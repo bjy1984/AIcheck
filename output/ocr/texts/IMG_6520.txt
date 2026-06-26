@@ -1,0 +1,112 @@
+序号
+PROJECT
+项目名称
+防爆电动球阀
+止回阀
+截止阀
+截止阀
+球阀
+球阀
+球阀
+阀门
+无缝钢管
+无缝钢管
+无缝钢管
+无缝钢管
+管子
+Material Name & Specification
+材料名称及规格
+CUANGDONG XINGRAN PETROCHEMICAL DESIGN INSTITUTE CO.LTD.
+一厂东星燃仁化政计院有限公司
+、二期装车站新增两套卸车系统项目
+珠海恒基达鑫国际化工仓储股份有限公司•一
+DN100 PN16
+DN100 PN16
+DN25 PN16
+DN100 PN16
+DN25 PN16
+DN50PN16
+DN100 PN16
+32x3
+①57×3.5
+①89x4
+中108x4
+0941H-16C
+H44H-16C
+J41H-16C
+041H-16C
+Q41H-16C
+Q41H-16C
+GB/T8163-2018
+GB/T8163-2018
+GB/T8163-2018
+GB/T8163-2018
+STD.Code & DWG.No.
+标准号或图号
+GENERAL MATERIAL LIST
+综合材料表
+WCB
+WCB
+WCB
+WCB
+WCB
+WCB
+WCB
+20#
+20#
+20#
+20#
+iaterial
+材料
+只
+只
+只
+只
+只
+Um
+单位
+200
+Quantity
+数量
+审核
+CHECK
+校核
+编制
+职责
+：2024年6月21日
+Om
+单重
+杨道紅
+湖募立
+姓名
+单位名称广东星燃石化设計院有限公司
+范關：錦车、至纪、性汤西，北羊原料酥、，化工工程）当业领
+化工石代医药行业（中成药、輔物制剂、石油及化工产品
+资质江书编号：A244010070
+效期至
+Weight
+重量（kg）
+F东省建设工程勘察设计出图专用章
+Total
+总重
+2021.3
+2021.3
+2021.3
+DATE
+日期
+RW
+版次
+DESIGN PHASE
+设计阶段
+DWG.No.
+图纸编号
+UNIT NAME
+裝置名称
+防火型，全通径
+防火型
+防火型，全通径
+Remarks
+备注
+施工图
+QX201903S-13-Y-09
+卸车站

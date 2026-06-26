@@ -1,0 +1,1277 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>压力管道监检协作系统工作台 UI</title>
+  <style>
+    :root {
+      --blue: #1d63d8;
+      --blue-2: #0f4fc6;
+      --light-blue: #eaf2ff;
+      --ink: #172033;
+      --muted: #64748b;
+      --line: #d8e0ea;
+      --line-2: #e8edf4;
+      --bg: #f6f8fb;
+      --card: #ffffff;
+      --green: #16a36b;
+      --orange: #f59e0b;
+      --red: #ef4b3f;
+      --purple: #7c3aed;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: #e5e7eb;
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif;
+    }
+
+    .screen {
+      width: 2048px;
+      height: 1260px;
+      overflow: hidden;
+      background: var(--bg);
+      border: 1px solid #cfd8e3;
+      display: grid;
+      grid-template-rows: 68px 1fr;
+    }
+
+    body.hash-construction .screen:not(#construction),
+    body.hash-inspection .screen:not(#inspection) { display: none; }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: 530px 1fr 450px;
+      align-items: center;
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+      padding: 0 24px;
+      gap: 22px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+      font-weight: 700;
+      font-size: 24px;
+      color: #1f2a44;
+    }
+
+    .project-name {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .hamburger {
+      width: 26px;
+      color: #52627a;
+      font-size: 26px;
+      line-height: 1;
+      margin-right: 4px;
+    }
+
+    .shield {
+      width: 28px;
+      height: 32px;
+      border-radius: 8px 8px 12px 12px;
+      background: linear-gradient(180deg, #2f75ff, #124db8);
+      color: white;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      box-shadow: inset 0 0 0 2px rgba(255,255,255,.2);
+    }
+
+    .status-pill {
+      font-size: 16px;
+      color: var(--blue-2);
+      background: #eaf2ff;
+      border: 1px solid #bdd4ff;
+      border-radius: 5px;
+      padding: 6px 12px;
+      white-space: nowrap;
+      font-weight: 600;
+    }
+
+    .status-pill.orange {
+      color: #d96b00;
+      background: #fff4e6;
+      border-color: #ffd39a;
+    }
+
+    .search {
+      height: 40px;
+      max-width: 720px;
+      display: flex;
+      align-items: center;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      color: #738095;
+      background: #fff;
+      padding: 0 14px;
+      font-size: 15px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .top-actions {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 22px;
+      color: #314159;
+      font-size: 15px;
+      white-space: nowrap;
+    }
+
+    .badge-num {
+      display: inline-flex;
+      min-width: 22px;
+      height: 22px;
+      justify-content: center;
+      align-items: center;
+      margin-left: 4px;
+      border-radius: 999px;
+      background: #f04438;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: linear-gradient(180deg, #4f8cff, #1e56bd);
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+
+    .workspace {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 410px 1fr 560px;
+      background: var(--bg);
+    }
+
+    .sidebar, .rightbar {
+      background: #fff;
+      min-height: 0;
+      border-right: 1px solid var(--line);
+    }
+
+    .rightbar {
+      border-right: 0;
+      border-left: 1px solid var(--line);
+      padding: 18px 20px;
+    }
+
+    .side-top {
+      height: 790px;
+      padding: 16px 18px 10px;
+      border-bottom: 1px solid var(--line);
+      overflow: hidden;
+    }
+
+    .side-header, .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 700;
+      font-size: 17px;
+      margin-bottom: 12px;
+    }
+
+    .side-icons {
+      display: flex;
+      gap: 14px;
+      color: #65758b;
+      font-size: 18px;
+    }
+
+    .tree {
+      font-size: 15px;
+      color: #26364e;
+      line-height: 1.15;
+    }
+
+    .tree-row {
+      display: grid;
+      grid-template-columns: 22px 1fr auto;
+      align-items: center;
+      gap: 6px;
+      min-height: 34px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      margin: 2px 0;
+    }
+
+    .tree-row .meta {
+      display: inline-flex;
+      gap: 4px;
+      align-items: center;
+      justify-content: flex-end;
+      color: #475569;
+      font-size: 13px;
+    }
+
+    .tree-row.category {
+      font-weight: 600;
+    }
+
+    .tree-row.child {
+      grid-template-columns: 26px 1fr auto;
+      padding-left: 36px;
+      color: #334155;
+    }
+
+    .tree-row.child .name {
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-height: 1.2;
+    }
+
+    .tree-row.selected {
+      background: #eaf2ff;
+      color: #0f55c8;
+      font-weight: 700;
+    }
+
+    .dot-status {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--line);
+      display: inline-block;
+    }
+
+    .dot-status.green { background: var(--green); }
+    .dot-status.orange { background: var(--orange); }
+    .dot-status.red { background: var(--red); }
+    .dot-status.blue { background: var(--blue); }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      height: 22px;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      color: #415169;
+      border-radius: 4px;
+      padding: 0 7px;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .tag.blue { background: #eef5ff; color: #0f55c8; border-color: #bdd5ff; }
+    .tag.green { background: #ecfdf5; color: #158457; border-color: #bbf7d0; }
+    .tag.orange { background: #fff7ed; color: #d96b00; border-color: #fed7aa; }
+    .tag.red { background: #fff1f0; color: #e63328; border-color: #fecaca; }
+    .tag.purple { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
+    .tag.gray { background: #f8fafc; color: #64748b; border-color: #dbe2ea; }
+
+    .side-bottom {
+      padding: 14px 18px;
+      height: calc(100% - 790px);
+      overflow: hidden;
+    }
+
+    .mini-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .mini-title small {
+      font-weight: 500;
+      color: var(--muted);
+      margin-left: 4px;
+    }
+
+    .mini-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .mini-table th,
+    .mini-table td {
+      border: 1px solid var(--line-2);
+      padding: 9px 7px;
+      text-align: left;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    .mini-table th {
+      background: #f8fafc;
+      color: #475569;
+      font-weight: 700;
+    }
+
+    .mini-table td:first-child {
+      max-width: 150px;
+      white-space: normal;
+      line-height: 1.25;
+    }
+
+    .main {
+      min-width: 0;
+      min-height: 0;
+      padding: 18px 20px;
+      overflow: hidden;
+    }
+
+    .breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 28px;
+      color: #53627a;
+      font-size: 14px;
+      margin: 0 0 12px;
+    }
+
+    .headline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.2;
+      color: #172033;
+    }
+
+    .sub {
+      color: var(--muted);
+      font-size: 14px;
+      margin-top: 4px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+
+    .card.pad { padding: 14px 16px; }
+
+    .card-title {
+      font-size: 17px;
+      font-weight: 700;
+      margin: 0 0 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .title-note {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 500;
+      margin-left: 8px;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: 1.1fr .82fr .82fr .82fr .82fr;
+      gap: 10px;
+    }
+
+    .summary-item {
+      border: 1px solid var(--line-2);
+      background: #fbfdff;
+      border-radius: 6px;
+      padding: 11px 12px;
+      min-height: 62px;
+    }
+
+    .summary-item .label {
+      color: #718096;
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+
+    .summary-item .value {
+      font-size: 18px;
+      font-weight: 800;
+      color: #1e293b;
+    }
+
+    .summary-item .value.blue { color: var(--blue); }
+    .summary-item .value.orange { color: #f97316; }
+    .summary-item .value.green { color: var(--green); }
+    .summary-item .value.red { color: var(--red); }
+
+    .desc-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    .desc-table th,
+    .desc-table td {
+      border-top: 1px solid var(--line-2);
+      padding: 12px 12px;
+      vertical-align: middle;
+    }
+
+    .desc-table th {
+      width: 128px;
+      color: #516073;
+      font-weight: 700;
+      text-align: left;
+      background: #fbfdff;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .chip {
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      border-radius: 5px;
+      padding: 6px 11px;
+      color: #334155;
+      font-size: 13px;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .package-overview {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 1fr 1fr;
+      gap: 10px;
+    }
+
+    .metric {
+      border: 1px solid var(--line-2);
+      border-radius: 6px;
+      padding: 10px 12px;
+      background: #fbfdff;
+    }
+
+    .metric b {
+      display: block;
+      font-size: 22px;
+      margin-bottom: 4px;
+    }
+
+    .metric span { color: #64748b; font-size: 13px; }
+
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .data-table th,
+    .data-table td {
+      border: 1px solid var(--line-2);
+      padding: 9px 10px;
+      vertical-align: middle;
+      text-align: left;
+      line-height: 1.2;
+    }
+
+    .data-table th {
+      background: #f8fafc;
+      color: #475569;
+      font-weight: 700;
+    }
+
+    .data-table tr.selected td { background: #eef5ff; }
+    .data-table .file-cell { min-width: 180px; }
+    .data-table .long { max-width: 300px; }
+
+    .action-link {
+      color: var(--blue);
+      font-weight: 700;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .upload-zone {
+      min-height: 74px;
+      border: 1px dashed #93b8ff;
+      background: #f8fbff;
+      border-radius: 6px;
+      color: #1d63d8;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      font-weight: 700;
+      gap: 7px;
+    }
+
+    .upload-zone small {
+      color: #64748b;
+      font-weight: 500;
+      font-size: 12px;
+    }
+
+    .textarea {
+      min-height: 74px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      padding: 12px;
+      color: #334155;
+      background: #fff;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .right-title {
+      font-size: 18px;
+      font-weight: 800;
+      margin: 0 0 8px;
+    }
+
+    .right-sub {
+      color: #52627a;
+      font-size: 14px;
+      margin-bottom: 14px;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    .ghost-btn {
+      height: 36px;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      color: #32445e;
+      border-radius: 5px;
+      padding: 0 14px;
+      font-weight: 700;
+      font-size: 13px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .primary-btn, .danger-btn, .outline-btn {
+      height: 42px;
+      border-radius: 5px;
+      border: 1px solid var(--blue);
+      background: var(--blue);
+      color: white;
+      font-weight: 800;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .danger-btn {
+      border-color: #fb5a25;
+      background: linear-gradient(180deg, #ff6c2f, #ff4c17);
+    }
+
+    .outline-btn {
+      background: #fff;
+      color: var(--blue);
+      border-color: #8fb8ff;
+    }
+
+    .action-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .preview {
+      height: 395px;
+      border: 1px solid var(--line);
+      background: #f8fafc;
+      border-radius: 6px;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+
+    .preview-bar {
+      height: 48px;
+      background: #f3f6fa;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+      color: #475569;
+      font-weight: 700;
+    }
+
+    .pdf-page {
+      height: calc(100% - 48px);
+      margin: 0 12px 12px;
+      background: #fff;
+      border: 1px solid #d8e0ea;
+      display: grid;
+      place-items: center;
+    }
+
+    .fake-doc {
+      width: 84%;
+      height: 82%;
+      border: 1px solid #cfd8e3;
+      background: #fff;
+      padding: 18px;
+      color: #111827;
+      font-size: 12px;
+    }
+
+    .fake-doc h3 {
+      margin: 0 0 12px;
+      text-align: center;
+      font-size: 18px;
+    }
+
+    .fake-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      border-left: 1px solid #9ca3af;
+      border-top: 1px solid #9ca3af;
+    }
+
+    .fake-grid div {
+      border-right: 1px solid #9ca3af;
+      border-bottom: 1px solid #9ca3af;
+      padding: 7px 6px;
+      min-height: 27px;
+    }
+
+    .highlight { background: #fff0b8; }
+
+    .info-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .info-table th,
+    .info-table td {
+      border: 1px solid var(--line-2);
+      padding: 8px 9px;
+      line-height: 1.25;
+      text-align: left;
+    }
+
+    .info-table th {
+      color: #64748b;
+      background: #fbfdff;
+      width: 116px;
+    }
+
+    .warn {
+      border: 1px solid #fed7aa;
+      background: #fffbeb;
+      color: #8a4b05;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.45;
+      margin-top: 12px;
+    }
+
+    .timeline {
+      position: relative;
+      margin: 10px 0 0 12px;
+      padding-left: 20px;
+      font-size: 13px;
+    }
+
+    .timeline:before {
+      content: "";
+      position: absolute;
+      left: 4px;
+      top: 4px;
+      bottom: 8px;
+      width: 2px;
+      background: #d8e0ea;
+    }
+
+    .timeline-item {
+      position: relative;
+      margin-bottom: 12px;
+      line-height: 1.35;
+    }
+
+    .timeline-item:before {
+      content: "";
+      position: absolute;
+      left: -21px;
+      top: 3px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--orange);
+    }
+
+    .timeline-item.red:before { background: var(--red); }
+    .timeline-item.blue:before { background: var(--blue); }
+    .timeline-item.gray:before { background: #94a3b8; }
+
+    .process {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    .process-row {
+      display: grid;
+      grid-template-columns: 42px 130px 1fr 230px;
+      min-height: 50px;
+      align-items: center;
+      border-bottom: 1px solid var(--line-2);
+      padding: 0 14px;
+      font-size: 14px;
+      gap: 12px;
+    }
+
+    .process-row:last-child { border-bottom: 0; }
+
+    .check {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 2px solid var(--green);
+      color: var(--green);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 13px;
+    }
+
+    .check.warn {
+      border-color: var(--red);
+      color: var(--red);
+      background: #fff;
+      padding: 0;
+      margin: 0;
+    }
+
+    .ai-result {
+      border: 1px solid #bdd7ff;
+      background: #f7fbff;
+      border-radius: 6px;
+      padding: 14px 16px;
+    }
+
+    .result-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      text-align: center;
+      border-bottom: 1px solid #dbe8ff;
+      margin-bottom: 12px;
+      padding-bottom: 12px;
+    }
+
+    .result-grid b {
+      display: block;
+      font-size: 24px;
+      margin-top: 3px;
+    }
+
+    .result-grid span { color: #475569; font-weight: 700; }
+
+    .bottom-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.15fr;
+      gap: 12px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      border: 1px solid var(--line-2);
+      border-bottom: 0;
+      font-size: 13px;
+    }
+
+    .form-grid > div {
+      border-bottom: 1px solid var(--line-2);
+      padding: 9px 10px;
+      min-height: 38px;
+    }
+
+    .form-grid .label {
+      background: #fbfdff;
+      color: #475569;
+      font-weight: 700;
+    }
+
+    .work-area {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 10px;
+      font-size: 14px;
+    }
+
+    .select-box, .input-box {
+      height: 38px;
+      border: 1px solid #cbd5e1;
+      border-radius: 5px;
+      background: #fff;
+      color: #64748b;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+    }
+
+    .text-box {
+      height: 94px;
+      border: 1px solid #cbd5e1;
+      border-radius: 5px;
+      background: #fff;
+      padding: 10px;
+      color: #334155;
+      line-height: 1.5;
+    }
+
+    .row-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      color: #475569;
+      overflow-wrap: anywhere;
+    }
+
+    #inspection .main { padding: 14px 20px; }
+    #inspection .headline { margin-bottom: 8px; }
+    #inspection h1 { font-size: 22px; }
+    #inspection .card { margin-bottom: 10px; }
+    #inspection .card.pad { padding: 11px 16px; }
+    #inspection .card-title { margin-bottom: 9px; }
+    #inspection .summary-item { min-height: 52px; padding: 8px 12px; }
+    #inspection .summary-item .value { font-size: 17px; }
+    #inspection .process-row { min-height: 41px; font-size: 13px; }
+    #inspection .data-table th,
+    #inspection .data-table td { padding: 7px 10px; }
+    #inspection .ai-result { padding: 11px 16px; }
+    #inspection .result-grid { margin-bottom: 8px; padding-bottom: 8px; }
+    #inspection .result-grid b { font-size: 22px; }
+    #inspection .ai-result div[style*="line-height"] { line-height: 1.45 !important; font-size: 13px !important; }
+    #inspection .bottom-grid { margin-top: 8px !important; }
+    #inspection .form-grid > div { min-height: 31px; padding: 6px 9px; }
+    #inspection .work-area { gap: 7px; font-size: 13px; }
+    #inspection .select-box,
+    #inspection .input-box { height: 32px; }
+    #inspection .text-box { height: 58px; padding: 8px 10px; }
+    #inspection .row-actions { gap: 8px; margin-top: 8px; }
+    #inspection .primary-btn,
+    #inspection .danger-btn,
+    #inspection .outline-btn { height: 36px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <section class="screen" id="construction">
+    <header class="topbar">
+      <div class="brand"><span class="hamburger">≡</span><span class="shield">盾</span><span class="project-name">华东成品油管道改造工程</span><span class="status-pill">资料提交中</span></div>
+      <div class="search">⌕ 全局搜索（项目 / 文件 / 节点名称 / 资料项 / 编号）</div>
+      <div class="top-actions"><span>待办<span class="badge-num">12</span></span><span>消息<span class="badge-num">7</span></span><span><span class="avatar"></span>施工方 李工⌄</span></div>
+    </header>
+
+    <main class="workspace">
+      <aside class="sidebar">
+        <div class="side-top">
+          <div class="side-header"><span>项目审核节点</span><span class="side-icons">↻ ⚙</span></div>
+          <div class="tree">
+            <div class="tree-row category"><span>⌄</span><span class="name">华东成品油管道改造工程</span><span></span></div>
+            <div class="tree-row category"><span>›</span><span class="name">受检单位资质</span><span class="meta"><span>3节点</span><span class="tag gray">只读</span></span></div>
+            <div class="tree-row category"><span>›</span><span class="name">设计文件</span><span class="meta"><span>7节点</span><span class="tag gray">只读</span></span></div>
+            <div class="tree-row category"><span>›</span><span class="name">施工组织设计</span><span class="meta"><span>1节点</span></span></div>
+            <div class="tree-row category"><span>⌄</span><span class="name">材料</span><span class="meta"><span>11节点</span><span class="tag orange">3待办</span></span></div>
+            <div class="tree-row child"><span>12</span><span class="name">压力管道元件及安全附件制造单位的许可资质</span><span class="meta"><span class="tag blue">C类</span><span>2文件</span></span></div>
+            <div class="tree-row child"><span>13</span><span class="name">需制造监检或有型式试验要求的压力管道元件的监检证书、型式试验报告</span><span class="meta"><span>1/2</span></span></div>
+            <div class="tree-row child selected"><span>16</span><span class="name">压力管道元件以及安全附件产品质量证明文件</span><span class="meta"><span class="tag blue">C类</span><span class="tag red">需补正</span><span>8文件</span></span></div>
+            <div class="tree-row child"><span>17</span><span class="name">压力管道元件以及安全附件产品验收的见证资料、抽样复验</span><span class="meta"><span>3/4</span></span></div>
+            <div class="tree-row child"><span>18</span><span class="name">材料复验报告、无损检测报告</span><span class="meta"><span class="tag orange">待提交</span></span></div>
+            <div class="tree-row child"><span>21</span><span class="name">材料标志移植</span><span class="meta"><span class="tag blue">B类</span><span>5文件</span></span></div>
+            <div class="tree-row category"><span>›</span><span class="name">阀门</span><span class="meta"><span>1节点</span></span></div>
+            <div class="tree-row category"><span>›</span><span class="name">焊接（粘接）</span><span class="meta"><span>8节点</span><span class="tag gray">只读</span></span></div>
+            <div class="tree-row category"><span>›</span><span class="name">热处理</span><span class="meta"><span>3节点</span></span></div>
+            <div class="tree-row category"><span>›</span><span class="name">无损检测</span><span class="meta"><span>8节点</span><span class="tag gray">只读</span></span></div>
+            <div class="tree-row category"><span>›</span><span class="name">防腐、保温</span><span class="meta"><span>5节点</span></span></div>
+            <div class="tree-row category"><span>›</span><span class="name">管道安装</span><span class="meta"><span>3节点</span></span></div>
+            <div class="tree-row category"><span>›</span><span class="name">耐压试验</span><span class="meta"><span>4节点</span><span class="tag gray">只读</span></span></div>
+            <div class="tree-row category"><span>›</span><span class="name">泄漏试验</span><span class="meta"><span>2节点</span></span></div>
+          </div>
+        </div>
+        <div class="side-bottom">
+          <div class="mini-title"><span>节点文件包 <small>16. 质量证明文件</small></span><span class="tag red">需补正</span></div>
+          <table class="mini-table">
+            <thead><tr><th>资料项/文件</th><th>版本</th><th>状态</th><th>OCR</th></tr></thead>
+            <tbody>
+              <tr><td>钢管质量证明书.pdf</td><td>V2</td><td><span class="tag red">需补正</span></td><td>完成</td></tr>
+              <tr><td>管件质量证明书.pdf</td><td>V1</td><td><span class="tag blue">已提交</span></td><td>完成</td></tr>
+              <tr><td>阀门合格证.pdf</td><td>V1</td><td><span class="tag orange">未提交</span></td><td>待识别</td></tr>
+              <tr><td>材料复验报告.pdf</td><td>V1</td><td><span class="tag orange">草稿</span></td><td>识别中</td></tr>
+              <tr><td>标志移植记录.docx</td><td>V1</td><td><span class="tag gray">待归类</span></td><td>-</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </aside>
+
+      <section class="main">
+        <div class="breadcrumb"><span>当前位置：材料 / 16. 压力管道元件以及安全附件产品质量证明文件</span><span>节点属性：<span class="tag blue">C类节点</span></span><span>节点状态：<span class="tag red">需补正</span></span></div>
+        <div class="headline">
+          <div><h1>节点文件包提交与补正</h1><div class="sub">提交对象是当前末级检测节点文件包；一个节点可挂载多份文件和多个资料项。</div></div>
+          <div class="toolbar"><button class="ghost-btn">批量归类</button><button class="ghost-btn">导出清单</button></div>
+        </div>
+
+        <div class="card pad">
+          <div class="card-title">一、当前节点摘要</div>
+          <div class="summary-grid">
+            <div class="summary-item"><div class="label">检测节点</div><div class="value" style="font-size:15px">16. 压力管道元件以及安全附件产品质量证明文件</div></div>
+            <div class="summary-item"><div class="label">必传完成度</div><div class="value orange">3 / 5</div></div>
+            <div class="summary-item"><div class="label">文件数量</div><div class="value blue">8</div></div>
+            <div class="summary-item"><div class="label">未提交</div><div class="value orange">2</div></div>
+            <div class="summary-item"><div class="label">需补正</div><div class="value red">1</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <table class="desc-table">
+            <tr><th>建议资料项</th><td><div class="chips"><span class="chip">钢管质量证明书</span><span class="chip">管件质量证明书</span><span class="chip">阀门合格证</span><span class="chip">材料复验报告</span><span class="chip">材料标志移植记录</span><span class="chip">更多...</span></div></td></tr>
+            <tr><th>模板要求</th><td>文件清晰可读，包含完整抬头、签章页、炉批号、规格型号、材质、执行标准和版本信息。</td></tr>
+            <tr><th>注意事项</th><td>材料炉批号、规格、材质应与材料清单保持一致；如不一致请在整改说明中说明原因。</td></tr>
+          </table>
+        </div>
+
+        <div class="card pad">
+          <div class="card-title">二、监检退回意见 <span class="title-note">第 1 次退回</span></div>
+          <table class="desc-table">
+            <tr><th>退回人</th><td>监检员 张工</td><th>退回时间</th><td>2024-05-10 16:20</td></tr>
+            <tr><th>补正原因</th><td colspan="3">钢管质量证明书中炉批号与材料清单不一致，请补充复验报告并说明差异。</td></tr>
+            <tr><th>证据页码</th><td>钢管质量证明书.pdf 第 2 页</td><th>要求</th><td>补充材料复验报告并在整改说明中说明原因。</td></tr>
+          </table>
+        </div>
+
+        <div class="card pad">
+          <div class="card-title">三、文件包明细 <span class="title-note">当前节点共 8 个文件，支持一项多文件</span></div>
+          <table class="data-table">
+            <thead><tr><th>资料项</th><th class="file-cell">文件名</th><th>用途</th><th>必传</th><th>版本</th><th>提交状态</th><th>OCR</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr class="selected"><td>钢管质量证明书</td><td>钢管质量证明书.pdf</td><td>原始提交</td><td>是</td><td>V2</td><td><span class="tag red">需补正</span></td><td>完成</td><td><span class="action-link">查看/替换</span></td></tr>
+              <tr><td>钢管质量证明书</td><td>炉批号差异说明.pdf</td><td>补正附件</td><td>否</td><td>V1</td><td><span class="tag orange">草稿</span></td><td>待识别</td><td><span class="action-link">提交</span></td></tr>
+              <tr><td>材料复验报告</td><td>材料复验报告.pdf</td><td>补正附件</td><td>是</td><td>V1</td><td><span class="tag orange">未提交</span></td><td>识别中</td><td><span class="action-link">定位</span></td></tr>
+              <tr><td>管件质量证明书</td><td>管件质量证明书.pdf</td><td>原始提交</td><td>是</td><td>V1</td><td><span class="tag blue">已提交</span></td><td>完成</td><td><span class="action-link">查看</span></td></tr>
+              <tr><td>阀门合格证</td><td>阀门合格证.pdf</td><td>证明材料</td><td>条件必传</td><td>V1</td><td><span class="tag orange">未提交</span></td><td>待识别</td><td><span class="action-link">归类</span></td></tr>
+              <tr><td>材料标志移植</td><td>材料标志移植记录.docx</td><td>证明材料</td><td>否</td><td>V1</td><td><span class="tag gray">待归类</span></td><td>-</td><td><span class="action-link">标记资料项</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="two-col">
+          <div class="card pad">
+            <div class="card-title">四、批量上传</div>
+            <div class="upload-zone">⇧ 点击或拖拽多个文件到此处上传<small>支持 pdf、doc、docx、xls、xlsx、jpg、png、zip；上传后选择资料项和用途</small></div>
+          </div>
+          <div class="card pad">
+            <div class="card-title">五、整改说明</div>
+            <div class="textarea">已补充材料复验报告，并上传炉批号差异说明。钢管质证书炉批号为 H240315A07，材料清单录入时漏写尾号。</div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="rightbar">
+        <div class="right-title">文件预览</div>
+        <div class="right-sub">当前文件：钢管质量证明书.pdf (V2)</div>
+        <div class="toolbar"><button class="ghost-btn">放大</button><button class="ghost-btn">缩小</button><button class="ghost-btn">定位意见</button><button class="ghost-btn">下载</button></div>
+        <div class="preview">
+          <div class="preview-bar"><span>第 2 / 8 页</span><span>⛶</span></div>
+          <div class="pdf-page">
+            <div class="fake-doc">
+              <h3>材料质量证明书</h3>
+              <div class="fake-grid">
+                <div>供应单位名称</div><div>中石化安装有限公司</div><div>证明书编号</div><div>MTP-20240510-021</div>
+                <div>合同号</div><div>CGHT-20240515-008</div><div>日期</div><div>2024-05-08</div>
+                <div>材料名称</div><div>钢管</div><div>产品标准</div><div>GB/T 9711.1-2023</div>
+                <div>规格型号</div><div>Φ219×8.0mm</div><div>长度</div><div>12.00m</div>
+                <div>材料炉号</div><div class="highlight">H240315A07</div><div>交货状态</div><div>正火</div>
+              </div>
+              <div style="margin-top:14px;text-align:center;font-weight:700">化学成分（%）</div>
+              <div class="fake-grid" style="grid-template-columns:repeat(7,1fr);margin-top:8px"><div>C</div><div>Si</div><div>Mn</div><div>P</div><div>S</div><div>Nb</div><div>V</div><div>0.15</div><div>0.28</div><div>1.22</div><div>0.010</div><div>0.003</div><div>0.025</div><div>0.050</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card pad">
+          <div class="card-title">办理操作</div>
+          <div class="sub" style="margin-bottom:10px">当前节点：16. 压力管道元件以及安全附件产品质量证明文件</div>
+          <div class="action-grid">
+            <button class="primary-btn">批量上传文件</button>
+            <button class="outline-btn">保存草稿</button>
+            <button class="primary-btn">提交本节点文件包</button>
+            <button class="outline-btn">提交选中文件</button>
+            <button class="outline-btn">撤回未提交</button>
+            <button class="danger-btn">补正反馈</button>
+          </div>
+          <div class="warn">提交对象是当前末级节点文件包；已提交文件不可物理删除，只能替换、追加版本、撤回未提交或新增补正附件。</div>
+        </div>
+
+        <div class="two-col">
+          <div class="card pad">
+            <div class="card-title">文件属性</div>
+            <table class="info-table">
+              <tr><th>文件名</th><td>钢管质量证明书.pdf</td></tr>
+              <tr><th>所属节点</th><td>材料 / 16. 质量证明文件</td></tr>
+              <tr><th>资料项</th><td>钢管质量证明书</td></tr>
+              <tr><th>文件用途</th><td>原始提交</td></tr>
+              <tr><th>提交状态</th><td><span class="tag red">需补正</span></td></tr>
+              <tr><th>关联意见</th><td>1 条 <span class="action-link">查看</span></td></tr>
+            </table>
+          </div>
+          <div class="card pad">
+            <div class="card-title">办理进度</div>
+            <div class="timeline">
+              <div class="timeline-item red"><b>监检退回</b><br>炉批号与材料清单不一致。</div>
+              <div class="timeline-item orange"><b>施工方补正中</b><br>已新增复验报告和差异说明。</div>
+              <div class="timeline-item gray"><b>等待重新提交</b><br>提交节点文件包后进入审查。</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </section>
+
+  <section class="screen" id="inspection">
+    <header class="topbar">
+      <div class="brand"><span class="hamburger">≡</span><span class="shield">盾</span><span class="project-name">华东成品油管道改造工程</span><span class="status-pill">监检审查中</span></div>
+      <div class="search">⌕ 全局搜索（项目 / 文件 / 节点 / 资料项 / 标准条款）</div>
+      <div class="top-actions"><span>待办<span class="badge-num">12</span></span><span>消息<span class="badge-num">7</span></span><span><span class="avatar"></span>监检员 张工⌄</span></div>
+    </header>
+
+    <main class="workspace">
+      <aside class="sidebar">
+        <div class="side-top">
+          <div class="side-header"><span>项目审核节点</span><span class="side-icons">↻ ⚙</span></div>
+          <div class="tree">
+            <div class="tree-row category"><span>⌄</span><span class="name">华东成品油管道改造工程</span><span></span></div>
+            <div class="tree-row category"><span>›</span><span class="name">受检单位资质</span><span class="meta"><span>3节点</span></span></div>
+            <div class="tree-row category"><span>›</span><span class="name">设计文件</span><span class="meta"><span>7节点</span></span></div>
+            <div class="tree-row category"><span>›</span><span class="name">施工组织设计</span><span class="meta"><span>1节点</span></span></div>
+            <div class="tree-row category"><span>›</span><span class="name">材料</span><span class="meta"><span>11节点</span><span class="tag red">1补正</span></span></div>
+            <div class="tree-row category"><span>›</span><span class="name">阀门</span><span class="meta"><span>1节点</span></span></div>
+            <div class="tree-row category"><span>⌄</span><span class="name">焊接（粘接）</span><span class="meta"><span>8节点</span><span class="tag orange">待审查</span></span></div>
+            <div class="tree-row child"><span>24</span><span class="name">焊工资格证及持证合格项目</span><span class="meta"><span class="tag blue">B类</span><span>18文件</span></span></div>
+            <div class="tree-row child selected"><span>25</span><span class="name">焊接（粘接）工艺文件</span><span class="meta"><span class="tag blue">C类</span><span class="tag orange">待审查</span><span>6文件</span></span></div>
+            <div class="tree-row child"><span>26</span><span class="name">焊接材料质量证明文件</span><span class="meta"><span>8文件</span></span></div>
+            <div class="tree-row child"><span>27</span><span class="name">焊接材料的验收、保管、发放、使用和回收的管理</span><span class="meta"><span class="tag blue">B类</span></span></div>
+            <div class="tree-row child"><span>29</span><span class="name">施焊参数、施焊记录、焊缝标识</span><span class="meta"><span>27文件</span></span></div>
+            <div class="tree-row category"><span>›</span><span class="name">热处理</span><span class="meta"><span>3节点</span></span></div>
+            <div class="tree-row category"><span>›</span><span class="name">无损检测</span><span class="meta"><span>8节点</span></span></div>
+            <div class="tree-row category"><span>›</span><span class="name">防腐、保温</span><span class="meta"><span>5节点</span></span></div>
+            <div class="tree-row category"><span>›</span><span class="name">管道安装</span><span class="meta"><span>3节点</span></span></div>
+            <div class="tree-row category"><span>›</span><span class="name">耐压试验</span><span class="meta"><span>4节点</span></span></div>
+            <div class="tree-row category"><span>›</span><span class="name">吹扫、清洗</span><span class="meta"><span>1节点</span></span></div>
+          </div>
+        </div>
+        <div class="side-bottom">
+          <div class="mini-title"><span>节点文件包 <small>25. 焊接工艺文件</small></span><span class="tag orange">待审查</span></div>
+          <table class="mini-table">
+            <thead><tr><th>文件名</th><th>来源</th><th>版本</th><th>状态</th></tr></thead>
+            <tbody>
+              <tr><td>焊接工艺评定报告.pdf</td><td>施工方</td><td>V2</td><td><span class="tag orange">待审查</span></td></tr>
+              <tr><td>焊接工艺卡.docx</td><td>施工方</td><td>V1</td><td><span class="tag orange">待审查</span></td></tr>
+              <tr><td>评定试验记录.pdf</td><td>施工方</td><td>V1</td><td><span class="tag red">需补正</span></td></tr>
+              <tr><td>母材及焊材证明.pdf</td><td>施工方</td><td>V3</td><td><span class="tag green">已通过</span></td></tr>
+              <tr><td>热处理记录.pdf</td><td>施工方</td><td>V1</td><td><span class="tag green">已通过</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </aside>
+
+      <section class="main">
+        <div class="headline">
+          <div><h1>AI 审查助手</h1><div class="sub">当前节点：25. 焊接（粘接）工艺文件 · C类节点 · 待审查 · 文件包 6 个文件</div></div>
+          <div class="toolbar"><button class="ghost-btn">重新推理</button><button class="ghost-btn">复制结论</button></div>
+        </div>
+
+        <div class="card pad">
+          <div class="summary-grid">
+            <div class="summary-item"><div class="label">节点文件包</div><div class="value blue">6 文件</div></div>
+            <div class="summary-item"><div class="label">资料项覆盖</div><div class="value green">4 / 5</div></div>
+            <div class="summary-item"><div class="label">OCR 完成</div><div class="value green">5</div></div>
+            <div class="summary-item"><div class="label">证据引用</div><div class="value blue">8 条</div></div>
+            <div class="summary-item"><div class="label">待人工确认</div><div class="value orange">2 项</div></div>
+          </div>
+        </div>
+
+        <div class="card pad">
+          <div class="card-title">AI 推理过程</div>
+          <div class="process">
+            <div class="process-row"><span class="check">✓</span><b>资料识别</b><span>识别节点文件包 6 个文件，当前分析焊接工艺评定报告、焊接工艺卡、评定试验记录。</span><span>证据：文件包清单</span></div>
+            <div class="process-row"><span class="check">✓</span><b>字段抽取</b><span>抽取 18 个字段，命中 15 个，2 个需人工确认，1 个缺失。</span><span>证据：OCR 字段表</span></div>
+            <div class="process-row"><span class="check">✓</span><b>标准条文匹配</b><span>命中 GB/T 20801、NB/T 47014 中工艺评定、适用焊法、母材厚度要求。</span><span>证据：条文匹配结果</span></div>
+            <div class="process-row"><span class="check">✓</span><b>规则比对</b><span>依据节点资料说明与标准条文，对 20 条规则进行比对。</span><span>证据：规则比对结果</span></div>
+            <div class="process-row"><span class="check warn">!</span><b>风险判断</b><span>未找到“适用焊接方法说明”，评定试验记录缺少拉伸试验页。</span><span>证据：文件包缺项</span></div>
+          </div>
+        </div>
+
+        <div class="card pad">
+          <div class="card-title">文件包与证据引用 <span class="title-note">按资料项聚合，不改变项目树节点</span></div>
+          <table class="data-table">
+            <thead><tr><th>资料项</th><th>文件名</th><th>版本</th><th>页码/证据</th><th>AI 判断</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr class="selected"><td>焊接工艺评定报告</td><td>焊接工艺评定报告.pdf</td><td>V2</td><td>第 3 页</td><td><span class="tag orange">待确认</span></td><td><span class="action-link">查看证据</span></td></tr>
+              <tr><td>焊接工艺文件</td><td>焊接工艺卡.docx</td><td>V1</td><td>第 1 页</td><td><span class="tag green">匹配</span></td><td><span class="action-link">定位</span></td></tr>
+              <tr><td>评定试验记录</td><td>评定试验记录.pdf</td><td>V1</td><td>缺第 10 页</td><td><span class="tag red">需补正</span></td><td><span class="action-link">退回项</span></td></tr>
+              <tr><td>母材及焊材证明</td><td>母材及焊材证明.pdf</td><td>V3</td><td>第 2 页</td><td><span class="tag green">通过</span></td><td><span class="action-link">查看</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="ai-result">
+          <div class="card-title">AI 推理结果 <span class="title-note">仅为建议</span></div>
+          <div class="result-grid">
+            <div><span>建议结论</span><b style="color:#f97316">需补正</b></div>
+            <div><span>风险等级</span><b style="color:#f97316">中</b></div>
+            <div><span>置信度</span><b style="color:#1d63d8">82%</b></div>
+            <div><span>人工确认</span><b style="color:#f97316">待确认</b></div>
+          </div>
+          <div style="font-size:14px;line-height:1.7">
+            <b>补正建议：</b><br>
+            1. 请补充适用焊接方法说明，明确 GTAW、SMAW 的适用接头形式、厚度范围及限制条件。<br>
+            2. 请补充评定试验记录中缺失的拉伸试验页，并与评定报告第 3 页数据一致。<br>
+            3. 请确认焊接工艺卡编号和报告编号有效期，必要时补充签章页。
+          </div>
+        </div>
+
+        <div class="bottom-grid" style="margin-top:12px">
+          <div class="card pad">
+            <div class="card-title">业务规则说明</div>
+            <div class="form-grid">
+              <div class="label">Prompt 版本</div><div><span class="action-link">v1.3</span> <span class="tag green">当前使用</span></div>
+              <div class="label">适用节点</div><div>25. 焊接（粘接）工艺文件</div>
+              <div class="label">标准范围</div><div><span class="tag blue">GB/T 20801</span> <span class="tag blue">NB/T 47014-2011</span> <span class="tag blue">GB/T 9711.1</span></div>
+              <div class="label">输出格式</div><div><span class="tag blue">风险点列表</span> <span class="tag blue">建议结论</span> <span class="tag blue">证据链</span> <span class="tag blue">补正建议</span></div>
+            </div>
+          </div>
+          <div class="card pad">
+            <div class="card-title">监检工作区</div>
+            <div class="work-area">
+              <div>检查结果 <span style="color:red">*</span></div><div class="select-box">请选择检查结果</div>
+              <div>审查意见 <span style="color:red">*</span></div><div class="text-box">符合 / 不符合 / 需补正</div>
+              <div>补正责任单位 <span style="color:red">*</span></div><div class="select-box">施工方</div>
+            </div>
+            <div class="row-actions">
+              <button class="primary-btn">采纳结果</button>
+              <button class="outline-btn">驳回结果</button>
+              <button class="outline-btn">保存意见</button>
+            </div>
+            <div class="row-actions" style="grid-template-columns:1fr 1fr;margin-top:10px">
+              <button class="danger-btn">退回补正</button>
+              <button class="primary-btn">报告生成/复核</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="rightbar">
+        <div class="right-title">文件预览</div>
+        <div class="right-sub">焊接工艺评定报告.pdf</div>
+        <div class="toolbar"><button class="ghost-btn">放大</button><button class="ghost-btn">缩小</button><button class="ghost-btn">定位证据</button><button class="ghost-btn">下载</button></div>
+        <div class="preview">
+          <div class="preview-bar"><span>第 3 / 12 页</span><span>⛶</span></div>
+          <div class="pdf-page">
+            <div class="fake-doc">
+              <h3>焊接工艺评定报告（PQR）</h3>
+              <div class="fake-grid">
+                <div>报告编号</div><div>PQR-20240510-001</div><div>评定标准</div><div>NB/T 47014-2011</div>
+                <div>焊接方法</div><div>GTAW+SMAW</div><div>接头型式</div><div>板对接</div>
+                <div>母材材质</div><div>20#</div><div>母材厚度</div><div>Φ219×8.0mm</div>
+                <div>焊材牌号</div><div>ER50-6 / J427</div><div>保护气体</div><div>100%Ar</div>
+              </div>
+              <div style="font-weight:700;margin:14px 0 8px">一、焊接工艺</div>
+              <div class="fake-grid" style="grid-template-columns:repeat(5,1fr)"><div>焊接方法</div><div>填充金属</div><div>焊接电流</div><div>电弧电压</div><div>焊接速度</div><div>GTAW</div><div>ER50-6</div><div>80-120A</div><div>10-14V</div><div>120mm/min</div><div>SMAW</div><div>E5015</div><div>90-130A</div><div>20-24V</div><div>110mm/min</div></div>
+              <div class="highlight" style="margin-top:12px;padding:8px">适用范围：板厚 6mm-25mm，母材为 20# 碳素钢。</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card pad">
+          <div class="card-title">文件属性</div>
+          <table class="info-table">
+            <tr><th>文件名</th><td>焊接工艺评定报告.pdf</td></tr>
+            <tr><th>所属节点</th><td>焊接（粘接） / 25. 焊接（粘接）工艺文件</td></tr>
+            <tr><th>资料项</th><td>焊接工艺评定报告</td></tr>
+            <tr><th>来源单位</th><td>施工方</td></tr>
+            <tr><th>上传人</th><td>施工方 李工</td></tr>
+            <tr><th>文件版本</th><td>V2</td></tr>
+            <tr><th>提交状态</th><td><span class="tag blue">已提交</span></td></tr>
+            <tr><th>OCR 状态</th><td><span class="tag green">OCR完成</span></td></tr>
+            <tr><th>关联证据数</th><td>8 条 <span class="action-link">查看证据链</span></td></tr>
+          </table>
+        </div>
+
+        <div class="card pad">
+          <div class="card-title">节点文件包状态</div>
+          <table class="info-table">
+            <tr><th>文件总数</th><td>6</td></tr>
+            <tr><th>资料项完成</th><td>4 / 5</td></tr>
+            <tr><th>缺失项</th><td>拉伸试验页、适用焊法说明</td></tr>
+            <tr><th>当前结论</th><td><span class="tag red">需补正</span></td></tr>
+          </table>
+        </div>
+      </aside>
+    </main>
+  </section>
+
+  <script>
+    function syncScreenFromHash() {
+      const hash = location.hash.replace("#", "");
+      document.body.classList.remove("hash-construction", "hash-inspection");
+      document.body.classList.add(hash === "inspection" ? "hash-inspection" : "hash-construction");
+    }
+
+    window.addEventListener("hashchange", syncScreenFromHash);
+    syncScreenFromHash();
+  </script>
+  <script src="./static_ui_nav.js"></script>
+</body>
+</html>

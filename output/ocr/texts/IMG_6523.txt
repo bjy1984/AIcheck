@@ -1,0 +1,85 @@
+序号
+PROJECT
+项目名称
+镀锌扁钢
+膨胀螺栓
+U型管卡
+钢板
+角钢
+槽钢
+管架材料
+MaterialName & opecucauon
+材料名称及規格
+GUANGDONG XINGRAN PETROCHEMICAL DESIGN INSTTUTE CO.L TD.
+am广东星燃石化设计院有限公司
+、二期装车站新增两套卸车系统项目
+珠海恒基达鑫国际化工仓储股份有限公司•一
+MIO
+A1-1（100）
+10mm
+L80x80x6
+［16
+GB/T 702-2017
+HG/T21629-1999
+GB/T 709-2019
+GB/T706-2016
+GB/T706-2016
+STD.Code & DWG.No.
+标准号或图号
+GENERAL MATERIAL LIST
+综合材料表
+0235A/镀锌
+Q235A
+Q235A/镀锌
+Q235A
+Q235A
+Q235A
+Miaterial
+材料
+只
+单位
+30
+46
+2.6
+32
+24
+Quantity
+数量
+APPROVE
+审核
+CHECK
+校核
+编制
+DUTY
+职责
+Unit
+单重
+杨5紅
+勿駛
+的莠生
+NAME
+姓名
+业务范围：保运、台生动菇、化学京料获、化工工程）专业级
+能工石化医药行业（中成药、药物台剂、石油及化工产品
+Weight
+重量（kg）
+广东省建设工程勘察设计出图专用章
+总重
+2021.3
+2021.3
+2021.3
+日期
+版次
+DESIGN PHASE
+设计阶段
+DWG.No.
+图纸编号
+UNIT NAME
+裝置名称
+静电接地用
+Remarks
+备注
+施工图
+QX201903S-13-¥-09
+卸车站
+Page 4 of 4

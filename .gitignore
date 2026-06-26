@@ -1,0 +1,9 @@
+.DS_Store
+.playwright-cli/
+tmp/
+
+__pycache__/
+*.py[cod]
+*.log
+
+output/**/*.inspect.ndjson

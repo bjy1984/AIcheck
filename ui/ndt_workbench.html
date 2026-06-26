@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>无损检测机构工作台</title>
+  <link rel="stylesheet" href="./workbench_v2.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="hamburger">≡</div>
+        <div class="brand-mark">盾</div>
+        <div class="project-title">华东成品油管道改造工程</div>
+        <div class="top-status">检测资料提交中</div>
+      </div>
+      <div class="global-search">⌕ 全局搜索（项目 / 底片编号 / 焊口编号 / 检测报告 / 节点）</div>
+      <div class="top-actions">
+        <span>待办<span class="notice-dot">5</span></span>
+        <span>消息<span class="notice-dot">3</span></span>
+        <span class="user"><span class="avatar"></span>无损检测 王工⌄</span>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside class="left">
+        <section class="tree-wrap">
+          <div class="section-title">
+            <span>项目审核节点</span>
+            <span class="section-tools">↻ ⚙</span>
+          </div>
+          <div class="tree">
+            <div class="tree-root"><span>⌄</span><span class="tree-label">华东成品油管道改造工程</span><span></span></div>
+            <div class="tree-group"><span>›</span><span>受检单位资质</span><span>3节点 <span class="pill blue">只读</span></span></div>
+            <div class="tree-group"><span>›</span><span>设计文件</span><span>7节点 <span class="pill blue">只读</span></span></div>
+            <div class="tree-group"><span>›</span><span>材料</span><span>11节点 <span class="pill blue">只读</span></span></div>
+            <div class="tree-group"><span>›</span><span>焊接（粘接）</span><span>8节点 <span class="pill blue">只读</span></span></div>
+            <div class="tree-group"><span>⌄</span><span>无损检测</span><span>8节点 <span class="pill orange">1补正</span></span></div>
+            <div class="tree-node"><span>35</span><span class="tree-label">无损检测机构施工现场质量保证体系的实施</span><span><span class="pill green">通过</span></span></div>
+            <div class="tree-node"><span>36</span><span class="tree-label">无损检测方案</span><span><span class="pill green">通过</span></span></div>
+            <div class="tree-node"><span>37</span><span class="tree-label">检测过程中发现问题的处理</span><span><span class="pill blue">已提交</span></span></div>
+            <div class="tree-node"><span>38</span><span class="tree-label">无损检测人员资格证、执业注册证及持证合格项目</span><span><span class="pill blue">B类</span></span></div>
+            <div class="tree-node"><span>39</span><span class="tree-label">无损检测工艺文件</span><span><span class="pill blue">C类</span> 4文件</span></div>
+            <div class="tree-node active"><span>40</span><span class="tree-label">无损检测记录、报告</span><span><span class="pill blue">C类</span> <span class="pill orange">待提交</span></span></div>
+            <div class="tree-node"><span>41</span><span class="tree-label">射线检测底片抽查</span><span><span class="pill blue">B类</span> 126底片</span></div>
+            <div class="tree-node warn"><span>42</span><span class="tree-label">射线检测现场抽查</span><span><span class="pill red">需补正</span></span></div>
+            <div class="tree-group"><span>›</span><span>耐压试验免除或替代</span><span>1节点</span></div>
+            <div class="tree-node"><span>65</span><span class="tree-label">无损检测报告和底片</span><span><span class="pill blue">已提交</span></span></div>
+          </div>
+        </section>
+
+        <section class="node-files">
+          <div class="node-file-head">
+            <span>检测资料包 <small>40. 无损检测记录、报告</small></span>
+            <span class="pill orange">待提交</span>
+          </div>
+          <table class="table compact">
+            <thead>
+              <tr><th>资料/记录</th><th>方法</th><th>数量</th><th>状态</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>RT 检测报告 R2.pdf</td><td>RT</td><td>1</td><td><span class="pill orange">草稿</span></td></tr>
+              <tr><td>RT-2026-001 ~ 018</td><td>RT</td><td>18</td><td><span class="pill blue">已挂载</span></td></tr>
+              <tr><td>UT-2026-017</td><td>UT</td><td>1</td><td><span class="pill orange">未提交</span></td></tr>
+              <tr><td>PAUT 图像包.zip</td><td>PAUT</td><td>1</td><td><span class="pill blue">识别中</span></td></tr>
+              <tr><td>现场抽查照片.zip</td><td>RT</td><td>6</td><td><span class="pill red">需补正</span></td></tr>
+            </tbody>
+          </table>
+        </section>
+      </aside>
+
+      <main class="center">
+        <div class="page-head">
+          <div>
+            <div class="crumbs">当前位置：无损检测 / 40. 无损检测记录、报告　　节点属性：<span class="pill blue">C类节点</span>　　节点状态：<span class="pill orange">待提交</span></div>
+            <h1>无损检测资料维护</h1>
+            <div class="sub">底片编号、检测记录、检测报告和相控阵/射线资料直接挂载到明确的无损检测节点。</div>
+          </div>
+          <div class="actions">
+            <button class="btn">新增底片编号</button>
+            <button class="btn">批量导入记录</button>
+            <button class="btn primary">提交检测资料</button>
+          </div>
+        </div>
+
+        <section class="card">
+          <div class="card-head"><h2>一、检测任务摘要</h2></div>
+          <div class="card-body">
+            <div class="metrics">
+              <div class="metric"><div class="metric-label">底片编号</div><div class="metric-value">126</div></div>
+              <div class="metric"><div class="metric-label">本批新增</div><div class="metric-value green">18</div></div>
+              <div class="metric"><div class="metric-label">检测报告</div><div class="metric-value">8</div></div>
+              <div class="metric"><div class="metric-label">挂载节点</div><div class="metric-value">4</div></div>
+              <div class="metric"><div class="metric-label">业务核验</div><div class="metric-value orange">3/4</div></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>二、检测资料业务核验链路</h2>
+            <div class="sub">无损检测机构查看链路状态并补充过程文件，不执行监检审查</div>
+          </div>
+          <div class="card-body">
+            <div class="review-chain">
+              <div class="review-step">
+                <div class="step-no">1</div>
+                <div>
+                  <div class="step-title">底片编号与报告一致性</div>
+                  <div class="step-desc">RT 检测报告 R2 中 18 张底片编号与 RT 底片编号清单一致，焊口编号 WJ-018 至 WJ-035 均能匹配报告明细。</div>
+                  <div class="evidence-row"><span class="pill blue">报告第1页</span><span class="pill blue">清单18行</span></div>
+                </div>
+                <span class="pill green">通过</span>
+              </div>
+              <div class="review-step">
+                <div class="step-no">2</div>
+                <div>
+                  <div class="step-title">返修复拍闭环</div>
+                  <div class="step-desc">报告结论显示 1 道焊口需返修复拍，但当前文件包未找到返修复拍后的底片和处理记录。</div>
+                  <div class="evidence-row"><span class="pill blue">报告结论</span><span class="pill red">缺复拍记录</span></div>
+                </div>
+                <span class="pill red">需补充</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>三、底片编号与检测记录</h2>
+            <div class="sub">维护结构化检测记录，提交后进入监检审查</div>
+          </div>
+          <div class="card-body">
+            <table class="table">
+              <thead>
+                <tr><th>底片编号</th><th>焊口编号</th><th>管线号</th><th>方法</th><th>检测日期</th><th>评定级别</th><th>缺陷代码</th><th>资料状态</th></tr>
+              </thead>
+              <tbody>
+                <tr class="selected"><td>RT-2026-001</td><td>WJ-018</td><td>PL-02</td><td>RT</td><td>2026-06-20</td><td>II</td><td>-</td><td><span class="pill blue">已挂载</span></td></tr>
+                <tr><td>RT-2026-002</td><td>WJ-019</td><td>PL-02</td><td>RT</td><td>2026-06-20</td><td>I</td><td>-</td><td><span class="pill blue">已挂载</span></td></tr>
+                <tr><td>RT-2026-003</td><td>WJ-020</td><td>PL-02</td><td>RT</td><td>2026-06-21</td><td>II</td><td>SL</td><td><span class="pill orange">待确认</span></td></tr>
+                <tr><td>UT-2026-017</td><td>WJ-032</td><td>PL-04</td><td>UT</td><td>2026-06-21</td><td>合格</td><td>-</td><td><span class="pill orange">草稿</span></td></tr>
+                <tr><td>PAUT-2026-006</td><td>WJ-045</td><td>PL-05</td><td>PAUT</td><td>2026-06-22</td><td>合格</td><td>-</td><td><span class="pill blue">识别中</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>四、检测报告与节点挂载</h2>
+            <div class="sub">无损检测资料只挂载到授权的无损检测相关节点</div>
+          </div>
+          <div class="card-body">
+            <table class="table">
+              <thead>
+                <tr><th>资料名称</th><th>资料类型</th><th>版本</th><th>挂载节点</th><th>处理状态</th><th>操作</th></tr>
+              </thead>
+              <tbody>
+                <tr class="selected"><td>RT 检测报告 R2.pdf</td><td>检测报告</td><td>V2</td><td>40、41、65</td><td><span class="pill orange">草稿</span></td><td><a>查看/替换</a></td></tr>
+                <tr><td>RT 底片编号清单.xlsx</td><td>检测记录</td><td>V1</td><td>40、41</td><td><span class="pill blue">已挂载</span></td><td><a>定位</a></td></tr>
+                <tr><td>PAUT 图像包.zip</td><td>相控阵资料</td><td>V1</td><td>40</td><td><span class="pill blue">识别中</span></td><td><a>查看</a></td></tr>
+                <tr><td>现场抽查照片.zip</td><td>补正材料</td><td>V2</td><td>42</td><td><span class="pill red">需补正</span></td><td><a>补正反馈</a></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <div class="split">
+          <section class="card">
+            <div class="card-head"><h2>五、检测报告上传</h2></div>
+            <div class="card-body">
+              <div class="upload-box">⇧ 上传检测报告、底片清单或图像包<br><span class="sub">上传后选择无损检测节点：40、41、42、65</span></div>
+            </div>
+          </section>
+          <section class="card">
+            <div class="card-head"><h2>六、补正材料</h2></div>
+            <div class="card-body">
+              <table class="table compact">
+                <tbody>
+                  <tr><th>补正节点</th><td>42. 射线检测现场抽查</td></tr>
+                  <tr><th>监检意见</th><td>现场抽查照片缺少拍摄时间和焊口编号标识。</td></tr>
+                  <tr><th>当前处理</th><td><span class="pill orange">补正中</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </main>
+
+      <aside class="right">
+        <h2 class="right-title">资料预览</h2>
+        <div class="preview-name">当前资料：RT 检测报告 R2.pdf</div>
+        <div class="preview-actions">
+          <button class="btn">放大</button>
+          <button class="btn">缩小</button>
+          <button class="btn">定位底片</button>
+          <button class="btn">下载</button>
+        </div>
+        <div class="doc-preview">
+          <div class="doc-toolbar"><span>第 1 / 10 页</span><span>⛶</span></div>
+          <div class="doc-canvas">
+            <div class="doc-paper">
+              <div class="paper-title">射线检测报告（RT）</div>
+              <table class="mini-doc-table">
+                <tr><td>报告编号</td><td>RT-RPT-20260622-02</td><td>检测标准</td><td>NB/T 47013.2</td></tr>
+                <tr><td>委托单位</td><td>华东管道项目部</td><td>检测方法</td><td>RT</td></tr>
+                <tr><td>管线号</td><td>PL-02</td><td>检测比例</td><td>20%</td></tr>
+                <tr><td>焊口数量</td><td>18</td><td>合格数量</td><td>17</td></tr>
+                <tr><td>报告结论</td><td colspan="3">1 道焊口需返修复拍，其余合格。</td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <section class="right-card">
+          <h3>无损检测操作</h3>
+          <div class="body">
+            <div class="sub">仅办理无损检测相关节点资料，不混入施工方资料办理入口。</div>
+            <div class="btn-group" style="margin-top:12px;">
+              <button class="btn primary">新增底片编号</button>
+              <button class="btn">上传检测报告</button>
+              <button class="btn">按节点挂载资料</button>
+              <button class="btn primary">提交检测资料</button>
+              <button class="btn">查看监检意见</button>
+              <button class="btn orange">补正反馈</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="right-card">
+          <h3>链路补充提示</h3>
+          <div class="body">
+            <table class="table compact">
+              <tbody>
+                <tr><th>需补充项</th><td>返修复拍后的底片和处理记录</td></tr>
+                <tr><th>关联步骤</th><td>返修复拍闭环核验</td></tr>
+                <tr><th>关联证据</th><td>RT 检测报告 R2 第 1 页结论</td></tr>
+                <tr><th>处理建议</th><td>上传复拍底片并挂载到 40、41 节点。</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="right-card">
+          <h3>资料属性</h3>
+          <div class="body">
+            <table class="table compact">
+              <tbody>
+                <tr><th>资料名称</th><td>RT 检测报告 R2.pdf</td></tr>
+                <tr><th>所属节点</th><td>无损检测 / 40. 无损检测记录、报告</td></tr>
+                <tr><th>关联节点</th><td>40、41、65</td></tr>
+                <tr><th>检测方法</th><td>RT</td></tr>
+                <tr><th>底片数量</th><td>18</td></tr>
+                <tr><th>资料状态</th><td><span class="pill orange">草稿</span></td></tr>
+                <tr><th>OCR/图像</th><td><span class="pill blue">识别中</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="right-card">
+          <h3>办理进度</h3>
+          <div class="body">
+            <div class="timeline">
+              <div class="time-row"><span class="time-dot"></span><div><strong>检测记录已导入</strong><br>18 条 RT 记录已完成节点挂载。</div></div>
+              <div class="time-row"><span class="time-dot orange"></span><div><strong>报告待提交</strong><br>RT 检测报告仍为草稿状态。</div></div>
+              <div class="time-row"><span class="time-dot red"></span><div><strong>现场抽查需补正</strong><br>补充拍摄时间和焊口编号标识。</div></div>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </div>
+  <script src="./static_ui_nav.js"></script>
+</body>
+</html>

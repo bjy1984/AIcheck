@@ -1,0 +1,1648 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>工业监督检验协作系统 - 四角色工作台静态原型</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --surface: #ffffff;
+      --surface-2: #f8fafc;
+      --line: #dbe3ef;
+      --line-2: #edf1f7;
+      --ink: #172033;
+      --muted: #66748a;
+      --muted-2: #8a96a8;
+      --blue: #1d5fd1;
+      --blue-2: #0f4db8;
+      --blue-soft: #eaf2ff;
+      --green: #12805c;
+      --green-soft: #e9f7f0;
+      --orange: #c66a06;
+      --orange-soft: #fff3df;
+      --red: #cf3434;
+      --red-soft: #fff0f0;
+      --purple: #6d45c7;
+      --purple-soft: #f1edff;
+      --shadow: 0 8px 22px rgba(28, 43, 68, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-width: 1260px;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif;
+    }
+
+    button,
+    input,
+    textarea,
+    select {
+      font: inherit;
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: 64px 1fr;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: 360px 1fr 430px;
+      gap: 18px;
+      align-items: center;
+      padding: 0 22px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+
+    .brand {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .mark {
+      width: 32px;
+      height: 32px;
+      border-radius: 7px;
+      background: linear-gradient(180deg, #3279ff, #174fbd);
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 17px;
+      flex: 0 0 auto;
+    }
+
+    .brand-main {
+      font-weight: 760;
+      font-size: 18px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .project-state {
+      margin-top: 3px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .role-tabs {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .role-tab {
+      height: 36px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: #314159;
+      border-radius: 6px;
+      padding: 0 14px;
+      cursor: pointer;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+
+    .role-tab.active {
+      color: var(--blue-2);
+      background: var(--blue-soft);
+      border-color: #b9d1ff;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .search {
+      height: 36px;
+      width: 205px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0 12px;
+      background: #fff;
+      color: var(--muted-2);
+    }
+
+    .dot {
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      background: var(--red);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .user-chip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #314159;
+      font-weight: 650;
+    }
+
+    .avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: linear-gradient(180deg, #5a8fff, #275ac0);
+      flex: 0 0 auto;
+    }
+
+    .workspace {
+      display: none;
+      min-height: 0;
+      grid-template-columns: 318px minmax(640px, 1fr) 360px;
+    }
+
+    .workspace.active {
+      display: grid;
+    }
+
+    .sidebar,
+    .main,
+    .rightbar {
+      min-height: calc(100vh - 64px);
+    }
+
+    .sidebar {
+      background: var(--surface);
+      border-right: 1px solid var(--line);
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    .main {
+      padding: 18px;
+      overflow: auto;
+    }
+
+    .rightbar {
+      background: var(--surface);
+      border-left: 1px solid var(--line);
+      padding: 16px;
+      overflow: auto;
+    }
+
+    .side-head {
+      padding: 14px 14px 10px;
+      border-bottom: 1px solid var(--line-2);
+    }
+
+    .side-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 760;
+      font-size: 15px;
+    }
+
+    .side-sub {
+      margin-top: 8px;
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .icon-btn {
+      width: 30px;
+      height: 30px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--muted);
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 800;
+    }
+
+    .tree {
+      padding: 10px;
+      overflow: auto;
+      font-size: 13px;
+    }
+
+    .tree-section {
+      margin-bottom: 6px;
+    }
+
+    .tree-folder,
+    .tree-node {
+      display: grid;
+      grid-template-columns: 18px 1fr auto;
+      gap: 6px;
+      align-items: center;
+      min-height: 30px;
+      padding: 4px 7px;
+      border-radius: 6px;
+      color: #26364e;
+    }
+
+    .tree-folder {
+      font-weight: 720;
+      background: #f7f9fc;
+    }
+
+    .tree-node {
+      margin-left: 18px;
+      color: #33445c;
+    }
+
+    .tree-node.active {
+      background: var(--blue-soft);
+      color: var(--blue-2);
+      font-weight: 700;
+      box-shadow: inset 3px 0 0 var(--blue);
+    }
+
+    .tree-node.alert {
+      background: var(--orange-soft);
+    }
+
+    .tree-node.readonly {
+      color: #526176;
+    }
+
+    .tree-label {
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 22px;
+      padding: 2px 7px;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+
+    .tag.blue {
+      color: var(--blue-2);
+      background: var(--blue-soft);
+      border-color: #bcd2fb;
+    }
+
+    .tag.green {
+      color: var(--green);
+      background: var(--green-soft);
+      border-color: #bce8d0;
+    }
+
+    .tag.orange {
+      color: var(--orange);
+      background: var(--orange-soft);
+      border-color: #f7d19a;
+    }
+
+    .tag.red {
+      color: var(--red);
+      background: var(--red-soft);
+      border-color: #ffc9c9;
+    }
+
+    .tag.purple {
+      color: var(--purple);
+      background: var(--purple-soft);
+      border-color: #d7ccff;
+    }
+
+    .side-foot {
+      padding: 12px 14px;
+      border-top: 1px solid var(--line-2);
+      background: #fbfcfe;
+    }
+
+    .mini-stat-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .mini-stat {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px;
+      background: #fff;
+    }
+
+    .mini-stat b {
+      display: block;
+      font-size: 18px;
+      line-height: 1.1;
+    }
+
+    .mini-stat span {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      margin-bottom: 14px;
+    }
+
+    .panel.flat {
+      box-shadow: none;
+    }
+
+    .panel-head {
+      min-height: 52px;
+      padding: 13px 15px;
+      border-bottom: 1px solid var(--line-2);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .panel-title {
+      min-width: 0;
+    }
+
+    .panel-title h2,
+    .panel-title h3 {
+      margin: 0;
+      line-height: 1.25;
+    }
+
+    .panel-title h2 {
+      font-size: 18px;
+    }
+
+    .panel-title h3 {
+      font-size: 15px;
+    }
+
+    .panel-title p {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .panel-body {
+      padding: 14px 15px;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      height: 34px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: #2d3b50;
+      border-radius: 6px;
+      padding: 0 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      cursor: pointer;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .btn.primary {
+      color: #fff;
+      background: var(--blue);
+      border-color: var(--blue);
+    }
+
+    .btn.warning {
+      color: #8a4100;
+      background: var(--orange-soft);
+      border-color: #f3c47d;
+    }
+
+    .btn.danger {
+      color: #fff;
+      background: var(--red);
+      border-color: var(--red);
+    }
+
+    .btn.ghost {
+      background: transparent;
+      border-color: transparent;
+      color: var(--blue-2);
+      padding-inline: 8px;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 6px;
+      border-bottom: 1px solid var(--line-2);
+      padding: 0 14px;
+      background: #fbfcff;
+    }
+
+    .tab {
+      height: 42px;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-weight: 720;
+      border-bottom: 3px solid transparent;
+      cursor: pointer;
+      padding: 0 8px;
+      white-space: nowrap;
+    }
+
+    .tab.active {
+      color: var(--blue-2);
+      border-bottom-color: var(--blue);
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .summary-grid.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 7px;
+      padding: 12px;
+      min-height: 76px;
+    }
+
+    .metric .label {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .metric .value {
+      margin-top: 7px;
+      font-size: 24px;
+      line-height: 1;
+      font-weight: 800;
+    }
+
+    .metric .hint {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+      gap: 14px;
+    }
+
+    .file-preview {
+      min-height: 320px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background:
+        linear-gradient(#fff, #fff) padding-box,
+        linear-gradient(135deg, #d8e4f5, #f2f5fa) border-box;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: 38px 1fr;
+    }
+
+    .preview-head {
+      background: #f4f7fb;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      color: #40516a;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .preview-doc {
+      padding: 20px 32px;
+      background: #eef2f8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .doc-paper {
+      width: min(420px, 100%);
+      height: 245px;
+      background: #fff;
+      border: 1px solid #cdd7e5;
+      box-shadow: 0 10px 22px rgba(20, 33, 54, 0.14);
+      padding: 22px;
+    }
+
+    .paper-title {
+      height: 18px;
+      width: 72%;
+      background: #2f405a;
+      border-radius: 2px;
+      margin-bottom: 18px;
+    }
+
+    .paper-line {
+      height: 8px;
+      background: #d5dde8;
+      border-radius: 2px;
+      margin: 9px 0;
+    }
+
+    .paper-table {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1px;
+      background: #d6dee9;
+      border: 1px solid #d6dee9;
+    }
+
+    .paper-table span {
+      height: 24px;
+      background: #f9fbfe;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 13px;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid var(--line-2);
+      padding: 10px 9px;
+      text-align: left;
+      vertical-align: middle;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    th {
+      color: #40516a;
+      background: #f6f8fb;
+      font-weight: 760;
+    }
+
+    tbody tr:hover {
+      background: #fbfdff;
+    }
+
+    .name-cell {
+      font-weight: 720;
+      color: #243247;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .stack {
+      display: grid;
+      gap: 10px;
+    }
+
+    .note-box {
+      border: 1px solid var(--line);
+      background: #fbfcfe;
+      border-radius: 7px;
+      padding: 12px;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .note-box.warn {
+      background: var(--orange-soft);
+      border-color: #f4cd91;
+    }
+
+    .note-box.good {
+      background: var(--green-soft);
+      border-color: #bfe7d0;
+    }
+
+    .note-title {
+      font-weight: 760;
+      margin-bottom: 5px;
+    }
+
+    .form-row {
+      display: grid;
+      gap: 7px;
+      margin-bottom: 12px;
+    }
+
+    .form-row label {
+      color: #40516a;
+      font-weight: 720;
+      font-size: 13px;
+    }
+
+    .select,
+    .input,
+    .textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--ink);
+      padding: 9px 10px;
+    }
+
+    .textarea {
+      min-height: 92px;
+      resize: vertical;
+      line-height: 1.45;
+    }
+
+    .action-stack {
+      display: grid;
+      gap: 8px;
+      margin: 12px 0 16px;
+    }
+
+    .action-stack .btn {
+      justify-content: center;
+      width: 100%;
+    }
+
+    .timeline {
+      display: grid;
+      gap: 10px;
+      margin-top: 6px;
+    }
+
+    .timeline-item {
+      display: grid;
+      grid-template-columns: 10px 1fr;
+      gap: 10px;
+      align-items: start;
+      font-size: 13px;
+      color: #34445a;
+    }
+
+    .timeline-dot {
+      width: 10px;
+      height: 10px;
+      margin-top: 5px;
+      border-radius: 50%;
+      background: var(--blue);
+    }
+
+    .upload-zone {
+      min-height: 160px;
+      border: 1px dashed #98afd1;
+      border-radius: 8px;
+      background: #f7faff;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 18px;
+    }
+
+    .upload-zone strong {
+      display: block;
+      font-size: 17px;
+      margin-bottom: 6px;
+    }
+
+    .upload-zone span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .check-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .check-item {
+      min-height: 38px;
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 9px;
+      font-size: 13px;
+    }
+
+    .check-item input {
+      width: 16px;
+      height: 16px;
+      flex: 0 0 auto;
+    }
+
+    .feedback-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .feedback-item {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 10px;
+      background: #fff;
+      display: grid;
+      gap: 7px;
+    }
+
+    .feedback-item.active {
+      border-color: #f2bd70;
+      background: #fffaf2;
+    }
+
+    .feedback-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+      font-weight: 760;
+      font-size: 13px;
+    }
+
+    .feedback-item p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .progress {
+      height: 8px;
+      background: #e7edf5;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .bar {
+      height: 100%;
+      border-radius: inherit;
+      background: var(--blue);
+    }
+
+    .readonly-mask {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #fbfcfe;
+      padding: 12px;
+      color: #46556b;
+      line-height: 1.55;
+      font-size: 13px;
+    }
+
+    .mobile-note {
+      display: none;
+    }
+
+    @media (max-width: 1350px) {
+      body {
+        min-width: 1120px;
+      }
+
+      .topbar {
+        grid-template-columns: 320px 1fr 360px;
+      }
+
+      .workspace {
+        grid-template-columns: 290px minmax(560px, 1fr) 330px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="mark">检</span>
+        <div>
+          <div class="brand-main">压力管道施工监督检验协作系统</div>
+          <div class="project-state">
+            <span>华东成品油管道改造工程</span>
+            <span class="tag blue">监检审查中</span>
+          </div>
+        </div>
+      </div>
+
+      <nav class="role-tabs" aria-label="工作台角色切换">
+        <button class="role-tab active" data-target="inspection">监检工作台</button>
+        <button class="role-tab" data-target="contractor">施工方工作台</button>
+        <button class="role-tab" data-target="ndt">无损检测机构</button>
+        <button class="role-tab" data-target="owner">建设方工作台</button>
+      </nav>
+
+      <div class="top-actions">
+        <div class="search">⌕ 文件 / 节点 / 底片编号</div>
+        <div>待办 <span class="dot">6</span></div>
+        <div>消息 <span class="dot">3</span></div>
+        <div class="user-chip"><span class="avatar"></span><span id="roleUser">张工｜监检人员</span></div>
+      </div>
+    </header>
+
+    <section class="workspace active" id="inspection" aria-label="监检工作台">
+      <aside class="sidebar">
+        <div class="side-head">
+          <div class="side-title">
+            <span>项目审核节点</span>
+            <button class="icon-btn" title="刷新">↻</button>
+          </div>
+          <div class="side-sub">
+            <span class="tag blue">统一树</span>
+            <span class="tag orange">4 个需补正</span>
+          </div>
+        </div>
+        <div class="tree">
+          <div class="tree-section">
+            <div class="tree-folder"><span>▾</span><span class="tree-label">材料</span><span class="tag orange">3</span></div>
+            <div class="tree-node"><span></span><span class="tree-label">12. 压力管道元件及安全附件制造单位许可资质</span><span class="tag green">通过</span></div>
+            <div class="tree-node active"><span></span><span class="tree-label">16. 压力管道元件以及安全附件产品质量证明文件</span><span class="tag orange">待审</span></div>
+            <div class="tree-node alert"><span></span><span class="tree-label">18. 材料复验报告、无损检测报告</span><span class="tag red">补正</span></div>
+            <div class="tree-node"><span></span><span class="tree-label">21. 材料标志移植</span><span class="tag blue">已提交</span></div>
+          </div>
+          <div class="tree-section">
+            <div class="tree-folder"><span>▾</span><span class="tree-label">焊接（粘接）</span><span class="tag blue">8</span></div>
+            <div class="tree-node"><span></span><span class="tree-label">24. 焊工资格证及持证合格项目</span><span class="tag orange">待审</span></div>
+            <div class="tree-node"><span></span><span class="tree-label">25. 焊接（粘接）工艺文件</span><span class="tag blue">已提交</span></div>
+            <div class="tree-node"><span></span><span class="tree-label">29. 施焊参数、施焊记录、焊缝标识</span><span class="tag orange">待审</span></div>
+          </div>
+          <div class="tree-section">
+            <div class="tree-folder"><span>▾</span><span class="tree-label">无损检测</span><span class="tag blue">5</span></div>
+            <div class="tree-node"><span></span><span class="tree-label">36. 无损检测方案</span><span class="tag green">通过</span></div>
+            <div class="tree-node"><span></span><span class="tree-label">40. 无损检测记录、报告</span><span class="tag orange">待审</span></div>
+            <div class="tree-node"><span></span><span class="tree-label">41. 射线检测底片抽查</span><span class="tag blue">已提交</span></div>
+          </div>
+          <div class="tree-section">
+            <div class="tree-folder"><span>▸</span><span class="tree-label">耐压试验</span><span class="tag orange">2</span></div>
+          </div>
+        </div>
+        <div class="side-foot">
+          <div class="mini-stat-row">
+            <div class="mini-stat"><b>69</b><span>检测节点</span></div>
+            <div class="mini-stat"><b>42</b><span>已提交</span></div>
+            <div class="mini-stat"><b>4</b><span>需补正</span></div>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-title">
+              <h2>16. 压力管道元件以及安全附件产品质量证明文件</h2>
+              <p>节点属性 C｜文件挂载 6｜必传完成 4/5｜当前轮次 R2</p>
+            </div>
+            <div class="toolbar">
+              <span class="tag orange">待审查</span>
+              <button class="btn">挂载文件</button>
+              <button class="btn">上传监检资料</button>
+            </div>
+          </div>
+          <div class="tabs">
+            <button class="tab active">节点文件</button>
+            <button class="tab">资料预览</button>
+            <button class="tab">OCR 识别</button>
+            <button class="tab">AI 审查</button>
+            <button class="tab">标准依据</button>
+            <button class="tab">审查记录</button>
+          </div>
+          <div class="panel-body">
+            <div class="summary-grid">
+              <div class="metric"><div class="label">挂载文件</div><div class="value">6</div><div class="hint">2 个低置信度字段</div></div>
+              <div class="metric"><div class="label">资料项完成</div><div class="value">4/5</div><div class="hint">缺阀门合格证</div></div>
+              <div class="metric"><div class="label">AI 风险点</div><div class="value">3</div><div class="hint">需人工确认</div></div>
+              <div class="metric"><div class="label">补正轮次</div><div class="value">R2</div><div class="hint">截止 06-29</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <div class="panel flat">
+            <div class="panel-head">
+              <div class="panel-title">
+                <h3>当前节点挂载文件</h3>
+                <p>节点文件包是挂载关系视图，文件不作为项目树节点。</p>
+              </div>
+              <button class="btn ghost">导出清单</button>
+            </div>
+            <div class="panel-body">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width: 25%">文件名</th>
+                    <th style="width: 18%">资料项</th>
+                    <th style="width: 13%">版本</th>
+                    <th style="width: 16%">OCR</th>
+                    <th style="width: 14%">挂载状态</th>
+                    <th style="width: 14%">证据</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="name-cell">钢管质量证明书.pdf</td>
+                    <td>质量证明文件</td>
+                    <td>V2</td>
+                    <td><span class="tag green">已识别</span></td>
+                    <td><span class="tag blue">已提交</span></td>
+                    <td>P3 区域 2</td>
+                  </tr>
+                  <tr>
+                    <td class="name-cell">管件合格证.pdf</td>
+                    <td>质量证明文件</td>
+                    <td>V1</td>
+                    <td><span class="tag orange">低置信度</span></td>
+                    <td><span class="tag orange">待审</span></td>
+                    <td>P1 标题栏</td>
+                  </tr>
+                  <tr>
+                    <td class="name-cell">安全附件产品资料.zip</td>
+                    <td>安全附件资料</td>
+                    <td>V1</td>
+                    <td><span class="tag blue">识别中</span></td>
+                    <td><span class="tag blue">已提交</span></td>
+                    <td>待抽取</td>
+                  </tr>
+                  <tr>
+                    <td class="name-cell">材料复验报告.pdf</td>
+                    <td>复验报告</td>
+                    <td>V3</td>
+                    <td><span class="tag green">已识别</span></td>
+                    <td><span class="tag red">需补正</span></td>
+                    <td>P5 结论</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="file-preview">
+            <div class="preview-head">
+              <span>钢管质量证明书.pdf｜P3</span>
+              <span>定位证据区域</span>
+            </div>
+            <div class="preview-doc">
+              <div class="doc-paper">
+                <div class="paper-title"></div>
+                <div class="paper-line" style="width: 92%"></div>
+                <div class="paper-line" style="width: 76%"></div>
+                <div class="paper-line" style="width: 84%"></div>
+                <div class="paper-table">
+                  <span></span><span></span><span></span>
+                  <span></span><span></span><span></span>
+                  <span></span><span></span><span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <aside class="rightbar">
+        <div class="panel flat">
+          <div class="panel-head">
+            <div class="panel-title">
+              <h3>监检操作面板</h3>
+              <p>所有结论由监检人员最终确认。</p>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="form-row">
+              <label>检查结果</label>
+              <select class="select">
+                <option>待确认</option>
+                <option>符合要求</option>
+                <option>需补正</option>
+                <option>不符合</option>
+              </select>
+            </div>
+            <div class="note-box warn">
+              <div class="note-title">AI 建议摘要</div>
+              材料批号与复验报告一致；管件合格证 OCR 置信度偏低；安全附件产品资料仍在识别中。
+            </div>
+            <div class="form-row">
+              <label>审查意见</label>
+              <textarea class="textarea">请补充阀门合格证，并重新提交材料复验报告中缺少签章页的版本。</textarea>
+            </div>
+            <div class="action-stack">
+              <button class="btn primary">保存审查意见</button>
+              <button class="btn warning">退回补正</button>
+              <button class="btn">采纳 AI 建议</button>
+              <button class="btn">驳回 AI 建议</button>
+              <button class="btn primary">报告生成 / 复核</button>
+            </div>
+            <div class="note-box">
+              <div class="note-title">Prompt 版本</div>
+              当前节点 Prompt V5｜输入资料要求、标准引用范围、输出格式和证据要求已配置。
+            </div>
+          </div>
+        </div>
+
+        <div class="panel flat">
+          <div class="panel-head">
+            <div class="panel-title"><h3>审查时间线</h3></div>
+          </div>
+          <div class="panel-body">
+            <div class="timeline">
+              <div class="timeline-item"><span class="timeline-dot"></span><div>06-25 09:10 施工方提交 R2 文件及挂载关系</div></div>
+              <div class="timeline-item"><span class="timeline-dot"></span><div>06-25 09:18 OCR 完成 4 个文件解析</div></div>
+              <div class="timeline-item"><span class="timeline-dot"></span><div>06-25 09:31 监检人员定位证据页码</div></div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="workspace" id="contractor" aria-label="施工方工作台">
+      <aside class="sidebar">
+        <div class="side-head">
+          <div class="side-title">
+            <span>项目树反馈导航</span>
+            <button class="icon-btn" title="筛选">≡</button>
+          </div>
+          <div class="side-sub">
+            <span class="tag orange">主要用于反馈</span>
+            <span class="tag red">3 个补正</span>
+          </div>
+        </div>
+        <div class="tree">
+          <div class="tree-section">
+            <div class="tree-folder"><span>▾</span><span class="tree-label">材料</span><span class="tag red">补正</span></div>
+            <div class="tree-node active alert"><span></span><span class="tree-label">16. 压力管道元件以及安全附件产品质量证明文件</span><span class="tag red">补正</span></div>
+            <div class="tree-node"><span></span><span class="tree-label">18. 材料复验报告、无损检测报告</span><span class="tag orange">待提交</span></div>
+            <div class="tree-node"><span></span><span class="tree-label">21. 材料标志移植</span><span class="tag blue">已提交</span></div>
+          </div>
+          <div class="tree-section">
+            <div class="tree-folder"><span>▾</span><span class="tree-label">焊接（粘接）</span><span class="tag orange">2</span></div>
+            <div class="tree-node"><span></span><span class="tree-label">24. 焊工资格证及持证合格项目</span><span class="tag orange">待提交</span></div>
+            <div class="tree-node"><span></span><span class="tree-label">25. 焊接（粘接）工艺文件</span><span class="tag blue">已提交</span></div>
+          </div>
+          <div class="tree-section">
+            <div class="tree-folder"><span>▸</span><span class="tree-label">耐压试验</span><span class="tag blue">0</span></div>
+          </div>
+        </div>
+        <div class="side-foot">
+          <div class="mini-stat-row">
+            <div class="mini-stat"><b>38</b><span>项目文件</span></div>
+            <div class="mini-stat"><b>7</b><span>未挂载</span></div>
+            <div class="mini-stat"><b>3</b><span>补正</span></div>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-title">
+              <h2>项目文件上传 / 文件库</h2>
+              <p>施工方以文件上传为主，上传时可选择一个或多个检测节点挂载；项目树用于反馈和补正定位。</p>
+            </div>
+            <div class="toolbar">
+              <button class="btn">保存草稿</button>
+              <button class="btn primary">提交本批文件及挂载关系</button>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="two-col">
+              <div class="upload-zone">
+                <div>
+                  <strong>拖拽或选择文件上传</strong>
+                  <span>支持 PDF、Word、Excel、图片、压缩包；上传后进入项目文件库。</span>
+                  <div style="margin-top: 12px;"><button class="btn primary">选择文件</button></div>
+                </div>
+              </div>
+              <div class="note-box">
+                <div class="note-title">本批挂载节点</div>
+                上传时可为文件选择多个节点；无法判断时先存入未挂载文件池。
+                <div class="check-grid">
+                  <label class="check-item"><input type="checkbox" checked />16. 产品质量证明文件</label>
+                  <label class="check-item"><input type="checkbox" checked />17. 验收见证资料、抽样复验</label>
+                  <label class="check-item"><input type="checkbox" />18. 材料复验报告、无损检测报告</label>
+                  <label class="check-item"><input type="checkbox" />21. 材料标志移植</label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel flat">
+          <div class="panel-head">
+            <div class="panel-title">
+              <h3>项目文件库</h3>
+              <p>文件状态与节点挂载状态分离；同一文件可在不同节点形成不同挂载状态。</p>
+            </div>
+            <div class="toolbar">
+              <button class="btn">只看未挂载</button>
+              <button class="btn">只看需补正</button>
+            </div>
+          </div>
+          <div class="panel-body">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 22%">文件名</th>
+                  <th style="width: 23%">挂载节点</th>
+                  <th style="width: 13%">资料项</th>
+                  <th style="width: 11%">文件状态</th>
+                  <th style="width: 12%">挂载状态</th>
+                  <th style="width: 10%">OCR</th>
+                  <th style="width: 9%">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="name-cell">钢管质量证明书.pdf</td>
+                  <td>16、17</td>
+                  <td>质量证明</td>
+                  <td><span class="tag green">已上传</span></td>
+                  <td><span class="tag blue">已提交</span></td>
+                  <td><span class="tag green">成功</span></td>
+                  <td>查看</td>
+                </tr>
+                <tr>
+                  <td class="name-cell">阀门合格证.pdf</td>
+                  <td>16</td>
+                  <td>待补充</td>
+                  <td><span class="tag green">已上传</span></td>
+                  <td><span class="tag orange">草稿挂载</span></td>
+                  <td><span class="tag blue">识别中</span></td>
+                  <td>提交</td>
+                </tr>
+                <tr>
+                  <td class="name-cell">材料标志移植记录.xlsx</td>
+                  <td>未选择</td>
+                  <td>未选择</td>
+                  <td><span class="tag green">已上传</span></td>
+                  <td><span class="tag orange">未挂载</span></td>
+                  <td><span class="tag green">成功</span></td>
+                  <td>挂载</td>
+                </tr>
+                <tr>
+                  <td class="name-cell">材料复验报告-补正.pdf</td>
+                  <td>18</td>
+                  <td>复验报告</td>
+                  <td><span class="tag green">已上传</span></td>
+                  <td><span class="tag red">需补正</span></td>
+                  <td><span class="tag green">成功</span></td>
+                  <td>反馈</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+
+      <aside class="rightbar">
+        <div class="panel flat">
+          <div class="panel-head">
+            <div class="panel-title"><h3>当前反馈摘要</h3><p>来自左侧选中节点。</p></div>
+          </div>
+          <div class="panel-body">
+            <div class="feedback-list">
+              <div class="feedback-item active">
+                <div class="feedback-top"><span>16. 产品质量证明文件</span><span class="tag red">需补正</span></div>
+                <p>请补充阀门合格证，并重新提交材料复验报告缺少签章页的版本。</p>
+              </div>
+              <div class="feedback-item">
+                <div class="feedback-top"><span>18. 材料复验报告</span><span class="tag orange">待提交</span></div>
+                <p>本节点尚缺复验结论页和检测机构盖章页。</p>
+              </div>
+              <div class="feedback-item">
+                <div class="feedback-top"><span>24. 焊工资格证</span><span class="tag orange">待提交</span></div>
+                <p>请上传焊工资格证及持证合格项目清单。</p>
+              </div>
+            </div>
+            <div class="form-row" style="margin-top: 14px;">
+              <label>整改说明</label>
+              <textarea class="textarea">已补充阀门合格证，材料复验报告签章页随本批文件提交。</textarea>
+            </div>
+            <div class="action-stack">
+              <button class="btn primary">提交补正反馈</button>
+              <button class="btn">上传补正附件</button>
+              <button class="btn">撤回未提交文件</button>
+            </div>
+            <div class="note-box">
+              <div class="note-title">操作边界</div>
+              已提交文件不提供物理删除入口；可撤回未提交文件，或按补正意见追加版本。
+            </div>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="workspace" id="ndt" aria-label="无损检测机构工作台">
+      <aside class="sidebar">
+        <div class="side-head">
+          <div class="side-title">
+            <span>无损检测节点</span>
+            <button class="icon-btn" title="定位">⌕</button>
+          </div>
+          <div class="side-sub">
+            <span class="tag blue">默认展开</span>
+            <span class="tag orange">1 个补正</span>
+          </div>
+        </div>
+        <div class="tree">
+          <div class="tree-section">
+            <div class="tree-folder"><span>▾</span><span class="tree-label">无损检测</span><span class="tag blue">8</span></div>
+            <div class="tree-node"><span></span><span class="tree-label">35. 无损检测机构质量保证体系实施</span><span class="tag green">通过</span></div>
+            <div class="tree-node"><span></span><span class="tree-label">36. 无损检测方案</span><span class="tag green">通过</span></div>
+            <div class="tree-node"><span></span><span class="tree-label">38. 无损检测人员资格证及持证项目</span><span class="tag blue">已提交</span></div>
+            <div class="tree-node active"><span></span><span class="tree-label">40. 无损检测记录、报告</span><span class="tag orange">待审</span></div>
+            <div class="tree-node"><span></span><span class="tree-label">41. 射线检测底片抽查</span><span class="tag blue">已提交</span></div>
+            <div class="tree-node alert"><span></span><span class="tree-label">42. 射线检测现场抽查</span><span class="tag red">补正</span></div>
+          </div>
+          <div class="tree-section">
+            <div class="tree-folder"><span>▾</span><span class="tree-label">耐压试验免除或替代</span><span class="tag blue">1</span></div>
+            <div class="tree-node"><span></span><span class="tree-label">65. 无损检测报告和底片</span><span class="tag blue">已提交</span></div>
+          </div>
+        </div>
+        <div class="side-foot">
+          <div class="mini-stat-row">
+            <div class="mini-stat"><b>126</b><span>底片</span></div>
+            <div class="mini-stat"><b>8</b><span>报告</span></div>
+            <div class="mini-stat"><b>1</b><span>补正</span></div>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-title">
+              <h2>40. 无损检测记录、报告</h2>
+              <p>节点明确，检测记录、底片编号和报告直接挂载到无损检测相关节点。</p>
+            </div>
+            <div class="toolbar">
+              <button class="btn">新增底片编号</button>
+              <button class="btn">上传检测报告</button>
+              <button class="btn primary">提交检测资料</button>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="summary-grid">
+              <div class="metric"><div class="label">底片编号</div><div class="value">126</div><div class="hint">本批新增 18</div></div>
+              <div class="metric"><div class="label">检测报告</div><div class="value">8</div><div class="hint">RT 5 / UT 3</div></div>
+              <div class="metric"><div class="label">挂载节点</div><div class="value">4</div><div class="hint">40、41、42、65</div></div>
+              <div class="metric"><div class="label">补正任务</div><div class="value">1</div><div class="hint">现场抽查照片</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <div class="panel flat">
+            <div class="panel-head">
+              <div class="panel-title"><h3>底片编号与检测记录</h3></div>
+              <button class="btn ghost">批量导入</button>
+            </div>
+            <div class="panel-body">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width: 16%">底片编号</th>
+                    <th style="width: 15%">焊口编号</th>
+                    <th style="width: 13%">管线号</th>
+                    <th style="width: 12%">方法</th>
+                    <th style="width: 14%">评定级别</th>
+                    <th style="width: 16%">资料状态</th>
+                    <th style="width: 14%">挂载节点</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="name-cell">RT-2026-001</td>
+                    <td>WJ-018</td>
+                    <td>PL-02</td>
+                    <td>RT</td>
+                    <td>II</td>
+                    <td><span class="tag blue">已提交</span></td>
+                    <td>40、41</td>
+                  </tr>
+                  <tr>
+                    <td class="name-cell">RT-2026-002</td>
+                    <td>WJ-019</td>
+                    <td>PL-02</td>
+                    <td>RT</td>
+                    <td>I</td>
+                    <td><span class="tag blue">已提交</span></td>
+                    <td>40、41</td>
+                  </tr>
+                  <tr>
+                    <td class="name-cell">UT-2026-017</td>
+                    <td>WJ-032</td>
+                    <td>PL-04</td>
+                    <td>UT</td>
+                    <td>合格</td>
+                    <td><span class="tag orange">草稿</span></td>
+                    <td>40</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="panel flat">
+            <div class="panel-head">
+              <div class="panel-title"><h3>检测报告与节点挂载</h3></div>
+            </div>
+            <div class="panel-body">
+              <div class="stack">
+                <div class="note-box good">
+                  <div class="note-title">RT 检测报告 R2</div>
+                  已挂载节点：40. 无损检测记录、报告；41. 射线检测底片抽查；65. 无损检测报告和底片。
+                </div>
+                <div class="note-box">
+                  <div class="note-title">PAUT 图像包</div>
+                  已挂载节点：40. 无损检测记录、报告。OCR/图像分析处理中。
+                </div>
+                <div class="note-box warn">
+                  <div class="note-title">现场抽查照片</div>
+                  节点 42 需补正：缺少照片拍摄时间和焊口编号标识。
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <aside class="rightbar">
+        <div class="panel flat">
+          <div class="panel-head">
+            <div class="panel-title"><h3>无损检测操作</h3><p>仅办理无损检测相关资料。</p></div>
+          </div>
+          <div class="panel-body">
+            <div class="action-stack">
+              <button class="btn primary">新增底片编号</button>
+              <button class="btn">上传检测报告</button>
+              <button class="btn">按节点挂载资料</button>
+              <button class="btn primary">提交检测资料</button>
+              <button class="btn warning">补正反馈</button>
+            </div>
+            <div class="form-row">
+              <label>检测资料说明</label>
+              <textarea class="textarea">本批 RT 检测记录和底片编号已补齐，现场抽查照片将在补正反馈中重新提交。</textarea>
+            </div>
+            <div class="note-box">
+              <div class="note-title">边界说明</div>
+              不混入施工方资料办理入口；报告生成/复核由监检人员处理。
+            </div>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="workspace" id="owner" aria-label="建设方工作台">
+      <aside class="sidebar">
+        <div class="side-head">
+          <div class="side-title">
+            <span>项目资料状态</span>
+            <button class="icon-btn" title="只读">i</button>
+          </div>
+          <div class="side-sub">
+            <span class="tag green">只读模式</span>
+            <span class="tag blue">授权项目</span>
+          </div>
+        </div>
+        <div class="tree">
+          <div class="tree-section">
+            <div class="tree-folder"><span>▾</span><span class="tree-label">项目总览</span><span class="tag blue">79%</span></div>
+          </div>
+          <div class="tree-section">
+            <div class="tree-folder"><span>▾</span><span class="tree-label">材料</span><span class="tag orange">异常</span></div>
+            <div class="tree-node readonly"><span></span><span class="tree-label">16. 产品质量证明文件</span><span class="tag red">补正</span></div>
+            <div class="tree-node readonly"><span></span><span class="tree-label">21. 材料标志移植</span><span class="tag green">通过</span></div>
+          </div>
+          <div class="tree-section">
+            <div class="tree-folder"><span>▾</span><span class="tree-label">无损检测</span><span class="tag blue">提交</span></div>
+            <div class="tree-node readonly"><span></span><span class="tree-label">40. 无损检测记录、报告</span><span class="tag orange">待审</span></div>
+            <div class="tree-node readonly"><span></span><span class="tree-label">41. 射线检测底片抽查</span><span class="tag blue">已提交</span></div>
+          </div>
+          <div class="tree-section">
+            <div class="tree-folder"><span>▾</span><span class="tree-label">报告归档</span><span class="tag orange">生成中</span></div>
+          </div>
+        </div>
+        <div class="side-foot">
+          <div class="readonly-mask">建设方用户仅查看项目概况、节点资料状态、报告预览和归档资料。</div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="dashboard-grid">
+          <div class="metric"><div class="label">资料完成率</div><div class="value">79%</div><div class="progress"><div class="bar" style="width: 79%"></div></div></div>
+          <div class="metric"><div class="label">已通过节点</div><div class="value">38</div><div class="hint">共 69 个检测节点</div></div>
+          <div class="metric"><div class="label">需补正</div><div class="value">4</div><div class="hint">材料、现场抽查</div></div>
+          <div class="metric"><div class="label">报告状态</div><div class="value">复核中</div><div class="hint">预计 06-30 完成</div></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-title">
+              <h2>建设方项目概况</h2>
+              <p>只读查看项目进展、资料状态、异常提醒、报告状态和归档资料。</p>
+            </div>
+            <span class="tag green">只读</span>
+          </div>
+          <div class="panel-body">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 18%">业务大类</th>
+                  <th style="width: 32%">检测节点</th>
+                  <th style="width: 13%">资料状态</th>
+                  <th style="width: 13%">审查状态</th>
+                  <th style="width: 12%">挂载资料数</th>
+                  <th style="width: 12%">更新时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>材料</td>
+                  <td class="name-cell">16. 压力管道元件以及安全附件产品质量证明文件</td>
+                  <td><span class="tag red">需补正</span></td>
+                  <td>退回补正</td>
+                  <td>6</td>
+                  <td>06-25</td>
+                </tr>
+                <tr>
+                  <td>焊接（粘接）</td>
+                  <td class="name-cell">25. 焊接（粘接）工艺文件</td>
+                  <td><span class="tag blue">已提交</span></td>
+                  <td>待审查</td>
+                  <td>3</td>
+                  <td>06-24</td>
+                </tr>
+                <tr>
+                  <td>无损检测</td>
+                  <td class="name-cell">40. 无损检测记录、报告</td>
+                  <td><span class="tag blue">已提交</span></td>
+                  <td>待审查</td>
+                  <td>8</td>
+                  <td>06-25</td>
+                </tr>
+                <tr>
+                  <td>耐压试验</td>
+                  <td class="name-cell">59. 耐压试验方案</td>
+                  <td><span class="tag green">已通过</span></td>
+                  <td>通过</td>
+                  <td>2</td>
+                  <td>06-22</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <div class="panel flat">
+            <div class="panel-head">
+              <div class="panel-title"><h3>关键时间线</h3></div>
+            </div>
+            <div class="panel-body">
+              <div class="timeline">
+                <div class="timeline-item"><span class="timeline-dot"></span><div>06-20 施工方完成首批项目资料上传</div></div>
+                <div class="timeline-item"><span class="timeline-dot"></span><div>06-23 无损检测机构提交检测记录与报告</div></div>
+                <div class="timeline-item"><span class="timeline-dot"></span><div>06-25 监检方退回材料节点补正</div></div>
+                <div class="timeline-item"><span class="timeline-dot"></span><div>06-30 预计进入报告确认</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="panel flat">
+            <div class="panel-head">
+              <div class="panel-title"><h3>报告与归档</h3></div>
+            </div>
+            <div class="panel-body">
+              <div class="stack">
+                <div class="note-box"><div class="note-title">报告草稿</div>工业管道施工监督检验报告 V0.8，监检人员复核中。</div>
+                <div class="note-box"><div class="note-title">归档资料</div>过程资料包待报告确认后生成；当前仅可预览已授权资料摘要。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <aside class="rightbar">
+        <div class="panel flat">
+          <div class="panel-head">
+            <div class="panel-title"><h3>只读详情</h3><p>不显示业务办理按钮。</p></div>
+          </div>
+          <div class="panel-body">
+            <div class="readonly-mask">
+              当前选中：16. 压力管道元件以及安全附件产品质量证明文件。
+              <br />资料状态：需补正。
+              <br />挂载资料数：6。
+              <br />最近意见：请补充阀门合格证，并重新提交材料复验报告签章页。
+            </div>
+            <div class="action-stack">
+              <button class="btn">预览报告</button>
+              <button class="btn">浏览归档资料</button>
+              <button class="btn">查看节点资料摘要</button>
+            </div>
+            <div class="note-box warn">
+              <div class="note-title">强制限制</div>
+              建设方页面不出现上传、退回、审查、复核、报告确认或归档操作按钮。
+            </div>
+          </div>
+        </div>
+      </aside>
+    </section>
+  </div>
+
+  <script>
+    const users = {
+      inspection: "张工｜监检人员",
+      contractor: "李工｜施工方经办",
+      ndt: "王工｜无损检测经办",
+      owner: "陈经理｜建设方用户"
+    };
+
+    const tabs = document.querySelectorAll(".role-tab");
+    const views = document.querySelectorAll(".workspace");
+    const roleUser = document.getElementById("roleUser");
+
+    function activate(id) {
+      tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.target === id));
+      views.forEach((view) => view.classList.toggle("active", view.id === id));
+      roleUser.textContent = users[id] || users.inspection;
+      history.replaceState(null, "", "#" + id);
+    }
+
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => activate(tab.dataset.target));
+    });
+
+    window.addEventListener("hashchange", () => {
+      const id = location.hash.replace("#", "");
+      if (users[id]) activate(id);
+    });
+
+    const initial = location.hash.replace("#", "");
+    if (users[initial]) activate(initial);
+  </script>
+  <script src="./static_ui_nav.js"></script>
+</body>
+</html>

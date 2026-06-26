@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>施工方工作台</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="./workbench_v2.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="hamburger">≡</div>
+        <div class="brand-mark">盾</div>
+        <button class="project-title project-switch-trigger" type="button" data-project-switcher data-role="contractor" data-current-project="P-2026-HDCP-001"><span data-project-name>华东成品油管道改造工程</span><span class="project-title-caret">▾</span></button>
+        <div class="top-status">资料提交中</div>
+      </div>
+      <div class="global-search">⌕ 全局搜索（文件 / 节点名称 / 资料项 / 反馈意见 / 编号）</div>
+      <div class="top-actions">
+        <span>待办<span class="notice-dot">12</span></span>
+        <span>消息<span class="notice-dot">7</span></span>
+        <span class="user"><span class="avatar"></span>施工方 李工⌄</span>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside class="left">
+        <section class="tree-wrap">
+          <div class="section-title">
+            <span>项目审核节点</span>
+            <span class="section-tools">反馈 ↻</span>
+          </div>
+          <div class="tree" data-project-tree data-role="contractor" data-active-node="16">
+            <div class="tree-root"><span>⌄</span><span class="tree-label">华东成品油管道改造工程</span><span></span></div>
+            <div class="tree-group"><span>›</span><span>受检单位资质</span><span>3节点 <span class="pill blue">只读</span></span></div>
+            <div class="tree-group"><span>›</span><span>设计文件</span><span>7节点 <span class="pill blue">只读</span></span></div>
+            <div class="tree-group"><span>›</span><span>施工组织设计</span><span>1节点</span></div>
+            <div class="tree-group"><span>⌄</span><span>材料</span><span>11节点 <span class="pill orange">3反馈</span></span></div>
+            <div class="tree-node"><span>12</span><span class="tree-label">压力管道元件及安全附件制造单位的许可资质</span><span><span class="pill blue">C类</span> 2文件</span></div>
+            <div class="tree-node"><span>13</span><span class="tree-label">需制造监检或有型式试验要求的压力管道元件监检证书、型式试验报告</span><span>1/2</span></div>
+            <div class="tree-node active"><span>16</span><span class="tree-label">压力管道元件以及安全附件产品质量证明文件</span><span><span class="pill red">需补正</span></span></div>
+            <div class="tree-node"><span>17</span><span class="tree-label">压力管道元件以及安全附件产品验收的见证资料、抽样复验</span><span>3/4</span></div>
+            <div class="tree-node warn"><span>18</span><span class="tree-label">材料复验报告、无损检测报告</span><span><span class="pill orange">待挂载</span></span></div>
+            <div class="tree-node"><span>21</span><span class="tree-label">材料标志移植</span><span><span class="pill blue">B类</span> 5文件</span></div>
+            <div class="tree-group"><span>›</span><span>阀门</span><span>1节点</span></div>
+            <div class="tree-group"><span>›</span><span>焊接（粘接）</span><span>8节点 <span class="pill blue">只读</span></span></div>
+            <div class="tree-group"><span>›</span><span>热处理</span><span>3节点</span></div>
+            <div class="tree-group"><span>›</span><span>无损检测</span><span>8节点 <span class="pill blue">只读</span></span></div>
+            <div class="tree-group"><span>›</span><span>耐压试验</span><span>4节点 <span class="pill blue">只读</span></span></div>
+            <div class="tree-group"><span>›</span><span>泄漏试验</span><span>2节点</span></div>
+          </div>
+        </section>
+
+        <section class="node-files">
+          <div class="node-file-head">
+            <span>监检反馈定位 <small>当前待办</small></span>
+            <span class="pill red">3项</span>
+          </div>
+          <table class="table compact">
+            <thead>
+              <tr><th>反馈节点</th><th>状态</th><th>文件</th><th>截止</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>16. 质量证明文件</td><td><span class="pill red">需补正</span></td><td>钢管质量证明书.pdf</td><td>06-28</td></tr>
+              <tr><td>18. 复验/检测报告</td><td><span class="pill orange">待挂载</span></td><td>材料复验报告.pdf</td><td>06-29</td></tr>
+              <tr><td>25. 焊接工艺文件</td><td><span class="pill orange">待审查</span></td><td>焊接工艺卡.docx</td><td>-</td></tr>
+              <tr><td>41. 底片抽查</td><td><span class="pill blue">只读</span></td><td>RT 清单.xlsx</td><td>-</td></tr>
+            </tbody>
+          </table>
+        </section>
+      </aside>
+
+      <main class="center">
+        <div class="page-head">
+          <div>
+            <div class="crumbs">当前位置：施工方 / 项目文件上传与文件库　　当前反馈节点：<span class="pill red">16. 材料质量证明文件需补正</span></div>
+            <h1>项目文件上传与挂载</h1>
+            <div class="sub">施工方以文件上传和项目文件库为主；上传时可选择一个或多个授权检测节点，无法判断时先进入未挂载文件池。</div>
+          </div>
+          <div class="actions">
+            <button class="btn primary">批量上传文件</button>
+            <button class="btn">选择挂载节点</button>
+            <button class="btn primary">提交本批文件及挂载关系</button>
+          </div>
+        </div>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>一、项目文件库</h2>
+            <div class="sub">本单位项目级文件、版本、OCR、提交状态和挂载状态</div>
+          </div>
+          <div class="card-body">
+            <table class="table">
+              <thead>
+                <tr><th>文件名</th><th>文件用途</th><th>版本</th><th>文件状态</th><th>挂载状态</th><th>OCR</th><th>上传人</th><th>关联意见</th><th>操作</th></tr>
+              </thead>
+              <tbody>
+                <tr class="selected"><td>钢管质量证明书.pdf</td><td>原始提交</td><td>V2</td><td><span class="pill blue">已上传</span></td><td><span class="pill red">需补正</span></td><td>已识别</td><td>李工</td><td>1条</td><td><a>查看/替换</a></td></tr>
+                <tr><td>焊工资格证-王建国.pdf</td><td>原始提交</td><td>V2</td><td><span class="pill blue">已上传</span></td><td><span class="pill green">满足要求</span></td><td>已识别</td><td>李工</td><td>链路反馈</td><td><a>查看反馈</a></td></tr>
+                <tr><td>炉批号差异说明.pdf</td><td>补正附件</td><td>V1</td><td><span class="pill orange">草稿</span></td><td><span class="pill orange">草稿挂载</span></td><td>待识别</td><td>李工</td><td>1条</td><td><a>提交</a></td></tr>
+                <tr><td>材料复验报告.pdf</td><td>补正附件</td><td>V1</td><td><span class="pill blue">已上传</span></td><td><span class="pill orange">待提交</span></td><td>识别中</td><td>李工</td><td>1条</td><td><a>定位反馈</a></td></tr>
+                <tr><td>管件质量证明书.pdf</td><td>原始提交</td><td>V1</td><td><span class="pill blue">已上传</span></td><td><span class="pill blue">已提交</span></td><td>已识别</td><td>李工</td><td>-</td><td><a>查看</a></td></tr>
+                <tr><td>阀门合格证.pdf</td><td>证明材料</td><td>V1</td><td><span class="pill blue">已上传</span></td><td><span class="pill orange">未挂载</span></td><td>未识别</td><td>李工</td><td>-</td><td><a>选择挂载节点</a></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <div class="split">
+          <section class="card">
+            <div class="card-head"><h2>二、项目文件上传区</h2></div>
+            <div class="card-body">
+              <div class="upload-box">⇧ 点击或拖拽多个文件到此处上传<br><span class="sub">支持 pdf、doc、docx、xls、xlsx、jpg、png、zip；可批量设置来源、用途和备注</span></div>
+            </div>
+          </section>
+          <section class="card">
+            <div class="card-head"><h2>三、批量挂载设置</h2></div>
+            <div class="card-body">
+              <table class="table compact">
+                <tbody>
+                  <tr><th style="width:120px;">批量节点</th><td><span class="pill blue">16. 质量证明文件</span> <span class="pill blue">18. 复验/检测报告</span></td></tr>
+                  <tr><th>默认用途</th><td>原始提交 / 补正附件 / 整改说明 / 证明材料</td></tr>
+                  <tr><th>提交规则</th><td>至少 1 个文件已选择挂载节点；未挂载文件只能保存草稿。</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>四、监检业务链路反馈</h2>
+            <div class="sub">施工方只查看反馈和补正要求，不编辑 AI 审查链路</div>
+          </div>
+          <div class="card-body">
+            <table class="table">
+              <thead>
+                <tr><th>反馈节点</th><th>审查对象</th><th>链路结论</th><th>关键依据</th><th>施工方动作</th></tr>
+              </thead>
+              <tbody>
+                <tr class="selected"><td>24. 焊工资格证及持证合格项目</td><td>焊工 王建国</td><td><span class="pill green">满足要求</span></td><td>证书有效期覆盖项目周期，GTAW/SMAW 持证项目匹配。</td><td>无需补正，等待监检确认</td></tr>
+                <tr><td>16. 产品质量证明文件</td><td>钢管质量证明书</td><td><span class="pill red">需补正</span></td><td>炉批号与材料清单不一致，需补充复验报告。</td><td>上传补正附件并提交挂载关系</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>五、上传挂载设置</h2>
+            <div class="sub">同一文件可挂载到多个节点，每个挂载关系分别保存资料项和用途</div>
+          </div>
+          <div class="card-body">
+            <table class="table">
+              <thead>
+                <tr><th>文件名</th><th>挂载节点</th><th>资料项</th><th>文件用途</th><th>必传</th><th>版本</th><th>文件状态</th><th>挂载状态</th></tr>
+              </thead>
+              <tbody>
+                <tr class="selected"><td>钢管质量证明书.pdf</td><td>16. 质量证明文件</td><td>钢管质量证明书</td><td>原始提交</td><td>是</td><td>V2</td><td><span class="pill blue">已上传</span></td><td><span class="pill red">需补正</span></td></tr>
+                <tr><td>焊工资格证-王建国.pdf</td><td>24. 焊工资格</td><td>焊工资格证书</td><td>原始提交</td><td>是</td><td>V2</td><td><span class="pill blue">已上传</span></td><td><span class="pill green">满足要求</span></td></tr>
+                <tr><td>炉批号差异说明.pdf</td><td>16. 质量证明文件</td><td>整改说明</td><td>补正附件</td><td>否</td><td>V1</td><td><span class="pill orange">草稿</span></td><td><span class="pill orange">草稿挂载</span></td></tr>
+                <tr><td>材料复验报告.pdf</td><td>16、18</td><td>材料复验报告</td><td>补正附件</td><td>是</td><td>V1</td><td><span class="pill blue">已上传</span></td><td><span class="pill orange">待提交</span></td></tr>
+                <tr><td>阀门合格证.pdf</td><td>-</td><td>-</td><td>证明材料</td><td>条件必传</td><td>V1</td><td><span class="pill blue">已上传</span></td><td><span class="pill orange">未挂载</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <div class="split">
+          <section class="card">
+            <div class="card-head"><h2>六、未挂载文件池</h2><span class="pill orange">3 个文件</span></div>
+            <div class="card-body">
+              <table class="table compact">
+                <tbody>
+                  <tr><th>阀门合格证.pdf</th><td>证明材料</td><td><span class="pill orange">未挂载</span></td></tr>
+                  <tr><th>材料照片.zip</th><td>现场照片</td><td><span class="pill orange">未挂载</span></td></tr>
+                  <tr><th>采购合同扫描件.pdf</th><td>辅助证明</td><td><span class="pill orange">未挂载</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <section class="card">
+            <div class="card-head"><h2>七、整改说明</h2></div>
+            <div class="card-body">
+              <textarea class="textarea">已补充材料复验报告，并上传炉批号差异说明。钢管质证书炉批号为 H240315A07，材料清单录入时漏写尾号。</textarea>
+            </div>
+          </section>
+        </div>
+
+        <section class="card">
+          <div class="card-head"><h2>八、文件批次摘要</h2></div>
+          <div class="card-body">
+            <div class="metrics">
+              <div class="metric"><div class="metric-label">本批文件</div><div class="metric-value">12</div></div>
+              <div class="metric"><div class="metric-label">已选择挂载</div><div class="metric-value green">8</div></div>
+              <div class="metric"><div class="metric-label">未挂载</div><div class="metric-value orange">3</div></div>
+              <div class="metric"><div class="metric-label">需补正</div><div class="metric-value red">1</div></div>
+              <div class="metric"><div class="metric-label">业务链路反馈</div><div class="metric-value green">2</div></div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <aside class="right">
+        <h2 class="right-title">文件预览</h2>
+        <div class="preview-name">当前文件：钢管质量证明书.pdf (V2)</div>
+        <div class="preview-actions">
+          <button class="btn">放大</button>
+          <button class="btn">缩小</button>
+          <button class="btn">定位反馈</button>
+          <button class="btn">下载</button>
+        </div>
+        <div class="doc-preview">
+          <div class="doc-toolbar"><span>第 2 / 8 页</span><span>⛶</span></div>
+          <div class="doc-canvas">
+            <div class="doc-paper">
+              <div class="paper-title">材料质量证明书</div>
+              <table class="mini-doc-table">
+                <tr><td>供应单位名称</td><td>中石化安装有限公司</td><td>证明书编号</td><td>MTP-20240510-021</td></tr>
+                <tr><td>合同号</td><td>CGHT-20240515-008</td><td>日期</td><td>2024-05-08</td></tr>
+                <tr><td>材料名称</td><td>钢管</td><td>产品标准</td><td>GB/T 9711.1-2023</td></tr>
+                <tr><td>规格型号</td><td>Φ219×8.0mm</td><td>长度</td><td>12.00m</td></tr>
+                <tr><td>材料炉号</td><td style="background:#fff1b9;">H240315A07</td><td>交货状态</td><td>正火</td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <section class="right-card">
+          <h3>当前反馈摘要</h3>
+          <div class="body">
+            <table class="table compact">
+              <tbody>
+                <tr><th>反馈节点</th><td>16. 压力管道元件以及安全附件产品质量证明文件</td></tr>
+                <tr><th>监检意见</th><td>钢管质量证明书中炉批号与材料清单不一致。</td></tr>
+                <tr><th>补正要求</th><td>补充材料复验报告并在整改说明中说明原因。</td></tr>
+                <tr><th>截止时间</th><td>2026-06-28 18:00</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="right-card">
+          <h3>业务链路只读摘要</h3>
+          <div class="body">
+            <table class="table compact">
+              <tbody>
+                <tr><th>审查对象</th><td>焊工 王建国</td></tr>
+                <tr><th>核验链路</th><td>真实性、有效期、持证项目、跨文件一致性均通过。</td></tr>
+                <tr><th>建议结论</th><td><span class="pill green">满足要求</span></td></tr>
+                <tr><th>施工方动作</th><td>无需修改文件；如监检要求，可补充最新查询截图。</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="right-card">
+          <h3>办理操作</h3>
+          <div class="body">
+            <div class="btn-group">
+              <button class="btn primary">批量上传文件</button>
+              <button class="btn">选择挂载节点</button>
+              <button class="btn">保存草稿</button>
+              <button class="btn primary">提交本批文件及挂载关系</button>
+              <button class="btn">提交选中文件及挂载关系</button>
+              <button class="btn">撤回未提交</button>
+              <button class="btn">查看历史版本</button>
+              <button class="btn orange">补正反馈</button>
+            </div>
+            <div class="note" style="margin-top:12px;">已提交文件不可物理删除；施工方提交的是项目文件及其节点挂载关系，历史提交快照必须可追溯。</div>
+          </div>
+        </section>
+
+        <section class="right-card">
+          <h3>文件属性</h3>
+          <div class="body">
+            <table class="table compact">
+              <tbody>
+                <tr><th>文件名</th><td>钢管质量证明书.pdf</td></tr>
+                <tr><th>项目级状态</th><td><span class="pill blue">已上传</span></td></tr>
+                <tr><th>挂载节点</th><td>16. 质量证明文件</td></tr>
+                <tr><th>资料项</th><td>钢管质量证明书</td></tr>
+                <tr><th>文件用途</th><td>原始提交</td></tr>
+                <tr><th>挂载状态</th><td><span class="pill red">需补正</span></td></tr>
+                <tr><th>关联意见</th><td>1 条 <a>查看</a></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="right-card">
+          <h3>处理进度</h3>
+          <div class="body">
+            <div class="timeline">
+              <div class="time-row"><span class="time-dot red"></span><div><strong>监检反馈</strong><br>炉批号与材料清单不一致。</div></div>
+              <div class="time-row"><span class="time-dot orange"></span><div><strong>补正草稿</strong><br>已新增复验报告和差异说明。</div></div>
+              <div class="time-row"><span class="time-dot"></span><div><strong>等待提交</strong><br>提交文件及挂载关系后进入重新审查。</div></div>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </div>
+  <script src="./workbench_project_tree.js"></script>
+  <script src="./workbench_project_switcher.js"></script>
+  <script src="./workbench_api.js"></script>
+  <script src="./workbench_interactions.js"></script>
+  <script src="./static_ui_nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,145 @@
+广东星燃石化设计院有限公司
+DUTY
+职黃
+NAME
+姓名
+GUANGDONG XINGRAN PE TROCHEMICAL DESIGN INSTITU TE CO.LTD
+EUIP： & PIPEPAINTINCand JNULATION LIST
+设备及管道油漆保温一览表
+日期
+UNIT NAME
+装置名称
+闻车站
+DESIGN
+校核
+孤意立
+20213
+DWGNO.
+设计阶段
+OX2019035-13-Y-08
+PROJECT
+项目名称
+珠海恒基达鑫国际化工仓储股份有限公司•一、二期装车站新增两套卸
+车系统项目
+APPROVE
+审核
+保护层
+2021.3
+REV.
+版饮
+施工图
+序号
+设备位号
+安装地点
+Equip.Or Piping No.
+Specs.
+規格
+Quantit
+数盘
+环境温度
+油漆层
+保温层
+Ambient
+材料
+常温
+Material
+Layer
+层数
+面积（m）
+材料
+Heat Insulation Layer
+HL（m）
+室内
+④ 108
+Inside
+Outside
+室外
+Matetial
+Thickness
+厚度（mm）体积（m）
+防潮层
+Material
+材料
+Dampproof Laves
+厚度（mm）体积（m））
+VoL
+材料
+Propection Layer
+Spees
+規格
+面积（m）
+除锈等绥
+05
+常温
+Vol.
+Derusting
+STD.DWGNo.
+标准图号
+餐连
+丙烯酸聚酯
+0.17
+SB.0
+花温
+靠温
+环氧富锌底
+0.34
+丙烯酸聚酯
+PL8303
+① 108
+面漆
+0.34
+丙烯酸聚酯
+漆
+30.52
+面漆
+30.52
+PL8304
+4 108
+05
+常温
+常温
+环氧富锌底
+0.17
+丙烯酸聚酯
+SB.0
+1 108
+微温
+常溫
+环氧富锌底
+而漆
+0.17
+0.34
+常温
+环氣富锌底
+面漆
+丙烯酸聚酯
+漆
+面漆
+33.91
+VT8301
+① 57
+常温
+常温
+环氧富锌底
+丙烯酸聚酯
+0.54
+S6.0
+环氧富锌底
+0.54
+VT8302
+4 57
+黹温
+常温
+丙烯酸聚酯
+0.54
+小计
+环筑富锌底
+单位名称，广东星城石化设计院有限公司
+东省建设王程勤察设计出图专用享
+丙烯酸聚酯
+面漆
+0037
+你于石代通带行业（中美威（苏物食料、万这文化工产
+有效期至：2024年6R21日
+资质區书编号：A244010070
+Page I of 1

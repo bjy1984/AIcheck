@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>监检工作台</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="./workbench_v2.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="hamburger">≡</div>
+        <div class="brand-mark">盾</div>
+        <button class="project-title project-switch-trigger" type="button" data-project-switcher data-role="inspection" data-current-project="P-2026-HDCP-001"><span data-project-name>华东成品油管道改造工程</span><span class="project-title-caret">▾</span></button>
+        <div class="top-status">监检审查中</div>
+      </div>
+      <div class="global-search">⌕ 全局搜索（项目 / 文件 / 节点 / 焊工证书 / 标准条款）</div>
+      <div class="top-actions">
+        <span>待办<span class="notice-dot">12</span></span>
+        <span>消息<span class="notice-dot">7</span></span>
+        <span class="user"><span class="avatar"></span>监检员 张工⌄</span>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside class="left with-project-package">
+        <section class="tree-wrap">
+          <div class="section-title">
+            <span>项目审核节点</span>
+            <span class="section-tools">↻ ⚙</span>
+          </div>
+          <div class="tree" data-project-tree data-role="inspection" data-active-node="24">
+            <div class="tree-root"><span>⌄</span><span class="tree-label">华东成品油管道改造工程</span><span></span></div>
+            <div class="tree-group"><span>›</span><span>受检单位资质</span><span>3节点</span></div>
+            <div class="tree-group"><span>›</span><span>设计文件</span><span>7节点</span></div>
+            <div class="tree-group"><span>›</span><span>施工组织设计</span><span>1节点</span></div>
+            <div class="tree-group"><span>›</span><span>材料</span><span>11节点 <span class="pill red">1补正</span></span></div>
+            <div class="tree-group"><span>›</span><span>阀门</span><span>1节点</span></div>
+            <div class="tree-group"><span>⌄</span><span>焊接（粘接）</span><span>8节点 <span class="pill orange">待审查</span></span></div>
+            <div class="tree-node active"><span>24</span><span class="tree-label">焊工资格证及持证合格项目</span><span><span class="pill blue">B类</span> <span class="pill orange">待确认</span></span></div>
+            <div class="tree-node"><span>25</span><span class="tree-label">焊接（粘接）工艺文件</span><span><span class="pill blue">C类</span> 6文件</span></div>
+            <div class="tree-node"><span>26</span><span class="tree-label">焊接材料质量证明文件</span><span>8文件</span></div>
+            <div class="tree-node"><span>27</span><span class="tree-label">焊接材料的验收、保管、发放、使用和回收的管理</span><span><span class="pill blue">B类</span></span></div>
+            <div class="tree-node"><span>29</span><span class="tree-label">施焊参数、施焊记录、焊缝标识</span><span>27文件</span></div>
+            <div class="tree-group"><span>›</span><span>热处理</span><span>3节点</span></div>
+            <div class="tree-group"><span>›</span><span>无损检测</span><span>8节点</span></div>
+            <div class="tree-group"><span>›</span><span>防腐、保温</span><span>5节点</span></div>
+            <div class="tree-group"><span>›</span><span>管道安装</span><span>3节点</span></div>
+            <div class="tree-group"><span>›</span><span>耐压试验</span><span>4节点</span></div>
+            <div class="tree-group"><span>›</span><span>吹扫、清洗</span><span>1节点</span></div>
+          </div>
+        </section>
+
+        <section class="node-files">
+          <div class="node-file-head">
+            <span>节点文件包 <small>24. 焊工资格</small></span>
+            <span class="pill orange">待确认</span>
+          </div>
+          <table class="table compact">
+            <thead>
+              <tr><th>文件名</th><th>来源</th><th>版本</th><th>状态</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>焊工资格证-王建国.pdf</td><td>施工方</td><td>V2</td><td><span class="pill orange">待确认</span></td></tr>
+              <tr><td>焊工名册.xlsx</td><td>施工方</td><td>V3</td><td><span class="pill blue">已提交</span></td></tr>
+              <tr><td>焊接工艺卡.docx</td><td>施工方</td><td>V1</td><td><span class="pill green">已匹配</span></td></tr>
+              <tr><td>施焊记录-PL02.pdf</td><td>施工方</td><td>V1</td><td><span class="pill green">已匹配</span></td></tr>
+              <tr><td>资格网站查询截图.png</td><td>监检方</td><td>V1</td><td><span class="pill blue">证据</span></td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section class="project-files">
+          <div class="node-file-head">
+            <span>项目文件包 <small>项目级文件库</small></span>
+            <span class="pill blue">184文件</span>
+          </div>
+          <table class="table compact">
+            <thead>
+              <tr><th>文件名</th><th>来源</th><th>挂载</th><th>状态</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>焊工资格证-王建国.pdf</td><td>施工方</td><td>24</td><td><span class="pill green">已挂载</span></td></tr>
+              <tr><td>焊工资格证-赵强.pdf</td><td>施工方</td><td>-</td><td><span class="pill orange">待挂载</span></td></tr>
+              <tr><td>焊接工艺卡.docx</td><td>施工方</td><td>24,25</td><td><span class="pill blue">多节点</span></td></tr>
+              <tr><td>项目施工计划.pdf</td><td>施工方</td><td>24,59</td><td><span class="pill blue">证据</span></td></tr>
+              <tr><td>监检现场照片.zip</td><td>监检方</td><td>-</td><td><span class="pill orange">可挂载</span></td></tr>
+            </tbody>
+          </table>
+          <div class="note" style="margin:10px 18px 0;">项目文件包展示项目级文件版本集合；监检人员可从这里选择文件挂载到当前节点，文件可同时支撑多个节点。</div>
+        </section>
+      </aside>
+
+      <main class="center">
+        <div class="page-head">
+          <div>
+            <h1>AI 业务审查链路</h1>
+            <div class="sub">当前节点：24. 焊工资格证及持证合格项目 · B类节点 · 审查对象：焊工 王建国 · 文件包 5 个文件</div>
+          </div>
+          <div class="actions">
+            <button class="btn">重新核验</button>
+            <button class="btn">查看规则版本</button>
+            <button class="btn">复制业务结论</button>
+          </div>
+        </div>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>一、业务核验链路</h2>
+            <div class="sub">每一步都关联过程文件和 EvidenceLink</div>
+          </div>
+          <div class="card-body">
+            <div class="review-chain">
+              <div class="review-step">
+                <div class="step-no">1</div>
+                <div>
+                  <div class="step-title">证书真实性核验</div>
+                  <div class="step-desc">从焊工资格证第 1 页提取证书编号 TS6J-2024-03158，并与资格审查网站查询截图比对。查询结果显示该证书存在，姓名“王建国”和身份证尾号“0821”与焊工名册一致。</div>
+                  <div class="evidence-row"><span class="pill blue">证书第1页</span><span class="pill blue">名册第4行</span><span class="pill orange">网站截图A</span></div>
+                </div>
+                <span class="pill green">通过</span>
+              </div>
+              <div class="review-step">
+                <div class="step-no">2</div>
+                <div>
+                  <div class="step-title">证书有效期核验</div>
+                  <div class="step-desc">证书有效期为 2024-04-12 至 2028-04-11，项目施工周期为 2026-05-01 至 2026-09-30。系统按日期覆盖规则判断，证书有效期覆盖项目周期。</div>
+                  <div class="evidence-row"><span class="pill blue">证书第1页</span><span class="pill blue">项目计划</span><span class="pill green">日期规则通过</span></div>
+                </div>
+                <span class="pill green">通过</span>
+              </div>
+              <div class="review-step">
+                <div class="step-no">3</div>
+                <div>
+                  <div class="step-title">持证项目适配核验</div>
+                  <div class="step-desc">证书持证项目包含 GTAW、SMAW，适用承压管道焊接；焊接工艺卡要求 GTAW+SMAW，材料 20#，规格 DN200。持证项目、焊接方法和作业范围均覆盖本项目要求。</div>
+                  <div class="evidence-row"><span class="pill blue">证书第2页</span><span class="pill blue">工艺卡第1页</span><span class="pill green">范围匹配</span></div>
+                </div>
+                <span class="pill green">通过</span>
+              </div>
+              <div class="review-step">
+                <div class="step-no">4</div>
+                <div>
+                  <div class="step-title">跨文件一致性核验</div>
+                  <div class="step-desc">焊工资格证、焊工名册、焊接工艺卡和施焊记录中的姓名、证书编号、焊接方法一致；施焊记录 PL02-WJ018、PL02-WJ019 均由王建国签署，未发现证据冲突。</div>
+                  <div class="evidence-row"><span class="pill blue">名册第4行</span><span class="pill blue">施焊记录第6页</span><span class="pill green">一致性通过</span></div>
+                </div>
+                <span class="pill green">通过</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>二、监检工作区</h2>
+            <div class="sub">先完成当前节点的人工确认和办理动作</div>
+          </div>
+          <div class="card-body">
+            <table class="table compact review-table">
+              <tbody>
+                <tr>
+                  <th>检查结果 <span class="pill red">必填</span></th>
+                  <td>
+                    <select class="review-control" data-review-result aria-label="检查结果">
+                      <option selected>满足要求</option>
+                      <option>需补正</option>
+                      <option>不适用</option>
+                    </select>
+                  </td>
+                </tr>
+                <tr>
+                  <th>审查意见 <span class="pill red">必填</span></th>
+                  <td>
+                    <textarea class="review-opinion-input" data-review-opinion rows="3" aria-label="审查意见">焊工资格证书真实有效，持证项目和项目焊接作业要求匹配。资格网站查询截图来源已人工确认。</textarea>
+                    <div class="edit-hint">AI 建议可带入为草稿，监检人员可修改后再保存；最终结论以后端保存的人工作业记录为准。</div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="btn-group" style="margin-top:12px;">
+              <button class="btn">挂载文件</button>
+              <button class="btn">上传监检资料</button>
+              <button class="btn primary">保存审查意见</button>
+              <button class="btn">采纳 AI 建议</button>
+              <button class="btn">驳回 AI 建议</button>
+              <button class="btn orange">退回补正</button>
+              <button class="btn primary">报告生成/复核</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="result-band">
+          <h2>三、AI 业务建议结果 <span class="sub">仅为建议，需监检人员确认</span></h2>
+          <div class="result-grid">
+            <div>建议结论<b>满足要求</b></div>
+            <div>风险等级<b>低</b></div>
+            <div>置信度<b class="blue">92%</b></div>
+            <div>人工确认<b>1项</b></div>
+          </div>
+          <div class="ai-suggestion-editor">
+            <div class="ai-suggestion-head">
+              <strong>建议意见</strong>
+              <span class="pill blue">可编辑草稿</span>
+            </div>
+            <textarea class="ai-suggestion-textarea" data-ai-suggestion rows="4" aria-label="AI 建议意见">焊工王建国的焊工资格证编号 TS6J-2024-03158 在过程文件和外部查询结果中一致，证书有效期覆盖本项目施工周期，持证项目 GTAW、SMAW 与本项目焊接工艺要求一致，建议本节点审查结论为“满足要求”。需人工确认资格网站查询截图是否来自最新官方查询结果。</textarea>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>四、审查对象与项目要求</h2>
+            <div class="sub">明确当前审查对象、项目要求和使用规则</div>
+          </div>
+          <div class="card-body">
+            <div class="chain-grid">
+              <div class="chain-card">
+                <h4>审查对象</h4>
+                <p>焊工：王建国；证书编号：TS6J-2024-03158；身份证尾号：0821。</p>
+              </div>
+              <div class="chain-card">
+                <h4>项目要求</h4>
+                <p>项目周期：2026-05-01 至 2026-09-30；焊接方法：GTAW+SMAW；管道材质：20#；规格：DN200。</p>
+              </div>
+              <div class="chain-card">
+                <h4>规则版本</h4>
+                <p>规则模板：Welder-Qualification-B-v2.1；Prompt：24-焊工资格-v1.5；标准范围：TSG Z6002、项目节点资料说明。</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>五、过程文件</h2>
+            <div class="sub">本次业务核验使用的文件、版本和证据来源</div>
+          </div>
+          <div class="card-body">
+            <table class="table">
+              <thead>
+                <tr><th>过程文件</th><th>版本</th><th>用途</th><th>关键字段</th><th>证据位置</th><th>状态</th></tr>
+              </thead>
+              <tbody>
+                <tr class="selected"><td>焊工资格证-王建国.pdf</td><td>V2</td><td>证书主体</td><td>证书编号、有效期、持证项目</td><td>第 1-2 页</td><td><span class="pill green">已识别</span></td></tr>
+                <tr><td>焊工名册.xlsx</td><td>V3</td><td>人员一致性</td><td>姓名、身份证尾号、证书编号</td><td>第 4 行</td><td><span class="pill green">已匹配</span></td></tr>
+                <tr><td>焊接工艺卡.docx</td><td>V1</td><td>项目作业要求</td><td>GTAW、SMAW、20#、DN200</td><td>第 1 页</td><td><span class="pill green">已匹配</span></td></tr>
+                <tr><td>施焊记录-PL02.pdf</td><td>V1</td><td>实际作业记录</td><td>焊工姓名、焊接方法、焊口编号</td><td>第 6 页</td><td><span class="pill green">已匹配</span></td></tr>
+                <tr><td>资格网站查询截图.png</td><td>V1</td><td>外部真实性核验</td><td>证书编号、姓名、有效状态</td><td>截图区域 A</td><td><span class="pill orange">人工确认</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>六、证据链与标准依据</h2>
+            <div class="sub">业务结论必须能追溯到文件、字段、工具结果和标准条款</div>
+          </div>
+          <div class="card-body">
+            <table class="table">
+              <thead>
+                <tr><th>核验项</th><th>引用证据</th><th>引用标准/规则</th><th>步骤结论</th><th>操作</th></tr>
+              </thead>
+              <tbody>
+                <tr class="selected"><td>证书真实性</td><td>证书第 1 页；资格网站查询截图区域 A</td><td>焊工资格真实性核验规则 R-24-01</td><td><span class="pill green">通过</span></td><td><a>定位证据</a></td></tr>
+                <tr><td>有效期覆盖</td><td>证书第 1 页；项目计划第 2 页</td><td>日期覆盖规则 R-24-02</td><td><span class="pill green">通过</span></td><td><a>查看日期比对</a></td></tr>
+                <tr><td>持证项目适配</td><td>证书第 2 页；工艺卡第 1 页</td><td>TSG Z6002；节点资料说明</td><td><span class="pill green">通过</span></td><td><a>查看条款</a></td></tr>
+                <tr><td>跨文件一致性</td><td>焊工名册第 4 行；施焊记录第 6 页</td><td>字段一致性规则 R-24-04</td><td><span class="pill green">通过</span></td><td><a>查看证据链</a></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>七、业务规则说明</h2>
+            <div class="sub">用于说明当前节点 AI 核验和人工审查采用的规则边界</div>
+          </div>
+          <div class="card-body">
+            <table class="table compact">
+              <tbody>
+                <tr><th>规则模板</th><td>Welder-Qualification-B-v2.1 <span class="pill green">当前使用</span></td></tr>
+                <tr><th>适用节点</th><td>24. 焊工资格证及持证合格项目</td></tr>
+                <tr><th>输入资料</th><td>资格证、焊工名册、焊接工艺卡、施焊记录、外部查询结果</td></tr>
+                <tr><th>输出格式</th><td>核验步骤、步骤结论、引用证据、建议结论、人工确认项</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-body">
+            <div class="metrics">
+              <div class="metric"><div class="metric-label">过程文件</div><div class="metric-value">5</div></div>
+              <div class="metric"><div class="metric-label">核验步骤</div><div class="metric-value green">4 / 4</div></div>
+              <div class="metric"><div class="metric-label">证据引用</div><div class="metric-value">11 条</div></div>
+              <div class="metric"><div class="metric-label">业务风险</div><div class="metric-value green">0</div></div>
+              <div class="metric"><div class="metric-label">待人工确认</div><div class="metric-value orange">1 项</div></div>
+            </div>
+          </div>
+        </section>
+
+      </main>
+
+      <aside class="right">
+        <h2 class="right-title">文件预览</h2>
+        <div class="preview-name">焊工资格证-王建国.pdf</div>
+        <div class="preview-actions">
+          <button class="btn">放大</button>
+          <button class="btn">缩小</button>
+          <button class="btn">定位证据</button>
+          <button class="btn">下载</button>
+        </div>
+        <div class="doc-preview">
+          <div class="doc-toolbar"><span>第 1 / 3 页</span><span>⛶</span></div>
+          <div class="doc-canvas">
+            <div class="doc-paper">
+              <div class="paper-title">特种设备焊工证</div>
+              <table class="mini-doc-table">
+                <tr><td>姓名</td><td>王建国</td><td>身份证尾号</td><td>0821</td></tr>
+                <tr><td>证书编号</td><td>TS6J-2024-03158</td><td>发证机关</td><td>省市场监管局</td></tr>
+                <tr><td>有效期</td><td>2024-04-12 至 2028-04-11</td><td>状态</td><td>有效</td></tr>
+                <tr><td>持证项目</td><td>GTAW、SMAW</td><td>适用范围</td><td>承压管道</td></tr>
+                <tr><td>复审记录</td><td colspan="3">2026 年复审记录有效，签章完整。</td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <section class="right-card">
+          <h3>当前证据定位</h3>
+          <div class="body">
+            <table class="table compact">
+              <tbody>
+                <tr><th>证据字段</th><td>证书编号 TS6J-2024-03158</td></tr>
+                <tr><th>文件页码</th><td>焊工资格证第 1 页</td></tr>
+                <tr><th>核验步骤</th><td>证书真实性核验</td></tr>
+                <tr><th>外部工具</th><td>资格审查网站查询截图</td></tr>
+                <tr><th>证据状态</th><td><span class="pill orange">需人工确认来源有效性</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="right-card">
+          <h3>文件属性</h3>
+          <div class="body">
+            <table class="table compact">
+              <tbody>
+                <tr><th>文件名</th><td>焊工资格证-王建国.pdf</td></tr>
+                <tr><th>所属节点</th><td>焊接（粘接）/ 24. 焊工资格证及持证合格项目</td></tr>
+                <tr><th>资料项</th><td>焊工资格证书</td></tr>
+                <tr><th>来源单位</th><td>施工方</td></tr>
+                <tr><th>上传人</th><td>施工方 李工</td></tr>
+                <tr><th>文件版本</th><td>V2</td></tr>
+                <tr><th>业务链路</th><td><span class="pill green">已生成</span></td></tr>
+                <tr><th>关联证据数</th><td>11 条 <a>查看证据链</a></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="right-card">
+          <h3>节点审查状态</h3>
+          <div class="body">
+            <table class="table compact">
+              <tbody>
+                <tr><th>文件总数</th><td>5</td></tr>
+                <tr><th>核验完成</th><td>4 / 4</td></tr>
+                <tr><th>业务风险</th><td>0</td></tr>
+                <tr><th>待确认</th><td>资格网站截图来源</td></tr>
+                <tr><th>建议结论</th><td><span class="pill green">满足要求</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </div>
+  <script src="./workbench_project_tree.js"></script>
+  <script src="./workbench_project_switcher.js"></script>
+  <script src="./workbench_api.js"></script>
+  <script src="./workbench_interactions.js"></script>
+  <script src="./static_ui_nav.js"></script>
+</body>
+</html>

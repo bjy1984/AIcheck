@@ -1,0 +1,31 @@
+source_file,knowledge_type,category,page_count,line_count,char_count,avg_confidence,evidence,text_file,drawing_score,design_doc_score,site_photo_score,certificate_score,standard_score
+20260623104523.pdf,证书 OCR 类数据,certificate,1,29,379,0.6621,主类型命中：特种设备安装改造维修许可证,output/ocr/texts/20260623104523.txt,0,1,0,0,0
+20260623104555.pdf,证书 OCR 类数据,certificate,5,178,1956,0.5854,主类型命中：特种设备制造许可证,output/ocr/texts/20260623104555.txt,0,4,0,0,0
+20260623104703.pdf,证书 OCR 类数据,certificate,7,628,6383,0.4398,主类型命中：交工/质量证明资料,output/ocr/texts/20260623104703.txt,0,0,0,21,14
+20260623104730.pdf,证书 OCR 类数据,certificate,24,1961,12570,0.742,主类型命中：交工/质量证明资料,output/ocr/texts/20260623104730.txt,18,15,5,19,8
+20260623104828.pdf,证书 OCR 类数据,certificate,12,885,6652,0.6861,主类型命中：质量证明书,output/ocr/texts/20260623104828.txt,0,2,3,60,41
+20260623105454.pdf,设计文件类数据,design_doc,19,691,10863,0.7253,主类型命中：施工方案,output/ocr/texts/20260623105454.txt,5,8,19,11,12
+20260623105534.pdf,证书 OCR 类数据,certificate,12,1253,9674,0.5966,主类型命中：特种设备制造许可证,output/ocr/texts/20260623105534.txt,3,4,1,16,10
+20260623105636.pdf,证书 OCR 类数据,certificate,5,408,2098,0.7184,主类型命中：射线检测报告,output/ocr/texts/20260623105636.txt,6,0,4,17,8
+IMG_6508.heic,设计文件类数据,design_doc,1,39,363,0.4462,主类型命中：材料表,output/ocr/texts/IMG_6508.txt,1,0,0,1,0
+IMG_6509.heic,设计文件类数据,design_doc,1,274,1620,0.6489,主类型命中：管道特性表,output/ocr/texts/IMG_6509.txt,3,4,0,1,0
+IMG_6510.heic,图纸类数据,drawing,1,41,486,0.3707,主类型命中：管道及仪表流程图,output/ocr/texts/IMG_6510.txt,1,0,0,1,0
+IMG_6511.heic,设计文件类数据,design_doc,1,113,1328,0.6619,主类型命中：压力管道强度计算书,output/ocr/texts/IMG_6511.txt,7,4,0,2,4
+IMG_6512.heic,设计文件类数据,design_doc,1,58,627,0.6052,主类型命中：工艺设计说明书,output/ocr/texts/IMG_6512.txt,3,2,1,1,3
+IMG_6513.heic,设计文件类数据,design_doc,1,100,947,0.721,主类型命中：设备一览表,output/ocr/texts/IMG_6513.txt,7,1,1,0,0
+IMG_6514.heic,设计文件类数据,design_doc,1,100,916,0.644,主类型命中：工艺设计说明书,output/ocr/texts/IMG_6514.txt,9,6,0,1,1
+IMG_6515.heic,设计文件类数据,design_doc,1,67,871,0.606,主类型命中：工艺设计说明书,output/ocr/texts/IMG_6515.txt,3,4,0,2,1
+IMG_6516.heic,设计文件类数据,design_doc,1,72,936,0.5792,主类型命中：设计说明书,output/ocr/texts/IMG_6516.txt,5,4,0,2,11
+IMG_6517.heic,设计文件类数据,design_doc,1,84,1061,0.631,主类型命中：工艺设计说明书,output/ocr/texts/IMG_6517.txt,3,3,2,1,21
+IMG_6518.heic,设计文件类数据,design_doc,1,69,940,0.5783,主类型命中：工艺设计说明书,output/ocr/texts/IMG_6518.txt,7,3,2,1,5
+IMG_6519.heic,设计文件类数据,design_doc,1,80,1014,0.6512,主类型命中：工艺设计说明书,output/ocr/texts/IMG_6519.txt,3,3,2,1,15
+IMG_6520.heic,设计文件类数据,design_doc,1,112,889,0.6929,主类型命中：综合材料表,output/ocr/texts/IMG_6520.txt,4,2,0,0,5
+IMG_6521.heic,设计文件类数据,design_doc,1,124,1134,0.6685,主类型命中：综合材料表,output/ocr/texts/IMG_6521.txt,4,2,0,1,14
+IMG_6522.heic,设计文件类数据,design_doc,1,111,986,0.6721,主类型命中：综合材料表,output/ocr/texts/IMG_6522.txt,4,2,0,0,7
+IMG_6523.heic,设计文件类数据,design_doc,1,85,706,0.6871,主类型命中：综合材料表,output/ocr/texts/IMG_6523.txt,5,2,0,0,6
+IMG_6524.heic,图纸类数据,drawing,1,70,799,0.6071,主类型命中：配管平面图,output/ocr/texts/IMG_6524.txt,8,0,0,1,0
+IMG_6526.heic,图纸类数据,drawing,1,7,47,0.3571,视觉抽检确认：低文本折叠图纸照片,output/ocr/texts/IMG_6526.txt,0,0,0,0,0
+IMG_6527.heic,图纸类数据,drawing,1,5,16,0.48,视觉抽检确认：低文本折叠图纸照片,output/ocr/texts/IMG_6527.txt,0,0,0,0,0
+IMG_6528.heic,图纸类数据,drawing,1,5,22,0.34,视觉抽检确认：低文本折叠图纸照片,output/ocr/texts/IMG_6528.txt,0,0,0,0,0
+IMG_6529.heic,设计文件类数据,design_doc,1,145,1015,0.4924,主类型命中：设备及管道油漆保温一览表,output/ocr/texts/IMG_6529.txt,3,0,1,0,1
+IMG_6530.heic,设计文件类数据,design_doc,1,240,1393,0.465,主类型命中：管道特性表,output/ocr/texts/IMG_6530.txt,4,3,0,1,0

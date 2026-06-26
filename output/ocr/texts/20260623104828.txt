@@ -1,0 +1,920 @@
+===== page 1 =====
+
+河北广浩管件有限公司
+产品出厂检验合格证
+收货单位：
+2021年3月18日
+材质
+20#
+产品名称
+规格
+数量
+执行标准
+化学成分%
+对焊法兰
+WN100 （B） -16 RF S=5
+14
+HG/T20592-2009
+碳C
+锰 Mn
+硅 Si
+硫S
+磷P
+铬 Cr
+镍 Ni
+0.19
+0.42
+0.26
+0.011
+0.018
+钛 Ti
+钼 Mo
+钨W
+铜 Cu
+铝 A1
+铅 Pb
+钒V
+屈服点
+抗拉强度
+延伸率
+断面收缩
+冲击率
+硬度
+MPa
+MPa
+%
+Cm？
+Cm"
+HB
+335
+435
+26
+结论
+检验合格
+我作有分
+检验员 检-2
+质检专用章：
+北
+质检专用章，
+
+===== page 2 =====
+
+河北广浩管件有限公司
+产品出厂检验合格证
+收货单位：
+编号：20210110019
+2021年1月10日
+材质
+20#
+产品名称
+规格
+数量
+执行标准
+化学成分%
+法兰
+WN25 （B） PV16 RF
+4
+HG20592-2009
+碳C
+锰 Mn
+硅 Si
+硫S
+磷P
+铬 Cr
+镍 Ni
+等径三通
+中108*5
+2
+GB/T12459-2017
+同心大小头
+①108*57*5*4
+2
+GB/T12459-2017
+0.19
+0.42
+0.21
+0.011
+0.017
+钛Ti
+钼 Mo
+钨W
+铜 Cu
+铝 AI
+铅 Pb
+钒V
+屈服点
+抗拉强度
+延伸率
+断面收缩
+冲击率
+硬度
+MPa
+MPa
+%
+Cm’
+Cm'
+HB
+275
+435
+结论
+检验合格
+检验员
+检-2
+质检专用章：
+质检专用章，
+
+===== page 3 =====
+
+B-PLow
+铜都流你
+安徽铜都流体科技股份有限公司
+产品质量证明书（合格证）
+TS编号：TS2734027-2022
+出厂日期：2021年04月15日
+产品名称
+球阀
+型号规格
+Q941F-16C DN100
+数量
+2台
+主要零部件材料
+阀体：WCB
+阀杆：20Cr13
+阀盖：WCB
+螺栓：8.8级
+检验项目
+单位
+标准规定值
+检验依据
+结论
+试验压力
+壳体
+MPa
+2.4
+2.4
+合格
+试验
+持续时间
+S
+60
+60
+合格
+试验结果
+无泄漏
+无泄漏
+无结构损伤
+无结构损伤
+合格
+液体
+试验压力
+MPa
+高压
+1.76
+1.76
+合格
+密封
+持续时间
+S
+60
+60
+合格
+试验
+试验结果
+无泄漏
+无结构损伤
+无泄漏
+无结构损伤
+合格
+气体
+试验压力
+MPa
+0.6
+0.6
+合格
+密封
+持续时间
+S
+60
+试验
+60
+合格
+试验结果
+无泄漏
+无泄漏
+合格
+适用介质
+水、燃气、油品
+适用温度
+^120°C
+制造标准
+GB/T 12237-2007《石油、石化及相关工业用钢制球阀》
+检验依据
+GB/T 13927-2008 工业阀门压力试验
+检验结论：
+该批阀门共2台，经检验合格准予出厂。
+ONGDU
+都
+0T
+检验负责人：
+检验日期：2021年04月15日
+品保際
+5
+
+===== page 4 =====
+
+5FLow
+铜都流体，
+安徽铜都流体科技股份有限公司
+出厂检验报告
+产品名称
+球阀
+型号规格
+Q941F-16C DN100
+物料编码
+1
+数量
+2台
+检验项目：
+《TD/QP-07成品检验规范》
+NO.
+检验项目
+Result
+结果
+1
+商标/铸字/流向
+OKG NGO
+2
+铭牌/合格证
+OKD NGO
+3
+顺时针关 逆时针开
+OKO NGO
+4
+驱动类别/方向
+OKG NGC
+5
+涂刷均匀、无漏刷、无流挂等现象
+OKD NGC
+6
+批次一致性
+OKE NGC
+7
+无磕碰划伤及缺陷
+OKG NGC
+8
+连接可靠、牢固
+OKD NGC
+9
+螺栓螺母符合要求
+OK NGD
+10
+附件齐全
+OK NGC
+随附资料齐全
+OKD NGO
+12
+密封面，法兰面，驱动头等防护到位
+OKG NGO
+13
+唛头及地址清晰
+我微股分。
+TECHNOLOSL
+OKG NGO
+检验结论：
+GD/
+经检验符合标准要求，此批产品合格，准予出厂。
+〈印章处）
+都
+LTD
+保部
+检验员：
+飞东华
+审批：
+日期：2021-04-15
+6
+
+===== page 5 =====
+
+镉都湓体
+安徽铜都流体科技股份有限公司
+产品质量证明书（合格证）
+TS编号：TS2734027-2022
+出厂日期：2021年04月15日
+产品名称
+球阀
+型号规格
+Q41F-16C DN100
+•数量
+4台
+主要零部件材料
+阀体：WCB
+阀杆：20Cr13
+阀盖：WCB
+螺栓：8.8级
+检验项目
+单位
+标准规定值
+检验依据
+结论
+试验压力
+壳体
+MPa
+2.4
+2.4
+合格
+试验
+持续时间
+60
+60
+合格
+试验结果
+无泄漏
+无结构损伤
+无泄漏
+无结构损伤
+合格
+液体
+试验压力
+高压
+MPa
+1.76
+1.76
+合格
+密封
+持续时间
+S
+60
+60
+合格
+试验
+试验结果
+无泄漏
+无结构损伤
+无泄漏
+无结构损伤
+合格
+气体
+试验压力
+MPa
+0.6
+0.6
+合格
+密封
+持续时间
+试验
+S
+60
+60
+合格
+试验结果
+无泄漏
+无泄漏
+合格
+适用介质
+水、燃气、油品
+适用温度
+爪120°C
+制造标准
+GB/T12237-2007《石油、石化及相关工业用钢制球阀》
+检验依据
+GB/T 13927-2008 工业阀门压力试验
+检验结论：
+锅
+该批阀门共4台，经检验合格准予出厂品品保部
+检验负责人：
+检验日期：2021年04月15日
+
+===== page 6 =====
+
+铜都流位
+安徽铜都流体科技股份有限公司
+出厂检验报告
+产品名称
+球阀
+型号规格
+Q41F-16C DN100
+物料编码
+数量
+4台
+检验项目：
+《TD/QP-07 成品检验规范》
+NO.
+检验项目
+Result
+结果
+1
+商标/铸字/流向
+OKZ NGD
+2
+铭牌/合格证
+OKD NGO
+3
+顺时针关 逆时针开
+OKD NGC
+4
+驱动类别/方向
+OKO NGC
+5
+涂刷均匀、无漏刷、无流挂等现象
+OKD NGE
+6
+批次一致性
+OK NGO
+7
+无磕碰划伤及缺陷
+OK NGO
+8
+连接可靠、牢固
+OK NGC
+9
+螺栓螺母符合要求
+OK NGC
+10
+附件齐全
+OKD NGO
+随附资料齐全
+OKD NGO
+12
+密封面，法兰面，驱动头等防护到位
+OKG NGO
+13
+唛头及地址清晰
+我我技飲及
+ECHNOL0G）
+OKG NGO
+检验结论：
+经检验符合标准要求，此批产品合格，准予出厂。
+〈印章处》
+品保部
+检验员：
+飞华
+日期：2021-04-15
+8
+
+===== page 7 =====
+
+B-HLOW
+安徽铜都流体科技股份有限公司
+产品质量证明书（合格证）
+TS编号：TS2734027-2022
+出厂日期：2021年04月15日
+产品名称
+闸阀
+型号规格
+Z41H-16C DN100
+数量
+4台
+主要零部件材料
+阀体：WCB
+阀杆：20Cr13
+阀盖：WCB
+螺栓：8.8级
+检验项目
+单位
+标准规定值
+检验依据
+结论
+试验压力
+MPa
+2.4
+2.4
+合格
+壳体
+试验
+持续时间
+S
+60
+60
+合格
+试验结果
+无泄漏
+无泄漏
+无结构损伤
+无结构损伤
+合格
+液体
+试验压力
+MPa
+1.76
+1.76
+合格
+高压
+密封
+持续时间
+S
+60
+60
+合格
+试验
+试验结果
+无泄漏
+无泄漏
+无结构损伤
+无结构损伤
+合格
+气体
+试验压力
+MPa
+0.6
+0.6
+合格
+密封
+持续时间
+S
+60
+60
+合格
+试验
+试验结果
+无泄漏
+无泄漏
+合格
+适用介质
+水、蒸汽、油品
+适用温度
+-29~425°C
+制造标准
+GB/T 12234-2007_《有油、天然气工业用螺柱连接阀盖的钢制闸阀》
+检验依据
+GB/T 13927-2008 工业阀门压力试验
+检验结论：
+该批阀门共4台，经检验合格准予出）
+品保部
+Dep
+检验负责人：
+检验日期：2021年04月15日
+9
+
+===== page 8 =====
+
+锢都流体
+FLOW
+安徽铜都流体科技股份有限公司
+出厂检验报告
+产品名称
+闸阀
+型号规格
+Z41H-16C DN100
+物料编码
+数量
+4台
+检验项目：
+《TD/QP-07 成品检验规范》
+NO.
+检验项目
+Result
+结果
+1
+商标/铸字/流向
+OKD NGO
+2
+铭牌/合格证
+OK NGO
+3
+顺时针关 逆时针开
+OK NGO
+4
+驱动类别/方向
+OK NGO
+5
+涂刷均匀、无漏刷、无流挂等现象
+OK NGO
+6
+批次一致性
+OK NGO
+7
+无磕碰划伤及缺陷
+OK NGO
+8
+连接可靠、牢固
+OK NGO
+9
+螺栓螺母符合要求
+OK NGD
+10
+附件齐全
+OK NGO
+11
+随附资料齐全
+OK NGO
+12
+密封面，法兰面，驱动头等防护到位
+OK NGO
+13
+唛头及地址清晰
+OK NGO
+检验结论：
+ONGOY
+都
+经检验符合标准要求，此批产品合格，准予出厂。
+〈印章处》
+锅
+DY
+CO
+品保部
+07
+检验员：
+飞东平
+审批：
+fpeg
+日期：2021-04-15
+10
+
+===== page 9 =====
+
+SOJOTUN
+CERTIFICATE OF ANALYSE
+COA
+检验报告（产品合格证）
+PRODUCT
+Customer Order（订单号）
+JOTA ZEP COMP.A
+W8880824
+Quantity（桶数）
+30
+产品名称
+环氧富锌底漆6BT 组份A
+COLOUR（颜色）
+灰色 GREY
+PROD.DATE（生产日期）
+2021-4-3
+Durability Days（保质期，天）
+730
+BATCH NO.（产品批号）
+2466982-1-*-1:2
+Product Code（产品编码）
+6BTGRE
+TESTS
+项目
+REF. STANDARD
+测试标准
+RESULT
+SPECIFICATION*
+结果
+Min.
+指标
+Viscosity measurements
+Max.
+Fineness of grind
+粘度
+ASTM D562
+117 KU
+115
+125
+Application properties
+细度
+ISO 1524
+50 um
+-
+50
+Weight and measurements
+流挂
+ISO 16862
+300 wm
+300
+-
+Drying time
+比重
+ISO 2811
+2.30g/ml
+2.29
+2.37
+干燥时间
+ASTM D5895
+-
+*The specification is given by the formulation responsible/laboratory
+THANGJ/ACANe）
+以上指标由我司实验室提供
+8（
+张家港）有限公司）
+佐敦涂料
+Place and date：打印日期
+2021-04-08
+晶控实验室.
+QC-lab./Lab.Manager
+文件编号（Document No）：FM-P29-01
+1/1
+版本号（Version）：1
+
+===== page 10 =====
+
+EJOTUN
+CERTIFICATE OF ANALYSE
+COA
+检验报告（产品合格证）
+PRODUCT
+Customer Order（订单号）
+JOTA ZEP COMP.B
+W8880824
+Quantity（桶数）
+57
+产品名称
+环氧富锌底漆6BT 组份B
+COLOUR（颜色）
+Durability Days（保质期，天）
+PROD.DATE（生产日期）
+2021-4-3
+730
+Product Code（产品编码）
+BATCH NO.（产品批号）
+6BTCPB
+2466997-1-*-1:2
+TESTS
+项目
+REF.STANDARD
+测试标准
+RESULT
+SPECIFICATION*
+结果
+Min.
+指标
+Viscosity measurements
+Max.
+Fineness of grind
+粘度
+ASTM D562
+---
+Application properties
+细度
+ISO 1524
+--
+-
+Weight and measurements
+流挂
+ISO 16862
+--
+-
+：
+Dryingtime
+比
+一重
+ISO 2811
+0.92 g/ml
+0.85
+0.95
+干燥时间
+ASTM D5895
+---
+-
+*The specification is given by the formulation responsible/laboratory
+（HANCJAGAN®）
+以上指标由我司实验室提供
+张家港）有限公司）8
+佐敦涂料
+Place and date：打印日期
+2021-04-08
+最控实验室
+QC-lab./Lab.Manager
+文件编号（Document No）：FM-P29-01
+1/1
+版本号（Version）：1
+
+===== page 11 =====
+
+aDJOTUN
+CERTIFICATE OF ANALYSE
+COA
+检验报告（产品合格证）
+PRODUCT
+Customer Order（订单号）
+W8880824
+Quantity（桶数）
+30
+FUTURA CLASSIC COMP.A
+产品名称
+丙烯酸聚氨酯面漆 组份A
+PROD.DATE（生产日期）
+2021-04-08
+Durability Days（保质期，天）
+1460
+Product Code（产品编码）
+OL4PGA
+（MC/MCI批号）
+MC/MCI Lot NO
+W8880824-2-3-1
+Color（颜色）
+STD 001
+TESTS
+项目
+REF. STANDARD
+测试标准
+RESULT
+SPECIFICATION*
+结果
+Min.
+指标
+Max.
+Viscosity measurements
+Fineness of grind
+粘度
+ISO 2884
+600 cps
+450
+650
+Application properties
+细度
+ISO 1524
+24 wm
+-
+25
+Weight and measurements
+流挂
+ISO 16862
+225 wm
+200
+-
+Drying time
+比重
+ISO 2811
+1.50 g/ml
+1.48
+1.54
+于燥时间
+ASTM D5895
+3.0 h
+4.0
+*The specification is given by the formulation responsible/laboratory
+（HANGUACAY
+以上指标由我司实验室提供
+佐敦涂料
+品控实驗室
+Place and date：打印日期
+2021-04-08
+QC-lab./Lab.Manager
+文件编号（Document No）：FM-P29-01
+1/1
+版本号（Version）：1
+
+===== page 12 =====
+
+SOJOTUN
+CERTIFICATE OF ANALYSE
+COA
+检验报告（产品合格证）
+PRODUCT
+Customer Order（订单号）
+W8880824
+FUTURA CLASSIC COMP.B
+Quantity（桶数）
+30
+产品名称
+丙烯酸聚氨酯面漆 组份B
+COLOUR（颜色）
+一-
+Durability Days（保质期，天）
+PROD.DATE（生产日期）
+2021-4-2
+1460
+BATCH NO.（产品批号）
+2466517-1-*-1:2
+Product Code（产品编码）
+OL4CPB
+TESTS
+项目
+REF. STANDARD
+RESULT
+SPECIFICATION*
+测试标准
+结果
+Min.
+指标
+Viscosity measurements
+Max.
+Fineness of grind
+粘度
+ISO 2884
+260 cps
+150
+350
+Application properties
+细度
+ISO 1524
+--
+Weight and measurements
+流挂
+ISO 16862
+！！
+-
+Drying time
+比
+：重
+ISO 2811
+1.07g/ml
+1.04
+1.10
+干燥时间
+ASTM D5895
+--
+*The specification is given by the formulation responsible/laboratory
+以上指标由我司实验室提供
+INGS
+（1HANGJAGANG
+（张寨港）有限公司
+佐敦涂料
+品控实验室（
+Place and date：打印日期
+2021-04-08
+QC-lab./Lab.Manager
+文件编号（Document No）：FM-P29-01
+1/1
+版本号（Version）：1

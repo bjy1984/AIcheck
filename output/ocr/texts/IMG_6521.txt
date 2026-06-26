@@ -1,0 +1,124 @@
+序号
+PROJECT
+项目名称
+螺纹螺栓/II型六角螺
+螺纹螺栓/II型六角螺
+螺纹螺栓/II型六角螺
+螺栓/螺母
+缠绕垫
+缠绕垫
+缠绕垫
+缠绕垫
+垫片
+法兰盖
+法兰盖
+带颈对㷆法兰
+带颈对焊法兰
+带颈对焊法兰
+带颈对熚法兰
+法兰
+Material Name & Specification
+材料名称及规格
+GUANGDONG XINGRAN PETROCHEMICAL DESIGN INSTITUTE CO.LTD.
+广东星燃石化设计院有限公司
+二期装车站新增两套卸车系统项目
+珠海恒基达鑫国际化工仓储股份有限公司•一
+M12x75
+M16x85
+M16x90
+RF25-16 T=3.0
+RF50-16 T=3.0
+RF80-16 T=3.0
+RF100-16 T=3.0
+BL25-16 RF（B）
+BL100-16 RF（B）
+法兰WN25-16 RF（B）
+法兰WN50-16 RF（B）
+法兰WN 80-16 RF（B）
+法兰WN 100-16 RF（B）
+HG/T20613-2009
+HG/T20613-2009
+HG/T20613-2009
+HG/T20610-2009
+HG/T20610-2009
+HG/T20610-2009
+HG/T20610-2009
+HG/T 20592-2009
+HG/T 20592-2009
+HG/T 20592-2009
+HG/T 20592-2009
+HG/T 20592-2009
+HG/T 20592-2009
+STD.Code & DWG.No.
+标准号或图号
+GENERAL MATERIAL LIST
+综合材料表
+35CrMo/30CrMo
+35CrMo/30CrMo
+35CrMo/30CrMo
+2H
+20#
+2H
+20#
+Material
+材料
+个
+个
+个
+个
+个
+片
+片
+片
+片
+Unit
+单位
+40
+30
+56
+10
+38
+Quantity
+数量
+APPROVE
+审核
+CHECK
+校核
+DESIGN
+编制
+DUTY
+职责
+Unit
+单重
+杨返紅
+勿原
+孤華生
+NAME
+姓名
+有效期至：2024年6月21日
+Weight
+重量（kg）
+业务范围：每运、全、佳汤耳、化辛原料落、化正工釋）停业乙的
+资质证书编号：A244010070
+单位名称：广东星燃石化设计院有限公司
+化工石化蔬药行业（中威药、药坎制剂、石油及化工产品
+Total
+总重
+2021.3
+2021.3
+2021.3
+日期
+REV.
+版次
+DESIGN PHASE
+设讨阶段
+D WG.NO.
+图纸编号
+UNIT NAME
+装置名称
+Remarks
+备注
+施工图
+QX201903S-13-Y-09
+卸车站
+Page 2 of

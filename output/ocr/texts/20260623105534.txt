@@ -1,0 +1,1288 @@
+===== page 1 =====
+
+承压设备焊接工艺评定报告
+编号：
+HP2013-10
+单
+位：
+贵州化工建设公司
+日
+期
+2013
+年11月2日
+
+===== page 2 =====
+
+焊接位置：
+对接㷆缝的位置
+立悍的焊接方向：（向上、向下）_向下
+5GX
+焊后热处理；
+角焊缝位置
+保温温度（°C）
+立 的焊接方向：（向上、向下）
+L
+保温时间范围（h）
+丄
+/
+预热：
+最小预热温度（C）
+气体：
+最大道间温度（C）
+100-150
+气体种类
+加热方式
+保持预热时间
+氧、乙炔火焰加热
+L
+尾部保护气_ 1
+保护气！
+混合比
+流量（L/ min）
+背面保护气_/
+电流种类；
+电特性
+焊接速度（范围）
+焊接电流范围 （A）：
+42-110
+直流
+极性：打底直流正接
+钨极类型及直径
+10-30（cm/min）
+电弧电压（V）：—
+18-26
+其余直流反搓
+焊接电弧种类（喷射弧、短路弧等）
+喷嘴直径（mm）
+（按所焊位置和厚度，分别列出电流利电压范围，记入下表）
+焊丝送进速度（cm/min）
+焊道/焊层
+焊接方法
+填充材料
+焊接电流
+电弧电压
+电流（A）
+（V）
+焊接速度
+牌号
+直径
+（cm/min）
+线能量
+极性
+（kj/cm）
+1
+焊条电弧焊
+E6010
+¢3.2
+直流正接
+42-60
+18
+10-25
+3.6-16.5
+2
+焊条电弧焊
+E7010
+$4.0
+直流反接
+90-110
+26
+12-30
+4.8-16.9
+3
+焊条电弧焊
+E7010
+$4.0
+直流反接
+90-110
+26
+12-30
+4.8-16.9
+/
+/
+/
+/
+/
+/
+/
+/
+/
+/
+/
+/
+/
+/
+1
+/
+/
+/
+/
+/
+/
+摆动焊或不摆动焊：
+技术措施：
+悍前清理和层间清理：焊前清理坡口两侧各50m范围内油污、锈等杂质，坡口周围20mm范围内打磨出金属光泽。
+不摆动焊
+摆动参数：
+其他：1、每层焊工数1-2名。
+层间焊道必须严格清理，请理使用角向磨光机及钢丝刷。
+3、桿条开封即用，勿需烘焙，若受潮须经80C烘焙1.5h 再使用。
+2、根焊道焊完后，应尽快进行热焊道焊接。
+编制
+日期
+2013,11.2
+审核
+日期
+201.11.2
+批准
+干洪
+目期203.化2
+
+===== page 3 =====
+
+拉伸试验
+试验报告编号；
+J13-11-1
+试样编号
+试样宽度
+（m）
+试样厚度
+LI-1
+（m）
+横截面积
+（mm3）
+最大载荷
+（kN）
+抗拉强度
+（MPa）
+断裂部位和特征
+19.7
+6.3
+124.11
+66
+$31.8
+母材上
+L1-2
+19.3
+6.3
+121.59
+65.5
+538.7
+母材上
+/
+/
+/
+/
+/
+/
+/
+/
+/
+/
+/
+/
+/
+/
+弯曲试验
+试验报告编号：
+J13-11-1
+试样编
+M2-1
+号
+试样类型
+试样厚度
+M2-2
+面弯
+（m）
+弯心直径
+（m）
+弯曲角度
+25.2
+25.2
+25.2
+25.2
+180
+（'）
+试验结果
+B2-3
+面弯
+6.3
+B2-4
+背弯
+背弯
+6.3
+180
+180
+完好
+6.3
+6.3
+完好
+180
+完好
+完好
+冲击试验
+试验报告编号；
+J13-11-1
+试样编
+号
+试样尺寸
+〈mm》
+夏比V型
+HI
+缺口位置
+试验温度
+（°C）
+冲击吸收功
+（J）
+侧向膨胀量
+（mm）
+备注
+5X10X55
+焊缝区
+0
+H2
+88
+5X10X55
+焊缝区
+0
+H3
+80
+5X10X55
+焊缝区
+0
+RI
+5X10XS5
+85
+热影响区
+0
+R2
+5×10×55
+91
+热影响区
+0
+R3
+5×10×55
+83
+热影响区
+0
+/
+/
+87
+/
+/
+/
+/
+/
+/
+/
+/
+/
+
+===== page 4 =====
+
+HJ
+射线检测报告
+工程名称：工艺评定
+第1页共2页
+（一）
+单元名称：管道
+检件名称
+管道
+检件编号
+HP2013-10
+制造安装单位
+贵州化工建设公司
+报告编号
+2013-10-1
+检件规格
+中323.9×6.3
+检件材质
+L360
+执行标准
+JB/T4730.2-2005
+检验比例
+100%
+合格级别
+II级
+射线源种类/设备型号：X射线/XXQ2505
+胶片类别：
+天津［
+焦
+距：
+600mm
+胶片规格：
+80X300（mm）
+管电压/同位素类型：170KV/一
+增感方式：
+Pb
+拍片条件
+管电流/活度：
+5mA/一
+像质计型号：
+10Fel6
+曝光时间：
+3min
+像质指数：
+13
+透照方法：
+双壁单影
+黑度：1.2-3.0
+总计：5张；
+拍片数量
+其中：一次返修张，二次返修_广张，
+三次返修张，
+扩透/张。
+蕞终评定结果
+I级/张，
+1级小张，
+IV级/张。
+II级1张，
+1.检测部位见（附图）
+_，检测结果见《射线检测报告（二）》。
+备注
+2.经X射线检测，未发现超标缺陷，符合JB/T4730.2-2005标准I级要求。
+检测
+第2$203年11月2
+市核人圣会T2013年11
+月2，日
+验专用章）
+尤仪构湖专川限
+
+===== page 5 =====
+
+刻槽锤断
+未见缺陷
+未见缺陷
+未见缺陷
+未见缺陷
+试验编号：J13-11-1
+HP2013-10
+E6010/E7010-P1
+SMAW/5GX
+2013 年11月2
+理化检發度
+断口
+中贝
+填表人：“終
+制造编号
+焊接材料
+焊接方式/位置
+代表部位
+硬度
+位置
+结论
+D=25.2m
+侧弯
+焊接试件力学和弯曲性能检验报告
+弯曲
+4857
+4857
+a =180°
+背弯
+完好
+完好
+黑化黄生用 掌鱼。
+面弯
+完好
+完好
+GB/T229
+冲击功（J）
+88
+80
+85
+91
+83
+87
+GB/T2653
+NB/T47014—2011
+试件编号
+焊工钢印
+坡口型式
+代表产品批号
+冲击
+试样尺寸5×10×55
+温度°C
+GBTT228
+焊接工艺评定
+L360/①323.9X6.3
+刻槽部位
+焊缝
+热影响区
+拉断
+部位
+热影
+响区
+热影
+响区
+委托单位：修文天燃气管道项目
+拉伸
+6b
+N/mm2
+名称
+材料牌号/规格
+材料代号
+热处理状况
+531.8
+538.7
+试验标准
+评定标准
+序号
+
+===== page 6 =====
+
+俨
+Bohler Welding
+GROUP
+00210232000%
+Wuliqiao St. 1, Chaoyang District
+Wylton Enterprices Co.， Ltd.
+WERKSZEUGNIS 2.2
+100024 Beijing
+10 Buiding # 10 Feizhongxin
+Test Report
+nach/ as per: EN 10204
+CHINA
+Nr./No.： 2-2011-03-2129742
+Rev. D Selle /pege: 1 von/of 1
+Aufrags-Nr.
+Bestell-Nr.
+Qrder No.
+Email
+vom7oi 26.04.2011
+Prufgegenaland
+Lieferschein/Pos./Splitt
+Worka order
+Diapatch note/pos./Splt
+2002198156/0010/ 900001
+1002112531
+100059
+Handelsname
+Test objedt
+Slabelektrode
+covered eleclrode
+vom/of 26.04.2011
+Normbezelchnung
+Produklkennzelchnung
+Marking of product
+Trade designation
+BOEHLER FOX CEL
+Y2014A05
+10011
+Standard classification
+EN ISO 2560-A:2005: E383G21/
+Serie
+Abmessung
+Dimension
+AYVS A5.1-04:E6010
+Llefermenge
+Lot No.
+3.20x350 mm （.128×147
+Anforderungen
+Quantity dellvered
+2126652
+Chemical oomposition in %
+Chemische Analyse In %
+Requirements
+18816 KG
+Reines Schweilgut
+Serie
+al-weld metal
+LotNo.
+C
+Si
+Mn
+P
+2125652
+0.125
+0.15
+0.54
+0.013
+0.008
+Tenslle Teel
+cugversuGn
+nach
+ardirg to
+EN 100021
+Probenvorbereitung
+Streckgrenze
+Specimen preparalion
+CN b76
+Prlftemp.
+Testtemp.
+T
+Yieldpolnt
+Reh
+Pelmgronze
+Zugfestigkeit
+Dehnung
+MPa
+Yeld strength
+Rp
+Tenste strength
+Rm
+Elongation
+A
+Elhschm.
+TBererkung
+Reduction
+Z
+Remarks
+Minlmum
+Kerbschlagv.
+Maximum
+20
+0.2% MPa 1.0%
+2390
+MPa
+470
+%Lo=5d
+540
+23
+%
+！
+Impact Test
+according to
+nach
+EN 10045-1
+Probenvorbereitung
+Proftemp.
+Specimen preparation
+Test temp，
+T
+Kerbschiagarbelt Mindest
+EN 875 VWT Oo
+Mitteiwert
+Lat. Breilg.
+Krist. Bruchanleil
+|Bernerkung
+20
+°C
+Absorbed energy minimuri valuea
+Awejaes
+Lateral expansion
+Shear fracture
+Remarks
+70
+%
+Bemerkung
+-30
+47
+Remarks
+：
+Ont/Tom
+Kapfenberg
+06.09.2011
+Datum / Date
+This cortlicatewes issued by DP-oquipment and does not iequtre signature
+Dleese Zeugnls wurde maschinell eetel und om ohne Unterschmtt.
+Authorized representatlve
+Abnahmebeauftragter
+；
+Bahder BowsiAtechnlk Austa GebH
+Wnkler
+indemotwww.hoehtotwiekdngt
+Bohlor-Wetdina-St.1
+A-0005 Kapfenber
+TeL: 443 10） 3802-3010
+Faic 14$ （0）38002301-65.193
+E.watpoennener.begng.onga.at
+ATU 27116007
+IVR 0862348
+Regketongerkht Leoben, FN77052M
+Deuteche Bark AG （BLZ 19100）； N. 31486000
+Swincode: DEUTATW
+BAN AT37 1910 0000$1446000
+
+===== page 7 =====
+
+SY
+承压设备焊接工艺评定
+编号：
+HP2014-11
+单
+位：
+贵州化工建设公司
+日
+期：
+2014年
+11 月29
+日
+
+===== page 8 =====
+
+预焊接工艺规程（续）
+WPS-2
+焊接位置：
+对接焊缝的位置
+角焊缝位置
+焊接方向：（向上、向下）
+向上
+50
+焊后热处理：
+焊接方向：（向上、向下）
+/
+温度范围（C）
+保温时间 （h）
+预热：
+预热温度（°C）（允许最低值）
+气体：
+保持预热时间
+层间温度（'C）（允许最高值》_
+L
+保护气纯氩
+气体种类
+混合比
+—1
+流量（L/ min）
+加热方式
+背面保护气_/
+尾部保护气_/
+9~10
+/
+/
+电流种类：
+电特性
+焊接电流范围（A）；
+90-130
+直流
+电弧电压（V）：
+_极性：
+打底DC
+20-24
+填充、盖面 DC*
+（按所煌位置和厚度，分别列出电流和电压范围，记入下表）
+焊道/焊层
+焊接方法
+填充材料
+焊接电流
+电弧电压
+牌号
+电流（A）
+（V）
+焊接速度
+直径
+（cm/min）
+线能量
+极性
+（kj/cm）
+正面1
+正面2
+GTAW
+正面3
+SMAW
+SMAW
+JTT-50
+J427
+J427
+①3.2
+①2.0
+DC™
+$3.2
+DC*
+110-130
+95-110
+95-110
+22-24
+20-22
+/
+DCt
+22-24
+/
+/
+/
+熔滴过瘦形式
+钨极类型及直径
+/
+①1.0
+焊丝送进速度（cm/min）.
+喷嘴直径（mm）
+/
+技术措施：
+焊前清理和层间清理；坡口周围30m范围内打磨
+摆动焊或不摆动焊：
+摆动
+摆动参数：
+导电嘴至工件距离（m）；
+单道焊或多道焊（每面）：单道焊每层打磨出金属光泽
+背面清根方法：
+坡口边缘各熔化1 m为宜
+单丝焊或多丝焊：
+其他：环境温度>0°C，相对湿度<90%
+锤击：
+编制
+刘步
+日期
+20141120
+审核
+日期
+o14.1.21
+批准
+日期
+
+===== page 9 =====
+
+焊接工艺评定报告（续一）
+PQR-2
+拉伸试验
+试验报告编号：
+2014-11-1
+试样编号
+试样宽度
+（mm）
+试样厚度
+（mm）
+横截面积
+（m2）
+断裂载荷
+（kN）
+抗拉强度
+（MPa）
+断裂部位和特征
+L1-1
+21.2
+6.3
+133.56
+68
+509
+热影响区
+L1-2
+20.5
+6.3
+129.15
+66.5
+514.9
+热影响区
+/
+/
+/
+1
+/
+/
+/
+/
+/
+/
+/
+/
+/
+/
+/
+弯曲试验
+试验报告编号：
+2014-11-1
+试样编号
+试样类型
+试样厚度
+M2-1
+M2-2
+面弯
+（m）
+弯心直径
+（mm）
+弯曲角度
+25.2
+（'）
+试验结果
+B2-3
+面弯
+6.3
+B2-4
+背弯
+背弯
+6.3
+25.2
+25.2
+180
+180
+完好
+6.3
+25.2
+180
+完好
+/
+6.3
+/
+180
+完好
+/
+/
+完好
+/
+冲击试验
+试验报告编号：
+试样编号
+试样尺寸
+（mm）
+缺口类型
+缺口位置
+试验温度
+（C）
+冲击吸收功
+（J）
+备注
+/
+/
+
+===== page 10 =====
+
+0.6mm
+合格
+焊接层次：正3
+坡口角度：60土5°
+边：1~1
+组对间隙：2士0.5
+背面清根：/
+预热方法：/
+测温方法：/
+焊缝外观检查记录
+工艺评定编号：HP2014-11
+缝余高（焊脚高）
+焊缝棱角
+错边量
+外观检查结果
+预热温度
+层间温度
+$0* $：
+2+0.5
+反面
+注：如需焊前预热，应记录加热方式、预热温度范围、层间温度及测温方法。
+保护气体流量（L/min）
+正面
+焊接层次、顺序示意图
+焊接速度
+Ccm/min）
+焊接工艺评定试件施焊及焊缝外观检查记录
+5G
+GTAW+SMAW
+ZX7-400
+3531
+2014-11-22
+电弧电
+压（V）
+20-22
+22-24
+22-24
+记录人：
+焊接电
+流（A）
+123
+102
+102
+坡口形式
+焊接位置
+焊接方法
+设备型号
+焊工钢印
+施焊日期
+施焊记录
+极性
+正接
+反接
+反接
+相对湿度：70%
+代号
+种类
+直流
+直流
+直流
+2014-11
+规格
+8 =6.5
+8 =6.3
+规格
+¢2.0
+¢3.2
+¢3.2
+焊材
+牌号
+20
+L360
+管对接
+牌号
+JTT-50
+J427
+J427
+环境温度：7C
+试件编号
+试件材料
+管材
+管材
+垫板
+接头及焊缝
+形式
+焊层
+
+===== page 11 =====
+
+DNT2014-11-1
+射线检报告
+工程名称：工艺评定
+第02页共2页
+（二）
+工程类别：试件
+单元名称：管道
+序
+号
+试件编号
+管道规格
+焊口号
+底片
+编号
+缺陷性质、尺寸及数量
+铘定
+B1-2
+B1-1
+未发现缺陷
+级别
+焊工号
+I
+未发现缺陷
+1
+HP2014-11
+①323.9×6.3/6.5
+B1
+B1-3
+气孔¢1×2
+B1-5
+B1-4
+未发现缺陷
+未发现缺陷
+3531
+B1-6
+未发现嶼陷
+I
+期人、麥华
+2014年11月23日
+
+===== page 12 =====
+
+销论
+Canciu-
+sion
+合格
+合格
+合格
+合格
+合格
+Wveic
+118
+190
+160
+118
+200
+161
+24
+180
+188
+184
+202
+Cu+Ni+Cr+
+Mo
+5、L： 熔族分析，P：产
+特种设备制造许可证：TS2710742-2014
+编号/Serial No.： 2HJZ2013-141
+会同号/Contract No.：
+ZHJZ-SR-GZRQ02-13-23
+Imnpact sample size （5°10°55mm）
+200
+210
+152
+162
+212
+116
+130
+180
+140
+160
+204
+164
+V+Nb+T
+0.04
+0.04
+0.04
+0.04
+0.04
+“技质-Z-B28/03
+页码/page:02/02
+0.04
+0.04
+0.G4
+学約
+iver-
+CEPcr：
+0.15
+0.14
+0.14
+0.15
+014
+0.14
+0.14
+0.14
+Testing Temp（0C）
+络合线+5
+Fusion Line +5
+CEmm
+0.28
+0.28
+0.28
+028
+026
+0.27
+0.27
+0.27
+事均
+223
+230
+232
+$73
+214
+215
+Composition
+Nb
+（沖音试拌尺寸5-10*55mm）limpact testing（）
+HAZ
+210
+260
+230
+210
+212
+230
+200
+242
+182
+208
+214
+Pipe cherical
+230
+230
+224
+162
+224
+218
+0.03
+0:03
+0.03
+0.03
+0.03
+003
+0.03
+0.03
+合计176根 2112.000米104.204吨。
+Pipe mechenical properies
+試验溫度（0C）
+平游：
+Av2:a89
+173
+220
+167
+185
+185
+化学成分（%）
+ng testing and Hydrotesting are qualfied, Hydto testing pressure 11.9f0 MPa, keping time：≥105, 2、 106% strip UT delection, 100% wek sear UT teisction are qualied, rasidia！
+管体横向
+Transversal pipe body
+200
+160
+226
+168
+194
+Mo
+0.03
+0.01
+0.01
+0.01
+0.OH
+0.01
+0.01
+0.01
+The pipes are tested according toCB/T9711-2011 PSL2.and counted nominally.amcunt 176 pcs 2112.000metres
+中海石油金洲管道有限公司
+产品质量证明书
+Product Quality Certification
+This is to certify that in accordance with the re!evant specifications and contracts the pipe manufactured
+物孝性能
+冲击 堅（）
+150
+180
+214
+168
+200
+170
+0.02
+0.02
+0.02
+0.02
+0.02
+0.02
+0.03
+0.03
+武验压力11.9*2 MPa，稔压时间≥10s.2、板材100⅔UT检验、焊縫全长100%UT检验会格，利磁量≤30高折.3、硬度、金相检验合格.4、外观：尺寸检验合格。
+Iness testing and Metallograhpic testing are qualied.4.The suriece qualiy and size inspecion are qualfed 5.L:Heat analysis, P: Pregvdt cnalvsis
+兹为你单位制造的钢管、经本公司技术质量部根据产品标准、技术条件检验合格、特发此证。
+210
+180
+220
+164
+180
+0.01
+0.01
+0.01
+c.oi
+001
+0.01
+0.01
+001
+深绿航
+拉强度
+Tensile
+Strength
+535
+520
+530
+555
+535
+555
+0.002
+0.002
+0.002
+0.002
+0.003
+0.003
+0.002
+0.002
+for your unit, were tested quaiified by our QualityDepartment.
+尼强比
+Rto.5/Rm
+0.018
+0.021
+0.021
+0.020
+0.019
+0.023
+0017
+0.017
+检查依据 CB/T9711-2011 PSL2：按理论计算，，
+体以向
+Longitudinel pipe body
+菇伸獎
+Elcngetic
+118
+1.17
+17
+1.17
+1.16
+1.17
+T行
+Tensile testin
+沆拉强
+Tensile
+Strength
+（Mpa）
+0.24
+0.22
+0.22
+0.23
+0.22
+025
+0.25
+104.204tons.
+Yield
+Strength
+RIO.5
+0.08
+0.07
+0.07
+0.08
+0.07
+0.07
+0.07
+0.07
+拉伸试验
+屈强比
+Rt0.5
+IRm
+0.73
+0.79
+0.79
+0.72
+0.74
+0.75
+式险区城
+Region
+菇伸率
+Elangation
+38.8
+41.6
+40.6
+36.6
+41.0
+38.4
+重取Weight
+（m）tons
+15.394
+29.601
+管侺機向
+Tranaversal pipe body
+抗拉强度
+Tensile
+Strengtn
+（pa）
+515
+499
+515
+555
+525
+530
+数量 Quantity
+米 Meter
+312.000
+600.000
+Yield
+Strength
+R:0.5
+378
+395
+406
+402
+390
+400
+根/Pcs
+50
+冽考用章
+产品名称/Description：高频直缝申阻煌钢管/HEY
+（億号
+Pipe number
+见清单）Pipe number
+^收货单位/Customer： 贵州揪何项且
+interval （Pipe number see
+detailed fist）
+13C15576-13C15674
+13C15797-13C15842
+T3C15852-13C15923
+13C16078 13C16138
+13C16139-13C16147
+飺号区间
+Interval （Pipe nunber see
+detailed 11st）
+T3C15576-13C15674
+13C15681-13C15682
+13C15797-13C15842
+13C15852-13C15923
+13C16078-13016138
+13C16139-13C16147
+钢级/Steel Grade: L360M
+规格/Size： ¢323.9mmX6.3mm
+管号区间
+N335796 13C15681-13C15682
+（管号见清单）
+各注：1、压病试验、水压试滨均宣体）
+品分析.\Remark 1.Fheyesaltsoi.fa）
+质徽经果；
+magnetism≤ 30.0e%2）
+LINE PIPE
+炉号
+Heat No.
+N315932
+炉号
+Heat No.
+N335796
+N315932

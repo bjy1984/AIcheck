@@ -1,0 +1,19 @@
+source_file,knowledge_type,category,page_count,line_count,char_count,avg_confidence,evidence,text_file,drawing_score,design_doc_score,site_photo_score,certificate_score,standard_score
+21fe60f0448d3fe8db68be35e811c560.jpg,标准规范类数据,standard,1,59,885,0.6864,视觉抽检确认：特种设备许可目录页,output/files_ocr/texts/21fe60f0448d3fe8db68be35e811c560.txt,0,5,0,0,3
+GB 50235-2010 工业金属管道工程施工规范.pdf,标准规范类数据,standard,129,7354,120211,0.651,文件名命中：标准/规范编号,output/files_ocr/texts/GB 50235-2010 工业金属管道工程施工规范.txt,110,184,99,173,657
+GB 50236-2011 现场设备、工业管道焊接工程施工规范.pdf,标准规范类数据,standard,132,4414,72939,0.5573,文件名命中：标准/规范编号,output/files_ocr/texts/GB 50236-2011 现场设备、工业管道焊接工程施工规范.txt,13,106,63,40,485
+GBT 8163-2018 输送流体用无缝钢管.pdf,标准规范类数据,standard,21,1240,19122,1.0,文件名命中：标准/规范编号,output/files_ocr/texts/GBT 8163-2018 输送流体用无缝钢管.txt,0,0,0,0,65
+GB∕T 20801.1-2020 压力管道规范 工业管道 第1部分：总则.pdf,标准规范类数据,standard,8,283,5996,0.5647,文件名命中：标准/规范编号,output/files_ocr/texts/GB∕T 20801.1-2020 压力管道规范 工业管道 第1部分：总则.txt,0,9,0,0,98
+GB∕T 20801.2-2020 压力管道规范 工业管道 第2部分：材料.pdf,标准规范类数据,standard,89,8941,102532,0.6305,文件名命中：标准/规范编号,output/files_ocr/texts/GB∕T 20801.2-2020 压力管道规范 工业管道 第2部分：材料.txt,4,7,3,16,1085
+GB∕T 20801.3-2020 压力管道规范 工业管道 第3部分：设计和计算.pdf,标准规范类数据,standard,98,5146,88588,0.6007,文件名命中：标准/规范编号,output/files_ocr/texts/GB∕T 20801.3-2020 压力管道规范 工业管道 第3部分：设计和计算.txt,17,12,10,3,773
+GB∕T 20801.4-2020 压力管道规范 工业管道 第4部分：制作与安装.pdf,标准规范类数据,standard,44,2872,41737,0.7049,文件名命中：标准/规范编号,output/files_ocr/texts/GB∕T 20801.4-2020 压力管道规范 工业管道 第4部分：制作与安装.txt,4,57,14,28,172
+GB∕T 20801.5-2020 压力管道规范 工业管道 第5部分：检验与试验.pdf,标准规范类数据,standard,17,852,15857,0.6556,文件名命中：标准/规范编号,output/files_ocr/texts/GB∕T 20801.5-2020 压力管道规范 工业管道 第5部分：检验与试验.txt,16,13,4,9,129
+GB∕T 20801.6-2020 压力管道规范 工业管道 第6部分：安全防护.pdf,标准规范类数据,standard,31,1790,25717,0.6402,文件名命中：标准/规范编号,output/files_ocr/texts/GB∕T 20801.6-2020 压力管道规范 工业管道 第6部分：安全防护.txt,1,5,1,3,162
+NBT47014承压设备焊接工艺评定.pdf,标准规范类数据,standard,88,4297,58418,0.6035,文件名命中：标准/规范编号,output/files_ocr/texts/NBT47014承压设备焊接工艺评定.txt,18,45,1,14,1060
+TSG D7006-2020 压力管道监督检验规则.pdf,标准规范类数据,standard,41,1184,30011,1.0,文件名命中：标准/规范编号,output/files_ocr/texts/TSG D7006-2020 压力管道监督检验规则.txt,18,139,68,64,368
+TSGZ6002-2010《焊接人员考核细则》.pdf,标准规范类数据,standard,64,3154,38321,0.6107,文件名命中：标准/规范编号,output/files_ocr/texts/TSGZ6002-2010《焊接人员考核细则》.txt,5,14,1,15,126
+交工资料.pdf,证书 OCR 类数据,certificate,24,2254,13317,0.719,主类型命中：交工/质量证明资料,output/files_ocr/texts/交工资料.txt,21,15,5,16,9
+材质证书.pdf,证书 OCR 类数据,certificate,7,549,5939,0.4446,主类型命中：质量证明书,output/files_ocr/texts/材质证书.txt,0,0,0,21,14
+特种设备生产和充装单位许可规则TSG 07-2019.pdf,标准规范类数据,standard,173,6071,142504,0.998,文件名命中：标准/规范编号,output/files_ocr/texts/特种设备生产和充装单位许可规则TSG 07-2019.txt,228,216,61,55,565
+设计资料.pdf,设计文件类数据,design_doc,10,1012,9843,0.7085,主类型命中：工艺设计说明书,output/files_ocr/texts/设计资料.txt,46,31,6,12,85
+资质证书.pdf,证书 OCR 类数据,certificate,6,194,2232,0.5727,主类型命中：特种设备安装改造维修许可证,output/files_ocr/texts/资质证书.txt,0,5,0,0,0

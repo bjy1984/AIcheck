@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>建设方工作台</title>
+  <link rel="stylesheet" href="./workbench_v2.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="hamburger">≡</div>
+        <div class="brand-mark">盾</div>
+        <div class="project-title">华东成品油管道改造工程</div>
+        <div class="top-status">只读查看</div>
+      </div>
+      <div class="global-search">⌕ 全局搜索（项目 / 节点 / 资料状态 / 报告 / 归档资料）</div>
+      <div class="top-actions">
+        <span>提醒<span class="notice-dot">4</span></span>
+        <span>消息<span class="notice-dot">2</span></span>
+        <span class="user"><span class="avatar"></span>建设方 陈经理⌄</span>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside class="left">
+        <section class="tree-wrap">
+          <div class="section-title">
+            <span>项目审核节点</span>
+            <span class="section-tools">只读 ⓘ</span>
+          </div>
+          <div class="tree">
+            <div class="tree-root"><span>⌄</span><span class="tree-label">华东成品油管道改造工程</span><span><span class="pill green">授权</span></span></div>
+            <div class="tree-group"><span>⌄</span><span>项目总览</span><span><span class="pill blue">79%</span></span></div>
+            <div class="tree-node active"><span>0</span><span class="tree-label">项目概况与资料状态</span><span><span class="pill green">只读</span></span></div>
+            <div class="tree-group"><span>⌄</span><span>材料</span><span>11节点 <span class="pill orange">异常</span></span></div>
+            <div class="tree-node"><span>16</span><span class="tree-label">压力管道元件以及安全附件产品质量证明文件</span><span><span class="pill red">需补正</span></span></div>
+            <div class="tree-node"><span>18</span><span class="tree-label">材料复验报告、无损检测报告</span><span><span class="pill orange">待提交</span></span></div>
+            <div class="tree-node"><span>21</span><span class="tree-label">材料标志移植</span><span><span class="pill green">通过</span></span></div>
+            <div class="tree-group"><span>⌄</span><span>焊接（粘接）</span><span>8节点</span></div>
+            <div class="tree-node"><span>25</span><span class="tree-label">焊接（粘接）工艺文件</span><span><span class="pill orange">待审查</span></span></div>
+            <div class="tree-node"><span>29</span><span class="tree-label">施焊参数、施焊记录、焊缝标识</span><span><span class="pill blue">已提交</span></span></div>
+            <div class="tree-group"><span>⌄</span><span>无损检测</span><span>8节点</span></div>
+            <div class="tree-node"><span>40</span><span class="tree-label">无损检测记录、报告</span><span><span class="pill blue">已提交</span></span></div>
+            <div class="tree-node"><span>41</span><span class="tree-label">射线检测底片抽查</span><span><span class="pill orange">待审查</span></span></div>
+            <div class="tree-group"><span>›</span><span>耐压试验</span><span>4节点</span></div>
+            <div class="tree-group"><span>›</span><span>报告归档</span><span><span class="pill orange">生成中</span></span></div>
+          </div>
+        </section>
+
+        <section class="node-files">
+          <div class="node-file-head">
+            <span>只读资料摘要 <small>当前项目</small></span>
+            <span class="pill green">只读</span>
+          </div>
+          <table class="table compact">
+            <thead>
+              <tr><th>类别</th><th>数量</th><th>状态</th><th>更新</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>检测节点</td><td>69</td><td><span class="pill blue">进行中</span></td><td>06-25</td></tr>
+              <tr><td>已通过节点</td><td>38</td><td><span class="pill green">通过</span></td><td>06-24</td></tr>
+              <tr><td>需补正节点</td><td>4</td><td><span class="pill red">提醒</span></td><td>06-25</td></tr>
+              <tr><td>监检报告</td><td>1</td><td><span class="pill orange">复核中</span></td><td>06-25</td></tr>
+              <tr><td>归档资料</td><td>0</td><td><span class="pill orange">待生成</span></td><td>-</td></tr>
+            </tbody>
+          </table>
+        </section>
+      </aside>
+
+      <main class="center">
+        <div class="page-head">
+          <div>
+            <div class="crumbs">当前位置：项目总览 / 项目概况与资料状态　　访问模式：<span class="pill green">建设方只读</span></div>
+            <h1>建设方项目概况</h1>
+            <div class="sub">只读查看项目进展、节点资料状态、异常提醒、报告状态和归档资料。</div>
+          </div>
+          <div class="actions">
+            <button class="btn">导出状态摘要</button>
+            <button class="btn">刷新状态</button>
+          </div>
+        </div>
+
+        <section class="card">
+          <div class="card-head"><h2>一、项目基础信息</h2><span class="pill green">只读模式</span></div>
+          <div class="card-body">
+            <div class="owner-dashboard">
+              <div class="metric"><div class="metric-label">资料完成率</div><div class="metric-value">79%</div><div class="progress"><span style="width:79%;"></span></div></div>
+              <div class="metric"><div class="metric-label">已通过节点</div><div class="metric-value green">38</div></div>
+              <div class="metric"><div class="metric-label">需补正</div><div class="metric-value red">4</div></div>
+              <div class="metric"><div class="metric-label">链路已生成</div><div class="metric-value orange">26</div></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>二、节点状态总览</h2>
+            <div class="sub">展示授权可见的节点资料摘要，不提供办理入口</div>
+          </div>
+          <div class="card-body">
+            <table class="table">
+              <thead>
+                <tr><th>业务大类</th><th>检测节点</th><th>资料状态</th><th>审查状态</th><th>挂载资料数</th><th>异常数量</th><th>最近更新时间</th></tr>
+              </thead>
+              <tbody>
+                <tr class="selected"><td>材料</td><td>16. 压力管道元件以及安全附件产品质量证明文件</td><td><span class="pill red">需补正</span></td><td>退回补正</td><td>6</td><td>1</td><td>2026-06-25</td></tr>
+                <tr><td>焊接（粘接）</td><td>25. 焊接（粘接）工艺文件</td><td><span class="pill blue">已提交</span></td><td>待审查</td><td>6</td><td>0</td><td>2026-06-24</td></tr>
+                <tr><td>无损检测</td><td>40. 无损检测记录、报告</td><td><span class="pill blue">已提交</span></td><td>待审查</td><td>8</td><td>0</td><td>2026-06-25</td></tr>
+                <tr><td>无损检测</td><td>42. 射线检测现场抽查</td><td><span class="pill red">需补正</span></td><td>补正中</td><td>3</td><td>1</td><td>2026-06-25</td></tr>
+                <tr><td>耐压试验</td><td>59. 耐压试验方案</td><td><span class="pill green">已通过</span></td><td>通过</td><td>2</td><td>0</td><td>2026-06-22</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>三、业务审查链路只读摘要</h2>
+            <div class="sub">建设方仅查看状态和摘要，不查看办理按钮</div>
+          </div>
+          <div class="card-body">
+            <table class="table">
+              <thead>
+                <tr><th>检测节点</th><th>审查对象</th><th>业务链路摘要</th><th>建议/状态</th><th>人工确认</th></tr>
+              </thead>
+              <tbody>
+                <tr class="selected"><td>24. 焊工资格证及持证合格项目</td><td>焊工 王建国</td><td>证书真实性、有效期、持证项目、跨文件一致性均通过。</td><td><span class="pill green">满足要求</span></td><td>待监检确认</td></tr>
+                <tr><td>16. 产品质量证明文件</td><td>钢管质量证明书</td><td>炉批号与材料清单不一致，需补充复验报告和差异说明。</td><td><span class="pill red">需补正</span></td><td>已退回责任单位</td></tr>
+                <tr><td>40. 无损检测记录、报告</td><td>RT 检测报告 R2</td><td>底片编号与报告一致，返修复拍闭环资料仍需补充。</td><td><span class="pill orange">部分通过</span></td><td>待检测机构补充</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <div class="split">
+          <section class="card">
+            <div class="card-head"><h2>四、关键时间线</h2></div>
+            <div class="card-body">
+              <div class="timeline">
+                <div class="time-row"><span class="time-dot"></span><div><strong>06-20 首批资料上传</strong><br>施工方完成材料与焊接资料初次提交。</div></div>
+                <div class="time-row"><span class="time-dot"></span><div><strong>06-23 检测资料提交</strong><br>无损检测机构提交检测记录与报告。</div></div>
+                <div class="time-row"><span class="time-dot red"></span><div><strong>06-25 监检退回材料补正</strong><br>材料节点存在炉批号差异说明缺失。</div></div>
+                <div class="time-row"><span class="time-dot orange"></span><div><strong>06-30 预计报告确认</strong><br>当前报告草稿处于监检复核中。</div></div>
+              </div>
+            </div>
+          </section>
+          <section class="card">
+            <div class="card-head"><h2>五、报告与归档状态</h2></div>
+            <div class="card-body">
+              <table class="table">
+                <tbody>
+                  <tr><th style="width:130px;">监检报告</th><td>工业管道施工监督检验报告 V0.8</td><td><span class="pill orange">复核中</span></td></tr>
+                  <tr><th>过程资料包</th><td>待报告确认后生成归档包</td><td><span class="pill orange">待生成</span></td></tr>
+                  <tr><th>最近异常</th><td>材料节点需补正、现场抽查照片需补正</td><td><span class="pill red">2项</span></td></tr>
+                  <tr><th>查看权限</th><td>仅可查看授权项目资料摘要和报告预览</td><td><span class="pill green">只读</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </main>
+
+      <aside class="right">
+        <h2 class="right-title">只读预览</h2>
+        <div class="preview-name">当前预览：项目资料状态摘要</div>
+        <div class="preview-actions">
+          <button class="btn">预览报告</button>
+          <button class="btn">浏览归档资料</button>
+          <button class="btn">查看节点资料摘要</button>
+        </div>
+        <div class="doc-preview">
+          <div class="doc-toolbar"><span>项目状态摘要</span><span>只读</span></div>
+          <div class="doc-canvas">
+            <div class="doc-paper">
+              <div class="paper-title">监督检验项目状态摘要</div>
+              <table class="mini-doc-table">
+                <tr><td>项目名称</td><td colspan="3">华东成品油管道改造工程</td></tr>
+                <tr><td>资料完成率</td><td>79%</td><td>已通过节点</td><td>38 / 69</td></tr>
+                <tr><td>需补正</td><td>4</td><td>待审查</td><td>12</td></tr>
+                <tr><td>报告状态</td><td>复核中</td><td>归档状态</td><td>待生成</td></tr>
+                <tr><td>最近更新时间</td><td colspan="3">2026-06-25 09:30</td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <section class="right-card">
+          <h3>当前节点资料摘要</h3>
+          <div class="body">
+            <table class="table compact">
+              <tbody>
+                <tr><th>当前节点</th><td>16. 压力管道元件以及安全附件产品质量证明文件</td></tr>
+                <tr><th>业务大类</th><td>材料</td></tr>
+                <tr><th>资料状态</th><td><span class="pill red">需补正</span></td></tr>
+                <tr><th>审查状态</th><td>退回补正</td></tr>
+                <tr><th>挂载资料数</th><td>6</td></tr>
+                <tr><th>最近异常</th><td>炉批号与材料清单不一致，需补充说明。</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="right-card">
+          <h3>业务链路状态</h3>
+          <div class="body">
+            <table class="table compact">
+              <tbody>
+                <tr><th>已生成链路</th><td>26 个节点</td></tr>
+                <tr><th>满足要求</th><td>18 个</td></tr>
+                <tr><th>需补正</th><td>4 个</td></tr>
+                <tr><th>待人工确认</th><td>7 个</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="right-card">
+          <h3>最近异常提醒</h3>
+          <div class="body">
+            <div class="timeline">
+              <div class="time-row"><span class="time-dot red"></span><div><strong>材料质量证明文件</strong><br>炉批号差异说明缺失。</div></div>
+              <div class="time-row"><span class="time-dot red"></span><div><strong>射线检测现场抽查</strong><br>照片缺少拍摄时间和焊口编号标识。</div></div>
+              <div class="time-row"><span class="time-dot orange"></span><div><strong>焊接工艺文件</strong><br>待监检方完成审查。</div></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="right-card">
+          <h3>强制限制</h3>
+          <div class="body">
+            <div class="readonly-mask">建设方页面不出现上传、退回、审查、复核、报告确认或归档操作按钮；这里只展示预览、浏览和摘要查看。</div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </div>
+  <script src="./static_ui_nav.js"></script>
+</body>
+</html>

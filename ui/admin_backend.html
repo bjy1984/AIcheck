@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>管理后台</title>
+  <link rel="stylesheet" href="./workbench_v2.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="hamburger">≡</div>
+        <div class="brand-mark">管</div>
+        <div class="project-title">监督检验协作系统后台</div>
+        <div class="top-status">基础配置</div>
+      </div>
+      <div class="global-search">⌕ 搜索（项目 / 单位 / 用户 / 角色 / 流程 / 待办 / 节点）</div>
+      <div class="top-actions">
+        <span>配置待办<span class="notice-dot">3</span></span>
+        <span>审计<span class="notice-dot">9</span></span>
+        <span class="user"><span class="avatar"></span>系统管理员 周工⌄</span>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside class="left">
+        <section class="tree-wrap">
+          <div class="section-title">
+            <span>后台菜单</span>
+            <span class="section-tools">⚙</span>
+          </div>
+          <div class="tree">
+            <div class="tree-root"><span>⌄</span><span class="tree-label">合同功能管理</span><span></span></div>
+            <div class="tree-group"><span>⌄</span><span>项目管理与基础配置</span><span>3页</span></div>
+            <div class="tree-node active"><span>01</span><span class="tree-label">项目列表</span><span><span class="pill blue">多项目</span></span></div>
+            <div class="tree-node"><span>02</span><span class="tree-label">项目详情</span><span><span class="pill green">基础信息</span></span></div>
+            <div class="tree-node"><span>03</span><span class="tree-label">项目立项向导</span><span><span class="pill orange">新建</span></span></div>
+            <div class="tree-group"><span>⌄</span><span>用户中心与组织权限</span><span>3页</span></div>
+            <div class="tree-node"><span>04</span><span class="tree-label">组织用户</span><span>68人</span></div>
+            <div class="tree-node"><span>05</span><span class="tree-label">角色权限配置</span><span><span class="pill blue">菜单/接口/动作</span></span></div>
+            <div class="tree-node"><span>06</span><span class="tree-label">项目成员授权</span><span><span class="pill green">按项目</span></span></div>
+            <div class="tree-group"><span>⌄</span><span>流程管理与待办任务</span><span>3页</span></div>
+            <div class="tree-node"><span>07</span><span class="tree-label">流程状态机</span><span><span class="pill blue">状态</span></span></div>
+            <div class="tree-node"><span>08</span><span class="tree-label">待办规则配置</span><span><span class="pill orange">规则</span></span></div>
+            <div class="tree-node"><span>09</span><span class="tree-label">流程实例详情</span><span><span class="pill green">流转</span></span></div>
+            <div class="tree-group"><span>⌄</span><span>规则与审计配置</span><span>7页</span></div>
+            <div class="tree-node"><span>10</span><span class="tree-label">项目审核节点维护</span><span><span class="pill blue">69项</span></span></div>
+            <div class="tree-node"><span>11</span><span class="tree-label">节点与角色权限矩阵</span><span><span class="pill blue">动作级</span></span></div>
+            <div class="tree-node"><span>12</span><span class="tree-label">AI 业务审查规则模板</span><span><span class="pill orange">新增</span></span></div>
+            <div class="tree-node"><span>13</span><span class="tree-label">外部核验工具源配置</span><span><span class="pill blue">4源</span></span></div>
+            <div class="tree-node"><span>14</span><span class="tree-label">证据字段映射配置</span><span><span class="pill blue">字段</span></span></div>
+            <div class="tree-node"><span>15</span><span class="tree-label">角色单位人员维护</span><span>基础</span></div>
+            <div class="tree-node"><span>16</span><span class="tree-label">操作日志</span><span>审计</span></div>
+          </div>
+        </section>
+
+        <section class="node-files">
+          <div class="node-file-head">
+            <span>后台边界</span>
+            <span class="pill green">无业务办理</span>
+          </div>
+          <table class="table compact">
+            <tbody>
+              <tr><th>合同1</th><td>项目列表、详情、立项向导</td></tr>
+              <tr><th>合同2</th><td>组织用户、角色权限、成员授权</td></tr>
+              <tr><th>合同3</th><td>流程状态机、待办规则、实例详情</td></tr>
+              <tr><th>边界</th><td>后台配置，不办理审查意见或报告确认</td></tr>
+            </tbody>
+          </table>
+        </section>
+      </aside>
+
+      <main class="center">
+        <div class="page-head">
+          <div>
+            <div class="crumbs">当前位置：管理后台 / 合同功能 1-3 覆盖　　配置范围：<span class="pill blue">项目、权限、流程</span>　　业务动作：<span class="pill red">不替代工作台办理</span></div>
+            <h1>合同功能 1-3 前端覆盖</h1>
+            <div class="sub">补齐项目管理、用户权限、流程待办的完整前端入口，支撑四类工作台按项目、角色和流程状态运转。</div>
+          </div>
+          <div class="actions">
+            <button class="btn primary">项目立项</button>
+            <button class="btn">项目成员授权</button>
+            <button class="btn">流程状态机</button>
+          </div>
+        </div>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>一、合同功能 1-3 模块入口</h2>
+            <div class="sub">每个入口均对应二级静态页面，覆盖合同要求的核心字段、筛选和状态。</div>
+          </div>
+          <div class="card-body">
+            <div class="metrics four">
+              <div class="metric"><div class="metric-label">项目管理页面</div><div class="metric-value">3</div></div>
+              <div class="metric"><div class="metric-label">权限管理页面</div><div class="metric-value green">3</div></div>
+              <div class="metric"><div class="metric-label">流程待办页面</div><div class="metric-value orange">3</div></div>
+              <div class="metric"><div class="metric-label">后台配置边界</div><div class="metric-value blue">只配置</div></div>
+            </div>
+            <table class="table" style="margin-top:12px;">
+              <thead><tr><th>合同项</th><th>新增前端页面</th><th>关键覆盖内容</th><th>入口</th></tr></thead>
+              <tbody>
+                <tr class="selected"><td>1. 项目管理与基础配置</td><td>项目列表、项目详情、项目立项向导</td><td>立项、项目详情、状态筛选、参建单位维护</td><td><a>项目列表</a></td></tr>
+                <tr><td>2. 用户中心与组织权限</td><td>组织用户、角色权限配置、项目成员授权</td><td>组织、账号、角色、菜单/接口/动作权限、项目授权</td><td><a>组织用户</a></td></tr>
+                <tr><td>3. 流程管理与待办任务</td><td>流程状态机、待办规则配置、流程实例详情</td><td>状态机、待办消息规则、项目节点流转历史</td><td><a>流程状态机</a></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><h2>二、模板概览</h2></div>
+          <div class="card-body">
+            <div class="metrics">
+              <div class="metric"><div class="metric-label">规则模板</div><div class="metric-value">18</div></div>
+              <div class="metric"><div class="metric-label">已绑定节点</div><div class="metric-value green">46</div></div>
+              <div class="metric"><div class="metric-label">外部工具源</div><div class="metric-value">4</div></div>
+              <div class="metric"><div class="metric-label">字段映射</div><div class="metric-value">126</div></div>
+              <div class="metric"><div class="metric-label">待配置</div><div class="metric-value orange">3</div></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>三、规则模板列表</h2>
+            <div class="sub">规则模板定义审查链路结构，不保存具体项目结论</div>
+          </div>
+          <div class="card-body">
+            <table class="table">
+              <thead>
+                <tr><th>模板名称</th><th>适用节点</th><th>审查对象</th><th>核验步骤</th><th>版本</th><th>状态</th><th>操作</th></tr>
+              </thead>
+              <tbody>
+                <tr class="selected"><td>Welder-Qualification-B</td><td>24. 焊工资格证及持证合格项目</td><td>人员证书</td><td>真实性、有效期、持证项目、一致性</td><td>v2.1</td><td><span class="pill green">启用</span></td><td><a>编辑模板</a></td></tr>
+                <tr><td>Material-Certificate-C</td><td>16. 产品质量证明文件</td><td>材料证明</td><td>炉批号、规格材质、标准版本、一致性</td><td>v1.8</td><td><span class="pill green">启用</span></td><td><a>编辑模板</a></td></tr>
+                <tr><td>NDT-Report-C</td><td>40. 无损检测记录、报告</td><td>检测报告</td><td>报告底片、比例、评定级别、返修闭环</td><td>v1.4</td><td><span class="pill orange">待完善</span></td><td><a>配置字段</a></td></tr>
+                <tr><td>Pressure-Test-A</td><td>61. 耐压试验压力、保压时间及结果</td><td>试验记录</td><td>压力表、介质、温度、压力、保压时间</td><td>v1.2</td><td><span class="pill green">启用</span></td><td><a>查看版本</a></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <div class="split">
+          <section class="card">
+            <div class="card-head"><h2>四、当前模板核验步骤</h2></div>
+            <div class="card-body">
+              <div class="review-chain">
+                <div class="review-step">
+                  <div class="step-no">1</div>
+                  <div><div class="step-title">证书真实性核验</div><div class="step-desc">输入证书编号、姓名、身份证尾号；输出证书是否存在和身份是否一致。</div></div>
+                  <span class="pill blue">工具</span>
+                </div>
+                <div class="review-step">
+                  <div class="step-no">2</div>
+                  <div><div class="step-title">有效期覆盖核验</div><div class="step-desc">输入证书有效期和项目周期；由日期规则判断是否覆盖施工周期。</div></div>
+                  <span class="pill green">规则</span>
+                </div>
+                <div class="review-step">
+                  <div class="step-no">3</div>
+                  <div><div class="step-title">持证项目适配核验</div><div class="step-desc">输入焊接方法、材质、规格范围；匹配项目焊接工艺要求。</div></div>
+                  <span class="pill green">规则</span>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section class="card">
+            <div class="card-head"><h2>五、外部核验工具源</h2></div>
+            <div class="card-body">
+              <table class="table compact">
+                <thead>
+                  <tr><th>工具源</th><th>类型</th><th>输入字段</th><th>失败处理</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td>焊工资格查询</td><td>网页/截图</td><td>证书编号</td><td>人工确认</td></tr>
+                  <tr><td>材料标准库</td><td>接口</td><td>标准号</td><td>降级检索</td></tr>
+                  <tr><td>日期覆盖规则</td><td>内置规则</td><td>起止日期</td><td>阻断提交</td></tr>
+                  <tr><td>OCR 证据定位</td><td>服务</td><td>文件版本</td><td>低置信度确认</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>六、动作级权限矩阵</h2>
+            <div class="sub">后台配置权限，不替代后端校验</div>
+          </div>
+          <div class="card-body">
+            <table class="table">
+              <thead>
+                <tr><th>动作</th><th>监检人员</th><th>施工方经办</th><th>无损检测经办</th><th>建设方用户</th><th>系统管理员</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>查看项目树</td><td><span class="pill green">允许</span></td><td><span class="pill green">允许</span></td><td><span class="pill green">允许</span></td><td><span class="pill green">允许</span></td><td><span class="pill green">允许</span></td></tr>
+                <tr><td>上传文件</td><td><span class="pill blue">节点附件</span></td><td><span class="pill green">允许</span></td><td><span class="pill green">允许</span></td><td><span class="pill red">禁止</span></td><td><span class="pill orange">配置项</span></td></tr>
+                <tr><td>审查/退回</td><td><span class="pill green">允许</span></td><td><span class="pill red">禁止</span></td><td><span class="pill red">禁止</span></td><td><span class="pill red">禁止</span></td><td><span class="pill red">禁止</span></td></tr>
+                <tr><td>配置规则模板</td><td><span class="pill red">禁止</span></td><td><span class="pill red">禁止</span></td><td><span class="pill red">禁止</span></td><td><span class="pill red">禁止</span></td><td><span class="pill green">允许</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+
+      <aside class="right">
+        <h2 class="right-title">模板详情</h2>
+        <div class="preview-name">Welder-Qualification-B v2.1</div>
+        <section class="right-card">
+          <h3>基础信息</h3>
+          <div class="body">
+            <table class="table compact">
+              <tbody>
+                <tr><th>模板名称</th><td>Welder-Qualification-B</td></tr>
+                <tr><th>适用节点</th><td>24. 焊工资格证及持证合格项目</td></tr>
+                <tr><th>审查对象</th><td>人员证书</td></tr>
+                <tr><th>当前版本</th><td>v2.1 <span class="pill green">启用</span></td></tr>
+                <tr><th>输出格式</th><td>审查对象、过程文件、核验步骤、证据、建议结论</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="right-card">
+          <h3>字段映射</h3>
+          <div class="body">
+            <table class="table compact">
+              <tbody>
+                <tr><th>证书编号</th><td>焊工资格证第 1 页 OCR 字段</td></tr>
+                <tr><th>有效期</th><td>资格证有效期字段</td></tr>
+                <tr><th>作业范围</th><td>资格证持证项目页</td></tr>
+                <tr><th>项目要求</th><td>焊接工艺卡字段</td></tr>
+                <tr><th>外部结果</th><td>资格网站查询截图字段</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="right-card">
+          <h3>版本记录</h3>
+          <div class="body">
+            <div class="timeline">
+              <div class="time-row"><span class="time-dot"></span><div><strong>v2.1 当前使用</strong><br>新增外部查询截图字段。</div></div>
+              <div class="time-row"><span class="time-dot"></span><div><strong>v2.0</strong><br>拆分真实性和有效期核验。</div></div>
+              <div class="time-row"><span class="time-dot orange"></span><div><strong>v1.8</strong><br>增加跨文件一致性核验。</div></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="right-card">
+          <h3>后台限制</h3>
+          <div class="body">
+            <div class="readonly-mask">后台只维护规则模板、工具源、字段映射和权限；不显示 AI 建议采纳、审查意见、退回补正、报告生成/复核或报告确认按钮。</div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </div>
+  <script src="./static_ui_nav.js"></script>
+</body>
+</html>
