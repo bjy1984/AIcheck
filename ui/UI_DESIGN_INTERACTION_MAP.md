@@ -105,6 +105,7 @@
 | 项目审核节点维护 | `#admin-node-tree` |
 | 节点与角色权限矩阵 | `#admin-permission-matrix` |
 | AI 业务审查规则模板、新增规则模板、复制模板、编辑模板 | `#admin-rule-template` |
+| AI 知识库管理、知识库总览、项目文件知识库、OCR/向量任务中心、多 LLM 反馈对比 | `ai_knowledge_base_admin.html` |
 | 外部核验工具源配置 | `#admin-tool-source` |
 | 证据字段映射配置、配置字段 | `#admin-field-mapping` |
 | 角色维护、单位管理、人员维护、人员与角色绑定 | `#admin-people-role` |

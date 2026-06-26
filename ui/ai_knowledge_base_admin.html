@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI 知识库管理</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="./workbench_v2.css" />
+  <style>
+    .kb-tree-link {
+      display: grid;
+      grid-template-columns: 20px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+      min-height: 34px;
+      margin-left: 28px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      color: #26364e;
+      text-decoration: none;
+      font-weight: 700;
+    }
+
+    .kb-tree-link.active {
+      background: var(--blue-soft);
+      color: var(--blue-2);
+      font-weight: 900;
+    }
+
+    .kb-tree-link:hover {
+      background: #f4f8ff;
+    }
+
+    .kb-link {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .kb-progress {
+      height: 8px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e6edf7;
+    }
+
+    .kb-progress span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--blue);
+    }
+
+    .kb-progress span.green {
+      background: var(--green);
+    }
+
+    .kb-progress span.orange {
+      background: var(--orange);
+    }
+
+    .kb-compare {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .kb-model {
+      min-height: 170px;
+      padding: 14px;
+      border: 1px solid var(--line-soft);
+      border-radius: 6px;
+      background: #fbfdff;
+    }
+
+    .kb-model h4 {
+      margin: 0 0 8px;
+      font-size: 15px;
+    }
+
+    .kb-model p {
+      margin: 0 0 10px;
+      color: #3f4f66;
+      font-weight: 700;
+      line-height: 1.55;
+    }
+
+    .top-actions a,
+    .actions a {
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="hamburger">≡</div>
+        <div class="brand-mark">知</div>
+        <div class="project-title">AI 知识库管理</div>
+        <div class="top-status">索引运行中</div>
+      </div>
+      <div class="global-search">⌕ 搜索（标准条文 / 项目文件 / 规则版本 / 推理日志 / 模型反馈）</div>
+      <div class="top-actions">
+        <a class="kb-link" href="./admin_backend.html">管理后台</a>
+        <span>失败任务<span class="notice-dot">7</span></span>
+        <span class="user"><span class="avatar"></span>系统管理员 周工⌄</span>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside class="left">
+        <section class="tree-wrap">
+          <div class="section-title">
+            <span>知识库菜单</span>
+            <span class="section-tools">↻ ⚙</span>
+          </div>
+          <div class="tree">
+            <div class="tree-root"><span>⌄</span><span class="tree-label">AI 知识库管理</span><span></span></div>
+            <a class="kb-tree-link active" href="#kb-overview"><span>01</span><span class="tree-label">知识库总览</span><span><span class="pill blue">运行</span></span></a>
+            <a class="kb-tree-link" href="#standard-library"><span>02</span><span class="tree-label">标准规范库</span><span>14份</span></a>
+            <a class="kb-tree-link" href="#project-file-library"><span>03</span><span class="tree-label">项目文件知识库</span><span>126份</span></a>
+            <a class="kb-tree-link" href="#file-knowledge-detail"><span>04</span><span class="tree-label">文件知识详情</span><span><span class="pill green">证据</span></span></a>
+            <a class="kb-tree-link" href="#task-center"><span>05</span><span class="tree-label">OCR/向量任务中心</span><span><span class="pill orange">7失败</span></span></a>
+            <a class="kb-tree-link" href="#rule-version"><span>06</span><span class="tree-label">业务规则版本管理</span><span>18规则</span></a>
+            <a class="kb-tree-link" href="#retrieval-test"><span>07</span><span class="tree-label">知识检索测试</span><span><span class="pill blue">测试</span></span></a>
+            <a class="kb-tree-link" href="#reasoning-log"><span>08</span><span class="tree-label">推理链路历史日志</span><span>248次</span></a>
+            <a class="kb-tree-link" href="#llm-compare"><span>09</span><span class="tree-label">多 LLM 反馈对比</span><span><span class="pill green">评估</span></span></a>
+            <a class="kb-tree-link" href="#kb-config"><span>10</span><span class="tree-label">知识库配置</span><span>策略</span></a>
+            <a class="kb-tree-link" href="#kb-audit"><span>11</span><span class="tree-label">操作审计日志</span><span>审计</span></a>
+          </div>
+        </section>
+
+        <section class="node-files">
+          <div class="node-file-head">
+            <span>后台边界</span>
+            <span class="pill green">只管理</span>
+          </div>
+          <table class="table compact">
+            <tbody>
+              <tr><th>不办理</th><td>退回补正、审查意见、报告复核</td></tr>
+              <tr><th>可管理</th><td>知识源、OCR、向量、规则版本、推理日志</td></tr>
+              <tr><th>权限</th><td>继承项目、单位、角色授权</td></tr>
+              <tr><th>审计</th><td>所有重跑、发布、回滚均留痕</td></tr>
+            </tbody>
+          </table>
+        </section>
+      </aside>
+
+      <main class="center">
+        <div class="page-head">
+          <div>
+            <div class="crumbs">当前位置：管理后台 / AI 知识库管理　　配置范围：<span class="pill blue">标准、项目文件、规则、推理</span>　　业务边界：<span class="pill red">不替代人工审查</span></div>
+            <h1>AI 知识库管理</h1>
+            <div class="sub">统一管理标准规范、项目文件、业务规则、OCR/向量任务、推理链路日志和多 LLM 反馈对比。</div>
+          </div>
+          <div class="actions">
+            <a class="btn primary" href="#standard-library">新增知识源</a>
+            <a class="btn" href="#task-center">重跑失败任务</a>
+            <a class="btn" href="#kb-audit">导出状态</a>
+          </div>
+        </div>
+
+        <section class="card" id="kb-overview">
+          <div class="card-head">
+            <h2>一、知识库总览</h2>
+            <div class="sub">标准规范、项目文件、规则版本和推理证据的整体状态</div>
+          </div>
+          <div class="card-body">
+            <div class="metrics">
+              <div class="metric"><div class="metric-label">标准规范</div><div class="metric-value">14</div></div>
+              <div class="metric"><div class="metric-label">项目文件</div><div class="metric-value green">126</div></div>
+              <div class="metric"><div class="metric-label">OCR 完成率</div><div class="metric-value">91%</div></div>
+              <div class="metric"><div class="metric-label">向量化完成率</div><div class="metric-value orange">84%</div></div>
+              <div class="metric"><div class="metric-label">失败任务</div><div class="metric-value red">7</div></div>
+            </div>
+            <table class="table" style="margin-top:12px;">
+              <thead><tr><th>知识库</th><th>文件数</th><th>切片数</th><th>向量数</th><th>索引版本</th><th>健康状态</th><th>最近更新</th></tr></thead>
+              <tbody>
+                <tr class="selected"><td>标准规范库</td><td>14</td><td>2,486</td><td>2,486</td><td>std-v2026.06</td><td><span class="pill green">健康</span></td><td>2026-06-26 09:10</td></tr>
+                <tr><td>项目文件知识库</td><td>126</td><td>8,921</td><td>7,496</td><td>proj-v2026.06.26</td><td><span class="pill orange">索引中</span></td><td>2026-06-26 09:31</td></tr>
+                <tr><td>业务规则知识库</td><td>18</td><td>146</td><td>146</td><td>rule-v2.1</td><td><span class="pill green">已发布</span></td><td>2026-06-25 18:20</td></tr>
+                <tr><td>推理证据库</td><td>248</td><td>1,132</td><td>1,132</td><td>trace-v2026.06</td><td><span class="pill blue">可检索</span></td><td>2026-06-26 08:55</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card" id="standard-library">
+          <div class="card-head">
+            <h2>二、标准规范库</h2>
+            <div class="sub">标准文件、条文拆分、版本、适用范围、OCR 与向量化状态</div>
+          </div>
+          <div class="card-body">
+            <table class="table">
+              <thead><tr><th>标准/规范</th><th>类别</th><th>版本</th><th>条文切片</th><th>OCR</th><th>向量化</th><th>适用范围</th><th>状态</th></tr></thead>
+              <tbody>
+                <tr class="selected"><td>TSG D7006-2020 压力管道监督检验规则</td><td>监管规则</td><td>2020</td><td>426</td><td><span class="pill green">已识别</span></td><td><span class="pill green">已向量化</span></td><td>工业管道监督检验</td><td><span class="pill green">启用</span></td></tr>
+                <tr><td>GB/T 20801.5-2020 检验与试验</td><td>国家标准</td><td>2020</td><td>318</td><td><span class="pill green">已识别</span></td><td><span class="pill green">已向量化</span></td><td>耐压、泄漏、无损检测</td><td><span class="pill green">启用</span></td></tr>
+                <tr><td>TSG Z6002-2010 焊接人员考核细则</td><td>人员资格</td><td>2010</td><td>209</td><td><span class="pill green">已识别</span></td><td><span class="pill orange">索引过期</span></td><td>焊工资格核验</td><td><span class="pill orange">待重建</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card" id="project-file-library">
+          <div class="card-head">
+            <h2>三、项目文件知识库</h2>
+            <div class="sub">从项目文件库、节点文件包、无损检测资料和监检资料同步入库</div>
+          </div>
+          <div class="card-body">
+            <table class="table">
+              <thead><tr><th>项目</th><th>节点</th><th>文件</th><th>版本</th><th>来源单位</th><th>OCR</th><th>切片</th><th>向量</th><th>索引</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr class="selected"><td>华东成品油管道</td><td>16. 产品质量证明文件</td><td>钢管质量证明书.pdf</td><td>V2</td><td>施工方</td><td><span class="pill green">已识别</span></td><td><span class="pill green">已切片</span></td><td><span class="pill green">已向量化</span></td><td>proj-v2026.06.26</td><td><a href="#file-knowledge-detail">详情</a></td></tr>
+                <tr><td>华东成品油管道</td><td>24. 焊工资格</td><td>焊工资格证-王建国.pdf</td><td>V2</td><td>施工方</td><td><span class="pill green">已识别</span></td><td><span class="pill green">已切片</span></td><td><span class="pill green">已向量化</span></td><td>proj-v2026.06.26</td><td><a href="#reasoning-log">推理引用</a></td></tr>
+                <tr><td>华东成品油管道</td><td>40. 无损检测记录、报告</td><td>RT 检测报告 R2.pdf</td><td>V1</td><td>无损检测</td><td><span class="pill blue">识别中</span></td><td><span class="pill orange">未切片</span></td><td><span class="pill orange">未向量化</span></td><td>-</td><td><a href="#task-center">查看任务</a></td></tr>
+                <tr><td>山西化工园区蒸汽管道</td><td>18. 材料复验报告</td><td>材料复验报告.pdf</td><td>V1</td><td>施工方</td><td><span class="pill red">识别失败</span></td><td><span class="pill orange">未切片</span></td><td><span class="pill orange">未向量化</span></td><td>-</td><td><a href="#task-center">重试</a></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card" id="file-knowledge-detail">
+          <div class="card-head">
+            <h2>四、文件知识详情</h2>
+            <div class="sub">单文件的 OCR 文本、切片结果、向量索引和推理引用</div>
+          </div>
+          <div class="card-body">
+            <table class="table compact">
+              <tbody>
+                <tr><th>文件</th><td>钢管质量证明书.pdf V2</td><th>Hash</th><td>8d34...af91</td></tr>
+                <tr><th>OCR 文本</th><td>8 页已识别，字段 42 个，低置信度 2 个</td><th>切片</th><td>36 个业务片段，平均 420 字</td></tr>
+                <tr><th>向量模型</th><td>embedding-v3-large</td><th>索引版本</th><td>proj-v2026.06.26</td></tr>
+                <tr><th>关联节点</th><td>16. 产品质量证明文件、18. 材料复验报告</td><th>推理引用</th><td>被 4 次 AI 业务审查链路引用</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <div class="split">
+          <section class="card" id="task-center">
+            <div class="card-head"><h2>五、OCR/向量任务中心</h2><span class="pill orange">7 个失败</span></div>
+            <div class="card-body">
+              <table class="table compact">
+                <thead><tr><th>任务</th><th>对象</th><th>状态</th><th>耗时</th></tr></thead>
+                <tbody>
+                  <tr><td>OCR-20260626-031</td><td>RT 检测报告 R2.pdf</td><td><span class="pill blue">识别中</span></td><td>00:42</td></tr>
+                  <tr><td>VEC-20260626-018</td><td>项目文件库增量索引</td><td><span class="pill orange">排队中</span></td><td>-</td></tr>
+                  <tr><td>OCR-20260625-099</td><td>材料复验报告.pdf</td><td><span class="pill red">识别失败</span></td><td>01:12</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <section class="card" id="retrieval-test">
+            <div class="card-head"><h2>六、知识检索测试</h2><span class="pill blue">召回验证</span></div>
+            <div class="card-body">
+              <table class="table compact">
+                <tbody>
+                  <tr><th>测试问题</th><td>焊工资格证有效期是否覆盖项目施工周期？</td></tr>
+                  <tr><th>召回范围</th><td>标准规范库 + 当前项目文件知识库 + 业务规则知识库</td></tr>
+                  <tr><th>命中证据</th><td>TSG Z6002 条文 3 条，焊工资格证页码 1，施工计划页码 2</td></tr>
+                  <tr><th>相似度</th><td>0.91 / 0.88 / 0.84</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <section class="card" id="rule-version">
+          <div class="card-head">
+            <h2>七、业务规则版本管理</h2>
+            <div class="sub">规则模板、Prompt、字段映射和工具源版本统一发布和回滚</div>
+          </div>
+          <div class="card-body">
+            <table class="table">
+              <thead><tr><th>规则模板</th><th>适用节点</th><th>规则版本</th><th>Prompt</th><th>字段映射</th><th>工具源</th><th>状态</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr class="selected"><td>Welder-Qualification-B</td><td>24. 焊工资格证</td><td>v2.1</td><td>prompt-v1.5</td><td>map-v1.3</td><td>tool-v2.0</td><td><span class="pill green">已发布</span></td><td><a href="#reasoning-log">查看引用</a></td></tr>
+                <tr><td>Material-Certificate-C</td><td>16. 产品质量证明文件</td><td>v1.8</td><td>prompt-v1.2</td><td>map-v1.1</td><td>tool-v1.4</td><td><span class="pill green">已发布</span></td><td><a href="#kb-audit">版本记录</a></td></tr>
+                <tr><td>NDT-Report-C</td><td>40. 无损检测记录、报告</td><td>v1.4</td><td>prompt-v0.9</td><td>map-v0.8</td><td>tool-v1.0</td><td><span class="pill orange">待发布</span></td><td><a href="#llm-compare">模型评估</a></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card" id="reasoning-log">
+          <div class="card-head">
+            <h2>八、推理链路历史日志</h2>
+            <div class="sub">回溯每次 AI 审查链路的输入、规则、召回、模型输出和人工处理结果</div>
+          </div>
+          <div class="card-body">
+            <table class="table">
+              <thead><tr><th>时间</th><th>项目/节点</th><th>审查对象</th><th>规则版本</th><th>模型</th><th>召回证据</th><th>AI 建议</th><th>人工处理</th></tr></thead>
+              <tbody>
+                <tr class="selected"><td>06-26 09:12</td><td>华东成品油 / 24</td><td>焊工 王建国</td><td>Welder v2.1</td><td>LLM-A</td><td>11 条</td><td><span class="pill green">满足要求</span></td><td>待确认</td></tr>
+                <tr><td>06-25 18:21</td><td>华东成品油 / 16</td><td>钢管质量证明书</td><td>Material v1.8</td><td>LLM-A</td><td>8 条</td><td><span class="pill red">需补正</span></td><td>已退回</td></tr>
+                <tr><td>06-25 16:40</td><td>广东能源站 / 40</td><td>RT 检测报告</td><td>NDT v1.4</td><td>LLM-B</td><td>6 条</td><td><span class="pill orange">需人工确认</span></td><td>复核中</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card" id="llm-compare">
+          <div class="card-head">
+            <h2>九、多 LLM 反馈对比</h2>
+            <div class="sub">同一审查对象在不同模型下的建议结果对比，仅用于规则优化和质量评估</div>
+          </div>
+          <div class="card-body">
+            <div class="kb-compare">
+              <div class="kb-model">
+                <h4>LLM-A 标准策略</h4>
+                <p>结论：满足要求。证据引用 11 条，提示 1 个需人工确认项。</p>
+                <span class="pill green">置信度 91%</span>
+              </div>
+              <div class="kb-model">
+                <h4>LLM-B 风险优先</h4>
+                <p>结论：需人工确认。强调外部查询截图日期与项目提交日期间隔较长。</p>
+                <span class="pill orange">置信度 84%</span>
+              </div>
+              <div class="kb-model">
+                <h4>LLM-C 成本模型</h4>
+                <p>结论：满足要求。证据引用 7 条，未识别出截图时效风险。</p>
+                <span class="pill blue">置信度 79%</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="split">
+          <section class="card" id="kb-config">
+            <div class="card-head"><h2>十、知识库配置</h2></div>
+            <div class="card-body">
+              <table class="table compact">
+                <tbody>
+                  <tr><th>OCR 引擎</th><td>Layout-OCR v3，低置信度阈值 0.85</td></tr>
+                  <tr><th>Embedding</th><td>embedding-v3-large，维度 3072</td></tr>
+                  <tr><th>切片策略</th><td>按章节、表格、证据字段混合切片</td></tr>
+                  <tr><th>索引策略</th><td>项目增量索引每日 02:00，标准规范手动发布</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <section class="card" id="kb-audit">
+            <div class="card-head"><h2>十一、操作审计日志</h2></div>
+            <div class="card-body">
+              <table class="table compact">
+                <tbody>
+                  <tr><th>09:31</th><td>周工重建项目文件知识库索引 proj-v2026.06.26</td></tr>
+                  <tr><th>09:10</th><td>系统同步 TSG D7006-2020 条文向量</td></tr>
+                  <tr><th>08:42</th><td>张工查看焊工资格证推理链路历史日志</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </main>
+
+      <aside class="right">
+        <h2 class="right-title">运行状态</h2>
+        <div class="preview-name">索引版本：proj-v2026.06.26</div>
+
+        <section class="right-card">
+          <h3>处理进度</h3>
+          <div class="body">
+            <table class="table compact">
+              <tbody>
+                <tr><th>OCR</th><td><div class="kb-progress"><span class="green" style="width:91%;"></span></div></td></tr>
+                <tr><th>切片</th><td><div class="kb-progress"><span class="green" style="width:88%;"></span></div></td></tr>
+                <tr><th>向量</th><td><div class="kb-progress"><span class="orange" style="width:84%;"></span></div></td></tr>
+                <tr><th>推理日志</th><td><span class="pill blue">248 次</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="right-card">
+          <h3>最近失败任务</h3>
+          <div class="body">
+            <table class="table compact">
+              <tbody>
+                <tr><th>OCR</th><td>材料复验报告.pdf 页面旋转异常</td></tr>
+                <tr><th>向量</th><td>RT 检测报告切片为空</td></tr>
+                <tr><th>索引</th><td>TSG Z6002 索引版本过期</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="right-card">
+          <h3>当前规则快照</h3>
+          <div class="body">
+            <table class="table compact">
+              <tbody>
+                <tr><th>规则</th><td>Welder-Qualification-B v2.1</td></tr>
+                <tr><th>Prompt</th><td>prompt-v1.5</td></tr>
+                <tr><th>字段映射</th><td>map-v1.3</td></tr>
+                <tr><th>工具源</th><td>tool-v2.0</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="right-card">
+          <h3>多模型评估摘要</h3>
+          <div class="body">
+            <table class="table compact">
+              <tbody>
+                <tr><th>一致结论</th><td>2 / 3 模型判断满足要求</td></tr>
+                <tr><th>分歧点</th><td>外部查询截图时效性</td></tr>
+                <tr><th>建议</th><td>加入截图日期核验规则</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="right-card">
+          <h3>后台限制</h3>
+          <div class="body">
+            <div class="readonly-mask">本页面仅管理知识源、规则版本、任务状态和推理日志，不提供采纳 AI 建议、退回补正、保存审查意见或报告复核按钮。</div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </div>
+</body>
+</html>

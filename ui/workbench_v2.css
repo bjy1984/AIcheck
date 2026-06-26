@@ -263,6 +263,30 @@ button.project-title {
   font-weight: 600;
 }
 
+.tree-node-link {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  margin-left: 28px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: #26364e;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.tree-node-link:hover {
+  background: #f4f8ff;
+}
+
+.tree-node-link.active {
+  background: var(--blue-soft);
+  color: var(--blue-2);
+  font-weight: 800;
+}
+
 .tree-node[hidden],
 .tree-node.tree-node-collapsed {
   display: none;
@@ -368,6 +392,9 @@ h3 {
 }
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 38px;
   padding: 0 17px;
   border-radius: 5px;
@@ -376,6 +403,7 @@ h3 {
   color: #26364e;
   font-weight: 800;
   cursor: default;
+  text-decoration: none;
 }
 
 .btn.primary {
