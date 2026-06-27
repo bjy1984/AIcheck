@@ -5,16 +5,18 @@ services:
       dockerfile: Dockerfile
     command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000
     environment:
-      AICHECK_MONGO_URL: mongodb://mongodb:27017
-      AICHECK_MONGO_DB: aicheck
-      AICHECK_REDIS_URL: redis://redis:6379/0
-      AICHECK_TASK_DISPATCH: celery
-      AICHECK_MINIO_ENDPOINT: minio:9000
-      AICHECK_MINIO_PUBLIC_ENDPOINT: 127.0.0.1:9000
-      AICHECK_MINIO_ACCESS_KEY: aicheck
-      AICHECK_MINIO_SECRET_KEY: aicheck-dev-password
-      LITELLM_BASE_URL: http://litellm-service:4000
-      LITELLM_API_KEY: sk-aicheck-dev
+      AICHECK_MONGO_URL: ${AICHECK_MONGO_URL:-mongodb://mongodb:27017}
+      AICHECK_MONGO_DB: ${AICHECK_MONGO_DB:-aicheck}
+      AICHECK_REDIS_URL: ${AICHECK_REDIS_URL:-redis://redis:6379/0}
+      AICHECK_TASK_DISPATCH: ${AICHECK_TASK_DISPATCH:-celery}
+      AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_ENDPOINT:-minio:9000}
+      AICHECK_MINIO_PUBLIC_ENDPOINT: ${AICHECK_MINIO_PUBLIC_ENDPOINT:-127.0.0.1:9000}
+      AICHECK_MINIO_ACCESS_KEY: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
+      AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:-aicheck-dev-password}
+      AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
+      LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://litellm-service:4000}
+      LITELLM_API_KEY: ${LITELLM_API_KEY:-sk-aicheck-dev}
+      AICHECK_REQUIRE_AUTH: ${AICHECK_REQUIRE_AUTH:-false}
     ports:
       - "8000:8000"
     depends_on:
@@ -29,15 +31,16 @@ services:
       dockerfile: Dockerfile
     command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO -Q ocr.parse_document,ocr.recognize_seals,knowledge.slice,knowledge.embed,inspection.ai_recheck,llm.compare,export.package
     environment:
-      AICHECK_MONGO_URL: mongodb://mongodb:27017
-      AICHECK_MONGO_DB: aicheck
-      AICHECK_REDIS_URL: redis://redis:6379/0
-      AICHECK_TASK_DISPATCH: celery
-      AICHECK_MINIO_ENDPOINT: minio:9000
-      AICHECK_MINIO_ACCESS_KEY: aicheck
-      AICHECK_MINIO_SECRET_KEY: aicheck-dev-password
-      LITELLM_BASE_URL: http://litellm-service:4000
-      LITELLM_API_KEY: sk-aicheck-dev
+      AICHECK_MONGO_URL: ${AICHECK_MONGO_URL:-mongodb://mongodb:27017}
+      AICHECK_MONGO_DB: ${AICHECK_MONGO_DB:-aicheck}
+      AICHECK_REDIS_URL: ${AICHECK_REDIS_URL:-redis://redis:6379/0}
+      AICHECK_TASK_DISPATCH: ${AICHECK_TASK_DISPATCH:-celery}
+      AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_ENDPOINT:-minio:9000}
+      AICHECK_MINIO_ACCESS_KEY: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
+      AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:-aicheck-dev-password}
+      AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
+      LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://litellm-service:4000}
+      LITELLM_API_KEY: ${LITELLM_API_KEY:-sk-aicheck-dev}
     depends_on:
       - mongodb
       - redis
@@ -51,9 +54,10 @@ services:
       dockerfile: Dockerfile
     command: uvicorn apps.ocr_service.main:app --host 0.0.0.0 --port 8010
     environment:
-      AICHECK_MINIO_ENDPOINT: minio:9000
-      AICHECK_MINIO_ACCESS_KEY: aicheck
-      AICHECK_MINIO_SECRET_KEY: aicheck-dev-password
+      AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_ENDPOINT:-minio:9000}
+      AICHECK_MINIO_ACCESS_KEY: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
+      AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:-aicheck-dev-password}
+      AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
     ports:
       - "8010:8010"
     depends_on:
@@ -75,8 +79,8 @@ services:
     image: minio/minio:RELEASE.2026-06-13T11-33-47Z
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: aicheck
-      MINIO_ROOT_PASSWORD: aicheck-dev-password
+      MINIO_ROOT_USER: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
+      MINIO_ROOT_PASSWORD: ${AICHECK_MINIO_SECRET_KEY:-aicheck-dev-password}
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -86,9 +90,9 @@ services:
   litellm-postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: litellm
-      POSTGRES_USER: litellm
-      POSTGRES_PASSWORD: litellm
+      POSTGRES_DB: ${LITELLM_POSTGRES_DB:-litellm}
+      POSTGRES_USER: ${LITELLM_POSTGRES_USER:-litellm}
+      POSTGRES_PASSWORD: ${LITELLM_POSTGRES_PASSWORD:-litellm}
     ports:
       - "5433:5432"
     volumes:
@@ -98,8 +102,8 @@ services:
     image: ghcr.io/berriai/litellm:main-latest
     command: ["--config", "/app/config/litellm.yaml", "--port", "4000", "--host", "0.0.0.0"]
     environment:
-      DATABASE_URL: postgresql://litellm:litellm@litellm-postgres:5432/litellm
-      LITELLM_MASTER_KEY: sk-aicheck-dev
+      DATABASE_URL: postgresql://${LITELLM_POSTGRES_USER:-litellm}:${LITELLM_POSTGRES_PASSWORD:-litellm}@litellm-postgres:5432/${LITELLM_POSTGRES_DB:-litellm}
+      LITELLM_MASTER_KEY: ${LITELLM_API_KEY:-sk-aicheck-dev}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     ports:
       - "4001:4000"

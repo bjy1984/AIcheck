@@ -2,6 +2,8 @@
 
 FastAPI backend for the AIcheck frontend contract, with production-like MongoDB, MinIO, Redis/Celery, OCR, and LiteLLM integration paths.
 
+Deployment guide: see [`../DEPLOYMENT.md`](../DEPLOYMENT.md).
+
 ## Services
 
 - `api-service`: FastAPI business API. It serves both stripped paths such as `/workbench/projects` and direct `/api/workbench/projects`.

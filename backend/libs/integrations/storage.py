@@ -46,6 +46,24 @@ class ObjectStorage:
         )
         return self._client
 
+    def presign_client(self) -> Any | None:
+        client = self.client()
+        if client is None:
+            return None
+        if not self.public_endpoint or self.public_endpoint == self.endpoint:
+            return client
+        try:
+            from minio import Minio
+        except Exception:
+            return client
+        endpoint, secure = normalize_minio_endpoint(self.public_endpoint, default_secure=self.secure)
+        return Minio(
+            endpoint,
+            access_key=self.access_key,
+            secret_key=self.secret_key,
+            secure=secure,
+        )
+
     def ensure_buckets(self) -> None:
         client = self.client()
         if client is None:
@@ -55,7 +73,7 @@ class ObjectStorage:
                 client.make_bucket(bucket)
 
     def presigned_put_url(self, bucket: str, object_name: str, *, content_type: str | None = None) -> str | None:
-        client = self.client()
+        client = self.presign_client()
         if client is None:
             return None
         self.ensure_buckets()
@@ -65,7 +83,7 @@ class ObjectStorage:
         parsed = parse_storage_url(url)
         if parsed is None:
             return None
-        client = self.client()
+        client = self.presign_client()
         if client is None:
             return None
         bucket, object_name = parsed
@@ -101,6 +119,13 @@ def parse_storage_url(url: str) -> tuple[str, str] | None:
     if parsed.scheme != "minio" or not parsed.netloc:
         return None
     return parsed.netloc, unquote(parsed.path.lstrip("/"))
+
+
+def normalize_minio_endpoint(endpoint: str, *, default_secure: bool) -> tuple[str, bool]:
+    if "://" not in endpoint:
+        return endpoint.strip("/"), default_secure
+    parsed = urlparse(endpoint)
+    return (parsed.netloc or parsed.path).strip("/"), parsed.scheme == "https"
 
 
 object_storage = ObjectStorage()
