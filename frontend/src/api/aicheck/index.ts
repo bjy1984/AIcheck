@@ -587,6 +587,8 @@ export type LlmComparePayload = {
   runId: string
   question: string
   createdAt: string
+  modelCodes: string[]
+  status?: '排队中' | '运行中' | '完成' | '失败'
   results: Array<{
     modelCode: string
     answer: string
@@ -603,6 +605,7 @@ export type LlmCompareRunSummary = {
   createdAt: string
   projectId?: string
   nodeId?: number
+  status?: '排队中' | '运行中' | '完成' | '失败'
 }
 
 export type AuditLogPayload = {

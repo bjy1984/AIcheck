@@ -419,8 +419,8 @@ const getErrorMessage = (error: unknown) => {
   return getAicheckErrorMessage(error, '接口返回异常，请稍后重试。')
 }
 
-const showActionError = (fallback: string) => {
-  ElMessage.error(getAicheckErrorMessage(undefined, fallback))
+const showActionError = (fallback: string, error?: unknown) => {
+  ElMessage.error(getAicheckErrorMessage(error, fallback))
 }
 
 const showUploadDrawerError = (fallback: string, error?: unknown) => {

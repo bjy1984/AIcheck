@@ -21,7 +21,7 @@ const reasonHints: Record<string, string> = {
   FORBIDDEN: '请确认当前角色、项目、节点和动作授权，必要时联系管理员补充权限。',
   ARCHIVED_READONLY: '当前对象已归档或处于只读状态，只能查看、预览或下载。',
   TASK_RUNNING: '已有任务正在运行，请稍后查看任务进度，避免重复触发。',
-  IDEMPOTENCY_CONFLICT: '检测到重复请求或幂等键冲突，请刷新状态后再重试。',
+  IDEMPOTENCY_KEY_CONFLICT: '检测到重复请求或幂等键冲突，请刷新状态后再重试。',
   ETAG_CONFLICT: '数据版本已变化，请先刷新最新数据，再重新提交。',
   FILE_TOO_LARGE: '请压缩文件、拆分文件或改用符合限制的资料重新上传。',
   NDT_FILE_TOO_LARGE: '请压缩检测资料、拆分文件或改用符合限制的资料重新上传。',

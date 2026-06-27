@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import io
+import json
+import inspect
+import zipfile
+
 from fastapi.testclient import TestClient
 
-from libs.db.indexes import ensure_mongo_indexes
+from libs.db.indexes import MONGO_INDEXES, ensure_mongo_indexes
+from libs.db.mongo import run_transaction_probe
 from apps.api.main import app
-from libs.db.repository import repo
+from libs.db.repository import IDEMPOTENCY_COLLECTION, SINGLETON_COLLECTIONS, STATE_COLLECTIONS, repo
 
 
 client = TestClient(app)
@@ -41,6 +47,7 @@ def test_response_envelope_and_api_prefix_compatibility() -> None:
 
     assert data[0]["id"] == "P-2026-HDCP-001"
     assert prefixed[0]["currentNodeId"] == 24
+    assert prefixed[0]["riskLevel"] == "高"
 
 
 def test_healthz_reports_runtime_flags(monkeypatch) -> None:
@@ -57,6 +64,29 @@ def test_healthz_reports_runtime_flags(monkeypatch) -> None:
     assert "objectStorageEnabled" in health
 
 
+def test_mongo_transaction_probe_endpoint_is_admin_only_when_auth_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
+    contractor = assert_ok(client.post("/api/auth/login", json={"username": "contractor", "password": "contractor"}))
+    admin = assert_ok(client.post("/api/auth/login", json={"username": "admin", "password": "admin"}))
+
+    assert_error(
+        client.get(
+            "/api/system/mongo-transaction-probe",
+            headers={"Authorization": f"Bearer {contractor['token']}"},
+        ),
+        "FORBIDDEN",
+    )
+    result = assert_ok(
+        client.get(
+            "/api/system/mongo-transaction-probe",
+            headers={"Authorization": f"Bearer {admin['token']}"},
+        )
+    )
+
+    assert result["mongoEnabled"] is False
+    assert result["transactionProbe"] == "skipped"
+
+
 def test_ocr_healthz_reports_pipeline_flags(monkeypatch) -> None:
     from apps.ocr_service.main import app as ocr_app
 
@@ -68,6 +98,35 @@ def test_ocr_healthz_reports_pipeline_flags(monkeypatch) -> None:
     assert "pipelineAvailable" in health
     assert "pipelineBackend" in health
     assert health["placeholderAllowed"] is False
+
+
+def test_ocr_parse_rejects_missing_storage_key() -> None:
+    from apps.ocr_service.main import app as ocr_app
+
+    ocr_client = TestClient(ocr_app)
+    payload = ocr_client.post("/internal/ocr/parse", json={}).json()
+
+    assert payload["code"] != 0
+    assert payload["data"]["reason"] == "VALIDATION_ERROR"
+    assert "operationId" in payload
+    assert "serverTime" in payload
+
+
+def test_litellm_client_rejects_default_key_when_production_flags_are_enabled(monkeypatch) -> None:
+    from libs.integrations.litellm_client import LiteLLMClient
+
+    monkeypatch.delenv("LITELLM_API_KEY", raising=False)
+    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
+
+    try:
+        LiteLLMClient()
+    except RuntimeError as exc:
+        assert "LITELLM_API_KEY" in str(exc)
+    else:
+        raise AssertionError("production LiteLLM client must require an explicit key")
+
+    client_with_key = LiteLLMClient(api_key="sk-production-test")
+    assert client_with_key.api_key == "sk-production-test"
 
 
 def test_login_compatibility_paths() -> None:
@@ -171,6 +230,52 @@ def test_submission_idempotency_replays_same_response() -> None:
         client.post(f"/projects/{project_id}/submissions", json=conflict_payload, headers=headers),
         "IDEMPOTENCY_KEY_CONFLICT",
     )
+
+
+def test_global_idempotency_covers_mutations_without_explicit_route_parameter() -> None:
+    project_id = "P-2026-HDCP-001"
+    document_id = "DOC-20260625-003"
+    headers = {"Idempotency-Key": "append-version-once"}
+    payload = {"fileSize": 1024, "mode": "append"}
+    before_count = len(repo.versions_for_document(document_id))
+
+    first = assert_ok(client.post(f"/projects/{project_id}/documents/{document_id}/versions", json=payload, headers=headers))
+    second = assert_ok(client.post(f"/projects/{project_id}/documents/{document_id}/versions", json=payload, headers=headers))
+
+    assert first["version"]["id"] == second["version"]["id"]
+    assert len(repo.versions_for_document(document_id)) == before_count + 1
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/documents/{document_id}/versions",
+            json={**payload, "fileSize": 2048},
+            headers=headers,
+        ),
+        "IDEMPOTENCY_KEY_CONFLICT",
+    )
+
+
+def test_global_audit_covers_mutations_without_explicit_audit_log() -> None:
+    project_id = "P-2026-HDCP-001"
+    before = len(repo.state["audit_logs"])
+
+    run = assert_ok(client.post(f"/projects/{project_id}/inspection/nodes/24/ai-recheck"))
+
+    assert "runId" in run
+    assert len(repo.state["audit_logs"]) == before + 1
+    audit = repo.state["audit_logs"][0]
+    assert audit["objectType"] == "ApiMutation"
+    assert audit["objectId"] == f"/projects/{project_id}/inspection/nodes/24/ai-recheck"
+    assert audit["operationId"].startswith("OP-")
+
+
+def test_global_audit_does_not_duplicate_explicit_audit_log() -> None:
+    project_id = "P-2026-HDCP-001"
+    before = len(repo.state["audit_logs"])
+
+    result = assert_ok(client.patch(f"/projects/{project_id}", json={"name": "审计不重复"}))
+
+    assert result["auditLogId"]
+    assert len(repo.state["audit_logs"]) == before + 1
 
 
 def test_withdraw_submission_items_enforces_batch_and_locked_state() -> None:
@@ -290,12 +395,27 @@ def test_owner_write_forbidden_and_archived_readonly() -> None:
         headers={"X-Role": "owner"},
     )
     assert_error(owner_write, "FORBIDDEN")
+    assert_error(client.post("/todos/TODO-001/complete", headers={"X-Role": "owner"}), "FORBIDDEN")
+    assert_error(client.post("/messages/MSG-001/read", headers={"X-Role": "owner"}), "FORBIDDEN")
+    assert_error(client.post("/messages/read-all", headers={"X-Role": "owner"}), "FORBIDDEN")
 
     archived = client.post(
         "/projects/P-2025-CQARCH-007/documents/upload-session",
         json={"files": [{"fileName": "readonly.pdf", "fileSize": 1, "fileType": "application/pdf"}]},
     )
     assert_error(archived, "ARCHIVED_READONLY")
+    assert_error(
+        client.post("/projects/P-2025-CQARCH-007/documents/batch-classify", json={}),
+        "ARCHIVED_READONLY",
+    )
+    assert_error(
+        client.post("/projects/P-2025-CQARCH-007/inspection/nodes/24/attachments", json={}),
+        "ARCHIVED_READONLY",
+    )
+    assert_error(
+        client.post("/projects/P-2025-CQARCH-007/inspection/nodes/24/file-bindings", json={"documentIds": ["DOC-20260625-001"]}),
+        "ARCHIVED_READONLY",
+    )
 
 
 def test_if_match_conflict_and_review_admin_guard() -> None:
@@ -353,16 +473,103 @@ def test_required_action_inference_covers_core_mutations() -> None:
 
     cases = [
         ("POST", "/api/projects/P-2026-HDCP-001/submissions", "submission:submit"),
+        ("POST", "/api/projects/P-2026-HDCP-001/documents/batch-classify", "file:bind"),
         ("POST", "/api/projects/P-2026-HDCP-001/inspection/nodes/24/report-review", "report:generate"),
         ("POST", "/api/projects/P-2026-HDCP-001/reports/RPT-001/archive", "report:archive"),
         ("POST", "/api/projects/P-2026-HDCP-001/ndt/submissions", "ndt:submit"),
+        ("POST", "/api/todos/TODO-001/complete", "todo:update"),
+        ("POST", "/api/messages/MSG-001/read", "message:update"),
+        ("POST", "/api/knowledge/retrieval-test", "knowledge:view"),
         ("POST", "/api/admin/config-overview/publish", "admin:config"),
+        ("PUT", "/api/admin/config-items/todo-rule/TR-001", "admin:config"),
         ("PATCH", "/api/knowledge/config", "knowledge:manage"),
+        ("PUT", "/api/knowledge/config", "knowledge:manage"),
+        ("POST", "/api/llm/compare", "llm:compare"),
     ]
 
     for method, path, expected in cases:
         assert required_action_for_request(method, path) == expected
     assert required_action_for_request("GET", "/api/admin/config-overview") is None
+
+
+def test_all_non_public_mutating_routes_have_inferred_action_codes() -> None:
+    from libs.security.actions import MUTATING_METHODS, required_action_for_request
+
+    public_mutations = {
+        ("POST", "/mock/user/login"),
+        ("POST", "/api/mock/user/login"),
+        ("POST", "/auth/login"),
+        ("POST", "/api/auth/login"),
+        ("POST", "/auth/logout"),
+        ("POST", "/api/auth/logout"),
+    }
+    missing = []
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        methods = set(getattr(route, "methods", set()) or set()) & MUTATING_METHODS
+        for method in methods:
+            if (method, path) in public_mutations:
+                continue
+            if required_action_for_request(method, path) is None:
+                missing.append(f"{method} {path}")
+
+    assert missing == []
+
+
+def test_project_mutating_routes_are_archived_readonly_guarded() -> None:
+    from libs.security.actions import MUTATING_METHODS
+    import apps.api.routes as route_module
+
+    delegated_guard_routes = {
+        ("POST", "/projects/{project_id}/inspection/nodes/{node_id}/attachments"),
+        ("POST", "/projects/{project_id}/inspection/nodes/{node_id}/file-bindings"),
+        ("POST", "/api/projects/{project_id}/inspection/nodes/{node_id}/attachments"),
+        ("POST", "/api/projects/{project_id}/inspection/nodes/{node_id}/file-bindings"),
+    }
+    missing = []
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        if "{project_id}" not in path:
+            continue
+        methods = set(getattr(route, "methods", set()) or set()) & MUTATING_METHODS
+        for method in methods:
+            if (method, path) in delegated_guard_routes:
+                continue
+            endpoint = getattr(route, "endpoint", None)
+            source = inspect.getsource(endpoint) if endpoint is not None else ""
+            if "mutation_guard(" not in source:
+                missing.append(f"{method} {path}")
+
+    assert missing == []
+
+
+def test_all_non_public_mutating_routes_are_audit_logged() -> None:
+    from apps.api.main import audit_scope
+    from libs.security.actions import MUTATING_METHODS
+
+    unaudited_public_routes = {
+        ("POST", "/mock/user/login"),
+        ("POST", "/api/mock/user/login"),
+        ("POST", "/auth/login"),
+        ("POST", "/api/auth/login"),
+        ("POST", "/auth/logout"),
+        ("POST", "/api/auth/logout"),
+    }
+    missing = []
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        methods = set(getattr(route, "methods", set()) or set()) & MUTATING_METHODS
+        for method in methods:
+            if (method, path) in unaudited_public_routes:
+                continue
+            assert audit_scope(type("Req", (), {"method": method, "url": type("Url", (), {"path": path})()})()) is not None
+            endpoint = getattr(route, "endpoint", None)
+            source = inspect.getsource(endpoint) if endpoint is not None else ""
+            has_explicit_audit = "mutation_result" in source or "add_audit" in source or "auditLogId" in source
+            if not has_explicit_audit and audit_scope(type("Req", (), {"method": method, "url": type("Url", (), {"path": path})()})()) is None:
+                missing.append(f"{method} {path}")
+
+    assert missing == []
 
 
 def test_inferred_action_codes_block_role_bypass_when_auth_required(monkeypatch) -> None:
@@ -442,7 +649,7 @@ def test_body_node_scope_is_enforced_for_project_mutations(monkeypatch) -> None:
     assert_error(
         client.post(
             f"/api/projects/{project_id}/ndt/records/import",
-            json={"nodeId": 24, "rows": [{"recordNo": "OUT-OF-SCOPE", "weldNo": "W-24"}]},
+            json={"nodeId": 24, "rows": [{"recordNo": "OUT-OF-SCOPE", "weldNo": "W-24", "method": "RT"}]},
             headers=ndt_headers,
         ),
         "FORBIDDEN",
@@ -458,7 +665,7 @@ def test_body_node_scope_is_enforced_for_project_mutations(monkeypatch) -> None:
     ndt_import = assert_ok(
         client.post(
             f"/api/projects/{project_id}/ndt/records/import",
-            json={"nodeId": 40, "rows": [{"recordNo": "IN-SCOPE", "weldNo": "W-40"}]},
+            json={"nodeId": 40, "rows": [{"recordNo": "IN-SCOPE", "weldNo": "W-40", "method": "RT"}]},
             headers=ndt_headers,
         )
     )
@@ -757,6 +964,81 @@ def test_upload_creates_knowledge_task_and_retrieval_works() -> None:
     assert retrieval["hits"]
 
 
+def test_upload_and_ndt_validation_errors_match_contract() -> None:
+    project_id = "P-2026-HDCP-001"
+
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/documents/upload-session",
+            json={"files": [{"fileName": "empty.pdf", "fileSize": 0, "fileType": "application/pdf"}]},
+        ),
+        "VALIDATION_ERROR",
+    )
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/documents/upload-session",
+            json={"files": [{"fileName": "tool.exe", "fileSize": 1024, "fileType": "application/x-msdownload"}]},
+        ),
+        "UNSUPPORTED_FILE_TYPE",
+    )
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/documents/upload-session",
+            json={"files": [{"fileName": "huge.pdf", "fileSize": 500 * 1024 * 1024 + 1, "fileType": "application/pdf"}]},
+        ),
+        "FILE_TOO_LARGE",
+    )
+
+    upload = assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/upload-session",
+            json={"files": [{"fileName": "match.pdf", "fileSize": 1024, "fileType": "application/pdf"}]},
+        )
+    )
+    assert_error(
+        client.post(f"/projects/NOT-A-PROJECT/documents/upload-session/{upload['uploadSessionId']}/complete"),
+        "NOT_FOUND",
+    )
+
+    assert_error(
+        client.post(f"/projects/{project_id}/ndt/films", json={"nodeId": 40, "filmNo": "F-1", "weldNo": "W-1"}),
+        "NDT_FILM_REQUIRED",
+    )
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/ndt/records/import",
+            json={"nodeId": 40, "rows": [{"recordNo": "R-1", "weldNo": "W-1"}]},
+        ),
+        "NDT_RECORD_REQUIRED",
+    )
+    assert_error(
+        client.post(f"/projects/{project_id}/ndt/reports/upload-session", json={"nodeId": 40, "files": []}),
+        "NDT_REPORT_REQUIRED",
+    )
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/ndt/reports/upload-session",
+            json={"nodeId": 40, "files": [{"fileName": "scan.exe", "fileSize": 1024, "fileType": "application/x-msdownload"}]},
+        ),
+        "UNSUPPORTED_NDT_FILE_TYPE",
+    )
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/ndt/reports/upload-session",
+            json={"nodeId": 40, "files": [{"fileName": "scan.dcm", "fileSize": 500 * 1024 * 1024 + 1, "fileType": "application/dicom"}]},
+        ),
+        "NDT_FILE_TOO_LARGE",
+    )
+    assert_error(
+        client.post(f"/projects/{project_id}/ndt/submissions", json={"nodeId": 40, "reportIds": []}),
+        "NDT_REPORT_REQUIRED",
+    )
+    assert_error(
+        client.post(f"/projects/{project_id}/ndt/rectifications", json={"nodeId": 40, "reportIds": ["NDT-RPT-001"]}),
+        "NDT_RECTIFICATION_REQUIRED",
+    )
+
+
 def test_cross_node_submission_scope_expands_empty_binding_ids() -> None:
     project_id = "P-2026-HDCP-001"
     draft = assert_ok(
@@ -787,7 +1069,8 @@ def test_ndt_submit_preserves_pending_report_and_rectification_updates_feedback(
     assert submit["nextStatus"] == "待审查"
 
     reports = assert_ok(client.get(f"/projects/{project_id}/ndt/reports"))
-    assert any(report["status"] == "待提交" for report in reports["items"])
+    assert any(report["id"] == "NDT-RPT-001" and report["status"] == "待审查" for report in reports["items"])
+    assert not any(str(report["reportNo"]).startswith("RT-FOLLOW") for report in reports["items"])
 
     rectification = assert_ok(
         client.post(
@@ -868,6 +1151,8 @@ def test_admin_project_creation_returns_four_initial_members_and_no_backend_inte
     assert gaps["fields"] == []
     all_contracts = assert_ok(client.get("/admin/integration-contract"))
     assert all_contracts["summary"]["blockers"] == 0
+    assert all_contracts["summary"]["pending"] == 0
+    assert all_contracts["summary"]["aligned"] == all_contracts["summary"]["total"]
 
 
 def test_upload_complete_inline_ocr_writes_fields_and_slice_task(monkeypatch) -> None:
@@ -912,6 +1197,34 @@ def test_upload_complete_inline_ocr_writes_fields_and_slice_task(monkeypatch) ->
     chunks = assert_ok(client.get(f"/knowledge/files/{knowledge_file_id}/chunks"))
     assert sliced["chunkCount"] == chunks["total"]
     assert chunks["items"][0]["text"].startswith("证书编号")
+
+
+def test_document_preview_and_download_use_current_version_signed_get(monkeypatch) -> None:
+    captured: list[tuple[str, str | None]] = []
+
+    def fake_presigned_get(url: str, *, file_name: str | None = None):
+        captured.append((url, file_name))
+        return f"https://minio.local/{url.removeprefix('minio://')}"
+
+    monkeypatch.setattr("libs.db.repository.object_storage.presigned_get_url", fake_presigned_get)
+    document, version = repo.create_document("P-2026-HDCP-001", "field-report.pdf", "application/pdf")
+
+    preview = assert_ok(client.get(f"/projects/P-2026-HDCP-001/documents/{document['id']}/preview-url"))
+    download = assert_ok(client.get(f"/projects/P-2026-HDCP-001/documents/{document['id']}/download-url"))
+    detail = assert_ok(client.get(f"/projects/P-2026-HDCP-001/documents/{document['id']}"))
+
+    expected_storage_url = f"minio://documents/{version['storageKey']}"
+    assert preview["url"].startswith("https://minio.local/documents/")
+    assert download["url"].startswith("https://minio.local/documents/")
+    assert detail["preview"]["url"] == preview["url"]
+    assert detail["download"]["url"] == download["url"]
+    assert preview["previewType"] == "pdf"
+    assert preview["contentType"] == "application/pdf"
+    assert download["contentType"] == "application/pdf"
+    assert (expected_storage_url, "field-report.pdf") in captured
+    assert "mock://" not in preview["url"]
+    assert "mock://" not in download["url"]
+    assert_error(client.get(f"/projects/NOT-A-PROJECT/documents/{document['id']}/download-url"), "NOT_FOUND")
 
 
 def test_worker_uses_ocr_http_client_when_configured(monkeypatch) -> None:
@@ -1011,6 +1324,64 @@ def test_ocr_service_reports_missing_source_before_running_pipeline() -> None:
     assert "OCR source file is unavailable" in result["diagnostics"][0]
 
 
+def test_worker_records_ocr_client_failure_without_leaking_provider_details(monkeypatch) -> None:
+    from apps.worker import tasks
+
+    class FailingOcrClient:
+        enabled = True
+
+        def parse_sync(self, storage_key: str, *, file_name: str | None = None):
+            raise RuntimeError("provider failed with sk-secret-ocr")
+
+    monkeypatch.setattr(tasks, "OcrClient", lambda: FailingOcrClient())
+    doc, version = repo.create_document("P-2026-HDCP-001", "OCR-fail.pdf", "pdf")
+
+    result = tasks.parse_document.run(doc["id"], version["id"], version["storageKey"], doc["fileName"])
+    task = repo.ocr_task_for(doc["id"], version["id"], doc["fileName"])
+
+    assert result["status"] == "failed"
+    assert result["applied"]["status"] == "failed"
+    assert task["status"] == "失败"
+    assert "OCR 服务 调用失败" in task["errorMessage"]
+    assert "sk-secret-ocr" not in task["errorMessage"]
+
+
+def test_missing_knowledge_file_workers_mark_tasks_failed() -> None:
+    from apps.worker import tasks
+
+    slice_task = {
+        "id": "KT-MISSING-SLICE",
+        "taskType": "slice",
+        "targetType": "file",
+        "targetId": "KF-MISSING",
+        "targetName": "missing.pdf",
+        "status": "排队中",
+        "progress": 0,
+        "createdAt": "2026-06-27 00:00:00",
+    }
+    vector_task = {
+        "id": "KT-MISSING-VECTOR",
+        "taskType": "vector",
+        "targetType": "file",
+        "targetId": "KF-MISSING",
+        "targetName": "missing.pdf",
+        "status": "排队中",
+        "progress": 0,
+        "createdAt": "2026-06-27 00:00:00",
+    }
+    repo.state["knowledge_tasks"].extend([slice_task, vector_task])
+
+    sliced = tasks.slice_knowledge.run("KF-MISSING")
+    embedded = tasks.embed_knowledge.run("KF-MISSING")
+
+    assert sliced["status"] == "missing"
+    assert embedded["status"] == "missing"
+    assert slice_task["status"] == "失败"
+    assert vector_task["status"] == "失败"
+    assert "找不到关联知识文件" in slice_task["errorMessage"]
+    assert "找不到关联知识文件" in vector_task["errorMessage"]
+
+
 def test_litellm_failure_maps_to_ai_run_failed(monkeypatch) -> None:
     from apps.worker import tasks
 
@@ -1018,7 +1389,7 @@ def test_litellm_failure_maps_to_ai_run_failed(monkeypatch) -> None:
 
     class FailingLiteLLM:
         def chat_sync(self, *args, **kwargs):
-            raise RuntimeError("provider unavailable")
+            raise RuntimeError("provider unavailable sk-secret-litellm")
 
     monkeypatch.setattr(tasks, "LiteLLMClient", FailingLiteLLM)
     result = tasks.ai_recheck.run("P-2026-HDCP-001", 24, run["runId"])
@@ -1027,6 +1398,54 @@ def test_litellm_failure_maps_to_ai_run_failed(monkeypatch) -> None:
     assert result["status"] == "失败"
     assert stored["status"] == "失败"
     assert stored["errorCode"] == "AI_RUN_FAILED"
+    assert "LiteLLM AI 复核 调用失败" in stored["errorMessage"]
+    assert "sk-secret-litellm" not in stored["errorMessage"]
+
+
+def test_embed_and_compare_failures_do_not_leak_provider_details(monkeypatch) -> None:
+    from apps.worker import tasks
+
+    class FailingLiteLLM:
+        def chat_sync(self, *args, **kwargs):
+            raise RuntimeError("chat failed sk-secret-chat")
+
+        def embed_sync(self, *args, **kwargs):
+            raise RuntimeError("embed failed sk-secret-embed")
+
+    repo.state.setdefault("knowledge_chunks", []).append(
+        {
+            "id": "CHK-FAIL-1",
+            "fileId": "KF-DOC-20260625-004",
+            "documentId": "DOC-20260625-004",
+            "documentVersionId": "DV-20260625-004-V1",
+            "chunkNo": 1,
+            "text": "待向量化文本",
+            "pageNo": 1,
+            "tokenCount": 6,
+            "createdAt": "2026-06-27 00:00:00",
+        }
+    )
+    monkeypatch.setattr(tasks, "LiteLLMClient", FailingLiteLLM)
+
+    embedded = tasks.embed_knowledge.run("KF-DOC-20260625-004")
+    vector_task = repo.find_one("knowledge_tasks", "KT-20260626-001")
+    compare = assert_ok(
+        client.post(
+            "/llm/compare",
+            json={"question": "材料证明是否一致？", "modelCodes": ["default-chat", "compare-fast"]},
+        )
+    )
+    compared = tasks.llm_compare.run(compare["runId"])
+    compare_run = repo.find_one("llm_compare_runs", compare["runId"], id_field="runId")
+
+    assert embedded["status"] == "failed"
+    assert vector_task["status"] == "失败"
+    assert "EXTERNAL_TOOL_FAILED" in vector_task["errorMessage"]
+    assert "sk-secret-embed" not in vector_task["errorMessage"]
+    assert compared["status"] == "失败"
+    assert compare_run["errorCode"] == "EXTERNAL_TOOL_FAILED"
+    assert "LiteLLM 模型对比 调用失败" in compare_run["errorMessage"]
+    assert "sk-secret-chat" not in compare_run["errorMessage"]
 
 
 def test_llm_compare_dispatches_to_worker_inline(monkeypatch) -> None:
@@ -1056,6 +1475,161 @@ def test_llm_compare_dispatches_to_worker_inline(monkeypatch) -> None:
     assert len(stored["results"]) == 2
 
 
+def test_completed_ocr_worker_is_idempotent(monkeypatch) -> None:
+    from apps.worker import tasks
+
+    calls = {"ocr": 0}
+
+    def fake_parse(storage_key: str, *, file_name: str | None = None):
+        calls["ocr"] += 1
+        return {
+            "storageKey": storage_key,
+            "fileName": file_name,
+            "status": "success",
+            "fragments": [{"pageNo": 1, "text": "证书编号 OCR-IDEMPOTENT", "confidence": 0.94}],
+            "fields": [{"fieldName": "证书编号", "fieldValue": "OCR-IDEMPOTENT", "confidence": 0.94}],
+            "seals": [],
+            "diagnostics": [],
+        }
+
+    monkeypatch.setattr(tasks.ocr_service, "parse_document", fake_parse)
+    doc, version = repo.create_document("P-2026-HDCP-001", "OCR-idempotent.pdf", "application/pdf")
+
+    first = tasks.parse_document.run(doc["id"], version["id"], version["storageKey"], doc["fileName"])
+    task = repo.ocr_task_for(doc["id"], version["id"], doc["fileName"])
+    logs_after_first = list(task.get("logs", []))
+    field_count_after_first = len(
+        [item for item in repo.state["extracted_fields"] if item.get("documentVersionId") == version["id"]]
+    )
+    second = tasks.parse_document.run(doc["id"], version["id"], version["storageKey"], doc["fileName"])
+
+    assert first["applied"]["status"] == "success"
+    assert second["alreadyCompleted"] is True
+    assert calls["ocr"] == 1
+    assert task.get("logs") == logs_after_first
+    assert len([item for item in repo.state["extracted_fields"] if item.get("documentVersionId") == version["id"]]) == field_count_after_first
+
+
+def test_completed_slice_and_embed_workers_are_idempotent(monkeypatch) -> None:
+    from apps.worker import tasks
+
+    def fake_parse(storage_key: str, *, file_name: str | None = None):
+        return {
+            "storageKey": storage_key,
+            "fileName": file_name,
+            "status": "success",
+            "fragments": [{"pageNo": 1, "text": "炉批号 SLICE-EMBED-IDEMPOTENT", "confidence": 0.92}],
+            "fields": [{"fieldName": "炉批号", "fieldValue": "SLICE-EMBED-IDEMPOTENT", "confidence": 0.92}],
+            "seals": [],
+            "diagnostics": [],
+        }
+
+    class FakeLiteLLM:
+        calls = 0
+
+        def embed_sync(self, *args, **kwargs):
+            FakeLiteLLM.calls += 1
+            return {"data": [{"embedding": [0.1, 0.2, 0.3]}]}
+
+    monkeypatch.setattr(tasks.ocr_service, "parse_document", fake_parse)
+    monkeypatch.setattr(tasks, "LiteLLMClient", FakeLiteLLM)
+    doc, version = repo.create_document("P-2026-HDCP-001", "slice-embed-idempotent.pdf", "application/pdf")
+    tasks.parse_document.run(doc["id"], version["id"], version["storageKey"], doc["fileName"])
+    file_id = f"KF-{doc['id']}"
+
+    first_slice = tasks.slice_knowledge.run(file_id)
+    slice_task = next(item for item in repo.state["knowledge_tasks"] if item["taskType"] == "slice" and item["targetId"] == file_id)
+    slice_logs_after_first = list(slice_task.get("logs", []))
+    chunk_count_after_first = len([item for item in repo.state["knowledge_chunks"] if item.get("fileId") == file_id])
+    second_slice = tasks.slice_knowledge.run(file_id)
+
+    first_embed = tasks.embed_knowledge.run(file_id)
+    vector_task = next(item for item in repo.state["knowledge_tasks"] if item["taskType"] == "vector" and item["targetId"] == file_id)
+    vector_logs_after_first = list(vector_task.get("logs", []))
+    second_embed = tasks.embed_knowledge.run(file_id)
+
+    assert first_slice["status"] == "success"
+    assert second_slice["alreadyCompleted"] is True
+    assert slice_task.get("logs") == slice_logs_after_first
+    assert len([item for item in repo.state["knowledge_chunks"] if item.get("fileId") == file_id]) == chunk_count_after_first
+    assert first_embed["status"] == "success"
+    assert second_embed["alreadyCompleted"] is True
+    assert FakeLiteLLM.calls == 1
+    assert vector_task.get("logs") == vector_logs_after_first
+
+
+def test_completed_ai_and_compare_workers_are_idempotent(monkeypatch) -> None:
+    from apps.worker import tasks
+
+    class FakeLiteLLM:
+        chat_calls = 0
+
+        def chat_sync(self, *args, **kwargs):
+            FakeLiteLLM.chat_calls += 1
+            return {"choices": [{"message": {"content": f"{kwargs.get('model')} completed"}}]}
+
+        @staticmethod
+        def first_message_text(response):
+            return response["choices"][0]["message"]["content"]
+
+    monkeypatch.setattr(tasks, "LiteLLMClient", FakeLiteLLM)
+
+    ai_run = assert_ok(client.post("/projects/P-2026-HDCP-001/inspection/nodes/24/ai-recheck"))
+    first_ai = tasks.ai_recheck.run("P-2026-HDCP-001", 24, ai_run["runId"])
+    second_ai = tasks.ai_recheck.run("P-2026-HDCP-001", 24, ai_run["runId"])
+
+    compare = assert_ok(
+        client.post(
+            "/llm/compare",
+            json={"question": "材料证明是否一致？", "modelCodes": ["default-chat", "compare-fast"]},
+        )
+    )
+    first_compare = tasks.llm_compare.run(compare["runId"])
+    calls_after_first_compare = FakeLiteLLM.chat_calls
+    second_compare = tasks.llm_compare.run(compare["runId"])
+
+    assert first_ai["status"] == "完成"
+    assert second_ai["alreadyCompleted"] is True
+    assert first_compare["status"] == "完成"
+    assert second_compare["alreadyCompleted"] is True
+    assert calls_after_first_compare == 3
+    assert FakeLiteLLM.chat_calls == calls_after_first_compare
+
+
+def test_completed_export_worker_is_idempotent(monkeypatch) -> None:
+    from apps.worker import tasks
+
+    stored: list[tuple[str, str, int]] = []
+
+    def fake_put(bucket: str, object_name: str, data: bytes, *, content_type: str):
+        stored.append((bucket, object_name, len(data)))
+        return f"minio://{bucket}/{object_name}"
+
+    monkeypatch.setattr("libs.db.repository.object_storage.put_bytes", fake_put)
+    task = {
+        "id": "EXP-IDEMPOTENT-001",
+        "projectId": "P-2026-HDCP-001",
+        "nodeIds": [24],
+        "exportType": "config-package",
+        "status": "排队中",
+        "progress": 0,
+        "fileName": "idempotent-export.zip",
+        "fileSize": 0,
+        "createdAt": "2026-06-27 00:00:00",
+    }
+    repo.state["export_tasks"].insert(0, task)
+
+    first = tasks.export_package.run(task["id"])
+    logs_after_first = list(task.get("logs", []))
+    second = tasks.export_package.run(task["id"])
+
+    assert first["status"] == "可下载"
+    assert second["alreadyCompleted"] is True
+    assert len(stored) == 1
+    assert stored[0][0] == "exports"
+    assert task.get("logs") == logs_after_first
+
+
 def test_export_artifact_uses_object_storage_when_available(monkeypatch) -> None:
     stored = {}
     monkeypatch.setenv("AICHECK_TASK_DISPATCH", "inline")
@@ -1065,6 +1639,7 @@ def test_export_artifact_uses_object_storage_when_available(monkeypatch) -> None
         stored["objectName"] = object_name
         stored["contentType"] = content_type
         stored["size"] = len(data)
+        stored["data"] = data
         return f"minio://{bucket}/{object_name}"
 
     def fake_get(url: str, *, file_name: str | None = None):
@@ -1081,6 +1656,57 @@ def test_export_artifact_uses_object_storage_when_available(monkeypatch) -> None
     assert stored["contentType"] == "application/zip"
     assert stored["size"] > 0
     assert signed["url"].startswith("https://minio.local/exports/")
+    with zipfile.ZipFile(io.BytesIO(stored["data"])) as archive:
+        names = set(archive.namelist())
+        assert {"manifest.json", "task.json", "documents.json", "evidence_links.json", "README.txt"}.issubset(names)
+        manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+        assert manifest["schemaVersion"] == "aicheck-export-v1"
+        assert manifest["taskId"] == export["exportId"]
+        assert manifest["projectId"] == "P-2026-HDCP-001"
+        assert manifest["counts"]["documents"] >= 1
+    task = repo.find_one("export_tasks", export["exportId"])
+    assert task is not None
+    assert [entry["message"] for entry in task["logs"]] == ["导出 worker 开始处理。", "导出任务完成。"]
+
+    report_export = assert_ok(
+        client.post(
+            "/projects/P-2026-HDCP-001/reports/RPT-20260625-001/export",
+            json={"format": "pdf"},
+        )
+    )
+    assert report_export["exportId"].startswith("EXP-RPT-")
+    assert stored["contentType"] == "application/pdf"
+    assert stored["data"].startswith(b"%PDF-1.4")
+    assert b"AIcheck Export Report" in stored["data"]
+
+
+def test_archive_and_evidence_packages_write_queryable_audit_artifacts(monkeypatch) -> None:
+    stored: dict[str, bytes | str | int] = {}
+
+    def fake_put(bucket: str, object_name: str, data: bytes, *, content_type: str):
+        stored[object_name] = data
+        return f"minio://{bucket}/{object_name}"
+
+    monkeypatch.setattr("libs.db.repository.object_storage.put_bytes", fake_put)
+
+    archive = assert_ok(client.get("/projects/P-2026-HDCP-001/archive/package"))
+    evidence = assert_ok(client.get("/projects/P-2026-HDCP-001/archive/evidence-package?nodeId=24"))
+    archive_task = repo.find_one("export_tasks", archive["exportId"])
+    evidence_task = repo.find_one("export_tasks", evidence["exportId"])
+
+    assert archive_task["status"] == "可下载"
+    assert archive_task["progress"] == 100
+    assert archive_task["storageKey"] in stored
+    assert evidence_task["status"] == "可下载"
+    assert evidence_task["storageKey"] in stored
+    with zipfile.ZipFile(io.BytesIO(stored[archive_task["storageKey"]])) as archive_zip:
+        manifest = json.loads(archive_zip.read("manifest.json").decode("utf-8"))
+        assert manifest["exportType"] == "archive-package"
+        assert manifest["counts"]["archiveItems"] >= 1
+    with zipfile.ZipFile(io.BytesIO(stored[evidence_task["storageKey"]])) as evidence_zip:
+        manifest = json.loads(evidence_zip.read("manifest.json").decode("utf-8"))
+        assert manifest["exportType"] == "evidence-package"
+        assert manifest["counts"]["evidenceLinks"] >= 1
 
 
 class FakeCursor:
@@ -1202,8 +1828,19 @@ async def test_mongo_indexes_include_compound_and_unique_specs() -> None:
     await ensure_mongo_indexes(database)
 
     assert ([("projectId", 1), ("nodeId", 1), ("status", 1)], {}) in database["project_nodes"].indexes
+    assert ([("projectId", 1), ("userId", 1), ("role", 1)], {"unique": True}) in database["project_members"].indexes
+    assert ([("documentVersionId", 1), ("fieldName", 1)], {}) in database["extracted_fields"].indexes
+    assert ([("sourceType", 1), ("status", 1), ("updatedAt", -1)], {}) in database["knowledge_sources"].indexes
+    assert ([("_singleton", 1)], {"unique": True}) in database["knowledge_configs"].indexes
+    assert ([("objectType", 1), ("objectId", 1), ("createdAt", -1)], {}) in database["audit_logs"].indexes
     assert ([("scope", 1)], {"unique": True}) in database["idempotency_keys"].indexes
     assert ([("username", 1)], {"unique": True}) in database["users"].indexes
+
+
+def test_mongo_indexes_cover_all_persisted_collections() -> None:
+    persisted_collections = set(STATE_COLLECTIONS.values()) | set(SINGLETON_COLLECTIONS.values()) | {IDEMPOTENCY_COLLECTION}
+
+    assert persisted_collections - set(MONGO_INDEXES) == set()
 
 
 async def test_mongo_state_round_trip_persists_planned_collections() -> None:
@@ -1233,3 +1870,30 @@ async def test_mongo_flush_uses_transaction_when_enabled(monkeypatch) -> None:
     assert database.client.transactions_closed == 1
     assert database["projects"].session_calls > 0
     assert database["admin_configs"].session_calls > 0
+
+
+async def test_mongo_transaction_probe_reports_skipped_without_mongo(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_MONGO_TRANSACTIONS", "true")
+
+    result = await run_transaction_probe(None)
+
+    assert result["mongoEnabled"] is False
+    assert result["transactionsConfigured"] is True
+    assert result["transactionProbe"] == "skipped"
+    assert result["reason"] == "mongo_not_configured"
+
+
+async def test_mongo_transaction_probe_runs_session_transaction(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_MONGO_TRANSACTIONS", "true")
+    database = FakeDatabase(with_client=True)
+
+    result = await run_transaction_probe(database)
+
+    assert result["mongoEnabled"] is True
+    assert result["transactionsConfigured"] is True
+    assert result["transactionProbe"] == "pass"
+    assert database.client.sessions_started == 1
+    assert database.client.sessions_closed == 1
+    assert database.client.transactions_started == 1
+    assert database.client.transactions_closed == 1
+    assert database["_deployment_probes"].session_calls == 2

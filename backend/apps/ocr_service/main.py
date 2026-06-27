@@ -5,7 +5,8 @@ import os
 from fastapi import FastAPI, Request
 
 from apps.ocr_service.service import AGENTDESIGN_BACKEND, ocr_service
-from libs.contracts.responses import ok
+from libs.contracts import errors
+from libs.contracts.responses import fail, ok
 
 app = FastAPI(title="AIcheck OCR Service", version="0.1.0")
 
@@ -26,7 +27,10 @@ async def healthz(request: Request):
 
 @app.post("/internal/ocr/parse")
 async def parse_document(request: Request, payload: dict):
+    storage_key = str(payload.get("storageKey") or "").strip()
+    if not storage_key:
+        return fail(errors.VALIDATION_ERROR, request, message="storageKey 不能为空。")
     return ok(
-        ocr_service.parse_document(payload["storageKey"], file_name=payload.get("fileName")),
+        ocr_service.parse_document(storage_key, file_name=payload.get("fileName")),
         request,
     )

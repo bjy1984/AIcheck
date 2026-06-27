@@ -21,8 +21,14 @@ ETAG_CONFLICT = BusinessErrorCode(40904, "ETAG_CONFLICT", "数据版本已变化
 IDEMPOTENCY_KEY_CONFLICT = BusinessErrorCode(40905, "IDEMPOTENCY_KEY_CONFLICT", "幂等键已被不同请求内容使用。")
 FILE_TOO_LARGE = BusinessErrorCode(40016, "FILE_TOO_LARGE", "文件超过上传限制。")
 UNSUPPORTED_FILE_TYPE = BusinessErrorCode(40017, "UNSUPPORTED_FILE_TYPE", "文件类型不支持。")
+NDT_FILE_TOO_LARGE = BusinessErrorCode(40018, "NDT_FILE_TOO_LARGE", "无损检测报告或影像包超过上传限制。")
+UNSUPPORTED_NDT_FILE_TYPE = BusinessErrorCode(40019, "UNSUPPORTED_NDT_FILE_TYPE", "无损检测报告或影像包格式不支持。")
 EMPTY_BINDINGS = BusinessErrorCode(40020, "EMPTY_BINDINGS", "资料挂载未选择有效资料。")
 EMPTY_NODE_PACKAGE = BusinessErrorCode(40021, "EMPTY_NODE_PACKAGE", "当前节点没有可提交资料。")
+NDT_FILM_REQUIRED = BusinessErrorCode(40022, "NDT_FILM_REQUIRED", "无损检测底片编号、焊口编号和检测方法不能为空。")
+NDT_RECORD_REQUIRED = BusinessErrorCode(40023, "NDT_RECORD_REQUIRED", "无损检测记录编号、焊口编号和检测方法不能为空。")
+NDT_REPORT_REQUIRED = BusinessErrorCode(40024, "NDT_REPORT_REQUIRED", "无损检测资料提交缺少可提交检测报告。")
+NDT_RECTIFICATION_REQUIRED = BusinessErrorCode(40025, "NDT_RECTIFICATION_REQUIRED", "无损检测补正反馈事项和说明不能为空。")
 WITHDRAW_LOCKED = BusinessErrorCode(40921, "WITHDRAW_LOCKED", "已通过或锁定资料不能撤回。")
 EXPORT_TASK_NOT_READY = BusinessErrorCode(40930, "EXPORT_TASK_NOT_READY", "导出任务尚未生成完成。")
 EXPORT_TASK_EXPIRED = BusinessErrorCode(41031, "EXPORT_TASK_EXPIRED", "导出任务已过期。")
@@ -44,8 +50,14 @@ ERROR_BY_REASON = {
         IDEMPOTENCY_KEY_CONFLICT,
         FILE_TOO_LARGE,
         UNSUPPORTED_FILE_TYPE,
+        NDT_FILE_TOO_LARGE,
+        UNSUPPORTED_NDT_FILE_TYPE,
         EMPTY_BINDINGS,
         EMPTY_NODE_PACKAGE,
+        NDT_FILM_REQUIRED,
+        NDT_RECORD_REQUIRED,
+        NDT_REPORT_REQUIRED,
+        NDT_RECTIFICATION_REQUIRED,
         WITHDRAW_LOCKED,
         EXPORT_TASK_NOT_READY,
         EXPORT_TASK_EXPIRED,

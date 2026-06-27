@@ -8,9 +8,10 @@ Deployment guide: see [`../DEPLOYMENT.md`](../DEPLOYMENT.md).
 
 - `api-service`: FastAPI business API. It serves both stripped paths such as `/workbench/projects` and direct `/api/workbench/projects`.
 - `worker-service`: Celery worker with Redis queues for OCR, knowledge slicing, embedding, AI recheck, LLM compare, and export packaging.
-- `ocr-service`: internal OCR wrapper. It imports the `agentdesign` seal OCR pipeline when available. Production should set `AICHECK_OCR_ALLOW_PLACEHOLDER=false` so missing OCR dependencies produce retryable task failures.
+- `ocr-service`: internal OCR wrapper built from `Dockerfile.ocr`. It installs `requirements-ocr.txt` and imports the `agentdesign` seal OCR pipeline from the mounted `AICHECK_AGENTDESIGN_HOST_PATH`. Production should set `AICHECK_OCR_ALLOW_PLACEHOLDER=false` so missing OCR dependencies produce retryable task failures.
 - `litellm-service`: LiteLLM proxy configured by `config/litellm.yaml`; PostgreSQL is only for LiteLLM metadata.
 - `mongodb`, `redis`, `minio`: business persistence, task queue, and object storage for documents/previews/exports/OCR artifacts.
+- Docker Compose healthchecks are declared for API, worker, OCR, MongoDB, Redis, MinIO, LiteLLM PostgreSQL, and LiteLLM; service dependencies use `condition: service_healthy` for startup ordering.
 
 ## Local Run
 
@@ -47,26 +48,35 @@ Deployment verification:
 
 ```bash
 python scripts/verify_deployment.py --strict-production
+python scripts/deployment_report.py --strict-production --output-dir ./deployment-reports/latest
 python scripts/audit_frontend_contract.py
 ```
 
-The verifier checks API health flags, role login/default paths, JWT protection, read-only project/task endpoints, identity-spoof rejection, action-bypass rejection, read-scope rejection, OCR health, and LiteLLM health/models without creating business data.
+The verifier checks API health flags, role login/default paths, JWT protection, the MongoDB transaction probe, read-only project/task endpoints, identity-spoof rejection, action-bypass rejection, read-scope rejection, OCR health, OCR parse/bad-request contracts, and LiteLLM health/models without creating business data or spending model quota. In `--strict-production`, MongoDB must be connected with `AICHECK_MONGO_TRANSACTIONS=true` and the transaction probe must pass; OCR must report a real pipeline with placeholder disabled.
+
+Add `--write-probes` to create a short-lived upload session, PUT a small PDF to the returned HTTP/HTTPS signed URL, complete the upload, verify document preview/download signed GET URLs can read the object, confirm the OCR task appears, and create/read an export task.
+Add `--ocr-object-probe` with `--write-probes` when you want the OCR service to parse the newly uploaded MinIO object and prove the real OCR pipeline can read object storage.
+Add `--litellm-provider-probes` when you want a quota-consuming production check that calls `default-chat` and `embedding-default` through LiteLLM.
+`deployment_report.py` aggregates config validation, frontend contract audit, and optional live probes into `report.json` and `report.md` for release evidence.
 The contract auditor statically compares `frontend/src/api/aicheck` and `frontend/src/api/login` request paths against FastAPI routes and fails if any required client endpoint is missing.
 
 ## Infrastructure
 
 ```bash
 cd backend
+# backend/.env must provide AICHECK_AGENTDESIGN_HOST_PATH=/absolute/path/to/agentdesign
 docker compose up --build
 ```
 
 MongoDB indexes are declared in `libs/db/indexes.py` and applied on startup when `AICHECK_MONGO_URL` is set. If the database is empty, the API seeds the current demo state into the planned collections. Mutating API calls then flush state back to Mongo so restarts preserve business data. Set `AICHECK_MONGO_TRANSACTIONS=true` only when MongoDB is running as a replica set or sharded cluster; the Compose stack starts Mongo as a single-node `rs0` replica set for this.
+The index test suite also verifies every persisted collection in `STATE_COLLECTIONS`, `SINGLETON_COLLECTIONS`, and `idempotency_keys` has an explicit index declaration.
 
 Key environment variables:
 
 - `AICHECK_MONGO_URL`, `AICHECK_MONGO_DB`, `AICHECK_MONGO_TRANSACTIONS=true`: business data persistence and transactional cross-collection flushes.
 - `AICHECK_REDIS_URL`, `AICHECK_TASK_DISPATCH=celery`: Celery broker/result backend and API task dispatch.
 - `AICHECK_MINIO_ENDPOINT`, `AICHECK_MINIO_ACCESS_KEY`, `AICHECK_MINIO_SECRET_KEY`: signed upload/download and export artifacts.
-- `AICHECK_OCR_BASE_URL`, `AICHECK_AGENTDESIGN_BACKEND`, `AICHECK_OCR_ALLOW_PLACEHOLDER=false`: worker-to-OCR service calls, pipeline import path, and OCR dependency failure policy.
-- `LITELLM_BASE_URL`, `LITELLM_API_KEY`, `OPENAI_API_KEY`: LiteLLM gateway and provider credentials.
+- `AICHECK_OCR_BASE_URL`, `AICHECK_AGENTDESIGN_HOST_PATH`, `AICHECK_AGENTDESIGN_BACKEND`, `AICHECK_OCR_ALLOW_PLACEHOLDER=false`: worker-to-OCR service calls, host-side `agentdesign` mount, pipeline import path, and OCR dependency failure policy. `Dockerfile.ocr` installs the PaddleOCR/PaddleX/PyMuPDF/OpenCV baseline in `requirements-ocr.txt`.
+- `LITELLM_BASE_URL`, `LITELLM_API_KEY`, `OPENAI_API_KEY`: LiteLLM gateway and provider credentials. When production flags are enabled, the worker/API clients require an explicit `LITELLM_API_KEY` and reject the built-in development key.
 - `AICHECK_JWT_SECRET`, `AICHECK_REQUIRE_AUTH=true`, `AICHECK_ENABLE_DEMO_USERS=false`: production authentication and demo-account controls.
+- `scripts/create_roles.py --password-file ... --require-strong-passwords`: initialize persistent role users with strong, non-default passwords; output is redacted by default and existing hashes are preserved unless `--rotate-passwords` is passed.

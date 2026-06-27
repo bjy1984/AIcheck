@@ -20,10 +20,77 @@ router = APIRouter(tags=["AIcheck API"])
 mock_router = APIRouter(tags=["Compatibility Mock"])
 
 REPORT_GENERATION_BLOCKED_STATUSES = {"待提交", "需补正", "退回补正中", "部分提交", "AI 预审中"}
+MAX_UPLOAD_BYTES = 500 * 1024 * 1024
+MAX_NDT_UPLOAD_BYTES = 500 * 1024 * 1024
+ALLOWED_UPLOAD_TYPES = {
+    "pdf",
+    "doc",
+    "docx",
+    "xls",
+    "xlsx",
+    "png",
+    "jpg",
+    "jpeg",
+    "zip",
+    "7z",
+    "application/pdf",
+    "application/msword",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "image/png",
+    "image/jpg",
+    "image/jpeg",
+    "application/zip",
+    "application/x-zip-compressed",
+    "application/x-7z-compressed",
+}
+ALLOWED_NDT_UPLOAD_TYPES = ALLOWED_UPLOAD_TYPES | {"dcm", "dicom", "application/dicom"}
 
 
 def role_from_query(role: str | None = None, x_role: str | None = None) -> str:
     return (x_role or role or "inspection").strip() or "inspection"
+
+
+def file_type_tokens(file: dict[str, Any]) -> set[str]:
+    raw_values = [file.get("fileType"), file.get("contentType")]
+    file_name = str(file.get("fileName") or "")
+    if "." in file_name:
+        raw_values.append(file_name.rsplit(".", 1)[-1])
+    tokens = {str(value).strip().lower() for value in raw_values if value}
+    return tokens
+
+
+def validate_upload_files(
+    request: Request,
+    files: list[dict[str, Any]],
+    *,
+    ndt: bool = False,
+) -> JSONResponse | None:
+    if not files:
+        error = errors.NDT_REPORT_REQUIRED if ndt else errors.VALIDATION_ERROR
+        return fail(error, request, message="上传文件不能为空。")
+    allowed_types = ALLOWED_NDT_UPLOAD_TYPES if ndt else ALLOWED_UPLOAD_TYPES
+    max_bytes = MAX_NDT_UPLOAD_BYTES if ndt else MAX_UPLOAD_BYTES
+    for index, file in enumerate(files):
+        file_name = file.get("fileName") or f"第 {index + 1} 个文件"
+        try:
+            file_size = int(file.get("fileSize") or 0)
+        except (TypeError, ValueError):
+            file_size = 0
+        if file_size < 1:
+            return fail(errors.VALIDATION_ERROR, request, message=f"{file_name} 文件大小必须大于 0。", data={"fileName": file_name})
+        if file_size > max_bytes:
+            error = errors.NDT_FILE_TOO_LARGE if ndt else errors.FILE_TOO_LARGE
+            return fail(error, request, message=f"{file_name} 超过 {max_bytes // 1024 // 1024}MB 上传限制。", data={"fileName": file_name, "fileSize": file_size})
+        if not (file_type_tokens(file) & allowed_types):
+            error = errors.UNSUPPORTED_NDT_FILE_TYPE if ndt else errors.UNSUPPORTED_FILE_TYPE
+            return fail(error, request, message=f"{file_name} 文件类型不支持。", data={"fileName": file_name, "fileType": file.get("fileType")})
+    return None
+
+
+def missing_required_fields(item: dict[str, Any], fields: list[str]) -> list[str]:
+    return [field for field in fields if item.get(field) in {None, ""}]
 
 
 def resolved_role_for_read(request: Request, role: str | None = None, x_role: str | None = None) -> tuple[str, JSONResponse | None]:
@@ -1115,11 +1182,9 @@ def create_upload_session(
 
     def produce():
         files = body.get("files") or []
-        if not files:
-            return fail(errors.VALIDATION_ERROR, request, message="上传文件不能为空。")
-        for file in files:
-            if int(file.get("fileSize") or 0) > 50 * 1024 * 1024:
-                return fail(errors.FILE_TOO_LARGE, request, message=f"{file.get('fileName', '文件')} 超过 50MB 上传限制。")
+        validation_error = validate_upload_files(request, files)
+        if validation_error:
+            return validation_error
         session_id, upload_urls = repo.create_upload_session(project_id, files)
         repo.add_audit("创建上传会话", "UploadSession", session_id)
         return ok({"uploadSessionId": session_id, "expiresAt": upload_urls[0]["expiresAt"], "uploadUrls": upload_urls}, request)
@@ -1137,6 +1202,9 @@ def complete_upload_session(request: Request, project_id: str, session_id: str, 
     guard = mutation_guard(request, project_id, x_role=x_role)
     if guard:
         return guard
+    session = repo.find_one("upload_sessions", session_id)
+    if not session or session.get("projectId") != project_id:
+        return fail(errors.NOT_FOUND, request)
     files = repo.complete_upload_session(session_id)
     dispatches = []
     for file in files:
@@ -1155,7 +1223,7 @@ def complete_upload_session(request: Request, project_id: str, session_id: str, 
 @router.get("/projects/{project_id}/documents/{document_id}")
 def document_detail(request: Request, project_id: str, document_id: str):
     document = repo.find_one("documents", document_id)
-    if not document:
+    if not document or document.get("projectId") != project_id:
         return fail(errors.NOT_FOUND, request)
     versions = repo.versions_for_document(document_id)
     version_ids = {item["id"] for item in versions}
@@ -1169,7 +1237,7 @@ def document_detail(request: Request, project_id: str, document_id: str):
             "extractedFields": repo.fields_for_versions(version_ids),
             "evidenceLinks": repo.evidence_for_versions(version_ids),
             "preview": preview,
-            "download": repo.signed_get(document["fileName"], f"mock://download/documents/{document_id}?versionId={document['currentVersionId']}", file_size=245760),
+            "download": repo.document_download(document),
         },
         request,
     )
@@ -1183,7 +1251,7 @@ def document_versions(request: Request, project_id: str, document_id: str):
 @router.get("/projects/{project_id}/documents/{document_id}/preview-url")
 def document_preview_url(request: Request, project_id: str, document_id: str):
     document = repo.find_one("documents", document_id)
-    if not document:
+    if not document or document.get("projectId") != project_id:
         return fail(errors.NOT_FOUND, request)
     return ok(repo.document_preview(document), request)
 
@@ -1191,9 +1259,9 @@ def document_preview_url(request: Request, project_id: str, document_id: str):
 @router.get("/projects/{project_id}/documents/{document_id}/download-url")
 def document_download_url(request: Request, project_id: str, document_id: str):
     document = repo.find_one("documents", document_id)
-    if not document:
+    if not document or document.get("projectId") != project_id:
         return fail(errors.NOT_FOUND, request)
-    return ok(repo.signed_get(document["fileName"], f"mock://download/documents/{document_id}?versionId={document['currentVersionId']}", file_size=245760), request)
+    return ok(repo.document_download(document), request)
 
 
 @router.get("/projects/{project_id}/documents/{document_id}/ocr-fields")
@@ -1353,7 +1421,10 @@ def void_document(request: Request, project_id: str, document_id: str, x_role: s
 
 
 @router.post("/projects/{project_id}/documents/batch-classify")
-def batch_classify_documents(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict)):
+def batch_classify_documents(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict), x_role: str | None = Header(default=None, alias="X-Role")):
+    guard = mutation_guard(request, project_id, x_role=x_role)
+    if guard:
+        return guard
     suggestions = [
         {"documentId": doc["id"], "fileName": doc["fileName"], "suggestedNodeIds": [24 if "焊工" in doc["fileName"] else 16], "confidence": 0.82}
         for doc in repo.project_documents(project_id)
@@ -2118,18 +2189,24 @@ def list_archive(request: Request, project_id: str, page_no: int = Query(default
 def archive_package(request: Request, project_id: str):
     scope = authorized_node_scope(request, project_id)
     export_id = "EXP-ARCHIVE-QUEUE-001"
-    task = repo.find_one("export_tasks", export_id) or {
+    existing_task = repo.find_one("export_tasks", export_id)
+    task = existing_task or {
         "id": export_id,
         "projectId": project_id,
         "exportType": "archive-package",
-        "status": "可下载",
-        "progress": 100,
+        "status": "排队中",
+        "progress": 0,
         "fileName": f"{project_id}-归档资料包.zip",
         "fileSize": 4194304,
         "downloadUrl": f"mock://download/archive/{project_id}.zip",
         "createdAt": server_time(),
-        "finishedAt": server_time(),
     }
+    if not existing_task:
+        repo.state["export_tasks"].insert(0, task)
+    task["status"] = "可下载"
+    task["progress"] = 100
+    task["finishedAt"] = server_time()
+    task["updatedAt"] = task["finishedAt"]
     repo.attach_export_artifact(task, content_type="application/zip")
     item_count = len([item for item in repo.state["archive_items"] if item.get("projectId") == project_id and archive_visible_in_scope(item, scope)])
     download_url = task.get("downloadUrl") or f"mock://download/archive/{project_id}.zip"
@@ -2144,7 +2221,13 @@ def evidence_package(request: Request, project_id: str, nodeId: int | None = Non
         return fail(errors.FORBIDDEN, request, message="用户不在该节点授权范围内。")
     export_id = "EXP-EVIDENCE-RUNNING-001"
     file_name = f"{project_id}-节点{effective_node_id}-证据定位包.zip"
-    task = {"id": export_id, "projectId": project_id, "exportType": "evidence-package", "status": "可下载", "progress": 100, "fileName": file_name, "fileSize": 786432, "downloadUrl": f"mock://download/archive/{project_id}-evidence.zip", "createdAt": server_time(), "finishedAt": server_time()}
+    task = repo.find_one("export_tasks", export_id) or {"id": export_id, "projectId": project_id, "exportType": "evidence-package", "status": "排队中", "progress": 0, "fileName": file_name, "fileSize": 786432, "downloadUrl": f"mock://download/archive/{project_id}-evidence.zip", "createdAt": server_time()}
+    if not repo.find_one("export_tasks", export_id):
+        repo.state["export_tasks"].insert(0, task)
+    task["status"] = "可下载"
+    task["progress"] = 100
+    task["finishedAt"] = server_time()
+    task["updatedAt"] = task["finishedAt"]
     repo.attach_export_artifact(task, content_type="application/zip")
     return ok({**repo.signed_get(file_name, task["downloadUrl"], "application/zip", task.get("fileSize")), "exportId": export_id, "projectId": project_id, "packageType": "evidence", "itemCount": len(repo.state["evidence_links"]), "generatedAt": server_time()}, request)
 
@@ -2282,15 +2365,18 @@ def create_ndt_film(request: Request, project_id: str, body: dict[str, Any] = Bo
         return guard
 
     def produce():
+        missing = missing_required_fields(body, ["filmNo", "weldNo", "method"])
+        if missing:
+            return fail(errors.NDT_FILM_REQUIRED, request, data={"fields": missing})
         node_id = node_ids[0] if node_ids else 40
         film = {
             "id": f"FILM-{uuid4().hex[:8].upper()}",
             "projectId": project_id,
             "nodeId": node_id,
-            "filmNo": body.get("filmNo") or "RT-NEW",
-            "weldNo": body.get("weldNo") or "W-NEW",
+            "filmNo": body.get("filmNo"),
+            "weldNo": body.get("weldNo"),
             "pipelineNo": body.get("pipelineNo"),
-            "method": body.get("method") or "RT",
+            "method": body.get("method"),
             "testDate": body.get("testDate"),
             "status": "待提交",
             "actions": ["ndt:submit"],
@@ -2331,10 +2417,19 @@ def import_ndt_films(request: Request, project_id: str, body: dict[str, Any] = B
     guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
     if guard:
         return guard
+    if not rows:
+        return fail(errors.NDT_FILM_REQUIRED, request, message="导入底片行不能为空。")
+    failed = [
+        {"row": index + 1, "fields": missing_required_fields(row, ["filmNo", "weldNo", "method"])}
+        for index, row in enumerate(rows)
+        if missing_required_fields(row, ["filmNo", "weldNo", "method"])
+    ]
+    if failed:
+        return fail(errors.NDT_FILM_REQUIRED, request, data={"failed": failed})
     created = []
     node_id = node_ids[0] if node_ids else 40
     for row in rows:
-        film = {"id": f"FILM-{uuid4().hex[:8].upper()}", "projectId": project_id, "nodeId": int(row.get("nodeId") or node_id), "filmNo": row.get("filmNo") or "RT-IMPORT", "weldNo": row.get("weldNo") or "W-IMPORT", "method": row.get("method") or "RT", "status": "待提交", "actions": ["ndt:submit"]}
+        film = {"id": f"FILM-{uuid4().hex[:8].upper()}", "projectId": project_id, "nodeId": int(row.get("nodeId") or node_id), "filmNo": row.get("filmNo"), "weldNo": row.get("weldNo"), "method": row.get("method"), "status": "待提交", "actions": ["ndt:submit"]}
         repo.state["ndt_films"].insert(0, film)
         created.append(film)
     return ok({"imported": len(created), "failed": [], "films": created}, request)
@@ -2363,18 +2458,28 @@ def import_ndt_records(request: Request, project_id: str, body: dict[str, Any] =
     guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
     if guard:
         return guard
+    rows = body.get("rows") or []
+    if not rows:
+        return fail(errors.NDT_RECORD_REQUIRED, request, message="导入检测记录行不能为空。")
+    failed = [
+        {"row": index + 1, "fields": missing_required_fields(row, ["recordNo", "weldNo", "method"])}
+        for index, row in enumerate(rows)
+        if missing_required_fields(row, ["recordNo", "weldNo", "method"])
+    ]
+    if failed:
+        return fail(errors.NDT_RECORD_REQUIRED, request, data={"failed": failed})
     created = []
-    for row in body.get("rows") or [{"recordNo": "REC-IMPORT-001", "weldNo": "W-IMPORT"}]:
+    for row in rows:
         record = {
             "id": f"NDT-REC-{uuid4().hex[:8].upper()}",
             "projectId": project_id,
             "nodeId": node_ids[0] if node_ids else 40,
-            "recordNo": row.get("recordNo") or "REC-IMPORT",
+            "recordNo": row.get("recordNo"),
             "filmId": row.get("filmId"),
             "reportId": row.get("reportId"),
-            "weldNo": row.get("weldNo") or "W-IMPORT",
+            "weldNo": row.get("weldNo"),
             "pipelineNo": row.get("pipelineNo"),
-            "method": row.get("method") or "RT",
+            "method": row.get("method"),
             "testDate": row.get("testDate") or "2026-06-26",
             "evaluatorName": row.get("evaluatorName") or "王工",
             "result": row.get("result") or "待复核",
@@ -2412,7 +2517,10 @@ def ndt_report_upload_session(request: Request, project_id: str, body: dict[str,
 
     def produce():
         node_id = node_ids[0] if node_ids else 40
-        files = body.get("files") or [{"fileName": "RT检测报告.pdf", "fileSize": 245760, "fileType": "application/pdf"}]
+        files = body.get("files") or []
+        validation_error = validate_upload_files(request, files, ndt=True)
+        if validation_error:
+            return validation_error
         session_id = f"UPS-NDT-{uuid4().hex[:8].upper()}"
         upload_urls = []
         for file in files:
@@ -2468,25 +2576,21 @@ def submit_ndt(request: Request, project_id: str, body: dict[str, Any] = Body(de
         node_id = node_ids[0] if node_ids else 40
         submission_id = f"NDT-SUB-{uuid4().hex[:8].upper()}"
         submitted_report_ids = set(body.get("reportIds") or [])
+        if not submitted_report_ids:
+            return fail(errors.NDT_REPORT_REQUIRED, request)
+        submitable_reports = [
+            report
+            for report in repo.state["ndt_reports"]
+            if report.get("projectId") == project_id
+            and report.get("id") in submitted_report_ids
+            and report.get("status") in {"草稿", "待提交", "需补正"}
+            and record_visible_for_request(request, report, project_id)
+        ]
+        if len(submitable_reports) != len(submitted_report_ids):
+            return fail(errors.NDT_REPORT_REQUIRED, request, message="未找到可提交的无损检测报告。")
         for report in repo.state["ndt_reports"]:
             if report["id"] in submitted_report_ids:
                 report["status"] = "待审查"
-        if not any(report["projectId"] == project_id and report["status"] in {"草稿", "待提交", "需补正"} for report in repo.state["ndt_reports"]):
-            seed = uuid4().hex[:8].upper()
-            repo.state["ndt_reports"].append(
-                {
-                    "id": f"NDT-RPT-{seed}",
-                    "projectId": project_id,
-                    "reportNo": f"RT-FOLLOW-{seed[:4]}",
-                    "method": "RT",
-                    "fileId": "DOC-20260625-004",
-                    "relatedFilmIds": body.get("filmIds") or ["FILM-RT-001"],
-                    "status": "待提交",
-                    "conclusion": "提交后自动生成的后续底片抽查报告。",
-                    "uploadedAt": server_time(),
-                    "actions": ["ndt:submit"],
-                }
-            )
         repo.set_node_status(project_id, node_id, "待审查")
         todo = {"id": f"TODO-{uuid4().hex[:8].upper()}", "title": "无损检测资料待审查", "projectId": project_id, "nodeId": node_id, "targetType": "submission", "targetId": submission_id, "status": "待处理", "priority": "中", "assigneeName": "张工", "actions": ["review:save"]}
         repo.state["todos"].insert(0, todo)
@@ -2505,6 +2609,8 @@ def ndt_rectification(request: Request, project_id: str, body: dict[str, Any] = 
     def produce():
         node_id = node_ids[0] if node_ids else 40
         rectification_id = body.get("rectificationId") or f"NDT-REC-{uuid4().hex[:8].upper()}"
+        if not body.get("description") or (not body.get("rectificationId") and not body.get("reportIds") and not body.get("filmIds")):
+            return fail(errors.NDT_RECTIFICATION_REQUIRED, request)
         feedback = repo.find_one("ndt_feedback", rectification_id)
         if feedback:
             scope_error = scope_error_for_record(request, feedback, project_id)
@@ -3283,10 +3389,10 @@ def integration_contract(request: Request, module: str | None = None, status: st
             "frontendField": "projects[].riskLevel",
             "backendField": "riskLevel",
             "required": False,
-            "status": "待后端确认",
-            "severity": "warning",
+            "status": "已对齐",
+            "severity": "info",
             "owner": "backend",
-            "note": "风险等级字段已纳入首屏合同，后续由真实规则计算。",
+            "note": "工作台项目列表按节点状态、待办、补正、AI/任务失败实时计算风险等级。",
             "updatedAt": server_time(),
         },
         {
@@ -3334,36 +3440,45 @@ def integration_contract(request: Request, module: str | None = None, status: st
             "note": "任务中心支持重试和取消。",
             "updatedAt": server_time(),
         },
+        {
+            "id": "IC-005",
+            "module": "documents",
+            "moduleLabel": "资料文件",
+            "endpoint": "/api/projects/{projectId}/documents/upload-session",
+            "method": "POST",
+            "frontendField": "uploadUrls[].documentVersionId",
+            "backendField": "uploadUrls[].documentVersionId",
+            "required": True,
+            "status": "已对齐",
+            "severity": "info",
+            "owner": "backend",
+            "note": "上传会话返回 documentId/documentVersionId、signed PUT URL 和 expiresAt，完成上传后创建 OCR 任务。",
+            "updatedAt": server_time(),
+        },
+        {
+            "id": "IC-006",
+            "module": "ndt-owner-report",
+            "moduleLabel": "无损与报告",
+            "endpoint": "/api/projects/{projectId}/ndt/reports",
+            "method": "GET",
+            "frontendField": "items[].relatedFilmIds",
+            "backendField": "relatedFilmIds",
+            "required": True,
+            "status": "已对齐",
+            "severity": "info",
+            "owner": "backend",
+            "note": "NDT 报告列表返回状态、方法、关联底片和可执行动作；报告/归档导出产物包含可审计 manifest。",
+            "updatedAt": server_time(),
+        },
     ]
     if module and module != "all":
         fields = [item for item in fields if item["module"] == module]
     if status and status != "all":
         fields = [item for item in fields if item["status"] == status]
     module_summaries = []
-    all_fields = [
-        item
-        for item in [
-            {
-                "module": "workbench",
-                "status": "待后端确认",
-            },
-            {
-                "module": "submissions",
-                "status": "已对齐",
-            },
-            {
-                "module": "inspection",
-                "status": "已对齐",
-            },
-            {
-                "module": "knowledge-admin",
-                "status": "已对齐",
-            },
-        ]
-    ]
     for code, label in modules:
-        module_fields = [item for item in all_fields if item["module"] == code]
-        total = len(module_fields) or 1
+        module_fields = [item for item in fields if item["module"] == code]
+        total = len(module_fields)
         aligned = len([item for item in module_fields if item["status"] == "已对齐"])
         pending = len([item for item in module_fields if item["status"] in {"待后端确认", "命名不一致"}])
         blockers = len([item for item in module_fields if item["status"] in {"前端缺失", "后端缺失"}])

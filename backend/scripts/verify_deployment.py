@@ -7,6 +7,8 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
+from uuid import uuid4
 
 import httpx
 
@@ -18,6 +20,38 @@ from libs.security.auth import ROLE_DEFAULT_PATHS
 
 
 DEFAULT_ROLES = ("admin", "inspection", "contractor", "ndt", "owner")
+REQUIRED_LITELLM_ALIASES = {"default-chat", "review-chat", "embedding-default", "compare-fast"}
+
+
+def deployment_probe_pdf() -> bytes:
+    text_stream = b"BT /F1 18 Tf 72 720 Td (AIcheck OCR verifier) Tj ET"
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length " + str(len(text_stream)).encode("ascii") + b" >>\nstream\n" + text_stream + b"\nendstream",
+    ]
+    parts = [b"%PDF-1.4\n"]
+    offsets = [0]
+    for index, body in enumerate(objects, start=1):
+        offsets.append(sum(len(part) for part in parts))
+        parts.append(f"{index} 0 obj\n".encode("ascii") + body + b"\nendobj\n")
+    xref_offset = sum(len(part) for part in parts)
+    xref = [b"xref\n", f"0 {len(objects) + 1}\n".encode("ascii"), b"0000000000 65535 f \n"]
+    for offset in offsets[1:]:
+        xref.append(f"{offset:010d} 00000 n \n".encode("ascii"))
+    parts.extend(
+        [
+            *xref,
+            b"trailer\n",
+            f"<< /Size {len(objects) + 1} /Root 1 0 R >>\n".encode("ascii"),
+            b"startxref\n",
+            f"{xref_offset}\n".encode("ascii"),
+            b"%%EOF\n",
+        ]
+    )
+    return b"".join(parts)
 
 
 @dataclass
@@ -43,6 +77,9 @@ class VerifyConfig:
     strict_production: bool
     skip_ocr: bool
     skip_litellm: bool
+    write_probes: bool
+    ocr_object_probe: bool
+    litellm_provider_probes: bool
 
 
 def parse_args() -> argparse.Namespace:
@@ -56,12 +93,31 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--strict-production", action="store_true", help="Fail if production security/storage flags are not enabled.")
     parser.add_argument("--skip-ocr", action="store_true")
     parser.add_argument("--skip-litellm", action="store_true")
+    parser.add_argument(
+        "--ocr-object-probe",
+        action="store_true",
+        help="After --write-probes upload, ask OCR service to parse the uploaded MinIO object. This may be slow.",
+    )
+    parser.add_argument(
+        "--litellm-provider-probes",
+        action="store_true",
+        help="Run real chat and embedding calls through LiteLLM. This may consume provider quota.",
+    )
+    parser.add_argument(
+        "--write-probes",
+        action="store_true",
+        help="Run signed PUT upload, signed GET preview/download, OCR task, and export write probes against the target project.",
+    )
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     parser.add_argument("--timeout", type=float, default=8.0)
     return parser.parse_args()
 
 
 def config_from_args(args: argparse.Namespace) -> VerifyConfig:
+    if args.ocr_object_probe and args.skip_ocr:
+        raise SystemExit("--ocr-object-probe cannot be used with --skip-ocr.")
+    if args.ocr_object_probe and not args.write_probes:
+        raise SystemExit("--ocr-object-probe requires --write-probes so the verifier has an uploaded object to parse.")
     roles = [item.strip() for item in args.roles.split(",") if item.strip()]
     unknown = [role for role in roles if role not in ROLE_DEFAULT_PATHS]
     if unknown:
@@ -76,6 +132,9 @@ def config_from_args(args: argparse.Namespace) -> VerifyConfig:
         strict_production=args.strict_production,
         skip_ocr=args.skip_ocr,
         skip_litellm=args.skip_litellm,
+        write_probes=args.write_probes,
+        ocr_object_probe=args.ocr_object_probe,
+        litellm_provider_probes=args.litellm_provider_probes,
     )
 
 
@@ -87,11 +146,13 @@ class DeploymentVerifier:
         api_client: httpx.Client,
         ocr_client: httpx.Client | None = None,
         litellm_client: httpx.Client | None = None,
+        storage_client: httpx.Client | None = None,
     ) -> None:
         self.config = config
         self.api = api_client
         self.ocr = ocr_client
         self.litellm = litellm_client
+        self.storage = storage_client or api_client
         self.results: list[CheckResult] = []
         self.api_health: dict[str, Any] = {}
         self.tokens: dict[str, str] = {}
@@ -101,12 +162,16 @@ class DeploymentVerifier:
         self.check_strict_production_flags()
         self.check_auth_gate()
         self.check_role_logins()
+        self.check_mongo_transaction_probe()
         self.check_admin_reads_rejected()
         self.check_project_and_task_reads()
+        self.check_write_probes()
         self.check_identity_spoof_rejected()
         self.check_action_bypass_rejected()
         self.check_read_scope_rejected()
         self.check_ocr_health()
+        self.check_ocr_parse_contract()
+        self.check_ocr_bad_request_contract()
         self.check_litellm_health()
         return self.results
 
@@ -228,6 +293,238 @@ class DeploymentVerifier:
             data = self.envelope_data(name, status_code, payload)
             if data is not None:
                 self.add(name, "pass")
+
+    def check_mongo_transaction_probe(self) -> None:
+        if not self.config.strict_production and not self.api_health.get("mongoTransactions"):
+            self.add("mongo.transaction-probe", "skip", "MongoDB transactions are disabled.")
+            return
+        status_code, payload = self.request_json(
+            self.api,
+            "GET",
+            "/api/system/mongo-transaction-probe",
+            headers=self.auth_headers("admin"),
+        )
+        data = self.envelope_data("mongo.transaction-probe", status_code, payload)
+        if data is None:
+            return
+        failures = []
+        if self.config.strict_production:
+            if data.get("mongoEnabled") is not True:
+                failures.append("mongoEnabled must be true")
+            if data.get("transactionsConfigured") is not True:
+                failures.append("transactionsConfigured must be true")
+            if data.get("transactionProbe") != "pass":
+                failures.append(f"transactionProbe must be pass, got {data.get('transactionProbe')!r}")
+        elif data.get("transactionsConfigured") and data.get("transactionProbe") == "failed":
+            failures.append("transaction probe failed")
+        if failures:
+            self.add("mongo.transaction-probe", "fail", "; ".join(failures), data)
+            return
+        status = "pass" if data.get("transactionProbe") == "pass" else "skip"
+        detail = "MongoDB transaction probe passed." if status == "pass" else str(data.get("reason") or "MongoDB transaction probe skipped.")
+        self.add("mongo.transaction-probe", status, detail, data)
+
+    def check_write_probes(self) -> None:
+        if not self.config.write_probes:
+            self.add("api.write-probes", "skip", "Write probes disabled; pass --write-probes to verify upload/OCR/export mutations.")
+            return
+        headers = self.auth_headers("contractor")
+        suffix = uuid4().hex[:8]
+        file_name = f"deployment-verify-{suffix}.pdf"
+        status_code, payload = self.request_json(
+            self.api,
+            "POST",
+            f"/api/projects/{self.config.project_id}/documents/upload-session",
+            headers={**headers, "Idempotency-Key": f"verify-upload-{suffix}"},
+            json={"files": [{"fileName": file_name, "fileSize": 1024, "fileType": "application/pdf"}]},
+        )
+        data = self.envelope_data("api.write-probes.upload-session", status_code, payload)
+        if data is None:
+            self.add("api.write-probes", "fail", "Upload session probe failed.")
+            return
+        upload_urls = data.get("uploadUrls") or []
+        session_id = data.get("uploadSessionId")
+        if not session_id or not upload_urls or upload_urls[0].get("method") != "PUT":
+            self.add("api.write-probes", "fail", f"Unexpected upload session payload: {data}")
+            return
+        document_id = upload_urls[0].get("documentId")
+        if not document_id:
+            self.add("api.write-probes", "fail", f"Upload session missing documentId: {data}")
+            return
+        if not self.check_signed_put_url(upload_urls[0]):
+            self.add("api.write-probes", "fail", "Signed PUT probe failed.")
+            return
+
+        status_code, payload = self.request_json(
+            self.api,
+            "POST",
+            f"/api/projects/{self.config.project_id}/documents/upload-session/{session_id}/complete",
+            headers=headers,
+        )
+        complete = self.envelope_data("api.write-probes.upload-complete", status_code, payload)
+        if complete is None:
+            self.add("api.write-probes", "fail", "Upload complete probe failed.")
+            return
+        if int(complete.get("fileCount") or 0) < 1 or not isinstance(complete.get("queuedTasks"), list):
+            self.add("api.write-probes", "fail", f"Unexpected upload complete payload: {complete}")
+            return
+
+        status_code, payload = self.request_json(
+            self.api,
+            "GET",
+            f"/api/knowledge/tasks?taskType=ocr&pageSize=50",
+            headers=headers,
+        )
+        tasks = self.envelope_data("api.write-probes.ocr-task", status_code, payload)
+        if tasks is None:
+            self.add("api.write-probes", "fail", "OCR task list probe failed.")
+            return
+        task_items = tasks.get("items") if isinstance(tasks, dict) else []
+        if not any(isinstance(item, dict) and item.get("targetName") == file_name for item in task_items or []):
+            self.add("api.write-probes", "fail", f"Created upload did not appear in OCR tasks: {tasks}")
+            return
+        if not self.check_document_signed_get_urls(str(document_id), headers):
+            self.add("api.write-probes", "fail", "Document signed GET preview/download probe failed.")
+            return
+        if not self.check_uploaded_document_ocr_parse(str(document_id), file_name, headers):
+            self.add("api.write-probes", "fail", "Uploaded object OCR parse probe failed.")
+            return
+
+        export_headers = self.auth_headers("inspection")
+        status_code, payload = self.request_json(
+            self.api,
+            "POST",
+            "/api/exports",
+            headers={**export_headers, "Idempotency-Key": f"verify-export-{suffix}"},
+            json={"projectId": self.config.project_id, "fileName": f"deployment-verify-{suffix}.zip"},
+        )
+        export = self.envelope_data("api.write-probes.export-create", status_code, payload)
+        if export is None:
+            self.add("api.write-probes", "fail", "Export create probe failed.")
+            return
+        export_id = export.get("exportId")
+        task = export.get("task") or {}
+        if not export_id or task.get("status") not in {"排队中", "运行中", "可下载"}:
+            self.add("api.write-probes", "fail", f"Unexpected export payload: {export}")
+            return
+        status_code, payload = self.request_json(self.api, "GET", f"/api/exports/{export_id}", headers=export_headers)
+        detail = self.envelope_data("api.write-probes.export-detail", status_code, payload)
+        if detail is None or not isinstance(detail.get("task"), dict):
+            self.add("api.write-probes", "fail", f"Export detail probe failed: {payload}")
+            return
+        self.add(
+            "api.write-probes",
+            "pass",
+            "Signed PUT, upload complete, document signed GETs, OCR task creation, optional OCR object parse, and export task probes passed.",
+        )
+
+    def check_signed_put_url(self, upload_url: dict[str, Any]) -> bool:
+        url = str(upload_url.get("url") or "")
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"}:
+            if self.config.strict_production:
+                self.add("api.write-probes.signed-put", "fail", f"Production signed PUT URL must be HTTP(S), got {url!r}.")
+                return False
+            self.add("api.write-probes.signed-put", "skip", f"Non-HTTP signed URL {url!r}; skipping object upload probe.")
+            return True
+        headers = {str(key): str(value) for key, value in (upload_url.get("headers") or {}).items()}
+        content_type = headers.get("Content-Type") or headers.get("content-type") or "application/pdf"
+        headers.setdefault("Content-Type", content_type)
+        body = deployment_probe_pdf()
+        try:
+            response = self.storage.request("PUT", url, headers=headers, content=body)
+        except Exception as exc:
+            self.add("api.write-probes.signed-put", "fail", str(exc))
+            return False
+        if response.status_code >= 400:
+            self.add("api.write-probes.signed-put", "fail", f"HTTP {response.status_code}")
+            return False
+        self.add("api.write-probes.signed-put", "pass", f"HTTP {response.status_code}")
+        return True
+
+    def check_uploaded_document_ocr_parse(self, document_id: str, file_name: str, headers: dict[str, str]) -> bool:
+        if not self.config.ocr_object_probe:
+            self.add("ocr.uploaded-object-parse", "skip", "Pass --ocr-object-probe with --write-probes to parse the uploaded object.")
+            return True
+        if self.config.skip_ocr or self.ocr is None:
+            self.add("ocr.uploaded-object-parse", "fail", "OCR client is disabled.")
+            return False
+        status_code, payload = self.request_json(
+            self.api,
+            "GET",
+            f"/api/projects/{self.config.project_id}/documents/{document_id}",
+            headers=headers,
+        )
+        detail = self.envelope_data("api.write-probes.document-detail", status_code, payload)
+        if detail is None:
+            return False
+        current_version = detail.get("currentVersion") if isinstance(detail, dict) else None
+        storage_key = (current_version or {}).get("storageKey") if isinstance(current_version, dict) else None
+        if not storage_key:
+            self.add("ocr.uploaded-object-parse", "fail", f"Document detail missing currentVersion.storageKey: {detail}")
+            return False
+        try:
+            status_code, payload = self.request_json(
+                self.ocr,
+                "POST",
+                "/internal/ocr/parse",
+                json={"storageKey": storage_key, "fileName": file_name},
+            )
+        except Exception as exc:
+            self.add("ocr.uploaded-object-parse", "fail", str(exc))
+            return False
+        data = self.envelope_data("ocr.uploaded-object-parse", status_code, payload)
+        if data is None:
+            return False
+        required = {"storageKey", "status", "fragments", "fields", "diagnostics"}
+        missing = sorted(required - set(data))
+        if missing:
+            self.add("ocr.uploaded-object-parse", "fail", f"Missing fields: {', '.join(missing)}", data)
+            return False
+        if data.get("status") != "success":
+            self.add("ocr.uploaded-object-parse", "fail", f"Expected status=success, got {data.get('status')!r}.", data)
+            return False
+        if not isinstance(data.get("fragments"), list):
+            self.add("ocr.uploaded-object-parse", "fail", "fragments must be a list.", data)
+            return False
+        self.add("ocr.uploaded-object-parse", "pass", "OCR service parsed the uploaded object.", {"storageKey": storage_key})
+        return True
+
+    def check_document_signed_get_urls(self, document_id: str, headers: dict[str, str]) -> bool:
+        for label, path in [
+            ("preview", f"/api/projects/{self.config.project_id}/documents/{document_id}/preview-url"),
+            ("download", f"/api/projects/{self.config.project_id}/documents/{document_id}/download-url"),
+        ]:
+            status_code, payload = self.request_json(self.api, "GET", path, headers=headers)
+            data = self.envelope_data(f"api.write-probes.document-{label}", status_code, payload)
+            if data is None:
+                return False
+            if not self.check_signed_get_url(f"api.write-probes.document-{label}-get", data):
+                return False
+        return True
+
+    def check_signed_get_url(self, name: str, payload: dict[str, Any]) -> bool:
+        url = str(payload.get("url") or "")
+        parsed = urlparse(url)
+        if payload.get("method") != "GET":
+            self.add(name, "fail", f"Expected method GET, got {payload.get('method')!r}.")
+            return False
+        if parsed.scheme not in {"http", "https"}:
+            if self.config.strict_production:
+                self.add(name, "fail", f"Production signed GET URL must be HTTP(S), got {url!r}.")
+                return False
+            self.add(name, "skip", f"Non-HTTP signed URL {url!r}; skipping object download probe.")
+            return True
+        try:
+            response = self.storage.request("GET", url)
+        except Exception as exc:
+            self.add(name, "fail", str(exc))
+            return False
+        if response.status_code >= 400:
+            self.add(name, "fail", f"HTTP {response.status_code}")
+            return False
+        self.add(name, "pass", f"HTTP {response.status_code}")
+        return True
 
     def check_admin_reads_rejected(self) -> None:
         if not self.api_health.get("authRequired") or "contractor" not in self.tokens:
@@ -362,12 +659,60 @@ class DeploymentVerifier:
             return
         fields = {"pipelineAvailable", "pipelineBackend", "placeholderAllowed"}
         missing = sorted(fields - set(data))
+        strict_failures = []
+        if self.config.strict_production:
+            if data.get("pipelineAvailable") is not True:
+                strict_failures.append("pipelineAvailable must be true")
+            if data.get("placeholderAllowed") is not False:
+                strict_failures.append("placeholderAllowed must be false")
+        failures = [f"Missing fields: {', '.join(missing)}"] if missing else []
+        failures.extend(strict_failures)
         self.add(
             "ocr.health",
-            "fail" if missing else "pass",
-            f"Missing fields: {', '.join(missing)}" if missing else "OCR health flags are present.",
+            "fail" if failures else "pass",
+            "; ".join(failures) if failures else "OCR health flags are present.",
             data,
         )
+
+    def check_ocr_parse_contract(self) -> None:
+        if self.config.skip_ocr or self.ocr is None:
+            self.add("ocr.parse-contract", "skip", "OCR check disabled.")
+            return
+        try:
+            status_code, payload = self.request_json(
+                self.ocr,
+                "POST",
+                "/internal/ocr/parse",
+                json={"storageKey": "__deployment_verify_missing__.pdf", "fileName": "__deployment_verify_missing__.pdf"},
+            )
+        except Exception as exc:
+            self.add("ocr.parse-contract", "fail", str(exc))
+            return
+        data = self.envelope_data("ocr.parse-contract", status_code, payload)
+        if data is None:
+            return
+        required = {"storageKey", "status", "fragments", "fields", "diagnostics"}
+        missing = sorted(required - set(data))
+        valid_status = data.get("status") in {"success", "failed"}
+        list_fields = all(isinstance(data.get(key), list) for key in ["fragments", "fields", "diagnostics"])
+        if missing or not valid_status or not list_fields:
+            self.add("ocr.parse-contract", "fail", f"Unexpected OCR parse payload: {data}", data)
+            return
+        self.add("ocr.parse-contract", "pass", f"OCR parse contract returned status={data.get('status')}.", data)
+
+    def check_ocr_bad_request_contract(self) -> None:
+        if self.config.skip_ocr or self.ocr is None:
+            self.add("ocr.bad-request", "skip", "OCR check disabled.")
+            return
+        try:
+            status_code, payload = self.request_json(self.ocr, "POST", "/internal/ocr/parse", json={})
+        except Exception as exc:
+            self.add("ocr.bad-request", "fail", str(exc))
+            return
+        if status_code == 200 and isinstance(payload, dict) and payload.get("data", {}).get("reason") == "VALIDATION_ERROR":
+            self.add("ocr.bad-request", "pass", "Malformed OCR parse requests return VALIDATION_ERROR.")
+            return
+        self.add("ocr.bad-request", "fail", f"Expected VALIDATION_ERROR, got {payload}")
 
     def check_litellm_health(self) -> None:
         if self.config.skip_litellm or self.litellm is None:
@@ -388,7 +733,102 @@ class DeploymentVerifier:
         except Exception as exc:
             self.add("litellm.models", "fail", str(exc))
             return
-        self.add("litellm.models", "pass" if models.status_code < 400 else "fail", f"HTTP {models.status_code}")
+        if models.status_code >= 400:
+            self.add("litellm.models", "fail", f"HTTP {models.status_code}")
+            return
+        self.add("litellm.models", "pass", f"HTTP {models.status_code}")
+        try:
+            payload = models.json()
+        except Exception as exc:
+            self.add("litellm.aliases", "fail", f"/v1/models returned non-JSON payload: {exc}")
+            return
+        model_ids = {
+            str(item.get("id") or item.get("model_name") or item.get("model") or "")
+            for item in payload.get("data", [])
+            if isinstance(item, dict)
+        }
+        missing = sorted(REQUIRED_LITELLM_ALIASES - model_ids)
+        aliases_ok = not missing
+        self.add(
+            "litellm.aliases",
+            "fail" if missing else "pass",
+            f"Missing model aliases: {', '.join(missing)}" if missing else "Required model aliases are available.",
+            {"modelIds": sorted(model_ids)},
+        )
+        if not aliases_ok:
+            return
+        self.check_litellm_provider_probes(headers)
+
+    def check_litellm_provider_probes(self, headers: dict[str, str]) -> None:
+        if not self.config.litellm_provider_probes:
+            self.add("litellm.provider-probes", "skip", "Pass --litellm-provider-probes to verify real chat and embedding calls.")
+            return
+        self.check_litellm_chat_probe(headers)
+        self.check_litellm_embedding_probe(headers)
+
+    def check_litellm_chat_probe(self, headers: dict[str, str]) -> None:
+        try:
+            response = self.litellm.post(
+                "/v1/chat/completions",
+                headers=headers,
+                json={
+                    "model": "default-chat",
+                    "messages": [
+                        {"role": "system", "content": "You are a deployment verifier. Reply briefly."},
+                        {"role": "user", "content": "Reply with: AIcheck verifier ok"},
+                    ],
+                    "max_tokens": 16,
+                    "temperature": 0,
+                },
+            )
+        except Exception as exc:
+            self.add("litellm.chat-probe", "fail", str(exc))
+            return
+        if response.status_code >= 400:
+            self.add("litellm.chat-probe", "fail", f"HTTP {response.status_code}")
+            return
+        try:
+            payload = response.json()
+        except Exception as exc:
+            self.add("litellm.chat-probe", "fail", f"Non-JSON response: {exc}")
+            return
+        choices = payload.get("choices") if isinstance(payload, dict) else None
+        message = choices[0].get("message", {}) if isinstance(choices, list) and choices else {}
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, str) or not content.strip():
+            self.add("litellm.chat-probe", "fail", "Chat completion returned no assistant content.")
+            return
+        self.add("litellm.chat-probe", "pass", "default-chat returned assistant content.", {"model": "default-chat"})
+
+    def check_litellm_embedding_probe(self, headers: dict[str, str]) -> None:
+        try:
+            response = self.litellm.post(
+                "/v1/embeddings",
+                headers=headers,
+                json={"model": "embedding-default", "input": "AIcheck deployment verifier"},
+            )
+        except Exception as exc:
+            self.add("litellm.embedding-probe", "fail", str(exc))
+            return
+        if response.status_code >= 400:
+            self.add("litellm.embedding-probe", "fail", f"HTTP {response.status_code}")
+            return
+        try:
+            payload = response.json()
+        except Exception as exc:
+            self.add("litellm.embedding-probe", "fail", f"Non-JSON response: {exc}")
+            return
+        data = payload.get("data") if isinstance(payload, dict) else None
+        embedding = data[0].get("embedding") if isinstance(data, list) and data else None
+        if not isinstance(embedding, list) or not embedding:
+            self.add("litellm.embedding-probe", "fail", "Embedding response returned no vector.")
+            return
+        self.add(
+            "litellm.embedding-probe",
+            "pass",
+            f"embedding-default returned vector dimension={len(embedding)}.",
+            {"model": "embedding-default", "dimension": len(embedding)},
+        )
 
 
 def print_results(results: list[CheckResult], *, as_json: bool) -> None:
@@ -406,6 +846,7 @@ def main() -> int:
     with httpx.Client(base_url=config.api_base, timeout=args.timeout) as api_client:
         ocr_client = None
         litellm_client = None
+        storage_client = httpx.Client(timeout=args.timeout)
         if config.ocr_base:
             ocr_client = httpx.Client(base_url=config.ocr_base, timeout=args.timeout)
         if config.litellm_base:
@@ -416,6 +857,7 @@ def main() -> int:
                 api_client=api_client,
                 ocr_client=ocr_client,
                 litellm_client=litellm_client,
+                storage_client=storage_client,
             )
             results = verifier.run()
         finally:
@@ -423,6 +865,7 @@ def main() -> int:
                 ocr_client.close()
             if litellm_client:
                 litellm_client.close()
+            storage_client.close()
     print_results(results, as_json=args.json)
     return 0 if all(item.ok or item.status == "skip" for item in results) else 1
 

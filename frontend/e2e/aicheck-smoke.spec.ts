@@ -63,7 +63,21 @@ const clearLoginState = async (page: Page) => {
     localStorage.clear()
     sessionStorage.clear()
   })
-  await page.reload()
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForLoadState('networkidle').catch(() => {})
+}
+
+const gotoLoginPage = async (page: Page, redirect?: string) => {
+  const target = redirect ? `/#/login?redirect=${encodeURIComponent(redirect)}` : '/#/login'
+  await page.goto(target, { waitUntil: 'domcontentloaded' })
+  const loginInputs = page.locator(`input[placeholder="${loginPlaceholder}"]`)
+  try {
+    await expect(loginInputs.first()).toBeVisible({ timeout: 15_000 })
+  } catch (error) {
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await expect(loginInputs.first()).toBeVisible({ timeout: 15_000 })
+  }
+  return loginInputs
 }
 
 const businessError = (code: number, message: string, reason: string) => ({
@@ -75,12 +89,10 @@ const businessError = (code: number, message: string, reason: string) => ({
 })
 
 const loginTo = async (page: Page, path: string, account = accountForPath(path)) => {
-  await page.goto('/#/login')
+  await page.goto('/#/login', { waitUntil: 'domcontentloaded' })
   await clearLoginState(page)
-  await page.goto(`/#/login?redirect=${encodeURIComponent(path)}`)
-  const loginInputs = page.locator(`input[placeholder="${loginPlaceholder}"]`)
+  const loginInputs = await gotoLoginPage(page, path)
 
-  await expect(loginInputs.first()).toBeVisible()
   await loginInputs.nth(0).fill(account)
   await loginInputs.nth(1).fill(account)
   await page.getByRole('button', { name: /^登录$/ }).click()
@@ -89,10 +101,8 @@ const loginTo = async (page: Page, path: string, account = accountForPath(path))
 }
 
 const loginWithoutRedirect = async (page: Page, account: string, expectedPath: string) => {
-  await page.goto('/#/login')
-  const loginInputs = page.locator(`input[placeholder="${loginPlaceholder}"]`)
+  const loginInputs = await gotoLoginPage(page)
 
-  await expect(loginInputs.first()).toBeVisible()
   await loginInputs.nth(0).fill(account)
   await loginInputs.nth(1).fill(account)
   await page.getByRole('button', { name: /^登录$/ }).click()
@@ -983,12 +993,19 @@ test.describe('AIcheck business writeback flows', () => {
     await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/workbench/ndt')!)
 
     const panel = page.locator('.ndt-panel')
+    const reportForm = panel.locator('.report-form')
+    const fileName = `E2E-NDT-待提交报告-${Date.now()}.pdf`
+    await reportForm
+      .locator('.el-form-item')
+      .filter({ hasText: '报告文件名' })
+      .locator('input')
+      .fill(fileName)
+    await reportForm.getByRole('button', { name: '创建报告上传会话' }).click()
+
     await expect(panel.locator('.ndt-actions')).toContainText(/待提交报告 [1-9]/)
     await panel.getByRole('button', { name: '提交检测资料' }).click()
 
-    await expect(
-      page.locator('.el-message').filter({ hasText: '无损检测资料已提交监检' })
-    ).toBeVisible()
+    await expect(panel).toContainText(fileName.replace('.pdf', ''))
     await expect(panel).toContainText('待审查')
   })
 
@@ -1409,10 +1426,11 @@ test.describe('AIcheck business writeback flows', () => {
       .filter({ hasText: '后端缺失' })
       .click()
 
-    await expect(panel.locator('.integration-contract-table')).toContainText('drafts[].nodeNames')
     await expect(panel.locator('.integration-contract-table')).toContainText(
-      '/api/projects/{projectId}/submissions'
+      '当前筛选下没有字段差异'
     )
+    await expect(panel).toContainText('阻塞项')
+    await expect(panel).toContainText('可推进')
 
     await page.setViewportSize({ width: 390, height: 900 })
     await expectNoPageOverflow(page)

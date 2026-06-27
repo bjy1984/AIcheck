@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import os
 from copy import deepcopy
 from datetime import timedelta
@@ -95,11 +96,40 @@ class InMemoryRepository:
     def project_for_role(self, project: dict[str, Any], role: str) -> dict[str, Any]:
         cloned = self.clone(project)
         cloned["currentNodeId"] = ROLE_NODE_MAP.get(role, project.get("currentNodeId", 24))
+        cloned["riskLevel"] = self.project_risk_level(project["id"])
         if project.get("status") == "已归档":
             cloned["actions"] = ["project:view", "archive:view", "archive:download"]
         else:
             cloned["actions"] = self.role_actions(role)
         return cloned
+
+    def project_risk_level(self, project_id: str) -> str:
+        if any(item.get("projectId") == project_id and item.get("status") == "失败" for item in self.state["ai_runs"]):
+            return "高"
+        if any(item.get("projectId") == project_id and item.get("status") == "失败" for item in self.state["export_tasks"]):
+            return "高"
+        failed_knowledge_task_project_ids = {
+            (self.find_one("knowledge_files", item.get("targetId")) or {}).get("projectId")
+            for item in self.state["knowledge_tasks"]
+            if item.get("status") == "失败"
+        }
+        if project_id in failed_knowledge_task_project_ids:
+            return "高"
+        project_nodes = [item for item in self.state["tree_nodes"] if item.get("projectId") == project_id]
+        risky_statuses = {"需补正", "退回补正中", "识别失败", "失败"}
+        if any(item.get("status") in risky_statuses for item in project_nodes):
+            return "高"
+        if any(item.get("projectId") == project_id and item.get("status") == "待反馈" for item in self.state["rectifications"]):
+            return "高"
+        if any(item.get("projectId") == project_id and item.get("status") == "待反馈" for item in self.state["ndt_feedback"]):
+            return "高"
+        pending_statuses = {"待提交", "待审查", "AI 预审中", "复审中", "报告生成/复核中", "部分提交"}
+        if any(item.get("status") in pending_statuses for item in project_nodes):
+            return "中"
+        project = self.require_project(project_id)
+        if project and (int(project.get("todoCount") or 0) > 0 or int(project.get("messageCount") or 0) > 0):
+            return "中"
+        return "低"
 
     def node(self, project_id: str, node_id: int) -> dict[str, Any] | None:
         return next(
@@ -233,20 +263,69 @@ class InMemoryRepository:
     def signed_put(self, bucket: str, object_name: str, fallback_url: str, *, content_type: str | None = None) -> str:
         return object_storage.presigned_put_url(bucket, object_name, content_type=content_type) or fallback_url
 
+    def document_storage_url(self, document: dict[str, Any], *, fallback_prefix: str) -> str:
+        version = self.current_version(document["id"])
+        bucket = (version or {}).get("storageBucket")
+        storage_key = (version or {}).get("storageKey")
+        if bucket and storage_key:
+            return f"minio://{bucket}/{storage_key}"
+        return f"mock://{fallback_prefix}/documents/{document['id']}?versionId={document.get('currentVersionId')}"
+
+    def document_content_type(self, document: dict[str, Any]) -> str | None:
+        raw_type = str(document.get("fileType") or "").lower()
+        if "/" in raw_type:
+            return raw_type
+        suffix = raw_type or str(document.get("fileName") or "").rsplit(".", 1)[-1].lower()
+        content_types = {
+            "pdf": "application/pdf",
+            "png": "image/png",
+            "jpg": "image/jpeg",
+            "jpeg": "image/jpeg",
+            "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        }
+        return content_types.get(suffix)
+
+    def document_preview_type(self, document: dict[str, Any]) -> str:
+        raw_type = str(document.get("fileType") or "").lower()
+        file_name = str(document.get("fileName") or "").lower()
+        suffix = file_name.rsplit(".", 1)[-1] if "." in file_name else raw_type
+        if raw_type == "application/pdf" or suffix == "pdf":
+            return "pdf"
+        if raw_type.startswith("image/") or suffix in {"png", "jpg", "jpeg"}:
+            return "image"
+        if suffix in {"xlsx", "docx"}:
+            return "office"
+        return "unsupported"
+
     def document_preview(self, document: dict[str, Any]) -> dict[str, Any]:
-        file_type = document.get("fileType", "")
-        preview_type = "pdf" if file_type == "pdf" else "image" if file_type in {"png", "jpg", "jpeg"} else "office" if file_type in {"xlsx", "docx"} else "unsupported"
+        preview_type = self.document_preview_type(document)
         return {
-            **self.signed_get(
-                document["fileName"],
-                f"mock://preview/documents/{document['id']}?versionId={document['currentVersionId']}",
-                f"application/{file_type}" if file_type else None,
-                245760,
-            ),
+            **self.document_signed_get(document, fallback_prefix="preview"),
             "previewType": preview_type,
             "readonly": True,
             "pageCount": 3 if preview_type == "pdf" else None,
         }
+
+    def document_download(self, document: dict[str, Any]) -> dict[str, Any]:
+        return self.document_signed_get(document, fallback_prefix="download")
+
+    def document_signed_get(self, document: dict[str, Any], *, fallback_prefix: str) -> dict[str, Any]:
+        content_type = self.document_content_type(document)
+        primary = self.signed_get(
+            document["fileName"],
+            self.document_storage_url(document, fallback_prefix=fallback_prefix),
+            content_type,
+            file_size=245760,
+        )
+        if not str(primary.get("url") or "").startswith("minio://"):
+            return primary
+        return self.signed_get(
+            document["fileName"],
+            f"mock://{fallback_prefix}/documents/{document['id']}?versionId={document.get('currentVersionId')}",
+            content_type,
+            file_size=245760,
+        )
 
     def create_document(
         self,
@@ -641,7 +720,7 @@ class InMemoryRepository:
         file_name = task.get("fileName") or f"{task['id']}.zip"
         suffix = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else "zip"
         content_type = content_type or ("application/pdf" if suffix == "pdf" else "application/zip")
-        artifact_body = body or build_placeholder_artifact(file_name, task)
+        artifact_body = body or build_export_artifact(file_name, task, content_type, self)
         object_key = f"{task.get('projectId') or 'global'}/{task['id']}/{file_name}"
         stored_url = object_storage.put_bytes("exports", object_key, artifact_body, content_type=content_type)
         if stored_url:
@@ -649,6 +728,7 @@ class InMemoryRepository:
             task["storageBucket"] = "exports"
             task["storageKey"] = object_key
             task["fileSize"] = len(artifact_body)
+            task["contentType"] = content_type
         return task
 
     async def load_from_mongo(self, database: Any) -> None:
@@ -854,18 +934,155 @@ def fields_from_fragments(result: dict[str, Any]) -> list[dict[str, Any]]:
     return fields
 
 
-def build_placeholder_artifact(file_name: str, task: dict[str, Any]) -> bytes:
-    if file_name.lower().endswith(".pdf"):
-        text = f"AIcheck export {task.get('id')} {file_name}".encode("utf-8")
-        return b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n% " + text + b"\n%%EOF\n"
+def build_export_artifact(
+    file_name: str,
+    task: dict[str, Any],
+    content_type: str,
+    repository: InMemoryRepository,
+) -> bytes:
+    if content_type == "application/pdf" or file_name.lower().endswith(".pdf"):
+        return build_pdf_artifact(file_name, task, repository)
+    return build_zip_artifact(file_name, task, repository)
+
+
+def export_context(task: dict[str, Any], repository: InMemoryRepository) -> dict[str, Any]:
+    project_id = task.get("projectId")
+    report_id = task.get("reportId")
+    project = repository.require_project(project_id) if project_id else None
+    reports = []
+    if report_id:
+        report = repository.find_one("reports", str(report_id))
+        reports = [repository.clone(report)] if report else []
+    elif project_id:
+        reports = [repository.clone(item) for item in repository.state["reports"] if item.get("projectId") == project_id]
+    documents = [repository.clone(item) for item in repository.state["documents"] if not project_id or item.get("projectId") == project_id]
+    document_ids = {item["id"] for item in documents}
+    archive_items = [
+        repository.clone(item)
+        for item in repository.state["archive_items"]
+        if not project_id or item.get("projectId") == project_id
+    ]
+    evidence_links = [
+        repository.clone(item)
+        for item in repository.state["evidence_links"]
+        if not document_ids or item.get("documentId") in document_ids
+    ]
+    return {
+        "project": repository.clone(project) if project else None,
+        "reports": reports,
+        "documents": documents,
+        "archiveItems": archive_items,
+        "evidenceLinks": evidence_links,
+        "counts": {
+            "reports": len(reports),
+            "documents": len(documents),
+            "archiveItems": len(archive_items),
+            "evidenceLinks": len(evidence_links),
+        },
+    }
+
+
+def build_zip_artifact(file_name: str, task: dict[str, Any], repository: InMemoryRepository) -> bytes:
     import io
     import zipfile
 
+    context = export_context(task, repository)
+    manifest = {
+        "schemaVersion": "aicheck-export-v1",
+        "generatedAt": server_time(),
+        "taskId": task.get("id"),
+        "exportType": task.get("exportType"),
+        "projectId": task.get("projectId"),
+        "reportId": task.get("reportId"),
+        "fileName": file_name,
+        "counts": context["counts"],
+        "contents": [
+            "manifest.json",
+            "task.json",
+            "project.json",
+            "reports.json",
+            "documents.json",
+            "archive_items.json",
+            "evidence_links.json",
+            "README.txt",
+        ],
+    }
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("manifest.json", str({"id": task.get("id"), "fileName": file_name, "createdAt": server_time()}))
-        archive.writestr("README.txt", "AIcheck export placeholder package.\n")
+        archive.writestr("manifest.json", json_dump(manifest))
+        archive.writestr("task.json", json_dump(task))
+        archive.writestr("project.json", json_dump(context["project"] or {}))
+        archive.writestr("reports.json", json_dump(context["reports"]))
+        archive.writestr("documents.json", json_dump(context["documents"]))
+        archive.writestr("archive_items.json", json_dump(context["archiveItems"]))
+        archive.writestr("evidence_links.json", json_dump(context["evidenceLinks"]))
+        archive.writestr(
+            "README.txt",
+            "AIcheck export package\n"
+            f"Task: {task.get('id')}\n"
+            f"Type: {task.get('exportType')}\n"
+            f"Project: {task.get('projectId') or 'global'}\n"
+            "This package contains machine-readable manifest and business snapshots for audit and recovery.\n",
+        )
     return buffer.getvalue()
+
+
+def build_pdf_artifact(file_name: str, task: dict[str, Any], repository: InMemoryRepository) -> bytes:
+    context = export_context(task, repository)
+    project = context["project"] or {}
+    report = context["reports"][0] if context["reports"] else {}
+    lines = [
+        "AIcheck Export Report",
+        f"Task: {task.get('id')}",
+        f"File: {file_name}",
+        f"Project: {project.get('code') or project.get('id') or task.get('projectId') or '-'}",
+        f"Report: {report.get('title') or report.get('reportNo') or task.get('reportId') or '-'}",
+        f"Export Type: {task.get('exportType') or '-'}",
+        f"Generated At: {server_time()}",
+        f"Documents: {context['counts']['documents']}",
+        f"Evidence Links: {context['counts']['evidenceLinks']}",
+    ]
+    return simple_pdf(lines)
+
+
+def json_dump(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, indent=2, default=str)
+
+
+def simple_pdf(lines: list[str]) -> bytes:
+    content_lines = ["BT", "/F1 12 Tf", "72 760 Td", "14 TL"]
+    for index, line in enumerate(lines):
+        prefix = "" if index == 0 else "T* "
+        content_lines.append(f"{prefix}({pdf_escape(line)}) Tj")
+    content_lines.append("ET")
+    stream = "\n".join(content_lines).encode("latin-1", errors="replace")
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n" + stream + b"\nendstream",
+    ]
+    output = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for index, obj in enumerate(objects, start=1):
+        offsets.append(len(output))
+        output.extend(f"{index} 0 obj\n".encode("ascii"))
+        output.extend(obj)
+        output.extend(b"\nendobj\n")
+    xref_offset = len(output)
+    output.extend(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
+    output.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        output.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    output.extend(
+        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n".encode("ascii")
+    )
+    return bytes(output)
+
+
+def pdf_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")[:120]
 
 
 repo = InMemoryRepository()

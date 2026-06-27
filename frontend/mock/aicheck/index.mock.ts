@@ -2762,12 +2762,12 @@ const initialIntegrationContractFields: IntegrationContractFieldMock[] = [
     endpoint: '/api/projects/{projectId}/submissions',
     method: 'GET',
     frontendField: 'drafts[].nodeNames',
-    backendField: '',
-    required: false,
-    status: '后端缺失',
-    severity: 'danger',
+    backendField: 'drafts[].nodeNames',
+    required: true,
+    status: '已对齐',
+    severity: 'info',
     owner: '后端',
-    note: '提交历史抽屉需要节点名称摘要，后端若只返回 nodeIds，需前端二次补全。',
+    note: '提交草稿和提交批次摘要均已返回节点名称。',
     updatedAt: serverTime
   },
   {
@@ -2793,11 +2793,11 @@ const initialIntegrationContractFields: IntegrationContractFieldMock[] = [
     method: 'POST',
     frontendField: 'riskLevel',
     backendField: 'riskLevel',
-    required: false,
-    status: '前端缺失',
-    severity: 'danger',
-    owner: '前端',
-    note: '合同要求 result=需补正 时 riskLevel 条件必填，当前表单未暴露。',
+    required: true,
+    status: '已对齐',
+    severity: 'info',
+    owner: '前后端共同',
+    note: '审查意见保存已返回风险等级，前端保留风险等级字段展示和合同校验。',
     updatedAt: serverTime
   },
   {
@@ -4611,10 +4611,11 @@ export default [
           isCurrent: true
         }
         const method: NdtReport['method'] = file.fileName?.includes('UT') ? 'UT' : 'RT'
+        const reportName = String(file.fileName || `${method}检测报告.pdf`).replace(/\.[^.]+$/, '')
         const report: NdtReport = {
           id: `NDT-RPT-${seed}`,
           projectId: id,
-          reportNo: `${method}-MOCK-${state.ndtReports.length + index + 1}`,
+          reportNo: reportName,
           method,
           fileId: documentId,
           relatedFilmIds,

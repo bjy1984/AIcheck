@@ -402,6 +402,20 @@ const retrievalLoading = ref(false)
 const retrievalResult = ref<KnowledgeRetrievalTestPayload | null>(null)
 const compareLoading = ref(false)
 const compareResult = ref<LlmComparePayload | null>(null)
+const compareDisplayResults = computed(() => {
+  if (!compareResult.value) return []
+  if (compareResult.value.results.length) return compareResult.value.results
+  return (compareResult.value.modelCodes || []).map((modelCode) => ({
+    modelCode,
+    answer:
+      compareResult.value?.status === '失败'
+        ? '模型对比失败，请查看任务错误并重试。'
+        : '模型对比任务已创建，等待 worker 回写结果。',
+    confidence: undefined,
+    evidenceLinkIds: [] as string[],
+    latencyMs: 0
+  }))
+})
 const ruleDiffVisible = ref(false)
 const ruleDiffLoading = ref(false)
 const ruleDiff = ref<KnowledgeRuleVersionDiffPayload | null>(null)
@@ -2408,19 +2422,40 @@ onMounted(() => {
                 <template #header>
                   <div class="panel-header">
                     <span>对比结果</span>
-                    <ElTag v-if="compareResult" effect="plain">{{ compareResult.runId }}</ElTag>
+                    <ElSpace v-if="compareResult">
+                      <ElTag effect="plain">{{ compareResult.runId }}</ElTag>
+                      <ElTag
+                        :type="
+                          compareResult.status === '失败'
+                            ? 'danger'
+                            : compareResult.status === '完成'
+                              ? 'success'
+                              : 'warning'
+                        "
+                        effect="light"
+                      >
+                        {{ compareResult.status || '完成' }}
+                      </ElTag>
+                    </ElSpace>
                   </div>
                 </template>
                 <ElEmpty v-if="!compareResult" description="运行或选择历史对比后显示结果" />
                 <div v-else class="model-result-list">
                   <div
-                    v-for="item in compareResult.results"
+                    v-for="item in compareDisplayResults"
                     :key="item.modelCode"
                     class="model-result-item"
                   >
                     <div class="model-result-head">
                       <strong>{{ item.modelCode }}</strong>
-                      <ElTag :type="item.confidence >= 0.85 ? 'success' : 'warning'" effect="light">
+                      <ElTag
+                        :type="
+                          typeof item.confidence === 'number' && item.confidence >= 0.85
+                            ? 'success'
+                            : 'warning'
+                        "
+                        effect="light"
+                      >
                         {{ confidencePercent(item.confidence) }}
                       </ElTag>
                     </div>

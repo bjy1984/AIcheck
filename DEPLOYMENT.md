@@ -32,6 +32,9 @@ AIcheck/
 │   ├── libs/security/         # JWT、角色、ActionCode、权限推断
 │   ├── scripts/               # 角色创建、部署验收、前后端合同审计
 │   ├── config/litellm.yaml    # LiteLLM 模型别名配置
+│   ├── Dockerfile             # API/worker 通用后端镜像
+│   ├── Dockerfile.ocr         # OCR 专用镜像，安装 PaddleOCR 基线依赖
+│   ├── requirements-ocr.txt   # agentdesign OCR 依赖基线
 │   └── docker-compose.yml     # 后端服务与依赖编排
 └── DEPLOYMENT.md              # 本部署与架构文档
 ```
@@ -105,17 +108,20 @@ AI 复核与模型对比：
 
 1. 前端创建报告导出或归档包导出任务。
 2. `api-service` 写入 `export_tasks` 并投递 `export.package`。
-3. `worker-service` 生成 zip/pdf 产物并写入 MinIO。
+3. `worker-service` 生成 zip/pdf 产物并写入 MinIO；zip 包必须包含 `manifest.json`、`task.json`、`project.json`、`reports.json`、`documents.json`、`archive_items.json`、`evidence_links.json` 和 `README.txt`。
 4. 前端查询任务状态；任务可下载时获取短期 signed GET。
 
 ### 1.5 权限与数据边界
 
 - 生产必须启用 `AICHECK_REQUIRE_AUTH=true`，后端以 JWT 身份为准；非管理员不能伪造 `X-Role` 或 `X-User-Id`。
 - 后端不会只依赖前端按钮显隐。mutation 会根据路径推断 `ActionCode`，即使前端未传 `X-Action-Code` 也会拦截越权动作。
+- `tests/test_contract.py::test_all_non_public_mutating_routes_have_inferred_action_codes` 会遍历 FastAPI 所有非登录 POST/PUT/PATCH/DELETE 路由，确保新增写接口必须配置后端可推断的 `ActionCode`。
+- 成功 mutation 如果路由没有显式返回 `auditLogId`，后端中间件会写入一条通用 `ApiMutation` 审计日志；已有显式审计的路由不会重复写。
 - 项目成员与节点范围校验覆盖 URL、query、body，以及 `documentId`、`bindingId`、`reportId`、NDT report/film、export task 等资源 ID 反查出的节点。
 - 项目树、文件、挂载、报告、归档、NDT、知识任务、搜索、待办、消息、推理日志和模型对比列表在登录态下按 `nodeScope` 过滤。
 - `/api/admin/*`、全局知识源/配置/审计、规则版本等管理接口仅管理员可读写。
 - 已归档项目的 mutation 统一返回 `ARCHIVED_READONLY`；过期 `If-Match` 返回 `ETAG_CONFLICT`；重复 `Idempotency-Key` 使用请求 hash 防止同 key 不同 body。
+- 后端中间件会对所有非公开 POST/PUT/PATCH/DELETE 写请求统一处理 `Idempotency-Key`：相同 key 和相同 body/query 重放首次成功响应，同 key 不同 body/query 返回 `IDEMPOTENCY_KEY_CONFLICT`；路由层仍可对提交、导出、任务重试等关键流程显式传入业务 fingerprint。
 
 ### 1.6 数据存储边界
 
@@ -125,6 +131,8 @@ AI 复核与模型对比：
 | MinIO | 原始文件、预览、导出包、OCR artifacts | 浏览器 signed URL 使用外部域名，服务端使用内网 endpoint。 |
 | Redis | Celery broker/result backend、任务状态缓存 | 建议开启持久化或使用托管 Redis。 |
 | PostgreSQL | 仅 LiteLLM 元数据 | 不承载 AIcheck 业务表。 |
+
+MongoDB 启动时会执行 `backend/libs/db/indexes.py` 中的索引声明。当前索引覆盖所有持久化 collection，包括项目/节点状态、文件版本、提交草稿、补正、项目成员授权、OCR 抽取字段、知识源/任务、审计日志、导出任务、NDT、用户/角色和幂等键；`tests/test_contract.py::test_mongo_indexes_cover_all_persisted_collections` 会阻止新增持久化集合但漏配索引。
 
 ## 2. 部署前准备
 
@@ -139,7 +147,7 @@ AI 复核与模型对比：
 
 - 模型供应商密钥，例如 `OPENAI_API_KEY`。
 - 可访问的域名和 HTTPS 证书。
-- 如果要启用真实 OCR，需要把 `agentdesign` 的 OCR 依赖纳入镜像或部署到可导入路径。生产建议保持 `AICHECK_OCR_ALLOW_PLACEHOLDER=false`，无法导入 OCR 管线时任务会失败并进入可重试状态。
+- 如果要启用真实 OCR，需要提供 `agentdesign` OCR 代码。当前 Compose 使用 `Dockerfile.ocr` 安装 `requirements-ocr.txt` 中的 PaddleOCR/PaddleX/PyMuPDF/OpenCV 依赖，并通过 `AICHECK_AGENTDESIGN_HOST_PATH` 把宿主机 `agentdesign` 目录只读挂载到 `/opt/agentdesign`；生产建议保持 `AICHECK_OCR_ALLOW_PLACEHOLDER=false`，无法导入 OCR 管线时任务会失败并进入可重试状态。
 
 ## 3. 端口与路径
 
@@ -164,7 +172,9 @@ curl http://127.0.0.1:8010/healthz
 curl http://127.0.0.1:4001/health
 ```
 
-`api-service` 健康检查会返回 `mongoEnabled`、`mongoTransactions`、`authRequired`、`demoUsersEnabled`、`objectStorageEnabled`。`ocr-service` 健康检查会返回 `pipelineAvailable`、`pipelineBackend`、`placeholderAllowed`，用于确认 OCR 依赖和占位策略是否符合生产预期。
+`api-service` 健康检查会返回 `mongoEnabled`、`mongoTransactions`、`authRequired`、`demoUsersEnabled`、`objectStorageEnabled`。`mongoTransactions` 表示后端已开启事务配置；生产验收还应使用 `verify_deployment.py --strict-production` 调用 `/api/system/mongo-transaction-probe`，实际执行一次临时 MongoDB transaction，确认数据库副本集和会话能力可用。`ocr-service` 健康检查会返回 `pipelineAvailable`、`pipelineBackend`、`placeholderAllowed`，用于确认 OCR 依赖和占位策略是否符合生产预期。
+
+Compose 已为 `api-service`、`worker-service`、`ocr-service`、`mongodb`、`redis`、`minio`、`litellm-postgres` 和 `litellm-service` 配置容器级 `healthcheck`；`api-service`、`worker-service`、`ocr-service` 和 `litellm-service` 的依赖使用 `condition: service_healthy`，避免依赖容器刚启动但服务尚不可用时提前接流量或消费任务。`validate_deployment_config.py --strict-production` 会静态检查这些 healthcheck 和依赖条件。
 
 前端生产环境只需要暴露 Web 站点、`/api/*`、`/mock/*` 和 MinIO 签名上传访问地址。LiteLLM、MongoDB、Redis、PostgreSQL 不应暴露到公网。
 
@@ -193,6 +203,7 @@ AICHECK_REQUIRE_AUTH=true
 AICHECK_ENABLE_DEMO_USERS=false
 
 AICHECK_OCR_BASE_URL=http://ocr-service:8010
+AICHECK_AGENTDESIGN_HOST_PATH=/Volumes/Volume/project/agentdesign
 AICHECK_AGENTDESIGN_BACKEND=/opt/agentdesign/mvp-system/backend
 AICHECK_OCR_ALLOW_PLACEHOLDER=false
 
@@ -217,10 +228,11 @@ LITELLM_POSTGRES_PASSWORD=replace-with-strong-password
 | `AICHECK_MINIO_ENDPOINT` | 是 | 后端访问 MinIO 的内部地址。 |
 | `AICHECK_MINIO_PUBLIC_ENDPOINT` | 是 | 浏览器访问签名 URL 的外部地址。域名、端口和协议必须与反代一致。 |
 | `AICHECK_MINIO_SECURE` | 否 | HTTPS 访问 MinIO 时设为 `true`。 |
-| `AICHECK_JWT_SECRET` | 是 | JWT 签名密钥。生产必须使用强随机值，不要使用镜像默认值。 |
+| `AICHECK_JWT_SECRET` | 是 | JWT 签名密钥。生产必须使用强随机值。 |
 | `AICHECK_REQUIRE_AUTH` | 是 | 生产设为 `true`，非公开接口强制校验 JWT。 |
 | `AICHECK_ENABLE_DEMO_USERS` | 是 | 生产设为 `false`，禁止使用内置演示账号兜底登录。 |
 | `AICHECK_OCR_BASE_URL` | 是 | worker 访问 OCR 服务的内部地址。 |
+| `AICHECK_AGENTDESIGN_HOST_PATH` | 是 | 宿主机上的 `agentdesign` 项目路径，Compose 会挂载到 OCR 容器 `/opt/agentdesign:ro`。 |
 | `AICHECK_AGENTDESIGN_BACKEND` | 是 | OCR 服务导入 `agentdesign` 后端包的路径，容器内建议挂载到 `/opt/agentdesign/mvp-system/backend`。 |
 | `AICHECK_OCR_ALLOW_PLACEHOLDER` | 否 | 生产设为 `false`；OCR 管线不可用时任务失败而不是生成占位成功结果。 |
 | `LITELLM_BASE_URL` | 是 | API/worker 访问 LiteLLM 的内部地址。 |
@@ -229,10 +241,11 @@ LITELLM_POSTGRES_PASSWORD=replace-with-strong-password
 | `LITELLM_POSTGRES_USER` | 是 | LiteLLM PostgreSQL 用户名。 |
 | `LITELLM_POSTGRES_PASSWORD` | 是 | LiteLLM PostgreSQL 密码。 |
 
-上线前必须替换以下开发默认值：
+Compose 对敏感变量使用必填校验，缺少以下变量时服务不会启动；上线前必须提供强随机值或真实 provider key：
 
+- `OPENAI_API_KEY`
+- `AICHECK_AGENTDESIGN_HOST_PATH`
 - `AICHECK_JWT_SECRET`
-- `AICHECK_MINIO_ACCESS_KEY`
 - `AICHECK_MINIO_SECRET_KEY`
 - `LITELLM_API_KEY`
 - `LITELLM_POSTGRES_PASSWORD`
@@ -241,6 +254,7 @@ LITELLM_POSTGRES_PASSWORD=replace-with-strong-password
 
 ```bash
 cd backend
+# 确认 backend/.env 中已设置 AICHECK_AGENTDESIGN_HOST_PATH，并且该目录包含 mvp-system/backend
 docker compose pull
 docker compose up -d --build
 docker compose ps
@@ -252,6 +266,7 @@ docker compose ps
 - Compose 中的 MongoDB 以 `rs0` 单节点 replica set 启动；这是 MongoDB transaction 的最低运行条件。
 - `api-service` 会确保 MinIO bucket：`documents`、`previews`、`exports`、`ocr-artifacts`。
 - `worker-service` 会监听队列：`ocr.parse_document`、`ocr.recognize_seals`、`knowledge.slice`、`knowledge.embed`、`inspection.ai_recheck`、`llm.compare`、`export.package`。
+- `ocr-service` 会把 `${AICHECK_AGENTDESIGN_HOST_PATH}` 只读挂载到 `/opt/agentdesign`，并从 `/opt/agentdesign/mvp-system/backend` 导入 OCR pipeline。
 - `litellm-service` 使用 `backend/config/litellm.yaml` 中的模型别名：`default-chat`、`review-chat`、`compare-fast`、`embedding-default`。
 
 ### 5.1 角色账号与权限初始化
@@ -260,42 +275,65 @@ docker compose ps
 
 生产开启 `AICHECK_REQUIRE_AUTH=true` 后，后端会以 JWT 中的登录身份为准校验 `X-Role` 和 `X-User-Id`：非管理员不能伪造其他角色或用户；未传 `X-User-Id` 时会自动使用 JWT 对应用户做项目成员和节点范围校验。GET 和 mutation 都会校验项目成员资格；节点范围同时覆盖 URL 中的 `/nodes/{nodeId}`、query/body 中的 `nodeId/nodeIds`，以及 `documentId`、`bindingId`、`reportId` 等资源 ID 反查出的关联节点。项目树、文件、挂载、报告和归档列表在登录态下会按 `nodeScope` 过滤，避免业务角色看到授权范围外的数据。写接口会根据后端路径表自动推断 `ActionCode`，即使前端未发送 `X-Action-Code`，也会按角色动作矩阵拦截越权调用。
 
-| 角色 | 用户名 / 初始密码 | 默认入口 | 说明 |
+| 角色 | 用户名 | 默认入口 | 说明 |
 | --- | --- | --- | --- |
-| 系统管理员 | `admin` / `admin` | `/admin/overview` | 管理后台、配置、授权、审计；不能代替业务角色保存审查意见。 |
-| 监检人员 | `inspection` / `inspection` | `/workbench/inspection` | 监检审查、AI 复核、报告生成、导出和归档。 |
-| 施工方 | `contractor` / `contractor` | `/workbench/contractor` | 资料上传、节点挂载、提交批次、补正反馈。 |
-| 无损检测 | `ndt` / `ndt` | `/workbench/ndt` | 底片、检测记录、检测报告和补正反馈。 |
-| 建设方 | `owner` / `owner` | `/workbench/owner` | 项目、报告和归档只读查看。 |
+| 系统管理员 | `admin` | `/admin/overview` | 管理后台、配置、授权、审计；不能代替业务角色保存审查意见。 |
+| 监检人员 | `inspection` | `/workbench/inspection` | 监检审查、AI 复核、报告生成、导出和归档。 |
+| 施工方 | `contractor` | `/workbench/contractor` | 资料上传、节点挂载、提交批次、补正反馈。 |
+| 无损检测 | `ndt` | `/workbench/ndt` | 底片、检测记录、检测报告和补正反馈。 |
+| 建设方 | `owner` | `/workbench/owner` | 项目、报告和归档只读查看。 |
 
 部署后运行角色创建脚本，确保 MongoDB 中的真实登录用户、角色、后台角色矩阵、用户/单位目录和项目成员授权一致：
 
 ```bash
 cd backend
 
+cat > /secure/aicheck-role-passwords.json <<'JSON'
+{
+  "admin": "replace-with-strong-admin-password",
+  "inspection": "replace-with-strong-inspection-password",
+  "contractor": "replace-with-strong-contractor-password",
+  "ndt": "replace-with-strong-ndt-password",
+  "owner": "replace-with-strong-owner-password"
+}
+JSON
+chmod 600 /secure/aicheck-role-passwords.json
+
 # 只预览，不写库
-python scripts/create_roles.py --dry-run --json
+python scripts/create_roles.py \
+  --password-file /secure/aicheck-role-passwords.json \
+  --require-strong-passwords \
+  --dry-run \
+  --json
 
 # 本机 MongoDB 写入
 AICHECK_MONGO_URL='mongodb://127.0.0.1:27017/?replicaSet=rs0' \
 AICHECK_MONGO_DB=aicheck \
 AICHECK_MONGO_TRANSACTIONS=true \
-python scripts/create_roles.py --project-id P-2026-HDCP-001
+python scripts/create_roles.py \
+  --project-id P-2026-HDCP-001 \
+  --password-file /secure/aicheck-role-passwords.json \
+  --require-strong-passwords
 
 # Docker Compose 环境写入
-docker compose exec api-service python scripts/create_roles.py --project-id P-2026-HDCP-001
+docker compose exec api-service python scripts/create_roles.py \
+  --project-id P-2026-HDCP-001 \
+  --password-file /run/secrets/aicheck-role-passwords.json \
+  --require-strong-passwords
 ```
 
 脚本行为：
 
 - 写入或更新 `users` 与 `roles`，`users.passwordHash` 使用 PBKDF2-SHA256；重复执行不会重置已有用户密码。
+- 生产必须通过 `--password-file` 或 `AICHECK_BOOTSTRAP_PASSWORD_<ROLE>` 环境变量提供初始密码，并使用 `--require-strong-passwords` 拒绝用户名同名、过短或复杂度不足的密码；默认输出会脱敏密码。
+- 如需显式重置已有账号密码，增加 `--rotate-passwords`；未传该参数时重复执行会保留已有 `passwordHash`。
 - 写入或更新 `admin_configs` singleton 中的 `orgUnits`、`users`、`permissionMatrix`。
 - 写入或更新 `project_members`，同一项目、同一用户、同一角色重复执行时会合并 `nodeScope` 和 `actions`，不会插入覆盖性重复成员。
 - 写入一条 `audit_logs` 记录，便于追溯部署初始化动作。
 - 当 `AICHECK_MONGO_TRANSACTIONS=true` 时，上述 MongoDB 写入在同一个 transaction 中提交。
 - 支持 `--roles admin,inspection` 只初始化部分角色；支持 `--project-id` 指定项目；支持 `--mongo-url` 和 `--db` 覆盖环境变量。
 
-注意：生产环境 `AICHECK_ENABLE_DEMO_USERS=false` 时，只有脚本写入 `users` 后才能登录。默认初始密码仍等于用户名，首次上线后应通过企业用户中心或后续密码重置流程替换。
+注意：生产环境 `AICHECK_ENABLE_DEMO_USERS=false` 时，只有脚本写入 `users` 后才能登录。不要在生产使用用户名同名密码；首次上线后仍建议接入企业用户中心或正式密码重置流程。
 
 查看日志：
 
@@ -408,8 +446,12 @@ OCR 调用链：
 真实 OCR 注意事项：
 
 - `backend/apps/ocr_service/service.py` 会从 `AICHECK_AGENTDESIGN_BACKEND` 指定路径导入 `seal_ocr.pipeline`。
-- 在 Docker 生产环境中，应把 `agentdesign` 的 OCR 代码和 `requirements/mvp-ocr.txt` 依赖合入 OCR 镜像，或通过 volume 挂载到相同路径。
+- 当前 Compose 要求设置 `AICHECK_AGENTDESIGN_HOST_PATH`，并把该目录挂载为 `/opt/agentdesign:ro`；默认 `AICHECK_AGENTDESIGN_BACKEND=/opt/agentdesign/mvp-system/backend`。
+- `Dockerfile.ocr` 会安装 `requirements-ocr.txt`；该文件对齐 `agentdesign/requirements/mvp-ocr.txt` 的基线依赖：`PyMuPDF`、`paddlepaddle`、`paddleocr`、`paddlex[ocr]`、`opencv-python-headless`。
+- 如果改为企业自维护 OCR 镜像，应保留 `/internal/ocr/parse` 合同和 `/healthz` 中的 `pipelineAvailable/placeholderAllowed` 字段，并继续安装上述 OCR 依赖基线或等价替代。
 - 生产应设置 `AICHECK_OCR_ALLOW_PLACEHOLDER=false`。此时 OCR 管线不可用会写入失败任务，前端任务中心可重试。
+- `verify_deployment.py --strict-production` 会要求 OCR 健康检查返回 `pipelineAvailable=true` 且 `placeholderAllowed=false`。
+- `POST /internal/ocr/parse` 缺少 `storageKey` 时必须返回 `VALIDATION_ERROR` 业务包；源文件缺失时返回 `status=failed` 结构化结果，不应暴露 500。
 - 本地联调可临时设置 `AICHECK_OCR_ALLOW_PLACEHOLDER=true`，用于没有 PaddleOCR 依赖时验证上传、任务和状态回写流程。
 
 任务中心行为：
@@ -417,6 +459,7 @@ OCR 调用链：
 - `POST /api/knowledge/tasks/{taskId}/retry` 会根据 `taskType` 重新投递 OCR、切片、向量化或重建索引子任务，并写入 `attempts`、`lastDispatch` 和 `logs`。
 - `POST /api/knowledge/tasks/{taskId}/cancel` 会把任务标记为 `已取消`；worker 开始执行前会检查取消状态，避免继续处理已取消任务。
 - retry 支持 `Idempotency-Key`，同一 task 和同一 key 重放同一次 retry 结果。
+- OCR 服务不可用、源文件缺失、切片/向量化目标缺失时，worker 会把对应 `knowledge_tasks.status` 写为 `失败`，并写入可前端展示的脱敏 `errorMessage` 和任务日志。
 
 ## 8. LiteLLM 部署说明
 
@@ -443,10 +486,15 @@ curl http://127.0.0.1:4001/v1/models \
   -H "Authorization: Bearer ${LITELLM_API_KEY}"
 ```
 
+`/v1/models` 必须能看到 `default-chat`、`review-chat`、`compare-fast`、`embedding-default` 四个别名；`verify_deployment.py` 会自动检查这些别名。
+
+`api-service` 和 `worker-service` 在 `AICHECK_REQUIRE_AUTH=true`、`AICHECK_MONGO_TRANSACTIONS=true` 或 `AICHECK_STRICT_PRODUCTION=true` 任一生产标志开启时，禁止使用内置开发 LiteLLM key；必须显式提供 `LITELLM_API_KEY`。
+
 如果 `OPENAI_API_KEY` 或供应商密钥无效：
 
 - AI 复核任务会映射为 `AI_RUN_FAILED`。
 - 向量化、模型对比等外部工具错误会映射为 `EXTERNAL_TOOL_FAILED`。
+- 返回给前端的 `errorMessage` 只保留业务级失败说明，不应包含 provider 原始错误、`sk-...` 密钥或内部连接细节。
 - 业务库保留 `ai_runs`、`llm_compare_runs` 等运行记录，LiteLLM 保存模型调用层日志。
 - `/api/llm/compare` 只创建异步 run；真实模型调用由 `llm.compare` worker 执行，前端通过 `GET /api/llm/compare-runs` 查询结果。
 
@@ -460,12 +508,13 @@ curl http://127.0.0.1:8000/api/workbench/projects
 
 curl -X POST http://127.0.0.1:8000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"admin"}'
+  -d "{\"username\":\"admin\",\"password\":\"${AICHECK_BOOTSTRAP_PASSWORD_ADMIN}\"}"
 
 for account in inspection contractor ndt owner admin; do
+  password_var="AICHECK_BOOTSTRAP_PASSWORD_${account^^}"
   curl -s -X POST http://127.0.0.1:8000/api/auth/login \
     -H "Content-Type: application/json" \
-    -d "{\"username\":\"${account}\",\"password\":\"${account}\"}" | jq '.data.user.role, .data.user.defaultPath'
+    -d "{\"username\":\"${account}\",\"password\":\"${!password_var}\"}" | jq '.data.user.role, .data.user.defaultPath'
 done
 ```
 
@@ -475,6 +524,12 @@ done
 cd backend
 source .venv/bin/activate
 
+# 离线配置验收，不依赖 Docker daemon
+python scripts/validate_deployment_config.py
+
+# CI/上线前严格模式：默认弱密钥、空 provider key 等会失败
+python scripts/validate_deployment_config.py --strict-production
+
 python scripts/verify_deployment.py \
   --api-base http://127.0.0.1:8000 \
   --ocr-base http://127.0.0.1:8010 \
@@ -482,11 +537,50 @@ python scripts/verify_deployment.py \
   --litellm-api-key "$LITELLM_API_KEY" \
   --strict-production
 
+# 指定测试项目执行写入探针：创建上传会话、实际 PUT signed URL、完成上传、
+# 校验文档 preview/download signed GET、确认 OCR task、创建导出任务
+python scripts/verify_deployment.py \
+  --strict-production \
+  --write-probes \
+  --project-id P-2026-HDCP-001
+
+# OCR 真实对象解析验收：会上传一份包含文字的 PDF，再让 OCR 服务从 MinIO 读取并解析
+python scripts/verify_deployment.py \
+  --strict-production \
+  --write-probes \
+  --ocr-object-probe \
+  --project-id P-2026-HDCP-001
+
+# 供应商级模型验收：会消耗少量模型额度，确认 default-chat 与 embedding-default 能真实调用 provider
+python scripts/verify_deployment.py \
+  --strict-production \
+  --litellm-provider-probes \
+  --litellm-api-key "$LITELLM_API_KEY"
+
 # 机器可读输出，适合 CI 或上线流水线
 python scripts/verify_deployment.py --strict-production --json
+
+# 生成上线验收证据包：默认跑离线配置和前后端合同审计，输出 report.json/report.md
+python scripts/deployment_report.py \
+  --strict-production \
+  --output-dir ./deployment-reports/latest
+
+# 生成包含目标环境探针的证据包；可按需加 --write-probes、--ocr-object-probe、--litellm-provider-probes
+python scripts/deployment_report.py \
+  --strict-production \
+  --include-live \
+  --write-probes \
+  --ocr-object-probe \
+  --litellm-provider-probes \
+  --litellm-api-key "$LITELLM_API_KEY" \
+  --output-dir ./deployment-reports/latest
 ```
 
-`verify_deployment.py` 默认只做健康检查、登录、只读查询和应返回 `FORBIDDEN` 的身份伪造/动作越权/读范围检查，不会创建业务数据。它会核验 API health flags、五类角色默认入口、JWT 保护、后端动作码拦截、项目读范围拦截、知识任务列表、OCR health、LiteLLM health 和 `/v1/models`。
+`validate_deployment_config.py` 会静态解析 `Dockerfile`、`Dockerfile.ocr`、`requirements-ocr.txt`、`docker-compose.yml` 和 `config/litellm.yaml`，检查镜像基础契约、非 root 运行用户、API/OCR 端口、OCR PaddleOCR 基线依赖、服务拓扑、依赖、healthcheck、端口映射、Celery 队列、Mongo replica set、OCR artifact 只读挂载、持久化 volume、关键环境变量、LiteLLM 四个模型别名和数据库配置。它不需要 Docker，可在没有 Docker daemon 的 CI 环境中先挡住配置错误。
+
+`verify_deployment.py` 默认只做健康检查、登录、MongoDB transaction 探针、只读查询、OCR parse 合同探测、OCR bad request 合同探测、LiteLLM 模型别名检查，以及应返回 `FORBIDDEN` 的身份伪造/动作越权/读范围检查，不会创建业务数据，也不会消耗模型额度。开启 `--litellm-provider-probes` 后会通过 LiteLLM 的 OpenAI-compatible API 实际调用 `default-chat` 和 `embedding-default`，证明网关、virtual key、provider key、模型别名和供应商连通性可用。开启 `--write-probes` 后会在 `--project-id` 指定项目下创建一条验证用上传会话，使用 returned HTTP/HTTPS signed URL 实际 PUT 一个包含文字的 PDF，再执行 upload complete，校验新文档的 preview/download signed GET 可以实际读取对象，确认 OCR task 创建，并创建/读取导出任务，用于证明 MinIO signed PUT、文档 signed GET、upload complete、OCR task 创建和 export task 查询闭环。开启 `--ocr-object-probe` 时，verifier 会读取新文档当前版本 `storageKey` 并调用 `ocr-service /internal/ocr/parse`，要求 OCR 对刚上传的 MinIO 对象返回 `status=success`。严格生产模式还会要求 MongoDB 已启用并通过实际 transaction 探针，校验 OCR 使用真实 pipeline 而不是 placeholder，并要求 signed PUT/GET URL 是 HTTP/HTTPS。
+
+`deployment_report.py` 会把离线配置验收、前后端合同审计和可选 live deployment probes 汇总成 `aicheck-deployment-report-v1` 结构，同时输出 Markdown 表格，适合随上线单归档。默认不访问目标环境；加 `--include-live` 后复用 `verify_deployment.py` 的所有目标环境探针。
 
 前后端合同审计：
 
@@ -505,6 +599,25 @@ cd frontend
 AICHECK_BASE_URL=https://aicheck.example.com pnpm playwright test e2e/aicheck-smoke.spec.ts --reporter=list
 ```
 
+本地联调可使用 FastAPI + Vite live 模式：
+
+```bash
+# 终端 1
+cd backend
+source .venv/bin/activate
+uvicorn apps.api.main:app --host 127.0.0.1 --port 8000
+
+# 终端 2
+cd frontend
+pnpm vite --mode live --host 127.0.0.1 --port 4100
+
+# 终端 3
+cd frontend
+AICHECK_BASE_URL=http://127.0.0.1:4100 pnpm playwright test e2e/aicheck-smoke.spec.ts --reporter=list
+```
+
+当前本地 live smoke 基线为 51 条通过，覆盖四类工作台、管理后台、知识库、NDT、报告导出/归档、联调清单 0 blocker、错误码恢复和主要写回流程。
+
 关键手工验证：
 
 - 五类角色登录后能进入各自默认面板；业务角色访问 `/admin/overview` 会回退到自己的工作台。
@@ -517,13 +630,19 @@ AICHECK_BASE_URL=https://aicheck.example.com pnpm playwright test e2e/aicheck-sm
 - 生产鉴权开启后，业务角色通过 `documentId`、`bindingId`、`reportId` 操作节点范围外资源返回 `FORBIDDEN`；资源与 URL `projectId` 不一致返回 `NOT_FOUND`。
 - 生产鉴权开启后，业务角色直接调用未授权写接口会按后端推断的 `ActionCode` 返回 `FORBIDDEN`，例如施工方不能生成报告草稿或发布后台配置。
 - mutation 使用相同 `Idempotency-Key` 和相同请求体会重放同一结果；同 key 不同请求体返回 `IDEMPOTENCY_KEY_CONFLICT`。
+- `verify_deployment.py --strict-production` 会调用 `/api/system/mongo-transaction-probe`，确认 MongoDB 已连接、`AICHECK_MONGO_TRANSACTIONS=true`，且能实际开启 session 并提交临时 transaction。
 - 提交批次撤回资料时，只能撤回该批次内资料；不存在的批次返回 `NOT_FOUND`，跨批次资料返回 `CONFLICT`，已通过、已锁定或已归档资料返回 `WITHDRAW_LOCKED`。
 - 施工方提交补正反馈时必须存在当前节点的待反馈补正单，且反馈资料必须属于该节点；成功后原补正单变为 `已反馈`，节点进入 `复审中`。
 - 报告草稿只能从已进入审查链路的节点生成；`待提交`、`需补正`、`退回补正中`、`部分提交`、`AI 预审中` 节点返回 `CONFLICT`。
 - 创建 upload session 返回 MinIO signed PUT URL。
-- 上传完成后 `GET /api/knowledge/tasks` 能看到 OCR/切片/向量任务。
+- `verify_deployment.py --write-probes --strict-production` 能实际 PUT signed URL，上传完成后文档 `preview-url/download-url` 能返回并读取 HTTP(S) signed GET，`GET /api/knowledge/tasks` 能看到 OCR/切片/向量任务。
+- `verify_deployment.py --write-probes --ocr-object-probe --strict-production` 能让 OCR 服务从 MinIO 读取刚上传的 PDF 并返回 `status=success`。
+- `POST /internal/ocr/parse` 返回统一 OCR 结构：`status/fragments/fields/diagnostics/storageKey`；源文件缺失时也应返回 `status=failed` 的业务结构，而不是 500。
 - 触发 AI 复核后 `GET /api/projects/{projectId}/inspection/nodes/{nodeId}/ai-runs` 能看到运行记录。
+- LiteLLM `/v1/models` 包含四个业务别名：`default-chat`、`review-chat`、`compare-fast`、`embedding-default`。
+- `verify_deployment.py --strict-production --litellm-provider-probes` 能通过 LiteLLM 实际获得 chat completion 和 embedding vector；失败时 verifier 只返回业务级 HTTP/形状错误，不输出 provider 原始密钥或错误正文。
 - 报告导出任务从处理中变为可下载。
+- 下载导出 zip 后能解出 `manifest.json`，其中 `schemaVersion=aicheck-export-v1`，`counts` 与当前项目报告、资料、归档和证据数量一致；报告 PDF 至少包含任务、项目和报告摘要。
 
 ## 10. 备份与恢复
 
@@ -599,7 +718,7 @@ VITE_USE_MOCK=false
 
 ### OCR 任务完成但没有真实字段
 
-检查 `ocr-service` 日志。如果看到 `agentdesign OCR pipeline not importable`，说明当前镜像没有真实 OCR 依赖，需要把 `agentdesign` OCR 代码和 PaddleOCR 相关依赖打进镜像。
+检查 `ocr-service` 日志。如果看到 `agentdesign OCR pipeline not importable`，先确认 `AICHECK_AGENTDESIGN_HOST_PATH` 已设置且挂载目录包含 `mvp-system/backend/seal_ocr`；如果路径正确，再确认 OCR 服务确实使用 `Dockerfile.ocr` 构建且 `requirements-ocr.txt` 安装成功。
 
 ### AI 复核失败
 

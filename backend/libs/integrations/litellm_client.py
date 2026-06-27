@@ -9,7 +9,12 @@ import httpx
 class LiteLLMClient:
     def __init__(self, base_url: str | None = None, api_key: str | None = None) -> None:
         self.base_url = (base_url or os.getenv("LITELLM_BASE_URL") or "http://litellm-service:4000").rstrip("/")
-        self.api_key = api_key or os.getenv("LITELLM_API_KEY") or "sk-aicheck-dev"
+        configured_key = api_key or os.getenv("LITELLM_API_KEY")
+        if not configured_key and production_mode_enabled():
+            raise RuntimeError("LITELLM_API_KEY is required when production flags are enabled")
+        self.api_key = configured_key or "sk-aicheck-dev"
+        if self.api_key == "sk-aicheck-dev" and production_mode_enabled():
+            raise RuntimeError("Default development LiteLLM key is not allowed in production mode")
 
     async def chat(self, messages: list[dict[str, str]], model: str = "default-chat", **kwargs: Any) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=60) as client:
@@ -57,3 +62,10 @@ class LiteLLMClient:
             return str(response["choices"][0]["message"]["content"])
         except Exception:
             return ""
+
+
+def production_mode_enabled() -> bool:
+    return any(
+        os.getenv(name, "").strip().lower() == "true"
+        for name in ["AICHECK_REQUIRE_AUTH", "AICHECK_MONGO_TRANSACTIONS", "AICHECK_STRICT_PRODUCTION"]
+    )

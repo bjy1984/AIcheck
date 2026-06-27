@@ -13,11 +13,11 @@ services:
       AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_ENDPOINT:-minio:9000}
       AICHECK_MINIO_PUBLIC_ENDPOINT: ${AICHECK_MINIO_PUBLIC_ENDPOINT:-127.0.0.1:9000}
       AICHECK_MINIO_ACCESS_KEY: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
-      AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:-aicheck-dev-password}
+      AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:?AICHECK_MINIO_SECRET_KEY is required}
       AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
-      AICHECK_JWT_SECRET: ${AICHECK_JWT_SECRET:-change-me-with-strong-secret}
+      AICHECK_JWT_SECRET: ${AICHECK_JWT_SECRET:?AICHECK_JWT_SECRET is required}
       LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://litellm-service:4000}
-      LITELLM_API_KEY: ${LITELLM_API_KEY:-sk-aicheck-dev}
+      LITELLM_API_KEY: ${LITELLM_API_KEY:?LITELLM_API_KEY is required}
       AICHECK_REQUIRE_AUTH: ${AICHECK_REQUIRE_AUTH:-true}
       AICHECK_ENABLE_DEMO_USERS: ${AICHECK_ENABLE_DEMO_USERS:-false}
     ports:
@@ -26,11 +26,20 @@ services:
       mongodb:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
       minio:
-        condition: service_started
+        condition: service_healthy
       litellm-service:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).read()\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
 
   worker-service:
     build:
@@ -45,39 +54,62 @@ services:
       AICHECK_TASK_DISPATCH: ${AICHECK_TASK_DISPATCH:-celery}
       AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_ENDPOINT:-minio:9000}
       AICHECK_MINIO_ACCESS_KEY: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
-      AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:-aicheck-dev-password}
+      AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:?AICHECK_MINIO_SECRET_KEY is required}
       AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
       AICHECK_OCR_BASE_URL: ${AICHECK_OCR_BASE_URL:-http://ocr-service:8010}
       LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://litellm-service:4000}
-      LITELLM_API_KEY: ${LITELLM_API_KEY:-sk-aicheck-dev}
+      LITELLM_API_KEY: ${LITELLM_API_KEY:?LITELLM_API_KEY is required}
     depends_on:
       mongodb:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
       api-service:
-        condition: service_started
+        condition: service_healthy
       minio:
-        condition: service_started
+        condition: service_healthy
+      ocr-service:
+        condition: service_healthy
       litellm-service:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "celery -A apps.worker.celery_app.celery_app inspect ping -d celery@$$HOSTNAME --timeout=5 | grep -q pong",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 6
 
   ocr-service:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.ocr
     command: uvicorn apps.ocr_service.main:app --host 0.0.0.0 --port 8010
     environment:
       AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_ENDPOINT:-minio:9000}
       AICHECK_MINIO_ACCESS_KEY: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
-      AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:-aicheck-dev-password}
+      AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:?AICHECK_MINIO_SECRET_KEY is required}
       AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
       AICHECK_AGENTDESIGN_BACKEND: ${AICHECK_AGENTDESIGN_BACKEND:-/opt/agentdesign/mvp-system/backend}
       AICHECK_OCR_ALLOW_PLACEHOLDER: ${AICHECK_OCR_ALLOW_PLACEHOLDER:-false}
     ports:
       - "8010:8010"
+    volumes:
+      - ${AICHECK_AGENTDESIGN_HOST_PATH:?AICHECK_AGENTDESIGN_HOST_PATH is required}:/opt/agentdesign:ro
     depends_on:
-      - minio
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/healthz', timeout=3).read()\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
 
   mongodb:
     image: mongo:7
@@ -100,43 +132,68 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   minio:
     image: minio/minio:RELEASE.2026-06-13T11-33-47Z
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
-      MINIO_ROOT_PASSWORD: ${AICHECK_MINIO_SECRET_KEY:-aicheck-dev-password}
+      MINIO_ROOT_PASSWORD: ${AICHECK_MINIO_SECRET_KEY:?AICHECK_MINIO_SECRET_KEY is required}
     ports:
       - "9000:9000"
       - "9001:9001"
     volumes:
       - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   litellm-postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: ${LITELLM_POSTGRES_DB:-litellm}
       POSTGRES_USER: ${LITELLM_POSTGRES_USER:-litellm}
-      POSTGRES_PASSWORD: ${LITELLM_POSTGRES_PASSWORD:-litellm}
+      POSTGRES_PASSWORD: ${LITELLM_POSTGRES_PASSWORD:?LITELLM_POSTGRES_PASSWORD is required}
     ports:
       - "5433:5432"
     volumes:
       - litellm-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   litellm-service:
     image: ghcr.io/berriai/litellm:main-latest
     command: ["--config", "/app/config/litellm.yaml", "--port", "4000", "--host", "0.0.0.0"]
     environment:
-      DATABASE_URL: postgresql://${LITELLM_POSTGRES_USER:-litellm}:${LITELLM_POSTGRES_PASSWORD:-litellm}@litellm-postgres:5432/${LITELLM_POSTGRES_DB:-litellm}
-      LITELLM_MASTER_KEY: ${LITELLM_API_KEY:-sk-aicheck-dev}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DATABASE_URL: postgresql://${LITELLM_POSTGRES_USER:-litellm}:${LITELLM_POSTGRES_PASSWORD:?LITELLM_POSTGRES_PASSWORD is required}@litellm-postgres:5432/${LITELLM_POSTGRES_DB:-litellm}
+      LITELLM_MASTER_KEY: ${LITELLM_API_KEY:?LITELLM_API_KEY is required}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
     ports:
       - "4001:4000"
     volumes:
       - ./config:/app/config:ro
     depends_on:
-      - litellm-postgres
+      litellm-postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health', timeout=3).read()\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
 
 volumes:
   mongo-data:

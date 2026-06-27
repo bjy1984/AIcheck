@@ -10,6 +10,10 @@ from libs.integrations.litellm_client import LiteLLMClient
 from libs.integrations.ocr_client import OcrClient
 
 
+def service_failure_message(service: str) -> str:
+    return f"{service} 调用失败，请检查服务健康、模型配置、凭据和网络连通性。"
+
+
 def load_state() -> None:
     repo.load_from_sync_mongo()
 
@@ -32,8 +36,23 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
     if task and task.get("status") == "已取消":
         flush_state()
         return {"documentId": document_id, "versionId": version_id, "status": "canceled"}
+    version = repo.find_one("versions", version_id)
+    if task and task.get("status") == "成功" and (version or {}).get("ocrStatus") == "已识别":
+        flush_state()
+        return {"documentId": document_id, "versionId": version_id, "status": "success", "alreadyCompleted": True}
     repo.mark_task_running(task, "OCR worker 开始处理。")
-    result = parse_with_ocr_service(storage_key, file_name=file_name)
+    try:
+        result = parse_with_ocr_service(storage_key, file_name=file_name)
+    except Exception:
+        result = {
+            "storageKey": storage_key,
+            "fileName": file_name,
+            "status": "failed",
+            "fragments": [],
+            "fields": [],
+            "seals": [],
+            "diagnostics": [service_failure_message("OCR 服务")],
+        }
     applied = repo.apply_ocr_result(document_id, version_id, result)
     flush_state()
     return {**result, "applied": applied}
@@ -59,19 +78,26 @@ def slice_knowledge(self, file_id: str) -> dict[str, Any]:
     if task and task.get("status") == "已取消":
         flush_state()
         return {"fileId": file_id, "status": "canceled", "chunkCount": 0}
-    repo.mark_task_running(task, "切片 worker 开始处理。")
     file = repo.find_one("knowledge_files", file_id)
+    if task and task.get("status") == "成功" and (file or {}).get("sliceStatus") == "已切片":
+        chunk_count = len([item for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") == file_id])
+        flush_state()
+        return {"fileId": file_id, "status": "success", "chunkCount": chunk_count, "alreadyCompleted": True}
+    repo.mark_task_running(task, "切片 worker 开始处理。")
+    if not file:
+        repo.mark_task_failed(task, "切片任务失败：找不到关联知识文件。")
+        flush_state()
+        return {"fileId": file_id, "status": "missing", "chunkCount": 0}
     fragments = []
-    if file:
-        fields = [
-            item
-            for item in repo.state["extracted_fields"]
-            if item.get("documentVersionId") == file.get("documentVersionId")
-        ]
-        fragments = [
-            {"pageNo": item.get("pageNo") or 1, "text": f"{item.get('fieldName')}: {item.get('fieldValue')}"}
-            for item in fields
-        ]
+    fields = [
+        item
+        for item in repo.state["extracted_fields"]
+        if item.get("documentVersionId") == file.get("documentVersionId")
+    ]
+    fragments = [
+        {"pageNo": item.get("pageNo") or 1, "text": f"{item.get('fieldName')}: {item.get('fieldValue')}"}
+        for item in fields
+    ]
     result = repo.apply_slice_result(file_id, fragments or None)
     flush_state()
     return result
@@ -86,15 +112,24 @@ def embed_knowledge(self, file_id: str) -> dict[str, Any]:
     if task and task.get("status") == "已取消":
         flush_state()
         return {"fileId": file_id, "status": "canceled", "vectorCount": 0}
+    file = repo.find_one("knowledge_files", file_id)
+    if task and task.get("status") == "成功" and (file or {}).get("vectorStatus") == "已向量化":
+        flush_state()
+        return {"fileId": file_id, "status": "success", "vectorCount": int((file or {}).get("vectorCount") or vector_count), "alreadyCompleted": True}
     repo.mark_task_running(task, "向量化 worker 开始处理。")
+    if not file:
+        repo.mark_task_failed(task, "向量化任务失败：找不到关联知识文件。")
+        flush_state()
+        return {"fileId": file_id, "status": "missing", "vectorCount": 0}
     try:
         if chunks:
             LiteLLMClient().embed_sync([item["text"] for item in chunks[:16]], model="embedding-default")
         result = repo.apply_embed_result(file_id, vector_count)
-    except Exception as exc:
-        result = {"fileId": file_id, "status": "failed", "errorMessage": str(exc)}
+    except Exception:
+        message = f"EXTERNAL_TOOL_FAILED: {service_failure_message('LiteLLM embedding')}"
+        result = {"fileId": file_id, "status": "failed", "errorMessage": message}
         if task:
-            repo.mark_task_failed(task, f"EXTERNAL_TOOL_FAILED: {exc}")
+            repo.mark_task_failed(task, message)
     flush_state()
     return result
 
@@ -105,6 +140,9 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
     run = repo.find_one("ai_runs", run_id)
     if not run:
         return {"projectId": project_id, "nodeId": node_id, "runId": run_id, "status": "missing"}
+    if run.get("status") in {"完成", "失败"} and run.get("finishedAt"):
+        flush_state()
+        return {"projectId": project_id, "nodeId": node_id, "runId": run_id, "status": run.get("status"), "alreadyCompleted": True}
     node = repo.node(project_id, node_id)
     fields = [
         item
@@ -144,11 +182,11 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
         )
         run["evidenceLinks"] = repo.clone(repo.state["evidence_links"][:5])
         status = "完成"
-    except Exception as exc:
+    except Exception:
         run["status"] = "失败"
         run["finishedAt"] = server_time()
         run["errorCode"] = "AI_RUN_FAILED"
-        run["errorMessage"] = str(exc)
+        run["errorMessage"] = service_failure_message("LiteLLM AI 复核")
         status = "失败"
     flush_state()
     return {"projectId": project_id, "nodeId": node_id, "runId": run_id, "status": status}
@@ -160,6 +198,9 @@ def llm_compare(self, run_id: str) -> dict[str, Any]:
     run = repo.find_one("llm_compare_runs", run_id, id_field="runId")
     if not run:
         return {"runId": run_id, "status": "missing"}
+    if run.get("status") in {"完成", "失败"} and run.get("finishedAt"):
+        flush_state()
+        return {"runId": run_id, "status": run.get("status"), "alreadyCompleted": True}
     results = []
     try:
         run["status"] = "运行中"
@@ -181,10 +222,10 @@ def llm_compare(self, run_id: str) -> dict[str, Any]:
         run["results"] = results
         run["status"] = "完成"
         run["finishedAt"] = server_time()
-    except Exception as exc:
+    except Exception:
         run["status"] = "失败"
         run["errorCode"] = "EXTERNAL_TOOL_FAILED"
-        run["errorMessage"] = str(exc)
+        run["errorMessage"] = service_failure_message("LiteLLM 模型对比")
         run["finishedAt"] = server_time()
     flush_state()
     return {"runId": run_id, "status": run.get("status")}
@@ -195,9 +236,24 @@ def export_package(self, export_id: str) -> dict[str, Any]:
     load_state()
     task = repo.find_one("export_tasks", export_id)
     if task:
+        if task.get("status") == "已取消":
+            flush_state()
+            return {"exportId": export_id, "status": "canceled"}
+        if task.get("status") == "可下载" and task.get("storageKey"):
+            flush_state()
+            return {"exportId": export_id, "status": "可下载", "alreadyCompleted": True}
+        repo.mark_task_running(task, "导出 worker 开始处理。")
+        task["progress"] = 80
+        try:
+            repo.attach_export_artifact(task)
+        except Exception:
+            repo.mark_task_failed(task, f"EXTERNAL_TOOL_FAILED: {service_failure_message('对象存储导出')}")
+            flush_state()
+            raise
         task["status"] = "可下载"
         task["progress"] = 100
         task["finishedAt"] = server_time()
-        repo.attach_export_artifact(task)
+        task["updatedAt"] = task["finishedAt"]
+        repo.append_task_log(task, "info", "导出任务完成。")
     flush_state()
-    return {"exportId": export_id, "status": "可下载"}
+    return {"exportId": export_id, "status": task.get("status") if task else "missing"}

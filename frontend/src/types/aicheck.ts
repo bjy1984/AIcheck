@@ -74,6 +74,7 @@ export type Project = {
   todoCount: number
   messageCount: number
   currentNodeId: number
+  riskLevel?: '低' | '中' | '高'
   updatedAt: string
   actions: ActionCode[]
 }

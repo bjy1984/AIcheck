@@ -19,20 +19,38 @@
 ```ts
 type ApiResult<T> =
   | {
-      ok: true;
+      code: 0;
       data: T;
       message?: string;
       operationId: string;
       serverTime: string;
     }
   | {
-      ok: false;
-      code: string;
+      code: number;
       message: string;
-      details?: unknown;
+      data?: {
+        reason: BusinessErrorReason;
+        [key: string]: unknown;
+      };
       operationId: string;
       serverTime: string;
     };
+
+type BusinessErrorReason =
+  | "VALIDATION_ERROR"
+  | "AUTH_REQUIRED"
+  | "FORBIDDEN"
+  | "NOT_FOUND"
+  | "CONFLICT"
+  | "FILE_TOO_LARGE"
+  | "UNSUPPORTED_FILE_TYPE"
+  | "TASK_RUNNING"
+  | "ARCHIVED_READONLY"
+  | "ETAG_CONFLICT"
+  | "IDEMPOTENCY_KEY_CONFLICT"
+  | "EXTERNAL_TOOL_FAILED"
+  | "AI_RUN_FAILED"
+  | string;
 
 type Page<T> = {
   items: T[];
@@ -69,7 +87,7 @@ type ListQuery = {
 
 ### 2.3 错误码
 
-| code                    | 说明                         |
+| reason                  | 说明                         |
 | ----------------------- | ---------------------------- |
 | `VALIDATION_ERROR`      | 请求字段校验失败             |
 | `AUTH_REQUIRED`         | 未登录                       |
@@ -81,6 +99,7 @@ type ListQuery = {
 | `TASK_RUNNING`          | 任务正在运行，不能重复触发   |
 | `ARCHIVED_READONLY`     | 项目或报告已归档，只读       |
 | `ETAG_CONFLICT`         | 数据版本已变化，需刷新后重试 |
+| `IDEMPOTENCY_KEY_CONFLICT` | 幂等键已被不同请求内容使用 |
 | `EMPTY_BINDINGS`        | 资料挂载未选择有效资料       |
 | `EMPTY_NODE_PACKAGE`    | 当前节点没有可提交资料       |
 | `WITHDRAW_LOCKED`       | 已通过或锁定资料不能撤回     |
@@ -2063,7 +2082,7 @@ type AdminFieldMapping = {
 | `X-Role`                        | 是            | 全部业务接口           | 当前视图角色，值为 `inspection/contractor/ndt/owner/admin`  |
 | `X-Project-Id`                  | 条件必填      | 项目域接口             | 路径中已有 `projectId` 时需一致；跨项目管理接口可省略       |
 | `Idempotency-Key`               | mutation 必填 | `POST/PATCH/DELETE`    | 防重复提交，建议格式 `role-project-action-timestamp-random` |
-| `If-Match`                      | 条件必填      | 更新、删除、提交、归档 | 对象版本号或 ETag；冲突返回 `CONFLICT`                      |
+| `If-Match`                      | 条件必填      | 更新、删除、提交、归档 | 对象版本号或 ETag；冲突返回 `ETAG_CONFLICT`                 |
 | `Content-Type`                  | mutation 必填 | `POST/PATCH/DELETE`    | JSON 为 `application/json`，上传直传按签名 URL 要求         |
 
 所有详情、列表行和 mutation 输出对象必须带版本字段：
@@ -2081,10 +2100,10 @@ type VersionedEntity = {
 
 ```json
 {
-  "ok": false,
-  "code": "CONFLICT",
+  "code": 40904,
   "message": "对象已被其他用户更新，请刷新后重试。",
-  "details": {
+  "data": {
+    "reason": "ETAG_CONFLICT",
     "currentEtag": "W/\"node-24-r8\"",
     "submittedEtag": "W/\"node-24-r7\""
   },
@@ -2292,19 +2311,21 @@ src/mock/
 
 ### 23.7 文件上传和预览协议
 
-文件上传采用“两段式 mock”：
+文件上传采用“两段式会话”：
 
 1. `POST /api/projects/{projectId}/documents/upload-session` 返回签名 URL、`documentId`、`documentVersionId`。
-2. 前端直传 mock 可以不真实上传，只在调用 `complete` 时把文件写入 seed state。
+2. 真实后端返回 MinIO signed PUT，前端直接上传对象；mock-first 模式可以返回 `mock://upload/...` 并跳过真实对象上传。
 3. `complete` 后必须创建 `DocumentAsset`、`DocumentVersion`、OCR 任务和知识库项目文件记录。
 
 当前 `frontend/` 的 mock-first 页面允许 `upload-session` 在创建会话时直接写入项目资料池，以便不接真实对象存储也能完成上传、挂载和提交闭环；切换真实后端时保持返回结构不变，把状态写入下沉到 `complete` 即可。创建会话返回业务错误时，前端上传抽屉按第 22.11 节保留文件列表和重试入口。
+
+真实后端的 `GET /api/projects/{projectId}/documents/{documentId}/preview-url` 和 `download-url` 必须基于当前 `DocumentVersion.storageBucket/storageKey` 生成短期 signed GET；URL 过期后前端重新请求即可。生产验收使用 `verify_deployment.py --write-probes --strict-production` 实际 PUT 一个 PDF，再 GET 新文档的 preview/download signed URL，证明上传对象、预览地址和下载地址指向同一对象存储链路。URL 中的 `projectId` 与文档归属不一致时返回 `NOT_FOUND`，不能泄露跨项目 signed URL。
 
 `upload-session` 返回示例：
 
 ```json
 {
-  "ok": true,
+  "code": 0,
   "data": {
     "uploadSessionId": "UP-20260626-001",
     "expiresAt": "2026-06-26 11:00:00",
@@ -2335,7 +2356,7 @@ src/mock/
 | `owner`      | 项目概况、节点摘要、报告预览、归档资料 | 无业务写入；只允许消息已读、导出只读资料          | 上传、提交、审查、补正、配置     |
 | `admin`      | 全局配置、审计、知识库、规则           | 配置、规则、知识任务、用户角色、流程模板          | 代替业务人员出具审查意见         |
 
-mock 中任何角色调用禁止动作，都返回 `FORBIDDEN`，并在 `details` 中包含：
+mock 中任何角色调用禁止动作，都返回 `FORBIDDEN`，并在 `data.reason` 和附加字段中包含：
 
 ```ts
 type ForbiddenDetail = {
@@ -2388,7 +2409,7 @@ type ForbiddenDetail = {
 | 权限覆盖 | 每个写动作都能按角色模拟允许/禁止                    |
 | 错误覆盖 | 至少能 mock 第 22.11 节 8 类错误                     |
 | 幂等覆盖 | 重复提交同一 `Idempotency-Key` 返回同一结果          |
-| 并发覆盖 | 过期 `If-Match` 返回 `CONFLICT`                      |
+| 并发覆盖 | 过期 `If-Match` 返回 `ETAG_CONFLICT`                |
 | 文件覆盖 | 上传、完成、预览、下载、OCR 均可 mock                |
 | 证据覆盖 | AI、OCR、标准条款、人工意见都能回到 `EvidenceLink`   |
 | 审计覆盖 | mutation 都能生成 `auditLogId`                       |
@@ -2396,7 +2417,7 @@ type ForbiddenDetail = {
 
 ### 23.11 联调字段差异清单
 
-`GET /api/admin/integration-contract` 是真实后端联调前的只读对账接口，前端用于在管理后台集中展示 mock 合同和真实后端字段之间的差异。当前 mock 样例覆盖 `workbench/documents/submissions/inspection/ndt-owner-report/knowledge-admin` 六个模块，状态覆盖 `已对齐/待后端确认/前端缺失/后端缺失/命名不一致`。
+`GET /api/admin/integration-contract` 是真实后端联调对账接口，前端用于在管理后台集中展示 mock 合同和真实后端字段之间的差异。当前真实后端样例覆盖 `workbench/documents/submissions/inspection/ndt-owner-report/knowledge-admin` 六个模块，基线为 `summary.blockers = 0`、`summary.pending = 0`、`summary.aligned = summary.total`；接口仍必须支持 `module/status` 筛选，以便后续出现字段差异时定位责任域。
 
 实现要求：
 

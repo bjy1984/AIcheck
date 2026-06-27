@@ -1,19 +1,21 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 from contextlib import asynccontextmanager
+from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
-from apps.api.routes import binding_node_ids, document_node_ids, member_node_scope_error, mock_router, report_node_ids, router
+from apps.api.routes import binding_node_ids, document_node_ids, idempotency_fingerprint, member_node_scope_error, mock_router, report_node_ids, router
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
-from libs.db.mongo import close_mongo, init_mongo_if_configured
+from libs.db.mongo import close_mongo, init_mongo_if_configured, run_transaction_probe
 from libs.db.repository import mongo_transactions_enabled, repo
 from libs.integrations.storage import object_storage
 from libs.security.actions import canonical_path, required_action_for_request
@@ -64,7 +66,11 @@ async def attach_operation_id(request: Request, call_next):
     action_error = inferred_action_error(request)
     if action_error is not None:
         return action_error
+    cached_idempotency = await idempotency_replay_response(request)
+    if cached_idempotency is not None:
+        return cached_idempotency
     response = await call_next(request)
+    response = await finalize_mutation_response(request, response)
     if request.method in {"POST", "PUT", "PATCH", "DELETE"} and repo.mongo is not None:
         await repo.flush_to_mongo()
     return response
@@ -84,6 +90,112 @@ def auth_required(request: Request) -> bool:
         "/openapi.json",
     )
     return not request.url.path.startswith(public_prefixes)
+
+
+def idempotency_scope(request: Request) -> str | None:
+    key = request.headers.get("Idempotency-Key")
+    if not key or request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return None
+    normalized_path = canonical_path(request.url.path)
+    if normalized_path.startswith(("/auth/", "/mock/")):
+        return None
+    return f"{request.method}:{request.url.path}:{key}"
+
+
+async def request_fingerprint(request: Request) -> str:
+    body = await request.body()
+    parsed_body: Any
+    if not body:
+        parsed_body = None
+    else:
+        try:
+            parsed_body = json.loads(body.decode("utf-8"))
+        except Exception:
+            parsed_body = body.decode("utf-8", errors="replace")
+    return idempotency_fingerprint(
+        {
+            "query": sorted((key, value) for key, value in request.query_params.multi_items()),
+            "body": parsed_body,
+        }
+    )
+
+
+async def idempotency_replay_response(request: Request) -> JSONResponse | None:
+    scope = idempotency_scope(request)
+    if not scope:
+        return None
+    fingerprint = await request_fingerprint(request)
+    request.state.idempotency_scope = scope
+    request.state.idempotency_fingerprint = fingerprint
+    cached = repo.state["idempotency"].get(scope)
+    if not isinstance(cached, dict) or "response" not in cached:
+        return None
+    if cached.get("requestHash") and cached["requestHash"] != fingerprint:
+        return fail(errors.IDEMPOTENCY_KEY_CONFLICT, request)
+    return JSONResponse(repo.clone(cached["response"]), status_code=int(cached.get("httpStatus") or 200))
+
+
+async def finalize_mutation_response(request: Request, response: Response) -> Response:
+    scope = getattr(request.state, "idempotency_scope", None)
+    if not scope and not audit_scope(request):
+        return response
+    body = b""
+    async for chunk in response.body_iterator:
+        body += chunk
+    replay_response = Response(
+        content=body,
+        status_code=response.status_code,
+        headers=dict(response.headers),
+        media_type=response.media_type,
+    )
+    try:
+        payload = json.loads(body.decode("utf-8")) if body else None
+    except Exception:
+        return replay_response
+    if response.status_code == 200 and isinstance(payload, dict) and payload.get("code") == 0:
+        if scope:
+            repo.state["idempotency"][scope] = {
+                "requestHash": getattr(request.state, "idempotency_fingerprint", None),
+                "response": repo.clone(payload),
+                "httpStatus": response.status_code,
+            }
+        audit_successful_mutation(request, payload)
+    return replay_response
+
+
+def audit_scope(request: Request) -> str | None:
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return None
+    normalized_path = canonical_path(request.url.path)
+    if normalized_path.startswith(("/auth/", "/mock/")):
+        return None
+    return normalized_path
+
+
+def audit_successful_mutation(request: Request, payload: dict[str, Any]) -> None:
+    normalized_path = audit_scope(request)
+    if not normalized_path or payload_contains_key(payload, "auditLogId"):
+        return
+    actor = getattr(request.state, "auth_user", None) or {}
+    audit_id = repo.add_audit(
+        f"{request.method} {normalized_path}",
+        "ApiMutation",
+        normalized_path,
+    )
+    audit = repo.find_one("audit_logs", audit_id)
+    if audit:
+        audit["actorId"] = actor.get("id") or audit.get("actorId")
+        audit["actorName"] = actor.get("name") or actor.get("username") or audit.get("actorName")
+        audit["actorOrgName"] = actor.get("orgName") or audit.get("actorOrgName")
+        audit["operationId"] = getattr(request.state, "operation_id", None)
+
+
+def payload_contains_key(value: Any, key: str) -> bool:
+    if isinstance(value, dict):
+        return key in value or any(payload_contains_key(item, key) for item in value.values())
+    if isinstance(value, list):
+        return any(payload_contains_key(item, key) for item in value)
+    return False
 
 
 def inferred_project_scope_error(request: Request) -> JSONResponse | None:
@@ -187,6 +299,16 @@ async def healthz(request: Request):
 @app.get("/api/healthz", tags=["system"])
 async def api_healthz(request: Request):
     return ok(health_payload(), request)
+
+
+@app.get("/system/mongo-transaction-probe", tags=["system"])
+@app.get("/api/system/mongo-transaction-probe", tags=["system"])
+async def mongo_transaction_probe(request: Request):
+    claims = getattr(request.state, "auth", None)
+    if os.getenv("AICHECK_REQUIRE_AUTH", "false").lower() == "true" and (not claims or claims.get("role") != "admin"):
+        return fail(errors.FORBIDDEN, request, message="仅管理员可执行 MongoDB transaction 探针。")
+    database = getattr(request.app.state, "mongo", None) or repo.mongo
+    return ok(await run_transaction_probe(database), request)
 
 
 def health_payload() -> dict[str, object]:

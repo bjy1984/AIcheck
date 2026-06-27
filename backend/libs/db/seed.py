@@ -26,6 +26,7 @@ ROLE_ACTIONS = {
         "ai:recheck",
         "ai:adopt",
         "ai:reject",
+        "llm:compare",
         "report:generate",
         "report:review",
         "report:export",
@@ -33,6 +34,8 @@ ROLE_ACTIONS = {
         "report:view",
         "archive:view",
         "archive:download",
+        "todo:update",
+        "message:update",
     ],
     "contractor": [
         "project:view",
@@ -46,6 +49,8 @@ ROLE_ACTIONS = {
         "submission:submit",
         "submission:withdraw",
         "rectification:submit",
+        "todo:update",
+        "message:update",
     ],
     "ndt": [
         "project:view",
@@ -57,9 +62,22 @@ ROLE_ACTIONS = {
         "ndt:report-upload",
         "ndt:submit",
         "rectification:submit",
+        "todo:update",
+        "message:update",
     ],
     "owner": ["project:view", "file:view", "file:preview", "report:view", "archive:view", "archive:download"],
-    "admin": ["project:view", "project:authorize-member", "knowledge:view", "knowledge:manage", "admin:config", "admin:export", "audit:view"],
+    "admin": [
+        "project:view",
+        "project:authorize-member",
+        "knowledge:view",
+        "knowledge:manage",
+        "llm:compare",
+        "admin:config",
+        "admin:export",
+        "audit:view",
+        "todo:update",
+        "message:update",
+    ],
 }
 
 GROUP_DEFINITIONS: list[tuple[str, list[tuple[int, str, str]]]] = [
