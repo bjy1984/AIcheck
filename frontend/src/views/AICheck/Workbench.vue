@@ -444,11 +444,6 @@ const showWithdrawSuccess = () => {
   withdrawSuccessTimer = setTimeout(() => {
     withdrawSuccessMessage.value = ''
   }, 20000)
-  ElMessage({
-    type: 'success',
-    message,
-    duration: 20000
-  })
 }
 
 const showBindDialogError = (fallback: string, error?: unknown) => {

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from typing import Any
 from uuid import uuid4
@@ -17,9 +19,25 @@ from libs.security.auth import ROLE_DEFAULT_PATHS, USERS, authenticate, decode_t
 router = APIRouter(tags=["AIcheck API"])
 mock_router = APIRouter(tags=["Compatibility Mock"])
 
+REPORT_GENERATION_BLOCKED_STATUSES = {"待提交", "需补正", "退回补正中", "部分提交", "AI 预审中"}
+
 
 def role_from_query(role: str | None = None, x_role: str | None = None) -> str:
     return (x_role or role or "inspection").strip() or "inspection"
+
+
+def resolved_role_for_read(request: Request, role: str | None = None, x_role: str | None = None) -> tuple[str, JSONResponse | None]:
+    effective_role, identity_error = effective_role_for_request(request, x_role)
+    if identity_error:
+        return "inspection", identity_error
+    requested_role = role_from_query(role, x_role)
+    claims = getattr(request.state, "auth", None)
+    token_role = claims.get("role") if claims else None
+    if token_role and token_role != "admin":
+        if requested_role != token_role:
+            return requested_role, fail(errors.FORBIDDEN, request, message="请求角色与登录身份不一致。")
+        return token_role, None
+    return requested_role or effective_role or "inspection", None
 
 
 def mutation_guard(
@@ -28,8 +46,11 @@ def mutation_guard(
     *,
     x_role: str | None = None,
     if_match: str | None = None,
+    node_ids: list[int] | None = None,
 ) -> JSONResponse | None:
-    effective_role = x_role or request.headers.get("X-Role")
+    effective_role, identity_error = effective_role_for_request(request, x_role)
+    if identity_error:
+        return identity_error
     if project_id:
         project = repo.require_project(project_id)
         if not project:
@@ -38,7 +59,7 @@ def mutation_guard(
             return fail(errors.ARCHIVED_READONLY, request)
         if if_match and if_match not in {"*", str(project.get("revision")), f"W/\"{project.get('revision')}\""}:
             return fail(errors.ETAG_CONFLICT, request)
-        node_scope_error = member_node_scope_error(request, project_id, effective_role)
+        node_scope_error = member_node_scope_error(request, project_id, effective_role, node_ids=node_ids)
         if node_scope_error:
             return node_scope_error
     action_code = request.headers.get("X-Action-Code")
@@ -51,10 +72,39 @@ def mutation_guard(
     return None
 
 
-def member_node_scope_error(request: Request, project_id: str, role: str | None) -> JSONResponse | None:
+def effective_role_for_request(request: Request, x_role: str | None = None) -> tuple[str | None, JSONResponse | None]:
+    header_role = x_role or request.headers.get("X-Role")
+    claims = getattr(request.state, "auth", None)
+    if not claims:
+        return header_role, None
+    token_role = claims.get("role")
+    auth_user = getattr(request.state, "auth_user", None) or user_by_username(claims.get("sub"))
+    token_user_id = auth_user.get("id") if auth_user else None
+    header_user_id = request.headers.get("X-User-Id")
+    if header_role and token_role and header_role != token_role and token_role != "admin":
+        return None, fail(errors.FORBIDDEN, request, message="请求角色与登录身份不一致。")
+    if header_user_id and token_user_id and header_user_id != token_user_id and token_role != "admin":
+        return None, fail(errors.FORBIDDEN, request, message="请求用户与登录身份不一致。")
+    return header_role or token_role, None
+
+
+def request_user_id(request: Request) -> str | None:
+    auth_user = getattr(request.state, "auth_user", None)
+    if auth_user and auth_user.get("id"):
+        return auth_user["id"]
+    return request.headers.get("X-User-Id")
+
+
+def member_node_scope_error(
+    request: Request,
+    project_id: str,
+    role: str | None,
+    *,
+    node_ids: list[int] | None = None,
+) -> JSONResponse | None:
     if role == "admin":
         return None
-    user_id = request.headers.get("X-User-Id")
+    user_id = request_user_id(request)
     if not user_id:
         return None
     member = next(
@@ -70,22 +120,366 @@ def member_node_scope_error(request: Request, project_id: str, role: str | None)
     )
     if member is None:
         return fail(errors.FORBIDDEN, request, message="用户未获得该项目授权。")
+    requested_node_ids = {int(item) for item in node_ids or []}
     match = re.search(r"/nodes/(\d+)", request.url.path)
-    if match and int(match.group(1)) not in {int(item) for item in member.get("nodeScope") or []}:
+    if match:
+        requested_node_ids.add(int(match.group(1)))
+    node_scope = {int(item) for item in member.get("nodeScope") or []}
+    out_of_scope = sorted(requested_node_ids - node_scope)
+    if out_of_scope:
         return fail(errors.FORBIDDEN, request, message="用户不在该节点授权范围内。")
     return None
 
 
-def idempotent(request: Request, key: str | None, producer):
+def node_ids_from_body(body: dict[str, Any], default_node_id: int | None = None) -> list[int]:
+    raw_node_ids = body.get("nodeIds")
+    if not raw_node_ids:
+        raw_node_ids = [body.get("nodeId") or default_node_id]
+    return [int(item) for item in raw_node_ids if item is not None and item != ""]
+
+
+def binding_node_ids(project_id: str, binding_id: str) -> list[int]:
+    binding = repo.find_one("bindings", binding_id)
+    if not binding or binding.get("projectId") != project_id:
+        return []
+    return [int(binding["nodeId"])]
+
+
+def document_node_ids(project_id: str, document_id: str) -> list[int]:
+    document = repo.find_one("documents", document_id)
+    if not document or document.get("projectId") != project_id:
+        return []
+    node_ids = {
+        int(binding["nodeId"])
+        for binding in repo.state["bindings"]
+        if binding.get("projectId") == project_id and binding.get("documentId") == document_id
+    }
+    _add_node_id(node_ids, document.get("nodeId"))
+    return sorted(node_ids)
+
+
+def report_node_ids(project_id: str, report_id: str) -> list[int]:
+    report = repo.find_one("reports", report_id)
+    if not report or report.get("projectId") != project_id:
+        return []
+    return [int(item) for item in report.get("nodeIds") or []]
+
+
+def authorized_node_scope(request: Request, project_id: str) -> set[int] | None:
+    claims = getattr(request.state, "auth", None)
+    if not claims or claims.get("role") == "admin":
+        return None
+    user_id = request_user_id(request)
+    role = claims.get("role")
+    member = next(
+        (
+            item
+            for item in repo.state["project_members"]
+            if item.get("projectId") == project_id
+            and item.get("userId") == user_id
+            and item.get("role") == role
+            and item.get("status") == "启用"
+        ),
+        None,
+    )
+    if member is None:
+        return set()
+    return {int(item) for item in member.get("nodeScope") or []}
+
+
+def project_visible_for_request(request: Request, project_id: str) -> bool:
+    scope = authorized_node_scope(request, project_id)
+    return scope is None or bool(scope)
+
+
+def filter_node_groups_for_scope(groups: list[dict[str, Any]], scope: set[int] | None) -> list[dict[str, Any]]:
+    if scope is None:
+        return groups
+    scoped_groups = []
+    for group in groups:
+        nodes = [node for node in group.get("nodes", []) if int(node.get("nodeId")) in scope]
+        if nodes:
+            scoped_groups.append({**group, "nodes": nodes})
+    return scoped_groups
+
+
+def document_visible_in_scope(document: dict[str, Any], scope: set[int] | None) -> bool:
+    if scope is None:
+        return True
+    binding_node_ids = {
+        int(binding["nodeId"])
+        for binding in repo.state["bindings"]
+        if binding.get("projectId") == document.get("projectId") and binding.get("documentId") == document.get("id")
+    }
+    _add_node_id(binding_node_ids, document.get("nodeId"))
+    return not binding_node_ids or bool(binding_node_ids & scope)
+
+
+def report_visible_in_scope(report: dict[str, Any], scope: set[int] | None) -> bool:
+    if scope is None:
+        return True
+    node_ids = {int(item) for item in report.get("nodeIds") or []}
+    return bool(node_ids) and node_ids.issubset(scope)
+
+
+def archive_visible_in_scope(item: dict[str, Any], scope: set[int] | None) -> bool:
+    if scope is None:
+        return True
+    if not scope:
+        return False
+    node_id = item.get("nodeId")
+    return node_id is not None and int(node_id) in scope
+
+
+def _add_node_id(node_ids: set[int], value: Any) -> None:
+    if value is None or value == "":
+        return
+    try:
+        node_ids.add(int(value))
+    except (TypeError, ValueError):
+        return
+
+
+def _document_project_id(document_id: str | None) -> str | None:
+    if not document_id:
+        return None
+    document = repo.find_one("documents", document_id)
+    return document.get("projectId") if document else None
+
+
+def _document_id_from_version(version_id: str | None) -> str | None:
+    if not version_id:
+        return None
+    version = repo.find_one("versions", version_id)
+    return version.get("documentId") if version else None
+
+
+def _knowledge_file(file_id: str | None) -> dict[str, Any] | None:
+    if not file_id:
+        return None
+    return repo.find_one("knowledge_files", file_id)
+
+
+def _knowledge_file_node_ids(file: dict[str, Any]) -> set[int]:
+    node_ids: set[int] = set()
+    _add_node_id(node_ids, file.get("nodeId"))
+    project_id = file.get("projectId") or _document_project_id(file.get("documentId"))
+    if project_id and file.get("documentId"):
+        node_ids.update(document_node_ids(project_id, file["documentId"]))
+    return node_ids
+
+
+def knowledge_file_visible_in_scope(file: dict[str, Any], scope: set[int] | None) -> bool:
+    if scope is None:
+        return True
+    if not scope:
+        return False
+    node_ids = _knowledge_file_node_ids(file)
+    return not node_ids or bool(node_ids & scope)
+
+
+def _target_record(collection: str, record_id: str | None, id_field: str = "id") -> dict[str, Any] | None:
+    if not record_id:
+        return None
+    return repo.find_one(collection, record_id, id_field=id_field)
+
+
+def record_project_id(record: dict[str, Any]) -> str | None:
+    if record.get("projectId"):
+        return str(record["projectId"])
+    for key in ("documentId",):
+        project_id = _document_project_id(record.get(key))
+        if project_id:
+            return project_id
+    if record.get("documentVersionId"):
+        project_id = _document_project_id(_document_id_from_version(record.get("documentVersionId")))
+        if project_id:
+            return project_id
+    for key in ("fileId", "targetId"):
+        file_id = record.get(key)
+        file = _knowledge_file(file_id)
+        if file and file.get("projectId"):
+            return str(file["projectId"])
+        project_id = _document_project_id(file_id)
+        if project_id:
+            return project_id
+    target_type = record.get("targetType")
+    target_id = record.get("targetId")
+    if target_type == "rectification":
+        rectification = _target_record("rectifications", target_id)
+        return rectification.get("projectId") if rectification else None
+    if target_type == "submission":
+        submission = _target_record("submissions", target_id, id_field="submissionId")
+        return submission.get("projectId") if submission else None
+    if target_type == "report":
+        report = _target_record("reports", target_id)
+        return report.get("projectId") if report else None
+    return None
+
+
+def record_node_ids(project_id: str, record: dict[str, Any]) -> set[int]:
+    node_ids: set[int] = set()
+    _add_node_id(node_ids, record.get("nodeId"))
+    for node_id in record.get("nodeIds") or []:
+        _add_node_id(node_ids, node_id)
+
+    document_id = record.get("documentId") or _document_id_from_version(record.get("documentVersionId"))
+    if document_id:
+        node_ids.update(document_node_ids(project_id, document_id))
+
+    file_id = record.get("fileId")
+    if file_id:
+        file = _knowledge_file(file_id)
+        if file:
+            node_ids.update(_knowledge_file_node_ids(file))
+        else:
+            node_ids.update(document_node_ids(project_id, file_id))
+
+    film_id = record.get("filmId")
+    if not film_id and str(record.get("id", "")).startswith("FILM-"):
+        film_id = record.get("id")
+    node_ids.update(ndt_film_node_ids(project_id, film_id))
+
+    ndt_report_id = record.get("reportId")
+    if not ndt_report_id and str(record.get("id", "")).startswith("NDT-RPT-"):
+        ndt_report_id = record.get("id")
+    node_ids.update(ndt_report_node_ids(project_id, ndt_report_id))
+    for related_film_id in record.get("relatedFilmIds") or []:
+        node_ids.update(ndt_film_node_ids(project_id, related_film_id))
+    for related_report_id in record.get("relatedReportIds") or []:
+        node_ids.update(ndt_report_node_ids(project_id, related_report_id))
+
+    if record.get("reportId"):
+        node_ids.update(report_node_ids(project_id, str(record["reportId"])))
+    if record.get("exportType") == "report":
+        inferred_report_id = record.get("reportId")
+        if not inferred_report_id and str(record.get("id", "")).startswith("EXP-RPT-"):
+            inferred_report_id = str(record["id"]).replace("EXP-", "", 1)
+        if inferred_report_id:
+            node_ids.update(report_node_ids(project_id, str(inferred_report_id)))
+
+    target_type = record.get("targetType")
+    target_id = record.get("targetId")
+    if target_type == "node":
+        _add_node_id(node_ids, target_id)
+    elif target_type == "rectification":
+        rectification = _target_record("rectifications", target_id)
+        if rectification:
+            _add_node_id(node_ids, rectification.get("nodeId"))
+    elif target_type == "submission":
+        submission = _target_record("submissions", target_id, id_field="submissionId")
+        if submission:
+            for node_id in submission.get("nodeIds") or []:
+                _add_node_id(node_ids, node_id)
+    elif target_type == "report":
+        node_ids.update(report_node_ids(project_id, str(target_id)))
+    elif target_type == "file":
+        file = _knowledge_file(str(target_id))
+        if file:
+            node_ids.update(_knowledge_file_node_ids(file))
+        else:
+            node_ids.update(document_node_ids(project_id, str(target_id)))
+    return node_ids
+
+
+def record_references_report(record: dict[str, Any]) -> bool:
+    return bool(record.get("reportId")) or record.get("targetType") == "report" or record.get("exportType") == "report"
+
+
+def ndt_film_node_ids(project_id: str, film_id: str | None) -> set[int]:
+    if not film_id:
+        return set()
+    node_ids: set[int] = set()
+    for record in repo.state["ndt_records"]:
+        if record.get("projectId") == project_id and record.get("filmId") == film_id:
+            _add_node_id(node_ids, record.get("nodeId"))
+    for feedback in repo.state["ndt_feedback"]:
+        if feedback.get("projectId") == project_id and film_id in set(feedback.get("relatedFilmIds") or []):
+            _add_node_id(node_ids, feedback.get("nodeId"))
+    for report in repo.state["ndt_reports"]:
+        if report.get("projectId") == project_id and film_id in set(report.get("relatedFilmIds") or []):
+            node_ids.update(ndt_report_node_ids(project_id, report.get("id")))
+    return node_ids
+
+
+def ndt_report_node_ids(project_id: str, report_id: str | None) -> set[int]:
+    if not report_id:
+        return set()
+    node_ids: set[int] = set()
+    report = repo.find_one("ndt_reports", report_id)
+    if report and report.get("projectId") == project_id:
+        _add_node_id(node_ids, report.get("nodeId"))
+        if report.get("fileId"):
+            node_ids.update(document_node_ids(project_id, report["fileId"]))
+        for film_id in report.get("relatedFilmIds") or []:
+            for record in repo.state["ndt_records"]:
+                if record.get("projectId") == project_id and record.get("filmId") == film_id:
+                    _add_node_id(node_ids, record.get("nodeId"))
+            for feedback in repo.state["ndt_feedback"]:
+                if feedback.get("projectId") == project_id and film_id in set(feedback.get("relatedFilmIds") or []):
+                    _add_node_id(node_ids, feedback.get("nodeId"))
+    for record in repo.state["ndt_records"]:
+        if record.get("projectId") == project_id and record.get("reportId") == report_id:
+            _add_node_id(node_ids, record.get("nodeId"))
+    for feedback in repo.state["ndt_feedback"]:
+        if feedback.get("projectId") == project_id and report_id in set(feedback.get("relatedReportIds") or []):
+            _add_node_id(node_ids, feedback.get("nodeId"))
+    return node_ids
+
+
+def record_visible_for_scope(record: dict[str, Any], scope: set[int] | None, *, project_id: str | None = None) -> bool:
+    if scope is None:
+        return True
+    if not scope:
+        return False
+    effective_project_id = project_id or record_project_id(record)
+    if not effective_project_id:
+        return True
+    node_ids = record_node_ids(effective_project_id, record)
+    if not node_ids:
+        return True
+    if record_references_report(record):
+        return node_ids.issubset(scope)
+    return bool(node_ids & scope)
+
+
+def record_visible_for_request(request: Request, record: dict[str, Any], project_id: str | None = None) -> bool:
+    effective_project_id = project_id or record_project_id(record)
+    if not effective_project_id:
+        return True
+    scope = authorized_node_scope(request, effective_project_id)
+    return record_visible_for_scope(record, scope, project_id=effective_project_id)
+
+
+def scope_error_for_record(request: Request, record: dict[str, Any], project_id: str | None = None) -> JSONResponse | None:
+    if record_visible_for_request(request, record, project_id):
+        return None
+    return fail(errors.FORBIDDEN, request, message="用户不在该资源授权范围内。")
+
+
+def idempotency_fingerprint(source: Any) -> str:
+    encoded = json.dumps(source, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def idempotent(request: Request, key: str | None, producer, fingerprint_source: Any | None = None):
     if not key:
         return producer()
     scope = f"{request.method}:{request.url.path}:{key}"
     cached = repo.state["idempotency"].get(scope)
+    fingerprint = idempotency_fingerprint(fingerprint_source) if fingerprint_source is not None else None
     if cached is not None:
+        if isinstance(cached, dict) and "response" in cached:
+            if fingerprint and cached.get("requestHash") and cached["requestHash"] != fingerprint:
+                return fail(errors.IDEMPOTENCY_KEY_CONFLICT, request)
+            return repo.clone(cached["response"])
         return repo.clone(cached)
     result = producer()
     if not isinstance(result, JSONResponse):
-        repo.state["idempotency"][scope] = repo.clone(result)
+        repo.state["idempotency"][scope] = {
+            "requestHash": fingerprint,
+            "response": repo.clone(result),
+        }
     return result
 
 
@@ -175,13 +569,18 @@ def project_member_snapshot(project_id: str, role: str, user_id: str | None = No
     }
 
 
-def project_detail_payload(project_id: str) -> dict[str, Any] | None:
+def project_detail_payload(project_id: str, request: Request | None = None) -> dict[str, Any] | None:
     project = repo.require_project(project_id)
     if not project:
         return None
     members = [repo.clone(item) for item in repo.state["project_members"] if item["projectId"] == project_id]
+    if request is not None and getattr(request.state, "auth", None) and getattr(request.state, "auth", {}).get("role") != "admin":
+        current_user_id = request_user_id(request)
+        members = [item for item in members if item.get("userId") == current_user_id]
+    scope = authorized_node_scope(request, project_id) if request is not None else None
     node_summary = []
-    for group in repo.node_groups(PROJECT_ID if project_id != PROJECT_ID else project_id):
+    groups = filter_node_groups_for_scope(repo.node_groups(PROJECT_ID if project_id != PROJECT_ID else project_id), scope)
+    for group in groups:
         nodes = group["nodes"]
         node_summary.append(
             {
@@ -302,15 +701,25 @@ def auth_login(request: Request, body: dict[str, Any] = Body(default_factory=dic
     return ok({"token": issue_token(user), "user": user}, request)
 
 
+@router.post("/auth/logout")
+def auth_logout(request: Request):
+    return ok(None, request)
+
+
 @router.get("/auth/me")
 def auth_me(request: Request):
     claims = decode_token(request.headers.get("Authorization", ""))
     user = user_by_username(claims.get("sub") if claims else None) or user_by_username("admin")
+    role = (user or {}).get("role", "admin")
+    user_id = (user or {}).get("id")
+    project_authorizations = repo.clone(repo.state["project_members"])
+    if role != "admin" and user_id:
+        project_authorizations = [item for item in project_authorizations if item.get("userId") == user_id]
     return ok(
         {
             **(user or {}),
-            "defaultRole": (user or {}).get("role", "admin"),
-            "projectAuthorizations": repo.clone(repo.state["project_members"]),
+            "defaultRole": role,
+            "projectAuthorizations": project_authorizations,
         },
         request,
     )
@@ -347,13 +756,17 @@ def list_workbench_projects(
     role: str = Query(default="inspection"),
     x_role: str | None = Header(default=None, alias="X-Role"),
 ):
-    resolved_role = role_from_query(role, x_role)
-    return ok([repo.project_for_role(item, resolved_role) for item in repo.state["projects"]], request)
+    resolved_role, role_error = resolved_role_for_read(request, role, x_role)
+    if role_error:
+        return role_error
+    items = [item for item in repo.state["projects"] if project_visible_for_request(request, item["id"])]
+    return ok([repo.project_for_role(item, resolved_role) for item in items], request)
 
 
 @router.get("/projects")
 def list_projects(request: Request, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), keyword: str | None = None):
-    items = filter_keyword([repo.clone(item) for item in repo.state["projects"]], keyword, ["name", "code", "region"])
+    items = [repo.clone(item) for item in repo.state["projects"] if project_visible_for_request(request, item["id"])]
+    items = filter_keyword(items, keyword, ["name", "code", "region"])
     return ok(page(items, page_no, page_size), request)
 
 
@@ -364,7 +777,7 @@ def create_project(request: Request, body: dict[str, Any] = Body(default_factory
 
 @router.get("/projects/{project_id}")
 def get_project_detail(request: Request, project_id: str):
-    detail = project_detail_payload(project_id)
+    detail = project_detail_payload(project_id, request)
     if not detail:
         return fail(errors.NOT_FOUND, request)
     return ok(detail, request)
@@ -472,7 +885,12 @@ def authorize_member(request: Request, project_id: str, body: dict[str, Any] = B
         audit_id = repo.add_audit("项目成员授权", "ProjectMember", member["id"])
         return ok({"member": member, "auditLogId": audit_id}, request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source=body,
+    )
 
 
 @router.put("/projects/{project_id}/members/{member_id}")
@@ -506,7 +924,20 @@ def workbench_context(request: Request, project_id: str, role: str = Query(defau
     project = repo.require_project(project_id)
     if not project:
         return fail(errors.NOT_FOUND, request)
-    resolved_role = role_from_query(role, x_role)
+    resolved_role, role_error = resolved_role_for_read(request, role, x_role)
+    if role_error:
+        return role_error
+    scope = authorized_node_scope(request, project_id)
+    visible_todos = [
+        item
+        for item in repo.state["todos"]
+        if item.get("projectId") == project_id and record_visible_for_scope(item, scope, project_id=project_id)
+    ]
+    visible_messages = [
+        item
+        for item in repo.state["messages"]
+        if item.get("projectId") == project_id and record_visible_for_scope(item, scope, project_id=project_id)
+    ]
     current_node_id = ROLE_NODE_MAP.get(resolved_role, project.get("currentNodeId", 24))
     role_project = repo.project_for_role(project, resolved_role)
     return ok(
@@ -515,8 +946,8 @@ def workbench_context(request: Request, project_id: str, role: str = Query(defau
             "role": resolved_role,
             "currentNodeId": current_node_id,
             "topbar": {
-                "todoCount": project.get("todoCount", 0),
-                "messageCount": project.get("messageCount", 0),
+                "todoCount": len(visible_todos),
+                "messageCount": len([item for item in visible_messages if not item.get("read")]),
                 "statusText": project.get("status"),
                 "projectSwitcherEnabled": True,
             },
@@ -528,25 +959,53 @@ def workbench_context(request: Request, project_id: str, role: str = Query(defau
 
 @router.get("/projects/{project_id}/workbench/summary")
 def workbench_summary(request: Request, project_id: str, role: str = Query(default="inspection")):
-    role_todos = [item for item in repo.state["todos"] if item["projectId"] == project_id]
-    correction_count = len([item for item in repo.state["tree_nodes"] if item["projectId"] == project_id and item["status"] in {"需补正", "补正中"}])
+    resolved_role, role_error = resolved_role_for_read(request, role)
+    if role_error:
+        return role_error
+    scope = authorized_node_scope(request, project_id)
+    role_todos = [
+        item
+        for item in repo.state["todos"]
+        if item["projectId"] == project_id and record_visible_for_scope(item, scope, project_id=project_id)
+    ]
+    visible_nodes = [
+        item
+        for item in repo.state["tree_nodes"]
+        if item["projectId"] == project_id and record_visible_for_scope(item, scope, project_id=project_id)
+    ]
+    visible_documents = [
+        item
+        for item in repo.project_documents(project_id)
+        if document_visible_in_scope(item, scope)
+    ]
+    visible_reports = [
+        item
+        for item in repo.state["reports"]
+        if item["projectId"] == project_id and report_visible_in_scope(item, scope)
+    ]
+    visible_messages = [
+        item
+        for item in repo.state["messages"]
+        if item.get("projectId") == project_id and record_visible_for_scope(item, scope, project_id=project_id)
+    ]
+    correction_count = len([item for item in visible_nodes if item["status"] in {"需补正", "补正中"}])
     metrics = [
         {"key": "todo", "label": "待办", "value": len(role_todos), "tone": "orange"},
         {"key": "correction", "label": "补正", "value": correction_count, "tone": "red"},
-        {"key": "document", "label": "资料", "value": len(repo.project_documents(project_id)), "tone": "blue"},
-        {"key": "report", "label": "报告", "value": len([item for item in repo.state["reports"] if item["projectId"] == project_id]), "tone": "green"},
+        {"key": "document", "label": "资料", "value": len(visible_documents), "tone": "blue"},
+        {"key": "report", "label": "报告", "value": len(visible_reports), "tone": "green"},
     ]
-    if role == "owner":
+    if resolved_role == "owner":
         metrics = [
             {"key": "progress", "label": "总体进度", "value": "42%", "tone": "blue"},
-            {"key": "report", "label": "报告版本", "value": len(repo.state["reports"]), "tone": "green"},
-            {"key": "archive", "label": "归档资料", "value": len(repo.state["archive_items"]), "tone": "gray"},
+            {"key": "report", "label": "报告版本", "value": len(visible_reports), "tone": "green"},
+            {"key": "archive", "label": "归档资料", "value": len([item for item in repo.state["archive_items"] if item.get("projectId") == project_id and archive_visible_in_scope(item, scope)]), "tone": "gray"},
         ]
     return ok(
         {
             "metrics": metrics,
             "todos": [repo.clone(item) for item in role_todos[:5]],
-            "messages": [repo.clone(item) for item in repo.state["messages"] if item.get("projectId") == project_id][:5],
+            "messages": [repo.clone(item) for item in visible_messages[:5]],
             "updatedAt": server_time(),
         },
         request,
@@ -558,7 +1017,9 @@ def project_tree(request: Request, project_id: str):
     project = repo.require_project(project_id)
     if not project:
         return fail(errors.NOT_FOUND, request)
-    return ok({"project": repo.clone(project), "groups": repo.node_groups(PROJECT_ID if project_id != PROJECT_ID else project_id)}, request)
+    scope = authorized_node_scope(request, project_id)
+    groups = filter_node_groups_for_scope(repo.node_groups(PROJECT_ID if project_id != PROJECT_ID else project_id), scope)
+    return ok({"project": repo.clone(project), "groups": groups}, request)
 
 
 @router.get("/projects/{project_id}/nodes/{node_id}")
@@ -580,15 +1041,26 @@ def node_package(request: Request, project_id: str, node_id: int):
     node = repo.node(effective_project_id, node_id)
     if not node:
         return fail(errors.NOT_FOUND, request)
+    scope = authorized_node_scope(request, project_id)
     bindings = repo.bindings_for_node(effective_project_id, node_id)
     version_ids = {item["documentVersionId"] for item in bindings}
+    project_files = [
+        item
+        for item in repo.project_documents(effective_project_id)
+        if document_visible_in_scope(item, scope)
+    ]
+    visible_document_ids = {item["id"] for item in project_files}
     return ok(
         {
             "node": repo.clone(node),
             "requirements": [repo.clone(item) for item in repo.state["requirements"] if int(item["nodeId"]) == int(node_id)],
             "bindings": bindings,
-            "projectFiles": repo.project_documents(effective_project_id),
-            "availableVersions": [repo.clone(item) for item in repo.state["versions"] if item["id"] in version_ids or True],
+            "projectFiles": project_files,
+            "availableVersions": [
+                repo.clone(item)
+                for item in repo.state["versions"]
+                if item["id"] in version_ids or item.get("documentId") in visible_document_ids
+            ],
             "extractedFields": repo.fields_for_versions(version_ids),
             "reviewOpinions": [repo.clone(item) for item in repo.state["review_opinions"] if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)],
             "aiRuns": [repo.clone(item) for item in repo.state["ai_runs"] if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)],
@@ -599,14 +1071,31 @@ def node_package(request: Request, project_id: str, node_id: int):
 
 
 @router.get("/projects/{project_id}/documents")
-def list_documents(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), keyword: str | None = None):
-    items = filter_keyword(repo.project_documents(PROJECT_ID if project_id != PROJECT_ID else project_id), keyword, ["fileName", "sourceOrgName"])
+def list_documents(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), keyword: str | None = None, nodeId: int | None = None):
+    scope = authorized_node_scope(request, project_id)
+    effective_project_id = PROJECT_ID if project_id != PROJECT_ID else project_id
+    items = [
+        item
+        for item in repo.project_documents(effective_project_id)
+        if document_visible_in_scope(item, scope)
+    ]
+    if nodeId:
+        document_ids = {
+            binding["documentId"]
+            for binding in repo.state["bindings"]
+            if binding.get("projectId") == effective_project_id and int(binding.get("nodeId")) == int(nodeId)
+        }
+        items = [item for item in items if item["id"] in document_ids]
+    items = filter_keyword(items, keyword, ["fileName", "sourceOrgName"])
     return ok(page(items, page_no, page_size), request)
 
 
 @router.get("/projects/{project_id}/documents/bindings")
 def list_bindings(request: Request, project_id: str, nodeId: int | None = None):
+    scope = authorized_node_scope(request, project_id)
     items = repo.bindings_for_project(PROJECT_ID if project_id != PROJECT_ID else project_id)
+    if scope is not None:
+        items = [item for item in items if int(item["nodeId"]) in scope]
     if nodeId:
         items = [item for item in items if int(item["nodeId"]) == int(nodeId)]
     return ok(items, request)
@@ -635,7 +1124,12 @@ def create_upload_session(
         repo.add_audit("创建上传会话", "UploadSession", session_id)
         return ok({"uploadSessionId": session_id, "expiresAt": upload_urls[0]["expiresAt"], "uploadUrls": upload_urls}, request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source=body,
+    )
 
 
 @router.post("/projects/{project_id}/documents/upload-session/{session_id}/complete")
@@ -715,11 +1209,11 @@ def document_review_feedback(request: Request, project_id: str, document_id: str
 
 @router.post("/projects/{project_id}/documents/{document_id}/versions")
 def append_document_version(request: Request, project_id: str, document_id: str, body: dict[str, Any] = Body(default_factory=dict), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
+    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=document_node_ids(project_id, document_id))
     if guard:
         return guard
     document = repo.find_one("documents", document_id)
-    if not document:
+    if not document or document.get("projectId") != project_id:
         return fail(errors.NOT_FOUND, request)
     version_id = f"DV-{uuid4().hex[:8].upper()}-V{len(repo.versions_for_document(document_id)) + 1}"
     for version in repo.state["versions"]:
@@ -754,7 +1248,8 @@ def bind_documents(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     x_role: str | None = Header(default=None, alias="X-Role"),
 ):
-    guard = mutation_guard(request, project_id, x_role=x_role)
+    node_ids = node_ids_from_body(body, ROLE_NODE_MAP["contractor"])
+    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
     if guard:
         return guard
 
@@ -762,10 +1257,9 @@ def bind_documents(
         binding_inputs = body.get("bindings") or []
         if not binding_inputs:
             return fail(errors.EMPTY_BINDINGS, request)
-        node_ids = body.get("nodeIds") or ([body.get("nodeId")] if body.get("nodeId") else [ROLE_NODE_MAP["contractor"]])
         created = []
         changed = []
-        for node_id in [int(item) for item in node_ids if item]:
+        for node_id in node_ids:
             requirements = [item for item in repo.state["requirements"] if int(item["nodeId"]) == node_id]
             for index, binding_input in enumerate(binding_inputs):
                 document = repo.find_one("documents", binding_input.get("documentId"))
@@ -795,16 +1289,21 @@ def bind_documents(
             changed.append(repo.set_node_status(project_id, node_id, "部分提交"))
         return ok(repo.mutation_result("保存节点挂载关系", "NodeFileBinding", created[0] if created else "BIND-EMPTY", next_status="部分提交", changed=changed, affected_ids=created), request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source=body,
+    )
 
 
 @router.patch("/projects/{project_id}/documents/bindings/{binding_id}")
 def update_binding(request: Request, project_id: str, binding_id: str, body: dict[str, Any] = Body(default_factory=dict), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
+    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=binding_node_ids(project_id, binding_id))
     if guard:
         return guard
     binding = repo.find_one("bindings", binding_id)
-    if not binding:
+    if not binding or binding.get("projectId") != project_id:
         return fail(errors.NOT_FOUND, request)
     changed = []
     for field in ["requirementId", "requirementName", "usage", "bindingStatus"]:
@@ -816,9 +1315,12 @@ def update_binding(request: Request, project_id: str, binding_id: str, body: dic
 
 @router.delete("/projects/{project_id}/documents/bindings/{binding_id}")
 def delete_binding(request: Request, project_id: str, binding_id: str, x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
+    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=binding_node_ids(project_id, binding_id))
     if guard:
         return guard
+    binding = repo.find_one("bindings", binding_id)
+    if not binding or binding.get("projectId") != project_id:
+        return fail(errors.NOT_FOUND, request)
     before = len(repo.state["bindings"])
     repo.state["bindings"] = [item for item in repo.state["bindings"] if item["id"] != binding_id]
     if len(repo.state["bindings"]) == before:
@@ -828,11 +1330,11 @@ def delete_binding(request: Request, project_id: str, binding_id: str, x_role: s
 
 @router.post("/projects/{project_id}/documents/{document_id}/withdraw")
 def withdraw_document(request: Request, project_id: str, document_id: str, x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
+    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=document_node_ids(project_id, document_id))
     if guard:
         return guard
     doc = repo.find_one("documents", document_id)
-    if not doc:
+    if not doc or doc.get("projectId") != project_id:
         return fail(errors.NOT_FOUND, request)
     doc["fileStatus"] = "已撤回"
     return ok(repo.mutation_result("撤回文件", "Document", document_id, next_status="已撤回"), request)
@@ -840,11 +1342,11 @@ def withdraw_document(request: Request, project_id: str, document_id: str, x_rol
 
 @router.post("/projects/{project_id}/documents/{document_id}/void")
 def void_document(request: Request, project_id: str, document_id: str, x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
+    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=document_node_ids(project_id, document_id))
     if guard:
         return guard
     doc = repo.find_one("documents", document_id)
-    if not doc:
+    if not doc or doc.get("projectId") != project_id:
         return fail(errors.NOT_FOUND, request)
     doc["fileStatus"] = "已作废"
     return ok(repo.mutation_result("作废文件", "Document", document_id, next_status="已作废"), request)
@@ -867,14 +1369,13 @@ def save_submission_draft(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     x_role: str | None = Header(default=None, alias="X-Role"),
 ):
-    guard = mutation_guard(request, project_id, x_role=x_role)
+    node_ids = node_ids_from_body(body, ROLE_NODE_MAP["contractor"])
+    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
     if guard:
         return guard
 
     def produce():
         draft_id = f"DRAFT-{uuid4().hex[:8].upper()}"
-        node_ids = body.get("nodeIds") or ([body.get("nodeId")] if body.get("nodeId") else [ROLE_NODE_MAP["contractor"]])
-        node_ids = [int(item) for item in node_ids if item]
         binding_ids = scoped_binding_ids(project_id, node_ids, body.get("bindingIds") or [])
         if not binding_ids:
             return fail(errors.EMPTY_NODE_PACKAGE, request)
@@ -891,7 +1392,7 @@ def save_submission_draft(
         repo.add_audit("保存提交草稿", "SubmissionDraft", draft_id)
         return ok({"draftId": draft_id, "savedAt": draft["savedAt"], "bindingIds": binding_ids}, request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 def draft_summary(draft: dict[str, Any]) -> dict[str, Any]:
@@ -951,14 +1452,14 @@ def submit_node_package(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     x_role: str | None = Header(default=None, alias="X-Role"),
 ):
-    guard = mutation_guard(request, project_id, x_role=x_role)
+    node_ids = node_ids_from_body(body, ROLE_NODE_MAP["contractor"])
+    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
     if guard:
         return guard
 
     def produce():
         submission_id = f"SUB-{uuid4().hex[:8].upper()}"
         snapshot_id = f"SNAP-{uuid4().hex[:8].upper()}"
-        node_ids = [int(item) for item in (body.get("nodeIds") or ([body.get("nodeId")] if body.get("nodeId") else [ROLE_NODE_MAP["contractor"]])) if item]
         binding_ids = scoped_binding_ids(project_id, node_ids, body.get("bindingIds") or [])
         if not binding_ids:
             return fail(errors.EMPTY_NODE_PACKAGE, request)
@@ -1000,7 +1501,7 @@ def submit_node_package(
         repo.state["submissions"].insert(0, submission)
         return ok({"submissionId": submission_id, "snapshotId": snapshot_id, "nextStatus": "AI 预审中", "createdTodos": [repo.state["todos"][0]]}, request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.get("/projects/{project_id}/submissions/{submission_id}")
@@ -1028,21 +1529,59 @@ def withdraw_submission_items(
         return guard
 
     def produce():
-        binding_ids = body.get("bindingIds") or []
+        binding_ids = [str(item) for item in (body.get("bindingIds") or []) if item]
         if not binding_ids:
             return fail(errors.EMPTY_BINDINGS, request)
-        for binding in repo.state["bindings"]:
-            if binding["id"] in binding_ids:
-                binding["bindingStatus"] = "草稿挂载"
-        submission = next((item for item in repo.state["submissions"] if item["submissionId"] == submission_id), None)
-        if submission:
-            submission["withdrawal"] = {"bindingCount": len(binding_ids), "reason": body.get("reason") or "撤回未提交项", "withdrawnAt": server_time()}
-            submission["nextStatus"] = "部分提交"
-        node_ids = sorted({int(item["nodeId"]) for item in repo.state["bindings"] if item["id"] in binding_ids})
+        requested_ids = set(binding_ids)
+        submission = next(
+            (
+                item
+                for item in repo.state["submissions"]
+                if item["projectId"] == project_id and item["submissionId"] == submission_id
+            ),
+            None,
+        )
+        if not submission:
+            return fail(errors.NOT_FOUND, request)
+        submitted_ids = set(submission.get("bindingIds") or [])
+        invalid_ids = sorted(requested_ids - submitted_ids)
+        if invalid_ids:
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="只能撤回当前提交批次内的资料。",
+                data={"invalidBindingIds": invalid_ids},
+            )
+        binding_by_id = {
+            binding["id"]: binding
+            for binding in repo.state["bindings"]
+            if binding.get("projectId") == project_id and binding["id"] in requested_ids
+        }
+        missing_ids = sorted(requested_ids - set(binding_by_id))
+        if missing_ids:
+            return fail(errors.NOT_FOUND, request, data={"missingBindingIds": missing_ids})
+        locked_ids = sorted(
+            binding["id"]
+            for binding in binding_by_id.values()
+            if binding.get("bindingStatus") in {"已通过", "已锁定", "已归档"}
+        )
+        if locked_ids:
+            return fail(errors.WITHDRAW_LOCKED, request, data={"lockedBindingIds": locked_ids})
+        for binding in binding_by_id.values():
+            binding["bindingStatus"] = "草稿挂载"
+        withdrawn_ids = sorted(set(submission.get("withdrawnBindingIds") or []) | requested_ids)
+        submission["withdrawnBindingIds"] = withdrawn_ids
+        submission["withdrawal"] = {
+            "bindingCount": len(withdrawn_ids),
+            "reason": body.get("reason") or "撤回未提交项",
+            "withdrawnAt": server_time(),
+        }
+        submission["nextStatus"] = "部分提交"
+        node_ids = sorted({int(item["nodeId"]) for item in binding_by_id.values()})
         changed = [repo.set_node_status(project_id, node_id, "部分提交") for node_id in node_ids]
         return ok(repo.mutation_result("撤回未提交项", "Submission", submission_id, next_status="部分提交", changed=changed, affected_ids=binding_ids), request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.post("/projects/{project_id}/rectifications")
@@ -1053,25 +1592,84 @@ def submit_rectification(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     x_role: str | None = Header(default=None, alias="X-Role"),
 ):
-    guard = mutation_guard(request, project_id, x_role=x_role)
+    node_ids = node_ids_from_body(body, ROLE_NODE_MAP["contractor"])
+    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
     if guard:
         return guard
 
     def produce():
-        node_id = int(body.get("nodeId") or ROLE_NODE_MAP["contractor"])
-        rectification = {
-            "id": f"REC-{uuid4().hex[:8].upper()}",
-            "projectId": project_id,
-            "nodeId": node_id,
-            "status": "已反馈",
-            "comment": body.get("comment") or body.get("description"),
-            "createdAt": server_time(),
-        }
-        repo.state["rectifications"].insert(0, rectification)
+        node_id = node_ids[0] if node_ids else ROLE_NODE_MAP["contractor"]
+        node = repo.node(project_id, node_id)
+        if not node:
+            return fail(errors.NOT_FOUND, request)
+        binding_ids = [str(item) for item in (body.get("bindingIds") or []) if item]
+        if not binding_ids:
+            return fail(errors.EMPTY_BINDINGS, request)
+        node_binding_ids = {item["id"] for item in repo.state["bindings"] if item["projectId"] == project_id and int(item["nodeId"]) == node_id}
+        invalid_binding_ids = sorted(set(binding_ids) - node_binding_ids)
+        if invalid_binding_ids:
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="补正反馈资料必须属于当前节点。",
+                data={"invalidBindingIds": invalid_binding_ids},
+            )
+        rectification_id = body.get("rectificationId")
+        if rectification_id:
+            rectification = next(
+                (
+                    item
+                    for item in repo.state["rectifications"]
+                    if item["projectId"] == project_id and item["id"] == rectification_id
+                ),
+                None,
+            )
+            if not rectification:
+                return fail(errors.NOT_FOUND, request)
+            if int(rectification["nodeId"]) != node_id:
+                return fail(errors.CONFLICT, request, message="补正单不属于当前节点。")
+        else:
+            rectification = next(
+                (
+                    item
+                    for item in repo.state["rectifications"]
+                    if item["projectId"] == project_id and int(item["nodeId"]) == node_id and item.get("status") == "待反馈"
+                ),
+                None,
+            )
+            if not rectification:
+                return fail(errors.CONFLICT, request, message="当前节点没有待反馈补正单。")
+        if rectification.get("status") != "待反馈":
+            return fail(errors.CONFLICT, request, message="补正单当前状态不允许提交反馈。")
+        rectification["status"] = "已反馈"
+        rectification["comment"] = body.get("comment") or body.get("description")
+        rectification["bindingIds"] = binding_ids
+        rectification["feedbackAt"] = server_time()
+        rectification["feedbackByName"] = "李工"
         changed = [repo.set_node_status(project_id, node_id, "复审中")]
-        return ok({"rectification": {"id": rectification["id"], "projectId": project_id, "nodeId": node_id, "status": rectification["status"]}, "nextStatus": "复审中", "createdTodos": [], **repo.mutation_result("提交补正反馈", "Rectification", rectification["id"], changed=changed)}, request)
+        return ok(
+            {
+                "rectification": {
+                    "id": rectification["id"],
+                    "projectId": project_id,
+                    "nodeId": node_id,
+                    "status": rectification["status"],
+                },
+                "nextStatus": "复审中",
+                "createdTodos": [],
+                **repo.mutation_result(
+                    "提交补正反馈",
+                    "Rectification",
+                    rectification["id"],
+                    next_status="复审中",
+                    changed=changed,
+                    affected_ids=[rectification["id"], *binding_ids],
+                ),
+            },
+            request,
+        )
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.get("/projects/{project_id}/rectifications")
@@ -1165,7 +1763,12 @@ def ai_recheck(
         dispatch = task_dispatcher.dispatch_ai_recheck(project_id, node_id, run_id)
         return ok({"runId": run_id, "status": run["status"], "latestRun": run, "dispatch": dispatch}, request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"projectId": project_id, "nodeId": node_id},
+    )
 
 
 @router.get("/projects/{project_id}/inspection/nodes/{node_id}/ai-runs")
@@ -1206,7 +1809,7 @@ def save_review_opinion(request: Request, project_id: str, node_id: int, body: d
         repo.set_node_status(project_id, node_id, next_status)
         return ok({"opinion": opinion, "nextStatus": next_status}, request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.get("/projects/{project_id}/inspection/nodes/{node_id}/review-opinions")
@@ -1271,9 +1874,9 @@ def return_correction(request: Request, project_id: str, node_id: int, body: dic
             "actions": ["rectification:submit"],
         }
         repo.state["todos"].insert(0, todo)
-        return ok({"rectification": {"id": rectification["id"], "projectId": project_id, "nodeId": node_id, "status": rectification["status"]}, "nextStatus": "需补正", "createdTodos": [todo], **repo.mutation_result("退回补正", "Rectification", rectification["id"], changed=changed)}, request)
+        return ok({"rectification": {"id": rectification["id"], "projectId": project_id, "nodeId": node_id, "status": rectification["status"]}, "nextStatus": "需补正", "createdTodos": [todo], **repo.mutation_result("退回补正", "Rectification", rectification["id"], next_status="需补正", changed=changed)}, request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.get("/projects/{project_id}/inspection/nodes/{node_id}/evidence-chain")
@@ -1342,6 +1945,16 @@ def generate_report_review(request: Request, project_id: str, node_id: int, body
         return guard
 
     def produce():
+        node = repo.node(project_id, node_id)
+        if not node:
+            return fail(errors.NOT_FOUND, request)
+        if node.get("status") in REPORT_GENERATION_BLOCKED_STATUSES:
+            return fail(
+                errors.CONFLICT,
+                request,
+                message=f"节点状态 {node.get('status')} 不允许生成报告草稿。",
+                data={"nodeId": node_id, "status": node.get("status")},
+            )
         report = {
             "id": f"RPT-{uuid4().hex[:8].upper()}",
             "projectId": project_id,
@@ -1365,17 +1978,19 @@ def generate_report_review(request: Request, project_id: str, node_id: int, body
         repo.state["todos"].insert(0, todo)
         return ok({"report": report, "nextStatus": "报告生成/复核中", "createdTodos": [todo]}, request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.get("/projects/{project_id}/owner/reports")
 def owner_reports(request: Request, project_id: str):
-    return ok([repo.clone(item) for item in repo.state["reports"] if item["projectId"] == project_id], request)
+    scope = authorized_node_scope(request, project_id)
+    return ok([repo.clone(item) for item in repo.state["reports"] if item["projectId"] == project_id and report_visible_in_scope(item, scope)], request)
 
 
 @router.get("/projects/{project_id}/reports")
 def list_reports(request: Request, project_id: str):
-    return ok([repo.clone(item) for item in repo.state["reports"] if item["projectId"] == project_id], request)
+    scope = authorized_node_scope(request, project_id)
+    return ok([repo.clone(item) for item in repo.state["reports"] if item["projectId"] == project_id and report_visible_in_scope(item, scope)], request)
 
 
 @router.get("/projects/{project_id}/reports/{report_id}")
@@ -1400,11 +2015,11 @@ def report_detail(request: Request, project_id: str, report_id: str):
 
 @router.patch("/projects/{project_id}/reports/{report_id}")
 def update_report(request: Request, project_id: str, report_id: str, body: dict[str, Any] = Body(default_factory=dict), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
+    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=report_node_ids(project_id, report_id))
     if guard:
         return guard
     report = repo.find_one("reports", report_id)
-    if not report:
+    if not report or report.get("projectId") != project_id:
         return fail(errors.NOT_FOUND, request)
     changed = []
     for field in ["title", "status"]:
@@ -1424,18 +2039,20 @@ def report_versions(request: Request, project_id: str, report_id: str):
 
 @router.post("/projects/{project_id}/reports/{report_id}/export")
 def export_report(request: Request, project_id: str, report_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
+    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=report_node_ids(project_id, report_id))
     if guard:
         return guard
 
     def produce():
         report = repo.find_one("reports", report_id)
-        if not report:
+        if not report or report.get("projectId") != project_id:
             return fail(errors.NOT_FOUND, request)
         export_id = f"EXP-RPT-{uuid4().hex[:8].upper()}"
         task = {
             "id": export_id,
             "projectId": project_id,
+            "reportId": report_id,
+            "nodeIds": report.get("nodeIds") or [],
             "exportType": "report",
             "status": "可下载",
             "progress": 100,
@@ -1451,18 +2068,18 @@ def export_report(request: Request, project_id: str, report_id: str, body: dict[
         report["status"] = "已签发" if report.get("status") == "待签发" else "复核中"
         return ok({"exportId": export_id, "report": report}, request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.post("/projects/{project_id}/reports/{report_id}/archive")
 def archive_report(request: Request, project_id: str, report_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
+    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=report_node_ids(project_id, report_id))
     if guard:
         return guard
 
     def produce():
         report = repo.find_one("reports", report_id)
-        if not report:
+        if not report or report.get("projectId") != project_id:
             return fail(errors.NOT_FOUND, request)
         report["status"] = "已归档"
         repo.touch_project(project_id, "已归档")
@@ -1480,12 +2097,17 @@ def archive_report(request: Request, project_id: str, report_id: str, body: dict
         repo.state["archive_items"].insert(0, item)
         return ok({"report": report, "nextStatus": "已归档"}, request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.get("/projects/{project_id}/archive")
 def list_archive(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), keyword: str | None = None, nodeId: int | None = None):
-    items = [repo.clone(item) for item in repo.state["archive_items"] if item.get("projectId") == project_id]
+    scope = authorized_node_scope(request, project_id)
+    items = [
+        repo.clone(item)
+        for item in repo.state["archive_items"]
+        if item.get("projectId") == project_id and archive_visible_in_scope(item, scope)
+    ]
     if nodeId:
         items = [item for item in items if int(item.get("nodeId") or 0) == int(nodeId)]
     items = filter_keyword(items, keyword, ["name", "sourceOrgName", "status"])
@@ -1494,6 +2116,7 @@ def list_archive(request: Request, project_id: str, page_no: int = Query(default
 
 @router.get("/projects/{project_id}/archive/package")
 def archive_package(request: Request, project_id: str):
+    scope = authorized_node_scope(request, project_id)
     export_id = "EXP-ARCHIVE-QUEUE-001"
     task = repo.find_one("export_tasks", export_id) or {
         "id": export_id,
@@ -1508,13 +2131,19 @@ def archive_package(request: Request, project_id: str):
         "finishedAt": server_time(),
     }
     repo.attach_export_artifact(task, content_type="application/zip")
-    return ok({**repo.signed_get(task["fileName"], task["downloadUrl"], "application/zip", task.get("fileSize")), "exportId": export_id, "projectId": project_id, "packageType": "archive", "itemCount": len(repo.state["archive_items"]), "generatedAt": server_time()}, request)
+    item_count = len([item for item in repo.state["archive_items"] if item.get("projectId") == project_id and archive_visible_in_scope(item, scope)])
+    download_url = task.get("downloadUrl") or f"mock://download/archive/{project_id}.zip"
+    return ok({**repo.signed_get(task["fileName"], download_url, "application/zip", task.get("fileSize")), "exportId": export_id, "projectId": project_id, "packageType": "archive", "itemCount": item_count, "generatedAt": server_time()}, request)
 
 
 @router.get("/projects/{project_id}/archive/evidence-package")
 def evidence_package(request: Request, project_id: str, nodeId: int | None = None):
+    scope = authorized_node_scope(request, project_id)
+    effective_node_id = nodeId or 24
+    if scope is not None and effective_node_id not in scope:
+        return fail(errors.FORBIDDEN, request, message="用户不在该节点授权范围内。")
     export_id = "EXP-EVIDENCE-RUNNING-001"
-    file_name = f"{project_id}-节点{nodeId or 24}-证据定位包.zip"
+    file_name = f"{project_id}-节点{effective_node_id}-证据定位包.zip"
     task = {"id": export_id, "projectId": project_id, "exportType": "evidence-package", "status": "可下载", "progress": 100, "fileName": file_name, "fileSize": 786432, "downloadUrl": f"mock://download/archive/{project_id}-evidence.zip", "createdAt": server_time(), "finishedAt": server_time()}
     repo.attach_export_artifact(task, content_type="application/zip")
     return ok({**repo.signed_get(file_name, task["downloadUrl"], "application/zip", task.get("fileSize")), "exportId": export_id, "projectId": project_id, "packageType": "evidence", "itemCount": len(repo.state["evidence_links"]), "generatedAt": server_time()}, request)
@@ -1523,8 +2152,11 @@ def evidence_package(request: Request, project_id: str, nodeId: int | None = Non
 @router.get("/projects/{project_id}/archive/{archive_item_id}")
 def archive_item_detail(request: Request, project_id: str, archive_item_id: str):
     item = repo.find_one("archive_items", archive_item_id)
-    if not item:
+    if not item or item.get("projectId") != project_id:
         return fail(errors.NOT_FOUND, request)
+    scope = authorized_node_scope(request, project_id)
+    if not archive_visible_in_scope(item, scope):
+        return fail(errors.FORBIDDEN, request, message="用户不在该资源授权范围内。")
     report = repo.state["reports"][0] if item["type"] == "report" else None
     return ok(
         {
@@ -1543,8 +2175,11 @@ def archive_item_detail(request: Request, project_id: str, archive_item_id: str)
 @router.get("/projects/{project_id}/export-tasks/{export_id}")
 def project_export_task(request: Request, project_id: str, export_id: str):
     task = repo.find_one("export_tasks", export_id)
-    if not task:
+    if not task or task.get("projectId") != project_id:
         return fail(errors.NOT_FOUND, request)
+    scope_error = scope_error_for_record(request, task, project_id)
+    if scope_error:
+        return scope_error
     return ok({"task": repo.clone(task)}, request)
 
 
@@ -1553,6 +2188,9 @@ def get_export_task(request: Request, export_id: str):
     task = repo.find_one("export_tasks", export_id)
     if not task:
         return fail(errors.NOT_FOUND, request)
+    scope_error = scope_error_for_record(request, task)
+    if scope_error:
+        return scope_error
     return ok({"task": repo.clone(task)}, request)
 
 
@@ -1561,6 +2199,9 @@ def export_download_url(request: Request, export_id: str):
     task = repo.find_one("export_tasks", export_id)
     if not task:
         return fail(errors.NOT_FOUND, request)
+    scope_error = scope_error_for_record(request, task)
+    if scope_error:
+        return scope_error
     signed = signed_url_for_task(task)
     if isinstance(signed, dict) and "error" in signed:
         return fail(signed["error"], request)
@@ -1575,35 +2216,56 @@ def file_signed_url(request: Request, file_id: str):
 @router.post("/exports")
 def create_export(request: Request, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     def produce():
+        project_id = body.get("projectId")
+        node_ids = node_ids_from_body(body)
+        if project_id and body.get("reportId"):
+            node_ids = sorted({*node_ids, *report_node_ids(project_id, str(body["reportId"]))})
+        if project_id:
+            role, identity_error = effective_role_for_request(request)
+            if identity_error:
+                return identity_error
+            scope_error = member_node_scope_error(request, project_id, role, node_ids=node_ids)
+            if scope_error:
+                return scope_error
         export_id = f"EXP-{uuid4().hex[:8].upper()}"
         task = {
             "id": export_id,
             "projectId": body.get("projectId"),
+            "nodeIds": node_ids,
+            "reportId": body.get("reportId"),
             "exportType": body.get("exportType") or "config-package",
-            "status": "可下载",
-            "progress": 100,
+            "status": "排队中",
+            "progress": 0,
             "fileName": body.get("fileName") or f"{export_id}.zip",
-            "fileSize": 1024,
-            "downloadUrl": f"mock://download/exports/{export_id}.zip",
+            "fileSize": 0,
             "createdAt": server_time(),
-            "finishedAt": server_time(),
             "expiresAt": "2026-06-27 18:00:00",
         }
-        repo.attach_export_artifact(task)
         repo.state["export_tasks"].insert(0, task)
-        return ok({"exportId": export_id, "task": task}, request)
+        dispatch = task_dispatcher.dispatch_export(export_id)
+        return ok({"exportId": export_id, "status": task["status"], "task": task, "dispatch": dispatch}, request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.get("/projects/{project_id}/ndt/summary")
 def ndt_summary(request: Request, project_id: str):
-    return ok({"filmCount": len(repo.state["ndt_films"]), "recordCount": len(repo.state["ndt_records"]), "reportCount": len(repo.state["ndt_reports"]), "feedbackCount": len(repo.state["ndt_feedback"])}, request)
+    scope = authorized_node_scope(request, project_id)
+    films = [item for item in repo.state["ndt_films"] if item["projectId"] == project_id and record_visible_for_scope(item, scope, project_id=project_id)]
+    records = [item for item in repo.state["ndt_records"] if item["projectId"] == project_id and record_visible_for_scope(item, scope, project_id=project_id)]
+    reports = [item for item in repo.state["ndt_reports"] if item["projectId"] == project_id and record_visible_for_scope(item, scope, project_id=project_id)]
+    feedback = [item for item in repo.state["ndt_feedback"] if item["projectId"] == project_id and record_visible_for_scope(item, scope, project_id=project_id)]
+    return ok({"filmCount": len(films), "recordCount": len(records), "reportCount": len(reports), "feedbackCount": len(feedback)}, request)
 
 
 @router.get("/projects/{project_id}/ndt/films")
 def list_ndt_films(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), status: str | None = None, method: str | None = None, keyword: str | None = None):
-    items = [repo.clone(item) for item in repo.state["ndt_films"] if item["projectId"] == project_id]
+    scope = authorized_node_scope(request, project_id)
+    items = [
+        repo.clone(item)
+        for item in repo.state["ndt_films"]
+        if item["projectId"] == project_id and record_visible_for_scope(item, scope, project_id=project_id)
+    ]
     if status:
         items = [item for item in items if item["status"] == status]
     if method:
@@ -1614,14 +2276,17 @@ def list_ndt_films(request: Request, project_id: str, page_no: int = Query(defau
 
 @router.post("/projects/{project_id}/ndt/films")
 def create_ndt_film(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
+    node_ids = node_ids_from_body(body, 40)
+    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
     if guard:
         return guard
 
     def produce():
+        node_id = node_ids[0] if node_ids else 40
         film = {
             "id": f"FILM-{uuid4().hex[:8].upper()}",
             "projectId": project_id,
+            "nodeId": node_id,
             "filmNo": body.get("filmNo") or "RT-NEW",
             "weldNo": body.get("weldNo") or "W-NEW",
             "pipelineNo": body.get("pipelineNo"),
@@ -1633,38 +2298,43 @@ def create_ndt_film(request: Request, project_id: str, body: dict[str, Any] = Bo
         repo.state["ndt_films"].insert(0, film)
         return ok({"film": film}, request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.get("/projects/{project_id}/ndt/films/{film_id}")
 def ndt_film_detail(request: Request, project_id: str, film_id: str):
     film = repo.find_one("ndt_films", film_id)
-    if not film:
+    if not film or film.get("projectId") != project_id:
         return fail(errors.NOT_FOUND, request)
+    scope_error = scope_error_for_record(request, film, project_id)
+    if scope_error:
+        return scope_error
     return ok({"film": repo.clone(film)}, request)
 
 
 @router.patch("/projects/{project_id}/ndt/films/{film_id}")
 def update_ndt_film(request: Request, project_id: str, film_id: str, body: dict[str, Any] = Body(default_factory=dict), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
+    film = repo.find_one("ndt_films", film_id)
+    if not film or film.get("projectId") != project_id:
+        return fail(errors.NOT_FOUND, request)
+    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=sorted(record_node_ids(project_id, film)))
     if guard:
         return guard
-    film = repo.find_one("ndt_films", film_id)
-    if not film:
-        return fail(errors.NOT_FOUND, request)
     film.update({key: value for key, value in body.items() if value is not None})
     return ok({"film": repo.clone(film), **repo.mutation_result("更新底片", "NdtFilm", film_id)}, request)
 
 
 @router.post("/projects/{project_id}/ndt/films/import")
 def import_ndt_films(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
+    rows = body.get("rows") or []
+    node_ids = sorted({*node_ids_from_body(body, 40), *[int(row["nodeId"]) for row in rows if row.get("nodeId") is not None]})
+    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
     if guard:
         return guard
-    rows = body.get("rows") or []
     created = []
+    node_id = node_ids[0] if node_ids else 40
     for row in rows:
-        film = {"id": f"FILM-{uuid4().hex[:8].upper()}", "projectId": project_id, "filmNo": row.get("filmNo") or "RT-IMPORT", "weldNo": row.get("weldNo") or "W-IMPORT", "method": row.get("method") or "RT", "status": "待提交", "actions": ["ndt:submit"]}
+        film = {"id": f"FILM-{uuid4().hex[:8].upper()}", "projectId": project_id, "nodeId": int(row.get("nodeId") or node_id), "filmNo": row.get("filmNo") or "RT-IMPORT", "weldNo": row.get("weldNo") or "W-IMPORT", "method": row.get("method") or "RT", "status": "待提交", "actions": ["ndt:submit"]}
         repo.state["ndt_films"].insert(0, film)
         created.append(film)
     return ok({"imported": len(created), "failed": [], "films": created}, request)
@@ -1672,7 +2342,12 @@ def import_ndt_films(request: Request, project_id: str, body: dict[str, Any] = B
 
 @router.get("/projects/{project_id}/ndt/records")
 def list_ndt_records(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), filmId: str | None = None, reportId: str | None = None, sampleStatus: str | None = None):
-    items = [repo.clone(item) for item in repo.state["ndt_records"] if item["projectId"] == project_id]
+    scope = authorized_node_scope(request, project_id)
+    items = [
+        repo.clone(item)
+        for item in repo.state["ndt_records"]
+        if item["projectId"] == project_id and record_visible_for_scope(item, scope, project_id=project_id)
+    ]
     if filmId:
         items = [item for item in items if item.get("filmId") == filmId]
     if reportId:
@@ -1684,7 +2359,8 @@ def list_ndt_records(request: Request, project_id: str, page_no: int = Query(def
 
 @router.post("/projects/{project_id}/ndt/records/import")
 def import_ndt_records(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
+    node_ids = node_ids_from_body(body, 40)
+    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
     if guard:
         return guard
     created = []
@@ -1692,7 +2368,7 @@ def import_ndt_records(request: Request, project_id: str, body: dict[str, Any] =
         record = {
             "id": f"NDT-REC-{uuid4().hex[:8].upper()}",
             "projectId": project_id,
-            "nodeId": int(body.get("nodeId") or 40),
+            "nodeId": node_ids[0] if node_ids else 40,
             "recordNo": row.get("recordNo") or "REC-IMPORT",
             "filmId": row.get("filmId"),
             "reportId": row.get("reportId"),
@@ -1714,7 +2390,12 @@ def import_ndt_records(request: Request, project_id: str, body: dict[str, Any] =
 
 @router.get("/projects/{project_id}/ndt/reports")
 def list_ndt_reports(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), status: str | None = None, method: str | None = None):
-    items = [repo.clone(item) for item in repo.state["ndt_reports"] if item["projectId"] == project_id]
+    scope = authorized_node_scope(request, project_id)
+    items = [
+        repo.clone(item)
+        for item in repo.state["ndt_reports"]
+        if item["projectId"] == project_id and record_visible_for_scope(item, scope, project_id=project_id)
+    ]
     if status:
         items = [item for item in items if item["status"] == status]
     if method:
@@ -1724,19 +2405,26 @@ def list_ndt_reports(request: Request, project_id: str, page_no: int = Query(def
 
 @router.post("/projects/{project_id}/ndt/reports/upload-session")
 def ndt_report_upload_session(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
+    node_ids = node_ids_from_body(body, 40)
+    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
     if guard:
         return guard
 
     def produce():
+        node_id = node_ids[0] if node_ids else 40
         files = body.get("files") or [{"fileName": "RT检测报告.pdf", "fileSize": 245760, "fileType": "application/pdf"}]
         session_id = f"UPS-NDT-{uuid4().hex[:8].upper()}"
         upload_urls = []
         for file in files:
             doc, version = repo.create_document(project_id, file.get("fileName", "RT检测报告.pdf"), file.get("fileType", "pdf"), source_org_name="华测检测有限公司", uploader_name="王工")
+            doc["nodeId"] = node_id
+            knowledge_file = repo.find_one("knowledge_files", f"KF-{doc['id']}")
+            if knowledge_file:
+                knowledge_file["nodeId"] = node_id
             report = {
                 "id": f"NDT-RPT-{uuid4().hex[:8].upper()}",
                 "projectId": project_id,
+                "nodeId": node_id,
                 "reportNo": file.get("fileName", "RT检测报告").split(".")[0],
                 "method": "UT" if "UT" in file.get("fileName", "") else "RT",
                 "fileId": doc["id"],
@@ -1750,28 +2438,34 @@ def ndt_report_upload_session(request: Request, project_id: str, body: dict[str,
             upload_urls.append({"fileName": doc["fileName"], "documentId": doc["id"], "documentVersionId": version["id"], "url": repo.signed_put("documents", version["storageKey"], f"mock://upload/ndt/{session_id}/{doc['id']}", content_type=content_type), "method": "PUT", "expiresAt": "2026-06-27 18:00:00", "headers": {"Content-Type": content_type}})
         return ok({"uploadSessionId": session_id, "expiresAt": "2026-06-27 18:00:00", "uploadUrls": upload_urls}, request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.get("/projects/{project_id}/ndt/reports/{report_id}")
 def ndt_report_detail(request: Request, project_id: str, report_id: str):
     report = repo.find_one("ndt_reports", report_id)
-    if not report:
+    if not report or report.get("projectId") != project_id:
         return fail(errors.NOT_FOUND, request)
-    films = [repo.clone(item) for item in repo.state["ndt_films"] if item["id"] in set(report.get("relatedFilmIds", []))]
-    records = [repo.clone(item) for item in repo.state["ndt_records"] if item.get("reportId") == report_id]
+    scope_error = scope_error_for_record(request, report, project_id)
+    if scope_error:
+        return scope_error
+    scope = authorized_node_scope(request, project_id)
+    films = [repo.clone(item) for item in repo.state["ndt_films"] if item["id"] in set(report.get("relatedFilmIds", [])) and record_visible_for_scope(item, scope, project_id=project_id)]
+    records = [repo.clone(item) for item in repo.state["ndt_records"] if item.get("reportId") == report_id and record_visible_for_scope(item, scope, project_id=project_id)]
     document = repo.find_one("documents", report.get("fileId"))
-    return ok({"report": repo.clone(report), "films": films, "records": records, "document": repo.clone(document) if document else None, "feedback": repo.clone(repo.state["ndt_feedback"])}, request)
+    feedback = [repo.clone(item) for item in repo.state["ndt_feedback"] if record_visible_for_scope(item, scope, project_id=project_id)]
+    return ok({"report": repo.clone(report), "films": films, "records": records, "document": repo.clone(document) if document else None, "feedback": feedback}, request)
 
 
 @router.post("/projects/{project_id}/ndt/submissions")
 def submit_ndt(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
+    node_ids = node_ids_from_body(body, 40)
+    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
     if guard:
         return guard
 
     def produce():
-        node_id = int(body.get("nodeId") or 40)
+        node_id = node_ids[0] if node_ids else 40
         submission_id = f"NDT-SUB-{uuid4().hex[:8].upper()}"
         submitted_report_ids = set(body.get("reportIds") or [])
         for report in repo.state["ndt_reports"]:
@@ -1798,19 +2492,24 @@ def submit_ndt(request: Request, project_id: str, body: dict[str, Any] = Body(de
         repo.state["todos"].insert(0, todo)
         return ok({"submissionId": submission_id, "nextStatus": "待审查", "createdTodos": [todo]}, request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.post("/projects/{project_id}/ndt/rectifications")
 def ndt_rectification(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
+    node_ids = node_ids_from_body(body, 40)
+    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
     if guard:
         return guard
 
     def produce():
+        node_id = node_ids[0] if node_ids else 40
         rectification_id = body.get("rectificationId") or f"NDT-REC-{uuid4().hex[:8].upper()}"
         feedback = repo.find_one("ndt_feedback", rectification_id)
         if feedback:
+            scope_error = scope_error_for_record(request, feedback, project_id)
+            if scope_error:
+                return scope_error
             feedback["status"] = "已反馈"
             feedback["feedbackDescription"] = body.get("description")
             feedback["feedbackAt"] = server_time()
@@ -1818,7 +2517,7 @@ def ndt_rectification(request: Request, project_id: str, body: dict[str, Any] = 
             feedback = {
                 "id": rectification_id,
                 "projectId": project_id,
-                "nodeId": 40,
+                "nodeId": node_id,
                 "title": "无损检测补正反馈",
                 "description": body.get("description") or "已补充无损检测资料。",
                 "status": "已反馈",
@@ -1827,16 +2526,21 @@ def ndt_rectification(request: Request, project_id: str, body: dict[str, Any] = 
                 "createdAt": server_time(),
             }
             repo.state["ndt_feedback"].insert(0, feedback)
-        rectification = {"id": feedback["id"], "projectId": project_id, "nodeId": 40, "status": feedback["status"]}
-        repo.set_node_status(project_id, 40, "复审中")
+        rectification = {"id": feedback["id"], "projectId": project_id, "nodeId": node_id, "status": feedback["status"]}
+        repo.set_node_status(project_id, node_id, "复审中")
         return ok({"rectification": rectification, "nextStatus": "复审中"}, request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.get("/projects/{project_id}/ndt/inspection-feedback")
 def list_ndt_feedback(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), status: str | None = None):
-    items = [repo.clone(item) for item in repo.state["ndt_feedback"] if item["projectId"] == project_id]
+    scope = authorized_node_scope(request, project_id)
+    items = [
+        repo.clone(item)
+        for item in repo.state["ndt_feedback"]
+        if item["projectId"] == project_id and record_visible_for_scope(item, scope, project_id=project_id)
+    ]
     if status:
         items = [item for item in items if item["status"] == status]
     return ok(page(items, page_no, page_size), request)
@@ -1845,14 +2549,18 @@ def list_ndt_feedback(request: Request, project_id: str, page_no: int = Query(de
 @router.get("/projects/{project_id}/ndt/inspection-feedback/{feedback_id}")
 def ndt_feedback_detail(request: Request, project_id: str, feedback_id: str):
     feedback = repo.find_one("ndt_feedback", feedback_id)
-    if not feedback:
+    if not feedback or feedback.get("projectId") != project_id:
         return fail(errors.NOT_FOUND, request)
+    scope_error = scope_error_for_record(request, feedback, project_id)
+    if scope_error:
+        return scope_error
+    scope = authorized_node_scope(request, project_id)
     return ok(
         {
             "feedback": repo.clone(feedback),
-            "reports": [repo.clone(item) for item in repo.state["ndt_reports"] if item["id"] in set(feedback.get("relatedReportIds", []))],
-            "films": [repo.clone(item) for item in repo.state["ndt_films"] if item["id"] in set(feedback.get("relatedFilmIds", []))],
-            "records": repo.clone(repo.state["ndt_records"]),
+            "reports": [repo.clone(item) for item in repo.state["ndt_reports"] if item["id"] in set(feedback.get("relatedReportIds", [])) and record_visible_for_scope(item, scope, project_id=project_id)],
+            "films": [repo.clone(item) for item in repo.state["ndt_films"] if item["id"] in set(feedback.get("relatedFilmIds", [])) and record_visible_for_scope(item, scope, project_id=project_id)],
+            "records": [repo.clone(item) for item in repo.state["ndt_records"] if record_visible_for_scope(item, scope, project_id=project_id)],
             "evidenceLinks": repo.clone(repo.state["evidence_links"]),
             "timeline": [{"title": "监检反馈", "actorName": "张工", "status": feedback["status"], "createdAt": feedback["createdAt"], "comment": feedback["description"]}],
         },
@@ -1865,16 +2573,20 @@ def search(request: Request, keyword: str = Query(default=""), projectId: str | 
     results: list[dict[str, Any]] = []
     lowered = keyword.lower()
     for project in repo.state["projects"]:
-        if not projectId or project["id"] == projectId:
+        scope = authorized_node_scope(request, project["id"])
+        if (not projectId or project["id"] == projectId) and (scope is None or bool(scope)):
             results.append({"type": "project", "id": project["id"], "title": project["name"], "description": project["status"], "route": f"/workbench/inspection?projectId={project['id']}", "highlights": [project["code"], project["region"]]})
     for node in repo.state["tree_nodes"]:
-        if not projectId or node["projectId"] == projectId:
+        scope = authorized_node_scope(request, node["projectId"])
+        if (not projectId or node["projectId"] == projectId) and record_visible_for_scope(node, scope, project_id=node["projectId"]):
             results.append({"type": "node", "id": str(node["nodeId"]), "title": f"节点 {node['nodeId']} {node['name']}", "description": node["status"], "route": f"/workbench/inspection?nodeId={node['nodeId']}", "highlights": [node["groupName"], node["inspectionType"]]})
     for doc in repo.state["documents"]:
-        if not projectId or doc["projectId"] == projectId:
+        scope = authorized_node_scope(request, doc["projectId"])
+        if (not projectId or doc["projectId"] == projectId) and document_visible_in_scope(doc, scope):
             results.append({"type": "document", "id": doc["id"], "title": doc["fileName"], "description": doc["sourceOrgName"], "route": f"/workbench/contractor?documentId={doc['id']}", "highlights": [doc["currentOcrStatus"]]})
     for report in repo.state["reports"]:
-        if not projectId or report["projectId"] == projectId:
+        scope = authorized_node_scope(request, report["projectId"])
+        if (not projectId or report["projectId"] == projectId) and report_visible_in_scope(report, scope):
             results.append({"type": "report", "id": report["id"], "title": report["title"], "description": report["status"], "route": f"/workbench/owner?reportId={report['id']}", "highlights": [report["reportNo"]]})
     if type:
         results = [item for item in results if item["type"] == type]
@@ -1885,7 +2597,7 @@ def search(request: Request, keyword: str = Query(default=""), projectId: str | 
 
 @router.get("/todos")
 def list_todos(request: Request, role: str | None = None, projectId: str | None = None, status: str | None = None, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    items = [repo.clone(item) for item in repo.state["todos"]]
+    items = [repo.clone(item) for item in repo.state["todos"] if record_visible_for_request(request, item)]
     if projectId:
         items = [item for item in items if item.get("projectId") == projectId]
     if status:
@@ -1898,6 +2610,9 @@ def todo_detail(request: Request, todo_id: str):
     todo = repo.find_one("todos", todo_id)
     if not todo:
         return fail(errors.NOT_FOUND, request)
+    scope_error = scope_error_for_record(request, todo)
+    if scope_error:
+        return scope_error
     return ok({**repo.clone(todo), "relatedObject": None, "evidenceLinks": repo.clone(repo.state["evidence_links"])}, request)
 
 
@@ -1906,6 +2621,9 @@ def complete_todo(request: Request, todo_id: str, body: dict[str, Any] = Body(de
     todo = repo.find_one("todos", todo_id)
     if not todo:
         return fail(errors.NOT_FOUND, request)
+    scope_error = scope_error_for_record(request, todo)
+    if scope_error:
+        return scope_error
     todo["status"] = "已完成"
     return ok(repo.mutation_result("完成待办", "Todo", todo_id, next_status="已完成"), request)
 
@@ -1915,13 +2633,16 @@ def defer_todo(request: Request, todo_id: str, body: dict[str, Any] = Body(defau
     todo = repo.find_one("todos", todo_id)
     if not todo:
         return fail(errors.NOT_FOUND, request)
+    scope_error = scope_error_for_record(request, todo)
+    if scope_error:
+        return scope_error
     todo["status"] = "已延期"
     return ok(repo.mutation_result("延期待办", "Todo", todo_id, next_status="已延期"), request)
 
 
 @router.get("/messages")
 def list_messages(request: Request, projectId: str | None = None, read: bool | None = None, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    items = [repo.clone(item) for item in repo.state["messages"]]
+    items = [repo.clone(item) for item in repo.state["messages"] if record_visible_for_request(request, item)]
     if projectId:
         items = [item for item in items if item.get("projectId") == projectId]
     if read is not None:
@@ -1934,6 +2655,9 @@ def mark_message_read(request: Request, message_id: str):
     message = repo.find_one("messages", message_id)
     if not message:
         return fail(errors.NOT_FOUND, request)
+    scope_error = scope_error_for_record(request, message)
+    if scope_error:
+        return scope_error
     message["read"] = True
     return ok(repo.mutation_result("标记消息已读", "Message", message_id), request)
 
@@ -1943,6 +2667,8 @@ def mark_all_messages_read(request: Request, body: dict[str, Any] = Body(default
     affected = 0
     for message in repo.state["messages"]:
         if body.get("projectId") and message.get("projectId") != body.get("projectId"):
+            continue
+        if not record_visible_for_request(request, message):
             continue
         if not message.get("read"):
             message["read"] = True
@@ -2011,7 +2737,7 @@ def create_knowledge_source(request: Request, body: dict[str, Any] = Body(defaul
         audit_id = repo.add_audit("新增知识源", "KnowledgeSource", source["id"])
         return ok({"source": source, "auditLogId": audit_id}, request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.get("/knowledge/sources/{source_id}")
@@ -2048,7 +2774,11 @@ def disable_knowledge_source(request: Request, source_id: str):
 
 @router.get("/knowledge/project-files")
 def list_knowledge_files(request: Request, keyword: str | None = None, projectId: str | None = None, nodeId: int | None = None, status: str | None = None, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    items = [repo.clone(item) for item in repo.state["knowledge_files"]]
+    items = [
+        repo.clone(item)
+        for item in repo.state["knowledge_files"]
+        if record_visible_for_request(request, item)
+    ]
     if projectId:
         items = [item for item in items if item.get("projectId") == projectId]
     if nodeId:
@@ -2064,6 +2794,9 @@ def knowledge_file_detail(request: Request, file_id: str):
     file = repo.find_one("knowledge_files", file_id)
     if not file:
         return fail(errors.NOT_FOUND, request)
+    scope_error = scope_error_for_record(request, file)
+    if scope_error:
+        return scope_error
     document = repo.find_one("documents", file.get("documentId"))
     latest_task = next((item for item in repo.state["knowledge_tasks"] if item.get("targetId") == file_id), None)
     return ok(
@@ -2086,6 +2819,11 @@ def knowledge_file_detail(request: Request, file_id: str):
 
 @router.get("/knowledge/files/{file_id}/chunks")
 def knowledge_file_chunks(request: Request, file_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
+    file = repo.find_one("knowledge_files", file_id)
+    if file:
+        scope_error = scope_error_for_record(request, file)
+        if scope_error:
+            return scope_error
     chunks = [repo.clone(item) for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") == file_id]
     if not chunks:
         chunks = [
@@ -2100,12 +2838,24 @@ def knowledge_file_vectors(request: Request, file_id: str):
     file = repo.find_one("knowledge_files", file_id)
     if not file:
         return fail(errors.NOT_FOUND, request)
+    scope_error = scope_error_for_record(request, file)
+    if scope_error:
+        return scope_error
     return ok({"vectorStatus": file.get("vectorStatus"), "vectorCount": file.get("vectorCount", 0), "indexVersion": "proj-v2026.06.26", "dimensions": 3072, "updatedAt": file.get("updatedAt")}, request)
 
 
 @router.get("/knowledge/files/{file_id}/reasoning-references")
 def knowledge_file_reasoning_refs(request: Request, file_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    refs = [{"runId": run["id"], "nodeId": run["nodeId"], "subject": run["subject"], "model": run["model"], "quotedText": "证据链引用该文件的 OCR 字段。", "createdAt": run.get("finishedAt") or run.get("startedAt")} for run in repo.state["ai_runs"]]
+    file = repo.find_one("knowledge_files", file_id)
+    if file:
+        scope_error = scope_error_for_record(request, file)
+        if scope_error:
+            return scope_error
+    refs = [
+        {"runId": run["id"], "nodeId": run["nodeId"], "subject": run["subject"], "model": run["model"], "quotedText": "证据链引用该文件的 OCR 字段。", "createdAt": run.get("finishedAt") or run.get("startedAt")}
+        for run in repo.state["ai_runs"]
+        if record_visible_for_request(request, run)
+    ]
     return ok(page(refs, page_no, page_size), request)
 
 
@@ -2115,16 +2865,19 @@ def reindex_file(request: Request, file_id: str, body: dict[str, Any] = Body(def
         file = repo.find_one("knowledge_files", file_id)
         if not file:
             return fail(errors.NOT_FOUND, request)
+        scope_error = scope_error_for_record(request, file)
+        if scope_error:
+            return scope_error
         task = {"id": f"KT-{uuid4().hex[:8].upper()}", "taskType": "reindex", "targetType": "file", "targetId": file_id, "targetName": file["fileName"], "status": "排队中", "progress": 0, "createdAt": server_time(), "actions": ["knowledge:task-retry"]}
         repo.state["knowledge_tasks"].insert(0, task)
         return ok({"task": task}, request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.get("/knowledge/tasks")
 def list_knowledge_tasks(request: Request, taskType: str | None = None, status: str | None = None, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    items = [repo.clone(item) for item in repo.state["knowledge_tasks"]]
+    items = [repo.clone(item) for item in repo.state["knowledge_tasks"] if record_visible_for_request(request, item)]
     if taskType:
         items = [item for item in items if item["taskType"] == taskType]
     if status:
@@ -2137,23 +2890,118 @@ def knowledge_task_detail(request: Request, task_id: str):
     task = repo.find_one("knowledge_tasks", task_id)
     if not task:
         return fail(errors.NOT_FOUND, request)
+    scope_error = scope_error_for_record(request, task)
+    if scope_error:
+        return scope_error
     return ok({"task": repo.clone(task)}, request)
 
 
 @router.get("/knowledge/tasks/{task_id}/logs")
 def knowledge_task_logs(request: Request, task_id: str):
-    return ok([{"createdAt": server_time(), "level": "info", "message": f"任务 {task_id} 已进入队列。"}], request)
-
-
-@router.post("/knowledge/tasks/{task_id}/retry")
-def retry_knowledge_task(request: Request, task_id: str):
     task = repo.find_one("knowledge_tasks", task_id)
     if not task:
         return fail(errors.NOT_FOUND, request)
+    scope_error = scope_error_for_record(request, task)
+    if scope_error:
+        return scope_error
+    logs = task.get("logs") or [{"createdAt": task.get("createdAt") or server_time(), "level": "info", "message": f"任务 {task_id} 已进入队列。"}]
+    return ok(logs, request)
+
+
+def retry_dispatch_for_knowledge_task(request: Request, task: dict[str, Any]) -> tuple[list[dict[str, Any]], JSONResponse | None]:
+    task_type = task.get("taskType")
+    dispatches: list[dict[str, Any]] = []
+    task["attempts"] = int(task.get("attempts") or 0) + 1
     task["status"] = "排队中"
     task["progress"] = 0
+    task["updatedAt"] = server_time()
     task.pop("errorMessage", None)
-    return ok({"task": repo.clone(task)}, request)
+    task.pop("finishedAt", None)
+    repo.append_task_log(task, "info", f"第 {task['attempts']} 次重试已投递。")
+
+    if task_type == "ocr":
+        file = repo.find_one("knowledge_files", task.get("targetId"))
+        document_id = task.get("documentId") or (file or {}).get("documentId")
+        version_id = task.get("documentVersionId") or (file or {}).get("documentVersionId")
+        version = repo.find_one("versions", version_id) if version_id else None
+        document = repo.find_one("documents", document_id) if document_id else None
+        if not document or not version:
+            repo.mark_task_failed(task, "OCR 重试失败：找不到关联文档版本。")
+            return [], fail(errors.NOT_FOUND, request, message="找不到关联文档版本。")
+        task["documentId"] = document["id"]
+        task["documentVersionId"] = version["id"]
+        dispatches.append(
+            task_dispatcher.dispatch_parse_document(
+                document["id"],
+                version["id"],
+                version.get("storageKey") or version["id"],
+                document.get("fileName") or task.get("targetName"),
+            )
+        )
+    elif task_type == "slice":
+        if not repo.find_one("knowledge_files", task.get("targetId")):
+            repo.mark_task_failed(task, "切片重试失败：找不到关联知识文件。")
+            return [], fail(errors.NOT_FOUND, request, message="找不到关联知识文件。")
+        dispatches.append(task_dispatcher.dispatch_slice(task["targetId"]))
+    elif task_type in {"vector", "embed"}:
+        if not repo.find_one("knowledge_files", task.get("targetId")):
+            repo.mark_task_failed(task, "向量化重试失败：找不到关联知识文件。")
+            return [], fail(errors.NOT_FOUND, request, message="找不到关联知识文件。")
+        dispatches.append(task_dispatcher.dispatch_embed(task["targetId"]))
+    elif task_type == "reindex":
+        target_type = task.get("targetType")
+        if target_type == "file":
+            targets = [repo.find_one("knowledge_files", task.get("targetId"))]
+        else:
+            targets = [item for item in repo.state["knowledge_files"] if item.get("sourceId") == task.get("targetId")]
+        targets = [item for item in targets if item]
+        if not targets:
+            repo.mark_task_failed(task, "重建索引失败：找不到可重建的知识文件。")
+            return [], fail(errors.NOT_FOUND, request, message="找不到可重建的知识文件。")
+        for file in targets:
+            slice_task = repo.upsert_knowledge_task(
+                task_type="slice",
+                target_id=file["id"],
+                target_name=file["fileName"],
+                document_id=file.get("documentId"),
+                version_id=file.get("documentVersionId"),
+            )
+            vector_task = repo.upsert_knowledge_task(
+                task_type="vector",
+                target_id=file["id"],
+                target_name=file["fileName"],
+                document_id=file.get("documentId"),
+                version_id=file.get("documentVersionId"),
+            )
+            dispatches.append({"knowledgeTaskId": slice_task["id"], **task_dispatcher.dispatch_slice(file["id"])})
+            dispatches.append({"knowledgeTaskId": vector_task["id"], **task_dispatcher.dispatch_embed(file["id"])})
+        task["status"] = "成功"
+        task["progress"] = 100
+        task["finishedAt"] = server_time()
+        repo.append_task_log(task, "info", f"重建索引已创建 {len(dispatches)} 个子任务。")
+    else:
+        repo.mark_task_failed(task, f"不支持的任务类型：{task_type}")
+        return [], fail(errors.VALIDATION_ERROR, request, message=f"不支持的任务类型：{task_type}")
+
+    task["lastDispatch"] = dispatches[0] if len(dispatches) == 1 else {"dispatches": dispatches}
+    return dispatches, None
+
+
+@router.post("/knowledge/tasks/{task_id}/retry")
+def retry_knowledge_task(request: Request, task_id: str, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    def produce():
+        task = repo.find_one("knowledge_tasks", task_id)
+        if not task:
+            return fail(errors.NOT_FOUND, request)
+        scope_error = scope_error_for_record(request, task)
+        if scope_error:
+            return scope_error
+        dispatches, error = retry_dispatch_for_knowledge_task(request, task)
+        if error:
+            return error
+        return ok({"task": repo.clone(task), "dispatches": dispatches}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"taskId": task_id})
 
 
 @router.post("/knowledge/tasks/{task_id}/cancel")
@@ -2161,7 +3009,12 @@ def cancel_knowledge_task(request: Request, task_id: str):
     task = repo.find_one("knowledge_tasks", task_id)
     if not task:
         return fail(errors.NOT_FOUND, request)
+    scope_error = scope_error_for_record(request, task)
+    if scope_error:
+        return scope_error
     task["status"] = "已取消"
+    task["updatedAt"] = server_time()
+    repo.append_task_log(task, "info", "任务已取消。")
     return ok({"task": repo.clone(task)}, request)
 
 
@@ -2176,7 +3029,7 @@ def batch_reindex(request: Request, body: dict[str, Any] = Body(default_factory=
             ids.append(task["id"])
         return ok({"taskIds": ids}, request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.post("/knowledge/retrieval-test")
@@ -2262,7 +3115,7 @@ def knowledge_audit_logs(request: Request, page_no: int = Query(default=1, alias
 
 @router.get("/reasoning/logs")
 def reasoning_logs(request: Request, projectId: str | None = None, nodeId: int | None = None, status: str | None = None, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    items = [repo.clone(item) for item in repo.state["ai_runs"]]
+    items = [repo.clone(item) for item in repo.state["ai_runs"] if record_visible_for_request(request, item)]
     if projectId:
         items = [item for item in items if item["projectId"] == projectId]
     if nodeId:
@@ -2277,6 +3130,9 @@ def reasoning_log_detail(request: Request, log_id: str):
     run = repo.find_one("ai_runs", log_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
+    scope_error = scope_error_for_record(request, run)
+    if scope_error:
+        return scope_error
     return ok({"log": repo.clone(run), "evidenceLinks": repo.clone(run.get("evidenceLinks") or repo.state["evidence_links"])}, request)
 
 
@@ -2285,38 +3141,62 @@ def reasoning_log_evidence(request: Request, log_id: str):
     run = repo.find_one("ai_runs", log_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
+    scope_error = scope_error_for_record(request, run)
+    if scope_error:
+        return scope_error
     return ok(repo.clone(run.get("evidenceLinks") or repo.state["evidence_links"]), request)
 
 
 @router.post("/llm/compare")
 def llm_compare(request: Request, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     def produce():
+        project_id = body.get("projectId")
+        node_ids = node_ids_from_body(body)
+        if project_id:
+            role, identity_error = effective_role_for_request(request)
+            if identity_error:
+                return identity_error
+            scope_error = member_node_scope_error(request, project_id, role, node_ids=node_ids)
+            if scope_error:
+                return scope_error
+        run_id = f"CMP-{uuid4().hex[:8].upper()}"
         run = {
-            "runId": f"CMP-{uuid4().hex[:8].upper()}",
+            "runId": run_id,
             "question": body.get("question") or "请对比审查意见。",
             "modelCodes": body.get("modelCodes") or ["default-chat", "compare-fast"],
             "createdAt": server_time(),
             "projectId": body.get("projectId"),
             "nodeId": body.get("nodeId"),
-            "results": [
-                {"modelCode": model, "answer": f"{model} 认为资料基本满足要求，建议保留人工确认项。", "confidence": 0.82, "evidenceLinkIds": body.get("evidenceLinkIds") or ["EV-24-001"], "latencyMs": 900 + idx * 220}
-                for idx, model in enumerate(body.get("modelCodes") or ["default-chat", "compare-fast"])
-            ],
+            "evidenceLinkIds": body.get("evidenceLinkIds") or ["EV-24-001"],
+            "status": "排队中",
+            "results": [],
         }
         repo.state["llm_compare_runs"].insert(0, run)
-        return ok(run, request)
+        dispatch = task_dispatcher.dispatch_llm_compare(run_id)
+        return ok({**run, "dispatch": dispatch}, request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.get("/llm/compare-runs")
 def list_compare_runs(request: Request, projectId: str | None = None, nodeId: int | None = None, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    items = [repo.clone(item) for item in repo.state["llm_compare_runs"]]
+    items = [repo.clone(item) for item in repo.state["llm_compare_runs"] if record_visible_for_request(request, item)]
     if projectId:
         items = [item for item in items if item.get("projectId") == projectId]
     if nodeId:
         items = [item for item in items if int(item.get("nodeId") or 0) == int(nodeId)]
-    summaries = [{"runId": item["runId"], "question": item["question"], "modelCodes": item["modelCodes"], "createdAt": item["createdAt"], "projectId": item.get("projectId"), "nodeId": item.get("nodeId")} for item in items]
+    summaries = [
+        {
+            "runId": item["runId"],
+            "question": item["question"],
+            "modelCodes": item["modelCodes"],
+            "createdAt": item["createdAt"],
+            "projectId": item.get("projectId"),
+            "nodeId": item.get("nodeId"),
+            "status": item.get("status", "完成"),
+        }
+        for item in items
+    ]
     return ok(page(summaries, page_no, page_size), request)
 
 
@@ -2325,6 +3205,9 @@ def compare_run_detail(request: Request, run_id: str):
     run = repo.find_one("llm_compare_runs", run_id, id_field="runId")
     if not run:
         return fail(errors.NOT_FOUND, request)
+    scope_error = scope_error_for_record(request, run)
+    if scope_error:
+        return scope_error
     return ok(repo.clone(run), request)
 
 
@@ -2377,7 +3260,7 @@ def create_admin_project(request: Request, body: dict[str, Any] = Body(default_f
         detail_data = project_detail_payload(project_id)
         return ok({"project": project, "detail": detail_data, "auditLogId": audit_id, "createdNodeCount": 69}, request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.get("/admin/integration-contract")
@@ -2413,12 +3296,12 @@ def integration_contract(request: Request, module: str | None = None, status: st
             "endpoint": "/api/projects/{projectId}/submissions",
             "method": "GET",
             "frontendField": "drafts[].nodeNames",
-            "backendField": "",
+            "backendField": "drafts[].nodeNames",
             "required": True,
-            "status": "后端缺失",
-            "severity": "danger",
+            "status": "已对齐",
+            "severity": "info",
             "owner": "backend",
-            "note": "联调清单保留缺口项，用于跟踪真实 Mongo 聚合合同。",
+            "note": "提交草稿和提交批次摘要均已返回节点名称。",
             "updatedAt": server_time(),
         },
         {
@@ -2466,7 +3349,7 @@ def integration_contract(request: Request, module: str | None = None, status: st
             },
             {
                 "module": "submissions",
-                "status": "后端缺失",
+                "status": "已对齐",
             },
             {
                 "module": "inspection",
@@ -2562,7 +3445,7 @@ def admin_config_export(request: Request, body: dict[str, Any] = Body(default_fa
         repo.state["export_tasks"].insert(0, task)
         return ok({"exportId": export_id, "task": task}, request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.get("/admin/{kind}")
@@ -2652,7 +3535,7 @@ def publish_admin_config(request: Request, body: dict[str, Any] = Body(default_f
         ]
         return ok({"publishId": publish_id, "status": "已发布", "version": version, "auditLogId": audit_id, "publishedAt": server_time(), "impactSummary": {"totalAffected": 8, "warningCount": 1, "linkedProjects": len([item for item in repo.state["projects"] if item["status"] != "已归档"]), "pushedMessages": 1, "reviewTodos": 1}, "impacts": impacts}, request)
 
-    return idempotent(request, idempotency_key, produce)
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.get("/admin/audit-logs")

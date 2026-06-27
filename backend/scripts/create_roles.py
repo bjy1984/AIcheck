@@ -14,7 +14,7 @@ if __package__ in {None, ""}:
 
 from libs.contracts.responses import server_time
 from libs.db.seed import ADMIN_CONFIG, PROJECT_ID, ROLE_ACTIONS
-from libs.security.auth import ROLE_DEFAULT_PATHS
+from libs.security.auth import ROLE_DEFAULT_PATHS, hash_password
 
 
 ROLE_SPECS: dict[str, dict[str, Any]] = {
@@ -75,7 +75,7 @@ ROLE_SPECS: dict[str, dict[str, Any]] = {
         "orgName": "华东管网建设公司",
         "orgType": "owner",
         "mobile": "13800000001",
-        "nodeScope": [1, 16, 24, 40, 68],
+        "nodeScope": [1, 16, 24, 40, 59, 68],
         "readonly": True,
     },
 }
@@ -159,6 +159,36 @@ def role_user(role: str, spec: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def auth_user(role: str, spec: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": spec["userId"],
+        "username": spec["username"],
+        "passwordHash": hash_password(spec["username"]),
+        "role": role,
+        "roleId": str(["admin", "inspection", "contractor", "ndt", "owner"].index(role) + 1),
+        "roleLabel": spec["roleLabel"],
+        "permissions": ROLE_ACTIONS[role],
+        "displayName": spec["name"],
+        "orgUnitName": spec["orgName"],
+        "status": "启用",
+        "defaultPath": ROLE_DEFAULT_PATHS[role],
+        "updatedAt": server_time(),
+    }
+
+
+def role_record(role: str, spec: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": f"ROLE-{role.upper()}",
+        "role": role,
+        "label": spec["roleLabel"],
+        "actions": ROLE_ACTIONS[role],
+        "readonly": spec["readonly"],
+        "status": "启用",
+        "defaultPath": ROLE_DEFAULT_PATHS[role],
+        "updatedAt": server_time(),
+    }
+
+
 def permission_matrix_item(role: str, spec: dict[str, Any]) -> dict[str, Any]:
     return {
         "role": role,
@@ -220,10 +250,14 @@ def merge_project_member(existing: dict[str, Any] | None, desired: dict[str, Any
 def build_plan(roles: list[str], project_id: str) -> dict[str, Any]:
     admin_payload, admin_changes = build_admin_config_payload(None, roles)
     members = [project_member(role, ROLE_SPECS[role], project_id) for role in roles]
+    users = [auth_user(role, ROLE_SPECS[role]) for role in roles]
+    role_records = [role_record(role, ROLE_SPECS[role]) for role in roles]
     return {
         "projectId": project_id,
         "roles": roles,
         "adminConfigChanges": admin_changes,
+        "authUsers": users,
+        "authRoles": role_records,
         "projectMembers": members,
         "loginAccounts": [
             {
@@ -238,6 +272,88 @@ def build_plan(roles: list[str], project_id: str) -> dict[str, Any]:
     }
 
 
+def mongo_transactions_enabled() -> bool:
+    return os.getenv("AICHECK_MONGO_TRANSACTIONS", "false").lower() == "true"
+
+
+def apply_role_bootstrap(database: Any, roles: list[str], project_id: str, *, session: Any | None = None) -> dict[str, Any]:
+    admin_doc = database["admin_configs"].find_one({"_singleton": "admin_config"}, session=session)
+    existing_payload = (admin_doc or {}).get("payload")
+    admin_payload, admin_changes = build_admin_config_payload(existing_payload, roles)
+    database["admin_configs"].replace_one(
+        {"_singleton": "admin_config"},
+        {"_singleton": "admin_config", "payload": admin_payload},
+        upsert=True,
+        session=session,
+    )
+
+    auth_changes: list[dict[str, Any]] = []
+    for role in roles:
+        spec = ROLE_SPECS[role]
+        user = auth_user(role, spec)
+        role_doc = role_record(role, spec)
+        existing_user = database["users"].find_one({"username": user["username"]}, session=session)
+        if existing_user and existing_user.get("passwordHash"):
+            user["passwordHash"] = existing_user["passwordHash"]
+        database["users"].replace_one({"username": user["username"]}, user, upsert=True, session=session)
+        database["roles"].replace_one({"role": role}, role_doc, upsert=True, session=session)
+        auth_changes.extend(
+            [
+                {"collection": "users", "action": "updated" if existing_user else "created", "id": user["id"]},
+                {"collection": "roles", "action": "upserted", "role": role},
+            ]
+        )
+
+    member_changes: list[dict[str, Any]] = []
+    for role in roles:
+        desired = project_member(role, ROLE_SPECS[role], project_id)
+        existing = database["project_members"].find_one(
+            {"projectId": project_id, "userId": desired["userId"], "role": role},
+            session=session,
+        )
+        status, merged = merge_project_member(existing, desired)
+        merged.pop("_id", None)
+        database["project_members"].replace_one(
+            {"projectId": project_id, "userId": desired["userId"], "role": role},
+            merged,
+            upsert=True,
+            session=session,
+        )
+        member_changes.append(
+            {
+                "collection": "project_members",
+                "action": status,
+                "id": merged["id"],
+                "role": role,
+                "nodeScope": merged["nodeScope"],
+            }
+        )
+
+    audit_id = f"AUD-{uuid4().hex[:10].upper()}"
+    database["audit_logs"].insert_one(
+        {
+            "id": audit_id,
+            "actorId": "USER-SYSTEM",
+            "actorName": "部署初始化脚本",
+            "actorOrgName": "AIcheck",
+            "action": "初始化角色与项目成员授权",
+            "objectType": "RoleBootstrap",
+            "objectId": project_id,
+            "result": "成功",
+            "createdAt": server_time(),
+        },
+        session=session,
+    )
+    return {
+        "dryRun": False,
+        "projectId": project_id,
+        "adminConfigChanges": admin_changes,
+        "authChanges": auth_changes,
+        "projectMemberChanges": member_changes,
+        "auditLogId": audit_id,
+    }
+
+
 def sync_mongo(mongo_url: str, db_name: str, roles: list[str], project_id: str) -> dict[str, Any]:
     try:
         from pymongo import MongoClient
@@ -248,59 +364,21 @@ def sync_mongo(mongo_url: str, db_name: str, roles: list[str], project_id: str) 
     database = client[db_name]
     try:
         client.admin.command("ping")
-        admin_doc = database["admin_configs"].find_one({"_singleton": "admin_config"})
-        existing_payload = (admin_doc or {}).get("payload")
-        admin_payload, admin_changes = build_admin_config_payload(existing_payload, roles)
-        database["admin_configs"].replace_one(
-            {"_singleton": "admin_config"},
-            {"_singleton": "admin_config", "payload": admin_payload},
-            upsert=True,
-        )
-
-        member_changes: list[dict[str, Any]] = []
-        for role in roles:
-            desired = project_member(role, ROLE_SPECS[role], project_id)
-            existing = database["project_members"].find_one(
-                {"projectId": project_id, "userId": desired["userId"], "role": role}
-            )
-            status, merged = merge_project_member(existing, desired)
-            merged.pop("_id", None)
-            database["project_members"].replace_one(
-                {"projectId": project_id, "userId": desired["userId"], "role": role},
-                merged,
-                upsert=True,
-            )
-            member_changes.append(
-                {
-                    "collection": "project_members",
-                    "action": status,
-                    "id": merged["id"],
-                    "role": role,
-                    "nodeScope": merged["nodeScope"],
-                }
-            )
-
-        audit_id = f"AUD-{uuid4().hex[:10].upper()}"
-        database["audit_logs"].insert_one(
+        transactional = mongo_transactions_enabled()
+        if transactional:
+            with client.start_session() as session:
+                with session.start_transaction():
+                    result = apply_role_bootstrap(database, roles, project_id, session=session)
+        else:
+            result = apply_role_bootstrap(database, roles, project_id)
+        result.update(
             {
-                "id": audit_id,
-                "actorId": "USER-SYSTEM",
-                "actorName": "部署初始化脚本",
-                "actorOrgName": "AIcheck",
-                "action": "初始化角色与项目成员授权",
-                "objectType": "RoleBootstrap",
-                "objectId": project_id,
-                "result": "成功",
-                "createdAt": server_time(),
+                "database": db_name,
+                "transactional": transactional,
             }
         )
         return {
-            "dryRun": False,
-            "database": db_name,
-            "projectId": project_id,
-            "adminConfigChanges": admin_changes,
-            "projectMemberChanges": member_changes,
-            "auditLogId": audit_id,
+            **result,
         }
     finally:
         client.close()
@@ -312,9 +390,16 @@ def print_summary(result: dict[str, Any], as_json: bool) -> None:
         return
     mode = "DRY RUN" if result.get("dryRun") else "APPLIED"
     print(f"[{mode}] projectId={result.get('projectId')}")
+    if not result.get("dryRun"):
+        print(f"- mongo transaction: {'enabled' if result.get('transactional') else 'disabled'}")
     for item in result.get("adminConfigChanges", []):
         identifier = item.get("id") or item.get("role")
         print(f"- {item['collection']}: {item['action']} {identifier}")
+    for item in result.get("authChanges", []):
+        identifier = item.get("id") or item.get("role")
+        print(f"- {item['collection']}: {item['action']} {identifier}")
+    for item in result.get("authUsers", []):
+        print(f"- users: planned {item['username']} ({item['role']})")
     for item in result.get("projectMemberChanges", result.get("projectMembers", [])):
         print(f"- project_members: {item.get('action', 'planned')} {item['role']} {item.get('nodeScope')}")
     if result.get("loginAccounts"):

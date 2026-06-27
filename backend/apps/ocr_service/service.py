@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -7,7 +8,9 @@ from typing import Any
 from libs.integrations.storage import object_storage, parse_storage_url
 
 
-AGENTDESIGN_BACKEND = Path("/Volumes/Volume/project/agentdesign/mvp-system/backend")
+AGENTDESIGN_BACKEND = Path(
+    os.getenv("AICHECK_AGENTDESIGN_BACKEND", "/Volumes/Volume/project/agentdesign/mvp-system/backend")
+)
 if AGENTDESIGN_BACKEND.exists() and str(AGENTDESIGN_BACKEND) not in sys.path:
     sys.path.append(str(AGENTDESIGN_BACKEND))
 
@@ -33,14 +36,25 @@ class OcrService:
         if self.pipeline is not None:
             try:
                 source_path = resolve_source_path(storage_key, file_name)
-                if source_path is not None:
-                    if callable(self.pipeline):
-                        result = self.pipeline(source_path)  # type: ignore[misc]
-                    else:
-                        result = self.pipeline.run(str(source_path))  # type: ignore[attr-defined]
-                    return normalize_ocr_result(result, storage_key, file_name)
+                if source_path is None:
+                    return failed_result(
+                        storage_key,
+                        file_name,
+                        "OCR source file is unavailable. Check MinIO object key, credentials, or mounted file path.",
+                    )
+                if callable(self.pipeline):
+                    result = self.pipeline(source_path)  # type: ignore[misc]
+                else:
+                    result = self.pipeline.run(str(source_path))  # type: ignore[attr-defined]
+                return normalize_ocr_result(result, storage_key, file_name)
             except Exception as exc:
                 return failed_result(storage_key, file_name, str(exc))
+        if os.getenv("AICHECK_OCR_ALLOW_PLACEHOLDER", "true").lower() != "true":
+            return failed_result(
+                storage_key,
+                file_name,
+                "agentdesign OCR pipeline not importable and placeholder OCR is disabled.",
+            )
         return normalize_ocr_result(
             {
                 "text": f"OCR placeholder for {file_name or storage_key}",

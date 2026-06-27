@@ -8,7 +8,7 @@ Deployment guide: see [`../DEPLOYMENT.md`](../DEPLOYMENT.md).
 
 - `api-service`: FastAPI business API. It serves both stripped paths such as `/workbench/projects` and direct `/api/workbench/projects`.
 - `worker-service`: Celery worker with Redis queues for OCR, knowledge slicing, embedding, AI recheck, LLM compare, and export packaging.
-- `ocr-service`: internal OCR wrapper. It imports the `agentdesign` seal OCR pipeline when available and falls back to a normalized placeholder result.
+- `ocr-service`: internal OCR wrapper. It imports the `agentdesign` seal OCR pipeline when available. Production should set `AICHECK_OCR_ALLOW_PLACEHOLDER=false` so missing OCR dependencies produce retryable task failures.
 - `litellm-service`: LiteLLM proxy configured by `config/litellm.yaml`; PostgreSQL is only for LiteLLM metadata.
 - `mongodb`, `redis`, `minio`: business persistence, task queue, and object storage for documents/previews/exports/OCR artifacts.
 
@@ -41,7 +41,17 @@ source .venv/bin/activate
 pytest
 ```
 
-The contract suite covers the response envelope, compatibility login paths, mutation idempotency, archived/etag guards, upload-to-OCR task creation, inline OCR field/chunk writeback, LiteLLM failure mapping, object-storage export artifacts, optional JWT/action/node-scope guards, and Mongo state round-trip.
+The contract suite covers the response envelope, compatibility login paths, persistent user login with demo users disabled, mutation idempotency and body-conflict detection, archived/etag guards, submission withdrawal, rectification feedback, report-generation state guards, backend-inferred action-code guards, read/write URL/body/resource-derived node-scope guards, list-level node-scope filtering, upload-to-OCR task creation, OCR HTTP client dispatch, inline OCR field/chunk writeback, retry/cancel behavior for knowledge tasks, LiteLLM failure mapping, async LLM compare, object-storage export artifacts, JWT/action/node-scope identity guards, and Mongo state round-trip.
+
+Deployment verification:
+
+```bash
+python scripts/verify_deployment.py --strict-production
+python scripts/audit_frontend_contract.py
+```
+
+The verifier checks API health flags, role login/default paths, JWT protection, read-only project/task endpoints, identity-spoof rejection, action-bypass rejection, read-scope rejection, OCR health, and LiteLLM health/models without creating business data.
+The contract auditor statically compares `frontend/src/api/aicheck` and `frontend/src/api/login` request paths against FastAPI routes and fails if any required client endpoint is missing.
 
 ## Infrastructure
 
@@ -50,12 +60,13 @@ cd backend
 docker compose up --build
 ```
 
-MongoDB indexes are declared in `libs/db/indexes.py` and applied on startup when `AICHECK_MONGO_URL` is set. If the database is empty, the API seeds the current demo state into the planned collections. Mutating API calls then flush state back to Mongo so restarts preserve business data.
+MongoDB indexes are declared in `libs/db/indexes.py` and applied on startup when `AICHECK_MONGO_URL` is set. If the database is empty, the API seeds the current demo state into the planned collections. Mutating API calls then flush state back to Mongo so restarts preserve business data. Set `AICHECK_MONGO_TRANSACTIONS=true` only when MongoDB is running as a replica set or sharded cluster; the Compose stack starts Mongo as a single-node `rs0` replica set for this.
 
 Key environment variables:
 
-- `AICHECK_MONGO_URL`, `AICHECK_MONGO_DB`: business data persistence.
+- `AICHECK_MONGO_URL`, `AICHECK_MONGO_DB`, `AICHECK_MONGO_TRANSACTIONS=true`: business data persistence and transactional cross-collection flushes.
 - `AICHECK_REDIS_URL`, `AICHECK_TASK_DISPATCH=celery`: Celery broker/result backend and API task dispatch.
 - `AICHECK_MINIO_ENDPOINT`, `AICHECK_MINIO_ACCESS_KEY`, `AICHECK_MINIO_SECRET_KEY`: signed upload/download and export artifacts.
+- `AICHECK_OCR_BASE_URL`, `AICHECK_AGENTDESIGN_BACKEND`, `AICHECK_OCR_ALLOW_PLACEHOLDER=false`: worker-to-OCR service calls, pipeline import path, and OCR dependency failure policy.
 - `LITELLM_BASE_URL`, `LITELLM_API_KEY`, `OPENAI_API_KEY`: LiteLLM gateway and provider credentials.
-- `AICHECK_REQUIRE_AUTH=true`: enforce JWT on non-public routes; disabled by default for existing frontend smoke compatibility.
+- `AICHECK_JWT_SECRET`, `AICHECK_REQUIRE_AUTH=true`, `AICHECK_ENABLE_DEMO_USERS=false`: production authentication and demo-account controls.

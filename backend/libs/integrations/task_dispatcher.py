@@ -64,6 +64,20 @@ def dispatch_ai_recheck(project_id: str, node_id: int, run_id: str) -> dict[str,
     return {"mode": mode, "taskId": None}
 
 
+def dispatch_llm_compare(run_id: str) -> dict[str, Any]:
+    mode = dispatch_mode()
+    if mode == "inline":
+        from apps.worker.tasks import llm_compare
+
+        return {"mode": mode, "result": llm_compare.run(run_id)}
+    if mode == "celery":
+        from apps.worker.tasks import llm_compare
+
+        result = llm_compare.delay(run_id)
+        return {"mode": mode, "taskId": result.id}
+    return {"mode": mode, "taskId": None}
+
+
 def dispatch_export(export_id: str) -> dict[str, Any]:
     mode = dispatch_mode()
     if mode == "inline":

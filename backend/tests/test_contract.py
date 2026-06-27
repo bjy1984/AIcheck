@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from libs.db.indexes import ensure_mongo_indexes
 from apps.api.main import app
 from libs.db.repository import repo
 
@@ -42,6 +43,33 @@ def test_response_envelope_and_api_prefix_compatibility() -> None:
     assert prefixed[0]["currentNodeId"] == 24
 
 
+def test_healthz_reports_runtime_flags(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
+    monkeypatch.setenv("AICHECK_ENABLE_DEMO_USERS", "false")
+    monkeypatch.setenv("AICHECK_MONGO_TRANSACTIONS", "true")
+
+    health = assert_ok(client.get("/api/healthz"))
+
+    assert health["service"] == "api-service"
+    assert health["authRequired"] is True
+    assert health["demoUsersEnabled"] is False
+    assert health["mongoTransactions"] is True
+    assert "objectStorageEnabled" in health
+
+
+def test_ocr_healthz_reports_pipeline_flags(monkeypatch) -> None:
+    from apps.ocr_service.main import app as ocr_app
+
+    monkeypatch.setenv("AICHECK_OCR_ALLOW_PLACEHOLDER", "false")
+    ocr_client = TestClient(ocr_app)
+    health = assert_ok(ocr_client.get("/healthz"))
+
+    assert health["service"] == "ocr-service"
+    assert "pipelineAvailable" in health
+    assert "pipelineBackend" in health
+    assert health["placeholderAllowed"] is False
+
+
 def test_login_compatibility_paths() -> None:
     cases = {
         "inspection": "/workbench/inspection",
@@ -65,6 +93,30 @@ def test_login_compatibility_paths() -> None:
         me = assert_ok(client.get("/api/auth/me", headers={"Authorization": f"Bearer {real_login['token']}"}))
         assert me["username"] == username
         assert me["defaultRole"] == username
+
+
+def test_persistent_user_login_when_demo_users_disabled(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_ENABLE_DEMO_USERS", "false")
+    repo.state["users"].append(
+        {
+            "id": "USER-PERSISTENT-001",
+            "username": "persistent",
+            "passwordHash": "plain:secret",
+            "role": "inspection",
+            "roleId": "2",
+            "roleLabel": "监检人员",
+            "displayName": "真实用户",
+            "orgUnitName": "省特检院一部",
+            "permissions": ["review:save"],
+            "status": "启用",
+            "defaultPath": "/workbench/inspection",
+        }
+    )
+
+    login = assert_ok(client.post("/api/auth/login", json={"username": "persistent", "password": "secret"}))
+    assert login["user"]["username"] == "persistent"
+    assert login["user"]["role"] == "inspection"
+    assert_error(client.post("/api/auth/login", json={"username": "inspection", "password": "inspection"}), "AUTH_REQUIRED")
 
 
 def test_frontend_route_groups_return_success() -> None:
@@ -114,6 +166,122 @@ def test_submission_idempotency_replays_same_response() -> None:
     assert first["submissionId"] == second["submissionId"]
     assert first["snapshotId"] == second["snapshotId"]
 
+    conflict_payload = {**payload, "submitterComment": "different body"}
+    assert_error(
+        client.post(f"/projects/{project_id}/submissions", json=conflict_payload, headers=headers),
+        "IDEMPOTENCY_KEY_CONFLICT",
+    )
+
+
+def test_withdraw_submission_items_enforces_batch_and_locked_state() -> None:
+    project_id = "P-2026-HDCP-001"
+    payload = {
+        "nodeId": 16,
+        "nodeIds": [16],
+        "bindingIds": ["BIND-16-001"],
+        "submitterComment": "withdraw state machine test",
+    }
+    submission = assert_ok(client.post(f"/projects/{project_id}/submissions", json=payload))
+    submission_id = submission["submissionId"]
+
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/submissions/SUB-MISSING/withdraw-items",
+            json={"bindingIds": ["BIND-16-001"]},
+        ),
+        "NOT_FOUND",
+    )
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/submissions/{submission_id}/withdraw-items",
+            json={"bindingIds": ["BIND-24-001"]},
+        ),
+        "CONFLICT",
+    )
+
+    binding = next(item for item in repo.state["bindings"] if item["id"] == "BIND-16-001")
+    binding["bindingStatus"] = "已通过"
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/submissions/{submission_id}/withdraw-items",
+            json={"bindingIds": ["BIND-16-001"]},
+        ),
+        "WITHDRAW_LOCKED",
+    )
+
+    binding["bindingStatus"] = "已提交"
+    withdrawn = assert_ok(
+        client.post(
+            f"/projects/{project_id}/submissions/{submission_id}/withdraw-items",
+            json={"bindingIds": ["BIND-16-001"], "reason": "资料版本修正"},
+        )
+    )
+    stored_submission = next(item for item in repo.state["submissions"] if item["submissionId"] == submission_id)
+
+    assert withdrawn["nextStatus"] == "部分提交"
+    assert binding["bindingStatus"] == "草稿挂载"
+    assert stored_submission["withdrawnBindingIds"] == ["BIND-16-001"]
+    assert stored_submission["withdrawal"]["bindingCount"] == 1
+
+
+def test_submit_rectification_updates_pending_item_and_enforces_scope() -> None:
+    project_id = "P-2026-HDCP-001"
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/rectifications",
+            json={"nodeId": 24, "bindingIds": ["BIND-24-001"], "comment": "没有待反馈单"},
+        ),
+        "CONFLICT",
+    )
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/rectifications",
+            json={"nodeId": 16, "bindingIds": ["BIND-24-001"], "comment": "跨节点资料"},
+        ),
+        "CONFLICT",
+    )
+
+    feedback = assert_ok(
+        client.post(
+            f"/projects/{project_id}/rectifications",
+            json={"nodeId": 16, "bindingIds": ["BIND-16-001"], "comment": "已补充炉批号差异说明。"},
+        )
+    )
+    rectification = repo.find_one("rectifications", "REC-16-001")
+    node = repo.node(project_id, 16)
+
+    assert feedback["rectification"]["id"] == "REC-16-001"
+    assert feedback["nextStatus"] == "复审中"
+    assert rectification["status"] == "已反馈"
+    assert rectification["bindingIds"] == ["BIND-16-001"]
+    assert node["status"] == "复审中"
+    assert len([item for item in repo.state["rectifications"] if item["id"] == "REC-16-001"]) == 1
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/rectifications",
+            json={"nodeId": 16, "bindingIds": ["BIND-16-001"], "comment": "重复反馈"},
+        ),
+        "CONFLICT",
+    )
+
+
+def test_generate_report_review_requires_existing_ready_node() -> None:
+    project_id = "P-2026-HDCP-001"
+    payload = {"includeEvidence": True, "reportScope": "currentNode"}
+
+    assert_error(
+        client.post(f"/projects/{project_id}/inspection/nodes/999/report-review", json=payload),
+        "NOT_FOUND",
+    )
+    assert_error(
+        client.post(f"/projects/{project_id}/inspection/nodes/16/report-review", json=payload),
+        "CONFLICT",
+    )
+
+    generated = assert_ok(client.post(f"/projects/{project_id}/inspection/nodes/24/report-review", json=payload))
+    assert generated["report"]["nodeIds"] == [24]
+    assert generated["nextStatus"] == "报告生成/复核中"
+
 
 def test_owner_write_forbidden_and_archived_readonly() -> None:
     project_id = "P-2026-HDCP-001"
@@ -151,11 +319,23 @@ def test_optional_jwt_action_and_node_scope_guards(monkeypatch) -> None:
     unauthenticated = client.get("/api/auth/me")
     assert_error(unauthenticated, "AUTH_REQUIRED")
 
+    role_spoof = client.post(
+        "/projects/P-2026-HDCP-001/inspection/nodes/24/ai-recheck",
+        headers={"Authorization": "Bearer dev-token-contractor-contractor", "X-Role": "inspection"},
+    )
+    assert_error(role_spoof, "FORBIDDEN")
+
     action_forbidden = client.post(
         "/projects/P-2026-HDCP-001/inspection/nodes/24/ai-recheck",
         headers={"Authorization": "Bearer dev-token-admin-admin", "X-Role": "contractor", "X-Action-Code": "review:save"},
     )
     assert_error(action_forbidden, "FORBIDDEN")
+
+    inferred_node_forbidden = client.post(
+        "/projects/P-2026-HDCP-001/inspection/nodes/40/ai-recheck",
+        headers={"Authorization": "Bearer dev-token-contractor-contractor", "X-Role": "contractor"},
+    )
+    assert_error(inferred_node_forbidden, "FORBIDDEN")
 
     node_forbidden = client.post(
         "/projects/P-2026-HDCP-001/inspection/nodes/40/ai-recheck",
@@ -166,6 +346,394 @@ def test_optional_jwt_action_and_node_scope_guards(monkeypatch) -> None:
         },
     )
     assert_error(node_forbidden, "FORBIDDEN")
+
+
+def test_required_action_inference_covers_core_mutations() -> None:
+    from libs.security.actions import required_action_for_request
+
+    cases = [
+        ("POST", "/api/projects/P-2026-HDCP-001/submissions", "submission:submit"),
+        ("POST", "/api/projects/P-2026-HDCP-001/inspection/nodes/24/report-review", "report:generate"),
+        ("POST", "/api/projects/P-2026-HDCP-001/reports/RPT-001/archive", "report:archive"),
+        ("POST", "/api/projects/P-2026-HDCP-001/ndt/submissions", "ndt:submit"),
+        ("POST", "/api/admin/config-overview/publish", "admin:config"),
+        ("PATCH", "/api/knowledge/config", "knowledge:manage"),
+    ]
+
+    for method, path, expected in cases:
+        assert required_action_for_request(method, path) == expected
+    assert required_action_for_request("GET", "/api/admin/config-overview") is None
+
+
+def test_inferred_action_codes_block_role_bypass_when_auth_required(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
+    project_id = "P-2026-HDCP-001"
+    contractor_headers = {"Authorization": "Bearer dev-token-contractor-contractor"}
+    inspection_headers = {"Authorization": "Bearer dev-token-inspection-inspection"}
+    ndt_headers = {"Authorization": "Bearer dev-token-ndt-ndt"}
+    admin_headers = {"Authorization": "Bearer dev-token-admin-admin"}
+
+    assert_error(
+        client.post(
+            f"/api/projects/{project_id}/inspection/nodes/24/report-review",
+            json={"includeEvidence": True, "reportScope": "currentNode"},
+            headers=contractor_headers,
+        ),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.post(
+            "/api/admin/config-overview/publish",
+            json={"scope": "all"},
+            headers=contractor_headers,
+        ),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.post(
+            f"/api/projects/{project_id}/submissions",
+            json={"nodeIds": [16], "bindingIds": ["BIND-16-001"]},
+            headers=inspection_headers,
+        ),
+        "FORBIDDEN",
+    )
+
+    ndt_submit = assert_ok(
+        client.post(
+            f"/api/projects/{project_id}/ndt/submissions",
+            json={"nodeId": 40, "reportIds": ["NDT-RPT-001"], "filmIds": ["FILM-RT-001"]},
+            headers=ndt_headers,
+        )
+    )
+    admin_publish = assert_ok(
+        client.post(
+            "/api/admin/config-overview/publish",
+            json={"scope": "all"},
+            headers=admin_headers,
+        )
+    )
+
+    assert ndt_submit["nextStatus"] == "待审查"
+    assert admin_publish["status"] == "已发布"
+
+
+def test_body_node_scope_is_enforced_for_project_mutations(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
+    project_id = "P-2026-HDCP-001"
+    contractor_headers = {"Authorization": "Bearer dev-token-contractor-contractor"}
+    ndt_headers = {"Authorization": "Bearer dev-token-ndt-ndt"}
+
+    assert_error(
+        client.post(
+            f"/api/projects/{project_id}/submissions",
+            json={"nodeIds": [40], "bindingIds": ["BIND-40-001"]},
+            headers=contractor_headers,
+        ),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.post(
+            f"/api/projects/{project_id}/documents/bindings",
+            json={"nodeId": 40, "bindings": [{"documentId": "DOC-20260625-004"}]},
+            headers=contractor_headers,
+        ),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.post(
+            f"/api/projects/{project_id}/ndt/records/import",
+            json={"nodeId": 24, "rows": [{"recordNo": "OUT-OF-SCOPE", "weldNo": "W-24"}]},
+            headers=ndt_headers,
+        ),
+        "FORBIDDEN",
+    )
+
+    contractor_submit = assert_ok(
+        client.post(
+            f"/api/projects/{project_id}/submissions",
+            json={"nodeIds": [16], "bindingIds": ["BIND-16-001"]},
+            headers=contractor_headers,
+        )
+    )
+    ndt_import = assert_ok(
+        client.post(
+            f"/api/projects/{project_id}/ndt/records/import",
+            json={"nodeId": 40, "rows": [{"recordNo": "IN-SCOPE", "weldNo": "W-40"}]},
+            headers=ndt_headers,
+        )
+    )
+
+    assert contractor_submit["nextStatus"] == "AI 预审中"
+    assert ndt_import["records"][0]["nodeId"] == 40
+
+
+def test_resource_id_node_scope_is_enforced_for_project_mutations(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
+    project_id = "P-2026-HDCP-001"
+    contractor_headers = {"Authorization": "Bearer dev-token-contractor-contractor"}
+    inspection_headers = {"Authorization": "Bearer dev-token-inspection-inspection"}
+
+    assert_error(
+        client.post(
+            f"/api/projects/{project_id}/documents/DOC-20260625-004/withdraw",
+            headers=contractor_headers,
+        ),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.patch(
+            f"/api/projects/{project_id}/documents/bindings/BIND-40-001",
+            json={"usage": "越权修改"},
+            headers=contractor_headers,
+        ),
+        "FORBIDDEN",
+    )
+
+    own_document = assert_ok(
+        client.post(
+            f"/api/projects/{project_id}/documents/DOC-20260625-003/withdraw",
+            headers=contractor_headers,
+        )
+    )
+    assert own_document["nextStatus"] == "已撤回"
+
+    inspection_member = next(item for item in repo.state["project_members"] if item["userId"] == "USER-INSPECTION-001")
+    inspection_member["nodeScope"] = [24]
+    assert_error(
+        client.post(
+            f"/api/projects/{project_id}/reports/RPT-20260625-001/export",
+            json={"format": "pdf"},
+            headers=inspection_headers,
+        ),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.post(
+            f"/api/projects/{project_id}/reports/RPT-20250618-007/export",
+            json={"format": "pdf"},
+            headers=inspection_headers,
+        ),
+        "NOT_FOUND",
+    )
+
+
+def test_read_project_scope_enforces_url_query_and_resource_nodes(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
+    project_id = "P-2026-HDCP-001"
+    contractor_headers = {"Authorization": "Bearer dev-token-contractor-contractor"}
+    owner_headers = {"Authorization": "Bearer dev-token-owner-owner"}
+    ndt_headers = {"Authorization": "Bearer dev-token-ndt-ndt"}
+    admin_headers = {"Authorization": "Bearer dev-token-admin-admin"}
+    repo.state["todos"].extend(
+        [
+            {
+                "id": "TODO-SCOPE-40",
+                "title": "节点 40 越权待办",
+                "projectId": project_id,
+                "nodeId": 40,
+                "targetType": "node",
+                "targetId": "40",
+                "status": "待处理",
+                "priority": "高",
+                "actions": ["review:save"],
+            },
+            {
+                "id": "TODO-SCOPE-RPT",
+                "title": "跨节点报告待办",
+                "projectId": project_id,
+                "targetType": "report",
+                "targetId": "RPT-20260625-001",
+                "status": "待处理",
+                "priority": "中",
+                "actions": ["report:review"],
+            },
+        ]
+    )
+    repo.state["messages"].append(
+        {
+            "id": "MSG-SCOPE-40",
+            "title": "节点 40 越权消息",
+            "content": "节点 40 有新状态。",
+            "projectId": project_id,
+            "targetType": "node",
+            "targetId": "40",
+            "read": False,
+            "createdAt": "2026-06-27 09:00:00",
+        }
+    )
+    repo.state["ai_runs"].append(
+        {
+            "id": "AIRUN-SCOPE-40",
+            "projectId": project_id,
+            "nodeId": 40,
+            "subject": "无损检测资料",
+            "model": "review-chat",
+            "status": "完成",
+            "startedAt": "2026-06-27 09:00:00",
+            "steps": [],
+        }
+    )
+    repo.state["llm_compare_runs"].append(
+        {
+            "runId": "CMP-SCOPE-40",
+            "question": "节点 40 对比",
+            "modelCodes": ["default-chat"],
+            "createdAt": "2026-06-27 09:00:00",
+            "projectId": project_id,
+            "nodeId": 40,
+            "status": "完成",
+            "results": [],
+        }
+    )
+
+    assert_error(
+        client.get(f"/api/projects/{project_id}/nodes/40/package", headers=contractor_headers),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.get(f"/api/projects/{project_id}/documents?nodeId=40", headers=contractor_headers),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.get(f"/api/projects/{project_id}/documents/DOC-20260625-004", headers=contractor_headers),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.get(f"/api/projects/{project_id}/reports/RPT-20260625-001", headers=contractor_headers),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.get(f"/api/projects/{project_id}/workbench/context?role=inspection", headers=contractor_headers),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.get("/api/todos/TODO-SCOPE-40", headers=contractor_headers),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.post("/api/messages/MSG-SCOPE-40/read", headers=contractor_headers),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.get("/api/knowledge/files/KF-DOC-20260625-004", headers=contractor_headers),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.get("/api/knowledge/tasks/KT-20260626-001", headers=contractor_headers),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.get("/api/reasoning/logs/AIRUN-SCOPE-40", headers=contractor_headers),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.get("/api/llm/compare-runs/CMP-SCOPE-40", headers=contractor_headers),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.get(f"/api/projects/{project_id}/ndt/films/FILM-RT-001", headers=contractor_headers),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.get(f"/api/projects/{project_id}/ndt/reports/NDT-RPT-001", headers=contractor_headers),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.get(f"/api/projects/{project_id}/ndt/inspection-feedback/NDT-FB-001", headers=contractor_headers),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.get(f"/api/projects/{project_id}/export-tasks/EXP-RPT-20260625-001", headers=contractor_headers),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.get("/api/exports/EXP-RPT-20260625-001", headers=contractor_headers),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.get("/api/exports/EXP-RPT-20260625-001/download-url", headers=contractor_headers),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.post(
+            "/api/exports",
+            json={"projectId": project_id, "exportType": "report", "reportId": "RPT-20260625-001"},
+            headers=contractor_headers,
+        ),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.get(f"/api/projects/{project_id}/archive/evidence-package?nodeId=40", headers=contractor_headers),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.get("/api/admin/config-overview", headers=contractor_headers),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.get("/api/knowledge/sources", headers=contractor_headers),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.get("/api/rules/versions", headers=contractor_headers),
+        "FORBIDDEN",
+    )
+
+    own_node = assert_ok(client.get(f"/api/projects/{project_id}/nodes/16/package", headers=contractor_headers))
+    own_document = assert_ok(client.get(f"/api/projects/{project_id}/documents/DOC-20260625-003", headers=contractor_headers))
+    admin_overview = assert_ok(client.get("/api/admin/config-overview", headers=admin_headers))
+    me = assert_ok(client.get("/api/auth/me", headers=contractor_headers))
+    workbench_projects = assert_ok(client.get("/api/workbench/projects?role=contractor", headers=contractor_headers))
+    project_page = assert_ok(client.get("/api/projects", headers=contractor_headers))
+    summary = assert_ok(client.get(f"/api/projects/{project_id}/workbench/summary?role=contractor", headers=contractor_headers))
+    tree = assert_ok(client.get(f"/api/projects/{project_id}/tree", headers=contractor_headers))
+    documents = assert_ok(client.get(f"/api/projects/{project_id}/documents", headers=contractor_headers))
+    bindings = assert_ok(client.get(f"/api/projects/{project_id}/documents/bindings", headers=contractor_headers))
+    reports = assert_ok(client.get(f"/api/projects/{project_id}/reports", headers=contractor_headers))
+    todos = assert_ok(client.get(f"/api/todos?projectId={project_id}", headers=contractor_headers))
+    messages = assert_ok(client.get(f"/api/messages?projectId={project_id}", headers=contractor_headers))
+    search_results = assert_ok(client.get(f"/api/search?projectId={project_id}&keyword=RT", headers=contractor_headers))
+    knowledge_files = assert_ok(client.get(f"/api/knowledge/project-files?projectId={project_id}", headers=contractor_headers))
+    knowledge_tasks = assert_ok(client.get("/api/knowledge/tasks", headers=contractor_headers))
+    reasoning = assert_ok(client.get(f"/api/reasoning/logs?projectId={project_id}", headers=contractor_headers))
+    compare_runs = assert_ok(client.get(f"/api/llm/compare-runs?projectId={project_id}", headers=contractor_headers))
+    ndt_summary = assert_ok(client.get(f"/api/projects/{project_id}/ndt/summary", headers=contractor_headers))
+    ndt_films = assert_ok(client.get(f"/api/projects/{project_id}/ndt/films", headers=contractor_headers))
+    ndt_records = assert_ok(client.get(f"/api/projects/{project_id}/ndt/records", headers=contractor_headers))
+    ndt_reports = assert_ok(client.get(f"/api/projects/{project_id}/ndt/reports", headers=contractor_headers))
+    ndt_feedback = assert_ok(client.get(f"/api/projects/{project_id}/ndt/inspection-feedback", headers=contractor_headers))
+    ndt_visible_records = assert_ok(client.get(f"/api/projects/{project_id}/ndt/records", headers=ndt_headers))
+    archive_package = assert_ok(client.get(f"/api/projects/{project_id}/archive/package", headers=contractor_headers))
+    owner_reports = assert_ok(client.get(f"/api/projects/{project_id}/owner/reports", headers=owner_headers))
+
+    assert own_node["node"]["nodeId"] == 16
+    assert own_document["document"]["id"] == "DOC-20260625-003"
+    assert "metrics" in admin_overview
+    assert {item["userId"] for item in me["projectAuthorizations"]} == {"USER-CONTRACTOR-001"}
+    assert {item["id"] for item in workbench_projects} == {project_id}
+    assert {item["id"] for item in project_page["items"]} == {project_id}
+    assert not any(item["id"] in {"TODO-SCOPE-40", "TODO-SCOPE-RPT"} for item in summary["todos"])
+    visible_node_ids = {node["nodeId"] for group in tree["groups"] for node in group["nodes"]}
+    assert visible_node_ids.issubset({16, 24, 25})
+    assert "DOC-20260625-004" not in {item["id"] for item in documents["items"]}
+    assert "BIND-40-001" not in {item["id"] for item in bindings}
+    assert all(set(report.get("nodeIds") or []).issubset({16, 24, 25}) for report in reports)
+    assert "TODO-SCOPE-40" not in {item["id"] for item in todos["items"]}
+    assert "TODO-SCOPE-RPT" not in {item["id"] for item in todos["items"]}
+    assert "MSG-SCOPE-40" not in {item["id"] for item in messages["items"]}
+    assert "DOC-20260625-004" not in {item["id"] for item in search_results["items"]}
+    assert "KF-DOC-20260625-004" not in {item["id"] for item in knowledge_files["items"]}
+    assert "KT-20260626-001" not in {item["id"] for item in knowledge_tasks["items"]}
+    assert "AIRUN-SCOPE-40" not in {item["id"] for item in reasoning["items"]}
+    assert "CMP-SCOPE-40" not in {item["runId"] for item in compare_runs["items"]}
+    assert ndt_summary == {"filmCount": 0, "recordCount": 0, "reportCount": 0, "feedbackCount": 0}
+    assert ndt_films["items"] == []
+    assert ndt_records["items"] == []
+    assert ndt_reports["items"] == []
+    assert ndt_feedback["items"] == []
+    assert any(item["id"] == "NDT-REC-001" for item in ndt_visible_records["items"])
+    assert archive_package["itemCount"] == 2
+    assert any(report["id"] == "RPT-20260625-001" for report in owner_reports)
 
 
 def test_upload_creates_knowledge_task_and_retrieval_works() -> None:
@@ -278,7 +846,7 @@ def test_admin_config_diff_export_publish_and_project_members() -> None:
     assert len(detail["members"]) == 5
 
 
-def test_admin_project_creation_returns_four_initial_members_and_integration_gaps() -> None:
+def test_admin_project_creation_returns_four_initial_members_and_no_backend_integration_gaps() -> None:
     created = assert_ok(
         client.post(
             "/admin/projects",
@@ -297,8 +865,9 @@ def test_admin_project_creation_returns_four_initial_members_and_integration_gap
     assert len(created["detail"]["members"]) == 4
 
     gaps = assert_ok(client.get("/admin/integration-contract?status=后端缺失"))
-    assert gaps["fields"][0]["frontendField"] == "drafts[].nodeNames"
-    assert gaps["fields"][0]["endpoint"] == "/api/projects/{projectId}/submissions"
+    assert gaps["fields"] == []
+    all_contracts = assert_ok(client.get("/admin/integration-contract"))
+    assert all_contracts["summary"]["blockers"] == 0
 
 
 def test_upload_complete_inline_ocr_writes_fields_and_slice_task(monkeypatch) -> None:
@@ -345,6 +914,103 @@ def test_upload_complete_inline_ocr_writes_fields_and_slice_task(monkeypatch) ->
     assert chunks["items"][0]["text"].startswith("证书编号")
 
 
+def test_worker_uses_ocr_http_client_when_configured(monkeypatch) -> None:
+    from apps.worker import tasks
+
+    class FakeOcrClient:
+        enabled = True
+
+        def parse_sync(self, storage_key: str, *, file_name: str | None = None):
+            return {
+                "storageKey": storage_key,
+                "fileName": file_name,
+                "status": "success",
+                "fragments": [{"pageNo": 1, "text": "HTTP OCR 证书编号 TS-HTTP", "confidence": 0.93}],
+                "fields": [{"fieldName": "证书编号", "fieldValue": "TS-HTTP", "confidence": 0.95}],
+                "seals": [],
+                "diagnostics": [],
+            }
+
+    monkeypatch.setattr(tasks, "OcrClient", lambda: FakeOcrClient())
+    doc, version = repo.create_document("P-2026-HDCP-001", "HTTP-OCR.pdf", "pdf")
+    result = tasks.parse_document.run(doc["id"], version["id"], version["storageKey"], doc["fileName"])
+
+    assert result["applied"]["status"] == "success"
+    fields = assert_ok(client.get(f"/projects/P-2026-HDCP-001/documents/{doc['id']}/ocr-fields"))
+    assert any(field["fieldValue"] == "TS-HTTP" for field in fields)
+
+
+def test_failed_knowledge_task_retry_dispatches_worker_and_is_idempotent(monkeypatch) -> None:
+    from apps.worker import tasks
+
+    monkeypatch.setenv("AICHECK_TASK_DISPATCH", "inline")
+    monkeypatch.delenv("AICHECK_OCR_BASE_URL", raising=False)
+
+    def fake_parse(storage_key: str, *, file_name: str | None = None):
+        return {
+            "storageKey": storage_key,
+            "fileName": file_name,
+            "status": "success",
+            "fragments": [{"pageNo": 1, "text": "炉批号 H240315A07", "confidence": 0.92}],
+            "fields": [{"fieldName": "炉批号", "fieldValue": "H240315A07", "confidence": 0.92}],
+            "seals": [],
+            "diagnostics": [],
+        }
+
+    monkeypatch.setattr(tasks.ocr_service, "parse_document", fake_parse)
+
+    first = assert_ok(
+        client.post(
+            "/knowledge/tasks/KT-20260626-002/retry",
+            headers={"Idempotency-Key": "retry-ocr-once"},
+        )
+    )
+    second = assert_ok(
+        client.post(
+            "/knowledge/tasks/KT-20260626-002/retry",
+            headers={"Idempotency-Key": "retry-ocr-once"},
+        )
+    )
+    task = repo.find_one("knowledge_tasks", "KT-20260626-002")
+
+    assert first["dispatches"][0]["mode"] == "inline"
+    assert second["task"]["attempts"] == first["task"]["attempts"]
+    assert task["attempts"] == 1
+    assert task["status"] == "成功"
+    assert task["progress"] == 100
+    assert task["lastDispatch"]["mode"] == "inline"
+    logs = assert_ok(client.get("/knowledge/tasks/KT-20260626-002/logs"))
+    assert any("重试已投递" in item["message"] for item in logs)
+    assert any("OCR 任务完成" in item["message"] for item in logs)
+
+
+def test_cancelled_knowledge_task_is_not_processed_by_worker() -> None:
+    from apps.worker import tasks
+
+    cancelled = assert_ok(client.post("/knowledge/tasks/KT-20260626-001/cancel"))
+    assert cancelled["task"]["status"] == "已取消"
+
+    result = tasks.embed_knowledge.run("KF-DOC-20260625-004")
+    task = repo.find_one("knowledge_tasks", "KT-20260626-001")
+
+    assert result["status"] == "canceled"
+    assert task["status"] == "已取消"
+    logs = assert_ok(client.get("/knowledge/tasks/KT-20260626-001/logs"))
+    assert any("任务已取消" in item["message"] for item in logs)
+
+
+def test_ocr_service_reports_missing_source_before_running_pipeline() -> None:
+    from apps.ocr_service.service import OcrService
+
+    service = OcrService()
+    service.pipeline = lambda source_path: {"text": f"unexpected {source_path}"}
+
+    result = service.parse_document("missing-object.pdf", file_name="missing-object.pdf")
+
+    assert result["status"] == "failed"
+    assert "OCR source file is unavailable" in result["diagnostics"][0]
+
+
 def test_litellm_failure_maps_to_ai_run_failed(monkeypatch) -> None:
     from apps.worker import tasks
 
@@ -363,8 +1029,36 @@ def test_litellm_failure_maps_to_ai_run_failed(monkeypatch) -> None:
     assert stored["errorCode"] == "AI_RUN_FAILED"
 
 
+def test_llm_compare_dispatches_to_worker_inline(monkeypatch) -> None:
+    from apps.worker import tasks
+
+    monkeypatch.setenv("AICHECK_TASK_DISPATCH", "inline")
+
+    class FakeLiteLLM:
+        def chat_sync(self, *args, **kwargs):
+            return {"choices": [{"message": {"content": f"{kwargs.get('model')} 完成对比"}}]}
+
+        @staticmethod
+        def first_message_text(response):
+            return response["choices"][0]["message"]["content"]
+
+    monkeypatch.setattr(tasks, "LiteLLMClient", FakeLiteLLM)
+    compare = assert_ok(
+        client.post(
+            "/llm/compare",
+            json={"question": "材料证明是否一致？", "modelCodes": ["default-chat", "compare-fast"]},
+        )
+    )
+    stored = repo.find_one("llm_compare_runs", compare["runId"], id_field="runId")
+
+    assert compare["dispatch"]["mode"] == "inline"
+    assert stored["status"] == "完成"
+    assert len(stored["results"]) == 2
+
+
 def test_export_artifact_uses_object_storage_when_available(monkeypatch) -> None:
     stored = {}
+    monkeypatch.setenv("AICHECK_TASK_DISPATCH", "inline")
 
     def fake_put(bucket: str, object_name: str, data: bytes, *, content_type: str):
         stored["bucket"] = bucket
@@ -400,14 +1094,19 @@ class FakeCursor:
 class FakeCollection:
     def __init__(self):
         self.docs = []
+        self.session_calls = 0
 
     async def count_documents(self, query):
         return len(self.docs)
 
-    async def delete_many(self, query):
+    async def delete_many(self, query, session=None):
+        if session is not None:
+            self.session_calls += 1
         self.docs.clear()
 
-    async def insert_many(self, docs):
+    async def insert_many(self, docs, session=None):
+        if session is not None:
+            self.session_calls += 1
         self.docs.extend([dict(item) for item in docs])
 
     def find(self, query):
@@ -419,7 +1118,9 @@ class FakeCollection:
                 return dict(doc)
         return None
 
-    async def replace_one(self, query, replacement, upsert=False):
+    async def replace_one(self, query, replacement, upsert=False, session=None):
+        if session is not None:
+            self.session_calls += 1
         for index, doc in enumerate(self.docs):
             if all(doc.get(key) == value for key, value in query.items()):
                 self.docs[index] = dict(replacement)
@@ -428,11 +1129,81 @@ class FakeCollection:
             self.docs.append(dict(replacement))
 
 
+class FakeTransaction:
+    def __init__(self, client):
+        self.client = client
+
+    async def __aenter__(self):
+        self.client.transactions_started += 1
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        self.client.transactions_closed += 1
+        return False
+
+
+class FakeSession:
+    def __init__(self, client):
+        self.client = client
+
+    async def __aenter__(self):
+        self.client.sessions_started += 1
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        self.client.sessions_closed += 1
+        return False
+
+    def start_transaction(self):
+        return FakeTransaction(self.client)
+
+
+class FakeClient:
+    def __init__(self):
+        self.sessions_started = 0
+        self.sessions_closed = 0
+        self.transactions_started = 0
+        self.transactions_closed = 0
+
+    async def start_session(self):
+        return FakeSession(self)
+
+
 class FakeDatabase(dict):
+    def __init__(self, *, with_client: bool = False):
+        super().__init__()
+        if with_client:
+            self.client = FakeClient()
+
     def __getitem__(self, key):
         if key not in self:
             self[key] = FakeCollection()
         return dict.__getitem__(self, key)
+
+
+class FakeIndexCollection:
+    def __init__(self):
+        self.indexes = []
+
+    async def create_index(self, keys, **kwargs):
+        self.indexes.append((list(keys), dict(kwargs)))
+
+
+class FakeIndexDatabase(dict):
+    def __getitem__(self, key):
+        if key not in self:
+            self[key] = FakeIndexCollection()
+        return dict.__getitem__(self, key)
+
+
+async def test_mongo_indexes_include_compound_and_unique_specs() -> None:
+    database = FakeIndexDatabase()
+
+    await ensure_mongo_indexes(database)
+
+    assert ([("projectId", 1), ("nodeId", 1), ("status", 1)], {}) in database["project_nodes"].indexes
+    assert ([("scope", 1)], {"unique": True}) in database["idempotency_keys"].indexes
+    assert ([("username", 1)], {"unique": True}) in database["users"].indexes
 
 
 async def test_mongo_state_round_trip_persists_planned_collections() -> None:
@@ -448,3 +1219,17 @@ async def test_mongo_state_round_trip_persists_planned_collections() -> None:
     assert database["document_versions"].docs
     assert database["node_bindings"].docs
     assert database["admin_configs"].docs[0]["_singleton"] == "admin_config"
+
+
+async def test_mongo_flush_uses_transaction_when_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_MONGO_TRANSACTIONS", "true")
+    database = FakeDatabase(with_client=True)
+
+    await repo.flush_to_mongo(database)
+
+    assert database.client.sessions_started == 1
+    assert database.client.sessions_closed == 1
+    assert database.client.transactions_started == 1
+    assert database.client.transactions_closed == 1
+    assert database["projects"].session_calls > 0
+    assert database["admin_configs"].session_calls > 0

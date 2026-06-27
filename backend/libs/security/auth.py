@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import os
+import hashlib
+import hmac
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -8,9 +12,15 @@ try:
 except Exception:  # pragma: no cover - optional until dependencies are installed
     jwt = None  # type: ignore[assignment]
 
+try:
+    from passlib.context import CryptContext
+except Exception:  # pragma: no cover - optional until dependencies are installed
+    CryptContext = None  # type: ignore[assignment]
+
 
 JWT_SECRET = "aicheck-dev-secret-change-me"
 JWT_ALGORITHM = "HS256"
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto") if CryptContext else None
 
 ROLE_DEFAULT_PATHS = {
     "inspection": "/workbench/inspection",
@@ -35,6 +45,7 @@ def user_record(
         "id": user_id,
         "username": username,
         "password": username,
+        "passwordHash": f"plain:{username}",
         "role": role,
         "roleId": role_id,
         "roleLabel": role_label,
@@ -55,8 +66,68 @@ USERS = {
 }
 
 
+def demo_users_enabled() -> bool:
+    return os.getenv("AICHECK_ENABLE_DEMO_USERS", "true").lower() == "true"
+
+
+def verify_password(password: str, stored_hash: str | None, legacy_password: str | None = None) -> bool:
+    if stored_hash:
+        if stored_hash.startswith("plain:"):
+            return password == stored_hash.removeprefix("plain:")
+        if stored_hash.startswith("pbkdf2_sha256$"):
+            try:
+                _, iterations, salt, expected = stored_hash.split("$", 3)
+                digest = hashlib.pbkdf2_hmac(
+                    "sha256",
+                    password.encode("utf-8"),
+                    salt.encode("utf-8"),
+                    int(iterations),
+                ).hex()
+            except Exception:
+                return False
+            return hmac.compare_digest(digest, expected)
+        if pwd_context is not None:
+            try:
+                return pwd_context.verify(password, stored_hash)
+            except Exception:
+                return False
+    if legacy_password and os.getenv("AICHECK_ALLOW_LEGACY_PLAIN_PASSWORDS", "false").lower() == "true":
+        return password == legacy_password
+    return False
+
+
+def hash_password(password: str) -> str:
+    iterations = 210_000
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt.encode("utf-8"),
+        iterations,
+    ).hex()
+    return f"pbkdf2_sha256${iterations}${salt}${digest}"
+
+
+def jwt_secret() -> str:
+    return os.getenv("AICHECK_JWT_SECRET", JWT_SECRET)
+
+
+def persistent_users() -> list[dict[str, Any]]:
+    try:
+        from libs.db.repository import repo
+    except Exception:
+        return []
+    return repo.state.get("users", [])
+
+
+def persistent_user_by_username(username: str | None) -> dict[str, Any] | None:
+    if not username:
+        return None
+    return next((user for user in persistent_users() if user.get("username") == username and user.get("status", "启用") == "启用"), None)
+
+
 def public_user(user: dict[str, Any]) -> dict[str, Any]:
-    safe_user = {key: value for key, value in user.items() if key != "password"}
+    safe_user = {key: value for key, value in user.items() if key not in {"password", "passwordHash"}}
     safe_user["defaultPath"] = ROLE_DEFAULT_PATHS.get(safe_user.get("role"), ROLE_DEFAULT_PATHS["inspection"])
     return safe_user
 
@@ -64,13 +135,23 @@ def public_user(user: dict[str, Any]) -> dict[str, Any]:
 def user_by_username(username: str | None) -> dict[str, Any] | None:
     if not username:
         return None
+    persistent_user = persistent_user_by_username(username)
+    if persistent_user:
+        return public_user(persistent_user)
+    if not demo_users_enabled():
+        return None
     user = USERS.get(username)
     return public_user(user) if user else None
 
 
 def authenticate(username: str, password: str) -> dict[str, Any] | None:
+    persistent_user = persistent_user_by_username(username)
+    if persistent_user and verify_password(password, persistent_user.get("passwordHash"), persistent_user.get("password")):
+        return public_user(persistent_user)
+    if not demo_users_enabled():
+        return None
     user = USERS.get(username)
-    if not user or user["password"] != password:
+    if not user or not verify_password(password, user.get("passwordHash"), user.get("password")):
         return None
     return public_user(user)
 
@@ -83,7 +164,7 @@ def issue_token(user: dict[str, Any]) -> str:
     }
     if jwt is None:
         return f"dev-token-{payload['sub']}-{payload['role']}"
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return jwt.encode(payload, jwt_secret(), algorithm=JWT_ALGORITHM)
 
 
 def decode_token(token: str) -> dict[str, Any] | None:
@@ -97,6 +178,6 @@ def decode_token(token: str) -> dict[str, Any] | None:
     if jwt is None:
         return None
     try:
-        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return jwt.decode(token, jwt_secret(), algorithms=[JWT_ALGORITHM])
     except Exception:
         return None

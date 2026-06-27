@@ -5,8 +5,9 @@ services:
       dockerfile: Dockerfile
     command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000
     environment:
-      AICHECK_MONGO_URL: ${AICHECK_MONGO_URL:-mongodb://mongodb:27017}
+      AICHECK_MONGO_URL: ${AICHECK_MONGO_URL:-mongodb://mongodb:27017/?replicaSet=rs0}
       AICHECK_MONGO_DB: ${AICHECK_MONGO_DB:-aicheck}
+      AICHECK_MONGO_TRANSACTIONS: ${AICHECK_MONGO_TRANSACTIONS:-true}
       AICHECK_REDIS_URL: ${AICHECK_REDIS_URL:-redis://redis:6379/0}
       AICHECK_TASK_DISPATCH: ${AICHECK_TASK_DISPATCH:-celery}
       AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_ENDPOINT:-minio:9000}
@@ -14,16 +15,22 @@ services:
       AICHECK_MINIO_ACCESS_KEY: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
       AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:-aicheck-dev-password}
       AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
+      AICHECK_JWT_SECRET: ${AICHECK_JWT_SECRET:-change-me-with-strong-secret}
       LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://litellm-service:4000}
       LITELLM_API_KEY: ${LITELLM_API_KEY:-sk-aicheck-dev}
-      AICHECK_REQUIRE_AUTH: ${AICHECK_REQUIRE_AUTH:-false}
+      AICHECK_REQUIRE_AUTH: ${AICHECK_REQUIRE_AUTH:-true}
+      AICHECK_ENABLE_DEMO_USERS: ${AICHECK_ENABLE_DEMO_USERS:-false}
     ports:
       - "8000:8000"
     depends_on:
-      - mongodb
-      - redis
-      - minio
-      - litellm-service
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_started
+      litellm-service:
+        condition: service_started
 
   worker-service:
     build:
@@ -31,22 +38,29 @@ services:
       dockerfile: Dockerfile
     command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO -Q ocr.parse_document,ocr.recognize_seals,knowledge.slice,knowledge.embed,inspection.ai_recheck,llm.compare,export.package
     environment:
-      AICHECK_MONGO_URL: ${AICHECK_MONGO_URL:-mongodb://mongodb:27017}
+      AICHECK_MONGO_URL: ${AICHECK_MONGO_URL:-mongodb://mongodb:27017/?replicaSet=rs0}
       AICHECK_MONGO_DB: ${AICHECK_MONGO_DB:-aicheck}
+      AICHECK_MONGO_TRANSACTIONS: ${AICHECK_MONGO_TRANSACTIONS:-true}
       AICHECK_REDIS_URL: ${AICHECK_REDIS_URL:-redis://redis:6379/0}
       AICHECK_TASK_DISPATCH: ${AICHECK_TASK_DISPATCH:-celery}
       AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_ENDPOINT:-minio:9000}
       AICHECK_MINIO_ACCESS_KEY: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
       AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:-aicheck-dev-password}
       AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
+      AICHECK_OCR_BASE_URL: ${AICHECK_OCR_BASE_URL:-http://ocr-service:8010}
       LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://litellm-service:4000}
       LITELLM_API_KEY: ${LITELLM_API_KEY:-sk-aicheck-dev}
     depends_on:
-      - mongodb
-      - redis
-      - api-service
-      - minio
-      - litellm-service
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      api-service:
+        condition: service_started
+      minio:
+        condition: service_started
+      litellm-service:
+        condition: service_started
 
   ocr-service:
     build:
@@ -58,6 +72,8 @@ services:
       AICHECK_MINIO_ACCESS_KEY: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
       AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:-aicheck-dev-password}
       AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
+      AICHECK_AGENTDESIGN_BACKEND: ${AICHECK_AGENTDESIGN_BACKEND:-/opt/agentdesign/mvp-system/backend}
+      AICHECK_OCR_ALLOW_PLACEHOLDER: ${AICHECK_OCR_ALLOW_PLACEHOLDER:-false}
     ports:
       - "8010:8010"
     depends_on:
@@ -65,10 +81,20 @@ services:
 
   mongodb:
     image: mongo:7
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
     ports:
       - "27017:27017"
     volumes:
       - mongo-data:/data/db
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mongosh --quiet --eval 'try { rs.status().ok } catch (e) { rs.initiate({_id:\"rs0\", members:[{_id:0, host:\"mongodb:27017\"}]}).ok }'",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   redis:
     image: redis:7-alpine

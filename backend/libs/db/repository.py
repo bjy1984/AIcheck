@@ -41,6 +41,8 @@ STATE_COLLECTIONS = {
     "rule_versions": "rule_versions",
     "llm_compare_runs": "llm_compare_runs",
     "project_members": "project_members",
+    "users": "users",
+    "roles": "roles",
     "submission_drafts": "submission_drafts",
     "submissions": "submissions",
     "rectifications": "rectifications",
@@ -54,6 +56,10 @@ SINGLETON_COLLECTIONS = {
 }
 
 IDEMPOTENCY_COLLECTION = "idempotency_keys"
+
+
+def mongo_transactions_enabled() -> bool:
+    return os.getenv("AICHECK_MONGO_TRANSACTIONS", "false").lower() == "true"
 
 
 class InMemoryRepository:
@@ -421,6 +427,44 @@ class InMemoryRepository:
         self.state["knowledge_tasks"].insert(0, task)
         return task
 
+    def append_task_log(self, task: dict[str, Any], level: str, message: str) -> dict[str, Any]:
+        entry = {"createdAt": server_time(), "level": level, "message": message}
+        task.setdefault("logs", []).append(entry)
+        return entry
+
+    def ocr_task_for(self, document_id: str, version_id: str, file_name: str | None = None) -> dict[str, Any] | None:
+        return next(
+            (
+                item
+                for item in self.state["knowledge_tasks"]
+                if item.get("taskType") == "ocr"
+                and (
+                    item.get("documentVersionId") == version_id
+                    or item.get("targetId") == f"KF-{document_id}"
+                    or (file_name and item.get("targetName") == file_name)
+                )
+            ),
+            None,
+        )
+
+    def mark_task_running(self, task: dict[str, Any] | None, message: str) -> None:
+        if not task:
+            return
+        task["status"] = "运行中"
+        task["progress"] = max(int(task.get("progress") or 0), 10)
+        task["startedAt"] = server_time()
+        task["updatedAt"] = task["startedAt"]
+        self.append_task_log(task, "info", message)
+
+    def mark_task_failed(self, task: dict[str, Any] | None, message: str) -> None:
+        if not task:
+            return
+        task["status"] = "失败"
+        task["errorMessage"] = message
+        task["finishedAt"] = server_time()
+        task["updatedAt"] = task["finishedAt"]
+        self.append_task_log(task, "error", message)
+
     def apply_ocr_result(self, document_id: str, version_id: str, result: dict[str, Any]) -> dict[str, Any]:
         document = self.find_one("documents", document_id)
         version = self.find_one("versions", version_id)
@@ -457,10 +501,13 @@ class InMemoryRepository:
             task["status"] = "成功" if success else "失败"
             task["progress"] = 100 if success else task.get("progress", 0)
             task["finishedAt"] = now
+            task["updatedAt"] = now
             if not success:
                 task["errorMessage"] = "; ".join(str(item) for item in result.get("diagnostics") or ["OCR failed"])
+                self.append_task_log(task, "error", task["errorMessage"])
             else:
                 task.pop("errorMessage", None)
+                self.append_task_log(task, "info", "OCR 任务完成。")
 
         if not success:
             return {"documentId": document_id, "versionId": version_id, "status": "failed", "fieldCount": 0}
@@ -566,6 +613,8 @@ class InMemoryRepository:
             task["status"] = "成功"
             task["progress"] = 100
             task["finishedAt"] = server_time()
+            task["updatedAt"] = task["finishedAt"]
+            self.append_task_log(task, "info", "切片任务完成。")
         return {"fileId": file_id, "status": "success", "chunkCount": file["chunkCount"]}
 
     def apply_embed_result(self, file_id: str, vector_count: int | None = None) -> dict[str, Any]:
@@ -584,6 +633,8 @@ class InMemoryRepository:
             task["status"] = "成功"
             task["progress"] = 100
             task["finishedAt"] = server_time()
+            task["updatedAt"] = task["finishedAt"]
+            self.append_task_log(task, "info", "向量化任务完成。")
         return {"fileId": file_id, "status": "success", "vectorCount": count}
 
     def attach_export_artifact(self, task: dict[str, Any], *, content_type: str | None = None, body: bytes | None = None) -> dict[str, Any]:
@@ -627,31 +678,41 @@ class InMemoryRepository:
         if target is None:
             return
         async with self._flush_lock:
-            for state_key, collection_name in STATE_COLLECTIONS.items():
-                collection = target[collection_name]
-                await collection.delete_many({})
-                docs = [self.clone(item) for item in self.state.get(state_key, [])]
-                if docs:
-                    await collection.insert_many(docs)
-            for state_key, collection_name in SINGLETON_COLLECTIONS.items():
-                await target[collection_name].replace_one(
-                    {"_singleton": state_key},
-                    {"_singleton": state_key, "payload": self.clone(self.state.get(state_key))},
-                    upsert=True,
-                )
-            collection = target[IDEMPOTENCY_COLLECTION]
-            await collection.delete_many({})
-            docs = [
-                {
-                    "id": stable_doc_id(scope),
-                    "scope": scope,
-                    "payload": self.clone(payload),
-                    "updatedAt": server_time(),
-                }
-                for scope, payload in self.state.get("idempotency", {}).items()
-            ]
+            client = getattr(target, "client", None)
+            if mongo_transactions_enabled() and client is not None:
+                async with await client.start_session() as session:
+                    async with session.start_transaction():
+                        await self._flush_to_mongo(target, session=session)
+                return
+            await self._flush_to_mongo(target)
+
+    async def _flush_to_mongo(self, target: Any, *, session: Any | None = None) -> None:
+        for state_key, collection_name in STATE_COLLECTIONS.items():
+            collection = target[collection_name]
+            await collection.delete_many({}, session=session)
+            docs = [self.clone(item) for item in self.state.get(state_key, [])]
             if docs:
-                await collection.insert_many(docs)
+                await collection.insert_many(docs, session=session)
+        for state_key, collection_name in SINGLETON_COLLECTIONS.items():
+            await target[collection_name].replace_one(
+                {"_singleton": state_key},
+                {"_singleton": state_key, "payload": self.clone(self.state.get(state_key))},
+                upsert=True,
+                session=session,
+            )
+        collection = target[IDEMPOTENCY_COLLECTION]
+        await collection.delete_many({}, session=session)
+        docs = [
+            {
+                "id": stable_doc_id(scope),
+                "scope": scope,
+                "payload": self.clone(payload),
+                "updatedAt": server_time(),
+            }
+            for scope, payload in self.state.get("idempotency", {}).items()
+        ]
+        if docs:
+            await collection.insert_many(docs, session=session)
 
     def configure_sync_mongo_from_env(self) -> None:
         if self.sync_mongo is not None:
@@ -699,26 +760,36 @@ class InMemoryRepository:
         self.configure_sync_mongo_from_env()
         if self.sync_mongo is None:
             return
+        client = getattr(self.sync_mongo, "client", None)
+        if mongo_transactions_enabled() and client is not None:
+            with client.start_session() as session:
+                with session.start_transaction():
+                    self._flush_to_sync_mongo(session=session)
+            return
+        self._flush_to_sync_mongo()
+
+    def _flush_to_sync_mongo(self, *, session: Any | None = None) -> None:
         for state_key, collection_name in STATE_COLLECTIONS.items():
             collection = self.sync_mongo[collection_name]
-            collection.delete_many({})
+            collection.delete_many({}, session=session)
             docs = [self.clone(item) for item in self.state.get(state_key, [])]
             if docs:
-                collection.insert_many(docs)
+                collection.insert_many(docs, session=session)
         for state_key, collection_name in SINGLETON_COLLECTIONS.items():
             self.sync_mongo[collection_name].replace_one(
                 {"_singleton": state_key},
                 {"_singleton": state_key, "payload": self.clone(self.state.get(state_key))},
                 upsert=True,
+                session=session,
             )
         collection = self.sync_mongo[IDEMPOTENCY_COLLECTION]
-        collection.delete_many({})
+        collection.delete_many({}, session=session)
         docs = [
             {"id": stable_doc_id(scope), "scope": scope, "payload": self.clone(payload), "updatedAt": server_time()}
             for scope, payload in self.state.get("idempotency", {}).items()
         ]
         if docs:
-            collection.insert_many(docs)
+            collection.insert_many(docs, session=session)
 
     def build_admin_overview(self) -> dict[str, Any]:
         config = self.clone(self.state["admin_config"])

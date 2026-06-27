@@ -21,7 +21,10 @@ export const loginApi = async (data: UserLoginType): Promise<IResponse<LoginResu
     const res = await request.post<UserType>({ url: '/mock/user/login', data })
     return { ...res, data: normalizeLoginResult(res.data) }
   }
-  const res = await request.post<{ token: string; user: UserType }>({ url: '/api/auth/login', data })
+  const res = await request.post<{ token: string; user: UserType }>({
+    url: '/api/auth/login',
+    data
+  })
   return { ...res, data: normalizeLoginResult(res.data) }
 }
 

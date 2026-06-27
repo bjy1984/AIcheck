@@ -27,7 +27,10 @@ export const isPathAllowedForRole = (path: string, role?: string): boolean => {
   if (['/login', '/404', '/redirect'].some((prefix) => path.startsWith(prefix))) return true
   if (normalizedRole === 'admin') return path.startsWith('/admin') || path.startsWith('/knowledge')
   if (normalizedRole === 'test') return path.startsWith('/workbench/inspection')
-  return path === ROLE_DEFAULT_PATHS[normalizedRole] || path.startsWith(`${ROLE_DEFAULT_PATHS[normalizedRole]}/`)
+  return (
+    path === ROLE_DEFAULT_PATHS[normalizedRole] ||
+    path.startsWith(`${ROLE_DEFAULT_PATHS[normalizedRole]}/`)
+  )
 }
 
 export const resolveRoleEntryPath = (role?: string, redirect?: string): string => {

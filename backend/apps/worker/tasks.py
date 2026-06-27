@@ -7,6 +7,7 @@ from apps.worker.celery_app import celery_app
 from libs.contracts.responses import server_time
 from libs.db.repository import repo
 from libs.integrations.litellm_client import LiteLLMClient
+from libs.integrations.ocr_client import OcrClient
 
 
 def load_state() -> None:
@@ -17,10 +18,22 @@ def flush_state() -> None:
     repo.flush_to_sync_mongo()
 
 
+def parse_with_ocr_service(storage_key: str, file_name: str | None = None) -> dict[str, Any]:
+    client = OcrClient()
+    if client.enabled:
+        return client.parse_sync(storage_key, file_name=file_name)
+    return ocr_service.parse_document(storage_key, file_name=file_name)
+
+
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 def parse_document(self, document_id: str, version_id: str, storage_key: str, file_name: str | None = None) -> dict[str, Any]:
     load_state()
-    result = ocr_service.parse_document(storage_key, file_name=file_name)
+    task = repo.ocr_task_for(document_id, version_id, file_name)
+    if task and task.get("status") == "已取消":
+        flush_state()
+        return {"documentId": document_id, "versionId": version_id, "status": "canceled"}
+    repo.mark_task_running(task, "OCR worker 开始处理。")
+    result = parse_with_ocr_service(storage_key, file_name=file_name)
     applied = repo.apply_ocr_result(document_id, version_id, result)
     flush_state()
     return {**result, "applied": applied}
@@ -31,7 +44,10 @@ def recognize_seals(self, document_id: str, version_id: str) -> dict[str, Any]:
     load_state()
     version = repo.find_one("versions", version_id)
     storage_key = version.get("storageKey") if version else version_id
-    result = ocr_service.parse_document(storage_key, file_name=(repo.find_one("documents", document_id) or {}).get("fileName"))
+    result = parse_with_ocr_service(
+        storage_key,
+        file_name=(repo.find_one("documents", document_id) or {}).get("fileName"),
+    )
     flush_state()
     return {"documentId": document_id, "versionId": version_id, "seals": result.get("seals") or []}
 
@@ -39,6 +55,11 @@ def recognize_seals(self, document_id: str, version_id: str) -> dict[str, Any]:
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 def slice_knowledge(self, file_id: str) -> dict[str, Any]:
     load_state()
+    task = next((item for item in repo.state["knowledge_tasks"] if item.get("taskType") == "slice" and item.get("targetId") == file_id), None)
+    if task and task.get("status") == "已取消":
+        flush_state()
+        return {"fileId": file_id, "status": "canceled", "chunkCount": 0}
+    repo.mark_task_running(task, "切片 worker 开始处理。")
     file = repo.find_one("knowledge_files", file_id)
     fragments = []
     if file:
@@ -62,6 +83,10 @@ def embed_knowledge(self, file_id: str) -> dict[str, Any]:
     chunks = [item for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") == file_id]
     vector_count = len(chunks) or 1
     task = next((item for item in repo.state["knowledge_tasks"] if item.get("taskType") == "vector" and item.get("targetId") == file_id), None)
+    if task and task.get("status") == "已取消":
+        flush_state()
+        return {"fileId": file_id, "status": "canceled", "vectorCount": 0}
+    repo.mark_task_running(task, "向量化 worker 开始处理。")
     try:
         if chunks:
             LiteLLMClient().embed_sync([item["text"] for item in chunks[:16]], model="embedding-default")
@@ -69,9 +94,7 @@ def embed_knowledge(self, file_id: str) -> dict[str, Any]:
     except Exception as exc:
         result = {"fileId": file_id, "status": "failed", "errorMessage": str(exc)}
         if task:
-            task["status"] = "失败"
-            task["errorMessage"] = "EXTERNAL_TOOL_FAILED"
-            task["finishedAt"] = server_time()
+            repo.mark_task_failed(task, f"EXTERNAL_TOOL_FAILED: {exc}")
     flush_state()
     return result
 
@@ -139,6 +162,7 @@ def llm_compare(self, run_id: str) -> dict[str, Any]:
         return {"runId": run_id, "status": "missing"}
     results = []
     try:
+        run["status"] = "运行中"
         for model in run.get("modelCodes") or ["default-chat", "compare-fast"]:
             response = LiteLLMClient().chat_sync(
                 [{"role": "user", "content": run.get("question") or "请对比审查意见。"}],
@@ -150,16 +174,18 @@ def llm_compare(self, run_id: str) -> dict[str, Any]:
                     "modelCode": model,
                     "answer": LiteLLMClient.first_message_text(response),
                     "confidence": 0.8,
-                    "evidenceLinkIds": ["EV-24-001"],
+                    "evidenceLinkIds": run.get("evidenceLinkIds") or ["EV-24-001"],
                     "latencyMs": 0,
                 }
             )
         run["results"] = results
         run["status"] = "完成"
+        run["finishedAt"] = server_time()
     except Exception as exc:
         run["status"] = "失败"
         run["errorCode"] = "EXTERNAL_TOOL_FAILED"
         run["errorMessage"] = str(exc)
+        run["finishedAt"] = server_time()
     flush_state()
     return {"runId": run_id, "status": run.get("status")}
 
