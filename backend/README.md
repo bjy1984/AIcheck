@@ -52,6 +52,26 @@ python scripts/deployment_report.py --strict-production --output-dir ./deploymen
 python scripts/audit_frontend_contract.py
 ```
 
+96+ live acceptance runbook:
+
+```bash
+cd backend
+cp .env.example .env
+# Replace placeholders in .env with real secrets and provider keys.
+python scripts/check_96_preflight.py --strict-production
+docker compose --env-file .env up --build -d
+set -a; source .env; set +a
+python scripts/deployment_report.py \
+  --strict-production \
+  --include-live \
+  --write-probes \
+  --ocr-object-probe \
+  --litellm-provider-probes \
+  --output-dir ./deployment-reports/latest
+```
+
+`check_96_preflight.py` fails early when Docker Compose, `backend/.env`, production flags, LiteLLM/provider keys, or the `agentdesign` OCR reference path are missing. The provider probe spends real LiteLLM upstream quota; omit `--litellm-provider-probes` only for a dry infrastructure check.
+
 The verifier checks API health flags, role login/default paths, JWT protection, the MongoDB transaction probe, read-only project/task endpoints, identity-spoof rejection, action-bypass rejection, read-scope rejection, OCR health, OCR parse/bad-request contracts, and LiteLLM health/models without creating business data or spending model quota. In `--strict-production`, MongoDB must be connected with `AICHECK_MONGO_TRANSACTIONS=true` and the transaction probe must pass; OCR must report a real pipeline with placeholder disabled.
 
 Add `--write-probes` to create a short-lived upload session, PUT a small PDF to the returned HTTP/HTTPS signed URL, complete the upload, verify document preview/download signed GET URLs can read the object, confirm the OCR task appears, and create/read an export task.

@@ -6,4 +6,8 @@ __pycache__/
 *.py[cod]
 *.log
 
+.env
+backend/.env
+backend/deployment-reports/
+
 output/**/*.inspect.ndjson

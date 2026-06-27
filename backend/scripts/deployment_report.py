@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from dataclasses import asdict
 from datetime import datetime
@@ -28,10 +29,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build an AIcheck deployment acceptance evidence report.")
     parser.add_argument("--strict-production", action="store_true")
     parser.add_argument("--include-live", action="store_true", help="Run live API/OCR/LiteLLM probes in addition to static checks.")
-    parser.add_argument("--api-base", default="http://127.0.0.1:8000")
-    parser.add_argument("--ocr-base", default="http://127.0.0.1:8010")
-    parser.add_argument("--litellm-base", default="http://127.0.0.1:4001")
-    parser.add_argument("--litellm-api-key", default="")
+    parser.add_argument("--api-base", default=os.getenv("AICHECK_API_BASE_URL", "http://127.0.0.1:8000"))
+    parser.add_argument("--ocr-base", default=os.getenv("AICHECK_VERIFY_OCR_BASE_URL", "http://127.0.0.1:8010"))
+    parser.add_argument("--litellm-base", default=os.getenv("LITELLM_BASE_URL", "http://127.0.0.1:4001"))
+    parser.add_argument("--litellm-api-key", default=os.getenv("LITELLM_API_KEY", ""))
     parser.add_argument("--project-id", default=PROJECT_ID)
     parser.add_argument("--roles", default=",".join(DEFAULT_ROLES))
     parser.add_argument("--skip-ocr", action="store_true")
