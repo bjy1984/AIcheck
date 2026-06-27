@@ -7,6 +7,7 @@ import {
 } from '@/utils/routerHelper'
 import { store } from '../index'
 import { cloneDeep } from 'lodash-es'
+import { getRoleDefaultPath, normalizeAicheckRole } from '@/utils/roleAccess'
 
 export interface PermissionState {
   routers: AppRouteRecordRaw[]
@@ -39,10 +40,12 @@ export const usePermissionStore = defineStore('permission', {
   actions: {
     generateRoutes(
       type: 'server' | 'frontEnd' | 'static',
-      routers?: AppCustomRouteRecordRaw[] | string[]
+      routers?: AppCustomRouteRecordRaw[] | string[],
+      role?: string
     ): Promise<unknown> {
       return new Promise<void>((resolve) => {
         let routerMap: AppRouteRecordRaw[] = []
+        const normalizedRole = normalizeAicheckRole(role)
         if (type === 'server') {
           // 模拟后端过滤菜单
           routerMap = generateRoutesByServer(routers as AppCustomRouteRecordRaw[])
@@ -51,7 +54,7 @@ export const usePermissionStore = defineStore('permission', {
           routerMap = generateRoutesByFrontEnd(cloneDeep(asyncRouterMap), routers as string[])
         } else {
           // 直接读取静态路由表
-          routerMap = cloneDeep(asyncRouterMap)
+          routerMap = filterRoutesByRole(cloneDeep(asyncRouterMap), normalizedRole)
         }
         // 动态路由，404一定要放到最后面
         this.addRouters = routerMap.concat([
@@ -92,6 +95,25 @@ export const usePermissionStore = defineStore('permission', {
     }
   ]
 })
+
+const filterRoutesByRole = (routes: AppRouteRecordRaw[], role: string): AppRouteRecordRaw[] => {
+  const filtered: AppRouteRecordRaw[] = []
+  const routeRole = role === 'test' ? 'inspection' : role
+  for (const route of routes) {
+    const roles = route.meta?.roles
+    if (roles?.length && !roles.includes(routeRole)) continue
+    const nextRoute = cloneDeep(route)
+    if (nextRoute.path === '/workbench') {
+      nextRoute.redirect = getRoleDefaultPath(role)
+    }
+    if (nextRoute.children?.length) {
+      nextRoute.children = filterRoutesByRole(nextRoute.children, role)
+      if (!nextRoute.children.length) continue
+    }
+    filtered.push(nextRoute)
+  }
+  return filtered
+}
 
 export const usePermissionStoreWithOut = () => {
   return usePermissionStore(store)

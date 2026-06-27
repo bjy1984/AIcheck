@@ -7,6 +7,7 @@ import { usePermissionStoreWithOut } from '@/store/modules/permission'
 import { usePageLoading } from '@/hooks/web/usePageLoading'
 import { NO_REDIRECT_WHITE_LIST } from '@/constants'
 import { useUserStoreWithOut } from '@/store/modules/user'
+import { getRoleDefaultPath, isPathAllowedForRole } from '@/utils/roleAccess'
 
 const { start, done } = useNProgress()
 
@@ -19,9 +20,19 @@ router.beforeEach(async (to, from, next) => {
   const appStore = useAppStoreWithOut()
   const userStore = useUserStoreWithOut()
   if (userStore.getUserInfo) {
+    const currentRole = userStore.getUserInfo.role
+    const defaultPath = getRoleDefaultPath(currentRole)
     if (to.path === '/login') {
-      next({ path: '/' })
+      next({ path: defaultPath })
     } else {
+      if (to.path === '/') {
+        next({ path: defaultPath })
+        return
+      }
+      if (!isPathAllowedForRole(to.path, currentRole)) {
+        next({ path: defaultPath, replace: true })
+        return
+      }
       if (permissionStore.getIsAddRouters) {
         next()
         return
@@ -36,7 +47,7 @@ router.beforeEach(async (to, from, next) => {
           ? await permissionStore.generateRoutes('server', roleRouters as AppCustomRouteRecordRaw[])
           : await permissionStore.generateRoutes('frontEnd', roleRouters as string[])
       } else {
-        await permissionStore.generateRoutes('static')
+        await permissionStore.generateRoutes('static', undefined, currentRole)
       }
 
       permissionStore.getAddRouters.forEach((route) => {

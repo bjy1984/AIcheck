@@ -12,7 +12,7 @@ from libs.contracts.responses import fail, ok, page, server_time
 from libs.db.repository import repo
 from libs.db.seed import PROJECT_ID, ROLE_ACTIONS, ROLE_NODE_MAP
 from libs.integrations import task_dispatcher
-from libs.security.auth import authenticate, issue_token
+from libs.security.auth import ROLE_DEFAULT_PATHS, USERS, authenticate, decode_token, issue_token, user_by_username
 
 router = APIRouter(tags=["AIcheck API"])
 mock_router = APIRouter(tags=["Compatibility Mock"])
@@ -52,6 +52,8 @@ def mutation_guard(
 
 
 def member_node_scope_error(request: Request, project_id: str, role: str | None) -> JSONResponse | None:
+    if role == "admin":
+        return None
     user_id = request.headers.get("X-User-Id")
     if not user_id:
         return None
@@ -204,19 +206,19 @@ def project_detail_payload(project_id: str) -> dict[str, Any] | None:
     }
 
 
-def simple_routes() -> list[dict[str, Any]]:
-    return [
+def simple_routes(role: str | None = None) -> list[dict[str, Any]]:
+    routes = [
         {
             "path": "/workbench",
             "component": "#",
-            "redirect": "/workbench/inspection",
+            "redirect": ROLE_DEFAULT_PATHS.get(role or "inspection", "/workbench/inspection"),
             "name": "Workbench",
-            "meta": {"title": "业务工作台", "icon": "vi-ep:monitor", "alwaysShow": True},
+            "meta": {"title": "业务工作台", "icon": "vi-ep:monitor", "alwaysShow": True, "roles": ["inspection", "contractor", "ndt", "owner"]},
             "children": [
-                {"path": "inspection", "component": "views/AICheck/Workbench", "name": "InspectionWorkbench", "meta": {"title": "监检工作台"}},
-                {"path": "contractor", "component": "views/AICheck/Workbench", "name": "ContractorWorkbench", "meta": {"title": "施工方工作台"}},
-                {"path": "ndt", "component": "views/AICheck/Workbench", "name": "NdtWorkbench", "meta": {"title": "无损检测工作台"}},
-                {"path": "owner", "component": "views/AICheck/Workbench", "name": "OwnerWorkbench", "meta": {"title": "建设方工作台"}},
+                {"path": "inspection", "component": "views/AICheck/Workbench", "name": "InspectionWorkbench", "meta": {"title": "监检工作台", "roles": ["inspection"]}},
+                {"path": "contractor", "component": "views/AICheck/Workbench", "name": "ContractorWorkbench", "meta": {"title": "施工方工作台", "roles": ["contractor"]}},
+                {"path": "ndt", "component": "views/AICheck/Workbench", "name": "NdtWorkbench", "meta": {"title": "无损检测工作台", "roles": ["ndt"]}},
+                {"path": "owner", "component": "views/AICheck/Workbench", "name": "OwnerWorkbench", "meta": {"title": "建设方工作台", "roles": ["owner"]}},
             ],
         },
         {
@@ -224,9 +226,9 @@ def simple_routes() -> list[dict[str, Any]]:
             "component": "#",
             "redirect": "/admin/overview",
             "name": "AICheckAdmin",
-            "meta": {"title": "管理后台", "icon": "vi-ep:setting", "alwaysShow": True},
+            "meta": {"title": "管理后台", "icon": "vi-ep:setting", "alwaysShow": True, "roles": ["admin"]},
             "children": [
-                {"path": item, "component": "views/AICheck/AdminOverview", "name": f"Admin{item.title().replace('-', '')}", "meta": {"title": "项目与权限配置"}}
+                {"path": item, "component": "views/AICheck/AdminOverview", "name": f"Admin{item.title().replace('-', '')}", "meta": {"title": "项目与权限配置", "roles": ["admin"]}}
                 for item in ["overview", "projects", "org", "permission", "rules", "fine-config", "integration", "audit"]
             ],
         },
@@ -235,13 +237,31 @@ def simple_routes() -> list[dict[str, Any]]:
             "component": "#",
             "redirect": "/knowledge/overview",
             "name": "Knowledge",
-            "meta": {"title": "AI 知识库", "icon": "vi-ep:collection", "alwaysShow": True},
+            "meta": {"title": "AI 知识库", "icon": "vi-ep:collection", "alwaysShow": True, "roles": ["admin"]},
             "children": [
-                {"path": item, "component": "views/AICheck/KnowledgeOverview", "name": f"Knowledge{item.title().replace('-', '')}", "meta": {"title": "AI 知识库管理"}}
+                {"path": item, "component": "views/AICheck/KnowledgeOverview", "name": f"Knowledge{item.title().replace('-', '')}", "meta": {"title": "AI 知识库管理", "roles": ["admin"]}}
                 for item in ["overview", "sources", "files", "tasks", "rules", "retrieval", "reasoning", "compare", "config"]
             ],
         },
     ]
+    return filter_routes_for_role(routes, role) if role else routes
+
+
+def filter_routes_for_role(routes: list[dict[str, Any]], role: str | None) -> list[dict[str, Any]]:
+    if not role:
+        return routes
+    filtered = []
+    for route in routes:
+        roles = route.get("meta", {}).get("roles")
+        if roles and role not in roles:
+            continue
+        copy = repo.clone(route)
+        if copy.get("children"):
+            copy["children"] = filter_routes_for_role(copy["children"], role)
+            if not copy["children"]:
+                continue
+        filtered.append(copy)
+    return filtered
 
 
 @mock_router.post("/mock/user/login")
@@ -258,8 +278,9 @@ def mock_logout(request: Request):
 
 
 @mock_router.get("/mock/role/list")
-def mock_role_list(request: Request):
-    return ok(simple_routes(), request)
+def mock_role_list(request: Request, roleName: str | None = None):
+    user = user_by_username(roleName)
+    return ok(simple_routes(user.get("role") if user else None), request)
 
 
 @mock_router.get("/mock/role/list2")
@@ -269,10 +290,7 @@ def mock_role_list2(request: Request):
 
 @mock_router.get("/mock/user/list")
 def mock_user_list(request: Request):
-    users = [
-        {"username": "admin", "role": "admin", "roleId": "1", "permissions": ["*.*.*"]},
-        {"username": "test", "role": "test", "roleId": "2", "permissions": ["example:dialog:create"]},
-    ]
+    users = [{key: value for key, value in user.items() if key != "password"} for user in USERS.values()]
     return ok({"list": users, "total": len(users)}, request)
 
 
@@ -286,13 +304,12 @@ def auth_login(request: Request, body: dict[str, Any] = Body(default_factory=dic
 
 @router.get("/auth/me")
 def auth_me(request: Request):
+    claims = decode_token(request.headers.get("Authorization", ""))
+    user = user_by_username(claims.get("sub") if claims else None) or user_by_username("admin")
     return ok(
         {
-            "id": "USER-ADMIN",
-            "username": "admin",
-            "displayName": "系统管理员",
-            "orgUnitName": "省特检院平台组",
-            "defaultRole": "admin",
+            **(user or {}),
+            "defaultRole": (user or {}).get("role", "admin"),
             "projectAuthorizations": repo.clone(repo.state["project_members"]),
         },
         request,
@@ -300,8 +317,8 @@ def auth_me(request: Request):
 
 
 @router.get("/auth/routes")
-def auth_routes(request: Request):
-    return ok(simple_routes(), request)
+def auth_routes(request: Request, role: str | None = None):
+    return ok(simple_routes(role), request)
 
 
 @router.get("/auth/actions")
@@ -410,14 +427,42 @@ def authorize_member(request: Request, project_id: str, body: dict[str, Any] = B
     def produce():
         role = body.get("role", "inspection")
         user = admin_user_snapshot(body.get("userId"), role)
+        user_id = body.get("userId") or user["id"]
+        incoming_scope = body.get("nodeScope") or [ROLE_NODE_MAP.get(role, 24)]
+        existing = next(
+            (
+                item
+                for item in repo.state["project_members"]
+                if item.get("projectId") == project_id
+                and item.get("userId") == user_id
+                and item.get("role") == role
+            ),
+            None,
+        )
+        if existing:
+            merged_scope = list(dict.fromkeys([*(existing.get("nodeScope") or []), *incoming_scope]))
+            existing.update(
+                {
+                    "name": body.get("name") or existing.get("name") or user.get("name") or "新授权成员",
+                    "orgName": body.get("orgName") or existing.get("orgName") or user.get("orgName") or "联调组织",
+                    "nodeScope": merged_scope,
+                    "actions": body.get("actions") or existing.get("actions") or repo.role_actions(role),
+                    "status": "启用",
+                    "expiresAt": body.get("expiresAt") or existing.get("expiresAt"),
+                    "updatedAt": server_time(),
+                }
+            )
+            audit_id = repo.add_audit("更新项目成员授权", "ProjectMember", existing["id"])
+            return ok({"member": repo.clone(existing), "auditLogId": audit_id}, request)
+
         member = {
             "id": f"PM-{uuid4().hex[:8].upper()}",
             "projectId": project_id,
-            "userId": body.get("userId") or user["id"],
+            "userId": user_id,
             "name": body.get("name") or user.get("name") or "新授权成员",
             "orgName": body.get("orgName") or user.get("orgName") or "联调组织",
             "role": role,
-            "nodeScope": body.get("nodeScope") or [ROLE_NODE_MAP.get(role, 24)],
+            "nodeScope": incoming_scope,
             "actions": body.get("actions") or repo.role_actions(role),
             "status": "启用",
             "expiresAt": body.get("expiresAt"),

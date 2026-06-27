@@ -43,12 +43,28 @@ def test_response_envelope_and_api_prefix_compatibility() -> None:
 
 
 def test_login_compatibility_paths() -> None:
-    mock_user = assert_ok(client.post("/mock/user/login", json={"username": "admin", "password": "admin"}))
-    real_login = assert_ok(client.post("/api/auth/login", json={"username": "admin", "password": "admin"}))
+    cases = {
+        "inspection": "/workbench/inspection",
+        "contractor": "/workbench/contractor",
+        "ndt": "/workbench/ndt",
+        "owner": "/workbench/owner",
+        "admin": "/admin/overview",
+    }
 
-    assert mock_user["username"] == "admin"
-    assert real_login["token"]
-    assert real_login["user"]["role"] == "admin"
+    for username, default_path in cases.items():
+        mock_user = assert_ok(client.post("/mock/user/login", json={"username": username, "password": username}))
+        real_login = assert_ok(client.post("/api/auth/login", json={"username": username, "password": username}))
+
+        assert mock_user["username"] == username
+        assert mock_user["role"] == username
+        assert mock_user["defaultPath"] == default_path
+        assert real_login["token"]
+        assert real_login["user"]["role"] == username
+        assert real_login["user"]["defaultPath"] == default_path
+
+        me = assert_ok(client.get("/api/auth/me", headers={"Authorization": f"Bearer {real_login['token']}"}))
+        assert me["username"] == username
+        assert me["defaultRole"] == username
 
 
 def test_frontend_route_groups_return_success() -> None:
@@ -242,9 +258,22 @@ def test_admin_config_diff_export_publish_and_project_members() -> None:
         client.post(
             f"/projects/{project_id}/members",
             json={"userId": "USER-ADMIN-001", "role": "admin", "nodeScope": [16, 24, 40, 59]},
+            headers={"X-Role": "admin", "X-User-Id": "USER-ADMIN-001"},
         )
     )
     assert member["member"]["name"] == "系统管理员"
+    detail = assert_ok(client.get(f"/projects/{project_id}"))
+    assert len(detail["members"]) == 5
+
+    updated_member = assert_ok(
+        client.post(
+            f"/projects/{project_id}/members",
+            json={"userId": "USER-INSPECTION-001", "role": "inspection", "nodeScope": [2, 3, 4]},
+            headers={"X-Role": "admin", "X-User-Id": "USER-ADMIN-001"},
+        )
+    )
+    assert updated_member["member"]["id"] == "PM-INSPECTION-001"
+    assert {2, 3, 4, 24}.issubset(set(updated_member["member"]["nodeScope"]))
     detail = assert_ok(client.get(f"/projects/{project_id}"))
     assert len(detail["members"]) == 5
 

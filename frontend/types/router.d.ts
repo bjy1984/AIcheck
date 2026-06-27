@@ -45,6 +45,7 @@ interface RouteMetaCustom extends Record<string | number | symbol, unknown> {
   noTagsView?: boolean
   canTo?: boolean
   permission?: string[]
+  roles?: string[]
 }
 
 declare module 'vue-router' {

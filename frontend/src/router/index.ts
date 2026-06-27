@@ -66,7 +66,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
     meta: {
       title: '业务工作台',
       icon: 'vi-ep:monitor',
-      alwaysShow: true
+      alwaysShow: true,
+      roles: ['inspection', 'contractor', 'ndt', 'owner']
     },
     children: [
       {
@@ -77,7 +78,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
           title: '监检工作台',
           icon: 'vi-ep:checked',
           noCache: true,
-          affix: true
+          affix: true,
+          roles: ['inspection']
         }
       },
       {
@@ -87,7 +89,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         meta: {
           title: '施工方工作台',
           icon: 'vi-ep:upload-filled',
-          noCache: true
+          noCache: true,
+          roles: ['contractor']
         }
       },
       {
@@ -97,7 +100,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         meta: {
           title: '无损检测工作台',
           icon: 'vi-ep:data-analysis',
-          noCache: true
+          noCache: true,
+          roles: ['ndt']
         }
       },
       {
@@ -107,7 +111,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         meta: {
           title: '建设方工作台',
           icon: 'vi-ep:view',
-          noCache: true
+          noCache: true,
+          roles: ['owner']
         }
       }
     ]
@@ -120,7 +125,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
     meta: {
       title: '管理后台',
       icon: 'vi-ep:setting',
-      alwaysShow: true
+      alwaysShow: true,
+      roles: ['admin']
     },
     children: [
       {
@@ -129,7 +135,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         name: 'AdminOverview',
         meta: {
           title: '项目与权限配置',
-          noCache: true
+          noCache: true,
+          roles: ['admin']
         }
       },
       {
@@ -138,7 +145,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         name: 'AdminProjects',
         meta: {
           title: '项目清单',
-          noCache: true
+          noCache: true,
+          roles: ['admin']
         }
       },
       {
@@ -147,7 +155,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         name: 'AdminOrg',
         meta: {
           title: '组织用户',
-          noCache: true
+          noCache: true,
+          roles: ['admin']
         }
       },
       {
@@ -156,7 +165,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         name: 'AdminPermission',
         meta: {
           title: '权限与节点',
-          noCache: true
+          noCache: true,
+          roles: ['admin']
         }
       },
       {
@@ -165,7 +175,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         name: 'AdminRules',
         meta: {
           title: '规则与流程',
-          noCache: true
+          noCache: true,
+          roles: ['admin']
         }
       },
       {
@@ -174,7 +185,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         name: 'AdminFineConfig',
         meta: {
           title: '细项配置',
-          noCache: true
+          noCache: true,
+          roles: ['admin']
         }
       },
       {
@@ -183,7 +195,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         name: 'AdminIntegration',
         meta: {
           title: '联调清单',
-          noCache: true
+          noCache: true,
+          roles: ['admin']
         }
       },
       {
@@ -192,7 +205,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         name: 'AdminAudit',
         meta: {
           title: '审计日志',
-          noCache: true
+          noCache: true,
+          roles: ['admin']
         }
       }
     ]
@@ -205,7 +219,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
     meta: {
       title: 'AI 知识库',
       icon: 'vi-ep:collection',
-      alwaysShow: true
+      alwaysShow: true,
+      roles: ['admin']
     },
     children: [
       {
@@ -214,7 +229,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         name: 'KnowledgeOverview',
         meta: {
           title: '知识库管理',
-          noCache: true
+          noCache: true,
+          roles: ['admin']
         }
       },
       {
@@ -223,7 +239,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         name: 'KnowledgeSources',
         meta: {
           title: '知识源管理',
-          noCache: true
+          noCache: true,
+          roles: ['admin']
         }
       },
       {
@@ -232,7 +249,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         name: 'KnowledgeFiles',
         meta: {
           title: '项目文件库',
-          noCache: true
+          noCache: true,
+          roles: ['admin']
         }
       },
       {
@@ -241,7 +259,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         name: 'KnowledgeTasks',
         meta: {
           title: '任务中心',
-          noCache: true
+          noCache: true,
+          roles: ['admin']
         }
       },
       {
@@ -250,7 +269,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         name: 'KnowledgeRules',
         meta: {
           title: '规则配置',
-          noCache: true
+          noCache: true,
+          roles: ['admin']
         }
       },
       {
@@ -259,7 +279,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         name: 'KnowledgeRetrieval',
         meta: {
           title: '检索测试',
-          noCache: true
+          noCache: true,
+          roles: ['admin']
         }
       },
       {
@@ -268,7 +289,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         name: 'KnowledgeReasoning',
         meta: {
           title: '推理日志',
-          noCache: true
+          noCache: true,
+          roles: ['admin']
         }
       },
       {
@@ -277,7 +299,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         name: 'KnowledgeCompare',
         meta: {
           title: '多模型对比',
-          noCache: true
+          noCache: true,
+          roles: ['admin']
         }
       },
       {
@@ -286,7 +309,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         name: 'KnowledgeConfig',
         meta: {
           title: '配置审计',
-          noCache: true
+          noCache: true,
+          roles: ['admin']
         }
       }
     ]

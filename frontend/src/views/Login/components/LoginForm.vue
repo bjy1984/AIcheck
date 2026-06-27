@@ -9,11 +9,12 @@ import { useAppStore } from '@/store/modules/app'
 import { usePermissionStore } from '@/store/modules/permission'
 import { useRouter } from 'vue-router'
 import type { RouteLocationNormalizedLoaded, RouteRecordRaw } from 'vue-router'
-import { UserType } from '@/api/login/types'
+import type { UserLoginType } from '@/api/login/types'
 import { useValidator } from '@/hooks/web/useValidator'
 import { Icon } from '@/components/Icon'
 import { useUserStore } from '@/store/modules/user'
 import { BaseButton } from '@/components/Button'
+import { resolveRoleEntryPath } from '@/utils/roleAccess'
 
 const { required } = useValidator()
 
@@ -57,7 +58,7 @@ const schema = reactive<FormSchema[]>([
       span: 24
     },
     componentProps: {
-      placeholder: 'admin or test'
+      placeholder: 'inspection / contractor / ndt / owner / admin'
     }
   },
   {
@@ -72,7 +73,7 @@ const schema = reactive<FormSchema[]>([
       style: {
         width: '100%'
       },
-      placeholder: 'admin or test',
+      placeholder: 'inspection / contractor / ndt / owner / admin',
       // 按下enter键触发登录
       onKeydown: (_e: any) => {
         if (_e.key === 'Enter') {
@@ -269,7 +270,7 @@ const signIn = async () => {
     if (isValid) {
       loading.value = true
       errorMessage.value = ''
-      const formData = await getFormData<UserType>()
+      const formData = await getFormData<UserLoginType>()
 
       try {
         const res = await loginApi(formData)
@@ -282,17 +283,26 @@ const signIn = async () => {
             userStore.setLoginInfo(undefined)
           }
           userStore.setRememberMe(unref(remember))
-          userStore.setUserInfo(res.data)
+          const loginResult = res.data
+          userStore.setToken(loginResult.token ? `Bearer ${loginResult.token}` : '')
+          userStore.setUserInfo(loginResult.user)
           // 是否使用动态路由
           if (appStore.getDynamicRouter) {
             getRole()
           } else {
-            await permissionStore.generateRoutes('static').catch(() => {})
+            await permissionStore
+              .generateRoutes('static', undefined, loginResult.user.role)
+              .catch(() => {})
             permissionStore.getAddRouters.forEach((route) => {
               addRoute(route as RouteRecordRaw) // 动态添加可访问路由表
             })
             permissionStore.setIsAddRouters(true)
-            push({ path: redirect.value || permissionStore.addRouters[0].path })
+            push({
+              path: resolveRoleEntryPath(
+                loginResult.user.role,
+                redirect.value || loginResult.defaultPath
+              )
+            })
           }
         }
       } catch (error: any) {
@@ -306,7 +316,7 @@ const signIn = async () => {
 
 // 获取角色信息
 const getRole = async () => {
-  const formData = await getFormData<UserType>()
+  const formData = await getFormData<UserLoginType>()
   const params = {
     roleName: formData.username
   }
@@ -325,7 +335,12 @@ const getRole = async () => {
       addRoute(route as RouteRecordRaw) // 动态添加可访问路由表
     })
     permissionStore.setIsAddRouters(true)
-    push({ path: redirect.value || permissionStore.addRouters[0].path })
+    push({
+      path: resolveRoleEntryPath(
+        userStore.getUserInfo?.role,
+        redirect.value || userStore.getUserInfo?.defaultPath || permissionStore.addRouters[0].path
+      )
+    })
   }
 }
 

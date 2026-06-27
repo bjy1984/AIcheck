@@ -6,6 +6,7 @@ const request = (option: AxiosConfig) => {
   const { url, method, params, data, headers, responseType } = option
 
   const userStore = useUserStoreWithOut()
+  const userInfo = userStore.getUserInfo
   return service.request({
     url: url,
     method,
@@ -15,6 +16,8 @@ const request = (option: AxiosConfig) => {
     headers: {
       'Content-Type': CONTENT_TYPE,
       [userStore.getTokenKey ?? 'Authorization']: userStore.getToken ?? '',
+      'X-Role': userInfo?.role ?? '',
+      'X-User-Id': userInfo?.id ?? '',
       ...headers
     }
   })

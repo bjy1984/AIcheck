@@ -48,6 +48,24 @@ const knowledgeDeepRouteCases = [
   { path: '/knowledge/config', menu: '知识库配置', tab: '配置审计' }
 ]
 
+const accountForPath = (path: string) => {
+  if (path.startsWith('/admin') || path.startsWith('/knowledge')) return 'admin'
+  if (path.includes('/workbench/contractor')) return 'contractor'
+  if (path.includes('/workbench/ndt')) return 'ndt'
+  if (path.includes('/workbench/owner')) return 'owner'
+  return 'inspection'
+}
+
+const loginPlaceholder = 'inspection / contractor / ndt / owner / admin'
+
+const clearLoginState = async (page: Page) => {
+  await page.evaluate(() => {
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+  await page.reload()
+}
+
 const businessError = (code: number, message: string, reason: string) => ({
   code,
   message,
@@ -56,15 +74,29 @@ const businessError = (code: number, message: string, reason: string) => ({
   serverTime: '2026-06-26 16:30:00'
 })
 
-const loginTo = async (page: Page, path: string) => {
+const loginTo = async (page: Page, path: string, account = accountForPath(path)) => {
+  await page.goto('/#/login')
+  await clearLoginState(page)
   await page.goto(`/#/login?redirect=${encodeURIComponent(path)}`)
-  const loginInputs = page.locator('input[placeholder="admin or test"]')
+  const loginInputs = page.locator(`input[placeholder="${loginPlaceholder}"]`)
 
   await expect(loginInputs.first()).toBeVisible()
-  await loginInputs.nth(0).fill('admin')
-  await loginInputs.nth(1).fill('admin')
+  await loginInputs.nth(0).fill(account)
+  await loginInputs.nth(1).fill(account)
   await page.getByRole('button', { name: /^登录$/ }).click()
   await page.waitForURL((url) => url.hash.includes(path))
+  await page.waitForLoadState('networkidle')
+}
+
+const loginWithoutRedirect = async (page: Page, account: string, expectedPath: string) => {
+  await page.goto('/#/login')
+  const loginInputs = page.locator(`input[placeholder="${loginPlaceholder}"]`)
+
+  await expect(loginInputs.first()).toBeVisible()
+  await loginInputs.nth(0).fill(account)
+  await loginInputs.nth(1).fill(account)
+  await page.getByRole('button', { name: /^登录$/ }).click()
+  await page.waitForURL((url) => url.hash.includes(expectedPath))
   await page.waitForLoadState('networkidle')
 }
 
@@ -115,6 +147,35 @@ const selectProject = async (page: Page, projectName: string) => {
 }
 
 test.describe('AIcheck route smoke', () => {
+  test('role accounts land on their default panel without redirect', async ({ page }) => {
+    const cases = [
+      { account: 'inspection', path: '/workbench/inspection', title: '监检工作台' },
+      { account: 'contractor', path: '/workbench/contractor', title: '施工方工作台' },
+      { account: 'ndt', path: '/workbench/ndt', title: '无损检测工作台' },
+      { account: 'owner', path: '/workbench/owner', title: '建设方工作台' },
+      { account: 'admin', path: '/admin/overview', title: '项目与权限配置' }
+    ]
+
+    for (const routeCase of cases) {
+      await page.goto('/#/login')
+      await clearLoginState(page)
+      await loginWithoutRedirect(page, routeCase.account, routeCase.path)
+      await expect(page.getByText(routeCase.title).first()).toBeVisible()
+    }
+  })
+
+  test('business role falls back when redirect targets admin panel', async ({ page }) => {
+    await page.goto(`/#/login?redirect=${encodeURIComponent('/admin/overview')}`)
+    const loginInputs = page.locator(`input[placeholder="${loginPlaceholder}"]`)
+
+    await expect(loginInputs.first()).toBeVisible()
+    await loginInputs.nth(0).fill('contractor')
+    await loginInputs.nth(1).fill('contractor')
+    await page.getByRole('button', { name: /^登录$/ }).click()
+    await page.waitForURL((url) => url.hash.includes('/workbench/contractor'))
+    await expect(page.locator('.aicheck-page .page-title')).toContainText('施工方工作台')
+  })
+
   for (const routeCase of routeCases) {
     test(`${routeCase.path} renders business page`, async ({ page }) => {
       await openRoute(page, routeCase)
@@ -133,13 +194,8 @@ test.describe('AIcheck route smoke', () => {
   test('core pages fit a 390px mobile viewport', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 900 })
 
-    const [firstRoute, ...nextRoutes] = [routeCases[0], routeCases[4], routeCases[5]]
-
-    await openRoute(page, firstRoute)
-    await expectNoPageOverflow(page)
-
-    for (const routeCase of nextRoutes) {
-      await gotoRoute(page, routeCase)
+    for (const routeCase of [routeCases[0], routeCases[4], routeCases[5]]) {
+      await openRoute(page, routeCase)
       await expectNoPageOverflow(page)
     }
   })
@@ -1067,7 +1123,7 @@ test.describe('AIcheck business writeback flows', () => {
     await traceDialog.locator('.el-dialog__headerbtn').click()
     await expect(traceDialog).toBeHidden()
 
-    await gotoRoute(
+    await openRoute(
       page,
       routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
     )

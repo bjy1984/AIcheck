@@ -1,16 +1,34 @@
 import request from '@/axios'
-import type { UserType } from './types'
+import type { LoginResult, UserLoginType, UserType } from './types'
+import { getRoleDefaultPath } from '@/utils/roleAccess'
 
 interface RoleParams {
   roleName: string
 }
 
-export const loginApi = (data: UserType): Promise<IResponse<UserType>> => {
-  return request.post({ url: '/mock/user/login', data })
+const normalizeLoginResult = (raw: UserType | { token?: string; user: UserType }): LoginResult => {
+  const token = 'user' in raw ? raw.token : undefined
+  const user = 'user' in raw ? raw.user : raw
+  return {
+    token,
+    user,
+    defaultPath: user.defaultPath || getRoleDefaultPath(user.role)
+  }
+}
+
+export const loginApi = async (data: UserLoginType): Promise<IResponse<LoginResult>> => {
+  if (import.meta.env.VITE_USE_MOCK === 'true') {
+    const res = await request.post<UserType>({ url: '/mock/user/login', data })
+    return { ...res, data: normalizeLoginResult(res.data) }
+  }
+  const res = await request.post<{ token: string; user: UserType }>({ url: '/api/auth/login', data })
+  return { ...res, data: normalizeLoginResult(res.data) }
 }
 
 export const loginOutApi = (): Promise<IResponse> => {
-  return request.get({ url: '/mock/user/loginOut' })
+  return import.meta.env.VITE_USE_MOCK === 'true'
+    ? request.get({ url: '/mock/user/loginOut' })
+    : request.post({ url: '/api/auth/logout' })
 }
 
 export const getUserListApi = ({ params }: AxiosConfig) => {
