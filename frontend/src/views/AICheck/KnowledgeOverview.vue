@@ -1,0 +1,3130 @@
+<script setup lang="ts">
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import {
+  ElAlert,
+  ElButton,
+  ElCard,
+  ElCheckbox,
+  ElCheckboxGroup,
+  ElCol,
+  ElDescriptions,
+  ElDescriptionsItem,
+  ElDialog,
+  ElDivider,
+  ElDrawer,
+  ElEmpty,
+  ElForm,
+  ElFormItem,
+  ElInput,
+  ElInputNumber,
+  ElMessage,
+  ElOption,
+  ElPagination,
+  ElProgress,
+  ElRow,
+  ElSelect,
+  ElSpace,
+  ElSwitch,
+  ElTabPane,
+  ElTable,
+  ElTableColumn,
+  ElTabs,
+  ElTag
+} from 'element-plus'
+import {
+  batchReindexKnowledgeApi,
+  cancelKnowledgeTaskApi,
+  createKnowledgeSourceApi,
+  disableKnowledgeSourceApi,
+  enableKnowledgeSourceApi,
+  getKnowledgeConfigApi,
+  getKnowledgeFileDetailApi,
+  getKnowledgeFileVectorApi,
+  getKnowledgeRuleVersionDiffApi,
+  getLlmCompareRunApi,
+  getReasoningLogDetailApi,
+  listKnowledgeAuditLogsApi,
+  listKnowledgeFileChunksApi,
+  listKnowledgeFileReasoningReferencesApi,
+  listKnowledgeProjectFilesApi,
+  listKnowledgeRuleVersionsApi,
+  listKnowledgeSourcesApi,
+  listKnowledgeTasksApi,
+  listLlmCompareRunsApi,
+  listReasoningLogsApi,
+  publishKnowledgeRuleVersionApi,
+  reindexKnowledgeFileApi,
+  retryKnowledgeTaskApi,
+  rollbackKnowledgeRuleVersionApi,
+  runKnowledgeRetrievalTestApi,
+  runLlmCompareApi,
+  updateKnowledgeConfigApi,
+  updateKnowledgeSourceApi
+} from '@/api/aicheck'
+import type {
+  KnowledgeAuditLog,
+  KnowledgeChunk,
+  KnowledgeConfig,
+  KnowledgeFile,
+  KnowledgeFileDetailPayload,
+  KnowledgeOverviewPayload,
+  KnowledgeReasoningReference,
+  KnowledgeRetrievalTestPayload,
+  KnowledgeRuleVersion,
+  KnowledgeRuleVersionDiffPayload,
+  KnowledgeSource,
+  KnowledgeSourceSavePayload,
+  KnowledgeTask,
+  LlmComparePayload,
+  LlmCompareRunSummary,
+  ReasoningLogDetailPayload
+} from '@/api/aicheck'
+import { getKnowledgeOverviewApi } from '@/api/aicheck'
+import type { AiReviewRun } from '@/types/aicheck'
+import { getAicheckErrorMessage } from '@/utils/aicheckError'
+import AdminKnowledgeStaticDeepSections from './components/AdminKnowledgeStaticDeepSections.vue'
+import StaticPageShell from './components/StaticPageShell.vue'
+import WorkbenchStateBanner from './components/WorkbenchStateBanner.vue'
+
+const emptyOverview = (): KnowledgeOverviewPayload => ({
+  metrics: [],
+  libraries: []
+})
+
+const emptyKnowledgeConfig = (): KnowledgeConfig => ({
+  embeddingModel: 'text-embedding-3-large',
+  chunkSize: 900,
+  chunkOverlap: 120,
+  topKDefault: 5,
+  rerankEnabled: true,
+  evidenceStrictMode: true,
+  autoReindex: true,
+  retentionDays: 180,
+  updatedBy: '',
+  updatedAt: ''
+})
+
+const emptySourceForm = (): KnowledgeSourceSavePayload => ({
+  name: '',
+  sourceType: 'standard',
+  version: '',
+  status: '待复核',
+  fileCount: 0,
+  chunkCount: 0,
+  vectorStatus: '待向量化'
+})
+
+const route = useRoute()
+const router = useRouter()
+
+const knowledgeShellMenuSectionsBase = [
+  {
+    title: '知识库管理',
+    meta: '11页',
+    items: [
+      {
+        index: '01',
+        label: '知识库总览',
+        badge: '运行',
+        tone: 'blue',
+        route: '/knowledge/overview'
+      },
+      {
+        index: '02',
+        label: '标准规范库',
+        badge: '标准',
+        tone: 'green',
+        route: '/knowledge/sources'
+      },
+      {
+        index: '03',
+        label: '项目文件知识库',
+        badge: '项目',
+        tone: 'blue',
+        route: '/knowledge/files'
+      },
+      {
+        index: '04',
+        label: '文件知识详情',
+        badge: '证据',
+        tone: 'green',
+        route: '/knowledge/files'
+      },
+      {
+        index: '05',
+        label: 'OCR/向量任务中心',
+        badge: '失败',
+        tone: 'orange',
+        route: '/knowledge/tasks'
+      },
+      {
+        index: '06',
+        label: '业务规则版本管理',
+        badge: '规则',
+        tone: 'blue',
+        route: '/knowledge/rules'
+      },
+      {
+        index: '07',
+        label: '知识检索测试',
+        badge: '测试',
+        tone: 'blue',
+        route: '/knowledge/retrieval'
+      },
+      {
+        index: '08',
+        label: '推理链路历史日志',
+        badge: '日志',
+        tone: 'green',
+        route: '/knowledge/reasoning'
+      },
+      {
+        index: '09',
+        label: '多 LLM 反馈对比',
+        badge: '评估',
+        tone: 'green',
+        route: '/knowledge/compare'
+      },
+      { index: '10', label: '知识库配置', badge: '策略', tone: 'blue', route: '/knowledge/config' },
+      {
+        index: '11',
+        label: '操作审计日志',
+        badge: '审计',
+        tone: 'blue',
+        route: '/knowledge/config'
+      }
+    ]
+  }
+] as const
+
+const knowledgeShellBoundaryRows = [
+  { label: '不办理', value: '退回补正、审查意见、报告复核' },
+  { label: '可管理', value: '知识源、OCR、向量、规则版本、推理日志' },
+  { label: '权限', value: '继承项目、单位、角色授权' },
+  { label: '审计', value: '所有重跑、发布、回滚均留痕' }
+] as const
+
+const knowledgeShellRightCards = [
+  {
+    title: '处理进度',
+    rows: [
+      { label: 'OCR', progress: 91, progressTone: 'green' },
+      { label: '切片', progress: 88, progressTone: 'green' },
+      { label: '向量', progress: 84, progressTone: 'orange' },
+      { label: '推理日志', valueBadge: '248 次', valueTone: 'blue' }
+    ]
+  },
+  {
+    title: '最近失败任务',
+    rows: [
+      { label: 'OCR', value: '材料复验报告.pdf 页面旋转异常' },
+      { label: '向量', value: 'RT 检测报告切片为空' },
+      { label: '索引', value: 'TSG Z6002 索引版本过期' }
+    ]
+  },
+  {
+    title: '当前规则快照',
+    rows: [
+      { label: '规则', value: 'Welder-Qualification-B v2.1' },
+      { label: 'Prompt', value: 'prompt-v1.5' },
+      { label: '字段映射', value: 'map-v1.3' },
+      { label: '工具源', value: 'tool-v2.0' }
+    ]
+  },
+  {
+    title: '多模型评估摘要',
+    rows: [
+      { label: '一致结论', value: '2 / 3 模型判断满足要求' },
+      { label: '分歧点', value: '外部查询截图时效性' },
+      { label: '建议', value: '加入截图日期核验规则' }
+    ]
+  },
+  {
+    title: '后台限制',
+    note: '本页面仅管理知识源、规则版本、任务状态和推理日志，不提供采纳 AI 建议、退回补正、保存审查意见或报告复核按钮。'
+  }
+] as const
+
+type PaginationState = {
+  page: number
+  pageSize: number
+  total: number
+}
+
+type SectionKey =
+  | 'sources'
+  | 'files'
+  | 'tasks'
+  | 'rules'
+  | 'config'
+  | 'audit'
+  | 'reasoning'
+  | 'compare'
+
+type SectionIssue = {
+  title: string
+  message?: string
+}
+
+type OperationIssueKey =
+  | 'source'
+  | 'rule'
+  | 'ruleDiff'
+  | 'config'
+  | 'reindex'
+  | 'file'
+  | 'task'
+  | 'retrieval'
+  | 'compare'
+  | 'fileDetail'
+  | 'reasoningDetail'
+
+const createPagination = (pageSize = 10): PaginationState => ({
+  page: 1,
+  pageSize,
+  total: 0
+})
+
+const loading = ref(false)
+const actionLoading = ref('')
+
+const knowledgeTabRouteMap = {
+  overview: '/knowledge/overview',
+  'source-manage': '/knowledge/sources',
+  files: '/knowledge/files',
+  tasks: '/knowledge/tasks',
+  rules: '/knowledge/rules',
+  retrieval: '/knowledge/retrieval',
+  reasoning: '/knowledge/reasoning',
+  compare: '/knowledge/compare',
+  config: '/knowledge/config'
+} as const
+
+type KnowledgeTabKey = keyof typeof knowledgeTabRouteMap
+
+const knowledgeRouteTabMap: Record<string, KnowledgeTabKey> = {
+  '/knowledge/overview': 'overview',
+  '/knowledge/sources': 'source-manage',
+  '/knowledge/files': 'files',
+  '/knowledge/tasks': 'tasks',
+  '/knowledge/rules': 'rules',
+  '/knowledge/retrieval': 'retrieval',
+  '/knowledge/reasoning': 'reasoning',
+  '/knowledge/compare': 'compare',
+  '/knowledge/config': 'config'
+}
+
+const getKnowledgeTabFromRoute = (path: string): KnowledgeTabKey =>
+  knowledgeRouteTabMap[path] || 'overview'
+
+const activeTab = ref<KnowledgeTabKey>(getKnowledgeTabFromRoute(route.path))
+const pageIssue = ref<{
+  type: 'error' | 'forbidden' | 'readonly' | 'empty'
+  title: string
+  message?: string
+}>()
+const overview = ref<KnowledgeOverviewPayload>(emptyOverview())
+const sources = ref<KnowledgeSource[]>([])
+const files = ref<KnowledgeFile[]>([])
+const tasks = ref<KnowledgeTask[]>([])
+const reasoningLogs = ref<AiReviewRun[]>([])
+const compareRuns = ref<LlmCompareRunSummary[]>([])
+const ruleVersions = ref<KnowledgeRuleVersion[]>([])
+const auditLogs = ref<KnowledgeAuditLog[]>([])
+const knowledgeConfig = reactive<KnowledgeConfig>(emptyKnowledgeConfig())
+const sectionIssues = reactive<Record<SectionKey, SectionIssue | undefined>>({
+  sources: undefined,
+  files: undefined,
+  tasks: undefined,
+  rules: undefined,
+  config: undefined,
+  audit: undefined,
+  reasoning: undefined,
+  compare: undefined
+})
+const operationIssues = reactive<Record<OperationIssueKey, SectionIssue | undefined>>({
+  source: undefined,
+  rule: undefined,
+  ruleDiff: undefined,
+  config: undefined,
+  reindex: undefined,
+  file: undefined,
+  task: undefined,
+  retrieval: undefined,
+  compare: undefined,
+  fileDetail: undefined,
+  reasoningDetail: undefined
+})
+
+const fileDrawerVisible = ref(false)
+const fileDetailLoading = ref(false)
+const fileDetail = ref<KnowledgeFileDetailPayload | null>(null)
+const fileChunks = ref<KnowledgeChunk[]>([])
+const fileReferences = ref<KnowledgeReasoningReference[]>([])
+
+const knowledgeShellMenuSections = computed(() => {
+  let activeMatched = false
+  return knowledgeShellMenuSectionsBase.map((section) => ({
+    ...section,
+    items: section.items.map((item) => {
+      const active = !activeMatched && item.route === route.path
+      if (active) activeMatched = true
+      return { ...item, active }
+    })
+  }))
+})
+
+watch(
+  () => route.path,
+  (path) => {
+    if (!path.startsWith('/knowledge')) return
+    const nextTab = getKnowledgeTabFromRoute(path)
+    if (activeTab.value !== nextTab) activeTab.value = nextTab
+  },
+  { immediate: true }
+)
+
+watch(activeTab, (tab) => {
+  if (!route.path.startsWith('/knowledge')) return
+  if (knowledgeRouteTabMap[route.path] === tab) return
+  const targetPath = knowledgeTabRouteMap[tab]
+  if (targetPath && route.path !== targetPath) {
+    router.push(targetPath)
+  }
+})
+
+const reasoningDrawerVisible = ref(false)
+const reasoningDetailLoading = ref(false)
+const reasoningDetail = ref<ReasoningLogDetailPayload | null>(null)
+
+const retrievalLoading = ref(false)
+const retrievalResult = ref<KnowledgeRetrievalTestPayload | null>(null)
+const compareLoading = ref(false)
+const compareResult = ref<LlmComparePayload | null>(null)
+const ruleDiffVisible = ref(false)
+const ruleDiffLoading = ref(false)
+const ruleDiff = ref<KnowledgeRuleVersionDiffPayload | null>(null)
+const selectedRuleDiffVersion = ref<KnowledgeRuleVersion | null>(null)
+
+const sourceDialogVisible = ref(false)
+const sourceDialogMode = ref<'create' | 'edit'>('create')
+const sourceEditingId = ref('')
+const sourceForm = reactive<KnowledgeSourceSavePayload>(emptySourceForm())
+
+const sourceFilters = reactive({
+  keyword: '',
+  sourceType: '',
+  status: ''
+})
+
+const sourcePagination = reactive(createPagination(6))
+
+const fileFilters = reactive({
+  keyword: '',
+  nodeId: undefined as number | undefined,
+  status: ''
+})
+
+const filePagination = reactive(createPagination(10))
+
+const taskFilters = reactive({
+  taskType: '',
+  status: ''
+})
+
+const taskPagination = reactive(createPagination(10))
+
+const reasoningFilters = reactive({
+  nodeId: undefined as number | undefined,
+  status: ''
+})
+
+const reasoningPagination = reactive(createPagination(10))
+
+const ruleFilters = reactive({
+  keyword: '',
+  status: ''
+})
+
+const rulePagination = reactive(createPagination(10))
+
+const auditFilters = reactive({
+  keyword: '',
+  objectType: '',
+  result: ''
+})
+
+const auditPagination = reactive(createPagination(10))
+
+const retrievalForm = reactive({
+  question: '焊工资格证与持证项目是否覆盖本项目焊接方法？',
+  scope: ['standard', 'project-file'],
+  topK: 5
+})
+
+const compareForm = reactive({
+  question: '材料质量证明书中的炉批号和标准条款是否一致？',
+  modelCodes: ['LLM-A', 'LLM-B'],
+  nodeId: 24
+})
+
+const libraries = computed(() => overview.value.libraries)
+const metrics = computed(() => overview.value.metrics)
+const canShowKnowledgeContent = computed(() => !pageIssue.value)
+const hasSectionIssue = computed(() => Object.values(sectionIssues).some(Boolean))
+const ruleDiffSummaryItems = computed<
+  Array<{
+    label: string
+    value: number
+  }>
+>(() => {
+  if (!ruleDiff.value) return []
+  return [
+    { label: '新增', value: ruleDiff.value.summary.added },
+    { label: '变更', value: ruleDiff.value.summary.changed },
+    { label: '移除', value: ruleDiff.value.summary.removed },
+    { label: '需关注', value: ruleDiff.value.summary.warning }
+  ]
+})
+
+const modelOptions = ['LLM-A', 'LLM-B', 'LLM-C']
+const sourceStatusOptions: KnowledgeSource['status'][] = ['启用', '停用', '过期', '待复核']
+const vectorStatusOptions: KnowledgeSource['vectorStatus'][] = [
+  '未向量化',
+  '待向量化',
+  '向量化中',
+  '已向量化',
+  '向量化失败'
+]
+const ruleStatusOptions: KnowledgeRuleVersion['status'][] = ['草稿', '待发布', '已发布', '已回滚']
+const auditObjectTypeOptions = [
+  'KnowledgeSource',
+  'KnowledgeTask',
+  'KnowledgeConfig',
+  'RuleVersion',
+  'LlmCompareRun'
+]
+
+const statusType = (status?: string) => {
+  if (!status) return 'info'
+  if (
+    ['健康', '完成', '成功', '启用', '已向量化', '已切片', '已识别', '已人工确认'].some((key) =>
+      status.includes(key)
+    )
+  ) {
+    return 'success'
+  }
+  if (['失败', '需补正', '停用'].some((key) => status.includes(key))) return 'danger'
+  if (
+    ['索引', '运行', '排队', '待复核', '人工修正', '识别中', '向量化中'].some((key) =>
+      status.includes(key)
+    )
+  ) {
+    return 'warning'
+  }
+  return 'info'
+}
+
+const taskTypeLabel = (type: KnowledgeTask['taskType']) => {
+  const map: Record<KnowledgeTask['taskType'], string> = {
+    ocr: 'OCR',
+    slice: '切片',
+    vector: '向量',
+    reindex: '重建索引'
+  }
+  return map[type]
+}
+
+const sourceTypeLabel = (type: KnowledgeSource['sourceType']) => {
+  const map: Record<KnowledgeSource['sourceType'], string> = {
+    standard: '标准规范',
+    'project-file': '项目文件',
+    rule: '规则 Prompt',
+    manual: '人工维护'
+  }
+  return map[type]
+}
+
+const vectorPercent = (row: KnowledgeOverviewPayload['libraries'][number]) => {
+  if (!row.chunkCount) return 0
+  return Math.min(100, Math.round((row.vectorCount / row.chunkCount) * 100))
+}
+
+const confidencePercent = (value?: number) => {
+  if (typeof value !== 'number') return '--'
+  return `${Math.round(value * 100)}%`
+}
+
+const getErrorMessage = (error: unknown) => {
+  return getAicheckErrorMessage(error, '知识库接口返回异常，请检查网络、权限或 mock 状态。')
+}
+
+const assertApiResponse = <T,>(response: { data?: T } | undefined, message: string) => {
+  if (!response) throw new Error(message)
+  return response
+}
+
+const setSectionIssue = (key: SectionKey, title: string, error: unknown) => {
+  sectionIssues[key] = {
+    title,
+    message: getErrorMessage(error)
+  }
+}
+
+const clearSectionIssue = (key: SectionKey) => {
+  sectionIssues[key] = undefined
+}
+
+const buildOperationFailureMessage = (action: string) =>
+  `${action}失败，当前输入和页面数据已保留，请稍后重试或刷新后再操作。`
+
+const setOperationIssue = (key: OperationIssueKey, title: string, error?: unknown) => {
+  operationIssues[key] = {
+    title,
+    message: getErrorMessage(error)
+  }
+}
+
+const clearOperationIssue = (key: OperationIssueKey) => {
+  operationIssues[key] = undefined
+}
+
+const loadSection = async (key: SectionKey, title: string, loader: () => Promise<void>) => {
+  try {
+    await loader()
+    clearSectionIssue(key)
+  } catch (error) {
+    setSectionIssue(key, title, error)
+  }
+}
+
+const formatDiffValue = (value: unknown) => {
+  if (Array.isArray(value)) return value.length ? value.join(', ') : '-'
+  if (value === undefined || value === null || value === '') return '-'
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+
+const diffChangeTypeLabel = (type: 'added' | 'changed' | 'removed') => {
+  const map = {
+    added: '新增',
+    changed: '变更',
+    removed: '移除'
+  }
+  return map[type]
+}
+
+const diffChangeTagType = (
+  type: 'added' | 'changed' | 'removed'
+): 'primary' | 'success' | 'warning' | 'danger' | 'info' => {
+  const map: Record<
+    'added' | 'changed' | 'removed',
+    'primary' | 'success' | 'warning' | 'danger' | 'info'
+  > = {
+    added: 'success',
+    changed: 'primary',
+    removed: 'danger'
+  }
+  return map[type]
+}
+
+const applyPagination = <T,>(
+  pagination: PaginationState,
+  payload?: { items: T[]; page: number; pageSize: number; total: number }
+) => {
+  pagination.page = payload?.page || pagination.page
+  pagination.pageSize = payload?.pageSize || pagination.pageSize
+  pagination.total = payload?.total || 0
+  return payload?.items || []
+}
+
+const handleFilterChange = async (pagination: PaginationState, loader: () => Promise<void>) => {
+  pagination.page = 1
+  await loader()
+}
+
+const handlePageChange = async (
+  pagination: PaginationState,
+  loader: () => Promise<void>,
+  page: number
+) => {
+  pagination.page = page
+  await loader()
+}
+
+const handlePageSizeChange = async (
+  pagination: PaginationState,
+  loader: () => Promise<void>,
+  pageSize: number
+) => {
+  pagination.page = 1
+  pagination.pageSize = pageSize
+  await loader()
+}
+
+const loadOverview = async () => {
+  const res = assertApiResponse(await getKnowledgeOverviewApi(), '知识库总览接口未返回有效数据。')
+  overview.value = res.data || emptyOverview()
+}
+
+const loadSources = async () => {
+  await loadSection('sources', '知识源加载失败', async () => {
+    const res = assertApiResponse(
+      await listKnowledgeSourcesApi({
+        keyword: sourceFilters.keyword || undefined,
+        sourceType: sourceFilters.sourceType as KnowledgeSource['sourceType'] | undefined,
+        status: sourceFilters.status as KnowledgeSource['status'] | undefined,
+        page: sourcePagination.page,
+        pageSize: sourcePagination.pageSize
+      }),
+      '知识源接口未返回有效数据。'
+    )
+    sources.value = applyPagination(sourcePagination, res.data)
+  })
+}
+
+const loadFiles = async () => {
+  await loadSection('files', '项目文件加载失败', async () => {
+    const res = assertApiResponse(
+      await listKnowledgeProjectFilesApi({
+        keyword: fileFilters.keyword || undefined,
+        nodeId: fileFilters.nodeId,
+        status: fileFilters.status || undefined,
+        page: filePagination.page,
+        pageSize: filePagination.pageSize
+      }),
+      '项目文件接口未返回有效数据。'
+    )
+    files.value = applyPagination(filePagination, res.data)
+  })
+}
+
+const loadTasks = async () => {
+  await loadSection('tasks', '任务中心加载失败', async () => {
+    const res = assertApiResponse(
+      await listKnowledgeTasksApi({
+        taskType: taskFilters.taskType as KnowledgeTask['taskType'] | undefined,
+        status: taskFilters.status as KnowledgeTask['status'] | undefined,
+        page: taskPagination.page,
+        pageSize: taskPagination.pageSize
+      }),
+      '任务中心接口未返回有效数据。'
+    )
+    tasks.value = applyPagination(taskPagination, res.data)
+  })
+}
+
+const loadRuleVersions = async () => {
+  await loadSection('rules', '规则版本加载失败', async () => {
+    const res = assertApiResponse(
+      await listKnowledgeRuleVersionsApi({
+        keyword: ruleFilters.keyword || undefined,
+        status: ruleFilters.status as KnowledgeRuleVersion['status'] | undefined,
+        page: rulePagination.page,
+        pageSize: rulePagination.pageSize
+      }),
+      '规则版本接口未返回有效数据。'
+    )
+    ruleVersions.value = applyPagination(rulePagination, res.data)
+  })
+}
+
+const loadKnowledgeConfig = async () => {
+  await loadSection('config', '知识库配置加载失败', async () => {
+    const res = assertApiResponse(await getKnowledgeConfigApi(), '知识库配置接口未返回有效数据。')
+    if (res.data?.config) {
+      Object.assign(knowledgeConfig, res.data.config)
+    }
+  })
+}
+
+const loadKnowledgeAuditLogs = async () => {
+  await loadSection('audit', '知识库审计加载失败', async () => {
+    const res = assertApiResponse(
+      await listKnowledgeAuditLogsApi({
+        keyword: auditFilters.keyword || undefined,
+        objectType: auditFilters.objectType || undefined,
+        result: auditFilters.result || undefined,
+        page: auditPagination.page,
+        pageSize: auditPagination.pageSize
+      }),
+      '知识库审计接口未返回有效数据。'
+    )
+    auditLogs.value = applyPagination(auditPagination, res.data)
+  })
+}
+
+const loadReasoningLogs = async () => {
+  await loadSection('reasoning', '推理日志加载失败', async () => {
+    const res = assertApiResponse(
+      await listReasoningLogsApi({
+        nodeId: reasoningFilters.nodeId,
+        status: reasoningFilters.status as AiReviewRun['status'] | undefined,
+        page: reasoningPagination.page,
+        pageSize: reasoningPagination.pageSize
+      }),
+      '推理日志接口未返回有效数据。'
+    )
+    reasoningLogs.value = applyPagination(reasoningPagination, res.data)
+  })
+}
+
+const loadCompareRuns = async () => {
+  await loadSection('compare', '多模型历史加载失败', async () => {
+    const res = assertApiResponse(
+      await listLlmCompareRunsApi({ pageSize: 20 }),
+      '多模型历史接口未返回有效数据。'
+    )
+    compareRuns.value = res.data?.items || []
+  })
+}
+
+const loadData = async () => {
+  loading.value = true
+  pageIssue.value = undefined
+  try {
+    await Promise.all([
+      loadOverview(),
+      loadSources(),
+      loadFiles(),
+      loadTasks(),
+      loadRuleVersions(),
+      loadKnowledgeConfig(),
+      loadKnowledgeAuditLogs(),
+      loadReasoningLogs(),
+      loadCompareRuns()
+    ])
+    if (
+      !overview.value.metrics.length &&
+      !overview.value.libraries.length &&
+      !sources.value.length &&
+      !files.value.length &&
+      !tasks.value.length &&
+      !hasSectionIssue.value
+    ) {
+      pageIssue.value = {
+        type: 'empty',
+        title: '暂无知识库数据',
+        message: '当前环境没有返回知识源、项目文件或任务数据，可重新加载或先新增知识源。'
+      }
+    }
+  } catch (error) {
+    pageIssue.value = {
+      type: 'error',
+      title: '知识库数据加载失败',
+      message: getErrorMessage(error)
+    }
+    ElMessage.error('知识库数据加载失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+const handleRetryLoad = () => {
+  loadData()
+}
+
+const refreshKnowledgeState = async () => {
+  await Promise.all([
+    loadOverview(),
+    loadSources(),
+    loadFiles(),
+    loadTasks(),
+    loadKnowledgeAuditLogs()
+  ])
+}
+
+const openCreateSourceDialog = () => {
+  clearOperationIssue('source')
+  sourceDialogMode.value = 'create'
+  sourceEditingId.value = ''
+  Object.assign(sourceForm, emptySourceForm())
+  sourceDialogVisible.value = true
+}
+
+const openEditSourceDialog = (row: KnowledgeSource) => {
+  clearOperationIssue('source')
+  sourceDialogMode.value = 'edit'
+  sourceEditingId.value = row.id
+  Object.assign(sourceForm, {
+    name: row.name,
+    sourceType: row.sourceType,
+    version: row.version || '',
+    status: row.status,
+    fileCount: row.fileCount,
+    chunkCount: row.chunkCount,
+    vectorStatus: row.vectorStatus
+  })
+  sourceDialogVisible.value = true
+}
+
+const handleSaveSource = async () => {
+  if (!sourceForm.name.trim()) {
+    ElMessage.warning('请输入知识源名称')
+    return
+  }
+  actionLoading.value = 'source-save'
+  clearOperationIssue('source')
+  try {
+    if (sourceDialogMode.value === 'create') {
+      const res = await createKnowledgeSourceApi(sourceForm)
+      if (!res) {
+        setOperationIssue('source', buildOperationFailureMessage('知识源新增'))
+        return
+      }
+      ElMessage.success('知识源已新增')
+    } else {
+      const res = await updateKnowledgeSourceApi(sourceEditingId.value, sourceForm)
+      if (!res) {
+        setOperationIssue('source', buildOperationFailureMessage('知识源更新'))
+        return
+      }
+      ElMessage.success('知识源已更新')
+    }
+    sourceDialogVisible.value = false
+    await refreshKnowledgeState()
+  } catch (error) {
+    setOperationIssue(
+      'source',
+      buildOperationFailureMessage(
+        sourceDialogMode.value === 'create' ? '知识源新增' : '知识源更新'
+      ),
+      error
+    )
+  } finally {
+    actionLoading.value = ''
+  }
+}
+
+const handleToggleSourceStatus = async (row: KnowledgeSource) => {
+  actionLoading.value = `source-status-${row.id}`
+  clearOperationIssue('source')
+  try {
+    if (row.status === '启用') {
+      const res = await disableKnowledgeSourceApi(row.id, { reason: '知识库管理页面停用' })
+      if (!res) {
+        setOperationIssue('source', buildOperationFailureMessage('知识源停用'))
+        return
+      }
+      ElMessage.success(`${row.name} 已停用`)
+    } else {
+      const res = await enableKnowledgeSourceApi(row.id, { reason: '知识库管理页面启用' })
+      if (!res) {
+        setOperationIssue('source', buildOperationFailureMessage('知识源启用'))
+        return
+      }
+      ElMessage.success(`${row.name} 已启用`)
+    }
+    await refreshKnowledgeState()
+  } catch (error) {
+    setOperationIssue(
+      'source',
+      buildOperationFailureMessage(row.status === '启用' ? '知识源停用' : '知识源启用'),
+      error
+    )
+  } finally {
+    actionLoading.value = ''
+  }
+}
+
+const getRollbackTargetVersion = (row: KnowledgeRuleVersion) =>
+  ruleVersions.value.find((item) => item.ruleKey === row.ruleKey && item.id !== row.id)?.version
+
+const getRuleDiffTarget = (row: KnowledgeRuleVersion) =>
+  ruleVersions.value.find(
+    (item) => item.ruleKey === row.ruleKey && item.id !== row.id && item.status === '已发布'
+  ) || ruleVersions.value.find((item) => item.ruleKey === row.ruleKey && item.id !== row.id)
+
+const handleOpenRuleDiff = async (row: KnowledgeRuleVersion) => {
+  selectedRuleDiffVersion.value = row
+  ruleDiffVisible.value = true
+  ruleDiffLoading.value = true
+  ruleDiff.value = null
+  clearOperationIssue('ruleDiff')
+  const target = getRuleDiffTarget(row)
+  try {
+    const res = await getKnowledgeRuleVersionDiffApi(row.id, {
+      targetVersionId: target?.id,
+      targetVersion: target?.version
+    })
+    if (!res) {
+      setOperationIssue('ruleDiff', buildOperationFailureMessage('规则版本差异加载'))
+      return
+    }
+    ruleDiff.value = res.data
+  } catch (error) {
+    setOperationIssue('ruleDiff', buildOperationFailureMessage('规则版本差异加载'), error)
+  } finally {
+    ruleDiffLoading.value = false
+  }
+}
+
+const retryRuleDiff = () => {
+  if (selectedRuleDiffVersion.value) {
+    handleOpenRuleDiff(selectedRuleDiffVersion.value)
+  }
+}
+
+const handlePublishRule = async (row: KnowledgeRuleVersion) => {
+  actionLoading.value = `rule-publish-${row.id}`
+  clearOperationIssue('rule')
+  try {
+    const res = await publishKnowledgeRuleVersionApi(row.id, { reason: '知识库规则管理发布' })
+    if (!res) {
+      setOperationIssue('rule', buildOperationFailureMessage('规则版本发布'))
+      return
+    }
+    ElMessage.success(`${row.name} 已发布`)
+    await Promise.all([loadRuleVersions(), loadKnowledgeAuditLogs()])
+  } catch (error) {
+    setOperationIssue('rule', buildOperationFailureMessage('规则版本发布'), error)
+  } finally {
+    actionLoading.value = ''
+  }
+}
+
+const handleRollbackRule = async (row: KnowledgeRuleVersion) => {
+  const targetVersion = getRollbackTargetVersion(row)
+  if (!targetVersion) {
+    ElMessage.warning('没有可回滚的目标版本')
+    return
+  }
+  actionLoading.value = `rule-rollback-${row.id}`
+  clearOperationIssue('rule')
+  try {
+    const res = await rollbackKnowledgeRuleVersionApi(row.id, {
+      targetVersion,
+      reason: '知识库规则管理回滚'
+    })
+    if (!res) {
+      setOperationIssue('rule', buildOperationFailureMessage('规则版本回滚'))
+      return
+    }
+    ElMessage.success(`${row.name} 已回滚到 ${targetVersion}`)
+    await Promise.all([loadRuleVersions(), loadKnowledgeAuditLogs()])
+  } catch (error) {
+    setOperationIssue('rule', buildOperationFailureMessage('规则版本回滚'), error)
+  } finally {
+    actionLoading.value = ''
+  }
+}
+
+const handleSaveKnowledgeConfig = async () => {
+  if (knowledgeConfig.chunkOverlap >= knowledgeConfig.chunkSize) {
+    ElMessage.warning('切片重叠必须小于切片长度')
+    return
+  }
+  actionLoading.value = 'config-save'
+  clearOperationIssue('config')
+  try {
+    const res = await updateKnowledgeConfigApi(knowledgeConfig)
+    if (!res) {
+      setOperationIssue('config', buildOperationFailureMessage('知识库配置保存'))
+      return
+    }
+    if (res.data?.config) Object.assign(knowledgeConfig, res.data.config)
+    ElMessage.success('知识库配置已保存')
+    await loadKnowledgeAuditLogs()
+  } catch (error) {
+    setOperationIssue('config', buildOperationFailureMessage('知识库配置保存'), error)
+  } finally {
+    actionLoading.value = ''
+  }
+}
+
+const handleReindexAll = async () => {
+  actionLoading.value = 'reindex-all'
+  clearOperationIssue('reindex')
+  try {
+    const res = await batchReindexKnowledgeApi({ scope: 'all' })
+    if (!res) {
+      setOperationIssue('reindex', buildOperationFailureMessage('批量重建索引'))
+      return
+    }
+    ElMessage.success(`已创建 ${res.data?.taskIds?.length || 0} 个索引任务`)
+    await refreshKnowledgeState()
+  } catch (error) {
+    setOperationIssue('reindex', buildOperationFailureMessage('批量重建索引'), error)
+  } finally {
+    actionLoading.value = ''
+  }
+}
+
+const handleReindexSource = async (row: KnowledgeOverviewPayload['libraries'][number]) => {
+  actionLoading.value = `source-${row.key}`
+  clearOperationIssue('reindex')
+  try {
+    const res = await batchReindexKnowledgeApi({ scope: 'source', sourceId: row.key })
+    if (!res) {
+      setOperationIssue('reindex', buildOperationFailureMessage('知识源重建索引'))
+      return
+    }
+    ElMessage.success(`${row.name} 已加入索引任务队列`)
+    await refreshKnowledgeState()
+  } catch (error) {
+    setOperationIssue('reindex', buildOperationFailureMessage('知识源重建索引'), error)
+  } finally {
+    actionLoading.value = ''
+  }
+}
+
+const handleOpenFile = async (row: KnowledgeFile) => {
+  fileDrawerVisible.value = true
+  fileDetailLoading.value = true
+  fileDetail.value = null
+  fileChunks.value = []
+  fileReferences.value = []
+  clearOperationIssue('fileDetail')
+  try {
+    const [detailRes, chunksRes, vectorRes, refRes] = await Promise.all([
+      getKnowledgeFileDetailApi(row.id),
+      listKnowledgeFileChunksApi(row.id, { pageSize: 12 }),
+      getKnowledgeFileVectorApi(row.id),
+      listKnowledgeFileReasoningReferencesApi(row.id, { pageSize: 10 })
+    ])
+    if (!detailRes || !chunksRes || !vectorRes || !refRes) {
+      setOperationIssue('fileDetail', buildOperationFailureMessage('文件知识详情加载'))
+      return
+    }
+    fileDetail.value = {
+      ...detailRes.data,
+      vectorSummary: vectorRes.data
+    }
+    fileChunks.value = chunksRes.data?.items || []
+    fileReferences.value = refRes.data?.items || []
+  } catch (error) {
+    setOperationIssue('fileDetail', buildOperationFailureMessage('文件知识详情加载'), error)
+  } finally {
+    fileDetailLoading.value = false
+  }
+}
+
+const handleReindexFile = async (row: KnowledgeFile) => {
+  actionLoading.value = `file-${row.id}`
+  clearOperationIssue('file')
+  try {
+    const res = await reindexKnowledgeFileApi(row.id, { force: true })
+    if (!res) {
+      setOperationIssue('file', buildOperationFailureMessage('文件重建索引'))
+      return
+    }
+    ElMessage.success(`${row.fileName} 已加入索引任务队列`)
+    await refreshKnowledgeState()
+  } catch (error) {
+    setOperationIssue('file', buildOperationFailureMessage('文件重建索引'), error)
+  } finally {
+    actionLoading.value = ''
+  }
+}
+
+const handleRetryTask = async (row: KnowledgeTask) => {
+  actionLoading.value = `retry-${row.id}`
+  clearOperationIssue('task')
+  try {
+    const res = await retryKnowledgeTaskApi(row.id, { reason: '前端任务中心手动重试' })
+    if (!res) {
+      setOperationIssue('task', buildOperationFailureMessage('知识库任务重试'))
+      return
+    }
+    ElMessage.success(`${row.targetName} 已重新排队`)
+    await refreshKnowledgeState()
+  } catch (error) {
+    setOperationIssue('task', buildOperationFailureMessage('知识库任务重试'), error)
+  } finally {
+    actionLoading.value = ''
+  }
+}
+
+const handleCancelTask = async (row: KnowledgeTask) => {
+  actionLoading.value = `cancel-${row.id}`
+  clearOperationIssue('task')
+  try {
+    const res = await cancelKnowledgeTaskApi(row.id, { reason: '前端任务中心取消排队任务' })
+    if (!res) {
+      setOperationIssue('task', buildOperationFailureMessage('知识库任务取消'))
+      return
+    }
+    ElMessage.success(`${row.targetName} 已取消`)
+    await refreshKnowledgeState()
+  } catch (error) {
+    setOperationIssue('task', buildOperationFailureMessage('知识库任务取消'), error)
+  } finally {
+    actionLoading.value = ''
+  }
+}
+
+const handleRunRetrieval = async () => {
+  if (!retrievalForm.question.trim()) {
+    ElMessage.warning('请输入检索问题')
+    return
+  }
+  retrievalLoading.value = true
+  clearOperationIssue('retrieval')
+  try {
+    const res = await runKnowledgeRetrievalTestApi({
+      question: retrievalForm.question,
+      scope: retrievalForm.scope,
+      topK: retrievalForm.topK
+    })
+    if (!res) {
+      setOperationIssue('retrieval', buildOperationFailureMessage('知识检索测试'))
+      return
+    }
+    retrievalResult.value = res.data
+  } catch (error) {
+    setOperationIssue('retrieval', buildOperationFailureMessage('知识检索测试'), error)
+  } finally {
+    retrievalLoading.value = false
+  }
+}
+
+const handleOpenReasoningLog = async (row: AiReviewRun) => {
+  reasoningDrawerVisible.value = true
+  reasoningDetailLoading.value = true
+  reasoningDetail.value = null
+  clearOperationIssue('reasoningDetail')
+  try {
+    const res = await getReasoningLogDetailApi(row.id)
+    if (!res) {
+      setOperationIssue('reasoningDetail', buildOperationFailureMessage('推理链路详情加载'))
+      return
+    }
+    reasoningDetail.value = res.data
+  } catch (error) {
+    setOperationIssue('reasoningDetail', buildOperationFailureMessage('推理链路详情加载'), error)
+  } finally {
+    reasoningDetailLoading.value = false
+  }
+}
+
+const handleRunCompare = async () => {
+  if (!compareForm.question.trim()) {
+    ElMessage.warning('请输入对比问题')
+    return
+  }
+  if (compareForm.modelCodes.length < 2) {
+    ElMessage.warning('至少选择两个模型')
+    return
+  }
+  compareLoading.value = true
+  clearOperationIssue('compare')
+  try {
+    const res = await runLlmCompareApi({
+      question: compareForm.question,
+      modelCodes: compareForm.modelCodes,
+      nodeId: compareForm.nodeId
+    })
+    if (!res) {
+      setOperationIssue('compare', buildOperationFailureMessage('多模型对比运行'))
+      return
+    }
+    compareResult.value = res.data
+    await loadCompareRuns()
+  } catch (error) {
+    setOperationIssue('compare', buildOperationFailureMessage('多模型对比运行'), error)
+  } finally {
+    compareLoading.value = false
+  }
+}
+
+const handleOpenCompareRun = async (row: LlmCompareRunSummary) => {
+  compareLoading.value = true
+  clearOperationIssue('compare')
+  try {
+    const res = await getLlmCompareRunApi(row.runId)
+    if (!res) {
+      setOperationIssue('compare', buildOperationFailureMessage('多模型历史加载'))
+      return
+    }
+    compareResult.value = res.data
+  } catch (error) {
+    setOperationIssue('compare', buildOperationFailureMessage('多模型历史加载'), error)
+  } finally {
+    compareLoading.value = false
+  }
+}
+
+onMounted(() => {
+  loadData()
+})
+</script>
+
+<template>
+  <div class="knowledge-page" v-loading="loading">
+    <StaticPageShell
+      brand-mark="知"
+      title="AI 知识库管理"
+      status="索引运行中"
+      status-tone="orange"
+      search-placeholder="⌕ 搜索（标准条文 / 项目文件 / 规则版本 / 推理日志 / 模型反馈）"
+      user-label="系统管理员 周工"
+      :top-stats="[
+        { label: '管理后台' },
+        { label: '失败任务', value: taskPagination.total || 7, tone: 'red' }
+      ]"
+      menu-title="知识库菜单"
+      menu-root="AI 知识库管理"
+      :menu-sections="knowledgeShellMenuSections"
+      boundary-title="后台边界"
+      boundary-badge="只管理"
+      boundary-tone="green"
+      :boundary-rows="knowledgeShellBoundaryRows"
+      right-title="运行状态"
+      right-subtitle="索引版本：proj-v2026.06.26"
+      :right-cards="knowledgeShellRightCards"
+    >
+      <div class="page-toolbar">
+        <div>
+          <div class="page-title">AI 知识库管理</div>
+          <div class="page-subtitle">标准规范、项目资料、任务中心、推理链路和多模型对比</div>
+        </div>
+        <ElButton
+          type="primary"
+          :disabled="!!pageIssue"
+          :loading="actionLoading === 'reindex-all'"
+          @click="handleReindexAll"
+        >
+          重建索引
+        </ElButton>
+      </div>
+
+      <WorkbenchStateBanner
+        v-if="pageIssue"
+        :type="pageIssue.type"
+        :title="pageIssue.title"
+        :message="pageIssue.message"
+        action-label="重新加载"
+        :action-loading="loading"
+        @action="handleRetryLoad"
+      />
+
+      <div v-if="operationIssues.reindex && canShowKnowledgeContent" class="section-error">
+        <div>
+          <strong>{{ operationIssues.reindex.title }}</strong>
+          <span>{{ operationIssues.reindex.message }}</span>
+        </div>
+        <ElButton
+          size="small"
+          type="primary"
+          plain
+          :loading="actionLoading === 'reindex-all'"
+          @click="handleReindexAll"
+        >
+          重试重建
+        </ElButton>
+      </div>
+
+      <div v-if="canShowKnowledgeContent" class="metric-grid">
+        <div
+          v-for="metric in metrics"
+          :key="metric.key"
+          :class="`metric-card metric-card--${metric.tone}`"
+        >
+          <span>{{ metric.label }}</span>
+          <strong>{{ metric.value }}</strong>
+        </div>
+      </div>
+
+      <AdminKnowledgeStaticDeepSections
+        v-if="canShowKnowledgeContent"
+        mode="knowledge"
+        :knowledge-overview="overview"
+        :knowledge-sources="sources"
+        :knowledge-files="files"
+        :knowledge-tasks="tasks"
+        :knowledge-rules="ruleVersions"
+        :knowledge-reasoning-logs="reasoningLogs"
+        :knowledge-compare-runs="compareRuns"
+        :knowledge-config="knowledgeConfig"
+        :knowledge-audit-logs="auditLogs"
+      />
+
+      <ElTabs v-if="canShowKnowledgeContent" v-model="activeTab" class="knowledge-tabs">
+        <ElTabPane label="总览" name="overview">
+          <ElRow :gutter="16">
+            <ElCol :xl="15" :lg="15" :md="24" :sm="24" :xs="24">
+              <ElCard shadow="never" class="panel">
+                <template #header>
+                  <div class="panel-header">
+                    <span>知识库索引</span>
+                    <ElTag type="info" effect="plain">{{ libraries.length }} 个库</ElTag>
+                  </div>
+                </template>
+                <ElTable :data="libraries" border height="360">
+                  <ElTableColumn prop="name" label="知识库" min-width="220" />
+                  <ElTableColumn prop="fileCount" label="文件" width="88" />
+                  <ElTableColumn prop="chunkCount" label="切片" width="100" />
+                  <ElTableColumn prop="vectorCount" label="向量" width="100" />
+                  <ElTableColumn label="向量化" min-width="160">
+                    <template #default="{ row }">
+                      <ElProgress :percentage="vectorPercent(row)" :stroke-width="8" />
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn prop="indexVersion" label="索引版本" width="150" />
+                  <ElTableColumn label="状态" width="100">
+                    <template #default="{ row }">
+                      <ElTag :type="statusType(row.status)" effect="light">{{ row.status }}</ElTag>
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn prop="updatedAt" label="更新时间" width="170" />
+                  <ElTableColumn label="操作" width="110" fixed="right">
+                    <template #default="{ row }">
+                      <ElButton
+                        link
+                        type="primary"
+                        :loading="actionLoading === `source-${row.key}`"
+                        @click="handleReindexSource(row)"
+                      >
+                        重建
+                      </ElButton>
+                    </template>
+                  </ElTableColumn>
+                </ElTable>
+              </ElCard>
+            </ElCol>
+
+            <ElCol :xl="9" :lg="9" :md="24" :sm="24" :xs="24">
+              <ElCard shadow="never" class="panel">
+                <template #header>
+                  <div class="panel-header">
+                    <span>知识源</span>
+                    <ElSpace>
+                      <ElTag type="success" effect="plain">{{ sources.length }} 个来源</ElTag>
+                      <ElButton size="small" type="primary" @click="openCreateSourceDialog">
+                        新增
+                      </ElButton>
+                    </ElSpace>
+                  </div>
+                </template>
+                <div class="filter-bar compact">
+                  <ElInput
+                    v-model="sourceFilters.keyword"
+                    clearable
+                    placeholder="搜索知识源"
+                    @change="handleFilterChange(sourcePagination, loadSources)"
+                  />
+                  <ElSelect
+                    v-model="sourceFilters.sourceType"
+                    clearable
+                    placeholder="类型"
+                    @change="handleFilterChange(sourcePagination, loadSources)"
+                  >
+                    <ElOption label="标准规范" value="standard" />
+                    <ElOption label="项目文件" value="project-file" />
+                    <ElOption label="规则 Prompt" value="rule" />
+                    <ElOption label="人工维护" value="manual" />
+                  </ElSelect>
+                  <ElSelect
+                    v-model="sourceFilters.status"
+                    clearable
+                    placeholder="状态"
+                    @change="handleFilterChange(sourcePagination, loadSources)"
+                  >
+                    <ElOption
+                      v-for="status in sourceStatusOptions"
+                      :key="status"
+                      :label="status"
+                      :value="status"
+                    />
+                  </ElSelect>
+                </div>
+                <div v-if="sectionIssues.sources" class="section-error">
+                  <div>
+                    <strong>{{ sectionIssues.sources.title }}</strong>
+                    <span>{{ sectionIssues.sources.message }}</span>
+                  </div>
+                  <ElButton size="small" type="primary" plain @click="loadSources">
+                    重新加载
+                  </ElButton>
+                </div>
+                <div v-if="operationIssues.source" class="section-error">
+                  <div>
+                    <strong>{{ operationIssues.source.title }}</strong>
+                    <span>{{ operationIssues.source.message }}</span>
+                  </div>
+                  <ElButton size="small" type="primary" plain @click="loadSources"
+                    >刷新列表</ElButton
+                  >
+                </div>
+                <div class="source-list">
+                  <div v-for="source in sources" :key="source.id" class="source-item">
+                    <div>
+                      <strong>{{ source.name }}</strong>
+                      <span
+                        >{{ sourceTypeLabel(source.sourceType) }} ·
+                        {{ source.version || '未发布' }}</span
+                      >
+                    </div>
+                    <div class="source-actions">
+                      <ElTag :type="statusType(source.status)" effect="light">
+                        {{ source.status }}
+                      </ElTag>
+                      <ElTag :type="statusType(source.vectorStatus)" effect="plain">
+                        {{ source.vectorStatus }}
+                      </ElTag>
+                      <ElButton link type="primary" @click="openEditSourceDialog(source)">
+                        编辑
+                      </ElButton>
+                      <ElButton
+                        link
+                        :type="source.status === '启用' ? 'danger' : 'success'"
+                        :loading="actionLoading === `source-status-${source.id}`"
+                        @click="handleToggleSourceStatus(source)"
+                      >
+                        {{ source.status === '启用' ? '停用' : '启用' }}
+                      </ElButton>
+                    </div>
+                  </div>
+                </div>
+                <ElPagination
+                  v-if="sourcePagination.total > sourcePagination.pageSize"
+                  v-model:current-page="sourcePagination.page"
+                  v-model:page-size="sourcePagination.pageSize"
+                  class="table-pagination"
+                  background
+                  :page-sizes="[6, 10, 20, 50]"
+                  layout="total, sizes, prev, pager, next"
+                  :total="sourcePagination.total"
+                  @size-change="(size) => handlePageSizeChange(sourcePagination, loadSources, size)"
+                  @current-change="(page) => handlePageChange(sourcePagination, loadSources, page)"
+                />
+              </ElCard>
+            </ElCol>
+          </ElRow>
+        </ElTabPane>
+
+        <ElTabPane label="知识源管理" name="source-manage">
+          <ElCard shadow="never" class="panel">
+            <template #header>
+              <div class="panel-header">
+                <span>标准库与知识源维护</span>
+                <ElTag effect="plain">{{ sourcePagination.total }} 个知识源</ElTag>
+                <ElButton type="primary" @click="openCreateSourceDialog">新增知识源</ElButton>
+              </div>
+            </template>
+            <div class="filter-bar">
+              <ElInput
+                v-model="sourceFilters.keyword"
+                clearable
+                placeholder="搜索知识源或版本"
+                @change="handleFilterChange(sourcePagination, loadSources)"
+              />
+              <ElSelect
+                v-model="sourceFilters.sourceType"
+                clearable
+                placeholder="类型"
+                @change="handleFilterChange(sourcePagination, loadSources)"
+              >
+                <ElOption label="标准规范" value="standard" />
+                <ElOption label="项目文件" value="project-file" />
+                <ElOption label="规则 Prompt" value="rule" />
+                <ElOption label="人工维护" value="manual" />
+              </ElSelect>
+              <ElSelect
+                v-model="sourceFilters.status"
+                clearable
+                placeholder="状态"
+                @change="handleFilterChange(sourcePagination, loadSources)"
+              >
+                <ElOption
+                  v-for="status in sourceStatusOptions"
+                  :key="status"
+                  :label="status"
+                  :value="status"
+                />
+              </ElSelect>
+              <ElButton @click="loadSources">刷新</ElButton>
+            </div>
+            <div v-if="sectionIssues.sources" class="section-error">
+              <div>
+                <strong>{{ sectionIssues.sources.title }}</strong>
+                <span>{{ sectionIssues.sources.message }}</span>
+              </div>
+              <ElButton size="small" type="primary" plain @click="loadSources">重新加载</ElButton>
+            </div>
+            <div v-if="operationIssues.source" class="section-error">
+              <div>
+                <strong>{{ operationIssues.source.title }}</strong>
+                <span>{{ operationIssues.source.message }}</span>
+              </div>
+              <ElButton size="small" type="primary" plain @click="loadSources">刷新列表</ElButton>
+            </div>
+            <ElTable :data="sources" border height="430">
+              <ElTableColumn prop="name" label="知识源" min-width="240" show-overflow-tooltip />
+              <ElTableColumn label="类型" width="120">
+                <template #default="{ row }">{{ sourceTypeLabel(row.sourceType) }}</template>
+              </ElTableColumn>
+              <ElTableColumn prop="version" label="版本" min-width="170" show-overflow-tooltip />
+              <ElTableColumn label="状态" width="100">
+                <template #default="{ row }">
+                  <ElTag :type="statusType(row.status)" effect="light">{{ row.status }}</ElTag>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="向量" width="120">
+                <template #default="{ row }">
+                  <ElTag :type="statusType(row.vectorStatus)" effect="plain">
+                    {{ row.vectorStatus }}
+                  </ElTag>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="文件/切片" width="120">
+                <template #default="{ row }">{{ row.fileCount }} / {{ row.chunkCount }}</template>
+              </ElTableColumn>
+              <ElTableColumn prop="updatedAt" label="更新时间" width="170" />
+              <ElTableColumn label="操作" width="230" fixed="right">
+                <template #default="{ row }">
+                  <ElButton link type="primary" @click="openEditSourceDialog(row)">编辑</ElButton>
+                  <ElButton
+                    link
+                    :type="row.status === '启用' ? 'danger' : 'success'"
+                    :loading="actionLoading === `source-status-${row.id}`"
+                    @click="handleToggleSourceStatus(row)"
+                  >
+                    {{ row.status === '启用' ? '停用' : '启用' }}
+                  </ElButton>
+                  <ElButton
+                    link
+                    type="primary"
+                    :loading="actionLoading === `source-${row.id}`"
+                    @click="
+                      handleReindexSource({
+                        key: row.id,
+                        name: row.name,
+                        fileCount: row.fileCount,
+                        chunkCount: row.chunkCount,
+                        vectorCount: row.chunkCount,
+                        indexVersion: row.version || row.id,
+                        status: row.status,
+                        updatedAt: row.updatedAt
+                      })
+                    "
+                  >
+                    重建
+                  </ElButton>
+                </template>
+              </ElTableColumn>
+            </ElTable>
+            <ElPagination
+              v-if="sourcePagination.total > sourcePagination.pageSize"
+              v-model:current-page="sourcePagination.page"
+              v-model:page-size="sourcePagination.pageSize"
+              class="table-pagination"
+              background
+              :page-sizes="[6, 10, 20, 50]"
+              layout="total, sizes, prev, pager, next"
+              :total="sourcePagination.total"
+              @size-change="(size) => handlePageSizeChange(sourcePagination, loadSources, size)"
+              @current-change="(page) => handlePageChange(sourcePagination, loadSources, page)"
+            />
+          </ElCard>
+        </ElTabPane>
+
+        <ElTabPane label="规则配置" name="rules">
+          <ElCard shadow="never" class="panel">
+            <template #header>
+              <div class="panel-header">
+                <span>规则版本发布与回滚</span>
+                <ElTag effect="plain">{{ rulePagination.total }} 个版本</ElTag>
+              </div>
+            </template>
+            <div class="filter-bar">
+              <ElInput
+                v-model="ruleFilters.keyword"
+                clearable
+                placeholder="搜索规则、版本或说明"
+                @change="handleFilterChange(rulePagination, loadRuleVersions)"
+              />
+              <ElSelect
+                v-model="ruleFilters.status"
+                clearable
+                placeholder="状态"
+                @change="handleFilterChange(rulePagination, loadRuleVersions)"
+              >
+                <ElOption
+                  v-for="status in ruleStatusOptions"
+                  :key="status"
+                  :label="status"
+                  :value="status"
+                />
+              </ElSelect>
+              <ElButton @click="loadRuleVersions">刷新</ElButton>
+            </div>
+            <div v-if="sectionIssues.rules" class="section-error">
+              <div>
+                <strong>{{ sectionIssues.rules.title }}</strong>
+                <span>{{ sectionIssues.rules.message }}</span>
+              </div>
+              <ElButton size="small" type="primary" plain @click="loadRuleVersions">
+                重新加载
+              </ElButton>
+            </div>
+            <div v-if="operationIssues.rule" class="section-error">
+              <div>
+                <strong>{{ operationIssues.rule.title }}</strong>
+                <span>{{ operationIssues.rule.message }}</span>
+              </div>
+              <ElButton size="small" type="primary" plain @click="loadRuleVersions">
+                刷新规则
+              </ElButton>
+            </div>
+            <ElTable :data="ruleVersions" border height="430">
+              <ElTableColumn prop="name" label="规则" min-width="220" show-overflow-tooltip />
+              <ElTableColumn prop="version" label="版本" min-width="190" show-overflow-tooltip />
+              <ElTableColumn label="状态" width="100">
+                <template #default="{ row }">
+                  <ElTag :type="statusType(row.status)" effect="light">{{ row.status }}</ElTag>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="节点范围" min-width="160">
+                <template #default="{ row }">{{ row.nodeIds.join(', ') }}</template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="promptVersion"
+                label="Prompt"
+                min-width="180"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
+                prop="outputSchemaVersion"
+                label="输出结构"
+                min-width="150"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
+                prop="description"
+                label="说明"
+                min-width="260"
+                show-overflow-tooltip
+              />
+              <ElTableColumn prop="updatedAt" label="更新时间" width="170" />
+              <ElTableColumn label="操作" width="210" fixed="right">
+                <template #default="{ row }">
+                  <ElButton link type="primary" @click="handleOpenRuleDiff(row)">差异</ElButton>
+                  <ElButton
+                    v-if="row.status !== '已发布'"
+                    link
+                    type="primary"
+                    :loading="actionLoading === `rule-publish-${row.id}`"
+                    @click="handlePublishRule(row)"
+                  >
+                    发布
+                  </ElButton>
+                  <ElButton
+                    v-if="row.status === '已发布'"
+                    link
+                    type="warning"
+                    :loading="actionLoading === `rule-rollback-${row.id}`"
+                    @click="handleRollbackRule(row)"
+                  >
+                    回滚
+                  </ElButton>
+                </template>
+              </ElTableColumn>
+            </ElTable>
+            <ElPagination
+              v-if="rulePagination.total > rulePagination.pageSize"
+              v-model:current-page="rulePagination.page"
+              v-model:page-size="rulePagination.pageSize"
+              class="table-pagination"
+              background
+              :page-sizes="[10, 20, 50]"
+              layout="total, sizes, prev, pager, next"
+              :total="rulePagination.total"
+              @size-change="(size) => handlePageSizeChange(rulePagination, loadRuleVersions, size)"
+              @current-change="(page) => handlePageChange(rulePagination, loadRuleVersions, page)"
+            />
+          </ElCard>
+        </ElTabPane>
+
+        <ElTabPane label="配置审计" name="config">
+          <ElRow :gutter="16">
+            <ElCol :xl="9" :lg="10" :md="24" :sm="24" :xs="24">
+              <ElCard shadow="never" class="panel">
+                <template #header>
+                  <div class="panel-header">
+                    <span>知识库配置</span>
+                    <ElTag effect="plain">{{ knowledgeConfig.updatedAt || '未保存' }}</ElTag>
+                  </div>
+                </template>
+                <div v-if="sectionIssues.config" class="section-error">
+                  <div>
+                    <strong>{{ sectionIssues.config.title }}</strong>
+                    <span>{{ sectionIssues.config.message }}</span>
+                  </div>
+                  <ElButton size="small" type="primary" plain @click="loadKnowledgeConfig">
+                    重新加载
+                  </ElButton>
+                </div>
+                <div v-if="operationIssues.config" class="section-error">
+                  <div>
+                    <strong>{{ operationIssues.config.title }}</strong>
+                    <span>{{ operationIssues.config.message }}</span>
+                  </div>
+                  <ElButton
+                    size="small"
+                    type="primary"
+                    plain
+                    :loading="actionLoading === 'config-save'"
+                    @click="handleSaveKnowledgeConfig"
+                  >
+                    重试保存
+                  </ElButton>
+                </div>
+                <ElForm label-position="top" class="config-form">
+                  <ElFormItem label="Embedding 模型">
+                    <ElInput v-model="knowledgeConfig.embeddingModel" />
+                  </ElFormItem>
+                  <ElFormItem label="切片长度">
+                    <ElInputNumber v-model="knowledgeConfig.chunkSize" :min="200" :max="2000" />
+                  </ElFormItem>
+                  <ElFormItem label="切片重叠">
+                    <ElInputNumber
+                      v-model="knowledgeConfig.chunkOverlap"
+                      :min="0"
+                      :max="knowledgeConfig.chunkSize - 1"
+                    />
+                  </ElFormItem>
+                  <ElFormItem label="默认 Top K">
+                    <ElInputNumber v-model="knowledgeConfig.topKDefault" :min="1" :max="20" />
+                  </ElFormItem>
+                  <div class="config-switch-list">
+                    <div>
+                      <span>重排序</span>
+                      <ElSwitch v-model="knowledgeConfig.rerankEnabled" />
+                    </div>
+                    <div>
+                      <span>证据严格模式</span>
+                      <ElSwitch v-model="knowledgeConfig.evidenceStrictMode" />
+                    </div>
+                    <div>
+                      <span>自动重建索引</span>
+                      <ElSwitch v-model="knowledgeConfig.autoReindex" />
+                    </div>
+                  </div>
+                  <ElFormItem label="审计留存天数">
+                    <ElInputNumber v-model="knowledgeConfig.retentionDays" :min="30" :max="3650" />
+                  </ElFormItem>
+                  <ElButton
+                    type="primary"
+                    :loading="actionLoading === 'config-save'"
+                    @click="handleSaveKnowledgeConfig"
+                  >
+                    保存配置
+                  </ElButton>
+                </ElForm>
+              </ElCard>
+            </ElCol>
+            <ElCol :xl="15" :lg="14" :md="24" :sm="24" :xs="24">
+              <ElCard shadow="never" class="panel">
+                <template #header>
+                  <div class="panel-header">
+                    <span>知识库审计</span>
+                    <ElTag effect="plain">{{ auditPagination.total }} 条</ElTag>
+                  </div>
+                </template>
+                <div class="filter-bar">
+                  <ElInput
+                    v-model="auditFilters.keyword"
+                    clearable
+                    placeholder="搜索操作、人或对象"
+                    @change="handleFilterChange(auditPagination, loadKnowledgeAuditLogs)"
+                  />
+                  <ElSelect
+                    v-model="auditFilters.objectType"
+                    clearable
+                    placeholder="对象"
+                    @change="handleFilterChange(auditPagination, loadKnowledgeAuditLogs)"
+                  >
+                    <ElOption
+                      v-for="item in auditObjectTypeOptions"
+                      :key="item"
+                      :label="item"
+                      :value="item"
+                    />
+                  </ElSelect>
+                  <ElSelect
+                    v-model="auditFilters.result"
+                    clearable
+                    placeholder="结果"
+                    @change="handleFilterChange(auditPagination, loadKnowledgeAuditLogs)"
+                  >
+                    <ElOption label="成功" value="成功" />
+                    <ElOption label="失败" value="失败" />
+                  </ElSelect>
+                  <ElButton @click="loadKnowledgeAuditLogs">刷新</ElButton>
+                </div>
+                <div v-if="sectionIssues.audit" class="section-error">
+                  <div>
+                    <strong>{{ sectionIssues.audit.title }}</strong>
+                    <span>{{ sectionIssues.audit.message }}</span>
+                  </div>
+                  <ElButton size="small" type="primary" plain @click="loadKnowledgeAuditLogs">
+                    重新加载
+                  </ElButton>
+                </div>
+                <ElTable :data="auditLogs" border height="392">
+                  <ElTableColumn prop="createdAt" label="时间" width="170" />
+                  <ElTableColumn prop="actorName" label="人员" width="110" />
+                  <ElTableColumn prop="action" label="操作" min-width="160" show-overflow-tooltip />
+                  <ElTableColumn prop="objectType" label="对象" width="150" />
+                  <ElTableColumn
+                    prop="objectId"
+                    label="对象 ID"
+                    min-width="180"
+                    show-overflow-tooltip
+                  />
+                  <ElTableColumn label="结果" width="90">
+                    <template #default="{ row }">
+                      <ElTag :type="statusType(row.result)" effect="light">{{ row.result }}</ElTag>
+                    </template>
+                  </ElTableColumn>
+                </ElTable>
+                <ElPagination
+                  v-if="auditPagination.total > auditPagination.pageSize"
+                  v-model:current-page="auditPagination.page"
+                  v-model:page-size="auditPagination.pageSize"
+                  class="table-pagination"
+                  background
+                  :page-sizes="[10, 20, 50]"
+                  layout="total, sizes, prev, pager, next"
+                  :total="auditPagination.total"
+                  @size-change="
+                    (size) => handlePageSizeChange(auditPagination, loadKnowledgeAuditLogs, size)
+                  "
+                  @current-change="
+                    (page) => handlePageChange(auditPagination, loadKnowledgeAuditLogs, page)
+                  "
+                />
+              </ElCard>
+            </ElCol>
+          </ElRow>
+        </ElTabPane>
+
+        <ElTabPane label="项目文件库" name="files">
+          <ElCard shadow="never" class="panel">
+            <template #header>
+              <div class="panel-header">
+                <span>项目文件知识库</span>
+                <ElTag effect="plain">{{ filePagination.total }} 个文件</ElTag>
+              </div>
+            </template>
+            <div class="filter-bar">
+              <ElInput
+                v-model="fileFilters.keyword"
+                clearable
+                placeholder="搜索文件、节点或项目"
+                @change="handleFilterChange(filePagination, loadFiles)"
+              />
+              <ElInputNumber
+                v-model="fileFilters.nodeId"
+                :min="1"
+                :max="69"
+                controls-position="right"
+                placeholder="节点号"
+                @change="handleFilterChange(filePagination, loadFiles)"
+              />
+              <ElSelect
+                v-model="fileFilters.status"
+                clearable
+                placeholder="状态"
+                @change="handleFilterChange(filePagination, loadFiles)"
+              >
+                <ElOption label="已识别" value="已识别" />
+                <ElOption label="识别中" value="识别中" />
+                <ElOption label="人工修正" value="人工修正" />
+                <ElOption label="已切片" value="已切片" />
+                <ElOption label="向量化中" value="向量化中" />
+                <ElOption label="已向量化" value="已向量化" />
+              </ElSelect>
+              <ElButton @click="loadFiles">筛选</ElButton>
+            </div>
+            <div v-if="sectionIssues.files" class="section-error">
+              <div>
+                <strong>{{ sectionIssues.files.title }}</strong>
+                <span>{{ sectionIssues.files.message }}</span>
+              </div>
+              <ElButton size="small" type="primary" plain @click="loadFiles">重新加载</ElButton>
+            </div>
+            <div v-if="operationIssues.file" class="section-error">
+              <div>
+                <strong>{{ operationIssues.file.title }}</strong>
+                <span>{{ operationIssues.file.message }}</span>
+              </div>
+              <ElButton size="small" type="primary" plain @click="loadFiles">刷新文件</ElButton>
+            </div>
+            <ElTable :data="files" border height="430">
+              <ElTableColumn prop="fileName" label="文件" min-width="220" />
+              <ElTableColumn
+                prop="projectName"
+                label="项目"
+                min-width="220"
+                show-overflow-tooltip
+              />
+              <ElTableColumn prop="nodeId" label="节点" width="76" />
+              <ElTableColumn
+                prop="nodeName"
+                label="节点名称"
+                min-width="220"
+                show-overflow-tooltip
+              />
+              <ElTableColumn label="OCR" width="110">
+                <template #default="{ row }">
+                  <ElTag :type="statusType(row.ocrStatus)" effect="light">{{
+                    row.ocrStatus
+                  }}</ElTag>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="切片" width="110">
+                <template #default="{ row }">
+                  <ElTag :type="statusType(row.sliceStatus)" effect="light">{{
+                    row.sliceStatus
+                  }}</ElTag>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="向量" width="120">
+                <template #default="{ row }">
+                  <ElTag :type="statusType(row.vectorStatus)" effect="light">{{
+                    row.vectorStatus
+                  }}</ElTag>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="切片/向量" width="120">
+                <template #default="{ row }">{{ row.chunkCount }} / {{ row.vectorCount }}</template>
+              </ElTableColumn>
+              <ElTableColumn prop="updatedAt" label="更新时间" width="170" />
+              <ElTableColumn label="操作" width="150" fixed="right">
+                <template #default="{ row }">
+                  <ElButton link type="primary" @click="handleOpenFile(row)">详情</ElButton>
+                  <ElButton
+                    link
+                    type="primary"
+                    :loading="actionLoading === `file-${row.id}`"
+                    @click="handleReindexFile(row)"
+                  >
+                    重建
+                  </ElButton>
+                </template>
+              </ElTableColumn>
+            </ElTable>
+            <ElPagination
+              v-if="filePagination.total > filePagination.pageSize"
+              v-model:current-page="filePagination.page"
+              v-model:page-size="filePagination.pageSize"
+              class="table-pagination"
+              background
+              :page-sizes="[10, 20, 50]"
+              layout="total, sizes, prev, pager, next"
+              :total="filePagination.total"
+              @size-change="(size) => handlePageSizeChange(filePagination, loadFiles, size)"
+              @current-change="(page) => handlePageChange(filePagination, loadFiles, page)"
+            />
+          </ElCard>
+        </ElTabPane>
+
+        <ElTabPane label="任务中心" name="tasks">
+          <ElCard shadow="never" class="panel">
+            <template #header>
+              <div class="panel-header">
+                <span>OCR / 切片 / 向量任务</span>
+                <ElTag effect="plain">{{ taskPagination.total }} 条</ElTag>
+              </div>
+            </template>
+            <div class="filter-bar">
+              <ElSelect
+                v-model="taskFilters.taskType"
+                clearable
+                placeholder="任务类型"
+                @change="handleFilterChange(taskPagination, loadTasks)"
+              >
+                <ElOption label="OCR" value="ocr" />
+                <ElOption label="切片" value="slice" />
+                <ElOption label="向量" value="vector" />
+                <ElOption label="重建索引" value="reindex" />
+              </ElSelect>
+              <ElSelect
+                v-model="taskFilters.status"
+                clearable
+                placeholder="状态"
+                @change="handleFilterChange(taskPagination, loadTasks)"
+              >
+                <ElOption label="排队中" value="排队中" />
+                <ElOption label="运行中" value="运行中" />
+                <ElOption label="成功" value="成功" />
+                <ElOption label="失败" value="失败" />
+                <ElOption label="已取消" value="已取消" />
+              </ElSelect>
+              <ElButton @click="loadTasks">刷新</ElButton>
+            </div>
+            <div v-if="sectionIssues.tasks" class="section-error">
+              <div>
+                <strong>{{ sectionIssues.tasks.title }}</strong>
+                <span>{{ sectionIssues.tasks.message }}</span>
+              </div>
+              <ElButton size="small" type="primary" plain @click="loadTasks">重新加载</ElButton>
+            </div>
+            <div v-if="operationIssues.task" class="section-error">
+              <div>
+                <strong>{{ operationIssues.task.title }}</strong>
+                <span>{{ operationIssues.task.message }}</span>
+              </div>
+              <ElButton size="small" type="primary" plain @click="loadTasks">刷新任务</ElButton>
+            </div>
+            <ElTable :data="tasks" border height="430">
+              <ElTableColumn prop="id" label="任务号" width="170" />
+              <ElTableColumn label="类型" width="110">
+                <template #default="{ row }">{{ taskTypeLabel(row.taskType) }}</template>
+              </ElTableColumn>
+              <ElTableColumn prop="targetName" label="目标" min-width="240" show-overflow-tooltip />
+              <ElTableColumn label="状态" width="110">
+                <template #default="{ row }">
+                  <ElTag :type="statusType(row.status)" effect="light">{{ row.status }}</ElTag>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="进度" min-width="150">
+                <template #default="{ row }">
+                  <ElProgress :percentage="row.progress" :stroke-width="8" />
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="errorMessage"
+                label="错误"
+                min-width="260"
+                show-overflow-tooltip
+              />
+              <ElTableColumn prop="createdAt" label="创建时间" width="170" />
+              <ElTableColumn prop="finishedAt" label="结束时间" width="170" />
+              <ElTableColumn label="操作" width="140" fixed="right">
+                <template #default="{ row }">
+                  <ElButton
+                    v-if="['失败', '已取消'].includes(row.status)"
+                    link
+                    type="primary"
+                    :loading="actionLoading === `retry-${row.id}`"
+                    @click="handleRetryTask(row)"
+                  >
+                    重试
+                  </ElButton>
+                  <ElButton
+                    v-if="row.status === '排队中'"
+                    link
+                    type="danger"
+                    :loading="actionLoading === `cancel-${row.id}`"
+                    @click="handleCancelTask(row)"
+                  >
+                    取消
+                  </ElButton>
+                </template>
+              </ElTableColumn>
+            </ElTable>
+            <ElPagination
+              v-if="taskPagination.total > taskPagination.pageSize"
+              v-model:current-page="taskPagination.page"
+              v-model:page-size="taskPagination.pageSize"
+              class="table-pagination"
+              background
+              :page-sizes="[10, 20, 50]"
+              layout="total, sizes, prev, pager, next"
+              :total="taskPagination.total"
+              @size-change="(size) => handlePageSizeChange(taskPagination, loadTasks, size)"
+              @current-change="(page) => handlePageChange(taskPagination, loadTasks, page)"
+            />
+          </ElCard>
+        </ElTabPane>
+
+        <ElTabPane label="检索测试" name="retrieval">
+          <ElRow :gutter="16">
+            <ElCol :xl="10" :lg="10" :md="24" :sm="24" :xs="24">
+              <ElCard shadow="never" class="panel">
+                <template #header>
+                  <div class="panel-header">
+                    <span>知识检索测试</span>
+                    <ElTag type="warning" effect="plain">不写入审查结论</ElTag>
+                  </div>
+                </template>
+                <ElForm label-position="top">
+                  <ElFormItem label="问题">
+                    <ElInput
+                      v-model="retrievalForm.question"
+                      type="textarea"
+                      :rows="4"
+                      maxlength="300"
+                      show-word-limit
+                    />
+                  </ElFormItem>
+                  <ElFormItem label="范围">
+                    <ElCheckboxGroup v-model="retrievalForm.scope">
+                      <ElCheckbox label="standard">标准规范</ElCheckbox>
+                      <ElCheckbox label="project-file">项目文件</ElCheckbox>
+                      <ElCheckbox label="rule">规则 Prompt</ElCheckbox>
+                    </ElCheckboxGroup>
+                  </ElFormItem>
+                  <ElFormItem label="Top K">
+                    <ElInputNumber v-model="retrievalForm.topK" :min="1" :max="10" />
+                  </ElFormItem>
+                  <ElButton type="primary" :loading="retrievalLoading" @click="handleRunRetrieval">
+                    运行检索
+                  </ElButton>
+                </ElForm>
+                <div v-if="operationIssues.retrieval" class="section-error local-operation-error">
+                  <div>
+                    <strong>{{ operationIssues.retrieval.title }}</strong>
+                    <span>{{ operationIssues.retrieval.message }}</span>
+                  </div>
+                  <ElButton
+                    size="small"
+                    type="primary"
+                    plain
+                    :loading="retrievalLoading"
+                    @click="handleRunRetrieval"
+                  >
+                    重试检索
+                  </ElButton>
+                </div>
+              </ElCard>
+            </ElCol>
+            <ElCol :xl="14" :lg="14" :md="24" :sm="24" :xs="24">
+              <ElCard shadow="never" class="panel retrieval-result">
+                <template #header>
+                  <div class="panel-header">
+                    <span>检索结果</span>
+                    <ElTag v-if="retrievalResult" type="info" effect="plain">
+                      {{ retrievalResult.latencyMs }} ms
+                    </ElTag>
+                  </div>
+                </template>
+                <ElEmpty v-if="!retrievalResult" description="运行检索后显示答案草稿和证据命中" />
+                <template v-else>
+                  <ElAlert
+                    title="答案草稿"
+                    type="success"
+                    :description="retrievalResult.answerDraft"
+                    :closable="false"
+                    show-icon
+                  />
+                  <ElDivider />
+                  <ElTable :data="retrievalResult.hits" border height="250">
+                    <ElTableColumn prop="objectType" label="对象" width="140" />
+                    <ElTableColumn
+                      prop="fileName"
+                      label="文件"
+                      min-width="180"
+                      show-overflow-tooltip
+                    />
+                    <ElTableColumn prop="pageNo" label="页码" width="80" />
+                    <ElTableColumn prop="fieldName" label="字段" width="120" />
+                    <ElTableColumn
+                      prop="quotedText"
+                      label="命中文本"
+                      min-width="260"
+                      show-overflow-tooltip
+                    />
+                    <ElTableColumn label="置信度" width="100">
+                      <template #default="{ row }">{{
+                        confidencePercent(row.confidence)
+                      }}</template>
+                    </ElTableColumn>
+                  </ElTable>
+                  <div class="index-version-list">
+                    <ElTag
+                      v-for="version in retrievalResult.usedIndexVersions"
+                      :key="version"
+                      effect="plain"
+                    >
+                      {{ version }}
+                    </ElTag>
+                  </div>
+                </template>
+              </ElCard>
+            </ElCol>
+          </ElRow>
+        </ElTabPane>
+
+        <ElTabPane label="推理日志" name="reasoning">
+          <ElCard shadow="never" class="panel">
+            <template #header>
+              <div class="panel-header">
+                <span>推理链路历史</span>
+                <ElTag effect="plain">{{ reasoningPagination.total }} 条</ElTag>
+              </div>
+            </template>
+            <div class="filter-bar">
+              <ElInputNumber
+                v-model="reasoningFilters.nodeId"
+                :min="1"
+                :max="69"
+                controls-position="right"
+                placeholder="节点号"
+                @change="handleFilterChange(reasoningPagination, loadReasoningLogs)"
+              />
+              <ElSelect
+                v-model="reasoningFilters.status"
+                clearable
+                placeholder="状态"
+                @change="handleFilterChange(reasoningPagination, loadReasoningLogs)"
+              >
+                <ElOption label="推理中" value="推理中" />
+                <ElOption label="完成" value="完成" />
+                <ElOption label="失败" value="失败" />
+                <ElOption label="已人工确认" value="已人工确认" />
+              </ElSelect>
+              <ElButton @click="loadReasoningLogs">刷新</ElButton>
+            </div>
+            <div v-if="sectionIssues.reasoning" class="section-error">
+              <div>
+                <strong>{{ sectionIssues.reasoning.title }}</strong>
+                <span>{{ sectionIssues.reasoning.message }}</span>
+              </div>
+              <ElButton size="small" type="primary" plain @click="loadReasoningLogs">
+                重新加载
+              </ElButton>
+            </div>
+            <ElTable :data="reasoningLogs" border height="430">
+              <ElTableColumn prop="id" label="Run ID" width="190" />
+              <ElTableColumn prop="nodeId" label="节点" width="76" />
+              <ElTableColumn prop="subject" label="主题" min-width="220" show-overflow-tooltip />
+              <ElTableColumn prop="model" label="模型" width="110" />
+              <ElTableColumn
+                prop="promptVersion"
+                label="Prompt"
+                min-width="170"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
+                prop="ruleVersion"
+                label="规则版本"
+                min-width="190"
+                show-overflow-tooltip
+              />
+              <ElTableColumn label="状态" width="110">
+                <template #default="{ row }">
+                  <ElTag :type="statusType(row.status)" effect="light">{{ row.status }}</ElTag>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="建议" min-width="260" show-overflow-tooltip>
+                <template #default="{ row }">{{ row.suggestion?.opinionDraft }}</template>
+              </ElTableColumn>
+              <ElTableColumn prop="finishedAt" label="完成时间" width="170" />
+              <ElTableColumn label="操作" width="90" fixed="right">
+                <template #default="{ row }">
+                  <ElButton link type="primary" @click="handleOpenReasoningLog(row)">详情</ElButton>
+                </template>
+              </ElTableColumn>
+            </ElTable>
+            <ElPagination
+              v-if="reasoningPagination.total > reasoningPagination.pageSize"
+              v-model:current-page="reasoningPagination.page"
+              v-model:page-size="reasoningPagination.pageSize"
+              class="table-pagination"
+              background
+              :page-sizes="[10, 20, 50]"
+              layout="total, sizes, prev, pager, next"
+              :total="reasoningPagination.total"
+              @size-change="
+                (size) => handlePageSizeChange(reasoningPagination, loadReasoningLogs, size)
+              "
+              @current-change="
+                (page) => handlePageChange(reasoningPagination, loadReasoningLogs, page)
+              "
+            />
+          </ElCard>
+        </ElTabPane>
+
+        <ElTabPane label="多模型对比" name="compare">
+          <ElRow :gutter="16">
+            <ElCol :xl="10" :lg="10" :md="24" :sm="24" :xs="24">
+              <ElCard shadow="never" class="panel">
+                <template #header>
+                  <div class="panel-header">
+                    <span>对比输入</span>
+                    <ElTag type="info" effect="plain">实验区</ElTag>
+                  </div>
+                </template>
+                <ElForm label-position="top">
+                  <ElFormItem label="问题">
+                    <ElInput
+                      v-model="compareForm.question"
+                      type="textarea"
+                      :rows="4"
+                      maxlength="300"
+                      show-word-limit
+                    />
+                  </ElFormItem>
+                  <ElFormItem label="节点">
+                    <ElInputNumber v-model="compareForm.nodeId" :min="1" :max="69" />
+                  </ElFormItem>
+                  <ElFormItem label="模型">
+                    <ElCheckboxGroup v-model="compareForm.modelCodes">
+                      <ElCheckbox v-for="model in modelOptions" :key="model" :label="model">
+                        {{ model }}
+                      </ElCheckbox>
+                    </ElCheckboxGroup>
+                  </ElFormItem>
+                  <ElButton type="primary" :loading="compareLoading" @click="handleRunCompare">
+                    开始对比
+                  </ElButton>
+                </ElForm>
+                <div v-if="operationIssues.compare" class="section-error local-operation-error">
+                  <div>
+                    <strong>{{ operationIssues.compare.title }}</strong>
+                    <span>{{ operationIssues.compare.message }}</span>
+                  </div>
+                  <ElButton
+                    size="small"
+                    type="primary"
+                    plain
+                    :loading="compareLoading"
+                    @click="handleRunCompare"
+                  >
+                    重试对比
+                  </ElButton>
+                </div>
+
+                <ElDivider />
+                <div v-if="sectionIssues.compare" class="section-error">
+                  <div>
+                    <strong>{{ sectionIssues.compare.title }}</strong>
+                    <span>{{ sectionIssues.compare.message }}</span>
+                  </div>
+                  <ElButton size="small" type="primary" plain @click="loadCompareRuns">
+                    重新加载
+                  </ElButton>
+                </div>
+                <div class="compare-history">
+                  <div
+                    v-for="run in compareRuns"
+                    :key="run.runId"
+                    class="compare-history-item"
+                    @click="handleOpenCompareRun(run)"
+                  >
+                    <strong>{{ run.question }}</strong>
+                    <span>{{ run.modelCodes.join(' / ') }} · {{ run.createdAt }}</span>
+                  </div>
+                </div>
+              </ElCard>
+            </ElCol>
+            <ElCol :xl="14" :lg="14" :md="24" :sm="24" :xs="24">
+              <ElCard shadow="never" class="panel compare-result" v-loading="compareLoading">
+                <template #header>
+                  <div class="panel-header">
+                    <span>对比结果</span>
+                    <ElTag v-if="compareResult" effect="plain">{{ compareResult.runId }}</ElTag>
+                  </div>
+                </template>
+                <ElEmpty v-if="!compareResult" description="运行或选择历史对比后显示结果" />
+                <div v-else class="model-result-list">
+                  <div
+                    v-for="item in compareResult.results"
+                    :key="item.modelCode"
+                    class="model-result-item"
+                  >
+                    <div class="model-result-head">
+                      <strong>{{ item.modelCode }}</strong>
+                      <ElTag :type="item.confidence >= 0.85 ? 'success' : 'warning'" effect="light">
+                        {{ confidencePercent(item.confidence) }}
+                      </ElTag>
+                    </div>
+                    <p>{{ item.answer }}</p>
+                    <span
+                      >{{ item.latencyMs }} ms · 证据 {{ item.evidenceLinkIds.join(', ') }}</span
+                    >
+                  </div>
+                </div>
+              </ElCard>
+            </ElCol>
+          </ElRow>
+        </ElTabPane>
+      </ElTabs>
+
+      <ElDialog
+        v-model="sourceDialogVisible"
+        :title="sourceDialogMode === 'create' ? '新增知识源' : '编辑知识源'"
+        width="min(560px, 92vw)"
+      >
+        <ElForm label-position="top" class="source-form">
+          <div v-if="operationIssues.source" class="section-error local-operation-error">
+            <div>
+              <strong>{{ operationIssues.source.title }}</strong>
+              <span>{{ operationIssues.source.message }}</span>
+            </div>
+            <ElButton
+              size="small"
+              type="primary"
+              plain
+              :loading="actionLoading === 'source-save'"
+              @click="handleSaveSource"
+            >
+              重试保存
+            </ElButton>
+          </div>
+          <ElFormItem label="名称">
+            <ElInput v-model="sourceForm.name" maxlength="80" show-word-limit />
+          </ElFormItem>
+          <ElFormItem label="类型">
+            <ElSelect v-model="sourceForm.sourceType">
+              <ElOption label="标准规范" value="standard" />
+              <ElOption label="项目文件" value="project-file" />
+              <ElOption label="规则 Prompt" value="rule" />
+              <ElOption label="人工维护" value="manual" />
+            </ElSelect>
+          </ElFormItem>
+          <ElFormItem label="版本">
+            <ElInput v-model="sourceForm.version" placeholder="例如 std-v2026.06" />
+          </ElFormItem>
+          <ElRow :gutter="12">
+            <ElCol :span="12">
+              <ElFormItem label="状态">
+                <ElSelect v-model="sourceForm.status">
+                  <ElOption
+                    v-for="status in sourceStatusOptions"
+                    :key="status"
+                    :label="status"
+                    :value="status"
+                  />
+                </ElSelect>
+              </ElFormItem>
+            </ElCol>
+            <ElCol :span="12">
+              <ElFormItem label="向量状态">
+                <ElSelect v-model="sourceForm.vectorStatus">
+                  <ElOption
+                    v-for="status in vectorStatusOptions"
+                    :key="status"
+                    :label="status"
+                    :value="status"
+                  />
+                </ElSelect>
+              </ElFormItem>
+            </ElCol>
+          </ElRow>
+          <ElRow :gutter="12">
+            <ElCol :span="12">
+              <ElFormItem label="文件数">
+                <ElInputNumber v-model="sourceForm.fileCount" :min="0" />
+              </ElFormItem>
+            </ElCol>
+            <ElCol :span="12">
+              <ElFormItem label="切片数">
+                <ElInputNumber v-model="sourceForm.chunkCount" :min="0" />
+              </ElFormItem>
+            </ElCol>
+          </ElRow>
+        </ElForm>
+        <template #footer>
+          <ElButton @click="sourceDialogVisible = false">取消</ElButton>
+          <ElButton
+            type="primary"
+            :loading="actionLoading === 'source-save'"
+            @click="handleSaveSource"
+          >
+            保存
+          </ElButton>
+        </template>
+      </ElDialog>
+
+      <ElDrawer v-model="ruleDiffVisible" title="规则版本差异" size="min(760px, 94vw)">
+        <div v-loading="ruleDiffLoading" class="drawer-content rule-diff-drawer">
+          <div v-if="operationIssues.ruleDiff" class="section-error local-operation-error">
+            <div>
+              <strong>{{ operationIssues.ruleDiff.title }}</strong>
+              <span>{{ operationIssues.ruleDiff.message }}</span>
+            </div>
+            <ElButton
+              size="small"
+              type="primary"
+              plain
+              :loading="ruleDiffLoading"
+              @click="retryRuleDiff"
+            >
+              重新加载
+            </ElButton>
+          </div>
+          <ElEmpty v-if="!ruleDiff && !operationIssues.ruleDiff" description="暂无规则差异" />
+          <template v-if="ruleDiff">
+            <ElDescriptions :column="1" border>
+              <ElDescriptionsItem label="当前版本">{{ ruleDiff.base.version }}</ElDescriptionsItem>
+              <ElDescriptionsItem label="对比版本">{{
+                ruleDiff.target.version
+              }}</ElDescriptionsItem>
+              <ElDescriptionsItem label="规则">{{ ruleDiff.base.name }}</ElDescriptionsItem>
+              <ElDescriptionsItem label="对比时间">{{ ruleDiff.comparedAt }}</ElDescriptionsItem>
+            </ElDescriptions>
+
+            <div class="rule-diff-summary">
+              <div v-for="item in ruleDiffSummaryItems" :key="item.label" class="rule-diff-metric">
+                <span>{{ item.label }}</span>
+                <strong>
+                  {{ item.value }}
+                  <small>项</small>
+                </strong>
+              </div>
+            </div>
+
+            <ElTable
+              :data="ruleDiff.changes"
+              border
+              height="360"
+              empty-text="当前对比未发现字段差异"
+            >
+              <ElTableColumn prop="label" label="字段" width="130" />
+              <ElTableColumn label="类型" width="96">
+                <template #default="{ row }">
+                  <ElTag :type="diffChangeTagType(row.changeType)" effect="light">
+                    {{ diffChangeTypeLabel(row.changeType) }}
+                  </ElTag>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="基线值" min-width="220" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span class="diff-value">{{ formatDiffValue(row.before) }}</span>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="当前值" min-width="220" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span class="diff-value">{{ formatDiffValue(row.after) }}</span>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="关注" width="90">
+                <template #default="{ row }">
+                  <ElTag :type="row.severity === 'warning' ? 'warning' : 'info'" effect="plain">
+                    {{ row.severity === 'warning' ? '需关注' : '信息' }}
+                  </ElTag>
+                </template>
+              </ElTableColumn>
+            </ElTable>
+          </template>
+        </div>
+      </ElDrawer>
+
+      <ElDrawer v-model="fileDrawerVisible" title="文件知识详情" size="58%">
+        <div v-loading="fileDetailLoading" class="drawer-content">
+          <div v-if="operationIssues.fileDetail" class="section-error local-operation-error">
+            <div>
+              <strong>{{ operationIssues.fileDetail.title }}</strong>
+              <span>{{ operationIssues.fileDetail.message }}</span>
+            </div>
+          </div>
+          <ElEmpty v-if="!fileDetail && !operationIssues.fileDetail" description="暂无文件详情" />
+          <template v-if="fileDetail">
+            <ElDescriptions :column="2" border>
+              <ElDescriptionsItem label="文件">{{ fileDetail.file.fileName }}</ElDescriptionsItem>
+              <ElDescriptionsItem label="项目">{{
+                fileDetail.file.projectName || '-'
+              }}</ElDescriptionsItem>
+              <ElDescriptionsItem label="节点">
+                {{ fileDetail.file.nodeId || '-' }} {{ fileDetail.file.nodeName || '' }}
+              </ElDescriptionsItem>
+              <ElDescriptionsItem label="版本">
+                {{ fileDetail.currentVersion?.versionNo || '-' }}
+              </ElDescriptionsItem>
+              <ElDescriptionsItem label="OCR">
+                <ElTag :type="statusType(fileDetail.file.ocrStatus)" effect="light">
+                  {{ fileDetail.file.ocrStatus }}
+                </ElTag>
+              </ElDescriptionsItem>
+              <ElDescriptionsItem label="向量">
+                <ElTag :type="statusType(fileDetail.vectorSummary.vectorStatus)" effect="light">
+                  {{ fileDetail.vectorSummary.vectorStatus }}
+                </ElTag>
+              </ElDescriptionsItem>
+              <ElDescriptionsItem label="索引版本">
+                {{ fileDetail.vectorSummary.indexVersion }}
+              </ElDescriptionsItem>
+              <ElDescriptionsItem label="维度">
+                {{ fileDetail.vectorSummary.dimensions }}
+              </ElDescriptionsItem>
+            </ElDescriptions>
+
+            <ElDivider content-position="left">切片</ElDivider>
+            <ElTable :data="fileChunks" border height="260">
+              <ElTableColumn prop="chunkNo" label="#" width="70" />
+              <ElTableColumn prop="pageNo" label="页码" width="80" />
+              <ElTableColumn prop="text" label="文本" min-width="360" show-overflow-tooltip />
+              <ElTableColumn prop="tokenCount" label="Token" width="90" />
+              <ElTableColumn prop="evidenceLinkId" label="证据" width="130" />
+            </ElTable>
+
+            <ElDivider content-position="left">推理引用</ElDivider>
+            <ElTable :data="fileReferences" border height="220">
+              <ElTableColumn prop="runId" label="Run ID" width="180" />
+              <ElTableColumn prop="nodeId" label="节点" width="70" />
+              <ElTableColumn prop="subject" label="主题" min-width="180" show-overflow-tooltip />
+              <ElTableColumn prop="model" label="模型" width="100" />
+              <ElTableColumn
+                prop="quotedText"
+                label="引用文本"
+                min-width="260"
+                show-overflow-tooltip
+              />
+              <ElTableColumn prop="createdAt" label="时间" width="170" />
+            </ElTable>
+          </template>
+        </div>
+      </ElDrawer>
+
+      <ElDrawer v-model="reasoningDrawerVisible" title="推理链路详情" size="52%">
+        <div v-loading="reasoningDetailLoading" class="drawer-content">
+          <div v-if="operationIssues.reasoningDetail" class="section-error local-operation-error">
+            <div>
+              <strong>{{ operationIssues.reasoningDetail.title }}</strong>
+              <span>{{ operationIssues.reasoningDetail.message }}</span>
+            </div>
+          </div>
+          <ElEmpty
+            v-if="!reasoningDetail && !operationIssues.reasoningDetail"
+            description="暂无推理详情"
+          />
+          <template v-if="reasoningDetail">
+            <ElDescriptions :column="2" border>
+              <ElDescriptionsItem label="Run ID">{{ reasoningDetail.log.id }}</ElDescriptionsItem>
+              <ElDescriptionsItem label="节点">{{ reasoningDetail.log.nodeId }}</ElDescriptionsItem>
+              <ElDescriptionsItem label="模型">{{ reasoningDetail.log.model }}</ElDescriptionsItem>
+              <ElDescriptionsItem label="状态">
+                <ElTag :type="statusType(reasoningDetail.log.status)" effect="light">
+                  {{ reasoningDetail.log.status }}
+                </ElTag>
+              </ElDescriptionsItem>
+              <ElDescriptionsItem label="规则版本">
+                {{ reasoningDetail.log.ruleVersion }}
+              </ElDescriptionsItem>
+              <ElDescriptionsItem label="Prompt">
+                {{ reasoningDetail.log.promptVersion }}
+              </ElDescriptionsItem>
+            </ElDescriptions>
+            <ElDivider content-position="left">模型建议</ElDivider>
+            <div class="reasoning-suggestion">
+              <ElTag :type="statusType(reasoningDetail.log.suggestion.result)" effect="light">
+                {{ reasoningDetail.log.suggestion.result }}
+              </ElTag>
+              <p>{{ reasoningDetail.log.suggestion.opinionDraft }}</p>
+              <ElSpace wrap>
+                <ElTag
+                  v-for="item in reasoningDetail.log.suggestion.manualConfirmItems"
+                  :key="item"
+                  type="warning"
+                  effect="plain"
+                >
+                  {{ item }}
+                </ElTag>
+              </ElSpace>
+            </div>
+            <ElDivider content-position="left">证据</ElDivider>
+            <ElTable :data="reasoningDetail.evidenceLinks" border height="280">
+              <ElTableColumn prop="objectType" label="对象" width="140" />
+              <ElTableColumn prop="fileName" label="文件" min-width="180" show-overflow-tooltip />
+              <ElTableColumn prop="pageNo" label="页码" width="80" />
+              <ElTableColumn prop="fieldName" label="字段" width="120" />
+              <ElTableColumn prop="quotedText" label="文本" min-width="260" show-overflow-tooltip />
+              <ElTableColumn label="置信度" width="100">
+                <template #default="{ row }">{{ confidencePercent(row.confidence) }}</template>
+              </ElTableColumn>
+            </ElTable>
+          </template>
+        </div>
+      </ElDrawer>
+    </StaticPageShell>
+  </div>
+</template>
+
+<style scoped>
+.knowledge-page {
+  min-height: 100vh;
+  padding: 0;
+  color: #1f2937;
+  background: #f5f7fb;
+}
+
+.page-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.page-title {
+  color: #172033;
+  font-size: 27px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.page-subtitle {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #667085;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.metric-card {
+  min-height: 78px;
+  padding: 14px 16px;
+  border: 1px solid #e5e7eb;
+  border-left: 4px solid #64748b;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.metric-card span {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #667085;
+}
+
+.metric-card strong {
+  font-size: 26px;
+  line-height: 32px;
+}
+
+.metric-card--blue {
+  border-left-color: #2563eb;
+}
+
+.metric-card--green {
+  border-left-color: #16a34a;
+}
+
+.metric-card--orange {
+  border-left-color: #f59e0b;
+}
+
+.metric-card--red {
+  border-left-color: #dc2626;
+}
+
+.metric-card--gray {
+  border-left-color: #64748b;
+}
+
+.knowledge-tabs {
+  padding: 0 2px;
+}
+
+.panel {
+  margin-bottom: 16px;
+  border-radius: 8px;
+}
+
+.panel-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+}
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.filter-bar :deep(.el-input),
+.filter-bar :deep(.el-select),
+.filter-bar :deep(.el-input-number) {
+  width: 220px;
+}
+
+.filter-bar.compact :deep(.el-input),
+.filter-bar.compact :deep(.el-select),
+.filter-bar.compact :deep(.el-input-number) {
+  width: 180px;
+}
+
+.table-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-top: 12px;
+  row-gap: 8px;
+}
+
+.section-error {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.section-error strong,
+.section-error span {
+  display: block;
+}
+
+.section-error strong {
+  line-height: 20px;
+}
+
+.section-error span {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 18px;
+  color: #b42318;
+}
+
+.section-error :deep(.el-button) {
+  flex: 0 0 auto;
+}
+
+.local-operation-error {
+  margin-top: 12px;
+}
+
+.source-list,
+.compare-history,
+.model-result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.source-item,
+.compare-history-item,
+.model-result-item {
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.source-item {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.source-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  min-width: 150px;
+}
+
+.source-item strong,
+.compare-history-item strong {
+  display: block;
+  line-height: 20px;
+}
+
+.source-item span,
+.compare-history-item span,
+.model-result-item span {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #667085;
+}
+
+.compare-history-item {
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease;
+}
+
+.compare-history-item:hover {
+  border-color: #409eff;
+  background: #f8fbff;
+}
+
+.retrieval-result,
+.compare-result {
+  min-height: 430px;
+}
+
+.index-version-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.model-result-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.model-result-item p {
+  margin: 10px 0 0;
+  line-height: 22px;
+  color: #344054;
+}
+
+.source-form :deep(.el-select),
+.source-form :deep(.el-input-number),
+.config-form :deep(.el-input),
+.config-form :deep(.el-input-number) {
+  width: 100%;
+}
+
+.config-switch-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.config-switch-list > div {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #344054;
+}
+
+.drawer-content {
+  min-height: 320px;
+}
+
+.rule-diff-drawer :deep(.el-descriptions) {
+  margin-bottom: 16px;
+}
+
+.rule-diff-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.rule-diff-metric {
+  min-height: 76px;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.rule-diff-metric span {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: #667085;
+}
+
+.rule-diff-metric strong {
+  display: block;
+  font-size: 24px;
+  line-height: 28px;
+  color: #1f2937;
+}
+
+.rule-diff-metric small {
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #667085;
+}
+
+.diff-value {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: #344054;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reasoning-suggestion {
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.reasoning-suggestion p {
+  margin: 10px 0;
+  line-height: 22px;
+  color: #344054;
+}
+
+@media (max-width: 768px) {
+  .knowledge-page {
+    padding: 0;
+  }
+
+  .page-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .filter-bar :deep(.el-input),
+  .filter-bar :deep(.el-select),
+  .filter-bar :deep(.el-input-number),
+  .filter-bar.compact :deep(.el-input),
+  .filter-bar.compact :deep(.el-select),
+  .filter-bar.compact :deep(.el-input-number) {
+    width: 100%;
+  }
+
+  .table-pagination {
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .section-error {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .section-error :deep(.el-button) {
+    align-self: flex-start;
+  }
+
+  .source-item {
+    flex-direction: column;
+  }
+
+  .source-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .rule-diff-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .metric-card strong {
+    font-size: 22px;
+  }
+
+  .rule-diff-summary {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

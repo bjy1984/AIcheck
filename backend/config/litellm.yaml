@@ -1,0 +1,25 @@
+model_list:
+  - model_name: default-chat
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: review-chat
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: compare-fast
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: embedding-default
+    litellm_params:
+      model: openai/text-embedding-3-large
+      api_key: os.environ/OPENAI_API_KEY
+
+general_settings:
+  master_key: sk-aicheck-dev
+  database_url: os.environ/DATABASE_URL
+  store_model_in_db: true
+
+router_settings:
+  routing_strategy: simple-shuffle

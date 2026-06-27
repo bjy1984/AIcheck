@@ -1,0 +1,35 @@
+[project]
+name = "aicheck-backend"
+version = "0.1.0"
+description = "AIcheck FastAPI backend, worker, OCR service, and LiteLLM gateway integration."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "pydantic>=2.8.0",
+  "pydantic-settings>=2.4.0",
+  "motor>=3.5.0",
+  "pymongo>=4.8.0",
+  "python-jose[cryptography]>=3.3.0",
+  "passlib[bcrypt]>=1.7.4",
+  "celery>=5.4.0",
+  "redis>=5.0.0",
+  "minio>=7.2.0",
+  "httpx>=0.27.0",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8.2.0",
+  "pytest-asyncio>=0.23.0",
+  "httpx>=0.27.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

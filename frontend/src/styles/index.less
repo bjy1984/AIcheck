@@ -1,0 +1,89 @@
+@import './var.css';
+@import 'element-plus/theme-chalk/dark/css-vars.css';
+
+// 解决抽屉弹出时，body宽度变化的问题
+.el-popup-parent--hidden {
+  width: 100% !important;
+}
+
+html,
+body,
+#app {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.admin-page,
+.knowledge-page,
+.aicheck-static-viewport {
+  --el-color-primary: #1f66d8;
+  --el-color-primary-light-3: #4d89ef;
+  --el-color-primary-light-5: #8fb0df;
+  --el-color-primary-light-7: #bcd4ff;
+  --el-color-primary-light-8: #d8e7ff;
+  --el-color-primary-light-9: #eef5ff;
+  --el-color-primary-dark-2: #174fa8;
+  --el-border-color: #d9e2ef;
+  --el-border-color-light: #e7edf6;
+  --el-border-color-lighter: #eef3f8;
+  --el-border-radius-base: 5px;
+  --el-border-radius-small: 4px;
+  --el-component-size: 36px;
+  --el-font-size-base: 14px;
+  --el-text-color-primary: #26364e;
+  --el-text-color-regular: #52647d;
+  --el-text-color-secondary: #6e7d92;
+  --el-fill-color-light: #f5f8fd;
+  --el-fill-color-lighter: #fbfdff;
+  --el-fill-color-blank: #ffffff;
+}
+
+.admin-page .el-button,
+.knowledge-page .el-button,
+.aicheck-static-viewport .el-button {
+  font-weight: 700;
+}
+
+.admin-page .el-button:focus-visible,
+.knowledge-page .el-button:focus-visible,
+.aicheck-static-viewport .el-button:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(31, 102, 216, 0.14);
+}
+
+.admin-page .el-table,
+.knowledge-page .el-table,
+.aicheck-static-viewport .el-table {
+  --el-table-border-color: #e4ebf5;
+  --el-table-header-bg-color: #f5f8fd;
+  --el-table-header-text-color: #52647d;
+  --el-table-row-hover-bg-color: #f8fbff;
+  --el-table-text-color: #26364e;
+}
+
+.admin-page .el-card,
+.knowledge-page .el-card,
+.aicheck-static-viewport .el-card {
+  --el-card-border-radius: 6px;
+  --el-card-border-color: #d9e2ef;
+}
+
+.admin-page .el-tabs__item,
+.knowledge-page .el-tabs__item {
+  font-weight: 700;
+}
+
+@media (max-width: 768px) {
+  .v-layout__classic > .layout-border__right {
+    width: 0 !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    transition: none !important;
+  }
+
+  .v-layout-content {
+    left: 0 !important;
+    width: 100% !important;
+    transition: none !important;
+  }
+}
