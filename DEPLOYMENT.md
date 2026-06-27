@@ -119,6 +119,44 @@ docker compose ps
 - `worker-service` 会监听队列：`ocr.parse_document`、`ocr.recognize_seals`、`knowledge.slice`、`knowledge.embed`、`inspection.ai_recheck`、`llm.compare`、`export.package`。
 - `litellm-service` 使用 `backend/config/litellm.yaml` 中的模型别名：`default-chat`、`review-chat`、`compare-fast`、`embedding-default`。
 
+### 4.1 角色账号与权限初始化
+
+第一版真实登录已支持五类角色账号。登录成功后前端会根据后端返回的 `defaultPath` 进入对应面板，并通过 `X-Role`、`X-User-Id` 请求头参与后端项目成员和节点范围校验。
+
+| 角色 | 用户名 / 初始密码 | 默认入口 | 说明 |
+| --- | --- | --- | --- |
+| 系统管理员 | `admin` / `admin` | `/admin/overview` | 管理后台、配置、授权、审计；不能代替业务角色保存审查意见。 |
+| 监检人员 | `inspection` / `inspection` | `/workbench/inspection` | 监检审查、AI 复核、报告生成、导出和归档。 |
+| 施工方 | `contractor` / `contractor` | `/workbench/contractor` | 资料上传、节点挂载、提交批次、补正反馈。 |
+| 无损检测 | `ndt` / `ndt` | `/workbench/ndt` | 底片、检测记录、检测报告和补正反馈。 |
+| 建设方 | `owner` / `owner` | `/workbench/owner` | 项目、报告和归档只读查看。 |
+
+部署后运行角色创建脚本，确保 MongoDB 中的后台角色矩阵、用户/单位目录和项目成员授权与登录账号一致：
+
+```bash
+cd backend
+
+# 只预览，不写库
+python scripts/create_roles.py --dry-run --json
+
+# 本机 MongoDB 写入
+AICHECK_MONGO_URL=mongodb://127.0.0.1:27017 \
+AICHECK_MONGO_DB=aicheck \
+python scripts/create_roles.py --project-id P-2026-HDCP-001
+
+# Docker Compose 环境写入
+docker compose exec api-service python scripts/create_roles.py --project-id P-2026-HDCP-001
+```
+
+脚本行为：
+
+- 写入或更新 `admin_configs` singleton 中的 `orgUnits`、`users`、`permissionMatrix`。
+- 写入或更新 `project_members`，同一项目、同一用户、同一角色重复执行时会合并 `nodeScope` 和 `actions`，不会插入覆盖性重复成员。
+- 写入一条 `audit_logs` 记录，便于追溯部署初始化动作。
+- 支持 `--roles admin,inspection` 只初始化部分角色；支持 `--project-id` 指定项目；支持 `--mongo-url` 和 `--db` 覆盖环境变量。
+
+注意：当前登录账号仍由后端内置演示账号提供，脚本负责同步后台目录和项目授权。正式生产接入企业用户中心前，应替换默认密码策略和静态演示账号。
+
 查看日志：
 
 ```bash
@@ -271,9 +309,16 @@ curl http://127.0.0.1:4001/v1/models \
 ```bash
 curl http://127.0.0.1:8000/healthz
 curl http://127.0.0.1:8000/api/workbench/projects
+
 curl -X POST http://127.0.0.1:8000/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"admin"}'
+
+for account in inspection contractor ndt owner admin; do
+  curl -s -X POST http://127.0.0.1:8000/api/auth/login \
+    -H "Content-Type: application/json" \
+    -d "{\"username\":\"${account}\",\"password\":\"${account}\"}" | jq '.data.user.role, .data.user.defaultPath'
+done
 ```
 
 前端 smoke：
@@ -285,8 +330,9 @@ AICHECK_BASE_URL=https://aicheck.example.com pnpm playwright test e2e/aicheck-sm
 
 关键手工验证：
 
-- 登录后能进入 AIcheck 工作台。
+- 五类角色登录后能进入各自默认面板；业务角色访问 `/admin/overview` 会回退到自己的工作台。
 - 项目列表、项目树、节点包、报告、归档页面能正常加载。
+- 管理后台项目成员授权后，业务角色节点范围外 mutation 返回 `FORBIDDEN`。
 - 创建 upload session 返回 MinIO signed PUT URL。
 - 上传完成后 `GET /api/knowledge/tasks` 能看到 OCR/切片/向量任务。
 - 触发 AI 复核后 `GET /api/projects/{projectId}/inspection/nodes/{nodeId}/ai-runs` 能看到运行记录。
