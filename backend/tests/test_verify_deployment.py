@@ -6,7 +6,13 @@ from argparse import Namespace
 import httpx
 import pytest
 
-from scripts.verify_deployment import DeploymentVerifier, VerifyConfig, config_from_args, deployment_probe_pdf
+from scripts.verify_deployment import (
+    DeploymentVerifier,
+    VerifyConfig,
+    config_from_args,
+    deployment_probe_pdf,
+    print_results,
+)
 
 
 probe_state = {"fileName": "deployment-verify-test.pdf", "signedPut": "", "signedGets": []}
@@ -305,6 +311,58 @@ def test_deployment_probe_pdf_contains_text_for_ocr() -> None:
     assert body.startswith(b"%PDF-1.4")
     assert b"AIcheck OCR verifier" in body
     assert b"startxref" in body
+
+
+def test_deployment_verifier_redacts_sensitive_result_fields(capsys) -> None:
+    config = VerifyConfig(
+        api_base="http://api",
+        ocr_base=None,
+        litellm_base=None,
+        litellm_api_key=None,
+        project_id="P-2026-HDCP-001",
+        roles=["admin"],
+        strict_production=True,
+        skip_ocr=True,
+        skip_litellm=True,
+        write_probes=False,
+        ocr_object_probe=False,
+        litellm_provider_probes=False,
+    )
+    verifier = DeploymentVerifier(
+        config,
+        api_client=httpx.Client(base_url=config.api_base, transport=httpx.MockTransport(api_transport)),
+    )
+
+    verifier.add(
+        "redaction",
+        "fail",
+        "Unexpected envelope: {'token': 'sk-secret-litellm', 'authorization': 'Bearer abcdefghijk'}",
+        {
+            "token": "plain-token-value",
+            "storageKey": "documents/DV-VERIFY-V1",
+            "nested": {
+                "api_key": "sk-nested-secret",
+                "diagnostic": "provider said sk-provider-secret",
+            },
+        },
+    )
+    result = verifier.results[0]
+
+    assert "sk-secret-litellm" not in result.detail
+    assert "Bearer abcdefghijk" not in result.detail
+    assert "***" in result.detail
+    assert result.data
+    assert result.data["token"] == "***"
+    assert result.data["storageKey"] == "documents/DV-VERIFY-V1"
+    assert result.data["nested"]["api_key"] == "***"
+    assert "sk-provider-secret" not in result.data["nested"]["diagnostic"]
+
+    print_results(verifier.results, as_json=True)
+    output = capsys.readouterr().out
+    assert "plain-token-value" not in output
+    assert "sk-secret-litellm" not in output
+    assert "sk-nested-secret" not in output
+    assert "sk-provider-secret" not in output
 
 
 def test_deployment_verifier_passes_happy_path() -> None:

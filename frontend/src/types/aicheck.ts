@@ -76,6 +76,8 @@ export type Project = {
   currentNodeId: number
   riskLevel?: '低' | '中' | '高'
   updatedAt: string
+  revision?: number
+  etag?: string
   actions: ActionCode[]
 }
 
@@ -206,6 +208,9 @@ export type ReportVersion = {
   scope: 'currentNode' | 'project'
   nodeIds: number[]
   generatedAt: string
+  revision?: number
+  etag?: string
+  updatedAt?: string
   reviewerName?: string
   previewUrl?: string
   exportUrl?: string
@@ -309,6 +314,11 @@ export type TodoItem = {
   priority: '低' | '中' | '高'
   deadline?: string
   assigneeName?: string
+  completedAt?: string
+  deferredUntil?: string
+  updatedAt?: string
+  revision?: number
+  etag?: string
   actions: ActionCode[]
 }
 
@@ -321,6 +331,10 @@ export type MessageItem = {
   targetId?: string
   read: boolean
   createdAt: string
+  readAt?: string
+  updatedAt?: string
+  revision?: number
+  etag?: string
 }
 
 export type SearchResult = {

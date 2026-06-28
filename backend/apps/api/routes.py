@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok, page, server_time
 from libs.db.repository import repo
-from libs.db.seed import PROJECT_ID, ROLE_ACTIONS, ROLE_NODE_MAP
+from libs.db.seed import PROJECT_ID, ROLE_NODE_MAP
 from libs.integrations import task_dispatcher
 from libs.security.auth import ROLE_DEFAULT_PATHS, USERS, authenticate, decode_token, issue_token, user_by_username
 
@@ -46,6 +46,7 @@ ALLOWED_UPLOAD_TYPES = {
     "application/x-7z-compressed",
 }
 ALLOWED_NDT_UPLOAD_TYPES = ALLOWED_UPLOAD_TYPES | {"dcm", "dicom", "application/dicom"}
+CONFIG_METADATA_FIELDS = {"revision", "etag", "updatedAt", "lastPublishedVersion", "lastPublishedAt", "lastPublishedScope"}
 
 
 def role_from_query(role: str | None = None, x_role: str | None = None) -> str:
@@ -124,7 +125,10 @@ def mutation_guard(
             return fail(errors.NOT_FOUND, request)
         if project.get("status") == "已归档":
             return fail(errors.ARCHIVED_READONLY, request)
-        if if_match and if_match not in {"*", str(project.get("revision")), f"W/\"{project.get('revision')}\""}:
+        effective_if_match = if_match
+        if effective_if_match is None and "/reports/" not in request.url.path:
+            effective_if_match = request.headers.get("If-Match")
+        if not project_if_match_valid(project, effective_if_match):
             return fail(errors.ETAG_CONFLICT, request)
         node_scope_error = member_node_scope_error(request, project_id, effective_role, node_ids=node_ids)
         if node_scope_error:
@@ -230,6 +234,117 @@ def report_node_ids(project_id: str, report_id: str) -> list[int]:
     if not report or report.get("projectId") != project_id:
         return []
     return [int(item) for item in report.get("nodeIds") or []]
+
+
+def project_revision(project: dict[str, Any]) -> int:
+    return int(project.get("revision") or 1)
+
+
+def project_etag(project: dict[str, Any]) -> str:
+    return f'W/"project-{project["id"]}-r{project_revision(project)}"'
+
+
+def project_if_match_valid(project: dict[str, Any], if_match: str | None) -> bool:
+    if not if_match:
+        return True
+    revision = project_revision(project)
+    return if_match in {"*", str(revision), f'W/"{revision}"', project_etag(project)}
+
+
+def versioned_project(project: dict[str, Any]) -> dict[str, Any]:
+    cloned = repo.clone(project)
+    cloned["revision"] = project_revision(project)
+    cloned["etag"] = project_etag(project)
+    return cloned
+
+
+def report_etag(report: dict[str, Any]) -> str:
+    revision = int(report.get("revision") or 1)
+    return str(report.get("etag") or f'W/"report-{report["id"]}-r{revision}"')
+
+
+def versioned_report(report: dict[str, Any]) -> dict[str, Any]:
+    cloned = repo.clone(report)
+    cloned["revision"] = int(report.get("revision") or 1)
+    cloned["etag"] = report_etag(report)
+    cloned["updatedAt"] = cloned.get("updatedAt") or cloned.get("generatedAt")
+    return cloned
+
+
+def report_if_match_valid(report: dict[str, Any], if_match: str | None) -> bool:
+    if not if_match:
+        return True
+    revision = int(report.get("revision") or 1)
+    return if_match in {"*", str(revision), f'W/"{revision}"', report_etag(report)}
+
+
+def singleton_revision(config: dict[str, Any]) -> int:
+    return int(config.get("revision") or 1)
+
+
+def singleton_etag(prefix: str, config: dict[str, Any]) -> str:
+    return f'W/"{prefix}-r{singleton_revision(config)}"'
+
+
+def versioned_singleton(prefix: str, config: dict[str, Any]) -> dict[str, Any]:
+    cloned = repo.clone(config)
+    cloned["revision"] = singleton_revision(config)
+    cloned["etag"] = singleton_etag(prefix, config)
+    cloned["updatedAt"] = cloned.get("updatedAt") or server_time()
+    return cloned
+
+
+def singleton_if_match_valid(prefix: str, config: dict[str, Any], if_match: str | None) -> bool:
+    if not if_match:
+        return True
+    revision = singleton_revision(config)
+    return if_match in {"*", str(revision), f'W/"{revision}"', singleton_etag(prefix, config)}
+
+
+def bump_singleton_revision(config: dict[str, Any]) -> None:
+    config["revision"] = singleton_revision(config) + 1
+    config["updatedAt"] = server_time()
+
+
+def record_revision(record: dict[str, Any]) -> int:
+    return int(record.get("revision") or 1)
+
+
+def record_etag(prefix: str, record: dict[str, Any]) -> str:
+    return f'W/"{prefix}-{record["id"]}-r{record_revision(record)}"'
+
+
+def versioned_record(prefix: str, record: dict[str, Any]) -> dict[str, Any]:
+    cloned = repo.clone(record)
+    cloned["revision"] = record_revision(record)
+    cloned["etag"] = record_etag(prefix, record)
+    cloned["updatedAt"] = cloned.get("updatedAt") or cloned.get("finishedAt") or cloned.get("createdAt") or server_time()
+    return cloned
+
+
+def record_if_match_valid(prefix: str, record: dict[str, Any], if_match: str | None) -> bool:
+    if not if_match:
+        return True
+    revision = record_revision(record)
+    return if_match in {"*", str(revision), f'W/"{revision}"', record_etag(prefix, record)}
+
+
+def bump_record_revision(record: dict[str, Any]) -> None:
+    record["revision"] = record_revision(record) + 1
+    record["updatedAt"] = server_time()
+
+
+def ndt_submission_node_ids(project_id: str, body: dict[str, Any]) -> list[int]:
+    node_ids = set(node_ids_from_body(body, 40))
+    for report_id in body.get("reportIds") or []:
+        report = repo.find_one("ndt_reports", str(report_id))
+        if report and report.get("projectId") == project_id:
+            node_ids.update(record_node_ids(project_id, report))
+    for film_id in body.get("filmIds") or []:
+        film = repo.find_one("ndt_films", str(film_id))
+        if film and film.get("projectId") == project_id:
+            node_ids.update(record_node_ids(project_id, film))
+    return sorted(node_ids)
 
 
 def authorized_node_scope(request: Request, project_id: str) -> set[int] | None:
@@ -633,6 +748,7 @@ def project_member_snapshot(project_id: str, role: str, user_id: str | None = No
         "actions": repo.role_actions(role),
         "status": "启用",
         "updatedAt": server_time(),
+        "revision": 1,
     }
 
 
@@ -640,7 +756,7 @@ def project_detail_payload(project_id: str, request: Request | None = None) -> d
     project = repo.require_project(project_id)
     if not project:
         return None
-    members = [repo.clone(item) for item in repo.state["project_members"] if item["projectId"] == project_id]
+    members = [versioned_record("project-member", item) for item in repo.state["project_members"] if item["projectId"] == project_id]
     if request is not None and getattr(request.state, "auth", None) and getattr(request.state, "auth", {}).get("role") != "admin":
         current_user_id = request_user_id(request)
         members = [item for item in members if item.get("userId") == current_user_id]
@@ -659,7 +775,7 @@ def project_detail_payload(project_id: str, request: Request | None = None) -> d
             }
         )
     return {
-        "project": repo.clone(project),
+        "project": versioned_project(project),
         "members": members,
         "participantUnits": [
             {"unitType": "owner", "unitName": project["ownerOrgName"], "contactName": "赵经理", "contactPhone": "13800000001"},
@@ -812,11 +928,6 @@ def permission_resources(request: Request):
     return ok(repo.state["admin_config"]["permissionMatrix"], request)
 
 
-@router.post("/auth/logout")
-def auth_logout(request: Request):
-    return ok(None, request)
-
-
 @router.get("/workbench/projects")
 def list_workbench_projects(
     request: Request,
@@ -827,12 +938,12 @@ def list_workbench_projects(
     if role_error:
         return role_error
     items = [item for item in repo.state["projects"] if project_visible_for_request(request, item["id"])]
-    return ok([repo.project_for_role(item, resolved_role) for item in items], request)
+    return ok([versioned_project(repo.project_for_role(item, resolved_role)) for item in items], request)
 
 
 @router.get("/projects")
 def list_projects(request: Request, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), keyword: str | None = None):
-    items = [repo.clone(item) for item in repo.state["projects"] if project_visible_for_request(request, item["id"])]
+    items = [versioned_project(item) for item in repo.state["projects"] if project_visible_for_request(request, item["id"])]
     items = filter_keyword(items, keyword, ["name", "code", "region"])
     return ok(page(items, page_no, page_size), request)
 
@@ -851,18 +962,31 @@ def get_project_detail(request: Request, project_id: str):
 
 
 @router.patch("/projects/{project_id}")
-def update_project(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict), x_role: str | None = Header(default=None, alias="X-Role"), if_match: str | None = Header(default=None, alias="If-Match")):
-    guard = mutation_guard(request, project_id, x_role=x_role, if_match=if_match)
-    if guard:
-        return guard
-    project = repo.require_project(project_id)
-    changed = []
-    for field in ["name", "type", "region", "ownerOrgName", "contractorOrgName", "ndtOrgName", "inspectionOrgName"]:
-        if field in body:
-            changed.append({"field": field, "before": project.get(field), "after": body[field]})
-            project[field] = body[field]
-    repo.touch_project(project_id)
-    return ok({"project": repo.clone(project), **repo.mutation_result("更新项目", "Project", project_id, changed=changed)}, request)
+def update_project(
+    request: Request,
+    project_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, if_match=if_match)
+        if guard:
+            return guard
+        project = repo.require_project(project_id)
+        if not project:
+            return fail(errors.NOT_FOUND, request)
+        changed = []
+        for field in ["name", "type", "region", "ownerOrgName", "contractorOrgName", "ndtOrgName", "inspectionOrgName"]:
+            if field in body and project.get(field) != body[field]:
+                changed.append({"field": field, "before": project.get(field), "after": body[field]})
+                project[field] = body[field]
+        if changed:
+            repo.touch_project(project_id)
+        return ok({"project": versioned_project(project), **repo.mutation_result("更新项目", "Project", project_id, changed=changed)}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"projectId": project_id, "body": body})
 
 
 @router.get("/projects/{project_id}/participants")
@@ -874,25 +998,46 @@ def list_participants(request: Request, project_id: str):
 
 
 @router.post("/projects/{project_id}/participants")
-def save_participant(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
-    if guard:
-        return guard
-    participant_id = body.get("id") or f"PU-{uuid4().hex[:8].upper()}"
-    return ok(repo.mutation_result("保存参建单位", "ProjectUnit", participant_id), request)
+def save_participant(
+    request: Request,
+    project_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role)
+        if guard:
+            return guard
+        participant_id = body.get("id") or f"PU-{uuid4().hex[:8].upper()}"
+        repo.touch_project(project_id)
+        return ok({**repo.mutation_result("保存参建单位", "ProjectUnit", participant_id), "project": versioned_project(repo.require_project(project_id))}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"projectId": project_id, "body": body})
 
 
 @router.patch("/projects/{project_id}/participants/{participant_id}")
-def update_participant(request: Request, project_id: str, participant_id: str, body: dict[str, Any] = Body(default_factory=dict), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
-    if guard:
-        return guard
-    return ok(repo.mutation_result("更新参建单位", "ProjectUnit", participant_id, changed=[{"field": "values", "after": body}]), request)
+def update_participant(
+    request: Request,
+    project_id: str,
+    participant_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role)
+        if guard:
+            return guard
+        repo.touch_project(project_id)
+        return ok({**repo.mutation_result("更新参建单位", "ProjectUnit", participant_id, changed=[{"field": "values", "after": body}]), "project": versioned_project(repo.require_project(project_id))}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"projectId": project_id, "participantId": participant_id, "body": body})
 
 
 @router.get("/projects/{project_id}/members")
 def list_project_members(request: Request, project_id: str, role: str | None = None, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    items = [repo.clone(item) for item in repo.state["project_members"] if item["projectId"] == project_id]
+    items = [versioned_record("project-member", item) for item in repo.state["project_members"] if item["projectId"] == project_id]
     if role:
         items = [item for item in items if item["role"] == role]
     return ok(page(items, page_no, page_size), request)
@@ -900,11 +1045,10 @@ def list_project_members(request: Request, project_id: str, role: str | None = N
 
 @router.post("/projects/{project_id}/members")
 def authorize_member(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
-    if guard:
-        return guard
-
     def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role)
+        if guard:
+            return guard
         role = body.get("role", "inspection")
         user = admin_user_snapshot(body.get("userId"), role)
         user_id = body.get("userId") or user["id"]
@@ -932,8 +1076,10 @@ def authorize_member(request: Request, project_id: str, body: dict[str, Any] = B
                     "updatedAt": server_time(),
                 }
             )
+            bump_record_revision(existing)
+            repo.touch_project(project_id)
             audit_id = repo.add_audit("更新项目成员授权", "ProjectMember", existing["id"])
-            return ok({"member": repo.clone(existing), "auditLogId": audit_id}, request)
+            return ok({"member": versioned_record("project-member", existing), "auditLogId": audit_id}, request)
 
         member = {
             "id": f"PM-{uuid4().hex[:8].upper()}",
@@ -947,10 +1093,12 @@ def authorize_member(request: Request, project_id: str, body: dict[str, Any] = B
             "status": "启用",
             "expiresAt": body.get("expiresAt"),
             "updatedAt": server_time(),
+            "revision": 1,
         }
         repo.state["project_members"].insert(0, member)
+        repo.touch_project(project_id)
         audit_id = repo.add_audit("项目成员授权", "ProjectMember", member["id"])
-        return ok({"member": member, "auditLogId": audit_id}, request)
+        return ok({"member": versioned_record("project-member", member), "auditLogId": audit_id}, request)
 
     return idempotent(
         request,
@@ -961,29 +1109,53 @@ def authorize_member(request: Request, project_id: str, body: dict[str, Any] = B
 
 
 @router.put("/projects/{project_id}/members/{member_id}")
-def update_member(request: Request, project_id: str, member_id: str, body: dict[str, Any] = Body(default_factory=dict), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
-    if guard:
-        return guard
-    member = repo.find_one("project_members", member_id)
-    if not member:
-        return fail(errors.NOT_FOUND, request, message="项目成员不存在。")
-    changed = []
-    for field in ["role", "nodeScope", "actions", "status", "expiresAt"]:
-        if field in body:
-            changed.append({"field": field, "before": member.get(field), "after": body[field]})
-            member[field] = body[field]
-    member["updatedAt"] = server_time()
-    audit_id = repo.add_audit("更新项目成员授权", "ProjectMember", member_id)
-    return ok({"member": repo.clone(member), "auditLogId": audit_id, "changed": changed}, request)
+def update_member(
+    request: Request,
+    project_id: str,
+    member_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, if_match="*")
+        if guard:
+            return guard
+        member = repo.find_one("project_members", member_id)
+        if not member or member.get("projectId") != project_id:
+            return fail(errors.NOT_FOUND, request, message="项目成员不存在。")
+        if not record_if_match_valid("project-member", member, if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        changed = []
+        for field in ["role", "nodeScope", "actions", "status", "expiresAt"]:
+            if field in body and member.get(field) != body[field]:
+                changed.append({"field": field, "before": member.get(field), "after": body[field]})
+                member[field] = body[field]
+        if changed:
+            bump_record_revision(member)
+            repo.touch_project(project_id)
+        audit_id = repo.add_audit("更新项目成员授权", "ProjectMember", member_id)
+        return ok({"member": versioned_record("project-member", member), "auditLogId": audit_id, "changed": changed}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"memberId": member_id, "body": body})
 
 
 @router.post("/projects/{project_id}/initialize-workflow")
-def initialize_workflow(request: Request, project_id: str, x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
-    if guard:
-        return guard
-    return ok({**repo.mutation_result("初始化 69 节点流程", "Project", project_id), "createdNodeCount": 69}, request)
+def initialize_workflow(
+    request: Request,
+    project_id: str,
+    x_role: str | None = Header(default=None, alias="X-Role"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role)
+        if guard:
+            return guard
+        repo.touch_project(project_id, "草稿/立项中", 1)
+        return ok({**repo.mutation_result("初始化 69 节点流程", "Project", project_id), "createdNodeCount": 69, "project": versioned_project(repo.require_project(project_id))}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"projectId": project_id})
 
 
 @router.get("/projects/{project_id}/workbench/context")
@@ -1176,11 +1348,10 @@ def create_upload_session(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     x_role: str | None = Header(default=None, alias="X-Role"),
 ):
-    guard = mutation_guard(request, project_id, x_role=x_role)
-    if guard:
-        return guard
-
     def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role)
+        if guard:
+            return guard
         files = body.get("files") or []
         validation_error = validate_upload_files(request, files)
         if validation_error:
@@ -1198,26 +1369,36 @@ def create_upload_session(
 
 
 @router.post("/projects/{project_id}/documents/upload-session/{session_id}/complete")
-def complete_upload_session(request: Request, project_id: str, session_id: str, body: dict[str, Any] = Body(default_factory=dict), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
-    if guard:
-        return guard
-    session = repo.find_one("upload_sessions", session_id)
-    if not session or session.get("projectId") != project_id:
-        return fail(errors.NOT_FOUND, request)
-    files = repo.complete_upload_session(session_id)
-    dispatches = []
-    for file in files:
-        dispatches.append(
-            task_dispatcher.dispatch_parse_document(
-                file["documentId"],
-                file["documentVersionId"],
-                file["storageKey"],
-                file.get("fileName"),
+def complete_upload_session(
+    request: Request,
+    project_id: str,
+    session_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role)
+        if guard:
+            return guard
+        session = repo.find_one("upload_sessions", session_id)
+        if not session or session.get("projectId") != project_id:
+            return fail(errors.NOT_FOUND, request)
+        files = repo.complete_upload_session(session_id)
+        dispatches = []
+        for file in files:
+            dispatches.append(
+                task_dispatcher.dispatch_parse_document(
+                    file["documentId"],
+                    file["documentVersionId"],
+                    file["storageKey"],
+                    file.get("fileName"),
+                )
             )
-        )
-    result = repo.mutation_result("完成上传会话", "UploadSession", session_id, next_status="排队中")
-    return ok({**result, "queuedTasks": dispatches, "fileCount": len(files)}, request)
+        result = repo.mutation_result("完成上传会话", "UploadSession", session_id, next_status="排队中")
+        return ok({**result, "queuedTasks": dispatches, "fileCount": len(files)}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"sessionId": session_id, "body": body})
 
 
 @router.get("/projects/{project_id}/documents/{document_id}")
@@ -1276,36 +1457,46 @@ def document_review_feedback(request: Request, project_id: str, document_id: str
 
 
 @router.post("/projects/{project_id}/documents/{document_id}/versions")
-def append_document_version(request: Request, project_id: str, document_id: str, body: dict[str, Any] = Body(default_factory=dict), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=document_node_ids(project_id, document_id))
-    if guard:
-        return guard
-    document = repo.find_one("documents", document_id)
-    if not document or document.get("projectId") != project_id:
-        return fail(errors.NOT_FOUND, request)
-    version_id = f"DV-{uuid4().hex[:8].upper()}-V{len(repo.versions_for_document(document_id)) + 1}"
-    for version in repo.state["versions"]:
-        if version["documentId"] == document_id:
-            version["isCurrent"] = False
-    version = {
-        "id": version_id,
-        "documentId": document_id,
-        "versionNo": f"V{len(repo.versions_for_document(document_id)) + 1}",
-        "hash": f"mock-sha256-{version_id}",
-        "fileSize": int(body.get("fileSize") or 245760),
-        "storageKey": f"documents/{project_id}/{version_id}",
-        "ocrStatus": "排队中",
-        "sliceStatus": "未切片",
-        "vectorStatus": "未向量化",
-        "uploaderName": "李工",
-        "uploadTime": server_time(),
-        "isCurrent": True,
-    }
-    repo.state["versions"].insert(0, version)
-    document["currentVersionId"] = version_id
-    document["fileStatus"] = "已追加版本" if body.get("mode") == "append" else "已替换"
-    document["updatedAt"] = server_time()
-    return ok({"version": version, **repo.mutation_result("新增文件版本", "DocumentVersion", version_id, next_status=document["fileStatus"])}, request)
+def append_document_version(
+    request: Request,
+    project_id: str,
+    document_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=document_node_ids(project_id, document_id))
+        if guard:
+            return guard
+        document = repo.find_one("documents", document_id)
+        if not document or document.get("projectId") != project_id:
+            return fail(errors.NOT_FOUND, request)
+        version_id = f"DV-{uuid4().hex[:8].upper()}-V{len(repo.versions_for_document(document_id)) + 1}"
+        for version in repo.state["versions"]:
+            if version["documentId"] == document_id:
+                version["isCurrent"] = False
+        version = {
+            "id": version_id,
+            "documentId": document_id,
+            "versionNo": f"V{len(repo.versions_for_document(document_id)) + 1}",
+            "hash": f"mock-sha256-{version_id}",
+            "fileSize": int(body.get("fileSize") or 245760),
+            "storageKey": f"documents/{project_id}/{version_id}",
+            "ocrStatus": "排队中",
+            "sliceStatus": "未切片",
+            "vectorStatus": "未向量化",
+            "uploaderName": "李工",
+            "uploadTime": server_time(),
+            "isCurrent": True,
+        }
+        repo.state["versions"].insert(0, version)
+        document["currentVersionId"] = version_id
+        document["fileStatus"] = "已追加版本" if body.get("mode") == "append" else "已替换"
+        document["updatedAt"] = server_time()
+        return ok({"version": version, **repo.mutation_result("新增文件版本", "DocumentVersion", version_id, next_status=document["fileStatus"])}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"documentId": document_id, "body": body})
 
 
 @router.post("/projects/{project_id}/documents/bindings")
@@ -1317,11 +1508,11 @@ def bind_documents(
     x_role: str | None = Header(default=None, alias="X-Role"),
 ):
     node_ids = node_ids_from_body(body, ROLE_NODE_MAP["contractor"])
-    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
-    if guard:
-        return guard
 
     def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
+        if guard:
+            return guard
         binding_inputs = body.get("bindings") or []
         if not binding_inputs:
             return fail(errors.EMPTY_BINDINGS, request)
@@ -1366,70 +1557,119 @@ def bind_documents(
 
 
 @router.patch("/projects/{project_id}/documents/bindings/{binding_id}")
-def update_binding(request: Request, project_id: str, binding_id: str, body: dict[str, Any] = Body(default_factory=dict), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=binding_node_ids(project_id, binding_id))
-    if guard:
-        return guard
-    binding = repo.find_one("bindings", binding_id)
-    if not binding or binding.get("projectId") != project_id:
-        return fail(errors.NOT_FOUND, request)
-    changed = []
-    for field in ["requirementId", "requirementName", "usage", "bindingStatus"]:
-        if field in body:
-            changed.append({"field": field, "before": binding.get(field), "after": body[field]})
-            binding[field] = body[field]
-    return ok(repo.mutation_result("更新挂载关系", "NodeFileBinding", binding_id, changed=changed), request)
+def update_binding(
+    request: Request,
+    project_id: str,
+    binding_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=binding_node_ids(project_id, binding_id))
+        if guard:
+            return guard
+        binding = repo.find_one("bindings", binding_id)
+        if not binding or binding.get("projectId") != project_id:
+            return fail(errors.NOT_FOUND, request)
+        changed = []
+        for field in ["requirementId", "requirementName", "usage", "bindingStatus"]:
+            if field in body and binding.get(field) != body[field]:
+                changed.append({"field": field, "before": binding.get(field), "after": body[field]})
+                binding[field] = body[field]
+        return ok({**repo.mutation_result("更新挂载关系", "NodeFileBinding", binding_id, changed=changed), "binding": repo.clone(binding)}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"bindingId": binding_id, "body": body})
 
 
 @router.delete("/projects/{project_id}/documents/bindings/{binding_id}")
-def delete_binding(request: Request, project_id: str, binding_id: str, x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=binding_node_ids(project_id, binding_id))
-    if guard:
-        return guard
-    binding = repo.find_one("bindings", binding_id)
-    if not binding or binding.get("projectId") != project_id:
-        return fail(errors.NOT_FOUND, request)
-    before = len(repo.state["bindings"])
-    repo.state["bindings"] = [item for item in repo.state["bindings"] if item["id"] != binding_id]
-    if len(repo.state["bindings"]) == before:
-        return fail(errors.NOT_FOUND, request)
-    return ok(repo.mutation_result("解除草稿挂载", "NodeFileBinding", binding_id, next_status="已解除挂载"), request)
+def delete_binding(
+    request: Request,
+    project_id: str,
+    binding_id: str,
+    x_role: str | None = Header(default=None, alias="X-Role"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=binding_node_ids(project_id, binding_id))
+        if guard:
+            return guard
+        binding = repo.find_one("bindings", binding_id)
+        if not binding or binding.get("projectId") != project_id:
+            return fail(errors.NOT_FOUND, request)
+        before = len(repo.state["bindings"])
+        repo.state["bindings"] = [item for item in repo.state["bindings"] if item["id"] != binding_id]
+        if len(repo.state["bindings"]) == before:
+            return fail(errors.NOT_FOUND, request)
+        return ok({**repo.mutation_result("解除草稿挂载", "NodeFileBinding", binding_id, next_status="已解除挂载"), "binding": repo.clone(binding)}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"bindingId": binding_id})
 
 
 @router.post("/projects/{project_id}/documents/{document_id}/withdraw")
-def withdraw_document(request: Request, project_id: str, document_id: str, x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=document_node_ids(project_id, document_id))
-    if guard:
-        return guard
-    doc = repo.find_one("documents", document_id)
-    if not doc or doc.get("projectId") != project_id:
-        return fail(errors.NOT_FOUND, request)
-    doc["fileStatus"] = "已撤回"
-    return ok(repo.mutation_result("撤回文件", "Document", document_id, next_status="已撤回"), request)
+def withdraw_document(
+    request: Request,
+    project_id: str,
+    document_id: str,
+    x_role: str | None = Header(default=None, alias="X-Role"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=document_node_ids(project_id, document_id))
+        if guard:
+            return guard
+        doc = repo.find_one("documents", document_id)
+        if not doc or doc.get("projectId") != project_id:
+            return fail(errors.NOT_FOUND, request)
+        doc["fileStatus"] = "已撤回"
+        doc["updatedAt"] = server_time()
+        return ok({**repo.mutation_result("撤回文件", "Document", document_id, next_status="已撤回"), "document": repo.clone(doc)}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"documentId": document_id})
 
 
 @router.post("/projects/{project_id}/documents/{document_id}/void")
-def void_document(request: Request, project_id: str, document_id: str, x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=document_node_ids(project_id, document_id))
-    if guard:
-        return guard
-    doc = repo.find_one("documents", document_id)
-    if not doc or doc.get("projectId") != project_id:
-        return fail(errors.NOT_FOUND, request)
-    doc["fileStatus"] = "已作废"
-    return ok(repo.mutation_result("作废文件", "Document", document_id, next_status="已作废"), request)
+def void_document(
+    request: Request,
+    project_id: str,
+    document_id: str,
+    x_role: str | None = Header(default=None, alias="X-Role"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=document_node_ids(project_id, document_id))
+        if guard:
+            return guard
+        doc = repo.find_one("documents", document_id)
+        if not doc or doc.get("projectId") != project_id:
+            return fail(errors.NOT_FOUND, request)
+        doc["fileStatus"] = "已作废"
+        doc["updatedAt"] = server_time()
+        return ok({**repo.mutation_result("作废文件", "Document", document_id, next_status="已作废"), "document": repo.clone(doc)}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"documentId": document_id})
 
 
 @router.post("/projects/{project_id}/documents/batch-classify")
-def batch_classify_documents(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
-    if guard:
-        return guard
-    suggestions = [
-        {"documentId": doc["id"], "fileName": doc["fileName"], "suggestedNodeIds": [24 if "焊工" in doc["fileName"] else 16], "confidence": 0.82}
-        for doc in repo.project_documents(project_id)
-    ]
-    return ok({"suggestions": suggestions}, request)
+def batch_classify_documents(
+    request: Request,
+    project_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role)
+        if guard:
+            return guard
+        suggestions = [
+            {"documentId": doc["id"], "fileName": doc["fileName"], "suggestedNodeIds": [24 if "焊工" in doc["fileName"] else 16], "confidence": 0.82}
+            for doc in repo.project_documents(project_id)
+        ]
+        audit_id = repo.add_audit("批量资料智能分类", "Document", project_id)
+        return ok({"suggestions": suggestions, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"projectId": project_id, "body": body})
 
 
 @router.post("/projects/{project_id}/submissions/drafts")
@@ -1441,11 +1681,11 @@ def save_submission_draft(
     x_role: str | None = Header(default=None, alias="X-Role"),
 ):
     node_ids = node_ids_from_body(body, ROLE_NODE_MAP["contractor"])
-    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
-    if guard:
-        return guard
 
     def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
+        if guard:
+            return guard
         draft_id = f"DRAFT-{uuid4().hex[:8].upper()}"
         binding_ids = scoped_binding_ids(project_id, node_ids, body.get("bindingIds") or [])
         if not binding_ids:
@@ -1524,11 +1764,11 @@ def submit_node_package(
     x_role: str | None = Header(default=None, alias="X-Role"),
 ):
     node_ids = node_ids_from_body(body, ROLE_NODE_MAP["contractor"])
-    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
-    if guard:
-        return guard
 
     def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
+        if guard:
+            return guard
         submission_id = f"SUB-{uuid4().hex[:8].upper()}"
         snapshot_id = f"SNAP-{uuid4().hex[:8].upper()}"
         binding_ids = scoped_binding_ids(project_id, node_ids, body.get("bindingIds") or [])
@@ -1583,7 +1823,18 @@ def get_submission_detail(request: Request, project_id: str, submission_id: str)
     bindings = [item for item in repo.bindings_for_project(project_id) if item["id"] in set(submission.get("bindingIds", []))]
     nodes = [repo.node(project_id, node_id) for node_id in submission.get("nodeIds", [])]
     todos = [item for item in repo.state["todos"] if item["id"] in set(submission.get("createdTodoIds", []))]
-    return ok({**submission_summary(submission), "nodes": [repo.clone(item) for item in nodes if item], "bindings": bindings, "createdTodos": todos, "changed": submission.get("changed", [])}, request)
+    return ok(
+        {
+            **submission_summary(submission),
+            "submissionType": submission.get("submissionType", "document"),
+            "nodes": [repo.clone(item) for item in nodes if item],
+            "bindings": bindings,
+            "createdTodos": todos,
+            "changed": submission.get("changed", []),
+            "snapshot": repo.clone(submission.get("snapshot")),
+        },
+        request,
+    )
 
 
 @router.post("/projects/{project_id}/submissions/{submission_id}/withdraw-items")
@@ -1595,11 +1846,10 @@ def withdraw_submission_items(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     x_role: str | None = Header(default=None, alias="X-Role"),
 ):
-    guard = mutation_guard(request, project_id, x_role=x_role)
-    if guard:
-        return guard
-
     def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role)
+        if guard:
+            return guard
         binding_ids = [str(item) for item in (body.get("bindingIds") or []) if item]
         if not binding_ids:
             return fail(errors.EMPTY_BINDINGS, request)
@@ -1664,11 +1914,11 @@ def submit_rectification(
     x_role: str | None = Header(default=None, alias="X-Role"),
 ):
     node_ids = node_ids_from_body(body, ROLE_NODE_MAP["contractor"])
-    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
-    if guard:
-        return guard
 
     def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
+        if guard:
+            return guard
         node_id = node_ids[0] if node_ids else ROLE_NODE_MAP["contractor"]
         node = repo.node(project_id, node_id)
         if not node:
@@ -1782,14 +2032,28 @@ def workflow_timeline(request: Request, project_id: str):
 
 
 @router.post("/projects/{project_id}/inspection/nodes/{node_id}/attachments")
-def inspection_attachments(request: Request, project_id: str, node_id: int, body: dict[str, Any] = Body(default_factory=dict), x_role: str | None = Header(default=None, alias="X-Role")):
-    return create_upload_session(request, project_id, {"files": body.get("files") or [{"fileName": "监检资料.pdf", "fileSize": 245760, "fileType": "application/pdf"}]}, None, x_role)
+def inspection_attachments(
+    request: Request,
+    project_id: str,
+    node_id: int,
+    body: dict[str, Any] = Body(default_factory=dict),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return create_upload_session(request, project_id, {"files": body.get("files") or [{"fileName": "监检资料.pdf", "fileSize": 245760, "fileType": "application/pdf"}]}, idempotency_key, x_role)
 
 
 @router.post("/projects/{project_id}/inspection/nodes/{node_id}/file-bindings")
-def inspection_file_bindings(request: Request, project_id: str, node_id: int, body: dict[str, Any] = Body(default_factory=dict), x_role: str | None = Header(default=None, alias="X-Role")):
+def inspection_file_bindings(
+    request: Request,
+    project_id: str,
+    node_id: int,
+    body: dict[str, Any] = Body(default_factory=dict),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
     body = {**body, "nodeId": node_id}
-    return bind_documents(request, project_id, body, None, x_role)
+    return bind_documents(request, project_id, body, idempotency_key, x_role)
 
 
 @router.post("/projects/{project_id}/inspection/nodes/{node_id}/ai-recheck")
@@ -1800,11 +2064,10 @@ def ai_recheck(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     x_role: str | None = Header(default=None, alias="X-Role"),
 ):
-    guard = mutation_guard(request, project_id, x_role=x_role)
-    if guard:
-        return guard
-
     def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
+        if guard:
+            return guard
         run_id = f"AIRUN-{node_id}-{uuid4().hex[:8].upper()}"
         node = repo.node(project_id, node_id)
         run = {
@@ -1857,11 +2120,10 @@ def get_ai_run(request: Request, project_id: str, node_id: int, run_id: str):
 
 @router.post("/projects/{project_id}/inspection/nodes/{node_id}/review-opinions")
 def save_review_opinion(request: Request, project_id: str, node_id: int, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
-    if guard:
-        return guard
-
     def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
+        if guard:
+            return guard
         opinion = {
             "id": f"OPN-{uuid4().hex[:8].upper()}",
             "projectId": project_id,
@@ -1889,39 +2151,54 @@ def list_review_opinions(request: Request, project_id: str, node_id: int):
 
 
 @router.post("/projects/{project_id}/inspection/nodes/{node_id}/ai-suggestions/{suggestion_id}/adopt")
-def adopt_ai_suggestion(request: Request, project_id: str, node_id: int, suggestion_id: str, body: dict[str, Any] = Body(default_factory=dict), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
-    if guard:
-        return guard
-    draft = {
-        "id": f"OPN-DRAFT-{uuid4().hex[:8].upper()}",
-        "projectId": project_id,
-        "nodeId": node_id,
-        "result": body.get("result") or "满足要求",
-        "opinion": body.get("opinion") or "采纳 AI 建议。",
-        "evidenceLinkIds": body.get("evidenceLinkIds") or ["EV-24-001"],
-        "reviewerName": "张工",
-        "createdAt": server_time(),
-    }
-    audit_id = repo.add_audit("采纳 AI 建议", "AiSuggestion", suggestion_id)
-    return ok({"draftOpinion": draft, "auditLogId": audit_id}, request)
+def adopt_ai_suggestion(request: Request, project_id: str, node_id: int, suggestion_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
+        if guard:
+            return guard
+        draft = {
+            "id": f"OPN-DRAFT-{uuid4().hex[:8].upper()}",
+            "projectId": project_id,
+            "nodeId": node_id,
+            "result": body.get("result") or "满足要求",
+            "opinion": body.get("opinion") or "采纳 AI 建议。",
+            "evidenceLinkIds": body.get("evidenceLinkIds") or ["EV-24-001"],
+            "reviewerName": "张工",
+            "createdAt": server_time(),
+        }
+        audit_id = repo.add_audit("采纳 AI 建议", "AiSuggestion", suggestion_id)
+        return ok({"draftOpinion": draft, "auditLogId": audit_id}, request)
+
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"projectId": project_id, "nodeId": node_id, "suggestionId": suggestion_id, "body": body},
+    )
 
 
 @router.post("/projects/{project_id}/inspection/nodes/{node_id}/ai-suggestions/{suggestion_id}/reject")
-def reject_ai_suggestion(request: Request, project_id: str, node_id: int, suggestion_id: str, body: dict[str, Any] = Body(default_factory=dict), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
-    if guard:
-        return guard
-    return ok(repo.mutation_result("驳回 AI 建议", "AiSuggestion", suggestion_id, changed=[{"field": "reason", "after": body.get("reason")}]), request)
+def reject_ai_suggestion(request: Request, project_id: str, node_id: int, suggestion_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
+        if guard:
+            return guard
+        return ok(repo.mutation_result("驳回 AI 建议", "AiSuggestion", suggestion_id, changed=[{"field": "reason", "after": body.get("reason")}]), request)
+
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"projectId": project_id, "nodeId": node_id, "suggestionId": suggestion_id, "body": body},
+    )
 
 
 @router.post("/projects/{project_id}/inspection/nodes/{node_id}/actions/return-correction")
 def return_correction(request: Request, project_id: str, node_id: int, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
-    if guard:
-        return guard
-
     def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
+        if guard:
+            return guard
         rectification = {
             "id": f"REC-{uuid4().hex[:8].upper()}",
             "projectId": project_id,
@@ -2011,11 +2288,10 @@ def review_log(request: Request, project_id: str, node_id: int):
 
 @router.post("/projects/{project_id}/inspection/nodes/{node_id}/report-review")
 def generate_report_review(request: Request, project_id: str, node_id: int, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role)
-    if guard:
-        return guard
-
     def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
+        if guard:
+            return guard
         node = repo.node(project_id, node_id)
         if not node:
             return fail(errors.NOT_FOUND, request)
@@ -2055,23 +2331,37 @@ def generate_report_review(request: Request, project_id: str, node_id: int, body
 @router.get("/projects/{project_id}/owner/reports")
 def owner_reports(request: Request, project_id: str):
     scope = authorized_node_scope(request, project_id)
-    return ok([repo.clone(item) for item in repo.state["reports"] if item["projectId"] == project_id and report_visible_in_scope(item, scope)], request)
+    return ok(
+        [
+            versioned_report(item)
+            for item in repo.state["reports"]
+            if item["projectId"] == project_id and report_visible_in_scope(item, scope)
+        ],
+        request,
+    )
 
 
 @router.get("/projects/{project_id}/reports")
 def list_reports(request: Request, project_id: str):
     scope = authorized_node_scope(request, project_id)
-    return ok([repo.clone(item) for item in repo.state["reports"] if item["projectId"] == project_id and report_visible_in_scope(item, scope)], request)
+    return ok(
+        [
+            versioned_report(item)
+            for item in repo.state["reports"]
+            if item["projectId"] == project_id and report_visible_in_scope(item, scope)
+        ],
+        request,
+    )
 
 
 @router.get("/projects/{project_id}/reports/{report_id}")
 def report_detail(request: Request, project_id: str, report_id: str):
     report = repo.find_one("reports", report_id)
-    if not report:
+    if not report or report.get("projectId") != project_id:
         return fail(errors.NOT_FOUND, request)
     return ok(
         {
-            "report": repo.clone(report),
+            "report": versioned_report(report),
             "sections": [
                 {"key": "summary", "title": "检验结论", "content": "资料、证据链与规则要求一致，建议复核后签发。", "evidenceLinkIds": ["EV-24-001"]},
                 {"key": "node-24", "title": "焊工资格证及持证合格项目", "content": "证书有效期覆盖施工周期，持证项目覆盖焊接方法。", "evidenceLinkIds": ["EV-24-001", "EV-24-002"]},
@@ -2085,36 +2375,56 @@ def report_detail(request: Request, project_id: str, report_id: str):
 
 
 @router.patch("/projects/{project_id}/reports/{report_id}")
-def update_report(request: Request, project_id: str, report_id: str, body: dict[str, Any] = Body(default_factory=dict), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=report_node_ids(project_id, report_id))
-    if guard:
-        return guard
-    report = repo.find_one("reports", report_id)
-    if not report or report.get("projectId") != project_id:
-        return fail(errors.NOT_FOUND, request)
-    changed = []
-    for field in ["title", "status"]:
-        if field in body:
-            changed.append({"field": field, "before": report.get(field), "after": body[field]})
-            report[field] = body[field]
-    return ok({"report": repo.clone(report), **repo.mutation_result("保存报告", "Report", report_id, changed=changed)}, request)
+def update_report(
+    request: Request,
+    project_id: str,
+    report_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=report_node_ids(project_id, report_id))
+        if guard:
+            return guard
+        report = repo.find_one("reports", report_id)
+        if not report or report.get("projectId") != project_id:
+            return fail(errors.NOT_FOUND, request)
+        if not report_if_match_valid(report, if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        changed = []
+        for field in ["title", "status"]:
+            if field in body:
+                changed.append({"field": field, "before": report.get(field), "after": body[field]})
+                report[field] = body[field]
+        if changed:
+            report["revision"] = int(report.get("revision") or 1) + 1
+            report["updatedAt"] = server_time()
+        return ok({"report": versioned_report(report), **repo.mutation_result("保存报告", "Report", report_id, changed=changed)}, request)
+
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"projectId": project_id, "reportId": report_id, "body": body},
+    )
 
 
 @router.get("/projects/{project_id}/reports/{report_id}/versions")
 def report_versions(request: Request, project_id: str, report_id: str):
     report = repo.find_one("reports", report_id)
-    if not report:
+    if not report or report.get("projectId") != project_id:
         return fail(errors.NOT_FOUND, request)
     return ok([{"id": report_id, "versionNo": report.get("versionNo", "V1"), "status": report["status"], "generatedAt": report["generatedAt"], "summary": "当前版本"}], request)
 
 
 @router.post("/projects/{project_id}/reports/{report_id}/export")
 def export_report(request: Request, project_id: str, report_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=report_node_ids(project_id, report_id))
-    if guard:
-        return guard
-
     def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=report_node_ids(project_id, report_id))
+        if guard:
+            return guard
         report = repo.find_one("reports", report_id)
         if not report or report.get("projectId") != project_id:
             return fail(errors.NOT_FOUND, request)
@@ -2136,23 +2446,38 @@ def export_report(request: Request, project_id: str, report_id: str, body: dict[
         }
         repo.attach_export_artifact(task, content_type="application/pdf" if (body.get("format") or "pdf") == "pdf" else None)
         repo.state["export_tasks"].insert(0, task)
-        report["status"] = "已签发" if report.get("status") == "待签发" else "复核中"
-        return ok({"exportId": export_id, "report": report}, request)
+        next_status = "已签发" if report.get("status") == "待签发" else "复核中"
+        if report.get("status") != next_status:
+            report["status"] = next_status
+            report["revision"] = int(report.get("revision") or 1) + 1
+            report["updatedAt"] = server_time()
+        return ok({"exportId": export_id, "report": versioned_report(report)}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.post("/projects/{project_id}/reports/{report_id}/archive")
-def archive_report(request: Request, project_id: str, report_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
-    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=report_node_ids(project_id, report_id))
-    if guard:
-        return guard
-
+def archive_report(
+    request: Request,
+    project_id: str,
+    report_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
     def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=report_node_ids(project_id, report_id))
+        if guard:
+            return guard
         report = repo.find_one("reports", report_id)
         if not report or report.get("projectId") != project_id:
             return fail(errors.NOT_FOUND, request)
+        if not report_if_match_valid(report, if_match):
+            return fail(errors.ETAG_CONFLICT, request)
         report["status"] = "已归档"
+        report["revision"] = int(report.get("revision") or 1) + 1
+        report["updatedAt"] = server_time()
         repo.touch_project(project_id, "已归档")
         item = {
             "id": f"ARCH-{uuid4().hex[:8].upper()}",
@@ -2166,7 +2491,7 @@ def archive_report(request: Request, project_id: str, report_id: str, body: dict
             "downloadUrl": report.get("exportUrl") or f"mock://download/reports/{report_id}.pdf",
         }
         repo.state["archive_items"].insert(0, item)
-        return ok({"report": report, "nextStatus": "已归档"}, request)
+        return ok({"report": versioned_report(report), "nextStatus": "已归档"}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
@@ -2360,11 +2685,11 @@ def list_ndt_films(request: Request, project_id: str, page_no: int = Query(defau
 @router.post("/projects/{project_id}/ndt/films")
 def create_ndt_film(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
     node_ids = node_ids_from_body(body, 40)
-    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
-    if guard:
-        return guard
 
     def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
+        if guard:
+            return guard
         missing = missing_required_fields(body, ["filmNo", "weldNo", "method"])
         if missing:
             return fail(errors.NDT_FILM_REQUIRED, request, data={"fields": missing})
@@ -2399,40 +2724,56 @@ def ndt_film_detail(request: Request, project_id: str, film_id: str):
 
 
 @router.patch("/projects/{project_id}/ndt/films/{film_id}")
-def update_ndt_film(request: Request, project_id: str, film_id: str, body: dict[str, Any] = Body(default_factory=dict), x_role: str | None = Header(default=None, alias="X-Role")):
-    film = repo.find_one("ndt_films", film_id)
-    if not film or film.get("projectId") != project_id:
-        return fail(errors.NOT_FOUND, request)
-    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=sorted(record_node_ids(project_id, film)))
-    if guard:
-        return guard
-    film.update({key: value for key, value in body.items() if value is not None})
-    return ok({"film": repo.clone(film), **repo.mutation_result("更新底片", "NdtFilm", film_id)}, request)
+def update_ndt_film(request: Request, project_id: str, film_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
+    def produce():
+        film = repo.find_one("ndt_films", film_id)
+        if not film or film.get("projectId") != project_id:
+            return fail(errors.NOT_FOUND, request)
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=sorted(record_node_ids(project_id, film)))
+        if guard:
+            return guard
+        film.update({key: value for key, value in body.items() if value is not None})
+        return ok({"film": repo.clone(film), **repo.mutation_result("更新底片", "NdtFilm", film_id)}, request)
+
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"projectId": project_id, "filmId": film_id, "body": body},
+    )
 
 
 @router.post("/projects/{project_id}/ndt/films/import")
-def import_ndt_films(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict), x_role: str | None = Header(default=None, alias="X-Role")):
-    rows = body.get("rows") or []
-    node_ids = sorted({*node_ids_from_body(body, 40), *[int(row["nodeId"]) for row in rows if row.get("nodeId") is not None]})
-    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
-    if guard:
-        return guard
-    if not rows:
-        return fail(errors.NDT_FILM_REQUIRED, request, message="导入底片行不能为空。")
-    failed = [
-        {"row": index + 1, "fields": missing_required_fields(row, ["filmNo", "weldNo", "method"])}
-        for index, row in enumerate(rows)
-        if missing_required_fields(row, ["filmNo", "weldNo", "method"])
-    ]
-    if failed:
-        return fail(errors.NDT_FILM_REQUIRED, request, data={"failed": failed})
-    created = []
-    node_id = node_ids[0] if node_ids else 40
-    for row in rows:
-        film = {"id": f"FILM-{uuid4().hex[:8].upper()}", "projectId": project_id, "nodeId": int(row.get("nodeId") or node_id), "filmNo": row.get("filmNo"), "weldNo": row.get("weldNo"), "method": row.get("method"), "status": "待提交", "actions": ["ndt:submit"]}
-        repo.state["ndt_films"].insert(0, film)
-        created.append(film)
-    return ok({"imported": len(created), "failed": [], "films": created}, request)
+def import_ndt_films(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
+    def produce():
+        rows = body.get("rows") or []
+        node_ids = sorted({*node_ids_from_body(body, 40), *[int(row["nodeId"]) for row in rows if row.get("nodeId") is not None]})
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
+        if guard:
+            return guard
+        if not rows:
+            return fail(errors.NDT_FILM_REQUIRED, request, message="导入底片行不能为空。")
+        failed = [
+            {"row": index + 1, "fields": missing_required_fields(row, ["filmNo", "weldNo", "method"])}
+            for index, row in enumerate(rows)
+            if missing_required_fields(row, ["filmNo", "weldNo", "method"])
+        ]
+        if failed:
+            return fail(errors.NDT_FILM_REQUIRED, request, data={"failed": failed})
+        created = []
+        node_id = node_ids[0] if node_ids else 40
+        for row in rows:
+            film = {"id": f"FILM-{uuid4().hex[:8].upper()}", "projectId": project_id, "nodeId": int(row.get("nodeId") or node_id), "filmNo": row.get("filmNo"), "weldNo": row.get("weldNo"), "method": row.get("method"), "status": "待提交", "actions": ["ndt:submit"]}
+            repo.state["ndt_films"].insert(0, film)
+            created.append(film)
+        return ok({"imported": len(created), "failed": [], "films": created}, request)
+
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"projectId": project_id, "body": body},
+    )
 
 
 @router.get("/projects/{project_id}/ndt/records")
@@ -2453,44 +2794,53 @@ def list_ndt_records(request: Request, project_id: str, page_no: int = Query(def
 
 
 @router.post("/projects/{project_id}/ndt/records/import")
-def import_ndt_records(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict), x_role: str | None = Header(default=None, alias="X-Role")):
+def import_ndt_records(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
     node_ids = node_ids_from_body(body, 40)
-    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
-    if guard:
-        return guard
-    rows = body.get("rows") or []
-    if not rows:
-        return fail(errors.NDT_RECORD_REQUIRED, request, message="导入检测记录行不能为空。")
-    failed = [
-        {"row": index + 1, "fields": missing_required_fields(row, ["recordNo", "weldNo", "method"])}
-        for index, row in enumerate(rows)
-        if missing_required_fields(row, ["recordNo", "weldNo", "method"])
-    ]
-    if failed:
-        return fail(errors.NDT_RECORD_REQUIRED, request, data={"failed": failed})
-    created = []
-    for row in rows:
-        record = {
-            "id": f"NDT-REC-{uuid4().hex[:8].upper()}",
-            "projectId": project_id,
-            "nodeId": node_ids[0] if node_ids else 40,
-            "recordNo": row.get("recordNo"),
-            "filmId": row.get("filmId"),
-            "reportId": row.get("reportId"),
-            "weldNo": row.get("weldNo"),
-            "pipelineNo": row.get("pipelineNo"),
-            "method": row.get("method"),
-            "testDate": row.get("testDate") or "2026-06-26",
-            "evaluatorName": row.get("evaluatorName") or "王工",
-            "result": row.get("result") or "待复核",
-            "sampleStatus": row.get("sampleStatus") or "未抽查",
-            "conclusion": row.get("conclusion"),
-            "importedAt": server_time(),
-            "actions": ["ndt:record-import"],
-        }
-        repo.state["ndt_records"].insert(0, record)
-        created.append(record)
-    return ok({"imported": len(created), "failed": [], "records": created}, request)
+
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
+        if guard:
+            return guard
+        rows = body.get("rows") or []
+        if not rows:
+            return fail(errors.NDT_RECORD_REQUIRED, request, message="导入检测记录行不能为空。")
+        failed = [
+            {"row": index + 1, "fields": missing_required_fields(row, ["recordNo", "weldNo", "method"])}
+            for index, row in enumerate(rows)
+            if missing_required_fields(row, ["recordNo", "weldNo", "method"])
+        ]
+        if failed:
+            return fail(errors.NDT_RECORD_REQUIRED, request, data={"failed": failed})
+        created = []
+        for row in rows:
+            record = {
+                "id": f"NDT-REC-{uuid4().hex[:8].upper()}",
+                "projectId": project_id,
+                "nodeId": node_ids[0] if node_ids else 40,
+                "recordNo": row.get("recordNo"),
+                "filmId": row.get("filmId"),
+                "reportId": row.get("reportId"),
+                "weldNo": row.get("weldNo"),
+                "pipelineNo": row.get("pipelineNo"),
+                "method": row.get("method"),
+                "testDate": row.get("testDate") or "2026-06-26",
+                "evaluatorName": row.get("evaluatorName") or "王工",
+                "result": row.get("result") or "待复核",
+                "sampleStatus": row.get("sampleStatus") or "未抽查",
+                "conclusion": row.get("conclusion"),
+                "importedAt": server_time(),
+                "actions": ["ndt:record-import"],
+            }
+            repo.state["ndt_records"].insert(0, record)
+            created.append(record)
+        return ok({"imported": len(created), "failed": [], "records": created}, request)
+
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"projectId": project_id, "body": body},
+    )
 
 
 @router.get("/projects/{project_id}/ndt/reports")
@@ -2511,11 +2861,11 @@ def list_ndt_reports(request: Request, project_id: str, page_no: int = Query(def
 @router.post("/projects/{project_id}/ndt/reports/upload-session")
 def ndt_report_upload_session(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
     node_ids = node_ids_from_body(body, 40)
-    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
-    if guard:
-        return guard
 
     def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
+        if guard:
+            return guard
         node_id = node_ids[0] if node_ids else 40
         files = body.get("files") or []
         validation_error = validate_upload_files(request, files, ndt=True)
@@ -2566,16 +2916,25 @@ def ndt_report_detail(request: Request, project_id: str, report_id: str):
 
 
 @router.post("/projects/{project_id}/ndt/submissions")
-def submit_ndt(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
-    node_ids = node_ids_from_body(body, 40)
-    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
-    if guard:
-        return guard
+def submit_ndt(
+    request: Request,
+    project_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+):
+    node_ids = ndt_submission_node_ids(project_id, body)
 
     def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
+        if guard:
+            return guard
         node_id = node_ids[0] if node_ids else 40
         submission_id = f"NDT-SUB-{uuid4().hex[:8].upper()}"
+        snapshot_id = f"SNAP-{submission_id}"
+        submitted_at = server_time()
         submitted_report_ids = set(body.get("reportIds") or [])
+        submitted_film_ids = set(body.get("filmIds") or [])
         if not submitted_report_ids:
             return fail(errors.NDT_REPORT_REQUIRED, request)
         submitable_reports = [
@@ -2588,13 +2947,75 @@ def submit_ndt(request: Request, project_id: str, body: dict[str, Any] = Body(de
         ]
         if len(submitable_reports) != len(submitted_report_ids):
             return fail(errors.NDT_REPORT_REQUIRED, request, message="未找到可提交的无损检测报告。")
-        for report in repo.state["ndt_reports"]:
-            if report["id"] in submitted_report_ids:
-                report["status"] = "待审查"
-        repo.set_node_status(project_id, node_id, "待审查")
-        todo = {"id": f"TODO-{uuid4().hex[:8].upper()}", "title": "无损检测资料待审查", "projectId": project_id, "nodeId": node_id, "targetType": "submission", "targetId": submission_id, "status": "待处理", "priority": "中", "assigneeName": "张工", "actions": ["review:save"]}
+        submitable_films = [
+            film
+            for film in repo.state["ndt_films"]
+            if film.get("projectId") == project_id
+            and film.get("id") in submitted_film_ids
+            and record_visible_for_request(request, film, project_id)
+        ]
+        if submitted_film_ids and len(submitable_films) != len(submitted_film_ids):
+            return fail(errors.NDT_FILM_REQUIRED, request, message="未找到可提交的无损检测底片。")
+        for report in submitable_reports:
+            report["status"] = "待审查"
+            report["submittedAt"] = submitted_at
+        for film in submitable_films:
+            film["status"] = "待审查"
+            film["submittedAt"] = submitted_at
+        changed = [repo.set_node_status(project_id, node_id, "待审查")]
+        todo = {
+            "id": f"TODO-{uuid4().hex[:8].upper()}",
+            "title": "无损检测资料待审查",
+            "projectId": project_id,
+            "nodeId": node_id,
+            "targetType": "submission",
+            "targetId": submission_id,
+            "status": "待处理",
+            "priority": "中",
+            "assigneeName": "张工",
+            "actions": ["review:save"],
+        }
         repo.state["todos"].insert(0, todo)
-        return ok({"submissionId": submission_id, "nextStatus": "待审查", "createdTodos": [todo]}, request)
+        related_records = [
+            repo.clone(record)
+            for record in repo.state["ndt_records"]
+            if record.get("projectId") == project_id
+            and (record.get("reportId") in submitted_report_ids or record.get("filmId") in submitted_film_ids)
+            and record_visible_for_request(request, record, project_id)
+        ]
+        submission = {
+            "submissionId": submission_id,
+            "snapshotId": snapshot_id,
+            "projectId": project_id,
+            "nodeId": node_id,
+            "nodeIds": node_ids,
+            "submissionType": "ndt",
+            "batchName": body.get("batchName") or "无损检测资料提交",
+            "submitterComment": body.get("comment") or body.get("submitterComment"),
+            "nextStatus": "待审查",
+            "submittedAt": submitted_at,
+            "createdTodoIds": [todo["id"]],
+            "reportIds": sorted(submitted_report_ids),
+            "filmIds": sorted(submitted_film_ids),
+            "changed": changed,
+            "snapshot": {
+                "reports": [repo.clone(report) for report in submitable_reports],
+                "films": [repo.clone(film) for film in submitable_films],
+                "records": related_records,
+            },
+        }
+        repo.state["submissions"].insert(0, submission)
+        return ok(
+            {
+                "submissionId": submission_id,
+                "snapshotId": snapshot_id,
+                "nextStatus": "待审查",
+                "createdTodos": [todo],
+                "submittedReportIds": sorted(submitted_report_ids),
+                "submittedFilmIds": sorted(submitted_film_ids),
+            },
+            request,
+        )
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
@@ -2602,11 +3023,11 @@ def submit_ndt(request: Request, project_id: str, body: dict[str, Any] = Body(de
 @router.post("/projects/{project_id}/ndt/rectifications")
 def ndt_rectification(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
     node_ids = node_ids_from_body(body, 40)
-    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
-    if guard:
-        return guard
 
     def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
+        if guard:
+            return guard
         node_id = node_ids[0] if node_ids else 40
         rectification_id = body.get("rectificationId") or f"NDT-REC-{uuid4().hex[:8].upper()}"
         if not body.get("description") or (not body.get("rectificationId") and not body.get("reportIds") and not body.get("filmIds")):
@@ -2703,7 +3124,7 @@ def search(request: Request, keyword: str = Query(default=""), projectId: str | 
 
 @router.get("/todos")
 def list_todos(request: Request, role: str | None = None, projectId: str | None = None, status: str | None = None, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    items = [repo.clone(item) for item in repo.state["todos"] if record_visible_for_request(request, item)]
+    items = [versioned_record("todo", item) for item in repo.state["todos"] if record_visible_for_request(request, item)]
     if projectId:
         items = [item for item in items if item.get("projectId") == projectId]
     if status:
@@ -2719,36 +3140,67 @@ def todo_detail(request: Request, todo_id: str):
     scope_error = scope_error_for_record(request, todo)
     if scope_error:
         return scope_error
-    return ok({**repo.clone(todo), "relatedObject": None, "evidenceLinks": repo.clone(repo.state["evidence_links"])}, request)
+    return ok({**versioned_record("todo", todo), "relatedObject": None, "evidenceLinks": repo.clone(repo.state["evidence_links"])}, request)
 
 
 @router.post("/todos/{todo_id}/complete")
-def complete_todo(request: Request, todo_id: str, body: dict[str, Any] = Body(default_factory=dict)):
-    todo = repo.find_one("todos", todo_id)
-    if not todo:
-        return fail(errors.NOT_FOUND, request)
-    scope_error = scope_error_for_record(request, todo)
-    if scope_error:
-        return scope_error
-    todo["status"] = "已完成"
-    return ok(repo.mutation_result("完成待办", "Todo", todo_id, next_status="已完成"), request)
+def complete_todo(
+    request: Request,
+    todo_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    def produce():
+        todo = repo.find_one("todos", todo_id)
+        if not todo:
+            return fail(errors.NOT_FOUND, request)
+        scope_error = scope_error_for_record(request, todo)
+        if scope_error:
+            return scope_error
+        if not record_if_match_valid("todo", todo, if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        if todo.get("status") != "已完成":
+            todo["status"] = "已完成"
+            todo["completedAt"] = server_time()
+            todo["completedComment"] = body.get("comment") or body.get("result")
+            bump_record_revision(todo)
+        result = repo.mutation_result("完成待办", "Todo", todo_id, next_status="已完成")
+        return ok({**result, "todo": versioned_record("todo", todo)}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"todoId": todo_id, "body": body})
 
 
 @router.post("/todos/{todo_id}/defer")
-def defer_todo(request: Request, todo_id: str, body: dict[str, Any] = Body(default_factory=dict)):
-    todo = repo.find_one("todos", todo_id)
-    if not todo:
-        return fail(errors.NOT_FOUND, request)
-    scope_error = scope_error_for_record(request, todo)
-    if scope_error:
-        return scope_error
-    todo["status"] = "已延期"
-    return ok(repo.mutation_result("延期待办", "Todo", todo_id, next_status="已延期"), request)
+def defer_todo(
+    request: Request,
+    todo_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    def produce():
+        todo = repo.find_one("todos", todo_id)
+        if not todo:
+            return fail(errors.NOT_FOUND, request)
+        scope_error = scope_error_for_record(request, todo)
+        if scope_error:
+            return scope_error
+        if not record_if_match_valid("todo", todo, if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        if todo.get("status") != "已延期":
+            todo["status"] = "已延期"
+            todo["deferredUntil"] = body.get("deferredUntil")
+            bump_record_revision(todo)
+        result = repo.mutation_result("延期待办", "Todo", todo_id, next_status="已延期")
+        return ok({**result, "todo": versioned_record("todo", todo)}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"todoId": todo_id, "body": body})
 
 
 @router.get("/messages")
 def list_messages(request: Request, projectId: str | None = None, read: bool | None = None, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    items = [repo.clone(item) for item in repo.state["messages"] if record_visible_for_request(request, item)]
+    items = [versioned_record("message", item) for item in repo.state["messages"] if record_visible_for_request(request, item)]
     if projectId:
         items = [item for item in items if item.get("projectId") == projectId]
     if read is not None:
@@ -2757,29 +3209,58 @@ def list_messages(request: Request, projectId: str | None = None, read: bool | N
 
 
 @router.post("/messages/{message_id}/read")
-def mark_message_read(request: Request, message_id: str):
-    message = repo.find_one("messages", message_id)
-    if not message:
-        return fail(errors.NOT_FOUND, request)
-    scope_error = scope_error_for_record(request, message)
-    if scope_error:
-        return scope_error
-    message["read"] = True
-    return ok(repo.mutation_result("标记消息已读", "Message", message_id), request)
+def mark_message_read(
+    request: Request,
+    message_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    def produce():
+        message = repo.find_one("messages", message_id)
+        if not message:
+            return fail(errors.NOT_FOUND, request)
+        scope_error = scope_error_for_record(request, message)
+        if scope_error:
+            return scope_error
+        if not record_if_match_valid("message", message, if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        if not message.get("read"):
+            message["read"] = True
+            message["readAt"] = server_time()
+            bump_record_revision(message)
+        result = repo.mutation_result("标记消息已读", "Message", message_id)
+        return ok({**result, "message": versioned_record("message", message)}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"messageId": message_id})
 
 
 @router.post("/messages/read-all")
-def mark_all_messages_read(request: Request, body: dict[str, Any] = Body(default_factory=dict)):
-    affected = 0
-    for message in repo.state["messages"]:
-        if body.get("projectId") and message.get("projectId") != body.get("projectId"):
-            continue
-        if not record_visible_for_request(request, message):
-            continue
-        if not message.get("read"):
-            message["read"] = True
-            affected += 1
-    return ok({"affectedCount": affected}, request)
+def mark_all_messages_read(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    def produce():
+        if if_match and if_match != "*":
+            return fail(errors.ETAG_CONFLICT, request, message="批量消息操作仅支持 If-Match: *。")
+        affected = 0
+        updated_messages = []
+        for message in repo.state["messages"]:
+            if body.get("projectId") and message.get("projectId") != body.get("projectId"):
+                continue
+            if not record_visible_for_request(request, message):
+                continue
+            if not message.get("read"):
+                message["read"] = True
+                message["readAt"] = server_time()
+                bump_record_revision(message)
+                affected += 1
+            updated_messages.append(versioned_record("message", message))
+        audit_id = repo.add_audit("全部消息已读", "Message", body.get("projectId") or "all")
+        return ok({"affectedCount": affected, "messages": updated_messages, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.get("/knowledge/overview")
@@ -2815,7 +3296,7 @@ def knowledge_overview(request: Request):
 
 @router.get("/knowledge/sources")
 def list_knowledge_sources(request: Request, keyword: str | None = None, sourceType: str | None = None, status: str | None = None, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    items = [repo.clone(item) for item in repo.state["knowledge_sources"]]
+    items = [versioned_record("knowledge-source", item) for item in repo.state["knowledge_sources"]]
     if sourceType:
         items = [item for item in items if item["sourceType"] == sourceType]
     if status:
@@ -2838,10 +3319,11 @@ def create_knowledge_source(request: Request, body: dict[str, Any] = Body(defaul
             "vectorStatus": body.get("vectorStatus") or "待向量化",
             "updatedAt": server_time(),
             "actions": ["knowledge:view", "knowledge:manage", "knowledge:reindex"],
+            "revision": 1,
         }
         repo.state["knowledge_sources"].insert(0, source)
         audit_id = repo.add_audit("新增知识源", "KnowledgeSource", source["id"])
-        return ok({"source": source, "auditLogId": audit_id}, request)
+        return ok({"source": versioned_record("knowledge-source", source), "auditLogId": audit_id}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
@@ -2851,31 +3333,46 @@ def get_knowledge_source(request: Request, source_id: str):
     source = repo.find_one("knowledge_sources", source_id)
     if not source:
         return fail(errors.NOT_FOUND, request)
-    return ok({"source": repo.clone(source)}, request)
+    return ok({"source": versioned_record("knowledge-source", source)}, request)
 
 
 @router.put("/knowledge/sources/{source_id}")
 @router.patch("/knowledge/sources/{source_id}")
-def update_knowledge_source(request: Request, source_id: str, body: dict[str, Any] = Body(default_factory=dict)):
-    source = repo.find_one("knowledge_sources", source_id)
-    if not source:
-        return fail(errors.NOT_FOUND, request)
-    for field in ["name", "sourceType", "version", "status", "fileCount", "chunkCount", "vectorStatus"]:
-        if field in body:
-            source[field] = body[field]
-    source["updatedAt"] = server_time()
-    audit_id = repo.add_audit("更新知识源", "KnowledgeSource", source_id)
-    return ok({"source": repo.clone(source), "auditLogId": audit_id}, request)
+def update_knowledge_source(
+    request: Request,
+    source_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    def produce():
+        source = repo.find_one("knowledge_sources", source_id)
+        if not source:
+            return fail(errors.NOT_FOUND, request)
+        effective_if_match = if_match if if_match is not None else request.headers.get("If-Match")
+        if not record_if_match_valid("knowledge-source", source, effective_if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        changed = []
+        for field in ["name", "sourceType", "version", "status", "fileCount", "chunkCount", "vectorStatus"]:
+            if field in body and source.get(field) != body[field]:
+                changed.append({"field": field, "before": source.get(field), "after": body[field]})
+                source[field] = body[field]
+        if changed:
+            bump_record_revision(source)
+        audit_id = repo.add_audit("更新知识源", "KnowledgeSource", source_id)
+        return ok({"source": versioned_record("knowledge-source", source), "auditLogId": audit_id, "changed": changed}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"sourceId": source_id, "body": body})
 
 
 @router.post("/knowledge/sources/{source_id}/enable")
-def enable_knowledge_source(request: Request, source_id: str):
-    return update_knowledge_source(request, source_id, {"status": "启用"})
+def enable_knowledge_source(request: Request, source_id: str, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), if_match: str | None = Header(default=None, alias="If-Match")):
+    return update_knowledge_source(request, source_id, {"status": "启用"}, idempotency_key=idempotency_key, if_match=if_match)
 
 
 @router.post("/knowledge/sources/{source_id}/disable")
-def disable_knowledge_source(request: Request, source_id: str):
-    return update_knowledge_source(request, source_id, {"status": "停用"})
+def disable_knowledge_source(request: Request, source_id: str, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), if_match: str | None = Header(default=None, alias="If-Match")):
+    return update_knowledge_source(request, source_id, {"status": "停用"}, idempotency_key=idempotency_key, if_match=if_match)
 
 
 @router.get("/knowledge/project-files")
@@ -2910,7 +3407,7 @@ def knowledge_file_detail(request: Request, file_id: str):
             "file": repo.clone(file),
             "document": repo.clone(document) if document else None,
             "currentVersion": repo.current_version(document["id"]) if document else None,
-            "latestTask": repo.clone(latest_task) if latest_task else None,
+            "latestTask": versioned_record("knowledge-task", latest_task) if latest_task else None,
             "vectorSummary": {
                 "vectorStatus": file.get("vectorStatus"),
                 "vectorCount": file.get("vectorCount", 0),
@@ -2974,16 +3471,16 @@ def reindex_file(request: Request, file_id: str, body: dict[str, Any] = Body(def
         scope_error = scope_error_for_record(request, file)
         if scope_error:
             return scope_error
-        task = {"id": f"KT-{uuid4().hex[:8].upper()}", "taskType": "reindex", "targetType": "file", "targetId": file_id, "targetName": file["fileName"], "status": "排队中", "progress": 0, "createdAt": server_time(), "actions": ["knowledge:task-retry"]}
+        task = {"id": f"KT-{uuid4().hex[:8].upper()}", "taskType": "reindex", "targetType": "file", "targetId": file_id, "targetName": file["fileName"], "status": "排队中", "progress": 0, "createdAt": server_time(), "updatedAt": server_time(), "revision": 1, "actions": ["knowledge:task-retry"]}
         repo.state["knowledge_tasks"].insert(0, task)
-        return ok({"task": task}, request)
+        return ok({"task": versioned_record("knowledge-task", task)}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.get("/knowledge/tasks")
 def list_knowledge_tasks(request: Request, taskType: str | None = None, status: str | None = None, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    items = [repo.clone(item) for item in repo.state["knowledge_tasks"] if record_visible_for_request(request, item)]
+    items = [versioned_record("knowledge-task", item) for item in repo.state["knowledge_tasks"] if record_visible_for_request(request, item)]
     if taskType:
         items = [item for item in items if item["taskType"] == taskType]
     if status:
@@ -2999,7 +3496,7 @@ def knowledge_task_detail(request: Request, task_id: str):
     scope_error = scope_error_for_record(request, task)
     if scope_error:
         return scope_error
-    return ok({"task": repo.clone(task)}, request)
+    return ok({"task": versioned_record("knowledge-task", task)}, request)
 
 
 @router.get("/knowledge/tasks/{task_id}/logs")
@@ -3094,7 +3591,13 @@ def retry_dispatch_for_knowledge_task(request: Request, task: dict[str, Any]) ->
 
 
 @router.post("/knowledge/tasks/{task_id}/retry")
-def retry_knowledge_task(request: Request, task_id: str, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+def retry_knowledge_task(
+    request: Request,
+    task_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
     def produce():
         task = repo.find_one("knowledge_tasks", task_id)
         if not task:
@@ -3102,26 +3605,40 @@ def retry_knowledge_task(request: Request, task_id: str, idempotency_key: str | 
         scope_error = scope_error_for_record(request, task)
         if scope_error:
             return scope_error
+        if not record_if_match_valid("knowledge-task", task, if_match):
+            return fail(errors.ETAG_CONFLICT, request)
         dispatches, error = retry_dispatch_for_knowledge_task(request, task)
         if error:
             return error
-        return ok({"task": repo.clone(task), "dispatches": dispatches}, request)
+        bump_record_revision(task)
+        return ok({"task": versioned_record("knowledge-task", task), "dispatches": dispatches}, request)
 
-    return idempotent(request, idempotency_key, produce, fingerprint_source={"taskId": task_id})
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"taskId": task_id, "body": body})
 
 
 @router.post("/knowledge/tasks/{task_id}/cancel")
-def cancel_knowledge_task(request: Request, task_id: str):
-    task = repo.find_one("knowledge_tasks", task_id)
-    if not task:
-        return fail(errors.NOT_FOUND, request)
-    scope_error = scope_error_for_record(request, task)
-    if scope_error:
-        return scope_error
-    task["status"] = "已取消"
-    task["updatedAt"] = server_time()
-    repo.append_task_log(task, "info", "任务已取消。")
-    return ok({"task": repo.clone(task)}, request)
+def cancel_knowledge_task(
+    request: Request,
+    task_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    def produce():
+        task = repo.find_one("knowledge_tasks", task_id)
+        if not task:
+            return fail(errors.NOT_FOUND, request)
+        scope_error = scope_error_for_record(request, task)
+        if scope_error:
+            return scope_error
+        if not record_if_match_valid("knowledge-task", task, if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        task["status"] = "已取消"
+        bump_record_revision(task)
+        repo.append_task_log(task, "info", "任务已取消。")
+        return ok({"task": versioned_record("knowledge-task", task)}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"taskId": task_id, "body": body})
 
 
 @router.post("/knowledge/reindex")
@@ -3130,7 +3647,7 @@ def batch_reindex(request: Request, body: dict[str, Any] = Body(default_factory=
         ids = []
         targets = repo.state["knowledge_files"] if body.get("scope") != "source" else repo.state["knowledge_sources"]
         for target in targets[:3]:
-            task = {"id": f"KT-{uuid4().hex[:8].upper()}", "taskType": "reindex", "targetType": "file" if "fileName" in target else "source", "targetId": target["id"], "targetName": target.get("fileName") or target.get("name"), "status": "排队中", "progress": 0, "createdAt": server_time(), "actions": ["knowledge:task-retry"]}
+            task = {"id": f"KT-{uuid4().hex[:8].upper()}", "taskType": "reindex", "targetType": "file" if "fileName" in target else "source", "targetId": target["id"], "targetName": target.get("fileName") or target.get("name"), "status": "排队中", "progress": 0, "createdAt": server_time(), "updatedAt": server_time(), "revision": 1, "actions": ["knowledge:task-retry"]}
             repo.state["knowledge_tasks"].insert(0, task)
             ids.append(task["id"])
         return ok({"taskIds": ids}, request)
@@ -3146,7 +3663,7 @@ def retrieval_test(request: Request, body: dict[str, Any] = Body(default_factory
 
 @router.get("/rules/versions")
 def list_rule_versions(request: Request, keyword: str | None = None, status: str | None = None, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    items = [repo.clone(item) for item in repo.state["rule_versions"]]
+    items = [versioned_record("rule-version", item) for item in repo.state["rule_versions"]]
     if status:
         items = [item for item in items if item["status"] == status]
     items = filter_keyword(items, keyword, ["name", "ruleKey", "version"])
@@ -3159,8 +3676,8 @@ def rule_version_diff(request: Request, version_id: str, targetVersionId: str | 
     target = repo.find_one("rule_versions", targetVersionId or "") or repo.state["rule_versions"][-1]
     return ok(
         {
-            "base": repo.clone(base),
-            "target": repo.clone(target),
+            "base": versioned_record("rule-version", base),
+            "target": versioned_record("rule-version", target),
             "comparedAt": server_time(),
             "summary": {"added": 1, "changed": 2, "removed": 0, "warning": 1},
             "changes": [
@@ -3173,39 +3690,83 @@ def rule_version_diff(request: Request, version_id: str, targetVersionId: str | 
 
 
 @router.post("/rules/versions/{version_id}/publish")
-def publish_rule_version(request: Request, version_id: str, body: dict[str, Any] = Body(default_factory=dict)):
-    rule = repo.find_one("rule_versions", version_id)
-    if not rule:
-        return fail(errors.NOT_FOUND, request)
-    rule["status"] = "已发布"
-    rule["publishedAt"] = server_time()
-    result = repo.mutation_result("发布规则版本", "RuleVersion", version_id, next_status="已发布")
-    return ok({**result, "rule": repo.clone(rule)}, request)
+def publish_rule_version(
+    request: Request,
+    version_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    def produce():
+        rule = repo.find_one("rule_versions", version_id)
+        if not rule:
+            return fail(errors.NOT_FOUND, request)
+        if not record_if_match_valid("rule-version", rule, if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        rule["status"] = "已发布"
+        rule["publishedAt"] = server_time()
+        bump_record_revision(rule)
+        result = repo.mutation_result("发布规则版本", "RuleVersion", version_id, next_status="已发布")
+        return ok({**result, "rule": versioned_record("rule-version", rule)}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"versionId": version_id, "body": body})
 
 
 @router.post("/rules/versions/{version_id}/rollback")
-def rollback_rule_version(request: Request, version_id: str, body: dict[str, Any] = Body(default_factory=dict)):
-    rule = repo.find_one("rule_versions", version_id)
-    if not rule:
-        return fail(errors.NOT_FOUND, request)
-    target = repo.state["rule_versions"][0]
-    rule["status"] = "已回滚"
-    result = repo.mutation_result("回滚规则版本", "RuleVersion", version_id, next_status="已回滚")
-    return ok({**result, "rule": repo.clone(rule), "target": repo.clone(target)}, request)
+def rollback_rule_version(
+    request: Request,
+    version_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    def produce():
+        rule = repo.find_one("rule_versions", version_id)
+        if not rule:
+            return fail(errors.NOT_FOUND, request)
+        if not record_if_match_valid("rule-version", rule, if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        target = (
+            repo.find_one("rule_versions", body.get("targetVersionId") or "")
+            or next((item for item in repo.state["rule_versions"] if item.get("version") == body.get("targetVersion")), None)
+            or repo.state["rule_versions"][0]
+        )
+        rule["status"] = "已回滚"
+        bump_record_revision(rule)
+        if target.get("id") != rule.get("id"):
+            target["status"] = "已发布"
+            target["publishedAt"] = server_time()
+            bump_record_revision(target)
+        result = repo.mutation_result("回滚规则版本", "RuleVersion", version_id, next_status="已回滚")
+        return ok({**result, "rule": versioned_record("rule-version", rule), "target": versioned_record("rule-version", target)}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"versionId": version_id, "body": body})
 
 
 @router.get("/knowledge/config")
 def get_knowledge_config(request: Request):
-    return ok({"config": repo.clone(repo.state["knowledge_config"]), "updatedAt": repo.state["knowledge_config"]["updatedAt"]}, request)
+    config = versioned_singleton("knowledge-config", repo.state["knowledge_config"])
+    return ok({"config": config, "updatedAt": config["updatedAt"], "revision": config["revision"], "etag": config["etag"]}, request)
 
 
 @router.put("/knowledge/config")
 @router.patch("/knowledge/config")
-def update_knowledge_config(request: Request, body: dict[str, Any] = Body(default_factory=dict)):
-    repo.state["knowledge_config"].update({key: value for key, value in body.items() if value is not None})
-    repo.state["knowledge_config"]["updatedAt"] = server_time()
-    audit_id = repo.add_audit("更新知识库配置", "KnowledgeConfig", "default")
-    return ok({"config": repo.clone(repo.state["knowledge_config"]), "updatedAt": repo.state["knowledge_config"]["updatedAt"], "auditLogId": audit_id}, request)
+def update_knowledge_config(request: Request, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), if_match: str | None = Header(default=None, alias="If-Match")):
+    def produce():
+        if not singleton_if_match_valid("knowledge-config", repo.state["knowledge_config"], if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        repo.state["knowledge_config"].update({key: value for key, value in body.items() if value is not None and key not in CONFIG_METADATA_FIELDS})
+        bump_singleton_revision(repo.state["knowledge_config"])
+        config = versioned_singleton("knowledge-config", repo.state["knowledge_config"])
+        audit_id = repo.add_audit("更新知识库配置", "KnowledgeConfig", "default")
+        return ok({"config": config, "updatedAt": config["updatedAt"], "revision": config["revision"], "etag": config["etag"], "auditLogId": audit_id}, request)
+
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source=body,
+    )
 
 
 @router.get("/knowledge/audit-logs")
@@ -3319,7 +3880,15 @@ def compare_run_detail(request: Request, run_id: str):
 
 @router.get("/admin/config-overview")
 def admin_config_overview(request: Request):
-    return ok(repo.build_admin_overview(), request)
+    overview = repo.build_admin_overview()
+    overview.update(
+        {
+            "revision": singleton_revision(repo.state["admin_config"]),
+            "etag": singleton_etag("admin-config", repo.state["admin_config"]),
+            "updatedAt": repo.state["admin_config"].get("updatedAt") or server_time(),
+        }
+    )
+    return ok(overview, request)
 
 
 @router.post("/admin/projects")
@@ -3364,7 +3933,7 @@ def create_admin_project(request: Request, body: dict[str, Any] = Body(default_f
             )
         audit_id = repo.add_audit("项目立项", "Project", project_id)
         detail_data = project_detail_payload(project_id)
-        return ok({"project": project, "detail": detail_data, "auditLogId": audit_id, "createdNodeCount": 69}, request)
+        return ok({"project": versioned_project(project), "detail": detail_data, "auditLogId": audit_id, "createdNodeCount": 69}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
@@ -3506,27 +4075,54 @@ def admin_config_diff_preview(request: Request, body: dict[str, Any] = Body(defa
 
 
 @router.post("/admin/config-items/{target}")
-def create_admin_config_item(request: Request, target: str, body: dict[str, Any] = Body(default_factory=dict)):
-    values = body.get("values") or {}
-    item_id = f"CFG-{uuid4().hex[:8].upper()}"
-    item = {"id": item_id, **values, "updatedAt": server_time()}
-    repo.state["admin_config"].setdefault(admin_collection_for(target), []).insert(0, item)
-    diff = build_config_diff(target, item_id, values, object_name=values.get("name") or values.get("scene") or target)
-    audit_id = repo.add_audit("新增配置项", "AdminConfig", diff["objectId"])
-    return ok({"overview": repo.build_admin_overview(), "diff": diff, "auditLogId": audit_id, "updatedAt": server_time()}, request)
+def create_admin_config_item(request: Request, target: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), if_match: str | None = Header(default=None, alias="If-Match")):
+    def produce():
+        if not singleton_if_match_valid("admin-config", repo.state["admin_config"], if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        values = body.get("values") or {}
+        item_id = f"CFG-{uuid4().hex[:8].upper()}"
+        item = {"id": item_id, **values, "updatedAt": server_time()}
+        repo.state["admin_config"].setdefault(admin_collection_for(target), []).insert(0, item)
+        bump_singleton_revision(repo.state["admin_config"])
+        diff = build_config_diff(target, item_id, values, object_name=values.get("name") or values.get("scene") or target)
+        audit_id = repo.add_audit("新增配置项", "AdminConfig", diff["objectId"])
+        overview = repo.build_admin_overview()
+        overview.update({"revision": singleton_revision(repo.state["admin_config"]), "etag": singleton_etag("admin-config", repo.state["admin_config"]), "updatedAt": repo.state["admin_config"]["updatedAt"]})
+        return ok({"overview": overview, "diff": diff, "auditLogId": audit_id, "updatedAt": repo.state["admin_config"]["updatedAt"], "revision": overview["revision"], "etag": overview["etag"]}, request)
+
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"target": target, "body": body},
+    )
 
 
 @router.put("/admin/config-items/{target}/{item_id}")
-def save_admin_config_item(request: Request, target: str, item_id: str, body: dict[str, Any] = Body(default_factory=dict)):
-    values = body.get("values") or {}
-    collection = repo.state["admin_config"].setdefault(admin_collection_for(target), [])
-    item = next((entry for entry in collection if entry.get("id") == item_id or entry.get("role") == item_id), None)
-    if item:
+def save_admin_config_item(request: Request, target: str, item_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), if_match: str | None = Header(default=None, alias="If-Match")):
+    def produce():
+        if not singleton_if_match_valid("admin-config", repo.state["admin_config"], if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        values = body.get("values") or {}
+        collection = repo.state["admin_config"].setdefault(admin_collection_for(target), [])
+        item = next((entry for entry in collection if entry.get("id") == item_id or entry.get("role") == item_id), None)
+        if not item:
+            return fail(errors.NOT_FOUND, request)
         item.update(values)
         item["updatedAt"] = server_time()
-    diff = build_config_diff(target, item_id, values, object_name=values.get("name") or values.get("scene") or target)
-    audit_id = repo.add_audit("保存配置项", "AdminConfig", item_id)
-    return ok({"overview": repo.build_admin_overview(), "diff": diff, "auditLogId": audit_id, "updatedAt": server_time()}, request)
+        bump_singleton_revision(repo.state["admin_config"])
+        diff = build_config_diff(target, item_id, values, object_name=values.get("name") or values.get("scene") or target)
+        audit_id = repo.add_audit("保存配置项", "AdminConfig", item_id)
+        overview = repo.build_admin_overview()
+        overview.update({"revision": singleton_revision(repo.state["admin_config"]), "etag": singleton_etag("admin-config", repo.state["admin_config"]), "updatedAt": repo.state["admin_config"]["updatedAt"]})
+        return ok({"overview": overview, "diff": diff, "auditLogId": audit_id, "updatedAt": repo.state["admin_config"]["updatedAt"], "revision": overview["revision"], "etag": overview["etag"]}, request)
+
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"target": target, "itemId": item_id, "body": body},
+    )
 
 
 def admin_collection_for(kind: str) -> str:
@@ -3577,24 +4173,46 @@ def admin_generic_list(request: Request, kind: str, page_no: int = Query(default
 
 
 @router.post("/admin/{kind}")
-def admin_generic_create(request: Request, kind: str, body: dict[str, Any] = Body(default_factory=dict)):
-    collection = admin_collection_for(kind)
-    values = body.get("values") or body
-    item = {"id": f"CFG-{uuid4().hex[:8].upper()}", **values, "updatedAt": server_time()}
-    repo.state["admin_config"].setdefault(collection, []).insert(0, item)
-    return ok({"item": item, "auditLogId": repo.add_audit("新增后台配置", "AdminConfig", item["id"])}, request)
+def admin_generic_create(request: Request, kind: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), if_match: str | None = Header(default=None, alias="If-Match")):
+    def produce():
+        if not singleton_if_match_valid("admin-config", repo.state["admin_config"], if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        collection = admin_collection_for(kind)
+        values = body.get("values") or body
+        item = {"id": f"CFG-{uuid4().hex[:8].upper()}", **values, "updatedAt": server_time()}
+        repo.state["admin_config"].setdefault(collection, []).insert(0, item)
+        bump_singleton_revision(repo.state["admin_config"])
+        return ok({"item": item, "auditLogId": repo.add_audit("新增后台配置", "AdminConfig", item["id"]), "revision": singleton_revision(repo.state["admin_config"]), "etag": singleton_etag("admin-config", repo.state["admin_config"]), "updatedAt": repo.state["admin_config"]["updatedAt"]}, request)
+
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"kind": kind, "body": body},
+    )
 
 
 @router.patch("/admin/{kind}/{item_id}")
-def admin_generic_update(request: Request, kind: str, item_id: str, body: dict[str, Any] = Body(default_factory=dict)):
-    collection = admin_collection_for(kind)
-    items = repo.state["admin_config"].setdefault(collection, [])
-    item = next((entry for entry in items if entry.get("id") == item_id), None)
-    if not item:
-        return fail(errors.NOT_FOUND, request)
-    item.update(body)
-    item["updatedAt"] = server_time()
-    return ok({"item": item, "auditLogId": repo.add_audit("更新后台配置", "AdminConfig", item_id)}, request)
+def admin_generic_update(request: Request, kind: str, item_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), if_match: str | None = Header(default=None, alias="If-Match")):
+    def produce():
+        if not singleton_if_match_valid("admin-config", repo.state["admin_config"], if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        collection = admin_collection_for(kind)
+        items = repo.state["admin_config"].setdefault(collection, [])
+        item = next((entry for entry in items if entry.get("id") == item_id), None)
+        if not item:
+            return fail(errors.NOT_FOUND, request)
+        item.update(body)
+        item["updatedAt"] = server_time()
+        bump_singleton_revision(repo.state["admin_config"])
+        return ok({"item": item, "auditLogId": repo.add_audit("更新后台配置", "AdminConfig", item_id), "revision": singleton_revision(repo.state["admin_config"]), "etag": singleton_etag("admin-config", repo.state["admin_config"]), "updatedAt": repo.state["admin_config"]["updatedAt"]}, request)
+
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"kind": kind, "itemId": item_id, "body": body},
+    )
 
 
 @router.get("/admin/workflow-state-machines")
@@ -3603,22 +4221,33 @@ def workflow_state_machines(request: Request):
 
 
 @router.post("/admin/workflow-state-machines")
-def create_workflow_state_machine(request: Request, body: dict[str, Any] = Body(default_factory=dict)):
-    return admin_generic_create(request, "workflowStateMachines", body)
+def create_workflow_state_machine(request: Request, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), if_match: str | None = Header(default=None, alias="If-Match")):
+    return admin_generic_create(request, "workflowStateMachines", body, idempotency_key, if_match)
 
 
 @router.patch("/admin/workflow-state-machines/{state_machine_id}")
-def update_workflow_state_machine(request: Request, state_machine_id: str, body: dict[str, Any] = Body(default_factory=dict)):
-    return admin_generic_update(request, "workflowStateMachines", state_machine_id, body)
+def update_workflow_state_machine(request: Request, state_machine_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), if_match: str | None = Header(default=None, alias="If-Match")):
+    return admin_generic_update(request, "workflowStateMachines", state_machine_id, body, idempotency_key, if_match)
 
 
 @router.post("/admin/config-overview/publish")
-def publish_admin_config(request: Request, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+def publish_admin_config(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
     def produce():
+        if not singleton_if_match_valid("admin-config", repo.state["admin_config"], if_match):
+            return fail(errors.ETAG_CONFLICT, request)
         publish_id = f"PUB-{uuid4().hex[:8].upper()}"
         audit_id = repo.add_audit("发布后台配置", "AdminConfig", publish_id)
         version = "config-v2026.06.27"
         scope = body.get("scope") or "all"
+        repo.state["admin_config"]["lastPublishedVersion"] = version
+        repo.state["admin_config"]["lastPublishedAt"] = server_time()
+        repo.state["admin_config"]["lastPublishedScope"] = scope
+        bump_singleton_revision(repo.state["admin_config"])
         message = {
             "id": f"MSG-{uuid4().hex[:8].upper()}",
             "title": f"后台配置已发布：{version}",
@@ -3648,7 +4277,7 @@ def publish_admin_config(request: Request, body: dict[str, Any] = Body(default_f
             {"domain": "message-template", "label": "消息模板", "affectedCount": 2, "status": "已同步", "trace": "消息模板已刷新待办通知"},
             {"domain": "field-mapping", "label": "字段映射", "affectedCount": 1, "status": "需复核", "trace": "字段映射阈值变更后需在真实 OCR 样例中复核"},
         ]
-        return ok({"publishId": publish_id, "status": "已发布", "version": version, "auditLogId": audit_id, "publishedAt": server_time(), "impactSummary": {"totalAffected": 8, "warningCount": 1, "linkedProjects": len([item for item in repo.state["projects"] if item["status"] != "已归档"]), "pushedMessages": 1, "reviewTodos": 1}, "impacts": impacts}, request)
+        return ok({"publishId": publish_id, "status": "已发布", "version": version, "auditLogId": audit_id, "publishedAt": repo.state["admin_config"]["lastPublishedAt"], "revision": singleton_revision(repo.state["admin_config"]), "etag": singleton_etag("admin-config", repo.state["admin_config"]), "impactSummary": {"totalAffected": 8, "warningCount": 1, "linkedProjects": len([item for item in repo.state["projects"] if item["status"] != "已归档"]), "pushedMessages": 1, "reviewTodos": 1}, "impacts": impacts}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 

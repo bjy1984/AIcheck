@@ -652,7 +652,12 @@ const handleOpenQuickAccess = async (tab: 'search' | 'todos' | 'messages') => {
 const handleCompleteQuickTodo = async (todoId: string) => {
   quickAccessLoading.value = true
   try {
-    const res = await completeTodoApi(todoId, { comment: '从全局入口处理完成。' })
+    const todo = quickTodos.value.find((item) => item.id === todoId)
+    const res = await completeTodoApi(
+      todoId,
+      { comment: '从全局入口处理完成。' },
+      { etag: todo?.etag }
+    )
     if (!res) {
       showActionError('待办处理失败，请刷新待办状态后重试。')
       return
@@ -667,7 +672,8 @@ const handleCompleteQuickTodo = async (todoId: string) => {
 const handleReadQuickMessage = async (messageId: string) => {
   quickAccessLoading.value = true
   try {
-    const res = await markMessageReadApi(messageId)
+    const message = quickMessages.value.find((item) => item.id === messageId)
+    const res = await markMessageReadApi(messageId, { etag: message?.etag })
     if (!res) {
       showActionError('消息标记已读失败，请刷新消息列表后重试。')
       return
@@ -681,7 +687,7 @@ const handleReadQuickMessage = async (messageId: string) => {
 const handleReadAllQuickMessages = async () => {
   quickAccessLoading.value = true
   try {
-    const res = await markAllMessagesReadApi({ projectId: activeProjectId.value })
+    const res = await markAllMessagesReadApi({ projectId: activeProjectId.value }, { etag: '*' })
     if (!res) {
       showActionError('全部消息标记已读失败，请刷新消息列表后重试。')
       return
@@ -933,7 +939,9 @@ const handleCreateUploadSession = async (
   actionLoading.value = true
   uploadDrawerError.value = ''
   try {
-    const res = await createDocumentUploadSessionApi(activeProjectId.value, files)
+    const res = await createDocumentUploadSessionApi(activeProjectId.value, files, {
+      etag: currentProject.value?.etag
+    })
     if (!res) {
       showUploadDrawerError('上传会话创建失败，请检查文件类型、大小和当前节点权限。')
       return
@@ -964,7 +972,9 @@ const handleCreateNdtFilm = async (payload: {
   actionLoading.value = true
   ndtFilmError.value = ''
   try {
-    const res = await createNdtFilmApi(activeProjectId.value, payload)
+    const res = await createNdtFilmApi(activeProjectId.value, payload, {
+      etag: currentProject.value?.etag
+    })
     if (!res) {
       showNdtFilmError('底片编号新增失败，请检查底片编号、焊口编号和当前节点状态。')
       return
@@ -991,7 +1001,9 @@ const handleUploadNdtReport = async (payload: {
   actionLoading.value = true
   ndtReportUploadError.value = ''
   try {
-    const res = await createNdtReportUploadSessionApi(activeProjectId.value, payload)
+    const res = await createNdtReportUploadSessionApi(activeProjectId.value, payload, {
+      etag: currentProject.value?.etag
+    })
     if (!res) {
       showNdtReportUploadError('检测报告上传会话创建失败，请检查文件类型、大小和检测资料权限。')
       return
@@ -1024,7 +1036,9 @@ const handleBindDocuments = async (payload: {
   actionLoading.value = true
   bindDialogError.value = ''
   try {
-    const res = await bindDocumentsToNodeApi(activeProjectId.value, payload)
+    const res = await bindDocumentsToNodeApi(activeProjectId.value, payload, {
+      etag: currentProject.value?.etag
+    })
     if (!res) {
       showBindDialogError('资料挂载失败，请检查资料选择、节点范围和当前项目状态。')
       return
@@ -1050,15 +1064,19 @@ const handleSaveDraft = async () => {
   if (!ensureWritableNode()) return
   actionLoading.value = true
   try {
-    const res = await saveSubmissionDraftApi(activeProjectId.value, {
-      nodeId: activeNodeId.value,
-      nodeIds: [activeNodeId.value],
-      bindingIds: bindingIds(),
-      batchName: selectedNode.value
-        ? `节点 ${selectedNode.value.nodeId} ${selectedNode.value.name} 提交草稿`
-        : undefined,
-      remark: '由工作台保存的节点资料提交草稿。'
-    })
+    const res = await saveSubmissionDraftApi(
+      activeProjectId.value,
+      {
+        nodeId: activeNodeId.value,
+        nodeIds: [activeNodeId.value],
+        bindingIds: bindingIds(),
+        batchName: selectedNode.value
+          ? `节点 ${selectedNode.value.nodeId} ${selectedNode.value.name} 提交草稿`
+          : undefined,
+        remark: '由工作台保存的节点资料提交草稿。'
+      },
+      { etag: currentProject.value?.etag }
+    )
     if (!res) {
       showActionError('提交草稿保存失败，请检查节点资料和当前项目状态。')
       return
@@ -1167,13 +1185,17 @@ const handleSaveDraftFromDialog = async (payload: {
   actionLoading.value = true
   submissionDialogError.value = ''
   try {
-    const res = await saveSubmissionDraftApi(activeProjectId.value, {
-      nodeId: activeNodeId.value,
-      nodeIds: payload.nodeIds,
-      bindingIds: payload.bindingIds,
-      batchName: payload.batchName,
-      remark: payload.remark
-    })
+    const res = await saveSubmissionDraftApi(
+      activeProjectId.value,
+      {
+        nodeId: activeNodeId.value,
+        nodeIds: payload.nodeIds,
+        bindingIds: payload.bindingIds,
+        batchName: payload.batchName,
+        remark: payload.remark
+      },
+      { etag: currentProject.value?.etag }
+    )
     if (!res) {
       showSubmissionDialogError('提交草稿保存失败，请检查节点范围、资料绑定和当前项目状态。')
       return
@@ -1201,13 +1223,17 @@ const handleSubmitBatch = async (payload: {
   actionLoading.value = true
   submissionDialogError.value = ''
   try {
-    const res = await submitNodePackageApi(activeProjectId.value, {
-      nodeId: activeNodeId.value,
-      nodeIds: payload.nodeIds,
-      bindingIds: payload.bindingIds,
-      batchName: payload.batchName,
-      submitterComment: payload.submitterComment
-    })
+    const res = await submitNodePackageApi(
+      activeProjectId.value,
+      {
+        nodeId: activeNodeId.value,
+        nodeIds: payload.nodeIds,
+        bindingIds: payload.bindingIds,
+        batchName: payload.batchName,
+        submitterComment: payload.submitterComment
+      },
+      { etag: currentProject.value?.etag }
+    )
     if (!res) {
       showSubmissionDialogError('节点资料提交失败，请检查资料绑定、节点状态和当前权限。')
       return
@@ -1236,10 +1262,15 @@ const handleWithdrawSubmission = async (payload: { bindingIds: string[]; reason:
   try {
     const submissionId =
       latestSubmissionIds.value[activeNodeId.value] || `SUB-${activeNodeId.value}-CURRENT`
-    const res = await withdrawSubmissionItemsApi(activeProjectId.value, submissionId, {
-      bindingIds: payload.bindingIds,
-      reason: payload.reason
-    })
+    const res = await withdrawSubmissionItemsApi(
+      activeProjectId.value,
+      submissionId,
+      {
+        bindingIds: payload.bindingIds,
+        reason: payload.reason
+      },
+      { etag: currentProject.value?.etag }
+    )
     if (!res) {
       showSubmissionDialogError('提交项撤回失败，请检查资料是否已锁定或当前状态是否允许撤回。')
       return
@@ -1271,11 +1302,17 @@ const handleSubmitNdt = async (payload: { reportIds: string[]; filmIds: string[]
   actionLoading.value = true
   ndtSubmitError.value = ''
   try {
-    const res = await submitNdtSubmissionApi(activeProjectId.value, {
-      nodeId: activeNodeId.value,
-      reportIds: payload.reportIds,
-      filmIds: payload.filmIds
-    })
+    const res = await submitNdtSubmissionApi(
+      activeProjectId.value,
+      {
+        nodeId: activeNodeId.value,
+        reportIds: payload.reportIds,
+        filmIds: payload.filmIds
+      },
+      {
+        etag: currentProject.value?.etag
+      }
+    )
     if (!res) {
       showNdtSubmitError('无损检测资料提交失败，请检查报告、底片和当前节点状态。')
       return
@@ -1295,10 +1332,16 @@ const handleImportNdtRecords = async (payload: { rows: Array<Partial<NdtRecord>>
   actionLoading.value = true
   ndtRecordImportError.value = ''
   try {
-    const res = await importNdtRecordsApi(activeProjectId.value, {
-      nodeId: activeNodeId.value,
-      rows: payload.rows
-    })
+    const res = await importNdtRecordsApi(
+      activeProjectId.value,
+      {
+        nodeId: activeNodeId.value,
+        rows: payload.rows
+      },
+      {
+        etag: currentProject.value?.etag
+      }
+    )
     if (!res) {
       showNdtRecordImportError('无损检测记录导入失败，请检查记录编号、焊口编号和导入数据。')
       return
@@ -1327,7 +1370,9 @@ const handleRectifyNdt = async (payload: {
   actionLoading.value = true
   ndtRectifyError.value = ''
   try {
-    const res = await submitNdtRectificationApi(activeProjectId.value, payload)
+    const res = await submitNdtRectificationApi(activeProjectId.value, payload, {
+      etag: currentProject.value?.etag
+    })
     if (!res) {
       showNdtRectifyError('无损检测补正反馈提交失败，请检查反馈事项和补正说明。')
       return
@@ -1386,11 +1431,15 @@ const handleSubmitRectification = async (payload: { comment: string; bindingIds:
   }
   actionLoading.value = true
   try {
-    const res = await submitRectificationApi(activeProjectId.value, {
-      nodeId: activeNodeId.value,
-      bindingIds: payload.bindingIds.length ? payload.bindingIds : bindingIds(),
-      comment: payload.comment
-    })
+    const res = await submitRectificationApi(
+      activeProjectId.value,
+      {
+        nodeId: activeNodeId.value,
+        bindingIds: payload.bindingIds.length ? payload.bindingIds : bindingIds(),
+        comment: payload.comment
+      },
+      { etag: currentProject.value?.etag }
+    )
     if (!res) {
       showActionError('补正反馈提交失败，请检查补正说明和资料选择。')
       return
@@ -1407,7 +1456,9 @@ const handleAiRecheck = async () => {
   if (!ensureWritableNode()) return
   actionLoading.value = true
   try {
-    const res = await requestAiRecheckApi(activeProjectId.value, activeNodeId.value)
+    const res = await requestAiRecheckApi(activeProjectId.value, activeNodeId.value, {
+      etag: currentProject.value?.etag
+    })
     if (!res) {
       showActionError('AI 复核触发失败，请检查是否已有任务运行或当前节点是否允许复核。')
       return
@@ -1427,11 +1478,18 @@ const handleSaveReviewOpinion = async () => {
   }
   actionLoading.value = true
   try {
-    const res = await saveReviewOpinionApi(activeProjectId.value, activeNodeId.value, {
-      result: reviewResult.value,
-      opinion: reviewOpinion.value.trim(),
-      evidenceLinkIds: evidenceLinks.value.map((item) => item.id)
-    })
+    const res = await saveReviewOpinionApi(
+      activeProjectId.value,
+      activeNodeId.value,
+      {
+        result: reviewResult.value,
+        opinion: reviewOpinion.value.trim(),
+        evidenceLinkIds: evidenceLinks.value.map((item) => item.id)
+      },
+      {
+        etag: currentProject.value?.etag
+      }
+    )
     if (!res) {
       showActionError('审查意见保存失败，请检查审查意见和当前节点状态。')
       return
@@ -1458,6 +1516,9 @@ const handleAdoptAiSuggestion = async (suggestionId: string) => {
         result: normalizedResult,
         opinion: latestAiRun.value.suggestion.opinionDraft,
         reason: '采纳 AI 建议作为人工审查草稿。'
+      },
+      {
+        etag: currentProject.value?.etag
       }
     )
     if (!res) {
@@ -1485,6 +1546,9 @@ const handleRejectAiSuggestion = async (suggestionId: string) => {
       {
         reason: 'AI 建议与人工复核判断不一致。',
         manualOpinion: reviewOpinion.value
+      },
+      {
+        etag: currentProject.value?.etag
       }
     )
     if (!res) {
@@ -1511,10 +1575,17 @@ const handleReturnCorrection = async () => {
   }
   actionLoading.value = true
   try {
-    const res = await returnCorrectionApi(activeProjectId.value, activeNodeId.value, {
-      reason: correctionReason.value.trim(),
-      evidenceLinkIds: evidenceLinks.value.map((item) => item.id)
-    })
+    const res = await returnCorrectionApi(
+      activeProjectId.value,
+      activeNodeId.value,
+      {
+        reason: correctionReason.value.trim(),
+        evidenceLinkIds: evidenceLinks.value.map((item) => item.id)
+      },
+      {
+        etag: currentProject.value?.etag
+      }
+    )
     if (!res) {
       showActionError('退回补正失败，请检查补正原因和节点权限。')
       return
@@ -1533,11 +1604,16 @@ const handleGenerateReport = async (payload: {
   if (!ensureWritableNode()) return
   actionLoading.value = true
   try {
-    const res = await generateReportReviewApi(activeProjectId.value, activeNodeId.value, {
-      includeEvidence: payload.includeEvidence,
-      reportScope: payload.reportScope,
-      reviewerNote: '由工作台发起报告草稿生成。'
-    })
+    const res = await generateReportReviewApi(
+      activeProjectId.value,
+      activeNodeId.value,
+      {
+        includeEvidence: payload.includeEvidence,
+        reportScope: payload.reportScope,
+        reviewerNote: '由工作台发起报告草稿生成。'
+      },
+      { etag: currentProject.value?.etag }
+    )
     if (!res) {
       showActionError('报告草稿生成失败，请检查节点审查状态和报告范围。')
       return
@@ -1553,7 +1629,14 @@ const handleExportReport = async (reportId: string) => {
   if (!activeProjectId.value) return
   actionLoading.value = true
   try {
-    const res = await exportReportApi(activeProjectId.value, reportId, { format: 'pdf' })
+    const res = await exportReportApi(
+      activeProjectId.value,
+      reportId,
+      { format: 'pdf' },
+      {
+        etag: currentProject.value?.etag
+      }
+    )
     if (!res) {
       showActionError('报告导出任务创建失败，请检查报告状态和导出权限。')
       return
@@ -1725,9 +1808,18 @@ const handleArchiveReport = async (reportId: string) => {
   if (!activeProjectId.value) return
   actionLoading.value = true
   try {
-    const res = await archiveReportApi(activeProjectId.value, reportId, {
-      archiveNote: '由监检工作台确认归档。'
-    })
+    const currentReport =
+      reportDetail.value?.report?.id === reportId
+        ? reportDetail.value.report
+        : reports.value.find((item) => item.id === reportId)
+    const res = await archiveReportApi(
+      activeProjectId.value,
+      reportId,
+      {
+        archiveNote: '由监检工作台确认归档。'
+      },
+      { etag: currentReport?.etag }
+    )
     if (!res) {
       showActionError('报告归档失败，请检查报告状态和项目权限。')
       return

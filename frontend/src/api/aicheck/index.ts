@@ -211,6 +211,8 @@ export type ProjectMember = {
   status: '启用' | '停用' | '已过期'
   expiresAt?: string
   updatedAt: string
+  revision?: number
+  etag?: string
 }
 
 export type ProjectMemberSavePayload = {
@@ -293,8 +295,11 @@ export type NdtFeedbackDetailPayload = {
 
 export type NdtSubmissionPayload = {
   submissionId: string
+  snapshotId: string
   nextStatus: '待审查'
   createdTodos: TodoItem[]
+  submittedReportIds: string[]
+  submittedFilmIds: string[]
 }
 
 export type NdtRectificationPayload = {
@@ -430,6 +435,8 @@ export type KnowledgeSource = {
   chunkCount: number
   vectorStatus: '未向量化' | '向量化中' | '已向量化' | '向量化失败' | '待向量化'
   updatedAt: string
+  revision?: number
+  etag?: string
   actions: ActionCode[]
 }
 
@@ -473,7 +480,10 @@ export type KnowledgeTask = {
   progress: number
   errorMessage?: string
   createdAt: string
+  updatedAt?: string
   finishedAt?: string
+  revision?: number
+  etag?: string
   actions: ActionCode[]
 }
 
@@ -530,6 +540,8 @@ export type KnowledgeRuleVersion = {
   description?: string
   publishedAt?: string
   updatedAt: string
+  revision?: number
+  etag?: string
   actions: ActionCode[]
 }
 
@@ -566,6 +578,8 @@ export type KnowledgeConfig = {
   retentionDays: number
   updatedBy: string
   updatedAt: string
+  revision?: number
+  etag?: string
 }
 
 export type KnowledgeAuditLog = {
@@ -665,6 +679,12 @@ export type AdminFieldMapping = {
 }
 
 export type AdminConfigOverviewPayload = {
+  revision?: number
+  etag?: string
+  updatedAt?: string
+  lastPublishedVersion?: string
+  lastPublishedAt?: string
+  lastPublishedScope?: string
   metrics: Array<{
     key: string
     label: string
@@ -849,6 +869,8 @@ export type AdminConfigSaveResult = {
   diff: AdminConfigDiffPayload
   auditLogId: string
   updatedAt: string
+  revision?: number
+  etag?: string
 }
 
 export type AdminPublishImpact = {
@@ -923,6 +945,8 @@ export type AdminPublishConfigPayload = {
   version: string
   auditLogId: string
   publishedAt: string
+  revision?: number
+  etag?: string
   impactSummary: {
     totalAffected: number
     warningCount: number
@@ -956,31 +980,53 @@ export const listProjectMembersApi = (
 
 export const authorizeProjectMemberApi = (
   projectId: string,
-  payload: ProjectMemberSavePayload
+  payload: ProjectMemberSavePayload,
+  options?: MutationHeaderOptions
 ): Promise<IResponse<{ member: ProjectMember; auditLogId: string }>> => {
-  return request.post({ url: `/api/projects/${projectId}/members`, data: payload })
+  return request.post({
+    url: `/api/projects/${projectId}/members`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const updateProjectMemberApi = (
   projectId: string,
   memberId: string,
-  payload: Partial<ProjectMemberSavePayload> & { status?: ProjectMember['status'] }
+  payload: Partial<ProjectMemberSavePayload> & { status?: ProjectMember['status'] },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<{ member: ProjectMember; auditLogId: string }>> => {
-  return request.put({ url: `/api/projects/${projectId}/members/${memberId}`, data: payload })
+  return request.put({
+    url: `/api/projects/${projectId}/members/${memberId}`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const createAdminProjectApi = (
-  payload: AdminProjectCreatePayload
+  payload: AdminProjectCreatePayload,
+  options?: MutationHeaderOptions
 ): Promise<IResponse<AdminProjectCreateResult>> => {
-  return request.post({ url: '/api/admin/projects', data: payload })
+  return request.post({
+    url: '/api/admin/projects',
+    data: payload,
+    headers: mutationHeaders(options)
+  })
 }
 
-export const createAdminConfigExportApi = (payload: {
-  scope: 'all' | 'permission' | 'workflow' | 'node-template' | 'rule'
-  includeAudit?: boolean
-  reason?: string
-}): Promise<IResponse<{ exportId: string; task: ExportTask }>> => {
-  return request.post({ url: '/api/admin/config-export', data: payload })
+export const createAdminConfigExportApi = (
+  payload: {
+    scope: 'all' | 'permission' | 'workflow' | 'node-template' | 'rule'
+    includeAudit?: boolean
+    reason?: string
+  },
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ exportId: string; task: ExportTask }>> => {
+  return request.post({
+    url: '/api/admin/config-export',
+    data: payload,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const getWorkbenchContextApi = (
@@ -1031,11 +1077,13 @@ export const getDocumentDownloadUrlApi = (
 
 export const createDocumentUploadSessionApi = (
   projectId: string,
-  files: Array<{ fileName: string; fileSize: number; fileType: string }>
+  files: Array<{ fileName: string; fileSize: number; fileType: string }>,
+  options?: MutationHeaderOptions
 ): Promise<IResponse<UploadSessionPayload>> => {
   return request.post({
     url: `/api/projects/${projectId}/documents/upload-session`,
-    data: { files }
+    data: { files },
+    headers: mutationHeaders(options)
   })
 }
 
@@ -1045,9 +1093,14 @@ export const bindDocumentsToNodeApi = (
     nodeId?: number
     nodeIds?: number[]
     bindings: Array<Pick<NodeFileBinding, 'documentId' | 'documentVersionId' | 'usage'>>
-  }
+  },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<MockMutationResult>> => {
-  return request.post({ url: `/api/projects/${projectId}/documents/bindings`, data: payload })
+  return request.post({
+    url: `/api/projects/${projectId}/documents/bindings`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const saveSubmissionDraftApi = (
@@ -1058,9 +1111,14 @@ export const saveSubmissionDraftApi = (
     bindingIds: string[]
     remark?: string
     batchName?: string
-  }
+  },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<SubmissionDraftPayload>> => {
-  return request.post({ url: `/api/projects/${projectId}/submissions/drafts`, data: payload })
+  return request.post({
+    url: `/api/projects/${projectId}/submissions/drafts`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const listSubmissionHistoryApi = (
@@ -1084,9 +1142,14 @@ export const submitNodePackageApi = (
     bindingIds: string[]
     submitterComment?: string
     batchName?: string
-  }
+  },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<SubmissionPayload>> => {
-  return request.post({ url: `/api/projects/${projectId}/submissions`, data: payload })
+  return request.post({
+    url: `/api/projects/${projectId}/submissions`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const getSubmissionDetailApi = (
@@ -1099,36 +1162,49 @@ export const getSubmissionDetailApi = (
 export const withdrawSubmissionItemsApi = (
   projectId: string,
   submissionId: string,
-  payload: { bindingIds?: string[]; documentVersionIds?: string[]; reason: string }
+  payload: { bindingIds?: string[]; documentVersionIds?: string[]; reason: string },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<MockMutationResult>> => {
   return request.post({
     url: `/api/projects/${projectId}/submissions/${submissionId}/withdraw-items`,
-    data: payload
+    data: payload,
+    headers: mutationHeaders(options)
   })
 }
 
 export const submitRectificationApi = (
   projectId: string,
-  payload: { nodeId: number; bindingIds: string[]; comment: string }
+  payload: { nodeId: number; bindingIds: string[]; comment: string },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<RectificationPayload>> => {
-  return request.post({ url: `/api/projects/${projectId}/rectifications`, data: payload })
+  return request.post({
+    url: `/api/projects/${projectId}/rectifications`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const requestAiRecheckApi = (
   projectId: string,
-  nodeId: number
+  nodeId: number,
+  options?: MutationHeaderOptions
 ): Promise<IResponse<AiRecheckPayload>> => {
-  return request.post({ url: `/api/projects/${projectId}/inspection/nodes/${nodeId}/ai-recheck` })
+  return request.post({
+    url: `/api/projects/${projectId}/inspection/nodes/${nodeId}/ai-recheck`,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const saveReviewOpinionApi = (
   projectId: string,
   nodeId: number,
-  payload: { result: ReviewOpinion['result']; opinion: string; evidenceLinkIds: string[] }
+  payload: { result: ReviewOpinion['result']; opinion: string; evidenceLinkIds: string[] },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<ReviewOpinionPayload>> => {
   return request.post({
     url: `/api/projects/${projectId}/inspection/nodes/${nodeId}/review-opinions`,
-    data: payload
+    data: payload,
+    headers: mutationHeaders(options)
   })
 }
 
@@ -1136,11 +1212,13 @@ export const adoptAiSuggestionApi = (
   projectId: string,
   nodeId: number,
   suggestionId: string,
-  payload: { result: ReviewOpinion['result']; opinion: string; reason: string }
+  payload: { result: ReviewOpinion['result']; opinion: string; reason: string },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<AiSuggestionAdoptPayload>> => {
   return request.post({
     url: `/api/projects/${projectId}/inspection/nodes/${nodeId}/ai-suggestions/${suggestionId}/adopt`,
-    data: payload
+    data: payload,
+    headers: mutationHeaders(options)
   })
 }
 
@@ -1148,22 +1226,26 @@ export const rejectAiSuggestionApi = (
   projectId: string,
   nodeId: number,
   suggestionId: string,
-  payload: { reason: string; manualOpinion?: string }
+  payload: { reason: string; manualOpinion?: string },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<MockMutationResult>> => {
   return request.post({
     url: `/api/projects/${projectId}/inspection/nodes/${nodeId}/ai-suggestions/${suggestionId}/reject`,
-    data: payload
+    data: payload,
+    headers: mutationHeaders(options)
   })
 }
 
 export const returnCorrectionApi = (
   projectId: string,
   nodeId: number,
-  payload: { reason: string; evidenceLinkIds: string[] }
+  payload: { reason: string; evidenceLinkIds: string[] },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<ReturnCorrectionPayload>> => {
   return request.post({
     url: `/api/projects/${projectId}/inspection/nodes/${nodeId}/actions/return-correction`,
-    data: payload
+    data: payload,
+    headers: mutationHeaders(options)
   })
 }
 
@@ -1201,11 +1283,13 @@ export const generateReportReviewApi = (
     includeEvidence: boolean
     reportScope: ReportVersion['scope']
     reviewerNote?: string
-  }
+  },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<ReportReviewPayload>> => {
   return request.post({
     url: `/api/projects/${projectId}/inspection/nodes/${nodeId}/report-review`,
-    data: payload
+    data: payload,
+    headers: mutationHeaders(options)
   })
 }
 
@@ -1257,22 +1341,26 @@ export const getEvidencePackageApi = (
 export const exportReportApi = (
   projectId: string,
   reportId: string,
-  payload: { format: 'docx' | 'pdf' }
+  payload: { format: 'docx' | 'pdf' },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<ReportExportPayload>> => {
   return request.post({
     url: `/api/projects/${projectId}/reports/${reportId}/export`,
-    data: payload
+    data: payload,
+    headers: mutationHeaders(options)
   })
 }
 
 export const archiveReportApi = (
   projectId: string,
   reportId: string,
-  payload: { archiveNote?: string }
+  payload: { archiveNote?: string },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<ReportArchivePayload>> => {
   return request.post({
     url: `/api/projects/${projectId}/reports/${reportId}/archive`,
-    data: payload
+    data: payload,
+    headers: mutationHeaders(options)
   })
 }
 
@@ -1294,9 +1382,14 @@ export const createNdtFilmApi = (
   payload: Pick<NdtFilm, 'filmNo' | 'weldNo' | 'method'> & {
     pipelineNo?: string
     testDate?: string
-  }
+  },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<{ film: NdtFilm }>> => {
-  return request.post({ url: `/api/projects/${projectId}/ndt/films`, data: payload })
+  return request.post({
+    url: `/api/projects/${projectId}/ndt/films`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const listNdtRecordsApi = (
@@ -1318,9 +1411,14 @@ export const importNdtRecordsApi = (
     fileId?: string
     nodeId: number
     rows?: Array<Partial<NdtRecord>>
-  }
+  },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<NdtRecordImportPayload>> => {
-  return request.post({ url: `/api/projects/${projectId}/ndt/records/import`, data: payload })
+  return request.post({
+    url: `/api/projects/${projectId}/ndt/records/import`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const listNdtReportsApi = (
@@ -1347,19 +1445,26 @@ export const createNdtReportUploadSessionApi = (
   payload: {
     files: Array<{ fileName: string; fileSize: number; fileType: string }>
     relatedFilmIds?: string[]
-  }
+  },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<NdtReportUploadPayload>> => {
   return request.post({
     url: `/api/projects/${projectId}/ndt/reports/upload-session`,
-    data: payload
+    data: payload,
+    headers: mutationHeaders(options)
   })
 }
 
 export const submitNdtSubmissionApi = (
   projectId: string,
-  payload: { reportIds: string[]; filmIds?: string[]; nodeId: number }
+  payload: { reportIds: string[]; filmIds?: string[]; nodeId: number },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<NdtSubmissionPayload>> => {
-  return request.post({ url: `/api/projects/${projectId}/ndt/submissions`, data: payload })
+  return request.post({
+    url: `/api/projects/${projectId}/ndt/submissions`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const submitNdtRectificationApi = (
@@ -1369,9 +1474,14 @@ export const submitNdtRectificationApi = (
     description: string
     reportIds?: string[]
     filmIds?: string[]
-  }
+  },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<NdtRectificationPayload>> => {
-  return request.post({ url: `/api/projects/${projectId}/ndt/rectifications`, data: payload })
+  return request.post({
+    url: `/api/projects/${projectId}/ndt/rectifications`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const listNdtInspectionFeedbackApi = (
@@ -1386,6 +1496,26 @@ export const getNdtInspectionFeedbackDetailApi = (
   feedbackId: string
 ): Promise<IResponse<NdtFeedbackDetailPayload>> => {
   return request.get({ url: `/api/projects/${projectId}/ndt/inspection-feedback/${feedbackId}` })
+}
+
+type MutationHeaderOptions = {
+  etag?: string
+  idempotencyKey?: string
+}
+
+const createIdempotencyKey = () => {
+  const random =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `aicheck-${random}`
+}
+
+const mutationHeaders = (options?: MutationHeaderOptions) => {
+  const headers: Record<string, string> = {}
+  if (options?.etag) headers['If-Match'] = options.etag
+  headers['Idempotency-Key'] = options?.idempotencyKey || createIdempotencyKey()
+  return Object.keys(headers).length ? headers : undefined
 }
 
 export const getKnowledgeOverviewApi = (): Promise<IResponse<KnowledgeOverviewPayload>> => {
@@ -1403,9 +1533,14 @@ export const listKnowledgeSourcesApi = (params?: {
 }
 
 export const createKnowledgeSourceApi = (
-  payload: KnowledgeSourceSavePayload
+  payload: KnowledgeSourceSavePayload,
+  options?: MutationHeaderOptions
 ): Promise<IResponse<{ source: KnowledgeSource; auditLogId: string }>> => {
-  return request.post({ url: '/api/knowledge/sources', data: payload })
+  return request.post({
+    url: '/api/knowledge/sources',
+    data: payload,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const getKnowledgeSourceApi = (
@@ -1416,23 +1551,38 @@ export const getKnowledgeSourceApi = (
 
 export const updateKnowledgeSourceApi = (
   sourceId: string,
-  payload: Partial<KnowledgeSourceSavePayload>
+  payload: Partial<KnowledgeSourceSavePayload>,
+  options?: MutationHeaderOptions
 ): Promise<IResponse<{ source: KnowledgeSource; auditLogId: string }>> => {
-  return request.put({ url: `/api/knowledge/sources/${sourceId}`, data: payload })
+  return request.put({
+    url: `/api/knowledge/sources/${sourceId}`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const enableKnowledgeSourceApi = (
   sourceId: string,
-  payload?: { reason?: string }
+  payload?: { reason?: string },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<{ source: KnowledgeSource; auditLogId: string }>> => {
-  return request.post({ url: `/api/knowledge/sources/${sourceId}/enable`, data: payload || {} })
+  return request.post({
+    url: `/api/knowledge/sources/${sourceId}/enable`,
+    data: payload || {},
+    headers: mutationHeaders(options)
+  })
 }
 
 export const disableKnowledgeSourceApi = (
   sourceId: string,
-  payload?: { reason?: string }
+  payload?: { reason?: string },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<{ source: KnowledgeSource; auditLogId: string }>> => {
-  return request.post({ url: `/api/knowledge/sources/${sourceId}/disable`, data: payload || {} })
+  return request.post({
+    url: `/api/knowledge/sources/${sourceId}/disable`,
+    data: payload || {},
+    headers: mutationHeaders(options)
+  })
 }
 
 export const listKnowledgeProjectFilesApi = (params?: {
@@ -1483,31 +1633,53 @@ export const listKnowledgeTasksApi = (params?: {
 
 export const retryKnowledgeTaskApi = (
   taskId: string,
-  payload?: { reason?: string }
+  payload?: { reason?: string },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<{ task: KnowledgeTask }>> => {
-  return request.post({ url: `/api/knowledge/tasks/${taskId}/retry`, data: payload || {} })
+  return request.post({
+    url: `/api/knowledge/tasks/${taskId}/retry`,
+    data: payload || {},
+    headers: mutationHeaders(options)
+  })
 }
 
 export const cancelKnowledgeTaskApi = (
   taskId: string,
-  payload?: { reason?: string }
+  payload?: { reason?: string },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<{ task: KnowledgeTask }>> => {
-  return request.post({ url: `/api/knowledge/tasks/${taskId}/cancel`, data: payload || {} })
+  return request.post({
+    url: `/api/knowledge/tasks/${taskId}/cancel`,
+    data: payload || {},
+    headers: mutationHeaders(options)
+  })
 }
 
 export const reindexKnowledgeFileApi = (
   fileId: string,
-  payload?: { force?: boolean }
+  payload?: { force?: boolean },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<{ task: KnowledgeTask }>> => {
-  return request.post({ url: `/api/knowledge/files/${fileId}/reindex`, data: payload || {} })
+  return request.post({
+    url: `/api/knowledge/files/${fileId}/reindex`,
+    data: payload || {},
+    headers: mutationHeaders(options)
+  })
 }
 
-export const batchReindexKnowledgeApi = (payload: {
-  scope: 'all' | 'project' | 'source'
-  projectId?: string
-  sourceId?: string
-}): Promise<IResponse<{ taskIds: string[] }>> => {
-  return request.post({ url: '/api/knowledge/reindex', data: payload })
+export const batchReindexKnowledgeApi = (
+  payload: {
+    scope: 'all' | 'project' | 'source'
+    projectId?: string
+    sourceId?: string
+  },
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ taskIds: string[] }>> => {
+  return request.post({
+    url: '/api/knowledge/reindex',
+    data: payload,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const runKnowledgeRetrievalTestApi = (payload: {
@@ -1538,30 +1710,53 @@ export const getKnowledgeRuleVersionDiffApi = (
 
 export const publishKnowledgeRuleVersionApi = (
   versionId: string,
-  payload: { reason: string; effectiveAt?: string }
+  payload: { reason: string; effectiveAt?: string },
+  options?: MutationHeaderOptions
 ): Promise<IResponse<MockMutationResult & { rule: KnowledgeRuleVersion }>> => {
-  return request.post({ url: `/api/rules/versions/${versionId}/publish`, data: payload })
+  return request.post({
+    url: `/api/rules/versions/${versionId}/publish`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const rollbackKnowledgeRuleVersionApi = (
   versionId: string,
-  payload: { reason: string; targetVersion: string }
+  payload: { reason: string; targetVersion: string },
+  options?: MutationHeaderOptions
 ): Promise<
   IResponse<MockMutationResult & { rule: KnowledgeRuleVersion; target: KnowledgeRuleVersion }>
 > => {
-  return request.post({ url: `/api/rules/versions/${versionId}/rollback`, data: payload })
+  return request.post({
+    url: `/api/rules/versions/${versionId}/rollback`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const getKnowledgeConfigApi = (): Promise<
-  IResponse<{ config: KnowledgeConfig; updatedAt: string }>
+  IResponse<{ config: KnowledgeConfig; updatedAt: string; revision?: number; etag?: string }>
 > => {
   return request.get({ url: '/api/knowledge/config' })
 }
 
 export const updateKnowledgeConfigApi = (
-  payload: Partial<KnowledgeConfig>
-): Promise<IResponse<{ config: KnowledgeConfig; updatedAt: string; auditLogId: string }>> => {
-  return request.put({ url: '/api/knowledge/config', data: payload })
+  payload: Partial<KnowledgeConfig>,
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    config: KnowledgeConfig
+    updatedAt: string
+    auditLogId: string
+    revision?: number
+    etag?: string
+  }>
+> => {
+  return request.put({
+    url: '/api/knowledge/config',
+    data: payload,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const listKnowledgeAuditLogsApi = (params?: {
@@ -1594,14 +1789,21 @@ export const getReasoningLogEvidenceApi = (logId: string): Promise<IResponse<Evi
   return request.get({ url: `/api/reasoning/logs/${logId}/evidence` })
 }
 
-export const runLlmCompareApi = (payload: {
-  question: string
-  modelCodes: string[]
-  projectId?: string
-  nodeId?: number
-  evidenceLinkIds?: string[]
-}): Promise<IResponse<LlmComparePayload>> => {
-  return request.post({ url: '/api/llm/compare', data: payload })
+export const runLlmCompareApi = (
+  payload: {
+    question: string
+    modelCodes: string[]
+    projectId?: string
+    nodeId?: number
+    evidenceLinkIds?: string[]
+  },
+  options?: MutationHeaderOptions
+): Promise<IResponse<LlmComparePayload>> => {
+  return request.post({
+    url: '/api/llm/compare',
+    data: payload,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const listLlmCompareRunsApi = (params?: {
@@ -1663,25 +1865,39 @@ export const previewAdminConfigDiffApi = (
 }
 
 export const createAdminConfigItemApi = (
-  payload: AdminConfigCreatePayload
+  payload: AdminConfigCreatePayload,
+  options?: MutationHeaderOptions
 ): Promise<IResponse<AdminConfigSaveResult>> => {
-  return request.post({ url: `/api/admin/config-items/${payload.target}`, data: payload })
-}
-
-export const saveAdminConfigItemApi = (
-  payload: AdminConfigChangePayload
-): Promise<IResponse<AdminConfigSaveResult>> => {
-  return request.put({
-    url: `/api/admin/config-items/${payload.target}/${payload.id}`,
-    data: payload
+  return request.post({
+    url: `/api/admin/config-items/${payload.target}`,
+    data: payload,
+    headers: mutationHeaders(options)
   })
 }
 
-export const publishAdminConfigApi = (payload: {
-  scope: 'all' | 'permission' | 'workflow' | 'node-template' | 'rule'
-  reason: string
-}): Promise<IResponse<AdminPublishConfigPayload>> => {
-  return request.post({ url: '/api/admin/config-overview/publish', data: payload })
+export const saveAdminConfigItemApi = (
+  payload: AdminConfigChangePayload,
+  options?: MutationHeaderOptions
+): Promise<IResponse<AdminConfigSaveResult>> => {
+  return request.put({
+    url: `/api/admin/config-items/${payload.target}/${payload.id}`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const publishAdminConfigApi = (
+  payload: {
+    scope: 'all' | 'permission' | 'workflow' | 'node-template' | 'rule'
+    reason: string
+  },
+  options?: MutationHeaderOptions
+): Promise<IResponse<AdminPublishConfigPayload>> => {
+  return request.post({
+    url: '/api/admin/config-overview/publish',
+    data: payload,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const searchApi = (params: {
@@ -1710,9 +1926,14 @@ export const getTodoDetailApi = (todoId: string): Promise<IResponse<TodoDetailPa
 
 export const completeTodoApi = (
   todoId: string,
-  payload?: { result?: string; comment?: string }
-): Promise<IResponse<MockMutationResult>> => {
-  return request.post({ url: `/api/todos/${todoId}/complete`, data: payload || {} })
+  payload?: { result?: string; comment?: string },
+  options?: MutationHeaderOptions
+): Promise<IResponse<MockMutationResult & { todo?: TodoItem }>> => {
+  return request.post({
+    url: `/api/todos/${todoId}/complete`,
+    data: payload || {},
+    headers: mutationHeaders(options)
+  })
 }
 
 export const listMessagesApi = (params?: {
@@ -1724,12 +1945,25 @@ export const listMessagesApi = (params?: {
   return request.get({ url: '/api/messages', params })
 }
 
-export const markMessageReadApi = (messageId: string): Promise<IResponse<MockMutationResult>> => {
-  return request.post({ url: `/api/messages/${messageId}/read` })
+export const markMessageReadApi = (
+  messageId: string,
+  options?: MutationHeaderOptions
+): Promise<IResponse<MockMutationResult & { message?: MessageItem }>> => {
+  return request.post({
+    url: `/api/messages/${messageId}/read`,
+    headers: mutationHeaders(options)
+  })
 }
 
-export const markAllMessagesReadApi = (payload?: {
-  projectId?: string
-}): Promise<IResponse<{ affectedCount: number }>> => {
-  return request.post({ url: '/api/messages/read-all', data: payload || {} })
+export const markAllMessagesReadApi = (
+  payload?: {
+    projectId?: string
+  },
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ affectedCount: number; messages?: MessageItem[]; auditLogId?: string }>> => {
+  return request.post({
+    url: '/api/messages/read-all',
+    data: payload || {},
+    headers: mutationHeaders(options)
+  })
 }

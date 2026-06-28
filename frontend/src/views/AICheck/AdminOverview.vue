@@ -1010,10 +1010,13 @@ const handlePublishConfig = async () => {
   adminActionError.value = ''
   adminActionRetry.value = null
   try {
-    const res = await publishAdminConfigApi({
-      scope: 'all',
-      reason: '发布管理后台配置快照。'
-    })
+    const res = await publishAdminConfigApi(
+      {
+        scope: 'all',
+        reason: '发布管理后台配置快照。'
+      },
+      { etag: overview.value.etag }
+    )
     if (!res) {
       adminActionError.value = getRequestErrorMessage(
         undefined,
@@ -1325,7 +1328,7 @@ const handleSaveCreatedConfigItem = async () => {
     ElMessage.warning('该配置类型不支持新增')
     return false
   }
-  const res = await createAdminConfigItemApi(payload)
+  const res = await createAdminConfigItemApi(payload, { etag: overview.value.etag })
   if (!res) {
     configOperationError.value = getRequestErrorMessage(
       undefined,
@@ -1387,7 +1390,9 @@ const handleSaveConfigItem = async () => {
       await handleSaveCreatedConfigItem()
       return
     }
-    const res = await saveAdminConfigItemApi(buildAdminConfigChangePayload())
+    const res = await saveAdminConfigItemApi(buildAdminConfigChangePayload(), {
+      etag: overview.value.etag
+    })
     if (!res) {
       configOperationError.value = getRequestErrorMessage(
         undefined,
@@ -1578,9 +1583,14 @@ const handleToggleMemberStatus = async (row: ProjectMember) => {
   memberSaving.value = true
   memberOperationError.value = ''
   try {
-    const res = await updateProjectMemberApi(projectDetail.value.project.id, row.id, {
-      status: nextStatus
-    })
+    const res = await updateProjectMemberApi(
+      projectDetail.value.project.id,
+      row.id,
+      {
+        status: nextStatus
+      },
+      { etag: row.etag }
+    )
     if (!res) {
       memberOperationError.value = getRequestErrorMessage(
         undefined,

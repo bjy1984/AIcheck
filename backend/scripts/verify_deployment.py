@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -21,6 +22,14 @@ from libs.security.auth import ROLE_DEFAULT_PATHS
 
 DEFAULT_ROLES = ("admin", "inspection", "contractor", "ndt", "owner")
 REQUIRED_LITELLM_ALIASES = {"default-chat", "review-chat", "embedding-default", "compare-fast"}
+SECRET_TEXT_PATTERNS = [
+    re.compile(r"sk-[A-Za-z0-9._-]{6,}"),
+    re.compile(r"(?i)(Bearer\s+)[A-Za-z0-9._~+/=-]{8,}"),
+    re.compile(
+        r"(?i)(['\"]?(?:authorization|api[_-]?key|password|secret|token)['\"]?\s*[:=]\s*['\"]?)[^'\"\s,}]+"
+    ),
+]
+SENSITIVE_FIELD_NAMES = {"authorization", "api_key", "apikey", "password", "secret", "token"}
 
 
 def deployment_probe_pdf() -> bytes:
@@ -52,6 +61,36 @@ def deployment_probe_pdf() -> bytes:
         ]
     )
     return b"".join(parts)
+
+
+def redact_sensitive_text(text: str) -> str:
+    redacted = text
+    redacted = SECRET_TEXT_PATTERNS[0].sub("sk-***", redacted)
+    redacted = SECRET_TEXT_PATTERNS[1].sub(r"\1***", redacted)
+    redacted = SECRET_TEXT_PATTERNS[2].sub(r"\1***", redacted)
+    return redacted
+
+
+def is_sensitive_field_name(name: object) -> bool:
+    normalized = str(name).replace("-", "_").lower()
+    return normalized in SENSITIVE_FIELD_NAMES or any(
+        normalized.endswith(f"_{field}") for field in SENSITIVE_FIELD_NAMES
+    )
+
+
+def redact_sensitive_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: "***" if is_sensitive_field_name(key) else redact_sensitive_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [redact_sensitive_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(redact_sensitive_value(item) for item in value)
+    if isinstance(value, str):
+        return redact_sensitive_text(value)
+    return value
 
 
 @dataclass
@@ -176,7 +215,15 @@ class DeploymentVerifier:
         return self.results
 
     def add(self, name: str, status: str, detail: str = "", data: dict[str, Any] | None = None) -> None:
-        self.results.append(CheckResult(name=name, status=status, detail=detail, data=data))
+        safe_data = redact_sensitive_value(data) if data is not None else None
+        self.results.append(
+            CheckResult(
+                name=name,
+                status=status,
+                detail=redact_sensitive_text(detail),
+                data=safe_data,
+            )
+        )
 
     def request_json(self, client: httpx.Client, method: str, path: str, **kwargs: Any) -> tuple[int, Any]:
         response = client.request(method, path, **kwargs)
@@ -372,7 +419,7 @@ class DeploymentVerifier:
         status_code, payload = self.request_json(
             self.api,
             "GET",
-            f"/api/knowledge/tasks?taskType=ocr&pageSize=50",
+            "/api/knowledge/tasks?taskType=ocr&pageSize=50",
             headers=headers,
         )
         tasks = self.envelope_data("api.write-probes.ocr-task", status_code, payload)

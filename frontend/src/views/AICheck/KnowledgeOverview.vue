@@ -889,7 +889,10 @@ const handleSaveSource = async () => {
       }
       ElMessage.success('知识源已新增')
     } else {
-      const res = await updateKnowledgeSourceApi(sourceEditingId.value, sourceForm)
+      const currentSource = sources.value.find((item) => item.id === sourceEditingId.value)
+      const res = await updateKnowledgeSourceApi(sourceEditingId.value, sourceForm, {
+        etag: currentSource?.etag
+      })
       if (!res) {
         setOperationIssue('source', buildOperationFailureMessage('知识源更新'))
         return
@@ -916,14 +919,22 @@ const handleToggleSourceStatus = async (row: KnowledgeSource) => {
   clearOperationIssue('source')
   try {
     if (row.status === '启用') {
-      const res = await disableKnowledgeSourceApi(row.id, { reason: '知识库管理页面停用' })
+      const res = await disableKnowledgeSourceApi(
+        row.id,
+        { reason: '知识库管理页面停用' },
+        { etag: row.etag }
+      )
       if (!res) {
         setOperationIssue('source', buildOperationFailureMessage('知识源停用'))
         return
       }
       ElMessage.success(`${row.name} 已停用`)
     } else {
-      const res = await enableKnowledgeSourceApi(row.id, { reason: '知识库管理页面启用' })
+      const res = await enableKnowledgeSourceApi(
+        row.id,
+        { reason: '知识库管理页面启用' },
+        { etag: row.etag }
+      )
       if (!res) {
         setOperationIssue('source', buildOperationFailureMessage('知识源启用'))
         return
@@ -984,7 +995,11 @@ const handlePublishRule = async (row: KnowledgeRuleVersion) => {
   actionLoading.value = `rule-publish-${row.id}`
   clearOperationIssue('rule')
   try {
-    const res = await publishKnowledgeRuleVersionApi(row.id, { reason: '知识库规则管理发布' })
+    const res = await publishKnowledgeRuleVersionApi(
+      row.id,
+      { reason: '知识库规则管理发布' },
+      { etag: row.etag }
+    )
     if (!res) {
       setOperationIssue('rule', buildOperationFailureMessage('规则版本发布'))
       return
@@ -1007,10 +1022,14 @@ const handleRollbackRule = async (row: KnowledgeRuleVersion) => {
   actionLoading.value = `rule-rollback-${row.id}`
   clearOperationIssue('rule')
   try {
-    const res = await rollbackKnowledgeRuleVersionApi(row.id, {
-      targetVersion,
-      reason: '知识库规则管理回滚'
-    })
+    const res = await rollbackKnowledgeRuleVersionApi(
+      row.id,
+      {
+        targetVersion,
+        reason: '知识库规则管理回滚'
+      },
+      { etag: row.etag }
+    )
     if (!res) {
       setOperationIssue('rule', buildOperationFailureMessage('规则版本回滚'))
       return
@@ -1032,7 +1051,11 @@ const handleSaveKnowledgeConfig = async () => {
   actionLoading.value = 'config-save'
   clearOperationIssue('config')
   try {
-    const res = await updateKnowledgeConfigApi(knowledgeConfig)
+    const payload: Partial<KnowledgeConfig> = { ...knowledgeConfig }
+    delete payload.etag
+    delete payload.revision
+    delete payload.updatedAt
+    const res = await updateKnowledgeConfigApi(payload, { etag: knowledgeConfig.etag })
     if (!res) {
       setOperationIssue('config', buildOperationFailureMessage('知识库配置保存'))
       return
@@ -1136,7 +1159,11 @@ const handleRetryTask = async (row: KnowledgeTask) => {
   actionLoading.value = `retry-${row.id}`
   clearOperationIssue('task')
   try {
-    const res = await retryKnowledgeTaskApi(row.id, { reason: '前端任务中心手动重试' })
+    const res = await retryKnowledgeTaskApi(
+      row.id,
+      { reason: '前端任务中心手动重试' },
+      { etag: row.etag }
+    )
     if (!res) {
       setOperationIssue('task', buildOperationFailureMessage('知识库任务重试'))
       return
@@ -1154,7 +1181,11 @@ const handleCancelTask = async (row: KnowledgeTask) => {
   actionLoading.value = `cancel-${row.id}`
   clearOperationIssue('task')
   try {
-    const res = await cancelKnowledgeTaskApi(row.id, { reason: '前端任务中心取消排队任务' })
+    const res = await cancelKnowledgeTaskApi(
+      row.id,
+      { reason: '前端任务中心取消排队任务' },
+      { etag: row.etag }
+    )
     if (!res) {
       setOperationIssue('task', buildOperationFailureMessage('知识库任务取消'))
       return

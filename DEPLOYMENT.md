@@ -250,6 +250,8 @@ Compose 对敏感变量使用必填校验，缺少以下变量时服务不会启
 - `LITELLM_API_KEY`
 - `LITELLM_POSTGRES_PASSWORD`
 
+`check_96_preflight.py --strict-production` 会额外检查内部密钥强度。`AICHECK_JWT_SECRET` 至少 32 个字符且至少 12 个不同字符；`AICHECK_MINIO_SECRET_KEY`、`LITELLM_API_KEY`、`LITELLM_POSTGRES_PASSWORD` 至少 16 个字符且至少 8 个不同字符。`OPENAI_API_KEY` 等 provider key 只做存在和 placeholder 检查，因为格式由供应商决定。
+
 ## 5. 启动后端服务
 
 ```bash
@@ -334,6 +336,20 @@ docker compose exec api-service python scripts/create_roles.py \
 - 支持 `--roles admin,inspection` 只初始化部分角色；支持 `--project-id` 指定项目；支持 `--mongo-url` 和 `--db` 覆盖环境变量。
 
 注意：生产环境 `AICHECK_ENABLE_DEMO_USERS=false` 时，只有脚本写入 `users` 后才能登录。不要在生产使用用户名同名密码；首次上线后仍建议接入企业用户中心或正式密码重置流程。
+
+无 MongoDB 的本地联调可以启用内存角色 bootstrap。该模式只用于开发机，后端启动时会把五类角色账号写入当前进程的 in-memory repository：
+
+```bash
+cd backend
+source .venv/bin/activate
+AICHECK_BOOTSTRAP_LOCAL_ROLES=true \
+AICHECK_BOOTSTRAP_PASSWORD_ADMIN='Local!2026-SystemZ' \
+AICHECK_BOOTSTRAP_PASSWORD_INSPECTION='Local!2026-InspectZ' \
+AICHECK_BOOTSTRAP_PASSWORD_CONTRACTOR='Local!2026-BuildZ' \
+AICHECK_BOOTSTRAP_PASSWORD_NDT='Local!2026-TestZ' \
+AICHECK_BOOTSTRAP_PASSWORD_OWNER='Local!2026-ViewZ' \
+uvicorn apps.api.main:app --host 127.0.0.1 --port 8000
+```
 
 查看日志：
 
@@ -560,7 +576,7 @@ python scripts/verify_deployment.py \
 # 机器可读输出，适合 CI 或上线流水线
 python scripts/verify_deployment.py --strict-production --json
 
-# 生成上线验收证据包：默认跑离线配置和前后端合同审计，输出 report.json/report.md
+# 生成上线验收证据包：默认跑离线配置、API 幂等覆盖、前端合同和 mutation header 审计
 python scripts/deployment_report.py \
   --strict-production \
   --output-dir ./deployment-reports/latest
@@ -578,9 +594,29 @@ python scripts/deployment_report.py \
 
 `validate_deployment_config.py` 会静态解析 `Dockerfile`、`Dockerfile.ocr`、`requirements-ocr.txt`、`docker-compose.yml` 和 `config/litellm.yaml`，检查镜像基础契约、非 root 运行用户、API/OCR 端口、OCR PaddleOCR 基线依赖、服务拓扑、依赖、healthcheck、端口映射、Celery 队列、Mongo replica set、OCR artifact 只读挂载、持久化 volume、关键环境变量、LiteLLM 四个模型别名和数据库配置。它不需要 Docker，可在没有 Docker daemon 的 CI 环境中先挡住配置错误。
 
+`check_96_preflight.py` 用于 live probes 之前的宿主机预检，会检查 Docker CLI/Compose、`backend/.env`、必需密钥、生产开关、`AICHECK_AGENTDESIGN_HOST_PATH` 和默认端口占用。文本输出和 `--json` 输出都会在失败项上附带 `remediation`，用于明确下一步安装 Docker、复制 `.env.example`、替换占位密钥或修正 agentdesign 路径。
+
+`backend/tests/test_check_96_preflight.py` 会校验 `backend/.env.example` 覆盖所有预检必需变量和生产开关；如果预检脚本新增必需变量但模板漏配，测试会直接失败。
+
 `verify_deployment.py` 默认只做健康检查、登录、MongoDB transaction 探针、只读查询、OCR parse 合同探测、OCR bad request 合同探测、LiteLLM 模型别名检查，以及应返回 `FORBIDDEN` 的身份伪造/动作越权/读范围检查，不会创建业务数据，也不会消耗模型额度。开启 `--litellm-provider-probes` 后会通过 LiteLLM 的 OpenAI-compatible API 实际调用 `default-chat` 和 `embedding-default`，证明网关、virtual key、provider key、模型别名和供应商连通性可用。开启 `--write-probes` 后会在 `--project-id` 指定项目下创建一条验证用上传会话，使用 returned HTTP/HTTPS signed URL 实际 PUT 一个包含文字的 PDF，再执行 upload complete，校验新文档的 preview/download signed GET 可以实际读取对象，确认 OCR task 创建，并创建/读取导出任务，用于证明 MinIO signed PUT、文档 signed GET、upload complete、OCR task 创建和 export task 查询闭环。开启 `--ocr-object-probe` 时，verifier 会读取新文档当前版本 `storageKey` 并调用 `ocr-service /internal/ocr/parse`，要求 OCR 对刚上传的 MinIO 对象返回 `status=success`。严格生产模式还会要求 MongoDB 已启用并通过实际 transaction 探针，校验 OCR 使用真实 pipeline 而不是 placeholder，并要求 signed PUT/GET URL 是 HTTP/HTTPS。
 
-`deployment_report.py` 会把离线配置验收、前后端合同审计和可选 live deployment probes 汇总成 `aicheck-deployment-report-v1` 结构，同时输出 Markdown 表格，适合随上线单归档。默认不访问目标环境；加 `--include-live` 后复用 `verify_deployment.py` 的所有目标环境探针。
+`deployment_report.py` 会把离线配置验收、API mutation 幂等覆盖、前端路由合同、前端 mutation header 覆盖和可选 live deployment probes 汇总成 `aicheck-deployment-report-v1` 结构，同时输出 Markdown 表格，适合随上线单归档。默认不访问目标环境；加 `--include-live` 后复用 `verify_deployment.py` 的所有目标环境探针。
+
+96+ 辅助审计包含以下门禁：
+
+- `api.response-envelope`：直接调用后端 `ok()/fail()` helper，确认成功 `{ code: 0, data, operationId, serverTime }`、失败 `{ code, message, data.reason, operationId, serverTime }`，并阻止旧版 `ok: true/false` 响应包回归。
+- `auth.role-contract`：检查生产五角色 `admin/inspection/contractor/ndt/owner` 的默认面板路径、动作矩阵、`owner` 只读约束、`create_roles.py` 覆盖、PBKDF2 密码哈希和项目成员授权规划。
+- `api.mutation-idempotency`：扫描 FastAPI mutating routes，业务写接口必须直接调用 `idempotent()` 或代理到已幂等的内部函数；公开登录和只读预览型 POST 会被单独列为豁免。
+- `api.action-coverage`：扫描所有非公开 mutating routes，确认后端能根据路径自动推断 `ActionCode`，避免新增写接口绕过角色动作矩阵。
+- `mongo.index-contract`：扫描 `backend/libs/db/indexes.py`，确认所有持久化 collection 都有索引声明，并检查项目节点、文件版本、知识任务、证据、审计、幂等键和成员授权的关键复合/唯一索引。
+- `storage.bucket-contract`：检查 MinIO bucket 合同必须包含且只包含 `documents`、`previews`、`exports`、`ocr-artifacts`，并确认 `ObjectStorage` 暴露 signed PUT、signed GET、字节写入、临时下载和 `minio://` URL 解析能力；同时扫描 repository 上传、下载、导出调用点，防止业务链路绕过对象存储抽象。
+- `ocr.service-contract`：检查 `ocr-service` 的 `/healthz` 必须暴露 `pipelineAvailable`、`pipelineBackend`、`placeholderAllowed`，`/internal/ocr/parse` 缺少 `storageKey` 时必须返回 `VALIDATION_ERROR`，并验证 OCR 成功/失败结果都包含 `storageKey`、`fileName`、`status`、`fragments`、`fields`、`seals`、`diagnostics`。
+- `litellm.client-contract`：用无网络 `MockTransport` 验证业务客户端会以 OpenAI-compatible `/v1/chat/completions`、`/v1/embeddings` 调用 LiteLLM，默认模型别名为 `default-chat`、`embedding-default`，请求必须携带 Bearer master key；同时检查生产模式禁用开发 key、provider 错误脱敏，以及 worker 中 `AI recheck`、向量化、模型对比的模型别名和错误码映射。
+- `export.artifact-contract`：实际构造导出 ZIP/PDF 字节，解析 ZIP 确认 `manifest.json`、`task.json`、`project.json`、`reports.json`、`documents.json`、`archive_items.json`、`evidence_links.json`、`README.txt` 全部存在，manifest 使用 `aicheck-export-v1`，PDF 产物必须带 `%PDF` 文件头和 `AIcheck Export Report` 摘要。
+- `worker.task-contract`：扫描 Celery task routes、worker 任务对象和 `task_dispatcher`，确认 `ocr.parse_document`、`ocr.recognize_seals`、`knowledge.slice`、`knowledge.embed`、`inspection.ai_recheck`、`llm.compare`、`export.package` 均有队列路由、重试配置和调度入口。
+- `frontend.mutation-headers`：扫描 `frontend/src/api/aicheck/index.ts` 的 `request.post/put/patch/delete` 调用，真实 mutation 必须使用 `mutationHeaders()` 自动携带 `Idempotency-Key`，更新类操作可同时透传 `If-Match`。
+- `frontend.mutation-helper`：检查 `mutationHeaders()` 本身必须生成 `Idempotency-Key`，并在传入 `etag` 时写入 `If-Match`，防止前端并发控制 helper 被误删或降级。
+- `check_96_preflight.py`：在 live probes 前检查 Docker/Compose、`.env`、placeholder、内部密钥强度、生产 flag、agentdesign OCR 基线文件和默认端口冲突；任何失败都会阻止 `probe.command-ready`。
 
 前后端合同审计：
 
@@ -605,6 +641,12 @@ AICHECK_BASE_URL=https://aicheck.example.com pnpm playwright test e2e/aicheck-sm
 # 终端 1
 cd backend
 source .venv/bin/activate
+AICHECK_BOOTSTRAP_LOCAL_ROLES=true \
+AICHECK_BOOTSTRAP_PASSWORD_ADMIN='Local!2026-SystemZ' \
+AICHECK_BOOTSTRAP_PASSWORD_INSPECTION='Local!2026-InspectZ' \
+AICHECK_BOOTSTRAP_PASSWORD_CONTRACTOR='Local!2026-BuildZ' \
+AICHECK_BOOTSTRAP_PASSWORD_NDT='Local!2026-TestZ' \
+AICHECK_BOOTSTRAP_PASSWORD_OWNER='Local!2026-ViewZ' \
 uvicorn apps.api.main:app --host 127.0.0.1 --port 8000
 
 # 终端 2

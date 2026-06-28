@@ -5,14 +5,13 @@ import hashlib
 import json
 import os
 from copy import deepcopy
-from datetime import timedelta
 from typing import Any
 from uuid import uuid4
 
 from libs.contracts.responses import server_time
 from libs.integrations.storage import object_storage
 
-from .seed import PROJECT_ID, ROLE_ACTIONS, ROLE_NODE_MAP, fresh_state
+from .seed import ROLE_ACTIONS, ROLE_NODE_MAP, fresh_state
 
 
 STATE_COLLECTIONS = {
@@ -488,8 +487,10 @@ class InMemoryRepository:
         )
         if existing:
             existing.update({"status": status, "progress": progress, "updatedAt": server_time()})
+            self._bump_revision(existing)
             return existing
         seed = uuid4().hex[:8].upper()
+        now = server_time()
         task = {
             "id": f"KT-{seed}",
             "taskType": task_type,
@@ -500,11 +501,16 @@ class InMemoryRepository:
             "documentVersionId": version_id,
             "status": status,
             "progress": progress,
-            "createdAt": server_time(),
+            "createdAt": now,
+            "updatedAt": now,
+            "revision": 1,
             "actions": ["knowledge:task-retry"],
         }
         self.state["knowledge_tasks"].insert(0, task)
         return task
+
+    def _bump_revision(self, item: dict[str, Any]) -> None:
+        item["revision"] = int(item.get("revision") or 1) + 1
 
     def append_task_log(self, task: dict[str, Any], level: str, message: str) -> dict[str, Any]:
         entry = {"createdAt": server_time(), "level": level, "message": message}
@@ -533,6 +539,7 @@ class InMemoryRepository:
         task["progress"] = max(int(task.get("progress") or 0), 10)
         task["startedAt"] = server_time()
         task["updatedAt"] = task["startedAt"]
+        self._bump_revision(task)
         self.append_task_log(task, "info", message)
 
     def mark_task_failed(self, task: dict[str, Any] | None, message: str) -> None:
@@ -542,6 +549,7 @@ class InMemoryRepository:
         task["errorMessage"] = message
         task["finishedAt"] = server_time()
         task["updatedAt"] = task["finishedAt"]
+        self._bump_revision(task)
         self.append_task_log(task, "error", message)
 
     def apply_ocr_result(self, document_id: str, version_id: str, result: dict[str, Any]) -> dict[str, Any]:
@@ -581,6 +589,7 @@ class InMemoryRepository:
             task["progress"] = 100 if success else task.get("progress", 0)
             task["finishedAt"] = now
             task["updatedAt"] = now
+            self._bump_revision(task)
             if not success:
                 task["errorMessage"] = "; ".join(str(item) for item in result.get("diagnostics") or ["OCR failed"])
                 self.append_task_log(task, "error", task["errorMessage"])
@@ -693,6 +702,7 @@ class InMemoryRepository:
             task["progress"] = 100
             task["finishedAt"] = server_time()
             task["updatedAt"] = task["finishedAt"]
+            self._bump_revision(task)
             self.append_task_log(task, "info", "切片任务完成。")
         return {"fileId": file_id, "status": "success", "chunkCount": file["chunkCount"]}
 
@@ -713,6 +723,7 @@ class InMemoryRepository:
             task["progress"] = 100
             task["finishedAt"] = server_time()
             task["updatedAt"] = task["finishedAt"]
+            self._bump_revision(task)
             self.append_task_log(task, "info", "向量化任务完成。")
         return {"fileId": file_id, "status": "success", "vectorCount": count}
 

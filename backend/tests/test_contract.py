@@ -5,10 +5,11 @@ import json
 import inspect
 import zipfile
 
+import httpx
 from fastapi.testclient import TestClient
 
 from libs.db.indexes import MONGO_INDEXES, ensure_mongo_indexes
-from libs.db.mongo import run_transaction_probe
+from libs.db.mongo import bootstrap_local_roles_if_configured, run_transaction_probe
 from apps.api.main import app
 from libs.db.repository import IDEMPOTENCY_COLLECTION, SINGLETON_COLLECTIONS, STATE_COLLECTIONS, repo
 
@@ -62,6 +63,28 @@ def test_healthz_reports_runtime_flags(monkeypatch) -> None:
     assert health["demoUsersEnabled"] is False
     assert health["mongoTransactions"] is True
     assert "objectStorageEnabled" in health
+
+
+def test_local_role_bootstrap_creates_login_accounts_without_mongo(monkeypatch) -> None:
+    passwords = {
+        "admin": "Local!2026-SystemZ",
+        "inspection": "Local!2026-InspectZ",
+        "contractor": "Local!2026-BuildZ",
+        "ndt": "Local!2026-TestZ",
+        "owner": "Local!2026-ViewZ",
+    }
+    monkeypatch.setenv("AICHECK_BOOTSTRAP_LOCAL_ROLES", "true")
+    for role, password in passwords.items():
+        monkeypatch.setenv(f"AICHECK_BOOTSTRAP_PASSWORD_{role.upper()}", password)
+
+    bootstrap_local_roles_if_configured()
+
+    assert {user["username"] for user in repo.state["users"]} >= set(passwords)
+    assert {member["role"] for member in repo.state["project_members"]} >= set(passwords)
+    for role, password in passwords.items():
+        result = assert_ok(client.post("/api/auth/login", json={"username": role, "password": password}))
+        assert result["user"]["role"] == role
+        assert result["user"]["defaultPath"]
 
 
 def test_mongo_transaction_probe_endpoint_is_admin_only_when_auth_enabled(monkeypatch) -> None:
@@ -127,6 +150,74 @@ def test_litellm_client_rejects_default_key_when_production_flags_are_enabled(mo
 
     client_with_key = LiteLLMClient(api_key="sk-production-test")
     assert client_with_key.api_key == "sk-production-test"
+
+
+def test_ocr_client_sanitizes_http_and_business_errors() -> None:
+    from libs.integrations.errors import IntegrationServiceError
+    from libs.integrations.ocr_client import OcrClient
+
+    def http_failure(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(502, json={"message": "upstream OCR failed with sk-secret-ocr"})
+
+    http_client = OcrClient(base_url="http://ocr", transport=httpx.MockTransport(http_failure))
+    try:
+        http_client.parse_sync("minio://documents/source.pdf")
+    except IntegrationServiceError as exc:
+        assert exc.status_code == 502
+        assert "HTTP 502" in str(exc)
+        assert "sk-secret-ocr" not in str(exc)
+    else:
+        raise AssertionError("OCR HTTP failure must raise a sanitized integration error")
+
+    def business_failure(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "code": 40001,
+                "message": "source unavailable sk-secret-provider",
+                "data": {"reason": "VALIDATION_ERROR"},
+            },
+        )
+
+    business_client = OcrClient(base_url="http://ocr", transport=httpx.MockTransport(business_failure))
+    try:
+        business_client.parse_sync("minio://documents/source.pdf")
+    except IntegrationServiceError as exc:
+        assert exc.reason == "VALIDATION_ERROR"
+        assert "VALIDATION_ERROR" in str(exc)
+        assert "sk-secret-provider" not in str(exc)
+    else:
+        raise AssertionError("OCR business failure must raise a sanitized integration error")
+
+
+def test_litellm_client_sanitizes_provider_response_body() -> None:
+    from libs.integrations.errors import IntegrationServiceError
+    from libs.integrations.litellm_client import LiteLLMClient
+
+    def provider_failure(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            401,
+            json={
+                "error": {
+                    "message": "invalid upstream key sk-secret-litellm",
+                    "type": "auth_error",
+                }
+            },
+        )
+
+    litellm = LiteLLMClient(
+        base_url="http://litellm",
+        api_key="sk-test",
+        transport=httpx.MockTransport(provider_failure),
+    )
+    try:
+        litellm.chat_sync([{"role": "user", "content": "ping"}])
+    except IntegrationServiceError as exc:
+        assert exc.status_code == 401
+        assert "HTTP 401" in str(exc)
+        assert "sk-secret-litellm" not in str(exc)
+    else:
+        raise AssertionError("LiteLLM provider failure must raise a sanitized integration error")
 
 
 def test_login_compatibility_paths() -> None:
@@ -383,9 +474,90 @@ def test_generate_report_review_requires_existing_ready_node() -> None:
         "CONFLICT",
     )
 
-    generated = assert_ok(client.post(f"/projects/{project_id}/inspection/nodes/24/report-review", json=payload))
+    report_count = len(repo.state["reports"])
+    headers = {"Idempotency-Key": "report-review-once"}
+    generated = assert_ok(client.post(f"/projects/{project_id}/inspection/nodes/24/report-review", json=payload, headers=headers))
+    generated_replay = assert_ok(client.post(f"/projects/{project_id}/inspection/nodes/24/report-review", json=payload, headers=headers))
     assert generated["report"]["nodeIds"] == [24]
+    assert generated_replay["report"]["id"] == generated["report"]["id"]
     assert generated["nextStatus"] == "报告生成/复核中"
+    assert len(repo.state["reports"]) == report_count + 1
+
+
+def test_report_detail_scope_and_archive_if_match() -> None:
+    project_id = "P-2026-HDCP-001"
+    report_id = "RPT-20260625-001"
+
+    assert_error(client.get(f"/projects/NOT-A-PROJECT/reports/{report_id}"), "NOT_FOUND")
+    detail = assert_ok(client.get(f"/projects/{project_id}/reports/{report_id}"))
+    etag = detail["report"]["etag"]
+    revision = detail["report"]["revision"]
+
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/reports/{report_id}/archive",
+            json={"archiveNote": "stale"},
+            headers={"If-Match": 'W/"report-stale-r0"'},
+        ),
+        "ETAG_CONFLICT",
+    )
+    archived = assert_ok(
+        client.post(
+            f"/projects/{project_id}/reports/{report_id}/archive",
+            json={"archiveNote": "ready"},
+            headers={"If-Match": etag, "Idempotency-Key": "report-archive-once"},
+        )
+    )
+    archived_replay = assert_ok(
+        client.post(
+            f"/projects/{project_id}/reports/{report_id}/archive",
+            json={"archiveNote": "ready"},
+            headers={"If-Match": etag, "Idempotency-Key": "report-archive-once"},
+        )
+    )
+
+    assert archived["nextStatus"] == "已归档"
+    assert archived_replay["report"]["etag"] == archived["report"]["etag"]
+    assert archived["report"]["revision"] == revision + 1
+    assert archived["report"]["etag"] != etag
+    assert repo.find_one("reports", report_id)["status"] == "已归档"
+
+
+def test_report_update_if_match_increments_revision() -> None:
+    project_id = "P-2026-HDCP-001"
+    report_id = "RPT-20260625-001"
+    detail = assert_ok(client.get(f"/projects/{project_id}/reports/{report_id}"))
+    etag = detail["report"]["etag"]
+    revision = detail["report"]["revision"]
+
+    assert_error(
+        client.patch(
+            f"/projects/{project_id}/reports/{report_id}",
+            json={"title": "过期报告标题"},
+            headers={"If-Match": 'W/"report-stale-r0"'},
+        ),
+        "ETAG_CONFLICT",
+    )
+    updated = assert_ok(
+        client.patch(
+            f"/projects/{project_id}/reports/{report_id}",
+            json={"title": "并发控制后的报告标题"},
+            headers={"If-Match": etag, "Idempotency-Key": "report-update-once"},
+        )
+    )
+    updated_replay = assert_ok(
+        client.patch(
+            f"/projects/{project_id}/reports/{report_id}",
+            json={"title": "并发控制后的报告标题"},
+            headers={"If-Match": etag, "Idempotency-Key": "report-update-once"},
+        )
+    )
+
+    assert updated["report"]["title"] == "并发控制后的报告标题"
+    assert updated_replay["report"]["etag"] == updated["report"]["etag"]
+    assert updated_replay["auditLogId"] == updated["auditLogId"]
+    assert updated["report"]["revision"] == revision + 1
+    assert updated["report"]["etag"] != etag
 
 
 def test_owner_write_forbidden_and_archived_readonly() -> None:
@@ -432,6 +604,666 @@ def test_if_match_conflict_and_review_admin_guard() -> None:
         json={"result": "满足要求", "opinion": "admin should not save", "evidenceLinkIds": []},
     )
     assert_error(admin_review, "FORBIDDEN")
+
+
+def test_project_management_etag_idempotency_and_versioned_responses() -> None:
+    project_id = "P-2026-HDCP-001"
+    detail = assert_ok(client.get(f"/projects/{project_id}"))
+    etag = detail["project"]["etag"]
+    revision = detail["project"]["revision"]
+    assert etag == f'W/"project-{project_id}-r{revision}"'
+
+    stale_update = client.patch(
+        f"/projects/{project_id}",
+        json={"name": "过期项目名称"},
+        headers={"If-Match": f'W/"project-{project_id}-r0"'},
+    )
+    assert_error(stale_update, "ETAG_CONFLICT")
+
+    updated = assert_ok(
+        client.patch(
+            f"/projects/{project_id}",
+            json={"name": "版本化项目名称"},
+            headers={"If-Match": etag, "Idempotency-Key": "project-update-once"},
+        )
+    )
+    replayed = assert_ok(
+        client.patch(
+            f"/projects/{project_id}",
+            json={"name": "版本化项目名称"},
+            headers={"If-Match": etag, "Idempotency-Key": "project-update-once"},
+        )
+    )
+    assert updated["project"]["name"] == "版本化项目名称"
+    assert updated["project"]["revision"] == revision + 1
+    assert updated["project"]["etag"] != etag
+    assert replayed["project"]["etag"] == updated["project"]["etag"]
+
+    participant = assert_ok(
+        client.post(
+            f"/projects/{project_id}/participants",
+            json={"unitType": "owner", "unitName": "版本化参建单位"},
+            headers={"If-Match": updated["project"]["etag"], "Idempotency-Key": "participant-save-once"},
+        )
+    )
+    participant_replay = assert_ok(
+        client.post(
+            f"/projects/{project_id}/participants",
+            json={"unitType": "owner", "unitName": "版本化参建单位"},
+            headers={"If-Match": updated["project"]["etag"], "Idempotency-Key": "participant-save-once"},
+        )
+    )
+    assert participant["project"]["revision"] == updated["project"]["revision"] + 1
+    assert participant_replay["project"]["etag"] == participant["project"]["etag"]
+
+    initialized = assert_ok(
+        client.post(
+            f"/projects/{project_id}/initialize-workflow",
+            headers={"If-Match": participant["project"]["etag"], "Idempotency-Key": "workflow-init-once"},
+        )
+    )
+    initialized_replay = assert_ok(
+        client.post(
+            f"/projects/{project_id}/initialize-workflow",
+            headers={"If-Match": participant["project"]["etag"], "Idempotency-Key": "workflow-init-once"},
+        )
+    )
+    assert initialized["createdNodeCount"] == 69
+    assert initialized["project"]["revision"] == participant["project"]["revision"] + 1
+    assert initialized_replay["project"]["etag"] == initialized["project"]["etag"]
+
+
+def test_document_mutations_are_idempotent_and_project_etag_guarded() -> None:
+    project_id = "P-2026-HDCP-001"
+    project = assert_ok(client.get(f"/projects/{project_id}"))["project"]
+
+    upload = assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/upload-session",
+            json={"files": [{"fileName": "幂等上传.pdf", "fileSize": 1024, "fileType": "application/pdf"}]},
+            headers={"If-Match": project["etag"], "Idempotency-Key": "upload-session-once"},
+        )
+    )
+    completed = assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/upload-session/{upload['uploadSessionId']}/complete",
+            json={"completedFiles": []},
+            headers={"If-Match": project["etag"], "Idempotency-Key": "upload-complete-once"},
+        )
+    )
+    completed_replay = assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/upload-session/{upload['uploadSessionId']}/complete",
+            json={"completedFiles": []},
+            headers={"If-Match": project["etag"], "Idempotency-Key": "upload-complete-once"},
+        )
+    )
+    assert completed_replay["id"] == completed["id"]
+    assert completed_replay["fileCount"] == completed["fileCount"] == 1
+
+    before_versions = len(repo.versions_for_document("DOC-20260625-001"))
+    appended = assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/DOC-20260625-001/versions",
+            json={"mode": "append", "fileSize": 2048},
+            headers={"If-Match": project["etag"], "Idempotency-Key": "document-version-once"},
+        )
+    )
+    appended_replay = assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/DOC-20260625-001/versions",
+            json={"mode": "append", "fileSize": 2048},
+            headers={"If-Match": project["etag"], "Idempotency-Key": "document-version-once"},
+        )
+    )
+    assert appended_replay["version"]["id"] == appended["version"]["id"]
+    assert len(repo.versions_for_document("DOC-20260625-001")) == before_versions + 1
+
+    updated_binding = assert_ok(
+        client.patch(
+            f"/projects/{project_id}/documents/bindings/BIND-24-001",
+            json={"usage": "证明材料"},
+            headers={"If-Match": project["etag"], "Idempotency-Key": "binding-update-once"},
+        )
+    )
+    updated_binding_replay = assert_ok(
+        client.patch(
+            f"/projects/{project_id}/documents/bindings/BIND-24-001",
+            json={"usage": "证明材料"},
+            headers={"If-Match": project["etag"], "Idempotency-Key": "binding-update-once"},
+        )
+    )
+    assert updated_binding["binding"]["usage"] == "证明材料"
+    assert updated_binding_replay["binding"]["usage"] == updated_binding["binding"]["usage"]
+
+    deleted = assert_ok(
+        client.delete(
+            f"/projects/{project_id}/documents/bindings/BIND-24-002",
+            headers={"If-Match": project["etag"], "Idempotency-Key": "binding-delete-once"},
+        )
+    )
+    deleted_replay = assert_ok(
+        client.delete(
+            f"/projects/{project_id}/documents/bindings/BIND-24-002",
+            headers={"If-Match": project["etag"], "Idempotency-Key": "binding-delete-once"},
+        )
+    )
+    assert deleted["nextStatus"] == "已解除挂载"
+    assert deleted_replay["id"] == deleted["id"]
+    assert repo.find_one("bindings", "BIND-24-002") is None
+
+
+def test_project_mutations_reject_stale_if_match_header() -> None:
+    project_id = "P-2026-HDCP-001"
+    stale = {"If-Match": 'W/"project-stale-r0"'}
+
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/documents/bindings",
+            json={"nodeId": 16, "bindings": [{"documentId": "DOC-20260625-003"}]},
+            headers=stale,
+        ),
+        "ETAG_CONFLICT",
+    )
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/submissions",
+            json={"nodeId": 16, "nodeIds": [16], "bindingIds": ["BIND-16-001"]},
+            headers=stale,
+        ),
+        "ETAG_CONFLICT",
+    )
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/ndt/films",
+            json={"nodeId": 40, "filmNo": "STALE-RT", "weldNo": "W-ST", "method": "RT"},
+            headers=stale,
+        ),
+        "ETAG_CONFLICT",
+    )
+
+    created = assert_ok(
+        client.post(
+            f"/projects/{project_id}/ndt/films",
+            json={"nodeId": 40, "filmNo": "FRESH-RT", "weldNo": "W-FR", "method": "RT"},
+            headers={"If-Match": "*"},
+        )
+    )
+    assert created["film"]["filmNo"] == "FRESH-RT"
+
+
+def test_inspection_ai_suggestion_mutations_are_idempotent_and_etag_guarded() -> None:
+    project_id = "P-2026-HDCP-001"
+    project = assert_ok(client.get(f"/projects/{project_id}"))["project"]
+    suggestion_id = "AIS-24-20260625-01"
+    adopt_payload = {
+        "result": "满足要求",
+        "opinion": "采纳 AI 建议生成草稿。",
+        "reason": "证据链一致。",
+    }
+
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/24/ai-suggestions/{suggestion_id}/adopt",
+            json=adopt_payload,
+            headers={"If-Match": 'W/"project-stale-r0"'},
+        ),
+        "ETAG_CONFLICT",
+    )
+
+    audit_count = len(repo.state["audit_logs"])
+    adopt_headers = {"If-Match": project["etag"], "Idempotency-Key": "ai-adopt-once"}
+    adopted = assert_ok(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/24/ai-suggestions/{suggestion_id}/adopt",
+            json=adopt_payload,
+            headers=adopt_headers,
+        )
+    )
+    adopted_replay = assert_ok(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/24/ai-suggestions/{suggestion_id}/adopt",
+            json=adopt_payload,
+            headers=adopt_headers,
+        )
+    )
+    assert adopted["draftOpinion"]["id"] == adopted_replay["draftOpinion"]["id"]
+    assert adopted["auditLogId"] == adopted_replay["auditLogId"]
+    assert len(repo.state["audit_logs"]) == audit_count + 1
+
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/24/ai-suggestions/{suggestion_id}/adopt",
+            json={**adopt_payload, "reason": "不同原因"},
+            headers=adopt_headers,
+        ),
+        "IDEMPOTENCY_KEY_CONFLICT",
+    )
+
+    reject_headers = {"If-Match": project["etag"], "Idempotency-Key": "ai-reject-once"}
+    rejected = assert_ok(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/24/ai-suggestions/{suggestion_id}/reject",
+            json={"reason": "人工复核不采纳。"},
+            headers=reject_headers,
+        )
+    )
+    rejected_replay = assert_ok(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/24/ai-suggestions/{suggestion_id}/reject",
+            json={"reason": "人工复核不采纳。"},
+            headers=reject_headers,
+        )
+    )
+    assert rejected["id"] == rejected_replay["id"]
+    assert rejected["auditLogId"] == rejected_replay["auditLogId"]
+
+
+def test_ndt_import_and_update_mutations_are_idempotent_and_etag_guarded() -> None:
+    project_id = "P-2026-HDCP-001"
+    project = assert_ok(client.get(f"/projects/{project_id}"))["project"]
+    stale = {"If-Match": 'W/"project-stale-r0"'}
+
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/ndt/films/import",
+            json={"nodeId": 40, "rows": [{"filmNo": "STALE-F", "weldNo": "W-ST", "method": "RT"}]},
+            headers=stale,
+        ),
+        "ETAG_CONFLICT",
+    )
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/ndt/records/import",
+            json={"nodeId": 40, "rows": [{"recordNo": "STALE-R", "weldNo": "W-ST", "method": "RT"}]},
+            headers=stale,
+        ),
+        "ETAG_CONFLICT",
+    )
+
+    film_import_headers = {"If-Match": project["etag"], "Idempotency-Key": "ndt-film-import-once"}
+    film_before = len(repo.state["ndt_films"])
+    film_payload = {
+        "nodeId": 40,
+        "rows": [
+            {"filmNo": "RT-IMP-001", "weldNo": "W-IMP-001", "method": "RT"},
+            {"filmNo": "UT-IMP-002", "weldNo": "W-IMP-002", "method": "UT"},
+        ],
+    }
+    film_import = assert_ok(client.post(f"/projects/{project_id}/ndt/films/import", json=film_payload, headers=film_import_headers))
+    film_import_replay = assert_ok(client.post(f"/projects/{project_id}/ndt/films/import", json=film_payload, headers=film_import_headers))
+    assert film_import["imported"] == 2
+    assert [item["id"] for item in film_import["films"]] == [item["id"] for item in film_import_replay["films"]]
+    assert len(repo.state["ndt_films"]) == film_before + 2
+
+    update_headers = {"If-Match": project["etag"], "Idempotency-Key": "ndt-film-update-once"}
+    updated = assert_ok(
+        client.patch(
+            f"/projects/{project_id}/ndt/films/{film_import['films'][0]['id']}",
+            json={"pipelineNo": "P-IMP-001"},
+            headers=update_headers,
+        )
+    )
+    updated_replay = assert_ok(
+        client.patch(
+            f"/projects/{project_id}/ndt/films/{film_import['films'][0]['id']}",
+            json={"pipelineNo": "P-IMP-001"},
+            headers=update_headers,
+        )
+    )
+    assert updated["film"]["pipelineNo"] == "P-IMP-001"
+    assert updated["id"] == updated_replay["id"]
+    assert updated["auditLogId"] == updated_replay["auditLogId"]
+
+    record_import_headers = {"If-Match": project["etag"], "Idempotency-Key": "ndt-record-import-once"}
+    record_before = len(repo.state["ndt_records"])
+    record_payload = {
+        "nodeId": 40,
+        "rows": [
+            {"recordNo": "REC-IMP-001", "weldNo": "W-IMP-001", "method": "RT"},
+            {"recordNo": "REC-IMP-002", "weldNo": "W-IMP-002", "method": "UT"},
+        ],
+    }
+    record_import = assert_ok(client.post(f"/projects/{project_id}/ndt/records/import", json=record_payload, headers=record_import_headers))
+    record_import_replay = assert_ok(client.post(f"/projects/{project_id}/ndt/records/import", json=record_payload, headers=record_import_headers))
+    assert record_import["imported"] == 2
+    assert [item["id"] for item in record_import["records"]] == [item["id"] for item in record_import_replay["records"]]
+    assert len(repo.state["ndt_records"]) == record_before + 2
+
+
+def test_singleton_config_if_match_and_revision_guards() -> None:
+    knowledge = assert_ok(client.get("/knowledge/config"))
+    knowledge_etag = knowledge["etag"]
+    knowledge_revision = knowledge["revision"]
+
+    assert_error(
+        client.put(
+            "/knowledge/config",
+            json={"chunkSize": 960, "revision": 0, "etag": 'W/"client-r0"'},
+            headers={"If-Match": 'W/"knowledge-config-r0"'},
+        ),
+        "ETAG_CONFLICT",
+    )
+    updated_knowledge = assert_ok(
+        client.put(
+            "/knowledge/config",
+            json={"chunkSize": 960, "revision": 0, "etag": 'W/"client-r0"'},
+            headers={"If-Match": knowledge_etag, "Idempotency-Key": "knowledge-config-update-once"},
+        )
+    )
+    updated_knowledge_replay = assert_ok(
+        client.put(
+            "/knowledge/config",
+            json={"chunkSize": 960, "revision": 0, "etag": 'W/"client-r0"'},
+            headers={"If-Match": knowledge_etag, "Idempotency-Key": "knowledge-config-update-once"},
+        )
+    )
+    assert updated_knowledge["config"]["chunkSize"] == 960
+    assert updated_knowledge_replay["etag"] == updated_knowledge["etag"]
+    assert updated_knowledge_replay["auditLogId"] == updated_knowledge["auditLogId"]
+    assert updated_knowledge["revision"] == knowledge_revision + 1
+    assert updated_knowledge["etag"] != knowledge_etag
+    assert "etag" not in repo.state["knowledge_config"]
+
+    overview = assert_ok(client.get("/admin/config-overview"))
+    admin_etag = overview["etag"]
+    admin_revision = overview["revision"]
+    assert_error(
+        client.put(
+            "/admin/config-items/todo-rule/TR-001",
+            json={"values": {"deadlineHours": 72}},
+            headers={"If-Match": 'W/"admin-config-r0"'},
+        ),
+        "ETAG_CONFLICT",
+    )
+    saved_config = assert_ok(
+        client.put(
+            "/admin/config-items/todo-rule/TR-001",
+            json={"values": {"deadlineHours": 72}, "reason": "并发控制测试"},
+            headers={"If-Match": admin_etag},
+        )
+    )
+    assert saved_config["overview"]["todoRules"][0]["deadlineHours"] == 72
+    assert saved_config["revision"] == admin_revision + 1
+    assert saved_config["etag"] != admin_etag
+
+    save_headers = {"If-Match": saved_config["etag"], "Idempotency-Key": "admin-config-save-once"}
+    saved_idempotent = assert_ok(
+        client.put(
+            "/admin/config-items/todo-rule/TR-001",
+            json={"values": {"deadlineHours": 96}, "reason": "幂等保存测试"},
+            headers=save_headers,
+        )
+    )
+    saved_replay = assert_ok(
+        client.put(
+            "/admin/config-items/todo-rule/TR-001",
+            json={"values": {"deadlineHours": 96}, "reason": "幂等保存测试"},
+            headers=save_headers,
+        )
+    )
+    assert saved_idempotent["auditLogId"] == saved_replay["auditLogId"]
+    assert saved_idempotent["etag"] == saved_replay["etag"]
+    assert saved_idempotent["overview"]["todoRules"][0]["deadlineHours"] == 96
+
+    message_count = len(repo.state["admin_config"].get("messageTemplates", []))
+    create_headers = {"If-Match": saved_idempotent["etag"], "Idempotency-Key": "admin-config-create-once"}
+    created_item = assert_ok(
+        client.post(
+            "/admin/config-items/message-template",
+            json={"target": "message-template", "values": {"scene": "合同测试通知", "title": "配置变更", "content": "配置已更新。"}},
+            headers=create_headers,
+        )
+    )
+    created_item_replay = assert_ok(
+        client.post(
+            "/admin/config-items/message-template",
+            json={"target": "message-template", "values": {"scene": "合同测试通知", "title": "配置变更", "content": "配置已更新。"}},
+            headers=create_headers,
+        )
+    )
+    assert created_item["auditLogId"] == created_item_replay["auditLogId"]
+    assert created_item["diff"]["objectId"] == created_item_replay["diff"]["objectId"]
+    assert len(repo.state["admin_config"]["messageTemplates"]) == message_count + 1
+
+    workflow_count = len(repo.state["admin_config"].get("workflowStateMachines", []))
+    workflow_headers = {"If-Match": created_item["etag"], "Idempotency-Key": "admin-workflow-create-once"}
+    workflow = assert_ok(
+        client.post(
+            "/admin/workflow-state-machines",
+            json={"name": "合同测试状态机", "version": "2026.07", "status": "启用"},
+            headers=workflow_headers,
+        )
+    )
+    workflow_replay = assert_ok(
+        client.post(
+            "/admin/workflow-state-machines",
+            json={"name": "合同测试状态机", "version": "2026.07", "status": "启用"},
+            headers=workflow_headers,
+        )
+    )
+    assert workflow["item"]["id"] == workflow_replay["item"]["id"]
+    assert workflow["auditLogId"] == workflow_replay["auditLogId"]
+    assert len(repo.state["admin_config"]["workflowStateMachines"]) == workflow_count + 1
+
+    workflow_update_headers = {"If-Match": workflow["etag"], "Idempotency-Key": "admin-workflow-update-once"}
+    workflow_updated = assert_ok(
+        client.patch(
+            f"/admin/workflow-state-machines/{workflow['item']['id']}",
+            json={"status": "停用"},
+            headers=workflow_update_headers,
+        )
+    )
+    workflow_updated_replay = assert_ok(
+        client.patch(
+            f"/admin/workflow-state-machines/{workflow['item']['id']}",
+            json={"status": "停用"},
+            headers=workflow_update_headers,
+        )
+    )
+    assert workflow_updated["item"]["status"] == "停用"
+    assert workflow_updated["auditLogId"] == workflow_updated_replay["auditLogId"]
+
+    assert_error(
+        client.post(
+            "/admin/config-overview/publish",
+            json={"scope": "all", "reason": "stale publish"},
+            headers={"If-Match": admin_etag},
+        ),
+        "ETAG_CONFLICT",
+    )
+    publish_headers = {"If-Match": workflow_updated["etag"], "Idempotency-Key": "publish-config-once"}
+    published = assert_ok(
+        client.post(
+            "/admin/config-overview/publish",
+            json={"scope": "all", "reason": "publish with fresh etag"},
+            headers=publish_headers,
+        )
+    )
+    replayed = assert_ok(
+        client.post(
+            "/admin/config-overview/publish",
+            json={"scope": "all", "reason": "publish with fresh etag"},
+            headers=publish_headers,
+        )
+    )
+    assert replayed["publishId"] == published["publishId"]
+    assert published["revision"] == workflow_updated["revision"] + 1
+    assert published["etag"] != workflow_updated["etag"]
+    published_overview = assert_ok(client.get("/admin/config-overview"))
+    assert published_overview["lastPublishedVersion"] == published["version"]
+    assert published_overview["etag"] == published["etag"]
+
+
+def test_knowledge_record_if_match_and_revision_guards() -> None:
+    sources = assert_ok(client.get("/knowledge/sources"))
+    source = sources["items"][0]
+    assert "etag" in source
+
+    assert_error(
+        client.put(
+            f"/knowledge/sources/{source['id']}",
+            json={"name": "过期知识源"},
+            headers={"If-Match": 'W/"knowledge-source-stale-r0"'},
+        ),
+        "ETAG_CONFLICT",
+    )
+    updated_source = assert_ok(
+        client.put(
+            f"/knowledge/sources/{source['id']}",
+            json={"name": "版本化知识源"},
+            headers={"If-Match": source["etag"], "Idempotency-Key": "knowledge-source-update-once"},
+        )
+    )
+    replayed_source = assert_ok(
+        client.put(
+            f"/knowledge/sources/{source['id']}",
+            json={"name": "版本化知识源"},
+            headers={"If-Match": source["etag"], "Idempotency-Key": "knowledge-source-update-once"},
+        )
+    )
+    assert replayed_source["source"]["id"] == updated_source["source"]["id"]
+    assert updated_source["source"]["name"] == "版本化知识源"
+    assert updated_source["source"]["revision"] == source["revision"] + 1
+    assert updated_source["source"]["etag"] != source["etag"]
+
+    task = assert_ok(client.get("/knowledge/tasks/KT-20260626-001"))["task"]
+    assert_error(
+        client.post(
+            "/knowledge/tasks/KT-20260626-001/cancel",
+            json={"reason": "stale cancel"},
+            headers={"If-Match": 'W/"knowledge-task-stale-r0"'},
+        ),
+        "ETAG_CONFLICT",
+    )
+    cancelled = assert_ok(
+        client.post(
+            "/knowledge/tasks/KT-20260626-001/cancel",
+            json={"reason": "fresh cancel"},
+            headers={"If-Match": task["etag"], "Idempotency-Key": "knowledge-task-cancel-once"},
+        )
+    )
+    replayed_cancel = assert_ok(
+        client.post(
+            "/knowledge/tasks/KT-20260626-001/cancel",
+            json={"reason": "fresh cancel"},
+            headers={"If-Match": task["etag"], "Idempotency-Key": "knowledge-task-cancel-once"},
+        )
+    )
+    assert replayed_cancel["task"]["revision"] == cancelled["task"]["revision"]
+    assert cancelled["task"]["status"] == "已取消"
+    assert cancelled["task"]["revision"] == task["revision"] + 1
+    assert cancelled["task"]["etag"] != task["etag"]
+
+    rule = next(item for item in assert_ok(client.get("/rules/versions"))["items"] if item["id"] == "RULE-NDT-202606")
+    assert_error(
+        client.post(
+            f"/rules/versions/{rule['id']}/publish",
+            json={"reason": "stale rule publish"},
+            headers={"If-Match": 'W/"rule-version-stale-r0"'},
+        ),
+        "ETAG_CONFLICT",
+    )
+    published_rule = assert_ok(
+        client.post(
+            f"/rules/versions/{rule['id']}/publish",
+            json={"reason": "fresh rule publish"},
+            headers={"If-Match": rule["etag"], "Idempotency-Key": "rule-version-publish-once"},
+        )
+    )
+    replayed_rule = assert_ok(
+        client.post(
+            f"/rules/versions/{rule['id']}/publish",
+            json={"reason": "fresh rule publish"},
+            headers={"If-Match": rule["etag"], "Idempotency-Key": "rule-version-publish-once"},
+        )
+    )
+    assert replayed_rule["rule"]["etag"] == published_rule["rule"]["etag"]
+    assert published_rule["rule"]["status"] == "已发布"
+    assert published_rule["rule"]["revision"] == rule["revision"] + 1
+    assert published_rule["rule"]["etag"] != rule["etag"]
+
+
+def test_todo_message_if_match_idempotency_and_revision_guards() -> None:
+    todo = assert_ok(client.get("/todos"))["items"][0]
+    assert "etag" in todo
+    assert_error(
+        client.post(
+            f"/todos/{todo['id']}/complete",
+            json={"comment": "stale complete"},
+            headers={"If-Match": 'W/"todo-stale-r0"'},
+        ),
+        "ETAG_CONFLICT",
+    )
+    completed = assert_ok(
+        client.post(
+            f"/todos/{todo['id']}/complete",
+            json={"comment": "fresh complete"},
+            headers={"If-Match": todo["etag"], "Idempotency-Key": "todo-complete-once"},
+        )
+    )
+    replayed_complete = assert_ok(
+        client.post(
+            f"/todos/{todo['id']}/complete",
+            json={"comment": "fresh complete"},
+            headers={"If-Match": todo["etag"], "Idempotency-Key": "todo-complete-once"},
+        )
+    )
+    assert completed["nextStatus"] == "已完成"
+    assert completed["todo"]["revision"] == todo["revision"] + 1
+    assert completed["todo"]["etag"] != todo["etag"]
+    assert replayed_complete["todo"]["etag"] == completed["todo"]["etag"]
+
+    message = assert_ok(client.get("/messages"))["items"][0]
+    assert_error(
+        client.post(
+            f"/messages/{message['id']}/read",
+            headers={"If-Match": 'W/"message-stale-r0"'},
+        ),
+        "ETAG_CONFLICT",
+    )
+    read_message = assert_ok(
+        client.post(
+            f"/messages/{message['id']}/read",
+            headers={"If-Match": message["etag"], "Idempotency-Key": "message-read-once"},
+        )
+    )
+    replayed_read = assert_ok(
+        client.post(
+            f"/messages/{message['id']}/read",
+            headers={"If-Match": message["etag"], "Idempotency-Key": "message-read-once"},
+        )
+    )
+    assert read_message["message"]["read"] is True
+    assert read_message["message"]["revision"] == message["revision"] + 1
+    assert read_message["message"]["etag"] != message["etag"]
+    assert replayed_read["message"]["etag"] == read_message["message"]["etag"]
+
+    assert_error(
+        client.post(
+            "/messages/read-all",
+            json={"projectId": "P-2026-HDCP-001"},
+            headers={"If-Match": message["etag"]},
+        ),
+        "ETAG_CONFLICT",
+    )
+    bulk = assert_ok(
+        client.post(
+            "/messages/read-all",
+            json={"projectId": "P-2026-HDCP-001"},
+            headers={"If-Match": "*", "Idempotency-Key": "message-read-all-once"},
+        )
+    )
+    replayed_bulk = assert_ok(
+        client.post(
+            "/messages/read-all",
+            json={"projectId": "P-2026-HDCP-001"},
+            headers={"If-Match": "*", "Idempotency-Key": "message-read-all-once"},
+        )
+    )
+    assert bulk["affectedCount"] >= 0
+    assert bulk["auditLogId"]
+    assert replayed_bulk["affectedCount"] == bulk["affectedCount"]
 
 
 def test_optional_jwt_action_and_node_scope_guards(monkeypatch) -> None:
@@ -518,7 +1350,6 @@ def test_all_non_public_mutating_routes_have_inferred_action_codes() -> None:
 
 def test_project_mutating_routes_are_archived_readonly_guarded() -> None:
     from libs.security.actions import MUTATING_METHODS
-    import apps.api.routes as route_module
 
     delegated_guard_routes = {
         ("POST", "/projects/{project_id}/inspection/nodes/{node_id}/attachments"),
@@ -966,6 +1797,7 @@ def test_upload_creates_knowledge_task_and_retrieval_works() -> None:
 
 def test_upload_and_ndt_validation_errors_match_contract() -> None:
     project_id = "P-2026-HDCP-001"
+    project = assert_ok(client.get(f"/projects/{project_id}"))["project"]
 
     assert_error(
         client.post(
@@ -1037,6 +1869,19 @@ def test_upload_and_ndt_validation_errors_match_contract() -> None:
         client.post(f"/projects/{project_id}/ndt/rectifications", json={"nodeId": 40, "reportIds": ["NDT-RPT-001"]}),
         "NDT_RECTIFICATION_REQUIRED",
     )
+    report_count = len(repo.state["ndt_reports"])
+    document_count = len(repo.state["documents"])
+    upload_payload = {
+        "nodeId": 40,
+        "files": [{"fileName": "RT-IDEMPOTENT.pdf", "fileSize": 2048, "fileType": "application/pdf"}],
+    }
+    upload_headers = {"If-Match": project["etag"], "Idempotency-Key": "ndt-report-upload-once"}
+    upload = assert_ok(client.post(f"/projects/{project_id}/ndt/reports/upload-session", json=upload_payload, headers=upload_headers))
+    upload_replay = assert_ok(client.post(f"/projects/{project_id}/ndt/reports/upload-session", json=upload_payload, headers=upload_headers))
+    assert upload_replay["uploadSessionId"] == upload["uploadSessionId"]
+    assert upload_replay["uploadUrls"][0]["documentId"] == upload["uploadUrls"][0]["documentId"]
+    assert len(repo.state["ndt_reports"]) == report_count + 1
+    assert len(repo.state["documents"]) == document_count + 1
 
 
 def test_cross_node_submission_scope_expands_empty_binding_ids() -> None:
@@ -1058,27 +1903,79 @@ def test_cross_node_submission_scope_expands_empty_binding_ids() -> None:
     assert submission["nextStatus"] == "AI 预审中"
 
 
-def test_ndt_submit_preserves_pending_report_and_rectification_updates_feedback() -> None:
+def test_ndt_submit_updates_reports_films_and_traceable_snapshot() -> None:
     project_id = "P-2026-HDCP-001"
+    project = assert_ok(client.get(f"/projects/{project_id}"))["project"]
+    film = assert_ok(
+        client.post(
+            f"/projects/{project_id}/ndt/films",
+            json={"nodeId": 40, "filmNo": "RT-FOLLOW-001", "weldNo": "W-40-RT-999", "method": "RT"},
+        )
+    )["film"]
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/ndt/submissions",
+            json={"nodeId": 40, "reportIds": ["NDT-RPT-001"], "filmIds": [film["id"], "FILM-MISSING"]},
+        ),
+        "NDT_FILM_REQUIRED",
+    )
+
     submit = assert_ok(
         client.post(
             f"/projects/{project_id}/ndt/submissions",
-            json={"nodeId": 40, "reportIds": ["NDT-RPT-001"], "filmIds": ["FILM-RT-001"]},
+            json={"nodeId": 40, "reportIds": ["NDT-RPT-001"], "filmIds": [film["id"]]},
+            headers={"If-Match": project["etag"], "Idempotency-Key": "ndt-submit-trace"},
         )
     )
+    replay = assert_ok(
+        client.post(
+            f"/projects/{project_id}/ndt/submissions",
+            json={"nodeId": 40, "reportIds": ["NDT-RPT-001"], "filmIds": [film["id"]]},
+            headers={"If-Match": project["etag"], "Idempotency-Key": "ndt-submit-trace"},
+        )
+    )
+
     assert submit["nextStatus"] == "待审查"
+    assert submit["submissionId"] == replay["submissionId"]
+    assert submit["snapshotId"] == replay["snapshotId"]
+    assert submit["submittedReportIds"] == ["NDT-RPT-001"]
+    assert submit["submittedFilmIds"] == [film["id"]]
 
     reports = assert_ok(client.get(f"/projects/{project_id}/ndt/reports"))
     assert any(report["id"] == "NDT-RPT-001" and report["status"] == "待审查" for report in reports["items"])
-    assert not any(str(report["reportNo"]).startswith("RT-FOLLOW") for report in reports["items"])
+    stored_film = repo.find_one("ndt_films", film["id"])
+    stored_submission = next(item for item in repo.state["submissions"] if item["submissionId"] == submit["submissionId"])
+    detail = assert_ok(client.get(f"/projects/{project_id}/submissions/{submit['submissionId']}"))
+
+    assert stored_film["status"] == "待审查"
+    assert stored_film["submittedAt"]
+    assert stored_submission["submissionType"] == "ndt"
+    assert stored_submission["reportIds"] == ["NDT-RPT-001"]
+    assert stored_submission["filmIds"] == [film["id"]]
+    assert stored_submission["snapshot"]["reports"][0]["id"] == "NDT-RPT-001"
+    assert stored_submission["snapshot"]["films"][0]["id"] == film["id"]
+    assert detail["submissionType"] == "ndt"
+    assert detail["snapshot"]["reports"][0]["status"] == "待审查"
+    assert detail["snapshot"]["films"][0]["status"] == "待审查"
+    assert detail["createdTodos"][0]["targetId"] == submit["submissionId"]
+    assert repo.node(project_id, 40)["status"] == "待审查"
 
     rectification = assert_ok(
         client.post(
             f"/projects/{project_id}/ndt/rectifications",
             json={"rectificationId": "NDT-FB-001", "description": "已补充底片索引。"},
+            headers={"If-Match": project["etag"], "Idempotency-Key": "ndt-rectification-once"},
+        )
+    )
+    rectification_replay = assert_ok(
+        client.post(
+            f"/projects/{project_id}/ndt/rectifications",
+            json={"rectificationId": "NDT-FB-001", "description": "已补充底片索引。"},
+            headers={"If-Match": project["etag"], "Idempotency-Key": "ndt-rectification-once"},
         )
     )
     assert rectification["rectification"]["status"] == "已反馈"
+    assert rectification_replay["rectification"]["id"] == rectification["rectification"]["id"]
     feedback = assert_ok(client.get(f"/projects/{project_id}/ndt/inspection-feedback"))
     assert feedback["items"][0]["status"] == "已反馈"
 
@@ -1105,14 +2002,31 @@ def test_admin_config_diff_export_publish_and_project_members() -> None:
     assert any("后台配置已发布：config-v" in item["title"] for item in messages["items"])
     assert any(item["title"] == "字段映射配置发布影响" for item in todos["items"])
 
+    project_before_member = assert_ok(client.get(f"/projects/{project_id}"))
+    project_member_etag = project_before_member["project"]["etag"]
+    member_headers = {
+        "X-Role": "admin",
+        "X-User-Id": "USER-ADMIN-001",
+        "If-Match": project_member_etag,
+        "Idempotency-Key": "member-authorize-once",
+    }
     member = assert_ok(
         client.post(
             f"/projects/{project_id}/members",
             json={"userId": "USER-ADMIN-001", "role": "admin", "nodeScope": [16, 24, 40, 59]},
-            headers={"X-Role": "admin", "X-User-Id": "USER-ADMIN-001"},
+            headers=member_headers,
+        )
+    )
+    replayed_member = assert_ok(
+        client.post(
+            f"/projects/{project_id}/members",
+            json={"userId": "USER-ADMIN-001", "role": "admin", "nodeScope": [16, 24, 40, 59]},
+            headers=member_headers,
         )
     )
     assert member["member"]["name"] == "系统管理员"
+    assert replayed_member["member"]["id"] == member["member"]["id"]
+    assert replayed_member["auditLogId"] == member["auditLogId"]
     detail = assert_ok(client.get(f"/projects/{project_id}"))
     assert len(detail["members"]) == 5
 
@@ -1127,9 +2041,48 @@ def test_admin_config_diff_export_publish_and_project_members() -> None:
     assert {2, 3, 4, 24}.issubset(set(updated_member["member"]["nodeScope"]))
     detail = assert_ok(client.get(f"/projects/{project_id}"))
     assert len(detail["members"]) == 5
+    inspection_member = next(item for item in detail["members"] if item["id"] == "PM-INSPECTION-001")
+    assert inspection_member["etag"].startswith('W/"project-member-PM-INSPECTION-001-r')
+    assert_error(
+        client.put(
+            f"/projects/{project_id}/members/{inspection_member['id']}",
+            json={"status": "停用"},
+            headers={"X-Role": "admin", "X-User-Id": "USER-ADMIN-001", "If-Match": 'W/"project-member-stale-r0"'},
+        ),
+        "ETAG_CONFLICT",
+    )
+    status_update = assert_ok(
+        client.put(
+            f"/projects/{project_id}/members/{inspection_member['id']}",
+            json={"status": "停用"},
+            headers={
+                "X-Role": "admin",
+                "X-User-Id": "USER-ADMIN-001",
+                "If-Match": inspection_member["etag"],
+                "Idempotency-Key": "member-status-once",
+            },
+        )
+    )
+    replayed_status_update = assert_ok(
+        client.put(
+            f"/projects/{project_id}/members/{inspection_member['id']}",
+            json={"status": "停用"},
+            headers={
+                "X-Role": "admin",
+                "X-User-Id": "USER-ADMIN-001",
+                "If-Match": inspection_member["etag"],
+                "Idempotency-Key": "member-status-once",
+            },
+        )
+    )
+    assert status_update["member"]["status"] == "停用"
+    assert status_update["member"]["revision"] == inspection_member["revision"] + 1
+    assert status_update["member"]["etag"] != inspection_member["etag"]
+    assert replayed_status_update["member"]["etag"] == status_update["member"]["etag"]
 
 
-def test_admin_project_creation_returns_four_initial_members_and_no_backend_integration_gaps() -> None:
+def test_project_creation_routes_are_idempotent_and_return_initial_members() -> None:
+    initial_project_count = len(repo.state["projects"])
     created = assert_ok(
         client.post(
             "/admin/projects",
@@ -1143,9 +2096,86 @@ def test_admin_project_creation_returns_four_initial_members_and_no_backend_inte
                     "inspection": "USER-INSPECTION-001",
                 },
             },
+            headers={"Idempotency-Key": "admin-project-create-once"},
+        )
+    )
+    replayed = assert_ok(
+        client.post(
+            "/admin/projects",
+            json={
+                "code": "P-E2E-001",
+                "name": "E2E 立项项目",
+                "memberUserIds": {
+                    "owner": "USER-OWNER-001",
+                    "contractor": "USER-CONTRACTOR-001",
+                    "ndt": "USER-NDT-001",
+                    "inspection": "USER-INSPECTION-001",
+                },
+            },
+            headers={"Idempotency-Key": "admin-project-create-once"},
         )
     )
     assert len(created["detail"]["members"]) == 4
+    assert replayed["project"]["id"] == created["project"]["id"]
+    assert replayed["auditLogId"] == created["auditLogId"]
+    assert len([item for item in repo.state["projects"] if item["id"] == "P-E2E-001"]) == 1
+    assert len([item for item in repo.state["project_members"] if item["projectId"] == "P-E2E-001"]) == 4
+
+    compatibility_created = assert_ok(
+        client.post(
+            "/projects",
+            json={
+                "code": "P-E2E-COMPAT-001",
+                "name": "E2E 兼容立项项目",
+                "memberUserIds": {
+                    "owner": "USER-OWNER-001",
+                    "contractor": "USER-CONTRACTOR-001",
+                    "ndt": "USER-NDT-001",
+                    "inspection": "USER-INSPECTION-001",
+                },
+            },
+            headers={"Idempotency-Key": "compat-project-create-once"},
+        )
+    )
+    compatibility_replayed = assert_ok(
+        client.post(
+            "/projects",
+            json={
+                "code": "P-E2E-COMPAT-001",
+                "name": "E2E 兼容立项项目",
+                "memberUserIds": {
+                    "owner": "USER-OWNER-001",
+                    "contractor": "USER-CONTRACTOR-001",
+                    "ndt": "USER-NDT-001",
+                    "inspection": "USER-INSPECTION-001",
+                },
+            },
+            headers={"Idempotency-Key": "compat-project-create-once"},
+        )
+    )
+    assert len(compatibility_created["detail"]["members"]) == 4
+    assert compatibility_replayed["project"]["id"] == compatibility_created["project"]["id"]
+    assert compatibility_replayed["auditLogId"] == compatibility_created["auditLogId"]
+    assert len([item for item in repo.state["projects"] if item["id"] == "P-E2E-COMPAT-001"]) == 1
+    assert len([item for item in repo.state["project_members"] if item["projectId"] == "P-E2E-COMPAT-001"]) == 4
+    assert_error(
+        client.post(
+            "/projects",
+            json={
+                "code": "P-E2E-COMPAT-001",
+                "name": "E2E 兼容立项项目-不同请求体",
+                "memberUserIds": {
+                    "owner": "USER-OWNER-001",
+                    "contractor": "USER-CONTRACTOR-001",
+                    "ndt": "USER-NDT-001",
+                    "inspection": "USER-INSPECTION-001",
+                },
+            },
+            headers={"Idempotency-Key": "compat-project-create-once"},
+        ),
+        "IDEMPOTENCY_KEY_CONFLICT",
+    )
+    assert len(repo.state["projects"]) == initial_project_count + 2
 
     gaps = assert_ok(client.get("/admin/integration-contract?status=后端缺失"))
     assert gaps["fields"] == []
@@ -1648,6 +2678,29 @@ def test_export_artifact_uses_object_storage_when_available(monkeypatch) -> None
     monkeypatch.setattr("libs.db.repository.object_storage.put_bytes", fake_put)
     monkeypatch.setattr("libs.db.repository.object_storage.presigned_get_url", fake_get)
 
+    repo.state["export_tasks"].extend(
+        [
+            {
+                "id": "EXP-NOT-READY-001",
+                "projectId": "P-2026-HDCP-001",
+                "exportType": "archive-package",
+                "status": "排队中",
+                "fileName": "pending.zip",
+                "createdAt": "2026-06-27 09:00:00",
+            },
+            {
+                "id": "EXP-EXPIRED-001",
+                "projectId": "P-2026-HDCP-001",
+                "exportType": "archive-package",
+                "status": "已过期",
+                "fileName": "expired.zip",
+                "createdAt": "2026-06-26 09:00:00",
+            },
+        ]
+    )
+    assert_error(client.get("/exports/EXP-NOT-READY-001/download-url"), "EXPORT_TASK_NOT_READY")
+    assert_error(client.get("/exports/EXP-EXPIRED-001/download-url"), "EXPORT_TASK_EXPIRED")
+
     export = assert_ok(client.post("/exports", json={"projectId": "P-2026-HDCP-001", "fileName": "contract.zip"}))
     signed = assert_ok(client.get(f"/exports/{export['exportId']}/download-url"))
 
@@ -1658,7 +2711,16 @@ def test_export_artifact_uses_object_storage_when_available(monkeypatch) -> None
     assert signed["url"].startswith("https://minio.local/exports/")
     with zipfile.ZipFile(io.BytesIO(stored["data"])) as archive:
         names = set(archive.namelist())
-        assert {"manifest.json", "task.json", "documents.json", "evidence_links.json", "README.txt"}.issubset(names)
+        assert {
+            "manifest.json",
+            "task.json",
+            "project.json",
+            "reports.json",
+            "documents.json",
+            "archive_items.json",
+            "evidence_links.json",
+            "README.txt",
+        }.issubset(names)
         manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
         assert manifest["schemaVersion"] == "aicheck-export-v1"
         assert manifest["taskId"] == export["exportId"]

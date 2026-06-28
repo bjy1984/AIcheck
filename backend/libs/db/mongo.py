@@ -13,6 +13,7 @@ from .repository import mongo_transactions_enabled, repo
 async def init_mongo_if_configured(app: Any) -> None:
     mongo_url = os.getenv("AICHECK_MONGO_URL")
     if not mongo_url:
+        bootstrap_local_roles_if_configured()
         app.state.mongo = None
         return
     try:
@@ -28,6 +29,21 @@ async def init_mongo_if_configured(app: Any) -> None:
     object_storage.ensure_buckets()
     app.state.mongo_client = client
     app.state.mongo = database
+
+
+def bootstrap_local_roles_if_configured() -> None:
+    if os.getenv("AICHECK_BOOTSTRAP_LOCAL_ROLES", "false").lower() != "true":
+        return
+    from scripts.create_roles import build_plan, resolve_role_passwords, selected_roles
+
+    roles = selected_roles(os.getenv("AICHECK_BOOTSTRAP_LOCAL_ROLE_LIST", "admin,inspection,contractor,ndt,owner"))
+    project_id = os.getenv("AICHECK_DEFAULT_PROJECT_ID", "P-2026-HDCP-001")
+    passwords = resolve_role_passwords(roles)
+    plan = build_plan(roles, project_id, passwords=passwords, show_passwords=False)
+    repo.state["users"] = plan["authUsers"]
+    repo.state["roles"] = plan["authRoles"]
+    repo.state["project_members"] = plan["projectMembers"]
+    repo.state["admin_config"] = plan["adminConfigPayload"]
 
 
 async def close_mongo(app: Any) -> None:

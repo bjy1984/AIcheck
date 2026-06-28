@@ -38,6 +38,28 @@ HOST_PORTS = {
     5433: "litellm-postgres",
 }
 PLACEHOLDER_MARKERS = ("replace-with", "change-me", "placeholder", "example", "sk-aicheck-dev")
+SECRET_STRENGTH_RULES = {
+    "AICHECK_MINIO_SECRET_KEY": {
+        "min_length": 16,
+        "min_unique": 8,
+        "description": "MinIO secret key",
+    },
+    "AICHECK_JWT_SECRET": {
+        "min_length": 32,
+        "min_unique": 12,
+        "description": "JWT signing secret",
+    },
+    "LITELLM_API_KEY": {
+        "min_length": 16,
+        "min_unique": 8,
+        "description": "LiteLLM master key",
+    },
+    "LITELLM_POSTGRES_PASSWORD": {
+        "min_length": 16,
+        "min_unique": 8,
+        "description": "LiteLLM PostgreSQL password",
+    },
+}
 
 
 @dataclass
@@ -46,6 +68,7 @@ class CheckResult:
     status: str
     detail: str = ""
     data: dict[str, object] | None = None
+    remediation: list[str] | None = None
 
     @property
     def ok(self) -> bool:
@@ -101,6 +124,16 @@ def is_placeholder(value: str | None) -> bool:
     return any(marker in lower_value for marker in PLACEHOLDER_MARKERS)
 
 
+def secret_strength_issues(value: str | None, *, min_length: int, min_unique: int) -> list[str]:
+    text = value or ""
+    issues: list[str] = []
+    if len(text) < min_length:
+        issues.append(f"length<{min_length}")
+    if len(set(text)) < min_unique:
+        issues.append(f"unique_chars<{min_unique}")
+    return issues
+
+
 def tcp_port_open(port: int, host: str = "127.0.0.1") -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(0.2)
@@ -126,27 +159,73 @@ class PreflightChecker:
         self.check_docker()
         self.check_env_file()
         self.check_required_env()
+        self.check_secret_strength()
         self.check_production_flags()
         self.check_agentdesign()
         self.check_ports()
         self.check_live_probe_command()
         return self.results
 
-    def add(self, name: str, status: str, detail: str = "", data: dict[str, object] | None = None) -> None:
-        self.results.append(CheckResult(name=name, status=status, detail=detail, data=data))
+    def add(
+        self,
+        name: str,
+        status: str,
+        detail: str = "",
+        data: dict[str, object] | None = None,
+        remediation: list[str] | None = None,
+    ) -> None:
+        self.results.append(
+            CheckResult(
+                name=name,
+                status=status,
+                detail=detail,
+                data=data,
+                remediation=remediation,
+            )
+        )
 
     def check_docker(self) -> None:
         docker = shutil.which("docker")
         if not docker:
-            self.add("runtime.docker", "fail", "docker CLI was not found on PATH.")
-            self.add("runtime.compose", "fail", "docker compose cannot be checked without docker CLI.")
+            self.add(
+                "runtime.docker",
+                "fail",
+                "docker CLI was not found on PATH.",
+                remediation=[
+                    "Install Docker Desktop or Docker Engine on the deployment host.",
+                    "Verify `docker --version` succeeds in the same shell used for deployment.",
+                ],
+            )
+            self.add(
+                "runtime.compose",
+                "fail",
+                "docker compose cannot be checked without docker CLI.",
+                remediation=[
+                    "Install the Docker Compose v2 plugin with Docker.",
+                    "Verify `docker compose version` succeeds before running live probes.",
+                ],
+            )
             return
 
         version = self.run_command([docker, "--version"])
-        self.add("runtime.docker", "pass" if version[0] else "fail", version[1])
+        self.add(
+            "runtime.docker",
+            "pass" if version[0] else "fail",
+            version[1],
+            remediation=None
+            if version[0]
+            else ["Fix the Docker installation until `docker --version` exits with code 0."],
+        )
 
         compose = self.run_command([docker, "compose", "version"])
-        self.add("runtime.compose", "pass" if compose[0] else "fail", compose[1])
+        self.add(
+            "runtime.compose",
+            "pass" if compose[0] else "fail",
+            compose[1],
+            remediation=None
+            if compose[0]
+            else ["Install or repair Docker Compose v2 until `docker compose version` passes."],
+        )
 
     def run_command(self, command: list[str]) -> tuple[bool, str]:
         try:
@@ -164,22 +243,104 @@ class PreflightChecker:
                 "env.file",
                 "fail",
                 f"{self.env_file} is missing. Copy backend/.env.example and replace placeholders.",
+                remediation=[
+                    "Run `cd backend && cp .env.example .env`.",
+                    "Replace every `replace-with-*` value in backend/.env with production secrets.",
+                ],
             )
 
     def check_required_env(self) -> None:
         missing = sorted(key for key in REQUIRED_ENV if not self.env.get(key))
         placeholders = sorted(key for key in REQUIRED_ENV if is_placeholder(self.env.get(key)))
         if missing:
-            self.add("env.required", "fail", "Missing required variables: " + ", ".join(missing))
+            self.add(
+                "env.required",
+                "fail",
+                "Missing required variables: " + ", ".join(missing),
+                {
+                    "missing": missing,
+                    "required": REQUIRED_ENV,
+                },
+                [
+                    f"Set {key} in {self.env_file} or the deployment environment."
+                    for key in missing
+                ],
+            )
             return
         if self.strict_production and placeholders:
-            self.add("env.required", "fail", "Placeholder values remain: " + ", ".join(placeholders))
+            self.add(
+                "env.required",
+                "fail",
+                "Placeholder values remain: " + ", ".join(placeholders),
+                {
+                    "placeholders": placeholders,
+                    "required": REQUIRED_ENV,
+                },
+                [
+                    f"Replace placeholder value for {key} with a real production secret or path."
+                    for key in placeholders
+                ],
+            )
             return
         status = "warn" if placeholders else "pass"
         detail = "Required variables are present."
         if placeholders:
             detail = "Required variables are present, but placeholders remain: " + ", ".join(placeholders)
-        self.add("env.required", status, detail, {"variables": sorted(REQUIRED_ENV)})
+        remediation = [
+            f"Replace placeholder value for {key} before production live probes."
+            for key in placeholders
+        ] or None
+        self.add("env.required", status, detail, {"variables": sorted(REQUIRED_ENV)}, remediation)
+
+    def check_secret_strength(self) -> None:
+        pending = sorted(
+            key for key in SECRET_STRENGTH_RULES if not self.env.get(key) or is_placeholder(self.env.get(key))
+        )
+        if pending:
+            self.add(
+                "env.secret-strength",
+                "warn",
+                "Secret strength check is waiting for non-placeholder values: " + ", ".join(pending),
+                {"pending": pending, "rules": SECRET_STRENGTH_RULES},
+                [
+                    f"Set a real production value for {key}, then rerun the preflight."
+                    for key in pending
+                ],
+            )
+            return
+        problems: dict[str, list[str]] = {}
+        for key, rule in SECRET_STRENGTH_RULES.items():
+            value = self.env.get(key)
+            issues = secret_strength_issues(
+                value,
+                min_length=int(rule["min_length"]),
+                min_unique=int(rule["min_unique"]),
+            )
+            if issues:
+                problems[key] = issues
+        if not problems:
+            self.add(
+                "env.secret-strength",
+                "pass",
+                "Internal production secrets meet minimum length and diversity requirements.",
+            )
+            return
+        status = "fail" if self.strict_production else "warn"
+        self.add(
+            "env.secret-strength",
+            status,
+            "Weak internal secret values: "
+            + "; ".join(f"{key} ({', '.join(issues)})" for key, issues in problems.items()),
+            {"problems": problems, "rules": SECRET_STRENGTH_RULES},
+            [
+                (
+                    f"Regenerate {key} as a random secret with at least "
+                    f"{rule['min_length']} characters and {rule['min_unique']} unique characters."
+                )
+                for key, rule in SECRET_STRENGTH_RULES.items()
+                if key in problems
+            ],
+        )
 
     def check_production_flags(self) -> None:
         failures: list[str] = []
@@ -188,7 +349,15 @@ class PreflightChecker:
             if actual != expected:
                 failures.append(f"{key}={actual}, expected {expected}")
         if failures:
-            self.add("env.production-flags", "fail", "; ".join(failures))
+            self.add(
+                "env.production-flags",
+                "fail",
+                "; ".join(failures),
+                remediation=[
+                    f"Set {key}={expected} in {self.env_file}."
+                    for key, expected in PRODUCTION_FLAG_DEFAULTS.items()
+                ],
+            )
             return
         self.add(
             "env.production-flags",
@@ -199,14 +368,31 @@ class PreflightChecker:
     def check_agentdesign(self) -> None:
         raw_path = self.env.get("AICHECK_AGENTDESIGN_HOST_PATH")
         if not raw_path:
-            self.add("agentdesign.path", "fail", "AICHECK_AGENTDESIGN_HOST_PATH is missing.")
+            self.add(
+                "agentdesign.path",
+                "fail",
+                "AICHECK_AGENTDESIGN_HOST_PATH is missing.",
+                remediation=[
+                    "Set AICHECK_AGENTDESIGN_HOST_PATH to the host checkout of agentdesign.",
+                    "The path must contain mvp-system/backend/seal_ocr/pipeline.py.",
+                ],
+            )
             return
         root = Path(raw_path).expanduser()
         pipeline = root / "mvp-system" / "backend" / "seal_ocr" / "pipeline.py"
         requirements = root / "requirements" / "mvp-ocr.txt"
         missing = [str(path) for path in (pipeline, requirements) if not path.exists()]
         if missing:
-            self.add("agentdesign.path", "fail", "Missing OCR reference files: " + ", ".join(missing))
+            self.add(
+                "agentdesign.path",
+                "fail",
+                "Missing OCR reference files: " + ", ".join(missing),
+                {"missing": missing},
+                [
+                    "Point AICHECK_AGENTDESIGN_HOST_PATH at a complete agentdesign checkout.",
+                    "Verify requirements/mvp-ocr.txt and mvp-system/backend/seal_ocr/pipeline.py exist.",
+                ],
+            )
             return
         self.add("agentdesign.path", "pass", f"{root} contains the expected OCR baseline files.")
 
@@ -219,20 +405,29 @@ class PreflightChecker:
         detail = "Default Compose ports are already open: " + ", ".join(
             f"{service}:{port}" for port, service in sorted(open_ports.items())
         )
-        self.add("host.ports", status, detail, {"openPorts": open_ports})
+        self.add(
+            "host.ports",
+            status,
+            detail,
+            {"openPorts": open_ports},
+            [
+                "Stop the conflicting local services before starting Compose, or",
+                "Change the published ports in docker-compose.yml for this host.",
+            ],
+        )
 
     def check_live_probe_command(self) -> None:
-        blockers = [
-            result.name
-            for result in self.results
-            if result.status == "fail"
-            and result.name in {"runtime.docker", "runtime.compose", "env.file", "env.required"}
-        ]
+        blockers = [result.name for result in self.results if result.status == "fail"]
         if blockers:
             self.add(
                 "probe.command-ready",
                 "fail",
                 "Cannot run 96+ live probes until these checks pass: " + ", ".join(blockers),
+                {"blockers": blockers},
+                [
+                    "Resolve the blocking checks listed in data.blockers.",
+                    "Then run `python scripts/check_96_preflight.py --strict-production` again.",
+                ],
             )
             return
         self.add(
@@ -256,6 +451,9 @@ def render_text(results: list[CheckResult]) -> str:
     lines = ["AIcheck 96+ Preflight", ""]
     for item in results:
         lines.append(f"- {item.status.upper()} {item.name}: {item.detail}")
+        if item.remediation:
+            for step in item.remediation:
+                lines.append(f"  remediation: {step}")
     summary = summarize(results)
     lines.extend(
         [
