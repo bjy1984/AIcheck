@@ -4783,30 +4783,154 @@ def fde_rollback_business_pack(
     return idempotent(request, idempotency_key, produce, fingerprint_source={"packId": pack_id, "body": body})
 
 
+def fde_ocr_quality_snapshot() -> dict[str, Any]:
+    documents = repo.state.get("documents", [])
+    fields = repo.state.get("extracted_fields", [])
+    jobs = repo.state.get("ocr_jobs", [])
+    results = repo.state.get("ocr_parse_results", [])
+    corrections = repo.state.get("ocr_corrections", [])
+    eval_runs = repo.state.get("ocr_eval_runs", [])
+    low_confidence = [item for item in fields if float(item.get("confidence") or 0) < 0.85]
+    result_diagnostics = [
+        diagnostic
+        for result in results
+        for diagnostic in result.get("diagnostics", [])
+        if isinstance(diagnostic, dict) or diagnostic
+    ]
+    table_failures = [
+        item
+        for item in result_diagnostics
+        if "TABLE" in str((item or {}).get("code") if isinstance(item, dict) else item).upper()
+    ]
+    seal_failures = [
+        item
+        for item in result_diagnostics
+        if "SEAL" in str((item or {}).get("code") if isinstance(item, dict) else item).upper()
+    ]
+    engine_failures = [
+        item
+        for item in result_diagnostics
+        if "ENGINE" in str((item or {}).get("code") if isinstance(item, dict) else item).upper()
+        or "FAILED" in str((item or {}).get("code") if isinstance(item, dict) else item).upper()
+    ]
+    success_documents = len([item for item in documents if item.get("currentOcrStatus") == "已识别"])
+    failed_documents = len([item for item in documents if item.get("currentOcrStatus") == "识别失败"])
+    success_results = len([item for item in results if item.get("status") == "success"])
+    failed_results = len([item for item in results if item.get("status") != "success"])
+    return {
+        "fileLevel": {
+            "total": len(documents),
+            "success": success_documents,
+            "failed": failed_documents,
+            "parseSuccessRate": round(success_results / (len(results) or 1), 4),
+        },
+        "fieldLevel": {
+            "total": len(fields),
+            "lowConfidence": len(low_confidence),
+            "manualCorrectionRate": round(len(corrections) / (len(fields) or 1), 4),
+        },
+        "jobLevel": {
+            "total": len(jobs),
+            "success": success_results,
+            "failed": failed_results,
+            "running": len([item for item in jobs if item.get("status") in {"queued", "running"}]),
+        },
+        "lowConfidenceFields": repo.clone(low_confidence[:20]),
+        "jobs": repo.clone(jobs[:20]),
+        "parseResults": repo.clone(results[:20]),
+        "corrections": repo.clone(corrections[:20]),
+        "evalRuns": repo.clone(eval_runs[:20]),
+        "failurePools": {
+            "tableFailures": repo.clone(table_failures[:20]),
+            "sealFailures": repo.clone(seal_failures[:20]),
+            "engineFailures": repo.clone(engine_failures[:20]),
+        },
+    }
+
+
 @router.get("/fde/ocr-quality")
 def fde_ocr_quality(request: Request):
     _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
     if role_error:
         return role_error
-    documents = repo.state.get("documents", [])
-    fields = repo.state.get("extracted_fields", [])
-    low_confidence = [item for item in fields if float(item.get("confidence") or 0) < 0.85]
-    return ok(
-        {
-            "fileLevel": {
-                "total": len(documents),
-                "success": len([item for item in documents if item.get("currentOcrStatus") == "已识别"]),
-                "failed": len([item for item in documents if item.get("currentOcrStatus") == "识别失败"]),
-            },
-            "fieldLevel": {
-                "total": len(fields),
-                "lowConfidence": len(low_confidence),
-                "manualCorrectionRate": round(len([item for item in fields if item.get("reviewStatus") == "已修正"]) / (len(fields) or 1), 4),
-            },
-            "lowConfidenceFields": repo.clone(low_confidence[:20]),
-        },
-        request,
-    )
+    return ok(fde_ocr_quality_snapshot(), request)
+
+
+@router.get("/fde/ocr-runs")
+def fde_ocr_runs(
+    request: Request,
+    status: str | None = None,
+    profileId: str | None = None,
+    pageNo: int = Query(default=1, ge=1),
+    pageSize: int = Query(default=20, ge=1, le=100),
+):
+    _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+    if role_error:
+        return role_error
+    items = repo.clone(repo.state.get("ocr_jobs", []))
+    if status:
+        items = [item for item in items if str(item.get("status") or "") == status]
+    if profileId:
+        items = [item for item in items if str(item.get("profileId") or "") == profileId]
+    return ok(page(items, pageNo, pageSize), request)
+
+
+@router.get("/fde/ocr-runs/{job_id}")
+def fde_ocr_run_detail(request: Request, job_id: str):
+    _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+    if role_error:
+        return role_error
+    job = repo.find_one("ocr_jobs", job_id) or repo.find_one("ocr_jobs", job_id, id_field="jobId")
+    if not job:
+        return fail(errors.NOT_FOUND, request)
+    result = None
+    if job.get("parseResultId"):
+        result = repo.find_one("ocr_parse_results", str(job["parseResultId"]), id_field="parseResultId")
+    corrections = [
+        item
+        for item in repo.state.get("ocr_corrections", [])
+        if item.get("documentVersionId") == job.get("documentVersionId")
+    ]
+    return ok({"job": repo.clone(job), "parseResult": repo.clone(result), "corrections": repo.clone(corrections)}, request)
+
+
+@router.post("/fde/ocr-corrections")
+def fde_create_ocr_correction(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        role, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+        if role_error:
+            return role_error
+        field_id = str(body.get("fieldId") or "")
+        field = repo.find_one("extracted_fields", field_id)
+        if field_id and not field:
+            return fail(errors.NOT_FOUND, request)
+        payload = {**body, "createdByRole": role or "fde"}
+        correction = repo.create_ocr_correction(payload)
+        audit_id = repo.add_audit("FDE OCR 字段纠错", "OcrCorrection", correction["id"])
+        return ok({"correction": correction, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
+
+
+@router.post("/fde/ocr-evaluation-runs")
+def fde_create_ocr_evaluation_run(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        role, role_error = fde_error_unless_allowed(request, "fde:evaluation:run")
+        if role_error:
+            return role_error
+        run = repo.create_ocr_eval_run({**body, "createdByRole": role or "fde"})
+        audit_id = repo.add_audit("FDE OCR 离线评测", "OcrEvaluationRun", run["id"])
+        return ok({"run": run, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.get("/fde/incidents")

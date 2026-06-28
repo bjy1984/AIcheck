@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from apps.ocr_service.service import ocr_service
@@ -23,9 +24,30 @@ def flush_state() -> None:
     repo.flush_to_sync_mongo()
 
 
-def parse_with_ocr_service(storage_key: str, file_name: str | None = None) -> dict[str, Any]:
+def parse_with_ocr_service(
+    storage_key: str,
+    file_name: str | None = None,
+    *,
+    document_id: str | None = None,
+    version_id: str | None = None,
+    profile_id: str | None = None,
+    document_type: str | None = None,
+) -> dict[str, Any]:
     client = OcrClient()
     if client.enabled:
+        use_job_api = os.getenv("AICHECK_OCR_USE_JOB_API", "true").lower() != "false"
+        if use_job_api and hasattr(client, "parse_via_job_sync"):
+            return client.parse_via_job_sync(
+                {
+                    "documentId": document_id,
+                    "documentVersionId": version_id,
+                    "documentType": document_type,
+                    "profileId": profile_id,
+                    "storageKey": storage_key,
+                    "fileName": file_name,
+                    "options": {"enableTables": True, "enableSeals": True, "enableFallback": True},
+                }
+            )
         return client.parse_sync(storage_key, file_name=file_name)
     return ocr_service.parse_document(storage_key, file_name=file_name)
 
@@ -42,8 +64,26 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
         flush_state()
         return {"documentId": document_id, "versionId": version_id, "status": "success", "alreadyCompleted": True}
     repo.mark_task_running(task, "OCR worker 开始处理。")
+    document = repo.find_one("documents", document_id)
+    profile_id = (version or {}).get("ocrProfileId") or (document or {}).get("ocrProfileId")
+    document_type = (version or {}).get("documentType") or (document or {}).get("documentType")
+    ocr_job_record = repo.create_ocr_job_record(
+        document_id=document_id,
+        version_id=version_id,
+        storage_key=storage_key,
+        file_name=file_name,
+        profile_id=profile_id,
+        document_type=document_type,
+    )
     try:
-        result = parse_with_ocr_service(storage_key, file_name=file_name)
+        result = parse_with_ocr_service(
+            storage_key,
+            file_name=file_name,
+            document_id=document_id,
+            version_id=version_id,
+            profile_id=profile_id,
+            document_type=document_type,
+        )
     except Exception:
         result = {
             "storageKey": storage_key,
@@ -54,9 +94,15 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
             "seals": [],
             "diagnostics": [service_failure_message("OCR 服务")],
         }
+    parse_result_record = repo.finish_ocr_job_record(ocr_job_record, result)
     applied = repo.apply_ocr_result(document_id, version_id, result)
     flush_state()
-    return {**result, "applied": applied}
+    return {
+        **result,
+        "applied": applied,
+        "ocrJobRecordId": ocr_job_record.get("id"),
+        "ocrParseResultId": (parse_result_record or {}).get("parseResultId"),
+    }
 
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
@@ -67,6 +113,8 @@ def recognize_seals(self, document_id: str, version_id: str) -> dict[str, Any]:
     result = parse_with_ocr_service(
         storage_key,
         file_name=(repo.find_one("documents", document_id) or {}).get("fileName"),
+        document_id=document_id,
+        version_id=version_id,
     )
     flush_state()
     return {"documentId": document_id, "versionId": version_id, "seals": result.get("seals") or []}

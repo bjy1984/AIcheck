@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import os
 from copy import deepcopy
+from pathlib import Path
 from threading import Lock
 from typing import Any
 from uuid import uuid4
@@ -13,6 +16,39 @@ class DocumentParseJobStore:
         self._lock = Lock()
         self._jobs: dict[str, dict[str, Any]] = {}
         self._results: dict[str, dict[str, Any]] = {}
+        self._store_path = Path(os.getenv("AICHECK_OCR_JOB_STORE_PATH", "/tmp/aicheck-ocr-job-store.json"))
+        self._load_from_disk()
+
+    def _load_from_disk(self) -> None:
+        if not self._store_path.exists():
+            return
+        try:
+            payload = json.loads(self._store_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        if not isinstance(payload, dict):
+            return
+        jobs = payload.get("jobs")
+        results = payload.get("results")
+        if isinstance(jobs, dict):
+            self._jobs = {str(key): value for key, value in jobs.items() if isinstance(value, dict)}
+        if isinstance(results, dict):
+            self._results = {str(key): value for key, value in results.items() if isinstance(value, dict)}
+
+    def _save_locked(self) -> None:
+        try:
+            self._store_path.parent.mkdir(parents=True, exist_ok=True)
+            self._store_path.write_text(
+                json.dumps(
+                    {"jobs": self._jobs, "results": self._results},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    default=str,
+                ),
+                encoding="utf-8",
+            )
+        except OSError:
+            return
 
     def create(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = server_time()
@@ -41,6 +77,7 @@ class DocumentParseJobStore:
         }
         with self._lock:
             self._jobs[job["jobId"]] = job
+            self._save_locked()
         return deepcopy(job)
 
     def get_job(self, job_id: str) -> dict[str, Any] | None:
@@ -62,6 +99,7 @@ class DocumentParseJobStore:
             job["status"] = "running"
             job["startedAt"] = job.get("startedAt") or now
             job["updatedAt"] = now
+            self._save_locked()
             return deepcopy(job)
 
     def mark_finished(self, job_id: str, result: dict[str, Any]) -> dict[str, Any] | None:
@@ -80,6 +118,7 @@ class DocumentParseJobStore:
             job["updatedAt"] = now
             job["engineRuns"] = result.get("engineRuns") or []
             job["diagnostics"] = result.get("diagnostics") or []
+            self._save_locked()
             return deepcopy(job)
 
     def retry_payload(self, job_id: str) -> dict[str, Any] | None:

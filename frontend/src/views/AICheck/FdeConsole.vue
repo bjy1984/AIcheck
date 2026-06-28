@@ -19,11 +19,14 @@ import {
 import {
   createFdeDataExportApi,
   createFdeEvaluationRunApi,
+  createFdeOcrCorrectionApi,
+  createFdeOcrEvaluationRunApi,
   getFdeAiRunApi,
   getFdeCapabilityBundlesApi,
   getFdeCostBudgetsApi,
   getFdeDashboardApi,
   getFdeEvaluationSetsApi,
+  getFdeOcrRunApi,
   getFdeOcrQualityApi,
   installFdeBusinessPackApi,
   listFdeAcceptanceReportsApi,
@@ -31,6 +34,7 @@ import {
   listFdeAiRunsApi,
   listFdeFeedbackApi,
   listFdeIncidentsApi,
+  listFdeOcrRunsApi,
   listFdeReleasesApi,
   requestFdeAccessGrantApi,
   replayFdeAiRunApi,
@@ -51,6 +55,7 @@ import type {
   FdeFeedback,
   FdeIncidentPayload,
   FdeOcrQualityPayload,
+  FdeOcrRunDetailPayload,
   FdeReleasePayload
 } from '@/api/aicheck'
 
@@ -65,6 +70,8 @@ const evaluation = ref<FdeEvaluationPayload | null>(null)
 const bundles = ref<FdeCapabilityBundlePayload | null>(null)
 const releases = ref<FdeReleasePayload | null>(null)
 const ocrQuality = ref<FdeOcrQualityPayload | null>(null)
+const ocrRuns = ref<Array<Record<string, unknown>>>([])
+const selectedOcrRun = ref<FdeOcrRunDetailPayload | null>(null)
 const incidentPayload = ref<FdeIncidentPayload | null>(null)
 const accessGrants = ref<Array<Record<string, unknown>>>([])
 const costGovernance = ref<FdeAccessPayload | null>(null)
@@ -97,6 +104,11 @@ const firstRunId = computed(() => String(aiRuns.value[0]?.id || ''))
 const firstReportId = computed(() => String(evaluation.value?.reports?.[0]?.id || ''))
 const firstReleaseId = computed(() => String(releases.value?.plans?.[0]?.id || ''))
 const firstPackId = computed(() => String(packValidation.value?.results?.[0]?.summary?.id || ''))
+const firstOcrJobId = computed(() => String(ocrRuns.value[0]?.id || ocrRuns.value[0]?.jobId || ''))
+const firstLowConfidenceField = computed(() => ocrQuality.value?.lowConfidenceFields?.[0])
+const selectedOcrResultSummary = computed(
+  () => (selectedOcrRun.value?.job?.resultSummary || {}) as Record<string, unknown>
+)
 const incidents = computed(() => incidentPayload.value?.incidents || [])
 const rcaItems = computed(() => incidentPayload.value?.rca || [])
 
@@ -112,6 +124,7 @@ const loadData = async () => {
       bundleRes,
       releaseRes,
       ocrRes,
+      ocrRunRes,
       incidentRes,
       acceptanceRes,
       validationRes,
@@ -125,6 +138,7 @@ const loadData = async () => {
       getFdeCapabilityBundlesApi(),
       listFdeReleasesApi(),
       getFdeOcrQualityApi(),
+      listFdeOcrRunsApi({ pageSize: 20 }),
       listFdeIncidentsApi(),
       listFdeAcceptanceReportsApi(),
       validateFdeBusinessPacksApi(),
@@ -138,6 +152,7 @@ const loadData = async () => {
     bundles.value = bundleRes.data
     releases.value = releaseRes.data
     ocrQuality.value = ocrRes.data
+    ocrRuns.value = ocrRunRes.data.items
     incidentPayload.value = incidentRes.data
     acceptanceReports.value = acceptanceRes.data
     packValidation.value = validationRes.data
@@ -145,6 +160,9 @@ const loadData = async () => {
     costGovernance.value = costRes.data
     if (aiRuns.value[0]) {
       await loadRunDetail(aiRuns.value[0].id)
+    }
+    if (firstOcrJobId.value) {
+      await loadOcrRunDetail(firstOcrJobId.value)
     }
   } catch {
     error.value = 'FDE 后台数据加载失败。'
@@ -156,6 +174,11 @@ const loadData = async () => {
 const loadRunDetail = async (runId: string) => {
   const res = await getFdeAiRunApi(runId)
   selectedRun.value = res.data
+}
+
+const loadOcrRunDetail = async (jobId: string) => {
+  const res = await getFdeOcrRunApi(jobId)
+  selectedOcrRun.value = res.data
 }
 
 const replayFirstRun = async () => {
@@ -268,6 +291,36 @@ const updateFirstRca = async () => {
       rootCause: 'low_quality_scan',
       temporaryAction: '已要求低置信度字段人工复核。',
       longTermAction: '优化 OCR Profile 预处理参数。'
+    })
+    await loadData()
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+const correctFirstOcrField = async () => {
+  const field = firstLowConfidenceField.value
+  if (!field) return
+  actionLoading.value = true
+  try {
+    await createFdeOcrCorrectionApi({
+      fieldId: field.id,
+      documentVersionId: field.documentVersionId,
+      correctedValue: String(field.fieldValue ?? ''),
+      reason: 'FDE 复核低置信度字段'
+    })
+    await loadData()
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+const startOcrEvaluation = async () => {
+  actionLoading.value = true
+  try {
+    await createFdeOcrEvaluationRunApi({
+      profileId: String(selectedOcrRun.value?.job?.profileId || 'all'),
+      caseCount: ocrRuns.value.length
     })
     await loadData()
   } finally {
@@ -513,18 +566,67 @@ onMounted(loadData)
           </ElCol>
           <ElCol :xl="8" :lg="8" :md="24" :sm="24" :xs="24">
             <ElCard shadow="never" class="panel">
-              <template #header>OCR 质量</template>
+              <template #header>
+                <div class="panel-header">
+                  <span>OCR 质量</span>
+                  <ElSpace>
+                    <ElButton
+                      size="small"
+                      plain
+                      :disabled="!firstLowConfidenceField"
+                      :loading="actionLoading"
+                      @click="correctFirstOcrField"
+                    >
+                      字段纠错
+                    </ElButton>
+                    <ElButton size="small" plain :loading="actionLoading" @click="startOcrEvaluation">
+                      OCR评测
+                    </ElButton>
+                  </ElSpace>
+                </div>
+              </template>
               <ElDescriptions v-if="ocrQuality" :column="1" border>
                 <ElDescriptionsItem label="文件成功"
                   >{{ ocrQuality.fileLevel.success }}/{{
                     ocrQuality.fileLevel.total
                   }}</ElDescriptionsItem
                 >
+                <ElDescriptionsItem label="Job 成功">{{
+                  ocrQuality.jobLevel?.success || 0
+                }}/{{ ocrQuality.jobLevel?.total || 0 }}</ElDescriptionsItem>
                 <ElDescriptionsItem label="低置信度字段">{{
                   ocrQuality.fieldLevel.lowConfidence
                 }}</ElDescriptionsItem>
                 <ElDescriptionsItem label="人工修正率">{{
                   percent(ocrQuality.fieldLevel.manualCorrectionRate)
+                }}</ElDescriptionsItem>
+              </ElDescriptions>
+              <ElTable
+                :data="ocrRuns"
+                border
+                height="220"
+                class="mt-12px"
+                @row-click="(row) => loadOcrRunDetail(String(row.id || row.jobId))"
+              >
+                <ElTableColumn prop="id" label="Job" min-width="150" show-overflow-tooltip />
+                <ElTableColumn prop="status" label="状态" width="95">
+                  <template #default="{ row }">
+                    <ElTag :type="statusType(String(row.status))" effect="plain">{{
+                      row.status
+                    }}</ElTag>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn prop="profileId" label="Profile" min-width="140" show-overflow-tooltip />
+              </ElTable>
+              <ElDescriptions v-if="selectedOcrRun" :column="1" border class="mt-12px">
+                <ElDescriptionsItem label="结果">{{
+                  selectedOcrRun.job.parseResultId || '-'
+                }}</ElDescriptionsItem>
+                <ElDescriptionsItem label="字段">{{
+                  selectedOcrResultSummary.fieldCount || 0
+                }}</ElDescriptionsItem>
+                <ElDescriptionsItem label="纠错">{{
+                  selectedOcrRun.corrections.length
                 }}</ElDescriptionsItem>
               </ElDescriptions>
             </ElCard>

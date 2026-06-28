@@ -916,9 +916,25 @@ export type FdeIncidentPayload = {
 }
 
 export type FdeOcrQualityPayload = {
-  fileLevel: { total: number; success: number; failed: number }
+  fileLevel: { total: number; success: number; failed: number; parseSuccessRate?: number }
   fieldLevel: { total: number; lowConfidence: number; manualCorrectionRate: number }
+  jobLevel?: { total: number; success: number; failed: number; running: number }
   lowConfidenceFields: ExtractedField[]
+  jobs?: Array<Record<string, unknown>>
+  parseResults?: Array<Record<string, unknown>>
+  corrections?: Array<Record<string, unknown>>
+  evalRuns?: Array<Record<string, unknown>>
+  failurePools?: {
+    tableFailures: Array<Record<string, unknown> | string>
+    sealFailures: Array<Record<string, unknown> | string>
+    engineFailures: Array<Record<string, unknown> | string>
+  }
+}
+
+export type FdeOcrRunDetailPayload = {
+  job: Record<string, unknown>
+  parseResult: Record<string, unknown> | null
+  corrections: Array<Record<string, unknown>>
 }
 
 export type AdminConfigTarget =
@@ -2304,6 +2320,50 @@ export const rollbackFdeBusinessPackApi = (
 
 export const getFdeOcrQualityApi = (): Promise<IResponse<FdeOcrQualityPayload>> => {
   return request.get({ url: '/api/fde/ocr-quality' })
+}
+
+export const listFdeOcrRunsApi = (params?: {
+  pageNo?: number
+  pageSize?: number
+  status?: string
+  profileId?: string
+}): Promise<IResponse<PagePayload<Record<string, unknown>>>> => {
+  return request.get({ url: '/api/fde/ocr-runs', params })
+}
+
+export const getFdeOcrRunApi = (
+  jobId: string
+): Promise<IResponse<FdeOcrRunDetailPayload>> => {
+  return request.get({ url: `/api/fde/ocr-runs/${jobId}` })
+}
+
+export const createFdeOcrCorrectionApi = (
+  data: {
+    fieldId?: string
+    documentVersionId?: string
+    correctedValue?: string
+    correctedBbox?: unknown
+    reason?: string
+    shouldEnterEvaluationSet?: boolean
+  },
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ correction: Record<string, unknown>; auditLogId: string }>> => {
+  return request.post({
+    url: '/api/fde/ocr-corrections',
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const createFdeOcrEvaluationRunApi = (
+  data?: { profileId?: string; caseCount?: number },
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ run: Record<string, unknown>; auditLogId: string }>> => {
+  return request.post({
+    url: '/api/fde/ocr-evaluation-runs',
+    data: data || {},
+    headers: mutationHeaders(options)
+  })
 }
 
 export const listFdeIncidentsApi = (): Promise<IResponse<FdeIncidentPayload>> => {

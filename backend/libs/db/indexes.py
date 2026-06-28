@@ -44,6 +44,21 @@ MONGO_INDEXES = {
     "prompt_versions": [[("promptKey", 1), ("version", 1), ("status", 1)]],
     "model_route_versions": [[("modelAlias", 1), ("version", 1), ("status", 1)]],
     "ocr_profile_versions": [[("profileKey", 1), ("version", 1), ("status", 1)]],
+    "ocr_jobs": [
+        [("documentVersionId", 1), ("status", 1), ("createdAt", -1)],
+        [("jobId", 1), ("status", 1)],
+        [("profileId", 1), ("status", 1), ("createdAt", -1)],
+    ],
+    "ocr_parse_results": [
+        [("documentVersionId", 1), ("status", 1), ("finishedAt", -1)],
+        [("parseResultId", 1)],
+        [("profileId", 1), ("status", 1), ("finishedAt", -1)],
+    ],
+    "ocr_corrections": [
+        [("documentVersionId", 1), ("targetType", 1), ("createdAt", -1)],
+        [("fieldId", 1), ("createdAt", -1)],
+    ],
+    "ocr_eval_runs": [[("profileId", 1), ("status", 1), ("finishedAt", -1)]],
     "capability_bundles": [[("businessPackId", 1), ("status", 1), ("riskLevel", 1)]],
     "release_plans": [[("capabilityBundleId", 1), ("status", 1), ("riskLevel", 1)], [("createdAt", -1)]],
     "release_approvals": [[("releasePlanId", 1), ("role", 1), ("status", 1)]],

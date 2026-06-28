@@ -2366,8 +2366,51 @@ def test_worker_uses_ocr_http_client_when_configured(monkeypatch) -> None:
     result = tasks.parse_document.run(doc["id"], version["id"], version["storageKey"], doc["fileName"])
 
     assert result["applied"]["status"] == "success"
+    assert result["ocrJobRecordId"]
+    assert result["ocrParseResultId"]
+    assert repo.state["ocr_jobs"][0]["documentVersionId"] == version["id"]
+    assert repo.state["ocr_parse_results"][0]["documentVersionId"] == version["id"]
     fields = assert_ok(client.get(f"/projects/P-2026-HDCP-001/documents/{doc['id']}/ocr-fields"))
     assert any(field["fieldValue"] == "TS-HTTP" for field in fields)
+
+
+def test_worker_prefers_ocr_job_api_when_available(monkeypatch) -> None:
+    from apps.worker import tasks
+
+    class FakeOcrClient:
+        enabled = True
+        called_job_api = False
+
+        def parse_via_job_sync(self, payload, **kwargs):
+            FakeOcrClient.called_job_api = True
+            return {
+                "jobId": "OCRJOB-REMOTE-001",
+                "externalJobId": "OCRJOB-REMOTE-001",
+                "parseResultId": "PARSE-REMOTE-001",
+                "storageKey": payload["storageKey"],
+                "fileName": payload["fileName"],
+                "status": "success",
+                "parserVersion": "document-intelligence@1",
+                "engineVersion": "local-paddle@profiled",
+                "fragments": [{"pageNo": 1, "text": "HTTP JOB OCR 证书编号 TS-JOB", "confidence": 0.93}],
+                "fields": [{"fieldName": "证书编号", "fieldValue": "TS-JOB", "confidence": 0.95}],
+                "tables": [],
+                "seals": [],
+                "diagnostics": [],
+                "engineRuns": [{"engine": "job-api", "status": "success"}],
+            }
+
+        def parse_sync(self, storage_key: str, *, file_name: str | None = None):
+            raise AssertionError("parse_sync should not be used when job API is available")
+
+    monkeypatch.setattr(tasks, "OcrClient", lambda: FakeOcrClient())
+    doc, version = repo.create_document("P-2026-HDCP-001", "HTTP-OCR-job.pdf", "pdf")
+    result = tasks.parse_document.run(doc["id"], version["id"], version["storageKey"], doc["fileName"])
+
+    assert FakeOcrClient.called_job_api is True
+    assert result["parseResultId"] == "PARSE-REMOTE-001"
+    assert repo.state["ocr_jobs"][0]["jobId"] == "OCRJOB-REMOTE-001"
+    assert repo.state["ocr_parse_results"][0]["parseResultId"] == "PARSE-REMOTE-001"
 
 
 def test_failed_knowledge_task_retry_dispatches_worker_and_is_idempotent(monkeypatch) -> None:

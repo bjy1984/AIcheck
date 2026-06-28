@@ -205,6 +205,57 @@ def test_fde_business_pack_install_rca_and_data_export() -> None:
     assert costs["exports"]
 
 
+def test_fde_ocr_quality_runs_corrections_and_eval() -> None:
+    job = repo.create_ocr_job_record(
+        document_id="DOC-20260625-003",
+        version_id="DV-20260625-003-V2",
+        storage_key="documents/DV-20260625-003-V2.pdf",
+        file_name="质量证明书.pdf",
+        profile_id="quality_certificate_v1",
+        document_type="quality_certificate",
+    )
+    result = repo.finish_ocr_job_record(
+        job,
+        {
+            "status": "success",
+            "parseResultId": "PARSE-FDE-OCR-001",
+            "fields": [
+                {"fieldName": "炉批号", "fieldValue": "H240315A07", "confidence": 0.66, "pageNo": 1}
+            ],
+            "tables": [{"tableId": "T1", "structureConfidence": 0.86}],
+            "seals": [{"sealId": "S1", "sealName": "测试单位章"}],
+            "diagnostics": [{"code": "TABLE_STRUCTURE_LOW_CONFIDENCE", "level": "warning"}],
+            "engineRuns": [{"engine": "pp_structure_v3", "status": "success"}],
+        },
+    )
+
+    quality = assert_ok(client.get("/api/fde/ocr-quality", headers={"X-Role": "fde"}))
+    runs = assert_ok(client.get("/api/fde/ocr-runs", headers={"X-Role": "fde"}))
+    detail = assert_ok(client.get(f"/api/fde/ocr-runs/{job['id']}", headers={"X-Role": "fde"}))
+    correction = assert_ok(
+        client.post(
+            "/api/fde/ocr-corrections",
+            json={"fieldId": "FIELD-16-001", "correctedValue": "H240315A07", "reason": "低置信度复核"},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-ocr-correction-001"},
+        )
+    )
+    evaluation = assert_ok(
+        client.post(
+            "/api/fde/ocr-evaluation-runs",
+            json={"profileId": "quality_certificate_v1"},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-ocr-eval-001"},
+        )
+    )
+
+    assert quality["jobLevel"]["total"] >= 1
+    assert quality["failurePools"]["tableFailures"]
+    assert runs["items"][0]["id"] == job["id"]
+    assert detail["parseResult"]["parseResultId"] == result["parseResultId"]
+    assert correction["correction"]["fieldId"] == "FIELD-16-001"
+    assert repo.find_one("extracted_fields", "FIELD-16-001")["reviewStatus"] == "已修正"
+    assert evaluation["run"]["metrics"]["fileSuccessRate"] == 1
+
+
 def test_fde_cannot_execute_business_review_mutation() -> None:
     payload = assert_error(
         client.post(

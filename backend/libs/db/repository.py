@@ -38,6 +38,10 @@ STATE_COLLECTIONS = {
     "prompt_versions": "prompt_versions",
     "model_route_versions": "model_route_versions",
     "ocr_profile_versions": "ocr_profile_versions",
+    "ocr_jobs": "ocr_jobs",
+    "ocr_parse_results": "ocr_parse_results",
+    "ocr_corrections": "ocr_corrections",
+    "ocr_eval_runs": "ocr_eval_runs",
     "capability_bundles": "capability_bundles",
     "release_plans": "release_plans",
     "release_approvals": "release_approvals",
@@ -94,6 +98,10 @@ class InMemoryRepository:
         self.state = fresh_state()
         self.state.setdefault("knowledge_chunks", [])
         self.state.setdefault("upload_sessions", [])
+        self.state.setdefault("ocr_jobs", [])
+        self.state.setdefault("ocr_parse_results", [])
+        self.state.setdefault("ocr_corrections", [])
+        self.state.setdefault("ocr_eval_runs", [])
         self.mongo = None
         self.sync_mongo = None
         self.mongo_enabled = False
@@ -103,6 +111,10 @@ class InMemoryRepository:
         self.state = fresh_state()
         self.state.setdefault("knowledge_chunks", [])
         self.state.setdefault("upload_sessions", [])
+        self.state.setdefault("ocr_jobs", [])
+        self.state.setdefault("ocr_parse_results", [])
+        self.state.setdefault("ocr_corrections", [])
+        self.state.setdefault("ocr_eval_runs", [])
 
     def clone(self, value: Any) -> Any:
         return deepcopy(value)
@@ -581,6 +593,156 @@ class InMemoryRepository:
         self._bump_revision(task)
         self.append_task_log(task, "error", message)
 
+    def create_ocr_job_record(
+        self,
+        *,
+        document_id: str,
+        version_id: str,
+        storage_key: str,
+        file_name: str | None = None,
+        profile_id: str | None = None,
+        document_type: str | None = None,
+    ) -> dict[str, Any]:
+        now = server_time()
+        job = {
+            "id": f"OCRJOB-BIZ-{uuid4().hex[:10].upper()}",
+            "jobId": None,
+            "documentId": document_id,
+            "documentVersionId": version_id,
+            "storageKey": storage_key,
+            "fileName": file_name,
+            "profileId": profile_id,
+            "documentType": document_type,
+            "status": "running",
+            "createdAt": now,
+            "startedAt": now,
+            "updatedAt": now,
+            "finishedAt": None,
+            "parseResultId": None,
+            "engineRuns": [],
+            "diagnostics": [],
+            "resultSummary": {},
+            "retryOfJobId": None,
+            "immutable": True,
+        }
+        self.state.setdefault("ocr_jobs", []).insert(0, job)
+        return job
+
+    def finish_ocr_job_record(self, job: dict[str, Any] | None, result: dict[str, Any]) -> dict[str, Any] | None:
+        if not job:
+            return None
+        now = server_time()
+        parse_result_id = result.get("parseResultId") or f"PARSE-{uuid4().hex[:12].upper()}"
+        result_record = {
+            "id": parse_result_id,
+            "parseResultId": parse_result_id,
+            "jobRecordId": job.get("id"),
+            "externalJobId": result.get("jobId") or result.get("externalJobId") or job.get("jobId"),
+            "documentId": job.get("documentId"),
+            "documentVersionId": job.get("documentVersionId"),
+            "storageKey": result.get("storageKey") or job.get("storageKey"),
+            "fileName": result.get("fileName") or job.get("fileName"),
+            "status": result.get("status") or "failed",
+            "profileId": result.get("profileId") or job.get("profileId"),
+            "documentType": result.get("documentType") or job.get("documentType"),
+            "parserVersion": result.get("parserVersion"),
+            "engineVersion": result.get("engineVersion"),
+            "modelManifest": result.get("modelManifest") or {},
+            "engineRuns": result.get("engineRuns") or [],
+            "diagnostics": result.get("diagnostics") or [],
+            "pages": result.get("pages") or [],
+            "fragments": result.get("fragments") or [],
+            "layoutBlocks": result.get("layoutBlocks") or [],
+            "tables": result.get("tables") or [],
+            "seals": result.get("seals") or [],
+            "fields": result.get("fields") or [],
+            "quality": result.get("quality") or {},
+            "inputHash": stable_doc_id(str(result.get("storageKey") or job.get("storageKey") or "")),
+            "outputHash": stable_doc_id(json.dumps(result, sort_keys=True, ensure_ascii=False, default=str)),
+            "createdAt": result.get("createdAt") or now,
+            "finishedAt": now,
+            "immutable": True,
+        }
+        self.state.setdefault("ocr_parse_results", []).insert(0, result_record)
+        job["jobId"] = result_record["externalJobId"]
+        job["status"] = "success" if result_record["status"] == "success" else "failed"
+        job["parseResultId"] = parse_result_id
+        job["finishedAt"] = now
+        job["updatedAt"] = now
+        job["engineRuns"] = result_record["engineRuns"]
+        job["diagnostics"] = result_record["diagnostics"]
+        job["resultSummary"] = {
+            "fieldCount": len(result_record["fields"]),
+            "fragmentCount": len(result_record["fragments"]),
+            "tableCount": len(result_record["tables"]),
+            "sealCount": len(result_record["seals"]),
+        }
+        return result_record
+
+    def create_ocr_correction(self, payload: dict[str, Any]) -> dict[str, Any]:
+        now = server_time()
+        field = self.find_one("extracted_fields", str(payload.get("fieldId") or ""))
+        before = self.clone(field) if field else None
+        if field:
+            if "correctedValue" in payload:
+                field["fieldValue"] = str(payload["correctedValue"])
+            if payload.get("correctedBbox") is not None:
+                field["bbox"] = payload["correctedBbox"]
+            field["reviewStatus"] = "已修正"
+            field["correctedAt"] = now
+            field["correctionReason"] = payload.get("reason") or "FDE OCR 纠错"
+        correction = {
+            "id": payload.get("id") or f"OCRC-{uuid4().hex[:8].upper()}",
+            "fieldId": payload.get("fieldId"),
+            "documentVersionId": payload.get("documentVersionId") or (field or {}).get("documentVersionId"),
+            "targetType": payload.get("targetType") or "field",
+            "correctionType": payload.get("correctionType") or "field_value",
+            "before": before,
+            "after": self.clone(field) if field else payload.get("after"),
+            "reason": payload.get("reason") or "FDE OCR 纠错",
+            "shouldEnterEvaluationSet": bool(payload.get("shouldEnterEvaluationSet", True)),
+            "createdByRole": payload.get("createdByRole") or "fde",
+            "createdAt": now,
+        }
+        self.state.setdefault("ocr_corrections", []).insert(0, correction)
+        return correction
+
+    def create_ocr_eval_run(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        payload = payload or {}
+        now = server_time()
+        results = self.state.get("ocr_parse_results", [])
+        corrections = self.state.get("ocr_corrections", [])
+        fields = [field for result in results for field in result.get("fields", []) if isinstance(field, dict)]
+        tables = [table for result in results for table in result.get("tables", []) if isinstance(table, dict)]
+        seals = [seal for result in results for seal in result.get("seals", []) if isinstance(seal, dict)]
+        low_conf = [field for field in fields if float(field.get("confidence") if field.get("confidence") is not None else 0) < 0.85]
+        total_results = len(results) or 1
+        success_count = len([item for item in results if item.get("status") == "success"])
+        metrics = {
+            "fileSuccessRate": round(success_count / total_results, 4),
+            "fieldAccuracyProxy": round(1 - (len(low_conf) / (len(fields) or 1)), 4),
+            "tableStructureUsableRate": round(len([item for item in tables if float(item.get("structureConfidence") or 0) >= 0.8]) / (len(tables) or 1), 4),
+            "sealDetectionProxy": round(len(seals) / (len(results) or 1), 4),
+            "manualCorrectionRate": round(len(corrections) / (len(fields) or 1), 4),
+            "caseCount": int(payload.get("caseCount") or len(results)),
+        }
+        run = {
+            "id": payload.get("id") or f"OCREVAL-{uuid4().hex[:8].upper()}",
+            "profileId": payload.get("profileId") or "all",
+            "status": "completed",
+            "startedAt": now,
+            "finishedAt": now,
+            "metrics": metrics,
+            "gateResults": [
+                {"gate": "file_success", "passed": metrics["fileSuccessRate"] >= 0.95},
+                {"gate": "field_accuracy_proxy", "passed": metrics["fieldAccuracyProxy"] >= 0.85},
+                {"gate": "manual_correction_rate", "passed": metrics["manualCorrectionRate"] <= 0.2},
+            ],
+            "createdByRole": payload.get("createdByRole") or "fde",
+        }
+        self.state.setdefault("ocr_eval_runs", []).insert(0, run)
+        return run
+
     def apply_ocr_result(self, document_id: str, version_id: str, result: dict[str, Any]) -> dict[str, Any]:
         document = self.find_one("documents", document_id)
         version = self.find_one("versions", version_id)
@@ -644,7 +806,7 @@ class InMemoryRepository:
             field_id = f"FIELD-{version_id}-{index}"
             evidence_id = f"EV-{version_id}-{index}"
             page_no = int(field.get("pageNo") or 1)
-            confidence = float(field.get("confidence") or 0.8)
+            confidence = float(first_present(field, "confidence", default=0.8))
             self.state["extracted_fields"].append(
                 {
                     "id": field_id,

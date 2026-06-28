@@ -61,6 +61,8 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/fde/data-exports$", "fde:security:manage"),
     ("POST", r"/fde/feedback/[^/]+/triage$", "fde:feedback:triage"),
     ("POST", r"/fde/evaluation-runs$", "fde:evaluation:run"),
+    ("POST", r"/fde/ocr-corrections$", "fde:ocr-quality:view"),
+    ("POST", r"/fde/ocr-evaluation-runs$", "fde:evaluation:run"),
     ("POST", r"/fde/capability-bundles$", "fde:capability-bundle:manage"),
     ("POST", r"/fde/releases$", "fde:release:submit"),
     ("POST", r"/fde/releases/[^/]+/submit$", "fde:release:submit"),

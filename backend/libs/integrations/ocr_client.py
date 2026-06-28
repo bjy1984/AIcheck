@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Any
 
 import httpx
@@ -56,6 +57,58 @@ class OcrClient:
 
     def get_parse_result(self, parse_result_id: str) -> dict[str, Any]:
         return self._request_enveloped("GET", f"/internal/document-parse/results/{parse_result_id}", timeout=30)
+
+    def parse_via_job_sync(
+        self,
+        payload: dict[str, Any],
+        *,
+        timeout_seconds: float = 120,
+        poll_interval: float = 0.5,
+    ) -> dict[str, Any]:
+        job = self.create_parse_job(payload)
+        job_id = str(job.get("jobId") or "")
+        if not job_id:
+            raise IntegrationServiceError("OCR service", "document-parse/jobs", reason="MISSING_JOB_ID")
+        deadline = time.monotonic() + timeout_seconds
+        last_job = job
+        while time.monotonic() < deadline:
+            last_job = self.get_parse_job(job_id)
+            status = str(last_job.get("status") or "")
+            if status == "success":
+                parse_result_id = str(last_job.get("parseResultId") or "")
+                result = self.get_parse_result(parse_result_id) if parse_result_id else {}
+                result["jobId"] = job_id
+                result["externalJobId"] = job_id
+                return result
+            if status in {"failed", "cancelled"}:
+                return {
+                    "jobId": job_id,
+                    "externalJobId": job_id,
+                    "parseResultId": last_job.get("parseResultId"),
+                    "storageKey": payload.get("storageKey"),
+                    "fileName": payload.get("fileName"),
+                    "status": "failed",
+                    "fragments": [],
+                    "fields": [],
+                    "seals": [],
+                    "tables": [],
+                    "diagnostics": last_job.get("diagnostics") or [f"OCR job {status}"],
+                    "engineRuns": last_job.get("engineRuns") or [],
+                }
+            time.sleep(poll_interval)
+        return {
+            "jobId": job_id,
+            "externalJobId": job_id,
+            "storageKey": payload.get("storageKey"),
+            "fileName": payload.get("fileName"),
+            "status": "failed",
+            "fragments": [],
+            "fields": [],
+            "seals": [],
+            "tables": [],
+            "diagnostics": [f"OCR job timeout after {timeout_seconds:g}s"],
+            "engineRuns": last_job.get("engineRuns") or [],
+        }
 
     def _request_enveloped(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         if not self.enabled:
