@@ -17,29 +17,39 @@ import {
   ElTag
 } from 'element-plus'
 import {
+  createFdeDataExportApi,
   createFdeEvaluationRunApi,
   getFdeAiRunApi,
   getFdeCapabilityBundlesApi,
+  getFdeCostBudgetsApi,
   getFdeDashboardApi,
   getFdeEvaluationSetsApi,
   getFdeOcrQualityApi,
+  installFdeBusinessPackApi,
   listFdeAcceptanceReportsApi,
+  listFdeAccessGrantsApi,
   listFdeAiRunsApi,
   listFdeFeedbackApi,
   listFdeIncidentsApi,
   listFdeReleasesApi,
+  requestFdeAccessGrantApi,
   replayFdeAiRunApi,
+  startFdeShadowApi,
+  submitFdeReleaseApi,
   triageFdeFeedbackApi,
+  updateFdeIncidentRcaApi,
   validateFdeBusinessPacksApi
 } from '@/api/aicheck'
 import type {
   BusinessPackValidateAllPayload,
+  FdeAccessPayload,
   FdeAiRun,
   FdeAiRunDetailPayload,
   FdeCapabilityBundlePayload,
   FdeDashboardPayload,
   FdeEvaluationPayload,
   FdeFeedback,
+  FdeIncidentPayload,
   FdeOcrQualityPayload,
   FdeReleasePayload
 } from '@/api/aicheck'
@@ -55,7 +65,9 @@ const evaluation = ref<FdeEvaluationPayload | null>(null)
 const bundles = ref<FdeCapabilityBundlePayload | null>(null)
 const releases = ref<FdeReleasePayload | null>(null)
 const ocrQuality = ref<FdeOcrQualityPayload | null>(null)
-const incidents = ref<Array<Record<string, unknown>>>([])
+const incidentPayload = ref<FdeIncidentPayload | null>(null)
+const accessGrants = ref<Array<Record<string, unknown>>>([])
+const costGovernance = ref<FdeAccessPayload | null>(null)
 const acceptanceReports = ref<Array<Record<string, unknown>>>([])
 const packValidation = ref<BusinessPackValidateAllPayload | null>(null)
 
@@ -81,6 +93,12 @@ const statusType = (status?: string) => {
 
 const firstEvaluationSetId = computed(() => String(evaluation.value?.sets?.[0]?.id || ''))
 const firstBundleId = computed(() => String(bundles.value?.bundles?.[0]?.id || ''))
+const firstRunId = computed(() => String(aiRuns.value[0]?.id || ''))
+const firstReportId = computed(() => String(evaluation.value?.reports?.[0]?.id || ''))
+const firstReleaseId = computed(() => String(releases.value?.plans?.[0]?.id || ''))
+const firstPackId = computed(() => String(packValidation.value?.results?.[0]?.summary?.id || ''))
+const incidents = computed(() => incidentPayload.value?.incidents || [])
+const rcaItems = computed(() => incidentPayload.value?.rca || [])
 
 const loadData = async () => {
   loading.value = true
@@ -96,7 +114,9 @@ const loadData = async () => {
       ocrRes,
       incidentRes,
       acceptanceRes,
-      validationRes
+      validationRes,
+      accessRes,
+      costRes
     ] = await Promise.all([
       getFdeDashboardApi(),
       listFdeAiRunsApi({ pageSize: 20 }),
@@ -107,7 +127,9 @@ const loadData = async () => {
       getFdeOcrQualityApi(),
       listFdeIncidentsApi(),
       listFdeAcceptanceReportsApi(),
-      validateFdeBusinessPacksApi()
+      validateFdeBusinessPacksApi(),
+      listFdeAccessGrantsApi(),
+      getFdeCostBudgetsApi()
     ])
     dashboard.value = dashboardRes.data
     aiRuns.value = aiRunRes.data.items
@@ -116,9 +138,11 @@ const loadData = async () => {
     bundles.value = bundleRes.data
     releases.value = releaseRes.data
     ocrQuality.value = ocrRes.data
-    incidents.value = incidentRes.data
+    incidentPayload.value = incidentRes.data
     acceptanceReports.value = acceptanceRes.data
     packValidation.value = validationRes.data
+    accessGrants.value = accessRes.data
+    costGovernance.value = costRes.data
     if (aiRuns.value[0]) {
       await loadRunDetail(aiRuns.value[0].id)
     }
@@ -171,6 +195,79 @@ const startEvaluation = async () => {
     await createFdeEvaluationRunApi({
       evaluationSetId: firstEvaluationSetId.value,
       capabilityBundleId: firstBundleId.value || undefined
+    })
+    await loadData()
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+const requestRawAccess = async () => {
+  if (!firstRunId.value) return
+  actionLoading.value = true
+  try {
+    await requestFdeAccessGrantApi({
+      targetType: 'ai_run',
+      targetId: firstRunId.value,
+      reason: 'FDE 诊断需要查看 AI Run 原文。'
+    })
+    await createFdeDataExportApi({
+      targetType: 'ai_run',
+      targetId: firstRunId.value,
+      masked: true
+    })
+    await loadData()
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+const submitReleaseGate = async () => {
+  if (!firstReleaseId.value) return
+  actionLoading.value = true
+  try {
+    await submitFdeReleaseApi(firstReleaseId.value, {
+      evaluationReportId: firstReportId.value || undefined,
+      rollbackPlanId: 'ROLLBACK-BUNDLE-202606'
+    })
+    await loadData()
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+const startShadowRun = async () => {
+  if (!firstReleaseId.value) return
+  actionLoading.value = true
+  try {
+    await startFdeShadowApi(firstReleaseId.value, { sampleRate: 0 })
+    await loadData()
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+const installBusinessPack = async () => {
+  if (!firstPackId.value) return
+  actionLoading.value = true
+  try {
+    await installFdeBusinessPackApi(firstPackId.value, { tenantId: 'demo', dryRun: true })
+    await loadData()
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+const updateFirstRca = async () => {
+  const incidentId = String(incidents.value[0]?.id || '')
+  if (!incidentId) return
+  actionLoading.value = true
+  try {
+    await updateFdeIncidentRcaApi(incidentId, {
+      status: 'open',
+      rootCause: 'low_quality_scan',
+      temporaryAction: '已要求低置信度字段人工复核。',
+      longTermAction: '优化 OCR Profile 预处理参数。'
     })
     await loadData()
   } finally {
@@ -252,7 +349,14 @@ onMounted(loadData)
           </ElCol>
           <ElCol :xl="10" :lg="10" :md="24" :sm="24" :xs="24">
             <ElCard shadow="never" class="panel">
-              <template #header>Trace 明细</template>
+              <template #header>
+                <div class="panel-header">
+                  <span>Trace 明细</span>
+                  <ElButton size="small" plain :loading="actionLoading" @click="requestRawAccess">
+                    申请原文
+                  </ElButton>
+                </div>
+              </template>
               <ElDescriptions v-if="selectedRun" :column="1" border>
                 <ElDescriptionsItem label="Run">{{ selectedRun.run.id }}</ElDescriptionsItem>
                 <ElDescriptionsItem label="输入 Hash">{{
@@ -268,6 +372,12 @@ onMounted(loadData)
                   selectedRun.replays.length
                 }}</ElDescriptionsItem>
               </ElDescriptions>
+              <ElTable v-if="selectedRun" :data="selectedRun.traceSteps" border class="mt-12px">
+                <ElTableColumn prop="sequence" label="#" width="64" />
+                <ElTableColumn prop="name" label="步骤" min-width="180" show-overflow-tooltip />
+                <ElTableColumn prop="status" label="状态" width="110" />
+                <ElTableColumn prop="latencyMs" label="耗时" width="110" />
+              </ElTable>
               <ElEmpty v-else description="请选择 AI Run" />
             </ElCard>
           </ElCol>
@@ -340,7 +450,24 @@ onMounted(loadData)
           </ElCol>
           <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
             <ElCard shadow="never" class="panel">
-              <template #header>发布计划</template>
+              <template #header>
+                <div class="panel-header">
+                  <span>发布计划</span>
+                  <ElSpace>
+                    <ElButton
+                      size="small"
+                      plain
+                      :loading="actionLoading"
+                      @click="submitReleaseGate"
+                    >
+                      提交门禁
+                    </ElButton>
+                    <ElButton size="small" plain :loading="actionLoading" @click="startShadowRun">
+                      Shadow
+                    </ElButton>
+                  </ElSpace>
+                </div>
+              </template>
               <ElTable :data="releases?.plans || []" border height="320">
                 <ElTableColumn prop="id" label="发布单" min-width="170" show-overflow-tooltip />
                 <ElTableColumn prop="riskLevel" label="风险" width="100" />
@@ -361,7 +488,19 @@ onMounted(loadData)
         <ElRow :gutter="16">
           <ElCol :xl="8" :lg="8" :md="24" :sm="24" :xs="24">
             <ElCard shadow="never" class="panel">
-              <template #header>业务包门禁</template>
+              <template #header>
+                <div class="panel-header">
+                  <span>业务包门禁</span>
+                  <ElButton
+                    size="small"
+                    plain
+                    :loading="actionLoading"
+                    @click="installBusinessPack"
+                  >
+                    安装演练
+                  </ElButton>
+                </div>
+              </template>
               <ElDescriptions v-if="packValidation" :column="1" border>
                 <ElDescriptionsItem label="整体状态">{{
                   packValidation.ok ? '通过' : '失败'
@@ -392,14 +531,52 @@ onMounted(loadData)
           </ElCol>
           <ElCol :xl="8" :lg="8" :md="24" :sm="24" :xs="24">
             <ElCard shadow="never" class="panel">
-              <template #header>事故与验收</template>
+              <template #header>
+                <div class="panel-header">
+                  <span>事故与验收</span>
+                  <ElButton size="small" plain :loading="actionLoading" @click="updateFirstRca">
+                    更新 RCA
+                  </ElButton>
+                </div>
+              </template>
               <ElDescriptions :column="1" border>
                 <ElDescriptionsItem label="事故数">{{ incidents.length }}</ElDescriptionsItem>
+                <ElDescriptionsItem label="RCA">{{ rcaItems.length }}</ElDescriptionsItem>
                 <ElDescriptionsItem label="验收报告">{{
                   acceptanceReports.length
                 }}</ElDescriptionsItem>
                 <ElDescriptionsItem label="发布计划">{{
                   releases?.plans.length || 0
+                }}</ElDescriptionsItem>
+              </ElDescriptions>
+            </ElCard>
+          </ElCol>
+        </ElRow>
+        <ElRow :gutter="16" class="mt-16px">
+          <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
+            <ElCard shadow="never" class="panel">
+              <template #header>数据安全</template>
+              <ElDescriptions :column="1" border>
+                <ElDescriptionsItem label="访问授权">{{ accessGrants.length }}</ElDescriptionsItem>
+                <ElDescriptionsItem label="导出申请">{{
+                  costGovernance?.exports.length || 0
+                }}</ElDescriptionsItem>
+                <ElDescriptionsItem label="导出水印">启用</ElDescriptionsItem>
+              </ElDescriptions>
+            </ElCard>
+          </ElCol>
+          <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
+            <ElCard shadow="never" class="panel">
+              <template #header>成本预算</template>
+              <ElDescriptions :column="1" border>
+                <ElDescriptionsItem label="预算数">{{
+                  costGovernance?.budgets.length || 0
+                }}</ElDescriptionsItem>
+                <ElDescriptionsItem label="Run 数">{{
+                  costGovernance?.usage.runCount || 0
+                }}</ElDescriptionsItem>
+                <ElDescriptionsItem label="估算费用">{{
+                  costGovernance?.usage.estimatedPrice || 0
                 }}</ElDescriptionsItem>
               </ElDescriptions>
             </ElCard>

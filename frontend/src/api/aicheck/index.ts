@@ -886,6 +886,7 @@ export type FdeEvaluationPayload = {
   sets: Array<Record<string, unknown>>
   cases: Array<Record<string, unknown>>
   runs: Array<Record<string, unknown>>
+  reports: Array<Record<string, unknown>>
 }
 
 export type FdeCapabilityBundlePayload = {
@@ -899,6 +900,19 @@ export type FdeCapabilityBundlePayload = {
 export type FdeReleasePayload = {
   plans: Array<Record<string, unknown>>
   approvals: Array<Record<string, unknown>>
+  gates: Array<Record<string, unknown>>
+}
+
+export type FdeAccessPayload = {
+  grants: Array<Record<string, unknown>>
+  exports: Array<Record<string, unknown>>
+  budgets: Array<Record<string, unknown>>
+  usage: { tokenEstimate: number; estimatedPrice: number; runCount: number }
+}
+
+export type FdeIncidentPayload = {
+  incidents: Array<Record<string, unknown>>
+  rca: Array<Record<string, unknown>>
 }
 
 export type FdeOcrQualityPayload = {
@@ -2030,6 +2044,44 @@ export const getFdeAiRunApi = (runId: string): Promise<IResponse<FdeAiRunDetailP
   return request.get({ url: `/api/fde/ai-runs/${runId}` })
 }
 
+export const listFdeAccessGrantsApi = (): Promise<IResponse<Array<Record<string, unknown>>>> => {
+  return request.get({ url: '/api/fde/access-grants' })
+}
+
+export const requestFdeAccessGrantApi = (
+  data: { targetType: string; targetId: string; reason?: string },
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ grant: Record<string, unknown>; auditLogId: string }>> => {
+  return request.post({
+    url: '/api/fde/access-grants/request',
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const approveFdeAccessGrantApi = (
+  grantId: string,
+  data: { status?: string; expiresAt?: string },
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ grant: Record<string, unknown>; auditLogId: string }>> => {
+  return request.post({
+    url: `/api/fde/access-grants/${grantId}/approve`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const createFdeDataExportApi = (
+  data: { targetType?: string; targetId?: string; masked?: boolean },
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ export: Record<string, unknown>; auditLogId: string }>> => {
+  return request.post({
+    url: '/api/fde/data-exports',
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
 export const replayFdeAiRunApi = (
   runId: string,
   data: { runType?: 'diagnostic_replay' | 'evaluation_replay' | 'shadow_replay'; reason?: string },
@@ -2082,12 +2134,22 @@ export const createFdeEvaluationRunApi = (
     capabilityBundleId?: string
   },
   options?: MutationHeaderOptions
-): Promise<IResponse<{ run: Record<string, unknown>; auditLogId: string }>> => {
+): Promise<
+  IResponse<{ run: Record<string, unknown>; report: Record<string, unknown>; auditLogId: string }>
+> => {
   return request.post({
     url: '/api/fde/evaluation-runs',
     data,
     headers: mutationHeaders(options)
   })
+}
+
+export const getFdeEvaluationReportApi = (
+  runId: string
+): Promise<
+  IResponse<{ report: Record<string, unknown>; metrics: Array<Record<string, unknown>> }>
+> => {
+  return request.get({ url: `/api/fde/evaluation-runs/${runId}/report` })
 }
 
 export const getFdeCapabilityBundlesApi = (): Promise<IResponse<FdeCapabilityBundlePayload>> => {
@@ -2112,9 +2174,75 @@ export const listFdeReleasesApi = (): Promise<IResponse<FdeReleasePayload>> => {
 export const createFdeReleaseApi = (
   data: Record<string, unknown>,
   options?: MutationHeaderOptions
-): Promise<IResponse<{ plan: Record<string, unknown>; auditLogId: string }>> => {
+): Promise<
+  IResponse<{
+    plan: Record<string, unknown>
+    gates: Array<Record<string, unknown>>
+    auditLogId: string
+  }>
+> => {
   return request.post({
     url: '/api/fde/releases',
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const submitFdeReleaseApi = (
+  releaseId: string,
+  data: Record<string, unknown>,
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    plan: Record<string, unknown>
+    gates: Array<Record<string, unknown>>
+    auditLogId: string
+  }>
+> => {
+  return request.post({
+    url: `/api/fde/releases/${releaseId}/submit`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const startFdeShadowApi = (
+  releaseId: string,
+  data: Record<string, unknown> = {},
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    plan: Record<string, unknown>
+    gates: Array<Record<string, unknown>>
+    auditLogId: string | null
+  }>
+> => {
+  return request.post({
+    url: `/api/fde/releases/${releaseId}/start-shadow`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const requestFdeCanaryApi = (
+  releaseId: string,
+  data: Record<string, unknown> = {},
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ plan: Record<string, unknown>; auditLogId: string }>> => {
+  return request.post({
+    url: `/api/fde/releases/${releaseId}/request-canary`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const rollbackFdeReleaseApi = (
+  releaseId: string,
+  data: Record<string, unknown> = {},
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ plan: Record<string, unknown>; auditLogId: string }>> => {
+  return request.post({
+    url: `/api/fde/releases/${releaseId}/rollback`,
     data,
     headers: mutationHeaders(options)
   })
@@ -2126,12 +2254,76 @@ export const validateFdeBusinessPacksApi = (): Promise<
   return request.post({ url: '/api/fde/business-packs/validate-all' })
 }
 
+export const installFdeBusinessPackApi = (
+  packId: string,
+  data: { tenantId?: string; dryRun?: boolean },
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    installation: Record<string, unknown>
+    validation: Record<string, unknown>
+    auditLogId: string
+  }>
+> => {
+  return request.post({
+    url: `/api/fde/business-packs/${packId}/install`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const upgradeFdeBusinessPackApi = (
+  packId: string,
+  data: { tenantId?: string; dryRun?: boolean },
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    installation: Record<string, unknown>
+    validation: Record<string, unknown>
+    auditLogId: string
+  }>
+> => {
+  return request.post({
+    url: `/api/fde/business-packs/${packId}/upgrade`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const rollbackFdeBusinessPackApi = (
+  packId: string,
+  data: { tenantId?: string; dryRun?: boolean; targetVersion?: string; reason?: string },
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ installation: Record<string, unknown>; auditLogId: string }>> => {
+  return request.post({
+    url: `/api/fde/business-packs/${packId}/rollback`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
 export const getFdeOcrQualityApi = (): Promise<IResponse<FdeOcrQualityPayload>> => {
   return request.get({ url: '/api/fde/ocr-quality' })
 }
 
-export const listFdeIncidentsApi = (): Promise<IResponse<Array<Record<string, unknown>>>> => {
+export const listFdeIncidentsApi = (): Promise<IResponse<FdeIncidentPayload>> => {
   return request.get({ url: '/api/fde/incidents' })
+}
+
+export const updateFdeIncidentRcaApi = (
+  incidentId: string,
+  data: Record<string, unknown>,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ rca: Record<string, unknown>; auditLogId: string }>> => {
+  return request.post({
+    url: `/api/fde/incidents/${incidentId}/rca`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const getFdeCostBudgetsApi = (): Promise<IResponse<FdeAccessPayload>> => {
+  return request.get({ url: '/api/fde/cost-budgets' })
 }
 
 export const listFdeAcceptanceReportsApi = (): Promise<

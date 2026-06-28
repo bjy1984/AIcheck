@@ -84,7 +84,7 @@ litellm-service
 | NDT | `/workbench/ndt` | 底片、检测记录、检测报告、NDT 补正 | `ndt_films`、`ndt_records`、`ndt_reports`、`ndt_feedback` |
 | 报告与归档 | 监检/建设方工作台 | 报告复核、导出、归档、证据包 | `reports`、`archive_items`、`export_tasks` |
 | 知识库 | `/knowledge/*` | 文件列表、任务中心、知识源、规则、检索测试 | `knowledge_files`、`knowledge_tasks`、`knowledge_chunks` |
-| FDE 后台 | `/fde/*` | AI 绩效、AI Run 追踪、反馈归因、评估集、Capability Bundle、发布治理、OCR 质量 | `ai_runs`、`ai_feedback`、`evaluation_sets`、`capability_bundles`、`release_plans` |
+| FDE 后台 | `/fde/*` | AI 绩效、AI Run 追踪、原文授权、反馈归因、评估报告、Capability Bundle、发布门禁、业务包安装/升级/回滚、OCR 质量、事故 RCA、成本预算 | `ai_runs`、`ai_trace_steps`、`access_grants`、`ai_feedback`、`evaluation_reports`、`capability_bundles`、`release_plans`、`business_pack_installations` |
 | 管理后台 | `/admin/*` | 项目、单位、用户、权限、配置发布、审计 | `admin_configs`、`audit_logs` |
 
 ### 1.4 业务包开发与部署
@@ -170,10 +170,32 @@ curl -X POST http://127.0.0.1:8000/api/ai/runs/{runId}/feedback \
 FDE 后台是平台级 AI Delivery & Governance Console，不属于业务包角色。它管理 AI 能力，不管理正式业务结论：
 
 - 默认入口：`/fde/dashboard`，登录账号：`fde`。
-- 允许：查看 AI 绩效、脱敏 AI Run、反馈池、评估集、Capability Bundle、业务包校验、发布计划、OCR 质量和事故/验收记录。
-- 受控：诊断重跑、反馈归因、发起离线评测、创建发布计划；重跑会生成 child run，不覆盖原始 AI Run。
+- 允许：查看 AI 绩效、脱敏 AI Run、Trace、反馈池、评估集/评估报告、Capability Bundle、业务包校验、发布计划、发布门禁、OCR 质量、成本预算和事故/验收记录。
+- 受控：诊断重跑、原文访问申请、数据导出申请、反馈归因、发起离线评测、创建/提交发布计划、启动 shadow、申请 canary、请求回滚、业务包安装/升级/回滚演练、事故 RCA 更新；重跑会生成 child run，不覆盖原始 AI Run。
 - 禁止：审批资料、保存正式审查意见、发正式补正单、关闭补正项、归档项目、删除业务文件、修改项目最终状态。
 - 生产数据默认脱敏；原文访问应通过 `access_grants` 授权并留审计。
+
+98+ 治理闭环已经落到以下接口：
+
+```text
+GET  /api/fde/dashboard
+GET  /api/fde/ai-runs/{id}
+POST /api/fde/ai-runs/{id}/replay
+POST /api/fde/access-grants/request
+POST /api/fde/access-grants/{id}/approve     # 仅 admin 批准
+POST /api/fde/data-exports
+POST /api/fde/evaluation-runs
+GET  /api/fde/evaluation-runs/{id}/report
+POST /api/fde/releases/{id}/submit
+POST /api/fde/releases/{id}/start-shadow
+POST /api/fde/releases/{id}/request-canary
+POST /api/fde/releases/{id}/rollback
+POST /api/fde/business-packs/{id}/install
+POST /api/fde/business-packs/{id}/upgrade
+POST /api/fde/business-packs/{id}/rollback
+POST /api/fde/incidents/{id}/rca
+GET  /api/fde/cost-budgets
+```
 
 ### 1.5 核心调用链
 
@@ -709,7 +731,7 @@ python scripts/deployment_report.py \
 
 `deployment_report.py` 会把离线配置验收、API mutation 幂等覆盖、前端路由合同、前端 mutation header 覆盖和可选 live deployment probes 汇总成 `aicheck-deployment-report-v1` 结构，同时输出 Markdown 表格，适合随上线单归档。默认不访问目标环境；加 `--include-live` 后复用 `verify_deployment.py` 的所有目标环境探针。
 
-96+ 辅助审计包含以下门禁：
+98+ 辅助审计包含以下门禁：
 
 - `api.response-envelope`：直接调用后端 `ok()/fail()` helper，确认成功 `{ code: 0, data, operationId, serverTime }`、失败 `{ code, message, data.reason, operationId, serverTime }`，并阻止旧版 `ok: true/false` 响应包回归。
 - `auth.role-contract`：检查生产角色 `admin/inspection/contractor/ndt/owner/fde` 的默认面板路径、动作矩阵、`owner` 只读约束、FDE 禁止业务审批约束、`create_roles.py` 覆盖、PBKDF2 密码哈希和项目成员授权规划。
@@ -723,6 +745,7 @@ python scripts/deployment_report.py \
 - `worker.task-contract`：扫描 Celery task routes、worker 任务对象和 `task_dispatcher`，确认 `ocr.parse_document`、`ocr.recognize_seals`、`knowledge.slice`、`knowledge.embed`、`inspection.ai_recheck`、`llm.compare`、`export.package` 均有队列路由、重试配置和调度入口。
 - `frontend.mutation-headers`：扫描 `frontend/src/api/aicheck/index.ts` 的 `request.post/put/patch/delete` 调用，真实 mutation 必须使用 `mutationHeaders()` 自动携带 `Idempotency-Key`，更新类操作可同时透传 `If-Match`。
 - `frontend.mutation-helper`：检查 `mutationHeaders()` 本身必须生成 `Idempotency-Key`，并在传入 `etag` 时写入 `If-Match`，防止前端并发控制 helper 被误删或降级。
+- `fde.governance-contract`：由 `tests/test_fde_console.py` 覆盖 FDE 单角色登录、脱敏 AI Run、Trace、child run 重跑、原文访问授权、反馈归因、评估报告、发布门禁、shadow/canary、业务包安装演练、数据导出、事故 RCA 和禁止业务审批。
 - `check_96_preflight.py`：在 live probes 前检查 Docker/Compose、`.env`、placeholder、内部密钥强度、生产 flag、agentdesign OCR 基线文件和默认端口冲突；任何失败都会阻止 `probe.command-ready`。
 
 前后端合同审计：
@@ -779,6 +802,10 @@ AICHECK_BASE_URL=http://127.0.0.1:4100 pnpm playwright test e2e/aicheck-smoke.sp
 - 生产鉴权开启后，业务角色通过 `documentId`、`bindingId`、`reportId` 操作节点范围外资源返回 `FORBIDDEN`；资源与 URL `projectId` 不一致返回 `NOT_FOUND`。
 - 生产鉴权开启后，业务角色直接调用未授权写接口会按后端推断的 `ActionCode` 返回 `FORBIDDEN`，例如施工方不能生成报告草稿或发布后台配置。
 - 生产鉴权开启后，FDE 直接调用正式业务写接口返回 `FORBIDDEN`；FDE 只能调用 `/api/fde/*` 治理接口，不能保存审查意见、发补正、归档或删除业务文件。
+- FDE 查看 AI Run 默认只能看到脱敏内容；`POST /api/fde/access-grants/request` 创建授权申请后，必须由管理员调用 `/api/fde/access-grants/{id}/approve` 才能查看原文。
+- FDE 发起评估运行后必须生成 `evaluation_report`；高风险发布缺少通过状态评估报告、Risk Set 或回滚方案时必须进入 `blocked_by_gate`。
+- FDE 业务包安装/升级/回滚先支持 dry-run，验收通过时写入 `business_pack_installations` 并写审计日志。
+- FDE 事故处理必须写 `incident_rca`，数据导出必须写 `data_exports` 并生成水印标识。
 - mutation 使用相同 `Idempotency-Key` 和相同请求体会重放同一结果；同 key 不同请求体返回 `IDEMPOTENCY_KEY_CONFLICT`。
 - `verify_deployment.py --strict-production` 会调用 `/api/system/mongo-transaction-probe`，确认 MongoDB 已连接、`AICHECK_MONGO_TRANSACTIONS=true`，且能实际开启 session 并提交临时 transaction。
 - 提交批次撤回资料时，只能撤回该批次内资料；不存在的批次返回 `NOT_FOUND`，跨批次资料返回 `CONFLICT`，已通过、已锁定或已归档资料返回 `WITHDRAW_LOCKED`。

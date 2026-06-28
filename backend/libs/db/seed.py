@@ -49,12 +49,14 @@ ROLE_ACTIONS.update(
             "fde:evaluation:run",
             "fde:config:draft",
             "fde:business-pack:validate",
+            "fde:business-pack:install",
             "fde:capability-bundle:manage",
             "fde:release:submit",
             "fde:release:shadow",
             "fde:release:canary",
             "fde:release:rollback",
             "fde:incident:manage",
+            "fde:security:manage",
         ],
     }
 )
@@ -651,6 +653,47 @@ AI_FEEDBACK: list[dict[str, Any]] = [
 ]
 
 ACCESS_GRANTS: list[dict[str, Any]] = []
+AI_TRACE_STEPS = [
+    {
+        "id": "TRACE-AIRUN-24-001-01",
+        "aiRunId": "AIRUN-24-20260625-01",
+        "traceId": "TRACE-AIRUN-24-20260625-01",
+        "sequence": 1,
+        "stepType": "ocr_context",
+        "name": "读取 OCR 和字段抽取结果",
+        "status": "completed",
+        "latencyMs": 420,
+        "inputHash": "sha256:ocr-input-demo",
+        "outputHash": "sha256:ocr-output-demo",
+        "createdAt": "2026-06-25 09:01:00",
+    },
+    {
+        "id": "TRACE-AIRUN-24-001-02",
+        "aiRunId": "AIRUN-24-20260625-01",
+        "traceId": "TRACE-AIRUN-24-20260625-01",
+        "sequence": 2,
+        "stepType": "rule_engine",
+        "name": "执行资料规则和节点状态校验",
+        "status": "completed",
+        "latencyMs": 180,
+        "inputHash": "sha256:rule-input-demo",
+        "outputHash": "sha256:rule-output-demo",
+        "createdAt": "2026-06-25 09:01:01",
+    },
+    {
+        "id": "TRACE-AIRUN-24-001-03",
+        "aiRunId": "AIRUN-24-20260625-01",
+        "traceId": "TRACE-AIRUN-24-20260625-01",
+        "sequence": 3,
+        "stepType": "llm_review",
+        "name": "生成证据化审查建议",
+        "status": "completed",
+        "latencyMs": 8700,
+        "inputHash": "sha256:llm-input-demo",
+        "outputHash": "sha256:llm-output-demo",
+        "createdAt": "2026-06-25 09:01:10",
+    },
+]
 AI_RUN_REPLAYS: list[dict[str, Any]] = []
 FEEDBACK_TRIAGE = [
     {
@@ -732,6 +775,30 @@ EVALUATION_METRICS = [
         "value": 0.92,
         "threshold": 0.9,
         "passed": True,
+    }
+]
+
+EVALUATION_REPORTS = [
+    {
+        "id": "EREPORT-20260626-001",
+        "evaluationRunId": "ERUN-20260626-001",
+        "capabilityBundleId": "BUNDLE-REVIEW-202606",
+        "businessPackId": DEFAULT_BUSINESS_PACK_ID,
+        "status": "passed",
+        "summary": "Golden Set 和 Risk Set 通过，证据命中率、幻觉率和高风险漏检率满足上线门槛。",
+        "metrics": {
+            "humanAcceptanceRate": 0.86,
+            "evidenceHitRate": 0.92,
+            "hallucinationRate": 0.0,
+            "highRiskMissRate": 0.0,
+            "schemaPassRate": 1.0,
+        },
+        "gateResults": [
+            {"gate": "golden_set", "passed": True},
+            {"gate": "risk_set", "passed": True},
+            {"gate": "rollback_plan", "passed": True},
+        ],
+        "createdAt": "2026-06-26 11:03:00",
     }
 ]
 
@@ -829,6 +896,25 @@ RELEASE_APPROVALS = [
     }
 ]
 
+RELEASE_GATES = [
+    {
+        "id": "RGATE-REVIEW-202606-001",
+        "releasePlanId": "REL-REVIEW-202606-001",
+        "gate": "evaluation_report",
+        "passed": True,
+        "message": "评估报告已通过。",
+        "checkedAt": "2026-06-26 11:12:00",
+    },
+    {
+        "id": "RGATE-REVIEW-202606-002",
+        "releasePlanId": "REL-REVIEW-202606-001",
+        "gate": "rollback_plan",
+        "passed": True,
+        "message": "已绑定回滚计划。",
+        "checkedAt": "2026-06-26 11:12:00",
+    },
+]
+
 INCIDENTS = [
     {
         "id": "INC-AI-20260626-001",
@@ -840,6 +926,62 @@ INCIDENTS = [
         "createdAt": "2026-06-26 11:30:00",
     }
 ]
+
+INCIDENT_RCA = [
+    {
+        "id": "RCA-AI-20260626-001",
+        "incidentId": "INC-AI-20260626-001",
+        "status": "open",
+        "rootCause": "low_quality_scan",
+        "impactScope": {"projectIds": [PROJECT_ID], "aiRunIds": ["AIRUN-24-20260625-01"]},
+        "temporaryAction": "对低置信度字段增加人工复核提醒。",
+        "longTermAction": "优化 OCR Profile 的低清晰度扫描件预处理参数。",
+        "owner": "FDE 工程师",
+        "updatedAt": "2026-06-26 11:45:00",
+    }
+]
+
+BUSINESS_PACK_INSTALLATIONS = [
+    {
+        "id": "BPINST-ENGINEERING-DEMO-001",
+        "businessPackId": DEFAULT_BUSINESS_PACK_ID,
+        "businessPackVersion": DEFAULT_BUSINESS_PACK["version"],
+        "tenantId": "demo",
+        "status": "production",
+        "installedByRole": "fde",
+        "installedAt": "2026-06-26 12:05:00",
+        "rollbackToVersion": "2026.06.01",
+        "validationStatus": "passed",
+    }
+]
+
+BUSINESS_PACK_OVERRIDES = [
+    {
+        "id": "BPOVR-ENGINEERING-DEMO-001",
+        "businessPackId": DEFAULT_BUSINESS_PACK_ID,
+        "tenantId": "demo",
+        "scope": "tenant",
+        "status": "active",
+        "overrides": {"reportTemplate": "TPL-PIPE-2026.06"},
+        "updatedAt": "2026-06-26 12:06:00",
+    }
+]
+
+COST_BUDGETS = [
+    {
+        "id": "BUDGET-DEMO-AI-202606",
+        "tenantId": "demo",
+        "scopeType": "tenant",
+        "scopeId": "demo",
+        "monthlyBudget": 5000,
+        "usedAmount": 128.4,
+        "currency": "CNY",
+        "status": "normal",
+        "updatedAt": "2026-06-26 12:10:00",
+    }
+]
+
+DATA_EXPORTS: list[dict[str, Any]] = []
 
 DELIVERY_ACCEPTANCE_REPORTS = [
     {
@@ -1449,12 +1591,14 @@ def fresh_state() -> dict[str, Any]:
         "review_findings": deepcopy(REVIEW_FINDINGS),
         "ai_feedback": deepcopy(AI_FEEDBACK),
         "access_grants": deepcopy(ACCESS_GRANTS),
+        "ai_trace_steps": deepcopy(AI_TRACE_STEPS),
         "ai_run_replays": deepcopy(AI_RUN_REPLAYS),
         "feedback_triage": deepcopy(FEEDBACK_TRIAGE),
         "evaluation_sets": deepcopy(EVALUATION_SETS),
         "evaluation_cases": deepcopy(EVALUATION_CASES),
         "evaluation_runs": deepcopy(EVALUATION_RUNS),
         "evaluation_metrics": deepcopy(EVALUATION_METRICS),
+        "evaluation_reports": deepcopy(EVALUATION_REPORTS),
         "agent_versions": deepcopy(AGENT_VERSIONS),
         "prompt_versions": deepcopy(PROMPT_VERSIONS),
         "model_route_versions": deepcopy(MODEL_ROUTE_VERSIONS),
@@ -1462,7 +1606,13 @@ def fresh_state() -> dict[str, Any]:
         "capability_bundles": deepcopy(CAPABILITY_BUNDLES),
         "release_plans": deepcopy(RELEASE_PLANS),
         "release_approvals": deepcopy(RELEASE_APPROVALS),
+        "release_gates": deepcopy(RELEASE_GATES),
         "incidents": deepcopy(INCIDENTS),
+        "incident_rca": deepcopy(INCIDENT_RCA),
+        "business_pack_installations": deepcopy(BUSINESS_PACK_INSTALLATIONS),
+        "business_pack_overrides": deepcopy(BUSINESS_PACK_OVERRIDES),
+        "cost_budgets": deepcopy(COST_BUDGETS),
+        "data_exports": deepcopy(DATA_EXPORTS),
         "delivery_acceptance_reports": deepcopy(DELIVERY_ACCEPTANCE_REPORTS),
         "reports": deepcopy(REPORTS),
         "archive_items": deepcopy(ARCHIVE_ITEMS),

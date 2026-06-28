@@ -44,11 +44,12 @@ def test_fde_dashboard_and_masked_ai_run_detail() -> None:
     dashboard = assert_ok(client.get("/api/fde/dashboard", headers={"X-Role": "fde"}))
     detail = assert_ok(client.get("/api/fde/ai-runs/AIRUN-24-20260625-01", headers={"X-Role": "fde"}))
 
-    assert {item["label"] for item in dashboard["metrics"]} >= {"AI Run", "采纳率", "证据命中率"}
+    assert {item["label"] for item in dashboard["metrics"]} >= {"AI Run", "采纳率", "证据命中率", "误报率", "疑似漏报率"}
     assert detail["run"]["immutable"] is True
     assert detail["run"]["rawAccess"] is False
     assert detail["run"]["inputHash"].startswith("sha256:")
     assert detail["run"]["outputHash"].startswith("sha256:")
+    assert detail["traceSteps"]
     assert detail["accessPolicy"]["rawAccessRequiresGrant"] is True
 
 
@@ -90,6 +91,118 @@ def test_fde_feedback_triage_and_release_gate() -> None:
     assert blocked_release["plan"]["status"] == "blocked_by_gate"
     assert "缺少评估报告" in blocked_release["plan"]["blockingReasons"]
     assert "缺少回滚方案" in blocked_release["plan"]["blockingReasons"]
+
+
+def test_fde_access_grant_controls_raw_ai_run_view() -> None:
+    masked = assert_ok(client.get("/api/fde/ai-runs/AIRUN-24-20260625-01", headers={"X-Role": "fde"}))
+    grant = assert_ok(
+        client.post(
+            "/api/fde/access-grants/request",
+            json={"targetType": "ai_run", "targetId": "AIRUN-24-20260625-01", "reason": "诊断证据定位"},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-access-001"},
+        )
+    )
+    approved = assert_ok(
+        client.post(
+            f"/api/fde/access-grants/{grant['grant']['id']}/approve",
+            json={"expiresAt": "9999-12-31 23:59:59"},
+            headers={"X-Role": "admin", "Idempotency-Key": "fde-access-approve-001"},
+        )
+    )
+    raw = assert_ok(client.get("/api/fde/ai-runs/AIRUN-24-20260625-01", headers={"X-Role": "fde"}))
+
+    assert masked["run"]["rawAccess"] is False
+    assert grant["grant"]["status"] == "pending"
+    assert approved["grant"]["status"] == "approved"
+    assert raw["run"]["rawAccess"] is True
+
+
+def test_fde_evaluation_report_and_release_state_machine() -> None:
+    evaluation = assert_ok(
+        client.post(
+            "/api/fde/evaluation-runs",
+            json={"evaluationSetId": "ESET-GOLDEN-ENGINEERING-001", "capabilityBundleId": "BUNDLE-REVIEW-202606"},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-eval-001"},
+        )
+    )
+    report = assert_ok(
+        client.get(
+            f"/api/fde/evaluation-runs/{evaluation['run']['id']}/report",
+            headers={"X-Role": "fde"},
+        )
+    )
+    release = assert_ok(
+        client.post(
+            "/api/fde/releases",
+            json={
+                "capabilityBundleId": "BUNDLE-REVIEW-202606",
+                "riskLevel": "high",
+                "evaluationReportId": evaluation["report"]["id"],
+                "rollbackPlanId": "ROLLBACK-BUNDLE-202606",
+            },
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-release-gated-001"},
+        )
+    )
+    submitted = assert_ok(
+        client.post(
+            f"/api/fde/releases/{release['plan']['id']}/submit",
+            json={},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-release-submit-001"},
+        )
+    )
+    shadow = assert_ok(
+        client.post(
+            f"/api/fde/releases/{release['plan']['id']}/start-shadow",
+            json={"sampleRate": 0},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-release-shadow-001"},
+        )
+    )
+    canary = assert_ok(
+        client.post(
+            f"/api/fde/releases/{release['plan']['id']}/request-canary",
+            json={"tenantPercent": 10},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-release-canary-001"},
+        )
+    )
+
+    assert evaluation["run"]["status"] == "completed"
+    assert report["report"]["status"] == "passed"
+    assert release["plan"]["status"] == "submitted"
+    assert all(gate["passed"] for gate in submitted["gates"])
+    assert shadow["plan"]["status"] == "shadow_running"
+    assert canary["plan"]["status"] == "canary_requested"
+
+
+def test_fde_business_pack_install_rca_and_data_export() -> None:
+    install = assert_ok(
+        client.post(
+            "/api/fde/business-packs/engineering_inspection_v1/install",
+            json={"tenantId": "demo", "dryRun": True},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-bp-install-001"},
+        )
+    )
+    export = assert_ok(
+        client.post(
+            "/api/fde/data-exports",
+            json={"targetType": "ai_run", "targetId": "AIRUN-24-20260625-01", "masked": True},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-export-001"},
+        )
+    )
+    rca = assert_ok(
+        client.post(
+            "/api/fde/incidents/INC-AI-20260626-001/rca",
+            json={"status": "open", "rootCause": "low_quality_scan"},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-rca-001"},
+        )
+    )
+    costs = assert_ok(client.get("/api/fde/cost-budgets", headers={"X-Role": "fde"}))
+
+    assert install["installation"]["status"] == "dry_run_passed"
+    assert install["validation"]["ok"] is True
+    assert export["export"]["watermark"].startswith("FDE-")
+    assert rca["rca"]["incidentId"] == "INC-AI-20260626-001"
+    assert costs["budgets"]
+    assert costs["exports"]
 
 
 def test_fde_cannot_execute_business_review_mutation() -> None:

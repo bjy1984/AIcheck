@@ -203,7 +203,15 @@ ROLE_REQUIRED_ACTIONS = {
     "contractor": {"file:upload", "file:bind", "submission:submit", "rectification:submit"},
     "ndt": {"ndt:film-create", "ndt:record-import", "ndt:report-upload", "ndt:submit"},
     "owner": {"project:view", "file:view", "report:view", "archive:view", "archive:download"},
-    "fde": {"fde:dashboard:view", "fde:ai-run:view-masked", "fde:feedback:triage", "fde:evaluation:run", "fde:release:submit"},
+    "fde": {
+        "fde:dashboard:view",
+        "fde:ai-run:view-masked",
+        "fde:feedback:triage",
+        "fde:evaluation:run",
+        "fde:release:submit",
+        "fde:business-pack:install",
+        "fde:security:manage",
+    },
 }
 OWNER_FORBIDDEN_WRITE_ACTIONS = {
     "file:upload",
