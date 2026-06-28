@@ -781,6 +781,27 @@ const initialMemberActions: Record<RoleCode, ActionCode[]> = {
     'admin:config',
     'admin:export',
     'audit:view'
+  ],
+  fde: [
+    'fde:dashboard:view',
+    'fde:ai-run:view-masked',
+    'fde:ai-run:replay',
+    'fde:feedback:view',
+    'fde:feedback:triage',
+    'fde:evaluation:view',
+    'fde:evaluation:manage',
+    'fde:evaluation:run',
+    'fde:business-pack:view',
+    'fde:business-pack:validate',
+    'fde:capability-bundle:manage',
+    'fde:release:view',
+    'fde:release:submit',
+    'fde:release:shadow',
+    'fde:release:canary',
+    'fde:release:rollback',
+    'fde:ocr-quality:view',
+    'fde:incident:manage',
+    'fde:config:draft'
   ]
 }
 
@@ -1202,6 +1223,27 @@ const roleActions: Record<RoleCode, ActionCode[]> = {
     'admin:config',
     'admin:export',
     'audit:view'
+  ],
+  fde: [
+    'fde:dashboard:view',
+    'fde:ai-run:view-masked',
+    'fde:ai-run:replay',
+    'fde:feedback:view',
+    'fde:feedback:triage',
+    'fde:evaluation:view',
+    'fde:evaluation:manage',
+    'fde:evaluation:run',
+    'fde:business-pack:view',
+    'fde:business-pack:validate',
+    'fde:capability-bundle:manage',
+    'fde:release:view',
+    'fde:release:submit',
+    'fde:release:shadow',
+    'fde:release:canary',
+    'fde:release:rollback',
+    'fde:ocr-quality:view',
+    'fde:incident:manage',
+    'fde:config:draft'
   ]
 }
 

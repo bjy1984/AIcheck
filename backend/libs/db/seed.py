@@ -26,6 +26,40 @@ for pack_summary in list_business_packs():
     ROLE_ACTIONS.update({key: value for key, value in role_actions_map(pack).items() if key not in ROLE_ACTIONS})
     ROLE_NODE_MAP.update({key: value for key, value in role_default_node_map(pack).items() if key not in ROLE_NODE_MAP})
 
+FDE_ROLES = ("fde",)
+FDE_ROLE_LABELS = {"fde": "FDE"}
+
+FDE_BASE_ACTIONS = [
+    "fde:dashboard:view",
+    "fde:ai-run:view-masked",
+    "fde:feedback:view",
+    "fde:evaluation:view",
+    "fde:business-pack:view",
+    "fde:release:view",
+    "fde:ocr-quality:view",
+]
+
+ROLE_ACTIONS.update(
+    {
+        "fde": [
+            *FDE_BASE_ACTIONS,
+            "fde:ai-run:replay",
+            "fde:feedback:triage",
+            "fde:evaluation:manage",
+            "fde:evaluation:run",
+            "fde:config:draft",
+            "fde:business-pack:validate",
+            "fde:capability-bundle:manage",
+            "fde:release:submit",
+            "fde:release:shadow",
+            "fde:release:canary",
+            "fde:release:rollback",
+            "fde:incident:manage",
+        ],
+    }
+)
+ROLE_NODE_MAP.update({role: DEFAULT_BUSINESS_PACK["nodeTemplates"][0]["nodeId"] for role in FDE_ROLES})
+
 
 def business_pack_project_fields(pack: dict[str, Any] | None = None) -> dict[str, Any]:
     source = pack or DEFAULT_BUSINESS_PACK
@@ -595,7 +629,229 @@ def fixture_review_findings() -> list[dict[str, Any]]:
 
 
 REVIEW_FINDINGS: list[dict[str, Any]] = fixture_review_findings()
-AI_FEEDBACK: list[dict[str, Any]] = []
+AI_FEEDBACK: list[dict[str, Any]] = [
+    {
+        "id": "AIFB-24-001",
+        "aiRunId": "AIRUN-24-20260625-01",
+        "projectId": PROJECT_ID,
+        "nodeId": 24,
+        "agentId": "compliance_review_agent",
+        "agentVersion": "1.0.0",
+        "businessPackId": DEFAULT_BUSINESS_PACK_ID,
+        "businessPackVersion": DEFAULT_BUSINESS_PACK["version"],
+        "feedbackType": "edited",
+        "accepted": True,
+        "comment": "AI 结论方向正确，人工补充外部查询截图来源说明。",
+        "correctedOutput": {"manualConfirmItems": ["资格网站查询截图来源"]},
+        "shouldEnterEvaluationSet": True,
+        "status": "created",
+        "rootCause": "prompt_error",
+        "createdAt": "2026-06-26 10:10:00",
+    }
+]
+
+ACCESS_GRANTS: list[dict[str, Any]] = []
+AI_RUN_REPLAYS: list[dict[str, Any]] = []
+FEEDBACK_TRIAGE = [
+    {
+        "id": "FBT-24-001",
+        "feedbackId": "AIFB-24-001",
+        "status": "triaged",
+        "rootCause": "prompt_error",
+        "dataSensitivity": "masked",
+        "canUseForEval": True,
+        "canUseForTraining": False,
+        "createdAt": "2026-06-26 10:20:00",
+    }
+]
+
+EVALUATION_SETS = [
+    {
+        "id": "ESET-GOLDEN-ENGINEERING-001",
+        "name": "工程监检金标评估集",
+        "setType": "golden",
+        "businessPackId": DEFAULT_BUSINESS_PACK_ID,
+        "caseCount": 1,
+        "riskLevel": "high",
+        "status": "active",
+        "createdAt": "2026-06-26 10:30:00",
+    },
+    {
+        "id": "ESET-RISK-PROMPT-INJECTION-001",
+        "name": "Prompt 注入与错误依据风险集",
+        "setType": "risk",
+        "businessPackId": DEFAULT_BUSINESS_PACK_ID,
+        "caseCount": 1,
+        "riskLevel": "high",
+        "status": "active",
+        "createdAt": "2026-06-26 10:35:00",
+    },
+]
+
+EVALUATION_CASES = [
+    {
+        "id": "ECASE-24-001",
+        "evaluationSetId": "ESET-GOLDEN-ENGINEERING-001",
+        "businessPackId": DEFAULT_BUSINESS_PACK_ID,
+        "nodeId": 24,
+        "materialTypeCode": "welder_certificate",
+        "inputDocumentVersionIds": ["DV-20260625-001-V2"],
+        "expectedFindings": ["资格网站查询截图来源需人工确认"],
+        "expectedEvidenceLinkIds": ["EV-24-001"],
+        "riskLevel": "medium",
+        "source": "human_feedback",
+        "dataSensitivity": "masked",
+        "canUseForTraining": False,
+        "canUseForEval": True,
+    }
+]
+
+EVALUATION_RUNS = [
+    {
+        "id": "ERUN-20260626-001",
+        "evaluationSetId": "ESET-GOLDEN-ENGINEERING-001",
+        "capabilityBundleId": "BUNDLE-REVIEW-202606",
+        "status": "completed",
+        "startedAt": "2026-06-26 11:00:00",
+        "finishedAt": "2026-06-26 11:02:00",
+        "metrics": {
+            "humanAcceptanceRate": 0.86,
+            "evidenceHitRate": 0.92,
+            "hallucinationRate": 0.0,
+            "highRiskMissRate": 0.0,
+            "averageLatencyMs": 9300,
+        },
+    }
+]
+
+EVALUATION_METRICS = [
+    {
+        "id": "EMET-20260626-001",
+        "evaluationRunId": "ERUN-20260626-001",
+        "metric": "evidence_hit_rate",
+        "value": 0.92,
+        "threshold": 0.9,
+        "passed": True,
+    }
+]
+
+AGENT_VERSIONS = [
+    {
+        "id": "AGENT-compliance_review_agent-1.0.0",
+        "agentId": "compliance_review_agent",
+        "name": "资料合规复核员",
+        "version": "1.0.0",
+        "owner": "ai_quality_team",
+        "riskLevel": "high",
+        "status": "production",
+        "allowedTools": ["get_project_context", "get_ocr_result", "search_knowledge_base", "run_rule_engine"],
+        "forbiddenActions": ["approve_review", "issue_correction", "archive_project", "delete_file", "change_project_status"],
+        "promotionGate": {"humanAcceptanceRate": ">=0.85", "hallucinationRate": "<=0.01", "evidenceHitRate": ">=0.90"},
+    }
+]
+
+PROMPT_VERSIONS = [
+    {
+        "id": "PROMPT-review-202606",
+        "promptKey": "review_prompt",
+        "version": "2026.06",
+        "status": "production",
+        "riskLevel": "high",
+        "businessPackId": DEFAULT_BUSINESS_PACK_ID,
+        "updatedAt": "2026-06-26 10:00:00",
+    }
+]
+
+MODEL_ROUTE_VERSIONS = [
+    {
+        "id": "MODELROUTE-review-chat-202606",
+        "modelAlias": "review-chat",
+        "version": "2026.06",
+        "status": "production",
+        "fallbackAliases": ["default-chat"],
+        "budgetPolicy": {"maxCostPerRun": 2.0, "maxLatencyMs": 30000},
+    }
+]
+
+OCR_PROFILE_VERSIONS = [
+    {
+        "id": "OCRPROFILE-paddle-seal-202606",
+        "profileKey": "paddle_seal_profile",
+        "version": "2026.06",
+        "status": "production",
+        "fieldAccuracy": 0.93,
+        "sealAccuracy": 0.89,
+    }
+]
+
+CAPABILITY_BUNDLES = [
+    {
+        "id": "BUNDLE-REVIEW-202606",
+        "name": "工程监检资料复核生产组合",
+        "businessPackId": DEFAULT_BUSINESS_PACK_ID,
+        "agentVersionId": "AGENT-compliance_review_agent-1.0.0",
+        "promptVersionId": "PROMPT-review-202606",
+        "modelRouteVersionId": "MODELROUTE-review-chat-202606",
+        "ruleSetVersion": "Welder-Qualification-B-v2.1",
+        "knowledgeBaseVersion": "proj-v2026.06.26",
+        "ocrProfileVersionId": "OCRPROFILE-paddle-seal-202606",
+        "schemaVersion": "ReviewFindingDraftList@1.0.0",
+        "riskLevel": "high",
+        "status": "production",
+        "createdAt": "2026-06-26 10:45:00",
+    }
+]
+
+RELEASE_PLANS = [
+    {
+        "id": "REL-REVIEW-202606-001",
+        "releaseType": "capability_bundle",
+        "capabilityBundleId": "BUNDLE-REVIEW-202606",
+        "riskLevel": "high",
+        "status": "production_approved",
+        "targetScope": {"tenantIds": ["demo"], "businessPackIds": [DEFAULT_BUSINESS_PACK_ID], "projectIds": [PROJECT_ID]},
+        "changeSummary": "资料合规复核员生产组合基线发布。",
+        "evaluationReportId": "ERUN-20260626-001",
+        "rollbackPlanId": "ROLLBACK-BUNDLE-202606",
+        "createdByRole": "fde",
+        "createdAt": "2026-06-26 11:10:00",
+    }
+]
+
+RELEASE_APPROVALS = [
+    {
+        "id": "RAPP-REVIEW-202606-001",
+        "releasePlanId": "REL-REVIEW-202606-001",
+        "role": "ai_owner",
+        "status": "approved",
+        "comment": "评估集和风险集通过，允许生产基线。",
+        "approvedAt": "2026-06-26 11:20:00",
+    }
+]
+
+INCIDENTS = [
+    {
+        "id": "INC-AI-20260626-001",
+        "title": "OCR 低置信度字段集中升高",
+        "severity": "medium",
+        "status": "monitoring",
+        "rootCause": "low_quality_scan",
+        "relatedAiRunIds": ["AIRUN-24-20260625-01"],
+        "createdAt": "2026-06-26 11:30:00",
+    }
+]
+
+DELIVERY_ACCEPTANCE_REPORTS = [
+    {
+        "id": "DAR-ENGINEERING-202606",
+        "businessPackId": DEFAULT_BUSINESS_PACK_ID,
+        "status": "accepted",
+        "acceptanceSetId": "ESET-GOLDEN-ENGINEERING-001",
+        "metrics": {"evidenceHitRate": 0.92, "humanAcceptanceRate": 0.86},
+        "confirmedBy": "客户管理员",
+        "confirmedAt": "2026-06-26 12:00:00",
+    }
+]
 
 REPORTS = [
     {
@@ -1090,6 +1346,7 @@ ADMIN_CONFIG = {
         {"id": "ORG-CONTRACTOR-001", "name": "中石化安装有限公司", "type": "contractor", "contactName": "李工", "contactPhone": "13800000002", "status": "启用", "projectCount": 1},
         {"id": "ORG-NDT-001", "name": "华测检测有限公司", "type": "ndt", "contactName": "王工", "contactPhone": "13800000003", "status": "启用", "projectCount": 1},
         {"id": "ORG-INSPECTION-001", "name": "省特检院一部", "type": "inspection", "contactName": "张工", "contactPhone": "13800000004", "status": "启用", "projectCount": 1},
+        {"id": "ORG-FDE-001", "name": "AI 交付治理组", "type": "fde", "contactName": "FDE", "contactPhone": "13800000061", "status": "启用", "projectCount": 0},
     ],
     "users": [
         {"id": "USER-INSPECTION-001", "name": "张工", "orgName": "省特检院一部", "role": "inspection", "mobile": "13800000004", "status": "启用", "lastLoginAt": "2026-06-26 09:05:00"},
@@ -1097,6 +1354,7 @@ ADMIN_CONFIG = {
         {"id": "USER-NDT-001", "name": "王工", "orgName": "华测检测有限公司", "role": "ndt", "mobile": "13800000003", "status": "启用", "lastLoginAt": "2026-06-25 17:10:00"},
         {"id": "USER-OWNER-001", "name": "赵经理", "orgName": "华东管网建设公司", "role": "owner", "mobile": "13800000001", "status": "启用", "lastLoginAt": "2026-06-25 16:40:00"},
         {"id": "USER-ADMIN-001", "name": "系统管理员", "orgName": "省特检院平台组", "role": "admin", "mobile": "13800000000", "status": "启用", "lastLoginAt": "2026-06-26 10:00:00"},
+        {"id": "USER-FDE-001", "name": "FDE 工程师", "orgName": "AI 交付治理组", "role": "fde", "mobile": "13800000061", "status": "启用", "lastLoginAt": "2026-06-26 10:30:00"},
     ],
     "permissionMatrix": [
         {"role": role, "label": label, "projectScope": "授权项目", "nodeScope": "授权节点", "actions": actions, "readonly": role == "owner"}
@@ -1106,6 +1364,7 @@ ADMIN_CONFIG = {
             ("ndt", "无损检测", ROLE_ACTIONS["ndt"]),
             ("owner", "建设方", ROLE_ACTIONS["owner"]),
             ("admin", "系统管理员", ROLE_ACTIONS["admin"]),
+            ("fde", "FDE", ROLE_ACTIONS["fde"]),
         ]
     ],
     "nodeTemplates": [{"id": "NT-PIPE-69", "version": "2026.06", "groupName": "压力管道监督检验 69 节点", "nodeCount": 69, "requiredCount": 42, "status": "已发布", "updatedAt": "2026-06-26 08:00:00"}],
@@ -1189,6 +1448,22 @@ def fresh_state() -> dict[str, Any]:
         "review_opinions": deepcopy(REVIEW_OPINIONS),
         "review_findings": deepcopy(REVIEW_FINDINGS),
         "ai_feedback": deepcopy(AI_FEEDBACK),
+        "access_grants": deepcopy(ACCESS_GRANTS),
+        "ai_run_replays": deepcopy(AI_RUN_REPLAYS),
+        "feedback_triage": deepcopy(FEEDBACK_TRIAGE),
+        "evaluation_sets": deepcopy(EVALUATION_SETS),
+        "evaluation_cases": deepcopy(EVALUATION_CASES),
+        "evaluation_runs": deepcopy(EVALUATION_RUNS),
+        "evaluation_metrics": deepcopy(EVALUATION_METRICS),
+        "agent_versions": deepcopy(AGENT_VERSIONS),
+        "prompt_versions": deepcopy(PROMPT_VERSIONS),
+        "model_route_versions": deepcopy(MODEL_ROUTE_VERSIONS),
+        "ocr_profile_versions": deepcopy(OCR_PROFILE_VERSIONS),
+        "capability_bundles": deepcopy(CAPABILITY_BUNDLES),
+        "release_plans": deepcopy(RELEASE_PLANS),
+        "release_approvals": deepcopy(RELEASE_APPROVALS),
+        "incidents": deepcopy(INCIDENTS),
+        "delivery_acceptance_reports": deepcopy(DELIVERY_ACCEPTANCE_REPORTS),
         "reports": deepcopy(REPORTS),
         "archive_items": deepcopy(ARCHIVE_ITEMS),
         "export_tasks": deepcopy(EXPORT_TASKS),

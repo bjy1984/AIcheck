@@ -8,10 +8,19 @@ export const ROLE_DEFAULT_PATHS: Record<AicheckRole, string> = {
   ndt: '/workbench/ndt',
   owner: '/workbench/owner',
   admin: '/admin/overview',
+  fde: '/fde/dashboard',
   test: '/workbench/inspection'
 }
 
-const roleValues: AicheckRole[] = ['inspection', 'contractor', 'ndt', 'owner', 'admin', 'test']
+const roleValues: AicheckRole[] = [
+  'inspection',
+  'contractor',
+  'ndt',
+  'owner',
+  'admin',
+  'fde',
+  'test'
+]
 
 export const normalizeAicheckRole = (role?: string): AicheckRole => {
   return roleValues.includes(role as AicheckRole) ? (role as AicheckRole) : 'inspection'
@@ -26,6 +35,7 @@ export const isPathAllowedForRole = (path: string, role?: string): boolean => {
   if (!path || path === '/') return false
   if (['/login', '/404', '/redirect'].some((prefix) => path.startsWith(prefix))) return true
   if (normalizedRole === 'admin') return path.startsWith('/admin') || path.startsWith('/knowledge')
+  if (normalizedRole === 'fde') return path.startsWith('/fde')
   if (normalizedRole === 'test') return path.startsWith('/workbench/inspection')
   return (
     path === ROLE_DEFAULT_PATHS[normalizedRole] ||

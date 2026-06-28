@@ -544,6 +544,24 @@ const roleActionOptions: Record<RoleCode, ActionCode[]> = {
     'admin:config',
     'admin:export',
     'audit:view'
+  ],
+  fde: [
+    'fde:dashboard:view',
+    'fde:ai-run:view-masked',
+    'fde:ai-run:replay',
+    'fde:feedback:view',
+    'fde:feedback:triage',
+    'fde:evaluation:view',
+    'fde:evaluation:manage',
+    'fde:evaluation:run',
+    'fde:business-pack:view',
+    'fde:business-pack:validate',
+    'fde:capability-bundle:manage',
+    'fde:release:view',
+    'fde:release:submit',
+    'fde:release:rollback',
+    'fde:ocr-quality:view',
+    'fde:incident:manage'
   ]
 }
 
@@ -581,7 +599,8 @@ const roleLabel = (role: RoleCode) => {
     contractor: '施工',
     ndt: '无损检测',
     owner: '建设方',
-    admin: '管理'
+    admin: '管理',
+    fde: 'FDE'
   }
   return labels[role]
 }

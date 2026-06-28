@@ -137,7 +137,8 @@ const roleConfig: Record<RoleCode, { title: string; subtitle: string }> = {
   contractor: { title: '施工方工作台', subtitle: '资料上传、节点提交、补正反馈' },
   ndt: { title: '无损检测工作台', subtitle: '检测报告提交、证据链维护' },
   owner: { title: '建设方工作台', subtitle: '项目进度、报告与归档资料查看' },
-  admin: { title: '管理工作台', subtitle: '系统配置与审计' }
+  admin: { title: '管理工作台', subtitle: '系统配置与审计' },
+  fde: { title: 'FDE 后台', subtitle: 'AI 交付、效果监控与治理' }
 }
 
 type WorkbenchStateIssue = {
@@ -285,7 +286,8 @@ const roleUserLabel = computed(() => {
     contractor: '施工方 李工',
     ndt: '无损检测 王工',
     owner: '建设方 陈经理',
-    admin: '系统管理员'
+    admin: '系统管理员',
+    fde: 'FDE 工程师'
   }
   return labels[role.value]
 })
@@ -307,7 +309,8 @@ const globalSearchPlaceholder = computed(() => {
     contractor: '⌕ 全局搜索（文件 / 节点名称 / 资料项 / 反馈意见 / 编号）',
     ndt: '⌕ 全局搜索（项目 / 底片编号 / 焊口编号 / 检测报告 / 节点）',
     owner: '⌕ 全局搜索（项目 / 节点 / 资料状态 / 报告 / 归档资料）',
-    admin: '⌕ 搜索（项目 / 单位 / 用户 / 角色 / 流程 / 待办 / 节点）'
+    admin: '⌕ 搜索（项目 / 单位 / 用户 / 角色 / 流程 / 待办 / 节点）',
+    fde: '⌕ 搜索（AI Run / Agent / 评估集 / 发布单 / 业务包）'
   }
   return placeholders[role.value]
 })
@@ -317,7 +320,8 @@ const pageHeadline = computed(() => {
     contractor: '项目文件上传与挂载',
     ndt: '无损检测资料维护',
     owner: '建设方项目概况',
-    admin: '管理工作台'
+    admin: '管理工作台',
+    fde: 'AI 交付治理后台'
   }
   return headlines[role.value]
 })
@@ -327,7 +331,8 @@ const pageIntro = computed(() => {
     contractor: '施工方以文件上传和项目文件库为主，可选择一个或多个授权检测节点并提交挂载关系。',
     ndt: '底片编号、检测记录、检测报告和图像资料直接挂载到明确的无损检测节点。',
     owner: '只读查看项目进展、节点资料状态、异常提醒、报告状态和归档资料。',
-    admin: '后台只维护配置、权限、流程和审计，不替代工作台业务办理。'
+    admin: '后台只维护配置、权限、流程和审计，不替代工作台业务办理。',
+    fde: 'FDE 只管理 AI 能力、评估、发布和治理，不替代业务人员作出正式结论。'
   }
   return intros[role.value]
 })

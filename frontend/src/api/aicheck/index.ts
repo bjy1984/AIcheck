@@ -826,6 +826,87 @@ export type GenericReviewWorkbenchPayload = {
   aiRuns: AiReviewRun[]
 }
 
+export type FdeMetric = {
+  label: string
+  value: number | string
+  tone: string
+  suffix?: string
+}
+
+export type FdeDashboardPayload = {
+  metrics: FdeMetric[]
+  alerts: Array<{ id: string; severity: string; title: string; status: string }>
+  agentPerformance: Array<{
+    agentId: string
+    version: string
+    status: string
+    riskLevel: string
+    acceptanceRate: number
+    evidenceHitRate: number
+    hallucinationRate: number
+  }>
+  cost: { tokenEstimate: number; estimatedPrice: number; budgetStatus: string }
+  releaseStatus: { bundles: number; releasePlans: number; pendingApprovals: number }
+}
+
+export type FdeAiRun = AiReviewRun & {
+  versionSnapshot?: Record<string, unknown>
+  inputHash?: string
+  outputHash?: string
+  immutable?: boolean
+  rawAccess?: boolean
+  parentRunId?: string
+  runType?: string
+}
+
+export type FdeAiRunDetailPayload = {
+  run: FdeAiRun
+  traceSteps: Array<Record<string, unknown>>
+  replays: Array<Record<string, unknown>>
+  feedback: FdeFeedback[]
+  accessPolicy: { rawAccess: boolean; rawAccessRequiresGrant: boolean }
+}
+
+export type FdeFeedback = {
+  id: string
+  aiRunId: string
+  projectId: string
+  nodeId: number
+  feedbackType: string
+  accepted: boolean
+  comment?: string
+  status?: string
+  rootCause?: string
+  shouldEnterEvaluationSet?: boolean
+  createdAt: string
+  triage?: Record<string, unknown>
+}
+
+export type FdeEvaluationPayload = {
+  sets: Array<Record<string, unknown>>
+  cases: Array<Record<string, unknown>>
+  runs: Array<Record<string, unknown>>
+}
+
+export type FdeCapabilityBundlePayload = {
+  bundles: Array<Record<string, unknown>>
+  agents: Array<Record<string, unknown>>
+  prompts: Array<Record<string, unknown>>
+  modelRoutes: Array<Record<string, unknown>>
+  ocrProfiles: Array<Record<string, unknown>>
+}
+
+export type FdeReleasePayload = {
+  plans: Array<Record<string, unknown>>
+  approvals: Array<Record<string, unknown>>
+}
+
+export type FdeOcrQualityPayload = {
+  fileLevel: { total: number; success: number; failed: number }
+  fieldLevel: { total: number; lowConfidence: number; manualCorrectionRate: number }
+  lowConfidenceFields: ExtractedField[]
+}
+
 export type AdminConfigTarget =
   | 'permission'
   | 'node-template'
@@ -1929,6 +2010,134 @@ export const getProjectReviewWorkbenchApi = (
   params?: { nodeId?: number }
 ): Promise<IResponse<GenericReviewWorkbenchPayload>> => {
   return request.get({ url: `/api/projects/${projectId}/review-workbench`, params })
+}
+
+export const getFdeDashboardApi = (): Promise<IResponse<FdeDashboardPayload>> => {
+  return request.get({ url: '/api/fde/dashboard' })
+}
+
+export const listFdeAiRunsApi = (params?: {
+  projectId?: string
+  businessPackId?: string
+  status?: string
+  page?: number
+  pageSize?: number
+}): Promise<IResponse<PagePayload<FdeAiRun>>> => {
+  return request.get({ url: '/api/fde/ai-runs', params })
+}
+
+export const getFdeAiRunApi = (runId: string): Promise<IResponse<FdeAiRunDetailPayload>> => {
+  return request.get({ url: `/api/fde/ai-runs/${runId}` })
+}
+
+export const replayFdeAiRunApi = (
+  runId: string,
+  data: { runType?: 'diagnostic_replay' | 'evaluation_replay' | 'shadow_replay'; reason?: string },
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{ replay: Record<string, unknown>; childRun: FdeAiRun; auditLogId: string }>
+> => {
+  return request.post({
+    url: `/api/fde/ai-runs/${runId}/replay`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const listFdeFeedbackApi = (params?: {
+  feedbackType?: string
+  status?: string
+}): Promise<IResponse<FdeFeedback[]>> => {
+  return request.get({ url: '/api/fde/feedback', params })
+}
+
+export const triageFdeFeedbackApi = (
+  feedbackId: string,
+  data: {
+    rootCause?: string
+    status?: string
+    canUseForEval?: boolean
+    canUseForTraining?: boolean
+  },
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{ feedback: FdeFeedback; triage: Record<string, unknown>; auditLogId: string }>
+> => {
+  return request.post({
+    url: `/api/fde/feedback/${feedbackId}/triage`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const getFdeEvaluationSetsApi = (params?: {
+  setType?: string
+}): Promise<IResponse<FdeEvaluationPayload>> => {
+  return request.get({ url: '/api/fde/evaluation-sets', params })
+}
+
+export const createFdeEvaluationRunApi = (
+  data: {
+    evaluationSetId: string
+    capabilityBundleId?: string
+  },
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ run: Record<string, unknown>; auditLogId: string }>> => {
+  return request.post({
+    url: '/api/fde/evaluation-runs',
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const getFdeCapabilityBundlesApi = (): Promise<IResponse<FdeCapabilityBundlePayload>> => {
+  return request.get({ url: '/api/fde/capability-bundles' })
+}
+
+export const createFdeCapabilityBundleApi = (
+  data: Record<string, unknown>,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ bundle: Record<string, unknown>; auditLogId: string }>> => {
+  return request.post({
+    url: '/api/fde/capability-bundles',
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const listFdeReleasesApi = (): Promise<IResponse<FdeReleasePayload>> => {
+  return request.get({ url: '/api/fde/releases' })
+}
+
+export const createFdeReleaseApi = (
+  data: Record<string, unknown>,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ plan: Record<string, unknown>; auditLogId: string }>> => {
+  return request.post({
+    url: '/api/fde/releases',
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const validateFdeBusinessPacksApi = (): Promise<
+  IResponse<BusinessPackValidateAllPayload>
+> => {
+  return request.post({ url: '/api/fde/business-packs/validate-all' })
+}
+
+export const getFdeOcrQualityApi = (): Promise<IResponse<FdeOcrQualityPayload>> => {
+  return request.get({ url: '/api/fde/ocr-quality' })
+}
+
+export const listFdeIncidentsApi = (): Promise<IResponse<Array<Record<string, unknown>>>> => {
+  return request.get({ url: '/api/fde/incidents' })
+}
+
+export const listFdeAcceptanceReportsApi = (): Promise<
+  IResponse<Array<Record<string, unknown>>>
+> => {
+  return request.get({ url: '/api/fde/acceptance-reports' })
 }
 
 export const getAdminIntegrationContractApi = (params?: {

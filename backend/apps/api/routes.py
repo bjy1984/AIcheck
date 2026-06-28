@@ -82,6 +82,29 @@ AI_FEEDBACK_TYPES = {
     "unsafe_output",
 }
 
+FDE_ROLES = {"fde"}
+
+FDE_REPLAY_TYPES = {
+    "diagnostic_replay",
+    "evaluation_replay",
+    "shadow_replay",
+}
+
+FDE_ROOT_CAUSES = {
+    "ocr_error",
+    "field_mapping_error",
+    "rule_error",
+    "kb_retrieval_error",
+    "kb_content_error",
+    "prompt_error",
+    "model_reasoning_error",
+    "schema_error",
+    "business_pack_config_error",
+    "user_uploaded_bad_file",
+    "ambiguous_business_standard",
+    "human_review_error",
+}
+
 
 def role_from_query(role: str | None = None, x_role: str | None = None) -> str:
     return (x_role or role or "inspection").strip() or "inspection"
@@ -170,6 +193,8 @@ def mutation_guard(
     action_code = request.headers.get("X-Action-Code")
     if action_code and effective_role and action_code not in repo.role_actions(effective_role):
         return fail(errors.FORBIDDEN, request, message=f"角色 {effective_role} 无权执行 {action_code}。")
+    if effective_role in FDE_ROLES:
+        return fail(errors.FORBIDDEN, request, message="FDE 只能管理 AI 能力和治理流程，不能执行正式业务写操作。")
     if effective_role in {"owner"}:
         return fail(errors.FORBIDDEN, request)
     if effective_role == "admin" and "/review-opinions" in request.url.path:
@@ -929,6 +954,29 @@ def simple_routes(role: str | None = None) -> list[dict[str, Any]]:
             "children": [
                 {"path": item, "component": "views/AICheck/KnowledgeOverview", "name": f"Knowledge{item.title().replace('-', '')}", "meta": {"title": "AI 知识库管理", "roles": ["admin"]}}
                 for item in ["overview", "sources", "files", "tasks", "rules", "retrieval", "reasoning", "compare", "config"]
+            ],
+        },
+        {
+            "path": "/fde",
+            "component": "#",
+            "redirect": "/fde/dashboard",
+            "name": "FdeConsole",
+            "meta": {"title": "FDE 后台", "icon": "vi-ep:operation", "alwaysShow": True, "roles": sorted(FDE_ROLES)},
+            "children": [
+                {"path": item, "component": "views/AICheck/FdeConsole", "name": f"Fde{item.title().replace('-', '')}", "meta": {"title": "AI 交付治理", "roles": sorted(FDE_ROLES)}}
+                for item in [
+                    "dashboard",
+                    "ai-runs",
+                    "feedback",
+                    "evaluation",
+                    "bundles",
+                    "business-packs",
+                    "releases",
+                    "ocr-quality",
+                    "security",
+                    "incidents",
+                    "acceptance",
+                ]
             ],
         },
     ]
@@ -3772,6 +3820,515 @@ def create_ai_run_feedback(
         return ok({"feedback": feedback, "aiRun": repo.clone(run), "auditLogId": audit_id}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"runId": run_id, "body": body})
+
+
+def fde_error_unless_allowed(request: Request, action: str | None = None) -> tuple[str | None, JSONResponse | None]:
+    role, identity_error = effective_role_for_request(request)
+    if identity_error:
+        return None, identity_error
+    role = role or "inspection"
+    if role != "admin" and role not in FDE_ROLES:
+        return role, fail(errors.FORBIDDEN, request, message="仅 FDE 或管理员可访问 AI 交付治理后台。")
+    if action and role != "admin" and action not in repo.role_actions(role):
+        return role, fail(errors.FORBIDDEN, request, message=f"角色 {role} 无权执行 {action}。")
+    return role, None
+
+
+def stable_hash_payload(value: Any) -> str:
+    raw = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def ai_run_snapshot(run: dict[str, Any]) -> dict[str, Any]:
+    project = repo.require_project(run.get("projectId"))
+    pack = business_pack_for_project(project) if project else load_business_pack(run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID)
+    return {
+        "businessPackId": run.get("businessPackId") or pack["id"],
+        "businessPackVersion": run.get("businessPackVersion") or pack["version"],
+        "businessPackSnapshotHash": run.get("businessPackSnapshotHash") or pack["snapshotHash"],
+        "agentId": run.get("agentId") or "unknown_agent",
+        "agentVersion": run.get("agentVersion") or "unknown",
+        "promptVersion": run.get("promptVersion") or "unknown",
+        "modelAlias": run.get("model") or "review-chat",
+        "modelResolved": run.get("modelResolved") or run.get("model") or "review-chat",
+        "ruleSetVersion": run.get("ruleVersion") or "unknown",
+        "knowledgeBaseVersion": run.get("knowledgeBaseVersion") or "proj-v2026.06.26",
+        "ocrResultVersions": run.get("ocrResultVersions") or [],
+        "inputDocumentVersionIds": run.get("inputDocumentVersionIds") or [],
+        "schemaVersion": run.get("schemaVersion") or "ReviewFindingDraftList@1.0.0",
+        "runType": run.get("runType") or "production",
+    }
+
+
+def has_raw_access(request: Request, target_type: str, target_id: str) -> bool:
+    role, _ = effective_role_for_request(request)
+    if role == "admin":
+        return True
+    user_id = request_user_id(request)
+    if not user_id:
+        return False
+    now = server_time()
+    return any(
+        grant.get("subjectUserId") == user_id
+        and grant.get("targetType") == target_type
+        and grant.get("targetId") == target_id
+        and grant.get("status") == "approved"
+        and str(grant.get("expiresAt") or "") >= now
+        for grant in repo.state.get("access_grants", [])
+    )
+
+
+def mask_text(value: Any, *, visible: int = 24) -> Any:
+    if not isinstance(value, str):
+        return value
+    if len(value) <= visible:
+        return value
+    return f"{value[:visible]}...<masked>"
+
+
+def fde_ai_run_view(run: dict[str, Any], *, raw_access: bool = False) -> dict[str, Any]:
+    snapshot = ai_run_snapshot(run)
+    view = repo.clone(run)
+    view["versionSnapshot"] = snapshot
+    view["inputHash"] = run.get("inputHash") or stable_hash_payload(snapshot["inputDocumentVersionIds"])
+    view["outputHash"] = run.get("outputHash") or stable_hash_payload(
+        {"suggestion": run.get("suggestion"), "findingDrafts": run.get("findingDrafts") or []}
+    )
+    view["immutable"] = True
+    view["rawAccess"] = raw_access
+    if not raw_access:
+        suggestion = view.get("suggestion") or {}
+        if isinstance(suggestion, dict):
+            suggestion["opinionDraft"] = mask_text(suggestion.get("opinionDraft"), visible=60)
+        for evidence in view.get("evidenceLinks") or []:
+            if isinstance(evidence, dict):
+                evidence["quotedText"] = mask_text(evidence.get("quotedText"), visible=36)
+        for finding in view.get("findingDrafts") or []:
+            if isinstance(finding, dict):
+                finding["description"] = mask_text(finding.get("description"), visible=80)
+    return view
+
+
+def fde_metric(label: str, value: Any, tone: str = "blue", suffix: str = "") -> dict[str, Any]:
+    return {"label": label, "value": value, "tone": tone, "suffix": suffix}
+
+
+def acceptance_rate() -> float:
+    feedback = repo.state.get("ai_feedback", [])
+    if not feedback:
+        return 0.0
+    accepted = len([item for item in feedback if item.get("accepted") or item.get("feedbackType") in {"accepted", "edited"}])
+    return round(accepted / len(feedback), 4)
+
+
+def evidence_hit_rate() -> float:
+    findings = [item for item in repo.state.get("review_findings", []) if item.get("source") == "ai"]
+    if not findings:
+        return 0.0
+    with_evidence = len([item for item in findings if item.get("evidenceLinkIds") and item.get("ruleRefs")])
+    return round(with_evidence / len(findings), 4)
+
+
+def hallucination_rate() -> float:
+    feedback = repo.state.get("ai_feedback", [])
+    if not feedback:
+        return 0.0
+    hallucinations = len([item for item in feedback if item.get("feedbackType") == "hallucination"])
+    return round(hallucinations / len(feedback), 4)
+
+
+@router.get("/fde/dashboard")
+def fde_dashboard(request: Request):
+    _, role_error = fde_error_unless_allowed(request, "fde:dashboard:view")
+    if role_error:
+        return role_error
+    ai_runs = repo.state.get("ai_runs", [])
+    failed_runs = [item for item in ai_runs if item.get("status") == "失败"]
+    ocr_documents = repo.state.get("documents", [])
+    ocr_success = len([item for item in ocr_documents if item.get("currentOcrStatus") == "已识别"])
+    ocr_total = len(ocr_documents) or 1
+    return ok(
+        {
+            "metrics": [
+                fde_metric("AI Run", len(ai_runs)),
+                fde_metric("成功率", round((len(ai_runs) - len(failed_runs)) / (len(ai_runs) or 1), 4), "green", "%"),
+                fde_metric("采纳率", acceptance_rate(), "green", "%"),
+                fde_metric("证据命中率", evidence_hit_rate(), "blue", "%"),
+                fde_metric("幻觉率", hallucination_rate(), "red", "%"),
+                fde_metric("OCR 成功率", round(ocr_success / ocr_total, 4), "orange", "%"),
+            ],
+            "alerts": [
+                {"id": item["id"], "severity": item["severity"], "title": item["title"], "status": item["status"]}
+                for item in repo.state.get("incidents", [])
+            ],
+            "agentPerformance": [
+                {
+                    "agentId": agent["agentId"],
+                    "version": agent["version"],
+                    "status": agent["status"],
+                    "riskLevel": agent["riskLevel"],
+                    "acceptanceRate": acceptance_rate(),
+                    "evidenceHitRate": evidence_hit_rate(),
+                    "hallucinationRate": hallucination_rate(),
+                }
+                for agent in repo.state.get("agent_versions", [])
+            ],
+            "cost": {
+                "tokenEstimate": sum(int(item.get("tokenUsage") or 0) for item in ai_runs),
+                "estimatedPrice": round(sum(float(item.get("estimatedPrice") or 0) for item in ai_runs), 4),
+                "budgetStatus": "normal",
+            },
+            "releaseStatus": {
+                "bundles": len(repo.state.get("capability_bundles", [])),
+                "releasePlans": len(repo.state.get("release_plans", [])),
+                "pendingApprovals": len([item for item in repo.state.get("release_plans", []) if item.get("status") in {"submitted", "canary_requested"}]),
+            },
+        },
+        request,
+    )
+
+
+@router.get("/fde/ai-runs")
+def fde_ai_runs(
+    request: Request,
+    projectId: str | None = None,
+    businessPackId: str | None = None,
+    status: str | None = None,
+    page_no: int = Query(default=1, alias="page"),
+    page_size: int = Query(default=20, alias="pageSize"),
+):
+    _, role_error = fde_error_unless_allowed(request, "fde:ai-run:view-masked")
+    if role_error:
+        return role_error
+    items = [repo.clone(item) for item in repo.state.get("ai_runs", [])]
+    if projectId:
+        items = [item for item in items if item.get("projectId") == projectId]
+    if businessPackId:
+        items = [item for item in items if item.get("businessPackId") == businessPackId]
+    if status:
+        items = [item for item in items if item.get("status") == status]
+    return ok(page([fde_ai_run_view(item) for item in items], page_no, page_size), request)
+
+
+@router.get("/fde/ai-runs/{run_id}")
+def fde_ai_run_detail(request: Request, run_id: str):
+    _, role_error = fde_error_unless_allowed(request, "fde:ai-run:view-masked")
+    if role_error:
+        return role_error
+    run = repo.find_one("ai_runs", run_id)
+    if not run:
+        return fail(errors.NOT_FOUND, request)
+    raw = has_raw_access(request, "ai_run", run_id)
+    return ok(
+        {
+            "run": fde_ai_run_view(run, raw_access=raw),
+            "traceSteps": repo.clone(run.get("steps") or []),
+            "replays": [repo.clone(item) for item in repo.state.get("ai_run_replays", []) if item.get("parentRunId") == run_id],
+            "feedback": [repo.clone(item) for item in repo.state.get("ai_feedback", []) if item.get("aiRunId") == run_id],
+            "accessPolicy": {"rawAccess": raw, "rawAccessRequiresGrant": not raw},
+        },
+        request,
+    )
+
+
+@router.post("/fde/ai-runs/{run_id}/replay")
+def fde_replay_ai_run(
+    request: Request,
+    run_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        _, role_error = fde_error_unless_allowed(request, "fde:ai-run:replay")
+        if role_error:
+            return role_error
+        parent = repo.find_one("ai_runs", run_id)
+        if not parent:
+            return fail(errors.NOT_FOUND, request)
+        run_type = body.get("runType") or "diagnostic_replay"
+        if run_type not in FDE_REPLAY_TYPES:
+            return fail(errors.VALIDATION_ERROR, request, message="FDE 重跑类型不支持。", data={"allowedTypes": sorted(FDE_REPLAY_TYPES)})
+        child_id = body.get("childRunId") or f"AIRUN-REPLAY-{uuid4().hex[:8].upper()}"
+        child = repo.clone(parent)
+        child.update(
+            {
+                "id": child_id,
+                "parentRunId": run_id,
+                "runType": run_type,
+                "status": "排队中",
+                "startedAt": server_time(),
+                "finishedAt": None,
+                "replayReason": body.get("reason") or "FDE 诊断重跑",
+                "immutable": True,
+                "inputHash": stable_hash_payload(parent.get("inputDocumentVersionIds") or []),
+                "outputHash": stable_hash_payload(parent.get("suggestion") or {}),
+            }
+        )
+        replay = {
+            "id": f"REPLAY-{uuid4().hex[:8].upper()}",
+            "parentRunId": run_id,
+            "childRunId": child_id,
+            "runType": run_type,
+            "status": "created",
+            "requestedByRole": effective_role_for_request(request)[0],
+            "reason": body.get("reason"),
+            "createdAt": server_time(),
+        }
+        repo.state["ai_runs"].insert(0, child)
+        repo.state["ai_run_replays"].insert(0, replay)
+        audit_id = repo.add_audit("FDE 创建 AI Run 重跑", "AIRunReplay", replay["id"])
+        return ok({"replay": replay, "childRun": fde_ai_run_view(child), "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"runId": run_id, "body": body})
+
+
+@router.get("/fde/feedback")
+def fde_feedback(request: Request, feedbackType: str | None = None, status: str | None = None):
+    _, role_error = fde_error_unless_allowed(request, "fde:feedback:view")
+    if role_error:
+        return role_error
+    items = [repo.clone(item) for item in repo.state.get("ai_feedback", [])]
+    if feedbackType:
+        items = [item for item in items if item.get("feedbackType") == feedbackType]
+    if status:
+        items = [item for item in items if item.get("status") == status]
+    triage_by_feedback = {item.get("feedbackId"): item for item in repo.state.get("feedback_triage", [])}
+    for item in items:
+        item["triage"] = repo.clone(triage_by_feedback.get(item["id"]))
+    return ok(items, request)
+
+
+@router.post("/fde/feedback/{feedback_id}/triage")
+def fde_triage_feedback(
+    request: Request,
+    feedback_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        _, role_error = fde_error_unless_allowed(request, "fde:feedback:triage")
+        if role_error:
+            return role_error
+        feedback = repo.find_one("ai_feedback", feedback_id)
+        if not feedback:
+            return fail(errors.NOT_FOUND, request)
+        root_cause = body.get("rootCause") or feedback.get("rootCause") or "prompt_error"
+        if root_cause not in FDE_ROOT_CAUSES:
+            return fail(errors.VALIDATION_ERROR, request, message="纠错归因类型不支持。", data={"allowedTypes": sorted(FDE_ROOT_CAUSES)})
+        triage = repo.find_one("feedback_triage", feedback_id, id_field="feedbackId")
+        payload = {
+            "id": (triage or {}).get("id") or f"FBT-{uuid4().hex[:8].upper()}",
+            "feedbackId": feedback_id,
+            "status": body.get("status") or "triaged",
+            "rootCause": root_cause,
+            "dataSensitivity": body.get("dataSensitivity") or "masked",
+            "canUseForEval": bool(body.get("canUseForEval", feedback.get("shouldEnterEvaluationSet", False))),
+            "canUseForTraining": bool(body.get("canUseForTraining", False)),
+            "adjudicationRequired": bool(body.get("adjudicationRequired", False)),
+            "updatedAt": server_time(),
+        }
+        if triage:
+            triage.update(payload)
+        else:
+            repo.state["feedback_triage"].insert(0, payload)
+        feedback["status"] = payload["status"]
+        feedback["rootCause"] = root_cause
+        audit_id = repo.add_audit("FDE 反馈归因", "HumanFeedback", feedback_id)
+        return ok({"feedback": repo.clone(feedback), "triage": payload, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"feedbackId": feedback_id, "body": body})
+
+
+@router.get("/fde/evaluation-sets")
+def fde_evaluation_sets(request: Request, setType: str | None = None):
+    _, role_error = fde_error_unless_allowed(request, "fde:evaluation:view")
+    if role_error:
+        return role_error
+    items = [repo.clone(item) for item in repo.state.get("evaluation_sets", [])]
+    if setType:
+        items = [item for item in items if item.get("setType") == setType]
+    return ok({"sets": items, "cases": repo.clone(repo.state.get("evaluation_cases", [])), "runs": repo.clone(repo.state.get("evaluation_runs", []))}, request)
+
+
+@router.post("/fde/evaluation-runs")
+def fde_create_evaluation_run(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        _, role_error = fde_error_unless_allowed(request, "fde:evaluation:run")
+        if role_error:
+            return role_error
+        set_id = body.get("evaluationSetId")
+        bundle_id = body.get("capabilityBundleId") or "BUNDLE-REVIEW-202606"
+        if not set_id or not repo.find_one("evaluation_sets", set_id):
+            return fail(errors.VALIDATION_ERROR, request, message="evaluationSetId 无效。")
+        run = {
+            "id": body.get("id") or f"ERUN-{uuid4().hex[:8].upper()}",
+            "evaluationSetId": set_id,
+            "capabilityBundleId": bundle_id,
+            "status": "queued",
+            "startedAt": server_time(),
+            "metrics": {},
+            "requestedByRole": effective_role_for_request(request)[0],
+        }
+        repo.state["evaluation_runs"].insert(0, run)
+        audit_id = repo.add_audit("FDE 发起离线评测", "EvaluationRun", run["id"])
+        return ok({"run": run, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
+
+
+@router.get("/fde/capability-bundles")
+def fde_capability_bundles(request: Request):
+    _, role_error = fde_error_unless_allowed(request, "fde:business-pack:view")
+    if role_error:
+        return role_error
+    return ok(
+        {
+            "bundles": repo.clone(repo.state.get("capability_bundles", [])),
+            "agents": repo.clone(repo.state.get("agent_versions", [])),
+            "prompts": repo.clone(repo.state.get("prompt_versions", [])),
+            "modelRoutes": repo.clone(repo.state.get("model_route_versions", [])),
+            "ocrProfiles": repo.clone(repo.state.get("ocr_profile_versions", [])),
+        },
+        request,
+    )
+
+
+@router.post("/fde/capability-bundles")
+def fde_create_capability_bundle(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        _, role_error = fde_error_unless_allowed(request, "fde:capability-bundle:manage")
+        if role_error:
+            return role_error
+        bundle = {
+            "id": body.get("id") or f"BUNDLE-{uuid4().hex[:8].upper()}",
+            "name": body.get("name") or "FDE 草稿能力组合",
+            "businessPackId": body.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID,
+            "agentVersionId": body.get("agentVersionId"),
+            "promptVersionId": body.get("promptVersionId"),
+            "modelRouteVersionId": body.get("modelRouteVersionId"),
+            "ruleSetVersion": body.get("ruleSetVersion"),
+            "knowledgeBaseVersion": body.get("knowledgeBaseVersion"),
+            "ocrProfileVersionId": body.get("ocrProfileVersionId"),
+            "schemaVersion": body.get("schemaVersion") or "ReviewFindingDraftList@1.0.0",
+            "riskLevel": body.get("riskLevel") or "medium",
+            "status": "draft",
+            "createdAt": server_time(),
+        }
+        repo.state["capability_bundles"].insert(0, bundle)
+        audit_id = repo.add_audit("FDE 创建 Capability Bundle 草稿", "CapabilityBundle", bundle["id"])
+        return ok({"bundle": bundle, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
+
+
+@router.get("/fde/releases")
+def fde_release_plans(request: Request):
+    _, role_error = fde_error_unless_allowed(request, "fde:release:view")
+    if role_error:
+        return role_error
+    return ok({"plans": repo.clone(repo.state.get("release_plans", [])), "approvals": repo.clone(repo.state.get("release_approvals", []))}, request)
+
+
+@router.post("/fde/releases")
+def fde_create_release_plan(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        _, role_error = fde_error_unless_allowed(request, "fde:release:submit")
+        if role_error:
+            return role_error
+        bundle_id = body.get("capabilityBundleId")
+        bundle = repo.find_one("capability_bundles", bundle_id) if bundle_id else None
+        if not bundle:
+            return fail(errors.VALIDATION_ERROR, request, message="capabilityBundleId 无效。")
+        risk_level = body.get("riskLevel") or bundle.get("riskLevel") or "medium"
+        status = "submitted"
+        blocking_reasons: list[str] = []
+        if risk_level == "high":
+            if not body.get("evaluationReportId"):
+                blocking_reasons.append("缺少评估报告")
+            if not body.get("rollbackPlanId"):
+                blocking_reasons.append("缺少回滚方案")
+            status = "blocked_by_gate" if blocking_reasons else "submitted"
+        plan = {
+            "id": body.get("id") or f"REL-{uuid4().hex[:8].upper()}",
+            "releaseType": body.get("releaseType") or "capability_bundle",
+            "capabilityBundleId": bundle_id,
+            "riskLevel": risk_level,
+            "status": status,
+            "targetScope": body.get("targetScope") or {"tenantIds": ["demo"], "businessPackIds": [bundle.get("businessPackId")], "projectIds": []},
+            "changeSummary": body.get("changeSummary") or "FDE 发起能力组合发布申请。",
+            "evaluationReportId": body.get("evaluationReportId"),
+            "rollbackPlanId": body.get("rollbackPlanId"),
+            "blockingReasons": blocking_reasons,
+            "createdByRole": effective_role_for_request(request)[0],
+            "createdAt": server_time(),
+        }
+        repo.state["release_plans"].insert(0, plan)
+        audit_id = repo.add_audit("FDE 创建发布计划", "ReleasePlan", plan["id"])
+        return ok({"plan": plan, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
+
+
+@router.post("/fde/business-packs/validate-all")
+def fde_validate_business_packs(request: Request):
+    _, role_error = fde_error_unless_allowed(request, "fde:business-pack:validate")
+    if role_error:
+        return role_error
+    return ok(validate_all_business_packs(), request)
+
+
+@router.get("/fde/ocr-quality")
+def fde_ocr_quality(request: Request):
+    _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+    if role_error:
+        return role_error
+    documents = repo.state.get("documents", [])
+    fields = repo.state.get("extracted_fields", [])
+    low_confidence = [item for item in fields if float(item.get("confidence") or 0) < 0.85]
+    return ok(
+        {
+            "fileLevel": {
+                "total": len(documents),
+                "success": len([item for item in documents if item.get("currentOcrStatus") == "已识别"]),
+                "failed": len([item for item in documents if item.get("currentOcrStatus") == "识别失败"]),
+            },
+            "fieldLevel": {
+                "total": len(fields),
+                "lowConfidence": len(low_confidence),
+                "manualCorrectionRate": round(len([item for item in fields if item.get("reviewStatus") == "已修正"]) / (len(fields) or 1), 4),
+            },
+            "lowConfidenceFields": repo.clone(low_confidence[:20]),
+        },
+        request,
+    )
+
+
+@router.get("/fde/incidents")
+def fde_incidents(request: Request):
+    _, role_error = fde_error_unless_allowed(request, "fde:incident:manage")
+    if role_error:
+        return role_error
+    return ok(repo.clone(repo.state.get("incidents", [])), request)
+
+
+@router.get("/fde/acceptance-reports")
+def fde_acceptance_reports(request: Request):
+    _, role_error = fde_error_unless_allowed(request, "fde:business-pack:view")
+    if role_error:
+        return role_error
+    return ok(repo.clone(repo.state.get("delivery_acceptance_reports", [])), request)
 
 
 @router.get("/knowledge/overview")

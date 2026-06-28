@@ -58,7 +58,7 @@ const schema = reactive<FormSchema[]>([
       span: 24
     },
     componentProps: {
-      placeholder: 'inspection / contractor / ndt / owner / admin'
+      placeholder: 'inspection / contractor / ndt / owner / admin / fde'
     }
   },
   {
@@ -73,7 +73,7 @@ const schema = reactive<FormSchema[]>([
       style: {
         width: '100%'
       },
-      placeholder: 'inspection / contractor / ndt / owner / admin',
+      placeholder: 'inspection / contractor / ndt / owner / admin / fde',
       // 按下enter键触发登录
       onKeydown: (_e: any) => {
         if (_e.key === 'Enter') {

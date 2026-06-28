@@ -79,7 +79,32 @@ ROLE_SPECS: dict[str, dict[str, Any]] = {
         "nodeScope": [1, 16, 24, 40, 59, 68],
         "readonly": True,
     },
+    "fde": {
+        "userId": "USER-FDE-001",
+        "username": "fde",
+        "name": "FDE 工程师",
+        "roleLabel": "FDE",
+        "orgId": "ORG-FDE-001",
+        "orgName": "AI 交付治理组",
+        "orgType": "fde",
+        "mobile": "13800000061",
+        "nodeScope": [],
+        "readonly": False,
+        "platformOnly": True,
+    },
 }
+
+
+def role_id_for(role: str) -> str:
+    ordered_roles = [
+        "admin",
+        "inspection",
+        "contractor",
+        "ndt",
+        "owner",
+        "fde",
+    ]
+    return str(ordered_roles.index(role) + 1 if role in ordered_roles else 99)
 
 
 def parse_args() -> argparse.Namespace:
@@ -88,7 +113,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--roles",
-        default="admin,inspection,contractor,ndt,owner",
+        default="admin,inspection,contractor,ndt,owner,fde",
         help="Comma-separated roles to create. Defaults to all supported roles.",
     )
     parser.add_argument(
@@ -267,7 +292,7 @@ def auth_user(role: str, spec: dict[str, Any], password: str) -> dict[str, Any]:
         "username": spec["username"],
         "passwordHash": hash_password(password),
         "role": role,
-        "roleId": str(["admin", "inspection", "contractor", "ndt", "owner"].index(role) + 1),
+        "roleId": role_id_for(role),
         "roleLabel": spec["roleLabel"],
         "permissions": ROLE_ACTIONS[role],
         "displayName": spec["name"],
@@ -366,7 +391,8 @@ def build_plan(
 ) -> dict[str, Any]:
     passwords = passwords or resolve_role_passwords(roles)
     admin_payload, admin_changes = build_admin_config_payload(None, roles)
-    members = [project_member(role, ROLE_SPECS[role], project_id) for role in roles]
+    member_roles = [role for role in roles if not ROLE_SPECS[role].get("platformOnly")]
+    members = [project_member(role, ROLE_SPECS[role], project_id) for role in member_roles]
     users = [auth_user(role, ROLE_SPECS[role], passwords[role]) for role in roles]
     role_records = [role_record(role, ROLE_SPECS[role]) for role in roles]
     return {
@@ -433,6 +459,8 @@ def apply_role_bootstrap(
 
     member_changes: list[dict[str, Any]] = []
     for role in roles:
+        if ROLE_SPECS[role].get("platformOnly"):
+            continue
         desired = project_member(role, ROLE_SPECS[role], project_id)
         existing = database["project_members"].find_one(
             {"projectId": project_id, "userId": desired["userId"], "role": role},

@@ -49,6 +49,7 @@ MUTATION_HEADER_EXEMPT_URLS = {
     "/api/business-packs/${packId}/validate",
     "/api/business-packs/{pack_id}/validate",
     "/api/business-packs/validate-all",
+    "/api/fde/business-packs/validate-all",
     "/api/knowledge/retrieval-test",
 }
 PUBLIC_MUTATION_ROUTES = {
@@ -64,6 +65,8 @@ READ_ONLY_POST_ROUTES = {
     ("POST", "/api/business-packs/{pack_id}/validate"),
     ("POST", "/business-packs/validate-all"),
     ("POST", "/api/business-packs/validate-all"),
+    ("POST", "/fde/business-packs/validate-all"),
+    ("POST", "/api/fde/business-packs/validate-all"),
     ("POST", "/knowledge/retrieval-test"),
     ("POST", "/api/knowledge/retrieval-test"),
     ("POST", "/admin/config-diff/preview"),
@@ -193,13 +196,14 @@ REQUIRED_EXPORT_ZIP_CONTENTS = {
     "evidence_links.json",
     "README.txt",
 }
-PRODUCTION_ROLES = ("admin", "inspection", "contractor", "ndt", "owner")
+PRODUCTION_ROLES = ("admin", "inspection", "contractor", "ndt", "owner", "fde")
 ROLE_REQUIRED_ACTIONS = {
     "admin": {"admin:config", "admin:export", "project:authorize-member", "knowledge:manage"},
     "inspection": {"review:save", "review:return-correction", "ai:recheck", "report:generate"},
     "contractor": {"file:upload", "file:bind", "submission:submit", "rectification:submit"},
     "ndt": {"ndt:film-create", "ndt:record-import", "ndt:report-upload", "ndt:submit"},
     "owner": {"project:view", "file:view", "report:view", "archive:view", "archive:download"},
+    "fde": {"fde:dashboard:view", "fde:ai-run:view-masked", "fde:feedback:triage", "fde:evaluation:run", "fde:release:submit"},
 }
 OWNER_FORBIDDEN_WRITE_ACTIONS = {
     "file:upload",
@@ -1185,7 +1189,12 @@ def role_contract_check(
         if role not in paths or role not in actions:
             missing_roles.append(role)
             continue
-        expected_path = "/admin/overview" if role == "admin" else f"/workbench/{role}"
+        if role == "admin":
+            expected_path = "/admin/overview"
+        elif role == "fde":
+            expected_path = "/fde/dashboard"
+        else:
+            expected_path = f"/workbench/{role}"
         if paths.get(role) != expected_path:
             bad_paths.append({"role": role, "expected": expected_path, "actual": paths.get(role)})
         required_actions = ROLE_REQUIRED_ACTIONS[role]
@@ -1203,7 +1212,9 @@ def role_contract_check(
             continue
         if spec.get("username") != role:
             missing_specs.append(role)
-        if not spec.get("userId") or not spec.get("orgId") or not spec.get("nodeScope"):
+        if not spec.get("userId") or not spec.get("orgId"):
+            missing_specs.append(role)
+        if not spec.get("platformOnly") and not spec.get("nodeScope"):
             missing_specs.append(role)
         if bool(spec.get("readonly")) != (role == "owner"):
             missing_specs.append(role)
@@ -1218,10 +1229,11 @@ def role_contract_check(
     auth_users = plan.get("authUsers", []) if isinstance(plan, dict) else []
     project_members = plan.get("projectMembers", []) if isinstance(plan, dict) else []
     login_accounts = plan.get("loginAccounts", []) if isinstance(plan, dict) else []
+    project_member_roles = [role for role in PRODUCTION_ROLES if not specs.get(role, {}).get("platformOnly")]
     if len(auth_users) != len(PRODUCTION_ROLES):
         plan_failures.append("authUsers must cover all production roles")
-    if len(project_members) != len(PRODUCTION_ROLES):
-        plan_failures.append("projectMembers must cover all production roles")
+    if len(project_members) != len(project_member_roles):
+        plan_failures.append("projectMembers must cover all project-scoped production roles")
     if len(login_accounts) != len(PRODUCTION_ROLES):
         plan_failures.append("loginAccounts must cover all production roles")
     for user in auth_users:

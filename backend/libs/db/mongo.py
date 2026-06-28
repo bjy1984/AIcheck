@@ -36,7 +36,7 @@ def bootstrap_local_roles_if_configured() -> None:
         return
     from scripts.create_roles import build_plan, resolve_role_passwords, selected_roles
 
-    roles = selected_roles(os.getenv("AICHECK_BOOTSTRAP_LOCAL_ROLE_LIST", "admin,inspection,contractor,ndt,owner"))
+    roles = selected_roles(os.getenv("AICHECK_BOOTSTRAP_LOCAL_ROLE_LIST", "admin,inspection,contractor,ndt,owner,fde"))
     project_id = os.getenv("AICHECK_DEFAULT_PROJECT_ID", "P-2026-HDCP-001")
     passwords = resolve_role_passwords(roles)
     plan = build_plan(roles, project_id, passwords=passwords, show_passwords=False)

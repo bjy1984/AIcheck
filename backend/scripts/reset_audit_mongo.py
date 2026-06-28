@@ -29,7 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--db", default=os.getenv("AICHECK_MONGO_DB", "aicheck"), help="MongoDB database name.")
     parser.add_argument(
         "--roles",
-        default="admin,inspection,contractor,ndt,owner",
+        default="admin,inspection,contractor,ndt,owner,fde",
         help="Comma-separated roles to bootstrap after resetting the seed.",
     )
     parser.add_argument("--project-id", default=os.getenv("AICHECK_DEFAULT_PROJECT_ID", PROJECT_ID))

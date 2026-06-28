@@ -818,7 +818,8 @@ export const roleNodeMap: Record<RoleCode, number> = {
   contractor: 16,
   ndt: 40,
   owner: 24,
-  admin: 24
+  admin: 24,
+  fde: 24
 }
 
 export const nodeGroups = groupDefinitions.map((group) => ({

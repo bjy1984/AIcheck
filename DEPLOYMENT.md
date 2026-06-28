@@ -84,6 +84,7 @@ litellm-service
 | NDT | `/workbench/ndt` | 底片、检测记录、检测报告、NDT 补正 | `ndt_films`、`ndt_records`、`ndt_reports`、`ndt_feedback` |
 | 报告与归档 | 监检/建设方工作台 | 报告复核、导出、归档、证据包 | `reports`、`archive_items`、`export_tasks` |
 | 知识库 | `/knowledge/*` | 文件列表、任务中心、知识源、规则、检索测试 | `knowledge_files`、`knowledge_tasks`、`knowledge_chunks` |
+| FDE 后台 | `/fde/*` | AI 绩效、AI Run 追踪、反馈归因、评估集、Capability Bundle、发布治理、OCR 质量 | `ai_runs`、`ai_feedback`、`evaluation_sets`、`capability_bundles`、`release_plans` |
 | 管理后台 | `/admin/*` | 项目、单位、用户、权限、配置发布、审计 | `admin_configs`、`audit_logs` |
 
 ### 1.4 业务包开发与部署
@@ -165,6 +166,14 @@ curl -X POST http://127.0.0.1:8000/api/ai/runs/{runId}/feedback \
   -H 'Idempotency-Key: feedback-001' \
   -d '{"feedbackType":"edited","accepted":true,"shouldEnterEvaluationSet":true}'
 ```
+
+FDE 后台是平台级 AI Delivery & Governance Console，不属于业务包角色。它管理 AI 能力，不管理正式业务结论：
+
+- 默认入口：`/fde/dashboard`，登录账号：`fde`。
+- 允许：查看 AI 绩效、脱敏 AI Run、反馈池、评估集、Capability Bundle、业务包校验、发布计划、OCR 质量和事故/验收记录。
+- 受控：诊断重跑、反馈归因、发起离线评测、创建发布计划；重跑会生成 child run，不覆盖原始 AI Run。
+- 禁止：审批资料、保存正式审查意见、发正式补正单、关闭补正项、归档项目、删除业务文件、修改项目最终状态。
+- 生产数据默认脱敏；原文访问应通过 `access_grants` 授权并留审计。
 
 ### 1.5 核心调用链
 
@@ -358,7 +367,7 @@ docker compose ps
 
 ### 5.1 角色账号与权限初始化
 
-第一版真实登录已支持五类角色账号。登录成功后前端会根据后端返回的 `defaultPath` 进入对应面板，并通过 `X-Role`、`X-User-Id` 请求头参与后端项目成员和节点范围校验。
+第一版真实登录已支持六类角色账号。登录成功后前端会根据后端返回的 `defaultPath` 进入对应面板，并通过 `X-Role`、`X-User-Id` 请求头参与后端项目成员和节点范围校验。FDE 是平台级 AI 治理角色，不写入业务包 `roles.yaml`，也不默认创建项目成员授权。
 
 生产开启 `AICHECK_REQUIRE_AUTH=true` 后，后端会以 JWT 中的登录身份为准校验 `X-Role` 和 `X-User-Id`：非管理员不能伪造其他角色或用户；未传 `X-User-Id` 时会自动使用 JWT 对应用户做项目成员和节点范围校验。GET 和 mutation 都会校验项目成员资格；节点范围同时覆盖 URL 中的 `/nodes/{nodeId}`、query/body 中的 `nodeId/nodeIds`，以及 `documentId`、`bindingId`、`reportId` 等资源 ID 反查出的关联节点。项目树、文件、挂载、报告和归档列表在登录态下会按 `nodeScope` 过滤，避免业务角色看到授权范围外的数据。写接口会根据后端路径表自动推断 `ActionCode`，即使前端未发送 `X-Action-Code`，也会按角色动作矩阵拦截越权调用。
 
@@ -369,6 +378,7 @@ docker compose ps
 | 施工方 | `contractor` | `/workbench/contractor` | 资料上传、节点挂载、提交批次、补正反馈。 |
 | 无损检测 | `ndt` | `/workbench/ndt` | 底片、检测记录、检测报告和补正反馈。 |
 | 建设方 | `owner` | `/workbench/owner` | 项目、报告和归档只读查看。 |
+| FDE | `fde` | `/fde/dashboard` | AI 交付治理、绩效监控、反馈归因、评估和发布申请；不能执行正式业务审批。 |
 
 部署后运行角色创建脚本，确保 MongoDB 中的真实登录用户、角色、后台角色矩阵、用户/单位目录和项目成员授权一致：
 
@@ -381,7 +391,8 @@ cat > /secure/aicheck-role-passwords.json <<'JSON'
   "inspection": "replace-with-strong-inspection-password",
   "contractor": "replace-with-strong-contractor-password",
   "ndt": "replace-with-strong-ndt-password",
-  "owner": "replace-with-strong-owner-password"
+  "owner": "replace-with-strong-owner-password",
+  "fde": "replace-with-strong-fde-password"
 }
 JSON
 chmod 600 /secure/aicheck-role-passwords.json
@@ -415,14 +426,14 @@ docker compose exec api-service python scripts/create_roles.py \
 - 生产必须通过 `--password-file` 或 `AICHECK_BOOTSTRAP_PASSWORD_<ROLE>` 环境变量提供初始密码，并使用 `--require-strong-passwords` 拒绝用户名同名、过短或复杂度不足的密码；默认输出会脱敏密码。
 - 如需显式重置已有账号密码，增加 `--rotate-passwords`；未传该参数时重复执行会保留已有 `passwordHash`。
 - 写入或更新 `admin_configs` singleton 中的 `orgUnits`、`users`、`permissionMatrix`。
-- 写入或更新 `project_members`，同一项目、同一用户、同一角色重复执行时会合并 `nodeScope` 和 `actions`，不会插入覆盖性重复成员。
+- 写入或更新 `project_members`，同一项目、同一用户、同一角色重复执行时会合并 `nodeScope` 和 `actions`，不会插入覆盖性重复成员。`fde` 是平台级角色，脚本会创建登录用户和角色记录，但不会写入 `project_members`。
 - 写入一条 `audit_logs` 记录，便于追溯部署初始化动作。
 - 当 `AICHECK_MONGO_TRANSACTIONS=true` 时，上述 MongoDB 写入在同一个 transaction 中提交。
-- 支持 `--roles admin,inspection` 只初始化部分角色；支持 `--project-id` 指定项目；支持 `--mongo-url` 和 `--db` 覆盖环境变量。
+- 支持 `--roles admin,inspection` 或 `--roles fde` 只初始化部分角色；支持 `--project-id` 指定项目；支持 `--mongo-url` 和 `--db` 覆盖环境变量。
 
 注意：生产环境 `AICHECK_ENABLE_DEMO_USERS=false` 时，只有脚本写入 `users` 后才能登录。不要在生产使用用户名同名密码；首次上线后仍建议接入企业用户中心或正式密码重置流程。
 
-无 MongoDB 的本地联调可以启用内存角色 bootstrap。该模式只用于开发机，后端启动时会把五类角色账号写入当前进程的 in-memory repository：
+无 MongoDB 的本地联调可以启用内存角色 bootstrap。该模式只用于开发机，后端启动时会把六类角色账号写入当前进程的 in-memory repository：
 
 ```bash
 cd backend
@@ -433,6 +444,8 @@ AICHECK_BOOTSTRAP_PASSWORD_INSPECTION='Local!2026-InspectZ' \
 AICHECK_BOOTSTRAP_PASSWORD_CONTRACTOR='Local!2026-BuildZ' \
 AICHECK_BOOTSTRAP_PASSWORD_NDT='Local!2026-TestZ' \
 AICHECK_BOOTSTRAP_PASSWORD_OWNER='Local!2026-ViewZ' \
+AICHECK_BOOTSTRAP_PASSWORD_FDE='Local!2026-FdeZ' \
+AICHECK_BOOTSTRAP_LOCAL_ROLE_LIST='admin,inspection,contractor,ndt,owner,fde' \
 uvicorn apps.api.main:app --host 127.0.0.1 --port 8000
 ```
 
@@ -699,7 +712,7 @@ python scripts/deployment_report.py \
 96+ 辅助审计包含以下门禁：
 
 - `api.response-envelope`：直接调用后端 `ok()/fail()` helper，确认成功 `{ code: 0, data, operationId, serverTime }`、失败 `{ code, message, data.reason, operationId, serverTime }`，并阻止旧版 `ok: true/false` 响应包回归。
-- `auth.role-contract`：检查生产五角色 `admin/inspection/contractor/ndt/owner` 的默认面板路径、动作矩阵、`owner` 只读约束、`create_roles.py` 覆盖、PBKDF2 密码哈希和项目成员授权规划。
+- `auth.role-contract`：检查生产角色 `admin/inspection/contractor/ndt/owner/fde` 的默认面板路径、动作矩阵、`owner` 只读约束、FDE 禁止业务审批约束、`create_roles.py` 覆盖、PBKDF2 密码哈希和项目成员授权规划。
 - `api.mutation-idempotency`：扫描 FastAPI mutating routes，业务写接口必须直接调用 `idempotent()` 或代理到已幂等的内部函数；公开登录和只读预览型 POST 会被单独列为豁免。
 - `api.action-coverage`：扫描所有非公开 mutating routes，确认后端能根据路径自动推断 `ActionCode`，避免新增写接口绕过角色动作矩阵。
 - `mongo.index-contract`：扫描 `backend/libs/db/indexes.py`，确认所有持久化 collection 都有索引声明，并检查项目节点、文件版本、知识任务、证据、审计、幂等键和成员授权的关键复合/唯一索引。
@@ -756,7 +769,7 @@ AICHECK_BASE_URL=http://127.0.0.1:4100 pnpm playwright test e2e/aicheck-smoke.sp
 
 关键手工验证：
 
-- 五类角色登录后能进入各自默认面板；业务角色访问 `/admin/overview` 会回退到自己的工作台。
+- 六类角色登录后能进入各自默认面板；业务角色访问 `/admin/overview` 会回退到自己的工作台，FDE 登录后进入 `/fde/dashboard`。
 - 项目列表、项目树、节点包、报告、归档页面能正常加载。
 - 管理后台项目成员授权后，业务角色节点范围外 mutation 返回 `FORBIDDEN`。
 - 生产鉴权开启后，业务角色读取项目成员范围外的节点包、文件详情或报告详情返回 `FORBIDDEN`。
@@ -765,6 +778,7 @@ AICHECK_BASE_URL=http://127.0.0.1:4100 pnpm playwright test e2e/aicheck-smoke.sp
 - 生产鉴权开启后，业务角色在请求体里提交授权范围外的 `nodeId/nodeIds` 返回 `FORBIDDEN`，例如施工方不能提交 NDT 节点资料，NDT 不能向监检节点导入记录。
 - 生产鉴权开启后，业务角色通过 `documentId`、`bindingId`、`reportId` 操作节点范围外资源返回 `FORBIDDEN`；资源与 URL `projectId` 不一致返回 `NOT_FOUND`。
 - 生产鉴权开启后，业务角色直接调用未授权写接口会按后端推断的 `ActionCode` 返回 `FORBIDDEN`，例如施工方不能生成报告草稿或发布后台配置。
+- 生产鉴权开启后，FDE 直接调用正式业务写接口返回 `FORBIDDEN`；FDE 只能调用 `/api/fde/*` 治理接口，不能保存审查意见、发补正、归档或删除业务文件。
 - mutation 使用相同 `Idempotency-Key` 和相同请求体会重放同一结果；同 key 不同请求体返回 `IDEMPOTENCY_KEY_CONFLICT`。
 - `verify_deployment.py --strict-production` 会调用 `/api/system/mongo-transaction-probe`，确认 MongoDB 已连接、`AICHECK_MONGO_TRANSACTIONS=true`，且能实际开启 session 并提交临时 transaction。
 - 提交批次撤回资料时，只能撤回该批次内资料；不存在的批次返回 `NOT_FOUND`，跨批次资料返回 `CONFLICT`，已通过、已锁定或已归档资料返回 `WITHDRAW_LOCKED`。

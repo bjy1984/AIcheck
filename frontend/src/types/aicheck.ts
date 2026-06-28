@@ -1,4 +1,10 @@
-export type RoleCode = 'inspection' | 'contractor' | 'ndt' | 'owner' | 'admin'
+export type RoleCode =
+  | 'inspection'
+  | 'contractor'
+  | 'ndt'
+  | 'owner'
+  | 'admin'
+  | 'fde'
 
 export type ProjectStatus =
   | '草稿/立项中'
@@ -59,6 +65,25 @@ export type ActionCode =
   | 'admin:config'
   | 'admin:export'
   | 'audit:view'
+  | 'fde:dashboard:view'
+  | 'fde:ai-run:view-masked'
+  | 'fde:ai-run:replay'
+  | 'fde:feedback:view'
+  | 'fde:feedback:triage'
+  | 'fde:evaluation:view'
+  | 'fde:evaluation:manage'
+  | 'fde:evaluation:run'
+  | 'fde:business-pack:view'
+  | 'fde:business-pack:validate'
+  | 'fde:capability-bundle:manage'
+  | 'fde:release:view'
+  | 'fde:release:submit'
+  | 'fde:release:shadow'
+  | 'fde:release:canary'
+  | 'fde:release:rollback'
+  | 'fde:ocr-quality:view'
+  | 'fde:incident:manage'
+  | 'fde:config:draft'
 
 export type Project = {
   id: string

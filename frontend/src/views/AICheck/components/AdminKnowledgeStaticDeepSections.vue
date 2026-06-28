@@ -195,14 +195,15 @@ const roleLabel = (role: RoleCode) => {
     contractor: '施工方经办',
     ndt: '无损检测经办',
     owner: '建设方用户',
-    admin: '系统管理员'
+    admin: '系统管理员',
+    fde: 'FDE'
   }
   return labels[role]
 }
 
 const adminPermissionRows = computed(() => {
   const rows = adminOverview.value.permissionMatrix
-  const roles: RoleCode[] = ['inspection', 'contractor', 'ndt', 'owner', 'admin']
+  const roles: RoleCode[] = ['inspection', 'contractor', 'ndt', 'owner', 'admin', 'fde']
   const getPolicy = (role: RoleCode, key: 'view' | 'upload' | 'review' | 'config') => {
     const row = rows.find((item) => item.role === role)
     if (!row) {

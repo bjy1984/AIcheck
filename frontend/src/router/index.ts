@@ -7,6 +7,7 @@ import { NO_RESET_WHITE_LIST } from '@/constants'
 const AICheckStaticLayout = () => import('@/layout/AICheckStaticLayout.vue')
 const AdminOverview = () => import('@/views/AICheck/AdminOverview.vue')
 const KnowledgeOverview = () => import('@/views/AICheck/KnowledgeOverview.vue')
+const FdeConsole = () => import('@/views/AICheck/FdeConsole.vue')
 
 export const constantRouterMap: AppRouteRecordRaw[] = [
   {
@@ -332,6 +333,60 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
           title: '配置审计',
           noCache: true,
           roles: ['admin']
+        }
+      }
+    ]
+  },
+  {
+    path: '/fde',
+    component: AICheckStaticLayout,
+    redirect: '/fde/dashboard',
+    name: 'FdeConsole',
+    meta: {
+      title: 'FDE 后台',
+      icon: 'vi-ep:operation',
+      alwaysShow: true,
+      roles: ['fde']
+    },
+    children: [
+      {
+        path: 'dashboard',
+        component: FdeConsole,
+        name: 'FdeDashboard',
+        meta: {
+          title: 'AI 交付治理',
+          noCache: true,
+          roles: ['fde']
+        }
+      },
+      {
+        path: 'ai-runs',
+        component: FdeConsole,
+        name: 'FdeAiRuns',
+        meta: {
+          title: 'AI Run 追踪',
+          noCache: true,
+          roles: ['fde']
+        }
+      },
+      {
+        path: 'feedback',
+        component: FdeConsole,
+        name: 'FdeFeedback',
+        meta: {
+          title: '反馈与标注',
+          noCache: true,
+          roles: ['fde']
+        }
+      },
+      {
+        path: 'releases',
+        component: FdeConsole,
+        name: 'FdeReleases',
+        meta: {
+          title: '发布治理',
+          noCache: true,
+          roles: ['fde']
         }
       }
     ]

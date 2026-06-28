@@ -247,6 +247,8 @@ def inferred_action_error(request: Request) -> JSONResponse | None:
         return None
     allowed_actions = set(repo.role_actions(role))
     for action_code in [inferred_action, explicit_action]:
+        if role == "fde" and action_code and not action_code.startswith("fde:"):
+            return fail(errors.FORBIDDEN, request, message="FDE 只能管理 AI 能力和治理流程，不能执行正式业务写操作。")
         if action_code and action_code not in allowed_actions:
             return fail(errors.FORBIDDEN, request, message=f"角色 {role} 无权执行 {action_code}。")
     return None
