@@ -1,0 +1,300 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1680" height="1040" viewBox="0 0 1680 1040">
+  <defs>
+    <style>
+      .bg { fill: #f4f7fb; }
+      .panel { fill: #ffffff; stroke: #d9e2ef; stroke-width: 1; }
+      .card { fill: #ffffff; stroke: #d9e2ef; stroke-width: 1; rx: 8; }
+      .soft { fill: #f8fbff; stroke: #e9eef6; stroke-width: 1; rx: 8; }
+      .title { font: 800 25px -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #172033; }
+      .h1 { font: 800 27px -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #172033; }
+      .h2 { font: 800 18px -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #172033; }
+      .h3 { font: 800 15px -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #172033; }
+      .text { font: 700 14px -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #26364e; }
+      .small { font: 700 12px -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #6a7890; }
+      .tiny { font: 700 11px -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Arial, sans-serif; fill: #6a7890; }
+      .muted { fill: #6a7890; }
+      .blue { fill: #1f66d8; }
+      .green { fill: #14a36b; }
+      .orange { fill: #ff8a00; }
+      .red { fill: #ff4d3d; }
+      .line { stroke: #d9e2ef; stroke-width: 1; }
+      .edge { stroke: #7f90a8; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+      .edge-blue { stroke: #1f66d8; stroke-width: 2.2; fill: none; marker-end: url(#arrowBlue); }
+      .edge-orange { stroke: #ff8a00; stroke-width: 2.2; fill: none; marker-end: url(#arrowOrange); }
+      .node { fill: #ffffff; stroke: #cbd8ea; stroke-width: 1.2; rx: 8; }
+      .node-active { fill: #eaf3ff; stroke: #1f66d8; stroke-width: 1.6; rx: 8; }
+      .node-pass { fill: #eaf8f1; stroke: #14a36b; stroke-width: 1.4; rx: 8; }
+      .node-warn { fill: #fff4e3; stroke: #ff8a00; stroke-width: 1.4; rx: 8; }
+      .pill-blue { fill: #eaf3ff; stroke: #bcd6ff; stroke-width: 1; rx: 5; }
+      .pill-green { fill: #eaf8f1; stroke: #bce8d4; stroke-width: 1; rx: 5; }
+      .pill-orange { fill: #fff4e3; stroke: #ffd6a0; stroke-width: 1; rx: 5; }
+      .pill-red { fill: #fff0ee; stroke: #ffc7c0; stroke-width: 1; rx: 5; }
+      .button { fill: #ffffff; stroke: #cbd8ea; stroke-width: 1; rx: 6; }
+      .button-primary { fill: #1f66d8; stroke: #1f66d8; stroke-width: 1; rx: 6; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#7f90a8"/>
+    </marker>
+    <marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#1f66d8"/>
+    </marker>
+    <marker id="arrowOrange" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#ff8a00"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1680" height="1040"/>
+
+  <!-- Top bar -->
+  <rect class="panel" x="0" y="0" width="1680" height="68"/>
+  <text class="text" x="20" y="42" font-size="24">≡</text>
+  <rect x="58" y="19" width="30" height="30" rx="8" fill="#1f66d8"/>
+  <text x="73" y="40" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial" font-size="16" font-weight="800" fill="#ffffff">图</text>
+  <text class="title" x="104" y="43">LangGraph 推理运行台</text>
+  <rect class="pill-blue" x="480" y="18" width="110" height="34"/>
+  <text class="text blue" x="535" y="40" text-anchor="middle">业务核验中</text>
+  <rect x="650" y="14" width="510" height="40" rx="6" fill="#ffffff" stroke="#cbd8ea"/>
+  <text class="text muted" x="670" y="40">⌕ 搜索 Run ID / 节点 / 规则 / EvidenceLink</text>
+  <text class="text" x="1190" y="40">图运行</text>
+  <rect x="1246" y="22" width="22" height="22" rx="11" fill="#ef3f3b"/>
+  <text x="1257" y="38" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial" font-size="12" font-weight="800" fill="#ffffff">4</text>
+  <text class="text" x="1298" y="40">人工中断</text>
+  <rect x="1378" y="22" width="22" height="22" rx="11" fill="#ff8a00"/>
+  <text x="1389" y="38" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial" font-size="12" font-weight="800" fill="#ffffff">1</text>
+  <circle cx="1452" cy="34" r="16" fill="#1f66d8"/>
+  <text class="text" x="1476" y="40">监检员 张工</text>
+
+  <!-- Left navigation -->
+  <rect class="panel" x="0" y="68" width="340" height="972"/>
+  <text class="h2" x="20" y="112">LangGraph 菜单</text>
+  <text class="small" x="284" y="112">↻ ⚙</text>
+  <line class="line" x1="0" y1="126" x2="340" y2="126"/>
+
+  <text class="text" x="22" y="164">⌄ AI 业务审查图</text>
+  <rect x="40" y="184" width="280" height="36" rx="6" fill="#eaf3ff"/>
+  <text class="text blue" x="58" y="207">01 当前运行实例</text>
+  <rect class="pill-blue" x="238" y="191" width="66" height="22"/>
+  <text class="tiny blue" x="271" y="206" text-anchor="middle">运行中</text>
+  <text class="text" x="58" y="250">02 图模板定义</text>
+  <text class="small" x="256" y="250">v2.1</text>
+  <text class="text" x="58" y="294">03 State 存储快照</text>
+  <text class="small" x="236" y="294">248次</text>
+  <text class="text" x="58" y="338">04 EvidenceLink 映射</text>
+  <text class="small" x="252" y="338">11条</text>
+  <text class="text" x="58" y="382">05 人工中断队列</text>
+  <rect class="pill-orange" x="240" y="366" width="64" height="22"/>
+  <text class="tiny orange" x="272" y="381" text-anchor="middle">1待处理</text>
+  <text class="text" x="58" y="426">06 回放与对比</text>
+  <text class="small" x="248" y="426">多模型</text>
+
+  <text class="text" x="22" y="484">⌄ 适用业务节点</text>
+  <text class="text" x="58" y="526">24. 焊工资格证</text>
+  <rect class="pill-green" x="224" y="510" width="64" height="22"/>
+  <text class="tiny green" x="256" y="525" text-anchor="middle">样板</text>
+  <text class="text" x="58" y="570">16. 产品质量证明文件</text>
+  <text class="small" x="242" y="570">v1.8</text>
+  <text class="text" x="58" y="614">40. 无损检测记录、报告</text>
+  <rect class="pill-orange" x="242" y="598" width="62" height="22"/>
+  <text class="tiny orange" x="273" y="613" text-anchor="middle">待发布</text>
+
+  <line class="line" x1="0" y1="668" x2="340" y2="668"/>
+  <text class="h2" x="20" y="708">运行边界</text>
+  <rect class="soft" x="20" y="730" width="300" height="238"/>
+  <text class="small" x="40" y="764">不做：</text>
+  <rect class="pill-red" x="88" y="746" width="202" height="26"/>
+  <text class="text red" x="189" y="765" text-anchor="middle">自动审批 / 自动退回</text>
+  <text class="small" x="40" y="812">输出：</text>
+  <text class="text" x="90" y="812">AI 建议草稿、风险、证据链</text>
+  <text class="small" x="40" y="860">暂停：</text>
+  <text class="text" x="90" y="860">低置信度、外部截图时效</text>
+  <text class="small" x="40" y="908">审计：</text>
+  <text class="text" x="90" y="908">保存每个节点输入/输出</text>
+
+  <!-- Center content -->
+  <text class="small" x="370" y="104">当前位置：监检工作台 / AI 业务审查链路 / LangGraph 运行实例</text>
+  <text class="h1" x="370" y="142">节点 24 焊工资格审查图</text>
+  <text class="text muted" x="370" y="170">当前对象：焊工 王建国 · 文件包 5 个文件 · 图模板 Welder-Qualification-B-v2.1</text>
+  <rect class="button-primary" x="956" y="112" width="92" height="36"/>
+  <text x="1002" y="135" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial" font-size="14" font-weight="800" fill="#ffffff">重新推理</text>
+  <rect class="button" x="1060" y="112" width="92" height="36"/>
+  <text class="text" x="1106" y="135" text-anchor="middle">查看版本</text>
+  <rect class="button" x="1164" y="112" width="72" height="36"/>
+  <text class="text" x="1200" y="135" text-anchor="middle">导出</text>
+
+  <g>
+    <rect class="card" x="360" y="188" width="164" height="72"/>
+    <text class="small" x="380" y="216">Run ID</text>
+    <text class="h2 blue" x="380" y="244">RUN-0926</text>
+    <rect class="card" x="536" y="188" width="164" height="72"/>
+    <text class="small" x="556" y="216">规则版本</text>
+    <text class="h2" x="556" y="244">v2.1</text>
+    <rect class="card" x="712" y="188" width="164" height="72"/>
+    <text class="small" x="732" y="216">证据引用</text>
+    <text class="h2 green" x="732" y="244">11 条</text>
+    <rect class="card" x="888" y="188" width="164" height="72"/>
+    <text class="small" x="908" y="216">人工中断</text>
+    <text class="h2 orange" x="908" y="244">1 项</text>
+    <rect class="card" x="1064" y="188" width="164" height="72"/>
+    <text class="small" x="1084" y="216">当前状态</text>
+    <text class="h2 orange" x="1084" y="244">等待确认</text>
+  </g>
+
+  <!-- Graph card -->
+  <rect class="card" x="360" y="282" width="860" height="512"/>
+  <text class="h2" x="386" y="320">一、LangGraph 业务推理图</text>
+  <text class="small" x="612" y="320">每个图节点都写入 State，并生成可回放的推理日志</text>
+  <line class="line" x1="360" y1="336" x2="1220" y2="336"/>
+
+  <rect class="soft" x="382" y="354" width="816" height="416"/>
+  <text class="tiny" x="398" y="378">输入与知识召回</text>
+  <text class="tiny" x="398" y="498">规则核验子图</text>
+  <text class="tiny" x="398" y="624">条件路由与人工中断</text>
+
+  <!-- Graph nodes -->
+  <rect class="node-active" x="404" y="394" width="148" height="58"/>
+  <text class="h3" x="478" y="419" text-anchor="middle">load_context</text>
+  <text class="tiny" x="478" y="438" text-anchor="middle">项目 / 节点 / 文件版本</text>
+
+  <rect class="node" x="584" y="394" width="148" height="58"/>
+  <text class="h3" x="658" y="419" text-anchor="middle">ingest_files</text>
+  <text class="tiny" x="658" y="438" text-anchor="middle">OCR 字段 / 低置信度</text>
+
+  <rect class="node" x="764" y="394" width="148" height="58"/>
+  <text class="h3" x="838" y="419" text-anchor="middle">retrieve_evidence</text>
+  <text class="tiny" x="838" y="438" text-anchor="middle">标准 + 项目文件召回</text>
+
+  <rect class="node" x="944" y="394" width="148" height="58"/>
+  <text class="h3" x="1018" y="419" text-anchor="middle">load_rules</text>
+  <text class="tiny" x="1018" y="438" text-anchor="middle">规则 / Prompt / 映射</text>
+
+  <rect class="node-pass" x="404" y="514" width="148" height="58"/>
+  <text class="h3" x="478" y="539" text-anchor="middle">真实性核验</text>
+  <text class="tiny" x="478" y="558" text-anchor="middle">R-24-01 · 通过</text>
+
+  <rect class="node-pass" x="584" y="514" width="148" height="58"/>
+  <text class="h3" x="658" y="539" text-anchor="middle">有效期覆盖</text>
+  <text class="tiny" x="658" y="558" text-anchor="middle">R-24-02 · 通过</text>
+
+  <rect class="node-pass" x="764" y="514" width="148" height="58"/>
+  <text class="h3" x="838" y="539" text-anchor="middle">持证项目适配</text>
+  <text class="tiny" x="838" y="558" text-anchor="middle">R-24-03 · 通过</text>
+
+  <rect class="node-pass" x="944" y="514" width="148" height="58"/>
+  <text class="h3" x="1018" y="539" text-anchor="middle">跨文件一致性</text>
+  <text class="tiny" x="1018" y="558" text-anchor="middle">R-24-04 · 通过</text>
+
+  <rect class="node-warn" x="674" y="628" width="170" height="60"/>
+  <text class="h3" x="759" y="653" text-anchor="middle">risk_router</text>
+  <text class="tiny" x="759" y="672" text-anchor="middle">通过 / 补正 / 人工确认</text>
+
+  <rect class="node-warn" x="438" y="706" width="170" height="58"/>
+  <text class="h3" x="523" y="731" text-anchor="middle">human_interrupt</text>
+  <text class="tiny" x="523" y="750" text-anchor="middle">截图来源时效确认</text>
+
+  <rect class="node" x="674" y="706" width="170" height="58"/>
+  <text class="h3" x="759" y="731" text-anchor="middle">draft_suggestion</text>
+  <text class="tiny" x="759" y="750" text-anchor="middle">AI 建议进入可编辑草稿</text>
+
+  <rect class="node" x="910" y="706" width="170" height="58"/>
+  <text class="h3" x="995" y="731" text-anchor="middle">audit_persist</text>
+  <text class="tiny" x="995" y="750" text-anchor="middle">写入推理链路日志</text>
+
+  <!-- Graph edges -->
+  <path class="edge-blue" d="M552 423 H584"/>
+  <path class="edge-blue" d="M732 423 H764"/>
+  <path class="edge-blue" d="M912 423 H944"/>
+  <path class="edge" d="M1018 452 V488 H478 V514"/>
+  <path class="edge" d="M1018 452 V488 H658 V514"/>
+  <path class="edge" d="M1018 452 V488 H838 V514"/>
+  <path class="edge" d="M1018 452 V514"/>
+  <path class="edge" d="M478 572 V604 H759 V628"/>
+  <path class="edge" d="M658 572 V604 H759 V628"/>
+  <path class="edge" d="M838 572 V604 H759 V628"/>
+  <path class="edge" d="M1018 572 V604 H759 V628"/>
+  <path class="edge-orange" d="M674 658 H523 V706"/>
+  <path class="edge-blue" d="M844 658 H1064 V735 H1080"/>
+  <path class="edge-orange" d="M608 735 H674"/>
+  <path class="edge-blue" d="M844 735 H910"/>
+
+  <!-- Bottom state cards -->
+  <rect class="card" x="360" y="812" width="420" height="198"/>
+  <text class="h2" x="386" y="848">二、当前 State 摘要</text>
+  <line class="line" x1="360" y1="864" x2="780" y2="864"/>
+  <text class="small" x="386" y="896">state.project_node</text>
+  <text class="text" x="542" y="896">24. 焊工资格证及持证合格项目</text>
+  <text class="small" x="386" y="930">state.step_results</text>
+  <text class="text green" x="542" y="930">4 / 4 通过</text>
+  <text class="small" x="386" y="964">state.interrupts</text>
+  <text class="text orange" x="542" y="964">资格网站截图需人工确认</text>
+  <text class="small" x="386" y="998">state.output</text>
+  <text class="text" x="542" y="998">AI 建议草稿 + EvidenceLink</text>
+
+  <rect class="card" x="800" y="812" width="420" height="198"/>
+  <text class="h2" x="826" y="848">三、节点输出事件流</text>
+  <line class="line" x1="800" y1="864" x2="1220" y2="864"/>
+  <rect class="pill-green" x="826" y="882" width="62" height="24"/>
+  <text class="tiny green" x="857" y="898" text-anchor="middle">完成</text>
+  <text class="text" x="902" y="898">R-24-01 证书真实性核验</text>
+  <rect class="pill-green" x="826" y="920" width="62" height="24"/>
+  <text class="tiny green" x="857" y="936" text-anchor="middle">完成</text>
+  <text class="text" x="902" y="936">R-24-02 日期覆盖规则</text>
+  <rect class="pill-green" x="826" y="958" width="62" height="24"/>
+  <text class="tiny green" x="857" y="974" text-anchor="middle">完成</text>
+  <text class="text" x="902" y="974">R-24-04 跨文件一致性</text>
+  <rect class="pill-orange" x="826" y="996" width="62" height="24"/>
+  <text class="tiny orange" x="857" y="1012" text-anchor="middle">暂停</text>
+  <text class="text" x="902" y="1012">等待监检员确认外部截图来源</text>
+
+  <!-- Right detail panel -->
+  <rect class="panel" x="1240" y="68" width="440" height="972"/>
+  <text class="h2" x="1264" y="112">运行状态</text>
+  <text class="small" x="1264" y="136">Thread ID：inspection-node-24-welder-wjg</text>
+
+  <rect class="card" x="1260" y="158" width="400" height="168"/>
+  <text class="h3" x="1282" y="190">图运行元数据</text>
+  <line class="line" x1="1260" y1="204" x2="1660" y2="204"/>
+  <text class="small" x="1282" y="232">Checkpointer</text>
+  <text class="text" x="1410" y="232">PostgreSQL / run_state</text>
+  <text class="small" x="1282" y="264">模型</text>
+  <text class="text" x="1410" y="264">LLM-A 标准策略</text>
+  <text class="small" x="1282" y="296">执行耗时</text>
+  <text class="text" x="1410" y="296">18.4s · 12,680 tokens</text>
+
+  <rect class="card" x="1260" y="348" width="400" height="228"/>
+  <text class="h3" x="1282" y="380">EvidenceLink 摘要</text>
+  <line class="line" x1="1260" y1="394" x2="1660" y2="394"/>
+  <rect class="pill-blue" x="1282" y="414" width="82" height="24"/>
+  <text class="tiny blue" x="1323" y="430" text-anchor="middle">证书第1页</text>
+  <text class="text" x="1378" y="430">证书编号 TS6J-2024-03158</text>
+  <rect class="pill-blue" x="1282" y="452" width="82" height="24"/>
+  <text class="tiny blue" x="1323" y="468" text-anchor="middle">名册第4行</text>
+  <text class="text" x="1378" y="468">姓名与身份证尾号一致</text>
+  <rect class="pill-blue" x="1282" y="490" width="82" height="24"/>
+  <text class="tiny blue" x="1323" y="506" text-anchor="middle">工艺卡</text>
+  <text class="text" x="1378" y="506">GTAW + SMAW 作业要求</text>
+  <rect class="pill-orange" x="1282" y="528" width="82" height="24"/>
+  <text class="tiny orange" x="1323" y="544" text-anchor="middle">截图区域A</text>
+  <text class="text orange" x="1378" y="544">来源时效需人工确认</text>
+
+  <rect class="card" x="1260" y="598" width="400" height="146"/>
+  <text class="h3" x="1282" y="630">人工中断队列</text>
+  <line class="line" x1="1260" y1="644" x2="1660" y2="644"/>
+  <rect class="pill-orange" x="1282" y="664" width="94" height="26"/>
+  <text class="tiny orange" x="1329" y="682" text-anchor="middle">等待确认</text>
+  <text class="text" x="1390" y="682">资格网站截图是否为最新查询结果</text>
+  <text class="small" x="1282" y="716">恢复动作：确认有效 / 标记需补正 / 重新上传证据</text>
+
+  <rect class="card" x="1260" y="766" width="400" height="204"/>
+  <text class="h3" x="1282" y="798">版本绑定</text>
+  <line class="line" x1="1260" y1="812" x2="1660" y2="812"/>
+  <text class="small" x="1282" y="842">规则模板</text>
+  <text class="text" x="1410" y="842">Welder-Qualification-B v2.1</text>
+  <text class="small" x="1282" y="876">Prompt</text>
+  <text class="text" x="1410" y="876">prompt-v1.5</text>
+  <text class="small" x="1282" y="910">字段映射</text>
+  <text class="text" x="1410" y="910">map-v1.3</text>
+  <text class="small" x="1282" y="944">向量索引</text>
+  <text class="text" x="1410" y="944">proj-v2026.06.26</text>
+
+  <text class="tiny" x="1264" y="1006">页面用途：展示 LangGraph 实际运行、暂停、恢复、审计和证据追溯；不承载最终审查办理动作。</text>
+</svg>
