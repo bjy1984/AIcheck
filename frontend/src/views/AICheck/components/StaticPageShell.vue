@@ -1,7 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ElButton, ElMenu, ElMenuItem, ElSubMenu } from 'element-plus'
+import {
+  ElButton,
+  ElDropdown,
+  ElDropdownItem,
+  ElDropdownMenu,
+  ElMenu,
+  ElMenuItem,
+  ElSubMenu
+} from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
+import { useUserStore } from '@/store/modules/user'
 
 type StaticShellTone = 'blue' | 'green' | 'orange' | 'red'
 
@@ -69,6 +78,7 @@ const props = defineProps<{
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 const getSectionIndex = (section: StaticShellMenuSection) => `section-${section.title}`
 const getItemIndex = (section: StaticShellMenuSection, item: StaticShellMenuItem) =>
   `${section.title}-${item.index}`
@@ -98,6 +108,12 @@ const handleStaticMenuSelect = (index: string) => {
     }
   }
 }
+
+const handleUserCommand = (command: string | number | object) => {
+  if (command === 'logout') {
+    userStore.logoutConfirm()
+  }
+}
 </script>
 
 <template>
@@ -118,7 +134,19 @@ const handleStaticMenuSelect = (index: string) => {
               {{ stat.value }}
             </span>
           </span>
-          <span class="user"><span class="avatar"></span>{{ userLabel }}⌄</span>
+          <ElDropdown trigger="click" class="user-menu" @command="handleUserCommand">
+            <button class="user" type="button" aria-label="打开用户菜单">
+              <span class="avatar"></span>
+              <span>{{ userLabel }}</span>
+              <span class="user-caret">⌄</span>
+            </button>
+            <template #dropdown>
+              <ElDropdownMenu>
+                <ElDropdownItem disabled>{{ userLabel }}</ElDropdownItem>
+                <ElDropdownItem command="logout" divided>退出登录</ElDropdownItem>
+              </ElDropdownMenu>
+            </template>
+          </ElDropdown>
         </div>
       </header>
 
@@ -468,18 +496,47 @@ const handleStaticMenuSelect = (index: string) => {
   background: var(--orange);
 }
 
-.user {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-  font-weight: 700;
-}
-
 .avatar {
   width: 32px;
   height: 32px;
   border-radius: 50%;
   background: linear-gradient(180deg, #4b83f7, #1e5ec8);
+}
+
+.user-menu {
+  flex: 0 0 auto;
+}
+
+.user {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 8px 0 4px;
+  color: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  transition:
+    color 0.18s ease,
+    background-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.user:hover,
+.user:focus-visible {
+  color: var(--blue-2);
+  background: #f4f8ff;
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(31, 102, 216, 0.12);
+}
+
+.user-caret {
+  color: #6a7890;
+  font-size: 12px;
+  line-height: 1;
 }
 
 .workspace {

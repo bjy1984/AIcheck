@@ -47,6 +47,13 @@ ALLOWED_UPLOAD_TYPES = {
 }
 ALLOWED_NDT_UPLOAD_TYPES = ALLOWED_UPLOAD_TYPES | {"dcm", "dicom", "application/dicom"}
 CONFIG_METADATA_FIELDS = {"revision", "etag", "updatedAt", "lastPublishedVersion", "lastPublishedAt", "lastPublishedScope"}
+KNOWLEDGE_TASK_STATUS_ORDER = {
+    "失败": 0,
+    "排队中": 1,
+    "运行中": 2,
+    "已取消": 3,
+    "成功": 4,
+}
 
 
 def role_from_query(role: str | None = None, x_role: str | None = None) -> str:
@@ -3485,6 +3492,8 @@ def list_knowledge_tasks(request: Request, taskType: str | None = None, status: 
         items = [item for item in items if item["taskType"] == taskType]
     if status:
         items = [item for item in items if item["status"] == status]
+    items.sort(key=lambda item: str(item.get("updatedAt") or item.get("createdAt") or ""), reverse=True)
+    items.sort(key=lambda item: KNOWLEDGE_TASK_STATUS_ORDER.get(str(item.get("status")), 99))
     return ok(page(items, page_no, page_size), request)
 
 

@@ -12,6 +12,7 @@ from scripts.verify_deployment import (
     config_from_args,
     deployment_probe_pdf,
     print_results,
+    role_login_password,
 )
 
 
@@ -122,6 +123,7 @@ def api_transport(request: httpx.Request) -> httpx.Response:
             }
         )
     if path == "/api/exports" and request.method == "POST":
+        assert request.headers.get("authorization") == "Bearer token-admin"
         return envelope({"exportId": "EXP-VERIFY", "task": {"id": "EXP-VERIFY", "status": "排队中", "progress": 0}})
     if path == "/api/exports/EXP-VERIFY":
         return envelope({"task": {"id": "EXP-VERIFY", "status": "排队中", "progress": 0}})
@@ -189,8 +191,10 @@ def ocr_transport(request: httpx.Request) -> httpx.Response:
 
 def litellm_transport(request: httpx.Request) -> httpx.Response:
     if request.url.path == "/health":
+        assert request.headers.get("authorization") == "Bearer sk-test"
         return httpx.Response(200, json={"status": "ok"})
     if request.url.path == "/v1/models":
+        assert request.headers.get("authorization") == "Bearer sk-test"
         return httpx.Response(
             200,
             json={
@@ -221,7 +225,49 @@ def litellm_transport(request: httpx.Request) -> httpx.Response:
             200,
             json={"data": [{"index": 0, "embedding": [0.01, 0.02, 0.03]}], "model": "embedding-default"},
         )
+    if request.url.path == "/key/generate":
+        body = json.loads(request.read().decode("utf-8") or "{}")
+        assert request.headers.get("authorization") == "Bearer sk-test"
+        assert body["models"] == ["default-chat", "embedding-default"]
+        assert body["max_budget"] == 0.01
+        assert body["rpm_limit"] == 1
+        assert body["tpm_limit"] == 256
+        return httpx.Response(
+            200,
+            json={
+                "key": "sk-generated-secret",
+                "key_alias": body["key_alias"],
+                "models": body["models"],
+                "max_budget": body["max_budget"],
+                "rpm_limit": body["rpm_limit"],
+                "tpm_limit": body["tpm_limit"],
+            },
+        )
+    if request.url.path == "/key/delete":
+        body = json.loads(request.read().decode("utf-8") or "{}")
+        assert request.headers.get("authorization") == "Bearer sk-test"
+        assert body["key_aliases"][0].startswith("aicheck-deploy-verify-")
+        return httpx.Response(200, json={"deleted_keys": body["key_aliases"]})
     return httpx.Response(404)
+
+
+def litellm_unhealthy_transport(request: httpx.Request) -> httpx.Response:
+    if request.url.path == "/health":
+        assert request.headers.get("authorization") == "Bearer sk-test"
+        return httpx.Response(
+            200,
+            json={
+                "healthy_count": 0,
+                "unhealthy_count": 1,
+                "unhealthy_endpoints": [
+                    {
+                        "model": "openai/gpt-4o-mini",
+                        "error": "AuthenticationError: Incorrect API key provided: sk-secret-test",
+                    }
+                ],
+            },
+        )
+    return litellm_transport(request)
 
 
 def storage_transport(request: httpx.Request) -> httpx.Response:
@@ -275,6 +321,7 @@ def verify_args(**overrides):
         "skip_litellm": False,
         "write_probes": False,
         "ocr_object_probe": False,
+        "litellm_management_probes": False,
         "litellm_provider_probes": False,
     }
     values.update(overrides)
@@ -288,6 +335,17 @@ def litellm_provider_failure_transport(request: httpx.Request) -> httpx.Response
         return httpx.Response(502, json={"error": {"message": "provider unavailable sk-secret"}})
     if request.url.path == "/v1/embeddings":
         return httpx.Response(200, json={"data": [{"embedding": [0.1]}]})
+    return httpx.Response(404)
+
+
+def litellm_db_disconnected_transport(request: httpx.Request) -> httpx.Response:
+    if request.url.path in {"/health", "/v1/models"}:
+        return litellm_transport(request)
+    if request.url.path == "/key/generate":
+        return httpx.Response(
+            500,
+            json={"error": {"message": "DB not connected. See https://docs.litellm.ai/docs/proxy/virtual_keys"}},
+        )
     return httpx.Response(404)
 
 
@@ -313,6 +371,16 @@ def test_deployment_probe_pdf_contains_text_for_ocr() -> None:
     assert b"startxref" in body
 
 
+def test_role_login_password_uses_verify_or_bootstrap_env(monkeypatch) -> None:
+    assert role_login_password("inspection") == "inspection"
+
+    monkeypatch.setenv("AICHECK_BOOTSTRAP_PASSWORD_INSPECTION", "Bootstrap!2026")
+    assert role_login_password("inspection") == "Bootstrap!2026"
+
+    monkeypatch.setenv("AICHECK_VERIFY_PASSWORD_INSPECTION", "Verify!2026")
+    assert role_login_password("inspection") == "Verify!2026"
+
+
 def test_deployment_verifier_redacts_sensitive_result_fields(capsys) -> None:
     config = VerifyConfig(
         api_base="http://api",
@@ -326,6 +394,7 @@ def test_deployment_verifier_redacts_sensitive_result_fields(capsys) -> None:
         skip_litellm=True,
         write_probes=False,
         ocr_object_probe=False,
+        litellm_management_probes=False,
         litellm_provider_probes=False,
     )
     verifier = DeploymentVerifier(
@@ -380,6 +449,7 @@ def test_deployment_verifier_passes_happy_path() -> None:
         skip_litellm=False,
         write_probes=True,
         ocr_object_probe=True,
+        litellm_management_probes=True,
         litellm_provider_probes=True,
     )
     verifier = DeploymentVerifier(
@@ -413,6 +483,12 @@ def test_deployment_verifier_passes_happy_path() -> None:
     assert any(item.name == "ocr.bad-request" and item.status == "pass" for item in results)
     assert any(item.name == "litellm.models" and item.status == "pass" for item in results)
     assert any(item.name == "litellm.aliases" and item.status == "pass" for item in results)
+    management_probe = next(item for item in results if item.name == "litellm.management-probes")
+    assert management_probe.status == "pass"
+    assert management_probe.data
+    assert management_probe.data["keyCreated"] is True
+    assert management_probe.data["keyDeleted"] is True
+    assert "sk-generated-secret" not in json.dumps(management_probe.data)
     assert any(item.name == "litellm.chat-probe" and item.status == "pass" for item in results)
     assert any(item.name == "litellm.embedding-probe" and item.status == "pass" for item in results)
 
@@ -430,6 +506,7 @@ def test_deployment_verifier_fails_strict_production_when_ocr_uses_placeholder()
         skip_litellm=True,
         write_probes=False,
         ocr_object_probe=False,
+        litellm_management_probes=False,
         litellm_provider_probes=False,
     )
     verifier = DeploymentVerifier(
@@ -460,6 +537,7 @@ def test_deployment_verifier_fails_strict_production_when_mongo_transaction_prob
         skip_litellm=True,
         write_probes=False,
         ocr_object_probe=False,
+        litellm_management_probes=False,
         litellm_provider_probes=False,
     )
     verifier = DeploymentVerifier(
@@ -492,6 +570,7 @@ def test_deployment_verifier_fails_litellm_provider_probe_without_leaking_provid
         skip_litellm=False,
         write_probes=False,
         ocr_object_probe=False,
+        litellm_management_probes=False,
         litellm_provider_probes=True,
     )
     verifier = DeploymentVerifier(
@@ -512,3 +591,77 @@ def test_deployment_verifier_fails_litellm_provider_probe_without_leaking_provid
     assert chat_probe.detail == "HTTP 502"
     assert "sk-secret" not in chat_probe.detail
     assert embedding_probe.status == "pass"
+
+
+def test_deployment_verifier_fails_litellm_management_probe_when_db_is_not_connected() -> None:
+    config = VerifyConfig(
+        api_base="http://api",
+        ocr_base=None,
+        litellm_base="http://litellm",
+        litellm_api_key="sk-test",
+        project_id="P-2026-HDCP-001",
+        roles=["admin", "inspection", "contractor"],
+        strict_production=True,
+        skip_ocr=True,
+        skip_litellm=False,
+        write_probes=False,
+        ocr_object_probe=False,
+        litellm_management_probes=True,
+        litellm_provider_probes=False,
+    )
+    verifier = DeploymentVerifier(
+        config,
+        api_client=httpx.Client(base_url=config.api_base, transport=httpx.MockTransport(api_transport)),
+        ocr_client=None,
+        litellm_client=httpx.Client(
+            base_url=config.litellm_base,
+            transport=httpx.MockTransport(litellm_db_disconnected_transport),
+        ),
+    )
+
+    results = verifier.run()
+
+    management_probe = next(item for item in results if item.name == "litellm.management-probes")
+    assert management_probe.status == "fail"
+    assert "/key/generate HTTP 500" in management_probe.detail
+    assert management_probe.data
+    assert "DB not connected" in management_probe.data["error"]["message"]
+
+
+def test_deployment_verifier_fails_litellm_health_when_proxy_reports_unhealthy_models() -> None:
+    config = VerifyConfig(
+        api_base="http://api",
+        ocr_base=None,
+        litellm_base="http://litellm",
+        litellm_api_key="sk-test",
+        project_id="P-2026-HDCP-001",
+        roles=["admin", "inspection", "contractor"],
+        strict_production=True,
+        skip_ocr=True,
+        skip_litellm=False,
+        write_probes=False,
+        ocr_object_probe=False,
+        litellm_management_probes=False,
+        litellm_provider_probes=False,
+    )
+    verifier = DeploymentVerifier(
+        config,
+        api_client=httpx.Client(base_url=config.api_base, transport=httpx.MockTransport(api_transport)),
+        ocr_client=None,
+        litellm_client=httpx.Client(
+            base_url=config.litellm_base,
+            transport=httpx.MockTransport(litellm_unhealthy_transport),
+        ),
+    )
+
+    results = verifier.run()
+
+    health = next(item for item in results if item.name == "litellm.health")
+    assert health.status == "fail"
+    assert "unhealthy endpoint" in health.detail
+    assert health.data == {
+        "healthyCount": 0,
+        "unhealthyCount": 1,
+        "unhealthyModels": ["openai/gpt-4o-mini"],
+    }
+    assert "sk-secret" not in health.detail

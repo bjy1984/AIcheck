@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 from scripts.validate_deployment_config import DeploymentConfigValidator, default_value
 
 
@@ -100,6 +102,35 @@ def test_strict_production_fails_when_ocr_service_uses_generic_image(tmp_path) -
 
     assert any(
         item.name == "compose.ocr-artifacts" and item.status == "fail" and "Dockerfile.ocr" in item.detail
+        for item in results
+    )
+    assert not all(item.ok for item in results)
+
+
+def test_strict_production_fails_when_litellm_healthcheck_only_checks_http_200(tmp_path) -> None:
+    compose_file = tmp_path / "docker-compose.yml"
+    compose = yaml.safe_load((BACKEND_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    compose["services"]["litellm-service"]["healthcheck"]["test"] = [
+        "CMD-SHELL",
+        "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health', timeout=3).read()\"",
+    ]
+    compose_file.write_text(yaml.safe_dump(compose, sort_keys=False), encoding="utf-8")
+    validator = DeploymentConfigValidator(
+        compose_file,
+        BACKEND_ROOT / "config/litellm.yaml",
+        dockerfile=BACKEND_ROOT / "Dockerfile",
+        ocr_dockerfile=BACKEND_ROOT / "Dockerfile.ocr",
+        ocr_requirements=BACKEND_ROOT / "requirements-ocr.txt",
+        strict_production=True,
+    )
+
+    results = validator.run()
+
+    assert any(
+        item.name == "compose.healthchecks"
+        and item.status == "fail"
+        and "LITELLM_MASTER_KEY" in item.detail
+        and "unhealthy providers" in item.detail
         for item in results
     )
     assert not all(item.ok for item in results)

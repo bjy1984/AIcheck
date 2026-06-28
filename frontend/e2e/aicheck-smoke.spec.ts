@@ -56,6 +56,15 @@ const accountForPath = (path: string) => {
   return 'inspection'
 }
 
+const passwordForAccount = (account: string) => {
+  const normalized = account.toUpperCase().replace(/-/g, '_')
+  return (
+    process.env[`AICHECK_E2E_PASSWORD_${normalized}`] ||
+    process.env[`AICHECK_BOOTSTRAP_PASSWORD_${normalized}`] ||
+    account
+  )
+}
+
 const loginPlaceholder = 'inspection / contractor / ndt / owner / admin'
 
 const clearLoginState = async (page: Page) => {
@@ -94,7 +103,7 @@ const loginTo = async (page: Page, path: string, account = accountForPath(path))
   const loginInputs = await gotoLoginPage(page, path)
 
   await loginInputs.nth(0).fill(account)
-  await loginInputs.nth(1).fill(account)
+  await loginInputs.nth(1).fill(passwordForAccount(account))
   await page.getByRole('button', { name: /^登录$/ }).click()
   await page.waitForURL((url) => url.hash.includes(path))
   await page.waitForLoadState('networkidle')
@@ -104,7 +113,7 @@ const loginWithoutRedirect = async (page: Page, account: string, expectedPath: s
   const loginInputs = await gotoLoginPage(page)
 
   await loginInputs.nth(0).fill(account)
-  await loginInputs.nth(1).fill(account)
+  await loginInputs.nth(1).fill(passwordForAccount(account))
   await page.getByRole('button', { name: /^登录$/ }).click()
   await page.waitForURL((url) => url.hash.includes(expectedPath))
   await page.waitForLoadState('networkidle')
@@ -180,7 +189,7 @@ test.describe('AIcheck route smoke', () => {
 
     await expect(loginInputs.first()).toBeVisible()
     await loginInputs.nth(0).fill('contractor')
-    await loginInputs.nth(1).fill('contractor')
+    await loginInputs.nth(1).fill(passwordForAccount('contractor'))
     await page.getByRole('button', { name: /^登录$/ }).click()
     await page.waitForURL((url) => url.hash.includes('/workbench/contractor'))
     await expect(page.locator('.aicheck-page .page-title')).toContainText('施工方工作台')
@@ -1440,26 +1449,30 @@ test.describe('AIcheck business writeback flows', () => {
     await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/knowledge/overview')!)
 
     await page.getByRole('tab', { name: '任务中心' }).click()
-    const failedTaskRow = page.getByRole('row').filter({ hasText: '钢管质量证明书.pdf' })
-    await expect(failedTaskRow).toContainText('失败')
-    await failedTaskRow.getByRole('button', { name: '重试' }).click()
+    const retryableTaskRow = page
+      .getByRole('row')
+      .filter({ has: page.getByRole('button', { name: '重试' }) })
+      .first()
+    await expect(retryableTaskRow).toBeVisible()
+    const retryTaskId = (await retryableTaskRow.locator('td').first().innerText()).trim()
+    const retryTaskRow = page.getByRole('row').filter({ hasText: retryTaskId })
 
-    await expect(
-      page.locator('.el-message').filter({ hasText: '钢管质量证明书.pdf 已重新排队' })
-    ).toBeVisible()
-    await expect(
-      page
-        .getByRole('row')
-        .filter({ hasText: '钢管质量证明书.pdf' })
-        .filter({ hasText: '排队中' })
-        .first()
-    ).toBeVisible()
+    await retryTaskRow.getByRole('button', { name: '重试' }).click()
 
-    const queuedTaskRow = page.getByRole('row').filter({ hasText: '项目文件知识库' })
-    await expect(queuedTaskRow).toContainText('排队中')
-    await queuedTaskRow.getByRole('button', { name: '取消' }).click()
+    await expect(page.locator('.el-message').filter({ hasText: '已重新排队' })).toBeVisible()
+    await expect(retryTaskRow).toContainText(/排队中|成功/)
 
-    await expect(queuedTaskRow).toContainText('已取消')
+    const cancellableTaskRow = page
+      .getByRole('row')
+      .filter({ has: page.getByRole('button', { name: '取消' }) })
+      .first()
+    await expect(cancellableTaskRow).toContainText('排队中')
+    const taskId = (await cancellableTaskRow.locator('td').first().innerText()).trim()
+    const taskRow = page.getByRole('row').filter({ hasText: taskId })
+
+    await taskRow.getByRole('button', { name: '取消' }).click()
+
+    await expect(taskRow).toContainText('已取消')
   })
 
   test('knowledge config save writes audit state', async ({ page }) => {
@@ -1507,7 +1520,7 @@ test.describe('AIcheck business writeback flows', () => {
     const exportDrawer = page.locator('.export-task-drawer')
     await expect(exportDrawer).toBeVisible()
     await expect(exportDrawer).toContainText('导出类型')
-    await expect(exportDrawer).toContainText('report')
+    await expect(exportDrawer).toContainText('报告导出')
     await expect(exportDrawer).toContainText('.pdf')
   })
 

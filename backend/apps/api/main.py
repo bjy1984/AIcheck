@@ -307,7 +307,9 @@ async def mongo_transaction_probe(request: Request):
     claims = getattr(request.state, "auth", None)
     if os.getenv("AICHECK_REQUIRE_AUTH", "false").lower() == "true" and (not claims or claims.get("role") != "admin"):
         return fail(errors.FORBIDDEN, request, message="仅管理员可执行 MongoDB transaction 探针。")
-    database = getattr(request.app.state, "mongo", None) or repo.mongo
+    database = getattr(request.app.state, "mongo", None)
+    if database is None:
+        database = repo.mongo
     return ok(await run_transaction_probe(database), request)
 
 

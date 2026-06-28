@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sys
+import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -93,6 +94,15 @@ def redact_sensitive_value(value: Any) -> Any:
     return value
 
 
+def role_login_password(role: str) -> str:
+    normalized = role.upper().replace("-", "_")
+    return (
+        os.getenv(f"AICHECK_VERIFY_PASSWORD_{normalized}")
+        or os.getenv(f"AICHECK_BOOTSTRAP_PASSWORD_{normalized}")
+        or role
+    )
+
+
 @dataclass
 class CheckResult:
     name: str
@@ -118,6 +128,7 @@ class VerifyConfig:
     skip_litellm: bool
     write_probes: bool
     ocr_object_probe: bool
+    litellm_management_probes: bool
     litellm_provider_probes: bool
 
 
@@ -141,6 +152,11 @@ def parse_args() -> argparse.Namespace:
         "--litellm-provider-probes",
         action="store_true",
         help="Run real chat and embedding calls through LiteLLM. This may consume provider quota.",
+    )
+    parser.add_argument(
+        "--litellm-management-probes",
+        action="store_true",
+        help="Create and delete a temporary LiteLLM virtual key to verify DB-backed key, budget, and rate-limit management.",
     )
     parser.add_argument(
         "--write-probes",
@@ -173,6 +189,7 @@ def config_from_args(args: argparse.Namespace) -> VerifyConfig:
         skip_litellm=args.skip_litellm,
         write_probes=args.write_probes,
         ocr_object_probe=args.ocr_object_probe,
+        litellm_management_probes=args.litellm_management_probes,
         litellm_provider_probes=args.litellm_provider_probes,
     )
 
@@ -296,7 +313,7 @@ class DeploymentVerifier:
                 self.api,
                 "POST",
                 "/api/auth/login",
-                json={"username": role, "password": role},
+                json={"username": role, "password": role_login_password(role)},
             )
             data = self.envelope_data(f"auth.login.{role}", status_code, payload)
             if data is None:
@@ -437,7 +454,7 @@ class DeploymentVerifier:
             self.add("api.write-probes", "fail", "Uploaded object OCR parse probe failed.")
             return
 
-        export_headers = self.auth_headers("inspection")
+        export_headers = self.auth_headers("admin")
         status_code, payload = self.request_json(
             self.api,
             "POST",
@@ -761,20 +778,60 @@ class DeploymentVerifier:
             return
         self.add("ocr.bad-request", "fail", f"Expected VALIDATION_ERROR, got {payload}")
 
+    def litellm_headers(self) -> dict[str, str]:
+        if not self.config.litellm_api_key:
+            return {}
+        return {"Authorization": f"Bearer {self.config.litellm_api_key}"}
+
     def check_litellm_health(self) -> None:
         if self.config.skip_litellm or self.litellm is None:
             self.add("litellm.health", "skip", "LiteLLM check disabled.")
             return
+        headers = self.litellm_headers()
         try:
-            response = self.litellm.get("/health")
+            response = self.litellm.get("/health", headers=headers)
         except Exception as exc:
             self.add("litellm.health", "fail", str(exc))
             return
-        self.add("litellm.health", "pass" if response.status_code < 400 else "fail", f"HTTP {response.status_code}")
+        if response.status_code >= 400:
+            self.add("litellm.health", "fail", f"HTTP {response.status_code}")
+        else:
+            health_data: dict[str, Any] | None = None
+            try:
+                payload = response.json()
+            except ValueError:
+                payload = None
+            if isinstance(payload, dict):
+                unhealthy_count = payload.get("unhealthy_count")
+                unhealthy_endpoints = payload.get("unhealthy_endpoints")
+                unhealthy_models = []
+                if isinstance(unhealthy_endpoints, list):
+                    unhealthy_models = sorted(
+                        {
+                            str(item.get("model"))
+                            for item in unhealthy_endpoints
+                            if isinstance(item, dict) and item.get("model")
+                        }
+                    )
+                health_data = {
+                    "healthyCount": payload.get("healthy_count"),
+                    "unhealthyCount": unhealthy_count,
+                    "unhealthyModels": unhealthy_models,
+                }
+                if isinstance(unhealthy_count, int) and unhealthy_count > 0:
+                    self.add(
+                        "litellm.health",
+                        "fail",
+                        f"HTTP {response.status_code}; LiteLLM reports {unhealthy_count} unhealthy endpoint(s).",
+                        health_data,
+                    )
+                else:
+                    self.add("litellm.health", "pass", f"HTTP {response.status_code}", health_data)
+            else:
+                self.add("litellm.health", "pass", f"HTTP {response.status_code}")
         if not self.config.litellm_api_key:
             self.add("litellm.models", "fail", "LITELLM_API_KEY is required for /v1/models.")
             return
-        headers = {"Authorization": f"Bearer {self.config.litellm_api_key}"} if self.config.litellm_api_key else {}
         try:
             models = self.litellm.get("/v1/models", headers=headers)
         except Exception as exc:
@@ -804,7 +861,98 @@ class DeploymentVerifier:
         )
         if not aliases_ok:
             return
+        self.check_litellm_management_probes(headers)
         self.check_litellm_provider_probes(headers)
+
+    def check_litellm_management_probes(self, headers: dict[str, str]) -> None:
+        if not self.config.litellm_management_probes:
+            self.add(
+                "litellm.management-probes",
+                "skip",
+                "Pass --litellm-management-probes to verify DB-backed virtual key, budget, and rate-limit management.",
+            )
+            return
+        if not self.config.litellm_api_key:
+            self.add("litellm.management-probes", "fail", "LITELLM_API_KEY is required for key management probes.")
+            return
+        key_alias = f"aicheck-deploy-verify-{uuid.uuid4().hex[:10]}"
+        requested = {
+            "models": ["default-chat", "embedding-default"],
+            "key_alias": key_alias,
+            "duration": "30m",
+            "max_budget": 0.01,
+            "rpm_limit": 1,
+            "tpm_limit": 256,
+            "metadata": {"purpose": "aicheck-deployment-verifier"},
+        }
+        generated_key = ""
+        try:
+            response = self.litellm.post("/key/generate", headers=headers, json=requested)
+        except Exception as exc:
+            self.add("litellm.management-probes", "fail", str(exc))
+            return
+        if response.status_code >= 400:
+            self.add(
+                "litellm.management-probes",
+                "fail",
+                f"/key/generate HTTP {response.status_code}",
+                self.safe_response_error_data(response),
+            )
+            return
+        try:
+            payload = response.json()
+        except Exception as exc:
+            self.add("litellm.management-probes", "fail", f"/key/generate returned non-JSON payload: {exc}")
+            return
+        if not isinstance(payload, dict):
+            self.add("litellm.management-probes", "fail", "/key/generate returned non-object JSON payload.")
+            return
+        generated_key = str(payload.get("key") or payload.get("token") or "")
+        if not generated_key:
+            self.add("litellm.management-probes", "fail", "/key/generate returned no virtual key.")
+            return
+        delete_payload = {"key_aliases": [key_alias]}
+        try:
+            delete_response = self.litellm.post("/key/delete", headers=headers, json=delete_payload)
+        except Exception as exc:
+            self.add("litellm.management-probes", "fail", f"Temporary key was created but cleanup failed: {exc}")
+            return
+        if delete_response.status_code >= 400:
+            self.add(
+                "litellm.management-probes",
+                "fail",
+                f"Temporary key was created but /key/delete returned HTTP {delete_response.status_code}",
+                self.safe_response_error_data(delete_response),
+            )
+            return
+        self.add(
+            "litellm.management-probes",
+            "pass",
+            "Created and deleted a temporary LiteLLM virtual key with budget and rate-limit settings.",
+            {
+                "keyAlias": key_alias,
+                "models": requested["models"],
+                "maxBudget": requested["max_budget"],
+                "rpmLimit": requested["rpm_limit"],
+                "tpmLimit": requested["tpm_limit"],
+                "keyCreated": bool(generated_key),
+                "keyDeleted": True,
+            },
+        )
+
+    def safe_response_error_data(self, response: httpx.Response) -> dict[str, Any]:
+        try:
+            payload = response.json()
+        except Exception:
+            return {}
+        if not isinstance(payload, dict):
+            return {}
+        error = payload.get("error")
+        if isinstance(error, dict):
+            return {"error": error}
+        if isinstance(error, str):
+            return {"error": error}
+        return {"response": payload}
 
     def check_litellm_provider_probes(self, headers: dict[str, str]) -> None:
         if not self.config.litellm_provider_probes:

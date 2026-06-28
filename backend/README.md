@@ -73,16 +73,18 @@ python scripts/deployment_report.py \
   --include-live \
   --write-probes \
   --ocr-object-probe \
+  --litellm-management-probes \
   --litellm-provider-probes \
   --output-dir ./deployment-reports/latest
 ```
 
-`check_96_preflight.py` fails early when Docker Compose, `backend/.env`, production flags, LiteLLM/provider keys, or the `agentdesign` OCR reference path are missing. Text and JSON output include `remediation` steps for each failing check so the deployment host can be corrected before live probes. The provider probe spends real LiteLLM upstream quota; omit `--litellm-provider-probes` only for a dry infrastructure check.
+`check_96_preflight.py` fails early when Docker Compose, `backend/.env`, production flags, LiteLLM/provider keys, or the `agentdesign` OCR reference path are missing. Text and JSON output include `remediation` steps for each failing check so the deployment host can be corrected before live probes. The management probe creates and deletes a temporary LiteLLM virtual key to verify DB-backed key, budget, and rate-limit management. The provider probe spends real LiteLLM upstream quota; omit `--litellm-provider-probes` only for a dry infrastructure check.
 
 The verifier checks API health flags, role login/default paths, JWT protection, the MongoDB transaction probe, read-only project/task endpoints, identity-spoof rejection, action-bypass rejection, read-scope rejection, OCR health, OCR parse/bad-request contracts, and LiteLLM health/models without creating business data or spending model quota. In `--strict-production`, MongoDB must be connected with `AICHECK_MONGO_TRANSACTIONS=true` and the transaction probe must pass; OCR must report a real pipeline with placeholder disabled.
 
 Add `--write-probes` to create a short-lived upload session, PUT a small PDF to the returned HTTP/HTTPS signed URL, complete the upload, verify document preview/download signed GET URLs can read the object, confirm the OCR task appears, and create/read an export task.
 Add `--ocr-object-probe` with `--write-probes` when you want the OCR service to parse the newly uploaded MinIO object and prove the real OCR pipeline can read object storage.
+Add `--litellm-management-probes` when you want to verify LiteLLM virtual key creation/deletion, max budget, RPM, and TPM management against PostgreSQL.
 Add `--litellm-provider-probes` when you want a quota-consuming production check that calls `default-chat` and `embedding-default` through LiteLLM.
 `deployment_report.py` aggregates config validation, API mutation idempotency coverage, frontend route coverage, frontend mutation header coverage, and optional live probes into `report.json` and `report.md` for release evidence.
 The contract auditor statically compares `frontend/src/api/aicheck` and `frontend/src/api/login` request paths against FastAPI routes and fails if any required client endpoint is missing. The deployment report also fails if a non-exempt backend mutation lacks direct or delegated idempotency handling, or if a real frontend mutation omits `Idempotency-Key` generation.

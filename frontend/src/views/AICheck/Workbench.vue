@@ -1,7 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElButton, ElDrawer, ElMessage, ElOption, ElSelect } from 'element-plus'
+import {
+  ElButton,
+  ElDrawer,
+  ElDropdown,
+  ElDropdownItem,
+  ElDropdownMenu,
+  ElMessage,
+  ElOption,
+  ElSelect
+} from 'element-plus'
 import {
   adoptAiSuggestionApi,
   archiveReportApi,
@@ -114,6 +123,7 @@ import WorkbenchRoleStaticSections from './components/WorkbenchRoleStaticSection
 import WorkbenchRightStaticDetails from './components/WorkbenchRightStaticDetails.vue'
 import WorkbenchSidePanel from './components/WorkbenchSidePanel.vue'
 import WorkbenchStateBanner from './components/WorkbenchStateBanner.vue'
+import { useUserStore } from '@/store/modules/user'
 
 type PreviewDrawerTarget = {
   source: 'node' | 'file' | 'report' | 'archive'
@@ -137,6 +147,7 @@ type WorkbenchStateIssue = {
 }
 
 const route = useRoute()
+const userStore = useUserStore()
 const loading = ref(false)
 const nodeLoading = ref(false)
 const actionLoading = ref(false)
@@ -278,6 +289,11 @@ const roleUserLabel = computed(() => {
   }
   return labels[role.value]
 })
+const handleUserCommand = (command: string | number | object) => {
+  if (command === 'logout') {
+    userStore.logoutConfirm()
+  }
+}
 const topbarStatus = computed(() => {
   return (
     context.value?.topbar.statusText ||
@@ -1910,7 +1926,19 @@ onMounted(() => {
             消息<span v-if="unreadMessageCount" class="notice-dot">{{ unreadMessageCount }}</span>
           </ElButton>
           <ElButton class="top-action" text @click="handleOpenCurrentPreview"> 文件预览 </ElButton>
-          <span class="user"><span class="avatar"></span>{{ roleUserLabel }}⌄</span>
+          <ElDropdown trigger="click" class="user-menu" @command="handleUserCommand">
+            <button class="user" type="button" aria-label="打开用户菜单">
+              <span class="avatar"></span>
+              <span>{{ roleUserLabel }}</span>
+              <span class="user-caret">⌄</span>
+            </button>
+            <template #dropdown>
+              <ElDropdownMenu>
+                <ElDropdownItem disabled>{{ roleUserLabel }}</ElDropdownItem>
+                <ElDropdownItem command="logout" divided>退出登录</ElDropdownItem>
+              </ElDropdownMenu>
+            </template>
+          </ElDropdown>
         </div>
       </header>
 
@@ -2832,11 +2860,40 @@ onMounted(() => {
   background: linear-gradient(180deg, #4b83f7, #1e5ec8);
 }
 
+.user-menu {
+  flex: 0 0 auto;
+}
+
 .user {
   display: inline-flex;
   gap: 8px;
   align-items: center;
+  min-height: 40px;
+  padding: 0 8px 0 4px;
+  color: inherit;
   font-weight: 700;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  transition:
+    color 0.18s ease,
+    background-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.user:hover,
+.user:focus-visible {
+  color: var(--blue-2);
+  background: #f4f8ff;
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(31, 102, 216, 0.12);
+}
+
+.user-caret {
+  color: #6a7890;
+  font-size: 12px;
+  line-height: 1;
 }
 
 .static-issue {

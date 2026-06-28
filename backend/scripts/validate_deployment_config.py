@@ -331,6 +331,11 @@ class DeploymentConfigValidator:
             test = command_text(healthcheck.get("test"))
             if expected_marker not in test:
                 failures.append(f"{service_name}: healthcheck must contain {expected_marker!r}")
+            if service_name == "litellm-service":
+                if "Authorization" not in test or "LITELLM_MASTER_KEY" not in test:
+                    failures.append("litellm-service: healthcheck must authenticate with LITELLM_MASTER_KEY")
+                if "unhealthy_count" not in test:
+                    failures.append("litellm-service: healthcheck must fail when LiteLLM reports unhealthy providers")
             for key in ("interval", "timeout", "retries"):
                 if key not in healthcheck:
                     failures.append(f"{service_name}: healthcheck missing {key}")

@@ -435,12 +435,12 @@ class PreflightChecker:
             "pass",
             (
                 "Run deployment_report.py with --include-live --write-probes --ocr-object-probe "
-                "--litellm-provider-probes after docker compose is healthy."
+                "--litellm-management-probes --litellm-provider-probes after docker compose is healthy."
             ),
             {
                 "command": (
                     "python scripts/deployment_report.py --strict-production --include-live "
-                    "--write-probes --ocr-object-probe --litellm-provider-probes "
+                    "--write-probes --ocr-object-probe --litellm-management-probes --litellm-provider-probes "
                     "--output-dir ./deployment-reports/latest"
                 )
             },

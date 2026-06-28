@@ -224,6 +224,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-litellm", action="store_true")
     parser.add_argument("--write-probes", action="store_true")
     parser.add_argument("--ocr-object-probe", action="store_true")
+    parser.add_argument("--litellm-management-probes", action="store_true")
     parser.add_argument("--litellm-provider-probes", action="store_true")
     parser.add_argument("--timeout", type=float, default=8.0)
     parser.add_argument("--output-dir", help="Optional directory for report.json and report.md.")
@@ -396,6 +397,7 @@ class DeploymentReportBuilder:
             skip_litellm=bool(self.args.skip_litellm),
             write_probes=bool(self.args.write_probes),
             ocr_object_probe=bool(self.args.ocr_object_probe),
+            litellm_management_probes=bool(self.args.litellm_management_probes),
             litellm_provider_probes=bool(self.args.litellm_provider_probes),
         )
         with httpx.Client(base_url=config.api_base, timeout=self.args.timeout) as api_client:
@@ -1254,11 +1256,20 @@ def role_contract_check(
     }
 
 
+def iter_effective_routes(route_source: Any | None = None):
+    for route in (route_source if route_source is not None else app.routes):
+        route_contexts = getattr(route, "effective_route_contexts", None)
+        if callable(route_contexts):
+            yield from route_contexts()
+            continue
+        yield route
+
+
 def backend_action_coverage_check(route_source: Any | None = None) -> dict[str, Any]:
     covered = []
     missing = []
     exempt = []
-    for route in (route_source if route_source is not None else app.routes):
+    for route in iter_effective_routes(route_source):
         path = str(getattr(route, "path", ""))
         methods = set(getattr(route, "methods", set()) or set()) & MUTATING_METHODS
         for method in sorted(methods):
@@ -1365,7 +1376,7 @@ def called_function_names(source: str) -> set[str]:
 
 def backend_mutation_idempotency_check(route_source: Any | None = None) -> dict[str, Any]:
     routes: list[dict[str, Any]] = []
-    for route in (route_source if route_source is not None else app.routes):
+    for route in iter_effective_routes(route_source):
         path = str(getattr(route, "path", ""))
         methods = set(getattr(route, "methods", set()) or set()) & MUTATING_METHODS
         if not methods:

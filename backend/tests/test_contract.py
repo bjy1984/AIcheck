@@ -110,6 +110,30 @@ def test_mongo_transaction_probe_endpoint_is_admin_only_when_auth_enabled(monkey
     assert result["transactionProbe"] == "skipped"
 
 
+def test_mongo_transaction_probe_does_not_bool_check_database(monkeypatch) -> None:
+    class BoolRaisingDatabase:
+        def __bool__(self) -> bool:
+            raise NotImplementedError("Database objects do not implement truth value testing")
+
+    async def fake_probe(database):
+        assert isinstance(database, BoolRaisingDatabase)
+        return {"mongoEnabled": True, "transactionsConfigured": True, "transactionProbe": "pass"}
+
+    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
+    monkeypatch.setattr(app.state, "mongo", BoolRaisingDatabase(), raising=False)
+    monkeypatch.setattr("apps.api.main.run_transaction_probe", fake_probe)
+    admin = assert_ok(client.post("/api/auth/login", json={"username": "admin", "password": "admin"}))
+
+    result = assert_ok(
+        client.get(
+            "/api/system/mongo-transaction-probe",
+            headers={"Authorization": f"Bearer {admin['token']}"},
+        )
+    )
+
+    assert result["transactionProbe"] == "pass"
+
+
 def test_ocr_healthz_reports_pipeline_flags(monkeypatch) -> None:
     from apps.ocr_service.main import app as ocr_app
 
@@ -2325,6 +2349,32 @@ def test_failed_knowledge_task_retry_dispatches_worker_and_is_idempotent(monkeyp
     logs = assert_ok(client.get("/knowledge/tasks/KT-20260626-002/logs"))
     assert any("重试已投递" in item["message"] for item in logs)
     assert any("OCR 任务完成" in item["message"] for item in logs)
+
+
+def test_knowledge_task_list_prioritizes_failed_tasks_before_new_queued_items() -> None:
+    for index in range(12):
+        repo.state["knowledge_tasks"].insert(
+            0,
+            {
+                "id": f"KT-NEW-{index}",
+                "taskType": "ocr",
+                "targetType": "file",
+                "targetId": f"KF-NEW-{index}",
+                "targetName": f"新上传资料-{index}.pdf",
+                "status": "排队中",
+                "progress": 0,
+                "createdAt": f"2026-06-27 18:{index:02d}:00",
+                "updatedAt": f"2026-06-27 18:{index:02d}:00",
+                "actions": ["knowledge:task-retry"],
+                "revision": 1,
+            },
+        )
+
+    tasks = assert_ok(client.get("/knowledge/tasks?pageSize=10"))["items"]
+
+    assert tasks[0]["id"] == "KT-20260626-002"
+    assert tasks[0]["targetName"] == "钢管质量证明书.pdf"
+    assert tasks[0]["status"] == "失败"
 
 
 def test_cancelled_knowledge_task_is_not_processed_by_worker() -> None:
