@@ -1,0 +1,8 @@
+materialTypes:
+  - {code: device_register, name: 设备台账, requiredType: 必传, requiredFields: [device_no, model, owner], evidenceRequired: true}
+  - {code: last_inspection_report, name: 上次检验报告, requiredType: 必传, requiredFields: [report_no, issue_date, conclusion], evidenceRequired: true}
+  - {code: maintenance_record, name: 维护保养记录, requiredType: 必传, requiredFields: [maintenance_date, operator, action], evidenceRequired: true}
+  - {code: calibration_certificate, name: 校准证书, requiredType: 条件必传, requiredFields: [certificate_no, valid_until, issuer], evidenceRequired: true}
+  - {code: safety_device_record, name: 安全附件记录, requiredType: 必传, requiredFields: [device_name, test_date, result], evidenceRequired: true}
+  - {code: defect_rectification, name: 缺陷整改记录, requiredType: 条件必传, requiredFields: [defect_id, action, closed_at], evidenceRequired: true}
+  - {code: device_inspection_report, name: 年检报告, requiredType: 必传, requiredFields: [report_no, conclusion, issue_date], evidenceRequired: true}

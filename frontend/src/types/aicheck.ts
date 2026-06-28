@@ -70,6 +70,10 @@ export type Project = {
   contractorOrgName: string
   ndtOrgName: string
   inspectionOrgName: string
+  businessPackId?: string
+  businessPackVersion?: string
+  domainType?: string
+  businessPackSnapshotHash?: string
   status: ProjectStatus
   todoCount: number
   messageCount: number

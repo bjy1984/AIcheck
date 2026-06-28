@@ -1,0 +1,58 @@
+nodeTemplates:
+  - nodeId: 1
+    code: DI-01
+    name: 设备基础信息确认
+    groupName: 启动与台账
+    inspectionType: C
+    defaultStatus: 待提交
+    actions: [project:view, file:bind]
+    requiredMaterials:
+      - {id: DI-REQ-01-01, materialTypeCode: device_register, name: 设备台账, requiredType: 必传}
+  - nodeId: 2
+    code: DI-02
+    name: 历史检验资料审查
+    groupName: 历史资料
+    inspectionType: C
+    defaultStatus: 待提交
+    actions: [project:view, file:bind]
+    requiredMaterials:
+      - {id: DI-REQ-02-01, materialTypeCode: last_inspection_report, name: 上次检验报告, requiredType: 必传}
+  - nodeId: 3
+    code: DI-03
+    name: 维护保养记录审查
+    groupName: 运行维护
+    inspectionType: B
+    defaultStatus: 待审查
+    fileCount: 2
+    requiredProgress: {done: 1, total: 2}
+    actions: [project:view, file:bind]
+    requiredMaterials:
+      - {id: DI-REQ-03-01, materialTypeCode: maintenance_record, name: 维护保养记录, requiredType: 必传}
+      - {id: DI-REQ-03-02, materialTypeCode: calibration_certificate, name: 校准证书, requiredType: 条件必传}
+  - nodeId: 4
+    code: DI-04
+    name: 安全附件校验审查
+    groupName: 安全附件
+    inspectionType: B
+    defaultStatus: 待提交
+    actions: [project:view, file:bind]
+    requiredMaterials:
+      - {id: DI-REQ-04-01, materialTypeCode: safety_device_record, name: 安全附件记录, requiredType: 必传}
+  - nodeId: 5
+    code: DI-05
+    name: 缺陷整改闭环审查
+    groupName: 整改闭环
+    inspectionType: B
+    defaultStatus: 待提交
+    actions: [project:view, file:bind]
+    requiredMaterials:
+      - {id: DI-REQ-05-01, materialTypeCode: defect_rectification, name: 缺陷整改记录, requiredType: 条件必传}
+  - nodeId: 6
+    code: DI-06
+    name: 年检报告归档
+    groupName: 报告归档
+    inspectionType: A
+    defaultStatus: 待提交
+    actions: [project:view, file:bind]
+    requiredMaterials:
+      - {id: DI-REQ-06-01, materialTypeCode: device_inspection_report, name: 年检报告, requiredType: 必传}

@@ -1,0 +1,20 @@
+workflowActions: [submit, start_ai_precheck, start_human_review, request_correction, accept, archive]
+workflowStateMachines:
+  - id: WF-DEVICE-INSPECTION-2026
+    name: 设备年检资料审查状态机
+    version: 2026.06
+    states:
+      - {code: draft, label: 草稿}
+      - {code: submitted, label: 已提交}
+      - {code: ai_prechecking, label: AI 预审中}
+      - {code: human_reviewing, label: 人工审查中}
+      - {code: correction_needed, label: 需整改}
+      - {code: accepted, label: 已确认}
+      - {code: archived, label: 已归档}
+    transitions:
+      - {action: submit, from: draft, to: submitted, roles: [device_submitter]}
+      - {action: start_ai_precheck, from: submitted, to: ai_prechecking, roles: [device_reviewer]}
+      - {action: start_human_review, from: ai_prechecking, to: human_reviewing, roles: [device_reviewer]}
+      - {action: request_correction, from: human_reviewing, to: correction_needed, roles: [device_reviewer]}
+      - {action: accept, from: human_reviewing, to: accepted, roles: [device_reviewer]}
+      - {action: archive, from: accepted, to: archived, roles: [device_reviewer]}

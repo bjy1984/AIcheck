@@ -9,6 +9,10 @@ from uuid import uuid4
 from fastapi import APIRouter, Body, Header, Query, Request
 from fastapi.responses import JSONResponse
 
+from apps.api.adapters.engineering_inspection import (
+    ENGINEERING_DOMAIN_TYPE,
+    ENGINEERING_PROJECT_DEFAULTS,
+)
 from libs.business_pack import (
     DEFAULT_BUSINESS_PACK_ID,
     build_project_requirements,
@@ -64,6 +68,18 @@ KNOWLEDGE_TASK_STATUS_ORDER = {
     "运行中": 2,
     "已取消": 3,
     "成功": 4,
+}
+AI_FEEDBACK_TYPES = {
+    "accepted",
+    "edited",
+    "rejected_false_positive",
+    "missed_issue",
+    "wrong_evidence",
+    "wrong_rule_reference",
+    "wrong_severity",
+    "hallucination",
+    "format_error",
+    "unsafe_output",
 }
 
 
@@ -825,6 +841,22 @@ def business_pack_snapshot_for_project(project: dict[str, Any]) -> dict[str, Any
     return business_pack_snapshot(business_pack_for_project(project))
 
 
+def project_defaults_for_pack(pack: dict[str, Any]) -> dict[str, str]:
+    if pack.get("domainType") == ENGINEERING_DOMAIN_TYPE:
+        return dict(ENGINEERING_PROJECT_DEFAULTS)
+    reviewer = next((role for role in pack.get("roles") or [] if role.get("platformRole") == "reviewer"), {})
+    submitter = next((role for role in pack.get("roles") or [] if role.get("platformRole") == "submitter"), {})
+    observer = next((role for role in pack.get("roles") or [] if role.get("platformRole") == "observer"), {})
+    return {
+        "name": f"新建{pack['name']}项目",
+        "type": pack["name"],
+        "ownerOrgName": f"{observer.get('label') or '观察者'}单位",
+        "contractorOrgName": f"{submitter.get('label') or '提交者'}单位",
+        "ndtOrgName": "专项资料单位",
+        "inspectionOrgName": f"{reviewer.get('label') or '审核者'}机构",
+    }
+
+
 def project_requirements_for_node(project_id: str, node_id: int) -> list[dict[str, Any]]:
     scoped = [
         repo.clone(item)
@@ -870,6 +902,7 @@ def simple_routes(role: str | None = None) -> list[dict[str, Any]]:
             "name": "Workbench",
             "meta": {"title": "业务工作台", "icon": "vi-ep:monitor", "alwaysShow": True, "roles": ["inspection", "contractor", "ndt", "owner"]},
             "children": [
+                {"path": "generic", "component": "views/AICheck/GenericReviewWorkbench", "name": "GenericReviewWorkbench", "meta": {"title": "通用资料审查", "roles": ["admin", "inspection", "contractor", "owner"]}},
                 {"path": "inspection", "component": "views/AICheck/Workbench", "name": "InspectionWorkbench", "meta": {"title": "监检工作台", "roles": ["inspection"]}},
                 {"path": "contractor", "component": "views/AICheck/Workbench", "name": "ContractorWorkbench", "meta": {"title": "施工方工作台", "roles": ["contractor"]}},
                 {"path": "ndt", "component": "views/AICheck/Workbench", "name": "NdtWorkbench", "meta": {"title": "无损检测工作台", "roles": ["ndt"]}},
@@ -3585,6 +3618,7 @@ def create_review_finding(
         if not project:
             return fail(errors.NOT_FOUND, request)
         pack = business_pack_for_project(project)
+        agent = (pack.get("agentSops") or [{}])[0]
         evidence_link_ids = body.get("evidenceLinkIds") or []
         rule_refs = body.get("ruleRefs") or []
         if body.get("source") == "ai" and (not evidence_link_ids or not rule_refs):
@@ -3599,6 +3633,9 @@ def create_review_finding(
             "nodeId": node_id,
             "businessPackId": pack["id"],
             "businessPackVersion": pack["version"],
+            "businessPackSnapshotHash": pack["snapshotHash"],
+            "agentId": body.get("agentId") or agent.get("id"),
+            "agentVersion": body.get("agentVersion") or agent.get("version"),
             "findingType": body.get("findingType") or "manual_review",
             "severity": body.get("severity") or "medium",
             "title": body.get("title") or "审查发现",
@@ -3610,6 +3647,7 @@ def create_review_finding(
             "suggestedAction": body.get("suggestedAction") or "human_confirm",
             "status": "draft",
             "source": body.get("source") or "human",
+            "humanStatus": body.get("humanStatus") or "pending_human_review",
             "createdAt": server_time(),
             "revision": 1,
         }
@@ -3703,6 +3741,14 @@ def create_ai_run_feedback(
         )
         if guard:
             return guard
+        feedback_type = body.get("feedbackType") or body.get("type") or "edited"
+        if feedback_type not in AI_FEEDBACK_TYPES:
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="AI 反馈类型不支持。",
+                data={"allowedTypes": sorted(AI_FEEDBACK_TYPES)},
+            )
         feedback = {
             "id": body.get("id") or f"AIFB-{uuid4().hex[:8].upper()}",
             "aiRunId": run_id,
@@ -3712,7 +3758,7 @@ def create_ai_run_feedback(
             "agentVersion": run.get("agentVersion"),
             "businessPackId": run.get("businessPackId"),
             "businessPackVersion": run.get("businessPackVersion"),
-            "feedbackType": body.get("feedbackType") or body.get("type") or "edited",
+            "feedbackType": feedback_type,
             "accepted": bool(body.get("accepted", False)),
             "comment": body.get("comment") or body.get("reason"),
             "correctedOutput": body.get("correctedOutput"),
@@ -4367,16 +4413,17 @@ def create_admin_project(request: Request, body: dict[str, Any] = Body(default_f
         except ValueError as exc:
             return fail(errors.VALIDATION_ERROR, request, message=str(exc))
         project_id = body.get("code") or f"P-2026-{uuid4().hex[:6].upper()}"
+        defaults = project_defaults_for_pack(pack)
         project = {
             "id": project_id,
             "code": project_id,
-            "name": body.get("name") or ("新建合规审计项目" if pack["id"] == "compliance_audit_v1" else "新建压力管道项目"),
-            "type": body.get("type") or ("合规审计" if pack["domainType"] == "compliance_audit" else "工业管道"),
+            "name": body.get("name") or defaults["name"],
+            "type": body.get("type") or defaults["type"],
             "region": body.get("region") or "华东",
-            "ownerOrgName": body.get("ownerOrgName") or "建设单位",
-            "contractorOrgName": body.get("contractorOrgName") or "施工单位",
-            "ndtOrgName": body.get("ndtOrgName") or "无损检测单位",
-            "inspectionOrgName": body.get("inspectionOrgName") or "监检机构",
+            "ownerOrgName": body.get("ownerOrgName") or defaults["ownerOrgName"],
+            "contractorOrgName": body.get("contractorOrgName") or defaults["contractorOrgName"],
+            "ndtOrgName": body.get("ndtOrgName") or defaults["ndtOrgName"],
+            "inspectionOrgName": body.get("inspectionOrgName") or defaults["inspectionOrgName"],
             "businessPackId": pack["id"],
             "businessPackVersion": pack["version"],
             "domainType": pack["domainType"],

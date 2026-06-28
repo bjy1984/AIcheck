@@ -43,6 +43,20 @@ MATERIAL_KEYS = {"code", "name", "requiredType"}
 WORKFLOW_KEYS = {"id", "name", "states", "transitions"}
 RULE_KEYS = {"id", "name", "ruleKey", "version", "status", "nodeIds"}
 REPORT_KEYS = {"id", "name", "version", "sections"}
+FIXTURE_COLLECTION_KEYS = (
+    "projects",
+    "documents",
+    "bindings",
+    "evidenceLinks",
+    "extractedFields",
+    "aiRuns",
+    "reviewFindings",
+    "projectMembers",
+    "todos",
+    "messages",
+    "knowledgeSources",
+    "knowledgeTasks",
+)
 
 
 class BusinessPackError(ValueError):
@@ -102,6 +116,7 @@ def business_pack_summary(pack: dict[str, Any]) -> dict[str, Any]:
         "materialTypeCount": len(pack.get("materialTypes") or []),
         "ruleSetCount": len(pack.get("ruleSets") or []),
         "agentSopCount": len(pack.get("agentSops") or []),
+        "fixtureProjectCount": len((pack.get("fixtures") or {}).get("projects") or []),
     }
 
 
@@ -151,6 +166,11 @@ def validate_business_pack(pack: dict[str, Any]) -> dict[str, Any]:
     material_codes = {
         item["code"] for item in pack.get("materialTypes", []) if isinstance(item, dict) and item.get("code")
     }
+    workflow_actions = {
+        action
+        for action in pack.get("workflowActions", [])
+        if isinstance(action, str) and action
+    }
     node_ids = {
         int(item["nodeId"])
         for item in pack.get("nodeTemplates", [])
@@ -183,7 +203,7 @@ def validate_business_pack(pack: dict[str, Any]) -> dict[str, Any]:
             errors.append(f"Workflow {workflow.get('id')} must declare states.")
         for transition in workflow.get("transitions") or []:
             action = transition.get("action")
-            if action and action not in action_codes:
+            if action and action not in action_codes and action not in workflow_actions:
                 warnings.append(f"Workflow {workflow.get('id')} action {action} is not listed in role actions.")
             if transition.get("from") not in states:
                 errors.append(f"Workflow {workflow.get('id')} transition has unknown from state.")
@@ -214,7 +234,24 @@ def validate_business_pack(pack: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(tool, str) or not tool:
                 errors.append(f"Agent SOP {agent.get('id')} contains invalid allowed tool.")
 
+    _validate_fixtures(
+        pack,
+        role_codes=role_codes,
+        material_codes=material_codes,
+        node_ids=node_ids,
+        errors=errors,
+        warnings=warnings,
+    )
+
     return {"ok": not errors, "errors": errors, "warnings": warnings}
+
+
+def business_pack_fixtures(pack: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    fixtures = pack.get("fixtures") or {}
+    return {
+        key: list(fixtures.get(key) or [])
+        for key in FIXTURE_COLLECTION_KEYS
+    }
 
 
 def validate_all_business_packs() -> dict[str, Any]:
@@ -240,6 +277,85 @@ def _validate_items(pack: dict[str, Any], key: str, required_keys: set[str], err
         missing = sorted(required_keys - set(item))
         if missing:
             errors.append(f"{key}[{index}] missing keys: {', '.join(missing)}")
+
+
+def _validate_fixtures(
+    pack: dict[str, Any],
+    *,
+    role_codes: set[str],
+    material_codes: set[str],
+    node_ids: set[int],
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    fixtures = pack.get("fixtures") or {}
+    if not fixtures:
+        warnings.append(f"Business pack {pack.get('id')} has no fixtures.")
+        return
+    if not isinstance(fixtures, dict):
+        errors.append("fixtures must be a mapping.")
+        return
+
+    project_ids: set[str] = set()
+    for project in fixtures.get("projects") or []:
+        project_id = project.get("id") or project.get("code")
+        if not project_id:
+            errors.append("Fixture project must declare id or code.")
+            continue
+        if project_id in project_ids:
+            errors.append(f"Fixture project id is duplicated: {project_id}")
+        project_ids.add(project_id)
+        if project.get("businessPackId") not in {None, pack["id"]}:
+            errors.append(f"Fixture project {project_id} references a different business pack.")
+        current_node_id = project.get("currentNodeId")
+        if current_node_id is not None and int(current_node_id) not in node_ids:
+            errors.append(f"Fixture project {project_id} references unknown current node: {current_node_id}")
+
+    document_ids: set[str] = set()
+    for document in fixtures.get("documents") or []:
+        document_id = document.get("id")
+        if not document_id:
+            errors.append("Fixture document must declare id.")
+            continue
+        if document_id in document_ids:
+            errors.append(f"Fixture document id is duplicated: {document_id}")
+        document_ids.add(document_id)
+        if document.get("projectId") and document["projectId"] not in project_ids:
+            errors.append(f"Fixture document {document_id} references unknown project: {document['projectId']}")
+        material_type = document.get("materialTypeCode")
+        if material_type and material_type not in material_codes:
+            errors.append(f"Fixture document {document_id} references unknown material type: {material_type}")
+
+    requirement_ids = {
+        requirement.get("id")
+        for node in pack.get("nodeTemplates") or []
+        for requirement in node.get("requiredMaterials") or []
+        if requirement.get("id")
+    }
+    for binding in fixtures.get("bindings") or []:
+        binding_id = binding.get("id") or "unknown"
+        if binding.get("projectId") and binding["projectId"] not in project_ids:
+            errors.append(f"Fixture binding {binding_id} references unknown project: {binding['projectId']}")
+        if int(binding.get("nodeId") or 0) not in node_ids:
+            errors.append(f"Fixture binding {binding_id} references unknown node: {binding.get('nodeId')}")
+        if binding.get("documentId") and binding["documentId"] not in document_ids:
+            errors.append(f"Fixture binding {binding_id} references unknown document: {binding['documentId']}")
+        if binding.get("requirementId") and binding["requirementId"] not in requirement_ids:
+            errors.append(f"Fixture binding {binding_id} references unknown requirement: {binding['requirementId']}")
+
+    for finding in fixtures.get("reviewFindings") or []:
+        finding_id = finding.get("id") or "unknown"
+        if finding.get("projectId") and finding["projectId"] not in project_ids:
+            errors.append(f"Fixture finding {finding_id} references unknown project: {finding['projectId']}")
+        if int(finding.get("nodeId") or 0) not in node_ids:
+            errors.append(f"Fixture finding {finding_id} references unknown node: {finding.get('nodeId')}")
+        if finding.get("source") == "ai" and (not finding.get("evidenceLinkIds") or not finding.get("ruleRefs")):
+            errors.append(f"Fixture AI finding {finding_id} must contain evidenceLinkIds and ruleRefs.")
+
+    for member in fixtures.get("projectMembers") or []:
+        role = member.get("role")
+        if role not in role_codes:
+            errors.append(f"Fixture member references unknown role: {role}")
 
 
 def role_actions_map(pack: dict[str, Any] | None = None) -> dict[str, list[str]]:

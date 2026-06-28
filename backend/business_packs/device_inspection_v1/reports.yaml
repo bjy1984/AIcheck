@@ -1,0 +1,10 @@
+reportTemplates:
+  - id: TPL-DEVICE-INSPECTION-2026.06
+    name: 设备年检资料审查报告
+    version: 2026.06
+    exportTypes: [report, archive-package, evidence-package]
+    sections:
+      - {code: device_summary, title: 设备概况, source: project}
+      - {code: review_findings, title: 审查发现, source: review_findings}
+      - {code: correction_summary, title: 整改闭环, source: corrections}
+      - {code: evidence_refs, title: 证据索引, source: evidence_links}

@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from apps.api.main import app
 from libs.business_pack import (
+    business_pack_fixtures,
     build_ai_review_prompt,
     build_project_requirements,
     build_project_tree,
@@ -47,22 +48,28 @@ def assert_business_error(response):
 def test_business_pack_loader_validates_engineering_and_compliance_packs() -> None:
     packs = {item["id"]: item for item in list_business_packs()}
 
-    assert set(packs) >= {"engineering_inspection_v1", "compliance_audit_v1"}
+    assert set(packs) >= {"engineering_inspection_v1", "compliance_audit_v1", "device_inspection_v1"}
     assert packs["engineering_inspection_v1"]["nodeCount"] == 69
     assert packs["compliance_audit_v1"]["nodeCount"] == 8
+    assert packs["device_inspection_v1"]["nodeCount"] == 6
 
-    for pack_id in ["engineering_inspection_v1", "compliance_audit_v1"]:
+    for pack_id in ["engineering_inspection_v1", "compliance_audit_v1", "device_inspection_v1"]:
         pack = load_business_pack(pack_id)
         validation = validate_business_pack(pack)
         assert validation["ok"], validation
         assert pack["snapshotHash"]
         assert build_project_tree("P-TST", pack)
         assert build_project_requirements(pack, project_id="P-TST")
+        assert business_pack_fixtures(pack)["projects"]
 
 
 def test_business_pack_api_and_compliance_project_generation() -> None:
     packs = assert_ok(client.get("/api/business-packs"))
-    assert {item["id"] for item in packs} >= {"engineering_inspection_v1", "compliance_audit_v1"}
+    assert {item["id"] for item in packs} >= {
+        "engineering_inspection_v1",
+        "compliance_audit_v1",
+        "device_inspection_v1",
+    }
 
     validation = assert_ok(client.post("/api/business-packs/compliance_audit_v1/validate"))
     assert validation["validation"]["ok"] is True
@@ -96,6 +103,21 @@ def test_business_pack_api_and_compliance_project_generation() -> None:
     assert project_snapshot["snapshot"]["id"] == "compliance_audit_v1"
     assert project_snapshot["businessPackSnapshotHash"] == project_snapshot["snapshot"]["snapshotHash"]
 
+    device_created = assert_ok(
+        client.post(
+            "/api/projects",
+            json={
+                "businessPackId": "device_inspection_v1",
+                "code": "P-DI-TEST-001",
+                "name": "设备年检迁移验证项目",
+            },
+            headers={"Idempotency-Key": "bp-device-project"},
+        )
+    )
+    assert device_created["project"]["businessPackId"] == "device_inspection_v1"
+    assert device_created["createdNodeCount"] == 6
+    assert device_created["createdRequirementCount"] == 7
+
 
 def test_business_pack_snapshot_and_validate_all_apis() -> None:
     snapshot = assert_ok(client.get("/api/business-packs/engineering_inspection_v1/snapshot"))
@@ -107,7 +129,24 @@ def test_business_pack_snapshot_and_validate_all_apis() -> None:
     assert {item["summary"]["id"] for item in validation["results"]} >= {
         "engineering_inspection_v1",
         "compliance_audit_v1",
+        "device_inspection_v1",
     }
+
+
+def test_business_pack_fixtures_seed_non_engineering_review_workbench() -> None:
+    compliance = assert_ok(client.get("/api/projects/P-CA-FIXTURE-001/review-workbench"))
+    assert compliance["project"]["businessPackId"] == "compliance_audit_v1"
+    assert compliance["businessPack"]["domainType"] == "compliance_audit"
+    assert [item["id"] for item in compliance["findings"]] == ["FND-CA-FIXTURE-001"]
+
+    device = assert_ok(client.get("/api/projects/P-DI-FIXTURE-001/review-workbench"))
+    assert device["project"]["businessPackId"] == "device_inspection_v1"
+    assert device["businessPack"]["domainType"] == "device_inspection"
+    assert [item["id"] for item in device["findings"]] == ["FND-DI-FIXTURE-001"]
+
+    device_tree = assert_ok(client.get("/api/projects/P-DI-FIXTURE-001/tree"))
+    device_node_count = sum(len(group["nodes"]) for group in device_tree["groups"])
+    assert device_node_count == 6
 
 
 def test_ai_review_finding_requires_evidence_and_rule_refs() -> None:

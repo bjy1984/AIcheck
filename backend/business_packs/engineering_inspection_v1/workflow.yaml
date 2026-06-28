@@ -1,3 +1,4 @@
+workflowActions: [submit, start_ai_precheck, start_human_review, request_correction, accept, archive]
 workflowStateMachines:
   - id: WF-ENGINEERING-REVIEW-2026
     name: 工程监检资料审查状态机

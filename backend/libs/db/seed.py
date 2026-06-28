@@ -5,6 +5,7 @@ from typing import Any
 
 from libs.business_pack import (
     DEFAULT_BUSINESS_PACK_ID,
+    business_pack_fixtures,
     build_project_requirements,
     build_project_tree,
     business_pack_snapshot,
@@ -38,7 +39,50 @@ def business_pack_project_fields(pack: dict[str, Any] | None = None) -> dict[str
 
 
 def build_tree(project_id: str = PROJECT_ID) -> list[dict[str, Any]]:
-    return build_project_tree(project_id, DEFAULT_BUSINESS_PACK)
+    project = next((item for item in PROJECTS if item.get("id") == project_id), None)
+    pack = load_business_pack(project.get("businessPackId")) if project and project.get("businessPackId") else DEFAULT_BUSINESS_PACK
+    return build_project_tree(project_id, pack)
+
+
+def pack_for_project_id(project_id: str) -> dict[str, Any]:
+    project = next((item for item in PROJECTS if item.get("id") == project_id), None)
+    if project and project.get("businessPackId"):
+        return load_business_pack(project["businessPackId"])
+    return DEFAULT_BUSINESS_PACK
+
+
+def fixture_projects() -> list[dict[str, Any]]:
+    existing_ids = {project["id"] for project in PROJECTS}
+    projects: list[dict[str, Any]] = []
+    for pack_summary in list_business_packs():
+        pack = load_business_pack(pack_summary["id"])
+        fixtures = business_pack_fixtures(pack)
+        for fixture in fixtures["projects"]:
+            project_id = fixture.get("id") or fixture.get("code")
+            if not project_id or project_id in existing_ids:
+                continue
+            project = {
+                "id": project_id,
+                "code": fixture.get("code") or project_id,
+                "name": fixture.get("name") or f"{pack['name']}示例项目",
+                "type": fixture.get("type") or pack["name"],
+                "region": fixture.get("region") or "默认区域",
+                "ownerOrgName": fixture.get("ownerOrgName") or "观察单位",
+                "contractorOrgName": fixture.get("contractorOrgName") or "提交单位",
+                "ndtOrgName": fixture.get("ndtOrgName") or "专项资料单位",
+                "inspectionOrgName": fixture.get("inspectionOrgName") or "审核机构",
+                "status": fixture.get("status") or "资料提交中",
+                "todoCount": int(fixture.get("todoCount") or 0),
+                "messageCount": int(fixture.get("messageCount") or 0),
+                "currentNodeId": int(fixture.get("currentNodeId") or pack["nodeTemplates"][0]["nodeId"]),
+                "updatedAt": fixture.get("updatedAt") or "2026-06-26 09:30:00",
+                "actions": role_actions_map(pack).get("admin", ["project:view"]),
+                "revision": 1,
+            }
+            project.update(business_pack_project_fields(pack))
+            projects.append(project)
+            existing_ids.add(project_id)
+    return projects
 
 
 PROJECTS = [
@@ -98,8 +142,11 @@ PROJECTS = [
     },
 ]
 
+PROJECTS.extend(fixture_projects())
+
 for project in PROJECTS:
-    project.update(business_pack_project_fields())
+    pack = load_business_pack(project.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID)
+    project.update(business_pack_project_fields(pack))
 
 REQUIREMENTS = build_project_requirements(DEFAULT_BUSINESS_PACK, project_id=PROJECT_ID)
 
@@ -171,8 +218,48 @@ DOCUMENTS = [
     },
 ]
 
+
+def fixture_documents() -> list[dict[str, Any]]:
+    existing_ids = {document["id"] for document in DOCUMENTS}
+    documents: list[dict[str, Any]] = []
+    projects_by_id = {project["id"]: project for project in PROJECTS}
+    for pack_summary in list_business_packs():
+        pack = load_business_pack(pack_summary["id"])
+        for fixture in business_pack_fixtures(pack)["documents"]:
+            document_id = fixture.get("id")
+            if not document_id or document_id in existing_ids:
+                continue
+            project_id = fixture.get("projectId")
+            project = projects_by_id.get(project_id or "")
+            version_seed = document_id.removeprefix("DOC-")
+            documents.append(
+                {
+                    "id": document_id,
+                    "projectId": project_id,
+                    "businessPackId": pack["id"],
+                    "materialTypeCode": fixture.get("materialTypeCode") or "generic_review_material",
+                    "fileName": fixture.get("fileName") or f"{document_id}.pdf",
+                    "fileType": fixture.get("fileType") or str(fixture.get("fileName") or "file.pdf").rsplit(".", 1)[-1],
+                    "sourceOrgName": fixture.get("sourceOrgName") or (project or {}).get("contractorOrgName") or "提交单位",
+                    "uploaderName": fixture.get("uploaderName") or "系统样例",
+                    "currentVersionId": fixture.get("currentVersionId") or f"DV-{version_seed}-V1",
+                    "fileStatus": fixture.get("fileStatus") or "已上传",
+                    "currentOcrStatus": fixture.get("currentOcrStatus") or "已识别",
+                    "updatedAt": fixture.get("updatedAt") or "2026-06-26 09:30:00",
+                    "actions": fixture.get("actions") or ["file:view", "file:bind", "file:preview", "file:download"],
+                }
+            )
+            existing_ids.add(document_id)
+    return documents
+
+
+DOCUMENTS.extend(fixture_documents())
+
 for document in DOCUMENTS:
-    document["businessPackId"] = DEFAULT_BUSINESS_PACK_ID
+    project_pack = pack_for_project_id(document["projectId"])
+    document.setdefault("businessPackId", project_pack["id"])
+    if document.get("materialTypeCode"):
+        continue
     if "焊工" in document["fileName"]:
         document["materialTypeCode"] = "welder_certificate"
     elif "质量证明" in document["fileName"]:
@@ -271,6 +358,49 @@ BINDINGS = [
     },
 ]
 
+
+def fixture_bindings() -> list[dict[str, Any]]:
+    existing_ids = {binding["id"] for binding in BINDINGS}
+    documents_by_id = {document["id"]: document for document in DOCUMENTS}
+    requirements_by_key = {
+        (requirement.get("projectId"), requirement["id"]): requirement
+        for project in PROJECTS
+        for requirement in build_project_requirements(pack_for_project_id(project["id"]), project_id=project["id"])
+    }
+    bindings: list[dict[str, Any]] = []
+    for pack_summary in list_business_packs():
+        pack = load_business_pack(pack_summary["id"])
+        for fixture in business_pack_fixtures(pack)["bindings"]:
+            binding_id = fixture.get("id")
+            if not binding_id or binding_id in existing_ids:
+                continue
+            document = documents_by_id.get(fixture.get("documentId"))
+            requirement = requirements_by_key.get((fixture.get("projectId"), fixture.get("requirementId"))) or {}
+            bindings.append(
+                {
+                    "id": binding_id,
+                    "projectId": fixture.get("projectId"),
+                    "nodeId": int(fixture.get("nodeId") or 1),
+                    "requirementId": fixture.get("requirementId"),
+                    "requirementName": fixture.get("requirementName") or requirement.get("name"),
+                    "documentId": fixture.get("documentId"),
+                    "documentVersionId": fixture.get("documentVersionId") or (document or {}).get("currentVersionId"),
+                    "fileName": fixture.get("fileName") or (document or {}).get("fileName") or "fixture.pdf",
+                    "versionNo": fixture.get("versionNo") or "V1",
+                    "usage": fixture.get("usage") or "原始提交",
+                    "sourceOrgName": fixture.get("sourceOrgName") or (document or {}).get("sourceOrgName") or "提交单位",
+                    "bindingStatus": fixture.get("bindingStatus") or "已提交",
+                    "boundByName": fixture.get("boundByName") or "系统样例",
+                    "boundAt": fixture.get("boundAt") or "2026-06-26 09:30:00",
+                    "actions": fixture.get("actions") or ["review:save", "review:return-correction"],
+                }
+            )
+            existing_ids.add(binding_id)
+    return bindings
+
+
+BINDINGS.extend(fixture_bindings())
+
 EVIDENCE_LINKS = [
     {
         "id": "EV-24-001",
@@ -304,6 +434,42 @@ EVIDENCE_LINKS = [
         "confidence": 0.66,
     },
 ]
+
+
+def fixture_evidence_links() -> list[dict[str, Any]]:
+    existing_ids = {link["id"] for link in EVIDENCE_LINKS}
+    version_by_id = {version["id"]: version for version in VERSIONS}
+    document_by_id = {document["id"]: document for document in DOCUMENTS}
+    links: list[dict[str, Any]] = []
+    for pack_summary in list_business_packs():
+        pack = load_business_pack(pack_summary["id"])
+        for fixture in business_pack_fixtures(pack)["evidenceLinks"]:
+            link_id = fixture.get("id")
+            if not link_id or link_id in existing_ids:
+                continue
+            object_id = fixture.get("objectId")
+            version = version_by_id.get(object_id or "")
+            document = document_by_id.get((version or {}).get("documentId"))
+            links.append(
+                {
+                    "id": link_id,
+                    "projectId": fixture.get("projectId"),
+                    "objectType": fixture.get("objectType") or "documentVersion",
+                    "objectId": object_id,
+                    "documentId": fixture.get("documentId") or (document or {}).get("id"),
+                    "documentVersionId": fixture.get("documentVersionId") or object_id,
+                    "fileName": fixture.get("fileName") or (document or {}).get("fileName"),
+                    "pageNo": int(fixture.get("pageNo") or 1),
+                    "fieldName": fixture.get("fieldName") or "关键字段",
+                    "quotedText": fixture.get("quotedText") or "业务包样例证据",
+                    "confidence": float(fixture.get("confidence") or 0.86),
+                }
+            )
+            existing_ids.add(link_id)
+    return links
+
+
+EVIDENCE_LINKS.extend(fixture_evidence_links())
 
 EXTRACTED_FIELDS = [
     {
@@ -394,7 +560,41 @@ for opinion in REVIEW_OPINIONS:
     opinion["ruleRefs"] = [{"ruleSetId": "RULE-WELDER-202606", "ruleCode": "welder-qualification"}]
     opinion["kbRefs"] = [{"kbDocId": "KS-STANDARD-TSG", "clause": opinion.get("basis")}]
 
-REVIEW_FINDINGS: list[dict[str, Any]] = []
+def fixture_review_findings() -> list[dict[str, Any]]:
+    findings: list[dict[str, Any]] = []
+    for pack_summary in list_business_packs():
+        pack = load_business_pack(pack_summary["id"])
+        for fixture in business_pack_fixtures(pack)["reviewFindings"]:
+            findings.append(
+                {
+                    "id": fixture.get("id") or f"FND-{pack['id']}",
+                    "projectId": fixture.get("projectId"),
+                    "nodeId": int(fixture.get("nodeId") or pack["nodeTemplates"][0]["nodeId"]),
+                    "businessPackId": pack["id"],
+                    "businessPackVersion": pack["version"],
+                    "businessPackSnapshotHash": pack["snapshotHash"],
+                    "agentId": (default_agent := next(iter(pack.get("agentSops") or []), {})).get("id"),
+                    "agentVersion": default_agent.get("version"),
+                    "findingType": fixture.get("findingType") or "manual_review",
+                    "severity": fixture.get("severity") or "medium",
+                    "title": fixture.get("title") or "审查发现",
+                    "description": fixture.get("description") or fixture.get("title") or "请人工确认该发现。",
+                    "evidenceLinkIds": fixture.get("evidenceLinkIds") or [],
+                    "ruleRefs": fixture.get("ruleRefs") or [],
+                    "kbRefs": fixture.get("kbRefs") or [],
+                    "confidence": float(fixture.get("confidence") or 0.82),
+                    "suggestedAction": fixture.get("suggestedAction") or "human_confirm",
+                    "status": fixture.get("status") or "draft",
+                    "source": fixture.get("source") or "ai",
+                    "humanStatus": fixture.get("humanStatus") or "pending_human_review",
+                    "createdAt": fixture.get("createdAt") or "2026-06-26 09:30:00",
+                    "revision": 1,
+                }
+            )
+    return findings
+
+
+REVIEW_FINDINGS: list[dict[str, Any]] = fixture_review_findings()
 AI_FEEDBACK: list[dict[str, Any]] = []
 
 REPORTS = [
@@ -972,8 +1172,9 @@ def fresh_state() -> dict[str, Any]:
     tree_nodes = []
     requirements = []
     for project in PROJECTS:
+        pack = pack_for_project_id(project["id"])
         tree_nodes.extend(build_tree(project["id"]))
-        requirements.extend(build_project_requirements(DEFAULT_BUSINESS_PACK, project_id=project["id"]))
+        requirements.extend(build_project_requirements(pack, project_id=project["id"]))
     knowledge_files = build_knowledge_files(DOCUMENTS, BINDINGS, tree_nodes)
     state = {
         "projects": deepcopy(PROJECTS),

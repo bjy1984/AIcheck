@@ -1,0 +1,46 @@
+fixtures:
+  projects:
+    - id: P-CA-FIXTURE-001
+      name: 数据权限合规审计项目
+      type: 合规审计
+      region: 华东
+      currentNodeId: 3
+      status: AI 预审中
+      ownerOrgName: 观察单位
+      contractorOrgName: 被审计单位
+      inspectionOrgName: 审计机构
+  documents:
+    - id: DOC-CA-001
+      projectId: P-CA-FIXTURE-001
+      fileName: 权限管理制度.pdf
+      materialTypeCode: policy_document
+    - id: DOC-CA-002
+      projectId: P-CA-FIXTURE-001
+      fileName: 控制矩阵.xlsx
+      materialTypeCode: control_matrix
+  bindings:
+    - id: BIND-CA-001
+      projectId: P-CA-FIXTURE-001
+      nodeId: 1
+      requirementId: CA-REQ-01-01
+      documentId: DOC-CA-001
+    - id: BIND-CA-003
+      projectId: P-CA-FIXTURE-001
+      nodeId: 3
+      requirementId: CA-REQ-03-01
+      documentId: DOC-CA-002
+  evidenceLinks:
+    - id: EV-CA-001
+      projectId: P-CA-FIXTURE-001
+      objectType: documentVersion
+      objectId: DV-CA-001-V1
+  reviewFindings:
+    - id: FND-CA-FIXTURE-001
+      projectId: P-CA-FIXTURE-001
+      nodeId: 3
+      source: ai
+      findingType: evidence_inconsistent
+      title: 控制矩阵与流程记录缺少一致性证据
+      evidenceLinkIds: [EV-CA-001]
+      ruleRefs:
+        - {ruleSetId: RULE-CA-CONTROL-202606, ruleCode: control-evidence-consistency}

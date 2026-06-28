@@ -71,6 +71,17 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
     },
     children: [
       {
+        path: 'generic',
+        component: () => import('@/views/AICheck/GenericReviewWorkbench.vue'),
+        name: 'GenericReviewWorkbench',
+        meta: {
+          title: '通用资料审查',
+          icon: 'vi-ep:collection',
+          noCache: true,
+          roles: ['admin', 'inspection', 'contractor', 'owner']
+        }
+      },
+      {
         path: 'inspection',
         component: () => import('@/views/AICheck/Workbench.vue'),
         name: 'InspectionWorkbench',
@@ -155,6 +166,16 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         name: 'AdminOrg',
         meta: {
           title: '组织用户',
+          noCache: true,
+          roles: ['admin']
+        }
+      },
+      {
+        path: 'business-packs',
+        component: AdminOverview,
+        name: 'AdminBusinessPacks',
+        meta: {
+          title: '业务包管理',
           noCache: true,
           roles: ['admin']
         }

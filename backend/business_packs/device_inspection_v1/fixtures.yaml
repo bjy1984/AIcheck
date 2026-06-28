@@ -1,0 +1,46 @@
+fixtures:
+  projects:
+    - id: P-DI-FIXTURE-001
+      name: 空压机年度资料核验项目
+      type: 设备年检
+      region: 华南
+      currentNodeId: 3
+      status: AI 预审中
+      ownerOrgName: 管理观察单位
+      contractorOrgName: 设备管理单位
+      inspectionOrgName: 年检审核机构
+  documents:
+    - id: DOC-DI-001
+      projectId: P-DI-FIXTURE-001
+      fileName: 空压机设备台账.pdf
+      materialTypeCode: device_register
+    - id: DOC-DI-002
+      projectId: P-DI-FIXTURE-001
+      fileName: 维护保养记录.xlsx
+      materialTypeCode: maintenance_record
+  bindings:
+    - id: BIND-DI-001
+      projectId: P-DI-FIXTURE-001
+      nodeId: 1
+      requirementId: DI-REQ-01-01
+      documentId: DOC-DI-001
+    - id: BIND-DI-003
+      projectId: P-DI-FIXTURE-001
+      nodeId: 3
+      requirementId: DI-REQ-03-01
+      documentId: DOC-DI-002
+  evidenceLinks:
+    - id: EV-DI-001
+      projectId: P-DI-FIXTURE-001
+      objectType: documentVersion
+      objectId: DV-DI-002-V1
+  reviewFindings:
+    - id: FND-DI-FIXTURE-001
+      projectId: P-DI-FIXTURE-001
+      nodeId: 3
+      source: ai
+      findingType: evidence_missing
+      title: 维护记录缺少责任人签名证据
+      evidenceLinkIds: [EV-DI-001]
+      ruleRefs:
+        - {ruleSetId: RULE-DI-MAINTENANCE-202606, ruleCode: maintenance-completeness}

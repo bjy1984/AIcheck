@@ -1,0 +1,21 @@
+ruleSets:
+  - id: RULE-DI-MAINTENANCE-202606
+    name: 维护记录完整性核验规则
+    ruleKey: maintenance-completeness
+    version: DI-Maintenance-v1.0
+    status: 已发布
+    nodeIds: [3]
+    severity: high
+    promptVersion: prompt-di-maintenance-v1
+    outputSchemaVersion: schema-review-v1.3
+    description: 核验维护保养记录日期、责任人、处置动作与设备台账的一致性。
+  - id: RULE-DI-SAFETY-202606
+    name: 安全附件证据核验规则
+    ruleKey: safety-device-evidence
+    version: DI-Safety-v1.0
+    status: 已发布
+    nodeIds: [4, 5]
+    severity: high
+    promptVersion: prompt-di-safety-v1
+    outputSchemaVersion: schema-review-v1.3
+    description: 核验安全附件记录、缺陷整改记录和年检报告引用证据的一致性。

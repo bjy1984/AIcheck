@@ -49,7 +49,8 @@ import {
   previewAdminConfigDiffApi,
   publishAdminConfigApi,
   saveAdminConfigItemApi,
-  updateProjectMemberApi
+  updateProjectMemberApi,
+  validateAllBusinessPacksApi
 } from '@/api/aicheck'
 import type {
   AdminConfigChangePayload,
@@ -60,6 +61,7 @@ import type {
   AdminProjectCreatePayload,
   AdminProjectDetailPayload,
   AuditLogPayload,
+  BusinessPackValidateAllPayload,
   IntegrationContractField,
   IntegrationContractModule,
   IntegrationContractPayload,
@@ -83,7 +85,8 @@ const emptyOverview = (): AdminConfigOverviewPayload => ({
   todoRules: [],
   messageTemplates: [],
   toolSources: [],
-  fieldMappings: []
+  fieldMappings: [],
+  businessPacks: []
 })
 
 const emptyIntegrationContract = (): IntegrationContractPayload => ({
@@ -165,55 +168,62 @@ const adminShellMenuSectionsBase = [
     items: [
       {
         index: '10',
+        label: '业务包管理',
+        badge: '复用',
+        tone: 'green',
+        route: '/admin/business-packs'
+      },
+      {
+        index: '11',
         label: '项目审核节点维护',
         badge: '69项',
         tone: 'blue',
         route: '/admin/permission'
       },
       {
-        index: '11',
+        index: '12',
         label: '节点与角色权限矩阵',
         badge: '动作级',
         tone: 'blue',
         route: '/admin/permission'
       },
       {
-        index: '12',
+        index: '13',
         label: 'AI 业务审查规则模板',
         badge: '新增',
         tone: 'orange',
         route: '/admin/rules'
       },
       {
-        index: '13',
+        index: '14',
         label: 'AI 知识库管理',
         badge: 'OCR/向量',
         tone: 'green',
         route: '/knowledge/overview'
       },
       {
-        index: '14',
+        index: '15',
         label: '外部核验工具源配置',
         badge: '4源',
         tone: 'blue',
         route: '/admin/fine-config'
       },
       {
-        index: '15',
+        index: '16',
         label: '证据字段映射配置',
         badge: '字段',
         tone: 'blue',
         route: '/admin/fine-config'
       },
-      { index: '16', label: '角色单位人员维护', badge: '基础', tone: 'green', route: '/admin/org' },
+      { index: '17', label: '角色单位人员维护', badge: '基础', tone: 'green', route: '/admin/org' },
       {
-        index: '17',
+        index: '18',
         label: '联调清单',
         badge: '对账',
         tone: 'orange',
         route: '/admin/integration'
       },
-      { index: '18', label: '操作日志', badge: '审计', tone: 'blue', route: '/admin/audit' }
+      { index: '19', label: '操作日志', badge: '审计', tone: 'blue', route: '/admin/audit' }
     ]
   }
 ] as const
@@ -300,6 +310,7 @@ const configPublishing = ref(false)
 
 const adminTabRouteMap = {
   org: '/admin/org',
+  'business-pack': '/admin/business-packs',
   permission: '/admin/permission',
   rule: '/admin/rules',
   'fine-config': '/admin/fine-config',
@@ -313,6 +324,7 @@ const adminRouteTabMap: Record<string, AdminTabKey> = {
   '/admin/overview': 'org',
   '/admin/projects': 'org',
   '/admin/org': 'org',
+  '/admin/business-packs': 'business-pack',
   '/admin/permission': 'permission',
   '/admin/rules': 'rule',
   '/admin/fine-config': 'fine-config',
@@ -335,6 +347,9 @@ const integrationError = ref('')
 const integrationModuleFilter = ref<IntegrationContractModule | 'all'>('all')
 const integrationStatusFilter = ref<IntegrationContractStatus | 'all'>('all')
 const adminActionRetry = ref<'export' | 'publish' | null>(null)
+const businessPackValidating = ref(false)
+const businessPackValidation = ref<BusinessPackValidateAllPayload | null>(null)
+const businessPackValidationError = ref('')
 const auditError = ref('')
 const projectDrawerVisible = ref(false)
 const projectDetailLoading = ref(false)
@@ -417,6 +432,7 @@ const auditFilters = reactive({
 const projectWizardRoles: ProjectWizardMemberRole[] = ['inspection', 'contractor', 'ndt', 'owner']
 
 const projectWizardForm = reactive({
+  businessPackId: 'engineering_inspection_v1',
   code: '',
   name: '',
   type: '工业管道新建',
@@ -589,7 +605,10 @@ const configSummary = computed(() => [
     value: `${overview.value.orgUnits.length} 个组织 / ${overview.value.users.length} 个用户`
   },
   { label: '权限模型', value: `${overview.value.permissionMatrix.length} 类角色矩阵` },
-  { label: '节点模板', value: `${overview.value.nodeTemplates.length} 组模板 / 69 个节点` },
+  {
+    label: '业务包',
+    value: `${(overview.value.businessPacks || []).length} 个业务包 / ${businessPackNodeTotal.value} 个节点`
+  },
   { label: '规则版本', value: `${overview.value.ruleVersions.length} 个规则包` },
   { label: '状态机', value: `${overview.value.workflowStateMachines.length} 个流程版本` },
   {
@@ -597,6 +616,21 @@ const configSummary = computed(() => [
     value: `${overview.value.todoRules.length + overview.value.messageTemplates.length + overview.value.toolSources.length + overview.value.fieldMappings.length} 项`
   }
 ])
+
+const businessPackRows = computed(() => overview.value.businessPacks || [])
+const businessPackNodeTotal = computed(() =>
+  businessPackRows.value.reduce((sum, pack) => sum + pack.nodeCount, 0)
+)
+const selectedWizardBusinessPack = computed(
+  () =>
+    businessPackRows.value.find((pack) => pack.id === projectWizardForm.businessPackId) ||
+    businessPackRows.value.find((pack) => pack.id === 'engineering_inspection_v1') ||
+    null
+)
+const isEngineeringWizardPack = computed(
+  () => selectedWizardBusinessPack.value?.domainType === 'engineering_inspection'
+)
+const selectedWizardNodeMax = computed(() => selectedWizardBusinessPack.value?.nodeCount || 69)
 
 const pendingRuleCount = computed(
   () => overview.value.ruleVersions.filter((item) => item.status === '待发布').length
@@ -869,23 +903,69 @@ const handleIntegrationFilterChange = () => {
   loadIntegrationContract()
 }
 
+const handleValidateBusinessPacks = async () => {
+  businessPackValidating.value = true
+  businessPackValidationError.value = ''
+  try {
+    const res = await validateAllBusinessPacksApi()
+    if (!res) {
+      businessPackValidationError.value = getRequestErrorMessage(
+        undefined,
+        '业务包校验失败，已保留当前配置列表。'
+      )
+      return
+    }
+    businessPackValidation.value = res.data
+    ElMessage.success(res.data.ok ? '业务包校验通过' : '业务包存在校验错误')
+  } catch (error) {
+    businessPackValidationError.value = getRequestErrorMessage(
+      error,
+      '业务包校验失败，已保留当前配置列表。'
+    )
+  } finally {
+    businessPackValidating.value = false
+  }
+}
+
 const getDefaultWizardUserId = (role: ProjectWizardMemberRole) =>
   overview.value.users.find((user) => user.role === role)?.id ||
   projectWizardForm.memberUserIds[role]
 
 const resetProjectWizardForm = () => {
+  projectWizardForm.businessPackId =
+    businessPackRows.value.find((pack) => pack.id === 'engineering_inspection_v1')?.id ||
+    businessPackRows.value[0]?.id ||
+    'engineering_inspection_v1'
   projectWizardForm.code = `P-2026-MOCK-${String(projects.value.length + 1).padStart(3, '0')}`
   projectWizardForm.name = ''
-  projectWizardForm.type = '工业管道新建'
   projectWizardForm.region = '华东'
-  projectWizardForm.ownerOrgName = '华东管网建设公司'
-  projectWizardForm.contractorOrgName = '中石化安装有限公司'
-  projectWizardForm.ndtOrgName = '华测检测有限公司'
-  projectWizardForm.inspectionOrgName = '省特检院一部'
-  projectWizardForm.currentNodeId = 1
+  applyBusinessPackDefaultsToWizard()
   projectWizardRoles.forEach((role) => {
     projectWizardForm.memberUserIds[role] = getDefaultWizardUserId(role)
   })
+}
+
+const applyBusinessPackDefaultsToWizard = () => {
+  const pack = selectedWizardBusinessPack.value
+  if (!pack || pack.domainType === 'engineering_inspection') {
+    projectWizardForm.type = '工业管道新建'
+    projectWizardForm.ownerOrgName = '华东管网建设公司'
+    projectWizardForm.contractorOrgName = '中石化安装有限公司'
+    projectWizardForm.ndtOrgName = '华测检测有限公司'
+    projectWizardForm.inspectionOrgName = '省特检院一部'
+    projectWizardForm.currentNodeId = 1
+    return
+  }
+  projectWizardForm.type = pack.name
+  projectWizardForm.ownerOrgName = '观察单位'
+  projectWizardForm.contractorOrgName = '提交单位'
+  projectWizardForm.ndtOrgName = '专项资料单位'
+  projectWizardForm.inspectionOrgName = '审核机构'
+  projectWizardForm.currentNodeId = 1
+}
+
+const handleWizardBusinessPackChange = () => {
+  applyBusinessPackDefaultsToWizard()
 }
 
 const openProjectWizard = () => {
@@ -919,7 +999,10 @@ const validateProjectWizardStep = () => {
     }
   }
   if (projectWizardStep.value === 2) {
-    if (projectWizardRoles.some((role) => !projectWizardForm.memberUserIds[role])) {
+    if (
+      isEngineeringWizardPack.value &&
+      projectWizardRoles.some((role) => !projectWizardForm.memberUserIds[role])
+    ) {
       ElMessage.warning('请为四类角色选择初始成员')
       return false
     }
@@ -936,6 +1019,7 @@ const handleCreateProject = async () => {
   if (!validateProjectWizardStep()) return
   const payload: AdminProjectCreatePayload = {
     code: projectWizardForm.code || undefined,
+    businessPackId: projectWizardForm.businessPackId,
     name: projectWizardForm.name,
     type: projectWizardForm.type,
     region: projectWizardForm.region,
@@ -1889,6 +1973,73 @@ onMounted(() => {
           </ElRow>
         </ElTabPane>
 
+        <ElTabPane label="业务包管理" name="business-pack">
+          <ElRow :gutter="16">
+            <ElCol :span="24">
+              <ElCard shadow="never" class="panel">
+                <template #header>
+                  <div class="panel-header">
+                    <span>业务包列表</span>
+                    <ElSpace>
+                      <ElTag
+                        :type="businessPackValidation?.ok === false ? 'danger' : 'success'"
+                        effect="plain"
+                      >
+                        {{ businessPackValidation?.ok === false ? '存在错误' : '可用' }}
+                      </ElTag>
+                      <ElButton
+                        type="primary"
+                        size="small"
+                        plain
+                        :loading="businessPackValidating"
+                        @click="handleValidateBusinessPacks"
+                      >
+                        重新校验
+                      </ElButton>
+                    </ElSpace>
+                  </div>
+                </template>
+                <ElAlert
+                  v-if="businessPackValidationError"
+                  type="error"
+                  show-icon
+                  :closable="false"
+                  :title="businessPackValidationError"
+                  class="mb-12px"
+                />
+                <ElTable :data="businessPackRows" border height="380">
+                  <ElTableColumn prop="name" label="业务包" min-width="190" show-overflow-tooltip />
+                  <ElTableColumn prop="id" label="ID" min-width="210" show-overflow-tooltip />
+                  <ElTableColumn prop="domainType" label="领域" min-width="150" />
+                  <ElTableColumn prop="version" label="版本" width="120" />
+                  <ElTableColumn prop="roleCount" label="角色" width="72" />
+                  <ElTableColumn prop="nodeCount" label="节点" width="72" />
+                  <ElTableColumn prop="materialTypeCount" label="资料" width="72" />
+                  <ElTableColumn prop="ruleSetCount" label="规则" width="72" />
+                  <ElTableColumn prop="agentSopCount" label="Agent" width="78" />
+                  <ElTableColumn label="Fixtures" width="92">
+                    <template #default="{ row }">
+                      {{ row.fixtureProjectCount || 0 }}
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn label="状态" width="96">
+                    <template #default="{ row }">
+                      <ElTag :type="statusType(row.status)" size="small" effect="plain">
+                        {{ row.status }}
+                      </ElTag>
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn label="快照" min-width="190" show-overflow-tooltip>
+                    <template #default="{ row }">
+                      {{ row.snapshotHash }}
+                    </template>
+                  </ElTableColumn>
+                </ElTable>
+              </ElCard>
+            </ElCol>
+          </ElRow>
+        </ElTabPane>
+
         <ElTabPane label="权限与节点" name="permission">
           <ElRow :gutter="16">
             <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
@@ -2519,6 +2670,28 @@ onMounted(() => {
           </div>
 
           <div v-show="projectWizardStep === 0">
+            <ElFormItem label="业务包">
+              <ElSelect
+                v-model="projectWizardForm.businessPackId"
+                filterable
+                @change="handleWizardBusinessPackChange"
+              >
+                <ElOption
+                  v-for="pack in businessPackRows"
+                  :key="pack.id"
+                  :label="`${pack.name} / ${pack.version}`"
+                  :value="pack.id"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElAlert
+              v-if="selectedWizardBusinessPack"
+              type="info"
+              show-icon
+              :closable="false"
+              :title="`${selectedWizardBusinessPack.name}：${selectedWizardBusinessPack.nodeCount} 个节点、${selectedWizardBusinessPack.materialTypeCount} 类资料、${selectedWizardBusinessPack.ruleSetCount} 套规则。`"
+              class="mb-12px"
+            />
             <ElRow :gutter="12">
               <ElCol :xs="24" :sm="12">
                 <ElFormItem label="项目编号">
@@ -2544,7 +2717,11 @@ onMounted(() => {
               </ElCol>
             </ElRow>
             <ElFormItem label="起始节点">
-              <ElInputNumber v-model="projectWizardForm.currentNodeId" :min="1" :max="69" />
+              <ElInputNumber
+                v-model="projectWizardForm.currentNodeId"
+                :min="1"
+                :max="selectedWizardNodeMax"
+              />
             </ElFormItem>
           </div>
 
@@ -2580,9 +2757,18 @@ onMounted(() => {
               type="info"
               show-icon
               :closable="false"
-              title="立项后将生成 69 个监督检验节点，并按四类角色写入初始项目成员授权。"
+              :title="
+                isEngineeringWizardPack
+                  ? '立项后将生成工程监检节点，并按四类角色写入初始项目成员授权。'
+                  : '立项后将按业务包角色自动创建成员授权，并进入通用资料审查工作台。'
+              "
             />
-            <ElTable :data="projectWizardRoles" border class="wizard-member-table">
+            <ElTable
+              v-if="isEngineeringWizardPack"
+              :data="projectWizardRoles"
+              border
+              class="wizard-member-table"
+            >
               <ElTableColumn label="角色" width="120">
                 <template #default="{ row }">{{ roleLabel(row) }}</template>
               </ElTableColumn>
@@ -2604,6 +2790,10 @@ onMounted(() => {
                 </template>
               </ElTableColumn>
             </ElTable>
+            <ElEmpty
+              v-else
+              description="非工程业务包使用业务包角色定义自动授权，后续可在项目成员中细化。"
+            />
           </div>
         </ElForm>
 

@@ -1,0 +1,10 @@
+agentSops:
+  - id: device_inspection_review_agent
+    name: 设备年检资料复核员
+    version: 1.0.0
+    taskType: review_recheck
+    inputSchema: ReviewTaskInput
+    outputSchema: ReviewFindingDraftList
+    allowedTools: [get_project_context, get_document_ocr_result, search_knowledge_base, create_review_finding_draft]
+    forbiddenActions: [approve_final_review, delete_document, change_project_status, issue_correction_without_human_approval]
+    humanConfirmationRequired: true

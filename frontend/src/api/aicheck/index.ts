@@ -243,6 +243,7 @@ export type AdminProjectDetailPayload = {
 }
 
 export type AdminProjectCreatePayload = {
+  businessPackId?: string
   code?: string
   name: string
   type: string
@@ -753,6 +754,76 @@ export type AdminConfigOverviewPayload = {
   messageTemplates: AdminMessageTemplate[]
   toolSources: AdminToolSource[]
   fieldMappings: AdminFieldMapping[]
+  businessPacks?: BusinessPackSummary[]
+}
+
+export type BusinessPackSummary = {
+  id: string
+  name: string
+  version: string
+  domainType: string
+  status: 'draft' | 'candidate' | 'published' | 'deprecated' | 'archived' | string
+  snapshotHash: string
+  roleCount: number
+  nodeCount: number
+  materialTypeCount: number
+  ruleSetCount: number
+  agentSopCount: number
+  fixtureProjectCount?: number
+}
+
+export type BusinessPackValidation = {
+  ok: boolean
+  errors: string[]
+  warnings: string[]
+}
+
+export type BusinessPackDetail = BusinessPackSummary & {
+  validation?: BusinessPackValidation
+  roles?: Array<{ code: string; label: string; platformRole: string; defaultPath: string }>
+  nodeTemplates?: Array<{ nodeId: number; code: string; name: string; groupName: string }>
+  materialTypes?: Array<{ code: string; name: string; requiredType: string }>
+  ruleSets?: Array<{ id: string; name: string; ruleKey: string; version: string; status: string }>
+  agentSops?: Array<{ id: string; name: string; version: string }>
+}
+
+export type BusinessPackValidateAllPayload = {
+  ok: boolean
+  results: Array<{
+    summary: BusinessPackSummary
+    validation: BusinessPackValidation
+  }>
+}
+
+export type ReviewFinding = {
+  id: string
+  projectId: string
+  nodeId: number
+  businessPackId: string
+  businessPackVersion: string
+  businessPackSnapshotHash?: string
+  agentId?: string
+  agentVersion?: string
+  findingType: string
+  severity: 'low' | 'medium' | 'high' | string
+  title: string
+  description: string
+  evidenceLinkIds: string[]
+  ruleRefs: Array<{ ruleSetId: string; ruleCode?: string }>
+  confidence: number
+  suggestedAction: string
+  status: string
+  source: 'ai' | 'human' | string
+  humanStatus?: string
+  createdAt: string
+}
+
+export type GenericReviewWorkbenchPayload = {
+  project: Project
+  businessPack: BusinessPackSummary
+  nodes: ProjectTreeNode[]
+  findings: ReviewFinding[]
+  aiRuns: AiReviewRun[]
 }
 
 export type AdminConfigTarget =
@@ -1831,6 +1902,33 @@ export const getAuditLogsApi = (params?: {
 
 export const getAdminConfigOverviewApi = (): Promise<IResponse<AdminConfigOverviewPayload>> => {
   return request.get({ url: '/api/admin/config-overview' })
+}
+
+export const listBusinessPacksApi = (): Promise<IResponse<BusinessPackSummary[]>> => {
+  return request.get({ url: '/api/business-packs' })
+}
+
+export const getBusinessPackApi = (packId: string): Promise<IResponse<BusinessPackDetail>> => {
+  return request.get({ url: `/api/business-packs/${packId}` })
+}
+
+export const validateBusinessPackApi = (
+  packId: string
+): Promise<IResponse<{ summary: BusinessPackSummary; validation: BusinessPackValidation }>> => {
+  return request.post({ url: `/api/business-packs/${packId}/validate` })
+}
+
+export const validateAllBusinessPacksApi = (): Promise<
+  IResponse<BusinessPackValidateAllPayload>
+> => {
+  return request.post({ url: '/api/business-packs/validate-all' })
+}
+
+export const getProjectReviewWorkbenchApi = (
+  projectId: string,
+  params?: { nodeId?: number }
+): Promise<IResponse<GenericReviewWorkbenchPayload>> => {
+  return request.get({ url: `/api/projects/${projectId}/review-workbench`, params })
 }
 
 export const getAdminIntegrationContractApi = (params?: {

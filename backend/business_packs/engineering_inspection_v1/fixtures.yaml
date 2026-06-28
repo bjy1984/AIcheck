@@ -1,0 +1,43 @@
+fixtures:
+  projects:
+    - id: P-2026-HDCP-001
+      name: 华东成品油管道改造工程
+      type: 工业管道改造
+      region: 华东
+      currentNodeId: 24
+      status: 监检审查中
+  documents:
+    - id: DOC-20260625-001
+      projectId: P-2026-HDCP-001
+      fileName: 焊工资格证-王建国.pdf
+      materialTypeCode: welder_certificate
+    - id: DOC-20260625-003
+      projectId: P-2026-HDCP-001
+      fileName: 钢管质量证明书.pdf
+      materialTypeCode: quality_certificate
+  bindings:
+    - id: BIND-24-001
+      projectId: P-2026-HDCP-001
+      nodeId: 24
+      requirementId: REQ-24-01
+      documentId: DOC-20260625-001
+    - id: BIND-16-001
+      projectId: P-2026-HDCP-001
+      nodeId: 16
+      requirementId: REQ-16-01
+      documentId: DOC-20260625-003
+  evidenceLinks:
+    - id: EV-24-001
+      projectId: P-2026-HDCP-001
+      objectType: documentVersion
+      objectId: DV-20260625-001-V2
+  reviewFindings:
+    - id: FND-ENG-FIXTURE-001
+      projectId: P-2026-HDCP-001
+      nodeId: 24
+      source: ai
+      findingType: field_missing
+      title: 外部查询截图来源待确认
+      evidenceLinkIds: [EV-24-001]
+      ruleRefs:
+        - {ruleSetId: RULE-WELDER-202606, ruleCode: welder-qualification}

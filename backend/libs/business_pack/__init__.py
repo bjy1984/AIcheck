@@ -1,5 +1,6 @@
 from .loader import (
     DEFAULT_BUSINESS_PACK_ID,
+    business_pack_fixtures,
     business_pack_summary,
     business_pack_snapshot,
     build_ai_review_prompt,
@@ -18,6 +19,7 @@ from .loader import (
 
 __all__ = [
     "DEFAULT_BUSINESS_PACK_ID",
+    "business_pack_fixtures",
     "business_pack_summary",
     "business_pack_snapshot",
     "build_ai_review_prompt",

@@ -21,9 +21,10 @@ AIcheck/
 │       ├── api/aicheck/       # 前端业务 API client，后端合同以此为准
 │       ├── api/login/         # 登录与动态路由 API client
 │       ├── utils/roleAccess.ts
-│       └── views/AICheck/     # 监检、施工方、NDT、建设方、管理后台页面
+│       └── views/AICheck/     # 工程角色工作台、通用审查工作台、管理后台页面
 ├── backend/
 │   ├── apps/api/              # FastAPI 主业务 API
+│   │   └── adapters/          # 行业兼容 adapter，例如工程监检旧接口默认值
 │   ├── apps/worker/           # Celery worker 与异步任务入口
 │   ├── apps/ocr_service/      # 内部 OCR HTTP 服务
 │   ├── business_packs/        # 可插拔业务包：角色、节点、资料、规则、报告、AI SOP
@@ -76,6 +77,7 @@ litellm-service
 | --- | --- | --- | --- |
 | 登录与角色 | `/login`、动态路由 | `/api/auth/login`、JWT、默认面板、路由与动作权限 | `users`、`roles`、`project_members` |
 | 工作台 | `/workbench/{role}` | 项目列表、项目上下文、摘要、项目树、节点包 | `projects`、`project_nodes`、`todos`、`messages` |
+| 通用资料审查 | `/workbench/generic` | 非工程业务包的节点、资料要求、AI 发现和人工确认入口 | `project_nodes`、`review_findings`、`ai_runs` |
 | 文件与节点资料 | 工作台文件区 | 上传会话、MinIO signed URL、版本、挂载、撤回、作废 | `documents`、`document_versions`、`node_bindings` |
 | 提交与补正 | 施工方/监检工作台 | 批次提交、撤回、补正反馈、状态机校验 | `submissions`、`rectifications`、`audit_logs` |
 | 监检审查 | 监检工作台 | AI 复核、人工意见、证据链、报告草稿 | `ai_runs`、`evidence_links`、`reports` |
@@ -96,11 +98,18 @@ AIcheck 现在按“通用资料审查内核 + 业务包”组织可复用业务
 - `rules.yaml`：规则版本、适用节点、严重级别、输出 schema。
 - `reports.yaml`：报告模板、章节和导出类型。
 - `agents.yaml`：AI 员工 SOP、工具权限和人工确认边界。
+- `fixtures.yaml`：可选但推荐，声明跨行业 smoke 用的示例项目、文档、绑定、证据和 AI 发现。
 
 内置业务包：
 
 - `engineering_inspection_v1`：工程监检业务包，当前默认包，生成 69 个工程监检节点。
 - `compliance_audit_v1`：合规审计样例包，用于验证跨业务复用，生成 8 个审计节点。
+- `device_inspection_v1`：设备年检样例包，用于验证设备资料核验迁移，生成 6 个年检节点。
+
+管理后台入口：
+
+- `/admin/business-packs`：查看业务包版本、快照 hash、角色/节点/资料/规则/Agent/fixtures 数量，并触发全量业务包校验。
+- `/admin/projects`：项目立项向导支持选择 `businessPackId`；工程包进入原工程监检工作台，非工程包可进入 `/workbench/generic` 通用资料审查工作台。
 
 部署或新增业务包后，应运行：
 

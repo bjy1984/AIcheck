@@ -46,6 +46,7 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = BACKEND_ROOT.parent
 MUTATION_HEADER_EXEMPT_URLS = {
     "/api/admin/config-diff/preview",
+    "/api/business-packs/${packId}/validate",
     "/api/business-packs/{pack_id}/validate",
     "/api/business-packs/validate-all",
     "/api/knowledge/retrieval-test",

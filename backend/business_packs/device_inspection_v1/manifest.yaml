@@ -1,0 +1,6 @@
+id: device_inspection_v1
+name: 设备年检业务包
+version: 2026.06.01
+domainType: device_inspection
+status: published
+description: 设备年检资料核验业务包，用于验证平台内核可迁移到非工程监检资料审查场景。
