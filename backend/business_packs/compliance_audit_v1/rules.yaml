@@ -1,0 +1,21 @@
+ruleSets:
+  - id: RULE-CA-POLICY-202606
+    name: 制度完整性核验规则
+    ruleKey: policy-completeness
+    version: CA-Policy-v1.0
+    status: 已发布
+    nodeIds: [1, 2]
+    severity: high
+    promptVersion: prompt-ca-policy-v1
+    outputSchemaVersion: schema-review-v1.3
+    description: 核验制度版本、生效日期、责任部门和审批记录完整性。
+  - id: RULE-CA-CONTROL-202606
+    name: 控制证据一致性核验规则
+    ruleKey: control-evidence-consistency
+    version: CA-Control-v1.0
+    status: 已发布
+    nodeIds: [3, 4, 5]
+    severity: high
+    promptVersion: prompt-ca-control-v1
+    outputSchemaVersion: schema-review-v1.3
+    description: 核验控制矩阵、流程记录、审批记录和事件记录的一致性。

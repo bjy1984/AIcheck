@@ -1,0 +1,13 @@
+materialTypes:
+  - {code: policy_document, name: 制度文件, requiredType: 必传, requiredFields: [title, version, effective_date], evidenceRequired: true}
+  - {code: org_chart, name: 组织架构与职责, requiredType: 必传, requiredFields: [department, owner, responsibility], evidenceRequired: true}
+  - {code: process_record, name: 流程执行记录, requiredType: 必传, requiredFields: [process_name, executor, date], evidenceRequired: true}
+  - {code: approval_record, name: 审批记录, requiredType: 必传, requiredFields: [approver, approval_time, decision], evidenceRequired: true}
+  - {code: risk_register, name: 风险清单, requiredType: 必传, requiredFields: [risk_id, severity, owner], evidenceRequired: true}
+  - {code: control_matrix, name: 控制矩阵, requiredType: 必传, requiredFields: [control_id, frequency, evidence], evidenceRequired: true}
+  - {code: incident_log, name: 事件记录, requiredType: 条件必传, requiredFields: [incident_id, date, status], evidenceRequired: true}
+  - {code: training_record, name: 培训记录, requiredType: 条件必传, requiredFields: [topic, attendee, date], evidenceRequired: true}
+  - {code: third_party_contract, name: 第三方合同, requiredType: 条件必传, requiredFields: [vendor, contract_no, effective_date], evidenceRequired: true}
+  - {code: data_access_log, name: 数据访问日志, requiredType: 条件必传, requiredFields: [user, action, timestamp], evidenceRequired: true}
+  - {code: remediation_plan, name: 整改计划, requiredType: 条件必传, requiredFields: [finding_id, owner, due_date], evidenceRequired: true}
+  - {code: audit_report, name: 审计报告, requiredType: 必传, requiredFields: [report_no, conclusion, issue_date], evidenceRequired: true}

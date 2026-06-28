@@ -27,6 +27,8 @@ MONGO_INDEXES = {
     ],
     "rectifications": [[("projectId", 1), ("nodeId", 1), ("status", 1)]],
     "ai_runs": [[("projectId", 1), ("nodeId", 1), ("status", 1), ("startedAt", -1)]],
+    "ai_feedback": [[("aiRunId", 1), ("feedbackType", 1), ("createdAt", -1)]],
+    "review_findings": [[("projectId", 1), ("nodeId", 1), ("status", 1), ("createdAt", -1)]],
     "extracted_fields": [[("documentVersionId", 1), ("fieldName", 1)], [("reviewStatus", 1), ("confidence", 1)]],
     "evidence_links": [[("objectType", 1), ("objectId", 1)], [("targetType", 1), ("targetId", 1)]],
     "reports": [[("projectId", 1), ("status", 1), ("generatedAt", -1)]],
@@ -70,6 +72,10 @@ MONGO_INDEXES = {
         [("role", 1), ("status", 1)],
     ],
     "roles": [{"keys": [("role", 1)], "options": {"unique": True}}, ("status", 1)],
+    "business_packs": [
+        {"keys": [("id", 1)], "options": {"unique": True}},
+        [("domainType", 1), ("status", 1)],
+    ],
 }
 
 

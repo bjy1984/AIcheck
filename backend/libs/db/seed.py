@@ -3,195 +3,42 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from libs.business_pack import (
+    DEFAULT_BUSINESS_PACK_ID,
+    build_project_requirements,
+    build_project_tree,
+    business_pack_snapshot,
+    default_business_pack,
+    list_business_packs,
+    load_business_pack,
+    role_actions_map,
+    role_default_node_map,
+)
+
 PROJECT_ID = "P-2026-HDCP-001"
+DEFAULT_BUSINESS_PACK = default_business_pack()
 
-ROLE_NODE_MAP = {
-    "inspection": 24,
-    "contractor": 16,
-    "ndt": 40,
-    "owner": 24,
-    "admin": 24,
-}
+ROLE_ACTIONS = role_actions_map(DEFAULT_BUSINESS_PACK)
+ROLE_NODE_MAP = role_default_node_map(DEFAULT_BUSINESS_PACK)
+for pack_summary in list_business_packs():
+    pack = load_business_pack(pack_summary["id"])
+    ROLE_ACTIONS.update({key: value for key, value in role_actions_map(pack).items() if key not in ROLE_ACTIONS})
+    ROLE_NODE_MAP.update({key: value for key, value in role_default_node_map(pack).items() if key not in ROLE_NODE_MAP})
 
-ROLE_ACTIONS = {
-    "inspection": [
-        "project:view",
-        "file:view",
-        "file:upload",
-        "file:bind",
-        "file:preview",
-        "file:download",
-        "review:save",
-        "review:return-correction",
-        "ai:recheck",
-        "ai:adopt",
-        "ai:reject",
-        "llm:compare",
-        "report:generate",
-        "report:review",
-        "report:export",
-        "report:archive",
-        "report:view",
-        "archive:view",
-        "archive:download",
-        "todo:update",
-        "message:update",
-    ],
-    "contractor": [
-        "project:view",
-        "file:view",
-        "file:upload",
-        "file:bind",
-        "file:preview",
-        "file:download",
-        "file:withdraw",
-        "submission:draft",
-        "submission:submit",
-        "submission:withdraw",
-        "rectification:submit",
-        "todo:update",
-        "message:update",
-    ],
-    "ndt": [
-        "project:view",
-        "file:view",
-        "file:preview",
-        "file:download",
-        "ndt:film-create",
-        "ndt:record-import",
-        "ndt:report-upload",
-        "ndt:submit",
-        "rectification:submit",
-        "todo:update",
-        "message:update",
-    ],
-    "owner": ["project:view", "file:view", "file:preview", "report:view", "archive:view", "archive:download"],
-    "admin": [
-        "project:view",
-        "project:authorize-member",
-        "knowledge:view",
-        "knowledge:manage",
-        "llm:compare",
-        "admin:config",
-        "admin:export",
-        "audit:view",
-        "todo:update",
-        "message:update",
-    ],
-}
 
-GROUP_DEFINITIONS: list[tuple[str, list[tuple[int, str, str]]]] = [
-    ("受检单位资质", [(1, "设计单位许可资质", "C"), (2, "施工单位许可资质", "C"), (3, "无损检测机构核准资质", "C")]),
-    (
-        "设计文件",
-        [
-            (4, "设计文件的批准程序", "C"),
-            (5, "施工图审查手续", "C"),
-            (6, "强度计算书、管道应力分析计算书的审批手续", "C"),
-            (7, "设计变更的书面批准文件", "C"),
-            (8, "设计采用的安全技术规范以及相关标准、压力管道元件的材料标准的版本", "C"),
-            (9, "设计文件上注明的无损检测、防腐、耐压试验和泄漏试验要求", "C"),
-            (10, "采用其他标准时的符合性申明及比照表", "需确认"),
-        ],
-    ),
-    ("施工组织设计", [(11, "施工组织设计", "C")]),
-    (
-        "材料",
-        [
-            (12, "压力管道元件及安全附件制造单位的许可资质", "C"),
-            (13, "需制造监检或有型式试验要求的压力管道元件的监检证书、型式试验报告", "C"),
-            (14, "不需制造许可、监检、型式试验的管道组成件的出厂检验报告", "C/B"),
-            (15, "境外制造的压力管道元件、安全附件的型式试验证书及制造许可证资质", "C"),
-            (16, "压力管道元件以及安全附件产品质量证明文件", "C"),
-            (17, "压力管道元件以及安全附件产品验收的见证资料、抽样复验", "C"),
-            (18, "材料复验报告、无损检测报告", "C"),
-            (19, "使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果", "C"),
-            (20, "新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续", "C"),
-            (21, "材料标志移植", "B"),
-            (22, "材料代用", "C"),
-        ],
-    ),
-    ("阀门", [(23, "阀门的施工资料和耐压试验记录（报告）", "C")]),
-    (
-        "焊接（粘接）",
-        [
-            (24, "焊工资格证及持证合格项目", "B"),
-            (25, "焊接（粘接）工艺文件", "C"),
-            (26, "焊接材料质量证明文件", "C"),
-            (27, "焊接材料的验收、保管、发放、使用和回收的管理", "B"),
-            (28, "管道组对", "C"),
-            (29, "施焊参数、施焊记录、焊缝标识", "B"),
-            (30, "焊接接头外观质量", "B"),
-            (31, "焊缝返修", "C"),
-        ],
-    ),
-    ("热处理", [(32, "焊接接头焊后热处理工艺文件", "C"), (33, "热处理设备用测温记录仪表", "C"), (34, "热处理记录、报告曲线、硬度检测报告", "C")]),
-    (
-        "无损检测",
-        [
-            (35, "无损检测机构施工现场质量保证体系的实施", "B"),
-            (36, "无损检测方案", "C"),
-            (37, "检测过程中发现问题的处理", "C"),
-            (38, "无损检测人员资格证、执业注册证及持证合格项目", "B"),
-            (39, "无损检测工艺文件", "C"),
-            (40, "无损检测记录、报告", "C"),
-            (41, "射线检测底片抽查", "B"),
-            (42, "射线检测现场抽查", "B"),
-        ],
-    ),
-    (
-        "防腐、保温",
-        [
-            (43, "防腐及保温材料质量证明文件", "C"),
-            (44, "防腐、补口、补伤及保温", "C"),
-            (45, "防腐层电火花检测", "C"),
-            (46, "牺牲阳极、外加电流阴极保护、杂散电流排流装置", "C"),
-            (47, "静电接地", "C"),
-        ],
-    ),
-    ("穿跨越工程", [(48, "穿跨越工程的管道结构、焊缝布置", "C"), (49, "穿跨越工程施工", "C"), (50, "套管防腐绝缘", "C"), (51, "绝缘支撑", "C")]),
-    ("管道现场制作（预制）", [(52, "管道现场制作（预制）", "B")]),
-    ("管道安装", [(53, "管道布管与连接方式、穿跨越", "C/B"), (54, "补偿装置", "C/B"), (55, "支撑件", "C/B")]),
-    ("安全附件", [(56, "安全阀、爆破片和紧急切断阀的安装位置、规格和型号", "B"), (57, "安全阀校验报告", "C"), (58, "紧急切断阀性能测试报告", "C")]),
-    ("耐压试验", [(59, "耐压试验方案", "A"), (60, "试验用压力表、试验介质、介质温度、环境温度", "A"), (61, "耐压试验压力、保压时间及结果", "A"), (62, "耐压试验记录（报告）", "A")]),
-    ("耐压试验免除或替代", [(63, "管道系统的柔性(应力)分析", "A"), (64, "现场检查替代性试验的过程", "A"), (65, "无损检测报告和底片", "A")]),
-    ("泄漏试验", [(66, "试验用压力表、试验介质、介质温度、环境温度、试验压力", "B"), (67, "泄漏试验方法和试验报告", "C")]),
-    ("吹扫、清洗", [(68, "吹扫、清洗", "C")]),
-    ("施工单位质量保证体系实施状况的评价", [(69, "施工单位质量保证体系实施状况的评价", "需确认")]),
-]
+def business_pack_project_fields(pack: dict[str, Any] | None = None) -> dict[str, Any]:
+    source = pack or DEFAULT_BUSINESS_PACK
+    return {
+        "businessPackId": source["id"],
+        "businessPackVersion": source["version"],
+        "domainType": source["domainType"],
+        "businessPackSnapshotHash": source["snapshotHash"],
+        "businessPackSnapshot": business_pack_snapshot(source),
+    }
 
 
 def build_tree(project_id: str = PROJECT_ID) -> list[dict[str, Any]]:
-    nodes: list[dict[str, Any]] = []
-    for group_name, rows in GROUP_DEFINITIONS:
-        for node_id, name, inspection_type in rows:
-            status = "待提交"
-            if node_id == 16:
-                status = "需补正"
-            elif node_id == 24:
-                status = "待人工确认"
-            elif node_id == 40:
-                status = "待审查"
-            nodes.append(
-                {
-                    "id": f"{project_id}-{node_id}",
-                    "projectId": project_id,
-                    "nodeId": node_id,
-                    "code": str(node_id).zfill(2),
-                    "name": name,
-                    "groupName": group_name,
-                    "inspectionType": inspection_type,
-                    "status": status,
-                    "fileCount": 4 if node_id in {16, 24, 40} else node_id % 5,
-                    "requiredProgress": {
-                        "done": 4 if node_id in {16, 24, 40} else node_id % 3,
-                        "total": 5,
-                    },
-                    "actions": ["project:view", "file:bind"],
-                    "revision": 1,
-                }
-            )
-    return nodes
+    return build_project_tree(project_id, DEFAULT_BUSINESS_PACK)
 
 
 PROJECTS = [
@@ -251,14 +98,10 @@ PROJECTS = [
     },
 ]
 
-REQUIREMENTS = [
-    {"id": "REQ-16-01", "nodeId": 16, "name": "产品质量证明书", "requiredType": "必传"},
-    {"id": "REQ-16-02", "nodeId": 16, "name": "材料复验报告", "requiredType": "条件必传"},
-    {"id": "REQ-24-01", "nodeId": 24, "name": "焊工资格证", "requiredType": "必传"},
-    {"id": "REQ-24-02", "nodeId": 24, "name": "焊工名册", "requiredType": "必传"},
-    {"id": "REQ-24-03", "nodeId": 24, "name": "外部查询截图", "requiredType": "条件必传"},
-    {"id": "REQ-40-01", "nodeId": 40, "name": "无损检测报告", "requiredType": "必传"},
-]
+for project in PROJECTS:
+    project.update(business_pack_project_fields())
+
+REQUIREMENTS = build_project_requirements(DEFAULT_BUSINESS_PACK, project_id=PROJECT_ID)
 
 DOCUMENTS = [
     {
@@ -327,6 +170,17 @@ DOCUMENTS = [
         "actions": ["file:view", "file:bind", "file:preview", "file:download"],
     },
 ]
+
+for document in DOCUMENTS:
+    document["businessPackId"] = DEFAULT_BUSINESS_PACK_ID
+    if "焊工" in document["fileName"]:
+        document["materialTypeCode"] = "welder_certificate"
+    elif "质量证明" in document["fileName"]:
+        document["materialTypeCode"] = "quality_certificate"
+    elif "检测报告" in document["fileName"]:
+        document["materialTypeCode"] = "ndt_report"
+    else:
+        document["materialTypeCode"] = "generic_review_material"
 
 VERSIONS = [
     {
@@ -512,6 +366,13 @@ AI_RUNS = [
     }
 ]
 
+for run in AI_RUNS:
+    run["businessPackId"] = DEFAULT_BUSINESS_PACK_ID
+    run["businessPackVersion"] = DEFAULT_BUSINESS_PACK["version"]
+    run["businessPackSnapshotHash"] = DEFAULT_BUSINESS_PACK["snapshotHash"]
+    run["agentId"] = "compliance_review_agent"
+    run["agentVersion"] = "1.0.0"
+
 REVIEW_OPINIONS = [
     {
         "id": "OPN-24-001",
@@ -527,6 +388,14 @@ REVIEW_OPINIONS = [
         "createdAt": "2026-06-26 09:12:00",
     }
 ]
+
+for opinion in REVIEW_OPINIONS:
+    opinion["findingType"] = "rule_passed"
+    opinion["ruleRefs"] = [{"ruleSetId": "RULE-WELDER-202606", "ruleCode": "welder-qualification"}]
+    opinion["kbRefs"] = [{"kbDocId": "KS-STANDARD-TSG", "clause": opinion.get("basis")}]
+
+REVIEW_FINDINGS: list[dict[str, Any]] = []
+AI_FEEDBACK: list[dict[str, Any]] = []
 
 REPORTS = [
     {
@@ -903,6 +772,27 @@ RULE_VERSIONS = [
     },
 ]
 
+RULE_VERSIONS = [
+    {
+        "id": rule["id"],
+        "name": rule["name"],
+        "ruleKey": rule["ruleKey"],
+        "version": rule["version"],
+        "status": rule["status"],
+        "nodeIds": rule["nodeIds"],
+        "promptVersion": rule.get("promptVersion"),
+        "outputSchemaVersion": rule.get("outputSchemaVersion"),
+        "description": rule.get("description"),
+        "businessPackId": DEFAULT_BUSINESS_PACK_ID,
+        "businessPackVersion": DEFAULT_BUSINESS_PACK["version"],
+        "publishedAt": "2026-06-26 09:12:00" if rule["status"] == "已发布" else None,
+        "updatedAt": "2026-06-26 09:12:00",
+        "actions": ["knowledge:view", "knowledge:manage"],
+        "revision": 1,
+    }
+    for rule in DEFAULT_BUSINESS_PACK["ruleSets"]
+]
+
 KNOWLEDGE_CONFIG = {
     "embeddingModel": "embedding-default",
     "chunkSize": 900,
@@ -1025,6 +915,30 @@ ADMIN_CONFIG = {
     "toolSources": [{"id": "TS-OCR-001", "name": "PaddleOCR 文档识别", "toolType": "ocr", "endpoint": "ocr-service:8010", "authMode": "token", "status": "启用", "updatedAt": "2026-06-26 08:30:00"}],
     "fieldMappings": [{"id": "FM-001", "nodeId": 24, "fieldName": "证书编号", "sourceField": "ocr.certificate_no", "targetField": "welder.certificateNo", "required": True, "confidenceThreshold": 0.85, "updatedAt": "2026-06-26 08:30:00"}],
 }
+ADMIN_CONFIG["businessPacks"] = list_business_packs()
+ADMIN_CONFIG["nodeTemplates"] = [
+    {
+        "id": f"NT-{DEFAULT_BUSINESS_PACK_ID}",
+        "version": DEFAULT_BUSINESS_PACK["version"],
+        "groupName": f"{DEFAULT_BUSINESS_PACK['name']}节点模板",
+        "nodeCount": len(DEFAULT_BUSINESS_PACK["nodeTemplates"]),
+        "requiredCount": len(REQUIREMENTS),
+        "status": "已发布",
+        "updatedAt": "2026-06-26 08:00:00",
+    }
+]
+ADMIN_CONFIG["workflowStateMachines"] = [
+    {
+        "id": workflow["id"],
+        "name": workflow["name"],
+        "version": workflow.get("version"),
+        "states": len(workflow.get("states") or []),
+        "transitions": len(workflow.get("transitions") or []),
+        "status": "启用",
+        "updatedAt": "2026-06-26 08:30:00",
+    }
+    for workflow in DEFAULT_BUSINESS_PACK["workflowStateMachines"]
+]
 
 AUDIT_LOGS = [
     {
@@ -1055,12 +969,16 @@ RECTIFICATIONS = [
 
 
 def fresh_state() -> dict[str, Any]:
-    tree_nodes = build_tree(PROJECT_ID)
+    tree_nodes = []
+    requirements = []
+    for project in PROJECTS:
+        tree_nodes.extend(build_tree(project["id"]))
+        requirements.extend(build_project_requirements(DEFAULT_BUSINESS_PACK, project_id=project["id"]))
     knowledge_files = build_knowledge_files(DOCUMENTS, BINDINGS, tree_nodes)
     state = {
         "projects": deepcopy(PROJECTS),
         "tree_nodes": tree_nodes,
-        "requirements": deepcopy(REQUIREMENTS),
+        "requirements": requirements,
         "documents": deepcopy(DOCUMENTS),
         "versions": deepcopy(VERSIONS),
         "bindings": deepcopy(BINDINGS),
@@ -1068,6 +986,8 @@ def fresh_state() -> dict[str, Any]:
         "extracted_fields": deepcopy(EXTRACTED_FIELDS),
         "ai_runs": deepcopy(AI_RUNS),
         "review_opinions": deepcopy(REVIEW_OPINIONS),
+        "review_findings": deepcopy(REVIEW_FINDINGS),
+        "ai_feedback": deepcopy(AI_FEEDBACK),
         "reports": deepcopy(REPORTS),
         "archive_items": deepcopy(ARCHIVE_ITEMS),
         "export_tasks": deepcopy(EXPORT_TASKS),
@@ -1087,6 +1007,7 @@ def fresh_state() -> dict[str, Any]:
         "project_members": deepcopy(PROJECT_MEMBERS),
         "users": [],
         "roles": [],
+        "business_packs": list_business_packs(),
         "admin_config": deepcopy(ADMIN_CONFIG),
         "audit_logs": deepcopy(AUDIT_LOGS),
         "submission_drafts": deepcopy(SUBMISSION_DRAFTS),

@@ -26,6 +26,7 @@ AIcheck/
 │   ├── apps/api/              # FastAPI 主业务 API
 │   ├── apps/worker/           # Celery worker 与异步任务入口
 │   ├── apps/ocr_service/      # 内部 OCR HTTP 服务
+│   ├── business_packs/        # 可插拔业务包：角色、节点、资料、规则、报告、AI SOP
 │   ├── libs/contracts/        # 统一响应、错误码、分页合同
 │   ├── libs/db/               # MongoDB 适配、索引、seed、仓储层
 │   ├── libs/integrations/     # MinIO、OCR、LiteLLM、任务投递客户端
@@ -83,7 +84,80 @@ litellm-service
 | 知识库 | `/knowledge/*` | 文件列表、任务中心、知识源、规则、检索测试 | `knowledge_files`、`knowledge_tasks`、`knowledge_chunks` |
 | 管理后台 | `/admin/*` | 项目、单位、用户、权限、配置发布、审计 | `admin_configs`、`audit_logs` |
 
-### 1.4 核心调用链
+### 1.4 业务包开发与部署
+
+AIcheck 现在按“通用资料审查内核 + 业务包”组织可复用业务。业务包放在 `backend/business_packs/{pack_id}/`，每个包至少包含：
+
+- `manifest.yaml`：`id`、`name`、`version`、`domainType`、发布状态。
+- `roles.yaml`：业务角色、平台角色映射、默认入口、动作权限。
+- `nodes.yaml`：节点模板、资料要求、默认状态。
+- `materials.yaml`：资料类型、必填字段、OCR 字段映射、证据要求。
+- `workflow.yaml`：状态、动作、允许角色和目标状态。
+- `rules.yaml`：规则版本、适用节点、严重级别、输出 schema。
+- `reports.yaml`：报告模板、章节和导出类型。
+- `agents.yaml`：AI 员工 SOP、工具权限和人工确认边界。
+
+内置业务包：
+
+- `engineering_inspection_v1`：工程监检业务包，当前默认包，生成 69 个工程监检节点。
+- `compliance_audit_v1`：合规审计样例包，用于验证跨业务复用，生成 8 个审计节点。
+
+部署或新增业务包后，应运行：
+
+```bash
+cd backend
+python scripts/validate_business_packs.py --json
+python -m pytest tests/test_business_pack.py -q
+python -m pytest -q
+```
+
+复制一个新业务包骨架：
+
+```bash
+cd backend
+python scripts/create_business_pack.py \
+  --id device_audit_v1 \
+  --template compliance_audit_v1 \
+  --dry-run
+```
+
+运行后可用 API 验证：
+
+```bash
+curl http://127.0.0.1:8000/api/business-packs
+curl -X POST http://127.0.0.1:8000/api/business-packs/validate-all
+curl -X POST http://127.0.0.1:8000/api/business-packs/engineering_inspection_v1/validate
+curl http://127.0.0.1:8000/api/business-packs/engineering_inspection_v1/snapshot
+```
+
+创建非默认业务项目时传入 `businessPackId`：
+
+```json
+{
+  "businessPackId": "compliance_audit_v1",
+  "code": "P-CA-001",
+  "name": "合规审计试点项目"
+}
+```
+
+核心层新增行业业务时不应修改平台逻辑；新增业务优先通过业务包配置表达。`libs/business_pack` 默认边界扫描会检查核心加载器中是否出现工程监检行业词。
+
+项目创建后可查询绑定快照，审计时以项目上的 `businessPackSnapshotHash` 和 `businessPackSnapshot` 为准，而不是直接读取最新业务包：
+
+```bash
+curl http://127.0.0.1:8000/api/projects/P-CA-001/business-pack/snapshot
+```
+
+AI 反馈进入结构化记录，不直接修改业务状态：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/ai/runs/{runId}/feedback \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: feedback-001' \
+  -d '{"feedbackType":"edited","accepted":true,"shouldEnterEvaluationSet":true}'
+```
+
+### 1.5 核心调用链
 
 文件上传与 OCR：
 

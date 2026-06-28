@@ -1,0 +1,10 @@
+reportTemplates:
+  - id: TPL-PIPE-2026.06
+    name: 工程监检资料审查报告
+    version: 2026.06
+    exportTypes: [report, archive-package, evidence-package]
+    sections:
+      - {code: project_summary, title: 项目概况, source: project}
+      - {code: material_review, title: 资料审查情况, source: review_findings}
+      - {code: correction_summary, title: 补正闭环, source: corrections}
+      - {code: evidence_refs, title: 证据引用, source: evidence_links}

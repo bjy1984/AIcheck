@@ -6,8 +6,11 @@ import re
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
+    ("POST", r"/business-packs/[^/]+/validate$", "knowledge:view"),
+    ("POST", r"/business-packs/validate-all$", "knowledge:view"),
     ("POST", r"/projects$", "admin:config"),
     ("PATCH", r"/projects/[^/]+$", "admin:config"),
+    ("POST", r"/projects/[^/]+/business-pack/apply$", "admin:config"),
     ("POST", r"/projects/[^/]+/participants$", "admin:config"),
     ("PATCH", r"/projects/[^/]+/participants/[^/]+$", "admin:config"),
     ("POST", r"/projects/[^/]+/members$", "project:authorize-member"),
@@ -48,6 +51,10 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/todos/[^/]+/(complete|defer)$", "todo:update"),
     ("POST", r"/messages/[^/]+/read$", "message:update"),
     ("POST", r"/messages/read-all$", "message:update"),
+    ("POST", r"/workflow/commands$", "admin:config"),
+    ("POST", r"/review/findings$", "review:save"),
+    ("POST", r"/review/findings/[^/]+/(accept|reject)$", "review:save"),
+    ("POST", r"/ai/runs/[^/]+/feedback$", "ai:adopt"),
     ("POST", r"/knowledge/sources$", "knowledge:manage"),
     ("PATCH", r"/knowledge/sources/[^/]+$", "knowledge:manage"),
     ("PUT", r"/knowledge/sources/[^/]+$", "knowledge:manage"),

@@ -46,6 +46,8 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = BACKEND_ROOT.parent
 MUTATION_HEADER_EXEMPT_URLS = {
     "/api/admin/config-diff/preview",
+    "/api/business-packs/{pack_id}/validate",
+    "/api/business-packs/validate-all",
     "/api/knowledge/retrieval-test",
 }
 PUBLIC_MUTATION_ROUTES = {
@@ -57,6 +59,10 @@ PUBLIC_MUTATION_ROUTES = {
     ("POST", "/api/auth/logout"),
 }
 READ_ONLY_POST_ROUTES = {
+    ("POST", "/business-packs/{pack_id}/validate"),
+    ("POST", "/api/business-packs/{pack_id}/validate"),
+    ("POST", "/business-packs/validate-all"),
+    ("POST", "/api/business-packs/validate-all"),
     ("POST", "/knowledge/retrieval-test"),
     ("POST", "/api/knowledge/retrieval-test"),
     ("POST", "/admin/config-diff/preview"),

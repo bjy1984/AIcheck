@@ -1,0 +1,21 @@
+ruleSets:
+  - id: RULE-WELDER-202606
+    name: 焊工资格核验规则
+    ruleKey: welder-qualification
+    version: Welder-Qualification-B-v2.1
+    status: 已发布
+    nodeIds: [24, 25, 27, 28]
+    severity: medium
+    promptVersion: prompt-welder-v2.1
+    outputSchemaVersion: schema-review-v1.3
+    description: 核验焊工资格证、持证项目、有效期与施工焊接方法覆盖关系。
+  - id: RULE-NDT-202606
+    name: 无损检测报告核验规则
+    ruleKey: ndt-report
+    version: NDT-Report-C-v1.4
+    status: 待发布
+    nodeIds: [35, 36, 40, 41, 42]
+    severity: high
+    promptVersion: prompt-ndt-v1.4
+    outputSchemaVersion: schema-ndt-v1.1
+    description: 核验底片、检测比例、评片结论、返修闭环和报告签章。

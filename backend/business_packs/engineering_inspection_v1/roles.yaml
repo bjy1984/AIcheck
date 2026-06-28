@@ -1,0 +1,31 @@
+roles:
+  - code: inspection
+    label: 监检人员
+    platformRole: reviewer
+    defaultPath: /workbench/inspection
+    defaultNodeId: 24
+    actions: [project:view, file:view, file:upload, file:bind, file:preview, file:download, review:save, review:return-correction, ai:recheck, ai:adopt, ai:reject, llm:compare, report:generate, report:review, report:export, report:archive, report:view, archive:view, archive:download, todo:update, message:update]
+  - code: contractor
+    label: 施工方
+    platformRole: submitter
+    defaultPath: /workbench/contractor
+    defaultNodeId: 16
+    actions: [project:view, file:view, file:upload, file:bind, file:preview, file:download, file:withdraw, submission:draft, submission:submit, submission:withdraw, rectification:submit, todo:update, message:update]
+  - code: ndt
+    label: 无损检测
+    platformRole: specialist_submitter
+    defaultPath: /workbench/ndt
+    defaultNodeId: 40
+    actions: [project:view, file:view, file:preview, file:download, ndt:film-create, ndt:record-import, ndt:report-upload, ndt:submit, rectification:submit, todo:update, message:update]
+  - code: owner
+    label: 建设方
+    platformRole: observer
+    defaultPath: /workbench/owner
+    defaultNodeId: 24
+    actions: [project:view, file:view, file:preview, report:view, archive:view, archive:download]
+  - code: admin
+    label: 系统管理员
+    platformRole: admin
+    defaultPath: /admin/overview
+    defaultNodeId: 24
+    actions: [project:view, project:authorize-member, knowledge:view, knowledge:manage, llm:compare, admin:config, admin:export, audit:view, todo:update, message:update]

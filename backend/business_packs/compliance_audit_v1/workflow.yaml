@@ -1,0 +1,19 @@
+workflowStateMachines:
+  - id: WF-COMPLIANCE-AUDIT-2026
+    name: 合规审计资料审查状态机
+    version: 2026.06
+    states:
+      - {code: draft, label: 草稿}
+      - {code: submitted, label: 已提交}
+      - {code: ai_prechecking, label: AI 预审中}
+      - {code: human_reviewing, label: 人工审查中}
+      - {code: correction_needed, label: 需整改}
+      - {code: accepted, label: 已确认}
+      - {code: archived, label: 已归档}
+    transitions:
+      - {action: submit, from: draft, to: submitted, roles: [submitter]}
+      - {action: start_ai_precheck, from: submitted, to: ai_prechecking, roles: [auditor]}
+      - {action: start_human_review, from: ai_prechecking, to: human_reviewing, roles: [auditor]}
+      - {action: request_correction, from: human_reviewing, to: correction_needed, roles: [auditor]}
+      - {action: accept, from: human_reviewing, to: accepted, roles: [auditor]}
+      - {action: archive, from: accepted, to: archived, roles: [auditor]}

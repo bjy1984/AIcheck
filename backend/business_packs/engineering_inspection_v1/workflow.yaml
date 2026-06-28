@@ -1,0 +1,19 @@
+workflowStateMachines:
+  - id: WF-ENGINEERING-REVIEW-2026
+    name: 工程监检资料审查状态机
+    version: 2026.06
+    states:
+      - {code: draft, label: 草稿}
+      - {code: submitted, label: 已提交}
+      - {code: ai_prechecking, label: AI 预审中}
+      - {code: human_reviewing, label: 人工审查中}
+      - {code: correction_needed, label: 需补正}
+      - {code: accepted, label: 已通过}
+      - {code: archived, label: 已归档}
+    transitions:
+      - {action: submit, from: draft, to: submitted, roles: [contractor, ndt]}
+      - {action: start_ai_precheck, from: submitted, to: ai_prechecking, roles: [inspection]}
+      - {action: start_human_review, from: ai_prechecking, to: human_reviewing, roles: [inspection]}
+      - {action: request_correction, from: human_reviewing, to: correction_needed, roles: [inspection]}
+      - {action: accept, from: human_reviewing, to: accepted, roles: [inspection]}
+      - {action: archive, from: accepted, to: archived, roles: [inspection]}

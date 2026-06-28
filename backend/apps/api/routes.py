@@ -9,6 +9,17 @@ from uuid import uuid4
 from fastapi import APIRouter, Body, Header, Query, Request
 from fastapi.responses import JSONResponse
 
+from libs.business_pack import (
+    DEFAULT_BUSINESS_PACK_ID,
+    build_project_requirements,
+    build_project_tree,
+    business_pack_snapshot,
+    business_pack_summary,
+    list_business_packs,
+    load_business_pack,
+    validate_all_business_packs,
+    validate_business_pack,
+)
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok, page, server_time
 from libs.db.repository import repo
@@ -741,9 +752,16 @@ def build_config_diff(target: str, object_id: str, values: dict[str, Any], *, ob
     }
 
 
-def project_member_snapshot(project_id: str, role: str, user_id: str | None = None, *, org_name: str | None = None) -> dict[str, Any]:
+def project_member_snapshot(
+    project_id: str,
+    role: str,
+    user_id: str | None = None,
+    *,
+    org_name: str | None = None,
+    node_scope: list[int] | None = None,
+    actions: list[str] | None = None,
+) -> dict[str, Any]:
     user = admin_user_snapshot(user_id, role)
-    node_scope = [35, 36, 40, 41, 42] if role == "ndt" else [1, 16, 24, 40, 68]
     return {
         "id": f"PM-{uuid4().hex[:8].upper()}",
         "projectId": project_id,
@@ -751,8 +769,8 @@ def project_member_snapshot(project_id: str, role: str, user_id: str | None = No
         "name": user.get("name") or "授权成员",
         "orgName": org_name or user.get("orgName") or "联调组织",
         "role": role,
-        "nodeScope": node_scope,
-        "actions": repo.role_actions(role),
+        "nodeScope": node_scope or [ROLE_NODE_MAP.get(role, 1)],
+        "actions": actions or repo.role_actions(role),
         "status": "启用",
         "updatedAt": server_time(),
         "revision": 1,
@@ -769,7 +787,7 @@ def project_detail_payload(project_id: str, request: Request | None = None) -> d
         members = [item for item in members if item.get("userId") == current_user_id]
     scope = authorized_node_scope(request, project_id) if request is not None else None
     node_summary = []
-    groups = filter_node_groups_for_scope(repo.node_groups(PROJECT_ID if project_id != PROJECT_ID else project_id), scope)
+    groups = filter_node_groups_for_scope(repo.node_groups(project_id), scope)
     for group in groups:
         nodes = group["nodes"]
         node_summary.append(
@@ -793,6 +811,54 @@ def project_detail_payload(project_id: str, request: Request | None = None) -> d
         "nodeSummary": node_summary,
         "recentExportTasks": [repo.clone(item) for item in repo.state["export_tasks"] if item.get("projectId") == project_id],
     }
+
+
+def business_pack_for_project(project: dict[str, Any] | None) -> dict[str, Any]:
+    pack_id = (project or {}).get("businessPackId") or DEFAULT_BUSINESS_PACK_ID
+    return load_business_pack(pack_id)
+
+
+def business_pack_snapshot_for_project(project: dict[str, Any]) -> dict[str, Any]:
+    stored = project.get("businessPackSnapshot")
+    if isinstance(stored, dict):
+        return repo.clone(stored)
+    return business_pack_snapshot(business_pack_for_project(project))
+
+
+def project_requirements_for_node(project_id: str, node_id: int) -> list[dict[str, Any]]:
+    scoped = [
+        repo.clone(item)
+        for item in repo.state["requirements"]
+        if int(item["nodeId"]) == int(node_id) and item.get("projectId") == project_id
+    ]
+    if scoped:
+        return scoped
+    return [
+        repo.clone(item)
+        for item in repo.state["requirements"]
+        if int(item["nodeId"]) == int(node_id) and not item.get("projectId")
+    ]
+
+
+def attach_business_pack_project_scaffold(project: dict[str, Any], pack: dict[str, Any]) -> tuple[int, int]:
+    project_id = project["id"]
+    existing_nodes = {item["id"] for item in repo.state["tree_nodes"]}
+    nodes = [
+        item
+        for item in build_project_tree(project_id, pack)
+        if item["id"] not in existing_nodes
+    ]
+    repo.state["tree_nodes"].extend(nodes)
+    existing_requirement_keys = {
+        (item.get("projectId"), item["id"]) for item in repo.state["requirements"]
+    }
+    requirements = [
+        item
+        for item in build_project_requirements(pack, project_id=project_id)
+        if (item.get("projectId"), item["id"]) not in existing_requirement_keys
+    ]
+    repo.state["requirements"].extend(requirements)
+    return len(nodes), len(requirements)
 
 
 def simple_routes(role: str | None = None) -> list[dict[str, Any]]:
@@ -935,6 +1001,55 @@ def permission_resources(request: Request):
     return ok(repo.state["admin_config"]["permissionMatrix"], request)
 
 
+@router.get("/business-packs")
+def get_business_packs(request: Request):
+    return ok(list_business_packs(), request)
+
+
+@router.post("/business-packs/validate-all")
+def validate_all_business_packs_endpoint(request: Request):
+    return ok(validate_all_business_packs(), request)
+
+
+@router.get("/business-packs/{pack_id}")
+def get_business_pack(request: Request, pack_id: str):
+    try:
+        pack = load_business_pack(pack_id)
+    except ValueError:
+        return fail(errors.NOT_FOUND, request, message="业务包不存在。")
+    return ok(
+        {
+            "summary": business_pack_summary(pack),
+            "roles": repo.clone(pack["roles"]),
+            "nodeTemplates": repo.clone(pack["nodeTemplates"]),
+            "materialTypes": repo.clone(pack["materialTypes"]),
+            "workflowStateMachines": repo.clone(pack["workflowStateMachines"]),
+            "ruleSets": repo.clone(pack["ruleSets"]),
+            "reportTemplates": repo.clone(pack["reportTemplates"]),
+            "agentSops": repo.clone(pack.get("agentSops") or []),
+        },
+        request,
+    )
+
+
+@router.get("/business-packs/{pack_id}/snapshot")
+def get_business_pack_snapshot(request: Request, pack_id: str):
+    try:
+        pack = load_business_pack(pack_id)
+    except ValueError:
+        return fail(errors.NOT_FOUND, request, message="业务包不存在。")
+    return ok(business_pack_snapshot(pack), request)
+
+
+@router.post("/business-packs/{pack_id}/validate")
+def validate_business_pack_endpoint(request: Request, pack_id: str):
+    try:
+        pack = load_business_pack(pack_id)
+    except ValueError as exc:
+        return fail(errors.NOT_FOUND, request, message=str(exc))
+    return ok({"summary": business_pack_summary(pack), "validation": validate_business_pack(pack)}, request)
+
+
 @router.get("/workbench/projects")
 def list_workbench_projects(
     request: Request,
@@ -994,6 +1109,76 @@ def update_project(
         return ok({"project": versioned_project(project), **repo.mutation_result("更新项目", "Project", project_id, changed=changed)}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"projectId": project_id, "body": body})
+
+
+@router.post("/projects/{project_id}/business-pack/apply")
+def apply_business_pack(
+    request: Request,
+    project_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, if_match="*")
+        if guard:
+            return guard
+        project = repo.require_project(project_id)
+        if not project:
+            return fail(errors.NOT_FOUND, request)
+        pack_id = body.get("businessPackId") or project.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID
+        try:
+            pack = load_business_pack(pack_id)
+        except ValueError as exc:
+            return fail(errors.VALIDATION_ERROR, request, message=str(exc))
+        project.update(
+            {
+                "businessPackId": pack["id"],
+                "businessPackVersion": pack["version"],
+                "domainType": pack["domainType"],
+                "businessPackSnapshotHash": pack["snapshotHash"],
+                "businessPackSnapshot": business_pack_snapshot(pack),
+            }
+        )
+        created_node_count, created_requirement_count = attach_business_pack_project_scaffold(project, pack)
+        repo.touch_project(project_id)
+        audit_id = repo.add_audit("应用业务包", "BusinessPack", pack["id"])
+        return ok(
+            {
+                "project": versioned_project(project),
+                "businessPack": business_pack_summary(pack),
+                "createdNodeCount": created_node_count,
+                "createdRequirementCount": created_requirement_count,
+                "auditLogId": audit_id,
+            },
+            request,
+        )
+
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"projectId": project_id, "body": body},
+    )
+
+
+@router.get("/projects/{project_id}/business-pack/snapshot")
+def get_project_business_pack_snapshot(request: Request, project_id: str):
+    project = repo.require_project(project_id)
+    if not project:
+        return fail(errors.NOT_FOUND, request)
+    snapshot = business_pack_snapshot_for_project(project)
+    return ok(
+        {
+            "projectId": project_id,
+            "businessPackId": project.get("businessPackId"),
+            "businessPackVersion": project.get("businessPackVersion"),
+            "businessPackSnapshotHash": project.get("businessPackSnapshotHash"),
+            "snapshotMatchesCurrent": project.get("businessPackSnapshotHash") == snapshot.get("snapshotHash"),
+            "snapshot": snapshot,
+        },
+        request,
+    )
 
 
 @router.get("/projects/{project_id}/participants")
@@ -1160,7 +1345,15 @@ def initialize_workflow(
         if guard:
             return guard
         repo.touch_project(project_id, "草稿/立项中", 1)
-        return ok({**repo.mutation_result("初始化 69 节点流程", "Project", project_id), "createdNodeCount": 69, "project": versioned_project(repo.require_project(project_id))}, request)
+        node_count = len([item for item in repo.state["tree_nodes"] if item.get("projectId") == project_id])
+        return ok(
+            {
+                **repo.mutation_result("初始化项目节点流程", "Project", project_id),
+                "createdNodeCount": node_count,
+                "project": versioned_project(repo.require_project(project_id)),
+            },
+            request,
+        )
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"projectId": project_id})
 
@@ -1264,13 +1457,13 @@ def project_tree(request: Request, project_id: str):
     if not project:
         return fail(errors.NOT_FOUND, request)
     scope = authorized_node_scope(request, project_id)
-    groups = filter_node_groups_for_scope(repo.node_groups(PROJECT_ID if project_id != PROJECT_ID else project_id), scope)
+    groups = filter_node_groups_for_scope(repo.node_groups(project_id), scope)
     return ok({"project": repo.clone(project), "groups": groups}, request)
 
 
 @router.get("/projects/{project_id}/nodes/{node_id}")
 def node_detail(request: Request, project_id: str, node_id: int):
-    node = repo.node(PROJECT_ID if project_id != PROJECT_ID else project_id, node_id)
+    node = repo.node(project_id, node_id)
     if not node:
         return fail(errors.NOT_FOUND, request)
     return ok({"node": repo.clone(node)}, request)
@@ -1278,12 +1471,12 @@ def node_detail(request: Request, project_id: str, node_id: int):
 
 @router.get("/projects/{project_id}/nodes/{node_id}/requirements")
 def node_requirements(request: Request, project_id: str, node_id: int):
-    return ok([repo.clone(item) for item in repo.state["requirements"] if int(item["nodeId"]) == int(node_id)], request)
+    return ok(project_requirements_for_node(project_id, node_id), request)
 
 
 @router.get("/projects/{project_id}/nodes/{node_id}/package")
 def node_package(request: Request, project_id: str, node_id: int):
-    effective_project_id = PROJECT_ID if project_id != PROJECT_ID else project_id
+    effective_project_id = project_id
     node = repo.node(effective_project_id, node_id)
     if not node:
         return fail(errors.NOT_FOUND, request)
@@ -1299,7 +1492,7 @@ def node_package(request: Request, project_id: str, node_id: int):
     return ok(
         {
             "node": repo.clone(node),
-            "requirements": [repo.clone(item) for item in repo.state["requirements"] if int(item["nodeId"]) == int(node_id)],
+            "requirements": project_requirements_for_node(project_id, node_id),
             "bindings": bindings,
             "projectFiles": project_files,
             "availableVersions": [
@@ -1319,7 +1512,7 @@ def node_package(request: Request, project_id: str, node_id: int):
 @router.get("/projects/{project_id}/documents")
 def list_documents(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), keyword: str | None = None, nodeId: int | None = None):
     scope = authorized_node_scope(request, project_id)
-    effective_project_id = PROJECT_ID if project_id != PROJECT_ID else project_id
+    effective_project_id = project_id
     items = [
         item
         for item in repo.project_documents(effective_project_id)
@@ -1339,7 +1532,7 @@ def list_documents(request: Request, project_id: str, page_no: int = Query(defau
 @router.get("/projects/{project_id}/documents/bindings")
 def list_bindings(request: Request, project_id: str, nodeId: int | None = None):
     scope = authorized_node_scope(request, project_id)
-    items = repo.bindings_for_project(PROJECT_ID if project_id != PROJECT_ID else project_id)
+    items = repo.bindings_for_project(project_id)
     if scope is not None:
         items = [item for item in items if int(item["nodeId"]) in scope]
     if nodeId:
@@ -2077,14 +2270,26 @@ def ai_recheck(
             return guard
         run_id = f"AIRUN-{node_id}-{uuid4().hex[:8].upper()}"
         node = repo.node(project_id, node_id)
+        project = repo.require_project(project_id)
+        pack = business_pack_for_project(project)
+        agent = (pack.get("agentSops") or [{}])[0]
+        rule = next(
+            (item for item in pack.get("ruleSets") or [] if node_id in set(item.get("nodeIds") or [])),
+            (pack.get("ruleSets") or [{}])[0],
+        )
         run = {
             "id": run_id,
             "projectId": project_id,
             "nodeId": node_id,
+            "businessPackId": pack["id"],
+            "businessPackVersion": pack["version"],
+            "businessPackSnapshotHash": pack["snapshotHash"],
+            "agentId": agent.get("id") or "review_agent",
+            "agentVersion": agent.get("version") or "1.0.0",
             "subject": node["name"] if node else "节点 AI 复核",
             "model": "review-chat",
             "promptVersion": f"node-{node_id}-v1",
-            "ruleVersion": "Welder-Qualification-B-v2.1",
+            "ruleVersion": rule.get("version") or "ruleset-v1",
             "inputDocumentVersionIds": [item["documentVersionId"] for item in repo.bindings_for_node(project_id, node_id)],
             "status": "推理中",
             "startedAt": server_time(),
@@ -2098,6 +2303,7 @@ def ai_recheck(
                 "manualConfirmItems": [],
             },
             "evidenceLinks": [],
+            "findingDrafts": [],
         }
         repo.state["ai_runs"].insert(0, run)
         repo.set_node_status(project_id, node_id, "业务核验中")
@@ -3270,6 +3476,258 @@ def mark_all_messages_read(
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
+@router.post("/workflow/commands")
+def execute_workflow_command(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+):
+    def produce():
+        project_id = body.get("projectId")
+        if not project_id:
+            return fail(errors.VALIDATION_ERROR, request, message="projectId 不能为空。")
+        node_id = body.get("nodeId")
+        guard = mutation_guard(
+            request,
+            project_id,
+            x_role=x_role,
+            node_ids=[int(node_id)] if node_id is not None else None,
+        )
+        if guard:
+            return guard
+        project = repo.require_project(project_id)
+        if not project:
+            return fail(errors.NOT_FOUND, request)
+        pack = business_pack_for_project(project)
+        action = body.get("action") or body.get("command")
+        transitions = [
+            transition
+            for workflow in pack.get("workflowStateMachines") or []
+            for transition in workflow.get("transitions") or []
+            if transition.get("action") == action
+        ]
+        next_status = body.get("nextStatus") or (transitions[0].get("to") if transitions else "submitted")
+        changed = []
+        if node_id is not None:
+            node = repo.node(project_id, int(node_id))
+            if not node:
+                return fail(errors.NOT_FOUND, request, message="节点不存在。")
+            changed.append(repo.set_node_status(project_id, int(node_id), next_status))
+        repo.touch_project(project_id)
+        audit_id = repo.add_audit("执行工作流命令", "WorkflowCommand", body.get("commandId") or action or "command")
+        return ok(
+            {
+                "commandId": body.get("commandId") or f"CMD-{uuid4().hex[:8].upper()}",
+                "projectId": project_id,
+                "nodeId": node_id,
+                "action": action,
+                "nextStatus": next_status,
+                "changed": changed,
+                "auditLogId": audit_id,
+            },
+            request,
+        )
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
+
+
+@router.get("/projects/{project_id}/review-workbench")
+def generic_review_workbench(request: Request, project_id: str, nodeId: int | None = None):
+    project = repo.require_project(project_id)
+    if not project:
+        return fail(errors.NOT_FOUND, request)
+    scope = authorized_node_scope(request, project_id)
+    nodes = [
+        item
+        for item in repo.state["tree_nodes"]
+        if item.get("projectId") == project_id and record_visible_for_scope(item, scope, project_id=project_id)
+    ]
+    if nodeId is not None:
+        nodes = [item for item in nodes if int(item["nodeId"]) == int(nodeId)]
+    findings = [
+        repo.clone(item)
+        for item in repo.state["review_findings"]
+        if item.get("projectId") == project_id and (nodeId is None or int(item.get("nodeId") or 0) == int(nodeId))
+    ]
+    return ok(
+        {
+            "project": versioned_project(project),
+            "businessPack": business_pack_summary(business_pack_for_project(project)),
+            "nodes": repo.clone(nodes),
+            "findings": findings,
+            "aiRuns": [
+                repo.clone(item)
+                for item in repo.state["ai_runs"]
+                if item.get("projectId") == project_id and (nodeId is None or int(item.get("nodeId") or 0) == int(nodeId))
+            ],
+        },
+        request,
+    )
+
+
+@router.post("/review/findings")
+def create_review_finding(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+):
+    def produce():
+        project_id = body.get("projectId")
+        node_id = int(body.get("nodeId") or 0)
+        if not project_id or not node_id:
+            return fail(errors.VALIDATION_ERROR, request, message="projectId 和 nodeId 不能为空。")
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
+        if guard:
+            return guard
+        project = repo.require_project(project_id)
+        if not project:
+            return fail(errors.NOT_FOUND, request)
+        pack = business_pack_for_project(project)
+        evidence_link_ids = body.get("evidenceLinkIds") or []
+        rule_refs = body.get("ruleRefs") or []
+        if body.get("source") == "ai" and (not evidence_link_ids or not rule_refs):
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="AI 审查发现必须包含 evidenceLinkIds 和 ruleRefs。",
+            )
+        finding = {
+            "id": body.get("id") or f"FND-{uuid4().hex[:8].upper()}",
+            "projectId": project_id,
+            "nodeId": node_id,
+            "businessPackId": pack["id"],
+            "businessPackVersion": pack["version"],
+            "findingType": body.get("findingType") or "manual_review",
+            "severity": body.get("severity") or "medium",
+            "title": body.get("title") or "审查发现",
+            "description": body.get("description") or body.get("opinion") or "请人工确认该发现。",
+            "evidenceLinkIds": evidence_link_ids,
+            "ruleRefs": rule_refs,
+            "kbRefs": body.get("kbRefs") or [],
+            "confidence": float(body.get("confidence") or 1),
+            "suggestedAction": body.get("suggestedAction") or "human_confirm",
+            "status": "draft",
+            "source": body.get("source") or "human",
+            "createdAt": server_time(),
+            "revision": 1,
+        }
+        repo.state["review_findings"].insert(0, finding)
+        audit_id = repo.add_audit("创建审查发现", "ReviewFinding", finding["id"])
+        return ok({"finding": finding, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
+
+
+@router.post("/review/findings/{finding_id}/accept")
+def accept_review_finding(
+    request: Request,
+    finding_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+):
+    def produce():
+        finding = repo.find_one("review_findings", finding_id)
+        if not finding:
+            return fail(errors.NOT_FOUND, request)
+        guard = mutation_guard(request, finding["projectId"], x_role=x_role, node_ids=[int(finding["nodeId"])])
+        if guard:
+            return guard
+        finding["status"] = "accepted"
+        finding["acceptedAt"] = server_time()
+        finding["revision"] = int(finding.get("revision") or 1) + 1
+        opinion = {
+            "id": f"OPN-{uuid4().hex[:8].upper()}",
+            "projectId": finding["projectId"],
+            "nodeId": finding["nodeId"],
+            "result": body.get("result") or ("需补正" if finding.get("suggestedAction") == "request_correction" else "满足要求"),
+            "opinion": body.get("opinion") or finding["description"],
+            "findingType": finding["findingType"],
+            "ruleRefs": finding.get("ruleRefs") or [],
+            "kbRefs": finding.get("kbRefs") or [],
+            "evidenceLinkIds": finding.get("evidenceLinkIds") or [],
+            "reviewerName": "张工",
+            "createdAt": server_time(),
+        }
+        repo.state["review_opinions"].insert(0, opinion)
+        audit_id = repo.add_audit("采纳审查发现", "ReviewFinding", finding_id)
+        return ok({"finding": finding, "opinion": opinion, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"findingId": finding_id, "body": body})
+
+
+@router.post("/review/findings/{finding_id}/reject")
+def reject_review_finding(
+    request: Request,
+    finding_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+):
+    def produce():
+        finding = repo.find_one("review_findings", finding_id)
+        if not finding:
+            return fail(errors.NOT_FOUND, request)
+        guard = mutation_guard(request, finding["projectId"], x_role=x_role, node_ids=[int(finding["nodeId"])])
+        if guard:
+            return guard
+        finding["status"] = "rejected"
+        finding["rejectReason"] = body.get("reason") or "人工驳回。"
+        finding["rejectedAt"] = server_time()
+        finding["revision"] = int(finding.get("revision") or 1) + 1
+        audit_id = repo.add_audit("驳回审查发现", "ReviewFinding", finding_id)
+        return ok({"finding": finding, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"findingId": finding_id, "body": body})
+
+
+@router.post("/ai/runs/{run_id}/feedback")
+def create_ai_run_feedback(
+    request: Request,
+    run_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+):
+    def produce():
+        run = repo.find_one("ai_runs", run_id)
+        if not run:
+            return fail(errors.NOT_FOUND, request)
+        guard = mutation_guard(
+            request,
+            run["projectId"],
+            x_role=x_role,
+            node_ids=[int(run["nodeId"])],
+        )
+        if guard:
+            return guard
+        feedback = {
+            "id": body.get("id") or f"AIFB-{uuid4().hex[:8].upper()}",
+            "aiRunId": run_id,
+            "projectId": run["projectId"],
+            "nodeId": run["nodeId"],
+            "agentId": run.get("agentId"),
+            "agentVersion": run.get("agentVersion"),
+            "businessPackId": run.get("businessPackId"),
+            "businessPackVersion": run.get("businessPackVersion"),
+            "feedbackType": body.get("feedbackType") or body.get("type") or "edited",
+            "accepted": bool(body.get("accepted", False)),
+            "comment": body.get("comment") or body.get("reason"),
+            "correctedOutput": body.get("correctedOutput"),
+            "shouldEnterEvaluationSet": bool(body.get("shouldEnterEvaluationSet", False)),
+            "createdAt": server_time(),
+        }
+        repo.state["ai_feedback"].insert(0, feedback)
+        run.setdefault("humanFeedback", []).insert(0, feedback)
+        run["status"] = "已人工确认" if feedback["accepted"] else run.get("status")
+        audit_id = repo.add_audit("记录 AI 反馈", "AIRun", run_id)
+        return ok({"feedback": feedback, "aiRun": repo.clone(run), "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"runId": run_id, "body": body})
+
+
 @router.get("/knowledge/overview")
 def knowledge_overview(request: Request):
     sources = repo.state["knowledge_sources"]
@@ -3903,46 +4361,78 @@ def admin_config_overview(request: Request):
 @router.post("/admin/projects")
 def create_admin_project(request: Request, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     def produce():
+        pack_id = body.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID
+        try:
+            pack = load_business_pack(pack_id)
+        except ValueError as exc:
+            return fail(errors.VALIDATION_ERROR, request, message=str(exc))
         project_id = body.get("code") or f"P-2026-{uuid4().hex[:6].upper()}"
         project = {
             "id": project_id,
             "code": project_id,
-            "name": body.get("name") or "新建压力管道项目",
-            "type": body.get("type") or "工业管道",
+            "name": body.get("name") or ("新建合规审计项目" if pack["id"] == "compliance_audit_v1" else "新建压力管道项目"),
+            "type": body.get("type") or ("合规审计" if pack["domainType"] == "compliance_audit" else "工业管道"),
             "region": body.get("region") or "华东",
             "ownerOrgName": body.get("ownerOrgName") or "建设单位",
             "contractorOrgName": body.get("contractorOrgName") or "施工单位",
             "ndtOrgName": body.get("ndtOrgName") or "无损检测单位",
             "inspectionOrgName": body.get("inspectionOrgName") or "监检机构",
+            "businessPackId": pack["id"],
+            "businessPackVersion": pack["version"],
+            "domainType": pack["domainType"],
+            "businessPackSnapshotHash": pack["snapshotHash"],
+            "businessPackSnapshot": business_pack_snapshot(pack),
             "status": "草稿/立项中",
             "todoCount": 0,
             "messageCount": 0,
-            "currentNodeId": int(body.get("currentNodeId") or 1),
+            "currentNodeId": int(body.get("currentNodeId") or pack["nodeTemplates"][0]["nodeId"]),
             "updatedAt": server_time(),
             "actions": ["project:view", "project:authorize-member"],
             "revision": 1,
         }
         repo.state["projects"].insert(0, project)
+        created_node_count, created_requirement_count = attach_business_pack_project_scaffold(project, pack)
         member_user_ids = body.get("memberUserIds") or {}
+        role_node_scope = {
+            role["code"]: [int(item["nodeId"]) for item in pack["nodeTemplates"]]
+            for role in pack["roles"]
+            if role["code"] != "admin"
+        }
         role_org_names = {
             "owner": project["ownerOrgName"],
             "contractor": project["contractorOrgName"],
             "ndt": project["ndtOrgName"],
             "inspection": project["inspectionOrgName"],
+            "observer": project["ownerOrgName"],
+            "submitter": project["contractorOrgName"],
+            "auditor": project["inspectionOrgName"],
         }
-        for role in ["owner", "contractor", "ndt", "inspection"]:
+        for role_def in [item for item in pack["roles"] if item["code"] != "admin"]:
+            role = role_def["code"]
             repo.state["project_members"].insert(
                 0,
                 project_member_snapshot(
                     project_id,
                     role,
                     member_user_ids.get(role),
-                    org_name=role_org_names[role],
+                    org_name=role_org_names.get(role, project["inspectionOrgName"]),
+                    node_scope=role_node_scope[role],
+                    actions=role_def["actions"],
                 ),
             )
         audit_id = repo.add_audit("项目立项", "Project", project_id)
         detail_data = project_detail_payload(project_id)
-        return ok({"project": versioned_project(project), "detail": detail_data, "auditLogId": audit_id, "createdNodeCount": 69}, request)
+        return ok(
+            {
+                "project": versioned_project(project),
+                "detail": detail_data,
+                "businessPack": business_pack_summary(pack),
+                "auditLogId": audit_id,
+                "createdNodeCount": created_node_count,
+                "createdRequirementCount": created_requirement_count,
+            },
+            request,
+        )
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 

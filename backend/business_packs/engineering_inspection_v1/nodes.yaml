@@ -1,0 +1,103 @@
+nodeTemplates:
+  - {nodeId: 1, code: "01", name: 设计单位许可资质, groupName: 受检单位资质, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 2, code: "02", name: 施工单位许可资质, groupName: 受检单位资质, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 3, code: "03", name: 无损检测机构核准资质, groupName: 受检单位资质, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 4, code: "04", name: 设计文件的批准程序, groupName: 设计文件, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 5, code: "05", name: 施工图审查手续, groupName: 设计文件, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 6, code: "06", name: 强度计算书、管道应力分析计算书的审批手续, groupName: 设计文件, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 7, code: "07", name: 设计变更的书面批准文件, groupName: 设计文件, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 8, code: "08", name: 设计采用的安全技术规范以及相关标准、压力管道元件的材料标准的版本, groupName: 设计文件, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 9, code: "09", name: 设计文件上注明的无损检测、防腐、耐压试验和泄漏试验要求, groupName: 设计文件, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 10, code: "10", name: 采用其他标准时的符合性申明及比照表, groupName: 设计文件, inspectionType: 需确认, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 11, code: "11", name: 施工组织设计, groupName: 施工组织设计, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 12, code: "12", name: 压力管道元件及安全附件制造单位的许可资质, groupName: 材料, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 13, code: "13", name: 需制造监检或有型式试验要求的压力管道元件的监检证书、型式试验报告, groupName: 材料, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 14, code: "14", name: 不需制造许可、监检、型式试验的管道组成件的出厂检验报告, groupName: 材料, inspectionType: C/B, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 15, code: "15", name: 境外制造的压力管道元件、安全附件的型式试验证书及制造许可证资质, groupName: 材料, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - nodeId: 16
+    code: "16"
+    name: 压力管道元件以及安全附件产品质量证明文件
+    groupName: 材料
+    inspectionType: C
+    defaultStatus: 需补正
+    fileCount: 4
+    requiredProgress: {done: 4, total: 5}
+    actions: [project:view, file:bind]
+    requiredMaterials:
+      - {id: REQ-16-01, materialTypeCode: quality_certificate, name: 产品质量证明书, requiredType: 必传}
+      - {id: REQ-16-02, materialTypeCode: material_retest_report, name: 材料复验报告, requiredType: 条件必传}
+  - {nodeId: 17, code: "17", name: 压力管道元件以及安全附件产品验收的见证资料、抽样复验, groupName: 材料, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 18, code: "18", name: 材料复验报告、无损检测报告, groupName: 材料, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 19, code: "19", name: 使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果, groupName: 材料, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 20, code: "20", name: 新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续, groupName: 材料, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 21, code: "21", name: 材料标志移植, groupName: 材料, inspectionType: B, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 22, code: "22", name: 材料代用, groupName: 材料, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 23, code: "23", name: 阀门的施工资料和耐压试验记录（报告）, groupName: 阀门, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - nodeId: 24
+    code: "24"
+    name: 焊工资格证及持证合格项目
+    groupName: 焊接（粘接）
+    inspectionType: B
+    defaultStatus: 待人工确认
+    fileCount: 4
+    requiredProgress: {done: 4, total: 5}
+    actions: [project:view, file:bind]
+    requiredMaterials:
+      - {id: REQ-24-01, materialTypeCode: welder_certificate, name: 焊工资格证, requiredType: 必传}
+      - {id: REQ-24-02, materialTypeCode: welder_roster, name: 焊工名册, requiredType: 必传}
+      - {id: REQ-24-03, materialTypeCode: external_query_screenshot, name: 外部查询截图, requiredType: 条件必传}
+  - {nodeId: 25, code: "25", name: 焊接（粘接）工艺文件, groupName: 焊接（粘接）, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 26, code: "26", name: 焊接材料质量证明文件, groupName: 焊接（粘接）, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 27, code: "27", name: 焊接材料的验收、保管、发放、使用和回收的管理, groupName: 焊接（粘接）, inspectionType: B, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 28, code: "28", name: 管道组对, groupName: 焊接（粘接）, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 29, code: "29", name: 施焊参数、施焊记录、焊缝标识, groupName: 焊接（粘接）, inspectionType: B, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 30, code: "30", name: 焊接接头外观质量, groupName: 焊接（粘接）, inspectionType: B, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 31, code: "31", name: 焊缝返修, groupName: 焊接（粘接）, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 32, code: "32", name: 焊接接头焊后热处理工艺文件, groupName: 热处理, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 33, code: "33", name: 热处理设备用测温记录仪表, groupName: 热处理, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 34, code: "34", name: 热处理记录、报告曲线、硬度检测报告, groupName: 热处理, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 35, code: "35", name: 无损检测机构施工现场质量保证体系的实施, groupName: 无损检测, inspectionType: B, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 36, code: "36", name: 无损检测方案, groupName: 无损检测, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 37, code: "37", name: 检测过程中发现问题的处理, groupName: 无损检测, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 38, code: "38", name: 无损检测人员资格证、执业注册证及持证合格项目, groupName: 无损检测, inspectionType: B, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 39, code: "39", name: 无损检测工艺文件, groupName: 无损检测, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - nodeId: 40
+    code: "40"
+    name: 无损检测记录、报告
+    groupName: 无损检测
+    inspectionType: C
+    defaultStatus: 待审查
+    fileCount: 4
+    requiredProgress: {done: 4, total: 5}
+    actions: [project:view, file:bind]
+    requiredMaterials:
+      - {id: REQ-40-01, materialTypeCode: ndt_report, name: 无损检测报告, requiredType: 必传}
+  - {nodeId: 41, code: "41", name: 射线检测底片抽查, groupName: 无损检测, inspectionType: B, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 42, code: "42", name: 射线检测现场抽查, groupName: 无损检测, inspectionType: B, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 43, code: "43", name: 防腐及保温材料质量证明文件, groupName: 防腐、保温, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 44, code: "44", name: 防腐、补口、补伤及保温, groupName: 防腐、保温, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 45, code: "45", name: 防腐层电火花检测, groupName: 防腐、保温, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 46, code: "46", name: 牺牲阳极、外加电流阴极保护、杂散电流排流装置, groupName: 防腐、保温, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 47, code: "47", name: 静电接地, groupName: 防腐、保温, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 48, code: "48", name: 穿跨越工程的管道结构、焊缝布置, groupName: 穿跨越工程, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 49, code: "49", name: 穿跨越工程施工, groupName: 穿跨越工程, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 50, code: "50", name: 套管防腐绝缘, groupName: 穿跨越工程, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 51, code: "51", name: 绝缘支撑, groupName: 穿跨越工程, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 52, code: "52", name: 管道现场制作（预制）, groupName: 管道现场制作（预制）, inspectionType: B, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 53, code: "53", name: 管道布管与连接方式、穿跨越, groupName: 管道安装, inspectionType: C/B, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 54, code: "54", name: 补偿装置, groupName: 管道安装, inspectionType: C/B, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 55, code: "55", name: 支撑件, groupName: 管道安装, inspectionType: C/B, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 56, code: "56", name: 安全阀、爆破片和紧急切断阀的安装位置、规格和型号, groupName: 安全附件, inspectionType: B, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 57, code: "57", name: 安全阀校验报告, groupName: 安全附件, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 58, code: "58", name: 紧急切断阀性能测试报告, groupName: 安全附件, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 59, code: "59", name: 耐压试验方案, groupName: 耐压试验, inspectionType: A, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 60, code: "60", name: 试验用压力表、试验介质、介质温度、环境温度, groupName: 耐压试验, inspectionType: A, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 61, code: "61", name: 耐压试验压力、保压时间及结果, groupName: 耐压试验, inspectionType: A, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 62, code: "62", name: 耐压试验记录（报告）, groupName: 耐压试验, inspectionType: A, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 63, code: "63", name: 管道系统的柔性(应力)分析, groupName: 耐压试验免除或替代, inspectionType: A, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 64, code: "64", name: 现场检查替代性试验的过程, groupName: 耐压试验免除或替代, inspectionType: A, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 65, code: "65", name: 无损检测报告和底片, groupName: 耐压试验免除或替代, inspectionType: A, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 66, code: "66", name: 试验用压力表、试验介质、介质温度、环境温度、试验压力, groupName: 泄漏试验, inspectionType: B, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 67, code: "67", name: 泄漏试验方法和试验报告, groupName: 泄漏试验, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 68, code: "68", name: 吹扫、清洗, groupName: 吹扫、清洗, inspectionType: C, defaultStatus: 待提交, actions: [project:view, file:bind]}
+  - {nodeId: 69, code: "69", name: 施工单位质量保证体系实施状况的评价, groupName: 施工单位质量保证体系实施状况的评价, inspectionType: 需确认, defaultStatus: 待提交, actions: [project:view, file:bind]}

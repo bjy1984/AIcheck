@@ -4,6 +4,7 @@ from typing import Any
 
 from apps.ocr_service.service import ocr_service
 from apps.worker.celery_app import celery_app
+from libs.business_pack import build_ai_review_prompt, load_business_pack, matching_rule_for_node
 from libs.contracts.responses import server_time
 from libs.db.repository import repo
 from libs.integrations.litellm_client import LiteLLMClient
@@ -144,18 +145,18 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
         flush_state()
         return {"projectId": project_id, "nodeId": node_id, "runId": run_id, "status": run.get("status"), "alreadyCompleted": True}
     node = repo.node(project_id, node_id)
+    project = repo.require_project(project_id)
+    pack = load_business_pack(run.get("businessPackId") or (project or {}).get("businessPackId") or "engineering_inspection_v1")
     fields = [
         item
         for item in repo.state["extracted_fields"]
         if item.get("documentVersionId") in set(run.get("inputDocumentVersionIds") or [])
     ]
-    prompt = (
-        f"请基于压力管道监检规则复核节点 {node_id} {node.get('name') if node else ''}。"
-        f"OCR字段: {fields[:12]}"
-    )
+    rule = matching_rule_for_node(pack, node_id)
+    prompt = build_ai_review_prompt(pack, node=node, fields=fields, rule=rule)
     try:
         response = LiteLLMClient().chat_sync(
-            [{"role": "system", "content": "你是压力管道监督检验 AI 复核助手。"}, {"role": "user", "content": prompt}],
+            [{"role": "system", "content": prompt["system"]}, {"role": "user", "content": prompt["user"]}],
             model=run.get("model") or "review-chat",
             temperature=0.1,
         )
@@ -181,6 +182,33 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
             }
         )
         run["evidenceLinks"] = repo.clone(repo.state["evidence_links"][:5])
+        run["findingDrafts"] = [
+            {
+                "id": f"FND-DRAFT-{run_id}",
+                "projectId": project_id,
+                "nodeId": node_id,
+                "businessPackId": run.get("businessPackId"),
+                "businessPackVersion": run.get("businessPackVersion"),
+                "businessPackSnapshotHash": run.get("businessPackSnapshotHash"),
+                "agentId": run.get("agentId"),
+                "agentVersion": run.get("agentVersion"),
+                "findingType": "ai_review_suggestion",
+                "severity": "medium",
+                "title": "AI 资料复核建议",
+                "description": answer[:800],
+                "evidenceLinkIds": [item["id"] for item in repo.state["evidence_links"][:3]],
+                "ruleRefs": [
+                    {
+                        "ruleSetId": (rule or {}).get("id"),
+                        "ruleSetVersion": run.get("ruleVersion") or (rule or {}).get("version"),
+                    }
+                ],
+                "kbRefs": [],
+                "confidence": 0.82,
+                "suggestedAction": "human_confirm",
+                "status": "pending_human_review",
+            }
+        ]
         status = "完成"
     except Exception:
         run["status"] = "失败"

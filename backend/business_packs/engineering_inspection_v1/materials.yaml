@@ -1,0 +1,37 @@
+materialTypes:
+  - code: generic_review_material
+    name: 审查资料
+    requiredType: 必传
+    requiredFields: [file_name, version, source_org]
+    evidenceRequired: true
+  - code: quality_certificate
+    name: 产品质量证明书
+    requiredType: 必传
+    requiredFields: [manufacturer, material_grade, batch_no, certificate_no, stamp]
+    ocrFieldMappings: [manufacturer, material_grade, batch_no, certificate_no, seal]
+    evidenceRequired: true
+  - code: material_retest_report
+    name: 材料复验报告
+    requiredType: 条件必传
+    requiredFields: [report_no, sample_no, conclusion]
+    evidenceRequired: true
+  - code: welder_certificate
+    name: 焊工资格证
+    requiredType: 必传
+    requiredFields: [name, certificate_no, qualified_items, valid_until]
+    evidenceRequired: true
+  - code: welder_roster
+    name: 焊工名册
+    requiredType: 必传
+    requiredFields: [name, certificate_no, work_scope]
+    evidenceRequired: true
+  - code: external_query_screenshot
+    name: 外部查询截图
+    requiredType: 条件必传
+    requiredFields: [query_source, query_time]
+    evidenceRequired: true
+  - code: ndt_report
+    name: 无损检测报告
+    requiredType: 必传
+    requiredFields: [report_no, method, conclusion, stamp]
+    evidenceRequired: true

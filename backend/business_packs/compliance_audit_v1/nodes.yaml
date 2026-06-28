@@ -1,0 +1,81 @@
+nodeTemplates:
+  - nodeId: 1
+    code: CA-01
+    name: 审计范围确认
+    groupName: 启动与范围
+    inspectionType: C
+    defaultStatus: 待提交
+    actions: [project:view, file:bind]
+    requiredMaterials:
+      - {id: CA-REQ-01-01, materialTypeCode: policy_document, name: 制度文件, requiredType: 必传}
+      - {id: CA-REQ-01-02, materialTypeCode: org_chart, name: 组织架构与职责, requiredType: 必传}
+  - nodeId: 2
+    code: CA-02
+    name: 制度与流程审查
+    groupName: 制度审查
+    inspectionType: C
+    defaultStatus: 待提交
+    actions: [project:view, file:bind]
+    requiredMaterials:
+      - {id: CA-REQ-02-01, materialTypeCode: policy_document, name: 制度文件, requiredType: 必传}
+      - {id: CA-REQ-02-02, materialTypeCode: process_record, name: 流程执行记录, requiredType: 必传}
+  - nodeId: 3
+    code: CA-03
+    name: 控制设计有效性审查
+    groupName: 控制测试
+    inspectionType: B
+    defaultStatus: 待审查
+    fileCount: 2
+    requiredProgress: {done: 1, total: 3}
+    actions: [project:view, file:bind]
+    requiredMaterials:
+      - {id: CA-REQ-03-01, materialTypeCode: control_matrix, name: 控制矩阵, requiredType: 必传}
+      - {id: CA-REQ-03-02, materialTypeCode: risk_register, name: 风险清单, requiredType: 必传}
+  - nodeId: 4
+    code: CA-04
+    name: 控制执行证据审查
+    groupName: 控制测试
+    inspectionType: B
+    defaultStatus: 待提交
+    actions: [project:view, file:bind]
+    requiredMaterials:
+      - {id: CA-REQ-04-01, materialTypeCode: process_record, name: 流程执行记录, requiredType: 必传}
+      - {id: CA-REQ-04-02, materialTypeCode: approval_record, name: 审批记录, requiredType: 必传}
+  - nodeId: 5
+    code: CA-05
+    name: 事件与例外事项审查
+    groupName: 风险与例外
+    inspectionType: C
+    defaultStatus: 待提交
+    actions: [project:view, file:bind]
+    requiredMaterials:
+      - {id: CA-REQ-05-01, materialTypeCode: incident_log, name: 事件记录, requiredType: 条件必传}
+      - {id: CA-REQ-05-02, materialTypeCode: data_access_log, name: 数据访问日志, requiredType: 条件必传}
+  - nodeId: 6
+    code: CA-06
+    name: 第三方与培训审查
+    groupName: 外部与人员
+    inspectionType: C
+    defaultStatus: 待提交
+    actions: [project:view, file:bind]
+    requiredMaterials:
+      - {id: CA-REQ-06-01, materialTypeCode: third_party_contract, name: 第三方合同, requiredType: 条件必传}
+      - {id: CA-REQ-06-02, materialTypeCode: training_record, name: 培训记录, requiredType: 条件必传}
+  - nodeId: 7
+    code: CA-07
+    name: 整改计划与关闭
+    groupName: 整改闭环
+    inspectionType: B
+    defaultStatus: 待提交
+    actions: [project:view, file:bind]
+    requiredMaterials:
+      - {id: CA-REQ-07-01, materialTypeCode: remediation_plan, name: 整改计划, requiredType: 条件必传}
+  - nodeId: 8
+    code: CA-08
+    name: 审计报告归档
+    groupName: 报告归档
+    inspectionType: A
+    defaultStatus: 待提交
+    actions: [project:view, file:bind]
+    requiredMaterials:
+      - {id: CA-REQ-08-01, materialTypeCode: audit_report, name: 审计报告, requiredType: 必传}

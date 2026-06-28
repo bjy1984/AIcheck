@@ -1,0 +1,6 @@
+id: engineering_inspection_v1
+name: 工程监检业务包
+version: 2026.06.98
+domainType: engineering_inspection
+status: published
+description: 工程监检资料审查业务包，承载角色、节点、资料目录、规则、报告和 AI SOP。

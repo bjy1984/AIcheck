@@ -1,0 +1,6 @@
+id: compliance_audit_v1
+name: 合规审计业务包
+version: 2026.06.01
+domainType: compliance_audit
+status: published
+description: 合规审计资料审查业务包，用于验证 AIcheck 平台内核的跨行业复用能力。

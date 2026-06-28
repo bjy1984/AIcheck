@@ -1,0 +1,25 @@
+roles:
+  - code: auditor
+    label: 审计员
+    platformRole: reviewer
+    defaultPath: /workbench/inspection
+    defaultNodeId: 3
+    actions: [project:view, file:view, file:preview, file:download, review:save, review:return-correction, ai:recheck, ai:adopt, ai:reject, report:generate, report:review, report:export, report:view, archive:view, todo:update, message:update]
+  - code: submitter
+    label: 被审计单位
+    platformRole: submitter
+    defaultPath: /workbench/contractor
+    defaultNodeId: 1
+    actions: [project:view, file:view, file:upload, file:bind, file:preview, file:download, file:withdraw, submission:draft, submission:submit, submission:withdraw, rectification:submit, todo:update, message:update]
+  - code: observer
+    label: 观察者
+    platformRole: observer
+    defaultPath: /workbench/owner
+    defaultNodeId: 3
+    actions: [project:view, file:view, file:preview, report:view, archive:view, archive:download]
+  - code: admin
+    label: 系统管理员
+    platformRole: admin
+    defaultPath: /admin/overview
+    defaultNodeId: 1
+    actions: [project:view, project:authorize-member, knowledge:view, knowledge:manage, llm:compare, admin:config, admin:export, audit:view, todo:update, message:update]

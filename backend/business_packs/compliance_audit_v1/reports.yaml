@@ -1,0 +1,10 @@
+reportTemplates:
+  - id: TPL-COMPLIANCE-AUDIT-2026.06
+    name: 合规审计资料审查报告
+    version: 2026.06
+    exportTypes: [report, archive-package, evidence-package]
+    sections:
+      - {code: audit_scope, title: 审计范围, source: project}
+      - {code: findings, title: 审查发现, source: review_findings}
+      - {code: remediation, title: 整改计划, source: corrections}
+      - {code: evidence, title: 证据索引, source: evidence_links}
