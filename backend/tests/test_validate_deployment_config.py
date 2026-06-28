@@ -136,6 +136,33 @@ def test_strict_production_fails_when_litellm_healthcheck_only_checks_http_200(t
     assert not all(item.ok for item in results)
 
 
+def test_strict_production_fails_when_litellm_proxy_bypass_is_missing(tmp_path) -> None:
+    compose_file = tmp_path / "docker-compose.yml"
+    compose = yaml.safe_load((BACKEND_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    compose["services"]["litellm-service"]["environment"].pop("NO_PROXY")
+    compose["services"]["litellm-service"]["environment"]["no_proxy"] = "litellm-postgres"
+    compose_file.write_text(yaml.safe_dump(compose, sort_keys=False), encoding="utf-8")
+    validator = DeploymentConfigValidator(
+        compose_file,
+        BACKEND_ROOT / "config/litellm.yaml",
+        dockerfile=BACKEND_ROOT / "Dockerfile",
+        ocr_dockerfile=BACKEND_ROOT / "Dockerfile.ocr",
+        ocr_requirements=BACKEND_ROOT / "requirements-ocr.txt",
+        strict_production=True,
+    )
+
+    results = validator.run()
+
+    assert any(
+        item.name == "compose.environment"
+        and item.status == "fail"
+        and "NO_PROXY" in item.detail
+        and "Prisma query-engine" in item.detail
+        for item in results
+    )
+    assert not all(item.ok for item in results)
+
+
 def test_default_value_extracts_compose_fallback() -> None:
     assert default_value("${AICHECK_REQUIRE_AUTH:-true}") == "true"
     assert default_value("${OPENAI_API_KEY:-}") == ""

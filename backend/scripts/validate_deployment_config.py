@@ -371,7 +371,13 @@ class DeploymentConfigValidator:
                 "LITELLM_API_KEY",
             },
             "ocr-service": {"AICHECK_AGENTDESIGN_BACKEND", "AICHECK_OCR_ALLOW_PLACEHOLDER"},
-            "litellm-service": {"DATABASE_URL", "LITELLM_MASTER_KEY", "OPENAI_API_KEY"},
+            "litellm-service": {
+                "DATABASE_URL",
+                "LITELLM_MASTER_KEY",
+                "OPENAI_API_KEY",
+                "NO_PROXY",
+                "no_proxy",
+            },
         }
         for service_name, keys in required_env.items():
             env = environment_map(self.service(service_name).get("environment"))
@@ -391,6 +397,9 @@ class DeploymentConfigValidator:
             failures.append("worker-service default AICHECK_TASK_DISPATCH must be celery")
         if default_value(ocr_env.get("AICHECK_OCR_ALLOW_PLACEHOLDER")) != "false":
             failures.append("ocr-service default AICHECK_OCR_ALLOW_PLACEHOLDER must be false")
+        litellm_env = environment_map(self.service("litellm-service").get("environment"))
+        proxy_failures = litellm_proxy_bypass_failures(litellm_env)
+        failures.extend(proxy_failures)
         weak_markers = {
             "AICHECK_JWT_SECRET": "change-me",
             "AICHECK_MINIO_SECRET_KEY": "dev-password",
@@ -570,6 +579,26 @@ def default_value(value: str | None) -> str:
         return ""
     match = re.match(r"\$\{[^:}]+:-(.*)\}$", value)
     return match.group(1) if match else value
+
+
+def litellm_proxy_bypass_failures(env: dict[str, str]) -> list[str]:
+    failures: list[str] = []
+    required_markers = {"127.0.0.1", "localhost"}
+    for key in ("NO_PROXY", "no_proxy"):
+        raw_value = env.get(key)
+        effective_value = default_value(raw_value)
+        tokens = {
+            token.strip()
+            for token in re.split(r"[, ]+", effective_value)
+            if token.strip()
+        }
+        missing = sorted(required_markers - tokens)
+        if missing:
+            failures.append(
+                f"litellm-service: {key} must include {', '.join(missing)} "
+                "so Prisma query-engine localhost health probes bypass HTTP proxies"
+            )
+    return failures
 
 
 def print_results(results: list[CheckResult], *, as_json: bool) -> None:

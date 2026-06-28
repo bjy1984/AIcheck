@@ -178,6 +178,8 @@ services:
       DATABASE_URL: postgresql://${LITELLM_POSTGRES_USER:-litellm}:${LITELLM_POSTGRES_PASSWORD:?LITELLM_POSTGRES_PASSWORD is required}@litellm-postgres:5432/${LITELLM_POSTGRES_DB:-litellm}
       LITELLM_MASTER_KEY: ${LITELLM_API_KEY:?LITELLM_API_KEY is required}
       OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
+      NO_PROXY: ${AICHECK_LITELLM_NO_PROXY:-127.0.0.1,localhost,::1,litellm-postgres}
+      no_proxy: ${AICHECK_LITELLM_NO_PROXY:-127.0.0.1,localhost,::1,litellm-postgres}
     ports:
       - "4001:4000"
     volumes:

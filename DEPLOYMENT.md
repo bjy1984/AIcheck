@@ -212,6 +212,7 @@ LITELLM_API_KEY=replace-with-litellm-master-key
 LITELLM_POSTGRES_DB=litellm
 LITELLM_POSTGRES_USER=litellm
 LITELLM_POSTGRES_PASSWORD=replace-with-strong-password
+AICHECK_LITELLM_NO_PROXY=127.0.0.1,localhost,::1,litellm-postgres
 
 ```
 
@@ -240,6 +241,7 @@ LITELLM_POSTGRES_PASSWORD=replace-with-strong-password
 | `LITELLM_POSTGRES_DB` | 是 | LiteLLM PostgreSQL 数据库名。 |
 | `LITELLM_POSTGRES_USER` | 是 | LiteLLM PostgreSQL 用户名。 |
 | `LITELLM_POSTGRES_PASSWORD` | 是 | LiteLLM PostgreSQL 密码。 |
+| `AICHECK_LITELLM_NO_PROXY` | 否 | LiteLLM 容器内代理旁路列表，默认必须包含 `127.0.0.1`、`localhost` 和 `litellm-postgres`，避免 Prisma query-engine 本机健康探针被 HTTP 代理转发。 |
 
 Compose 对敏感变量使用必填校验，缺少以下变量时服务不会启动；上线前必须提供强随机值或真实 provider key：
 
@@ -506,6 +508,8 @@ curl http://127.0.0.1:4001/v1/models \
 
 `api-service` 和 `worker-service` 在 `AICHECK_REQUIRE_AUTH=true`、`AICHECK_MONGO_TRANSACTIONS=true` 或 `AICHECK_STRICT_PRODUCTION=true` 任一生产标志开启时，禁止使用内置开发 LiteLLM key；必须显式提供 `LITELLM_API_KEY`。
 
+LiteLLM DB-backed virtual key、预算和限流管理依赖 Prisma query-engine。query-engine 会在容器本机启动 HTTP 健康探针；如果宿主或容器注入了 HTTP proxy 且没有设置 `NO_PROXY/no_proxy`，`/key/generate` 可能返回 `DB not connected` 或启动卡住。Compose 会把 `AICHECK_LITELLM_NO_PROXY` 同时写入 `NO_PROXY` 和 `no_proxy`，默认值为 `127.0.0.1,localhost,::1,litellm-postgres`；生产环境可以追加内网域名，但不能删除 `127.0.0.1` 和 `localhost`。
+
 如果 `OPENAI_API_KEY` 或供应商密钥无效：
 
 - AI 复核任务会映射为 `AI_RUN_FAILED`。
@@ -567,6 +571,12 @@ python scripts/verify_deployment.py \
   --ocr-object-probe \
   --project-id P-2026-HDCP-001
 
+# LiteLLM DB-backed 管理面验收：创建并删除临时 virtual key，确认预算和限流可用
+python scripts/verify_deployment.py \
+  --strict-production \
+  --litellm-management-probes \
+  --litellm-api-key "$LITELLM_API_KEY"
+
 # 供应商级模型验收：会消耗少量模型额度，确认 default-chat 与 embedding-default 能真实调用 provider
 python scripts/verify_deployment.py \
   --strict-production \
@@ -581,24 +591,25 @@ python scripts/deployment_report.py \
   --strict-production \
   --output-dir ./deployment-reports/latest
 
-# 生成包含目标环境探针的证据包；可按需加 --write-probes、--ocr-object-probe、--litellm-provider-probes
+# 生成包含目标环境探针的证据包；可按需加 OCR、LiteLLM 管理面和 provider 实调探针
 python scripts/deployment_report.py \
   --strict-production \
   --include-live \
   --write-probes \
   --ocr-object-probe \
+  --litellm-management-probes \
   --litellm-provider-probes \
   --litellm-api-key "$LITELLM_API_KEY" \
   --output-dir ./deployment-reports/latest
 ```
 
-`validate_deployment_config.py` 会静态解析 `Dockerfile`、`Dockerfile.ocr`、`requirements-ocr.txt`、`docker-compose.yml` 和 `config/litellm.yaml`，检查镜像基础契约、非 root 运行用户、API/OCR 端口、OCR PaddleOCR 基线依赖、服务拓扑、依赖、healthcheck、端口映射、Celery 队列、Mongo replica set、OCR artifact 只读挂载、持久化 volume、关键环境变量、LiteLLM 四个模型别名和数据库配置。它不需要 Docker，可在没有 Docker daemon 的 CI 环境中先挡住配置错误。
+`validate_deployment_config.py` 会静态解析 `Dockerfile`、`Dockerfile.ocr`、`requirements-ocr.txt`、`docker-compose.yml` 和 `config/litellm.yaml`，检查镜像基础契约、非 root 运行用户、API/OCR 端口、OCR PaddleOCR 基线依赖、服务拓扑、依赖、healthcheck、端口映射、Celery 队列、Mongo replica set、OCR artifact 只读挂载、持久化 volume、关键环境变量、LiteLLM 四个模型别名、数据库配置和 Prisma 本机代理旁路。它不需要 Docker，可在没有 Docker daemon 的 CI 环境中先挡住配置错误。
 
 `check_96_preflight.py` 用于 live probes 之前的宿主机预检，会检查 Docker CLI/Compose、`backend/.env`、必需密钥、生产开关、`AICHECK_AGENTDESIGN_HOST_PATH` 和默认端口占用。文本输出和 `--json` 输出都会在失败项上附带 `remediation`，用于明确下一步安装 Docker、复制 `.env.example`、替换占位密钥或修正 agentdesign 路径。
 
 `backend/tests/test_check_96_preflight.py` 会校验 `backend/.env.example` 覆盖所有预检必需变量和生产开关；如果预检脚本新增必需变量但模板漏配，测试会直接失败。
 
-`verify_deployment.py` 默认只做健康检查、登录、MongoDB transaction 探针、只读查询、OCR parse 合同探测、OCR bad request 合同探测、LiteLLM 模型别名检查，以及应返回 `FORBIDDEN` 的身份伪造/动作越权/读范围检查，不会创建业务数据，也不会消耗模型额度。开启 `--litellm-provider-probes` 后会通过 LiteLLM 的 OpenAI-compatible API 实际调用 `default-chat` 和 `embedding-default`，证明网关、virtual key、provider key、模型别名和供应商连通性可用。开启 `--write-probes` 后会在 `--project-id` 指定项目下创建一条验证用上传会话，使用 returned HTTP/HTTPS signed URL 实际 PUT 一个包含文字的 PDF，再执行 upload complete，校验新文档的 preview/download signed GET 可以实际读取对象，确认 OCR task 创建，并创建/读取导出任务，用于证明 MinIO signed PUT、文档 signed GET、upload complete、OCR task 创建和 export task 查询闭环。开启 `--ocr-object-probe` 时，verifier 会读取新文档当前版本 `storageKey` 并调用 `ocr-service /internal/ocr/parse`，要求 OCR 对刚上传的 MinIO 对象返回 `status=success`。严格生产模式还会要求 MongoDB 已启用并通过实际 transaction 探针，校验 OCR 使用真实 pipeline 而不是 placeholder，并要求 signed PUT/GET URL 是 HTTP/HTTPS。
+`verify_deployment.py` 默认只做健康检查、登录、MongoDB transaction 探针、只读查询、OCR parse 合同探测、OCR bad request 合同探测、LiteLLM 模型别名检查，以及应返回 `FORBIDDEN` 的身份伪造/动作越权/读范围检查，不会创建业务数据，也不会消耗模型额度。开启 `--litellm-management-probes` 后会创建并删除一个临时 LiteLLM virtual key，验证 PostgreSQL-backed key、预算、RPM 和 TPM 管理能力。开启 `--litellm-provider-probes` 后会通过 LiteLLM 的 OpenAI-compatible API 实际调用 `default-chat` 和 `embedding-default`，证明网关、virtual key、provider key、模型别名和供应商连通性可用。开启 `--write-probes` 后会在 `--project-id` 指定项目下创建一条验证用上传会话，使用 returned HTTP/HTTPS signed URL 实际 PUT 一个包含文字的 PDF，再执行 upload complete，校验新文档的 preview/download signed GET 可以实际读取对象，确认 OCR task 创建，并创建/读取导出任务，用于证明 MinIO signed PUT、文档 signed GET、upload complete、OCR task 创建和 export task 查询闭环。开启 `--ocr-object-probe` 时，verifier 会读取新文档当前版本 `storageKey` 并调用 `ocr-service /internal/ocr/parse`，要求 OCR 对刚上传的 MinIO 对象返回 `status=success`。严格生产模式还会要求 MongoDB 已启用并通过实际 transaction 探针，校验 OCR 使用真实 pipeline 而不是 placeholder，并要求 signed PUT/GET URL 是 HTTP/HTTPS。
 
 `deployment_report.py` 会把离线配置验收、API mutation 幂等覆盖、前端路由合同、前端 mutation header 覆盖和可选 live deployment probes 汇总成 `aicheck-deployment-report-v1` 结构，同时输出 Markdown 表格，适合随上线单归档。默认不访问目标环境；加 `--include-live` 后复用 `verify_deployment.py` 的所有目标环境探针。
 
@@ -682,6 +693,7 @@ AICHECK_BASE_URL=http://127.0.0.1:4100 pnpm playwright test e2e/aicheck-smoke.sp
 - `POST /internal/ocr/parse` 返回统一 OCR 结构：`status/fragments/fields/diagnostics/storageKey`；源文件缺失时也应返回 `status=failed` 的业务结构，而不是 500。
 - 触发 AI 复核后 `GET /api/projects/{projectId}/inspection/nodes/{nodeId}/ai-runs` 能看到运行记录。
 - LiteLLM `/v1/models` 包含四个业务别名：`default-chat`、`review-chat`、`compare-fast`、`embedding-default`。
+- `verify_deployment.py --strict-production --litellm-management-probes` 能创建并删除临时 virtual key，证明 PostgreSQL-backed 预算和限流管理面可用。
 - `verify_deployment.py --strict-production --litellm-provider-probes` 能通过 LiteLLM 实际获得 chat completion 和 embedding vector；失败时 verifier 只返回业务级 HTTP/形状错误，不输出 provider 原始密钥或错误正文。
 - 报告导出任务从处理中变为可下载。
 - 下载导出 zip 后能解出 `manifest.json`，其中 `schemaVersion=aicheck-export-v1`，`counts` 与当前项目报告、资料、归档和证据数量一致；报告 PDF 至少包含任务、项目和报告摘要。
@@ -770,6 +782,7 @@ VITE_USE_MOCK=false
 - `backend/config/litellm.yaml` 的模型名是否被供应商支持。
 - `LITELLM_API_KEY` 是否与 `general_settings.master_key` 一致。
 - `worker-service` 能否访问 `http://litellm-service:4000`。
+- `AICHECK_LITELLM_NO_PROXY` 是否仍包含 `127.0.0.1` 和 `localhost`；缺失时 LiteLLM Prisma query-engine 可能无法连上 DB-backed 管理面。
 
 ### 写接口返回 `AUTH_REQUIRED`
 

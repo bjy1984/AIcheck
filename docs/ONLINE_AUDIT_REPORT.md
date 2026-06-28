@@ -1,30 +1,30 @@
 # AIcheck 线上审计阶段报告
 
-更新时间：2026-06-27 18:38:19 PDT
+更新时间：2026-06-27 22:24:00 PDT
 
 ## 结论
 
-本次审计结论为：**本机 live 审计环境已大幅推进，API/Mongo/MinIO/OCR/前端 e2e 均通过；但 LiteLLM provider 实调失败，LiteLLM virtual key 管理面未连上 DB，Docker Compose 生产集群未验证，因此不能出具“生产无误”最终报告。**
+本次审计结论为：**本机 live 审计环境已大幅推进，API/Mongo/MinIO/OCR/前端 e2e 均通过；LiteLLM DB-backed virtual key、预算和限流管理面已通过 live 探针；但 LiteLLM provider 仍不健康，Docker Compose 生产集群未验证，因此不能出具“生产无误”最终报告。**
 
 已通过：
 
 - 前端 live e2e：51/51 通过。
-- 后端全量测试：117 passed。
+- 后端全量测试：118 passed。
 - API 鉴权模式：`AICHECK_REQUIRE_AUTH=true`，`AICHECK_ENABLE_DEMO_USERS=false`。
 - MongoDB replica set：事务探针通过。
 - MinIO：signed PUT、preview signed GET、download signed GET 通过。
 - OCR 服务：真实 agentdesign/PaddleOCR 管线可用，placeholder 关闭，上传对象 OCR 解析通过。
-- LiteLLM：服务可访问，模型别名 `default-chat`、`review-chat`、`embedding-default`、`compare-fast` 存在。
+- LiteLLM：4001 已以 DB-backed 模式运行，模型别名 `default-chat`、`review-chat`、`embedding-default`、`compare-fast` 存在。
+- LiteLLM 管理面：`--litellm-management-probes` 创建并删除临时 virtual key 成功，预算、RPM、TPM 设置通过。
 
 未通过：
 
 - LiteLLM `/health` 报 4 个 unhealthy endpoint。
-- LiteLLM `/key/generate` 管理探针返回 `DB not connected`，virtual key、预算、限流未通过 live 验证。
 - LiteLLM `default-chat` 实调返回 HTTP 401。
 - LiteLLM `embedding-default` 实调返回 HTTP 401。
 - 当前本机无 Docker CLI，无法验证 Compose 生产集群。
 - `backend/.env` 仍缺失，生产密钥和 provider key 未落入标准部署配置。
-- 当前 4001 LiteLLM 服务可访问模型列表，但管理接口未连接 PostgreSQL；本机 4002 DB-backed 启动实验完成 schema sync 后卡在应用启动阶段，未形成可用服务。
+- 当前 4001 LiteLLM 已连接本机 PostgreSQL；provider 不健康仍由无效/占位 provider key 导致。
 
 ## 本机服务状态
 
@@ -35,7 +35,7 @@
 | 前端 | `http://127.0.0.1:4000` | 已监听 |
 | API | `http://127.0.0.1:8000` | 已监听 |
 | OCR | `http://127.0.0.1:8010` | 已监听 |
-| LiteLLM | `http://127.0.0.1:4001` | 已监听，provider 不健康 |
+| LiteLLM | `http://127.0.0.1:4001` | DB-backed 已监听，管理面通过，provider 不健康 |
 | MinIO API | `http://127.0.0.1:9000` | 已监听 |
 | MinIO Console | `http://127.0.0.1:9001` | 已监听 |
 | MongoDB RS | `127.0.0.1:27018` | 已监听 |
@@ -57,7 +57,7 @@
 
 ## Live 探针结果
 
-最终严格探针命令：
+完整严格探针命令：
 
 ```bash
 cd backend
@@ -74,7 +74,22 @@ cd backend
   --json
 ```
 
-2026-06-27 18:38 PDT 复跑结果：`ok=false`。
+2026-06-27 18:38 PDT 完整严格探针结果：`ok=false`。
+2026-06-27 22:24 PDT 复跑 LiteLLM 管理面子集：
+
+```bash
+cd backend
+.venv/bin/python scripts/verify_deployment.py \
+  --api-base http://127.0.0.1:8000 \
+  --ocr-base http://127.0.0.1:8010 \
+  --litellm-base http://127.0.0.1:4001 \
+  --litellm-api-key '***' \
+  --strict-production \
+  --litellm-management-probes \
+  --json
+```
+
+结果仍为 `ok=false`，原因是 `litellm.health` 继续报告 provider unhealthy；但管理面探针已通过。
 
 通过项包括：
 
@@ -99,13 +114,15 @@ cd backend
 - `ocr.bad-request`
 - `litellm.models`
 - `litellm.aliases`
+- `litellm.management-probes`
 
 失败项：
 
 - `litellm.health`：HTTP 200，但 LiteLLM 报 `unhealthyCount=4`。
-- `litellm.management-probes`：`/key/generate HTTP 500`，错误为 `DB not connected`。
 - `litellm.chat-probe`：HTTP 401。
 - `litellm.embedding-probe`：HTTP 401。
+
+说明：22:24 的最新复跑没有再次消耗 provider quota；provider 失败结论沿用 18:38 的 `--litellm-provider-probes` 结果，并且当前 `/health` 仍显示 4 个 unhealthy endpoint。
 
 ## 前端 E2E
 
@@ -143,9 +160,8 @@ pnpm exec playwright test
 已执行并通过：
 
 - `cd backend && .venv/bin/python scripts/validate_deployment_config.py --strict-production --json`：通过。
-- `cd backend && .venv/bin/python -m pytest tests/test_verify_deployment.py tests/test_deployment_report.py -q`：27 passed。
-- `cd backend && .venv/bin/python -m pytest tests/test_validate_deployment_config.py tests/test_check_96_preflight.py -q`：12 passed。
-- `cd backend && .venv/bin/python -m pytest -q`：117 passed，1 个第三方 deprecation warning。
+- `cd backend && .venv/bin/python -m pytest tests/test_validate_deployment_config.py tests/test_check_96_preflight.py tests/test_verify_deployment.py tests/test_deployment_report.py -q`：40 passed。
+- `cd backend && .venv/bin/python -m pytest -q`：118 passed，1 个第三方 deprecation warning。
 - `python -m ruff check backend`：通过。
 - `git diff --check`：通过。
 - `cd frontend && pnpm ts:check`：通过。
@@ -169,7 +185,9 @@ pnpm exec playwright test
 - 新增 `backend/scripts/reset_audit_mongo.py`：显式 `--yes` 才能重置本地/审计 Mongo 种子，并创建强密码角色账号。
 - `backend/.gitignore`：忽略本地 LiteLLM Python 3.11 虚拟环境。
 - `docker-compose.yml`：LiteLLM healthcheck 现在携带 `LITELLM_MASTER_KEY` 调 `/health`，并在 `unhealthy_count > 0` 时失败，避免 provider 不健康时 Compose 误报 healthy。
-- `validate_deployment_config.py`：静态审计 LiteLLM healthcheck 必须带 Bearer key 且检查 unhealthy provider，并新增回归测试。
+- `docker-compose.yml`：`litellm-service` 新增 `NO_PROXY/no_proxy`，默认 `127.0.0.1,localhost,::1,litellm-postgres`，避免 Prisma query-engine 本机 HTTP 健康探针被代理转发导致 DB-backed 管理面失败。
+- `validate_deployment_config.py`：静态审计 LiteLLM healthcheck 必须带 Bearer key、检查 unhealthy provider，并要求 `NO_PROXY/no_proxy` 包含 `127.0.0.1` 和 `localhost`。
+- 本机 4001 LiteLLM：已用 PostgreSQL `litellm` 数据库和 `NO_PROXY/no_proxy` 重启为 DB-backed 实例；管理探针通过。
 
 ## 生产预检
 
@@ -182,6 +200,8 @@ pnpm exec playwright test
 - `agentdesign.path`：未通过 `.env` 配置。
 - `probe.command-ready`：上述阻塞未解决前不能宣称 96+ 生产验收。
 
+预检同时提示当前默认端口已有本地 live 服务监听，包括 `4001`、`6379`、`8000`、`8010`、`9000`、`9001`、`27017`；这是本机审计环境正在运行导致，真正启动 Compose 前需要停止或调整端口。
+
 ## 风险判断
 
 当前可以确认：
@@ -193,7 +213,7 @@ pnpm exec playwright test
 当前不能确认：
 
 - LiteLLM 能调用真实 chat/embedding provider。
-- LiteLLM DB-backed proxy 的 virtual key、预算、限流、调用日志可用；当前管理探针已明确失败为 `DB not connected`。
+- LiteLLM DB-backed proxy 的 virtual key、预算、限流管理面可用；调用日志仍需在真实 provider 调用成功后再验。
 - Docker Compose 生产集群可启动并健康。
 - `.env` 标准部署配置已经具备真实生产密钥。
 
@@ -204,7 +224,7 @@ pnpm exec playwright test
 1. 安装 Docker/Compose，并确认 `docker --version`、`docker compose version` 可用。
 2. 创建 `backend/.env`，填入真实 `OPENAI_API_KEY`、`LITELLM_API_KEY`、`LITELLM_POSTGRES_PASSWORD`、`AICHECK_JWT_SECRET`、`AICHECK_MINIO_SECRET_KEY`。
 3. 配置 `AICHECK_AGENTDESIGN_HOST_PATH` 指向包含 `mvp-system/backend/seal_ocr/pipeline.py` 的 agentdesign checkout。
-4. 启动 DB-backed LiteLLM Proxy，确认 PostgreSQL-backed virtual key、预算、限流和日志可用。
+4. 换入真实 provider key，确认 LiteLLM `/health` healthy，并通过 chat、embedding 和调用日志探针。
 5. 重跑：
    - `cd backend && python scripts/check_96_preflight.py --strict-production`
    - `cd backend && python scripts/verify_deployment.py --strict-production --write-probes --ocr-object-probe --litellm-management-probes --litellm-provider-probes --json`
