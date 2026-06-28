@@ -938,17 +938,17 @@ def normalize_fields(result: dict[str, Any]) -> list[dict[str, Any]]:
     for raw in result.get("fields") or []:
         if not isinstance(raw, dict):
             continue
-        name = raw.get("fieldName") or raw.get("name") or raw.get("key") or raw.get("label")
-        value = raw.get("fieldValue") or raw.get("value") or raw.get("text")
+        name = first_present(raw, "fieldName", "name", "key", "label")
+        value = first_present(raw, "fieldValue", "value", "text")
         if name and value is not None:
             fields.append(
                 {
                     "fieldName": str(name),
                     "fieldValue": str(value),
-                    "pageNo": raw.get("pageNo") or raw.get("page") or 1,
-                    "bbox": raw.get("bbox") or raw.get("box"),
-                    "confidence": raw.get("confidence") or raw.get("score") or 0.8,
-                    "extractionMethod": raw.get("extractionMethod") or raw.get("method"),
+                    "pageNo": first_present(raw, "pageNo", "page", default=1),
+                    "bbox": first_present(raw, "bbox", "box"),
+                    "confidence": first_present(raw, "confidence", "score", default=0.8),
+                    "extractionMethod": first_present(raw, "extractionMethod", "method"),
                 }
             )
     return fields
@@ -965,13 +965,20 @@ def fields_from_fragments(result: dict[str, Any]) -> list[dict[str, Any]]:
             {
                 "fieldName": "OCR文本" if index == 1 else f"OCR文本{index}",
                 "fieldValue": text[:200],
-                "pageNo": fragment.get("pageNo") or 1,
+                "pageNo": first_present(fragment, "pageNo", default=1),
                 "bbox": fragment.get("bbox"),
-                "confidence": fragment.get("confidence") or 0.8,
+                "confidence": first_present(fragment, "confidence", default=0.8),
                 "extractionMethod": "PaddleOCR",
             }
         )
     return fields
+
+
+def first_present(raw: dict[str, Any], *keys: str, default: Any = None) -> Any:
+    for key in keys:
+        if key in raw and raw[key] is not None:
+            return raw[key]
+    return default
 
 
 def build_export_artifact(

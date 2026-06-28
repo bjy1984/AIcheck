@@ -17,11 +17,12 @@ from scripts.check_96_preflight import (
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
-def write_env(path: Path, agentdesign: Path) -> None:
+def write_env(path: Path, agentdesign: Path, models: Path) -> None:
     path.write_text(
         "\n".join(
             [
                 f"AICHECK_AGENTDESIGN_HOST_PATH={agentdesign}",
+                f"AICHECK_OCR_MODELS_HOST_PATH={models}",
                 "AICHECK_MINIO_SECRET_KEY=strong-minio-secret",
                 "AICHECK_JWT_SECRET=strong-jwt-secret-with-more-than-random-text",
                 "LITELLM_API_KEY=sk-litellm-master",
@@ -30,6 +31,8 @@ def write_env(path: Path, agentdesign: Path) -> None:
                 "AICHECK_REQUIRE_AUTH=true",
                 "AICHECK_ENABLE_DEMO_USERS=false",
                 "AICHECK_OCR_ALLOW_PLACEHOLDER=false",
+                "AICHECK_OCR_OFFLINE_ONLY=true",
+                "AICHECK_OCR_DISABLE_NETWORK=true",
                 "AICHECK_MONGO_TRANSACTIONS=true",
             ]
         ),
@@ -42,6 +45,12 @@ def create_agentdesign(root: Path) -> None:
     (root / "requirements").mkdir()
     (root / "mvp-system" / "backend" / "seal_ocr" / "pipeline.py").write_text("", encoding="utf-8")
     (root / "requirements" / "mvp-ocr.txt").write_text("paddleocr\n", encoding="utf-8")
+
+
+def create_ocr_models(root: Path) -> None:
+    for name in ["paddleocr", "paddlex", "paddleocr-vl", "docling"]:
+        (root / name).mkdir(parents=True, exist_ok=True)
+        (root / name / ".keep").write_text(name, encoding="utf-8")
 
 
 def test_env_example_covers_preflight_required_variables() -> None:
@@ -112,9 +121,11 @@ def test_preflight_fails_without_runtime_and_env(tmp_path, monkeypatch) -> None:
 
 def test_preflight_passes_with_env_and_mocked_docker(tmp_path, monkeypatch) -> None:
     agentdesign = tmp_path / "agentdesign"
+    models = tmp_path / "models"
     create_agentdesign(agentdesign)
+    create_ocr_models(models)
     env_file = tmp_path / ".env"
-    write_env(env_file, agentdesign)
+    write_env(env_file, agentdesign, models)
     monkeypatch.setattr("scripts.check_96_preflight.shutil.which", lambda name: "/usr/local/bin/docker")
     monkeypatch.setattr("scripts.check_96_preflight.tcp_port_open", lambda port: False)
 
@@ -131,9 +142,11 @@ def test_preflight_passes_with_env_and_mocked_docker(tmp_path, monkeypatch) -> N
 
 def test_strict_preflight_rejects_placeholders(tmp_path, monkeypatch) -> None:
     agentdesign = tmp_path / "agentdesign"
+    models = tmp_path / "models"
     create_agentdesign(agentdesign)
+    create_ocr_models(models)
     env_file = tmp_path / ".env"
-    write_env(env_file, agentdesign)
+    write_env(env_file, agentdesign, models)
     env_file.write_text(
         env_file.read_text(encoding="utf-8").replace("sk-provider", "replace-with-provider-api-key"),
         encoding="utf-8",
@@ -159,9 +172,11 @@ def test_strict_preflight_rejects_placeholders(tmp_path, monkeypatch) -> None:
 
 def test_strict_preflight_rejects_weak_internal_secrets(tmp_path, monkeypatch) -> None:
     agentdesign = tmp_path / "agentdesign"
+    models = tmp_path / "models"
     create_agentdesign(agentdesign)
+    create_ocr_models(models)
     env_file = tmp_path / ".env"
-    write_env(env_file, agentdesign)
+    write_env(env_file, agentdesign, models)
     env_file.write_text(
         env_file.read_text(encoding="utf-8")
         .replace("strong-jwt-secret-with-more-than-random-text", "short")

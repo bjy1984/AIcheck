@@ -1,28 +1,30 @@
 from __future__ import annotations
 
-import os
-
-from fastapi import FastAPI, Request
+from fastapi import BackgroundTasks, FastAPI, Request
 
 from apps.ocr_service.service import AGENTDESIGN_BACKEND, ocr_service
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 
-app = FastAPI(title="AIcheck OCR Service", version="0.1.0")
+app = FastAPI(title="AIcheck Document Intelligence Service", version="1.0.0")
 
 
 @app.get("/healthz")
 async def healthz(request: Request):
-    return ok(
-        {
-            "status": "ok",
-            "service": "ocr-service",
-            "pipelineAvailable": ocr_service.pipeline is not None,
-            "pipelineBackend": str(AGENTDESIGN_BACKEND),
-            "placeholderAllowed": os.getenv("AICHECK_OCR_ALLOW_PLACEHOLDER", "true").lower() == "true",
-        },
-        request,
-    )
+    payload = ocr_service.health_payload()
+    payload["service"] = payload.get("service", "ocr-service")
+    payload["pipelineAvailable"] = payload.get("pipelineAvailable")
+    payload["pipelineBackend"] = str(AGENTDESIGN_BACKEND)
+    payload["placeholderAllowed"] = payload.get("placeholderAllowed")
+    return ok(payload, request)
+
+
+@app.get("/readyz")
+async def readyz(request: Request):
+    payload = ocr_service.readiness_payload()
+    if payload["ready"]:
+        return ok(payload, request)
+    return fail(errors.EXTERNAL_TOOL_FAILED, request, message="本地 OCR 模型或引擎未就绪。", data=payload, http_status=503)
 
 
 @app.post("/internal/ocr/parse")
@@ -31,6 +33,49 @@ async def parse_document(request: Request, payload: dict):
     if not storage_key:
         return fail(errors.VALIDATION_ERROR, request, message="storageKey 不能为空。")
     return ok(
-        ocr_service.parse_document(storage_key, file_name=payload.get("fileName")),
+        ocr_service.parse_document(
+            storage_key,
+            file_name=payload.get("fileName"),
+            profile_id=payload.get("profileId"),
+            document_type=payload.get("documentType"),
+            document_version_id=payload.get("documentVersionId"),
+            business_pack_id=payload.get("businessPackId"),
+            options=payload.get("options") if isinstance(payload.get("options"), dict) else None,
+        ),
         request,
     )
+
+
+@app.post("/internal/document-parse/jobs")
+async def create_document_parse_job(request: Request, payload: dict, background_tasks: BackgroundTasks):
+    storage_key = str(payload.get("storageKey") or "").strip()
+    if not storage_key:
+        return fail(errors.VALIDATION_ERROR, request, message="storageKey 不能为空。")
+    job = ocr_service.create_job(payload)
+    background_tasks.add_task(ocr_service.run_job, job["jobId"])
+    return ok(job, request)
+
+
+@app.get("/internal/document-parse/jobs/{job_id}")
+async def get_document_parse_job(request: Request, job_id: str):
+    job = ocr_service.jobs.get_job(job_id)
+    if not job:
+        return fail(errors.NOT_FOUND, request, message="OCR Job 不存在。")
+    return ok(job, request)
+
+
+@app.post("/internal/document-parse/jobs/{job_id}/retry")
+async def retry_document_parse_job(request: Request, job_id: str, background_tasks: BackgroundTasks):
+    job = ocr_service.retry_job(job_id)
+    if not job:
+        return fail(errors.NOT_FOUND, request, message="OCR Job 不存在。")
+    background_tasks.add_task(ocr_service.run_job, job["jobId"])
+    return ok(job, request)
+
+
+@app.get("/internal/document-parse/results/{parse_result_id}")
+async def get_document_parse_result(request: Request, parse_result_id: str):
+    result = ocr_service.jobs.get_result(parse_result_id)
+    if not result:
+        return fail(errors.NOT_FOUND, request, message="OCR 解析结果不存在。")
+    return ok(result, request)

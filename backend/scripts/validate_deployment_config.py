@@ -39,7 +39,7 @@ REQUIRED_VOLUMES = {"mongo-data", "minio-data", "litellm-postgres-data"}
 REQUIRED_HEALTHCHECKS = {
     "api-service": "8000/healthz",
     "worker-service": "celery",
-    "ocr-service": "8010/healthz",
+    "ocr-service": "8010/readyz",
     "mongodb": "rs.status",
     "redis": "redis-cli",
     "minio": "mc ready",
@@ -370,7 +370,16 @@ class DeploymentConfigValidator:
                 "LITELLM_BASE_URL",
                 "LITELLM_API_KEY",
             },
-            "ocr-service": {"AICHECK_AGENTDESIGN_BACKEND", "AICHECK_OCR_ALLOW_PLACEHOLDER"},
+            "ocr-service": {
+                "AICHECK_AGENTDESIGN_BACKEND",
+                "AICHECK_OCR_ALLOW_PLACEHOLDER",
+                "AICHECK_OCR_OFFLINE_ONLY",
+                "AICHECK_OCR_DISABLE_NETWORK",
+                "PADDLEOCR_MODEL_DIR",
+                "PADDLEX_MODEL_DIR",
+                "PADDLEOCR_VL_MODEL_DIR",
+                "DOCLING_ARTIFACTS_PATH",
+            },
             "litellm-service": {
                 "DATABASE_URL",
                 "LITELLM_MASTER_KEY",
@@ -397,6 +406,10 @@ class DeploymentConfigValidator:
             failures.append("worker-service default AICHECK_TASK_DISPATCH must be celery")
         if default_value(ocr_env.get("AICHECK_OCR_ALLOW_PLACEHOLDER")) != "false":
             failures.append("ocr-service default AICHECK_OCR_ALLOW_PLACEHOLDER must be false")
+        if default_value(ocr_env.get("AICHECK_OCR_OFFLINE_ONLY")) != "true":
+            failures.append("ocr-service default AICHECK_OCR_OFFLINE_ONLY must be true")
+        if default_value(ocr_env.get("AICHECK_OCR_DISABLE_NETWORK")) != "true":
+            failures.append("ocr-service default AICHECK_OCR_DISABLE_NETWORK must be true")
         litellm_env = environment_map(self.service("litellm-service").get("environment"))
         proxy_failures = litellm_proxy_bypass_failures(litellm_env)
         failures.extend(proxy_failures)
@@ -438,14 +451,22 @@ class DeploymentConfigValidator:
         volumes = normalize_volumes(ocr_service.get("volumes"))
         if not any(volume_targets_path(volume, "/opt/agentdesign") for volume in volumes):
             failures.append("ocr-service must mount AICHECK_AGENTDESIGN_HOST_PATH to /opt/agentdesign:ro")
+        if not any(volume_targets_path(volume, "/models") for volume in volumes):
+            failures.append("ocr-service must mount AICHECK_OCR_MODELS_HOST_PATH to /models:ro")
         if not any(str(volume).startswith("${AICHECK_AGENTDESIGN_HOST_PATH:?") for volume in volumes):
             failures.append("ocr-service agentdesign mount must require AICHECK_AGENTDESIGN_HOST_PATH")
+        if not any(str(volume).startswith("${AICHECK_OCR_MODELS_HOST_PATH:?") for volume in volumes):
+            failures.append("ocr-service model mount must require AICHECK_OCR_MODELS_HOST_PATH")
         if not any(volume.endswith(":/opt/agentdesign:ro") or ":/opt/agentdesign:ro," in volume for volume in volumes):
             failures.append("ocr-service agentdesign mount must be read-only")
+        if not any(volume.endswith(":/models:ro") or ":/models:ro," in volume for volume in volumes):
+            failures.append("ocr-service model mount must be read-only")
         self.add(
             "compose.ocr-artifacts",
             "fail" if failures else "pass",
-            "; ".join(failures) if failures else "OCR service requires and mounts the agentdesign pipeline artifacts read-only.",
+            "; ".join(failures)
+            if failures
+            else "OCR service requires local model artifacts and mounts OCR artifacts read-only.",
             {"backendPath": backend_path, "volumes": sorted(volumes)},
         )
 

@@ -179,12 +179,33 @@ def ocr_transport(request: httpx.Request) -> httpx.Response:
                 "diagnostics": ["missing object"],
             }
         )
+    if request.url.path == "/readyz":
+        return envelope(
+            {
+                "service": "ocr-service",
+                "pipelineAvailable": True,
+                "pipelineBackend": "/opt/agentdesign/mvp-system/backend",
+                "placeholderAllowed": False,
+                "offlineOnly": True,
+                "networkDisabled": True,
+                "ready": True,
+                "readinessFailures": [],
+                "modelManifest": {
+                    "modelDirs": {
+                        "PADDLEOCR_MODEL_DIR": {"path": "/models/paddleocr", "exists": True},
+                        "PADDLEX_MODEL_DIR": {"path": "/models/paddlex", "exists": True},
+                    }
+                },
+            }
+        )
     return envelope(
         {
             "service": "ocr-service",
             "pipelineAvailable": True,
             "pipelineBackend": "/opt/agentdesign/mvp-system/backend",
             "placeholderAllowed": False,
+            "offlineOnly": True,
+            "networkDisabled": True,
         }
     )
 
@@ -283,6 +304,20 @@ def storage_transport(request: httpx.Request) -> httpx.Response:
 
 
 def ocr_placeholder_transport(request: httpx.Request) -> httpx.Response:
+    if request.url.path == "/readyz":
+        return envelope(
+            {
+                "service": "ocr-service",
+                "pipelineAvailable": False,
+                "pipelineBackend": "/opt/agentdesign/mvp-system/backend",
+                "placeholderAllowed": True,
+                "offlineOnly": False,
+                "networkDisabled": False,
+                "ready": False,
+                "readinessFailures": ["placeholder enabled"],
+                "modelManifest": {"modelDirs": {}},
+            }
+        )
     if request.url.path == "/healthz":
         return envelope(
             {
@@ -290,6 +325,8 @@ def ocr_placeholder_transport(request: httpx.Request) -> httpx.Response:
                 "pipelineAvailable": False,
                 "pipelineBackend": "/opt/agentdesign/mvp-system/backend",
                 "placeholderAllowed": True,
+                "offlineOnly": False,
+                "networkDisabled": False,
             }
         )
     return ocr_transport(request)

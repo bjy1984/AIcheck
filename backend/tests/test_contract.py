@@ -159,6 +159,69 @@ def test_ocr_parse_rejects_missing_storage_key() -> None:
     assert "serverTime" in payload
 
 
+def test_ocr_document_parse_job_lifecycle(monkeypatch) -> None:
+    from apps.ocr_service.main import app as ocr_app
+    from apps.ocr_service.main import ocr_service as app_ocr_service
+
+    def fake_parse_document(storage_key: str, **kwargs):
+        return {
+            "parseResultId": "PARSE-TEST",
+            "storageKey": storage_key,
+            "fileName": kwargs.get("file_name"),
+            "status": "success",
+            "fragments": [{"pageNo": 1, "text": "job ok", "confidence": 1.0}],
+            "fields": [],
+            "diagnostics": [],
+            "engineRuns": [{"engine": "test", "status": "success"}],
+        }
+
+    monkeypatch.setattr(app_ocr_service, "parse_document", fake_parse_document)
+    ocr_client = TestClient(ocr_app)
+
+    created = assert_ok(
+        ocr_client.post(
+            "/internal/document-parse/jobs",
+            json={
+                "storageKey": "minio://documents/job.pdf",
+                "fileName": "job.pdf",
+                "profileId": "quality_certificate_v1",
+            },
+        )
+    )
+    job = assert_ok(ocr_client.get(f"/internal/document-parse/jobs/{created['jobId']}"))
+
+    assert job["status"] == "success"
+    assert job["parseResultId"] == "PARSE-TEST"
+    result = assert_ok(ocr_client.get("/internal/document-parse/results/PARSE-TEST"))
+    assert result["fragments"][0]["text"] == "job ok"
+    retry = assert_ok(ocr_client.post(f"/internal/document-parse/jobs/{created['jobId']}/retry"))
+    assert retry["retryOfJobId"] == created["jobId"]
+
+
+def test_ocr_normalize_preserves_zero_values() -> None:
+    from apps.ocr_service.service import normalize_ocr_result
+
+    result = normalize_ocr_result(
+        {
+            "text": "zero",
+            "fields": [
+                {
+                    "fieldName": "zero_field",
+                    "fieldValue": 0,
+                    "page_index": 0,
+                    "bbox": [0, 0, 1, 1],
+                    "confidence": 0,
+                }
+            ],
+        },
+        "minio://documents/zero.pdf",
+        "zero.pdf",
+    )
+
+    assert result["fields"][0]["fieldValue"] == "0"
+    assert result["fields"][0]["confidence"] == 0
+
+
 def test_litellm_client_rejects_default_key_when_production_flags_are_enabled(monkeypatch) -> None:
     from libs.integrations.litellm_client import LiteLLMClient
 
@@ -2399,6 +2462,24 @@ def test_ocr_service_reports_missing_source_before_running_pipeline() -> None:
     service.pipeline = lambda source_path: {"text": f"unexpected {source_path}"}
 
     result = service.parse_document("missing-object.pdf", file_name="missing-object.pdf")
+
+    assert result["status"] == "failed"
+    assert "OCR source file is unavailable" in result["diagnostics"][0]
+
+
+def test_ocr_service_rejects_unapproved_local_file_path(tmp_path, monkeypatch) -> None:
+    from apps.ocr_service.service import OcrService
+
+    outside = tmp_path / "outside.pdf"
+    allowed = tmp_path / "allowed"
+    outside.write_text("not a real pdf", encoding="utf-8")
+    allowed.mkdir()
+    monkeypatch.setenv("AICHECK_OCR_ALLOWED_LOCAL_DIRS", str(allowed))
+    monkeypatch.setenv("AICHECK_OCR_ALLOW_DIRECT_PATHS", "false")
+    service = OcrService()
+    service.pipeline = lambda source_path: {"text": f"unexpected {source_path}"}
+
+    result = service.parse_document(str(outside), file_name="outside.pdf")
 
     assert result["status"] == "failed"
     assert "OCR source file is unavailable" in result["diagnostics"][0]

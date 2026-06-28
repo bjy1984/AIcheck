@@ -15,6 +15,7 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ENV_FILE = BACKEND_ROOT / ".env"
 REQUIRED_ENV = {
     "AICHECK_AGENTDESIGN_HOST_PATH": "agentdesign source checkout",
+    "AICHECK_OCR_MODELS_HOST_PATH": "local OCR model artifact directory",
     "AICHECK_MINIO_SECRET_KEY": "MinIO root password and signing secret",
     "AICHECK_JWT_SECRET": "JWT signing secret",
     "LITELLM_API_KEY": "LiteLLM master key used by API/worker probes",
@@ -25,6 +26,8 @@ PRODUCTION_FLAG_DEFAULTS = {
     "AICHECK_REQUIRE_AUTH": "true",
     "AICHECK_ENABLE_DEMO_USERS": "false",
     "AICHECK_OCR_ALLOW_PLACEHOLDER": "false",
+    "AICHECK_OCR_OFFLINE_ONLY": "true",
+    "AICHECK_OCR_DISABLE_NETWORK": "true",
     "AICHECK_MONGO_TRANSACTIONS": "true",
 }
 HOST_PORTS = {
@@ -162,6 +165,7 @@ class PreflightChecker:
         self.check_secret_strength()
         self.check_production_flags()
         self.check_agentdesign()
+        self.check_ocr_models()
         self.check_ports()
         self.check_live_probe_command()
         return self.results
@@ -395,6 +399,36 @@ class PreflightChecker:
             )
             return
         self.add("agentdesign.path", "pass", f"{root} contains the expected OCR baseline files.")
+
+    def check_ocr_models(self) -> None:
+        raw_path = self.env.get("AICHECK_OCR_MODELS_HOST_PATH")
+        if not raw_path:
+            self.add(
+                "ocr.models",
+                "fail",
+                "AICHECK_OCR_MODELS_HOST_PATH is missing.",
+                remediation=[
+                    "Set AICHECK_OCR_MODELS_HOST_PATH to the local OCR model artifact directory.",
+                    "The path must contain paddleocr, paddlex, paddleocr-vl, and docling subdirectories.",
+                ],
+            )
+            return
+        root = Path(raw_path).expanduser()
+        required = ["paddleocr", "paddlex", "paddleocr-vl", "docling"]
+        missing = [name for name in required if not (root / name).exists()]
+        if missing:
+            self.add(
+                "ocr.models",
+                "fail",
+                "Missing local OCR model directories: " + ", ".join(missing),
+                {"missing": missing, "root": str(root)},
+                [
+                    "Download or copy the approved local OCR model artifact bundle before deployment.",
+                    "Verify the model bundle is mounted read-only to /models in ocr-service.",
+                ],
+            )
+            return
+        self.add("ocr.models", "pass", f"{root} contains required local OCR model directories.")
 
     def check_ports(self) -> None:
         open_ports = {port: service for port, service in HOST_PORTS.items() if tcp_port_open(port)}

@@ -44,3 +44,40 @@ class OcrClient:
             reason = data.get("reason") if isinstance(data, dict) else None
             raise IntegrationServiceError("OCR service", "parse", reason=safe_reason(reason) or f"CODE_{payload.get('code')}")
         return payload.get("data") or {}
+
+    def create_parse_job(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request_enveloped("POST", "/internal/document-parse/jobs", json=payload, timeout=30)
+
+    def get_parse_job(self, job_id: str) -> dict[str, Any]:
+        return self._request_enveloped("GET", f"/internal/document-parse/jobs/{job_id}", timeout=30)
+
+    def retry_parse_job(self, job_id: str) -> dict[str, Any]:
+        return self._request_enveloped("POST", f"/internal/document-parse/jobs/{job_id}/retry", timeout=30)
+
+    def get_parse_result(self, parse_result_id: str) -> dict[str, Any]:
+        return self._request_enveloped("GET", f"/internal/document-parse/results/{parse_result_id}", timeout=30)
+
+    def _request_enveloped(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+        if not self.enabled:
+            raise RuntimeError("AICHECK_OCR_BASE_URL is not configured")
+        client_kwargs: dict[str, Any] = {"timeout": kwargs.pop("timeout", 120)}
+        if self.transport is not None:
+            client_kwargs["transport"] = self.transport
+        try:
+            with httpx.Client(**client_kwargs) as client:
+                response = client.request(method, f"{self.base_url}{path}", **kwargs)
+        except httpx.HTTPError as exc:
+            raise IntegrationServiceError("OCR service", path, reason=exc.__class__.__name__) from exc
+        if response.status_code >= 400:
+            raise IntegrationServiceError("OCR service", path, status_code=response.status_code)
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise IntegrationServiceError("OCR service", path, reason="INVALID_JSON") from exc
+        if not isinstance(payload, dict):
+            raise IntegrationServiceError("OCR service", path, reason="INVALID_RESPONSE")
+        if payload.get("code") != 0:
+            data = payload.get("data") if isinstance(payload, dict) else {}
+            reason = data.get("reason") if isinstance(data, dict) else None
+            raise IntegrationServiceError("OCR service", path, reason=safe_reason(reason) or f"CODE_{payload.get('code')}")
+        return payload.get("data") or {}

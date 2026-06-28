@@ -94,10 +94,20 @@ services:
       AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
       AICHECK_AGENTDESIGN_BACKEND: ${AICHECK_AGENTDESIGN_BACKEND:-/opt/agentdesign/mvp-system/backend}
       AICHECK_OCR_ALLOW_PLACEHOLDER: ${AICHECK_OCR_ALLOW_PLACEHOLDER:-false}
+      AICHECK_OCR_OFFLINE_ONLY: ${AICHECK_OCR_OFFLINE_ONLY:-true}
+      AICHECK_OCR_DISABLE_NETWORK: ${AICHECK_OCR_DISABLE_NETWORK:-true}
+      PADDLEOCR_MODEL_DIR: ${PADDLEOCR_MODEL_DIR:-/models/paddleocr}
+      PADDLEX_MODEL_DIR: ${PADDLEX_MODEL_DIR:-/models/paddlex}
+      PADDLEOCR_VL_MODEL_DIR: ${PADDLEOCR_VL_MODEL_DIR:-/models/paddleocr-vl}
+      DOCLING_ARTIFACTS_PATH: ${DOCLING_ARTIFACTS_PATH:-/models/docling}
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      PADDLE_PDX_MODEL_SOURCE: local
     ports:
       - "8010:8010"
     volumes:
       - ${AICHECK_AGENTDESIGN_HOST_PATH:?AICHECK_AGENTDESIGN_HOST_PATH is required}:/opt/agentdesign:ro
+      - ${AICHECK_OCR_MODELS_HOST_PATH:?AICHECK_OCR_MODELS_HOST_PATH is required}:/models:ro
     depends_on:
       minio:
         condition: service_healthy
@@ -105,7 +115,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/healthz', timeout=3).read()\"",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/readyz', timeout=3).read()\"",
         ]
       interval: 10s
       timeout: 5s

@@ -226,6 +226,7 @@ class DeploymentVerifier:
         self.check_action_bypass_rejected()
         self.check_read_scope_rejected()
         self.check_ocr_health()
+        self.check_ocr_readyz()
         self.check_ocr_parse_contract()
         self.check_ocr_bad_request_contract()
         self.check_litellm_health()
@@ -729,12 +730,49 @@ class DeploymentVerifier:
                 strict_failures.append("pipelineAvailable must be true")
             if data.get("placeholderAllowed") is not False:
                 strict_failures.append("placeholderAllowed must be false")
+            if data.get("offlineOnly") is not True:
+                strict_failures.append("offlineOnly must be true")
+            if data.get("networkDisabled") is not True:
+                strict_failures.append("networkDisabled must be true")
         failures = [f"Missing fields: {', '.join(missing)}"] if missing else []
         failures.extend(strict_failures)
         self.add(
             "ocr.health",
             "fail" if failures else "pass",
             "; ".join(failures) if failures else "OCR health flags are present.",
+            data,
+        )
+
+    def check_ocr_readyz(self) -> None:
+        if self.config.skip_ocr or self.ocr is None:
+            self.add("ocr.readyz", "skip", "OCR check disabled.")
+            return
+        try:
+            status_code, payload = self.request_json(self.ocr, "GET", "/readyz")
+        except Exception as exc:
+            self.add("ocr.readyz", "fail", str(exc))
+            return
+        data = self.envelope_data("ocr.readyz", status_code, payload)
+        if data is None:
+            return
+        failures = []
+        if data.get("ready") is not True:
+            failures.append("ready must be true")
+        if self.config.strict_production:
+            if data.get("placeholderAllowed") is not False:
+                failures.append("placeholderAllowed must be false")
+            if data.get("offlineOnly") is not True:
+                failures.append("offlineOnly must be true")
+            if data.get("networkDisabled") is not True:
+                failures.append("networkDisabled must be true")
+            model_manifest = data.get("modelManifest") if isinstance(data, dict) else None
+            model_dirs = model_manifest.get("modelDirs") if isinstance(model_manifest, dict) else {}
+            if not model_dirs or any(not item.get("exists") for item in model_dirs.values() if isinstance(item, dict)):
+                failures.append("all local OCR model directories must exist")
+        self.add(
+            "ocr.readyz",
+            "fail" if failures else "pass",
+            "; ".join(failures) if failures else "OCR readyz confirms local model readiness.",
             data,
         )
 
