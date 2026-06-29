@@ -286,7 +286,7 @@ curl http://127.0.0.1:8010/healthz
 curl http://127.0.0.1:4001/health
 ```
 
-`api-service` 健康检查会返回 `mongoEnabled`、`mongoTransactions`、`authRequired`、`demoUsersEnabled`、`objectStorageEnabled`。`mongoTransactions` 表示后端已开启事务配置；生产验收还应使用 `verify_deployment.py --strict-production` 调用 `/api/system/mongo-transaction-probe`，实际执行一次临时 MongoDB transaction，确认数据库副本集和会话能力可用。`ocr-service` 健康检查会返回 `pipelineAvailable`、`pipelineBackend`、`placeholderAllowed`，用于确认 OCR 依赖和占位策略是否符合生产预期。
+`api-service` 健康检查会返回 `mongoEnabled`、`mongoTransactions`、`authRequired`、`demoUsersEnabled`、`objectStorageEnabled`。`mongoTransactions` 表示后端已开启事务配置；生产验收还应使用 `verify_deployment.py --strict-production` 调用 `/api/system/mongo-transaction-probe`，实际执行一次临时 MongoDB transaction，确认数据库副本集和会话能力可用。`ocr-service` 健康检查会返回 `pipelineAvailable`、`pipelineBackend`、`placeholderAllowed`，`/internal/ocr/doctor` 会返回本地包、模型目录、引擎和预处理候选能力诊断，用于确认 OCR 依赖和占位策略是否符合生产预期。
 
 Compose 已为 `api-service`、`worker-service`、`ocr-service`、`mongodb`、`redis`、`minio`、`litellm-postgres` 和 `litellm-service` 配置容器级 `healthcheck`；`api-service`、`worker-service`、`ocr-service` 和 `litellm-service` 的依赖使用 `condition: service_healthy`，避免依赖容器刚启动但服务尚不可用时提前接流量或消费任务。`validate_deployment_config.py --strict-production` 会静态检查这些 healthcheck 和依赖条件。
 
@@ -320,6 +320,25 @@ AICHECK_OCR_BASE_URL=http://ocr-service:8010
 AICHECK_AGENTDESIGN_HOST_PATH=/Volumes/Volume/project/agentdesign
 AICHECK_AGENTDESIGN_BACKEND=/opt/agentdesign/mvp-system/backend
 AICHECK_OCR_ALLOW_PLACEHOLDER=false
+AICHECK_OCR_OFFLINE_ONLY=true
+AICHECK_OCR_DISABLE_NETWORK=true
+AICHECK_OCR_MODELS_HOST_PATH=/opt/aicheck/ocr-models
+AICHECK_PADDLEOCR_DET_MODEL_DIR=/models/paddleocr/PP-OCRv6_medium_det
+AICHECK_PADDLEOCR_REC_MODEL_DIR=/models/paddleocr/PP-OCRv6_medium_rec
+AICHECK_OCR_ENABLE_PERSISTENT_SUBPROCESS=true
+AICHECK_OCR_PERSISTENT_WORKER_TIMEOUT=180
+AICHECK_PPSTRUCTURE_LAYOUT_MODEL_DIR=/models/paddlex/PP-DocLayout-L
+AICHECK_PPSTRUCTURE_WIRED_TABLE_STRUCTURE_MODEL_DIR=/models/paddlex/SLANeXt_wired
+AICHECK_PPSTRUCTURE_WIRED_TABLE_CELLS_MODEL_DIR=/models/paddlex/RT-DETR-L_wired_table_cell_det
+AICHECK_PPSTRUCTURE_WIRELESS_TABLE_STRUCTURE_MODEL_DIR=/models/paddlex/SLANeXt_wireless
+AICHECK_PPSTRUCTURE_WIRELESS_TABLE_CELLS_MODEL_DIR=/models/paddlex/RT-DETR-L_wireless_table_cell_det
+AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE=false
+AICHECK_SEAL_DET_MODEL_DIR=/models/paddlex/PP-OCRv4_server_seal_det
+AICHECK_SEAL_REC_MODEL_DIR=/models/paddleocr/PP-OCRv4_server_rec
+AICHECK_OCR_PREPROCESS_CACHE_DIR=/tmp/aicheck-ocr-preprocess-cache
+AICHECK_OCR_DISABLE_VARIANT_CACHE=false
+AICHECK_OCR_RESULT_CACHE_DIR=/tmp/aicheck-ocr-result-cache
+AICHECK_OCR_DISABLE_RESULT_CACHE=false
 
 LITELLM_BASE_URL=http://litellm-service:4000
 LITELLM_API_KEY=replace-with-litellm-master-key
@@ -350,6 +369,19 @@ AICHECK_LITELLM_NO_PROXY=127.0.0.1,localhost,::1,litellm-postgres
 | `AICHECK_AGENTDESIGN_HOST_PATH` | 是 | 宿主机上的 `agentdesign` 项目路径，Compose 会挂载到 OCR 容器 `/opt/agentdesign:ro`。 |
 | `AICHECK_AGENTDESIGN_BACKEND` | 是 | OCR 服务导入 `agentdesign` 后端包的路径，容器内建议挂载到 `/opt/agentdesign/mvp-system/backend`。 |
 | `AICHECK_OCR_ALLOW_PLACEHOLDER` | 否 | 生产设为 `false`；OCR 管线不可用时任务失败而不是生成占位成功结果。 |
+| `AICHECK_OCR_OFFLINE_ONLY` | 是 | 生产设为 `true`，OCR 只允许使用本地模型。 |
+| `AICHECK_OCR_DISABLE_NETWORK` | 是 | 生产设为 `true`，配合 `HF_HUB_OFFLINE=1`、`TRANSFORMERS_OFFLINE=1` 禁止运行时下载模型。 |
+| `AICHECK_OCR_MODELS_HOST_PATH` | 是 | 宿主机本地 OCR 模型目录，Compose 挂载到 `/models:ro`。 |
+| `AICHECK_PADDLEOCR_DET_MODEL_DIR` / `AICHECK_PADDLEOCR_REC_MODEL_DIR` | 是 | PP-OCRv6 文本检测与识别模型目录。 |
+| `AICHECK_OCR_ENABLE_PERSISTENT_SUBPROCESS` | 否 | 生产建议 `true`，让 `paddle_ocr_subprocess` 复用常驻 PaddleOCR worker，避免每次解析重复加载模型；异常时自动回退一次性子进程。 |
+| `AICHECK_OCR_PERSISTENT_WORKER_TIMEOUT` | 否 | 常驻 PaddleOCR worker 单次请求超时秒数，默认沿用 `AICHECK_OCR_SUBPROCESS_TIMEOUT` 或 `180`。 |
+| `AICHECK_PPSTRUCTURE_*_MODEL_DIR` | 建议 | PP-StructureV3 版面、无线/有线表格结构和单元格检测模型目录；缺失时表格引擎不可用，不会联网下载。 |
+| `AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE` | 否 | 默认 `false`；只有确认本地 PaddleX 印章 pipeline 和模型可用后再启用。未启用时仍会使用本地颜色视觉候选作为印章定位兜底。 |
+| `AICHECK_SEAL_DET_MODEL_DIR` / `AICHECK_SEAL_REC_MODEL_DIR` | 建议 | PaddleX 印章检测和文字识别模型目录。 |
+| `AICHECK_OCR_PREPROCESS_CACHE_DIR` | 否 | 预处理候选图缓存目录，默认 `/tmp/aicheck-ocr-preprocess-cache`；缓存键包含源文件 hash、Profile 和预处理策略。结果会返回 `preprocessStatus.requestedVariants/generatedVariants/missingVariants`。 |
+| `AICHECK_OCR_DISABLE_VARIANT_CACHE` | 否 | 设为 `true` 时禁用预处理候选缓存，用于排查图像策略问题。 |
+| `AICHECK_OCR_RESULT_CACHE_DIR` | 否 | 本地 OCR 成功解析结果缓存目录，默认 `/tmp/aicheck-ocr-result-cache`；缓存键包含源文件 hash、Profile、模型清单、预处理策略和引擎选项。 |
+| `AICHECK_OCR_DISABLE_RESULT_CACHE` | 否 | 设为 `true` 时禁用解析结果缓存，用于重新跑 OCR 引擎或排查模型变化。 |
 | `LITELLM_BASE_URL` | 是 | API/worker 访问 LiteLLM 的内部地址。 |
 | `LITELLM_API_KEY` | 是 | LiteLLM master key，需与 LiteLLM 配置保持一致。 |
 | `LITELLM_POSTGRES_DB` | 是 | LiteLLM PostgreSQL 数据库名。 |
@@ -584,9 +616,128 @@ OCR 调用链：
 - `backend/apps/ocr_service/service.py` 会从 `AICHECK_AGENTDESIGN_BACKEND` 指定路径导入 `seal_ocr.pipeline`。
 - 当前 Compose 要求设置 `AICHECK_AGENTDESIGN_HOST_PATH`，并把该目录挂载为 `/opt/agentdesign:ro`；默认 `AICHECK_AGENTDESIGN_BACKEND=/opt/agentdesign/mvp-system/backend`。
 - `Dockerfile.ocr` 会安装 `requirements-ocr.txt`；该文件对齐 `agentdesign/requirements/mvp-ocr.txt` 的基线依赖：`PyMuPDF`、`paddlepaddle`、`paddleocr`、`paddlex[ocr]`、`opencv-python-headless`。
+- OCR 服务已按 Document Intelligence 方向组织：优先使用本地 agentdesign 管线；无可解析内容时调用本地引擎链 `PaddleOCR subprocess -> PaddleOCR in-process -> PP-StructureV3 -> PaddleX Seal -> 视觉印章候选 -> PaddleOCR-VL/Docling adapter`。所有引擎都必须使用本地模型目录，缺模型时只标记 engine unavailable 或返回结构化诊断，不允许运行时联网下载。
+- 本地模型目录建议结构：
+
+```text
+${AICHECK_OCR_MODELS_HOST_PATH}/
+├── paddleocr/
+│   ├── PP-OCRv6_medium_det/
+│   ├── PP-OCRv6_medium_rec/
+│   └── PP-OCRv4_server_rec/
+├── paddlex/
+│   ├── PP-DocLayout-L/
+│   ├── SLANeXt_wired/
+│   ├── RT-DETR-L_wired_table_cell_det/
+│   ├── SLANeXt_wireless/
+│   ├── RT-DETR-L_wireless_table_cell_det/
+│   └── PP-OCRv4_server_seal_det/
+├── paddleocr-vl/
+└── docling/
+```
+
+- `piping_characteristic_list_v1` 已内置为第一批工程表格 Profile；PP-StructureV3 模型缺失时，会基于 OCR 文本坐标重建基础 `piping_characteristic_table_1`，并抽取公司名称、项目名称、文件标题、图纸编号、设计阶段、管道代号等字段。
+- 样本验收可使用：
+
+```bash
+cd backend
+python scripts/ocr_runtime_doctor.py --json
+python scripts/ocr_runtime_doctor.py --strict-production
+curl http://127.0.0.1:8010/internal/ocr/doctor
+```
+
+`ocr_runtime_doctor.py` 不跑 OCR 推理，只检查本地 Python 包、`AICHECK_OCR_SUBPROCESS_PYTHON`、模型目录、引擎可用性、离线策略和预处理候选生成能力。若 `preprocess.variants`、`engine.paddle_ocr_subprocess` 或 `engine.pp_structure_v3` 失败，应先修 OCR 镜像依赖或模型挂载，再调 Profile 和字段规则。
+如果 `AICHECK_AGENTDESIGN_HOST_PATH` 指向本地 agentdesign 工程，doctor 会额外返回 `recommendedEnv`，自动推荐 `.venv-ocr311/bin/python`、`.paddlex-cache/official_models/PP-OCRv6_medium_det`、`PP-OCRv6_medium_rec`、`PP-OCRv4_server_seal_det` 等可用路径，便于直接写入 `backend/.env`。
+Docker 部署时 `AICHECK_OCR_SUBPROCESS_PYTHON` 应保持 `/usr/local/bin/python`，使用 OCR 镜像内依赖；只有裸机本地 probe 才使用 doctor 推荐的宿主机 `.venv-ocr311`。
+裸机本地 probe 可以加 `--auto-discover-runtime`，脚本会在未显式设置对应环境变量时应用 doctor 推荐的 OCR Python 和模型路径；生产 Compose 仍应显式写入 `.env`，不要依赖自动发现。
+FDE 的 `GET /api/fde/ocr-quality` 会返回同一诊断的 `runtimeDoctor` 摘要，后台可直接看到 fail/warn 数和首要修复建议。
+
+```bash
+cd backend
+AICHECK_OCR_ALLOWED_LOCAL_DIRS=/tmp \
+AICHECK_OCR_SUBPROCESS_PYTHON=/Volumes/Volume/project/agentdesign/.venv-ocr311/bin/python \
+AICHECK_PADDLEX_MODEL_CACHE=/Volumes/Volume/project/agentdesign/.paddlex-cache/official_models \
+python scripts/ocr_sample_probe.py /tmp/aicheck-ocr-test-IMG_6509.png \
+  --profile-id piping_characteristic_list_v1 \
+  --min-fragments 300 \
+  --min-fields 5 \
+  --require-field-code project_name \
+  --require-field-code document_title \
+  --require-field-code drawing_no \
+  --max-missing-required-fields 0 \
+  --max-field-conflicts 0 \
+  --min-tables 1 \
+  --min-formal-tables 1 \
+  --min-business-rows 5 \
+  --max-missing-required-tables 0 \
+  --max-heuristic-tables 0 \
+  --min-seals 1 \
+  --min-readable-seals 1 \
+  --min-fragment-seals 1 \
+  --require-seal-type design_license_seal \
+  --max-missing-expected-seal-types 0 \
+  --require-quality-status auto_usable \
+  --min-evidence-completeness 1 \
+  --max-low-confidence-fields 0 \
+  --max-missing-evidence 0 \
+  --output /tmp/aicheck-img6509-probe-full.json \
+  --summary-output /tmp/aicheck-img6509-probe-summary.json
+```
+
+自动发现版：
+
+```bash
+cd backend
+AICHECK_OCR_ALLOWED_LOCAL_DIRS=/tmp \
+python scripts/ocr_sample_probe.py /tmp/aicheck-ocr-test-IMG_6509.png \
+  --auto-discover-runtime \
+  --profile-id piping_characteristic_list_v1 \
+  --min-fragments 300 \
+  --min-fields 5 \
+  --require-field-code project_name \
+  --require-field-code document_title \
+  --max-missing-required-fields 0 \
+  --min-tables 1 \
+  --min-formal-tables 1 \
+  --min-business-rows 5 \
+  --max-missing-required-tables 0 \
+  --min-seals 1 \
+  --min-readable-seals 1 \
+  --min-fragment-seals 1 \
+  --require-seal-type design_license_seal \
+  --max-missing-expected-seal-types 0 \
+  --require-quality-status auto_usable \
+  --min-evidence-completeness 1
+```
+
+- 性能门禁应在至少一次缓存预热后启用，例如追加 `--min-engine-cache-hit-rate 0.75 --max-engine-duration-ms 5000 --max-single-engine-duration-ms 3000`。验证 PaddleX Seal、agentdesign seal OCR 等增强引擎时，再追加 `--fail-on-engine-failure`，避免增强引擎超时但融合结果靠 fallback 成功而被误判为全绿。
+
+- OCR Profile、预处理策略、模型清单或表格/印章引擎变更后，应使用 release evaluation set 做本地回归门禁：
+
+```bash
+cd backend
+python scripts/ocr_eval_set.py ./ocr_eval/piping_release_set.json \
+  --output ./ocr_eval/reports/piping_release_report.json \
+  --summary-output ./ocr_eval/reports/piping_release_summary.json \
+  --markdown-output ./ocr_eval/reports/piping_release_report.md \
+  --min-average-score 0.90
+```
+
+评估集 case 可以内嵌 `result`，也可以用 `resultPath` 指向已保存的 OCR JSON；需要真实跑本地 OCR 时增加 `--run-ocr` 并提供 `source`。相对 `resultPath`，以及启用 `--run-ocr` 时的相对 `source`，都按评估集文件所在目录解析，便于把 release set 和 fixtures 一起迁移。报告会输出字段召回、字段值准确、字段/表格/印章证据召回、字段/表格/印章 bbox IoU 命中率、表格命中、印章命中、质量状态、质量原因召回，以及可选的 `quality.evidenceCompleteness` 上下限匹配。评估集顶层 `thresholds` 支持 overall 门槛和 `piping_table_profile`、`seal_text_profile`、`fragment_seal_profile`、`quality_gate_profile`、`field_confidence_profile`、`evidence_profile` 等场景门槛，防止综合均分掩盖某个 OCR 场景低分。`fragment_seal_profile` 专门覆盖视觉印章候选由 OCR 片段融合成正式章名的回归门禁，会校验 `sourceEngine=fragment_seal_text_fusion`、`fragment_seal_text` 质量标记、章内字段和 bbox 证据。`evidence_profile` 专门覆盖核心字段、必需表格、正式印章缺少 bbox/polygon 的证据化门禁。完整 JSON/Markdown 报告还包含 `findingCounts` 和 `details.fields/tables/seals/quality`，用于 FDE 按失败原因定位值错误、漏识别、证据缺失或坐标偏移。`POST /api/fde/ocr-evaluation-runs` 可接收同样的 `cases/thresholds`，并在原有 proxy metrics 外返回同结构 `evaluationSummary`、`evaluationReport.findingCounts`、`scenarioMetrics.findingCounts` 和 `caseDiagnostics`，FDE 后台会优先展示失败原因聚合。`GET /api/fde/ocr-quality` 的 `fieldLevel` 汇总业务落地字段和 parse result 字段候选，包括字段总量、低置信度、冲突字段、缺证据字段、必需字段缺失、字段代码分布、字段来源和质量标记；`evidenceLevel` 汇总平均证据完整度、缺证据总数和 field/table/seal 分布，FDE 后台用它区分“识别值低置信度”和“识别值没有可追溯证据”；`tableLevel` 拆分正式表格、启发表格 fallback、待复核表格、必需表格缺失、业务行和表格来源分布；`sealLevel` 进一步拆分印章总数、可读章、`fragment_seal_text` 片段融合章、视觉候选待复核、期望章类型命中/缺失和章源/章类型分布，避免把成功融合标记误判为故障。
+- `--summary-output` 会写出适合 CI/FDE 读取的小摘要，包含 `ok`、`summary`、`metrics`、`findingCounts`、`thresholdFailures`、`scenarioMetrics` 和 `failedCases`；完整证据仍看 `--output` 或 `--markdown-output`。
+- `--output`、`--summary-output` 与 `--markdown-output` 会自动创建父目录，首次运行不需要预先创建 `ocr_eval/reports`。
 - 如果改为企业自维护 OCR 镜像，应保留 `/internal/ocr/parse` 合同和 `/healthz` 中的 `pipelineAvailable/placeholderAllowed` 字段，并继续安装上述 OCR 依赖基线或等价替代。
+- OCR 结果会额外返回 `pageQuality`、`imageVariants`、`preprocessStatus`、`quality.status`、`quality.reasons`、`profilePostprocessVersion`、`resultCacheHit` 和 `engineRuns[].variantId/preprocessChain/purpose/variantCacheHit`。`paddle_ocr_subprocess` 还会返回 `workerMode=persistent|oneshot`，用于 FDE 判断是否复用了常驻 OCR worker。这些字段用于 FDE 质量分析、预处理候选选优和重复解析性能治理；旧的 `fragments/fields/tables/seals/diagnostics` 合同保持不变。
+- 结果缓存 key 已包含 `profilePostprocessVersion`，Profile 行映射或字段抽取升级后会自动绕开旧缓存，不会把旧版 `businessRows` 当成新结果。
+- `preprocessStatus.missingVariants` 非空时，优先排查 OCR 镜像是否安装 `opencv-python-headless`，或是否设置了指向本地 OCR Python 的 `AICHECK_OCR_SUBPROCESS_PYTHON`。服务会同时写入 `PREPROCESS_VARIANT_GENERATION_UNAVAILABLE`，避免把“预处理依赖缺失”误判成 Profile 规则或模型准确率问题。
+- 对同时包含表格和印章的 Profile，候选图上限会优先保留 `table_line_enhanced` 与 `seal_color_mask`，再加入灰度/纠偏类文本候选，防止印章证据被表格优化挤出候选集。
+- 对必需印章类 Profile，视觉红/蓝章候选只能证明“疑似有章”，不能单独证明章名已识别；如果章区 OCR fragments 已读到可靠文字，例如许可范围或 `TS...` 证号，融合层会标记 `fragment_seal_text` 并可满足印章门禁。若既没有 fragment seal text，也未命中 PaddleX/agentdesign 正式章名 OCR，质量门禁应返回 `needs_human_review` 和 `SEAL_TEXT_LOW_CONFIDENCE`；若可读正式章类型不匹配 Profile 的 `sealRules.expectedSealTypes`，应返回 `EXPECTED_SEAL_TYPE_MISSING`，样张门禁使用 `--require-seal-type` 和 `--max-missing-expected-seal-types 0` 阻断发布。
+- 如需本地高精度章名 OCR，可设置 `AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR=true`。该引擎会在 `AICHECK_OCR_SUBPROCESS_PYTHON` 中调用 agentdesign 的 `seal_ocr.recognize_document`，输出 `organization_name`、`seal_type`、`valid_until`、`license_scope` 等正式字段；它默认关闭，因为 accuracy-first 印章管线在大图上可能增加约 1 分钟耗时。超时或失败会写 `AGENTDESIGN_SEAL_OCR_TIMEOUT/FAILED` 诊断，并继续使用视觉印章候选兜底。
+- 对必需表格类 Profile，基于 OCR 坐标的启发式表格重建只能作为 fallback 候选；未命中 PP-StructureV3 等正式表格结构结果时，质量门禁应返回 `TABLE_HEURISTIC_REVIEW_REQUIRED`。
+- PP-StructureV3 返回的表格 HTML 会被归一化为 `cells/rows/columns/normalizedRows`，并支持基础 `rowspan/colspan`。正式表格模型启用后的验收应检查 `normalizedRows` 是否覆盖关键业务列。
+- `piping_characteristic_list_v1` 会把管道特性表行额外映射成 `businessRows`，稳定字段包括 `pipeNo`、`nominalDiameter`、`mediumName`、`designPressure`、`weldDetectionMethod` 等；规则和 AI 复核应优先使用这些字段，而不是直接依赖原始 OCR 表头。空白管道代号续行会继承上一条 `pipeNo`，并标记 `isContinuation=true`，下游规则应把它当作分支/续行处理。
 - 生产应设置 `AICHECK_OCR_ALLOW_PLACEHOLDER=false`。此时 OCR 管线不可用会写入失败任务，前端任务中心可重试。
-- `verify_deployment.py --strict-production` 会要求 OCR 健康检查返回 `pipelineAvailable=true` 且 `placeholderAllowed=false`。
+- `verify_deployment.py --strict-production` 会要求 OCR 健康检查返回 `pipelineAvailable=true`、`placeholderAllowed=false`，并要求 `/internal/ocr/doctor` 没有 failed checks。
 - `POST /internal/ocr/parse` 缺少 `storageKey` 时必须返回 `VALIDATION_ERROR` 业务包；源文件缺失时返回 `status=failed` 结构化结果，不应暴露 500。
 - 本地联调可临时设置 `AICHECK_OCR_ALLOW_PLACEHOLDER=true`，用于没有 PaddleOCR 依赖时验证上传、任务和状态回写流程。
 
@@ -727,7 +878,7 @@ python scripts/deployment_report.py \
 
 `backend/tests/test_check_96_preflight.py` 会校验 `backend/.env.example` 覆盖所有预检必需变量和生产开关；如果预检脚本新增必需变量但模板漏配，测试会直接失败。
 
-`verify_deployment.py` 默认只做健康检查、登录、MongoDB transaction 探针、只读查询、OCR parse 合同探测、OCR bad request 合同探测、LiteLLM 模型别名检查，以及应返回 `FORBIDDEN` 的身份伪造/动作越权/读范围检查，不会创建业务数据，也不会消耗模型额度。开启 `--litellm-management-probes` 后会创建并删除一个临时 LiteLLM virtual key，验证 PostgreSQL-backed key、预算、RPM 和 TPM 管理能力。开启 `--litellm-provider-probes` 后会通过 LiteLLM 的 OpenAI-compatible API 实际调用 `default-chat` 和 `embedding-default`，证明网关、virtual key、provider key、模型别名和供应商连通性可用。开启 `--write-probes` 后会在 `--project-id` 指定项目下创建一条验证用上传会话，使用 returned HTTP/HTTPS signed URL 实际 PUT 一个包含文字的 PDF，再执行 upload complete，校验新文档的 preview/download signed GET 可以实际读取对象，确认 OCR task 创建，并创建/读取导出任务，用于证明 MinIO signed PUT、文档 signed GET、upload complete、OCR task 创建和 export task 查询闭环。开启 `--ocr-object-probe` 时，verifier 会读取新文档当前版本 `storageKey` 并调用 `ocr-service /internal/ocr/parse`，要求 OCR 对刚上传的 MinIO 对象返回 `status=success`。严格生产模式还会要求 MongoDB 已启用并通过实际 transaction 探针，校验 OCR 使用真实 pipeline 而不是 placeholder，并要求 signed PUT/GET URL 是 HTTP/HTTPS。
+`verify_deployment.py` 默认只做健康检查、登录、MongoDB transaction 探针、只读查询、OCR readyz、OCR runtime doctor、OCR parse 合同探测、OCR bad request 合同探测、LiteLLM 模型别名检查，以及应返回 `FORBIDDEN` 的身份伪造/动作越权/读范围检查，不会创建业务数据，也不会消耗模型额度。开启 `--litellm-management-probes` 后会创建并删除一个临时 LiteLLM virtual key，验证 PostgreSQL-backed key、预算、RPM 和 TPM 管理能力。开启 `--litellm-provider-probes` 后会通过 LiteLLM 的 OpenAI-compatible API 实际调用 `default-chat` 和 `embedding-default`，证明网关、virtual key、provider key、模型别名和供应商连通性可用。开启 `--write-probes` 后会在 `--project-id` 指定项目下创建一条验证用上传会话，使用 returned HTTP/HTTPS signed URL 实际 PUT 一个包含文字的 PDF，再执行 upload complete，校验新文档的 preview/download signed GET 可以实际读取对象，确认 OCR task 创建，并创建/读取导出任务，用于证明 MinIO signed PUT、文档 signed GET、upload complete、OCR task 创建和 export task 查询闭环。开启 `--ocr-object-probe` 时，verifier 会读取新文档当前版本 `storageKey` 并调用 `ocr-service /internal/ocr/parse`，要求 OCR 对刚上传的 MinIO 对象返回 `status=success`。严格生产模式还会要求 MongoDB 已启用并通过实际 transaction 探针，校验 OCR 使用真实 pipeline 而不是 placeholder，OCR runtime doctor 没有 failed checks，并要求 signed PUT/GET URL 是 HTTP/HTTPS。
 
 `deployment_report.py` 会把离线配置验收、API mutation 幂等覆盖、前端路由合同、前端 mutation header 覆盖和可选 live deployment probes 汇总成 `aicheck-deployment-report-v1` 结构，同时输出 Markdown 表格，适合随上线单归档。默认不访问目标环境；加 `--include-live` 后复用 `verify_deployment.py` 的所有目标环境探针。
 
@@ -739,7 +890,7 @@ python scripts/deployment_report.py \
 - `api.action-coverage`：扫描所有非公开 mutating routes，确认后端能根据路径自动推断 `ActionCode`，避免新增写接口绕过角色动作矩阵。
 - `mongo.index-contract`：扫描 `backend/libs/db/indexes.py`，确认所有持久化 collection 都有索引声明，并检查项目节点、文件版本、知识任务、证据、审计、幂等键和成员授权的关键复合/唯一索引。
 - `storage.bucket-contract`：检查 MinIO bucket 合同必须包含且只包含 `documents`、`previews`、`exports`、`ocr-artifacts`，并确认 `ObjectStorage` 暴露 signed PUT、signed GET、字节写入、临时下载和 `minio://` URL 解析能力；同时扫描 repository 上传、下载、导出调用点，防止业务链路绕过对象存储抽象。
-- `ocr.service-contract`：检查 `ocr-service` 的 `/healthz` 必须暴露 `pipelineAvailable`、`pipelineBackend`、`placeholderAllowed`，`/internal/ocr/parse` 缺少 `storageKey` 时必须返回 `VALIDATION_ERROR`，并验证 OCR 成功/失败结果都包含 `storageKey`、`fileName`、`status`、`fragments`、`fields`、`seals`、`diagnostics`。
+- `ocr.service-contract`：检查 `ocr-service` 的 `/healthz` 必须暴露 `pipelineAvailable`、`pipelineBackend`、`placeholderAllowed`，`/internal/ocr/doctor` 必须返回 runtime doctor，`/internal/ocr/parse` 缺少 `storageKey` 时必须返回 `VALIDATION_ERROR`，并验证 OCR 成功/失败结果都包含 `storageKey`、`fileName`、`status`、`fragments`、`fields`、`seals`、`diagnostics`。
 - `litellm.client-contract`：用无网络 `MockTransport` 验证业务客户端会以 OpenAI-compatible `/v1/chat/completions`、`/v1/embeddings` 调用 LiteLLM，默认模型别名为 `default-chat`、`embedding-default`，请求必须携带 Bearer master key；同时检查生产模式禁用开发 key、provider 错误脱敏，以及 worker 中 `AI recheck`、向量化、模型对比的模型别名和错误码映射。
 - `export.artifact-contract`：实际构造导出 ZIP/PDF 字节，解析 ZIP 确认 `manifest.json`、`task.json`、`project.json`、`reports.json`、`documents.json`、`archive_items.json`、`evidence_links.json`、`README.txt` 全部存在，manifest 使用 `aicheck-export-v1`，PDF 产物必须带 `%PDF` 文件头和 `AIcheck Export Report` 摘要。
 - `worker.task-contract`：扫描 Celery task routes、worker 任务对象和 `task_dispatcher`，确认 `ocr.parse_document`、`ocr.recognize_seals`、`knowledge.slice`、`knowledge.embed`、`inspection.ai_recheck`、`llm.compare`、`export.package` 均有队列路由、重试配置和调度入口。
@@ -897,6 +1048,13 @@ VITE_USE_MOCK=false
 ### OCR 任务完成但没有真实字段
 
 检查 `ocr-service` 日志。如果看到 `agentdesign OCR pipeline not importable`，先确认 `AICHECK_AGENTDESIGN_HOST_PATH` 已设置且挂载目录包含 `mvp-system/backend/seal_ocr`；如果路径正确，再确认 OCR 服务确实使用 `Dockerfile.ocr` 构建且 `requirements-ocr.txt` 安装成功。
+如果 OCR 有 `fragments` 但没有 `fields/tables/seals`，继续检查：
+
+- `/healthz` 的 `engines` 中 `paddle_ocr_subprocess` 是否 available，`detModelDir/recModelDir` 是否指向真实目录。
+- `pp_structure_v3.missingModelDirs` 是否为空；不为空时表格引擎未启用，只能依赖 Profile 的坐标启发表格重建。
+- `GET /internal/ocr/doctor` 或 `python scripts/ocr_runtime_doctor.py --json` 中 `preprocess.variants` 是否通过；不通过时先安装 `opencv-python-headless` 或配置 `AICHECK_OCR_SUBPROCESS_PYTHON`。
+- 请求是否带 `profileId=piping_characteristic_list_v1` 或正确 `documentType`；没有 Profile 时不会抽取工程表格字段。
+- 运行 `scripts/ocr_sample_probe.py` 对同一图片做本地阈值探测，确认 `fragments/fields/tables/seals` 数量是否达标，并加入 `--min-evidence-completeness`、`--max-low-confidence-fields`、`--max-missing-evidence` 检查证据门禁。对必需字段资料，加入 `--min-fields`、重复 `--require-field-code` 指定关键字段，并在严格回归集中使用 `--max-field-conflicts 0`，防止字段冲突静默通过；再加入 `--max-missing-required-fields 0`，让 Profile 自身的 `quality.missingFields` 也能阻断发布。对必需表格资料，加入 `--min-formal-tables`、`--min-business-rows`、`--max-missing-required-tables 0`，必要时再加 `--max-heuristic-tables` 或 `--max-table-review-required`，防止缺失必需表格或启发表格 fallback 在没有正式结构证据时误过门禁。对必需印章资料，再加入 `--min-readable-seals`、`--min-fragment-seals`、`--require-seal-type`、`--max-missing-expected-seal-types 0`，防止视觉章候选、非预期章类型或没有可读章名/片段融合证据的结果误过门禁；`--max-seal-review-required` 只建议用于印章专项回归集，因为真实拍照件可能同时检测到多个非关键视觉候选。验证 PaddleX Seal、agentdesign seal OCR 等增强引擎时，再加入 `--fail-on-engine-failure` 与 `--max-single-engine-duration-ms`，避免增强引擎超时但融合结果靠 fallback 成功而被误判为全绿。用 `--output` 保存完整解析结果，用 `--summary-output` 保存小摘要；失败时先看 `gateFailures/gateFailureCounts`，对目录运行时再看 `qualityReasonCounts`、`diagnosticCodeCounts`、`fieldCodeCounts`、`missingRequiredFieldCounts`、`fieldSourceCounts`、`fieldQualityFlagCounts`、`missingRequiredTableCounts`、`tableSourceCounts`、`tableQualityFlagCounts`、`matchedExpectedSealTypeCounts`、`missingExpectedSealTypeCounts`、`sealTypeCounts`、`readableSealTypeCounts`、`sealSourceCounts`、`sealQualityFlagCounts`、`engineStatusCounts`、`failedEngineRunCount`、`slowestEngineRuns` 和 `slowestFiles`，定位主要失败原因和性能瓶颈。
 
 ### AI 复核失败
 

@@ -198,6 +198,22 @@ def ocr_transport(request: httpx.Request) -> httpx.Response:
                 },
             }
         )
+    if request.url.path == "/internal/ocr/doctor":
+        return envelope(
+            {
+                "schemaVersion": "aicheck-ocr-runtime-doctor-v1",
+                "ok": True,
+                "summary": {"pass": 6, "warn": 0, "fail": 0, "total": 6},
+                "checks": [
+                    {"name": "package.cv2", "status": "pass", "message": "opencv-python-headless is importable."},
+                    {"name": "subprocess.python", "status": "pass", "message": "OCR subprocess Python is usable."},
+                    {"name": "models.PADDLEOCR_MODEL_DIR", "status": "pass", "message": "PADDLEOCR_MODEL_DIR exists."},
+                    {"name": "engine.paddle_ocr_subprocess", "status": "pass", "message": "paddle_ocr_subprocess is available."},
+                    {"name": "engine.pp_structure_v3", "status": "pass", "message": "pp_structure_v3 is available."},
+                    {"name": "preprocess.variants", "status": "pass", "message": "Preprocess variants can be generated."},
+                ],
+            }
+        )
     return envelope(
         {
             "service": "ocr-service",
@@ -327,6 +343,18 @@ def ocr_placeholder_transport(request: httpx.Request) -> httpx.Response:
                 "placeholderAllowed": True,
                 "offlineOnly": False,
                 "networkDisabled": False,
+            }
+        )
+    if request.url.path == "/internal/ocr/doctor":
+        return envelope(
+            {
+                "schemaVersion": "aicheck-ocr-runtime-doctor-v1",
+                "ok": False,
+                "summary": {"pass": 0, "warn": 0, "fail": 2, "total": 2},
+                "checks": [
+                    {"name": "policy.placeholder-disabled", "status": "fail", "message": "Placeholder OCR is enabled."},
+                    {"name": "preprocess.variants", "status": "fail", "message": "Only original images can be used."},
+                ],
             }
         )
     return ocr_transport(request)
@@ -516,6 +544,7 @@ def test_deployment_verifier_passes_happy_path() -> None:
     assert probe_state["signedPut"] == "ok"
     assert set(probe_state["signedGets"]) == {"/download/DOC-VERIFY/preview", "/download/DOC-VERIFY/download"}
     assert any(item.name == "ocr.health" and item.status == "pass" for item in results)
+    assert any(item.name == "ocr.runtime-doctor" and item.status == "pass" for item in results)
     assert any(item.name == "ocr.parse-contract" and item.status == "pass" for item in results)
     assert any(item.name == "ocr.bad-request" and item.status == "pass" for item in results)
     assert any(item.name == "litellm.models" and item.status == "pass" for item in results)
@@ -556,9 +585,12 @@ def test_deployment_verifier_fails_strict_production_when_ocr_uses_placeholder()
     results = verifier.run()
 
     ocr_health = next(item for item in results if item.name == "ocr.health")
+    ocr_doctor = next(item for item in results if item.name == "ocr.runtime-doctor")
     assert ocr_health.status == "fail"
     assert "pipelineAvailable must be true" in ocr_health.detail
     assert "placeholderAllowed must be false" in ocr_health.detail
+    assert ocr_doctor.status == "fail"
+    assert "runtime doctor has failed checks" in ocr_doctor.detail
 
 
 def test_deployment_verifier_fails_strict_production_when_mongo_transaction_probe_fails() -> None:

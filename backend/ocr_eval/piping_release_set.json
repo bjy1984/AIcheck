@@ -1,0 +1,677 @@
+{
+  "name": "piping_release_set",
+  "version": "0.3.0",
+  "profileId": "piping_characteristic_list_v1",
+  "thresholds": {
+    "averageScore": 0.98,
+    "metrics": {
+      "fieldRecall": 0.98,
+      "fieldValueAccuracy": 0.98,
+      "fieldEvidenceRecall": 0.98,
+      "fieldBboxHitRate": 0.98,
+      "tableRecall": 0.98,
+      "tableEvidenceRecall": 0.98,
+      "tableBboxHitRate": 0.98,
+      "sealRecall": 0.98,
+      "sealEvidenceRecall": 0.98,
+      "sealBboxHitRate": 0.98,
+      "qualityStatusMatch": 0.98,
+      "qualityReasonRecall": 0.98,
+      "qualityEvidenceCompletenessMatch": 0.98
+    },
+    "scenarios": {
+      "piping_table_profile": {
+        "averageScore": 0.98,
+        "metrics": {
+          "fieldRecall": 0.98,
+          "fieldValueAccuracy": 0.98,
+          "fieldEvidenceRecall": 0.98,
+          "fieldBboxHitRate": 0.98,
+          "tableRecall": 0.98,
+          "tableEvidenceRecall": 0.98,
+          "tableBboxHitRate": 0.98,
+          "sealEvidenceRecall": 0.98,
+          "sealBboxHitRate": 0.98,
+          "qualityEvidenceCompletenessMatch": 0.98
+        }
+      },
+      "seal_text_profile": {
+        "averageScore": 0.98,
+        "metrics": {
+          "sealRecall": 0.98,
+          "sealEvidenceRecall": 0.98,
+          "sealBboxHitRate": 0.98,
+          "qualityStatusMatch": 0.98,
+          "qualityEvidenceCompletenessMatch": 0.98
+        }
+      },
+      "fragment_seal_profile": {
+        "averageScore": 0.98,
+        "metrics": {
+          "sealRecall": 0.98,
+          "sealEvidenceRecall": 0.98,
+          "sealBboxHitRate": 0.98,
+          "qualityStatusMatch": 0.98,
+          "qualityEvidenceCompletenessMatch": 0.98
+        }
+      },
+      "quality_gate_profile": {
+        "averageScore": 0.98,
+        "metrics": {
+          "qualityStatusMatch": 0.98,
+          "qualityReasonRecall": 0.98,
+          "qualityEvidenceCompletenessMatch": 0.98
+        }
+      },
+      "field_conflict_profile": {
+        "averageScore": 0.98,
+        "metrics": {
+          "qualityStatusMatch": 0.98,
+          "qualityReasonRecall": 0.98,
+          "fieldRecall": 0.98,
+          "fieldValueAccuracy": 0.98,
+          "qualityEvidenceCompletenessMatch": 0.98
+        }
+      },
+      "field_confidence_profile": {
+        "averageScore": 0.98,
+        "metrics": {
+          "qualityStatusMatch": 0.98,
+          "qualityReasonRecall": 0.98,
+          "fieldRecall": 0.98,
+          "fieldValueAccuracy": 0.98,
+          "qualityEvidenceCompletenessMatch": 0.98
+        }
+      },
+      "evidence_profile": {
+        "averageScore": 0.98,
+        "metrics": {
+          "qualityStatusMatch": 0.98,
+          "qualityReasonRecall": 0.98,
+          "qualityEvidenceCompletenessMatch": 0.98
+        }
+      }
+    }
+  },
+  "cases": [
+    {
+      "caseId": "piping-table-001",
+      "scenario": "piping_table_profile",
+      "profileId": "piping_characteristic_list_v1",
+      "documentType": "engineering_table_photo",
+      "minScore": 0.98,
+      "result": {
+        "parseResultId": "PARSE-EVAL-PIPE-001",
+        "status": "success",
+        "profileId": "piping_characteristic_list_v1",
+        "documentType": "engineering_table_photo",
+        "fields": [
+          {
+            "fieldCode": "company_name",
+            "fieldName": "company_name",
+            "fieldValue": "GX Petrochemical Design Institute",
+            "bbox": [
+              10,
+              10,
+              260,
+              30
+            ],
+            "confidence": 0.94
+          },
+          {
+            "fieldCode": "document_title",
+            "fieldName": "document_title",
+            "fieldValue": "Piping Characteristic List",
+            "bbox": [
+              300,
+              10,
+              520,
+              30
+            ],
+            "confidence": 0.96
+          },
+          {
+            "fieldCode": "pipe_no",
+            "fieldName": "pipe_no",
+            "fieldValue": "PL8301,VT8301",
+            "bbox": [
+              40,
+              120,
+              180,
+              180
+            ],
+            "confidence": 0.92
+          }
+        ],
+        "tables": [
+          {
+            "tableId": "piping_characteristic_table_1",
+            "businessSchema": "piping_characteristic_table_v1",
+            "rows": 3,
+            "columns": 5,
+            "bbox": [
+              20,
+              100,
+              800,
+              260
+            ],
+            "sourceEngine": "pp_structure_v3",
+            "structureConfidence": 0.91,
+            "businessRows": [
+              {
+                "pipeNo": "PL8301",
+                "nominalDiameter": "DN100",
+                "mediumName": "chemical",
+                "designPressure": "0.1",
+                "weldDetectionMethod": "RT"
+              },
+              {
+                "pipeNo": "VT8301",
+                "nominalDiameter": "DN50",
+                "mediumName": "gas",
+                "designPressure": "0.55",
+                "weldDetectionMethod": "RT"
+              }
+            ]
+          }
+        ],
+        "seals": [
+          {
+            "sealId": "seal_1",
+            "sealType": "pressure_pipe_design_license_seal",
+            "sealName": "pressure pipe design license seal",
+            "bbox": [
+              600,
+              420,
+              760,
+              560
+            ],
+            "ocrConfidence": 0.88
+          }
+        ],
+        "quality": {
+          "status": "auto_usable",
+          "reasons": [],
+          "evidenceCompleteness": 1.0
+        }
+      },
+      "expected": {
+        "fields": [
+          {
+            "fieldCode": "pipe_no",
+            "value": "PL8301,VT8301",
+            "bbox": [
+              40,
+              120,
+              180,
+              180
+            ],
+            "bboxIouThreshold": 0.9
+          }
+        ],
+        "tables": [
+          {
+            "businessSchema": "piping_characteristic_table_v1",
+            "minRows": 3,
+            "minColumns": 5,
+            "requiredBusinessKeys": [
+              "pipeNo",
+              "nominalDiameter",
+              "mediumName",
+              "designPressure",
+              "weldDetectionMethod"
+            ],
+            "bbox": [
+              20,
+              100,
+              800,
+              260
+            ],
+            "bboxIouThreshold": 0.9
+          }
+        ],
+        "seals": [
+          {
+            "sealType": "pressure_pipe_design_license_seal",
+            "nameContains": "design license",
+            "minConfidence": 0.8,
+            "bbox": [
+              600,
+              420,
+              760,
+              560
+            ],
+            "bboxIouThreshold": 0.9
+          }
+        ],
+        "qualityStatus": "auto_usable",
+        "minEvidenceCompleteness": 1.0
+      }
+    },
+    {
+      "caseId": "piping-seal-001",
+      "scenario": "seal_text_profile",
+      "profileId": "piping_characteristic_list_v1",
+      "documentType": "engineering_table_photo",
+      "minScore": 0.98,
+      "result": {
+        "parseResultId": "PARSE-EVAL-SEAL-001",
+        "status": "success",
+        "fields": [],
+        "tables": [],
+        "seals": [
+          {
+            "sealId": "seal_1",
+            "sealType": "pressure_pipe_design_license_seal",
+            "sealName": "pressure pipe design license seal",
+            "bbox": [
+              600,
+              420,
+              760,
+              560
+            ],
+            "ocrConfidence": 0.92
+          }
+        ],
+        "quality": {
+          "status": "auto_usable",
+          "reasons": [],
+          "evidenceCompleteness": 1.0
+        }
+      },
+      "expected": {
+        "seals": [
+          {
+            "sealType": "pressure_pipe_design_license_seal",
+            "nameContains": "design license",
+            "minConfidence": 0.9,
+            "bbox": [
+              600,
+              420,
+              760,
+              560
+            ],
+            "bboxIouThreshold": 0.9
+          }
+        ],
+        "qualityStatus": "auto_usable",
+        "minEvidenceCompleteness": 1.0
+      }
+    },
+    {
+      "caseId": "piping-fragment-seal-001",
+      "scenario": "fragment_seal_profile",
+      "profileId": "piping_characteristic_list_v1",
+      "documentType": "engineering_table_photo",
+      "minScore": 0.98,
+      "result": {
+        "parseResultId": "PARSE-EVAL-FRAGMENT-SEAL-001",
+        "status": "success",
+        "fields": [],
+        "tables": [],
+        "seals": [
+          {
+            "sealId": "red_candidate_1",
+            "sealType": "design_license_seal",
+            "sealName": "压力管道 杨道红 TS1810648-2021 2017年8月31日",
+            "sourceEngine": "fragment_seal_text_fusion",
+            "bbox": [
+              600,
+              420,
+              760,
+              560
+            ],
+            "ocrConfidence": 0.88,
+            "qualityFlags": [
+              "fragment_seal_text"
+            ],
+            "fields": [
+              {
+                "fieldCode": "seal_text",
+                "fieldName": "seal_text",
+                "fieldValue": "压力管道 杨道红 TS1810648-2021 2017年8月31日",
+                "confidence": 0.88
+              },
+              {
+                "fieldCode": "license_no",
+                "fieldName": "license_no",
+                "fieldValue": "TS1810648-2021",
+                "confidence": 0.88
+              },
+              {
+                "fieldCode": "license_scope",
+                "fieldName": "license_scope",
+                "fieldValue": "压力管道",
+                "confidence": 0.88
+              }
+            ]
+          }
+        ],
+        "quality": {
+          "status": "auto_usable",
+          "reasons": [],
+          "evidenceCompleteness": 1.0
+        }
+      },
+      "expected": {
+        "seals": [
+          {
+            "sealType": "design_license_seal",
+            "sourceEngine": "fragment_seal_text_fusion",
+            "nameContains": "TS1810648-2021",
+            "minConfidence": 0.8,
+            "qualityFlags": [
+              "fragment_seal_text"
+            ],
+            "bbox": [
+              600,
+              420,
+              760,
+              560
+            ],
+            "bboxIouThreshold": 0.9,
+            "fields": [
+              {
+                "fieldCode": "seal_text",
+                "value": "压力管道",
+                "contains": true
+              },
+              {
+                "fieldCode": "license_no",
+                "value": "TS1810648-2021"
+              },
+              {
+                "fieldCode": "license_scope",
+                "value": "压力管道"
+              }
+            ]
+          }
+        ],
+        "qualityStatus": "auto_usable",
+        "minEvidenceCompleteness": 1.0
+      }
+    },
+    {
+      "caseId": "piping-quality-gate-001",
+      "scenario": "quality_gate_profile",
+      "profileId": "piping_characteristic_list_v1",
+      "documentType": "engineering_table_photo",
+      "minScore": 0.98,
+      "result": {
+        "parseResultId": "PARSE-EVAL-QG-001",
+        "status": "success",
+        "fields": [],
+        "tables": [
+          {
+            "tableId": "piping_characteristic_table_1",
+            "businessSchema": "piping_characteristic_table_v1",
+            "rows": 3,
+            "columns": 5,
+            "sourceEngine": "heuristic_table_from_ocr_fragments",
+            "qualityFlags": [
+              "heuristic_table_fallback"
+            ],
+            "businessRows": [
+              {
+                "pipeNo": "PL8301",
+                "nominalDiameter": "DN100"
+              }
+            ]
+          }
+        ],
+        "seals": [
+          {
+            "sealId": "red_candidate_1",
+            "sealType": "visual_red_seal_candidate",
+            "sealName": "visual seal candidate",
+            "visualConfidence": 0.94,
+            "ocrConfidence": 0,
+            "qualityFlags": [
+              "visual_candidate_only",
+              "requires_seal_ocr_text"
+            ]
+          }
+        ],
+        "quality": {
+          "status": "needs_human_review",
+          "reasons": [
+            "SEAL_TEXT_LOW_CONFIDENCE",
+            "TABLE_HEURISTIC_REVIEW_REQUIRED"
+          ],
+          "evidenceCompleteness": 0.0
+        }
+      },
+      "expected": {
+        "qualityStatus": "needs_human_review",
+        "qualityReasons": [
+          "SEAL_TEXT_LOW_CONFIDENCE",
+          "TABLE_HEURISTIC_REVIEW_REQUIRED"
+        ],
+        "maxEvidenceCompleteness": 0.01
+      }
+    },
+    {
+      "caseId": "piping-field-conflict-001",
+      "scenario": "field_conflict_profile",
+      "profileId": "piping_characteristic_list_v1",
+      "documentType": "engineering_table_photo",
+      "minScore": 0.98,
+      "result": {
+        "parseResultId": "PARSE-EVAL-FIELD-CONFLICT-001",
+        "status": "success",
+        "fields": [
+          {
+            "fieldCode": "drawing_no",
+            "fieldName": "drawing_no",
+            "fieldValue": "QX201903S-13-Y-07",
+            "bbox": [
+              500,
+              40,
+              720,
+              70
+            ],
+            "confidence": 0.93,
+            "fusionDecision": "conflict_highest_confidence_candidate",
+            "qualityFlags": [
+              "field_value_conflict"
+            ],
+            "conflictingValues": [
+              {
+                "value": "QX201903S-13-Y-07",
+                "normalizedValue": "QX201903S-13-Y-07",
+                "confidence": 0.93,
+                "sourceEngine": "paddle_ocr_subprocess",
+                "variantId": "page_1_original"
+              },
+              {
+                "value": "QX2019035-13-Y-07",
+                "normalizedValue": "QX2019035-13-Y-07",
+                "confidence": 0.89,
+                "sourceEngine": "paddleocr_vl_1_6",
+                "variantId": "page_1_vlm"
+              }
+            ]
+          }
+        ],
+        "tables": [],
+        "seals": [],
+        "quality": {
+          "status": "needs_human_review",
+          "reasons": [
+            "FIELD_VALUE_CONFLICT"
+          ],
+          "evidenceCompleteness": 1.0
+        }
+      },
+      "expected": {
+        "fields": [
+          {
+            "fieldCode": "drawing_no",
+            "value": "QX201903S-13-Y-07",
+            "bbox": [
+              500,
+              40,
+              720,
+              70
+            ],
+            "bboxIouThreshold": 0.9
+          }
+        ],
+        "qualityStatus": "needs_human_review",
+        "qualityReasons": [
+          "FIELD_VALUE_CONFLICT"
+        ],
+        "minEvidenceCompleteness": 1.0
+      }
+    },
+    {
+      "caseId": "piping-field-confidence-001",
+      "scenario": "field_confidence_profile",
+      "profileId": "piping_characteristic_list_v1",
+      "documentType": "engineering_table_photo",
+      "minScore": 0.98,
+      "result": {
+        "parseResultId": "PARSE-EVAL-FIELD-CONFIDENCE-001",
+        "status": "success",
+        "fields": [
+          {
+            "fieldCode": "project_name",
+            "fieldName": "project_name",
+            "fieldValue": "storage station project",
+            "bbox": [
+              80,
+              40,
+              420,
+              70
+            ],
+            "confidence": 0.52,
+            "qualityFlags": [
+              "field_low_confidence"
+            ]
+          }
+        ],
+        "tables": [],
+        "seals": [],
+        "quality": {
+          "status": "needs_human_review",
+          "reasons": [
+            "FIELD_LOW_CONFIDENCE"
+          ],
+          "evidenceCompleteness": 1.0,
+          "lowConfidenceFields": [
+            {
+              "fieldCode": "project_name",
+              "fieldName": "project_name",
+              "fieldValue": "storage station project",
+              "confidence": 0.52,
+              "threshold": 0.75
+            }
+          ]
+        }
+      },
+      "expected": {
+        "fields": [
+          {
+            "fieldCode": "project_name",
+            "value": "storage station project",
+            "bbox": [
+              80,
+              40,
+              420,
+              70
+            ],
+            "bboxIouThreshold": 0.9
+          }
+        ],
+        "qualityStatus": "needs_human_review",
+        "qualityReasons": [
+          "FIELD_LOW_CONFIDENCE"
+        ],
+        "minEvidenceCompleteness": 1.0
+      }
+    },
+    {
+      "caseId": "piping-evidence-001",
+      "scenario": "evidence_profile",
+      "profileId": "piping_characteristic_list_v1",
+      "documentType": "engineering_table_photo",
+      "minScore": 0.98,
+      "result": {
+        "parseResultId": "PARSE-EVAL-EVIDENCE-001",
+        "status": "success",
+        "fields": [
+          {
+            "fieldCode": "company_name",
+            "fieldName": "company_name",
+            "fieldValue": "GX Petrochemical Design Institute",
+            "confidence": 0.94,
+            "qualityFlags": [
+              "field_evidence_missing"
+            ]
+          }
+        ],
+        "tables": [
+          {
+            "tableId": "piping_characteristic_table_1",
+            "businessSchema": "piping_characteristic_table_v1",
+            "rows": 3,
+            "columns": 5,
+            "sourceEngine": "pp_structure_v3",
+            "structureConfidence": 0.91,
+            "qualityFlags": [
+              "table_evidence_missing"
+            ],
+            "businessRows": [
+              {
+                "pipeNo": "PL8301"
+              }
+            ]
+          }
+        ],
+        "seals": [
+          {
+            "sealId": "seal_1",
+            "sealType": "pressure_pipe_design_license_seal",
+            "sealName": "pressure pipe design license seal",
+            "ocrConfidence": 0.88,
+            "qualityFlags": [
+              "seal_evidence_missing"
+            ]
+          }
+        ],
+        "quality": {
+          "status": "needs_human_review",
+          "evidenceCompleteness": 0.0,
+          "reasons": [
+            "FIELD_EVIDENCE_MISSING",
+            "TABLE_EVIDENCE_MISSING",
+            "SEAL_EVIDENCE_MISSING"
+          ],
+          "missingEvidence": [
+            {
+              "targetType": "field",
+              "targetId": "company_name"
+            },
+            {
+              "targetType": "table",
+              "targetId": "piping_characteristic_table_1"
+            },
+            {
+              "targetType": "seal",
+              "targetId": "seal_1"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "qualityStatus": "needs_human_review",
+        "qualityReasons": [
+          "FIELD_EVIDENCE_MISSING",
+          "TABLE_EVIDENCE_MISSING",
+          "SEAL_EVIDENCE_MISSING"
+        ],
+        "maxEvidenceCompleteness": 0.01
+      }
+    }
+  ]
+}

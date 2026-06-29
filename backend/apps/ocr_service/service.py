@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
 from copy import deepcopy
 from pathlib import Path
@@ -10,8 +11,22 @@ from typing import Any
 from uuid import uuid4
 
 from apps.ocr_service.engines import local_engines
+from apps.ocr_service.fusion import fuse_parse_result, missing_required_tables
 from apps.ocr_service.jobs import DocumentParseJobStore
+from apps.ocr_service.preprocess import generate_image_variants, requested_variant_names
 from apps.ocr_service.profiles import profile_for
+from apps.ocr_service.quality import probe_page_quality
+from apps.ocr_service.result_cache import (
+    build_engine_result_cache_key,
+    build_result_cache_key,
+    load_engine_result_cache,
+    load_result_cache,
+    rehydrate_cached_result,
+    save_engine_result_cache,
+    save_result_cache,
+)
+from apps.ocr_service.routing import route_engine_variants
+from apps.ocr_service.runtime_doctor import build_runtime_doctor
 from libs.contracts.responses import server_time
 from libs.integrations.storage import object_storage, parse_storage_url
 
@@ -23,12 +38,42 @@ if AGENTDESIGN_BACKEND.exists() and str(AGENTDESIGN_BACKEND) not in sys.path:
     sys.path.append(str(AGENTDESIGN_BACKEND))
 
 
-MODEL_ENV_KEYS = {
+MODEL_ROOT_ENV_KEYS = {
     "PADDLEOCR_MODEL_DIR": "/models/paddleocr",
     "PADDLEX_MODEL_DIR": "/models/paddlex",
     "PADDLEOCR_VL_MODEL_DIR": "/models/paddleocr-vl",
     "DOCLING_ARTIFACTS_PATH": "/models/docling",
 }
+
+REQUIRED_MODEL_ENV_KEYS = {
+    "AICHECK_PADDLEOCR_DET_MODEL_DIR": "/models/paddleocr/PP-OCRv6_medium_det",
+    "AICHECK_PADDLEOCR_REC_MODEL_DIR": "/models/paddleocr/PP-OCRv6_medium_rec",
+}
+
+OPTIONAL_MODEL_ENV_KEYS = {
+    "AICHECK_PPSTRUCTURE_LAYOUT_MODEL_DIR": "/models/paddlex/PP-DocLayout-L",
+    "AICHECK_PPSTRUCTURE_WIRED_TABLE_STRUCTURE_MODEL_DIR": "/models/paddlex/SLANeXt_wired",
+    "AICHECK_PPSTRUCTURE_WIRED_TABLE_CELLS_MODEL_DIR": "/models/paddlex/RT-DETR-L_wired_table_cell_det",
+    "AICHECK_PPSTRUCTURE_WIRELESS_TABLE_STRUCTURE_MODEL_DIR": "/models/paddlex/SLANeXt_wireless",
+    "AICHECK_PPSTRUCTURE_WIRELESS_TABLE_CELLS_MODEL_DIR": "/models/paddlex/RT-DETR-L_wireless_table_cell_det",
+    "AICHECK_SEAL_DET_MODEL_DIR": "/models/paddlex/PP-OCRv4_server_seal_det",
+    "AICHECK_SEAL_REC_MODEL_DIR": "/models/paddleocr/PP-OCRv4_server_rec",
+}
+
+MODEL_ENV_KEYS = {
+    **MODEL_ROOT_ENV_KEYS,
+    **REQUIRED_MODEL_ENV_KEYS,
+    **OPTIONAL_MODEL_ENV_KEYS,
+}
+
+
+PIPE_CODE_RE = re.compile(r"\b(?:PL|VT)\d{3,5}\b", re.IGNORECASE)
+DRAWING_NO_RE = re.compile(r"\b[A-Z]{1,4}\d{6,}[A-Z0-9.-]*\b")
+DESIGN_PHASE_RE = re.compile(r"(施工图|初步设计|详细设计|竣工图)")
+DN_RE = re.compile(r"\bDN\s*\d+\b", re.IGNORECASE)
+PIPE_SIZE_RE = re.compile(r"[Φ①]?\s*\d{2,4}\s*[x×]\s*\d+(?:\.\d+)?", re.IGNORECASE)
+PID_RE = re.compile(r"\b[A-Z]-\d+\b", re.IGNORECASE)
+NUMBER_RE = re.compile(r"^-?\d+(?:\.\d+)?$")
 
 
 class OcrService:
@@ -87,7 +132,7 @@ class OcrService:
         if not self.pipeline_available:
             failures.append("No local OCR engine or agentdesign OCR pipeline is available.")
         if self.offline_only:
-            for key, default in MODEL_ENV_KEYS.items():
+            for key, default in REQUIRED_MODEL_ENV_KEYS.items():
                 path = Path(os.getenv(key, default))
                 if not path.exists():
                     failures.append(f"{key} model path is missing: {path}")
@@ -99,6 +144,15 @@ class OcrService:
             "ready": not failures,
             "readinessFailures": failures,
         }
+
+    def runtime_doctor_payload(self) -> dict[str, Any]:
+        return build_runtime_doctor(
+            engine_status=self.engine_status(),
+            model_manifest=self.model_manifest(),
+            offline_only=self.offline_only,
+            network_disabled=self.disable_network,
+            placeholder_allowed=self.placeholder_allowed,
+        )
 
     def engine_status(self) -> list[dict[str, Any]]:
         return [engine.status() for engine in self.engines]
@@ -113,14 +167,44 @@ class OcrService:
                     manifest.update(loaded)
             except Exception as exc:
                 manifest["manifestError"] = str(exc)
-        for key, default in MODEL_ENV_KEYS.items():
-            path = Path(os.getenv(key, default))
-            manifest["modelDirs"][key] = {
-                "path": str(path),
-                "exists": path.exists(),
-                "hash": directory_fingerprint(path) if path.exists() else None,
-            }
+        for key, default in MODEL_ROOT_ENV_KEYS.items():
+            self._add_model_manifest_dir(manifest, key, default, category="root", required=False)
+        for key, default in REQUIRED_MODEL_ENV_KEYS.items():
+            self._add_model_manifest_dir(manifest, key, default, category="required", required=True)
+        for key, default in OPTIONAL_MODEL_ENV_KEYS.items():
+            self._add_model_manifest_dir(manifest, key, default, category="optional", required=False)
+        manifest["engineConfig"] = {
+            "AICHECK_OCR_SUBPROCESS_PYTHON": os.getenv("AICHECK_OCR_SUBPROCESS_PYTHON"),
+            "AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE": os.getenv("AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE", "false"),
+            "AICHECK_ENABLE_OPENCV_TABLE_GRID": os.getenv("AICHECK_ENABLE_OPENCV_TABLE_GRID", "true"),
+            "AICHECK_OPENCV_TABLE_GRID_MAX_CELLS": os.getenv("AICHECK_OPENCV_TABLE_GRID_MAX_CELLS", "1800"),
+            "AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR": os.getenv("AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR", "false"),
+            "AICHECK_AGENTDESIGN_SEAL_MAX_CANDIDATES": os.getenv("AICHECK_AGENTDESIGN_SEAL_MAX_CANDIDATES", "6"),
+            "AICHECK_AGENTDESIGN_SEAL_MAX_OCR_CANDIDATES": os.getenv(
+                "AICHECK_AGENTDESIGN_SEAL_MAX_OCR_CANDIDATES", "3"
+            ),
+            "AICHECK_AGENTDESIGN_SEAL_PAGE_SUBJECT": os.getenv("AICHECK_AGENTDESIGN_SEAL_PAGE_SUBJECT", "false"),
+            "AICHECK_AGENTDESIGN_SEAL_ENABLE_PPOCR5": os.getenv("AICHECK_AGENTDESIGN_SEAL_ENABLE_PPOCR5", "false"),
+        }
         return manifest
+
+    def _add_model_manifest_dir(
+        self,
+        manifest: dict[str, Any],
+        key: str,
+        default: str,
+        *,
+        category: str,
+        required: bool,
+    ) -> None:
+        path = Path(os.getenv(key, default))
+        manifest["modelDirs"][key] = {
+            "path": str(path),
+            "exists": path.exists(),
+            "hash": directory_fingerprint(path) if path.exists() else None,
+            "category": category,
+            "required": required,
+        }
 
     def parse_document(
         self,
@@ -151,13 +235,15 @@ class OcrService:
                 else:
                     result = self.pipeline.run(str(source_path))  # type: ignore[attr-defined]
                 normalized = normalize_ocr_result(result, storage_key, file_name)
-                return enrich_parse_result(
-                    normalized,
-                    profile=profile,
-                    document_version_id=document_version_id,
-                    business_pack_id=business_pack_id,
-                    model_manifest=self.model_manifest(),
-                )
+                if has_parse_content(normalized):
+                    return enrich_parse_result(
+                        normalized,
+                        profile=profile,
+                        document_version_id=document_version_id,
+                        business_pack_id=business_pack_id,
+                        model_manifest=self.model_manifest(),
+                    )
+                pipeline_error = "agentdesign OCR pipeline returned no parseable text, fields, tables, or seals."
             except Exception as exc:
                 pipeline_error = str(exc)
         else:
@@ -191,7 +277,8 @@ class OcrService:
         diagnostics = normalized.get("diagnostics") or []
         if pipeline_error:
             diagnostics = [*diagnostics, pipeline_error]
-        return failed_result(storage_key, file_name, "; ".join(str(item) for item in diagnostics))
+        normalized["diagnostics"] = normalize_diagnostics(diagnostics)
+        return normalized
 
     def parse_with_local_engines(
         self,
@@ -204,6 +291,23 @@ class OcrService:
         business_pack_id: str | None,
         options: dict[str, Any],
     ) -> dict[str, Any]:
+        model_manifest = self.model_manifest()
+        result_cache_key = build_result_cache_key(
+            source_path,
+            profile=profile,
+            model_manifest=model_manifest,
+            options=options,
+        )
+        cached_result = load_result_cache(result_cache_key)
+        if cached_result is not None and result_cache_key is not None:
+            return rehydrate_cached_result(
+                cached_result,
+                cache_key=result_cache_key,
+                storage_key=storage_key,
+                file_name=file_name,
+                document_version_id=document_version_id,
+                business_pack_id=business_pack_id,
+            )
         merged: dict[str, Any] = {
             "storageKey": storage_key,
             "fileName": file_name,
@@ -219,51 +323,120 @@ class OcrService:
             "diagnostics": [],
             "engineRuns": [],
         }
+        page_quality = probe_page_quality(source_path, profile=profile)
+        requested_variants = requested_variant_names(profile, page_quality, options=options)
+        variants = generate_image_variants(source_path, profile=profile, page_quality=page_quality, options=options)
+        generated_variant_names = variant_names(variants)
+        missing_variants = [
+            name
+            for name in requested_variants
+            if name != "original" and name not in generated_variant_names
+        ]
+        merged["pageQuality"] = page_quality
+        merged["imageVariants"] = public_variants(variants)
+        merged["preprocessStatus"] = {
+            "requestedVariants": requested_variants,
+            "generatedVariants": sorted(generated_variant_names),
+            "missingVariants": missing_variants,
+            "dependencyHint": None,
+        }
+        if missing_variants:
+            merged["preprocessStatus"]["dependencyHint"] = (
+                "Install opencv-python-headless in the OCR runtime or set AICHECK_OCR_SUBPROCESS_PYTHON "
+                "to a local Python environment with cv2/numpy."
+            )
+            merged["diagnostics"].append(
+                diagnostic(
+                    "PREPROCESS_VARIANT_GENERATION_UNAVAILABLE",
+                    "部分预处理候选图未生成，OCR 会退回原图；请检查本地 OpenCV 依赖或 OCR subprocess Python 配置。",
+                    level="warning",
+                    missingVariants=missing_variants,
+                )
+            )
         for engine in self.engines:
+            engine_status = engine.status()
             if not engine.available():
-                merged["engineRuns"].append({**engine.status(), "status": "unavailable", "durationMs": 0})
+                merged["engineRuns"].append({**engine_status, "status": "unavailable", "durationMs": 0})
                 continue
-            started = monotonic_ms()
-            try:
-                raw = engine.parse(source_path, file_name=file_name, profile=profile)
-                normalized = normalize_ocr_result(raw, storage_key, file_name)
-                merge_parse_result(merged, normalized)
-                merged["engineRuns"].append(
-                    {
-                        **engine.status(),
-                        "status": "success" if normalized.get("status") == "success" else "failed",
-                        "durationMs": max(monotonic_ms() - started, 0),
-                    }
-                )
-            except Exception as exc:
-                merged["diagnostics"].append(
-                    diagnostic(
-                        "ENGINE_FAILED",
-                        f"{engine.name} failed: {exc.__class__.__name__}",
-                        level="error",
+            routed_variants = route_engine_variants(
+                engine.name,
+                variants,
+                profile=profile,
+                page_quality=page_quality,
+                options=options,
+            )
+            if not routed_variants:
+                merged["engineRuns"].append({**engine_status, "status": "skipped", "durationMs": 0})
+                continue
+            for variant in routed_variants:
+                started = monotonic_ms()
+                try:
+                    engine_cache_key = build_engine_result_cache_key(
+                        source_path,
+                        engine_status=engine_status,
+                        variant=variant,
+                        profile=profile,
+                        model_manifest=model_manifest,
+                        options=options,
                     )
-                )
-                merged["engineRuns"].append(
-                    {
-                        **engine.status(),
-                        "status": "failed",
-                        "durationMs": max(monotonic_ms() - started, 0),
-                        "errorCode": exc.__class__.__name__,
-                    }
-                )
+                    raw = load_engine_result_cache(engine_cache_key)
+                    engine_cache_hit = raw is not None
+                    if raw is None:
+                        raw = engine.parse(source_path, file_name=file_name, profile=profile, variant=variant)
+                        if isinstance(raw, dict):
+                            save_engine_result_cache(engine_cache_key, raw)
+                    normalized = normalize_ocr_result(raw, storage_key, file_name)
+                    attach_variant_metadata(normalized, engine.name, variant)
+                    merge_parse_result(merged, normalized)
+                    merged["engineRuns"].append(
+                        {
+                            **engine_status,
+                            "status": "success" if normalized.get("status") == "success" else "failed",
+                            "durationMs": max(monotonic_ms() - started, 0),
+                            "variantId": variant.get("variantId"),
+                            "preprocessChain": variant.get("preprocessChain") or [],
+                            "purpose": variant.get("purpose"),
+                            "variantCacheHit": bool(variant.get("cacheHit")),
+                            "engineCacheHit": engine_cache_hit,
+                            "workerMode": raw.get("workerMode") if isinstance(raw, dict) else None,
+                            "qualityScore": variant_quality_score(variant, page_quality),
+                        }
+                    )
+                except Exception as exc:
+                    merged["diagnostics"].append(
+                        diagnostic(
+                            "ENGINE_FAILED",
+                            f"{engine.name} failed: {exc.__class__.__name__}",
+                            level="error",
+                        )
+                    )
+                    merged["engineRuns"].append(
+                        {
+                            **engine_status,
+                            "status": "failed",
+                            "durationMs": max(monotonic_ms() - started, 0),
+                            "errorCode": exc.__class__.__name__,
+                            "variantId": variant.get("variantId"),
+                            "preprocessChain": variant.get("preprocessChain") or [],
+                            "purpose": variant.get("purpose"),
+                            "variantCacheHit": bool(variant.get("cacheHit")),
+                        }
+                    )
         if has_parse_content(merged):
             merged["status"] = "success"
         else:
             merged["diagnostics"].append(
                 diagnostic("NO_LOCAL_OCR_RESULT", "No local OCR engine produced parseable content.", level="error")
             )
-        return enrich_parse_result(
+        enriched = enrich_parse_result(
             merged,
             profile=profile,
             document_version_id=document_version_id,
             business_pack_id=business_pack_id,
-            model_manifest=self.model_manifest(),
+            model_manifest=model_manifest,
         )
+        save_result_cache(result_cache_key, enriched)
+        return enriched
 
     def create_job(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self.jobs.create(payload)
@@ -439,6 +612,8 @@ def fields_from_seals(seals: Any) -> list[dict[str, Any]]:
     for seal in seals:
         if not isinstance(seal, dict):
             continue
+        if "visual_candidate_only" in (seal.get("qualityFlags") or []):
+            continue
         page_no = int(first_present(seal, "pageNo", default=None) or (int(first_present(seal, "page_index", default=0)) + 1))
         polygon = first_present(seal, "polygon", "bbox")
         seal_fields = seal.get("fields") or {}
@@ -494,6 +669,9 @@ def normalize_raw_seals(seals: Any) -> list[dict[str, Any]]:
                 "sealName": str(first_present(seal, "sealName", "text", "name", default="")),
                 "bbox": first_present(seal, "bbox", "box"),
                 "polygon": first_present(seal, "polygon", "dt_poly"),
+                "pageWidth": seal.get("pageWidth"),
+                "pageHeight": seal.get("pageHeight"),
+                "visualColor": seal.get("visualColor"),
                 "cropObjectKey": seal.get("cropObjectKey"),
                 "visualConfidence": first_present(seal, "visualConfidence", "visual_confidence", "det_score", "score", default=0.8),
                 "ocrConfidence": first_present(seal, "ocrConfidence", "ocr_confidence", "rec_score", "score", default=0.8),
@@ -517,10 +695,7 @@ def seal_field_label(key: str) -> str:
 def normalize_fragments(raw: Any, text: str | None) -> list[dict[str, Any]]:
     if isinstance(raw, dict) and isinstance(raw.get("fragments"), list):
         return [item for item in raw["fragments"] if isinstance(item, dict)]
-    summary = ""
-    if isinstance(raw, dict):
-        summary = str(raw.get("document_summary") or raw.get("candidate_summary") or "")
-    value = text or summary or ""
+    value = text or ""
     return [{"pageNo": 1, "text": value, "bbox": None, "confidence": 0.8}] if value else []
 
 
@@ -536,6 +711,63 @@ def has_parse_content(result: dict[str, Any]) -> bool:
     return any(result.get(key) for key in ["fragments", "fields", "tables", "seals", "layoutBlocks"])
 
 
+def public_variants(variants: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    public = []
+    for variant in variants:
+        if not isinstance(variant, dict):
+            continue
+        public.append(
+            {
+                "variantId": variant.get("variantId"),
+                "pageNo": variant.get("pageNo"),
+                "preprocessChain": variant.get("preprocessChain") or [],
+                "imageHash": variant.get("imageHash"),
+                "purpose": variant.get("purpose"),
+                "source": variant.get("source"),
+                "cacheHit": bool(variant.get("cacheHit")),
+            }
+        )
+    return public
+
+
+def variant_names(variants: list[dict[str, Any]]) -> set[str]:
+    names: set[str] = set()
+    for variant in variants:
+        if not isinstance(variant, dict):
+            continue
+        variant_id = str(variant.get("variantId") or "")
+        if variant_id.startswith("page_1_"):
+            names.add(variant_id.replace("page_1_", "", 1))
+    return names
+
+
+def attach_variant_metadata(result: dict[str, Any], engine_name: str, variant: dict[str, Any]) -> None:
+    variant_id = variant.get("variantId")
+    chain = variant.get("preprocessChain") or []
+    for key in ["fragments", "fields", "tables", "seals", "layoutBlocks"]:
+        for item in result.get(key) or []:
+            if not isinstance(item, dict):
+                continue
+            item.setdefault("sourceEngine", engine_name)
+            item["variantId"] = variant_id
+            item["selectedVariantId"] = variant_id
+            item["preprocessChain"] = chain
+
+
+def variant_quality_score(variant: dict[str, Any], page_quality: list[dict[str, Any]]) -> float:
+    quality = (page_quality[0].get("quality") if page_quality else {}) or {}
+    base = 0.75
+    if variant.get("source") == "original":
+        base += 0.05
+    if variant.get("purpose") == "table" and quality.get("hasTableCandidate"):
+        base += 0.08
+    if variant.get("purpose") == "seal" and quality.get("hasSealCandidate"):
+        base += 0.08
+    if variant.get("purpose") == "text" and quality.get("isLowQuality"):
+        base += 0.05
+    return round(min(base, 0.99), 4)
+
+
 def enrich_parse_result(
     result: dict[str, Any],
     *,
@@ -547,6 +779,7 @@ def enrich_parse_result(
     enriched = deepcopy(result)
     enriched.setdefault("parseResultId", f"PARSE-{uuid4().hex[:12].upper()}")
     enriched["parserVersion"] = "document-intelligence-local-v1"
+    enriched["profilePostprocessVersion"] = profile.get("postprocessVersion") or "v1"
     enriched["engineVersion"] = "local-paddle-doc-intel-v1"
     enriched["profileId"] = profile.get("profileId")
     enriched["documentType"] = profile.get("documentType")
@@ -554,7 +787,700 @@ def enrich_parse_result(
     enriched["documentVersionId"] = document_version_id
     enriched["modelManifest"] = model_manifest
     enriched.setdefault("createdAt", server_time())
-    return enriched
+    apply_profile_postprocessing(enriched, profile)
+    return fuse_parse_result(enriched, profile=profile)
+
+
+def apply_profile_postprocessing(result: dict[str, Any], profile: dict[str, Any]) -> None:
+    if not is_piping_characteristic_profile(result, profile):
+        return
+    inferred_tables = infer_piping_tables(result.get("fragments") or [])
+    grid_table = best_opencv_grid_table(result.get("tables") or [])
+    if inferred_tables and grid_table:
+        result["tables"] = [align_piping_text_table_with_grid(inferred_tables[0], grid_table)]
+        result.setdefault("diagnostics", []).append(
+            diagnostic(
+                "OPENCV_GRID_TABLE_ALIGNED",
+                "已用本地 OpenCV 表格网格结构对齐 OCR 文本行，作为 PP-StructureV3 缺失时的本地结构化表格结果。",
+                level="info",
+                tableId=result["tables"][0]["tableId"],
+            )
+        )
+    elif inferred_tables and not result.get("tables"):
+        result["tables"] = inferred_tables
+        result.setdefault("diagnostics", []).append(
+            diagnostic(
+                "HEURISTIC_TABLE_INFERRED",
+                "基于 OCR 文本坐标重建管道特性表；建议后续用 PP-StructureV3 表格模型复核。",
+                level="info",
+                tableIds=[table["tableId"] for table in inferred_tables],
+            )
+        )
+    normalize_piping_tables(result)
+    extract_piping_fields(result)
+    add_profile_quality_diagnostics(result, profile)
+
+
+def best_opencv_grid_table(tables: list[Any]) -> dict[str, Any] | None:
+    candidates = [
+        table
+        for table in tables
+        if isinstance(table, dict) and str(table.get("sourceEngine") or "") == "opencv_table_grid_subprocess"
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda table: (int(table.get("gridCellCount") or 0), float(table.get("structureConfidence") or 0.0)))
+
+
+def align_piping_text_table_with_grid(text_table: dict[str, Any], grid_table: dict[str, Any]) -> dict[str, Any]:
+    aligned = deepcopy(text_table)
+    aligned["tableId"] = "piping_characteristic_table_1"
+    aligned["sourceEngine"] = "opencv_grid_text_aligned"
+    aligned["bbox"] = grid_table.get("bbox") or aligned.get("bbox")
+    aligned["rows"] = max(int(aligned.get("rows") or 0), int(grid_table.get("rows") or 0))
+    aligned["columns"] = max(int(aligned.get("columns") or 0), int(grid_table.get("columns") or 0))
+    aligned["structureConfidence"] = round(max(float(aligned.get("structureConfidence") or 0.0), float(grid_table.get("structureConfidence") or 0.0), 0.86), 4)
+    flags = {str(flag) for flag in aligned.get("qualityFlags") or []}
+    flags.discard("heuristic_table_fallback")
+    flags.update({"opencv_grid_structure", "ocr_text_aligned"})
+    aligned["qualityFlags"] = sorted(flags)
+    aligned["gridEvidence"] = {
+        "tableId": grid_table.get("tableId"),
+        "rows": grid_table.get("rows"),
+        "columns": grid_table.get("columns"),
+        "gridCellCount": grid_table.get("gridCellCount"),
+        "gridLineXs": grid_table.get("gridLineXs"),
+        "gridLineYs": grid_table.get("gridLineYs"),
+        "structureConfidence": grid_table.get("structureConfidence"),
+    }
+    return aligned
+
+
+def is_piping_characteristic_profile(result: dict[str, Any], profile: dict[str, Any]) -> bool:
+    profile_id = str(profile.get("profileId") or result.get("profileId") or "")
+    document_type = str(profile.get("documentType") or result.get("documentType") or "")
+    if profile_id == "piping_characteristic_list_v1" or document_type == "engineering_table_photo":
+        return True
+    all_text = "\n".join(
+        str(item.get("text") or "") for item in result.get("fragments") or [] if isinstance(item, dict)
+    )
+    return "管道特性表" in all_text or "PIPING CHARACTERISTIC LIST" in all_text.upper()
+
+
+def infer_piping_tables(fragments: list[Any]) -> list[dict[str, Any]]:
+    candidates = []
+    for fragment in fragments:
+        if not isinstance(fragment, dict):
+            continue
+        text = str(fragment.get("text") or "").strip()
+        bbox = rect_from_bbox(fragment.get("bbox"))
+        if not text or bbox is None:
+            continue
+        candidates.append(
+            {
+                "text": text,
+                "bbox": bbox,
+                "pageNo": page_no_from(fragment),
+                "confidence": float(first_present(fragment, "confidence", default=0.8) or 0.0),
+                "sourceEngine": fragment.get("sourceEngine"),
+            }
+        )
+    if len(candidates) < 12:
+        return []
+    tables = []
+    for page_no in sorted({int(item["pageNo"]) for item in candidates}):
+        page_items = [item for item in candidates if int(item["pageNo"]) == page_no]
+        page_tables = infer_piping_tables_for_page(page_items, page_no)
+        tables.extend(page_tables)
+    return tables
+
+
+def infer_piping_tables_for_page(items: list[dict[str, Any]], page_no: int) -> list[dict[str, Any]]:
+    heights = [max(1.0, item["bbox"][3] - item["bbox"][1]) for item in items]
+    tolerance = max(18.0, sorted(heights)[len(heights) // 2] * 0.85) if heights else 22.0
+    rows: list[list[dict[str, Any]]] = []
+    for item in sorted(items, key=lambda value: ((value["bbox"][1] + value["bbox"][3]) / 2, value["bbox"][0])):
+        center_y = (item["bbox"][1] + item["bbox"][3]) / 2
+        matched = False
+        for row in rows:
+            row_center = sum((cell["bbox"][1] + cell["bbox"][3]) / 2 for cell in row) / len(row)
+            if abs(center_y - row_center) <= tolerance:
+                row.append(item)
+                matched = True
+                break
+        if not matched:
+            rows.append([item])
+
+    table_rows: list[list[dict[str, Any]]] = []
+    for row in rows:
+        ordered = sorted(row, key=lambda value: value["bbox"][0])
+        span = max(cell["bbox"][2] for cell in ordered) - min(cell["bbox"][0] for cell in ordered)
+        row_text = " ".join(cell["text"] for cell in ordered)
+        if len(ordered) >= 4 and span >= 400:
+            table_rows.append(ordered)
+        elif table_rows and (PIPE_CODE_RE.search(row_text) or len(ordered) >= 3):
+            table_rows.append(ordered)
+
+    data_rows = [row for row in table_rows if any(PIPE_CODE_RE.search(cell["text"]) for cell in row)]
+    if len(data_rows) < 2:
+        return []
+    x0 = min(cell["bbox"][0] for row in table_rows for cell in row)
+    y0 = min(cell["bbox"][1] for row in table_rows for cell in row)
+    x1 = max(cell["bbox"][2] for row in table_rows for cell in row)
+    y1 = max(cell["bbox"][3] for row in table_rows for cell in row)
+    cells = []
+    normalized_rows = []
+    current_pipe_no: str | None = None
+    for row_index, row in enumerate(table_rows):
+        for col_index, cell in enumerate(row):
+            cells.append(
+                {
+                    "cellId": f"cell_{row_index + 1}_{col_index + 1}",
+                    "row": row_index,
+                    "col": col_index,
+                    "rowspan": 1,
+                    "colspan": 1,
+                    "text": cell["text"],
+                    "bbox": cell["bbox"],
+                    "confidence": cell["confidence"],
+                    "isHeader": row_index == 0,
+                }
+            )
+        pipe_cell = next((cell for cell in row if PIPE_CODE_RE.search(cell["text"])), None)
+        pipe_match = PIPE_CODE_RE.search(pipe_cell["text"]) if pipe_cell else None
+        if pipe_cell and pipe_match:
+            current_pipe_no = pipe_match.group(0).upper()
+            normalized_rows.append(
+                {
+                    "pipeNo": current_pipe_no,
+                    "rawCells": [cell["text"] for cell in row],
+                    "sourceRowIndex": row_index,
+                }
+            )
+        elif current_pipe_no and row_looks_like_piping_continuation(row):
+            normalized_rows.append(
+                {
+                    "pipeNo": current_pipe_no,
+                    "rawCells": [cell["text"] for cell in row],
+                    "sourceRowIndex": row_index,
+                    "isContinuation": True,
+                }
+            )
+    structure_confidence = min(0.9, 0.58 + min(len(data_rows), 10) * 0.025)
+    return [
+        {
+            "tableId": "piping_characteristic_table_1",
+            "pageNo": page_no,
+            "bbox": [x0, y0, x1, y1],
+            "rows": len(table_rows),
+            "columns": max(len(row) for row in table_rows),
+            "structureConfidence": round(structure_confidence, 4),
+            "cells": cells,
+            "normalizedRows": normalized_rows,
+            "sourceEngine": "heuristic_table_from_ocr_fragments",
+            "qualityFlags": ["heuristic_table_fallback"],
+        }
+    ]
+
+
+def normalize_piping_tables(result: dict[str, Any]) -> None:
+    for table in result.get("tables") or []:
+        if not isinstance(table, dict):
+            continue
+        business_rows = piping_business_rows_from_table(table)
+        if not business_rows:
+            continue
+        table["businessRows"] = business_rows
+        normalized_rows = [row for row in table.get("normalizedRows") or [] if isinstance(row, dict)]
+        if normalized_rows:
+            for index, row in enumerate(normalized_rows):
+                if index < len(business_rows):
+                    row.update({key: value for key, value in business_rows[index].items() if value})
+        else:
+            table["normalizedRows"] = business_rows
+        table.setdefault("businessSchema", "piping_characteristic_table_v1")
+
+
+def piping_business_rows_from_table(table: dict[str, Any]) -> list[dict[str, str]]:
+    normalized_rows = [row for row in table.get("normalizedRows") or [] if isinstance(row, dict)]
+    if normalized_rows:
+        mapped = [map_piping_row(row) for row in normalized_rows]
+        return [row for row in mapped if row.get("pipeNo")]
+    cells = [cell for cell in table.get("cells") or [] if isinstance(cell, dict)]
+    if not cells:
+        return []
+    header_by_col = {
+        int(cell.get("col") or 0): str(cell.get("text") or "")
+        for cell in cells
+        if cell.get("isHeader") and str(cell.get("text") or "").strip()
+    }
+    if not header_by_col:
+        header_row_no = min(int(cell.get("row") or 0) for cell in cells)
+        header_by_col = {
+            int(cell.get("col") or 0): str(cell.get("text") or "")
+            for cell in cells
+            if int(cell.get("row") or 0) == header_row_no and str(cell.get("text") or "").strip()
+        }
+    data_rows = []
+    header_rows = {int(cell.get("row") or 0) for cell in cells if cell.get("isHeader")}
+    for row_no in sorted({int(cell.get("row") or 0) for cell in cells if int(cell.get("row") or 0) not in header_rows}):
+        raw = {
+            header_by_col.get(int(cell.get("col") or 0), f"col_{int(cell.get('col') or 0) + 1}"): str(cell.get("text") or "")
+            for cell in cells
+            if int(cell.get("row") or 0) == row_no and str(cell.get("text") or "").strip()
+        }
+        mapped = map_piping_row(raw)
+        if mapped.get("pipeNo"):
+            data_rows.append(mapped)
+    return data_rows
+
+
+def map_piping_row(row: dict[str, Any]) -> dict[str, str]:
+    output: dict[str, str] = {}
+    raw_cells = row.get("rawCells")
+    if isinstance(raw_cells, list):
+        output.update(infer_piping_row_from_raw_cells(raw_cells))
+    if row.get("isContinuation"):
+        inherited_pipe_no = str(row.get("pipeNo") or output.get("pipeNo") or "").upper()
+        if inherited_pipe_no:
+            output["pipeNo"] = inherited_pipe_no
+            output["isContinuation"] = "true"
+        if row.get("sourceRowIndex") is not None:
+            output["sourceRowIndex"] = str(row.get("sourceRowIndex"))
+    for key, value in row.items():
+        canonical = piping_header_code(str(key))
+        text = str(value or "").strip()
+        if not canonical or not text:
+            continue
+        if canonical == "pipeNo":
+            match = PIPE_CODE_RE.search(text)
+            output[canonical] = match.group(0).upper() if match else text.upper()
+            continue
+        output[canonical] = text
+    return output
+
+
+def infer_piping_row_from_raw_cells(raw_cells: list[Any]) -> dict[str, str]:
+    cells = [clean_piping_cell_text(item) for item in raw_cells]
+    cells = [item for item in cells if item]
+    pipe_index = next((index for index, text in enumerate(cells) if PIPE_CODE_RE.search(text)), None)
+    output: dict[str, str] = {}
+    if pipe_index is not None:
+        output["pipeNo"] = PIPE_CODE_RE.search(cells[pipe_index]).group(0).upper()  # type: ignore[union-attr]
+        tail = cells[pipe_index + 1 :]
+    else:
+        tail = cells[1:] if cells and NUMBER_RE.fullmatch(cells[0]) else cells
+    assign_first_match(output, "nominalDiameter", tail[:8], DN_RE)
+    assign_first_match(output, "outerDiameterThickness", tail[:10], PIPE_SIZE_RE)
+    pipe_class = first_token(tail[:8], lambda text: text.upper() in {"MIB", "M1B", "MIIB", "M2B"})
+    if pipe_class:
+        output["pipeClass"] = normalize_pipe_class(pipe_class)
+    pressure_level = first_token(tail[:10], lambda text: re.fullmatch(r"GC\d+", text.upper()) is not None)
+    if pressure_level:
+        output["pressureLevel"] = pressure_level.upper()
+
+    pid_index = next((index for index, text in enumerate(cells) if PID_RE.search(text)), None)
+    if pid_index is not None:
+        output["pAndId"] = PID_RE.search(cells[pid_index]).group(0).upper()  # type: ignore[union-attr]
+
+    medium_start = first_index_after(cells, pipe_index or 0, lambda text: "化工品" in text or "物料" in text)
+    if medium_start is not None:
+        medium_parts = [cells[medium_start]]
+        if medium_start + 1 < len(cells) and re.search(r"[（(].+|丙醇|液化|油|气|水", cells[medium_start + 1]):
+            medium_parts.append(cells[medium_start + 1])
+        output["mediumName"] = "".join(medium_parts).replace("( ", "(")
+
+    content_end = pid_index if pid_index is not None else len(cells)
+    before_pid = cells[(pipe_index + 1) if pipe_index is not None else 0 : content_end]
+    state = first_token(before_pid, lambda text: text in {"液体", "气相", "气体", "水", "空气"})
+    if state:
+        output["mediumState"] = state
+    prop_index = next((index for index, text in enumerate(cells[:content_end]) if "易燃" in text or "易爆" in text), None)
+    if prop_index is not None:
+        output["mediumProperty"] = cells[prop_index]
+    start_end = infer_start_end(cells, pipe_index=pipe_index or 0, pid_index=pid_index, prop_index=prop_index)
+    output.update(start_end)
+
+    if pid_index is not None:
+        operation = infer_temperature_pressure(cells[pid_index + 1 :])
+        output.update(operation)
+        tests = infer_test_and_weld_columns(cells[pid_index + 1 :])
+        output.update(tests)
+    return {key: value for key, value in output.items() if value}
+
+
+def row_looks_like_piping_continuation(row: list[dict[str, Any]]) -> bool:
+    texts = [clean_piping_cell_text(cell.get("text")) for cell in row]
+    texts = [text for text in texts if text]
+    if any(PIPE_CODE_RE.search(text) for text in texts):
+        return False
+    if not any(DN_RE.search(text) for text in texts):
+        return False
+    if row_looks_like_header_tokens(texts):
+        return False
+    signal_count = sum(
+        1
+        for text in texts
+        if PIPE_SIZE_RE.search(text)
+        or PID_RE.search(text)
+        or text in {"液体", "气相", "气体", "水", "空气", "常温"}
+        or text.upper() in {"RT", "UT", "MT", "PT"}
+        or "易燃" in text
+        or "化工品" in text
+    )
+    return signal_count >= 3
+
+
+def row_looks_like_header_tokens(texts: list[str]) -> bool:
+    header_tokens = {
+        "name",
+        "名称",
+        "state",
+        "状态",
+        "property",
+        "特性",
+        "start",
+        "end",
+        "p&id",
+        "no.",
+        "t.(c)",
+        "p.(mpag)",
+        "检测方法",
+        "检测数量",
+        "合格等级",
+        "技术等级",
+    }
+    normalized = {text.lower() for text in texts}
+    return len(normalized & header_tokens) >= 5
+
+
+def clean_piping_cell_text(value: Any) -> str:
+    text = str(value or "").strip()
+    text = text.replace("①", "Φ").replace("φ", "Φ").replace("×", "x")
+    return re.sub(r"\s+", "", text)
+
+
+def assign_first_match(output: dict[str, str], key: str, cells: list[str], pattern: re.Pattern[str]) -> None:
+    match = first_token(cells, lambda text: pattern.search(text) is not None)
+    if match:
+        value = pattern.search(match).group(0).replace(" ", "")  # type: ignore[union-attr]
+        output[key] = normalize_pipe_size(value) if key == "outerDiameterThickness" else value
+
+
+def normalize_pipe_size(value: str) -> str:
+    text = str(value or "").replace("×", "x").replace("①", "Φ").strip()
+    match = re.fullmatch(r"([01])(\d{2,3}x\d+(?:\.\d+)?)", text, flags=re.IGNORECASE)
+    if match:
+        return f"Φ{match.group(2)}"
+    if re.fullmatch(r"\d{2,3}x\d+(?:\.\d+)?", text, flags=re.IGNORECASE):
+        return f"Φ{text}"
+    return text
+
+
+def first_token(cells: list[str], predicate) -> str | None:
+    return next((text for text in cells if predicate(text)), None)
+
+
+def first_index_after(cells: list[str], start: int, predicate) -> int | None:
+    return next((index for index in range(start + 1, len(cells)) if predicate(cells[index])), None)
+
+
+def normalize_pipe_class(value: str) -> str:
+    return value.upper().replace("1", "I").replace("2", "II")
+
+
+def infer_start_end(
+    cells: list[str],
+    *,
+    pipe_index: int,
+    pid_index: int | None,
+    prop_index: int | None,
+) -> dict[str, str]:
+    if pid_index is None:
+        return {}
+    start_index = (prop_index + 1) if prop_index is not None else pipe_index + 1
+    candidates = [
+        text
+        for text in cells[start_index:pid_index]
+        if not DN_RE.search(text)
+        and not PIPE_SIZE_RE.search(text)
+        and text.upper() not in {"MIB", "M1B", "MIIB", "M2B"}
+        and not re.fullmatch(r"GC\d+", text.upper())
+        and text not in {"液体", "气相", "气体", "水", "空气", "化工品", "(丙醇", "丙醇"}
+        and "易燃" not in text
+        and "易爆" not in text
+    ]
+    candidates = [text for text in candidates if not NUMBER_RE.fullmatch(text)]
+    if not candidates:
+        return {}
+    if len(candidates) == 1:
+        return {"startPoint": candidates[0]}
+    return {"startPoint": " ".join(candidates[:-1]), "endPoint": candidates[-1]}
+
+
+def infer_temperature_pressure(cells: list[str]) -> dict[str, str]:
+    values = collapse_consecutive_duplicates([
+        text
+        for text in cells
+        if text in {"常温", "室温"} or NUMBER_RE.fullmatch(text)
+    ])
+    if len(values) < 4:
+        return {}
+    return {
+        "operatingTemperature": values[0],
+        "operatingPressure": values[1],
+        "designTemperature": values[2],
+        "designPressure": values[3],
+    }
+
+
+def collapse_consecutive_duplicates(values: list[str]) -> list[str]:
+    collapsed: list[str] = []
+    for value in values:
+        if collapsed and collapsed[-1] == value:
+            continue
+        collapsed.append(value)
+    return collapsed
+
+
+def infer_test_and_weld_columns(cells: list[str]) -> dict[str, str]:
+    output: dict[str, str] = {}
+    method_index = next((index for index, text in enumerate(cells) if text.upper() in {"RT", "UT", "MT", "PT"}), None)
+    if method_index is None:
+        return output
+    output["weldDetectionMethod"] = cells[method_index].upper()
+    scale = first_token(cells[method_index + 1 : method_index + 5], lambda text: text.endswith("%"))
+    if scale:
+        output["weldDetectionScale"] = scale
+    eligible = first_token(cells[method_index + 1 : method_index + 8], lambda text: text.upper() in {"I", "II", "III", "IV"})
+    if eligible:
+        output["eligibleLevel"] = eligible.upper()
+    ranking = first_token(cells[method_index + 1 : method_index + 10], lambda text: text.upper() in {"A", "B", "C", "AB"})
+    if ranking:
+        output["ranking"] = ranking.upper()
+
+    before_method = cells[:method_index]
+    media = [(index, text) for index, text in enumerate(before_method) if text in {"水", "空气"}]
+    for media_index, (index, medium) in enumerate(media[-2:]):
+        pressure = first_token(before_method[index + 1 : index + 4], lambda text: NUMBER_RE.fullmatch(text) is not None)
+        if media_index == 0:
+            output["strengthTestMedium"] = medium
+            if pressure:
+                output["strengthTestPressure"] = pressure
+        else:
+            output["tightnessTestMedium"] = medium
+            if pressure:
+                output["tightnessTestPressure"] = pressure
+    return output
+
+
+def piping_header_code(header: str) -> str | None:
+    compact = "".join(str(header or "").lower().replace("_", "").split()).strip("：:")
+    if not compact:
+        return None
+    aliases = [
+        ("pipeNo", ["管道代号", "管线号", "管道编号", "pipeno", "pipelineno", "lineno"]),
+        ("nominalDiameter", ["公称直径", "公称管径", "dn", "nps", "diameter"]),
+        ("pipeClass", ["管道等级", "class", "pipeclass"]),
+        ("pressureLevel", ["压力管道级别", "压力等级", "级别", "pressurelevel"]),
+        ("outerDiameterThickness", ["外径×壁厚", "外径壁厚", "外径", "壁厚", "odthk", "size"]),
+        ("mediumName", ["介质名称", "名称name", "mediumname", "name"]),
+        ("mediumState", ["状态state", "state"]),
+        ("mediumProperty", ["特性property", "property"]),
+        ("startPoint", ["起点", "start"]),
+        ("endPoint", ["终点", "end"]),
+        ("pAndId", ["流程图号", "pid", "p&id", "pandid"]),
+        ("operatingTemperature", ["操作温度", "operationdatatc", "operationtemperature"]),
+        ("operatingPressure", ["操作压力", "operationdatapmpag", "operationpressure"]),
+        ("designTemperature", ["设计温度", "designdatatc", "designtemperature"]),
+        ("designPressure", ["设计压力", "designdatapmpag", "designpressure"]),
+        ("insulationCode", ["隔热参数代号", "code"]),
+        ("material", ["主要材料", "material"]),
+        ("insulationThickness", ["厚度", "thickness"]),
+        ("strengthTestMedium", ["强度试验介质", "强度试验", "strengthtestmedium"]),
+        ("strengthTestPressure", ["强度试验压力", "strengthtestpressure"]),
+        ("tightnessTestMedium", ["严密性试验介质", "tightnesstestmedium"]),
+        ("tightnessTestPressure", ["严密性试验压力", "tightnesstestpressure"]),
+        ("weldDetectionMethod", ["焊缝检测检测方法", "检测方法", "d.method", "method"]),
+        ("weldDetectionScale", ["检测数量", "检测比例", "d.scale", "scale"]),
+        ("eligibleLevel", ["合格等级", "eligiblel", "eligiblelevel"]),
+        ("ranking", ["技术等级", "ranking"]),
+    ]
+    for canonical, candidates in aliases:
+        if any(candidate in compact for candidate in candidates):
+            return canonical
+    return None
+
+
+def extract_piping_fields(result: dict[str, Any]) -> None:
+    fragments = [item for item in result.get("fragments") or [] if isinstance(item, dict)]
+    text_items = [(str(item.get("text") or "").strip(), item) for item in fragments if str(item.get("text") or "").strip()]
+    joined = "\n".join(text for text, _ in text_items)
+    add_field_if_missing(
+        result,
+        "document_title",
+        "文件标题",
+        find_text_fragment(text_items, ["管道特性表", "PIPING CHARACTERISTIC LIST"]),
+    )
+    add_field_if_missing(result, "company_name", "公司名称", find_text_fragment(text_items, ["广东星燃石化设计院有限公司"]))
+    project_fragment = find_project_fragment(text_items)
+    add_field_if_missing(result, "project_name", "项目名称", project_fragment)
+    drawing_match = DRAWING_NO_RE.search(joined)
+    if drawing_match:
+        add_field_if_missing(result, "drawing_no", "图纸编号", match_to_fragment(text_items, drawing_match.group(0)))
+    phase_match = DESIGN_PHASE_RE.search(joined)
+    if phase_match:
+        add_field_if_missing(result, "design_phase", "设计阶段", match_to_fragment(text_items, phase_match.group(0)))
+    pipe_values = []
+    pipe_bbox = None
+    for text, fragment in text_items:
+        for match in PIPE_CODE_RE.finditer(text):
+            value = match.group(0).upper()
+            if value not in pipe_values:
+                pipe_values.append(value)
+                pipe_bbox = pipe_bbox or rect_from_bbox(fragment.get("bbox"))
+    for table in result.get("tables") or []:
+        if not isinstance(table, dict):
+            continue
+        for row in table.get("businessRows") or []:
+            if not isinstance(row, dict):
+                continue
+            value = str(row.get("pipeNo") or "").upper()
+            if value and value not in pipe_values:
+                pipe_values.append(value)
+    if pipe_values:
+        add_field_if_missing(
+            result,
+            "pipe_no",
+            "管道代号",
+            {
+                "text": ",".join(pipe_values[:20]),
+                "fragment": {
+                    "bbox": pipe_bbox,
+                    "pageNo": 1,
+                    "confidence": 0.82,
+                    "sourceEngine": "profile_regex",
+                },
+            },
+        )
+
+
+def add_profile_quality_diagnostics(result: dict[str, Any], profile: dict[str, Any]) -> None:
+    diagnostics = result.setdefault("diagnostics", [])
+    if (profile.get("sealRules") or {}).get("required") and not result.get("seals"):
+        diagnostics.append(diagnostic("SEAL_NOT_FOUND", "当前 Profile 要求印章，但未检测到印章候选。", level="warning"))
+    required_fields = profile.get("requiredFields") or []
+    field_codes = {str(item.get("fieldCode") or "") for item in result.get("fields") or [] if isinstance(item, dict)}
+    missing_fields = [field for field in required_fields if field != "seal" and field not in field_codes]
+    if missing_fields:
+        diagnostics.append(
+            diagnostic(
+                "REQUIRED_FIELD_MISSING",
+                "Profile 必抽字段仍有缺失。",
+                level="warning",
+                missingFields=missing_fields,
+            )
+        )
+    required_tables = [str(table) for table in profile.get("requiredTables") or []]
+    tables = [table for table in result.get("tables") or [] if isinstance(table, dict)]
+    missing_tables = missing_required_tables(tables, required_tables)
+    if missing_tables:
+        diagnostics.append(
+            diagnostic(
+                "REQUIRED_TABLE_MISSING",
+                "Profile 必需表格仍有缺失。",
+                level="warning",
+                missingTables=missing_tables,
+            )
+        )
+    min_table_confidence = float((profile.get("qualityRules") or {}).get("minTableStructureConfidence") or 0)
+    for table in result.get("tables") or []:
+        if not isinstance(table, dict):
+            continue
+        confidence = float(table.get("structureConfidence") or 0)
+        if min_table_confidence and confidence < min_table_confidence:
+            diagnostics.append(
+                diagnostic(
+                    "TABLE_STRUCTURE_LOW_CONFIDENCE",
+                    "表格结构置信度低于 Profile 阈值。",
+                    level="warning",
+                    tableId=table.get("tableId"),
+                    confidence=confidence,
+                    threshold=min_table_confidence,
+                )
+            )
+
+
+def add_field_if_missing(result: dict[str, Any], field_code: str, field_name: str, candidate: Any) -> None:
+    if not candidate:
+        return
+    fields = result.setdefault("fields", [])
+    if any(isinstance(item, dict) and item.get("fieldCode") == field_code for item in fields):
+        return
+    text = candidate.get("text") if isinstance(candidate, dict) else None
+    fragment = candidate.get("fragment") if isinstance(candidate, dict) else None
+    if not text or not isinstance(fragment, dict):
+        return
+    fields.append(
+        {
+            "fieldCode": field_code,
+            "fieldName": field_name,
+            "fieldValue": str(text),
+            "pageNo": page_no_from(fragment),
+            "bbox": rect_from_bbox(fragment.get("bbox")),
+            "confidence": first_present(fragment, "confidence", default=0.82),
+            "extractionMethod": "profile_heuristic",
+            "sourceEngine": first_present(fragment, "sourceEngine", default="profile_postprocessor"),
+        }
+    )
+
+
+def find_text_fragment(text_items: list[tuple[str, dict[str, Any]]], needles: list[str]) -> dict[str, Any] | None:
+    for needle in needles:
+        for text, fragment in text_items:
+            if needle in text or needle.upper() in text.upper():
+                return {"text": needle if needle in text else text, "fragment": fragment}
+    return None
+
+
+def find_project_fragment(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    for text, fragment in text_items:
+        if "项目名称" in text or "PROJECT" in text.upper():
+            cleaned = text.replace("项目名称", "").replace("PROJECT", "").strip(" ：:")
+            if cleaned:
+                return {"text": cleaned, "fragment": fragment}
+    for text, fragment in text_items:
+        if "有限公司" in text and ("项目" in text or "新增" in text):
+            return {"text": text, "fragment": fragment}
+    return None
+
+
+def match_to_fragment(text_items: list[tuple[str, dict[str, Any]]], value: str) -> dict[str, Any] | None:
+    for text, fragment in text_items:
+        if value in text:
+            return {"text": value, "fragment": fragment}
+    return {
+        "text": value,
+        "fragment": {"pageNo": 1, "bbox": None, "confidence": 0.78, "sourceEngine": "profile_regex"},
+    }
+
+
+def rect_from_bbox(raw_bbox: Any) -> list[float] | None:
+    if not isinstance(raw_bbox, list) or not raw_bbox:
+        return None
+    if len(raw_bbox) == 4 and all(isinstance(value, (int, float)) for value in raw_bbox):
+        x0, y0, x1, y1 = [float(value) for value in raw_bbox]
+        return [min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)]
+    points = []
+    for point in raw_bbox:
+        if isinstance(point, (list, tuple)) and len(point) >= 2:
+            try:
+                points.append((float(point[0]), float(point[1])))
+            except (TypeError, ValueError):
+                continue
+    if not points:
+        return None
+    return [min(x for x, _ in points), min(y for _, y in points), max(x for x, _ in points), max(y for _, y in points)]
 
 
 def diagnostic(code: str, message: str, *, level: str = "warning", **extra: Any) -> dict[str, Any]:

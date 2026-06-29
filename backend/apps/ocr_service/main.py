@@ -27,6 +27,11 @@ async def readyz(request: Request):
     return fail(errors.EXTERNAL_TOOL_FAILED, request, message="本地 OCR 模型或引擎未就绪。", data=payload, http_status=503)
 
 
+@app.get("/internal/ocr/doctor")
+async def runtime_doctor(request: Request):
+    return ok(ocr_service.runtime_doctor_payload(), request)
+
+
 @app.post("/internal/ocr/parse")
 async def parse_document(request: Request, payload: dict):
     storage_key = str(payload.get("storageKey") or "").strip()

@@ -917,18 +917,171 @@ export type FdeIncidentPayload = {
 
 export type FdeOcrQualityPayload = {
   fileLevel: { total: number; success: number; failed: number; parseSuccessRate?: number }
-  fieldLevel: { total: number; lowConfidence: number; manualCorrectionRate: number }
+  fieldLevel: {
+    total: number
+    lowConfidence: number
+    manualCorrectionRate: number
+    parseResultCount?: number
+    parseFieldCount?: number
+    lowConfidenceParseFieldCount?: number
+    conflictFieldCount?: number
+    evidenceMissingFieldCount?: number
+    missingRequiredFieldCount?: number
+    averageFieldConfidence?: number
+    missingRequiredFieldBreakdown?: Array<{ fieldCode: string; count: number }>
+    sampleMissingRequiredFields?: Array<Record<string, unknown>>
+    sourceBreakdown?: Array<{ source: string; count: number }>
+    fieldCodeBreakdown?: Array<{ fieldCode: string; count: number }>
+    qualityFlagCounts?: Array<{ flag: string; count: number }>
+    sampleFields?: Array<Record<string, unknown>>
+  }
+  evidenceLevel?: {
+    parseResultCount: number
+    scoredResultCount: number
+    averageEvidenceCompleteness: number
+    missingEvidence: number
+    fieldEvidenceMissing: number
+    tableEvidenceMissing: number
+    sealEvidenceMissing: number
+    unknownEvidenceMissing: number
+    missingEvidenceItems: Array<Record<string, unknown>>
+  }
+  tableLevel?: {
+    parseResultCount: number
+    tableCount: number
+    formalTableCount: number
+    heuristicTableCount: number
+    reviewRequiredCount: number
+    missingRequiredTableCount?: number
+    businessRowCount: number
+    normalizedRowCount: number
+    cellCount: number
+    averageTableConfidence: number
+    formalTableRate: number
+    heuristicTableRate: number
+    reviewRequiredRate: number
+    missingRequiredTableBreakdown?: Array<{ tableCode: string; count: number }>
+    sampleMissingRequiredTables?: Array<Record<string, unknown>>
+    sourceBreakdown: Array<{ source: string; count: number }>
+    qualityFlagCounts: Array<{ flag: string; count: number }>
+    sampleTables: Array<Record<string, unknown>>
+  }
+  sealLevel?: {
+    parseResultCount: number
+    sealCount: number
+    readableSealCount: number
+    fragmentSealCount: number
+    visualCandidateCount: number
+    reviewRequiredCount: number
+    missingExpectedSealTypeCount?: number
+    missingTextCount: number
+    averageSealConfidence: number
+    readableSealRate: number
+    fragmentSealRate: number
+    visualCandidateReviewRate: number
+    sealTypeBreakdown?: Array<{ sealType: string; count: number }>
+    readableSealTypeBreakdown?: Array<{ sealType: string; count: number }>
+    matchedExpectedSealTypeBreakdown?: Array<{ sealType: string; count: number }>
+    missingExpectedSealTypeBreakdown?: Array<{ sealType: string; count: number }>
+    sampleMissingExpectedSealTypes?: Array<Record<string, unknown>>
+    sourceBreakdown: Array<{ source: string; count: number }>
+    qualityFlagCounts: Array<{ flag: string; count: number }>
+    sampleSeals: Array<Record<string, unknown>>
+  }
   jobLevel?: { total: number; success: number; failed: number; running: number }
   lowConfidenceFields: ExtractedField[]
   jobs?: Array<Record<string, unknown>>
   parseResults?: Array<Record<string, unknown>>
   corrections?: Array<Record<string, unknown>>
-  evalRuns?: Array<Record<string, unknown>>
+  evalRuns?: FdeOcrEvalRun[]
+  cacheMetrics?: {
+    engineRunCount: number
+    engineCacheHits: number
+    engineCacheHitRate: number
+    variantCacheHits: number
+    variantCacheHitRate: number
+    resultCacheHits: number
+    totalDurationMs: number
+    averageDurationMs: number
+    slowEngines: Array<Record<string, unknown>>
+  }
+  qualityReasonCounts?: Array<{ reason: string; count: number }>
+  runtimeDoctor?: {
+    status?: string
+    ok?: boolean
+    summary?: { pass?: number; warn?: number; fail?: number; total?: number }
+    topIssues?: Array<Record<string, unknown>>
+    subprocessPython?: string
+    schemaVersion?: string
+  }
   failurePools?: {
+    fieldFailures?: Array<Record<string, unknown> | string>
     tableFailures: Array<Record<string, unknown> | string>
     sealFailures: Array<Record<string, unknown> | string>
     engineFailures: Array<Record<string, unknown> | string>
   }
+}
+
+export type FdeOcrEvalRun = {
+  id: string
+  profileId: string
+  status: string
+  startedAt?: string
+  finishedAt?: string
+  metrics: Record<string, number | string | boolean>
+  gateResults?: Array<Record<string, unknown>>
+  evaluationReport?: {
+    ok?: boolean
+    summary?: { cases?: number; total?: number; passed?: number; failed?: number; averageScore?: number }
+    metrics?: Record<string, number>
+    findingCounts?: Record<string, number>
+    thresholdFailures?: Array<Record<string, unknown>>
+  }
+  evaluationSummary?: {
+    ok?: boolean
+    summary?: { cases?: number; total?: number; passed?: number; failed?: number; averageScore?: number }
+    metrics?: Record<string, number>
+    findingCounts?: Record<string, number>
+    thresholdFailures?: Array<Record<string, unknown>>
+    scenarioMetrics?: Record<
+      string,
+      {
+        ok?: boolean
+        cases?: number
+        passed?: number
+        failed?: number
+        averageScore?: number
+        findingCounts?: Record<string, number>
+        thresholdFailures?: Array<Record<string, unknown>>
+      }
+    >
+    failedCases?: Array<{
+      caseId?: string
+      scenario?: string
+      score?: number
+      minScore?: number
+      qualityStatus?: string
+      findings?: string[]
+    }>
+  }
+  scenarioMetrics?: Record<
+    string,
+    {
+      ok?: boolean
+      summary?: { cases?: number; total?: number; passed?: number; failed?: number; averageScore?: number }
+      metrics?: Record<string, number>
+      findingCounts?: Record<string, number>
+      thresholdFailures?: Array<Record<string, unknown>>
+    }
+  >
+  caseDiagnostics?: Array<{
+    caseId?: string
+    scenario?: string
+    score?: number
+    passed?: boolean
+    findings?: Array<Record<string, unknown>>
+    details?: Record<string, unknown>
+  }>
 }
 
 export type FdeOcrRunDetailPayload = {
@@ -2356,9 +2509,14 @@ export const createFdeOcrCorrectionApi = (
 }
 
 export const createFdeOcrEvaluationRunApi = (
-  data?: { profileId?: string; caseCount?: number },
+  data?: {
+    profileId?: string
+    caseCount?: number
+    cases?: Array<Record<string, unknown>>
+    thresholds?: Record<string, unknown>
+  },
   options?: MutationHeaderOptions
-): Promise<IResponse<{ run: Record<string, unknown>; auditLogId: string }>> => {
+): Promise<IResponse<{ run: FdeOcrEvalRun; auditLogId: string }>> => {
   return request.post({
     url: '/api/fde/ocr-evaluation-runs',
     data: data || {},

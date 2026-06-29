@@ -220,12 +220,97 @@ def test_fde_ocr_quality_runs_corrections_and_eval() -> None:
             "status": "success",
             "parseResultId": "PARSE-FDE-OCR-001",
             "fields": [
-                {"fieldName": "炉批号", "fieldValue": "H240315A07", "confidence": 0.66, "pageNo": 1}
+                {
+                    "fieldCode": "heat_no",
+                    "fieldName": "炉批号",
+                    "fieldValue": "H240315A07",
+                    "confidence": 0.66,
+                    "pageNo": 1,
+                    "sourceEngine": "paddle_ocr_subprocess",
+                    "qualityFlags": ["field_low_confidence"],
+                },
+                {
+                    "fieldCode": "report_no",
+                    "fieldName": "报告编号",
+                    "fieldValue": "RT-2026-001",
+                    "confidence": 0.91,
+                    "sourceEngine": "profile_regex",
+                    "qualityFlags": ["field_value_conflict"],
+                },
             ],
-            "tables": [{"tableId": "T1", "structureConfidence": 0.86}],
-            "seals": [{"sealId": "S1", "sealName": "测试单位章"}],
+            "tables": [
+                {
+                    "tableId": "T1",
+                    "sourceEngine": "heuristic_table_from_ocr_fragments",
+                    "structureConfidence": 0.86,
+                    "qualityFlags": ["table_evidence_missing", "heuristic_table_fallback"],
+                    "businessRows": [{"pipeNo": "PL8301"}],
+                    "normalizedRows": [{"pipeNo": "PL8301"}],
+                },
+                {
+                    "tableId": "T2",
+                    "sourceEngine": "opencv_grid_text_aligned",
+                    "structureConfidence": 0.92,
+                    "qualityFlags": ["opencv_grid_structure", "ocr_text_aligned"],
+                    "businessRows": [{"pipeNo": "PL8302"}, {"pipeNo": "VT8301"}],
+                    "normalizedRows": [{"pipeNo": "PL8302"}, {"pipeNo": "VT8301"}],
+                    "cells": [{"text": "pipeNo"}, {"text": "PL8302"}, {"text": "VT8301"}],
+                },
+            ],
+            "seals": [
+                {"sealId": "S1", "sealName": "测试单位章", "qualityFlags": ["seal_evidence_missing"]},
+                {
+                    "sealId": "S2",
+                    "sealName": "压力管道 杨道红 TS1810648-2021",
+                    "sealType": "design_license_seal",
+                    "sourceEngine": "fragment_seal_text_fusion",
+                    "ocrConfidence": 0.88,
+                    "qualityFlags": ["fragment_seal_text"],
+                },
+                {
+                    "sealId": "S3",
+                    "sealName": "视觉印章候选",
+                    "sealType": "visual_red_seal_candidate",
+                    "visualConfidence": 0.93,
+                    "qualityFlags": ["visual_candidate_only", "requires_seal_ocr_text"],
+                },
+            ],
             "diagnostics": [{"code": "TABLE_STRUCTURE_LOW_CONFIDENCE", "level": "warning"}],
-            "engineRuns": [{"engine": "pp_structure_v3", "status": "success"}],
+            "quality": {
+                "status": "needs_human_review",
+                "evidenceCompleteness": 0.5,
+                "missingFields": ["drawing_no"],
+                "missingTables": ["piping_characteristic_table"],
+                "matchedSealTypes": ["design_license_seal"],
+                "missingExpectedSealTypes": ["inspection_testing_seal"],
+                "reasons": [
+                    "FIELD_EVIDENCE_MISSING",
+                    "FIELD_VALUE_CONFLICT",
+                    "TABLE_EVIDENCE_MISSING",
+                    "SEAL_EVIDENCE_MISSING",
+                ],
+                "missingEvidence": [
+                    {"targetType": "field", "targetId": "report_no"},
+                    {"targetType": "table", "targetId": "T1"},
+                    {"targetType": "seal", "targetId": "S1"},
+                ],
+            },
+            "engineRuns": [
+                {
+                    "engine": "paddle_ocr_subprocess",
+                    "status": "success",
+                    "durationMs": 1200,
+                    "engineCacheHit": True,
+                    "variantCacheHit": False,
+                },
+                {
+                    "engine": "opencv_table_grid_subprocess",
+                    "status": "success",
+                    "durationMs": 180,
+                    "engineCacheHit": False,
+                    "variantCacheHit": True,
+                },
+            ],
         },
     )
 
@@ -248,12 +333,138 @@ def test_fde_ocr_quality_runs_corrections_and_eval() -> None:
     )
 
     assert quality["jobLevel"]["total"] >= 1
+    assert quality["cacheMetrics"]["engineRunCount"] >= 2
+    assert quality["cacheMetrics"]["engineCacheHits"] >= 1
+    assert quality["cacheMetrics"]["variantCacheHits"] >= 1
+    assert quality["cacheMetrics"]["slowEngines"][0]["engine"] == "paddle_ocr_subprocess"
+    assert quality["fieldLevel"]["parseFieldCount"] >= 2
+    assert quality["fieldLevel"]["lowConfidenceParseFieldCount"] >= 1
+    assert quality["fieldLevel"]["conflictFieldCount"] >= 1
+    assert quality["fieldLevel"]["missingRequiredFieldCount"] >= 1
+    assert quality["fieldLevel"]["averageFieldConfidence"] > 0
+    assert "drawing_no" in {item["fieldCode"] for item in quality["fieldLevel"]["missingRequiredFieldBreakdown"]}
+    assert "report_no" in {item["fieldCode"] for item in quality["fieldLevel"]["fieldCodeBreakdown"]}
+    assert "field_value_conflict" in {item["flag"] for item in quality["fieldLevel"]["qualityFlagCounts"]}
+    assert "paddle_ocr_subprocess" in {item["source"] for item in quality["fieldLevel"]["sourceBreakdown"]}
+    assert quality["evidenceLevel"]["missingEvidence"] >= 3
+    assert quality["evidenceLevel"]["fieldEvidenceMissing"] >= 1
+    assert quality["evidenceLevel"]["tableEvidenceMissing"] >= 1
+    assert quality["evidenceLevel"]["sealEvidenceMissing"] >= 1
+    assert quality["evidenceLevel"]["averageEvidenceCompleteness"] < 1
+    assert quality["tableLevel"]["tableCount"] >= 2
+    assert quality["tableLevel"]["formalTableCount"] >= 1
+    assert quality["tableLevel"]["heuristicTableCount"] >= 1
+    assert quality["tableLevel"]["reviewRequiredCount"] >= 1
+    assert quality["tableLevel"]["missingRequiredTableCount"] >= 1
+    assert quality["tableLevel"]["businessRowCount"] >= 3
+    assert quality["tableLevel"]["cellCount"] >= 3
+    assert quality["tableLevel"]["formalTableRate"] > 0
+    assert "heuristic_table_fallback" in {item["flag"] for item in quality["tableLevel"]["qualityFlagCounts"]}
+    assert "opencv_grid_text_aligned" in {item["source"] for item in quality["tableLevel"]["sourceBreakdown"]}
+    assert "piping_characteristic_table" in {
+        item["tableCode"] for item in quality["tableLevel"]["missingRequiredTableBreakdown"]
+    }
+    assert quality["sealLevel"]["sealCount"] >= 3
+    assert quality["sealLevel"]["readableSealCount"] >= 1
+    assert quality["sealLevel"]["fragmentSealCount"] >= 1
+    assert quality["sealLevel"]["visualCandidateCount"] >= 1
+    assert quality["sealLevel"]["reviewRequiredCount"] >= 2
+    assert quality["sealLevel"]["missingExpectedSealTypeCount"] >= 1
+    assert quality["sealLevel"]["fragmentSealRate"] > 0
+    assert "design_license_seal" in {item["sealType"] for item in quality["sealLevel"]["sealTypeBreakdown"]}
+    assert "design_license_seal" in {item["sealType"] for item in quality["sealLevel"]["readableSealTypeBreakdown"]}
+    assert "design_license_seal" in {item["sealType"] for item in quality["sealLevel"]["matchedExpectedSealTypeBreakdown"]}
+    assert "inspection_testing_seal" in {item["sealType"] for item in quality["sealLevel"]["missingExpectedSealTypeBreakdown"]}
+    assert quality["sealLevel"]["sampleMissingExpectedSealTypes"][0]["sealType"] == "inspection_testing_seal"
+    assert "fragment_seal_text" in {item["flag"] for item in quality["sealLevel"]["qualityFlagCounts"]}
+    assert {item["reason"] for item in quality["qualityReasonCounts"]} >= {
+        "FIELD_EVIDENCE_MISSING",
+        "FIELD_VALUE_CONFLICT",
+        "TABLE_EVIDENCE_MISSING",
+        "SEAL_EVIDENCE_MISSING",
+    }
+    assert quality["failurePools"]["fieldFailures"]
+    assert {item["code"] for item in quality["failurePools"]["fieldFailures"]} >= {
+        "FIELD_EVIDENCE_MISSING",
+        "FIELD_LOW_CONFIDENCE",
+        "FIELD_VALUE_CONFLICT",
+    }
+    assert quality["runtimeDoctor"]["status"] in {"unavailable", "attention", "ready"}
+    assert "summary" in quality["runtimeDoctor"]
     assert quality["failurePools"]["tableFailures"]
+    assert "TABLE_EVIDENCE_MISSING" in {item["code"] for item in quality["failurePools"]["tableFailures"]}
+    seal_failure_codes = {item["code"] for item in quality["failurePools"]["sealFailures"]}
+    assert "SEAL_EVIDENCE_MISSING" in seal_failure_codes
+    assert "SEAL_REVIEW_REQUIRED" in seal_failure_codes
+    assert "S2" not in {item.get("sealId") for item in quality["failurePools"]["sealFailures"]}
     assert runs["items"][0]["id"] == job["id"]
     assert detail["parseResult"]["parseResultId"] == result["parseResultId"]
     assert correction["correction"]["fieldId"] == "FIELD-16-001"
     assert repo.find_one("extracted_fields", "FIELD-16-001")["reviewStatus"] == "已修正"
     assert evaluation["run"]["metrics"]["fileSuccessRate"] == 1
+    assert evaluation["run"]["metrics"]["caseCount"] == evaluation["run"]["evaluationSummary"]["summary"]["cases"]
+    assert evaluation["run"]["evaluationReport"]["ok"] is False
+    assert evaluation["run"]["evaluationReport"]["findingCounts"]["OCR_EVAL_FIELD_EVIDENCE_MISSING"] >= 1
+    assert evaluation["run"]["evaluationSummary"]["ok"] is False
+    assert evaluation["run"]["evaluationSummary"]["findingCounts"]["OCR_EVAL_FIELD_EVIDENCE_MISSING"] >= 1
+    assert evaluation["run"]["evaluationSummary"]["failedCases"]
+    assert {"field_extraction_profile", "table_structure_profile", "seal_text_profile"} <= set(evaluation["run"]["scenarioMetrics"])
+    assert {"field_extraction_profile", "table_structure_profile", "seal_text_profile"} <= set(
+        evaluation["run"]["evaluationSummary"]["scenarioMetrics"]
+    )
+    assert evaluation["run"]["scenarioMetrics"]["field_extraction_profile"]["findingCounts"]["OCR_EVAL_FIELD_EVIDENCE_MISSING"] >= 1
+    assert evaluation["run"]["caseDiagnostics"][0]["details"]
+    assert any(
+        item.get("code") == "OCR_EVAL_FIELD_EVIDENCE_MISSING"
+        for diagnostic in evaluation["run"]["caseDiagnostics"]
+        for item in diagnostic.get("findings", [])
+    )
+
+
+def test_fde_ocr_evaluation_accepts_explicit_cases_and_returns_diagnostics() -> None:
+    evaluation = assert_ok(
+        client.post(
+            "/api/fde/ocr-evaluation-runs",
+            json={
+                "profileId": "piping_characteristic_list_v1",
+                "thresholds": {
+                    "metrics": {"fieldBboxHitRate": 0.95},
+                    "scenarios": {"piping_table_profile": {"metrics": {"fieldBboxHitRate": 0.95}}},
+                },
+                "cases": [
+                    {
+                        "caseId": "fde-explicit-bbox",
+                        "scenario": "piping_table_profile",
+                        "minScore": 0,
+                        "result": {
+                            "parseResultId": "PARSE-FDE-EXPLICIT",
+                            "status": "success",
+                            "fields": [{"fieldCode": "pipe_no", "fieldValue": "PL8301", "bbox": [0, 0, 10, 10]}],
+                            "tables": [],
+                            "seals": [],
+                            "quality": {"status": "auto_usable", "reasons": []},
+                        },
+                        "expected": {
+                            "fields": [{"fieldCode": "pipe_no", "value": "PL8301", "bbox": [100, 100, 120, 120]}],
+                        },
+                    }
+                ],
+            },
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-ocr-eval-explicit-001"},
+        )
+    )
+
+    run = evaluation["run"]
+    diagnostics = run["caseDiagnostics"][0]
+
+    assert run["evaluationReport"]["ok"] is False
+    assert run["metrics"]["caseCount"] == 1
+    assert run["evaluationSummary"]["ok"] is False
+    assert run["evaluationSummary"]["failedCases"][0]["caseId"] == "fde-explicit-bbox"
+    assert run["evaluationSummary"]["scenarioMetrics"]["piping_table_profile"]["thresholdFailures"][0]["metric"] == "fieldBboxHitRate"
+    assert run["scenarioMetrics"]["piping_table_profile"]["thresholdFailures"][0]["metric"] == "fieldBboxHitRate"
+    assert diagnostics["caseId"] == "fde-explicit-bbox"
+    assert diagnostics["details"]["fields"][0]["status"] == "bbox_mismatch"
 
 
 def test_fde_cannot_execute_business_review_mutation() -> None:

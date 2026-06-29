@@ -24,6 +24,13 @@ STATE_COLLECTIONS = {
     "evidence_links": "evidence_links",
     "extracted_fields": "extracted_fields",
     "ai_runs": "ai_runs",
+    "review_runs": "review_runs",
+    "review_step_runs": "review_step_runs",
+    "review_graph_nodes": "review_graph_nodes",
+    "review_tool_calls": "review_tool_calls",
+    "review_events": "review_events",
+    "retrieval_traces": "retrieval_traces",
+    "rule_check_results": "rule_check_results",
     "ai_feedback": "ai_feedback",
     "access_grants": "access_grants",
     "ai_trace_steps": "ai_trace_steps",
@@ -102,6 +109,13 @@ class InMemoryRepository:
         self.state.setdefault("ocr_parse_results", [])
         self.state.setdefault("ocr_corrections", [])
         self.state.setdefault("ocr_eval_runs", [])
+        self.state.setdefault("review_runs", [])
+        self.state.setdefault("review_step_runs", [])
+        self.state.setdefault("review_graph_nodes", [])
+        self.state.setdefault("review_tool_calls", [])
+        self.state.setdefault("review_events", [])
+        self.state.setdefault("retrieval_traces", [])
+        self.state.setdefault("rule_check_results", [])
         self.mongo = None
         self.sync_mongo = None
         self.mongo_enabled = False
@@ -115,6 +129,13 @@ class InMemoryRepository:
         self.state.setdefault("ocr_parse_results", [])
         self.state.setdefault("ocr_corrections", [])
         self.state.setdefault("ocr_eval_runs", [])
+        self.state.setdefault("review_runs", [])
+        self.state.setdefault("review_step_runs", [])
+        self.state.setdefault("review_graph_nodes", [])
+        self.state.setdefault("review_tool_calls", [])
+        self.state.setdefault("review_events", [])
+        self.state.setdefault("retrieval_traces", [])
+        self.state.setdefault("rule_check_results", [])
 
     def clone(self, value: Any) -> Any:
         return deepcopy(value)
@@ -718,13 +739,14 @@ class InMemoryRepository:
         low_conf = [field for field in fields if float(field.get("confidence") if field.get("confidence") is not None else 0) < 0.85]
         total_results = len(results) or 1
         success_count = len([item for item in results if item.get("status") == "success"])
+        case_count = payload.get("caseCount")
         metrics = {
             "fileSuccessRate": round(success_count / total_results, 4),
             "fieldAccuracyProxy": round(1 - (len(low_conf) / (len(fields) or 1)), 4),
             "tableStructureUsableRate": round(len([item for item in tables if float(item.get("structureConfidence") or 0) >= 0.8]) / (len(tables) or 1), 4),
             "sealDetectionProxy": round(len(seals) / (len(results) or 1), 4),
             "manualCorrectionRate": round(len(corrections) / (len(fields) or 1), 4),
-            "caseCount": int(payload.get("caseCount") or len(results)),
+            "caseCount": int(case_count if case_count is not None else len(results)),
         }
         run = {
             "id": payload.get("id") or f"OCREVAL-{uuid4().hex[:8].upper()}",
@@ -738,6 +760,10 @@ class InMemoryRepository:
                 {"gate": "field_accuracy_proxy", "passed": metrics["fieldAccuracyProxy"] >= 0.85},
                 {"gate": "manual_correction_rate", "passed": metrics["manualCorrectionRate"] <= 0.2},
             ],
+            "evaluationReport": payload.get("evaluationReport") or {},
+            "evaluationSummary": payload.get("evaluationSummary") or {},
+            "scenarioMetrics": payload.get("scenarioMetrics") or {},
+            "caseDiagnostics": payload.get("caseDiagnostics") or [],
             "createdByRole": payload.get("createdByRole") or "fde",
         }
         self.state.setdefault("ocr_eval_runs", []).insert(0, run)

@@ -13,6 +13,7 @@ from apps.api.adapters.engineering_inspection import (
     ENGINEERING_DOMAIN_TYPE,
     ENGINEERING_PROJECT_DEFAULTS,
 )
+from apps.ocr_service.evaluation import compact_evaluation_report, evaluate_cases
 from libs.business_pack import (
     DEFAULT_BUSINESS_PACK_ID,
     build_project_requirements,
@@ -29,6 +30,15 @@ from libs.contracts.responses import fail, ok, page, server_time
 from libs.db.repository import repo
 from libs.db.seed import PROJECT_ID, ROLE_NODE_MAP
 from libs.integrations import task_dispatcher
+from libs.integrations.errors import IntegrationServiceError
+from libs.integrations.ocr_client import OcrClient
+from libs.review_orchestrator import (
+    clone_review_run_for_replay,
+    graph_view_for_review_run,
+    human_decision_for_review_run,
+    review_run_timeline,
+    review_run_view,
+)
 from libs.security.auth import ROLE_DEFAULT_PATHS, USERS, authenticate, decode_token, issue_token, user_by_username
 
 router = APIRouter(tags=["AIcheck API"])
@@ -2390,6 +2400,10 @@ def ai_recheck(
         repo.state["ai_runs"].insert(0, run)
         repo.set_node_status(project_id, node_id, "业务核验中")
         dispatch = task_dispatcher.dispatch_ai_recheck(project_id, node_id, run_id)
+        if dispatch.get("reviewRunId"):
+            run["reviewRunId"] = dispatch.get("reviewRunId")
+        if dispatch.get("workflowId"):
+            run["workflowId"] = dispatch.get("workflowId")
         return ok({"runId": run_id, "status": run["status"], "latestRun": run, "dispatch": dispatch}, request)
 
     return idempotent(
@@ -2411,6 +2425,104 @@ def get_ai_run(request: Request, project_id: str, node_id: int, run_id: str):
     if not run:
         return fail(errors.NOT_FOUND, request)
     return ok(repo.clone(run), request)
+
+
+@router.get("/review-runs/{review_run_id}")
+def get_review_run(request: Request, review_run_id: str):
+    run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
+    if not run:
+        return fail(errors.NOT_FOUND, request)
+    project_id = run.get("projectId")
+    if project_id and not project_visible_for_request(request, str(project_id)):
+        return fail(errors.FORBIDDEN, request)
+    return ok({"run": review_run_view(run)}, request)
+
+
+@router.get("/review-runs/{review_run_id}/timeline")
+def get_review_run_timeline(request: Request, review_run_id: str):
+    run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
+    if not run:
+        return fail(errors.NOT_FOUND, request)
+    project_id = run.get("projectId")
+    if project_id and not project_visible_for_request(request, str(project_id)):
+        return fail(errors.FORBIDDEN, request)
+    return ok({"reviewRunId": review_run_id, "events": review_run_timeline(review_run_id)}, request)
+
+
+@router.get("/review-runs/{review_run_id}/graph")
+def get_review_run_graph(request: Request, review_run_id: str):
+    run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
+    if not run:
+        return fail(errors.NOT_FOUND, request)
+    project_id = run.get("projectId")
+    if project_id and not project_visible_for_request(request, str(project_id)):
+        return fail(errors.FORBIDDEN, request)
+    return ok({"reviewRunId": review_run_id, **graph_view_for_review_run(review_run_id)}, request)
+
+
+@router.post("/review-runs/{review_run_id}/human-decision")
+def submit_review_run_human_decision(
+    request: Request,
+    review_run_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
+        if not run:
+            return fail(errors.NOT_FOUND, request)
+        project_id = run.get("projectId")
+        if project_id and not project_visible_for_request(request, str(project_id)):
+            return fail(errors.FORBIDDEN, request)
+        decision = str(body.get("decision") or "accept")
+        result = human_decision_for_review_run(review_run_id, decision, body)
+        if result.get("status") in {"missing", "invalid_decision"}:
+            return fail(errors.VALIDATION_ERROR, request, data=result)
+        audit_id = repo.add_audit("提交 ReviewRun 人工确认", "ReviewRun", review_run_id)
+        return ok({"reviewRun": review_run_view(result["reviewRun"]), "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"reviewRunId": review_run_id, "body": body})
+
+
+@router.post("/review-runs/{review_run_id}/cancel")
+def cancel_review_run(
+    request: Request,
+    review_run_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
+        if not run:
+            return fail(errors.NOT_FOUND, request)
+        run["status"] = "cancelled"
+        run["cancelReason"] = body.get("reason") or "用户取消 ReviewRun"
+        run["updatedAt"] = server_time()
+        audit_id = repo.add_audit("取消 ReviewRun", "ReviewRun", review_run_id)
+        return ok({"reviewRun": review_run_view(run), "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"reviewRunId": review_run_id, "body": body})
+
+
+@router.post("/review-runs/{review_run_id}/rerun")
+def rerun_review_run(
+    request: Request,
+    review_run_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        parent = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
+        if not parent:
+            return fail(errors.NOT_FOUND, request)
+        project_id = parent.get("projectId")
+        if project_id and not project_visible_for_request(request, str(project_id)):
+            return fail(errors.FORBIDDEN, request)
+        child = clone_review_run_for_replay(parent, run_mode="diagnostic_replay", reason=body.get("reason") or "业务端请求重跑")
+        audit_id = repo.add_audit("业务端请求 ReviewRun 重跑", "ReviewRun", child["reviewRunId"])
+        return ok({"reviewRun": review_run_view(child), "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"reviewRunId": review_run_id, "body": body})
 
 
 @router.post("/projects/{project_id}/inspection/nodes/{node_id}/review-opinions")
@@ -4138,6 +4250,119 @@ def fde_ai_run_detail(request: Request, run_id: str):
     )
 
 
+@router.get("/fde/review-runs")
+def fde_review_runs(
+    request: Request,
+    projectId: str | None = None,
+    businessPackId: str | None = None,
+    status: str | None = None,
+    page_no: int = Query(default=1, alias="page"),
+    page_size: int = Query(default=20, alias="pageSize"),
+):
+    _, role_error = fde_error_unless_allowed(request, "fde:ai-run:view-masked")
+    if role_error:
+        return role_error
+    items = [repo.clone(item) for item in repo.state.get("review_runs", [])]
+    if projectId:
+        items = [item for item in items if item.get("projectId") == projectId]
+    if businessPackId:
+        items = [item for item in items if item.get("businessPackId") == businessPackId]
+    if status:
+        items = [item for item in items if item.get("status") == status]
+    return ok(page([review_run_view(item) for item in items], page_no, page_size), request)
+
+
+@router.get("/fde/review-runs/{review_run_id}")
+def fde_review_run_detail(request: Request, review_run_id: str):
+    _, role_error = fde_error_unless_allowed(request, "fde:ai-run:view-masked")
+    if role_error:
+        return role_error
+    run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
+    if not run:
+        return fail(errors.NOT_FOUND, request)
+    return ok(
+        {
+            "run": review_run_view(run),
+            "graph": graph_view_for_review_run(review_run_id),
+            "timeline": review_run_timeline(review_run_id),
+            "temporal": temporal_history_summary(run),
+        },
+        request,
+    )
+
+
+@router.get("/fde/review-runs/{review_run_id}/graph")
+def fde_review_run_graph(request: Request, review_run_id: str):
+    _, role_error = fde_error_unless_allowed(request, "fde:ai-run:view-masked")
+    if role_error:
+        return role_error
+    run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
+    if not run:
+        return fail(errors.NOT_FOUND, request)
+    return ok({"reviewRunId": review_run_id, **graph_view_for_review_run(review_run_id)}, request)
+
+
+@router.get("/fde/review-runs/{review_run_id}/temporal-history")
+def fde_review_run_temporal_history(request: Request, review_run_id: str):
+    _, role_error = fde_error_unless_allowed(request, "fde:ai-run:view-masked")
+    if role_error:
+        return role_error
+    run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
+    if not run:
+        return fail(errors.NOT_FOUND, request)
+    return ok(temporal_history_summary(run), request)
+
+
+@router.post("/fde/review-runs/{review_run_id}/replay")
+def fde_replay_review_run(
+    request: Request,
+    review_run_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        _, role_error = fde_error_unless_allowed(request, "fde:ai-run:replay")
+        if role_error:
+            return role_error
+        parent = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
+        if not parent:
+            return fail(errors.NOT_FOUND, request)
+        run_type = body.get("runMode") or body.get("runType") or "diagnostic_replay"
+        if run_type not in FDE_REPLAY_TYPES:
+            return fail(errors.VALIDATION_ERROR, request, message="FDE ReviewRun 重跑类型不支持。", data={"allowedTypes": sorted(FDE_REPLAY_TYPES)})
+        child = clone_review_run_for_replay(parent, run_mode=run_type, reason=body.get("reason"))
+        audit_id = repo.add_audit("FDE 创建 ReviewRun 重跑", "ReviewRun", child["reviewRunId"])
+        return ok({"reviewRun": review_run_view(child), "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"reviewRunId": review_run_id, "body": body})
+
+
+@router.post("/fde/review-runs/{review_run_id}/shadow-run")
+def fde_shadow_review_run(
+    request: Request,
+    review_run_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    body = {**body, "runMode": "shadow_replay", "reason": body.get("reason") or "FDE Shadow Run"}
+    return fde_replay_review_run(request, review_run_id, body, idempotency_key)
+
+
+def temporal_history_summary(run: dict[str, Any]) -> dict[str, Any]:
+    events = review_run_timeline(str(run.get("reviewRunId") or run.get("id")))
+    return {
+        "workflowEngine": run.get("workflowEngine") or "temporal",
+        "workflowType": run.get("workflowType") or "ReviewRunWorkflow",
+        "workflowId": run.get("workflowId"),
+        "temporalRunId": run.get("temporalRunId"),
+        "namespace": run.get("temporalNamespace") or "default",
+        "historyPolicy": "ids_hashes_versions_only",
+        "payloadCodecRequired": bool((run.get("sensitivePayloadPolicy") or {}).get("payloadCodecRequiredInProduction", True)),
+        "eventCount": len(events),
+        "events": events[:100],
+    }
+
+
 @router.get("/fde/access-grants")
 def fde_access_grants(request: Request):
     _, role_error = fde_error_unless_allowed(request, "fde:security:manage")
@@ -4797,12 +5022,12 @@ def fde_ocr_quality_snapshot() -> dict[str, Any]:
         for diagnostic in result.get("diagnostics", [])
         if isinstance(diagnostic, dict) or diagnostic
     ]
-    table_failures = [
+    diagnostic_table_failures = [
         item
         for item in result_diagnostics
         if "TABLE" in str((item or {}).get("code") if isinstance(item, dict) else item).upper()
     ]
-    seal_failures = [
+    diagnostic_seal_failures = [
         item
         for item in result_diagnostics
         if "SEAL" in str((item or {}).get("code") if isinstance(item, dict) else item).upper()
@@ -4813,10 +5038,19 @@ def fde_ocr_quality_snapshot() -> dict[str, Any]:
         if "ENGINE" in str((item or {}).get("code") if isinstance(item, dict) else item).upper()
         or "FAILED" in str((item or {}).get("code") if isinstance(item, dict) else item).upper()
     ]
+    field_failures = fde_ocr_field_failures(results, fields)
+    table_failures = [*diagnostic_table_failures, *fde_ocr_table_failures(results)]
+    seal_failures = [*diagnostic_seal_failures, *fde_ocr_seal_failures(results)]
+    quality_reason_counts = fde_ocr_quality_reason_counts(results)
+    field_level = fde_ocr_field_level(results, fields, corrections)
+    evidence_level = fde_ocr_evidence_level(results)
+    table_level = fde_ocr_table_level(results)
+    seal_level = fde_ocr_seal_level(results)
     success_documents = len([item for item in documents if item.get("currentOcrStatus") == "已识别"])
     failed_documents = len([item for item in documents if item.get("currentOcrStatus") == "识别失败"])
     success_results = len([item for item in results if item.get("status") == "success"])
     failed_results = len([item for item in results if item.get("status") != "success"])
+    cache_metrics = fde_ocr_cache_metrics(results, jobs)
     return {
         "fileLevel": {
             "total": len(documents),
@@ -4824,11 +5058,10 @@ def fde_ocr_quality_snapshot() -> dict[str, Any]:
             "failed": failed_documents,
             "parseSuccessRate": round(success_results / (len(results) or 1), 4),
         },
-        "fieldLevel": {
-            "total": len(fields),
-            "lowConfidence": len(low_confidence),
-            "manualCorrectionRate": round(len(corrections) / (len(fields) or 1), 4),
-        },
+        "fieldLevel": field_level,
+        "evidenceLevel": evidence_level,
+        "tableLevel": table_level,
+        "sealLevel": seal_level,
         "jobLevel": {
             "total": len(jobs),
             "success": success_results,
@@ -4840,12 +5073,787 @@ def fde_ocr_quality_snapshot() -> dict[str, Any]:
         "parseResults": repo.clone(results[:20]),
         "corrections": repo.clone(corrections[:20]),
         "evalRuns": repo.clone(eval_runs[:20]),
+        "cacheMetrics": cache_metrics,
+        "qualityReasonCounts": quality_reason_counts,
+        "runtimeDoctor": fde_ocr_runtime_doctor_snapshot(),
         "failurePools": {
+            "fieldFailures": repo.clone(field_failures[:20]),
             "tableFailures": repo.clone(table_failures[:20]),
             "sealFailures": repo.clone(seal_failures[:20]),
             "engineFailures": repo.clone(engine_failures[:20]),
         },
     }
+
+
+def fde_ocr_field_failures(results: list[dict[str, Any]], extracted_fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    failures: list[dict[str, Any]] = []
+    for result in results:
+        parse_result_id = result.get("parseResultId") or result.get("id")
+        for diagnostic_item in result.get("diagnostics", []):
+            code = str((diagnostic_item or {}).get("code") if isinstance(diagnostic_item, dict) else diagnostic_item)
+            upper_code = code.upper()
+            if "FIELD" in upper_code or "CONFLICT" in upper_code:
+                payload = repo.clone(diagnostic_item) if isinstance(diagnostic_item, dict) else {"code": code}
+                payload["parseResultId"] = parse_result_id
+                payload.setdefault("source", "diagnostic")
+                failures.append(payload)
+        for field in result.get("fields", []):
+            if not isinstance(field, dict):
+                continue
+            flags = [str(flag) for flag in field.get("qualityFlags") or []]
+            confidence = float(field.get("confidence") or 0)
+            if flags or confidence < 0.75:
+                if "field_value_conflict" in flags:
+                    code = "FIELD_VALUE_CONFLICT"
+                elif "field_evidence_missing" in flags:
+                    code = "FIELD_EVIDENCE_MISSING"
+                else:
+                    code = "FIELD_LOW_CONFIDENCE"
+                failures.append(
+                    {
+                        "code": code,
+                        "source": "field",
+                        "parseResultId": parse_result_id,
+                        "fieldCode": field.get("fieldCode") or field.get("fieldName"),
+                        "fieldName": field.get("fieldName"),
+                        "fieldValue": field.get("fieldValue"),
+                        "confidence": field.get("confidence"),
+                        "qualityFlags": flags,
+                    }
+                )
+        failures.extend(
+            fde_missing_evidence_items(
+                result,
+                target_type="field",
+                code="FIELD_EVIDENCE_MISSING",
+                parse_result_id=parse_result_id,
+            )
+        )
+    for field in extracted_fields:
+        confidence = float(field.get("confidence") or 0)
+        if confidence < 0.75:
+            failures.append(
+                {
+                    "code": "FIELD_LOW_CONFIDENCE",
+                    "source": "extracted_field",
+                    "fieldId": field.get("id"),
+                    "documentVersionId": field.get("documentVersionId"),
+                    "fieldCode": field.get("fieldCode") or field.get("fieldName"),
+                    "fieldName": field.get("fieldName"),
+                    "fieldValue": field.get("fieldValue"),
+                    "confidence": field.get("confidence"),
+                }
+            )
+    return failures
+
+
+def fde_ocr_table_failures(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    failures: list[dict[str, Any]] = []
+    for result in results:
+        parse_result_id = result.get("parseResultId") or result.get("id")
+        for table in result.get("tables", []):
+            if not isinstance(table, dict):
+                continue
+            flags = [str(flag) for flag in table.get("qualityFlags") or []]
+            review_flags = [flag for flag in flags if ocr_quality_flag_requires_review(flag)]
+            if not review_flags:
+                continue
+            failures.append(
+                {
+                    "code": "TABLE_EVIDENCE_MISSING" if "table_evidence_missing" in review_flags else "TABLE_REVIEW_REQUIRED",
+                    "source": "table",
+                    "parseResultId": parse_result_id,
+                    "tableId": table.get("tableId"),
+                    "businessSchema": table.get("businessSchema"),
+                    "sourceEngine": table.get("sourceEngine"),
+                    "structureConfidence": table.get("structureConfidence"),
+                    "qualityFlags": review_flags,
+                }
+            )
+        failures.extend(
+            fde_missing_evidence_items(
+                result,
+                target_type="table",
+                code="TABLE_EVIDENCE_MISSING",
+                parse_result_id=parse_result_id,
+            )
+        )
+    return dedupe_failure_pool(failures)
+
+
+def fde_ocr_seal_failures(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    failures: list[dict[str, Any]] = []
+    for result in results:
+        parse_result_id = result.get("parseResultId") or result.get("id")
+        for seal in result.get("seals", []):
+            if not isinstance(seal, dict):
+                continue
+            flags = [str(flag) for flag in seal.get("qualityFlags") or []]
+            review_flags = [flag for flag in flags if ocr_quality_flag_requires_review(flag)]
+            if not review_flags:
+                continue
+            failures.append(
+                {
+                    "code": "SEAL_EVIDENCE_MISSING" if "seal_evidence_missing" in review_flags else "SEAL_REVIEW_REQUIRED",
+                    "source": "seal",
+                    "parseResultId": parse_result_id,
+                    "sealId": seal.get("sealId"),
+                    "sealName": seal.get("sealName"),
+                    "sealType": seal.get("sealType"),
+                    "sourceEngine": seal.get("sourceEngine"),
+                    "ocrConfidence": seal.get("ocrConfidence"),
+                    "qualityFlags": review_flags,
+                }
+            )
+        failures.extend(
+            fde_missing_evidence_items(
+                result,
+                target_type="seal",
+                code="SEAL_EVIDENCE_MISSING",
+                parse_result_id=parse_result_id,
+            )
+        )
+    return dedupe_failure_pool(failures)
+
+
+def ocr_quality_flag_requires_review(flag: Any) -> bool:
+    normalized = str(flag or "").lower()
+    return any(
+        token in normalized
+        for token in ["missing", "requires", "review", "low_confidence", "conflict", "fallback", "failed", "timeout"]
+    )
+
+
+def fde_missing_evidence_items(
+    result: dict[str, Any],
+    *,
+    target_type: str,
+    code: str,
+    parse_result_id: str | None,
+) -> list[dict[str, Any]]:
+    quality = result.get("quality") if isinstance(result.get("quality"), dict) else {}
+    items = []
+    for item in quality.get("missingEvidence") or []:
+        if not isinstance(item, dict) or item.get("targetType") != target_type:
+            continue
+        items.append(
+            {
+                **repo.clone(item),
+                "code": code,
+                "source": "quality.missingEvidence",
+                "parseResultId": parse_result_id,
+            }
+        )
+    return items
+
+
+def dedupe_failure_pool(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen = set()
+    deduped = []
+    for item in items:
+        key = (
+            item.get("code"),
+            item.get("parseResultId"),
+            item.get("targetType"),
+            item.get("targetId"),
+            item.get("tableId"),
+            item.get("sealId"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
+
+
+def fde_ocr_quality_reason_counts(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    counts: dict[str, int] = {}
+    for result in results:
+        quality = result.get("quality") if isinstance(result.get("quality"), dict) else {}
+        for reason in quality.get("reasons") or []:
+            key = str(reason)
+            counts[key] = counts.get(key, 0) + 1
+    return [{"reason": reason, "count": count} for reason, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))]
+
+
+def fde_ocr_field_level(
+    results: list[dict[str, Any]],
+    extracted_fields: list[dict[str, Any]],
+    corrections: list[dict[str, Any]],
+) -> dict[str, Any]:
+    parse_fields = [
+        field
+        for result in results
+        for field in result.get("fields", [])
+        if isinstance(field, dict)
+    ]
+    source_counts: dict[str, int] = {}
+    code_counts: dict[str, int] = {}
+    flag_counts: dict[str, int] = {}
+    missing_required_counts: dict[str, int] = {}
+    missing_required_items: list[dict[str, Any]] = []
+    low_confidence_parse_fields = []
+    conflict_fields = []
+    evidence_missing_fields = []
+    confidence_values: list[float] = []
+    for result in results:
+        quality = result.get("quality") if isinstance(result.get("quality"), dict) else {}
+        for field_code in quality.get("missingFields") or []:
+            key = str(field_code or "unknown")
+            missing_required_counts[key] = missing_required_counts.get(key, 0) + 1
+            missing_required_items.append(
+                {
+                    "fieldCode": key,
+                    "parseResultId": result.get("parseResultId") or result.get("id"),
+                    "profileId": result.get("profileId"),
+                    "documentType": result.get("documentType"),
+                }
+            )
+    for field in parse_fields:
+        flags = [str(flag) for flag in field.get("qualityFlags") or []]
+        source = str(field.get("sourceEngine") or field.get("source") or "unknown")
+        code = str(field.get("fieldCode") or field.get("fieldName") or "unknown")
+        source_counts[source] = source_counts.get(source, 0) + 1
+        code_counts[code] = code_counts.get(code, 0) + 1
+        for flag in flags:
+            flag_counts[flag] = flag_counts.get(flag, 0) + 1
+        confidence = safe_float(field.get("confidence"))
+        confidence_values.append(confidence)
+        if confidence < 0.75:
+            low_confidence_parse_fields.append(field)
+        if any("conflict" in flag.lower() for flag in flags):
+            conflict_fields.append(field)
+        if any("evidence_missing" in flag.lower() or "missing_evidence" in flag.lower() for flag in flags):
+            evidence_missing_fields.append(field)
+
+    low_confidence_extracted = [item for item in extracted_fields if safe_float(item.get("confidence")) < 0.85]
+    field_count = len(parse_fields)
+    return {
+        "total": len(extracted_fields),
+        "lowConfidence": len(low_confidence_extracted),
+        "manualCorrectionRate": round(len(corrections) / (len(extracted_fields) or 1), 4),
+        "parseResultCount": len(results),
+        "parseFieldCount": field_count,
+        "lowConfidenceParseFieldCount": len(low_confidence_parse_fields),
+        "conflictFieldCount": len(conflict_fields),
+        "evidenceMissingFieldCount": len(evidence_missing_fields),
+        "missingRequiredFieldCount": len(missing_required_items),
+        "averageFieldConfidence": round(sum(confidence_values) / (len(confidence_values) or 1), 4),
+        "missingRequiredFieldBreakdown": [
+            {"fieldCode": code, "count": count}
+            for code, count in sorted(missing_required_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "sampleMissingRequiredFields": repo.clone(missing_required_items[:10]),
+        "sourceBreakdown": [
+            {"source": source, "count": count}
+            for source, count in sorted(source_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "fieldCodeBreakdown": [
+            {"fieldCode": code, "count": count}
+            for code, count in sorted(code_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "qualityFlagCounts": [
+            {"flag": flag, "count": count}
+            for flag, count in sorted(flag_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "sampleFields": repo.clone(parse_fields[:10]),
+    }
+
+
+def fde_ocr_table_level(results: list[dict[str, Any]]) -> dict[str, Any]:
+    tables = [
+        table
+        for result in results
+        for table in result.get("tables", [])
+        if isinstance(table, dict)
+    ]
+    source_counts: dict[str, int] = {}
+    flag_counts: dict[str, int] = {}
+    missing_required_counts: dict[str, int] = {}
+    missing_required_items: list[dict[str, Any]] = []
+    formal_tables = []
+    heuristic_tables = []
+    review_required = []
+    business_row_count = 0
+    normalized_row_count = 0
+    cell_count = 0
+    confidence_values: list[float] = []
+    for result in results:
+        quality = result.get("quality") if isinstance(result.get("quality"), dict) else {}
+        for table_code in quality.get("missingTables") or []:
+            key = str(table_code or "unknown")
+            missing_required_counts[key] = missing_required_counts.get(key, 0) + 1
+            missing_required_items.append(
+                {
+                    "tableCode": key,
+                    "parseResultId": result.get("parseResultId") or result.get("id"),
+                    "profileId": result.get("profileId"),
+                    "documentType": result.get("documentType"),
+                }
+            )
+    for table in tables:
+        flags = [str(flag) for flag in table.get("qualityFlags") or []]
+        source = str(table.get("sourceEngine") or table.get("source") or "unknown")
+        source_counts[source] = source_counts.get(source, 0) + 1
+        for flag in flags:
+            flag_counts[flag] = flag_counts.get(flag, 0) + 1
+        try:
+            confidence_values.append(float(table.get("structureConfidence") or table.get("confidence") or 0))
+        except (TypeError, ValueError):
+            confidence_values.append(0.0)
+        if fde_table_is_heuristic(table):
+            heuristic_tables.append(table)
+        else:
+            formal_tables.append(table)
+        if any(ocr_quality_flag_requires_review(flag) for flag in flags):
+            review_required.append(table)
+        business_row_count += len([row for row in table.get("businessRows") or [] if isinstance(row, dict)])
+        normalized_row_count += len([row for row in table.get("normalizedRows") or [] if isinstance(row, dict)])
+        cell_count += len([cell for cell in table.get("cells") or [] if isinstance(cell, dict)])
+    table_count = len(tables)
+    return {
+        "parseResultCount": len(results),
+        "tableCount": table_count,
+        "formalTableCount": len(formal_tables),
+        "heuristicTableCount": len(heuristic_tables),
+        "reviewRequiredCount": len(review_required),
+        "missingRequiredTableCount": len(missing_required_items),
+        "businessRowCount": business_row_count,
+        "normalizedRowCount": normalized_row_count,
+        "cellCount": cell_count,
+        "averageTableConfidence": round(sum(confidence_values) / (len(confidence_values) or 1), 4),
+        "formalTableRate": round(len(formal_tables) / (table_count or 1), 4),
+        "heuristicTableRate": round(len(heuristic_tables) / (table_count or 1), 4),
+        "reviewRequiredRate": round(len(review_required) / (table_count or 1), 4),
+        "missingRequiredTableBreakdown": [
+            {"tableCode": code, "count": count}
+            for code, count in sorted(missing_required_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "sampleMissingRequiredTables": repo.clone(missing_required_items[:10]),
+        "sourceBreakdown": [
+            {"source": source, "count": count}
+            for source, count in sorted(source_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "qualityFlagCounts": [
+            {"flag": flag, "count": count}
+            for flag, count in sorted(flag_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "sampleTables": repo.clone(tables[:10]),
+    }
+
+
+def fde_table_is_heuristic(table: dict[str, Any]) -> bool:
+    source = str(table.get("sourceEngine") or "")
+    flags = {str(flag) for flag in table.get("qualityFlags") or []}
+    return source.startswith("heuristic_") or "heuristic_table_fallback" in flags
+
+
+def fde_ocr_seal_level(results: list[dict[str, Any]]) -> dict[str, Any]:
+    seals = [
+        seal
+        for result in results
+        for seal in result.get("seals", [])
+        if isinstance(seal, dict)
+    ]
+    source_counts: dict[str, int] = {}
+    flag_counts: dict[str, int] = {}
+    type_counts: dict[str, int] = {}
+    readable_type_counts: dict[str, int] = {}
+    matched_expected_counts: dict[str, int] = {}
+    missing_expected_counts: dict[str, int] = {}
+    missing_expected_items: list[dict[str, Any]] = []
+    fragment_seals = []
+    readable_seals = []
+    visual_candidates = []
+    review_required = []
+    confidence_values: list[float] = []
+    for result in results:
+        quality = result.get("quality") if isinstance(result.get("quality"), dict) else {}
+        for seal_type in quality.get("matchedSealTypes") or []:
+            key = str(seal_type or "unknown")
+            matched_expected_counts[key] = matched_expected_counts.get(key, 0) + 1
+        for seal_type in quality.get("missingExpectedSealTypes") or []:
+            key = str(seal_type or "unknown")
+            missing_expected_counts[key] = missing_expected_counts.get(key, 0) + 1
+            missing_expected_items.append(
+                {
+                    "sealType": key,
+                    "parseResultId": result.get("parseResultId") or result.get("id"),
+                    "profileId": result.get("profileId"),
+                    "documentType": result.get("documentType"),
+                }
+            )
+    for seal in seals:
+        flags = [str(flag) for flag in seal.get("qualityFlags") or []]
+        source = str(seal.get("sourceEngine") or seal.get("source") or "unknown")
+        seal_type = str(seal.get("sealType") or "unknown")
+        source_counts[source] = source_counts.get(source, 0) + 1
+        type_counts[seal_type] = type_counts.get(seal_type, 0) + 1
+        for flag in flags:
+            flag_counts[flag] = flag_counts.get(flag, 0) + 1
+        try:
+            confidence_values.append(float(seal.get("ocrConfidence") or seal.get("visualConfidence") or 0))
+        except (TypeError, ValueError):
+            confidence_values.append(0.0)
+        if "fragment_seal_text" in flags or source == "fragment_seal_text_fusion":
+            fragment_seals.append(seal)
+        if fde_seal_is_visual_candidate(seal):
+            visual_candidates.append(seal)
+        if fde_seal_text_is_readable(seal):
+            readable_seals.append(seal)
+            readable_type_counts[seal_type] = readable_type_counts.get(seal_type, 0) + 1
+        if any(ocr_quality_flag_requires_review(flag) for flag in flags):
+            review_required.append(seal)
+    seal_count = len(seals)
+    return {
+        "parseResultCount": len(results),
+        "sealCount": seal_count,
+        "readableSealCount": len(readable_seals),
+        "fragmentSealCount": len(fragment_seals),
+        "visualCandidateCount": len(visual_candidates),
+        "reviewRequiredCount": len(review_required),
+        "missingExpectedSealTypeCount": len(missing_expected_items),
+        "missingTextCount": len([seal for seal in visual_candidates if not fde_seal_text_is_readable(seal)]),
+        "averageSealConfidence": round(sum(confidence_values) / (len(confidence_values) or 1), 4),
+        "readableSealRate": round(len(readable_seals) / (seal_count or 1), 4),
+        "fragmentSealRate": round(len(fragment_seals) / (seal_count or 1), 4),
+        "visualCandidateReviewRate": round(len(review_required) / (len(visual_candidates) or 1), 4),
+        "sealTypeBreakdown": [
+            {"sealType": seal_type, "count": count}
+            for seal_type, count in sorted(type_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "readableSealTypeBreakdown": [
+            {"sealType": seal_type, "count": count}
+            for seal_type, count in sorted(readable_type_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "matchedExpectedSealTypeBreakdown": [
+            {"sealType": seal_type, "count": count}
+            for seal_type, count in sorted(matched_expected_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "missingExpectedSealTypeBreakdown": [
+            {"sealType": seal_type, "count": count}
+            for seal_type, count in sorted(missing_expected_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "sampleMissingExpectedSealTypes": repo.clone(missing_expected_items[:10]),
+        "sourceBreakdown": [
+            {"source": source, "count": count}
+            for source, count in sorted(source_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "qualityFlagCounts": [
+            {"flag": flag, "count": count}
+            for flag, count in sorted(flag_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "sampleSeals": repo.clone(seals[:10]),
+    }
+
+
+def fde_seal_is_visual_candidate(seal: dict[str, Any]) -> bool:
+    flags = {str(flag) for flag in seal.get("qualityFlags") or []}
+    seal_type = str(seal.get("sealType") or "")
+    seal_name = str(seal.get("sealName") or "")
+    return "visual_candidate_only" in flags or seal_type.startswith("visual_") or seal_name.startswith("视觉")
+
+
+def fde_seal_text_is_readable(seal: dict[str, Any]) -> bool:
+    if fde_seal_is_visual_candidate(seal):
+        return False
+    seal_name = str(seal.get("sealName") or "").strip()
+    if not seal_name:
+        return False
+    try:
+        confidence = float(seal.get("ocrConfidence") or 0)
+    except (TypeError, ValueError):
+        return False
+    return confidence >= 0.65
+
+
+def fde_ocr_evidence_level(results: list[dict[str, Any]]) -> dict[str, Any]:
+    scores: list[float] = []
+    missing_items: list[dict[str, Any]] = []
+    by_type = {"field": 0, "table": 0, "seal": 0, "unknown": 0}
+    for result in results:
+        quality = result.get("quality") if isinstance(result.get("quality"), dict) else {}
+        if "evidenceCompleteness" in quality:
+            try:
+                scores.append(float(quality.get("evidenceCompleteness") or 0))
+            except (TypeError, ValueError):
+                scores.append(0.0)
+        missing_evidence = [item for item in quality.get("missingEvidence") or [] if isinstance(item, dict)]
+        for item in missing_evidence:
+            target_type = str(item.get("targetType") or "unknown")
+            if target_type not in by_type:
+                target_type = "unknown"
+            by_type[target_type] += 1
+            missing_items.append(
+                {
+                    **repo.clone(item),
+                    "parseResultId": result.get("parseResultId") or result.get("id"),
+                    "profileId": result.get("profileId"),
+                    "documentType": result.get("documentType"),
+                }
+            )
+    return {
+        "parseResultCount": len(results),
+        "scoredResultCount": len(scores),
+        "averageEvidenceCompleteness": round(sum(scores) / (len(scores) or 1), 4),
+        "missingEvidence": len(missing_items),
+        "fieldEvidenceMissing": by_type["field"],
+        "tableEvidenceMissing": by_type["table"],
+        "sealEvidenceMissing": by_type["seal"],
+        "unknownEvidenceMissing": by_type["unknown"],
+        "missingEvidenceItems": repo.clone(missing_items[:20]),
+    }
+
+
+def fde_ocr_cache_metrics(results: list[dict[str, Any]], jobs: list[dict[str, Any]]) -> dict[str, Any]:
+    sources = results if results else jobs
+    engine_runs = [
+        run
+        for source in sources
+        for run in source.get("engineRuns", [])
+        if isinstance(run, dict)
+    ]
+    total_runs = len(engine_runs)
+    engine_cache_hits = len([run for run in engine_runs if bool(run.get("engineCacheHit"))])
+    variant_cache_hits = len([run for run in engine_runs if bool(run.get("variantCacheHit"))])
+    result_cache_hits = len([run for run in engine_runs if bool(run.get("resultCacheHit")) or run.get("engine") == "ocr_result_cache"])
+    total_duration = sum(safe_int(run.get("durationMs")) for run in engine_runs)
+    by_engine: dict[str, dict[str, Any]] = {}
+    for run in engine_runs:
+        engine = str(run.get("engine") or "unknown")
+        item = by_engine.setdefault(
+            engine,
+            {
+                "engine": engine,
+                "runCount": 0,
+                "engineCacheHits": 0,
+                "variantCacheHits": 0,
+                "failures": 0,
+                "totalDurationMs": 0,
+                "averageDurationMs": 0,
+            },
+        )
+        item["runCount"] += 1
+        item["engineCacheHits"] += 1 if bool(run.get("engineCacheHit")) else 0
+        item["variantCacheHits"] += 1 if bool(run.get("variantCacheHit")) else 0
+        item["failures"] += 1 if str(run.get("status") or "") == "failed" else 0
+        item["totalDurationMs"] += safe_int(run.get("durationMs"))
+    for item in by_engine.values():
+        item["averageDurationMs"] = round(item["totalDurationMs"] / (item["runCount"] or 1), 2)
+        item["engineCacheHitRate"] = round(item["engineCacheHits"] / (item["runCount"] or 1), 4)
+    slow_engines = sorted(by_engine.values(), key=lambda item: item["totalDurationMs"], reverse=True)[:8]
+    return {
+        "engineRunCount": total_runs,
+        "engineCacheHits": engine_cache_hits,
+        "engineCacheHitRate": round(engine_cache_hits / (total_runs or 1), 4),
+        "variantCacheHits": variant_cache_hits,
+        "variantCacheHitRate": round(variant_cache_hits / (total_runs or 1), 4),
+        "resultCacheHits": result_cache_hits,
+        "totalDurationMs": total_duration,
+        "averageDurationMs": round(total_duration / (total_runs or 1), 2),
+        "slowEngines": repo.clone(slow_engines),
+    }
+
+
+def safe_int(value: Any) -> int:
+    try:
+        return int(float(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def safe_float(value: Any) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def fde_ocr_runtime_doctor_snapshot() -> dict[str, Any]:
+    client = OcrClient()
+    if not client.enabled:
+        return {
+            "status": "unavailable",
+            "ok": False,
+            "summary": {"pass": 0, "warn": 1, "fail": 0, "total": 1},
+            "topIssues": [
+                {
+                    "name": "ocr.base-url",
+                    "status": "warn",
+                    "message": "AICHECK_OCR_BASE_URL is not configured for API service.",
+                    "fix": "Set AICHECK_OCR_BASE_URL so FDE can read OCR runtime doctor.",
+                }
+            ],
+        }
+    try:
+        report = client.runtime_doctor()
+    except (IntegrationServiceError, RuntimeError) as exc:
+        return {
+            "status": "unavailable",
+            "ok": False,
+            "summary": {"pass": 0, "warn": 0, "fail": 1, "total": 1},
+            "topIssues": [
+                {
+                    "name": "ocr.runtime-doctor",
+                    "status": "fail",
+                    "message": f"OCR runtime doctor is unavailable: {exc.__class__.__name__}",
+                    "fix": "Check ocr-service network, /internal/ocr/doctor, and AICHECK_OCR_BASE_URL.",
+                }
+            ],
+        }
+    checks = [item for item in report.get("checks") or [] if isinstance(item, dict)]
+    top_issues = [item for item in checks if item.get("status") in {"fail", "warn"}][:8]
+    return {
+        "status": "ready" if report.get("ok") else "attention",
+        "ok": bool(report.get("ok")),
+        "summary": report.get("summary") or {},
+        "topIssues": repo.clone(top_issues),
+        "subprocessPython": report.get("subprocessPython"),
+        "schemaVersion": report.get("schemaVersion"),
+    }
+
+
+def fde_build_ocr_evaluation_report(body: dict[str, Any]) -> dict[str, Any]:
+    cases = body.get("cases") if isinstance(body.get("cases"), list) else None
+    thresholds = body.get("thresholds") if isinstance(body.get("thresholds"), dict) else None
+    if cases is None:
+        cases = fde_ocr_evaluation_cases_from_results(str(body.get("profileId") or "all"))
+    if not cases:
+        cases = [
+            {
+                "caseId": "ocr-empty-eval",
+                "scenario": "quality_gate_profile",
+                "minScore": 0,
+                "result": {"parseResultId": "empty", "status": "failed", "fields": [], "tables": [], "seals": [], "quality": {"status": "failed", "reasons": ["NO_OCR_RESULTS"]}},
+                "expected": {"qualityStatus": "failed", "qualityReasons": ["NO_OCR_RESULTS"]},
+            }
+        ]
+    return evaluate_cases(cases, thresholds=thresholds)
+
+
+def fde_ocr_evaluation_cases_from_results(profile_id: str) -> list[dict[str, Any]]:
+    results = [
+        item
+        for item in repo.state.get("ocr_parse_results", [])
+        if profile_id in {"", "all"} or str(item.get("profileId") or "") == profile_id
+    ]
+    if not results and profile_id not in {"", "all"}:
+        results = list(repo.state.get("ocr_parse_results", []))
+    cases: list[dict[str, Any]] = []
+    for result in results[:20]:
+        parse_id = str(result.get("parseResultId") or result.get("id") or "ocr-result")
+        if result.get("fields"):
+            cases.append(
+                {
+                    "caseId": f"{parse_id}-fields",
+                    "scenario": "field_extraction_profile",
+                    "profileId": result.get("profileId"),
+                    "documentType": result.get("documentType"),
+                    "result": result,
+                    "expected": {"fields": expected_fields_from_result(result)},
+                    "minScore": 0.9,
+                }
+            )
+        if result.get("tables"):
+            cases.append(
+                {
+                    "caseId": f"{parse_id}-tables",
+                    "scenario": "table_structure_profile",
+                    "profileId": result.get("profileId"),
+                    "documentType": result.get("documentType"),
+                    "result": result,
+                    "expected": {"tables": expected_tables_from_result(result)},
+                    "minScore": 0.9,
+                }
+            )
+        if result.get("seals"):
+            cases.append(
+                {
+                    "caseId": f"{parse_id}-seals",
+                    "scenario": "seal_text_profile",
+                    "profileId": result.get("profileId"),
+                    "documentType": result.get("documentType"),
+                    "result": result,
+                    "expected": {"seals": expected_seals_from_result(result)},
+                    "minScore": 0.9,
+                }
+            )
+        quality = result.get("quality") if isinstance(result.get("quality"), dict) else {}
+        if quality.get("status") or quality.get("reasons"):
+            cases.append(
+                {
+                    "caseId": f"{parse_id}-quality",
+                    "scenario": "quality_gate_profile",
+                    "profileId": result.get("profileId"),
+                    "documentType": result.get("documentType"),
+                    "result": result,
+                    "expected": {
+                        "qualityStatus": quality.get("status"),
+                        "qualityReasons": quality.get("reasons") or [],
+                    },
+                    "minScore": 0.9,
+                }
+            )
+    return cases
+
+
+def expected_fields_from_result(result: dict[str, Any]) -> list[dict[str, Any]]:
+    expected = []
+    for field in result.get("fields") or []:
+        if not isinstance(field, dict):
+            continue
+        field_code = str(field.get("fieldCode") or field.get("fieldName") or "")
+        if not field_code:
+            continue
+        item = {"fieldCode": field_code, "value": field.get("fieldValue")}
+        if field.get("bbox") or field.get("polygon"):
+            item["bbox"] = field.get("bbox") or field.get("polygon")
+            item["bboxIouThreshold"] = 0.5
+        expected.append(item)
+    return expected[:50]
+
+
+def expected_tables_from_result(result: dict[str, Any]) -> list[dict[str, Any]]:
+    expected = []
+    for table in result.get("tables") or []:
+        if not isinstance(table, dict):
+            continue
+        item: dict[str, Any] = {
+            "businessSchema": table.get("businessSchema"),
+            "tableId": table.get("tableId"),
+            "minRows": int(table.get("rows") or 0),
+            "minColumns": int(table.get("columns") or 0),
+        }
+        rows = table.get("businessRows") or table.get("normalizedRows") or []
+        if rows and isinstance(rows[0], dict):
+            item["requiredBusinessKeys"] = [key for key, value in rows[0].items() if value not in {None, ""}][:12]
+        if table.get("bbox") or table.get("polygon"):
+            item["bbox"] = table.get("bbox") or table.get("polygon")
+            item["bboxIouThreshold"] = 0.5
+        expected.append({key: value for key, value in item.items() if fde_expected_value_present(value)})
+    return expected[:20]
+
+
+def expected_seals_from_result(result: dict[str, Any]) -> list[dict[str, Any]]:
+    expected = []
+    for seal in result.get("seals") or []:
+        if not isinstance(seal, dict):
+            continue
+        seal_name = str(seal.get("sealName") or "")
+        item: dict[str, Any] = {
+            "sealType": seal.get("sealType"),
+            "nameContains": seal_name,
+            "minConfidence": min(float(seal.get("ocrConfidence") or seal.get("visualConfidence") or 0), 0.8),
+        }
+        if seal.get("bbox") or seal.get("polygon"):
+            item["bbox"] = seal.get("bbox") or seal.get("polygon")
+            item["bboxIouThreshold"] = 0.5
+        expected.append({key: value for key, value in item.items() if fde_expected_value_present(value)})
+    return expected[:20]
+
+
+def fde_expected_value_present(value: Any) -> bool:
+    return value is not None and value != "" and value != []
 
 
 @router.get("/fde/ocr-quality")
@@ -4926,7 +5934,39 @@ def fde_create_ocr_evaluation_run(
         role, role_error = fde_error_unless_allowed(request, "fde:evaluation:run")
         if role_error:
             return role_error
-        run = repo.create_ocr_eval_run({**body, "createdByRole": role or "fde"})
+        evaluation_report = fde_build_ocr_evaluation_report(body)
+        case_diagnostics = [
+            {
+                "caseId": case.get("caseId"),
+                "scenario": case.get("scenario"),
+                "score": case.get("score"),
+                "passed": case.get("passed"),
+                "findings": case.get("findings") or [],
+                "details": case.get("details") or {},
+            }
+            for case in evaluation_report.get("cases", [])
+        ]
+        evaluation_summary = compact_evaluation_report(evaluation_report)
+        evaluation_case_count = int(
+            (evaluation_report.get("summary") or {}).get("cases") or len(evaluation_report.get("cases") or [])
+        )
+        run = repo.create_ocr_eval_run(
+            {
+                **body,
+                "createdByRole": role or "fde",
+                "caseCount": evaluation_case_count,
+                "evaluationReport": {
+                    "ok": evaluation_report.get("ok"),
+                    "summary": evaluation_report.get("summary"),
+                    "metrics": evaluation_report.get("metrics"),
+                    "findingCounts": evaluation_report.get("findingCounts") or {},
+                    "thresholdFailures": evaluation_report.get("thresholdFailures") or [],
+                },
+                "evaluationSummary": evaluation_summary,
+                "scenarioMetrics": evaluation_report.get("scenarios") or {},
+                "caseDiagnostics": case_diagnostics,
+            }
+        )
         audit_id = repo.add_audit("FDE OCR 离线评测", "OcrEvaluationRun", run["id"])
         return ok({"run": run, "auditLogId": audit_id}, request)
 

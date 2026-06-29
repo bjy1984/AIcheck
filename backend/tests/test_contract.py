@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import io
+import importlib.util
 import json
 import inspect
+import sys
 import zipfile
+from argparse import Namespace
+from pathlib import Path
 
 import httpx
 from fastapi.testclient import TestClient
@@ -147,6 +151,496 @@ def test_ocr_healthz_reports_pipeline_flags(monkeypatch) -> None:
     assert health["placeholderAllowed"] is False
 
 
+def test_ocr_runtime_doctor_reports_dependency_contract(monkeypatch) -> None:
+    from apps.ocr_service.main import app as ocr_app
+
+    monkeypatch.delenv("AICHECK_OCR_SUBPROCESS_PYTHON", raising=False)
+    ocr_client = TestClient(ocr_app)
+    report = assert_ok(ocr_client.get("/internal/ocr/doctor"))
+
+    assert report["schemaVersion"] == "aicheck-ocr-runtime-doctor-v1"
+    assert {"pass", "warn", "fail", "total"} <= set(report["summary"])
+    names = {item["name"] for item in report["checks"]}
+    assert "package.cv2" in names
+    assert "subprocess.python" in names
+    assert "preprocess.variants" in names
+    assert "policy.placeholder-disabled" in names
+
+
+def test_ocr_runtime_doctor_recommends_discovered_local_ocr_env(monkeypatch, tmp_path) -> None:
+    from apps.ocr_service import runtime_doctor
+
+    root = tmp_path / "agentdesign"
+    python_bin = root / ".venv-ocr311" / "bin" / "python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    model_base = root / ".paddlex-cache" / "official_models"
+    for model_name in [
+        "PP-OCRv6_medium_det",
+        "PP-OCRv6_medium_rec",
+        "PP-OCRv4_server_seal_det",
+        "PP-OCRv4_server_rec",
+        "PP-DocLayout-L",
+    ]:
+        (model_base / model_name).mkdir(parents=True)
+
+    monkeypatch.setenv("AICHECK_AGENTDESIGN_HOST_PATH", str(root))
+    monkeypatch.setenv("AICHECK_OCR_SUBPROCESS_PYTHON", str(python_bin))
+    monkeypatch.delenv("AICHECK_PADDLEX_MODEL_CACHE", raising=False)
+    monkeypatch.setattr(
+        runtime_doctor,
+        "check_subprocess_packages",
+        lambda _python_bin, packages: {name: True for name in packages},
+    )
+
+    report = runtime_doctor.build_runtime_doctor(
+        engine_status=[],
+        model_manifest={"modelDirs": {}},
+        offline_only=True,
+        network_disabled=True,
+        placeholder_allowed=False,
+    )
+
+    assert report["recommendedEnv"]["AICHECK_OCR_SUBPROCESS_PYTHON"] == str(python_bin)
+    assert report["recommendedEnv"]["AICHECK_PADDLEOCR_DET_MODEL_DIR"] == str(model_base / "PP-OCRv6_medium_det")
+    assert report["recommendedEnv"]["AICHECK_SEAL_DET_MODEL_DIR"] == str(model_base / "PP-OCRv4_server_seal_det")
+    assert report["recommendedEnv"]["AICHECK_PPSTRUCTURE_LAYOUT_MODEL_DIR"] == str(model_base / "PP-DocLayout-L")
+    assert report["discovered"]["subprocessPythonCandidates"][0]["usable"] is True
+    checks_by_name = {item["name"]: item for item in report["checks"]}
+    assert checks_by_name["subprocess.python"]["status"] == "pass"
+    assert checks_by_name["package.paddleocr"]["status"] == "warn"
+    assert checks_by_name["package.paddleocr"]["data"]["subprocessCovered"] is True
+    assert checks_by_name["preprocess.variants"]["status"] == "pass"
+
+
+def test_piping_raw_cells_mapping_extracts_business_columns() -> None:
+    from apps.ocr_service.service import map_piping_row
+
+    mapped = map_piping_row(
+        {
+            "pipeNo": "PL8302",
+            "rawCells": [
+                "2",
+                "PL8302",
+                "DN100",
+                "MIB",
+                "1",
+                "Φ108x4",
+                "化工品",
+                "(丙醇",
+                "液体",
+                "易燃易爆",
+                "装车鹤管",
+                "F8301A",
+                "V8301",
+                "Y-02",
+                "常温",
+                "0.01",
+                "50",
+                "0.1",
+                "水",
+                "0.150",
+                "空气",
+                "0.1",
+                "RT",
+                "10%",
+                "III",
+                "AB",
+            ],
+        }
+    )
+
+    assert mapped["pipeNo"] == "PL8302"
+    assert mapped["nominalDiameter"] == "DN100"
+    assert mapped["outerDiameterThickness"] == "Φ108x4"
+    assert mapped["mediumName"] == "化工品(丙醇"
+    assert mapped["pAndId"] == "Y-02"
+    assert mapped["designPressure"] == "0.1"
+    assert mapped["weldDetectionMethod"] == "RT"
+    assert mapped["weldDetectionScale"] == "10%"
+    assert mapped["eligibleLevel"] == "III"
+    assert mapped["ranking"] == "AB"
+
+
+def test_piping_continuation_row_inherits_pipe_no_and_normalizes_values() -> None:
+    from apps.ocr_service.service import map_piping_row
+
+    mapped = map_piping_row(
+        {
+            "pipeNo": "PL8303",
+            "isContinuation": True,
+            "sourceRowIndex": 7,
+            "rawCells": [
+                "4",
+                "DN80",
+                "MIB",
+                "GC2",
+                "089x4",
+                "化工品",
+                "(丙醇",
+                "液体",
+                "易燃易爆",
+                "P8301A",
+                "四区交换站",
+                "Y-02",
+                "常温",
+                "常温",
+                "0.5",
+                "0.5",
+                "50",
+                "50",
+                "0.55",
+                "水",
+                "0.825",
+                "空气",
+                "0.55",
+                "RT",
+                "10%",
+                "III",
+                "AB",
+            ],
+        }
+    )
+
+    assert mapped["pipeNo"] == "PL8303"
+    assert mapped["isContinuation"] == "true"
+    assert mapped["sourceRowIndex"] == "7"
+    assert mapped["nominalDiameter"] == "DN80"
+    assert mapped["outerDiameterThickness"] == "Φ89x4"
+    assert mapped["operatingPressure"] == "0.5"
+    assert mapped["designTemperature"] == "50"
+    assert mapped["designPressure"] == "0.55"
+
+
+def test_piping_visual_seal_priority_prefers_bottom_right_red_candidate() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+    from apps.ocr_service.profiles import profile_for
+
+    result = {
+        "status": "success",
+        "fields": [],
+        "tables": [],
+        "seals": [
+            {
+                "sealId": "blue_title_block",
+                "sealName": "视觉蓝章候选",
+                "visualColor": "blue",
+                "bbox": [2800, 500, 3400, 800],
+                "pageWidth": 4000,
+                "pageHeight": 3000,
+                "visualConfidence": 0.95,
+                "ocrConfidence": 0.0,
+                "qualityFlags": ["visual_candidate_only", "requires_seal_ocr_text"],
+            },
+            {
+                "sealId": "red_license",
+                "sealName": "视觉印章候选",
+                "visualColor": "red",
+                "bbox": [2600, 2100, 3400, 2750],
+                "pageWidth": 4000,
+                "pageHeight": 3000,
+                "visualConfidence": 0.7,
+                "ocrConfidence": 0.0,
+                "qualityFlags": ["visual_candidate_only", "requires_seal_ocr_text"],
+            },
+        ],
+    }
+
+    fused = fuse_parse_result(result, profile=profile_for("piping_characteristic_list_v1"))
+
+    assert fused["seals"][0]["sealId"] == "red_license"
+    assert fused["seals"][0]["visualRankScore"] > fused["seals"][1]["visualRankScore"]
+    assert fused["quality"]["status"] == "needs_human_review"
+    assert "SEAL_TEXT_LOW_CONFIDENCE" in fused["quality"]["reasons"]
+
+
+def test_visual_seal_candidates_do_not_create_business_fields() -> None:
+    from apps.ocr_service.service import fields_from_seals
+
+    fields = fields_from_seals(
+        [
+            {
+                "sealId": "red_candidate",
+                "pageNo": 1,
+                "bbox": [1, 2, 3, 4],
+                "fields": [{"fieldName": "印章颜色", "fieldValue": "red", "confidence": 0.8}],
+                "qualityFlags": ["visual_candidate_only", "requires_seal_ocr_text"],
+            }
+        ]
+    )
+
+    assert fields == []
+
+
+def test_visual_seal_candidate_enriched_from_ocr_fragments_can_satisfy_required_seal() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+    from apps.ocr_service.profiles import profile_for
+
+    required_fields = [
+        "company_name",
+        "project_name",
+        "document_title",
+        "drawing_no",
+        "design_phase",
+        "pipe_no",
+    ]
+    fused = fuse_parse_result(
+        {
+            "status": "success",
+            "fragments": [
+                {"text": "压力管道", "confidence": 0.99, "bbox": [4378, 2466, 4730, 2569]},
+                {"text": "杨道红", "confidence": 0.99, "bbox": [4428, 2540, 4685, 2626]},
+                {"text": "TS1810648-2021", "confidence": 0.99, "bbox": [4362, 2605, 4758, 2688]},
+                {"text": "2017年8月31日", "confidence": 0.99, "bbox": [4361, 2660, 4768, 2753]},
+            ],
+            "fields": [
+                {"fieldCode": code, "fieldName": code, "fieldValue": code, "confidence": 0.9, "bbox": [1, 1, 2, 2]}
+                for code in required_fields
+            ],
+            "tables": [
+                {
+                    "tableId": "grid",
+                    "businessSchema": "piping_characteristic_table_v1",
+                    "sourceEngine": "opencv_grid_text_aligned",
+                    "bbox": [1, 1, 10, 10],
+                    "structureConfidence": 0.9,
+                    "normalizedRows": [{"pipeNo": "PL8301"}],
+                }
+            ],
+            "seals": [
+                {
+                    "sealId": "visual_red",
+                    "sealName": "视觉印章候选",
+                    "visualColor": "red",
+                    "bbox": [4141, 2364, 4981, 2879],
+                    "pageWidth": 5712,
+                    "pageHeight": 3213,
+                    "visualConfidence": 0.95,
+                    "ocrConfidence": 0.0,
+                    "qualityFlags": ["visual_candidate_only", "requires_seal_ocr_text"],
+                }
+            ],
+        },
+        profile=profile_for("piping_characteristic_list_v1"),
+    )
+
+    seal = fused["seals"][0]
+    assert seal["sourceEngine"] == "fragment_seal_text_fusion"
+    assert seal["sealType"] == "design_license_seal"
+    assert "TS1810648-2021" in seal["sealName"]
+    assert "fragment_seal_text" in seal["qualityFlags"]
+    assert "visual_candidate_only" not in seal["qualityFlags"]
+    assert "SEAL_TEXT_LOW_CONFIDENCE" not in fused["quality"]["reasons"]
+    assert fused["quality"]["matchedSealTypes"] == ["design_license_seal"]
+    assert fused["quality"]["missingExpectedSealTypes"] == []
+    assert fused["quality"]["sealCompleteness"] == 1.0
+    assert fused["quality"]["status"] == "auto_usable"
+
+
+def test_agentdesign_seal_payload_normalizes_to_readable_formal_seal() -> None:
+    from apps.ocr_service.engines import normalize_agentdesign_seal_result
+    from apps.ocr_service.fusion import fuse_parse_result
+    from apps.ocr_service.profiles import profile_for
+
+    seals = normalize_agentdesign_seal_result(
+        {
+            "seals": [
+                {
+                    "seal_result_id": "seal_result_1",
+                    "page_index": 1,
+                    "polygon": [[4041, 2264], [5081, 2264], [5081, 2979], [4041, 2979]],
+                    "decision": "REVIEW",
+                    "fields": {
+                        "organization_name": {
+                            "value": "广东星燃石化设计院有限公司",
+                            "calibrated_confidence": 0.92,
+                        },
+                        "seal_type": {
+                            "value": "特种设备设计许可印章",
+                            "calibrated_confidence": 0.86,
+                        },
+                        "valid_until": {
+                            "value": "2024年6月21日",
+                            "calibrated_confidence": 0.93,
+                        },
+                    },
+                    "audit_trace": {"candidate": {"candidate_type": "red_round_seal"}},
+                }
+            ]
+        }
+    )
+
+    fused = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [],
+            "tables": [],
+            "seals": seals,
+        },
+        profile=profile_for("piping_characteristic_list_v1"),
+    )
+
+    assert fused["seals"][0]["sealType"] == "special_equipment_design_permit_seal"
+    assert "广东星燃石化设计院有限公司" in fused["seals"][0]["sealName"]
+    assert fused["seals"][0]["ocrConfidence"] >= 0.86
+    assert fused["quality"]["matchedSealTypes"] == ["design_license_seal"]
+    assert fused["quality"]["missingExpectedSealTypes"] == []
+    assert "SEAL_TEXT_LOW_CONFIDENCE" not in fused["quality"]["reasons"]
+
+
+def test_ocr_fusion_wrong_formal_seal_type_requires_review() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+
+    result = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [{"fieldCode": "report_no", "fieldValue": "RT-1", "confidence": 0.9, "bbox": [0, 0, 10, 10]}],
+            "tables": [],
+            "seals": [
+                {
+                    "sealId": "company",
+                    "sealName": "某某有限公司公章",
+                    "sealType": "company_official_seal",
+                    "ocrConfidence": 0.9,
+                    "bbox": [0, 0, 10, 10],
+                }
+            ],
+        },
+        profile={
+            "profileId": "seal_type_profile_v1",
+            "documentType": "ndt_report",
+            "requiredFields": ["report_no"],
+            "requiredTables": [],
+            "sealRules": {"required": True, "expectedSealTypes": ["inspection_testing_seal"]},
+            "qualityRules": {"minFieldConfidence": 0.75, "criticalConflictFields": []},
+        },
+    )
+
+    assert result["quality"]["status"] == "needs_human_review"
+    assert "EXPECTED_SEAL_TYPE_MISSING" in result["quality"]["reasons"]
+    assert result["quality"]["matchedSealTypes"] == []
+    assert result["quality"]["missingExpectedSealTypes"] == ["inspection_testing_seal"]
+    assert result["quality"]["sealCompleteness"] == 0.0
+
+
+def test_formal_agentdesign_seal_beats_overlapping_visual_candidate() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+    from apps.ocr_service.profiles import profile_for
+
+    fused = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [],
+            "tables": [],
+            "seals": [
+                {
+                    "sealId": "visual_red",
+                    "sealName": "视觉印章候选",
+                    "visualColor": "red",
+                    "bbox": [4040, 2260, 5080, 2980],
+                    "pageWidth": 5712,
+                    "pageHeight": 3213,
+                    "visualConfidence": 0.95,
+                    "ocrConfidence": 0.0,
+                    "qualityFlags": ["visual_candidate_only", "requires_seal_ocr_text"],
+                },
+                {
+                    "sealId": "formal_red",
+                    "sealName": "石化设计院有限公司 特种设备设计许可印章",
+                    "sealType": "special_equipment_design_permit_seal",
+                    "bbox": [4041, 2264, 5081, 2979],
+                    "ocrConfidence": 0.86,
+                    "qualityFlags": ["agentdesign_seal_ocr", "review_required"],
+                    "fields": [
+                        {
+                            "fieldCode": "seal_type",
+                            "fieldName": "seal_type",
+                            "fieldValue": "特种设备设计许可印章",
+                            "confidence": 0.86,
+                        }
+                    ],
+                },
+            ],
+        },
+        profile=profile_for("piping_characteristic_list_v1"),
+    )
+
+    assert len(fused["seals"]) == 1
+    assert fused["seals"][0]["sealId"] == "formal_red"
+
+
+def test_piping_grid_aligned_table_is_not_flagged_as_heuristic() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+    from apps.ocr_service.profiles import profile_for
+    from apps.ocr_service.service import align_piping_text_table_with_grid
+
+    text_table = {
+        "tableId": "piping_characteristic_table_1",
+        "sourceEngine": "heuristic_table_from_ocr_fragments",
+        "bbox": [800, 600, 5100, 3000],
+        "rows": 10,
+        "columns": 30,
+        "structureConfidence": 0.78,
+        "qualityFlags": ["heuristic_table_fallback"],
+        "normalizedRows": [
+            {
+                "pipeNo": "PL8301",
+                "rawCells": ["1", "PL8301", "DN100", "MIB", "Φ108x4", "化工品", "液体", "Y-02", "常温", "0.01", "50", "0.1", "RT", "10%"],
+            }
+        ],
+        "businessRows": [
+            {
+                "pipeNo": "PL8301",
+                "nominalDiameter": "DN100",
+                "designPressure": "0.1",
+                "weldDetectionMethod": "RT",
+            }
+        ],
+    }
+    grid_table = {
+        "tableId": "opencv_grid_table_1",
+        "sourceEngine": "opencv_table_grid_subprocess",
+        "bbox": [790, 590, 5120, 3020],
+        "rows": 32,
+        "columns": 44,
+        "gridCellCount": 1408,
+        "gridLineXs": [790, 900, 1020],
+        "gridLineYs": [590, 650, 710],
+        "structureConfidence": 0.91,
+    }
+
+    aligned = align_piping_text_table_with_grid(text_table, grid_table)
+    fused = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [
+                {"fieldCode": "company_name", "fieldValue": "A", "confidence": 0.9, "bbox": [1, 1, 2, 2]},
+                {"fieldCode": "project_name", "fieldValue": "B", "confidence": 0.9, "bbox": [1, 1, 2, 2]},
+                {"fieldCode": "document_title", "fieldValue": "管道特性表", "confidence": 0.9, "bbox": [1, 1, 2, 2]},
+                {"fieldCode": "drawing_no", "fieldValue": "QX201903S-13-Y-07", "confidence": 0.9, "bbox": [1, 1, 2, 2]},
+                {"fieldCode": "design_phase", "fieldValue": "施工图", "confidence": 0.9, "bbox": [1, 1, 2, 2]},
+                {"fieldCode": "pipe_no", "fieldValue": "PL8301", "confidence": 0.9, "bbox": [1, 1, 2, 2]},
+            ],
+            "tables": [aligned],
+            "seals": [
+                {
+                    "sealId": "formal",
+                    "sealName": "广东星燃石化设计院有限公司 特种设备设计许可印章",
+                    "sealType": "special_equipment_design_permit_seal",
+                    "bbox": [1, 1, 2, 2],
+                    "ocrConfidence": 0.9,
+                    "qualityFlags": ["agentdesign_seal_ocr", "review_required"],
+                }
+            ],
+        },
+        profile=profile_for("piping_characteristic_list_v1"),
+    )
+
+    assert aligned["sourceEngine"] == "opencv_grid_text_aligned"
+    assert "heuristic_table_fallback" not in aligned["qualityFlags"]
+    assert "TABLE_HEURISTIC_REVIEW_REQUIRED" not in fused["quality"]["reasons"]
+
+
 def test_ocr_parse_rejects_missing_storage_key() -> None:
     from apps.ocr_service.main import app as ocr_app
 
@@ -222,6 +716,2590 @@ def test_ocr_normalize_preserves_zero_values() -> None:
     assert result["fields"][0]["confidence"] == 0
 
 
+def test_ocr_normalize_does_not_treat_seal_summary_as_text() -> None:
+    from apps.ocr_service.service import has_parse_content, normalize_ocr_result
+
+    result = normalize_ocr_result(
+        {
+            "ok": True,
+            "document_summary": {"page_count": 1, "candidate_count": 0},
+            "candidate_summary": {"total": 0, "candidates": []},
+            "diagnostics": [{"code": "NO_SEAL_CANDIDATE", "message": "no seal candidate selected for OCR"}],
+        },
+        "minio://documents/seal-summary-only.png",
+        "seal-summary-only.png",
+    )
+
+    assert result["status"] == "success"
+    assert result["fragments"] == []
+    assert result["fields"] == []
+    assert result["seals"] == []
+    assert has_parse_content(result) is False
+
+
+def test_piping_profile_infers_table_and_fields_from_fragments() -> None:
+    from apps.ocr_service.profiles import profile_for
+    from apps.ocr_service.service import enrich_parse_result
+
+    fragments = [
+        {"pageNo": 1, "text": "广东星燃石化设计院有限公司", "bbox": [100, 20, 450, 60], "confidence": 0.94},
+        {"pageNo": 1, "text": "管道特性表", "bbox": [600, 60, 760, 100], "confidence": 0.96},
+        {"pageNo": 1, "text": "PIPING CHARACTERISTIC LIST", "bbox": [590, 105, 850, 130], "confidence": 0.92},
+        {"pageNo": 1, "text": "项目名称 珠海恒基达鑫国际化工仓储股份有限公司二期装车站新增项目", "bbox": [80, 140, 700, 175], "confidence": 0.9},
+        {"pageNo": 1, "text": "图纸编号 QX201903S-13-Y-0", "bbox": [880, 140, 1120, 175], "confidence": 0.9},
+        {"pageNo": 1, "text": "设计阶段 施工图", "bbox": [880, 178, 1050, 210], "confidence": 0.9},
+        {"pageNo": 1, "text": "序号", "bbox": [50, 260, 90, 280], "confidence": 0.9},
+        {"pageNo": 1, "text": "管道代号", "bbox": [110, 260, 180, 280], "confidence": 0.9},
+        {"pageNo": 1, "text": "公称直径", "bbox": [200, 260, 280, 280], "confidence": 0.9},
+        {"pageNo": 1, "text": "介质", "bbox": [300, 260, 360, 280], "confidence": 0.9},
+        {"pageNo": 1, "text": "起点", "bbox": [390, 260, 450, 280], "confidence": 0.9},
+        {"pageNo": 1, "text": "1", "bbox": [55, 300, 75, 320], "confidence": 0.9},
+        {"pageNo": 1, "text": "PL8301", "bbox": [110, 300, 175, 320], "confidence": 0.91},
+        {"pageNo": 1, "text": "DN100", "bbox": [200, 300, 260, 320], "confidence": 0.91},
+        {"pageNo": 1, "text": "液体", "bbox": [300, 300, 345, 320], "confidence": 0.91},
+        {"pageNo": 1, "text": "E8301A", "bbox": [390, 300, 455, 320], "confidence": 0.91},
+        {"pageNo": 1, "text": "2", "bbox": [55, 340, 75, 360], "confidence": 0.9},
+        {"pageNo": 1, "text": "VT8301", "bbox": [110, 340, 175, 360], "confidence": 0.91},
+        {"pageNo": 1, "text": "DN50", "bbox": [200, 340, 250, 360], "confidence": 0.91},
+        {"pageNo": 1, "text": "气相", "bbox": [300, 340, 345, 360], "confidence": 0.91},
+        {"pageNo": 1, "text": "放空", "bbox": [390, 340, 435, 360], "confidence": 0.91},
+    ]
+
+    result = enrich_parse_result(
+        {
+            "status": "success",
+            "storageKey": "/tmp/piping.png",
+            "fileName": "piping.png",
+            "fragments": fragments,
+            "fields": [],
+            "tables": [],
+            "seals": [
+                {
+                    "sealId": "fragment_seal",
+                    "sealName": "压力管道 杨道红 TS1810648-2021",
+                    "sealType": "design_license_seal",
+                    "sourceEngine": "fragment_seal_text_fusion",
+                    "ocrConfidence": 0.88,
+                    "qualityFlags": ["fragment_seal_text"],
+                },
+                {
+                    "sealId": "visual_candidate",
+                    "sealName": "视觉印章候选",
+                    "sealType": "visual_red_seal_candidate",
+                    "visualConfidence": 0.92,
+                    "qualityFlags": ["visual_candidate_only", "requires_seal_ocr_text"],
+                },
+                {
+                    "sealId": "missing_evidence",
+                    "sealName": "测试单位章",
+                    "ocrConfidence": 0.72,
+                    "qualityFlags": ["seal_evidence_missing"],
+                },
+            ],
+            "diagnostics": [],
+        },
+        profile=profile_for("piping_characteristic_list_v1"),
+        document_version_id="docv_test",
+        business_pack_id="engineering_inspection_v1",
+        model_manifest={},
+    )
+
+    field_codes = {field["fieldCode"] for field in result["fields"]}
+    assert result["tables"][0]["tableId"] == "piping_characteristic_table_1"
+    assert result["tables"][0]["normalizedRows"][0]["pipeNo"] == "PL8301"
+    assert "HEURISTIC_TABLE_INFERRED" in {item["code"] for item in result["diagnostics"] if isinstance(item, dict)}
+    assert {"company_name", "project_name", "document_title", "drawing_no", "design_phase", "pipe_no"} <= field_codes
+
+
+def test_piping_profile_maps_formal_table_rows_to_business_fields() -> None:
+    from apps.ocr_service.profiles import profile_for
+    from apps.ocr_service.service import enrich_parse_result
+
+    result = enrich_parse_result(
+        {
+            "status": "success",
+            "storageKey": "/tmp/piping-formal.png",
+            "fileName": "piping-formal.png",
+            "fragments": [
+                {"pageNo": 1, "text": "管道特性表", "bbox": [0, 0, 100, 20], "confidence": 0.95},
+                {"pageNo": 1, "text": "图纸编号 QX201903S-13-Y-07", "bbox": [0, 30, 200, 50], "confidence": 0.9},
+                {"pageNo": 1, "text": "设计阶段 施工图", "bbox": [0, 60, 200, 80], "confidence": 0.9},
+            ],
+            "fields": [
+                {"fieldCode": "company_name", "fieldName": "公司名称", "fieldValue": "广东星燃石化设计院有限公司", "confidence": 0.9},
+                {"fieldCode": "project_name", "fieldName": "项目名称", "fieldValue": "项目", "confidence": 0.9},
+            ],
+            "tables": [
+                {
+                    "tableId": "table_1",
+                    "pageNo": 1,
+                    "bbox": [0, 100, 400, 240],
+                    "rows": 3,
+                    "columns": 5,
+                    "cells": [],
+                    "normalizedRows": [
+                        {"管道代号": "PL8301", "公称直径": "DN100", "介质名称": "化工品", "设计压力": "0.1", "检测方法": "RT"},
+                        {"管道代号": "VT8301", "公称直径": "DN50", "介质名称": "气相", "设计压力": "0.55", "检测方法": "RT"},
+                    ],
+                    "sourceEngine": "pp_structure_v3",
+                    "structureConfidence": 0.91,
+                }
+            ],
+            "seals": [],
+            "diagnostics": [],
+        },
+        profile=profile_for("piping_characteristic_list_v1"),
+        document_version_id="docv_test",
+        business_pack_id="engineering_inspection_v1",
+        model_manifest={},
+    )
+
+    table = result["tables"][0]
+    fields = {field["fieldCode"]: field["fieldValue"] for field in result["fields"]}
+
+    assert table["businessSchema"] == "piping_characteristic_table_v1"
+    assert table["businessRows"][0]["pipeNo"] == "PL8301"
+    assert table["businessRows"][0]["nominalDiameter"] == "DN100"
+    assert table["businessRows"][0]["mediumName"] == "化工品"
+    assert table["businessRows"][0]["designPressure"] == "0.1"
+    assert table["businessRows"][0]["weldDetectionMethod"] == "RT"
+    assert table["normalizedRows"][1]["pipeNo"] == "VT8301"
+    assert fields["pipe_no"] == "PL8301,VT8301"
+
+
+def test_visual_seal_subprocess_normalizes_candidates(monkeypatch, tmp_path) -> None:
+    from apps.ocr_service.engines import VisualSealCandidateSubprocessEngine
+
+    class Completed:
+        returncode = 0
+        stderr = ""
+        stdout = json.dumps(
+            {
+                "ok": True,
+                "seals": [
+                    {
+                        "sealId": "red_candidate_1",
+                        "pageNo": 1,
+                        "sealType": "visual_red_seal_candidate",
+                        "sealName": "视觉印章候选",
+                        "bbox": [10, 20, 110, 120],
+                        "visualConfidence": 0.82,
+                        "ocrConfidence": 0,
+                        "fields": [{"fieldName": "印章颜色", "fieldValue": "red"}],
+                        "qualityFlags": ["visual_candidate_only"],
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        )
+
+    calls = []
+
+    def fake_run(*args, **kwargs):
+        calls.append((args, kwargs))
+        return Completed()
+
+    sample = tmp_path / "seal.png"
+    sample.write_bytes(b"png")
+    monkeypatch.setenv("AICHECK_OCR_SUBPROCESS_PYTHON", sys.executable)
+    monkeypatch.setattr("apps.ocr_service.engines.subprocess.run", fake_run)
+
+    result = VisualSealCandidateSubprocessEngine().parse(sample)
+
+    assert result["ok"] is True
+    assert result["seals"][0]["sealType"] == "visual_red_seal_candidate"
+    assert calls[0][1]["env"]["HF_HUB_OFFLINE"] == "1"
+
+
+def test_paddle_ocr_subprocess_can_reuse_persistent_worker(monkeypatch, tmp_path) -> None:
+    from apps.ocr_service.engines import PaddleOcrSubprocessEngine
+
+    class FakeStdin:
+        def __init__(self):
+            self.writes = []
+
+        def write(self, value):
+            self.writes.append(value)
+
+        def flush(self):
+            return None
+
+    class FakeStdout:
+        def __init__(self):
+            self.lines = [
+                'AICHECK_OCR_RESULT {"ok": true, "fragments": [{"text": "A"}], "text": "A"}\n',
+                'AICHECK_OCR_RESULT {"ok": true, "fragments": [{"text": "B"}], "text": "B"}\n',
+            ]
+
+        def fileno(self):
+            return 0
+
+        def readline(self):
+            return self.lines.pop(0)
+
+    class FakeProcess:
+        def __init__(self):
+            self.stdin = FakeStdin()
+            self.stdout = FakeStdout()
+            self.terminated = False
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            self.terminated = True
+
+        def wait(self, timeout=None):
+            return 0
+
+    popen_calls = []
+    process = FakeProcess()
+
+    def fake_popen(*args, **kwargs):
+        popen_calls.append((args, kwargs))
+        return process
+
+    def fake_select(readable, _writeable, _errors, _timeout):
+        return readable, [], []
+
+    source = tmp_path / "sample.png"
+    det_dir = tmp_path / "det"
+    rec_dir = tmp_path / "rec"
+    source.write_bytes(b"image")
+    det_dir.mkdir()
+    rec_dir.mkdir()
+    monkeypatch.setenv("AICHECK_OCR_SUBPROCESS_PYTHON", sys.executable)
+    monkeypatch.setenv("AICHECK_PADDLEOCR_DET_MODEL_DIR", str(det_dir))
+    monkeypatch.setenv("AICHECK_PADDLEOCR_REC_MODEL_DIR", str(rec_dir))
+    monkeypatch.setenv("AICHECK_OCR_ENABLE_PERSISTENT_SUBPROCESS", "true")
+    monkeypatch.setattr("apps.ocr_service.engines.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("apps.ocr_service.engines.select.select", fake_select)
+
+    engine = PaddleOcrSubprocessEngine()
+    first = engine.parse(source)
+    second = engine.parse(source)
+
+    assert first["workerMode"] == "persistent"
+    assert second["workerMode"] == "persistent"
+    assert first["text"] == "A"
+    assert second["text"] == "B"
+    assert len(popen_calls) == 1
+    assert len(process.stdin.writes) == 2
+
+
+def test_pp_structure_requires_explicit_local_model_dirs(monkeypatch, tmp_path) -> None:
+    from apps.ocr_service.engines import PpStructureEngine
+
+    monkeypatch.setenv("AICHECK_PADDLEX_MODEL_CACHE", str(tmp_path))
+    for key in [
+        "AICHECK_PPSTRUCTURE_LAYOUT_MODEL_DIR",
+        "AICHECK_PPSTRUCTURE_WIRED_TABLE_STRUCTURE_MODEL_DIR",
+        "AICHECK_PPSTRUCTURE_WIRED_TABLE_CELLS_MODEL_DIR",
+        "AICHECK_PPSTRUCTURE_WIRELESS_TABLE_STRUCTURE_MODEL_DIR",
+        "AICHECK_PPSTRUCTURE_WIRELESS_TABLE_CELLS_MODEL_DIR",
+        "AICHECK_PADDLEOCR_DET_MODEL_DIR",
+        "AICHECK_PADDLEOCR_REC_MODEL_DIR",
+    ]:
+        monkeypatch.delenv(key, raising=False)
+
+    status = PpStructureEngine().status()
+
+    assert status["available"] is False
+    assert "layout" in status["missingModelDirs"]
+    assert "wired_table_structure" in status["missingModelDirs"]
+
+
+def test_pp_structure_html_table_normalizes_cells_and_rows() -> None:
+    from apps.ocr_service.engines import normalize_structure_result
+
+    tables, blocks = normalize_structure_result(
+        [
+            {
+                "type": "table",
+                "bbox": [10, 20, 300, 180],
+                "confidence": 0.91,
+                "res": {
+                    "html": """
+                    <table>
+                      <tr><th>管道代号</th><th>公称直径</th><th>介质</th></tr>
+                      <tr><td>PL8301</td><td>DN100</td><td>液体</td></tr>
+                      <tr><td>VT8301</td><td>DN50</td><td>气相</td></tr>
+                    </table>
+                    """
+                },
+            }
+        ],
+        "pp_structure_v3",
+    )
+
+    assert blocks[0]["blockType"] == "table"
+    assert tables[0]["sourceEngine"] == "pp_structure_v3"
+    assert tables[0]["rows"] == 3
+    assert tables[0]["columns"] == 3
+    assert len(tables[0]["cells"]) == 9
+    assert tables[0]["cells"][0]["isHeader"] is True
+    assert tables[0]["normalizedRows"][0]["管道代号"] == "PL8301"
+    assert tables[0]["normalizedRows"][1]["介质"] == "气相"
+
+
+def test_pp_structure_html_table_handles_rowspan_and_colspan() -> None:
+    from apps.ocr_service.engines import html_table_to_structure
+
+    structure = html_table_to_structure(
+        """
+        <table>
+          <tr><th rowspan="2">管道代号</th><th colspan="2">强度试验</th></tr>
+          <tr><th>介质</th><th>压力</th></tr>
+          <tr><td>PL8301</td><td>水</td><td>0.15</td></tr>
+        </table>
+        """
+    )
+
+    assert structure["rows"] == 3
+    assert structure["columns"] == 3
+    assert structure["cells"][0]["rowspan"] == 2
+    assert structure["cells"][1]["colspan"] == 2
+    assert structure["normalizedRows"][0]["管道代号"] == "PL8301"
+    assert structure["normalizedRows"][0]["介质"] == "水"
+    assert structure["normalizedRows"][0]["压力"] == "0.15"
+
+
+def test_ocr_routing_keeps_text_ocr_on_original_by_default() -> None:
+    from apps.ocr_service.routing import route_engine_variants
+
+    variants = [
+        {"variantId": "page_1_original", "path": "/tmp/original.png", "purpose": "general"},
+        {"variantId": "page_1_gray_clahe", "path": "/tmp/gray.png", "purpose": "text"},
+    ]
+
+    routed = route_engine_variants(
+        "paddle_ocr_subprocess",
+        variants,
+        profile={"preprocessPolicy": {}},
+        page_quality=[{"pageNo": 1, "quality": {"isLowQuality": True}}],
+        options={},
+    )
+
+    assert routed[0]["variantId"] == "page_1_original"
+
+
+def test_ocr_preprocess_variant_cache_round_trips(monkeypatch, tmp_path) -> None:
+    from apps.ocr_service.preprocess import load_cached_variants, save_cached_variants, variant_cache_dir
+
+    source = tmp_path / "source.png"
+    source.write_bytes(b"source-image")
+    monkeypatch.setenv("AICHECK_OCR_PREPROCESS_CACHE_DIR", str(tmp_path / "cache"))
+    profile = {"profileId": "piping_characteristic_list_v1", "preprocessPolicy": {"variants": ["original", "gray_clahe"]}}
+    cache_dir = variant_cache_dir(source, profile, ["original", "gray_clahe"], options={})
+    assert cache_dir is not None
+    variant_file = cache_dir / "source-gray_clahe.png"
+    variant_file.parent.mkdir(parents=True, exist_ok=True)
+    variant_file.write_bytes(b"variant")
+
+    save_cached_variants(
+        cache_dir,
+        [
+            {
+                "variantId": "page_1_gray_clahe",
+                "pageNo": 1,
+                "path": str(variant_file),
+                "preprocessChain": ["grayscale", "clahe"],
+                "imageHash": "sha256:variant",
+                "purpose": "text",
+                "source": "generated",
+            }
+        ],
+    )
+
+    cached = load_cached_variants(cache_dir)
+
+    assert cached is not None
+    assert cached[0]["variantId"] == "page_1_gray_clahe"
+    assert cached[0]["cacheHit"] is True
+    assert variant_cache_dir(source, profile, ["original"], options={"disableVariantCache": True}) is None
+
+
+def test_ocr_preprocess_keeps_table_and_seal_variants_in_priority_cap() -> None:
+    from apps.ocr_service.preprocess import requested_variant_names
+    from apps.ocr_service.profiles import profile_for
+
+    requested = requested_variant_names(
+        profile_for("piping_characteristic_list_v1"),
+        [{"pageNo": 1, "quality": {"hasTableCandidate": True, "hasSealCandidate": True, "isLowQuality": False}}],
+    )
+
+    assert requested[:3] == ["original", "table_line_enhanced", "seal_color_mask"]
+    assert len(requested) <= 4
+
+
+def test_ocr_service_result_cache_skips_repeated_engine_run(monkeypatch, tmp_path) -> None:
+    from apps.ocr_service.profiles import profile_for
+    from apps.ocr_service.service import OcrService
+
+    class FakeEngine:
+        name = "paddle_ocr_subprocess"
+        version = "test"
+
+        def __init__(self):
+            self.calls = 0
+
+        def available(self):
+            return True
+
+        def status(self):
+            return {"engine": self.name, "version": self.version, "available": True}
+
+        def parse(self, source_path, *, file_name=None, profile=None, variant=None):
+            self.calls += 1
+            return {
+                "ok": True,
+                "fragments": [
+                    {
+                        "pageNo": 1,
+                        "text": "管道特性表 PL8301 PL8302",
+                        "bbox": [[0, 0], [200, 0], [200, 20], [0, 20]],
+                        "confidence": 0.94,
+                    }
+                ],
+                "diagnostics": [],
+            }
+
+    source = tmp_path / "sample.png"
+    source.write_bytes(b"sample-image")
+    monkeypatch.setenv("AICHECK_OCR_RESULT_CACHE_DIR", str(tmp_path / "result-cache"))
+    monkeypatch.setenv("AICHECK_OCR_ENGINE_RESULT_CACHE_DIR", str(tmp_path / "engine-cache"))
+    monkeypatch.setattr(
+        "apps.ocr_service.service.probe_page_quality",
+        lambda source_path, profile=None: [{"pageNo": 1, "quality": {"hasTableCandidate": False, "hasSealCandidate": False}}],
+    )
+    monkeypatch.setattr(
+        "apps.ocr_service.service.generate_image_variants",
+        lambda source_path, profile, page_quality, options=None: [
+            {
+                "variantId": "page_1_original",
+                "pageNo": 1,
+                "path": str(source_path),
+                "preprocessChain": ["original"],
+                "imageHash": "sha256:test",
+                "purpose": "general",
+                "source": "original",
+            }
+        ],
+    )
+    engine = FakeEngine()
+    service = OcrService()
+    service.pipeline = None
+    service.engines = [engine]
+    monkeypatch.setattr(service, "model_manifest", lambda: {"modelDirs": {"test": {"hash": "sha256:model"}}})
+    profile = profile_for("piping_characteristic_list_v1")
+
+    first = service.parse_with_local_engines(
+        source,
+        storage_key=str(source),
+        file_name="sample.png",
+        profile=profile,
+        document_version_id="docv_1",
+        business_pack_id="engineering_inspection_v1",
+        options={},
+    )
+    second = service.parse_with_local_engines(
+        source,
+        storage_key=str(source),
+        file_name="sample.png",
+        profile=profile,
+        document_version_id="docv_2",
+        business_pack_id="engineering_inspection_v1",
+        options={},
+    )
+
+    assert first["status"] == "success"
+    assert second["status"] == "success"
+    assert engine.calls == 1
+    assert first.get("resultCacheHit") is None
+    assert second["resultCacheHit"] is True
+    assert second["documentVersionId"] == "docv_2"
+    assert second["parseResultId"] != first["parseResultId"]
+    assert "OCR_RESULT_CACHE_HIT" in {item["code"] for item in second["diagnostics"] if isinstance(item, dict)}
+
+
+def test_ocr_sample_probe_cache_control_options_are_mapped() -> None:
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "ocr_sample_probe.py"
+    spec = importlib.util.spec_from_file_location("ocr_sample_probe_contract", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    options = module.build_parse_options(
+        Namespace(
+            disable_result_cache=True,
+            disable_engine_cache=True,
+            disable_variant_cache=True,
+            run_all_variants=True,
+        )
+    )
+
+    assert options == {
+        "disableEngineResultCache": True,
+        "disableResultCache": True,
+        "disableVariantCache": True,
+        "runAllVariants": True,
+    }
+
+
+def test_ocr_sample_probe_auto_discover_runtime_sets_missing_env(monkeypatch) -> None:
+    from apps.ocr_service import runtime_doctor
+
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "ocr_sample_probe.py"
+    spec = importlib.util.spec_from_file_location("ocr_sample_probe_auto_runtime", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.delenv("AICHECK_OCR_SUBPROCESS_PYTHON", raising=False)
+    monkeypatch.setenv("AICHECK_PADDLEOCR_DET_MODEL_DIR", "/already-set-det")
+    monkeypatch.setattr(runtime_doctor, "discover_runtime_candidates", lambda: {"source": "test"})
+    monkeypatch.setattr(
+        runtime_doctor,
+        "recommended_env",
+        lambda discovered: {
+            "AICHECK_OCR_SUBPROCESS_PYTHON": "/tmp/ocr-python",
+            "AICHECK_PADDLEOCR_DET_MODEL_DIR": "/tmp/recommended-det",
+        },
+    )
+
+    applied = module.apply_auto_discovered_runtime(Namespace(auto_discover_runtime=True))
+
+    assert applied == {"AICHECK_OCR_SUBPROCESS_PYTHON": "/tmp/ocr-python"}
+    assert module.os.getenv("AICHECK_OCR_SUBPROCESS_PYTHON") == "/tmp/ocr-python"
+    assert module.os.getenv("AICHECK_PADDLEOCR_DET_MODEL_DIR") == "/already-set-det"
+    assert module.apply_auto_discovered_runtime(Namespace(auto_discover_runtime=False)) == {}
+
+
+def test_ocr_sample_probe_can_write_compact_summary_output(monkeypatch, tmp_path) -> None:
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "ocr_sample_probe.py"
+    spec = importlib.util.spec_from_file_location("ocr_sample_probe_summary_output", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    class FakeOcrService:
+        def parse_document(self, source_path, *, file_name=None, profile_id=None, document_type=None, options=None):
+            return {
+                "status": "success",
+                "parseResultId": "parse_test",
+                "profileId": profile_id,
+                "documentType": document_type,
+                "quality": {
+                    "status": "auto_usable",
+                    "reasons": [],
+                    "evidenceCompleteness": 1,
+                    "lowConfidenceFields": [],
+                    "missingEvidence": [],
+                },
+                "fragments": [{"text": "管道特性表"}],
+                "fields": [],
+                "tables": [],
+                "seals": [],
+                "diagnostics": [],
+                "engineRuns": [],
+            }
+
+    source = tmp_path / "sample.png"
+    source.write_bytes(b"image")
+    full_output = tmp_path / "full.json"
+    summary_output = tmp_path / "summary.json"
+    monkeypatch.setattr(module, "ocr_service", FakeOcrService())
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "ocr_sample_probe.py",
+            str(source),
+            "--output",
+            str(full_output),
+            "--summary-output",
+            str(summary_output),
+        ],
+    )
+
+    assert module.main() == 0
+    assert json.loads(full_output.read_text(encoding="utf-8"))["fragments"][0]["text"] == "管道特性表"
+    summary = json.loads(summary_output.read_text(encoding="utf-8"))
+    assert summary["parseResultId"] == "parse_test"
+    assert summary["fragments"] == 1
+    assert "fields" not in summary or isinstance(summary["fields"], int)
+
+
+def test_ocr_sample_probe_summary_output_includes_gate_failures(monkeypatch, tmp_path) -> None:
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "ocr_sample_probe.py"
+    spec = importlib.util.spec_from_file_location("ocr_sample_probe_gate_failures", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    class FakeOcrService:
+        def parse_document(self, source_path, *, file_name=None, profile_id=None, document_type=None, options=None):
+            return {
+                "status": "success",
+                "parseResultId": "parse_gate",
+                "profileId": profile_id,
+                "documentType": document_type,
+                "quality": {
+                    "status": "needs_human_review",
+                    "reasons": ["FIELD_EVIDENCE_MISSING"],
+                    "evidenceCompleteness": 0.5,
+                    "lowConfidenceFields": [{"fieldCode": "report_no"}],
+                    "missingEvidence": [{"targetType": "field", "targetId": "report_no"}],
+                },
+                "fragments": [{"text": "管道特性表"}],
+                "fields": [],
+                "tables": [],
+                "seals": [],
+                "diagnostics": [],
+                "engineRuns": [],
+            }
+
+    source = tmp_path / "sample.png"
+    source.write_bytes(b"image")
+    summary_output = tmp_path / "summary.json"
+    monkeypatch.setattr(module, "ocr_service", FakeOcrService())
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "ocr_sample_probe.py",
+            str(source),
+            "--require-quality-status",
+            "auto_usable",
+            "--min-evidence-completeness",
+            "1",
+            "--max-low-confidence-fields",
+            "0",
+            "--max-missing-evidence",
+            "0",
+            "--summary-output",
+            str(summary_output),
+        ],
+    )
+
+    assert module.main() == 1
+    summary = json.loads(summary_output.read_text(encoding="utf-8"))
+    assert summary["gatePassed"] is False
+    assert summary["gateFailureCounts"] == {
+        "EVIDENCE_COMPLETENESS_BELOW_MIN": 1,
+        "LOW_CONFIDENCE_FIELDS_ABOVE_MAX": 1,
+        "MISSING_EVIDENCE_ABOVE_MAX": 1,
+        "QUALITY_STATUS_MISMATCH": 1,
+    }
+    assert {item["metric"] for item in summary["gateFailures"]} == {
+        "qualityStatus",
+        "evidenceCompleteness",
+        "lowConfidenceFields",
+        "missingEvidence",
+    }
+
+
+def test_ocr_sample_probe_summary_exposes_performance_metrics() -> None:
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "ocr_sample_probe.py"
+    spec = importlib.util.spec_from_file_location("ocr_sample_probe_metrics", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    summary = module.build_summary(
+        {
+            "status": "success",
+            "quality": {
+                "status": "auto_usable",
+                "reasons": [],
+                "evidenceCompleteness": 0.75,
+                "missingFields": ["drawing_no", "design_phase"],
+                "missingTables": ["piping_characteristic_table"],
+                "matchedSealTypes": ["design_license_seal"],
+                "missingExpectedSealTypes": ["inspection_testing_seal"],
+                "lowConfidenceFields": [{"fieldCode": "report_no"}],
+                "missingEvidence": [
+                    {"targetType": "field", "targetId": "report_no"},
+                    {"targetType": "seal", "targetId": "seal_001"},
+                ],
+            },
+            "imageVariants": [],
+            "preprocessStatus": {},
+            "fragments": [],
+            "fields": [
+                {
+                    "fieldCode": "project_name",
+                    "fieldValue": "珠海恒基达鑫项目",
+                    "confidence": 0.91,
+                    "sourceEngine": "paddle_ocr_subprocess",
+                    "qualityFlags": [],
+                },
+                {
+                    "fieldCode": "document_title",
+                    "fieldValue": "管道特性表",
+                    "confidence": 0.95,
+                    "sourceEngine": "profile_rule",
+                },
+                {
+                    "fieldCode": "report_no",
+                    "fieldValue": "RT-2026-001",
+                    "confidence": 0.88,
+                    "qualityFlags": ["field_value_conflict"],
+                },
+            ],
+            "tables": [
+                {
+                    "tableId": "formal_grid",
+                    "sourceEngine": "opencv_grid_text_aligned",
+                    "structureConfidence": 0.91,
+                    "qualityFlags": ["opencv_grid_structure", "ocr_text_aligned"],
+                    "businessRows": [{"pipeNo": "PL8301"}, {"pipeNo": "VT8301"}],
+                    "normalizedRows": [{"pipeNo": "PL8301"}, {"pipeNo": "VT8301"}],
+                    "cells": [{"text": "pipeNo"}, {"text": "PL8301"}, {"text": "VT8301"}],
+                },
+                {
+                    "tableId": "heuristic_table",
+                    "sourceEngine": "heuristic_table_from_ocr_fragments",
+                    "structureConfidence": 0.62,
+                    "qualityFlags": ["heuristic_table_fallback"],
+                    "businessRows": [{"pipeNo": "PL8302"}],
+                    "normalizedRows": [{"pipeNo": "PL8302"}],
+                },
+            ],
+            "seals": [
+                {
+                    "sealId": "fragment_seal",
+                    "sealName": "压力管道 杨道红 TS1810648-2021",
+                    "sealType": "design_license_seal",
+                    "sourceEngine": "fragment_seal_text_fusion",
+                    "ocrConfidence": 0.88,
+                    "qualityFlags": ["fragment_seal_text"],
+                },
+                {
+                    "sealId": "visual_candidate",
+                    "sealName": "视觉印章候选",
+                    "sealType": "visual_red_seal_candidate",
+                    "visualConfidence": 0.92,
+                    "qualityFlags": ["visual_candidate_only", "requires_seal_ocr_text"],
+                },
+                {
+                    "sealId": "missing_evidence",
+                    "sealName": "测试单位章",
+                    "ocrConfidence": 0.72,
+                    "qualityFlags": ["seal_evidence_missing"],
+                },
+            ],
+            "diagnostics": [],
+            "engineRuns": [
+                {"engine": "paddle_ocr_subprocess", "status": "success", "available": True, "durationMs": 10, "engineCacheHit": True},
+                {"engine": "opencv_table_grid_subprocess", "status": "success", "available": True, "durationMs": 20, "engineCacheHit": False},
+                {"engine": "agentdesign_seal_ocr_subprocess", "status": "failed", "available": True, "durationMs": 140000},
+                {"engine": "pp_structure_v3", "status": "unavailable", "available": False, "durationMs": 0},
+            ],
+        },
+        source="sample.png",
+    )
+
+    assert summary["engineRunCount"] == 4
+    assert summary["eligibleEngineRunCount"] == 2
+    assert summary["engineCacheHits"] == 1
+    assert summary["engineCacheHitRate"] == 0.5
+    assert summary["totalEngineDurationMs"] == 140030
+    assert summary["engineStatusCounts"]["agentdesign_seal_ocr_subprocess:failed"] == 1
+    assert summary["failedEngineRuns"][0]["engine"] == "agentdesign_seal_ocr_subprocess"
+    assert summary["slowestEngineRuns"][0]["durationMs"] == 140000
+    assert summary["evidenceCompleteness"] == 0.75
+    assert summary["lowConfidenceFields"] == 1
+    assert summary["missingEvidence"] == 2
+    assert summary["missingEvidenceByType"] == {"field": 1, "seal": 1}
+    assert summary["fields"] == 3
+    assert summary["fieldCodes"] == ["document_title", "project_name", "report_no"]
+    assert summary["fieldConflictCount"] == 1
+    assert summary["fieldCodeCounts"] == {
+        "document_title": 1,
+        "project_name": 1,
+        "report_no": 1,
+    }
+    assert summary["fieldSourceCounts"] == {
+        "paddle_ocr_subprocess": 1,
+        "profile_rule": 1,
+        "unknown": 1,
+    }
+    assert summary["fieldQualityFlagCounts"] == {"field_value_conflict": 1}
+    assert summary["missingRequiredFields"] == ["design_phase", "drawing_no"]
+    assert summary["missingRequiredFieldCount"] == 2
+    assert summary["missingRequiredFieldCounts"] == {"design_phase": 1, "drawing_no": 1}
+    assert summary["tables"] == 2
+    assert summary["missingRequiredTables"] == ["piping_characteristic_table"]
+    assert summary["missingRequiredTableCount"] == 1
+    assert summary["missingRequiredTableCounts"] == {"piping_characteristic_table": 1}
+    assert summary["formalTables"] == 1
+    assert summary["heuristicTables"] == 1
+    assert summary["tableReviewRequired"] == 1
+    assert summary["businessRows"] == 3
+    assert summary["normalizedRows"] == 3
+    assert summary["tableCells"] == 3
+    assert summary["tableSourceCounts"] == {
+        "heuristic_table_from_ocr_fragments": 1,
+        "opencv_grid_text_aligned": 1,
+    }
+    assert summary["tableQualityFlagCounts"]["heuristic_table_fallback"] == 1
+    assert summary["tableQualityFlagCounts"]["opencv_grid_structure"] == 1
+    assert summary["seals"] == 3
+    assert summary["readableSeals"] == 2
+    assert summary["fragmentSeals"] == 1
+    assert summary["visualCandidateSeals"] == 1
+    assert summary["sealReviewRequired"] == 2
+    assert summary["missingSealText"] == 1
+    assert summary["sealSourceCounts"] == {"fragment_seal_text_fusion": 1, "unknown": 2}
+    assert summary["sealQualityFlagCounts"]["fragment_seal_text"] == 1
+    assert summary["sealQualityFlagCounts"]["requires_seal_ocr_text"] == 1
+    assert summary["sealTypes"] == ["design_license_seal", "visual_red_seal_candidate"]
+    assert summary["readableSealTypes"] == ["design_license_seal"]
+    assert summary["sealTypeCounts"] == {
+        "design_license_seal": 1,
+        "unknown": 1,
+        "visual_red_seal_candidate": 1,
+    }
+    assert summary["readableSealTypeCounts"] == {"design_license_seal": 1, "unknown": 1}
+    assert summary["matchedExpectedSealTypes"] == ["design_license_seal"]
+    assert summary["matchedExpectedSealTypeCount"] == 1
+    assert summary["matchedExpectedSealTypeCounts"] == {"design_license_seal": 1}
+    assert summary["missingExpectedSealTypes"] == ["inspection_testing_seal"]
+    assert summary["missingExpectedSealTypeCount"] == 1
+    assert summary["missingExpectedSealTypeCounts"] == {"inspection_testing_seal": 1}
+    failures = module.collect_gate_failures(
+        [summary],
+        Namespace(
+            min_fragments=0,
+            min_tables=0,
+            min_formal_tables=None,
+            min_business_rows=None,
+            max_heuristic_tables=None,
+            max_table_review_required=None,
+            min_seals=0,
+            require_seal_type=[],
+            max_missing_expected_seal_types=None,
+            min_engine_cache_hit_rate=None,
+            max_engine_duration_ms=None,
+            max_single_engine_duration_ms=100000,
+            fail_on_engine_failure=True,
+            require_quality_status=None,
+            min_evidence_completeness=None,
+            max_low_confidence_fields=None,
+            max_missing_evidence=None,
+        ),
+    )
+    assert {item["code"] for item in failures} == {
+        "ENGINE_RUN_FAILED",
+        "SINGLE_ENGINE_DURATION_ABOVE_MAX",
+    }
+
+
+def test_ocr_sample_probe_can_gate_required_field_codes() -> None:
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "ocr_sample_probe.py"
+    spec = importlib.util.spec_from_file_location("ocr_sample_probe_field_gates", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    failures = module.collect_gate_failures(
+        [
+            {
+                "source": "sample.png",
+                "status": "success",
+                "fragments": 10,
+                "fields": 1,
+                "fieldCodes": ["project_name"],
+                "fieldConflictCount": 2,
+                "missingRequiredFieldCount": 1,
+                "tables": 1,
+                "seals": 1,
+                "engineRuns": [],
+            }
+        ],
+        Namespace(
+            min_fragments=1,
+            min_fields=2,
+            require_field_code=["project_name", "document_title"],
+            max_field_conflicts=0,
+            max_missing_required_fields=0,
+            min_tables=1,
+            min_formal_tables=None,
+            min_business_rows=None,
+            max_heuristic_tables=None,
+            max_table_review_required=None,
+            min_seals=1,
+            min_readable_seals=None,
+            min_fragment_seals=None,
+            max_seal_review_required=None,
+            min_engine_cache_hit_rate=None,
+            max_engine_duration_ms=None,
+            max_single_engine_duration_ms=None,
+            fail_on_engine_failure=False,
+            require_quality_status=None,
+            min_evidence_completeness=None,
+            max_low_confidence_fields=None,
+            max_missing_evidence=None,
+        ),
+    )
+
+    assert {item["code"] for item in failures} == {
+        "FIELD_CONFLICTS_ABOVE_MAX",
+        "FIELDS_BELOW_MIN",
+        "MISSING_REQUIRED_FIELDS_ABOVE_MAX",
+        "REQUIRED_FIELD_CODE_MISSING",
+    }
+    assert {item["metric"] for item in failures} == {
+        "fieldConflictCount",
+        "fieldCodes.document_title",
+        "fields",
+        "missingRequiredFieldCount",
+    }
+
+
+def test_ocr_sample_probe_can_gate_readable_and_fragment_seals() -> None:
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "ocr_sample_probe.py"
+    spec = importlib.util.spec_from_file_location("ocr_sample_probe_seal_gates", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    failures = module.collect_gate_failures(
+        [
+            {
+                "source": "sample.png",
+                "status": "success",
+                "fragments": 10,
+                "tables": 1,
+                "seals": 1,
+                "readableSeals": 0,
+                "fragmentSeals": 0,
+                "readableSealTypes": [],
+                "missingExpectedSealTypeCount": 1,
+                "sealReviewRequired": 2,
+                "engineRuns": [],
+            }
+        ],
+        Namespace(
+            min_fragments=1,
+            min_tables=1,
+            min_formal_tables=None,
+            min_business_rows=None,
+            max_heuristic_tables=None,
+            max_table_review_required=None,
+            min_seals=1,
+            min_readable_seals=1,
+            min_fragment_seals=1,
+            require_seal_type=["design_license_seal"],
+            max_missing_expected_seal_types=0,
+            max_seal_review_required=1,
+            min_engine_cache_hit_rate=None,
+            max_engine_duration_ms=None,
+            max_single_engine_duration_ms=None,
+            fail_on_engine_failure=False,
+            require_quality_status=None,
+            min_evidence_completeness=None,
+            max_low_confidence_fields=None,
+            max_missing_evidence=None,
+        ),
+    )
+
+    assert {item["code"] for item in failures} == {
+        "FRAGMENT_SEALS_BELOW_MIN",
+        "MISSING_EXPECTED_SEAL_TYPES_ABOVE_MAX",
+        "READABLE_SEALS_BELOW_MIN",
+        "REQUIRED_SEAL_TYPE_MISSING",
+        "SEAL_REVIEW_REQUIRED_ABOVE_MAX",
+    }
+    assert {item["metric"] for item in failures} == {
+        "fragmentSeals",
+        "missingExpectedSealTypeCount",
+        "readableSeals",
+        "readableSealTypes.design_license_seal",
+        "sealReviewRequired",
+    }
+
+
+def test_ocr_sample_probe_can_gate_formal_tables_and_business_rows() -> None:
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "ocr_sample_probe.py"
+    spec = importlib.util.spec_from_file_location("ocr_sample_probe_table_gates", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    failures = module.collect_gate_failures(
+        [
+            {
+                "source": "sample.png",
+                "status": "success",
+                "fragments": 10,
+                "tables": 1,
+                "formalTables": 0,
+                "heuristicTables": 1,
+                "tableReviewRequired": 1,
+                "missingRequiredTableCount": 1,
+                "businessRows": 0,
+                "seals": 1,
+                "engineRuns": [],
+            }
+        ],
+        Namespace(
+            min_fragments=1,
+            min_tables=1,
+            min_formal_tables=1,
+            min_business_rows=1,
+            max_heuristic_tables=0,
+            max_table_review_required=0,
+            max_missing_required_tables=0,
+            min_seals=1,
+            min_readable_seals=None,
+            min_fragment_seals=None,
+            max_seal_review_required=None,
+            min_engine_cache_hit_rate=None,
+            max_engine_duration_ms=None,
+            max_single_engine_duration_ms=None,
+            fail_on_engine_failure=False,
+            require_quality_status=None,
+            min_evidence_completeness=None,
+            max_low_confidence_fields=None,
+            max_missing_evidence=None,
+        ),
+    )
+
+    assert {item["code"] for item in failures} == {
+        "BUSINESS_ROWS_BELOW_MIN",
+        "FORMAL_TABLES_BELOW_MIN",
+        "HEURISTIC_TABLES_ABOVE_MAX",
+        "MISSING_REQUIRED_TABLES_ABOVE_MAX",
+        "TABLE_REVIEW_REQUIRED_ABOVE_MAX",
+    }
+    assert {item["metric"] for item in failures} == {
+        "businessRows",
+        "formalTables",
+        "heuristicTables",
+        "missingRequiredTableCount",
+        "tableReviewRequired",
+    }
+
+
+def test_ocr_sample_probe_directory_summary_aggregates_diagnostics() -> None:
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "ocr_sample_probe.py"
+    spec = importlib.util.spec_from_file_location("ocr_sample_probe_directory", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    summary = module.build_directory_summary(
+        [
+            {
+                "summary": {
+                    "source": "slow.png",
+                    "status": "success",
+                    "qualityStatus": "needs_human_review",
+                    "qualityReasons": ["FIELD_LOW_CONFIDENCE", "FIELD_EVIDENCE_MISSING"],
+                    "evidenceCompleteness": 0.5,
+                    "lowConfidenceFields": 2,
+                    "missingEvidence": 1,
+                    "missingEvidenceByType": {"field": 1},
+                    "diagnosticCodes": ["TABLE_HEURISTIC_REVIEW_REQUIRED"],
+                    "engineRuns": [
+                        {"engine": "paddle_ocr_subprocess", "status": "success", "available": True, "durationMs": 100},
+                        {"engine": "pp_structure_v3", "status": "unavailable", "available": False, "durationMs": 0},
+                    ],
+                    "totalEngineDurationMs": 100,
+                    "fragments": 10,
+                    "fields": 1,
+                    "fieldCodeCounts": {"project_name": 1},
+                    "fieldSourceCounts": {"paddle_ocr_subprocess": 1},
+                    "fieldQualityFlagCounts": {"field_value_conflict": 1},
+                    "fieldConflictCount": 1,
+                    "missingRequiredFieldCount": 1,
+                    "missingRequiredFieldCounts": {"drawing_no": 1},
+                    "tables": 1,
+                    "missingRequiredTableCount": 1,
+                    "missingRequiredTableCounts": {"piping_characteristic_table": 1},
+                    "formalTables": 0,
+                    "heuristicTables": 1,
+                    "tableReviewRequired": 1,
+                    "businessRows": 0,
+                    "normalizedRows": 1,
+                    "tableSourceCounts": {"heuristic_table_from_ocr_fragments": 1},
+                    "tableQualityFlagCounts": {"heuristic_table_fallback": 1},
+                    "seals": 0,
+                    "readableSeals": 0,
+                    "fragmentSeals": 0,
+                    "visualCandidateSeals": 1,
+                    "sealReviewRequired": 1,
+                    "missingExpectedSealTypeCount": 1,
+                    "matchedExpectedSealTypeCounts": {},
+                    "missingExpectedSealTypeCounts": {"design_license_seal": 1},
+                    "sealTypeCounts": {"visual_red_seal_candidate": 1},
+                    "readableSealTypeCounts": {},
+                    "sealSourceCounts": {"visual_seal_candidate_subprocess": 1},
+                    "sealQualityFlagCounts": {"requires_seal_ocr_text": 1},
+                }
+            },
+            {
+                "summary": {
+                    "source": "fast.png",
+                    "status": "success",
+                    "qualityStatus": "auto_usable",
+                    "qualityReasons": ["FIELD_LOW_CONFIDENCE"],
+                    "evidenceCompleteness": 1.0,
+                    "lowConfidenceFields": 1,
+                    "missingEvidence": 0,
+                    "missingEvidenceByType": {},
+                    "diagnosticCodes": ["OPENCV_GRID_TABLE_ALIGNED"],
+                    "engineRuns": [{"engine": "paddle_ocr_subprocess", "status": "success", "available": True, "durationMs": 10}],
+                    "totalEngineDurationMs": 10,
+                    "fragments": 20,
+                    "fields": 2,
+                    "fieldCodeCounts": {"document_title": 1, "project_name": 1},
+                    "fieldSourceCounts": {"profile_rule": 2},
+                    "fieldQualityFlagCounts": {},
+                    "fieldConflictCount": 0,
+                    "missingRequiredFieldCount": 0,
+                    "missingRequiredFieldCounts": {},
+                    "tables": 1,
+                    "missingRequiredTableCount": 0,
+                    "missingRequiredTableCounts": {},
+                    "formalTables": 1,
+                    "heuristicTables": 0,
+                    "tableReviewRequired": 0,
+                    "businessRows": 2,
+                    "normalizedRows": 2,
+                    "tableSourceCounts": {"opencv_grid_text_aligned": 1},
+                    "tableQualityFlagCounts": {"opencv_grid_structure": 1},
+                    "seals": 1,
+                    "readableSeals": 1,
+                    "fragmentSeals": 1,
+                    "visualCandidateSeals": 0,
+                    "sealReviewRequired": 0,
+                    "missingExpectedSealTypeCount": 0,
+                    "matchedExpectedSealTypeCounts": {"design_license_seal": 1},
+                    "missingExpectedSealTypeCounts": {},
+                    "sealTypeCounts": {"design_license_seal": 1},
+                    "readableSealTypeCounts": {"design_license_seal": 1},
+                    "sealSourceCounts": {"fragment_seal_text_fusion": 1},
+                    "sealQualityFlagCounts": {"fragment_seal_text": 1},
+                }
+            },
+        ]
+    )
+
+    assert summary["qualityReasonCounts"] == {"FIELD_LOW_CONFIDENCE": 2, "FIELD_EVIDENCE_MISSING": 1}
+    assert summary["diagnosticCodeCounts"] == {
+        "OPENCV_GRID_TABLE_ALIGNED": 1,
+        "TABLE_HEURISTIC_REVIEW_REQUIRED": 1,
+    }
+    assert summary["engineStatusCounts"]["paddle_ocr_subprocess:success"] == 2
+    assert summary["engineStatusCounts"]["pp_structure_v3:unavailable"] == 1
+    assert summary["slowestFiles"][0]["source"] == "slow.png"
+    assert summary["slowestFiles"][0]["totalEngineDurationMs"] == 100
+    assert summary["fieldCodeCounts"] == {"project_name": 2, "document_title": 1}
+    assert summary["fieldSourceCounts"] == {"profile_rule": 2, "paddle_ocr_subprocess": 1}
+    assert summary["fieldQualityFlagCounts"] == {"field_value_conflict": 1}
+    assert summary["totalFieldConflicts"] == 1
+    assert summary["totalMissingRequiredFields"] == 1
+    assert summary["missingRequiredFieldCounts"] == {"drawing_no": 1}
+    assert summary["totalMissingRequiredTables"] == 1
+    assert summary["missingRequiredTableCounts"] == {"piping_characteristic_table": 1}
+    assert summary["totalFormalTables"] == 1
+    assert summary["totalHeuristicTables"] == 1
+    assert summary["totalTableReviewRequired"] == 1
+    assert summary["totalBusinessRows"] == 2
+    assert summary["totalNormalizedRows"] == 3
+    assert summary["tableSourceCounts"] == {
+        "heuristic_table_from_ocr_fragments": 1,
+        "opencv_grid_text_aligned": 1,
+    }
+    assert summary["tableQualityFlagCounts"] == {
+        "heuristic_table_fallback": 1,
+        "opencv_grid_structure": 1,
+    }
+    assert summary["totalReadableSeals"] == 1
+    assert summary["totalFragmentSeals"] == 1
+    assert summary["totalVisualCandidateSeals"] == 1
+    assert summary["totalSealReviewRequired"] == 1
+    assert summary["totalMissingExpectedSealTypes"] == 1
+    assert summary["matchedExpectedSealTypeCounts"] == {"design_license_seal": 1}
+    assert summary["missingExpectedSealTypeCounts"] == {"design_license_seal": 1}
+    assert summary["sealTypeCounts"] == {"design_license_seal": 1, "visual_red_seal_candidate": 1}
+    assert summary["readableSealTypeCounts"] == {"design_license_seal": 1}
+    assert summary["sealSourceCounts"] == {
+        "fragment_seal_text_fusion": 1,
+        "visual_seal_candidate_subprocess": 1,
+    }
+    assert summary["sealQualityFlagCounts"] == {
+        "fragment_seal_text": 1,
+        "requires_seal_ocr_text": 1,
+    }
+
+
+def test_ocr_result_cache_key_includes_profile_postprocess_version(tmp_path) -> None:
+    from apps.ocr_service.result_cache import build_result_cache_key
+
+    source = tmp_path / "sample.png"
+    source.write_bytes(b"sample-image")
+    base_profile = {
+        "profileId": "piping_characteristic_list_v1",
+        "documentType": "engineering_table_photo",
+        "preprocessPolicy": {"variants": ["original"]},
+        "postprocessVersion": "v1",
+    }
+    model_manifest = {"modelDirs": {"text": {"hash": "sha256:model"}}}
+
+    first = build_result_cache_key(source, profile=base_profile, model_manifest=model_manifest)
+    second = build_result_cache_key(
+        source,
+        profile={**base_profile, "postprocessVersion": "v2"},
+        model_manifest=model_manifest,
+    )
+
+    assert first is not None
+    assert second is not None
+    assert first != second
+
+
+def test_ocr_engine_result_cache_key_ignores_profile_postprocess_version(tmp_path) -> None:
+    from apps.ocr_service.result_cache import build_engine_result_cache_key
+
+    source = tmp_path / "sample.png"
+    source.write_bytes(b"sample-image")
+    base_profile = {
+        "profileId": "piping_characteristic_list_v1",
+        "documentType": "engineering_table_photo",
+        "preprocessPolicy": {"variants": ["original"]},
+        "postprocessVersion": "v1",
+    }
+    model_manifest = {"modelDirs": {"text": {"hash": "sha256:model"}}}
+    engine_status = {"engine": "paddle_ocr_subprocess", "version": "test", "available": True}
+    variant = {
+        "variantId": "page_1_original",
+        "imageHash": "sha256:variant",
+        "preprocessChain": ["original"],
+        "purpose": "general",
+        "source": "original",
+    }
+
+    first = build_engine_result_cache_key(
+        source,
+        engine_status=engine_status,
+        variant=variant,
+        profile=base_profile,
+        model_manifest=model_manifest,
+    )
+    second = build_engine_result_cache_key(
+        source,
+        engine_status=engine_status,
+        variant=variant,
+        profile={**base_profile, "postprocessVersion": "v2"},
+        model_manifest=model_manifest,
+    )
+    changed_engine = build_engine_result_cache_key(
+        source,
+        engine_status={**engine_status, "version": "test-2"},
+        variant=variant,
+        profile=base_profile,
+        model_manifest=model_manifest,
+    )
+
+    assert first is not None
+    assert first == second
+    assert changed_engine != first
+
+
+def test_ocr_engine_result_cache_survives_profile_postprocess_change(monkeypatch, tmp_path) -> None:
+    from apps.ocr_service.profiles import profile_for
+    from apps.ocr_service.service import OcrService
+
+    class FakeEngine:
+        name = "paddle_ocr_subprocess"
+        version = "test"
+
+        def __init__(self):
+            self.calls = 0
+
+        def available(self):
+            return True
+
+        def status(self):
+            return {"engine": self.name, "version": self.version, "available": True}
+
+        def parse(self, source_path, *, file_name=None, profile=None, variant=None):
+            self.calls += 1
+            return {
+                "ok": True,
+                "fragments": [
+                    {
+                        "pageNo": 1,
+                        "text": "管道特性表 PL8301 PL8302",
+                        "bbox": [[0, 0], [200, 0], [200, 20], [0, 20]],
+                        "confidence": 0.94,
+                    }
+                ],
+                "diagnostics": [],
+            }
+
+    source = tmp_path / "sample.png"
+    source.write_bytes(b"sample-image")
+    monkeypatch.setenv("AICHECK_OCR_RESULT_CACHE_DIR", str(tmp_path / "result-cache"))
+    monkeypatch.setenv("AICHECK_OCR_ENGINE_RESULT_CACHE_DIR", str(tmp_path / "engine-cache"))
+    monkeypatch.setattr(
+        "apps.ocr_service.service.probe_page_quality",
+        lambda source_path, profile=None: [{"pageNo": 1, "quality": {"hasTableCandidate": False, "hasSealCandidate": False}}],
+    )
+    monkeypatch.setattr(
+        "apps.ocr_service.service.generate_image_variants",
+        lambda source_path, profile, page_quality, options=None: [
+            {
+                "variantId": "page_1_original",
+                "pageNo": 1,
+                "path": str(source_path),
+                "preprocessChain": ["original"],
+                "imageHash": "sha256:test",
+                "purpose": "general",
+                "source": "original",
+            }
+        ],
+    )
+    engine = FakeEngine()
+    service = OcrService()
+    service.pipeline = None
+    service.engines = [engine]
+    monkeypatch.setattr(service, "model_manifest", lambda: {"modelDirs": {"test": {"hash": "sha256:model"}}})
+    base_profile = profile_for("piping_characteristic_list_v1")
+    first_profile = {**base_profile, "postprocessVersion": "v1"}
+    second_profile = {**base_profile, "postprocessVersion": "v2"}
+
+    first = service.parse_with_local_engines(
+        source,
+        storage_key=str(source),
+        file_name="sample.png",
+        profile=first_profile,
+        document_version_id="docv_1",
+        business_pack_id="engineering_inspection_v1",
+        options={},
+    )
+    second = service.parse_with_local_engines(
+        source,
+        storage_key=str(source),
+        file_name="sample.png",
+        profile=second_profile,
+        document_version_id="docv_2",
+        business_pack_id="engineering_inspection_v1",
+        options={},
+    )
+
+    assert first["status"] == "success"
+    assert second["status"] == "success"
+    assert engine.calls == 1
+    assert first.get("resultCacheHit") is None
+    assert second.get("resultCacheHit") is None
+    assert second["engineRuns"][0]["engineCacheHit"] is True
+    assert second["documentVersionId"] == "docv_2"
+
+
+def test_ocr_parse_document_preserves_local_diagnostics_on_failure(monkeypatch, tmp_path) -> None:
+    from apps.ocr_service.service import OcrService
+
+    class UnavailableEngine:
+        name = "pp_structure_v3"
+        version = "test"
+
+        def available(self):
+            return False
+
+        def status(self):
+            return {"engine": self.name, "version": self.version, "available": False}
+
+    source = tmp_path / "sample.png"
+    source.write_bytes(b"not-an-image-but-path-is-allowed")
+    monkeypatch.setenv("AICHECK_OCR_ALLOWED_LOCAL_DIRS", str(tmp_path))
+    monkeypatch.setattr(
+        "apps.ocr_service.service.probe_page_quality",
+        lambda source_path, profile=None: [{"pageNo": 1, "quality": {"hasTableCandidate": True, "hasSealCandidate": True}}],
+    )
+    monkeypatch.setattr(
+        "apps.ocr_service.service.generate_image_variants",
+        lambda source_path, profile, page_quality, options=None: [
+            {
+                "variantId": "page_1_original",
+                "pageNo": 1,
+                "path": str(source_path),
+                "preprocessChain": ["original"],
+                "imageHash": "sha256:test",
+                "purpose": "general",
+                "source": "original",
+            }
+        ],
+    )
+
+    service = OcrService()
+    service.pipeline = None
+    service.engines = [UnavailableEngine()]
+    result = service.parse_document(
+        str(source),
+        file_name="sample.png",
+        profile_id="piping_characteristic_list_v1",
+        document_type="engineering_table_photo",
+        options={"disableResultCache": True},
+    )
+
+    assert result["status"] == "failed"
+    assert result["profileId"] == "piping_characteristic_list_v1"
+    assert result["pageQuality"]
+    assert result["imageVariants"][0]["variantId"] == "page_1_original"
+    assert "table_line_enhanced" in result["preprocessStatus"]["missingVariants"]
+    assert result["engineRuns"][0]["status"] == "unavailable"
+    diagnostic_codes = {item["code"] for item in result["diagnostics"] if isinstance(item, dict)}
+    assert "NO_LOCAL_OCR_RESULT" in diagnostic_codes
+    assert "PREPROCESS_VARIANT_GENERATION_UNAVAILABLE" in diagnostic_codes
+
+
+def test_ocr_fusion_quality_gate_marks_missing_required_data_for_review() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+    from apps.ocr_service.profiles import profile_for
+
+    result = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [{"fieldCode": "company_name", "fieldName": "公司名称", "fieldValue": "A", "confidence": 0.9}],
+            "tables": [],
+            "seals": [],
+            "diagnostics": [],
+        },
+        profile=profile_for("piping_characteristic_list_v1"),
+    )
+
+    assert result["quality"]["status"] == "needs_human_review"
+    assert "REQUIRED_FIELD_MISSING" in result["quality"]["reasons"]
+    assert "REQUIRED_TABLE_MISSING" in result["quality"]["reasons"]
+    assert "SEAL_NOT_FOUND" in result["quality"]["reasons"]
+    assert result["quality"]["missingTables"] == ["piping_characteristic_table"]
+
+
+def test_ocr_fusion_required_table_matches_business_schema_suffix() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+    from apps.ocr_service.profiles import profile_for
+
+    result = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [
+                {"fieldCode": "company_name", "fieldName": "公司名称", "fieldValue": "广东星燃石化设计院有限公司", "confidence": 0.9},
+                {"fieldCode": "project_name", "fieldName": "项目名称", "fieldValue": "项目", "confidence": 0.9},
+                {"fieldCode": "document_title", "fieldName": "文件标题", "fieldValue": "管道特性表", "confidence": 0.9},
+                {"fieldCode": "drawing_no", "fieldName": "图纸编号", "fieldValue": "QX201903S-13-Y-07", "confidence": 0.9},
+                {"fieldCode": "design_phase", "fieldName": "设计阶段", "fieldValue": "施工图", "confidence": 0.9},
+                {"fieldCode": "pipe_no", "fieldName": "管道代号", "fieldValue": "PL8301", "confidence": 0.9},
+            ],
+            "tables": [
+                {
+                    "tableId": "piping_characteristic_table_1",
+                    "businessSchema": "piping_characteristic_table_v1",
+                    "structureConfidence": 0.9,
+                    "bbox": [0, 0, 10, 10],
+                }
+            ],
+            "seals": [
+                {
+                    "sealId": "seal_1",
+                    "sealName": "广东星燃石化设计院有限公司压力管道设计许可章",
+                    "ocrConfidence": 0.9,
+                    "bbox": [0, 0, 10, 10],
+                }
+            ],
+            "diagnostics": [],
+        },
+        profile=profile_for("piping_characteristic_list_v1"),
+    )
+
+    assert result["quality"]["missingTables"] == []
+    assert "REQUIRED_TABLE_MISSING" not in result["quality"]["reasons"]
+
+
+def test_ocr_fusion_visual_seal_only_requires_human_review() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+    from apps.ocr_service.profiles import profile_for
+
+    result = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [
+                {"fieldCode": "company_name", "fieldName": "公司名称", "fieldValue": "广东星燃石化设计院有限公司", "confidence": 0.9},
+                {"fieldCode": "project_name", "fieldName": "项目名称", "fieldValue": "项目", "confidence": 0.9},
+                {"fieldCode": "document_title", "fieldName": "文件标题", "fieldValue": "管道特性表", "confidence": 0.9},
+                {"fieldCode": "drawing_no", "fieldName": "图纸编号", "fieldValue": "QX201903S-13-Y-07", "confidence": 0.9},
+                {"fieldCode": "design_phase", "fieldName": "设计阶段", "fieldValue": "施工图", "confidence": 0.9},
+                {"fieldCode": "pipe_no", "fieldName": "管道代号", "fieldValue": "PL8301", "confidence": 0.9},
+            ],
+            "tables": [{"tableId": "piping_characteristic_table_1", "structureConfidence": 0.8, "bbox": [0, 0, 10, 10]}],
+            "seals": [
+                {
+                    "sealId": "red_candidate_1",
+                    "sealName": "视觉印章候选",
+                    "visualConfidence": 0.95,
+                    "ocrConfidence": 0,
+                    "bbox": [0, 0, 10, 10],
+                    "qualityFlags": ["visual_candidate_only", "requires_seal_ocr_text"],
+                }
+            ],
+            "diagnostics": [],
+        },
+        profile=profile_for("piping_characteristic_list_v1"),
+    )
+
+    assert result["quality"]["status"] == "needs_human_review"
+    assert "SEAL_TEXT_LOW_CONFIDENCE" in result["quality"]["reasons"]
+
+
+def test_ocr_fusion_field_value_conflict_requires_human_review() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+
+    profile = {
+        "profileId": "conflict_profile_v1",
+        "documentType": "quality_certificate",
+        "requiredFields": ["report_no"],
+        "requiredTables": [],
+        "sealRules": {"required": False},
+        "qualityRules": {},
+    }
+
+    result = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [
+                {
+                    "fieldCode": "report_no",
+                    "fieldName": "报告编号",
+                    "fieldValue": "RT-2026-001",
+                    "confidence": 0.92,
+                    "sourceEngine": "paddle_ocr_subprocess",
+                    "variantId": "page_1_original",
+                    "bbox": [0, 0, 10, 10],
+                },
+                {
+                    "fieldCode": "report_no",
+                    "fieldName": "报告编号",
+                    "fieldValue": "RT-2026-00I",
+                    "confidence": 0.89,
+                    "sourceEngine": "paddleocr_vl_1_6",
+                    "variantId": "page_1_vlm",
+                    "bbox": [0, 0, 10, 10],
+                },
+            ],
+            "tables": [],
+            "seals": [],
+            "diagnostics": [],
+        },
+        profile=profile,
+    )
+
+    assert result["quality"]["status"] == "needs_human_review"
+    assert "FIELD_VALUE_CONFLICT" in result["quality"]["reasons"]
+    assert result["fields"][0]["fusionDecision"] == "conflict_highest_confidence_candidate"
+    assert "field_value_conflict" in result["fields"][0]["qualityFlags"]
+    assert {item["normalizedValue"] for item in result["fields"][0]["conflictingValues"]} == {
+        "RT-2026-001",
+        "RT-2026-00I",
+    }
+
+
+def test_ocr_profile_critical_conflict_fields_drive_quality_gate() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+    from apps.ocr_service.profiles import profile_for
+
+    profile = profile_for("piping_characteristic_list_v1")
+    assert "drawing_no" in profile["qualityRules"]["criticalConflictFields"]
+
+    result = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [
+                {
+                    "fieldCode": "drawing_no",
+                    "fieldValue": "QX201903S-13-Y-07",
+                    "confidence": 0.93,
+                    "sourceEngine": "paddle_ocr_subprocess",
+                    "bbox": [0, 0, 10, 10],
+                },
+                {
+                    "fieldCode": "drawing_no",
+                    "fieldValue": "QX2019035-13-Y-07",
+                    "confidence": 0.89,
+                    "sourceEngine": "paddleocr_vl_1_6",
+                    "bbox": [0, 0, 10, 10],
+                },
+            ],
+            "tables": [{"tableId": "T1", "structureConfidence": 0.9, "bbox": [0, 0, 10, 10]}],
+            "seals": [
+                {
+                    "sealId": "seal_1",
+                    "sealName": "广东星燃石化设计院有限公司压力管道设计许可章",
+                    "ocrConfidence": 0.9,
+                    "bbox": [0, 0, 10, 10],
+                }
+            ],
+            "diagnostics": [],
+        },
+        profile={**profile, "requiredFields": []},
+    )
+
+    assert "field_value_conflict" in result["fields"][0]["qualityFlags"]
+    assert result["quality"]["status"] == "needs_human_review"
+    assert "FIELD_VALUE_CONFLICT" in result["quality"]["reasons"]
+
+
+def test_ocr_fusion_ignores_weak_field_value_conflict_candidate() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+
+    profile = {
+        "profileId": "conflict_profile_v1",
+        "documentType": "quality_certificate",
+        "requiredFields": ["report_no"],
+        "requiredTables": [],
+        "sealRules": {"required": False},
+        "qualityRules": {},
+    }
+
+    result = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [
+                {
+                    "fieldCode": "report_no",
+                    "fieldValue": "RT-2026-001",
+                    "confidence": 0.94,
+                    "sourceEngine": "paddle_ocr_subprocess",
+                    "bbox": [0, 0, 10, 10],
+                },
+                {
+                    "fieldCode": "report_no",
+                    "fieldValue": "RT-2026-00I",
+                    "confidence": 0.55,
+                    "sourceEngine": "low_confidence_candidate",
+                    "bbox": [0, 0, 10, 10],
+                },
+            ],
+            "tables": [],
+            "seals": [],
+            "diagnostics": [],
+        },
+        profile=profile,
+    )
+
+    assert result["quality"]["status"] == "auto_usable"
+    assert "FIELD_VALUE_CONFLICT" not in result["quality"]["reasons"]
+    assert result["fields"][0]["fusionDecision"] == "highest_confidence_candidate"
+    assert "qualityFlags" not in result["fields"][0]
+
+
+def test_ocr_fusion_low_confidence_required_field_requires_human_review() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+    from apps.ocr_service.profiles import profile_for
+
+    result = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [
+                {"fieldCode": "company_name", "fieldName": "公司名称", "fieldValue": "广东星燃石化设计院有限公司", "confidence": 0.9},
+                {"fieldCode": "project_name", "fieldName": "项目名称", "fieldValue": "项目", "confidence": 0.52},
+                {"fieldCode": "document_title", "fieldName": "文件标题", "fieldValue": "管道特性表", "confidence": 0.9},
+                {"fieldCode": "drawing_no", "fieldName": "图纸编号", "fieldValue": "QX201903S-13-Y-07", "confidence": 0.9},
+                {"fieldCode": "design_phase", "fieldName": "设计阶段", "fieldValue": "施工图", "confidence": 0.9},
+                {"fieldCode": "pipe_no", "fieldName": "管道代号", "fieldValue": "PL8301", "confidence": 0.9},
+            ],
+            "tables": [{"tableId": "T1", "structureConfidence": 0.9, "bbox": [0, 0, 10, 10]}],
+            "seals": [
+                {
+                    "sealId": "seal_1",
+                    "sealName": "广东星燃石化设计院有限公司压力管道设计许可章",
+                    "ocrConfidence": 0.9,
+                    "bbox": [0, 0, 10, 10],
+                }
+            ],
+            "diagnostics": [],
+        },
+        profile=profile_for("piping_characteristic_list_v1"),
+    )
+
+    assert result["quality"]["status"] == "needs_human_review"
+    assert "FIELD_LOW_CONFIDENCE" in result["quality"]["reasons"]
+    assert result["quality"]["lowConfidenceFields"] == [
+        {
+            "fieldCode": "project_name",
+            "fieldName": "项目名称",
+            "fieldValue": "项目",
+            "confidence": 0.52,
+            "threshold": 0.75,
+            "sourceEngine": None,
+            "variantId": None,
+        }
+    ]
+    flagged = next(field for field in result["fields"] if field["fieldCode"] == "project_name")
+    assert "field_low_confidence" in flagged["qualityFlags"]
+
+
+def test_ocr_fusion_low_confidence_optional_field_does_not_block_auto_usable() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+
+    result = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [{"fieldCode": "optional_note", "fieldValue": "备注", "confidence": 0.2}],
+            "tables": [],
+            "seals": [],
+            "diagnostics": [],
+        },
+        profile={
+            "profileId": "optional_profile_v1",
+            "documentType": "generic_document",
+            "requiredFields": [],
+            "requiredTables": [],
+            "sealRules": {"required": False},
+            "qualityRules": {"minFieldConfidence": 0.75, "criticalConflictFields": []},
+        },
+    )
+
+    assert result["quality"]["status"] == "auto_usable"
+    assert "FIELD_LOW_CONFIDENCE" not in result["quality"]["reasons"]
+    assert result["quality"]["lowConfidenceFields"] == []
+    assert "qualityFlags" not in result["fields"][0]
+
+
+def test_ocr_fusion_missing_required_evidence_requires_human_review() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+    from apps.ocr_service.profiles import profile_for
+
+    result = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [
+                {"fieldCode": "company_name", "fieldName": "公司名称", "fieldValue": "广东星燃石化设计院有限公司", "confidence": 0.9},
+                {"fieldCode": "project_name", "fieldName": "项目名称", "fieldValue": "项目", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "document_title", "fieldName": "文件标题", "fieldValue": "管道特性表", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "drawing_no", "fieldName": "图纸编号", "fieldValue": "QX201903S-13-Y-07", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "design_phase", "fieldName": "设计阶段", "fieldValue": "施工图", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "pipe_no", "fieldName": "管道代号", "fieldValue": "PL8301", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+            ],
+            "tables": [{"tableId": "T1", "structureConfidence": 0.9}],
+            "seals": [
+                {
+                    "sealId": "seal_1",
+                    "sealName": "广东星燃石化设计院有限公司压力管道设计许可章",
+                    "ocrConfidence": 0.9,
+                }
+            ],
+            "diagnostics": [],
+        },
+        profile=profile_for("piping_characteristic_list_v1"),
+    )
+
+    assert result["quality"]["status"] == "needs_human_review"
+    assert {"FIELD_EVIDENCE_MISSING", "TABLE_EVIDENCE_MISSING", "SEAL_EVIDENCE_MISSING"}.issubset(
+        set(result["quality"]["reasons"])
+    )
+    assert {item["targetType"] for item in result["quality"]["missingEvidence"]} == {"field", "table", "seal"}
+    field = next(item for item in result["fields"] if item["fieldCode"] == "company_name")
+    table = result["tables"][0]
+    seal = result["seals"][0]
+    assert "field_evidence_missing" in field["qualityFlags"]
+    assert "table_evidence_missing" in table["qualityFlags"]
+    assert "seal_evidence_missing" in seal["qualityFlags"]
+
+
+def test_ocr_fusion_missing_optional_evidence_does_not_block_auto_usable() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+
+    result = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [{"fieldCode": "optional_note", "fieldValue": "备注", "confidence": 0.9}],
+            "tables": [],
+            "seals": [],
+            "diagnostics": [],
+        },
+        profile={
+            "profileId": "optional_profile_v1",
+            "documentType": "generic_document",
+            "requiredFields": [],
+            "requiredTables": [],
+            "sealRules": {"required": False},
+            "qualityRules": {"minFieldConfidence": 0.75, "criticalConflictFields": []},
+        },
+    )
+
+    assert result["quality"]["status"] == "auto_usable"
+    assert result["quality"]["missingEvidence"] == []
+    assert "FIELD_EVIDENCE_MISSING" not in result["quality"]["reasons"]
+    assert "qualityFlags" not in result["fields"][0]
+
+
+def test_ocr_fusion_noncritical_optional_field_conflict_does_not_block_auto_usable() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+
+    profile = {
+        "profileId": "conflict_profile_v1",
+        "documentType": "engineering_table_photo",
+        "requiredFields": [],
+        "requiredTables": [],
+        "sealRules": {"required": False},
+        "qualityRules": {},
+    }
+
+    result = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [
+                {
+                    "fieldCode": "date",
+                    "fieldValue": "2024年6月21日",
+                    "confidence": 0.93,
+                    "sourceEngine": "agentdesign_seal_ocr_subprocess",
+                    "bbox": [0, 0, 10, 10],
+                },
+                {
+                    "fieldCode": "date",
+                    "fieldValue": "2017年8月31日",
+                    "confidence": 0.9,
+                    "sourceEngine": "agentdesign_seal_ocr_subprocess",
+                    "bbox": [0, 0, 10, 10],
+                },
+            ],
+            "tables": [],
+            "seals": [],
+            "diagnostics": [],
+        },
+        profile=profile,
+    )
+
+    assert result["fields"][0]["fusionDecision"] == "conflict_highest_confidence_candidate"
+    assert "field_value_conflict" in result["fields"][0]["qualityFlags"]
+    assert result["quality"]["status"] == "auto_usable"
+    assert "FIELD_VALUE_CONFLICT" not in result["quality"]["reasons"]
+
+
+def test_ocr_fusion_heuristic_table_requires_human_review() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+    from apps.ocr_service.profiles import profile_for
+
+    complete_fields = [
+        {"fieldCode": "company_name", "fieldName": "公司名称", "fieldValue": "广东星燃石化设计院有限公司", "confidence": 0.9},
+        {"fieldCode": "project_name", "fieldName": "项目名称", "fieldValue": "项目", "confidence": 0.9},
+        {"fieldCode": "document_title", "fieldName": "文件标题", "fieldValue": "管道特性表", "confidence": 0.9},
+        {"fieldCode": "drawing_no", "fieldName": "图纸编号", "fieldValue": "QX201903S-13-Y-07", "confidence": 0.9},
+        {"fieldCode": "design_phase", "fieldName": "设计阶段", "fieldValue": "施工图", "confidence": 0.9},
+        {"fieldCode": "pipe_no", "fieldName": "管道代号", "fieldValue": "PL8301", "confidence": 0.9},
+    ]
+    for index, field in enumerate(complete_fields):
+        field["bbox"] = [index, index, index + 1, index + 1]
+    result = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": complete_fields,
+            "tables": [
+                {
+                    "tableId": "piping_characteristic_table_1",
+                    "structureConfidence": 0.86,
+                    "bbox": [0, 0, 10, 10],
+                    "sourceEngine": "heuristic_table_from_ocr_fragments",
+                    "qualityFlags": ["heuristic_table_fallback"],
+                }
+            ],
+            "seals": [
+                {
+                    "sealId": "seal_1",
+                    "sealName": "广东星燃石化设计院有限公司压力管道设计许可章",
+                    "ocrConfidence": 0.88,
+                    "bbox": [0, 0, 10, 10],
+                }
+            ],
+            "diagnostics": [],
+        },
+        profile=profile_for("piping_characteristic_list_v1"),
+    )
+
+    assert result["quality"]["status"] == "needs_human_review"
+    assert result["quality"]["reasons"] == ["TABLE_HEURISTIC_REVIEW_REQUIRED"]
+
+
+def test_ocr_evaluation_scores_fields_tables_seals_and_quality() -> None:
+    from apps.ocr_service.evaluation import evaluate_cases
+
+    report = evaluate_cases(
+        [
+            {
+                "caseId": "piping-golden-001",
+                "profileId": "piping_characteristic_list_v1",
+                "minScore": 1,
+                "result": {
+                    "parseResultId": "PARSE-EVAL-001",
+                    "status": "success",
+                    "profileId": "piping_characteristic_list_v1",
+                    "fields": [
+                        {
+                            "fieldCode": "pipe_no",
+                            "fieldValue": "PL8301,VT8301",
+                            "bbox": [0, 0, 100, 20],
+                            "confidence": 0.94,
+                        }
+                    ],
+                    "tables": [
+                        {
+                            "tableId": "table_1",
+                            "businessSchema": "piping_characteristic_table_v1",
+                            "rows": 3,
+                            "columns": 4,
+                            "bbox": [10, 40, 300, 180],
+                            "businessRows": [{"pipeNo": "PL8301", "designPressure": "0.1"}],
+                        }
+                    ],
+                    "seals": [
+                        {
+                            "sealId": "seal_1",
+                            "sealName": "广东星燃石化设计院有限公司压力管道设计许可章",
+                            "sealType": "pressure_pipe_design_license_seal",
+                            "ocrConfidence": 0.9,
+                            "bbox": [320, 200, 420, 300],
+                        }
+                    ],
+                    "quality": {
+                        "status": "needs_human_review",
+                        "reasons": ["TABLE_HEURISTIC_REVIEW_REQUIRED"],
+                        "evidenceCompleteness": 1.0,
+                    },
+                },
+                "expected": {
+                    "fields": [{"fieldCode": "pipe_no", "value": "PL8301,VT8301", "bbox": [0, 0, 100, 20]}],
+                    "tables": [
+                        {
+                            "businessSchema": "piping_characteristic_table_v1",
+                            "minRows": 2,
+                            "requiredBusinessKeys": ["pipeNo", "designPressure"],
+                            "bbox": [10, 40, 300, 180],
+                        }
+                    ],
+                    "seals": [{"nameContains": "压力管道设计许可章", "minConfidence": 0.8, "bbox": [320, 200, 420, 300]}],
+                    "qualityStatus": "needs_human_review",
+                    "qualityReasons": ["TABLE_HEURISTIC_REVIEW_REQUIRED"],
+                    "minEvidenceCompleteness": 1.0,
+                },
+            }
+        ]
+    )
+
+    assert report["ok"] is True
+    assert report["summary"]["averageScore"] == 1
+    assert report["cases"][0]["metrics"]["fieldEvidenceRecall"] == 1
+    assert report["cases"][0]["metrics"]["fieldBboxHitRate"] == 1
+    assert report["cases"][0]["metrics"]["tableEvidenceRecall"] == 1
+    assert report["cases"][0]["metrics"]["tableBboxHitRate"] == 1
+    assert report["cases"][0]["metrics"]["sealEvidenceRecall"] == 1
+    assert report["cases"][0]["metrics"]["sealBboxHitRate"] == 1
+    assert report["cases"][0]["metrics"]["qualityEvidenceCompletenessMatch"] == 1
+    assert report["cases"][0]["details"]["fields"][0]["status"] == "matched"
+    assert report["cases"][0]["details"]["fields"][0]["bestIou"] == 1
+    assert report["cases"][0]["details"]["tables"][0]["status"] == "matched"
+    assert report["cases"][0]["details"]["seals"][0]["status"] == "matched"
+
+
+def test_ocr_evaluation_reports_missing_expected_items() -> None:
+    from apps.ocr_service.evaluation import evaluate_cases
+
+    report = evaluate_cases(
+        [
+            {
+                "caseId": "piping-golden-missing",
+                "result": {
+                    "parseResultId": "PARSE-EVAL-002",
+                    "status": "success",
+                    "fields": [],
+                    "tables": [],
+                    "seals": [],
+                    "quality": {"status": "auto_usable", "reasons": []},
+                },
+                "expected": {
+                    "fields": [{"fieldCode": "pipe_no", "value": "PL8301"}],
+                    "tables": [{"businessSchema": "piping_characteristic_table_v1"}],
+                    "seals": [{"nameContains": "设计许可章"}],
+                    "qualityStatus": "needs_human_review",
+                    "qualityReasons": ["SEAL_TEXT_LOW_CONFIDENCE"],
+                },
+            }
+        ]
+    )
+
+    findings = {item["code"] for item in report["cases"][0]["findings"]}
+
+    assert report["ok"] is False
+    assert report["cases"][0]["score"] < 0.5
+    assert report["findingCounts"]["OCR_EVAL_FIELD_MISSING"] == 1
+    assert report["scenarios"]["default"]["findingCounts"]["OCR_EVAL_TABLE_MISSING"] == 1
+    assert "OCR_EVAL_FIELD_MISSING" in findings
+    assert "OCR_EVAL_TABLE_MISSING" in findings
+    assert "OCR_EVAL_SEAL_MISSING" in findings
+    assert "OCR_EVAL_QUALITY_STATUS_MISMATCH" in findings
+
+
+def test_ocr_evaluation_reports_bbox_mismatch() -> None:
+    from apps.ocr_service.evaluation import evaluate_cases
+
+    report = evaluate_cases(
+        [
+            {
+                "caseId": "bbox-mismatch",
+                "minScore": 0,
+                "result": {
+                    "parseResultId": "PARSE-EVAL-BBOX",
+                    "status": "success",
+                    "fields": [{"fieldCode": "pipe_no", "fieldValue": "PL8301", "bbox": [0, 0, 10, 10]}],
+                    "tables": [{"businessSchema": "piping_characteristic_table_v1", "bbox": [20, 20, 100, 100]}],
+                    "seals": [{"sealName": "pressure pipe design license seal", "bbox": [120, 120, 200, 200], "ocrConfidence": 0.9}],
+                    "quality": {"status": "auto_usable", "reasons": []},
+                },
+                "expected": {
+                    "fields": [{"fieldCode": "pipe_no", "value": "PL8301", "bbox": [200, 200, 220, 220]}],
+                    "tables": [{"businessSchema": "piping_characteristic_table_v1", "bbox": [220, 220, 320, 320]}],
+                    "seals": [{"nameContains": "design license", "bbox": [340, 340, 420, 420]}],
+                },
+            }
+        ]
+    )
+
+    findings = {item["code"] for item in report["cases"][0]["findings"]}
+
+    assert report["ok"] is False
+    assert report["cases"][0]["metrics"]["fieldBboxHitRate"] == 0
+    assert report["cases"][0]["metrics"]["tableBboxHitRate"] == 0
+    assert report["cases"][0]["metrics"]["sealBboxHitRate"] == 0
+    assert report["cases"][0]["details"]["fields"][0]["status"] == "bbox_mismatch"
+    assert report["cases"][0]["details"]["fields"][0]["candidates"][0]["iou"] == 0
+    assert report["cases"][0]["details"]["tables"][0]["status"] == "bbox_mismatch"
+    assert report["cases"][0]["details"]["seals"][0]["status"] == "bbox_mismatch"
+    assert "OCR_EVAL_FIELD_BBOX_MISMATCH" in findings
+    assert "OCR_EVAL_TABLE_BBOX_MISMATCH" in findings
+    assert "OCR_EVAL_SEAL_BBOX_MISMATCH" in findings
+
+
+def test_ocr_evaluation_requires_field_evidence_even_when_value_matches() -> None:
+    from apps.ocr_service.evaluation import evaluate_cases
+
+    report = evaluate_cases(
+        [
+            {
+                "caseId": "field-value-without-evidence",
+                "minScore": 0,
+                "result": {
+                    "parseResultId": "PARSE-EVAL-NO-FIELD-EVIDENCE",
+                    "status": "success",
+                    "fields": [{"fieldCode": "pipe_no", "fieldValue": "PL8301"}],
+                    "tables": [],
+                    "seals": [],
+                    "quality": {"status": "auto_usable", "reasons": []},
+                },
+                "expected": {
+                    "fields": [{"fieldCode": "pipe_no", "value": "PL8301"}],
+                },
+            }
+        ]
+    )
+
+    findings = {item["code"] for item in report["cases"][0]["findings"]}
+
+    assert report["ok"] is False
+    assert report["cases"][0]["metrics"]["fieldRecall"] == 1
+    assert report["cases"][0]["metrics"]["fieldValueAccuracy"] == 1
+    assert report["cases"][0]["metrics"]["fieldEvidenceRecall"] == 0
+    assert "OCR_EVAL_FIELD_EVIDENCE_MISSING" in findings
+
+
+def test_ocr_evaluation_requires_table_and_seal_evidence_when_matched() -> None:
+    from apps.ocr_service.evaluation import evaluate_cases
+
+    report = evaluate_cases(
+        [
+            {
+                "caseId": "table-seal-without-evidence",
+                "minScore": 0,
+                "result": {
+                    "parseResultId": "PARSE-EVAL-NO-TABLE-SEAL-EVIDENCE",
+                    "status": "success",
+                    "fields": [],
+                    "tables": [
+                        {
+                            "tableId": "table_1",
+                            "businessSchema": "piping_characteristic_table_v1",
+                            "businessRows": [{"pipeNo": "PL8301"}],
+                        }
+                    ],
+                    "seals": [{"sealName": "pressure pipe design license seal", "ocrConfidence": 0.9}],
+                    "quality": {"status": "auto_usable", "reasons": []},
+                },
+                "expected": {
+                    "tables": [
+                        {
+                            "businessSchema": "piping_characteristic_table_v1",
+                            "requiredBusinessKeys": ["pipeNo"],
+                        }
+                    ],
+                    "seals": [{"nameContains": "design license", "minConfidence": 0.8}],
+                },
+            }
+        ]
+    )
+
+    findings = {item["code"] for item in report["cases"][0]["findings"]}
+
+    assert report["ok"] is False
+    assert report["cases"][0]["metrics"]["tableRecall"] == 1
+    assert report["cases"][0]["metrics"]["tableEvidenceRecall"] == 0
+    assert report["cases"][0]["metrics"]["sealRecall"] == 1
+    assert report["cases"][0]["metrics"]["sealEvidenceRecall"] == 0
+    assert report["cases"][0]["details"]["tables"][0]["status"] == "evidence_missing"
+    assert report["cases"][0]["details"]["seals"][0]["status"] == "evidence_missing"
+    assert "OCR_EVAL_TABLE_EVIDENCE_MISSING" in findings
+    assert "OCR_EVAL_SEAL_EVIDENCE_MISSING" in findings
+
+
+def test_ocr_evaluation_can_gate_fragment_seal_source_flags_and_fields() -> None:
+    from apps.ocr_service.evaluation import evaluate_cases
+
+    report = evaluate_cases(
+        [
+            {
+                "caseId": "fragment-seal-contract",
+                "result": {
+                    "parseResultId": "PARSE-EVAL-FRAGMENT-SEAL",
+                    "status": "success",
+                    "seals": [
+                        {
+                            "sealId": "red_candidate_1",
+                            "sealType": "design_license_seal",
+                            "sealName": "压力管道 杨道红 TS1810648-2021 2017年8月31日",
+                            "sourceEngine": "fragment_seal_text_fusion",
+                            "bbox": [600, 420, 760, 560],
+                            "ocrConfidence": 0.88,
+                            "qualityFlags": ["fragment_seal_text"],
+                            "fields": [
+                                {
+                                    "fieldCode": "seal_text",
+                                    "fieldValue": "压力管道 杨道红 TS1810648-2021 2017年8月31日",
+                                    "confidence": 0.88,
+                                },
+                                {"fieldCode": "license_no", "fieldValue": "TS1810648-2021", "confidence": 0.88},
+                            ],
+                        }
+                    ],
+                    "quality": {"status": "auto_usable", "reasons": [], "evidenceCompleteness": 1.0},
+                },
+                "expected": {
+                    "seals": [
+                        {
+                            "sealType": "design_license_seal",
+                            "sourceEngine": "fragment_seal_text_fusion",
+                            "nameContains": "TS1810648-2021",
+                            "minConfidence": 0.8,
+                            "qualityFlags": ["fragment_seal_text"],
+                            "bbox": [600, 420, 760, 560],
+                            "bboxIouThreshold": 0.9,
+                            "fields": [
+                                {"fieldCode": "seal_text", "value": "压力管道", "contains": True},
+                                {"fieldCode": "license_no", "value": "TS1810648-2021"},
+                            ],
+                        }
+                    ],
+                    "qualityStatus": "auto_usable",
+                    "minEvidenceCompleteness": 1.0,
+                },
+            }
+        ]
+    )
+
+    assert report["ok"] is True
+    assert report["cases"][0]["metrics"]["sealRecall"] == 1
+    assert report["cases"][0]["details"]["seals"][0]["status"] == "matched"
+
+
+def test_ocr_evaluation_rejects_fragment_seal_without_expected_source_or_fields() -> None:
+    from apps.ocr_service.evaluation import evaluate_cases
+
+    report = evaluate_cases(
+        [
+            {
+                "caseId": "fragment-seal-source-mismatch",
+                "minScore": 0,
+                "result": {
+                    "parseResultId": "PARSE-EVAL-FRAGMENT-SEAL-MISMATCH",
+                    "status": "success",
+                    "seals": [
+                        {
+                            "sealId": "red_candidate_1",
+                            "sealType": "design_license_seal",
+                            "sealName": "压力管道 杨道红",
+                            "sourceEngine": "visual_red_seal_candidate",
+                            "bbox": [600, 420, 760, 560],
+                            "ocrConfidence": 0.88,
+                            "qualityFlags": ["visual_candidate_only"],
+                            "fields": [{"fieldCode": "seal_text", "fieldValue": "压力管道 杨道红"}],
+                        }
+                    ],
+                    "quality": {"status": "auto_usable", "reasons": [], "evidenceCompleteness": 1.0},
+                },
+                "expected": {
+                    "seals": [
+                        {
+                            "sealType": "design_license_seal",
+                            "sourceEngine": "fragment_seal_text_fusion",
+                            "qualityFlags": ["fragment_seal_text"],
+                            "fields": [{"fieldCode": "license_no", "value": "TS1810648-2021"}],
+                            "bbox": [600, 420, 760, 560],
+                        }
+                    ],
+                },
+            }
+        ]
+    )
+
+    findings = {item["code"] for item in report["cases"][0]["findings"]}
+
+    assert report["ok"] is False
+    assert report["cases"][0]["metrics"]["sealRecall"] == 0
+    assert report["cases"][0]["details"]["seals"][0]["status"] == "missing"
+    assert "OCR_EVAL_SEAL_MISSING" in findings
+
+
+def test_ocr_evaluation_checks_quality_evidence_completeness_range() -> None:
+    from apps.ocr_service.evaluation import evaluate_cases
+
+    report = evaluate_cases(
+        [
+            {
+                "caseId": "quality-evidence-completeness-mismatch",
+                "minScore": 0,
+                "result": {
+                    "parseResultId": "PARSE-EVAL-QUALITY-EVIDENCE-RANGE",
+                    "status": "success",
+                    "fields": [],
+                    "tables": [],
+                    "seals": [],
+                    "quality": {"status": "needs_human_review", "reasons": [], "evidenceCompleteness": 1.0},
+                },
+                "expected": {
+                    "qualityStatus": "needs_human_review",
+                    "maxEvidenceCompleteness": 0.5,
+                },
+            }
+        ]
+    )
+
+    findings = {item["code"] for item in report["cases"][0]["findings"]}
+    quality_detail = report["cases"][0]["details"]["quality"]
+
+    assert report["ok"] is False
+    assert report["cases"][0]["metrics"]["qualityEvidenceCompletenessMatch"] == 0
+    assert quality_detail["actualEvidenceCompleteness"] == 1.0
+    assert quality_detail["expectedMaxEvidenceCompleteness"] == 0.5
+    assert quality_detail["evidenceCompletenessStatus"] == "range_mismatch"
+    assert report["findingCounts"]["OCR_EVAL_QUALITY_EVIDENCE_COMPLETENESS_MISMATCH"] == 1
+    assert "OCR_EVAL_QUALITY_EVIDENCE_COMPLETENESS_MISMATCH" in findings
+
+
+def test_ocr_eval_markdown_report_summarizes_findings_and_quality_range() -> None:
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "ocr_eval_set.py"
+    spec = importlib.util.spec_from_file_location("ocr_eval_set_markdown", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    report = {
+        "ok": False,
+        "summary": {"cases": 1, "passed": 0, "failed": 1, "averageScore": 0.5},
+        "metrics": {"qualityEvidenceCompletenessMatch": 0},
+        "findingCounts": {"OCR_EVAL_QUALITY_EVIDENCE_COMPLETENESS_MISMATCH": 1},
+        "thresholdFailures": [],
+        "scenarios": {},
+        "cases": [
+            {
+                "caseId": "quality-range",
+                "scenario": "evidence_profile",
+                "score": 0.5,
+                "qualityStatus": "needs_human_review",
+                "passed": False,
+                "findings": [{"code": "OCR_EVAL_QUALITY_EVIDENCE_COMPLETENESS_MISMATCH"}],
+                "details": {
+                    "quality": {
+                        "status": "matched",
+                        "expectedStatus": "needs_human_review",
+                        "actualStatus": "needs_human_review",
+                        "missingReasons": [],
+                        "evidenceCompletenessStatus": "range_mismatch",
+                        "actualEvidenceCompleteness": 1.0,
+                        "expectedMaxEvidenceCompleteness": 0.5,
+                    }
+                },
+            }
+        ],
+    }
+
+    markdown = module.markdown_report(report, eval_set_name="unit")
+
+    assert "## Finding Summary" in markdown
+    assert "OCR_EVAL_QUALITY_EVIDENCE_COMPLETENESS_MISMATCH" in markdown
+    assert "evidenceCompleteness actual=1.0000" in markdown
+
+
+def test_ocr_eval_compact_summary_preserves_gate_findings() -> None:
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "ocr_eval_set.py"
+    spec = importlib.util.spec_from_file_location("ocr_eval_set_compact_summary", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    report = {
+        "ok": False,
+        "summary": {"cases": 1, "passed": 0, "failed": 1, "averageScore": 0.5},
+        "metrics": {"fieldRecall": 0.5},
+        "findingCounts": {"OCR_EVAL_FIELD_MISSING": 1},
+        "thresholdFailures": [{"scope": "overall", "metric": "averageScore", "actual": 0.5, "minimum": 0.98}],
+        "scenarios": {
+            "piping_table_profile": {
+                "ok": False,
+                "cases": 1,
+                "passed": 0,
+                "failed": 1,
+                "averageScore": 0.5,
+                "findingCounts": {"OCR_EVAL_FIELD_MISSING": 1},
+                "thresholdFailures": [
+                    {"scope": "piping_table_profile", "metric": "fieldRecall", "actual": 0.5, "minimum": 0.98}
+                ],
+                "metrics": {"fieldRecall": 0.5},
+            }
+        },
+        "cases": [
+            {
+                "caseId": "missing-field",
+                "scenario": "piping_table_profile",
+                "score": 0.5,
+                "minScore": 0.98,
+                "passed": False,
+                "qualityStatus": "needs_human_review",
+                "findings": [{"code": "OCR_EVAL_FIELD_MISSING"}],
+                "details": {"fields": [{"status": "missing"}]},
+            }
+        ],
+    }
+
+    summary = module.compact_evaluation_report(report)
+
+    assert summary["ok"] is False
+    assert summary["findingCounts"] == {"OCR_EVAL_FIELD_MISSING": 1}
+    assert summary["thresholdFailures"][0]["metric"] == "averageScore"
+    assert summary["scenarioMetrics"]["piping_table_profile"]["findingCounts"] == {"OCR_EVAL_FIELD_MISSING": 1}
+    assert summary["failedCases"] == [
+        {
+            "caseId": "missing-field",
+            "scenario": "piping_table_profile",
+            "score": 0.5,
+            "minScore": 0.98,
+            "qualityStatus": "needs_human_review",
+            "findings": ["OCR_EVAL_FIELD_MISSING"],
+        }
+    ]
+
+
+def test_ocr_eval_set_resolves_relative_paths_from_eval_set_directory(tmp_path) -> None:
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "ocr_eval_set.py"
+    spec = importlib.util.spec_from_file_location("ocr_eval_set_paths", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    eval_dir = tmp_path / "release"
+    fixture_dir = eval_dir / "fixtures"
+    fixture_dir.mkdir(parents=True)
+    result_path = fixture_dir / "result.json"
+    source_path = fixture_dir / "sample.png"
+    result_path.write_text("{}", encoding="utf-8")
+    source_path.write_bytes(b"image")
+
+    normalized = module.normalize_case_paths(
+        [
+            {"caseId": "relative", "resultPath": "fixtures/result.json", "source": "fixtures/sample.png"},
+            {"caseId": "absolute", "resultPath": str(result_path), "source": str(source_path)},
+            {"caseId": "uri", "resultPath": "minio://documents/result.json", "source": "minio://documents/sample.png"},
+        ],
+        base_dir=eval_dir,
+        resolve_sources=True,
+    )
+
+    assert normalized[0]["resultPath"] == str(result_path.resolve())
+    assert normalized[0]["source"] == str(source_path.resolve())
+    assert normalized[1]["resultPath"] == str(result_path)
+    assert normalized[1]["source"] == str(source_path)
+    assert normalized[2]["resultPath"] == "minio://documents/result.json"
+    assert normalized[2]["source"] == "minio://documents/sample.png"
+
+
+def test_ocr_eval_set_creates_report_output_directories(tmp_path) -> None:
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "ocr_eval_set.py"
+    spec = importlib.util.spec_from_file_location("ocr_eval_set_output_dirs", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    report = {
+        "ok": True,
+        "summary": {"cases": 0, "passed": 0, "failed": 0, "averageScore": 1.0},
+        "metrics": {},
+        "findingCounts": {},
+        "thresholdFailures": [],
+        "scenarios": {},
+        "cases": [],
+    }
+    json_output = tmp_path / "nested" / "reports" / "eval.json"
+    markdown_output = tmp_path / "nested" / "reports" / "eval.md"
+
+    module.write_text_file(json_output, json.dumps(report, ensure_ascii=False, indent=2))
+    module.write_text_file(markdown_output, module.markdown_report(report, eval_set_name="unit"))
+
+    assert json.loads(json_output.read_text(encoding="utf-8"))["ok"] is True
+    assert "# OCR Evaluation Report: unit" in markdown_output.read_text(encoding="utf-8")
+
+
+def test_ocr_evaluation_enforces_scenario_thresholds() -> None:
+    from apps.ocr_service.evaluation import evaluate_cases
+
+    report = evaluate_cases(
+        [
+            {
+                "caseId": "seal-low-score",
+                "scenario": "seal_text_profile",
+                "minScore": 0,
+                "result": {
+                    "parseResultId": "PARSE-EVAL-THRESHOLD",
+                    "status": "success",
+                    "fields": [],
+                    "tables": [],
+                    "seals": [{"sealName": "visual seal candidate", "visualConfidence": 0.9}],
+                    "quality": {"status": "needs_human_review", "reasons": ["SEAL_TEXT_LOW_CONFIDENCE"]},
+                },
+                "expected": {
+                    "seals": [{"nameContains": "design license", "minConfidence": 0.8}],
+                    "qualityStatus": "needs_human_review",
+                    "qualityReasons": ["SEAL_TEXT_LOW_CONFIDENCE"],
+                },
+            }
+        ],
+        thresholds={
+            "averageScore": 0.8,
+            "metrics": {"sealRecall": 0.98},
+            "scenarios": {
+                "seal_text_profile": {
+                    "averageScore": 0.8,
+                    "metrics": {"sealRecall": 0.98},
+                }
+            },
+        },
+    )
+
+    scenario_failures = report["scenarios"]["seal_text_profile"]["thresholdFailures"]
+
+    assert report["ok"] is False
+    assert "sealRecall" in {item["metric"] for item in report["thresholdFailures"]}
+    assert scenario_failures[0]["scope"] == "seal_text_profile"
+    assert "sealRecall" in {item["metric"] for item in scenario_failures}
+
+
+def test_ocr_service_adds_quality_variants_and_engine_run_metadata(monkeypatch, tmp_path) -> None:
+    from apps.ocr_service.profiles import profile_for
+    from apps.ocr_service.service import OcrService
+
+    class FakeEngine:
+        name = "paddle_ocr_subprocess"
+        version = "test"
+
+        def available(self):
+            return True
+
+        def status(self):
+            return {"engine": self.name, "version": self.version, "available": True}
+
+        def parse(self, source_path, *, file_name=None, profile=None, variant=None):
+            return {
+                "ok": True,
+                "fragments": [
+                    {
+                        "pageNo": 1,
+                        "text": "管道特性表 PL8301 PL8302",
+                        "bbox": [[0, 0], [200, 0], [200, 20], [0, 20]],
+                        "confidence": 0.94,
+                    }
+                ],
+                "fields": [
+                    {
+                        "fieldCode": "document_title",
+                        "fieldName": "文件标题",
+                        "fieldValue": "管道特性表",
+                        "bbox": [0, 0, 200, 20],
+                        "confidence": 0.94,
+                    }
+                ],
+                "diagnostics": [],
+            }
+
+    source = tmp_path / "sample.png"
+    source.write_bytes(b"not-a-real-image")
+    monkeypatch.setattr(
+        "apps.ocr_service.service.probe_page_quality",
+        lambda source_path, profile=None: [
+            {
+                "pageNo": 1,
+                "quality": {
+                    "isImageReadable": True,
+                    "isLowQuality": False,
+                    "hasTableCandidate": True,
+                    "hasSealCandidate": False,
+                },
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "apps.ocr_service.service.generate_image_variants",
+        lambda source_path, profile, page_quality, options=None: [
+            {
+                "variantId": "page_1_original",
+                "pageNo": 1,
+                "path": str(source_path),
+                "preprocessChain": ["original"],
+                "imageHash": "sha256:test",
+                "purpose": "general",
+                "source": "original",
+            }
+        ],
+    )
+    service = OcrService()
+    service.pipeline = None
+    service.engines = [FakeEngine()]
+
+    result = service.parse_with_local_engines(
+        source,
+        storage_key=str(source),
+        file_name="sample.png",
+        profile=profile_for("piping_characteristic_list_v1"),
+        document_version_id="docv_test",
+        business_pack_id="engineering_inspection_v1",
+        options={},
+    )
+
+    assert result["status"] == "success"
+    assert result["pageQuality"][0]["quality"]["hasTableCandidate"] is True
+    assert result["imageVariants"][0]["variantId"] == "page_1_original"
+    assert result["engineRuns"][0]["variantId"] == "page_1_original"
+    assert result["fields"][0]["candidates"][0]["variantId"] == "page_1_original"
+    assert result["quality"]["status"] in {"auto_usable", "needs_human_review"}
+
+
 def test_litellm_client_rejects_default_key_when_production_flags_are_enabled(monkeypatch) -> None:
     from libs.integrations.litellm_client import LiteLLMClient
 
@@ -275,6 +3353,31 @@ def test_ocr_client_sanitizes_http_and_business_errors() -> None:
         assert "sk-secret-provider" not in str(exc)
     else:
         raise AssertionError("OCR business failure must raise a sanitized integration error")
+
+
+def test_ocr_client_reads_runtime_doctor() -> None:
+    from libs.integrations.ocr_client import OcrClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/internal/ocr/doctor"
+        return httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "data": {
+                    "schemaVersion": "aicheck-ocr-runtime-doctor-v1",
+                    "ok": True,
+                    "summary": {"pass": 1, "warn": 0, "fail": 0, "total": 1},
+                    "checks": [],
+                },
+            },
+        )
+
+    client = OcrClient(base_url="http://ocr", transport=httpx.MockTransport(handler))
+    report = client.runtime_doctor()
+
+    assert report["ok"] is True
+    assert report["schemaVersion"] == "aicheck-ocr-runtime-doctor-v1"
 
 
 def test_litellm_client_sanitizes_provider_response_body() -> None:

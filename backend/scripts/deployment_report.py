@@ -172,6 +172,21 @@ REQUIRED_REPOSITORY_STORAGE_CALLS = {
 }
 REQUIRED_OCR_HEALTH_FIELDS = {"service", "pipelineAvailable", "pipelineBackend", "placeholderAllowed"}
 REQUIRED_OCR_RESULT_FIELDS = {"storageKey", "fileName", "status", "fragments", "fields", "seals", "diagnostics"}
+REQUIRED_OCR_EVALUATION_METRICS = {
+    "fieldBboxHitRate",
+    "fieldRecall",
+    "fieldValueAccuracy",
+    "fieldEvidenceRecall",
+    "tableBboxHitRate",
+    "tableEvidenceRecall",
+    "tableRecall",
+    "sealBboxHitRate",
+    "sealEvidenceRecall",
+    "sealRecall",
+    "qualityStatusMatch",
+    "qualityReasonRecall",
+    "qualityEvidenceCompletenessMatch",
+}
 REQUIRED_LITELLM_CLIENT_METHODS = {
     "__init__": ["LITELLM_API_KEY", "production_mode_enabled", "sk-aicheck-dev", "RuntimeError"],
     "chat": ["/v1/chat/completions", "Authorization", "Bearer", "default-chat", "messages"],
@@ -340,10 +355,14 @@ class DeploymentReportBuilder:
 
     def ocr_service_contract_section(self) -> dict[str, Any]:
         check = ocr_service_contract_check()
+        profile_check = ocr_profile_contract_check()
+        evaluation_check = ocr_evaluation_contract_check()
         return {
             "name": "ocr-service-contract",
-            "ok": check["status"] == "pass",
-            "checks": [check],
+            "ok": check["status"] == "pass"
+            and profile_check["status"] == "pass"
+            and evaluation_check["status"] == "pass",
+            "checks": [check, profile_check, evaluation_check],
         }
 
     def litellm_client_contract_section(self) -> dict[str, Any]:
@@ -709,11 +728,14 @@ def ocr_service_contract_check(
     *,
     ocr_main_module: Any | None = None,
     service_module: Any | None = None,
+    fusion_module: Any | None = None,
 ) -> dict[str, Any]:
     if ocr_main_module is None:
         from apps.ocr_service import main as ocr_main_module
     if service_module is None:
         from apps.ocr_service import service as service_module
+    if fusion_module is None:
+        from apps.ocr_service import fusion as fusion_module
 
     health_failures: list[str] = []
     health_func = getattr(ocr_main_module, "healthz", None)
@@ -735,12 +757,22 @@ def ocr_service_contract_check(
         parse_failures.append("parse endpoint is missing")
     if missing_parse_terms:
         parse_failures.append("missing parse endpoint terms: " + ", ".join(missing_parse_terms))
+    doctor_failures: list[str] = []
+    doctor_func = getattr(ocr_main_module, "runtime_doctor", None)
+    doctor_source = source_for_callable(doctor_func) if callable(doctor_func) else ""
+    if not callable(doctor_func):
+        doctor_failures.append("runtime doctor endpoint is missing")
+    elif "ocr_service.runtime_doctor_payload" not in doctor_source or "ok(" not in doctor_source:
+        doctor_failures.append("runtime doctor endpoint must return ocr_service.runtime_doctor_payload in ok() envelope")
 
     service_failures: list[str] = []
     service_type = getattr(service_module, "OcrService", None)
     parse_method = getattr(service_type, "parse_document", None) if service_type else None
+    local_parse_method = getattr(service_type, "parse_with_local_engines", None) if service_type else None
+    doctor_method = getattr(service_type, "runtime_doctor_payload", None) if service_type else None
     service_source = source_for_callable(service_type) if service_type else ""
     parse_method_source = source_for_callable(parse_method) if callable(parse_method) else ""
+    local_parse_source = source_for_callable(local_parse_method) if callable(local_parse_method) else ""
     required_service_terms = [
         "resolve_source_path",
         "AICHECK_OCR_ALLOW_PLACEHOLDER",
@@ -756,10 +788,39 @@ def ocr_service_contract_check(
         service_failures.append("OcrService.parse_document is missing")
     if missing_service_terms:
         service_failures.append("missing OcrService.parse_document terms: " + ", ".join(missing_service_terms))
+    doctor_method_source = source_for_callable(doctor_method) if callable(doctor_method) else ""
+    if not callable(doctor_method):
+        doctor_failures.append("OcrService.runtime_doctor_payload is missing")
+    elif "build_runtime_doctor" not in doctor_method_source:
+        doctor_failures.append("OcrService.runtime_doctor_payload must call build_runtime_doctor")
     resolve_source = source_for_callable(getattr(service_module, "resolve_source_path", None))
     for term in ["parse_storage_url", "download_to_temp"]:
         if term not in resolve_source:
             service_failures.append(f"resolve_source_path must use {term}")
+    preprocess_failures: list[str] = []
+    for term in [
+        "requested_variant_names",
+        "preprocessStatus",
+        "missingVariants",
+        "PREPROCESS_VARIANT_GENERATION_UNAVAILABLE",
+    ]:
+        if term not in local_parse_source:
+            preprocess_failures.append(f"parse_with_local_engines missing {term}")
+    quality_gate_failures: list[str] = []
+    quality_gate_source = source_for_callable(getattr(fusion_module, "build_quality_gate", None))
+    fusion_source = source_for_callable(fusion_module)
+    for term in [
+        "minFieldConfidence",
+        "FIELD_LOW_CONFIDENCE",
+        "lowConfidenceFields",
+        "field_low_confidence",
+        "FIELD_EVIDENCE_MISSING",
+        "TABLE_EVIDENCE_MISSING",
+        "SEAL_EVIDENCE_MISSING",
+        "missingEvidence",
+    ]:
+        if term not in quality_gate_source and term not in fusion_source:
+            quality_gate_failures.append(f"quality gate missing {term}")
 
     result_failures: list[str] = []
     normalize_func = getattr(service_module, "normalize_ocr_result", None)
@@ -826,7 +887,15 @@ def ocr_service_contract_check(
     if not all(isinstance(failed.get(key), list) for key in ["fragments", "fields", "seals", "diagnostics"]):
         result_failures.append("failed fragments/fields/seals/diagnostics must be lists")
 
-    failures = health_failures + parse_failures + service_failures + result_failures
+    failures = (
+        health_failures
+        + parse_failures
+        + doctor_failures
+        + service_failures
+        + preprocess_failures
+        + quality_gate_failures
+        + result_failures
+    )
     status = "pass" if not failures else "fail"
     return {
         "name": "ocr.service-contract",
@@ -839,10 +908,269 @@ def ocr_service_contract_check(
         "data": {
             "healthFailures": health_failures,
             "parseFailures": parse_failures,
+            "doctorFailures": doctor_failures,
             "serviceFailures": service_failures,
+            "preprocessFailures": preprocess_failures,
+            "qualityGateFailures": quality_gate_failures,
             "resultFailures": result_failures,
             "requiredHealthFields": sorted(REQUIRED_OCR_HEALTH_FIELDS),
             "requiredResultFields": sorted(REQUIRED_OCR_RESULT_FIELDS),
+        },
+    }
+
+
+def ocr_evaluation_contract_check(
+    *,
+    evaluation_module: Any | None = None,
+    cli_path: Path | None = None,
+    fixture_path: Path | None = None,
+) -> dict[str, Any]:
+    if evaluation_module is None:
+        from apps.ocr_service import evaluation as evaluation_module
+
+    cli = cli_path or BACKEND_ROOT / "scripts" / "ocr_eval_set.py"
+    fixture = fixture_path or BACKEND_ROOT / "ocr_eval" / "piping_release_set.json"
+    failures: list[str] = []
+    data: dict[str, Any] = {
+        "requiredMetrics": sorted(REQUIRED_OCR_EVALUATION_METRICS),
+        "metricFailures": [],
+        "cliFailures": [],
+        "fixtureFailures": [],
+    }
+
+    evaluate_cases = getattr(evaluation_module, "evaluate_cases", None)
+    compact_evaluation_report = getattr(evaluation_module, "compact_evaluation_report", None)
+    if not callable(evaluate_cases):
+        failures.append("apps.ocr_service.evaluation.evaluate_cases is missing")
+        data["metricFailures"].append("evaluate_cases missing")
+    if not callable(compact_evaluation_report):
+        failures.append("apps.ocr_service.evaluation.compact_evaluation_report is missing")
+        data["metricFailures"].append("compact_evaluation_report missing")
+    else:
+        try:
+            report = evaluate_cases(
+                [
+                    {
+                        "caseId": "deployment-contract-ocr-eval",
+                        "minScore": 1,
+                        "result": {
+                            "parseResultId": "PARSE-CONTRACT",
+                            "status": "success",
+                            "fields": [{"fieldCode": "pipe_no", "fieldValue": "PL8301", "bbox": [0, 0, 10, 10]}],
+                            "tables": [
+                                {
+                                    "businessSchema": "piping_characteristic_table_v1",
+                                    "rows": 2,
+                                    "columns": 2,
+                                    "bbox": [10, 10, 80, 80],
+                                    "businessRows": [{"pipeNo": "PL8301"}],
+                                }
+                            ],
+                            "seals": [{"sealName": "pressure pipe design license seal", "ocrConfidence": 0.9, "bbox": [100, 100, 180, 180]}],
+                            "quality": {"status": "needs_human_review", "reasons": ["TABLE_HEURISTIC_REVIEW_REQUIRED"]},
+                        },
+                        "expected": {
+                            "fields": [{"fieldCode": "pipe_no", "value": "PL8301", "bbox": [0, 0, 10, 10]}],
+                            "tables": [
+                                {
+                                    "businessSchema": "piping_characteristic_table_v1",
+                                    "requiredBusinessKeys": ["pipeNo"],
+                                    "bbox": [10, 10, 80, 80],
+                                }
+                            ],
+                            "seals": [{"nameContains": "design license", "minConfidence": 0.8, "bbox": [100, 100, 180, 180]}],
+                            "qualityStatus": "needs_human_review",
+                            "qualityReasons": ["TABLE_HEURISTIC_REVIEW_REQUIRED"],
+                        },
+                    }
+                ]
+            )
+        except Exception as exc:
+            report = {}
+            failures.append(f"evaluate_cases raised {exc.__class__.__name__}")
+            data["metricFailures"].append(f"runtime error: {exc.__class__.__name__}")
+        metrics = report.get("metrics") if isinstance(report, dict) else {}
+        missing_metrics = sorted(REQUIRED_OCR_EVALUATION_METRICS - set(metrics or {}))
+        if missing_metrics:
+            failures.append("missing OCR evaluation metrics: " + ", ".join(missing_metrics))
+            data["metricFailures"].extend(missing_metrics)
+        if isinstance(report, dict) and not report.get("ok"):
+            failures.append("inline OCR evaluation contract case did not pass")
+            data["metricFailures"].append("inline contract case failed")
+        details = ((report.get("cases") or [{}])[0].get("details") or {}) if isinstance(report, dict) else {}
+        missing_detail_keys = sorted(set(["fields", "tables", "seals", "quality"]) - set(details))
+        if missing_detail_keys:
+            failures.append("missing OCR evaluation details: " + ", ".join(missing_detail_keys))
+            data["metricFailures"].extend(f"details.{key}" for key in missing_detail_keys)
+        if not isinstance(report.get("findingCounts") if isinstance(report, dict) else None, dict):
+            failures.append("OCR evaluation report must expose findingCounts")
+            data["metricFailures"].append("findingCounts missing")
+        if callable(compact_evaluation_report):
+            compact = compact_evaluation_report(report if isinstance(report, dict) else {})
+            required_compact_keys = {"ok", "summary", "metrics", "findingCounts", "thresholdFailures", "scenarioMetrics", "failedCases"}
+            missing_compact_keys = sorted(required_compact_keys - set(compact if isinstance(compact, dict) else {}))
+            if missing_compact_keys:
+                failures.append("OCR compact evaluation report missing keys: " + ", ".join(missing_compact_keys))
+                data["metricFailures"].extend(f"compact.{key}" for key in missing_compact_keys)
+            else:
+                data["compactSummary"] = {
+                    "ok": compact.get("ok"),
+                    "failedCases": len(compact.get("failedCases") or []),
+                    "scenarioCount": len(compact.get("scenarioMetrics") or {}),
+                }
+            try:
+                contract_repo = InMemoryRepository()
+                persisted = contract_repo.create_ocr_eval_run(
+                    {
+                        "id": "OCREVAL-CONTRACT-COMPACT",
+                        "profileId": "deployment_contract",
+                        "caseCount": 1,
+                        "evaluationSummary": compact,
+                    }
+                )
+            except Exception as exc:
+                persisted = {}
+                failures.append(f"repository OCR evaluationSummary persistence raised {exc.__class__.__name__}")
+                data["metricFailures"].append(f"evaluationSummary persistence runtime error: {exc.__class__.__name__}")
+            if not isinstance(persisted, dict) or not persisted.get("evaluationSummary"):
+                failures.append("Repository must preserve OCR evaluationSummary")
+                data["metricFailures"].append("evaluationSummary persistence missing")
+            if isinstance(persisted, dict) and (persisted.get("metrics") or {}).get("caseCount") != 1:
+                failures.append("Repository must preserve explicit OCR evaluation caseCount")
+                data["metricFailures"].append("evaluation caseCount persistence mismatch")
+        try:
+            evidence_report = evaluate_cases(
+                [
+                    {
+                        "caseId": "deployment-contract-field-evidence-negative",
+                        "minScore": 0,
+                        "result": {
+                            "parseResultId": "PARSE-CONTRACT-NO-EVIDENCE",
+                            "status": "success",
+                            "fields": [{"fieldCode": "pipe_no", "fieldValue": "PL8301"}],
+                            "tables": [{"businessSchema": "piping_characteristic_table_v1", "businessRows": [{"pipeNo": "PL8301"}]}],
+                            "seals": [{"sealName": "pressure pipe design license seal", "ocrConfidence": 0.9}],
+                            "quality": {"status": "auto_usable", "reasons": [], "evidenceCompleteness": 1.0},
+                        },
+                        "expected": {
+                            "fields": [{"fieldCode": "pipe_no", "value": "PL8301"}],
+                            "tables": [{"businessSchema": "piping_characteristic_table_v1", "requiredBusinessKeys": ["pipeNo"]}],
+                            "seals": [{"nameContains": "design license", "minConfidence": 0.8}],
+                            "maxEvidenceCompleteness": 0.99,
+                        },
+                    }
+                ]
+            )
+        except Exception as exc:
+            evidence_report = {}
+            failures.append(f"field evidence negative case raised {exc.__class__.__name__}")
+            data["metricFailures"].append(f"field evidence runtime error: {exc.__class__.__name__}")
+        evidence_findings = {
+            item.get("code")
+            for item in (((evidence_report.get("cases") or [{}])[0]).get("findings") or [])
+            if isinstance(item, dict)
+        } if isinstance(evidence_report, dict) else set()
+        if "OCR_EVAL_FIELD_EVIDENCE_MISSING" not in evidence_findings or evidence_report.get("ok"):
+            failures.append("OCR evaluation must fail field values without bbox/polygon evidence")
+            data["metricFailures"].append("field evidence negative case failed")
+        if "OCR_EVAL_TABLE_EVIDENCE_MISSING" not in evidence_findings or evidence_report.get("ok"):
+            failures.append("OCR evaluation must fail matched tables without bbox/polygon evidence")
+            data["metricFailures"].append("table evidence negative case failed")
+        if "OCR_EVAL_SEAL_EVIDENCE_MISSING" not in evidence_findings or evidence_report.get("ok"):
+            failures.append("OCR evaluation must fail matched seals without bbox/polygon evidence")
+            data["metricFailures"].append("seal evidence negative case failed")
+        if "OCR_EVAL_QUALITY_EVIDENCE_COMPLETENESS_MISMATCH" not in evidence_findings or evidence_report.get("ok"):
+            failures.append("OCR evaluation must fail mismatched quality.evidenceCompleteness")
+            data["metricFailures"].append("quality evidence completeness negative case failed")
+        evidence_finding_counts = evidence_report.get("findingCounts") if isinstance(evidence_report, dict) else {}
+        for code in [
+            "OCR_EVAL_FIELD_EVIDENCE_MISSING",
+            "OCR_EVAL_TABLE_EVIDENCE_MISSING",
+            "OCR_EVAL_SEAL_EVIDENCE_MISSING",
+            "OCR_EVAL_QUALITY_EVIDENCE_COMPLETENESS_MISMATCH",
+        ]:
+            if not isinstance(evidence_finding_counts, dict) or int(evidence_finding_counts.get(code) or 0) < 1:
+                failures.append(f"OCR evaluation findingCounts missing {code}")
+                data["metricFailures"].append(f"findingCounts.{code} missing")
+        data["inlineReportSummary"] = report.get("summary") if isinstance(report, dict) else None
+
+    if not cli.exists():
+        failures.append(f"OCR evaluation CLI is missing: {cli}")
+        data["cliFailures"].append("missing")
+    else:
+        cli_source = cli.read_text(encoding="utf-8")
+        for term in [
+            "evaluate_cases",
+            "thresholds",
+            "markdown_report",
+            "normalize_case_paths",
+            "resolve_local_reference",
+            "write_text_file",
+            "compact_evaluation_report",
+            "--run-ocr",
+            "--min-average-score",
+            "--output",
+            "--summary-output",
+            "--markdown-output",
+        ]:
+            if term not in cli_source:
+                failures.append(f"OCR evaluation CLI missing term: {term}")
+                data["cliFailures"].append(term)
+
+    if not fixture.exists():
+        failures.append(f"OCR release evaluation fixture is missing: {fixture}")
+        data["fixtureFailures"].append("missing")
+    elif callable(evaluate_cases):
+        try:
+            payload = json.loads(fixture.read_text(encoding="utf-8"))
+            cases = payload.get("cases") if isinstance(payload, dict) else payload
+            thresholds = payload.get("thresholds") if isinstance(payload, dict) and isinstance(payload.get("thresholds"), dict) else None
+            if not isinstance(cases, list) or not cases:
+                failures.append("OCR release evaluation fixture must contain cases[]")
+                data["fixtureFailures"].append("cases[] missing")
+            else:
+                fixture_report = evaluate_cases(cases, thresholds=thresholds)
+                data["fixtureSummary"] = fixture_report.get("summary")
+                data["fixtureScenarios"] = sorted((fixture_report.get("scenarios") or {}).keys())
+                if not fixture_report.get("ok"):
+                    failures.append("OCR release evaluation fixture does not pass")
+                    data["fixtureFailures"].append("fixture failed")
+        except Exception as exc:
+            failures.append(f"OCR release evaluation fixture failed to load: {exc.__class__.__name__}")
+            data["fixtureFailures"].append(exc.__class__.__name__)
+
+    return {
+        "name": "ocr.evaluation-contract",
+        "status": "pass" if not failures else "fail",
+        "detail": "OCR release evaluation set and runner are usable." if not failures else f"failures={len(failures)}",
+        "data": data,
+    }
+
+
+def ocr_profile_contract_check() -> dict[str, Any]:
+    from apps.ocr_service.profiles import OCR_PROFILES, validate_profiles
+
+    failures = validate_profiles()
+    profile_ids = sorted(OCR_PROFILES)
+    business_profiles = [profile_id for profile_id in profile_ids if profile_id != "generic_document_v1"]
+    status = "pass" if not failures else "fail"
+    return {
+        "name": "ocr.profile-contract",
+        "status": status,
+        "detail": (
+            f"profiles={len(profile_ids)}, businessProfiles={len(business_profiles)}, failures=0"
+            if not failures
+            else f"profiles={len(profile_ids)}, failures={len(failures)}"
+        ),
+        "data": {
+            "profileIds": profile_ids,
+            "businessProfileIds": business_profiles,
+            "failures": failures,
+            "requiredQualityRuleKeys": [
+                "criticalConflictFields",
+                "minFieldConfidence",
+                "minTableStructureConfidence",
+            ],
         },
     }
 

@@ -58,6 +58,9 @@ class OcrClient:
     def get_parse_result(self, parse_result_id: str) -> dict[str, Any]:
         return self._request_enveloped("GET", f"/internal/document-parse/results/{parse_result_id}", timeout=30)
 
+    def runtime_doctor(self) -> dict[str, Any]:
+        return self._request_enveloped("GET", "/internal/ocr/doctor", timeout=10)
+
     def parse_via_job_sync(
         self,
         payload: dict[str, Any],

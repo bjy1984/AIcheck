@@ -227,6 +227,7 @@ class DeploymentVerifier:
         self.check_read_scope_rejected()
         self.check_ocr_health()
         self.check_ocr_readyz()
+        self.check_ocr_runtime_doctor()
         self.check_ocr_parse_contract()
         self.check_ocr_bad_request_contract()
         self.check_litellm_health()
@@ -773,6 +774,35 @@ class DeploymentVerifier:
             "ocr.readyz",
             "fail" if failures else "pass",
             "; ".join(failures) if failures else "OCR readyz confirms local model readiness.",
+            data,
+        )
+
+    def check_ocr_runtime_doctor(self) -> None:
+        if self.config.skip_ocr or self.ocr is None:
+            self.add("ocr.runtime-doctor", "skip", "OCR check disabled.")
+            return
+        try:
+            status_code, payload = self.request_json(self.ocr, "GET", "/internal/ocr/doctor")
+        except Exception as exc:
+            self.add("ocr.runtime-doctor", "fail", str(exc))
+            return
+        data = self.envelope_data("ocr.runtime-doctor", status_code, payload)
+        if data is None:
+            return
+        failures = []
+        if data.get("schemaVersion") != "aicheck-ocr-runtime-doctor-v1":
+            failures.append("schemaVersion must be aicheck-ocr-runtime-doctor-v1")
+        summary = data.get("summary") if isinstance(data.get("summary"), dict) else {}
+        checks = data.get("checks") if isinstance(data.get("checks"), list) else []
+        if not summary or not checks:
+            failures.append("doctor summary/checks must be present")
+        failed_checks = [item for item in checks if isinstance(item, dict) and item.get("status") == "fail"]
+        if self.config.strict_production and failed_checks:
+            failures.append("runtime doctor has failed checks: " + ", ".join(str(item.get("name")) for item in failed_checks[:8]))
+        self.add(
+            "ocr.runtime-doctor",
+            "fail" if failures else "pass",
+            "; ".join(failures) if failures else "OCR runtime doctor confirms package/model/preprocess readiness.",
             data,
         )
 

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from argparse import Namespace
+from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi.responses import JSONResponse
@@ -17,6 +20,7 @@ from scripts.deployment_report import (
     litellm_client_contract_check,
     markdown_report,
     mongo_index_contract_check,
+    ocr_evaluation_contract_check,
     ocr_service_contract_check,
     response_envelope_contract_check,
     role_contract_check,
@@ -97,8 +101,32 @@ def test_deployment_report_static_sections_pass_and_live_is_skipped() -> None:
     assert ocr_check["status"] == "pass"
     assert ocr_check["data"]["healthFailures"] == []
     assert ocr_check["data"]["parseFailures"] == []
+    assert ocr_check["data"]["doctorFailures"] == []
     assert ocr_check["data"]["serviceFailures"] == []
+    assert ocr_check["data"]["preprocessFailures"] == []
+    assert ocr_check["data"]["qualityGateFailures"] == []
     assert ocr_check["data"]["resultFailures"] == []
+    ocr_profile_check = next(
+        check for check in sections["ocr-service-contract"]["checks"] if check["name"] == "ocr.profile-contract"
+    )
+    assert ocr_profile_check["status"] == "pass"
+    assert ocr_profile_check["data"]["failures"] == []
+    assert "piping_characteristic_list_v1" in ocr_profile_check["data"]["businessProfileIds"]
+    ocr_eval_check = next(
+        check for check in sections["ocr-service-contract"]["checks"] if check["name"] == "ocr.evaluation-contract"
+    )
+    assert ocr_eval_check["status"] == "pass"
+    assert ocr_eval_check["data"]["metricFailures"] == []
+    assert ocr_eval_check["data"]["fixtureFailures"] == []
+    assert set(ocr_eval_check["data"]["fixtureScenarios"]) == {
+        "evidence_profile",
+        "field_confidence_profile",
+        "field_conflict_profile",
+        "fragment_seal_profile",
+        "piping_table_profile",
+        "quality_gate_profile",
+        "seal_text_profile",
+    }
     litellm_check = next(
         check for check in sections["litellm-client-contract"]["checks"] if check["name"] == "litellm.client-contract"
     )
@@ -154,6 +182,124 @@ def test_deployment_report_writes_json_and_markdown(tmp_path) -> None:
     assert report_json["ok"] is True
     assert report_json["schemaVersion"] == "aicheck-deployment-report-v1"
     assert "AIcheck Deployment Acceptance Report" in report_md
+
+
+def test_ocr_evaluation_contract_and_cli_fixture_pass(tmp_path) -> None:
+    backend_root = Path(__file__).resolve().parents[1]
+    markdown_path = tmp_path / "ocr-eval-report.md"
+    check = ocr_evaluation_contract_check()
+
+    assert check["status"] == "pass"
+    assert check["data"]["fixtureSummary"]["averageScore"] == 1
+    assert check["data"]["compactSummary"]["ok"] is True
+    assert check["data"]["compactSummary"]["scenarioCount"] >= 1
+    assert set(check["data"]["fixtureScenarios"]) == {
+        "evidence_profile",
+        "field_confidence_profile",
+        "field_conflict_profile",
+        "fragment_seal_profile",
+        "piping_table_profile",
+        "quality_gate_profile",
+        "seal_text_profile",
+    }
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/ocr_eval_set.py",
+            "ocr_eval/piping_release_set.json",
+            "--min-average-score",
+            "1",
+            "--markdown-output",
+            str(markdown_path),
+        ],
+        cwd=backend_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    summary = json.loads(completed.stdout)
+    assert summary["averageScore"] == 1
+    assert summary["scenarios"]["piping_table_profile"]["averageScore"] == 1
+    markdown = markdown_path.read_text(encoding="utf-8")
+    assert "# OCR Evaluation Report: piping_release_set" in markdown
+    assert "| piping_table_profile | 1 | 1 | 0 | 1.0000 |" in markdown
+    assert "No failed cases." in markdown
+
+
+def test_ocr_profile_contract_rejects_missing_critical_conflict_fields() -> None:
+    from apps.ocr_service.profiles import DEFAULT_PROFILE_ID, OCR_PROFILES, validate_profiles
+
+    profiles = {key: json.loads(json.dumps(value, ensure_ascii=False)) for key, value in OCR_PROFILES.items()}
+    profiles["broken_profile_v1"] = {
+        "profileId": "broken_profile_v1",
+        "documentType": "broken",
+        "requiredFields": ["report_no"],
+        "requiredTables": [],
+        "sealRules": {"required": False, "expectedSealTypes": []},
+        "qualityRules": {"criticalConflictFields": []},
+        "preprocessPolicy": profiles[DEFAULT_PROFILE_ID]["preprocessPolicy"],
+    }
+    profiles["inherited_profile_v1"] = {
+        "profileId": "inherited_profile_v1",
+        "documentType": "inherited",
+        "requiredFields": ["report_no"],
+        "requiredTables": [],
+        "sealRules": {"required": False, "expectedSealTypes": []},
+    }
+
+    failures = validate_profiles(profiles)
+
+    assert any(
+        item["profileId"] == "broken_profile_v1"
+        and item["path"] == "qualityRules.criticalConflictFields"
+        for item in failures
+    )
+    assert any(
+        item["profileId"] == "inherited_profile_v1"
+        and item["path"] == "qualityRules.criticalConflictFields"
+        for item in failures
+    )
+    assert any(
+        item["profileId"] == "inherited_profile_v1"
+        and item["path"] == "preprocessPolicy"
+        for item in failures
+    )
+
+
+def test_ocr_eval_markdown_includes_failed_case_diagnostics() -> None:
+    from apps.ocr_service.evaluation import evaluate_cases
+    from scripts.ocr_eval_set import markdown_report as ocr_markdown_report
+
+    report = evaluate_cases(
+        [
+            {
+                "caseId": "bad-field-box",
+                "scenario": "piping_table_profile",
+                "minScore": 0,
+                "result": {
+                    "parseResultId": "PARSE-BAD",
+                    "status": "success",
+                    "fields": [{"fieldCode": "pipe_no", "fieldValue": "PL8301", "bbox": [0, 0, 10, 10]}],
+                    "tables": [],
+                    "seals": [],
+                    "quality": {"status": "auto_usable", "reasons": []},
+                },
+                "expected": {
+                    "fields": [{"fieldCode": "pipe_no", "value": "PL8301", "bbox": [100, 100, 120, 120]}],
+                },
+            }
+        ]
+    )
+
+    markdown = ocr_markdown_report(report, eval_set_name="failed_fixture")
+
+    assert "### bad-field-box" in markdown
+    assert "OCR_EVAL_FIELD_BBOX_MISMATCH" in markdown
+    assert "#### Fields" in markdown
+    assert "bestIoU=0.0000" in markdown
 
 
 def test_frontend_mutation_header_check_fails_non_exempt_mutation_without_headers(tmp_path) -> None:
@@ -353,8 +499,10 @@ def test_ocr_service_contract_check_fails_missing_health_parse_and_result_fields
     assert check["status"] == "fail"
     assert any("missing health fields" in item for item in check["data"]["healthFailures"])
     assert any("missing parse endpoint terms" in item for item in check["data"]["parseFailures"])
+    assert any("runtime doctor endpoint is missing" in item for item in check["data"]["doctorFailures"])
     assert any("missing OcrService.parse_document terms" in item for item in check["data"]["serviceFailures"])
     assert "resolve_source_path must use parse_storage_url" in check["data"]["serviceFailures"]
+    assert check["data"]["qualityGateFailures"] == []
     assert any("missing normalized result fields" in item for item in check["data"]["resultFailures"])
     assert any("missing failed result fields" in item for item in check["data"]["resultFailures"])
 

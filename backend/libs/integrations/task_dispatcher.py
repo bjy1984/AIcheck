@@ -51,6 +51,11 @@ def dispatch_embed(file_id: str) -> dict[str, Any]:
 
 
 def dispatch_ai_recheck(project_id: str, node_id: int, run_id: str) -> dict[str, Any]:
+    orchestration_mode = os.getenv("AICHECK_REVIEW_ORCHESTRATION", "legacy").strip().lower() or "legacy"
+    if orchestration_mode in {"temporal", "inline"}:
+        from libs.review_orchestrator import dispatch_review_run
+
+        return dispatch_review_run(run_id)
     mode = dispatch_mode()
     if mode == "inline":
         from apps.worker.tasks import ai_recheck
