@@ -44,7 +44,12 @@ const schema = reactive<FormSchema[]>([
     formItemProps: {
       slots: {
         default: () => {
-          return <h2 class="text-2xl font-bold text-center w-[100%]">{t('login.login')}</h2>
+          return (
+            <div class="w-[100%]">
+              <h2 class="auth-form-title">{t('login.login')} AIcheck</h2>
+              <p class="auth-form-subtitle">进入资料审查、项目管控、知识库和 FDE 治理工作台。</p>
+            </div>
+          )
         }
       }
     }
@@ -58,7 +63,8 @@ const schema = reactive<FormSchema[]>([
       span: 24
     },
     componentProps: {
-      placeholder: 'inspection / contractor / ndt / owner / admin / fde'
+      placeholder: '请输入账号',
+      prefixIcon: <Icon icon="vi-ep:user" />
     }
   },
   {
@@ -73,7 +79,8 @@ const schema = reactive<FormSchema[]>([
       style: {
         width: '100%'
       },
-      placeholder: 'inspection / contractor / ndt / owner / admin / fde',
+      placeholder: '请输入密码',
+      prefixIcon: <Icon icon="vi-ep:lock" />,
       // 按下enter键触发登录
       onKeydown: (_e: any) => {
         if (_e.key === 'Enter') {
@@ -143,14 +150,14 @@ const schema = reactive<FormSchema[]>([
                 <BaseButton
                   loading={loading.value}
                   type="primary"
-                  class="w-[100%]"
+                  class="w-[100%] auth-submit-button"
                   onClick={signIn}
                 >
                   {t('login.login')}
                 </BaseButton>
               </div>
               <div class="w-[100%] mt-15px">
-                <BaseButton class="w-[100%]" onClick={toRegister}>
+                <BaseButton class="w-[100%] auth-secondary-button" onClick={toRegister}>
                   {t('login.register')}
                 </BaseButton>
               </div>
@@ -161,15 +168,7 @@ const schema = reactive<FormSchema[]>([
     }
   },
   {
-    field: 'other',
-    component: 'Divider',
-    label: t('login.otherLogin'),
-    componentProps: {
-      contentPosition: 'center'
-    }
-  },
-  {
-    field: 'otherIcon',
+    field: 'roleHint',
     colProps: {
       span: 24
     },
@@ -177,46 +176,16 @@ const schema = reactive<FormSchema[]>([
       slots: {
         default: () => {
           return (
-            <>
-              <div class="flex justify-between w-[100%]">
-                <Icon
-                  icon="vi-ant-design:github-filled"
-                  size={iconSize}
-                  class="cursor-pointer ant-icon"
-                  color={iconColor}
-                  hoverColor={hoverColor}
-                />
-                <Icon
-                  icon="vi-ant-design:wechat-filled"
-                  size={iconSize}
-                  class="cursor-pointer ant-icon"
-                  color={iconColor}
-                  hoverColor={hoverColor}
-                />
-                <Icon
-                  icon="vi-ant-design:alipay-circle-filled"
-                  size={iconSize}
-                  color={iconColor}
-                  hoverColor={hoverColor}
-                  class="cursor-pointer ant-icon"
-                />
-                <Icon
-                  icon="vi-ant-design:weibo-circle-filled"
-                  size={iconSize}
-                  color={iconColor}
-                  hoverColor={hoverColor}
-                  class="cursor-pointer ant-icon"
-                />
-              </div>
-            </>
+            <div class="auth-helper-line">
+              测试账号：<b>inspection</b> / <b>contractor</b> / <b>ndt</b> / <b>owner</b> /
+              <b>admin</b> / <b>fde</b>
+            </div>
           )
         }
       }
     }
   }
 ])
-
-const iconSize = 30
 
 const remember = ref(userStore.getRememberMe)
 
@@ -236,10 +205,6 @@ const { formRegister, formMethods } = useForm()
 const { getFormData, getElFormExpose, setValues } = formMethods
 
 const loading = ref(false)
-
-const iconColor = '#999'
-
-const hoverColor = 'var(--el-color-primary)'
 
 const redirect = ref<string>('')
 
@@ -357,7 +322,7 @@ const toRegister = () => {
     label-position="top"
     hide-required-asterisk
     size="large"
-    class="dark:(border-1 border-[var(--el-border-color)] border-solid)"
+    class="auth-form dark:(border-1 border-[var(--el-border-color)] border-solid)"
     @register="formRegister"
   />
 </template>

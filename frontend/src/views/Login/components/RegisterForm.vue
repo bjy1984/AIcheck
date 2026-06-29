@@ -7,6 +7,7 @@ import { ElInput, FormRules } from 'element-plus'
 import { useValidator } from '@/hooks/web/useValidator'
 import { BaseButton } from '@/components/Button'
 import { IAgree } from '@/components/IAgree'
+import { Icon } from '@/components/Icon'
 
 const emit = defineEmits(['to-login'])
 
@@ -40,7 +41,12 @@ const schema = reactive<FormSchema[]>([
     formItemProps: {
       slots: {
         default: () => {
-          return <h2 class="text-2xl font-bold text-center w-[100%]">{t('login.register')}</h2>
+          return (
+            <div class="w-[100%]">
+              <h2 class="auth-form-title">创建 AIcheck 账号</h2>
+              <p class="auth-form-subtitle">注册后由管理员分配项目、节点范围和业务角色。</p>
+            </div>
+          )
         }
       }
     }
@@ -54,7 +60,8 @@ const schema = reactive<FormSchema[]>([
       span: 24
     },
     componentProps: {
-      placeholder: t('login.usernamePlaceholder')
+      placeholder: '请输入账号',
+      prefixIcon: <Icon icon="vi-ep:user" />
     }
   },
   {
@@ -70,7 +77,8 @@ const schema = reactive<FormSchema[]>([
         width: '100%'
       },
       strength: true,
-      placeholder: t('login.passwordPlaceholder')
+      placeholder: '请输入密码',
+      prefixIcon: <Icon icon="vi-ep:lock" />
     }
   },
   {
@@ -86,7 +94,8 @@ const schema = reactive<FormSchema[]>([
         width: '100%'
       },
       strength: true,
-      placeholder: t('login.passwordPlaceholder')
+      placeholder: '再次输入密码',
+      prefixIcon: <Icon icon="vi-ep:lock" />
     }
   },
   {
@@ -99,12 +108,12 @@ const schema = reactive<FormSchema[]>([
       slots: {
         default: (formData) => {
           return (
-            <div class="w-[100%] flex">
-              <ElInput v-model={formData.code} placeholder={t('login.codePlaceholder')} />
+            <div class="auth-code-row">
+              <ElInput v-model={formData.code} placeholder="请输入验证码" />
               <BaseButton
                 type="primary"
                 disabled={unref(getCodeLoading)}
-                class="ml-10px"
+                class="auth-code-button"
                 onClick={getCode}
               >
                 {t('login.getCode')}
@@ -156,7 +165,7 @@ const schema = reactive<FormSchema[]>([
               <div class="w-[100%]">
                 <BaseButton
                   type="primary"
-                  class="w-[100%]"
+                  class="w-[100%] auth-submit-button"
                   loading={loading.value}
                   onClick={loginRegister}
                 >
@@ -164,7 +173,7 @@ const schema = reactive<FormSchema[]>([
                 </BaseButton>
               </div>
               <div class="w-[100%] mt-15px">
-                <BaseButton class="w-[100%]" onClick={toLogin}>
+                <BaseButton class="w-[100%] auth-secondary-button" onClick={toLogin}>
                   {t('login.hasUser')}
                 </BaseButton>
               </div>
@@ -212,7 +221,7 @@ const loginRegister = async () => {
     label-position="top"
     hide-required-asterisk
     size="large"
-    class="dark:(border-1 border-[var(--el-border-color)] border-solid)"
+    class="auth-form dark:(border-1 border-[var(--el-border-color)] border-solid)"
     @register="formRegister"
   />
 </template>
