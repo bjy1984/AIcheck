@@ -24,7 +24,7 @@ from libs.security.actions import MUTATING_METHODS, required_action_for_request
 from apps.api.main import app
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
-from libs.db.indexes import MONGO_INDEXES
+from libs.db.indexes import POSTGRES_INDEXES
 from libs.db.repository import (
     IDEMPOTENCY_COLLECTION,
     InMemoryRepository,
@@ -133,17 +133,12 @@ REQUIRED_PLAN_COLLECTIONS = {
     "audit_logs",
     "admin_configs",
 }
-CRITICAL_MONGO_INDEXES = [
-    {"collection": "project_nodes", "fields": ["projectId", "nodeId", "status"]},
-    {"collection": "documents", "fields": ["projectId", "nodeId", "status"]},
-    {"collection": "document_versions", "fields": ["documentId", "id"]},
-    {"collection": "knowledge_tasks", "fields": ["taskType", "status", "targetType", "targetId"]},
-    {"collection": "knowledge_clauses", "fields": ["kbDocId", "clauseNo", "status"]},
-    {"collection": "knowledge_page_index_nodes", "fields": ["kbDocId", "kbVersion", "nodeId"]},
-    {"collection": "evidence_links", "fields": ["targetType", "targetId"]},
-    {"collection": "audit_logs", "fields": ["createdAt", "objectType", "objectId"]},
-    {"collection": IDEMPOTENCY_COLLECTION, "fields": ["scope"], "unique": True},
-    {"collection": "project_members", "fields": ["projectId", "userId", "role"], "unique": True},
+CRITICAL_POSTGRES_INDEXES = [
+    {"table": "aicheck_state", "fields": ["collection", "object_id"], "unique": True},
+    {"table": "aicheck_state", "fields": ["collection"]},
+    {"table": "aicheck_state", "fields": ["payload"], "type": "gin"},
+    {"table": "aicheck_singletons", "fields": ["name"], "unique": True},
+    {"table": "idempotency_records", "fields": ["scope"], "unique": True},
 ]
 REQUIRED_STORAGE_BUCKETS = ("documents", "previews", "exports", "ocr-artifacts")
 REQUIRED_STORAGE_METHODS = {
@@ -503,7 +498,7 @@ class DeploymentReportBuilder:
         }
 
     def data_contract_section(self) -> dict[str, Any]:
-        check = mongo_index_contract_check()
+        check = postgres_index_contract_check()
         return {
             "name": "data-contract",
             "ok": check["status"] == "pass",
@@ -788,45 +783,62 @@ def normalize_index_spec(spec: Any) -> dict[str, Any]:
     }
 
 
-def normalized_mongo_indexes(indexes: dict[str, list[Any]] | None = None) -> dict[str, list[dict[str, Any]]]:
-    source = indexes if indexes is not None else MONGO_INDEXES
-    return {
-        collection: [normalize_index_spec(spec) for spec in specs]
-        for collection, specs in source.items()
-    }
+def normalized_postgres_indexes(indexes: dict[str, list[Any]] | None = None) -> dict[str, list[dict[str, Any]]]:
+    source = indexes if indexes is not None else POSTGRES_INDEXES
+    normalized: dict[str, list[dict[str, Any]]] = {}
+    for table, specs in source.items():
+        table_indexes = []
+        for spec in specs:
+            if isinstance(spec, dict):
+                table_indexes.append(
+                    {
+                        "fields": list(spec.get("fields") or []),
+                        "unique": bool(spec.get("unique")),
+                        "type": spec.get("type", "btree"),
+                    }
+                )
+            else:
+                table_indexes.append(normalize_index_spec(spec))
+        normalized[table] = table_indexes
+    return normalized
 
 
-def mongo_index_contract_check(indexes: dict[str, list[Any]] | None = None) -> dict[str, Any]:
-    normalized = normalized_mongo_indexes(indexes)
-    indexed_collections = set(normalized)
+def postgres_index_contract_check(indexes: dict[str, list[Any]] | None = None) -> dict[str, Any]:
+    normalized = normalized_postgres_indexes(indexes)
+    indexed_tables = set(normalized)
     persisted_collections = (
         set(STATE_COLLECTIONS.values()) | set(SINGLETON_COLLECTIONS.values()) | {IDEMPOTENCY_COLLECTION}
     )
-    missing_persisted = sorted(persisted_collections - indexed_collections)
-    missing_plan_collections = sorted(REQUIRED_PLAN_COLLECTIONS - indexed_collections)
+    required_tables = {"aicheck_state", "aicheck_singletons", "idempotency_records"}
+    missing_tables = sorted(required_tables - indexed_tables)
+    missing_plan_collections = sorted(REQUIRED_PLAN_COLLECTIONS - persisted_collections)
     missing_critical = []
-    for required in CRITICAL_MONGO_INDEXES:
-        collection_indexes = normalized.get(str(required["collection"]), [])
+    for required in CRITICAL_POSTGRES_INDEXES:
+        table_indexes = normalized.get(str(required["table"]), [])
         fields = list(required["fields"])
         unique = bool(required.get("unique", False))
+        index_type = required.get("type")
         found = any(
-            item["fields"][: len(fields)] == fields and (not unique or item["unique"])
-            for item in collection_indexes
+            item["fields"][: len(fields)] == fields
+            and (not unique or item["unique"])
+            and (not index_type or item.get("type") == index_type)
+            for item in table_indexes
         )
         if not found:
             missing_critical.append(required)
-    status = "pass" if not missing_persisted and not missing_plan_collections and not missing_critical else "fail"
+    status = "pass" if not missing_tables and not missing_plan_collections and not missing_critical else "fail"
     return {
-        "name": "mongo.index-contract",
+        "name": "postgres.index-contract",
         "status": status,
         "detail": (
-            f"collections={len(indexed_collections)}, persistedMissing={len(missing_persisted)}, "
-            f"planMissing={len(missing_plan_collections)}, criticalMissing={len(missing_critical)}"
+            f"tables={len(indexed_tables)}, persistedCollections={len(persisted_collections)}, "
+            f"tableMissing={len(missing_tables)}, planMissing={len(missing_plan_collections)}, "
+            f"criticalMissing={len(missing_critical)}"
         ),
         "data": {
-            "indexedCollections": sorted(indexed_collections),
+            "indexedTables": sorted(indexed_tables),
             "persistedCollections": sorted(persisted_collections),
-            "missingPersisted": missing_persisted,
+            "missingTables": missing_tables,
             "missingPlanCollections": missing_plan_collections,
             "missingCriticalIndexes": missing_critical,
         },
@@ -1656,13 +1668,11 @@ def knowledge_rule_contract_check(
 
     collection_failures: list[str] = []
     repository_collections = set(STATE_COLLECTIONS.values()) | set(SINGLETON_COLLECTIONS.values())
-    indexed_collections = set(MONGO_INDEXES)
     missing_repository = sorted(REQUIRED_KNOWLEDGE_RULE_COLLECTIONS - repository_collections)
-    missing_indexes = sorted(REQUIRED_KNOWLEDGE_RULE_COLLECTIONS - indexed_collections)
     if missing_repository:
         collection_failures.append("knowledge/rule collections missing repository mapping: " + ", ".join(missing_repository))
-    if missing_indexes:
-        collection_failures.append("knowledge/rule collections missing Mongo indexes: " + ", ".join(missing_indexes))
+    if "idx_aicheck_state_payload_gin" not in {item.get("name") for item in POSTGRES_INDEXES.get("aicheck_state", [])}:
+        collection_failures.append("PostgreSQL JSONB payload GIN index is missing for knowledge/rule collections")
 
     run_step_source = source_for_callable(getattr(execution_module, "run_step", None))
     retrieval_source = (
@@ -1875,10 +1885,8 @@ def review_orchestration_contract_check(
     missing_collections = sorted(REQUIRED_REVIEW_COLLECTIONS - collections)
     if missing_collections:
         state_failures.append("missing review state collections: " + ", ".join(missing_collections))
-    indexed_collections = set(MONGO_INDEXES)
-    missing_indexes = sorted(REQUIRED_REVIEW_COLLECTIONS - indexed_collections)
-    if missing_indexes:
-        state_failures.append("review state collections missing Mongo indexes: " + ", ".join(missing_indexes))
+    if "idx_aicheck_state_payload_gin" not in {item.get("name") for item in POSTGRES_INDEXES.get("aicheck_state", [])}:
+        state_failures.append("PostgreSQL JSONB payload GIN index is missing for review state collections")
     if not REQUIRED_REVIEW_COLLECTIONS.issubset(set(STATE_COLLECTIONS.values())):
         missing_state_map = sorted(REQUIRED_REVIEW_COLLECTIONS - set(STATE_COLLECTIONS.values()))
         state_failures.append("review state collections missing repository mapping: " + ", ".join(missing_state_map))
@@ -2116,13 +2124,11 @@ def fde_governance_contract_check(
 
     collection_failures: list[str] = []
     repository_collections = set(STATE_COLLECTIONS.values()) | set(SINGLETON_COLLECTIONS.values())
-    indexed_collections = set(MONGO_INDEXES)
     missing_repository = sorted(REQUIRED_FDE_RELEASE_COLLECTIONS - repository_collections)
-    missing_indexes = sorted(REQUIRED_FDE_RELEASE_COLLECTIONS - indexed_collections)
     if missing_repository:
         collection_failures.append("FDE release collections missing repository mapping: " + ", ".join(missing_repository))
-    if missing_indexes:
-        collection_failures.append("FDE release collections missing Mongo indexes: " + ", ".join(missing_indexes))
+    if "idx_aicheck_state_payload_gin" not in {item.get("name") for item in POSTGRES_INDEXES.get("aicheck_state", [])}:
+        collection_failures.append("PostgreSQL JSONB payload GIN index is missing for FDE release collections")
 
     source_failures: list[str] = []
 
@@ -2282,16 +2288,11 @@ def feedback_hr_contract_check(
 
     collection_failures: list[str] = []
     repository_collections = set(STATE_COLLECTIONS.values()) | set(SINGLETON_COLLECTIONS.values())
-    indexed_collections = set(MONGO_INDEXES)
     missing_repository = sorted(REQUIRED_FEEDBACK_HR_COLLECTIONS - repository_collections)
-    missing_indexes = sorted(REQUIRED_FEEDBACK_HR_COLLECTIONS - indexed_collections)
     if missing_repository:
         collection_failures.append("AI HR collections missing repository mapping: " + ", ".join(missing_repository))
-    if missing_indexes:
-        collection_failures.append("AI HR collections missing Mongo indexes: " + ", ".join(missing_indexes))
-    evaluation_case_indexes = json.dumps(MONGO_INDEXES.get("evaluation_cases", []), ensure_ascii=False, default=str)
-    if "sourceFeedbackId" not in evaluation_case_indexes:
-        collection_failures.append("evaluation_cases missing sourceFeedbackId index for idempotent feedback promotion")
+    if "idempotency_records_pkey" not in {item.get("name") for item in POSTGRES_INDEXES.get("idempotency_records", [])}:
+        collection_failures.append("idempotency_records primary key is missing for idempotent feedback promotion")
 
     source_failures: list[str] = []
 

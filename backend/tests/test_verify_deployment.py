@@ -44,8 +44,8 @@ def api_transport(request: httpx.Request) -> httpx.Response:
                 "service": "api-service",
                 "authRequired": True,
                 "demoUsersEnabled": False,
-                "mongoEnabled": True,
-                "mongoTransactions": True,
+                "postgresEnabled": True,
+                "postgresTransactions": True,
                 "objectStorageEnabled": True,
             }
         )
@@ -64,8 +64,8 @@ def api_transport(request: httpx.Request) -> httpx.Response:
                 "user": {"username": role, "role": role, "defaultPath": default_path},
             }
         )
-    if path == "/api/system/mongo-transaction-probe":
-        return envelope({"mongoEnabled": True, "transactionsConfigured": True, "transactionProbe": "pass"})
+    if path == "/api/system/postgres-transaction-probe":
+        return envelope({"postgresEnabled": True, "transactionsConfigured": True, "transactionProbe": "pass"})
     if path == "/api/workbench/projects":
         return envelope({"items": [], "total": 0})
     if path == "/api/knowledge/tasks":
@@ -498,10 +498,10 @@ def ocr_placeholder_transport(request: httpx.Request) -> httpx.Response:
 
 
 def api_failed_transaction_transport(request: httpx.Request) -> httpx.Response:
-    if request.url.path == "/api/system/mongo-transaction-probe":
+    if request.url.path == "/api/system/postgres-transaction-probe":
         return envelope(
             {
-                "mongoEnabled": True,
+                "postgresEnabled": True,
                 "transactionsConfigured": True,
                 "transactionProbe": "failed",
                 "reason": "transaction_probe_failed",
@@ -765,7 +765,7 @@ def test_deployment_verifier_passes_happy_path() -> None:
     assert results
     assert all(item.status in {"pass", "skip"} for item in results)
     assert any(item.name == "api.strict-production" and item.status == "pass" for item in results)
-    assert any(item.name == "mongo.transaction-probe" and item.status == "pass" for item in results)
+    assert any(item.name == "postgres.transaction-probe" and item.status == "pass" for item in results)
     assert any(item.name == "auth.admin-reads" and item.status == "pass" for item in results)
     assert any(item.name == "auth.identity-spoof" and item.status == "pass" for item in results)
     assert any(item.name == "auth.action-bypass" and item.status == "pass" for item in results)
@@ -840,7 +840,7 @@ def test_deployment_verifier_fails_strict_production_when_ocr_uses_placeholder()
     assert "runtime doctor has failed checks" in ocr_doctor.detail
 
 
-def test_deployment_verifier_fails_strict_production_when_mongo_transaction_probe_fails() -> None:
+def test_deployment_verifier_fails_strict_production_when_postgres_transaction_probe_fails() -> None:
     config = VerifyConfig(
         api_base="http://api",
         ocr_base=None,
@@ -870,7 +870,7 @@ def test_deployment_verifier_fails_strict_production_when_mongo_transaction_prob
 
     results = verifier.run()
 
-    transaction_probe = next(item for item in results if item.name == "mongo.transaction-probe")
+    transaction_probe = next(item for item in results if item.name == "postgres.transaction-probe")
     assert transaction_probe.status == "fail"
     assert "transactionProbe must be pass" in transaction_probe.detail
 

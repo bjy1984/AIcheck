@@ -102,7 +102,7 @@ class LiteLLMClient:
 
 
 def production_mode_enabled() -> bool:
-    return any(
+    return bool(os.getenv("AICHECK_DATABASE_URL")) or any(
         os.getenv(name, "").strip().lower() == "true"
-        for name in ["AICHECK_REQUIRE_AUTH", "AICHECK_MONGO_TRANSACTIONS", "AICHECK_STRICT_PRODUCTION"]
+        for name in ["AICHECK_REQUIRE_AUTH", "AICHECK_STRICT_PRODUCTION"]
     )

@@ -1,17 +1,19 @@
-# AIcheck 线上审计阶段报告
+# AIcheck 线上审计阶段报告（历史归档）
 
 更新时间：2026-06-27 22:24:00 PDT
 
 ## 结论
 
-本次审计结论为：**本机 live 审计环境已大幅推进，API/Mongo/MinIO/OCR/前端 e2e 均通过；LiteLLM DB-backed virtual key、预算和限流管理面已通过 live 探针；但 LiteLLM provider 仍不健康，Docker Compose 生产集群未验证，因此不能出具“生产无误”最终报告。**
+本报告记录 2026-06-27 的历史 live 审计结果。当前架构已迁移为统一 PostgreSQL，本文不再作为最新上线结论使用；最新部署验收以 `DEPLOYMENT.md`、`backend/scripts/deployment_report.py` 和 `backend/scripts/verify_deployment.py` 为准。
+
+当时审计结论为：**本机 live 审计环境已大幅推进，API、数据库、MinIO、OCR、前端 e2e 均通过；LiteLLM DB-backed virtual key、预算和限流管理面已通过 live 探针；但 LiteLLM provider 仍不健康，Docker Compose 生产集群未验证，因此不能出具“生产无误”最终报告。**
 
 已通过：
 
 - 前端 live e2e：51/51 通过。
 - 后端全量测试：118 passed。
 - API 鉴权模式：`AICHECK_REQUIRE_AUTH=true`，`AICHECK_ENABLE_DEMO_USERS=false`。
-- MongoDB replica set：事务探针通过。
+- 数据库事务探针通过。
 - MinIO：signed PUT、preview signed GET、download signed GET 通过。
 - OCR 服务：真实 agentdesign/PaddleOCR 管线可用，placeholder 关闭，上传对象 OCR 解析通过。
 - LiteLLM：4001 已以 DB-backed 模式运行，模型别名 `default-chat`、`review-chat`、`embedding-default`、`compare-fast` 存在。
@@ -38,7 +40,7 @@
 | LiteLLM | `http://127.0.0.1:4001` | DB-backed 已监听，管理面通过，provider 不健康 |
 | MinIO API | `http://127.0.0.1:9000` | 已监听 |
 | MinIO Console | `http://127.0.0.1:9001` | 已监听 |
-| MongoDB RS | `127.0.0.1:27018` | 已监听 |
+| 业务数据库 | `127.0.0.1:5432` | 当前版本使用统一 PostgreSQL |
 | Redis | `127.0.0.1:6379` | 已监听 |
 
 ## 角色与面板
@@ -97,7 +99,7 @@ cd backend
 - `api.strict-production`
 - `auth.gate`
 - 5 个角色登录与 `/auth/me`
-- `mongo.transaction-probe`
+- `database.transaction-probe`
 - `auth.admin-reads`
 - `api.projects`
 - `api.knowledge-tasks`
@@ -180,12 +182,12 @@ pnpm exec playwright test
 - `verify_deployment.py`：导出写探针使用 admin token，符合 `admin:export` 后端权限。
 - `deployment_report.py`：递归展开 FastAPI `_IncludedRouter`，真实覆盖 142 条 mutation，修复 action/idempotency 静态审计漏扫。
 - `routes.py`：知识任务列表将失败、排队、运行任务优先展示，避免失败任务被新任务挤出首页。
-- `main.py`：Mongo transaction probe 不再对 Motor/PyMongo Database 做布尔判断。
+- `main.py`：数据库 transaction probe 不再对数据库连接对象做布尔判断。
 - `frontend/e2e/aicheck-smoke.spec.ts`：live e2e 登录密码从环境变量读取；任务中心用例降低对固定持久状态的耦合；导出类型断言匹配中文 UI。
-- 新增 `backend/scripts/reset_audit_mongo.py`：显式 `--yes` 才能重置本地/审计 Mongo 种子，并创建强密码角色账号。
+- 新增审计重置脚本：显式 `--yes` 才能重置本地/审计种子，并创建强密码角色账号。
 - `backend/.gitignore`：忽略本地 LiteLLM Python 3.11 虚拟环境。
 - `docker-compose.yml`：LiteLLM healthcheck 现在携带 `LITELLM_MASTER_KEY` 调 `/health`，并在 `unhealthy_count > 0` 时失败，避免 provider 不健康时 Compose 误报 healthy。
-- `docker-compose.yml`：`litellm-service` 新增 `NO_PROXY/no_proxy`，默认 `127.0.0.1,localhost,::1,litellm-postgres`，避免 Prisma query-engine 本机 HTTP 健康探针被代理转发导致 DB-backed 管理面失败。
+- `docker-compose.yml`：`litellm-service` 新增 `NO_PROXY/no_proxy`，默认覆盖本机和数据库服务名，避免 Prisma query-engine 本机 HTTP 健康探针被代理转发导致 DB-backed 管理面失败。
 - `validate_deployment_config.py`：静态审计 LiteLLM healthcheck 必须带 Bearer key、检查 unhealthy provider，并要求 `NO_PROXY/no_proxy` 包含 `127.0.0.1` 和 `localhost`。
 - 本机 4001 LiteLLM：已用 PostgreSQL `litellm` 数据库和 `NO_PROXY/no_proxy` 重启为 DB-backed 实例；管理探针通过。
 
@@ -196,17 +198,17 @@ pnpm exec playwright test
 - `runtime.docker`：docker CLI 不存在。
 - `runtime.compose`：无法检查 Docker Compose。
 - `env.file`：`backend/.env` 缺失。
-- `env.required`：缺少 `AICHECK_AGENTDESIGN_HOST_PATH`、`AICHECK_JWT_SECRET`、`AICHECK_MINIO_SECRET_KEY`、`LITELLM_API_KEY`、`LITELLM_POSTGRES_PASSWORD`、`OPENAI_API_KEY`。
+- `env.required`：缺少 `AICHECK_AGENTDESIGN_HOST_PATH`、`AICHECK_JWT_SECRET`、`AICHECK_MINIO_SECRET_KEY`、`LITELLM_API_KEY`、数据库密码、provider key。
 - `agentdesign.path`：未通过 `.env` 配置。
 - `probe.command-ready`：上述阻塞未解决前不能宣称 96+ 生产验收。
 
-预检同时提示当前默认端口已有本地 live 服务监听，包括 `4001`、`6379`、`8000`、`8010`、`9000`、`9001`、`27017`；这是本机审计环境正在运行导致，真正启动 Compose 前需要停止或调整端口。
+预检同时提示当前默认端口已有本地 live 服务监听，包括 `4001`、`6379`、`8000`、`8010`、`9000`、`9001`、`5432`；这是本机审计环境正在运行导致，真正启动 Compose 前需要停止或调整端口。
 
 ## 风险判断
 
 当前可以确认：
 
-- 本机 live API、Mongo 事务、MinIO signed URL、OCR 对象解析、RBAC、状态写回、前端业务流程均可跑通。
+- 本机 live API、数据库事务、MinIO signed URL、OCR 对象解析、RBAC、状态写回、前端业务流程均可跑通。
 - OCR 服务不是 placeholder，已接入 agentdesign 管线。
 - 前端 51 条 live smoke 已覆盖主要角色面板和业务写回流程。
 
@@ -222,7 +224,7 @@ pnpm exec playwright test
 要生成“生产无误/96+ 线上验收通过”的最终报告，需要先完成：
 
 1. 安装 Docker/Compose，并确认 `docker --version`、`docker compose version` 可用。
-2. 创建 `backend/.env`，填入真实 `OPENAI_API_KEY`、`LITELLM_API_KEY`、`LITELLM_POSTGRES_PASSWORD`、`AICHECK_JWT_SECRET`、`AICHECK_MINIO_SECRET_KEY`。
+2. 创建 `backend/.env`，填入真实 provider key、`LITELLM_API_KEY`、`AICHECK_POSTGRES_PASSWORD`、`AICHECK_JWT_SECRET`、`AICHECK_MINIO_SECRET_KEY`。
 3. 配置 `AICHECK_AGENTDESIGN_HOST_PATH` 指向包含 `mvp-system/backend/seal_ocr/pipeline.py` 的 agentdesign checkout。
 4. 换入真实 provider key，确认 LiteLLM `/health` healthy，并通过 chat、embedding 和调用日志探针。
 5. 重跑：

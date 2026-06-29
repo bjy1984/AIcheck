@@ -21,12 +21,10 @@ REQUIRED_SERVICES = {
     "worker-service",
     "review-worker-service",
     "ocr-service",
-    "mongodb",
     "redis",
     "minio",
-    "litellm-postgres",
+    "postgres",
     "litellm-service",
-    "workflow-postgres",
     "temporal-service",
     "temporal-ui",
 }
@@ -39,18 +37,16 @@ REQUIRED_WORKER_QUEUES = {
     "llm.compare",
     "export.package",
 }
-REQUIRED_VOLUMES = {"mongo-data", "minio-data", "litellm-postgres-data", "workflow-postgres-data"}
+REQUIRED_VOLUMES = {"minio-data", "postgres-data"}
 REQUIRED_HEALTHCHECKS = {
     "api-service": "8000/healthz",
     "worker-service": "celery",
     "review-worker-service": "temporalio.client",
     "ocr-service": "8010/readyz",
-    "mongodb": "rs.status",
+    "postgres": "pg_isready",
     "redis": "redis-cli",
     "minio": "mc ready",
-    "litellm-postgres": "pg_isready",
     "litellm-service": "4000/health",
-    "workflow-postgres": "pg_isready",
     "temporal-service": "cluster health",
 }
 
@@ -267,12 +263,12 @@ class DeploymentConfigValidator:
 
     def check_service_dependencies(self) -> None:
         expected = {
-            "api-service": {"mongodb", "redis", "minio", "litellm-service", "temporal-service"},
-            "worker-service": {"mongodb", "redis", "api-service", "minio", "ocr-service", "litellm-service"},
-            "review-worker-service": {"mongodb", "temporal-service", "workflow-postgres", "litellm-service"},
+            "api-service": {"postgres", "redis", "minio", "litellm-service", "temporal-service"},
+            "worker-service": {"postgres", "redis", "api-service", "minio", "ocr-service", "litellm-service"},
+            "review-worker-service": {"postgres", "temporal-service", "litellm-service"},
             "ocr-service": {"minio"},
-            "litellm-service": {"litellm-postgres"},
-            "temporal-service": {"workflow-postgres"},
+            "litellm-service": {"postgres"},
+            "temporal-service": {"postgres"},
             "temporal-ui": {"temporal-service"},
         }
         failures = []
@@ -282,12 +278,12 @@ class DeploymentConfigValidator:
             if missing:
                 failures.append(f"{name}: missing {', '.join(missing)}")
         healthy_dependencies = {
-            "api-service": {"mongodb", "redis", "minio", "litellm-service", "temporal-service"},
-            "worker-service": {"mongodb", "redis", "api-service", "minio", "ocr-service", "litellm-service"},
-            "review-worker-service": {"mongodb", "temporal-service", "workflow-postgres", "litellm-service"},
+            "api-service": {"postgres", "redis", "minio", "litellm-service", "temporal-service"},
+            "worker-service": {"postgres", "redis", "api-service", "minio", "ocr-service", "litellm-service"},
+            "review-worker-service": {"postgres", "temporal-service", "litellm-service"},
             "ocr-service": {"minio"},
-            "litellm-service": {"litellm-postgres"},
-            "temporal-service": {"workflow-postgres"},
+            "litellm-service": {"postgres"},
+            "temporal-service": {"postgres"},
             "temporal-ui": {"temporal-service"},
         }
         for service_name, dependencies in healthy_dependencies.items():
@@ -326,20 +322,17 @@ class DeploymentConfigValidator:
             "ocr-service": "8010:8010",
             "minio": "9000:9000",
             "litellm-service": "4001:4000",
-            "workflow-postgres": "5434:5432",
+            "postgres": "5432:5432",
             "temporal-service": "7233:7233",
             "temporal-ui": "8088:8080",
         }
         for service_name, expected_port in port_expectations.items():
             if expected_port not in normalize_ports(self.service(service_name).get("ports")):
                 failures.append(f"{service_name} missing port mapping {expected_port}")
-        mongo_command = command_text(self.service("mongodb").get("command"))
-        if "--replSet" not in mongo_command or "rs0" not in mongo_command:
-            failures.append("mongodb must start with replica set rs0 for transactions")
         self.add(
             "compose.commands-ports",
             "fail" if failures else "pass",
-            "; ".join(failures) if failures else "Commands, queues, replica set, and public ports are valid.",
+            "; ".join(failures) if failures else "Commands, queues, PostgreSQL service, and public ports are valid.",
         )
 
     def check_healthchecks(self) -> None:
@@ -371,9 +364,7 @@ class DeploymentConfigValidator:
         warnings = []
         required_env = {
             "api-service": {
-                "AICHECK_MONGO_URL",
-                "AICHECK_MONGO_DB",
-                "AICHECK_MONGO_TRANSACTIONS",
+                "AICHECK_DATABASE_URL",
                 "AICHECK_REDIS_URL",
                 "AICHECK_TASK_DISPATCH",
                 "AICHECK_REVIEW_ORCHESTRATION",
@@ -393,7 +384,7 @@ class DeploymentConfigValidator:
                 "LITELLM_API_KEY",
             },
             "worker-service": {
-                "AICHECK_MONGO_URL",
+                "AICHECK_DATABASE_URL",
                 "AICHECK_REDIS_URL",
                 "AICHECK_TASK_DISPATCH",
                 "AICHECK_REVIEW_ORCHESTRATION",
@@ -402,9 +393,7 @@ class DeploymentConfigValidator:
                 "LITELLM_API_KEY",
             },
             "review-worker-service": {
-                "AICHECK_MONGO_URL",
-                "AICHECK_MONGO_DB",
-                "AICHECK_MONGO_TRANSACTIONS",
+                "AICHECK_DATABASE_URL",
                 "AICHECK_REVIEW_ORCHESTRATION",
                 "TEMPORAL_ADDRESS",
                 "TEMPORAL_NAMESPACE",
@@ -440,10 +429,12 @@ class DeploymentConfigValidator:
                 "NO_PROXY",
                 "no_proxy",
             },
-            "workflow-postgres": {
+            "postgres": {
                 "POSTGRES_DB",
                 "POSTGRES_USER",
                 "POSTGRES_PASSWORD",
+                "LITELLM_POSTGRES_DB",
+                "WORKFLOW_POSTGRES_DB",
             },
             "temporal-service": {
                 "DB",
@@ -468,8 +459,8 @@ class DeploymentConfigValidator:
             failures.append("api-service default AICHECK_REQUIRE_AUTH must be true")
         if default_value(api_env.get("AICHECK_ENABLE_DEMO_USERS")) != "false":
             failures.append("api-service default AICHECK_ENABLE_DEMO_USERS must be false")
-        if default_value(api_env.get("AICHECK_MONGO_TRANSACTIONS")) != "true":
-            failures.append("api-service default AICHECK_MONGO_TRANSACTIONS must be true")
+        if "postgres:5432" not in default_value(api_env.get("AICHECK_DATABASE_URL")):
+            failures.append("api-service AICHECK_DATABASE_URL must target postgres:5432")
         if default_value(worker_env.get("AICHECK_TASK_DISPATCH")) != "celery":
             failures.append("worker-service default AICHECK_TASK_DISPATCH must be celery")
         if default_value(api_env.get("AICHECK_REVIEW_ORCHESTRATION")) != "temporal":
@@ -480,10 +471,10 @@ class DeploymentConfigValidator:
             failures.append("review-worker-service default AICHECK_REVIEW_LLM_EXECUTION must be litellm")
         if default_value(review_worker_env.get("AICHECK_LANGGRAPH_DISABLE")) != "false":
             failures.append("review-worker-service default AICHECK_LANGGRAPH_DISABLE must be false")
-        if "workflow-postgres" not in default_value(api_env.get("LANGGRAPH_CHECKPOINT_DSN")):
-            failures.append("api-service LANGGRAPH_CHECKPOINT_DSN must target workflow-postgres")
-        if "workflow-postgres" not in default_value(review_worker_env.get("LANGGRAPH_CHECKPOINT_DSN")):
-            failures.append("review-worker-service LANGGRAPH_CHECKPOINT_DSN must target workflow-postgres")
+        if "postgres:5432" not in default_value(api_env.get("LANGGRAPH_CHECKPOINT_DSN")):
+            failures.append("api-service LANGGRAPH_CHECKPOINT_DSN must target postgres:5432")
+        if "postgres:5432" not in default_value(review_worker_env.get("LANGGRAPH_CHECKPOINT_DSN")):
+            failures.append("review-worker-service LANGGRAPH_CHECKPOINT_DSN must target postgres:5432")
         if default_value(ocr_env.get("AICHECK_OCR_ALLOW_PLACEHOLDER")) != "false":
             failures.append("ocr-service default AICHECK_OCR_ALLOW_PLACEHOLDER must be false")
         if default_value(ocr_env.get("AICHECK_OCR_OFFLINE_ONLY")) != "true":
@@ -497,11 +488,10 @@ class DeploymentConfigValidator:
             "AICHECK_JWT_SECRET": "change-me",
             "AICHECK_MINIO_SECRET_KEY": "dev-password",
             "LITELLM_API_KEY": "sk-aicheck-dev",
-            "LITELLM_POSTGRES_PASSWORD": "litellm",
-            "WORKFLOW_POSTGRES_PASSWORD": "workflow",
+            "AICHECK_POSTGRES_PASSWORD": "aicheck",
             "DEEPSEEK_API_KEY": "",
         }
-        for service_name in ["api-service", "worker-service", "review-worker-service", "litellm-service", "litellm-postgres", "workflow-postgres", "temporal-service"]:
+        for service_name in ["api-service", "worker-service", "review-worker-service", "litellm-service", "postgres", "temporal-service"]:
             env = environment_map(self.service(service_name).get("environment"))
             for key, weak in weak_markers.items():
                 value = env.get(key)

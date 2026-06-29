@@ -14,6 +14,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from libs.contracts.responses import server_time
+from libs.db.repository import repo
 from libs.db.seed import ADMIN_CONFIG, PROJECT_ID, ROLE_ACTIONS
 from libs.security.auth import ROLE_DEFAULT_PATHS, hash_password
 
@@ -122,14 +123,14 @@ def parse_args() -> argparse.Namespace:
         help="Project id for project_members grants. Defaults to demo project.",
     )
     parser.add_argument(
-        "--mongo-url",
-        default=os.getenv("AICHECK_MONGO_URL"),
-        help="MongoDB URL. Defaults to AICHECK_MONGO_URL.",
+        "--database-url",
+        default=os.getenv("AICHECK_DATABASE_URL"),
+        help="PostgreSQL URL. Defaults to AICHECK_DATABASE_URL.",
     )
     parser.add_argument(
         "--db",
-        default=os.getenv("AICHECK_MONGO_DB", "aicheck"),
-        help="MongoDB database name. Defaults to AICHECK_MONGO_DB or aicheck.",
+        default=os.getenv("AICHECK_POSTGRES_DB", "aicheck"),
+        help="PostgreSQL business database name. Defaults to AICHECK_POSTGRES_DB or aicheck.",
     )
     parser.add_argument(
         "--password-file",
@@ -150,7 +151,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print initial passwords in output. Avoid this in production logs.",
     )
-    parser.add_argument("--dry-run", action="store_true", help="Print planned changes without writing MongoDB.")
+    parser.add_argument("--dry-run", action="store_true", help="Print planned changes without writing PostgreSQL.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON summary.")
     return parser.parse_args()
 
@@ -407,50 +408,37 @@ def build_plan(
     }
 
 
-def mongo_transactions_enabled() -> bool:
-    return os.getenv("AICHECK_MONGO_TRANSACTIONS", "false").lower() == "true"
-
-
-def apply_role_bootstrap(
-    database: Any,
+def apply_role_bootstrap_to_state(
     roles: list[str],
     project_id: str,
     *,
     passwords: dict[str, str] | None = None,
     rotate_passwords: bool = False,
-    session: Any | None = None,
 ) -> dict[str, Any]:
     passwords = passwords or resolve_role_passwords(roles)
-    admin_doc = database["admin_configs"].find_one({"_singleton": "admin_config"}, session=session)
-    existing_payload = (admin_doc or {}).get("payload")
-    admin_payload, admin_changes = build_admin_config_payload(existing_payload, roles)
-    database["admin_configs"].replace_one(
-        {"_singleton": "admin_config"},
-        {"_singleton": "admin_config", "payload": admin_payload},
-        upsert=True,
-        session=session,
-    )
+    admin_payload, admin_changes = build_admin_config_payload(repo.state.get("admin_config"), roles)
+    repo.state["admin_config"] = admin_payload
 
     auth_changes: list[dict[str, Any]] = []
     for role in roles:
         spec = ROLE_SPECS[role]
         user = auth_user(role, spec, passwords[role])
         role_doc = role_record(role, spec)
-        existing_user = database["users"].find_one({"username": user["username"]}, session=session)
+        existing_user = next((item for item in repo.state["users"] if item.get("username") == user["username"]), None)
         password_action = "created"
         if existing_user and existing_user.get("passwordHash") and not rotate_passwords:
             user["passwordHash"] = existing_user["passwordHash"]
             password_action = "preserved"
         elif existing_user:
             password_action = "rotated"
-        database["users"].replace_one({"username": user["username"]}, user, upsert=True, session=session)
-        database["roles"].replace_one({"role": role}, role_doc, upsert=True, session=session)
+        user_status, merged_user = upsert_by_key(repo.state["users"], user, "username")
+        upsert_by_key(repo.state["roles"], role_doc, "role")
         auth_changes.extend(
             [
                 {
                     "collection": "users",
-                    "action": "updated" if existing_user else "created",
-                    "id": user["id"],
+                    "action": user_status,
+                    "id": merged_user["id"],
                     "password": password_action,
                 },
                 {"collection": "roles", "action": "upserted", "role": role},
@@ -462,18 +450,20 @@ def apply_role_bootstrap(
         if ROLE_SPECS[role].get("platformOnly"):
             continue
         desired = project_member(role, ROLE_SPECS[role], project_id)
-        existing = database["project_members"].find_one(
-            {"projectId": project_id, "userId": desired["userId"], "role": role},
-            session=session,
+        existing_index = next(
+            (
+                index
+                for index, item in enumerate(repo.state["project_members"])
+                if item.get("projectId") == project_id and item.get("userId") == desired["userId"] and item.get("role") == role
+            ),
+            None,
         )
+        existing = repo.state["project_members"][existing_index] if existing_index is not None else None
         status, merged = merge_project_member(existing, desired)
-        merged.pop("_id", None)
-        database["project_members"].replace_one(
-            {"projectId": project_id, "userId": desired["userId"], "role": role},
-            merged,
-            upsert=True,
-            session=session,
-        )
+        if existing_index is None:
+            repo.state["project_members"].append(merged)
+        else:
+            repo.state["project_members"][existing_index] = merged
         member_changes.append(
             {
                 "collection": "project_members",
@@ -485,7 +475,7 @@ def apply_role_bootstrap(
         )
 
     audit_id = f"AUD-{uuid4().hex[:10].upper()}"
-    database["audit_logs"].insert_one(
+    repo.state["audit_logs"].append(
         {
             "id": audit_id,
             "actorId": "USER-SYSTEM",
@@ -496,8 +486,7 @@ def apply_role_bootstrap(
             "objectId": project_id,
             "result": "成功",
             "createdAt": server_time(),
-        },
-        session=session,
+        }
     )
     return {
         "dryRun": False,
@@ -508,56 +497,28 @@ def apply_role_bootstrap(
         "auditLogId": audit_id,
     }
 
-
-def sync_mongo(
-    mongo_url: str,
-    db_name: str,
+def sync_postgres(
+    database_url: str,
     roles: list[str],
     project_id: str,
     *,
     passwords: dict[str, str],
     rotate_passwords: bool,
 ) -> dict[str, Any]:
-    try:
-        from pymongo import MongoClient
-    except Exception as exc:  # pragma: no cover - dependency failure is deployment-specific
-        raise SystemExit(f"pymongo is required to write MongoDB: {exc}") from exc
-
-    client = MongoClient(mongo_url, serverSelectionTimeoutMS=3000)
-    database = client[db_name]
-    try:
-        client.admin.command("ping")
-        transactional = mongo_transactions_enabled()
-        if transactional:
-            with client.start_session() as session:
-                with session.start_transaction():
-                    result = apply_role_bootstrap(
-                        database,
-                        roles,
-                        project_id,
-                        passwords=passwords,
-                        rotate_passwords=rotate_passwords,
-                        session=session,
-                    )
-        else:
-            result = apply_role_bootstrap(
-                database,
-                roles,
-                project_id,
-                passwords=passwords,
-                rotate_passwords=rotate_passwords,
-            )
-        result.update(
-            {
-                "database": db_name,
-                "transactional": transactional,
-            }
-        )
-        return {
-            **result,
-        }
-    finally:
-        client.close()
+    repo.configure_sync_postgres(database_url)
+    if repo.sync_postgres is None:
+        raise SystemExit("psycopg is required and AICHECK_DATABASE_URL must point to a reachable PostgreSQL database.")
+    repo.ensure_postgres_schema()
+    repo.load_from_sync_postgres()
+    result = apply_role_bootstrap_to_state(
+        roles,
+        project_id,
+        passwords=passwords,
+        rotate_passwords=rotate_passwords,
+    )
+    repo.flush_to_sync_postgres()
+    result.update({"database": "postgresql", "transactional": True})
+    return result
 
 
 def print_summary(result: dict[str, Any], as_json: bool) -> None:
@@ -567,7 +528,7 @@ def print_summary(result: dict[str, Any], as_json: bool) -> None:
     mode = "DRY RUN" if result.get("dryRun") else "APPLIED"
     print(f"[{mode}] projectId={result.get('projectId')}")
     if not result.get("dryRun"):
-        print(f"- mongo transaction: {'enabled' if result.get('transactional') else 'disabled'}")
+        print(f"- postgres transaction: {'enabled' if result.get('transactional') else 'disabled'}")
     for item in result.get("adminConfigChanges", []):
         identifier = item.get("id") or item.get("role")
         print(f"- {item['collection']}: {item['action']} {identifier}")
@@ -603,11 +564,10 @@ def main() -> None:
         print_summary(result, args.json)
         return
 
-    if not args.mongo_url:
-        raise SystemExit("AICHECK_MONGO_URL or --mongo-url is required unless --dry-run is used.")
-    result = sync_mongo(
-        args.mongo_url,
-        args.db,
+    if not args.database_url:
+        raise SystemExit("AICHECK_DATABASE_URL or --database-url is required unless --dry-run is used.")
+    result = sync_postgres(
+        args.database_url,
         roles,
         args.project_id,
         passwords=passwords,

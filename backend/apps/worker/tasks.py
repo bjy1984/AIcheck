@@ -17,11 +17,11 @@ def service_failure_message(service: str) -> str:
 
 
 def load_state() -> None:
-    repo.load_from_sync_mongo()
+    repo.load_from_sync_postgres()
 
 
 def flush_state() -> None:
-    repo.flush_to_sync_mongo()
+    repo.flush_to_sync_postgres()
 
 
 def parse_with_ocr_service(

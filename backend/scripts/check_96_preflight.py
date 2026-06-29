@@ -19,8 +19,8 @@ REQUIRED_ENV = {
     "AICHECK_MINIO_SECRET_KEY": "MinIO root password and signing secret",
     "AICHECK_JWT_SECRET": "JWT signing secret",
     "LITELLM_API_KEY": "LiteLLM master key used by API/worker probes",
-    "LITELLM_POSTGRES_PASSWORD": "LiteLLM PostgreSQL password",
-    "WORKFLOW_POSTGRES_PASSWORD": "Temporal and LangGraph workflow PostgreSQL password",
+    "AICHECK_POSTGRES_PASSWORD": "Unified PostgreSQL password for AIcheck, LiteLLM, Temporal, and LangGraph",
+    "AICHECK_DATABASE_URL": "AIcheck business PostgreSQL connection URL",
     "DEEPSEEK_API_KEY": "DeepSeek provider key consumed by LiteLLM review-chat/deepseek-reasoner",
 }
 PRODUCTION_FLAG_DEFAULTS = {
@@ -29,7 +29,6 @@ PRODUCTION_FLAG_DEFAULTS = {
     "AICHECK_OCR_ALLOW_PLACEHOLDER": "false",
     "AICHECK_OCR_OFFLINE_ONLY": "true",
     "AICHECK_OCR_DISABLE_NETWORK": "true",
-    "AICHECK_MONGO_TRANSACTIONS": "true",
     "AICHECK_REVIEW_ORCHESTRATION": "temporal",
 }
 HOST_PORTS = {
@@ -38,10 +37,8 @@ HOST_PORTS = {
     4001: "litellm-service",
     9000: "minio-api",
     9001: "minio-console",
-    27017: "mongodb",
     6379: "redis",
-    5433: "litellm-postgres",
-    5434: "workflow-postgres",
+    5432: "postgres",
     7233: "temporal-service",
     8088: "temporal-ui",
 }
@@ -62,15 +59,10 @@ SECRET_STRENGTH_RULES = {
         "min_unique": 8,
         "description": "LiteLLM master key",
     },
-    "LITELLM_POSTGRES_PASSWORD": {
+    "AICHECK_POSTGRES_PASSWORD": {
         "min_length": 16,
         "min_unique": 8,
-        "description": "LiteLLM PostgreSQL password",
-    },
-    "WORKFLOW_POSTGRES_PASSWORD": {
-        "min_length": 16,
-        "min_unique": 8,
-        "description": "Temporal and LangGraph workflow PostgreSQL password",
+        "description": "Unified PostgreSQL password",
     },
 }
 OCR_BUNDLED_MODEL_DIRS = ("paddleocr", "paddlex", "paddleocr-vl", "docling")
@@ -392,7 +384,7 @@ class PreflightChecker:
         self.add(
             "env.production-flags",
             "pass",
-            "Authentication, OCR, and Mongo transaction flags are production-ready.",
+            "Authentication, OCR, PostgreSQL, and orchestration flags are production-ready.",
         )
 
     def check_agentdesign(self) -> None:

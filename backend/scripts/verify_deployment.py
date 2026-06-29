@@ -241,7 +241,7 @@ class DeploymentVerifier:
         self.check_strict_production_flags()
         self.check_auth_gate()
         self.check_role_logins()
-        self.check_mongo_transaction_probe()
+        self.check_postgres_transaction_probe()
         self.check_admin_reads_rejected()
         self.check_project_and_task_reads()
         self.check_write_probes()
@@ -295,7 +295,7 @@ class DeploymentVerifier:
         if data is None:
             return
         self.api_health = data
-        required = {"service", "authRequired", "demoUsersEnabled", "mongoEnabled", "objectStorageEnabled"}
+        required = {"service", "authRequired", "demoUsersEnabled", "postgresEnabled", "objectStorageEnabled"}
         missing = sorted(required - set(data))
         if missing:
             self.add("api.health", "fail", f"Missing fields: {', '.join(missing)}", data)
@@ -308,8 +308,8 @@ class DeploymentVerifier:
         expected = {
             "authRequired": True,
             "demoUsersEnabled": False,
-            "mongoEnabled": True,
-            "mongoTransactions": True,
+            "postgresEnabled": True,
+            "postgresTransactions": True,
             "objectStorageEnabled": True,
         }
         mismatches = [
@@ -384,23 +384,23 @@ class DeploymentVerifier:
             if data is not None:
                 self.add(name, "pass")
 
-    def check_mongo_transaction_probe(self) -> None:
-        if not self.config.strict_production and not self.api_health.get("mongoTransactions"):
-            self.add("mongo.transaction-probe", "skip", "MongoDB transactions are disabled.")
+    def check_postgres_transaction_probe(self) -> None:
+        if not self.config.strict_production and not self.api_health.get("postgresTransactions"):
+            self.add("postgres.transaction-probe", "skip", "PostgreSQL persistence is disabled.")
             return
         status_code, payload = self.request_json(
             self.api,
             "GET",
-            "/api/system/mongo-transaction-probe",
+            "/api/system/postgres-transaction-probe",
             headers=self.auth_headers("admin"),
         )
-        data = self.envelope_data("mongo.transaction-probe", status_code, payload)
+        data = self.envelope_data("postgres.transaction-probe", status_code, payload)
         if data is None:
             return
         failures = []
         if self.config.strict_production:
-            if data.get("mongoEnabled") is not True:
-                failures.append("mongoEnabled must be true")
+            if data.get("postgresEnabled") is not True:
+                failures.append("postgresEnabled must be true")
             if data.get("transactionsConfigured") is not True:
                 failures.append("transactionsConfigured must be true")
             if data.get("transactionProbe") != "pass":
@@ -408,11 +408,11 @@ class DeploymentVerifier:
         elif data.get("transactionsConfigured") and data.get("transactionProbe") == "failed":
             failures.append("transaction probe failed")
         if failures:
-            self.add("mongo.transaction-probe", "fail", "; ".join(failures), data)
+            self.add("postgres.transaction-probe", "fail", "; ".join(failures), data)
             return
         status = "pass" if data.get("transactionProbe") == "pass" else "skip"
-        detail = "MongoDB transaction probe passed." if status == "pass" else str(data.get("reason") or "MongoDB transaction probe skipped.")
-        self.add("mongo.transaction-probe", status, detail, data)
+        detail = "PostgreSQL transaction probe passed." if status == "pass" else str(data.get("reason") or "PostgreSQL transaction probe skipped.")
+        self.add("postgres.transaction-probe", status, detail, data)
 
     def check_write_probes(self) -> None:
         if not self.config.write_probes:

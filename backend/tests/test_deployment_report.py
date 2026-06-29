@@ -22,9 +22,9 @@ from scripts.deployment_report import (
     knowledge_rule_contract_check,
     litellm_client_contract_check,
     markdown_report,
-    mongo_index_contract_check,
     ocr_evaluation_contract_check,
     ocr_service_contract_check,
+    postgres_index_contract_check,
     review_orchestration_contract_check,
     response_envelope_contract_check,
     role_contract_check,
@@ -106,11 +106,11 @@ def test_deployment_report_static_sections_pass_and_live_is_skipped() -> None:
     assert role_check["data"]["missingRoles"] == []
     assert role_check["data"]["ownerWriteLeaks"] == []
     assert role_check["data"]["planFailures"] == []
-    mongo_check = next(check for check in sections["data-contract"]["checks"] if check["name"] == "mongo.index-contract")
-    assert mongo_check["status"] == "pass"
-    assert mongo_check["data"]["missingPersisted"] == []
-    assert mongo_check["data"]["missingPlanCollections"] == []
-    assert mongo_check["data"]["missingCriticalIndexes"] == []
+    postgres_check = next(check for check in sections["data-contract"]["checks"] if check["name"] == "postgres.index-contract")
+    assert postgres_check["status"] == "pass"
+    assert postgres_check["data"]["missingTables"] == []
+    assert postgres_check["data"]["missingPlanCollections"] == []
+    assert postgres_check["data"]["missingCriticalIndexes"] == []
     storage_check = next(
         check for check in sections["storage-contract"]["checks"] if check["name"] == "storage.bucket-contract"
     )
@@ -473,21 +473,20 @@ def test_frontend_mutation_helper_check_requires_if_match_and_idempotency(tmp_pa
     assert "etag option" in check["data"]["missing"]
 
 
-def test_mongo_index_contract_check_fails_missing_persisted_and_critical_indexes() -> None:
-    check = mongo_index_contract_check(
+def test_postgres_index_contract_check_fails_missing_tables_and_critical_indexes() -> None:
+    check = postgres_index_contract_check(
         {
-            "projects": [[("code", 1)]],
-            "project_nodes": [[("projectId", 1), ("nodeId", 1)]],
-            "documents": [[("projectId", 1), ("currentVersionId", 1)]],
+            "aicheck_state": [{"fields": ["collection"]}],
         }
     )
 
     assert check["status"] == "fail"
-    assert "audit_logs" in check["data"]["missingPersisted"]
-    assert "knowledge_tasks" in check["data"]["missingPlanCollections"]
+    assert "aicheck_singletons" in check["data"]["missingTables"]
+    assert check["data"]["missingPlanCollections"] == []
     assert {
-        "collection": "project_nodes",
-        "fields": ["projectId", "nodeId", "status"],
+        "table": "aicheck_state",
+        "fields": ["collection", "object_id"],
+        "unique": True,
     } in check["data"]["missingCriticalIndexes"]
 
 

@@ -119,7 +119,7 @@ ai_recheck(...)
 
 当前执行流程：
 
-1. 调用 `repo.load_from_sync_mongo()` 加载业务状态。
+1. 调用 `repo.load_from_sync_postgres()` 加载业务状态。
 2. 根据 `run_id` 查找 `ai_runs`。
 3. 根据 run 的 `inputDocumentVersionIds` 查找 `extracted_fields`。
 4. 拼接一个简单中文 Prompt。

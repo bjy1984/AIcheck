@@ -5,9 +5,7 @@ services:
       dockerfile: Dockerfile
     command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000
     environment:
-      AICHECK_MONGO_URL: ${AICHECK_MONGO_URL:-mongodb://mongodb:27017/?replicaSet=rs0}
-      AICHECK_MONGO_DB: ${AICHECK_MONGO_DB:-aicheck}
-      AICHECK_MONGO_TRANSACTIONS: ${AICHECK_MONGO_TRANSACTIONS:-true}
+      AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${AICHECK_POSTGRES_DB:-aicheck}
       AICHECK_REDIS_URL: ${AICHECK_REDIS_URL:-redis://redis:6379/0}
       AICHECK_TASK_DISPATCH: ${AICHECK_TASK_DISPATCH:-celery}
       AICHECK_REVIEW_ORCHESTRATION: ${AICHECK_REVIEW_ORCHESTRATION:-temporal}
@@ -18,7 +16,7 @@ services:
       AICHECK_LANGGRAPH_DISABLE: ${AICHECK_LANGGRAPH_DISABLE:-false}
       AICHECK_LANGGRAPH_CHECKPOINT_DISABLE: ${AICHECK_LANGGRAPH_CHECKPOINT_DISABLE:-false}
       AICHECK_LANGGRAPH_CHECKPOINT_SETUP: ${AICHECK_LANGGRAPH_CHECKPOINT_SETUP:-false}
-      LANGGRAPH_CHECKPOINT_DSN: postgresql://${WORKFLOW_POSTGRES_USER:-workflow}:${WORKFLOW_POSTGRES_PASSWORD:?WORKFLOW_POSTGRES_PASSWORD is required}@workflow-postgres:5432/${WORKFLOW_POSTGRES_DB:-workflow}
+      LANGGRAPH_CHECKPOINT_DSN: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${WORKFLOW_POSTGRES_DB:-workflow}
       AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_ENDPOINT:-minio:9000}
       AICHECK_MINIO_PUBLIC_ENDPOINT: ${AICHECK_MINIO_PUBLIC_ENDPOINT:-127.0.0.1:9000}
       AICHECK_MINIO_ACCESS_KEY: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
@@ -32,7 +30,7 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      mongodb:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -58,9 +56,7 @@ services:
       dockerfile: Dockerfile
     command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO -Q ocr.parse_document,ocr.recognize_seals,knowledge.slice,knowledge.embed,inspection.ai_recheck,llm.compare,export.package
     environment:
-      AICHECK_MONGO_URL: ${AICHECK_MONGO_URL:-mongodb://mongodb:27017/?replicaSet=rs0}
-      AICHECK_MONGO_DB: ${AICHECK_MONGO_DB:-aicheck}
-      AICHECK_MONGO_TRANSACTIONS: ${AICHECK_MONGO_TRANSACTIONS:-true}
+      AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${AICHECK_POSTGRES_DB:-aicheck}
       AICHECK_REDIS_URL: ${AICHECK_REDIS_URL:-redis://redis:6379/0}
       AICHECK_TASK_DISPATCH: ${AICHECK_TASK_DISPATCH:-celery}
       AICHECK_REVIEW_ORCHESTRATION: ${AICHECK_REVIEW_ORCHESTRATION:-temporal}
@@ -72,7 +68,7 @@ services:
       LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://litellm-service:4000}
       LITELLM_API_KEY: ${LITELLM_API_KEY:?LITELLM_API_KEY is required}
     depends_on:
-      mongodb:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -100,9 +96,7 @@ services:
       dockerfile: Dockerfile
     command: python -m apps.review_worker.main
     environment:
-      AICHECK_MONGO_URL: ${AICHECK_MONGO_URL:-mongodb://mongodb:27017/?replicaSet=rs0}
-      AICHECK_MONGO_DB: ${AICHECK_MONGO_DB:-aicheck}
-      AICHECK_MONGO_TRANSACTIONS: ${AICHECK_MONGO_TRANSACTIONS:-true}
+      AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${AICHECK_POSTGRES_DB:-aicheck}
       AICHECK_REVIEW_ORCHESTRATION: temporal
       TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-temporal-service:7233}
       TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
@@ -115,15 +109,13 @@ services:
       AICHECK_LANGGRAPH_DISABLE: ${AICHECK_LANGGRAPH_DISABLE:-false}
       AICHECK_LANGGRAPH_CHECKPOINT_DISABLE: ${AICHECK_LANGGRAPH_CHECKPOINT_DISABLE:-false}
       AICHECK_LANGGRAPH_CHECKPOINT_SETUP: ${AICHECK_LANGGRAPH_CHECKPOINT_SETUP:-false}
-      LANGGRAPH_CHECKPOINT_DSN: postgresql://${WORKFLOW_POSTGRES_USER:-workflow}:${WORKFLOW_POSTGRES_PASSWORD:?WORKFLOW_POSTGRES_PASSWORD is required}@workflow-postgres:5432/${WORKFLOW_POSTGRES_DB:-workflow}
+      LANGGRAPH_CHECKPOINT_DSN: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${WORKFLOW_POSTGRES_DB:-workflow}
       LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://litellm-service:4000}
       LITELLM_API_KEY: ${LITELLM_API_KEY:?LITELLM_API_KEY is required}
     depends_on:
-      mongodb:
-        condition: service_healthy
       temporal-service:
         condition: service_healthy
-      workflow-postgres:
+      postgres:
         condition: service_healthy
       litellm-service:
         condition: service_healthy
@@ -203,23 +195,6 @@ services:
       timeout: 5s
       retries: 12
 
-  mongodb:
-    image: mongo:7
-    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongo-data:/data/db
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "mongosh --quiet --eval 'try { rs.status().ok } catch (e) { rs.initiate({_id:\"rs0\", members:[{_id:0, host:\"mongodb:27017\"}]}).ok }'",
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-
   redis:
     image: redis:7-alpine
     ports:
@@ -247,32 +222,19 @@ services:
       timeout: 5s
       retries: 20
 
-  litellm-postgres:
+  postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: ${LITELLM_POSTGRES_DB:-litellm}
-      POSTGRES_USER: ${LITELLM_POSTGRES_USER:-litellm}
-      POSTGRES_PASSWORD: ${LITELLM_POSTGRES_PASSWORD:?LITELLM_POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${AICHECK_POSTGRES_DB:-aicheck}
+      POSTGRES_USER: ${AICHECK_POSTGRES_USER:-aicheck}
+      POSTGRES_PASSWORD: ${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}
+      LITELLM_POSTGRES_DB: ${LITELLM_POSTGRES_DB:-litellm}
+      WORKFLOW_POSTGRES_DB: ${WORKFLOW_POSTGRES_DB:-workflow}
     ports:
-      - "5433:5432"
+      - "5432:5432"
     volumes:
-      - litellm-postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-
-  workflow-postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: ${WORKFLOW_POSTGRES_DB:-workflow}
-      POSTGRES_USER: ${WORKFLOW_POSTGRES_USER:-workflow}
-      POSTGRES_PASSWORD: ${WORKFLOW_POSTGRES_PASSWORD:?WORKFLOW_POSTGRES_PASSWORD is required}
-    ports:
-      - "5434:5432"
-    volumes:
-      - workflow-postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -284,14 +246,14 @@ services:
     environment:
       DB: postgres12
       DB_PORT: 5432
-      POSTGRES_USER: ${WORKFLOW_POSTGRES_USER:-workflow}
-      POSTGRES_PWD: ${WORKFLOW_POSTGRES_PASSWORD:?WORKFLOW_POSTGRES_PASSWORD is required}
-      POSTGRES_SEEDS: workflow-postgres
+      POSTGRES_USER: ${AICHECK_POSTGRES_USER:-aicheck}
+      POSTGRES_PWD: ${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}
+      POSTGRES_SEEDS: postgres
       DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
     ports:
       - "7233:7233"
     depends_on:
-      workflow-postgres:
+      postgres:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "tctl --address 127.0.0.1:7233 cluster health | grep -q SERVING"]
@@ -314,19 +276,19 @@ services:
     image: ghcr.io/berriai/litellm:main-latest
     command: ["--config", "/app/config/litellm.yaml", "--port", "4000", "--host", "0.0.0.0"]
     environment:
-      DATABASE_URL: postgresql://${LITELLM_POSTGRES_USER:-litellm}:${LITELLM_POSTGRES_PASSWORD:?LITELLM_POSTGRES_PASSWORD is required}@litellm-postgres:5432/${LITELLM_POSTGRES_DB:-litellm}
+      DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${LITELLM_POSTGRES_DB:-litellm}
       LITELLM_MASTER_KEY: ${LITELLM_API_KEY:?LITELLM_API_KEY is required}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?DEEPSEEK_API_KEY is required}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       AICHECK_LITELLM_STRICT_PROVIDER_HEALTH: ${AICHECK_LITELLM_STRICT_PROVIDER_HEALTH:-true}
-      NO_PROXY: ${AICHECK_LITELLM_NO_PROXY:-127.0.0.1,localhost,::1,litellm-postgres}
-      no_proxy: ${AICHECK_LITELLM_NO_PROXY:-127.0.0.1,localhost,::1,litellm-postgres}
+      NO_PROXY: ${AICHECK_LITELLM_NO_PROXY:-127.0.0.1,localhost,::1,postgres}
+      no_proxy: ${AICHECK_LITELLM_NO_PROXY:-127.0.0.1,localhost,::1,postgres}
     ports:
       - "4001:4000"
     volumes:
       - ./config:/app/config:ro
     depends_on:
-      litellm-postgres:
+      postgres:
         condition: service_healthy
     healthcheck:
       test:
@@ -339,7 +301,5 @@ services:
       retries: 12
 
 volumes:
-  mongo-data:
   minio-data:
-  litellm-postgres-data:
-  workflow-postgres-data:
+  postgres-data:

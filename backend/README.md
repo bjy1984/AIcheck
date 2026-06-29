@@ -1,6 +1,6 @@
 # AIcheck Backend
 
-FastAPI backend for the AIcheck frontend contract, with production-like MongoDB, MinIO, Redis/Celery, local OCR, Temporal/LangGraph review orchestration, and LiteLLM integration paths.
+FastAPI backend for the AIcheck frontend contract, with PostgreSQL business persistence, MinIO, Redis/Celery, local OCR, Temporal/LangGraph review orchestration, and LiteLLM integration paths.
 
 Deployment guide: see [`../DEPLOYMENT.md`](../DEPLOYMENT.md).
 
@@ -10,10 +10,10 @@ Deployment guide: see [`../DEPLOYMENT.md`](../DEPLOYMENT.md).
 - `worker-service`: Celery worker with Redis queues for OCR, knowledge slicing, embedding, AI recheck, LLM compare, and export packaging.
 - `review-worker-service`: Temporal worker for `ReviewRunWorkflow`. The outer workflow handles long-running review state, retry/cancel/wait-for-human behavior, and the inner LangGraph-compatible graph records each review step for FDE visualization.
 - `ocr-service`: local-only Document Intelligence service built from `Dockerfile.ocr`. It keeps the legacy agentdesign seal OCR import path, adds async document-parse jobs, and requires local model artifacts mounted at `/models`; production should keep `AICHECK_OCR_ALLOW_PLACEHOLDER=false`, `AICHECK_OCR_OFFLINE_ONLY=true`, and `AICHECK_OCR_DISABLE_NETWORK=true`.
-- `litellm-service`: LiteLLM proxy configured by `config/litellm.yaml`; PostgreSQL is only for LiteLLM metadata.
-- `temporal-service`, `temporal-ui`, `workflow-postgres`: durable review workflow engine, workflow UI, and workflow/checkpoint database.
-- `mongodb`, `redis`, `minio`: business persistence, task queue, and object storage for documents/previews/exports/OCR artifacts.
-- Docker Compose healthchecks are declared for API, worker, review worker, OCR, MongoDB, Redis, MinIO, Workflow PostgreSQL, Temporal, LiteLLM PostgreSQL, and LiteLLM; service dependencies use `condition: service_healthy` for startup ordering.
+- `litellm-service`: LiteLLM proxy configured by `config/litellm.yaml`; it uses the unified PostgreSQL service for metadata.
+- `temporal-service`, `temporal-ui`: durable review workflow engine and workflow UI.
+- `postgres`, `redis`, `minio`: unified PostgreSQL databases for AIcheck/LiteLLM/workflow, task queue/cache, and object storage for documents/previews/exports/OCR artifacts.
+- Docker Compose healthchecks are declared for API, worker, review worker, OCR, PostgreSQL, Redis, MinIO, Temporal, and LiteLLM; service dependencies use `condition: service_healthy` for startup ordering.
 
 ## Local Run
 
@@ -31,8 +31,8 @@ AICHECK_BOOTSTRAP_PASSWORD_OWNER='Local!2026-ViewZ' \
 uvicorn apps.api.main:app --host 127.0.0.1 --port 8000
 ```
 
-Without `AICHECK_MONGO_URL`, `AICHECK_MINIO_ENDPOINT`, or `AICHECK_TASK_DISPATCH`, the API runs in compatibility mode using seeded in-memory data and mock URLs. This mode is intended for fast frontend contract tests.
-Set `AICHECK_BOOTSTRAP_LOCAL_ROLES=true` to inject the five PBKDF2 role accounts into the in-memory repository for local login checks without MongoDB.
+Without `AICHECK_DATABASE_URL`, `AICHECK_MINIO_ENDPOINT`, or `AICHECK_TASK_DISPATCH`, the API runs in compatibility mode using seeded in-memory data and mock URLs. This mode is intended for fast frontend contract tests.
+Set `AICHECK_BOOTSTRAP_LOCAL_ROLES=true` to inject the five PBKDF2 role accounts into the in-memory repository for local login checks without PostgreSQL.
 
 Frontend live-backend mode:
 
@@ -51,7 +51,7 @@ source .venv/bin/activate
 pytest
 ```
 
-The contract suite covers the response envelope, compatibility login paths, persistent user login with demo users disabled, mutation idempotency and body-conflict detection, archived/etag guards, submission withdrawal, rectification feedback, report-generation state guards, backend-inferred action-code guards, read/write URL/body/resource-derived node-scope guards, list-level node-scope filtering, upload-to-OCR task creation, OCR HTTP client dispatch, inline OCR field/chunk writeback, retry/cancel behavior for knowledge tasks, Temporal/LangGraph-compatible ReviewRun creation, graph visualization, human decision handling, AI feedback sample creation, FDE feedback triage to evaluation cases, FDE ReviewRun replay/shadow APIs, LiteLLM failure mapping, async LLM compare, object-storage export artifacts, JWT/action/node-scope identity guards, and Mongo state round-trip.
+The contract suite covers the response envelope, compatibility login paths, persistent user login with demo users disabled, mutation idempotency and body-conflict detection, archived/etag guards, submission withdrawal, rectification feedback, report-generation state guards, backend-inferred action-code guards, read/write URL/body/resource-derived node-scope guards, list-level node-scope filtering, upload-to-OCR task creation, OCR HTTP client dispatch, inline OCR field/chunk writeback, retry/cancel behavior for knowledge tasks, Temporal/LangGraph-compatible ReviewRun creation, graph visualization, human decision handling, AI feedback sample creation, FDE feedback triage to evaluation cases, FDE ReviewRun replay/shadow APIs, LiteLLM failure mapping, async LLM compare, object-storage export artifacts, JWT/action/node-scope identity guards, and PostgreSQL state round-trip.
 
 Deployment verification:
 
@@ -96,7 +96,7 @@ python scripts/deployment_report.py \
 
 `check_96_preflight.py` fails early when Docker Compose, `backend/.env`, production flags, LiteLLM/provider keys, the `agentdesign` OCR reference path, or local OCR model directories are missing. Text and JSON output include `remediation` steps for each failing check so the deployment host can be corrected before live probes. The ReviewRun probe creates a temporary AI recheck, requires Temporal dispatch in strict production, waits for the worker to advance the LangGraph step graph, verifies ReviewRun business endpoints, submits a human decision, and verifies FDE diagnostic replay. The management probe creates and deletes a temporary LiteLLM virtual key to verify DB-backed key, budget, and rate-limit management. The provider probe spends real LiteLLM upstream quota; omit `--litellm-provider-probes` only for a dry infrastructure check.
 
-The verifier checks API health flags, role login/default paths, JWT protection, the MongoDB transaction probe, read-only project/task endpoints, identity-spoof rejection, action-bypass rejection, read-scope rejection, OCR health/readyz, OCR runtime doctor, OCR parse/bad-request contracts, and LiteLLM health/models without creating business data or spending model quota. In `--strict-production`, MongoDB must be connected with `AICHECK_MONGO_TRANSACTIONS=true` and the transaction probe must pass; OCR must report local engines, placeholder disabled, offline-only enabled, network disabled, existing model directories, and no failed runtime doctor checks.
+The verifier checks API health flags, role login/default paths, JWT protection, the PostgreSQL transaction probe, read-only project/task endpoints, identity-spoof rejection, action-bypass rejection, read-scope rejection, OCR health/readyz, OCR runtime doctor, OCR parse/bad-request contracts, and LiteLLM health/models without creating business data or spending model quota. In `--strict-production`, PostgreSQL must be connected through `AICHECK_DATABASE_URL` and the transaction probe must pass; OCR must report local engines, placeholder disabled, offline-only enabled, network disabled, existing model directories, and no failed runtime doctor checks.
 
 Add `--write-probes` to create a short-lived upload session, PUT a small PDF to the returned HTTP/HTTPS signed URL, complete the upload, verify document preview/download signed GET URLs can read the object, confirm the OCR task appears, and create/read an export task.
 Add `--ocr-object-probe` with `--write-probes` when you want the OCR service to parse the newly uploaded MinIO object and prove the real OCR pipeline can read object storage.
@@ -111,8 +111,8 @@ the placeholder secrets and provider key, and run the real local workflow stack:
 
 ```bash
 docker compose --env-file .env.review100 up -d \
-  workflow-postgres temporal-service mongodb redis minio \
-  litellm-postgres litellm-service api-service review-worker-service
+  postgres temporal-service redis minio \
+  litellm-service api-service review-worker-service
 
 python scripts/review_orchestration_100_probe.py \
   --api-base http://127.0.0.1:8000 \
@@ -137,12 +137,11 @@ cd backend
 docker compose up --build
 ```
 
-MongoDB indexes are declared in `libs/db/indexes.py` and applied on startup when `AICHECK_MONGO_URL` is set. If the database is empty, the API seeds the current demo state into the planned collections. Mutating API calls then flush state back to Mongo so restarts preserve business data. Set `AICHECK_MONGO_TRANSACTIONS=true` only when MongoDB is running as a replica set or sharded cluster; the Compose stack starts Mongo as a single-node `rs0` replica set for this.
-The index test suite also verifies every persisted collection in `STATE_COLLECTIONS`, `SINGLETON_COLLECTIONS`, and `idempotency_keys` has an explicit index declaration.
+PostgreSQL persistence is enabled when `AICHECK_DATABASE_URL` is set. On startup the API creates the first-stage JSONB state tables (`aicheck_state`, `aicheck_singletons`, `idempotency_records`) and seeds the current demo state when the business database is empty. Mutating API calls flush state back to PostgreSQL so restarts preserve business data. The index test suite verifies the JSONB state table, singleton table, idempotency primary key, and GIN payload index contract.
 
 Key environment variables:
 
-- `AICHECK_MONGO_URL`, `AICHECK_MONGO_DB`, `AICHECK_MONGO_TRANSACTIONS=true`: business data persistence and transactional cross-collection flushes.
+- `AICHECK_DATABASE_URL`, `AICHECK_POSTGRES_DB`, `AICHECK_POSTGRES_USER`, `AICHECK_POSTGRES_PASSWORD`: unified PostgreSQL persistence for AIcheck business data, LiteLLM metadata, Temporal, and LangGraph checkpoint databases.
 - `AICHECK_REDIS_URL`, `AICHECK_TASK_DISPATCH=celery`: Celery broker/result backend and API task dispatch.
 - `AICHECK_REVIEW_ORCHESTRATION=temporal`, `TEMPORAL_ADDRESS`, `TEMPORAL_NAMESPACE`, `AICHECK_REVIEW_*_TASK_QUEUE`, `AICHECK_REVIEW_LLM_EXECUTION=litellm`, `AICHECK_LANGGRAPH_DISABLE=false`, `AICHECK_LANGGRAPH_CHECKPOINT_DISABLE=false`, `AICHECK_LANGGRAPH_CHECKPOINT_SETUP=false`, `LANGGRAPH_CHECKPOINT_DSN`: Temporal/LangGraph review orchestration, LiteLLM-backed finding generation, checkpoint storage, shadow runs, replay, and human decision/cancel signals.
 - `AICHECK_MINIO_ENDPOINT`, `AICHECK_MINIO_ACCESS_KEY`, `AICHECK_MINIO_SECRET_KEY`: signed upload/download and export artifacts.

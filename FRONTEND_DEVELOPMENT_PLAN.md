@@ -43,7 +43,7 @@
 
 暂不建议开始的范围：
 
-- 生产外部依赖联调：真实 MinIO、PaddleOCR/Seal OCR、LiteLLM provider、MongoDB replica set。
+- 生产外部依赖联调：真实 MinIO、PaddleOCR/Seal OCR、LiteLLM provider、统一 PostgreSQL。
 - OpenAPI SDK/codegen。
 - 真实对象存储上传、真实 OCR、真实向量检索、真实 LLM 调用。
 - 复杂报表模板编辑器。
@@ -464,7 +464,7 @@ frontend/
 - 已完成：工作台基础组件拆分、核心 mock mutation 写回、管理后台配置第一版、知识库二期管理操作第一版。
 - 可以立即继续：`ui/` 静态稿截图级 1:1 克隆、Element Plus 可替换点审计、更多异常恢复连续 E2E、配置联动深化和 OpenAPI/codegen 准备。
 - 可以并行继续：弹窗级错误恢复、关键页面截图检查、OpenAPI/codegen 准备。
-- 暂不建议作为前端任务内直接承诺：生产 MinIO、PaddleOCR/Seal OCR、LiteLLM provider、MongoDB replica set 的目标环境压测。
+- 暂不建议作为前端任务内直接承诺：生产 MinIO、PaddleOCR/Seal OCR、LiteLLM provider、统一 PostgreSQL 的目标环境压测。
 - 必须继续补齐：更细的弹窗级错误态、组件级 retry、真实预览服务和生产上传协议替换点。
 
 启动条件评估：

@@ -4,7 +4,6 @@ import asyncio
 import hashlib
 import json
 import os
-import time
 from copy import deepcopy
 from typing import Any
 from uuid import uuid4
@@ -96,36 +95,12 @@ STATE_COLLECTIONS = {
     "audit_logs": "audit_logs",
 }
 
-TRANSIENT_MONGO_ERROR_CODES = {112, 251}
-
-
-def is_transient_mongo_error(exc: Exception) -> bool:
-    has_label = getattr(exc, "has_error_label", None)
-    if callable(has_label) and (
-        has_label("TransientTransactionError") or has_label("UnknownTransactionCommitResult")
-    ):
-        return True
-    details = getattr(exc, "details", None)
-    if isinstance(details, dict):
-        labels = set(details.get("errorLabels") or [])
-        if labels & {"TransientTransactionError", "UnknownTransactionCommitResult"}:
-            return True
-        code = details.get("code")
-        if code in TRANSIENT_MONGO_ERROR_CODES:
-            return True
-    code = getattr(exc, "code", None)
-    return code in TRANSIENT_MONGO_ERROR_CODES
-
 SINGLETON_COLLECTIONS = {
     "admin_config": "admin_configs",
     "knowledge_config": "knowledge_configs",
 }
 
 IDEMPOTENCY_COLLECTION = "idempotency_keys"
-
-
-def mongo_transactions_enabled() -> bool:
-    return os.getenv("AICHECK_MONGO_TRANSACTIONS", "false").lower() == "true"
 
 
 class InMemoryRepository:
@@ -150,9 +125,9 @@ class InMemoryRepository:
         self.state.setdefault("rule_check_results", [])
         self.state.setdefault("cost_budget_change_requests", [])
         self.state.setdefault("masking_policies", [])
-        self.mongo = None
-        self.sync_mongo = None
-        self.mongo_enabled = False
+        self.postgres_dsn: str | None = None
+        self.sync_postgres = None
+        self.postgres_enabled = False
         self._flush_lock = asyncio.Lock()
 
     def reset(self) -> None:
@@ -999,159 +974,172 @@ class InMemoryRepository:
             task["contentType"] = content_type
         return task
 
-    async def load_from_mongo(self, database: Any) -> None:
-        self.mongo = database
-        self.mongo_enabled = True
-        if await database[STATE_COLLECTIONS["projects"]].count_documents({}) == 0:
-            await self.flush_to_mongo(database)
+    def configure_sync_postgres(self, dsn: str | None = None) -> None:
+        target_dsn = dsn or os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL")
+        if not target_dsn:
             return
-        loaded = fresh_state()
-        loaded.setdefault("knowledge_chunks", [])
-        loaded.setdefault("knowledge_clauses", [])
-        loaded.setdefault("knowledge_page_index_nodes", [])
-        loaded.setdefault("upload_sessions", [])
-        for state_key, collection_name in STATE_COLLECTIONS.items():
-            docs = await database[collection_name].find({}).to_list(length=None)
-            loaded[state_key] = [strip_mongo_id(doc) for doc in docs]
-        for state_key, collection_name in SINGLETON_COLLECTIONS.items():
-            doc = await database[collection_name].find_one({"_singleton": state_key})
-            if doc:
-                loaded[state_key] = strip_mongo_id(doc).get("payload", loaded.get(state_key))
-        idempotency_docs = await database[IDEMPOTENCY_COLLECTION].find({}).to_list(length=None)
-        loaded["idempotency"] = {
-            doc["scope"]: doc.get("payload") for doc in idempotency_docs if doc.get("scope")
-        }
-        self.state = loaded
-
-    async def flush_to_mongo(self, database: Any | None = None) -> None:
-        target = database if database is not None else self.mongo
-        if target is None:
+        if self.sync_postgres is not None and self.postgres_dsn == target_dsn:
             return
-        async with self._flush_lock:
-            client = getattr(target, "client", None)
-            if mongo_transactions_enabled() and client is not None:
-                async with await client.start_session() as session:
-                    async with session.start_transaction():
-                        await self._flush_to_mongo(target, session=session)
-                return
-            await self._flush_to_mongo(target)
+        try:
+            import psycopg
+        except Exception as exc:
+            raise RuntimeError(f"psycopg is required to use PostgreSQL persistence: {exc}") from exc
+        self.close_sync_postgres()
+        self.sync_postgres = psycopg.connect(target_dsn, autocommit=False)
+        self.postgres_dsn = target_dsn
+        self.postgres_enabled = True
 
-    async def _flush_to_mongo(self, target: Any, *, session: Any | None = None) -> None:
-        for state_key, collection_name in STATE_COLLECTIONS.items():
-            collection = target[collection_name]
-            await collection.delete_many({}, session=session)
-            docs = [self.clone(item) for item in self.state.get(state_key, [])]
-            if docs:
-                await collection.insert_many(docs, session=session)
-        for state_key, collection_name in SINGLETON_COLLECTIONS.items():
-            await target[collection_name].replace_one(
-                {"_singleton": state_key},
-                {"_singleton": state_key, "payload": self.clone(self.state.get(state_key))},
-                upsert=True,
-                session=session,
+    def close_sync_postgres(self) -> None:
+        connection = self.sync_postgres
+        self.sync_postgres = None
+        if connection is not None:
+            try:
+                connection.close()
+            except Exception:
+                pass
+
+    def postgres_connection(self, dsn: str | None = None):
+        try:
+            import psycopg
+        except Exception as exc:
+            raise RuntimeError(f"psycopg is required to use PostgreSQL persistence: {exc}") from exc
+        target_dsn = dsn or self.postgres_dsn or os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL")
+        if not target_dsn:
+            raise RuntimeError("AICHECK_DATABASE_URL is required to use PostgreSQL persistence.")
+        return psycopg.connect(target_dsn, autocommit=False)
+
+    def ensure_postgres_schema(self) -> None:
+        self.configure_sync_postgres()
+        if self.sync_postgres is None:
+            return
+        with self.sync_postgres.transaction():
+            self.sync_postgres.execute(
+                """
+                CREATE TABLE IF NOT EXISTS aicheck_state (
+                    collection text NOT NULL,
+                    object_id text NOT NULL,
+                    payload jsonb NOT NULL,
+                    updated_at timestamptz NOT NULL DEFAULT now(),
+                    PRIMARY KEY (collection, object_id)
+                )
+                """
             )
-        collection = target[IDEMPOTENCY_COLLECTION]
-        await collection.delete_many({}, session=session)
-        docs = [
-            {
-                "id": stable_doc_id(scope),
-                "scope": scope,
-                "payload": self.clone(payload),
-                "updatedAt": server_time(),
-            }
-            for scope, payload in self.state.get("idempotency", {}).items()
-        ]
-        if docs:
-            await collection.insert_many(docs, session=session)
+            self.sync_postgres.execute(
+                """
+                CREATE TABLE IF NOT EXISTS aicheck_singletons (
+                    name text PRIMARY KEY,
+                    payload jsonb NOT NULL,
+                    updated_at timestamptz NOT NULL DEFAULT now()
+                )
+                """
+            )
+            self.sync_postgres.execute(
+                """
+                CREATE TABLE IF NOT EXISTS idempotency_records (
+                    scope text PRIMARY KEY,
+                    payload jsonb NOT NULL,
+                    updated_at timestamptz NOT NULL DEFAULT now()
+                )
+                """
+            )
+            self.sync_postgres.execute(
+                "CREATE INDEX IF NOT EXISTS idx_aicheck_state_collection ON aicheck_state (collection)"
+            )
+            self.sync_postgres.execute(
+                "CREATE INDEX IF NOT EXISTS idx_aicheck_state_payload_gin ON aicheck_state USING gin (payload)"
+            )
+            self.sync_postgres.execute(
+                "CREATE INDEX IF NOT EXISTS idx_idempotency_updated_at ON idempotency_records (updated_at DESC)"
+            )
 
-    def configure_sync_mongo_from_env(self) -> None:
-        if self.sync_mongo is not None:
+    def load_from_sync_postgres(self) -> None:
+        self.configure_sync_postgres()
+        if self.sync_postgres is None:
             return
-        mongo_url = os.getenv("AICHECK_MONGO_URL")
-        if not mongo_url:
-            return
-        try:
-            from pymongo import MongoClient
-        except Exception:
-            return
-        client = MongoClient(mongo_url, serverSelectionTimeoutMS=1500)
-        database = client[os.getenv("AICHECK_MONGO_DB", "aicheck")]
-        try:
-            client.admin.command("ping")
-        except Exception:
-            client.close()
-            return
-        self.sync_mongo = database
-
-    def load_from_sync_mongo(self) -> None:
-        self.configure_sync_mongo_from_env()
-        if self.sync_mongo is None:
-            return
+        self.ensure_postgres_schema()
         loaded = fresh_state()
         loaded.setdefault("knowledge_chunks", [])
         loaded.setdefault("knowledge_clauses", [])
         loaded.setdefault("knowledge_page_index_nodes", [])
         loaded.setdefault("upload_sessions", [])
-        has_project_seed = self.sync_mongo[STATE_COLLECTIONS["projects"]].count_documents({}) > 0
+        loaded.setdefault("ocr_jobs", [])
+        loaded.setdefault("ocr_parse_results", [])
+        loaded.setdefault("ocr_corrections", [])
+        loaded.setdefault("ocr_eval_runs", [])
+        loaded.setdefault("ocr_annotation_tasks", [])
+        loaded.setdefault("ocr_annotation_imports", [])
+        loaded.setdefault("review_runs", [])
+        loaded.setdefault("review_step_runs", [])
+        loaded.setdefault("review_graph_nodes", [])
+        loaded.setdefault("review_tool_calls", [])
+        loaded.setdefault("review_events", [])
+        loaded.setdefault("retrieval_traces", [])
+        loaded.setdefault("rule_check_results", [])
+        loaded.setdefault("cost_budget_change_requests", [])
+        loaded.setdefault("masking_policies", [])
+        rows = self.sync_postgres.execute(
+            "SELECT collection, payload FROM aicheck_state ORDER BY collection, object_id"
+        ).fetchall()
+        has_project_seed = any(row[0] == STATE_COLLECTIONS["projects"] for row in rows)
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for collection_name, payload in rows:
+            grouped.setdefault(collection_name, []).append(json.loads(json.dumps(payload)))
         for state_key, collection_name in STATE_COLLECTIONS.items():
-            documents = [strip_mongo_id(doc) for doc in self.sync_mongo[collection_name].find({})]
+            documents = grouped.get(collection_name, [])
             if has_project_seed or documents:
                 loaded[state_key] = documents
-        for state_key, collection_name in SINGLETON_COLLECTIONS.items():
-            doc = self.sync_mongo[collection_name].find_one({"_singleton": state_key})
-            if doc:
-                loaded[state_key] = strip_mongo_id(doc).get("payload", loaded.get(state_key))
+        for name, payload in self.sync_postgres.execute("SELECT name, payload FROM aicheck_singletons").fetchall():
+            loaded[name] = json.loads(json.dumps(payload))
         loaded["idempotency"] = {
-            doc["scope"]: doc.get("payload")
-            for doc in self.sync_mongo[IDEMPOTENCY_COLLECTION].find({})
-            if doc.get("scope")
+            scope: json.loads(json.dumps(payload))
+            for scope, payload in self.sync_postgres.execute("SELECT scope, payload FROM idempotency_records").fetchall()
         }
         self.state = loaded
         if not has_project_seed:
-            self.flush_to_sync_mongo()
+            self.flush_to_sync_postgres()
 
-    def flush_to_sync_mongo(self) -> None:
-        self.configure_sync_mongo_from_env()
-        if self.sync_mongo is None:
+    def flush_to_sync_postgres(self) -> None:
+        self.configure_sync_postgres()
+        if self.sync_postgres is None:
             return
-        client = getattr(self.sync_mongo, "client", None)
-        if mongo_transactions_enabled() and client is not None:
-            max_attempts = max(1, int(os.getenv("AICHECK_MONGO_TRANSACTION_RETRIES", "5")))
-            for attempt in range(max_attempts):
-                try:
-                    with client.start_session() as session:
-                        with session.start_transaction():
-                            self._flush_to_sync_mongo(session=session)
-                    return
-                except Exception as exc:
-                    if attempt >= max_attempts - 1 or not is_transient_mongo_error(exc):
-                        raise
-                    time.sleep(min(0.5, 0.05 * (attempt + 1)))
-            return
-        self._flush_to_sync_mongo()
-
-    def _flush_to_sync_mongo(self, *, session: Any | None = None) -> None:
-        for state_key, collection_name in STATE_COLLECTIONS.items():
-            collection = self.sync_mongo[collection_name]
-            collection.delete_many({}, session=session)
-            docs = [self.clone(item) for item in self.state.get(state_key, [])]
-            if docs:
-                collection.insert_many(docs, session=session)
-        for state_key, collection_name in SINGLETON_COLLECTIONS.items():
-            self.sync_mongo[collection_name].replace_one(
-                {"_singleton": state_key},
-                {"_singleton": state_key, "payload": self.clone(self.state.get(state_key))},
-                upsert=True,
-                session=session,
-            )
-        collection = self.sync_mongo[IDEMPOTENCY_COLLECTION]
-        collection.delete_many({}, session=session)
-        docs = [
-            {"id": stable_doc_id(scope), "scope": scope, "payload": self.clone(payload), "updatedAt": server_time()}
-            for scope, payload in self.state.get("idempotency", {}).items()
-        ]
-        if docs:
-            collection.insert_many(docs, session=session)
+        self.ensure_postgres_schema()
+        with self.sync_postgres.transaction():
+            self.sync_postgres.execute("DELETE FROM aicheck_state")
+            self.sync_postgres.execute("DELETE FROM aicheck_singletons")
+            self.sync_postgres.execute("DELETE FROM idempotency_records")
+            for state_key, collection_name in STATE_COLLECTIONS.items():
+                docs = [self.clone(item) for item in self.state.get(state_key, [])]
+                for index, doc in enumerate(docs):
+                    object_id = str(doc.get("id") or doc.get("reviewRunId") or doc.get("jobId") or doc.get("parseResultId") or index)
+                    self.sync_postgres.execute(
+                        """
+                        INSERT INTO aicheck_state (collection, object_id, payload, updated_at)
+                        VALUES (%s, %s, %s::jsonb, now())
+                        ON CONFLICT (collection, object_id)
+                        DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()
+                        """,
+                        (collection_name, object_id, json.dumps(doc, ensure_ascii=False)),
+                    )
+            for state_key in SINGLETON_COLLECTIONS:
+                self.sync_postgres.execute(
+                    """
+                    INSERT INTO aicheck_singletons (name, payload, updated_at)
+                    VALUES (%s, %s::jsonb, now())
+                    ON CONFLICT (name)
+                    DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()
+                    """,
+                    (state_key, json.dumps(self.clone(self.state.get(state_key)), ensure_ascii=False)),
+                )
+            for scope, payload in self.state.get("idempotency", {}).items():
+                self.sync_postgres.execute(
+                    """
+                    INSERT INTO idempotency_records (scope, payload, updated_at)
+                    VALUES (%s, %s::jsonb, now())
+                    ON CONFLICT (scope)
+                    DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()
+                    """,
+                    (scope, json.dumps(self.clone(payload), ensure_ascii=False)),
+                )
 
     def build_admin_overview(self) -> dict[str, Any]:
         config = self.clone(self.state["admin_config"])
@@ -1163,12 +1151,6 @@ class InMemoryRepository:
         ]
         config["ruleVersions"] = self.clone(self.state["rule_versions"])
         return config
-
-
-def strip_mongo_id(doc: dict[str, Any]) -> dict[str, Any]:
-    cleaned = deepcopy(doc)
-    cleaned.pop("_id", None)
-    return cleaned
 
 
 def stable_doc_id(value: str) -> str:
@@ -1378,8 +1360,8 @@ repo = InMemoryRepository()
 
 
 def load_state() -> None:
-    repo.load_from_sync_mongo()
+    repo.load_from_sync_postgres()
 
 
 def flush_state() -> None:
-    repo.flush_to_sync_mongo()
+    repo.flush_to_sync_postgres()

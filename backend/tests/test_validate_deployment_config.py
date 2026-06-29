@@ -140,7 +140,7 @@ def test_strict_production_fails_when_litellm_proxy_bypass_is_missing(tmp_path) 
     compose_file = tmp_path / "docker-compose.yml"
     compose = yaml.safe_load((BACKEND_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
     compose["services"]["litellm-service"]["environment"].pop("NO_PROXY")
-    compose["services"]["litellm-service"]["environment"]["no_proxy"] = "litellm-postgres"
+    compose["services"]["litellm-service"]["environment"]["no_proxy"] = "postgres"
     compose_file.write_text(yaml.safe_dump(compose, sort_keys=False), encoding="utf-8")
     validator = DeploymentConfigValidator(
         compose_file,

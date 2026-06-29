@@ -12,8 +12,8 @@ from pathlib import Path
 import httpx
 from fastapi.testclient import TestClient
 
-from libs.db.indexes import MONGO_INDEXES, ensure_mongo_indexes
-from libs.db.mongo import bootstrap_local_roles_if_configured, run_transaction_probe
+from libs.db.indexes import POSTGRES_INDEXES
+from libs.db.postgres import bootstrap_local_roles_if_configured, run_transaction_probe
 from apps.api.main import app
 from libs.db.repository import IDEMPOTENCY_COLLECTION, SINGLETON_COLLECTIONS, STATE_COLLECTIONS, repo
 
@@ -23,8 +23,9 @@ client = TestClient(app)
 
 def setup_function() -> None:
     repo.reset()
-    repo.mongo = None
-    repo.sync_mongo = None
+    repo.postgres_enabled = False
+    repo.sync_postgres = None
+    repo.postgres_dsn = None
 
 
 def assert_ok(response):
@@ -58,18 +59,18 @@ def test_response_envelope_and_api_prefix_compatibility() -> None:
 def test_healthz_reports_runtime_flags(monkeypatch) -> None:
     monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
     monkeypatch.setenv("AICHECK_ENABLE_DEMO_USERS", "false")
-    monkeypatch.setenv("AICHECK_MONGO_TRANSACTIONS", "true")
+    repo.postgres_enabled = True
 
     health = assert_ok(client.get("/api/healthz"))
 
     assert health["service"] == "api-service"
     assert health["authRequired"] is True
     assert health["demoUsersEnabled"] is False
-    assert health["mongoTransactions"] is True
+    assert health["postgresTransactions"] is True
     assert "objectStorageEnabled" in health
 
 
-def test_local_role_bootstrap_creates_login_accounts_without_mongo(monkeypatch) -> None:
+def test_local_role_bootstrap_creates_login_accounts_without_postgres(monkeypatch) -> None:
     passwords = {
         "admin": "Local!2026-SystemZ",
         "inspection": "Local!2026-InspectZ",
@@ -91,46 +92,46 @@ def test_local_role_bootstrap_creates_login_accounts_without_mongo(monkeypatch) 
         assert result["user"]["defaultPath"]
 
 
-def test_mongo_transaction_probe_endpoint_is_admin_only_when_auth_enabled(monkeypatch) -> None:
+def test_postgres_transaction_probe_endpoint_is_admin_only_when_auth_enabled(monkeypatch) -> None:
     monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
     contractor = assert_ok(client.post("/api/auth/login", json={"username": "contractor", "password": "contractor"}))
     admin = assert_ok(client.post("/api/auth/login", json={"username": "admin", "password": "admin"}))
 
     assert_error(
         client.get(
-            "/api/system/mongo-transaction-probe",
+            "/api/system/postgres-transaction-probe",
             headers={"Authorization": f"Bearer {contractor['token']}"},
         ),
         "FORBIDDEN",
     )
     result = assert_ok(
         client.get(
-            "/api/system/mongo-transaction-probe",
+            "/api/system/postgres-transaction-probe",
             headers={"Authorization": f"Bearer {admin['token']}"},
         )
     )
 
-    assert result["mongoEnabled"] is False
+    assert result["postgresEnabled"] is False
     assert result["transactionProbe"] == "skipped"
 
 
-def test_mongo_transaction_probe_does_not_bool_check_database(monkeypatch) -> None:
-    class BoolRaisingDatabase:
+def test_postgres_transaction_probe_does_not_bool_check_database(monkeypatch) -> None:
+    class BoolRaisingDsn(str):
         def __bool__(self) -> bool:
-            raise NotImplementedError("Database objects do not implement truth value testing")
+            raise NotImplementedError("DSN objects do not implement truth value testing")
 
-    async def fake_probe(database):
-        assert isinstance(database, BoolRaisingDatabase)
-        return {"mongoEnabled": True, "transactionsConfigured": True, "transactionProbe": "pass"}
+    async def fake_probe(dsn):
+        assert isinstance(dsn, BoolRaisingDsn)
+        return {"postgresEnabled": True, "transactionsConfigured": True, "transactionProbe": "pass"}
 
     monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
-    monkeypatch.setattr(app.state, "mongo", BoolRaisingDatabase(), raising=False)
+    monkeypatch.setattr(app.state, "postgres", BoolRaisingDsn("postgresql://example"), raising=False)
     monkeypatch.setattr("apps.api.main.run_transaction_probe", fake_probe)
     admin = assert_ok(client.post("/api/auth/login", json={"username": "admin", "password": "admin"}))
 
     result = assert_ok(
         client.get(
-            "/api/system/mongo-transaction-probe",
+            "/api/system/postgres-transaction-probe",
             headers={"Authorization": f"Bearer {admin['token']}"},
         )
     )
@@ -6481,78 +6482,119 @@ class FakeIndexDatabase(dict):
         return dict.__getitem__(self, key)
 
 
-async def test_mongo_indexes_include_compound_and_unique_specs() -> None:
-    database = FakeIndexDatabase()
+class FakePostgresTransaction:
+    def __init__(self, connection):
+        self.connection = connection
 
-    await ensure_mongo_indexes(database)
+    def __enter__(self):
+        self.connection.transactions_started += 1
+        return self
 
-    assert ([("projectId", 1), ("nodeId", 1), ("status", 1)], {}) in database["project_nodes"].indexes
-    assert ([("projectId", 1), ("userId", 1), ("role", 1)], {"unique": True}) in database["project_members"].indexes
-    assert ([("documentVersionId", 1), ("fieldName", 1)], {}) in database["extracted_fields"].indexes
-    assert ([("sourceType", 1), ("status", 1), ("updatedAt", -1)], {}) in database["knowledge_sources"].indexes
-    assert ([("_singleton", 1)], {"unique": True}) in database["knowledge_configs"].indexes
-    assert ([("objectType", 1), ("objectId", 1), ("createdAt", -1)], {}) in database["audit_logs"].indexes
-    assert ([("scope", 1)], {"unique": True}) in database["idempotency_keys"].indexes
-    assert ([("username", 1)], {"unique": True}) in database["users"].indexes
+    def __exit__(self, exc_type, exc, tb):
+        self.connection.transactions_closed += 1
+        return False
 
 
-def test_mongo_indexes_cover_all_persisted_collections() -> None:
+class FakePostgresCursor:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def fetchall(self):
+        return list(self.rows)
+
+
+class FakePostgresConnection:
+    def __init__(self):
+        self.state_rows: dict[tuple[str, str], dict] = {}
+        self.singleton_rows: dict[str, dict] = {}
+        self.idempotency_rows: dict[str, dict] = {}
+        self.transactions_started = 0
+        self.transactions_closed = 0
+        self.executed: list[str] = []
+
+    def transaction(self):
+        return FakePostgresTransaction(self)
+
+    def execute(self, sql, params=None):
+        normalized = " ".join(str(sql).split())
+        self.executed.append(normalized)
+        if normalized.startswith("SELECT collection, payload FROM aicheck_state"):
+            return FakePostgresCursor([(collection, payload) for (collection, _), payload in sorted(self.state_rows.items())])
+        if normalized.startswith("SELECT name, payload FROM aicheck_singletons"):
+            return FakePostgresCursor(list(self.singleton_rows.items()))
+        if normalized.startswith("SELECT scope, payload FROM idempotency_records"):
+            return FakePostgresCursor(list(self.idempotency_rows.items()))
+        if normalized.startswith("DELETE FROM aicheck_state"):
+            self.state_rows.clear()
+        elif normalized.startswith("DELETE FROM aicheck_singletons"):
+            self.singleton_rows.clear()
+        elif normalized.startswith("DELETE FROM idempotency_records"):
+            self.idempotency_rows.clear()
+        elif normalized.startswith("INSERT INTO aicheck_state"):
+            collection, object_id, payload = params
+            self.state_rows[(collection, object_id)] = json.loads(payload)
+        elif normalized.startswith("INSERT INTO aicheck_singletons"):
+            name, payload = params
+            self.singleton_rows[name] = json.loads(payload)
+        elif normalized.startswith("INSERT INTO idempotency_records"):
+            scope, payload = params
+            self.idempotency_rows[scope] = json.loads(payload)
+        return FakePostgresCursor([])
+
+
+def test_postgres_indexes_include_jsonb_and_idempotency_specs() -> None:
+    assert "aicheck_state" in POSTGRES_INDEXES
+    assert {"name": "idx_aicheck_state_payload_gin", "fields": ["payload"], "type": "gin"} in POSTGRES_INDEXES["aicheck_state"]
+    assert {"name": "idempotency_records_pkey", "fields": ["scope"], "unique": True} in POSTGRES_INDEXES["idempotency_records"]
+
+
+def test_postgres_jsonb_state_table_covers_all_persisted_collections() -> None:
     persisted_collections = set(STATE_COLLECTIONS.values()) | set(SINGLETON_COLLECTIONS.values()) | {IDEMPOTENCY_COLLECTION}
 
-    assert persisted_collections - set(MONGO_INDEXES) == set()
+    assert persisted_collections
+    assert {"aicheck_state", "aicheck_singletons", "idempotency_records"} <= set(POSTGRES_INDEXES)
 
 
-async def test_mongo_state_round_trip_persists_planned_collections() -> None:
-    database = FakeDatabase()
-    repo.state["projects"][0]["name"] = "Mongo round trip"
-    await repo.flush_to_mongo(database)
+def test_postgres_state_round_trip_persists_planned_collections() -> None:
+    database = FakePostgresConnection()
+    repo.sync_postgres = database
+    repo.postgres_dsn = "postgresql://fake"
+    repo.postgres_enabled = True
+    repo.state["projects"][0]["name"] = "Postgres round trip"
+    repo.flush_to_sync_postgres()
 
     repo.reset()
-    await repo.load_from_mongo(database)
+    repo.sync_postgres = database
+    repo.postgres_dsn = "postgresql://fake"
+    repo.postgres_enabled = True
+    repo.load_from_sync_postgres()
 
-    assert repo.require_project("P-2026-HDCP-001")["name"] == "Mongo round trip"
-    assert database["project_nodes"].docs
-    assert database["document_versions"].docs
-    assert database["node_bindings"].docs
-    assert database["admin_configs"].docs[0]["_singleton"] == "admin_config"
-
-
-async def test_mongo_flush_uses_transaction_when_enabled(monkeypatch) -> None:
-    monkeypatch.setenv("AICHECK_MONGO_TRANSACTIONS", "true")
-    database = FakeDatabase(with_client=True)
-
-    await repo.flush_to_mongo(database)
-
-    assert database.client.sessions_started == 1
-    assert database.client.sessions_closed == 1
-    assert database.client.transactions_started == 1
-    assert database.client.transactions_closed == 1
-    assert database["projects"].session_calls > 0
-    assert database["admin_configs"].session_calls > 0
+    assert repo.require_project("P-2026-HDCP-001")["name"] == "Postgres round trip"
+    assert any(key[0] == "project_nodes" for key in database.state_rows)
+    assert any(key[0] == "document_versions" for key in database.state_rows)
+    assert any(key[0] == "node_bindings" for key in database.state_rows)
+    assert "admin_config" in database.singleton_rows
 
 
-async def test_mongo_transaction_probe_reports_skipped_without_mongo(monkeypatch) -> None:
-    monkeypatch.setenv("AICHECK_MONGO_TRANSACTIONS", "true")
+def test_postgres_flush_uses_transaction() -> None:
+    database = FakePostgresConnection()
+    repo.sync_postgres = database
+    repo.postgres_dsn = "postgresql://fake"
+    repo.postgres_enabled = True
 
+    repo.flush_to_sync_postgres()
+
+    assert database.transactions_started >= 1
+    assert database.transactions_closed >= 1
+    assert database.state_rows
+    assert database.singleton_rows
+
+
+async def test_postgres_transaction_probe_reports_skipped_without_postgres(monkeypatch) -> None:
+    monkeypatch.delenv("AICHECK_DATABASE_URL", raising=False)
     result = await run_transaction_probe(None)
 
-    assert result["mongoEnabled"] is False
-    assert result["transactionsConfigured"] is True
+    assert result["postgresEnabled"] is False
+    assert result["transactionsConfigured"] is False
     assert result["transactionProbe"] == "skipped"
-    assert result["reason"] == "mongo_not_configured"
-
-
-async def test_mongo_transaction_probe_runs_session_transaction(monkeypatch) -> None:
-    monkeypatch.setenv("AICHECK_MONGO_TRANSACTIONS", "true")
-    database = FakeDatabase(with_client=True)
-
-    result = await run_transaction_probe(database)
-
-    assert result["mongoEnabled"] is True
-    assert result["transactionsConfigured"] is True
-    assert result["transactionProbe"] == "pass"
-    assert database.client.sessions_started == 1
-    assert database.client.sessions_closed == 1
-    assert database.client.transactions_started == 1
-    assert database.client.transactions_closed == 1
-    assert database["_deployment_probes"].session_calls == 2
+    assert result["reason"] == "postgres_not_configured"

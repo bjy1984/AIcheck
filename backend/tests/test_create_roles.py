@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import json
-from copy import deepcopy
 
 import pytest
 
+from libs.db.repository import repo
 from libs.security.auth import verify_password
 from scripts.create_roles import (
-    apply_role_bootstrap,
+    apply_role_bootstrap_to_state,
     build_plan,
     load_password_overrides,
     redact_plan_secrets,
@@ -16,33 +16,8 @@ from scripts.create_roles import (
 )
 
 
-class FakeCollection:
-    def __init__(self, docs: list[dict] | None = None) -> None:
-        self.docs = [deepcopy(item) for item in docs or []]
-
-    def find_one(self, query: dict, session=None):
-        for doc in self.docs:
-            if all(doc.get(key) == value for key, value in query.items()):
-                return deepcopy(doc)
-        return None
-
-    def replace_one(self, query: dict, replacement: dict, upsert: bool = False, session=None) -> None:
-        for index, doc in enumerate(self.docs):
-            if all(doc.get(key) == value for key, value in query.items()):
-                self.docs[index] = deepcopy(replacement)
-                return
-        if upsert:
-            self.docs.append(deepcopy(replacement))
-
-    def insert_one(self, doc: dict, session=None) -> None:
-        self.docs.append(deepcopy(doc))
-
-
-class FakeDatabase(dict):
-    def __getitem__(self, key):
-        if key not in self:
-            self[key] = FakeCollection()
-        return dict.__getitem__(self, key)
+def setup_function() -> None:
+    repo.reset()
 
 
 def test_create_roles_strong_password_validation_rejects_default_passwords() -> None:
@@ -83,8 +58,7 @@ def test_create_roles_password_file_overrides_and_redacts_output(tmp_path) -> No
 
 
 def test_create_roles_preserves_existing_password_hash_by_default() -> None:
-    database = FakeDatabase()
-    database["users"].docs.append(
+    repo.state["users"].append(
         {
             "id": "USER-ADMIN-001",
             "username": "admin",
@@ -93,21 +67,19 @@ def test_create_roles_preserves_existing_password_hash_by_default() -> None:
         }
     )
 
-    result = apply_role_bootstrap(
-        database,
+    result = apply_role_bootstrap_to_state(
         ["admin"],
         "P-2026-HDCP-001",
         passwords={"admin": "Adm!Secure-2026"},
     )
-    stored = database["users"].find_one({"username": "admin"})
+    stored = next(item for item in repo.state["users"] if item["username"] == "admin")
 
     assert stored["passwordHash"] == "plain:existing-secret"
     assert next(item for item in result["authChanges"] if item["collection"] == "users")["password"] == "preserved"
 
 
 def test_create_roles_rotates_existing_password_when_requested() -> None:
-    database = FakeDatabase()
-    database["users"].docs.append(
+    repo.state["users"].append(
         {
             "id": "USER-ADMIN-001",
             "username": "admin",
@@ -116,14 +88,13 @@ def test_create_roles_rotates_existing_password_when_requested() -> None:
         }
     )
 
-    result = apply_role_bootstrap(
-        database,
+    result = apply_role_bootstrap_to_state(
         ["admin"],
         "P-2026-HDCP-001",
         passwords={"admin": "Adm!Secure-2026"},
         rotate_passwords=True,
     )
-    stored = database["users"].find_one({"username": "admin"})
+    stored = next(item for item in repo.state["users"] if item["username"] == "admin")
 
     assert verify_password("Adm!Secure-2026", stored["passwordHash"])
     assert next(item for item in result["authChanges"] if item["collection"] == "users")["password"] == "rotated"

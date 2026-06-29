@@ -13,8 +13,6 @@ client = TestClient(app)
 
 def setup_function() -> None:
     repo.reset()
-    repo.mongo = None
-    repo.sync_mongo = None
 
 
 def assert_ok(response):

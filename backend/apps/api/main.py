@@ -15,8 +15,8 @@ from fastapi.responses import JSONResponse, Response
 from apps.api.routes import binding_node_ids, document_node_ids, idempotency_fingerprint, member_node_scope_error, mock_router, report_node_ids, router
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
-from libs.db.mongo import close_mongo, init_mongo_if_configured, run_transaction_probe
-from libs.db.repository import flush_state, load_state, mongo_transactions_enabled, repo
+from libs.db.postgres import close_postgres, init_postgres_if_configured, run_transaction_probe
+from libs.db.repository import flush_state, load_state, repo
 from libs.integrations.storage import object_storage
 from libs.security.actions import canonical_path, required_action_for_request
 from libs.security.auth import decode_token, demo_users_enabled, user_by_username
@@ -24,16 +24,16 @@ from libs.security.auth import decode_token, demo_users_enabled, user_by_usernam
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_mongo_if_configured(app)
+    await init_postgres_if_configured(app)
     load_state()
     yield
-    await close_mongo(app)
+    await close_postgres(app)
 
 
 app = FastAPI(
     title="AIcheck Backend API",
     version="0.1.0",
-    description="FastAPI backend for AIcheck with MongoDB-ready repository, OCR/worker integration, and LiteLLM gateway support.",
+    description="FastAPI backend for AIcheck with PostgreSQL-ready repository, OCR/worker integration, and LiteLLM gateway support.",
     lifespan=lifespan,
 )
 
@@ -72,9 +72,7 @@ async def attach_operation_id(request: Request, call_next):
         return cached_idempotency
     response = await call_next(request)
     response = await finalize_mutation_response(request, response)
-    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and repo.mongo is not None:
-        await repo.flush_to_mongo()
-    elif request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
         flush_state()
     return response
 
@@ -306,24 +304,21 @@ async def api_healthz(request: Request):
     return ok(health_payload(), request)
 
 
-@app.get("/system/mongo-transaction-probe", tags=["system"])
-@app.get("/api/system/mongo-transaction-probe", tags=["system"])
-async def mongo_transaction_probe(request: Request):
+@app.get("/system/postgres-transaction-probe", tags=["system"])
+@app.get("/api/system/postgres-transaction-probe", tags=["system"])
+async def postgres_transaction_probe(request: Request):
     claims = getattr(request.state, "auth", None)
     if os.getenv("AICHECK_REQUIRE_AUTH", "false").lower() == "true" and (not claims or claims.get("role") != "admin"):
-        return fail(errors.FORBIDDEN, request, message="仅管理员可执行 MongoDB transaction 探针。")
-    database = getattr(request.app.state, "mongo", None)
-    if database is None:
-        database = repo.mongo
-    return ok(await run_transaction_probe(database), request)
+        return fail(errors.FORBIDDEN, request, message="仅管理员可执行 PostgreSQL transaction 探针。")
+    return ok(await run_transaction_probe(getattr(request.app.state, "postgres", None)), request)
 
 
 def health_payload() -> dict[str, object]:
     return {
         "status": "ok",
         "service": "api-service",
-        "mongoEnabled": repo.mongo_enabled,
-        "mongoTransactions": mongo_transactions_enabled(),
+        "postgresEnabled": repo.postgres_enabled,
+        "postgresTransactions": bool(repo.postgres_enabled),
         "authRequired": os.getenv("AICHECK_REQUIRE_AUTH", "false").lower() == "true",
         "demoUsersEnabled": demo_users_enabled(),
         "objectStorageEnabled": object_storage.enabled,

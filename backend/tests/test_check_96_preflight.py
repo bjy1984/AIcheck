@@ -26,15 +26,14 @@ def write_env(path: Path, agentdesign: Path, models: Path) -> None:
                 "AICHECK_MINIO_SECRET_KEY=strong-minio-secret",
                 "AICHECK_JWT_SECRET=strong-jwt-secret-with-more-than-random-text",
                 "LITELLM_API_KEY=sk-litellm-master",
-                "LITELLM_POSTGRES_PASSWORD=strong-postgres-secret",
-                "WORKFLOW_POSTGRES_PASSWORD=strong-workflow-secret",
+                "AICHECK_POSTGRES_PASSWORD=strong-postgres-secret",
+                "AICHECK_DATABASE_URL=postgresql://aicheck:strong-postgres-secret@postgres:5432/aicheck",
                 "DEEPSEEK_API_KEY=sk-provider",
                 "AICHECK_REQUIRE_AUTH=true",
                 "AICHECK_ENABLE_DEMO_USERS=false",
                 "AICHECK_OCR_ALLOW_PLACEHOLDER=false",
                 "AICHECK_OCR_OFFLINE_ONLY=true",
                 "AICHECK_OCR_DISABLE_NETWORK=true",
-                "AICHECK_MONGO_TRANSACTIONS=true",
             ]
         ),
         encoding="utf-8",
@@ -302,7 +301,7 @@ def test_strict_preflight_rejects_weak_internal_secrets(tmp_path, monkeypatch) -
     assert secret_strength.status == "fail"
     assert secret_strength.data
     assert "AICHECK_JWT_SECRET" in secret_strength.data["problems"]
-    assert "LITELLM_POSTGRES_PASSWORD" in secret_strength.data["problems"]
+    assert "AICHECK_POSTGRES_PASSWORD" in secret_strength.data["problems"]
     assert any("Regenerate AICHECK_JWT_SECRET" in step for step in secret_strength.remediation or [])
     assert command_ready.status == "fail"
     assert command_ready.data and "env.secret-strength" in command_ready.data["blockers"]

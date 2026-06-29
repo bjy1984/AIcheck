@@ -93,8 +93,8 @@ KNOWLEDGE_TASK_STATUS_ORDER = {
 }
 
 
-def refresh_state_from_mongo_for_live_read() -> None:
-    if repo.sync_mongo is not None:
+def refresh_state_from_postgres_for_live_read() -> None:
+    if repo.sync_postgres is not None:
         load_state()
 AI_FEEDBACK_TYPES = {
     "accepted",
@@ -2452,7 +2452,7 @@ def get_ai_run(request: Request, project_id: str, node_id: int, run_id: str):
 
 @router.get("/review-runs/{review_run_id}")
 def get_review_run(request: Request, review_run_id: str):
-    refresh_state_from_mongo_for_live_read()
+    refresh_state_from_postgres_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
@@ -2464,7 +2464,7 @@ def get_review_run(request: Request, review_run_id: str):
 
 @router.get("/review-runs/{review_run_id}/timeline")
 def get_review_run_timeline(request: Request, review_run_id: str):
-    refresh_state_from_mongo_for_live_read()
+    refresh_state_from_postgres_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
@@ -2476,7 +2476,7 @@ def get_review_run_timeline(request: Request, review_run_id: str):
 
 @router.get("/review-runs/{review_run_id}/graph")
 def get_review_run_graph(request: Request, review_run_id: str):
-    refresh_state_from_mongo_for_live_read()
+    refresh_state_from_postgres_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
@@ -2494,7 +2494,7 @@ def submit_review_run_human_decision(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     def produce():
-        refresh_state_from_mongo_for_live_read()
+        refresh_state_from_postgres_for_live_read()
         run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
         if not run:
             return fail(errors.NOT_FOUND, request)
@@ -2537,7 +2537,7 @@ def cancel_review_run(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     def produce():
-        refresh_state_from_mongo_for_live_read()
+        refresh_state_from_postgres_for_live_read()
         run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
         if not run:
             return fail(errors.NOT_FOUND, request)
@@ -2560,7 +2560,7 @@ def rerun_review_run(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     def produce():
-        refresh_state_from_mongo_for_live_read()
+        refresh_state_from_postgres_for_live_read()
         parent = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
         if not parent:
             return fail(errors.NOT_FOUND, request)
@@ -4470,7 +4470,7 @@ def fde_review_runs(
     _, role_error = fde_error_unless_allowed(request, "fde:ai-run:view-masked")
     if role_error:
         return role_error
-    refresh_state_from_mongo_for_live_read()
+    refresh_state_from_postgres_for_live_read()
     items = [repo.clone(item) for item in repo.state.get("review_runs", [])]
     if projectId:
         items = [item for item in items if item.get("projectId") == projectId]
@@ -4486,7 +4486,7 @@ def fde_review_run_detail(request: Request, review_run_id: str):
     _, role_error = fde_error_unless_allowed(request, "fde:ai-run:view-masked")
     if role_error:
         return role_error
-    refresh_state_from_mongo_for_live_read()
+    refresh_state_from_postgres_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
@@ -4513,7 +4513,7 @@ def fde_review_run_graph(request: Request, review_run_id: str):
     _, role_error = fde_error_unless_allowed(request, "fde:ai-run:view-masked")
     if role_error:
         return role_error
-    refresh_state_from_mongo_for_live_read()
+    refresh_state_from_postgres_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
@@ -4525,7 +4525,7 @@ def fde_review_run_temporal_history(request: Request, review_run_id: str):
     _, role_error = fde_error_unless_allowed(request, "fde:ai-run:view-masked")
     if role_error:
         return role_error
-    refresh_state_from_mongo_for_live_read()
+    refresh_state_from_postgres_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
@@ -4543,7 +4543,7 @@ def fde_replay_review_run(
         _, role_error = fde_error_unless_allowed(request, "fde:ai-run:replay")
         if role_error:
             return role_error
-        refresh_state_from_mongo_for_live_read()
+        refresh_state_from_postgres_for_live_read()
         parent = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
         if not parent:
             return fail(errors.NOT_FOUND, request)

@@ -130,7 +130,7 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
         "taskQueues": task_queues,
         "sensitivePayloadPolicy": {
             "temporalPayload": "ids_hashes_versions_only",
-            "rawTextStorage": "mongo_minio_with_fde_grants",
+            "rawTextStorage": "postgres_minio_with_fde_grants",
             "payloadCodecRequiredInProduction": True,
         },
         "allowedTools": sorted(ALLOWED_AGENT_TOOLS),

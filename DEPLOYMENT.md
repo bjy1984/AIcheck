@@ -7,12 +7,12 @@
 - `review-worker-service`：Temporal worker，执行 ReviewRun 外层 Workflow，并调用 LangGraph 兼容审查图。
 - `ocr-service`：内部 OCR 服务，提供 `/healthz` 和 `/internal/ocr/parse`。
 - `litellm-service`：LiteLLM Proxy，提供 OpenAI-compatible 模型网关。
-- `temporal-service`、`temporal-ui`、`workflow-postgres`：审查编排、任务可视化和 workflow checkpoint。
-- `mongodb`、`redis`、`minio`、`litellm-postgres`：业务数据、任务队列、对象存储和 LiteLLM 元数据。
+- `temporal-service`、`temporal-ui`：审查编排与任务可视化。
+- `postgres`、`redis`、`minio`：统一 PostgreSQL 数据库、任务队列/缓存、对象存储。
 
 ## 1. 项目架构
 
-AIcheck 采用前后端分离、主业务 API 与异步能力服务拆分的架构。浏览器只访问前端站点、`api-service` 和 MinIO signed URL；OCR、LiteLLM、MongoDB、Redis、PostgreSQL 均应部署在内网。
+AIcheck 采用前后端分离、主业务 API 与异步能力服务拆分的架构。浏览器只访问前端站点、`api-service` 和 MinIO signed URL；OCR、LiteLLM、PostgreSQL、Redis 均应部署在内网。
 
 ### 1.1 仓库结构
 
@@ -31,7 +31,7 @@ AIcheck/
 │   ├── apps/ocr_service/      # 内部 OCR HTTP 服务
 │   ├── business_packs/        # 可插拔业务包：角色、节点、资料、规则、报告、AI SOP
 │   ├── libs/contracts/        # 统一响应、错误码、分页合同
-│   ├── libs/db/               # MongoDB 适配、索引、seed、仓储层
+│   ├── libs/db/               # PostgreSQL 适配、索引、seed、仓储层
 │   ├── libs/integrations/     # MinIO、OCR、LiteLLM、任务投递客户端
 │   ├── libs/security/         # JWT、角色、ActionCode、权限推断
 │   ├── scripts/               # 角色创建、部署验收、前后端合同审计
@@ -51,7 +51,7 @@ Browser
   ├── 静态资源：frontend/dist-pro
   ├── /api/*、/mock/* ───────────────▶ api-service (FastAPI)
   │                                      │
-  │                                      ├── MongoDB：业务数据、审计、任务状态
+  │                                      ├── PostgreSQL：业务数据、审计、任务状态
   │                                      ├── Redis：Celery broker/result backend
   │                                      ├── MinIO：signed PUT/GET、预览、导出包
   │                                      └── LiteLLM：少量同步模型能力探测
@@ -63,13 +63,12 @@ worker-service (Celery)
   │              inspection.ai_recheck（legacy）、llm.compare、export.package
   ├── 调用 ocr-service 完成 PDF/图片 OCR、印章识别和结构化字段抽取
   ├── 调用 litellm-service 完成 chat、embedding、模型对比
-  └── 回写 MongoDB 与 MinIO 导出产物
+  └── 回写 PostgreSQL 与 MinIO 导出产物
 
 review-worker-service (Temporal + LangGraph)
   ├── Temporal Workflow：ReviewRunWorkflow，负责长流程、重试、等待人工确认和取消信号
   ├── LangGraph 兼容 Graph：load_context → OCR → 规则 → 知识检索 → LiteLLM → 校验 → 草稿持久化
-  ├── MongoDB：保存 review_runs、review_graph_nodes、review_events、retrieval_traces、rule_check_results
-  ├── workflow-postgres：Temporal 状态库与 LangGraph checkpoint 存储
+  ├── PostgreSQL：保存业务 ReviewRun 元数据、Temporal 状态库与 LangGraph checkpoint
   └── temporal-ui：工作流调试和任务可视化入口
 
 ocr-service
@@ -77,7 +76,7 @@ ocr-service
 
 litellm-service
   ├── 对 api/worker 暴露 OpenAI-compatible API
-  └── 使用 litellm-postgres 保存模型配置、virtual key、预算和调用日志
+  └── 使用统一 PostgreSQL 中的 `litellm` 数据库保存模型配置、virtual key、预算和调用日志
 ```
 
 ### 1.3 业务模块边界
@@ -281,15 +280,15 @@ AI 复核与模型对比：
 4. AI finding draft 只进入 `waiting_human_review`，不会直接改变正式业务结论；监检员通过人工确认 API 后才写入正式 `review_findings`，同时沉淀 `ai_feedback`，供 FDE 归因和评估集回流。
 5. FDE 通过 `/api/fde/review-runs/*` 查看 Workflow 时间线、Graph 节点、节点产物摘要、工具调用、规则结果、检索 Trace、Finding Draft 明细、校验失败数、Temporal 摘要和 `scorecard`；scorecard 会按 workflow、graph、evidence、governance 四段显示 100 分生产就绪度，明确暴露 inline/fallback、缺少 LangGraph checkpoint、缺少证据链或人工确认边界等阻断项。FDE 可发起诊断重跑或 shadow run；重跑生成 child ReviewRun，不覆盖原始结果。
 6. LLM compare 仍由 `worker-service` 通过 LiteLLM 的 OpenAI-compatible API 异步执行。
-7. 业务结果回写 MongoDB；LiteLLM 保存模型调用层日志，`workflow-postgres` 保存 Workflow/checkpoint 状态。
+7. 业务结果回写 PostgreSQL；LiteLLM 保存模型调用层日志，`postgres` 保存 Workflow/checkpoint 状态。
 
 本地开发态如果要达到 Agent 审查编排 `100/100`，不能使用 `AICHECK_REVIEW_ORCHESTRATION=inline`。复制
 `backend/.env.review100.example` 为 `.env.review100`，替换本地密钥后启动真实 workflow 栈：
 
 ```bash
 docker compose --env-file .env.review100 up -d \
-  workflow-postgres temporal-service mongodb redis minio \
-  litellm-postgres litellm-service api-service review-worker-service
+  postgres temporal-service redis minio \
+  litellm-service api-service review-worker-service
 
 python scripts/review_orchestration_100_probe.py \
   --api-base http://127.0.0.1:8000 \
@@ -326,12 +325,11 @@ signal 成功发送到 Temporal。inline 模式仍保留为快速单测路径，
 
 | 存储 | 用途 | 生产要求 |
 | --- | --- | --- |
-| MongoDB | AIcheck 主业务数据、审计日志、任务状态 | 必须开启 replica set 或分片集群以支持 transaction。 |
+| PostgreSQL | AIcheck 主业务数据、审计日志、任务状态、LiteLLM 元数据、Temporal 状态、LangGraph checkpoint | 使用单实例多数据库或多 schema；生产必须开启持久化卷和备份。 |
 | MinIO | 原始文件、预览、导出包、OCR artifacts | 浏览器 signed URL 使用外部域名，服务端使用内网 endpoint。 |
 | Redis | Celery broker/result backend、任务状态缓存 | 建议开启持久化或使用托管 Redis。 |
-| PostgreSQL | LiteLLM 元数据、LangGraph workflow checkpoint | 不承载 AIcheck 主业务表。 |
 
-MongoDB 启动时会执行 `backend/libs/db/indexes.py` 中的索引声明。当前索引覆盖所有持久化 collection，包括项目/节点状态、文件版本、提交草稿、补正、项目成员授权、OCR 抽取字段、知识源/任务、审计日志、导出任务、NDT、用户/角色和幂等键；`tests/test_contract.py::test_mongo_indexes_cover_all_persisted_collections` 会阻止新增持久化集合但漏配索引。
+PostgreSQL 第一阶段使用 `aicheck_state`、`aicheck_singletons`、`idempotency_records` 三类 JSONB 状态表承载现有业务 collection，保留 API 行为不变；`backend/libs/db/indexes.py` 声明 PostgreSQL 主键、collection 索引和 JSONB GIN 索引，测试会阻止状态表索引合同退化。后续可按高频查询逐步把项目、资料、审计、FDE 指标等对象关系化。
 
 ## 2. 部署前准备
 
@@ -339,7 +337,7 @@ MongoDB 启动时会执行 `backend/libs/db/indexes.py` 中的索引声明。当
 
 - Docker 24+ 与 Docker Compose v2。
 - 4 核 CPU、16 GB 内存起步；真实 PaddleOCR/印章识别建议 8 核、32 GB 内存或独立 OCR 节点。
-- 磁盘至少 100 GB，并为 MongoDB、MinIO、PostgreSQL 数据卷预留独立持久化空间。
+- 磁盘至少 100 GB，并为 PostgreSQL、MinIO 数据卷预留独立持久化空间。
 - 前端构建机需要 Node.js 18+ 与 pnpm 8+。
 
 外部依赖：
@@ -358,12 +356,10 @@ MongoDB 启动时会执行 `backend/libs/db/indexes.py` 中的索引声明。当
 | `ocr-service` | 8010 | 8010 | 内部 OCR API |
 | `review-worker-service` | - | - | Temporal/LangGraph 审查编排 worker，不直接暴露 HTTP |
 | `litellm-service` | 4000 | 4001 | LiteLLM Proxy，对内使用 |
-| `mongodb` | 27017 | 27017 | 业务数据库 |
+| `postgres` | 5432 | 5432 | 统一 PostgreSQL 数据库，包含 `aicheck`、`litellm`、`workflow` |
 | `redis` | 6379 | 6379 | Celery broker/result backend |
 | `minio` | 9000 | 9000 | 对象存储 API，浏览器签名上传需要访问 |
 | `minio` | 9001 | 9001 | MinIO 控制台 |
-| `litellm-postgres` | 5432 | 5433 | LiteLLM 元数据数据库 |
-| `workflow-postgres` | 5432 | 5434 | Temporal/LangGraph workflow checkpoint 数据库 |
 | `temporal-service` | 7233 | 7233 | Temporal 内部 gRPC 服务 |
 | `temporal-ui` | 8080 | 8088 | Temporal 工作流调试 UI |
 
@@ -375,11 +371,11 @@ curl http://127.0.0.1:8010/healthz
 curl http://127.0.0.1:4001/health
 ```
 
-`api-service` 健康检查会返回 `mongoEnabled`、`mongoTransactions`、`authRequired`、`demoUsersEnabled`、`objectStorageEnabled`。`mongoTransactions` 表示后端已开启事务配置；生产验收还应使用 `verify_deployment.py --strict-production` 调用 `/api/system/mongo-transaction-probe`，实际执行一次临时 MongoDB transaction，确认数据库副本集和会话能力可用。`ocr-service` 健康检查会返回 `pipelineAvailable`、`pipelineBackend`、`placeholderAllowed`，`/internal/ocr/doctor` 会返回本地包、模型目录、引擎和预处理候选能力诊断，用于确认 OCR 依赖和占位策略是否符合生产预期。
+`api-service` 健康检查会返回 `postgresEnabled`、`postgresTransactions`、`authRequired`、`demoUsersEnabled`、`objectStorageEnabled`。`postgresTransactions` 表示后端已启用 PostgreSQL 持久化；生产验收还应使用 `verify_deployment.py --strict-production` 调用 `/api/system/postgres-transaction-probe`，实际执行一次临时 PostgreSQL transaction。`ocr-service` 健康检查会返回 `pipelineAvailable`、`pipelineBackend`、`placeholderAllowed`，`/internal/ocr/doctor` 会返回本地包、模型目录、引擎和预处理候选能力诊断，用于确认 OCR 依赖和占位策略是否符合生产预期。
 
-Compose 已为 `api-service`、`worker-service`、`review-worker-service`、`ocr-service`、`mongodb`、`redis`、`minio`、`workflow-postgres`、`temporal-service`、`litellm-postgres` 和 `litellm-service` 配置容器级 `healthcheck`；`api-service`、`worker-service`、`review-worker-service`、`ocr-service` 和 `litellm-service` 的依赖使用 `condition: service_healthy`，避免依赖容器刚启动但服务尚不可用时提前接流量或消费任务。`validate_deployment_config.py --strict-production` 会静态检查这些 healthcheck 和依赖条件。
+Compose 已为 `api-service`、`worker-service`、`review-worker-service`、`ocr-service`、`postgres`、`redis`、`minio`、`temporal-service` 和 `litellm-service` 配置容器级 `healthcheck`；`api-service`、`worker-service`、`review-worker-service`、`ocr-service` 和 `litellm-service` 的依赖使用 `condition: service_healthy`，避免依赖容器刚启动但服务尚不可用时提前接流量或消费任务。`validate_deployment_config.py --strict-production` 会静态检查这些 healthcheck 和依赖条件。
 
-前端生产环境只需要暴露 Web 站点、`/api/*`、`/mock/*` 和 MinIO 签名上传访问地址。LiteLLM、MongoDB、Redis、PostgreSQL 不应暴露到公网。
+前端生产环境只需要暴露 Web 站点、`/api/*`、`/mock/*` 和 MinIO 签名上传访问地址。LiteLLM、PostgreSQL、Redis 不应暴露到公网。
 
 ## 4. 后端环境变量
 
@@ -390,9 +386,10 @@ DEEPSEEK_API_KEY=sk-...
 # Optional: only needed by the default embedding-default alias.
 OPENAI_API_KEY=
 
-AICHECK_MONGO_URL=mongodb://mongodb:27017/?replicaSet=rs0
-AICHECK_MONGO_DB=aicheck
-AICHECK_MONGO_TRANSACTIONS=true
+AICHECK_POSTGRES_DB=aicheck
+AICHECK_POSTGRES_USER=aicheck
+AICHECK_POSTGRES_PASSWORD=replace-with-strong-postgres-password
+AICHECK_DATABASE_URL=postgresql://aicheck:replace-with-strong-postgres-password@postgres:5432/aicheck
 
 AICHECK_REDIS_URL=redis://redis:6379/0
 AICHECK_TASK_DISPATCH=celery
@@ -409,9 +406,7 @@ AICHECK_LANGGRAPH_DISABLE=false
 AICHECK_LANGGRAPH_CHECKPOINT_DISABLE=false
 AICHECK_LANGGRAPH_CHECKPOINT_SETUP=false
 WORKFLOW_POSTGRES_DB=workflow
-WORKFLOW_POSTGRES_USER=workflow
-WORKFLOW_POSTGRES_PASSWORD=replace-with-strong-workflow-postgres-password
-LANGGRAPH_CHECKPOINT_DSN=postgresql://workflow:replace-with-strong-workflow-postgres-password@workflow-postgres:5432/workflow
+LANGGRAPH_CHECKPOINT_DSN=postgresql://aicheck:replace-with-strong-postgres-password@postgres:5432/workflow
 
 AICHECK_MINIO_ENDPOINT=minio:9000
 AICHECK_MINIO_PUBLIC_ENDPOINT=files.example.com
@@ -455,9 +450,7 @@ AICHECK_OCR_DISABLE_RESULT_CACHE=false
 LITELLM_BASE_URL=http://litellm-service:4000
 LITELLM_API_KEY=replace-with-litellm-master-key
 LITELLM_POSTGRES_DB=litellm
-LITELLM_POSTGRES_USER=litellm
-LITELLM_POSTGRES_PASSWORD=replace-with-strong-password
-AICHECK_LITELLM_NO_PROXY=127.0.0.1,localhost,::1,litellm-postgres
+AICHECK_LITELLM_NO_PROXY=127.0.0.1,localhost,::1,postgres
 AICHECK_LITELLM_STRICT_PROVIDER_HEALTH=true
 
 ```
@@ -473,9 +466,9 @@ OCR 离线模型目录支持两种布局：
 | --- | --- | --- |
 | `DEEPSEEK_API_KEY` | 是 | LiteLLM 转发到 DeepSeek 的密钥。`default-chat`、`review-chat`、`compare-fast` 和 `deepseek-reasoner` 默认都路由到 `deepseek/deepseek-reasoner`。 |
 | `OPENAI_API_KEY` | 条件必填 | 仅默认 `embedding-default` 使用。若更换 embedding provider，可不填但应关闭严格 provider 健康门禁或同步替换 `embedding-default`。 |
-| `AICHECK_MONGO_URL` | 是 | 主业务 MongoDB 连接串。Compose 默认使用单节点 replica set：`mongodb://mongodb:27017/?replicaSet=rs0`。 |
-| `AICHECK_MONGO_DB` | 是 | 主业务数据库名。 |
-| `AICHECK_MONGO_TRANSACTIONS` | 是 | 生产设为 `true`，跨 collection flush 和角色初始化会使用 MongoDB transaction；数据库必须是 replica set 或分片集群。 |
+| `AICHECK_DATABASE_URL` | 是 | 主业务 PostgreSQL 连接串。Compose 默认指向 `postgres:5432/aicheck`。 |
+| `AICHECK_POSTGRES_DB` | 是 | 主业务数据库名。 |
+| `AICHECK_POSTGRES_USER` / `AICHECK_POSTGRES_PASSWORD` | 是 | 统一 PostgreSQL 用户与密码，供 AIcheck、LiteLLM、Temporal 和 LangGraph 使用。 |
 | `AICHECK_REDIS_URL` | 是 | Celery broker 和 result backend。 |
 | `AICHECK_TASK_DISPATCH` | 是 | 生产使用 `celery`；本地测试可用 `disabled` 或 `inline`。 |
 | `AICHECK_REVIEW_ORCHESTRATION` | 是 | 审查工作流编排模式；生产使用 `temporal`，本地兼容模式可用 `legacy`。 |
@@ -485,8 +478,8 @@ OCR 离线模型目录支持两种布局：
 | `AICHECK_LANGGRAPH_DISABLE` | 否 | 生产默认 `false`。为 `true` 时禁用真实 LangGraph runner，仅使用可审计 fallback。 |
 | `AICHECK_LANGGRAPH_CHECKPOINT_DISABLE` | 否 | 生产默认 `false`。为 `true` 时即使配置了 DSN 也不启用 LangGraph checkpointer。 |
 | `AICHECK_LANGGRAPH_CHECKPOINT_SETUP` | 否 | 是否在 worker 启动执行图时调用 checkpointer `setup()`。生产首次部署可临时设为 `true`，迁移完成后建议关闭。 |
-| `WORKFLOW_POSTGRES_DB` / `WORKFLOW_POSTGRES_USER` / `WORKFLOW_POSTGRES_PASSWORD` | 是 | Temporal 和 LangGraph checkpoint PostgreSQL 配置。 |
-| `LANGGRAPH_CHECKPOINT_DSN` | 是 | LangGraph checkpoint 连接串；建议与 `workflow-postgres` 保持一致。 |
+| `WORKFLOW_POSTGRES_DB` | 是 | Temporal 和 LangGraph checkpoint 数据库名，统一 PostgreSQL 初始化脚本会自动创建。 |
+| `LANGGRAPH_CHECKPOINT_DSN` | 是 | LangGraph checkpoint 连接串；建议与 `postgres` 保持一致。 |
 | `AICHECK_MINIO_ENDPOINT` | 是 | 后端访问 MinIO 的内部地址。 |
 | `AICHECK_MINIO_PUBLIC_ENDPOINT` | 是 | 浏览器访问签名 URL 的外部地址。域名、端口和协议必须与反代一致。 |
 | `AICHECK_MINIO_SECURE` | 否 | HTTPS 访问 MinIO 时设为 `true`。 |
@@ -513,9 +506,7 @@ OCR 离线模型目录支持两种布局：
 | `LITELLM_BASE_URL` | 是 | API/worker 访问 LiteLLM 的内部地址。 |
 | `LITELLM_API_KEY` | 是 | LiteLLM master key，需与 LiteLLM 配置保持一致。 |
 | `LITELLM_POSTGRES_DB` | 是 | LiteLLM PostgreSQL 数据库名。 |
-| `LITELLM_POSTGRES_USER` | 是 | LiteLLM PostgreSQL 用户名。 |
-| `LITELLM_POSTGRES_PASSWORD` | 是 | LiteLLM PostgreSQL 密码。 |
-| `AICHECK_LITELLM_NO_PROXY` | 否 | LiteLLM 容器内代理旁路列表，默认必须包含 `127.0.0.1`、`localhost` 和 `litellm-postgres`，避免 Prisma query-engine 本机健康探针被 HTTP 代理转发。 |
+| `AICHECK_LITELLM_NO_PROXY` | 否 | LiteLLM 容器内代理旁路列表，默认必须包含 `127.0.0.1`、`localhost` 和 `postgres`，避免 Prisma query-engine 本机健康探针被 HTTP 代理转发。 |
 | `AICHECK_LITELLM_STRICT_PROVIDER_HEALTH` | 否 | 默认 `true`，LiteLLM healthcheck 会在任何 provider 不健康时失败。本地只跑 DeepSeek ReviewRun 且未配置 embedding provider 时可临时设为 `false`。 |
 
 Compose 对关键变量使用必填校验，缺少以下变量时服务不会启动；上线前必须提供强随机值、真实 provider key 或可访问的宿主机路径：
@@ -526,12 +517,11 @@ Compose 对关键变量使用必填校验，缺少以下变量时服务不会启
 - `AICHECK_JWT_SECRET`
 - `AICHECK_MINIO_SECRET_KEY`
 - `LITELLM_API_KEY`
-- `LITELLM_POSTGRES_PASSWORD`
-- `WORKFLOW_POSTGRES_PASSWORD`
+- `AICHECK_POSTGRES_PASSWORD`
 
 `OPENAI_API_KEY` 是条件必填：如果继续使用默认 `embedding-default` alias 并开启 `AICHECK_LITELLM_STRICT_PROVIDER_HEALTH=true`，则必须提供；如果 embedding provider 已替换为本地或其他供应商，应同步更新 `backend/config/litellm.yaml` 和验收脚本期望。
 
-`check_96_preflight.py --strict-production` 会额外检查内部密钥强度。`AICHECK_JWT_SECRET` 至少 32 个字符且至少 12 个不同字符；`AICHECK_MINIO_SECRET_KEY`、`LITELLM_API_KEY`、`LITELLM_POSTGRES_PASSWORD`、`WORKFLOW_POSTGRES_PASSWORD` 至少 16 个字符且至少 8 个不同字符。`DEEPSEEK_API_KEY` 等 provider key 只做存在和 placeholder 检查，因为格式由供应商决定。
+`check_96_preflight.py --strict-production` 会额外检查内部密钥强度。`AICHECK_JWT_SECRET` 至少 32 个字符且至少 12 个不同字符；`AICHECK_MINIO_SECRET_KEY`、`LITELLM_API_KEY`、`AICHECK_POSTGRES_PASSWORD` 至少 16 个字符且至少 8 个不同字符。`DEEPSEEK_API_KEY` 等 provider key 只做存在和 placeholder 检查，因为格式由供应商决定。
 
 ## 5. 启动后端服务
 
@@ -545,8 +535,8 @@ docker compose ps
 
 首次启动时：
 
-- `api-service` 会连接 MongoDB，创建索引，并在空库时写入 demo seed 数据。
-- Compose 中的 MongoDB 以 `rs0` 单节点 replica set 启动；这是 MongoDB transaction 的最低运行条件。
+- `api-service` 会连接 PostgreSQL，创建索引，并在空库时写入 demo seed 数据。
+- Compose 中的 PostgreSQL 使用一个服务承载 `aicheck`、`litellm`、`workflow` 三个数据库；首次启动时 `docker/postgres/init-databases.sh` 会创建辅助数据库。
 - `api-service` 会确保 MinIO bucket：`documents`、`previews`、`exports`、`ocr-artifacts`。
 - `worker-service` 会监听队列：`ocr.parse_document`、`ocr.recognize_seals`、`knowledge.slice`、`knowledge.embed`、`inspection.ai_recheck`、`llm.compare`、`export.package`。
 - `ocr-service` 会把 `${AICHECK_AGENTDESIGN_HOST_PATH}` 只读挂载到 `/opt/agentdesign`，并从 `/opt/agentdesign/mvp-system/backend` 导入 OCR pipeline。
@@ -567,7 +557,7 @@ docker compose ps
 | 建设方 | `owner` | `/workbench/owner` | 项目、报告和归档只读查看。 |
 | FDE | `fde` | `/fde/dashboard` | AI 交付治理、绩效监控、反馈归因、评估和发布申请；不能执行正式业务审批。 |
 
-部署后运行角色创建脚本，确保 MongoDB 中的真实登录用户、角色、后台角色矩阵、用户/单位目录和项目成员授权一致：
+部署后运行角色创建脚本，确保 PostgreSQL 中的真实登录用户、角色、后台角色矩阵、用户/单位目录和项目成员授权一致：
 
 ```bash
 cd backend
@@ -591,10 +581,8 @@ python scripts/create_roles.py \
   --dry-run \
   --json
 
-# 本机 MongoDB 写入
-AICHECK_MONGO_URL='mongodb://127.0.0.1:27017/?replicaSet=rs0' \
-AICHECK_MONGO_DB=aicheck \
-AICHECK_MONGO_TRANSACTIONS=true \
+# 本机 PostgreSQL 写入
+AICHECK_DATABASE_URL='postgresql://aicheck:replace-with-strong-postgres-password@127.0.0.1:5432/aicheck' \
 python scripts/create_roles.py \
   --project-id P-2026-HDCP-001 \
   --password-file /secure/aicheck-role-passwords.json \
@@ -620,12 +608,12 @@ docker compose exec api-service rm -f /tmp/aicheck-role-passwords.json
 - 写入或更新 `admin_configs` singleton 中的 `orgUnits`、`users`、`permissionMatrix`。
 - 写入或更新 `project_members`，同一项目、同一用户、同一角色重复执行时会合并 `nodeScope` 和 `actions`，不会插入覆盖性重复成员。`fde` 是平台级角色，脚本会创建登录用户和角色记录，但不会写入 `project_members`。
 - 写入一条 `audit_logs` 记录，便于追溯部署初始化动作。
-- 当 `AICHECK_MONGO_TRANSACTIONS=true` 时，上述 MongoDB 写入在同一个 transaction 中提交。
-- 支持 `--roles admin,inspection` 或 `--roles fde` 只初始化部分角色；支持 `--project-id` 指定项目；支持 `--mongo-url` 和 `--db` 覆盖环境变量。
+- 上述 PostgreSQL 写入在同一个 transaction 中提交。
+- 支持 `--roles admin,inspection` 或 `--roles fde` 只初始化部分角色；支持 `--project-id` 指定项目；支持 `--database-url` 覆盖环境变量。
 
 注意：生产环境 `AICHECK_ENABLE_DEMO_USERS=false` 时，只有脚本写入 `users` 后才能登录。不要在生产使用用户名同名密码；首次上线后仍建议接入企业用户中心或正式密码重置流程。
 
-无 MongoDB 的本地联调可以启用内存角色 bootstrap。该模式只用于开发机，后端启动时会把六类角色账号写入当前进程的 in-memory repository：
+无 PostgreSQL 的本地联调可以启用内存角色 bootstrap。该模式只用于开发机，后端启动时会把六类角色账号写入当前进程的 in-memory repository：
 
 ```bash
 cd backend
@@ -666,7 +654,7 @@ cd backend
 docker compose down
 ```
 
-不要在生产环境使用 `docker compose down -v`，它会删除 MongoDB、MinIO 和 PostgreSQL 数据卷。
+不要在生产环境使用 `docker compose down -v`，它会删除 PostgreSQL、MinIO 和 PostgreSQL 数据卷。
 
 ## 6. 前端构建与发布
 
@@ -1325,9 +1313,9 @@ curl http://127.0.0.1:4001/v1/models \
 
 `/v1/models` 必须能看到 `default-chat`、`review-chat`、`deepseek-reasoner`、`compare-fast`、`embedding-default` 五个别名；`verify_deployment.py` 会自动检查这些别名。
 
-`api-service` 和 `worker-service` 在 `AICHECK_REQUIRE_AUTH=true`、`AICHECK_MONGO_TRANSACTIONS=true` 或 `AICHECK_STRICT_PRODUCTION=true` 任一生产标志开启时，禁止使用内置开发 LiteLLM key；必须显式提供 `LITELLM_API_KEY`。
+`api-service` 和 `worker-service` 在 `AICHECK_REQUIRE_AUTH=true`、配置了 `AICHECK_DATABASE_URL` 或 `AICHECK_STRICT_PRODUCTION=true` 任一生产标志开启时，禁止使用内置开发 LiteLLM key；必须显式提供 `LITELLM_API_KEY`。
 
-LiteLLM DB-backed virtual key、预算和限流管理依赖 Prisma query-engine。query-engine 会在容器本机启动 HTTP 健康探针；如果宿主或容器注入了 HTTP proxy 且没有设置 `NO_PROXY/no_proxy`，`/key/generate` 可能返回 `DB not connected` 或启动卡住。Compose 会把 `AICHECK_LITELLM_NO_PROXY` 同时写入 `NO_PROXY` 和 `no_proxy`，默认值为 `127.0.0.1,localhost,::1,litellm-postgres`；生产环境可以追加内网域名，但不能删除 `127.0.0.1` 和 `localhost`。
+LiteLLM DB-backed virtual key、预算和限流管理依赖 Prisma query-engine。query-engine 会在容器本机启动 HTTP 健康探针；如果宿主或容器注入了 HTTP proxy 且没有设置 `NO_PROXY/no_proxy`，`/key/generate` 可能返回 `DB not connected` 或启动卡住。Compose 会把 `AICHECK_LITELLM_NO_PROXY` 同时写入 `NO_PROXY` 和 `no_proxy`，默认值为 `127.0.0.1,localhost,::1,postgres`；生产环境可以追加内网域名，但不能删除 `127.0.0.1` 和 `localhost`。
 
 如果 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY` 或供应商密钥无效：
 
@@ -1433,13 +1421,13 @@ python scripts/deployment_report.py \
   --output-dir ./deployment-reports/latest
 ```
 
-`validate_deployment_config.py` 会静态解析 `Dockerfile`、`Dockerfile.ocr`、`requirements-ocr.txt`、`docker-compose.yml` 和 `config/litellm.yaml`，检查镜像基础契约、非 root 运行用户、API/OCR 端口、OCR PaddleOCR 基线依赖、服务拓扑、依赖、healthcheck、端口映射、Celery 队列、Mongo replica set、OCR artifact 只读挂载、持久化 volume、关键环境变量、LiteLLM 五个模型别名、数据库配置和 Prisma 本机代理旁路。它不需要 Docker，可在没有 Docker daemon 的 CI 环境中先挡住配置错误。
+`validate_deployment_config.py` 会静态解析 `Dockerfile`、`Dockerfile.ocr`、`requirements-ocr.txt`、`docker-compose.yml` 和 `config/litellm.yaml`，检查镜像基础契约、非 root 运行用户、API/OCR 端口、OCR PaddleOCR 基线依赖、服务拓扑、依赖、healthcheck、端口映射、Celery 队列、统一 PostgreSQL 服务、OCR artifact 只读挂载、持久化 volume、关键环境变量、LiteLLM 五个模型别名、数据库配置和 Prisma 本机代理旁路。它不需要 Docker，可在没有 Docker daemon 的 CI 环境中先挡住配置错误。
 
 `check_96_preflight.py` 用于 live probes 之前的宿主机预检，会检查 Docker CLI/Compose、`backend/.env`、必需密钥、生产开关、`AICHECK_AGENTDESIGN_HOST_PATH`、OCR 离线模型目录和默认端口占用。OCR 模型检查同时支持标准 bundle 布局和 PaddleX `official_models` 扁平缓存布局；容器路径 `/models/...` 会映射回 `AICHECK_OCR_MODELS_HOST_PATH`，`/opt/agentdesign/...` 会映射回 `AICHECK_AGENTDESIGN_HOST_PATH`。文本输出和 `--json` 输出都会在失败项上附带 `remediation`，用于明确下一步安装 Docker、复制 `.env.example`、替换占位密钥或修正本地路径。
 
 `backend/tests/test_check_96_preflight.py` 会校验 `backend/.env.example` 覆盖所有预检必需变量和生产开关；如果预检脚本新增必需变量但模板漏配，测试会直接失败。
 
-`verify_deployment.py` 默认只做健康检查、登录、MongoDB transaction 探针、只读查询、OCR readyz、OCR runtime doctor、OCR parse 合同探测、OCR bad request 合同探测、LiteLLM 模型别名检查，以及应返回 `FORBIDDEN` 的身份伪造/动作越权/读范围检查，不会创建业务数据，也不会消耗模型额度。开启 `--litellm-management-probes` 后会创建并删除一个临时 LiteLLM virtual key，验证 PostgreSQL-backed key、预算、RPM 和 TPM 管理能力。开启 `--litellm-provider-probes` 后会通过 LiteLLM 的 OpenAI-compatible API 实际调用 `default-chat` 和 `embedding-default`，证明网关、virtual key、provider key、模型别名和供应商连通性可用。开启 `--write-probes` 后会在 `--project-id` 指定项目下创建一条验证用上传会话，使用 returned HTTP/HTTPS signed URL 实际 PUT 一个包含文字的 PDF，再执行 upload complete，校验新文档的 preview/download signed GET 可以实际读取对象，确认 OCR task 创建，并创建/读取导出任务，用于证明 MinIO signed PUT、文档 signed GET、upload complete、OCR task 创建和 export task 查询闭环。开启 `--ocr-object-probe` 时，verifier 会读取新文档当前版本 `storageKey` 并调用 `ocr-service /internal/ocr/parse`，要求 OCR 对刚上传的 MinIO 对象返回 `status=success`。开启 `--review-run-probe` 时，verifier 会使用监检员创建 AI 复核 ReviewRun，验证 `/api/review-runs/{id}`、`/graph`、`/timeline`、`/human-decision`，再用 FDE 角色验证 `/api/fde/review-runs/{id}`、diagnostic replay、Graph artifact summary 和 orchestration `scorecard`；严格生产模式要求 dispatch mode 为 `temporal`、FDE scorecard 为 `100/100` 且 `ok=true`，并会在 `--review-run-wait-seconds` 窗口内等待图节点至少进入 running/succeeded/failed/skipped 或 run 状态离开 queued，用于发现 Temporal worker 未消费任务的故障，因此该探针必须配合 `--roles admin,inspection,contractor,ndt,owner,fde`。严格生产模式还会要求 MongoDB 已启用并通过实际 transaction 探针，校验 OCR 使用真实 pipeline 而不是 placeholder，OCR runtime doctor 没有 failed checks，并要求 signed PUT/GET URL 是 HTTP/HTTPS。
+`verify_deployment.py` 默认只做健康检查、登录、PostgreSQL transaction 探针、只读查询、OCR readyz、OCR runtime doctor、OCR parse 合同探测、OCR bad request 合同探测、LiteLLM 模型别名检查，以及应返回 `FORBIDDEN` 的身份伪造/动作越权/读范围检查，不会创建业务数据，也不会消耗模型额度。开启 `--litellm-management-probes` 后会创建并删除一个临时 LiteLLM virtual key，验证 PostgreSQL-backed key、预算、RPM 和 TPM 管理能力。开启 `--litellm-provider-probes` 后会通过 LiteLLM 的 OpenAI-compatible API 实际调用 `default-chat` 和 `embedding-default`，证明网关、virtual key、provider key、模型别名和供应商连通性可用。开启 `--write-probes` 后会在 `--project-id` 指定项目下创建一条验证用上传会话，使用 returned HTTP/HTTPS signed URL 实际 PUT 一个包含文字的 PDF，再执行 upload complete，校验新文档的 preview/download signed GET 可以实际读取对象，确认 OCR task 创建，并创建/读取导出任务，用于证明 MinIO signed PUT、文档 signed GET、upload complete、OCR task 创建和 export task 查询闭环。开启 `--ocr-object-probe` 时，verifier 会读取新文档当前版本 `storageKey` 并调用 `ocr-service /internal/ocr/parse`，要求 OCR 对刚上传的 MinIO 对象返回 `status=success`。开启 `--review-run-probe` 时，verifier 会使用监检员创建 AI 复核 ReviewRun，验证 `/api/review-runs/{id}`、`/graph`、`/timeline`、`/human-decision`，再用 FDE 角色验证 `/api/fde/review-runs/{id}`、diagnostic replay、Graph artifact summary 和 orchestration `scorecard`；严格生产模式要求 dispatch mode 为 `temporal`、FDE scorecard 为 `100/100` 且 `ok=true`，并会在 `--review-run-wait-seconds` 窗口内等待图节点至少进入 running/succeeded/failed/skipped 或 run 状态离开 queued，用于发现 Temporal worker 未消费任务的故障，因此该探针必须配合 `--roles admin,inspection,contractor,ndt,owner,fde`。严格生产模式还会要求 PostgreSQL 已启用并通过实际 transaction 探针，校验 OCR 使用真实 pipeline 而不是 placeholder，OCR runtime doctor 没有 failed checks，并要求 signed PUT/GET URL 是 HTTP/HTTPS。
 
 `deployment_report.py` 会把离线配置验收、API mutation 幂等覆盖、前端路由合同、前端 mutation header 覆盖和可选 live deployment probes 汇总成 `aicheck-deployment-report-v1` 结构，同时输出 Markdown 表格，适合随上线单归档。默认不访问目标环境；加 `--include-live` 后复用 `verify_deployment.py` 的所有目标环境探针。
 
@@ -1449,7 +1437,7 @@ python scripts/deployment_report.py \
 - `auth.role-contract`：检查生产角色 `admin/inspection/contractor/ndt/owner/fde` 的默认面板路径、动作矩阵、`owner` 只读约束、FDE 禁止业务审批约束、`create_roles.py` 覆盖、PBKDF2 密码哈希和项目成员授权规划。
 - `api.mutation-idempotency`：扫描 FastAPI mutating routes，业务写接口必须直接调用 `idempotent()` 或代理到已幂等的内部函数；公开登录和只读预览型 POST 会被单独列为豁免。
 - `api.action-coverage`：扫描所有非公开 mutating routes，确认后端能根据路径自动推断 `ActionCode`，避免新增写接口绕过角色动作矩阵。
-- `mongo.index-contract`：扫描 `backend/libs/db/indexes.py`，确认所有持久化 collection 都有索引声明，并检查项目节点、文件版本、知识任务、证据、审计、幂等键和成员授权的关键复合/唯一索引。
+- `postgres.index-contract`：扫描 `backend/libs/db/indexes.py`，确认所有持久化 collection 都有索引声明，并检查项目节点、文件版本、知识任务、证据、审计、幂等键和成员授权的关键复合/唯一索引。
 - `storage.bucket-contract`：检查 MinIO bucket 合同必须包含且只包含 `documents`、`previews`、`exports`、`ocr-artifacts`，并确认 `ObjectStorage` 暴露 signed PUT、signed GET、字节写入、临时下载和 `minio://` URL 解析能力；同时扫描 repository 上传、下载、导出调用点，防止业务链路绕过对象存储抽象。
 - `ocr.service-contract`：检查 `ocr-service` 的 `/healthz` 必须暴露 `pipelineAvailable`、`pipelineBackend`、`placeholderAllowed`，`/internal/ocr/doctor` 必须返回 runtime doctor，`/internal/ocr/parse` 缺少 `storageKey` 时必须返回 `VALIDATION_ERROR`，并验证 OCR 成功/失败结果都包含 `storageKey`、`fileName`、`status`、`fragments`、`fields`、`seals`、`diagnostics`。
 - `ocr.evaluation-contract`：检查共享 evaluator、compact summary、`--strict-100`、`ocr_100_thresholds()`、`ocr_100_scorecard.py` 和 release fixture。普通 fixture 只证明合同可用；100 分验收必须另跑 `ocr_100_scorecard.py`，并满足 100-case、必需场景、本地引擎和真实样张门禁。
@@ -1541,7 +1529,7 @@ docker compose down
 - FDE 业务包安装/升级/回滚先支持 dry-run，验收通过时写入 `business_pack_installations` 并写审计日志。
 - FDE 事故处理必须写 `incident_rca`，数据导出必须写 `data_exports` 并生成水印标识。
 - mutation 使用相同 `Idempotency-Key` 和相同请求体会重放同一结果；同 key 不同请求体返回 `IDEMPOTENCY_KEY_CONFLICT`。
-- `verify_deployment.py --strict-production` 会调用 `/api/system/mongo-transaction-probe`，确认 MongoDB 已连接、`AICHECK_MONGO_TRANSACTIONS=true`，且能实际开启 session 并提交临时 transaction。
+- `verify_deployment.py --strict-production` 会调用 `/api/system/postgres-transaction-probe`，确认 PostgreSQL 已连接且能实际开启并提交临时 transaction。
 - 提交批次撤回资料时，只能撤回该批次内资料；不存在的批次返回 `NOT_FOUND`，跨批次资料返回 `CONFLICT`，已通过、已锁定或已归档资料返回 `WITHDRAW_LOCKED`。
 - 施工方提交补正反馈时必须存在当前节点的待反馈补正单，且反馈资料必须属于该节点；成功后原补正单变为 `已反馈`，节点进入 `复审中`。
 - 报告草稿只能从已进入审查链路的节点生成；`待提交`、`需补正`、`退回补正中`、`部分提交`、`AI 预审中` 节点返回 `CONFLICT`。
@@ -1565,9 +1553,9 @@ docker compose down
 - 前端必须通过 `pnpm lint`、`pnpm ts:check`、`pnpm build:pro`，且 `VITE_USE_MOCK=false`。
 - 后端必须通过 `python -m pytest backend/tests -q`，以及 `python scripts/audit_frontend_contract.py` 缺失 endpoint 为 0。
 - `deployment_report.py --strict-production --include-live --write-probes --ocr-object-probe --review-run-probe --litellm-management-probes --litellm-provider-probes` 必须生成全绿证据包。
-- `verify_deployment.py --strict-production --roles admin,inspection,contractor,ndt,owner,fde` 必须证明六类角色登录、默认面板、权限边界、Mongo transaction、OCR readyz 和 LiteLLM alias 全部可用。
-- `AICHECK_REQUIRE_AUTH=true`、`AICHECK_ENABLE_DEMO_USERS=false`、`AICHECK_OCR_ALLOW_PLACEHOLDER=false`、`AICHECK_OCR_OFFLINE_ONLY=true`、`AICHECK_OCR_DISABLE_NETWORK=true`、`AICHECK_MONGO_TRANSACTIONS=true`、`AICHECK_REVIEW_ORCHESTRATION=temporal` 必须保持生产值。
-- 最近一次完整备份必须覆盖 MongoDB、MinIO、LiteLLM PostgreSQL 和 workflow-postgres；若本次上线包含数据结构或 workflow 变更，必须先做一次恢复演练或 staging 恢复验证。
+- `verify_deployment.py --strict-production --roles admin,inspection,contractor,ndt,owner,fde` 必须证明六类角色登录、默认面板、权限边界、PostgreSQL transaction、OCR readyz 和 LiteLLM alias 全部可用。
+- `AICHECK_REQUIRE_AUTH=true`、`AICHECK_ENABLE_DEMO_USERS=false`、`AICHECK_OCR_ALLOW_PLACEHOLDER=false`、`AICHECK_OCR_OFFLINE_ONLY=true`、`AICHECK_OCR_DISABLE_NETWORK=true`、`AICHECK_DATABASE_URL`、`AICHECK_REVIEW_ORCHESTRATION=temporal` 必须保持生产值。
+- 最近一次完整备份必须覆盖 PostgreSQL、MinIO；若本次上线包含数据结构或 workflow 变更，必须先做一次恢复演练或 staging 恢复验证。
 - HTTPS 证书、MinIO signed PUT/GET、CORS、前端静态资源缓存、反代 `client_max_body_size` 和 upload timeout 必须通过真实浏览器上传验证。
 - 任一 provider health、ReviewRun Temporal/LangGraph scorecard、FDE governance scorecard、OCR runtime doctor 或 live write probe 失败时，不允许上线。
 
@@ -1575,10 +1563,10 @@ docker compose down
 
 生产备份必须覆盖四类持久化数据：
 
-- MongoDB：AIcheck 主业务数据、审计日志、任务状态。
+- PostgreSQL `aicheck` 数据库：AIcheck 主业务数据、审计日志、任务状态。
+- PostgreSQL `litellm` 数据库：模型网关配置、virtual key、预算、调用记录。
+- PostgreSQL `workflow` 数据库：Temporal 状态和 LangGraph checkpoint。
 - MinIO：原始文件、预览、OCR artifacts、导出包。
-- LiteLLM PostgreSQL：模型网关配置、virtual key、预算、调用记录。
-- workflow-postgres：Temporal 状态和 LangGraph checkpoint。
 
 建议在低峰期进入短暂停写窗口：暂停前端入口或维护页，停止 `worker-service` 和 `review-worker-service` 消费，再执行备份。备份前先记录当前版本和渲染后的 Compose 配置：
 
@@ -1599,31 +1587,23 @@ chmod 600 "${BACKUP_DIR}/env.secret"
 docker compose stop worker-service review-worker-service
 ```
 
-MongoDB 备份：
+PostgreSQL 数据库备份：
 
 ```bash
-docker compose exec -T mongodb mongodump \
-  --db "${AICHECK_MONGO_DB:-aicheck}" \
-  --archive \
-  --gzip > "${BACKUP_DIR}/mongodb.archive.gz"
-```
+docker compose exec -T postgres pg_dump \
+  -U "${AICHECK_POSTGRES_USER:-aicheck}" \
+  -d "${AICHECK_POSTGRES_DB:-aicheck}" \
+  -Fc > "${BACKUP_DIR}/aicheck-postgres.dump"
 
-LiteLLM PostgreSQL 备份：
-
-```bash
-docker compose exec -T litellm-postgres pg_dump \
-  -U "${LITELLM_POSTGRES_USER:-litellm}" \
+docker compose exec -T postgres pg_dump \
+  -U "${AICHECK_POSTGRES_USER:-aicheck}" \
   -d "${LITELLM_POSTGRES_DB:-litellm}" \
-  -Fc > "${BACKUP_DIR}/litellm-postgres.dump"
-```
+  -Fc > "${BACKUP_DIR}/litellm-db.dump"
 
-workflow-postgres 备份：
-
-```bash
-docker compose exec -T workflow-postgres pg_dump \
-  -U "${WORKFLOW_POSTGRES_USER:-workflow}" \
+docker compose exec -T postgres pg_dump \
+  -U "${AICHECK_POSTGRES_USER:-aicheck}" \
   -d "${WORKFLOW_POSTGRES_DB:-workflow}" \
-  -Fc > "${BACKUP_DIR}/workflow-postgres.dump"
+  -Fc > "${BACKUP_DIR}/workflow-db.dump"
 ```
 
 MinIO 数据备份。建议运维机安装 MinIO Client `mc`，从外部 signed URL 域名或内网 endpoint mirror 全量对象：
@@ -1657,7 +1637,7 @@ docker compose start review-worker-service worker-service
 
 1. 确认目标环境版本与备份中的 `git-commit.txt`、`docker-compose.rendered.yml`、`.env` 匹配，或先回滚到对应 commit。
 2. 停止写入服务：`api-service`、`worker-service`、`review-worker-service`、`ocr-service`、`litellm-service`。
-3. 恢复 MongoDB、LiteLLM PostgreSQL、workflow-postgres。
+3. 恢复 PostgreSQL 中的 `aicheck`、`litellm`、`workflow` 三个数据库。
 4. 恢复 MinIO buckets。
 5. 启动全部服务并执行严格验收。
 
@@ -1669,19 +1649,20 @@ RESTORE_DIR="./backup/20260101-120000"
 
 docker compose stop api-service worker-service review-worker-service ocr-service litellm-service
 
-cat "${RESTORE_DIR}/mongodb.archive.gz" | docker compose exec -T mongodb mongorestore \
-  --drop \
-  --archive \
-  --gzip
+cat "${RESTORE_DIR}/aicheck-postgres.dump" | docker compose exec -T postgres pg_restore \
+  -U "${AICHECK_POSTGRES_USER:-aicheck}" \
+  -d "${AICHECK_POSTGRES_DB:-aicheck}" \
+  --clean \
+  --if-exists
 
-cat "${RESTORE_DIR}/litellm-postgres.dump" | docker compose exec -T litellm-postgres pg_restore \
-  -U "${LITELLM_POSTGRES_USER:-litellm}" \
+cat "${RESTORE_DIR}/litellm-db.dump" | docker compose exec -T postgres pg_restore \
+  -U "${AICHECK_POSTGRES_USER:-aicheck}" \
   -d "${LITELLM_POSTGRES_DB:-litellm}" \
   --clean \
   --if-exists
 
-cat "${RESTORE_DIR}/workflow-postgres.dump" | docker compose exec -T workflow-postgres pg_restore \
-  -U "${WORKFLOW_POSTGRES_USER:-workflow}" \
+cat "${RESTORE_DIR}/workflow-db.dump" | docker compose exec -T postgres pg_restore \
+  -U "${AICHECK_POSTGRES_USER:-aicheck}" \
   -d "${WORKFLOW_POSTGRES_DB:-workflow}" \
   --clean \
   --if-exists
@@ -1696,7 +1677,7 @@ python scripts/verify_deployment.py --strict-production --roles admin,inspection
 
 恢复验收必须至少确认：
 
-- `GET /healthz` 中 `mongoEnabled=true`、`mongoTransactions=true`、`authRequired=true`。
+- `GET /healthz` 中 `postgresEnabled=true`、`postgresTransactions=true`、`authRequired=true`。
 - 六类角色可登录，默认面板正确。
 - 历史项目、资料、ReviewRun、AI feedback、审计日志可查询。
 - 已有文件 preview/download signed GET 可读。
@@ -1705,7 +1686,7 @@ python scripts/verify_deployment.py --strict-production --roles admin,inspection
 
 灾备策略建议：
 
-- MongoDB、PostgreSQL 每日全量备份，关键上线前额外手动备份。
+- PostgreSQL、MinIO 每日全量备份，关键上线前额外手动备份。
 - MinIO bucket 开启版本控制或外部对象存储生命周期备份。
 - 备份包必须加密存储，并和 `.env` secret 分离授权。
 - 每月至少做一次恢复演练，恢复后运行 `deployment_report.py --include-live` 生成演练证据。
@@ -1762,7 +1743,7 @@ docker compose up -d --build
 python scripts/verify_deployment.py --strict-production --roles admin,inspection,contractor,ndt,owner,fde
 ```
 
-如果升级包含数据结构变化，先做 MongoDB、MinIO、LiteLLM PostgreSQL 和 workflow-postgres 备份。当前后端启动时会自动补齐 MongoDB 索引，但没有单独的迁移命令；上线窗口内如发现数据结构不兼容，应按第 10 节恢复整套备份，而不是只回滚代码。
+如果升级包含数据结构变化，先做 PostgreSQL 三个数据库和 MinIO 备份。当前后端启动时会自动补齐 PostgreSQL 状态表和索引；上线窗口内如发现数据结构不兼容，应按第 10 节恢复整套备份，而不是只回滚代码。
 
 ## 12. 常见问题
 

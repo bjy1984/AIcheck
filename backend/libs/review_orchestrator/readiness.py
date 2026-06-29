@@ -156,7 +156,7 @@ def governance_section(review_run: dict[str, Any]) -> dict[str, Any]:
         points += 4
     else:
         blockers.append("review run has not reached a human-review governance state")
-    if policy.get("rawTextStorage") == "mongo_minio_with_fde_grants":
+    if policy.get("rawTextStorage") == "postgres_minio_with_fde_grants":
         points += 3
     else:
         blockers.append("raw text storage policy is not grant-gated")
