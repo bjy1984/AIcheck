@@ -72,7 +72,7 @@ const alertType = computed(() => {
   color: #667085;
 }
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .state-content {
     align-items: flex-start;
     flex-direction: column;

@@ -1,0 +1,157 @@
+{
+  "schemaVersion": "aicheck-ocr-100-scan-manifest-v1",
+  "sourceDir": "../Scan",
+  "notes": "Manual visual inventory of Scan/ captured on 2026-06-29. These are sample collection labels only; expected fields/tables/seals still need positive-area bbox/polygon annotation before OCR 100 certification.",
+  "samples": [
+    {
+      "fileName": "20260623104523.pdf",
+      "scenario": "qualification_certificate_profile",
+      "notes": "Special equipment manufacturing license page with official seal."
+    },
+    {
+      "fileName": "20260623104555.pdf",
+      "scenario": "qualification_certificate_profile",
+      "notes": "Special equipment manufacturing license multi-page sample with official seal."
+    },
+    {
+      "fileName": "20260623104703.pdf",
+      "scenario": "quality_certificate_profile",
+      "notes": "Product quality certificate with stamped pages and tabular material data."
+    },
+    {
+      "fileName": "20260623104730.pdf",
+      "scenario": "construction_record_profile",
+      "notes": "Project handover document package with cover, catalog, and construction records."
+    },
+    {
+      "fileName": "20260623104828.pdf",
+      "scenario": "quality_certificate_profile",
+      "notes": "Pipe fitting product quality certificate with stamped tabular records."
+    },
+    {
+      "fileName": "20260623105454.pdf",
+      "scenario": "construction_record_profile",
+      "notes": "Construction plan package with cover and catalog."
+    },
+    {
+      "fileName": "20260623105534.pdf",
+      "scenario": "welding_record_profile",
+      "notes": "Pressure equipment welding procedure qualification report."
+    },
+    {
+      "fileName": "20260623105636.pdf",
+      "scenario": "ndt_rt_profile",
+      "notes": "Radiographic inspection report package."
+    },
+    {
+      "fileName": "IMG_6508.heic",
+      "scenario": "piping_table_profile",
+      "notes": "Photo of piping characteristic list with dense table and blue stamp."
+    },
+    {
+      "fileName": "IMG_6509.heic",
+      "scenario": "piping_table_profile",
+      "notes": "Photo of piping characteristic list with dense table and red/blue stamps."
+    },
+    {
+      "fileName": "IMG_6510.heic",
+      "scenario": "quality_gate_profile",
+      "notes": "Folded design drawing photo with low contrast and heavy creases; use as a real quality-gate case for needs_human_review diagnostics."
+    },
+    {
+      "fileName": "IMG_6511.heic",
+      "scenario": "quality_certificate_profile",
+      "notes": "Product quality certificate photo with stamp."
+    },
+    {
+      "fileName": "IMG_6512.heic",
+      "scenario": "quality_certificate_profile",
+      "notes": "Product quality certificate photo with stamp."
+    },
+    {
+      "fileName": "IMG_6513.heic",
+      "scenario": "quality_certificate_profile",
+      "notes": "Landscape product quality certificate table photo."
+    },
+    {
+      "fileName": "IMG_6514.heic",
+      "scenario": "quality_certificate_profile",
+      "notes": "Product quality certificate photo."
+    },
+    {
+      "fileName": "IMG_6515.heic",
+      "scenario": "quality_certificate_profile",
+      "notes": "Product quality certificate page with text and stamp."
+    },
+    {
+      "fileName": "IMG_6516.heic",
+      "scenario": "quality_certificate_profile",
+      "notes": "Product quality certificate page with text and stamp."
+    },
+    {
+      "fileName": "IMG_6517.heic",
+      "scenario": "quality_certificate_profile",
+      "notes": "Product quality certificate page with text and stamp."
+    },
+    {
+      "fileName": "IMG_6518.heic",
+      "scenario": "quality_certificate_profile",
+      "notes": "Product quality certificate page with text and stamp."
+    },
+    {
+      "fileName": "IMG_6519.heic",
+      "scenario": "quality_certificate_profile",
+      "notes": "Product quality certificate page with text and stamp."
+    },
+    {
+      "fileName": "IMG_6520.heic",
+      "scenario": "quality_certificate_profile",
+      "notes": "Landscape quality certificate table photo."
+    },
+    {
+      "fileName": "IMG_6521.heic",
+      "scenario": "quality_certificate_profile",
+      "notes": "Landscape quality certificate table photo."
+    },
+    {
+      "fileName": "IMG_6522.heic",
+      "scenario": "quality_certificate_profile",
+      "notes": "Landscape quality certificate table photo."
+    },
+    {
+      "fileName": "IMG_6523.heic",
+      "scenario": "quality_certificate_profile",
+      "notes": "Landscape quality certificate table photo."
+    },
+    {
+      "fileName": "IMG_6524.heic",
+      "scenario": "seal_text_profile",
+      "notes": "Close-up design drawing title block with pressure-piping design license seal."
+    },
+    {
+      "fileName": "IMG_6526.heic",
+      "scenario": "fragment_seal_profile",
+      "notes": "Folded drawing photo with visible stamp/title-block evidence; use as a fragment seal fusion case where seal text may need OCR fragment aggregation."
+    },
+    {
+      "fileName": "IMG_6527.heic",
+      "scenario": "evidence_profile",
+      "notes": "Folded drawing photo with stamps; useful for evidence/quality gate annotation."
+    },
+    {
+      "fileName": "IMG_6528.heic",
+      "scenario": "evidence_profile",
+      "notes": "Folded drawing photo with stamps; useful for evidence/quality gate annotation."
+    },
+    {
+      "fileName": "IMG_6529.heic",
+      "scenario": "piping_table_profile",
+      "notes": "Photo of piping characteristic list with dense table and blue stamp."
+    },
+    {
+      "fileName": "IMG_6530.heic",
+      "scenario": "piping_table_profile",
+      "notes": "Photo of piping characteristic list with dense table and blue stamp."
+    }
+  ]
+}

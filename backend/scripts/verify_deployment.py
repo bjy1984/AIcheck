@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sys
+import time
 import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -22,7 +23,7 @@ from libs.security.auth import ROLE_DEFAULT_PATHS
 
 
 DEFAULT_ROLES = ("admin", "inspection", "contractor", "ndt", "owner")
-REQUIRED_LITELLM_ALIASES = {"default-chat", "review-chat", "embedding-default", "compare-fast"}
+REQUIRED_LITELLM_ALIASES = {"default-chat", "review-chat", "deepseek-reasoner", "embedding-default", "compare-fast"}
 SECRET_TEXT_PATTERNS = [
     re.compile(r"sk-[A-Za-z0-9._-]{6,}"),
     re.compile(r"(?i)(Bearer\s+)[A-Za-z0-9._~+/=-]{8,}"),
@@ -128,6 +129,8 @@ class VerifyConfig:
     skip_litellm: bool
     write_probes: bool
     ocr_object_probe: bool
+    review_run_probe: bool
+    review_run_wait_seconds: float
     litellm_management_probes: bool
     litellm_provider_probes: bool
 
@@ -163,6 +166,20 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Run signed PUT upload, signed GET preview/download, OCR task, and export write probes against the target project.",
     )
+    parser.add_argument(
+        "--review-run-probe",
+        action="store_true",
+        help=(
+            "Create a ReviewRun through ai-recheck, verify graph/timeline/human-decision endpoints, "
+            "and verify FDE diagnostic replay. Requires roles inspection,fde."
+        ),
+    )
+    parser.add_argument(
+        "--review-run-wait-seconds",
+        type=float,
+        default=float(os.getenv("AICHECK_VERIFY_REVIEW_RUN_WAIT_SECONDS", "20")),
+        help="Maximum seconds for --review-run-probe to wait for Temporal/LangGraph worker progress in strict production.",
+    )
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     parser.add_argument("--timeout", type=float, default=8.0)
     return parser.parse_args()
@@ -177,6 +194,10 @@ def config_from_args(args: argparse.Namespace) -> VerifyConfig:
     unknown = [role for role in roles if role not in ROLE_DEFAULT_PATHS]
     if unknown:
         raise SystemExit(f"Unsupported roles: {', '.join(unknown)}")
+    if args.review_run_probe:
+        missing = sorted({"inspection", "fde"} - set(roles))
+        if missing:
+            raise SystemExit("--review-run-probe requires --roles including inspection,fde.")
     return VerifyConfig(
         api_base=args.api_base.rstrip("/"),
         ocr_base=None if args.skip_ocr else (args.ocr_base or "").rstrip("/"),
@@ -189,6 +210,8 @@ def config_from_args(args: argparse.Namespace) -> VerifyConfig:
         skip_litellm=args.skip_litellm,
         write_probes=args.write_probes,
         ocr_object_probe=args.ocr_object_probe,
+        review_run_probe=args.review_run_probe,
+        review_run_wait_seconds=max(0.0, float(args.review_run_wait_seconds or 0.0)),
         litellm_management_probes=args.litellm_management_probes,
         litellm_provider_probes=args.litellm_provider_probes,
     )
@@ -222,6 +245,7 @@ class DeploymentVerifier:
         self.check_admin_reads_rejected()
         self.check_project_and_task_reads()
         self.check_write_probes()
+        self.check_review_run_probe()
         self.check_identity_spoof_rejected()
         self.check_action_bypass_rejected()
         self.check_read_scope_rejected()
@@ -483,6 +507,223 @@ class DeploymentVerifier:
             "pass",
             "Signed PUT, upload complete, document signed GETs, OCR task creation, optional OCR object parse, and export task probes passed.",
         )
+
+    def check_review_run_probe(self) -> None:
+        if not self.config.review_run_probe:
+            self.add(
+                "api.review-run-probe",
+                "skip",
+                "Pass --review-run-probe with --roles including inspection,fde to verify Temporal/LangGraph ReviewRun orchestration.",
+            )
+            return
+        missing_tokens = [role for role in ["inspection", "fde"] if role not in self.tokens]
+        if missing_tokens:
+            self.add("api.review-run-probe", "fail", f"Missing login token(s): {', '.join(missing_tokens)}")
+            return
+        suffix = uuid4().hex[:8]
+        inspection_headers = self.auth_headers("inspection")
+        fde_headers = self.auth_headers("fde")
+
+        status_code, payload = self.request_json(
+            self.api,
+            "POST",
+            f"/api/projects/{self.config.project_id}/inspection/nodes/24/ai-recheck",
+            headers={**inspection_headers, "Idempotency-Key": f"verify-review-run-{suffix}"},
+        )
+        created = self.envelope_data("api.review-run-probe.create", status_code, payload)
+        if created is None:
+            self.add("api.review-run-probe", "fail", "ReviewRun create probe failed.")
+            return
+        dispatch = created.get("dispatch") if isinstance(created.get("dispatch"), dict) else {}
+        latest_run = created.get("latestRun") if isinstance(created.get("latestRun"), dict) else {}
+        review_run_id = str(dispatch.get("reviewRunId") or latest_run.get("reviewRunId") or "")
+        dispatch_mode = str(dispatch.get("mode") or "")
+        dispatch_status = str(dispatch.get("status") or "")
+        if not review_run_id:
+            self.add("api.review-run-probe", "fail", f"ai-recheck did not return reviewRunId: {created}")
+            return
+        if dispatch_status in {"failed_to_start", "missing"}:
+            self.add("api.review-run-probe", "fail", f"ReviewRun dispatch failed: {dispatch}", {"dispatch": dispatch})
+            return
+        if self.config.strict_production and dispatch_mode != "temporal":
+            self.add(
+                "api.review-run-probe",
+                "fail",
+                f"Strict production ReviewRun probe requires Temporal dispatch, got mode={dispatch_mode!r}.",
+                {"dispatch": dispatch},
+            )
+            return
+
+        detail, graph, timeline, progressed = self.wait_for_review_run_progress(review_run_id, inspection_headers)
+        if detail is None:
+            self.add("api.review-run-probe", "fail", "ReviewRun detail probe failed.")
+            return
+        run = detail.get("run") if isinstance(detail.get("run"), dict) else {}
+        run_failures = []
+        if run.get("reviewRunId") != review_run_id:
+            run_failures.append("detail run.reviewRunId mismatch")
+        if not run.get("workflowEngine"):
+            run_failures.append("workflowEngine is missing")
+        if not run.get("graphEngine"):
+            run_failures.append("graphEngine is missing")
+        if run.get("modelGateway") != "litellm":
+            run_failures.append(f"modelGateway expected litellm, got {run.get('modelGateway')!r}")
+        if run_failures:
+            self.add("api.review-run-probe", "fail", "; ".join(run_failures), {"run": run})
+            return
+        if graph is None:
+            self.add("api.review-run-probe", "fail", "ReviewRun graph probe failed.")
+            return
+        nodes = graph.get("nodes") if isinstance(graph, dict) else None
+        edges = graph.get("edges") if isinstance(graph, dict) else None
+        if not isinstance(nodes, list) or not nodes:
+            self.add("api.review-run-probe", "fail", "ReviewRun graph returned no nodes.", {"graph": graph})
+            return
+        if not isinstance(edges, list) or len(edges) < max(0, len(nodes) - 1):
+            self.add("api.review-run-probe", "fail", "ReviewRun graph edges are incomplete.", {"nodeCount": len(nodes), "edges": edges})
+            return
+        if any(not isinstance(node, dict) or not node.get("nodeKey") or not node.get("status") for node in nodes):
+            self.add("api.review-run-probe", "fail", "ReviewRun graph nodes must include nodeKey/status.", {"nodes": nodes[:3]})
+            return
+        if timeline is None:
+            self.add("api.review-run-probe", "fail", "ReviewRun timeline probe failed.")
+            return
+        events = timeline.get("events") if isinstance(timeline, dict) else None
+        if not isinstance(events, list) or not events:
+            self.add("api.review-run-probe", "fail", "ReviewRun timeline returned no events.", {"timeline": timeline})
+            return
+        if self.config.strict_production and not progressed:
+            node_statuses = sorted({str(node.get("status") or "") for node in nodes if isinstance(node, dict)})
+            self.add(
+                "api.review-run-probe",
+                "fail",
+                f"ReviewRun graph did not progress within {self.config.review_run_wait_seconds:g}s.",
+                {"reviewRunId": review_run_id, "runStatus": run.get("status"), "nodeStatuses": node_statuses},
+            )
+            return
+
+        decision = self.get_required_envelope(
+            "api.review-run-probe.human-decision",
+            "POST",
+            f"/api/review-runs/{review_run_id}/human-decision",
+            headers={**inspection_headers, "Idempotency-Key": f"verify-review-run-decision-{suffix}"},
+            json={"decision": "accept", "comment": "deployment verifier accepted this temporary ReviewRun."},
+        )
+        if decision is None:
+            self.add("api.review-run-probe", "fail", "ReviewRun human decision probe failed.")
+            return
+        decision_run = decision.get("reviewRun") if isinstance(decision.get("reviewRun"), dict) else {}
+        if decision_run.get("status") != "accepted_by_human":
+            self.add("api.review-run-probe", "fail", f"Expected accepted_by_human, got {decision_run.get('status')!r}.", decision)
+            return
+
+        fde_detail = self.get_required_envelope(
+            "fde.review-run-probe.detail",
+            "GET",
+            f"/api/fde/review-runs/{review_run_id}",
+            headers=fde_headers,
+        )
+        if fde_detail is None:
+            self.add("api.review-run-probe", "fail", "FDE ReviewRun detail probe failed.")
+            return
+        if not isinstance(fde_detail.get("graph"), dict) or not isinstance(fde_detail.get("temporal"), dict):
+            self.add("api.review-run-probe", "fail", "FDE ReviewRun detail must include graph and temporal summaries.", fde_detail)
+            return
+        scorecard = fde_detail.get("scorecard") if isinstance(fde_detail.get("scorecard"), dict) else {}
+        if self.config.strict_production and (
+            scorecard.get("targetScore") != 100
+            or scorecard.get("ok") is not True
+            or float(scorecard.get("score") or 0) < 100
+        ):
+            self.add(
+                "api.review-run-probe",
+                "fail",
+                "Strict production ReviewRun probe requires FDE orchestration scorecard 100.",
+                {"reviewRunId": review_run_id, "scorecard": scorecard},
+            )
+            return
+
+        replay = self.get_required_envelope(
+            "fde.review-run-probe.replay",
+            "POST",
+            f"/api/fde/review-runs/{review_run_id}/replay",
+            headers={**fde_headers, "Idempotency-Key": f"verify-review-run-replay-{suffix}"},
+            json={"runMode": "diagnostic_replay", "reason": "deployment verifier immutable replay probe"},
+        )
+        if replay is None:
+            self.add("api.review-run-probe", "fail", "FDE ReviewRun replay probe failed.")
+            return
+        replay_run = replay.get("reviewRun") if isinstance(replay.get("reviewRun"), dict) else {}
+        if replay_run.get("parentReviewRunId") != review_run_id or replay_run.get("reviewRunId") == review_run_id:
+            self.add("api.review-run-probe", "fail", f"Unexpected replay payload: {replay}")
+            return
+
+        self.add(
+            "api.review-run-probe",
+            "pass",
+            "ReviewRun create/detail/graph/timeline/human-decision and FDE diagnostic replay probes passed.",
+            {
+                "reviewRunId": review_run_id,
+                "dispatchMode": dispatch_mode,
+                "workflowEngine": run.get("workflowEngine"),
+                "graphEngine": run.get("graphEngine"),
+                "graphRunner": run.get("graphRunner"),
+                "graphProgressed": progressed,
+                "scorecardScore": scorecard.get("score"),
+                "scorecardOk": scorecard.get("ok"),
+                "nodeCount": len(nodes),
+                "eventCount": len(events),
+                "replayReviewRunId": replay_run.get("reviewRunId"),
+            },
+        )
+
+    def wait_for_review_run_progress(
+        self,
+        review_run_id: str,
+        headers: dict[str, str],
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None, bool]:
+        deadline = time.monotonic() + self.config.review_run_wait_seconds
+        latest_detail: dict[str, Any] | None = None
+        latest_graph: dict[str, Any] | None = None
+        latest_timeline: dict[str, Any] | None = None
+        latest_progressed = False
+        while True:
+            latest_detail = self.get_required_envelope(
+                "api.review-run-probe.detail",
+                "GET",
+                f"/api/review-runs/{review_run_id}",
+                headers=headers,
+            )
+            latest_graph = self.get_required_envelope(
+                "api.review-run-probe.graph",
+                "GET",
+                f"/api/review-runs/{review_run_id}/graph",
+                headers=headers,
+            )
+            latest_timeline = self.get_required_envelope(
+                "api.review-run-probe.timeline",
+                "GET",
+                f"/api/review-runs/{review_run_id}/timeline",
+                headers=headers,
+            )
+            if latest_detail is None or latest_graph is None or latest_timeline is None:
+                return latest_detail, latest_graph, latest_timeline, False
+            latest_progressed = self.review_run_progressed(latest_detail, latest_graph)
+            if latest_progressed or not self.config.strict_production or time.monotonic() >= deadline:
+                return latest_detail, latest_graph, latest_timeline, latest_progressed
+            time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
+
+    def review_run_progressed(self, detail: dict[str, Any], graph: dict[str, Any]) -> bool:
+        run = detail.get("run") if isinstance(detail.get("run"), dict) else {}
+        if run.get("status") not in {None, "", "created", "queued"}:
+            return True
+        nodes = graph.get("nodes") if isinstance(graph, dict) else []
+        progressed_statuses = {"running", "succeeded", "failed", "skipped"}
+        return any(isinstance(node, dict) and node.get("status") in progressed_statuses for node in nodes)
+
+    def get_required_envelope(self, name: str, method: str, path: str, **kwargs: Any) -> dict[str, Any] | None:
+        status_code, payload = self.request_json(self.api, method, path, **kwargs)
+        return self.envelope_data(name, status_code, payload)
 
     def check_signed_put_url(self, upload_url: dict[str, Any]) -> bool:
         url = str(upload_url.get("url") or "")

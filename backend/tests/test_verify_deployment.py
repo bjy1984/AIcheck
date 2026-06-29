@@ -16,7 +16,13 @@ from scripts.verify_deployment import (
 )
 
 
-probe_state = {"fileName": "deployment-verify-test.pdf", "signedPut": "", "signedGets": []}
+probe_state = {
+    "fileName": "deployment-verify-test.pdf",
+    "signedPut": "",
+    "signedGets": [],
+    "reviewRunId": "RRUN-VERIFY",
+    "replayReviewRunId": "RRUN-REPLAY-VERIFY",
+}
 UPLOADED_STORAGE_KEY = "documents/P-2026-HDCP-001/DV-VERIFY-V1"
 
 
@@ -51,10 +57,11 @@ def api_transport(request: httpx.Request) -> httpx.Response:
         return envelope({"username": role, "defaultRole": role})
     if path == "/api/auth/login":
         role = json.loads(request.read().decode("utf-8"))["username"]
+        default_path = "/admin/overview" if role == "admin" else "/fde/dashboard" if role == "fde" else f"/workbench/{role}"
         return envelope(
             {
                 "token": f"token-{role}",
-                "user": {"username": role, "role": role, "defaultPath": f"/workbench/{role}" if role != "admin" else "/admin/overview"},
+                "user": {"username": role, "role": role, "defaultPath": default_path},
             }
         )
     if path == "/api/system/mongo-transaction-probe":
@@ -145,7 +152,136 @@ def api_transport(request: httpx.Request) -> httpx.Response:
     if path == "/api/knowledge/files/KF-DOC-20260625-004":
         return envelope(code=403, reason="FORBIDDEN")
     if path.endswith("/inspection/nodes/24/ai-recheck"):
+        auth = request.headers.get("authorization", "")
+        if auth == "Bearer token-inspection":
+            review_run_id = probe_state["reviewRunId"]
+            return envelope(
+                {
+                    "runId": "AIRUN-VERIFY",
+                    "status": "推理中",
+                    "latestRun": {
+                        "id": "AIRUN-VERIFY",
+                        "reviewRunId": review_run_id,
+                        "workflowId": f"review-run-{review_run_id}",
+                        "workflowEngine": "temporal",
+                        "graphEngine": "langgraph",
+                        "modelGateway": "litellm",
+                    },
+                    "dispatch": {
+                        "mode": "temporal",
+                        "status": "started",
+                        "reviewRunId": review_run_id,
+                        "workflowId": f"review-run-{review_run_id}",
+                        "temporalRunId": "temporal-run-verify",
+                        "taskQueue": "review.workflow",
+                    },
+                }
+            )
         return envelope(code=403, reason="FORBIDDEN")
+    if path == "/api/review-runs/RRUN-VERIFY":
+        return envelope(
+            {
+                "run": {
+                    "reviewRunId": "RRUN-VERIFY",
+                    "aiRunId": "AIRUN-VERIFY",
+                    "projectId": "P-2026-HDCP-001",
+                    "nodeId": 24,
+                    "status": "waiting_human_review",
+                    "workflowEngine": "temporal",
+                    "workflowType": "ReviewRunWorkflow",
+                    "workflowId": "review-run-RRUN-VERIFY",
+                    "graphEngine": "langgraph",
+                    "modelGateway": "litellm",
+                    "modelAlias": "review-chat",
+                    "graphSummary": {"total": 3, "statusCounts": {"succeeded": 3}},
+                }
+            }
+        )
+    if path == "/api/review-runs/RRUN-VERIFY/graph":
+        return envelope(
+            {
+                "reviewRunId": "RRUN-VERIFY",
+                "nodes": [
+                    {"nodeKey": "load_context", "status": "succeeded"},
+                    {"nodeKey": "run_rule_engine", "status": "succeeded"},
+                    {"nodeKey": "quality_gate", "status": "succeeded"},
+                ],
+                "edges": [
+                    {"source": "load_context", "target": "run_rule_engine"},
+                    {"source": "run_rule_engine", "target": "quality_gate"},
+                ],
+                "timeline": [{"eventType": "review_run.created", "status": "queued"}],
+            }
+        )
+    if path == "/api/review-runs/RRUN-VERIFY/timeline":
+        return envelope(
+            {
+                "reviewRunId": "RRUN-VERIFY",
+                "events": [{"eventType": "review_run.created", "status": "queued"}],
+            }
+        )
+    if path == "/api/review-runs/RRUN-VERIFY/human-decision":
+        return envelope(
+            {
+                "reviewRun": {"reviewRunId": "RRUN-VERIFY", "status": "accepted_by_human"},
+                "temporalSignal": {
+                    "status": "sent",
+                    "workflowId": "review-run-RRUN-VERIFY",
+                    "signalName": "submit_human_decision",
+                },
+                "auditLogId": "AUD-VERIFY",
+            }
+        )
+    if path == "/api/fde/review-runs/RRUN-VERIFY":
+        assert request.headers.get("authorization") == "Bearer token-fde"
+        return envelope(
+            {
+                "run": {
+                    "reviewRunId": "RRUN-VERIFY",
+                    "workflowEngine": "temporal",
+                    "graphEngine": "langgraph",
+                    "modelGateway": "litellm",
+                },
+                "graph": {
+                    "nodes": [{"nodeKey": "load_context", "status": "succeeded"}],
+                    "edges": [],
+                    "timeline": [{"eventType": "review_run.created", "status": "queued"}],
+                },
+                "timeline": [{"eventType": "review_run.created", "status": "queued"}],
+                "temporal": {
+                    "workflowEngine": "temporal",
+                    "workflowType": "ReviewRunWorkflow",
+                    "workflowId": "review-run-RRUN-VERIFY",
+                    "historyPolicy": "ids_hashes_versions_only",
+                },
+                "scorecard": {
+                    "schemaVersion": "aicheck-review-orchestration-scorecard-v1",
+                    "targetScore": 100,
+                    "score": 100,
+                    "ok": True,
+                    "sections": [
+                        {"name": "workflow", "score": 25, "maxScore": 25, "status": "pass", "blockers": []},
+                        {"name": "graph", "score": 25, "maxScore": 25, "status": "pass", "blockers": []},
+                        {"name": "evidence", "score": 30, "maxScore": 30, "status": "pass", "blockers": []},
+                        {"name": "governance", "score": 20, "maxScore": 20, "status": "pass", "blockers": []},
+                    ],
+                    "blockers": [],
+                },
+            }
+        )
+    if path == "/api/fde/review-runs/RRUN-VERIFY/replay":
+        assert request.headers.get("authorization") == "Bearer token-fde"
+        return envelope(
+            {
+                "reviewRun": {
+                    "reviewRunId": probe_state["replayReviewRunId"],
+                    "parentReviewRunId": "RRUN-VERIFY",
+                    "runMode": "diagnostic_replay",
+                    "status": "queued",
+                },
+                "auditLogId": "AUD-REPLAY",
+            }
+        )
     if path.endswith("/inspection/nodes/24/report-review"):
         return envelope(code=403, reason="FORBIDDEN")
     if path == "/api/admin/config-overview/publish":
@@ -238,6 +374,7 @@ def litellm_transport(request: httpx.Request) -> httpx.Response:
                 "data": [
                     {"id": "default-chat"},
                     {"id": "review-chat"},
+                    {"id": "deepseek-reasoner"},
                     {"id": "embedding-default"},
                     {"id": "compare-fast"},
                 ]
@@ -373,6 +510,91 @@ def api_failed_transaction_transport(request: httpx.Request) -> httpx.Response:
     return api_transport(request)
 
 
+def api_review_run_no_progress_transport(request: httpx.Request) -> httpx.Response:
+    if request.url.path == "/api/review-runs/RRUN-VERIFY":
+        return envelope(
+            {
+                "run": {
+                    "reviewRunId": "RRUN-VERIFY",
+                    "aiRunId": "AIRUN-VERIFY",
+                    "projectId": "P-2026-HDCP-001",
+                    "nodeId": 24,
+                    "status": "queued",
+                    "workflowEngine": "temporal",
+                    "workflowType": "ReviewRunWorkflow",
+                    "workflowId": "review-run-RRUN-VERIFY",
+                    "graphEngine": "langgraph",
+                    "modelGateway": "litellm",
+                    "modelAlias": "review-chat",
+                    "graphSummary": {"total": 3, "statusCounts": {"pending": 3}},
+                }
+            }
+        )
+    if request.url.path == "/api/review-runs/RRUN-VERIFY/graph":
+        return envelope(
+            {
+                "reviewRunId": "RRUN-VERIFY",
+                "nodes": [
+                    {"nodeKey": "load_context", "status": "pending"},
+                    {"nodeKey": "run_rule_engine", "status": "pending"},
+                    {"nodeKey": "quality_gate", "status": "pending"},
+                ],
+                "edges": [
+                    {"source": "load_context", "target": "run_rule_engine"},
+                    {"source": "run_rule_engine", "target": "quality_gate"},
+                ],
+                "timeline": [{"eventType": "review_run.created", "status": "queued"}],
+            }
+        )
+    return api_transport(request)
+
+
+def api_review_run_low_scorecard_transport(request: httpx.Request) -> httpx.Response:
+    if request.url.path == "/api/fde/review-runs/RRUN-VERIFY":
+        return envelope(
+            {
+                "run": {
+                    "reviewRunId": "RRUN-VERIFY",
+                    "workflowEngine": "temporal",
+                    "graphEngine": "langgraph",
+                    "modelGateway": "litellm",
+                },
+                "graph": {
+                    "nodes": [{"nodeKey": "load_context", "status": "succeeded"}],
+                    "edges": [],
+                    "timeline": [{"eventType": "review_run.created", "status": "queued"}],
+                },
+                "timeline": [{"eventType": "review_run.created", "status": "queued"}],
+                "temporal": {
+                    "workflowEngine": "temporal",
+                    "workflowType": "ReviewRunWorkflow",
+                    "workflowId": "review-run-RRUN-VERIFY",
+                    "historyPolicy": "ids_hashes_versions_only",
+                },
+                "scorecard": {
+                    "schemaVersion": "aicheck-review-orchestration-scorecard-v1",
+                    "targetScore": 100,
+                    "score": 75,
+                    "ok": False,
+                    "sections": [
+                        {"name": "workflow", "score": 25, "maxScore": 25, "status": "pass", "blockers": []},
+                        {
+                            "name": "graph",
+                            "score": 0,
+                            "maxScore": 25,
+                            "status": "fail",
+                            "blockers": ["LangGraph Postgres checkpointer is not active"],
+                        },
+                        {"name": "evidence", "score": 30, "maxScore": 30, "status": "pass", "blockers": []},
+                        {"name": "governance", "score": 20, "maxScore": 20, "status": "pass", "blockers": []},
+                    ],
+                    "blockers": ["LangGraph Postgres checkpointer is not active"],
+                },
+            }
+        )
+    return api_transport(request)
+
+
 def verify_args(**overrides):
     values = {
         "api_base": "http://api",
@@ -386,6 +608,8 @@ def verify_args(**overrides):
         "skip_litellm": False,
         "write_probes": False,
         "ocr_object_probe": False,
+        "review_run_probe": False,
+        "review_run_wait_seconds": 0.0,
         "litellm_management_probes": False,
         "litellm_provider_probes": False,
     }
@@ -428,6 +652,13 @@ def test_verify_config_rejects_ocr_object_probe_when_ocr_is_skipped() -> None:
     assert "--ocr-object-probe cannot be used with --skip-ocr" in str(exc.value)
 
 
+def test_verify_config_requires_fde_and_inspection_for_review_run_probe() -> None:
+    with pytest.raises(SystemExit) as exc:
+        config_from_args(verify_args(review_run_probe=True, roles="admin,inspection,contractor"))
+
+    assert "--review-run-probe requires --roles including inspection,fde" in str(exc.value)
+
+
 def test_deployment_probe_pdf_contains_text_for_ocr() -> None:
     body = deployment_probe_pdf()
 
@@ -459,6 +690,8 @@ def test_deployment_verifier_redacts_sensitive_result_fields(capsys) -> None:
         skip_litellm=True,
         write_probes=False,
         ocr_object_probe=False,
+        review_run_probe=False,
+        review_run_wait_seconds=0.0,
         litellm_management_probes=False,
         litellm_provider_probes=False,
     )
@@ -508,12 +741,14 @@ def test_deployment_verifier_passes_happy_path() -> None:
         litellm_base="http://litellm",
         litellm_api_key="sk-test",
         project_id="P-2026-HDCP-001",
-        roles=["admin", "inspection", "contractor"],
+        roles=["admin", "inspection", "contractor", "fde"],
         strict_production=True,
         skip_ocr=False,
         skip_litellm=False,
         write_probes=True,
         ocr_object_probe=True,
+        review_run_probe=True,
+        review_run_wait_seconds=0.0,
         litellm_management_probes=True,
         litellm_provider_probes=True,
     )
@@ -541,6 +776,16 @@ def test_deployment_verifier_passes_happy_path() -> None:
     assert any(item.name == "api.write-probes.document-preview-get" and item.status == "pass" for item in results)
     assert any(item.name == "api.write-probes.document-download-get" and item.status == "pass" for item in results)
     assert any(item.name == "ocr.uploaded-object-parse" and item.status == "pass" for item in results)
+    review_probe = next(item for item in results if item.name == "api.review-run-probe")
+    assert review_probe.status == "pass"
+    assert review_probe.data
+    assert review_probe.data["dispatchMode"] == "temporal"
+    assert review_probe.data["workflowEngine"] == "temporal"
+    assert review_probe.data["graphEngine"] == "langgraph"
+    assert review_probe.data["graphProgressed"] is True
+    assert review_probe.data["scorecardScore"] == 100
+    assert review_probe.data["scorecardOk"] is True
+    assert review_probe.data["replayReviewRunId"] == "RRUN-REPLAY-VERIFY"
     assert probe_state["signedPut"] == "ok"
     assert set(probe_state["signedGets"]) == {"/download/DOC-VERIFY/preview", "/download/DOC-VERIFY/download"}
     assert any(item.name == "ocr.health" and item.status == "pass" for item in results)
@@ -572,6 +817,8 @@ def test_deployment_verifier_fails_strict_production_when_ocr_uses_placeholder()
         skip_litellm=True,
         write_probes=False,
         ocr_object_probe=False,
+        review_run_probe=False,
+        review_run_wait_seconds=0.0,
         litellm_management_probes=False,
         litellm_provider_probes=False,
     )
@@ -606,6 +853,8 @@ def test_deployment_verifier_fails_strict_production_when_mongo_transaction_prob
         skip_litellm=True,
         write_probes=False,
         ocr_object_probe=False,
+        review_run_probe=False,
+        review_run_wait_seconds=0.0,
         litellm_management_probes=False,
         litellm_provider_probes=False,
     )
@@ -626,6 +875,77 @@ def test_deployment_verifier_fails_strict_production_when_mongo_transaction_prob
     assert "transactionProbe must be pass" in transaction_probe.detail
 
 
+def test_deployment_verifier_fails_review_run_probe_when_worker_does_not_progress() -> None:
+    config = VerifyConfig(
+        api_base="http://api",
+        ocr_base=None,
+        litellm_base=None,
+        litellm_api_key=None,
+        project_id="P-2026-HDCP-001",
+        roles=["admin", "inspection", "contractor", "fde"],
+        strict_production=True,
+        skip_ocr=True,
+        skip_litellm=True,
+        write_probes=False,
+        ocr_object_probe=False,
+        review_run_probe=True,
+        review_run_wait_seconds=0.0,
+        litellm_management_probes=False,
+        litellm_provider_probes=False,
+    )
+    verifier = DeploymentVerifier(
+        config,
+        api_client=httpx.Client(base_url=config.api_base, transport=httpx.MockTransport(api_review_run_no_progress_transport)),
+        ocr_client=None,
+        litellm_client=None,
+    )
+
+    results = verifier.run()
+
+    review_probe = next(item for item in results if item.name == "api.review-run-probe")
+    assert review_probe.status == "fail"
+    assert "did not progress" in review_probe.detail
+    assert review_probe.data
+    assert review_probe.data["nodeStatuses"] == ["pending"]
+
+
+def test_deployment_verifier_fails_review_run_probe_when_scorecard_is_not_100() -> None:
+    config = VerifyConfig(
+        api_base="http://api",
+        ocr_base=None,
+        litellm_base=None,
+        litellm_api_key=None,
+        project_id="P-2026-HDCP-001",
+        roles=["admin", "inspection", "contractor", "fde"],
+        strict_production=True,
+        skip_ocr=True,
+        skip_litellm=True,
+        write_probes=False,
+        ocr_object_probe=False,
+        review_run_probe=True,
+        review_run_wait_seconds=0.0,
+        litellm_management_probes=False,
+        litellm_provider_probes=False,
+    )
+    verifier = DeploymentVerifier(
+        config,
+        api_client=httpx.Client(
+            base_url=config.api_base,
+            transport=httpx.MockTransport(api_review_run_low_scorecard_transport),
+        ),
+        ocr_client=None,
+        litellm_client=None,
+    )
+
+    results = verifier.run()
+
+    review_probe = next(item for item in results if item.name == "api.review-run-probe")
+    assert review_probe.status == "fail"
+    assert "scorecard 100" in review_probe.detail
+    assert review_probe.data
+    assert review_probe.data["scorecard"]["score"] == 75
+
+
 def test_deployment_verifier_fails_litellm_provider_probe_without_leaking_provider_body() -> None:
     config = VerifyConfig(
         api_base="http://api",
@@ -639,6 +959,8 @@ def test_deployment_verifier_fails_litellm_provider_probe_without_leaking_provid
         skip_litellm=False,
         write_probes=False,
         ocr_object_probe=False,
+        review_run_probe=False,
+        review_run_wait_seconds=0.0,
         litellm_management_probes=False,
         litellm_provider_probes=True,
     )
@@ -675,6 +997,8 @@ def test_deployment_verifier_fails_litellm_management_probe_when_db_is_not_conne
         skip_litellm=False,
         write_probes=False,
         ocr_object_probe=False,
+        review_run_probe=False,
+        review_run_wait_seconds=0.0,
         litellm_management_probes=True,
         litellm_provider_probes=False,
     )
@@ -710,6 +1034,8 @@ def test_deployment_verifier_fails_litellm_health_when_proxy_reports_unhealthy_m
         skip_litellm=False,
         write_probes=False,
         ocr_object_probe=False,
+        review_run_probe=False,
+        review_run_wait_seconds=0.0,
         litellm_management_probes=False,
         litellm_provider_probes=False,
     )

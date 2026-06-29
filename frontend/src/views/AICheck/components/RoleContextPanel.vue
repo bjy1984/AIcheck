@@ -135,9 +135,9 @@ const archiveProgress = computed(() => {
 .owner-item,
 .todo-row {
   padding: 10px;
+  background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  background: #ffffff;
 }
 
 .owner-item span,
@@ -173,7 +173,7 @@ const archiveProgress = computed(() => {
   color: #667085;
 }
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .owner-grid {
     grid-template-columns: 1fr;
   }

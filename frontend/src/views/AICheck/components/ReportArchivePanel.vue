@@ -286,8 +286,8 @@ const handleGenerate = () => {
 
 .recent-export-head {
   margin-bottom: 8px;
-  color: #26364e;
   font-weight: 800;
+  color: #26364e;
 }
 
 .recent-export-row {
@@ -310,27 +310,27 @@ const handleGenerate = () => {
 
 .recent-export-row strong {
   overflow: hidden;
-  color: #1f2937;
   font-size: 13px;
+  color: #1f2937;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .recent-export-row span {
   margin-top: 3px;
-  color: #667085;
   font-size: 12px;
+  color: #667085;
 }
 
 .latest-report {
   display: grid;
+  padding: 10px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
-  padding: 10px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #ffffff;
 }
 
 .latest-report span {
@@ -353,7 +353,7 @@ const handleGenerate = () => {
   padding: 8px 0;
 }
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .report-form,
   .latest-report,
   .package-actions {

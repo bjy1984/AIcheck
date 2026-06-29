@@ -475,9 +475,9 @@ const handleRectifyNdt = () => {
 
 .ndt-metrics div {
   padding: 10px;
+  background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  background: #ffffff;
 }
 
 .ndt-metrics span {
@@ -572,7 +572,7 @@ const handleRectifyNdt = () => {
   padding: 8px 0;
 }
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .ndt-metrics,
   .inline-form,
   .report-form,

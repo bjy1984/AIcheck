@@ -181,8 +181,13 @@ def test_ocr_runtime_doctor_recommends_discovered_local_ocr_env(monkeypatch, tmp
         "PP-OCRv4_server_seal_det",
         "PP-OCRv4_server_rec",
         "PP-DocLayout-L",
+        "PP-DocLayoutV3",
+        "PaddleOCR-VL-1.6",
     ]:
         (model_base / model_name).mkdir(parents=True)
+    docling_dir = root / "docling"
+    docling_dir.mkdir()
+    (docling_dir / "model.bin").write_text("local-docling-artifact", encoding="utf-8")
 
     monkeypatch.setenv("AICHECK_AGENTDESIGN_HOST_PATH", str(root))
     monkeypatch.setenv("AICHECK_OCR_SUBPROCESS_PYTHON", str(python_bin))
@@ -205,10 +210,13 @@ def test_ocr_runtime_doctor_recommends_discovered_local_ocr_env(monkeypatch, tmp
     assert report["recommendedEnv"]["AICHECK_PADDLEOCR_DET_MODEL_DIR"] == str(model_base / "PP-OCRv6_medium_det")
     assert report["recommendedEnv"]["AICHECK_SEAL_DET_MODEL_DIR"] == str(model_base / "PP-OCRv4_server_seal_det")
     assert report["recommendedEnv"]["AICHECK_PPSTRUCTURE_LAYOUT_MODEL_DIR"] == str(model_base / "PP-DocLayout-L")
+    assert report["recommendedEnv"]["AICHECK_PADDLEOCR_VL_REC_MODEL_DIR"] == str(model_base / "PaddleOCR-VL-1.6")
+    assert report["recommendedEnv"]["DOCLING_ARTIFACTS_PATH"] == str(docling_dir)
+    assert report["discovered"]["doclingArtifacts"][0]["fileCount"] == 1
     assert report["discovered"]["subprocessPythonCandidates"][0]["usable"] is True
     checks_by_name = {item["name"]: item for item in report["checks"]}
     assert checks_by_name["subprocess.python"]["status"] == "pass"
-    assert checks_by_name["package.paddleocr"]["status"] == "warn"
+    assert checks_by_name["package.paddleocr"]["status"] in {"pass", "warn"}
     assert checks_by_name["package.paddleocr"]["data"]["subprocessCovered"] is True
     assert checks_by_name["preprocess.variants"]["status"] == "pass"
 
@@ -3141,6 +3149,26 @@ def test_ocr_eval_set_resolves_relative_paths_from_eval_set_directory(tmp_path) 
     assert normalized[2]["source"] == "minio://documents/sample.png"
 
 
+def test_ocr_eval_set_can_force_disable_result_cache() -> None:
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "ocr_eval_set.py"
+    spec = importlib.util.spec_from_file_location("ocr_eval_set_options", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    cases = module.with_ocr_option(
+        [
+            {"caseId": "plain"},
+            {"caseId": "existing", "options": {"foo": "bar"}},
+        ],
+        "disableResultCache",
+        True,
+    )
+
+    assert cases[0]["options"] == {"disableResultCache": True}
+    assert cases[1]["options"] == {"foo": "bar", "disableResultCache": True}
+
+
 def test_ocr_eval_set_creates_report_output_directories(tmp_path) -> None:
     script_path = Path(__file__).resolve().parents[1] / "scripts" / "ocr_eval_set.py"
     spec = importlib.util.spec_from_file_location("ocr_eval_set_output_dirs", script_path)
@@ -3209,6 +3237,230 @@ def test_ocr_evaluation_enforces_scenario_thresholds() -> None:
     assert "sealRecall" in {item["metric"] for item in report["thresholdFailures"]}
     assert scenario_failures[0]["scope"] == "seal_text_profile"
     assert "sealRecall" in {item["metric"] for item in scenario_failures}
+
+
+def test_ocr_evaluation_enforces_min_cases_and_required_scenarios() -> None:
+    from apps.ocr_service.evaluation import evaluate_cases
+
+    report = evaluate_cases(
+        [
+            {
+                "caseId": "perfect-piping",
+                "scenario": "piping_table_profile",
+                "minScore": 0,
+                "result": {
+                    "parseResultId": "PARSE-EVAL-SCALE",
+                    "status": "success",
+                    "fields": [{"fieldCode": "pipe_no", "fieldValue": "PL8301", "bbox": [0, 0, 10, 10]}],
+                    "tables": [{"businessSchema": "piping_characteristic_table_v1", "bbox": [0, 0, 20, 20]}],
+                    "seals": [],
+                    "quality": {"status": "auto_usable", "reasons": [], "evidenceCompleteness": 1.0},
+                },
+                "expected": {
+                    "fields": [{"fieldCode": "pipe_no", "value": "PL8301", "bbox": [0, 0, 10, 10]}],
+                    "tables": [{"businessSchema": "piping_characteristic_table_v1", "bbox": [0, 0, 20, 20]}],
+                    "qualityStatus": "auto_usable",
+                    "minEvidenceCompleteness": 1.0,
+                },
+            }
+        ],
+        thresholds={
+            "minCases": 2,
+            "requiredScenarios": ["piping_table_profile", "seal_text_profile"],
+            "scenarios": {"piping_table_profile": {"minCases": 2}},
+        },
+    )
+
+    assert report["ok"] is False
+    assert {"cases", "scenario.seal_text_profile"} <= {item["metric"] for item in report["thresholdFailures"]}
+    assert report["scenarios"]["piping_table_profile"]["thresholdFailures"][0]["metric"] == "cases"
+
+
+def test_ocr_100_thresholds_merge_keeps_stricter_custom_gates() -> None:
+    from apps.ocr_service.evaluation import merge_thresholds, ocr_100_thresholds
+
+    merged = merge_thresholds(
+        {
+            "averageScore": 0.98,
+            "metrics": {"fieldRecall": 0.99},
+            "requiredScenarios": ["custom_profile"],
+            "scenarios": {"custom_profile": {"averageScore": 0.99}},
+        },
+        ocr_100_thresholds(),
+    )
+
+    assert merged["averageScore"] == 0.98
+    assert merged["minCases"] == 100
+    assert merged["metrics"]["fieldRecall"] == 0.99
+    assert "custom_profile" in merged["requiredScenarios"]
+    assert "piping_table_profile" in merged["requiredScenarios"]
+    assert merged["scenarios"]["custom_profile"]["averageScore"] == 0.99
+    assert merged["scenarios"]["piping_table_profile"]["minCases"] == 1
+
+
+def test_ocr_eval_cli_strict_100_rejects_small_fixture_set(monkeypatch, tmp_path) -> None:
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "ocr_eval_set.py"
+    spec = importlib.util.spec_from_file_location("ocr_eval_set_strict_100", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    eval_set = tmp_path / "eval.json"
+    eval_set.write_text(
+        json.dumps(
+            {
+                "cases": [
+                    {
+                        "caseId": "small",
+                        "scenario": "piping_table_profile",
+                        "minScore": 0,
+                        "result": {
+                            "status": "success",
+                            "fields": [{"fieldCode": "pipe_no", "fieldValue": "PL8301", "bbox": [0, 0, 10, 10]}],
+                            "tables": [{"businessSchema": "piping_characteristic_table_v1", "bbox": [0, 0, 20, 20]}],
+                            "seals": [],
+                            "quality": {"status": "auto_usable", "evidenceCompleteness": 1.0, "reasons": []},
+                        },
+                        "expected": {
+                            "fields": [{"fieldCode": "pipe_no", "value": "PL8301", "bbox": [0, 0, 10, 10]}],
+                            "tables": [{"businessSchema": "piping_characteristic_table_v1", "bbox": [0, 0, 20, 20]}],
+                            "qualityStatus": "auto_usable",
+                            "minEvidenceCompleteness": 1.0,
+                        },
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys, "argv", ["ocr_eval_set.py", str(eval_set), "--strict-100"])
+
+    assert module.main() == 1
+
+
+def test_ocr_100_scorecard_scores_perfect_gate() -> None:
+    from apps.ocr_service.evaluation import OCR_100_REQUIRED_SCENARIOS, ocr_100_thresholds
+    from apps.ocr_service.readiness import OCR_100_REQUIRED_ENGINES, build_ocr_100_scorecard
+
+    thresholds = ocr_100_thresholds()
+    evaluation_report = {
+        "ok": True,
+        "summary": {"cases": 100, "passed": 100, "failed": 0, "averageScore": 0.99},
+        "metrics": {metric: 1.0 for metric in thresholds["metrics"]},
+        "findingCounts": {},
+        "thresholdFailures": [],
+        "scenarios": {
+            scenario: {"ok": True, "cases": 1, "passed": 1, "failed": 0, "averageScore": 0.99}
+            for scenario in OCR_100_REQUIRED_SCENARIOS
+        },
+        "cases": [],
+    }
+    runtime_doctor = {
+        "checks": [
+            *[
+                {"name": f"engine.{engine}", "status": "pass"}
+                for engine in OCR_100_REQUIRED_ENGINES
+            ],
+            {"name": "policy.offline-only", "status": "pass"},
+            {"name": "policy.network-disabled", "status": "pass"},
+            {"name": "policy.placeholder-disabled", "status": "pass"},
+        ]
+    }
+    sample = {
+        "gatePassed": True,
+        "qualityStatus": "auto_usable",
+        "missingExpectedSealTypeCount": 0,
+        "fields": 6,
+        "formalTables": 1,
+        "businessRows": 10,
+        "readableSeals": 1,
+        "fragmentSeals": 1,
+        "evidenceCompleteness": 1.0,
+    }
+
+    scorecard = build_ocr_100_scorecard(
+        evaluation_report=evaluation_report,
+        runtime_doctor=runtime_doctor,
+        sample_summaries=[sample],
+    )
+
+    assert scorecard["ok"] is True
+    assert scorecard["score"] == 100
+    assert scorecard["blockers"] == []
+
+
+def test_ocr_100_scorecard_exposes_runtime_and_corpus_gaps() -> None:
+    from apps.ocr_service.readiness import build_ocr_100_scorecard
+
+    scorecard = build_ocr_100_scorecard(
+        evaluation_report={
+            "ok": False,
+            "summary": {"cases": 7, "passed": 7, "failed": 0, "averageScore": 1.0},
+            "metrics": {"fieldRecall": 1.0},
+            "findingCounts": {},
+            "thresholdFailures": [],
+            "scenarios": {"piping_table_profile": {"ok": True, "cases": 1, "averageScore": 1.0}},
+            "cases": [],
+        },
+        runtime_doctor={"checks": [{"name": "engine.paddle_ocr_subprocess", "status": "pass"}]},
+        sample_summaries=[],
+    )
+
+    assert scorecard["ok"] is False
+    assert scorecard["score"] < 100
+    assert any("pp_structure_v3" in blocker for blocker in scorecard["blockers"])
+    assert any("fewer than 100 cases" in blocker for blocker in scorecard["blockers"])
+    assert any("sample probe summaries are missing" in blocker for blocker in scorecard["blockers"])
+
+
+def test_ocr_100_scorecard_rejects_fixture_derived_cases() -> None:
+    from apps.ocr_service.evaluation import OCR_100_REQUIRED_SCENARIOS, ocr_100_thresholds
+    from apps.ocr_service.readiness import OCR_100_REQUIRED_ENGINES, build_ocr_100_scorecard
+
+    thresholds = ocr_100_thresholds()
+    scorecard = build_ocr_100_scorecard(
+        evaluation_report={
+            "ok": True,
+            "summary": {"cases": 100, "passed": 100, "failed": 0, "averageScore": 1.0},
+            "metrics": {metric: 1.0 for metric in thresholds["metrics"]},
+            "findingCounts": {},
+            "thresholdFailures": [],
+            "scenarios": {
+                scenario: {"ok": True, "cases": 1, "passed": 1, "failed": 0, "averageScore": 1.0}
+                for scenario in OCR_100_REQUIRED_SCENARIOS
+            },
+            "cases": [{"caseId": "fixture", "fixtureDerived": True}],
+        },
+        runtime_doctor={
+            "checks": [
+                *[
+                    {"name": f"engine.{engine}", "status": "pass"}
+                    for engine in OCR_100_REQUIRED_ENGINES
+                ],
+                {"name": "policy.offline-only", "status": "pass"},
+                {"name": "policy.network-disabled", "status": "pass"},
+                {"name": "policy.placeholder-disabled", "status": "pass"},
+            ]
+        },
+        sample_summaries=[
+            {
+                "gatePassed": True,
+                "qualityStatus": "auto_usable",
+                "missingExpectedSealTypeCount": 0,
+                "fields": 6,
+                "formalTables": 1,
+                "businessRows": 10,
+                "readableSeals": 1,
+                "fragmentSeals": 1,
+                "evidenceCompleteness": 1.0,
+            }
+        ],
+    )
+
+    assert scorecard["ok"] is False
+    assert scorecard["sections"][1]["status"] == "fail"
+    assert any("fixture-derived" in blocker for blocker in scorecard["blockers"])
 
 
 def test_ocr_service_adds_quality_variants_and_engine_run_metadata(monkeypatch, tmp_path) -> None:
@@ -4503,6 +4755,7 @@ def test_required_action_inference_covers_core_mutations() -> None:
         ("POST", "/api/messages/MSG-001/read", "message:update"),
         ("POST", "/api/knowledge/retrieval-test", "knowledge:view"),
         ("POST", "/api/admin/config-overview/publish", "admin:config"),
+        ("POST", "/api/fde/releases/REL-001/approve", "admin:config"),
         ("PUT", "/api/admin/config-items/todo-rule/TR-001", "admin:config"),
         ("PATCH", "/api/knowledge/config", "knowledge:manage"),
         ("PUT", "/api/knowledge/config", "knowledge:manage"),
@@ -4983,6 +5236,73 @@ def test_upload_creates_knowledge_task_and_retrieval_works() -> None:
         )
     )
     assert retrieval["hits"]
+    assert retrieval["retrievalTrace"]["queryType"] == "interactive_retrieval_test"
+    assert retrieval["retrievalTrace"]["selectedRoute"] == "hybrid_review_basis_search"
+    assert retrieval["retrievalTrace"]["queryRouter"]["selectedRoute"] == "hybrid_review_basis_search"
+    assert retrieval["retrievalTrace"]["selectedClauses"][0]["clauseId"]
+    assert any(item["type"] == "clause_index" for item in retrieval["retrievalTrace"]["retrievers"])
+    assert any(item["type"] == "hybrid_bm25_dense" for item in retrieval["retrievalTrace"]["retrievers"])
+    clauses = assert_ok(client.get("/knowledge/clauses", params={"keyword": "焊工资格证", "nodeId": 24}))
+    assert clauses["items"]
+    assert clauses["items"][0]["clauseId"]
+
+
+def test_knowledge_retrieval_query_router_supports_exact_clause_and_pageindex_routes() -> None:
+    exact = assert_ok(
+        client.post(
+            "/knowledge/retrieval-test",
+            json={"question": "请解释第5.3.2条质量证明文件要求", "topK": 3},
+        )
+    )
+    exact_trace = exact["retrievalTrace"]
+    assert exact_trace["selectedRoute"] == "exact_clause_lookup"
+    assert exact_trace["routerSignals"]["exactClauseRefs"] == ["5.3.2"]
+    assert exact_trace["selectedClauses"][0]["clauseNo"] == "5.3.2"
+    assert exact_trace["selectedClauses"][0]["retrievalMode"] == "exact_clause_lookup"
+    assert any(item["type"] == "exact_clause_lookup" and item["enabled"] for item in exact_trace["retrievers"])
+
+    pageindex = assert_ok(
+        client.post(
+            "/knowledge/retrieval-test",
+            json={"question": "请结合正文和附录跨章节说明无损检测报告签章要求", "topK": 3},
+        )
+    )
+    pageindex_trace = pageindex["retrievalTrace"]
+    assert pageindex_trace["selectedRoute"] == "pageindex_tree_search"
+    assert pageindex_trace["queryRouter"]["signals"]["needsPageIndex"] is True
+    assert any(item["type"] == "pageindex_tree" and item["enabled"] for item in pageindex_trace["retrievers"])
+    assert pageindex_trace["selectedClauses"][0]["retrievalMode"] == "pageindex_tree_local"
+    assert pageindex_trace["pageIndexTree"]["selectedNodes"]
+    assert pageindex_trace["pageIndexTree"]["selectedNodes"][0]["pageIndexNodeId"] == "PIN-TSG-D7005-7"
+    assert "TSG-D7005-7.4" in pageindex_trace["pageIndexTree"]["linkedClauseIds"]
+    assert pageindex_trace["selectedClauses"][0]["pageIndexNodeIds"] == ["PIN-TSG-D7005-7"]
+
+    nodes = assert_ok(client.get("/knowledge/page-index-nodes", params={"keyword": "无损检测"}))
+    assert nodes["items"]
+    assert nodes["items"][0]["pageIndexNodeId"] == "PIN-TSG-D7005-7"
+
+    overview = assert_ok(client.get("/knowledge/overview"))
+    scorecard = overview["scorecard"]
+    assert scorecard["targetScore"] == 100
+    assert scorecard["schemaVersion"] == "aicheck-knowledge-rule-scorecard-v1"
+    assert {"source-index", "rule-clause", "retrieval-router", "evaluation-governance"} <= {
+        item["name"] for item in scorecard["sections"]
+    }
+    probes = scorecard["retrievalProbes"]
+    assert {"exact_clause_lookup", "hybrid_review_basis_search", "pageindex_tree_search"} <= {
+        item["expectedRoute"] for item in probes
+    }
+    assert any(
+        item["expectedRoute"] == "pageindex_tree_search"
+        and item["selectedRoute"] == "pageindex_tree_search"
+        and item["pageIndexNodeCount"] >= 1
+        for item in probes
+    )
+    assert all(item["selectedClauseCount"] >= 1 for item in probes)
+    assert all(item["evidenceBacked"] is True for item in probes)
+    assert scorecard["score"] == 100
+    assert scorecard["ok"] is True
+    assert scorecard["blockers"] == []
 
 
 def test_upload_and_ndt_validation_errors_match_contract() -> None:

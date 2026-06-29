@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -9,7 +10,12 @@ from typing import Any
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from apps.ocr_service.evaluation import compact_evaluation_report, evaluate_cases
+from apps.ocr_service.evaluation import (
+    compact_evaluation_report,
+    evaluate_cases,
+    merge_thresholds,
+    ocr_100_thresholds,
+)
 from apps.ocr_service.service import ocr_service
 
 
@@ -24,19 +30,33 @@ def main() -> int:
         action="store_true",
         help="Run local OCR for cases with source paths. Without this flag, cases must embed result or resultPath.",
     )
+    parser.add_argument("--auto-discover-runtime", action="store_true", help="Apply runtime-doctor recommended OCR subprocess/model paths before --run-ocr.")
+    parser.add_argument("--disable-result-cache", action="store_true", help="Bypass OCR result cache for --run-ocr evaluation runs.")
     parser.add_argument("--min-average-score", type=float, default=0.9)
+    parser.add_argument(
+        "--strict-100",
+        action="store_true",
+        help="Apply AIcheck OCR 100 readiness gates: 100 cases, required scenarios, and 95%%+ core metrics.",
+    )
     args = parser.parse_args()
 
     eval_set_path = Path(args.eval_set).resolve()
     payload = json.loads(eval_set_path.read_text(encoding="utf-8"))
     cases = payload.get("cases") if isinstance(payload, dict) else payload
     thresholds = payload.get("thresholds") if isinstance(payload, dict) and isinstance(payload.get("thresholds"), dict) else None
+    if args.strict_100:
+        thresholds = merge_thresholds(thresholds or {}, ocr_100_thresholds())
     if not isinstance(cases, list):
         print("OCR eval set must be a JSON array or an object with cases[].", file=sys.stderr)
         return 2
+    applied_runtime = apply_auto_discovered_runtime() if args.auto_discover_runtime else {}
     cases = normalize_case_paths(cases, base_dir=eval_set_path.parent, resolve_sources=args.run_ocr)
+    if args.run_ocr and args.disable_result_cache:
+        cases = with_ocr_option(cases, "disableResultCache", True)
 
     report = evaluate_cases(cases, parse_runner=parse_case_with_ocr if args.run_ocr else None, thresholds=thresholds)
+    if applied_runtime:
+        report["appliedAutoDiscoveredRuntime"] = applied_runtime
     if args.output:
         write_text_file(Path(args.output), json.dumps(report, ensure_ascii=False, indent=2))
     if args.summary_output:
@@ -66,6 +86,31 @@ def eval_set_name(payload: Any, fallback: str) -> str:
     if isinstance(payload, dict) and payload.get("name"):
         return str(payload["name"])
     return Path(fallback).stem
+
+
+def apply_auto_discovered_runtime() -> dict[str, str]:
+    from apps.ocr_service.runtime_doctor import discover_runtime_candidates, recommended_env
+
+    applied: dict[str, str] = {}
+    for key, value in recommended_env(discover_runtime_candidates()).items():
+        if value and not os.getenv(key):
+            os.environ[key] = str(value)
+            applied[key] = str(value)
+    return applied
+
+
+def with_ocr_option(cases: list[Any], key: str, value: Any) -> list[Any]:
+    updated: list[Any] = []
+    for case in cases:
+        if not isinstance(case, dict):
+            updated.append(case)
+            continue
+        normalized = dict(case)
+        options = dict(normalized.get("options") if isinstance(normalized.get("options"), dict) else {})
+        options[key] = value
+        normalized["options"] = options
+        updated.append(normalized)
+    return updated
 
 
 def normalize_case_paths(

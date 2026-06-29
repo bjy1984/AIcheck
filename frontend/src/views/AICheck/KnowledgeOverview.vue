@@ -47,6 +47,7 @@ import {
   listKnowledgeAuditLogsApi,
   listKnowledgeFileChunksApi,
   listKnowledgeFileReasoningReferencesApi,
+  listKnowledgePageIndexNodesApi,
   listKnowledgeProjectFilesApi,
   listKnowledgeRuleVersionsApi,
   listKnowledgeSourcesApi,
@@ -69,6 +70,7 @@ import type {
   KnowledgeFile,
   KnowledgeFileDetailPayload,
   KnowledgeOverviewPayload,
+  KnowledgePageIndexNode,
   KnowledgeReasoningReference,
   KnowledgeRetrievalTestPayload,
   KnowledgeRuleVersion,
@@ -275,6 +277,7 @@ type OperationIssueKey =
   | 'reindex'
   | 'file'
   | 'task'
+  | 'pageIndex'
   | 'retrieval'
   | 'compare'
   | 'fileDetail'
@@ -351,6 +354,7 @@ const operationIssues = reactive<Record<OperationIssueKey, SectionIssue | undefi
   reindex: undefined,
   file: undefined,
   task: undefined,
+  pageIndex: undefined,
   retrieval: undefined,
   compare: undefined,
   fileDetail: undefined,
@@ -400,6 +404,12 @@ const reasoningDetail = ref<ReasoningLogDetailPayload | null>(null)
 
 const retrievalLoading = ref(false)
 const retrievalResult = ref<KnowledgeRetrievalTestPayload | null>(null)
+const pageIndexLoading = ref(false)
+const pageIndexNodes = ref<KnowledgePageIndexNode[]>([])
+const retrievalTrace = computed(() => retrievalResult.value?.retrievalTrace || null)
+const retrievalPageIndexTree = computed(() => retrievalTrace.value?.pageIndexTree || null)
+const retrievalPageIndexNodes = computed(() => retrievalPageIndexTree.value?.selectedNodes || [])
+const retrievalTreePathRows = computed(() => retrievalPageIndexTree.value?.treeSearchPath || [])
 const compareLoading = ref(false)
 const compareResult = ref<LlmComparePayload | null>(null)
 const compareDisplayResults = computed(() => {
@@ -485,6 +495,15 @@ const compareForm = reactive({
 
 const libraries = computed(() => overview.value.libraries)
 const metrics = computed(() => overview.value.metrics)
+const knowledgeScorecard = computed(() => overview.value.scorecard || null)
+const knowledgeScorecardSections = computed(() => knowledgeScorecard.value?.sections || [])
+const knowledgeScorecardBlockerRows = computed(() =>
+  (knowledgeScorecard.value?.blockers || []).slice(0, 8).map((blocker, index) => ({
+    id: index + 1,
+    blocker
+  }))
+)
+const knowledgeRetrievalProbeRows = computed(() => knowledgeScorecard.value?.retrievalProbes || [])
 const canShowKnowledgeContent = computed(() => !pageIssue.value)
 const hasSectionIssue = computed(() => Object.values(sectionIssues).some(Boolean))
 const ruleDiffSummaryItems = computed<
@@ -568,6 +587,27 @@ const vectorPercent = (row: KnowledgeOverviewPayload['libraries'][number]) => {
 const confidencePercent = (value?: number) => {
   if (typeof value !== 'number') return '--'
   return `${Math.round(value * 100)}%`
+}
+
+const formatPageRange = (row: { startPage?: number; endPage?: number }) => {
+  if (!row.startPage && !row.endPage) return '--'
+  if (row.startPage && row.endPage) return `${row.startPage}-${row.endPage}`
+  return String(row.startPage || row.endPage)
+}
+
+const formatTextList = (items?: string[]) => {
+  if (!items?.length) return '--'
+  return items.join(' / ')
+}
+
+const routeLabel = (route?: string) => {
+  const map: Record<string, string> = {
+    exact_clause_lookup: '精确条款',
+    hybrid_rag: 'Hybrid RAG',
+    pageindex_tree_search: 'PageIndex 树检索',
+    project_requirement_lookup: '项目特殊要求'
+  }
+  return route ? map[route] || route : '--'
 }
 
 const getErrorMessage = (error: unknown) => {
@@ -794,6 +834,25 @@ const loadCompareRuns = async () => {
   })
 }
 
+const loadPageIndexNodes = async (keyword = '') => {
+  pageIndexLoading.value = true
+  clearOperationIssue('pageIndex')
+  try {
+    const res = assertApiResponse(
+      await listKnowledgePageIndexNodesApi({
+        keyword: keyword || undefined,
+        pageSize: 20
+      }),
+      'PageIndex 节点接口未返回有效数据。'
+    )
+    pageIndexNodes.value = res.data?.items || []
+  } catch (error) {
+    setOperationIssue('pageIndex', buildOperationFailureMessage('PageIndex 节点加载'), error)
+  } finally {
+    pageIndexLoading.value = false
+  }
+}
+
 const loadData = async () => {
   loading.value = true
   pageIssue.value = undefined
@@ -807,7 +866,8 @@ const loadData = async () => {
       loadKnowledgeConfig(),
       loadKnowledgeAuditLogs(),
       loadReasoningLogs(),
-      loadCompareRuns()
+      loadCompareRuns(),
+      loadPageIndexNodes()
     ])
     if (
       !overview.value.metrics.length &&
@@ -1217,6 +1277,9 @@ const handleRunRetrieval = async () => {
       return
     }
     retrievalResult.value = res.data
+    if (res.data.retrievalTrace?.selectedRoute === 'pageindex_tree_search') {
+      await loadPageIndexNodes(retrievalForm.question)
+    }
   } catch (error) {
     setOperationIssue('retrieval', buildOperationFailureMessage('知识检索测试'), error)
   } finally {
@@ -1370,6 +1433,94 @@ onMounted(() => {
           <strong>{{ metric.value }}</strong>
         </div>
       </div>
+
+      <ElCard v-if="canShowKnowledgeContent && knowledgeScorecard" shadow="never" class="panel">
+        <template #header>
+          <div class="panel-header">
+            <span>知识依据链 100</span>
+            <ElTag :type="knowledgeScorecard.ok ? 'success' : 'danger'" effect="plain">
+              {{ knowledgeScorecard.ok ? '生产就绪' : '存在阻断' }}
+            </ElTag>
+          </div>
+        </template>
+        <div class="scorecard-grid">
+          <div class="scorecard-item">
+            <span>总分</span>
+            <strong>{{ knowledgeScorecard.score }}/{{ knowledgeScorecard.targetScore }}</strong>
+          </div>
+          <div class="scorecard-item">
+            <span>评分域</span>
+            <strong>{{ knowledgeScorecardSections.length }}</strong>
+          </div>
+          <div class="scorecard-item">
+            <span>阻断项</span>
+            <strong>{{ knowledgeScorecard.blockers.length }}</strong>
+          </div>
+          <div class="scorecard-item">
+            <span>检索探针</span>
+            <strong>{{ knowledgeRetrievalProbeRows.length }}</strong>
+          </div>
+        </div>
+        <ElRow :gutter="12" class="mt-12">
+          <ElCol :xl="8" :lg="8" :md="24" :sm="24" :xs="24">
+            <ElTable :data="knowledgeScorecardSections" border height="190">
+              <ElTableColumn prop="name" label="评分域" min-width="140" show-overflow-tooltip />
+              <ElTableColumn label="分数" width="105">
+                <template #default="{ row }">{{ row.score }}/{{ row.maxScore }}</template>
+              </ElTableColumn>
+              <ElTableColumn prop="status" label="状态" width="95">
+                <template #default="{ row }">
+                  <ElTag :type="row.status === 'pass' ? 'success' : 'danger'" effect="plain">
+                    {{ row.status }}
+                  </ElTag>
+                </template>
+              </ElTableColumn>
+            </ElTable>
+          </ElCol>
+          <ElCol :xl="8" :lg="8" :md="24" :sm="24" :xs="24">
+            <ElTable :data="knowledgeRetrievalProbeRows" border height="190">
+              <ElTableColumn
+                prop="expectedRoute"
+                label="期望路由"
+                min-width="155"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
+                prop="selectedRoute"
+                label="实际路由"
+                min-width="155"
+                show-overflow-tooltip
+              />
+              <ElTableColumn prop="selectedClauseCount" label="条款" width="80" />
+              <ElTableColumn prop="passed" label="结果" width="90">
+                <template #default="{ row }">
+                  <ElTag :type="row.passed ? 'success' : 'danger'" effect="plain">
+                    {{ row.passed ? '通过' : '失败' }}
+                  </ElTag>
+                </template>
+              </ElTableColumn>
+            </ElTable>
+          </ElCol>
+          <ElCol :xl="8" :lg="8" :md="24" :sm="24" :xs="24">
+            <ElTable
+              v-if="knowledgeScorecardBlockerRows.length"
+              :data="knowledgeScorecardBlockerRows"
+              border
+              height="190"
+            >
+              <ElTableColumn prop="id" label="#" width="64" />
+              <ElTableColumn prop="blocker" label="阻断项" min-width="250" show-overflow-tooltip />
+            </ElTable>
+            <ElAlert
+              v-else
+              type="success"
+              show-icon
+              :closable="false"
+              title="知识依据链未发现生产阻断项。"
+            />
+          </ElCol>
+        </ElRow>
+      </ElCard>
 
       <AdminKnowledgeStaticDeepSections
         v-if="canShowKnowledgeContent"
@@ -2226,6 +2377,44 @@ onMounted(() => {
                     重试检索
                   </ElButton>
                 </div>
+                <ElDivider />
+                <div class="panel-header compact">
+                  <span>PageIndex 树节点</span>
+                  <ElTag effect="plain">{{ pageIndexNodes.length }} 个</ElTag>
+                </div>
+                <div v-if="operationIssues.pageIndex" class="section-error local-operation-error">
+                  <div>
+                    <strong>{{ operationIssues.pageIndex.title }}</strong>
+                    <span>{{ operationIssues.pageIndex.message }}</span>
+                  </div>
+                  <ElButton
+                    size="small"
+                    type="primary"
+                    plain
+                    :loading="pageIndexLoading"
+                    @click="loadPageIndexNodes()"
+                  >
+                    重试
+                  </ElButton>
+                </div>
+                <ElTable
+                  v-else
+                  v-loading="pageIndexLoading"
+                  :data="pageIndexNodes"
+                  border
+                  height="220"
+                  class="page-index-table"
+                >
+                  <ElTableColumn prop="title" label="节点" min-width="180" show-overflow-tooltip />
+                  <ElTableColumn label="页码" width="86">
+                    <template #default="{ row }">{{ formatPageRange(row) }}</template>
+                  </ElTableColumn>
+                  <ElTableColumn label="条款" min-width="150" show-overflow-tooltip>
+                    <template #default="{ row }">{{
+                      formatTextList(row.linkedClauseIds)
+                    }}</template>
+                  </ElTableColumn>
+                </ElTable>
               </ElCard>
             </ElCol>
             <ElCol :xl="14" :lg="14" :md="24" :sm="24" :xs="24">
@@ -2247,6 +2436,64 @@ onMounted(() => {
                     :closable="false"
                     show-icon
                   />
+                  <ElDivider />
+                  <ElDescriptions v-if="retrievalTrace" :column="3" border size="small">
+                    <ElDescriptionsItem label="路由">
+                      {{ routeLabel(retrievalTrace.selectedRoute) }}
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="Router">
+                      {{ retrievalTrace.routerVersion || '--' }}
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="PageIndex 候选">
+                      {{ retrievalPageIndexTree?.candidateNodeCount || 0 }}
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="关联条款" :span="3">
+                      {{ formatTextList(retrievalPageIndexTree?.linkedClauseIds) }}
+                    </ElDescriptionsItem>
+                  </ElDescriptions>
+                  <template v-if="retrievalPageIndexNodes.length">
+                    <ElDivider />
+                    <div class="subsection-title">PageIndex 命中节点</div>
+                    <ElTable :data="retrievalPageIndexNodes" border height="180">
+                      <ElTableColumn
+                        prop="title"
+                        label="节点"
+                        min-width="180"
+                        show-overflow-tooltip
+                      />
+                      <ElTableColumn label="页码" width="86">
+                        <template #default="{ row }">{{ formatPageRange(row) }}</template>
+                      </ElTableColumn>
+                      <ElTableColumn label="分数" width="90">
+                        <template #default="{ row }">
+                          {{ typeof row.score === 'number' ? row.score.toFixed(2) : '--' }}
+                        </template>
+                      </ElTableColumn>
+                      <ElTableColumn label="条款" min-width="180" show-overflow-tooltip>
+                        <template #default="{ row }">{{
+                          formatTextList(row.linkedClauseIds)
+                        }}</template>
+                      </ElTableColumn>
+                    </ElTable>
+                  </template>
+                  <template v-if="retrievalTreePathRows.length">
+                    <ElDivider />
+                    <div class="subsection-title">树检索路径</div>
+                    <ElTable :data="retrievalTreePathRows" border height="160">
+                      <ElTableColumn
+                        prop="pageIndexNodeId"
+                        label="节点ID"
+                        width="180"
+                        show-overflow-tooltip
+                      />
+                      <ElTableColumn
+                        prop="title"
+                        label="路径节点"
+                        min-width="220"
+                        show-overflow-tooltip
+                      />
+                    </ElTable>
+                  </template>
                   <ElDivider />
                   <ElTable :data="retrievalResult.hits" border height="250">
                     <ElTableColumn prop="objectType" label="对象" width="140" />
@@ -2810,10 +3057,10 @@ onMounted(() => {
 }
 
 .page-title {
-  color: #172033;
   font-size: 27px;
   font-weight: 900;
   line-height: 1.2;
+  color: #172033;
 }
 
 .page-subtitle {
@@ -2832,10 +3079,10 @@ onMounted(() => {
 .metric-card {
   min-height: 78px;
   padding: 14px 16px;
+  background: #fff;
   border: 1px solid #e5e7eb;
   border-left: 4px solid #64748b;
   border-radius: 8px;
-  background: #ffffff;
 }
 
 .metric-card span {
@@ -2870,6 +3117,36 @@ onMounted(() => {
   border-left-color: #64748b;
 }
 
+.scorecard-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.scorecard-item {
+  min-height: 72px;
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.scorecard-item span {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #667085;
+}
+
+.scorecard-item strong {
+  font-size: 20px;
+  line-height: 28px;
+}
+
+.mt-12 {
+  margin-top: 12px;
+}
+
 .knowledge-tabs {
   padding: 0 2px;
 }
@@ -2885,6 +3162,22 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   font-weight: 700;
+}
+
+.panel-header.compact {
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.subsection-title {
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #344054;
+}
+
+.page-index-table {
+  margin-top: 8px;
 }
 
 .filter-bar {
@@ -2917,15 +3210,15 @@ onMounted(() => {
 
 .section-error {
   display: flex;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  color: #991b1b;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
   gap: 12px;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 12px;
-  padding: 10px 12px;
-  border: 1px solid #fecaca;
-  border-radius: 8px;
-  background: #fef2f2;
-  color: #991b1b;
 }
 
 .section-error strong,
@@ -2964,9 +3257,9 @@ onMounted(() => {
 .compare-history-item,
 .model-result-item {
   padding: 12px;
+  background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  background: #ffffff;
 }
 
 .source-item {
@@ -3007,8 +3300,8 @@ onMounted(() => {
 }
 
 .compare-history-item:hover {
-  border-color: #409eff;
   background: #f8fbff;
+  border-color: #409eff;
 }
 
 .retrieval-result,
@@ -3053,13 +3346,13 @@ onMounted(() => {
 .config-switch-list > div {
   display: flex;
   min-height: 44px;
-  align-items: center;
-  justify-content: space-between;
   padding: 8px 10px;
+  color: #344054;
+  background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  background: #ffffff;
-  color: #344054;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .drawer-content {
@@ -3080,9 +3373,9 @@ onMounted(() => {
 .rule-diff-metric {
   min-height: 76px;
   padding: 10px 12px;
+  background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  background: #ffffff;
 }
 
 .rule-diff-metric span {
@@ -3117,9 +3410,9 @@ onMounted(() => {
 
 .reasoning-suggestion {
   padding: 12px;
+  background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  background: #ffffff;
 }
 
 .reasoning-suggestion p {
@@ -3128,7 +3421,7 @@ onMounted(() => {
   color: #344054;
 }
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .knowledge-page {
     padding: 0;
   }
@@ -3152,9 +3445,9 @@ onMounted(() => {
   }
 
   .table-pagination {
-    justify-content: flex-start;
-    overflow-x: auto;
     padding-bottom: 4px;
+    overflow-x: auto;
+    justify-content: flex-start;
   }
 
   .section-error {
@@ -3178,9 +3471,13 @@ onMounted(() => {
   .rule-diff-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .scorecard-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
-@media (max-width: 480px) {
+@media (width <= 480px) {
   .metric-grid {
     grid-template-columns: 1fr;
   }
@@ -3190,6 +3487,10 @@ onMounted(() => {
   }
 
   .rule-diff-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .scorecard-grid {
     grid-template-columns: 1fr;
   }
 }

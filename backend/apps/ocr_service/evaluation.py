@@ -23,6 +23,91 @@ DEFAULT_WEIGHTS = {
     "qualityEvidenceCompletenessMatch": 0.06,
 }
 
+OCR_100_REQUIRED_SCENARIOS = [
+    "piping_table_profile",
+    "quality_certificate_profile",
+    "ndt_rt_profile",
+    "ndt_ut_profile",
+    "construction_record_profile",
+    "welding_record_profile",
+    "qualification_certificate_profile",
+    "seal_text_profile",
+    "fragment_seal_profile",
+    "evidence_profile",
+    "quality_gate_profile",
+]
+
+
+def ocr_100_thresholds() -> dict[str, Any]:
+    return {
+        "minCases": 100,
+        "requiredScenarios": OCR_100_REQUIRED_SCENARIOS,
+        "averageScore": 0.96,
+        "metrics": {
+            "fieldRecall": 0.95,
+            "fieldValueAccuracy": 0.95,
+            "fieldEvidenceRecall": 0.95,
+            "fieldBboxHitRate": 0.90,
+            "tableRecall": 0.95,
+            "tableEvidenceRecall": 0.95,
+            "tableBboxHitRate": 0.90,
+            "sealRecall": 0.95,
+            "sealEvidenceRecall": 0.95,
+            "sealBboxHitRate": 0.90,
+            "qualityStatusMatch": 0.95,
+            "qualityReasonRecall": 0.95,
+            "qualityEvidenceCompletenessMatch": 0.95,
+        },
+        "scenarios": {
+            scenario: {"averageScore": 0.94, "minCases": 1}
+            for scenario in OCR_100_REQUIRED_SCENARIOS
+        },
+    }
+
+
+def merge_thresholds(base: dict[str, Any] | None, overlay: dict[str, Any] | None) -> dict[str, Any]:
+    merged = {**(base or {})}
+    overlay = overlay or {}
+    for key, value in overlay.items():
+        if key == "metrics" and isinstance(value, dict):
+            merged[key] = merge_numeric_threshold_maps(merged.get(key), value)
+        elif key == "scenarios" and isinstance(value, dict):
+            merged[key] = merge_scenario_thresholds(merged.get(key), value)
+        elif key == "requiredScenarios":
+            existing = [str(item) for item in merged.get(key) or []]
+            for item in value or []:
+                if str(item) not in existing:
+                    existing.append(str(item))
+            merged[key] = existing
+        elif isinstance(value, (int, float)) and isinstance(merged.get(key), (int, float)):
+            merged[key] = max(float(merged[key]), float(value))
+        else:
+            merged[key] = value
+    return merged
+
+
+def merge_numeric_threshold_maps(base: Any, overlay: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base) if isinstance(base, dict) else {}
+    for key, value in overlay.items():
+        if isinstance(value, (int, float)) and isinstance(merged.get(key), (int, float)):
+            merged[key] = max(float(merged[key]), float(value))
+        else:
+            merged[key] = value
+    return merged
+
+
+def merge_scenario_thresholds(base: Any, overlay: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base) if isinstance(base, dict) else {}
+    for scenario, thresholds in overlay.items():
+        if isinstance(thresholds, dict):
+            merged[str(scenario)] = merge_thresholds(
+                merged.get(str(scenario)) if isinstance(merged.get(str(scenario)), dict) else {},
+                thresholds,
+            )
+        else:
+            merged[str(scenario)] = thresholds
+    return merged
+
 
 def evaluate_cases(
     cases: list[dict[str, Any]],
@@ -36,10 +121,14 @@ def evaluate_cases(
     finding_counts = aggregate_finding_counts(case_reports)
     threshold_failures = threshold_failures_for_scope(
         "overall",
-        {"averageScore": round(average([item["score"] for item in case_reports]), 4)},
+        {
+            "averageScore": round(average([item["score"] for item in case_reports]), 4),
+            "cases": len(case_reports),
+        },
         aggregate_metrics,
         thresholds or {},
     )
+    threshold_failures.extend(required_scenario_failures(thresholds or {}, scenario_reports))
     return {
         "ok": all(item["passed"] for item in case_reports)
         and not threshold_failures
@@ -103,6 +192,10 @@ def evaluate_case(case: dict[str, Any], *, parse_runner: ParseRunner | None = No
         "findings": findings,
         "parseResultId": result.get("parseResultId"),
         "qualityStatus": (result.get("quality") or {}).get("status") if isinstance(result.get("quality"), dict) else None,
+        "bootstrapGenerated": bool(case.get("bootstrapGenerated")),
+        "fixtureDerived": bool(case.get("fixtureDerived")),
+        "collectionStatus": case.get("collectionStatus"),
+        "sourceCaseId": case.get("sourceCaseId"),
     }
 
 
@@ -436,6 +529,16 @@ def threshold_failures_for_scope(
                 "minimum": float(min_average),
             }
         )
+    min_cases = thresholds.get("minCases")
+    if min_cases is not None and int(summary.get("cases") or 0) < int(min_cases):
+        failures.append(
+            {
+                "scope": scope,
+                "metric": "cases",
+                "actual": int(summary.get("cases") or 0),
+                "minimum": int(min_cases),
+            }
+        )
     metric_thresholds = thresholds.get("metrics") if isinstance(thresholds.get("metrics"), dict) else {}
     for metric, minimum in metric_thresholds.items():
         actual = metrics.get(str(metric))
@@ -444,6 +547,23 @@ def threshold_failures_for_scope(
         elif float(actual) < float(minimum):
             failures.append({"scope": scope, "metric": str(metric), "actual": float(actual), "minimum": float(minimum)})
     return failures
+
+
+def required_scenario_failures(
+    thresholds: dict[str, Any],
+    scenario_reports: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    required = [str(item) for item in thresholds.get("requiredScenarios") or []]
+    missing = [scenario for scenario in required if scenario not in scenario_reports]
+    return [
+        {
+            "scope": "overall",
+            "metric": f"scenario.{scenario}",
+            "actual": 0,
+            "minimum": 1,
+        }
+        for scenario in missing
+    ]
 
 
 def build_findings(

@@ -114,9 +114,9 @@ const locationTitle = computed(() => {
 .detail-box {
   min-height: 260px;
   padding: 12px;
+  background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  background: #ffffff;
 }
 
 .preview-title {
@@ -143,7 +143,7 @@ const locationTitle = computed(() => {
   min-height: 160px;
   padding: 18px;
   color: #344054;
-  background: #ffffff;
+  background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 6px;
 }
@@ -176,7 +176,7 @@ const locationTitle = computed(() => {
   color: #1f2937;
 }
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .locator-grid {
     grid-template-columns: 1fr;
   }

@@ -16,8 +16,10 @@ PACKAGE_CHECKS = {
     "paddleocr": "paddleocr",
     "paddlex": "paddlex[ocr]",
     "docling": "docling",
+    "transformers": "transformers",
 }
 SUBPROCESS_REQUIRED_PACKAGES = ("cv2", "numpy", "paddleocr")
+SUBPROCESS_PROBED_PACKAGES = tuple(PACKAGE_CHECKS)
 
 
 def build_runtime_doctor(
@@ -72,7 +74,7 @@ def package_check(
     available = importlib.util.find_spec(module_name) is not None
     subprocess_packages = subprocess_packages or {}
     subprocess_covers_core = module_name in SUBPROCESS_REQUIRED_PACKAGES and bool(subprocess_packages.get(module_name))
-    optional_runtime_package = module_name in {"fitz", "paddlex", "docling"}
+    optional_runtime_package = module_name in {"fitz", "paddlex", "docling", "transformers"}
     status = "pass" if available else "warn" if subprocess_covers_core or optional_runtime_package else "fail"
     if available:
         message = f"{package_name} is importable."
@@ -125,8 +127,8 @@ def subprocess_python_check(candidates: list[dict[str, Any]] | None = None) -> d
             "fix": "Fix AICHECK_OCR_SUBPROCESS_PYTHON or install the OCR venv.",
             "data": {"python": str(path), "packages": {}},
         }
-    package_status = check_subprocess_packages(path, SUBPROCESS_REQUIRED_PACKAGES)
-    missing = sorted(name for name, available in package_status.items() if not available)
+    package_status = check_subprocess_packages(path, SUBPROCESS_PROBED_PACKAGES)
+    missing = sorted(name for name in SUBPROCESS_REQUIRED_PACKAGES if not package_status.get(name))
     return {
         "name": "subprocess.python",
         "status": "pass" if not missing else "fail",
@@ -290,10 +292,12 @@ def discover_runtime_candidates() -> dict[str, Any]:
     roots = candidate_agentdesign_roots()
     python_candidates = discover_subprocess_python_candidates(roots)
     model_caches = discover_model_caches(roots)
+    docling_artifacts = discover_docling_artifacts(roots)
     return {
         "agentdesignRoots": [str(root) for root in roots],
         "subprocessPythonCandidates": python_candidates,
         "modelCaches": model_caches,
+        "doclingArtifacts": docling_artifacts,
     }
 
 
@@ -335,8 +339,8 @@ def discover_subprocess_python_candidates(roots: list[Path]) -> list[dict[str, A
             deduped.append(path)
     candidates = []
     for path in deduped[:8]:
-        packages = check_subprocess_packages(path, SUBPROCESS_REQUIRED_PACKAGES)
-        missing = sorted(name for name, available in packages.items() if not available)
+        packages = check_subprocess_packages(path, SUBPROCESS_PROBED_PACKAGES)
+        missing = sorted(name for name in SUBPROCESS_REQUIRED_PACKAGES if not packages.get(name))
         candidates.append(
             {
                 "path": str(path),
@@ -353,6 +357,8 @@ def discover_model_caches(roots: list[Path]) -> list[dict[str, Any]]:
     for value in [os.getenv("AICHECK_PADDLEX_MODEL_CACHE"), os.getenv("PADDLE_PDX_MODEL_SOURCE")]:
         if value:
             paths.append(Path(value).expanduser())
+    if os.getenv("PADDLEOCR_VL_MODEL_DIR"):
+        paths.append(Path(os.environ["PADDLEOCR_VL_MODEL_DIR"]).expanduser())
     for root in roots:
         paths.append(root / ".paddlex-cache" / "official_models")
     deduped: list[Path] = []
@@ -366,6 +372,26 @@ def discover_model_caches(roots: list[Path]) -> list[dict[str, Any]]:
     return caches
 
 
+def discover_docling_artifacts(roots: list[Path]) -> list[dict[str, Any]]:
+    paths: list[Path] = []
+    if os.getenv("DOCLING_ARTIFACTS_PATH"):
+        paths.append(Path(os.environ["DOCLING_ARTIFACTS_PATH"]).expanduser())
+    for root in roots:
+        paths.extend([root / "docling", root / ".cache" / "docling" / "models"])
+    artifacts = []
+    seen: set[Path] = set()
+    for path in paths:
+        if path in seen:
+            continue
+        seen.add(path)
+        if not path.exists() or not path.is_dir():
+            continue
+        file_count = sum(1 for item in path.rglob("*") if item.is_file())
+        if file_count:
+            artifacts.append({"path": str(path), "fileCount": file_count})
+    return artifacts[:6]
+
+
 def recommended_env(discovered: dict[str, Any]) -> dict[str, str]:
     env: dict[str, str] = {}
     usable_python = next(
@@ -377,17 +403,33 @@ def recommended_env(discovered: dict[str, Any]) -> dict[str, str]:
     cache = next((item for item in discovered.get("modelCaches") or [] if item.get("models")), None)
     if cache:
         base = Path(str(cache["path"]))
-        mappings = {
+        env["AICHECK_PADDLEX_MODEL_CACHE"] = str(base)
+        mappings: dict[str, str | tuple[str, ...]] = {
             "AICHECK_PADDLEOCR_DET_MODEL_DIR": "PP-OCRv6_medium_det",
             "AICHECK_PADDLEOCR_REC_MODEL_DIR": "PP-OCRv6_medium_rec",
             "AICHECK_SEAL_DET_MODEL_DIR": "PP-OCRv4_server_seal_det",
             "AICHECK_SEAL_REC_MODEL_DIR": "PP-OCRv4_server_rec",
             "AICHECK_PPSTRUCTURE_LAYOUT_MODEL_DIR": "PP-DocLayout-L",
+            "AICHECK_PPSTRUCTURE_WIRED_TABLE_STRUCTURE_MODEL_DIR": "SLANeXt_wired",
+            "AICHECK_PPSTRUCTURE_WIRED_TABLE_CELLS_MODEL_DIR": "RT-DETR-L_wired_table_cell_det",
+            "AICHECK_PPSTRUCTURE_WIRELESS_TABLE_STRUCTURE_MODEL_DIR": "SLANeXt_wireless",
+            "AICHECK_PPSTRUCTURE_WIRELESS_TABLE_CELLS_MODEL_DIR": "RT-DETR-L_wireless_table_cell_det",
+            "AICHECK_PADDLEOCR_VL_LAYOUT_MODEL_DIR": "PP-DocLayoutV3",
+            "AICHECK_PADDLEOCR_VL_REC_MODEL_DIR": ("PaddleOCR-VL-1.6-0.9B", "PaddleOCR-VL-1.6"),
+            "AICHECK_PADDLEOCR_VL_DOC_ORI_MODEL_DIR": "PP-LCNet_x1_0_doc_ori",
+            "AICHECK_PADDLEOCR_VL_DOC_UNWARP_MODEL_DIR": "UVDoc",
         }
-        for key, model_name in mappings.items():
-            path = base / model_name
-            if path.exists():
-                env[key] = str(path)
+        for key, model_names in mappings.items():
+            for model_name in (model_names if isinstance(model_names, tuple) else (model_names,)):
+                path = base / model_name
+                if path.exists():
+                    env[key] = str(path)
+                    break
+        if (base / "PP-OCRv4_server_seal_det").exists() and (base / "PP-OCRv4_server_rec").exists():
+            env["AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE"] = "true"
+    docling_artifact = next((item for item in discovered.get("doclingArtifacts") or [] if item.get("path")), None)
+    if docling_artifact:
+        env["DOCLING_ARTIFACTS_PATH"] = str(docling_artifact["path"])
     return env
 
 

@@ -977,17 +977,17 @@ h4 {
 
 p {
   margin: 0;
-  color: #344054;
   font-size: 14px;
   font-weight: 700;
   line-height: 1.7;
+  color: #344054;
 }
 
 .sub {
   margin-top: 6px;
-  color: var(--muted);
   font-size: 14px;
   font-weight: 700;
+  color: var(--muted);
 }
 
 .split {
@@ -1015,17 +1015,17 @@ p {
 }
 
 .metric-label {
-  color: var(--muted);
   font-size: 13px;
   font-weight: 800;
+  color: var(--muted);
 }
 
 .metric-value {
   margin-top: 8px;
-  color: var(--blue);
   font-size: 24px;
   font-weight: 900;
   line-height: 1;
+  color: var(--blue);
 }
 
 .metric-value.green {
@@ -1047,8 +1047,8 @@ p {
 .table {
   width: 100%;
   font-size: 14px;
-  table-layout: fixed;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .table th,
@@ -1063,8 +1063,8 @@ p {
 }
 
 .table th {
-  color: #485a73;
   font-weight: 900;
+  color: #485a73;
   background: var(--head);
 }
 
@@ -1086,18 +1086,18 @@ p {
 
 .pill {
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
   min-height: 24px;
   padding: 3px 8px;
-  color: var(--blue-2);
   font-size: 13px;
   font-weight: 800;
   line-height: 1;
+  color: var(--blue-2);
   white-space: nowrap;
   background: var(--blue-soft);
   border: 1px solid #bcd4ff;
   border-radius: 5px;
+  align-items: center;
+  justify-content: center;
 }
 
 .pill.blue {
@@ -1153,11 +1153,11 @@ p {
   display: grid;
   width: 28px;
   height: 28px;
-  place-items: center;
-  color: #fff;
   font-weight: 900;
+  color: #fff;
   background: var(--blue);
   border-radius: 50%;
+  place-items: center;
 }
 
 .step-title {
@@ -1166,9 +1166,9 @@ p {
 
 .step-desc {
   margin-top: 6px;
-  color: #344054;
   font-size: 14px;
   line-height: 1.6;
+  color: #344054;
 }
 
 .evidence-row {
@@ -1203,23 +1203,23 @@ p {
 .upload-box {
   display: grid;
   min-height: 128px;
-  place-items: center;
   padding: 22px;
-  color: #37506f;
   font-size: 18px;
   font-weight: 900;
+  color: #37506f;
   text-align: center;
   background: #f8fbff;
   border: 1px dashed #9db8df;
   border-radius: 6px;
+  place-items: center;
 }
 
 .textarea-like {
   min-height: 128px;
   padding: 11px 12px;
-  color: #26364e;
   font-weight: 800;
   line-height: 1.7;
+  color: #26364e;
   background: #fff;
   border: 1px solid #cbd8ea;
   border-radius: 5px;
@@ -1227,15 +1227,15 @@ p {
 
 .action-text {
   display: inline-flex;
-  align-items: center;
   min-height: 24px;
   padding: 0 6px;
-  color: var(--blue-2);
   font-weight: 900;
+  color: var(--blue-2);
   border-radius: 5px;
   transition:
     color 0.18s ease,
     background-color 0.18s ease;
+  align-items: center;
 }
 
 .action-text:hover {
@@ -1260,12 +1260,12 @@ p {
 
 .time-row {
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr);
-  gap: 10px;
-  color: #344054;
   font-size: 14px;
   font-weight: 700;
   line-height: 1.6;
+  color: #344054;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 10px;
 }
 
 .time-dot {

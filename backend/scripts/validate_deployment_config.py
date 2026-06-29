@@ -19,12 +19,16 @@ from scripts.verify_deployment import REQUIRED_LITELLM_ALIASES
 REQUIRED_SERVICES = {
     "api-service",
     "worker-service",
+    "review-worker-service",
     "ocr-service",
     "mongodb",
     "redis",
     "minio",
     "litellm-postgres",
     "litellm-service",
+    "workflow-postgres",
+    "temporal-service",
+    "temporal-ui",
 }
 REQUIRED_WORKER_QUEUES = {
     "ocr.parse_document",
@@ -35,16 +39,19 @@ REQUIRED_WORKER_QUEUES = {
     "llm.compare",
     "export.package",
 }
-REQUIRED_VOLUMES = {"mongo-data", "minio-data", "litellm-postgres-data"}
+REQUIRED_VOLUMES = {"mongo-data", "minio-data", "litellm-postgres-data", "workflow-postgres-data"}
 REQUIRED_HEALTHCHECKS = {
     "api-service": "8000/healthz",
     "worker-service": "celery",
+    "review-worker-service": "temporalio.client",
     "ocr-service": "8010/readyz",
     "mongodb": "rs.status",
     "redis": "redis-cli",
     "minio": "mc ready",
     "litellm-postgres": "pg_isready",
     "litellm-service": "4000/health",
+    "workflow-postgres": "pg_isready",
+    "temporal-service": "cluster health",
 }
 
 
@@ -210,6 +217,8 @@ class DeploymentConfigValidator:
             "paddleocr",
             "paddlex[ocr]",
             "opencv-python-headless",
+            "docling",
+            "transformers",
         }
         present = {
             line.split("==", 1)[0].split(">=", 1)[0].split("<", 1)[0].strip()
@@ -220,7 +229,7 @@ class DeploymentConfigValidator:
         self.add(
             "requirements.ocr-baseline",
             "fail" if missing else "pass",
-            f"Missing OCR packages: {', '.join(missing)}" if missing else "OCR dependency baseline includes PaddleOCR, PaddleX, PyMuPDF, and OpenCV.",
+            f"Missing OCR packages: {', '.join(missing)}" if missing else "OCR dependency baseline includes PaddleOCR, PaddleX, PyMuPDF, OpenCV, Docling, and Transformers.",
             {"packages": sorted(present)},
         )
 
@@ -258,10 +267,13 @@ class DeploymentConfigValidator:
 
     def check_service_dependencies(self) -> None:
         expected = {
-            "api-service": {"mongodb", "redis", "minio", "litellm-service"},
+            "api-service": {"mongodb", "redis", "minio", "litellm-service", "temporal-service"},
             "worker-service": {"mongodb", "redis", "api-service", "minio", "ocr-service", "litellm-service"},
+            "review-worker-service": {"mongodb", "temporal-service", "workflow-postgres", "litellm-service"},
             "ocr-service": {"minio"},
             "litellm-service": {"litellm-postgres"},
+            "temporal-service": {"workflow-postgres"},
+            "temporal-ui": {"temporal-service"},
         }
         failures = []
         for name, required in expected.items():
@@ -270,10 +282,13 @@ class DeploymentConfigValidator:
             if missing:
                 failures.append(f"{name}: missing {', '.join(missing)}")
         healthy_dependencies = {
-            "api-service": {"mongodb", "redis", "minio", "litellm-service"},
+            "api-service": {"mongodb", "redis", "minio", "litellm-service", "temporal-service"},
             "worker-service": {"mongodb", "redis", "api-service", "minio", "ocr-service", "litellm-service"},
+            "review-worker-service": {"mongodb", "temporal-service", "workflow-postgres", "litellm-service"},
             "ocr-service": {"minio"},
             "litellm-service": {"litellm-postgres"},
+            "temporal-service": {"workflow-postgres"},
+            "temporal-ui": {"temporal-service"},
         }
         for service_name, dependencies in healthy_dependencies.items():
             for dependency in dependencies:
@@ -289,12 +304,15 @@ class DeploymentConfigValidator:
         failures = []
         api_command = command_text(self.service("api-service").get("command"))
         worker_command = command_text(self.service("worker-service").get("command"))
+        review_worker_command = command_text(self.service("review-worker-service").get("command"))
         ocr_command = command_text(self.service("ocr-service").get("command"))
         litellm_command = command_text(self.service("litellm-service").get("command"))
         if "uvicorn apps.api.main:app" not in api_command or "--port 8000" not in api_command:
             failures.append("api-service command must run FastAPI on port 8000")
         if "celery" not in worker_command or "apps.worker.celery_app.celery_app" not in worker_command:
             failures.append("worker-service command must run Celery app")
+        if "python -m apps.review_worker.main" not in review_worker_command:
+            failures.append("review-worker-service command must run the Temporal ReviewRun worker")
         queue_list = set(re.split(r"[, ]+", worker_command))
         missing_queues = sorted(REQUIRED_WORKER_QUEUES - queue_list)
         if missing_queues:
@@ -308,6 +326,9 @@ class DeploymentConfigValidator:
             "ocr-service": "8010:8010",
             "minio": "9000:9000",
             "litellm-service": "4001:4000",
+            "workflow-postgres": "5434:5432",
+            "temporal-service": "7233:7233",
+            "temporal-ui": "8088:8080",
         }
         for service_name, expected_port in port_expectations.items():
             if expected_port not in normalize_ports(self.service(service_name).get("ports")):
@@ -355,6 +376,15 @@ class DeploymentConfigValidator:
                 "AICHECK_MONGO_TRANSACTIONS",
                 "AICHECK_REDIS_URL",
                 "AICHECK_TASK_DISPATCH",
+                "AICHECK_REVIEW_ORCHESTRATION",
+                "TEMPORAL_ADDRESS",
+                "TEMPORAL_NAMESPACE",
+                "AICHECK_REVIEW_WORKFLOW_TASK_QUEUE",
+                "AICHECK_REVIEW_LLM_EXECUTION",
+                "AICHECK_LANGGRAPH_DISABLE",
+                "AICHECK_LANGGRAPH_CHECKPOINT_DISABLE",
+                "AICHECK_LANGGRAPH_CHECKPOINT_SETUP",
+                "LANGGRAPH_CHECKPOINT_DSN",
                 "AICHECK_MINIO_ENDPOINT",
                 "AICHECK_JWT_SECRET",
                 "AICHECK_REQUIRE_AUTH",
@@ -366,7 +396,28 @@ class DeploymentConfigValidator:
                 "AICHECK_MONGO_URL",
                 "AICHECK_REDIS_URL",
                 "AICHECK_TASK_DISPATCH",
+                "AICHECK_REVIEW_ORCHESTRATION",
                 "AICHECK_OCR_BASE_URL",
+                "LITELLM_BASE_URL",
+                "LITELLM_API_KEY",
+            },
+            "review-worker-service": {
+                "AICHECK_MONGO_URL",
+                "AICHECK_MONGO_DB",
+                "AICHECK_MONGO_TRANSACTIONS",
+                "AICHECK_REVIEW_ORCHESTRATION",
+                "TEMPORAL_ADDRESS",
+                "TEMPORAL_NAMESPACE",
+                "AICHECK_REVIEW_WORKFLOW_TASK_QUEUE",
+                "AICHECK_REVIEW_GRAPH_TASK_QUEUE",
+                "AICHECK_REVIEW_LLM_TASK_QUEUE",
+                "AICHECK_REVIEW_RETRIEVAL_TASK_QUEUE",
+                "AICHECK_REVIEW_VALIDATION_TASK_QUEUE",
+                "AICHECK_REVIEW_LLM_EXECUTION",
+                "AICHECK_LANGGRAPH_DISABLE",
+                "AICHECK_LANGGRAPH_CHECKPOINT_DISABLE",
+                "AICHECK_LANGGRAPH_CHECKPOINT_SETUP",
+                "LANGGRAPH_CHECKPOINT_DSN",
                 "LITELLM_BASE_URL",
                 "LITELLM_API_KEY",
             },
@@ -383,9 +434,25 @@ class DeploymentConfigValidator:
             "litellm-service": {
                 "DATABASE_URL",
                 "LITELLM_MASTER_KEY",
+                "DEEPSEEK_API_KEY",
                 "OPENAI_API_KEY",
+                "AICHECK_LITELLM_STRICT_PROVIDER_HEALTH",
                 "NO_PROXY",
                 "no_proxy",
+            },
+            "workflow-postgres": {
+                "POSTGRES_DB",
+                "POSTGRES_USER",
+                "POSTGRES_PASSWORD",
+            },
+            "temporal-service": {
+                "DB",
+                "POSTGRES_USER",
+                "POSTGRES_PWD",
+                "POSTGRES_SEEDS",
+            },
+            "temporal-ui": {
+                "TEMPORAL_ADDRESS",
             },
         }
         for service_name, keys in required_env.items():
@@ -395,6 +462,7 @@ class DeploymentConfigValidator:
                 failures.append(f"{service_name}: missing {', '.join(missing)}")
         api_env = environment_map(self.service("api-service").get("environment"))
         worker_env = environment_map(self.service("worker-service").get("environment"))
+        review_worker_env = environment_map(self.service("review-worker-service").get("environment"))
         ocr_env = environment_map(self.service("ocr-service").get("environment"))
         if default_value(api_env.get("AICHECK_REQUIRE_AUTH")) != "true":
             failures.append("api-service default AICHECK_REQUIRE_AUTH must be true")
@@ -404,6 +472,18 @@ class DeploymentConfigValidator:
             failures.append("api-service default AICHECK_MONGO_TRANSACTIONS must be true")
         if default_value(worker_env.get("AICHECK_TASK_DISPATCH")) != "celery":
             failures.append("worker-service default AICHECK_TASK_DISPATCH must be celery")
+        if default_value(api_env.get("AICHECK_REVIEW_ORCHESTRATION")) != "temporal":
+            failures.append("api-service default AICHECK_REVIEW_ORCHESTRATION must be temporal")
+        if default_value(review_worker_env.get("AICHECK_REVIEW_ORCHESTRATION")) != "temporal":
+            failures.append("review-worker-service AICHECK_REVIEW_ORCHESTRATION must be temporal")
+        if default_value(review_worker_env.get("AICHECK_REVIEW_LLM_EXECUTION")) != "litellm":
+            failures.append("review-worker-service default AICHECK_REVIEW_LLM_EXECUTION must be litellm")
+        if default_value(review_worker_env.get("AICHECK_LANGGRAPH_DISABLE")) != "false":
+            failures.append("review-worker-service default AICHECK_LANGGRAPH_DISABLE must be false")
+        if "workflow-postgres" not in default_value(api_env.get("LANGGRAPH_CHECKPOINT_DSN")):
+            failures.append("api-service LANGGRAPH_CHECKPOINT_DSN must target workflow-postgres")
+        if "workflow-postgres" not in default_value(review_worker_env.get("LANGGRAPH_CHECKPOINT_DSN")):
+            failures.append("review-worker-service LANGGRAPH_CHECKPOINT_DSN must target workflow-postgres")
         if default_value(ocr_env.get("AICHECK_OCR_ALLOW_PLACEHOLDER")) != "false":
             failures.append("ocr-service default AICHECK_OCR_ALLOW_PLACEHOLDER must be false")
         if default_value(ocr_env.get("AICHECK_OCR_OFFLINE_ONLY")) != "true":
@@ -418,9 +498,10 @@ class DeploymentConfigValidator:
             "AICHECK_MINIO_SECRET_KEY": "dev-password",
             "LITELLM_API_KEY": "sk-aicheck-dev",
             "LITELLM_POSTGRES_PASSWORD": "litellm",
-            "OPENAI_API_KEY": "",
+            "WORKFLOW_POSTGRES_PASSWORD": "workflow",
+            "DEEPSEEK_API_KEY": "",
         }
-        for service_name in ["api-service", "worker-service", "litellm-service", "litellm-postgres"]:
+        for service_name in ["api-service", "worker-service", "review-worker-service", "litellm-service", "litellm-postgres", "workflow-postgres", "temporal-service"]:
             env = environment_map(self.service(service_name).get("environment"))
             for key, weak in weak_markers.items():
                 value = env.get(key)

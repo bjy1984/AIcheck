@@ -4,3 +4,5 @@ paddlepaddle==3.3.1
 paddleocr==3.7.0
 paddlex[ocr]>=3.7.0,<3.8.0
 opencv-python-headless>=4.10,<5
+docling>=2.70,<3
+transformers>=4.57,<5

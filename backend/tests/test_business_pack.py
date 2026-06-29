@@ -126,6 +126,19 @@ def test_business_pack_snapshot_and_validate_all_apis() -> None:
 
     validation = assert_ok(client.post("/api/business-packs/validate-all"))
     assert validation["ok"] is True
+    assert validation["scorecard"]["targetScore"] == 100
+    assert validation["scorecard"]["score"] == 100
+    assert validation["scorecard"]["ok"] is True
+    assert validation["scorecard"]["blockers"] == []
+    assert {"catalog", "core-boundary", "fixtures", "delivery"} <= {
+        item["name"] for item in validation["scorecard"]["sections"]
+    }
+    assert all(item["score"] == 100 for item in validation["scorecard"]["packs"])
+    assert {item["packId"] for item in validation["scorecard"]["packs"]} >= {
+        "engineering_inspection_v1",
+        "compliance_audit_v1",
+        "device_inspection_v1",
+    }
     assert {item["summary"]["id"] for item in validation["results"]} >= {
         "engineering_inspection_v1",
         "compliance_audit_v1",

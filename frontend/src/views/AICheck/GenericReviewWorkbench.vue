@@ -244,11 +244,11 @@ onMounted(loadData)
 
 .summary-label {
   margin-bottom: 4px;
-  color: var(--el-text-color-secondary);
   font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .generic-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

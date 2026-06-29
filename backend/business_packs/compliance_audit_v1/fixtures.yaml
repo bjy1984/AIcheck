@@ -44,3 +44,19 @@ fixtures:
       evidenceLinkIds: [EV-CA-001]
       ruleRefs:
         - {ruleSetId: RULE-CA-CONTROL-202606, ruleCode: control-evidence-consistency}
+  projectMembers:
+    - id: BPM-CA-AUDITOR
+      projectId: P-CA-FIXTURE-001
+      role: auditor
+      userId: USER-INSPECTION-001
+      nodeScope: [1, 2, 3, 4]
+    - id: BPM-CA-SUBMITTER
+      projectId: P-CA-FIXTURE-001
+      role: submitter
+      userId: USER-CONTRACTOR-001
+      nodeScope: [1, 2, 3, 4]
+    - id: BPM-CA-OBSERVER
+      projectId: P-CA-FIXTURE-001
+      role: observer
+      userId: USER-OWNER-001
+      nodeScope: [1, 2, 3, 4]

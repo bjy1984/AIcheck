@@ -15,13 +15,17 @@ from scripts.deployment_report import (
     backend_mutation_idempotency_check,
     called_function_names,
     export_artifact_contract_check,
+    fde_governance_contract_check,
+    feedback_hr_contract_check,
     frontend_mutation_header_check,
     frontend_mutation_helper_check,
+    knowledge_rule_contract_check,
     litellm_client_contract_check,
     markdown_report,
     mongo_index_contract_check,
     ocr_evaluation_contract_check,
     ocr_service_contract_check,
+    review_orchestration_contract_check,
     response_envelope_contract_check,
     role_contract_check,
     storage_contract_check,
@@ -44,6 +48,9 @@ def report_args(**overrides):
         "skip_litellm": False,
         "write_probes": False,
         "ocr_object_probe": False,
+        "review_run_probe": False,
+        "review_run_wait_seconds": 0.0,
+        "litellm_management_probes": False,
         "litellm_provider_probes": False,
         "timeout": 1.0,
         "output_dir": None,
@@ -65,6 +72,22 @@ def test_deployment_report_static_sections_pass_and_live_is_skipped() -> None:
     assert sections["storage-contract"]["ok"] is True
     assert sections["ocr-service-contract"]["ok"] is True
     assert sections["litellm-client-contract"]["ok"] is True
+    assert sections["knowledge-rule-contract"]["ok"] is True
+    assert sections["review-orchestration-contract"]["ok"] is True
+    review_check = next(
+        check
+        for check in sections["review-orchestration-contract"]["checks"]
+        if check["name"] == "review-orchestration.contract"
+    )
+    assert review_check["data"]["frontendArtifactVisualization"] is True
+    assert sections["fde-governance-contract"]["ok"] is True
+    assert sections["feedback-hr-contract"]["ok"] is True
+    feedback_check = next(
+        check
+        for check in sections["feedback-hr-contract"]["checks"]
+        if check["name"] == "feedback.hr-contract"
+    )
+    assert feedback_check["data"]["frontendFeedbackGovernance"] is True
     assert sections["export-artifact-contract"]["ok"] is True
     assert sections["worker-contract"]["ok"] is True
     assert sections["api-contract"]["ok"] is True
@@ -117,6 +140,12 @@ def test_deployment_report_static_sections_pass_and_live_is_skipped() -> None:
     )
     assert ocr_eval_check["status"] == "pass"
     assert ocr_eval_check["data"]["metricFailures"] == []
+    assert ocr_eval_check["data"]["cliFailures"] == []
+    assert ocr_eval_check["data"]["scorecardFailures"] == []
+    assert ocr_eval_check["data"]["corpusFailures"] == []
+    assert ocr_eval_check["data"]["prefetchFailures"] == []
+    assert ocr_eval_check["data"]["strict100Thresholds"]["minCases"] == 100
+    assert ocr_eval_check["data"]["strict100Thresholds"]["requiredScenarioCount"] >= 10
     assert ocr_eval_check["data"]["fixtureFailures"] == []
     assert set(ocr_eval_check["data"]["fixtureScenarios"]) == {
         "evidence_profile",
@@ -134,6 +163,34 @@ def test_deployment_report_static_sections_pass_and_live_is_skipped() -> None:
     assert litellm_check["data"]["clientFailures"] == []
     assert litellm_check["data"]["workerFailures"] == []
     assert litellm_check["data"]["runtimeFailures"] == []
+    review_check = next(
+        check for check in sections["review-orchestration-contract"]["checks"] if check["name"] == "review-orchestration.contract"
+    )
+    assert review_check["status"] == "pass"
+    assert review_check["data"]["routeFailures"] == []
+    assert review_check["data"]["graphFailures"] == []
+    assert review_check["data"]["stateFailures"] == []
+    assert review_check["data"]["toolFailures"] == []
+    assert review_check["data"]["sourceFailures"] == []
+    assert review_check["data"]["stepKeys"][:3] == ["load_context", "load_ocr_result", "run_rule_engine"]
+    assert "llm_generate_findings" in review_check["data"]["stepKeys"]
+    assert "review.llm" in review_check["data"]["taskQueues"]
+    fde_gate_check = next(
+        check for check in sections["fde-governance-contract"]["checks"] if check["name"] == "fde.governance-contract"
+    )
+    assert fde_gate_check["status"] == "pass"
+    assert fde_gate_check["data"]["routeFailures"] == []
+    assert fde_gate_check["data"]["collectionFailures"] == []
+    assert fde_gate_check["data"]["sourceFailures"] == []
+    assert fde_gate_check["data"]["businessPackPortabilityScorecard"] is True
+    assert fde_gate_check["data"]["frontendBusinessPackScorecard"] is True
+    feedback_hr_check = next(
+        check for check in sections["feedback-hr-contract"]["checks"] if check["name"] == "feedback.hr-contract"
+    )
+    assert feedback_hr_check["status"] == "pass"
+    assert feedback_hr_check["data"]["routeFailures"] == []
+    assert feedback_hr_check["data"]["collectionFailures"] == []
+    assert feedback_hr_check["data"]["sourceFailures"] == []
     export_check = next(
         check for check in sections["export-artifact-contract"]["checks"] if check["name"] == "export.artifact-contract"
     )
@@ -545,6 +602,133 @@ def test_litellm_client_contract_check_fails_bad_client_and_worker_usage() -> No
     assert any(item.get("method") == "__init__" for item in check["data"]["clientFailures"])
     assert any(item.get("task") == "embed_knowledge" for item in check["data"]["workerFailures"])
     assert any("mocked LiteLLM request failed" in item for item in check["data"]["runtimeFailures"])
+
+
+def test_knowledge_rule_contract_check_fails_missing_routes_fields_and_validators() -> None:
+    class BadExecution:
+        pass
+
+    def bad_run_step():
+        return {}
+
+    def bad_validator():
+        return {"passed": True}
+
+    bad_run_step.__source__ = "def bad_run_step():\n    return {}\n"
+    bad_validator.__source__ = "def bad_validator():\n    return {'passed': True}\n"
+    BadExecution.run_step = bad_run_step
+    BadExecution.validate_review_schema = bad_validator
+    BadExecution.validate_review_evidence_refs = bad_validator
+    BadExecution.validate_review_references = bad_validator
+    BadExecution.review_quality_gate = bad_validator
+
+    check = knowledge_rule_contract_check(
+        fastapi_app=SimpleNamespace(routes=[]),
+        execution_module=BadExecution,
+    )
+
+    assert check["status"] == "fail"
+    assert check["data"]["routeFailures"]
+    assert any("RuleCheckResult missing fields" in item for item in check["data"]["fieldFailures"])
+    assert any("RetrievalTrace missing fields" in item for item in check["data"]["fieldFailures"])
+    assert any("validate_review_schema missing source terms" in item for item in check["data"]["validationFailures"])
+
+
+def test_review_orchestration_contract_check_fails_missing_routes_graph_and_sources() -> None:
+    class BadExecution:
+        REVIEW_GRAPH_STEPS = [{"key": "load_context", "taskQueue": "review.graph"}]
+        REVIEW_GRAPH_EDGES = []
+        REVIEW_STATE_COLLECTIONS = ("review_runs",)
+        ALLOWED_AGENT_TOOLS = {"approve_review"}
+        FORBIDDEN_AGENT_TOOLS = {"approve_review"}
+
+    def bad_create_review_run_from_ai_run():
+        return {}
+
+    def bad_generate_finding_drafts():
+        return []
+
+    bad_create_review_run_from_ai_run.__source__ = "def bad_create_review_run_from_ai_run():\n    return {}\n"
+    bad_generate_finding_drafts.__source__ = "def bad_generate_finding_drafts():\n    return []\n"
+    BadExecution.create_review_run_from_ai_run = bad_create_review_run_from_ai_run
+    BadExecution.execute_review_run_inline = bad_create_review_run_from_ai_run
+    BadExecution.run_step = bad_create_review_run_from_ai_run
+    BadExecution.generate_finding_drafts = bad_generate_finding_drafts
+    BadExecution.human_decision_for_review_run = bad_create_review_run_from_ai_run
+    BadExecution.clone_review_run_for_replay = bad_create_review_run_from_ai_run
+
+    check = review_orchestration_contract_check(
+        fastapi_app=SimpleNamespace(routes=[]),
+        execution_module=BadExecution,
+        dispatcher_module=SimpleNamespace(),
+        graph_module=SimpleNamespace(),
+        worker_main_module=SimpleNamespace(),
+        workflow_module=SimpleNamespace(),
+        activities_module=SimpleNamespace(),
+    )
+
+    assert check["status"] == "fail"
+    assert check["data"]["routeFailures"]
+    assert any("missing graph steps" in item for item in check["data"]["graphFailures"])
+    assert any("missing review state collections" in item for item in check["data"]["stateFailures"])
+    assert any("missing allowed tools" in item for item in check["data"]["toolFailures"])
+    assert any("both allowed and forbidden" in item for item in check["data"]["toolFailures"])
+    assert any("create_review_run_from_ai_run missing source terms" in item for item in check["data"]["sourceFailures"])
+
+
+def test_fde_governance_contract_check_fails_missing_routes_and_gate_sources() -> None:
+    def bad_gate():
+        return []
+
+    bad_gate.__source__ = "def bad_gate():\n    return []\n"
+    bad_module = SimpleNamespace(
+        fde_release_gate_results=bad_gate,
+        fde_create_release_plan=bad_gate,
+        fde_submit_release_plan=bad_gate,
+        fde_approve_release_plan=bad_gate,
+        fde_start_shadow_release=bad_gate,
+        fde_request_canary_release=bad_gate,
+    )
+
+    check = fde_governance_contract_check(
+        fastapi_app=SimpleNamespace(routes=[]),
+        api_routes_module=bad_module,
+    )
+
+    assert check["status"] == "fail"
+    assert check["data"]["routeFailures"]
+    assert any("fde_release_gate_results missing source terms" in item for item in check["data"]["sourceFailures"])
+    assert any("fde_approve_release_plan missing source terms" in item for item in check["data"]["sourceFailures"])
+
+
+def test_feedback_hr_contract_check_fails_missing_routes_and_feedback_sources() -> None:
+    def bad_handler():
+        return {}
+
+    bad_handler.__source__ = "def bad_handler():\n    return {}\n"
+    bad_api_module = SimpleNamespace(
+        router=SimpleNamespace(routes=[]),
+        fde_triage_feedback=bad_handler,
+        fde_upsert_evaluation_case_from_feedback=bad_handler,
+    )
+    bad_execution_module = SimpleNamespace(
+        human_decision_for_review_run=bad_handler,
+        record_human_feedback_for_review_run=bad_handler,
+    )
+
+    check = feedback_hr_contract_check(
+        fastapi_app=SimpleNamespace(routes=[]),
+        api_routes_module=bad_api_module,
+        execution_module=bad_execution_module,
+    )
+
+    assert check["status"] == "fail"
+    assert check["data"]["routeFailures"]
+    assert any("record_human_feedback_for_review_run missing source terms" in item for item in check["data"]["sourceFailures"])
+    assert any(
+        "fde_upsert_evaluation_case_from_feedback missing source terms" in item
+        for item in check["data"]["sourceFailures"]
+    )
 
 
 def test_export_artifact_contract_check_fails_invalid_package_builder() -> None:

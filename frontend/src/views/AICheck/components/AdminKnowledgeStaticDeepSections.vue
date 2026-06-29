@@ -890,7 +890,7 @@ const getPillClass = (value?: string | number) => {
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 6px;
-  box-shadow: 0 1px 2px rgba(20, 34, 56, 0.04);
+  box-shadow: 0 1px 2px rgb(20 34 56 / 4%);
   transition:
     border-color 0.18s ease,
     box-shadow 0.18s ease;
@@ -899,7 +899,7 @@ const getPillClass = (value?: string | number) => {
 .static-card:hover,
 .static-card:focus-within {
   border-color: #c4d5ee;
-  box-shadow: 0 2px 8px rgba(20, 34, 56, 0.08);
+  box-shadow: 0 2px 8px rgb(20 34 56 / 8%);
 }
 
 .static-card-head {
@@ -929,16 +929,16 @@ h4 {
 
 p {
   margin: 0 0 10px;
-  color: #344054;
   font-size: 14px;
   font-weight: 700;
   line-height: 1.6;
+  color: #344054;
 }
 
 .sub {
-  color: var(--muted);
   font-size: 14px;
   font-weight: 700;
+  color: var(--muted);
 }
 
 .split {
@@ -966,17 +966,17 @@ p {
 }
 
 .metric-label {
-  color: var(--muted);
   font-size: 13px;
   font-weight: 800;
+  color: var(--muted);
 }
 
 .metric-value {
   margin-top: 8px;
-  color: var(--blue);
   font-size: 24px;
   font-weight: 900;
   line-height: 1;
+  color: var(--blue);
 }
 
 .metric-value.green {
@@ -1002,8 +1002,8 @@ p {
 .table {
   width: 100%;
   font-size: 14px;
-  table-layout: fixed;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .table th,
@@ -1018,8 +1018,8 @@ p {
 }
 
 .table th {
-  color: #485a73;
   font-weight: 900;
+  color: #485a73;
   background: var(--head);
 }
 
@@ -1041,18 +1041,18 @@ p {
 
 .pill {
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
   min-height: 24px;
   padding: 3px 8px;
-  color: var(--blue-2);
   font-size: 13px;
   font-weight: 800;
   line-height: 1;
+  color: var(--blue-2);
   white-space: nowrap;
   background: var(--blue-soft);
   border: 1px solid #bcd4ff;
   border-radius: 5px;
+  align-items: center;
+  justify-content: center;
 }
 
 .pill.blue {
@@ -1081,15 +1081,15 @@ p {
 
 .action-text {
   display: inline-flex;
-  align-items: center;
   min-height: 24px;
   padding: 0 6px;
-  color: var(--blue-2);
   font-weight: 900;
+  color: var(--blue-2);
   border-radius: 5px;
   transition:
     color 0.18s ease,
     background-color 0.18s ease;
+  align-items: center;
 }
 
 .action-text:hover {
@@ -1127,11 +1127,11 @@ p {
   display: grid;
   width: 28px;
   height: 28px;
-  place-items: center;
-  color: #fff;
   font-weight: 900;
+  color: #fff;
   background: var(--blue);
   border-radius: 50%;
+  place-items: center;
 }
 
 .step-title {
@@ -1140,9 +1140,9 @@ p {
 
 .step-desc {
   margin-top: 6px;
-  color: #344054;
   font-size: 14px;
   line-height: 1.6;
+  color: #344054;
 }
 
 .kb-compare {

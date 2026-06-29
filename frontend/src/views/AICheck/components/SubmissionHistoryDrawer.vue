@@ -187,12 +187,12 @@ const withdrawalText = (row: SubmissionSummary) => {
 .withdrawal-time {
   display: block;
   margin-top: 4px;
-  color: #667085;
   font-size: 12px;
   line-height: 18px;
+  color: #667085;
 }
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .history-toolbar {
     align-items: flex-start;
     flex-direction: column;

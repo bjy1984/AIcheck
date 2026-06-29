@@ -186,7 +186,7 @@ const title = computed(() => (props.mode === 'report' ? '检测报告详情' : '
   margin-bottom: 12px;
 }
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .ndt-detail-drawer :deep(.el-drawer) {
     width: 100% !important;
   }

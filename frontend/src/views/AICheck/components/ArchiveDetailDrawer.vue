@@ -167,7 +167,7 @@ const visible = computed({
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
   :global(.archive-detail-drawer.el-drawer) {
     width: 100vw !important;
     max-width: 100vw;

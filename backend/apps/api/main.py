@@ -16,7 +16,7 @@ from apps.api.routes import binding_node_ids, document_node_ids, idempotency_fin
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 from libs.db.mongo import close_mongo, init_mongo_if_configured, run_transaction_probe
-from libs.db.repository import mongo_transactions_enabled, repo
+from libs.db.repository import flush_state, load_state, mongo_transactions_enabled, repo
 from libs.integrations.storage import object_storage
 from libs.security.actions import canonical_path, required_action_for_request
 from libs.security.auth import decode_token, demo_users_enabled, user_by_username
@@ -25,6 +25,7 @@ from libs.security.auth import decode_token, demo_users_enabled, user_by_usernam
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_mongo_if_configured(app)
+    load_state()
     yield
     await close_mongo(app)
 
@@ -73,6 +74,8 @@ async def attach_operation_id(request: Request, call_next):
     response = await finalize_mutation_response(request, response)
     if request.method in {"POST", "PUT", "PATCH", "DELETE"} and repo.mongo is not None:
         await repo.flush_to_mongo()
+    elif request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        flush_state()
     return response
 
 

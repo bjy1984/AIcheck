@@ -1,6 +1,6 @@
 # AIcheck Backend
 
-FastAPI backend for the AIcheck frontend contract, with production-like MongoDB, MinIO, Redis/Celery, OCR, and LiteLLM integration paths.
+FastAPI backend for the AIcheck frontend contract, with production-like MongoDB, MinIO, Redis/Celery, local OCR, Temporal/LangGraph review orchestration, and LiteLLM integration paths.
 
 Deployment guide: see [`../DEPLOYMENT.md`](../DEPLOYMENT.md).
 
@@ -8,10 +8,12 @@ Deployment guide: see [`../DEPLOYMENT.md`](../DEPLOYMENT.md).
 
 - `api-service`: FastAPI business API. It serves both stripped paths such as `/workbench/projects` and direct `/api/workbench/projects`.
 - `worker-service`: Celery worker with Redis queues for OCR, knowledge slicing, embedding, AI recheck, LLM compare, and export packaging.
+- `review-worker-service`: Temporal worker for `ReviewRunWorkflow`. The outer workflow handles long-running review state, retry/cancel/wait-for-human behavior, and the inner LangGraph-compatible graph records each review step for FDE visualization.
 - `ocr-service`: local-only Document Intelligence service built from `Dockerfile.ocr`. It keeps the legacy agentdesign seal OCR import path, adds async document-parse jobs, and requires local model artifacts mounted at `/models`; production should keep `AICHECK_OCR_ALLOW_PLACEHOLDER=false`, `AICHECK_OCR_OFFLINE_ONLY=true`, and `AICHECK_OCR_DISABLE_NETWORK=true`.
 - `litellm-service`: LiteLLM proxy configured by `config/litellm.yaml`; PostgreSQL is only for LiteLLM metadata.
+- `temporal-service`, `temporal-ui`, `workflow-postgres`: durable review workflow engine, workflow UI, and workflow/checkpoint database.
 - `mongodb`, `redis`, `minio`: business persistence, task queue, and object storage for documents/previews/exports/OCR artifacts.
-- Docker Compose healthchecks are declared for API, worker, OCR, MongoDB, Redis, MinIO, LiteLLM PostgreSQL, and LiteLLM; service dependencies use `condition: service_healthy` for startup ordering.
+- Docker Compose healthchecks are declared for API, worker, review worker, OCR, MongoDB, Redis, MinIO, Workflow PostgreSQL, Temporal, LiteLLM PostgreSQL, and LiteLLM; service dependencies use `condition: service_healthy` for startup ordering.
 
 ## Local Run
 
@@ -49,7 +51,7 @@ source .venv/bin/activate
 pytest
 ```
 
-The contract suite covers the response envelope, compatibility login paths, persistent user login with demo users disabled, mutation idempotency and body-conflict detection, archived/etag guards, submission withdrawal, rectification feedback, report-generation state guards, backend-inferred action-code guards, read/write URL/body/resource-derived node-scope guards, list-level node-scope filtering, upload-to-OCR task creation, OCR HTTP client dispatch, inline OCR field/chunk writeback, retry/cancel behavior for knowledge tasks, LiteLLM failure mapping, async LLM compare, object-storage export artifacts, JWT/action/node-scope identity guards, and Mongo state round-trip.
+The contract suite covers the response envelope, compatibility login paths, persistent user login with demo users disabled, mutation idempotency and body-conflict detection, archived/etag guards, submission withdrawal, rectification feedback, report-generation state guards, backend-inferred action-code guards, read/write URL/body/resource-derived node-scope guards, list-level node-scope filtering, upload-to-OCR task creation, OCR HTTP client dispatch, inline OCR field/chunk writeback, retry/cancel behavior for knowledge tasks, Temporal/LangGraph-compatible ReviewRun creation, graph visualization, human decision handling, AI feedback sample creation, FDE feedback triage to evaluation cases, FDE ReviewRun replay/shadow APIs, LiteLLM failure mapping, async LLM compare, object-storage export artifacts, JWT/action/node-scope identity guards, and Mongo state round-trip.
 
 Deployment verification:
 
@@ -65,35 +67,65 @@ python scripts/audit_frontend_contract.py
 cd backend
 cp .env.example .env
 # Replace placeholders in .env with real secrets, provider keys, and local OCR model paths.
-# AICHECK_OCR_MODELS_HOST_PATH must contain paddleocr/, paddlex/, paddleocr-vl/, and docling/.
-# Required offline OCR subdirectories include:
+# Supported OCR model layouts:
+# 1) Bundle: AICHECK_OCR_MODELS_HOST_PATH contains paddleocr/, paddlex/, paddleocr-vl/, and docling/.
+# 2) PaddleX official cache: AICHECK_OCR_MODELS_HOST_PATH points at .paddlex-cache/official_models,
+#    explicit AICHECK_*_MODEL_DIR values use /models/<model-dir>, and Docling may use
+#    DOCLING_ARTIFACTS_PATH=/opt/agentdesign/docling.
+# Required offline OCR model directories include:
 # paddleocr/PP-OCRv6_medium_det, paddleocr/PP-OCRv6_medium_rec,
 # paddlex/PP-DocLayout-L, paddlex/SLANeXt_wired, paddlex/RT-DETR-L_wired_table_cell_det,
 # paddlex/SLANeXt_wireless, paddlex/RT-DETR-L_wireless_table_cell_det,
-# paddlex/PP-OCRv4_server_seal_det, and paddleocr/PP-OCRv4_server_rec.
+# paddlex/PP-OCRv4_server_seal_det, paddleocr/PP-OCRv4_server_rec,
+# paddleocr-vl/PP-DocLayoutV3, and paddleocr-vl/PaddleOCR-VL-1.6-0.9B.
 python scripts/check_96_preflight.py --strict-production
 docker compose --env-file .env up --build -d
 set -a; source .env; set +a
 python scripts/deployment_report.py \
   --strict-production \
   --include-live \
+  --roles admin,inspection,contractor,ndt,owner,fde \
   --write-probes \
   --ocr-object-probe \
+  --review-run-probe \
+  --review-run-wait-seconds 20 \
   --litellm-management-probes \
   --litellm-provider-probes \
   --output-dir ./deployment-reports/latest
 ```
 
-`check_96_preflight.py` fails early when Docker Compose, `backend/.env`, production flags, LiteLLM/provider keys, the `agentdesign` OCR reference path, or local OCR model directories are missing. Text and JSON output include `remediation` steps for each failing check so the deployment host can be corrected before live probes. The management probe creates and deletes a temporary LiteLLM virtual key to verify DB-backed key, budget, and rate-limit management. The provider probe spends real LiteLLM upstream quota; omit `--litellm-provider-probes` only for a dry infrastructure check.
+`check_96_preflight.py` fails early when Docker Compose, `backend/.env`, production flags, LiteLLM/provider keys, the `agentdesign` OCR reference path, or local OCR model directories are missing. Text and JSON output include `remediation` steps for each failing check so the deployment host can be corrected before live probes. The ReviewRun probe creates a temporary AI recheck, requires Temporal dispatch in strict production, waits for the worker to advance the LangGraph step graph, verifies ReviewRun business endpoints, submits a human decision, and verifies FDE diagnostic replay. The management probe creates and deletes a temporary LiteLLM virtual key to verify DB-backed key, budget, and rate-limit management. The provider probe spends real LiteLLM upstream quota; omit `--litellm-provider-probes` only for a dry infrastructure check.
 
 The verifier checks API health flags, role login/default paths, JWT protection, the MongoDB transaction probe, read-only project/task endpoints, identity-spoof rejection, action-bypass rejection, read-scope rejection, OCR health/readyz, OCR runtime doctor, OCR parse/bad-request contracts, and LiteLLM health/models without creating business data or spending model quota. In `--strict-production`, MongoDB must be connected with `AICHECK_MONGO_TRANSACTIONS=true` and the transaction probe must pass; OCR must report local engines, placeholder disabled, offline-only enabled, network disabled, existing model directories, and no failed runtime doctor checks.
 
 Add `--write-probes` to create a short-lived upload session, PUT a small PDF to the returned HTTP/HTTPS signed URL, complete the upload, verify document preview/download signed GET URLs can read the object, confirm the OCR task appears, and create/read an export task.
 Add `--ocr-object-probe` with `--write-probes` when you want the OCR service to parse the newly uploaded MinIO object and prove the real OCR pipeline can read object storage.
+Add `--review-run-probe --review-run-wait-seconds 20 --roles admin,inspection,contractor,ndt,owner,fde` when you want the verifier to create a ReviewRun through `/inspection/nodes/24/ai-recheck`, check `/api/review-runs/{id}` detail/graph/timeline, confirm the worker advanced the graph in strict production, submit human confirmation, and verify FDE immutable replay.
 Add `--litellm-management-probes` when you want to verify LiteLLM virtual key creation/deletion, max budget, RPM, and TPM management against PostgreSQL.
-Add `--litellm-provider-probes` when you want a quota-consuming production check that calls `default-chat` and `embedding-default` through LiteLLM.
-`deployment_report.py` aggregates config validation, API mutation idempotency coverage, frontend route coverage, frontend mutation header coverage, and optional live probes into `report.json` and `report.md` for release evidence.
+Add `--litellm-provider-probes` when you want a quota-consuming production check that calls `default-chat` and `embedding-default` through LiteLLM. `default-chat`, `review-chat`, and `compare-fast` route to DeepSeek `deepseek-reasoner`; `embedding-default` still requires an embedding provider such as OpenAI.
+`deployment_report.py` aggregates config validation, API mutation idempotency coverage, knowledge/rule/retrieval validation contracts, Temporal/LangGraph ReviewRun orchestration contracts, FDE release-governance gates, AI HR feedback/evaluation-case contracts, frontend route coverage, frontend mutation header coverage, and optional live probes into `report.json` and `report.md` for release evidence. The knowledge/rule gate checks `knowledge_clauses`, `knowledge_page_index_nodes`, `RetrievalTrace.selectedClauses`, `RetrievalTrace.pageIndexTree`, `queryRouter/selectedRoute/routerSignals`, exact clause lookup, Hybrid RAG, PageIndex conditional routing, and `RuleCheckResult.linkedClauseIds` so AI findings can be traced back to explicit local clauses and the retrieval route that produced them. The FDE governance gate checks high-risk releases for evaluation, risk set, rollback plan, non-FDE approval, shadow, and canary controls. The feedback HR gate checks that human review decisions create immutable `ai_feedback` records, FDE triage can promote approved feedback into `evaluation_cases`, and FDE evaluation runs persist case-level `evaluation_case_results` with finding recall, evidence coverage, retrieval recall, wrong-reference rate, and gate status.
 The contract auditor statically compares `frontend/src/api/aicheck` and `frontend/src/api/login` request paths against FastAPI routes and fails if any required client endpoint is missing. The deployment report also fails if a non-exempt backend mutation lacks direct or delegated idempotency handling, or if a real frontend mutation omits `Idempotency-Key` generation.
+
+For a local ReviewRun orchestration 100/100 check, copy `backend/.env.review100.example` to `.env.review100`, replace
+the placeholder secrets and provider key, and run the real local workflow stack:
+
+```bash
+docker compose --env-file .env.review100 up -d \
+  workflow-postgres temporal-service mongodb redis minio \
+  litellm-postgres litellm-service api-service review-worker-service
+
+python scripts/review_orchestration_100_probe.py \
+  --api-base http://127.0.0.1:8000 \
+  --project-id P-2026-HDCP-001 \
+  --node-id 24 \
+  --wait-seconds 60 \
+  --json
+```
+
+This probe is stricter than the inline unit tests: it requires `dispatch.mode=temporal`,
+`workflowEngine=temporal`, `graphRunner=langgraph`, `graphExecution.checkpointer=postgres`, FDE
+`scorecard.score=100`, and a real Temporal human-decision signal. Inline mode remains useful for fast tests, but it is
+not the local 100/100 scoring path.
 
 ## Infrastructure
 
@@ -112,15 +144,16 @@ Key environment variables:
 
 - `AICHECK_MONGO_URL`, `AICHECK_MONGO_DB`, `AICHECK_MONGO_TRANSACTIONS=true`: business data persistence and transactional cross-collection flushes.
 - `AICHECK_REDIS_URL`, `AICHECK_TASK_DISPATCH=celery`: Celery broker/result backend and API task dispatch.
+- `AICHECK_REVIEW_ORCHESTRATION=temporal`, `TEMPORAL_ADDRESS`, `TEMPORAL_NAMESPACE`, `AICHECK_REVIEW_*_TASK_QUEUE`, `AICHECK_REVIEW_LLM_EXECUTION=litellm`, `AICHECK_LANGGRAPH_DISABLE=false`, `AICHECK_LANGGRAPH_CHECKPOINT_DISABLE=false`, `AICHECK_LANGGRAPH_CHECKPOINT_SETUP=false`, `LANGGRAPH_CHECKPOINT_DSN`: Temporal/LangGraph review orchestration, LiteLLM-backed finding generation, checkpoint storage, shadow runs, replay, and human decision/cancel signals.
 - `AICHECK_MINIO_ENDPOINT`, `AICHECK_MINIO_ACCESS_KEY`, `AICHECK_MINIO_SECRET_KEY`: signed upload/download and export artifacts.
-- `AICHECK_OCR_BASE_URL`, `AICHECK_AGENTDESIGN_HOST_PATH`, `AICHECK_AGENTDESIGN_BACKEND`, `AICHECK_OCR_MODELS_HOST_PATH`, `AICHECK_OCR_ALLOW_PLACEHOLDER=false`, `AICHECK_OCR_OFFLINE_ONLY=true`, `AICHECK_OCR_DISABLE_NETWORK=true`: worker-to-OCR calls, host-side reference pipeline, local model artifact mount, and local-only OCR policy. `Dockerfile.ocr` installs the PaddleOCR/PaddleX/PyMuPDF/OpenCV baseline in `requirements-ocr.txt`; model weights are mounted read-only instead of downloaded at runtime.
+- `AICHECK_OCR_BASE_URL`, `AICHECK_AGENTDESIGN_HOST_PATH`, `AICHECK_AGENTDESIGN_BACKEND`, `AICHECK_OCR_MODELS_HOST_PATH`, `AICHECK_OCR_ALLOW_PLACEHOLDER=false`, `AICHECK_OCR_OFFLINE_ONLY=true`, `AICHECK_OCR_DISABLE_NETWORK=true`: worker-to-OCR calls, host-side reference pipeline, local model artifact mount, and local-only OCR policy. `Dockerfile.ocr` installs the PaddleOCR/PaddleX/PyMuPDF/OpenCV/Docling/Transformers baseline in `requirements-ocr.txt`; model weights are mounted read-only instead of downloaded at runtime.
 - `AICHECK_PADDLEOCR_DET_MODEL_DIR`, `AICHECK_PADDLEOCR_REC_MODEL_DIR`, `AICHECK_PPSTRUCTURE_*_MODEL_DIR`, `AICHECK_SEAL_DET_MODEL_DIR`, `AICHECK_SEAL_REC_MODEL_DIR`: explicit local model folders for text OCR, PP-StructureV3 table/layout, and optional PaddleX seal recognition. Missing PP-Structure folders keep the table engine unavailable instead of downloading at runtime; the piping profile can still infer a basic table from OCR text coordinates.
 - `AICHECK_ENABLE_OPENCV_TABLE_GRID=true`, `AICHECK_OPENCV_TABLE_GRID_MAX_CELLS=1800`: enable the local OpenCV table-grid detector. It runs against the `table_line_enhanced` candidate image, uses adaptive/edge/color line masks, and can align OCR text rows to detected grid evidence when PP-StructureV3 is unavailable.
 - `AICHECK_OCR_ENABLE_PERSISTENT_SUBPROCESS=true`, `AICHECK_OCR_PERSISTENT_WORKER_TIMEOUT=180`: keep the PaddleOCR subprocess worker alive across requests. If the worker fails or times out, the engine resets it and falls back to one-shot subprocess OCR.
 - `AICHECK_OCR_PREPROCESS_CACHE_DIR`, `AICHECK_OCR_DISABLE_VARIANT_CACHE=false`: cache generated preprocess variants by source hash, Profile, and preprocess policy. OCR results expose `imageVariants[].cacheHit`, `preprocessStatus.requestedVariants/generatedVariants/missingVariants`, and `engineRuns[].variantCacheHit` for FDE performance analysis. If OpenCV is missing and no `AICHECK_OCR_SUBPROCESS_PYTHON` is configured, the result keeps the original image only and adds `PREPROCESS_VARIANT_GENERATION_UNAVAILABLE`.
 - `AICHECK_OCR_RESULT_CACHE_DIR`, `AICHECK_OCR_DISABLE_RESULT_CACHE=false`: cache successful local parse results by source hash, Profile, model manifest, preprocess policy, and engine options. Cache hits return a fresh `parseResultId` with `resultCacheHit=true` and skip OCR engine execution.
 - `AICHECK_OCR_ENGINE_RESULT_CACHE_DIR`, `AICHECK_OCR_DISABLE_ENGINE_RESULT_CACHE=false`: cache individual local engine outputs by source hash, engine version, candidate-image hash, Profile preprocess policy, and model manifest. This cache intentionally ignores Profile `postprocessVersion`, so table/field/quality rule tuning can reuse expensive PaddleOCR or seal OCR outputs while still recomputing fusion and quality gates.
-- `LITELLM_BASE_URL`, `LITELLM_API_KEY`, `OPENAI_API_KEY`: LiteLLM gateway and provider credentials. When production flags are enabled, the worker/API clients require an explicit `LITELLM_API_KEY` and reject the built-in development key. Keep `AICHECK_LITELLM_NO_PROXY` including `127.0.0.1` and `localhost`; LiteLLM's Prisma query-engine uses local HTTP health probes and can fail DB-backed key management if routed through a proxy.
+- `LITELLM_BASE_URL`, `LITELLM_API_KEY`, `DEEPSEEK_API_KEY`, optional `OPENAI_API_KEY`: LiteLLM gateway and provider credentials. `review-chat` uses DeepSeek `deepseek-reasoner`; `embedding-default` uses `OPENAI_API_KEY` unless you replace the embedding alias. When production flags are enabled, the worker/API clients require an explicit `LITELLM_API_KEY` and reject the built-in development key. Keep `AICHECK_LITELLM_NO_PROXY` including `127.0.0.1` and `localhost`; LiteLLM's Prisma query-engine uses local HTTP health probes and can fail DB-backed key management if routed through a proxy.
 - `AICHECK_JWT_SECRET`, `AICHECK_REQUIRE_AUTH=true`, `AICHECK_ENABLE_DEMO_USERS=false`: production authentication and demo-account controls.
 - `scripts/create_roles.py --password-file ... --require-strong-passwords`: initialize persistent role users with strong, non-default passwords; output is redacted by default and existing hashes are preserved unless `--rotate-passwords` is passed.
 
@@ -144,6 +177,110 @@ In Docker, keep `AICHECK_OCR_SUBPROCESS_PYTHON=/usr/local/bin/python` so it uses
 only use the host `.venv-ocr311` path for non-container local probes.
 For a bare-metal local probe, add `--auto-discover-runtime` to `ocr_sample_probe.py` to apply the doctor's
 recommended OCR Python and model paths when the corresponding environment variables are not already set.
+
+Prepare local PaddleX/PaddleOCR model artifacts before enabling runtime offline-only mode:
+
+```bash
+python scripts/ocr_prefetch_models.py \
+  --python /path/to/ocr-python \
+  --cache-home /absolute/path/to/paddlex-cache \
+  --ocr-100
+
+# If a large PaddleOCR-VL download was interrupted, move the partial cache aside
+# and retry explicitly.
+python scripts/ocr_prefetch_models.py \
+  --python /path/to/ocr-python \
+  --cache-home /absolute/path/to/paddlex-cache \
+  --model PaddleOCR-VL-1.6-0.9B \
+  --vl-download-method hf-snapshot \
+  --timeout-seconds 3600 \
+  --download-retries 3 \
+  --disable-hf-xet \
+  --clean-incomplete
+
+python scripts/ocr_prefetch_models.py \
+  --python /path/to/ocr-python \
+  --cache-home /absolute/path/to/paddlex-cache \
+  --ocr-100 \
+  --verify-only
+```
+
+The prefetch step is allowed to contact official model sources in a controlled deployment-prep environment. Production
+`ocr-service` should then mount the resulting `official_models` directory read-only and run with
+`AICHECK_OCR_OFFLINE_ONLY=true` and `AICHECK_OCR_DISABLE_NETWORK=true`.
+OCR 100 also requires `docling` and `transformers` in the OCR image, plus a non-empty local `DOCLING_ARTIFACTS_PATH` and
+PaddleOCR-VL artifact directories. The prefetch CLI downloads Docling's default offline artifacts when `--ocr-100` is
+used, unless `--no-docling` is set. PaddleX may normalize the VL recognition directory to `PaddleOCR-VL-1.6`; both that
+name and `PaddleOCR-VL-1.6-0.9B` are accepted, but the directory must contain real `transformers` artifacts such as
+`model.safetensors`. Missing `PP-DocLayoutV3` or an incomplete VL recognition directory keeps the VL adapter unavailable
+by design.
+
+For OCR 100 certification, generate a real-sample collection plan and reject bootstrap/fixture-derived cases:
+
+```bash
+python scripts/ocr_100_ingest_samples.py ../files ../Scan \
+  --output ./ocr_eval/reports/ocr_100_real_sample_queue.json \
+  --base-dir ..
+
+python scripts/ocr_100_ingest_samples.py ../Scan \
+  --manifest ./ocr_eval/scan_sample_manifest.json \
+  --output ./ocr_eval/reports/scan_sample_queue.json \
+  --base-dir ..
+
+python scripts/ocr_100_annotation_pack.py ./ocr_eval/reports/scan_sample_queue.json \
+  --output-dir ./ocr_eval/reports/scan_annotation_pack \
+  --source-base-dir .. \
+  --render-previews \
+  --page-level-tasks
+
+python scripts/ocr_100_annotation_prelabel.py ./ocr_eval/reports/scan_annotation_pack \
+  --output ./ocr_eval/reports/scan_annotation_pack/prelabelled_tasks.json \
+  --source-base-dir .. \
+  --run-ocr \
+  --auto-discover-runtime \
+  --disable-result-cache \
+  --save-result-dir ./ocr_eval/reports/scan_ocr_results \
+  --limit 5
+
+python scripts/ocr_100_label_studio_export.py ./ocr_eval/reports/scan_annotation_pack/prelabelled_tasks.json \
+  --output-dir ./ocr_eval/reports/scan_label_studio \
+  --preview-base-dir ./ocr_eval/reports/scan_annotation_pack \
+  --local-files-root ./ocr_eval/reports/scan_annotation_pack
+
+python scripts/ocr_100_label_studio_import.py ./ocr_eval/reports/scan_label_studio/label_studio_export.json \
+  --annotation-tasks ./ocr_eval/reports/scan_annotation_pack/prelabelled_tasks.json \
+  --output ./ocr_eval/reports/scan_annotation_pack/labeled_tasks.json \
+  --report-output ./ocr_eval/reports/scan_label_studio_import_report.json
+
+python scripts/ocr_annotation_readiness.py ./ocr_eval/reports/scan_annotation_pack/labeled_tasks.json \
+  --output ./ocr_eval/reports/scan_annotation_readiness.json \
+  --markdown-output ./ocr_eval/reports/scan_annotation_readiness.md
+
+python scripts/ocr_100_annotation_export.py ./ocr_eval/reports/scan_annotation_pack/labeled_tasks.json \
+  --output ./ocr_eval/reports/scan_labeled_release_set.json \
+  --report-output ./ocr_eval/reports/scan_annotation_export_report.json
+
+python scripts/ocr_100_corpus.py ./ocr_eval \
+  --report-output ./ocr_eval/reports/ocr_100_corpus_report.json \
+  --collection-plan-output ./ocr_eval/reports/ocr_100_collection_plan.json \
+  --collection-todo-output ./ocr_eval/reports/ocr_100_collection_todo.csv \
+  --require-real-samples
+```
+
+Public benchmark datasets can be indexed as foundation-only baselines. They are useful for layout/table regression, but
+they never count toward AIcheck OCR 100 production certification:
+
+```bash
+python scripts/ocr_public_benchmark.py --list-datasets
+
+python scripts/ocr_public_benchmark.py \
+  --dataset doclaynet \
+  --dataset-root ./ocr_eval/public_datasets/doclaynet \
+  --split val \
+  --limit 100 \
+  --output ./ocr_eval/public_reports/doclaynet_val_report.json \
+  --case-output ./ocr_eval/public_reports/doclaynet_val_cases.json
+```
 
 ```bash
 cd backend
@@ -285,9 +422,131 @@ python scripts/ocr_eval_set.py ./ocr_eval/piping_release_set.json \
   --min-average-score 0.90
 ```
 
+Strict OCR 100 readiness is a separate gate. It is expected to fail until the local runtime has all required engines
+and the evaluation corpus reaches 100 cases across the required scenarios:
+
+```bash
+python scripts/ocr_100_corpus.py ./ocr_eval \
+  --output ./ocr_eval/reports/ocr_100_release_set.json \
+  --report-output ./ocr_eval/reports/ocr_100_corpus_report.json
+
+python scripts/ocr_100_ingest_samples.py ../files ../Scan \
+  --output ./ocr_eval/reports/ocr_100_real_sample_queue.json \
+  --base-dir ..
+
+python scripts/ocr_100_ingest_samples.py ../Scan \
+  --manifest ./ocr_eval/scan_sample_manifest.json \
+  --output ./ocr_eval/reports/scan_sample_queue.json \
+  --base-dir ..
+
+python scripts/ocr_100_annotation_pack.py ./ocr_eval/reports/scan_sample_queue.json \
+  --output-dir ./ocr_eval/reports/scan_annotation_pack \
+  --source-base-dir .. \
+  --render-previews
+
+python scripts/ocr_100_annotation_prelabel.py ./ocr_eval/reports/scan_annotation_pack \
+  --output ./ocr_eval/reports/scan_annotation_pack/prelabelled_tasks.json \
+  --source-base-dir .. \
+  --run-ocr \
+  --auto-discover-runtime \
+  --disable-result-cache \
+  --save-result-dir ./ocr_eval/reports/scan_ocr_results \
+  --limit 5
+
+python scripts/ocr_100_label_studio_export.py ./ocr_eval/reports/scan_annotation_pack/prelabelled_tasks.json \
+  --output-dir ./ocr_eval/reports/scan_label_studio \
+  --preview-base-dir ./ocr_eval/reports/scan_annotation_pack \
+  --local-files-root ./ocr_eval/reports/scan_annotation_pack
+
+python scripts/ocr_100_label_studio_import.py ./ocr_eval/reports/scan_label_studio/label_studio_export.json \
+  --annotation-tasks ./ocr_eval/reports/scan_annotation_pack/prelabelled_tasks.json \
+  --output ./ocr_eval/reports/scan_annotation_pack/labeled_tasks.json \
+  --report-output ./ocr_eval/reports/scan_label_studio_import_report.json
+
+python scripts/ocr_100_annotation_export.py ./ocr_eval/reports/scan_annotation_pack/labeled_tasks.json \
+  --output ./ocr_eval/reports/scan_labeled_release_set.json \
+  --report-output ./ocr_eval/reports/scan_annotation_export_report.json
+
+# Optional collection skeleton only. Replace fixtureDerived cases with real labelled samples before certification.
+python scripts/ocr_100_corpus.py ./ocr_eval/piping_release_set.json \
+  --bootstrap-to-targets \
+  --output ./ocr_eval/reports/ocr_100_collection_skeleton.json \
+  --report-output ./ocr_eval/reports/ocr_100_collection_skeleton_report.json
+
+python scripts/ocr_eval_set.py ./ocr_eval/piping_release_set.json \
+  --auto-discover-runtime \
+  --disable-result-cache \
+  --strict-100 \
+  --summary-output ./ocr_eval/reports/piping_release_100_summary.json
+
+python scripts/ocr_100_scorecard.py \
+  --eval-set ./ocr_eval/piping_release_set.json \
+  --auto-discover-runtime \
+  --sample-summary /tmp/aicheck-ocr-sample-summary.json \
+  --output ./ocr_eval/reports/ocr_100_scorecard.json
+```
+
+The scorecard is intentionally objective: runtime engines/offline policy count for 25 points, release evaluation
+coverage and metrics for 45 points, real sample probes for 20 points, and observability fields for 10 points. Current
+small fixtures prove the evaluator and Profile contracts; they do not by themselves certify a 100-point OCR service.
+`ocr_100_corpus.py` combines real eval set files and fails duplicate case IDs, missing required scenarios, fewer than
+100 cases, target scenario count gaps, and expected field/table/seal items without positive-area bbox or polygon evidence.
+Use `--collection-plan-output` for the full JSON plan and `--collection-todo-output` for a CSV task board that lists
+each missing case, required annotations, source requirements, and scenario-specific collection hints such as the
+required UT report evidence.
+`ocr_100_ingest_samples.py` scans local PDFs/images into a `collectionStatus=needs_labeling` queue, auto-excluding
+likely standard/specification documents unless `--include-standards` is set. The generated `expected` values are
+annotation placeholders only; they must be replaced with real field/table/seal labels and positive-area coordinates
+before `--require-real-samples` can pass.
+For numerically named scan files, pass `--manifest ./ocr_eval/scan_sample_manifest.json`; the current `Scan/`
+inventory yields 30 queue cases across quality certificate, piping table, construction record, qualification,
+welding, RT report, seal-text, fragment-seal, evidence, and quality-gate scenarios; UT report samples are still
+missing from the local Scan batch.
+`ocr_100_annotation_pack.py` turns that queue into annotator-facing `annotation_tasks.json`, CSV, Markdown, and
+optional page/image previews. Use `--page-level-tasks` for multi-page PDFs or long scans; each generated page task keeps
+`parentTaskId`, `pageNo`, a single `pagePreviewPath`, and a one-page `previewPaths` value so field/table/seal bboxes do
+not get mixed across pages. The generated pack is a local work artifact; after labeling, copy the verified labels back
+into a release eval set and re-run `ocr_100_corpus.py --require-real-samples`.
+`ocr_100_annotation_prelabel.py` can pre-fill machine suggestions into `suggestedExpected` from existing OCR result
+JSON files or by running local OCR with `--run-ocr`; use `--auto-discover-runtime` to apply the runtime-doctor OCR
+Python/model recommendations, `--disable-result-cache` when refreshing stale failed results, `--save-result-dir` to
+persist raw OCR JSON per case, and `--case-id`/`--limit` to batch expensive OCR work. These suggestions are not
+exported as human truth until a reviewer copies/edits them into `labeledExpected`.
+`ocr_100_label_studio_export.py` converts annotation/prelabel tasks into `label_config.xml` and
+`label_studio_tasks.json`. Configure Label Studio local files with the same `--local-files-root`; machine
+`suggestedExpected` bbox values become editable prediction regions, and page-level tasks only export predictions whose
+`pageNo` matches the current page. This helps reviewers correct table/field/seal coordinates without cross-page noise.
+The export is strict by default: tasks without usable preview images make the command fail instead of silently shrinking
+the annotation batch. Use `--allow-skipped` only for partial draft batches.
+`ocr_100_label_studio_import.py` reads Label Studio's exported human `annotations` back into `labeledExpected`.
+It imports a full `label_json` value when reviewers provide one; otherwise it converts corrected rectangle regions
+back into pixel bboxes and merges matching `suggestedExpected` metadata. It deliberately ignores `predictions` by
+default, so machine prelabels do not become ground truth without a human annotation. The import step is also a strict
+certification gate: placeholder labels, zero-area boxes, schema failures, or missing field/table/seal evidence make the
+report fail. Failed imports now write `<output>.draft.json` instead of overwriting the official `--output`; use
+`--allow-incomplete` only for a draft review artifact.
+`ocr_annotation_readiness.py` applies the same schema and evidence checks plus a two-person review gate for
+`collectionStatus=ready_for_eval`: labeler and reviewer must both be present and cannot be the same person.
+FDE can inspect and operate the same queue through `/api/fde/ocr-annotation/tasks`,
+`/readiness`, `/export-label-studio`, `/import-label-studio`, and `/tasks/{taskId}/review`; these APIs use the single
+FDE role and never grant business approval permissions.
+`ocr_100_annotation_export.py` is the strict handoff from annotation pack to release eval set: it refuses placeholder
+labels, zero-area bbox values, and missing field/table/seal evidence. Use `--allow-incomplete` only to write a draft
+review artifact; it will still report the unresolved failure count and must not be used for OCR 100 certification.
+`--bootstrap-to-targets` creates a 100-case collection skeleton from existing templates and marks generated items with
+`bootstrapGenerated=true`; cross-scenario derived items also get `fixtureDerived=true` /
+`collectionStatus=needs_real_sample_replacement`. It is useful for sample collection planning, not for production
+certification by itself. `ocr_100_scorecard.py` treats any `bootstrapGenerated` or `fixtureDerived` case as a blocker
+even when the synthetic metrics are perfect.
+The default 100-case target distribution is: piping table 12, quality certificate 10, NDT RT 10, NDT UT 8,
+construction record 10, welding record 10, qualification certificate 8, seal text 8, fragment seal 8, evidence 8,
+and quality gate 8. The corpus report prints `scenarioTargetGaps` so the next sample collection batch is explicit.
+
 Each case can embed a `result`, point to a `resultPath`, or provide a local `source` and run with `--run-ocr`.
 Relative `resultPath` values, and relative `source` values when `--run-ocr` is enabled, are resolved from the eval
 set file's directory so release fixtures can move together without depending on the current shell directory.
+Use `--auto-discover-runtime` with `--run-ocr` for local OCR evaluation and `--disable-result-cache` when the eval
+must refresh stale OCR cache entries.
 The evaluator reports field recall, field value accuracy, field/table/seal evidence recall, bbox IoU hit rates for
 fields/tables/seals, table recall, seal recall, quality status match, quality reason recall, and optional
 `quality.evidenceCompleteness` range matching. Top-level `thresholds` can set overall

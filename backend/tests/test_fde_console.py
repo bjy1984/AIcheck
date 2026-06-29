@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi.testclient import TestClient
 
 from apps.api.main import app
@@ -71,6 +73,168 @@ def test_fde_replay_creates_child_run_without_overwriting_parent() -> None:
     assert parent_after["suggestion"] == parent_before["suggestion"]
 
 
+def test_review_run_orchestration_graph_and_human_decision(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "inline")
+    ai_run = assert_ok(
+        client.post(
+            "/api/projects/P-2026-HDCP-001/inspection/nodes/24/ai-recheck",
+            headers={"X-Role": "inspection", "Idempotency-Key": "review-run-inline-001"},
+        )
+    )
+
+    review_run_id = ai_run["dispatch"]["reviewRunId"]
+    business_view = assert_ok(client.get(f"/api/review-runs/{review_run_id}", headers={"X-Role": "inspection"}))
+    graph = assert_ok(client.get(f"/api/review-runs/{review_run_id}/graph", headers={"X-Role": "inspection"}))
+    timeline = assert_ok(client.get(f"/api/review-runs/{review_run_id}/timeline", headers={"X-Role": "inspection"}))
+    decision = assert_ok(
+        client.post(
+            f"/api/review-runs/{review_run_id}/human-decision",
+            json={"decision": "accept", "comment": "证据链完整，人工确认。"},
+            headers={"X-Role": "inspection", "Idempotency-Key": "review-run-decision-001"},
+        )
+    )
+
+    assert ai_run["dispatch"]["mode"] == "inline"
+    assert business_view["run"]["workflowEngine"] == "inline_temporal_compatible"
+    assert business_view["run"]["graphEngine"] in {"langgraph", "langgraph_fallback"}
+    assert business_view["run"]["graphRunner"] in {"langgraph", "manual"}
+    assert business_view["run"]["modelGateway"] == "litellm"
+    assert business_view["run"]["qualityGate"]["passed"] is True
+    assert business_view["run"]["qualityGate"]["metrics"]["status"] == "ready_for_human_review"
+    assert len(graph["nodes"]) >= 12
+    assert all(node["status"] == "succeeded" for node in graph["nodes"])
+    assert graph["artifactSummary"]["toolCalls"] >= 3
+    assert graph["artifactSummary"]["ruleCheckResults"] >= 1
+    assert graph["artifactSummary"]["retrievalTraces"] >= 1
+    assert graph["artifactSummary"]["findingDrafts"] >= 1
+    validation_nodes = {
+        node["nodeKey"]: node.get("details") or {}
+        for node in graph["nodes"]
+        if node["nodeKey"] in {"schema_validation", "evidence_validation", "reference_validation", "quality_gate"}
+    }
+    graph_nodes_by_key = {node["nodeKey"]: node for node in graph["nodes"]}
+    assert graph_nodes_by_key["run_rule_engine"]["artifactCounts"]["ruleResults"] >= 1
+    assert graph_nodes_by_key["run_rule_engine"]["ruleResults"][0]["linkedClauseIds"]
+    assert graph_nodes_by_key["retrieve_knowledge"]["artifactCounts"]["retrievalTraces"] >= 1
+    assert graph_nodes_by_key["retrieve_knowledge"]["retrievalTraces"][0]["selectedClauseCount"] >= 1
+    assert graph_nodes_by_key["quality_gate"]["validationSummary"]["passed"] is True
+    assert validation_nodes["schema_validation"]["checked"] >= 1
+    assert "failures" in validation_nodes["evidence_validation"]
+    assert validation_nodes["reference_validation"]["metrics"]["ruleResultCount"] >= 1
+    assert validation_nodes["quality_gate"]["metrics"]["requiresHumanReview"] is True
+    assert len(graph["edges"]) == len(graph["nodes"]) - 1
+    assert any(event["eventType"] == "review_run.waiting_human" for event in timeline["events"])
+    assert decision["reviewRun"]["status"] == "accepted_by_human"
+    assert decision["temporalSignal"]["status"] == "skipped"
+    assert any(item.get("reviewRunId") == review_run_id for item in repo.state["review_step_runs"])
+    assert any(item.get("reviewRunId") == review_run_id for item in repo.state["review_findings"])
+    assert any(item.get("reviewRunId") == review_run_id for item in repo.state["retrieval_traces"])
+    assert any(item.get("reviewRunId") == review_run_id for item in repo.state["rule_check_results"])
+    assert decision["feedback"]["feedbackType"] == "accepted"
+    assert decision["feedback"]["reviewRunId"] == review_run_id
+    assert decision["feedback"]["shouldEnterEvaluationSet"] is False
+    assert decision["feedback"]["originalAiOutput"]
+    trace = next(item for item in repo.state["retrieval_traces"] if item.get("reviewRunId") == review_run_id)
+    rule_result = next(item for item in repo.state["rule_check_results"] if item.get("reviewRunId") == review_run_id)
+    assert trace["selectedClauses"]
+    assert rule_result["linkedClauseIds"]
+    assert business_view["run"]["findingDrafts"][0]["kbRefs"][0]["clauseIds"]
+
+
+def test_review_run_can_call_litellm_and_normalize_structured_findings(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "inline")
+    monkeypatch.setenv("AICHECK_REVIEW_LLM_EXECUTION", "litellm")
+
+    def fake_chat_sync(self, messages, model="default-chat", **kwargs):
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            '{"findings":[{"findingType":"field_missing","severity":"high",'
+                            '"title":"缺少关键字段","description":"报告缺少材料牌号，需人工确认。",'
+                            '"confidence":0.91,"suggestedAction":"request_correction"}]}'
+                        )
+                    }
+                }
+            ],
+            "usage": {"total_tokens": 120},
+        }
+
+    monkeypatch.setattr("libs.review_orchestrator.execution.LiteLLMClient.chat_sync", fake_chat_sync)
+
+    ai_run = assert_ok(
+        client.post(
+            "/api/projects/P-2026-HDCP-001/inspection/nodes/24/ai-recheck",
+            headers={"X-Role": "inspection", "Idempotency-Key": "review-run-litellm-001"},
+        )
+    )
+    review_run_id = ai_run["dispatch"]["reviewRunId"]
+    run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId")
+    tool_calls = [
+        item
+        for item in repo.state["review_tool_calls"]
+        if item.get("reviewRunId") == review_run_id and item.get("toolName") == "call_litellm_chat"
+    ]
+
+    assert run["status"] == "waiting_human_review"
+    assert run["findingDrafts"][0]["findingType"] == "field_missing"
+    assert run["findingDrafts"][0]["severity"] == "high"
+    assert run["findingDrafts"][0]["requiresHumanConfirmation"] is True
+    assert run["findingDrafts"][0]["llmGenerated"] is True
+    assert tool_calls and tool_calls[0]["allowed"] is True
+
+
+def test_fde_review_run_visualization_replay_and_shadow(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "inline")
+    ai_run = assert_ok(
+        client.post(
+            "/api/projects/P-2026-HDCP-001/inspection/nodes/24/ai-recheck",
+            headers={"X-Role": "inspection", "Idempotency-Key": "review-run-fde-001"},
+        )
+    )
+    review_run_id = ai_run["dispatch"]["reviewRunId"]
+
+    page = assert_ok(client.get("/api/fde/review-runs", headers={"X-Role": "fde"}))
+    detail = assert_ok(client.get(f"/api/fde/review-runs/{review_run_id}", headers={"X-Role": "fde"}))
+    graph = assert_ok(client.get(f"/api/fde/review-runs/{review_run_id}/graph", headers={"X-Role": "fde"}))
+    temporal = assert_ok(client.get(f"/api/fde/review-runs/{review_run_id}/temporal-history", headers={"X-Role": "fde"}))
+    replay = assert_ok(
+        client.post(
+            f"/api/fde/review-runs/{review_run_id}/replay",
+            json={"runMode": "diagnostic_replay", "reason": "验证编排不可变重跑"},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-review-replay-001"},
+        )
+    )
+    shadow = assert_ok(
+        client.post(
+            f"/api/fde/review-runs/{review_run_id}/shadow-run",
+            json={"reason": "验证影子运行"},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-review-shadow-001"},
+        )
+    )
+
+    assert any(item["reviewRunId"] == review_run_id for item in page["items"])
+    assert detail["run"]["reviewRunId"] == review_run_id
+    assert detail["temporal"]["historyPolicy"] == "ids_hashes_versions_only"
+    assert detail["scorecard"]["targetScore"] == 100
+    assert detail["scorecard"]["sections"]
+    assert {"workflow", "graph", "evidence", "governance"} <= {
+        item["name"] for item in detail["scorecard"]["sections"]
+    }
+    assert detail["scorecard"]["score"] < 100
+    assert any("Temporal" in blocker for blocker in detail["scorecard"]["blockers"])
+    assert graph["nodes"]
+    assert graph["artifactSummary"]["toolCalls"] >= 3
+    assert graph["artifacts"]["retrievalTraces"]
+    assert graph["artifacts"]["ruleCheckResults"]
+    assert temporal["workflowType"] == "ReviewRunWorkflow"
+    assert replay["reviewRun"]["parentReviewRunId"] == review_run_id
+    assert replay["reviewRun"]["runMode"] == "diagnostic_replay"
+    assert shadow["reviewRun"]["parentReviewRunId"] == review_run_id
+    assert shadow["reviewRun"]["runMode"] == "shadow_replay"
+
+
 def test_fde_feedback_triage_and_release_gate() -> None:
     triage = assert_ok(
         client.post(
@@ -86,8 +250,25 @@ def test_fde_feedback_triage_and_release_gate() -> None:
             headers={"X-Role": "fde", "Idempotency-Key": "fde-release-001"},
         )
     )
+    feedback_rows = assert_ok(client.get("/api/fde/feedback", headers={"X-Role": "fde"}))
+    feedback_row = next(item for item in feedback_rows if item["id"] == "AIFB-24-001")
 
     assert triage["feedback"]["status"] == "approved_for_eval"
+    assert triage["feedback"]["governanceState"] == "promoted_to_eval"
+    assert triage["feedback"]["evaluationCaseId"] == triage["evaluationCase"]["id"]
+    assert triage["feedback"]["canUseForEval"] is True
+    assert triage["feedback"]["sampleUsage"]["evaluationCaseId"] == triage["evaluationCase"]["id"]
+    assert triage["evaluationCase"]["sourceFeedbackId"] == "AIFB-24-001"
+    assert triage["evaluationCase"]["status"] == "approved_for_eval"
+    assert triage["evaluationCase"]["canUseForEval"] is True
+    assert feedback_row["governanceState"] == "promoted_to_eval"
+    assert feedback_row["evaluationCaseId"] == triage["evaluationCase"]["id"]
+    assert feedback_row["canUseForEval"] is True
+    assert feedback_row["canUseForTraining"] is False
+    assert feedback_row["dataSensitivity"] == "masked"
+    assert feedback_row["adjudicationRequired"] is False
+    assert feedback_row["sampleUsage"]["sourceFeedbackId"] == "AIFB-24-001"
+    assert any(item.get("sourceFeedbackId") == "AIFB-24-001" for item in repo.state["evaluation_cases"])
     assert blocked_release["plan"]["status"] == "blocked_by_gate"
     assert "缺少评估报告" in blocked_release["plan"]["blockingReasons"]
     assert "缺少回滚方案" in blocked_release["plan"]["blockingReasons"]
@@ -143,12 +324,55 @@ def test_fde_evaluation_report_and_release_state_machine() -> None:
             headers={"X-Role": "fde", "Idempotency-Key": "fde-release-gated-001"},
         )
     )
+    assert evaluation["run"]["caseSummary"]["cases"] >= 1
+    assert evaluation["run"]["metrics"]["casePassRate"] >= 0.9
+    assert evaluation["run"]["metrics"]["retrievalRecall"] >= 0.9
+    assert evaluation["run"]["metrics"]["wrongReferenceRate"] == 0
+    assert evaluation["caseResults"]
+    assert evaluation["caseResults"][0]["evaluationRunId"] == evaluation["run"]["id"]
+    assert evaluation["caseResults"][0]["status"] == "passed"
+    assert evaluation["caseResults"][0]["retrievalPassed"] is True
+    assert evaluation["caseResults"][0]["expectedClauseIds"] == ["TSG-Z6002-3.2"]
+    assert evaluation["caseResults"][0]["selectedRoute"] == "hybrid_review_basis_search"
+    assert evaluation["caseResults"][0]["retrievalTraceId"]
+    assert any(item.get("evaluationRunId") == evaluation["run"]["id"] for item in repo.state["evaluation_case_results"])
+    assert any(
+        item.get("evaluationRunId") == evaluation["run"]["id"]
+        and item.get("queryType") == "fde_evaluation_retrieval"
+        for item in repo.state["retrieval_traces"]
+    )
+    assert report["report"]["caseSummary"]["cases"] == evaluation["run"]["caseSummary"]["cases"]
+    assert report["report"]["caseSummary"]["retrievalRecall"] >= 0.9
+    assert report["caseResults"]
+    fde_approval = assert_error(
+        client.post(
+            f"/api/fde/releases/{release['plan']['id']}/approve",
+            json={"comment": "FDE 不能自批高风险发布。"},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-release-approve-fde-001"},
+        ),
+        "FORBIDDEN",
+    )
     submitted = assert_ok(
         client.post(
             f"/api/fde/releases/{release['plan']['id']}/submit",
             json={},
             headers={"X-Role": "fde", "Idempotency-Key": "fde-release-submit-001"},
         )
+    )
+    approved = assert_ok(
+        client.post(
+            f"/api/fde/releases/{release['plan']['id']}/approve",
+            json={"comment": "评估、风险集和回滚计划满足灰度前置条件。"},
+            headers={"X-Role": "admin", "Idempotency-Key": "fde-release-approve-admin-001"},
+        )
+    )
+    direct_canary = assert_error(
+        client.post(
+            f"/api/fde/releases/{release['plan']['id']}/request-canary",
+            json={"tenantPercent": 10},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-release-canary-direct-001"},
+        ),
+        "VALIDATION_ERROR",
     )
     shadow = assert_ok(
         client.post(
@@ -167,13 +391,159 @@ def test_fde_evaluation_report_and_release_state_machine() -> None:
 
     assert evaluation["run"]["status"] == "completed"
     assert report["report"]["status"] == "passed"
-    assert release["plan"]["status"] == "submitted"
-    assert all(gate["passed"] for gate in submitted["gates"])
+    assert release["plan"]["status"] == "blocked_by_gate"
+    assert any(gate["gate"] == "release_approval" and not gate["passed"] for gate in release["gates"])
+    assert fde_approval["data"]["reason"] == "FORBIDDEN"
+    assert submitted["plan"]["status"] == "blocked_by_gate"
+    assert any(gate["gate"] == "release_approval" and not gate["passed"] for gate in submitted["gates"])
+    assert approved["approval"]["status"] == "approved"
+    assert approved["plan"]["status"] == "submitted"
+    assert all(gate["passed"] for gate in approved["gates"])
+    assert direct_canary["data"]["reason"] == "VALIDATION_ERROR"
     assert shadow["plan"]["status"] == "shadow_running"
     assert canary["plan"]["status"] == "canary_requested"
 
 
+def test_fde_evaluation_run_fails_when_case_findings_are_missing() -> None:
+    evaluation = assert_ok(
+        client.post(
+            "/api/fde/evaluation-runs",
+            json={
+                "evaluationSetId": "ESET-GOLDEN-ENGINEERING-001",
+                "capabilityBundleId": "BUNDLE-REVIEW-202606",
+                "caseResults": {
+                    "ECASE-24-001": {
+                        "actualFindings": [],
+                        "actualEvidence": [],
+                        "replayMode": "shadow_replay",
+                    }
+                },
+            },
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-eval-fail-001"},
+        )
+    )
+    report = assert_ok(
+        client.get(
+            f"/api/fde/evaluation-runs/{evaluation['run']['id']}/report",
+            headers={"X-Role": "fde"},
+        )
+    )
+    failed_metric = next(
+        item
+        for item in repo.state["evaluation_metrics"]
+        if item.get("evaluationRunId") == evaluation["run"]["id"] and item.get("metric") == "casePassRate"
+    )
+
+    assert evaluation["report"]["status"] == "failed"
+    assert evaluation["run"]["caseSummary"]["failed"] == 1
+    assert evaluation["caseResults"][0]["status"] == "failed"
+    assert evaluation["caseResults"][0]["missingFindings"]
+    assert failed_metric["passed"] is False
+    assert report["report"]["status"] == "failed"
+    assert report["caseResults"][0]["missingFindings"] == evaluation["caseResults"][0]["missingFindings"]
+
+
+def test_fde_evaluation_run_fails_when_expected_clause_is_missing() -> None:
+    evaluation = assert_ok(
+        client.post(
+            "/api/fde/evaluation-runs",
+            json={
+                "evaluationSetId": "ESET-GOLDEN-ENGINEERING-001",
+                "capabilityBundleId": "BUNDLE-REVIEW-202606",
+                "caseResults": {
+                    "ECASE-24-001": {
+                        "actualClauseIds": ["TSG-D7005-7.4"],
+                        "selectedRoute": "hybrid_review_basis_search",
+                    }
+                },
+            },
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-eval-retrieval-fail-001"},
+        )
+    )
+    retrieval_metric = next(
+        item
+        for item in repo.state["evaluation_metrics"]
+        if item.get("evaluationRunId") == evaluation["run"]["id"] and item.get("metric") == "retrievalRecall"
+    )
+    wrong_reference_metric = next(
+        item
+        for item in repo.state["evaluation_metrics"]
+        if item.get("evaluationRunId") == evaluation["run"]["id"] and item.get("metric") == "wrongReferenceRate"
+    )
+
+    assert evaluation["report"]["status"] == "failed"
+    assert evaluation["caseResults"][0]["retrievalPassed"] is False
+    assert evaluation["caseResults"][0]["missingClauseIds"] == ["TSG-Z6002-3.2"]
+    assert evaluation["caseResults"][0]["unexpectedTopClauseId"] == "TSG-D7005-7.4"
+    assert retrieval_metric["passed"] is False
+    assert wrong_reference_metric["passed"] is False
+
+
+def test_fde_release_gate_rejects_failed_report_and_accepts_run_id_reference() -> None:
+    failed_eval = assert_ok(
+        client.post(
+            "/api/fde/evaluation-runs",
+            json={
+                "evaluationSetId": "ESET-GOLDEN-ENGINEERING-001",
+                "capabilityBundleId": "BUNDLE-REVIEW-202606",
+                "caseResults": {"ECASE-24-001": {"actualFindings": [], "actualEvidence": []}},
+            },
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-eval-failed-release-001"},
+        )
+    )
+    failed_release = assert_ok(
+        client.post(
+            "/api/fde/releases",
+            json={
+                "capabilityBundleId": "BUNDLE-REVIEW-202606",
+                "riskLevel": "high",
+                "evaluationReportId": failed_eval["report"]["id"],
+                "rollbackPlanId": "ROLLBACK-BUNDLE-202606",
+            },
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-release-failed-report-001"},
+        )
+    )
+    passed_eval = assert_ok(
+        client.post(
+            "/api/fde/evaluation-runs",
+            json={
+                "evaluationSetId": "ESET-GOLDEN-ENGINEERING-001",
+                "capabilityBundleId": "BUNDLE-REVIEW-202606",
+            },
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-eval-runref-001"},
+        )
+    )
+    run_ref_release = assert_ok(
+        client.post(
+            "/api/fde/releases",
+            json={
+                "capabilityBundleId": "BUNDLE-REVIEW-202606",
+                "riskLevel": "high",
+                "evaluationReportId": passed_eval["run"]["id"],
+                "rollbackPlanId": "ROLLBACK-BUNDLE-202606",
+            },
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-release-runref-001"},
+        )
+    )
+
+    failed_gate = next(gate for gate in failed_release["gates"] if gate["gate"] == "evaluation_report")
+    run_ref_gate = next(gate for gate in run_ref_release["gates"] if gate["gate"] == "evaluation_report")
+    assert failed_eval["report"]["status"] == "failed"
+    assert failed_release["plan"]["status"] == "blocked_by_gate"
+    assert failed_gate["passed"] is False
+    assert failed_gate["message"] == "评估报告未通过"
+    assert passed_eval["report"]["status"] == "passed"
+    assert run_ref_gate["passed"] is True
+    assert run_ref_release["plan"]["status"] == "blocked_by_gate"
+
+
 def test_fde_business_pack_install_rca_and_data_export() -> None:
+    validation = assert_ok(
+        client.post(
+            "/api/fde/business-packs/validate-all",
+            headers={"X-Role": "fde"},
+        )
+    )
     install = assert_ok(
         client.post(
             "/api/fde/business-packs/engineering_inspection_v1/install",
@@ -197,6 +567,12 @@ def test_fde_business_pack_install_rca_and_data_export() -> None:
     )
     costs = assert_ok(client.get("/api/fde/cost-budgets", headers={"X-Role": "fde"}))
 
+    assert validation["scorecard"]["targetScore"] == 100
+    assert validation["scorecard"]["ok"] is True
+    assert validation["scorecard"]["blockers"] == []
+    assert {"catalog", "core-boundary", "fixtures", "delivery"} <= {
+        item["name"] for item in validation["scorecard"]["sections"]
+    }
     assert install["installation"]["status"] == "dry_run_passed"
     assert install["validation"]["ok"] is True
     assert export["export"]["watermark"].startswith("FDE-")
@@ -391,6 +767,13 @@ def test_fde_ocr_quality_runs_corrections_and_eval() -> None:
     }
     assert quality["runtimeDoctor"]["status"] in {"unavailable", "attention", "ready"}
     assert "summary" in quality["runtimeDoctor"]
+    assert quality["ocr100Scorecard"]["targetScore"] == 100
+    assert quality["ocr100Scorecard"]["score"] < 100
+    assert quality["ocr100Scorecard"]["sections"]
+    assert quality["ocr100Scorecard"]["blockers"]
+    assert {"runtime", "evaluation", "sample-probes", "observability"} <= {
+        item["name"] for item in quality["ocr100Scorecard"]["sections"]
+    }
     assert quality["failurePools"]["tableFailures"]
     assert "TABLE_EVIDENCE_MISSING" in {item["code"] for item in quality["failurePools"]["tableFailures"]}
     seal_failure_codes = {item["code"] for item in quality["failurePools"]["sealFailures"]}
@@ -419,6 +802,12 @@ def test_fde_ocr_quality_runs_corrections_and_eval() -> None:
         for diagnostic in evaluation["run"]["caseDiagnostics"]
         for item in diagnostic.get("findings", [])
     )
+    quality_after_eval = assert_ok(client.get("/api/fde/ocr-quality", headers={"X-Role": "fde"}))
+    assert quality_after_eval["ocr100Scorecard"]["sections"][1]["name"] == "evaluation"
+    assert any(
+        "evaluation set has fewer than 100 cases" in blocker
+        for blocker in quality_after_eval["ocr100Scorecard"]["blockers"]
+    )
 
 
 def test_fde_ocr_evaluation_accepts_explicit_cases_and_returns_diagnostics() -> None:
@@ -436,6 +825,8 @@ def test_fde_ocr_evaluation_accepts_explicit_cases_and_returns_diagnostics() -> 
                         "caseId": "fde-explicit-bbox",
                         "scenario": "piping_table_profile",
                         "minScore": 0,
+                        "fixtureDerived": True,
+                        "collectionStatus": "needs_real_sample_replacement",
                         "result": {
                             "parseResultId": "PARSE-FDE-EXPLICIT",
                             "status": "success",
@@ -464,7 +855,195 @@ def test_fde_ocr_evaluation_accepts_explicit_cases_and_returns_diagnostics() -> 
     assert run["evaluationSummary"]["scenarioMetrics"]["piping_table_profile"]["thresholdFailures"][0]["metric"] == "fieldBboxHitRate"
     assert run["scenarioMetrics"]["piping_table_profile"]["thresholdFailures"][0]["metric"] == "fieldBboxHitRate"
     assert diagnostics["caseId"] == "fde-explicit-bbox"
+    assert diagnostics["fixtureDerived"] is True
+    assert diagnostics["collectionStatus"] == "needs_real_sample_replacement"
     assert diagnostics["details"]["fields"][0]["status"] == "bbox_mismatch"
+
+
+def test_fde_ocr_annotation_queue_import_and_review() -> None:
+    listing = assert_ok(client.get("/api/fde/ocr-annotation/tasks", headers={"X-Role": "fde"}))
+
+    assert listing["summary"]["tasks"] >= 1
+    assert listing["summary"]["readyForEval"] == 0
+    assert listing["page"]["items"][0]["candidateCounts"]["fields"] >= 1
+    assert listing["page"]["items"][0]["pageDimensions"]["1"] == [2000, 1500]
+
+    export = assert_ok(
+        client.post(
+            "/api/fde/ocr-annotation/export-label-studio",
+            json={"includeWithoutImage": True},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-annotation-export-001"},
+        )
+    )
+
+    assert export["summary"]["tasks"] >= 1
+    assert export["tasks"][0]["data"]["case_id"] == "real-piping_table_profile-seed-001"
+    assert "<RectangleLabels" in export["labelConfigXml"]
+
+    expected = {
+        "qualityStatus": "auto_usable",
+        "fields": [{"fieldCode": "pipe_no", "value": "PL8301", "bbox": [10, 10, 40, 20], "pageNo": 1}],
+        "tables": [{"businessSchema": "piping_characteristic_table_v1", "bbox": [0, 20, 90, 80], "pageNo": 1}],
+    }
+    imported = assert_ok(
+        client.post(
+            "/api/fde/ocr-annotation/import-label-studio",
+            json={
+                "markStatus": "ready_for_eval",
+                "labelStudioExport": [
+                    {
+                        "data": {"case_id": "real-piping_table_profile-seed-001", "page_no": 1},
+                        "annotations": [
+                            {
+                                "id": 1,
+                                "result": [
+                                    {
+                                        "from_name": "label_json",
+                                        "type": "textarea",
+                                        "value": {"text": [json.dumps(expected, ensure_ascii=False)]},
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            },
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-annotation-import-001"},
+        )
+    )
+
+    assert imported["import"]["summary"]["importedTasks"] == 1
+    assert imported["readiness"]["summary"]["humanLabeled"] == 1
+    assert "review_labeler_missing" in imported["readiness"]["summary"]["blockerCounts"]
+
+    reviewed = assert_ok(
+        client.post(
+            "/api/fde/ocr-annotation/tasks/ANNO-SEED-PIPING-001/review",
+            json={"labeler": "标注员A", "reviewer": "FDE 工程师", "comment": "二审通过"},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-annotation-review-001"},
+        )
+    )
+
+    assert reviewed["readiness"]["ok"] is True
+    assert reviewed["task"]["collectionStatus"] == "ready_for_eval"
+
+
+def test_fde_builtin_ocr_annotation_label_verify_and_import_pack() -> None:
+    expected = {
+        "qualityStatus": "auto_usable",
+        "fields": [{"fieldCode": "pipe_no", "value": "PL8301", "bbox": [120, 260, 220, 300], "pageNo": 1}],
+        "tables": [
+            {
+                "businessSchema": "piping_characteristic_table_v1",
+                "bbox": [70, 230, 1800, 1120],
+                "minRows": 10,
+                "minColumns": 12,
+                "pageNo": 1,
+            }
+        ],
+    }
+
+    saved = assert_ok(
+        client.put(
+            "/api/fde/ocr-annotation/tasks/ANNO-SEED-PIPING-001/label",
+            json={
+                "labeler": "标注员A",
+                "labeledExpected": expected,
+                "pageDimensions": {"1": [2000, 1500]},
+            },
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-annotation-label-001"},
+        )
+    )
+
+    assert saved["task"]["collectionStatus"] == "labeled"
+    assert saved["task"]["labelCounts"] == {"fields": 1, "tables": 1, "seals": 0}
+    assert saved["readiness"]["summary"]["readyForEval"] == 0
+    assert "review_required" in saved["readiness"]["summary"]["blockerCounts"]
+
+    verified = assert_ok(
+        client.post(
+            "/api/fde/ocr-annotation/tasks/ANNO-SEED-PIPING-001/verify",
+            json={"reviewer": "FDE 工程师", "decision": "approved", "comment": "内置标注台二审通过"},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-annotation-verify-001"},
+        )
+    )
+
+    assert verified["readiness"]["ok"] is True
+    assert verified["task"]["readyForEval"] is True
+    assert verified["task"]["labeledExpected"]["review"]["reviewer"] == "FDE 工程师"
+
+    imported = assert_ok(
+        client.post(
+            "/api/fde/ocr-annotation/import-pack",
+            json={
+                "tasks": [
+                    {
+                        "taskId": "ANNO-IMPORT-DEMO-001",
+                        "caseId": "real-seal_text_profile-import-demo",
+                        "scenario": "seal_text_profile",
+                        "profileId": "seal_text_profile_v1",
+                        "documentType": "seal_photo",
+                        "collectionStatus": "needs_labeling",
+                        "suggestedExpected": {
+                            "qualityStatus": "needs_human_review",
+                            "seals": [
+                                {
+                                    "sealType": "company_official_seal",
+                                    "nameContains": "设计院",
+                                    "bbox": [10, 10, 120, 90],
+                                    "pageNo": 1,
+                                }
+                            ],
+                        },
+                    }
+                ]
+            },
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-annotation-pack-001"},
+        )
+    )
+
+    assert imported["summary"]["importedTasks"] == 1
+    assert imported["summary"]["totalTasks"] >= 2
+
+
+def test_fde_ocr_annotation_label_blocks_non_fde_and_bad_schema() -> None:
+    forbidden = assert_error(
+        client.put(
+            "/api/fde/ocr-annotation/tasks/ANNO-SEED-PIPING-001/label",
+            json={"labeledExpected": {"qualityStatus": "auto_usable"}},
+            headers={"X-Role": "contractor", "Idempotency-Key": "fde-annotation-label-forbidden"},
+        ),
+        "FORBIDDEN",
+    )
+    assert forbidden["code"] != 0
+
+    invalid_expected = {
+        "qualityStatus": "auto_usable",
+        "fields": [
+            {"fieldCode": "pipe_no", "value": "PL8301", "bbox": [120, 260, 220, 300], "pageNo": 1},
+            {"fieldCode": "pipe_no", "value": "PL8301", "bbox": [120, 260, 220, 300], "pageNo": 1},
+            {"fieldCode": "empty_value", "value": "", "bbox": [10, 10, 20, 20], "pageNo": 1},
+        ],
+        "tables": [
+            {"businessSchema": "piping_characteristic_table_v1", "bbox": [0, 0, 100, 100], "minRows": 0, "pageNo": 1},
+            {"businessSchema": "piping_characteristic_table_v1", "bbox": [0, 0, 100, 100], "pageNo": 1},
+        ],
+    }
+
+    saved = assert_ok(
+        client.put(
+            "/api/fde/ocr-annotation/tasks/ANNO-SEED-PIPING-001/label",
+            json={"labeler": "标注员A", "labeledExpected": invalid_expected, "pageDimensions": {"1": [90, 90]}},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-annotation-label-invalid"},
+        )
+    )
+
+    blockers = saved["readiness"]["summary"]["blockerCounts"]
+    assert blockers["OCR_ANNOTATION_DUPLICATE_FIELD"] == 1
+    assert blockers["OCR_ANNOTATION_FIELD_VALUE_EMPTY"] == 1
+    assert blockers["OCR_ANNOTATION_DUPLICATE_TABLE"] == 1
+    assert blockers["OCR_ANNOTATION_TABLE_MIN_INVALID"] == 1
+    assert blockers["OCR_ANNOTATION_BBOX_OUT_OF_BOUNDS"] >= 1
 
 
 def test_fde_cannot_execute_business_review_mutation() -> None:
@@ -498,3 +1077,152 @@ def test_fde_auth_required_uses_single_role(monkeypatch) -> None:
 
     assert dashboard["metrics"]
     assert forbidden["code"] != 0
+
+
+def test_fde_100_routes_and_governance_surface() -> None:
+    routes = assert_ok(client.get("/api/auth/routes?role=fde"))
+    child_paths = {child["path"] for child in routes[0]["children"]}
+
+    assert {
+        "dashboard",
+        "ai-runs",
+        "review-runs",
+        "feedback",
+        "evaluation",
+        "capability-bundles",
+        "releases",
+        "ocr-quality",
+        "business-packs",
+        "security",
+        "incidents",
+        "costs",
+        "acceptance",
+    } <= child_paths
+
+
+def test_fde_security_masking_data_export_and_audit_flow() -> None:
+    policies = assert_ok(client.get("/api/fde/security/masking-policies", headers={"X-Role": "fde"}))
+    created_policy = assert_ok(
+        client.post(
+            "/api/fde/security/masking-policies",
+            json={"targetType": "ai_run", "fieldPath": "findingDrafts.description", "visibleChars": 80},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-mask-policy-001"},
+        )
+    )
+    export = assert_ok(
+        client.post(
+            "/api/fde/data-exports",
+            json={"targetType": "ai_run", "targetId": "AIRUN-24-20260625-01", "masked": True},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-export-approval-001"},
+        )
+    )
+    forbidden = assert_error(
+        client.post(
+            f"/api/fde/data-exports/{export['export']['id']}/approve",
+            json={"status": "approved"},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-export-approval-denied"},
+        ),
+        "FORBIDDEN",
+    )
+    approved = assert_ok(
+        client.post(
+            f"/api/fde/data-exports/{export['export']['id']}/approve",
+            json={"status": "approved"},
+            headers={"X-Role": "admin", "Idempotency-Key": "fde-export-approval-admin"},
+        )
+    )
+    expired = assert_ok(
+        client.post(
+            f"/api/fde/data-exports/{export['export']['id']}/expire",
+            json={"reason": "测试过期"},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-export-expire-001"},
+        )
+    )
+    audit = assert_ok(client.get("/api/fde/audit-events", headers={"X-Role": "fde"}))
+
+    assert policies
+    assert created_policy["policy"]["status"] == "draft"
+    assert forbidden["data"]["reason"] == "FORBIDDEN"
+    assert approved["export"]["status"] == "approved"
+    assert expired["export"]["status"] == "expired"
+    assert any(item["objectType"] == "DataExport" for item in audit["events"])
+    assert any(item["objectType"] == "MaskingPolicy" for item in audit["events"])
+
+
+def test_fde_version_diff_release_impact_and_production_gate() -> None:
+    bundle_id = repo.state["capability_bundles"][0]["id"]
+    bundle_diff = assert_ok(client.get(f"/api/fde/capability-bundles/{bundle_id}/diff", headers={"X-Role": "fde"}))
+    pack_diff = assert_ok(client.get("/api/fde/business-packs/engineering_inspection_v1/diff", headers={"X-Role": "fde"}))
+    release = assert_ok(
+        client.post(
+            "/api/fde/releases",
+            json={
+                "capabilityBundleId": bundle_id,
+                "riskLevel": "medium",
+                "targetScope": {"tenantIds": ["demo"], "businessPackIds": ["engineering_inspection_v1"], "projectIds": []},
+            },
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-release-100-001"},
+        )
+    )
+    release_id = release["plan"]["id"]
+    impact = assert_ok(client.get(f"/api/fde/releases/{release_id}/impact", headers={"X-Role": "fde"}))
+    shadow = assert_ok(
+        client.post(
+            f"/api/fde/releases/{release_id}/start-shadow",
+            json={"sampleRate": 0},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-release-shadow-100"},
+        )
+    )
+    shadow_passed = assert_ok(
+        client.post(
+            f"/api/fde/releases/{release_id}/mark-shadow-passed",
+            json={"metrics": {"failedRuns": 0}},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-release-shadow-pass-100"},
+        )
+    )
+    production_forbidden = assert_error(
+        client.post(
+            f"/api/fde/releases/{release_id}/approve-production",
+            json={"comment": "FDE 不可批准生产"},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-release-prod-denied"},
+        ),
+        "FORBIDDEN",
+    )
+    production = assert_ok(
+        client.post(
+            f"/api/fde/releases/{release_id}/approve-production",
+            json={"comment": "管理员批准生产"},
+            headers={"X-Role": "admin", "Idempotency-Key": "fde-release-prod-admin"},
+        )
+    )
+
+    assert bundle_diff["bundleId"] == bundle_id
+    assert pack_diff["businessPackId"] == "engineering_inspection_v1"
+    assert impact["affectedProjectCount"] >= 1
+    assert shadow["plan"]["status"] == "shadow_running"
+    assert shadow_passed["plan"]["status"] == "shadow_passed"
+    assert production_forbidden["data"]["reason"] == "FORBIDDEN"
+    assert production["plan"]["status"] == "production_approved"
+
+
+def test_fde_incident_close_and_cost_budget_change_request() -> None:
+    budget_id = repo.state["cost_budgets"][0]["id"]
+    change = assert_ok(
+        client.post(
+            f"/api/fde/cost-budgets/{budget_id}/propose-change",
+            json={"proposedLimit": 1000, "reason": "测试预算变更"},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-budget-change-001"},
+        )
+    )
+    closed = assert_ok(
+        client.post(
+            "/api/fde/incidents/INC-AI-20260626-001/close",
+            json={"resolution": "测试关闭"},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-incident-close-001"},
+        )
+    )
+    costs = assert_ok(client.get("/api/fde/cost-budgets", headers={"X-Role": "fde"}))
+
+    assert change["changeRequest"]["status"] == "pending_approval"
+    assert closed["incident"]["status"] == "closed"
+    assert any(item["id"] == change["changeRequest"]["id"] for item in costs["changeRequests"])

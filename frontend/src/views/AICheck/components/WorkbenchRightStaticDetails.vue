@@ -589,7 +589,7 @@ const getPillClass = (value?: string | number) => {
 .right-card:hover,
 .right-card:focus-within {
   border-color: #c4d5ee;
-  box-shadow: 0 2px 8px rgba(20, 34, 56, 0.08);
+  box-shadow: 0 2px 8px rgb(20 34 56 / 8%);
 }
 
 .right-card h3 {
@@ -607,8 +607,8 @@ const getPillClass = (value?: string | number) => {
 .table {
   width: 100%;
   font-size: 14px;
-  table-layout: fixed;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .table th,
@@ -624,8 +624,8 @@ const getPillClass = (value?: string | number) => {
 
 .table th {
   width: 128px;
-  color: #485a73;
   font-weight: 900;
+  color: #485a73;
   background: var(--head);
 }
 
@@ -642,18 +642,18 @@ const getPillClass = (value?: string | number) => {
 
 .pill {
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
   min-height: 24px;
   padding: 3px 8px;
-  color: var(--blue-2);
   font-size: 13px;
   font-weight: 800;
   line-height: 1;
+  color: var(--blue-2);
   white-space: nowrap;
   background: var(--blue-soft);
   border: 1px solid #bcd4ff;
   border-radius: 5px;
+  align-items: center;
+  justify-content: center;
 }
 
 .pill.blue {
@@ -682,15 +682,15 @@ const getPillClass = (value?: string | number) => {
 
 .action-text {
   display: inline-flex;
-  align-items: center;
   min-height: 24px;
   padding: 0 6px;
-  color: var(--blue-2);
   font-weight: 900;
+  color: var(--blue-2);
   border-radius: 5px;
   transition:
     color 0.18s ease,
     background-color 0.18s ease;
+  align-items: center;
 }
 
 .action-text:hover {
@@ -714,12 +714,12 @@ const getPillClass = (value?: string | number) => {
 
 .time-row {
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr);
-  gap: 10px;
-  color: #344054;
   font-size: 14px;
   font-weight: 700;
   line-height: 1.6;
+  color: #344054;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 10px;
 }
 
 .time-dot {

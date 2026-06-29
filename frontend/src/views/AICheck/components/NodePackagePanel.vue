@@ -194,13 +194,13 @@ const alertType = computed(() => {
   font-weight: 700;
 }
 
-@media (max-width: 1280px) {
+@media (width <= 1280px) {
   .node-panel {
     margin-bottom: 16px;
   }
 }
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .node-issue-content {
     align-items: flex-start;
     flex-direction: column;

@@ -6,7 +6,7 @@ from typing import Any
 
 from libs.db.repository import repo
 
-from .execution import create_review_run_from_ai_run, execute_review_run_inline
+from .execution import append_review_event, create_review_run_from_ai_run, execute_review_run_inline
 
 
 def review_orchestration_mode() -> str:
@@ -71,3 +71,57 @@ async def _start_temporal_workflow(review_run: dict[str, Any]) -> dict[str, Any]
         "temporalRunId": handle.result_run_id,
         "taskQueue": review_run["taskQueues"]["workflow"],
     }
+
+
+def signal_review_run_human_decision(review_run: dict[str, Any], decision: dict[str, Any]) -> dict[str, Any]:
+    if review_run.get("workflowEngine") != "temporal":
+        return {"status": "skipped", "reason": "workflowEngine is not temporal"}
+    return _run_temporal_signal(review_run, "submit_human_decision", decision)
+
+
+def signal_review_run_cancel(review_run: dict[str, Any], reason: str | None = None) -> dict[str, Any]:
+    if review_run.get("workflowEngine") != "temporal":
+        return {"status": "skipped", "reason": "workflowEngine is not temporal"}
+    return _run_temporal_signal(review_run, "cancel_review", reason)
+
+
+def _run_temporal_signal(review_run: dict[str, Any], signal_name: str, payload: Any) -> dict[str, Any]:
+    try:
+        result = asyncio.run(_signal_temporal_workflow(review_run, signal_name, payload))
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        try:
+            result = loop.run_until_complete(_signal_temporal_workflow(review_run, signal_name, payload))
+        finally:
+            loop.close()
+    except Exception as exc:
+        review_run["temporalSignalErrorCode"] = "TEMPORAL_SIGNAL_FAILED"
+        review_run["temporalSignalErrorMessage"] = str(exc)
+        append_review_event(
+            str(review_run.get("reviewRunId") or review_run.get("id")),
+            event_type="temporal.signal_failed",
+            title="Temporal signal 发送失败",
+            status="warning",
+            details={"signalName": signal_name, "message": str(exc)},
+        )
+        return {"status": "failed", "errorCode": "TEMPORAL_SIGNAL_FAILED", "message": str(exc)}
+    append_review_event(
+        str(review_run.get("reviewRunId") or review_run.get("id")),
+        event_type="temporal.signal_sent",
+        title="Temporal signal 已发送",
+        status="succeeded",
+        details={"signalName": signal_name},
+    )
+    return result
+
+
+async def _signal_temporal_workflow(review_run: dict[str, Any], signal_name: str, payload: Any) -> dict[str, Any]:
+    from temporalio.client import Client
+
+    workflow_id = str(review_run.get("workflowId") or f"review-run-{review_run.get('reviewRunId')}")
+    address = os.getenv("TEMPORAL_ADDRESS", "localhost:7233")
+    namespace = os.getenv("TEMPORAL_NAMESPACE", "default")
+    client = await Client.connect(address, namespace=namespace)
+    handle = client.get_workflow_handle(workflow_id)
+    await handle.signal(signal_name, payload)
+    return {"status": "sent", "workflowId": workflow_id, "signalName": signal_name}

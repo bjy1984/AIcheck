@@ -78,6 +78,7 @@ IDEMPOTENT_DELEGATE_CALLS = {
     "bind_documents",
     "create_admin_project",
     "create_upload_session",
+    "fde_replay_review_run",
     "update_knowledge_source",
 }
 REQUIRED_WORKER_TASKS = {
@@ -125,6 +126,8 @@ REQUIRED_PLAN_COLLECTIONS = {
     "export_tasks",
     "knowledge_files",
     "knowledge_tasks",
+    "knowledge_clauses",
+    "knowledge_page_index_nodes",
     "todos",
     "messages",
     "audit_logs",
@@ -135,6 +138,8 @@ CRITICAL_MONGO_INDEXES = [
     {"collection": "documents", "fields": ["projectId", "nodeId", "status"]},
     {"collection": "document_versions", "fields": ["documentId", "id"]},
     {"collection": "knowledge_tasks", "fields": ["taskType", "status", "targetType", "targetId"]},
+    {"collection": "knowledge_clauses", "fields": ["kbDocId", "clauseNo", "status"]},
+    {"collection": "knowledge_page_index_nodes", "fields": ["kbDocId", "kbVersion", "nodeId"]},
     {"collection": "evidence_links", "fields": ["targetType", "targetId"]},
     {"collection": "audit_logs", "fields": ["createdAt", "objectType", "objectId"]},
     {"collection": IDEMPOTENCY_COLLECTION, "fields": ["scope"], "unique": True},
@@ -201,6 +206,160 @@ REQUIRED_LITELLM_WORKER_USAGE = {
     "ai_recheck": ["LiteLLMClient().chat_sync", "review-chat", "AI_RUN_FAILED", "first_message_text"],
     "llm_compare": ["LiteLLMClient().chat_sync", "default-chat", "compare-fast", "EXTERNAL_TOOL_FAILED"],
 }
+REQUIRED_REVIEW_RUN_ROUTES = [
+    {"method": "POST", "suffix": "/projects/{project_id}/inspection/nodes/{node_id}/ai-recheck"},
+    {"method": "GET", "suffix": "/review-runs/{review_run_id}"},
+    {"method": "GET", "suffix": "/review-runs/{review_run_id}/timeline"},
+    {"method": "GET", "suffix": "/review-runs/{review_run_id}/graph"},
+    {"method": "POST", "suffix": "/review-runs/{review_run_id}/human-decision"},
+    {"method": "POST", "suffix": "/review-runs/{review_run_id}/cancel"},
+    {"method": "POST", "suffix": "/review-runs/{review_run_id}/rerun"},
+    {"method": "GET", "suffix": "/fde/review-runs"},
+    {"method": "GET", "suffix": "/fde/review-runs/{review_run_id}"},
+    {"method": "GET", "suffix": "/fde/review-runs/{review_run_id}/graph"},
+    {"method": "GET", "suffix": "/fde/review-runs/{review_run_id}/temporal-history"},
+    {"method": "POST", "suffix": "/fde/review-runs/{review_run_id}/replay"},
+    {"method": "POST", "suffix": "/fde/review-runs/{review_run_id}/shadow-run"},
+]
+REQUIRED_REVIEW_GRAPH_STEP_KEYS = [
+    "load_context",
+    "load_ocr_result",
+    "run_rule_engine",
+    "retrieve_knowledge",
+    "build_prompt",
+    "llm_generate_findings",
+    "schema_validation",
+    "evidence_validation",
+    "reference_validation",
+    "critic_review",
+    "quality_gate",
+    "persist_drafts",
+]
+REQUIRED_REVIEW_COLLECTIONS = {
+    "review_runs",
+    "review_step_runs",
+    "review_graph_nodes",
+    "review_tool_calls",
+    "review_events",
+    "retrieval_traces",
+    "rule_check_results",
+}
+REQUIRED_REVIEW_ALLOWED_TOOLS = {
+    "get_project_context",
+    "get_node_requirements",
+    "get_document_ocr_result",
+    "run_rule_engine",
+    "retrieve_clauses",
+    "search_knowledge_base",
+    "call_litellm_chat",
+    "create_review_finding_draft",
+}
+REQUIRED_REVIEW_FORBIDDEN_TOOLS = {
+    "approve_review",
+    "issue_formal_correction",
+    "close_correction",
+    "change_project_status",
+    "archive_project",
+    "delete_document",
+    "modify_audit_log",
+    "grant_permission",
+}
+REQUIRED_KNOWLEDGE_RULE_ROUTES = [
+    {"method": "GET", "suffix": "/knowledge/overview"},
+    {"method": "GET", "suffix": "/knowledge/sources"},
+    {"method": "POST", "suffix": "/knowledge/sources"},
+    {"method": "GET", "suffix": "/knowledge/sources/{source_id}"},
+    {"method": "PUT", "suffix": "/knowledge/sources/{source_id}"},
+    {"method": "GET", "suffix": "/knowledge/project-files"},
+    {"method": "GET", "suffix": "/knowledge/files/{file_id}"},
+    {"method": "GET", "suffix": "/knowledge/files/{file_id}/chunks"},
+    {"method": "GET", "suffix": "/knowledge/files/{file_id}/vectors"},
+    {"method": "GET", "suffix": "/knowledge/files/{file_id}/reasoning-references"},
+    {"method": "GET", "suffix": "/knowledge/clauses"},
+    {"method": "GET", "suffix": "/knowledge/page-index-nodes"},
+    {"method": "POST", "suffix": "/knowledge/files/{file_id}/reindex"},
+    {"method": "GET", "suffix": "/knowledge/tasks"},
+    {"method": "POST", "suffix": "/knowledge/tasks/{task_id}/retry"},
+    {"method": "POST", "suffix": "/knowledge/retrieval-test"},
+    {"method": "GET", "suffix": "/knowledge/config"},
+    {"method": "PUT", "suffix": "/knowledge/config"},
+    {"method": "GET", "suffix": "/rules/versions"},
+    {"method": "GET", "suffix": "/rules/versions/{version_id}/diff"},
+    {"method": "POST", "suffix": "/rules/versions/{version_id}/publish"},
+    {"method": "POST", "suffix": "/rules/versions/{version_id}/rollback"},
+]
+REQUIRED_KNOWLEDGE_RULE_COLLECTIONS = {
+    "knowledge_sources",
+    "knowledge_files",
+    "knowledge_tasks",
+    "knowledge_chunks",
+    "knowledge_clauses",
+    "knowledge_page_index_nodes",
+    "knowledge_configs",
+    "rule_versions",
+    "retrieval_traces",
+    "rule_check_results",
+}
+REQUIRED_FDE_RELEASE_ROUTES = [
+    {"method": "GET", "suffix": "/fde/releases"},
+    {"method": "POST", "suffix": "/fde/releases"},
+    {"method": "POST", "suffix": "/fde/releases/{release_id}/submit"},
+    {"method": "POST", "suffix": "/fde/releases/{release_id}/approve"},
+    {"method": "POST", "suffix": "/fde/releases/{release_id}/start-shadow"},
+    {"method": "POST", "suffix": "/fde/releases/{release_id}/request-canary"},
+    {"method": "POST", "suffix": "/fde/releases/{release_id}/rollback"},
+]
+REQUIRED_FDE_RELEASE_COLLECTIONS = {
+    "capability_bundles",
+    "release_plans",
+    "release_approvals",
+    "release_gates",
+    "evaluation_reports",
+    "evaluation_sets",
+}
+REQUIRED_FEEDBACK_HR_ROUTES = [
+    {"method": "GET", "suffix": "/fde/feedback"},
+    {"method": "POST", "suffix": "/fde/feedback/{feedback_id}/triage"},
+    {"method": "GET", "suffix": "/fde/evaluation-sets"},
+]
+REQUIRED_FEEDBACK_HR_COLLECTIONS = {
+    "ai_feedback",
+    "feedback_triage",
+    "evaluation_sets",
+    "evaluation_cases",
+    "evaluation_case_results",
+    "retrieval_traces",
+}
+REQUIRED_RULE_CHECK_RESULT_FIELDS = {
+    "id",
+    "reviewRunId",
+    "ruleCode",
+    "ruleSetVersion",
+    "result",
+    "severity",
+    "message",
+    "linkedClauseIds",
+    "evidenceRefs",
+    "suggestedAction",
+    "createdAt",
+}
+REQUIRED_RETRIEVAL_TRACE_FIELDS = {
+    "id",
+    "retrievalTraceId",
+    "reviewRunId",
+    "query",
+    "queryType",
+    "routerVersion",
+    "selectedRoute",
+    "routerSignals",
+    "queryRouter",
+    "pageIndexTree",
+    "filters",
+    "retrievers",
+    "selectedClauses",
+    "kbVersion",
+    "createdAt",
+}
 REQUIRED_EXPORT_ZIP_CONTENTS = {
     "manifest.json",
     "task.json",
@@ -258,6 +417,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-litellm", action="store_true")
     parser.add_argument("--write-probes", action="store_true")
     parser.add_argument("--ocr-object-probe", action="store_true")
+    parser.add_argument("--review-run-probe", action="store_true")
+    parser.add_argument("--review-run-wait-seconds", type=float, default=float(os.getenv("AICHECK_VERIFY_REVIEW_RUN_WAIT_SECONDS", "20")))
     parser.add_argument("--litellm-management-probes", action="store_true")
     parser.add_argument("--litellm-provider-probes", action="store_true")
     parser.add_argument("--timeout", type=float, default=8.0)
@@ -278,6 +439,10 @@ class DeploymentReportBuilder:
             self.storage_contract_section(),
             self.ocr_service_contract_section(),
             self.litellm_client_contract_section(),
+            self.knowledge_rule_contract_section(),
+            self.review_orchestration_contract_section(),
+            self.fde_governance_contract_section(),
+            self.feedback_hr_contract_section(),
             self.export_artifact_contract_section(),
             self.worker_contract_section(),
             self.api_contract_section(),
@@ -373,6 +538,38 @@ class DeploymentReportBuilder:
             "checks": [check],
         }
 
+    def review_orchestration_contract_section(self) -> dict[str, Any]:
+        check = review_orchestration_contract_check()
+        return {
+            "name": "review-orchestration-contract",
+            "ok": check["status"] == "pass",
+            "checks": [check],
+        }
+
+    def fde_governance_contract_section(self) -> dict[str, Any]:
+        check = fde_governance_contract_check()
+        return {
+            "name": "fde-governance-contract",
+            "ok": check["status"] == "pass",
+            "checks": [check],
+        }
+
+    def feedback_hr_contract_section(self) -> dict[str, Any]:
+        check = feedback_hr_contract_check()
+        return {
+            "name": "feedback-hr-contract",
+            "ok": check["status"] == "pass",
+            "checks": [check],
+        }
+
+    def knowledge_rule_contract_section(self) -> dict[str, Any]:
+        check = knowledge_rule_contract_check()
+        return {
+            "name": "knowledge-rule-contract",
+            "ok": check["status"] == "pass",
+            "checks": [check],
+        }
+
     def export_artifact_contract_section(self) -> dict[str, Any]:
         check = export_artifact_contract_check()
         return {
@@ -435,6 +632,8 @@ class DeploymentReportBuilder:
             skip_litellm=bool(self.args.skip_litellm),
             write_probes=bool(self.args.write_probes),
             ocr_object_probe=bool(self.args.ocr_object_probe),
+            review_run_probe=bool(self.args.review_run_probe),
+            review_run_wait_seconds=max(0.0, float(self.args.review_run_wait_seconds or 0.0)),
             litellm_management_probes=bool(self.args.litellm_management_probes),
             litellm_provider_probes=bool(self.args.litellm_provider_probes),
         )
@@ -924,29 +1123,67 @@ def ocr_evaluation_contract_check(
     evaluation_module: Any | None = None,
     cli_path: Path | None = None,
     fixture_path: Path | None = None,
+    scorecard_path: Path | None = None,
 ) -> dict[str, Any]:
     if evaluation_module is None:
         from apps.ocr_service import evaluation as evaluation_module
 
     cli = cli_path or BACKEND_ROOT / "scripts" / "ocr_eval_set.py"
+    scorecard_cli = scorecard_path or BACKEND_ROOT / "scripts" / "ocr_100_scorecard.py"
+    corpus_cli = BACKEND_ROOT / "scripts" / "ocr_100_corpus.py"
+    prefetch_cli = BACKEND_ROOT / "scripts" / "ocr_prefetch_models.py"
     fixture = fixture_path or BACKEND_ROOT / "ocr_eval" / "piping_release_set.json"
     failures: list[str] = []
     data: dict[str, Any] = {
         "requiredMetrics": sorted(REQUIRED_OCR_EVALUATION_METRICS),
         "metricFailures": [],
         "cliFailures": [],
+        "scorecardFailures": [],
+        "corpusFailures": [],
+        "prefetchFailures": [],
         "fixtureFailures": [],
     }
 
     evaluate_cases = getattr(evaluation_module, "evaluate_cases", None)
     compact_evaluation_report = getattr(evaluation_module, "compact_evaluation_report", None)
+    ocr_100_thresholds = getattr(evaluation_module, "ocr_100_thresholds", None)
+    merge_thresholds = getattr(evaluation_module, "merge_thresholds", None)
     if not callable(evaluate_cases):
         failures.append("apps.ocr_service.evaluation.evaluate_cases is missing")
         data["metricFailures"].append("evaluate_cases missing")
     if not callable(compact_evaluation_report):
         failures.append("apps.ocr_service.evaluation.compact_evaluation_report is missing")
         data["metricFailures"].append("compact_evaluation_report missing")
-    else:
+    if not callable(ocr_100_thresholds):
+        failures.append("apps.ocr_service.evaluation.ocr_100_thresholds is missing")
+        data["metricFailures"].append("ocr_100_thresholds missing")
+    if not callable(merge_thresholds):
+        failures.append("apps.ocr_service.evaluation.merge_thresholds is missing")
+        data["metricFailures"].append("merge_thresholds missing")
+    if callable(ocr_100_thresholds):
+        try:
+            strict_thresholds = ocr_100_thresholds()
+        except Exception as exc:
+            strict_thresholds = {}
+            failures.append(f"ocr_100_thresholds raised {exc.__class__.__name__}")
+            data["metricFailures"].append(f"ocr_100_thresholds runtime error: {exc.__class__.__name__}")
+        if isinstance(strict_thresholds, dict):
+            data["strict100Thresholds"] = {
+                "minCases": strict_thresholds.get("minCases"),
+                "requiredScenarioCount": len(strict_thresholds.get("requiredScenarios") or []),
+                "metricCount": len(strict_thresholds.get("metrics") or {}),
+            }
+            if int(strict_thresholds.get("minCases") or 0) < 100:
+                failures.append("OCR 100 thresholds must require at least 100 cases")
+                data["metricFailures"].append("strict100 minCases too low")
+            missing_strict_metrics = sorted(REQUIRED_OCR_EVALUATION_METRICS - set(strict_thresholds.get("metrics") or {}))
+            if missing_strict_metrics:
+                failures.append("OCR 100 thresholds missing metrics: " + ", ".join(missing_strict_metrics))
+                data["metricFailures"].extend(f"strict100.{metric}" for metric in missing_strict_metrics)
+            if len(strict_thresholds.get("requiredScenarios") or []) < 10:
+                failures.append("OCR 100 thresholds must require broad scenario coverage")
+                data["metricFailures"].append("strict100 requiredScenarios too small")
+    if callable(evaluate_cases):
         try:
             report = evaluate_cases(
                 [
@@ -1108,14 +1345,84 @@ def ocr_evaluation_contract_check(
             "write_text_file",
             "compact_evaluation_report",
             "--run-ocr",
+            "--strict-100",
             "--min-average-score",
             "--output",
             "--summary-output",
             "--markdown-output",
+            "ocr_100_thresholds",
+            "merge_thresholds",
         ]:
             if term not in cli_source:
                 failures.append(f"OCR evaluation CLI missing term: {term}")
                 data["cliFailures"].append(term)
+
+    if not scorecard_cli.exists():
+        failures.append(f"OCR 100 scorecard CLI is missing: {scorecard_cli}")
+        data["scorecardFailures"].append("missing")
+    else:
+        scorecard_source = scorecard_cli.read_text(encoding="utf-8")
+        for term in [
+            "build_ocr_100_scorecard",
+            "ocr_100_thresholds",
+            "--eval-set",
+            "--sample-summary",
+            "--runtime-doctor-json",
+            "--run-ocr",
+            "--output",
+        ]:
+            if term not in scorecard_source:
+                failures.append(f"OCR 100 scorecard CLI missing term: {term}")
+                data["scorecardFailures"].append(term)
+    try:
+        from apps.api import routes as api_routes_module
+
+        quality_source = source_for_callable(getattr(api_routes_module, "fde_ocr_quality_snapshot", None))
+        quality_source += source_for_callable(getattr(api_routes_module, "fde_ocr_100_scorecard_snapshot", None))
+    except Exception as exc:
+        quality_source = ""
+        failures.append(f"FDE OCR quality contract source unavailable: {exc.__class__.__name__}")
+        data["scorecardFailures"].append(f"fde source unavailable: {exc.__class__.__name__}")
+    for term in ["ocr100Scorecard", "build_ocr_100_scorecard", "runtime_doctor_report", "sample_summaries"]:
+        if term not in quality_source:
+            failures.append(f"FDE OCR quality endpoint missing OCR 100 term: {term}")
+            data["scorecardFailures"].append(f"fde.{term}")
+
+    if not corpus_cli.exists():
+        failures.append(f"OCR 100 corpus CLI is missing: {corpus_cli}")
+        data["corpusFailures"].append("missing")
+    else:
+        corpus_source = corpus_cli.read_text(encoding="utf-8")
+        for term in [
+            "build_corpus_report",
+            "ocr_100_thresholds",
+            "OCR_100_REQUIRED_SCENARIOS",
+            "--allow-missing-expected-evidence",
+            "--output",
+            "--report-output",
+            "OCR_100_CORPUS_TOO_SMALL",
+            "OCR_100_CORPUS_EXPECTED_EVIDENCE_MISSING",
+        ]:
+            if term not in corpus_source:
+                failures.append(f"OCR 100 corpus CLI missing term: {term}")
+                data["corpusFailures"].append(term)
+
+    if not prefetch_cli.exists():
+        failures.append(f"OCR model prefetch CLI is missing: {prefetch_cli}")
+        data["prefetchFailures"].append("missing")
+    else:
+        prefetch_source = prefetch_cli.read_text(encoding="utf-8")
+        for term in [
+            "OCR_100_PADDLEX_MODELS",
+            "create_model",
+            "--ocr-100",
+            "--verify-only",
+            "PADDLE_PDX_CACHE_HOME",
+            "OCR_PREFETCH_MODEL_MISSING",
+        ]:
+            if term not in prefetch_source:
+                failures.append(f"OCR model prefetch CLI missing term: {term}")
+                data["prefetchFailures"].append(term)
 
     if not fixture.exists():
         failures.append(f"OCR release evaluation fixture is missing: {fixture}")
@@ -1301,6 +1608,824 @@ def litellm_client_contract_check(
             "runtimeFailures": runtime_failures,
             "requiredMethods": sorted(REQUIRED_LITELLM_CLIENT_METHODS),
             "requiredWorkerTasks": sorted(REQUIRED_LITELLM_WORKER_USAGE),
+        },
+    }
+
+
+def knowledge_rule_contract_check(
+    *,
+    fastapi_app: Any | None = None,
+    execution_module: Any | None = None,
+    retrieval_module: Any | None = None,
+    readiness_module: Any | None = None,
+) -> dict[str, Any]:
+    if execution_module is None:
+        from libs.review_orchestrator import execution as execution_module
+    if retrieval_module is None:
+        import libs.knowledge_retrieval as retrieval_module
+    if readiness_module is None:
+        import libs.knowledge_readiness as readiness_module
+
+    app_obj = fastapi_app or app
+    routes_to_check = list(getattr(app_obj, "routes", []) or [])
+    api_routes_module = None
+    if fastapi_app is None:
+        from apps.api import routes as api_routes
+
+        api_routes_module = api_routes
+        routes_to_check.extend(getattr(api_routes.router, "routes", []) or [])
+    if api_routes_module is None:
+        from apps.api import routes as api_routes
+
+        api_routes_module = api_routes
+    route_failures: list[dict[str, Any]] = []
+    route_summaries: list[dict[str, Any]] = []
+    for required in REQUIRED_KNOWLEDGE_RULE_ROUTES:
+        expected_method = str(required["method"])
+        expected_suffix = str(required["suffix"])
+        found = False
+        for route in routes_to_check:
+            route_path = str(getattr(route, "path", ""))
+            route_methods = {str(method).upper() for method in (getattr(route, "methods", set()) or set())}
+            if route_path.endswith(expected_suffix) and expected_method in route_methods:
+                route_summaries.append({"method": expected_method, "path": route_path})
+                found = True
+                break
+        if not found:
+            route_failures.append({"method": expected_method, "suffix": expected_suffix})
+
+    collection_failures: list[str] = []
+    repository_collections = set(STATE_COLLECTIONS.values()) | set(SINGLETON_COLLECTIONS.values())
+    indexed_collections = set(MONGO_INDEXES)
+    missing_repository = sorted(REQUIRED_KNOWLEDGE_RULE_COLLECTIONS - repository_collections)
+    missing_indexes = sorted(REQUIRED_KNOWLEDGE_RULE_COLLECTIONS - indexed_collections)
+    if missing_repository:
+        collection_failures.append("knowledge/rule collections missing repository mapping: " + ", ".join(missing_repository))
+    if missing_indexes:
+        collection_failures.append("knowledge/rule collections missing Mongo indexes: " + ", ".join(missing_indexes))
+
+    run_step_source = source_for_callable(getattr(execution_module, "run_step", None))
+    retrieval_source = (
+        source_for_callable(getattr(retrieval_module, "retrieve_knowledge_clauses", None))
+        + source_for_callable(getattr(retrieval_module, "knowledge_clause_candidates", None))
+    )
+    knowledge_rule_source = run_step_source + retrieval_source
+    field_failures: list[str] = []
+    missing_rule_fields = sorted(field for field in REQUIRED_RULE_CHECK_RESULT_FIELDS if field not in run_step_source)
+    missing_trace_fields = sorted(field for field in REQUIRED_RETRIEVAL_TRACE_FIELDS if field not in knowledge_rule_source)
+    if missing_rule_fields:
+        field_failures.append("RuleCheckResult missing fields in run_step: " + ", ".join(missing_rule_fields))
+    run_step_uses_retrieval_trace = (
+        "retrieve_knowledge_clauses" in run_step_source
+        and "retrieval_traces" in run_step_source
+        and "trace" in run_step_source
+    )
+    if not run_step_uses_retrieval_trace:
+        field_failures.append(
+            "RetrievalTrace missing fields in run_step: "
+            + ", ".join(sorted(REQUIRED_RETRIEVAL_TRACE_FIELDS))
+        )
+    elif missing_trace_fields:
+        field_failures.append("RetrievalTrace missing fields in run_step: " + ", ".join(missing_trace_fields))
+    for term in [
+        "clause_index",
+        "hybrid_bm25_dense",
+        "exact_clause_lookup",
+        "pageindex_tree",
+        "pageIndexTree",
+        "local_page_index_nodes",
+        "queryRouter",
+        "selectedRoute",
+        "search_knowledge_base",
+        "run_rule_engine",
+    ]:
+        if term not in knowledge_rule_source:
+            field_failures.append(f"knowledge/rule source missing term: {term}")
+
+    readiness_source = (
+        source_for_callable(getattr(readiness_module, "build_knowledge_rule_scorecard", None))
+        + source_for_callable(getattr(readiness_module, "source_index_section", None))
+        + source_for_callable(getattr(readiness_module, "rule_clause_section", None))
+        + source_for_callable(getattr(readiness_module, "retrieval_router_section", None))
+        + source_for_callable(getattr(readiness_module, "evaluation_governance_section", None))
+        + source_for_callable(getattr(readiness_module, "run_retrieval_probes", None))
+        + repr(getattr(readiness_module, "REQUIRED_KNOWLEDGE_ROUTES", {}))
+    )
+    for term in [
+        "aicheck-knowledge-rule-scorecard-v1",
+        "source-index",
+        "rule-clause",
+        "retrieval-router",
+        "evaluation-governance",
+        "REQUIRED_KNOWLEDGE_ROUTES",
+        "exact_clause_lookup",
+        "hybrid_review_basis_search",
+        "pageindex_tree_search",
+        "retrievalProbes",
+        "retrievalRecall",
+        "wrongReferenceRate",
+        "persisted RetrievalTrace",
+    ]:
+        if term not in readiness_source:
+            field_failures.append(f"knowledge readiness scorecard missing term: {term}")
+    overview_source = source_for_callable(getattr(api_routes_module, "knowledge_overview", None))
+    for term in ["scorecard", "build_knowledge_rule_scorecard"]:
+        if term not in overview_source:
+            field_failures.append(f"knowledge overview missing scorecard term: {term}")
+
+    validation_failures: list[str] = []
+    required_validation_sources = {
+        "validate_review_schema": [
+            "REVIEW_FINDING_REQUIRED_FIELDS",
+            "FINDING_SCHEMA_MISSING_FIELDS",
+            "FINDING_MUST_REQUIRE_HUMAN_CONFIRMATION",
+        ],
+        "validate_review_evidence_refs": [
+            "EVIDENCE_LINK_NOT_FOUND",
+            "EVIDENCE_REF_BAD_BBOX",
+            "documentVersionId",
+            "pageNo",
+            "bbox",
+        ],
+        "validate_review_references": [
+            "RULE_REF_NOT_FOUND",
+            "KB_RETRIEVAL_TRACE_NOT_FOUND",
+            "KB_CLAUSE_NOT_IN_TRACE",
+            "selectedClauses",
+            "ruleSetVersion",
+            "kbVersion",
+        ],
+        "review_quality_gate": [
+            "schema_validation",
+            "evidence_validation",
+            "reference_validation",
+            "requiresHumanReview",
+            "ready_for_human_review",
+        ],
+    }
+    for name, terms in required_validation_sources.items():
+        source = source_for_callable(getattr(execution_module, name, None))
+        if not source:
+            validation_failures.append(f"{name} is missing")
+            continue
+        missing_terms = [term for term in terms if term not in source]
+        if missing_terms:
+            validation_failures.append(f"{name} missing source terms: " + ", ".join(missing_terms))
+
+    failures = route_failures + collection_failures + field_failures + validation_failures
+    status = "pass" if not failures else "fail"
+    return {
+        "name": "knowledge-rule.contract",
+        "status": status,
+        "detail": (
+            "Knowledge source, rule version, retrieval trace, rule-check, and reference validation contracts are present."
+            if status == "pass"
+            else f"failures={len(failures)}"
+        ),
+        "data": {
+            "routeFailures": route_failures,
+            "collectionFailures": collection_failures,
+            "fieldFailures": field_failures,
+            "validationFailures": validation_failures,
+            "routeCount": len(route_summaries),
+            "requiredRoutes": REQUIRED_KNOWLEDGE_RULE_ROUTES,
+            "requiredCollections": sorted(REQUIRED_KNOWLEDGE_RULE_COLLECTIONS),
+            "requiredRuleCheckFields": sorted(REQUIRED_RULE_CHECK_RESULT_FIELDS),
+            "requiredRetrievalTraceFields": sorted(REQUIRED_RETRIEVAL_TRACE_FIELDS),
+            "readinessScorecard": "build_knowledge_rule_scorecard" in readiness_source,
+        },
+    }
+
+
+def review_orchestration_contract_check(
+    *,
+    fastapi_app: Any | None = None,
+    execution_module: Any | None = None,
+    dispatcher_module: Any | None = None,
+    graph_module: Any | None = None,
+    readiness_module: Any | None = None,
+    worker_main_module: Any | None = None,
+    workflow_module: Any | None = None,
+    activities_module: Any | None = None,
+) -> dict[str, Any]:
+    if execution_module is None:
+        from libs.review_orchestrator import execution as execution_module
+    if dispatcher_module is None:
+        from libs.review_orchestrator import dispatcher as dispatcher_module
+    if graph_module is None:
+        from libs.review_orchestrator import graph as graph_module
+    if readiness_module is None:
+        from libs.review_orchestrator import readiness as readiness_module
+    worker_main_source = ""
+    workflow_source = ""
+    activities_source = ""
+    if worker_main_module is None:
+        worker_main_source = (BACKEND_ROOT / "apps" / "review_worker" / "main.py").read_text(encoding="utf-8")
+    if workflow_module is None:
+        workflow_source = (BACKEND_ROOT / "apps" / "review_worker" / "workflows.py").read_text(encoding="utf-8")
+    if activities_module is None:
+        activities_source = (BACKEND_ROOT / "apps" / "review_worker" / "activities.py").read_text(encoding="utf-8")
+
+    app_obj = fastapi_app or app
+    routes_to_check = list(getattr(app_obj, "routes", []) or [])
+    api_routes_module = None
+    if fastapi_app is None:
+        from apps.api import routes as api_routes_module
+
+        routes_to_check.extend(getattr(api_routes_module.router, "routes", []) or [])
+    route_failures: list[dict[str, Any]] = []
+    route_summaries: list[dict[str, Any]] = []
+    for required in REQUIRED_REVIEW_RUN_ROUTES:
+        expected_method = str(required["method"])
+        expected_suffix = str(required["suffix"])
+        found = False
+        for route in routes_to_check:
+            route_path = str(getattr(route, "path", ""))
+            route_methods = {str(method).upper() for method in (getattr(route, "methods", set()) or set())}
+            if route_path.endswith(expected_suffix) and expected_method in route_methods:
+                route_summaries.append({"method": expected_method, "path": route_path})
+                found = True
+                break
+        if not found:
+            route_failures.append({"method": expected_method, "suffix": expected_suffix})
+
+    graph_failures: list[str] = []
+    steps = getattr(execution_module, "REVIEW_GRAPH_STEPS", []) or []
+    step_keys = [str(item.get("key")) for item in steps if isinstance(item, dict)]
+    missing_steps = [key for key in REQUIRED_REVIEW_GRAPH_STEP_KEYS if key not in step_keys]
+    if missing_steps:
+        graph_failures.append("missing graph steps: " + ", ".join(missing_steps))
+    if len(step_keys) < len(REQUIRED_REVIEW_GRAPH_STEP_KEYS):
+        graph_failures.append("graph step count is below contract")
+    edges = getattr(execution_module, "REVIEW_GRAPH_EDGES", []) or []
+    if len(edges) < max(0, len(step_keys) - 1):
+        graph_failures.append("graph edges must connect the ordered review steps")
+    task_queues = {
+        str(item.get("taskQueue"))
+        for item in steps
+        if isinstance(item, dict) and item.get("taskQueue")
+    }
+    required_task_queues = {"review.graph", "review.validation", "review.retrieval", "review.llm"}
+    missing_task_queues = sorted(required_task_queues - task_queues)
+    if missing_task_queues:
+        graph_failures.append("missing graph task queues: " + ", ".join(missing_task_queues))
+
+    state_failures: list[str] = []
+    collections = set(getattr(execution_module, "REVIEW_STATE_COLLECTIONS", []) or [])
+    missing_collections = sorted(REQUIRED_REVIEW_COLLECTIONS - collections)
+    if missing_collections:
+        state_failures.append("missing review state collections: " + ", ".join(missing_collections))
+    indexed_collections = set(MONGO_INDEXES)
+    missing_indexes = sorted(REQUIRED_REVIEW_COLLECTIONS - indexed_collections)
+    if missing_indexes:
+        state_failures.append("review state collections missing Mongo indexes: " + ", ".join(missing_indexes))
+    if not REQUIRED_REVIEW_COLLECTIONS.issubset(set(STATE_COLLECTIONS.values())):
+        missing_state_map = sorted(REQUIRED_REVIEW_COLLECTIONS - set(STATE_COLLECTIONS.values()))
+        state_failures.append("review state collections missing repository mapping: " + ", ".join(missing_state_map))
+
+    tool_failures: list[str] = []
+    allowed_tools = set(getattr(execution_module, "ALLOWED_AGENT_TOOLS", set()) or set())
+    forbidden_tools = set(getattr(execution_module, "FORBIDDEN_AGENT_TOOLS", set()) or set())
+    missing_allowed = sorted(REQUIRED_REVIEW_ALLOWED_TOOLS - allowed_tools)
+    missing_forbidden = sorted(REQUIRED_REVIEW_FORBIDDEN_TOOLS - forbidden_tools)
+    overlap = sorted(allowed_tools & forbidden_tools)
+    if missing_allowed:
+        tool_failures.append("missing allowed tools: " + ", ".join(missing_allowed))
+    if missing_forbidden:
+        tool_failures.append("missing forbidden tools: " + ", ".join(missing_forbidden))
+    if overlap:
+        tool_failures.append("tools cannot be both allowed and forbidden: " + ", ".join(overlap))
+
+    source_failures: list[str] = []
+
+    def require_source_terms(label: str, source: str, terms: list[str]) -> None:
+        missing = [term for term in terms if term not in source]
+        if missing:
+            source_failures.append(f"{label} missing source terms: " + ", ".join(missing))
+
+    require_source_terms(
+        "create_review_run_from_ai_run",
+        source_for_callable(getattr(execution_module, "create_review_run_from_ai_run", None)),
+        [
+            "workflowEngine",
+            "ReviewRunWorkflow",
+            "modelGateway",
+            "litellm",
+            "ids_hashes_versions_only",
+            "payloadCodecRequiredInProduction",
+            "stable_hash_payload",
+            "seed_graph_nodes",
+        ],
+    )
+    require_source_terms(
+        "execute_review_run_inline",
+        source_for_callable(getattr(execution_module, "execute_review_run_inline", None)),
+        [
+            "execute_review_graph",
+            "graphRunner",
+            "waiting_human_review",
+            "graph_nodes_for_review_run",
+            "findingDrafts",
+            "outputHash",
+        ],
+    )
+    require_source_terms(
+        "run_step",
+        source_for_callable(getattr(execution_module, "run_step", None)),
+        [
+            "run_rule_engine",
+            "retrieve_knowledge",
+            "schema_validation",
+            "evidence_validation",
+            "reference_validation",
+            "quality_gate",
+            "retrieval_traces",
+            "rule_check_results",
+        ],
+    )
+    require_source_terms(
+        "generate_finding_drafts",
+        source_for_callable(getattr(execution_module, "generate_finding_drafts", None)),
+        [
+            "LiteLLMClient().chat_sync",
+            "review-chat",
+            "response_format",
+            "call_litellm_chat",
+            "stable_hash_payload",
+            "normalize_llm_findings",
+        ],
+    )
+    require_source_terms(
+        "human_decision_for_review_run",
+        source_for_callable(getattr(execution_module, "human_decision_for_review_run", None)),
+        ["accepted_by_human", "edited_by_human", "rejected_by_human", "persist_confirmed_findings"],
+    )
+    require_source_terms(
+        "graph_view_for_review_run",
+        source_for_callable(getattr(execution_module, "graph_view_for_review_run", None)),
+        ["artifactSummary", "artifacts", "ruleCheckResults", "retrievalTraces", "validationFailures"],
+    )
+    require_source_terms(
+        "build_review_orchestration_scorecard",
+        source_for_callable(getattr(readiness_module, "build_review_orchestration_scorecard", None)),
+        ["workflow_section", "graph_section", "evidence_section", "governance_section", "targetScore", "blockers"],
+    )
+    require_source_terms(
+        "fde_review_run_detail",
+        source_for_callable(getattr(api_routes_module, "fde_review_run_detail", None)) if api_routes_module is not None else "",
+        ["scorecard", "build_review_orchestration_scorecard", "temporal_history_summary", "graph_view_for_review_run"],
+    )
+    fde_console_source = ""
+    try:
+        fde_console_source = (REPO_ROOT / "frontend" / "src" / "views" / "AICheck" / "FdeConsole.vue").read_text(encoding="utf-8")
+    except FileNotFoundError:
+        source_failures.append("FDE ReviewRun artifact visualization source is missing")
+    require_source_terms(
+        "FDE ReviewRun artifact visualization",
+        fde_console_source,
+        [
+            "reviewRuleResultRows",
+            "reviewRetrievalTraceRows",
+            "reviewFindingDraftRows",
+            "ruleCheckResults",
+            "retrievalTraces",
+            "findingDrafts",
+            "规则结果",
+            "检索 Trace",
+            "Finding Draft",
+        ],
+    )
+    require_source_terms(
+        "clone_review_run_for_replay",
+        source_for_callable(getattr(execution_module, "clone_review_run_for_replay", None)),
+        ["parentReviewRunId", "RRUN-REPLAY", "findingDrafts", "humanDecision", "seed_graph_nodes"],
+    )
+    require_source_terms(
+        "dispatch_review_run",
+        source_for_callable(getattr(dispatcher_module, "dispatch_review_run", None)),
+        ["review_orchestration_mode", "create_review_run_from_ai_run", "execute_review_run_inline", "start_temporal_workflow"],
+    )
+    require_source_terms(
+        "start_temporal_workflow",
+        source_for_callable(getattr(dispatcher_module, "start_temporal_workflow", None))
+        + source_for_callable(getattr(dispatcher_module, "_start_temporal_workflow", None)),
+        ["Client.connect", "start_workflow", "ReviewRunWorkflow", "workflowId", "task_queue", "TEMPORAL_START_FAILED"],
+    )
+    require_source_terms(
+        "temporal signals",
+        source_for_callable(getattr(dispatcher_module, "signal_review_run_human_decision", None))
+        + source_for_callable(getattr(dispatcher_module, "signal_review_run_cancel", None))
+        + source_for_callable(getattr(dispatcher_module, "_run_temporal_signal", None))
+        + source_for_callable(getattr(dispatcher_module, "_signal_temporal_workflow", None)),
+        ["submit_human_decision", "cancel_review", "get_workflow_handle", "handle.signal", "TEMPORAL_SIGNAL_FAILED"],
+    )
+    require_source_terms(
+        "execute_review_graph",
+        source_for_callable(getattr(graph_module, "execute_review_graph", None)),
+        ["StateGraph", "START", "END", "thread_id", "graph.compile", "execute_manual_graph"],
+    )
+    require_source_terms(
+        "langgraph_checkpointer_context",
+        source_for_callable(getattr(graph_module, "langgraph_checkpointer_context", None)),
+        ["LANGGRAPH_CHECKPOINT_DSN", "PostgresSaver", "from_conn_string", "postgres"],
+    )
+    worker_main_source = worker_main_source or source_for_callable(getattr(worker_main_module, "main", None))
+    require_source_terms(
+        "review worker main",
+        worker_main_source,
+        ["Client.connect", "Worker", "ReviewRunWorkflow", "run_review_graph_activity", "AICHECK_REVIEW_WORKFLOW_TASK_QUEUE"],
+    )
+    workflow_cls = getattr(workflow_module, "ReviewRunWorkflow", None) if workflow_module is not None else None
+    workflow_source = workflow_source or source_for_callable(workflow_cls)
+    require_source_terms(
+        "ReviewRunWorkflow",
+        workflow_source,
+        [
+            "workflow.defn",
+            "workflow.run",
+            "workflow.execute_activity",
+            "workflow.wait_condition",
+            "workflow.signal",
+            "submit_human_decision",
+            "cancel_review",
+            "workflow.query",
+        ],
+    )
+    activities_source = activities_source or source_for_callable(getattr(activities_module, "run_review_graph_activity", None))
+    require_source_terms(
+        "run_review_graph_activity",
+        activities_source,
+        ["activity.defn", "load_state", "execute_review_run_inline", "flush_state"],
+    )
+
+    failures = route_failures + graph_failures + state_failures + tool_failures + source_failures
+    status = "pass" if not failures else "fail"
+    return {
+        "name": "review-orchestration.contract",
+        "status": status,
+        "detail": (
+            "Temporal/LangGraph ReviewRun orchestration, routes, state, tools, and replay contracts are present."
+            if status == "pass"
+            else f"failures={len(failures)}"
+        ),
+        "data": {
+            "routeFailures": route_failures,
+            "graphFailures": graph_failures,
+            "stateFailures": state_failures,
+            "toolFailures": tool_failures,
+            "sourceFailures": source_failures,
+            "routeCount": len(route_summaries),
+            "stepKeys": step_keys,
+            "taskQueues": sorted(task_queues),
+            "collections": sorted(collections),
+            "allowedTools": sorted(allowed_tools),
+            "forbiddenTools": sorted(forbidden_tools),
+            "requiredRoutes": REQUIRED_REVIEW_RUN_ROUTES,
+            "frontendArtifactVisualization": "reviewRuleResultRows" in fde_console_source,
+        },
+    }
+
+
+def fde_governance_contract_check(
+    *,
+    fastapi_app: Any | None = None,
+    api_routes_module: Any | None = None,
+) -> dict[str, Any]:
+    app_obj = fastapi_app or app
+    routes_to_check = list(getattr(app_obj, "routes", []) or [])
+    if api_routes_module is None:
+        from apps.api import routes as api_routes_module
+    if fastapi_app is None:
+        routes_to_check.extend(getattr(api_routes_module.router, "routes", []) or [])
+
+    route_failures: list[dict[str, Any]] = []
+    route_summaries: list[dict[str, Any]] = []
+    for required in REQUIRED_FDE_RELEASE_ROUTES:
+        expected_method = str(required["method"])
+        expected_suffix = str(required["suffix"])
+        found = False
+        for route in routes_to_check:
+            route_path = str(getattr(route, "path", ""))
+            route_methods = {str(method).upper() for method in (getattr(route, "methods", set()) or set())}
+            if route_path.endswith(expected_suffix) and expected_method in route_methods:
+                route_summaries.append({"method": expected_method, "path": route_path})
+                found = True
+                break
+        if not found:
+            route_failures.append({"method": expected_method, "suffix": expected_suffix})
+
+    collection_failures: list[str] = []
+    repository_collections = set(STATE_COLLECTIONS.values()) | set(SINGLETON_COLLECTIONS.values())
+    indexed_collections = set(MONGO_INDEXES)
+    missing_repository = sorted(REQUIRED_FDE_RELEASE_COLLECTIONS - repository_collections)
+    missing_indexes = sorted(REQUIRED_FDE_RELEASE_COLLECTIONS - indexed_collections)
+    if missing_repository:
+        collection_failures.append("FDE release collections missing repository mapping: " + ", ".join(missing_repository))
+    if missing_indexes:
+        collection_failures.append("FDE release collections missing Mongo indexes: " + ", ".join(missing_indexes))
+
+    source_failures: list[str] = []
+
+    def require_source_terms(label: str, source: str, terms: list[str]) -> None:
+        missing = [term for term in terms if term not in source]
+        if missing:
+            source_failures.append(f"{label} missing source terms: " + ", ".join(missing))
+
+    require_source_terms(
+        "fde_release_gate_results",
+        source_for_callable(getattr(api_routes_module, "fde_release_gate_results", None))
+        + source_for_callable(getattr(api_routes_module, "fde_find_evaluation_report", None)),
+        [
+            "evaluation_report",
+            "risk_set",
+            "rollback_plan",
+            "release_approval",
+            "release_approvals",
+            "riskLevel",
+            "evaluationRunId",
+            "status\") == \"passed\"",
+            "评估报告未通过",
+        ],
+    )
+    require_source_terms(
+        "fde_create_release_plan",
+        source_for_callable(getattr(api_routes_module, "fde_create_release_plan", None)),
+        ["fde_release_gate_results", "blocked_by_gate", "blockingReasons", "capabilityBundleId"],
+    )
+    require_source_terms(
+        "fde_submit_release_plan",
+        source_for_callable(getattr(api_routes_module, "fde_submit_release_plan", None)),
+        ["fde_release_gate_results", "blocked_by_gate", "submitted", "blockingReasons"],
+    )
+    require_source_terms(
+        "fde_approve_release_plan",
+        source_for_callable(getattr(api_routes_module, "fde_approve_release_plan", None)),
+        ["role != \"admin\"", "FORBIDDEN", "release_approvals", "approvedByRole", "fde_release_gate_results"],
+    )
+    require_source_terms(
+        "fde_start_shadow_release",
+        source_for_callable(getattr(api_routes_module, "fde_start_shadow_release", None)),
+        ["fde_release_gate_results", "blocked_by_gate", "shadow_running", "shadowSampleRate"],
+    )
+    require_source_terms(
+        "fde_request_canary_release",
+        source_for_callable(getattr(api_routes_module, "fde_request_canary_release", None)),
+        ["fde_release_gate_results", "shadow_running", "shadow_passed", "blocked_by_gate", "canary_requested"],
+    )
+    try:
+        from libs.business_pack import loader as business_pack_loader_module
+        from libs.business_pack import readiness as business_pack_readiness_module
+    except Exception as exc:  # pragma: no cover - defensive contract reporting
+        source_failures.append(f"business pack portability source unavailable: {exc.__class__.__name__}")
+        business_pack_scorecard_source = ""
+        business_pack_loader_source = ""
+    else:
+        business_pack_scorecard_source = (
+            source_for_callable(getattr(business_pack_readiness_module, "build_business_pack_portability_scorecard", None))
+            + source_for_callable(getattr(business_pack_readiness_module, "pack_catalog_section", None))
+            + source_for_callable(getattr(business_pack_readiness_module, "boundary_section", None))
+            + source_for_callable(getattr(business_pack_readiness_module, "fixture_section", None))
+            + source_for_callable(getattr(business_pack_readiness_module, "delivery_section", None))
+        )
+        business_pack_loader_source = source_for_callable(
+            getattr(business_pack_loader_module, "validate_all_business_packs", None)
+        )
+    require_source_terms(
+        "business pack portability scorecard",
+        business_pack_scorecard_source,
+        [
+            "aicheck-business-pack-portability-scorecard-v1",
+            "catalog",
+            "core-boundary",
+            "fixtures",
+            "delivery",
+            "projectMembers",
+            "scan_core_boundary",
+            "targetScore",
+            "blockers",
+        ],
+    )
+    require_source_terms(
+        "validate_all_business_packs",
+        business_pack_loader_source,
+        ["scorecard", "build_business_pack_portability_scorecard"],
+    )
+    require_source_terms(
+        "fde_validate_business_packs",
+        source_for_callable(getattr(api_routes_module, "fde_validate_business_packs", None)),
+        ["validate_all_business_packs", "fde:business-pack:validate"],
+    )
+    fde_console_source = ""
+    try:
+        fde_console_source = (REPO_ROOT / "frontend" / "src" / "views" / "AICheck" / "FdeConsole.vue").read_text(encoding="utf-8")
+    except FileNotFoundError:
+        source_failures.append("FDE business pack scorecard source is missing")
+    require_source_terms(
+        "FDE business pack scorecard UI",
+        fde_console_source,
+        ["packValidation.scorecard", "可迁移评分", "门禁分段", "可交付包", "阻断项"],
+    )
+
+    failures = route_failures + collection_failures + source_failures
+    status = "pass" if not failures else "fail"
+    return {
+        "name": "fde.governance-contract",
+        "status": status,
+        "detail": (
+            "FDE high-risk release gates require evaluation, risk set, rollback plan, non-FDE approval, shadow, and canary controls."
+            if status == "pass"
+            else f"failures={len(failures)}"
+        ),
+        "data": {
+            "routeFailures": route_failures,
+            "collectionFailures": collection_failures,
+            "sourceFailures": source_failures,
+            "routeCount": len(route_summaries),
+            "requiredRoutes": REQUIRED_FDE_RELEASE_ROUTES,
+            "requiredCollections": sorted(REQUIRED_FDE_RELEASE_COLLECTIONS),
+            "businessPackPortabilityScorecard": "build_business_pack_portability_scorecard" in business_pack_scorecard_source,
+            "frontendBusinessPackScorecard": "packValidation.scorecard" in fde_console_source,
+        },
+    }
+
+
+def feedback_hr_contract_check(
+    *,
+    fastapi_app: Any | None = None,
+    api_routes_module: Any | None = None,
+    execution_module: Any | None = None,
+) -> dict[str, Any]:
+    app_obj = fastapi_app or app
+    routes_to_check = list(getattr(app_obj, "routes", []) or [])
+    if api_routes_module is None:
+        from apps.api import routes as api_routes_module
+    if execution_module is None:
+        from libs.review_orchestrator import execution as execution_module
+    if fastapi_app is None:
+        routes_to_check.extend(getattr(api_routes_module.router, "routes", []) or [])
+
+    route_failures: list[dict[str, Any]] = []
+    route_summaries: list[dict[str, Any]] = []
+    for required in REQUIRED_FEEDBACK_HR_ROUTES:
+        expected_method = str(required["method"])
+        expected_suffix = str(required["suffix"])
+        found = False
+        for route in routes_to_check:
+            route_path = str(getattr(route, "path", ""))
+            route_methods = {str(method).upper() for method in (getattr(route, "methods", set()) or set())}
+            if route_path.endswith(expected_suffix) and expected_method in route_methods:
+                route_summaries.append({"method": expected_method, "path": route_path})
+                found = True
+                break
+        if not found:
+            route_failures.append({"method": expected_method, "suffix": expected_suffix})
+
+    collection_failures: list[str] = []
+    repository_collections = set(STATE_COLLECTIONS.values()) | set(SINGLETON_COLLECTIONS.values())
+    indexed_collections = set(MONGO_INDEXES)
+    missing_repository = sorted(REQUIRED_FEEDBACK_HR_COLLECTIONS - repository_collections)
+    missing_indexes = sorted(REQUIRED_FEEDBACK_HR_COLLECTIONS - indexed_collections)
+    if missing_repository:
+        collection_failures.append("AI HR collections missing repository mapping: " + ", ".join(missing_repository))
+    if missing_indexes:
+        collection_failures.append("AI HR collections missing Mongo indexes: " + ", ".join(missing_indexes))
+    evaluation_case_indexes = json.dumps(MONGO_INDEXES.get("evaluation_cases", []), ensure_ascii=False, default=str)
+    if "sourceFeedbackId" not in evaluation_case_indexes:
+        collection_failures.append("evaluation_cases missing sourceFeedbackId index for idempotent feedback promotion")
+
+    source_failures: list[str] = []
+
+    def require_source_terms(label: str, source: str, terms: list[str]) -> None:
+        missing = [term for term in terms if term not in source]
+        if missing:
+            source_failures.append(f"{label} missing source terms: " + ", ".join(missing))
+
+    require_source_terms(
+        "human_decision_for_review_run",
+        source_for_callable(getattr(execution_module, "human_decision_for_review_run", None)),
+        ["record_human_feedback_for_review_run", "feedback"],
+    )
+    require_source_terms(
+        "record_human_feedback_for_review_run",
+        source_for_callable(getattr(execution_module, "record_human_feedback_for_review_run", None)),
+        [
+            "ai_feedback",
+            "accepted",
+            "edited",
+            "rejected_false_positive",
+            "originalAiOutput",
+            "correctedOutput",
+            "shouldEnterEvaluationSet",
+            "inputDocumentVersionIds",
+            "immutableSourceRun",
+        ],
+    )
+    require_source_terms(
+        "fde_triage_feedback",
+        source_for_callable(getattr(api_routes_module, "fde_triage_feedback", None)),
+        ["fde_upsert_evaluation_case_from_feedback", "fde_feedback_governance_view", "evaluationCase", "feedback_triage", "rootCause"],
+    )
+    require_source_terms(
+        "fde_feedback_governance_view",
+        source_for_callable(getattr(api_routes_module, "fde_feedback_governance_view", None)),
+        [
+            "governanceState",
+            "evaluationCaseId",
+            "evaluationSetId",
+            "canUseForEval",
+            "canUseForTraining",
+            "adjudicationRequired",
+            "sampleUsage",
+            "promoted_to_eval",
+            "needs_adjudication",
+        ],
+    )
+    require_source_terms(
+        "fde_upsert_evaluation_case_from_feedback",
+        source_for_callable(getattr(api_routes_module, "fde_upsert_evaluation_case_from_feedback", None)),
+        [
+            "evaluation_cases",
+            "sourceFeedbackId",
+            "expectedFindings",
+            "expectedEvidence",
+            "approved_for_eval",
+            "canUseForEval",
+            "canUseForTraining",
+        ],
+    )
+    require_source_terms(
+        "fde_create_evaluation_run",
+        source_for_callable(getattr(api_routes_module, "fde_create_evaluation_run", None)),
+        [
+            "evaluation_case_results",
+            "caseResults",
+            "caseSummary",
+            "casePassRate",
+            "findingRecall",
+            "evidenceCoverage",
+            "retrievalRecall",
+            "wrongReferenceRate",
+        ],
+    )
+    require_source_terms(
+        "fde_build_evaluation_case_results",
+        source_for_callable(getattr(api_routes_module, "fde_build_evaluation_case_results", None)),
+        [
+            "fde_evaluate_retrieval_for_case",
+            "retrievalPassed",
+        ],
+    )
+    require_source_terms(
+        "fde_evaluate_retrieval_for_case",
+        source_for_callable(getattr(api_routes_module, "fde_evaluate_retrieval_for_case", None)),
+        [
+            "retrieve_knowledge_clauses",
+            "fde_evaluation_retrieval",
+            "expectedClauseIds",
+            "retrievalTraceId",
+            "selectedRoute",
+            "missingClauseIds",
+            "unexpectedTopClauseId",
+        ],
+    )
+    fde_console_source = ""
+    try:
+        fde_console_source = (REPO_ROOT / "frontend" / "src" / "views" / "AICheck" / "FdeConsole.vue").read_text(encoding="utf-8")
+    except FileNotFoundError:
+        source_failures.append("FDE feedback governance visualization source is missing")
+    require_source_terms(
+        "FDE feedback governance visualization",
+        fde_console_source,
+        [
+            "governanceState",
+            "evaluationCaseId",
+            "canUseForEval",
+            "canUseForTraining",
+            "adjudicationRequired",
+            "评估样本",
+            "入评估",
+            "仲裁",
+        ],
+    )
+
+    failures = route_failures + collection_failures + source_failures
+    status = "pass" if not failures else "fail"
+    return {
+        "name": "feedback.hr-contract",
+        "status": status,
+        "detail": (
+            "Human review decisions create immutable AI feedback and FDE triage can promote feedback into evaluation cases."
+            if status == "pass"
+            else f"failures={len(failures)}"
+        ),
+        "data": {
+            "routeFailures": route_failures,
+            "collectionFailures": collection_failures,
+            "sourceFailures": source_failures,
+            "routeCount": len(route_summaries),
+            "requiredRoutes": REQUIRED_FEEDBACK_HR_ROUTES,
+            "requiredCollections": sorted(REQUIRED_FEEDBACK_HR_COLLECTIONS),
+            "frontendFeedbackGovernance": "governanceState" in fde_console_source,
         },
     }
 

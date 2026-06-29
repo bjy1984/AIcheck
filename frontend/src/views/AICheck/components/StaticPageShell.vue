@@ -274,7 +274,7 @@ const handleUserCommand = (command: string | number | object) => {
 <style scoped>
 .aicheck-static-viewport {
   --bg: #f4f7fb;
-  --panel: #ffffff;
+  --panel: #fff;
   --line: #d9e2ef;
   --line-soft: #e9eef6;
   --head: #f3f6fa;
@@ -289,14 +289,15 @@ const handleUserCommand = (command: string | number | object) => {
   --orange-soft: #fff4e3;
   --red: #ff4d3d;
   --red-soft: #fff0ee;
+
   width: 100%;
-  max-width: 100vw;
   height: 100vh;
+  max-width: 100vw;
   overflow: hidden;
-  color: var(--ink);
-  background: var(--bg);
   font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei',
     'Noto Sans CJK SC', Arial, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
 }
 
 .aicheck-static-viewport *,
@@ -307,26 +308,26 @@ const handleUserCommand = (command: string | number | object) => {
 
 .app-shell {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
   width: 100%;
-  min-width: 0;
-  max-width: 100vw;
   height: 100vh;
+  max-width: 100vw;
+  min-width: 0;
   min-height: 0;
   overflow-x: hidden;
   background: var(--bg);
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .topbar {
   display: grid;
-  grid-template-columns: minmax(280px, 404px) minmax(260px, 1fr) minmax(260px, 520px);
-  gap: 18px;
-  align-items: center;
-  min-height: 68px;
   min-width: 0;
+  min-height: 68px;
   padding: 0 20px;
   background: #fff;
   border-bottom: 1px solid var(--line);
+  grid-template-columns: minmax(280px, 404px) minmax(260px, 1fr) minmax(260px, 520px);
+  gap: 18px;
+  align-items: center;
 }
 
 .brand {
@@ -338,29 +339,29 @@ const handleUserCommand = (command: string | number | object) => {
 }
 
 .hamburger {
-  color: #304158;
   font-size: 22px;
   line-height: 1;
+  color: #304158;
 }
 
 .brand-mark {
   display: grid;
   width: 30px;
   height: 30px;
-  place-items: center;
-  color: #fff;
   font-weight: 800;
+  color: #fff;
   background: linear-gradient(180deg, #4b86ff, #1761d2);
   border-radius: 8px;
+  place-items: center;
 }
 
 .project-title {
   min-width: 0;
   overflow: hidden;
-  color: var(--ink);
   font-size: 25px;
   font-weight: 800;
   line-height: 1.1;
+  color: var(--ink);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -414,21 +415,6 @@ const handleUserCommand = (command: string | number | object) => {
 }
 
 .global-search {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  justify-self: center;
-  width: min(720px, 100%);
-  height: 40px;
-  padding: 0 16px;
-  margin: 0;
-  color: #8b98aa;
-  font-weight: 600;
-  text-align: left;
-  cursor: pointer;
-  background: #fff;
-  border: 1px solid #cbd8ea;
-  border-radius: 6px;
   --el-button-bg-color: #fff;
   --el-button-border-color: #cbd8ea;
   --el-button-hover-bg-color: #f8fbff;
@@ -437,11 +423,27 @@ const handleUserCommand = (command: string | number | object) => {
   --el-button-active-bg-color: #eef5ff;
   --el-button-active-border-color: #8fb0df;
   --el-button-active-text-color: #52647d;
+
+  display: flex;
+  width: min(720px, 100%);
+  height: 40px;
+  padding: 0 16px;
+  margin: 0;
+  font-weight: 600;
+  color: #8b98aa;
+  text-align: left;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid #cbd8ea;
+  border-radius: 6px;
   transition:
     color 0.18s ease,
     background-color 0.18s ease,
     border-color 0.18s ease,
     box-shadow 0.18s ease;
+  align-items: center;
+  justify-content: flex-start;
+  justify-self: center;
 }
 
 .global-search :deep(span) {
@@ -455,33 +457,33 @@ const handleUserCommand = (command: string | number | object) => {
   background: #f8fbff;
   border-color: #9db8df;
   outline: 0;
-  box-shadow: 0 0 0 3px rgba(31, 102, 216, 0.12);
+  box-shadow: 0 0 0 3px rgb(31 102 216 / 12%);
 }
 
 .top-actions {
   display: flex;
+  min-width: 0;
+  font-size: 15px;
+  color: #27364d;
+  white-space: nowrap;
   gap: 18px;
   align-items: center;
   justify-content: flex-end;
-  min-width: 0;
-  color: #27364d;
-  font-size: 15px;
-  white-space: nowrap;
 }
 
 .notice-dot {
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 22px;
   height: 22px;
+  min-width: 22px;
   padding: 0 6px;
   margin-left: 2px;
-  color: #fff;
   font-size: 12px;
   font-weight: 800;
+  color: #fff;
   background: #ef3f3b;
   border-radius: 999px;
+  align-items: center;
+  justify-content: center;
 }
 
 .notice-dot.blue {
@@ -499,8 +501,8 @@ const handleUserCommand = (command: string | number | object) => {
 .avatar {
   width: 32px;
   height: 32px;
-  border-radius: 50%;
   background: linear-gradient(180deg, #4b83f7, #1e5ec8);
+  border-radius: 50%;
 }
 
 .user-menu {
@@ -509,12 +511,10 @@ const handleUserCommand = (command: string | number | object) => {
 
 .user {
   display: inline-flex;
-  gap: 8px;
-  align-items: center;
   min-height: 40px;
   padding: 0 8px 0 4px;
-  color: inherit;
   font-weight: 700;
+  color: inherit;
   cursor: pointer;
   background: transparent;
   border: 0;
@@ -523,6 +523,8 @@ const handleUserCommand = (command: string | number | object) => {
     color 0.18s ease,
     background-color 0.18s ease,
     box-shadow 0.18s ease;
+  gap: 8px;
+  align-items: center;
 }
 
 .user:hover,
@@ -530,23 +532,23 @@ const handleUserCommand = (command: string | number | object) => {
   color: var(--blue-2);
   background: #f4f8ff;
   outline: 0;
-  box-shadow: 0 0 0 3px rgba(31, 102, 216, 0.12);
+  box-shadow: 0 0 0 3px rgb(31 102 216 / 12%);
 }
 
 .user-caret {
-  color: #6a7890;
   font-size: 12px;
   line-height: 1;
+  color: #6a7890;
 }
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(300px, 404px) minmax(0, 1fr) minmax(320px, 552px);
   width: 100%;
-  max-width: 100vw;
   height: 100%;
+  max-width: 100vw;
   min-height: 0;
   overflow-x: hidden;
+  grid-template-columns: minmax(300px, 404px) minmax(0, 1fr) minmax(320px, 552px);
 }
 
 .left,
@@ -557,19 +559,17 @@ const handleUserCommand = (command: string | number | object) => {
 
 .left {
   display: grid;
-  grid-template-rows: minmax(560px, 1fr) 394px;
   height: 100%;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden auto;
   background: #fff;
   border-right: 1px solid var(--line);
+  grid-template-rows: minmax(560px, 1fr) 394px;
 }
 
 .tree-wrap,
 .node-files {
   min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden auto;
 }
 
 .section-title {
@@ -583,21 +583,22 @@ const handleUserCommand = (command: string | number | object) => {
 }
 
 .section-tools {
-  color: #6e7d92;
   font-size: 16px;
+  color: #6e7d92;
 }
 
 .tree.static-tree-menu {
+  --el-menu-active-color: var(--blue-2);
+  --el-menu-bg-color: transparent;
+  --el-menu-hover-bg-color: transparent;
+  --el-menu-text-color: #26364e;
+
   height: calc(100% - 44px);
   padding: 8px 18px 16px;
   overflow: auto;
   background: transparent;
   border-right: 0;
   border-bottom: 1px solid var(--line);
-  --el-menu-active-color: var(--blue-2);
-  --el-menu-bg-color: transparent;
-  --el-menu-hover-bg-color: transparent;
-  --el-menu-text-color: #26364e;
 }
 
 .static-tree-menu :deep(.el-menu) {
@@ -666,8 +667,8 @@ const handleUserCommand = (command: string | number | object) => {
 
 .tree-node.active,
 .tree-node.is-active {
-  color: var(--blue-2);
   font-weight: 800;
+  color: var(--blue-2);
   background: var(--blue-soft);
   box-shadow: inset 3px 0 0 var(--blue);
 }
@@ -693,19 +694,17 @@ const handleUserCommand = (command: string | number | object) => {
 }
 
 .center {
-  min-width: 0;
   height: 100%;
+  min-width: 0;
   padding: 18px 20px 24px;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden auto;
 }
 
 .right {
-  min-width: 0;
   height: 100%;
+  min-width: 0;
   padding: 18px 20px 24px;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden auto;
   background: #fff;
   border-left: 1px solid var(--line);
 }
@@ -718,8 +717,8 @@ const handleUserCommand = (command: string | number | object) => {
 
 .preview-name {
   margin-bottom: 12px;
-  color: #26364e;
   font-weight: 800;
+  color: #26364e;
 }
 
 .right-card {
@@ -735,12 +734,12 @@ const handleUserCommand = (command: string | number | object) => {
 .right-card:hover,
 .right-card:focus-within {
   border-color: #c4d5ee;
-  box-shadow: 0 2px 8px rgba(20, 34, 56, 0.08);
+  box-shadow: 0 2px 8px rgb(20 34 56 / 8%);
 }
 
 .right-card h3 {
-  margin: 0;
   padding: 13px 16px;
+  margin: 0;
   font-size: 18px;
   line-height: 1.2;
   border-bottom: 1px solid var(--line-soft);
@@ -753,8 +752,8 @@ const handleUserCommand = (command: string | number | object) => {
 .table {
   width: 100%;
   font-size: 14px;
-  table-layout: fixed;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .table th,
@@ -769,8 +768,8 @@ const handleUserCommand = (command: string | number | object) => {
 }
 
 .table th {
-  color: #485a73;
   font-weight: 900;
+  color: #485a73;
   background: var(--head);
 }
 
@@ -827,18 +826,18 @@ const handleUserCommand = (command: string | number | object) => {
 
 .time-row {
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr);
-  gap: 9px;
-  color: #3f4f66;
   font-size: 13px;
   font-weight: 600;
   line-height: 1.5;
+  color: #3f4f66;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 9px;
 }
 
 .time-row strong {
-  color: var(--ink);
   font-size: 14px;
   font-weight: 900;
+  color: var(--ink);
 }
 
 .time-dot {
@@ -867,9 +866,9 @@ const handleUserCommand = (command: string | number | object) => {
 
 .readonly-mask {
   padding: 12px;
-  color: #6b2b24;
   font-weight: 800;
   line-height: 1.6;
+  color: #6b2b24;
   background: var(--red-soft);
   border: 1px solid #ffc5bd;
   border-radius: 6px;
@@ -885,7 +884,7 @@ const handleUserCommand = (command: string | number | object) => {
   }
 }
 
-@media (max-width: 1360px) {
+@media (width <= 1360px) {
   .topbar {
     grid-template-columns: minmax(260px, 360px) minmax(220px, 1fr);
   }
@@ -907,7 +906,7 @@ const handleUserCommand = (command: string | number | object) => {
   }
 }
 
-@media (max-width: 900px) {
+@media (width <= 900px) {
   .aicheck-static-viewport {
     overflow-y: auto;
   }

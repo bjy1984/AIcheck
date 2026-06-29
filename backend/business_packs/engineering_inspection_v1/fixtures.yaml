@@ -41,3 +41,19 @@ fixtures:
       evidenceLinkIds: [EV-24-001]
       ruleRefs:
         - {ruleSetId: RULE-WELDER-202606, ruleCode: welder-qualification}
+  projectMembers:
+    - id: BPM-ENG-INSPECTION
+      projectId: P-2026-HDCP-001
+      role: inspection
+      userId: USER-INSPECTION-001
+      nodeScope: [16, 24]
+    - id: BPM-ENG-CONTRACTOR
+      projectId: P-2026-HDCP-001
+      role: contractor
+      userId: USER-CONTRACTOR-001
+      nodeScope: [16, 24]
+    - id: BPM-ENG-OWNER
+      projectId: P-2026-HDCP-001
+      role: owner
+      userId: USER-OWNER-001
+      nodeScope: [16, 24]

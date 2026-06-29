@@ -270,7 +270,7 @@ watch(
   line-height: 1.5;
 }
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .bind-form {
     grid-template-columns: 1fr;
   }

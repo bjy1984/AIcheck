@@ -20,7 +20,8 @@ REQUIRED_ENV = {
     "AICHECK_JWT_SECRET": "JWT signing secret",
     "LITELLM_API_KEY": "LiteLLM master key used by API/worker probes",
     "LITELLM_POSTGRES_PASSWORD": "LiteLLM PostgreSQL password",
-    "OPENAI_API_KEY": "upstream provider key consumed by LiteLLM",
+    "WORKFLOW_POSTGRES_PASSWORD": "Temporal and LangGraph workflow PostgreSQL password",
+    "DEEPSEEK_API_KEY": "DeepSeek provider key consumed by LiteLLM review-chat/deepseek-reasoner",
 }
 PRODUCTION_FLAG_DEFAULTS = {
     "AICHECK_REQUIRE_AUTH": "true",
@@ -29,6 +30,7 @@ PRODUCTION_FLAG_DEFAULTS = {
     "AICHECK_OCR_OFFLINE_ONLY": "true",
     "AICHECK_OCR_DISABLE_NETWORK": "true",
     "AICHECK_MONGO_TRANSACTIONS": "true",
+    "AICHECK_REVIEW_ORCHESTRATION": "temporal",
 }
 HOST_PORTS = {
     8000: "api-service",
@@ -39,6 +41,9 @@ HOST_PORTS = {
     27017: "mongodb",
     6379: "redis",
     5433: "litellm-postgres",
+    5434: "workflow-postgres",
+    7233: "temporal-service",
+    8088: "temporal-ui",
 }
 PLACEHOLDER_MARKERS = ("replace-with", "change-me", "placeholder", "example", "sk-aicheck-dev")
 SECRET_STRENGTH_RULES = {
@@ -62,6 +67,27 @@ SECRET_STRENGTH_RULES = {
         "min_unique": 8,
         "description": "LiteLLM PostgreSQL password",
     },
+    "WORKFLOW_POSTGRES_PASSWORD": {
+        "min_length": 16,
+        "min_unique": 8,
+        "description": "Temporal and LangGraph workflow PostgreSQL password",
+    },
+}
+OCR_BUNDLED_MODEL_DIRS = ("paddleocr", "paddlex", "paddleocr-vl", "docling")
+OCR_FLAT_MODEL_DIRS = {
+    "AICHECK_PADDLEOCR_DET_MODEL_DIR": ("PP-OCRv6_medium_det",),
+    "AICHECK_PADDLEOCR_REC_MODEL_DIR": ("PP-OCRv6_medium_rec",),
+    "AICHECK_PPSTRUCTURE_LAYOUT_MODEL_DIR": ("PP-DocLayout-L",),
+    "AICHECK_PPSTRUCTURE_WIRED_TABLE_STRUCTURE_MODEL_DIR": ("SLANeXt_wired",),
+    "AICHECK_PPSTRUCTURE_WIRED_TABLE_CELLS_MODEL_DIR": ("RT-DETR-L_wired_table_cell_det",),
+    "AICHECK_PPSTRUCTURE_WIRELESS_TABLE_STRUCTURE_MODEL_DIR": ("SLANeXt_wireless",),
+    "AICHECK_PPSTRUCTURE_WIRELESS_TABLE_CELLS_MODEL_DIR": ("RT-DETR-L_wireless_table_cell_det",),
+    "AICHECK_SEAL_DET_MODEL_DIR": ("PP-OCRv4_server_seal_det",),
+    "AICHECK_SEAL_REC_MODEL_DIR": ("PP-OCRv4_server_rec",),
+    "AICHECK_PADDLEOCR_VL_LAYOUT_MODEL_DIR": ("PP-DocLayoutV3",),
+    "AICHECK_PADDLEOCR_VL_REC_MODEL_DIR": ("PaddleOCR-VL-1.6-0.9B", "PaddleOCR-VL-1.6"),
+    "AICHECK_PADDLEOCR_VL_DOC_ORI_MODEL_DIR": ("PP-LCNet_x1_0_doc_ori",),
+    "AICHECK_PADDLEOCR_VL_DOC_UNWARP_MODEL_DIR": ("UVDoc",),
 }
 
 
@@ -414,21 +440,94 @@ class PreflightChecker:
             )
             return
         root = Path(raw_path).expanduser()
-        required = ["paddleocr", "paddlex", "paddleocr-vl", "docling"]
-        missing = [name for name in required if not (root / name).exists()]
+        bundled_missing = [name for name in OCR_BUNDLED_MODEL_DIRS if not (root / name).exists()]
+        if not bundled_missing:
+            self.add(
+                "ocr.models",
+                "pass",
+                f"{root} contains required local OCR model directories.",
+                {"layout": "bundled", "root": str(root), "required": list(OCR_BUNDLED_MODEL_DIRS)},
+            )
+            return
+
+        flat_missing = self.missing_flat_ocr_model_dirs(root)
+        docling_ready = self.docling_artifacts_ready(root)
+        if not flat_missing and docling_ready:
+            self.add(
+                "ocr.models",
+                "pass",
+                f"{root} contains the required explicit OCR model directories.",
+                {
+                    "layout": "flat-explicit",
+                    "root": str(root),
+                    "modelDirectories": {
+                        key: str(self.resolve_host_model_path(root, self.env.get(key) or aliases[0]))
+                        for key, aliases in OCR_FLAT_MODEL_DIRS.items()
+                    },
+                    "doclingArtifactsPath": str(self.resolve_docling_artifacts_path(root)),
+                },
+            )
+            return
+
+        missing = [] if not flat_missing else list(bundled_missing)
+        missing.extend(flat_missing)
+        if not docling_ready:
+            missing.append("DOCLING_ARTIFACTS_PATH")
+        missing = sorted(set(missing))
         if missing:
             self.add(
                 "ocr.models",
                 "fail",
                 "Missing local OCR model directories: " + ", ".join(missing),
-                {"missing": missing, "root": str(root)},
+                {
+                    "missing": missing,
+                    "root": str(root),
+                    "supportedLayouts": ["bundled", "flat-explicit"],
+                    "bundledMissing": bundled_missing,
+                    "flatMissing": flat_missing,
+                    "doclingReady": docling_ready,
+                },
                 [
                     "Download or copy the approved local OCR model artifact bundle before deployment.",
+                    "For a bundled artifact, provide paddleocr, paddlex, paddleocr-vl, and docling subdirectories.",
+                    "For a PaddleX official_models cache, set the explicit AICHECK_*_MODEL_DIR variables and DOCLING_ARTIFACTS_PATH.",
                     "Verify the model bundle is mounted read-only to /models in ocr-service.",
                 ],
             )
             return
-        self.add("ocr.models", "pass", f"{root} contains required local OCR model directories.")
+
+    def missing_flat_ocr_model_dirs(self, root: Path) -> list[str]:
+        missing: list[str] = []
+        for env_name, aliases in OCR_FLAT_MODEL_DIRS.items():
+            configured = self.env.get(env_name)
+            if configured:
+                candidates = [self.resolve_host_model_path(root, configured)]
+            else:
+                candidates = [root / alias for alias in aliases]
+            if not any(candidate.exists() and candidate.is_dir() for candidate in candidates):
+                missing.append(env_name)
+        return missing
+
+    def resolve_host_model_path(self, root: Path, value: str) -> Path:
+        path = Path(value).expanduser()
+        if path.is_absolute() and path.parts[:2] == ("/", "models"):
+            return root.joinpath(*path.parts[2:])
+        if path.is_absolute() and path.parts[:3] == ("/", "opt", "agentdesign"):
+            agentdesign_root = Path(self.env.get("AICHECK_AGENTDESIGN_HOST_PATH", "/opt/agentdesign")).expanduser()
+            return agentdesign_root.joinpath(*path.parts[3:])
+        return path if path.is_absolute() else root / path
+
+    def resolve_docling_artifacts_path(self, root: Path) -> Path:
+        configured = self.env.get("DOCLING_ARTIFACTS_PATH")
+        if configured:
+            return self.resolve_host_model_path(root, configured)
+        return root / "docling"
+
+    def docling_artifacts_ready(self, root: Path) -> bool:
+        path = self.resolve_docling_artifacts_path(root)
+        if not path.exists() or not path.is_dir():
+            return False
+        return any(item.is_file() for item in path.rglob("*"))
 
     def check_ports(self) -> None:
         open_ports = {port: service for port, service in HOST_PORTS.items() if tcp_port_open(port)}

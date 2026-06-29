@@ -1,10 +1,4 @@
-export type RoleCode =
-  | 'inspection'
-  | 'contractor'
-  | 'ndt'
-  | 'owner'
-  | 'admin'
-  | 'fde'
+export type RoleCode = 'inspection' | 'contractor' | 'ndt' | 'owner' | 'admin' | 'fde'
 
 export type ProjectStatus =
   | '草稿/立项中'

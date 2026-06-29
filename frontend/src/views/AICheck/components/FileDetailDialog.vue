@@ -236,21 +236,21 @@ const confidenceText = (confidence?: number) => {
 .preview-shell {
   min-height: 210px;
   overflow: hidden;
+  background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  background: #ffffff;
 }
 
 .preview-toolbar {
   display: flex;
-  gap: 10px;
-  align-items: center;
-  justify-content: space-between;
   height: 42px;
   padding: 0 12px;
   font-weight: 700;
-  border-bottom: 1px solid #e5e7eb;
   background: #f8fafc;
+  border-bottom: 1px solid #e5e7eb;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .preview-body {
@@ -273,11 +273,11 @@ const confidenceText = (confidence?: number) => {
 .preview-body code {
   display: block;
   max-width: 100%;
-  overflow-wrap: anywhere;
   padding: 8px;
-  border-radius: 6px;
   color: #475467;
   background: #f3f4f6;
+  border-radius: 6px;
+  overflow-wrap: anywhere;
 }
 
 .preview-body--disabled {
@@ -294,7 +294,7 @@ const confidenceText = (confidence?: number) => {
   font-weight: 700;
 }
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .file-header,
   .file-actions {
     align-items: stretch;

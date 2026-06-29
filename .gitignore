@@ -8,6 +8,11 @@ __pycache__/
 
 .env
 backend/.env
+backend/.env.*
+!backend/.env.*.example
 backend/deployment-reports/
+backend/ocr_eval/reports/
+backend/ocr_eval/public_datasets/
+backend/ocr_eval/public_reports/
 
 output/**/*.inspect.ndjson

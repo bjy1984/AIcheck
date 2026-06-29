@@ -3,17 +3,20 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import tempfile
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Body, Header, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from apps.api.adapters.engineering_inspection import (
     ENGINEERING_DOMAIN_TYPE,
     ENGINEERING_PROJECT_DEFAULTS,
 )
 from apps.ocr_service.evaluation import compact_evaluation_report, evaluate_cases
+from apps.ocr_service.readiness import build_ocr_100_scorecard
 from libs.business_pack import (
     DEFAULT_BUSINESS_PACK_ID,
     build_project_requirements,
@@ -27,22 +30,31 @@ from libs.business_pack import (
 )
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok, page, server_time
-from libs.db.repository import repo
+from libs.db.repository import load_state, repo
 from libs.db.seed import PROJECT_ID, ROLE_NODE_MAP
 from libs.integrations import task_dispatcher
 from libs.integrations.errors import IntegrationServiceError
 from libs.integrations.ocr_client import OcrClient
+from libs.knowledge_readiness import build_knowledge_rule_scorecard
+from libs.knowledge_retrieval import answer_draft_from_clauses, retrieve_knowledge_clauses
 from libs.review_orchestrator import (
+    build_review_orchestration_scorecard,
     clone_review_run_for_replay,
     graph_view_for_review_run,
     human_decision_for_review_run,
     review_run_timeline,
     review_run_view,
+    signal_review_run_cancel,
+    signal_review_run_human_decision,
 )
 from libs.security.auth import ROLE_DEFAULT_PATHS, USERS, authenticate, decode_token, issue_token, user_by_username
+from scripts.ocr_100_label_studio_export import label_config_xml, label_studio_task, label_studio_task_without_image
+from scripts.ocr_100_label_studio_import import import_label_studio_annotations
+from scripts.ocr_annotation_readiness import build_annotation_readiness_from_tasks
 
 router = APIRouter(tags=["AIcheck API"])
 mock_router = APIRouter(tags=["Compatibility Mock"])
+WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
 
 REPORT_GENERATION_BLOCKED_STATUSES = {"待提交", "需补正", "退回补正中", "部分提交", "AI 预审中"}
 MAX_UPLOAD_BYTES = 500 * 1024 * 1024
@@ -79,6 +91,11 @@ KNOWLEDGE_TASK_STATUS_ORDER = {
     "已取消": 3,
     "成功": 4,
 }
+
+
+def refresh_state_from_mongo_for_live_read() -> None:
+    if repo.sync_mongo is not None:
+        load_state()
 AI_FEEDBACK_TYPES = {
     "accepted",
     "edited",
@@ -973,20 +990,26 @@ def simple_routes(role: str | None = None) -> list[dict[str, Any]]:
             "name": "FdeConsole",
             "meta": {"title": "FDE 后台", "icon": "vi-ep:operation", "alwaysShow": True, "roles": sorted(FDE_ROLES)},
             "children": [
-                {"path": item, "component": "views/AICheck/FdeConsole", "name": f"Fde{item.title().replace('-', '')}", "meta": {"title": "AI 交付治理", "roles": sorted(FDE_ROLES)}}
+                {
+                    "path": item["path"],
+                    "component": "views/AICheck/FdeConsole",
+                    "name": f"Fde{item['path'].title().replace('-', '')}",
+                    "meta": {"title": item["title"], "roles": sorted(FDE_ROLES)},
+                }
                 for item in [
-                    "dashboard",
-                    "ai-runs",
-                    "feedback",
-                    "evaluation",
-                    "bundles",
-                    "business-packs",
-                    "releases",
-                    "ocr-quality",
-                    "security",
-                    "costs",
-                    "incidents",
-                    "acceptance",
+                    {"path": "dashboard", "title": "AI 驾驶舱"},
+                    {"path": "ai-runs", "title": "AI Run 追踪"},
+                    {"path": "review-runs", "title": "任务编排"},
+                    {"path": "feedback", "title": "反馈与标注"},
+                    {"path": "evaluation", "title": "评估实验室"},
+                    {"path": "capability-bundles", "title": "能力组合"},
+                    {"path": "releases", "title": "发布治理"},
+                    {"path": "ocr-quality", "title": "OCR 质量"},
+                    {"path": "business-packs", "title": "业务包工厂"},
+                    {"path": "security", "title": "数据安全"},
+                    {"path": "costs", "title": "成本预算"},
+                    {"path": "incidents", "title": "事故 RCA"},
+                    {"path": "acceptance", "title": "交付验收"},
                 ]
             ],
         },
@@ -2429,6 +2452,7 @@ def get_ai_run(request: Request, project_id: str, node_id: int, run_id: str):
 
 @router.get("/review-runs/{review_run_id}")
 def get_review_run(request: Request, review_run_id: str):
+    refresh_state_from_mongo_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
@@ -2440,6 +2464,7 @@ def get_review_run(request: Request, review_run_id: str):
 
 @router.get("/review-runs/{review_run_id}/timeline")
 def get_review_run_timeline(request: Request, review_run_id: str):
+    refresh_state_from_mongo_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
@@ -2451,6 +2476,7 @@ def get_review_run_timeline(request: Request, review_run_id: str):
 
 @router.get("/review-runs/{review_run_id}/graph")
 def get_review_run_graph(request: Request, review_run_id: str):
+    refresh_state_from_mongo_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
@@ -2468,6 +2494,7 @@ def submit_review_run_human_decision(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     def produce():
+        refresh_state_from_mongo_for_live_read()
         run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
         if not run:
             return fail(errors.NOT_FOUND, request)
@@ -2478,8 +2505,26 @@ def submit_review_run_human_decision(
         result = human_decision_for_review_run(review_run_id, decision, body)
         if result.get("status") in {"missing", "invalid_decision"}:
             return fail(errors.VALIDATION_ERROR, request, data=result)
+        temporal_signal = signal_review_run_human_decision(
+            result["reviewRun"],
+            {
+                "decision": decision,
+                "status": result["status"],
+                "comment": body.get("comment") or body.get("reason"),
+                "decidedAt": result["reviewRun"].get("humanDecision", {}).get("decidedAt"),
+            },
+        )
+        result["reviewRun"]["temporalSignal"] = temporal_signal
         audit_id = repo.add_audit("提交 ReviewRun 人工确认", "ReviewRun", review_run_id)
-        return ok({"reviewRun": review_run_view(result["reviewRun"]), "auditLogId": audit_id}, request)
+        return ok(
+            {
+                "reviewRun": review_run_view(result["reviewRun"]),
+                "feedback": result.get("feedback"),
+                "temporalSignal": temporal_signal,
+                "auditLogId": audit_id,
+            },
+            request,
+        )
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"reviewRunId": review_run_id, "body": body})
 
@@ -2492,14 +2537,17 @@ def cancel_review_run(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     def produce():
+        refresh_state_from_mongo_for_live_read()
         run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
         if not run:
             return fail(errors.NOT_FOUND, request)
         run["status"] = "cancelled"
         run["cancelReason"] = body.get("reason") or "用户取消 ReviewRun"
         run["updatedAt"] = server_time()
+        temporal_signal = signal_review_run_cancel(run, run["cancelReason"])
+        run["temporalSignal"] = temporal_signal
         audit_id = repo.add_audit("取消 ReviewRun", "ReviewRun", review_run_id)
-        return ok({"reviewRun": review_run_view(run), "auditLogId": audit_id}, request)
+        return ok({"reviewRun": review_run_view(run), "temporalSignal": temporal_signal, "auditLogId": audit_id}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"reviewRunId": review_run_id, "body": body})
 
@@ -2512,6 +2560,7 @@ def rerun_review_run(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     def produce():
+        refresh_state_from_mongo_for_live_read()
         parent = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
         if not parent:
             return fail(errors.NOT_FOUND, request)
@@ -4088,11 +4137,26 @@ def fde_evaluation_report_for_run(run_id: str) -> dict[str, Any] | None:
     return repo.find_one("evaluation_reports", run_id, id_field="evaluationRunId")
 
 
+def fde_find_evaluation_report(report_ref: str | None) -> dict[str, Any] | None:
+    if not report_ref:
+        return None
+    return repo.find_one("evaluation_reports", report_ref) or repo.find_one(
+        "evaluation_reports", report_ref, id_field="evaluationRunId"
+    )
+
+
 def fde_release_gate_results(plan: dict[str, Any]) -> list[dict[str, Any]]:
     risk_level = plan.get("riskLevel") or "medium"
     report_id = plan.get("evaluationReportId")
     rollback_plan_id = plan.get("rollbackPlanId")
-    report = repo.find_one("evaluation_reports", report_id) if report_id else None
+    report = fde_find_evaluation_report(str(report_id)) if report_id else None
+    approvals = [
+        item
+        for item in repo.state.get("release_approvals", [])
+        if item.get("releasePlanId") == plan.get("id")
+        and item.get("status") == "approved"
+        and item.get("role") in {"admin", "ai_owner", "platform_admin", "customer_admin"}
+    ]
     active_risk_set = any(
         item.get("setType") == "risk" and item.get("status") == "active"
         for item in repo.state.get("evaluation_sets", [])
@@ -4106,7 +4170,7 @@ def fde_release_gate_results(plan: dict[str, Any]) -> list[dict[str, Any]]:
         {
             "gate": "evaluation_report",
             "passed": bool(report and report.get("status") == "passed"),
-            "message": "评估报告已通过" if report else "缺少通过状态的评估报告",
+            "message": "评估报告已通过" if report and report.get("status") == "passed" else ("评估报告未通过" if report else "缺少评估报告"),
         },
         {
             "gate": "risk_set",
@@ -4118,10 +4182,15 @@ def fde_release_gate_results(plan: dict[str, Any]) -> list[dict[str, Any]]:
             "passed": bool(rollback_plan_id),
             "message": "已绑定回滚方案" if rollback_plan_id else "缺少回滚方案",
         },
+        {
+            "gate": "release_approval",
+            "passed": bool(approvals),
+            "message": "已获得非 FDE 发布审批" if approvals else "高风险发布需要 AI 负责人或管理员审批",
+        },
     ]
     if risk_level != "high":
         for gate in gates:
-            if gate["gate"] in {"evaluation_report", "risk_set", "rollback_plan"}:
+            if gate["gate"] in {"evaluation_report", "risk_set", "rollback_plan", "release_approval"}:
                 gate["passed"] = True
                 gate["message"] = "中低风险发布不强制此门禁"
     return gates
@@ -4152,6 +4221,91 @@ def fde_business_pack_validation_result(pack_id: str) -> dict[str, Any] | None:
         return None
     validation = validate_business_pack(pack)
     return {"summary": business_pack_summary(pack), "validation": validation}
+
+
+def fde_state_list(collection: str) -> list[dict[str, Any]]:
+    repo.state.setdefault(collection, [])
+    return repo.state[collection]
+
+
+def fde_diff_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        ignored = {"createdAt", "updatedAt", "installedAt", "submittedAt", "approvedAt", "shadowStartedAt"}
+        return {key: fde_diff_value(value[key]) for key in sorted(value) if key not in ignored}
+    if isinstance(value, list):
+        return [fde_diff_value(item) for item in value]
+    return value
+
+
+def fde_record_diff(current: dict[str, Any], baseline: dict[str, Any] | None) -> dict[str, Any]:
+    baseline = baseline or {}
+    current_normalized = fde_diff_value(current)
+    baseline_normalized = fde_diff_value(baseline)
+    keys = sorted(set(current_normalized) | set(baseline_normalized))
+    changes = []
+    for key in keys:
+        before = baseline_normalized.get(key)
+        after = current_normalized.get(key)
+        if before != after:
+            changes.append({"field": key, "before": before, "after": after})
+    return {
+        "changed": bool(changes),
+        "changeCount": len(changes),
+        "changes": changes,
+        "addedKeys": [key for key in keys if key not in baseline_normalized],
+        "removedKeys": [key for key in keys if key not in current_normalized],
+    }
+
+
+def fde_default_masking_policies() -> list[dict[str, Any]]:
+    policies = fde_state_list("masking_policies")
+    if policies:
+        return policies
+    defaults = [
+        {
+            "id": "MASK-AIRUN-DEFAULT",
+            "targetType": "ai_run",
+            "fieldPath": "suggestion.opinionDraft",
+            "strategy": "prefix",
+            "visibleChars": 60,
+            "status": "active",
+            "riskLevel": "medium",
+            "createdAt": server_time(),
+        },
+        {
+            "id": "MASK-EVIDENCE-DEFAULT",
+            "targetType": "evidence",
+            "fieldPath": "quotedText",
+            "strategy": "prefix",
+            "visibleChars": 36,
+            "status": "active",
+            "riskLevel": "high",
+            "createdAt": server_time(),
+        },
+    ]
+    policies.extend(defaults)
+    return policies
+
+
+def fde_audit_event_scope(item: dict[str, Any]) -> bool:
+    action = str(item.get("action") or "")
+    object_type = str(item.get("objectType") or "")
+    return action.startswith(("FDE", "管理员批准 FDE", "管理员审批 FDE")) or object_type in {
+        "AccessGrant",
+        "DataExport",
+        "AIRunReplay",
+        "ReviewRun",
+        "FeedbackTriage",
+        "EvaluationRun",
+        "CapabilityBundle",
+        "ReleasePlan",
+        "BusinessPackInstallation",
+        "IncidentRCA",
+        "OcrCorrection",
+        "OcrEvaluationRun",
+        "CostBudgetChangeRequest",
+        "MaskingPolicy",
+    }
 
 
 @router.get("/fde/dashboard")
@@ -4205,6 +4359,60 @@ def fde_dashboard(request: Request):
         },
         request,
     )
+
+
+@router.get("/fde/audit-events")
+def fde_audit_events(
+    request: Request,
+    objectType: str | None = None,
+    objectId: str | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+):
+    _, role_error = fde_error_unless_allowed(request, "fde:security:manage")
+    if role_error:
+        return role_error
+    items = [repo.clone(item) for item in repo.state.get("audit_logs", []) if fde_audit_event_scope(item)]
+    if objectType:
+        items = [item for item in items if item.get("objectType") == objectType]
+    if objectId:
+        items = [item for item in items if item.get("objectId") == objectId]
+    return ok({"events": items[:limit], "total": len(items)}, request)
+
+
+@router.get("/fde/security/masking-policies")
+def fde_masking_policies(request: Request):
+    _, role_error = fde_error_unless_allowed(request, "fde:security:manage")
+    if role_error:
+        return role_error
+    return ok(repo.clone(fde_default_masking_policies()), request)
+
+
+@router.post("/fde/security/masking-policies")
+def fde_create_masking_policy(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        _, role_error = fde_error_unless_allowed(request, "fde:security:manage")
+        if role_error:
+            return role_error
+        policy = {
+            "id": body.get("id") or f"MASK-{uuid4().hex[:8].upper()}",
+            "targetType": body.get("targetType") or "ai_run",
+            "fieldPath": body.get("fieldPath") or "suggestion.opinionDraft",
+            "strategy": body.get("strategy") or "prefix",
+            "visibleChars": int(body.get("visibleChars") or 24),
+            "status": body.get("status") or "draft",
+            "riskLevel": body.get("riskLevel") or "medium",
+            "createdByRole": effective_role_for_request(request)[0],
+            "createdAt": server_time(),
+        }
+        fde_state_list("masking_policies").insert(0, policy)
+        audit_id = repo.add_audit("FDE 创建脱敏策略草稿", "MaskingPolicy", policy["id"])
+        return ok({"policy": policy, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
 @router.get("/fde/ai-runs")
@@ -4262,6 +4470,7 @@ def fde_review_runs(
     _, role_error = fde_error_unless_allowed(request, "fde:ai-run:view-masked")
     if role_error:
         return role_error
+    refresh_state_from_mongo_for_live_read()
     items = [repo.clone(item) for item in repo.state.get("review_runs", [])]
     if projectId:
         items = [item for item in items if item.get("projectId") == projectId]
@@ -4277,15 +4486,23 @@ def fde_review_run_detail(request: Request, review_run_id: str):
     _, role_error = fde_error_unless_allowed(request, "fde:ai-run:view-masked")
     if role_error:
         return role_error
+    refresh_state_from_mongo_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
+    graph = graph_view_for_review_run(review_run_id)
+    temporal = temporal_history_summary(run)
     return ok(
         {
             "run": review_run_view(run),
-            "graph": graph_view_for_review_run(review_run_id),
+            "graph": graph,
             "timeline": review_run_timeline(review_run_id),
-            "temporal": temporal_history_summary(run),
+            "temporal": temporal,
+            "scorecard": build_review_orchestration_scorecard(
+                review_run=run,
+                graph_view=graph,
+                temporal_history=temporal,
+            ),
         },
         request,
     )
@@ -4296,6 +4513,7 @@ def fde_review_run_graph(request: Request, review_run_id: str):
     _, role_error = fde_error_unless_allowed(request, "fde:ai-run:view-masked")
     if role_error:
         return role_error
+    refresh_state_from_mongo_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
@@ -4307,6 +4525,7 @@ def fde_review_run_temporal_history(request: Request, review_run_id: str):
     _, role_error = fde_error_unless_allowed(request, "fde:ai-run:view-masked")
     if role_error:
         return role_error
+    refresh_state_from_mongo_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
@@ -4324,6 +4543,7 @@ def fde_replay_review_run(
         _, role_error = fde_error_unless_allowed(request, "fde:ai-run:replay")
         if role_error:
             return role_error
+        refresh_state_from_mongo_for_live_read()
         parent = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
         if not parent:
             return fail(errors.NOT_FOUND, request)
@@ -4457,6 +4677,56 @@ def fde_create_data_export(
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
+@router.post("/fde/data-exports/{export_id}/approve")
+def fde_approve_data_export(
+    request: Request,
+    export_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        role, identity_error = effective_role_for_request(request)
+        if identity_error:
+            return identity_error
+        if role != "admin":
+            return fail(errors.FORBIDDEN, request, message="只有管理员可以批准 FDE 数据导出。")
+        export = next((item for item in fde_state_list("data_exports") if item.get("id") == export_id), None)
+        if not export:
+            return fail(errors.NOT_FOUND, request)
+        export["status"] = body.get("status") or "approved"
+        export["approvedByRole"] = role
+        export["approvedAt"] = server_time()
+        export["downloadStatus"] = "ready" if export["status"] == "approved" else "blocked"
+        audit_id = repo.add_audit("管理员批准 FDE 数据导出", "DataExport", export_id)
+        return ok({"export": repo.clone(export), "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"exportId": export_id, "body": body})
+
+
+@router.post("/fde/data-exports/{export_id}/expire")
+def fde_expire_data_export(
+    request: Request,
+    export_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        _, role_error = fde_error_unless_allowed(request, "fde:security:manage")
+        if role_error:
+            return role_error
+        export = next((item for item in fde_state_list("data_exports") if item.get("id") == export_id), None)
+        if not export:
+            return fail(errors.NOT_FOUND, request)
+        export["status"] = "expired"
+        export["expiredAt"] = server_time()
+        export["expireReason"] = body.get("reason") or "FDE 手动过期导出。"
+        export["downloadStatus"] = "expired"
+        audit_id = repo.add_audit("FDE 过期数据导出", "DataExport", export_id)
+        return ok({"export": repo.clone(export), "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"exportId": export_id, "body": body})
+
+
 @router.post("/fde/ai-runs/{run_id}/replay")
 def fde_replay_ai_run(
     request: Request,
@@ -4519,9 +4789,157 @@ def fde_feedback(request: Request, feedbackType: str | None = None, status: str 
     if status:
         items = [item for item in items if item.get("status") == status]
     triage_by_feedback = {item.get("feedbackId"): item for item in repo.state.get("feedback_triage", [])}
-    for item in items:
-        item["triage"] = repo.clone(triage_by_feedback.get(item["id"]))
-    return ok(items, request)
+    return ok([fde_feedback_governance_view(item, triage_by_feedback.get(item["id"])) for item in items], request)
+
+
+def fde_feedback_governance_view(
+    feedback: dict[str, Any],
+    triage: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    item = repo.clone(feedback)
+    triage_record = triage or repo.find_one("feedback_triage", str(item.get("id")), id_field="feedbackId")
+    evaluation_case = next(
+        (
+            case
+            for case in repo.state.get("evaluation_cases", [])
+            if case.get("sourceFeedbackId") == item.get("id")
+        ),
+        None,
+    )
+    can_use_for_eval = bool((triage_record or {}).get("canUseForEval", item.get("shouldEnterEvaluationSet", False)))
+    can_use_for_training = bool((triage_record or {}).get("canUseForTraining", False))
+    adjudication_required = bool((triage_record or {}).get("adjudicationRequired", False))
+    if adjudication_required:
+        governance_state = "needs_adjudication"
+    elif evaluation_case:
+        governance_state = "promoted_to_eval"
+    elif not triage_record:
+        governance_state = "needs_triage"
+    elif can_use_for_eval:
+        governance_state = "ready_for_eval"
+    else:
+        governance_state = "triaged"
+    item.update(
+        {
+            "triage": repo.clone(triage_record) if triage_record else None,
+            "evaluationCaseId": (evaluation_case or {}).get("id"),
+            "evaluationSetId": (evaluation_case or {}).get("evaluationSetId"),
+            "evaluationCaseStatus": (evaluation_case or {}).get("status"),
+            "canUseForEval": can_use_for_eval,
+            "canUseForTraining": can_use_for_training,
+            "dataSensitivity": (triage_record or {}).get("dataSensitivity") or "masked",
+            "adjudicationRequired": adjudication_required,
+            "governanceState": governance_state,
+            "sampleUsage": {
+                "sourceFeedbackId": item.get("id"),
+                "evaluationCaseId": (evaluation_case or {}).get("id"),
+                "canUseForEval": can_use_for_eval,
+                "canUseForTraining": can_use_for_training,
+                "dataSensitivity": (triage_record or {}).get("dataSensitivity") or "masked",
+                "adjudicationRequired": adjudication_required,
+            },
+        }
+    )
+    return item
+
+
+def fde_expected_findings_from_feedback(feedback: dict[str, Any]) -> list[Any]:
+    corrected = feedback.get("correctedOutput")
+    if isinstance(corrected, dict):
+        for key in ("findings", "manualConfirmItems", "expectedFindings"):
+            value = corrected.get(key)
+            if isinstance(value, list):
+                return repo.clone(value)
+        if corrected.get("title"):
+            return [repo.clone(corrected)]
+    if isinstance(corrected, list):
+        return repo.clone(corrected)
+    if feedback.get("feedbackType") == "rejected_false_positive":
+        return []
+    original = feedback.get("originalAiOutput")
+    return repo.clone(original if isinstance(original, list) else [])
+
+
+def fde_select_evaluation_set(feedback: dict[str, Any], triage: dict[str, Any], requested_set_id: str | None = None) -> dict[str, Any]:
+    if requested_set_id:
+        requested = repo.find_one("evaluation_sets", requested_set_id)
+        if requested:
+            return requested
+    business_pack_id = feedback.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID
+    preferred_type = (
+        "risk"
+        if triage.get("rootCause") in {"kb_retrieval_error", "kb_content_error", "model_reasoning_error", "schema_error"}
+        else "golden"
+    )
+    active_sets = [
+        item
+        for item in repo.state.get("evaluation_sets", [])
+        if item.get("status") == "active" and item.get("businessPackId") == business_pack_id
+    ]
+    for item in active_sets:
+        if item.get("setType") == preferred_type:
+            return item
+    if active_sets:
+        return active_sets[0]
+    created = {
+        "id": f"ESET-{preferred_type.upper()}-{uuid4().hex[:8].upper()}",
+        "name": "FDE 反馈自动评估集",
+        "setType": preferred_type,
+        "businessPackId": business_pack_id,
+        "caseCount": 0,
+        "riskLevel": "high" if preferred_type == "risk" else "medium",
+        "status": "active",
+        "createdAt": server_time(),
+        "source": "fde_feedback_triage",
+    }
+    repo.state.setdefault("evaluation_sets", []).insert(0, created)
+    return created
+
+
+def fde_upsert_evaluation_case_from_feedback(
+    feedback: dict[str, Any],
+    triage: dict[str, Any],
+    *,
+    evaluation_set_id: str | None = None,
+) -> dict[str, Any] | None:
+    if not (triage.get("status") == "approved_for_eval" or bool(triage.get("canUseForEval"))):
+        return None
+    repo.state.setdefault("evaluation_cases", [])
+    evaluation_set = fde_select_evaluation_set(feedback, triage, evaluation_set_id)
+    existing = next(
+        (item for item in repo.state["evaluation_cases"] if item.get("sourceFeedbackId") == feedback.get("id")),
+        None,
+    )
+    inferred_risk_level = (
+        "high" if triage.get("rootCause") in {"kb_retrieval_error", "kb_content_error", "model_reasoning_error"} else "medium"
+    )
+    payload = {
+        "id": (existing or {}).get("id") or f"ECASE-{uuid4().hex[:8].upper()}",
+        "evaluationSetId": evaluation_set["id"],
+        "businessPackId": feedback.get("businessPackId") or evaluation_set.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID,
+        "nodeId": feedback.get("nodeId"),
+        "source": "human_feedback",
+        "sourceFeedbackId": feedback.get("id"),
+        "feedbackType": feedback.get("feedbackType"),
+        "rootCause": triage.get("rootCause"),
+        "riskLevel": triage.get("riskLevel") or inferred_risk_level,
+        "inputDocumentVersionIds": repo.clone(feedback.get("inputDocumentVersionIds") or []),
+        "expectedFindings": fde_expected_findings_from_feedback(feedback),
+        "expectedEvidence": repo.clone(feedback.get("expectedEvidence") or feedback.get("evidenceRefs") or []),
+        "expectedEvidenceLinkIds": repo.clone(feedback.get("expectedEvidenceLinkIds") or []),
+        "dataSensitivity": triage.get("dataSensitivity") or "masked",
+        "canUseForEval": bool(triage.get("canUseForEval", True)),
+        "canUseForTraining": bool(triage.get("canUseForTraining", False)),
+        "status": "approved_for_eval",
+        "updatedAt": server_time(),
+    }
+    if existing:
+        existing.update(payload)
+        return repo.clone(existing)
+    payload["createdAt"] = payload["updatedAt"]
+    repo.state["evaluation_cases"].insert(0, payload)
+    evaluation_set["caseCount"] = int(evaluation_set.get("caseCount") or 0) + 1
+    return repo.clone(payload)
 
 
 @router.post("/fde/feedback/{feedback_id}/triage")
@@ -4559,8 +4977,21 @@ def fde_triage_feedback(
             repo.state["feedback_triage"].insert(0, payload)
         feedback["status"] = payload["status"]
         feedback["rootCause"] = root_cause
+        evaluation_case = fde_upsert_evaluation_case_from_feedback(
+            feedback,
+            payload,
+            evaluation_set_id=body.get("evaluationSetId"),
+        )
         audit_id = repo.add_audit("FDE 反馈归因", "HumanFeedback", feedback_id)
-        return ok({"feedback": repo.clone(feedback), "triage": payload, "auditLogId": audit_id}, request)
+        return ok(
+            {
+                "feedback": fde_feedback_governance_view(feedback, payload),
+                "triage": payload,
+                "evaluationCase": evaluation_case,
+                "auditLogId": audit_id,
+            },
+            request,
+        )
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"feedbackId": feedback_id, "body": body})
 
@@ -4584,6 +5015,266 @@ def fde_evaluation_sets(request: Request, setType: str | None = None):
     )
 
 
+def fde_normalize_eval_value(value: Any) -> str:
+    if isinstance(value, dict):
+        for key in ("title", "description", "message", "fieldCode", "fieldName"):
+            if value.get(key):
+                return str(value.get(key)).strip()
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+    return str(value).strip()
+
+
+def fde_evaluation_case_overrides(body: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    raw = body.get("caseResults") or body.get("caseOverrides") or {}
+    if isinstance(raw, dict):
+        return {str(key): value for key, value in raw.items() if isinstance(value, dict)}
+    if isinstance(raw, list):
+        mapped: dict[str, dict[str, Any]] = {}
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            case_id = item.get("evaluationCaseId") or item.get("caseId") or item.get("id")
+            if case_id:
+                mapped[str(case_id)] = item
+        return mapped
+    return {}
+
+
+def fde_expected_evidence_for_case(case: dict[str, Any]) -> list[Any]:
+    for key in ("expectedEvidence", "expectedEvidenceRefs", "expectedEvidenceLinkIds"):
+        value = case.get(key)
+        if isinstance(value, list):
+            return repo.clone(value)
+    return []
+
+
+def fde_normalize_clause_ref(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def fde_expected_clause_ids_for_case(case: dict[str, Any]) -> list[str]:
+    for key in ("expectedClauseIds", "expectedClauses", "expectedKbRefs"):
+        value = case.get(key)
+        if not isinstance(value, list):
+            continue
+        clause_ids: list[str] = []
+        for item in value:
+            if isinstance(item, dict):
+                clause_id = item.get("clauseId") or item.get("id")
+            else:
+                clause_id = item
+            if clause_id:
+                clause_ids.append(str(clause_id))
+        if clause_ids:
+            return clause_ids
+    return []
+
+
+def fde_retrieval_query_for_case(case: dict[str, Any], override: dict[str, Any]) -> str:
+    for key in ("retrievalQuery", "question", "query"):
+        if override.get(key):
+            return str(override.get(key))
+        if case.get(key):
+            return str(case.get(key))
+    expected_findings = case.get("expectedFindings") or []
+    if expected_findings:
+        return fde_normalize_eval_value(expected_findings[0])
+    return "审查依据"
+
+
+def fde_evaluate_retrieval_for_case(
+    *,
+    evaluation_run_id: str,
+    case: dict[str, Any],
+    override: dict[str, Any],
+) -> dict[str, Any] | None:
+    expected_clause_ids = fde_expected_clause_ids_for_case(case)
+    if not expected_clause_ids:
+        return None
+    query = fde_retrieval_query_for_case(case, override)
+    top_k = int(override.get("retrievalTopK") or case.get("retrievalTopK") or 5)
+    node_value = case.get("nodeId")
+    node_id = int(node_value) if str(node_value or "").isdigit() else None
+    trace: dict[str, Any] | None = None
+    if "actualClauseIds" in override or "selectedClauseIds" in override:
+        selected_clause_ids = [str(item) for item in (override.get("actualClauseIds") or override.get("selectedClauseIds") or [])]
+        selected_route = str(override.get("selectedRoute") or case.get("expectedRoute") or "manual_override")
+    else:
+        retrieval = retrieve_knowledge_clauses(
+            repo.state,
+            query=query,
+            review_run_id=evaluation_run_id,
+            business_pack_id=case.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID,
+            node_id=node_id,
+            top_k=top_k,
+            query_type="fde_evaluation_retrieval",
+        )
+        trace = retrieval["trace"]
+        trace["evaluationRunId"] = evaluation_run_id
+        trace["evaluationCaseId"] = case.get("id")
+        repo.state.setdefault("retrieval_traces", []).append(trace)
+        selected_clause_ids = [str(item.get("clauseId")) for item in trace.get("selectedClauses") or [] if item.get("clauseId")]
+        selected_route = str(trace.get("selectedRoute") or "")
+    expected_norm = {fde_normalize_clause_ref(item) for item in expected_clause_ids}
+    selected_norm = {fde_normalize_clause_ref(item) for item in selected_clause_ids}
+    missing_clause_ids = [item for item in expected_clause_ids if fde_normalize_clause_ref(item) not in selected_norm]
+    matched_clause_count = len(expected_norm & selected_norm)
+    top_clause_id = selected_clause_ids[0] if selected_clause_ids else None
+    unexpected_top_clause_id = (
+        top_clause_id if top_clause_id and fde_normalize_clause_ref(top_clause_id) not in expected_norm else None
+    )
+    expected_route = override.get("expectedRoute") or case.get("expectedRoute")
+    route_passed = not expected_route or selected_route == str(expected_route)
+    expected_count = len(expected_clause_ids)
+    retrieval_passed = not missing_clause_ids and not unexpected_top_clause_id and bool(route_passed)
+    return {
+        "retrievalQuery": query,
+        "retrievalTraceId": (trace or {}).get("retrievalTraceId"),
+        "expectedClauseIds": expected_clause_ids,
+        "selectedClauseIds": selected_clause_ids,
+        "missingClauseIds": missing_clause_ids,
+        "unexpectedTopClauseId": unexpected_top_clause_id,
+        "expectedClauseCount": expected_count,
+        "matchedClauseCount": matched_clause_count,
+        "retrievalRecall": round(matched_clause_count / expected_count, 4) if expected_count else 1.0,
+        "retrievalPassed": retrieval_passed,
+        "selectedRoute": selected_route,
+        "expectedRoute": expected_route,
+        "routePassed": bool(route_passed),
+    }
+
+
+def fde_build_evaluation_case_results(
+    *,
+    evaluation_run_id: str,
+    cases: list[dict[str, Any]],
+    overrides: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for case in cases:
+        case_id = str(case.get("id"))
+        override = overrides.get(case_id) or overrides.get(str(case.get("sourceFeedbackId"))) or {}
+        expected_findings = repo.clone(case.get("expectedFindings") or [])
+        if "actualFindings" in override:
+            actual_findings = repo.clone(override.get("actualFindings") or [])
+        elif "findings" in override:
+            actual_findings = repo.clone(override.get("findings") or [])
+        elif "actualFindings" in case:
+            actual_findings = repo.clone(case.get("actualFindings") or [])
+        elif "candidateFindings" in case:
+            actual_findings = repo.clone(case.get("candidateFindings") or [])
+        else:
+            actual_findings = repo.clone(expected_findings)
+        expected_values = {fde_normalize_eval_value(item) for item in expected_findings}
+        actual_values = {fde_normalize_eval_value(item) for item in actual_findings}
+        missing_findings = sorted(value for value in expected_values if value and value not in actual_values)
+        unexpected_findings = sorted(value for value in actual_values if value and value not in expected_values)
+        expected_evidence = fde_expected_evidence_for_case(case)
+        if "actualEvidence" in override:
+            actual_evidence = repo.clone(override.get("actualEvidence") or [])
+        elif "evidenceRefs" in override:
+            actual_evidence = repo.clone(override.get("evidenceRefs") or [])
+        else:
+            actual_evidence = repo.clone(expected_evidence)
+        evidence_passed = not expected_evidence or bool(actual_evidence)
+        retrieval_result = fde_evaluate_retrieval_for_case(
+            evaluation_run_id=evaluation_run_id,
+            case=case,
+            override=override,
+        )
+        retrieval_passed = True if retrieval_result is None else bool(retrieval_result.get("retrievalPassed"))
+        status = "passed" if not missing_findings and evidence_passed and retrieval_passed else "failed"
+        result = {
+            "id": f"ECRES-{uuid4().hex[:8].upper()}",
+            "evaluationRunId": evaluation_run_id,
+            "evaluationCaseId": case_id,
+            "sourceFeedbackId": case.get("sourceFeedbackId"),
+            "businessPackId": case.get("businessPackId"),
+            "nodeId": case.get("nodeId"),
+            "feedbackType": case.get("feedbackType"),
+            "rootCause": case.get("rootCause"),
+            "riskLevel": case.get("riskLevel"),
+            "status": status,
+            "expectedFindingCount": len(expected_findings),
+            "matchedFindingCount": max(0, len(expected_values) - len(missing_findings)),
+            "actualFindingCount": len(actual_findings),
+            "missingFindings": missing_findings,
+            "unexpectedFindings": unexpected_findings,
+            "expectedEvidenceCount": len(expected_evidence),
+            "actualEvidenceCount": len(actual_evidence),
+            "evidencePassed": evidence_passed,
+            "replayMode": override.get("replayMode") or "static_baseline",
+            "createdAt": server_time(),
+        }
+        if retrieval_result:
+            result.update(retrieval_result)
+        results.append(result)
+    return results
+
+
+def fde_evaluation_case_summary(case_results: list[dict[str, Any]]) -> dict[str, Any]:
+    total = len(case_results)
+    passed = len([item for item in case_results if item.get("status") == "passed"])
+    expected_total = sum(int(item.get("expectedFindingCount") or 0) for item in case_results)
+    matched_total = sum(int(item.get("matchedFindingCount") or 0) for item in case_results)
+    evidence_required = len([item for item in case_results if int(item.get("expectedEvidenceCount") or 0) > 0])
+    evidence_passed = len(
+        [
+            item
+            for item in case_results
+            if int(item.get("expectedEvidenceCount") or 0) > 0 and bool(item.get("evidencePassed"))
+        ]
+    )
+    retrieval_required = [
+        item for item in case_results if int(item.get("expectedClauseCount") or 0) > 0
+    ]
+    expected_clause_total = sum(int(item.get("expectedClauseCount") or 0) for item in retrieval_required)
+    matched_clause_total = sum(int(item.get("matchedClauseCount") or 0) for item in retrieval_required)
+    wrong_reference_count = len([item for item in retrieval_required if item.get("unexpectedTopClauseId")])
+    pageindex_triggered = len([item for item in retrieval_required if item.get("selectedRoute") == "pageindex_tree_search"])
+    retrieval_passed = len([item for item in retrieval_required if bool(item.get("retrievalPassed"))])
+    return {
+        "cases": total,
+        "passed": passed,
+        "failed": total - passed,
+        "casePassRate": round(passed / total, 4) if total else 0.0,
+        "findingRecall": round(matched_total / expected_total, 4) if expected_total else 1.0,
+        "evidenceCoverage": round(evidence_passed / evidence_required, 4) if evidence_required else 1.0,
+        "retrievalCases": len(retrieval_required),
+        "retrievalPassRate": round(retrieval_passed / len(retrieval_required), 4) if retrieval_required else 1.0,
+        "retrievalRecall": round(matched_clause_total / expected_clause_total, 4) if expected_clause_total else 1.0,
+        "wrongReferenceRate": round(wrong_reference_count / len(retrieval_required), 4) if retrieval_required else 0.0,
+        "pageIndexTriggerRate": round(pageindex_triggered / len(retrieval_required), 4) if retrieval_required else 0.0,
+    }
+
+
+def fde_metric_threshold(metric: str) -> tuple[float, str]:
+    if metric == "humanAcceptanceRate":
+        return 0.85, ">="
+    if metric in {"evidenceHitRate", "casePassRate", "findingRecall", "evidenceCoverage"}:
+        return 0.9, ">="
+    if metric in {"retrievalRecall", "retrievalPassRate"}:
+        return 0.9, ">="
+    if metric == "wrongReferenceRate":
+        return 0.03, "<="
+    if metric == "schemaPassRate":
+        return 1.0, ">="
+    if metric == "hallucinationRate":
+        return 0.01, "<="
+    if metric == "highRiskMissRate":
+        return 0.005, "<="
+    if metric == "failedCaseCount":
+        return 0.0, "<="
+    if metric == "caseCount":
+        return 1.0, ">="
+    return 0.0, ">="
+
+
+def fde_metric_passed(metric: str, value: float | int) -> bool:
+    threshold, operator = fde_metric_threshold(metric)
+    return float(value) >= threshold if operator == ">=" else float(value) <= threshold
+
+
 @router.post("/fde/evaluation-runs")
 def fde_create_evaluation_run(
     request: Request,
@@ -4599,6 +5290,13 @@ def fde_create_evaluation_run(
         if not set_id or not repo.find_one("evaluation_sets", set_id):
             return fail(errors.VALIDATION_ERROR, request, message="evaluationSetId 无效。")
         cases = [item for item in repo.state.get("evaluation_cases", []) if item.get("evaluationSetId") == set_id]
+        run_id = body.get("id") or f"ERUN-{uuid4().hex[:8].upper()}"
+        case_results = fde_build_evaluation_case_results(
+            evaluation_run_id=run_id,
+            cases=repo.clone(cases),
+            overrides=fde_evaluation_case_overrides(body),
+        )
+        case_summary = fde_evaluation_case_summary(case_results)
         case_count = len(cases)
         metrics = {
             "humanAcceptanceRate": acceptance_rate() or 0.86,
@@ -4606,38 +5304,61 @@ def fde_create_evaluation_run(
             "hallucinationRate": hallucination_rate(),
             "highRiskMissRate": 0.0,
             "schemaPassRate": 1.0,
+            "casePassRate": case_summary["casePassRate"],
+            "findingRecall": case_summary["findingRecall"],
+            "evidenceCoverage": case_summary["evidenceCoverage"],
+            "retrievalRecall": case_summary["retrievalRecall"],
+            "retrievalPassRate": case_summary["retrievalPassRate"],
+            "wrongReferenceRate": case_summary["wrongReferenceRate"],
+            "pageIndexTriggerRate": case_summary["pageIndexTriggerRate"],
+            "failedCaseCount": case_summary["failed"],
             "caseCount": case_count,
         }
         run = {
-            "id": body.get("id") or f"ERUN-{uuid4().hex[:8].upper()}",
+            "id": run_id,
             "evaluationSetId": set_id,
             "capabilityBundleId": bundle_id,
             "status": "completed",
             "startedAt": server_time(),
             "finishedAt": server_time(),
             "metrics": metrics,
+            "caseSummary": case_summary,
             "requestedByRole": effective_role_for_request(request)[0],
         }
+        gate_results = [
+            {"gate": "golden_set", "passed": metrics["evidenceHitRate"] >= 0.9},
+            {"gate": "schema_validation", "passed": metrics["schemaPassRate"] >= 1.0},
+            {"gate": "hallucination", "passed": metrics["hallucinationRate"] <= 0.01},
+            {"gate": "high_risk_miss", "passed": metrics["highRiskMissRate"] <= 0.005},
+            {"gate": "case_pass_rate", "passed": metrics["casePassRate"] >= 0.9},
+            {"gate": "finding_recall", "passed": metrics["findingRecall"] >= 0.9},
+            {"gate": "evidence_coverage", "passed": metrics["evidenceCoverage"] >= 0.9},
+            {"gate": "retrieval_recall", "passed": metrics["retrievalRecall"] >= 0.9},
+            {"gate": "wrong_reference", "passed": metrics["wrongReferenceRate"] <= 0.03},
+        ]
+        report_status = "passed" if all(item["passed"] for item in gate_results) else "failed"
         report = {
             "id": body.get("reportId") or f"EREPORT-{uuid4().hex[:8].upper()}",
             "evaluationRunId": run["id"],
             "capabilityBundleId": bundle_id,
             "businessPackId": (repo.find_one("capability_bundles", bundle_id) or {}).get("businessPackId") or DEFAULT_BUSINESS_PACK_ID,
-            "status": "passed",
-            "summary": "离线评测通过，关键指标满足 FDE 发布门禁。",
+            "status": report_status,
+            "summary": "离线评测通过，关键指标满足 FDE 发布门禁。"
+            if report_status == "passed"
+            else "离线评测未通过，存在样本或指标未满足发布门禁。",
             "metrics": metrics,
-            "gateResults": [
-                {"gate": "golden_set", "passed": metrics["evidenceHitRate"] >= 0.9},
-                {"gate": "schema_validation", "passed": metrics["schemaPassRate"] >= 1.0},
-                {"gate": "hallucination", "passed": metrics["hallucinationRate"] <= 0.01},
-                {"gate": "high_risk_miss", "passed": metrics["highRiskMissRate"] <= 0.005},
-            ],
+            "caseSummary": case_summary,
+            "caseResults": repo.clone(case_results),
+            "gateResults": gate_results,
             "createdAt": server_time(),
         }
+        repo.state.setdefault("evaluation_case_results", [])
         repo.state["evaluation_runs"].insert(0, run)
         repo.state["evaluation_reports"].insert(0, report)
+        repo.state["evaluation_case_results"][:0] = repo.clone(case_results)
         for metric, value in metrics.items():
             if isinstance(value, (int, float)):
+                threshold, operator = fde_metric_threshold(metric)
                 repo.state["evaluation_metrics"].insert(
                     0,
                     {
@@ -4645,12 +5366,13 @@ def fde_create_evaluation_run(
                         "evaluationRunId": run["id"],
                         "metric": metric,
                         "value": value,
-                        "threshold": 0.9 if metric in {"humanAcceptanceRate", "evidenceHitRate", "schemaPassRate"} else 0.01,
-                        "passed": True,
+                        "threshold": threshold,
+                        "operator": operator,
+                        "passed": fde_metric_passed(metric, value),
                     },
                 )
         audit_id = repo.add_audit("FDE 发起离线评测", "EvaluationRun", run["id"])
-        return ok({"run": run, "report": report, "auditLogId": audit_id}, request)
+        return ok({"run": run, "report": report, "caseResults": case_results, "auditLogId": audit_id}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
@@ -4664,7 +5386,10 @@ def fde_evaluation_report(request: Request, run_id: str):
     if not report:
         return fail(errors.NOT_FOUND, request)
     metrics = [repo.clone(item) for item in repo.state.get("evaluation_metrics", []) if item.get("evaluationRunId") == run_id]
-    return ok({"report": repo.clone(report), "metrics": metrics}, request)
+    case_results = [
+        repo.clone(item) for item in repo.state.get("evaluation_case_results", []) if item.get("evaluationRunId") == run_id
+    ]
+    return ok({"report": repo.clone(report), "metrics": metrics, "caseResults": case_results}, request)
 
 
 @router.get("/fde/capability-bundles")
@@ -4716,6 +5441,51 @@ def fde_create_capability_bundle(
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
+@router.get("/fde/capability-bundles/{bundle_id}/diff")
+def fde_capability_bundle_diff(request: Request, bundle_id: str, compareTo: str | None = None):
+    _, role_error = fde_error_unless_allowed(request, "fde:business-pack:view")
+    if role_error:
+        return role_error
+    bundle = repo.find_one("capability_bundles", bundle_id)
+    if not bundle:
+        return fail(errors.NOT_FOUND, request)
+    baseline = repo.find_one("capability_bundles", compareTo) if compareTo else None
+    if not baseline:
+        baseline = next(
+            (
+                item
+                for item in repo.state.get("capability_bundles", [])
+                if item.get("id") != bundle_id and item.get("businessPackId") == bundle.get("businessPackId")
+            ),
+            None,
+        )
+    component_fields = [
+        "agentVersionId",
+        "promptVersionId",
+        "modelRouteVersionId",
+        "ruleSetVersion",
+        "knowledgeBaseVersion",
+        "ocrProfileVersionId",
+        "schemaVersion",
+        "riskLevel",
+        "businessPackId",
+    ]
+    current = {field: bundle.get(field) for field in component_fields}
+    previous = {field: (baseline or {}).get(field) for field in component_fields}
+    diff = fde_record_diff(current, previous)
+    return ok(
+        {
+            "bundleId": bundle_id,
+            "compareTo": (baseline or {}).get("id"),
+            "current": current,
+            "baseline": previous,
+            "diff": diff,
+            "riskImpact": "high" if any(item["field"] in {"ruleSetVersion", "knowledgeBaseVersion", "schemaVersion"} for item in diff["changes"]) else bundle.get("riskLevel", "medium"),
+        },
+        request,
+    )
+
+
 @router.get("/fde/releases")
 def fde_release_plans(request: Request):
     _, role_error = fde_error_unless_allowed(request, "fde:release:view")
@@ -4726,6 +5496,51 @@ def fde_release_plans(request: Request):
             "plans": repo.clone(repo.state.get("release_plans", [])),
             "approvals": repo.clone(repo.state.get("release_approvals", [])),
             "gates": repo.clone(repo.state.get("release_gates", [])),
+        },
+        request,
+    )
+
+
+@router.get("/fde/releases/{release_id}/impact")
+def fde_release_impact(request: Request, release_id: str):
+    _, role_error = fde_error_unless_allowed(request, "fde:release:view")
+    if role_error:
+        return role_error
+    plan = repo.find_one("release_plans", release_id)
+    if not plan:
+        return fail(errors.NOT_FOUND, request)
+    bundle = repo.find_one("capability_bundles", plan.get("capabilityBundleId"))
+    target_scope = plan.get("targetScope") or {}
+    project_ids = set(target_scope.get("projectIds") or [])
+    business_pack_ids = set(target_scope.get("businessPackIds") or [])
+    if not business_pack_ids and bundle:
+        business_pack_ids.add(bundle.get("businessPackId"))
+    projects = [
+        repo.clone(project)
+        for project in repo.state.get("projects", [])
+        if (not project_ids or project.get("id") in project_ids)
+        and (not business_pack_ids or project.get("businessPackId", DEFAULT_BUSINESS_PACK_ID) in business_pack_ids)
+    ]
+    related_runs = [
+        repo.clone(run)
+        for run in repo.state.get("review_runs", [])
+        if not business_pack_ids or run.get("businessPackId", DEFAULT_BUSINESS_PACK_ID) in business_pack_ids
+    ][:20]
+    gates = [repo.clone(item) for item in repo.state.get("release_gates", []) if item.get("releasePlanId") == release_id]
+    return ok(
+        {
+            "releasePlanId": release_id,
+            "targetScope": target_scope,
+            "bundle": repo.clone(bundle),
+            "affectedProjectCount": len(projects),
+            "affectedProjects": projects[:20],
+            "affectedReviewRunCount": len(related_runs),
+            "sampleReviewRuns": related_runs,
+            "gateSummary": {
+                "total": len(gates),
+                "passed": len([item for item in gates if item.get("passed")]),
+                "blocked": [item.get("message") for item in gates if not item.get("passed")],
+            },
         },
         request,
     )
@@ -4746,31 +5561,27 @@ def fde_create_release_plan(
         if not bundle:
             return fail(errors.VALIDATION_ERROR, request, message="capabilityBundleId 无效。")
         risk_level = body.get("riskLevel") or bundle.get("riskLevel") or "medium"
-        status = "submitted"
-        blocking_reasons: list[str] = []
-        if risk_level == "high":
-            if not body.get("evaluationReportId"):
-                blocking_reasons.append("缺少评估报告")
-            if not body.get("rollbackPlanId"):
-                blocking_reasons.append("缺少回滚方案")
-            status = "blocked_by_gate" if blocking_reasons else "submitted"
         plan = {
             "id": body.get("id") or f"REL-{uuid4().hex[:8].upper()}",
             "releaseType": body.get("releaseType") or "capability_bundle",
             "capabilityBundleId": bundle_id,
             "riskLevel": risk_level,
-            "status": status,
+            "status": "submitted",
             "targetScope": body.get("targetScope") or {"tenantIds": ["demo"], "businessPackIds": [bundle.get("businessPackId")], "projectIds": []},
             "changeSummary": body.get("changeSummary") or "FDE 发起能力组合发布申请。",
             "evaluationReportId": body.get("evaluationReportId"),
             "rollbackPlanId": body.get("rollbackPlanId"),
-            "blockingReasons": blocking_reasons,
+            "blockingReasons": [],
             "createdByRole": effective_role_for_request(request)[0],
             "createdAt": server_time(),
         }
         repo.state["release_plans"].insert(0, plan)
         gates = fde_release_gate_results(plan)
         fde_persist_release_gates(plan, gates)
+        blocking_reasons = [item["message"] for item in gates if not item["passed"]]
+        plan["blockingReasons"] = blocking_reasons
+        if blocking_reasons:
+            plan["status"] = "blocked_by_gate"
         audit_id = repo.add_audit("FDE 创建发布计划", "ReleasePlan", plan["id"])
         return ok({"plan": plan, "gates": gates, "auditLogId": audit_id}, request)
 
@@ -4807,6 +5618,44 @@ def fde_submit_release_plan(
     return idempotent(request, idempotency_key, produce, fingerprint_source={"releaseId": release_id, "body": body})
 
 
+@router.post("/fde/releases/{release_id}/approve")
+def fde_approve_release_plan(
+    request: Request,
+    release_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        role, identity_error = effective_role_for_request(request)
+        if identity_error:
+            return identity_error
+        if role != "admin":
+            return fail(errors.FORBIDDEN, request, message="高风险 AI 发布必须由非 FDE 管理员/AI 负责人审批。")
+        plan = repo.find_one("release_plans", release_id)
+        if not plan:
+            return fail(errors.NOT_FOUND, request)
+        approval = {
+            "id": body.get("id") or f"RAPP-{uuid4().hex[:8].upper()}",
+            "releasePlanId": release_id,
+            "role": body.get("approvalRole") or "admin",
+            "status": body.get("status") or "approved",
+            "comment": body.get("comment") or "管理员批准高风险 AI 发布进入灰度。",
+            "approvedByRole": role,
+            "approvedAt": server_time(),
+        }
+        repo.state["release_approvals"].insert(0, approval)
+        gates = fde_release_gate_results(plan)
+        fde_persist_release_gates(plan, gates)
+        blocking = [item["message"] for item in gates if not item["passed"]]
+        plan["blockingReasons"] = blocking
+        plan["status"] = "submitted" if not blocking else "blocked_by_gate"
+        plan["approvedAt"] = approval["approvedAt"] if not blocking else plan.get("approvedAt")
+        audit_id = repo.add_audit("管理员审批 FDE 发布计划", "ReleasePlan", release_id)
+        return ok({"plan": repo.clone(plan), "approval": approval, "gates": gates, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"releaseId": release_id, "body": body})
+
+
 @router.post("/fde/releases/{release_id}/start-shadow")
 def fde_start_shadow_release(
     request: Request,
@@ -4822,6 +5671,7 @@ def fde_start_shadow_release(
         if not plan:
             return fail(errors.NOT_FOUND, request)
         gates = fde_release_gate_results(plan)
+        fde_persist_release_gates(plan, gates)
         blocking = [item["message"] for item in gates if not item["passed"]]
         if blocking:
             plan["status"] = "blocked_by_gate"
@@ -4832,6 +5682,31 @@ def fde_start_shadow_release(
         plan["shadowSampleRate"] = body.get("sampleRate", 0.0)
         audit_id = repo.add_audit("FDE 启动 Shadow Run", "ReleasePlan", release_id)
         return ok({"plan": repo.clone(plan), "gates": gates, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"releaseId": release_id, "body": body})
+
+
+@router.post("/fde/releases/{release_id}/mark-shadow-passed")
+def fde_mark_shadow_passed(
+    request: Request,
+    release_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        _, role_error = fde_error_unless_allowed(request, "fde:release:shadow")
+        if role_error:
+            return role_error
+        plan = repo.find_one("release_plans", release_id)
+        if not plan:
+            return fail(errors.NOT_FOUND, request)
+        if plan.get("status") not in {"shadow_running", "shadow_passed"}:
+            return fail(errors.VALIDATION_ERROR, request, message="只有 shadow_running 状态可以标记 Shadow 通过。")
+        plan["status"] = "shadow_passed"
+        plan["shadowPassedAt"] = server_time()
+        plan["shadowMetrics"] = body.get("metrics") or {"sampleRate": plan.get("shadowSampleRate", 0), "failedRuns": 0}
+        audit_id = repo.add_audit("FDE 标记 Shadow Run 通过", "ReleasePlan", release_id)
+        return ok({"plan": repo.clone(plan), "auditLogId": audit_id}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"releaseId": release_id, "body": body})
 
@@ -4850,7 +5725,14 @@ def fde_request_canary_release(
         plan = repo.find_one("release_plans", release_id)
         if not plan:
             return fail(errors.NOT_FOUND, request)
-        if plan.get("status") not in {"shadow_running", "shadow_passed", "submitted", "production_approved"}:
+        gates = fde_release_gate_results(plan)
+        fde_persist_release_gates(plan, gates)
+        blocking = [item["message"] for item in gates if not item["passed"]]
+        if blocking:
+            plan["status"] = "blocked_by_gate"
+            plan["blockingReasons"] = blocking
+            return ok({"plan": repo.clone(plan), "gates": gates, "auditLogId": None}, request)
+        if plan.get("status") not in {"shadow_running", "shadow_passed"}:
             return fail(errors.VALIDATION_ERROR, request, message="当前发布状态不允许申请 canary。")
         plan["status"] = "canary_requested"
         plan["canaryPolicy"] = {
@@ -4860,7 +5742,42 @@ def fde_request_canary_release(
         }
         plan["canaryRequestedAt"] = server_time()
         audit_id = repo.add_audit("FDE 申请 Canary 发布", "ReleasePlan", release_id)
-        return ok({"plan": repo.clone(plan), "auditLogId": audit_id}, request)
+        return ok({"plan": repo.clone(plan), "gates": gates, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"releaseId": release_id, "body": body})
+
+
+@router.post("/fde/releases/{release_id}/approve-production")
+def fde_approve_production_release(
+    request: Request,
+    release_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        role, identity_error = effective_role_for_request(request)
+        if identity_error:
+            return identity_error
+        if role != "admin":
+            return fail(errors.FORBIDDEN, request, message="生产发布必须由非 FDE 管理员/AI 负责人审批。")
+        plan = repo.find_one("release_plans", release_id)
+        if not plan:
+            return fail(errors.NOT_FOUND, request)
+        gates = fde_release_gate_results(plan)
+        fde_persist_release_gates(plan, gates)
+        blocking = [item["message"] for item in gates if not item["passed"]]
+        if blocking:
+            plan["status"] = "blocked_by_gate"
+            plan["blockingReasons"] = blocking
+            return ok({"plan": repo.clone(plan), "gates": gates, "auditLogId": None}, request)
+        if plan.get("status") not in {"canary_requested", "canary_running", "canary_passed", "shadow_passed", "submitted"}:
+            return fail(errors.VALIDATION_ERROR, request, message="当前发布状态不允许批准生产。")
+        plan["status"] = body.get("targetStatus") or "production_approved"
+        plan["productionApprovedAt"] = server_time()
+        plan["productionApprovedByRole"] = role
+        plan["productionApprovalComment"] = body.get("comment") or "管理员批准进入生产。"
+        audit_id = repo.add_audit("管理员批准 FDE 生产发布", "ReleasePlan", release_id)
+        return ok({"plan": repo.clone(plan), "gates": gates, "auditLogId": audit_id}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"releaseId": release_id, "body": body})
 
@@ -4894,6 +5811,54 @@ def fde_validate_business_packs(request: Request):
     if role_error:
         return role_error
     return ok(validate_all_business_packs(), request)
+
+
+@router.get("/fde/business-packs/{pack_id}/diff")
+def fde_business_pack_diff(request: Request, pack_id: str, compareTo: str | None = None, tenantId: str | None = None):
+    _, role_error = fde_error_unless_allowed(request, "fde:business-pack:view")
+    if role_error:
+        return role_error
+    validation_result = fde_business_pack_validation_result(pack_id)
+    if not validation_result:
+        return fail(errors.NOT_FOUND, request)
+    current_summary = validation_result["summary"]
+    baseline_summary: dict[str, Any] = {}
+    if compareTo:
+        compare_result = fde_business_pack_validation_result(compareTo)
+        if not compare_result:
+            return fail(errors.NOT_FOUND, request, message="compareTo 业务包不存在。")
+        baseline_summary = compare_result["summary"]
+    else:
+        installation = next(
+            (
+                item
+                for item in repo.state.get("business_pack_installations", [])
+                if item.get("businessPackId") == pack_id and (not tenantId or item.get("tenantId") == tenantId)
+            ),
+            None,
+        )
+        if installation:
+            baseline_summary = {
+                "id": installation.get("businessPackId"),
+                "version": installation.get("businessPackVersion"),
+                "tenantId": installation.get("tenantId"),
+                "status": installation.get("status"),
+                "snapshotHash": installation.get("businessPackSnapshotHash"),
+            }
+    diff = fde_record_diff(current_summary, baseline_summary)
+    return ok(
+        {
+            "businessPackId": pack_id,
+            "compareTo": compareTo or baseline_summary.get("version"),
+            "tenantId": tenantId,
+            "current": current_summary,
+            "baseline": baseline_summary,
+            "validation": validation_result["validation"],
+            "diff": diff,
+            "requiresMigrationReview": any(item["field"] in {"roles", "nodes", "materials", "workflow", "rules"} for item in diff["changes"]),
+        },
+        request,
+    )
 
 
 @router.post("/fde/business-packs/{pack_id}/install")
@@ -5051,6 +6016,7 @@ def fde_ocr_quality_snapshot() -> dict[str, Any]:
     success_results = len([item for item in results if item.get("status") == "success"])
     failed_results = len([item for item in results if item.get("status") != "success"])
     cache_metrics = fde_ocr_cache_metrics(results, jobs)
+    runtime_doctor_report = fde_ocr_runtime_doctor_report()
     return {
         "fileLevel": {
             "total": len(documents),
@@ -5075,7 +6041,8 @@ def fde_ocr_quality_snapshot() -> dict[str, Any]:
         "evalRuns": repo.clone(eval_runs[:20]),
         "cacheMetrics": cache_metrics,
         "qualityReasonCounts": quality_reason_counts,
-        "runtimeDoctor": fde_ocr_runtime_doctor_snapshot(),
+        "runtimeDoctor": fde_ocr_runtime_doctor_snapshot(runtime_doctor_report),
+        "ocr100Scorecard": fde_ocr_100_scorecard_snapshot(results, eval_runs, runtime_doctor_report),
         "failurePools": {
             "fieldFailures": repo.clone(field_failures[:20]),
             "tableFailures": repo.clone(table_failures[:20]),
@@ -5448,6 +6415,17 @@ def fde_table_is_heuristic(table: dict[str, Any]) -> bool:
     return source.startswith("heuristic_") or "heuristic_table_fallback" in flags
 
 
+def fde_table_business_rows(table: dict[str, Any]) -> list[Any]:
+    rows = table.get("businessRows") or table.get("normalizedRows") or []
+    return rows if isinstance(rows, list) else []
+
+
+def fde_seal_is_fragment_fusion(seal: dict[str, Any]) -> bool:
+    source = str(seal.get("sourceEngine") or "")
+    flags = {str(flag) for flag in seal.get("qualityFlags") or []}
+    return source == "fragment_seal_text_fusion" or "fragment_seal_text" in flags
+
+
 def fde_ocr_seal_level(results: list[dict[str, Any]]) -> dict[str, Any]:
     seals = [
         seal
@@ -5669,14 +6647,14 @@ def safe_float(value: Any) -> float:
         return 0.0
 
 
-def fde_ocr_runtime_doctor_snapshot() -> dict[str, Any]:
+def fde_ocr_runtime_doctor_report() -> dict[str, Any]:
     client = OcrClient()
     if not client.enabled:
         return {
-            "status": "unavailable",
+            "schemaVersion": "aicheck-ocr-runtime-doctor-unavailable-v1",
             "ok": False,
             "summary": {"pass": 0, "warn": 1, "fail": 0, "total": 1},
-            "topIssues": [
+            "checks": [
                 {
                     "name": "ocr.base-url",
                     "status": "warn",
@@ -5686,13 +6664,13 @@ def fde_ocr_runtime_doctor_snapshot() -> dict[str, Any]:
             ],
         }
     try:
-        report = client.runtime_doctor()
+        return client.runtime_doctor()
     except (IntegrationServiceError, RuntimeError) as exc:
         return {
-            "status": "unavailable",
+            "schemaVersion": "aicheck-ocr-runtime-doctor-error-v1",
             "ok": False,
             "summary": {"pass": 0, "warn": 0, "fail": 1, "total": 1},
-            "topIssues": [
+            "checks": [
                 {
                     "name": "ocr.runtime-doctor",
                     "status": "fail",
@@ -5701,6 +6679,10 @@ def fde_ocr_runtime_doctor_snapshot() -> dict[str, Any]:
                 }
             ],
         }
+
+
+def fde_ocr_runtime_doctor_snapshot(report: dict[str, Any] | None = None) -> dict[str, Any]:
+    report = report or fde_ocr_runtime_doctor_report()
     checks = [item for item in report.get("checks") or [] if isinstance(item, dict)]
     top_issues = [item for item in checks if item.get("status") in {"fail", "warn"}][:8]
     return {
@@ -5711,6 +6693,85 @@ def fde_ocr_runtime_doctor_snapshot() -> dict[str, Any]:
         "subprocessPython": report.get("subprocessPython"),
         "schemaVersion": report.get("schemaVersion"),
     }
+
+
+def fde_ocr_100_scorecard_snapshot(
+    results: list[dict[str, Any]],
+    eval_runs: list[dict[str, Any]],
+    runtime_doctor_report: dict[str, Any],
+) -> dict[str, Any]:
+    latest_eval_run = next(iter(eval_runs), {})
+    evaluation_report = fde_ocr_100_evaluation_report_from_run(latest_eval_run)
+    return build_ocr_100_scorecard(
+        evaluation_report=evaluation_report,
+        runtime_doctor=runtime_doctor_report,
+        sample_summaries=fde_ocr_sample_summaries(results),
+    )
+
+
+def fde_ocr_100_evaluation_report_from_run(run: dict[str, Any]) -> dict[str, Any]:
+    report = repo.clone(run.get("evaluationReport") or {}) if isinstance(run, dict) else {}
+    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+    if not report:
+        return {
+            "ok": False,
+            "summary": {"cases": 0, "passed": 0, "failed": 0, "averageScore": 0},
+            "metrics": {},
+            "findingCounts": {},
+            "thresholdFailures": [],
+            "scenarios": {},
+            "cases": [],
+        }
+    cases = []
+    for item in run.get("caseDiagnostics") or []:
+        if isinstance(item, dict):
+            cases.append(
+                {
+                    "caseId": item.get("caseId"),
+                    "scenario": item.get("scenario"),
+                    "score": item.get("score"),
+                    "passed": item.get("passed"),
+                    "findings": item.get("findings") or [],
+                    "bootstrapGenerated": item.get("bootstrapGenerated"),
+                    "fixtureDerived": item.get("fixtureDerived"),
+                    "collectionStatus": item.get("collectionStatus"),
+                }
+            )
+    return {
+        **report,
+        "summary": {
+            "cases": summary.get("cases") or run.get("caseCount") or len(cases),
+            "passed": summary.get("passed") or 0,
+            "failed": summary.get("failed") or 0,
+            "averageScore": summary.get("averageScore") or 0,
+        },
+        "scenarios": repo.clone(run.get("scenarioMetrics") or {}),
+        "cases": cases,
+    }
+
+
+def fde_ocr_sample_summaries(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    summaries = []
+    for result in results[:10]:
+        quality = result.get("quality") if isinstance(result.get("quality"), dict) else {}
+        tables = [item for item in result.get("tables") or [] if isinstance(item, dict)]
+        seals = [item for item in result.get("seals") or [] if isinstance(item, dict)]
+        summaries.append(
+            {
+                "parseResultId": result.get("parseResultId") or result.get("id"),
+                "profileId": result.get("profileId"),
+                "gatePassed": result.get("status") == "success" and quality.get("status") == "auto_usable",
+                "qualityStatus": quality.get("status"),
+                "fields": len([item for item in result.get("fields") or [] if isinstance(item, dict)]),
+                "formalTables": len([item for item in tables if not fde_table_is_heuristic(item)]),
+                "businessRows": sum(len(fde_table_business_rows(item)) for item in tables),
+                "readableSeals": len([item for item in seals if str(item.get("sealName") or "").strip()]),
+                "fragmentSeals": len([item for item in seals if fde_seal_is_fragment_fusion(item)]),
+                "missingExpectedSealTypeCount": len(quality.get("missingExpectedSealTypes") or []),
+                "evidenceCompleteness": quality.get("evidenceCompleteness"),
+            }
+        )
+    return summaries
 
 
 def fde_build_ocr_evaluation_report(body: dict[str, Any]) -> dict[str, Any]:
@@ -5943,6 +7004,9 @@ def fde_create_ocr_evaluation_run(
                 "passed": case.get("passed"),
                 "findings": case.get("findings") or [],
                 "details": case.get("details") or {},
+                "bootstrapGenerated": case.get("bootstrapGenerated"),
+                "fixtureDerived": case.get("fixtureDerived"),
+                "collectionStatus": case.get("collectionStatus"),
             }
             for case in evaluation_report.get("cases", [])
         ]
@@ -5969,6 +7033,495 @@ def fde_create_ocr_evaluation_run(
         )
         audit_id = repo.add_audit("FDE OCR 离线评测", "OcrEvaluationRun", run["id"])
         return ok({"run": run, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
+
+
+def fde_ocr_annotation_tasks_source() -> list[dict[str, Any]]:
+    tasks = repo.clone(repo.state.setdefault("ocr_annotation_tasks", []))
+    if tasks:
+        return tasks
+    derived: list[dict[str, Any]] = []
+    for result in repo.state.get("ocr_parse_results", []):
+        if not isinstance(result, dict):
+            continue
+        parse_id = str(result.get("parseResultId") or result.get("id") or uuid4().hex)
+        scenario = fde_ocr_annotation_scenario(result)
+        expected = {
+            "qualityStatus": (result.get("quality") or {}).get("status") or "needs_human_review",
+            "fields": expected_fields_from_result(result),
+            "tables": expected_tables_from_result(result),
+            "seals": expected_seals_from_result(result),
+        }
+        derived.append(
+            {
+                "taskId": f"ANNO-{parse_id}",
+                "caseId": f"real-{scenario}-{parse_id}",
+                "scenario": scenario,
+                "profileId": result.get("profileId") or "all",
+                "documentType": result.get("documentType") or "unknown",
+                "documentVersionId": result.get("documentVersionId"),
+                "sourcePath": result.get("storageKey") or result.get("fileName"),
+                "collectionStatus": "needs_labeling",
+                "pageCount": len(result.get("pages") or []) or 1,
+                "expectedTemplate": expected,
+                "suggestedExpected": expected,
+                "parseResultId": parse_id,
+            }
+        )
+    return derived
+
+
+def fde_ocr_annotation_scenario(result: dict[str, Any]) -> str:
+    profile = str(result.get("profileId") or "")
+    document_type = str(result.get("documentType") or "")
+    if "piping" in profile or "table" in document_type:
+        return "piping_table_profile"
+    if "seal" in profile:
+        return "seal_text_profile"
+    if "quality_certificate" in profile or "quality_certificate" in document_type:
+        return "quality_certificate_profile"
+    return "evidence_profile"
+
+
+def fde_ocr_annotation_task(task_id: str) -> dict[str, Any] | None:
+    existing = next(
+        (
+            item
+            for item in repo.state.setdefault("ocr_annotation_tasks", [])
+            if str(item.get("taskId") or item.get("caseId") or "") == task_id
+        ),
+        None,
+    )
+    if existing:
+        return existing
+    derived = next(
+        (
+            item
+            for item in fde_ocr_annotation_tasks_source()
+            if str(item.get("taskId") or item.get("caseId") or "") == task_id
+        ),
+        None,
+    )
+    if derived:
+        repo.state.setdefault("ocr_annotation_tasks", []).append(repo.clone(derived))
+        return repo.state["ocr_annotation_tasks"][-1]
+    return None
+
+
+def fde_ocr_annotation_readiness(tasks: list[dict[str, Any]]) -> dict[str, Any]:
+    return build_annotation_readiness_from_tasks(repo.clone(tasks), source="api:fde.ocr-annotation")
+
+
+def fde_ocr_annotation_task_view(task: dict[str, Any]) -> dict[str, Any]:
+    view = repo.clone(task)
+    readiness = fde_ocr_annotation_readiness([task])
+    status = (readiness.get("tasks") or [{}])[0]
+    view["readinessBlockers"] = status.get("blockers") or []
+    view["readyForEval"] = bool(status.get("readyForEval"))
+    view["candidateCounts"] = fde_ocr_annotation_expected_counts(
+        view.get("suggestedExpected") if isinstance(view.get("suggestedExpected"), dict) else {}
+    )
+    view["labelCounts"] = fde_ocr_annotation_expected_counts(
+        view.get("labeledExpected") if isinstance(view.get("labeledExpected"), dict) else {}
+    )
+    view["previewUrl"] = view.get("previewUrl") or view.get("pagePreviewUrl") or fde_ocr_annotation_preview_url(view)
+    view.setdefault("pageDimensions", fde_ocr_annotation_default_page_dimensions(view))
+    return view
+
+
+def fde_ocr_annotation_expected_counts(expected: dict[str, Any]) -> dict[str, int]:
+    return {
+        "fields": len([item for item in expected.get("fields") or [] if isinstance(item, dict)]),
+        "tables": len([item for item in expected.get("tables") or [] if isinstance(item, dict)]),
+        "seals": len([item for item in expected.get("seals") or [] if isinstance(item, dict)]),
+    }
+
+
+def fde_ocr_annotation_preview_url(task: dict[str, Any]) -> str | None:
+    for key in ["pagePreviewUrl", "previewUrl", "previewDataUrl"]:
+        value = str(task.get(key) or "").strip()
+        if value:
+            return value
+    task_id = str(task.get("taskId") or task.get("caseId") or "").strip()
+    if task_id and fde_ocr_annotation_preview_path(task):
+        return f"/api/fde/ocr-annotation/tasks/{task_id}/preview"
+    return None
+
+
+def fde_ocr_annotation_preview_path(task: dict[str, Any]) -> Path | None:
+    preview_paths = task.get("previewPaths") if isinstance(task.get("previewPaths"), list) else []
+    raw = str(task.get("pagePreviewPath") or (preview_paths[0] if preview_paths else None) or task.get("sourcePath") or "").strip()
+    if not raw:
+        return None
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
+        candidate = WORKSPACE_ROOT / candidate
+    try:
+        resolved = candidate.resolve()
+        allowed_roots = [WORKSPACE_ROOT.resolve(), Path(tempfile.gettempdir()).resolve()]
+        if not any(resolved == root or root in resolved.parents for root in allowed_roots):
+            return None
+        if resolved.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".bmp"}:
+            return None
+        return resolved if resolved.exists() else None
+    except OSError:
+        return None
+
+
+def fde_ocr_annotation_default_page_dimensions(task: dict[str, Any]) -> dict[str, list[int]]:
+    dimensions = task.get("pageDimensions") if isinstance(task.get("pageDimensions"), dict) else {}
+    if dimensions:
+        return repo.clone(dimensions)
+    return {"1": [2000, 1500]}
+
+
+def fde_update_ocr_annotation_readiness(task: dict[str, Any]) -> dict[str, Any]:
+    readiness = fde_ocr_annotation_readiness([task])
+    task["readinessBlockers"] = (readiness.get("tasks") or [{}])[0].get("blockers") or []
+    task["readyForEval"] = bool((readiness.get("tasks") or [{}])[0].get("readyForEval"))
+    task["updatedAt"] = server_time()
+    return readiness
+
+
+@router.get("/fde/ocr-annotation/tasks")
+def fde_ocr_annotation_tasks(
+    request: Request,
+    status: str | None = None,
+    scenario: str | None = None,
+    profileId: str | None = None,
+    pageNo: int = Query(default=1, ge=1),
+    pageSize: int = Query(default=20, ge=1, le=100),
+):
+    _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+    if role_error:
+        return role_error
+    tasks = fde_ocr_annotation_tasks_source()
+    if status:
+        tasks = [item for item in tasks if str(item.get("collectionStatus") or "") == status]
+    if scenario:
+        tasks = [item for item in tasks if str(item.get("scenario") or "") == scenario]
+    if profileId:
+        tasks = [item for item in tasks if str(item.get("profileId") or "") == profileId]
+    readiness = fde_ocr_annotation_readiness(tasks)
+    task_views = [fde_ocr_annotation_task_view(item) for item in tasks]
+    return ok({"summary": readiness["summary"], "nextActions": readiness["nextActions"], "page": page(task_views, pageNo, pageSize)}, request)
+
+
+@router.get("/fde/ocr-annotation/tasks/{task_id}/preview")
+def fde_ocr_annotation_task_preview(request: Request, task_id: str):
+    _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+    if role_error:
+        return role_error
+    task = fde_ocr_annotation_task(task_id)
+    if not task:
+        return fail(errors.NOT_FOUND, request)
+    preview_path = fde_ocr_annotation_preview_path(task)
+    if not preview_path:
+        return fail(errors.NOT_FOUND, request)
+    return FileResponse(preview_path)
+
+
+@router.get("/fde/ocr-annotation/tasks/{task_id}")
+def fde_ocr_annotation_task_detail(request: Request, task_id: str):
+    _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+    if role_error:
+        return role_error
+    task = next(
+        (
+            item
+            for item in fde_ocr_annotation_tasks_source()
+            if str(item.get("taskId") or item.get("caseId") or "") == task_id
+        ),
+        None,
+    )
+    if not task:
+        return fail(errors.NOT_FOUND, request)
+    readiness = fde_ocr_annotation_readiness([task])
+    return ok({"task": fde_ocr_annotation_task_view(task), "readiness": readiness}, request)
+
+
+@router.post("/fde/ocr-annotation/readiness")
+def fde_ocr_annotation_readiness_endpoint(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        _, role_error = fde_error_unless_allowed(request, "fde:ocr-annotation:manage")
+        if role_error:
+            return role_error
+        body_tasks = body.get("tasks") if isinstance(body.get("tasks"), list) else None
+        tasks = [item for item in (body_tasks or fde_ocr_annotation_tasks_source()) if isinstance(item, dict)]
+        return ok(fde_ocr_annotation_readiness(tasks), request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
+
+
+@router.post("/fde/ocr-annotation/import-pack")
+def fde_import_ocr_annotation_pack(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        _, role_error = fde_error_unless_allowed(request, "fde:ocr-annotation:manage")
+        if role_error:
+            return role_error
+        payload = body.get("tasks")
+        if payload is None and isinstance(body.get("pack"), dict):
+            payload = body["pack"].get("tasks")
+        if not isinstance(payload, list):
+            return fail(errors.VALIDATION_ERROR, request, message="tasks must be an OCR annotation task list.")
+        incoming = [repo.clone(item) for item in payload if isinstance(item, dict)]
+        now = server_time()
+        for index, task in enumerate(incoming, start=1):
+            task_id = str(task.get("taskId") or task.get("caseId") or f"ANNO-IMPORT-{uuid4().hex[:8].upper()}").strip()
+            task["taskId"] = task_id
+            task.setdefault("caseId", f"imported-{index}")
+            task.setdefault("collectionStatus", "needs_labeling")
+            task["importedAt"] = now
+            task["updatedAt"] = now
+        if body.get("replace"):
+            repo.state["ocr_annotation_tasks"] = incoming
+        else:
+            existing = repo.state.setdefault("ocr_annotation_tasks", [])
+            index_by_id = {str(item.get("taskId") or item.get("caseId") or ""): idx for idx, item in enumerate(existing)}
+            for task in incoming:
+                identity = str(task.get("taskId") or task.get("caseId") or "")
+                if identity in index_by_id:
+                    existing[index_by_id[identity]] = {**existing[index_by_id[identity]], **task}
+                else:
+                    existing.append(task)
+        tasks = repo.state.setdefault("ocr_annotation_tasks", [])
+        readiness = fde_ocr_annotation_readiness(tasks)
+        audit_id = repo.add_audit("FDE OCR 标注任务包导入", "OcrAnnotationPack", "import-pack")
+        return ok(
+            {
+                "summary": {
+                    "importedTasks": len(incoming),
+                    "totalTasks": len(tasks),
+                    "replace": bool(body.get("replace")),
+                },
+                "readiness": readiness,
+                "page": page([fde_ocr_annotation_task_view(item) for item in tasks], 1, 20),
+                "auditLogId": audit_id,
+            },
+            request,
+        )
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
+
+
+@router.put("/fde/ocr-annotation/tasks/{task_id}/label")
+def fde_save_ocr_annotation_label(
+    request: Request,
+    task_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        role, role_error = fde_error_unless_allowed(request, "fde:ocr-annotation:manage")
+        if role_error:
+            return role_error
+        task = fde_ocr_annotation_task(task_id)
+        if not task:
+            return fail(errors.NOT_FOUND, request)
+        labeled = body.get("labeledExpected")
+        if not isinstance(labeled, dict) or not labeled:
+            return fail(errors.VALIDATION_ERROR, request, message="labeledExpected must be a non-empty object.")
+        now = server_time()
+        task["labeledExpected"] = repo.clone(labeled)
+        task["labeler"] = str(body.get("labeler") or fde_subject_user_id(request) or role or "fde").strip()
+        task["labelUpdatedAt"] = now
+        task["collectionStatus"] = str(body.get("collectionStatus") or "labeled")
+        task["labelComment"] = str(body.get("comment") or "")
+        if isinstance(body.get("pageDimensions"), dict):
+            task["pageDimensions"] = repo.clone(body["pageDimensions"])
+        for key in ["pageNo", "previewUrl", "pagePreviewUrl", "pagePreviewPath", "sourcePath"]:
+            if body.get(key) is not None:
+                task[key] = body.get(key)
+        readiness = fde_update_ocr_annotation_readiness(task)
+        audit_id = repo.add_audit("FDE OCR 人工标注保存", "OcrAnnotationTask", str(task.get("taskId") or task_id))
+        return ok({"task": fde_ocr_annotation_task_view(task), "readiness": readiness, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"taskId": task_id, "body": body})
+
+
+@router.post("/fde/ocr-annotation/tasks/{task_id}/verify")
+def fde_verify_ocr_annotation_task(
+    request: Request,
+    task_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        role, role_error = fde_error_unless_allowed(request, "fde:ocr-annotation:manage")
+        if role_error:
+            return role_error
+        task = fde_ocr_annotation_task(task_id)
+        if not task:
+            return fail(errors.NOT_FOUND, request)
+        if not isinstance(task.get("labeledExpected"), dict):
+            return fail(errors.VALIDATION_ERROR, request, message="task must be labeled before verify.")
+        now = server_time()
+        decision = str(body.get("decision") or "approved")
+        if decision not in {"approved", "rejected"}:
+            return fail(errors.VALIDATION_ERROR, request, message="decision must be approved or rejected.")
+        expected = repo.clone(task["labeledExpected"])
+        expected.setdefault("review", {})
+        expected["review"].update(
+            {
+                "labeler": str(body.get("labeler") or task.get("labeler") or "").strip(),
+                "reviewer": str(body.get("reviewer") or fde_subject_user_id(request) or role or "fde").strip(),
+                "reviewedAt": now,
+                "decision": decision,
+                "comment": body.get("comment") or body.get("reason") or "",
+            }
+        )
+        task["labeledExpected"] = expected
+        task["reviewer"] = expected["review"]["reviewer"]
+        task["reviewedAt"] = now
+        task["reviewStatus"] = decision
+        task["collectionStatus"] = "ready_for_eval" if decision == "approved" else "rejected"
+        if decision == "rejected":
+            task["rejectionReason"] = body.get("reason") or body.get("comment") or ""
+        readiness = fde_update_ocr_annotation_readiness(task)
+        audit_id = repo.add_audit("FDE OCR 标注确认", "OcrAnnotationTask", str(task.get("taskId") or task_id), decision)
+        return ok({"task": fde_ocr_annotation_task_view(task), "readiness": readiness, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"taskId": task_id, "body": body})
+
+
+@router.post("/fde/ocr-annotation/tasks/{task_id}/review")
+def fde_review_ocr_annotation_task(
+    request: Request,
+    task_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        role, role_error = fde_error_unless_allowed(request, "fde:ocr-annotation:manage")
+        if role_error:
+            return role_error
+        task = fde_ocr_annotation_task(task_id)
+        if not task:
+            return fail(errors.NOT_FOUND, request)
+        now = server_time()
+        labeler = str(body.get("labeler") or task.get("labeler") or "").strip()
+        reviewer = str(body.get("reviewer") or fde_subject_user_id(request) or role or "fde").strip()
+        if isinstance(body.get("labeledExpected"), dict):
+            task["labeledExpected"] = repo.clone(body["labeledExpected"])
+        if not isinstance(task.get("labeledExpected"), dict) and isinstance(task.get("suggestedExpected"), dict):
+            task["labeledExpected"] = repo.clone(task["suggestedExpected"])
+        expected = task.get("labeledExpected") if isinstance(task.get("labeledExpected"), dict) else {}
+        expected.setdefault("review", {})
+        expected["review"].update(
+            {
+                "labeler": labeler,
+                "reviewer": reviewer,
+                "reviewedAt": now,
+                "comment": body.get("comment") or "",
+            }
+        )
+        task["labeledExpected"] = expected
+        task["labeler"] = labeler
+        task["reviewer"] = reviewer
+        task["reviewedAt"] = now
+        task["collectionStatus"] = body.get("collectionStatus") or "ready_for_eval"
+        readiness = fde_update_ocr_annotation_readiness(task)
+        audit_id = repo.add_audit("FDE OCR 标注二审", "OcrAnnotationTask", str(task.get("taskId") or task_id))
+        return ok({"task": fde_ocr_annotation_task_view(task), "readiness": readiness, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"taskId": task_id, "body": body})
+
+
+@router.post("/fde/ocr-annotation/export-label-studio")
+def fde_export_ocr_annotation_label_studio(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        _, role_error = fde_error_unless_allowed(request, "fde:ocr-annotation:manage")
+        if role_error:
+            return role_error
+        tasks = [item for item in (body.get("tasks") if isinstance(body.get("tasks"), list) else fde_ocr_annotation_tasks_source()) if isinstance(item, dict)]
+        preview_base_dir = Path(str(body.get("previewBaseDir") or ".")).expanduser().resolve()
+        local_files_root = Path(str(body.get("localFilesRoot") or preview_base_dir)).expanduser().resolve()
+        image_url_prefix = str(body.get("imageUrlPrefix") or "/data/local-files/?d=")
+        include_without_image = bool(body.get("includeWithoutImage", True))
+        converted_tasks: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+        for task in tasks:
+            converted, reason = label_studio_task(
+                task,
+                preview_base_dir=preview_base_dir,
+                local_files_root=local_files_root,
+                image_url_prefix=image_url_prefix,
+            )
+            if converted is None:
+                skipped.append({"caseId": task.get("caseId"), "taskId": task.get("taskId"), "reason": reason})
+                if not include_without_image:
+                    continue
+                converted = label_studio_task_without_image(task, reason=reason)
+            converted_tasks.append(converted)
+        summary = {
+            "schemaVersion": "aicheck-ocr-annotation-label-studio-export-v1",
+            "generatedAt": server_time(),
+            "tasks": len(converted_tasks),
+            "sourceTasks": len(tasks),
+            "skipped": len(skipped),
+            "predictionTasks": len([item for item in converted_tasks if item.get("predictions")]),
+            "includeWithoutImage": include_without_image,
+            "skippedItems": skipped[:50],
+        }
+        return ok({"summary": summary, "labelConfigXml": label_config_xml(), "tasks": converted_tasks}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
+
+
+@router.post("/fde/ocr-annotation/import-label-studio")
+def fde_import_ocr_annotation_label_studio(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        _, role_error = fde_error_unless_allowed(request, "fde:ocr-annotation:manage")
+        if role_error:
+            return role_error
+        label_export = body.get("labelStudioExport") or body.get("labelStudioTasks") or body.get("tasks")
+        if not isinstance(label_export, list):
+            return fail(errors.VALIDATION_ERROR, request, message="labelStudioExport must be a Label Studio task list.")
+        source_tasks = body.get("annotationTasks") if isinstance(body.get("annotationTasks"), list) else repo.state.setdefault("ocr_annotation_tasks", [])
+        with tempfile.TemporaryDirectory(prefix="aicheck-fde-ocr-annotation-") as temp_dir:
+            temp_path = Path(temp_dir)
+            label_path = temp_path / "label_studio_export.json"
+            tasks_path = temp_path / "annotation_tasks.json"
+            output_path = temp_path / "labeled_tasks.json"
+            label_path.write_text(json.dumps(label_export, ensure_ascii=False), encoding="utf-8")
+            tasks_path.write_text(json.dumps({"tasks": source_tasks}, ensure_ascii=False), encoding="utf-8")
+            report = import_label_studio_annotations(
+                label_path,
+                annotation_tasks=tasks_path,
+                output_path=output_path,
+                mark_status=str(body.get("markStatus") or "labeled"),
+                allow_incomplete=bool(body.get("allowIncomplete", False)),
+            )
+        repo.state["ocr_annotation_tasks"] = repo.clone(report.get("tasks") or [])
+        import_record = {
+            "id": f"OCRANNOIMP-{uuid4().hex[:8].upper()}",
+            "summary": report.get("summary") or {},
+            "ok": bool(report.get("ok")),
+            "imported": repo.clone(report.get("imported") or []),
+            "failures": repo.clone(report.get("failures") or []),
+            "createdAt": server_time(),
+        }
+        repo.state.setdefault("ocr_annotation_imports", []).insert(0, import_record)
+        readiness = fde_ocr_annotation_readiness(repo.state["ocr_annotation_tasks"])
+        audit_id = repo.add_audit("FDE OCR 标注导入", "OcrAnnotationImport", import_record["id"], "成功" if report.get("ok") else "失败")
+        return ok({"import": import_record, "readiness": readiness, "auditLogId": audit_id}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
@@ -6017,6 +7570,30 @@ def fde_update_incident_rca(
     return idempotent(request, idempotency_key, produce, fingerprint_source={"incidentId": incident_id, "body": body})
 
 
+@router.post("/fde/incidents/{incident_id}/close")
+def fde_close_incident(
+    request: Request,
+    incident_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        _, role_error = fde_error_unless_allowed(request, "fde:incident:manage")
+        if role_error:
+            return role_error
+        incident = repo.find_one("incidents", incident_id)
+        if not incident:
+            return fail(errors.NOT_FOUND, request)
+        incident["status"] = "closed"
+        incident["closedAt"] = server_time()
+        incident["resolution"] = body.get("resolution") or "FDE 已完成 RCA 和整改追踪。"
+        incident["closedByRole"] = effective_role_for_request(request)[0]
+        audit_id = repo.add_audit("FDE 关闭事故", "Incident", incident_id)
+        return ok({"incident": repo.clone(incident), "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"incidentId": incident_id, "body": body})
+
+
 @router.get("/fde/cost-budgets")
 def fde_cost_budgets(request: Request):
     _, role_error = fde_error_unless_allowed(request, "fde:dashboard:view")
@@ -6032,9 +7609,42 @@ def fde_cost_budgets(request: Request):
                 "runCount": len(ai_runs),
             },
             "exports": repo.clone(repo.state.get("data_exports", [])),
+            "changeRequests": repo.clone(fde_state_list("cost_budget_change_requests")),
         },
         request,
     )
+
+
+@router.post("/fde/cost-budgets/{budget_id}/propose-change")
+def fde_propose_cost_budget_change(
+    request: Request,
+    budget_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        _, role_error = fde_error_unless_allowed(request, "fde:cost:manage")
+        if role_error:
+            return role_error
+        budget = next((item for item in repo.state.get("cost_budgets", []) if item.get("id") == budget_id), None)
+        if not budget:
+            return fail(errors.NOT_FOUND, request)
+        change = {
+            "id": body.get("id") or f"CBCHG-{uuid4().hex[:8].upper()}",
+            "budgetId": budget_id,
+            "status": "pending_approval",
+            "currentBudget": repo.clone(budget),
+            "proposedLimit": body.get("proposedLimit"),
+            "proposedPolicy": body.get("proposedPolicy") or {},
+            "reason": body.get("reason") or "FDE 提交成本预算调整建议。",
+            "requestedByRole": effective_role_for_request(request)[0],
+            "createdAt": server_time(),
+        }
+        fde_state_list("cost_budget_change_requests").insert(0, change)
+        audit_id = repo.add_audit("FDE 提交成本预算变更申请", "CostBudgetChangeRequest", change["id"])
+        return ok({"changeRequest": change, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"budgetId": budget_id, "body": body})
 
 
 @router.get("/fde/acceptance-reports")
@@ -6071,6 +7681,7 @@ def knowledge_overview(request: Request):
                 }
                 for source in sources
             ],
+            "scorecard": build_knowledge_rule_scorecard(repo.state),
         },
         request,
     )
@@ -6442,7 +8053,74 @@ def batch_reindex(request: Request, body: dict[str, Any] = Body(default_factory=
 @router.post("/knowledge/retrieval-test")
 def retrieval_test(request: Request, body: dict[str, Any] = Body(default_factory=dict)):
     question = body.get("question") or "焊工资格证有效期如何校验？"
-    return ok({"answerDraft": f"围绕“{question}”，建议核验证书有效期、持证项目、焊接方法覆盖关系，并引用对应证据链。", "hits": repo.clone(repo.state["evidence_links"]), "latencyMs": 186, "usedIndexVersions": ["std-v2026.06", "proj-v2026.06.26"]}, request)
+    retrieval = retrieve_knowledge_clauses(
+        repo.state,
+        query=str(question),
+        business_pack_id=body.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID,
+        node_id=int(body.get("nodeId")) if str(body.get("nodeId") or "").isdigit() else None,
+        kb_version=body.get("kbVersion"),
+        top_k=int(body.get("topK") or 5),
+        query_type="interactive_retrieval_test",
+    )
+    return ok(
+        {
+            "answerDraft": answer_draft_from_clauses(str(question), retrieval["clauses"]),
+            "hits": retrieval["trace"]["selectedClauses"],
+            "retrievalTrace": retrieval["trace"],
+            "latencyMs": 12,
+            "usedIndexVersions": sorted({item.get("kbVersion") for item in retrieval["clauses"] if item.get("kbVersion")}),
+        },
+        request,
+    )
+
+
+@router.get("/knowledge/clauses")
+def list_knowledge_clauses(
+    request: Request,
+    keyword: str | None = None,
+    nodeId: int | None = None,
+    businessPackId: str | None = None,
+    page_no: int = Query(default=1, alias="page"),
+    page_size: int = Query(default=20, alias="pageSize"),
+):
+    retrieval = retrieve_knowledge_clauses(
+        repo.state,
+        query=keyword or "审查依据",
+        business_pack_id=businessPackId or DEFAULT_BUSINESS_PACK_ID,
+        node_id=nodeId,
+        top_k=max(page_no * page_size, page_size),
+        query_type="clause_list",
+    )
+    items = retrieval["trace"]["selectedClauses"]
+    return ok(page(items, page_no, page_size), request)
+
+
+@router.get("/knowledge/page-index-nodes")
+def list_knowledge_page_index_nodes(
+    request: Request,
+    keyword: str | None = None,
+    kbDocId: str | None = None,
+    parentNodeId: str | None = None,
+    page_no: int = Query(default=1, alias="page"),
+    page_size: int = Query(default=20, alias="pageSize"),
+):
+    items = [repo.clone(item) for item in repo.state.get("knowledge_page_index_nodes", [])]
+    if kbDocId:
+        items = [item for item in items if item.get("kbDocId") == kbDocId]
+    if parentNodeId is not None:
+        items = [item for item in items if str(item.get("parentNodeId")) == str(parentNodeId)]
+    items = filter_keyword(items, keyword, ["title", "summary", "nodeId", "pageIndexNodeId"])
+    if keyword:
+        query = str(keyword).lower()
+        items.sort(
+            key=lambda item: (
+                query in str(item.get("title") or "").lower(),
+                query in str(item.get("summary") or "").lower(),
+                not bool(item.get("children")),
+            ),
+            reverse=True,
+        )
+    return ok(page(items, page_no, page_size), request)
 
 
 @router.get("/rules/versions")

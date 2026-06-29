@@ -44,3 +44,19 @@ fixtures:
       evidenceLinkIds: [EV-DI-001]
       ruleRefs:
         - {ruleSetId: RULE-DI-MAINTENANCE-202606, ruleCode: maintenance-completeness}
+  projectMembers:
+    - id: BPM-DI-AUDITOR
+      projectId: P-DI-FIXTURE-001
+      role: device_reviewer
+      userId: USER-INSPECTION-001
+      nodeScope: [1, 2, 3, 4]
+    - id: BPM-DI-SUBMITTER
+      projectId: P-DI-FIXTURE-001
+      role: device_submitter
+      userId: USER-CONTRACTOR-001
+      nodeScope: [1, 2, 3, 4]
+    - id: BPM-DI-OBSERVER
+      projectId: P-DI-FIXTURE-001
+      role: device_observer
+      userId: USER-OWNER-001
+      nodeScope: [1, 2, 3, 4]

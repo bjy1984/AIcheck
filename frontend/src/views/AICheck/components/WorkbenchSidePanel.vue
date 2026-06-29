@@ -227,9 +227,9 @@ const handleLocateById = (evidenceLinkId?: string) => {
 .date-item,
 .opinion-item {
   padding: 10px;
+  background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  background: #ffffff;
 }
 
 .field-item,
@@ -282,8 +282,8 @@ const handleLocateById = (evidenceLinkId?: string) => {
 .date-compare-grid div {
   min-width: 0;
   padding: 8px;
-  border-radius: 6px;
   background: #f8fafc;
+  border-radius: 6px;
 }
 
 .date-compare-grid span,
@@ -305,7 +305,7 @@ const handleLocateById = (evidenceLinkId?: string) => {
   margin-top: 14px;
 }
 
-@media (max-width: 1280px) {
+@media (width <= 1280px) {
   .side-panel {
     margin-bottom: 16px;
   }

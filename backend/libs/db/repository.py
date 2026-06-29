@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import os
+import time
 from copy import deepcopy
 from typing import Any
 from uuid import uuid4
@@ -38,6 +39,7 @@ STATE_COLLECTIONS = {
     "feedback_triage": "feedback_triage",
     "evaluation_sets": "evaluation_sets",
     "evaluation_cases": "evaluation_cases",
+    "evaluation_case_results": "evaluation_case_results",
     "evaluation_runs": "evaluation_runs",
     "evaluation_metrics": "evaluation_metrics",
     "evaluation_reports": "evaluation_reports",
@@ -49,6 +51,8 @@ STATE_COLLECTIONS = {
     "ocr_parse_results": "ocr_parse_results",
     "ocr_corrections": "ocr_corrections",
     "ocr_eval_runs": "ocr_eval_runs",
+    "ocr_annotation_tasks": "ocr_annotation_tasks",
+    "ocr_annotation_imports": "ocr_annotation_imports",
     "capability_bundles": "capability_bundles",
     "release_plans": "release_plans",
     "release_approvals": "release_approvals",
@@ -58,7 +62,9 @@ STATE_COLLECTIONS = {
     "business_pack_installations": "business_pack_installations",
     "business_pack_overrides": "business_pack_overrides",
     "cost_budgets": "cost_budgets",
+    "cost_budget_change_requests": "cost_budget_change_requests",
     "data_exports": "data_exports",
+    "masking_policies": "masking_policies",
     "delivery_acceptance_reports": "delivery_acceptance_reports",
     "review_findings": "review_findings",
     "review_opinions": "review_opinions",
@@ -75,6 +81,8 @@ STATE_COLLECTIONS = {
     "knowledge_files": "knowledge_files",
     "knowledge_tasks": "knowledge_tasks",
     "knowledge_chunks": "knowledge_chunks",
+    "knowledge_clauses": "knowledge_clauses",
+    "knowledge_page_index_nodes": "knowledge_page_index_nodes",
     "rule_versions": "rule_versions",
     "llm_compare_runs": "llm_compare_runs",
     "project_members": "project_members",
@@ -87,6 +95,26 @@ STATE_COLLECTIONS = {
     "upload_sessions": "upload_sessions",
     "audit_logs": "audit_logs",
 }
+
+TRANSIENT_MONGO_ERROR_CODES = {112, 251}
+
+
+def is_transient_mongo_error(exc: Exception) -> bool:
+    has_label = getattr(exc, "has_error_label", None)
+    if callable(has_label) and (
+        has_label("TransientTransactionError") or has_label("UnknownTransactionCommitResult")
+    ):
+        return True
+    details = getattr(exc, "details", None)
+    if isinstance(details, dict):
+        labels = set(details.get("errorLabels") or [])
+        if labels & {"TransientTransactionError", "UnknownTransactionCommitResult"}:
+            return True
+        code = details.get("code")
+        if code in TRANSIENT_MONGO_ERROR_CODES:
+            return True
+    code = getattr(exc, "code", None)
+    return code in TRANSIENT_MONGO_ERROR_CODES
 
 SINGLETON_COLLECTIONS = {
     "admin_config": "admin_configs",
@@ -104,11 +132,15 @@ class InMemoryRepository:
     def __init__(self) -> None:
         self.state = fresh_state()
         self.state.setdefault("knowledge_chunks", [])
+        self.state.setdefault("knowledge_clauses", [])
+        self.state.setdefault("knowledge_page_index_nodes", [])
         self.state.setdefault("upload_sessions", [])
         self.state.setdefault("ocr_jobs", [])
         self.state.setdefault("ocr_parse_results", [])
         self.state.setdefault("ocr_corrections", [])
         self.state.setdefault("ocr_eval_runs", [])
+        self.state.setdefault("ocr_annotation_tasks", [])
+        self.state.setdefault("ocr_annotation_imports", [])
         self.state.setdefault("review_runs", [])
         self.state.setdefault("review_step_runs", [])
         self.state.setdefault("review_graph_nodes", [])
@@ -116,6 +148,8 @@ class InMemoryRepository:
         self.state.setdefault("review_events", [])
         self.state.setdefault("retrieval_traces", [])
         self.state.setdefault("rule_check_results", [])
+        self.state.setdefault("cost_budget_change_requests", [])
+        self.state.setdefault("masking_policies", [])
         self.mongo = None
         self.sync_mongo = None
         self.mongo_enabled = False
@@ -124,11 +158,15 @@ class InMemoryRepository:
     def reset(self) -> None:
         self.state = fresh_state()
         self.state.setdefault("knowledge_chunks", [])
+        self.state.setdefault("knowledge_clauses", [])
+        self.state.setdefault("knowledge_page_index_nodes", [])
         self.state.setdefault("upload_sessions", [])
         self.state.setdefault("ocr_jobs", [])
         self.state.setdefault("ocr_parse_results", [])
         self.state.setdefault("ocr_corrections", [])
         self.state.setdefault("ocr_eval_runs", [])
+        self.state.setdefault("ocr_annotation_tasks", [])
+        self.state.setdefault("ocr_annotation_imports", [])
         self.state.setdefault("review_runs", [])
         self.state.setdefault("review_step_runs", [])
         self.state.setdefault("review_graph_nodes", [])
@@ -136,6 +174,8 @@ class InMemoryRepository:
         self.state.setdefault("review_events", [])
         self.state.setdefault("retrieval_traces", [])
         self.state.setdefault("rule_check_results", [])
+        self.state.setdefault("cost_budget_change_requests", [])
+        self.state.setdefault("masking_policies", [])
 
     def clone(self, value: Any) -> Any:
         return deepcopy(value)
@@ -967,6 +1007,8 @@ class InMemoryRepository:
             return
         loaded = fresh_state()
         loaded.setdefault("knowledge_chunks", [])
+        loaded.setdefault("knowledge_clauses", [])
+        loaded.setdefault("knowledge_page_index_nodes", [])
         loaded.setdefault("upload_sessions", [])
         for state_key, collection_name in STATE_COLLECTIONS.items():
             docs = await database[collection_name].find({}).to_list(length=None)
@@ -1045,14 +1087,16 @@ class InMemoryRepository:
         self.configure_sync_mongo_from_env()
         if self.sync_mongo is None:
             return
-        if self.sync_mongo[STATE_COLLECTIONS["projects"]].count_documents({}) == 0:
-            self.flush_to_sync_mongo()
-            return
         loaded = fresh_state()
         loaded.setdefault("knowledge_chunks", [])
+        loaded.setdefault("knowledge_clauses", [])
+        loaded.setdefault("knowledge_page_index_nodes", [])
         loaded.setdefault("upload_sessions", [])
+        has_project_seed = self.sync_mongo[STATE_COLLECTIONS["projects"]].count_documents({}) > 0
         for state_key, collection_name in STATE_COLLECTIONS.items():
-            loaded[state_key] = [strip_mongo_id(doc) for doc in self.sync_mongo[collection_name].find({})]
+            documents = [strip_mongo_id(doc) for doc in self.sync_mongo[collection_name].find({})]
+            if has_project_seed or documents:
+                loaded[state_key] = documents
         for state_key, collection_name in SINGLETON_COLLECTIONS.items():
             doc = self.sync_mongo[collection_name].find_one({"_singleton": state_key})
             if doc:
@@ -1063,6 +1107,8 @@ class InMemoryRepository:
             if doc.get("scope")
         }
         self.state = loaded
+        if not has_project_seed:
+            self.flush_to_sync_mongo()
 
     def flush_to_sync_mongo(self) -> None:
         self.configure_sync_mongo_from_env()
@@ -1070,9 +1116,17 @@ class InMemoryRepository:
             return
         client = getattr(self.sync_mongo, "client", None)
         if mongo_transactions_enabled() and client is not None:
-            with client.start_session() as session:
-                with session.start_transaction():
-                    self._flush_to_sync_mongo(session=session)
+            max_attempts = max(1, int(os.getenv("AICHECK_MONGO_TRANSACTION_RETRIES", "5")))
+            for attempt in range(max_attempts):
+                try:
+                    with client.start_session() as session:
+                        with session.start_transaction():
+                            self._flush_to_sync_mongo(session=session)
+                    return
+                except Exception as exc:
+                    if attempt >= max_attempts - 1 or not is_transient_mongo_error(exc):
+                        raise
+                    time.sleep(min(0.5, 0.05 * (attempt + 1)))
             return
         self._flush_to_sync_mongo()
 
@@ -1321,3 +1375,11 @@ def pdf_escape(value: str) -> str:
 
 
 repo = InMemoryRepository()
+
+
+def load_state() -> None:
+    repo.load_from_sync_mongo()
+
+
+def flush_state() -> None:
+    repo.flush_to_sync_mongo()

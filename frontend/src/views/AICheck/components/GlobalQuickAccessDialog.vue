@@ -190,7 +190,7 @@ const unreadCount = computed(() => props.messages.filter((item) => !item.read).l
   color: #667085;
 }
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .search-bar,
   .message-toolbar {
     align-items: stretch;

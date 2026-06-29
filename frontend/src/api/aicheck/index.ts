@@ -422,6 +422,21 @@ export type KnowledgeOverviewPayload = {
     status: string
     updatedAt: string
   }>
+  scorecard?: {
+    schemaVersion?: string
+    targetScore: number
+    score: number
+    ok: boolean
+    sections: Array<{
+      name: string
+      score: number
+      maxScore: number
+      status: string
+      blockers?: string[]
+    }>
+    blockers: string[]
+    retrievalProbes?: Array<Record<string, unknown>>
+  }
 }
 
 export type KnowledgeStatus = '启用' | '停用' | '过期' | '待复核'
@@ -522,9 +537,53 @@ export type KnowledgeFileDetailPayload = {
   vectorSummary: KnowledgeVectorSummary
 }
 
+export type KnowledgePageIndexNode = {
+  id?: string
+  pageIndexNodeId: string
+  kbDocId?: string
+  kbVersion?: string
+  nodeId: string
+  parentNodeId?: string | null
+  title: string
+  summary?: string
+  startPage?: number
+  endPage?: number
+  sectionPath?: string[]
+  children?: string[]
+  linkedClauseIds?: string[]
+  businessPackId?: string
+  nodeTypes?: string[]
+  materialTypes?: string[]
+  tags?: string[]
+  status?: string
+  score?: number
+}
+
+export type KnowledgeRetrievalTrace = {
+  retrievalTraceId: string
+  queryType?: string
+  selectedRoute?: string
+  routerVersion?: string
+  routerSignals?: Record<string, unknown>
+  queryRouter?: {
+    selectedRoute?: string
+    fallbackRoute?: string
+    signals?: Record<string, unknown>
+  }
+  retrievers?: Array<Record<string, unknown>>
+  selectedClauses?: Array<Record<string, unknown>>
+  pageIndexTree?: {
+    candidateNodeCount?: number
+    selectedNodes?: KnowledgePageIndexNode[]
+    linkedClauseIds?: string[]
+    treeSearchPath?: Array<Record<string, unknown>>
+  }
+}
+
 export type KnowledgeRetrievalTestPayload = {
   answerDraft: string
   hits: EvidenceLink[]
+  retrievalTrace?: KnowledgeRetrievalTrace
   latencyMs: number
   usedIndexVersions: string[]
 }
@@ -778,6 +837,32 @@ export type BusinessPackValidation = {
   warnings: string[]
 }
 
+export type BusinessPackPortabilityScorecard = {
+  schemaVersion?: string
+  targetScore: number
+  score: number
+  ok: boolean
+  sections: Array<{
+    name: string
+    score: number
+    maxScore: number
+    status: string
+    blockers?: string[]
+  }>
+  blockers: string[]
+  packs?: Array<{
+    packId: string
+    domainType: string
+    score: number
+    ok: boolean
+    summary: BusinessPackSummary
+    componentStatus?: Record<string, boolean>
+    fixtureStatus?: Record<string, boolean>
+    portabilityStatus?: Record<string, boolean>
+    blockers?: string[]
+  }>
+}
+
 export type BusinessPackDetail = BusinessPackSummary & {
   validation?: BusinessPackValidation
   roles?: Array<{ code: string; label: string; platformRole: string; defaultPath: string }>
@@ -789,6 +874,7 @@ export type BusinessPackDetail = BusinessPackSummary & {
 
 export type BusinessPackValidateAllPayload = {
   ok: boolean
+  scorecard?: BusinessPackPortabilityScorecard
   results: Array<{
     summary: BusinessPackSummary
     validation: BusinessPackValidation
@@ -867,6 +953,69 @@ export type FdeAiRunDetailPayload = {
   accessPolicy: { rawAccess: boolean; rawAccessRequiresGrant: boolean }
 }
 
+export type FdeReviewRun = {
+  id: string
+  reviewRunId: string
+  aiRunId?: string
+  projectId?: string
+  nodeId?: number | string
+  businessPackId?: string
+  agentId?: string
+  agentVersion?: string
+  promptVersion?: string
+  modelAlias?: string
+  modelGateway?: string
+  workflowEngine?: string
+  graphEngine?: string
+  graphRunner?: string
+  workflowId?: string
+  temporalRunId?: string
+  status?: string
+  currentStep?: string
+  runMode?: string
+  inputHash?: string
+  outputHash?: string
+  parentReviewRunId?: string
+  graphSummary?: { total: number; statusCounts: Record<string, number> }
+  graphExecution?: Record<string, unknown>
+  createdAt?: string
+  updatedAt?: string
+}
+
+export type ReviewGraphPayload = {
+  reviewRunId?: string
+  nodes: Array<Record<string, unknown>>
+  edges: Array<Record<string, unknown>>
+  timeline: Array<Record<string, unknown>>
+  artifactSummary?: Record<string, number>
+  artifacts?: {
+    ruleCheckResults?: Array<Record<string, unknown>>
+    retrievalTraces?: Array<Record<string, unknown>>
+    findingDrafts?: Array<Record<string, unknown>>
+  }
+}
+
+export type FdeReviewRunDetailPayload = {
+  run: FdeReviewRun
+  graph: ReviewGraphPayload
+  timeline: Array<Record<string, unknown>>
+  temporal: Record<string, unknown>
+  scorecard?: {
+    schemaVersion?: string
+    targetScore: number
+    score: number
+    ok: boolean
+    sections: Array<{
+      name: string
+      score: number
+      maxScore: number
+      status: string
+      blockers?: string[]
+    }>
+    blockers: string[]
+  }
+}
+
 export type FdeFeedback = {
   id: string
   aiRunId: string
@@ -878,15 +1027,89 @@ export type FdeFeedback = {
   status?: string
   rootCause?: string
   shouldEnterEvaluationSet?: boolean
+  governanceState?: string
+  evaluationCaseId?: string
+  evaluationSetId?: string
+  evaluationCaseStatus?: string
+  canUseForEval?: boolean
+  canUseForTraining?: boolean
+  dataSensitivity?: string
+  adjudicationRequired?: boolean
+  sampleUsage?: Record<string, unknown>
   createdAt: string
   triage?: Record<string, unknown>
+}
+
+export type FdeEvaluationCaseResult = {
+  id: string
+  evaluationRunId: string
+  evaluationCaseId: string
+  sourceFeedbackId?: string
+  feedbackType?: string
+  rootCause?: string
+  riskLevel?: string
+  status: string
+  expectedFindingCount?: number
+  matchedFindingCount?: number
+  actualFindingCount?: number
+  missingFindings?: string[]
+  unexpectedFindings?: string[]
+  expectedEvidenceCount?: number
+  actualEvidenceCount?: number
+  evidencePassed?: boolean
+  retrievalQuery?: string
+  retrievalTraceId?: string
+  expectedClauseIds?: string[]
+  selectedClauseIds?: string[]
+  missingClauseIds?: string[]
+  unexpectedTopClauseId?: string
+  expectedClauseCount?: number
+  matchedClauseCount?: number
+  retrievalRecall?: number
+  retrievalPassed?: boolean
+  selectedRoute?: string
+  expectedRoute?: string
+  routePassed?: boolean
+  replayMode?: string
+  createdAt?: string
+}
+
+export type FdeEvaluationRun = {
+  id: string
+  evaluationSetId: string
+  capabilityBundleId?: string
+  status: string
+  metrics?: Record<string, number | string | boolean>
+  caseSummary?: Record<string, number | string | boolean>
+  startedAt?: string
+  finishedAt?: string
+}
+
+export type FdeEvaluationReport = {
+  id: string
+  evaluationRunId: string
+  capabilityBundleId?: string
+  businessPackId?: string
+  status: string
+  summary?: string
+  metrics?: Record<string, number | string | boolean>
+  caseSummary?: Record<string, number | string | boolean>
+  caseResults?: FdeEvaluationCaseResult[]
+  gateResults?: Array<Record<string, unknown>>
+  createdAt?: string
+}
+
+export type FdeEvaluationReportPayload = {
+  report: FdeEvaluationReport
+  metrics: Array<Record<string, unknown>>
+  caseResults: FdeEvaluationCaseResult[]
 }
 
 export type FdeEvaluationPayload = {
   sets: Array<Record<string, unknown>>
   cases: Array<Record<string, unknown>>
-  runs: Array<Record<string, unknown>>
-  reports: Array<Record<string, unknown>>
+  runs: FdeEvaluationRun[]
+  reports: FdeEvaluationReport[]
 }
 
 export type FdeCapabilityBundlePayload = {
@@ -907,6 +1130,7 @@ export type FdeAccessPayload = {
   grants: Array<Record<string, unknown>>
   exports: Array<Record<string, unknown>>
   budgets: Array<Record<string, unknown>>
+  changeRequests?: Array<Record<string, unknown>>
   usage: { tokenEstimate: number; estimatedPrice: number; runCount: number }
 }
 
@@ -1014,6 +1238,20 @@ export type FdeOcrQualityPayload = {
     subprocessPython?: string
     schemaVersion?: string
   }
+  ocr100Scorecard?: {
+    schemaVersion?: string
+    targetScore: number
+    score: number
+    ok: boolean
+    sections: Array<{
+      name: string
+      score: number
+      maxScore: number
+      status: string
+      blockers?: string[]
+    }>
+    blockers: string[]
+  }
   failurePools?: {
     fieldFailures?: Array<Record<string, unknown> | string>
     tableFailures: Array<Record<string, unknown> | string>
@@ -1032,14 +1270,26 @@ export type FdeOcrEvalRun = {
   gateResults?: Array<Record<string, unknown>>
   evaluationReport?: {
     ok?: boolean
-    summary?: { cases?: number; total?: number; passed?: number; failed?: number; averageScore?: number }
+    summary?: {
+      cases?: number
+      total?: number
+      passed?: number
+      failed?: number
+      averageScore?: number
+    }
     metrics?: Record<string, number>
     findingCounts?: Record<string, number>
     thresholdFailures?: Array<Record<string, unknown>>
   }
   evaluationSummary?: {
     ok?: boolean
-    summary?: { cases?: number; total?: number; passed?: number; failed?: number; averageScore?: number }
+    summary?: {
+      cases?: number
+      total?: number
+      passed?: number
+      failed?: number
+      averageScore?: number
+    }
     metrics?: Record<string, number>
     findingCounts?: Record<string, number>
     thresholdFailures?: Array<Record<string, unknown>>
@@ -1068,7 +1318,13 @@ export type FdeOcrEvalRun = {
     string,
     {
       ok?: boolean
-      summary?: { cases?: number; total?: number; passed?: number; failed?: number; averageScore?: number }
+      summary?: {
+        cases?: number
+        total?: number
+        passed?: number
+        failed?: number
+        averageScore?: number
+      }
       metrics?: Record<string, number>
       findingCounts?: Record<string, number>
       thresholdFailures?: Array<Record<string, unknown>>
@@ -1088,6 +1344,59 @@ export type FdeOcrRunDetailPayload = {
   job: Record<string, unknown>
   parseResult: Record<string, unknown> | null
   corrections: Array<Record<string, unknown>>
+}
+
+export type FdeOcrAnnotationTask = {
+  taskId?: string
+  caseId?: string
+  scenario?: string
+  profileId?: string
+  documentType?: string
+  sourcePath?: string
+  pageNo?: number
+  collectionStatus?: string
+  labeledExpected?: Record<string, unknown>
+  suggestedExpected?: Record<string, unknown>
+  certificationBlockers?: string[]
+  readinessBlockers?: string[]
+  previewPaths?: string[]
+  previewUrl?: string
+  pagePreviewUrl?: string
+  pageDimensions?: Record<string, [number, number]>
+  candidateCounts?: Record<'fields' | 'tables' | 'seals', number>
+  labelCounts?: Record<'fields' | 'tables' | 'seals', number>
+  readyForEval?: boolean
+  labeler?: string
+  reviewer?: string
+}
+
+export type FdeOcrAnnotationReadinessPayload = {
+  schemaVersion?: string
+  ok: boolean
+  summary: {
+    tasks: number
+    humanLabeled: number
+    readyForEval: number
+    missingHumanLabels: number
+    completionRate: number
+    scenarioCounts?: Record<string, number>
+    readyScenarioCounts?: Record<string, number>
+    statusCounts?: Record<string, number>
+    blockerCounts?: Record<string, number>
+  }
+  nextActions: string[]
+  tasks?: Array<Record<string, unknown>>
+}
+
+export type FdeOcrAnnotationPayload = {
+  summary: FdeOcrAnnotationReadinessPayload['summary']
+  nextActions: string[]
+  page: PagePayload<FdeOcrAnnotationTask>
+}
+
+export type FdeOcrAnnotationDetailPayload = {
+  task: FdeOcrAnnotationTask
+  readiness: FdeOcrAnnotationReadinessPayload
 }
 
 export type AdminConfigTarget =
@@ -2027,6 +2336,16 @@ export const runKnowledgeRetrievalTestApi = (payload: {
   return request.post({ url: '/api/knowledge/retrieval-test', data: payload })
 }
 
+export const listKnowledgePageIndexNodesApi = (params?: {
+  keyword?: string
+  kbDocId?: string
+  parentNodeId?: string
+  page?: number
+  pageSize?: number
+}): Promise<IResponse<PagePayload<KnowledgePageIndexNode>>> => {
+  return request.get({ url: '/api/knowledge/page-index-nodes', params })
+}
+
 export const listKnowledgeRuleVersionsApi = (params?: {
   keyword?: string
   status?: KnowledgeRuleVersion['status']
@@ -2213,6 +2532,34 @@ export const getFdeAiRunApi = (runId: string): Promise<IResponse<FdeAiRunDetailP
   return request.get({ url: `/api/fde/ai-runs/${runId}` })
 }
 
+export const listFdeReviewRunsApi = (params?: {
+  projectId?: string
+  businessPackId?: string
+  status?: string
+  page?: number
+  pageSize?: number
+}): Promise<IResponse<PagePayload<FdeReviewRun>>> => {
+  return request.get({ url: '/api/fde/review-runs', params })
+}
+
+export const getFdeReviewRunApi = (
+  reviewRunId: string
+): Promise<IResponse<FdeReviewRunDetailPayload>> => {
+  return request.get({ url: `/api/fde/review-runs/${reviewRunId}` })
+}
+
+export const getFdeReviewRunGraphApi = (
+  reviewRunId: string
+): Promise<IResponse<ReviewGraphPayload>> => {
+  return request.get({ url: `/api/fde/review-runs/${reviewRunId}/graph` })
+}
+
+export const getFdeReviewRunTemporalHistoryApi = (
+  reviewRunId: string
+): Promise<IResponse<Record<string, unknown>>> => {
+  return request.get({ url: `/api/fde/review-runs/${reviewRunId}/temporal-history` })
+}
+
 export const listFdeAccessGrantsApi = (): Promise<IResponse<Array<Record<string, unknown>>>> => {
   return request.get({ url: '/api/fde/access-grants' })
 }
@@ -2251,6 +2598,53 @@ export const createFdeDataExportApi = (
   })
 }
 
+export const approveFdeDataExportApi = (
+  exportId: string,
+  data: { status?: string } = {},
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ export: Record<string, unknown>; auditLogId: string }>> => {
+  return request.post({
+    url: `/api/fde/data-exports/${exportId}/approve`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const expireFdeDataExportApi = (
+  exportId: string,
+  data: { reason?: string } = {},
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ export: Record<string, unknown>; auditLogId: string }>> => {
+  return request.post({
+    url: `/api/fde/data-exports/${exportId}/expire`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const getFdeAuditEventsApi = (params?: {
+  objectType?: string
+  objectId?: string
+  limit?: number
+}): Promise<IResponse<{ events: Array<Record<string, unknown>>; total: number }>> => {
+  return request.get({ url: '/api/fde/audit-events', params })
+}
+
+export const getFdeMaskingPoliciesApi = (): Promise<IResponse<Array<Record<string, unknown>>>> => {
+  return request.get({ url: '/api/fde/security/masking-policies' })
+}
+
+export const createFdeMaskingPolicyApi = (
+  data: Record<string, unknown>,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ policy: Record<string, unknown>; auditLogId: string }>> => {
+  return request.post({
+    url: '/api/fde/security/masking-policies',
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
 export const replayFdeAiRunApi = (
   runId: string,
   data: { runType?: 'diagnostic_replay' | 'evaluation_replay' | 'shadow_replay'; reason?: string },
@@ -2260,6 +2654,30 @@ export const replayFdeAiRunApi = (
 > => {
   return request.post({
     url: `/api/fde/ai-runs/${runId}/replay`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const replayFdeReviewRunApi = (
+  reviewRunId: string,
+  data: { runMode?: 'diagnostic_replay' | 'evaluation_replay' | 'shadow_replay'; reason?: string },
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ reviewRun: FdeReviewRun; auditLogId: string }>> => {
+  return request.post({
+    url: `/api/fde/review-runs/${reviewRunId}/replay`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const shadowFdeReviewRunApi = (
+  reviewRunId: string,
+  data: { reason?: string } = {},
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ reviewRun: FdeReviewRun; auditLogId: string }>> => {
+  return request.post({
+    url: `/api/fde/review-runs/${reviewRunId}/shadow-run`,
     data,
     headers: mutationHeaders(options)
   })
@@ -2282,7 +2700,12 @@ export const triageFdeFeedbackApi = (
   },
   options?: MutationHeaderOptions
 ): Promise<
-  IResponse<{ feedback: FdeFeedback; triage: Record<string, unknown>; auditLogId: string }>
+  IResponse<{
+    feedback: FdeFeedback
+    triage: Record<string, unknown>
+    evaluationCase?: Record<string, unknown> | null
+    auditLogId: string
+  }>
 > => {
   return request.post({
     url: `/api/fde/feedback/${feedbackId}/triage`,
@@ -2304,7 +2727,12 @@ export const createFdeEvaluationRunApi = (
   },
   options?: MutationHeaderOptions
 ): Promise<
-  IResponse<{ run: Record<string, unknown>; report: Record<string, unknown>; auditLogId: string }>
+  IResponse<{
+    run: FdeEvaluationRun
+    report: FdeEvaluationReport
+    caseResults: FdeEvaluationCaseResult[]
+    auditLogId: string
+  }>
 > => {
   return request.post({
     url: '/api/fde/evaluation-runs',
@@ -2315,9 +2743,7 @@ export const createFdeEvaluationRunApi = (
 
 export const getFdeEvaluationReportApi = (
   runId: string
-): Promise<
-  IResponse<{ report: Record<string, unknown>; metrics: Array<Record<string, unknown>> }>
-> => {
+): Promise<IResponse<FdeEvaluationReportPayload>> => {
   return request.get({ url: `/api/fde/evaluation-runs/${runId}/report` })
 }
 
@@ -2334,6 +2760,13 @@ export const createFdeCapabilityBundleApi = (
     data,
     headers: mutationHeaders(options)
   })
+}
+
+export const getFdeCapabilityBundleDiffApi = (
+  bundleId: string,
+  params?: { compareTo?: string }
+): Promise<IResponse<Record<string, unknown>>> => {
+  return request.get({ url: `/api/fde/capability-bundles/${bundleId}/diff`, params })
 }
 
 export const listFdeReleasesApi = (): Promise<IResponse<FdeReleasePayload>> => {
@@ -2375,6 +2808,25 @@ export const submitFdeReleaseApi = (
   })
 }
 
+export const approveFdeReleaseApi = (
+  releaseId: string,
+  data: Record<string, unknown>,
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    plan: Record<string, unknown>
+    approval: Record<string, unknown>
+    gates: Array<Record<string, unknown>>
+    auditLogId: string
+  }>
+> => {
+  return request.post({
+    url: `/api/fde/releases/${releaseId}/approve`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
 export const startFdeShadowApi = (
   releaseId: string,
   data: Record<string, unknown> = {},
@@ -2393,6 +2845,18 @@ export const startFdeShadowApi = (
   })
 }
 
+export const markFdeShadowPassedApi = (
+  releaseId: string,
+  data: Record<string, unknown> = {},
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ plan: Record<string, unknown>; auditLogId: string }>> => {
+  return request.post({
+    url: `/api/fde/releases/${releaseId}/mark-shadow-passed`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
 export const requestFdeCanaryApi = (
   releaseId: string,
   data: Record<string, unknown> = {},
@@ -2403,6 +2867,30 @@ export const requestFdeCanaryApi = (
     data,
     headers: mutationHeaders(options)
   })
+}
+
+export const approveFdeProductionReleaseApi = (
+  releaseId: string,
+  data: Record<string, unknown> = {},
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    plan: Record<string, unknown>
+    gates: Array<Record<string, unknown>>
+    auditLogId: string | null
+  }>
+> => {
+  return request.post({
+    url: `/api/fde/releases/${releaseId}/approve-production`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const getFdeReleaseImpactApi = (
+  releaseId: string
+): Promise<IResponse<Record<string, unknown>>> => {
+  return request.get({ url: `/api/fde/releases/${releaseId}/impact` })
 }
 
 export const rollbackFdeReleaseApi = (
@@ -2421,6 +2909,13 @@ export const validateFdeBusinessPacksApi = (): Promise<
   IResponse<BusinessPackValidateAllPayload>
 > => {
   return request.post({ url: '/api/fde/business-packs/validate-all' })
+}
+
+export const getFdeBusinessPackDiffApi = (
+  packId: string,
+  params?: { compareTo?: string; tenantId?: string }
+): Promise<IResponse<Record<string, unknown>>> => {
+  return request.get({ url: `/api/fde/business-packs/${packId}/diff`, params })
 }
 
 export const installFdeBusinessPackApi = (
@@ -2484,10 +2979,156 @@ export const listFdeOcrRunsApi = (params?: {
   return request.get({ url: '/api/fde/ocr-runs', params })
 }
 
-export const getFdeOcrRunApi = (
-  jobId: string
-): Promise<IResponse<FdeOcrRunDetailPayload>> => {
+export const getFdeOcrRunApi = (jobId: string): Promise<IResponse<FdeOcrRunDetailPayload>> => {
   return request.get({ url: `/api/fde/ocr-runs/${jobId}` })
+}
+
+export const listFdeOcrAnnotationTasksApi = (params?: {
+  pageNo?: number
+  pageSize?: number
+  status?: string
+  scenario?: string
+  profileId?: string
+}): Promise<IResponse<FdeOcrAnnotationPayload>> => {
+  return request.get({ url: '/api/fde/ocr-annotation/tasks', params })
+}
+
+export const getFdeOcrAnnotationTaskApi = (
+  taskId: string
+): Promise<IResponse<FdeOcrAnnotationDetailPayload>> => {
+  return request.get({ url: `/api/fde/ocr-annotation/tasks/${taskId}` })
+}
+
+export const getFdeOcrAnnotationReadinessApi = (
+  data?: { tasks?: FdeOcrAnnotationTask[] },
+  options?: MutationHeaderOptions
+): Promise<IResponse<FdeOcrAnnotationReadinessPayload>> => {
+  return request.post({
+    url: '/api/fde/ocr-annotation/readiness',
+    data: data || {},
+    headers: mutationHeaders(options)
+  })
+}
+
+export const importFdeOcrAnnotationPackApi = (
+  data: {
+    tasks?: FdeOcrAnnotationTask[]
+    pack?: { tasks?: FdeOcrAnnotationTask[] }
+    replace?: boolean
+  },
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    summary: Record<string, unknown>
+    readiness: FdeOcrAnnotationReadinessPayload
+    page: PagePayload<FdeOcrAnnotationTask>
+    auditLogId: string
+  }>
+> => {
+  return request.post({
+    url: '/api/fde/ocr-annotation/import-pack',
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const exportFdeOcrAnnotationLabelStudioApi = (
+  data?: {
+    tasks?: FdeOcrAnnotationTask[]
+    includeWithoutImage?: boolean
+    previewBaseDir?: string
+    localFilesRoot?: string
+  },
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    summary: Record<string, unknown>
+    labelConfigXml: string
+    tasks: Array<Record<string, unknown>>
+  }>
+> => {
+  return request.post({
+    url: '/api/fde/ocr-annotation/export-label-studio',
+    data: data || {},
+    headers: mutationHeaders(options)
+  })
+}
+
+export const saveFdeOcrAnnotationLabelApi = (
+  taskId: string,
+  data: {
+    labeler?: string
+    comment?: string
+    collectionStatus?: string
+    labeledExpected: Record<string, unknown>
+    pageDimensions?: Record<string, [number, number]>
+    pageNo?: number
+    previewUrl?: string
+    pagePreviewUrl?: string
+    pagePreviewPath?: string
+    sourcePath?: string
+  },
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    task: FdeOcrAnnotationTask
+    readiness: FdeOcrAnnotationReadinessPayload
+    auditLogId: string
+  }>
+> => {
+  return request.put({
+    url: `/api/fde/ocr-annotation/tasks/${taskId}/label`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const verifyFdeOcrAnnotationTaskApi = (
+  taskId: string,
+  data: {
+    labeler?: string
+    reviewer?: string
+    decision?: 'approved' | 'rejected'
+    reason?: string
+    comment?: string
+  },
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    task: FdeOcrAnnotationTask
+    readiness: FdeOcrAnnotationReadinessPayload
+    auditLogId: string
+  }>
+> => {
+  return request.post({
+    url: `/api/fde/ocr-annotation/tasks/${taskId}/verify`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const reviewFdeOcrAnnotationTaskApi = (
+  taskId: string,
+  data: {
+    labeler?: string
+    reviewer?: string
+    comment?: string
+    collectionStatus?: string
+    labeledExpected?: Record<string, unknown>
+  },
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    task: FdeOcrAnnotationTask
+    readiness: FdeOcrAnnotationReadinessPayload
+    auditLogId: string
+  }>
+> => {
+  return request.post({
+    url: `/api/fde/ocr-annotation/tasks/${taskId}/review`,
+    data,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const createFdeOcrCorrectionApi = (
@@ -2540,8 +3181,32 @@ export const updateFdeIncidentRcaApi = (
   })
 }
 
+export const closeFdeIncidentApi = (
+  incidentId: string,
+  data: Record<string, unknown> = {},
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ incident: Record<string, unknown>; auditLogId: string }>> => {
+  return request.post({
+    url: `/api/fde/incidents/${incidentId}/close`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
 export const getFdeCostBudgetsApi = (): Promise<IResponse<FdeAccessPayload>> => {
   return request.get({ url: '/api/fde/cost-budgets' })
+}
+
+export const proposeFdeCostBudgetChangeApi = (
+  budgetId: string,
+  data: Record<string, unknown>,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ changeRequest: Record<string, unknown>; auditLogId: string }>> => {
+  return request.post({
+    url: `/api/fde/cost-budgets/${budgetId}/propose-change`,
+    data,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const listFdeAcceptanceReportsApi = (): Promise<

@@ -205,7 +205,7 @@ watch(
   margin-top: 6px;
 }
 
-@media (max-width: 520px) {
+@media (width <= 520px) {
   .drawer-error-content,
   .drawer-actions {
     align-items: stretch;

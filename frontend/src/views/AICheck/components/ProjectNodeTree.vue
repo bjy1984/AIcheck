@@ -117,10 +117,11 @@ const handleNodeClick = (data: ProjectTreeViewNode) => {
 }
 
 .tree-scroll {
+  --el-tree-node-hover-bg-color: transparent;
+
   max-height: calc(100vh - 270px);
   overflow: auto;
   background: transparent;
-  --el-tree-node-hover-bg-color: transparent;
 }
 
 .node-group-title {
@@ -130,15 +131,15 @@ const handleNodeClick = (data: ProjectTreeViewNode) => {
   font-size: 13px;
   font-weight: 700;
   color: #475467;
-  background: #ffffff;
+  background: #fff;
 }
 
 .node-tree :deep(.el-tree-node__content) {
   height: auto;
   min-height: 34px;
   padding-left: 0 !important;
-  color: #26364e;
   line-height: 1.2;
+  color: #26364e;
   background: transparent;
 }
 
@@ -148,12 +149,12 @@ const handleNodeClick = (data: ProjectTreeViewNode) => {
 }
 
 .node-tree :deep(.el-tree-node__expand-icon) {
-  flex: 0 0 28px;
   width: 28px;
   height: 28px;
   margin-right: 2px;
-  color: #6e7d92;
   font-size: 18px;
+  color: #6e7d92;
+  flex: 0 0 28px;
 }
 
 .node-tree :deep(.el-tree-node__expand-icon svg) {
@@ -174,23 +175,7 @@ const handleNodeClick = (data: ProjectTreeViewNode) => {
 }
 
 .node-button {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: start;
-  width: 100%;
-  min-height: 58px;
-  padding: 9px 8px;
-  margin-bottom: 6px;
-  margin-left: 8px;
-  color: #26364e;
-  text-align: left;
-  cursor: pointer;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  white-space: normal;
-  --el-button-bg-color: #ffffff;
+  --el-button-bg-color: #fff;
   --el-button-border-color: #e5e7eb;
   --el-button-hover-bg-color: #eff6ff;
   --el-button-hover-border-color: #2563eb;
@@ -198,14 +183,31 @@ const handleNodeClick = (data: ProjectTreeViewNode) => {
   --el-button-active-bg-color: #eff6ff;
   --el-button-active-border-color: #2563eb;
   --el-button-active-text-color: #26364e;
+
+  display: grid;
+  width: 100%;
+  min-height: 58px;
+  padding: 9px 8px;
+  margin-bottom: 6px;
+  margin-left: 8px;
+  color: #26364e;
+  text-align: left;
+  white-space: normal;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
 }
 
 .node-button:hover,
 .node-button:focus-visible,
 .node-button.is-active {
+  background: #eff6ff;
   border-color: #2563eb;
   outline: none;
-  background: #eff6ff;
 }
 
 .node-button.is-active {
@@ -245,7 +247,7 @@ const handleNodeClick = (data: ProjectTreeViewNode) => {
   color: #667085;
 }
 
-@media (max-width: 1280px) {
+@media (width <= 1280px) {
   .tree-panel {
     margin-bottom: 16px;
   }

@@ -192,9 +192,9 @@ const getEvidenceItems = (ids: string[]) =>
 
 .section-block {
   padding: 12px;
+  background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  background: #ffffff;
 }
 
 .section-title {
@@ -232,7 +232,7 @@ const getEvidenceItems = (ids: string[]) =>
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
   :global(.report-detail-drawer.el-drawer) {
     width: 100vw !important;
     max-width: 100vw;

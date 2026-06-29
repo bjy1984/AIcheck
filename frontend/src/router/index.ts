@@ -349,46 +349,30 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
       roles: ['fde']
     },
     children: [
-      {
-        path: 'dashboard',
+      ...[
+        ['dashboard', 'FdeDashboard', 'AI 驾驶舱'],
+        ['ai-runs', 'FdeAiRuns', 'AI Run 追踪'],
+        ['review-runs', 'FdeReviewRuns', '任务编排'],
+        ['feedback', 'FdeFeedback', '反馈与标注'],
+        ['evaluation', 'FdeEvaluation', '评估实验室'],
+        ['capability-bundles', 'FdeCapabilityBundles', '能力组合'],
+        ['releases', 'FdeReleases', '发布治理'],
+        ['ocr-quality', 'FdeOcrQuality', 'OCR 质量'],
+        ['business-packs', 'FdeBusinessPacks', '业务包工厂'],
+        ['security', 'FdeSecurity', '数据安全'],
+        ['incidents', 'FdeIncidents', '事故 RCA'],
+        ['costs', 'FdeCosts', '成本预算'],
+        ['acceptance', 'FdeAcceptance', '交付验收']
+      ].map(([path, name, title]) => ({
+        path,
         component: FdeConsole,
-        name: 'FdeDashboard',
+        name,
         meta: {
-          title: 'AI 交付治理',
+          title,
           noCache: true,
           roles: ['fde']
         }
-      },
-      {
-        path: 'ai-runs',
-        component: FdeConsole,
-        name: 'FdeAiRuns',
-        meta: {
-          title: 'AI Run 追踪',
-          noCache: true,
-          roles: ['fde']
-        }
-      },
-      {
-        path: 'feedback',
-        component: FdeConsole,
-        name: 'FdeFeedback',
-        meta: {
-          title: '反馈与标注',
-          noCache: true,
-          roles: ['fde']
-        }
-      },
-      {
-        path: 'releases',
-        component: FdeConsole,
-        name: 'FdeReleases',
-        meta: {
-          title: '发布治理',
-          noCache: true,
-          roles: ['fde']
-        }
-      }
+      }))
     ]
   }
 ]

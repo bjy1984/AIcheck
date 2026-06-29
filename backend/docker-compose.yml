@@ -10,6 +10,15 @@ services:
       AICHECK_MONGO_TRANSACTIONS: ${AICHECK_MONGO_TRANSACTIONS:-true}
       AICHECK_REDIS_URL: ${AICHECK_REDIS_URL:-redis://redis:6379/0}
       AICHECK_TASK_DISPATCH: ${AICHECK_TASK_DISPATCH:-celery}
+      AICHECK_REVIEW_ORCHESTRATION: ${AICHECK_REVIEW_ORCHESTRATION:-temporal}
+      TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-temporal-service:7233}
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
+      AICHECK_REVIEW_WORKFLOW_TASK_QUEUE: ${AICHECK_REVIEW_WORKFLOW_TASK_QUEUE:-review.workflow}
+      AICHECK_REVIEW_LLM_EXECUTION: ${AICHECK_REVIEW_LLM_EXECUTION:-litellm}
+      AICHECK_LANGGRAPH_DISABLE: ${AICHECK_LANGGRAPH_DISABLE:-false}
+      AICHECK_LANGGRAPH_CHECKPOINT_DISABLE: ${AICHECK_LANGGRAPH_CHECKPOINT_DISABLE:-false}
+      AICHECK_LANGGRAPH_CHECKPOINT_SETUP: ${AICHECK_LANGGRAPH_CHECKPOINT_SETUP:-false}
+      LANGGRAPH_CHECKPOINT_DSN: postgresql://${WORKFLOW_POSTGRES_USER:-workflow}:${WORKFLOW_POSTGRES_PASSWORD:?WORKFLOW_POSTGRES_PASSWORD is required}@workflow-postgres:5432/${WORKFLOW_POSTGRES_DB:-workflow}
       AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_ENDPOINT:-minio:9000}
       AICHECK_MINIO_PUBLIC_ENDPOINT: ${AICHECK_MINIO_PUBLIC_ENDPOINT:-127.0.0.1:9000}
       AICHECK_MINIO_ACCESS_KEY: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
@@ -30,6 +39,8 @@ services:
       minio:
         condition: service_healthy
       litellm-service:
+        condition: service_healthy
+      temporal-service:
         condition: service_healthy
     healthcheck:
       test:
@@ -52,6 +63,7 @@ services:
       AICHECK_MONGO_TRANSACTIONS: ${AICHECK_MONGO_TRANSACTIONS:-true}
       AICHECK_REDIS_URL: ${AICHECK_REDIS_URL:-redis://redis:6379/0}
       AICHECK_TASK_DISPATCH: ${AICHECK_TASK_DISPATCH:-celery}
+      AICHECK_REVIEW_ORCHESTRATION: ${AICHECK_REVIEW_ORCHESTRATION:-temporal}
       AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_ENDPOINT:-minio:9000}
       AICHECK_MINIO_ACCESS_KEY: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
       AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:?AICHECK_MINIO_SECRET_KEY is required}
@@ -80,6 +92,49 @@ services:
         ]
       interval: 30s
       timeout: 10s
+      retries: 6
+
+  review-worker-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m apps.review_worker.main
+    environment:
+      AICHECK_MONGO_URL: ${AICHECK_MONGO_URL:-mongodb://mongodb:27017/?replicaSet=rs0}
+      AICHECK_MONGO_DB: ${AICHECK_MONGO_DB:-aicheck}
+      AICHECK_MONGO_TRANSACTIONS: ${AICHECK_MONGO_TRANSACTIONS:-true}
+      AICHECK_REVIEW_ORCHESTRATION: temporal
+      TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-temporal-service:7233}
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
+      AICHECK_REVIEW_WORKFLOW_TASK_QUEUE: ${AICHECK_REVIEW_WORKFLOW_TASK_QUEUE:-review.workflow}
+      AICHECK_REVIEW_GRAPH_TASK_QUEUE: ${AICHECK_REVIEW_GRAPH_TASK_QUEUE:-review.graph}
+      AICHECK_REVIEW_LLM_TASK_QUEUE: ${AICHECK_REVIEW_LLM_TASK_QUEUE:-review.llm}
+      AICHECK_REVIEW_RETRIEVAL_TASK_QUEUE: ${AICHECK_REVIEW_RETRIEVAL_TASK_QUEUE:-review.retrieval}
+      AICHECK_REVIEW_VALIDATION_TASK_QUEUE: ${AICHECK_REVIEW_VALIDATION_TASK_QUEUE:-review.validation}
+      AICHECK_REVIEW_LLM_EXECUTION: ${AICHECK_REVIEW_LLM_EXECUTION:-litellm}
+      AICHECK_LANGGRAPH_DISABLE: ${AICHECK_LANGGRAPH_DISABLE:-false}
+      AICHECK_LANGGRAPH_CHECKPOINT_DISABLE: ${AICHECK_LANGGRAPH_CHECKPOINT_DISABLE:-false}
+      AICHECK_LANGGRAPH_CHECKPOINT_SETUP: ${AICHECK_LANGGRAPH_CHECKPOINT_SETUP:-false}
+      LANGGRAPH_CHECKPOINT_DSN: postgresql://${WORKFLOW_POSTGRES_USER:-workflow}:${WORKFLOW_POSTGRES_PASSWORD:?WORKFLOW_POSTGRES_PASSWORD is required}@workflow-postgres:5432/${WORKFLOW_POSTGRES_DB:-workflow}
+      LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://litellm-service:4000}
+      LITELLM_API_KEY: ${LITELLM_API_KEY:?LITELLM_API_KEY is required}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      temporal-service:
+        condition: service_healthy
+      workflow-postgres:
+        condition: service_healthy
+      litellm-service:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import asyncio, os; from temporalio.client import Client; asyncio.run(Client.connect(os.environ['TEMPORAL_ADDRESS'], namespace=os.environ.get('TEMPORAL_NAMESPACE', 'default')))\"",
+        ]
+      interval: 30s
+      timeout: 5s
       retries: 6
 
   ocr-service:
@@ -208,13 +263,62 @@ services:
       timeout: 5s
       retries: 20
 
+  workflow-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${WORKFLOW_POSTGRES_DB:-workflow}
+      POSTGRES_USER: ${WORKFLOW_POSTGRES_USER:-workflow}
+      POSTGRES_PASSWORD: ${WORKFLOW_POSTGRES_PASSWORD:?WORKFLOW_POSTGRES_PASSWORD is required}
+    ports:
+      - "5434:5432"
+    volumes:
+      - workflow-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  temporal-service:
+    image: temporalio/auto-setup:1.26.2
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: ${WORKFLOW_POSTGRES_USER:-workflow}
+      POSTGRES_PWD: ${WORKFLOW_POSTGRES_PASSWORD:?WORKFLOW_POSTGRES_PASSWORD is required}
+      POSTGRES_SEEDS: workflow-postgres
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
+    ports:
+      - "7233:7233"
+    depends_on:
+      workflow-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "tctl --address 127.0.0.1:7233 cluster health | grep -q SERVING"]
+      interval: 10s
+      timeout: 5s
+      retries: 24
+
+  temporal-ui:
+    image: temporalio/ui:2.31.2
+    environment:
+      TEMPORAL_ADDRESS: temporal-service:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:4000,http://127.0.0.1:4000
+    ports:
+      - "8088:8080"
+    depends_on:
+      temporal-service:
+        condition: service_healthy
+
   litellm-service:
     image: ghcr.io/berriai/litellm:main-latest
     command: ["--config", "/app/config/litellm.yaml", "--port", "4000", "--host", "0.0.0.0"]
     environment:
       DATABASE_URL: postgresql://${LITELLM_POSTGRES_USER:-litellm}:${LITELLM_POSTGRES_PASSWORD:?LITELLM_POSTGRES_PASSWORD is required}@litellm-postgres:5432/${LITELLM_POSTGRES_DB:-litellm}
       LITELLM_MASTER_KEY: ${LITELLM_API_KEY:?LITELLM_API_KEY is required}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?DEEPSEEK_API_KEY is required}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AICHECK_LITELLM_STRICT_PROVIDER_HEALTH: ${AICHECK_LITELLM_STRICT_PROVIDER_HEALTH:-true}
       NO_PROXY: ${AICHECK_LITELLM_NO_PROXY:-127.0.0.1,localhost,::1,litellm-postgres}
       no_proxy: ${AICHECK_LITELLM_NO_PROXY:-127.0.0.1,localhost,::1,litellm-postgres}
     ports:
@@ -228,7 +332,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "python -c \"import json, os, sys, urllib.request; req=urllib.request.Request('http://127.0.0.1:4000/health', headers={'Authorization': 'Bearer ' + os.environ['LITELLM_MASTER_KEY']}); data=json.loads(urllib.request.urlopen(req, timeout=3).read() or b'{}'); sys.exit(1 if int(data.get('unhealthy_count') or 0) else 0)\"",
+          "python -c \"import json, os, sys, urllib.request; req=urllib.request.Request('http://127.0.0.1:4000/health', headers={'Authorization': 'Bearer ' + os.environ['LITELLM_MASTER_KEY']}); data=json.loads(urllib.request.urlopen(req, timeout=3).read() or b'{}'); unhealthy_count=int(data.get('unhealthy_count') or 0); strict=os.getenv('AICHECK_LITELLM_STRICT_PROVIDER_HEALTH','true').lower()=='true'; sys.exit(1 if strict and unhealthy_count else 0)\"",
         ]
       interval: 10s
       timeout: 5s
@@ -238,3 +342,4 @@ volumes:
   mongo-data:
   minio-data:
   litellm-postgres-data:
+  workflow-postgres-data:

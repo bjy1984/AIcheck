@@ -3545,10 +3545,10 @@ onMounted(() => {
 }
 
 .page-title {
-  color: #172033;
   font-size: 27px;
   font-weight: 900;
   line-height: 1.2;
+  color: #172033;
 }
 
 .page-subtitle {
@@ -3567,10 +3567,10 @@ onMounted(() => {
 .metric-card {
   min-height: 78px;
   padding: 14px 16px;
+  background: #fff;
   border: 1px solid #e5e7eb;
   border-left: 4px solid #64748b;
   border-radius: 8px;
-  background: #ffffff;
 }
 
 .metric-card span {
@@ -3630,13 +3630,13 @@ onMounted(() => {
 
 .local-error {
   display: grid;
+  padding: 10px;
+  background: #fff7f7;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
-  padding: 10px;
-  border: 1px solid #fecaca;
-  border-radius: 8px;
-  background: #fff7f7;
 }
 
 .local-error--compact {
@@ -3660,14 +3660,14 @@ onMounted(() => {
 
 .export-task-card {
   display: flex;
+  padding: 12px;
+  margin-top: 12px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
   gap: 12px;
   align-items: flex-start;
   justify-content: space-between;
-  margin-top: 12px;
-  padding: 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #ffffff;
 }
 
 .export-task-card strong {
@@ -3743,11 +3743,11 @@ onMounted(() => {
 
 .rule-description {
   padding: 12px;
+  line-height: 22px;
+  color: #344054;
+  background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  background: #ffffff;
-  color: #344054;
-  line-height: 22px;
 }
 
 .rule-diff-drawer :deep(.el-descriptions) {
@@ -3763,9 +3763,9 @@ onMounted(() => {
 .rule-diff-metric {
   min-height: 76px;
   padding: 10px 12px;
+  background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  background: #ffffff;
 }
 
 .rule-diff-metric span {
@@ -3800,9 +3800,9 @@ onMounted(() => {
 .integration-module-card {
   min-height: 76px;
   padding: 12px;
+  background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  background: #ffffff;
 }
 
 .integration-summary-card {
@@ -3870,17 +3870,17 @@ onMounted(() => {
 
 .method-pill {
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 52px;
   height: 22px;
-  margin-right: 8px;
+  min-width: 52px;
   padding: 0 8px;
-  border-radius: 6px;
-  background: #eff6ff;
-  color: #1d4ed8;
+  margin-right: 8px;
   font-size: 12px;
   font-weight: 700;
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-radius: 6px;
+  align-items: center;
+  justify-content: center;
 }
 
 .diff-value {
@@ -3899,7 +3899,7 @@ onMounted(() => {
   gap: 10px;
   justify-content: flex-end;
   padding: 12px 0 4px;
-  background: #ffffff;
+  background: #fff;
 }
 
 .action-checkbox-grid {
@@ -3911,23 +3911,23 @@ onMounted(() => {
 
 .batch-result {
   display: flex;
+  padding: 10px;
+  margin-bottom: 12px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
   flex-wrap: wrap;
   gap: 8px;
   align-items: flex-start;
-  margin-bottom: 12px;
-  padding: 10px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #ffffff;
 }
 
 .batch-result-list {
   display: grid;
-  flex-basis: 100%;
-  gap: 4px;
-  color: #667085;
   font-size: 12px;
   line-height: 18px;
+  color: #667085;
+  flex-basis: 100%;
+  gap: 4px;
 }
 
 .member-option-tag {
@@ -3943,7 +3943,7 @@ onMounted(() => {
   margin-bottom: 12px;
 }
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .admin-page {
     padding: 0;
   }
@@ -3996,7 +3996,7 @@ onMounted(() => {
   }
 }
 
-@media (max-width: 480px) {
+@media (width <= 480px) {
   .metric-grid,
   .integration-summary-grid,
   .rule-diff-summary {

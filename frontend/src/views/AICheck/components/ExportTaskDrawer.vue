@@ -208,7 +208,7 @@ const taskIssue = computed(() => {
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
   :global(.export-task-drawer.el-drawer) {
     width: 100vw !important;
     max-width: 100vw;

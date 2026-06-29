@@ -262,7 +262,10 @@ def validate_all_business_packs() -> dict[str, Any]:
         validation = validate_business_pack(pack)
         ok = ok and validation["ok"]
         results.append({"summary": business_pack_summary(pack), "validation": validation})
-    return {"ok": ok, "results": results}
+    from .readiness import build_business_pack_portability_scorecard
+
+    scorecard = build_business_pack_portability_scorecard()
+    return {"ok": ok and bool(scorecard.get("ok")), "results": results, "scorecard": scorecard}
 
 
 def _validate_items(pack: dict[str, Any], key: str, required_keys: set[str], errors: list[str]) -> None:

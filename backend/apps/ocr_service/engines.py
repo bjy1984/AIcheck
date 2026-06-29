@@ -174,7 +174,19 @@ class PpStructureEngine(LocalOcrEngine):
     required_package = "paddleocr"
 
     def available(self) -> bool:
-        return super().available() and all(path.exists() for path in pp_structure_model_dirs().values())
+        return self.package_available() and all(path.exists() for path in pp_structure_model_dirs().values())
+
+    def package_available(self) -> bool:
+        inprocess_ready = importlib.util.find_spec(self.required_package) is not None
+        subprocess_ready = subprocess_package_available("paddleocr")
+        return inprocess_ready or subprocess_ready
+
+    def execution_mode(self) -> str:
+        if importlib.util.find_spec(self.required_package) is not None:
+            return "inprocess"
+        if subprocess_package_available("paddleocr"):
+            return "subprocess"
+        return "unavailable"
 
     def status(self) -> dict[str, Any]:
         dirs = pp_structure_model_dirs()
@@ -182,6 +194,9 @@ class PpStructureEngine(LocalOcrEngine):
             "engine": self.name,
             "version": self.version,
             "available": self.available(),
+            "executionMode": self.execution_mode(),
+            "python": os.getenv("AICHECK_OCR_SUBPROCESS_PYTHON"),
+            "subprocessPackageAvailable": subprocess_package_available("paddleocr"),
             "modelDirs": {key: str(path) for key, path in dirs.items()},
             "missingModelDirs": [key for key, path in dirs.items() if not path.exists()],
             "package": self.required_package,
@@ -195,8 +210,6 @@ class PpStructureEngine(LocalOcrEngine):
         profile: dict[str, Any] | None = None,
         variant: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        from paddleocr import PPStructureV3  # type: ignore
-
         source_path = variant_source_path(source_path, variant)
         dirs = pp_structure_model_dirs()
         missing = [key for key, path in dirs.items() if not path.exists()]
@@ -213,6 +226,10 @@ class PpStructureEngine(LocalOcrEngine):
                 "engine": self.name,
                 "engineVersion": self.version,
             }
+        if importlib.util.find_spec(self.required_package) is None:
+            return self.parse_with_subprocess(source_path)
+        from paddleocr import PPStructureV3  # type: ignore
+
         engine = PPStructureV3(
             layout_detection_model_dir=str(dirs["layout"]),
             text_detection_model_dir=str(dirs["text_det"]),
@@ -238,6 +255,118 @@ class PpStructureEngine(LocalOcrEngine):
             "diagnostics": [],
             "engine": self.name,
             "engineVersion": self.version,
+        }
+
+    def parse_with_subprocess(self, source_path: Path) -> dict[str, Any]:
+        python_bin = os.getenv("AICHECK_OCR_SUBPROCESS_PYTHON")
+        if not python_bin or not Path(python_bin).exists():
+            return {
+                "ok": False,
+                "diagnostics": [{"code": "PP_STRUCTURE_SUBPROCESS_NOT_CONFIGURED", "level": "info", "message": "AICHECK_OCR_SUBPROCESS_PYTHON is not configured."}],
+                "engine": self.name,
+                "engineVersion": self.version,
+            }
+        dirs = pp_structure_model_dirs()
+        script = textwrap.dedent(
+            """
+            import json
+            import sys
+            from paddleocr import PPStructureV3
+
+            image_path = sys.argv[1]
+            dirs = json.loads(sys.argv[2])
+
+            def basic(value):
+                if isinstance(value, (str, int, float, bool)) or value is None:
+                    return value
+                if isinstance(value, dict):
+                    return {str(k): basic(v) for k, v in value.items() if str(k) not in {"input_img", "img", "dt_polys"}}
+                if isinstance(value, (list, tuple)):
+                    return [basic(v) for v in value]
+                if hasattr(value, "tolist"):
+                    try:
+                        return value.tolist()
+                    except Exception:
+                        return str(value)
+                json_payload = getattr(value, "json", None)
+                if isinstance(json_payload, dict):
+                    return basic(json_payload)
+                if callable(json_payload):
+                    try:
+                        return basic(json_payload())
+                    except Exception:
+                        pass
+                if hasattr(value, "items"):
+                    try:
+                        return {str(k): basic(v) for k, v in value.items() if str(k) not in {"input_img", "img", "dt_polys"}}
+                    except Exception:
+                        return str(value)
+                return str(value)
+
+            engine = PPStructureV3(
+                layout_detection_model_dir=dirs["layout"],
+                text_detection_model_dir=dirs["text_det"],
+                text_recognition_model_dir=dirs["text_rec"],
+                wired_table_structure_recognition_model_dir=dirs["wired_table_structure"],
+                wired_table_cells_detection_model_dir=dirs["wired_table_cells"],
+                wireless_table_structure_recognition_model_dir=dirs["wireless_table_structure"],
+                wireless_table_cells_detection_model_dir=dirs["wireless_table_cells"],
+                use_doc_orientation_classify=False,
+                use_doc_unwarping=False,
+                use_textline_orientation=False,
+                use_table_recognition=True,
+                use_seal_recognition=False,
+                use_formula_recognition=False,
+                use_chart_recognition=False,
+            )
+            raw = [basic(item) for item in engine.predict(image_path)]
+            print("AICHECK_PP_STRUCTURE_RESULT " + json.dumps(raw, ensure_ascii=False), flush=True)
+            """
+        )
+        try:
+            completed = subprocess.run(
+                [python_bin, "-c", script, str(source_path), json.dumps({key: str(path) for key, path in dirs.items()})],
+                check=False,
+                capture_output=True,
+                encoding="utf-8",
+                env=ocr_subprocess_env(),
+                timeout=float(os.getenv("AICHECK_PP_STRUCTURE_TIMEOUT", "180")),
+            )
+        except subprocess.TimeoutExpired:
+            return {
+                "ok": False,
+                "diagnostics": [{"code": "PP_STRUCTURE_TIMEOUT", "level": "warning", "message": "PP-Structure subprocess timed out."}],
+                "engine": self.name,
+                "engineVersion": self.version,
+            }
+        if completed.returncode != 0:
+            return {
+                "ok": False,
+                "diagnostics": [{"code": "PP_STRUCTURE_FAILED", "level": "warning", "message": (completed.stderr or completed.stdout or "PP-Structure subprocess failed")[-1200:]}],
+                "engine": self.name,
+                "engineVersion": self.version,
+            }
+        payload_line = next(
+            (line for line in reversed(completed.stdout.splitlines()) if line.startswith("AICHECK_PP_STRUCTURE_RESULT ")),
+            "",
+        )
+        if not payload_line:
+            return {
+                "ok": False,
+                "diagnostics": [{"code": "PP_STRUCTURE_EMPTY", "level": "warning", "message": "PP-Structure subprocess returned no parseable payload."}],
+                "engine": self.name,
+                "engineVersion": self.version,
+            }
+        raw = json.loads(payload_line.replace("AICHECK_PP_STRUCTURE_RESULT ", "", 1))
+        tables, layout_blocks = normalize_structure_result(raw, self.name)
+        return {
+            "ok": bool(tables or layout_blocks),
+            "tables": tables,
+            "layoutBlocks": layout_blocks,
+            "diagnostics": [],
+            "engine": self.name,
+            "engineVersion": self.version,
+            "workerMode": "subprocess",
         }
 
 
@@ -776,7 +905,17 @@ class PaddlexSealEngine(LocalOcrEngine):
 
     def available(self) -> bool:
         enabled = os.getenv("AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE", "false").lower() in {"1", "true", "yes", "on"}
-        return enabled and super().available() and all(path.exists() for path in seal_model_dirs().values())
+        return enabled and self.package_available() and all(path.exists() for path in seal_model_dirs().values())
+
+    def package_available(self) -> bool:
+        return importlib.util.find_spec(self.required_package) is not None or subprocess_package_available("paddlex")
+
+    def execution_mode(self) -> str:
+        if importlib.util.find_spec(self.required_package) is not None:
+            return "inprocess"
+        if subprocess_package_available("paddlex"):
+            return "subprocess"
+        return "unavailable"
 
     def status(self) -> dict[str, Any]:
         dirs = seal_model_dirs()
@@ -785,6 +924,9 @@ class PaddlexSealEngine(LocalOcrEngine):
             "version": self.version,
             "available": self.available(),
             "enabled": os.getenv("AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE", "false"),
+            "executionMode": self.execution_mode(),
+            "python": os.getenv("AICHECK_OCR_SUBPROCESS_PYTHON"),
+            "subprocessPackageAvailable": subprocess_package_available("paddlex"),
             "modelDirs": {key: str(path) for key, path in dirs.items()},
             "missingModelDirs": [key for key, path in dirs.items() if not path.exists()],
             "package": self.required_package,
@@ -798,8 +940,6 @@ class PaddlexSealEngine(LocalOcrEngine):
         profile: dict[str, Any] | None = None,
         variant: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        from paddlex import create_pipeline  # type: ignore
-
         source_path = variant_source_path(source_path, variant)
         missing = [key for key, path in seal_model_dirs().items() if not path.exists()]
         if missing:
@@ -809,6 +949,10 @@ class PaddlexSealEngine(LocalOcrEngine):
                 "engine": self.name,
                 "engineVersion": self.version,
             }
+        if importlib.util.find_spec(self.required_package) is None:
+            return self.parse_with_subprocess(source_path, profile=profile)
+        from paddlex import create_pipeline  # type: ignore
+
         pipeline = create_pipeline(pipeline="seal_recognition")
         raw = pipeline.predict(str(source_path))
         seals = normalize_seal_result(raw)
@@ -822,6 +966,104 @@ class PaddlexSealEngine(LocalOcrEngine):
             "diagnostics": diagnostics,
             "engine": self.name,
             "engineVersion": self.version,
+        }
+
+    def parse_with_subprocess(self, source_path: Path, *, profile: dict[str, Any] | None = None) -> dict[str, Any]:
+        python_bin = os.getenv("AICHECK_OCR_SUBPROCESS_PYTHON")
+        if not python_bin or not Path(python_bin).exists():
+            return {
+                "ok": False,
+                "diagnostics": [{"code": "PADDLEX_SEAL_SUBPROCESS_NOT_CONFIGURED", "level": "info", "message": "AICHECK_OCR_SUBPROCESS_PYTHON is not configured."}],
+                "engine": self.name,
+                "engineVersion": self.version,
+            }
+        script = textwrap.dedent(
+            """
+            import json
+            import sys
+            from paddlex import create_pipeline
+
+            image_path = sys.argv[1]
+
+            def basic(value):
+                if isinstance(value, (str, int, float, bool)) or value is None:
+                    return value
+                if isinstance(value, dict):
+                    return {str(k): basic(v) for k, v in value.items() if str(k) not in {"input_img", "img", "dt_polys"}}
+                if isinstance(value, (list, tuple)):
+                    return [basic(v) for v in value]
+                if hasattr(value, "tolist"):
+                    try:
+                        return value.tolist()
+                    except Exception:
+                        return str(value)
+                json_payload = getattr(value, "json", None)
+                if isinstance(json_payload, dict):
+                    return basic(json_payload)
+                if callable(json_payload):
+                    try:
+                        return basic(json_payload())
+                    except Exception:
+                        pass
+                if hasattr(value, "items"):
+                    try:
+                        return {str(k): basic(v) for k, v in value.items() if str(k) not in {"input_img", "img", "dt_polys"}}
+                    except Exception:
+                        return str(value)
+                return str(value)
+
+            pipeline = create_pipeline(pipeline="seal_recognition")
+            raw = [basic(item) for item in pipeline.predict(image_path)]
+            print("AICHECK_PADDLEX_SEAL_RESULT " + json.dumps(raw, ensure_ascii=False), flush=True)
+            """
+        )
+        try:
+            completed = subprocess.run(
+                [python_bin, "-c", script, str(source_path)],
+                check=False,
+                capture_output=True,
+                encoding="utf-8",
+                env=ocr_subprocess_env(),
+                timeout=float(os.getenv("AICHECK_PADDLEX_SEAL_TIMEOUT", "160")),
+            )
+        except subprocess.TimeoutExpired:
+            return {
+                "ok": False,
+                "diagnostics": [{"code": "PADDLEX_SEAL_TIMEOUT", "level": "warning", "message": "PaddleX seal subprocess timed out."}],
+                "engine": self.name,
+                "engineVersion": self.version,
+            }
+        if completed.returncode != 0:
+            return {
+                "ok": False,
+                "diagnostics": [{"code": "PADDLEX_SEAL_FAILED", "level": "warning", "message": (completed.stderr or completed.stdout or "PaddleX seal subprocess failed")[-1200:]}],
+                "engine": self.name,
+                "engineVersion": self.version,
+            }
+        payload_line = next(
+            (line for line in reversed(completed.stdout.splitlines()) if line.startswith("AICHECK_PADDLEX_SEAL_RESULT ")),
+            "",
+        )
+        if not payload_line:
+            return {
+                "ok": False,
+                "diagnostics": [{"code": "PADDLEX_SEAL_EMPTY", "level": "warning", "message": "PaddleX seal subprocess returned no parseable payload."}],
+                "engine": self.name,
+                "engineVersion": self.version,
+            }
+        raw = json.loads(payload_line.replace("AICHECK_PADDLEX_SEAL_RESULT ", "", 1))
+        seals = normalize_seal_result(raw)
+        seal_rules = (profile or {}).get("sealRules") or {}
+        diagnostics = []
+        if seal_rules.get("required") and not seals:
+            diagnostics.append({"code": "SEAL_NOT_FOUND", "level": "warning", "message": "未识别到必需印章。"})
+        return {
+            "ok": bool(seals) or not seal_rules.get("required"),
+            "seals": seals,
+            "diagnostics": diagnostics,
+            "engine": self.name,
+            "engineVersion": self.version,
+            "workerMode": "subprocess",
         }
 
 
@@ -1127,8 +1369,30 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
 class PaddleOcrVlEngine(LocalOcrEngine):
     name = "paddleocr_vl_1_6"
     version = "paddleocr-vl@1.6"
-    required_env = "PADDLEOCR_VL_MODEL_DIR"
     required_package = "paddleocr"
+
+    def available(self) -> bool:
+        dirs = paddleocr_vl_model_dirs()
+        required = ["layout", "vl_rec"]
+        return self.package_available() and all(dirs[key].exists() for key in required)
+
+    def package_available(self) -> bool:
+        return importlib.util.find_spec(self.required_package) is not None or subprocess_package_available("paddleocr")
+
+    def status(self) -> dict[str, Any]:
+        dirs = paddleocr_vl_model_dirs()
+        return {
+            "engine": self.name,
+            "version": self.version,
+            "available": self.available(),
+            "executionMode": "inprocess" if importlib.util.find_spec(self.required_package) is not None and importlib.util.find_spec("transformers") is not None else "subprocess" if subprocess_package_available("paddleocr") and subprocess_package_available("transformers") else "unavailable",
+            "python": os.getenv("AICHECK_OCR_SUBPROCESS_PYTHON"),
+            "modelDir": os.getenv("PADDLEOCR_VL_MODEL_DIR"),
+            "modelDirs": {key: str(path) for key, path in dirs.items()},
+            "missingModelDirs": [key for key in ["layout", "vl_rec"] if not dirs[key].exists()],
+            "package": self.required_package,
+            "transformersAvailable": importlib.util.find_spec("transformers") is not None or subprocess_package_available("transformers"),
+        }
 
     def parse(
         self,
@@ -1138,17 +1402,165 @@ class PaddleOcrVlEngine(LocalOcrEngine):
         profile: dict[str, Any] | None = None,
         variant: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        source_path = variant_source_path(source_path, variant)
+        dirs = paddleocr_vl_model_dirs()
+        missing = [key for key in ["layout", "vl_rec"] if not dirs[key].exists()]
+        if missing:
+            return {
+                "ok": False,
+                "diagnostics": [
+                    {
+                        "code": "PADDLEOCR_VL_MODEL_MISSING",
+                        "level": "warning",
+                        "message": f"PaddleOCR-VL local model directories are missing: {', '.join(missing)}.",
+                    }
+                ],
+                "engine": self.name,
+                "engineVersion": self.version,
+            }
+        if importlib.util.find_spec(self.required_package) is None:
+            return self.parse_with_subprocess(source_path, dirs=dirs)
+        from paddleocr import PaddleOCRVL  # type: ignore
+
+        engine = PaddleOCRVL(
+            pipeline_version="v1.6",
+            layout_detection_model_dir=str(dirs["layout"]),
+            vl_rec_model_dir=str(dirs["vl_rec"]),
+            doc_orientation_classify_model_dir=str(dirs["doc_orientation"]) if dirs["doc_orientation"].exists() else None,
+            doc_unwarping_model_dir=str(dirs["doc_unwarping"]) if dirs["doc_unwarping"].exists() else None,
+            use_doc_orientation_classify=dirs["doc_orientation"].exists(),
+            use_doc_unwarping=dirs["doc_unwarping"].exists(),
+            use_layout_detection=True,
+            use_chart_recognition=False,
+            use_seal_recognition=False,
+            format_block_content=True,
+            merge_layout_blocks=True,
+        )
+        raw = engine.predict(str(source_path))
+        text, fragments, tables, layout_blocks = normalize_vl_result(raw, self.name)
         return {
-            "ok": False,
-            "diagnostics": [
-                {
-                    "code": "ENGINE_ADAPTER_NOT_ENABLED",
-                    "level": "info",
-                    "message": "PaddleOCR-VL local fallback adapter is registered but not enabled for inline parse.",
-                }
-            ],
+            "ok": bool(text.strip() or fragments or tables or layout_blocks),
+            "text": text,
+            "fragments": fragments,
+            "tables": tables,
+            "layoutBlocks": layout_blocks,
+            "diagnostics": [],
             "engine": self.name,
             "engineVersion": self.version,
+        }
+
+    def parse_with_subprocess(self, source_path: Path, *, dirs: dict[str, Path]) -> dict[str, Any]:
+        python_bin = os.getenv("AICHECK_OCR_SUBPROCESS_PYTHON")
+        if not python_bin or not Path(python_bin).exists():
+            return {
+                "ok": False,
+                "diagnostics": [{"code": "PADDLEOCR_VL_SUBPROCESS_NOT_CONFIGURED", "level": "info", "message": "AICHECK_OCR_SUBPROCESS_PYTHON is not configured."}],
+                "engine": self.name,
+                "engineVersion": self.version,
+            }
+        script = textwrap.dedent(
+            """
+            import json
+            import sys
+            from paddleocr import PaddleOCRVL
+
+            image_path = sys.argv[1]
+            dirs = json.loads(sys.argv[2])
+
+            def basic(value):
+                if isinstance(value, (str, int, float, bool)) or value is None:
+                    return value
+                if isinstance(value, dict):
+                    return {str(k): basic(v) for k, v in value.items() if str(k) not in {"input_img", "img"}}
+                if isinstance(value, (list, tuple)):
+                    return [basic(v) for v in value]
+                if hasattr(value, "tolist"):
+                    try:
+                        return value.tolist()
+                    except Exception:
+                        return str(value)
+                json_payload = getattr(value, "json", None)
+                if isinstance(json_payload, dict):
+                    return basic(json_payload)
+                if callable(json_payload):
+                    try:
+                        return basic(json_payload())
+                    except Exception:
+                        pass
+                if hasattr(value, "items"):
+                    try:
+                        return {str(k): basic(v) for k, v in value.items() if str(k) not in {"input_img", "img"}}
+                    except Exception:
+                        return str(value)
+                return str(value)
+
+            engine = PaddleOCRVL(
+                pipeline_version="v1.6",
+                layout_detection_model_dir=dirs["layout"],
+                vl_rec_model_dir=dirs["vl_rec"],
+                doc_orientation_classify_model_dir=dirs.get("doc_orientation") or None,
+                doc_unwarping_model_dir=dirs.get("doc_unwarping") or None,
+                use_doc_orientation_classify=bool(dirs.get("doc_orientation")),
+                use_doc_unwarping=bool(dirs.get("doc_unwarping")),
+                use_layout_detection=True,
+                use_chart_recognition=False,
+                use_seal_recognition=False,
+                format_block_content=True,
+                merge_layout_blocks=True,
+            )
+            raw = [basic(item) for item in engine.predict(image_path)]
+            print("AICHECK_PADDLEOCR_VL_RESULT " + json.dumps(raw, ensure_ascii=False), flush=True)
+            """
+        )
+        payload_dirs = {
+            "layout": str(dirs["layout"]),
+            "vl_rec": str(dirs["vl_rec"]),
+            "doc_orientation": str(dirs["doc_orientation"]) if dirs["doc_orientation"].exists() else "",
+            "doc_unwarping": str(dirs["doc_unwarping"]) if dirs["doc_unwarping"].exists() else "",
+        }
+        try:
+            completed = subprocess.run(
+                [python_bin, "-c", script, str(source_path), json.dumps(payload_dirs)],
+                check=False,
+                capture_output=True,
+                encoding="utf-8",
+                env=ocr_subprocess_env(),
+                timeout=float(os.getenv("AICHECK_PADDLEOCR_VL_TIMEOUT", "420")),
+            )
+        except subprocess.TimeoutExpired:
+            return {
+                "ok": False,
+                "diagnostics": [{"code": "PADDLEOCR_VL_TIMEOUT", "level": "warning", "message": "PaddleOCR-VL subprocess timed out."}],
+                "engine": self.name,
+                "engineVersion": self.version,
+            }
+        if completed.returncode != 0:
+            return {
+                "ok": False,
+                "diagnostics": [{"code": "PADDLEOCR_VL_FAILED", "level": "warning", "message": (completed.stderr or completed.stdout or "PaddleOCR-VL subprocess failed")[-1200:]}],
+                "engine": self.name,
+                "engineVersion": self.version,
+            }
+        payload_line = next((line for line in reversed(completed.stdout.splitlines()) if line.startswith("AICHECK_PADDLEOCR_VL_RESULT ")), "")
+        if not payload_line:
+            return {
+                "ok": False,
+                "diagnostics": [{"code": "PADDLEOCR_VL_EMPTY", "level": "warning", "message": "PaddleOCR-VL subprocess returned no parseable payload."}],
+                "engine": self.name,
+                "engineVersion": self.version,
+            }
+        raw = json.loads(payload_line.replace("AICHECK_PADDLEOCR_VL_RESULT ", "", 1))
+        text, fragments, tables, layout_blocks = normalize_vl_result(raw, self.name)
+        return {
+            "ok": bool(text.strip() or fragments or tables or layout_blocks),
+            "text": text,
+            "fragments": fragments,
+            "tables": tables,
+            "layoutBlocks": layout_blocks,
+            "diagnostics": [],
+            "engine": self.name,
+            "engineVersion": self.version,
+            "workerMode": "subprocess",
         }
 
 
@@ -1158,6 +1570,25 @@ class DoclingLocalEngine(LocalOcrEngine):
     required_env = "DOCLING_ARTIFACTS_PATH"
     required_package = "docling"
 
+    def available(self) -> bool:
+        return self.package_available() and docling_artifacts_ready()
+
+    def package_available(self) -> bool:
+        return importlib.util.find_spec(self.required_package) is not None or subprocess_package_available("docling")
+
+    def status(self) -> dict[str, Any]:
+        model_dir = os.getenv(self.required_env)
+        return {
+            "engine": self.name,
+            "version": self.version,
+            "available": self.available(),
+            "executionMode": "inprocess" if importlib.util.find_spec(self.required_package) is not None else "subprocess" if subprocess_package_available("docling") else "unavailable",
+            "python": os.getenv("AICHECK_OCR_SUBPROCESS_PYTHON"),
+            "modelDir": model_dir,
+            "artifactsReady": docling_artifacts_ready(),
+            "package": self.required_package,
+        }
+
     def parse(
         self,
         source_path: Path,
@@ -1166,6 +1597,8 @@ class DoclingLocalEngine(LocalOcrEngine):
         profile: dict[str, Any] | None = None,
         variant: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        if importlib.util.find_spec(self.required_package) is None:
+            return self.parse_with_subprocess(variant_source_path(source_path, variant))
         from docling.document_converter import DocumentConverter  # type: ignore
 
         source_path = variant_source_path(source_path, variant)
@@ -1179,6 +1612,71 @@ class DoclingLocalEngine(LocalOcrEngine):
             "diagnostics": [],
             "engine": self.name,
             "engineVersion": self.version,
+        }
+
+    def parse_with_subprocess(self, source_path: Path) -> dict[str, Any]:
+        python_bin = os.getenv("AICHECK_OCR_SUBPROCESS_PYTHON")
+        if not python_bin or not Path(python_bin).exists():
+            return {
+                "ok": False,
+                "diagnostics": [{"code": "DOCLING_SUBPROCESS_NOT_CONFIGURED", "level": "info", "message": "AICHECK_OCR_SUBPROCESS_PYTHON is not configured."}],
+                "engine": self.name,
+                "engineVersion": self.version,
+            }
+        script = textwrap.dedent(
+            """
+            import json
+            import sys
+            from docling.document_converter import DocumentConverter
+
+            source_path = sys.argv[1]
+            converter = DocumentConverter()
+            result = converter.convert(source_path)
+            text = result.document.export_to_markdown()
+            print("AICHECK_DOCLING_RESULT " + json.dumps({"text": text}, ensure_ascii=False), flush=True)
+            """
+        )
+        try:
+            completed = subprocess.run(
+                [python_bin, "-c", script, str(source_path)],
+                check=False,
+                capture_output=True,
+                encoding="utf-8",
+                env=ocr_subprocess_env(),
+                timeout=float(os.getenv("AICHECK_DOCLING_TIMEOUT", "180")),
+            )
+        except subprocess.TimeoutExpired:
+            return {
+                "ok": False,
+                "diagnostics": [{"code": "DOCLING_TIMEOUT", "level": "warning", "message": "Docling subprocess timed out."}],
+                "engine": self.name,
+                "engineVersion": self.version,
+            }
+        if completed.returncode != 0:
+            return {
+                "ok": False,
+                "diagnostics": [{"code": "DOCLING_FAILED", "level": "warning", "message": (completed.stderr or completed.stdout or "Docling subprocess failed")[-1200:]}],
+                "engine": self.name,
+                "engineVersion": self.version,
+            }
+        payload_line = next((line for line in reversed(completed.stdout.splitlines()) if line.startswith("AICHECK_DOCLING_RESULT ")), "")
+        if not payload_line:
+            return {
+                "ok": False,
+                "diagnostics": [{"code": "DOCLING_EMPTY", "level": "warning", "message": "Docling subprocess returned no parseable payload."}],
+                "engine": self.name,
+                "engineVersion": self.version,
+            }
+        payload = json.loads(payload_line.replace("AICHECK_DOCLING_RESULT ", "", 1))
+        text = str(payload.get("text") or "")
+        return {
+            "ok": bool(text.strip()),
+            "text": text,
+            "fragments": [{"pageNo": 1, "text": text, "bbox": None, "confidence": 0.95, "sourceEngine": self.name}],
+            "diagnostics": [],
+            "engine": self.name,
+            "engineVersion": self.version,
+            "workerMode": "subprocess",
         }
 
 
@@ -1205,7 +1703,18 @@ def variant_source_path(source_path: Path, variant: dict[str, Any] | None) -> Pa
     return source_path
 
 
-def model_dir(env_name: str, model_name: str, *, root_envs: tuple[str, ...] = ("AICHECK_PADDLEX_MODEL_CACHE", "PADDLEOCR_MODEL_DIR", "PADDLEX_MODEL_DIR")) -> Path:
+def model_dir(
+    env_name: str,
+    model_name: str,
+    *,
+    aliases: tuple[str, ...] = (),
+    root_envs: tuple[str, ...] = (
+        "AICHECK_PADDLEX_MODEL_CACHE",
+        "PADDLEOCR_MODEL_DIR",
+        "PADDLEX_MODEL_DIR",
+        "PADDLEOCR_VL_MODEL_DIR",
+    ),
+) -> Path:
     if os.getenv(env_name):
         return Path(os.environ[env_name])
     candidates: list[Path] = []
@@ -1213,8 +1722,10 @@ def model_dir(env_name: str, model_name: str, *, root_envs: tuple[str, ...] = ("
         if not os.getenv(root_env):
             continue
         root = Path(os.environ[root_env])
-        candidates.extend([root if root.name == model_name else root / model_name, root / "official_models" / model_name])
-    candidates.append(Path("/models") / model_name)
+        for name in (model_name, *aliases):
+            candidates.extend([root if root.name == name else root / name, root / "official_models" / name])
+    for name in (model_name, *aliases):
+        candidates.append(Path("/models") / name)
     return next((candidate for candidate in candidates if candidate.exists()), candidates[0] if candidates else Path("/models") / model_name)
 
 
@@ -1241,12 +1752,57 @@ def seal_model_dirs() -> dict[str, Path]:
     }
 
 
+def paddleocr_vl_model_dirs() -> dict[str, Path]:
+    return {
+        "layout": model_dir("AICHECK_PADDLEOCR_VL_LAYOUT_MODEL_DIR", "PP-DocLayoutV3"),
+        "vl_rec": model_dir("AICHECK_PADDLEOCR_VL_REC_MODEL_DIR", "PaddleOCR-VL-1.6-0.9B", aliases=("PaddleOCR-VL-1.6",)),
+        "doc_orientation": model_dir("AICHECK_PADDLEOCR_VL_DOC_ORI_MODEL_DIR", "PP-LCNet_x1_0_doc_ori"),
+        "doc_unwarping": model_dir("AICHECK_PADDLEOCR_VL_DOC_UNWARP_MODEL_DIR", "UVDoc"),
+    }
+
+
 def agentdesign_backend_path() -> Path:
     return Path(os.getenv("AICHECK_AGENTDESIGN_BACKEND", "/Volumes/Volume/project/agentdesign/mvp-system/backend"))
 
 
 def subprocess_model_dir(env_name: str, model_name: str) -> Path:
     return model_dir(env_name, model_name)
+
+
+def required_env_path_exists(env_name: str | None) -> bool:
+    if not env_name:
+        return True
+    value = os.getenv(env_name)
+    return bool(value and Path(value).exists())
+
+
+def docling_artifacts_ready() -> bool:
+    value = os.getenv("DOCLING_ARTIFACTS_PATH")
+    if not value:
+        return False
+    path = Path(value)
+    if not path.exists() or not path.is_dir():
+        return False
+    return any(item.is_file() for item in path.rglob("*"))
+
+
+def subprocess_package_available(package_name: str) -> bool:
+    python_bin = os.getenv("AICHECK_OCR_SUBPROCESS_PYTHON")
+    if not python_bin or not Path(python_bin).exists():
+        return False
+    script = "import importlib.util,sys; raise SystemExit(0 if importlib.util.find_spec(sys.argv[1]) is not None else 1)"
+    try:
+        completed = subprocess.run(
+            [python_bin, "-c", script, package_name],
+            check=False,
+            capture_output=True,
+            encoding="utf-8",
+            env=ocr_subprocess_env(),
+            timeout=10,
+        )
+    except Exception:
+        return False
+    return completed.returncode == 0
 
 
 def normalize_paddle_fragments(raw: Any, page_no: int, source_engine: str) -> list[dict[str, Any]]:
@@ -1276,12 +1832,15 @@ def normalize_paddle_fragments(raw: Any, page_no: int, source_engine: str) -> li
 def normalize_structure_result(raw: Any, source_engine: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     tables: list[dict[str, Any]] = []
     blocks: list[dict[str, Any]] = []
-    items = raw if isinstance(raw, list) else [raw]
+    items: list[Any] = []
+    for raw_item in iterable_raw_items(raw):
+        items.extend(extract_structure_items(raw_item))
     for index, item in enumerate(items):
+        item = dict_like_payload(item)
         if not isinstance(item, dict):
             continue
         block_type = str(item.get("type") or item.get("label") or "layout")
-        bbox = item.get("bbox") or item.get("box")
+        bbox = item.get("bbox") or item.get("box") or bbox_from_coordinate(item.get("coordinate"))
         res = item.get("res")
         res_text = res.get("text") if isinstance(res, dict) else None
         res_html = res.get("html") if isinstance(res, dict) else None
@@ -1315,6 +1874,111 @@ def normalize_structure_result(raw: Any, source_engine: str) -> tuple[list[dict[
                 }
             )
     return tables, blocks
+
+
+def normalize_vl_result(raw: Any, source_engine: str) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    fragments: list[dict[str, Any]] = []
+    tables, layout_blocks = normalize_structure_result(raw, source_engine)
+    seen_text: set[str] = set()
+    for page_index, raw_item in enumerate(iterable_raw_items(raw), start=1):
+        item = dict_like_payload(raw_item)
+        page_no = page_index
+        if isinstance(item, dict):
+            page_no = int(item.get("pageNo") or item.get("page_no") or item.get("page_index") or page_index)
+            text_values = vl_text_values(item)
+            html_values = recursive_values_for_keys(item, {"html"})
+            for html in html_values:
+                if not isinstance(html, str) or not html.strip():
+                    continue
+                table_structure = html_table_to_structure(html)
+                if table_structure["cells"]:
+                    tables.append(
+                        {
+                            "tableId": f"vl_html_table_{len(tables) + 1}",
+                            "pageNo": page_no,
+                            "bbox": None,
+                            "rows": table_structure["rows"],
+                            "columns": table_structure["columns"],
+                            "cells": table_structure["cells"],
+                            "html": html,
+                            "normalizedRows": table_structure["normalizedRows"],
+                            "structureConfidence": 0.78,
+                            "sourceEngine": source_engine,
+                            "qualityFlags": ["paddleocr_vl_html_table"],
+                        }
+                    )
+        elif isinstance(item, str):
+            text_values = [item]
+        else:
+            text_values = []
+        for text in text_values:
+            normalized = "\n".join(part.strip() for part in str(text).splitlines() if part.strip())
+            if not normalized or normalized in seen_text:
+                continue
+            seen_text.add(normalized)
+            fragments.append(
+                {
+                    "pageNo": page_no,
+                    "text": normalized,
+                    "bbox": None,
+                    "confidence": 0.82,
+                    "sourceEngine": source_engine,
+                    "qualityFlags": ["paddleocr_vl_text"],
+                }
+            )
+    return "\n".join(item["text"] for item in fragments), fragments, tables, layout_blocks
+
+
+def vl_text_values(item: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+    for key in [
+        "markdown",
+        "markdown_text",
+        "markdownText",
+        "text",
+        "content",
+        "result",
+        "block_content",
+        "blockContent",
+    ]:
+        value = item.get(key)
+        if isinstance(value, str) and value.strip():
+            values.append(value)
+        elif isinstance(value, list):
+            values.extend(str(part) for part in value if isinstance(part, str) and part.strip())
+    for value in recursive_values_for_keys(item, {"markdown", "text", "content", "result"}):
+        if isinstance(value, str) and value.strip():
+            values.append(value)
+    deduped: list[str] = []
+    for value in values:
+        if value not in deduped:
+            deduped.append(value)
+    return deduped[:20]
+
+
+def extract_structure_items(item: Any) -> list[Any]:
+    item = dict_like_payload(item)
+    if not isinstance(item, dict):
+        return []
+    if isinstance(item.get("res"), dict):
+        nested = dict(item["res"])
+        for key in ["type", "label", "bbox", "box", "coordinate", "pageNo", "page_no", "confidence", "score", "markdown"]:
+            if key not in nested and key in item:
+                nested[key] = item[key]
+        item = nested
+    extracted: list[Any] = []
+    table_res_list = item.get("table_res_list")
+    if isinstance(table_res_list, list):
+        extracted.extend(table_res_list)
+    layout = item.get("layout_det_res")
+    layout = dict_like_payload(layout)
+    if isinstance(layout, dict) and isinstance(layout.get("boxes"), list):
+        extracted.extend(layout["boxes"])
+    if extracted:
+        return extracted
+    if any(key in item for key in ["type", "label", "bbox", "box", "coordinate", "html", "res"]):
+        return [item]
+    return []
 
 
 class TableHtmlParser(HTMLParser):
@@ -1463,26 +2127,133 @@ def normalize_header_text(value: str) -> str:
 
 def normalize_seal_result(raw: Any) -> list[dict[str, Any]]:
     seals: list[dict[str, Any]] = []
-    items = raw if isinstance(raw, list) else [raw]
+    items = []
+    for item in iterable_raw_items(raw):
+        items.extend(extract_seal_items(item))
     for index, item in enumerate(items):
         if not isinstance(item, dict):
             continue
-        text = item.get("text") or item.get("sealName") or item.get("rec_text") or ""
+        text = item.get("text") or item.get("sealName") or item.get("rec_text") or inferred_seal_text(item)
+        bbox = item.get("bbox") or item.get("box") or bbox_from_coordinate(item.get("coordinate"))
+        polygon = item.get("polygon") or item.get("dt_poly") or item.get("points")
+        if not text and not bbox and not polygon:
+            continue
         seals.append(
             {
                 "sealId": f"seal_{index + 1}",
                 "pageNo": int(item.get("pageNo") or item.get("page_no") or 1),
                 "sealType": item.get("sealType") or "unknown",
                 "sealName": str(text),
-                "bbox": item.get("bbox") or item.get("box"),
-                "polygon": item.get("polygon") or item.get("dt_poly"),
-                "visualConfidence": item.get("visualConfidence") or item.get("det_score") or item.get("score") or 0.8,
-                "ocrConfidence": item.get("ocrConfidence") or item.get("rec_score") or item.get("score") or 0.8,
+                "bbox": bbox,
+                "polygon": polygon,
+                "visualConfidence": item.get("visualConfidence") or item.get("det_score") or item.get("score") or inferred_score(item) or 0.8,
+                "ocrConfidence": item.get("ocrConfidence") or item.get("rec_score") or item.get("score") or inferred_score(item) or 0.8,
                 "fields": item.get("fields") or [],
                 "qualityFlags": item.get("qualityFlags") or [],
             }
         )
     return seals
+
+
+def iterable_raw_items(raw: Any) -> list[Any]:
+    if isinstance(raw, (list, tuple)):
+        return list(raw)
+    if isinstance(raw, dict) or isinstance(raw, (str, bytes)) or raw is None:
+        return [raw]
+    if hasattr(raw, "__iter__"):
+        try:
+            return list(raw)
+        except TypeError:
+            return [raw]
+    return [raw]
+
+
+def extract_seal_items(item: Any) -> list[Any]:
+    item = dict_like_payload(item)
+    if not isinstance(item, dict):
+        return []
+    if isinstance(item.get("res"), dict):
+        item = item["res"]
+    seal_res_list = item.get("seal_res_list")
+    if isinstance(seal_res_list, list):
+        extracted: list[Any] = []
+        for child in seal_res_list:
+            extracted.extend(extract_seal_items(child))
+        return extracted
+    if any(key in item for key in ["sealName", "text", "rec_text", "bbox", "box", "coordinate", "polygon", "dt_poly", "points"]):
+        return [item]
+    for key in ["seal_rec_res", "ocr_res", "rec_res", "det_res"]:
+        if isinstance(item.get(key), dict):
+            nested = extract_seal_items(item[key])
+            if nested:
+                return nested
+    return []
+
+
+def dict_like_payload(value: Any) -> Any:
+    json_payload = getattr(value, "json", None)
+    if isinstance(json_payload, dict):
+        return json_payload
+    if callable(json_payload):
+        try:
+            payload = json_payload()
+            if isinstance(payload, dict):
+                return payload
+        except Exception:
+            pass
+    if isinstance(value, dict):
+        return value
+    if hasattr(value, "items"):
+        try:
+            return dict(value.items())
+        except Exception:
+            return value
+    return value
+
+
+def inferred_seal_text(item: dict[str, Any]) -> str:
+    values = recursive_values_for_keys(item, {"rec_text", "rec_texts", "text", "texts"})
+    flattened: list[str] = []
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            flattened.append(value.strip())
+        elif isinstance(value, list):
+            flattened.extend(str(part).strip() for part in value if str(part).strip())
+    return " ".join(flattened[:8])
+
+
+def inferred_score(item: dict[str, Any]) -> float | None:
+    values = recursive_values_for_keys(item, {"score", "scores", "rec_score", "rec_scores", "det_score", "det_scores"})
+    numeric: list[float] = []
+    for value in values:
+        if isinstance(value, (int, float)):
+            numeric.append(float(value))
+        elif isinstance(value, list):
+            for part in value:
+                if isinstance(part, (int, float)):
+                    numeric.append(float(part))
+    if not numeric:
+        return None
+    return max(0.0, min(1.0, sum(numeric) / len(numeric)))
+
+
+def recursive_values_for_keys(value: Any, target_keys: set[str]) -> list[Any]:
+    found: list[Any] = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if str(key) in target_keys:
+                found.append(child)
+            found.extend(recursive_values_for_keys(child, target_keys))
+    elif isinstance(value, list):
+        for child in value:
+            found.extend(recursive_values_for_keys(child, target_keys))
+    return found
+
+
+def bbox_from_coordinate(value: Any) -> list[float] | None:
+    if isinstance(value, list) and len(value) >= 4 and all(isinstance(item, (int, float)) for item in value[:4]):
+        return [float(item) for item in value[:4]]
+    return None
 
 
 def normalize_agentdesign_seal_result(raw: Any) -> list[dict[str, Any]]:

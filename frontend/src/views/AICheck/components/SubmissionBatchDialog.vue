@@ -382,7 +382,7 @@ watch(
   color: #667085;
 }
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .batch-form {
     grid-template-columns: 1fr;
   }
