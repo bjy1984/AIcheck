@@ -74,6 +74,7 @@ const props = defineProps<{
   rightTitle: string
   rightSubtitle?: string
   rightCards: ReadonlyArray<StaticShellRightCard>
+  workspaceMode?: 'default' | 'wide'
 }>()
 
 const route = useRoute()
@@ -117,7 +118,7 @@ const handleUserCommand = (command: string | number | object) => {
 </script>
 
 <template>
-  <div class="aicheck-static-viewport">
+  <div :class="['aicheck-static-viewport', `shell-${workspaceMode || 'default'}`]">
     <div class="aicheck-page app-shell">
       <header class="topbar">
         <div class="brand">
@@ -549,6 +550,44 @@ const handleUserCommand = (command: string | number | object) => {
   min-height: 0;
   overflow-x: hidden;
   grid-template-columns: minmax(300px, 404px) minmax(0, 1fr) minmax(320px, 552px);
+}
+
+.shell-wide .topbar {
+  grid-template-columns: minmax(240px, 300px) minmax(280px, 1fr) minmax(220px, 340px);
+}
+
+.shell-wide .workspace {
+  grid-template-columns: minmax(248px, 300px) minmax(0, 1fr) minmax(260px, 340px);
+}
+
+.shell-wide .left {
+  background: #f8fafc;
+  border-right: 0;
+  grid-template-rows: minmax(500px, 1fr) 322px;
+}
+
+.shell-wide .center,
+.shell-wide .right {
+  padding: 18px 18px 24px;
+}
+
+.shell-wide .right {
+  background: #f8fafc;
+  border-left: 0;
+}
+
+.shell-wide .tree.static-tree-menu {
+  border-bottom-color: #e8eef7;
+}
+
+.shell-wide .tree-node {
+  min-height: 42px;
+  padding: 8px 10px;
+}
+
+.shell-wide .tree-node.active,
+.shell-wide .tree-node.is-active {
+  box-shadow: none;
 }
 
 .left,
