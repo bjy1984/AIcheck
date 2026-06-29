@@ -30,34 +30,6 @@ const toLogin = () => {
     <ElScrollbar class="h-full">
       <main class="aicheck-login-shell">
         <section :class="`${prefixCls}__left aicheck-login-brief`">
-          <div class="satellite-scene" aria-hidden="true">
-            <div class="audit-orbit orbit-outer"></div>
-            <div class="audit-orbit orbit-inner"></div>
-            <div class="audit-scan-sweep"></div>
-            <div class="audit-data-field">
-              <span></span>
-              <span></span>
-              <span></span>
-              <span></span>
-              <span></span>
-              <span></span>
-              <span></span>
-              <span></span>
-              <span></span>
-              <span></span>
-              <span></span>
-              <span></span>
-            </div>
-            <div class="satellite-track">
-              <div class="audit-satellite">
-                <span class="satellite-core"></span>
-                <span class="satellite-panel panel-left"></span>
-                <span class="satellite-panel panel-right"></span>
-                <span class="satellite-beam"></span>
-              </div>
-            </div>
-          </div>
-
           <div class="brand-row">
             <img src="@/assets/imgs/logo.png" alt="AIcheck" class="brand-logo" />
             <div>
@@ -79,25 +51,6 @@ const toLogin = () => {
               <span>本地 OCR</span>
               <span>证据留痕</span>
               <span>FDE 治理</span>
-            </div>
-
-            <div class="audit-info-grid" aria-label="审计信息网格">
-              <div class="audit-info-card">
-                <b>OCR</b>
-                <span>本地解析</span>
-              </div>
-              <div class="audit-info-card">
-                <b>RULE</b>
-                <span>规则命中</span>
-              </div>
-              <div class="audit-info-card">
-                <b>RAG</b>
-                <span>依据检索</span>
-              </div>
-              <div class="audit-info-card">
-                <b>TRACE</b>
-                <span>全程留痕</span>
-              </div>
             </div>
           </div>
         </section>
@@ -168,8 +121,7 @@ const toLogin = () => {
   position: relative;
   overflow: hidden;
   padding: 36px;
-  background: linear-gradient(135deg, rgb(255 255 255 / 7%) 0 1px, transparent 1px 22px),
-    linear-gradient(155deg, #07142b 0%, #082044 52%, #0b2a56 100%);
+  background: #06152f;
   border-right: 1px solid rgb(92 147 220 / 30%);
   flex-direction: column;
 }
@@ -179,27 +131,21 @@ const toLogin = () => {
   inset: 0;
   pointer-events: none;
   content: '';
-  background: linear-gradient(90deg, rgb(125 169 232 / 10%) 1px, transparent 1px),
-    linear-gradient(0deg, rgb(125 169 232 / 7%) 1px, transparent 1px);
-  background-size: 44px 44px;
-  mask-image: linear-gradient(90deg, rgb(0 0 0 / 44%), transparent 72%);
+  background-image: linear-gradient(rgb(122 207 255 / 24%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(122 207 255 / 22%) 1px, transparent 1px);
+  background-position: 0 0;
+  background-size: 50px 50px;
+  box-shadow: inset 0 0 120px rgb(12 34 72 / 78%);
+  animation: login-grid-scroll 0.92s linear infinite reverse;
 }
 
 .aicheck-login-brief::after {
   position: absolute;
-  right: -18%;
-  bottom: -10%;
-  width: 62%;
-  height: 44%;
+  inset: 0;
   pointer-events: none;
   content: '';
-  background: linear-gradient(
-    140deg,
-    transparent 0 40%,
-    rgb(92 187 255 / 11%) 48%,
-    transparent 58%
-  );
-  transform: rotate(-8deg);
+  background: radial-gradient(circle at 74% 30%, rgb(75 171 255 / 20%), transparent 28%),
+    linear-gradient(90deg, rgb(3 14 31 / 82%) 0%, rgb(6 21 47 / 34%) 48%, rgb(3 14 31 / 68%) 100%);
 }
 
 .brand-row,
@@ -291,218 +237,6 @@ const toLogin = () => {
   border: 1px solid rgb(132 178 240 / 34%);
   border-radius: 999px;
   box-shadow: 0 0 22px rgb(84 154 255 / 8%);
-}
-
-.audit-info-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  max-width: 520px;
-  margin-top: 20px;
-}
-
-.audit-info-card {
-  position: relative;
-  display: flex;
-  min-height: 64px;
-  padding: 11px 13px;
-  overflow: hidden;
-  background: linear-gradient(145deg, rgb(255 255 255 / 10%), rgb(74 142 235 / 7%));
-  border: 1px solid rgb(136 188 255 / 26%);
-  border-radius: 8px;
-  flex-direction: column;
-  justify-content: center;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 10%);
-}
-
-.audit-info-card::after {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  content: '';
-  background: linear-gradient(
-    110deg,
-    transparent 0 38%,
-    rgb(123 198 255 / 18%) 48%,
-    transparent 58%
-  );
-  transform: translateX(-115%);
-  animation: info-card-scan 5.6s ease-in-out infinite;
-}
-
-.audit-info-card:nth-child(2)::after {
-  animation-delay: 0.7s;
-}
-
-.audit-info-card:nth-child(3)::after {
-  animation-delay: 1.25s;
-}
-
-.audit-info-card:nth-child(4)::after {
-  animation-delay: 1.8s;
-}
-
-.audit-info-card b {
-  font-size: 13px;
-  font-weight: 800;
-  line-height: 1.2;
-  color: #f5fbff;
-}
-
-.audit-info-card span {
-  margin-top: 6px;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.2;
-  color: rgb(207 225 250 / 76%);
-}
-
-.satellite-scene {
-  position: absolute;
-  top: 12%;
-  right: -8%;
-  z-index: 1;
-  width: min(480px, 62%);
-  aspect-ratio: 1;
-  pointer-events: none;
-  opacity: 0.9;
-}
-
-.audit-orbit {
-  position: absolute;
-  border: 1px solid rgb(128 178 245 / 20%);
-  border-radius: 50%;
-  transform: rotate(-18deg) scaleY(0.46);
-}
-
-.orbit-outer {
-  inset: 5%;
-}
-
-.orbit-inner {
-  inset: 24%;
-  border-color: rgb(128 178 245 / 12%);
-}
-
-.audit-scan-sweep {
-  position: absolute;
-  inset: 18% 5% 18% 5%;
-  background: linear-gradient(
-    100deg,
-    transparent 0 44%,
-    rgb(110 190 255 / 15%) 48%,
-    rgb(166 220 255 / 24%) 50%,
-    transparent 56%
-  );
-  border-radius: 50%;
-  filter: blur(0.2px);
-  transform: rotate(-18deg) scaleY(0.5) translateX(-35%);
-  animation: audit-sweep 5.8s ease-in-out infinite;
-}
-
-.audit-data-field {
-  position: absolute;
-  top: 49%;
-  right: 20%;
-  display: grid;
-  width: 172px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 7px;
-  opacity: 0.72;
-  transform: rotate(-17deg) skewY(-8deg);
-}
-
-.audit-data-field span {
-  height: 12px;
-  background: linear-gradient(90deg, rgb(56 119 205 / 38%), rgb(133 201 255 / 80%));
-  border: 1px solid rgb(143 201 255 / 24%);
-  border-radius: 2px;
-  box-shadow: 0 0 16px rgb(82 166 255 / 12%);
-  animation: data-cell-pulse 3.6s ease-in-out infinite;
-}
-
-.audit-data-field span:nth-child(2n) {
-  animation-delay: 0.35s;
-}
-
-.audit-data-field span:nth-child(3n) {
-  animation-delay: 0.8s;
-}
-
-.audit-data-field span:nth-child(4n) {
-  animation-delay: 1.15s;
-}
-
-.satellite-track {
-  position: absolute;
-  inset: 8%;
-  border-radius: 50%;
-  animation: satellite-orbit 16s linear infinite;
-}
-
-.satellite-track::after {
-  position: absolute;
-  top: 18%;
-  left: 44%;
-  width: 104px;
-  height: 1px;
-  content: '';
-  background: linear-gradient(90deg, rgb(126 199 255 / 45%), transparent);
-  transform: rotate(16deg);
-  transform-origin: right;
-}
-
-.audit-satellite {
-  position: absolute;
-  top: 18%;
-  left: 49%;
-  width: 48px;
-  height: 28px;
-  transform: rotate(18deg);
-  filter: drop-shadow(0 0 14px rgb(120 190 255 / 42%));
-}
-
-.satellite-core {
-  position: absolute;
-  top: 8px;
-  left: 18px;
-  width: 14px;
-  height: 12px;
-  background: linear-gradient(145deg, #e7f4ff, #77b8ff);
-  border: 1px solid rgb(255 255 255 / 72%);
-  border-radius: 3px;
-  box-shadow: 0 0 18px rgb(123 194 255 / 72%);
-}
-
-.satellite-panel {
-  position: absolute;
-  top: 7px;
-  width: 16px;
-  height: 13px;
-  background: linear-gradient(145deg, rgb(56 126 211 / 88%), rgb(18 57 114 / 90%));
-  border: 1px solid rgb(149 200 255 / 62%);
-  border-radius: 2px;
-}
-
-.panel-left {
-  left: 0;
-}
-
-.panel-right {
-  right: 0;
-}
-
-.satellite-beam {
-  position: absolute;
-  top: 21px;
-  left: 21px;
-  width: 34px;
-  height: 96px;
-  background: linear-gradient(180deg, rgb(118 194 255 / 38%), transparent 74%);
-  clip-path: polygon(46% 0, 54% 0, 100% 100%, 0 100%);
-  transform: rotate(16deg);
-  transform-origin: top;
-  animation: satellite-scan 3.7s ease-in-out infinite;
 }
 
 .aicheck-login-main {
@@ -687,65 +421,13 @@ const toLogin = () => {
   }
 }
 
-@keyframes satellite-orbit {
+@keyframes login-grid-scroll {
   from {
-    transform: rotate(0deg) scaleY(0.46);
+    background-position: 0 0;
   }
 
   to {
-    transform: rotate(360deg) scaleY(0.46);
-  }
-}
-
-@keyframes satellite-scan {
-  0%,
-  100% {
-    opacity: 0.18;
-    transform: rotate(10deg) scaleY(0.78);
-  }
-
-  48% {
-    opacity: 0.68;
-    transform: rotate(24deg) scaleY(1);
-  }
-}
-
-@keyframes audit-sweep {
-  0%,
-  100% {
-    opacity: 0.18;
-    transform: rotate(-18deg) scaleY(0.5) translateX(-38%);
-  }
-
-  46% {
-    opacity: 0.92;
-    transform: rotate(-18deg) scaleY(0.5) translateX(34%);
-  }
-}
-
-@keyframes data-cell-pulse {
-  0%,
-  100% {
-    opacity: 0.24;
-  }
-
-  45% {
-    opacity: 0.92;
-  }
-}
-
-@keyframes info-card-scan {
-  0%,
-  58% {
-    transform: translateX(-115%);
-  }
-
-  82% {
-    transform: translateX(115%);
-  }
-
-  100% {
-    transform: translateX(115%);
+    background-position: 50px 50px;
   }
 }
 </style>
