@@ -1030,6 +1030,270 @@ def graph_view_for_review_run(review_run_id: str) -> dict[str, Any]:
     }
 
 
+def _compact_tool_call(call: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": call.get("id"),
+        "toolName": call.get("toolName"),
+        "allowed": call.get("allowed") is True,
+        "outputHash": call.get("outputHash"),
+        "outputSummary": call.get("outputSummary") or {},
+        "createdAt": call.get("createdAt"),
+    }
+
+
+def _summarize_node_decision(
+    review_run: dict[str, Any],
+    node: dict[str, Any],
+    *,
+    tool_calls: list[dict[str, Any]],
+    rule_results: list[dict[str, Any]],
+    retrieval_traces: list[dict[str, Any]],
+    finding_drafts: list[dict[str, Any]],
+) -> dict[str, Any]:
+    node_key = str(node.get("nodeKey") or "")
+    details = node.get("details") if isinstance(node.get("details"), dict) else {}
+    summary_map = {
+        "load_context": "读取项目、节点、业务包和资料目录快照，形成审查上下文。",
+        "load_ocr_result": "读取 OCR 字段、证据定位和文档版本，只引用结构化证据，不直接改业务状态。",
+        "run_rule_engine": "执行确定性规则，得到缺项、字段、签章和状态约束结果。",
+        "retrieve_knowledge": "按业务包、节点、资料类型和知识库版本检索可引用条款。",
+        "build_prompt": "将上下文、规则结果、证据 ID 和条款 ID 组装为受控 Prompt 载荷。",
+        "llm_generate_findings": "通过 LiteLLM 生成结构化审查草稿，输出必须绑定证据、规则和知识依据。",
+        "schema_validation": "校验 Finding Draft 的字段、枚举、置信度和人工确认要求。",
+        "evidence_validation": "校验证据引用是否存在，bbox/page/documentVersion 是否可回放。",
+        "reference_validation": "校验规则和知识条款引用是否来自本次规则结果和检索 Trace。",
+        "critic_review": "执行确定性 Critic 复核，检查高风险动作是否仍需人工确认。",
+        "quality_gate": "汇总 Schema、证据、依据和人工确认门禁，判断是否可进入人工审查。",
+        "persist_drafts": "持久化审查草稿并生成输出哈希，原始运行不可被重跑覆盖。",
+    }
+    input_summary = {
+        "reviewRunId": review_run.get("reviewRunId"),
+        "inputHash": review_run.get("inputHash"),
+        "documentVersionIds": review_run.get("inputDocumentVersionIds") or [],
+        "ocrResultVersions": review_run.get("ocrResultVersions") or [],
+    }
+    output_summary = {
+        "outputHash": node.get("outputHash") or details.get("outputHash"),
+        "detailsHash": stable_hash_payload(details) if details else None,
+        "details": details,
+    }
+    quality = {
+        "passed": details.get("passed") if "passed" in details else node.get("status") == "succeeded",
+        "failureCount": len(details.get("failures") or []),
+        "warningCount": len(details.get("warnings") or []),
+        "metrics": details.get("metrics") or {},
+    }
+    evidence_refs: list[dict[str, Any]] = []
+    rule_refs: list[dict[str, Any]] = []
+    kb_refs: list[dict[str, Any]] = []
+    if node_key == "run_rule_engine":
+        rule_refs = [
+            {
+                "ruleCode": item.get("ruleCode"),
+                "ruleSetVersion": item.get("ruleSetVersion"),
+                "linkedClauseIds": item.get("linkedClauseIds") or [],
+            }
+            for item in rule_results[:5]
+        ]
+    if node_key == "retrieve_knowledge":
+        kb_refs = [
+            {
+                "retrievalTraceId": item.get("retrievalTraceId"),
+                "selectedRoute": item.get("selectedRoute"),
+                "selectedClauseIds": item.get("selectedClauseIds") or [],
+            }
+            for item in retrieval_traces[:5]
+        ]
+    if node_key in {"llm_generate_findings", "evidence_validation", "reference_validation", "quality_gate", "persist_drafts"}:
+        for draft in finding_drafts[:5]:
+            if not isinstance(draft, dict):
+                continue
+            evidence_refs.extend(repo.clone(draft.get("evidenceRefs") or [])[:3])
+            rule_refs.extend(repo.clone(draft.get("ruleRefs") or [])[:3])
+            kb_refs.extend(repo.clone(draft.get("kbRefs") or [])[:3])
+    return {
+        "traceId": f"{review_run.get('reviewRunId')}:{node_key}:{node.get('sequence')}",
+        "nodeKey": node_key,
+        "stepName": node.get("label"),
+        "sequence": node.get("sequence"),
+        "phase": node.get("taskQueue"),
+        "status": node.get("status"),
+        "attempt": node.get("attempt") or 0,
+        "agentId": review_run.get("agentId"),
+        "agentVersion": review_run.get("agentVersion"),
+        "inputSummary": input_summary,
+        "reasoningSummary": summary_map.get(node_key) or "执行编排节点并记录结构化产物。",
+        "toolCalls": [_compact_tool_call(call) for call in tool_calls],
+        "outputSummary": output_summary,
+        "evidenceRefs": evidence_refs[:8],
+        "ruleRefs": rule_refs[:8],
+        "kbRefs": kb_refs[:8],
+        "quality": quality,
+        "startedAt": node.get("startedAt"),
+        "finishedAt": node.get("finishedAt"),
+        "redactionPolicy": "audit_summary_only_no_raw_chain_of_thought",
+    }
+
+
+def _validation_dimension(node: dict[str, Any]) -> dict[str, Any]:
+    details = node.get("details") if isinstance(node.get("details"), dict) else {}
+    passed = details.get("passed")
+    if passed is None:
+        passed = node.get("status") == "succeeded"
+    failures = details.get("failures") or []
+    warnings = details.get("warnings") or []
+    return {
+        "dimension": node.get("label") or node.get("nodeKey"),
+        "nodeKey": node.get("nodeKey"),
+        "status": "pass" if passed else "fail",
+        "score": 1 if passed else 0,
+        "failureCount": len(failures),
+        "warningCount": len(warnings),
+        "finding": failures[0].get("code") if failures and isinstance(failures[0], dict) else (warnings[0].get("code") if warnings and isinstance(warnings[0], dict) else "-"),
+        "metrics": details.get("metrics") or {},
+    }
+
+
+def _human_corrections_for_review_run(review_run: dict[str, Any]) -> list[dict[str, Any]]:
+    review_run_id = str(review_run.get("reviewRunId") or "")
+    ai_run_id = str(review_run.get("aiRunId") or "")
+    corrections: list[dict[str, Any]] = []
+    for feedback in repo.state.get("ai_feedback", []):
+        if feedback.get("reviewRunId") != review_run_id and feedback.get("aiRunId") != ai_run_id:
+            continue
+        original_output = feedback.get("originalAiOutput") or []
+        corrected_output = feedback.get("correctedOutput")
+        first_original = original_output[0] if isinstance(original_output, list) and original_output else {}
+        first_corrected = corrected_output[0] if isinstance(corrected_output, list) and corrected_output else corrected_output
+        corrections.append(
+            {
+                "id": feedback.get("id"),
+                "targetType": "review_finding_draft",
+                "targetId": first_original.get("id") if isinstance(first_original, dict) else None,
+                "feedbackType": feedback.get("feedbackType"),
+                "status": feedback.get("status"),
+                "rootCause": feedback.get("rootCause"),
+                "beforeSummary": first_original.get("description") if isinstance(first_original, dict) else None,
+                "afterSummary": first_corrected.get("description") if isinstance(first_corrected, dict) else first_corrected,
+                "comment": feedback.get("comment"),
+                "accepted": feedback.get("accepted"),
+                "shouldEnterEvaluationSet": feedback.get("shouldEnterEvaluationSet"),
+                "createdAt": feedback.get("createdAt"),
+            }
+        )
+    if review_run.get("humanDecision") and not corrections:
+        decision = review_run["humanDecision"]
+        corrections.append(
+            {
+                "id": f"HDEC-{review_run_id}",
+                "targetType": "review_run",
+                "targetId": review_run_id,
+                "feedbackType": decision.get("decision"),
+                "status": review_run.get("status"),
+                "rootCause": None,
+                "beforeSummary": "AI 审查草稿",
+                "afterSummary": decision.get("correctedOutput"),
+                "comment": decision.get("comment"),
+                "accepted": decision.get("decision") in {"accept", "edit"},
+                "shouldEnterEvaluationSet": decision.get("decision") in {"edit", "reject"},
+                "createdAt": decision.get("decidedAt"),
+            }
+        )
+    return corrections
+
+
+def review_run_audit_trace(review_run_id: str) -> dict[str, Any]:
+    ensure_review_state()
+    review_run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id) or {}
+    graph = graph_view_for_review_run(review_run_id)
+    nodes = graph.get("nodes") or []
+    tool_calls = [
+        repo.clone(item)
+        for item in repo.state.get("review_tool_calls", [])
+        if item.get("reviewRunId") == review_run_id
+    ]
+    tool_calls_by_node: dict[str, list[dict[str, Any]]] = {}
+    for call in tool_calls:
+        tool_calls_by_node.setdefault(str(call.get("nodeKey")), []).append(call)
+    rule_results = graph.get("artifacts", {}).get("ruleCheckResults") or []
+    retrieval_traces = graph.get("artifacts", {}).get("retrievalTraces") or []
+    finding_drafts = repo.clone(review_run.get("findingDrafts") or [])
+    reasoning_trace = [
+        _summarize_node_decision(
+            review_run,
+            node,
+            tool_calls=tool_calls_by_node.get(str(node.get("nodeKey")), []),
+            rule_results=rule_results,
+            retrieval_traces=retrieval_traces,
+            finding_drafts=finding_drafts,
+        )
+        for node in nodes
+    ]
+    validation_nodes = [
+        node
+        for node in nodes
+        if node.get("nodeKey") in {"schema_validation", "evidence_validation", "reference_validation", "critic_review", "quality_gate"}
+    ]
+    dimensions = [_validation_dimension(node) for node in validation_nodes]
+    failed_dimensions = [item for item in dimensions if item["status"] != "pass"]
+    lineage = {
+        "schemaVersion": review_run.get("schemaVersion") or "ReviewFindingDraftList@1.0.0",
+        "businessPackId": review_run.get("businessPackId"),
+        "businessPackVersion": review_run.get("businessPackVersion"),
+        "businessPackSnapshotHash": review_run.get("businessPackSnapshotHash"),
+        "agentId": review_run.get("agentId"),
+        "agentVersion": review_run.get("agentVersion"),
+        "promptVersion": review_run.get("promptVersion"),
+        "modelGateway": review_run.get("modelGateway") or "litellm",
+        "modelAlias": review_run.get("modelAlias"),
+        "ruleSetVersion": review_run.get("ruleSetVersion"),
+        "kbVersion": review_run.get("kbVersion"),
+        "workflowEngine": review_run.get("workflowEngine"),
+        "workflowId": review_run.get("workflowId"),
+        "temporalRunId": review_run.get("temporalRunId"),
+        "graphEngine": review_run.get("graphEngine"),
+        "graphRunner": review_run.get("graphRunner"),
+        "inputDocumentVersionIds": repo.clone(review_run.get("inputDocumentVersionIds") or []),
+        "ocrResultVersions": repo.clone(review_run.get("ocrResultVersions") or []),
+        "inputHash": review_run.get("inputHash"),
+        "outputHash": review_run.get("outputHash"),
+        "capabilityBundleHash": stable_hash_payload(
+            {
+                "agentVersion": review_run.get("agentVersion"),
+                "promptVersion": review_run.get("promptVersion"),
+                "modelAlias": review_run.get("modelAlias"),
+                "ruleSetVersion": review_run.get("ruleSetVersion"),
+                "kbVersion": review_run.get("kbVersion"),
+                "businessPackVersion": review_run.get("businessPackVersion"),
+            }
+        ),
+        "immutabilityPolicy": "replay_creates_child_run_original_is_never_overwritten",
+        "reasoningPolicy": "show_audit_summary_not_raw_chain_of_thought",
+    }
+    return {
+        "reasoningTrace": reasoning_trace,
+        "lineage": lineage,
+        "qualityEvaluation": {
+            "score": round((sum(float(item["score"]) for item in dimensions) / len(dimensions)) * 100, 1) if dimensions else 0,
+            "status": "pass" if not failed_dimensions else "needs_human_review",
+            "dimensions": dimensions,
+            "gates": [
+                {
+                    "code": item.get("nodeKey"),
+                    "status": item.get("status"),
+                    "message": item.get("finding"),
+                    "failureCount": item.get("failureCount"),
+                    "warningCount": item.get("warningCount"),
+                }
+                for item in dimensions
+            ],
+            "humanReviewRequired": True,
+        },
+        "humanCorrections": _human_corrections_for_review_run(review_run),
+        "redactionPolicy": "audit_summary_only_no_raw_chain_of_thought",
+    }
+
+
 def review_run_view(review_run: dict[str, Any], *, include_sensitive: bool = False) -> dict[str, Any]:
     view = repo.clone(review_run)
     if not include_sensitive:

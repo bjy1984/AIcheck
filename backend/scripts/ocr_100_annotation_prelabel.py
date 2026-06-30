@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import sys
@@ -38,8 +39,11 @@ def main() -> int:
     parser.add_argument("--save-result-dir", help="Optional directory where raw OCR/prelabel parse result JSON files are written per caseId.")
     parser.add_argument("--run-ocr", action="store_true", help="Run local OCR when no precomputed result is available.")
     parser.add_argument("--disable-result-cache", action="store_true", help="Bypass OCR result cache when --run-ocr is used.")
+    parser.add_argument("--disable-remediation", action="store_true", help="Skip second-pass OCR remediation during batch prelabel retries.")
+    parser.add_argument("--retry-fast-timeouts", action="store_true", help="Apply shorter OCR engine subprocess timeouts for retry batches.")
+    parser.add_argument("--engine-timeout-seconds", type=float, default=60.0, help="Timeout value used with --retry-fast-timeouts.")
     parser.add_argument("--auto-discover-runtime", action="store_true", help="Apply runtime-doctor recommended OCR subprocess/model paths before running local OCR.")
-    parser.add_argument("--prefer-previews", action="store_true", default=True, help="Use preview images for HEIC/HEIF sources when available.")
+    parser.add_argument("--prefer-previews", action="store_true", default=True, help="Use rendered preview images when available so prelabels share annotator pixel coordinates.")
     parser.add_argument("--max-fields", type=int, default=12)
     parser.add_argument("--max-tables", type=int, default=5)
     parser.add_argument("--max-seals", type=int, default=5)
@@ -56,6 +60,8 @@ def main() -> int:
         save_result_dir=Path(args.save_result_dir) if args.save_result_dir else None,
         run_ocr=bool(args.run_ocr),
         disable_result_cache=bool(args.disable_result_cache),
+        disable_remediation=bool(args.disable_remediation),
+        engine_timeout_seconds=float(args.engine_timeout_seconds) if args.retry_fast_timeouts else None,
         prefer_previews=bool(args.prefer_previews),
         max_fields=max(1, int(args.max_fields)),
         max_tables=max(1, int(args.max_tables)),
@@ -78,6 +84,8 @@ def prelabel_annotation_tasks(
     save_result_dir: Path | None = None,
     run_ocr: bool = False,
     disable_result_cache: bool = False,
+    disable_remediation: bool = False,
+    engine_timeout_seconds: float | None = None,
     prefer_previews: bool = True,
     max_fields: int = 12,
     max_tables: int = 5,
@@ -121,6 +129,8 @@ def prelabel_annotation_tasks(
             run_ocr=run_ocr,
             prefer_previews=prefer_previews,
             disable_result_cache=disable_result_cache,
+            disable_remediation=disable_remediation,
+            engine_timeout_seconds=engine_timeout_seconds,
             parse_runner=parse_runner,
         )
         event_record = {"caseId": case_id, **event}
@@ -167,6 +177,8 @@ def prelabel_annotation_tasks(
         "empty": len([task for task in prelabelled if task.get("prelabelStatus") == "empty"]),
         "unavailable": len([task for task in prelabelled if task.get("prelabelStatus") == "unavailable"]),
         "events": events,
+        "engineTimeoutSeconds": engine_timeout_seconds,
+        "disableRemediation": bool(disable_remediation),
     }
     write_text_file(output_path, json.dumps(output_payload, ensure_ascii=False, indent=2))
     return {"ok": True, "summary": output_payload["prelabelSummary"], "tasks": prelabelled}
@@ -213,6 +225,8 @@ def parse_result_for_task(
     run_ocr: bool,
     prefer_previews: bool,
     disable_result_cache: bool,
+    disable_remediation: bool,
+    engine_timeout_seconds: float | None,
     parse_runner: ParseRunner | None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
     case_id = str(task.get("caseId") or task.get("taskId") or "unknown")
@@ -233,10 +247,14 @@ def parse_result_for_task(
         "fileName": source_path.name,
         "profileId": task.get("profileId"),
         "documentType": task.get("documentType"),
-        "options": {"disableResultCache": bool(disable_result_cache)},
+        "options": {
+            "disableResultCache": bool(disable_result_cache),
+            "disableRemediation": bool(disable_remediation),
+        },
     }
     try:
-        result = parse_runner(parse_case) if parse_runner else run_local_ocr(parse_case, source_base_dir=source_base_dir)
+        with temporary_engine_timeouts(engine_timeout_seconds):
+            result = parse_runner(parse_case) if parse_runner else run_local_ocr(parse_case, source_base_dir=source_base_dir)
         return result, {"source": "local_ocr", "sourcePath": str(source_path)}
     except Exception as exc:
         return None, {"source": "local_ocr", "sourcePath": str(source_path), "error": exc.__class__.__name__}
@@ -253,10 +271,10 @@ def result_path_for_case(case_id: str, *, result_dir: Path | None) -> Path | Non
 
 
 def task_source_path(task: dict[str, Any], *, pack_dir: Path, source_base_dir: Path, prefer_previews: bool) -> Path:
-    if prefer_previews and str(task.get("sourcePath") or "").lower().endswith((".heic", ".heif")):
-        previews = [item for item in task.get("previewPaths") or [] if isinstance(item, str)]
+    if prefer_previews:
+        previews = [item for item in task.get("previewPaths") or [] if isinstance(item, str) and item.strip()]
         if previews:
-            preview = Path(previews[0])
+            preview = Path(previews[0]).expanduser()
             return preview if preview.is_absolute() else (pack_dir / preview).resolve()
     source_path = Path(str(task.get("sourcePath") or "")).expanduser()
     return source_path if source_path.is_absolute() else (source_base_dir / source_path).resolve()
@@ -284,6 +302,39 @@ def merge_allowed_local_dirs(existing: str | None, additions: list[str]) -> str:
         if item and item not in values:
             values.append(item)
     return ",".join(values)
+
+
+@contextlib.contextmanager
+def temporary_engine_timeouts(timeout_seconds: float | None):
+    if not timeout_seconds or timeout_seconds <= 0:
+        yield
+        return
+    timeout = str(float(timeout_seconds))
+    shorter = str(float(max(10.0, min(float(timeout_seconds), 45.0))))
+    keys = {
+        "AICHECK_OCR_SUBPROCESS_TIMEOUT": timeout,
+        "AICHECK_OCR_PERSISTENT_WORKER_TIMEOUT": timeout,
+        "AICHECK_PP_STRUCTURE_TIMEOUT": timeout,
+        "AICHECK_DOCLING_TIMEOUT": timeout,
+        "AICHECK_PADDLEOCR_VL_TIMEOUT": timeout,
+        "AICHECK_PADDLEX_SEAL_TIMEOUT": shorter,
+        "AICHECK_AGENTDESIGN_SEAL_TIMEOUT": shorter,
+        "AICHECK_AGENTDESIGN_SEAL_DOCUMENT_TIMEOUT": shorter,
+        "AICHECK_AGENTDESIGN_SEAL_CANDIDATE_TIMEOUT": shorter,
+        "AICHECK_OCR_VISUAL_SEAL_TIMEOUT": shorter,
+        "AICHECK_OPENCV_TABLE_GRID_TIMEOUT": shorter,
+    }
+    previous = {key: os.environ.get(key) for key in keys}
+    try:
+        for key, value in keys.items():
+            os.environ[key] = value
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 def suggested_expected_from_result(
@@ -330,7 +381,7 @@ def suggested_field(field: dict[str, Any]) -> dict[str, Any]:
         "fieldCode": str(code) if code else None,
         "value": field.get("fieldValue", field.get("value", field.get("text"))),
         "pageNo": field.get("pageNo"),
-        "bbox": field.get("bbox") or field.get("polygon"),
+        "bbox": normalized_bbox(field.get("bbox"), field.get("polygon")),
         "confidence": field.get("confidence"),
         "sourceEngine": field.get("sourceEngine"),
         "reviewStatus": "machine_suggested",
@@ -347,11 +398,17 @@ def suggested_table(table: dict[str, Any]) -> dict[str, Any]:
         "businessSchema": table.get("businessSchema") or table.get("tableId") or "table_suggestion",
         "minRows": rows,
         "minColumns": columns,
-        "bbox": table.get("bbox") or table.get("polygon"),
+        "bbox": normalized_bbox(table.get("bbox"), table.get("polygon")),
         "structureConfidence": table.get("structureConfidence") or table.get("confidence"),
         "sourceEngine": table.get("sourceEngine"),
         "reviewStatus": "machine_suggested",
     }
+    if isinstance(table.get("businessSchemas"), list) and table["businessSchemas"]:
+        output["businessSchemas"] = [str(item) for item in table["businessSchemas"] if item]
+    if isinstance(table.get("matchedRequiredTables"), list) and table["matchedRequiredTables"]:
+        output["matchedRequiredTables"] = [str(item) for item in table["matchedRequiredTables"] if item]
+    elif table.get("matchedRequiredTable"):
+        output["matchedRequiredTables"] = [str(table["matchedRequiredTable"])]
     business_rows = table.get("businessRows") or table.get("normalizedRows")
     if isinstance(business_rows, list) and business_rows:
         output["requiredBusinessKeys"] = sorted(str(key) for key in business_rows[0].keys()) if isinstance(business_rows[0], dict) else None
@@ -363,12 +420,52 @@ def suggested_seal(seal: dict[str, Any]) -> dict[str, Any]:
     output = {
         "nameContains": name,
         "sealType": seal.get("sealType"),
-        "bbox": seal.get("bbox") or seal.get("polygon"),
+        "bbox": normalized_bbox(seal.get("bbox"), seal.get("polygon")),
         "minConfidence": seal.get("ocrConfidence") or seal.get("visualConfidence") or seal.get("confidence"),
         "sourceEngine": seal.get("sourceEngine"),
         "reviewStatus": "machine_suggested",
     }
     return {key: value for key, value in output.items() if value is not None}
+
+
+def normalized_bbox(*candidates: Any) -> list[float] | None:
+    for candidate in candidates:
+        bbox = bbox_from_value(candidate)
+        if bbox is not None:
+            return bbox
+    return None
+
+
+def bbox_from_value(value: Any) -> list[float] | None:
+    if not isinstance(value, list) or not value:
+        return None
+    if len(value) >= 4 and all(isinstance(item, int | float | str) for item in value[:4]):
+        try:
+            x1, y1, x2, y2 = [float(item) for item in value[:4]]
+        except (TypeError, ValueError):
+            return None
+        min_x, max_x = sorted([x1, x2])
+        min_y, max_y = sorted([y1, y2])
+        if max_x <= min_x or max_y <= min_y:
+            return None
+        return [min_x, min_y, max_x, max_y]
+    points: list[tuple[float, float]] = []
+    for point in value:
+        if not isinstance(point, list | tuple) or len(point) < 2:
+            return None
+        try:
+            points.append((float(point[0]), float(point[1])))
+        except (TypeError, ValueError):
+            return None
+    if len(points) < 2:
+        return None
+    xs = [point[0] for point in points]
+    ys = [point[1] for point in points]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    if max_x <= min_x or max_y <= min_y:
+        return None
+    return [min_x, min_y, max_x, max_y]
 
 
 def suggested_has_content(expected: dict[str, Any]) -> bool:

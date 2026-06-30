@@ -3028,7 +3028,1574 @@ const buildSearchResults = (keyword: string, projectId?: string): SearchResult[]
   return [...projectResults, ...nodeResults, ...documentResults, ...reportResults, ...staticResults]
 }
 
+const getFdeProjectVersionIds = (id: string, nodeId?: number) => {
+  const selectedBindings = state.bindings.filter((binding) => {
+    if (binding.projectId !== id) return false
+    if (nodeId && binding.nodeId !== nodeId) return false
+    return true
+  })
+  const ids = selectedBindings.map((binding) => binding.documentVersionId).filter(Boolean)
+  if (ids.length) return ids
+  return state.documents
+    .filter((document) => document.projectId === id)
+    .map((document) => document.currentVersionId)
+}
+
+const fdeAuditDocumentTemplates = [
+  {
+    fileName: '管道特性表-第2版.png',
+    fileType: 'png',
+    requirementName: '管道特性表',
+    usage: '设计资料',
+    currentOcrStatus: '人工修正',
+    sliceStatus: '已切片',
+    vectorStatus: '已向量化',
+    chunkCount: 42,
+    vectorCount: 42,
+    pageIndexStatus: '已构建',
+    latestTaskStatus: '成功'
+  },
+  {
+    fileName: '质量证明书-QX201903S.pdf',
+    fileType: 'pdf',
+    requirementName: '产品质量证明文件',
+    usage: '证明材料',
+    currentOcrStatus: '已识别',
+    sliceStatus: '已切片',
+    vectorStatus: '已向量化',
+    chunkCount: 34,
+    vectorCount: 31,
+    pageIndexStatus: '已构建',
+    latestTaskStatus: '成功'
+  },
+  {
+    fileName: 'RT检测报告-焊口清单.pdf',
+    fileType: 'pdf',
+    requirementName: '无损检测报告',
+    usage: '检测报告',
+    currentOcrStatus: '已识别',
+    sliceStatus: '已切片',
+    vectorStatus: '向量化中',
+    chunkCount: 28,
+    vectorCount: 19,
+    pageIndexStatus: '待补齐向量',
+    latestTaskStatus: '运行中'
+  },
+  {
+    fileName: '焊工资格证与外部查询截图.pdf',
+    fileType: 'pdf',
+    requirementName: '焊工资格证及外部查询截图',
+    usage: '资质证明',
+    currentOcrStatus: '已识别',
+    sliceStatus: '切片中',
+    vectorStatus: '待向量化',
+    chunkCount: 16,
+    vectorCount: 0,
+    pageIndexStatus: '等待切片',
+    latestTaskStatus: '排队中'
+  }
+] as const
+
+const compactFdeId = (id: string) => id.replace(/[^a-zA-Z0-9]/g, '').slice(-10) || 'LOCAL'
+
+const makeFdeProjectDocumentSeeds = (id: string) => {
+  const project = getProject(id)
+  const key = compactFdeId(id)
+  return fdeAuditDocumentTemplates.map((template, index) => ({
+    id: `FDE-DOC-${key}-${index + 1}`,
+    projectId: id,
+    fileName: template.fileName,
+    fileType: template.fileType,
+    sourceOrgName: index === 2 ? project.ndtOrgName : project.contractorOrgName,
+    uploaderName: index === 2 ? 'NDT 王工' : '施工方 李工',
+    currentVersionId: `FDE-DV-${key}-${index + 1}-V${index === 0 ? 2 : 1}`,
+    fileStatus: '已上传',
+    currentOcrStatus: template.currentOcrStatus,
+    updatedAt: `2026-06-26 ${String(9 + index).padStart(2, '0')}:1${index}:00`,
+    actions: ['file:view', 'file:bind', 'file:preview', 'file:download'] as ActionCode[]
+  }))
+}
+
+const getMockPageIndexNodes = (id: string, documentVersionId?: string) => {
+  const project = getProject(id)
+  const docSuffix = documentVersionId ? documentVersionId.slice(-2) : '00'
+  return [
+    {
+      pageIndexNodeId: `PIN-${id}-${docSuffix}-01`,
+      nodeId: `PI-${docSuffix}-01`,
+      title: '资料完整性与字段要求',
+      summary: '定位资料目录、必填字段、证书编号、日期和签章要求。',
+      businessPackId: project.businessPackId || 'engineering_inspection_v1',
+      startPage: 1,
+      endPage: 2,
+      sectionPath: ['工程监检业务包', '资料审查', '完整性要求'],
+      linkedClauseIds: ['CLAUSE-QC-5.3.2', 'CLAUSE-DOC-2.1.1'],
+      score: 0.92
+    },
+    {
+      pageIndexNodeId: `PIN-${id}-${docSuffix}-02`,
+      nodeId: `PI-${docSuffix}-02`,
+      title: '印章、资质和有效期核验',
+      summary: '定位单位印章、人员资质、证书有效期和外部查询截图。',
+      businessPackId: project.businessPackId || 'engineering_inspection_v1',
+      startPage: 2,
+      endPage: 4,
+      sectionPath: ['工程监检业务包', '证据链', '签章与资质'],
+      linkedClauseIds: ['CLAUSE-SEAL-4.2.1', 'CLAUSE-WELDER-6.1.3'],
+      score: 0.88
+    },
+    {
+      pageIndexNodeId: `PIN-${id}-${docSuffix}-03`,
+      nodeId: `PI-${docSuffix}-03`,
+      title: '跨文件一致性与证据回放',
+      summary: '串联设计资料、质量证明书、NDT 报告和焊工资格证，定位跨资料矛盾。',
+      businessPackId: project.businessPackId || 'engineering_inspection_v1',
+      startPage: 4,
+      endPage: 7,
+      sectionPath: ['工程监检业务包', '跨文件一致性', '证据回放'],
+      linkedClauseIds: ['CLAUSE-CROSS-7.2.4', 'CLAUSE-EVIDENCE-3.3.1'],
+      score: 0.86
+    },
+    {
+      pageIndexNodeId: `PIN-${id}-${docSuffix}-04`,
+      nodeId: `PI-${docSuffix}-04`,
+      title: 'PageIndex 路由诊断与回退依据',
+      summary: '记录长文档检索为何触发 PageIndex，以及 Hybrid RAG 回退命中的条款。',
+      businessPackId: project.businessPackId || 'engineering_inspection_v1',
+      startPage: 8,
+      endPage: 9,
+      sectionPath: ['FDE 审计手册', 'PageIndex 路由', '质量门禁'],
+      linkedClauseIds: ['CLAUSE-ROUTER-1.1.0', 'CLAUSE-RAG-2.4.2'],
+      score: 0.81
+    }
+  ]
+}
+
+const getFdeProjectDocuments = (id: string) => {
+  const sourceDocuments = state.documents.filter((document) => document.projectId === id)
+  const documentsForAudit =
+    sourceDocuments.length >= 3 ? sourceDocuments : makeFdeProjectDocumentSeeds(id)
+  return documentsForAudit
+    .map((document, index) => {
+      const template = fdeAuditDocumentTemplates[index % fdeAuditDocumentTemplates.length]
+      const knowledgeFile = state.knowledgeFiles.find(
+        (file) => file.documentVersionId === document.currentVersionId
+      )
+      const knowledgeSource = knowledgeFile ? getKnowledgeSource(knowledgeFile.sourceId) : undefined
+      const latestTask = knowledgeFile
+        ? state.knowledgeTasks.find((task) => task.targetId === knowledgeFile.id)
+        : undefined
+      const pageIndexNodes = getMockPageIndexNodes(id, document.currentVersionId)
+      return {
+        ...document,
+        knowledgeFileId: knowledgeFile?.id,
+        knowledgeSourceId: knowledgeFile?.sourceId,
+        knowledgeSourceName: knowledgeFile?.sourceName || knowledgeSource?.name,
+        sliceStatus:
+          knowledgeFile?.sliceStatus ||
+          template.sliceStatus ||
+          (document.currentOcrStatus === '已识别' ? '已切片' : '等待OCR'),
+        vectorStatus:
+          knowledgeFile?.vectorStatus ||
+          template.vectorStatus ||
+          (document.currentOcrStatus === '已识别' ? '已向量化' : '待向量化'),
+        chunkCount: knowledgeFile?.chunkCount || template.chunkCount || [42, 34, 28, 16][index] || 8,
+        vectorCount: knowledgeFile?.vectorCount || template.vectorCount || [42, 31, 19, 0][index] || 0,
+        embeddingModel: state.knowledgeConfig.embeddingModel,
+        indexVersion: knowledgeSource?.version || 'proj-v2026.06.26',
+        vectorDimensions: 3072,
+        pageIndexStatus: template.pageIndexStatus || (pageIndexNodes.length ? '已构建' : '待构建'),
+        pageIndexNodeCount: template.pageIndexStatus === '等待切片' ? 0 : pageIndexNodes.length,
+        latestKnowledgeTask: latestTask || null,
+        latestTask: latestTask?.status || template.latestTaskStatus || knowledgeFile?.vectorStatus || '已向量化'
+      }
+    })
+}
+
+const buildMockFdeAiRuns = (id?: string, nodeId?: number) =>
+  state.aiRuns
+    .filter((run) => {
+      if (id && run.projectId !== id) return false
+      if (nodeId && run.nodeId !== nodeId) return false
+      return true
+    })
+    .map((run) => ({
+      ...run,
+      immutable: true,
+      rawAccess: false,
+      runType: 'production',
+      inputHash: `sha256:${run.id.toLowerCase()}-input`,
+      outputHash: `sha256:${run.id.toLowerCase()}-output`,
+      versionSnapshot: {
+        businessPackVersion: 'engineering_inspection_v1@2026.06',
+        agentVersion: 'compliance_review_agent@1.4.0',
+        promptVersion: run.promptVersion,
+        modelRouteVersion: 'deepseek-reasoner@litellm-local',
+        ruleSetVersion: run.ruleVersion,
+        kbVersion: 'knowledge-index@local'
+      }
+    }))
+
+const buildMockReviewRun = (
+  aiRun = state.aiRuns[0],
+  id = aiRun?.projectId || projectId,
+  nodeId = aiRun?.nodeId || getProject(id).currentNodeId
+) => {
+  const reviewRunId = `RR-${String(aiRun?.id || 'LOCAL').replace('AIRUN-', '')}`
+  return {
+    id: reviewRunId,
+    reviewRunId,
+    aiRunId: aiRun?.id,
+    projectId: id,
+    nodeId,
+    businessPackId: getProject(id).businessPackId || 'engineering_inspection_v1',
+    agentId: 'compliance_review_agent',
+    agentVersion: 'compliance_review_agent@1.4.0',
+    promptVersion: aiRun?.promptVersion || 'review_prompt@2026.06',
+    modelAlias: 'deepseek-reasoner',
+    modelGateway: 'litellm',
+    workflowEngine: 'temporal',
+    graphEngine: 'langgraph',
+    graphRunner: 'local-dev-graph-runner',
+    workflowId: `wf-review-${id}-${nodeId}`,
+    temporalRunId: `temporal-${reviewRunId.toLowerCase()}`,
+    status: 'waiting_human_review',
+    currentStep: 'waiting_human_review',
+    runMode: 'production',
+    inputHash: `sha256:${reviewRunId.toLowerCase()}-input`,
+    outputHash: `sha256:${reviewRunId.toLowerCase()}-output`,
+    graphSummary: {
+      total: 8,
+      statusCounts: { completed: 7, waiting_human_review: 1 }
+    },
+    graphExecution: {
+      checkpointer: 'postgres',
+      checkpointNamespace: `review:${id}:${nodeId}`,
+      persistence: 'langgraph_postgres_checkpointer',
+      temporalTaskQueue: 'review-orchestrator-local'
+    },
+    createdAt: '2026-06-26 09:42:00',
+    updatedAt: serverTime
+  }
+}
+
+const buildMockReviewRuns = (id?: string, nodeId?: number) => {
+  const runs = buildMockFdeAiRuns(id, nodeId)
+  const fallbackProjectId = id || projectId
+  const baseRuns = runs.length
+    ? runs.map((run) => buildMockReviewRun(run, run.projectId, run.nodeId))
+    : [
+        buildMockReviewRun(
+          state.aiRuns[0],
+          fallbackProjectId,
+          nodeId || getProject(fallbackProjectId).currentNodeId
+        )
+      ]
+  const primary = baseRuns[0]
+  if (!primary || baseRuns.length >= 2) return baseRuns
+  return [
+    primary,
+    {
+      ...primary,
+      id: `${primary.reviewRunId}-SHADOW`,
+      reviewRunId: `${primary.reviewRunId}-SHADOW`,
+      runMode: 'shadow',
+      status: 'draft_persisted',
+      currentStep: 'quality_gate',
+      workflowId: `${primary.workflowId}-shadow`,
+      temporalRunId: `${primary.temporalRunId}-shadow`,
+      graphSummary: {
+        total: 8,
+        statusCounts: { completed: 8 }
+      },
+      updatedAt: '2026-06-26 10:24:00'
+    }
+  ]
+}
+
+const buildMockReviewGraph = (reviewRunId: string) => {
+  const selectedNodes = getMockPageIndexNodes(projectId, state.documents[0]?.currentVersionId)
+  return {
+    reviewRunId,
+    nodes: [
+      {
+        nodeKey: 'load_document_context',
+        status: 'completed',
+        taskQueue: 'review-orchestrator-local',
+        durationMs: 260,
+        toolCalls: ['get_project_context', 'get_batch_documents']
+      },
+      {
+        nodeKey: 'load_ocr_result',
+        status: 'completed',
+        taskQueue: 'document-intelligence-local',
+        durationMs: 810,
+        toolCalls: ['get_ocr_result']
+      },
+      {
+        nodeKey: 'run_rule_checks',
+        status: 'completed',
+        taskQueue: 'knowledge-rule-local',
+        durationMs: 430,
+        toolCalls: ['run_rule_engine']
+      },
+      {
+        nodeKey: 'retrieve_knowledge',
+        status: 'completed',
+        taskQueue: 'knowledge-rule-local',
+        durationMs: 720,
+        toolCalls: ['search_knowledge_base', 'retrieve_pageindex_nodes']
+      },
+      {
+        nodeKey: 'llm_generate_findings',
+        status: 'completed',
+        taskQueue: 'litellm-local',
+        durationMs: 2800,
+        toolCalls: ['litellm.chat.completions']
+      },
+      {
+        nodeKey: 'evidence_validation',
+        status: 'completed',
+        taskQueue: 'review-orchestrator-local',
+        durationMs: 360,
+        toolCalls: ['validate_evidence_refs']
+      },
+      {
+        nodeKey: 'quality_gate',
+        status: 'completed',
+        taskQueue: 'review-orchestrator-local',
+        durationMs: 180,
+        toolCalls: ['validate_schema', 'validate_references']
+      },
+      {
+        nodeKey: 'waiting_human_review',
+        status: 'waiting_human_review',
+        taskQueue: 'business-review',
+        durationMs: 0,
+        toolCalls: []
+      }
+    ],
+    edges: [
+      { source: 'load_document_context', target: 'load_ocr_result' },
+      { source: 'load_ocr_result', target: 'run_rule_checks' },
+      { source: 'run_rule_checks', target: 'retrieve_knowledge' },
+      { source: 'retrieve_knowledge', target: 'llm_generate_findings' },
+      { source: 'llm_generate_findings', target: 'evidence_validation' },
+      { source: 'evidence_validation', target: 'quality_gate' },
+      { source: 'quality_gate', target: 'waiting_human_review' }
+    ],
+    timeline: [
+      {
+        stepName: 'load_document_context',
+        status: 'completed',
+        startedAt: '2026-06-26 09:42:01',
+        durationMs: 260
+      },
+      {
+        stepName: 'load_ocr_result',
+        status: 'completed',
+        startedAt: '2026-06-26 09:42:02',
+        durationMs: 810
+      },
+      {
+        stepName: 'run_rule_checks',
+        status: 'completed',
+        startedAt: '2026-06-26 09:42:03',
+        durationMs: 430
+      },
+      {
+        stepName: 'retrieve_knowledge',
+        status: 'completed',
+        startedAt: '2026-06-26 09:42:04',
+        durationMs: 720
+      },
+      {
+        stepName: 'llm_generate_findings',
+        status: 'completed',
+        startedAt: '2026-06-26 09:42:05',
+        durationMs: 2800
+      },
+      {
+        stepName: 'waiting_human_review',
+        status: 'waiting_human_review',
+        startedAt: serverTime,
+        durationMs: 0
+      }
+    ],
+    artifactSummary: {
+      toolCalls: 9,
+      ruleCheckResults: 3,
+      retrievalTraces: 3,
+      pageIndexTraces: 1,
+      findingDrafts: 3,
+      validationFailures: 1
+    },
+    artifacts: {
+      ruleCheckResults: [
+        {
+          ruleCode: 'WELDER_CERT_001',
+          result: 'passed',
+          severity: 'medium',
+          message: '焊工资格证编号、有效期和持证项目已识别。',
+          linkedClauseIds: ['CLAUSE-WELDER-6.1.3']
+        },
+        {
+          ruleCode: 'OCR_FIELD_CONF_002',
+          result: 'warning',
+          severity: 'medium',
+          message: '证书编号字段置信度 0.84，低于人工确认阈值 0.90。',
+          linkedClauseIds: ['CLAUSE-DOC-2.1.1']
+        }
+      ],
+      retrievalTraces: [
+        {
+          retrievalTraceId: `RT-${reviewRunId}-HYBRID`,
+          query: '焊工资格证有效期和持证项目审查依据',
+          queryType: 'review_basis_search',
+          selectedRoute: 'hybrid_rag',
+          selectedClauseCount: 3,
+          selectedClauseIds: ['CLAUSE-WELDER-6.1.3', 'CLAUSE-DOC-2.1.1'],
+          queryRouter: { selectedRoute: 'hybrid_rag', reason: '条款号和资料类型明确' }
+        },
+        {
+          retrievalTraceId: `RT-${reviewRunId}-PAGEINDEX`,
+          query: '资质证书、外部查询截图和签章跨章节依据',
+          queryType: 'long_document_cross_section',
+          selectedRoute: 'pageindex_tree_search',
+          selectedClauseCount: 2,
+          selectedClauseIds: ['CLAUSE-SEAL-4.2.1', 'CLAUSE-WELDER-6.1.3'],
+          queryRouter: {
+            selectedRoute: 'pageindex_tree_search',
+            fallbackRoute: 'hybrid_rag',
+            reason: '问题涉及证书、截图、印章多个章节'
+          },
+          pageIndexTree: {
+            rootNodeId: 'PI-ROOT',
+            candidateNodeCount: selectedNodes.length,
+            selectedNodes
+          }
+        },
+        {
+          retrievalTraceId: `RT-${reviewRunId}-VECTOR`,
+          query: '管道特性表、质量证明书和 NDT 报告的证据片段是否已入库',
+          queryType: 'review_basis_search',
+          selectedRoute: 'hybrid_rag',
+          selectedClauseCount: 4,
+          selectedClauseIds: [
+            'CLAUSE-DOC-2.1.1',
+            'CLAUSE-QC-5.3.2',
+            'CLAUSE-NDT-8.1.4',
+            'CLAUSE-EVIDENCE-3.3.1'
+          ],
+          queryRouter: {
+            selectedRoute: 'hybrid_rag',
+            reason: '问题以资料字段和条款号为主，优先使用向量索引和 BM25 融合检索'
+          },
+          vectorSearch: {
+            embeddingModel: state.knowledgeConfig.embeddingModel,
+            indexVersion: 'knowledge-index@local',
+            topK: 12,
+            hitCount: 10,
+            minScore: 0.72
+          }
+        }
+      ],
+      findingDrafts: [
+        {
+          id: `FD-${reviewRunId}-001`,
+          findingType: 'needs_human_confirmation',
+          severity: 'medium',
+          title: '外部查询截图来源需人工确认',
+          confidence: 0.88,
+          evidenceRefs: [
+            {
+              documentVersionId: state.documents[0]?.currentVersionId,
+              pageNo: 1,
+              bbox: [120, 220, 560, 420]
+            }
+          ],
+          ruleRefs: [{ ruleCode: 'WELDER_CERT_001' }],
+          kbRefs: [{ clauseId: 'CLAUSE-WELDER-6.1.3' }],
+          requiresHumanConfirmation: true
+        },
+        {
+          id: `FD-${reviewRunId}-002`,
+          findingType: 'low_confidence_field',
+          severity: 'low',
+          title: '证书编号 OCR 置信度低于阈值',
+          confidence: 0.84,
+          evidenceRefs: [
+            {
+              documentVersionId: state.documents[0]?.currentVersionId,
+              pageNo: 1,
+              bbox: [640, 300, 980, 360]
+            }
+          ],
+          ruleRefs: [{ ruleCode: 'OCR_FIELD_CONF_002' }],
+          kbRefs: [{ clauseId: 'CLAUSE-DOC-2.1.1' }],
+          requiresHumanConfirmation: true
+        },
+        {
+          id: `FD-${reviewRunId}-003`,
+          findingType: 'cross_document_consistency_warning',
+          severity: 'medium',
+          title: 'NDT 报告焊口编号与施工记录需复核一致性',
+          confidence: 0.79,
+          evidenceRefs: [
+            {
+              documentVersionId: state.documents[3]?.currentVersionId,
+              pageNo: 2,
+              bbox: [220, 460, 1120, 720]
+            }
+          ],
+          ruleRefs: [{ ruleCode: 'CROSS_DOC_WELD_NO_001' }],
+          kbRefs: [{ clauseId: 'CLAUSE-CROSS-7.2.4' }],
+          requiresHumanConfirmation: true
+        }
+      ]
+    }
+  }
+}
+
+const buildMockFdeReviewRunDetail = (reviewRunId: string) => {
+  const run =
+    buildMockReviewRuns().find((item) => item.reviewRunId === reviewRunId) || buildMockReviewRun()
+  const graph = buildMockReviewGraph(reviewRunId)
+  return {
+    run,
+    graph,
+    timeline: graph.timeline,
+    temporal: {
+      workflowId: run.workflowId,
+      runId: run.temporalRunId,
+      eventCount: 18,
+      status: 'running',
+      historyPolicy: 'ids_hashes_versions_only',
+      taskQueue: 'review-orchestrator-local'
+    },
+    reasoningTrace: [
+      {
+        step: '规则优先',
+        thought: '缺项和低置信字段先由规则库确定，不由 LLM 直接判断。',
+        evidence: 'WELDER_CERT_001 / OCR_FIELD_CONF_002',
+        quality: '可追溯'
+      },
+      {
+        step: '依据检索',
+        thought: '普通依据走 Hybrid RAG，跨章节资质和签章要求触发 PageIndex。',
+        evidence: 'RT-RR-PAGEINDEX',
+        quality: '需人工确认'
+      }
+    ],
+    lineage: {
+      documentVersions: getFdeProjectVersionIds(
+        run.projectId || projectId,
+        Number(run.nodeId || 0)
+      ),
+      ocrResultVersions: ['parse-local-20260626-001'],
+      kbVersion: 'knowledge-index@local',
+      ruleSetVersion: 'engineering_rules@2026.06',
+      promptVersion: run.promptVersion,
+      modelRouteVersion: 'deepseek-reasoner@litellm-local'
+    },
+    qualityEvaluation: {
+      score: 0.91,
+      status: 'needs_human_review',
+      humanReviewRequired: true,
+      dimensions: [
+        { name: '证据命中率', score: 0.93, status: 'pass' },
+        { name: '依据正确率', score: 0.9, status: 'pass' },
+        { name: '低置信字段处理', score: 0.82, status: 'warning' }
+      ],
+      gates: [
+        { name: 'Schema 校验', status: 'pass', message: '结构化输出字段完整。' },
+        { name: '证据校验', status: 'pass', message: 'bbox 和页码可回显。' },
+        { name: '人工确认', status: 'warning', message: '外部查询截图来源需人工确认。' }
+      ]
+    },
+    humanCorrections: [
+      {
+        id: 'HC-FDE-001',
+        targetType: 'finding_draft',
+        correctionType: 'edit',
+        before: '建议通过',
+        after: '建议人工确认外部查询截图来源后通过',
+        rootCause: 'evidence_scope_needs_human'
+      }
+    ],
+    redactionPolicy: 'masked_by_default',
+    scorecard: {
+      schemaVersion: 'review-orchestrator-scorecard@1.0',
+      targetScore: 100,
+      score: 92,
+      ok: false,
+      sections: [
+        { name: 'Temporal 工作流', score: 20, maxScore: 20, status: 'pass' },
+        { name: 'LangGraph Checkpoint', score: 20, maxScore: 20, status: 'pass' },
+        { name: '证据与依据校验', score: 28, maxScore: 30, status: 'pass' },
+        { name: '人工确认闭环', score: 24, maxScore: 30, status: 'warning' }
+      ],
+      blockers: ['外部查询截图来源仍需人工确认']
+    }
+  }
+}
+
+const buildMockOcrJobs = (id?: string, nodeId?: number) =>
+  getFdeProjectDocuments(id || projectId)
+    .filter((document) => {
+      if (!nodeId) return true
+      const boundVersionIds = state.bindings
+        .filter((binding) => binding.projectId === (id || projectId) && binding.nodeId === nodeId)
+        .map((binding) => binding.documentVersionId)
+      if (boundVersionIds.length < 2) return true
+      return boundVersionIds.some(
+        (binding) =>
+          String(binding) === String(document.currentVersionId)
+      )
+    })
+    .map((document, index) => ({
+      id: `OCR-JOB-${document.currentVersionId}`,
+      jobId: `OCR-JOB-${document.currentVersionId}`,
+      projectId: document.projectId,
+      nodeId: state.bindings.find(
+        (binding) => binding.documentVersionId === document.currentVersionId
+      )?.nodeId,
+      documentId: document.id,
+      documentVersionId: document.currentVersionId,
+      profileId:
+        index === 0
+          ? 'qualification_certificate_v1'
+          : index === 2
+            ? 'quality_certificate_v1'
+            : index === 3
+              ? 'ndt_rt_report_v1'
+              : 'construction_record_v1',
+      status: document.currentOcrStatus === '识别中' ? 'running' : 'success',
+      parseResultId: `PARSE-${document.currentVersionId}`,
+      resultSummary: {
+        fieldCount: index === 3 ? 16 : 9,
+        tableCount: index === 1 || index === 3 ? 2 : 1,
+        sealCount: index === 2 || index === 3 ? 1 : 0,
+        lowConfidenceFieldCount: index === 2 ? 3 : 1
+      },
+      engineRuns: [
+        {
+          engine: 'pp_ocr_v6',
+          status: 'success',
+          durationMs: 1260,
+          selectedVariantId: 'v1_deskew'
+        },
+        {
+          engine: 'pp_structure_v3',
+          status: 'success',
+          durationMs: 2180,
+          selectedVariantId: 'table_v1_line_enhanced'
+        },
+        {
+          engine: 'paddlex_seal',
+          status: index === 1 ? 'skipped' : 'success',
+          durationMs: 740,
+          selectedVariantId: 'seal_v0_color_original'
+        }
+      ],
+      updatedAt: document.updatedAt
+    }))
+
+const buildMockOcrRunDetail = (jobId: string) => {
+  const job =
+    buildMockOcrJobs().find((item) => item.jobId === jobId || item.id === jobId) ||
+    buildMockOcrJobs()[0]
+  return {
+    job,
+    parseResult: {
+      parseResultId: job.parseResultId,
+      status: job.status,
+      profileId: job.profileId,
+      preprocessStatus: {
+        requestedVariants: [
+          'original',
+          'deskew',
+          'gray_clahe',
+          'table_line_enhanced',
+          'seal_color_crop'
+        ],
+        generatedVariants: [
+          'original',
+          'deskew',
+          'gray_clahe',
+          'table_line_enhanced',
+          'seal_color_crop'
+        ],
+        selectedVariantId: 'table_v1_line_enhanced',
+        missingVariants: []
+      },
+      engineRuns: job.engineRuns,
+      diagnostics: [
+        {
+          code: 'FIELD_LOW_CONFIDENCE',
+          level: 'warning',
+          message: '证书编号字段置信度低于 0.90，建议人工复核。',
+          pageNo: 1
+        },
+        {
+          code: 'TABLE_STRUCTURE_LOW_CONFIDENCE',
+          level: 'warning',
+          message: '第 2 页表格跨列结构需标注样本补强。',
+          pageNo: 2
+        }
+      ]
+    },
+    corrections: [
+      {
+        id: 'OCR-CORR-001',
+        documentVersionId: job.documentVersionId,
+        fieldCode: 'certificate_no',
+        originalValue: 'TS1810648-202',
+        correctedValue: 'TS1810648-2021',
+        reason: '低清晰度导致末位漏识别',
+        shouldEnterEvaluationSet: true
+      }
+    ]
+  }
+}
+
+const buildMockOcrAnnotationTasks = (id?: string, nodeId?: number) =>
+  buildMockOcrJobs(id, nodeId)
+    .slice(0, 6)
+    .map((job, index) => {
+      const profileId = index === 2 ? 'seal_text_profile_v1' : job.profileId
+      return {
+        taskId: `OCR-LABEL-${index + 1}`,
+        caseId: `OCR-CASE-${index + 1}`,
+        projectId: job.projectId,
+        nodeId: job.nodeId,
+        documentVersionId: job.documentVersionId,
+        scenario:
+          index === 0
+            ? '字段框选与证书编号修正'
+            : index === 1
+              ? '表格单元格结构标定'
+              : index === 2
+                ? '红章区域与章名标定'
+                : 'NDT 报告跨页表格标定',
+        profileId,
+        documentType: profileId,
+        pageNo: index + 1,
+        collectionStatus:
+          index === 0 ? 'labeled' : index === 1 ? 'needs_labeling' : 'ready_for_eval',
+        readinessBlockers: index === 1 ? ['缺少人工表格单元格标注'] : [],
+        certificationBlockers: index === 2 ? ['印章名称需二审'] : [],
+        pageDimensions: { 1: [2480, 3508], 2: [2480, 3508], 3: [2480, 3508], 4: [2480, 3508] },
+        candidateCounts: {
+          fields: 8 + index,
+          tables: index % 2 ? 2 : 1,
+          seals: index >= 2 ? 1 : 0
+        },
+        labelCounts: {
+          fields: index === 1 ? 0 : 6 + index,
+          tables: index === 1 ? 0 : 1,
+          seals: index >= 2 ? 1 : 0
+        },
+        readyForEval: index !== 1,
+        labeler: index === 1 ? '' : 'FDE 张工',
+        reviewer: index === 2 ? 'OCR 负责人' : ''
+      }
+    })
+
+const buildMockOcrAnnotationPayload = (id?: string, nodeId?: number, page = 1, pageSize = 20) => {
+  const tasks = buildMockOcrAnnotationTasks(id, nodeId)
+  const blockerCounts = tasks.reduce<Record<string, number>>((acc, task) => {
+    for (const blocker of [
+      ...(task.readinessBlockers || []),
+      ...(task.certificationBlockers || [])
+    ]) {
+      acc[blocker] = (acc[blocker] || 0) + 1
+    }
+    return acc
+  }, {})
+  const humanLabeled = tasks.filter((task) => task.collectionStatus !== 'needs_labeling').length
+  const readyForEval = tasks.filter((task) => task.readyForEval).length
+  return {
+    summary: {
+      tasks: tasks.length,
+      humanLabeled,
+      readyForEval,
+      missingHumanLabels: tasks.length - humanLabeled,
+      completionRate: tasks.length ? Math.round((humanLabeled / tasks.length) * 100) / 100 : 0,
+      scenarioCounts: tasks.reduce<Record<string, number>>((acc, task) => {
+        const scenario = String(task.profileId || 'unknown')
+        acc[scenario] = (acc[scenario] || 0) + 1
+        return acc
+      }, {}),
+      readyScenarioCounts: tasks.reduce<Record<string, number>>((acc, task) => {
+        if (!task.readyForEval) return acc
+        const scenario = String(task.profileId || 'unknown')
+        acc[scenario] = (acc[scenario] || 0) + 1
+        return acc
+      }, {}),
+      statusCounts: tasks.reduce<Record<string, number>>((acc, task) => {
+        const status = String(task.collectionStatus || 'unknown')
+        acc[status] = (acc[status] || 0) + 1
+        return acc
+      }, {}),
+      blockerCounts
+    },
+    nextActions: ['补齐表格单元格标注', '复核低置信印章章名', '将通过样本加入 OCR Regression Set'],
+    page: makePage(tasks, page, pageSize)
+  }
+}
+
+const buildMockFdeOcrQuality = () => ({
+  overview: {
+    parseResultCount: 4,
+    autoUsableRate: 0.82,
+    needsHumanReviewRate: 0.18,
+    averageConfidence: 0.89
+  },
+  evidenceLevel: {
+    bboxCoverage: 0.94,
+    missingEvidenceItems: [
+      {
+        documentVersionId: state.documents[2]?.currentVersionId,
+        fieldCode: 'seal_name',
+        reason: '印章文字低置信'
+      }
+    ]
+  },
+  fieldLevel: {
+    fieldCount: 38,
+    lowConfidenceFieldCount: 4,
+    averageFieldConfidence: 0.88,
+    fieldCodeBreakdown: [{ fieldCode: 'certificate_no', count: 2 }],
+    qualityFlagCounts: [{ flag: 'low_confidence', count: 4 }],
+    missingRequiredFieldBreakdown: [{ fieldCode: 'material_grade', count: 1 }]
+  },
+  tableLevel: {
+    tableCount: 6,
+    formalTableCount: 4,
+    heuristicTableCount: 2,
+    reviewRequiredCount: 2,
+    businessRowCount: 42,
+    normalizedRowCount: 38,
+    cellCount: 216,
+    averageTableConfidence: 0.86,
+    formalTableRate: 0.67,
+    heuristicTableRate: 0.33,
+    reviewRequiredRate: 0.33,
+    sourceBreakdown: [{ source: 'pp_structure_v3', count: 4 }],
+    qualityFlagCounts: [{ flag: 'merged_cell_uncertain', count: 2 }],
+    sampleTables: []
+  },
+  sealLevel: {
+    parseResultCount: 4,
+    sealCount: 2,
+    readableSealCount: 1,
+    fragmentSealCount: 1,
+    visualCandidateCount: 2,
+    reviewRequiredCount: 1,
+    missingTextCount: 1,
+    averageSealConfidence: 0.78,
+    readableSealRate: 0.5,
+    fragmentSealRate: 0.5,
+    visualCandidateReviewRate: 0.5,
+    sourceBreakdown: [{ source: 'paddlex_seal', count: 2 }],
+    qualityFlagCounts: [{ flag: 'seal_text_low_confidence', count: 1 }],
+    sampleSeals: []
+  },
+  jobLevel: { total: 4, success: 3, failed: 0, running: 1 },
+  lowConfidenceFields: extractedFields.slice(0, 4),
+  jobs: buildMockOcrJobs(),
+  parseResults: buildMockOcrJobs().map(
+    (job) => buildMockOcrRunDetail(String(job.jobId)).parseResult
+  ),
+  corrections: buildMockOcrRunDetail(String(buildMockOcrJobs()[0]?.jobId || '')).corrections,
+  evalRuns: [
+    {
+      id: 'OCR-EVAL-20260626-001',
+      profileId: 'engineering_inspection_ocr_release',
+      status: 'completed',
+      startedAt: '2026-06-26 09:00:00',
+      finishedAt: '2026-06-26 09:12:00',
+      metrics: {
+        caseCount: 12,
+        averageScore: 0.91,
+        fieldAccuracy: 0.93,
+        tableAccuracy: 0.88,
+        sealAccuracy: 0.82
+      },
+      evaluationSummary: {
+        ok: false,
+        summary: { cases: 12, total: 12, passed: 10, failed: 2, averageScore: 0.91 },
+        metrics: {
+          fieldAccuracy: 0.93,
+          tableAccuracy: 0.88,
+          sealAccuracy: 0.82,
+          bboxHitRate: 0.94
+        },
+        findingCounts: {
+          FIELD_LOW_CONFIDENCE: 3,
+          TABLE_STRUCTURE_LOW_CONFIDENCE: 2,
+          SEAL_TEXT_LOW_CONFIDENCE: 1
+        },
+        thresholdFailures: [{ metric: 'sealNameAccuracy', actual: 0.82, threshold: 0.9 }],
+        scenarioMetrics: {
+          field_extraction: {
+            ok: true,
+            cases: 4,
+            passed: 4,
+            failed: 0,
+            averageScore: 0.94,
+            findingCounts: {},
+            thresholdFailures: []
+          },
+          table_structure: {
+            ok: false,
+            cases: 4,
+            passed: 3,
+            failed: 1,
+            averageScore: 0.88,
+            findingCounts: { TABLE_STRUCTURE_LOW_CONFIDENCE: 2 },
+            thresholdFailures: [{ metric: 'cellAccuracy', actual: 0.88, threshold: 0.9 }]
+          },
+          seal_recognition: {
+            ok: false,
+            cases: 2,
+            passed: 1,
+            failed: 1,
+            averageScore: 0.82,
+            findingCounts: { SEAL_TEXT_LOW_CONFIDENCE: 1 },
+            thresholdFailures: [{ metric: 'sealNameAccuracy', actual: 0.82, threshold: 0.9 }]
+          },
+          pageindex_evidence: {
+            ok: true,
+            cases: 2,
+            passed: 2,
+            failed: 0,
+            averageScore: 0.93,
+            findingCounts: {},
+            thresholdFailures: []
+          }
+        },
+        failedCases: [
+          {
+            caseId: 'OCR-CASE-002',
+            scenario: 'table_structure',
+            score: 0.86,
+            minScore: 0.9,
+            qualityStatus: 'needs_human_review',
+            findings: ['跨列表格单元格边界需人工修正']
+          },
+          {
+            caseId: 'OCR-CASE-003',
+            scenario: 'seal_recognition',
+            score: 0.82,
+            minScore: 0.9,
+            qualityStatus: 'needs_human_review',
+            findings: ['印章名称末尾公司名识别不完整']
+          }
+        ]
+      },
+      caseDiagnostics: []
+    }
+  ],
+  qualityReasonCounts: [
+    { reason: 'FIELD_LOW_CONFIDENCE', count: 4 },
+    { reason: 'TABLE_STRUCTURE_LOW_CONFIDENCE', count: 2 }
+  ],
+  runtimeDoctor: {
+    status: 'warning',
+    ok: false,
+    summary: { pass: 8, warn: 2, fail: 0, total: 10 },
+    topIssues: [{ code: 'SEAL_MODEL_NEEDS_EVAL', message: '印章文字准确率低于发布阈值。' }],
+    subprocessPython: 'python3.11',
+    schemaVersion: 'ocr-runtime-doctor@1.0'
+  },
+  ocr100Scorecard: {
+    schemaVersion: 'ocr-100@1.0',
+    targetScore: 100,
+    score: 91,
+    ok: false,
+    sections: [
+      { name: '统一 Schema', score: 20, maxScore: 20, status: 'pass' },
+      { name: '候选图与选优', score: 18, maxScore: 20, status: 'pass' },
+      {
+        name: '表格结构',
+        score: 24,
+        maxScore: 30,
+        status: 'warning',
+        blockers: ['跨列表格样本不足']
+      },
+      {
+        name: '印章识别',
+        score: 19,
+        maxScore: 30,
+        status: 'warning',
+        blockers: ['印章文字准确率未达 90%']
+      }
+    ],
+    blockers: ['印章文字准确率未达 90%', '跨列表格标注样本不足']
+  },
+  failurePools: {
+    fieldFailures: [{ code: 'FIELD_LOW_CONFIDENCE', source: 'ocr_eval' }],
+    tableFailures: [{ code: 'TABLE_STRUCTURE_LOW_CONFIDENCE', source: 'ocr_eval' }],
+    sealFailures: [{ code: 'SEAL_TEXT_LOW_CONFIDENCE', source: 'ocr_eval' }],
+    engineFailures: []
+  }
+})
+
+const buildMockFdeProjectWorkspace = (id: string, nodeId?: number) => {
+  const project = getProject(id)
+  const nodes = state.treeNodes.filter((node) => node.projectId === id)
+  const selectedNodeId = nodeId || project.currentNodeId || nodes[0]?.nodeId
+  const selectedNode = selectedNodeId ? getNode(id, selectedNodeId) : nodes[0]
+  const documents = getFdeProjectDocuments(id)
+  const bindingsForProject = state.bindings.filter((binding) => binding.projectId === id)
+  const bindingsForNode = selectedNodeId
+    ? bindingsForProject.filter((binding) => binding.nodeId === selectedNodeId)
+    : bindingsForProject
+  const auditBindingsForNode = documents.map((document, index) => {
+    const existing = bindingsForNode.find(
+      (binding) => binding.documentVersionId === document.currentVersionId
+    )
+    if (existing) return existing
+    const template = fdeAuditDocumentTemplates[index % fdeAuditDocumentTemplates.length]
+    return {
+      id: `FDE-BIND-${compactFdeId(id)}-${selectedNodeId || 'NODE'}-${index + 1}`,
+      projectId: id,
+      nodeId: selectedNodeId || project.currentNodeId || 0,
+      requirementId: `FDE-REQ-${index + 1}`,
+      requirementName: template.requirementName,
+      documentId: document.id,
+      documentVersionId: document.currentVersionId,
+      fileName: document.fileName,
+      versionNo: String(document.currentVersionId || '').includes('V2') ? 'V2' : 'V1',
+      usage: template.usage,
+      sourceOrgName: document.sourceOrgName,
+      bindingStatus: index === 2 ? '需人工复核' : '已提交',
+      boundAt: document.updatedAt,
+      actions: ['file:view', 'review:save'] as ActionCode[]
+    }
+  })
+  const reviewRuns = buildMockReviewRuns(id, selectedNodeId)
+  const ocrJobs = buildMockOcrJobs(id, selectedNodeId)
+  const annotationTasks = buildMockOcrAnnotationTasks(id, selectedNodeId)
+  const nodeSummaries = nodes.map((node) => {
+    const nodeBindings = bindingsForProject.filter((binding) => binding.nodeId === node.nodeId)
+    const effectiveNodeBindings =
+      nodeBindings.length || node.nodeId !== selectedNodeId ? nodeBindings : auditBindingsForNode
+    const nodeDocuments = documents.filter((document) =>
+      effectiveNodeBindings.some(
+        (binding) => binding.documentVersionId === document.currentVersionId
+      )
+    )
+    return {
+      nodeId: node.nodeId,
+      name: node.name,
+      status: node.status,
+      documentCount: nodeDocuments.length,
+      vectorizedDocumentCount: nodeDocuments.filter((document) =>
+        String(document.vectorStatus).startsWith('已向量化')
+      ).length,
+      pageIndexNodeCount: nodeDocuments.reduce(
+        (sum, document) => sum + Number(document.pageIndexNodeCount || 0),
+        0
+      ),
+      reviewRunCount: reviewRuns.filter((run) => Number(run.nodeId) === node.nodeId).length,
+      ocrJobCount: ocrJobs.filter((job) => Number(job.nodeId) === node.nodeId).length,
+      annotationTaskCount: annotationTasks.filter((task) => Number(task.nodeId) === node.nodeId)
+        .length,
+      blockerCount: node.nodeId === 24 ? 2 : node.nodeId === 40 ? 1 : 0,
+      lowConfidenceFieldCount: node.nodeId === 24 ? 2 : node.nodeId === 40 ? 2 : 0
+    }
+  })
+  const submissions = state.submissionSnapshots
+    .filter((snapshot) => snapshot.projectId === id)
+    .map((snapshot) => ({
+      submissionId: snapshot.submissionId,
+      batchName: snapshot.batchName,
+      nodeIds: snapshot.nodeIds,
+      nodeNames: snapshot.nodeIds.map((nodeId) => getNode(id, nodeId).name),
+      status: snapshot.nextStatus || 'submitted',
+      bindingCount: snapshot.bindingIds.length,
+      submittedAt: snapshot.submittedAt
+    }))
+  if (!submissions.length) {
+    submissions.push({
+      submissionId: `FDE-SUB-${compactFdeId(id)}-${selectedNodeId || 'NODE'}`,
+      batchName: `${selectedNode?.name || '审查节点'}资料批次`,
+      nodeIds: selectedNodeId ? [selectedNodeId] : [],
+      nodeNames: selectedNode?.name ? [selectedNode.name] : [],
+      status: 'waiting_human_review',
+      bindingCount: auditBindingsForNode.length,
+      submittedAt: '2026-06-26 10:18:00'
+    })
+  }
+  const qualityBlockers = [
+    {
+      id: 'FDE-BLOCK-OCR-001',
+      type: 'ocr-field',
+      level: 'warning',
+      title: '证书编号字段置信度低',
+      target: documents[0]?.fileName,
+      action: '进入 OCR 打标页修正 bbox 与字段值'
+    },
+    {
+      id: 'FDE-BLOCK-AGENT-001',
+      type: 'agent',
+      level: 'warning',
+      title: 'ReviewRun 等待人工复核',
+      target: reviewRuns[0]?.reviewRunId,
+      action: '检查 LangGraph Trace 后确认或修正发现项'
+    },
+    {
+      id: 'FDE-BLOCK-SEAL-001',
+      type: 'ocr',
+      level: 'danger',
+      title: '印章文字准确率未达发布阈值',
+      target: documents[2]?.fileName,
+      action: '补充印章标注样本并重新评估'
+    }
+  ]
+  const metrics = {
+    nodes: nodes.length,
+    documents: documents.length,
+    knowledgeChunks: documents.reduce((sum, document) => sum + Number(document.chunkCount || 0), 0),
+    knowledgeVectors: documents.reduce(
+      (sum, document) => sum + Number(document.vectorCount || 0),
+      0
+    ),
+    vectorizedDocuments: documents.filter((document) =>
+      String(document.vectorStatus).startsWith('已向量化')
+    ).length,
+    pageIndexNodes: documents.reduce(
+      (sum, document) => sum + Number(document.pageIndexNodeCount || 0),
+      0
+    ),
+    submissions: submissions.length,
+    ocrJobs: ocrJobs.length,
+    reviewRuns: reviewRuns.length,
+    annotationTasks: annotationTasks.length,
+    blockers: qualityBlockers.length,
+    lowConfidenceFields: 4
+  }
+  return {
+    project,
+    selectedNodeId,
+    selectedNode,
+    groups: getProjectGroups(id),
+    nodeSummaries,
+    metrics,
+    documents,
+    bindings: auditBindingsForNode,
+    submissions,
+    reviewRuns,
+    aiRuns: buildMockFdeAiRuns(id, selectedNodeId),
+    ocrJobs,
+    ocrAnnotationTasks: annotationTasks,
+    qualityBlockers,
+    updatedAt: serverTime
+  }
+}
+
+const buildMockFdeProjectSummaries = () =>
+  state.projects.map((project) => {
+    const workspace = buildMockFdeProjectWorkspace(project.id, project.currentNodeId)
+    return {
+      project,
+      metrics: workspace.metrics,
+      currentNodeId: workspace.selectedNodeId,
+      currentNodeName: workspace.selectedNode?.name,
+      topBlockers: workspace.qualityBlockers.slice(0, 3),
+      updatedAt: workspace.updatedAt
+    }
+  })
+
+const buildMockFdeDashboard = () => ({
+  metrics: [
+    { label: '资料向量化完成率', value: 0.75, tone: 'green', suffix: '%' },
+    { label: 'PageIndex 命中率', value: 0.5, tone: 'blue', suffix: '%' },
+    { label: 'Agent 待人工复核', value: 1, tone: 'orange' },
+    { label: 'OCR 标注缺口', value: 2, tone: 'red' }
+  ],
+  alerts: [
+    {
+      id: 'FDE-ALERT-001',
+      severity: 'warning',
+      title: '印章文字准确率低于 90% 门禁',
+      status: 'open'
+    },
+    {
+      id: 'FDE-ALERT-002',
+      severity: 'info',
+      title: 'PageIndex 已命中跨章节依据',
+      status: 'monitoring'
+    }
+  ],
+  agentPerformance: [
+    {
+      agentId: 'compliance_review_agent',
+      version: '1.4.0',
+      status: 'production',
+      riskLevel: 'high',
+      acceptanceRate: 0.86,
+      evidenceHitRate: 0.93,
+      hallucinationRate: 0.006
+    }
+  ],
+  cost: { tokenEstimate: 18620, estimatedPrice: 1.42, budgetStatus: 'normal' },
+  releaseStatus: { bundles: 1, releasePlans: 0, pendingApprovals: 0 }
+})
+
 export default [
+  {
+    url: '/api/fde/dashboard',
+    method: 'get',
+    timeout,
+    response: () => ok(buildMockFdeDashboard())
+  },
+  {
+    url: '/api/fde/projects',
+    method: 'get',
+    timeout,
+    response: () => ok(buildMockFdeProjectSummaries())
+  },
+  {
+    url: /\/api\/fde\/projects\/[^/]+\/audit-workspace/,
+    method: 'get',
+    timeout,
+    response: ({ query, url }) => {
+      const id = pathParts(url)[3] || projectId
+      const nodeId = Number(query?.nodeId || 0) || undefined
+      return ok(buildMockFdeProjectWorkspace(id, nodeId))
+    }
+  },
+  {
+    url: /\/api\/fde\/projects\/[^/]+\/nodes\/[^/]+\/audit-detail/,
+    method: 'get',
+    timeout,
+    response: ({ url }) => {
+      const parts = pathParts(url)
+      const id = parts[3] || projectId
+      const nodeId = Number(parts[5] || 0) || getProject(id).currentNodeId
+      return ok({
+        project: getProject(id),
+        node: getNode(id, nodeId),
+        workspace: buildMockFdeProjectWorkspace(id, nodeId),
+        pageIndexNodes: getMockPageIndexNodes(id),
+        updatedAt: serverTime
+      })
+    }
+  },
+  {
+    url: '/api/fde/ai-runs',
+    method: 'get',
+    timeout,
+    response: ({ query }) => {
+      const items = buildMockFdeAiRuns(
+        query?.projectId ? String(query.projectId) : undefined,
+        Number(query?.nodeId || 0) || undefined
+      )
+      return ok(makePage(items, Number(query?.page) || 1, Number(query?.pageSize) || 20))
+    }
+  },
+  {
+    url: /\/api\/fde\/ai-runs\/[^/]+$/,
+    method: 'get',
+    timeout,
+    response: ({ url }) => {
+      const runId = pathParts(url)[3]
+      const run = buildMockFdeAiRuns().find((item) => item.id === runId) || buildMockFdeAiRuns()[0]
+      return ok({
+        run,
+        traceSteps: [
+          { step: 'context', status: 'completed', message: '加载项目、节点、资料版本上下文。' },
+          { step: 'ocr', status: 'completed', message: '读取 OCR 字段、表格和印章结果。' },
+          { step: 'rag', status: 'completed', message: 'Hybrid RAG 与 PageIndex 检索依据。' },
+          {
+            step: 'llm',
+            status: 'completed',
+            message: '通过 LiteLLM 调用 deepseek-reasoner 生成草稿。'
+          }
+        ],
+        replays: [],
+        feedback: [],
+        accessPolicy: { rawAccess: false, rawAccessRequiresGrant: true }
+      })
+    }
+  },
+  {
+    url: '/api/fde/review-runs',
+    method: 'get',
+    timeout,
+    response: ({ query }) => {
+      const items = buildMockReviewRuns(
+        query?.projectId ? String(query.projectId) : undefined,
+        Number(query?.nodeId || 0) || undefined
+      )
+      return ok(makePage(items, Number(query?.page) || 1, Number(query?.pageSize) || 20))
+    }
+  },
+  {
+    url: /\/api\/fde\/review-runs\/[^/]+\/graph$/,
+    method: 'get',
+    timeout,
+    response: ({ url }) => ok(buildMockReviewGraph(pathParts(url)[3] || 'RR-LOCAL'))
+  },
+  {
+    url: /\/api\/fde\/review-runs\/[^/]+\/temporal-history$/,
+    method: 'get',
+    timeout,
+    response: ({ url }) => {
+      const reviewRunId = pathParts(url)[3] || 'RR-LOCAL'
+      const detail = buildMockFdeReviewRunDetail(reviewRunId)
+      return ok({
+        workflowId: detail.run.workflowId,
+        runId: detail.run.temporalRunId,
+        eventCount: detail.temporal.eventCount,
+        events: detail.timeline.map((item, index) => ({
+          eventId: index + 1,
+          eventType:
+            item.status === 'waiting_human_review'
+              ? 'WorkflowExecutionSignaled'
+              : 'ActivityTaskCompleted',
+          stepName: item.stepName,
+          status: item.status
+        }))
+      })
+    }
+  },
+  {
+    url: /\/api\/fde\/review-runs\/[^/]+$/,
+    method: 'get',
+    timeout,
+    response: ({ url }) => ok(buildMockFdeReviewRunDetail(pathParts(url)[3] || 'RR-LOCAL'))
+  },
+  {
+    url: '/api/fde/feedback',
+    method: 'get',
+    timeout,
+    response: () =>
+      ok([
+        {
+          id: 'FDB-001',
+          aiRunId: state.aiRuns[0]?.id,
+          projectId,
+          nodeId: 24,
+          feedbackType: 'edited',
+          accepted: false,
+          comment: 'AI 建议方向正确，但外部查询截图需要人工确认来源。',
+          status: 'triaged',
+          rootCause: 'evidence_scope_needs_human',
+          shouldEnterEvaluationSet: true,
+          createdAt: serverTime
+        }
+      ])
+  },
+  {
+    url: '/api/fde/evaluation-sets',
+    method: 'get',
+    timeout,
+    response: () =>
+      ok({
+        sets: [
+          {
+            id: 'ESET-OCR-RELEASE',
+            name: 'OCR Release 回归集',
+            setType: 'ocr_release',
+            caseCount: 12,
+            status: 'active'
+          },
+          {
+            id: 'ESET-AGENT-GOLDEN',
+            name: 'Agent 审查金标集',
+            setType: 'agent_golden',
+            caseCount: 8,
+            status: 'active'
+          }
+        ],
+        cases: [
+          {
+            id: 'ECASE-001',
+            evaluationCaseId: 'ECASE-001',
+            scenario: 'pageindex_evidence',
+            expectedRoute: 'pageindex_tree_search',
+            riskLevel: 'high',
+            status: 'active'
+          }
+        ],
+        runs: [],
+        reports: []
+      })
+  },
+  {
+    url: '/api/fde/capability-bundles',
+    method: 'get',
+    timeout,
+    response: () =>
+      ok({
+        bundles: [],
+        agents: [],
+        prompts: [],
+        modelRoutes: [],
+        ocrProfiles: []
+      })
+  },
+  {
+    url: '/api/fde/releases',
+    method: 'get',
+    timeout,
+    response: () => ok({ plans: [], approvals: [], gates: [] })
+  },
+  {
+    url: '/api/fde/ocr-quality',
+    method: 'get',
+    timeout,
+    response: () => ok(buildMockFdeOcrQuality())
+  },
+  {
+    url: '/api/fde/ocr-runs',
+    method: 'get',
+    timeout,
+    response: ({ query }) => {
+      const items = buildMockOcrJobs(
+        query?.projectId ? String(query.projectId) : undefined,
+        Number(query?.nodeId || 0) || undefined
+      )
+      return ok(makePage(items, Number(query?.page) || 1, Number(query?.pageSize) || 20))
+    }
+  },
+  {
+    url: /\/api\/fde\/ocr-runs\/[^/]+$/,
+    method: 'get',
+    timeout,
+    response: ({ url }) => ok(buildMockOcrRunDetail(pathParts(url)[3] || ''))
+  },
+  {
+    url: '/api/fde/ocr-annotation/tasks',
+    method: 'get',
+    timeout,
+    response: ({ query }) =>
+      ok(
+        buildMockOcrAnnotationPayload(
+          query?.projectId ? String(query.projectId) : undefined,
+          Number(query?.nodeId || 0) || undefined,
+          Number(query?.page) || 1,
+          Number(query?.pageSize) || 20
+        )
+      )
+  },
+  {
+    url: /\/api\/fde\/ocr-annotation\/tasks\/[^/]+$/,
+    method: 'get',
+    timeout,
+    response: ({ url }) => {
+      const taskId = pathParts(url)[4]
+      const payload = buildMockOcrAnnotationPayload()
+      const task =
+        payload.page.items.find((item) => item.taskId === taskId) || payload.page.items[0]
+      return ok({
+        task,
+        readiness: { ok: true, summary: payload.summary, nextActions: payload.nextActions }
+      })
+    }
+  },
+  {
+    url: '/api/fde/ocr-annotation/readiness',
+    method: 'post',
+    timeout,
+    response: () => {
+      const payload = buildMockOcrAnnotationPayload()
+      return ok({
+        ok: true,
+        summary: payload.summary,
+        nextActions: payload.nextActions,
+        tasks: payload.page.items
+      })
+    }
+  },
+  {
+    url: '/api/fde/incidents',
+    method: 'get',
+    timeout,
+    response: () =>
+      ok({
+        incidents: [
+          {
+            id: 'INC-OCR-SEAL-001',
+            title: '印章文字识别准确率低于门禁',
+            severity: 'warning',
+            status: 'monitoring',
+            createdAt: serverTime
+          }
+        ],
+        rca: []
+      })
+  },
+  {
+    url: '/api/fde/acceptance-reports',
+    method: 'get',
+    timeout,
+    response: () => ok([])
+  },
+  {
+    url: '/api/fde/business-packs/validate-all',
+    method: 'post',
+    timeout,
+    response: () =>
+      ok({
+        summary: { total: 1, passed: 1, failed: 0, warning: 0 },
+        results: [
+          {
+            summary: {
+              id: 'engineering_inspection_v1',
+              name: '工程监检业务包',
+              version: '2026.06',
+              status: 'production'
+            },
+            validation: { status: 'passed', score: 0.96, blockers: [] }
+          }
+        ]
+      })
+  },
+  {
+    url: '/api/fde/access-grants',
+    method: 'get',
+    timeout,
+    response: () => ok([])
+  },
+  {
+    url: '/api/fde/cost-budgets',
+    method: 'get',
+    timeout,
+    response: () =>
+      ok({
+        grants: [],
+        exports: [],
+        budgets: [{ id: 'BUDGET-FDE-LOCAL', name: '本地开发预算', limit: 1000, used: 38 }],
+        changeRequests: [],
+        usage: { tokenEstimate: 18620, estimatedPrice: 1.42, runCount: 3 }
+      })
+  },
+  {
+    url: '/api/fde/audit-events',
+    method: 'get',
+    timeout,
+    response: () => ok({ events: state.auditLogs.slice(0, 20), total: state.auditLogs.length })
+  },
+  {
+    url: '/api/fde/security/masking-policies',
+    method: 'get',
+    timeout,
+    response: () =>
+      ok([
+        {
+          id: 'MASK-FDE-DEFAULT',
+          name: 'FDE 默认脱敏',
+          status: 'active',
+          fields: ['document.rawText', 'credentialNo', 'phone']
+        }
+      ])
+  },
   {
     url: '/api/workbench/projects',
     method: 'get',

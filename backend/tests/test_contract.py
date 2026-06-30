@@ -446,6 +446,35 @@ def test_visual_seal_candidate_enriched_from_ocr_fragments_can_satisfy_required_
     assert fused["quality"]["status"] == "auto_usable"
 
 
+def test_fragment_text_can_create_drawing_approval_seal_without_visual_candidate() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+
+    fused = fuse_parse_result(
+        {
+            "status": "success",
+            "fragments": [
+                {"text": "广东省建设工程勘察设计出图专用章", "confidence": 0.94, "bbox": [4382, 1927, 5230, 1989]},
+                {"text": "单位名称：广东星燃石化设计院有限公司", "confidence": 0.94, "bbox": [4388, 2001, 5257, 2059]},
+                {"text": "项目范围：压力管道设计", "confidence": 0.9, "bbox": [4388, 2070, 5257, 2130]},
+            ],
+            "fields": [],
+            "tables": [],
+            "seals": [],
+        },
+        profile={
+            "profileId": "drawing_seal_profile",
+            "sealRules": {"required": True, "expectedSealTypes": ["drawing_approval_seal"]},
+        },
+    )
+
+    assert fused["seals"]
+    assert fused["seals"][0]["sealType"] == "drawing_approval_seal"
+    assert fused["seals"][0]["sourceEngine"] == "fragment_seal_text_detector"
+    assert "text_only_seal_candidate" in fused["seals"][0]["qualityFlags"]
+    assert fused["quality"]["matchedSealTypes"] == ["drawing_approval_seal"]
+    assert fused["quality"]["missingExpectedSealTypes"] == []
+
+
 def test_agentdesign_seal_payload_normalizes_to_readable_formal_seal() -> None:
     from apps.ocr_service.engines import normalize_agentdesign_seal_result
     from apps.ocr_service.fusion import fuse_parse_result
@@ -876,6 +905,162 @@ def test_piping_profile_maps_formal_table_rows_to_business_fields() -> None:
     assert fields["pipe_no"] == "PL8301,VT8301"
 
 
+def test_quality_certificate_profile_extracts_business_fields_and_table_schemas() -> None:
+    from apps.ocr_service.profiles import profile_for
+    from apps.ocr_service.service import enrich_parse_result
+
+    fragments = [
+        {"pageNo": 1, "text": "河北广浩管件有限公司", "bbox": [10, 10, 180, 30], "confidence": 0.95},
+        {"pageNo": 1, "text": "产品出厂检验合格证", "bbox": [10, 40, 180, 65], "confidence": 0.96},
+        {"pageNo": 1, "text": "2021年3月18日", "bbox": [300, 40, 420, 65], "confidence": 0.92},
+        {"pageNo": 1, "text": "材质", "bbox": [10, 80, 60, 100], "confidence": 0.9},
+        {"pageNo": 1, "text": "20#", "bbox": [70, 80, 110, 100], "confidence": 0.9},
+        {"pageNo": 1, "text": "WN100(B)-16 RF S=5", "bbox": [120, 80, 260, 100], "confidence": 0.9},
+        {"pageNo": 1, "text": "HG/T20592-2009", "bbox": [270, 80, 390, 100], "confidence": 0.9},
+        {"pageNo": 1, "text": "检验合格", "bbox": [10, 220, 100, 245], "confidence": 0.91},
+    ]
+    table = {
+        "tableId": "docling_table_10",
+        "sourceEngine": "docling_local",
+        "rows": 7,
+        "columns": 7,
+        "bbox": [10, 110, 400, 260],
+        "structureConfidence": 0.88,
+        "cells": [
+            {"text": "材质 20#", "bbox": [10, 110, 80, 130], "isHeader": True},
+            {"text": "化学成分%", "bbox": [10, 140, 80, 160], "isHeader": True},
+            {"text": "碳C", "bbox": [90, 140, 120, 160], "isHeader": True},
+            {"text": "锰Mn", "bbox": [130, 140, 160, 160], "isHeader": True},
+            {"text": "硅Si", "bbox": [170, 140, 200, 160], "isHeader": True},
+            {"text": "屈服点", "bbox": [10, 180, 80, 200], "isHeader": True},
+            {"text": "抗拉强度", "bbox": [90, 180, 160, 200], "isHeader": True},
+            {"text": "延伸率", "bbox": [170, 180, 220, 200], "isHeader": True},
+        ],
+    }
+
+    result = enrich_parse_result(
+        {
+            "status": "success",
+            "storageKey": "/tmp/quality.png",
+            "fileName": "quality.png",
+            "fragments": fragments,
+            "fields": [],
+            "tables": [table],
+            "seals": [],
+            "diagnostics": [],
+        },
+        profile=profile_for("quality_certificate_v1"),
+        document_version_id="docv_quality",
+        business_pack_id="engineering_inspection_v1",
+        model_manifest={},
+    )
+
+    fields = {field["fieldCode"]: field["fieldValue"] for field in result["fields"]}
+    assert fields["manufacturer"] == "河北广浩管件有限公司"
+    assert fields["material_grade"] == "20#"
+    assert fields["specification"] == "WN100(B)-16 RF S=5"
+    assert fields["standard_no"] == "HG/T20592-2009"
+    assert fields["inspection_conclusion"] == "检验合格"
+    assert fields["issue_date"] == "2021年3月18日"
+    assert set(result["tables"][0]["businessSchemas"]) == {
+        "material_chemical_composition_table",
+        "mechanical_property_table",
+    }
+    assert result["quality"]["missingTables"] == []
+
+
+def test_quality_certificate_profile_does_not_extract_fields_from_design_spec_text() -> None:
+    from apps.ocr_service.profiles import profile_for
+    from apps.ocr_service.service import enrich_parse_result
+
+    result = enrich_parse_result(
+        {
+            "status": "success",
+            "storageKey": "/tmp/design-spec.png",
+            "fileName": "design-spec.png",
+            "fragments": [
+                {"pageNo": 1, "text": "广东星燃石化设计院有限公司", "bbox": [1, 1, 100, 20], "confidence": 0.9},
+                {"pageNo": 1, "text": "工艺设计说明书", "bbox": [1, 30, 100, 50], "confidence": 0.9},
+                {"pageNo": 1, "text": "质量验收标准进行", "bbox": [1, 60, 100, 80], "confidence": 0.9},
+            ],
+            "fields": [],
+            "tables": [],
+            "seals": [],
+            "diagnostics": [],
+        },
+        profile=profile_for("quality_certificate_v1"),
+        document_version_id="docv_design",
+        business_pack_id="engineering_inspection_v1",
+        model_manifest={},
+    )
+
+    assert not any(field["fieldCode"] == "manufacturer" for field in result["fields"])
+    assert "REQUIRED_FIELD_MISSING" in result["quality"]["reasons"]
+
+
+def test_welding_record_profile_extracts_process_assessment_identifiers() -> None:
+    from apps.ocr_service.profiles import profile_for
+    from apps.ocr_service.service import enrich_parse_result
+
+    result = enrich_parse_result(
+        {
+            "status": "success",
+            "storageKey": "/tmp/welding.png",
+            "fileName": "welding.png",
+            "fragments": [
+                {"pageNo": 1, "text": "承压设备焊接工艺评定报告", "bbox": [10, 10, 220, 35], "confidence": 0.94},
+                {"pageNo": 1, "text": "编号：", "bbox": [10, 50, 60, 70], "confidence": 0.92},
+                {"pageNo": 1, "text": "HP2013-10", "bbox": [70, 50, 150, 70], "confidence": 0.93},
+                {"pageNo": 1, "text": "单位：贵州化工建设公司", "bbox": [10, 80, 220, 100], "confidence": 0.91},
+                {"pageNo": 1, "text": "日期：2013年11月2日", "bbox": [10, 110, 190, 130], "confidence": 0.91},
+            ],
+            "fields": [],
+            "tables": [],
+            "seals": [],
+            "diagnostics": [],
+        },
+        profile=profile_for("welding_record_v1"),
+        document_version_id="docv_welding",
+        business_pack_id="engineering_inspection_v1",
+        model_manifest={},
+    )
+
+    fields = {field["fieldCode"]: field["fieldValue"] for field in result["fields"]}
+    assert fields["record_no"] == "HP2013-10"
+    assert fields["welding_date"] == "2013年11月2日"
+    assert "weld_no" in result["quality"]["missingFields"]
+    assert "welding_record_table" in result["quality"]["missingTables"]
+
+
+def test_welding_record_profile_does_not_extract_from_unrelated_design_text() -> None:
+    from apps.ocr_service.profiles import profile_for
+    from apps.ocr_service.service import enrich_parse_result
+
+    result = enrich_parse_result(
+        {
+            "status": "success",
+            "storageKey": "/tmp/design.png",
+            "fileName": "design.png",
+            "fragments": [
+                {"pageNo": 1, "text": "广东星燃石化设计院有限公司", "bbox": [1, 1, 100, 20], "confidence": 0.9},
+                {"pageNo": 1, "text": "编号：QX201903S", "bbox": [1, 30, 100, 50], "confidence": 0.9},
+                {"pageNo": 1, "text": "日期：2021年3月1日", "bbox": [1, 60, 100, 80], "confidence": 0.9},
+            ],
+            "fields": [],
+            "tables": [],
+            "seals": [],
+            "diagnostics": [],
+        },
+        profile=profile_for("welding_record_v1"),
+        document_version_id="docv_design",
+        business_pack_id="engineering_inspection_v1",
+        model_manifest={},
+    )
+
+    assert result["fields"] == []
+    assert "REQUIRED_FIELD_MISSING" in result["quality"]["reasons"]
+
+
 def test_visual_seal_subprocess_normalizes_candidates(monkeypatch, tmp_path) -> None:
     from apps.ocr_service.engines import VisualSealCandidateSubprocessEngine
 
@@ -1073,7 +1258,7 @@ def test_pp_structure_html_table_handles_rowspan_and_colspan() -> None:
     assert structure["normalizedRows"][0]["压力"] == "0.15"
 
 
-def test_ocr_routing_keeps_text_ocr_on_original_by_default() -> None:
+def test_ocr_routing_uses_enhanced_text_variant_for_low_quality_page() -> None:
     from apps.ocr_service.routing import route_engine_variants
 
     variants = [
@@ -1089,7 +1274,74 @@ def test_ocr_routing_keeps_text_ocr_on_original_by_default() -> None:
         options={},
     )
 
-    assert routed[0]["variantId"] == "page_1_original"
+    assert routed[0]["variantId"] == "page_1_gray_clahe"
+
+
+def test_ocr_parse_document_merges_agentdesign_candidate_with_local_engines(monkeypatch, tmp_path) -> None:
+    from apps.ocr_service.service import OcrService
+
+    class FakeEngine:
+        name = "paddle_ocr_subprocess"
+        version = "test"
+
+        def available(self):
+            return True
+
+        def status(self):
+            return {"engine": self.name, "version": self.version, "available": True}
+
+        def parse(self, source_path, *, file_name=None, profile=None, variant=None):
+            return {
+                "ok": True,
+                "fragments": [{"pageNo": 1, "text": "local candidate", "bbox": [1, 1, 10, 10], "confidence": 0.91}],
+                "diagnostics": [],
+            }
+
+    source = tmp_path / "sample.png"
+    source.write_bytes(b"sample-image")
+    monkeypatch.setenv("AICHECK_OCR_ALLOWED_LOCAL_DIRS", str(tmp_path))
+    service = OcrService()
+    service.pipeline = lambda path: {
+        "ok": True,
+        "fragments": [{"pageNo": 1, "text": "agentdesign candidate", "bbox": [0, 0, 8, 8], "confidence": 0.88}],
+    }
+    service.engines = [FakeEngine()]
+    monkeypatch.setattr(service, "model_manifest", lambda: {"modelDirs": {"test": {"hash": "sha256:model"}}})
+
+    result = service.parse_document(str(source), file_name="sample.png", profile_id="generic_document_v1", options={"disableResultCache": True})
+
+    texts = {item["text"] for item in result["fragments"]}
+    assert {"agentdesign candidate", "local candidate"}.issubset(texts)
+    engines = {item["engine"] for item in result["engineRuns"]}
+    assert {"agentdesign_pipeline", "paddle_ocr_subprocess"}.issubset(engines)
+
+
+def test_ocr_preprocess_uses_page_scoped_original_variants(monkeypatch, tmp_path) -> None:
+    from apps.ocr_service.preprocess import generate_image_variants
+    from apps.ocr_service.profiles import profile_for
+
+    source = tmp_path / "two-pages.pdf"
+    source.write_bytes(b"%PDF-1.4")
+    page_one = tmp_path / "page-1.png"
+    page_two = tmp_path / "page-2.png"
+    page_one.write_bytes(b"page-one")
+    page_two.write_bytes(b"page-two")
+    monkeypatch.setattr(
+        "apps.ocr_service.preprocess.render_document_pages",
+        lambda source_path, profile=None: [
+            {"pageNo": 1, "path": str(page_one), "documentPath": str(source), "sourceType": "pdf", "renderDpi": 300},
+            {"pageNo": 2, "path": str(page_two), "documentPath": str(source), "sourceType": "pdf", "renderDpi": 300},
+        ],
+    )
+    profile = profile_for("generic_document_v1")
+
+    page_quality = [
+        {"pageNo": 1, "quality": {"hasTableCandidate": False, "hasSealCandidate": False, "isLowQuality": False}},
+        {"pageNo": 2, "quality": {"hasTableCandidate": False, "hasSealCandidate": False, "isLowQuality": False}},
+    ]
+    variants = generate_image_variants(source, profile=profile, page_quality=page_quality, options={"variants": ["original"]})
+
+    assert {item["variantId"] for item in variants if item["source"] == "original"} == {"page_1_original", "page_2_original"}
 
 
 def test_ocr_preprocess_variant_cache_round_trips(monkeypatch, tmp_path) -> None:
@@ -1209,7 +1461,7 @@ def test_ocr_service_result_cache_skips_repeated_engine_run(monkeypatch, tmp_pat
         profile=profile,
         document_version_id="docv_1",
         business_pack_id="engineering_inspection_v1",
-        options={},
+        options={"disableRemediation": True},
     )
     second = service.parse_with_local_engines(
         source,
@@ -1218,7 +1470,7 @@ def test_ocr_service_result_cache_skips_repeated_engine_run(monkeypatch, tmp_pat
         profile=profile,
         document_version_id="docv_2",
         business_pack_id="engineering_inspection_v1",
-        options={},
+        options={"disableRemediation": True},
     )
 
     assert first["status"] == "success"
@@ -2088,7 +2340,7 @@ def test_ocr_engine_result_cache_survives_profile_postprocess_change(monkeypatch
         profile=first_profile,
         document_version_id="docv_1",
         business_pack_id="engineering_inspection_v1",
-        options={},
+        options={"disableRemediation": True},
     )
     second = service.parse_with_local_engines(
         source,
@@ -2097,7 +2349,7 @@ def test_ocr_engine_result_cache_survives_profile_postprocess_change(monkeypatch
         profile=second_profile,
         document_version_id="docv_2",
         business_pack_id="engineering_inspection_v1",
-        options={},
+        options={"disableRemediation": True},
     )
 
     assert first["status"] == "success"
@@ -2107,6 +2359,83 @@ def test_ocr_engine_result_cache_survives_profile_postprocess_change(monkeypatch
     assert second.get("resultCacheHit") is None
     assert second["engineRuns"][0]["engineCacheHit"] is True
     assert second["documentVersionId"] == "docv_2"
+
+
+def test_ocr_remediation_cache_key_includes_remediation_context(monkeypatch, tmp_path) -> None:
+    from apps.ocr_service.profiles import profile_for
+    from apps.ocr_service.service import OcrService
+
+    class RemediationEngine:
+        name = "paddleocr_vl_1_6"
+        version = "test"
+
+        def available(self):
+            return True
+
+        def status(self):
+            return {"engine": self.name, "version": self.version, "available": True}
+
+        def parse(self, source_path, *, file_name=None, profile=None, variant=None):
+            return {
+                "ok": True,
+                "fragments": [
+                    {
+                        "pageNo": 1,
+                        "text": "remediated text",
+                        "bbox": [1, 1, 10, 10],
+                        "confidence": 0.9,
+                    }
+                ],
+            }
+
+    source = tmp_path / "sample.png"
+    source.write_bytes(b"sample-image")
+    captured_options = []
+
+    def capture_cache_key(source_path, *, engine_status, variant, profile, model_manifest, options=None):
+        captured_options.append(options or {})
+        return None
+
+    service = OcrService()
+    service.engines = [RemediationEngine()]
+    monkeypatch.setattr("apps.ocr_service.service.build_engine_result_cache_key", capture_cache_key)
+
+    result = service.run_remediation_pass(
+        {
+            "status": "success",
+            "quality": {"reasons": ["REQUIRED_FIELD_MISSING"]},
+            "fragments": [],
+            "fields": [],
+            "tables": [],
+            "seals": [],
+            "diagnostics": [],
+        },
+        source_path=source,
+        storage_key=str(source),
+        file_name="sample.png",
+        profile=profile_for("ndt_rt_report_v1"),
+        variants=[
+            {
+                "variantId": "page_1_original",
+                "pageNo": 1,
+                "path": str(source),
+                "preprocessChain": ["original"],
+                "imageHash": "sha256:test",
+                "purpose": "general",
+                "source": "original",
+            }
+        ],
+        page_quality=[{"pageNo": 1, "quality": {"isLowQuality": False}}],
+        model_manifest={"modelDirs": {"test": {"hash": "sha256:model"}}},
+        document_version_id="docv_1",
+        business_pack_id="engineering_inspection_v1",
+        options={},
+    )
+
+    assert result["remediationRuns"][0]["status"] == "success"
+    assert captured_options
+    assert captured_options[0]["runRemediation"] is True
+    assert captured_options[0]["remediationReasons"] == ["REQUIRED_FIELD_MISSING"]
 
 
 def test_ocr_parse_document_preserves_local_diagnostics_on_failure(monkeypatch, tmp_path) -> None:
@@ -2226,6 +2555,53 @@ def test_ocr_fusion_required_table_matches_business_schema_suffix() -> None:
 
     assert result["quality"]["missingTables"] == []
     assert "REQUIRED_TABLE_MISSING" not in result["quality"]["reasons"]
+
+
+def test_ocr_fusion_merges_duplicate_required_table_matches() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+    from apps.ocr_service.profiles import profile_for
+
+    result = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [
+                {"fieldCode": "certificate_no", "fieldValue": "QC-001", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "manufacturer", "fieldValue": "河北广浩管件有限公司", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "material_grade", "fieldValue": "20#", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "specification", "fieldValue": "WN100", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "batch_no", "fieldValue": "B001", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "standard_no", "fieldValue": "HG/T20592-2009", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "inspection_conclusion", "fieldValue": "检验合格", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "issue_date", "fieldValue": "2021年3月18日", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "seal", "fieldValue": "质检专用章", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+            ],
+            "tables": [
+                {
+                    "tableId": "docling_table_10",
+                    "businessSchema": "material_chemical_composition_table",
+                    "businessSchemas": ["material_chemical_composition_table", "mechanical_property_table"],
+                    "structureConfidence": 0.9,
+                    "bbox": [0, 0, 100, 100],
+                    "cells": [
+                        {"text": "化学成分", "isHeader": True},
+                        {"text": "碳C", "isHeader": True},
+                        {"text": "抗拉强度", "isHeader": True},
+                        {"text": "延伸率", "isHeader": True},
+                    ],
+                }
+            ],
+            "seals": [{"sealId": "seal_1", "sealType": "quality_seal", "sealName": "质检专用章", "ocrConfidence": 0.9, "bbox": [0, 0, 10, 10]}],
+            "diagnostics": [],
+        },
+        profile=profile_for("quality_certificate_v1"),
+    )
+
+    assert len(result["tables"]) == 1
+    assert result["tables"][0]["matchedRequiredTables"] == [
+        "material_chemical_composition_table",
+        "mechanical_property_table",
+    ]
+    assert result["quality"]["missingTables"] == []
 
 
 def test_ocr_fusion_visual_seal_only_requires_human_review() -> None:

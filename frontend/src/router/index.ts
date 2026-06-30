@@ -340,7 +340,7 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
   {
     path: '/fde',
     component: AICheckStaticLayout,
-    redirect: '/fde/dashboard',
+    redirect: '/fde/projects',
     name: 'FdeConsole',
     meta: {
       title: 'FDE 后台',
@@ -350,25 +350,32 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
     },
     children: [
       ...[
-        ['dashboard', 'FdeDashboard', 'AI 驾驶舱'],
-        ['ai-runs', 'FdeAiRuns', 'AI Run 追踪'],
-        ['review-runs', 'FdeReviewRuns', '任务编排'],
-        ['feedback', 'FdeFeedback', '反馈与标注'],
-        ['evaluation', 'FdeEvaluation', '评估实验室'],
-        ['capability-bundles', 'FdeCapabilityBundles', '能力组合'],
-        ['releases', 'FdeReleases', '发布治理'],
-        ['ocr-quality', 'FdeOcrQuality', 'OCR 质量'],
-        ['business-packs', 'FdeBusinessPacks', '业务包工厂'],
-        ['security', 'FdeSecurity', '数据安全'],
-        ['incidents', 'FdeIncidents', '事故 RCA'],
-        ['costs', 'FdeCosts', '成本预算'],
-        ['acceptance', 'FdeAcceptance', '交付验收']
-      ].map(([path, name, title]) => ({
+        { path: 'projects', name: 'FdeProjects', title: '项目审计工作台', hidden: false },
+        { path: 'dashboard', name: 'FdeDashboard', title: 'AI 驾驶舱', hidden: true },
+        { path: 'ai-runs', name: 'FdeAiRuns', title: 'AI Run 追踪', hidden: true },
+        { path: 'review-runs', name: 'FdeReviewRuns', title: 'Agent 审查编排', hidden: true },
+        { path: 'feedback', name: 'FdeFeedback', title: '人工反馈与样本池', hidden: true },
+        { path: 'evaluation', name: 'FdeEvaluation', title: '评估实验室', hidden: true },
+        {
+          path: 'capability-bundles',
+          name: 'FdeCapabilityBundles',
+          title: '能力版本组合',
+          hidden: true
+        },
+        { path: 'releases', name: 'FdeReleases', title: '发布治理', hidden: true },
+        { path: 'ocr-quality', name: 'FdeOcrQuality', title: 'OCR 质量与标注', hidden: true },
+        { path: 'business-packs', name: 'FdeBusinessPacks', title: '业务包工厂', hidden: true },
+        { path: 'security', name: 'FdeSecurity', title: '数据安全', hidden: true },
+        { path: 'incidents', name: 'FdeIncidents', title: '事故复盘', hidden: true },
+        { path: 'costs', name: 'FdeCosts', title: '成本预算', hidden: true },
+        { path: 'acceptance', name: 'FdeAcceptance', title: '客户验收', hidden: true }
+      ].map(({ path, name, title, hidden }) => ({
         path,
         component: FdeConsole,
         name,
         meta: {
           title,
+          hidden,
           noCache: true,
           roles: ['fde']
         }

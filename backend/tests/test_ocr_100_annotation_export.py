@@ -83,6 +83,47 @@ def test_ocr_100_annotation_export_writes_labeled_eval_set(tmp_path) -> None:
     assert payload["cases"][0]["expected"]["fields"][0]["fieldCode"] == "pipe_no"
 
 
+def test_ocr_100_annotation_export_rejects_machine_draft_labels(tmp_path) -> None:
+    tasks = tmp_path / "annotation_tasks.json"
+    tasks.write_text(
+        json.dumps(
+            {
+                "tasks": [
+                    {
+                        "taskId": "label-real-piping",
+                        "caseId": "real-piping",
+                        "scenario": "piping_table_profile",
+                        "profileId": "piping_characteristic_list_v1",
+                        "documentType": "engineering_table_photo",
+                        "collectionStatus": "needs_human_review",
+                        "sourcePath": "Scan/IMG_6509.heic",
+                        "machineDraftLabel": {"source": "machine_suggestion_draft"},
+                        "labeledExpected": {
+                            "qualityStatus": "auto_usable",
+                            "fields": [{"fieldCode": "pipe_no", "value": "PL8301", "bbox": [10, 20, 200, 80]}],
+                            "tables": [{"businessSchema": "piping_characteristic_table_v1", "bbox": [10, 90, 800, 500]}],
+                            "review": {
+                                "source": "machine_suggestion_draft",
+                                "labeler": "machine_prelabel",
+                                "requiresHumanConfirmation": True,
+                            },
+                        },
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    report = export_annotation_tasks(tasks, output_path=tmp_path / "release.json")
+    codes = {failure["code"] for failure in report["failures"]}
+
+    assert report["ok"] is False
+    assert "OCR_100_ANNOTATION_MACHINE_DRAFT_NOT_CONFIRMED" in codes
+    assert not (tmp_path / "release.json").exists()
+
+
 def test_ocr_100_annotation_export_can_write_incomplete_for_review(tmp_path) -> None:
     tasks = tmp_path / "annotation_tasks.json"
     tasks.write_text(

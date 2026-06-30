@@ -43,6 +43,48 @@ def test_annotation_readiness_blocks_unconfirmed_machine_suggestions(tmp_path) -
     assert "zero_area_bbox" in report["summary"]["blockerCounts"]
 
 
+def test_annotation_readiness_does_not_count_machine_draft_as_human_label(tmp_path) -> None:
+    tasks = tmp_path / "draft_tasks.json"
+    tasks.write_text(
+        json.dumps(
+            {
+                "tasks": [
+                    {
+                        "taskId": "label-case-1",
+                        "caseId": "case-1",
+                        "scenario": "piping_table_profile",
+                        "collectionStatus": "needs_human_review",
+                        "machineDraftLabel": {"source": "machine_suggestion_draft"},
+                        "labeledExpected": {
+                            "qualityStatus": "auto_usable",
+                            "fields": [{"fieldCode": "pipe_no", "value": "PL8301", "bbox": [10, 10, 30, 20]}],
+                            "tables": [{"businessSchema": "piping_characteristic_list", "bbox": [1, 1, 80, 40]}],
+                            "review": {
+                                "source": "machine_suggestion_draft",
+                                "labeler": "machine_prelabel",
+                                "requiresHumanConfirmation": True,
+                            },
+                        },
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    report = build_annotation_readiness_report(tasks)
+
+    assert report["ok"] is False
+    assert report["summary"]["humanLabeled"] == 0
+    assert report["summary"]["missingHumanLabels"] == 1
+    assert report["summary"]["readyForEval"] == 0
+    assert report["tasks"][0]["hasMachineDraftLabel"] is True
+    assert report["tasks"][0]["hasHumanLabel"] is False
+    assert report["summary"]["blockerCounts"]["machine_draft_not_human_confirmed"] == 1
+    assert report["summary"]["blockerCounts"]["missing_human_label"] == 1
+
+
 def test_annotation_readiness_accepts_labeled_positive_evidence(tmp_path) -> None:
     tasks = tmp_path / "labeled_tasks.json"
     tasks.write_text(

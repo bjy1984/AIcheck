@@ -4,18 +4,48 @@ import re
 from copy import deepcopy
 from typing import Any
 
+FIELD_ALIASES = {
+    "管线号": "pipe_no",
+    "管道号": "pipe_no",
+    "管道代号": "pipe_no",
+    "pipeline_no": "pipe_no",
+    "line_no": "pipe_no",
+    "pipe_no": "pipe_no",
+    "图纸编号": "drawing_no",
+    "图纸号": "drawing_no",
+    "dwg_no": "drawing_no",
+    "drawing_no": "drawing_no",
+    "项目名称": "project_name",
+    "project_name": "project_name",
+    "证书编号": "certificate_no",
+    "certificate_no": "certificate_no",
+    "报告编号": "report_no",
+    "report_no": "report_no",
+}
+
+TABLE_HEADER_ALIASES = {
+    "piping_characteristic_table": {"序号", "管道号", "管道代号", "管线号", "公称直径", "管道等级", "设计压力", "介质", "起点", "终点"},
+    "weld_detection_result_table": {"焊口编号", "检测方法", "评定级别", "检测比例", "结论", "报告编号"},
+    "material_chemical_composition_table": {"化学成分", "炉批号", "c", "si", "mn", "p", "s"},
+    "mechanical_property_table": {"力学性能", "抗拉强度", "屈服强度", "伸长率"},
+    "construction_record_table": {"施工日期", "施工内容", "责任人", "检查结果"},
+    "welding_record_table": {"焊口编号", "焊工", "焊工资格", "焊接日期"},
+}
+
 
 def fuse_parse_result(result: dict[str, Any], *, profile: dict[str, Any]) -> dict[str, Any]:
     fused = deepcopy(result)
     fused["fragments"] = dedupe_fragments(fused.get("fragments") or [])
     fused["fields"] = fuse_fields(fused.get("fields") or [])
     fused["tables"] = choose_tables(fused.get("tables") or [], profile=profile)
+    seal_candidates = enrich_visual_seals_from_fragments(
+        fused.get("seals") or [],
+        fused.get("fragments") or [],
+        profile=profile,
+    )
+    seal_candidates.extend(fragment_seal_candidates_from_text(fused.get("fragments") or [], existing_seals=seal_candidates))
     fused["seals"] = fuse_seals(
-        enrich_visual_seals_from_fragments(
-            fused.get("seals") or [],
-            fused.get("fragments") or [],
-            profile=profile,
-        ),
+        seal_candidates,
         profile=profile,
     )
     fused["quality"] = build_quality_gate(fused, profile)
@@ -46,7 +76,7 @@ def fuse_fields(fields: list[Any]) -> list[dict[str, Any]]:
     for field in fields:
         if not isinstance(field, dict):
             continue
-        field_code = str(field.get("fieldCode") or field.get("fieldName") or "")
+        field_code = normalize_field_key(field.get("fieldCode") or field.get("fieldName") or "")
         if not field_code:
             passthrough.append(field)
             continue
@@ -56,7 +86,7 @@ def fuse_fields(fields: list[Any]) -> list[dict[str, Any]]:
         best = max(candidates, key=field_score)
         conflict = field_value_conflict(candidates)
         output = deepcopy(best)
-        output.setdefault("fieldCode", field_code)
+        output["fieldCode"] = field_code
         output["selectedVariantId"] = output.get("selectedVariantId") or output.get("variantId")
         if conflict:
             output["fusionDecision"] = "conflict_highest_confidence_candidate"
@@ -83,19 +113,51 @@ def choose_tables(tables: list[Any], *, profile: dict[str, Any]) -> list[dict[st
     table_items = [table for table in tables if isinstance(table, dict)]
     if not table_items:
         return []
-    if len(table_items) == 1:
+    required_tables = [str(item) for item in profile.get("requiredTables") or []]
+    if len(table_items) == 1 and not required_tables:
         return table_items
-    preferred = sorted(table_items, key=table_score, reverse=True)
-    best = preferred[0]
-    conflicts = [
-        table.get("tableId")
-        for table in preferred[1:]
-        if abs(table_score(best) - table_score(table)) < 0.08 and table.get("sourceEngine") != best.get("sourceEngine")
+    selected: list[dict[str, Any]] = []
+    for required in required_tables:
+        candidates = [table for table in table_items if table_matches_required(table, required)] or table_items
+        best_source = max(candidates, key=lambda item: table_score(item, required_table=required))
+        existing = next((table for table in selected if same_table_identity(table, best_source)), None)
+        if existing is not None:
+            matched = {str(item) for item in existing.get("matchedRequiredTables") or [] if item}
+            if existing.get("matchedRequiredTable"):
+                matched.add(str(existing["matchedRequiredTable"]))
+            matched.add(required)
+            existing["matchedRequiredTables"] = sorted(matched)
+            existing.pop("matchedRequiredTable", None)
+            schemas = {str(item) for item in existing.get("businessSchemas") or [] if item}
+            schemas.update(str(item) for item in best_source.get("businessSchemas") or [] if item)
+            if best_source.get("businessSchema"):
+                schemas.add(str(best_source["businessSchema"]))
+            if schemas:
+                existing["businessSchemas"] = sorted(schemas)
+            continue
+        best = deepcopy(best_source)
+        best.setdefault("matchedRequiredTable", required)
+        conflicts = [
+            table.get("tableId")
+            for table in candidates
+            if not same_table_identity(table, best_source)
+            and abs(table_score(best, required_table=required) - table_score(table, required_table=required)) < 0.08
+            and table.get("sourceEngine") != best.get("sourceEngine")
+        ]
+        if conflicts:
+            best.setdefault("qualityFlags", []).append("table_engine_conflict")
+            best["conflictingTableIds"] = conflicts
+        selected.append(best)
+    unmatched = [
+        table
+        for table in table_items
+        if not any(same_table_identity(table, selected_item) for selected_item in selected)
+        and table_score(table) >= 0.72
     ]
-    if conflicts:
-        best.setdefault("qualityFlags", []).append("table_engine_conflict")
-        best["conflictingTableIds"] = conflicts
-    return [best]
+    selected.extend(deepcopy(table) for table in unmatched)
+    if not selected:
+        selected.append(deepcopy(max(table_items, key=table_score)))
+    return selected
 
 
 def fuse_seals(seals: list[Any], *, profile: dict[str, Any]) -> list[dict[str, Any]]:
@@ -188,7 +250,14 @@ def fragments_for_seal(seal_bbox: list[float], fragments: list[dict[str, Any]]) 
         center_y = (bbox[1] + bbox[3]) / 2
         if x0 - pad_x <= center_x <= x1 + pad_x and y0 - pad_y <= center_y <= y1 + pad_y:
             hits.append(fragment)
-    return sorted(hits, key=fragment_sort_key)[:12]
+    ranked = sorted(hits, key=seal_fragment_rank_key)[:24]
+    return sorted(ranked, key=fragment_sort_key)
+
+
+def seal_fragment_rank_key(fragment: dict[str, Any]) -> tuple[int, float, float, str]:
+    bbox = flat_bbox(fragment.get("bbox")) or [0.0, 0.0, 0.0, 0.0]
+    text = normalize_text(fragment.get("text"))
+    return (0 if seal_text_has_indicator(text) else 1, bbox[1], bbox[0], text)
 
 
 def fragment_sort_key(fragment: dict[str, Any]) -> tuple[float, float, str]:
@@ -206,8 +275,7 @@ def seal_fragment_hits_are_readable(
     text = " ".join(normalize_text(item.get("text")) for item in hits)
     if len(text.replace(" ", "")) < 8:
         return False
-    indicators = ["章", "许可", "管道", "检测", "公司", "设计", "TS"]
-    if any(indicator in text for indicator in indicators):
+    if seal_text_has_indicator(text):
         return True
     expected = " ".join(str(item) for item in (profile.get("sealRules") or {}).get("expectedSealTypes") or [])
     return bool(expected and any(token in text.lower() for token in ["seal", "license", "permit"]))
@@ -218,14 +286,129 @@ def compact_seal_text(text: str) -> str:
     return clean[:120]
 
 
+def seal_text_has_indicator(text: str) -> bool:
+    indicators = ["章", "许可", "管道", "检测", "检验", "公司", "设计", "出图", "单位名称", "TS"]
+    return any(indicator in text for indicator in indicators)
+
+
 def infer_fragment_seal_type(text: str, seal: dict[str, Any]) -> str:
-    if "管道" in text or re.search(r"TS\s*\d", text, flags=re.I):
+    if "设计许可" in text or ("管道" in text and ("许可" in text or re.search(r"TS\s*\d", text, flags=re.I))):
         return "design_license_seal"
     if "检测" in text or "检验" in text:
         return "inspection_testing_seal"
-    if "出图" in text or "设计" in text:
+    if "出图" in text or "审图" in text or "施工图审查" in text:
         return "drawing_approval_seal"
+    if "管道" in text or re.search(r"TS\s*\d", text, flags=re.I):
+        return "design_license_seal"
     return str(seal.get("sealType") or "fragment_text_seal")
+
+
+def fragment_seal_candidates_from_text(
+    fragments: list[dict[str, Any]],
+    *,
+    existing_seals: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    existing_types = {normalize_seal_type_key(seal.get("sealType")) for seal in existing_seals if isinstance(seal, dict)}
+    grouped: dict[int, list[dict[str, Any]]] = {}
+    for fragment in fragments:
+        if not isinstance(fragment, dict):
+            continue
+        page_no = int(fragment.get("pageNo") or 1)
+        grouped.setdefault(page_no, []).append(fragment)
+    specs = [
+        (
+            "design_license_seal",
+            ("设计许可", "压力管道"),
+            ("设计许可", "许可", "压力管道", "TS"),
+        ),
+        (
+            "drawing_approval_seal",
+            ("出图", "单位名称"),
+            ("出图", "出图专用", "施工图审查", "单位名称"),
+        ),
+        (
+            "inspection_testing_seal",
+            ("检测", "检验"),
+            ("检测专用章", "检验专用章", "检验检测", "检测", "检验"),
+        ),
+        (
+            "quality_seal",
+            ("质量", "证明"),
+            ("质量证明", "出厂检验", "质量专用章", "质量", "证明"),
+        ),
+    ]
+    for page_no, page_fragments in grouped.items():
+        for seal_type, required_terms, optional_terms in specs:
+            if seal_type in existing_types:
+                continue
+            hits = keyword_fragment_hits(page_fragments, required_terms=required_terms, optional_terms=optional_terms)
+            if not hits:
+                continue
+            bbox = union_bbox([flat_bbox(item.get("bbox")) for item in hits])
+            if not bbox:
+                continue
+            text = " ".join(normalize_text(item.get("text")) for item in sorted(hits, key=fragment_sort_key))
+            candidates.append(
+                {
+                    "sealId": f"fragment_{seal_type}_{page_no}_{len(candidates) + 1}",
+                    "pageNo": page_no,
+                    "sealType": seal_type,
+                    "sealName": compact_seal_text(text),
+                    "bbox": bbox,
+                    "polygon": bbox_to_polygon(bbox),
+                    "ocrConfidence": round(min(0.88, max(0.68, average([float(item.get("confidence") or 0.0) for item in hits]) * 0.9)), 4),
+                    "fields": fragment_seal_fields(text, hits, bbox, 0.78),
+                    "qualityFlags": ["fragment_seal_text", "text_only_seal_candidate"],
+                    "sourceEngine": "fragment_seal_text_detector",
+                    "fragmentEvidence": [
+                        {
+                            "text": item.get("text"),
+                            "bbox": item.get("bbox"),
+                            "confidence": item.get("confidence"),
+                            "sourceEngine": item.get("sourceEngine"),
+                        }
+                        for item in hits
+                    ],
+                }
+            )
+            existing_types.add(seal_type)
+    return candidates
+
+
+def keyword_fragment_hits(
+    fragments: list[dict[str, Any]],
+    *,
+    required_terms: tuple[str, ...],
+    optional_terms: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    term_hits: list[dict[str, Any]] = []
+    text_blob = " ".join(normalize_text(item.get("text")) for item in fragments)
+    if not all(term in text_blob for term in required_terms):
+        return []
+    for fragment in fragments:
+        text = normalize_text(fragment.get("text"))
+        if text and any(term in text for term in optional_terms):
+            term_hits.append(fragment)
+    if len(term_hits) < 2:
+        return []
+    bbox = union_bbox([flat_bbox(item.get("bbox")) for item in term_hits])
+    if not bbox:
+        return []
+    x0, y0, x1, y1 = bbox
+    pad_x = max((x1 - x0) * 0.18, 80.0)
+    pad_y = max((y1 - y0) * 0.18, 80.0)
+    nearby: list[dict[str, Any]] = []
+    for fragment in fragments:
+        fragment_bbox = flat_bbox(fragment.get("bbox"))
+        if not fragment_bbox:
+            continue
+        center_x = (fragment_bbox[0] + fragment_bbox[2]) / 2
+        center_y = (fragment_bbox[1] + fragment_bbox[3]) / 2
+        if x0 - pad_x <= center_x <= x1 + pad_x and y0 - pad_y <= center_y <= y1 + pad_y:
+            nearby.append(fragment)
+    ranked = sorted(nearby or term_hits, key=seal_fragment_rank_key)[:18]
+    return sorted(ranked, key=fragment_sort_key)
 
 
 def fragment_seal_fields(
@@ -437,11 +620,31 @@ def table_matches_required(table: dict[str, Any], required_table: str) -> bool:
         return False
     candidates = [
         table.get("businessSchema"),
+        table.get("businessSchemas"),
+        table.get("matchedRequiredTables"),
         table.get("tableId"),
         table.get("tableType"),
         table.get("schema"),
     ]
-    return any(normalize_table_key(candidate) == required for candidate in candidates)
+    if any(normalize_table_key(candidate) == required for candidate in flatten_table_candidates(candidates)):
+        return True
+    return table_schema_match_score(table, required_table) >= 0.58
+
+
+def flatten_table_candidates(candidates: list[Any]) -> list[Any]:
+    flattened: list[Any] = []
+    for candidate in candidates:
+        if isinstance(candidate, (list, tuple, set)):
+            flattened.extend(candidate)
+        else:
+            flattened.append(candidate)
+    return flattened
+
+
+def same_table_identity(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    if left.get("tableId") and right.get("tableId") and left.get("tableId") == right.get("tableId"):
+        return True
+    return left.get("sourceEngine") == right.get("sourceEngine") and left.get("bbox") == right.get("bbox")
 
 
 def normalize_table_key(value: Any) -> str:
@@ -449,6 +652,37 @@ def normalize_table_key(value: Any) -> str:
     normalized = re.sub(r"_v\d+$", "", normalized)
     normalized = re.sub(r"_\d+$", "", normalized)
     return normalized
+
+
+def table_schema_match_score(table: dict[str, Any], required_table: str | None) -> float:
+    if not required_table:
+        return 0.0
+    expected = TABLE_HEADER_ALIASES.get(normalize_table_key(required_table), set())
+    if not expected:
+        return 0.0
+    headers = table_header_tokens(table)
+    if not headers:
+        return 0.0
+    matched = {token for token in expected if any(token in header or header in token for header in headers)}
+    return len(matched) / max(len(expected), 1)
+
+
+def table_header_tokens(table: dict[str, Any]) -> set[str]:
+    tokens: set[str] = set()
+    for cell in table.get("cells") or []:
+        if not isinstance(cell, dict) or not cell.get("isHeader"):
+            continue
+        token = normalize_header_token(cell.get("text"))
+        if token:
+            tokens.add(token)
+    for row in (table.get("normalizedRows") or [])[:2]:
+        if isinstance(row, dict):
+            tokens.update(normalize_header_token(key) for key in row.keys())
+    return {token for token in tokens if token}
+
+
+def normalize_header_token(value: Any) -> str:
+    return re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "", str(value or "").strip().lower())
 
 
 def field_score(field: dict[str, Any]) -> float:
@@ -618,15 +852,29 @@ def mark_missing_required_evidence(
 
 
 def normalize_field_key(value: Any) -> str:
-    return str(value or "").strip().lower()
+    normalized = re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "_", str(value or "").strip().lower()).strip("_")
+    return FIELD_ALIASES.get(normalized, normalized)
 
 
-def table_score(table: dict[str, Any]) -> float:
+def table_score(table: dict[str, Any], required_table: str | None = None) -> float:
     confidence = float(table.get("structureConfidence") or 0.0)
     normalized_rows = len(table.get("normalizedRows") or [])
     cells = len(table.get("cells") or [])
     source_bonus = 0.12 if table.get("sourceEngine") == "pp_structure_v3" else 0.0
-    return confidence + min(normalized_rows, 20) * 0.02 + min(cells, 200) * 0.0005 + source_bonus
+    header_bonus = table_schema_match_score(table, required_table) * 0.22 if required_table else 0.0
+    fill_bonus = table_fill_rate(table) * 0.08
+    return confidence + min(normalized_rows, 20) * 0.02 + min(cells, 200) * 0.0005 + source_bonus + header_bonus + fill_bonus
+
+
+def table_fill_rate(table: dict[str, Any]) -> float:
+    cells = [cell for cell in table.get("cells") or [] if isinstance(cell, dict)]
+    if cells:
+        return len([cell for cell in cells if str(cell.get("text") or "").strip()]) / max(len(cells), 1)
+    rows = [row for row in table.get("normalizedRows") or [] if isinstance(row, dict)]
+    values = [value for row in rows for value in row.values()]
+    if not values:
+        return 0.0
+    return len([value for value in values if str(value or "").strip()]) / len(values)
 
 
 def table_is_heuristic_fallback(table: dict[str, Any]) -> bool:
@@ -639,7 +887,7 @@ def seal_score(seal: dict[str, Any], profile: dict[str, Any] | None = None) -> f
     confidence = float(seal.get("ocrConfidence") or seal.get("visualConfidence") or 0.0)
     name_bonus = 0.12 if str(seal.get("sealName") or "").strip() else 0.0
     flags = {str(flag) for flag in seal.get("qualityFlags") or []}
-    formal_bonus = -0.08 if "visual_candidate_only" in flags else 0.25
+    formal_bonus = -0.3 if "visual_candidate_only" in flags else 0.25
     if "agentdesign_seal_ocr" in flags:
         formal_bonus += 0.2
     return confidence + name_bonus + formal_bonus + visual_profile_bonus(seal, profile or {})
@@ -716,6 +964,23 @@ def flat_bbox(raw_bbox: Any) -> list[float] | None:
     if not points:
         return None
     return [min(x for x, _ in points), min(y for _, y in points), max(x for x, _ in points), max(y for _, y in points)]
+
+
+def union_bbox(boxes: list[list[float] | None]) -> list[float] | None:
+    valid = [box for box in boxes if box and len(box) >= 4]
+    if not valid:
+        return None
+    return [
+        min(float(box[0]) for box in valid),
+        min(float(box[1]) for box in valid),
+        max(float(box[2]) for box in valid),
+        max(float(box[3]) for box in valid),
+    ]
+
+
+def bbox_to_polygon(bbox: list[float]) -> list[list[float]]:
+    x0, y0, x1, y1 = [float(item) for item in bbox[:4]]
+    return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
 
 
 def evidence_completeness(result: dict[str, Any]) -> float:

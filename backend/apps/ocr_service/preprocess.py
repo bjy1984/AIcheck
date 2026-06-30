@@ -10,6 +10,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from apps.ocr_service.pages import render_document_pages
+
 PREPROCESS_CACHE_SCHEMA = "aicheck-ocr-preprocess-cache-v1"
 
 
@@ -21,56 +23,74 @@ def generate_image_variants(
     options: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     requested = requested_variant_names(profile, page_quality, options=options)
-    quality = (page_quality[0].get("quality") if page_quality else {}) or {}
-    variants = [
-        build_original_variant(source_path),
-    ]
+    quality_by_page = {
+        int(item.get("pageNo") or 1): (item.get("quality") if isinstance(item.get("quality"), dict) else {})
+        for item in page_quality
+        if isinstance(item, dict)
+    }
+    pages = render_document_pages(source_path, profile=profile)
+    variants = [build_original_variant(Path(str(page.get("path") or source_path)), page=page) for page in pages]
     cache_dir = variant_cache_dir(source_path, profile, requested, options=options)
     cached_variants = load_cached_variants(cache_dir)
     if cached_variants is not None:
-        return [variants[0], *cached_variants]
+        return [*variants, *cached_variants]
 
-    image = load_image(source_path)
-    if image is None:
-        generated = generate_variants_subprocess(source_path, requested, quality, out_dir=cache_dir)
-        save_cached_variants(cache_dir, generated)
-        return [variants[0], *generated]
-    cv2, np, raw = image
+    generated: list[dict[str, Any]] = []
     out_dir = cache_dir or Path(tempfile.mkdtemp(prefix="aicheck-ocr-variants-"))
     out_dir.mkdir(parents=True, exist_ok=True)
-    variant_builders = {
-        "deskew": lambda: deskew_image(cv2, np, raw, float(quality.get("skewAngle") or 0.0)),
-        "gray_clahe": lambda: gray_clahe_image(cv2, raw),
-        "denoise_light": lambda: denoise_light_image(cv2, raw),
-        "adaptive_threshold": lambda: adaptive_threshold_image(cv2, raw),
-        "table_line_enhanced": lambda: table_line_enhanced_image(cv2, np, raw),
-        "seal_color_mask": lambda: seal_color_mask_image(cv2, raw),
-    }
-    for name in requested:
-        if name == "original" or name not in variant_builders:
+    for page in pages:
+        page_no = int(page.get("pageNo") or 1)
+        page_path = Path(str(page.get("path") or source_path))
+        quality = quality_by_page.get(page_no) or {}
+        image = load_image(page_path)
+        if image is None:
+            generated.extend(
+                generate_variants_subprocess(
+                    page_path,
+                    requested,
+                    quality,
+                    out_dir=out_dir,
+                    page_no=page_no,
+                    document_path=Path(str(page.get("documentPath") or source_path)),
+                )
+            )
             continue
-        try:
-            variant_image = variant_builders[name]()
-        except Exception:
-            continue
-        if variant_image is None:
-            continue
-        target = out_dir / f"{source_path.stem or 'page'}-{name}.png"
-        if not cv2.imwrite(str(target), variant_image):
-            continue
-        variants.append(
-            {
-                "variantId": f"page_1_{name}",
-                "pageNo": 1,
-                "path": str(target),
-                "preprocessChain": preprocess_chain_for(name),
-                "imageHash": file_hash(target),
-                "purpose": purpose_for_variant(name),
-                "source": "generated",
-            }
-        )
-    save_cached_variants(cache_dir, variants[1:])
-    return variants
+        cv2, np, raw = image
+        variant_builders = {
+            "deskew": lambda: deskew_image(cv2, np, raw, float(quality.get("skewAngle") or 0.0)),
+            "gray_clahe": lambda: gray_clahe_image(cv2, raw),
+            "denoise_light": lambda: denoise_light_image(cv2, raw),
+            "adaptive_threshold": lambda: adaptive_threshold_image(cv2, raw),
+            "table_line_enhanced": lambda: table_line_enhanced_image(cv2, np, raw),
+            "seal_color_mask": lambda: seal_color_mask_image(cv2, raw),
+        }
+        for name in requested:
+            if name == "original" or name not in variant_builders:
+                continue
+            try:
+                variant_image = variant_builders[name]()
+            except Exception:
+                continue
+            if variant_image is None:
+                continue
+            target = out_dir / f"page-{page_no}-{name}.png"
+            if not cv2.imwrite(str(target), variant_image):
+                continue
+            generated.append(
+                {
+                    "variantId": f"page_{page_no}_{name}",
+                    "pageNo": page_no,
+                    "path": str(target),
+                    "documentPath": str(page.get("documentPath") or source_path),
+                    "preprocessChain": preprocess_chain_for(name),
+                    "imageHash": file_hash(target),
+                    "purpose": purpose_for_variant(name),
+                    "source": "generated",
+                    "coordinateTransformStatus": "unmapped" if name in {"deskew"} else "identity",
+                }
+            )
+    save_cached_variants(cache_dir, generated)
+    return [*variants, *generated]
 
 
 def requested_variant_names(
@@ -81,7 +101,8 @@ def requested_variant_names(
 ) -> list[str]:
     policy = profile.get("preprocessPolicy") or {}
     requested = list((options or {}).get("variants") or policy.get("variants") or ["original"])
-    quality = (page_quality[0].get("quality") if page_quality else {}) or {}
+    qualities = [(item.get("quality") if isinstance(item.get("quality"), dict) else {}) for item in page_quality]
+    quality = merged_quality_flags(qualities)
     if quality.get("hasTableCandidate") and "table_line_enhanced" not in requested:
         requested.append("table_line_enhanced")
     if quality.get("hasSealCandidate") and "seal_color_mask" not in requested:
@@ -93,12 +114,25 @@ def requested_variant_names(
     return cap_requested_variants(requested, quality)
 
 
+def merged_quality_flags(qualities: list[dict[str, Any]]) -> dict[str, Any]:
+    if not qualities:
+        return {}
+    return {
+        "hasTableCandidate": any(item.get("hasTableCandidate") for item in qualities),
+        "hasSealCandidate": any(item.get("hasSealCandidate") for item in qualities),
+        "isLowQuality": any(item.get("isLowQuality") for item in qualities),
+        "skewAngle": max((abs(float(item.get("skewAngle") or 0.0)) for item in qualities), default=0.0),
+    }
+
+
 def generate_variants_subprocess(
     source_path: Path,
     requested: list[str],
     quality: dict[str, Any],
     *,
     out_dir: Path | None = None,
+    page_no: int = 1,
+    document_path: Path | None = None,
 ) -> list[dict[str, Any]]:
     python_bin = os.getenv("AICHECK_OCR_SUBPROCESS_PYTHON")
     if not python_bin or not Path(python_bin).exists():
@@ -199,13 +233,15 @@ def generate_variants_subprocess(
         name = str(item["name"])
         variants.append(
             {
-                "variantId": f"page_1_{name}",
-                "pageNo": 1,
+                "variantId": f"page_{page_no}_{name}",
+                "pageNo": page_no,
                 "path": str(path),
+                "documentPath": str(document_path or source_path),
                 "preprocessChain": preprocess_chain_for(name),
                 "imageHash": file_hash(path),
                 "purpose": purpose_for_variant(name),
                 "source": "generated",
+                "coordinateTransformStatus": "unmapped" if name in {"deskew"} else "identity",
             }
         )
     return variants
@@ -309,15 +345,18 @@ def cap_requested_variants(requested: list[str], quality: dict[str, Any]) -> lis
     return selected
 
 
-def build_original_variant(source_path: Path) -> dict[str, Any]:
+def build_original_variant(source_path: Path, *, page: dict[str, Any] | None = None) -> dict[str, Any]:
+    page_no = int((page or {}).get("pageNo") or 1)
     return {
-        "variantId": "page_1_original",
-        "pageNo": 1,
+        "variantId": f"page_{page_no}_original",
+        "pageNo": page_no,
         "path": str(source_path),
+        "documentPath": str((page or {}).get("documentPath") or source_path),
         "preprocessChain": ["original"],
         "imageHash": file_hash(source_path) if source_path.exists() else None,
         "purpose": "general",
         "source": "original",
+        "coordinateTransformStatus": "identity",
     }
 
 

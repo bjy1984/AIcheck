@@ -83,7 +83,7 @@ const List: {
     roleLabel: 'FDE 工程师',
     displayName: 'FDE 工程师',
     orgUnitName: 'AI 交付治理组',
-    defaultPath: '/fde/dashboard',
+    defaultPath: '/fde/projects',
     permissions: ['fde:default']
   },
   {

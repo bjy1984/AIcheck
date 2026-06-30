@@ -151,12 +151,19 @@ def main() -> int:
         action="store_true",
         help="Apply runtime-doctor recommended local OCR Python and model paths when env vars are not already set.",
     )
+    parser.add_argument(
+        "--no-auto-allow-source-dir",
+        action="store_true",
+        help="Do not add the probed local source directory to AICHECK_OCR_ALLOWED_LOCAL_DIRS for this CLI run.",
+    )
     parser.add_argument("--output", help="Optional full OCR parse-result JSON output path.")
     parser.add_argument("--summary-output", help="Optional compact JSON summary output path.")
     args = parser.parse_args()
     apply_auto_discovered_runtime(args)
 
     source = Path(args.source)
+    if not bool(getattr(args, "no_auto_allow_source_dir", False)):
+        allow_probe_source_dir(source)
     if source.is_dir():
         results = [run_one(path, args) for path in sorted(source.iterdir()) if path.is_file()]
         summary = build_directory_summary(results)
@@ -211,6 +218,30 @@ def apply_auto_discovered_runtime(args: argparse.Namespace) -> dict[str, str]:
         os.environ[key] = value
         applied[key] = value
     return applied
+
+
+def allow_probe_source_dir(source: Path) -> None:
+    paths: list[str] = []
+    try:
+        resolved = source.expanduser().resolve()
+    except Exception:
+        return
+    if resolved.is_dir():
+        paths.append(str(resolved))
+    else:
+        paths.append(str(resolved.parent))
+    os.environ["AICHECK_OCR_ALLOWED_LOCAL_DIRS"] = merge_allowed_local_dirs(
+        os.getenv("AICHECK_OCR_ALLOWED_LOCAL_DIRS"),
+        paths,
+    )
+
+
+def merge_allowed_local_dirs(existing: str | None, additions: list[str]) -> str:
+    values = [item.strip() for item in (existing or "").split(",") if item.strip()]
+    for item in additions:
+        if item and item not in values:
+            values.append(item)
+    return ",".join(values)
 
 
 def build_parse_options(args: argparse.Namespace) -> dict[str, Any]:

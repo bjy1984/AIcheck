@@ -1000,6 +1000,17 @@ export type FdeReviewRunDetailPayload = {
   graph: ReviewGraphPayload
   timeline: Array<Record<string, unknown>>
   temporal: Record<string, unknown>
+  reasoningTrace?: Array<Record<string, unknown>>
+  lineage?: Record<string, unknown>
+  qualityEvaluation?: {
+    score?: number
+    status?: string
+    dimensions?: Array<Record<string, unknown>>
+    gates?: Array<Record<string, unknown>>
+    humanReviewRequired?: boolean
+  }
+  humanCorrections?: Array<Record<string, unknown>>
+  redactionPolicy?: string
   scorecard?: {
     schemaVersion?: string
     targetScore: number
@@ -1014,6 +1025,49 @@ export type FdeReviewRunDetailPayload = {
     }>
     blockers: string[]
   }
+}
+
+export type FdeProjectAuditSummary = {
+  project: Project
+  metrics: Record<string, number>
+  currentNodeId?: number
+  currentNodeName?: string
+  topBlockers: Array<Record<string, unknown>>
+  updatedAt?: string
+}
+
+export type FdeProjectAuditDocument = DocumentAsset & {
+  knowledgeFileId?: string
+  knowledgeSourceId?: string
+  knowledgeSourceName?: string
+  sliceStatus?: '未切片' | '切片中' | '已切片' | '切片失败' | string
+  vectorStatus?: KnowledgeSource['vectorStatus'] | string
+  chunkCount?: number
+  vectorCount?: number
+  embeddingModel?: string
+  indexVersion?: string
+  vectorDimensions?: number
+  pageIndexStatus?: string
+  pageIndexNodeCount?: number
+  latestKnowledgeTask?: Record<string, unknown> | string
+}
+
+export type FdeProjectAuditWorkspace = {
+  project: Project
+  selectedNodeId?: number
+  selectedNode?: ProjectTreeNode | null
+  groups: Array<{ groupName: string; nodes: ProjectTreeNode[] }>
+  nodeSummaries: Array<Record<string, unknown>>
+  metrics: Record<string, number>
+  documents: FdeProjectAuditDocument[]
+  bindings: NodeFileBinding[]
+  submissions: Array<Record<string, unknown>>
+  reviewRuns: FdeReviewRun[]
+  aiRuns: FdeAiRun[]
+  ocrJobs: Array<Record<string, unknown>>
+  ocrAnnotationTasks: Array<Record<string, unknown>>
+  qualityBlockers: Array<Record<string, unknown>>
+  updatedAt?: string
 }
 
 export type FdeFeedback = {
@@ -2518,8 +2572,27 @@ export const getFdeDashboardApi = (): Promise<IResponse<FdeDashboardPayload>> =>
   return request.get({ url: '/api/fde/dashboard' })
 }
 
+export const listFdeProjectsApi = (): Promise<IResponse<FdeProjectAuditSummary[]>> => {
+  return request.get({ url: '/api/fde/projects' })
+}
+
+export const getFdeProjectAuditWorkspaceApi = (
+  projectId: string,
+  params?: { nodeId?: number }
+): Promise<IResponse<FdeProjectAuditWorkspace>> => {
+  return request.get({ url: `/api/fde/projects/${projectId}/audit-workspace`, params })
+}
+
+export const getFdeProjectNodeAuditDetailApi = (
+  projectId: string,
+  nodeId: number
+): Promise<IResponse<Record<string, unknown>>> => {
+  return request.get({ url: `/api/fde/projects/${projectId}/nodes/${nodeId}/audit-detail` })
+}
+
 export const listFdeAiRunsApi = (params?: {
   projectId?: string
+  nodeId?: number
   businessPackId?: string
   status?: string
   page?: number
@@ -2534,6 +2607,9 @@ export const getFdeAiRunApi = (runId: string): Promise<IResponse<FdeAiRunDetailP
 
 export const listFdeReviewRunsApi = (params?: {
   projectId?: string
+  nodeId?: number
+  submissionId?: string
+  documentVersionId?: string
   businessPackId?: string
   status?: string
   page?: number
@@ -2966,11 +3042,18 @@ export const rollbackFdeBusinessPackApi = (
   })
 }
 
-export const getFdeOcrQualityApi = (): Promise<IResponse<FdeOcrQualityPayload>> => {
-  return request.get({ url: '/api/fde/ocr-quality' })
+export const getFdeOcrQualityApi = (params?: {
+  projectId?: string
+  nodeId?: number
+  profileId?: string
+}): Promise<IResponse<FdeOcrQualityPayload>> => {
+  return request.get({ url: '/api/fde/ocr-quality', params })
 }
 
 export const listFdeOcrRunsApi = (params?: {
+  projectId?: string
+  nodeId?: number
+  documentVersionId?: string
   pageNo?: number
   pageSize?: number
   status?: string
@@ -2984,6 +3067,9 @@ export const getFdeOcrRunApi = (jobId: string): Promise<IResponse<FdeOcrRunDetai
 }
 
 export const listFdeOcrAnnotationTasksApi = (params?: {
+  projectId?: string
+  nodeId?: number
+  documentVersionId?: string
   pageNo?: number
   pageSize?: number
   status?: string

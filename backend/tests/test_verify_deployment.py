@@ -57,7 +57,7 @@ def api_transport(request: httpx.Request) -> httpx.Response:
         return envelope({"username": role, "defaultRole": role})
     if path == "/api/auth/login":
         role = json.loads(request.read().decode("utf-8"))["username"]
-        default_path = "/admin/overview" if role == "admin" else "/fde/dashboard" if role == "fde" else f"/workbench/{role}"
+        default_path = "/admin/overview" if role == "admin" else "/fde/projects" if role == "fde" else f"/workbench/{role}"
         return envelope(
             {
                 "token": f"token-{role}",

@@ -92,10 +92,14 @@ def annotation_task_status(task: dict[str, Any]) -> dict[str, Any]:
     template = task.get("expectedTemplate") if isinstance(task.get("expectedTemplate"), dict) else None
     expected = labeled or template or {}
     collection_status = str(task.get("collectionStatus") or "")
+    machine_draft = bool(labeled and is_machine_draft_label(task, labeled))
+    human_labeled = bool(labeled) and not machine_draft
     blockers = []
-    if not labeled:
+    if not human_labeled:
         blockers.append("missing_human_label")
-    elif collection_status != "ready_for_eval":
+    if machine_draft:
+        blockers.append("machine_draft_not_human_confirmed")
+    elif human_labeled and collection_status != "ready_for_eval":
         blockers.append("review_required")
     blockers.extend(certification_blockers(expected))
     blockers.extend(evidence_blockers(expected))
@@ -113,11 +117,26 @@ def annotation_task_status(task: dict[str, Any]) -> dict[str, Any]:
         "documentType": task.get("documentType"),
         "collectionStatus": task.get("collectionStatus"),
         "hasMachineSuggestion": bool(suggested),
-        "hasHumanLabel": bool(labeled),
-        "readyForEval": bool(labeled) and collection_status == "ready_for_eval" and not blockers,
+        "hasMachineDraftLabel": bool(machine_draft),
+        "hasHumanLabel": bool(human_labeled),
+        "readyForEval": bool(human_labeled) and collection_status == "ready_for_eval" and not blockers,
         "blockers": blockers,
         "previewPaths": task.get("previewPaths") or [],
     }
+
+
+def is_machine_draft_label(task: dict[str, Any], expected: dict[str, Any] | None = None) -> bool:
+    expected = expected if isinstance(expected, dict) else task.get("labeledExpected")
+    review = expected.get("review") if isinstance(expected, dict) and isinstance(expected.get("review"), dict) else {}
+    machine_draft = task.get("machineDraftLabel") if isinstance(task.get("machineDraftLabel"), dict) else {}
+    source = str(review.get("source") or machine_draft.get("source") or "").strip()
+    labeler = str(review.get("labeler") or task.get("labeler") or "").strip()
+    return bool(
+        machine_draft
+        or review.get("requiresHumanConfirmation") is True
+        or source in {"machine_suggestion_draft", "machine_prelabel_draft", "ocr_prelabel_draft"}
+        or labeler in {"machine_prelabel", "machine_suggestion", "ocr_prelabel"}
+    )
 
 
 def evidence_blockers(expected: dict[str, Any]) -> list[str]:
@@ -203,6 +222,8 @@ def next_actions(items: list[dict[str, Any]]) -> list[str]:
     actions: list[str] = []
     if any("missing_human_label" in (item.get("blockers") or []) for item in items):
         actions.append("Import the Label Studio package, correct machine predictions, and export human annotations.")
+    if any("machine_draft_not_human_confirmed" in (item.get("blockers") or []) for item in items):
+        actions.append("Review machine draft labels, correct values/bboxes, then set a real labeler and reviewer before ready_for_eval.")
     if any("machine_suggestion_not_confirmed" in (item.get("blockers") or []) for item in items):
         actions.append("Run ocr_100_label_studio_import.py so predictions become reviewed labeledExpected values.")
     if any("placeholder_labels" in (item.get("blockers") or []) for item in items):

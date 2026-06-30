@@ -30,6 +30,46 @@ def test_paddlex_seal_engine_available_with_subprocess_runtime(monkeypatch, tmp_
     assert status["missingModelDirs"] == []
 
 
+def test_paddlex_seal_engine_auto_enables_when_local_models_exist(monkeypatch, tmp_path) -> None:
+    seal_det = tmp_path / "PP-OCRv4_server_seal_det"
+    seal_rec = tmp_path / "PP-OCRv4_server_rec"
+    seal_det.mkdir()
+    seal_rec.mkdir()
+    python_bin = tmp_path / "python"
+    python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+
+    monkeypatch.delenv("AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE", raising=False)
+    monkeypatch.setenv("AICHECK_OCR_SUBPROCESS_PYTHON", str(python_bin))
+    monkeypatch.setenv("AICHECK_SEAL_DET_MODEL_DIR", str(seal_det))
+    monkeypatch.setenv("AICHECK_SEAL_REC_MODEL_DIR", str(seal_rec))
+    monkeypatch.setattr(engines, "subprocess_package_available", lambda package: package == "paddlex")
+
+    engine = engines.PaddlexSealEngine()
+    status = engine.status()
+
+    assert engine.available() is True
+    assert status["enabled"] == "auto"
+
+
+def test_paddlex_seal_engine_can_be_explicitly_disabled(monkeypatch, tmp_path) -> None:
+    seal_det = tmp_path / "PP-OCRv4_server_seal_det"
+    seal_rec = tmp_path / "PP-OCRv4_server_rec"
+    seal_det.mkdir()
+    seal_rec.mkdir()
+    python_bin = tmp_path / "python"
+    python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+
+    monkeypatch.setenv("AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE", "false")
+    monkeypatch.setenv("AICHECK_OCR_SUBPROCESS_PYTHON", str(python_bin))
+    monkeypatch.setenv("AICHECK_SEAL_DET_MODEL_DIR", str(seal_det))
+    monkeypatch.setenv("AICHECK_SEAL_REC_MODEL_DIR", str(seal_rec))
+    monkeypatch.setattr(engines, "subprocess_package_available", lambda package: package == "paddlex")
+
+    engine = engines.PaddlexSealEngine()
+
+    assert engine.available() is False
+
+
 def test_pp_structure_engine_available_with_subprocess_runtime(monkeypatch, tmp_path) -> None:
     model_names = [
         "PP-DocLayout-L",

@@ -35,8 +35,9 @@ def test_fde_login_and_dynamic_routes() -> None:
     routes = assert_ok(client.get("/api/auth/routes?role=fde"))
 
     assert login["user"]["role"] == "fde"
-    assert login["user"]["defaultPath"] == "/fde/dashboard"
+    assert login["user"]["defaultPath"] == "/fde/projects"
     assert [route["path"] for route in routes] == ["/fde"]
+    assert routes[0]["children"][0]["path"] == "projects"
     assert routes[0]["children"][0]["component"] == "views/AICheck/FdeConsole"
 
 
@@ -222,11 +223,36 @@ def test_fde_review_run_visualization_replay_and_shadow(monkeypatch) -> None:
     }
     assert detail["scorecard"]["score"] < 100
     assert any("Temporal" in blocker for blocker in detail["scorecard"]["blockers"])
+    assert detail["reasoningTrace"]
+    assert detail["reasoningTrace"][0]["redactionPolicy"] == "audit_summary_only_no_raw_chain_of_thought"
+    assert all("rawChainOfThought" not in item for item in detail["reasoningTrace"])
+    assert detail["lineage"]["reasoningPolicy"] == "show_audit_summary_not_raw_chain_of_thought"
+    assert detail["lineage"]["capabilityBundleHash"].startswith("sha256:")
+    assert detail["qualityEvaluation"]["dimensions"]
+    assert detail["qualityEvaluation"]["gates"]
+    assert detail["qualityEvaluation"]["humanReviewRequired"] is True
+    assert detail["humanCorrections"] == []
     assert graph["nodes"]
     assert graph["artifactSummary"]["toolCalls"] >= 3
     assert graph["artifacts"]["retrievalTraces"]
     assert graph["artifacts"]["ruleCheckResults"]
     assert temporal["workflowType"] == "ReviewRunWorkflow"
+    decision = assert_ok(
+        client.post(
+            f"/api/review-runs/{review_run_id}/human-decision",
+            json={
+                "decision": "edit",
+                "comment": "人工修正 finding 表述，纳入评估样本。",
+                "correctedOutput": [{"description": "人工修正后的审查发现。"}],
+                "shouldEnterEvaluationSet": True,
+            },
+            headers={"X-Role": "inspection", "Idempotency-Key": "fde-review-decision-001"},
+        )
+    )
+    detail_after_decision = assert_ok(client.get(f"/api/fde/review-runs/{review_run_id}", headers={"X-Role": "fde"}))
+    assert decision["feedback"]["feedbackType"] == "edited"
+    assert detail_after_decision["humanCorrections"]
+    assert detail_after_decision["humanCorrections"][0]["shouldEnterEvaluationSet"] is True
     assert replay["reviewRun"]["parentReviewRunId"] == review_run_id
     assert replay["reviewRun"]["runMode"] == "diagnostic_replay"
     assert shadow["reviewRun"]["parentReviewRunId"] == review_run_id
@@ -1082,6 +1108,7 @@ def test_fde_100_routes_and_governance_surface() -> None:
     child_paths = {child["path"] for child in routes[0]["children"]}
 
     assert {
+        "projects",
         "dashboard",
         "ai-runs",
         "review-runs",
@@ -1096,6 +1123,140 @@ def test_fde_100_routes_and_governance_surface() -> None:
         "costs",
         "acceptance",
     } <= child_paths
+
+
+def test_fde_project_audit_workspace_groups_tasks_and_blockers() -> None:
+    projects = assert_ok(client.get("/api/fde/projects", headers={"X-Role": "fde"}))
+    first = projects[0]
+    project_id = first["project"]["id"]
+    workspace = assert_ok(
+        client.get(f"/api/fde/projects/{project_id}/audit-workspace", headers={"X-Role": "fde"})
+    )
+    node_id = workspace["selectedNodeId"]
+    detail = assert_ok(
+        client.get(
+            f"/api/fde/projects/{project_id}/nodes/{node_id}/audit-detail",
+            headers={"X-Role": "fde"},
+        )
+    )
+
+    assert first["metrics"]["nodes"] >= 1
+    assert workspace["project"]["id"] == project_id
+    assert workspace["groups"]
+    assert workspace["nodeSummaries"]
+    assert workspace["metrics"]["documents"] >= 1
+    assert workspace["metrics"]["knowledgeChunks"] >= 1
+    assert workspace["metrics"]["knowledgeVectors"] >= 1
+    assert workspace["metrics"]["vectorizedDocuments"] >= 1
+    assert workspace["metrics"]["pageIndexNodes"] >= 1
+    assert "reviewRuns" in workspace
+    assert "ocrJobs" in workspace
+    assert "ocrAnnotationTasks" in workspace
+    assert "qualityBlockers" in workspace
+    assert workspace["reviewRuns"]
+    review_run = workspace["reviewRuns"][0]
+    assert review_run["graphSummary"]["total"] >= 1
+    assert review_run["graphAuditSummary"]["nodeCount"] >= 1
+    assert review_run["graphAuditSummary"]["edgeCount"] >= 1
+    assert review_run["graphAuditSummary"]["timelineCount"] >= 1
+    assert review_run["graphAuditSummary"]["workflowEngine"]
+    assert review_run["graphAuditSummary"]["graphEngine"] == "langgraph"
+    assert "artifactSummary" in review_run["graphAuditSummary"]
+    assert workspace["ocrAnnotationTasks"]
+    annotation_task = workspace["ocrAnnotationTasks"][0]
+    assert "candidateCounts" in annotation_task
+    assert "labelCounts" in annotation_task
+    assert "readyForEval" in annotation_task
+    assert "readinessBlockers" in annotation_task
+    document = workspace["documents"][0]
+    assert document["knowledgeFileId"].startswith("KF-")
+    assert document["sliceStatus"] in {"已切片", "切片中", "待切片", "等待OCR"}
+    assert document["vectorStatus"] in {"已向量化", "向量化中", "待向量化", "未向量化"}
+    assert document["chunkCount"] >= 1
+    assert document["vectorCount"] >= 1
+    assert document["embeddingModel"] == "embedding-default"
+    assert document["indexVersion"]
+    assert document["pageIndexStatus"] == "已构建"
+    assert document["pageIndexNodeCount"] >= 1
+    assert detail["summary"]["nodeId"] == node_id
+    assert "bindings" in detail
+
+
+def test_fde_project_audit_workspace_supplies_backend_projection_data() -> None:
+    workspace = assert_ok(
+        client.get(
+            "/api/fde/projects/P-2026-GDLNG-002/audit-workspace?nodeId=16",
+            headers={"X-Role": "fde"},
+        )
+    )
+
+    assert workspace["metrics"]["documents"] >= 4
+    assert workspace["metrics"]["knowledgeChunks"] >= 100
+    assert workspace["metrics"]["knowledgeVectors"] >= 80
+    assert workspace["metrics"]["pageIndexNodes"] >= 4
+    assert workspace["metrics"]["ocrJobs"] >= 4
+    assert workspace["metrics"]["annotationTasks"] >= 4
+    assert {item["fileName"] for item in workspace["documents"]} >= {
+        "管道特性表-第2版.png",
+        "质量证明书-QX201903S.pdf",
+        "RT检测报告-焊口清单.pdf",
+        "焊工资格证与外部查询截图.pdf",
+    }
+    assert any(item["profileId"] == "piping_characteristic_list_v1" for item in workspace["ocrJobs"])
+    assert any(item["profileId"] == "seal_text_profile_v1" for item in workspace["ocrAnnotationTasks"])
+    assert any(item["vectorCount"] < item["chunkCount"] for item in workspace["documents"])
+    assert workspace["reviewRuns"]
+
+    review_run_id = workspace["reviewRuns"][0]["reviewRunId"]
+    detail = assert_ok(client.get(f"/api/fde/review-runs/{review_run_id}", headers={"X-Role": "fde"}))
+    graph = detail["graph"]
+
+    assert detail["run"]["workflowEngine"] == "temporal"
+    assert detail["run"]["graphEngine"] == "langgraph"
+    assert detail["run"]["graphExecution"]["checkpointer"] == "postgres"
+    assert detail["scorecard"]["score"] == 100
+    assert detail["lineage"]["reasoningPolicy"] == "show_audit_summary_not_raw_chain_of_thought"
+    assert len(graph["nodes"]) >= 12
+    assert graph["artifactSummary"]["toolCalls"] >= 5
+    assert graph["artifactSummary"]["retrievalTraces"] >= 2
+    assert graph["artifactSummary"]["pageIndexTraces"] >= 1
+    assert graph["artifactSummary"]["findingDrafts"] >= 2
+    assert detail["reasoningTrace"]
+    assert all("rawChainOfThought" not in item for item in detail["reasoningTrace"])
+
+    ocr_job_id = workspace["ocrJobs"][0]["jobId"]
+    ocr_detail = assert_ok(client.get(f"/api/fde/ocr-runs/{ocr_job_id}", headers={"X-Role": "fde"}))
+    assert ocr_detail["job"]["jobId"] == ocr_job_id
+    assert ocr_detail["parseResult"]["parseResultId"] == workspace["ocrJobs"][0]["parseResultId"]
+    assert ocr_detail["parseResult"]["preprocessStatus"]["generatedVariants"]
+    assert ocr_detail["parseResult"]["fields"]
+    assert ocr_detail["parseResult"]["tables"]
+    assert ocr_detail["parseResult"]["seals"]
+    assert ocr_detail["parseResult"]["diagnostics"]
+
+
+def test_fde_synthetic_ocr_job_detail_can_be_opened_directly() -> None:
+    review_detail = assert_ok(
+        client.get(
+            "/api/fde/review-runs/RR-AUDIT-P-2026-GDLNG-002-16",
+            headers={"X-Role": "fde"},
+        )
+    )
+    detail = assert_ok(
+        client.get(
+            "/api/fde/ocr-runs/OCR-JOB-FDE-2026GDLNG002-1",
+            headers={"X-Role": "fde"},
+        )
+    )
+
+    assert review_detail["run"]["reviewRunId"] == "RR-AUDIT-P-2026-GDLNG-002-16"
+    assert review_detail["run"]["workflowEngine"] == "temporal"
+    assert review_detail["run"]["graphExecution"]["checkpointer"] == "postgres"
+    assert review_detail["graph"]["artifactSummary"]["pageIndexTraces"] >= 1
+    assert detail["job"]["jobId"] == "OCR-JOB-FDE-2026GDLNG002-1"
+    assert detail["parseResult"]["profileId"] == "piping_characteristic_list_v1"
+    assert "table_line_enhanced" in detail["parseResult"]["preprocessStatus"]["generatedVariants"]
+    assert detail["parseResult"]["quality"]["status"] in {"auto_usable", "needs_human_review"}
 
 
 def test_fde_security_masking_data_export_and_audit_flow() -> None:

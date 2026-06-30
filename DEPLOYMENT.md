@@ -484,7 +484,7 @@ AICHECK_PPSTRUCTURE_WIRED_TABLE_STRUCTURE_MODEL_DIR=/models/paddlex/SLANeXt_wire
 AICHECK_PPSTRUCTURE_WIRED_TABLE_CELLS_MODEL_DIR=/models/paddlex/RT-DETR-L_wired_table_cell_det
 AICHECK_PPSTRUCTURE_WIRELESS_TABLE_STRUCTURE_MODEL_DIR=/models/paddlex/SLANeXt_wireless
 AICHECK_PPSTRUCTURE_WIRELESS_TABLE_CELLS_MODEL_DIR=/models/paddlex/RT-DETR-L_wireless_table_cell_det
-AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE=false
+AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE=auto
 AICHECK_SEAL_DET_MODEL_DIR=/models/paddlex/PP-OCRv4_server_seal_det
 AICHECK_SEAL_REC_MODEL_DIR=/models/paddleocr/PP-OCRv4_server_rec
 AICHECK_PADDLEOCR_VL_LAYOUT_MODEL_DIR=/models/paddleocr-vl/PP-DocLayoutV3
@@ -547,7 +547,7 @@ OCR 离线模型目录支持两种布局：
 | `AICHECK_OCR_ENABLE_PERSISTENT_SUBPROCESS` | 否 | 生产建议 `true`，让 `paddle_ocr_subprocess` 复用常驻 PaddleOCR worker，避免每次解析重复加载模型；异常时自动回退一次性子进程。 |
 | `AICHECK_OCR_PERSISTENT_WORKER_TIMEOUT` | 否 | 常驻 PaddleOCR worker 单次请求超时秒数，默认沿用 `AICHECK_OCR_SUBPROCESS_TIMEOUT` 或 `180`。 |
 | `AICHECK_PPSTRUCTURE_*_MODEL_DIR` | 建议 | PP-StructureV3 版面、无线/有线表格结构和单元格检测模型目录；缺失时表格引擎不可用，不会联网下载。 |
-| `AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE` | 否 | 默认 `false`；只有确认本地 PaddleX 印章 pipeline 和模型可用后再启用。未启用时仍会使用本地颜色视觉候选作为印章定位兜底。 |
+| `AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE` | 否 | 默认 `auto`；本地 PaddleX 包和印章模型目录齐全时自动启用真实章名识别，显式设为 `false` 才关闭。必需印章 Profile 不应只依赖颜色视觉候选，未跑出可读章名时会进入人工复核。 |
 | `AICHECK_SEAL_DET_MODEL_DIR` / `AICHECK_SEAL_REC_MODEL_DIR` | 建议 | PaddleX 印章检测和文字识别模型目录。 |
 | `AICHECK_OCR_PREPROCESS_CACHE_DIR` | 否 | 预处理候选图缓存目录，默认 `/tmp/aicheck-ocr-preprocess-cache`；缓存键包含源文件 hash、Profile 和预处理策略。结果会返回 `preprocessStatus.requestedVariants/generatedVariants/missingVariants`。 |
 | `AICHECK_OCR_DISABLE_VARIANT_CACHE` | 否 | 设为 `true` 时禁用预处理候选缓存，用于排查图像策略问题。 |
@@ -1099,9 +1099,39 @@ python scripts/ocr_100_scorecard.py \
 `Scan/` 这类数字文件名扫描件需要配合 `--manifest ./ocr_eval/scan_sample_manifest.json` 导入；当前 manifest 识别出 30 个待标注样本，覆盖质量证明、管道特性表、施工资料、资质证书、焊接工艺评定、RT 报告、印章文字、碎片印章、证据定位和质量门禁场景；本地 Scan 批次仍缺 UT 报告样本。
 `ocr_100_annotation_pack.py` 会把待标注队列转成 `annotation_tasks.json`、CSV、Markdown 和可选预览图，便于人工填写字段/表格/印章标签及正面积坐标；预览包是本地工作产物，完成标注后再把 verified expected 写回 release eval set。
 `ocr_100_annotation_prelabel.py` 可从已有 OCR JSON 或 `--run-ocr` 生成 `suggestedExpected` 机器预标注；本地真实 OCR 建议加 `--auto-discover-runtime` 自动套用 runtime doctor 推荐的 OCR Python 和模型目录，用 `--disable-result-cache` 避免复用旧失败缓存，用 `--save-result-dir` 保存每个 case 的原始 OCR JSON，并用 `--case-id`/`--limit` 分批处理昂贵任务；这些建议只用于人工复核，审核人必须复制/修正到 `labeledExpected` 后才会被导出为真值。
+预标注脚本默认优先使用 annotation pack 中的 `previewPaths`，不只限 HEIC，也包括 PDF 渲染预览；这样机器建议和人工标注共享同一张 PNG 的像素坐标，避免直接重跑原始多页 PDF 后 bbox 坐标系不一致。
+`ocr_100_sample_probe_batch.py` 用于把 `scan_sample_queue.json` 中的真实样本按 case/profile 批量跑 OCR，并输出 `ocr_100_scorecard.py --sample-summary` 可直接消费的 `items[]` 摘要。它适合做上线前真实样张 smoke，不会生成或确认金标；`--scorecard-sample-gate` 只验证样张是否达到字段、表格、印章和证据门禁。示例：
+
+```bash
+python scripts/ocr_100_sample_probe_batch.py ./ocr_eval/reports/scan_sample_queue.json \
+  --case-id real-piping_table_profile-002 \
+  --scorecard-sample-gate \
+  --auto-discover-runtime \
+  --disable-result-cache \
+  --output ./ocr_eval/reports/scan_sample_probe_batch.json \
+  --summary-dir ./ocr_eval/reports/scan_sample_probe_items \
+  --require-all-pass
+
+python scripts/ocr_100_scorecard.py \
+  --eval-set ./ocr_eval/reports/ocr_100_release_set.json \
+  --sample-summary ./ocr_eval/reports/scan_sample_probe_batch.json \
+  --auto-discover-runtime \
+  --output ./ocr_eval/reports/ocr_100_scorecard.json
+```
+
 `ocr_100_label_studio_export.py` 会把标注/预标注任务转换成 Label Studio 的 `label_config.xml` 和 `label_studio_tasks.json`；配置 Label Studio local files 指向同一个 `--local-files-root` 后，机器建议 bbox 会作为可编辑 prediction region 导入，方便人工修正字段、表格和印章坐标。导出默认不允许静默跳过缺预览或不可读预览的任务，`--allow-skipped` 只适合分批草稿导出，全空导出仍不能作为成功标注包。
 `ocr_100_label_studio_import.py` 会把 Label Studio 导出的人工 `annotations` 回写到 `labeledExpected`：如果审核人填写了完整 `label_json`，优先使用该 JSON；否则把人工矩形区域换算回像素 bbox，并尽量合并匹配的 `suggestedExpected` 字段/表格/印章元数据。脚本默认忽略 `predictions`，避免机器预标注未经人工确认就进入金标；导入阶段也会严格检查占位标签、零面积 bbox 和缺少字段/表格/印章证据，默认失败，只有显式 `--allow-incomplete` 才能作为复核草稿继续写出。
 `ocr_annotation_readiness.py` 用于在导出 release eval set 前检查人工标注进度，输出任务数、人工已标注数、可入评估集数、场景覆盖、阻断项计数和下一步动作；它会把只有 `suggestedExpected` 的机器预标注标记为 `machine_suggestion_not_confirmed`，防止机器结果未经人工校对直接进入金标。
+`ocr_100_annotation_sprint.py` 用于把 annotation/prelabelled pack 转成“人工标注冲刺计划”，按 OCR 100 场景目标、是否已有机器建议、是否已有正面积证据和 readiness blocker 排序，输出 JSON、Markdown 和 CSV 工作清单。它只排班和提示，不会把机器建议升级成金标。示例：
+
+```bash
+python scripts/ocr_100_annotation_sprint.py ./ocr_eval/reports/scan_annotation_pack/prelabelled_tasks.json \
+  --limit 30 \
+  --output ./ocr_eval/reports/scan_annotation_sprint.json \
+  --markdown-output ./ocr_eval/reports/scan_annotation_sprint.md \
+  --csv-output ./ocr_eval/reports/scan_annotation_sprint.csv
+```
+
 `ocr_100_annotation_export.py` 是标注包到 release eval set 的严格交接工具：默认拒绝占位标签、零面积 bbox 和缺少字段/表格/印章证据的半成品；`--allow-incomplete` 只用于复核草稿输出，仍会报告未完成项数量，不能用于 OCR 100 认证。
 
 ### 7.1 OCR 手动打标教程
@@ -1143,6 +1173,102 @@ python scripts/ocr_100_annotation_prelabel.py ./ocr_eval/reports/scan_annotation
   --save-result-dir ./ocr_eval/reports/scan_ocr_results \
   --limit 5
 ```
+
+单个样本修复或模型策略更新后，可以只刷新目标 case，避免覆盖整包：
+
+```bash
+python scripts/ocr_100_annotation_prelabel.py ./ocr_eval/reports/scan_annotation_pack \
+  --output ./ocr_eval/reports/scan_annotation_pack/prelabelled_img6509_refreshed_tasks.json \
+  --source-base-dir .. \
+  --run-ocr \
+  --auto-discover-runtime \
+  --disable-result-cache \
+  --save-result-dir ./ocr_eval/reports/scan_ocr_results_refreshed \
+  --case-id real-piping_table_profile-002 \
+  --max-fields 8 \
+  --max-tables 3 \
+  --max-seals 3
+```
+
+刷新局部 case 后，先合并成新的主预标注包，再把该合并包交给人工标注。合并工具默认保留已有 `labeledExpected`，不会覆盖人工金标：
+
+```bash
+python scripts/ocr_100_annotation_merge_prelabels.py \
+  ./ocr_eval/reports/scan_annotation_pack/prelabelled_tasks.json \
+  ./ocr_eval/reports/scan_annotation_pack/prelabelled_img6509_refreshed_tasks.json \
+  --output ./ocr_eval/reports/scan_annotation_pack/prelabelled_tasks_merged.json
+
+python scripts/ocr_100_annotation_sprint.py ./ocr_eval/reports/scan_annotation_pack/prelabelled_tasks_merged.json \
+  --limit 30 \
+  --output ./ocr_eval/reports/scan_annotation_sprint_merged.json \
+  --markdown-output ./ocr_eval/reports/scan_annotation_sprint_merged.md \
+  --csv-output ./ocr_eval/reports/scan_annotation_sprint_merged.csv
+```
+
+刷新一批 OCR 结果后，先做 Scan manifest 审计，防止样本场景错配污染 100-case 评估集。审计工具会读取队列/manifest、已保存 OCR result，按关键词和 OCR 文本给出 `suggestedScenario`、`mismatch` 和目标分布缺口；它只给人工复核建议，不会自动修改 manifest：
+
+```bash
+python scripts/ocr_100_manifest_audit.py ./ocr_eval/reports/scan_sample_queue.json \
+  --result-dir ./ocr_eval/reports/scan_ocr_results_refreshed \
+  --result-dir ./ocr_eval/reports/scan_ocr_results_single \
+  --output ./ocr_eval/reports/scan_manifest_audit.json \
+  --csv-output ./ocr_eval/reports/scan_manifest_audit.csv \
+  --markdown-output ./ocr_eval/reports/scan_manifest_audit.md
+```
+
+如果审计报告出现 `mismatch`，先人工确认文件类型，再决定是修正 manifest/队列场景，还是把该样本排除出对应场景的 release eval set。比如 `管道壁厚计算书/设计图纸` 不应继续作为 `quality_certificate_profile` 的质量证明书金标样本。
+
+对旧 `NO_LOCAL_OCR_RESULT` 或 `qualityStatus=failed` 的预标注包，先生成重试计划，不要盲目全量重跑。计划会把 manifest mismatch 样本放入 `reviewBeforeRetry`，其余旧失败样本按优先级拆成小批次，并生成可审阅的 shell 命令：
+
+```bash
+python scripts/ocr_100_prelabel_retry_plan.py \
+  ./ocr_eval/reports/scan_annotation_pack/prelabelled_tasks_merged_v2.json \
+  --manifest-audit ./ocr_eval/reports/scan_manifest_audit.json \
+  --limit 12 \
+  --batch-size 3 \
+  --output ./ocr_eval/reports/scan_prelabel_retry_plan.json \
+  --csv-output ./ocr_eval/reports/scan_prelabel_retry_plan.csv \
+  --shell-output ./ocr_eval/reports/scan_prelabel_retry_plan.sh \
+  --refresh-output ./ocr_eval/reports/scan_annotation_pack/prelabelled_retry_refreshed_tasks.json \
+  --merged-output ./ocr_eval/reports/scan_annotation_pack/prelabelled_tasks_retry_merged.json \
+  --result-dir ./ocr_eval/reports/scan_ocr_results_refreshed \
+  --source-base-dir ..
+```
+
+执行 `scan_prelabel_retry_plan.sh` 前必须先打开 CSV/JSON 核对 caseId，尤其是 `reviewBeforeRetry`。计划生成的命令默认带 `--retry-fast-timeouts --engine-timeout-seconds <N> --disable-remediation`，用于快速刷新旧失败样本并避免二阶段补救链路拖慢批量预标注；如果要做完整 OCR 优化回归，再用 `--enable-remediation` 重新生成计划。若确认错配样本仍需要重跑，可加 `--include-mismatches` 重新生成计划；否则应先修正 manifest/队列或排除该样本。每批重试完成后，再运行 `ocr_100_manifest_audit.py` 和 `ocr_100_annotation_sprint.py` 生成新的人工标注冲刺清单。
+
+如果某条机器预标注已经足够接近人工结果，可以先把它复制成“人工复核草稿”，减少手工录入量。下面命令只处理 `IMG_6509` 对应 case，并且只接受 `qualityStatus=auto_usable` 的机器建议：
+
+```bash
+python scripts/ocr_100_annotation_draft_labels.py \
+  ./ocr_eval/reports/scan_annotation_pack/prelabelled_tasks_merged.json \
+  --case-id real-piping_table_profile-002 \
+  --only-auto-usable \
+  --output ./ocr_eval/reports/scan_annotation_pack/draft_labeled_img6509_tasks.json
+
+python scripts/ocr_annotation_readiness.py \
+  ./ocr_eval/reports/scan_annotation_pack/draft_labeled_img6509_tasks.json \
+  --output ./ocr_eval/reports/scan_annotation_pack/draft_labeled_img6509_readiness.json \
+  --markdown-output ./ocr_eval/reports/scan_annotation_pack/draft_labeled_img6509_readiness.md
+```
+
+`ocr_100_annotation_draft_labels.py` 会把 `suggestedExpected` 复制到 `labeledExpected`，同时标记 `machineDraftLabel` 和 `review.source=machine_suggestion_draft`，状态保持为 `needs_human_review`。这种草稿不会被计入人工金标，也不能通过 `ready_for_eval`；人工必须校对字段值、表格、印章和 bbox，删除 `machine_prelabel`，填写真实 `labeler/reviewer` 后才可进入评估。
+
+人工完成逐项校对后，用 finalize 工具做最后门禁。该工具默认拒绝机器草稿；只有明确传入 `--confirm-human-reviewed`，并填写不同的 `--labeler` / `--reviewer`，才会移除 `machineDraftLabel`、写入 `review.source=human_review` 并尝试进入 `ready_for_eval`：
+
+```bash
+python scripts/ocr_100_annotation_finalize_labels.py \
+  ./ocr_eval/reports/scan_annotation_pack/draft_labeled_img6509_tasks.json \
+  --case-id real-piping_table_profile-002 \
+  --labeler "标注员A" \
+  --reviewer "复核员B" \
+  --comment "人工已核对字段、表格、印章和证据框" \
+  --confirm-human-reviewed \
+  --output ./ocr_eval/reports/scan_annotation_pack/labeled_img6509_tasks.json \
+  --report-output ./ocr_eval/reports/scan_annotation_pack/finalize_img6509_report.json
+```
+
+如果未传 `--confirm-human-reviewed`，工具会生成失败报告并保持 `outputWritten=false`，用于证明该 case 仍停留在人工复核阶段。若校对后仍存在空值、零面积 bbox、重复字段、缺少表格/印章证据或标注员/复核人相同，finalize 同样会失败。
 
 `prelabelled_tasks.json` 里的 `suggestedExpected` 只是机器建议，不能直接作为金标。每条任务必须由人工写入或确认 `labeledExpected`，再由第二个人或 FDE 复核进入 `ready_for_eval`。
 
@@ -1250,6 +1376,7 @@ curl -X POST http://127.0.0.1:8000/api/fde/ocr-annotation/readiness \
 | --- | --- | --- |
 | `missing_human_label` | 没有人工 `labeledExpected` | 进入 FDE 工作台编辑并保存草稿。 |
 | `machine_suggestion_not_confirmed` | 只有机器 `suggestedExpected` | 人工校对后保存为 `labeledExpected`。 |
+| `machine_draft_not_human_confirmed` | `labeledExpected` 是机器草稿，不是人工金标 | 人工逐项校对并改成真实标注员，再由不同复核人二审。 |
 | `review_required` | 已标注但未二审 | 由不同复核人二审通过。 |
 | `review_labeler_missing` / `review_reviewer_missing` | 缺少标注员或复核人 | 填写标注员和复核人。 |
 | `reviewer_equals_labeler` | 标注员和复核人相同 | 换不同复核人。 |
@@ -1293,7 +1420,15 @@ python scripts/ocr_annotation_readiness.py ./ocr_eval/reports/scan_annotation_pa
   --output ./ocr_eval/reports/scan_annotation_readiness.json \
   --markdown-output ./ocr_eval/reports/scan_annotation_readiness.md
 
-python scripts/ocr_100_annotation_export.py ./ocr_eval/reports/scan_annotation_pack/labeled_tasks.json \
+python scripts/ocr_100_annotation_finalize_labels.py \
+  ./ocr_eval/reports/scan_annotation_pack/labeled_tasks.json \
+  --labeler "标注员A" \
+  --reviewer "复核员B" \
+  --confirm-human-reviewed \
+  --output ./ocr_eval/reports/scan_annotation_pack/ready_labeled_tasks.json \
+  --report-output ./ocr_eval/reports/scan_annotation_finalize_report.json
+
+python scripts/ocr_100_annotation_export.py ./ocr_eval/reports/scan_annotation_pack/ready_labeled_tasks.json \
   --output ./ocr_eval/reports/scan_labeled_release_set.json \
   --report-output ./ocr_eval/reports/scan_annotation_export_report.json
 

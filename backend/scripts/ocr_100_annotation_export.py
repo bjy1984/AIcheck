@@ -14,6 +14,7 @@ from apps.ocr_service.annotation_schema import validate_expected_schema
 from apps.ocr_service.evaluation import ocr_100_thresholds
 from scripts.ocr_100_annotation_pack import certification_blockers
 from scripts.ocr_100_corpus import expected_evidence_failures
+from scripts.ocr_annotation_readiness import is_machine_draft_label
 from scripts.ocr_eval_set import write_text_file
 
 READY_STATUSES = {"labeled", "verified", "ready_for_eval"}
@@ -117,6 +118,7 @@ def export_task(task: dict[str, Any], *, exported_at: str, mark_status: str) -> 
             "parentTaskId": task.get("parentTaskId"),
             "pageNo": task.get("pageNo"),
             "sourceCollectionStatus": task.get("collectionStatus"),
+            "machineDraftLabel": task.get("machineDraftLabel") if isinstance(task.get("machineDraftLabel"), dict) else None,
             "exportedAt": exported_at,
             "labeler": task.get("labeler"),
             "reviewer": task.get("reviewer"),
@@ -184,6 +186,15 @@ def export_failures(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
             failures.append({"code": "OCR_100_ANNOTATION_CASE_ID_DUPLICATE", "message": f"Duplicate caseId: {case_id}", "caseId": case_id})
         seen.add(case_id)
         expected = case.get("expected") if isinstance(case.get("expected"), dict) else {}
+        annotation = case.get("annotation") if isinstance(case.get("annotation"), dict) else {}
+        if is_machine_draft_label({"machineDraftLabel": annotation.get("machineDraftLabel")}, expected):
+            failures.append(
+                {
+                    "code": "OCR_100_ANNOTATION_MACHINE_DRAFT_NOT_CONFIRMED",
+                    "message": f"{case_id}: machine draft labels must be reviewed by a human labeler and second reviewer before export.",
+                    "caseId": case_id,
+                }
+            )
         for schema_failure in validate_expected_schema(
             expected,
             scenario=str(case.get("scenario") or ""),
