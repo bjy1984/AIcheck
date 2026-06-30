@@ -119,7 +119,8 @@ def build_collection_intake(
             f"--candidates {relative_to(Path.cwd(), output_dir / 'collection_candidates.json')} "
             "--output ocr_eval/reports/ocr_100_action_board.json "
             "--markdown-output ocr_eval/reports/ocr_100_action_board.md "
-            "--csv-output ocr_eval/reports/ocr_100_action_board.csv"
+            "--csv-output ocr_eval/reports/ocr_100_action_board.csv "
+            "--handoff-output-dir ocr_eval/reports/ocr_100_action_handoff"
         ),
         "autofillManifest": (
             "python scripts/ocr_100_collection_intake_autofill.py "

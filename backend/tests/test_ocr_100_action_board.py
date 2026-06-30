@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.ocr_100_action_board import action_board_csv, action_board_markdown, build_action_board
+from scripts.ocr_100_action_board import action_board_csv, action_board_markdown, build_action_board, write_action_handoff
 
 
 def write_json(path: Path, payload: dict) -> Path:
@@ -98,6 +98,18 @@ def test_action_board_combines_collection_label_and_candidate_actions(tmp_path: 
     assert "checklist" in csv_text
     assert "core fields; table bbox" in csv_text
     assert "triage-new-candidates" in csv_text
+    manifest = write_action_handoff(board, tmp_path / "handoff")
+    assert manifest["schemaVersion"] == "aicheck-ocr-100-action-handoff-v1"
+    assert manifest["laneCounts"]["collect_samples"] == 1
+    assert manifest["laneCounts"]["label_existing"] == 1
+    collect_markdown = (tmp_path / "handoff" / "collect_samples.md").read_text(encoding="utf-8")
+    label_csv = (tmp_path / "handoff" / "label_existing.csv").read_text(encoding="utf-8")
+    readme = (tmp_path / "handoff" / "README.md").read_text(encoding="utf-8")
+    assert "Collect Real OCR Samples" in collect_markdown
+    assert "ocr_eval/reports/ocr_100_sample_intake_after_batch6_dedupe/samples/ndt_rt_profile" in collect_markdown
+    assert "case-1" in label_csv
+    assert "Human Label Existing OCR Samples" in (tmp_path / "handoff" / "label_existing.md").read_text(encoding="utf-8")
+    assert "Execution Order" in readme
 
 
 def test_action_board_adds_release_eval_action_when_labels_are_ready(tmp_path: Path) -> None:

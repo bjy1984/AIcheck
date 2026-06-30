@@ -620,6 +620,8 @@ test.describe('AIcheck deep route menu', () => {
     await expect(page.locator('.fde-console')).toContainText('向量入库')
     await expect(page.locator('.fde-console')).toContainText('向量条目')
     await expect(page.locator('.fde-console')).toContainText('PageIndex')
+    await expect(page.locator('.fde-console')).toContainText('Lineage 来源')
+    await expect(page.locator('.fde-console')).toContainText('后端审计投影')
 
     await page.goto('/#/fde/projects?view=pageindex')
     await page.waitForLoadState('networkidle')

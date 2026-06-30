@@ -60,6 +60,7 @@ def test_ocr_100_collection_intake_creates_scenario_folders_and_manifest(tmp_pat
     assert "collection_candidates.md" in report["summary"]["commands"]["scanDroppedCandidates"]
     assert "ocr_100_action_board.py" in report["summary"]["commands"]["actionBoard"]
     assert "ocr_100_action_board.csv" in report["summary"]["commands"]["actionBoard"]
+    assert "--handoff-output-dir" in report["summary"]["commands"]["actionBoard"]
     assert "ocr_100_collection_intake_autofill.py" in report["summary"]["commands"]["autofillManifest"]
     assert "manifest_autofilled.json" in report["summary"]["commands"]["verifyAutofilledManifest"]
     assert "ocr_100_collection_intake_pipeline.py" in report["summary"]["commands"]["pipelineDryRun"]

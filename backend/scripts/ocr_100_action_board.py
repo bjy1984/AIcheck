@@ -32,6 +32,7 @@ def main() -> int:
     parser.add_argument("--output", help="Optional JSON output path.")
     parser.add_argument("--markdown-output", help="Optional Markdown output path.")
     parser.add_argument("--csv-output", help="Optional CSV output path.")
+    parser.add_argument("--handoff-output-dir", help="Optional directory for collector/labeler handoff Markdown and CSV files.")
     parser.add_argument("--strict", action="store_true", help="Return non-zero unless the OCR 100 action board is complete.")
     args = parser.parse_args()
 
@@ -49,6 +50,8 @@ def main() -> int:
         write_text_file(Path(args.markdown_output), action_board_markdown(report))
     if args.csv_output:
         write_text_file(Path(args.csv_output), action_board_csv(report))
+    if args.handoff_output_dir:
+        write_action_handoff(report, Path(args.handoff_output_dir))
     print(json.dumps(report["summary"], ensure_ascii=False, indent=2))
     return 0 if (report.get("ok") or not args.strict) else 1
 
@@ -341,6 +344,134 @@ def action_board_csv(report: dict[str, Any]) -> str:
             }
         )
     return handle.getvalue()
+
+
+def write_action_handoff(report: dict[str, Any], output_dir: Path) -> dict[str, Any]:
+    output_dir = output_dir.expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    actions = [action for action in report.get("actions") or [] if isinstance(action, dict)]
+    grouped = actions_by_lane(actions)
+    files = {
+        "readme": output_dir / "README.md",
+        "collectMarkdown": output_dir / "collect_samples.md",
+        "collectCsv": output_dir / "collect_samples.csv",
+        "labelMarkdown": output_dir / "label_existing.md",
+        "labelCsv": output_dir / "label_existing.csv",
+    }
+    write_text_file(files["readme"], action_handoff_readme(report, grouped))
+    write_text_file(files["collectMarkdown"], lane_markdown(report, grouped.get("collect_samples", []), lane="collect_samples"))
+    write_text_file(files["collectCsv"], lane_csv(grouped.get("collect_samples", []), lane="collect_samples"))
+    write_text_file(files["labelMarkdown"], lane_markdown(report, grouped.get("label_existing", []), lane="label_existing"))
+    write_text_file(files["labelCsv"], lane_csv(grouped.get("label_existing", []), lane="label_existing"))
+    manifest = {
+        "schemaVersion": "aicheck-ocr-100-action-handoff-v1",
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "outputDir": str(output_dir),
+        "summary": report.get("summary") if isinstance(report.get("summary"), dict) else {},
+        "laneCounts": {lane: len(items) for lane, items in sorted(grouped.items())},
+        "files": {key: str(path) for key, path in files.items()},
+    }
+    write_text_file(output_dir / "handoff_manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+    return manifest
+
+
+def actions_by_lane(actions: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for action in actions:
+        lane = str(action.get("lane") or "unspecified")
+        grouped.setdefault(lane, []).append(action)
+    return grouped
+
+
+def action_handoff_readme(report: dict[str, Any], grouped: dict[str, list[dict[str, Any]]]) -> str:
+    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+    collect_count = len(grouped.get("collect_samples", []))
+    label_count = len(grouped.get("label_existing", []))
+    lines = [
+        "# OCR 100 Operator Handoff",
+        "",
+        f"- Status: {summary.get('status')}",
+        f"- Score: {summary.get('score')}",
+        f"- Ready for eval: {summary.get('readyForEval')} / {summary.get('requiredReadyForEval')}",
+        f"- Missing real sample slots: {summary.get('collectionMissingCases')}",
+        f"- Remaining human labels: {summary.get('remainingHumanLabels')}",
+        f"- Collection actions: {collect_count}",
+        f"- Labeling actions: {label_count}",
+        "",
+        "## Files",
+        "",
+        "| File | Owner | Purpose |",
+        "| --- | --- | --- |",
+        "| `collect_samples.md` / `collect_samples.csv` | Sample collector | Scenario gaps, drop folders, and minimum annotation checklist. |",
+        "| `label_existing.md` / `label_existing.csv` | Human labeler/reviewer | Existing Scan tasks that need field/table/seal correction and evidence boxes. |",
+        "",
+        "## Execution Order",
+        "",
+        "1. Collect missing real files into each `dropDirectory` listed in `collect_samples.*`.",
+        "2. Run intake autofill and strict verification from `ocr_100_sample_intake.../commands.json`.",
+        "3. Complete existing annotation tasks from `label_existing.*`; do not submit machine suggestions as gold labels without human review.",
+        "4. Finalize labels only after values, quality status, and positive-area evidence are reviewed.",
+        "5. Rerun `ocr_100_action_board.py` and `ocr_100_certification_status.py` until `readyForEval` reaches the required target.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def lane_markdown(report: dict[str, Any], actions: list[dict[str, Any]], *, lane: str) -> str:
+    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+    title = "Collect Real OCR Samples" if lane == "collect_samples" else "Human Label Existing OCR Samples"
+    lines = [
+        f"# {title}",
+        "",
+        f"- Board status: {summary.get('status')}",
+        f"- Actions: {len(actions)}",
+        "",
+    ]
+    if lane == "collect_samples":
+        lines.extend(["| Priority | Scenario | Missing | Drop Directory | Checklist | Hint | Done When |", "| ---: | --- | ---: | --- | --- | --- | --- |"])
+        for action in actions:
+            lines.append(
+                f"| {action.get('priority')} | {action.get('scenario')} | {action.get('missingCases')} | "
+                f"{action.get('dropDirectory')} | {join_values(action.get('checklist'))} | "
+                f"{action.get('collectionHint') or ''} | {action.get('doneWhen') or ''} |"
+            )
+    elif lane == "label_existing":
+        lines.extend(["| Priority | Case | Scenario | Source | Previews | Blockers | Human Actions | Done When |", "| ---: | --- | --- | --- | --- | --- | --- | --- |"])
+        for action in actions:
+            lines.append(
+                f"| {action.get('priority')} | {action.get('caseId') or action.get('taskId')} | {action.get('scenario')} | "
+                f"{action.get('sourcePath') or ''} | {join_values(action.get('previewPaths'))} | "
+                f"{join_values(action.get('blockers'))} | {join_values(action.get('humanActions'))} | {action.get('doneWhen') or ''} |"
+            )
+    else:
+        lines.extend(["| Priority | Lane | Scenario | Title | Done When |", "| ---: | --- | --- | --- | --- |"])
+        for action in actions:
+            lines.append(f"| {action.get('priority')} | {action.get('lane')} | {action.get('scenario')} | {action.get('title')} | {action.get('doneWhen') or ''} |")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def lane_csv(actions: list[dict[str, Any]], *, lane: str) -> str:
+    if lane == "collect_samples":
+        fieldnames = ["priority", "scenario", "missingCases", "dropDirectory", "checklist", "collectionHint", "doneWhen"]
+    elif lane == "label_existing":
+        fieldnames = ["priority", "caseId", "taskId", "scenario", "sourcePath", "previewPaths", "blockers", "humanActions", "doneWhen"]
+    else:
+        fieldnames = ["priority", "lane", "scenario", "id", "title", "doneWhen"]
+    handle = StringIO()
+    writer = csv.DictWriter(handle, fieldnames=fieldnames)
+    writer.writeheader()
+    for action in actions:
+        writer.writerow({key: join_values(action.get(key)) if key in {"checklist", "previewPaths", "blockers", "humanActions"} else action.get(key) for key in fieldnames})
+    return handle.getvalue()
+
+
+def join_values(value: Any) -> str:
+    if isinstance(value, list):
+        return "; ".join(str(item) for item in value)
+    if value is None:
+        return ""
+    return str(value)
 
 
 def action_detail_for_export(action: dict[str, Any]) -> str:

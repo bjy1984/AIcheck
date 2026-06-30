@@ -1036,6 +1036,47 @@ export type FdeProjectAuditSummary = {
   updatedAt?: string
 }
 
+export type FdeKnowledgeLineageStage = {
+  key: string
+  label: string
+  status: string
+  done: boolean
+  tone?: string
+  evidence?: string
+  action?: string
+  blocker?: string | null
+  metrics?: Record<string, unknown>
+}
+
+export type FdeDocumentKnowledgeLineage = {
+  schemaVersion?: string
+  documentId?: string
+  documentVersionId?: string
+  knowledgeFileId?: string
+  fileName?: string
+  readiness?: string
+  readinessLabel?: string
+  auditConclusion?: string
+  localOnly?: boolean
+  latestTaskType?: string
+  latestTaskStatus?: string
+  vectorIndex?: Record<string, unknown>
+  pageIndex?: Record<string, unknown>
+  stages?: FdeKnowledgeLineageStage[]
+  blockers?: string[]
+}
+
+export type FdeProjectKnowledgeLineage = {
+  schemaVersion?: string
+  source?: string
+  documents?: FdeDocumentKnowledgeLineage[]
+  vectorFlow?: Array<Record<string, unknown>>
+  pageIndexFlow?: Array<Record<string, unknown>>
+  retrievalTraceCount?: number
+  pageIndexTraceCount?: number
+  blockers?: Array<Record<string, unknown>>
+}
+
 export type FdeProjectAuditDocument = DocumentAsset & {
   knowledgeFileId?: string
   knowledgeSourceId?: string
@@ -1050,6 +1091,7 @@ export type FdeProjectAuditDocument = DocumentAsset & {
   pageIndexStatus?: string
   pageIndexNodeCount?: number
   latestKnowledgeTask?: Record<string, unknown> | string
+  knowledgeLineage?: FdeDocumentKnowledgeLineage
 }
 
 export type FdeProjectAuditWorkspace = {
@@ -1067,6 +1109,7 @@ export type FdeProjectAuditWorkspace = {
   ocrJobs: Array<Record<string, unknown>>
   ocrAnnotationTasks: Array<Record<string, unknown>>
   qualityBlockers: Array<Record<string, unknown>>
+  knowledgeLineage?: FdeProjectKnowledgeLineage
   updatedAt?: string
 }
 
@@ -1322,6 +1365,25 @@ export type FdeOcrQualityPayload = {
       duplicateLocalCandidates?: number
       actions?: number
       laneCounts?: Record<string, number>
+    }
+    handoff?: {
+      schemaVersion?: string
+      ok?: boolean
+      status?: string
+      generatedAt?: string
+      outputDir?: string
+      manifestPath?: string
+      summary?: Record<string, unknown>
+      laneCounts?: Record<string, number>
+      files?: Array<{
+        key?: string
+        label?: string
+        owner?: string
+        purpose?: string
+        path?: string
+        exists?: boolean
+        sizeBytes?: number
+      }>
     }
     actions?: Array<Record<string, unknown>>
   }

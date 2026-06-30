@@ -993,7 +993,7 @@ const firstRuntimeIssue = computed(() => ocrRuntimeDoctor.value?.topIssues?.[0] 
 const ocr100Scorecard = computed(() => ocrQuality.value?.ocr100Scorecard || null)
 const ocr100ActionBoard = computed(() => ocrQuality.value?.ocr100ActionBoard || null)
 const ocr100ActionSummary = computed(() => ocr100ActionBoard.value?.summary || null)
-const ocr100ActionRows = computed(() => (ocr100ActionBoard.value?.actions || []).slice(0, 6))
+const ocr100ActionRows = computed(() => ocr100ActionBoard.value?.actions || [])
 const ocr100LaneCount = (lane: string) => Number(ocr100ActionSummary.value?.laneCounts?.[lane] || 0)
 const ocr100SectionRows = computed(() => ocr100Scorecard.value?.sections || [])
 const ocr100BlockerRows = computed(() =>
@@ -1689,12 +1689,8 @@ type Ocr100ActionBoardRow = {
   doneWhen: string
   canOpenAnnotation: boolean
 }
-const ocr100ActionBoardView = computed<{
-  cards: Array<{ label: string; value: string; hint: string; tone: string }>
-  rows: Ocr100ActionBoardRow[]
-}>(() => ({
-  cards: ocr100ActionCards.value,
-  rows: ocr100ActionRows.value.map((row) => {
+const ocr100ActionBoardRows = computed<Ocr100ActionBoardRow[]>(() =>
+  ocr100ActionRows.value.map((row) => {
     const item = toRecord(row)
     const lane = String(item.lane || '')
     const taskId = String(item.taskId || item.caseId || '')
@@ -1733,6 +1729,13 @@ const ocr100ActionBoardView = computed<{
       canOpenAnnotation: lane === 'label_existing' && Boolean(taskId)
     }
   })
+)
+const ocr100ActionBoardView = computed<{
+  cards: Array<{ label: string; value: string; hint: string; tone: string }>
+  rows: Ocr100ActionBoardRow[]
+}>(() => ({
+  cards: ocr100ActionCards.value,
+  rows: ocr100ActionBoardRows.value.slice(0, 6)
 }))
 const ocrAnnotationStatusLabel = (row: FdeOcrAnnotationTask) => {
   if (row.readyForEval || row.collectionStatus === 'ready_for_eval') return '可入评估'
@@ -3196,6 +3199,15 @@ const selectedProjectAuditNodeSummary = computed(() => {
   return projectAuditNodeRows.value.find((item) => Number(item.nodeId) === nodeId) || null
 })
 const projectAuditMetrics = computed(() => projectAuditWorkspace.value?.metrics || {})
+const projectAuditKnowledgeLineage = computed(() =>
+  toRecord(projectAuditWorkspace.value?.knowledgeLineage)
+)
+const projectAuditLineageSourceLabel = computed(() => {
+  const source = String(projectAuditKnowledgeLineage.value.source || '')
+  if (source === 'backend_audit_projection') return '后端审计投影'
+  if (source) return source
+  return '前端推断'
+})
 const projectAuditMetricCards = computed(() => [
   {
     label: '项目节点',
@@ -3288,6 +3300,7 @@ const normalizedProjectAuditVectorRows = computed(() =>
     const vectorStatus = String(item.vectorStatus || '')
     const pageIndexStatus = String(item.pageIndexStatus || '')
     const latestTask = item.latestTask
+    const knowledgeLineage = toRecord(item.knowledgeLineage)
     const vectorGap = Math.max(0, chunkCount - vectorCount)
     const readyForRag = vectorCount > 0 && vectorStatus.includes('已向量化')
     const readyForPageIndex = pageIndexNodeCount > 0 || pageIndexStatus.includes('已构建')
@@ -3331,9 +3344,14 @@ const normalizedProjectAuditVectorRows = computed(() =>
       vectorGap,
       readyForRag,
       readyForPageIndex,
-      readinessLabel: readyForRag && readyForPageIndex ? '可用于审查' : '需补齐',
+      readinessLabel:
+        String(knowledgeLineage.readinessLabel || '') ||
+        (readyForRag && readyForPageIndex ? '可用于审查' : '需补齐'),
       issue,
       action,
+      lineageConclusion:
+        String(knowledgeLineage.auditConclusion || '') ||
+        (readyForRag && readyForPageIndex ? '可进入审查链' : '仍有知识资产缺口'),
       latestTaskText: friendlyStatus(latestTask, '-')
     }
   })
@@ -3410,6 +3428,17 @@ const projectAuditVectorCards = computed(() => {
 })
 
 const projectAuditVectorFlowRows = computed(() => {
+  const lineageRows = toRecordArray(projectAuditKnowledgeLineage.value.vectorFlow)
+  if (lineageRows.length) {
+    return lineageRows.map((row, index) => ({
+      step: String(row.step || `0${index + 1}`),
+      label: String(row.label || '-'),
+      description: String(row.description || '-'),
+      done: Number(row.done || 0),
+      total: Number(row.total || 0),
+      tone: String(row.tone || 'blue')
+    }))
+  }
   const rows = normalizedProjectAuditVectorRows.value
   const total = rows.length
   const ocrReady = rows.filter((row) => String(row.ocrStatus).includes('已识别')).length
@@ -3527,6 +3556,16 @@ const projectAuditPageIndexTraceRows = computed<Array<Record<string, unknown>>>(
 )
 
 const projectAuditPageIndexFlowRows = computed(() => {
+  const lineageRows = toRecordArray(projectAuditKnowledgeLineage.value.pageIndexFlow)
+  if (lineageRows.length) {
+    return lineageRows.map((row, index) => ({
+      step: String(row.step || `0${index + 1}`),
+      label: String(row.label || '-'),
+      description: String(row.description || '-'),
+      value: String(row.value || '-'),
+      tone: String(row.tone || 'blue')
+    }))
+  }
   const traces = projectAuditPageIndexTraceRows.value
   const traceCount = traces.length
   const shouldUse = traces.filter((row) => row.shouldUsePageIndex).length
@@ -5272,7 +5311,7 @@ const downloadTextFile = (filename: string, content: string, type = 'text/csv;ch
 }
 
 const exportOcr100ActionBoardCsv = () => {
-  const rows = ocr100ActionBoardView.value.rows
+  const rows = ocr100ActionBoardRows.value
   if (!rows.length) return
   const headers = [
     'lane',
@@ -6040,6 +6079,9 @@ onMounted(loadData)
                   </ElDescriptionsItem>
                   <ElDescriptionsItem label="索引版本">
                     {{ projectAuditVectorIndexProfile.indexVersion }}
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="Lineage 来源">
+                    {{ projectAuditLineageSourceLabel }}
                   </ElDescriptionsItem>
                   <ElDescriptionsItem label="RAG 就绪">
                     {{ projectAuditVectorIndexProfile.ragReady }}
@@ -8944,7 +8986,7 @@ onMounted(loadData)
                         <ElButton
                           size="small"
                           plain
-                          :disabled="!ocr100ActionBoardView.rows.length"
+                          :disabled="!ocr100ActionBoardRows.length"
                           @click="exportOcr100ActionBoardCsv"
                         >
                           导出CSV

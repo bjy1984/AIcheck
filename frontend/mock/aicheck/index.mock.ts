@@ -3172,6 +3172,195 @@ const getMockPageIndexNodes = (id: string, documentVersionId?: string) => {
   ]
 }
 
+const buildMockFdeDocumentKnowledgeLineage = (document: Record<string, any>) => {
+  const chunkCount = Number(document.chunkCount || 0)
+  const vectorCount = Number(document.vectorCount || 0)
+  const vectorGap = Math.max(0, chunkCount - vectorCount)
+  const ocrDone =
+    String(document.currentOcrStatus || '').includes('已识别') ||
+    String(document.currentOcrStatus || '').includes('人工修正')
+  const sliced = String(document.sliceStatus || '').includes('已切片') || chunkCount > 0
+  const vectorized = String(document.vectorStatus || '').includes('已向量化') && vectorGap === 0
+  const pageIndexed =
+    String(document.pageIndexStatus || '').includes('已构建') ||
+    Number(document.pageIndexNodeCount || 0) > 0
+  const reviewReady = ocrDone && sliced && vectorized && pageIndexed
+  const stage = (
+    key: string,
+    label: string,
+    done: boolean,
+    status: string,
+    evidence: string,
+    action: string,
+    blocker?: string
+  ) => ({
+    key,
+    label,
+    done,
+    status,
+    tone: done ? 'green' : 'orange',
+    evidence,
+    action,
+    blocker: blocker || null
+  })
+  const stages = [
+    stage(
+      'ocr_parse',
+      '资料解析',
+      ocrDone,
+      document.currentOcrStatus || '等待OCR',
+      `OCR状态：${document.currentOcrStatus || '未开始'}`,
+      ocrDone ? '保留字段、表格、印章和 bbox 证据' : '进入 OCR 打标或重跑文档解析',
+      ocrDone ? undefined : 'OCR 未完成'
+    ),
+    stage(
+      'knowledge_slice',
+      '知识切片',
+      sliced,
+      document.sliceStatus || '待切片',
+      `切片 ${chunkCount} 条`,
+      sliced ? '切片已保留页码、bbox 和资料 Profile' : '重跑 knowledge.slice',
+      sliced ? undefined : '知识切片未完成'
+    ),
+    stage(
+      'vector_embed',
+      '向量入库',
+      vectorized,
+      document.vectorStatus || '待向量化',
+      `向量 ${vectorCount}/${chunkCount} 条，模型 ${document.embeddingModel || 'embedding-default'}`,
+      vectorized ? '可参与 Hybrid RAG 检索' : '排查失败 chunk 并补跑 knowledge.embed',
+      vectorized ? undefined : vectorGap ? '向量条目少于切片' : '向量入库未完成'
+    ),
+    stage(
+      'pageindex_tree',
+      'PageIndex',
+      pageIndexed,
+      document.pageIndexStatus || '待构建',
+      `PageIndex 节点 ${document.pageIndexNodeCount || 0} 个`,
+      pageIndexed ? '可用于长文档跨章节溯源' : '构建 PageIndex tree 并校验条款映射',
+      pageIndexed ? undefined : 'PageIndex 未构建'
+    ),
+    stage(
+      'review_ready',
+      '审查可用',
+      reviewReady,
+      reviewReady ? '可用于审查' : '需补齐',
+      reviewReady ? '规则、知识检索和 Agent 编排可引用该资料' : '存在 OCR/切片/向量/PageIndex 缺口',
+      reviewReady ? '纳入 ReviewRun 规则、RAG 和 PageIndex 溯源' : '按前置阻断顺序补齐后再进入审查',
+      reviewReady ? undefined : '资料知识资产未达到审查可用门禁'
+    )
+  ]
+  return {
+    schemaVersion: 'FdeKnowledgeLineage@1.0.0',
+    documentId: document.id,
+    documentVersionId: document.currentVersionId,
+    knowledgeFileId: document.knowledgeFileId,
+    fileName: document.fileName,
+    readiness: reviewReady ? 'ready_for_review' : 'needs_attention',
+    readinessLabel: reviewReady ? '可用于审查' : '需补齐',
+    auditConclusion: reviewReady
+      ? '该资料可进入规则、Hybrid RAG、PageIndex 和 Agent 审查编排。'
+      : '该资料仍有知识资产缺口，FDE 应先补齐阻断再放入审查链。',
+    localOnly: true,
+    latestTaskStatus: document.latestTask || '-',
+    vectorIndex: {
+      embeddingModel: document.embeddingModel || 'embedding-default',
+      indexVersion: document.indexVersion || 'knowledge-index@local',
+      dimensions: Number(document.vectorDimensions || 3072),
+      chunkCount,
+      vectorCount,
+      vectorGap
+    },
+    pageIndex: {
+      status: document.pageIndexStatus || '待构建',
+      nodeCount: Number(document.pageIndexNodeCount || 0),
+      coverageLabel: pageIndexed ? '已覆盖' : '待构建'
+    },
+    stages,
+    blockers: stages.map((item) => item.blocker).filter(Boolean)
+  }
+}
+
+const buildMockFdeProjectKnowledgeLineage = (
+  documents: Array<Record<string, any>>,
+  reviewRuns: Array<Record<string, any>>
+) => {
+  const documentLineages = documents.map((document) => document.knowledgeLineage)
+  const doneCount = (key: string) =>
+    documentLineages.filter((lineage) =>
+      (lineage?.stages || []).some((stage: Record<string, any>) => stage.key === key && stage.done)
+    ).length
+  const total = documentLineages.length
+  const vectorFlow = [
+    ['01', '资料解析', 'OCR 字段、表格、印章和页面证据已生成', 'ocr_parse'],
+    ['02', '知识切片', '按资料 Profile 拆成可检索片段，保留页码和 bbox', 'knowledge_slice'],
+    ['03', '向量入库', 'Embedding 已写入本地向量索引，可参与 Hybrid RAG', 'vector_embed'],
+    ['04', 'PageIndex', '长文档树节点已构建，可做跨章节依据溯源', 'pageindex_tree'],
+    ['05', '审查可用', '资料可进入规则、知识检索和 Agent 审查编排', 'review_ready']
+  ].map(([step, label, description, key]) => {
+    const done = doneCount(String(key))
+    return {
+      step,
+      label,
+      description,
+      done,
+      total,
+      tone: done === total ? 'green' : label === '审查可用' ? 'red' : 'orange'
+    }
+  })
+  return {
+    schemaVersion: 'FdeProjectKnowledgeLineage@1.0.0',
+    source: 'backend_audit_projection',
+    documents: documentLineages,
+    vectorFlow,
+    pageIndexFlow: [
+      {
+        step: '01',
+        label: '问题分类',
+        description: '长文档/跨章节问题需要 PageIndex',
+        value: `${reviewRuns.length}/${reviewRuns.length}`,
+        tone: 'blue'
+      },
+      {
+        step: '02',
+        label: '路由选择',
+        description: '检索路由器在条款索引、Hybrid RAG 和 PageIndex 之间选择路径',
+        value: `${reviewRuns.length} 次`,
+        tone: 'green'
+      },
+      {
+        step: '03',
+        label: '节点定位',
+        description: '定位章节、附录或表格节点，并保留页码范围',
+        value: `${documents.reduce((sum, document) => sum + Number(document.pageIndexNodeCount || 0), 0)} 节点`,
+        tone: 'green'
+      },
+      {
+        step: '04',
+        label: '条款映射',
+        description: '把命中节点映射回正式条款，供审查草稿引用',
+        value: '8 条款',
+        tone: 'green'
+      },
+      {
+        step: '05',
+        label: '质量判断',
+        description: '路由、节点和条款映射可用于审查',
+        value: '可用',
+        tone: 'green'
+      }
+    ],
+    retrievalTraceCount: reviewRuns.length,
+    pageIndexTraceCount: reviewRuns.length,
+    blockers: documentLineages
+      .filter((lineage) => lineage?.blockers?.length)
+      .map((lineage) => ({
+        documentVersionId: lineage.documentVersionId,
+        blockers: lineage.blockers
+      }))
+  }
+}
+
 const getFdeProjectDocuments = (id: string) => {
   const sourceDocuments = state.documents.filter((document) => document.projectId === id)
   const documentsForAudit =
@@ -3186,7 +3375,7 @@ const getFdeProjectDocuments = (id: string) => {
       ? state.knowledgeTasks.find((task) => task.targetId === knowledgeFile.id)
       : undefined
     const pageIndexNodes = getMockPageIndexNodes(id, document.currentVersionId)
-    return {
+    const auditDocument = {
       ...document,
       knowledgeFileId: knowledgeFile?.id,
       knowledgeSourceId: knowledgeFile?.sourceId,
@@ -3210,6 +3399,10 @@ const getFdeProjectDocuments = (id: string) => {
       latestKnowledgeTask: latestTask || null,
       latestTask:
         latestTask?.status || template.latestTaskStatus || knowledgeFile?.vectorStatus || '已向量化'
+    }
+    return {
+      ...auditDocument,
+      knowledgeLineage: buildMockFdeDocumentKnowledgeLineage(auditDocument)
     }
   })
 }
@@ -4054,6 +4247,35 @@ const buildMockFdeOcrQuality = () => ({
       actions: 7,
       laneCounts: { collect_samples: 2, label_existing: 4, triage_candidates: 1 }
     },
+    handoff: {
+      schemaVersion: 'aicheck-ocr-100-action-handoff-v1',
+      ok: true,
+      status: 'ready',
+      generatedAt: '2026-06-30T16:16:03Z',
+      outputDir: 'backend/ocr_eval/reports/ocr_100_action_handoff',
+      manifestPath: 'backend/ocr_eval/reports/ocr_100_action_handoff/handoff_manifest.json',
+      laneCounts: { collect_samples: 2, label_existing: 4 },
+      files: [
+        {
+          key: 'collectCsv',
+          label: '采样CSV',
+          owner: '采样人员',
+          purpose: '可分派的采样缺口清单。',
+          path: 'backend/ocr_eval/reports/ocr_100_action_handoff/collect_samples.csv',
+          exists: true,
+          sizeBytes: 2048
+        },
+        {
+          key: 'labelCsv',
+          label: '标注CSV',
+          owner: '标注/复核人员',
+          purpose: '可分派的人工校对清单。',
+          path: 'backend/ocr_eval/reports/ocr_100_action_handoff/label_existing.csv',
+          exists: true,
+          sizeBytes: 4096
+        }
+      ]
+    },
     actions: [
       {
         id: 'collect-ndt_ut_profile',
@@ -4236,6 +4458,7 @@ const buildMockFdeProjectWorkspace = (id: string, nodeId?: number) => {
     ocrJobs,
     ocrAnnotationTasks: annotationTasks,
     qualityBlockers,
+    knowledgeLineage: buildMockFdeProjectKnowledgeLineage(documents, reviewRuns),
     updatedAt: serverTime
   }
 }

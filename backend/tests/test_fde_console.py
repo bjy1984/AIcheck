@@ -848,6 +848,14 @@ def test_fde_ocr_quality_runs_corrections_and_eval() -> None:
     assert quality["ocr100ActionBoard"]["summary"]["requiredReadyForEval"] == 100
     assert "collect_samples" in quality["ocr100ActionBoard"]["summary"]["laneCounts"]
     assert any(action["lane"] == "label_existing" for action in quality["ocr100ActionBoard"]["actions"])
+    assert quality["ocr100ActionBoard"]["handoff"]["schemaVersion"] == "aicheck-ocr-100-action-handoff-v1"
+    assert quality["ocr100ActionBoard"]["handoff"]["status"] in {"ready", "incomplete", "missing"}
+    assert quality["ocr100ActionBoard"]["handoff"]["manifestPath"].endswith("ocr_100_action_handoff/handoff_manifest.json")
+    if quality["ocr100ActionBoard"]["handoff"]["files"]:
+        handoff_files = {item["key"]: item for item in quality["ocr100ActionBoard"]["handoff"]["files"]}
+        assert {"collectCsv", "labelCsv"} <= set(handoff_files)
+        assert handoff_files["collectCsv"]["owner"] == "采样人员"
+        assert "backend/ocr_eval/reports/ocr_100_action_handoff" in handoff_files["labelCsv"]["path"]
     assert quality["failurePools"]["tableFailures"]
     assert "TABLE_EVIDENCE_MISSING" in {item["code"] for item in quality["failurePools"]["tableFailures"]}
     seal_failure_codes = {item["code"] for item in quality["failurePools"]["sealFailures"]}
@@ -1228,6 +1236,19 @@ def test_fde_project_audit_workspace_groups_tasks_and_blockers() -> None:
     assert document["indexVersion"]
     assert document["pageIndexStatus"] == "已构建"
     assert document["pageIndexNodeCount"] >= 1
+    assert document["knowledgeLineage"]["schemaVersion"] == "FdeKnowledgeLineage@1.0.0"
+    assert document["knowledgeLineage"]["stages"]
+    assert {stage["key"] for stage in document["knowledgeLineage"]["stages"]} >= {
+        "ocr_parse",
+        "knowledge_slice",
+        "vector_embed",
+        "pageindex_tree",
+        "review_ready",
+    }
+    assert workspace["knowledgeLineage"]["schemaVersion"] == "FdeProjectKnowledgeLineage@1.0.0"
+    assert workspace["knowledgeLineage"]["source"] == "backend_audit_projection"
+    assert len(workspace["knowledgeLineage"]["vectorFlow"]) == 5
+    assert len(workspace["knowledgeLineage"]["pageIndexFlow"]) == 5
     assert detail["summary"]["nodeId"] == node_id
     assert "bindings" in detail
 
@@ -1255,6 +1276,9 @@ def test_fde_project_audit_workspace_supplies_backend_projection_data() -> None:
     assert any(item["profileId"] == "piping_characteristic_list_v1" for item in workspace["ocrJobs"])
     assert any(item["profileId"] == "seal_text_profile_v1" for item in workspace["ocrAnnotationTasks"])
     assert any(item["vectorCount"] < item["chunkCount"] for item in workspace["documents"])
+    assert workspace["knowledgeLineage"]["retrievalTraceCount"] >= 1
+    assert workspace["knowledgeLineage"]["pageIndexTraceCount"] >= 1
+    assert any(item["readiness"] == "needs_attention" for item in workspace["knowledgeLineage"]["documents"])
     assert workspace["reviewRuns"]
 
     review_run_id = workspace["reviewRuns"][0]["reviewRunId"]

@@ -4496,6 +4496,265 @@ def fde_project_node_audit_summary(project_id: str, node: dict[str, Any]) -> dic
     }
 
 
+def fde_as_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def fde_knowledge_lineage_stage(
+    *,
+    key: str,
+    label: str,
+    done: bool,
+    status: str,
+    evidence: str,
+    action: str,
+    blocker: str | None = None,
+    metrics: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "key": key,
+        "label": label,
+        "status": status,
+        "done": done,
+        "tone": "green" if done else "orange",
+        "evidence": evidence,
+        "action": action,
+        "blocker": blocker,
+        "metrics": metrics or {},
+    }
+
+
+def fde_document_knowledge_lineage(document: dict[str, Any]) -> dict[str, Any]:
+    """Build a FDE-facing lineage view for one document without mutating business state."""
+    ocr_status = str(document.get("currentOcrStatus") or document.get("ocrStatus") or "")
+    slice_status = str(document.get("sliceStatus") or "")
+    vector_status = str(document.get("vectorStatus") or "")
+    page_index_status = str(document.get("pageIndexStatus") or "")
+    chunk_count = fde_as_int(document.get("chunkCount"))
+    vector_count = fde_as_int(document.get("vectorCount"))
+    vector_gap = max(0, chunk_count - vector_count)
+    page_index_node_count = fde_as_int(document.get("pageIndexNodeCount"))
+    latest_task = document.get("latestKnowledgeTask")
+    if isinstance(latest_task, dict):
+        latest_task_status = str(latest_task.get("status") or latest_task.get("taskStatus") or "-")
+        latest_task_type = str(latest_task.get("taskType") or "-")
+    else:
+        latest_task_status = str(latest_task or "-")
+        latest_task_type = "-"
+
+    ocr_done = "已识别" in ocr_status or "人工修正" in ocr_status or "success" in ocr_status
+    sliced = "已切片" in slice_status or chunk_count > 0
+    vectorized = "已向量化" in vector_status or (vector_count > 0 and vector_gap == 0)
+    page_index_ready = "已构建" in page_index_status or page_index_node_count > 0
+    review_ready = ocr_done and sliced and vectorized and page_index_ready
+
+    stages = [
+        fde_knowledge_lineage_stage(
+            key="ocr_parse",
+            label="资料解析",
+            done=ocr_done,
+            status=ocr_status or "等待OCR",
+            evidence=f"OCR状态：{ocr_status or '未开始'}",
+            action="进入 OCR 打标或重跑文档解析" if not ocr_done else "保留字段、表格、印章和 bbox 证据",
+            blocker=None if ocr_done else "OCR 未完成",
+            metrics={"status": ocr_status},
+        ),
+        fde_knowledge_lineage_stage(
+            key="knowledge_slice",
+            label="知识切片",
+            done=sliced,
+            status=slice_status or "待切片",
+            evidence=f"切片 {chunk_count} 条",
+            action="重跑 knowledge.slice" if not sliced else "切片已保留页码、bbox 和资料 Profile",
+            blocker=None if sliced else "知识切片未完成",
+            metrics={"chunkCount": chunk_count},
+        ),
+        fde_knowledge_lineage_stage(
+            key="vector_embed",
+            label="向量入库",
+            done=vectorized,
+            status=vector_status or "待向量化",
+            evidence=f"向量 {vector_count}/{chunk_count} 条，模型 {document.get('embeddingModel') or 'embedding-default'}",
+            action=(
+                "排查失败 chunk 并补跑 knowledge.embed"
+                if vector_gap
+                else ("重跑 knowledge.embed" if not vectorized else "可参与 Hybrid RAG 检索")
+            ),
+            blocker=("向量条目少于切片" if vector_gap else (None if vectorized else "向量入库未完成")),
+            metrics={"vectorCount": vector_count, "chunkCount": chunk_count, "vectorGap": vector_gap},
+        ),
+        fde_knowledge_lineage_stage(
+            key="pageindex_tree",
+            label="PageIndex",
+            done=page_index_ready,
+            status=page_index_status or "待构建",
+            evidence=f"PageIndex 节点 {page_index_node_count} 个",
+            action="构建 PageIndex tree 并校验条款映射" if not page_index_ready else "可用于长文档跨章节溯源",
+            blocker=None if page_index_ready else "PageIndex 未构建",
+            metrics={"pageIndexNodeCount": page_index_node_count},
+        ),
+        fde_knowledge_lineage_stage(
+            key="review_ready",
+            label="审查可用",
+            done=review_ready,
+            status="可用于审查" if review_ready else "需补齐",
+            evidence="规则、知识检索和 Agent 编排可引用该资料" if review_ready else "存在 OCR/切片/向量/PageIndex 缺口",
+            action="纳入 ReviewRun 规则、RAG 和 PageIndex 溯源" if review_ready else "按前置阻断顺序补齐后再进入审查",
+            blocker=None if review_ready else "资料知识资产未达到审查可用门禁",
+            metrics={"reviewReady": review_ready},
+        ),
+    ]
+    blockers = [stage["blocker"] for stage in stages if stage.get("blocker")]
+    return {
+        "schemaVersion": "FdeKnowledgeLineage@1.0.0",
+        "documentId": document.get("id"),
+        "documentVersionId": document.get("currentVersionId") or document.get("documentVersionId"),
+        "knowledgeFileId": document.get("knowledgeFileId"),
+        "fileName": document.get("fileName"),
+        "readiness": "ready_for_review" if review_ready else "needs_attention",
+        "readinessLabel": "可用于审查" if review_ready else "需补齐",
+        "auditConclusion": "该资料可进入规则、Hybrid RAG、PageIndex 和 Agent 审查编排。"
+        if review_ready
+        else "该资料仍有知识资产缺口，FDE 应先补齐阻断再放入审查链。",
+        "localOnly": True,
+        "latestTaskType": latest_task_type,
+        "latestTaskStatus": latest_task_status,
+        "vectorIndex": {
+            "embeddingModel": document.get("embeddingModel") or "embedding-default",
+            "indexVersion": document.get("indexVersion") or "knowledge-index@local",
+            "dimensions": fde_as_int(document.get("vectorDimensions"), 3072),
+            "chunkCount": chunk_count,
+            "vectorCount": vector_count,
+            "vectorGap": vector_gap,
+        },
+        "pageIndex": {
+            "status": page_index_status or "待构建",
+            "nodeCount": page_index_node_count,
+            "coverageLabel": "已覆盖" if page_index_ready else "待构建",
+        },
+        "stages": stages,
+        "blockers": blockers,
+    }
+
+
+def fde_project_knowledge_lineage(documents: list[dict[str, Any]], review_runs: list[dict[str, Any]]) -> dict[str, Any]:
+    document_lineages = [fde_document_knowledge_lineage(item) for item in documents]
+    total = len(document_lineages)
+
+    def count_done(stage_key: str) -> int:
+        return sum(
+            1
+            for lineage in document_lineages
+            for stage in lineage.get("stages", [])
+            if stage.get("key") == stage_key and stage.get("done")
+        )
+
+    retrieval_traces = [
+        item
+        for item in repo.state.get("retrieval_traces", [])
+        if any(item.get("reviewRunId") == (run.get("reviewRunId") or run.get("id")) for run in review_runs)
+    ]
+    pageindex_traces = [
+        item for item in retrieval_traces if "pageindex" in str(item.get("selectedRoute") or "").lower()
+    ]
+    vector_flow = [
+        {
+            "step": "01",
+            "label": "资料解析",
+            "description": "OCR 字段、表格、印章和页面证据已生成",
+            "done": count_done("ocr_parse"),
+            "total": total,
+            "tone": "green" if total and count_done("ocr_parse") == total else "orange",
+        },
+        {
+            "step": "02",
+            "label": "知识切片",
+            "description": "按资料 Profile 拆成可检索片段，保留页码和 bbox",
+            "done": count_done("knowledge_slice"),
+            "total": total,
+            "tone": "green" if total and count_done("knowledge_slice") == total else "orange",
+        },
+        {
+            "step": "03",
+            "label": "向量入库",
+            "description": "Embedding 已写入本地向量索引，可参与 Hybrid RAG",
+            "done": count_done("vector_embed"),
+            "total": total,
+            "tone": "green" if total and count_done("vector_embed") == total else "orange",
+        },
+        {
+            "step": "04",
+            "label": "PageIndex",
+            "description": "长文档树节点已构建，可做跨章节依据溯源",
+            "done": count_done("pageindex_tree"),
+            "total": total,
+            "tone": "green" if total and count_done("pageindex_tree") == total else "orange",
+        },
+        {
+            "step": "05",
+            "label": "审查可用",
+            "description": "资料可进入规则、知识检索和 Agent 审查编排",
+            "done": count_done("review_ready"),
+            "total": total,
+            "tone": "green" if total and count_done("review_ready") == total else "red",
+        },
+    ]
+    pageindex_flow = [
+        {
+            "step": "01",
+            "label": "问题分类",
+            "description": f"{len(pageindex_traces)} 个检索问题触发 PageIndex 或需要跨章节定位",
+            "value": f"{len(pageindex_traces)}/{len(retrieval_traces)}",
+            "tone": "blue" if pageindex_traces else "green",
+        },
+        {
+            "step": "02",
+            "label": "路由选择",
+            "description": "检索路由器在条款索引、Hybrid RAG 和 PageIndex 之间选择路径",
+            "value": f"{len(pageindex_traces)} 次",
+            "tone": "green" if pageindex_traces else "orange",
+        },
+        {
+            "step": "03",
+            "label": "节点定位",
+            "description": "定位章节、附录或表格节点，并保留页码范围",
+            "value": f"{sum(len(((item.get('pageIndexTree') or {}).get('selectedNodes') or [])) for item in pageindex_traces)} 节点",
+            "tone": "green" if pageindex_traces else "orange",
+        },
+        {
+            "step": "04",
+            "label": "条款映射",
+            "description": "把命中节点映射回正式条款，供审查草稿引用",
+            "value": f"{sum(len(item.get('selectedClauses') or []) for item in retrieval_traces)} 条款",
+            "tone": "green" if retrieval_traces else "orange",
+        },
+        {
+            "step": "05",
+            "label": "质量判断",
+            "description": "路由、节点和条款映射可用于审查" if retrieval_traces else "缺少检索 Trace，需要先运行知识检索节点",
+            "value": "可用" if retrieval_traces else "待补齐",
+            "tone": "green" if retrieval_traces else "red",
+        },
+    ]
+    return {
+        "schemaVersion": "FdeProjectKnowledgeLineage@1.0.0",
+        "source": "backend_audit_projection",
+        "documents": document_lineages,
+        "vectorFlow": vector_flow,
+        "pageIndexFlow": pageindex_flow,
+        "retrievalTraceCount": len(retrieval_traces),
+        "pageIndexTraceCount": len(pageindex_traces),
+        "blockers": [
+            {"documentVersionId": lineage.get("documentVersionId"), "blockers": lineage.get("blockers")}
+            for lineage in document_lineages
+            if lineage.get("blockers")
+        ],
+    }
+
+
 def fde_project_document_audit_view(document: dict[str, Any]) -> dict[str, Any]:
     item = repo.clone(document)
     version_id = str(item.get("currentVersionId") or "")
@@ -4566,6 +4825,7 @@ def fde_project_document_audit_view(document: dict[str, Any]) -> dict[str, Any]:
                 "latestKnowledgeTask": None,
             }
         )
+    item["knowledgeLineage"] = fde_document_knowledge_lineage(item)
     return item
 
 
@@ -4648,40 +4908,40 @@ def fde_project_synthetic_document_views(project: dict[str, Any], node_id: int |
         version_id = f"FDE-DV-{project_key}-{index}-V{2 if index == 1 else 1}"
         source_org = project.get("ndtOrgName") if template["source"] == "ndt" else project.get("contractorOrgName")
         page_index_ready = template["pageIndexStatus"] != "等待切片"
-        documents.append(
-            {
-                "id": f"FDE-DOC-{project_key}-{index}",
-                "projectId": project_id,
-                "nodeId": node_id,
-                "fileName": template["fileName"],
-                "fileType": template["fileType"],
-                "sourceOrgName": source_org or project.get("contractorOrgName") or "项目参建单位",
-                "uploaderName": "NDT 王工" if template["source"] == "ndt" else "施工方 李工",
-                "currentVersionId": version_id,
-                "knowledgeFileId": f"KF-FDE-{project_key}-{index}",
-                "fileStatus": "已上传",
-                "currentOcrStatus": template["currentOcrStatus"],
-                "sliceStatus": template["sliceStatus"],
-                "vectorStatus": template["vectorStatus"],
-                "chunkCount": int(template["chunkCount"]),
-                "vectorCount": int(template["vectorCount"]),
-                "embeddingModel": knowledge_config.get("embeddingModel") or "embedding-default",
-                "indexVersion": "proj-v2026.06.26",
-                "vectorDimensions": int(knowledge_config.get("dimensions") or 3072),
-                "pageIndexStatus": template["pageIndexStatus"],
-                "pageIndexNodeCount": page_index_node_count if page_index_ready else 0,
-                "requirementName": template["requirementName"],
-                "latestKnowledgeTask": {
-                    "id": f"FDE-KTASK-{project_key}-{index}",
-                    "taskType": "vector" if template["vectorStatus"] != "待向量化" else "slice",
-                    "status": "成功" if template["vectorStatus"] == "已向量化" else "运行中",
-                    "progress": 100 if template["vectorStatus"] == "已向量化" else 62,
-                },
-                "syntheticFdeAudit": True,
-                "updatedAt": f"2026-06-26 {8 + index:02d}:18:00",
-                "actions": ["file:view", "file:preview", "file:download"],
-            }
-        )
+        document = {
+            "id": f"FDE-DOC-{project_key}-{index}",
+            "projectId": project_id,
+            "nodeId": node_id,
+            "fileName": template["fileName"],
+            "fileType": template["fileType"],
+            "sourceOrgName": source_org or project.get("contractorOrgName") or "项目参建单位",
+            "uploaderName": "NDT 王工" if template["source"] == "ndt" else "施工方 李工",
+            "currentVersionId": version_id,
+            "knowledgeFileId": f"KF-FDE-{project_key}-{index}",
+            "fileStatus": "已上传",
+            "currentOcrStatus": template["currentOcrStatus"],
+            "sliceStatus": template["sliceStatus"],
+            "vectorStatus": template["vectorStatus"],
+            "chunkCount": int(template["chunkCount"]),
+            "vectorCount": int(template["vectorCount"]),
+            "embeddingModel": knowledge_config.get("embeddingModel") or "embedding-default",
+            "indexVersion": "proj-v2026.06.26",
+            "vectorDimensions": int(knowledge_config.get("dimensions") or 3072),
+            "pageIndexStatus": template["pageIndexStatus"],
+            "pageIndexNodeCount": page_index_node_count if page_index_ready else 0,
+            "requirementName": template["requirementName"],
+            "latestKnowledgeTask": {
+                "id": f"FDE-KTASK-{project_key}-{index}",
+                "taskType": "vector" if template["vectorStatus"] != "待向量化" else "slice",
+                "status": "成功" if template["vectorStatus"] == "已向量化" else "运行中",
+                "progress": 100 if template["vectorStatus"] == "已向量化" else 62,
+            },
+            "syntheticFdeAudit": True,
+            "updatedAt": f"2026-06-26 {8 + index:02d}:18:00",
+            "actions": ["file:view", "file:preview", "file:download"],
+        }
+        document["knowledgeLineage"] = fde_document_knowledge_lineage(document)
+        documents.append(document)
     return documents
 
 
@@ -5795,6 +6055,7 @@ def fde_project_audit_workspace(project_id: str, node_id: int | None = None) -> 
         "nodeSummaries": node_summaries,
         "selectedNode": repo.clone(selected_node),
         "metrics": metrics,
+        "knowledgeLineage": fde_project_knowledge_lineage(documents, review_runs),
         "documents": documents[:50],
         "bindings": bindings[:50],
         "submissions": submissions[:50],
@@ -8447,13 +8708,15 @@ def fde_ocr_100_action_board_snapshot() -> dict[str, Any]:
         ]
     )
     try:
-        return build_action_board(
+        board = build_action_board(
             reports_dir=reports_dir,
             closure_plan_path=closure_plan,
             annotation_tasks_path=annotation_tasks,
             candidates_path=candidates,
             limit=30,
         )
+        board["handoff"] = fde_ocr_100_action_handoff_snapshot(reports_dir)
+        return board
     except Exception as exc:  # pragma: no cover - defensive API fallback
         return {
             "schemaVersion": "aicheck-ocr-100-action-board-v1",
@@ -8471,7 +8734,75 @@ def fde_ocr_100_action_board_snapshot() -> dict[str, Any]:
             "actions": [],
             "scenarioPlan": {},
             "candidateSummary": {},
+            "handoff": fde_ocr_100_action_handoff_snapshot(reports_dir),
         }
+
+
+def fde_ocr_100_action_handoff_snapshot(reports_dir: Path) -> dict[str, Any]:
+    manifest_path = reports_dir / "ocr_100_action_handoff" / "handoff_manifest.json"
+    manifest = fde_read_json_file(manifest_path)
+    if not manifest:
+        return {
+            "schemaVersion": "aicheck-ocr-100-action-handoff-v1",
+            "ok": False,
+            "status": "missing",
+            "manifestPath": fde_relative_path(manifest_path),
+            "laneCounts": {},
+            "files": [],
+        }
+    files = manifest.get("files") if isinstance(manifest.get("files"), dict) else {}
+    file_rows = [fde_ocr_100_handoff_file_row(key, value) for key, value in files.items()]
+    return {
+        "schemaVersion": manifest.get("schemaVersion") or "aicheck-ocr-100-action-handoff-v1",
+        "ok": bool(file_rows) and all(row.get("exists") for row in file_rows),
+        "status": "ready" if file_rows and all(row.get("exists") for row in file_rows) else "incomplete",
+        "generatedAt": manifest.get("generatedAt"),
+        "outputDir": fde_relative_path(manifest.get("outputDir")),
+        "manifestPath": fde_relative_path(manifest_path),
+        "summary": manifest.get("summary") if isinstance(manifest.get("summary"), dict) else {},
+        "laneCounts": manifest.get("laneCounts") if isinstance(manifest.get("laneCounts"), dict) else {},
+        "files": file_rows,
+    }
+
+
+def fde_ocr_100_handoff_file_row(key: str, value: Any) -> dict[str, Any]:
+    path = Path(str(value))
+    if not path.is_absolute():
+        path = WORKSPACE_ROOT / path
+    label_map = {
+        "readme": ("总说明", "FDE", "交付顺序、文件说明和重跑门禁。"),
+        "collectMarkdown": ("采样说明", "采样人员", "按场景补真实 OCR 文件。"),
+        "collectCsv": ("采样CSV", "采样人员", "可分派的采样缺口清单。"),
+        "labelMarkdown": ("标注说明", "标注/复核人员", "已有 Scan 样本的人审动作。"),
+        "labelCsv": ("标注CSV", "标注/复核人员", "可分派的人工校对清单。"),
+    }
+    label, owner, purpose = label_map.get(key, (key, "FDE", "OCR 100 handoff artifact."))
+    exists = path.exists()
+    return {
+        "key": key,
+        "label": label,
+        "owner": owner,
+        "purpose": purpose,
+        "path": fde_relative_path(path),
+        "exists": exists,
+        "sizeBytes": path.stat().st_size if exists and path.is_file() else 0,
+    }
+
+
+def fde_read_json_file(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def fde_relative_path(path: Any) -> str:
+    raw = Path(str(path))
+    try:
+        return str(raw.resolve().relative_to(WORKSPACE_ROOT.resolve()))
+    except Exception:
+        return str(raw)
 
 
 def first_existing_path(paths: list[Path]) -> Path | None:

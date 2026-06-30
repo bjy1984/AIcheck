@@ -957,10 +957,12 @@ python scripts/ocr_100_action_board.py \
   --candidates ocr_eval/reports/ocr_100_scan_candidates.json \
   --output ocr_eval/reports/ocr_100_action_board.json \
   --markdown-output ocr_eval/reports/ocr_100_action_board.md \
-  --csv-output ocr_eval/reports/ocr_100_action_board.csv
+  --csv-output ocr_eval/reports/ocr_100_action_board.csv \
+  --handoff-output-dir ocr_eval/reports/ocr_100_action_handoff
 ```
 
 `ocr_100_action_board.csv` 可直接给采样/标注人员使用；`collect_samples` 行包含 `missingCases`、`dropDirectory`、`checklist` 和 `collectionHint`，用于补真实业务文件；`label_existing` 行包含 `sourcePath`、`taskId`、`blockers`、`previewPaths` 和 `humanActions`，用于处理已有 Scan 样本的人审校对；`triage_candidates` 行先去重再入库。
+`--handoff-output-dir` 会额外生成 `README.md`、`collect_samples.md/csv`、`label_existing.md/csv` 和 `handoff_manifest.json`，用于把采样人员和人工标注人员的任务拆开交付；采样人员只看 `collect_samples.*`，标注/复核人员只看 `label_existing.*`。
 
 真实样本采集和导入流程：
 
