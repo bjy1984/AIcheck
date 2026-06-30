@@ -4,16 +4,116 @@ materialTypes:
     requiredType: 必传
     requiredFields: [file_name, version, source_org]
     evidenceRequired: true
+  - code: design_license
+    name: 设计单位许可证
+    requiredType: 条件必传
+    requiredFields: [organization_name, certificate_no, license_scope, valid_until, seal]
+    evidenceRequired: true
+  - code: construction_license
+    name: 施工单位安装许可证
+    requiredType: 条件必传
+    requiredFields: [organization_name, certificate_no, license_scope, valid_until]
+    evidenceRequired: true
+  - code: manufacturing_license
+    name: 制造单位许可证
+    requiredType: 条件必传
+    requiredFields: [manufacturer, certificate_no, license_scope, product_scope, valid_until]
+    evidenceRequired: true
+  - code: ndt_org_certificate
+    name: 无损检测机构核准证
+    requiredType: 条件必传
+    requiredFields: [organization_name, certificate_no, approved_items, valid_until]
+    evidenceRequired: true
+  - code: ndt_person_certificate
+    name: 无损检测人员资格证和执业注册证
+    requiredType: 条件必传
+    requiredFields: [name, certificate_no, qualified_items, registration_no, valid_until]
+    evidenceRequired: true
+  - code: design_document
+    name: 设计文件
+    requiredType: 条件必传
+    requiredFields: [document_no, title, design_org, pipeline_class, design_pressure, design_temperature, standard_versions]
+    evidenceRequired: true
+  - code: drawing_review_record
+    name: 施工图审查手续
+    requiredType: 条件必传
+    requiredFields: [project_name, drawing_no, review_org, review_date, stamp]
+    evidenceRequired: true
+  - code: calculation_report
+    name: 强度计算书或应力分析报告
+    requiredType: 条件必传
+    requiredFields: [report_no, applicable_line_no, design_condition, approver, conclusion]
+    evidenceRequired: true
+  - code: design_change_document
+    name: 设计变更和书面批准文件
+    requiredType: 条件必传
+    requiredFields: [change_no, original_design_org, approved_scope, approval_date, seal]
+    evidenceRequired: true
+  - code: construction_organization_design
+    name: 施工组织设计
+    requiredType: 条件必传
+    requiredFields: [document_no, compiler, reviewer, approver, owner_approval, scope]
+    evidenceRequired: true
+  - code: construction_schedule
+    name: 施工计划工期文件
+    requiredType: 条件必传
+    requiredFields: [start_date, end_date, project_scope]
+    evidenceRequired: true
   - code: quality_certificate
     name: 产品质量证明书
     requiredType: 必传
     requiredFields: [manufacturer, material_grade, batch_no, certificate_no, stamp]
     ocrFieldMappings: [manufacturer, material_grade, batch_no, certificate_no, seal]
     evidenceRequired: true
+  - code: manufacturing_supervision_certificate
+    name: 制造监督检验证书
+    requiredType: 条件必传
+    requiredFields: [certificate_no, product_name, manufacturer, specification, conclusion]
+    evidenceRequired: true
+  - code: type_test_report
+    name: 型式试验证书或型式试验报告
+    requiredType: 条件必传
+    requiredFields: [report_no, product_name, specification_scope, test_org, conclusion, valid_until]
+    evidenceRequired: true
+  - code: factory_inspection_report
+    name: 出厂检验报告
+    requiredType: 条件必传
+    requiredFields: [report_no, product_name, material_grade, specification, pressure_class, conclusion]
+    evidenceRequired: true
+  - code: overseas_material_certificate
+    name: 境外制造或境外牌号材料证明文件
+    requiredType: 条件必传
+    requiredFields: [origin_country, manufacturer, material_grade, equivalent_grade, standard_no, conclusion]
+    evidenceRequired: true
+  - code: acceptance_witness_record
+    name: 到货验收见证资料
+    requiredType: 条件必传
+    requiredFields: [item_name, batch_no, quantity, witness_person, acceptance_items, conclusion]
+    evidenceRequired: true
   - code: material_retest_report
     name: 材料复验报告
     requiredType: 条件必传
-    requiredFields: [report_no, sample_no, conclusion]
+    requiredFields: [report_no, sample_no, batch_no, test_items, conclusion]
+    evidenceRequired: true
+  - code: material_mark_transfer_record
+    name: 材料标志移植记录
+    requiredType: 条件必传
+    requiredFields: [original_mark, transferred_mark, batch_no, material_grade, inspector, conclusion]
+    evidenceRequired: true
+  - code: material_substitution_approval
+    name: 材料代用批准文件
+    requiredType: 条件必传
+    requiredFields: [original_material, substitute_material, approved_by, approval_date, seal]
+    evidenceRequired: true
+  - code: technical_review_approval
+    name: 技术评审和批准手续
+    requiredType: 条件必传
+    requiredFields: [review_no, material_name, applicable_scope, approval_org, conclusion]
+    evidenceRequired: true
+  - code: valve_test_report
+    name: 阀门施工资料和耐压试验报告
+    requiredType: 条件必传
+    requiredFields: [valve_no, model, nominal_pressure, test_pressure, holding_time, conclusion]
     evidenceRequired: true
   - code: welder_certificate
     name: 焊工资格证
@@ -25,13 +125,128 @@ materialTypes:
     requiredType: 必传
     requiredFields: [name, certificate_no, work_scope]
     evidenceRequired: true
-  - code: external_query_screenshot
-    name: 外部查询截图
+  - code: wps_pqr
+    name: 焊接工艺评定报告和焊接作业指导书
     requiredType: 条件必传
-    requiredFields: [query_source, query_time]
+    requiredFields: [pqr_no, wps_no, welding_method, material_group, thickness_range, approved_by]
+    evidenceRequired: true
+  - code: welding_material_certificate
+    name: 焊接材料质量证明文件
+    requiredType: 条件必传
+    requiredFields: [material_name, brand, specification, batch_no, chemical_composition, mechanical_property]
+    evidenceRequired: true
+  - code: welding_material_management_record
+    name: 焊材验收保管发放回收记录
+    requiredType: 条件必传
+    requiredFields: [batch_no, storage_condition, drying_record, issue_qty, return_qty, handler]
+    evidenceRequired: true
+  - code: welding_record
+    name: 焊接记录和焊缝标识资料
+    requiredType: 条件必传
+    requiredFields: [weld_no, welder_no, welding_method, material, specification, parameter, conclusion]
+    evidenceRequired: true
+  - code: weld_repair_record
+    name: 焊缝返修记录
+    requiredType: 条件必传
+    requiredFields: [weld_no, repair_count, repair_procedure, approval, retest_report, conclusion]
+    evidenceRequired: true
+  - code: heat_treatment_procedure
+    name: 焊后热处理工艺文件
+    requiredType: 条件必传
+    requiredFields: [procedure_no, weld_no, temperature, holding_time, heating_rate, cooling_rate]
+    evidenceRequired: true
+  - code: heat_treatment_record
+    name: 热处理记录、曲线和硬度检测报告
+    requiredType: 条件必传
+    requiredFields: [record_no, weld_no, curve_no, holding_temperature, holding_time, hardness_result]
+    evidenceRequired: true
+  - code: instrument_calibration_certificate
+    name: 仪表检定或校准证书
+    requiredType: 条件必传
+    requiredFields: [instrument_name, instrument_no, accuracy, range, calibration_date, valid_until]
+    evidenceRequired: true
+  - code: ndt_plan
+    name: 无损检测方案
+    requiredType: 条件必传
+    requiredFields: [plan_no, method, ratio, timing, approver, standard_no]
+    evidenceRequired: true
+  - code: ndt_procedure
+    name: 无损检测工艺文件
+    requiredType: 条件必传
+    requiredFields: [procedure_no, method, equipment, sensitivity, acceptance_level, standard_no]
     evidenceRequired: true
   - code: ndt_report
     name: 无损检测报告
     requiredType: 必传
-    requiredFields: [report_no, method, conclusion, stamp]
+    requiredFields: [report_no, method, weld_no, ratio, conclusion, stamp]
+    evidenceRequired: true
+  - code: radiographic_film
+    name: 射线检测底片
+    requiredType: 条件必传
+    requiredFields: [film_no, weld_no, image_quality, defect_level, report_no]
+    evidenceRequired: true
+  - code: anticorrosion_insulation_material_certificate
+    name: 防腐及保温材料质量证明文件
+    requiredType: 条件必传
+    requiredFields: [material_name, manufacturer, batch_no, standard_no, conclusion]
+    evidenceRequired: true
+  - code: anticorrosion_insulation_record
+    name: 防腐补口补伤和保温施工记录
+    requiredType: 条件必传
+    requiredFields: [line_no, location, process, inspection_item, result, conclusion]
+    evidenceRequired: true
+  - code: cathodic_protection_record
+    name: 阴极保护和杂散电流排流装置资料
+    requiredType: 条件必传
+    requiredFields: [device_name, location, installation_record, test_value, conclusion]
+    evidenceRequired: true
+  - code: grounding_test_record
+    name: 静电接地施工和测试记录
+    requiredType: 条件必传
+    requiredFields: [location, grounding_resistance, tester, test_date, conclusion]
+    evidenceRequired: true
+  - code: installation_record
+    name: 管道安装和现场制作记录
+    requiredType: 条件必传
+    requiredFields: [line_no, weld_no, location, process, inspection_result, conclusion]
+    evidenceRequired: true
+  - code: safety_accessory_record
+    name: 安全附件安装、校验或性能测试资料
+    requiredType: 条件必传
+    requiredFields: [accessory_no, model, specification, set_pressure, test_result, conclusion]
+    evidenceRequired: true
+  - code: pressure_test_plan
+    name: 耐压试验方案
+    requiredType: 条件必传
+    requiredFields: [plan_no, test_medium, test_pressure, holding_time, safety_measure, approval]
+    evidenceRequired: true
+  - code: pressure_test_report
+    name: 耐压试验记录或报告
+    requiredType: 条件必传
+    requiredFields: [report_no, test_medium, test_pressure, holding_time, pressure_gauge_no, conclusion]
+    evidenceRequired: true
+  - code: leakage_test_report
+    name: 泄漏试验记录或报告
+    requiredType: 条件必传
+    requiredFields: [report_no, method, medium, pressure, holding_time, conclusion]
+    evidenceRequired: true
+  - code: purge_cleaning_record
+    name: 吹扫清洗方案和记录
+    requiredType: 条件必传
+    requiredFields: [line_no, medium, pressure, sequence, acceptance_criteria, conclusion]
+    evidenceRequired: true
+  - code: field_photo
+    name: 现场照片、底片或实物核验证据
+    requiredType: 条件必传
+    requiredFields: [capture_time, location, object_id, description]
+    evidenceRequired: true
+  - code: quality_system_document
+    name: 质量保证体系文件和实施记录
+    requiredType: 条件必传
+    requiredFields: [organization_name, procedure_no, personnel, equipment, implementation_record]
+    evidenceRequired: true
+  - code: external_query_screenshot
+    name: 外部查询截图
+    requiredType: 条件必传
+    requiredFields: [query_source, query_time]
     evidenceRequired: true

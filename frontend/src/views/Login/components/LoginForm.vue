@@ -46,8 +46,7 @@ const schema = reactive<FormSchema[]>([
         default: () => {
           return (
             <div class="w-[100%]">
-              <h2 class="auth-form-title">{t('login.login')} AIcheck</h2>
-              <p class="auth-form-subtitle">进入资料审查、项目管控、知识库和 FDE 治理工作台。</p>
+              <h2 class="auth-form-title">{t('login.login')}</h2>
             </div>
           )
         }
@@ -177,8 +176,9 @@ const schema = reactive<FormSchema[]>([
         default: () => {
           return (
             <div class="auth-helper-line">
-              测试账号：<b>inspection</b> / <b>contractor</b> / <b>ndt</b> / <b>owner</b> /
-              <b>admin</b> / <b>fde</b>
+              测试账号：<b>inspection</b>（监检机构） / <b>contractor</b>（施工方） /{' '}
+              <b>ndt</b>（无损检测机构） / <b>owner</b>（建设方） / <b>admin</b>
+              （管理员） / <b>fde</b>（开发人员）；密码同账号。
             </div>
           )
         }
