@@ -17,7 +17,7 @@ from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 from libs.db.postgres import close_postgres, init_postgres_if_configured, run_transaction_probe
 from libs.db.repository import flush_state, load_state, repo
-from libs.integrations.storage import object_storage
+from libs.integrations.storage import ObjectStorageUnavailable, object_storage
 from libs.security.actions import canonical_path, required_action_for_request
 from libs.security.auth import decode_token, demo_users_enabled, user_by_username
 
@@ -278,6 +278,15 @@ def inferred_admin_read_error(request: Request) -> JSONResponse | None:
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(request: Request, exc: RequestValidationError):
     return fail(errors.VALIDATION_ERROR, request, data={"errors": exc.errors()})
+
+
+@app.exception_handler(ObjectStorageUnavailable)
+async def object_storage_error_handler(request: Request, exc: ObjectStorageUnavailable):
+    return fail(
+        errors.OBJECT_STORAGE_REQUIRED,
+        request,
+        message=str(exc) or errors.OBJECT_STORAGE_REQUIRED.message,
+    )
 
 
 @app.exception_handler(Exception)

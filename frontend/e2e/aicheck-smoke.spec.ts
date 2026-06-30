@@ -20,6 +20,7 @@ const routeCases: RouteCase[] = [
   },
   { path: '/workbench/owner', title: '建设方工作台', titleLocator: '.aicheck-page .page-title' },
   { path: '/admin/overview', title: '项目与权限配置', titleLocator: '.admin-page .page-title' },
+  { path: '/fde/dashboard', title: 'AI 交付治理后台', titleLocator: '.fde-console .page-title' },
   {
     path: '/knowledge/overview',
     title: 'AI 知识库管理',
@@ -48,7 +49,24 @@ const knowledgeDeepRouteCases = [
   { path: '/knowledge/config', menu: '知识库配置', tab: '配置审计' }
 ]
 
+const fdeDeepRouteCases = [
+  { path: '/fde/dashboard', menu: 'AI 驾驶舱', context: 'AI 驾驶舱' },
+  { path: '/fde/ai-runs', menu: 'AI Run 追踪', context: 'AI Run 追踪' },
+  { path: '/fde/review-runs', menu: '任务编排', context: '任务编排' },
+  { path: '/fde/feedback', menu: '反馈与标注', context: '反馈与标注' },
+  { path: '/fde/evaluation', menu: '评估实验室', context: '评估实验室' },
+  { path: '/fde/capability-bundles', menu: '能力组合', context: '能力组合' },
+  { path: '/fde/releases', menu: '发布治理', context: '发布治理' },
+  { path: '/fde/ocr-quality', menu: 'OCR 质量', context: 'OCR 质量' },
+  { path: '/fde/business-packs', menu: '业务包工厂', context: '业务包工厂' },
+  { path: '/fde/security', menu: '数据安全', context: '数据安全' },
+  { path: '/fde/incidents', menu: '事故 RCA', context: '事故 RCA' },
+  { path: '/fde/costs', menu: '成本预算', context: '成本预算' },
+  { path: '/fde/acceptance', menu: '交付验收', context: '交付验收' }
+]
+
 const accountForPath = (path: string) => {
+  if (path.startsWith('/fde')) return 'fde'
   if (path.startsWith('/admin') || path.startsWith('/knowledge')) return 'admin'
   if (path.includes('/workbench/contractor')) return 'contractor'
   if (path.includes('/workbench/ndt')) return 'ndt'
@@ -65,8 +83,6 @@ const passwordForAccount = (account: string) => {
   )
 }
 
-const loginPlaceholder = 'inspection / contractor / ndt / owner / admin'
-
 const clearLoginState = async (page: Page) => {
   await page.evaluate(() => {
     localStorage.clear()
@@ -79,7 +95,7 @@ const clearLoginState = async (page: Page) => {
 const gotoLoginPage = async (page: Page, redirect?: string) => {
   const target = redirect ? `/#/login?redirect=${encodeURIComponent(redirect)}` : '/#/login'
   await page.goto(target, { waitUntil: 'domcontentloaded' })
-  const loginInputs = page.locator(`input[placeholder="${loginPlaceholder}"]`)
+  const loginInputs = page.locator('.auth-form .el-input__inner')
   try {
     await expect(loginInputs.first()).toBeVisible({ timeout: 15_000 })
   } catch (error) {
@@ -172,7 +188,8 @@ test.describe('AIcheck route smoke', () => {
       { account: 'contractor', path: '/workbench/contractor', title: '施工方工作台' },
       { account: 'ndt', path: '/workbench/ndt', title: '无损检测工作台' },
       { account: 'owner', path: '/workbench/owner', title: '建设方工作台' },
-      { account: 'admin', path: '/admin/overview', title: '项目与权限配置' }
+      { account: 'admin', path: '/admin/overview', title: '项目与权限配置' },
+      { account: 'fde', path: '/fde/dashboard', title: 'AI 交付治理后台' }
     ]
 
     for (const routeCase of cases) {
@@ -185,7 +202,7 @@ test.describe('AIcheck route smoke', () => {
 
   test('business role falls back when redirect targets admin panel', async ({ page }) => {
     await page.goto(`/#/login?redirect=${encodeURIComponent('/admin/overview')}`)
-    const loginInputs = page.locator(`input[placeholder="${loginPlaceholder}"]`)
+    const loginInputs = page.locator('.auth-form .el-input__inner')
 
     await expect(loginInputs.first()).toBeVisible()
     await loginInputs.nth(0).fill('contractor')
@@ -213,7 +230,14 @@ test.describe('AIcheck route smoke', () => {
   test('core pages fit a 390px mobile viewport', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 900 })
 
-    for (const routeCase of [routeCases[0], routeCases[4], routeCases[5]]) {
+    for (const routeCase of routeCases.filter((item) =>
+      [
+        '/workbench/inspection',
+        '/admin/overview',
+        '/knowledge/overview',
+        '/fde/dashboard'
+      ].includes(item.path)
+    )) {
       await openRoute(page, routeCase)
       await expectNoPageOverflow(page)
     }
@@ -255,6 +279,22 @@ test.describe('AIcheck deep route menu', () => {
         'aria-selected',
         'true'
       )
+      await expectNoPageOverflow(page)
+    }
+  })
+
+  test('fde subroutes select static menu and route context', async ({ page }) => {
+    await loginTo(page, fdeDeepRouteCases[0].path)
+
+    for (const routeCase of fdeDeepRouteCases) {
+      await page.goto(`/#${routeCase.path}`)
+      await page.waitForURL((url) => url.hash.includes(routeCase.path))
+      await page.waitForLoadState('networkidle')
+      await expect(page.locator('.fde-console .page-title')).toContainText('AI 交付治理后台')
+      await expect(page.locator('.static-tree-menu .tree-node.active').first()).toContainText(
+        routeCase.menu
+      )
+      await expect(page.locator('.route-context')).toContainText(routeCase.context)
       await expectNoPageOverflow(page)
     }
   })

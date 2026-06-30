@@ -5768,6 +5768,31 @@ def test_document_preview_and_download_use_current_version_signed_get(monkeypatc
     assert_error(client.get(f"/projects/NOT-A-PROJECT/documents/{document['id']}/download-url"), "NOT_FOUND")
 
 
+def test_production_signed_url_rejects_mock_storage(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REQUIRE_OBJECT_STORAGE", "true")
+
+    response = client.get("/downloads/prod-storage-required/signed-url")
+    assert_error(response, "OBJECT_STORAGE_REQUIRED")
+
+
+def test_upload_session_storage_failure_does_not_create_dirty_records(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REQUIRE_OBJECT_STORAGE", "true")
+    monkeypatch.setattr("libs.db.repository.object_storage.presigned_put_url", lambda *args, **kwargs: None)
+    tracked_collections = ("documents", "versions", "knowledge_files", "knowledge_tasks", "upload_sessions")
+    before = {collection: len(repo.state[collection]) for collection in tracked_collections}
+
+    assert_error(
+        client.post(
+            "/projects/P-2026-HDCP-001/documents/upload-session",
+            json={"files": [{"fileName": "should-not-persist.pdf", "fileSize": 1024, "fileType": "application/pdf"}]},
+        ),
+        "OBJECT_STORAGE_REQUIRED",
+    )
+
+    after = {collection: len(repo.state[collection]) for collection in tracked_collections}
+    assert after == before
+
+
 def test_worker_uses_ocr_http_client_when_configured(monkeypatch) -> None:
     from apps.worker import tasks
 

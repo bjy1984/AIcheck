@@ -9,7 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 from libs.contracts.responses import server_time
-from libs.integrations.storage import object_storage
+from libs.integrations.storage import ObjectStorageUnavailable, object_storage, parse_storage_url
 
 from .seed import ROLE_ACTIONS, ROLE_NODE_MAP, fresh_state
 
@@ -322,6 +322,8 @@ class InMemoryRepository:
 
     def signed_get(self, file_name: str, url: str, content_type: str | None = None, file_size: int | None = None) -> dict[str, Any]:
         signed_url = object_storage.presigned_get_url(url, file_name=file_name)
+        if not signed_url and object_storage.required and (parse_storage_url(url) or str(url).startswith("mock://")):
+            raise ObjectStorageUnavailable("Object storage is required in production but signed GET could not be created.")
         payload = {
             "url": signed_url or url,
             "method": "GET",
@@ -335,7 +337,12 @@ class InMemoryRepository:
         return payload
 
     def signed_put(self, bucket: str, object_name: str, fallback_url: str, *, content_type: str | None = None) -> str:
-        return object_storage.presigned_put_url(bucket, object_name, content_type=content_type) or fallback_url
+        signed_url = object_storage.presigned_put_url(bucket, object_name, content_type=content_type)
+        if signed_url:
+            return signed_url
+        if object_storage.required:
+            raise ObjectStorageUnavailable("Object storage is required in production but signed PUT could not be created.")
+        return fallback_url
 
     def document_storage_url(self, document: dict[str, Any], *, fallback_prefix: str) -> str:
         version = self.current_version(document["id"])
@@ -343,6 +350,8 @@ class InMemoryRepository:
         storage_key = (version or {}).get("storageKey")
         if bucket and storage_key:
             return f"minio://{bucket}/{storage_key}"
+        if object_storage.required:
+            raise ObjectStorageUnavailable("Object storage is required in production but the document has no storage object.")
         return f"mock://{fallback_prefix}/documents/{document['id']}?versionId={document.get('currentVersionId')}"
 
     def document_content_type(self, document: dict[str, Any]) -> str | None:
@@ -410,14 +419,35 @@ class InMemoryRepository:
         source_org_name: str = "中石化安装有限公司",
         uploader_name: str = "李工",
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        seed = uuid4().hex[:8].upper()
+        doc, version, knowledge_file, knowledge_task = self._build_document_records(
+            project_id,
+            file_name,
+            file_type,
+            source_org_name=source_org_name,
+            uploader_name=uploader_name,
+        )
+        self._insert_document_records(doc, version, knowledge_file, knowledge_task)
+        return doc, version
+
+    def _build_document_records(
+        self,
+        project_id: str,
+        file_name: str,
+        file_type: str,
+        *,
+        source_org_name: str = "中石化安装有限公司",
+        uploader_name: str = "李工",
+        seed: str | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
+        seed = seed or uuid4().hex[:8].upper()
         document_id = f"DOC-{seed}"
         version_id = f"DV-{seed}-V1"
         now = server_time()
+        project = self.require_project(project_id)
         doc = {
             "id": document_id,
             "projectId": project_id,
-            "businessPackId": (self.require_project(project_id) or {}).get("businessPackId"),
+            "businessPackId": (project or {}).get("businessPackId"),
             "materialTypeCode": "generic_review_material",
             "fileName": file_name,
             "fileType": file_type or file_name.split(".")[-1],
@@ -444,15 +474,13 @@ class InMemoryRepository:
             "uploadTime": now,
             "isCurrent": True,
         }
-        self.state["documents"].insert(0, doc)
-        self.state["versions"].insert(0, version)
         knowledge_file = {
             "id": f"KF-{document_id}",
             "fileName": file_name,
             "sourceId": "KS-PROJECT-FILE",
             "sourceName": "项目文件知识库",
             "projectId": project_id,
-            "projectName": self.require_project(project_id).get("name") if self.require_project(project_id) else "",
+            "projectName": project.get("name") if project else "",
             "documentId": document_id,
             "documentVersionId": version_id,
             "ocrStatus": "排队中",
@@ -463,39 +491,50 @@ class InMemoryRepository:
             "updatedAt": now,
             "actions": ["knowledge:view", "knowledge:reindex"],
         }
+        knowledge_task = {
+            "id": f"KT-{seed}",
+            "taskType": "ocr",
+            "targetType": "file",
+            "targetId": knowledge_file["id"],
+            "targetName": file_name,
+            "documentId": document_id,
+            "documentVersionId": version_id,
+            "status": "排队中",
+            "progress": 0,
+            "createdAt": now,
+            "actions": ["knowledge:task-retry"],
+        }
+        return doc, version, knowledge_file, knowledge_task
+
+    def _insert_document_records(
+        self,
+        doc: dict[str, Any],
+        version: dict[str, Any],
+        knowledge_file: dict[str, Any],
+        knowledge_task: dict[str, Any],
+    ) -> None:
+        self.state["documents"].insert(0, doc)
+        self.state["versions"].insert(0, version)
         self.state["knowledge_files"].insert(0, knowledge_file)
-        self.state["knowledge_tasks"].insert(
-            0,
-            {
-                "id": f"KT-{seed}",
-                "taskType": "ocr",
-                "targetType": "file",
-                "targetId": knowledge_file["id"],
-                "targetName": file_name,
-                "documentId": document_id,
-                "documentVersionId": version_id,
-                "status": "排队中",
-                "progress": 0,
-                "createdAt": now,
-                "actions": ["knowledge:task-retry"],
-            },
-        )
-        return doc, version
+        self.state["knowledge_tasks"].insert(0, knowledge_task)
 
     def create_upload_session(self, project_id: str, files: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
         session_id = f"UPS-{uuid4().hex[:10].upper()}"
         upload_urls = []
         session_files = []
+        pending_records: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]] = []
         for file in files:
-            doc, version = self.create_document(
+            doc, version, knowledge_file, knowledge_task = self._build_document_records(
                 project_id,
                 file.get("fileName") or "未命名资料.pdf",
                 file.get("fileType") or "pdf",
             )
             content_type = file.get("fileType") or "application/octet-stream"
-            upload_url = object_storage.presigned_put_url(
+            # signed_put wraps object_storage.presigned_put_url and enforces production storage.
+            upload_url = self.signed_put(
                 "documents",
                 version["storageKey"],
+                f"mock://upload/{session_id}/{doc['id']}",
                 content_type=content_type,
             )
             upload_urls.append(
@@ -503,7 +542,7 @@ class InMemoryRepository:
                     "fileName": doc["fileName"],
                     "documentId": doc["id"],
                     "documentVersionId": version["id"],
-                    "url": upload_url or f"mock://upload/{session_id}/{doc['id']}",
+                    "url": upload_url,
                     "method": "PUT",
                     "expiresAt": object_storage.expires_at(),
                     "headers": {"Content-Type": content_type},
@@ -518,6 +557,9 @@ class InMemoryRepository:
                     "storageKey": version["storageKey"],
                 }
             )
+            pending_records.append((doc, version, knowledge_file, knowledge_task))
+        for records in pending_records:
+            self._insert_document_records(*records)
         self.state["upload_sessions"].insert(
             0,
             {
@@ -972,6 +1014,8 @@ class InMemoryRepository:
             task["storageKey"] = object_key
             task["fileSize"] = len(artifact_body)
             task["contentType"] = content_type
+        elif object_storage.required:
+            raise ObjectStorageUnavailable("Object storage is required in production but export artifact could not be stored.")
         return task
 
     def configure_sync_postgres(self, dsn: str | None = None) -> None:

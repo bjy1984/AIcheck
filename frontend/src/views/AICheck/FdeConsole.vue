@@ -143,6 +143,7 @@ type AnnotationOverlayItem = Record<string, unknown> & {
   label: string
   bbox?: unknown
 }
+type FdeElTagType = 'success' | 'warning' | 'info' | 'primary' | 'danger'
 const incidentPayload = ref<FdeIncidentPayload | null>(null)
 const selectedIncidentId = ref('')
 const accessGrants = ref<Array<Record<string, unknown>>>([])
@@ -254,6 +255,31 @@ const fdeShellMenuSections = computed(() =>
     }))
   }))
 )
+const currentFdeRouteContext = computed(() => {
+  for (const section of fdeShellMenuSectionsBase) {
+    const item = section.items.find((candidate) => candidate.route === route.path)
+    if (item) {
+      return {
+        group: section.title,
+        label: item.label,
+        badge: item.badge,
+        tone: item.tone
+      }
+    }
+  }
+  return {
+    group: '运行监控',
+    label: 'AI 驾驶舱',
+    badge: '总览',
+    tone: 'blue'
+  }
+})
+const fdeTagType = (tone: string): FdeElTagType => {
+  if (tone === 'red') return 'danger'
+  if (tone === 'green') return 'success'
+  if (tone === 'orange') return 'warning'
+  return 'info'
+}
 
 const percent = (value?: number | string) => {
   const numeric = Number(value || 0)
@@ -1336,6 +1362,13 @@ onMounted(loadData)
             <ElTag type="info" effect="plain">脱敏默认</ElTag>
             <ElTag type="success" effect="plain">证据追踪</ElTag>
             <ElTag type="warning" effect="plain">发布门禁</ElTag>
+          </div>
+          <div class="route-context">
+            <span>{{ currentFdeRouteContext.group }}</span>
+            <strong>{{ currentFdeRouteContext.label }}</strong>
+            <ElTag :type="fdeTagType(currentFdeRouteContext.tone)" effect="plain">
+              {{ currentFdeRouteContext.badge }}
+            </ElTag>
           </div>
         </div>
         <ElSpace wrap>
@@ -3298,6 +3331,25 @@ onMounted(loadData)
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
+}
+
+.route-context {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 7px 10px;
+  margin-top: 12px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: #667085;
+  background: #f8fafc;
+  border-radius: 8px;
+  align-items: center;
+  gap: 8px;
+}
+
+.route-context strong {
+  font-size: 14px;
+  color: #172033;
 }
 
 .metric-grid {

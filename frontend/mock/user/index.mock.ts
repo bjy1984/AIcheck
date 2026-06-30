@@ -75,6 +75,18 @@ const List: {
     permissions: ['*.*.*']
   },
   {
+    id: 'USER-FDE-001',
+    username: 'fde',
+    password: 'fde',
+    role: 'fde',
+    roleId: '6',
+    roleLabel: 'FDE 工程师',
+    displayName: 'FDE 工程师',
+    orgUnitName: 'AI 交付治理组',
+    defaultPath: '/fde/dashboard',
+    permissions: ['fde:default']
+  },
+  {
     id: 'USER-TEST-001',
     username: 'test',
     password: 'test',

@@ -13,6 +13,10 @@ from libs.contracts.responses import SERVER_TZ
 DEFAULT_BUCKETS = ("documents", "previews", "exports", "ocr-artifacts")
 
 
+class ObjectStorageUnavailable(RuntimeError):
+    """Raised when production mode requires object storage but no signed URL can be created."""
+
+
 class ObjectStorage:
     def __init__(self) -> None:
         self.endpoint = os.getenv("AICHECK_MINIO_ENDPOINT", "").strip()
@@ -25,6 +29,17 @@ class ObjectStorage:
     @property
     def enabled(self) -> bool:
         return bool(self.endpoint)
+
+    @property
+    def required(self) -> bool:
+        explicit = os.getenv("AICHECK_REQUIRE_OBJECT_STORAGE", "").strip().lower()
+        if explicit in {"true", "1", "yes"}:
+            return True
+        if explicit in {"false", "0", "no"}:
+            return False
+        auth_required = os.getenv("AICHECK_REQUIRE_AUTH", "false").lower() == "true"
+        demo_disabled = os.getenv("AICHECK_ENABLE_DEMO_USERS", "true").lower() == "false"
+        return auth_required and demo_disabled
 
     def expires_at(self, minutes: int = 30) -> str:
         return (datetime.now(SERVER_TZ) + timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")

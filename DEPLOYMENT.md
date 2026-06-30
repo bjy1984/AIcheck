@@ -10,6 +10,56 @@
 - `temporal-service`、`temporal-ui`：审查编排与任务可视化。
 - `postgres`、`redis`、`minio`：统一 PostgreSQL 数据库、任务队列/缓存、对象存储。
 
+## 0. 稳定上线门禁
+
+除 **OCR 100+ 人工标注样本准确率评估报告** 可作为延期项外，其它生产门禁必须全部通过。上线前不要使用当前本地开发进程作为验收依据，必须以 Docker Compose 生产拓扑和 live probe 报告为准。
+
+必须满足：
+
+- API `/healthz`：`authRequired=true`、`demoUsersEnabled=false`、`postgresEnabled=true`、`postgresTransactions=true`、`objectStorageEnabled=true`。
+- 生产模式禁止 `mock://` 上传、预览、下载、导出 URL。MinIO 未配置或 signed URL 生成失败时返回 `OBJECT_STORAGE_REQUIRED`，不得静默回退到 mock。
+- OCR 服务必须运行最新 `document-intelligence-service` 入口，并暴露 `/healthz`、`/readyz`、`/internal/ocr/doctor`、`/internal/ocr/parse`、`/internal/document-parse/jobs`。允许延期的是 100+ 样本准确率报告，不允许使用 placeholder OCR。
+- LiteLLM 必须通过健康检查、模型别名检查、virtual key 管理探针和最小 provider 调用。
+- ReviewRun 必须通过真实 worker/Temporal/LangGraph 编排探针，FDE replay 必须生成 child run，不覆盖原始 run。
+- FDE、admin、inspection、contractor、ndt、owner 六类角色必须登录到自己的默认面板，FDE 不能调用正式业务审批命令。
+
+上线验收命令：
+
+```bash
+cd backend
+
+python scripts/check_96_preflight.py --strict-production --require-ports-free
+python scripts/ocr_runtime_doctor.py --strict-production
+python scripts/validate_business_packs.py --json
+
+python scripts/deployment_report.py \
+  --strict-production \
+  --include-live \
+  --write-probes \
+  --ocr-object-probe \
+  --review-run-probe \
+  --review-run-wait-seconds 30 \
+  --litellm-management-probes \
+  --litellm-provider-probes \
+  --roles admin,inspection,contractor,ndt,owner,fde \
+  --output-dir ./deployment-reports/latest
+
+python -m pytest -q
+
+cd ../frontend
+npm run ts:check
+npm run lint:style:check
+npm run test:e2e -- --grep "aicheck|fde"
+```
+
+当前允许延期项只包括：
+
+```text
+OCR 100+ 人工标注样本准确率评估报告
+```
+
+延期项不豁免 OCR 运行态。`ocr_runtime_doctor.py --strict-production` 仍必须无 fail，`--ocr-object-probe` 仍必须证明 OCR 服务能读取 MinIO 对象并返回结构化失败或成功结果。
+
 ## 1. 项目架构
 
 AIcheck 采用前后端分离、主业务 API 与异步能力服务拆分的架构。浏览器只访问前端站点、`api-service` 和 MinIO signed URL；OCR、LiteLLM、PostgreSQL、Redis 均应部署在内网。
