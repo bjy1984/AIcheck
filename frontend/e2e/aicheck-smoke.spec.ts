@@ -311,6 +311,28 @@ const expectFdeProjectTreeUsable = async (page: Page) => {
             visible
           )
           if (projectCards.length < 2) failures.push(`project-cards:${projectCards.length}`)
+          const tallProjectCards = projectCards
+            .map((card) => ({
+              text: (card.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 32),
+              height: Math.round(card.getBoundingClientRect().height)
+            }))
+            .filter((card) => card.height > 74)
+          if (tallProjectCards.length) {
+            failures.push(
+              `project-card-tall:${tallProjectCards.map((card) => `${card.text}:${card.height}`).join('|')}`
+            )
+          }
+          const crowdedProjectCards = projectCards
+            .map((card) => ({
+              text: (card.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 32),
+              chipCount: card.querySelectorAll('.tree-chip').length
+            }))
+            .filter((card) => card.chipCount > 3)
+          if (crowdedProjectCards.length) {
+            failures.push(
+              `project-card-chips:${crowdedProjectCards.map((card) => `${card.text}:${card.chipCount}`).join('|')}`
+            )
+          }
           const visibleTreeNodes = Array.from(
             document.querySelectorAll<HTMLElement>('.tree-section-menu.is-opened .tree-node')
           ).filter(visible)
@@ -325,7 +347,7 @@ const expectFdeProjectTreeUsable = async (page: Page) => {
               text: (node.textContent || '').trim().replace(/\s+/g, ' '),
               height: Math.round(node.getBoundingClientRect().height)
             }))
-            .filter((node) => node.height > 42)
+            .filter((node) => node.height > 38)
 
           if (visibleHints.length) failures.push(`tree-hints:${visibleHints.length}`)
           if (visiblePills.length > 1) failures.push(`tree-pills:${visiblePills.length}`)

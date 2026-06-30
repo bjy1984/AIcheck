@@ -302,9 +302,9 @@ const handleUserCommand = (command: string | number | object) => {
                   <template #title>
                     <span class="tree-group-wrap">
                       <span class="tree-group">
-                        <span>⌄</span>
-                        <span>{{ section.title }}</span>
-                        <span>{{ section.meta }}</span>
+                        <span class="tree-group-caret">⌄</span>
+                        <span class="tree-group-title">{{ section.title }}</span>
+                        <span class="tree-group-status">{{ section.meta }}</span>
                       </span>
                       <span v-if="section.chips?.length" class="tree-group-chips">
                         <span
@@ -1070,17 +1070,17 @@ const handleUserCommand = (command: string | number | object) => {
 
 .tree-section-menu {
   position: relative;
-  margin: 8px 0;
+  margin: 6px 0;
 }
 
 .tree-section-menu::before {
   position: absolute;
-  top: 52px;
-  bottom: 8px;
-  left: 19px;
+  top: 46px;
+  bottom: 6px;
+  left: 17px;
   width: 1px;
   content: '';
-  background: linear-gradient(180deg, #c9d9ee, rgb(201 217 238 / 0%));
+  background: linear-gradient(180deg, #d3dfef, rgb(211 223 239 / 0%));
 }
 
 .tree-section-menu :deep(> .el-sub-menu__title) {
@@ -1104,16 +1104,17 @@ const handleUserCommand = (command: string | number | object) => {
 }
 
 .tree-group-wrap {
-  display: block;
+  display: grid;
   min-width: 0;
   width: 100%;
-  padding: 8px 10px;
+  padding: 7px 9px;
   background:
     linear-gradient(180deg, rgb(255 255 255 / 92%), rgb(248 251 255 / 92%)),
-    radial-gradient(circle at 18px 12px, rgb(37 99 235 / 10%), transparent 46px);
+    radial-gradient(circle at 16px 12px, rgb(37 99 235 / 8%), transparent 42px);
   border: 1px solid #e4ecf7;
-  border-radius: 10px;
-  box-shadow: 0 8px 20px rgb(15 23 42 / 5%);
+  border-radius: 9px;
+  box-shadow: 0 6px 16px rgb(15 23 42 / 4%);
+  gap: 5px;
   transition:
     border-color 0.18s ease,
     box-shadow 0.18s ease,
@@ -1161,10 +1162,26 @@ const handleUserCommand = (command: string | number | object) => {
 }
 
 .tree-group {
-  min-height: 28px;
+  min-height: 26px;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  gap: 7px;
 }
 
-.tree-group > span:nth-child(2) {
+.tree-group-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+  line-height: 1;
+  color: #58708e;
+  background: #fff;
+  border: 1px solid #d5e1f0;
+  border-radius: 7px;
+}
+
+.tree-group-title {
   min-width: 0;
   overflow: hidden;
   font-size: 13px;
@@ -1174,13 +1191,13 @@ const handleUserCommand = (command: string | number | object) => {
   white-space: nowrap;
 }
 
-.tree-group > span:nth-child(3) {
+.tree-group-status {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  max-width: 92px;
+  max-width: 84px;
   min-height: 22px;
-  padding: 2px 7px;
+  padding: 2px 6px;
   overflow: hidden;
   font-size: 11px;
   font-weight: 800;
@@ -1193,20 +1210,21 @@ const handleUserCommand = (command: string | number | object) => {
 }
 
 .tree-group-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px 6px;
-  padding: 5px 0 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 0 0 0 27px;
 }
 
 .tree-chip {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   min-height: 21px;
   max-width: 100%;
-  padding: 2px 7px;
+  padding: 2px 5px;
   overflow: hidden;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 800;
   line-height: 1.2;
   text-overflow: ellipsis;
@@ -1241,9 +1259,9 @@ const handleUserCommand = (command: string | number | object) => {
 
 .tree-node {
   grid-template-columns: 8px minmax(0, 1fr) auto;
-  min-height: 30px;
-  padding: 4px 7px 4px 10px;
-  margin: 2px 0 2px 24px;
+  min-height: 28px;
+  padding: 3px 7px 3px 9px;
+  margin: 2px 0 2px 22px;
   font-weight: 600;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -1266,9 +1284,9 @@ const handleUserCommand = (command: string | number | object) => {
 }
 
 .tree-node .pill {
-  min-height: 20px;
-  padding: 2px 7px;
-  font-size: 11px;
+  min-height: 18px;
+  padding: 2px 6px;
+  font-size: 10.5px;
 }
 
 .tree-node:hover,
