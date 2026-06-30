@@ -4754,6 +4754,24 @@ export default [
     response: () => ok(buildMockFdeOcrQuality())
   },
   {
+    url: '/api/fde/ocr-100/action-board/refresh',
+    method: 'post',
+    timeout,
+    response: () => {
+      const board = buildMockFdeOcrQuality().ocr100ActionBoard
+      return ok({
+        board,
+        outputs: {
+          json: 'backend/ocr_eval/reports/ocr_100_action_board.json',
+          markdown: 'backend/ocr_eval/reports/ocr_100_action_board.md',
+          csv: 'backend/ocr_eval/reports/ocr_100_action_board.csv',
+          handoffDir: 'backend/ocr_eval/reports/ocr_100_action_handoff'
+        },
+        auditLogId: 'AUDIT-FDE-OCR100-REFRESH-MOCK'
+      })
+    }
+  },
+  {
     url: '/api/fde/ocr-runs',
     method: 'get',
     timeout,

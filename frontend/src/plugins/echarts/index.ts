@@ -7,7 +7,9 @@ import {
   MapChart,
   PictorialBarChart,
   RadarChart,
-  GraphChart
+  GraphChart,
+  SankeyChart,
+  TreeChart
 } from 'echarts/charts'
 
 import {
@@ -39,7 +41,9 @@ echarts.use([
   CanvasRenderer,
   PictorialBarChart,
   RadarChart,
-  GraphChart
+  GraphChart,
+  SankeyChart,
+  TreeChart
 ])
 
 export default echarts

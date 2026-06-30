@@ -5133,6 +5133,7 @@ def test_required_action_inference_covers_core_mutations() -> None:
         ("POST", "/api/knowledge/retrieval-test", "knowledge:view"),
         ("POST", "/api/admin/config-overview/publish", "admin:config"),
         ("POST", "/api/fde/releases/REL-001/approve", "admin:config"),
+        ("POST", "/api/fde/ocr-100/action-board/refresh", "fde:ocr-annotation:manage"),
         ("PUT", "/api/admin/config-items/todo-rule/TR-001", "admin:config"),
         ("PATCH", "/api/knowledge/config", "knowledge:manage"),
         ("PUT", "/api/knowledge/config", "knowledge:manage"),

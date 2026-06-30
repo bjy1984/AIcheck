@@ -68,6 +68,7 @@ import {
   markFdeShadowPassedApi,
   proposeFdeCostBudgetChangeApi,
   requestFdeAccessGrantApi,
+  refreshFdeOcr100ActionBoardApi,
   reviewFdeOcrAnnotationTaskApi,
   replayFdeAiRunApi,
   replayFdeReviewRunApi,
@@ -128,6 +129,7 @@ const selectedReleaseId = ref('')
 const ocrQuality = ref<FdeOcrQualityPayload | null>(null)
 const ocrRuns = ref<Array<Record<string, unknown>>>([])
 const selectedOcrRun = ref<FdeOcrRunDetailPayload | null>(null)
+const ocr100ActionBoardRefreshing = ref(false)
 const ocrAuditDrawerVisible = ref(false)
 const ocrAnnotation = ref<FdeOcrAnnotationPayload | null>(null)
 const labelStudioExportSummary = ref<Record<string, unknown> | null>(null)
@@ -833,6 +835,7 @@ const statusLabelMap: Record<string, string> = {
   reviewed: '已复核',
   running: '运行中',
   submitted: '已提交',
+  stale: '需刷新',
   success: '成功',
   triaged: '已归因',
   approved_for_eval: '已准入评估集',
@@ -1753,11 +1756,23 @@ const ocr100HandoffFiles = computed(() =>
   }))
 )
 const ocr100HandoffVisibleFiles = computed(() => ocr100HandoffFiles.value.slice(0, 5))
+const ocr100HandoffStaleReasons = computed(() => toRecordArray(ocr100Handoff.value.staleReasons))
 const ocr100HandoffStatusType = computed<FdeElTagType>(() => {
   const status = String(ocr100Handoff.value.status || '')
   if (status === 'ready') return 'success'
   if (status === 'missing') return 'danger'
   return 'warning'
+})
+const ocr100HandoffHint = computed(() => {
+  const status = String(ocr100Handoff.value.status || '')
+  if (status === 'stale') {
+    const reason = ocr100HandoffStaleReasons.value[0]
+    const field = String(reason?.field || '行动板')
+    return `交付包与当前行动板不同步：${field} 已变化，请重新生成 handoff。`
+  }
+  if (status === 'incomplete') return '部分交付文件缺失，请重新生成 handoff。'
+  if (status === 'missing') return '尚未生成交付包，请运行 action board handoff 命令。'
+  return ''
 })
 const ocrAnnotationStatusLabel = (row: FdeOcrAnnotationTask) => {
   if (row.readyForEval || row.collectionStatus === 'ready_for_eval') return '可入评估'
@@ -3306,6 +3321,7 @@ const projectAuditVectorRows = computed(() =>
       pageIndexStatus: raw.pageIndexStatus || (chunkCount > 0 ? '可构建' : '等待切片'),
       pageIndexNodeCount: Number(raw.pageIndexNodeCount || 0),
       latestTask: raw.latestTask || raw.latestKnowledgeTask || ocrJob?.status || '-',
+      knowledgeLineage: raw.knowledgeLineage || {},
       updatedAt: document.updatedAt
     }
   })
@@ -3371,6 +3387,7 @@ const normalizedProjectAuditVectorRows = computed(() =>
         (readyForRag && readyForPageIndex ? '可用于审查' : '需补齐'),
       issue,
       action,
+      knowledgeLineage,
       lineageConclusion:
         String(knowledgeLineage.auditConclusion || '') ||
         (readyForRag && readyForPageIndex ? '可进入审查链' : '仍有知识资产缺口'),
@@ -3381,6 +3398,72 @@ const normalizedProjectAuditVectorRows = computed(() =>
 
 const projectAuditVectorIssueRows = computed(() =>
   normalizedProjectAuditVectorRows.value.filter((row) => row.issue !== '无')
+)
+
+const projectAuditDocumentLineageCards = computed(() =>
+  normalizedProjectAuditVectorRows.value.map((row, index) => {
+    const lineage = toRecord(row.knowledgeLineage)
+    const lineageStages = toRecordArray(lineage.stages)
+    const fallbackStages = [
+      {
+        key: 'ocr_parse',
+        label: '资料解析',
+        done: String(row.ocrStatus).includes('已识别'),
+        status: row.ocrStatus
+      },
+      {
+        key: 'knowledge_slice',
+        label: '知识切片',
+        done: String(row.sliceStatus).includes('已切片'),
+        status: row.sliceStatus
+      },
+      { key: 'vector_embed', label: '向量入库', done: row.readyForRag, status: row.vectorStatus },
+      {
+        key: 'pageindex_tree',
+        label: 'PageIndex',
+        done: row.readyForPageIndex,
+        status: row.pageIndexStatus
+      },
+      {
+        key: 'review_ready',
+        label: '审查可用',
+        done: row.readyForRag && row.readyForPageIndex,
+        status: row.readinessLabel
+      }
+    ]
+    const stages = (lineageStages.length ? lineageStages : fallbackStages).map((stage) => {
+      const item = toRecord(stage)
+      return {
+        key: String(item.key || `stage-${index}`),
+        label: String(item.label || '-'),
+        done: Boolean(item.done),
+        status: friendlyStatus(item.status, '-'),
+        evidence: String(item.evidence || ''),
+        action: String(item.action || '')
+      }
+    })
+    const blockers = Array.isArray(lineage.blockers)
+      ? lineage.blockers.map((item) => shortText(item, '')).filter(Boolean)
+      : row.issue !== '无'
+        ? [String(row.issue)]
+        : []
+    return {
+      id: String(row.id || row.documentVersionId || `lineage-${index + 1}`),
+      fileName: String(row.fileName || '-'),
+      requirementName: String(row.requirementName || '-'),
+      readinessLabel: String(lineage.readinessLabel || row.readinessLabel || '-'),
+      ready:
+        String(lineage.readiness || '').includes('ready') ||
+        (row.readyForRag && row.readyForPageIndex),
+      conclusion: String(lineage.auditConclusion || row.lineageConclusion || '-'),
+      stages,
+      blockers
+    }
+  })
+)
+
+const projectAuditDocumentLineageVisibleCards = computed(() =>
+  projectAuditDocumentLineageCards.value.slice(0, 4)
 )
 
 const projectAuditVectorIndexProfile = computed(() => {
@@ -3512,6 +3595,113 @@ const projectAuditVectorFlowRows = computed(() => {
   ]
 })
 
+const projectAuditVectorSankeyOption = computed<EChartsOption>(() => {
+  const rows = normalizedProjectAuditVectorRows.value.slice(0, 6)
+  const nodes = new Map<string, Record<string, unknown>>()
+  const links = new Map<string, { source: string; target: string; value: number }>()
+  const addNode = (name: string, color: string) => {
+    if (!nodes.has(name)) {
+      nodes.set(name, { name, itemStyle: { color, borderColor: '#ffffff', borderWidth: 2 } })
+    }
+  }
+  const addLink = (source: string, target: string, value = 1) => {
+    const key = `${source}->${target}`
+    const current = links.get(key)
+    if (current) {
+      current.value += value
+      return
+    }
+    links.set(key, { source, target, value })
+  }
+
+  addNode('资料文件', '#2563eb')
+  addNode('OCR 证据', '#f59e0b')
+  addNode('知识切片', '#16a34a')
+  addNode('向量索引', '#0ea5e9')
+  addNode('PageIndex 树', '#6366f1')
+  addNode('Agent 审查', '#15803d')
+
+  rows.forEach((row) => {
+    const fileName = shortText(row.fileName, '资料文件')
+    const docNode = `资料 ${row.rowIndex}：${fileName.slice(0, 18)}`
+    addNode(docNode, '#3b82f6')
+    addLink('资料文件', docNode)
+    addLink(docNode, 'OCR 证据')
+
+    if (!String(row.ocrStatus).includes('已识别')) {
+      addNode('阻断：OCR 待识别', '#dc2626')
+      addLink('OCR 证据', '阻断：OCR 待识别')
+      return
+    }
+    addLink('OCR 证据', '知识切片')
+
+    if (!String(row.sliceStatus).includes('已切片')) {
+      addNode('阻断：未切片', '#dc2626')
+      addLink('知识切片', '阻断：未切片')
+      return
+    }
+    addLink('知识切片', '向量索引')
+
+    if (!row.readyForRag) {
+      addNode('阻断：向量缺口', '#dc2626')
+      addLink('向量索引', '阻断：向量缺口')
+      return
+    }
+    addLink('向量索引', 'PageIndex 树')
+
+    if (!row.readyForPageIndex) {
+      addNode('阻断：PI 未构建', '#dc2626')
+      addLink('PageIndex 树', '阻断：PI 未构建')
+      return
+    }
+    addLink('PageIndex 树', 'Agent 审查')
+  })
+
+  return {
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'item',
+      confine: true,
+      formatter: (params: any) => {
+        if (params.dataType === 'edge') {
+          return `${params.data.source}<br/>→ ${params.data.target}<br/>资料数：${params.data.value}`
+        }
+        return String(params.name || '')
+      }
+    },
+    series: [
+      {
+        type: 'sankey',
+        left: 12,
+        right: 18,
+        top: 18,
+        bottom: 18,
+        nodeWidth: 12,
+        nodeGap: 11,
+        draggable: false,
+        data: Array.from(nodes.values()),
+        links: Array.from(links.values()),
+        label: {
+          color: '#172033',
+          fontSize: 12,
+          fontWeight: 800,
+          width: 112,
+          overflow: 'truncate'
+        },
+        lineStyle: {
+          color: 'gradient',
+          opacity: 0.24,
+          curveness: 0.45
+        },
+        emphasis: {
+          focus: 'adjacency',
+          lineStyle: { opacity: 0.55 }
+        }
+      }
+    ]
+  } as EChartsOption
+})
+
 const projectAuditPageIndexTraceRows = computed<Array<Record<string, unknown>>>(() =>
   reviewRetrievalTraceRows.value.map((trace, index) => {
     const item = toRecord(trace)
@@ -3576,6 +3766,153 @@ const projectAuditPageIndexTraceRows = computed<Array<Record<string, unknown>>>(
     }
   })
 )
+
+const projectAuditPageIndexFriendlyCards = computed(() =>
+  projectAuditPageIndexTraceRows.value.slice(0, 4).map((row, index) => {
+    const routeLabel = friendlyTechLabel(row.selectedRoute)
+    const fallbackLabel =
+      row.fallbackRoute === '-' ? '无回退' : friendlyTechLabel(row.fallbackRoute)
+    const nodeCount = Number(row.pageIndexNodeCount || 0)
+    const clauseCount = Number(row.selectedClauseCount || 0)
+    const ok = row.issue === '无'
+    return {
+      id: String(row.retrievalTraceId || `pageindex-friendly-${index + 1}`),
+      sequence: String(index + 1).padStart(2, '0'),
+      queryType: friendlyTechLabel(row.queryType),
+      query: shortText(row.query, '暂无检索问题'),
+      routeLabel,
+      fallbackLabel,
+      ok,
+      conclusion: ok
+        ? `本次检索走 ${routeLabel}，命中 ${nodeCount} 个章节节点、${clauseCount} 条正式依据。`
+        : `${row.issue}：${row.action}`,
+      facts: [
+        { label: '路由选择', value: routeLabel },
+        { label: '节点命中', value: `${nodeCount} 个` },
+        { label: '条款依据', value: `${clauseCount} 条` },
+        { label: '回退策略', value: fallbackLabel }
+      ],
+      action: String(row.action || '-')
+    }
+  })
+)
+
+const projectAuditPageIndexTreeOption = computed<EChartsOption>(() => {
+  const traces = projectAuditPageIndexTraceRows.value.slice(0, 4)
+  const children = traces.map((trace, index) => {
+    const selectedNodes = toRecordArray(trace.selectedNodes).slice(0, 4)
+    const nodeChildren = selectedNodes.length
+      ? selectedNodes.map((node) => ({
+          name: shortText(node.title || node.nodeId, '命中节点').slice(0, 28),
+          value: shortText(node.sectionPath || node.pageRange, '章节节点'),
+          itemStyle: { color: '#6366f1' }
+        }))
+      : [
+          {
+            name: Number(trace.pageIndexNodeCount || 0) ? '后端未返回节点明细' : '未命中章节节点',
+            value: trace.action,
+            itemStyle: { color: '#f59e0b' }
+          }
+        ]
+    return {
+      name: `检索 ${String(index + 1).padStart(2, '0')}`,
+      value: shortText(trace.query, '-'),
+      itemStyle: { color: trace.issue === '无' ? '#2563eb' : '#f59e0b' },
+      children: [
+        {
+          name: `问题：${friendlyTechLabel(trace.queryType)}`,
+          value: trace.query,
+          itemStyle: { color: '#0ea5e9' }
+        },
+        {
+          name: `路由：${friendlyTechLabel(trace.selectedRoute)}`,
+          value:
+            trace.fallbackRoute === '-'
+              ? '未触发回退'
+              : `回退 ${friendlyTechLabel(trace.fallbackRoute)}`,
+          itemStyle: { color: trace.pageIndexUsed ? '#16a34a' : '#f59e0b' }
+        },
+        {
+          name: `节点：${Number(trace.pageIndexNodeCount || 0)} 个`,
+          value: '章节、附录或表格节点',
+          itemStyle: { color: '#6366f1' },
+          children: nodeChildren
+        },
+        {
+          name: `条款：${Number(trace.selectedClauseCount || 0)} 条`,
+          value: shortText(trace.linkedClauseIds, '-'),
+          itemStyle: { color: Number(trace.selectedClauseCount || 0) ? '#15803d' : '#dc2626' }
+        },
+        {
+          name: trace.issue === '无' ? '结论：可用于审查' : `处理：${trace.issue}`,
+          value: trace.action,
+          itemStyle: { color: trace.issue === '无' ? '#16a34a' : '#dc2626' }
+        }
+      ]
+    }
+  })
+
+  return {
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'item',
+      confine: true,
+      formatter: (params: any) =>
+        [`<strong>${params.name}</strong>`, shortText(params.data?.value, '')]
+          .filter(Boolean)
+          .join('<br/>')
+    },
+    series: [
+      {
+        type: 'tree',
+        data: [
+          {
+            name: 'PageIndex 检索审计',
+            value: '从问题分类到路由、章节节点、正式条款和处理建议',
+            itemStyle: { color: '#172033' },
+            children
+          }
+        ],
+        left: 18,
+        right: 150,
+        top: 20,
+        bottom: 20,
+        orient: 'LR',
+        expandAndCollapse: false,
+        initialTreeDepth: 4,
+        symbol: 'roundRect',
+        symbolSize: [86, 28],
+        edgeShape: 'polyline',
+        lineStyle: {
+          color: '#a7bddb',
+          width: 1.5,
+          curveness: 0.12
+        },
+        label: {
+          position: 'inside',
+          color: '#ffffff',
+          fontSize: 11,
+          fontWeight: 800,
+          width: 78,
+          overflow: 'truncate'
+        },
+        leaves: {
+          label: {
+            position: 'right',
+            color: '#26364e',
+            fontSize: 12,
+            fontWeight: 800,
+            width: 116,
+            overflow: 'truncate'
+          }
+        },
+        emphasis: {
+          focus: 'descendant'
+        }
+      }
+    ]
+  } as EChartsOption
+})
 
 const projectAuditPageIndexFlowRows = computed(() => {
   const lineageRows = toRecordArray(projectAuditKnowledgeLineage.value.pageIndexFlow)
@@ -5369,6 +5706,23 @@ const exportOcr100ActionBoardCsv = () => {
   downloadTextFile('ocr_100_action_board.csv', lines.join('\n'))
 }
 
+const refreshOcr100ActionBoard = async () => {
+  ocr100ActionBoardRefreshing.value = true
+  try {
+    const res = await refreshFdeOcr100ActionBoardApi()
+    if (ocrQuality.value) {
+      ocrQuality.value = {
+        ...ocrQuality.value,
+        ocr100ActionBoard: res.data.board
+      }
+    } else {
+      await loadData()
+    }
+  } finally {
+    ocr100ActionBoardRefreshing.value = false
+  }
+}
+
 const validAnnotationBox = () => {
   const form = annotationBoxForm.value
   return Number(form.x2) > Number(form.x1) && Number(form.y2) > Number(form.y1)
@@ -6010,6 +6364,57 @@ onMounted(loadData)
             </article>
           </section>
 
+          <ElCard shadow="never" class="panel chart-panel mb-16px">
+            <template #header>
+              <div class="panel-header">
+                <span>资料向量化链路图</span>
+                <ElTag effect="plain">Sankey</ElTag>
+              </div>
+            </template>
+            <div class="knowledge-chart-shell">
+              <Echart
+                :options="projectAuditVectorSankeyOption"
+                height="320px"
+                class="knowledge-echart"
+              />
+            </div>
+          </ElCard>
+
+          <section class="lineage-document-grid" aria-label="资料知识资产溯源">
+            <article class="lineage-document-intro">
+              <span>资料知识资产溯源</span>
+              <strong>每份资料为什么能进入 Agent 审查</strong>
+              <small> 按 OCR、切片、向量、PageIndex 和审查可用五个阶段检查证据完整性。 </small>
+            </article>
+            <article
+              v-for="card in projectAuditDocumentLineageVisibleCards"
+              :key="card.id"
+              class="lineage-document-card"
+            >
+              <div class="lineage-document-card__head">
+                <div>
+                  <span>{{ card.requirementName }}</span>
+                  <strong>{{ card.fileName }}</strong>
+                </div>
+                <ElTag :type="card.ready ? 'success' : 'warning'" effect="plain">
+                  {{ card.readinessLabel }}
+                </ElTag>
+              </div>
+              <div class="lineage-stage-row" aria-label="资料处理阶段">
+                <span
+                  v-for="stage in card.stages"
+                  :key="`${card.id}-${stage.key}`"
+                  :class="['lineage-stage-pill', stage.done ? 'is-done' : 'is-waiting']"
+                  :title="`${stage.label}：${stage.evidence || stage.status}`"
+                >
+                  {{ stage.label }}
+                </span>
+              </div>
+              <p>{{ card.conclusion }}</p>
+              <small v-if="card.blockers.length">阻断：{{ card.blockers.join('；') }}</small>
+            </article>
+          </section>
+
           <ElRow :gutter="16">
             <ElCol :xl="16" :lg="16" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
@@ -6186,6 +6591,55 @@ onMounted(loadData)
                 <small>{{ row.description }}</small>
               </div>
               <em>{{ row.value }}</em>
+            </article>
+          </section>
+
+          <ElCard shadow="never" class="panel chart-panel mb-16px">
+            <template #header>
+              <div class="panel-header">
+                <span>PageIndex 检索溯源树</span>
+                <ElTag effect="plain">Tree</ElTag>
+              </div>
+            </template>
+            <div class="knowledge-chart-shell knowledge-chart-shell--tree">
+              <Echart
+                :options="projectAuditPageIndexTreeOption"
+                height="360px"
+                class="knowledge-echart"
+              />
+            </div>
+          </ElCard>
+
+          <section class="pageindex-friendly-grid" aria-label="PageIndex 友好判读">
+            <article class="pageindex-friendly-intro">
+              <span>PageIndex 友好判读</span>
+              <strong>每次检索为什么这样走</strong>
+              <small>
+                先看问题类型、路由、节点、条款和回退策略；需要追责时再进入原始 Trace。
+              </small>
+            </article>
+            <article
+              v-for="card in projectAuditPageIndexFriendlyCards"
+              :key="card.id"
+              class="pageindex-friendly-card"
+            >
+              <div class="pageindex-friendly-card__head">
+                <span>{{ card.sequence }}</span>
+                <div>
+                  <strong>{{ card.query }}</strong>
+                  <small>{{ card.queryType }}</small>
+                </div>
+                <ElTag :type="card.ok ? 'success' : 'warning'" effect="plain">
+                  {{ card.ok ? '可用于审查' : '需处理' }}
+                </ElTag>
+              </div>
+              <div class="pageindex-friendly-facts">
+                <span v-for="fact in card.facts" :key="`${card.id}-${fact.label}`">
+                  <em>{{ fact.label }}</em>
+                  <strong>{{ fact.value }}</strong>
+                </span>
+              </div>
+              <p>{{ card.conclusion }}</p>
             </article>
           </section>
 
@@ -9007,6 +9461,15 @@ onMounted(loadData)
                         </ElTag>
                         <ElButton
                           size="small"
+                          type="primary"
+                          plain
+                          :loading="ocr100ActionBoardRefreshing"
+                          @click="refreshOcr100ActionBoard"
+                        >
+                          刷新交付包
+                        </ElButton>
+                        <ElButton
+                          size="small"
                           plain
                           :disabled="!ocr100ActionBoardRows.length"
                           @click="exportOcr100ActionBoardCsv"
@@ -9036,6 +9499,7 @@ onMounted(loadData)
                           <span>{{
                             ocr100Handoff.outputDir || ocr100Handoff.manifestPath || '待生成'
                           }}</span>
+                          <small v-if="ocr100HandoffHint">{{ ocr100HandoffHint }}</small>
                         </div>
                         <ElTag :type="ocr100HandoffStatusType" effect="plain">
                           {{ friendlyStatus(ocr100Handoff.status, '待生成') }}
@@ -11158,6 +11622,221 @@ onMounted(loadData)
   border-color: #ffc8c1;
 }
 
+.chart-panel :deep(.el-card__body) {
+  padding: 10px;
+}
+
+.knowledge-chart-shell {
+  min-width: 0;
+  overflow: hidden;
+  background: linear-gradient(90deg, rgb(37 99 235 / 4%) 1px, transparent 1px),
+    linear-gradient(180deg, rgb(37 99 235 / 4%) 1px, transparent 1px),
+    linear-gradient(180deg, #f8fbff 0%, #fff 100%);
+  background-size:
+    34px 34px,
+    34px 34px,
+    auto;
+  border: 1px solid #dbe8f7;
+  border-radius: 8px;
+}
+
+.knowledge-chart-shell--tree {
+  background-size:
+    42px 42px,
+    42px 42px,
+    auto;
+}
+
+.knowledge-echart {
+  width: 100%;
+}
+
+.lineage-document-grid,
+.pageindex-friendly-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.85fr) repeat(2, minmax(260px, 1fr));
+  gap: 10px;
+  margin: 0 0 16px;
+}
+
+.lineage-document-intro,
+.lineage-document-card,
+.pageindex-friendly-intro,
+.pageindex-friendly-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  min-height: 154px;
+  padding: 13px;
+  background: #fff;
+  border: 1px solid #dfe8f5;
+  border-radius: 8px;
+  box-shadow: 0 7px 18px rgb(15 23 42 / 4%);
+}
+
+.lineage-document-intro,
+.pageindex-friendly-intro {
+  background: linear-gradient(135deg, #f8fbff 0%, #eef6ff 100%);
+  border-color: #cfe0f5;
+}
+
+.lineage-document-intro span,
+.lineage-document-card__head span,
+.pageindex-friendly-intro span,
+.pageindex-friendly-card__head small {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #2563eb;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lineage-document-intro strong,
+.lineage-document-card__head strong,
+.pageindex-friendly-intro strong,
+.pageindex-friendly-card__head strong {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 20px;
+  color: #172033;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lineage-document-intro small,
+.lineage-document-card p,
+.lineage-document-card > small,
+.pageindex-friendly-intro small,
+.pageindex-friendly-card p {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 18px;
+  color: #64748b;
+  text-overflow: ellipsis;
+}
+
+.lineage-document-card__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  min-width: 0;
+}
+
+.lineage-document-card__head > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.lineage-stage-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-height: 50px;
+  align-content: flex-start;
+}
+
+.lineage-stage-pill {
+  display: inline-flex;
+  max-width: 100%;
+  min-height: 22px;
+  padding: 2px 7px;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: 999px;
+}
+
+.lineage-stage-pill.is-done {
+  color: #167341;
+  background: #ecfdf3;
+  border-color: #bfe7cf;
+}
+
+.lineage-stage-pill.is-waiting {
+  color: #b45309;
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
+.pageindex-friendly-card__head {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: start;
+  min-width: 0;
+}
+
+.pageindex-friendly-card__head > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  font-size: 11px;
+  font-weight: 900;
+  color: #1f66d8;
+  background: #eff6ff;
+  border: 1px solid #c9dcfb;
+  border-radius: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pageindex-friendly-card__head > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pageindex-friendly-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.pageindex-friendly-facts span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px 7px;
+  background: #f8fbff;
+  border: 1px solid #e3edf9;
+  border-radius: 8px;
+}
+
+.pageindex-friendly-facts em,
+.pageindex-friendly-facts strong {
+  min-width: 0;
+  overflow: hidden;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pageindex-friendly-facts em {
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  color: #64748b;
+}
+
+.pageindex-friendly-facts strong {
+  font-size: 12px;
+  font-weight: 900;
+  color: #172033;
+}
+
 .graph-node-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
@@ -12142,6 +12821,7 @@ onMounted(loadData)
 }
 
 .ocr-handoff__head span,
+.ocr-handoff__head small,
 .ocr-handoff__file span,
 .ocr-handoff__file small {
   display: block;
@@ -12575,6 +13255,16 @@ onMounted(loadData)
   .audit-flow-strip {
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   }
+
+  .lineage-document-grid,
+  .pageindex-friendly-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lineage-document-intro,
+  .pageindex-friendly-intro {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (width <= 1180px) {
@@ -12631,6 +13321,29 @@ onMounted(loadData)
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .lineage-document-grid,
+  .pageindex-friendly-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lineage-document-intro,
+  .pageindex-friendly-intro {
+    grid-column: auto;
+  }
+
+  .lineage-document-card__head,
+  .pageindex-friendly-card__head {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pageindex-friendly-card__head > span {
+    display: none;
+  }
+
+  .pageindex-friendly-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .annotation-canvas {
     min-height: 360px;
   }
@@ -12655,6 +13368,7 @@ onMounted(loadData)
 
   .ocr-handoff__head strong,
   .ocr-handoff__head span,
+  .ocr-handoff__head small,
   .ocr-handoff__file strong,
   .ocr-handoff__file span,
   .ocr-handoff__file small {
@@ -12674,6 +13388,10 @@ onMounted(loadData)
   }
 
   .audit-flow-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pageindex-friendly-facts {
     grid-template-columns: minmax(0, 1fr);
   }
 }

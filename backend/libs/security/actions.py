@@ -71,6 +71,7 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/fde/evaluation-runs$", "fde:evaluation:run"),
     ("POST", r"/fde/ocr-corrections$", "fde:ocr-quality:view"),
     ("POST", r"/fde/ocr-evaluation-runs$", "fde:evaluation:run"),
+    ("POST", r"/fde/ocr-100/action-board/refresh$", "fde:ocr-annotation:manage"),
     ("POST", r"/fde/ocr-annotation/readiness$", "fde:ocr-annotation:manage"),
     ("POST", r"/fde/ocr-annotation/import-pack$", "fde:ocr-annotation:manage"),
     ("POST", r"/fde/ocr-annotation/import-label-studio$", "fde:ocr-annotation:manage"),

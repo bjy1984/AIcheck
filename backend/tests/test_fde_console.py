@@ -5,6 +5,7 @@ import json
 from fastapi.testclient import TestClient
 
 from apps.api.main import app
+from apps.api.routes import fde_ocr_100_action_handoff_snapshot
 from libs.db.repository import repo
 
 
@@ -28,6 +29,48 @@ def assert_error(response, reason: str):
     assert payload["code"] != 0
     assert payload["data"]["reason"] == reason
     return payload
+
+
+def test_fde_ocr_action_handoff_marks_stale_when_board_summary_changes(tmp_path) -> None:
+    handoff_dir = tmp_path / "ocr_100_action_handoff"
+    handoff_dir.mkdir()
+    collect_csv = handoff_dir / "collect_samples.csv"
+    collect_csv.write_text("scenario,missingCases\nndt_rt_profile,1\n", encoding="utf-8")
+    manifest = {
+        "schemaVersion": "aicheck-ocr-100-action-handoff-v1",
+        "generatedAt": "2026-06-30T16:00:00Z",
+        "outputDir": str(handoff_dir),
+        "summary": {
+            "status": "needs_sample_files",
+            "score": 79,
+            "readyForEval": 0,
+            "requiredReadyForEval": 100,
+            "collectionMissingCases": 75,
+            "actions": 1,
+            "laneCounts": {"collect_samples": 1},
+        },
+        "laneCounts": {"collect_samples": 1},
+        "files": {"collectCsv": str(collect_csv)},
+    }
+    (handoff_dir / "handoff_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    snapshot = fde_ocr_100_action_handoff_snapshot(
+        tmp_path,
+        current_summary={
+            "status": "needs_sample_files",
+            "score": 79.0,
+            "readyForEval": 0,
+            "requiredReadyForEval": 100,
+            "collectionMissingCases": 75,
+            "actions": 2,
+            "laneCounts": {"collect_samples": 1, "label_existing": 1},
+        },
+    )
+
+    assert snapshot["ok"] is False
+    assert snapshot["status"] == "stale"
+    assert {item["field"] for item in snapshot["staleReasons"]} == {"actions", "laneCounts"}
+    assert snapshot["files"][0]["exists"] is True
 
 
 def test_fde_login_and_dynamic_routes() -> None:
@@ -856,6 +899,17 @@ def test_fde_ocr_quality_runs_corrections_and_eval() -> None:
         assert {"collectCsv", "labelCsv"} <= set(handoff_files)
         assert handoff_files["collectCsv"]["owner"] == "采样人员"
         assert "backend/ocr_eval/reports/ocr_100_action_handoff" in handoff_files["labelCsv"]["path"]
+    refresh = assert_ok(
+        client.post(
+            "/api/fde/ocr-100/action-board/refresh",
+            json={},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-ocr100-refresh-001"},
+        )
+    )
+    assert refresh["board"]["schemaVersion"] == "aicheck-ocr-100-action-board-v1"
+    assert refresh["board"]["handoff"]["status"] == "ready"
+    assert refresh["outputs"]["csv"].endswith("ocr_100_action_board.csv")
+    assert refresh["auditLogId"]
     assert quality["failurePools"]["tableFailures"]
     assert "TABLE_EVIDENCE_MISSING" in {item["code"] for item in quality["failurePools"]["tableFailures"]}
     seal_failure_codes = {item["code"] for item in quality["failurePools"]["sealFailures"]}

@@ -1374,6 +1374,7 @@ export type FdeOcrQualityPayload = {
       outputDir?: string
       manifestPath?: string
       summary?: Record<string, unknown>
+      staleReasons?: Array<Record<string, unknown>>
       laneCounts?: Record<string, number>
       files?: Array<{
         key?: string
@@ -3154,6 +3155,22 @@ export const getFdeOcrQualityApi = (params?: {
   profileId?: string
 }): Promise<IResponse<FdeOcrQualityPayload>> => {
   return request.get({ url: '/api/fde/ocr-quality', params })
+}
+
+export const refreshFdeOcr100ActionBoardApi = (
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    board: NonNullable<FdeOcrQualityPayload['ocr100ActionBoard']>
+    outputs: Record<string, string>
+    auditLogId: string
+  }>
+> => {
+  return request.post({
+    url: '/api/fde/ocr-100/action-board/refresh',
+    data: {},
+    headers: mutationHeaders(options)
+  })
 }
 
 export const listFdeOcrRunsApi = (params?: {

@@ -53,7 +53,12 @@ from libs.review_orchestrator import (
 from libs.security.auth import ROLE_DEFAULT_PATHS, USERS, authenticate, decode_token, issue_token, user_by_username
 from scripts.ocr_100_label_studio_export import label_config_xml, label_studio_task, label_studio_task_without_image
 from scripts.ocr_100_label_studio_import import import_label_studio_annotations
-from scripts.ocr_100_action_board import build_action_board
+from scripts.ocr_100_action_board import (
+    action_board_csv,
+    action_board_markdown,
+    build_action_board,
+    write_action_handoff,
+)
 from scripts.ocr_annotation_readiness import build_annotation_readiness_from_tasks
 
 router = APIRouter(tags=["AIcheck API"])
@@ -8689,6 +8694,13 @@ def fde_ocr_100_scorecard_snapshot(
 
 def fde_ocr_100_action_board_snapshot() -> dict[str, Any]:
     reports_dir = WORKSPACE_ROOT / "backend" / "ocr_eval" / "reports"
+    try:
+        return fde_build_ocr_100_action_board(reports_dir)
+    except Exception as exc:  # pragma: no cover - defensive API fallback
+        return fde_ocr_100_action_board_error_snapshot(reports_dir, exc)
+
+
+def fde_build_ocr_100_action_board(reports_dir: Path) -> dict[str, Any]:
     annotation_tasks = first_existing_path(
         [
             reports_dir / "scan_annotation_pack" / "prelabelled_tasks_retry_merged_after_batch6_dedupe.json",
@@ -8707,38 +8719,68 @@ def fde_ocr_100_action_board_snapshot() -> dict[str, Any]:
             reports_dir / "ocr_100_closure_plan.json",
         ]
     )
-    try:
-        board = build_action_board(
-            reports_dir=reports_dir,
-            closure_plan_path=closure_plan,
-            annotation_tasks_path=annotation_tasks,
-            candidates_path=candidates,
-            limit=30,
-        )
-        board["handoff"] = fde_ocr_100_action_handoff_snapshot(reports_dir)
-        return board
-    except Exception as exc:  # pragma: no cover - defensive API fallback
-        return {
-            "schemaVersion": "aicheck-ocr-100-action-board-v1",
-            "ok": False,
-            "summary": {
-                "status": "action_board_unavailable",
-                "score": None,
-                "readyForEval": 0,
-                "requiredReadyForEval": 100,
-                "collectionMissingCases": None,
-                "actions": 0,
-                "laneCounts": {},
-                "error": exc.__class__.__name__,
-            },
-            "actions": [],
-            "scenarioPlan": {},
-            "candidateSummary": {},
-            "handoff": fde_ocr_100_action_handoff_snapshot(reports_dir),
-        }
+    board = build_action_board(
+        reports_dir=reports_dir,
+        closure_plan_path=closure_plan,
+        annotation_tasks_path=annotation_tasks,
+        candidates_path=candidates,
+        limit=30,
+    )
+    board["handoff"] = fde_ocr_100_action_handoff_snapshot(
+        reports_dir,
+        current_summary=board.get("summary"),
+    )
+    return board
 
 
-def fde_ocr_100_action_handoff_snapshot(reports_dir: Path) -> dict[str, Any]:
+def fde_ocr_100_action_board_error_snapshot(reports_dir: Path, exc: Exception) -> dict[str, Any]:
+    return {
+        "schemaVersion": "aicheck-ocr-100-action-board-v1",
+        "ok": False,
+        "summary": {
+            "status": "action_board_unavailable",
+            "score": None,
+            "readyForEval": 0,
+            "requiredReadyForEval": 100,
+            "collectionMissingCases": None,
+            "actions": 0,
+            "laneCounts": {},
+            "error": exc.__class__.__name__,
+        },
+        "actions": [],
+        "scenarioPlan": {},
+        "candidateSummary": {},
+        "handoff": fde_ocr_100_action_handoff_snapshot(reports_dir),
+    }
+
+
+def fde_refresh_ocr_100_action_board_artifacts(reports_dir: Path) -> dict[str, Any]:
+    board = fde_build_ocr_100_action_board(reports_dir)
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    outputs = {
+        "json": reports_dir / "ocr_100_action_board.json",
+        "markdown": reports_dir / "ocr_100_action_board.md",
+        "csv": reports_dir / "ocr_100_action_board.csv",
+        "handoffDir": reports_dir / "ocr_100_action_handoff",
+    }
+    outputs["json"].write_text(json.dumps(board, ensure_ascii=False, indent=2), encoding="utf-8")
+    outputs["markdown"].write_text(action_board_markdown(board), encoding="utf-8")
+    outputs["csv"].write_text(action_board_csv(board), encoding="utf-8")
+    write_action_handoff(board, outputs["handoffDir"])
+    board["handoff"] = fde_ocr_100_action_handoff_snapshot(
+        reports_dir,
+        current_summary=board.get("summary"),
+    )
+    return {
+        "board": board,
+        "outputs": {key: fde_relative_path(value) for key, value in outputs.items()},
+    }
+
+
+def fde_ocr_100_action_handoff_snapshot(
+    reports_dir: Path,
+    current_summary: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     manifest_path = reports_dir / "ocr_100_action_handoff" / "handoff_manifest.json"
     manifest = fde_read_json_file(manifest_path)
     if not manifest:
@@ -8752,17 +8794,78 @@ def fde_ocr_100_action_handoff_snapshot(reports_dir: Path) -> dict[str, Any]:
         }
     files = manifest.get("files") if isinstance(manifest.get("files"), dict) else {}
     file_rows = [fde_ocr_100_handoff_file_row(key, value) for key, value in files.items()]
+    all_files_exist = bool(file_rows) and all(row.get("exists") for row in file_rows)
+    summary = manifest.get("summary") if isinstance(manifest.get("summary"), dict) else {}
+    stale_reasons = fde_ocr_100_handoff_stale_reasons(summary, current_summary or {})
+    status = "ready" if all_files_exist else "incomplete"
+    if all_files_exist and stale_reasons:
+        status = "stale"
     return {
         "schemaVersion": manifest.get("schemaVersion") or "aicheck-ocr-100-action-handoff-v1",
-        "ok": bool(file_rows) and all(row.get("exists") for row in file_rows),
-        "status": "ready" if file_rows and all(row.get("exists") for row in file_rows) else "incomplete",
+        "ok": all_files_exist and not stale_reasons,
+        "status": status,
         "generatedAt": manifest.get("generatedAt"),
         "outputDir": fde_relative_path(manifest.get("outputDir")),
         "manifestPath": fde_relative_path(manifest_path),
-        "summary": manifest.get("summary") if isinstance(manifest.get("summary"), dict) else {},
+        "summary": summary,
+        "staleReasons": stale_reasons,
         "laneCounts": manifest.get("laneCounts") if isinstance(manifest.get("laneCounts"), dict) else {},
         "files": file_rows,
     }
+
+
+def fde_ocr_100_handoff_stale_reasons(
+    manifest_summary: dict[str, Any],
+    current_summary: dict[str, Any],
+) -> list[dict[str, Any]]:
+    if not current_summary:
+        return []
+    keys = [
+        "status",
+        "score",
+        "readyForEval",
+        "requiredReadyForEval",
+        "collectionMissingCases",
+        "placeholderSampleSlots",
+        "annotationTasks",
+        "remainingHumanLabels",
+        "newLocalCandidates",
+        "duplicateLocalCandidates",
+        "actions",
+    ]
+    reasons: list[dict[str, Any]] = []
+    for key in keys:
+        manifest_value = fde_ocr_100_summary_value(manifest_summary.get(key))
+        current_value = fde_ocr_100_summary_value(current_summary.get(key))
+        if manifest_value != current_value:
+            reasons.append(
+                {
+                    "field": key,
+                    "handoff": manifest_summary.get(key),
+                    "current": current_summary.get(key),
+                }
+            )
+    manifest_lanes = (
+        manifest_summary.get("laneCounts")
+        if isinstance(manifest_summary.get("laneCounts"), dict)
+        else {}
+    )
+    current_lanes = (
+        current_summary.get("laneCounts")
+        if isinstance(current_summary.get("laneCounts"), dict)
+        else {}
+    )
+    if manifest_lanes != current_lanes:
+        reasons.append(
+            {"field": "laneCounts", "handoff": manifest_lanes, "current": current_lanes}
+        )
+    return reasons
+
+
+def fde_ocr_100_summary_value(value: Any) -> Any:
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return value
 
 
 def fde_ocr_100_handoff_file_row(key: str, value: Any) -> dict[str, Any]:
@@ -9031,6 +9134,24 @@ def fde_ocr_quality(
     if role_error:
         return role_error
     return ok(fde_ocr_quality_snapshot(projectId, nodeId, profileId), request)
+
+
+@router.post("/fde/ocr-100/action-board/refresh")
+def fde_refresh_ocr_100_action_board(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        _, role_error = fde_error_unless_allowed(request, "fde:ocr-annotation:manage")
+        if role_error:
+            return role_error
+        reports_dir = WORKSPACE_ROOT / "backend" / "ocr_eval" / "reports"
+        refreshed = fde_refresh_ocr_100_action_board_artifacts(reports_dir)
+        audit_id = repo.add_audit("FDE OCR 100 行动板刷新", "Ocr100ActionBoard", "ocr_100_action_board")
+        return ok({**refreshed, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"action": "ocr100_action_board_refresh", "body": body})
 
 
 @router.get("/fde/ocr-runs")
