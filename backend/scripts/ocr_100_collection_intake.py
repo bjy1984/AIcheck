@@ -103,6 +103,24 @@ def build_collection_intake(
         "samples": slots,
     }
     commands = {
+        "scanDroppedCandidates": (
+            "python scripts/ocr_100_collection_candidates.py "
+            f"{relative_to(Path.cwd(), samples_dir)} "
+            "--existing-queue ocr_eval/reports/scan_sample_queue.json "
+            f"--existing-queue {queue_output} "
+            f"--intake-dir {relative_to(Path.cwd(), output_dir)} "
+            f"--output {relative_to(Path.cwd(), output_dir / 'collection_candidates.json')} "
+            f"--markdown-output {relative_to(Path.cwd(), output_dir / 'collection_candidates.md')}"
+        ),
+        "actionBoard": (
+            "python scripts/ocr_100_action_board.py "
+            f"--closure-plan {relative_to(Path.cwd(), closure_plan_path)} "
+            "--annotation-tasks ocr_eval/reports/scan_annotation_pack/prelabelled_tasks_retry_merged_after_batch6_dedupe.json "
+            f"--candidates {relative_to(Path.cwd(), output_dir / 'collection_candidates.json')} "
+            "--output ocr_eval/reports/ocr_100_action_board.json "
+            "--markdown-output ocr_eval/reports/ocr_100_action_board.md "
+            "--csv-output ocr_eval/reports/ocr_100_action_board.csv"
+        ),
         "autofillManifest": (
             "python scripts/ocr_100_collection_intake_autofill.py "
             f"{relative_to(Path.cwd(), output_dir)} "
@@ -116,6 +134,27 @@ def build_collection_intake(
             "--manifest manifest_autofilled.json --strict "
             f"--output {relative_to(Path.cwd(), output_dir / 'verify_autofilled.json')} "
             f"--markdown-output {relative_to(Path.cwd(), output_dir / 'verify_autofilled.md')}"
+        ),
+        "pipelineDryRun": (
+            "python scripts/ocr_100_collection_intake_pipeline.py "
+            f"{relative_to(Path.cwd(), output_dir)} "
+            "--output "
+            f"{relative_to(Path.cwd(), output_dir / 'pipeline.json')} "
+            "--markdown-output "
+            f"{relative_to(Path.cwd(), output_dir / 'pipeline.md')}"
+        ),
+        "pipelineExecute": (
+            "python scripts/ocr_100_collection_intake_pipeline.py "
+            f"{relative_to(Path.cwd(), output_dir)} "
+            "--execute --render-previews "
+            f"--queue-output {queue_output} "
+            "--annotation-output-dir ocr_eval/reports/new_annotation_pack "
+            "--ocr-result-dir ocr_eval/reports/new_ocr_results "
+            f"--copy-to {copy_to} "
+            "--output "
+            f"{relative_to(Path.cwd(), output_dir / 'pipeline_execute.json')} "
+            "--markdown-output "
+            f"{relative_to(Path.cwd(), output_dir / 'pipeline_execute.md')}"
         ),
         "ingestAll": (
             "python scripts/ocr_100_ingest_samples.py "
@@ -132,6 +171,14 @@ def build_collection_intake(
             "ocr_eval/reports/new_annotation_pack/annotation_tasks.json "
             "--output ocr_eval/reports/new_annotation_pack/prelabelled_tasks.json "
             "--source-base-dir . --run-ocr --auto-discover-runtime --save-result-dir ocr_eval/reports/new_ocr_results"
+        ),
+        "reviewedLabelGate": (
+            "python scripts/ocr_100_reviewed_label_gate.py "
+            "ocr_eval/reports/new_annotation_pack/prelabelled_tasks.json "
+            "--label-studio-export <label-studio-export.json> "
+            "--output-dir ocr_eval/reports/reviewed_label_gate "
+            "--sample-summary ocr_eval/reports/img6509_sample_probe_summary.json "
+            "--strict"
         ),
     }
     summary = {
@@ -165,8 +212,10 @@ def intake_readme(summary: dict[str, Any]) -> str:
         "1. Put real PDF/image samples into the matching `samples/<scenario>/` folder.",
         "2. Run `autofillManifest` from `commands.json`, or edit `manifest_template.json` manually and replace each `fileName` placeholder.",
         "3. Run `verifyAutofilledManifest` from `commands.json` until it passes.",
-        "4. Run `ingestAll` from `commands.json`.",
-        "5. Build previews, prelabel, then send the annotation pack to human review.",
+        "4. Run `pipelineDryRun` to inspect the exact ingest/annotation steps.",
+        "5. Run `pipelineExecute` to ingest and build the annotation pack.",
+        "6. Build previews, prelabel, then send the annotation pack to human review.",
+        "7. After Label Studio export, run `reviewedLabelGate` to import reviewed labels, export the release eval set, and gate scorecard readiness.",
         "",
         "## Scenario Gaps",
         "",

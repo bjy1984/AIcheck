@@ -53,6 +53,7 @@ from libs.review_orchestrator import (
 from libs.security.auth import ROLE_DEFAULT_PATHS, USERS, authenticate, decode_token, issue_token, user_by_username
 from scripts.ocr_100_label_studio_export import label_config_xml, label_studio_task, label_studio_task_without_image
 from scripts.ocr_100_label_studio_import import import_label_studio_annotations
+from scripts.ocr_100_action_board import build_action_board
 from scripts.ocr_annotation_readiness import build_annotation_readiness_from_tasks
 
 router = APIRouter(tags=["AIcheck API"])
@@ -6152,6 +6153,100 @@ def fde_shadow_review_run(
     return fde_replay_review_run(request, review_run_id, body, idempotency_key)
 
 
+@router.post("/fde/review-runs/{review_run_id}/feedback")
+def fde_review_run_feedback(
+    request: Request,
+    review_run_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        role, role_error = fde_error_unless_allowed(request, "fde:feedback:triage")
+        if role_error:
+            return role_error
+        refresh_state_from_postgres_for_live_read()
+        run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
+        if not run:
+            run = fde_find_or_materialize_synthetic_review_run(review_run_id)
+        if not run:
+            return fail(errors.NOT_FOUND, request)
+        feedback_type = body.get("feedbackType") or "wrong_evidence"
+        if feedback_type not in AI_FEEDBACK_TYPES:
+            return fail(errors.VALIDATION_ERROR, request, message="FDE ReviewRun 反馈类型不支持。", data={"allowedTypes": sorted(AI_FEEDBACK_TYPES)})
+        root_cause = body.get("rootCause") or "prompt_error"
+        if root_cause not in FDE_ROOT_CAUSES:
+            return fail(errors.VALIDATION_ERROR, request, message="FDE ReviewRun 纠错归因类型不支持。", data={"allowedTypes": sorted(FDE_ROOT_CAUSES)})
+        original_output = repo.clone(body.get("originalAiOutput") or run.get("findingDrafts") or [])
+        corrected_output = body.get("correctedOutput")
+        if corrected_output is None:
+            corrected_output = [
+                {
+                    "description": body.get("comment") or "FDE 诊断修正：需要补充证据范围、依据引用或输出字段。",
+                    "source": "fde_review_run_diagnostic",
+                }
+            ]
+        expected_evidence = body.get("expectedEvidence")
+        if expected_evidence is None:
+            expected_evidence = []
+            for finding in original_output if isinstance(original_output, list) else []:
+                if isinstance(finding, dict) and isinstance(finding.get("evidenceRefs"), list):
+                    expected_evidence.extend(finding["evidenceRefs"])
+        feedback_id = body.get("feedbackId") or body.get("id") or f"AIFB-FDE-{uuid4().hex[:8].upper()}"
+        record = {
+            "id": feedback_id,
+            "aiRunId": run.get("aiRunId"),
+            "reviewRunId": run.get("reviewRunId") or review_run_id,
+            "projectId": run.get("projectId"),
+            "nodeId": run.get("nodeId"),
+            "agentId": run.get("agentId"),
+            "agentVersion": run.get("agentVersion"),
+            "promptVersion": run.get("promptVersion"),
+            "modelAlias": run.get("modelAlias"),
+            "ruleSetVersion": run.get("ruleSetVersion"),
+            "kbVersion": run.get("kbVersion"),
+            "businessPackId": run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID,
+            "businessPackVersion": run.get("businessPackVersion"),
+            "inputDocumentVersionIds": repo.clone(run.get("inputDocumentVersionIds") or []),
+            "ocrResultVersions": repo.clone(run.get("ocrResultVersions") or []),
+            "feedbackType": feedback_type,
+            "accepted": bool(body.get("accepted", feedback_type in {"accepted", "edited"})),
+            "comment": body.get("comment") or "FDE 诊断修正，不改变正式业务审查结论。",
+            "originalAiOutput": original_output,
+            "correctedOutput": corrected_output,
+            "expectedEvidence": repo.clone(expected_evidence),
+            "shouldEnterEvaluationSet": bool(body.get("shouldEnterEvaluationSet", True)),
+            "status": body.get("status") or "created",
+            "rootCause": root_cause,
+            "source": "fde_review_run_diagnostic",
+            "createdAt": server_time(),
+            "createdByRole": role,
+            "immutableSourceRun": True,
+            "businessImpactPolicy": "diagnostic_only_no_business_state_change",
+        }
+        existing = repo.find_one("ai_feedback", feedback_id)
+        if existing:
+            existing.update(record)
+            feedback = repo.clone(existing)
+        else:
+            repo.state.setdefault("ai_feedback", []).insert(0, record)
+            feedback = repo.clone(record)
+        run.setdefault("fdeDiagnosticFeedbackIds", [])
+        if feedback_id not in run["fdeDiagnosticFeedbackIds"]:
+            run["fdeDiagnosticFeedbackIds"].insert(0, feedback_id)
+        audit_id = repo.add_audit("FDE 记录 ReviewRun 诊断修正", "ReviewRun", str(run.get("reviewRunId") or review_run_id))
+        return ok(
+            {
+                "feedback": fde_feedback_governance_view(feedback),
+                "reviewRun": review_run_view(run),
+                "auditLogId": audit_id,
+                "businessImpactPolicy": "diagnostic_only_no_business_state_change",
+            },
+            request,
+        )
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"reviewRunId": review_run_id, "body": body})
+
+
 def temporal_history_summary(run: dict[str, Any]) -> dict[str, Any]:
     events = review_run_timeline(str(run.get("reviewRunId") or run.get("id")))
     return {
@@ -7664,6 +7759,7 @@ def fde_ocr_quality_snapshot(project_id: str | None = None, node_id: int | None 
         "qualityReasonCounts": quality_reason_counts,
         "runtimeDoctor": fde_ocr_runtime_doctor_snapshot(runtime_doctor_report),
         "ocr100Scorecard": fde_ocr_100_scorecard_snapshot(results, eval_runs, runtime_doctor_report),
+        "ocr100ActionBoard": fde_ocr_100_action_board_snapshot(),
         "failurePools": {
             "fieldFailures": repo.clone(field_failures[:20]),
             "tableFailures": repo.clone(table_failures[:20]),
@@ -8328,6 +8424,61 @@ def fde_ocr_100_scorecard_snapshot(
         runtime_doctor=runtime_doctor_report,
         sample_summaries=fde_ocr_sample_summaries(results),
     )
+
+
+def fde_ocr_100_action_board_snapshot() -> dict[str, Any]:
+    reports_dir = WORKSPACE_ROOT / "backend" / "ocr_eval" / "reports"
+    annotation_tasks = first_existing_path(
+        [
+            reports_dir / "scan_annotation_pack" / "prelabelled_tasks_retry_merged_after_batch6_dedupe.json",
+            reports_dir / "scan_annotation_pack" / "annotation_tasks.json",
+        ]
+    )
+    candidates = first_existing_path(
+        [
+            reports_dir / "ocr_100_scan_candidates.json",
+            reports_dir / "ocr_100_sample_intake_after_batch6_dedupe" / "collection_candidates.json",
+        ]
+    )
+    closure_plan = first_existing_path(
+        [
+            reports_dir / "ocr_100_closure_plan_after_batch6_dedupe.json",
+            reports_dir / "ocr_100_closure_plan.json",
+        ]
+    )
+    try:
+        return build_action_board(
+            reports_dir=reports_dir,
+            closure_plan_path=closure_plan,
+            annotation_tasks_path=annotation_tasks,
+            candidates_path=candidates,
+            limit=30,
+        )
+    except Exception as exc:  # pragma: no cover - defensive API fallback
+        return {
+            "schemaVersion": "aicheck-ocr-100-action-board-v1",
+            "ok": False,
+            "summary": {
+                "status": "action_board_unavailable",
+                "score": None,
+                "readyForEval": 0,
+                "requiredReadyForEval": 100,
+                "collectionMissingCases": None,
+                "actions": 0,
+                "laneCounts": {},
+                "error": exc.__class__.__name__,
+            },
+            "actions": [],
+            "scenarioPlan": {},
+            "candidateSummary": {},
+        }
+
+
+def first_existing_path(paths: list[Path]) -> Path | None:
+    for path in paths:
+        if path.exists():
+            return path
+    return None
 
 
 def fde_ocr_100_evaluation_report_from_run(run: dict[str, Any]) -> dict[str, Any]:

@@ -258,7 +258,11 @@ const handleUserCommand = (command: string | number | object) => {
                 <em v-if="activeMenuFilter?.count !== undefined">{{ activeMenuFilter.count }}</em>
                 <small>{{ treeFiltersOpen ? '收起' : '展开' }}</small>
               </button>
-              <div v-if="menuFilters?.length && treeFiltersOpen" class="tree-filter" aria-label="项目筛选">
+              <div
+                v-if="menuFilters?.length && treeFiltersOpen"
+                class="tree-filter"
+                aria-label="项目筛选"
+              >
                 <button
                   v-for="filter in menuFilters"
                   :key="filter.value"
@@ -845,9 +849,9 @@ const handleUserCommand = (command: string | number | object) => {
   padding: 0;
   margin: -1px;
   overflow: hidden;
+  clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
-  clip: rect(0, 0, 0, 0);
 }
 
 .tree-controls {
@@ -944,8 +948,8 @@ const handleUserCommand = (command: string | number | object) => {
 
 .tree-filter {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .tree-filter button {
@@ -953,9 +957,9 @@ const handleUserCommand = (command: string | number | object) => {
   align-items: center;
   justify-content: space-between;
   min-width: 0;
-  min-height: 34px;
-  padding: 7px 9px;
-  font-size: 12px;
+  min-height: 30px;
+  padding: 6px 7px;
+  font-size: 11.5px;
   font-weight: 800;
   color: #52627a;
   cursor: pointer;
@@ -1002,8 +1006,8 @@ const handleUserCommand = (command: string | number | object) => {
 .tree-empty {
   display: grid;
   min-height: 120px;
-  margin: 8px 18px 16px;
   padding: 18px;
+  margin: 8px 18px 16px;
   font-size: 13px;
   font-weight: 700;
   line-height: 1.6;
@@ -1074,13 +1078,7 @@ const handleUserCommand = (command: string | number | object) => {
 }
 
 .tree-section-menu::before {
-  position: absolute;
-  top: 46px;
-  bottom: 6px;
-  left: 17px;
-  width: 1px;
-  content: '';
-  background: linear-gradient(180deg, #d3dfef, rgb(211 223 239 / 0%));
+  display: none;
 }
 
 .tree-section-menu :deep(> .el-sub-menu__title) {
@@ -1105,26 +1103,25 @@ const handleUserCommand = (command: string | number | object) => {
 
 .tree-group-wrap {
   display: grid;
-  min-width: 0;
   width: 100%;
-  padding: 7px 9px;
-  background:
-    linear-gradient(180deg, rgb(255 255 255 / 92%), rgb(248 251 255 / 92%)),
+  min-width: 0;
+  padding: 7px 8px;
+  background: linear-gradient(180deg, rgb(255 255 255 / 92%), rgb(248 251 255 / 92%)),
     radial-gradient(circle at 16px 12px, rgb(37 99 235 / 8%), transparent 42px);
   border: 1px solid #e4ecf7;
   border-radius: 9px;
   box-shadow: 0 6px 16px rgb(15 23 42 / 4%);
-  gap: 5px;
   transition:
     border-color 0.18s ease,
     box-shadow 0.18s ease,
     transform 0.18s ease;
+  gap: 4px;
 }
 
 .tree-section-menu :deep(> .el-sub-menu__title:hover) .tree-group-wrap {
   border-color: #c9dcfb;
-  box-shadow: 0 12px 26px rgb(30 93 180 / 9%);
   transform: translateY(-1px);
+  box-shadow: 0 12px 26px rgb(30 93 180 / 9%);
 }
 
 .tree-root,
@@ -1218,10 +1215,8 @@ const handleUserCommand = (command: string | number | object) => {
 
 .tree-chip {
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 21px;
   max-width: 100%;
+  min-height: 21px;
   padding: 2px 5px;
   overflow: hidden;
   font-size: 10.5px;
@@ -1231,6 +1226,8 @@ const handleUserCommand = (command: string | number | object) => {
   white-space: nowrap;
   border: 1px solid transparent;
   border-radius: 999px;
+  align-items: center;
+  justify-content: center;
 }
 
 .tree-chip.blue {
@@ -1258,10 +1255,10 @@ const handleUserCommand = (command: string | number | object) => {
 }
 
 .tree-node {
-  grid-template-columns: 8px minmax(0, 1fr) auto;
-  min-height: 28px;
-  padding: 3px 7px 3px 9px;
-  margin: 2px 0 2px 22px;
+  grid-template-columns: 7px minmax(0, 1fr) auto;
+  min-height: 34px;
+  padding: 5px 6px;
+  margin: 0;
   font-weight: 600;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -1271,6 +1268,18 @@ const handleUserCommand = (command: string | number | object) => {
     border-color 0.18s ease,
     transform 0.18s ease,
     box-shadow 0.18s ease;
+}
+
+.tree-section-menu :deep(> .el-menu.el-menu--inline) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  padding: 5px 0 4px 22px;
+  overflow: visible;
+}
+
+.tree-section-menu :deep(> .el-menu.el-menu--inline > .el-menu-item) {
+  width: 100%;
 }
 
 .tree-node-marker {
@@ -1285,8 +1294,8 @@ const handleUserCommand = (command: string | number | object) => {
 
 .tree-node .pill {
   min-height: 18px;
-  padding: 2px 6px;
-  font-size: 10.5px;
+  padding: 2px 5px;
+  font-size: 10px;
 }
 
 .tree-node:hover,
@@ -1296,7 +1305,7 @@ const handleUserCommand = (command: string | number | object) => {
   background: #f5f9ff;
   border-color: #d7e6fb;
   outline: 0;
-  transform: translateX(1px);
+  transform: translateY(-1px);
 }
 
 .tree-node.active,

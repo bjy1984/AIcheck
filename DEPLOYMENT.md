@@ -927,6 +927,142 @@ Docker 部署时 `AICHECK_OCR_SUBPROCESS_PYTHON` 应保持 `/usr/local/bin/pytho
 裸机本地 probe 可以加 `--auto-discover-runtime`，脚本会在未显式设置对应环境变量时应用 doctor 推荐的 OCR Python 和模型路径；生产 Compose 仍应显式写入 `.env`，不要依赖自动发现。
 FDE 的 `GET /api/fde/ocr-quality` 会返回同一诊断的 `runtimeDoctor` 摘要，后台可直接看到 fail/warn 数和首要修复建议。
 
+### 7.1 OCR 100 人工金标验收 Runbook
+
+OCR 100 分不是运行态 smoke test，而是“本地 OCR 能力 + 真实业务样本 + 人工金标 + 回归评分”的验收证据。运行态必须先通过 `ocr_runtime_doctor.py --strict-production` 和 live OCR object probe；100+ 人工标注准确率报告可以延期，但不能用机器预标注或合成样本替代。
+
+当前状态先用统一汇总命令查看：
+
+```bash
+cd backend
+python scripts/ocr_100_certification_status.py \
+  --output ocr_eval/reports/ocr_100_certification_status.json \
+  --markdown-output ocr_eval/reports/ocr_100_certification_status.md
+```
+
+汇总报告会合并 `ocr_100_scorecard.json`、closure plan、sample intake、pipeline 和 reviewed-label gate，输出 `status`、门禁、阻塞项、场景缺口和下一步动作。典型未完成状态包括：
+
+- `needs_sample_files`：真实样本文件还没有放入 intake 目录，或 `manifest` 仍是占位文件名。
+- `needs_human_labels`：样本已进入标注包，但还没有完成独立人工标注和复核。
+- `needs_release_eval_export`：人工标注已 ready，但 release eval set 尚未导出。
+- `needs_scorecard_rerun`：release eval set 已存在，需要重跑 scorecard。
+- `complete`：scorecard `ok=true` 且 100 分门禁完成。
+
+生成 OCR 100 行动板，给 FDE/人工标注团队分派“采样、去重、标注、导出、重跑评分”任务：
+
+```bash
+python scripts/ocr_100_action_board.py \
+  --closure-plan ocr_eval/reports/ocr_100_closure_plan_after_batch6_dedupe.json \
+  --annotation-tasks ocr_eval/reports/scan_annotation_pack/prelabelled_tasks_retry_merged_after_batch6_dedupe.json \
+  --candidates ocr_eval/reports/ocr_100_scan_candidates.json \
+  --output ocr_eval/reports/ocr_100_action_board.json \
+  --markdown-output ocr_eval/reports/ocr_100_action_board.md \
+  --csv-output ocr_eval/reports/ocr_100_action_board.csv
+```
+
+`ocr_100_action_board.csv` 可直接给采样/标注人员使用；`collect_samples` 行包含 `missingCases`、`dropDirectory`、`checklist` 和 `collectionHint`，用于补真实业务文件；`label_existing` 行包含 `sourcePath`、`taskId`、`blockers`、`previewPaths` 和 `humanActions`，用于处理已有 Scan 样本的人审校对；`triage_candidates` 行先去重再入库。
+
+真实样本采集和导入流程：
+
+```bash
+cd backend
+
+# 1. 由 closure plan 生成或刷新缺口采样包。
+python scripts/ocr_100_collection_intake.py \
+  ocr_eval/reports/ocr_100_closure_plan_after_batch6_dedupe.json \
+  --output-dir ocr_eval/reports/ocr_100_sample_intake_after_batch6_dedupe
+
+# 2. 按 samples/<scenario>/README.md 放入真实客户/现场文件。
+#    不要把标准、规范、制度 PDF 当作业务 OCR 认证样本。
+
+# 3. 先扫描候选文件并按 SHA256 去重；发现 duplicate 时不要重复入库。
+python scripts/ocr_100_collection_candidates.py \
+  ocr_eval/reports/ocr_100_sample_intake_after_batch6_dedupe/samples \
+  --existing-queue ocr_eval/reports/scan_sample_queue.json \
+  --existing-queue ocr_eval/reports/new_sample_queue.json \
+  --intake-dir ocr_eval/reports/ocr_100_sample_intake_after_batch6_dedupe \
+  --output ocr_eval/reports/ocr_100_sample_intake_after_batch6_dedupe/collection_candidates.json \
+  --markdown-output ocr_eval/reports/ocr_100_sample_intake_after_batch6_dedupe/collection_candidates.md
+
+# 4. 自动把各场景目录中的文件填入 manifest_autofilled.json。
+python scripts/ocr_100_collection_intake_autofill.py \
+  ocr_eval/reports/ocr_100_sample_intake_after_batch6_dedupe \
+  --output-manifest manifest_autofilled.json \
+  --output ocr_eval/reports/ocr_100_sample_intake_after_batch6_dedupe/autofill.json \
+  --markdown-output ocr_eval/reports/ocr_100_sample_intake_after_batch6_dedupe/autofill.md
+
+# 5. 严格校验 manifest。该命令不过，不允许进入 ingest。
+python scripts/ocr_100_collection_intake_verify.py \
+  ocr_eval/reports/ocr_100_sample_intake_after_batch6_dedupe \
+  --manifest manifest_autofilled.json \
+  --strict \
+  --output ocr_eval/reports/ocr_100_sample_intake_after_batch6_dedupe/verify_autofilled.json \
+  --markdown-output ocr_eval/reports/ocr_100_sample_intake_after_batch6_dedupe/verify_autofilled.md
+
+# 6. 先 dry-run 看 ingest 和 annotation pack 计划。
+python scripts/ocr_100_collection_intake_pipeline.py \
+  ocr_eval/reports/ocr_100_sample_intake_after_batch6_dedupe \
+  --output ocr_eval/reports/ocr_100_sample_intake_after_batch6_dedupe/pipeline.json \
+  --markdown-output ocr_eval/reports/ocr_100_sample_intake_after_batch6_dedupe/pipeline.md
+
+# 7. strict 校验通过后执行 ingest 和 annotation pack 生成。
+python scripts/ocr_100_collection_intake_pipeline.py \
+  ocr_eval/reports/ocr_100_sample_intake_after_batch6_dedupe \
+  --execute \
+  --render-previews \
+  --queue-output ocr_eval/reports/new_sample_queue.json \
+  --annotation-output-dir ocr_eval/reports/new_annotation_pack \
+  --ocr-result-dir ocr_eval/reports/new_ocr_results \
+  --copy-to ocr_eval/real_samples \
+  --output ocr_eval/reports/ocr_100_sample_intake_after_batch6_dedupe/pipeline_execute.json \
+  --markdown-output ocr_eval/reports/ocr_100_sample_intake_after_batch6_dedupe/pipeline_execute.md
+```
+
+人工标注要求：
+
+- Label Studio 中必须由人工校对机器建议，替换所有 `replace-with-*` 占位值。
+- 每个字段、表格、印章都要有正面积 `bbox` 或 `polygon` 证据；`[0,0,0,0]` 不合格。
+- `collectionStatus` 必须进入 `ready_for_eval`。
+- `review.labeler` 与 `review.reviewer` 必须存在且不能相同。
+- 机器草稿必须改为 `review.source=human_review`，并设置 `requiresHumanConfirmation=false`。
+
+Label Studio 回导和 release eval 门禁：
+
+```bash
+cd backend
+
+python scripts/ocr_100_reviewed_label_gate.py \
+  ocr_eval/reports/new_annotation_pack/prelabelled_tasks.json \
+  --label-studio-export <label-studio-export.json> \
+  --output-dir ocr_eval/reports/reviewed_label_gate \
+  --sample-summary ocr_eval/reports/img6509_sample_probe_summary.json \
+  --strict
+```
+
+`reviewed_label_gate` 会导入 Label Studio 标注、运行 readiness、导出 `ocr_100_labeled_release_set.json`，并在可用时写入 gate 报告。它不通过时，不要手工拼 release eval set。
+
+最终 scorecard：
+
+```bash
+python scripts/ocr_100_scorecard.py \
+  --eval-set ocr_eval/reports/reviewed_label_gate/ocr_100_labeled_release_set.json \
+  --sample-summary ocr_eval/reports/img6509_sample_probe_summary.json \
+  --auto-discover-runtime \
+  --output ocr_eval/reports/ocr_100_scorecard.json
+
+python scripts/ocr_100_certification_status.py \
+  --output ocr_eval/reports/ocr_100_certification_status.json \
+  --markdown-output ocr_eval/reports/ocr_100_certification_status.md \
+  --strict
+```
+
+OCR 100 完成标准：
+
+- `ocr_100_certification_status.py --strict` 返回 0。
+- `ocr_100_scorecard.json` 中 `ok=true`、`score=100`。
+- Release eval set 至少 100 个真实人工金标 case。
+- 必需场景覆盖质量证明书、RT/UT NDT 报告、施工记录、焊接记录、资质证书、管道特性表、印章文本、证据定位和质量门禁样本。
+
 部署前预取本地 OCR 模型：
 
 ```bash

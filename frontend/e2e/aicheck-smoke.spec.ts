@@ -64,7 +64,7 @@ const fdeDeepRouteCases = [
     hint: 'PI节点',
     context: '项目审计工作台',
     title: '项目审计工作台',
-    content: 'PageIndex 路由 Trace'
+    content: 'PageIndex 路由追踪'
   },
   {
     path: '/fde/projects?view=langgraph',
@@ -362,7 +362,9 @@ const expectFdeProjectTreeUsable = async (page: Page) => {
           if (visibleHints.length) failures.push(`tree-hints:${visibleHints.length}`)
           if (visiblePills.length > 1) failures.push(`tree-pills:${visiblePills.length}`)
           if (tallNodes.length) {
-            failures.push(`tree-tall:${tallNodes.map((node) => `${node.text}:${node.height}`).join('|')}`)
+            failures.push(
+              `tree-tall:${tallNodes.map((node) => `${node.text}:${node.height}`).join('|')}`
+            )
           }
 
           const openedProjectSections = document.querySelectorAll(
@@ -613,16 +615,20 @@ test.describe('AIcheck deep route menu', () => {
     await expectFdeProjectTreeUsable(page)
     await expect(page.locator('.fde-console')).toContainText('管道特性表')
     await expect(page.locator('.fde-console')).toContainText('质量证明书')
+    await expect(page.locator('.fde-console')).toContainText('资料解析')
     await expect(page.locator('.fde-console')).toContainText('知识切片')
+    await expect(page.locator('.fde-console')).toContainText('向量入库')
     await expect(page.locator('.fde-console')).toContainText('向量条目')
     await expect(page.locator('.fde-console')).toContainText('PageIndex')
 
     await page.goto('/#/fde/projects?view=pageindex')
     await page.waitForLoadState('networkidle')
     await waitForFdeProjectAuditReady(page)
-    await expect(page.locator('.fde-console')).toContainText('PageIndex 路由 Trace')
+    await expect(page.locator('.fde-console')).toContainText('PageIndex 路由追踪')
+    await expect(page.locator('.fde-console')).toContainText('问题分类')
+    await expect(page.locator('.fde-console')).toContainText('条款映射')
     await expect(page.locator('.fde-console .pageindex-trace-card').first()).toContainText(
-      'Query Router'
+      '检索路由器'
     )
     await expect(page.locator('.fde-console')).toContainText('跨文件一致性与证据回放')
     await expect(page.locator('.fde-console')).toContainText('长文档跨章节检索')
@@ -630,7 +636,10 @@ test.describe('AIcheck deep route menu', () => {
     await page.goto('/#/fde/projects?view=langgraph')
     await page.waitForLoadState('networkidle')
     await waitForFdeProjectAuditReady(page)
-    await expect(page.locator('.fde-console')).toContainText('LangGraph 节点执行图')
+    await expect(page.locator('.fde-console')).toContainText('LangGraph 编排图')
+    await expect(page.locator('.fde-console')).toContainText('阶段泳道')
+    await expect(page.locator('.fde-console')).toContainText('COG 可审计思考摘要')
+    await expect(page.locator('.fde-console .langgraph-chart-shell canvas').first()).toBeVisible()
     await expect(page.locator('.fde-console')).toContainText('postgres')
     await expect(page.locator('.fde-console')).toContainText('Agent 思考链与工具证据')
     await expect(page.locator('.fde-console')).toContainText('审查草稿结果')
@@ -642,6 +651,7 @@ test.describe('AIcheck deep route menu', () => {
     await expect(reviewDrawer).toContainText('可审计推理摘要')
     await expect(reviewDrawer).toContainText('工具调用')
     await expect(reviewDrawer).toContainText('证据/规则/条款')
+    await expect(reviewDrawer.getByRole('button', { name: '记录诊断修正' })).toBeVisible()
     await expect(reviewDrawer.locator('.drawer-step-card').first()).toContainText('证据/依据')
     await reviewDrawer.getByRole('tab', { name: '结果' }).click()
     await expect(reviewDrawer).toContainText('建议动作')

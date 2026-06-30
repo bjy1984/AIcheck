@@ -56,8 +56,16 @@ def test_ocr_100_collection_intake_creates_scenario_folders_and_manifest(tmp_pat
     assert len(manifest["samples"]) == 3
     assert any(item["fileName"].startswith("replace-with-piping_table_profile") for item in manifest["samples"])
     assert {item["scenario"] for item in manifest["samples"]} == {"piping_table_profile", "ndt_rt_profile"}
+    assert "ocr_100_collection_candidates.py" in report["summary"]["commands"]["scanDroppedCandidates"]
+    assert "collection_candidates.md" in report["summary"]["commands"]["scanDroppedCandidates"]
+    assert "ocr_100_action_board.py" in report["summary"]["commands"]["actionBoard"]
+    assert "ocr_100_action_board.csv" in report["summary"]["commands"]["actionBoard"]
     assert "ocr_100_collection_intake_autofill.py" in report["summary"]["commands"]["autofillManifest"]
     assert "manifest_autofilled.json" in report["summary"]["commands"]["verifyAutofilledManifest"]
+    assert "ocr_100_collection_intake_pipeline.py" in report["summary"]["commands"]["pipelineDryRun"]
+    assert "--execute --render-previews" in report["summary"]["commands"]["pipelineExecute"]
+    assert "ocr_100_reviewed_label_gate.py" in report["summary"]["commands"]["reviewedLabelGate"]
+    assert "<label-studio-export.json>" in report["summary"]["commands"]["reviewedLabelGate"]
     assert "ocr_100_ingest_samples.py" in report["summary"]["commands"]["ingestAll"]
     assert "manifest_autofilled.json" in report["summary"]["commands"]["ingestAll"]
     assert "Scenario Gaps" in readme

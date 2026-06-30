@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import type { EChartsOption } from 'echarts'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ElAlert,
@@ -33,6 +34,7 @@ import {
   createFdeMaskingPolicyApi,
   createFdeOcrCorrectionApi,
   createFdeOcrEvaluationRunApi,
+  createFdeReviewRunFeedbackApi,
   expireFdeDataExportApi,
   exportFdeOcrAnnotationLabelStudioApi,
   getFdeAiRunApi,
@@ -78,6 +80,7 @@ import {
   validateFdeBusinessPacksApi,
   verifyFdeOcrAnnotationTaskApi
 } from '@/api/aicheck'
+import { Echart } from '@/components/Echart'
 import type {
   BusinessPackValidateAllPayload,
   FdeAccessPayload,
@@ -151,6 +154,7 @@ type AnnotationOverlayItem = Record<string, unknown> & {
   bbox?: unknown
 }
 type FdeElTagType = 'success' | 'warning' | 'info' | 'primary' | 'danger'
+type FdeTone = 'blue' | 'green' | 'orange' | 'red'
 type ProjectAuditSubpage =
   | 'overview'
   | 'vectorization'
@@ -201,6 +205,7 @@ type FdePageActionKey =
   | 'go-ocr-label'
   | 'start-ocr-evaluation'
   | 'triage-feedback'
+  | 'create-review-diagnostic-feedback'
   | 'start-evaluation'
   | 'replay-ai-run'
   | 'replay-review-run'
@@ -304,7 +309,8 @@ const fdeRouteMeta: Record<
     nextAction: '先选中 ReviewRun，再检查 Workflow 时间线和校验失败。',
     actions: [
       { key: 'replay-review-run', label: '诊断重跑', plain: true },
-      { key: 'shadow-review-run', label: 'Shadow', plain: true }
+      { key: 'shadow-review-run', label: 'Shadow', plain: true },
+      { key: 'create-review-diagnostic-feedback', label: '记录诊断修正', plain: true }
     ]
   },
   feedback: {
@@ -851,12 +857,16 @@ const techLabelMap: Record<string, string> = {
   evidence_validation: '证据校验',
   field_inconsistent: '字段不一致',
   field_missing: '字段缺失',
+  load_context: '读取项目上下文',
   load_document_context: '加载资料上下文',
   load_ocr_result: '读取 OCR 结果',
+  llm_review: '生成审查草稿',
   llm_generate_findings: 'LLM 生成审查草稿',
   quality_gate: '质量门禁',
   retrieve_knowledge: '检索知识依据',
+  run_rule_engine: '执行规则引擎',
   run_rule_checks: '执行规则检查',
+  validate_output: '校验证据与依据',
   waiting_human_review: '等待人工复核',
   hybrid_rag: 'Hybrid RAG',
   pageindex: 'PageIndex',
@@ -870,6 +880,19 @@ const friendlyTechLabel = (value: unknown, fallback = '-') => {
   const raw = String(value || '').trim()
   if (!raw) return fallback
   return techLabelMap[raw] || statusLabelMap[raw] || raw
+}
+
+const friendlyTaskQueueLabel = (value: unknown) => {
+  const raw = String(value || '').trim()
+  if (!raw || raw === '-') return '-'
+  const normalized = raw.toLowerCase()
+  if (normalized.includes('document-intelligence')) return '文档智能服务'
+  if (normalized.includes('knowledge-rule')) return '知识规则服务'
+  if (normalized.includes('review-orchestrator')) return '审查编排服务'
+  if (normalized.includes('litellm')) return 'LiteLLM 网关'
+  if (normalized.includes('business-review')) return '业务复核'
+  if (normalized.includes('temporal')) return 'Temporal 工作流'
+  return raw
 }
 
 const statusType = (status?: string) => {
@@ -968,6 +991,10 @@ const firstLowConfidenceField = computed(() => ocrQuality.value?.lowConfidenceFi
 const ocrRuntimeDoctor = computed(() => ocrQuality.value?.runtimeDoctor || null)
 const firstRuntimeIssue = computed(() => ocrRuntimeDoctor.value?.topIssues?.[0] || null)
 const ocr100Scorecard = computed(() => ocrQuality.value?.ocr100Scorecard || null)
+const ocr100ActionBoard = computed(() => ocrQuality.value?.ocr100ActionBoard || null)
+const ocr100ActionSummary = computed(() => ocr100ActionBoard.value?.summary || null)
+const ocr100ActionRows = computed(() => (ocr100ActionBoard.value?.actions || []).slice(0, 6))
+const ocr100LaneCount = (lane: string) => Number(ocr100ActionSummary.value?.laneCounts?.[lane] || 0)
 const ocr100SectionRows = computed(() => ocr100Scorecard.value?.sections || [])
 const ocr100BlockerRows = computed(() =>
   (ocr100Scorecard.value?.blockers || []).slice(0, 8).map((blocker, index) => ({
@@ -1583,6 +1610,33 @@ const ocrPriorityCards = computed(() => [
     tone: ocrReadyForEvalCount.value ? 'green' : 'orange'
   }
 ])
+const ocr100ActionCards = computed(() => [
+  {
+    label: '行动项',
+    value: String(ocr100ActionSummary.value?.actions || 0),
+    hint: friendlyStatus(ocr100ActionSummary.value?.status, '未生成'),
+    tone: ocr100ActionSummary.value?.actions || 0 ? ('orange' as const) : ('green' as const)
+  },
+  {
+    label: '采样',
+    value: String(ocr100LaneCount('collect_samples')),
+    hint: `缺 ${ocr100ActionSummary.value?.collectionMissingCases || 0} 份`,
+    tone: ocr100LaneCount('collect_samples') ? ('red' as const) : ('green' as const)
+  },
+  {
+    label: '标注',
+    value: String(ocr100LaneCount('label_existing')),
+    hint: `待人审 ${ocr100ActionSummary.value?.remainingHumanLabels || 0}`,
+    tone: ocr100LaneCount('label_existing') ? ('orange' as const) : ('green' as const)
+  },
+  {
+    label: '本地候选',
+    value: String(ocr100ActionSummary.value?.newLocalCandidates || 0),
+    hint: `重复 ${ocr100ActionSummary.value?.duplicateLocalCandidates || 0}`,
+    tone:
+      ocr100ActionSummary.value?.newLocalCandidates || 0 ? ('blue' as const) : ('green' as const)
+  }
+])
 const ocrTopBlockerRows = computed(() => {
   const rows: Array<Record<string, unknown>> = []
   for (const item of ocrRuntimeDoctor.value?.topIssues || []) {
@@ -1608,6 +1662,78 @@ const ocrTopBlockerRows = computed(() => {
   }
   return rows.slice(0, 6).map((row, index) => ({ id: index + 1, ...row }))
 })
+const ocr100ActionLaneLabel = (lane: unknown) => {
+  const key = String(lane || '')
+  if (key === 'collect_samples') return '采样'
+  if (key === 'label_existing') return '标注'
+  if (key === 'triage_candidates') return '候选'
+  if (key === 'release_eval') return '导出'
+  if (key === 'scorecard') return '评分'
+  return friendlyStatus(key, '行动')
+}
+type Ocr100ActionBoardRow = {
+  id: string
+  taskId: string
+  caseId: string
+  lane: string
+  laneLabel: string
+  scenario: string
+  title: string
+  detailText: string
+  sourcePath: string
+  dropDirectory: string
+  missingCases: number
+  checklistText: string
+  blockersText: string
+  humanActionsText: string
+  doneWhen: string
+  canOpenAnnotation: boolean
+}
+const ocr100ActionBoardView = computed<{
+  cards: Array<{ label: string; value: string; hint: string; tone: string }>
+  rows: Ocr100ActionBoardRow[]
+}>(() => ({
+  cards: ocr100ActionCards.value,
+  rows: ocr100ActionRows.value.map((row) => {
+    const item = toRecord(row)
+    const lane = String(item.lane || '')
+    const taskId = String(item.taskId || item.caseId || '')
+    const caseId = String(item.caseId || '')
+    const scenario = String(item.scenario || '')
+    const checklist = Array.isArray(item.checklist) ? item.checklist : []
+    const dropDirectory = String(item.dropDirectory || '')
+    const sourcePath = String(item.sourcePath || '')
+    const missingCases = Number(item.missingCases || 0)
+    const checklistText = checklist.slice(0, 2).join(' / ') || '按场景 README 标注'
+    const blockers = Array.isArray(item.blockers) ? item.blockers : []
+    const blockersText = blockers.slice(0, 2).join(' / ') || '待人工校对'
+    const humanActions = Array.isArray(item.humanActions) ? item.humanActions : []
+    const detailText =
+      lane === 'collect_samples'
+        ? `缺 ${missingCases} 份 · ${dropDirectory || '待生成采样目录'} · ${checklistText}`
+        : lane === 'label_existing'
+          ? `${sourcePath || caseId || taskId} · ${blockersText}`
+          : String(item.doneWhen || '')
+    return {
+      id: String(item.id || item.caseId || item.title || ''),
+      taskId,
+      caseId,
+      lane,
+      scenario,
+      title: String(item.title || '-'),
+      detailText,
+      sourcePath,
+      dropDirectory,
+      missingCases,
+      checklistText: checklist.join('; '),
+      blockersText: blockers.join('; '),
+      humanActionsText: humanActions.join('; '),
+      doneWhen: String(item.doneWhen || ''),
+      laneLabel: ocr100ActionLaneLabel(lane),
+      canOpenAnnotation: lane === 'label_existing' && Boolean(taskId)
+    }
+  })
+}))
 const ocrAnnotationStatusLabel = (row: FdeOcrAnnotationTask) => {
   if (row.readyForEval || row.collectionStatus === 'ready_for_eval') return '可入评估'
   if (row.collectionStatus === 'reviewed') return '待入评估'
@@ -3283,6 +3409,58 @@ const projectAuditVectorCards = computed(() => {
   ]
 })
 
+const projectAuditVectorFlowRows = computed(() => {
+  const rows = normalizedProjectAuditVectorRows.value
+  const total = rows.length
+  const ocrReady = rows.filter((row) => String(row.ocrStatus).includes('已识别')).length
+  const sliced = rows.filter((row) => String(row.sliceStatus).includes('已切片')).length
+  const vectorized = rows.filter((row) => row.readyForRag).length
+  const pageIndexed = rows.filter((row) => row.readyForPageIndex).length
+  const reviewReady = rows.filter((row) => row.readyForRag && row.readyForPageIndex).length
+  return [
+    {
+      step: '01',
+      label: '资料解析',
+      description: 'OCR 字段、表格、印章和页面证据已生成',
+      done: ocrReady,
+      total,
+      tone: ocrReady === total ? 'green' : 'orange'
+    },
+    {
+      step: '02',
+      label: '知识切片',
+      description: '按资料 Profile 拆成可检索片段，保留页码和 bbox',
+      done: sliced,
+      total,
+      tone: sliced === total ? 'green' : 'orange'
+    },
+    {
+      step: '03',
+      label: '向量入库',
+      description: 'Embedding 已写入本地向量索引，可参与 Hybrid RAG',
+      done: vectorized,
+      total,
+      tone: vectorized === total ? 'green' : 'orange'
+    },
+    {
+      step: '04',
+      label: 'PageIndex',
+      description: '长文档树节点已构建，可做跨章节依据溯源',
+      done: pageIndexed,
+      total,
+      tone: pageIndexed === total ? 'green' : 'orange'
+    },
+    {
+      step: '05',
+      label: '审查可用',
+      description: '资料可进入规则、知识检索和 Agent 审查编排',
+      done: reviewReady,
+      total,
+      tone: reviewReady === total ? 'green' : 'red'
+    }
+  ]
+})
+
 const projectAuditPageIndexTraceRows = computed<Array<Record<string, unknown>>>(() =>
   reviewRetrievalTraceRows.value.map((trace, index) => {
     const item = toRecord(trace)
@@ -3317,9 +3495,9 @@ const projectAuditPageIndexTraceRows = computed<Array<Record<string, unknown>>>(
       action = '重建 PageIndex tree 并校验节点映射'
     } else if (shouldUsePageIndex && !pageIndexUsed) {
       issue = '长文档问题未触发 PageIndex'
-      action = '检查 Query Router 或增加触发规则'
+      action = '检查检索路由器或增加触发规则'
     } else if (fallbackRoute !== '-') {
-      issue = '存在 fallback 路由'
+      issue = '存在回退路由'
       action = '对比 PageIndex 与 Hybrid RAG 命中质量'
     }
 
@@ -3347,6 +3525,57 @@ const projectAuditPageIndexTraceRows = computed<Array<Record<string, unknown>>>(
     }
   })
 )
+
+const projectAuditPageIndexFlowRows = computed(() => {
+  const traces = projectAuditPageIndexTraceRows.value
+  const traceCount = traces.length
+  const shouldUse = traces.filter((row) => row.shouldUsePageIndex).length
+  const used = traces.filter((row) => row.pageIndexUsed).length
+  const nodeHits = traces.reduce((sum, row) => sum + Number(row.pageIndexNodeCount || 0), 0)
+  const clauseHits = traces.reduce((sum, row) => sum + Number(row.selectedClauseCount || 0), 0)
+  const issues = projectAuditPageIndexIssueRows.value.length
+  return [
+    {
+      step: '01',
+      label: '问题分类',
+      description: shouldUse
+        ? `${shouldUse} 个长文档/跨章节问题需要 PageIndex`
+        : '当前问题可由普通条款检索处理',
+      value: `${shouldUse}/${traceCount}`,
+      tone: shouldUse ? 'blue' : 'green'
+    },
+    {
+      step: '02',
+      label: '路由选择',
+      description: '检索路由器在条款索引、Hybrid RAG 和 PageIndex 之间选择路径',
+      value: `${used} 次`,
+      tone: used >= shouldUse ? 'green' : 'orange'
+    },
+    {
+      step: '03',
+      label: '节点定位',
+      description: '定位章节、附录或表格节点，并保留页码范围',
+      value: `${nodeHits} 节点`,
+      tone: nodeHits ? 'green' : 'orange'
+    },
+    {
+      step: '04',
+      label: '条款映射',
+      description: '把命中节点映射回正式条款，供审查草稿引用',
+      value: `${clauseHits} 条款`,
+      tone: clauseHits ? 'green' : 'orange'
+    },
+    {
+      step: '05',
+      label: '质量判断',
+      description: issues
+        ? '存在路由或覆盖缺口，需要补构建或调规则'
+        : '路由、节点和条款映射可用于审查',
+      value: issues ? `${issues} 缺口` : '可用',
+      tone: issues ? 'red' : 'green'
+    }
+  ]
+})
 
 const projectAuditPageIndexNodeRows = computed<Array<Record<string, unknown>>>(() =>
   projectAuditPageIndexTraceRows.value.flatMap((trace) => {
@@ -3443,7 +3672,7 @@ const projectAuditPageIndexCards = computed(() => {
     {
       label: '依据条款',
       value: String(mappedClauses),
-      hint: 'Trace 关联条款数量',
+      hint: '路由追踪关联条款数量',
       tone: mappedClauses ? 'blue' : 'red'
     },
     {
@@ -3463,13 +3692,13 @@ const projectAuditPageIndexCards = computed(() => {
 
 const projectAuditLangGraphCards = computed(() => [
   {
-    label: 'Graph 节点',
+    label: '编排节点',
     value: String(reviewGraphNodes.value.length),
     hint: 'LangGraph 内层执行节点',
     tone: reviewGraphNodes.value.length ? 'green' : 'orange'
   },
   {
-    label: 'Graph 边',
+    label: '依赖边',
     value: String(reviewGraphEdges.value.length),
     hint: '节点依赖关系',
     tone: 'blue'
@@ -3481,7 +3710,7 @@ const projectAuditLangGraphCards = computed(() => [
     tone: 'green'
   },
   {
-    label: 'Checkpoint',
+    label: '检查点',
     value: shortText(selectedReviewRun.value?.run.graphExecution?.checkpointer, '-'),
     hint: '本地开发态建议 PostgreSQL checkpointer',
     tone: selectedReviewRun.value?.run.graphExecution?.checkpointer ? 'green' : 'orange'
@@ -3499,6 +3728,332 @@ const projectAuditLangGraphCards = computed(() => [
     tone: projectAuditLangGraphIssueRows.value.length ? 'red' : 'green'
   }
 ])
+
+const langGraphStageDefs = [
+  {
+    key: 'context',
+    label: '上下文',
+    hint: '读取项目、节点、批次和资料版本',
+    tone: 'blue'
+  },
+  {
+    key: 'ocr',
+    label: 'OCR 证据',
+    hint: '加载字段、表格、印章和 bbox',
+    tone: 'orange'
+  },
+  {
+    key: 'rules',
+    label: '规则核对',
+    hint: '执行确定性缺项、错项和状态规则',
+    tone: 'green'
+  },
+  {
+    key: 'retrieval',
+    label: '知识检索',
+    hint: 'Clause / Hybrid RAG / PageIndex 取依据',
+    tone: 'blue'
+  },
+  {
+    key: 'llm',
+    label: 'LLM 草稿',
+    hint: '生成结构化审查发现草稿',
+    tone: 'green'
+  },
+  {
+    key: 'cog',
+    label: 'COG 思考摘要',
+    hint: '公开可审计的推理摘要，不展示模型内部隐式思维',
+    tone: 'blue'
+  },
+  {
+    key: 'validation',
+    label: '质量门禁',
+    hint: 'Schema、证据、依据和 Critic 校验',
+    tone: 'orange'
+  },
+  {
+    key: 'human',
+    label: '人工确认',
+    hint: '持久化草稿并等待监检员确认',
+    tone: 'blue'
+  }
+] as const
+
+const langGraphStageKey = (nodeKey: string) => {
+  const key = nodeKey.toLowerCase()
+  if (key.includes('ocr')) return 'ocr'
+  if (key.includes('rule') || key.includes('consistency')) return 'rules'
+  if (
+    key.includes('knowledge') ||
+    key.includes('retriev') ||
+    key.includes('rag') ||
+    key.includes('pageindex')
+  ) {
+    return 'retrieval'
+  }
+  if (
+    key.includes('prompt') ||
+    key.includes('llm') ||
+    key.includes('finding') ||
+    key.includes('generate') ||
+    key.includes('aggregate')
+  ) {
+    return 'llm'
+  }
+  if (
+    key.includes('validation') ||
+    key.includes('validator') ||
+    key.includes('critic') ||
+    key.includes('quality') ||
+    key.includes('gate')
+  ) {
+    return 'validation'
+  }
+  if (
+    key.includes('cog') ||
+    key.includes('reasoning') ||
+    key.includes('thought') ||
+    key.includes('summary')
+  ) {
+    return 'cog'
+  }
+  if (key.includes('persist') || key.includes('human') || key.includes('draft')) return 'human'
+  return 'context'
+}
+
+const langGraphStatusTone = (status: unknown): FdeTone => {
+  const value = String(status || '').toLowerCase()
+  if (
+    ['succeeded', 'success', 'completed', 'complete', 'done', 'pass', 'passed'].some((token) =>
+      value.includes(token)
+    )
+  ) {
+    return 'green'
+  }
+  if (['failed', 'fail', 'error', 'blocked', 'rejected'].some((token) => value.includes(token))) {
+    return 'red'
+  }
+  if (
+    ['running', 'queued', 'waiting', 'review', 'warning'].some((token) => value.includes(token))
+  ) {
+    return 'orange'
+  }
+  return 'blue'
+}
+
+const langGraphFlowGroups = computed(() => {
+  const nodes = reviewGraphNodes.value.map((raw, index) => {
+    const node = toRecord(raw)
+    const nodeKey = String(node.nodeKey || node.id || node.name || `node-${index + 1}`)
+    const toolCalls = toRecordArray(node.toolCalls)
+    const artifactCounts = toRecord(node.artifactCounts)
+    const duration = Number(node.durationMs || node.latencyMs || 0)
+    const status = node.status || 'unknown'
+    return {
+      id: nodeKey,
+      sequence: index + 1,
+      nodeKey,
+      label: friendlyTechLabel(node.label || node.title || nodeKey),
+      status,
+      statusLabel: friendlyStatus(status),
+      tone: langGraphStatusTone(status),
+      queue: friendlyTaskQueueLabel(node.taskQueue || node.queue || '-'),
+      toolCount: toolCalls.length,
+      artifactCount:
+        Number(artifactCounts.ruleResults || 0) +
+        Number(artifactCounts.retrievalTraces || 0) +
+        Number(artifactCounts.findingDrafts || 0) +
+        Number(artifactCounts.toolCalls || 0),
+      durationMs: duration,
+      durationText: duration ? `${duration}ms` : '-'
+    }
+  })
+  if (normalizedReviewReasoningRows.value.length) {
+    const toolCount = normalizedReviewReasoningRows.value.reduce(
+      (sum, row) => sum + Number(row.toolCount || 0),
+      0
+    )
+    nodes.push({
+      id: 'cog_reasoning_summary',
+      sequence: nodes.length + 1,
+      nodeKey: 'cog_reasoning_summary',
+      label: 'COG 思考摘要',
+      status: 'completed',
+      statusLabel: '已记录',
+      tone: 'blue',
+      queue: '审查编排服务',
+      toolCount,
+      artifactCount: normalizedReviewReasoningRows.value.length,
+      durationMs: 0,
+      durationText: '-'
+    })
+  }
+  return langGraphStageDefs.map((stage, index) => {
+    const stageNodes = nodes.filter((node) => langGraphStageKey(node.nodeKey) === stage.key)
+    const hasNodes = stageNodes.length > 0
+    const hasFailed = stageNodes.some((node) => node.tone === 'red')
+    const hasWaiting = stageNodes.some((node) => node.tone === 'orange')
+    const status = !hasNodes ? '未返回' : hasFailed ? '需处理' : hasWaiting ? '处理中' : '已完成'
+    const tone = !hasNodes ? 'blue' : hasFailed ? 'red' : hasWaiting ? 'orange' : stage.tone
+    return {
+      ...stage,
+      index: index + 1,
+      nodes: stageNodes,
+      nodeCount: stageNodes.length,
+      toolCount: stageNodes.reduce((sum, node) => sum + node.toolCount, 0),
+      artifactCount: stageNodes.reduce((sum, node) => sum + node.artifactCount, 0),
+      durationMs: stageNodes.reduce((sum, node) => sum + node.durationMs, 0),
+      status,
+      tagType: (tone === 'green'
+        ? 'success'
+        : tone === 'red'
+          ? 'danger'
+          : tone === 'orange'
+            ? 'warning'
+            : 'info') as FdeElTagType,
+      tone
+    }
+  })
+})
+
+const hasLangGraphFlowNodes = computed(() =>
+  langGraphFlowGroups.value.some((group) => group.nodeCount > 0)
+)
+
+const langGraphToneColor = (tone: FdeTone) => {
+  if (tone === 'green') return '#16a34a'
+  if (tone === 'orange') return '#f59e0b'
+  if (tone === 'red') return '#dc2626'
+  return '#2563eb'
+}
+
+const langGraphEchartOption = computed<EChartsOption>(() => {
+  const stageYGap = 66
+  const nodeXGap = 174
+  const centerX = 430
+  const baseY = 44
+  const chartNodes = langGraphFlowGroups.value.flatMap((group, groupIndex) => {
+    const nodes = group.nodes.length
+      ? group.nodes
+      : [
+          {
+            id: `${group.key}-empty`,
+            sequence: group.index,
+            nodeKey: `${group.key}-empty`,
+            label: group.label,
+            status: 'missing',
+            statusLabel: '未返回',
+            tone: 'blue' as FdeTone,
+            queue: '-',
+            toolCount: 0,
+            artifactCount: 0,
+            durationMs: 0,
+            durationText: '-'
+          }
+        ]
+    const offset = ((nodes.length - 1) * nodeXGap) / 2
+    return nodes.map((node, nodeIndex) => ({
+      name: node.id,
+      value: node.label,
+      x: centerX + nodeIndex * nodeXGap - offset,
+      y: baseY + groupIndex * stageYGap,
+      symbolSize: node.id.includes('-empty') ? [124, 36] : [152, 42],
+      category: group.label,
+      itemStyle: {
+        color: node.id.includes('-empty') ? '#ffffff' : langGraphToneColor(node.tone),
+        borderColor: node.id.includes('-empty') ? '#bfd2ea' : '#ffffff',
+        borderWidth: node.id.includes('-empty') ? 1.5 : 3,
+        shadowBlur: node.id.includes('-empty') ? 0 : 12,
+        shadowColor: `${langGraphToneColor(node.tone)}33`
+      },
+      label: {
+        show: true,
+        formatter: node.label,
+        color: node.id.includes('-empty') ? '#64748b' : '#ffffff',
+        fontSize: 12,
+        fontWeight: 800,
+        lineHeight: 16,
+        width: 118,
+        overflow: 'truncate' as const
+      },
+      meta: {
+        stage: group.label,
+        status: node.statusLabel,
+        queue: node.queue,
+        tools: node.toolCount,
+        artifacts: node.artifactCount,
+        duration: node.durationText
+      }
+    }))
+  })
+  const nonEmptyNodes = chartNodes.filter((node) => !String(node.name).includes('-empty'))
+  const fallbackLinks = nonEmptyNodes
+    .slice(1)
+    .map((node, index) => ({
+      source: String(nonEmptyNodes[index]?.name || ''),
+      target: String(node.name)
+    }))
+    .filter((edge) => edge.source && edge.target)
+  const links = fallbackLinks.map((edge) => ({
+    ...edge,
+    lineStyle: { color: '#8fb1df', width: 2, curveness: 0.08 }
+  }))
+  const stageLabels = langGraphFlowGroups.value.map((group, index) => ({
+    type: 'text',
+    left: 18,
+    top: baseY + index * stageYGap - 10,
+    style: {
+      text: `${String(group.index).padStart(2, '0')} ${group.label}`,
+      fill: langGraphToneColor(group.tone as FdeTone),
+      font: '700 12px sans-serif'
+    },
+    silent: true
+  }))
+  return {
+    backgroundColor: 'transparent',
+    graphic: stageLabels,
+    tooltip: {
+      trigger: 'item',
+      confine: true,
+      formatter: (params: any) => {
+        const meta = params.data?.meta
+        if (!meta) return params.name
+        return [
+          `<strong>${params.data.value}</strong>`,
+          `阶段：${meta.stage}`,
+          `状态：${meta.status}`,
+          `队列：${meta.queue}`,
+          `工具：${meta.tools} 次`,
+          `产物：${meta.artifacts} 个`,
+          `耗时：${meta.duration}`
+        ].join('<br/>')
+      }
+    },
+    series: [
+      {
+        type: 'graph',
+        layout: 'none',
+        roam: false,
+        draggable: false,
+        edgeSymbol: ['circle', 'arrow'],
+        edgeSymbolSize: [3, 9],
+        symbol: 'roundRect',
+        data: chartNodes,
+        links,
+        lineStyle: {
+          opacity: 0.82,
+          width: 2,
+          curveness: 0.18
+        },
+        emphasis: {
+          focus: 'adjacency',
+          lineStyle: { width: 4 }
+        }
+      }
+    ]
+  } as EChartsOption
+})
 
 const normalizedProjectAuditAnnotationRows = computed(() =>
   projectAuditAnnotationTasks.value.map((row, index) => {
@@ -4412,6 +4967,32 @@ const shadowFirstReviewRun = async () => {
   }
 }
 
+const createReviewDiagnosticFeedback = async () => {
+  if (!activeReviewRunId.value) return
+  actionLoading.value = true
+  try {
+    await createFdeReviewRunFeedbackApi(
+      activeReviewRunId.value,
+      {
+        feedbackType: 'wrong_evidence',
+        rootCause: 'prompt_error',
+        comment: 'FDE 诊断修正：证据范围或依据引用需要复核，不改变正式业务结论。',
+        correctedOutput: [
+          {
+            description: '建议补齐证据页码、bbox、规则编号和知识条款映射后再进入生产采纳。'
+          }
+        ],
+        shouldEnterEvaluationSet: true
+      },
+      { idempotencyKey: `fde-review-feedback-${activeReviewRunId.value}-${Date.now()}` }
+    )
+    await loadReviewRunDetail(activeReviewRunId.value)
+    await loadData()
+  } finally {
+    actionLoading.value = false
+  }
+}
+
 const triageFirstFeedback = async () => {
   if (!activeFeedbackId.value) return
   actionLoading.value = true
@@ -4663,6 +5244,70 @@ const openAnnotationEditor = async (row: FdeOcrAnnotationTask) => {
   }
 }
 
+const openOcr100ActionAnnotation = async (row: Ocr100ActionBoardRow) => {
+  if (!row.canOpenAnnotation || !row.taskId) return
+  await openAnnotationEditor({
+    taskId: row.taskId,
+    caseId: row.caseId || row.taskId,
+    scenario: '',
+    collectionStatus: 'needs_labeling'
+  } as FdeOcrAnnotationTask)
+}
+
+const csvCell = (value: unknown) => {
+  const text = String(value ?? '')
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+}
+
+const downloadTextFile = (filename: string, content: string, type = 'text/csv;charset=utf-8') => {
+  const blob = new Blob([content], { type })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+const exportOcr100ActionBoardCsv = () => {
+  const rows = ocr100ActionBoardView.value.rows
+  if (!rows.length) return
+  const headers = [
+    'lane',
+    'scenario',
+    'title',
+    'sourcePath',
+    'dropDirectory',
+    'missingCases',
+    'checklist',
+    'blockers',
+    'humanActions',
+    'doneWhen'
+  ]
+  const lines = [
+    headers.join(','),
+    ...rows.map((row) =>
+      [
+        row.lane,
+        row.scenario,
+        row.title,
+        row.sourcePath,
+        row.dropDirectory,
+        row.missingCases || '',
+        row.checklistText,
+        row.blockersText,
+        row.humanActionsText,
+        row.doneWhen
+      ]
+        .map(csvCell)
+        .join(',')
+    )
+  ]
+  downloadTextFile('ocr_100_action_board.csv', lines.join('\n'))
+}
+
 const validAnnotationBox = () => {
   const form = annotationBoxForm.value
   return Number(form.x2) > Number(form.x1) && Number(form.y2) > Number(form.y1)
@@ -4864,6 +5509,7 @@ const runFdePageAction = async (key: FdePageActionKey) => {
   if (key === 'replay-ai-run') return replayFirstRun()
   if (key === 'replay-review-run') return replayFirstReviewRun()
   if (key === 'shadow-review-run') return shadowFirstReviewRun()
+  if (key === 'create-review-diagnostic-feedback') return createReviewDiagnosticFeedback()
   if (key === 'submit-release') return submitReleaseGate()
   if (key === 'install-business-pack') return installBusinessPack()
   if (key === 'create-mask-policy') return createMaskingPolicyDraft()
@@ -5153,7 +5799,7 @@ onMounted(loadData)
                   :key="row.stage"
                   :class="['audit-health-item', row.healthy ? 'is-healthy' : 'is-warning']"
                 >
-                  <span class="audit-health-dot" aria-hidden="true" />
+                  <span class="audit-health-dot" aria-hidden="true"></span>
                   <div class="audit-health-copy">
                     <strong>{{ row.stage }}</strong>
                     <small>{{ row.evidence }}</small>
@@ -5287,6 +5933,21 @@ onMounted(loadData)
               <small>{{ card.hint }}</small>
             </div>
           </div>
+
+          <section class="audit-flow-strip" aria-label="资料向量化审计流程">
+            <article
+              v-for="row in projectAuditVectorFlowRows"
+              :key="row.step"
+              :class="['audit-flow-card', `audit-flow-card--${row.tone}`]"
+            >
+              <span>{{ row.step }}</span>
+              <div>
+                <strong>{{ row.label }}</strong>
+                <small>{{ row.description }}</small>
+              </div>
+              <em>{{ row.done }}/{{ row.total }}</em>
+            </article>
+          </section>
 
           <ElRow :gutter="16">
             <ElCol :xl="16" :lg="16" :md="24" :sm="24" :xs="24">
@@ -5449,12 +6110,27 @@ onMounted(loadData)
             </div>
           </div>
 
+          <section class="audit-flow-strip" aria-label="PageIndex 路由审计流程">
+            <article
+              v-for="row in projectAuditPageIndexFlowRows"
+              :key="row.step"
+              :class="['audit-flow-card', `audit-flow-card--${row.tone}`]"
+            >
+              <span>{{ row.step }}</span>
+              <div>
+                <strong>{{ row.label }}</strong>
+                <small>{{ row.description }}</small>
+              </div>
+              <em>{{ row.value }}</em>
+            </article>
+          </section>
+
           <ElRow :gutter="16">
             <ElCol :xl="14" :lg="14" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
-                    <span>PageIndex 路由 Trace</span>
+                    <span>PageIndex 路由追踪</span>
                     <ElTag effect="plain">{{ projectAuditPageIndexTraceRows.length }} 条</ElTag>
                   </div>
                 </template>
@@ -5466,7 +6142,7 @@ onMounted(loadData)
                   >
                     <div class="pageindex-trace-head">
                       <div>
-                        <span>Trace</span>
+                        <span>追踪ID</span>
                         <strong>{{ row.retrievalTraceId }}</strong>
                       </div>
                       <ElTag :type="row.pageIndexUsed ? 'success' : 'warning'" effect="plain">
@@ -5478,11 +6154,11 @@ onMounted(loadData)
                       <p>{{ row.query }}</p>
                     </div>
                     <div class="pageindex-route-flow" aria-label="PageIndex 路由决策">
-                      <span>Query Router</span>
+                      <span>检索路由器</span>
                       <i></i>
                       <strong>{{ friendlyTechLabel(row.selectedRoute) }}</strong>
                       <em v-if="row.fallbackRoute !== '-'">
-                        fallback {{ friendlyTechLabel(row.fallbackRoute) }}
+                        回退 {{ friendlyTechLabel(row.fallbackRoute) }}
                       </em>
                     </div>
                     <div class="pageindex-trace-facts">
@@ -5514,7 +6190,7 @@ onMounted(loadData)
                     </div>
                   </article>
                 </div>
-                <ElEmpty v-else description="暂无 PageIndex 路由 Trace" />
+                <ElEmpty v-else description="暂无 PageIndex 路由追踪" />
               </ElCard>
             </ElCol>
             <ElCol :xl="10" :lg="10" :md="24" :sm="24" :xs="24">
@@ -5618,11 +6294,11 @@ onMounted(loadData)
           </div>
 
           <ElRow :gutter="16">
-            <ElCol :xl="14" :lg="14" :md="24" :sm="24" :xs="24">
+            <ElCol :xl="15" :lg="15" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
-                    <span>LangGraph 节点执行图</span>
+                    <span>LangGraph 编排图</span>
                     <ElSpace>
                       <ElTag effect="plain">{{
                         selectedReviewRun?.run.reviewRunId || '未选中'
@@ -5639,26 +6315,61 @@ onMounted(loadData)
                     </ElSpace>
                   </div>
                 </template>
-                <div class="graph-node-grid">
-                  <button
-                    v-for="node in reviewGraphNodes"
-                    :key="String(node.nodeKey || node.id || node.name)"
-                    type="button"
-                    class="graph-node-card"
-                  >
-                    <span>{{ friendlyTechLabel(node.nodeKey || node.id || node.name) }}</span>
-                    <strong>{{ friendlyStatus(node.status) }}</strong>
-                    <small>
-                      队列 {{ shortText(node.taskQueue) }} · 工具
-                      {{ toRecordArray(node.toolCalls).length }}
-                    </small>
-                  </button>
+                <div v-if="hasLangGraphFlowNodes" class="langgraph-chart-shell">
+                  <Echart
+                    :options="langGraphEchartOption"
+                    height="480px"
+                    class="langgraph-echart"
+                  />
                 </div>
+                <section v-if="normalizedReviewReasoningRows.length" class="langgraph-cog-panel">
+                  <div class="langgraph-cog-head">
+                    <div>
+                      <span>COG 可审计思考摘要</span>
+                      <strong>展示公开推理摘要、工具和证据，不展示模型内部隐式思维</strong>
+                    </div>
+                    <ElTag effect="plain">{{ normalizedReviewReasoningRows.length }} 步</ElTag>
+                  </div>
+                  <div class="langgraph-cog-list">
+                    <article
+                      v-for="row in normalizedReviewReasoningRows.slice(0, 3)"
+                      :key="`langgraph-cog-${row.sequence}`"
+                    >
+                      <span>{{ String(row.sequence).padStart(2, '0') }}</span>
+                      <div>
+                        <strong>{{ friendlyTechLabel(row.stepName) }}</strong>
+                        <p>{{ row.reasoningSummary }}</p>
+                      </div>
+                      <em>{{ row.toolCount }} 工具 · {{ row.evidenceCount }} 证据</em>
+                    </article>
+                  </div>
+                </section>
                 <ElEmpty v-if="!reviewGraphNodes.length" description="暂无 LangGraph 节点数据" />
               </ElCard>
             </ElCol>
-            <ElCol :xl="10" :lg="10" :md="24" :sm="24" :xs="24">
+            <ElCol :xl="9" :lg="9" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
+                <template #header>阶段泳道</template>
+                <div class="langgraph-lane-list" aria-label="LangGraph 阶段泳道">
+                  <article
+                    v-for="group in langGraphFlowGroups"
+                    :key="group.key"
+                    :class="['langgraph-lane', `langgraph-lane--${group.tone}`]"
+                  >
+                    <div class="langgraph-lane-main">
+                      <span>{{ String(group.index).padStart(2, '0') }}</span>
+                      <strong>{{ group.label }}</strong>
+                      <small>{{ group.hint }}</small>
+                    </div>
+                    <div class="langgraph-lane-meta">
+                      <ElTag :type="group.tagType" effect="plain">{{ group.status }}</ElTag>
+                      <em>{{ group.nodeCount }} 节点</em>
+                      <em>{{ group.toolCount }} 工具</em>
+                    </div>
+                  </article>
+                </div>
+              </ElCard>
+              <ElCard shadow="never" class="panel mt-16px">
                 <template #header>Temporal / Checkpoint</template>
                 <ElDescriptions :column="1" border>
                   <ElDescriptionsItem label="Workflow">
@@ -5682,7 +6393,7 @@ onMounted(loadData)
               </ElCard>
               <ElCard shadow="never" class="panel mt-16px">
                 <template #header>执行边与时间线</template>
-                <ElTable :data="reviewGraphEdges" border height="180">
+                <ElTable :data="reviewGraphEdges" border height="150">
                   <ElTableColumn prop="source" label="来源" min-width="130" show-overflow-tooltip>
                     <template #default="{ row }">{{ friendlyTechLabel(row.source) }}</template>
                   </ElTableColumn>
@@ -5693,7 +6404,7 @@ onMounted(loadData)
                 <ElTable
                   :data="reviewGraphTimeline.slice(0, 5)"
                   border
-                  height="180"
+                  height="150"
                   class="mt-12px"
                 >
                   <ElTableColumn prop="stepName" label="事件" min-width="150" show-overflow-tooltip>
@@ -5851,9 +6562,19 @@ onMounted(loadData)
                 <template #header>
                   <div class="panel-header">
                     <span>人工修正与样本回流</span>
-                    <ElTag effect="plain"
-                      >{{ normalizedReviewHumanCorrectionRows.length }} 条</ElTag
-                    >
+                    <ElSpace>
+                      <ElTag effect="plain"
+                        >{{ normalizedReviewHumanCorrectionRows.length }} 条</ElTag
+                      >
+                      <ElButton
+                        size="small"
+                        plain
+                        :loading="actionLoading"
+                        @click="createReviewDiagnosticFeedback"
+                      >
+                        记录诊断修正
+                      </ElButton>
+                    </ElSpace>
                   </div>
                 </template>
                 <ElTable :data="normalizedReviewHumanCorrectionRows" border height="240">
@@ -6828,7 +7549,17 @@ onMounted(loadData)
                 <template #header>
                   <div class="panel-header">
                     <span>人工修正与样本回流</span>
-                    <ElTag effect="plain">{{ reviewHumanCorrectionRows.length }} 条</ElTag>
+                    <ElSpace>
+                      <ElTag effect="plain">{{ reviewHumanCorrectionRows.length }} 条</ElTag>
+                      <ElButton
+                        size="small"
+                        plain
+                        :loading="actionLoading"
+                        @click="createReviewDiagnosticFeedback"
+                      >
+                        记录诊断修正
+                      </ElButton>
+                    </ElSpace>
                   </div>
                 </template>
                 <ElTable :data="reviewHumanCorrectionRows" border height="300">
@@ -7447,7 +8178,8 @@ onMounted(loadData)
                   </ElTableColumn>
                   <ElTableColumn label="引用" min-width="230" show-overflow-tooltip>
                     <template #default="{ row }">
-                      证据 {{ row.evidenceCount }} / 规则 {{ row.ruleCount }} / 条款 {{ row.kbCount }}
+                      证据 {{ row.evidenceCount }} / 规则 {{ row.ruleCount }} / 条款
+                      {{ row.kbCount }}
                     </template>
                   </ElTableColumn>
                   <ElTableColumn label="质量" width="120">
@@ -8202,6 +8934,55 @@ onMounted(loadData)
                       show-overflow-tooltip
                     />
                   </ElTable>
+                  <div v-if="ocr100ActionSummary" class="ocr-action-board mb-12px">
+                    <div class="panel-header panel-header--compact">
+                      <span>OCR 100 行动板</span>
+                      <ElSpace>
+                        <ElTag :type="ocr100ActionBoard?.ok ? 'success' : 'warning'" effect="plain">
+                          {{ friendlyStatus(ocr100ActionSummary.status, '待推进') }}
+                        </ElTag>
+                        <ElButton
+                          size="small"
+                          plain
+                          :disabled="!ocr100ActionBoardView.rows.length"
+                          @click="exportOcr100ActionBoardCsv"
+                        >
+                          导出CSV
+                        </ElButton>
+                      </ElSpace>
+                    </div>
+                    <div class="workbench-summary-grid project-subpage-kpis">
+                      <div
+                        v-for="card in ocr100ActionBoardView.cards"
+                        :key="card.label"
+                        :class="`workbench-summary-card workbench-summary-card--${card.tone}`"
+                      >
+                        <span>{{ card.label }}</span>
+                        <strong>{{ card.value }}</strong>
+                        <small>{{ card.hint }}</small>
+                      </div>
+                    </div>
+                    <div v-if="ocr100ActionBoardView.rows.length" class="ocr-action-list">
+                      <div
+                        v-for="row in ocr100ActionBoardView.rows"
+                        :key="String(row.id || row.title)"
+                        class="ocr-action-row"
+                      >
+                        <ElTag size="small" effect="plain">{{ row.laneLabel }}</ElTag>
+                        <strong>{{ row.title }}</strong>
+                        <span>{{ row.detailText }}</span>
+                        <ElButton
+                          v-if="row.canOpenAnnotation"
+                          size="small"
+                          plain
+                          :loading="annotationDetailLoading"
+                          @click="openOcr100ActionAnnotation(row)"
+                        >
+                          打开
+                        </ElButton>
+                      </div>
+                    </div>
+                  </div>
                   <ElDescriptions v-if="ocrQuality" :column="1" border>
                     <ElDescriptionsItem label="文件成功"
                       >{{ ocrQuality.fileLevel.success }}/{{
@@ -9068,6 +9849,9 @@ onMounted(loadData)
             <ElButton plain :loading="actionLoading" @click="shadowFirstReviewRun">
               Shadow 运行
             </ElButton>
+            <ElButton plain :loading="actionLoading" @click="createReviewDiagnosticFeedback">
+              记录诊断修正
+            </ElButton>
           </div>
 
           <ElDescriptions :column="1" border class="mb-12px">
@@ -9108,7 +9892,10 @@ onMounted(loadData)
                 :closable="false"
                 title="这里展示可审计推理摘要、工具调用、证据引用和质量判断，不展示模型内部原始隐式思维。"
               />
-              <div v-if="normalizedReviewReasoningRows.length" class="audit-step-list drawer-step-list">
+              <div
+                v-if="normalizedReviewReasoningRows.length"
+                class="audit-step-list drawer-step-list"
+              >
                 <article
                   v-for="row in normalizedReviewReasoningRows"
                   :key="`drawer-${row.sequence}-${row.stepName}`"
@@ -9184,7 +9971,12 @@ onMounted(loadData)
                 </ElDescriptionsItem>
               </ElDescriptions>
               <ElTable :data="normalizedReviewQualityRows" border height="220">
-                <ElTableColumn prop="name" label="门禁/维度" min-width="150" show-overflow-tooltip />
+                <ElTableColumn
+                  prop="name"
+                  label="门禁/维度"
+                  min-width="150"
+                  show-overflow-tooltip
+                />
                 <ElTableColumn prop="status" label="状态" width="110">
                   <template #default="{ row }">
                     <ElTag :type="row.status === 'pass' ? 'success' : 'danger'" effect="plain">
@@ -9210,23 +10002,28 @@ onMounted(loadData)
             </ElTabPane>
             <ElTabPane label="人工修正" name="human">
               <ElTable :data="normalizedReviewHumanCorrectionRows" border height="300">
-                <ElTableColumn prop="targetType" label="对象" min-width="120" show-overflow-tooltip />
+                <ElTableColumn
+                  prop="targetType"
+                  label="对象"
+                  min-width="120"
+                  show-overflow-tooltip
+                />
                 <ElTableColumn
                   prop="correctionType"
                   label="类型"
                   min-width="140"
                   show-overflow-tooltip
                 />
-                <ElTableColumn
-                  prop="before"
-                  label="修正前"
-                  min-width="220"
-                  show-overflow-tooltip
-                />
+                <ElTableColumn prop="before" label="修正前" min-width="220" show-overflow-tooltip />
                 <ElTableColumn label="修正后" min-width="220" show-overflow-tooltip>
                   <template #default="{ row }">{{ shortText(row.after) }}</template>
                 </ElTableColumn>
-                <ElTableColumn prop="rootCause" label="归因" min-width="150" show-overflow-tooltip />
+                <ElTableColumn
+                  prop="rootCause"
+                  label="归因"
+                  min-width="150"
+                  show-overflow-tooltip
+                />
                 <ElTableColumn label="入评估集" width="100">
                   <template #default="{ row }">
                     <ElTag :type="row.shouldEnterEvaluationSet ? 'success' : 'info'" effect="plain">
@@ -9625,20 +10422,20 @@ onMounted(loadData)
 
 .project-audit-workbench {
   display: grid;
+  max-width: 100%;
+  min-width: 0;
   grid-template-columns: minmax(0, 1fr);
   gap: 16px;
-  min-width: 0;
-  max-width: 100%;
 }
 
 .project-audit-workbench > * {
-  min-width: 0;
   max-width: 100%;
+  min-width: 0;
 }
 
 .project-audit-card {
-  min-width: 0;
   max-width: 100%;
+  min-width: 0;
   border: 1px solid #e6edf7;
   border-radius: 8px;
 }
@@ -9738,16 +10535,16 @@ onMounted(loadData)
 
 .project-audit-module-bar {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(360px, 1.25fr);
-  gap: 14px;
-  align-items: center;
-  min-width: 0;
   max-width: 100%;
+  min-width: 0;
   min-height: 52px;
   padding: 12px 14px;
   background: #fff;
   border: 1px solid #e6edf7;
   border-radius: 8px;
+  grid-template-columns: minmax(260px, 1fr) minmax(360px, 1.25fr);
+  gap: 14px;
+  align-items: center;
 }
 
 .project-audit-module-title {
@@ -9839,11 +10636,11 @@ onMounted(loadData)
 
 .workbench-summary-grid {
   display: grid;
+  max-width: 100%;
+  min-width: 0;
+  margin-bottom: 16px;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 14px;
-  min-width: 0;
-  max-width: 100%;
-  margin-bottom: 16px;
 }
 
 .workbench-summary-card {
@@ -10042,8 +10839,8 @@ onMounted(loadData)
 .audit-issue-item span,
 .audit-blocker-item span {
   display: -webkit-box;
-  -webkit-box-orient: vertical;
   white-space: normal;
+  -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
 
@@ -10095,8 +10892,8 @@ onMounted(loadData)
 .audit-node-item:focus-visible {
   border-color: #9db8df;
   outline: 0;
-  box-shadow: 0 10px 22px rgb(15 23 42 / 8%);
   transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgb(15 23 42 / 8%);
 }
 
 .audit-node-item span {
@@ -10160,6 +10957,107 @@ onMounted(loadData)
   color: #64748b;
 }
 
+.audit-flow-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 16px;
+}
+
+.audit-flow-card {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 9px;
+  min-width: 0;
+  min-height: 86px;
+  padding: 11px;
+  background: #fff;
+  border: 1px solid #dbe8f7;
+  border-radius: 8px;
+  box-shadow: 0 7px 18px rgb(15 23 42 / 4%);
+}
+
+.audit-flow-card > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  font-size: 11px;
+  font-weight: 900;
+  color: #1f66d8;
+  background: #eff6ff;
+  border: 1px solid #c9dcfb;
+  border-radius: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.audit-flow-card div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.audit-flow-card strong,
+.audit-flow-card small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.audit-flow-card strong {
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 20px;
+  color: #172033;
+  white-space: nowrap;
+}
+
+.audit-flow-card small {
+  display: -webkit-box;
+  font-size: 12px;
+  line-height: 18px;
+  color: #64748b;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.audit-flow-card em {
+  grid-column: 2;
+  justify-self: start;
+  min-height: 22px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 18px;
+  color: #475569;
+  background: rgb(255 255 255 / 82%);
+  border: 1px solid #dbe8f7;
+  border-radius: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.audit-flow-card--green {
+  background: #f2fbf6;
+  border-color: #c9ead8;
+}
+
+.audit-flow-card--blue {
+  background: #f8fbff;
+  border-color: #cbdcf8;
+}
+
+.audit-flow-card--orange {
+  background: #fff8ed;
+  border-color: #f6d6a5;
+}
+
+.audit-flow-card--red {
+  background: #fff4f3;
+  border-color: #ffc8c1;
+}
+
 .graph-node-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
@@ -10185,9 +11083,9 @@ onMounted(loadData)
   bottom: 14px;
   left: 0;
   width: 4px;
-  content: '';
   background: #2563eb;
   border-radius: 0 4px 4px 0;
+  content: '';
 }
 
 .graph-node-card span,
@@ -10221,6 +11119,250 @@ onMounted(loadData)
   font-size: 12px;
   line-height: 18px;
   color: #64748b;
+}
+
+.langgraph-chart-shell {
+  min-height: 560px;
+  padding: 8px;
+  overflow: hidden;
+  background: linear-gradient(90deg, rgb(37 99 235 / 5%) 1px, transparent 1px),
+    linear-gradient(180deg, rgb(37 99 235 / 5%) 1px, transparent 1px),
+    linear-gradient(180deg, #f8fbff 0%, #fff 100%);
+  background-size:
+    34px 34px,
+    34px 34px,
+    auto;
+  border: 1px solid #dbe8f7;
+  border-radius: 8px;
+}
+
+.langgraph-echart {
+  width: 100%;
+}
+
+.langgraph-cog-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  margin-top: 12px;
+  background: linear-gradient(180deg, #f8fbff, #fff);
+  border: 1px solid #dbe8f7;
+  border-radius: 8px;
+}
+
+.langgraph-cog-head {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.langgraph-cog-head div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.langgraph-cog-head span {
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #172033;
+}
+
+.langgraph-cog-head strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 18px;
+  color: #64748b;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.langgraph-cog-list {
+  display: grid;
+  gap: 8px;
+}
+
+.langgraph-cog-list article {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: start;
+  min-width: 0;
+  padding: 9px 10px;
+  background: #fff;
+  border: 1px solid #e4ecf7;
+  border-radius: 8px;
+}
+
+.langgraph-cog-list article > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  font-size: 11px;
+  font-weight: 900;
+  color: #1f66d8;
+  background: #eff6ff;
+  border: 1px solid #c9dcfb;
+  border-radius: 7px;
+  font-variant-numeric: tabular-nums;
+}
+
+.langgraph-cog-list div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.langgraph-cog-list strong,
+.langgraph-cog-list p {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.langgraph-cog-list strong {
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #172033;
+  white-space: nowrap;
+}
+
+.langgraph-cog-list p {
+  display: -webkit-box;
+  font-size: 12px;
+  line-height: 18px;
+  color: #475569;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.langgraph-cog-list em {
+  min-height: 22px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 18px;
+  color: #1f66d8;
+  white-space: nowrap;
+  background: #eff6ff;
+  border: 1px solid #c9dcfb;
+  border-radius: 6px;
+}
+
+.langgraph-lane-list {
+  display: grid;
+  gap: 8px;
+}
+
+.langgraph-lane {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  min-width: 0;
+  min-height: 58px;
+  padding: 10px 11px;
+  background: #fff;
+  border: 1px solid #dbe8f7;
+  border-radius: 8px;
+}
+
+.langgraph-lane--blue {
+  background: #f8fbff;
+  border-color: #cbdcf8;
+}
+
+.langgraph-lane--green {
+  background: #f2fbf6;
+  border-color: #c9ead8;
+}
+
+.langgraph-lane--orange {
+  background: #fff8ed;
+  border-color: #f6d6a5;
+}
+
+.langgraph-lane--red {
+  background: #fff4f3;
+  border-color: #ffc8c1;
+}
+
+.langgraph-lane-main {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 2px 8px;
+  min-width: 0;
+  align-items: center;
+}
+
+.langgraph-lane-main span {
+  grid-row: 1 / 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  color: #1f66d8;
+  background: #fff;
+  border: 1px solid #c9dcfb;
+  border-radius: 7px;
+  font-variant-numeric: tabular-nums;
+}
+
+.langgraph-lane-main strong,
+.langgraph-lane-main small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.langgraph-lane-main strong {
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #172033;
+}
+
+.langgraph-lane-main small {
+  font-size: 12px;
+  line-height: 17px;
+  color: #64748b;
+}
+
+.langgraph-lane-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 108px;
+}
+
+.langgraph-lane-meta em {
+  min-height: 20px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 18px;
+  color: #475569;
+  background: rgb(255 255 255 / 78%);
+  border: 1px solid #dbe8f7;
+  border-radius: 5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .audit-step-list {
@@ -10757,8 +11899,8 @@ onMounted(loadData)
 
 .workflow-card:hover {
   border-color: #a9c8ff;
-  box-shadow: 0 12px 24px rgb(15 23 42 / 8%);
   transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgb(15 23 42 / 8%);
 }
 
 .workflow-card span,
@@ -10803,9 +11945,9 @@ onMounted(loadData)
   bottom: -36px;
   width: 112px;
   height: 112px;
-  content: '';
   background: rgb(37 99 235 / 7%);
   border-radius: 999px;
+  content: '';
 }
 
 .workflow-card--green::after {
@@ -10817,8 +11959,8 @@ onMounted(loadData)
 }
 
 .panel {
-  min-width: 0;
   max-width: 100%;
+  min-width: 0;
   margin-bottom: 20px;
   overflow: hidden;
   border: 1px solid #e5e7eb;
@@ -10853,19 +11995,76 @@ onMounted(loadData)
   white-space: nowrap;
 }
 
+.panel-header--compact {
+  min-height: 28px;
+  margin-bottom: 10px;
+}
+
+.ocr-action-board {
+  padding: 12px;
+  background: #f8fbff;
+  border: 1px solid #e3edf9;
+  border-radius: 8px;
+}
+
+.ocr-action-board .project-subpage-kpis {
+  margin-bottom: 10px;
+}
+
+.ocr-action-list {
+  display: grid;
+  gap: 8px;
+}
+
+.ocr-action-row {
+  display: grid;
+  grid-template-columns: 68px minmax(190px, 0.9fr) minmax(260px, 1.4fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 42px;
+  padding: 8px 10px;
+  color: #334155;
+  background: #fff;
+  border: 1px solid #e6edf7;
+  border-radius: 8px;
+}
+
+.ocr-action-row strong,
+.ocr-action-row span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocr-action-row strong {
+  font-weight: 800;
+  color: #172033;
+}
+
+.ocr-action-row span {
+  color: #64748b;
+}
+
+.ocr-action-row .el-button {
+  min-width: 58px;
+}
+
 .fde-tabs {
   margin-top: 2px;
 }
 
 .fde-tabs :deep(.el-row) {
-  min-width: 0;
   max-width: 100%;
+  min-width: 0;
   row-gap: 18px;
 }
 
 .fde-tabs :deep(.el-col) {
-  min-width: 0;
   max-width: 100%;
+  min-width: 0;
 }
 
 .fde-tabs :deep(.el-tabs__header) {
@@ -11217,6 +12416,10 @@ onMounted(loadData)
   .workbench-summary-grid.project-subpage-kpis {
     grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
   }
+
+  .audit-flow-strip {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
 }
 
 @media (width <= 1180px) {
@@ -11269,12 +12472,25 @@ onMounted(loadData)
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .audit-flow-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .annotation-canvas {
     min-height: 360px;
   }
 
   .annotation-item {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ocr-action-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ocr-action-row strong,
+  .ocr-action-row span {
+    white-space: normal;
   }
 
   .audit-drawer-hero {
@@ -11286,6 +12502,10 @@ onMounted(loadData)
   .metric-grid,
   .gate-summary,
   .artifact-summary-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .audit-flow-strip {
     grid-template-columns: minmax(0, 1fr);
   }
 }

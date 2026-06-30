@@ -176,8 +176,8 @@ const schema = reactive<FormSchema[]>([
         default: () => {
           return (
             <div class="auth-helper-line">
-              测试账号：<b>inspection</b>（监检机构） / <b>contractor</b>（施工方） /{' '}
-              <b>ndt</b>（无损检测机构） / <b>owner</b>（建设方） / <b>admin</b>
+              测试账号：<b>inspection</b>（监检机构） / <b>contractor</b>（施工方） / <b>ndt</b>
+              （无损检测机构） / <b>owner</b>（建设方） / <b>admin</b>
               （管理员） / <b>fde</b>（开发人员）；密码同账号。
             </div>
           )

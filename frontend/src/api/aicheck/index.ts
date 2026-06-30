@@ -1306,6 +1306,25 @@ export type FdeOcrQualityPayload = {
     }>
     blockers: string[]
   }
+  ocr100ActionBoard?: {
+    schemaVersion?: string
+    ok?: boolean
+    summary?: {
+      status?: string
+      score?: number
+      readyForEval?: number
+      requiredReadyForEval?: number
+      collectionMissingCases?: number
+      placeholderSampleSlots?: number
+      annotationTasks?: number
+      remainingHumanLabels?: number
+      newLocalCandidates?: number
+      duplicateLocalCandidates?: number
+      actions?: number
+      laneCounts?: Record<string, number>
+    }
+    actions?: Array<Record<string, unknown>>
+  }
   failurePools?: {
     fieldFailures?: Array<Record<string, unknown> | string>
     tableFailures: Array<Record<string, unknown> | string>
@@ -2754,6 +2773,31 @@ export const shadowFdeReviewRunApi = (
 ): Promise<IResponse<{ reviewRun: FdeReviewRun; auditLogId: string }>> => {
   return request.post({
     url: `/api/fde/review-runs/${reviewRunId}/shadow-run`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const createFdeReviewRunFeedbackApi = (
+  reviewRunId: string,
+  data: {
+    feedbackType?: string
+    comment?: string
+    correctedOutput?: unknown
+    rootCause?: string
+    shouldEnterEvaluationSet?: boolean
+  },
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    feedback: FdeFeedback
+    reviewRun: FdeReviewRun
+    auditLogId: string
+    businessImpactPolicy: string
+  }>
+> => {
+  return request.post({
+    url: `/api/fde/review-runs/${reviewRunId}/feedback`,
     data,
     headers: mutationHeaders(options)
   })

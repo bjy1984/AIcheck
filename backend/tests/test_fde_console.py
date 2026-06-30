@@ -259,6 +259,52 @@ def test_fde_review_run_visualization_replay_and_shadow(monkeypatch) -> None:
     assert shadow["reviewRun"]["runMode"] == "shadow_replay"
 
 
+def test_fde_review_run_diagnostic_feedback_does_not_change_business_state(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "inline")
+    ai_run = assert_ok(
+        client.post(
+            "/api/projects/P-2026-HDCP-001/inspection/nodes/24/ai-recheck",
+            headers={"X-Role": "inspection", "Idempotency-Key": "fde-review-feedback-inline-001"},
+        )
+    )
+    review_run_id = ai_run["dispatch"]["reviewRunId"]
+    detail_before = assert_ok(client.get(f"/api/fde/review-runs/{review_run_id}", headers={"X-Role": "fde"}))
+    before_status = detail_before["run"]["status"]
+    feedback = assert_ok(
+        client.post(
+            f"/api/fde/review-runs/{review_run_id}/feedback",
+            json={
+                "feedbackType": "wrong_evidence",
+                "rootCause": "prompt_error",
+                "comment": "FDE 标记证据范围需修正，不改变业务结论。",
+                "correctedOutput": [{"description": "补充页码、bbox 和条款映射。"}],
+                "shouldEnterEvaluationSet": True,
+            },
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-review-feedback-001"},
+        )
+    )
+    detail_after = assert_ok(client.get(f"/api/fde/review-runs/{review_run_id}", headers={"X-Role": "fde"}))
+    forbidden = assert_error(
+        client.post(
+            f"/api/fde/review-runs/{review_run_id}/feedback",
+            json={"feedbackType": "wrong_evidence"},
+            headers={"X-Role": "contractor", "Idempotency-Key": "fde-review-feedback-forbidden"},
+        ),
+        "FORBIDDEN",
+    )
+
+    assert feedback["businessImpactPolicy"] == "diagnostic_only_no_business_state_change"
+    assert feedback["feedback"]["reviewRunId"] == review_run_id
+    assert feedback["feedback"]["source"] == "fde_review_run_diagnostic"
+    assert feedback["feedback"]["governanceState"] == "needs_triage"
+    assert feedback["feedback"]["shouldEnterEvaluationSet"] is True
+    assert feedback["reviewRun"]["status"] == before_status
+    assert detail_after["run"]["status"] == before_status
+    assert detail_after["humanCorrections"]
+    assert detail_after["humanCorrections"][0]["feedbackType"] == "wrong_evidence"
+    assert forbidden["message"]
+
+
 def test_fde_feedback_triage_and_release_gate() -> None:
     triage = assert_ok(
         client.post(
@@ -798,6 +844,10 @@ def test_fde_ocr_quality_runs_corrections_and_eval() -> None:
     assert {"runtime", "evaluation", "sample-probes", "observability"} <= {
         item["name"] for item in quality["ocr100Scorecard"]["sections"]
     }
+    assert quality["ocr100ActionBoard"]["schemaVersion"] == "aicheck-ocr-100-action-board-v1"
+    assert quality["ocr100ActionBoard"]["summary"]["requiredReadyForEval"] == 100
+    assert "collect_samples" in quality["ocr100ActionBoard"]["summary"]["laneCounts"]
+    assert any(action["lane"] == "label_existing" for action in quality["ocr100ActionBoard"]["actions"])
     assert quality["failurePools"]["tableFailures"]
     assert "TABLE_EVIDENCE_MISSING" in {item["code"] for item in quality["failurePools"]["tableFailures"]}
     seal_failure_codes = {item["code"] for item in quality["failurePools"]["sealFailures"]}

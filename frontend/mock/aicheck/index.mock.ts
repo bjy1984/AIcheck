@@ -1160,6 +1160,7 @@ const state = {
   adminFieldMappings: clone<AdminFieldMappingMock[]>(initialAdminFieldMappings),
   submissionDrafts: [] as SubmissionDraftMock[],
   submissionSnapshots: [] as SubmissionSnapshotMock[],
+  fdeReviewFeedbacks: [] as Array<Record<string, unknown>>,
   idempotencyKeys: new Set<string>(),
   auditLogs: [
     {
@@ -3175,41 +3176,42 @@ const getFdeProjectDocuments = (id: string) => {
   const sourceDocuments = state.documents.filter((document) => document.projectId === id)
   const documentsForAudit =
     sourceDocuments.length >= 3 ? sourceDocuments : makeFdeProjectDocumentSeeds(id)
-  return documentsForAudit
-    .map((document, index) => {
-      const template = fdeAuditDocumentTemplates[index % fdeAuditDocumentTemplates.length]
-      const knowledgeFile = state.knowledgeFiles.find(
-        (file) => file.documentVersionId === document.currentVersionId
-      )
-      const knowledgeSource = knowledgeFile ? getKnowledgeSource(knowledgeFile.sourceId) : undefined
-      const latestTask = knowledgeFile
-        ? state.knowledgeTasks.find((task) => task.targetId === knowledgeFile.id)
-        : undefined
-      const pageIndexNodes = getMockPageIndexNodes(id, document.currentVersionId)
-      return {
-        ...document,
-        knowledgeFileId: knowledgeFile?.id,
-        knowledgeSourceId: knowledgeFile?.sourceId,
-        knowledgeSourceName: knowledgeFile?.sourceName || knowledgeSource?.name,
-        sliceStatus:
-          knowledgeFile?.sliceStatus ||
-          template.sliceStatus ||
-          (document.currentOcrStatus === '已识别' ? '已切片' : '等待OCR'),
-        vectorStatus:
-          knowledgeFile?.vectorStatus ||
-          template.vectorStatus ||
-          (document.currentOcrStatus === '已识别' ? '已向量化' : '待向量化'),
-        chunkCount: knowledgeFile?.chunkCount || template.chunkCount || [42, 34, 28, 16][index] || 8,
-        vectorCount: knowledgeFile?.vectorCount || template.vectorCount || [42, 31, 19, 0][index] || 0,
-        embeddingModel: state.knowledgeConfig.embeddingModel,
-        indexVersion: knowledgeSource?.version || 'proj-v2026.06.26',
-        vectorDimensions: 3072,
-        pageIndexStatus: template.pageIndexStatus || (pageIndexNodes.length ? '已构建' : '待构建'),
-        pageIndexNodeCount: template.pageIndexStatus === '等待切片' ? 0 : pageIndexNodes.length,
-        latestKnowledgeTask: latestTask || null,
-        latestTask: latestTask?.status || template.latestTaskStatus || knowledgeFile?.vectorStatus || '已向量化'
-      }
-    })
+  return documentsForAudit.map((document, index) => {
+    const template = fdeAuditDocumentTemplates[index % fdeAuditDocumentTemplates.length]
+    const knowledgeFile = state.knowledgeFiles.find(
+      (file) => file.documentVersionId === document.currentVersionId
+    )
+    const knowledgeSource = knowledgeFile ? getKnowledgeSource(knowledgeFile.sourceId) : undefined
+    const latestTask = knowledgeFile
+      ? state.knowledgeTasks.find((task) => task.targetId === knowledgeFile.id)
+      : undefined
+    const pageIndexNodes = getMockPageIndexNodes(id, document.currentVersionId)
+    return {
+      ...document,
+      knowledgeFileId: knowledgeFile?.id,
+      knowledgeSourceId: knowledgeFile?.sourceId,
+      knowledgeSourceName: knowledgeFile?.sourceName || knowledgeSource?.name,
+      sliceStatus:
+        knowledgeFile?.sliceStatus ||
+        template.sliceStatus ||
+        (document.currentOcrStatus === '已识别' ? '已切片' : '等待OCR'),
+      vectorStatus:
+        knowledgeFile?.vectorStatus ||
+        template.vectorStatus ||
+        (document.currentOcrStatus === '已识别' ? '已向量化' : '待向量化'),
+      chunkCount: knowledgeFile?.chunkCount || template.chunkCount || [42, 34, 28, 16][index] || 8,
+      vectorCount:
+        knowledgeFile?.vectorCount || template.vectorCount || [42, 31, 19, 0][index] || 0,
+      embeddingModel: state.knowledgeConfig.embeddingModel,
+      indexVersion: knowledgeSource?.version || 'proj-v2026.06.26',
+      vectorDimensions: 3072,
+      pageIndexStatus: template.pageIndexStatus || (pageIndexNodes.length ? '已构建' : '待构建'),
+      pageIndexNodeCount: template.pageIndexStatus === '等待切片' ? 0 : pageIndexNodes.length,
+      latestKnowledgeTask: latestTask || null,
+      latestTask:
+        latestTask?.status || template.latestTaskStatus || knowledgeFile?.vectorStatus || '已向量化'
+    }
+  })
 }
 
 const buildMockFdeAiRuns = (id?: string, nodeId?: number) =>
@@ -3621,7 +3623,8 @@ const buildMockFdeReviewRunDetail = (reviewRunId: string) => {
         before: '建议通过',
         after: '建议人工确认外部查询截图来源后通过',
         rootCause: 'evidence_scope_needs_human'
-      }
+      },
+      ...state.fdeReviewFeedbacks.filter((item) => item.reviewRunId === reviewRunId)
     ],
     redactionPolicy: 'masked_by_default',
     scorecard: {
@@ -3649,8 +3652,7 @@ const buildMockOcrJobs = (id?: string, nodeId?: number) =>
         .map((binding) => binding.documentVersionId)
       if (boundVersionIds.length < 2) return true
       return boundVersionIds.some(
-        (binding) =>
-          String(binding) === String(document.currentVersionId)
+        (binding) => String(binding) === String(document.currentVersionId)
       )
     })
     .map((document, index) => ({
@@ -4035,6 +4037,47 @@ const buildMockFdeOcrQuality = () => ({
     ],
     blockers: ['印章文字准确率未达 90%', '跨列表格标注样本不足']
   },
+  ocr100ActionBoard: {
+    schemaVersion: 'aicheck-ocr-100-action-board-v1',
+    ok: false,
+    summary: {
+      status: 'needs_sample_files',
+      score: 91,
+      readyForEval: 30,
+      requiredReadyForEval: 100,
+      collectionMissingCases: 12,
+      placeholderSampleSlots: 12,
+      annotationTasks: 42,
+      remainingHumanLabels: 12,
+      newLocalCandidates: 3,
+      duplicateLocalCandidates: 8,
+      actions: 7,
+      laneCounts: { collect_samples: 2, label_existing: 4, triage_candidates: 1 }
+    },
+    actions: [
+      {
+        id: 'collect-ndt_ut_profile',
+        lane: 'collect_samples',
+        scenario: 'ndt_ut_profile',
+        title: 'Collect 8 real OCR sample(s) for ndt_ut_profile',
+        doneWhen: '真实 UT 报告已放入场景目录并通过 manifest 校验。'
+      },
+      {
+        id: 'label-real-piping_table_profile-002',
+        lane: 'label_existing',
+        scenario: 'piping_table_profile',
+        title: 'Human-review OCR label for real-piping_table_profile-002',
+        doneWhen: '字段、表格、印章证据已人工校对并二审。'
+      },
+      {
+        id: 'triage-new-candidates',
+        lane: 'triage_candidates',
+        scenario: 'mixed',
+        title: 'Triage 3 new local OCR sample candidate(s)',
+        doneWhen: '候选样本完成去重并进入正确场景目录。'
+      }
+    ]
+  },
   failurePools: {
     fieldFailures: [{ code: 'FIELD_LOW_CONFIDENCE', source: 'ocr_eval' }],
     tableFailures: [{ code: 'TABLE_STRUCTURE_LOW_CONFIDENCE', source: 'ocr_eval' }],
@@ -4361,6 +4404,41 @@ export default [
           stepName: item.stepName,
           status: item.status
         }))
+      })
+    }
+  },
+  {
+    url: /\/api\/fde\/review-runs\/[^/]+\/feedback$/,
+    method: 'post',
+    timeout,
+    response: ({ url, body }) => {
+      const reviewRunId = pathParts(url)[3] || 'RR-LOCAL'
+      const record = {
+        id: `HC-FDE-${state.fdeReviewFeedbacks.length + 2}`,
+        reviewRunId,
+        targetType: 'finding_draft',
+        correctionType: body?.feedbackType || 'wrong_evidence',
+        feedbackType: body?.feedbackType || 'wrong_evidence',
+        before: 'AI 草稿证据或依据待复核',
+        after:
+          body?.correctedOutput?.[0]?.description ||
+          '建议补齐证据页码、bbox、规则编号和知识条款映射。',
+        rootCause: body?.rootCause || 'prompt_error',
+        status: 'created',
+        shouldEnterEvaluationSet: body?.shouldEnterEvaluationSet ?? true,
+        comment: body?.comment || 'FDE 诊断修正，不改变正式业务结论。',
+        createdAt: serverTime
+      }
+      state.fdeReviewFeedbacks.unshift(record)
+      return ok({
+        feedback: {
+          ...record,
+          source: 'fde_review_run_diagnostic',
+          governanceState: 'needs_triage'
+        },
+        reviewRun: buildMockFdeReviewRunDetail(reviewRunId).run,
+        auditLogId: 'AUD-FDE-REVIEW-FEEDBACK',
+        businessImpactPolicy: 'diagnostic_only_no_business_state_change'
       })
     }
   },
