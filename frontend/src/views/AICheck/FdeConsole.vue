@@ -826,6 +826,7 @@ const statusLabelMap: Record<string, string> = {
   production: '生产中',
   production_approved: '生产已批准',
   queued: '排队中',
+  ready: '就绪',
   ready_for_eval: '可入评估',
   rejected: '已驳回',
   request_correction: '建议发起补正',
@@ -835,6 +836,8 @@ const statusLabelMap: Record<string, string> = {
   success: '成功',
   triaged: '已归因',
   approved_for_eval: '已准入评估集',
+  incomplete: '不完整',
+  missing: '缺失',
   unknown: '未知',
   hybrid_rag: 'Hybrid RAG',
   pageindex: 'PageIndex',
@@ -1737,6 +1740,25 @@ const ocr100ActionBoardView = computed<{
   cards: ocr100ActionCards.value,
   rows: ocr100ActionBoardRows.value.slice(0, 6)
 }))
+const ocr100Handoff = computed(() => toRecord(ocr100ActionBoard.value?.handoff))
+const ocr100HandoffFiles = computed(() =>
+  toRecordArray(ocr100Handoff.value.files).map((file) => ({
+    key: String(file.key || ''),
+    label: String(file.label || file.key || '-'),
+    owner: String(file.owner || 'FDE'),
+    purpose: String(file.purpose || ''),
+    path: String(file.path || ''),
+    exists: Boolean(file.exists),
+    sizeBytes: Number(file.sizeBytes || 0)
+  }))
+)
+const ocr100HandoffVisibleFiles = computed(() => ocr100HandoffFiles.value.slice(0, 5))
+const ocr100HandoffStatusType = computed<FdeElTagType>(() => {
+  const status = String(ocr100Handoff.value.status || '')
+  if (status === 'ready') return 'success'
+  if (status === 'missing') return 'danger'
+  return 'warning'
+})
 const ocrAnnotationStatusLabel = (row: FdeOcrAnnotationTask) => {
   if (row.readyForEval || row.collectionStatus === 'ready_for_eval') return '可入评估'
   if (row.collectionStatus === 'reviewed') return '待入评估'
@@ -9004,6 +9026,42 @@ onMounted(loadData)
                         <small>{{ card.hint }}</small>
                       </div>
                     </div>
+                    <div
+                      v-if="ocr100Handoff.status || ocr100HandoffVisibleFiles.length"
+                      class="ocr-handoff"
+                    >
+                      <div class="ocr-handoff__head">
+                        <div>
+                          <strong>人工交付包</strong>
+                          <span>{{
+                            ocr100Handoff.outputDir || ocr100Handoff.manifestPath || '待生成'
+                          }}</span>
+                        </div>
+                        <ElTag :type="ocr100HandoffStatusType" effect="plain">
+                          {{ friendlyStatus(ocr100Handoff.status, '待生成') }}
+                        </ElTag>
+                      </div>
+                      <div v-if="ocr100HandoffVisibleFiles.length" class="ocr-handoff__files">
+                        <div
+                          v-for="file in ocr100HandoffVisibleFiles"
+                          :key="file.key || file.path"
+                          class="ocr-handoff__file"
+                        >
+                          <div>
+                            <strong>{{ file.label }}</strong>
+                            <span>{{ file.owner }} · {{ file.purpose }}</span>
+                            <small>{{ file.path }}</small>
+                          </div>
+                          <ElTag
+                            :type="file.exists ? 'success' : 'danger'"
+                            effect="plain"
+                            size="small"
+                          >
+                            {{ file.exists ? '已生成' : '缺失' }}
+                          </ElTag>
+                        </div>
+                      </div>
+                    </div>
                     <div v-if="ocr100ActionBoardView.rows.length" class="ocr-action-list">
                       <div
                         v-for="row in ocr100ActionBoardView.rows"
@@ -12053,6 +12111,61 @@ onMounted(loadData)
   margin-bottom: 10px;
 }
 
+.ocr-handoff {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  margin-bottom: 10px;
+  background: rgb(255 255 255 / 78%);
+  border: 1px solid #e6edf7;
+  border-radius: 8px;
+}
+
+.ocr-handoff__head,
+.ocr-handoff__file {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.ocr-handoff__head strong,
+.ocr-handoff__file strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 18px;
+  color: #172033;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocr-handoff__head span,
+.ocr-handoff__file span,
+.ocr-handoff__file small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 18px;
+  color: #64748b;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocr-handoff__files {
+  display: grid;
+  gap: 6px;
+}
+
+.ocr-handoff__file {
+  min-height: 44px;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border-radius: 6px;
+}
+
 .ocr-action-list {
   display: grid;
   gap: 8px;
@@ -12532,6 +12645,19 @@ onMounted(loadData)
 
   .ocr-action-row strong,
   .ocr-action-row span {
+    white-space: normal;
+  }
+
+  .ocr-handoff__head,
+  .ocr-handoff__file {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ocr-handoff__head strong,
+  .ocr-handoff__head span,
+  .ocr-handoff__file strong,
+  .ocr-handoff__file span,
+  .ocr-handoff__file small {
     white-space: normal;
   }
 
