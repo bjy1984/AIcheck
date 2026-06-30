@@ -260,6 +260,16 @@ const expectFdeWorkspaceNotClipped = async (page: Page) => {
     .toBe('')
 }
 
+const waitForFdeProjectAuditReady = async (page: Page) => {
+  await expect(page.locator('.fde-console')).toBeVisible({ timeout: 15000 })
+  await expect(page.locator('.static-tree-menu .tree-group-wrap').first()).toBeVisible({
+    timeout: 15000
+  })
+  await expect(page.locator('.static-tree-menu .tree-node.active').first()).toBeVisible({
+    timeout: 15000
+  })
+}
+
 const expectFdeProjectTreeUsable = async (page: Page) => {
   await expect
     .poll(
@@ -539,13 +549,14 @@ test.describe('AIcheck deep route menu', () => {
 
   test('fde subroutes select static menu and route context', async ({ page }) => {
     await loginTo(page, '/fde/projects')
-    await expect(page.locator('.static-tree-menu .tree-node').first()).toBeVisible()
+    await waitForFdeProjectAuditReady(page)
     await expect(page.locator('.fde-console')).toContainText('项目审计工作台')
 
     for (const routeCase of fdeDeepRouteCases) {
       await page.goto(`/#${routeCase.path}`)
       await page.waitForURL((url) => url.hash.includes(routeCase.path))
       await page.waitForLoadState('networkidle')
+      await waitForFdeProjectAuditReady(page)
       await expect(page.locator('.fde-console .page-title')).toContainText(routeCase.title)
       const activeTreeItem = page.locator('.static-tree-menu .tree-node.active').first()
       await expect(activeTreeItem).toContainText(routeCase.menu)
@@ -573,6 +584,7 @@ test.describe('AIcheck deep route menu', () => {
         await page.goto(`/#${path}`)
         await page.waitForURL((url) => url.hash.includes(path))
         await page.waitForLoadState('networkidle')
+        await waitForFdeProjectAuditReady(page)
         await expect(page.locator('.fde-console .page-title')).toContainText('项目审计工作台')
         await expectFdeProjectTreeUsable(page)
         await expectNoPageOverflow(page)
@@ -585,6 +597,7 @@ test.describe('AIcheck deep route menu', () => {
     for (const width of [1440, 1280, 1024]) {
       await page.setViewportSize({ width, height: 820 })
       await loginTo(page, '/fde/projects')
+      await waitForFdeProjectAuditReady(page)
       await expect(page.locator('.fde-console .page-title')).toContainText('项目审计工作台')
       await expectFdeTopbarCompact(page)
       await expectNoPageOverflow(page)
@@ -595,6 +608,7 @@ test.describe('AIcheck deep route menu', () => {
     await loginTo(page, '/fde/projects')
     await page.goto('/#/fde/projects?projectId=P-2026-GDLNG-002&view=vectorization')
     await page.waitForLoadState('networkidle')
+    await waitForFdeProjectAuditReady(page)
 
     await expectFdeProjectTreeUsable(page)
     await expect(page.locator('.fde-console')).toContainText('管道特性表')
@@ -605,6 +619,7 @@ test.describe('AIcheck deep route menu', () => {
 
     await page.goto('/#/fde/projects?view=pageindex')
     await page.waitForLoadState('networkidle')
+    await waitForFdeProjectAuditReady(page)
     await expect(page.locator('.fde-console')).toContainText('PageIndex 路由 Trace')
     await expect(page.locator('.fde-console .pageindex-trace-card').first()).toContainText(
       'Query Router'
@@ -614,6 +629,7 @@ test.describe('AIcheck deep route menu', () => {
 
     await page.goto('/#/fde/projects?view=langgraph')
     await page.waitForLoadState('networkidle')
+    await waitForFdeProjectAuditReady(page)
     await expect(page.locator('.fde-console')).toContainText('LangGraph 节点执行图')
     await expect(page.locator('.fde-console')).toContainText('postgres')
     await expect(page.locator('.fde-console')).toContainText('Agent 思考链与工具证据')
@@ -626,6 +642,7 @@ test.describe('AIcheck deep route menu', () => {
     await expect(reviewDrawer).toContainText('可审计推理摘要')
     await expect(reviewDrawer).toContainText('工具调用')
     await expect(reviewDrawer).toContainText('证据/规则/条款')
+    await expect(reviewDrawer.locator('.drawer-step-card').first()).toContainText('证据/依据')
     await reviewDrawer.getByRole('tab', { name: '结果' }).click()
     await expect(reviewDrawer).toContainText('建议动作')
     await expect(reviewDrawer).toContainText('人工确认')
@@ -634,6 +651,7 @@ test.describe('AIcheck deep route menu', () => {
 
     await page.goto('/#/fde/projects?view=ocr-labeling')
     await page.waitForLoadState('networkidle')
+    await waitForFdeProjectAuditReady(page)
     await expect(page.locator('.fde-console')).toContainText('标注覆盖率')
     await expect(page.locator('.fde-console')).toContainText('seal_text_profile')
     await expect(page.locator('.fde-console')).toContainText('ndt_rt_report_v1')
@@ -650,6 +668,7 @@ test.describe('AIcheck deep route menu', () => {
 
     await page.goto('/#/fde/projects?view=evaluation')
     await page.waitForLoadState('networkidle')
+    await waitForFdeProjectAuditReady(page)
     await expect(page.locator('.fde-console')).toContainText('准确率评估门禁')
     await expect(page.locator('.fde-console')).toContainText('OCR 100')
     await expect(page.locator('.fde-console')).toContainText('Agent 评分')

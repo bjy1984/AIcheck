@@ -5745,6 +5745,7 @@ onMounted(loadData)
                         <strong>{{ shortText(row.evidence, '-') }}</strong>
                       </div>
                       <div class="audit-step-meta">
+                        <span class="audit-step-meta-label">证据/规则/条款</span>
                         <span>工具 {{ row.toolCount }}</span>
                         <span>证据 {{ row.evidenceCount }}</span>
                         <span>规则 {{ row.ruleCount }}</span>
@@ -9107,35 +9108,39 @@ onMounted(loadData)
                 :closable="false"
                 title="这里展示可审计推理摘要、工具调用、证据引用和质量判断，不展示模型内部原始隐式思维。"
               />
-              <ElTable :data="normalizedReviewReasoningRows" border height="300">
-                <ElTableColumn prop="sequence" label="#" width="58" />
-                <ElTableColumn prop="stepName" label="步骤" min-width="150" show-overflow-tooltip>
-                  <template #default="{ row }">{{ friendlyTechLabel(row.stepName) }}</template>
-                </ElTableColumn>
-                <ElTableColumn
-                  prop="reasoningSummary"
-                  label="可审计推理摘要"
-                  min-width="300"
-                  show-overflow-tooltip
-                />
-                <ElTableColumn label="工具调用" min-width="190" show-overflow-tooltip>
-                  <template #default="{ row }">
-                    {{ row.toolCount ? `${row.toolCount} 个：${row.toolNames || '-'}` : '-' }}
-                  </template>
-                </ElTableColumn>
-                <ElTableColumn label="证据/规则/条款" min-width="160">
-                  <template #default="{ row }">
-                    证据 {{ row.evidenceCount }} / 规则 {{ row.ruleCount }} / 条款 {{ row.kbCount }}
-                  </template>
-                </ElTableColumn>
-                <ElTableColumn label="质量" width="105">
-                  <template #default="{ row }">
-                    <ElTag :type="row.qualityPassed ? 'success' : 'warning'" effect="plain">
-                      {{ row.qualityText }}
-                    </ElTag>
-                  </template>
-                </ElTableColumn>
-              </ElTable>
+              <div v-if="normalizedReviewReasoningRows.length" class="audit-step-list drawer-step-list">
+                <article
+                  v-for="row in normalizedReviewReasoningRows"
+                  :key="`drawer-${row.sequence}-${row.stepName}`"
+                  class="audit-step-card drawer-step-card"
+                >
+                  <div class="audit-step-index">
+                    <span>{{ String(row.sequence).padStart(2, '0') }}</span>
+                  </div>
+                  <div class="audit-step-body">
+                    <div class="audit-step-title">
+                      <strong>{{ friendlyTechLabel(row.stepName) }}</strong>
+                      <ElTag :type="row.qualityPassed ? 'success' : 'warning'" effect="plain">
+                        {{ row.qualityText }}
+                      </ElTag>
+                    </div>
+                    <p>{{ row.reasoningSummary }}</p>
+                    <div class="audit-step-evidence">
+                      <span>证据/依据</span>
+                      <strong>{{ shortText(row.evidence, '-') }}</strong>
+                    </div>
+                    <div class="audit-step-meta">
+                      <span class="audit-step-meta-label">证据/规则/条款</span>
+                      <span>工具 {{ row.toolCount }}</span>
+                      <span>证据 {{ row.evidenceCount }}</span>
+                      <span>规则 {{ row.ruleCount }}</span>
+                      <span>条款 {{ row.kbCount }}</span>
+                    </div>
+                    <small v-if="row.toolNames">工具：{{ row.toolNames }}</small>
+                  </div>
+                </article>
+              </div>
+              <ElEmpty v-else description="暂无可审计推理摘要" />
             </ElTabPane>
             <ElTabPane label="结果" name="findings">
               <ElTable :data="normalizedReviewFindingRows" border height="300">
@@ -10228,6 +10233,10 @@ onMounted(loadData)
   scrollbar-color: #c7d5e8 transparent;
 }
 
+.drawer-step-list {
+  max-height: min(46vh, 420px);
+}
+
 .audit-step-card {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
@@ -10289,6 +10298,7 @@ onMounted(loadData)
   font-size: 13px;
   line-height: 1.55;
   color: #334155;
+  overflow-wrap: anywhere;
 }
 
 .audit-step-evidence {
@@ -10319,6 +10329,12 @@ onMounted(loadData)
   white-space: nowrap;
 }
 
+.drawer-step-card .audit-step-evidence strong,
+.drawer-step-card .audit-step-body small {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .audit-step-meta {
   display: flex;
   flex-wrap: wrap;
@@ -10335,6 +10351,12 @@ onMounted(loadData)
   background: #eff6ff;
   border: 1px solid #d4e3f8;
   border-radius: 999px;
+}
+
+.audit-step-meta .audit-step-meta-label {
+  color: #475569;
+  background: #f8fafc;
+  border-color: #e2e8f0;
 }
 
 .audit-step-body small {
