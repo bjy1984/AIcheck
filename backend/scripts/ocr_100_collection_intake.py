@@ -96,17 +96,31 @@ def build_collection_intake(
         "sourceClosurePlan": str(closure_plan_path),
         "instructions": [
             "Put real customer/field documents into each slot's dropDirectory.",
-            "Replace fileName placeholders with the actual file names before running ingest.",
+            "Run autofillManifest or replace fileName placeholders with the actual file names before running ingest.",
             "Do not use standards/specification PDFs as OCR 100 certification samples unless they are the target business document.",
             "After ingest, build annotation previews, prelabel, then human-review labels before OCR 100 certification.",
         ],
         "samples": slots,
     }
     commands = {
+        "autofillManifest": (
+            "python scripts/ocr_100_collection_intake_autofill.py "
+            f"{relative_to(Path.cwd(), output_dir)} "
+            "--output-manifest manifest_autofilled.json "
+            f"--output {relative_to(Path.cwd(), output_dir / 'autofill.json')} "
+            f"--markdown-output {relative_to(Path.cwd(), output_dir / 'autofill.md')}"
+        ),
+        "verifyAutofilledManifest": (
+            "python scripts/ocr_100_collection_intake_verify.py "
+            f"{relative_to(Path.cwd(), output_dir)} "
+            "--manifest manifest_autofilled.json --strict "
+            f"--output {relative_to(Path.cwd(), output_dir / 'verify_autofilled.json')} "
+            f"--markdown-output {relative_to(Path.cwd(), output_dir / 'verify_autofilled.md')}"
+        ),
         "ingestAll": (
             "python scripts/ocr_100_ingest_samples.py "
             f"{relative_to(Path.cwd(), samples_dir)} "
-            f"--manifest {relative_to(Path.cwd(), output_dir / 'manifest_template.json')} "
+            f"--manifest {relative_to(Path.cwd(), output_dir / 'manifest_autofilled.json')} "
             f"--base-dir . --copy-to {copy_to} --output {queue_output}"
         ),
         "buildAnnotationPack": (
@@ -149,9 +163,10 @@ def intake_readme(summary: dict[str, Any]) -> str:
         "## Workflow",
         "",
         "1. Put real PDF/image samples into the matching `samples/<scenario>/` folder.",
-        "2. Edit `manifest_template.json` and replace each `fileName` placeholder with the actual file name.",
-        "3. Run `ingestAll` from `commands.json`.",
-        "4. Build previews, prelabel, then send the annotation pack to human review.",
+        "2. Run `autofillManifest` from `commands.json`, or edit `manifest_template.json` manually and replace each `fileName` placeholder.",
+        "3. Run `verifyAutofilledManifest` from `commands.json` until it passes.",
+        "4. Run `ingestAll` from `commands.json`.",
+        "5. Build previews, prelabel, then send the annotation pack to human review.",
         "",
         "## Scenario Gaps",
         "",

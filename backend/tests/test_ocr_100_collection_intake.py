@@ -56,7 +56,10 @@ def test_ocr_100_collection_intake_creates_scenario_folders_and_manifest(tmp_pat
     assert len(manifest["samples"]) == 3
     assert any(item["fileName"].startswith("replace-with-piping_table_profile") for item in manifest["samples"])
     assert {item["scenario"] for item in manifest["samples"]} == {"piping_table_profile", "ndt_rt_profile"}
+    assert "ocr_100_collection_intake_autofill.py" in report["summary"]["commands"]["autofillManifest"]
+    assert "manifest_autofilled.json" in report["summary"]["commands"]["verifyAutofilledManifest"]
     assert "ocr_100_ingest_samples.py" in report["summary"]["commands"]["ingestAll"]
+    assert "manifest_autofilled.json" in report["summary"]["commands"]["ingestAll"]
     assert "Scenario Gaps" in readme
     assert "quality_certificate_profile" not in {item["scenario"] for item in report["summary"]["scenarioItems"]}
 

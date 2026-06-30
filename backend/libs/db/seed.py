@@ -1568,7 +1568,7 @@ KNOWLEDGE_TASKS = [
     },
 ]
 
-RULE_VERSIONS = [
+CORE_RULE_VERSIONS = [
     {
         "id": "RULE-WELDER-202606",
         "name": "焊工资格核验规则",
@@ -1599,6 +1599,14 @@ RULE_VERSIONS = [
 ]
 
 RULE_VERSIONS = [
+    *[
+        {
+            **rule,
+            "revision": rule.get("revision", 1),
+        }
+        for rule in CORE_RULE_VERSIONS
+    ],
+    *[
     {
         "id": rule["id"],
         "name": rule["name"],
@@ -1617,6 +1625,7 @@ RULE_VERSIONS = [
         "revision": 1,
     }
     for rule in DEFAULT_BUSINESS_PACK["ruleSets"]
+    ],
 ]
 
 KNOWLEDGE_CONFIG = {
