@@ -402,10 +402,23 @@ def test_visual_seal_candidate_enriched_from_ocr_fragments_can_satisfy_required_
                 {"text": "TS1810648-2021", "confidence": 0.99, "bbox": [4362, 2605, 4758, 2688]},
                 {"text": "2017年8月31日", "confidence": 0.99, "bbox": [4361, 2660, 4768, 2753]},
             ],
-            "fields": [
-                {"fieldCode": code, "fieldName": code, "fieldValue": code, "confidence": 0.9, "bbox": [1, 1, 2, 2]}
-                for code in required_fields
-            ],
+        "fields": [
+            {
+                "fieldCode": code,
+                "fieldName": code,
+                "fieldValue": {
+                    "company_name": "广东星燃石化设计院有限公司",
+                    "project_name": "项目",
+                    "document_title": "管道特性表",
+                    "drawing_no": "QX201903S-13-Y-07",
+                    "design_phase": "施工图",
+                    "pipe_no": "PL8301",
+                }[code],
+                "confidence": 0.9,
+                "bbox": [1, 1, 2, 2],
+            }
+            for code in required_fields
+        ],
             "tables": [
                 {
                     "tableId": "grid",
@@ -752,6 +765,26 @@ def test_ocr_normalize_preserves_zero_values() -> None:
 
     assert result["fields"][0]["fieldValue"] == "0"
     assert result["fields"][0]["confidence"] == 0
+
+
+def test_ocr_normalize_does_not_invent_missing_confidence() -> None:
+    from apps.ocr_service.service import normalize_ocr_result
+
+    result = normalize_ocr_result(
+        {
+            "text": "plain fallback text",
+            "fields": [{"fieldName": "missing_conf_field", "fieldValue": "A", "bbox": [0, 0, 1, 1]}],
+            "seals": [{"sealName": "未知置信印章", "bbox": [1, 2, 3, 4], "fields": [{"fieldName": "seal_text", "fieldValue": "未知置信印章"}]}],
+        },
+        "minio://documents/missing-confidence.pdf",
+        "missing-confidence.pdf",
+    )
+
+    assert result["fragments"][0]["confidence"] == 0
+    assert result["fields"][0]["confidence"] == 0
+    assert result["fields"][1]["confidence"] == 0
+    assert result["seals"][0]["visualConfidence"] == 0
+    assert result["seals"][0]["ocrConfidence"] == 0
 
 
 def test_ocr_normalize_does_not_treat_seal_summary_as_text() -> None:
@@ -1258,6 +1291,44 @@ def test_pp_structure_html_table_handles_rowspan_and_colspan() -> None:
     assert structure["normalizedRows"][0]["压力"] == "0.15"
 
 
+def test_ocr_engine_normalizers_preserve_zero_confidence() -> None:
+    from apps.ocr_service.engines import normalize_paddle_fragments, normalize_seal_result, normalize_structure_result
+
+    fragments = normalize_paddle_fragments(
+        {"rec_texts": ["低置信文字"], "rec_scores": [0], "dt_polys": [[[0, 0], [10, 0], [10, 10], [0, 10]]]},
+        page_no=1,
+        source_engine="paddle_ocr_subprocess",
+    )
+    tables, blocks = normalize_structure_result(
+        [{"type": "table", "score": 0, "bbox": [0, 0, 10, 10], "html": "<table><tr><td>A</td></tr></table>"}],
+        "pp_structure_v3",
+    )
+    seals = normalize_seal_result([{"sealName": "低置信印章", "bbox": [1, 2, 3, 4], "score": 0}])
+
+    assert fragments[0]["confidence"] == 0
+    assert blocks[0]["confidence"] == 0
+    assert tables[0]["structureConfidence"] == 0
+    assert seals[0]["visualConfidence"] == 0
+    assert seals[0]["ocrConfidence"] == 0
+
+
+def test_ocr_engine_normalizers_do_not_invent_missing_confidence() -> None:
+    from apps.ocr_service.engines import normalize_paddle_fragments, normalize_seal_result, normalize_structure_result
+
+    fragments = normalize_paddle_fragments({"rec_texts": ["未知置信文字"], "dt_polys": []}, page_no=1, source_engine="paddle")
+    tables, blocks = normalize_structure_result(
+        [{"type": "table", "bbox": [0, 0, 10, 10], "html": "<table><tr><td>A</td></tr></table>"}],
+        "pp_structure_v3",
+    )
+    seals = normalize_seal_result([{"sealName": "未知置信印章", "bbox": [1, 2, 3, 4]}])
+
+    assert fragments[0]["confidence"] == 0
+    assert blocks[0]["confidence"] == 0
+    assert tables[0]["structureConfidence"] == 0
+    assert seals[0]["visualConfidence"] == 0
+    assert seals[0]["ocrConfidence"] == 0
+
+
 def test_ocr_routing_uses_enhanced_text_variant_for_low_quality_page() -> None:
     from apps.ocr_service.routing import route_engine_variants
 
@@ -1275,6 +1346,145 @@ def test_ocr_routing_uses_enhanced_text_variant_for_low_quality_page() -> None:
     )
 
     assert routed[0]["variantId"] == "page_1_gray_clahe"
+    assert [item["variantId"] for item in routed] == ["page_1_gray_clahe", "page_1_original"]
+
+
+def test_ocr_routing_runs_structure_original_and_best_enhanced_variant() -> None:
+    from apps.ocr_service.routing import route_engine_variants
+
+    variants = [
+        {"variantId": "page_1_original", "path": "/tmp/original.png", "purpose": "general"},
+        {"variantId": "page_1_table_line_enhanced", "path": "/tmp/table.png", "purpose": "table"},
+        {"variantId": "page_1_deskew", "path": "/tmp/deskew.png", "purpose": "text"},
+        {"variantId": "page_1_gray_clahe", "path": "/tmp/gray.png", "purpose": "text"},
+    ]
+
+    routed = route_engine_variants(
+        "pp_structure_v3",
+        variants,
+        profile={"preprocessPolicy": {}},
+        page_quality=[{"pageNo": 1, "quality": {"isLowQuality": True, "skewAngle": 1.4}}],
+        options={},
+    )
+
+    assert [item["variantId"] for item in routed] == ["page_1_original", "page_1_deskew"]
+
+
+def test_ocr_routing_keeps_opencv_grid_on_table_variant_only() -> None:
+    from apps.ocr_service.routing import route_engine_variants
+
+    variants = [
+        {"variantId": "page_1_original", "path": "/tmp/original.png", "purpose": "general"},
+        {"variantId": "page_1_table_line_enhanced", "path": "/tmp/table.png", "purpose": "table"},
+        {"variantId": "page_1_gray_clahe", "path": "/tmp/gray.png", "purpose": "text"},
+    ]
+
+    routed = route_engine_variants(
+        "opencv_table_grid_subprocess",
+        variants,
+        profile={"preprocessPolicy": {}},
+        page_quality=[{"pageNo": 1, "quality": {"hasTableCandidate": True}}],
+        options={},
+    )
+
+    assert [item["variantId"] for item in routed] == ["page_1_table_line_enhanced"]
+
+
+def test_ocr_routing_runs_formal_seal_ocr_on_original_and_mask_candidate() -> None:
+    from apps.ocr_service.routing import route_engine_variants
+
+    variants = [
+        {"variantId": "page_1_original", "pageNo": 1, "path": "/tmp/p1.png", "purpose": "general"},
+        {"variantId": "page_1_seal_color_mask", "pageNo": 1, "path": "/tmp/p1-seal.png", "purpose": "seal"},
+        {"variantId": "page_2_original", "pageNo": 2, "path": "/tmp/p2.png", "purpose": "general"},
+    ]
+
+    routed = route_engine_variants(
+        "paddlex_seal_recognition",
+        variants,
+        profile={"sealRules": {"required": True}, "preprocessPolicy": {"seal": {"maxPages": 4}}},
+        page_quality=[
+            {"pageNo": 1, "quality": {"hasSealCandidate": True}},
+            {"pageNo": 2, "quality": {"hasSealCandidate": False}},
+        ],
+        options={},
+    )
+
+    assert [item["variantId"] for item in routed] == [
+        "page_1_original",
+        "page_1_seal_color_mask",
+        "page_2_original",
+    ]
+
+
+def test_ocr_routing_required_formal_seal_ocr_falls_back_to_edge_pages() -> None:
+    from apps.ocr_service.routing import route_engine_variants
+
+    variants = [
+        {"variantId": "page_1_original", "pageNo": 1, "path": "/tmp/p1.png", "purpose": "general"},
+        {"variantId": "page_2_original", "pageNo": 2, "path": "/tmp/p2.png", "purpose": "general"},
+        {"variantId": "page_3_original", "pageNo": 3, "path": "/tmp/p3.png", "purpose": "general"},
+    ]
+
+    routed = route_engine_variants(
+        "paddlex_seal_recognition",
+        variants,
+        profile={"sealRules": {"required": True}, "preprocessPolicy": {"seal": {"maxPages": 2}}},
+        page_quality=[
+            {"pageNo": 1, "quality": {"hasSealCandidate": False}},
+            {"pageNo": 2, "quality": {"hasSealCandidate": False}},
+            {"pageNo": 3, "quality": {"hasSealCandidate": False}},
+        ],
+        options={},
+    )
+
+    assert [item["variantId"] for item in routed] == ["page_1_original", "page_3_original"]
+
+
+def test_ocr_routing_can_infer_page_number_from_variant_id() -> None:
+    from apps.ocr_service.routing import route_engine_variants
+
+    variants = [
+        {"variantId": "page_1_original", "path": "/tmp/p1.png", "purpose": "general"},
+        {"variantId": "page_2_original", "path": "/tmp/p2.png", "purpose": "general"},
+        {"variantId": "page_3_original", "path": "/tmp/p3.png", "purpose": "general"},
+    ]
+
+    routed = route_engine_variants(
+        "agentdesign_seal_ocr_subprocess",
+        variants,
+        profile={"sealRules": {"required": True}, "preprocessPolicy": {"seal": {"maxPages": 2}}},
+        page_quality=[
+            {"pageNo": 1, "quality": {"hasSealCandidate": False}},
+            {"pageNo": 2, "quality": {"hasSealCandidate": False}},
+            {"pageNo": 3, "quality": {"hasSealCandidate": False}},
+        ],
+        options={},
+    )
+
+    assert [item["variantId"] for item in routed] == ["page_1_original", "page_3_original"]
+
+
+def test_ocr_routing_visual_seal_detector_does_not_fallback_to_edge_pages() -> None:
+    from apps.ocr_service.routing import route_engine_variants
+
+    variants = [
+        {"variantId": "page_1_original", "pageNo": 1, "path": "/tmp/p1.png", "purpose": "general"},
+        {"variantId": "page_2_original", "pageNo": 2, "path": "/tmp/p2.png", "purpose": "general"},
+    ]
+
+    routed = route_engine_variants(
+        "visual_seal_candidate_subprocess",
+        variants,
+        profile={"sealRules": {"required": True}, "preprocessPolicy": {"seal": {"maxPages": 2}}},
+        page_quality=[
+            {"pageNo": 1, "quality": {"hasSealCandidate": False}},
+            {"pageNo": 2, "quality": {"hasSealCandidate": False}},
+        ],
+        options={},
+    )
+
+    assert routed == []
 
 
 def test_ocr_parse_document_merges_agentdesign_candidate_with_local_engines(monkeypatch, tmp_path) -> None:
@@ -2557,6 +2767,180 @@ def test_ocr_fusion_required_table_matches_business_schema_suffix() -> None:
     assert "REQUIRED_TABLE_MISSING" not in result["quality"]["reasons"]
 
 
+def test_ocr_fusion_normalizes_common_business_field_aliases() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+    from apps.ocr_service.profiles import profile_for
+
+    result = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [
+                {"fieldName": "证书编号", "fieldValue": "QC-001", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldName": "生产厂家", "fieldValue": "河北广浩管件有限公司", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldName": "材质", "fieldValue": "20#", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldName": "规格型号", "fieldValue": "WN100", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldName": "炉批号", "fieldValue": "B001", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldName": "执行标准", "fieldValue": "HG/T20592-2009", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldName": "检验结论", "fieldValue": "检验合格", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldName": "签发日期", "fieldValue": "2021年3月18日", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldName": "seal", "fieldValue": "质检专用章", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+            ],
+            "tables": [
+                {
+                    "tableId": "T1",
+                    "businessSchema": "material_chemical_composition_table",
+                    "businessSchemas": ["material_chemical_composition_table", "mechanical_property_table"],
+                    "structureConfidence": 0.9,
+                    "bbox": [0, 0, 10, 10],
+                    "cells": [{"text": "化学成分", "isHeader": True}, {"text": "抗拉强度", "isHeader": True}],
+                }
+            ],
+            "seals": [{"sealId": "seal_1", "sealType": "quality_seal", "sealName": "质检专用章", "ocrConfidence": 0.9, "bbox": [0, 0, 10, 10]}],
+            "diagnostics": [],
+        },
+        profile=profile_for("quality_certificate_v1"),
+    )
+
+    field_codes = {field["fieldCode"] for field in result["fields"]}
+    assert {
+        "certificate_no",
+        "manufacturer",
+        "material_grade",
+        "specification",
+        "batch_no",
+        "standard_no",
+        "inspection_conclusion",
+        "issue_date",
+        "seal",
+    }.issubset(field_codes)
+    assert result["quality"]["missingFields"] == []
+    assert "REQUIRED_FIELD_MISSING" not in result["quality"]["reasons"]
+
+
+def test_ocr_fusion_required_table_matches_header_aliases() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+    from apps.ocr_service.profiles import profile_for
+
+    result = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [
+                {"fieldCode": "company_name", "fieldValue": "广东星燃石化设计院有限公司", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "project_name", "fieldValue": "项目", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "document_title", "fieldValue": "管道特性表", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "drawing_no", "fieldValue": "QX201903S-13-Y-07", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "design_phase", "fieldValue": "施工图", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "pipe_no", "fieldValue": "PL8301", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+            ],
+            "tables": [
+                {
+                    "tableId": "model_table_1",
+                    "structureConfidence": 0.84,
+                    "bbox": [0, 0, 200, 100],
+                    "cells": [
+                        {"text": "管号", "isHeader": True},
+                        {"text": "DN", "isHeader": True},
+                        {"text": "设计压力", "isHeader": True},
+                        {"text": "介质", "isHeader": True},
+                    ],
+                }
+            ],
+            "seals": [{"sealId": "seal_1", "sealName": "广东星燃石化设计院有限公司压力管道设计许可章", "ocrConfidence": 0.9, "bbox": [0, 0, 10, 10]}],
+            "diagnostics": [],
+        },
+        profile=profile_for("piping_characteristic_list_v1"),
+    )
+
+    assert result["quality"]["missingTables"] == []
+    assert result["tables"][0]["matchedRequiredTable"] == "piping_characteristic_table"
+    assert "REQUIRED_TABLE_MISSING" not in result["quality"]["reasons"]
+
+
+def test_ocr_fusion_unmatched_table_does_not_satisfy_required_schema() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+    from apps.ocr_service.profiles import profile_for
+
+    result = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [
+                {"fieldCode": "report_no", "fieldValue": "RT-2026-001", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "project_name", "fieldValue": "项目", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "detection_method", "fieldValue": "RT", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "weld_no", "fieldValue": "W-001", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "detection_date", "fieldValue": "2026年6月30日", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "evaluation_level", "fieldValue": "II", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "conclusion", "fieldValue": "合格", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "inspection_unit", "fieldValue": "检测有限公司", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "seal", "fieldValue": "检测专用章", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+            ],
+            "tables": [
+                {
+                    "tableId": "unrelated_material_table",
+                    "structureConfidence": 0.95,
+                    "bbox": [0, 0, 200, 100],
+                    "cells": [
+                        {"text": "化学成分", "isHeader": True},
+                        {"text": "C", "isHeader": True},
+                        {"text": "Si", "isHeader": True},
+                    ],
+                }
+            ],
+            "seals": [{"sealId": "seal_1", "sealName": "检测有限公司检验检测专用章", "sealType": "inspection_testing_seal", "ocrConfidence": 0.9, "bbox": [0, 0, 10, 10]}],
+            "diagnostics": [],
+        },
+        profile=profile_for("ndt_rt_report_v1"),
+    )
+
+    assert result["quality"]["missingTables"] == ["weld_detection_result_table"]
+    assert "REQUIRED_TABLE_MISSING" in result["quality"]["reasons"]
+    assert "matchedRequiredTable" not in result["tables"][0]
+    assert result["tables"][0]["candidateForRequiredTables"] == ["weld_detection_result_table"]
+    assert "required_table_unmatched_candidate" in result["tables"][0]["qualityFlags"]
+
+
+def test_ocr_fusion_required_table_matches_row_zero_headers_without_header_flag() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+    from apps.ocr_service.profiles import profile_for
+
+    result = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [
+                {"fieldCode": "report_no", "fieldValue": "RT-2026-001", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "project_name", "fieldValue": "项目", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "detection_method", "fieldValue": "RT", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "weld_no", "fieldValue": "W-001", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "detection_date", "fieldValue": "2026年6月30日", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "evaluation_level", "fieldValue": "II", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "conclusion", "fieldValue": "合格", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "inspection_unit", "fieldValue": "检测有限公司", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "seal", "fieldValue": "检测专用章", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+            ],
+            "tables": [
+                {
+                    "tableId": "rt_table",
+                    "structureConfidence": 0.9,
+                    "bbox": [0, 0, 200, 100],
+                    "cells": [
+                        {"row": 0, "col": 0, "text": "焊口号"},
+                        {"row": 0, "col": 1, "text": "检测方法"},
+                        {"row": 0, "col": 2, "text": "评定级别"},
+                        {"row": 1, "col": 0, "text": "W-001"},
+                    ],
+                }
+            ],
+            "seals": [{"sealId": "seal_1", "sealName": "检测有限公司检验检测专用章", "sealType": "inspection_testing_seal", "ocrConfidence": 0.9, "bbox": [0, 0, 10, 10]}],
+            "diagnostics": [],
+        },
+        profile=profile_for("ndt_rt_report_v1"),
+    )
+
+    assert result["quality"]["missingTables"] == []
+    assert result["tables"][0]["matchedRequiredTable"] == "weld_detection_result_table"
+    assert "REQUIRED_TABLE_MISSING" not in result["quality"]["reasons"]
+
+
 def test_ocr_fusion_merges_duplicate_required_table_matches() -> None:
     from apps.ocr_service.fusion import fuse_parse_result
     from apps.ocr_service.profiles import profile_for
@@ -2780,6 +3164,48 @@ def test_ocr_fusion_ignores_weak_field_value_conflict_candidate() -> None:
     assert "qualityFlags" not in result["fields"][0]
 
 
+def test_ocr_fusion_prefers_valid_field_candidate_over_invalid_high_confidence() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+
+    result = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [
+                {
+                    "fieldCode": "report_no",
+                    "fieldValue": "@@@",
+                    "confidence": 0.96,
+                    "sourceEngine": "noisy_ocr",
+                    "bbox": [0, 0, 10, 10],
+                },
+                {
+                    "fieldCode": "report_no",
+                    "fieldValue": "RT-2026-001",
+                    "confidence": 0.86,
+                    "sourceEngine": "profile_regex",
+                    "bbox": [0, 0, 10, 10],
+                },
+            ],
+            "tables": [],
+            "seals": [],
+            "diagnostics": [],
+        },
+        profile={
+            "profileId": "field_candidate_profile_v1",
+            "documentType": "ndt_report",
+            "requiredFields": ["report_no"],
+            "requiredTables": [],
+            "sealRules": {"required": False},
+            "qualityRules": {"minFieldConfidence": 0.75, "criticalConflictFields": []},
+        },
+    )
+
+    assert result["fields"][0]["fieldValue"] == "RT-2026-001"
+    assert result["fields"][0]["sourceEngine"] == "profile_regex"
+    assert result["quality"]["invalidFields"] == []
+    assert "FIELD_FORMAT_INVALID" not in result["quality"]["reasons"]
+
+
 def test_ocr_fusion_low_confidence_required_field_requires_human_review() -> None:
     from apps.ocr_service.fusion import fuse_parse_result
     from apps.ocr_service.profiles import profile_for
@@ -2850,6 +3276,99 @@ def test_ocr_fusion_low_confidence_optional_field_does_not_block_auto_usable() -
     assert result["quality"]["status"] == "auto_usable"
     assert "FIELD_LOW_CONFIDENCE" not in result["quality"]["reasons"]
     assert result["quality"]["lowConfidenceFields"] == []
+    assert "qualityFlags" not in result["fields"][0]
+
+
+def test_ocr_fusion_invalid_required_field_format_requires_human_review() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+
+    result = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [
+                {"fieldCode": "report_no", "fieldName": "报告编号", "fieldValue": "@@@", "confidence": 0.95, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "issue_date", "fieldName": "签发日期", "fieldValue": "2026年13月40日", "confidence": 0.95, "bbox": [0, 0, 10, 10]},
+            ],
+            "tables": [],
+            "seals": [],
+            "diagnostics": [],
+        },
+        profile={
+            "profileId": "field_format_profile_v1",
+            "documentType": "quality_certificate",
+            "requiredFields": ["report_no", "issue_date"],
+            "requiredTables": [],
+            "sealRules": {"required": False},
+            "qualityRules": {"minFieldConfidence": 0.75, "criticalConflictFields": []},
+        },
+    )
+
+    assert result["quality"]["status"] == "needs_human_review"
+    assert "FIELD_FORMAT_INVALID" in result["quality"]["reasons"]
+    assert {item["fieldCode"] for item in result["quality"]["invalidFields"]} == {"report_no", "issue_date"}
+    assert {item["reason"] for item in result["quality"]["invalidFields"]} == {
+        "identifier_has_invalid_characters",
+        "date_out_of_range",
+    }
+    assert all("field_format_invalid" in field["qualityFlags"] for field in result["fields"])
+
+
+def test_ocr_fusion_valid_business_field_formats_do_not_block_auto_usable() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+
+    result = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [
+                {"fieldCode": "report_no", "fieldValue": "RT-2026-001", "confidence": 0.95, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "issue_date", "fieldValue": "2026年6月30日", "confidence": 0.95, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "pipe_no", "fieldValue": "PL8301,VT8302", "confidence": 0.95, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "design_pressure", "fieldValue": "0.55MPa", "confidence": 0.95, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "detection_method", "fieldValue": "RT", "confidence": 0.95, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "conclusion", "fieldValue": "合格", "confidence": 0.95, "bbox": [0, 0, 10, 10]},
+            ],
+            "tables": [],
+            "seals": [],
+            "diagnostics": [],
+        },
+        profile={
+            "profileId": "field_format_profile_v1",
+            "documentType": "engineering_table_photo",
+            "requiredFields": ["report_no", "issue_date", "pipe_no", "design_pressure", "detection_method", "conclusion"],
+            "requiredTables": [],
+            "sealRules": {"required": False},
+            "qualityRules": {"minFieldConfidence": 0.75, "criticalConflictFields": []},
+        },
+    )
+
+    assert result["quality"]["status"] == "auto_usable"
+    assert result["quality"]["invalidFields"] == []
+    assert "FIELD_FORMAT_INVALID" not in result["quality"]["reasons"]
+
+
+def test_ocr_fusion_invalid_optional_field_format_does_not_block_auto_usable() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+
+    result = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [{"fieldCode": "report_no", "fieldValue": "@@@", "confidence": 0.95, "bbox": [0, 0, 10, 10]}],
+            "tables": [],
+            "seals": [],
+            "diagnostics": [],
+        },
+        profile={
+            "profileId": "optional_field_format_profile_v1",
+            "documentType": "generic_document",
+            "requiredFields": [],
+            "requiredTables": [],
+            "sealRules": {"required": False},
+            "qualityRules": {"minFieldConfidence": 0.75, "criticalConflictFields": []},
+        },
+    )
+
+    assert result["quality"]["status"] == "auto_usable"
+    assert result["quality"]["invalidFields"] == []
     assert "qualityFlags" not in result["fields"][0]
 
 

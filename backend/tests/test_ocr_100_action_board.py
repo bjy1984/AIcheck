@@ -80,6 +80,8 @@ def test_action_board_combines_collection_label_and_candidate_actions(tmp_path: 
     assert board["ok"] is False
     assert board["summary"]["collectionMissingCases"] == 2
     assert board["summary"]["newLocalCandidates"] == 1
+    assert board["summary"]["scenarioReviewBacklog"]["ndt_rt_profile"]["reviewBacklogCases"] == 1
+    assert board["summary"]["scenarioReviewBacklog"]["ndt_rt_profile"]["missingReadyCases"] == 10
     assert {"collect_samples", "label_existing", "triage_candidates"} <= lanes
     assert any(action["id"] == "collect-ndt_rt_profile" for action in board["actions"])
     collect_action = next(action for action in board["actions"] if action["id"] == "collect-ndt_rt_profile")
@@ -93,6 +95,7 @@ def test_action_board_combines_collection_label_and_candidate_actions(tmp_path: 
     markdown = action_board_markdown(board)
     csv_text = action_board_csv(board)
     assert "OCR 100 Action Board" in markdown
+    assert "## Scenario Gaps" in markdown
     assert "ocr_eval/reports/ocr_100_sample_intake_after_batch6_dedupe/samples/ndt_rt_profile" in markdown
     assert "dropDirectory" in csv_text
     assert "checklist" in csv_text
@@ -110,6 +113,7 @@ def test_action_board_combines_collection_label_and_candidate_actions(tmp_path: 
     assert "case-1" in label_csv
     assert "Human Label Existing OCR Samples" in (tmp_path / "handoff" / "label_existing.md").read_text(encoding="utf-8")
     assert "Execution Order" in readme
+    assert "Scenario Gaps" in readme
 
 
 def test_action_board_adds_release_eval_action_when_labels_are_ready(tmp_path: Path) -> None:

@@ -48,6 +48,7 @@ import {
   getFdeEvaluationSetsApi,
   getFdeMaskingPoliciesApi,
   getFdeOcrAnnotationTaskApi,
+  getFdeOcr100HandoffArtifactApi,
   getFdeOcrRunApi,
   getFdeOcrQualityApi,
   getFdeProjectAuditWorkspaceApi,
@@ -112,6 +113,20 @@ const loading = ref(false)
 const actionLoading = ref(false)
 const error = ref('')
 const activeFdeTab = ref('dashboard')
+const fdeChartZoom = ref<Record<FdeChartKey, number>>({
+  ocrHeatmap: 1,
+  vectorSankey: 1,
+  pageIndexTree: 1,
+  reviewTimeline: 1,
+  langGraph: 1
+})
+const fdeChartPan = ref<Record<FdeChartKey, { x: number; y: number }>>({
+  ocrHeatmap: { x: 0, y: 0 },
+  vectorSankey: { x: 0, y: 0 },
+  pageIndexTree: { x: 0, y: 0 },
+  reviewTimeline: { x: 0, y: 0 },
+  langGraph: { x: 0, y: 0 }
+})
 const dashboard = ref<FdeDashboardPayload | null>(null)
 const aiRuns = ref<FdeAiRun[]>([])
 const selectedRun = ref<FdeAiRunDetailPayload | null>(null)
@@ -130,6 +145,7 @@ const ocrQuality = ref<FdeOcrQualityPayload | null>(null)
 const ocrRuns = ref<Array<Record<string, unknown>>>([])
 const selectedOcrRun = ref<FdeOcrRunDetailPayload | null>(null)
 const ocr100ActionBoardRefreshing = ref(false)
+const ocr100HandoffOpening = ref('')
 const ocrAuditDrawerVisible = ref(false)
 const ocrAnnotation = ref<FdeOcrAnnotationPayload | null>(null)
 const labelStudioExportSummary = ref<Record<string, unknown> | null>(null)
@@ -225,6 +241,8 @@ type FdePageAction = {
   plain?: boolean
   disabled?: boolean
 }
+
+type FdeChartKey = 'ocrHeatmap' | 'vectorSankey' | 'pageIndexTree' | 'reviewTimeline' | 'langGraph'
 
 type FdeShellMenuItemPayload = {
   projectId?: string
@@ -434,6 +452,268 @@ const currentFdeRouteKey = computed(() =>
 )
 
 const isFdeRoute = (...keys: string[]) => keys.includes(currentFdeRouteKey.value)
+
+const chartBaseSizes: Record<FdeChartKey, { width: number; height: number }> = {
+  ocrHeatmap: { width: 1100, height: 300 },
+  vectorSankey: { width: 1280, height: 320 },
+  pageIndexTree: { width: 1500, height: 360 },
+  reviewTimeline: { width: 1160, height: 300 },
+  langGraph: { width: 1080, height: 430 }
+}
+const chartZoom = (key: FdeChartKey) => fdeChartZoom.value[key] || 1
+const chartPan = (key: FdeChartKey) => fdeChartPan.value[key] || { x: 0, y: 0 }
+const chartZoomPercent = (key: FdeChartKey) => `${Math.round(chartZoom(key) * 100)}%`
+const chartBaseWidth = (base: number) => `${base}px`
+const chartBaseHeight = (base: number) => `${base}px`
+const chartFrameStyle = (_key: FdeChartKey, width: number, height: number) => ({
+  width: `${width}px`,
+  height: `${height}px`
+})
+const chartContentStyle = (key: FdeChartKey, width: number, height: number) => ({
+  width: `${width}px`,
+  height: `${height}px`,
+  transform: `translate3d(${chartPan(key).x}px, ${chartPan(key).y}px, 0) scale(${chartZoom(key)})`,
+  transformOrigin: '0 0'
+})
+const clampChartZoom = (value: number) => Math.min(1.6, Math.max(1, Number(value.toFixed(2))))
+const chartFrameIn = (shell?: HTMLElement | null) =>
+  shell?.querySelector<HTMLElement>('.chart-zoom-frame') || null
+const clampChartPan = (
+  key: FdeChartKey,
+  x: number,
+  y: number,
+  shell?: HTMLElement | null,
+  zoom = chartZoom(key)
+) => {
+  const frame = chartFrameIn(shell)
+  const base = chartBaseSizes[key]
+  const width = frame?.offsetWidth || base.width
+  const height = frame?.offsetHeight || base.height
+  const viewportWidth = shell?.clientWidth || width
+  const viewportHeight = shell?.clientHeight || height
+  const minX = Math.min(0, viewportWidth - width * zoom)
+  const minY = Math.min(0, viewportHeight - height * zoom)
+  return {
+    x: Math.round(Math.min(0, Math.max(minX, x))),
+    y: Math.round(Math.min(0, Math.max(minY, y)))
+  }
+}
+const applyChartTransform = (
+  key: FdeChartKey,
+  value: number,
+  pan = chartPan(key),
+  shell?: HTMLElement | null
+) => {
+  const zoom = clampChartZoom(value)
+  const clampedPan = clampChartPan(key, pan.x, pan.y, shell, zoom)
+  fdeChartZoom.value = {
+    ...fdeChartZoom.value,
+    [key]: zoom
+  }
+  fdeChartPan.value = {
+    ...fdeChartPan.value,
+    [key]: zoom === 1 && !shell ? { x: 0, y: 0 } : clampedPan
+  }
+}
+const setChartZoom = (key: FdeChartKey, value: number, shell?: HTMLElement | null) =>
+  applyChartTransform(key, value, chartPan(key), shell)
+const setChartPan = (key: FdeChartKey, pan: { x: number; y: number }, shell?: HTMLElement | null) =>
+  applyChartTransform(key, chartZoom(key), pan, shell)
+const zoomInChart = (key: FdeChartKey) => setChartZoom(key, chartZoom(key) + 0.06)
+const zoomOutChart = (key: FdeChartKey) => setChartZoom(key, chartZoom(key) - 0.06)
+const resetChartZoom = (key: FdeChartKey) => applyChartTransform(key, 1, { x: 0, y: 0 })
+const chartGesturePoints = new Map<FdeChartKey, Map<number, { x: number; y: number }>>()
+let chartDragState: {
+  key: FdeChartKey
+  pointerId: number
+  shell: HTMLElement
+  startX: number
+  startY: number
+  startPanX: number
+  startPanY: number
+} | null = null
+let chartPinchState: {
+  key: FdeChartKey
+  shell: HTMLElement
+  startDistance: number
+  startZoom: number
+} | null = null
+let chartNativeGestureState: {
+  key: FdeChartKey
+  shell: HTMLElement
+  startZoom: number
+} | null = null
+type NativeChartGestureEvent = Event & {
+  scale?: number
+  clientX?: number
+  clientY?: number
+}
+
+const getChartShell = (event: Event) => event.currentTarget as HTMLElement
+const chartPointsFor = (key: FdeChartKey) => {
+  if (!chartGesturePoints.has(key)) {
+    chartGesturePoints.set(key, new Map())
+  }
+  return chartGesturePoints.get(key)!
+}
+const distanceBetweenChartPoints = (points: Array<{ x: number; y: number }>) => {
+  if (points.length < 2) return 0
+  return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y)
+}
+const midpointBetweenChartPoints = (points: Array<{ x: number; y: number }>) => ({
+  x: (points[0].x + points[1].x) / 2,
+  y: (points[0].y + points[1].y) / 2
+})
+const zoomChartAt = (
+  key: FdeChartKey,
+  nextZoom: number,
+  shell: HTMLElement,
+  clientX: number,
+  clientY: number
+) => {
+  const currentZoom = chartZoom(key)
+  const clampedZoom = clampChartZoom(nextZoom)
+  if (clampedZoom === currentZoom) return
+  const frame = chartFrameIn(shell)
+  const rect = frame?.getBoundingClientRect() || shell.getBoundingClientRect()
+  const anchorX = clientX - rect.left
+  const anchorY = clientY - rect.top
+  const currentPan = chartPan(key)
+  const contentX = (anchorX - currentPan.x) / currentZoom
+  const contentY = (anchorY - currentPan.y) / currentZoom
+  applyChartTransform(
+    key,
+    clampedZoom,
+    {
+      x: anchorX - contentX * clampedZoom,
+      y: anchorY - contentY * clampedZoom
+    },
+    shell
+  )
+}
+const handleChartWheel = (event: WheelEvent, key: FdeChartKey) => {
+  if (!event.ctrlKey && !event.metaKey) return
+  event.preventDefault()
+  event.stopPropagation()
+  const shell = getChartShell(event)
+  const delta = event.deltaY < 0 ? 0.05 : -0.05
+  zoomChartAt(key, chartZoom(key) + delta, shell, event.clientX, event.clientY)
+}
+const startChartGesture = (event: PointerEvent, key: FdeChartKey) => {
+  if (event.pointerType === 'mouse' && event.button !== 0) return
+  event.preventDefault()
+  event.stopPropagation()
+  const shell = getChartShell(event)
+  const points = chartPointsFor(key)
+  points.set(event.pointerId, { x: event.clientX, y: event.clientY })
+  shell.setPointerCapture?.(event.pointerId)
+  shell.classList.add('is-panning')
+  if (points.size >= 2) {
+    const pointList = [...points.values()]
+    chartPinchState = {
+      key,
+      shell,
+      startDistance: distanceBetweenChartPoints(pointList),
+      startZoom: chartZoom(key)
+    }
+    chartDragState = null
+  } else {
+    chartDragState = {
+      key,
+      pointerId: event.pointerId,
+      shell,
+      startX: event.clientX,
+      startY: event.clientY,
+      startPanX: chartPan(key).x,
+      startPanY: chartPan(key).y
+    }
+    chartPinchState = null
+  }
+}
+const moveChartGesture = (event: PointerEvent, key: FdeChartKey) => {
+  const points = chartPointsFor(key)
+  if (!points.has(event.pointerId)) return
+  event.stopPropagation()
+  points.set(event.pointerId, { x: event.clientX, y: event.clientY })
+  if (points.size >= 2 && chartPinchState?.key === key) {
+    event.preventDefault()
+    const pointList = [...points.values()]
+    const distance = distanceBetweenChartPoints(pointList)
+    if (!chartPinchState.startDistance || !distance) return
+    const center = midpointBetweenChartPoints(pointList)
+    zoomChartAt(
+      key,
+      chartPinchState.startZoom * (1 + (distance / chartPinchState.startDistance - 1) * 0.35),
+      chartPinchState.shell,
+      center.x,
+      center.y
+    )
+    return
+  }
+  if (chartDragState?.key === key && chartDragState.pointerId === event.pointerId) {
+    event.preventDefault()
+    setChartPan(
+      key,
+      {
+        x: chartDragState.startPanX + (event.clientX - chartDragState.startX),
+        y: chartDragState.startPanY + (event.clientY - chartDragState.startY)
+      },
+      chartDragState.shell
+    )
+  }
+}
+const endChartGesture = (event: PointerEvent, key: FdeChartKey) => {
+  const points = chartPointsFor(key)
+  points.delete(event.pointerId)
+  const shell = getChartShell(event)
+  if (shell.hasPointerCapture?.(event.pointerId)) {
+    shell.releasePointerCapture?.(event.pointerId)
+  }
+  if (chartDragState?.key === key && chartDragState.pointerId === event.pointerId) {
+    chartDragState.shell.classList.remove('is-panning')
+    chartDragState = null
+  }
+  if (points.size < 2 && chartPinchState?.key === key) {
+    chartPinchState.shell.classList.remove('is-panning')
+    chartPinchState = null
+  }
+  if (!points.size) {
+    shell.classList.remove('is-panning')
+  }
+}
+const startNativeChartGesture = (event: NativeChartGestureEvent, key: FdeChartKey) => {
+  event.preventDefault()
+  event.stopPropagation()
+  const shell = getChartShell(event)
+  shell.classList.add('is-panning')
+  chartNativeGestureState = {
+    key,
+    shell,
+    startZoom: chartZoom(key)
+  }
+}
+const changeNativeChartGesture = (event: NativeChartGestureEvent, key: FdeChartKey) => {
+  if (chartNativeGestureState?.key !== key) return
+  event.preventDefault()
+  event.stopPropagation()
+  const shell = chartNativeGestureState.shell
+  const rect = shell.getBoundingClientRect()
+  const scale = Number(event.scale || 1)
+  zoomChartAt(
+    key,
+    chartNativeGestureState.startZoom * (1 + (scale - 1) * 0.35),
+    shell,
+    Number(event.clientX || rect.left + rect.width / 2),
+    Number(event.clientY || rect.top + rect.height / 2)
+  )
+}
+const endNativeChartGesture = (event: NativeChartGestureEvent, key: FdeChartKey) => {
+  if (chartNativeGestureState?.key !== key) return
+  event.preventDefault()
+  event.stopPropagation()
+  chartNativeGestureState.shell.classList.remove('is-panning')
+  chartNativeGestureState = null
+}
 
 const firstQueryValue = (value: unknown) => {
   if (Array.isArray(value)) return value[0] ? String(value[0]) : ''
@@ -789,6 +1069,12 @@ const scorePercent = (value?: number | string) => {
   return `${Math.round(numeric * 1000) / 10}%`
 }
 
+const score100 = (value: unknown, fallback = 0) => {
+  const numeric = Number(value ?? fallback)
+  if (Number.isNaN(numeric)) return fallback
+  return Math.max(0, Math.min(100, Math.round(numeric <= 1 ? numeric * 100 : numeric)))
+}
+
 const shortText = (value: unknown, fallback = '-') => {
   if (value === undefined || value === null || value === '') return fallback
   if (Array.isArray(value)) {
@@ -879,7 +1165,11 @@ const techLabelMap: Record<string, string> = {
   pageindex_tree_search: 'PageIndex 树检索',
   vector_search: '向量检索',
   review_basis_search: '审查依据检索',
-  long_document_cross_section: '长文档跨章节检索'
+  long_document_cross_section: '长文档跨章节检索',
+  field_extraction: '字段抽取',
+  table_structure: '表格结构',
+  seal_recognition: '印章识别',
+  pageindex_evidence: 'PageIndex 证据'
 }
 
 const friendlyTechLabel = (value: unknown, fallback = '-') => {
@@ -1146,6 +1436,103 @@ const ocrScenarioRows = computed(() =>
     }
   })
 )
+const ocrQualityHeatmapDimensions = ['平均分', '通过率', '阈值门禁', '发现项控制']
+const ocrQualityHeatmapRows = computed(() => {
+  const scenarioRows = ocrScenarioRows.value.length
+    ? ocrScenarioRows.value
+    : [
+        {
+          scenario: 'overall',
+          ok: latestOcrEvalOk.value,
+          total: latestOcrEvalCaseTotal.value || ocrQuality.value?.fileLevel?.total || 0,
+          passed:
+            latestOcrEvalSummary.value.passed ||
+            ocrQuality.value?.fileLevel?.success ||
+            ocrQuality.value?.jobLevel?.success ||
+            0,
+          failed:
+            latestOcrEvalSummary.value.failed ||
+            ocrQuality.value?.fileLevel?.failed ||
+            ocrQuality.value?.jobLevel?.failed ||
+            0,
+          averageScore:
+            latestOcrEvalSummary.value.averageScore ||
+            Number(toRecord(toRecord(ocrQuality.value).overview).averageConfidence || 0) ||
+            0,
+          thresholdFailureCount: ocrThresholdFailureRows.value.length
+        }
+      ]
+  return scenarioRows.map((row) => {
+    const total = Number(row.total || 0)
+    const passed = Number(row.passed || 0)
+    const failed = Number(row.failed || 0)
+    const thresholdFailures = Number(row.thresholdFailureCount || 0)
+    const findingCount = ocrFindingCountRows.value
+      .filter((item) => item.scope === row.scenario || item.scope === 'overall')
+      .reduce((sum, item) => sum + Number(item.count || 0), 0)
+    return {
+      scenario: friendlyTechLabel(row.scenario),
+      metrics: [
+        score100(row.averageScore),
+        total ? score100(passed / total) : row.ok ? 100 : 0,
+        Math.max(0, 100 - thresholdFailures * 25),
+        Math.max(0, 100 - (failed + findingCount) * 12)
+      ],
+      raw: row
+    }
+  })
+})
+const ocrQualityHeatmapOption = computed<EChartsOption>(() => {
+  const rows = ocrQualityHeatmapRows.value.slice(0, 8)
+  const yLabels = rows.map((row) => row.scenario)
+  const data = rows.flatMap((row, rowIndex) =>
+    row.metrics.map((value, metricIndex) => [metricIndex, rowIndex, value])
+  )
+  return {
+    backgroundColor: 'transparent',
+    grid: { left: 92, right: 28, top: 18, bottom: 36 },
+    tooltip: {
+      trigger: 'item',
+      confine: true,
+      formatter: (params: any) => {
+        const [metricIndex, rowIndex, value] = params.value || []
+        return [
+          `<strong>${yLabels[rowIndex] || '-'}</strong>`,
+          `${ocrQualityHeatmapDimensions[metricIndex] || '-'}：${value}/100`
+        ].join('<br/>')
+      }
+    },
+    xAxis: {
+      type: 'category',
+      data: ocrQualityHeatmapDimensions,
+      axisTick: { show: false },
+      axisLine: { lineStyle: { color: '#dbe8f7' } },
+      axisLabel: { color: '#475569', fontWeight: 800 }
+    },
+    yAxis: {
+      type: 'category',
+      data: yLabels,
+      axisTick: { show: false },
+      axisLine: { show: false },
+      axisLabel: { color: '#475569', fontWeight: 800, width: 76, overflow: 'truncate' }
+    },
+    visualMap: {
+      min: 0,
+      max: 100,
+      show: false,
+      inRange: { color: ['#fee2e2', '#fed7aa', '#bfdbfe', '#bbf7d0'] }
+    },
+    series: [
+      {
+        type: 'heatmap',
+        data,
+        label: { show: true, color: '#172033', fontSize: 11, fontWeight: 900 },
+        itemStyle: { borderColor: '#ffffff', borderWidth: 3, borderRadius: 6 },
+        emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgb(15 23 42 / 18%)' } }
+      }
+    ]
+  } as EChartsOption
+})
 const ocrThresholdFailureRows = computed(() => {
   const rows: Array<Record<string, unknown>> = []
   for (const item of latestOcrEvalCompact.value?.thresholdFailures ||
@@ -1643,8 +2030,8 @@ const ocr100ActionCards = computed(() => [
       ocr100ActionSummary.value?.newLocalCandidates || 0 ? ('blue' as const) : ('green' as const)
   }
 ])
-const ocrTopBlockerRows = computed(() => {
-  const rows: Array<Record<string, unknown>> = []
+const ocrTopBlockerRows = computed<OcrTopBlockerRow[]>(() => {
+  const rows: Array<Omit<OcrTopBlockerRow, 'id'>> = []
   for (const item of ocrRuntimeDoctor.value?.topIssues || []) {
     rows.push({
       source: '运行时',
@@ -1694,6 +2081,12 @@ type Ocr100ActionBoardRow = {
   humanActionsText: string
   doneWhen: string
   canOpenAnnotation: boolean
+}
+type OcrTopBlockerRow = {
+  id: number
+  source: string
+  blocker: string
+  action: string
 }
 const ocr100ActionBoardRows = computed<Ocr100ActionBoardRow[]>(() =>
   ocr100ActionRows.value.map((row) => {
@@ -4319,6 +4712,38 @@ const hasLangGraphFlowNodes = computed(() =>
   langGraphFlowGroups.value.some((group) => group.nodeCount > 0)
 )
 
+const reviewTimelineChartRows = computed(() => {
+  const timelineRows = reviewGraphTimeline.value.length
+    ? reviewGraphTimeline.value.map((row, index) => {
+        const item = toRecord(row)
+        const stepName = String(item.stepName || item.nodeKey || item.name || `step-${index + 1}`)
+        const duration = Number(item.durationMs || item.latencyMs || 0)
+        return {
+          id: stepName,
+          label: friendlyTechLabel(stepName),
+          status: item.status || 'unknown',
+          statusLabel: friendlyStatus(item.status, '未知'),
+          queue: friendlyTaskQueueLabel(item.taskQueue || item.queue || '-'),
+          startedAt: shortText(item.startedAt, '-'),
+          durationMs: duration,
+          displayDuration: duration || 80
+        }
+      })
+    : langGraphFlowGroups.value.flatMap((group) =>
+        group.nodes.map((node) => ({
+          id: node.id,
+          label: node.label,
+          status: node.status,
+          statusLabel: node.statusLabel,
+          queue: node.queue,
+          startedAt: '-',
+          durationMs: node.durationMs,
+          displayDuration: node.durationMs || 80
+        }))
+      )
+  return timelineRows.slice(0, 10)
+})
+
 const langGraphToneColor = (tone: FdeTone) => {
   if (tone === 'green') return '#16a34a'
   if (tone === 'orange') return '#f59e0b'
@@ -4326,11 +4751,73 @@ const langGraphToneColor = (tone: FdeTone) => {
   return '#2563eb'
 }
 
+const reviewTimelineEchartOption = computed<EChartsOption>(() => {
+  const rows = reviewTimelineChartRows.value
+  return {
+    backgroundColor: 'transparent',
+    grid: { left: 108, right: 36, top: 16, bottom: 34 },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      confine: true,
+      formatter: (params: any) => {
+        const item = Array.isArray(params) ? params[0] : params
+        const row = rows[item?.dataIndex || 0]
+        return [
+          `<strong>${row?.label || '-'}</strong>`,
+          `状态：${row?.statusLabel || '-'}`,
+          `队列：${row?.queue || '-'}`,
+          `开始：${row?.startedAt || '-'}`,
+          `耗时：${row?.durationMs ? `${row.durationMs}ms` : '等待/未返回'}`
+        ].join('<br/>')
+      }
+    },
+    xAxis: {
+      type: 'value',
+      name: '耗时 ms',
+      nameTextStyle: { color: '#64748b', fontWeight: 800 },
+      axisLine: { show: false },
+      axisTick: { show: false },
+      splitLine: { lineStyle: { color: '#e6edf7' } },
+      axisLabel: { color: '#64748b' }
+    },
+    yAxis: {
+      type: 'category',
+      data: rows.map((row) => row.label),
+      inverse: true,
+      axisTick: { show: false },
+      axisLine: { show: false },
+      axisLabel: { color: '#475569', fontWeight: 800, width: 96, overflow: 'truncate' }
+    },
+    series: [
+      {
+        type: 'bar',
+        data: rows.map((row) => ({
+          value: row.displayDuration,
+          itemStyle: {
+            color: langGraphToneColor(langGraphStatusTone(row.status))
+          },
+          label: {
+            show: true,
+            position: 'right',
+            color: '#334155',
+            fontSize: 11,
+            fontWeight: 800,
+            formatter: row.durationMs ? `${row.durationMs}ms` : row.statusLabel
+          }
+        })),
+        barWidth: 14,
+        itemStyle: { borderRadius: [0, 7, 7, 0] }
+      }
+    ]
+  } as EChartsOption
+})
+
 const langGraphEchartOption = computed<EChartsOption>(() => {
-  const stageYGap = 66
-  const nodeXGap = 174
-  const centerX = 430
-  const baseY = 44
+  const stageYGap = 58
+  const nodeXGap = 154
+  const centerX = 250
+  const baseY = 38
   const chartNodes = langGraphFlowGroups.value.flatMap((group, groupIndex) => {
     const nodes = group.nodes.length
       ? group.nodes
@@ -4356,7 +4843,7 @@ const langGraphEchartOption = computed<EChartsOption>(() => {
       value: node.label,
       x: centerX + nodeIndex * nodeXGap - offset,
       y: baseY + groupIndex * stageYGap,
-      symbolSize: node.id.includes('-empty') ? [124, 36] : [152, 42],
+      symbolSize: node.id.includes('-empty') ? [116, 34] : [142, 38],
       category: group.label,
       itemStyle: {
         color: node.id.includes('-empty') ? '#ffffff' : langGraphToneColor(node.tone),
@@ -4372,7 +4859,7 @@ const langGraphEchartOption = computed<EChartsOption>(() => {
         fontSize: 12,
         fontWeight: 800,
         lineHeight: 16,
-        width: 118,
+        width: 110,
         overflow: 'truncate' as const
       },
       meta: {
@@ -4399,12 +4886,17 @@ const langGraphEchartOption = computed<EChartsOption>(() => {
   }))
   const stageLabels = langGraphFlowGroups.value.map((group, index) => ({
     type: 'text',
-    left: 18,
-    top: baseY + index * stageYGap - 10,
+    left: 10,
+    top: baseY + index * stageYGap - 9,
     style: {
       text: `${String(group.index).padStart(2, '0')} ${group.label}`,
       fill: langGraphToneColor(group.tone as FdeTone),
-      font: '700 12px sans-serif'
+      font: '800 12px sans-serif',
+      backgroundColor: '#ffffff',
+      borderColor: '#dbe8f7',
+      borderWidth: 1,
+      borderRadius: 6,
+      padding: [4, 7]
     },
     silent: true
   }))
@@ -5723,6 +6215,36 @@ const refreshOcr100ActionBoard = async () => {
   }
 }
 
+const openOcr100HandoffFile = async (file: { key: string; exists: boolean; label: string }) => {
+  if (!file.exists || !file.key || ocr100HandoffOpening.value) return
+  const previewWindow = window.open('about:blank', '_blank')
+  ocr100HandoffOpening.value = file.key
+  try {
+    const res = await getFdeOcr100HandoffArtifactApi(file.key)
+    const blob = res.data instanceof Blob ? res.data : new Blob([res.data])
+    const url = URL.createObjectURL(blob)
+    if (previewWindow) {
+      previewWindow.opener = null
+      previewWindow.document.title = file.label || 'OCR 100 handoff'
+      previewWindow.location.href = url
+    } else {
+      const link = document.createElement('a')
+      link.href = url
+      link.target = '_blank'
+      link.rel = 'noopener noreferrer'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    }
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  } catch (err) {
+    previewWindow?.close()
+    void err
+  } finally {
+    ocr100HandoffOpening.value = ''
+  }
+}
+
 const validAnnotationBox = () => {
   const form = annotationBoxForm.value
   return Number(form.x2) > Number(form.x1) && Number(form.y2) > Number(form.y1)
@@ -6076,6 +6598,237 @@ onMounted(loadData)
         class="mb-12px"
       />
 
+      <div v-if="isFdeRoute('ocr-quality')" class="ocr-command-center">
+        <section class="ocr-goal-panel" aria-label="OCR 页面目标">
+          <div class="ocr-goal-copy">
+            <span>页面目标</span>
+            <strong>把低置信 OCR 输出变成可审计、可评估、可回归的标注样本</strong>
+            <small>
+              先看阻断和热力图，再处理待标注样本，最后用 OCR 评测确认是否达到发布门禁。
+            </small>
+          </div>
+          <div class="ocr-goal-actions">
+            <ElButton
+              type="primary"
+              plain
+              :loading="actionLoading"
+              @click="openFirstOcrAnnotationTask"
+            >
+              打开待标注样本
+            </ElButton>
+            <ElButton plain :disabled="!firstLowConfidenceField" @click="correctFirstOcrField">
+              字段纠错
+            </ElButton>
+            <ElButton plain :loading="actionLoading" @click="startOcrEvaluation">发起评测</ElButton>
+          </div>
+        </section>
+
+        <div class="ocr-step-grid" aria-label="OCR 治理流程">
+          <article class="ocr-step-card ocr-step-card--red">
+            <span>01</span>
+            <strong>看阻断</strong>
+            <small>{{ firstOcrBlockingSummary }}</small>
+          </article>
+          <article class="ocr-step-card ocr-step-card--orange">
+            <span>02</span>
+            <strong>补标注</strong>
+            <small
+              >待标注 {{ ocrPendingAnnotationCount }}，样本
+              {{ ocrAnnotationSummary?.tasks || 0 }}</small
+            >
+          </article>
+          <article class="ocr-step-card ocr-step-card--blue">
+            <span>03</span>
+            <strong>查运行时</strong>
+            <small>
+              {{ friendlyStatus(ocrRuntimeDoctor?.status, '未知') }} ·
+              {{ ocrRuntimeDoctor?.summary?.fail || 0 }} fail /
+              {{ ocrRuntimeDoctor?.summary?.warn || 0 }} warn
+            </small>
+          </article>
+          <article class="ocr-step-card ocr-step-card--green">
+            <span>04</span>
+            <strong>过门禁</strong>
+            <small>
+              {{
+                ocr100Scorecard
+                  ? `${ocr100Scorecard.score}/${ocr100Scorecard.targetScore}`
+                  : '待评估'
+              }}
+              · 可评估 {{ ocrReadyForEvalCount }}
+            </small>
+          </article>
+        </div>
+
+        <div class="workbench-summary-grid ocr-command-kpis">
+          <div
+            v-for="card in ocrPriorityCards"
+            :key="card.label"
+            :class="`workbench-summary-card workbench-summary-card--${card.tone}`"
+          >
+            <span>{{ card.label }}</span>
+            <strong>{{ card.value }}</strong>
+            <small>{{ card.hint }}</small>
+          </div>
+        </div>
+
+        <ElRow :gutter="16">
+          <ElCol :xl="15" :lg="15" :md="24" :sm="24" :xs="24">
+            <ElCard shadow="never" class="panel chart-panel">
+              <template #header>
+                <div class="panel-header">
+                  <span>质量分布</span>
+                  <ElSpace wrap>
+                    <ElTag effect="plain">OCR 场景质量热力图</ElTag>
+                    <span class="chart-zoom-value">{{ chartZoomPercent('ocrHeatmap') }}</span>
+                    <ElButton
+                      size="small"
+                      text
+                      aria-label="缩小 OCR 场景质量热力图"
+                      @click="zoomOutChart('ocrHeatmap')"
+                      >缩小</ElButton
+                    >
+                    <ElButton
+                      size="small"
+                      text
+                      aria-label="放大 OCR 场景质量热力图"
+                      @click="zoomInChart('ocrHeatmap')"
+                      >放大</ElButton
+                    >
+                    <ElButton
+                      size="small"
+                      text
+                      aria-label="重置 OCR 场景质量热力图"
+                      @click="resetChartZoom('ocrHeatmap')"
+                      >重置</ElButton
+                    >
+                  </ElSpace>
+                </div>
+              </template>
+              <div
+                class="knowledge-chart-shell knowledge-chart-shell--heatmap"
+                @wheel.capture="handleChartWheel($event, 'ocrHeatmap')"
+                @gesturestart.capture="startNativeChartGesture($event, 'ocrHeatmap')"
+                @gesturechange.capture="changeNativeChartGesture($event, 'ocrHeatmap')"
+                @gestureend.capture="endNativeChartGesture($event, 'ocrHeatmap')"
+                @pointerdown.capture="startChartGesture($event, 'ocrHeatmap')"
+                @pointermove.capture="moveChartGesture($event, 'ocrHeatmap')"
+                @pointerup.capture="endChartGesture($event, 'ocrHeatmap')"
+                @pointercancel.capture="endChartGesture($event, 'ocrHeatmap')"
+              >
+                <div class="chart-zoom-frame" :style="chartFrameStyle('ocrHeatmap', 1100, 300)">
+                  <div
+                    class="chart-zoom-content"
+                    :style="chartContentStyle('ocrHeatmap', 1100, 300)"
+                  >
+                    <Echart
+                      :options="ocrQualityHeatmapOption"
+                      :width="chartBaseWidth(1100)"
+                      :height="chartBaseHeight(300)"
+                      class="knowledge-echart"
+                    />
+                  </div>
+                </div>
+              </div>
+            </ElCard>
+          </ElCol>
+          <ElCol :xl="9" :lg="9" :md="24" :sm="24" :xs="24">
+            <ElCard shadow="never" class="panel ocr-priority-panel">
+              <template #header>
+                <div class="panel-header">
+                  <span>优先处理</span>
+                  <ElTag :type="ocrTopBlockerRows.length ? 'warning' : 'success'" effect="plain">
+                    {{ ocrTopBlockerRows.length || '无' }} 项
+                  </ElTag>
+                </div>
+              </template>
+              <div v-if="ocrTopBlockerRows.length" class="ocr-blocker-list">
+                <article v-for="row in ocrTopBlockerRows.slice(0, 4)" :key="String(row.id)">
+                  <ElTag type="warning" effect="plain">{{ row.source }}</ElTag>
+                  <strong>{{ row.blocker }}</strong>
+                  <small>{{ row.action }}</small>
+                </article>
+              </div>
+              <ElEmpty v-else description="当前没有 OCR 阻断项" />
+            </ElCard>
+          </ElCol>
+        </ElRow>
+
+        <ElRow :gutter="16" class="mt-16px">
+          <ElCol :xl="14" :lg="14" :md="24" :sm="24" :xs="24">
+            <ElCard shadow="never" class="panel">
+              <template #header>
+                <div class="panel-header">
+                  <span>待标注样本</span>
+                  <ElTag effect="plain">{{ ocrAnnotationRows.length }} 条</ElTag>
+                </div>
+              </template>
+              <ElTable :data="ocrAnnotationRows.slice(0, 6)" border height="270">
+                <ElTableColumn label="样本" min-width="180" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    {{ row.caseId || row.taskId || '-' }}
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn label="资料类型" min-width="160" show-overflow-tooltip>
+                  <template #default="{ row }">{{
+                    row.documentType || row.scenario || '-'
+                  }}</template>
+                </ElTableColumn>
+                <ElTableColumn label="状态" width="120">
+                  <template #default="{ row }">
+                    <ElTag :type="ocrAnnotationStatusType(row)" effect="plain">
+                      {{ ocrAnnotationStatusLabel(row) }}
+                    </ElTag>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn label="操作" width="120">
+                  <template #default="{ row }">
+                    <ElButton size="small" text @click="openAnnotationEditor(row)">标注</ElButton>
+                  </template>
+                </ElTableColumn>
+              </ElTable>
+            </ElCard>
+          </ElCol>
+          <ElCol :xl="10" :lg="10" :md="24" :sm="24" :xs="24">
+            <ElCard shadow="never" class="panel">
+              <template #header>
+                <div class="panel-header">
+                  <span>评估门禁</span>
+                  <ElTag :type="ocr100Scorecard?.ok ? 'success' : 'warning'" effect="plain">
+                    {{ ocr100Scorecard?.ok ? '可发布' : '需修复' }}
+                  </ElTag>
+                </div>
+              </template>
+              <ElDescriptions :column="1" border>
+                <ElDescriptionsItem label="OCR 100">
+                  {{
+                    ocr100Scorecard
+                      ? `${ocr100Scorecard.score}/${ocr100Scorecard.targetScore}`
+                      : '-'
+                  }}
+                </ElDescriptionsItem>
+                <ElDescriptionsItem label="可评估样本">{{
+                  ocrReadyForEvalCount
+                }}</ElDescriptionsItem>
+                <ElDescriptionsItem label="字段低置信">
+                  {{ ocrQuality?.fieldLevel?.lowConfidence || 0 }}
+                </ElDescriptionsItem>
+                <ElDescriptionsItem label="表格结构">
+                  {{ ocrQuality?.tableLevel?.formalTableCount || 0 }}/{{
+                    ocrQuality?.tableLevel?.tableCount || 0
+                  }}
+                </ElDescriptionsItem>
+                <ElDescriptionsItem label="印章可读">
+                  {{ ocrQuality?.sealLevel?.readableSealCount || 0 }}/{{
+                    ocrQuality?.sealLevel?.sealCount || 0
+                  }}
+                </ElDescriptionsItem>
+              </ElDescriptions>
+            </ElCard>
+          </ElCol>
+        </ElRow>
+      </div>
+
       <div v-if="isFdeRoute('dashboard')" class="metric-grid">
         <div
           v-for="metric in dashboardMetricCards"
@@ -6368,15 +7121,57 @@ onMounted(loadData)
             <template #header>
               <div class="panel-header">
                 <span>资料向量化链路图</span>
-                <ElTag effect="plain">Sankey</ElTag>
+                <ElSpace wrap>
+                  <ElTag effect="plain">Sankey</ElTag>
+                  <span class="chart-zoom-value">{{ chartZoomPercent('vectorSankey') }}</span>
+                  <ElButton
+                    size="small"
+                    text
+                    aria-label="缩小资料向量化链路图"
+                    @click="zoomOutChart('vectorSankey')"
+                    >缩小</ElButton
+                  >
+                  <ElButton
+                    size="small"
+                    text
+                    aria-label="放大资料向量化链路图"
+                    @click="zoomInChart('vectorSankey')"
+                    >放大</ElButton
+                  >
+                  <ElButton
+                    size="small"
+                    text
+                    aria-label="重置资料向量化链路图"
+                    @click="resetChartZoom('vectorSankey')"
+                    >重置</ElButton
+                  >
+                </ElSpace>
               </div>
             </template>
-            <div class="knowledge-chart-shell">
-              <Echart
-                :options="projectAuditVectorSankeyOption"
-                height="320px"
-                class="knowledge-echart"
-              />
+            <div
+              class="knowledge-chart-shell knowledge-chart-shell--sankey"
+              @wheel.capture="handleChartWheel($event, 'vectorSankey')"
+              @gesturestart.capture="startNativeChartGesture($event, 'vectorSankey')"
+              @gesturechange.capture="changeNativeChartGesture($event, 'vectorSankey')"
+              @gestureend.capture="endNativeChartGesture($event, 'vectorSankey')"
+              @pointerdown.capture="startChartGesture($event, 'vectorSankey')"
+              @pointermove.capture="moveChartGesture($event, 'vectorSankey')"
+              @pointerup.capture="endChartGesture($event, 'vectorSankey')"
+              @pointercancel.capture="endChartGesture($event, 'vectorSankey')"
+            >
+              <div class="chart-zoom-frame" :style="chartFrameStyle('vectorSankey', 1280, 320)">
+                <div
+                  class="chart-zoom-content"
+                  :style="chartContentStyle('vectorSankey', 1280, 320)"
+                >
+                  <Echart
+                    :options="projectAuditVectorSankeyOption"
+                    :width="chartBaseWidth(1280)"
+                    :height="chartBaseHeight(320)"
+                    class="knowledge-echart"
+                  />
+                </div>
+              </div>
             </div>
           </ElCard>
 
@@ -6598,15 +7393,57 @@ onMounted(loadData)
             <template #header>
               <div class="panel-header">
                 <span>PageIndex 检索溯源树</span>
-                <ElTag effect="plain">Tree</ElTag>
+                <ElSpace wrap>
+                  <ElTag effect="plain">Tree</ElTag>
+                  <span class="chart-zoom-value">{{ chartZoomPercent('pageIndexTree') }}</span>
+                  <ElButton
+                    size="small"
+                    text
+                    aria-label="缩小 PageIndex 检索溯源树"
+                    @click="zoomOutChart('pageIndexTree')"
+                    >缩小</ElButton
+                  >
+                  <ElButton
+                    size="small"
+                    text
+                    aria-label="放大 PageIndex 检索溯源树"
+                    @click="zoomInChart('pageIndexTree')"
+                    >放大</ElButton
+                  >
+                  <ElButton
+                    size="small"
+                    text
+                    aria-label="重置 PageIndex 检索溯源树"
+                    @click="resetChartZoom('pageIndexTree')"
+                    >重置</ElButton
+                  >
+                </ElSpace>
               </div>
             </template>
-            <div class="knowledge-chart-shell knowledge-chart-shell--tree">
-              <Echart
-                :options="projectAuditPageIndexTreeOption"
-                height="360px"
-                class="knowledge-echart"
-              />
+            <div
+              class="knowledge-chart-shell knowledge-chart-shell--tree"
+              @wheel.capture="handleChartWheel($event, 'pageIndexTree')"
+              @gesturestart.capture="startNativeChartGesture($event, 'pageIndexTree')"
+              @gesturechange.capture="changeNativeChartGesture($event, 'pageIndexTree')"
+              @gestureend.capture="endNativeChartGesture($event, 'pageIndexTree')"
+              @pointerdown.capture="startChartGesture($event, 'pageIndexTree')"
+              @pointermove.capture="moveChartGesture($event, 'pageIndexTree')"
+              @pointerup.capture="endChartGesture($event, 'pageIndexTree')"
+              @pointercancel.capture="endChartGesture($event, 'pageIndexTree')"
+            >
+              <div class="chart-zoom-frame" :style="chartFrameStyle('pageIndexTree', 1500, 360)">
+                <div
+                  class="chart-zoom-content"
+                  :style="chartContentStyle('pageIndexTree', 1500, 360)"
+                >
+                  <Echart
+                    :options="projectAuditPageIndexTreeOption"
+                    :width="chartBaseWidth(1500)"
+                    :height="chartBaseHeight(360)"
+                    class="knowledge-echart"
+                  />
+                </div>
+              </div>
             </div>
           </ElCard>
 
@@ -6811,16 +7648,96 @@ onMounted(loadData)
             </div>
           </div>
 
+          <ElCard shadow="never" class="panel chart-panel mb-16px">
+            <template #header>
+              <div class="panel-header">
+                <span>Temporal 执行时间线</span>
+                <ElSpace wrap>
+                  <ElTag effect="plain">{{ reviewTimelineChartRows.length }} 个环节</ElTag>
+                  <span class="chart-zoom-value">{{ chartZoomPercent('reviewTimeline') }}</span>
+                  <ElButton
+                    size="small"
+                    text
+                    aria-label="缩小 Temporal 执行时间线"
+                    @click="zoomOutChart('reviewTimeline')"
+                    >缩小</ElButton
+                  >
+                  <ElButton
+                    size="small"
+                    text
+                    aria-label="放大 Temporal 执行时间线"
+                    @click="zoomInChart('reviewTimeline')"
+                    >放大</ElButton
+                  >
+                  <ElButton
+                    size="small"
+                    text
+                    aria-label="重置 Temporal 执行时间线"
+                    @click="resetChartZoom('reviewTimeline')"
+                    >重置</ElButton
+                  >
+                </ElSpace>
+              </div>
+            </template>
+            <div
+              class="knowledge-chart-shell knowledge-chart-shell--timeline"
+              @wheel.capture="handleChartWheel($event, 'reviewTimeline')"
+              @gesturestart.capture="startNativeChartGesture($event, 'reviewTimeline')"
+              @gesturechange.capture="changeNativeChartGesture($event, 'reviewTimeline')"
+              @gestureend.capture="endNativeChartGesture($event, 'reviewTimeline')"
+              @pointerdown.capture="startChartGesture($event, 'reviewTimeline')"
+              @pointermove.capture="moveChartGesture($event, 'reviewTimeline')"
+              @pointerup.capture="endChartGesture($event, 'reviewTimeline')"
+              @pointercancel.capture="endChartGesture($event, 'reviewTimeline')"
+            >
+              <div class="chart-zoom-frame" :style="chartFrameStyle('reviewTimeline', 1160, 300)">
+                <div
+                  class="chart-zoom-content"
+                  :style="chartContentStyle('reviewTimeline', 1160, 300)"
+                >
+                  <Echart
+                    :options="reviewTimelineEchartOption"
+                    :width="chartBaseWidth(1160)"
+                    :height="chartBaseHeight(300)"
+                    class="knowledge-echart"
+                  />
+                </div>
+              </div>
+            </div>
+          </ElCard>
+
           <ElRow :gutter="16">
             <ElCol :xl="15" :lg="15" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
                     <span>LangGraph 编排图</span>
-                    <ElSpace>
+                    <ElSpace wrap>
                       <ElTag effect="plain">{{
                         selectedReviewRun?.run.reviewRunId || '未选中'
                       }}</ElTag>
+                      <span class="chart-zoom-value">{{ chartZoomPercent('langGraph') }}</span>
+                      <ElButton
+                        size="small"
+                        text
+                        aria-label="缩小 LangGraph 编排图"
+                        @click="zoomOutChart('langGraph')"
+                        >缩小</ElButton
+                      >
+                      <ElButton
+                        size="small"
+                        text
+                        aria-label="放大 LangGraph 编排图"
+                        @click="zoomInChart('langGraph')"
+                        >放大</ElButton
+                      >
+                      <ElButton
+                        size="small"
+                        text
+                        aria-label="重置 LangGraph 编排图"
+                        @click="resetChartZoom('langGraph')"
+                        >重置</ElButton
+                      >
                       <ElButton
                         v-if="activeReviewRunId"
                         data-testid="fde-open-review-detail"
@@ -6833,12 +7750,31 @@ onMounted(loadData)
                     </ElSpace>
                   </div>
                 </template>
-                <div v-if="hasLangGraphFlowNodes" class="langgraph-chart-shell">
-                  <Echart
-                    :options="langGraphEchartOption"
-                    height="480px"
-                    class="langgraph-echart"
-                  />
+                <div
+                  v-if="hasLangGraphFlowNodes"
+                  class="langgraph-chart-shell"
+                  @wheel.capture="handleChartWheel($event, 'langGraph')"
+                  @gesturestart.capture="startNativeChartGesture($event, 'langGraph')"
+                  @gesturechange.capture="changeNativeChartGesture($event, 'langGraph')"
+                  @gestureend.capture="endNativeChartGesture($event, 'langGraph')"
+                  @pointerdown.capture="startChartGesture($event, 'langGraph')"
+                  @pointermove.capture="moveChartGesture($event, 'langGraph')"
+                  @pointerup.capture="endChartGesture($event, 'langGraph')"
+                  @pointercancel.capture="endChartGesture($event, 'langGraph')"
+                >
+                  <div class="chart-zoom-frame" :style="chartFrameStyle('langGraph', 1080, 430)">
+                    <div
+                      class="chart-zoom-content"
+                      :style="chartContentStyle('langGraph', 1080, 430)"
+                    >
+                      <Echart
+                        :options="langGraphEchartOption"
+                        :width="chartBaseWidth(1080)"
+                        :height="chartBaseHeight(430)"
+                        class="langgraph-echart"
+                      />
+                    </div>
+                  </div>
                 </div>
                 <section v-if="normalizedReviewReasoningRows.length" class="langgraph-cog-panel">
                   <div class="langgraph-cog-head">
@@ -7809,7 +8745,7 @@ onMounted(loadData)
         </ElRow>
       </div>
 
-      <ElTabs v-else v-model="activeFdeTab" class="fde-tabs">
+      <ElTabs v-else-if="!isFdeRoute('ocr-quality')" v-model="activeFdeTab" class="fde-tabs">
         <ElTabPane label="AI 驾驶舱" name="dashboard">
           <ElRow :gutter="16">
             <ElCol :xl="24" :lg="24" :md="24" :sm="24" :xs="24">
@@ -9430,6 +10366,21 @@ onMounted(loadData)
                     :closable="false"
                     :title="`当前首要阻断：${firstOcrBlockingSummary}`"
                   />
+                  <ElCard shadow="never" class="panel chart-panel mb-12px">
+                    <template #header>
+                      <div class="panel-header">
+                        <span>OCR 场景质量热力图</span>
+                        <ElTag effect="plain">Heatmap</ElTag>
+                      </div>
+                    </template>
+                    <div class="knowledge-chart-shell knowledge-chart-shell--heatmap">
+                      <Echart
+                        :options="ocrQualityHeatmapOption"
+                        height="300px"
+                        class="knowledge-echart"
+                      />
+                    </div>
+                  </ElCard>
                   <ElTable
                     v-if="ocrTopBlockerRows.length"
                     :data="ocrTopBlockerRows"
@@ -9516,13 +10467,25 @@ onMounted(loadData)
                             <span>{{ file.owner }} · {{ file.purpose }}</span>
                             <small>{{ file.path }}</small>
                           </div>
-                          <ElTag
-                            :type="file.exists ? 'success' : 'danger'"
-                            effect="plain"
-                            size="small"
-                          >
-                            {{ file.exists ? '已生成' : '缺失' }}
-                          </ElTag>
+                          <div class="ocr-handoff__actions">
+                            <ElTag
+                              :type="file.exists ? 'success' : 'danger'"
+                              effect="plain"
+                              size="small"
+                            >
+                              {{ file.exists ? '已生成' : '缺失' }}
+                            </ElTag>
+                            <ElButton
+                              size="small"
+                              text
+                              type="primary"
+                              :disabled="!file.exists"
+                              :loading="ocr100HandoffOpening === file.key"
+                              @click="openOcr100HandoffFile(file)"
+                            >
+                              打开
+                            </ElButton>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -11626,9 +12589,192 @@ onMounted(loadData)
   padding: 10px;
 }
 
+.ocr-command-center {
+  display: grid;
+  gap: 16px;
+  margin: 0 0 18px;
+}
+
+.ocr-goal-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 16px;
+  background: linear-gradient(135deg, #f7fbff 0%, #eef6ff 100%);
+  border: 1px solid #cfe0f5;
+  border-radius: 8px;
+}
+
+.ocr-goal-copy {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.ocr-goal-copy span {
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #2563eb;
+}
+
+.ocr-goal-copy strong {
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 26px;
+  color: #172033;
+}
+
+.ocr-goal-copy small {
+  font-size: 13px;
+  line-height: 20px;
+  color: #64748b;
+}
+
+.ocr-goal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.ocr-step-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ocr-step-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 10px;
+  min-width: 0;
+  min-height: 96px;
+  padding: 13px;
+  background: #fff;
+  border: 1px solid #dfe8f5;
+  border-radius: 8px;
+  box-shadow: 0 7px 18px rgb(15 23 42 / 4%);
+}
+
+.ocr-step-card span {
+  grid-row: span 2;
+  width: 34px;
+  height: 34px;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 34px;
+  color: #2563eb;
+  text-align: center;
+  background: #eff6ff;
+  border-radius: 8px;
+}
+
+.ocr-step-card strong,
+.ocr-step-card small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ocr-step-card strong {
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 20px;
+  color: #172033;
+  white-space: nowrap;
+}
+
+.ocr-step-card small {
+  display: -webkit-box;
+  font-size: 12px;
+  line-height: 18px;
+  color: #64748b;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.ocr-step-card--green {
+  border-color: #c9ead8;
+}
+
+.ocr-step-card--orange {
+  border-color: #f6d6a5;
+}
+
+.ocr-step-card--red {
+  border-color: #ffc8c1;
+}
+
+.ocr-step-card--blue {
+  border-color: #cbdcf8;
+}
+
+.ocr-command-kpis {
+  margin-bottom: 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.chart-zoom-value {
+  min-width: 42px;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 22px;
+  color: #2563eb;
+  text-align: center;
+  background: #eff6ff;
+  border: 1px solid #cfe0fb;
+  border-radius: 999px;
+}
+
+.ocr-priority-panel :deep(.el-card__body) {
+  min-height: 320px;
+}
+
+.ocr-blocker-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ocr-blocker-list article {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 11px;
+  background: #fff8ed;
+  border: 1px solid #f6d6a5;
+  border-radius: 8px;
+}
+
+.ocr-blocker-list strong,
+.ocr-blocker-list small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ocr-blocker-list strong {
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 20px;
+  color: #172033;
+  white-space: nowrap;
+}
+
+.ocr-blocker-list small {
+  display: -webkit-box;
+  font-size: 12px;
+  line-height: 18px;
+  color: #64748b;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
 .knowledge-chart-shell {
   min-width: 0;
   overflow: hidden;
+  cursor: grab;
   background: linear-gradient(90deg, rgb(37 99 235 / 4%) 1px, transparent 1px),
     linear-gradient(180deg, rgb(37 99 235 / 4%) 1px, transparent 1px),
     linear-gradient(180deg, #f8fbff 0%, #fff 100%);
@@ -11638,6 +12784,44 @@ onMounted(loadData)
     auto;
   border: 1px solid #dbe8f7;
   border-radius: 8px;
+  user-select: none;
+  overscroll-behavior: contain;
+  touch-action: none;
+  scrollbar-color: #a9c7ed transparent;
+  scrollbar-width: thin;
+}
+
+.knowledge-chart-shell.is-panning,
+.langgraph-chart-shell.is-panning {
+  cursor: grabbing;
+}
+
+.chart-zoom-frame {
+  position: relative;
+  overflow: visible;
+}
+
+.chart-zoom-content {
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.knowledge-chart-shell::-webkit-scrollbar,
+.langgraph-chart-shell::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.knowledge-chart-shell::-webkit-scrollbar-thumb,
+.langgraph-chart-shell::-webkit-scrollbar-thumb {
+  background: #a9c7ed;
+  border: 2px solid #f8fbff;
+  border-radius: 999px;
+}
+
+.knowledge-chart-shell::-webkit-scrollbar-track,
+.langgraph-chart-shell::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .knowledge-chart-shell--tree {
@@ -11649,6 +12833,24 @@ onMounted(loadData)
 
 .knowledge-echart {
   width: 100%;
+  min-width: 760px;
+  touch-action: none;
+}
+
+.knowledge-chart-shell--sankey .knowledge-echart {
+  min-width: 960px;
+}
+
+.knowledge-chart-shell--tree .knowledge-echart {
+  min-width: 1120px;
+}
+
+.knowledge-chart-shell--timeline .knowledge-echart {
+  min-width: 920px;
+}
+
+.knowledge-chart-shell--heatmap .knowledge-echart {
+  min-width: 820px;
 }
 
 .lineage-document-grid,
@@ -11901,9 +13103,10 @@ onMounted(loadData)
 }
 
 .langgraph-chart-shell {
-  min-height: 560px;
+  min-height: 462px;
   padding: 8px;
   overflow: hidden;
+  cursor: grab;
   background: linear-gradient(90deg, rgb(37 99 235 / 5%) 1px, transparent 1px),
     linear-gradient(180deg, rgb(37 99 235 / 5%) 1px, transparent 1px),
     linear-gradient(180deg, #f8fbff 0%, #fff 100%);
@@ -11913,10 +13116,17 @@ onMounted(loadData)
     auto;
   border: 1px solid #dbe8f7;
   border-radius: 8px;
+  user-select: none;
+  overscroll-behavior: contain;
+  touch-action: none;
+  scrollbar-color: #a9c7ed transparent;
+  scrollbar-width: thin;
 }
 
 .langgraph-echart {
   width: 100%;
+  min-width: 980px;
+  touch-action: none;
 }
 
 .langgraph-cog-panel {
@@ -12846,6 +14056,20 @@ onMounted(loadData)
   border-radius: 6px;
 }
 
+.ocr-handoff__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.ocr-handoff__actions .el-button {
+  min-width: 44px;
+  min-height: 28px;
+  padding: 0 8px;
+}
+
 .ocr-action-list {
   display: grid;
   gap: 8px;
@@ -13261,6 +14485,11 @@ onMounted(loadData)
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .ocr-step-grid,
+  .ocr-command-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .lineage-document-intro,
   .pageindex-friendly-intro {
     grid-column: 1 / -1;
@@ -13275,6 +14504,14 @@ onMounted(loadData)
 
   .workbench-summary-grid.project-subpage-kpis {
     grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  }
+
+  .ocr-goal-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ocr-goal-actions {
+    justify-content: flex-start;
   }
 }
 
@@ -13314,6 +14551,11 @@ onMounted(loadData)
   }
 
   .workbench-summary-grid.project-subpage-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ocr-command-kpis,
+  .ocr-step-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -13375,6 +14617,10 @@ onMounted(loadData)
     white-space: normal;
   }
 
+  .ocr-handoff__actions {
+    justify-content: flex-start;
+  }
+
   .audit-drawer-hero {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -13388,6 +14634,11 @@ onMounted(loadData)
   }
 
   .audit-flow-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ocr-command-kpis,
+  .ocr-step-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 

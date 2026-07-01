@@ -1060,7 +1060,7 @@ const handleUserCommand = (command: string | number | object) => {
 }
 
 .static-tree-menu :deep(.el-sub-menu__icon-arrow) {
-  display: none;
+  display: none !important;
 }
 
 .tree-root-menu,
@@ -1142,6 +1142,7 @@ const handleUserCommand = (command: string | number | object) => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  place-self: center;
   width: 22px;
   height: 22px;
   font-size: 12px;
@@ -1168,6 +1169,7 @@ const handleUserCommand = (command: string | number | object) => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  place-self: center;
   width: 20px;
   height: 20px;
   font-size: 12px;
@@ -1255,13 +1257,14 @@ const handleUserCommand = (command: string | number | object) => {
 }
 
 .tree-node {
+  position: relative;
   grid-template-columns: 7px minmax(0, 1fr) auto;
-  min-height: 34px;
-  padding: 5px 6px;
+  min-height: 32px;
+  padding: 4px 7px 4px 8px;
   margin: 0;
   font-weight: 600;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 7px;
   transition:
     color 0.18s ease,
     background-color 0.18s ease,
@@ -1272,9 +1275,9 @@ const handleUserCommand = (command: string | number | object) => {
 
 .tree-section-menu :deep(> .el-menu.el-menu--inline) {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 5px;
-  padding: 5px 0 4px 22px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  padding: 4px 0 6px 24px;
   overflow: visible;
 }
 
@@ -1282,12 +1285,34 @@ const handleUserCommand = (command: string | number | object) => {
   width: 100%;
 }
 
+.tree-node::before,
+.tree-node::after {
+  position: absolute;
+  pointer-events: none;
+  content: '';
+}
+
+.tree-node::before {
+  top: -3px;
+  bottom: -3px;
+  left: -13px;
+  border-left: 1px solid #d8e5f5;
+}
+
+.tree-node::after {
+  top: 50%;
+  left: -13px;
+  width: 12px;
+  border-top: 1px solid #d8e5f5;
+}
+
 .tree-node-marker {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 6px;
-  height: 6px;
+  place-self: center;
+  width: 5px;
+  height: 5px;
   background: #aab9cc;
   border-radius: 999px;
 }

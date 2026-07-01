@@ -3173,6 +3173,13 @@ export const refreshFdeOcr100ActionBoardApi = (
   })
 }
 
+export const getFdeOcr100HandoffArtifactApi = (artifactKey: string): Promise<any> => {
+  return request.get({
+    url: `/api/fde/ocr-100/action-board/handoff/${encodeURIComponent(artifactKey)}`,
+    responseType: 'blob'
+  })
+}
+
 export const listFdeOcrRunsApi = (params?: {
   projectId?: string
   nodeId?: number

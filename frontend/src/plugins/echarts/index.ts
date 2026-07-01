@@ -8,6 +8,7 @@ import {
   PictorialBarChart,
   RadarChart,
   GraphChart,
+  HeatmapChart,
   SankeyChart,
   TreeChart
 } from 'echarts/charts'
@@ -42,6 +43,7 @@ echarts.use([
   PictorialBarChart,
   RadarChart,
   GraphChart,
+  HeatmapChart,
   SankeyChart,
   TreeChart
 ])

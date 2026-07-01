@@ -745,7 +745,7 @@ def normalize_raw_fields(raw_fields: Any) -> list[dict[str, Any]]:
                 "fieldValue": str(value),
                 "pageNo": page_no_from(raw),
                 "bbox": first_present(raw, "bbox", "polygon", "box"),
-                "confidence": first_present(raw, "confidence", "calibrated_confidence", "score", default=0.8),
+                "confidence": first_present(raw, "confidence", "calibrated_confidence", "score", default=0.0),
                 "extractionMethod": first_present(raw, "extractionMethod", "method", default="PaddleOCR"),
                 "sourceEngine": raw.get("sourceEngine"),
             }
@@ -779,7 +779,7 @@ def fields_from_seals(seals: Any) -> list[dict[str, Any]]:
                             "fieldValue": str(value),
                             "pageNo": page_no,
                             "bbox": first_present(item, "bbox", default=polygon),
-                            "confidence": first_present(item, "confidence", "ocrConfidence", default=0.8),
+                            "confidence": first_present(item, "confidence", "ocrConfidence", default=0.0),
                             "extractionMethod": "PaddleOCR+seal",
                         }
                     )
@@ -797,7 +797,7 @@ def fields_from_seals(seals: Any) -> list[dict[str, Any]]:
                     "fieldValue": str(field_value),
                     "pageNo": page_no,
                     "bbox": polygon,
-                    "confidence": first_present(value, "calibrated_confidence", "visual_confidence", "confidence", default=0.8),
+                    "confidence": first_present(value, "calibrated_confidence", "visual_confidence", "confidence", default=0.0),
                     "extractionMethod": "PaddleOCR+seal",
                 }
             )
@@ -823,8 +823,8 @@ def normalize_raw_seals(seals: Any) -> list[dict[str, Any]]:
                 "pageHeight": seal.get("pageHeight"),
                 "visualColor": seal.get("visualColor"),
                 "cropObjectKey": seal.get("cropObjectKey"),
-                "visualConfidence": first_present(seal, "visualConfidence", "visual_confidence", "det_score", "score", default=0.8),
-                "ocrConfidence": first_present(seal, "ocrConfidence", "ocr_confidence", "rec_score", "score", default=0.8),
+                "visualConfidence": first_present(seal, "visualConfidence", "visual_confidence", "det_score", "score", default=0.0),
+                "ocrConfidence": first_present(seal, "ocrConfidence", "ocr_confidence", "rec_score", "score", default=0.0),
                 "fields": seal.get("fields") or [],
                 "qualityFlags": seal.get("qualityFlags") or [],
             }
@@ -874,7 +874,7 @@ def normalize_fragments(raw: Any, text: str | None) -> list[dict[str, Any]]:
     if isinstance(raw, dict) and isinstance(raw.get("fragments"), list):
         return [item for item in raw["fragments"] if isinstance(item, dict)]
     value = text or ""
-    return [{"pageNo": 1, "text": value, "bbox": None, "confidence": 0.8}] if value else []
+    return [{"pageNo": 1, "text": value, "bbox": None, "confidence": 0.0}] if value else []
 
 
 def merge_parse_result(target: dict[str, Any], incoming: dict[str, Any]) -> None:
@@ -1123,7 +1123,7 @@ def infer_piping_tables(fragments: list[Any]) -> list[dict[str, Any]]:
                 "text": text,
                 "bbox": bbox,
                 "pageNo": page_no_from(fragment),
-                "confidence": float(first_present(fragment, "confidence", default=0.8) or 0.0),
+                "confidence": float(first_present(fragment, "confidence", default=0.0) or 0.0),
                 "sourceEngine": fragment.get("sourceEngine"),
             }
         )
@@ -1600,7 +1600,7 @@ def extract_piping_fields(result: dict[str, Any]) -> None:
                 "fragment": {
                     "bbox": pipe_bbox,
                     "pageNo": 1,
-                    "confidence": 0.82,
+                    "confidence": 0.74 if pipe_bbox else 0.52,
                     "sourceEngine": "profile_regex",
                 },
             },
@@ -1876,7 +1876,7 @@ def add_field_if_missing(result: dict[str, Any], field_code: str, field_name: st
             "fieldValue": str(text),
             "pageNo": page_no_from(fragment),
             "bbox": rect_from_bbox(fragment.get("bbox")),
-            "confidence": first_present(fragment, "confidence", default=0.82),
+            "confidence": first_present(fragment, "confidence", default=0.0),
             "extractionMethod": "profile_heuristic",
             "sourceEngine": first_present(fragment, "sourceEngine", default="profile_postprocessor"),
         }

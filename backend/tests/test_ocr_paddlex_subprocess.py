@@ -251,8 +251,57 @@ def test_normalize_vl_result_extracts_markdown_html_and_layout() -> None:
 
     assert "管道特性表" in text
     assert fragments[0]["sourceEngine"] == "paddleocr_vl_1_6"
+    assert fragments[0]["confidence"] == 0.66
+    assert "evidence_bbox_missing" in fragments[0]["qualityFlags"]
     assert any(table["rows"] == 2 and table["columns"] == 2 for table in tables)
     assert blocks[0]["blockType"] == "table"
+
+
+def test_normalize_docling_payload_marks_markdown_only_as_low_evidence() -> None:
+    fragments, tables, blocks = engines.normalize_docling_payload({}, "仅有 Markdown 文本", "docling_local")
+
+    assert tables == []
+    assert blocks == []
+    assert fragments[0]["confidence"] == 0.62
+    assert fragments[0]["bbox"] is None
+    assert "docling_markdown_only" in fragments[0]["qualityFlags"]
+    assert "evidence_bbox_missing" in fragments[0]["qualityFlags"]
+
+
+def test_normalize_docling_payload_scores_table_by_evidence() -> None:
+    payload = {
+        "tables": [
+            {
+                "label": "table",
+                "prov": [{"page_no": 1, "bbox": {"l": 0, "t": 0, "r": 100, "b": 50}}],
+                "data": {
+                    "table_cells": [
+                        {
+                            "start_row_offset_idx": 0,
+                            "start_col_offset_idx": 0,
+                            "text": "管号",
+                            "column_header": True,
+                            "bbox": {"l": 0, "t": 0, "r": 40, "b": 20},
+                        },
+                        {
+                            "start_row_offset_idx": 1,
+                            "start_col_offset_idx": 0,
+                            "text": "PL8301",
+                            "bbox": {"l": 0, "t": 20, "r": 40, "b": 40},
+                        },
+                    ]
+                },
+            }
+        ]
+    }
+
+    fragments, tables, blocks = engines.normalize_docling_payload(payload, "", "docling_local")
+
+    assert fragments == []
+    assert blocks[0]["blockType"] == "table"
+    assert tables[0]["structureConfidence"] > 0.8
+    assert "docling_structured_table" in tables[0]["qualityFlags"]
+    assert "table_evidence_missing" not in tables[0]["qualityFlags"]
 
 
 def test_ocr_prefetch_verify_only_reports_missing_models(tmp_path) -> None:

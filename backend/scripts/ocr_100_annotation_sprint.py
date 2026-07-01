@@ -3,8 +3,11 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import sys
 from collections import Counter
+from copy import deepcopy
+from datetime import datetime, timezone
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -32,6 +35,7 @@ def main() -> int:
     parser.add_argument("--output", help="Optional JSON sprint plan output path.")
     parser.add_argument("--markdown-output", help="Optional Markdown sprint plan output path.")
     parser.add_argument("--csv-output", help="Optional CSV worklist output path.")
+    parser.add_argument("--workbook-output-dir", help="Optional directory for per-case human label JSON drafts.")
     args = parser.parse_args()
 
     plan = build_annotation_sprint_plan(Path(args.annotation_tasks), limit=args.limit)
@@ -41,6 +45,8 @@ def main() -> int:
         write_text_file(Path(args.markdown_output), annotation_sprint_markdown(plan))
     if args.csv_output:
         write_text_file(Path(args.csv_output), annotation_sprint_csv(plan))
+    if args.workbook_output_dir:
+        write_annotation_workbook(plan, Path(args.workbook_output_dir))
     print(json.dumps(plan["summary"], ensure_ascii=False, indent=2))
     return 0
 
@@ -144,7 +150,53 @@ def annotation_work_item(task: dict[str, Any]) -> dict[str, Any]:
         "suggestedPositiveEvidenceCounts": positive_evidence_counts,
         "templateCounts": template_counts,
         "checklist": checklist,
+        "draftSource": draft_source(suggested, template),
+        "labelJsonDraft": build_label_json_draft(task, status=status, suggested=suggested, template=template, checklist=checklist),
         "humanActions": human_actions(status, suggested, template),
+    }
+
+
+def draft_source(suggested: dict[str, Any], template: dict[str, Any]) -> str:
+    if suggested:
+        return "suggestedExpected"
+    if template:
+        return "expectedTemplate"
+    return "empty"
+
+
+def build_label_json_draft(
+    task: dict[str, Any],
+    *,
+    status: dict[str, Any],
+    suggested: dict[str, Any],
+    template: dict[str, Any],
+    checklist: list[Any],
+) -> dict[str, Any]:
+    expected = deepcopy(suggested or template or {})
+    expected.setdefault("qualityStatus", suggested.get("qualityStatus") or "needs_human_review")
+    review = expected.get("review") if isinstance(expected.get("review"), dict) else {}
+    review.update(
+        {
+            "source": "human_workbook_draft",
+            "requiresHumanConfirmation": True,
+            "labeler": "replace-with-human-labeler",
+            "reviewer": "replace-with-second-reviewer",
+        }
+    )
+    expected["review"] = review
+    return {
+        "schemaVersion": "aicheck-ocr-100-human-label-workbook-draft-v1",
+        "caseId": task.get("caseId"),
+        "taskId": task.get("taskId"),
+        "scenario": task.get("scenario"),
+        "profileId": task.get("profileId"),
+        "documentType": task.get("documentType"),
+        "sourcePath": task.get("sourcePath"),
+        "previewPaths": task.get("previewPaths") or [],
+        "blockers": status.get("blockers") or [],
+        "checklist": checklist,
+        "humanInstructions": human_actions(status, suggested, template),
+        "expected": expected,
     }
 
 
@@ -279,6 +331,7 @@ def annotation_sprint_csv(plan: dict[str, Any]) -> str:
         "readyForEval",
         "blockers",
         "humanActions",
+        "draftSource",
         "previewPaths",
     ]
     handle = StringIO()
@@ -294,6 +347,85 @@ def annotation_sprint_csv(plan: dict[str, Any]) -> str:
             }
         )
     return handle.getvalue()
+
+
+def write_annotation_workbook(plan: dict[str, Any], output_dir: Path) -> dict[str, Any]:
+    output_dir = output_dir.expanduser().resolve()
+    drafts_dir = output_dir / "drafts"
+    drafts_dir.mkdir(parents=True, exist_ok=True)
+    items = [item for item in plan.get("workItems") or [] if isinstance(item, dict)]
+    draft_files: list[dict[str, Any]] = []
+    for item in items:
+        draft = item.get("labelJsonDraft") if isinstance(item.get("labelJsonDraft"), dict) else {}
+        if not draft:
+            continue
+        case_id = str(item.get("caseId") or item.get("taskId") or f"work-item-{len(draft_files) + 1}")
+        path = drafts_dir / f"{safe_filename(case_id)}.expected.json"
+        write_text_file(path, json.dumps(draft, ensure_ascii=False, indent=2))
+        draft_files.append(
+            {
+                "caseId": item.get("caseId"),
+                "taskId": item.get("taskId"),
+                "scenario": item.get("scenario"),
+                "draftSource": item.get("draftSource"),
+                "path": str(path),
+                "blockers": item.get("blockers") or [],
+            }
+        )
+    manifest = {
+        "schemaVersion": "aicheck-ocr-100-annotation-workbook-v1",
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "source": plan.get("source"),
+        "summary": plan.get("summary") if isinstance(plan.get("summary"), dict) else {},
+        "draftCount": len(draft_files),
+        "drafts": draft_files,
+        "files": {
+            "readme": str(output_dir / "README.md"),
+            "manifest": str(output_dir / "workbook_manifest.json"),
+            "draftsDir": str(drafts_dir),
+        },
+    }
+    write_text_file(output_dir / "README.md", annotation_workbook_readme(manifest))
+    write_text_file(output_dir / "workbook_manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+    return manifest
+
+
+def annotation_workbook_readme(manifest: dict[str, Any]) -> str:
+    summary = manifest.get("summary") if isinstance(manifest.get("summary"), dict) else {}
+    lines = [
+        "# OCR 100 Annotation Workbook",
+        "",
+        f"- Source: {manifest.get('source')}",
+        f"- Drafts: {manifest.get('draftCount', 0)}",
+        f"- Ready for eval: {summary.get('readyForEval', 0)}",
+        f"- Remaining human labels: {summary.get('remainingHumanLabels', 0)}",
+        "",
+        "## How To Use",
+        "",
+        "1. Open the source document and preview listed in the sprint plan.",
+        "2. Open the matching `drafts/<caseId>.expected.json` file.",
+        "3. Correct every field value, table schema/rows, seal text/type, quality status, and bbox/polygon.",
+        "4. Paste only the `expected` object into Label Studio's JSON annotation area, or import the corrected JSON through the existing label import flow.",
+        "5. Finalize only after a second reviewer confirms the label; machine workbook drafts are not gold labels.",
+        "",
+        "## Drafts",
+        "",
+        "| Case | Scenario | Draft Source | File | Blockers |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for item in manifest.get("drafts") or []:
+        blockers = "; ".join(str(value) for value in item.get("blockers") or [])
+        lines.append(
+            f"| {item.get('caseId') or item.get('taskId')} | {item.get('scenario')} | "
+            f"{item.get('draftSource')} | `{item.get('path')}` | {blockers} |"
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def safe_filename(value: str) -> str:
+    clean = re.sub(r"[^A-Za-z0-9_.-]+", "_", value.strip())
+    return clean[:120] or "case"
 
 
 if __name__ == "__main__":

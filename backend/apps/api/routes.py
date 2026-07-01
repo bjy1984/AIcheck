@@ -8892,6 +8892,41 @@ def fde_ocr_100_handoff_file_row(key: str, value: Any) -> dict[str, Any]:
     }
 
 
+def fde_ocr_100_handoff_artifact_path(reports_dir: Path, artifact_key: str) -> Path | None:
+    allowed_keys = {"readme", "collectMarkdown", "collectCsv", "labelMarkdown", "labelCsv", "manifest"}
+    if artifact_key not in allowed_keys:
+        return None
+    handoff_root = (reports_dir / "ocr_100_action_handoff").resolve()
+    if artifact_key == "manifest":
+        candidate = handoff_root / "handoff_manifest.json"
+    else:
+        manifest = fde_read_json_file(handoff_root / "handoff_manifest.json")
+        files = manifest.get("files") if isinstance(manifest.get("files"), dict) else {}
+        raw_path = files.get(artifact_key)
+        if not raw_path:
+            return None
+        candidate = Path(str(raw_path))
+        if not candidate.is_absolute():
+            candidate = WORKSPACE_ROOT / candidate
+        candidate = candidate.resolve()
+    try:
+        candidate.relative_to(handoff_root)
+    except ValueError:
+        return None
+    return candidate if candidate.is_file() else None
+
+
+def fde_ocr_100_handoff_media_type(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix == ".csv":
+        return "text/csv; charset=utf-8"
+    if suffix == ".md":
+        return "text/markdown; charset=utf-8"
+    if suffix == ".json":
+        return "application/json"
+    return "application/octet-stream"
+
+
 def fde_read_json_file(path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -9152,6 +9187,23 @@ def fde_refresh_ocr_100_action_board(
         return ok({**refreshed, "auditLogId": audit_id}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"action": "ocr100_action_board_refresh", "body": body})
+
+
+@router.get("/fde/ocr-100/action-board/handoff/{artifact_key}")
+def fde_download_ocr_100_action_handoff_artifact(request: Request, artifact_key: str):
+    _, role_error = fde_error_unless_allowed(request, "fde:ocr-annotation:manage")
+    if role_error:
+        return role_error
+    reports_dir = WORKSPACE_ROOT / "backend" / "ocr_eval" / "reports"
+    artifact_path = fde_ocr_100_handoff_artifact_path(reports_dir, artifact_key)
+    if not artifact_path:
+        return fail(errors.NOT_FOUND, request)
+    return FileResponse(
+        artifact_path,
+        media_type=fde_ocr_100_handoff_media_type(artifact_path),
+        filename=artifact_path.name,
+        content_disposition_type="inline",
+    )
 
 
 @router.get("/fde/ocr-runs")

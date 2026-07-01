@@ -4772,6 +4772,21 @@ export default [
     }
   },
   {
+    url: /\/api\/fde\/ocr-100\/action-board\/handoff\/[^/]+$/,
+    method: 'get',
+    timeout,
+    rawResponse: async (req, res) => {
+      const artifactKey = String(req.url || '').split('/').pop() || 'artifact'
+      const isCsv = artifactKey.toLowerCase().includes('csv')
+      res.setHeader('Content-Type', isCsv ? 'text/csv; charset=utf-8' : 'text/markdown; charset=utf-8')
+      res.end(
+        isCsv
+          ? 'lane,scenario,title\ncollect_samples,ndt_ut_profile,Collect real OCR sample\n'
+          : '# OCR 100 handoff\n\nMock handoff artifact for FDE OCR labeling.\n'
+      )
+    }
+  },
+  {
     url: '/api/fde/ocr-runs',
     method: 'get',
     timeout,

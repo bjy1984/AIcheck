@@ -73,6 +73,41 @@ def test_fde_ocr_action_handoff_marks_stale_when_board_summary_changes(tmp_path)
     assert snapshot["files"][0]["exists"] is True
 
 
+def test_fde_ocr_action_handoff_artifact_download_is_key_scoped() -> None:
+    refresh = assert_ok(
+        client.post(
+            "/api/fde/ocr-100/action-board/refresh",
+            json={},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-ocr100-download-001"},
+        )
+    )
+    assert refresh["board"]["handoff"]["status"] == "ready"
+
+    download = client.get(
+        "/api/fde/ocr-100/action-board/handoff/collectCsv",
+        headers={"X-Role": "fde"},
+    )
+    assert download.status_code == 200
+    assert "text/csv" in download.headers["content-type"]
+    assert "priority" in download.text
+    assert "scenario" in download.text
+    assert "dropDirectory" in download.text
+
+    invalid = client.get(
+        "/api/fde/ocr-100/action-board/handoff/../../secret",
+        headers={"X-Role": "fde"},
+    )
+    assert invalid.status_code == 404
+
+    assert_error(
+        client.get(
+            "/api/fde/ocr-100/action-board/handoff/secret",
+            headers={"X-Role": "fde"},
+        ),
+        "NOT_FOUND",
+    )
+
+
 def test_fde_login_and_dynamic_routes() -> None:
     login = assert_ok(client.post("/api/auth/login", json={"username": "fde", "password": "fde"}))
     routes = assert_ok(client.get("/api/auth/routes?role=fde"))

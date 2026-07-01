@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
 type RouteCase = {
   path: string
@@ -260,6 +260,87 @@ const expectFdeWorkspaceNotClipped = async (page: Page) => {
     .toBe('')
 }
 
+const expectFixedChartTransformZoom = async (
+  page: Page,
+  shell: Locator,
+  options: {
+    zoomButtonName: string
+    resetButtonName: string
+    echartSelector: string
+  }
+) => {
+  const content = shell.locator('.chart-zoom-content').first()
+  await expect(shell.locator('canvas').first()).toBeVisible()
+
+  const shellWidthBefore = await shell.evaluate((el) => (el as HTMLElement).offsetWidth)
+  const shellHeightBefore = await shell.evaluate((el) => (el as HTMLElement).offsetHeight)
+  const frameWidthBefore = await shell
+    .locator('.chart-zoom-frame')
+    .first()
+    .evaluate((el) => (el as HTMLElement).offsetWidth)
+  const frameHeightBefore = await shell
+    .locator('.chart-zoom-frame')
+    .first()
+    .evaluate((el) => (el as HTMLElement).offsetHeight)
+  const chartWidthBefore = await shell
+    .locator(options.echartSelector)
+    .first()
+    .evaluate((el) => (el as HTMLElement).offsetWidth)
+  const chartHeightBefore = await shell
+    .locator(options.echartSelector)
+    .first()
+    .evaluate((el) => (el as HTMLElement).offsetHeight)
+  const transformBefore = await content.evaluate(
+    (el) => getComputedStyle(el as HTMLElement).transform
+  )
+
+  await page.getByRole('button', { name: options.zoomButtonName }).click()
+
+  await expect
+    .poll(async () => content.evaluate((el) => getComputedStyle(el as HTMLElement).transform))
+    .not.toBe(transformBefore)
+  await expect
+    .poll(async () => shell.evaluate((el) => (el as HTMLElement).offsetWidth))
+    .toBe(shellWidthBefore)
+  await expect
+    .poll(async () => shell.evaluate((el) => (el as HTMLElement).offsetHeight))
+    .toBe(shellHeightBefore)
+  await expect
+    .poll(async () =>
+      shell
+        .locator('.chart-zoom-frame')
+        .first()
+        .evaluate((el) => (el as HTMLElement).offsetWidth)
+    )
+    .toBe(frameWidthBefore)
+  await expect
+    .poll(async () =>
+      shell
+        .locator('.chart-zoom-frame')
+        .first()
+        .evaluate((el) => (el as HTMLElement).offsetHeight)
+    )
+    .toBe(frameHeightBefore)
+  await expect
+    .poll(async () =>
+      shell
+        .locator(options.echartSelector)
+        .first()
+        .evaluate((el) => (el as HTMLElement).offsetWidth)
+    )
+    .toBe(chartWidthBefore)
+  await expect
+    .poll(async () =>
+      shell
+        .locator(options.echartSelector)
+        .first()
+        .evaluate((el) => (el as HTMLElement).offsetHeight)
+    )
+    .toBe(chartHeightBefore)
+
+  await page.getByRole('button', { name: options.resetButtonName }).click()
+}
+
 const waitForFdeProjectAuditReady = async (page: Page) => {
   await expect(page.locator('.fde-console')).toBeVisible({ timeout: 15000 })
   await expect(page.locator('.static-tree-menu .tree-group-wrap').first()).toBeVisible({
@@ -302,6 +383,45 @@ const expectFdeProjectTreeUsable = async (page: Page) => {
             if (treeRect.width < 240) failures.push(`tree-too-narrow:${Math.round(treeRect.width)}`)
             if (tree.scrollWidth > tree.clientWidth + 18) {
               failures.push(`tree-horizontal-scroll:${tree.scrollWidth}/${tree.clientWidth}`)
+            }
+            const openedNodeMenus = Array.from(
+              tree.querySelectorAll<HTMLElement>('.tree-section-menu.is-opened .el-menu--inline')
+            ).filter(visible)
+            for (const menu of openedNodeMenus) {
+              const nodes = Array.from(menu.querySelectorAll<HTMLElement>('.tree-node')).filter(
+                visible
+              )
+              if (nodes.length > 1) {
+                const rects = nodes.map((node) => node.getBoundingClientRect())
+                const topRows = new Set(rects.map((rect) => Math.round(rect.top)))
+                const leftValues = rects.map((rect) => Math.round(rect.left))
+                const leftSpread = Math.max(...leftValues) - Math.min(...leftValues)
+                if (topRows.size !== nodes.length) {
+                  failures.push(`tree-node-not-single-column:${nodes.length}/${topRows.size}`)
+                }
+                if (leftSpread > 3) {
+                  failures.push(`tree-node-left-spread:${leftSpread}`)
+                }
+                for (const node of nodes) {
+                  const nodeRect = node.getBoundingClientRect()
+                  const marker = node.querySelector<HTMLElement>('.tree-node-marker')
+                  if (marker) {
+                    const style = getComputedStyle(node)
+                    const firstColumn = Number.parseFloat(style.gridTemplateColumns.split(' ')[0])
+                    const paddingLeft = Number.parseFloat(style.paddingLeft || '0')
+                    const borderLeft = Number.parseFloat(style.borderLeftWidth || '0')
+                    const markerRect = marker.getBoundingClientRect()
+                    const markerCenterX = markerRect.left + markerRect.width / 2
+                    const expectedCenterX =
+                      nodeRect.left + borderLeft + paddingLeft + firstColumn / 2
+                    if (Math.abs(markerCenterX - expectedCenterX) > 2) {
+                      failures.push(
+                        `tree-node-marker-off-center:${Math.round(markerCenterX - expectedCenterX)}`
+                      )
+                    }
+                  }
+                }
+              }
             }
             const leaking = Array.from(left.querySelectorAll('*'))
               .filter(visible)
@@ -622,6 +742,15 @@ test.describe('AIcheck deep route menu', () => {
     await expect(page.locator('.fde-console')).toContainText('每份资料为什么能进入 Agent 审查')
     await expect(page.locator('.fde-console')).toContainText('资料向量化链路图')
     await expect(page.locator('.fde-console .knowledge-chart-shell canvas').first()).toBeVisible()
+    await expectFixedChartTransformZoom(
+      page,
+      page.locator('.fde-console .knowledge-chart-shell--sankey').first(),
+      {
+        zoomButtonName: '放大资料向量化链路图',
+        resetButtonName: '重置资料向量化链路图',
+        echartSelector: '.knowledge-echart'
+      }
+    )
     await expect(page.locator('.fde-console')).toContainText('向量条目')
     await expect(page.locator('.fde-console')).toContainText('PageIndex')
     await expect(page.locator('.fde-console')).toContainText('Lineage 来源')
@@ -634,6 +763,15 @@ test.describe('AIcheck deep route menu', () => {
     await expect(page.locator('.fde-console')).toContainText('每次检索为什么这样走')
     await expect(page.locator('.fde-console')).toContainText('PageIndex 检索溯源树')
     await expect(page.locator('.fde-console .knowledge-chart-shell canvas').first()).toBeVisible()
+    await expectFixedChartTransformZoom(
+      page,
+      page.locator('.fde-console .knowledge-chart-shell--tree').first(),
+      {
+        zoomButtonName: '放大 PageIndex 检索溯源树',
+        resetButtonName: '重置 PageIndex 检索溯源树',
+        echartSelector: '.knowledge-echart'
+      }
+    )
     await expect(page.locator('.fde-console')).toContainText('PageIndex 路由追踪')
     await expect(page.locator('.fde-console')).toContainText('问题分类')
     await expect(page.locator('.fde-console')).toContainText('条款映射')
@@ -647,9 +785,29 @@ test.describe('AIcheck deep route menu', () => {
     await page.waitForLoadState('networkidle')
     await waitForFdeProjectAuditReady(page)
     await expect(page.locator('.fde-console')).toContainText('LangGraph 编排图')
+    await expect(page.locator('.fde-console')).toContainText('Temporal 执行时间线')
+    await expect(page.locator('.fde-console .knowledge-chart-shell canvas').first()).toBeVisible()
+    await expectFixedChartTransformZoom(
+      page,
+      page.locator('.fde-console .knowledge-chart-shell--timeline').first(),
+      {
+        zoomButtonName: '放大 Temporal 执行时间线',
+        resetButtonName: '重置 Temporal 执行时间线',
+        echartSelector: '.knowledge-echart'
+      }
+    )
     await expect(page.locator('.fde-console')).toContainText('阶段泳道')
     await expect(page.locator('.fde-console')).toContainText('COG 可审计思考摘要')
     await expect(page.locator('.fde-console .langgraph-chart-shell canvas').first()).toBeVisible()
+    await expectFixedChartTransformZoom(
+      page,
+      page.locator('.fde-console .langgraph-chart-shell').first(),
+      {
+        zoomButtonName: '放大 LangGraph 编排图',
+        resetButtonName: '重置 LangGraph 编排图',
+        echartSelector: '.langgraph-echart'
+      }
+    )
     await expect(page.locator('.fde-console')).toContainText('postgres')
     await expect(page.locator('.fde-console')).toContainText('Agent 思考链与工具证据')
     await expect(page.locator('.fde-console')).toContainText('审查草稿结果')
@@ -685,6 +843,182 @@ test.describe('AIcheck deep route menu', () => {
     await expect(ocrDrawer).toContainText('引擎')
     await page.keyboard.press('Escape')
     await expect(ocrDrawer).toBeHidden()
+
+    await page.goto('/#/fde/ocr-quality')
+    await page.waitForLoadState('networkidle')
+    await expect(page.locator('.fde-console')).toContainText('OCR 场景质量热力图')
+    const heatmapShell = page.locator('.fde-console .knowledge-chart-shell--heatmap').first()
+    await expect(heatmapShell.locator('canvas').first()).toBeVisible()
+    const heatmapShellWidthBefore = await heatmapShell.evaluate(
+      (el) => (el as HTMLElement).offsetWidth
+    )
+    const heatmapShellHeightBefore = await heatmapShell.evaluate(
+      (el) => (el as HTMLElement).offsetHeight
+    )
+    const heatmapChartWidthBefore = await heatmapShell
+      .locator('.knowledge-echart')
+      .first()
+      .evaluate((el) => (el as HTMLElement).offsetWidth)
+    const heatmapChartHeightBefore = await heatmapShell
+      .locator('.knowledge-echart')
+      .first()
+      .evaluate((el) => (el as HTMLElement).offsetHeight)
+    const heatmapFrameWidthBefore = await heatmapShell
+      .locator('.chart-zoom-frame')
+      .first()
+      .evaluate((el) => (el as HTMLElement).offsetWidth)
+    const heatmapFrameHeightBefore = await heatmapShell
+      .locator('.chart-zoom-frame')
+      .first()
+      .evaluate((el) => (el as HTMLElement).offsetHeight)
+    const heatmapContent = heatmapShell.locator('.chart-zoom-content').first()
+    const heatmapTransformBefore = await heatmapContent.evaluate(
+      (el) => getComputedStyle(el as HTMLElement).transform
+    )
+    await page.getByRole('button', { name: '放大 OCR 场景质量热力图' }).click()
+    await expect
+      .poll(async () =>
+        heatmapContent.evaluate((el) => getComputedStyle(el as HTMLElement).transform)
+      )
+      .not.toBe(heatmapTransformBefore)
+    await expect
+      .poll(async () => heatmapShell.evaluate((el) => (el as HTMLElement).offsetWidth))
+      .toBe(heatmapShellWidthBefore)
+    await expect
+      .poll(async () => heatmapShell.evaluate((el) => (el as HTMLElement).offsetHeight))
+      .toBe(heatmapShellHeightBefore)
+    await expect
+      .poll(async () =>
+        heatmapShell
+          .locator('.chart-zoom-frame')
+          .first()
+          .evaluate((el) => (el as HTMLElement).offsetWidth)
+      )
+      .toBe(heatmapFrameWidthBefore)
+    await expect
+      .poll(async () =>
+        heatmapShell
+          .locator('.chart-zoom-frame')
+          .first()
+          .evaluate((el) => (el as HTMLElement).offsetHeight)
+      )
+      .toBe(heatmapFrameHeightBefore)
+    await expect
+      .poll(async () =>
+        heatmapShell
+          .locator('.knowledge-echart')
+          .first()
+          .evaluate((el) => (el as HTMLElement).offsetWidth)
+      )
+      .toBe(heatmapChartWidthBefore)
+    await expect
+      .poll(async () =>
+        heatmapShell
+          .locator('.knowledge-echart')
+          .first()
+          .evaluate((el) => (el as HTMLElement).offsetHeight)
+      )
+      .toBe(heatmapChartHeightBefore)
+    await page.getByRole('button', { name: '重置 OCR 场景质量热力图' }).click()
+    const heatmapShellWidthReset = await heatmapShell.evaluate(
+      (el) => (el as HTMLElement).offsetWidth
+    )
+    const heatmapShellHeightReset = await heatmapShell.evaluate(
+      (el) => (el as HTMLElement).offsetHeight
+    )
+    const heatmapChartWidthReset = await heatmapShell
+      .locator('.knowledge-echart')
+      .first()
+      .evaluate((el) => (el as HTMLElement).offsetWidth)
+    const heatmapChartHeightReset = await heatmapShell
+      .locator('.knowledge-echart')
+      .first()
+      .evaluate((el) => (el as HTMLElement).offsetHeight)
+    const heatmapFrameWidthReset = await heatmapShell
+      .locator('.chart-zoom-frame')
+      .first()
+      .evaluate((el) => (el as HTMLElement).offsetWidth)
+    const heatmapFrameHeightReset = await heatmapShell
+      .locator('.chart-zoom-frame')
+      .first()
+      .evaluate((el) => (el as HTMLElement).offsetHeight)
+    const heatmapTransformReset = await heatmapContent.evaluate(
+      (el) => getComputedStyle(el as HTMLElement).transform
+    )
+    const heatmapCanvas = heatmapShell.locator('canvas').first()
+    await heatmapCanvas.evaluate((el) => {
+      const rect = el.getBoundingClientRect()
+      el.dispatchEvent(
+        new WheelEvent('wheel', {
+          bubbles: true,
+          cancelable: true,
+          clientX: rect.left + 120,
+          clientY: rect.top + 120,
+          ctrlKey: true,
+          deltaY: -120
+        })
+      )
+    })
+    await expect
+      .poll(async () =>
+        heatmapContent.evaluate((el) => getComputedStyle(el as HTMLElement).transform)
+      )
+      .not.toBe(heatmapTransformReset)
+    await expect
+      .poll(async () => heatmapShell.evaluate((el) => (el as HTMLElement).offsetWidth))
+      .toBe(heatmapShellWidthReset)
+    await expect
+      .poll(async () => heatmapShell.evaluate((el) => (el as HTMLElement).offsetHeight))
+      .toBe(heatmapShellHeightReset)
+    await expect
+      .poll(async () =>
+        heatmapShell
+          .locator('.chart-zoom-frame')
+          .first()
+          .evaluate((el) => (el as HTMLElement).offsetWidth)
+      )
+      .toBe(heatmapFrameWidthReset)
+    await expect
+      .poll(async () =>
+        heatmapShell
+          .locator('.chart-zoom-frame')
+          .first()
+          .evaluate((el) => (el as HTMLElement).offsetHeight)
+      )
+      .toBe(heatmapFrameHeightReset)
+    await expect
+      .poll(async () =>
+        heatmapShell
+          .locator('.knowledge-echart')
+          .first()
+          .evaluate((el) => (el as HTMLElement).offsetWidth)
+      )
+      .toBe(heatmapChartWidthReset)
+    await expect
+      .poll(async () =>
+        heatmapShell
+          .locator('.knowledge-echart')
+          .first()
+          .evaluate((el) => (el as HTMLElement).offsetHeight)
+      )
+      .toBe(heatmapChartHeightReset)
+    const heatmapBox = await heatmapCanvas.boundingBox()
+    expect(heatmapBox).not.toBeNull()
+    const heatmapTransformBeforeDrag = await heatmapContent.evaluate(
+      (el) => getComputedStyle(el as HTMLElement).transform
+    )
+    await page.mouse.move(heatmapBox!.x + 260, heatmapBox!.y + 140)
+    await page.mouse.down()
+    await page.mouse.move(heatmapBox!.x + 120, heatmapBox!.y + 140, { steps: 4 })
+    await page.mouse.up()
+    await expect
+      .poll(async () =>
+        heatmapContent.evaluate((el) => getComputedStyle(el as HTMLElement).transform)
+      )
+      .not.toBe(heatmapTransformBeforeDrag)
+    await expect
+      .poll(async () => heatmapShell.evaluate((el) => (el as HTMLElement).scrollLeft))
+      .toBe(0)
 
     await page.goto('/#/fde/projects?view=evaluation')
     await page.waitForLoadState('networkidle')

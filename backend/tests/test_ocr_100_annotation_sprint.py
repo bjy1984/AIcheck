@@ -7,6 +7,7 @@ from scripts.ocr_100_annotation_sprint import (
     annotation_sprint_csv,
     annotation_sprint_markdown,
     build_annotation_sprint_plan,
+    write_annotation_workbook,
 )
 
 
@@ -67,6 +68,10 @@ def test_ocr_100_annotation_sprint_prioritizes_reviewable_machine_suggestions(tm
     assert plan["workItems"][0]["caseId"] == "real-piping-001"
     assert plan["workItems"][0]["suggestedCounts"] == {"fields": 1, "tables": 1, "seals": 1, "diagnostics": 0}
     assert plan["workItems"][0]["suggestedPositiveEvidenceCounts"] == {"fields": 1, "tables": 1, "seals": 1}
+    assert plan["workItems"][0]["draftSource"] == "suggestedExpected"
+    assert plan["workItems"][0]["labelJsonDraft"]["expected"]["fields"][0]["value"] == "PL8301"
+    assert plan["workItems"][0]["labelJsonDraft"]["expected"]["review"]["requiresHumanConfirmation"] is True
+    assert plan["workItems"][1]["draftSource"] == "suggestedExpected"
     assert "Review suggestedExpected" in " ".join(plan["workItems"][0]["humanActions"])
     assert "missing_human_label" in plan["workItems"][0]["blockers"]
 
@@ -102,3 +107,48 @@ def test_ocr_100_annotation_sprint_exports_markdown_and_csv(tmp_path: Path) -> N
     assert "seal_text_profile" in markdown
     assert "case-1" in csv_text
     assert "missing_human_label" in csv_text
+    assert "draftSource" in csv_text
+
+
+def test_ocr_100_annotation_sprint_writes_human_workbook_drafts(tmp_path: Path) -> None:
+    tasks = tmp_path / "prelabelled_tasks.json"
+    tasks.write_text(
+        json.dumps(
+            {
+                "tasks": [
+                    {
+                        "taskId": "label-1",
+                        "caseId": "case/1",
+                        "scenario": "seal_text_profile",
+                        "profileId": "seal_text_v1",
+                        "documentType": "sealed_document",
+                        "collectionStatus": "needs_labeling",
+                        "sourcePath": "Scan/seal.png",
+                        "previewPaths": ["previews/case-1.png"],
+                        "suggestedExpected": {
+                            "qualityStatus": "needs_human_review",
+                            "seals": [{"nameContains": "公司", "bbox": [1, 1, 10, 10]}],
+                        },
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    plan = build_annotation_sprint_plan(tasks, limit=1)
+
+    manifest = write_annotation_workbook(plan, tmp_path / "workbook")
+
+    assert manifest["schemaVersion"] == "aicheck-ocr-100-annotation-workbook-v1"
+    assert manifest["draftCount"] == 1
+    draft_path = Path(manifest["drafts"][0]["path"])
+    draft = json.loads(draft_path.read_text(encoding="utf-8"))
+    assert draft_path.name == "case_1.expected.json"
+    assert draft["caseId"] == "case/1"
+    assert draft["expected"]["seals"][0]["nameContains"] == "公司"
+    assert draft["expected"]["review"]["source"] == "human_workbook_draft"
+    assert draft["expected"]["review"]["requiresHumanConfirmation"] is True
+    readme = (tmp_path / "workbook" / "README.md").read_text(encoding="utf-8")
+    assert "machine workbook drafts are not gold labels" in readme
+    assert "case/1" in readme

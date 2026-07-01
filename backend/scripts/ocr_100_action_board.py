@@ -232,6 +232,8 @@ def board_summary(
         "duplicateLocalCandidates": candidate_summary.get("duplicates", 0),
         "actions": len(actions),
         "laneCounts": dict(sorted(lane_counts.items())),
+        "scenarioTargetGaps": sprint_summary.get("scenarioTargetGaps", {}),
+        "scenarioReviewBacklog": scenario_review_backlog_from_sprint(sprint),
     }
 
 
@@ -242,6 +244,27 @@ def scenario_plan_from_closure(closure: dict[str, Any]) -> dict[str, dict[str, A
 
 def collection_missing_from_closure(closure: dict[str, Any]) -> int:
     return sum(safe_int(item.get("collectionMissingCases")) for item in scenario_plan_from_closure(closure).values())
+
+
+def scenario_review_backlog_from_sprint(sprint: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    plan = sprint.get("scenarioPlan") if isinstance(sprint.get("scenarioPlan"), dict) else {}
+    backlog: dict[str, dict[str, Any]] = {}
+    for scenario, item in plan.items():
+        if not isinstance(item, dict):
+            continue
+        review_backlog = safe_int(item.get("reviewBacklogCases"))
+        missing_ready = safe_int(item.get("missingReadyCases"))
+        if review_backlog <= 0 and missing_ready <= 0:
+            continue
+        backlog[str(scenario)] = {
+            "targetCases": safe_int(item.get("targetCases")),
+            "queuedCases": safe_int(item.get("queuedCases")),
+            "readyForEval": safe_int(item.get("readyForEval")),
+            "missingReadyCases": missing_ready,
+            "reviewBacklogCases": review_backlog,
+            "collectionMissingCases": safe_int(item.get("collectionMissingCases")),
+        }
+    return dict(sorted(backlog.items()))
 
 
 def path_from_status(status: dict[str, Any], report_name: str) -> Path | None:
@@ -287,11 +310,29 @@ def action_board_markdown(report: dict[str, Any]) -> str:
         f"- Remaining human labels: {summary.get('remainingHumanLabels')}",
         f"- New local candidates: {summary.get('newLocalCandidates')}",
         "",
+        "## Scenario Gaps",
+        "",
+    ]
+    scenario_backlog = summary.get("scenarioReviewBacklog") if isinstance(summary.get("scenarioReviewBacklog"), dict) else {}
+    if scenario_backlog:
+        lines.extend(["| Scenario | Target | Queued | Ready | Missing Ready | Review Backlog | Collection Missing |", "| --- | ---: | ---: | ---: | ---: | ---: | ---: |"])
+        for scenario, item in scenario_backlog.items():
+            if not isinstance(item, dict):
+                continue
+            lines.append(
+                f"| {scenario} | {item.get('targetCases', 0)} | {item.get('queuedCases', 0)} | "
+                f"{item.get('readyForEval', 0)} | {item.get('missingReadyCases', 0)} | "
+                f"{item.get('reviewBacklogCases', 0)} | {item.get('collectionMissingCases', 0)} |"
+            )
+    else:
+        lines.append("No scenario gaps.")
+    lines.extend([
+        "",
         "## Lane Counts",
         "",
         "| Lane | Count |",
         "| --- | ---: |",
-    ]
+    ])
     lane_counts = summary.get("laneCounts") if isinstance(summary.get("laneCounts"), dict) else {}
     for lane, count in lane_counts.items():
         lines.append(f"| {lane} | {count} |")
@@ -398,6 +439,24 @@ def action_handoff_readme(report: dict[str, Any], grouped: dict[str, list[dict[s
         f"- Collection actions: {collect_count}",
         f"- Labeling actions: {label_count}",
         "",
+        "## Scenario Gaps",
+        "",
+    ]
+    scenario_backlog = summary.get("scenarioReviewBacklog") if isinstance(summary.get("scenarioReviewBacklog"), dict) else {}
+    if scenario_backlog:
+        lines.extend(["| Scenario | Target | Queued | Ready | Missing Ready | Review Backlog | Collection Missing |", "| --- | ---: | ---: | ---: | ---: | ---: | ---: |"])
+        for scenario, item in scenario_backlog.items():
+            if not isinstance(item, dict):
+                continue
+            lines.append(
+                f"| {scenario} | {item.get('targetCases', 0)} | {item.get('queuedCases', 0)} | "
+                f"{item.get('readyForEval', 0)} | {item.get('missingReadyCases', 0)} | "
+                f"{item.get('reviewBacklogCases', 0)} | {item.get('collectionMissingCases', 0)} |"
+            )
+    else:
+        lines.append("No scenario gaps.")
+    lines.extend([
+        "",
         "## Files",
         "",
         "| File | Owner | Purpose |",
@@ -413,7 +472,7 @@ def action_handoff_readme(report: dict[str, Any], grouped: dict[str, list[dict[s
         "4. Finalize labels only after values, quality status, and positive-area evidence are reviewed.",
         "5. Rerun `ocr_100_action_board.py` and `ocr_100_certification_status.py` until `readyForEval` reaches the required target.",
         "",
-    ]
+    ])
     return "\n".join(lines)
 
 

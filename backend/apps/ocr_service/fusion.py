@@ -1,35 +1,112 @@
 from __future__ import annotations
 
+from datetime import datetime
 import re
 from copy import deepcopy
 from typing import Any
 
 FIELD_ALIASES = {
+    "公司名称": "company_name",
+    "单位名称": "organization_name",
+    "组织名称": "organization_name",
     "管线号": "pipe_no",
     "管道号": "pipe_no",
     "管道代号": "pipe_no",
+    "管号": "pipe_no",
+    "pipeline": "pipe_no",
     "pipeline_no": "pipe_no",
     "line_no": "pipe_no",
     "pipe_no": "pipe_no",
     "图纸编号": "drawing_no",
     "图纸号": "drawing_no",
+    "图纸号dwg_no": "drawing_no",
     "dwg_no": "drawing_no",
     "drawing_no": "drawing_no",
     "项目名称": "project_name",
     "project_name": "project_name",
+    "文件标题": "document_title",
+    "设计阶段": "design_phase",
     "证书编号": "certificate_no",
+    "合格证编号": "certificate_no",
+    "质证书编号": "certificate_no",
     "certificate_no": "certificate_no",
+    "certificate_number": "certificate_no",
+    "cert_no": "certificate_no",
     "报告编号": "report_no",
+    "报告号": "report_no",
     "report_no": "report_no",
+    "report_number": "report_no",
+    "生产厂家": "manufacturer",
+    "制造单位": "manufacturer",
+    "制造商": "manufacturer",
+    "manufacturer": "manufacturer",
+    "材质": "material_grade",
+    "材料牌号": "material_grade",
+    "牌号": "material_grade",
+    "material_grade": "material_grade",
+    "规格": "specification",
+    "规格型号": "specification",
+    "型号规格": "specification",
+    "specification": "specification",
+    "炉批号": "batch_no",
+    "批号": "batch_no",
+    "batch_no": "batch_no",
+    "标准号": "standard_no",
+    "执行标准": "standard_no",
+    "standard_no": "standard_no",
+    "检验结论": "inspection_conclusion",
+    "结论": "conclusion",
+    "inspection_conclusion": "inspection_conclusion",
+    "日期": "issue_date",
+    "签发日期": "issue_date",
+    "发证日期": "issue_date",
+    "出厂日期": "issue_date",
+    "issue_date": "issue_date",
+    "有效期": "valid_until",
+    "有效期至": "valid_until",
+    "valid_until": "valid_until",
+    "签发机构": "issuer",
+    "发证机关": "issuer",
+    "issuer": "issuer",
+    "许可范围": "license_scope",
+    "license_scope": "license_scope",
+    "检测方法": "detection_method",
+    "探伤方法": "detection_method",
+    "detection_method": "detection_method",
+    "焊口编号": "weld_no",
+    "焊口号": "weld_no",
+    "weld_no": "weld_no",
+    "检测日期": "detection_date",
+    "detection_date": "detection_date",
+    "评定级别": "evaluation_level",
+    "evaluation_level": "evaluation_level",
+    "检测单位": "inspection_unit",
+    "inspection_unit": "inspection_unit",
+    "记录编号": "record_no",
+    "record_no": "record_no",
+    "施工日期": "construction_date",
+    "construction_date": "construction_date",
+    "责任人": "responsible_person",
+    "responsible_person": "responsible_person",
+    "焊工": "welder_name",
+    "焊工姓名": "welder_name",
+    "welder_name": "welder_name",
+    "焊工资格证号": "welder_cert_no",
+    "证书号": "welder_cert_no",
+    "welder_cert_no": "welder_cert_no",
+    "焊接日期": "welding_date",
+    "welding_date": "welding_date",
+    "设计压力": "design_pressure",
+    "试验压力": "test_pressure",
 }
 
 TABLE_HEADER_ALIASES = {
-    "piping_characteristic_table": {"序号", "管道号", "管道代号", "管线号", "公称直径", "管道等级", "设计压力", "介质", "起点", "终点"},
-    "weld_detection_result_table": {"焊口编号", "检测方法", "评定级别", "检测比例", "结论", "报告编号"},
-    "material_chemical_composition_table": {"化学成分", "炉批号", "c", "si", "mn", "p", "s"},
-    "mechanical_property_table": {"力学性能", "抗拉强度", "屈服强度", "伸长率"},
-    "construction_record_table": {"施工日期", "施工内容", "责任人", "检查结果"},
-    "welding_record_table": {"焊口编号", "焊工", "焊工资格", "焊接日期"},
+    "piping_characteristic_table": {"序号", "管道号", "管道代号", "管线号", "管号", "pipeno", "lineno", "公称直径", "dn", "nps", "管道等级", "设计压力", "介质", "起点", "终点"},
+    "weld_detection_result_table": {"焊口编号", "焊口号", "weldno", "检测方法", "探伤方法", "rt", "ut", "评定级别", "检测比例", "结论", "报告编号"},
+    "material_chemical_composition_table": {"化学成分", "化学成份", "炉批号", "批号", "heatno", "batchno", "c", "si", "mn", "p", "s"},
+    "mechanical_property_table": {"力学性能", "机械性能", "抗拉强度", "屈服强度", "伸长率", "tensile", "yield", "elongation"},
+    "construction_record_table": {"施工日期", "施工内容", "责任人", "检查结果", "记录编号", "project"},
+    "welding_record_table": {"焊口编号", "焊口号", "焊工", "焊工资格", "资格证号", "焊接日期", "wps", "pqr"},
 }
 
 
@@ -83,8 +160,8 @@ def fuse_fields(fields: list[Any]) -> list[dict[str, Any]]:
         grouped.setdefault(field_code, []).append(field)
     fused = []
     for field_code, candidates in grouped.items():
-        best = max(candidates, key=field_score)
-        conflict = field_value_conflict(candidates)
+        best = max(candidates, key=lambda item: field_score(item, field_code=field_code))
+        conflict = field_value_conflict(candidates, field_code=field_code)
         output = deepcopy(best)
         output["fieldCode"] = field_code
         output["selectedVariantId"] = output.get("selectedVariantId") or output.get("variantId")
@@ -118,25 +195,40 @@ def choose_tables(tables: list[Any], *, profile: dict[str, Any]) -> list[dict[st
         return table_items
     selected: list[dict[str, Any]] = []
     for required in required_tables:
-        candidates = [table for table in table_items if table_matches_required(table, required)] or table_items
+        matched_candidates = [table for table in table_items if table_matches_required(table, required)]
+        candidates = matched_candidates or table_items
         best_source = max(candidates, key=lambda item: table_score(item, required_table=required))
         existing = next((table for table in selected if same_table_identity(table, best_source)), None)
         if existing is not None:
-            matched = {str(item) for item in existing.get("matchedRequiredTables") or [] if item}
-            if existing.get("matchedRequiredTable"):
-                matched.add(str(existing["matchedRequiredTable"]))
-            matched.add(required)
-            existing["matchedRequiredTables"] = sorted(matched)
-            existing.pop("matchedRequiredTable", None)
+            if matched_candidates:
+                matched = {str(item) for item in existing.get("matchedRequiredTables") or [] if item}
+                if existing.get("matchedRequiredTable"):
+                    matched.add(str(existing["matchedRequiredTable"]))
+                matched.add(required)
+                existing["matchedRequiredTables"] = sorted(matched)
+                existing.pop("matchedRequiredTable", None)
             schemas = {str(item) for item in existing.get("businessSchemas") or [] if item}
             schemas.update(str(item) for item in best_source.get("businessSchemas") or [] if item)
             if best_source.get("businessSchema"):
                 schemas.add(str(best_source["businessSchema"]))
             if schemas:
                 existing["businessSchemas"] = sorted(schemas)
+            if not matched_candidates:
+                flags = {str(flag) for flag in existing.get("qualityFlags") or []}
+                flags.add("required_table_unmatched_candidate")
+                existing["qualityFlags"] = sorted(flags)
+                candidates_for = {str(item) for item in existing.get("candidateForRequiredTables") or [] if item}
+                candidates_for.add(required)
+                existing["candidateForRequiredTables"] = sorted(candidates_for)
             continue
         best = deepcopy(best_source)
-        best.setdefault("matchedRequiredTable", required)
+        if matched_candidates:
+            best.setdefault("matchedRequiredTable", required)
+        else:
+            flags = {str(flag) for flag in best.get("qualityFlags") or []}
+            flags.add("required_table_unmatched_candidate")
+            best["qualityFlags"] = sorted(flags)
+            best.setdefault("candidateForRequiredTables", [required])
         conflicts = [
             table.get("tableId")
             for table in candidates
@@ -495,6 +587,9 @@ def build_quality_gate(result: dict[str, Any], profile: dict[str, Any]) -> dict[
     low_confidence_fields = mark_low_confidence_fields(fields, profile, required_fields)
     if low_confidence_fields:
         reasons.append("FIELD_LOW_CONFIDENCE")
+    invalid_fields = mark_invalid_field_values(fields, profile, required_fields)
+    if invalid_fields:
+        reasons.append("FIELD_FORMAT_INVALID")
     missing_evidence = mark_missing_required_evidence(
         fields=fields,
         tables=tables,
@@ -548,6 +643,7 @@ def build_quality_gate(result: dict[str, Any], profile: dict[str, Any]) -> dict[
         "matchedSealTypes": matched_seal_types,
         "missingExpectedSealTypes": missing_expected_seal_types,
         "lowConfidenceFields": low_confidence_fields,
+        "invalidFields": invalid_fields,
         "missingEvidence": missing_evidence,
     }
 
@@ -628,7 +724,7 @@ def table_matches_required(table: dict[str, Any], required_table: str) -> bool:
     ]
     if any(normalize_table_key(candidate) == required for candidate in flatten_table_candidates(candidates)):
         return True
-    return table_schema_match_score(table, required_table) >= 0.58
+    return table_schema_match_score(table, required_table) >= 0.58 or table_schema_match_count(table, required_table) >= 3
 
 
 def flatten_table_candidates(candidates: list[Any]) -> list[Any]:
@@ -667,10 +763,25 @@ def table_schema_match_score(table: dict[str, Any], required_table: str | None) 
     return len(matched) / max(len(expected), 1)
 
 
+def table_schema_match_count(table: dict[str, Any], required_table: str | None) -> int:
+    if not required_table:
+        return 0
+    expected = TABLE_HEADER_ALIASES.get(normalize_table_key(required_table), set())
+    if not expected:
+        return 0
+    headers = table_header_tokens(table)
+    if not headers:
+        return 0
+    return len({token for token in expected if any(token in header or header in token for header in headers)})
+
+
 def table_header_tokens(table: dict[str, Any]) -> set[str]:
     tokens: set[str] = set()
     for cell in table.get("cells") or []:
-        if not isinstance(cell, dict) or not cell.get("isHeader"):
+        if not isinstance(cell, dict):
+            continue
+        is_header = bool(cell.get("isHeader")) or int_from(cell.get("row"), default=-1) == 0
+        if not is_header:
             continue
         token = normalize_header_token(cell.get("text"))
         if token:
@@ -685,15 +796,34 @@ def normalize_header_token(value: Any) -> str:
     return re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "", str(value or "").strip().lower())
 
 
-def field_score(field: dict[str, Any]) -> float:
+def int_from(value: Any, *, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def field_score(field: dict[str, Any], *, field_code: str | None = None) -> float:
     value = str(field.get("fieldValue") or "")
     confidence = float(field.get("confidence") or 0.0)
     bbox_bonus = 0.05 if field.get("bbox") else 0.0
     value_bonus = min(len(value), 20) / 400.0
-    return confidence + bbox_bonus + value_bonus
+    validation_bonus = 0.0
+    if field_code:
+        valid, _ = validate_business_field_value(field_code, value)
+        validation_bonus = 0.08 if valid else -0.22
+    return confidence + bbox_bonus + value_bonus + validation_bonus
 
 
-def field_value_conflict(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def field_value_conflict(candidates: list[dict[str, Any]], *, field_code: str | None = None) -> list[dict[str, Any]]:
+    if field_code:
+        valid_candidates = [
+            candidate
+            for candidate in candidates
+            if validate_business_field_value(field_code, candidate.get("fieldValue"))[0]
+        ]
+        if valid_candidates:
+            candidates = valid_candidates
     by_value: dict[str, dict[str, Any]] = {}
     for candidate in candidates:
         normalized = normalize_field_value(candidate.get("fieldValue"))
@@ -780,6 +910,166 @@ def mark_low_confidence_fields(
             }
         )
     return low_confidence
+
+
+def mark_invalid_field_values(
+    fields: list[dict[str, Any]],
+    profile: dict[str, Any],
+    required_fields: list[str],
+) -> list[dict[str, Any]]:
+    required = {normalize_field_key(item) for item in required_fields}
+    profile_critical = {
+        normalize_field_key(item)
+        for item in ((profile.get("qualityRules") or {}).get("criticalConflictFields") or [])
+    }
+    watched = required | profile_critical
+    invalid: list[dict[str, Any]] = []
+    for field in fields:
+        code = normalize_field_key(field.get("fieldCode") or field.get("fieldName"))
+        if not code or code not in watched:
+            continue
+        ok, reason = validate_business_field_value(code, field.get("fieldValue"))
+        if ok:
+            continue
+        flags = {str(flag) for flag in field.get("qualityFlags") or []}
+        flags.add("field_format_invalid")
+        field["qualityFlags"] = sorted(flags)
+        invalid.append(
+            {
+                "fieldCode": field.get("fieldCode") or field.get("fieldName"),
+                "fieldName": field.get("fieldName"),
+                "fieldValue": field.get("fieldValue"),
+                "reason": reason,
+                "sourceEngine": field.get("sourceEngine"),
+                "variantId": field.get("variantId") or field.get("selectedVariantId"),
+            }
+        )
+    return invalid
+
+
+def validate_business_field_value(field_code: str, value: Any) -> tuple[bool, str]:
+    text = normalize_text(value)
+    if not text:
+        return False, "empty_value"
+    normalized = normalize_field_key(field_code)
+    if normalized in {
+        "report_no",
+        "certificate_no",
+        "record_no",
+        "drawing_no",
+        "welder_cert_no",
+        "batch_no",
+        "standard_no",
+    }:
+        return validate_identifier_value(normalized, text)
+    if normalized in {
+        "issue_date",
+        "valid_until",
+        "detection_date",
+        "construction_date",
+        "welding_date",
+    }:
+        return validate_date_value(text)
+    if normalized in {"pipe_no", "weld_no"}:
+        return validate_code_list_value(normalized, text)
+    if normalized in {"design_pressure", "test_pressure", "pressure"}:
+        return validate_pressure_value(text)
+    if normalized in {"detection_method"}:
+        return validate_detection_method(text)
+    if normalized in {"evaluation_level"}:
+        return validate_evaluation_level(text)
+    if normalized in {"conclusion", "inspection_conclusion"}:
+        return validate_conclusion_value(text)
+    return True, ""
+
+
+def validate_identifier_value(field_code: str, text: str) -> tuple[bool, str]:
+    compact = normalize_identifier_text(text)
+    if len(compact) < 2:
+        return False, "identifier_too_short"
+    if re.search(r"[^A-Z0-9/_.#()（）\-\u4e00-\u9fff]", compact, flags=re.I):
+        return False, "identifier_has_invalid_characters"
+    if not re.search(r"[A-Z0-9]", compact, flags=re.I):
+        return False, "identifier_missing_alnum"
+    if field_code in {"report_no", "certificate_no", "record_no", "drawing_no"} and len(compact) < 4:
+        return False, "identifier_too_short"
+    return True, ""
+
+
+def validate_date_value(text: str) -> tuple[bool, str]:
+    compact = normalize_identifier_text(text)
+    patterns = [
+        r"(?P<year>\d{4})年(?P<month>\d{1,2})月(?P<day>\d{1,2})日?",
+        r"(?P<year>\d{4})[-/.](?P<month>\d{1,2})[-/.](?P<day>\d{1,2})",
+        r"(?P<year>\d{4})(?P<month>\d{2})(?P<day>\d{2})",
+        r"(?P<year>\d{4})年(?P<month>\d{1,2})月",
+        r"(?P<year>\d{4})[-/.](?P<month>\d{1,2})",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, compact)
+        if not match:
+            continue
+        year = int(match.group("year"))
+        month = int(match.group("month"))
+        day = int(match.groupdict().get("day") or 1)
+        try:
+            datetime(year, month, day)
+        except ValueError:
+            return False, "date_out_of_range"
+        return True, ""
+    return False, "date_format_unrecognized"
+
+
+def validate_code_list_value(field_code: str, text: str) -> tuple[bool, str]:
+    tokens = [token for token in re.split(r"[,，;；、\s]+", normalize_identifier_text(text)) if token]
+    if not tokens:
+        return False, "code_list_empty"
+    valid_count = 0
+    for token in tokens[:30]:
+        if re.search(r"[A-Z]", token, flags=re.I) and re.search(r"\d", token) and re.fullmatch(r"[A-Z0-9_.#()/（）\-]+", token, flags=re.I):
+            valid_count += 1
+    if valid_count == 0:
+        return False, f"{field_code}_format_unrecognized"
+    return True, ""
+
+
+def validate_pressure_value(text: str) -> tuple[bool, str]:
+    compact = normalize_identifier_text(text).replace("MPA", "").replace("Mpa", "").replace("MPa", "")
+    matches = re.findall(r"\d+(?:\.\d+)?", compact)
+    if not matches:
+        return False, "pressure_missing_number"
+    values = [float(value) for value in matches]
+    if any(value < 0 or value > 100 for value in values):
+        return False, "pressure_out_of_range"
+    return True, ""
+
+
+def validate_detection_method(text: str) -> tuple[bool, str]:
+    compact = normalize_identifier_text(text).upper()
+    if any(method in compact for method in ["RT", "UT", "MT", "PT", "TOFD", "PAUT", "DR"]):
+        return True, ""
+    if any(term in compact for term in ["射线", "超声", "磁粉", "渗透", "检测"]):
+        return True, ""
+    return False, "detection_method_unrecognized"
+
+
+def validate_evaluation_level(text: str) -> tuple[bool, str]:
+    compact = normalize_identifier_text(text).upper()
+    if re.search(r"(I{1,4}|ⅰ|Ⅱ|Ⅲ|Ⅳ|一级|二级|三级|四级|合格|不合格|AB|B|C)", compact):
+        return True, ""
+    return False, "evaluation_level_unrecognized"
+
+
+def validate_conclusion_value(text: str) -> tuple[bool, str]:
+    if any(term in text for term in ["合格", "不合格", "通过", "符合", "不符合", "返修", "复验", "接受", "拒收"]):
+        return True, ""
+    if any(term in text.upper() for term in ["PASS", "FAIL", "ACCEPT", "REJECT", "OK", "NG"]):
+        return True, ""
+    return False, "conclusion_unrecognized"
+
+
+def normalize_identifier_text(value: Any) -> str:
+    return "".join(str(value or "").split())
 
 
 def mark_missing_required_evidence(

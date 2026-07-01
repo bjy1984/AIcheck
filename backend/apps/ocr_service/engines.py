@@ -734,7 +734,7 @@ class PaddleOcrSubprocessEngine(LocalOcrEngine):
                             "pageNo": page_index + 1,
                             "text": str(text),
                             "bbox": box,
-                            "confidence": float(scores[index]) if index < len(scores) else 0.8,
+                            "confidence": float(scores[index]) if index < len(scores) and scores[index] is not None else 0.0,
                             "sourceEngine": "paddle_ocr_subprocess",
                         }
                     )
@@ -893,7 +893,7 @@ def paddle_ocr_worker_script() -> str:
                             "pageNo": page_index + 1,
                             "text": str(text),
                             "bbox": box,
-                            "confidence": float(scores[index]) if index < len(scores) else 0.8,
+                            "confidence": float(scores[index]) if index < len(scores) and scores[index] is not None else 0.0,
                             "sourceEngine": "paddle_ocr_subprocess",
                         }
                     )
@@ -1772,19 +1772,34 @@ def normalize_docling_payload(payload: dict[str, Any], markdown: str, engine_nam
                 layout_blocks.append({"blockId": f"docling_table_{index}", "blockType": "table", "pageNo": page_no, "bbox": bbox, "sourceEngine": engine_name})
                 continue
         if text:
+            confidence = 0.9 if bbox else 0.68
+            quality_flags = ["docling_block"]
+            if not bbox:
+                quality_flags.append("evidence_bbox_missing")
             fragments.append(
                 {
                     "pageNo": page_no,
                     "text": text,
                     "bbox": bbox,
-                    "confidence": 0.94 if bbox else 0.86,
+                    "confidence": confidence,
                     "sourceEngine": engine_name,
                     "fragmentType": "docling_block",
+                    "qualityFlags": quality_flags,
                 }
             )
             layout_blocks.append({"blockId": f"docling_text_{index}", "blockType": label or "text", "pageNo": page_no, "bbox": bbox, "sourceEngine": engine_name})
     if not fragments and markdown.strip():
-        fragments.append({"pageNo": 1, "text": markdown, "bbox": None, "confidence": 0.82, "sourceEngine": engine_name, "fragmentType": "markdown"})
+        fragments.append(
+            {
+                "pageNo": 1,
+                "text": markdown,
+                "bbox": None,
+                "confidence": 0.62,
+                "sourceEngine": engine_name,
+                "fragmentType": "markdown",
+                "qualityFlags": ["docling_markdown_only", "evidence_bbox_missing"],
+            }
+        )
     return fragments, tables, layout_blocks
 
 
@@ -1860,7 +1875,7 @@ def docling_table(item: dict[str, Any], *, index: int, page_no: int, bbox: list[
                 "colspan": int(cell.get("colspan") or 1),
                 "text": text,
                 "bbox": docling_bbox(cell),
-                "confidence": 0.9,
+                "confidence": 0.9 if docling_bbox(cell) else 0.68,
                 "isHeader": bool(cell.get("column_header") or cell.get("row_header") or row == 0),
             }
         )
@@ -1874,10 +1889,28 @@ def docling_table(item: dict[str, Any], *, index: int, page_no: int, bbox: list[
         "columns": max((cell["col"] for cell in normalized_cells), default=0) + 1,
         "cells": normalized_cells,
         "normalizedRows": table_cells_to_rows(normalized_cells),
-        "structureConfidence": 0.88,
+        "structureConfidence": docling_table_confidence(normalized_cells, bbox),
         "sourceEngine": engine_name,
-        "qualityFlags": ["docling_structured_table"],
+        "qualityFlags": docling_table_quality_flags(normalized_cells, bbox),
     }
+
+
+def docling_table_confidence(cells: list[dict[str, Any]], bbox: list[float] | None) -> float:
+    if not cells:
+        return 0.0
+    cell_evidence = len([cell for cell in cells if cell.get("bbox")]) / max(len(cells), 1)
+    fill_rate = len([cell for cell in cells if str(cell.get("text") or "").strip()]) / max(len(cells), 1)
+    base = 0.58 + fill_rate * 0.18 + cell_evidence * 0.16 + (0.06 if bbox else 0.0)
+    return round(min(base, 0.94), 4)
+
+
+def docling_table_quality_flags(cells: list[dict[str, Any]], bbox: list[float] | None) -> list[str]:
+    flags = ["docling_structured_table"]
+    if not bbox:
+        flags.append("table_evidence_missing")
+    if any(not cell.get("bbox") for cell in cells):
+        flags.append("cell_evidence_missing")
+    return flags
 
 
 def table_cells_to_rows(cells: list[dict[str, Any]]) -> list[dict[str, str]]:
@@ -2049,6 +2082,17 @@ def subprocess_package_available(package_name: str) -> bool:
     return completed.returncode == 0
 
 
+def first_numeric(raw: dict[str, Any], *keys: str, default: float = 0.0) -> float:
+    for key in keys:
+        if key not in raw or raw[key] is None:
+            continue
+        try:
+            return float(raw[key])
+        except (TypeError, ValueError):
+            continue
+    return float(default)
+
+
 def normalize_paddle_fragments(raw: Any, page_no: int, source_engine: str) -> list[dict[str, Any]]:
     fragments: list[dict[str, Any]] = []
     if isinstance(raw, dict):
@@ -2063,7 +2107,7 @@ def normalize_paddle_fragments(raw: Any, page_no: int, source_engine: str) -> li
                     "pageNo": page_no,
                     "text": str(text),
                     "bbox": boxes[index] if index < len(boxes) else None,
-                    "confidence": scores[index] if index < len(scores) else 0.8,
+                    "confidence": float(scores[index]) if index < len(scores) and scores[index] is not None else 0.0,
                     "sourceEngine": source_engine,
                 }
             )
@@ -2095,7 +2139,7 @@ def normalize_structure_result(raw: Any, source_engine: str) -> tuple[list[dict[
                 "pageNo": int(item.get("pageNo") or item.get("page_no") or 1),
                 "bbox": bbox,
                 "text": item.get("text") or res_text,
-                "confidence": item.get("confidence") or item.get("score") or 0.8,
+                "confidence": first_numeric(item, "confidence", "score", default=0.0),
                 "sourceEngine": source_engine,
             }
         )
@@ -2113,7 +2157,7 @@ def normalize_structure_result(raw: Any, source_engine: str) -> tuple[list[dict[
                     "html": html,
                     "markdown": item.get("markdown"),
                     "normalizedRows": table_structure["normalizedRows"],
-                    "structureConfidence": item.get("confidence") or item.get("score") or 0.8,
+                    "structureConfidence": first_numeric(item, "confidence", "score", default=0.0),
                     "sourceEngine": source_engine,
                 }
             )
@@ -2165,9 +2209,9 @@ def normalize_vl_result(raw: Any, source_engine: str) -> tuple[str, list[dict[st
                     "pageNo": page_no,
                     "text": normalized,
                     "bbox": None,
-                    "confidence": 0.82,
+                    "confidence": 0.66,
                     "sourceEngine": source_engine,
-                    "qualityFlags": ["paddleocr_vl_text"],
+                    "qualityFlags": ["paddleocr_vl_text", "evidence_bbox_missing"],
                 }
             )
     return "\n".join(item["text"] for item in fragments), fragments, tables, layout_blocks
@@ -2382,6 +2426,7 @@ def normalize_seal_result(raw: Any) -> list[dict[str, Any]]:
         polygon = item.get("polygon") or item.get("dt_poly") or item.get("points")
         if not text and not bbox and not polygon:
             continue
+        inferred_confidence = inferred_score(item)
         seals.append(
             {
                 "sealId": f"seal_{index + 1}",
@@ -2390,8 +2435,20 @@ def normalize_seal_result(raw: Any) -> list[dict[str, Any]]:
                 "sealName": str(text),
                 "bbox": bbox,
                 "polygon": polygon,
-                "visualConfidence": item.get("visualConfidence") or item.get("det_score") or item.get("score") or inferred_score(item) or 0.8,
-                "ocrConfidence": item.get("ocrConfidence") or item.get("rec_score") or item.get("score") or inferred_score(item) or 0.8,
+                "visualConfidence": first_numeric(
+                    item,
+                    "visualConfidence",
+                    "det_score",
+                    "score",
+                    default=float(inferred_confidence or 0.0),
+                ),
+                "ocrConfidence": first_numeric(
+                    item,
+                    "ocrConfidence",
+                    "rec_score",
+                    "score",
+                    default=float(inferred_confidence or 0.0),
+                ),
                 "fields": item.get("fields") or [],
                 "qualityFlags": item.get("qualityFlags") or [],
             }

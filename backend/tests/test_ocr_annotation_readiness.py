@@ -41,6 +41,13 @@ def test_annotation_readiness_blocks_unconfirmed_machine_suggestions(tmp_path) -
     assert report["summary"]["blockerCounts"]["machine_suggestion_not_confirmed"] == 1
     assert "placeholder_labels" in report["summary"]["blockerCounts"]
     assert "zero_area_bbox" in report["summary"]["blockerCounts"]
+    scenario_gap = report["scenarioGaps"]["piping_table_profile"]
+    assert scenario_gap["tasks"] == 1
+    assert scenario_gap["missingHumanLabels"] == 1
+    assert scenario_gap["reviewRequired"] == 1
+    assert scenario_gap["machineSuggestions"] == 1
+    assert scenario_gap["evidenceBlockerCounts"]["zero_area_bbox"] == 1
+    assert "Review machine suggestions" in scenario_gap["nextHumanAction"]
 
 
 def test_annotation_readiness_does_not_count_machine_draft_as_human_label(tmp_path) -> None:
@@ -151,3 +158,33 @@ def test_annotation_readiness_directory_prefers_labeled_tasks(tmp_path) -> None:
 
     assert report["ok"] is True
     assert report["tasks"][0]["caseId"] == "ready"
+
+
+def test_annotation_readiness_markdown_includes_scenario_gap_table(tmp_path) -> None:
+    from scripts.ocr_annotation_readiness import annotation_readiness_markdown
+
+    tasks = tmp_path / "prelabelled_tasks.json"
+    tasks.write_text(
+        json.dumps(
+            {
+                "tasks": [
+                    {
+                        "taskId": "label-case-1",
+                        "caseId": "case-1",
+                        "scenario": "seal_text_profile",
+                        "collectionStatus": "needs_labeling",
+                        "suggestedExpected": {"seals": [{"nameContains": "公司", "bbox": [1, 1, 10, 10]}]},
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    report = build_annotation_readiness_report(tasks)
+    markdown = annotation_readiness_markdown(report)
+
+    assert "## Scenario Gaps" in markdown
+    assert "seal_text_profile" in markdown
+    assert "Missing human labels" in markdown
