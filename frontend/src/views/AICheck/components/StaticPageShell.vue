@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   ElButton,
   ElDropdown,
@@ -107,6 +107,8 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const rightPanelOpen = ref(!props.rightCollapsedDefault)
+const rightPanelTriggerRef = ref<{ $el?: HTMLElement } | HTMLElement | null>(null)
+const rightPanelCloseRef = ref<{ $el?: HTMLElement } | HTMLElement | null>(null)
 const treeFiltersOpen = ref(!props.menuFiltersCollapsedDefault)
 const boundaryOpen = ref(!props.boundaryCollapsedDefault)
 const rightPanelIsDrawer = computed(() => props.rightPanelMode === 'drawer')
@@ -168,11 +170,40 @@ const handleMenuFilter = (value: string) => {
   emit('menu-filter-change', value)
 }
 
+const focusElementRef = (target: typeof rightPanelTriggerRef.value) => {
+  const element = target instanceof HTMLElement ? target : target?.$el
+  element?.focus?.()
+}
+
+const openRightPanel = () => {
+  rightPanelOpen.value = true
+  nextTick(() => focusElementRef(rightPanelCloseRef.value))
+}
+
+const closeRightPanel = () => {
+  rightPanelOpen.value = false
+  nextTick(() => focusElementRef(rightPanelTriggerRef.value))
+}
+
 const handleUserCommand = (command: string | number | object) => {
   if (command === 'logout') {
     userStore.logoutConfirm()
   }
 }
+
+const handleShellKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape' && rightPanelIsDrawer.value && rightPanelOpen.value) {
+    closeRightPanel()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleShellKeydown)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleShellKeydown)
+})
 </script>
 
 <template>
@@ -196,7 +227,9 @@ const handleUserCommand = (command: string | number | object) => {
             {{ status }}
           </div>
         </div>
-        <ElButton class="global-search">{{ searchPlaceholder }}</ElButton>
+        <ElButton class="global-search" aria-label="打开全局搜索" :title="searchPlaceholder">
+          {{ searchPlaceholder }}
+        </ElButton>
         <div class="top-actions">
           <span v-for="stat in topStats" :key="stat.label">
             {{ stat.label
@@ -206,9 +239,12 @@ const handleUserCommand = (command: string | number | object) => {
           </span>
           <ElButton
             v-if="rightPanelIsDrawer"
+            ref="rightPanelTriggerRef"
             class="right-panel-trigger"
             plain
-            @click="rightPanelOpen = true"
+            aria-controls="static-right-panel"
+            :aria-expanded="rightPanelOpen"
+            @click="openRightPanel"
           >
             {{ rightToggleLabel || rightTitle }}
           </ElButton>
@@ -291,7 +327,7 @@ const handleUserCommand = (command: string | number | object) => {
             >
               <ElSubMenu index="root" class="tree-root-menu">
                 <template #title>
-                  <span class="tree-root">
+                  <span class="tree-root" :title="menuRoot">
                     <span>⌄</span>
                     <span class="tree-label">{{ menuRoot }}</span>
                     <span></span>
@@ -304,7 +340,10 @@ const handleUserCommand = (command: string | number | object) => {
                   class="tree-section-menu"
                 >
                   <template #title>
-                    <span class="tree-group-wrap">
+                    <span
+                      class="tree-group-wrap"
+                      :title="section.meta ? `${section.title} · ${section.meta}` : section.title"
+                    >
                       <span class="tree-group">
                         <span class="tree-group-caret">⌄</span>
                         <span class="tree-group-title">{{ section.title }}</span>
@@ -326,10 +365,13 @@ const handleUserCommand = (command: string | number | object) => {
                     :key="getItemIndex(section, item)"
                     :index="getItemIndex(section, item)"
                     :class="['tree-node', { active: item.active }]"
+                    :title="item.hint ? `${item.label} · ${item.hint}` : item.label"
+                    :aria-label="item.hint ? `${item.label}，${item.hint}` : item.label"
                   >
                     <span class="tree-node-marker" aria-hidden="true"></span>
                     <span class="tree-label-wrap">
                       <span class="tree-label">{{ item.label }}</span>
+                      <span v-if="item.hint" class="sr-only">{{ item.hint }}</span>
                     </span>
                     <span v-if="item.badge" :class="['pill', item.tone || 'blue']">
                       {{ item.badge }}
@@ -354,7 +396,7 @@ const handleUserCommand = (command: string | number | object) => {
                 <small>{{ boundaryOpen ? '收起' : '展开' }}</small>
               </span>
             </button>
-            <table v-if="boundaryOpen" aria-hidden="true" class="table compact">
+            <table v-if="boundaryOpen" class="table compact" :aria-label="boundaryTitle">
               <tbody>
                 <tr v-for="row in boundaryRows" :key="row.label">
                   <th>{{ row.label }}</th>
@@ -374,17 +416,26 @@ const handleUserCommand = (command: string | number | object) => {
           class="right-scrim"
           type="button"
           aria-label="收起右侧摘要"
-          @click="rightPanelOpen = false"
+          @click="closeRightPanel"
         ></button>
 
-        <aside v-if="!rightPanelIsDrawer || rightPanelOpen" class="right">
+        <aside
+          v-if="!rightPanelIsDrawer || rightPanelOpen"
+          id="static-right-panel"
+          class="right"
+          :role="rightPanelIsDrawer ? 'dialog' : 'complementary'"
+          :aria-modal="rightPanelIsDrawer ? 'true' : undefined"
+          :aria-label="rightTitle"
+        >
           <div class="right-panel-head">
             <h2 class="right-title">{{ rightTitle }}</h2>
             <ElButton
               v-if="rightPanelIsDrawer"
+              ref="rightPanelCloseRef"
               class="right-panel-close"
               text
-              @click="rightPanelOpen = false"
+              :aria-label="`收起${rightTitle}`"
+              @click="closeRightPanel"
             >
               收起
             </ElButton>
@@ -393,7 +444,7 @@ const handleUserCommand = (command: string | number | object) => {
           <section v-for="card in rightCards" :key="card.title" class="right-card">
             <h3>{{ card.title }}</h3>
             <div class="body">
-              <table v-if="card.rows?.length" aria-hidden="true" class="table compact">
+              <table v-if="card.rows?.length" class="table compact" :aria-label="card.title">
                 <tbody>
                   <tr v-for="row in card.rows" :key="row.label">
                     <th>{{ row.label }}</th>
@@ -417,7 +468,7 @@ const handleUserCommand = (command: string | number | object) => {
                   </tr>
                 </tbody>
               </table>
-              <div v-if="card.timeline?.length" aria-hidden="true" class="timeline">
+              <div v-if="card.timeline?.length" class="timeline" :aria-label="card.title">
                 <div v-for="item in card.timeline" :key="item.title" class="time-row">
                   <span :class="['time-dot', item.tone || 'blue']"></span>
                   <div>
@@ -1713,7 +1764,11 @@ const handleUserCommand = (command: string | number | object) => {
   }
 
   .topbar,
-  .workspace {
+  .workspace,
+  .shell-wide .topbar,
+  .shell-wide .workspace,
+  .right-drawer-mode .workspace,
+  .right-drawer-mode.shell-wide .workspace {
     grid-template-columns: minmax(0, 1fr);
   }
 

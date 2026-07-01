@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ElAlert,
@@ -86,6 +86,7 @@ import { getKnowledgeOverviewApi } from '@/api/aicheck'
 import type { AiReviewRun } from '@/types/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import AdminKnowledgeStaticDeepSections from './components/AdminKnowledgeStaticDeepSections.vue'
+import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import StaticPageShell from './components/StaticPageShell.vue'
 import WorkbenchStateBanner from './components/WorkbenchStateBanner.vue'
 
@@ -379,12 +380,25 @@ const knowledgeShellMenuSections = computed(() => {
   }))
 })
 
+const scrollKnowledgeContentIntoView = () => {
+  nextTick(() => {
+    document
+      .querySelector('.knowledge-tabs')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
+
+const handleKnowledgeMenuSelect = () => {
+  scrollKnowledgeContentIntoView()
+}
+
 watch(
   () => route.path,
-  (path) => {
+  (path, oldPath) => {
     if (!path.startsWith('/knowledge')) return
     const nextTab = getKnowledgeTabFromRoute(path)
     if (activeTab.value !== nextTab) activeTab.value = nextTab
+    if (oldPath) scrollKnowledgeContentIntoView()
   },
   { immediate: true }
 )
@@ -505,6 +519,32 @@ const knowledgeScorecardBlockerRows = computed(() =>
 )
 const knowledgeRetrievalProbeRows = computed(() => knowledgeScorecard.value?.retrievalProbes || [])
 const canShowKnowledgeContent = computed(() => !pageIssue.value)
+const knowledgeAuditCards = computed<AuditSummaryCard[]>(() => [
+  {
+    label: '知识源入库',
+    value: `${sources.value.length} 个来源`,
+    hint: `${files.value.length} 份资料进入 OCR/切片链路`,
+    tone: 'blue'
+  },
+  {
+    label: '向量化状态',
+    value: `${files.value.filter((file) => file.vectorStatus === '已向量化').length} 份完成`,
+    hint: `${tasks.value.filter((task) => task.taskType === 'vector').length} 个向量任务可追踪`,
+    tone: 'green'
+  },
+  {
+    label: '章节溯源',
+    value: `${pageIndexNodes.value.length} 个节点`,
+    hint: '用于长文档章节树、命中路径和条款定位',
+    tone: 'orange'
+  },
+  {
+    label: '引用质量',
+    value: `${knowledgeScorecard.value?.blockers.length || 0} 个阻断`,
+    hint: `${reasoningLogs.value.length} 条推理日志可回放评估`,
+    tone: 'red'
+  }
+])
 const hasSectionIssue = computed(() => Object.values(sectionIssues).some(Boolean))
 const ruleDiffSummaryItems = computed<
   Array<{
@@ -1362,13 +1402,23 @@ onMounted(() => {
   <div class="knowledge-page" v-loading="loading">
     <StaticPageShell
       brand-mark="知"
-      title="AI 知识库管理"
+      title="知识工程审计台"
       status="索引运行中"
       status-tone="orange"
-      search-placeholder="⌕ 搜索（标准条文 / 项目文件 / 规则版本 / 推理日志 / 模型反馈）"
+      search-placeholder="搜索条款、资料、PageIndex、检索 Trace"
       user-label="系统管理员 周工"
+      workspace-mode="wide"
+      right-panel-mode="drawer"
+      right-toggle-label="运行摘要"
+      right-collapsed-default
+      boundary-collapsed-default
       :top-stats="[
-        { label: '管理后台' },
+        { label: '知识源', value: sources.length, tone: 'blue' },
+        {
+          label: '向量任务',
+          value: tasks.filter((task) => task.taskType === 'vector').length,
+          tone: 'green'
+        },
         { label: '失败任务', value: taskPagination.total || 7, tone: 'red' }
       ]"
       menu-title="知识库菜单"
@@ -1381,11 +1431,12 @@ onMounted(() => {
       right-title="运行状态"
       right-subtitle="索引版本：proj-v2026.06.26"
       :right-cards="knowledgeShellRightCards"
+      @menu-select="handleKnowledgeMenuSelect"
     >
       <div class="page-toolbar">
         <div>
-          <div class="page-title">AI 知识库管理</div>
-          <div class="page-subtitle">标准规范、项目资料、任务中心、推理链路和多模型对比</div>
+          <div class="page-title">知识工程审计台</div>
+          <div class="page-subtitle">追踪资料入库、OCR 切片、向量化、PageIndex 与引用质量</div>
         </div>
         <ElButton
           type="primary"
@@ -1396,6 +1447,12 @@ onMounted(() => {
           重建索引
         </ElButton>
       </div>
+
+      <AuditSummaryGrid
+        v-if="canShowKnowledgeContent"
+        :cards="knowledgeAuditCards"
+        aria-label="知识工程审计摘要"
+      />
 
       <WorkbenchStateBanner
         v-if="pageIssue"
@@ -1463,7 +1520,12 @@ onMounted(() => {
         </div>
         <ElRow :gutter="12" class="mt-12">
           <ElCol :xl="8" :lg="8" :md="24" :sm="24" :xs="24">
-            <ElTable :data="knowledgeScorecardSections" border height="190">
+            <ElTable
+              :data="knowledgeScorecardSections"
+              border
+              height="190"
+              empty-text="暂无知识质量评分项"
+            >
               <ElTableColumn prop="name" label="评分域" min-width="140" show-overflow-tooltip />
               <ElTableColumn label="分数" width="105">
                 <template #default="{ row }">{{ row.score }}/{{ row.maxScore }}</template>
@@ -1478,7 +1540,12 @@ onMounted(() => {
             </ElTable>
           </ElCol>
           <ElCol :xl="8" :lg="8" :md="24" :sm="24" :xs="24">
-            <ElTable :data="knowledgeRetrievalProbeRows" border height="190">
+            <ElTable
+              :data="knowledgeRetrievalProbeRows"
+              border
+              height="190"
+              empty-text="暂无检索探针"
+            >
               <ElTableColumn
                 prop="expectedRoute"
                 label="期望路由"
@@ -1547,7 +1614,7 @@ onMounted(() => {
                     <ElTag type="info" effect="plain">{{ libraries.length }} 个库</ElTag>
                   </div>
                 </template>
-                <ElTable :data="libraries" border height="360">
+                <ElTable :data="libraries" border height="360" empty-text="暂无知识库索引">
                   <ElTableColumn prop="name" label="知识库" min-width="220" />
                   <ElTableColumn prop="fileCount" label="文件" width="88" />
                   <ElTableColumn prop="chunkCount" label="切片" width="100" />
@@ -1746,7 +1813,7 @@ onMounted(() => {
               </div>
               <ElButton size="small" type="primary" plain @click="loadSources">刷新列表</ElButton>
             </div>
-            <ElTable :data="sources" border height="430">
+            <ElTable :data="sources" border height="430" empty-text="暂无知识源">
               <ElTableColumn prop="name" label="知识源" min-width="240" show-overflow-tooltip />
               <ElTableColumn label="类型" width="120">
                 <template #default="{ row }">{{ sourceTypeLabel(row.sourceType) }}</template>
@@ -1864,7 +1931,7 @@ onMounted(() => {
                 刷新规则
               </ElButton>
             </div>
-            <ElTable :data="ruleVersions" border height="430">
+            <ElTable :data="ruleVersions" border height="430" empty-text="暂无规则版本">
               <ElTableColumn prop="name" label="规则" min-width="220" show-overflow-tooltip />
               <ElTableColumn prop="version" label="版本" min-width="190" show-overflow-tooltip />
               <ElTableColumn label="状态" width="100">
@@ -2059,7 +2126,7 @@ onMounted(() => {
                     重新加载
                   </ElButton>
                 </div>
-                <ElTable :data="auditLogs" border height="392">
+                <ElTable :data="auditLogs" border height="392" empty-text="当前筛选下暂无审计日志">
                   <ElTableColumn prop="createdAt" label="时间" width="170" />
                   <ElTableColumn prop="actorName" label="人员" width="110" />
                   <ElTableColumn prop="action" label="操作" min-width="160" show-overflow-tooltip />
@@ -2149,7 +2216,7 @@ onMounted(() => {
               </div>
               <ElButton size="small" type="primary" plain @click="loadFiles">刷新文件</ElButton>
             </div>
-            <ElTable :data="files" border height="430">
+            <ElTable :data="files" border height="430" empty-text="暂无项目知识文件">
               <ElTableColumn prop="fileName" label="文件" min-width="220" />
               <ElTableColumn
                 prop="projectName"
@@ -2266,7 +2333,7 @@ onMounted(() => {
               </div>
               <ElButton size="small" type="primary" plain @click="loadTasks">刷新任务</ElButton>
             </div>
-            <ElTable :data="tasks" border height="430">
+            <ElTable :data="tasks" border height="430" empty-text="暂无 OCR 或向量任务">
               <ElTableColumn prop="id" label="任务号" width="170" />
               <ElTableColumn label="类型" width="110">
                 <template #default="{ row }">{{ taskTypeLabel(row.taskType) }}</template>
@@ -2571,7 +2638,7 @@ onMounted(() => {
                 重新加载
               </ElButton>
             </div>
-            <ElTable :data="reasoningLogs" border height="430">
+            <ElTable :data="reasoningLogs" border height="430" empty-text="暂无推理日志">
               <ElTableColumn prop="id" label="Run ID" width="190" />
               <ElTableColumn prop="nodeId" label="节点" width="76" />
               <ElTableColumn prop="subject" label="主题" min-width="220" show-overflow-tooltip />
@@ -3431,6 +3498,7 @@ onMounted(() => {
     flex-direction: column;
   }
 
+  .knowledge-flow-board,
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3478,6 +3546,7 @@ onMounted(() => {
 }
 
 @media (width <= 480px) {
+  .knowledge-flow-board,
   .metric-grid {
     grid-template-columns: 1fr;
   }

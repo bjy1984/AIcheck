@@ -68,7 +68,7 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
       title: '业务工作台',
       icon: 'vi-ep:monitor',
       alwaysShow: true,
-      roles: ['inspection', 'contractor', 'ndt', 'owner']
+      roles: ['admin', 'inspection', 'contractor', 'ndt', 'owner']
     },
     children: [
       {

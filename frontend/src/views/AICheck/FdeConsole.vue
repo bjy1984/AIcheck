@@ -325,7 +325,7 @@ const fdeRouteMeta: Record<
     badge: '链路',
     tone: 'green',
     title: 'Agent 审查编排',
-    subtitle: '查看 Temporal 外层 Workflow、LangGraph 内层节点和审查产物。',
+    subtitle: '查看流程编排、Agent 节点和审查产物。',
     nextAction: '先选中 ReviewRun，再检查 Workflow 时间线和校验失败。',
     actions: [
       { key: 'replay-review-run', label: '诊断重跑', plain: true },
@@ -439,7 +439,7 @@ const fdeRouteMeta: Record<
 const fdeShellBoundaryRows = [
   { label: '聚焦', value: '按审计项目组织 OCR 与 Agent 编排数据' },
   { label: '层级', value: '项目 → 节点 → 批次/资料 → OCR/Agent 任务' },
-  { label: 'Agent', value: 'Temporal Workflow + LangGraph 节点追踪' },
+  { label: 'Agent', value: '流程编排 + Agent 节点追踪' },
   { label: '边界', value: 'FDE 只做 AI 诊断、标注和治理，不办理业务审批' }
 ] as const
 
@@ -460,6 +460,8 @@ const chartBaseSizes: Record<FdeChartKey, { width: number; height: number }> = {
   reviewTimeline: { width: 1160, height: 300 },
   langGraph: { width: 1080, height: 430 }
 }
+const chartZoomStep = 0.03
+const chartGestureZoomSensitivity = 0.18
 const chartZoom = (key: FdeChartKey) => fdeChartZoom.value[key] || 1
 const chartPan = (key: FdeChartKey) => fdeChartPan.value[key] || { x: 0, y: 0 }
 const chartZoomPercent = (key: FdeChartKey) => `${Math.round(chartZoom(key) * 100)}%`
@@ -475,7 +477,7 @@ const chartContentStyle = (key: FdeChartKey, width: number, height: number) => (
   transform: `translate3d(${chartPan(key).x}px, ${chartPan(key).y}px, 0) scale(${chartZoom(key)})`,
   transformOrigin: '0 0'
 })
-const clampChartZoom = (value: number) => Math.min(1.6, Math.max(1, Number(value.toFixed(2))))
+const clampChartZoom = (value: number) => Math.min(1.45, Math.max(1, Number(value.toFixed(2))))
 const chartFrameIn = (shell?: HTMLElement | null) =>
   shell?.querySelector<HTMLElement>('.chart-zoom-frame') || null
 const clampChartPan = (
@@ -519,8 +521,8 @@ const setChartZoom = (key: FdeChartKey, value: number, shell?: HTMLElement | nul
   applyChartTransform(key, value, chartPan(key), shell)
 const setChartPan = (key: FdeChartKey, pan: { x: number; y: number }, shell?: HTMLElement | null) =>
   applyChartTransform(key, chartZoom(key), pan, shell)
-const zoomInChart = (key: FdeChartKey) => setChartZoom(key, chartZoom(key) + 0.06)
-const zoomOutChart = (key: FdeChartKey) => setChartZoom(key, chartZoom(key) - 0.06)
+const zoomInChart = (key: FdeChartKey) => setChartZoom(key, chartZoom(key) + chartZoomStep)
+const zoomOutChart = (key: FdeChartKey) => setChartZoom(key, chartZoom(key) - chartZoomStep)
 const resetChartZoom = (key: FdeChartKey) => applyChartTransform(key, 1, { x: 0, y: 0 })
 const chartGesturePoints = new Map<FdeChartKey, Map<number, { x: number; y: number }>>()
 let chartDragState: {
@@ -596,7 +598,7 @@ const handleChartWheel = (event: WheelEvent, key: FdeChartKey) => {
   event.preventDefault()
   event.stopPropagation()
   const shell = getChartShell(event)
-  const delta = event.deltaY < 0 ? 0.05 : -0.05
+  const delta = event.deltaY < 0 ? chartZoomStep : -chartZoomStep
   zoomChartAt(key, chartZoom(key) + delta, shell, event.clientX, event.clientY)
 }
 const startChartGesture = (event: PointerEvent, key: FdeChartKey) => {
@@ -643,7 +645,8 @@ const moveChartGesture = (event: PointerEvent, key: FdeChartKey) => {
     const center = midpointBetweenChartPoints(pointList)
     zoomChartAt(
       key,
-      chartPinchState.startZoom * (1 + (distance / chartPinchState.startDistance - 1) * 0.35),
+      chartPinchState.startZoom *
+        (1 + (distance / chartPinchState.startDistance - 1) * chartGestureZoomSensitivity),
       chartPinchState.shell,
       center.x,
       center.y
@@ -701,7 +704,7 @@ const changeNativeChartGesture = (event: NativeChartGestureEvent, key: FdeChartK
   const scale = Number(event.scale || 1)
   zoomChartAt(
     key,
-    chartNativeGestureState.startZoom * (1 + (scale - 1) * 0.35),
+    chartNativeGestureState.startZoom * (1 + (scale - 1) * chartGestureZoomSensitivity),
     shell,
     Number(event.clientX || rect.left + rect.width / 2),
     Number(event.clientY || rect.top + rect.height / 2)
@@ -923,8 +926,8 @@ const projectAuditMenuFilterOptions = computed(() => {
     { label: '全部', value: 'all', count: projects.length },
     { label: '有阻断', value: 'blocked', count: blocked },
     { label: '向量化', value: 'vectorization', count: vectorization },
-    { label: 'PageIndex', value: 'pageindex', count: pageIndex },
-    { label: 'LangGraph', value: 'langgraph', count: langGraph },
+    { label: '章节溯源', value: 'pageindex', count: pageIndex },
+    { label: 'Agent 编排', value: 'langgraph', count: langGraph },
     { label: 'OCR打标', value: 'ocr-labeling', count: ocrLabeling },
     { label: '评估', value: 'evaluation', count: evaluationReady }
   ]
@@ -935,8 +938,8 @@ const projectAuditMenuEmptyText = computed(() => {
   if (keyword) return `没有找到“${keyword}”相关项目`
   if (projectAuditFilter.value === 'blocked') return '当前没有质量阻断项目'
   if (projectAuditFilter.value === 'vectorization') return '当前没有可向量化资料'
-  if (projectAuditFilter.value === 'pageindex') return '当前没有 PageIndex 审计项目'
-  if (projectAuditFilter.value === 'langgraph') return '当前没有 LangGraph 编排项目'
+  if (projectAuditFilter.value === 'pageindex') return '当前没有章节溯源审计项目'
+  if (projectAuditFilter.value === 'langgraph') return '当前没有 Agent 编排项目'
   if (projectAuditFilter.value === 'ocr-labeling') return '当前没有 OCR 打标样本'
   if (projectAuditFilter.value === 'evaluation') return '当前没有可评估项目'
   return '当前没有可审计项目'
@@ -1129,8 +1132,8 @@ const statusLabelMap: Record<string, string> = {
   missing: '缺失',
   unknown: '未知',
   hybrid_rag: 'Hybrid RAG',
-  pageindex: 'PageIndex',
-  pageindex_tree_search: 'PageIndex 树检索',
+  pageindex: '章节溯源',
+  pageindex_tree_search: '章节树检索',
   vector_search: '向量检索',
   review_basis_search: '审查依据检索',
   long_document_cross_section: '长文档跨章节检索',
@@ -1161,15 +1164,15 @@ const techLabelMap: Record<string, string> = {
   validate_output: '校验证据与依据',
   waiting_human_review: '等待人工复核',
   hybrid_rag: 'Hybrid RAG',
-  pageindex: 'PageIndex',
-  pageindex_tree_search: 'PageIndex 树检索',
+  pageindex: '章节溯源',
+  pageindex_tree_search: '章节树检索',
   vector_search: '向量检索',
   review_basis_search: '审查依据检索',
   long_document_cross_section: '长文档跨章节检索',
   field_extraction: '字段抽取',
   table_structure: '表格结构',
   seal_recognition: '印章识别',
-  pageindex_evidence: 'PageIndex 证据'
+  pageindex_evidence: '章节溯源证据'
 }
 
 const friendlyTechLabel = (value: unknown, fallback = '-') => {
@@ -1787,10 +1790,10 @@ const projectAuditLangGraphAuditRows = computed(() => {
       healthy: Boolean(workflowId)
     },
     {
-      stage: 'LangGraph Checkpoint',
+      stage: 'Agent 检查点',
       status: checkpointer ? `${shortText(checkpointer)} checkpointer` : '缺少 checkpoint',
       evidence: selectedReviewRun.value?.run.graphExecution?.persistence || '未返回持久化配置',
-      action: checkpointer ? '可进行中断恢复和重放' : '启用 LangGraph Postgres checkpointer',
+      action: checkpointer ? '可进行中断恢复和重放' : '启用 Agent Postgres 检查点',
       healthy: Boolean(checkpointer)
     },
     {
@@ -1806,8 +1809,7 @@ const projectAuditLangGraphAuditRows = computed(() => {
       stage: '规则与知识检索',
       status: ruleCount || retrievalCount ? '已记录' : '缺少',
       evidence: `规则 ${ruleCount} 条，检索 Trace ${retrievalCount} 条`,
-      action:
-        ruleCount || retrievalCount ? '抽查依据条款和 PageIndex 路由' : '补跑规则和知识检索节点',
+      action: ruleCount || retrievalCount ? '抽查依据条款和章节溯源路由' : '补跑规则和知识检索节点',
       healthy: ruleCount > 0 && retrievalCount > 0
     },
     {
@@ -1881,7 +1883,7 @@ const reviewArtifactRows = computed(() => [
   { label: '工具调用', value: recordNumber(reviewArtifactSummary.value, 'toolCalls') },
   { label: '规则结果', value: recordNumber(reviewArtifactSummary.value, 'ruleCheckResults') },
   { label: '检索 Trace', value: recordNumber(reviewArtifactSummary.value, 'retrievalTraces') },
-  { label: 'PageIndex', value: recordNumber(reviewArtifactSummary.value, 'pageIndexTraces') },
+  { label: '章节溯源', value: recordNumber(reviewArtifactSummary.value, 'pageIndexTraces') },
   { label: '草稿', value: recordNumber(reviewArtifactSummary.value, 'findingDrafts') },
   { label: '校验失败', value: recordNumber(reviewArtifactSummary.value, 'validationFailures') }
 ])
@@ -1949,7 +1951,7 @@ const agentEmptyGuideRows = computed(() => [
   {
     label: '如何触发任务',
     value:
-      '从监检员审查页面发起 AI 复核；本地开发态需启用 review-orchestrator / Temporal / LangGraph 后再刷新。'
+      '从监检员审查页面发起 AI 复核；本地开发态需启用审查编排服务、流程引擎和 Agent 图后再刷新。'
   },
   {
     label: 'FDE 先做什么',
@@ -2197,7 +2199,7 @@ const agentSubpageItems = computed(() => [
   {
     key: 'trace' as const,
     label: '底层 Trace',
-    description: 'LangGraph 节点、Temporal 时间线、规则和检索产物。'
+    description: 'Agent 节点、流程时间线、规则和检索产物。'
   }
 ])
 const ocrSubpageItems = computed(() => [
@@ -3574,7 +3576,7 @@ const dashboardMetricCards = computed(() =>
 const fdeWorkflowCards = computed(() => [
   {
     title: 'Agent 审查编排',
-    description: '检查 Temporal Workflow、LangGraph 节点、工具调用、规则和检索产物。',
+    description: '检查流程编排、Agent 节点、工具调用、规则和检索产物。',
     route: '/fde/review-runs',
     action: '看编排',
     tone: 'green',
@@ -3751,8 +3753,8 @@ const normalizedProjectAuditVectorRows = computed(() =>
       issue = '向量条目少于切片'
       action = '排查失败 chunk 并补跑 embedding'
     } else if (!readyForPageIndex) {
-      issue = 'PageIndex 未构建'
-      action = '构建 PageIndex tree 后再用于长文档溯源'
+      issue = '章节溯源未构建'
+      action = '构建章节树后再用于长文档溯源'
     }
 
     return {
@@ -3813,7 +3815,7 @@ const projectAuditDocumentLineageCards = computed(() =>
       { key: 'vector_embed', label: '向量入库', done: row.readyForRag, status: row.vectorStatus },
       {
         key: 'pageindex_tree',
-        label: 'PageIndex',
+        label: '章节溯源',
         done: row.readyForPageIndex,
         status: row.pageIndexStatus
       },
@@ -3901,7 +3903,7 @@ const projectAuditVectorCards = computed(() => {
     {
       label: '知识切片',
       value: String(chunkCount),
-      hint: '用于 Hybrid RAG / PageIndex',
+      hint: '用于混合检索 / 章节溯源',
       tone: 'green'
     },
     {
@@ -3911,7 +3913,7 @@ const projectAuditVectorCards = computed(() => {
       tone: vectorCount ? 'green' : 'orange'
     },
     {
-      label: 'PageIndex',
+      label: '章节溯源',
       value: String(pageIndexNodeCount),
       hint: `${readyCount}/${rows.length} 个资料已向量化`,
       tone: pageIndexNodeCount ? 'green' : 'orange'
@@ -3971,7 +3973,7 @@ const projectAuditVectorFlowRows = computed(() => {
     },
     {
       step: '04',
-      label: 'PageIndex',
+      label: '章节溯源',
       description: '长文档树节点已构建，可做跨章节依据溯源',
       done: pageIndexed,
       total,
@@ -4011,7 +4013,7 @@ const projectAuditVectorSankeyOption = computed<EChartsOption>(() => {
   addNode('OCR 证据', '#f59e0b')
   addNode('知识切片', '#16a34a')
   addNode('向量索引', '#0ea5e9')
-  addNode('PageIndex 树', '#6366f1')
+  addNode('章节溯源树', '#6366f1')
   addNode('Agent 审查', '#15803d')
 
   rows.forEach((row) => {
@@ -4040,14 +4042,14 @@ const projectAuditVectorSankeyOption = computed<EChartsOption>(() => {
       addLink('向量索引', '阻断：向量缺口')
       return
     }
-    addLink('向量索引', 'PageIndex 树')
+    addLink('向量索引', '章节溯源树')
 
     if (!row.readyForPageIndex) {
       addNode('阻断：PI 未构建', '#dc2626')
-      addLink('PageIndex 树', '阻断：PI 未构建')
+      addLink('章节溯源树', '阻断：章节树未构建')
       return
     }
-    addLink('PageIndex 树', 'Agent 审查')
+    addLink('章节溯源树', 'Agent 审查')
   })
 
   return {
@@ -4125,14 +4127,14 @@ const projectAuditPageIndexTraceRows = computed<Array<Record<string, unknown>>>(
       issue = '未命中依据条款'
       action = '补充条款索引或检查 metadata filter'
     } else if (pageIndexUsed && pageIndexNodeCount <= 0) {
-      issue = '已触发 PageIndex 但缺少节点'
-      action = '重建 PageIndex tree 并校验节点映射'
+      issue = '已触发章节溯源但缺少节点'
+      action = '重建章节树并校验节点映射'
     } else if (shouldUsePageIndex && !pageIndexUsed) {
-      issue = '长文档问题未触发 PageIndex'
+      issue = '长文档问题未触发章节溯源'
       action = '检查检索路由器或增加触发规则'
     } else if (fallbackRoute !== '-') {
       issue = '存在回退路由'
-      action = '对比 PageIndex 与 Hybrid RAG 命中质量'
+      action = '对比章节溯源与混合检索命中质量'
     }
 
     return {
@@ -4148,7 +4150,7 @@ const projectAuditPageIndexTraceRows = computed<Array<Record<string, unknown>>>(
       pageIndexUsed,
       shouldUsePageIndex,
       routeDecision: pageIndexUsed
-        ? '已触发 PageIndex'
+        ? '已触发章节溯源'
         : shouldUsePageIndex
           ? '应触发未触发'
           : '未触发',
@@ -4260,7 +4262,7 @@ const projectAuditPageIndexTreeOption = computed<EChartsOption>(() => {
         type: 'tree',
         data: [
           {
-            name: 'PageIndex 检索审计',
+            name: '章节溯源检索审计',
             value: '从问题分类到路由、章节节点、正式条款和处理建议',
             itemStyle: { color: '#172033' },
             children
@@ -4330,7 +4332,7 @@ const projectAuditPageIndexFlowRows = computed(() => {
       step: '01',
       label: '问题分类',
       description: shouldUse
-        ? `${shouldUse} 个长文档/跨章节问题需要 PageIndex`
+        ? `${shouldUse} 个长文档/跨章节问题需要章节溯源`
         : '当前问题可由普通条款检索处理',
       value: `${shouldUse}/${traceCount}`,
       tone: shouldUse ? 'blue' : 'green'
@@ -4338,7 +4340,7 @@ const projectAuditPageIndexFlowRows = computed(() => {
     {
       step: '02',
       label: '路由选择',
-      description: '检索路由器在条款索引、Hybrid RAG 和 PageIndex 之间选择路径',
+      description: '检索路由器在条款索引、混合检索和章节溯源之间选择路径',
       value: `${used} 次`,
       tone: used >= shouldUse ? 'green' : 'orange'
     },
@@ -4395,8 +4397,8 @@ const projectAuditPageIndexNodeRows = computed<Array<Record<string, unknown>>>((
             nodeId: '-',
             title:
               String(trace.selectedRoute).toLowerCase() === 'pageindex'
-                ? '已触发 PageIndex，但后端未返回节点明细'
-                : '未触发 PageIndex',
+                ? '已触发章节溯源，但后端未返回节点明细'
+                : '未触发章节溯源',
             sectionPath: '-',
             pageRange: '-',
             linkedClauseIds: shortText(trace.linkedClauseIds),
@@ -4410,8 +4412,8 @@ const projectAuditPageIndexCoverageRows = computed(() =>
   normalizedProjectAuditVectorRows.value.map((row) => ({
     ...row,
     coverageStatus: row.readyForPageIndex ? '已构建' : '待构建',
-    coverageIssue: row.readyForPageIndex ? '无' : '资料未形成 PageIndex 节点',
-    coverageAction: row.readyForPageIndex ? '可参与长文档溯源' : '先完成切片和 PageIndex tree 构建'
+    coverageIssue: row.readyForPageIndex ? '无' : '资料未形成章节节点',
+    coverageAction: row.readyForPageIndex ? '可参与长文档溯源' : '先完成切片和章节树构建'
   }))
 )
 
@@ -4449,7 +4451,7 @@ const projectAuditPageIndexCards = computed(() => {
   ).length
   return [
     {
-      label: 'PageIndex 触发',
+      label: '章节溯源触发',
       value: String(triggered),
       hint: `应触发 ${expected} 条检索`,
       tone: triggered >= expected ? 'green' : 'orange'
@@ -4469,7 +4471,7 @@ const projectAuditPageIndexCards = computed(() => {
     {
       label: '资料覆盖',
       value: `${coveredDocuments}/${projectAuditPageIndexCoverageRows.value.length}`,
-      hint: '已构建 PageIndex 的资料',
+      hint: '已构建章节溯源的资料',
       tone: coveredDocuments ? 'green' : 'orange'
     },
     {
@@ -4485,7 +4487,7 @@ const projectAuditLangGraphCards = computed(() => [
   {
     label: '编排节点',
     value: String(reviewGraphNodes.value.length),
-    hint: 'LangGraph 内层执行节点',
+    hint: 'Agent 内层执行节点',
     tone: reviewGraphNodes.value.length ? 'green' : 'orange'
   },
   {
@@ -4542,7 +4544,7 @@ const langGraphStageDefs = [
   {
     key: 'retrieval',
     label: '知识检索',
-    hint: 'Clause / Hybrid RAG / PageIndex 取依据',
+    hint: '条款索引 / 混合检索 / 章节溯源取依据',
     tone: 'blue'
   },
   {
@@ -5216,7 +5218,7 @@ const projectAuditEvaluationGateRows = computed(() => {
       Number(summary.retrievalRecall || 0),
       0.85,
       'gte',
-      '检查 Hybrid RAG / PageIndex 路由和条款索引'
+      '检查混合检索 / 章节溯源路由和条款索引'
     ),
     buildRatioGate(
       '错误依据率',
@@ -5315,13 +5317,13 @@ const projectAuditSubpageItems = computed(() => [
   },
   {
     key: 'pageindex' as const,
-    label: 'PageIndex 溯源',
+    label: '章节溯源',
     description: '查看长文档树检索路径、命中节点和条款映射。'
   },
   {
     key: 'langgraph' as const,
-    label: 'LangGraph 可视化',
-    description: '查看 Temporal Workflow、LangGraph 节点、边和检查点。'
+    label: 'Agent 编排图',
+    description: '查看流程编排、Agent 节点、边和检查点。'
   },
   {
     key: 'ocr-labeling' as const,
@@ -5331,7 +5333,7 @@ const projectAuditSubpageItems = computed(() => [
   {
     key: 'evaluation' as const,
     label: '准确率评估',
-    description: '查看 OCR、RAG、PageIndex、Agent 的质量门禁和失败样本。'
+    description: '查看 OCR、检索、章节溯源、Agent 的质量门禁和失败样本。'
   }
 ])
 const selectedProjectAuditSubpageItem = computed(
@@ -7006,7 +7008,7 @@ onMounted(loadData)
               </div>
               <div v-else class="audit-empty-state">
                 <strong>链路完整</strong>
-                <span>Temporal、LangGraph、工具证据、规则检索和质量门禁均已返回。</span>
+                <span>流程编排、Agent 图、工具证据、规则检索和质量门禁均已返回。</span>
               </div>
             </ElCard>
           </div>
@@ -7179,7 +7181,7 @@ onMounted(loadData)
             <article class="lineage-document-intro">
               <span>资料知识资产溯源</span>
               <strong>每份资料为什么能进入 Agent 审查</strong>
-              <small> 按 OCR、切片、向量、PageIndex 和审查可用五个阶段检查证据完整性。 </small>
+              <small> 按 OCR、切片、向量、章节溯源和审查可用五个阶段检查证据完整性。 </small>
             </article>
             <article
               v-for="card in projectAuditDocumentLineageVisibleCards"
@@ -7308,7 +7310,7 @@ onMounted(loadData)
                   <ElDescriptionsItem label="RAG 就绪">
                     {{ projectAuditVectorIndexProfile.ragReady }}
                   </ElDescriptionsItem>
-                  <ElDescriptionsItem label="PageIndex 就绪">
+                  <ElDescriptionsItem label="章节溯源就绪">
                     {{ projectAuditVectorIndexProfile.pageIndexReady }}
                   </ElDescriptionsItem>
                   <ElDescriptionsItem label="入库结论">
@@ -7374,7 +7376,7 @@ onMounted(loadData)
             </div>
           </div>
 
-          <section class="audit-flow-strip" aria-label="PageIndex 路由审计流程">
+          <section class="audit-flow-strip" aria-label="章节溯源路由审计流程">
             <article
               v-for="row in projectAuditPageIndexFlowRows"
               :key="row.step"
@@ -7392,28 +7394,28 @@ onMounted(loadData)
           <ElCard shadow="never" class="panel chart-panel mb-16px">
             <template #header>
               <div class="panel-header">
-                <span>PageIndex 检索溯源树</span>
+                <span>章节溯源检索树</span>
                 <ElSpace wrap>
                   <ElTag effect="plain">Tree</ElTag>
                   <span class="chart-zoom-value">{{ chartZoomPercent('pageIndexTree') }}</span>
                   <ElButton
                     size="small"
                     text
-                    aria-label="缩小 PageIndex 检索溯源树"
+                    aria-label="缩小章节溯源检索树"
                     @click="zoomOutChart('pageIndexTree')"
                     >缩小</ElButton
                   >
                   <ElButton
                     size="small"
                     text
-                    aria-label="放大 PageIndex 检索溯源树"
+                    aria-label="放大章节溯源检索树"
                     @click="zoomInChart('pageIndexTree')"
                     >放大</ElButton
                   >
                   <ElButton
                     size="small"
                     text
-                    aria-label="重置 PageIndex 检索溯源树"
+                    aria-label="重置章节溯源检索树"
                     @click="resetChartZoom('pageIndexTree')"
                     >重置</ElButton
                   >
@@ -7447,9 +7449,9 @@ onMounted(loadData)
             </div>
           </ElCard>
 
-          <section class="pageindex-friendly-grid" aria-label="PageIndex 友好判读">
+          <section class="pageindex-friendly-grid" aria-label="章节溯源友好判读">
             <article class="pageindex-friendly-intro">
-              <span>PageIndex 友好判读</span>
+              <span>章节溯源友好判读</span>
               <strong>每次检索为什么这样走</strong>
               <small>
                 先看问题类型、路由、节点、条款和回退策略；需要追责时再进入原始 Trace。
@@ -7485,7 +7487,7 @@ onMounted(loadData)
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
-                    <span>PageIndex 路由追踪</span>
+                    <span>章节溯源路由追踪</span>
                     <ElTag effect="plain">{{ projectAuditPageIndexTraceRows.length }} 条</ElTag>
                   </div>
                 </template>
@@ -7508,7 +7510,7 @@ onMounted(loadData)
                       <span>{{ friendlyTechLabel(row.queryType) }}</span>
                       <p>{{ row.query }}</p>
                     </div>
-                    <div class="pageindex-route-flow" aria-label="PageIndex 路由决策">
+                    <div class="pageindex-route-flow" aria-label="章节溯源路由决策">
                       <span>检索路由器</span>
                       <i></i>
                       <strong>{{ friendlyTechLabel(row.selectedRoute) }}</strong>
@@ -7545,12 +7547,12 @@ onMounted(loadData)
                     </div>
                   </article>
                 </div>
-                <ElEmpty v-else description="暂无 PageIndex 路由追踪" />
+                <ElEmpty v-else description="暂无章节溯源路由追踪" />
               </ElCard>
             </ElCol>
             <ElCol :xl="10" :lg="10" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
-                <template #header>PageIndex 资料覆盖</template>
+                <template #header>章节溯源资料覆盖</template>
                 <ElTable :data="projectAuditPageIndexCoverageRows" border height="380">
                   <ElTableColumn
                     prop="fileName"
@@ -7631,7 +7633,7 @@ onMounted(loadData)
             type="info"
             show-icon
             :closable="false"
-            title="PageIndex 用于长文档、跨章节、附录和表格依据检索；普通条款命中仍优先走 Clause Index / Hybrid RAG。"
+            title="章节溯源用于长文档、跨章节、附录和表格依据检索；普通条款命中仍优先走条款索引和混合检索。"
           />
         </template>
 
@@ -7711,7 +7713,7 @@ onMounted(loadData)
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
-                    <span>LangGraph 编排图</span>
+                    <span>Agent 审查编排图</span>
                     <ElSpace wrap>
                       <ElTag effect="plain">{{
                         selectedReviewRun?.run.reviewRunId || '未选中'
@@ -7720,21 +7722,21 @@ onMounted(loadData)
                       <ElButton
                         size="small"
                         text
-                        aria-label="缩小 LangGraph 编排图"
+                        aria-label="缩小 Agent 审查编排图"
                         @click="zoomOutChart('langGraph')"
                         >缩小</ElButton
                       >
                       <ElButton
                         size="small"
                         text
-                        aria-label="放大 LangGraph 编排图"
+                        aria-label="放大 Agent 审查编排图"
                         @click="zoomInChart('langGraph')"
                         >放大</ElButton
                       >
                       <ElButton
                         size="small"
                         text
-                        aria-label="重置 LangGraph 编排图"
+                        aria-label="重置 Agent 审查编排图"
                         @click="resetChartZoom('langGraph')"
                         >重置</ElButton
                       >
@@ -7798,13 +7800,13 @@ onMounted(loadData)
                     </article>
                   </div>
                 </section>
-                <ElEmpty v-if="!reviewGraphNodes.length" description="暂无 LangGraph 节点数据" />
+                <ElEmpty v-if="!reviewGraphNodes.length" description="暂无 Agent 编排节点数据" />
               </ElCard>
             </ElCol>
             <ElCol :xl="9" :lg="9" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>阶段泳道</template>
-                <div class="langgraph-lane-list" aria-label="LangGraph 阶段泳道">
+                <div class="langgraph-lane-list" aria-label="Agent 编排阶段泳道">
                   <article
                     v-for="group in langGraphFlowGroups"
                     :key="group.key"
@@ -9248,7 +9250,7 @@ onMounted(loadData)
                   <ElDescriptionsItem label="错误依据率">{{
                     scorePercent(Number(latestEvaluationCaseSummary.wrongReferenceRate || 0))
                   }}</ElDescriptionsItem>
-                  <ElDescriptionsItem label="PageIndex 触发">{{
+                  <ElDescriptionsItem label="章节溯源触发">{{
                     scorePercent(Number(latestEvaluationCaseSummary.pageIndexTriggerRate || 0))
                   }}</ElDescriptionsItem>
                 </ElDescriptions>
@@ -9360,7 +9362,7 @@ onMounted(loadData)
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
-                    <span>Temporal Workflow / LangGraph Run</span>
+                    <span>流程编排 / Agent Run</span>
                     <ElSpace>
                       <ElButton
                         size="small"
@@ -9763,7 +9765,7 @@ onMounted(loadData)
             <ElCol :xl="24" :lg="24" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>
-                  LangGraph 节点
+                  Agent 节点
                   <ElTag class="ml-8px" effect="plain">edges {{ reviewGraphEdges.length }}</ElTag>
                 </template>
                 <ElTable :data="reviewGraphNodes" border height="420">
@@ -9909,7 +9911,7 @@ onMounted(loadData)
                     show-overflow-tooltip
                   />
                   <ElTableColumn prop="selectedClauseCount" label="条款" width="80" />
-                  <ElTableColumn prop="pageIndexNodeCount" label="PageIndex" width="105" />
+                  <ElTableColumn prop="pageIndexNodeCount" label="章节溯源" width="105" />
                   <ElTableColumn label="命中条款" min-width="180" show-overflow-tooltip>
                     <template #default="{ row }">
                       {{ (row.selectedClauseIds || []).join('；') || '-' }}
@@ -12772,6 +12774,8 @@ onMounted(loadData)
 }
 
 .knowledge-chart-shell {
+  position: relative;
+  max-width: 100%;
   min-width: 0;
   overflow: hidden;
   cursor: grab;
@@ -12787,6 +12791,7 @@ onMounted(loadData)
   user-select: none;
   overscroll-behavior: contain;
   touch-action: none;
+  contain: layout paint;
   scrollbar-color: #a9c7ed transparent;
   scrollbar-width: thin;
 }
@@ -12799,9 +12804,12 @@ onMounted(loadData)
 .chart-zoom-frame {
   position: relative;
   overflow: visible;
+  flex: 0 0 auto;
 }
 
 .chart-zoom-content {
+  position: absolute;
+  inset: 0 auto auto 0;
   transform-origin: 0 0;
   will-change: transform;
 }
@@ -13103,6 +13111,8 @@ onMounted(loadData)
 }
 
 .langgraph-chart-shell {
+  position: relative;
+  max-width: 100%;
   min-height: 462px;
   padding: 8px;
   overflow: hidden;
@@ -13119,6 +13129,7 @@ onMounted(loadData)
   user-select: none;
   overscroll-behavior: contain;
   touch-action: none;
+  contain: layout paint;
   scrollbar-color: #a9c7ed transparent;
   scrollbar-width: thin;
 }

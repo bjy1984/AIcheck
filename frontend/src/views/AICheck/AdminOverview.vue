@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ElAlert,
@@ -72,6 +72,7 @@ import type {
 import type { ActionCode, ExportTask, Project, RoleCode } from '@/types/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import AdminKnowledgeStaticDeepSections from './components/AdminKnowledgeStaticDeepSections.vue'
+import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import StaticPageShell from './components/StaticPageShell.vue'
 
 const emptyOverview = (): AdminConfigOverviewPayload => ({
@@ -392,12 +393,23 @@ const adminShellMenuSections = computed(() => {
   }))
 })
 
+const scrollAdminContentIntoView = () => {
+  nextTick(() => {
+    document.querySelector('.admin-tabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
+
+const handleAdminMenuSelect = () => {
+  scrollAdminContentIntoView()
+}
+
 watch(
   () => route.path,
-  (path) => {
+  (path, oldPath) => {
     if (!path.startsWith('/admin')) return
     const nextTab = getAdminTabFromRoute(path)
     if (activeTab.value !== nextTab) activeTab.value = nextTab
+    if (oldPath) scrollAdminContentIntoView()
   },
   { immediate: true }
 )
@@ -654,6 +666,33 @@ const selectedWizardNodeMax = computed(() => selectedWizardBusinessPack.value?.n
 const pendingRuleCount = computed(
   () => overview.value.ruleVersions.filter((item) => item.status === '待发布').length
 )
+
+const adminAuditCards = computed<AuditSummaryCard[]>(() => [
+  {
+    label: '当前治理对象',
+    value: '项目、组织、权限与业务包',
+    hint: `${projects.value.length} 个项目 · ${overview.value.users.length} 个用户`,
+    tone: 'blue'
+  },
+  {
+    label: '配置影响范围',
+    value: `${overview.value.permissionMatrix.length} 类角色矩阵`,
+    hint: `${overview.value.nodeTemplates.length} 组节点模板参与校验`,
+    tone: 'green'
+  },
+  {
+    label: '发布门禁',
+    value: pendingRuleCount.value ? `${pendingRuleCount.value} 项待发布` : '无待发布项',
+    hint: '发布前需完成 Diff、影响范围和审计记录',
+    tone: 'orange'
+  },
+  {
+    label: '风险关注',
+    value: `${auditPagination.total || 0} 条审计记录`,
+    hint: '重点关注权限、规则和业务包变更',
+    tone: 'red'
+  }
+])
 
 const currentRoleActions = computed(() => roleActionOptions[memberForm.role] || [])
 
@@ -1746,12 +1785,18 @@ onMounted(() => {
   <div class="admin-page" v-loading="loading">
     <StaticPageShell
       brand-mark="管"
-      title="监督检验协作系统后台"
+      title="管理后台治理台"
       status="基础配置"
       status-tone="blue"
-      search-placeholder="⌕ 搜索（项目 / 单位 / 用户 / 角色 / 流程 / 待办 / 节点）"
+      search-placeholder="搜索项目、用户、权限、规则"
       user-label="系统管理员 周工"
+      workspace-mode="wide"
+      right-panel-mode="drawer"
+      right-toggle-label="配置摘要"
+      right-collapsed-default
+      boundary-collapsed-default
       :top-stats="[
+        { label: '项目', value: projects.length, tone: 'blue' },
         { label: '配置待办', value: pendingRuleCount || 3, tone: 'orange' },
         { label: '审计', value: auditPagination.total || 9, tone: 'red' }
       ]"
@@ -1765,11 +1810,12 @@ onMounted(() => {
       right-title="模板详情"
       right-subtitle="Welder-Qualification-B v2.1"
       :right-cards="adminShellRightCards"
+      @menu-select="handleAdminMenuSelect"
     >
       <div class="page-toolbar">
         <div>
-          <div class="page-title">项目与权限配置</div>
-          <div class="page-subtitle">组织用户、权限矩阵、节点模板、规则版本、审计日志</div>
+          <div class="page-title">管理后台治理台</div>
+          <div class="page-subtitle">按配置对象查看影响范围、发布门禁和审计证据</div>
         </div>
         <ElSpace wrap>
           <ElButton type="primary" plain @click="openProjectWizard">新建项目</ElButton>
@@ -1779,6 +1825,8 @@ onMounted(() => {
           </ElButton>
         </ElSpace>
       </div>
+
+      <AuditSummaryGrid :cards="adminAuditCards" aria-label="管理后台治理摘要" />
 
       <div v-if="overviewError || adminActionError" class="error-stack">
         <div v-if="overviewError" class="local-error">
@@ -1826,7 +1874,7 @@ onMounted(() => {
                 <ElTag type="info" effect="plain">{{ projects.length }} 个</ElTag>
               </div>
             </template>
-            <ElTable :data="projects" border height="360">
+            <ElTable :data="projects" border height="360" empty-text="暂无项目配置">
               <ElTableColumn prop="code" label="项目编号" width="150" />
               <ElTableColumn prop="name" label="项目名称" min-width="220" show-overflow-tooltip />
               <ElTableColumn prop="region" label="区域" width="100" />
@@ -1935,7 +1983,7 @@ onMounted(() => {
                     <ElTag type="info" effect="plain">{{ overview.orgUnits.length }} 个</ElTag>
                   </div>
                 </template>
-                <ElTable :data="overview.orgUnits" border height="320">
+                <ElTable :data="overview.orgUnits" border height="320" empty-text="暂无组织单位">
                   <ElTableColumn
                     prop="name"
                     label="组织名称"
@@ -1964,7 +2012,7 @@ onMounted(() => {
                     <ElTag type="info" effect="plain">{{ overview.users.length }} 人</ElTag>
                   </div>
                 </template>
-                <ElTable :data="overview.users" border height="320">
+                <ElTable :data="overview.users" border height="320" empty-text="暂无用户账号">
                   <ElTableColumn prop="name" label="姓名" width="96" />
                   <ElTableColumn
                     prop="orgName"
@@ -2026,7 +2074,7 @@ onMounted(() => {
                   :title="businessPackValidationError"
                   class="mb-12px"
                 />
-                <ElTable :data="businessPackRows" border height="380">
+                <ElTable :data="businessPackRows" border height="380" empty-text="暂无业务包配置">
                   <ElTableColumn prop="name" label="业务包" min-width="190" show-overflow-tooltip />
                   <ElTableColumn prop="id" label="ID" min-width="210" show-overflow-tooltip />
                   <ElTableColumn prop="domainType" label="领域" min-width="150" />
@@ -2071,7 +2119,12 @@ onMounted(() => {
                     >
                   </div>
                 </template>
-                <ElTable :data="overview.permissionMatrix" border height="360">
+                <ElTable
+                  :data="overview.permissionMatrix"
+                  border
+                  height="360"
+                  empty-text="暂无权限矩阵"
+                >
                   <ElTableColumn prop="label" label="角色" width="100" />
                   <ElTableColumn
                     prop="projectScope"
@@ -2137,7 +2190,12 @@ onMounted(() => {
                     <ElTag type="info" effect="plain">{{ overview.nodeTemplates.length }} 组</ElTag>
                   </div>
                 </template>
-                <ElTable :data="overview.nodeTemplates" border height="360">
+                <ElTable
+                  :data="overview.nodeTemplates"
+                  border
+                  height="360"
+                  empty-text="暂无节点模板"
+                >
                   <ElTableColumn
                     prop="groupName"
                     label="业务分组"
@@ -2180,7 +2238,12 @@ onMounted(() => {
                     </ElTag>
                   </div>
                 </template>
-                <ElTable :data="overview.ruleVersions" border height="320">
+                <ElTable
+                  :data="overview.ruleVersions"
+                  border
+                  height="320"
+                  empty-text="暂无规则版本"
+                >
                   <ElTableColumn
                     prop="name"
                     label="规则名称"
@@ -2638,7 +2701,13 @@ onMounted(() => {
                 重新加载
               </ElButton>
             </div>
-            <ElTable :data="auditLogs" border height="360" v-loading="auditLoading">
+            <ElTable
+              :data="auditLogs"
+              border
+              height="360"
+              v-loading="auditLoading"
+              empty-text="当前筛选下暂无审计日志"
+            >
               <ElTableColumn prop="actorName" label="操作人" width="110" />
               <ElTableColumn prop="action" label="动作" min-width="180" show-overflow-tooltip />
               <ElTableColumn prop="objectType" label="对象类型" width="130" />
@@ -3953,6 +4022,7 @@ onMounted(() => {
     flex-direction: column;
   }
 
+  .audit-object-board,
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3997,6 +4067,7 @@ onMounted(() => {
 }
 
 @media (width <= 480px) {
+  .audit-object-board,
   .metric-grid,
   .integration-summary-grid,
   .rule-diff-summary {
