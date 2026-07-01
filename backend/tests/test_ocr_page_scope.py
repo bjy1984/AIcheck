@@ -469,3 +469,314 @@ def test_piping_table_helpers_are_page_scoped() -> None:
         {"tableId": "grid_p2", "pageNo": 2, "rows": 2, "columns": 3, "gridCellCount": 6},
     )
     assert aligned["tableId"] == "page_2_piping_characteristic_table_1"
+
+
+def test_visual_plus_page_text_cannot_satisfy_required_seal_without_crop_ocr() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+
+    result = fuse_parse_result(
+        {
+            "fragments": [
+                {
+                    "pageNo": 1,
+                    "text": "压力管道设计许可",
+                    "bbox": [20, 20, 160, 40],
+                    "confidence": 0.96,
+                    "coordinateSystem": "rendered_pixels",
+                    "coordinateTransformStatus": "original",
+                },
+                {
+                    "pageNo": 1,
+                    "text": "TS1810648-2021",
+                    "bbox": [20, 52, 160, 72],
+                    "confidence": 0.96,
+                    "coordinateSystem": "rendered_pixels",
+                    "coordinateTransformStatus": "original",
+                },
+            ],
+            "fields": [],
+            "tables": [],
+            "seals": [
+                {
+                    "sealId": "visual_1",
+                    "pageNo": 1,
+                    "bbox": [0, 0, 220, 120],
+                    "visualColor": "red",
+                    "visualConfidence": 0.9,
+                    "coordinateSystem": "rendered_pixels",
+                    "coordinateTransformStatus": "original",
+                    "qualityFlags": ["visual_candidate_only", "requires_seal_ocr_text"],
+                }
+            ],
+        },
+        profile={
+            "requiredFields": [],
+            "requiredTables": [],
+            "sealRules": {
+                "required": True,
+                "preferredVisualColors": ["red"],
+                "expectedSealTypes": ["design_license_seal"],
+            },
+        },
+    )
+
+    seal = result["seals"][0]
+    assert seal["sourceEngine"] == "fragment_seal_text_fusion"
+    assert seal["candidateOnly"] is True
+    assert seal["canSatisfyRequiredSeal"] is False
+    assert "requires_seal_ocr_text" in seal["qualityFlags"]
+    assert result["quality"]["sealCompleteness"] == 0.0
+    assert "SEAL_TEXT_LOW_CONFIDENCE" in result["quality"]["reasons"]
+
+
+def test_fragments_for_seal_rejects_missing_coordinate_system() -> None:
+    from apps.ocr_service.fusion import fragments_for_seal
+
+    seal = {
+        "pageNo": 1,
+        "bbox": [0, 0, 200, 120],
+        "coordinateSystem": "rendered_pixels",
+        "coordinateTransformStatus": "original",
+    }
+    fragments = [
+        {"pageNo": 1, "text": "公司章", "bbox": [20, 20, 80, 40], "confidence": 0.9},
+        {
+            "pageNo": 1,
+            "text": "有效公司章",
+            "bbox": [20, 50, 100, 70],
+            "confidence": 0.9,
+            "coordinateSystem": "rendered_pixels",
+            "coordinateTransformStatus": "original",
+        },
+    ]
+
+    assert [item["text"] for item in fragments_for_seal(seal, fragments)] == ["有效公司章"]
+    assert fragments_for_seal({"pageNo": 1, "bbox": [0, 0, 200, 120]}, fragments) == []
+
+
+def test_overlap_and_table_identity_reject_missing_coordinate_system() -> None:
+    from apps.ocr_service.fusion import same_page_overlap, same_table_identity
+
+    assert not same_page_overlap(
+        {"pageNo": 1, "bbox": [0, 0, 100, 100]},
+        {"pageNo": 1, "bbox": [0, 0, 100, 100], "coordinateSystem": "rendered_pixels"},
+    )
+    assert not same_table_identity(
+        {"pageNo": 1, "tableId": "table_1"},
+        {"pageNo": 1, "tableId": "table_1", "coordinateSystem": "rendered_pixels"},
+    )
+
+
+def test_nested_crop_bbox_is_not_double_offset() -> None:
+    from apps.ocr_service.service import attach_variant_metadata
+
+    result = {
+        "fragments": [],
+        "fields": [],
+        "tables": [
+            {
+                "tableId": "t1",
+                "bbox": [0, 0, 50, 50],
+                "cells": [{"text": "A", "bbox": [1, 2, 11, 12]}],
+            }
+        ],
+        "seals": [],
+        "layoutBlocks": [],
+    }
+    variant = {
+        "variantId": "page_2_table_crop_t1",
+        "pageNo": 2,
+        "source": "remediation_crop",
+        "engineScope": "crop",
+        "coordinateSystem": "crop_pixels",
+        "sourceCoordinateSystem": "rendered_pixels",
+        "coordinateTransformStatus": "crop_local",
+        "cropOffsetX": 100,
+        "cropOffsetY": 200,
+        "preprocessChain": ["table", "crop"],
+    }
+
+    attach_variant_metadata(result, "pp_structure_v3", variant, document_pages=[{"pageNo": 2}])
+
+    assert result["tables"][0]["bbox"] == [100.0, 200.0, 150.0, 250.0]
+    assert result["tables"][0]["cells"][0]["bbox"] == [101.0, 202.0, 111.0, 212.0]
+
+
+def test_build_crop_variants_rejects_coordinate_transform_unmapped(tmp_path: Path) -> None:
+    from PIL import Image
+    from apps.ocr_service.service import remediation_variants_for_reasons
+
+    source = tmp_path / "page-1.png"
+    Image.new("RGB", (200, 200), (255, 255, 255)).save(source)
+    variants = [{"variantId": "page_1_original", "pageNo": 1, "path": str(source)}]
+    result = {
+        "tables": [
+            {
+                "tableId": "bad",
+                "pageNo": 1,
+                "bbox": [20, 20, 120, 120],
+                "coordinateSystem": "rendered_pixels",
+                "coordinateTransformStatus": "unmapped",
+                "qualityFlags": ["coordinate_transform_unmapped"],
+            }
+        ],
+        "seals": [],
+    }
+
+    routed = remediation_variants_for_reasons(result, variants, {"TABLE_STRUCTURE_LOW_CONFIDENCE"})
+
+    assert all(item.get("source") != "remediation_crop" for item in routed)
+
+
+def test_purpose_variant_does_not_route_all_pages_without_page_clue() -> None:
+    from apps.ocr_service.routing import route_engine_variants
+
+    variants = [
+        {"variantId": "page_1_original", "pageNo": 1, "path": "/tmp/p1.png"},
+        {"variantId": "page_1_table_line_enhanced", "pageNo": 1, "path": "/tmp/p1-table.png", "purpose": "table"},
+        {"variantId": "page_2_original", "pageNo": 2, "path": "/tmp/p2.png"},
+        {"variantId": "page_2_table_line_enhanced", "pageNo": 2, "path": "/tmp/p2-table.png", "purpose": "table"},
+    ]
+    quality = [
+        {"pageNo": 1, "quality": {"hasVisualTableCandidate": True}},
+        {"pageNo": 2, "quality": {"hasVisualTableCandidate": False, "hasTableCandidate": False}},
+    ]
+
+    routed = route_engine_variants("opencv_table_grid_subprocess", variants, profile={}, page_quality=quality)
+
+    assert [item["pageNo"] for item in routed] == [1]
+
+
+def test_field_remediation_prioritizes_missing_field_label_crop(tmp_path: Path) -> None:
+    from PIL import Image
+    from apps.ocr_service.service import remediation_variants_for_reasons
+
+    source = tmp_path / "page-1.png"
+    Image.new("RGB", (500, 300), (255, 255, 255)).save(source)
+    variants = [{"variantId": "page_1_original", "pageNo": 1, "path": str(source)}]
+    fields = [
+        {
+            "fieldCode": f"existing_{idx}",
+            "pageNo": 1,
+            "bbox": [10 + idx, 100, 30 + idx, 120],
+            "coordinateSystem": "rendered_pixels",
+            "coordinateTransformStatus": "original",
+        }
+        for idx in range(8)
+    ]
+    result = {
+        "quality": {"missingFields": ["report_no"]},
+        "fragments": [
+            {
+                "text": "报告编号",
+                "pageNo": 1,
+                "bbox": [50, 30, 100, 50],
+                "coordinateSystem": "rendered_pixels",
+                "coordinateTransformStatus": "original",
+                "pageWidth": 500,
+                "pageHeight": 300,
+            }
+        ],
+        "fields": fields,
+        "tables": [],
+        "seals": [],
+    }
+
+    routed = remediation_variants_for_reasons(result, variants, {"REQUIRED_FIELD_MISSING"})
+
+    assert routed[0]["purpose"] == "field"
+    assert routed[0]["remediationTarget"]["id"] == "report_no"
+
+
+def test_required_table_missing_generates_page_region_crop(tmp_path: Path) -> None:
+    from PIL import Image
+    from apps.ocr_service.service import remediation_variants_for_reasons
+
+    source = tmp_path / "page-1.png"
+    Image.new("RGB", (400, 300), (255, 255, 255)).save(source)
+    variants = [{"variantId": "page_1_original", "pageNo": 1, "path": str(source)}]
+    result = {"quality": {"missingTables": ["weld_detection_result_table"]}, "tables": [], "seals": []}
+
+    routed = remediation_variants_for_reasons(
+        result,
+        variants,
+        {"REQUIRED_TABLE_MISSING"},
+        profile={"requiredTables": ["weld_detection_result_table"]},
+    )
+
+    assert routed[0]["purpose"] == "table"
+    assert routed[0]["source"] == "remediation_crop"
+
+
+def test_seal_not_found_generates_tail_page_signature_region_crop(tmp_path: Path) -> None:
+    from PIL import Image
+    from apps.ocr_service.service import remediation_variants_for_reasons
+
+    first = tmp_path / "page-1.png"
+    last = tmp_path / "page-8.png"
+    Image.new("RGB", (400, 300), (255, 255, 255)).save(first)
+    Image.new("RGB", (400, 300), (255, 255, 255)).save(last)
+    variants = [
+        {"variantId": "page_1_original", "pageNo": 1, "path": str(first)},
+        {"variantId": "page_8_original", "pageNo": 8, "path": str(last)},
+    ]
+    result = {"tables": [], "seals": []}
+
+    routed = remediation_variants_for_reasons(
+        result,
+        variants,
+        {"SEAL_NOT_FOUND"},
+        profile={"sealRules": {"required": True}},
+    )
+
+    seal_crops = [item for item in routed if item.get("purpose") == "seal" and item.get("source") == "remediation_crop"]
+    assert {item["pageNo"] for item in seal_crops} == {1, 8}
+
+
+def test_agentdesign_page_index_zero_based_normalization() -> None:
+    from apps.ocr_service.engines import normalize_agentdesign_seal_result, normalize_vl_result
+
+    seals = normalize_agentdesign_seal_result(
+        {
+            "seals": [
+                {
+                    "seal_result_id": "seal-1",
+                    "page_index": 1,
+                    "polygon": [[0, 0], [10, 0], [10, 10], [0, 10]],
+                    "fields": {"seal_text": {"value": "测试章", "calibrated_confidence": 0.9}},
+                }
+            ]
+        }
+    )
+    _, fragments, _, _ = normalize_vl_result({"page_index": 1, "text": "第二页"}, "vl")
+
+    assert seals[0]["pageNo"] == 2
+    assert fragments[0]["pageNo"] == 2
+
+
+def test_piping_regex_field_preserves_source_fragment_page_and_coordinate_system() -> None:
+    from apps.ocr_service.service import extract_piping_fields
+
+    result = {
+        "fragments": [
+            {
+                "pageNo": 3,
+                "text": "PL8301",
+                "bbox": [10, 20, 80, 40],
+                "confidence": 0.88,
+                "coordinateSystem": "rendered_pixels",
+                "coordinateTransformStatus": "original",
+                "variantId": "page_3_original",
+                "sourceEngine": "paddle_ocr_v6",
+            }
+        ],
+        "fields": [],
+        "tables": [],
+    }
+
+    extract_piping_fields(result, profile={})
+
+    pipe_field = next(field for field in result["fields"] if field["fieldCode"] == "pipe_no")
+    assert pipe_field["pageNo"] == 3
+    assert pipe_field["coordinateSystem"] == "rendered_pixels"
+    assert pipe_field["coordinateTransformStatus"] == "original"

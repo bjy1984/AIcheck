@@ -137,6 +137,8 @@ def dedupe_fragments(fragments: list[Any]) -> list[dict[str, Any]]:
             continue
         key = (
             fragment.get("pageNo"),
+            fragment.get("coordinateSystem"),
+            fragment.get("coordinateTransformStatus"),
             normalize_text(fragment.get("text")),
             tuple(flat_bbox(fragment.get("bbox")) or []),
         )
@@ -198,7 +200,7 @@ def choose_tables(tables: list[Any], *, profile: dict[str, Any]) -> list[dict[st
         matched_candidates = [table for table in table_items if table_matches_required(table, required)]
         candidates = matched_candidates or table_items
         best_source = max(candidates, key=lambda item: table_score(item, required_table=required))
-        existing = next((table for table in selected if same_table_identity(table, best_source)), None)
+        existing = next((table for table in selected if same_table_selection_identity(table, best_source)), None)
         if existing is not None:
             if matched_candidates:
                 matched = {str(item) for item in existing.get("matchedRequiredTables") or [] if item}
@@ -247,7 +249,7 @@ def choose_tables(tables: list[Any], *, profile: dict[str, Any]) -> list[dict[st
     unmatched = [
         table
         for table in table_items
-        if not any(same_table_identity(table, selected_item) for selected_item in selected)
+        if not any(same_table_selection_identity(table, selected_item) for selected_item in selected)
         and table_score(table) >= 0.72
     ]
     selected.extend(deepcopy(table) for table in unmatched)
@@ -298,17 +300,17 @@ def enrich_visual_seals_from_fragments(
         output["ocrConfidence"] = round(confidence, 4)
         output["sourceEngine"] = "fragment_seal_text_fusion"
         flags = {str(flag) for flag in output.get("qualityFlags") or []}
-        flags.discard("visual_candidate_only")
-        flags.discard("requires_seal_ocr_text")
         flags.add("fragment_seal_text")
         output["qualityFlags"] = sorted(flags)
-        output["fields"] = fragment_seal_fields(text, hits, seal_bbox, confidence)
+        output["sealEvidenceLevel"] = "visual_plus_page_text"
+        output["candidateOnly"] = True
+        output["canSatisfyRequiredSeal"] = False
+        output["fields"] = fragment_seal_fields(text, hits, seal_bbox, confidence, spatial_source=seal)
         output["fragmentEvidence"] = [
             {
+                **copy_spatial_metadata(item),
                 "text": item.get("text"),
-                "bbox": item.get("bbox"),
                 "confidence": item.get("confidence"),
-                "sourceEngine": item.get("sourceEngine"),
             }
             for item in hits
         ]
@@ -330,11 +332,11 @@ def should_enrich_visual_seal(seal: dict[str, Any], profile: dict[str, Any]) -> 
 
 def fragments_for_seal(seal: dict[str, Any], fragments: list[dict[str, Any]]) -> list[dict[str, Any]]:
     seal_bbox = flat_bbox(seal.get("bbox"))
-    if not seal_bbox:
+    if not seal_bbox or not has_evidence_box(seal):
         return []
     x0, y0, x1, y1 = seal_bbox
     seal_page = int_from(seal.get("pageNo"), default=1)
-    seal_coordinate = str(seal.get("coordinateSystem") or "rendered_pixels")
+    seal_coordinate = seal.get("coordinateSystem")
     pad_x = max((x1 - x0) * 0.12, 60.0)
     pad_y = max((y1 - y0) * 0.12, 60.0)
     hits = []
@@ -344,9 +346,11 @@ def fragments_for_seal(seal: dict[str, Any], fragments: list[dict[str, Any]]) ->
         text = normalize_text(fragment.get("text"))
         if not text or len(text) <= 1:
             continue
+        if not has_evidence_box(fragment):
+            continue
         if int_from(fragment.get("pageNo"), default=1) != seal_page:
             continue
-        if str(fragment.get("coordinateSystem") or "rendered_pixels") != seal_coordinate:
+        if fragment.get("coordinateSystem") != seal_coordinate:
             continue
         bbox = flat_bbox(fragment.get("bbox"))
         if not bbox:
@@ -465,15 +469,14 @@ def fragment_seal_candidates_from_text(
                     "ocrConfidence": round(min(0.88, max(0.68, average([float(item.get("confidence") or 0.0) for item in hits]) * 0.9)), 4),
                     "candidateOnly": True,
                     "canSatisfyRequiredSeal": False,
-                    "fields": fragment_seal_fields(text, hits, bbox, 0.78),
+                    "fields": fragment_seal_fields(text, hits, bbox, 0.78, spatial_source=hits[0] if hits else None),
                     "qualityFlags": ["fragment_seal_text", "text_only_seal_candidate"],
                     "sourceEngine": "fragment_seal_text_detector",
                     "fragmentEvidence": [
                         {
+                            **copy_spatial_metadata(item),
                             "text": item.get("text"),
-                            "bbox": item.get("bbox"),
                             "confidence": item.get("confidence"),
-                            "sourceEngine": item.get("sourceEngine"),
                         }
                         for item in hits
                     ],
@@ -523,13 +526,16 @@ def fragment_seal_fields(
     hits: list[dict[str, Any]],
     seal_bbox: list[float],
     confidence: float,
+    *,
+    spatial_source: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
+    spatial = copy_spatial_metadata(spatial_source or (hits[0] if hits else {}), bbox=seal_bbox)
     fields = [
         {
+            **spatial,
             "fieldName": "seal_text",
             "fieldCode": "seal_text",
             "fieldValue": compact_seal_text(text),
-            "bbox": seal_bbox,
             "confidence": round(confidence, 4),
             "source": "ocr_fragments_in_visual_seal_bbox",
         }
@@ -538,10 +544,10 @@ def fragment_seal_fields(
     if license_match:
         fields.append(
             {
+                **spatial,
                 "fieldName": "license_no",
                 "fieldCode": "license_no",
                 "fieldValue": license_match.group(0).replace(" ", ""),
-                "bbox": seal_bbox,
                 "confidence": round(confidence, 4),
                 "source": "ocr_fragments_in_visual_seal_bbox",
             }
@@ -550,15 +556,32 @@ def fragment_seal_fields(
     if scope:
         fields.append(
             {
+                **spatial,
                 "fieldName": "license_scope",
                 "fieldCode": "license_scope",
                 "fieldValue": scope,
-                "bbox": seal_bbox,
                 "confidence": round(confidence, 4),
                 "source": "ocr_fragments_in_visual_seal_bbox",
             }
         )
     return fields
+
+
+def copy_spatial_metadata(src: dict[str, Any], *, bbox: Any | None = None, polygon: Any | None = None) -> dict[str, Any]:
+    output = {
+        "bbox": bbox if bbox is not None else src.get("bbox"),
+        "polygon": polygon if polygon is not None else src.get("polygon"),
+        "pageNo": src.get("pageNo"),
+        "coordinateSystem": src.get("coordinateSystem"),
+        "sourceCoordinateSystem": src.get("sourceCoordinateSystem"),
+        "coordinateTransform": src.get("coordinateTransform"),
+        "coordinateTransformStatus": src.get("coordinateTransformStatus"),
+        "qualityFlags": list(src.get("qualityFlags") or []),
+        "variantId": src.get("variantId"),
+        "selectedVariantId": src.get("selectedVariantId"),
+        "sourceEngine": src.get("sourceEngine"),
+    }
+    return {key: value for key, value in output.items() if value is not None and value != []}
 
 
 def build_quality_gate(result: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
@@ -758,11 +781,25 @@ def flatten_table_candidates(candidates: list[Any]) -> list[Any]:
 def same_table_identity(left: dict[str, Any], right: dict[str, Any]) -> bool:
     if int_from(left.get("pageNo"), default=1) != int_from(right.get("pageNo"), default=1):
         return False
-    if str(left.get("coordinateSystem") or "rendered_pixels") != str(right.get("coordinateSystem") or "rendered_pixels"):
+    if not left.get("coordinateSystem") or not right.get("coordinateSystem"):
+        return False
+    if left.get("coordinateSystem") != right.get("coordinateSystem"):
         return False
     if left.get("tableId") and right.get("tableId") and left.get("tableId") == right.get("tableId"):
         return True
     return left.get("sourceEngine") == right.get("sourceEngine") and left.get("bbox") == right.get("bbox")
+
+
+def same_table_selection_identity(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    if same_table_identity(left, right):
+        return True
+    if left.get("tableId") and left.get("tableId") == right.get("tableId"):
+        left_page = left.get("pageNo")
+        right_page = right.get("pageNo")
+        if left_page is not None and right_page is not None and int_from(left_page, default=1) != int_from(right_page, default=1):
+            return False
+        return True
+    return False
 
 
 def normalize_table_key(value: Any) -> str:
@@ -808,7 +845,9 @@ def header_token_matches(expected: str, header: str) -> bool:
 def same_page_overlap(left: dict[str, Any], right: dict[str, Any]) -> bool:
     if int_from(left.get("pageNo"), default=1) != int_from(right.get("pageNo"), default=1):
         return False
-    if str(left.get("coordinateSystem") or "rendered_pixels") != str(right.get("coordinateSystem") or "rendered_pixels"):
+    if not left.get("coordinateSystem") or not right.get("coordinateSystem"):
+        return False
+    if left.get("coordinateSystem") != right.get("coordinateSystem"):
         return False
     return overlaps(left.get("bbox"), right.get("bbox"))
 

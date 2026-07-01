@@ -50,6 +50,12 @@ def route_engine_variants(
     if engine_name == "opencv_table_grid_subprocess":
         return purpose_variants_by_page(variants, "table", quality_by_page, fallback=False)
     if engine_name in SEAL_ENGINES:
+        seal_policy = ((profile.get("preprocessPolicy") or {}).get("seal") or {}) if isinstance(profile, dict) else {}
+        required_seal = bool(((profile.get("sealRules") or {}) if isinstance(profile, dict) else {}).get("required"))
+        if engine_name == "paddlex_seal_recognition" and not required_seal and not seal_policy.get("enablePaddlexSeal"):
+            return []
+        if engine_name == "visual_seal_candidate_subprocess" and not required_seal and not seal_policy.get("enableColorCandidate"):
+            return []
         if engine_name == "visual_seal_candidate_subprocess":
             return purpose_variants_by_page(variants, "seal", quality_by_page, fallback=True)
         return seal_text_variants(
@@ -171,11 +177,11 @@ def purpose_variants_by_page(
         quality = quality_by_page.get(page_no) or {}
         purpose_variant = variant_for_page_purpose(variants, page_no, purpose)
         if purpose == "table" and not (
-            quality.get("hasVisualTableCandidate") or quality.get("hasTableCandidate") or purpose_variant
+            quality.get("hasVisualTableCandidate") or quality.get("hasTableCandidate")
         ):
             continue
         if purpose == "seal" and not (
-            quality.get("hasVisualSealCandidate") or quality.get("hasSealCandidate") or purpose_variant
+            quality.get("hasVisualSealCandidate") or quality.get("hasSealCandidate")
         ):
             continue
         match = purpose_variant
@@ -204,7 +210,7 @@ def seal_text_variants(
     candidate_pages = [
         page_no
         for page_no in all_pages
-        if (quality_by_page.get(page_no) or {}).get("hasVisualSealCandidate") or variant_for_page_purpose(variants, page_no, "seal")
+        if (quality_by_page.get(page_no) or {}).get("hasVisualSealCandidate")
     ]
     fallback_pages = [all_pages[0], all_pages[-1]] if required_seal else []
     ordered_pages = dedupe_page_order([*fallback_pages, *candidate_pages])

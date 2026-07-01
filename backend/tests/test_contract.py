@@ -381,7 +381,7 @@ def test_visual_seal_candidates_do_not_create_business_fields() -> None:
     assert fields == []
 
 
-def test_visual_seal_candidate_enriched_from_ocr_fragments_can_satisfy_required_seal() -> None:
+def test_visual_seal_candidate_enriched_from_ocr_fragments_requires_crop_ocr_for_required_seal() -> None:
     from apps.ocr_service.fusion import fuse_parse_result
     from apps.ocr_service.profiles import profile_for
 
@@ -481,12 +481,14 @@ def test_visual_seal_candidate_enriched_from_ocr_fragments_can_satisfy_required_
     assert seal["sealType"] == "design_license_seal"
     assert "TS1810648-2021" in seal["sealName"]
     assert "fragment_seal_text" in seal["qualityFlags"]
-    assert "visual_candidate_only" not in seal["qualityFlags"]
-    assert "SEAL_TEXT_LOW_CONFIDENCE" not in fused["quality"]["reasons"]
-    assert fused["quality"]["matchedSealTypes"] == ["design_license_seal"]
-    assert fused["quality"]["missingExpectedSealTypes"] == []
-    assert fused["quality"]["sealCompleteness"] == 1.0
-    assert fused["quality"]["status"] == "auto_usable"
+    assert "visual_candidate_only" in seal["qualityFlags"]
+    assert seal["candidateOnly"] is True
+    assert seal["canSatisfyRequiredSeal"] is False
+    assert "SEAL_TEXT_LOW_CONFIDENCE" in fused["quality"]["reasons"]
+    assert fused["quality"]["matchedSealTypes"] == []
+    assert "design_license_seal" in fused["quality"]["missingExpectedSealTypes"]
+    assert fused["quality"]["sealCompleteness"] == 0.0
+    assert fused["quality"]["status"] == "needs_human_review"
 
 
 def test_fragment_text_can_create_drawing_approval_seal_without_visual_candidate() -> None:

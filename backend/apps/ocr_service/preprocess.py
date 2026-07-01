@@ -48,12 +48,13 @@ def generate_image_variants(
         page_no = int(page.get("pageNo") or 1)
         page_path = Path(str(page.get("path") or source_path))
         quality = quality_by_page.get(page_no) or {}
+        page_requested = requested_variant_names_for_page(requested, profile, quality)
         image = load_image(page_path)
         if image is None:
             generated.extend(
                 generate_variants_subprocess(
                     page_path,
-                    requested,
+                    page_requested,
                     quality,
                     out_dir=out_dir,
                     page_no=page_no,
@@ -70,7 +71,7 @@ def generate_image_variants(
             "table_line_enhanced": lambda: table_line_enhanced_image(cv2, np, raw),
             "seal_color_mask": lambda: seal_color_mask_image(cv2, raw),
         }
-        for name in requested:
+        for name in page_requested:
             if name == "original" or name not in variant_builders:
                 continue
             try:
@@ -116,13 +117,38 @@ def requested_variant_names(
     quality = merged_quality_flags(qualities)
     if quality.get("hasTableCandidate") and "table_line_enhanced" not in requested:
         requested.append("table_line_enhanced")
-    if quality.get("hasSealCandidate") and "seal_color_mask" not in requested:
+    seal_policy = (policy.get("seal") or {}) if isinstance(policy.get("seal"), dict) else {}
+    required_seal = bool((profile.get("sealRules") or {}).get("required"))
+    if (
+        quality.get("hasSealCandidate")
+        and (required_seal or seal_policy.get("enableColorCandidate"))
+        and "seal_color_mask" not in requested
+    ):
         requested.append("seal_color_mask")
     if quality.get("isLowQuality"):
         for name in ["deskew", "gray_clahe"]:
             if name not in requested:
                 requested.append(name)
     return cap_requested_variants(requested, quality)
+
+
+def requested_variant_names_for_page(requested: list[str], profile: dict[str, Any], quality: dict[str, Any]) -> list[str]:
+    policy = profile.get("preprocessPolicy") or {}
+    seal_policy = (policy.get("seal") or {}) if isinstance(policy.get("seal"), dict) else {}
+    required_seal = bool((profile.get("sealRules") or {}).get("required"))
+    output = []
+    for name in requested:
+        if name == "table_line_enhanced" and not (quality.get("hasVisualTableCandidate") or quality.get("hasTableCandidate")):
+            continue
+        if name == "seal_color_mask":
+            if not (required_seal or seal_policy.get("enableColorCandidate")):
+                continue
+            if not quality.get("hasVisualSealCandidate"):
+                continue
+        output.append(name)
+    if "original" not in output:
+        output.insert(0, "original")
+    return output
 
 
 def merged_quality_flags(qualities: list[dict[str, Any]]) -> dict[str, Any]:

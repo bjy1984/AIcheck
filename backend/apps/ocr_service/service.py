@@ -982,48 +982,208 @@ def remediation_variants_for_reasons(
                 purpose="field",
                 padding_ratio=0.35,
                 max_items=6,
+                reasons=reasons,
             )
         )
     if reasons.intersection(TABLE_REMEDIATION_REASONS):
         crop_variants.extend(
             build_crop_variants(
-                result.get("tables") or [],
+                [
+                    *(result.get("tables") or []),
+                    *missing_table_remediation_targets(result, variants, profile or {}, reasons=reasons),
+                ],
                 variants,
                 target_type="table",
                 purpose="table",
                 padding_ratio=0.08,
                 max_items=3,
+                reasons=reasons,
             )
         )
     if reasons.intersection(SEAL_REMEDIATION_REASONS):
         crop_variants.extend(
             build_crop_variants(
-                result.get("seals") or [],
+                [
+                    *(result.get("seals") or []),
+                    *missing_seal_remediation_targets(result, variants, profile or {}, reasons=reasons),
+                ],
                 variants,
                 target_type="seal",
                 purpose="seal",
                 padding_ratio=0.22,
                 max_items=4,
+                reasons=reasons,
             )
         )
     return [*crop_variants, *variants] if crop_variants else variants
 
 
 def field_remediation_targets(result: dict[str, Any], profile: dict[str, Any]) -> list[dict[str, Any]]:
-    targets = [
-        field
-        for field in result.get("fields") or []
-        if isinstance(field, dict) and (field.get("bbox") or field.get("polygon"))
-    ]
+    targets: list[dict[str, Any]] = []
     missing_fields = [str(item) for item in ((result.get("quality") or {}).get("missingFields") or []) if str(item).strip()]
-    if not missing_fields:
-        return targets
     fragments = [fragment for fragment in result.get("fragments") or [] if isinstance(fragment, dict)]
     for field_code in missing_fields:
         target = missing_field_label_target(field_code, fragments)
         if target:
             targets.append(target)
+    fields = [field for field in result.get("fields") or [] if isinstance(field, dict) and (field.get("bbox") or field.get("polygon"))]
+    quality = result.get("quality") if isinstance(result.get("quality"), dict) else {}
+    low_confidence = {str(item.get("fieldCode") or item.get("fieldName") or "") for item in quality.get("lowConfidenceFields") or [] if isinstance(item, dict)}
+    invalid = {str(item.get("fieldCode") or item.get("fieldName") or "") for item in quality.get("invalidFields") or [] if isinstance(item, dict)}
+    missing_evidence = {
+        str(item.get("targetCode") or item.get("fieldCode") or item.get("targetName") or "")
+        for item in quality.get("missingEvidence") or []
+        if isinstance(item, dict) and item.get("targetType") == "field"
+    }
+
+    def field_priority(field: dict[str, Any]) -> tuple[int, str]:
+        code = str(field.get("fieldCode") or field.get("fieldName") or "")
+        if code in low_confidence:
+            return (0, code)
+        if code in invalid:
+            return (1, code)
+        if code in missing_evidence:
+            return (2, code)
+        if "field_value_conflict" in {str(flag) for flag in field.get("qualityFlags") or []}:
+            return (3, code)
+        return (9, code)
+
+    targets.extend(sorted(fields, key=field_priority))
+    return dedupe_crop_targets(targets)
+
+
+def missing_table_remediation_targets(
+    result: dict[str, Any],
+    variants: list[dict[str, Any]],
+    profile: dict[str, Any],
+    *,
+    reasons: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    quality = result.get("quality") if isinstance(result.get("quality"), dict) else {}
+    reason_set = {str(item) for item in (reasons or set())} | {str(item) for item in quality.get("reasons") or []}
+    if "REQUIRED_TABLE_MISSING" not in reason_set and result.get("tables"):
+        return []
+    targets = []
+    required = [str(item) for item in (profile.get("requiredTables") or quality.get("missingTables") or []) if str(item).strip()]
+    for variant in original_page_variants(variants)[:3]:
+        dims = variant_dimensions(variant)
+        if not dims:
+            continue
+        width, height = dims
+        targets.append(
+            {
+                "tableId": f"missing_required_table_page_{variant_page_no(variant)}",
+                "requiredTables": required,
+                "pageNo": variant_page_no(variant),
+                "bbox": [width * 0.04, height * 0.12, width * 0.96, height * 0.88],
+                "coordinateSystem": "rendered_pixels",
+                "coordinateTransformStatus": "original",
+                "qualityFlags": ["missing_required_table_region_crop"],
+            }
+        )
     return targets
+
+
+def missing_seal_remediation_targets(
+    result: dict[str, Any],
+    variants: list[dict[str, Any]],
+    profile: dict[str, Any],
+    *,
+    reasons: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    quality = result.get("quality") if isinstance(result.get("quality"), dict) else {}
+    reason_set = {str(item) for item in (reasons or set())} | {str(item) for item in quality.get("reasons") or []}
+    required_seal = bool((profile.get("sealRules") or {}).get("required"))
+    if result.get("seals") and "SEAL_NOT_FOUND" not in reason_set:
+        return []
+    if not required_seal and "SEAL_NOT_FOUND" not in reason_set:
+        return []
+    originals = original_page_variants(variants)
+    if not originals:
+        return []
+    edge_pages = dedupe_by_page([originals[0], originals[-1]])
+    targets = []
+    for variant in edge_pages:
+        dims = variant_dimensions(variant)
+        if not dims:
+            continue
+        width, height = dims
+        page_no = variant_page_no(variant)
+        for region_name, bbox in {
+            "bottom_right": [width * 0.48, height * 0.52, width * 0.98, height * 0.96],
+            "bottom_left": [width * 0.02, height * 0.52, width * 0.52, height * 0.96],
+        }.items():
+            targets.append(
+                {
+                    "sealId": f"missing_seal_{region_name}_page_{page_no}",
+                    "pageNo": page_no,
+                    "bbox": bbox,
+                    "coordinateSystem": "rendered_pixels",
+                    "coordinateTransformStatus": "original",
+                    "qualityFlags": ["missing_required_seal_region_crop"],
+                }
+            )
+    return targets
+
+
+def dedupe_crop_targets(targets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[Any, ...]] = set()
+    output = []
+    for target in targets:
+        key = (
+            target.get("fieldCode") or target.get("fieldName") or target.get("tableId") or target.get("sealId"),
+            page_no_from(target),
+            tuple(rect_from_bbox(target.get("bbox") or target.get("polygon")) or []),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(target)
+    return output
+
+
+def original_page_variants(variants: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        variant
+        for variant in variants
+        if isinstance(variant, dict)
+        and str(variant.get("variantId") or "").endswith("_original")
+        and variant.get("path")
+    ]
+
+
+def dedupe_by_page(variants: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen = set()
+    output = []
+    for variant in variants:
+        page_no = variant_page_no(variant)
+        if page_no in seen:
+            continue
+        seen.add(page_no)
+        output.append(variant)
+    return output
+
+
+def variant_page_no(variant: dict[str, Any]) -> int:
+    return int(variant.get("pageNo") or 1)
+
+
+def variant_dimensions(variant: dict[str, Any]) -> tuple[float, float] | None:
+    width = float(variant.get("pageWidth") or variant.get("sourcePageWidth") or 0)
+    height = float(variant.get("pageHeight") or variant.get("sourcePageHeight") or 0)
+    if width > 0 and height > 0:
+        return width, height
+    path = Path(str(variant.get("path") or ""))
+    if not path.exists():
+        return None
+    try:
+        from PIL import Image  # type: ignore
+
+        with Image.open(str(path)) as image:
+            width, height = image.size
+        return float(width), float(height)
+    except Exception:
+        return None
 
 
 FIELD_LABEL_ALIASES = {
@@ -1073,7 +1233,9 @@ def missing_field_label_target(field_code: str, fragments: list[dict[str, Any]])
                 "bbox": crop_bbox,
                 "pageNo": page_no_from(fragment),
                 "coordinateSystem": fragment.get("coordinateSystem"),
-                "qualityFlags": ["missing_field_label_crop"],
+                "sourceCoordinateSystem": fragment.get("sourceCoordinateSystem"),
+                "coordinateTransformStatus": fragment.get("coordinateTransformStatus"),
+                "qualityFlags": sorted({*map(str, fragment.get("qualityFlags") or []), "missing_field_label_crop"}),
             }
     return None
 
@@ -1086,6 +1248,7 @@ def build_crop_variants(
     purpose: str,
     padding_ratio: float,
     max_items: int,
+    reasons: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
     for item in items:
@@ -1093,7 +1256,7 @@ def build_crop_variants(
             break
         if not isinstance(item, dict):
             continue
-        if item.get("coordinateSystem") != "rendered_pixels":
+        if not can_use_as_crop_target(item):
             continue
         bbox = rect_from_bbox(item.get("bbox") or item.get("polygon"))
         if bbox is None:
@@ -1111,8 +1274,16 @@ def build_crop_variants(
         if crop is None:
             continue
         crop_path = Path(str(crop["path"]))
-        target_id = str(item.get(f"{target_type}Id") or item.get("tableId") or item.get("sealId") or len(output) + 1)
+        target_id = str(
+            item.get(f"{target_type}Id")
+            or item.get("fieldCode")
+            or item.get("fieldName")
+            or item.get("tableId")
+            or item.get("sealId")
+            or len(output) + 1
+        )
         variant_id = f"page_{page_no}_{purpose}_crop_{safe_variant_token(target_id)}"
+        reason_list = sorted(str(reason) for reason in (reasons or set()) if str(reason).strip())
         output.append(
             {
                 "variantId": variant_id,
@@ -1141,12 +1312,27 @@ def build_crop_variants(
                     "type": target_type,
                     "id": target_id,
                     "fieldCode": item.get("fieldCode"),
-                    "reason": "remediation_crop",
+                    "reason": reason_list[0] if len(reason_list) == 1 else "remediation_crop",
+                    "reasons": reason_list,
                 },
                 "coordinateTransformStatus": "crop_local",
             }
         )
     return output
+
+
+def can_use_as_crop_target(item: dict[str, Any]) -> bool:
+    flags = {str(flag) for flag in item.get("qualityFlags") or []}
+    if item.get("coordinateSystem") != "rendered_pixels":
+        return False
+    if not item.get("pageNo"):
+        return False
+    if {"document_coordinate_unmapped", "coordinate_transform_unmapped", "external_coordinate_unverified"}.intersection(flags):
+        return False
+    status = item.get("coordinateTransformStatus")
+    if status and status not in {"original", "mapped", "mapped_from_crop", "mapped_from_pdf_points"}:
+        return False
+    return bool(rect_from_bbox(item.get("bbox") or item.get("polygon")))
 
 
 def original_variant_for_page(variants: list[dict[str, Any]], page_no: int) -> dict[str, Any] | None:
@@ -1463,18 +1649,6 @@ def normalize_nested_coordinates(
         return
     for item in obj:
         if isinstance(item, dict):
-            item.setdefault("pageNo", parent_page_no)
-            item.setdefault("coordinateSystem", parent_coordinate_system)
-            item.setdefault("sourceEngine", engine_name)
-            item.setdefault("variantId", variant.get("variantId"))
-            item.setdefault("selectedVariantId", variant.get("variantId"))
-            if item.get("bbox") or item.get("polygon"):
-                normalize_item_coordinates(item, engine_name=engine_name, variant=variant, pages_by_no=pages_by_no)
-                if variant_has_unmapped_coordinates(variant, item):
-                    flags = {str(flag) for flag in item.get("qualityFlags") or []}
-                    flags.add("coordinate_transform_unmapped")
-                    item["qualityFlags"] = sorted(flags)
-                    item["coordinateTransformStatus"] = variant.get("coordinateTransformStatus")
             normalize_nested_coordinates(
                 item,
                 engine_name=engine_name,
@@ -2127,12 +2301,15 @@ def extract_piping_fields(result: dict[str, Any], profile: dict[str, Any] | None
         add_field_if_missing(result, "design_phase", "设计阶段", match_to_fragment(text_items, phase_match.group(0)))
     pipe_values = []
     pipe_bbox = None
+    pipe_fragment = None
     for text, fragment in text_items:
         for match in PIPE_CODE_RE.finditer(text):
             value = match.group(0).upper()
             if value not in pipe_values:
                 pipe_values.append(value)
-                pipe_bbox = pipe_bbox or rect_from_bbox(fragment.get("bbox"))
+                if pipe_bbox is None:
+                    pipe_bbox = rect_from_bbox(fragment.get("bbox"))
+                    pipe_fragment = fragment
     for table in result.get("tables") or []:
         if not isinstance(table, dict):
             continue
@@ -2143,18 +2320,30 @@ def extract_piping_fields(result: dict[str, Any], profile: dict[str, Any] | None
             if value and value not in pipe_values:
                 pipe_values.append(value)
     if pipe_values:
+        fragment_evidence = {
+            "bbox": pipe_bbox,
+            "pageNo": page_no_from(pipe_fragment or {}),
+            "confidence": 0.74 if pipe_bbox else 0.52,
+            "sourceEngine": "profile_regex",
+        }
+        if isinstance(pipe_fragment, dict):
+            fragment_evidence.update(
+                {
+                    "coordinateSystem": pipe_fragment.get("coordinateSystem"),
+                    "sourceCoordinateSystem": pipe_fragment.get("sourceCoordinateSystem"),
+                    "coordinateTransformStatus": pipe_fragment.get("coordinateTransformStatus"),
+                    "qualityFlags": list(pipe_fragment.get("qualityFlags") or []),
+                    "variantId": pipe_fragment.get("variantId"),
+                    "selectedVariantId": pipe_fragment.get("selectedVariantId"),
+                }
+            )
         add_field_if_missing(
             result,
             "pipe_no",
             "管道代号",
             {
                 "text": ",".join(pipe_values[:20]),
-                "fragment": {
-                    "bbox": pipe_bbox,
-                    "pageNo": 1,
-                    "confidence": 0.74 if pipe_bbox else 0.52,
-                    "sourceEngine": "profile_regex",
-                },
+                "fragment": fragment_evidence,
             },
         )
 

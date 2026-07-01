@@ -2180,7 +2180,7 @@ def normalize_structure_result(raw: Any, source_engine: str) -> tuple[list[dict[
             {
                 "blockId": f"layout_{index + 1}",
                 "blockType": block_type,
-                "pageNo": int(item.get("pageNo") or item.get("page_no") or 1),
+                "pageNo": normalize_page_no(item, fallback=1),
                 "bbox": bbox,
                 "text": item.get("text") or res_text,
                 "confidence": first_numeric(item, "confidence", "score", default=0.0),
@@ -2193,7 +2193,7 @@ def normalize_structure_result(raw: Any, source_engine: str) -> tuple[list[dict[
             tables.append(
                 {
                     "tableId": f"table_{len(tables) + 1}",
-                    "pageNo": int(item.get("pageNo") or item.get("page_no") or 1),
+                    "pageNo": normalize_page_no(item, fallback=1),
                     "bbox": bbox,
                     "rows": table_structure["rows"],
                     "columns": table_structure["columns"],
@@ -2216,7 +2216,7 @@ def normalize_vl_result(raw: Any, source_engine: str) -> tuple[str, list[dict[st
         item = dict_like_payload(raw_item)
         page_no = page_index
         if isinstance(item, dict):
-            page_no = int(item.get("pageNo") or item.get("page_no") or item.get("page_index") or page_index)
+            page_no = normalize_page_no(item, fallback=page_index)
             text_values = vl_text_values(item)
             html_values = recursive_values_for_keys(item, {"html"})
             for html in html_values:
@@ -2621,7 +2621,7 @@ def normalize_agentdesign_seal_result(raw: Any) -> list[dict[str, Any]]:
         seals.append(
             {
                 "sealId": str(item.get("seal_result_id") or f"agentdesign_seal_{index}"),
-                "pageNo": int(item.get("page_index") or 1),
+                "pageNo": normalize_page_no(item, fallback=1),
                 "sealType": seal_type,
                 "sealName": seal_name,
                 "bbox": bbox,
@@ -2636,6 +2636,19 @@ def normalize_agentdesign_seal_result(raw: Any) -> list[dict[str, Any]]:
             }
         )
     return seals
+
+
+def normalize_page_no(item: dict[str, Any], *, fallback: int = 1) -> int:
+    try:
+        if item.get("pageNo") is not None:
+            return int(item["pageNo"])
+        if item.get("page_no") is not None:
+            return int(item["page_no"])
+        if item.get("page_index") is not None:
+            return int(item["page_index"]) + 1
+    except (TypeError, ValueError):
+        return fallback
+    return fallback
 
 
 def normalize_agentdesign_seal_fields(raw_fields: Any) -> list[dict[str, Any]]:
