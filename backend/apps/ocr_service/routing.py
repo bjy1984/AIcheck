@@ -21,43 +21,204 @@ def route_engine_variants(
         return []
     if bool((options or {}).get("runAllVariants")):
         return variants
-    by_id = {variant.get("variantId"): variant for variant in variants}
-    original = by_id.get("page_1_original") or variants[0]
-    quality = (page_quality[0].get("quality") if page_quality else {}) or {}
+    originals = variants_by_name(variants, "original") or [variants[0]]
+    quality_by_page = {
+        int(item.get("pageNo") or 1): (item.get("quality") if isinstance(item.get("quality"), dict) else {})
+        for item in page_quality
+        if isinstance(item, dict)
+    }
     policy = profile.get("preprocessPolicy") or {}
-    if engine_name in TABLE_ENGINES:
-        preferred = variant_for_purpose(variants, "table") if quality.get("hasTableCandidate") else None
-        return [preferred or original]
+    if engine_name == "pp_structure_v3":
+        return structure_variants(variants, quality_by_page)
+    if engine_name == "opencv_table_grid_subprocess":
+        return purpose_variants_by_page(variants, "table", quality_by_page, fallback=False)
     if engine_name in SEAL_ENGINES:
-        preferred = variant_for_purpose(variants, "seal") if engine_name == "paddlex_seal_recognition" else original
-        return [preferred or original]
+        if engine_name == "visual_seal_candidate_subprocess":
+            return purpose_variants_by_page(variants, "seal", quality_by_page, fallback=True)
+        return seal_text_variants(
+            variants,
+            quality_by_page,
+            profile=profile,
+            include_mask=engine_name == "paddlex_seal_recognition",
+        )
     if engine_name in FALLBACK_ENGINES:
-        if should_run_fallback(policy, quality):
-            return [original]
+        if should_run_fallback(policy, merged_quality(quality_by_page), options=options):
+            return originals
         return []
     if engine_name in TEXT_ENGINES:
         if engine_name in {"pymupdf_text_layer", "docling_local"}:
-            return [original]
-        if not bool((options or {}).get("useEnhancedTextVariants")):
-            return [original]
-        preferred = text_variant(variants, quality)
-        return [preferred or original]
-    return [original]
+            return originals[:1]
+        return text_variants_by_page(variants, quality_by_page)
+    return originals
 
 
 def variant_for_purpose(variants: list[dict[str, Any]], purpose: str) -> dict[str, Any] | None:
     return next((variant for variant in variants if variant.get("purpose") == purpose), None)
 
 
+def variants_by_name(variants: list[dict[str, Any]], name: str) -> list[dict[str, Any]]:
+    suffix = f"_{name}"
+    return [variant for variant in variants if str(variant.get("variantId") or "").endswith(suffix)]
+
+
+def variant_page_no(variant: dict[str, Any]) -> int:
+    try:
+        return int(variant.get("pageNo"))
+    except (TypeError, ValueError):
+        pass
+    variant_id = str(variant.get("variantId") or "")
+    parts = variant_id.split("_", 2)
+    if len(parts) >= 2 and parts[0] == "page":
+        try:
+            return int(parts[1])
+        except ValueError:
+            return 1
+    return 1
+
+
+def variants_for_page(variants: list[dict[str, Any]], page_no: int) -> list[dict[str, Any]]:
+    return [variant for variant in variants if variant_page_no(variant) == page_no]
+
+
+def original_for_page(variants: list[dict[str, Any]], page_no: int) -> dict[str, Any] | None:
+    return next(
+        (variant for variant in variants_for_page(variants, page_no) if str(variant.get("variantId") or "").endswith("_original")),
+        None,
+    )
+
+
+def text_variants_by_page(variants: list[dict[str, Any]], quality_by_page: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
+    routed = []
+    pages = sorted({variant_page_no(variant) for variant in variants})
+    for page_no in pages:
+        page_variants = variants_for_page(variants, page_no)
+        quality = quality_by_page.get(page_no) or {}
+        preferred = text_variant(page_variants, quality)
+        original = original_for_page(variants, page_no)
+        if preferred:
+            routed.append(preferred)
+        if original and original not in routed:
+            routed.append(original)
+    return routed
+
+
+def structure_variants(variants: list[dict[str, Any]], quality_by_page: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
+    routed = []
+    for page_no in sorted({variant_page_no(variant) for variant in variants}):
+        page_variants = variants_for_page(variants, page_no)
+        quality = quality_by_page.get(page_no) or {}
+        preferred_names = (
+            ["original", "deskew", "gray_clahe"]
+            if quality.get("isLowQuality") or abs(float(quality.get("skewAngle") or 0.0)) > 0.8
+            else ["original", "gray_clahe"]
+        )
+        page_routed = []
+        for name in preferred_names:
+            match = next((variant for variant in page_variants if str(variant.get("variantId") or "").endswith(f"_{name}")), None)
+            if match and match not in page_routed:
+                page_routed.append(match)
+        routed.extend(page_routed[:2])
+    return routed
+
+
+def purpose_variants_by_page(
+    variants: list[dict[str, Any]],
+    purpose: str,
+    quality_by_page: dict[int, dict[str, Any]],
+    *,
+    fallback: bool,
+) -> list[dict[str, Any]]:
+    routed = []
+    for page_no in sorted({variant_page_no(variant) for variant in variants}):
+        quality = quality_by_page.get(page_no) or {}
+        if purpose == "table" and not quality.get("hasTableCandidate"):
+            continue
+        if purpose == "seal" and not quality.get("hasSealCandidate"):
+            continue
+        match = next((variant for variant in variants_for_page(variants, page_no) if variant.get("purpose") == purpose), None)
+        if match:
+            routed.append(match)
+        elif fallback:
+            original = original_for_page(variants, page_no)
+            if original:
+                routed.append(original)
+    return routed
+
+
+def seal_text_variants(
+    variants: list[dict[str, Any]],
+    quality_by_page: dict[int, dict[str, Any]],
+    *,
+    profile: dict[str, Any],
+    include_mask: bool,
+) -> list[dict[str, Any]]:
+    all_pages = sorted({variant_page_no(variant) for variant in variants})
+    if not all_pages:
+        return []
+    seal_policy = ((profile.get("preprocessPolicy") or {}).get("seal") or {}) if isinstance(profile, dict) else {}
+    required_seal = bool(((profile.get("sealRules") or {}) if isinstance(profile, dict) else {}).get("required"))
+    max_pages = int(seal_policy.get("maxPages") or (6 if required_seal else 2))
+    candidate_pages = [
+        page_no
+        for page_no in all_pages
+        if (quality_by_page.get(page_no) or {}).get("hasSealCandidate") or variant_for_page_purpose(variants, page_no, "seal")
+    ]
+    fallback_pages = [all_pages[0], all_pages[-1]] if required_seal else []
+    selected_pages = dedupe_page_order([*candidate_pages, *fallback_pages])[:max(max_pages, 1)]
+    if not selected_pages and required_seal:
+        selected_pages = all_pages[:max(max_pages, 1)]
+    routed = []
+    for page_no in selected_pages:
+        original = original_for_page(variants, page_no)
+        seal_variant = variant_for_page_purpose(variants, page_no, "seal")
+        if original:
+            routed.append(original)
+        if include_mask and seal_variant and seal_variant not in routed:
+            routed.append(seal_variant)
+    return routed
+
+
+def variant_for_page_purpose(variants: list[dict[str, Any]], page_no: int, purpose: str) -> dict[str, Any] | None:
+    return next((variant for variant in variants_for_page(variants, page_no) if variant.get("purpose") == purpose), None)
+
+
+def dedupe_page_order(page_numbers: list[int]) -> list[int]:
+    seen = set()
+    output = []
+    for page_no in page_numbers:
+        if page_no in seen:
+            continue
+        seen.add(page_no)
+        output.append(page_no)
+    return output
+
+
 def text_variant(variants: list[dict[str, Any]], quality: dict[str, Any]) -> dict[str, Any] | None:
     if quality.get("isLowQuality"):
-        for variant_id in ["page_1_gray_clahe", "page_1_deskew", "page_1_adaptive_threshold"]:
-            match = next((variant for variant in variants if variant.get("variantId") == variant_id), None)
+        for name in ["gray_clahe", "deskew", "adaptive_threshold"]:
+            match = next((variant for variant in variants if str(variant.get("variantId") or "").endswith(f"_{name}")), None)
             if match:
                 return match
-    return next((variant for variant in variants if variant.get("variantId") == "page_1_original"), variants[0] if variants else None)
+    for name in ["gray_clahe", "original"]:
+        match = next((variant for variant in variants if str(variant.get("variantId") or "").endswith(f"_{name}")), None)
+        if match:
+            return match
+    return variants[0] if variants else None
 
 
-def should_run_fallback(policy: dict[str, Any], quality: dict[str, Any]) -> bool:
+def merged_quality(quality_by_page: dict[int, dict[str, Any]]) -> dict[str, Any]:
+    qualities = list(quality_by_page.values())
+    return {
+        "isLowQuality": any(item.get("isLowQuality") for item in qualities),
+        "hasTableCandidate": any(item.get("hasTableCandidate") for item in qualities),
+        "hasSealCandidate": any(item.get("hasSealCandidate") for item in qualities),
+    }
+
+
+def should_run_fallback(policy: dict[str, Any], quality: dict[str, Any], *, options: dict[str, Any] | None = None) -> bool:
     fallback = policy.get("fallback") or {}
-    return bool(fallback.get("enableVlmWhen")) and bool(quality.get("isLowQuality"))
+    configured = {str(item) for item in fallback.get("enableVlmWhen") or []}
+    reasons = {str(item) for item in (options or {}).get("remediationReasons") or []}
+    if configured and reasons and configured.intersection(reasons):
+        return True
+    return bool(configured) and bool(quality.get("isLowQuality"))

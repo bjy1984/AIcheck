@@ -2654,7 +2654,7 @@ def role_contract_check(
         if role == "admin":
             expected_path = "/admin/overview"
         elif role == "fde":
-            expected_path = "/fde/dashboard"
+            expected_path = "/fde/projects"
         else:
             expected_path = f"/workbench/{role}"
         if paths.get(role) != expected_path:

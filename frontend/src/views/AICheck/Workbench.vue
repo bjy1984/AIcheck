@@ -99,6 +99,7 @@ import type {
   WorkbenchSummaryPayload
 } from '@/types/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
+import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import ArchiveDetailDrawer from './components/ArchiveDetailDrawer.vue'
 import DocumentBindDialog from './components/DocumentBindDialog.vue'
 import EvidenceLocatorDialog from './components/EvidenceLocatorDialog.vue'
@@ -340,6 +341,32 @@ const currentNodeLabel = computed(() => {
   if (!selectedNode.value) return '未选择节点'
   return `${selectedNode.value.nodeId}. ${selectedNode.value.name}`
 })
+const workbenchAuditCards = computed<AuditSummaryCard[]>(() => [
+  {
+    label: '当前审查对象',
+    value: selectedNode.value?.name || currentNodeLabel.value,
+    hint: currentProject.value?.name || '未选择项目',
+    tone: 'blue'
+  },
+  {
+    label: '资料证据',
+    value: `${bindings.value.length} 份挂载资料`,
+    hint: `${extractedFields.value.length} 个 OCR/字段证据可定位`,
+    tone: 'green'
+  },
+  {
+    label: 'AI 审查',
+    value: latestAiRun.value?.suggestion.result || '等待预审',
+    hint: 'AI 只生成建议，正式结论由人工确认',
+    tone: 'orange'
+  },
+  {
+    label: '人工确认',
+    value: `${latestAiRun.value?.suggestion.manualConfirmItems.length || 0} 项`,
+    hint: role.value === 'owner' ? '只读查看，不办理审批' : '低置信和阻断项优先处理',
+    tone: 'red'
+  }
+])
 const nodeBindingsPreview = computed(() => bindings.value.slice(0, 5))
 const projectFilesPreview = computed(() => (nodePackage.value?.projectFiles || []).slice(0, 5))
 const firstBinding = computed(() => bindings.value[0])
@@ -2109,6 +2136,8 @@ onMounted(() => {
             </div>
           </div>
 
+          <AuditSummaryGrid :cards="workbenchAuditCards" aria-label="业务工作台审计摘要" />
+
           <section class="card">
             <div class="card-body">
               <div class="metrics">
@@ -3816,6 +3845,20 @@ h3 {
 
   .center-support-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workbench-audit-board,
+  .metrics,
+  .result-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (width <= 560px) {
+  .workbench-audit-board,
+  .metrics,
+  .result-grid {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -26,6 +26,12 @@ def env_bool(name: str, default: bool) -> bool:
     return value.lower() in {"1", "true", "yes", "on"}
 
 
+def inprocess_paddle_enabled() -> bool:
+    if env_bool("AICHECK_OCR_ENABLE_INPROCESS_PADDLE", False):
+        return True
+    return not bool(os.getenv("AICHECK_OCR_SUBPROCESS_PYTHON"))
+
+
 class LocalOcrEngine:
     name = "local_ocr_engine"
     version = "unknown"
@@ -75,13 +81,15 @@ class PyMuPdfTextLayerEngine(LocalOcrEngine):
     ) -> dict[str, Any]:
         import fitz  # type: ignore
 
-        source_path = variant_source_path(source_path, variant)
+        if isinstance(variant, dict) and variant.get("documentPath"):
+            source_path = Path(str(variant["documentPath"]))
+        else:
+            source_path = variant_source_path(source_path, variant)
         fragments: list[dict[str, Any]] = []
         pages: list[dict[str, Any]] = []
         with fitz.open(str(source_path)) as document:
             for page_index, page in enumerate(document):
                 page_no = page_index + 1
-                text = page.get_text("text").strip()
                 rect = page.rect
                 pages.append(
                     {
@@ -91,14 +99,36 @@ class PyMuPdfTextLayerEngine(LocalOcrEngine):
                         "rotation": int(page.rotation or 0),
                     }
                 )
-                if text:
+                words = page.get_text("words") or []
+                line_texts: list[str] = []
+                for word_index, word in enumerate(words):
+                    if not isinstance(word, (list, tuple)) or len(word) < 5:
+                        continue
+                    text = str(word[4]).strip()
+                    if not text:
+                        continue
                     fragments.append(
                         {
                             "pageNo": page_no,
                             "text": text,
+                            "bbox": [float(word[0]), float(word[1]), float(word[2]), float(word[3])],
+                            "confidence": 1.0,
+                            "sourceEngine": self.name,
+                            "fragmentType": "word",
+                            "wordIndex": word_index,
+                        }
+                    )
+                    line_texts.append(text)
+                page_text = page.get_text("text").strip()
+                if page_text and not words:
+                    fragments.append(
+                        {
+                            "pageNo": page_no,
+                            "text": page_text,
                             "bbox": [float(rect.x0), float(rect.y0), float(rect.x1), float(rect.y1)],
                             "confidence": 1.0,
                             "sourceEngine": self.name,
+                            "fragmentType": "page",
                         }
                     )
         return {
@@ -120,7 +150,7 @@ class PaddleOcrEngine(LocalOcrEngine):
     required_package = "paddleocr"
 
     def available(self) -> bool:
-        return super().available() and paddle_text_model_dirs_available()
+        return inprocess_paddle_enabled() and super().available() and paddle_text_model_dirs_available()
 
     def status(self) -> dict[str, Any]:
         det_dir = model_dir("AICHECK_PADDLEOCR_DET_MODEL_DIR", "PP-OCRv6_medium_det")
@@ -129,6 +159,7 @@ class PaddleOcrEngine(LocalOcrEngine):
             "engine": self.name,
             "version": self.version,
             "available": self.available(),
+            "disabledReason": None if inprocess_paddle_enabled() else "subprocess_ocr_python_configured",
             "detModelDir": str(det_dir),
             "recModelDir": str(rec_dir),
             "package": self.required_package,
@@ -147,12 +178,15 @@ class PaddleOcrEngine(LocalOcrEngine):
         source_path = variant_source_path(source_path, variant)
         det_dir = str(model_dir("AICHECK_PADDLEOCR_DET_MODEL_DIR", "PP-OCRv6_medium_det"))
         rec_dir = str(model_dir("AICHECK_PADDLEOCR_REC_MODEL_DIR", "PP-OCRv6_medium_rec"))
+        runtime = paddle_runtime_options(profile)
         ocr = PaddleOCR(
             text_detection_model_dir=det_dir,
             text_recognition_model_dir=rec_dir,
-            use_doc_orientation_classify=False,
-            use_doc_unwarping=False,
-            use_textline_orientation=False,
+            use_doc_orientation_classify=runtime["use_doc_orientation_classify"],
+            use_doc_unwarping=runtime["use_doc_unwarping"],
+            use_textline_orientation=runtime["use_textline_orientation"],
+            text_det_limit_side_len=runtime["text_det_limit_side_len"],
+            text_det_limit_type="max",
         )
         raw = ocr.predict(str(source_path))
         fragments: list[dict[str, Any]] = []
@@ -182,10 +216,10 @@ class PpStructureEngine(LocalOcrEngine):
         return inprocess_ready or subprocess_ready
 
     def execution_mode(self) -> str:
-        if importlib.util.find_spec(self.required_package) is not None:
-            return "inprocess"
         if subprocess_package_available("paddleocr"):
             return "subprocess"
+        if importlib.util.find_spec(self.required_package) is not None:
+            return "inprocess"
         return "unavailable"
 
     def status(self) -> dict[str, Any]:
@@ -226,10 +260,11 @@ class PpStructureEngine(LocalOcrEngine):
                 "engine": self.name,
                 "engineVersion": self.version,
             }
-        if importlib.util.find_spec(self.required_package) is None:
-            return self.parse_with_subprocess(source_path)
+        if self.execution_mode() == "subprocess":
+            return self.parse_with_subprocess(source_path, profile=profile)
         from paddleocr import PPStructureV3  # type: ignore
 
+        runtime = paddle_runtime_options(profile)
         engine = PPStructureV3(
             layout_detection_model_dir=str(dirs["layout"]),
             text_detection_model_dir=str(dirs["text_det"]),
@@ -238,9 +273,9 @@ class PpStructureEngine(LocalOcrEngine):
             wired_table_cells_detection_model_dir=str(dirs["wired_table_cells"]),
             wireless_table_structure_recognition_model_dir=str(dirs["wireless_table_structure"]),
             wireless_table_cells_detection_model_dir=str(dirs["wireless_table_cells"]),
-            use_doc_orientation_classify=False,
-            use_doc_unwarping=False,
-            use_textline_orientation=False,
+            use_doc_orientation_classify=runtime["use_doc_orientation_classify"],
+            use_doc_unwarping=runtime["use_doc_unwarping"],
+            use_textline_orientation=runtime["use_textline_orientation"],
             use_table_recognition=True,
             use_seal_recognition=False,
             use_formula_recognition=False,
@@ -257,7 +292,7 @@ class PpStructureEngine(LocalOcrEngine):
             "engineVersion": self.version,
         }
 
-    def parse_with_subprocess(self, source_path: Path) -> dict[str, Any]:
+    def parse_with_subprocess(self, source_path: Path, *, profile: dict[str, Any] | None = None) -> dict[str, Any]:
         python_bin = os.getenv("AICHECK_OCR_SUBPROCESS_PYTHON")
         if not python_bin or not Path(python_bin).exists():
             return {
@@ -275,6 +310,7 @@ class PpStructureEngine(LocalOcrEngine):
 
             image_path = sys.argv[1]
             dirs = json.loads(sys.argv[2])
+            runtime = json.loads(sys.argv[3])
 
             def basic(value):
                 if isinstance(value, (str, int, float, bool)) or value is None:
@@ -311,9 +347,9 @@ class PpStructureEngine(LocalOcrEngine):
                 wired_table_cells_detection_model_dir=dirs["wired_table_cells"],
                 wireless_table_structure_recognition_model_dir=dirs["wireless_table_structure"],
                 wireless_table_cells_detection_model_dir=dirs["wireless_table_cells"],
-                use_doc_orientation_classify=False,
-                use_doc_unwarping=False,
-                use_textline_orientation=False,
+                use_doc_orientation_classify=bool(runtime.get("use_doc_orientation_classify")),
+                use_doc_unwarping=bool(runtime.get("use_doc_unwarping")),
+                use_textline_orientation=bool(runtime.get("use_textline_orientation")),
                 use_table_recognition=True,
                 use_seal_recognition=False,
                 use_formula_recognition=False,
@@ -325,7 +361,14 @@ class PpStructureEngine(LocalOcrEngine):
         )
         try:
             completed = subprocess.run(
-                [python_bin, "-c", script, str(source_path), json.dumps({key: str(path) for key, path in dirs.items()})],
+                [
+                    python_bin,
+                    "-c",
+                    script,
+                    str(source_path),
+                    json.dumps({key: str(path) for key, path in dirs.items()}),
+                    json.dumps(paddle_runtime_options(profile)),
+                ],
                 check=False,
                 capture_output=True,
                 encoding="utf-8",
@@ -642,7 +685,8 @@ class PaddleOcrSubprocessEngine(LocalOcrEngine):
         source_path = variant_source_path(source_path, variant)
         det_dir = subprocess_model_dir("AICHECK_PADDLEOCR_DET_MODEL_DIR", "PP-OCRv6_medium_det")
         rec_dir = subprocess_model_dir("AICHECK_PADDLEOCR_REC_MODEL_DIR", "PP-OCRv6_medium_rec")
-        if env_bool("AICHECK_OCR_ENABLE_PERSISTENT_SUBPROCESS", False):
+        runtime = paddle_runtime_options(profile)
+        if env_bool("AICHECK_OCR_ENABLE_PERSISTENT_SUBPROCESS", False) and runtime == paddle_runtime_options(None):
             try:
                 return self.parse_with_persistent_worker(Path(python_bin), source_path, det_dir, rec_dir)
             except Exception:
@@ -654,14 +698,15 @@ class PaddleOcrSubprocessEngine(LocalOcrEngine):
             import sys
             from paddleocr import PaddleOCR
 
-            image_path, det_dir, rec_dir = sys.argv[1:4]
+            image_path, det_dir, rec_dir, runtime_json = sys.argv[1:5]
+            runtime = json.loads(runtime_json)
             ocr = PaddleOCR(
                 text_detection_model_dir=det_dir,
                 text_recognition_model_dir=rec_dir,
-                use_doc_orientation_classify=False,
-                use_doc_unwarping=False,
-                use_textline_orientation=False,
-                text_det_limit_side_len=2400,
+                use_doc_orientation_classify=bool(runtime.get("use_doc_orientation_classify")),
+                use_doc_unwarping=bool(runtime.get("use_doc_unwarping")),
+                use_textline_orientation=bool(runtime.get("use_textline_orientation")),
+                text_det_limit_side_len=int(runtime.get("text_det_limit_side_len") or 2400),
                 text_det_limit_type="max",
             )
             raw = ocr.predict(image_path)
@@ -689,7 +734,7 @@ class PaddleOcrSubprocessEngine(LocalOcrEngine):
                             "pageNo": page_index + 1,
                             "text": str(text),
                             "bbox": box,
-                            "confidence": float(scores[index]) if index < len(scores) else 0.8,
+                            "confidence": float(scores[index]) if index < len(scores) and scores[index] is not None else 0.0,
                             "sourceEngine": "paddle_ocr_subprocess",
                         }
                     )
@@ -699,7 +744,7 @@ class PaddleOcrSubprocessEngine(LocalOcrEngine):
         env = ocr_subprocess_env()
         timeout = float(os.getenv("AICHECK_OCR_SUBPROCESS_TIMEOUT", "180"))
         completed = subprocess.run(
-            [python_bin, "-c", script, str(source_path), str(det_dir), str(rec_dir)],
+            [python_bin, "-c", script, str(source_path), str(det_dir), str(rec_dir), json.dumps(runtime)],
             check=False,
             capture_output=True,
             encoding="utf-8",
@@ -848,7 +893,7 @@ def paddle_ocr_worker_script() -> str:
                             "pageNo": page_index + 1,
                             "text": str(text),
                             "bbox": box,
-                            "confidence": float(scores[index]) if index < len(scores) else 0.8,
+                            "confidence": float(scores[index]) if index < len(scores) and scores[index] is not None else 0.0,
                             "sourceEngine": "paddle_ocr_subprocess",
                         }
                     )
@@ -904,17 +949,17 @@ class PaddlexSealEngine(LocalOcrEngine):
     required_package = "paddlex"
 
     def available(self) -> bool:
-        enabled = os.getenv("AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE", "false").lower() in {"1", "true", "yes", "on"}
+        enabled = seal_pipeline_enabled()
         return enabled and self.package_available() and all(path.exists() for path in seal_model_dirs().values())
 
     def package_available(self) -> bool:
         return importlib.util.find_spec(self.required_package) is not None or subprocess_package_available("paddlex")
 
     def execution_mode(self) -> str:
-        if importlib.util.find_spec(self.required_package) is not None:
-            return "inprocess"
         if subprocess_package_available("paddlex"):
             return "subprocess"
+        if importlib.util.find_spec(self.required_package) is not None:
+            return "inprocess"
         return "unavailable"
 
     def status(self) -> dict[str, Any]:
@@ -923,7 +968,7 @@ class PaddlexSealEngine(LocalOcrEngine):
             "engine": self.name,
             "version": self.version,
             "available": self.available(),
-            "enabled": os.getenv("AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE", "false"),
+            "enabled": os.getenv("AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE", "auto"),
             "executionMode": self.execution_mode(),
             "python": os.getenv("AICHECK_OCR_SUBPROCESS_PYTHON"),
             "subprocessPackageAvailable": subprocess_package_available("paddlex"),
@@ -949,7 +994,7 @@ class PaddlexSealEngine(LocalOcrEngine):
                 "engine": self.name,
                 "engineVersion": self.version,
             }
-        if importlib.util.find_spec(self.required_package) is None:
+        if self.execution_mode() == "subprocess":
             return self.parse_with_subprocess(source_path, profile=profile)
         from paddlex import create_pipeline  # type: ignore
 
@@ -1115,7 +1160,7 @@ class AgentdesignSealOcrSubprocessEngine(LocalOcrEngine):
             }
         source_path = variant_source_path(source_path, variant)
         config = {
-            "max_pages": int(os.getenv("AICHECK_AGENTDESIGN_SEAL_MAX_PAGES", "1")),
+            "max_pages": seal_max_pages(profile),
             "max_candidates_per_page": int(os.getenv("AICHECK_AGENTDESIGN_SEAL_MAX_CANDIDATES", "6")),
             "max_ocr_candidates_per_page": int(os.getenv("AICHECK_AGENTDESIGN_SEAL_MAX_OCR_CANDIDATES", "3")),
             "production_document_timeout_seconds": float(os.getenv("AICHECK_AGENTDESIGN_SEAL_DOCUMENT_TIMEOUT", "120")),
@@ -1605,10 +1650,14 @@ class DoclingLocalEngine(LocalOcrEngine):
         converter = DocumentConverter()
         result = converter.convert(str(source_path))
         text = result.document.export_to_markdown()
+        payload = docling_document_payload(result.document)
+        fragments, tables, layout_blocks = normalize_docling_payload(payload, text, self.name)
         return {
-            "ok": bool(text.strip()),
+            "ok": bool(text.strip() or fragments or tables or layout_blocks),
             "text": text,
-            "fragments": [{"pageNo": 1, "text": text, "bbox": None, "confidence": 0.95, "sourceEngine": self.name}],
+            "fragments": fragments,
+            "tables": tables,
+            "layoutBlocks": layout_blocks,
             "diagnostics": [],
             "engine": self.name,
             "engineVersion": self.version,
@@ -1633,7 +1682,16 @@ class DoclingLocalEngine(LocalOcrEngine):
             converter = DocumentConverter()
             result = converter.convert(source_path)
             text = result.document.export_to_markdown()
-            print("AICHECK_DOCLING_RESULT " + json.dumps({"text": text}, ensure_ascii=False), flush=True)
+            payload = {}
+            for method in ("export_to_dict", "dict", "model_dump"):
+                fn = getattr(result.document, method, None)
+                if callable(fn):
+                    try:
+                        payload = fn()
+                        break
+                    except Exception:
+                        pass
+            print("AICHECK_DOCLING_RESULT " + json.dumps({"text": text, "document": payload}, ensure_ascii=False), flush=True)
             """
         )
         try:
@@ -1669,15 +1727,207 @@ class DoclingLocalEngine(LocalOcrEngine):
             }
         payload = json.loads(payload_line.replace("AICHECK_DOCLING_RESULT ", "", 1))
         text = str(payload.get("text") or "")
+        fragments, tables, layout_blocks = normalize_docling_payload(payload.get("document") or {}, text, self.name)
         return {
-            "ok": bool(text.strip()),
+            "ok": bool(text.strip() or fragments or tables or layout_blocks),
             "text": text,
-            "fragments": [{"pageNo": 1, "text": text, "bbox": None, "confidence": 0.95, "sourceEngine": self.name}],
+            "fragments": fragments,
+            "tables": tables,
+            "layoutBlocks": layout_blocks,
             "diagnostics": [],
             "engine": self.name,
             "engineVersion": self.version,
             "workerMode": "subprocess",
         }
+
+
+def docling_document_payload(document: Any) -> dict[str, Any]:
+    for method in ("export_to_dict", "dict", "model_dump"):
+        fn = getattr(document, method, None)
+        if callable(fn):
+            try:
+                payload = fn()
+            except Exception:
+                continue
+            if isinstance(payload, dict):
+                return payload
+    return {}
+
+
+def normalize_docling_payload(payload: dict[str, Any], markdown: str, engine_name: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    fragments: list[dict[str, Any]] = []
+    tables: list[dict[str, Any]] = []
+    layout_blocks: list[dict[str, Any]] = []
+    for index, item in enumerate(flatten_docling_items(payload), start=1):
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or item.get("type") or item.get("self_ref") or "")
+        text = str(item.get("text") or item.get("orig") or item.get("content") or "").strip()
+        page_no = docling_page_no(item)
+        bbox = docling_bbox(item)
+        if "table" in label.lower() or item.get("data") or item.get("cells"):
+            table = docling_table(item, index=index, page_no=page_no, bbox=bbox, engine_name=engine_name)
+            if table:
+                tables.append(table)
+                layout_blocks.append({"blockId": f"docling_table_{index}", "blockType": "table", "pageNo": page_no, "bbox": bbox, "sourceEngine": engine_name})
+                continue
+        if text:
+            confidence = 0.9 if bbox else 0.68
+            quality_flags = ["docling_block"]
+            if not bbox:
+                quality_flags.append("evidence_bbox_missing")
+            fragments.append(
+                {
+                    "pageNo": page_no,
+                    "text": text,
+                    "bbox": bbox,
+                    "confidence": confidence,
+                    "sourceEngine": engine_name,
+                    "fragmentType": "docling_block",
+                    "qualityFlags": quality_flags,
+                }
+            )
+            layout_blocks.append({"blockId": f"docling_text_{index}", "blockType": label or "text", "pageNo": page_no, "bbox": bbox, "sourceEngine": engine_name})
+    if not fragments and markdown.strip():
+        fragments.append(
+            {
+                "pageNo": 1,
+                "text": markdown,
+                "bbox": None,
+                "confidence": 0.62,
+                "sourceEngine": engine_name,
+                "fragmentType": "markdown",
+                "qualityFlags": ["docling_markdown_only", "evidence_bbox_missing"],
+            }
+        )
+    return fragments, tables, layout_blocks
+
+
+def flatten_docling_items(payload: Any) -> list[Any]:
+    if isinstance(payload, dict):
+        items: list[Any] = []
+        for key in ("texts", "tables", "groups", "pictures", "items", "children", "body"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                items.extend(value)
+        if not items:
+            for value in payload.values():
+                if isinstance(value, (dict, list)):
+                    items.extend(flatten_docling_items(value))
+        return items
+    if isinstance(payload, list):
+        items = []
+        for value in payload:
+            if isinstance(value, dict):
+                items.append(value)
+                items.extend(flatten_docling_items(value))
+            elif isinstance(value, list):
+                items.extend(flatten_docling_items(value))
+        return items
+    return []
+
+
+def docling_page_no(item: dict[str, Any]) -> int:
+    prov = item.get("prov")
+    if isinstance(prov, list) and prov and isinstance(prov[0], dict):
+        return int(prov[0].get("page_no") or prov[0].get("pageNo") or 1)
+    return int(item.get("pageNo") or item.get("page_no") or 1)
+
+
+def docling_bbox(item: dict[str, Any]) -> list[float] | None:
+    prov = item.get("prov")
+    bbox = None
+    if isinstance(prov, list) and prov and isinstance(prov[0], dict):
+        bbox = prov[0].get("bbox")
+    bbox = bbox or item.get("bbox")
+    if isinstance(bbox, dict):
+        keys = ("l", "t", "r", "b")
+        if all(key in bbox for key in keys):
+            return [float(bbox["l"]), float(bbox["t"]), float(bbox["r"]), float(bbox["b"])]
+        keys = ("x0", "y0", "x1", "y1")
+        if all(key in bbox for key in keys):
+            return [float(bbox["x0"]), float(bbox["y0"]), float(bbox["x1"]), float(bbox["y1"])]
+    if isinstance(bbox, list) and len(bbox) == 4:
+        try:
+            return [float(value) for value in bbox]
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def docling_table(item: dict[str, Any], *, index: int, page_no: int, bbox: list[float] | None, engine_name: str) -> dict[str, Any] | None:
+    cells = item.get("cells") or ((item.get("data") or {}).get("table_cells") if isinstance(item.get("data"), dict) else None)
+    if not isinstance(cells, list):
+        return None
+    normalized_cells = []
+    for cell_index, cell in enumerate(cells):
+        if not isinstance(cell, dict):
+            continue
+        row = int(cell.get("row") or cell.get("row_header") or cell.get("start_row_offset_idx") or 0)
+        col = int(cell.get("col") or cell.get("col_header") or cell.get("start_col_offset_idx") or 0)
+        text = str(cell.get("text") or cell.get("content") or "").strip()
+        normalized_cells.append(
+            {
+                "cellId": f"docling_cell_{index}_{cell_index}",
+                "row": row,
+                "col": col,
+                "rowspan": int(cell.get("rowspan") or 1),
+                "colspan": int(cell.get("colspan") or 1),
+                "text": text,
+                "bbox": docling_bbox(cell),
+                "confidence": 0.9 if docling_bbox(cell) else 0.68,
+                "isHeader": bool(cell.get("column_header") or cell.get("row_header") or row == 0),
+            }
+        )
+    if not normalized_cells:
+        return None
+    return {
+        "tableId": f"docling_table_{index}",
+        "pageNo": page_no,
+        "bbox": bbox,
+        "rows": max((cell["row"] for cell in normalized_cells), default=0) + 1,
+        "columns": max((cell["col"] for cell in normalized_cells), default=0) + 1,
+        "cells": normalized_cells,
+        "normalizedRows": table_cells_to_rows(normalized_cells),
+        "structureConfidence": docling_table_confidence(normalized_cells, bbox),
+        "sourceEngine": engine_name,
+        "qualityFlags": docling_table_quality_flags(normalized_cells, bbox),
+    }
+
+
+def docling_table_confidence(cells: list[dict[str, Any]], bbox: list[float] | None) -> float:
+    if not cells:
+        return 0.0
+    cell_evidence = len([cell for cell in cells if cell.get("bbox")]) / max(len(cells), 1)
+    fill_rate = len([cell for cell in cells if str(cell.get("text") or "").strip()]) / max(len(cells), 1)
+    base = 0.58 + fill_rate * 0.18 + cell_evidence * 0.16 + (0.06 if bbox else 0.0)
+    return round(min(base, 0.94), 4)
+
+
+def docling_table_quality_flags(cells: list[dict[str, Any]], bbox: list[float] | None) -> list[str]:
+    flags = ["docling_structured_table"]
+    if not bbox:
+        flags.append("table_evidence_missing")
+    if any(not cell.get("bbox") for cell in cells):
+        flags.append("cell_evidence_missing")
+    return flags
+
+
+def table_cells_to_rows(cells: list[dict[str, Any]]) -> list[dict[str, str]]:
+    header_by_col = {
+        int(cell.get("col") or 0): str(cell.get("text") or f"col_{int(cell.get('col') or 0)}")
+        for cell in cells
+        if cell.get("isHeader")
+    }
+    rows: dict[int, dict[str, str]] = {}
+    for cell in cells:
+        row = int(cell.get("row") or 0)
+        if row == 0 and header_by_col:
+            continue
+        col = int(cell.get("col") or 0)
+        key = header_by_col.get(col) or f"col_{col}"
+        rows.setdefault(row, {})[key] = str(cell.get("text") or "")
+    return [rows[index] for index in sorted(rows)]
 
 
 def local_engines() -> list[LocalOcrEngine]:
@@ -1701,6 +1951,33 @@ def variant_source_path(source_path: Path, variant: dict[str, Any] | None) -> Pa
         if candidate.exists():
             return candidate
     return source_path
+
+
+def paddle_runtime_options(profile: dict[str, Any] | None) -> dict[str, Any]:
+    policy = (profile or {}).get("preprocessPolicy") or {}
+    ocr_policy = policy.get("ocr") or {}
+    return {
+        "use_doc_orientation_classify": bool(ocr_policy.get("useDocOrientationClassify", policy.get("useDocOrientationClassify", False))),
+        "use_doc_unwarping": bool(ocr_policy.get("useDocUnwarping", policy.get("useDocUnwarping", False))),
+        "use_textline_orientation": bool(ocr_policy.get("useTextlineOrientation", policy.get("useTextlineOrientation", False))),
+        "text_det_limit_side_len": int(ocr_policy.get("textDetLimitSideLen") or policy.get("textDetLimitSideLen") or 2400),
+    }
+
+
+def seal_pipeline_enabled() -> bool:
+    value = os.getenv("AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE")
+    if value is None or value.strip().lower() == "auto":
+        return True
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def seal_max_pages(profile: dict[str, Any] | None) -> int:
+    seal_policy = ((profile or {}).get("preprocessPolicy") or {}).get("seal") or {}
+    if seal_policy.get("maxPages"):
+        return int(seal_policy["maxPages"])
+    if ((profile or {}).get("sealRules") or {}).get("required"):
+        return int(os.getenv("AICHECK_AGENTDESIGN_SEAL_MAX_PAGES", "6"))
+    return int(os.getenv("AICHECK_AGENTDESIGN_SEAL_MAX_PAGES", "1"))
 
 
 def model_dir(
@@ -1805,6 +2082,17 @@ def subprocess_package_available(package_name: str) -> bool:
     return completed.returncode == 0
 
 
+def first_numeric(raw: dict[str, Any], *keys: str, default: float = 0.0) -> float:
+    for key in keys:
+        if key not in raw or raw[key] is None:
+            continue
+        try:
+            return float(raw[key])
+        except (TypeError, ValueError):
+            continue
+    return float(default)
+
+
 def normalize_paddle_fragments(raw: Any, page_no: int, source_engine: str) -> list[dict[str, Any]]:
     fragments: list[dict[str, Any]] = []
     if isinstance(raw, dict):
@@ -1819,7 +2107,7 @@ def normalize_paddle_fragments(raw: Any, page_no: int, source_engine: str) -> li
                     "pageNo": page_no,
                     "text": str(text),
                     "bbox": boxes[index] if index < len(boxes) else None,
-                    "confidence": scores[index] if index < len(scores) else 0.8,
+                    "confidence": float(scores[index]) if index < len(scores) and scores[index] is not None else 0.0,
                     "sourceEngine": source_engine,
                 }
             )
@@ -1851,7 +2139,7 @@ def normalize_structure_result(raw: Any, source_engine: str) -> tuple[list[dict[
                 "pageNo": int(item.get("pageNo") or item.get("page_no") or 1),
                 "bbox": bbox,
                 "text": item.get("text") or res_text,
-                "confidence": item.get("confidence") or item.get("score") or 0.8,
+                "confidence": first_numeric(item, "confidence", "score", default=0.0),
                 "sourceEngine": source_engine,
             }
         )
@@ -1869,7 +2157,7 @@ def normalize_structure_result(raw: Any, source_engine: str) -> tuple[list[dict[
                     "html": html,
                     "markdown": item.get("markdown"),
                     "normalizedRows": table_structure["normalizedRows"],
-                    "structureConfidence": item.get("confidence") or item.get("score") or 0.8,
+                    "structureConfidence": first_numeric(item, "confidence", "score", default=0.0),
                     "sourceEngine": source_engine,
                 }
             )
@@ -1921,9 +2209,9 @@ def normalize_vl_result(raw: Any, source_engine: str) -> tuple[str, list[dict[st
                     "pageNo": page_no,
                     "text": normalized,
                     "bbox": None,
-                    "confidence": 0.82,
+                    "confidence": 0.66,
                     "sourceEngine": source_engine,
-                    "qualityFlags": ["paddleocr_vl_text"],
+                    "qualityFlags": ["paddleocr_vl_text", "evidence_bbox_missing"],
                 }
             )
     return "\n".join(item["text"] for item in fragments), fragments, tables, layout_blocks
@@ -2138,6 +2426,7 @@ def normalize_seal_result(raw: Any) -> list[dict[str, Any]]:
         polygon = item.get("polygon") or item.get("dt_poly") or item.get("points")
         if not text and not bbox and not polygon:
             continue
+        inferred_confidence = inferred_score(item)
         seals.append(
             {
                 "sealId": f"seal_{index + 1}",
@@ -2146,8 +2435,20 @@ def normalize_seal_result(raw: Any) -> list[dict[str, Any]]:
                 "sealName": str(text),
                 "bbox": bbox,
                 "polygon": polygon,
-                "visualConfidence": item.get("visualConfidence") or item.get("det_score") or item.get("score") or inferred_score(item) or 0.8,
-                "ocrConfidence": item.get("ocrConfidence") or item.get("rec_score") or item.get("score") or inferred_score(item) or 0.8,
+                "visualConfidence": first_numeric(
+                    item,
+                    "visualConfidence",
+                    "det_score",
+                    "score",
+                    default=float(inferred_confidence or 0.0),
+                ),
+                "ocrConfidence": first_numeric(
+                    item,
+                    "ocrConfidence",
+                    "rec_score",
+                    "score",
+                    default=float(inferred_confidence or 0.0),
+                ),
                 "fields": item.get("fields") or [],
                 "qualityFlags": item.get("qualityFlags") or [],
             }

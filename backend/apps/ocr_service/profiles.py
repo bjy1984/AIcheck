@@ -38,6 +38,13 @@ OCR_PROFILES: dict[str, dict[str, Any]] = {
         "preprocessPolicy": {
             "renderDpi": 300,
             "maxLongSide": 2600,
+            "textDetLimitSideLen": 2400,
+            "ocr": {
+                "useDocOrientationClassify": False,
+                "useDocUnwarping": False,
+                "useTextlineOrientation": False,
+                "textDetLimitSideLen": 2400,
+            },
             "variants": ["original", "gray_clahe"],
             "table": {"preferEngine": "pp_structure_v3", "fallback": "heuristic_table_from_fragments"},
             "seal": {"enableColorCandidate": True, "enablePaddlexSeal": False},
@@ -72,9 +79,16 @@ OCR_PROFILES: dict[str, dict[str, Any]] = {
         "preprocessPolicy": {
             "renderDpi": 400,
             "maxLongSide": 2800,
+            "textDetLimitSideLen": 3200,
+            "ocr": {
+                "useDocOrientationClassify": True,
+                "useDocUnwarping": True,
+                "useTextlineOrientation": True,
+                "textDetLimitSideLen": 3200,
+            },
             "variants": ["original", "deskew", "gray_clahe", "adaptive_threshold", "table_line_enhanced"],
             "table": {"preferEngine": "pp_structure_v3", "fallback": "heuristic_table_from_fragments"},
-            "seal": {"enableColorCandidate": True, "enablePaddlexSeal": True, "cropPaddingRatio": 0.18},
+            "seal": {"enableColorCandidate": True, "enablePaddlexSeal": True, "cropPaddingRatio": 0.18, "maxPages": 6},
         },
     },
     "ndt_rt_report_v1": {
@@ -109,9 +123,16 @@ OCR_PROFILES: dict[str, dict[str, Any]] = {
         "preprocessPolicy": {
             "renderDpi": 300,
             "maxLongSide": 2600,
+            "textDetLimitSideLen": 3200,
+            "ocr": {
+                "useDocOrientationClassify": True,
+                "useDocUnwarping": False,
+                "useTextlineOrientation": True,
+                "textDetLimitSideLen": 3200,
+            },
             "variants": ["original", "deskew", "gray_clahe", "table_line_enhanced"],
             "table": {"preferEngine": "pp_structure_v3", "fallback": "heuristic_table_from_fragments"},
-            "seal": {"enableColorCandidate": True, "enablePaddlexSeal": True},
+            "seal": {"enableColorCandidate": True, "enablePaddlexSeal": True, "maxPages": 6},
             "fallback": {
                 "enableVlmWhen": [
                     "TABLE_STRUCTURE_LOW_CONFIDENCE",
@@ -153,9 +174,16 @@ OCR_PROFILES: dict[str, dict[str, Any]] = {
         "preprocessPolicy": {
             "renderDpi": 300,
             "maxLongSide": 2600,
+            "textDetLimitSideLen": 3200,
+            "ocr": {
+                "useDocOrientationClassify": True,
+                "useDocUnwarping": False,
+                "useTextlineOrientation": True,
+                "textDetLimitSideLen": 3200,
+            },
             "variants": ["original", "deskew", "gray_clahe", "table_line_enhanced"],
             "table": {"preferEngine": "pp_structure_v3", "fallback": "heuristic_table_from_fragments"},
-            "seal": {"enableColorCandidate": True, "enablePaddlexSeal": True},
+            "seal": {"enableColorCandidate": True, "enablePaddlexSeal": True, "maxPages": 6},
             "fallback": {
                 "enableVlmWhen": [
                     "TABLE_STRUCTURE_LOW_CONFIDENCE",
@@ -222,9 +250,16 @@ OCR_PROFILES: dict[str, dict[str, Any]] = {
         "preprocessPolicy": {
             "renderDpi": 400,
             "maxLongSide": 2800,
+            "textDetLimitSideLen": 3200,
+            "ocr": {
+                "useDocOrientationClassify": True,
+                "useDocUnwarping": True,
+                "useTextlineOrientation": True,
+                "textDetLimitSideLen": 3200,
+            },
             "variants": ["original", "deskew", "gray_clahe", "adaptive_threshold", "seal_color_mask"],
             "table": {"preferEngine": "pp_structure_v3", "fallback": "heuristic_table_from_fragments"},
-            "seal": {"enableColorCandidate": True, "enablePaddlexSeal": True, "cropPaddingRatio": 0.18},
+            "seal": {"enableColorCandidate": True, "enablePaddlexSeal": True, "cropPaddingRatio": 0.18, "maxPages": 8},
         },
     },
     "piping_characteristic_list_v1": {
@@ -262,13 +297,20 @@ OCR_PROFILES: dict[str, dict[str, Any]] = {
         "preprocessPolicy": {
             "renderDpi": 300,
             "maxLongSide": 2600,
+            "textDetLimitSideLen": 4096,
+            "ocr": {
+                "useDocOrientationClassify": True,
+                "useDocUnwarping": True,
+                "useTextlineOrientation": True,
+                "textDetLimitSideLen": 4096,
+            },
             "variants": ["original", "gray_clahe", "table_line_enhanced", "seal_color_mask"],
             "table": {
                 "preferEngine": "pp_structure_v3",
                 "fallback": "heuristic_table_from_fragments",
                 "useLineEnhancedImage": True,
             },
-            "seal": {"enableColorCandidate": True, "enablePaddlexSeal": True},
+            "seal": {"enableColorCandidate": True, "enablePaddlexSeal": True, "maxPages": 4},
         },
     },
 }

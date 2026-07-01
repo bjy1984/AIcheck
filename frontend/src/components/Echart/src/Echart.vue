@@ -79,6 +79,14 @@ const resizeHandler = debounce(() => {
   }
 }, 100)
 
+watch(
+  () => [props.width, props.height],
+  () => {
+    resizeHandler()
+  },
+  { flush: 'post' }
+)
+
 const contentResizeHandler = async (e: TransitionEvent) => {
   if (e.propertyName === 'width') {
     resizeHandler()

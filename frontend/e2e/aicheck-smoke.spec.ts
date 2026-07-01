@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
 type RouteCase = {
   path: string
@@ -20,7 +20,7 @@ const routeCases: RouteCase[] = [
   },
   { path: '/workbench/owner', title: '建设方工作台', titleLocator: '.aicheck-page .page-title' },
   { path: '/admin/overview', title: '项目与权限配置', titleLocator: '.admin-page .page-title' },
-  { path: '/fde/dashboard', title: 'AI 交付治理后台', titleLocator: '.fde-console .page-title' },
+  { path: '/fde/projects', title: '项目审计工作台', titleLocator: '.fde-console .page-title' },
   {
     path: '/knowledge/overview',
     title: 'AI 知识库管理',
@@ -50,19 +50,46 @@ const knowledgeDeepRouteCases = [
 ]
 
 const fdeDeepRouteCases = [
-  { path: '/fde/dashboard', menu: 'AI 驾驶舱', context: 'AI 驾驶舱' },
-  { path: '/fde/ai-runs', menu: 'AI Run 追踪', context: 'AI Run 追踪' },
-  { path: '/fde/review-runs', menu: '任务编排', context: '任务编排' },
-  { path: '/fde/feedback', menu: '反馈与标注', context: '反馈与标注' },
-  { path: '/fde/evaluation', menu: '评估实验室', context: '评估实验室' },
-  { path: '/fde/capability-bundles', menu: '能力组合', context: '能力组合' },
-  { path: '/fde/releases', menu: '发布治理', context: '发布治理' },
-  { path: '/fde/ocr-quality', menu: 'OCR 质量', context: 'OCR 质量' },
-  { path: '/fde/business-packs', menu: '业务包工厂', context: '业务包工厂' },
-  { path: '/fde/security', menu: '数据安全', context: '数据安全' },
-  { path: '/fde/incidents', menu: '事故 RCA', context: '事故 RCA' },
-  { path: '/fde/costs', menu: '成本预算', context: '成本预算' },
-  { path: '/fde/acceptance', menu: '交付验收', context: '交付验收' }
+  {
+    path: '/fde/projects?view=vectorization',
+    menu: '资料向量化',
+    hint: '向量',
+    context: '项目审计工作台',
+    title: '项目审计工作台',
+    content: '资料索引入库状态'
+  },
+  {
+    path: '/fde/projects?view=pageindex',
+    menu: 'PageIndex 溯源',
+    hint: 'PI节点',
+    context: '项目审计工作台',
+    title: '项目审计工作台',
+    content: 'PageIndex 路由追踪'
+  },
+  {
+    path: '/fde/projects?view=langgraph',
+    menu: 'LangGraph 可视化',
+    hint: 'ReviewRun',
+    context: '项目审计工作台',
+    title: '项目审计工作台',
+    content: 'Agent 思考链与工具证据'
+  },
+  {
+    path: '/fde/projects?view=ocr-labeling',
+    menu: 'OCR 打标',
+    hint: '样本',
+    context: '项目审计工作台',
+    title: '项目审计工作台',
+    content: '标注覆盖率'
+  },
+  {
+    path: '/fde/projects?view=evaluation',
+    menu: '准确率评估',
+    hint: '阻断',
+    context: '项目审计工作台',
+    title: '项目审计工作台',
+    content: '准确率评估门禁'
+  }
 ]
 
 const accountForPath = (path: string) => {
@@ -166,6 +193,368 @@ const expectNoPageOverflow = async (page: Page) => {
     .toBe(false)
 }
 
+const expectFdeWorkspaceNotClipped = async (page: Page) => {
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const viewportWidth = document.documentElement.clientWidth
+          const failures: string[] = []
+          const center = document.querySelector<HTMLElement>('.center')
+          const workbench = document.querySelector<HTMLElement>('.project-audit-workbench')
+          const visible = (element: Element) => {
+            const rect = element.getBoundingClientRect()
+            const style = getComputedStyle(element)
+            return (
+              rect.width > 1 &&
+              rect.height > 1 &&
+              style.display !== 'none' &&
+              style.visibility !== 'hidden'
+            )
+          }
+
+          if (center && center.scrollWidth > center.clientWidth + 2) {
+            failures.push(`center:${center.scrollWidth}/${center.clientWidth}`)
+          }
+
+          if (workbench && workbench.scrollWidth > workbench.clientWidth + 2) {
+            failures.push(`workbench:${workbench.scrollWidth}/${workbench.clientWidth}`)
+          }
+
+          const compactProjectCard = document.querySelector<HTMLElement>(
+            '.fde-console .project-audit-card--compact'
+          )
+          if (compactProjectCard) {
+            const height = Math.round(compactProjectCard.getBoundingClientRect().height)
+            if (height > 96) failures.push(`compact-project-card:${height}`)
+          }
+
+          const checkedSelectors = [
+            '.fde-console .project-audit-card',
+            '.fde-console .project-audit-module-bar',
+            '.fde-console .workbench-summary-card',
+            '.fde-console .audit-step-card',
+            '.fde-console .pageindex-trace-card',
+            '.fde-console .panel',
+            '.fde-console .project-audit-select'
+          ]
+          const offscreen = checkedSelectors.flatMap((selector) =>
+            Array.from(document.querySelectorAll(selector))
+              .filter(visible)
+              .filter((element) => {
+                const rect = element.getBoundingClientRect()
+                return rect.left < -2 || rect.right > viewportWidth + 2
+              })
+              .map((element) => {
+                const rect = element.getBoundingClientRect()
+                const text = (element.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 32)
+                return `${selector}:${Math.round(rect.left)}-${Math.round(rect.right)}:${text}`
+              })
+          )
+
+          failures.push(...offscreen)
+          return failures.join('\n')
+        }),
+      { timeout: 1500 }
+    )
+    .toBe('')
+}
+
+const expectFixedChartTransformZoom = async (
+  page: Page,
+  shell: Locator,
+  options: {
+    zoomButtonName: string
+    resetButtonName: string
+    echartSelector: string
+  }
+) => {
+  const content = shell.locator('.chart-zoom-content').first()
+  await expect(shell.locator('canvas').first()).toBeVisible()
+
+  const shellWidthBefore = await shell.evaluate((el) => (el as HTMLElement).offsetWidth)
+  const shellHeightBefore = await shell.evaluate((el) => (el as HTMLElement).offsetHeight)
+  const frameWidthBefore = await shell
+    .locator('.chart-zoom-frame')
+    .first()
+    .evaluate((el) => (el as HTMLElement).offsetWidth)
+  const frameHeightBefore = await shell
+    .locator('.chart-zoom-frame')
+    .first()
+    .evaluate((el) => (el as HTMLElement).offsetHeight)
+  const chartWidthBefore = await shell
+    .locator(options.echartSelector)
+    .first()
+    .evaluate((el) => (el as HTMLElement).offsetWidth)
+  const chartHeightBefore = await shell
+    .locator(options.echartSelector)
+    .first()
+    .evaluate((el) => (el as HTMLElement).offsetHeight)
+  const transformBefore = await content.evaluate(
+    (el) => getComputedStyle(el as HTMLElement).transform
+  )
+
+  await page.getByRole('button', { name: options.zoomButtonName }).click()
+
+  await expect
+    .poll(async () => content.evaluate((el) => getComputedStyle(el as HTMLElement).transform))
+    .not.toBe(transformBefore)
+  await expect
+    .poll(async () => shell.evaluate((el) => (el as HTMLElement).offsetWidth))
+    .toBe(shellWidthBefore)
+  await expect
+    .poll(async () => shell.evaluate((el) => (el as HTMLElement).offsetHeight))
+    .toBe(shellHeightBefore)
+  await expect
+    .poll(async () =>
+      shell
+        .locator('.chart-zoom-frame')
+        .first()
+        .evaluate((el) => (el as HTMLElement).offsetWidth)
+    )
+    .toBe(frameWidthBefore)
+  await expect
+    .poll(async () =>
+      shell
+        .locator('.chart-zoom-frame')
+        .first()
+        .evaluate((el) => (el as HTMLElement).offsetHeight)
+    )
+    .toBe(frameHeightBefore)
+  await expect
+    .poll(async () =>
+      shell
+        .locator(options.echartSelector)
+        .first()
+        .evaluate((el) => (el as HTMLElement).offsetWidth)
+    )
+    .toBe(chartWidthBefore)
+  await expect
+    .poll(async () =>
+      shell
+        .locator(options.echartSelector)
+        .first()
+        .evaluate((el) => (el as HTMLElement).offsetHeight)
+    )
+    .toBe(chartHeightBefore)
+
+  await page.getByRole('button', { name: options.resetButtonName }).click()
+}
+
+const waitForFdeProjectAuditReady = async (page: Page) => {
+  await expect(page.locator('.fde-console')).toBeVisible({ timeout: 15000 })
+  await expect(page.locator('.static-tree-menu .tree-group-wrap').first()).toBeVisible({
+    timeout: 15000
+  })
+  await expect(page.locator('.static-tree-menu .tree-node.active').first()).toBeVisible({
+    timeout: 15000
+  })
+}
+
+const expectFdeProjectTreeUsable = async (page: Page) => {
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const failures: string[] = []
+          const left = document.querySelector<HTMLElement>('.left')
+          const tree = document.querySelector<HTMLElement>('.static-tree-menu')
+          const activeNode = document.querySelector<HTMLElement>(
+            '.static-tree-menu .tree-node.active, .static-tree-menu .tree-node.is-active'
+          )
+          const visible = (element: Element) => {
+            const rect = element.getBoundingClientRect()
+            const style = getComputedStyle(element)
+            return (
+              rect.width > 1 &&
+              rect.height > 1 &&
+              style.display !== 'none' &&
+              style.visibility !== 'hidden'
+            )
+          }
+
+          if (!left) failures.push('missing-left')
+          if (!tree) failures.push('missing-tree')
+          if (!activeNode) failures.push('missing-active-node')
+
+          if (left && tree) {
+            const leftRect = left.getBoundingClientRect()
+            const treeRect = tree.getBoundingClientRect()
+            if (treeRect.width < 240) failures.push(`tree-too-narrow:${Math.round(treeRect.width)}`)
+            if (tree.scrollWidth > tree.clientWidth + 18) {
+              failures.push(`tree-horizontal-scroll:${tree.scrollWidth}/${tree.clientWidth}`)
+            }
+            const openedNodeMenus = Array.from(
+              tree.querySelectorAll<HTMLElement>('.tree-section-menu.is-opened .el-menu--inline')
+            ).filter(visible)
+            for (const menu of openedNodeMenus) {
+              const nodes = Array.from(menu.querySelectorAll<HTMLElement>('.tree-node')).filter(
+                visible
+              )
+              if (nodes.length > 1) {
+                const rects = nodes.map((node) => node.getBoundingClientRect())
+                const topRows = new Set(rects.map((rect) => Math.round(rect.top)))
+                const leftValues = rects.map((rect) => Math.round(rect.left))
+                const leftSpread = Math.max(...leftValues) - Math.min(...leftValues)
+                if (topRows.size !== nodes.length) {
+                  failures.push(`tree-node-not-single-column:${nodes.length}/${topRows.size}`)
+                }
+                if (leftSpread > 3) {
+                  failures.push(`tree-node-left-spread:${leftSpread}`)
+                }
+                for (const node of nodes) {
+                  const nodeRect = node.getBoundingClientRect()
+                  const marker = node.querySelector<HTMLElement>('.tree-node-marker')
+                  if (marker) {
+                    const style = getComputedStyle(node)
+                    const firstColumn = Number.parseFloat(style.gridTemplateColumns.split(' ')[0])
+                    const paddingLeft = Number.parseFloat(style.paddingLeft || '0')
+                    const borderLeft = Number.parseFloat(style.borderLeftWidth || '0')
+                    const markerRect = marker.getBoundingClientRect()
+                    const markerCenterX = markerRect.left + markerRect.width / 2
+                    const expectedCenterX =
+                      nodeRect.left + borderLeft + paddingLeft + firstColumn / 2
+                    if (Math.abs(markerCenterX - expectedCenterX) > 2) {
+                      failures.push(
+                        `tree-node-marker-off-center:${Math.round(markerCenterX - expectedCenterX)}`
+                      )
+                    }
+                  }
+                }
+              }
+            }
+            const leaking = Array.from(left.querySelectorAll('*'))
+              .filter(visible)
+              .filter((element) => {
+                const rect = element.getBoundingClientRect()
+                return rect.left < leftRect.left - 2 || rect.right > leftRect.right + 2
+              })
+              .map((element) => {
+                const text = (element.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 28)
+                return `${element.className?.toString?.() || element.tagName}:${text}`
+              })
+              .slice(0, 6)
+            if (leaking.length) failures.push(`left-leak:${leaking.join('|')}`)
+          }
+
+          const projectCards = Array.from(document.querySelectorAll('.tree-group-wrap')).filter(
+            visible
+          )
+          if (projectCards.length < 2) failures.push(`project-cards:${projectCards.length}`)
+          const tallProjectCards = projectCards
+            .map((card) => ({
+              text: (card.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 32),
+              height: Math.round(card.getBoundingClientRect().height)
+            }))
+            .filter((card) => card.height > 74)
+          if (tallProjectCards.length) {
+            failures.push(
+              `project-card-tall:${tallProjectCards.map((card) => `${card.text}:${card.height}`).join('|')}`
+            )
+          }
+          const crowdedProjectCards = projectCards
+            .map((card) => ({
+              text: (card.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 32),
+              chipCount: card.querySelectorAll('.tree-chip').length
+            }))
+            .filter((card) => card.chipCount > 3)
+          if (crowdedProjectCards.length) {
+            failures.push(
+              `project-card-chips:${crowdedProjectCards.map((card) => `${card.text}:${card.chipCount}`).join('|')}`
+            )
+          }
+          const visibleTreeNodes = Array.from(
+            document.querySelectorAll<HTMLElement>('.tree-section-menu.is-opened .tree-node')
+          ).filter(visible)
+          const visibleHints = visibleTreeNodes.filter(
+            (node) => node.querySelectorAll('small').length > 0
+          )
+          const visiblePills = visibleTreeNodes.flatMap((node) =>
+            Array.from(node.querySelectorAll<HTMLElement>('.pill')).filter(visible)
+          )
+          const tallNodes = visibleTreeNodes
+            .map((node) => ({
+              text: (node.textContent || '').trim().replace(/\s+/g, ' '),
+              height: Math.round(node.getBoundingClientRect().height)
+            }))
+            .filter((node) => node.height > 38)
+
+          if (visibleHints.length) failures.push(`tree-hints:${visibleHints.length}`)
+          if (visiblePills.length > 1) failures.push(`tree-pills:${visiblePills.length}`)
+          if (tallNodes.length) {
+            failures.push(
+              `tree-tall:${tallNodes.map((node) => `${node.text}:${node.height}`).join('|')}`
+            )
+          }
+
+          const openedProjectSections = document.querySelectorAll(
+            '.tree-section-menu.is-opened'
+          ).length
+          if (openedProjectSections > 1) {
+            failures.push(`too-many-open-projects:${openedProjectSections}`)
+          }
+
+          if (activeNode) {
+            const rect = activeNode.getBoundingClientRect()
+            if (rect.height < 34 || rect.height > 72) {
+              failures.push(`active-height:${Math.round(rect.height)}`)
+            }
+          }
+
+          return failures.join('\n')
+        }),
+      { timeout: 1500 }
+    )
+    .toBe('')
+}
+
+const expectFdeTopbarCompact = async (page: Page) => {
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const failures: string[] = []
+          const viewportWidth = document.documentElement.clientWidth
+          const statusCount = document.querySelectorAll('.brand .top-status').length
+          const search = document.querySelector<HTMLElement>('.global-search')
+          const topActions = document.querySelector<HTMLElement>('.top-actions')
+          const searchRect = search?.getBoundingClientRect()
+          const actionRect = topActions?.getBoundingClientRect()
+          const maxSearchWidth = viewportWidth <= 1360 ? 362 : 482
+
+          if (statusCount > 0) failures.push(`status:${statusCount}`)
+
+          if (!searchRect || searchRect.width > maxSearchWidth) {
+            failures.push(`search:${Math.round(searchRect?.width || 0)}/${maxSearchWidth}`)
+          }
+
+          if (!actionRect) {
+            failures.push('actions:missing')
+          } else {
+            if (actionRect.height > 44) {
+              failures.push(`actions-height:${Math.round(actionRect.height)}`)
+            }
+            if (actionRect.left < -2 || actionRect.right > viewportWidth + 2) {
+              failures.push(
+                `actions-offscreen:${Math.round(actionRect.left)}-${Math.round(actionRect.right)}`
+              )
+            }
+          }
+
+          const topActionTexts = Array.from(document.querySelectorAll('.top-actions > *'))
+            .map((element) => (element.textContent || '').trim().replace(/\s+/g, ' '))
+            .join('|')
+          if (!topActionTexts.includes('治理摘要') || !topActionTexts.includes('FDE 工程师')) {
+            failures.push(`actions-text:${topActionTexts}`)
+          }
+
+          return failures.join('\n')
+        }),
+      { timeout: 1500 }
+    )
+    .toBe('')
+}
+
 const selectProject = async (page: Page, projectName: string) => {
   const select = page.locator('.project-select')
   await expect(select).toBeVisible()
@@ -189,7 +578,7 @@ test.describe('AIcheck route smoke', () => {
       { account: 'ndt', path: '/workbench/ndt', title: '无损检测工作台' },
       { account: 'owner', path: '/workbench/owner', title: '建设方工作台' },
       { account: 'admin', path: '/admin/overview', title: '项目与权限配置' },
-      { account: 'fde', path: '/fde/dashboard', title: 'AI 交付治理后台' }
+      { account: 'fde', path: '/fde/projects', title: '项目审计工作台' }
     ]
 
     for (const routeCase of cases) {
@@ -231,12 +620,9 @@ test.describe('AIcheck route smoke', () => {
     await page.setViewportSize({ width: 390, height: 900 })
 
     for (const routeCase of routeCases.filter((item) =>
-      [
-        '/workbench/inspection',
-        '/admin/overview',
-        '/knowledge/overview',
-        '/fde/dashboard'
-      ].includes(item.path)
+      ['/workbench/inspection', '/admin/overview', '/knowledge/overview', '/fde/projects'].includes(
+        item.path
+      )
     )) {
       await openRoute(page, routeCase)
       await expectNoPageOverflow(page)
@@ -284,19 +670,364 @@ test.describe('AIcheck deep route menu', () => {
   })
 
   test('fde subroutes select static menu and route context', async ({ page }) => {
-    await loginTo(page, fdeDeepRouteCases[0].path)
+    await loginTo(page, '/fde/projects')
+    await waitForFdeProjectAuditReady(page)
+    await expect(page.locator('.fde-console')).toContainText('项目审计工作台')
 
     for (const routeCase of fdeDeepRouteCases) {
       await page.goto(`/#${routeCase.path}`)
       await page.waitForURL((url) => url.hash.includes(routeCase.path))
       await page.waitForLoadState('networkidle')
-      await expect(page.locator('.fde-console .page-title')).toContainText('AI 交付治理后台')
-      await expect(page.locator('.static-tree-menu .tree-node.active').first()).toContainText(
-        routeCase.menu
-      )
+      await waitForFdeProjectAuditReady(page)
+      await expect(page.locator('.fde-console .page-title')).toContainText(routeCase.title)
+      const activeTreeItem = page.locator('.static-tree-menu .tree-node.active').first()
+      await expect(activeTreeItem).toContainText(routeCase.menu)
+      await expect(activeTreeItem).toContainText('当前')
+      await expect(page.locator('.project-audit-focus-facts')).toBeVisible()
+      await expect(page.locator('.project-audit-focus-facts')).toContainText('当前节点')
       await expect(page.locator('.route-context')).toContainText(routeCase.context)
+      if (routeCase.content) {
+        await expect(page.locator('.fde-console')).toContainText(routeCase.content)
+      }
+      await expectFdeProjectTreeUsable(page)
+      await expectNoPageOverflow(page)
+      await expectFdeWorkspaceNotClipped(page)
+    }
+  })
+
+  test('fde project audit pages do not clip cards at desktop widths', async ({ page }) => {
+    const paths = ['/fde/projects', ...fdeDeepRouteCases.map((routeCase) => routeCase.path)]
+
+    for (const width of [1280, 1024]) {
+      await page.setViewportSize({ width, height: 820 })
+      await loginTo(page, '/fde/projects')
+
+      for (const path of paths) {
+        await page.goto(`/#${path}`)
+        await page.waitForURL((url) => url.hash.includes(path))
+        await page.waitForLoadState('networkidle')
+        await waitForFdeProjectAuditReady(page)
+        await expect(page.locator('.fde-console .page-title')).toContainText('项目审计工作台')
+        await expectFdeProjectTreeUsable(page)
+        await expectNoPageOverflow(page)
+        await expectFdeWorkspaceNotClipped(page)
+      }
+    }
+  })
+
+  test('fde topbar keeps actions single-line and search compact', async ({ page }) => {
+    for (const width of [1440, 1280, 1024]) {
+      await page.setViewportSize({ width, height: 820 })
+      await loginTo(page, '/fde/projects')
+      await waitForFdeProjectAuditReady(page)
+      await expect(page.locator('.fde-console .page-title')).toContainText('项目审计工作台')
+      await expectFdeTopbarCompact(page)
       await expectNoPageOverflow(page)
     }
+  })
+
+  test('fde mock audit data exposes OCR and agent evidence for UI review', async ({ page }) => {
+    await loginTo(page, '/fde/projects')
+    await page.goto('/#/fde/projects?projectId=P-2026-GDLNG-002&view=vectorization')
+    await page.waitForLoadState('networkidle')
+    await waitForFdeProjectAuditReady(page)
+
+    await expectFdeProjectTreeUsable(page)
+    await expect(page.locator('.fde-console')).toContainText('管道特性表')
+    await expect(page.locator('.fde-console')).toContainText('质量证明书')
+    await expect(page.locator('.fde-console')).toContainText('资料解析')
+    await expect(page.locator('.fde-console')).toContainText('知识切片')
+    await expect(page.locator('.fde-console')).toContainText('向量入库')
+    await expect(page.locator('.fde-console')).toContainText('资料知识资产溯源')
+    await expect(page.locator('.fde-console')).toContainText('每份资料为什么能进入 Agent 审查')
+    await expect(page.locator('.fde-console')).toContainText('资料向量化链路图')
+    await expect(page.locator('.fde-console .knowledge-chart-shell canvas').first()).toBeVisible()
+    await expectFixedChartTransformZoom(
+      page,
+      page.locator('.fde-console .knowledge-chart-shell--sankey').first(),
+      {
+        zoomButtonName: '放大资料向量化链路图',
+        resetButtonName: '重置资料向量化链路图',
+        echartSelector: '.knowledge-echart'
+      }
+    )
+    await expect(page.locator('.fde-console')).toContainText('向量条目')
+    await expect(page.locator('.fde-console')).toContainText('PageIndex')
+    await expect(page.locator('.fde-console')).toContainText('Lineage 来源')
+    await expect(page.locator('.fde-console')).toContainText('后端审计投影')
+
+    await page.goto('/#/fde/projects?view=pageindex')
+    await page.waitForLoadState('networkidle')
+    await waitForFdeProjectAuditReady(page)
+    await expect(page.locator('.fde-console')).toContainText('PageIndex 友好判读')
+    await expect(page.locator('.fde-console')).toContainText('每次检索为什么这样走')
+    await expect(page.locator('.fde-console')).toContainText('PageIndex 检索溯源树')
+    await expect(page.locator('.fde-console .knowledge-chart-shell canvas').first()).toBeVisible()
+    await expectFixedChartTransformZoom(
+      page,
+      page.locator('.fde-console .knowledge-chart-shell--tree').first(),
+      {
+        zoomButtonName: '放大 PageIndex 检索溯源树',
+        resetButtonName: '重置 PageIndex 检索溯源树',
+        echartSelector: '.knowledge-echart'
+      }
+    )
+    await expect(page.locator('.fde-console')).toContainText('PageIndex 路由追踪')
+    await expect(page.locator('.fde-console')).toContainText('问题分类')
+    await expect(page.locator('.fde-console')).toContainText('条款映射')
+    await expect(page.locator('.fde-console .pageindex-trace-card').first()).toContainText(
+      '检索路由器'
+    )
+    await expect(page.locator('.fde-console')).toContainText('跨文件一致性与证据回放')
+    await expect(page.locator('.fde-console')).toContainText('长文档跨章节检索')
+
+    await page.goto('/#/fde/projects?view=langgraph')
+    await page.waitForLoadState('networkidle')
+    await waitForFdeProjectAuditReady(page)
+    await expect(page.locator('.fde-console')).toContainText('LangGraph 编排图')
+    await expect(page.locator('.fde-console')).toContainText('Temporal 执行时间线')
+    await expect(page.locator('.fde-console .knowledge-chart-shell canvas').first()).toBeVisible()
+    await expectFixedChartTransformZoom(
+      page,
+      page.locator('.fde-console .knowledge-chart-shell--timeline').first(),
+      {
+        zoomButtonName: '放大 Temporal 执行时间线',
+        resetButtonName: '重置 Temporal 执行时间线',
+        echartSelector: '.knowledge-echart'
+      }
+    )
+    await expect(page.locator('.fde-console')).toContainText('阶段泳道')
+    await expect(page.locator('.fde-console')).toContainText('COG 可审计思考摘要')
+    await expect(page.locator('.fde-console .langgraph-chart-shell canvas').first()).toBeVisible()
+    await expectFixedChartTransformZoom(
+      page,
+      page.locator('.fde-console .langgraph-chart-shell').first(),
+      {
+        zoomButtonName: '放大 LangGraph 编排图',
+        resetButtonName: '重置 LangGraph 编排图',
+        echartSelector: '.langgraph-echart'
+      }
+    )
+    await expect(page.locator('.fde-console')).toContainText('postgres')
+    await expect(page.locator('.fde-console')).toContainText('Agent 思考链与工具证据')
+    await expect(page.locator('.fde-console')).toContainText('审查草稿结果')
+    await expect(page.locator('.fde-console .audit-step-card').first()).toContainText('证据/依据')
+    await page.getByTestId('fde-open-review-detail').click()
+    await expect(page.getByTestId('fde-review-drawer')).toBeVisible()
+    await expect(page.getByTestId('fde-review-drawer')).toContainText('ReviewRun')
+    const reviewDrawer = page.getByRole('dialog', { name: 'Agent 审查编排详情' })
+    await expect(reviewDrawer).toContainText('可审计推理摘要')
+    await expect(reviewDrawer).toContainText('工具调用')
+    await expect(reviewDrawer).toContainText('证据/规则/条款')
+    await expect(reviewDrawer.getByRole('button', { name: '记录诊断修正' })).toBeVisible()
+    await expect(reviewDrawer.locator('.drawer-step-card').first()).toContainText('证据/依据')
+    await reviewDrawer.getByRole('tab', { name: '结果' }).click()
+    await expect(reviewDrawer).toContainText('建议动作')
+    await expect(reviewDrawer).toContainText('人工确认')
+    await page.keyboard.press('Escape')
+    await expect(reviewDrawer).toBeHidden()
+
+    await page.goto('/#/fde/projects?view=ocr-labeling')
+    await page.waitForLoadState('networkidle')
+    await waitForFdeProjectAuditReady(page)
+    await expect(page.locator('.fde-console')).toContainText('标注覆盖率')
+    await expect(page.locator('.fde-console')).toContainText('seal_text_profile')
+    await expect(page.locator('.fde-console')).toContainText('ndt_rt_report_v1')
+    await page.getByTestId('fde-open-ocr-detail').first().click()
+    await expect(page.getByTestId('fde-ocr-drawer')).toBeVisible()
+    await expect(page.getByTestId('fde-ocr-drawer')).toContainText('OCR Job')
+    const ocrDrawer = page.getByRole('dialog', { name: 'OCR 任务审计详情' })
+    await expect(ocrDrawer).toContainText('候选图')
+    await expect(ocrDrawer).toContainText('字段问题')
+    await expect(ocrDrawer).toContainText('证据缺口')
+    await expect(ocrDrawer).toContainText('引擎')
+    await page.keyboard.press('Escape')
+    await expect(ocrDrawer).toBeHidden()
+
+    await page.goto('/#/fde/ocr-quality')
+    await page.waitForLoadState('networkidle')
+    await expect(page.locator('.fde-console')).toContainText('OCR 场景质量热力图')
+    const heatmapShell = page.locator('.fde-console .knowledge-chart-shell--heatmap').first()
+    await expect(heatmapShell.locator('canvas').first()).toBeVisible()
+    const heatmapShellWidthBefore = await heatmapShell.evaluate(
+      (el) => (el as HTMLElement).offsetWidth
+    )
+    const heatmapShellHeightBefore = await heatmapShell.evaluate(
+      (el) => (el as HTMLElement).offsetHeight
+    )
+    const heatmapChartWidthBefore = await heatmapShell
+      .locator('.knowledge-echart')
+      .first()
+      .evaluate((el) => (el as HTMLElement).offsetWidth)
+    const heatmapChartHeightBefore = await heatmapShell
+      .locator('.knowledge-echart')
+      .first()
+      .evaluate((el) => (el as HTMLElement).offsetHeight)
+    const heatmapFrameWidthBefore = await heatmapShell
+      .locator('.chart-zoom-frame')
+      .first()
+      .evaluate((el) => (el as HTMLElement).offsetWidth)
+    const heatmapFrameHeightBefore = await heatmapShell
+      .locator('.chart-zoom-frame')
+      .first()
+      .evaluate((el) => (el as HTMLElement).offsetHeight)
+    const heatmapContent = heatmapShell.locator('.chart-zoom-content').first()
+    const heatmapTransformBefore = await heatmapContent.evaluate(
+      (el) => getComputedStyle(el as HTMLElement).transform
+    )
+    await page.getByRole('button', { name: '放大 OCR 场景质量热力图' }).click()
+    await expect
+      .poll(async () =>
+        heatmapContent.evaluate((el) => getComputedStyle(el as HTMLElement).transform)
+      )
+      .not.toBe(heatmapTransformBefore)
+    await expect
+      .poll(async () => heatmapShell.evaluate((el) => (el as HTMLElement).offsetWidth))
+      .toBe(heatmapShellWidthBefore)
+    await expect
+      .poll(async () => heatmapShell.evaluate((el) => (el as HTMLElement).offsetHeight))
+      .toBe(heatmapShellHeightBefore)
+    await expect
+      .poll(async () =>
+        heatmapShell
+          .locator('.chart-zoom-frame')
+          .first()
+          .evaluate((el) => (el as HTMLElement).offsetWidth)
+      )
+      .toBe(heatmapFrameWidthBefore)
+    await expect
+      .poll(async () =>
+        heatmapShell
+          .locator('.chart-zoom-frame')
+          .first()
+          .evaluate((el) => (el as HTMLElement).offsetHeight)
+      )
+      .toBe(heatmapFrameHeightBefore)
+    await expect
+      .poll(async () =>
+        heatmapShell
+          .locator('.knowledge-echart')
+          .first()
+          .evaluate((el) => (el as HTMLElement).offsetWidth)
+      )
+      .toBe(heatmapChartWidthBefore)
+    await expect
+      .poll(async () =>
+        heatmapShell
+          .locator('.knowledge-echart')
+          .first()
+          .evaluate((el) => (el as HTMLElement).offsetHeight)
+      )
+      .toBe(heatmapChartHeightBefore)
+    await page.getByRole('button', { name: '重置 OCR 场景质量热力图' }).click()
+    const heatmapShellWidthReset = await heatmapShell.evaluate(
+      (el) => (el as HTMLElement).offsetWidth
+    )
+    const heatmapShellHeightReset = await heatmapShell.evaluate(
+      (el) => (el as HTMLElement).offsetHeight
+    )
+    const heatmapChartWidthReset = await heatmapShell
+      .locator('.knowledge-echart')
+      .first()
+      .evaluate((el) => (el as HTMLElement).offsetWidth)
+    const heatmapChartHeightReset = await heatmapShell
+      .locator('.knowledge-echart')
+      .first()
+      .evaluate((el) => (el as HTMLElement).offsetHeight)
+    const heatmapFrameWidthReset = await heatmapShell
+      .locator('.chart-zoom-frame')
+      .first()
+      .evaluate((el) => (el as HTMLElement).offsetWidth)
+    const heatmapFrameHeightReset = await heatmapShell
+      .locator('.chart-zoom-frame')
+      .first()
+      .evaluate((el) => (el as HTMLElement).offsetHeight)
+    const heatmapTransformReset = await heatmapContent.evaluate(
+      (el) => getComputedStyle(el as HTMLElement).transform
+    )
+    const heatmapCanvas = heatmapShell.locator('canvas').first()
+    await heatmapCanvas.evaluate((el) => {
+      const rect = el.getBoundingClientRect()
+      el.dispatchEvent(
+        new WheelEvent('wheel', {
+          bubbles: true,
+          cancelable: true,
+          clientX: rect.left + 120,
+          clientY: rect.top + 120,
+          ctrlKey: true,
+          deltaY: -120
+        })
+      )
+    })
+    await expect
+      .poll(async () =>
+        heatmapContent.evaluate((el) => getComputedStyle(el as HTMLElement).transform)
+      )
+      .not.toBe(heatmapTransformReset)
+    await expect
+      .poll(async () => heatmapShell.evaluate((el) => (el as HTMLElement).offsetWidth))
+      .toBe(heatmapShellWidthReset)
+    await expect
+      .poll(async () => heatmapShell.evaluate((el) => (el as HTMLElement).offsetHeight))
+      .toBe(heatmapShellHeightReset)
+    await expect
+      .poll(async () =>
+        heatmapShell
+          .locator('.chart-zoom-frame')
+          .first()
+          .evaluate((el) => (el as HTMLElement).offsetWidth)
+      )
+      .toBe(heatmapFrameWidthReset)
+    await expect
+      .poll(async () =>
+        heatmapShell
+          .locator('.chart-zoom-frame')
+          .first()
+          .evaluate((el) => (el as HTMLElement).offsetHeight)
+      )
+      .toBe(heatmapFrameHeightReset)
+    await expect
+      .poll(async () =>
+        heatmapShell
+          .locator('.knowledge-echart')
+          .first()
+          .evaluate((el) => (el as HTMLElement).offsetWidth)
+      )
+      .toBe(heatmapChartWidthReset)
+    await expect
+      .poll(async () =>
+        heatmapShell
+          .locator('.knowledge-echart')
+          .first()
+          .evaluate((el) => (el as HTMLElement).offsetHeight)
+      )
+      .toBe(heatmapChartHeightReset)
+    const heatmapBox = await heatmapCanvas.boundingBox()
+    expect(heatmapBox).not.toBeNull()
+    const heatmapTransformBeforeDrag = await heatmapContent.evaluate(
+      (el) => getComputedStyle(el as HTMLElement).transform
+    )
+    await page.mouse.move(heatmapBox!.x + 260, heatmapBox!.y + 140)
+    await page.mouse.down()
+    await page.mouse.move(heatmapBox!.x + 120, heatmapBox!.y + 140, { steps: 4 })
+    await page.mouse.up()
+    await expect
+      .poll(async () =>
+        heatmapContent.evaluate((el) => getComputedStyle(el as HTMLElement).transform)
+      )
+      .not.toBe(heatmapTransformBeforeDrag)
+    await expect
+      .poll(async () => heatmapShell.evaluate((el) => (el as HTMLElement).scrollLeft))
+      .toBe(0)
+
+    await page.goto('/#/fde/projects?view=evaluation')
+    await page.waitForLoadState('networkidle')
+    await waitForFdeProjectAuditReady(page)
+    await expect(page.locator('.fde-console')).toContainText('准确率评估门禁')
+    await expect(page.locator('.fde-console')).toContainText('OCR 100')
+    await expect(page.locator('.fde-console')).toContainText('Agent 评分')
+    await expectNoPageOverflow(page)
+    await expectFdeWorkspaceNotClipped(page)
   })
 })
 

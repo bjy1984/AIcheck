@@ -1000,6 +1000,17 @@ export type FdeReviewRunDetailPayload = {
   graph: ReviewGraphPayload
   timeline: Array<Record<string, unknown>>
   temporal: Record<string, unknown>
+  reasoningTrace?: Array<Record<string, unknown>>
+  lineage?: Record<string, unknown>
+  qualityEvaluation?: {
+    score?: number
+    status?: string
+    dimensions?: Array<Record<string, unknown>>
+    gates?: Array<Record<string, unknown>>
+    humanReviewRequired?: boolean
+  }
+  humanCorrections?: Array<Record<string, unknown>>
+  redactionPolicy?: string
   scorecard?: {
     schemaVersion?: string
     targetScore: number
@@ -1014,6 +1025,92 @@ export type FdeReviewRunDetailPayload = {
     }>
     blockers: string[]
   }
+}
+
+export type FdeProjectAuditSummary = {
+  project: Project
+  metrics: Record<string, number>
+  currentNodeId?: number
+  currentNodeName?: string
+  topBlockers: Array<Record<string, unknown>>
+  updatedAt?: string
+}
+
+export type FdeKnowledgeLineageStage = {
+  key: string
+  label: string
+  status: string
+  done: boolean
+  tone?: string
+  evidence?: string
+  action?: string
+  blocker?: string | null
+  metrics?: Record<string, unknown>
+}
+
+export type FdeDocumentKnowledgeLineage = {
+  schemaVersion?: string
+  documentId?: string
+  documentVersionId?: string
+  knowledgeFileId?: string
+  fileName?: string
+  readiness?: string
+  readinessLabel?: string
+  auditConclusion?: string
+  localOnly?: boolean
+  latestTaskType?: string
+  latestTaskStatus?: string
+  vectorIndex?: Record<string, unknown>
+  pageIndex?: Record<string, unknown>
+  stages?: FdeKnowledgeLineageStage[]
+  blockers?: string[]
+}
+
+export type FdeProjectKnowledgeLineage = {
+  schemaVersion?: string
+  source?: string
+  documents?: FdeDocumentKnowledgeLineage[]
+  vectorFlow?: Array<Record<string, unknown>>
+  pageIndexFlow?: Array<Record<string, unknown>>
+  retrievalTraceCount?: number
+  pageIndexTraceCount?: number
+  blockers?: Array<Record<string, unknown>>
+}
+
+export type FdeProjectAuditDocument = DocumentAsset & {
+  knowledgeFileId?: string
+  knowledgeSourceId?: string
+  knowledgeSourceName?: string
+  sliceStatus?: '未切片' | '切片中' | '已切片' | '切片失败' | string
+  vectorStatus?: KnowledgeSource['vectorStatus'] | string
+  chunkCount?: number
+  vectorCount?: number
+  embeddingModel?: string
+  indexVersion?: string
+  vectorDimensions?: number
+  pageIndexStatus?: string
+  pageIndexNodeCount?: number
+  latestKnowledgeTask?: Record<string, unknown> | string
+  knowledgeLineage?: FdeDocumentKnowledgeLineage
+}
+
+export type FdeProjectAuditWorkspace = {
+  project: Project
+  selectedNodeId?: number
+  selectedNode?: ProjectTreeNode | null
+  groups: Array<{ groupName: string; nodes: ProjectTreeNode[] }>
+  nodeSummaries: Array<Record<string, unknown>>
+  metrics: Record<string, number>
+  documents: FdeProjectAuditDocument[]
+  bindings: NodeFileBinding[]
+  submissions: Array<Record<string, unknown>>
+  reviewRuns: FdeReviewRun[]
+  aiRuns: FdeAiRun[]
+  ocrJobs: Array<Record<string, unknown>>
+  ocrAnnotationTasks: Array<Record<string, unknown>>
+  qualityBlockers: Array<Record<string, unknown>>
+  knowledgeLineage?: FdeProjectKnowledgeLineage
+  updatedAt?: string
 }
 
 export type FdeFeedback = {
@@ -1251,6 +1348,45 @@ export type FdeOcrQualityPayload = {
       blockers?: string[]
     }>
     blockers: string[]
+  }
+  ocr100ActionBoard?: {
+    schemaVersion?: string
+    ok?: boolean
+    summary?: {
+      status?: string
+      score?: number
+      readyForEval?: number
+      requiredReadyForEval?: number
+      collectionMissingCases?: number
+      placeholderSampleSlots?: number
+      annotationTasks?: number
+      remainingHumanLabels?: number
+      newLocalCandidates?: number
+      duplicateLocalCandidates?: number
+      actions?: number
+      laneCounts?: Record<string, number>
+    }
+    handoff?: {
+      schemaVersion?: string
+      ok?: boolean
+      status?: string
+      generatedAt?: string
+      outputDir?: string
+      manifestPath?: string
+      summary?: Record<string, unknown>
+      staleReasons?: Array<Record<string, unknown>>
+      laneCounts?: Record<string, number>
+      files?: Array<{
+        key?: string
+        label?: string
+        owner?: string
+        purpose?: string
+        path?: string
+        exists?: boolean
+        sizeBytes?: number
+      }>
+    }
+    actions?: Array<Record<string, unknown>>
   }
   failurePools?: {
     fieldFailures?: Array<Record<string, unknown> | string>
@@ -2518,8 +2654,27 @@ export const getFdeDashboardApi = (): Promise<IResponse<FdeDashboardPayload>> =>
   return request.get({ url: '/api/fde/dashboard' })
 }
 
+export const listFdeProjectsApi = (): Promise<IResponse<FdeProjectAuditSummary[]>> => {
+  return request.get({ url: '/api/fde/projects' })
+}
+
+export const getFdeProjectAuditWorkspaceApi = (
+  projectId: string,
+  params?: { nodeId?: number }
+): Promise<IResponse<FdeProjectAuditWorkspace>> => {
+  return request.get({ url: `/api/fde/projects/${projectId}/audit-workspace`, params })
+}
+
+export const getFdeProjectNodeAuditDetailApi = (
+  projectId: string,
+  nodeId: number
+): Promise<IResponse<Record<string, unknown>>> => {
+  return request.get({ url: `/api/fde/projects/${projectId}/nodes/${nodeId}/audit-detail` })
+}
+
 export const listFdeAiRunsApi = (params?: {
   projectId?: string
+  nodeId?: number
   businessPackId?: string
   status?: string
   page?: number
@@ -2534,6 +2689,9 @@ export const getFdeAiRunApi = (runId: string): Promise<IResponse<FdeAiRunDetailP
 
 export const listFdeReviewRunsApi = (params?: {
   projectId?: string
+  nodeId?: number
+  submissionId?: string
+  documentVersionId?: string
   businessPackId?: string
   status?: string
   page?: number
@@ -2678,6 +2836,31 @@ export const shadowFdeReviewRunApi = (
 ): Promise<IResponse<{ reviewRun: FdeReviewRun; auditLogId: string }>> => {
   return request.post({
     url: `/api/fde/review-runs/${reviewRunId}/shadow-run`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const createFdeReviewRunFeedbackApi = (
+  reviewRunId: string,
+  data: {
+    feedbackType?: string
+    comment?: string
+    correctedOutput?: unknown
+    rootCause?: string
+    shouldEnterEvaluationSet?: boolean
+  },
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    feedback: FdeFeedback
+    reviewRun: FdeReviewRun
+    auditLogId: string
+    businessImpactPolicy: string
+  }>
+> => {
+  return request.post({
+    url: `/api/fde/review-runs/${reviewRunId}/feedback`,
     data,
     headers: mutationHeaders(options)
   })
@@ -2966,11 +3149,41 @@ export const rollbackFdeBusinessPackApi = (
   })
 }
 
-export const getFdeOcrQualityApi = (): Promise<IResponse<FdeOcrQualityPayload>> => {
-  return request.get({ url: '/api/fde/ocr-quality' })
+export const getFdeOcrQualityApi = (params?: {
+  projectId?: string
+  nodeId?: number
+  profileId?: string
+}): Promise<IResponse<FdeOcrQualityPayload>> => {
+  return request.get({ url: '/api/fde/ocr-quality', params })
+}
+
+export const refreshFdeOcr100ActionBoardApi = (
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    board: NonNullable<FdeOcrQualityPayload['ocr100ActionBoard']>
+    outputs: Record<string, string>
+    auditLogId: string
+  }>
+> => {
+  return request.post({
+    url: '/api/fde/ocr-100/action-board/refresh',
+    data: {},
+    headers: mutationHeaders(options)
+  })
+}
+
+export const getFdeOcr100HandoffArtifactApi = (artifactKey: string): Promise<any> => {
+  return request.get({
+    url: `/api/fde/ocr-100/action-board/handoff/${encodeURIComponent(artifactKey)}`,
+    responseType: 'blob'
+  })
 }
 
 export const listFdeOcrRunsApi = (params?: {
+  projectId?: string
+  nodeId?: number
+  documentVersionId?: string
   pageNo?: number
   pageSize?: number
   status?: string
@@ -2984,6 +3197,9 @@ export const getFdeOcrRunApi = (jobId: string): Promise<IResponse<FdeOcrRunDetai
 }
 
 export const listFdeOcrAnnotationTasksApi = (params?: {
+  projectId?: string
+  nodeId?: number
+  documentVersionId?: string
   pageNo?: number
   pageSize?: number
   status?: string

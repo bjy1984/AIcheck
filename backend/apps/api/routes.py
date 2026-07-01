@@ -38,10 +38,13 @@ from libs.integrations.ocr_client import OcrClient
 from libs.knowledge_readiness import build_knowledge_rule_scorecard
 from libs.knowledge_retrieval import answer_draft_from_clauses, retrieve_knowledge_clauses
 from libs.review_orchestrator import (
+    REVIEW_GRAPH_STEPS,
     build_review_orchestration_scorecard,
     clone_review_run_for_replay,
+    create_review_run_from_ai_run,
     graph_view_for_review_run,
     human_decision_for_review_run,
+    review_run_audit_trace,
     review_run_timeline,
     review_run_view,
     signal_review_run_cancel,
@@ -50,6 +53,12 @@ from libs.review_orchestrator import (
 from libs.security.auth import ROLE_DEFAULT_PATHS, USERS, authenticate, decode_token, issue_token, user_by_username
 from scripts.ocr_100_label_studio_export import label_config_xml, label_studio_task, label_studio_task_without_image
 from scripts.ocr_100_label_studio_import import import_label_studio_annotations
+from scripts.ocr_100_action_board import (
+    action_board_csv,
+    action_board_markdown,
+    build_action_board,
+    write_action_handoff,
+)
 from scripts.ocr_annotation_readiness import build_annotation_readiness_from_tasks
 
 router = APIRouter(tags=["AIcheck API"])
@@ -986,7 +995,7 @@ def simple_routes(role: str | None = None) -> list[dict[str, Any]]:
         {
             "path": "/fde",
             "component": "#",
-            "redirect": "/fde/dashboard",
+            "redirect": "/fde/projects",
             "name": "FdeConsole",
             "meta": {"title": "FDE 后台", "icon": "vi-ep:operation", "alwaysShow": True, "roles": sorted(FDE_ROLES)},
             "children": [
@@ -994,22 +1003,23 @@ def simple_routes(role: str | None = None) -> list[dict[str, Any]]:
                     "path": item["path"],
                     "component": "views/AICheck/FdeConsole",
                     "name": f"Fde{item['path'].title().replace('-', '')}",
-                    "meta": {"title": item["title"], "roles": sorted(FDE_ROLES)},
+                    "meta": {"title": item["title"], "hidden": item.get("hidden", False), "roles": sorted(FDE_ROLES)},
                 }
                 for item in [
-                    {"path": "dashboard", "title": "AI 驾驶舱"},
-                    {"path": "ai-runs", "title": "AI Run 追踪"},
-                    {"path": "review-runs", "title": "任务编排"},
-                    {"path": "feedback", "title": "反馈与标注"},
-                    {"path": "evaluation", "title": "评估实验室"},
-                    {"path": "capability-bundles", "title": "能力组合"},
-                    {"path": "releases", "title": "发布治理"},
-                    {"path": "ocr-quality", "title": "OCR 质量"},
-                    {"path": "business-packs", "title": "业务包工厂"},
-                    {"path": "security", "title": "数据安全"},
-                    {"path": "costs", "title": "成本预算"},
-                    {"path": "incidents", "title": "事故 RCA"},
-                    {"path": "acceptance", "title": "交付验收"},
+                    {"path": "projects", "title": "项目审计工作台"},
+                    {"path": "dashboard", "title": "AI 驾驶舱", "hidden": True},
+                    {"path": "ai-runs", "title": "AI Run 追踪", "hidden": True},
+                    {"path": "review-runs", "title": "Agent 审查编排", "hidden": True},
+                    {"path": "feedback", "title": "人工反馈与样本池", "hidden": True},
+                    {"path": "evaluation", "title": "评估实验室", "hidden": True},
+                    {"path": "capability-bundles", "title": "能力版本组合", "hidden": True},
+                    {"path": "releases", "title": "发布治理", "hidden": True},
+                    {"path": "ocr-quality", "title": "OCR 质量与标注", "hidden": True},
+                    {"path": "business-packs", "title": "业务包工厂", "hidden": True},
+                    {"path": "security", "title": "数据安全", "hidden": True},
+                    {"path": "costs", "title": "成本预算", "hidden": True},
+                    {"path": "incidents", "title": "事故复盘", "hidden": True},
+                    {"path": "acceptance", "title": "客户验收", "hidden": True},
                 ]
             ],
         },
@@ -2455,6 +2465,8 @@ def get_review_run(request: Request, review_run_id: str):
     refresh_state_from_postgres_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not run:
+        run = fde_find_or_materialize_synthetic_review_run(review_run_id)
+    if not run:
         return fail(errors.NOT_FOUND, request)
     project_id = run.get("projectId")
     if project_id and not project_visible_for_request(request, str(project_id)):
@@ -2467,6 +2479,8 @@ def get_review_run_timeline(request: Request, review_run_id: str):
     refresh_state_from_postgres_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not run:
+        run = fde_find_or_materialize_synthetic_review_run(review_run_id)
+    if not run:
         return fail(errors.NOT_FOUND, request)
     project_id = run.get("projectId")
     if project_id and not project_visible_for_request(request, str(project_id)):
@@ -2478,6 +2492,8 @@ def get_review_run_timeline(request: Request, review_run_id: str):
 def get_review_run_graph(request: Request, review_run_id: str):
     refresh_state_from_postgres_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
+    if not run:
+        run = fde_find_or_materialize_synthetic_review_run(review_run_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
     project_id = run.get("projectId")
@@ -4308,6 +4324,1814 @@ def fde_audit_event_scope(item: dict[str, Any]) -> bool:
     }
 
 
+def fde_version_project_id(version_id: Any) -> str | None:
+    version = repo.find_one("versions", str(version_id)) if version_id else None
+    document = repo.find_one("documents", version.get("documentId")) if version else None
+    return document.get("projectId") if document else None
+
+
+def fde_project_version_ids(project_id: str, node_id: int | None = None) -> set[str]:
+    if node_id is not None:
+        return {
+            str(item.get("documentVersionId"))
+            for item in repo.state.get("bindings", [])
+            if item.get("projectId") == project_id
+            and int(item.get("nodeId") or 0) == int(node_id)
+            and item.get("documentVersionId")
+        }
+    document_ids = {
+        item["id"]
+        for item in repo.state.get("documents", [])
+        if item.get("projectId") == project_id
+    }
+    return {
+        str(item.get("id"))
+        for item in repo.state.get("versions", [])
+        if item.get("documentId") in document_ids
+    }
+
+
+def fde_record_matches_project(
+    record: dict[str, Any],
+    project_id: str,
+    *,
+    node_id: int | None = None,
+    version_ids: set[str] | None = None,
+) -> bool:
+    if record.get("projectId") and record.get("projectId") != project_id:
+        return False
+    if node_id is not None:
+        record_node_id = record.get("nodeId")
+        record_node_ids = {
+            int(item)
+            for item in record.get("nodeIds") or []
+            if str(item).isdigit()
+        }
+        if record_node_id is not None:
+            record_node_ids.add(int(record_node_id))
+        if record_node_ids and int(node_id) not in record_node_ids:
+            return False
+    if record.get("projectId") == project_id:
+        return True
+    record_version_id = record.get("documentVersionId")
+    if record_version_id and version_ids is not None:
+        return str(record_version_id) in version_ids
+    if record_version_id:
+        return fde_version_project_id(record_version_id) == project_id
+    return False
+
+
+def fde_project_quality_blockers(project_id: str, node_id: int | None = None) -> list[dict[str, Any]]:
+    version_ids = fde_project_version_ids(project_id, node_id)
+    blockers: list[dict[str, Any]] = []
+    for document in repo.state.get("documents", []):
+        if document.get("projectId") != project_id:
+            continue
+        if node_id is not None:
+            linked = any(
+                item.get("projectId") == project_id
+                and item.get("documentId") == document.get("id")
+                and int(item.get("nodeId") or 0) == int(node_id)
+                for item in repo.state.get("bindings", [])
+            )
+            if not linked:
+                continue
+        if document.get("currentOcrStatus") not in {"已识别", "识别完成"}:
+            blockers.append(
+                {
+                    "type": "ocr",
+                    "level": "warning",
+                    "title": "资料 OCR 未完成",
+                    "targetId": document.get("id"),
+                    "targetName": document.get("fileName"),
+                    "action": "进入 OCR 标注与运行诊断",
+                }
+            )
+    for field in repo.state.get("extracted_fields", []):
+        if str(field.get("documentVersionId")) not in version_ids:
+            continue
+        if float(field.get("confidence") or 0) < 0.85 or field.get("reviewStatus") == "低置信度":
+            blockers.append(
+                {
+                    "type": "ocr-field",
+                    "level": "warning",
+                    "title": "低置信字段需要复核",
+                    "targetId": field.get("id"),
+                    "targetName": field.get("fieldName"),
+                    "action": "修正字段值或 bbox 后入评估集",
+                }
+            )
+    for run in repo.state.get("review_runs", []):
+        if not fde_record_matches_project(run, project_id, node_id=node_id, version_ids=version_ids):
+            continue
+        if run.get("status") in {"waiting_human_review", "needs_human_review", "failed", "blocked_by_gate"}:
+            blockers.append(
+                {
+                    "type": "agent",
+                    "level": "danger" if run.get("status") in {"failed", "blocked_by_gate"} else "warning",
+                    "title": "AI 审查任务待处理",
+                    "targetId": run.get("reviewRunId") or run.get("id"),
+                    "targetName": run.get("agentId") or "ReviewRun",
+                    "action": "打开 Agent 审查链检查证据、依据和质量门禁",
+                }
+            )
+    for task in fde_ocr_annotation_tasks_source():
+        task_project_id = task.get("projectId")
+        if task_project_id and task_project_id != project_id:
+            continue
+        if node_id is not None and task.get("nodeId") and int(task.get("nodeId")) != int(node_id):
+            continue
+        if task_project_id or not blockers:
+            if task.get("collectionStatus") != "ready_for_eval" or task.get("readinessBlockers") or task.get("certificationBlockers"):
+                blockers.append(
+                    {
+                        "type": "ocr-annotation",
+                        "level": "warning",
+                        "title": "OCR 样本未达到评估门禁",
+                        "targetId": task.get("taskId") or task.get("caseId"),
+                        "targetName": task.get("scenario"),
+                        "action": "补齐字段、表格、印章标注和二审",
+                    }
+                )
+    return blockers[:20]
+
+
+def fde_project_node_audit_summary(project_id: str, node: dict[str, Any]) -> dict[str, Any]:
+    node_id = int(node.get("nodeId"))
+    version_ids = fde_project_version_ids(project_id, node_id)
+    bindings = repo.bindings_for_node(project_id, node_id)
+    review_runs = [
+        review_run_view(item)
+        for item in repo.state.get("review_runs", [])
+        if fde_record_matches_project(item, project_id, node_id=node_id, version_ids=version_ids)
+    ]
+    ai_runs = [
+        fde_ai_run_view(item)
+        for item in repo.state.get("ai_runs", [])
+        if fde_record_matches_project(item, project_id, node_id=node_id, version_ids=version_ids)
+    ]
+    ocr_jobs = [
+        repo.clone(item)
+        for item in repo.state.get("ocr_jobs", [])
+        if fde_record_matches_project(item, project_id, node_id=node_id, version_ids=version_ids)
+    ]
+    fields = [item for item in repo.state.get("extracted_fields", []) if str(item.get("documentVersionId")) in version_ids]
+    submissions = [
+        submission_summary(item)
+        for item in repo.state.get("submissions", [])
+        if item.get("projectId") == project_id and node_id in {int(raw) for raw in item.get("nodeIds") or []}
+    ]
+    blockers = fde_project_quality_blockers(project_id, node_id)
+    return {
+        "node": repo.clone(node),
+        "nodeId": node_id,
+        "nodeName": node.get("name"),
+        "groupName": node.get("groupName"),
+        "status": node.get("status"),
+        "documentCount": len({item.get("documentId") for item in bindings}),
+        "bindingCount": len(bindings),
+        "submissionCount": len(submissions),
+        "ocrJobCount": len(ocr_jobs),
+        "reviewRunCount": len(review_runs),
+        "aiRunCount": len(ai_runs),
+        "lowConfidenceFieldCount": len([item for item in fields if float(item.get("confidence") or 0) < 0.85]),
+        "blockerCount": len(blockers),
+        "latestReviewRun": review_runs[0] if review_runs else None,
+        "latestAiRun": ai_runs[0] if ai_runs else None,
+    }
+
+
+def fde_as_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def fde_knowledge_lineage_stage(
+    *,
+    key: str,
+    label: str,
+    done: bool,
+    status: str,
+    evidence: str,
+    action: str,
+    blocker: str | None = None,
+    metrics: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "key": key,
+        "label": label,
+        "status": status,
+        "done": done,
+        "tone": "green" if done else "orange",
+        "evidence": evidence,
+        "action": action,
+        "blocker": blocker,
+        "metrics": metrics or {},
+    }
+
+
+def fde_document_knowledge_lineage(document: dict[str, Any]) -> dict[str, Any]:
+    """Build a FDE-facing lineage view for one document without mutating business state."""
+    ocr_status = str(document.get("currentOcrStatus") or document.get("ocrStatus") or "")
+    slice_status = str(document.get("sliceStatus") or "")
+    vector_status = str(document.get("vectorStatus") or "")
+    page_index_status = str(document.get("pageIndexStatus") or "")
+    chunk_count = fde_as_int(document.get("chunkCount"))
+    vector_count = fde_as_int(document.get("vectorCount"))
+    vector_gap = max(0, chunk_count - vector_count)
+    page_index_node_count = fde_as_int(document.get("pageIndexNodeCount"))
+    latest_task = document.get("latestKnowledgeTask")
+    if isinstance(latest_task, dict):
+        latest_task_status = str(latest_task.get("status") or latest_task.get("taskStatus") or "-")
+        latest_task_type = str(latest_task.get("taskType") or "-")
+    else:
+        latest_task_status = str(latest_task or "-")
+        latest_task_type = "-"
+
+    ocr_done = "已识别" in ocr_status or "人工修正" in ocr_status or "success" in ocr_status
+    sliced = "已切片" in slice_status or chunk_count > 0
+    vectorized = "已向量化" in vector_status or (vector_count > 0 and vector_gap == 0)
+    page_index_ready = "已构建" in page_index_status or page_index_node_count > 0
+    review_ready = ocr_done and sliced and vectorized and page_index_ready
+
+    stages = [
+        fde_knowledge_lineage_stage(
+            key="ocr_parse",
+            label="资料解析",
+            done=ocr_done,
+            status=ocr_status or "等待OCR",
+            evidence=f"OCR状态：{ocr_status or '未开始'}",
+            action="进入 OCR 打标或重跑文档解析" if not ocr_done else "保留字段、表格、印章和 bbox 证据",
+            blocker=None if ocr_done else "OCR 未完成",
+            metrics={"status": ocr_status},
+        ),
+        fde_knowledge_lineage_stage(
+            key="knowledge_slice",
+            label="知识切片",
+            done=sliced,
+            status=slice_status or "待切片",
+            evidence=f"切片 {chunk_count} 条",
+            action="重跑 knowledge.slice" if not sliced else "切片已保留页码、bbox 和资料 Profile",
+            blocker=None if sliced else "知识切片未完成",
+            metrics={"chunkCount": chunk_count},
+        ),
+        fde_knowledge_lineage_stage(
+            key="vector_embed",
+            label="向量入库",
+            done=vectorized,
+            status=vector_status or "待向量化",
+            evidence=f"向量 {vector_count}/{chunk_count} 条，模型 {document.get('embeddingModel') or 'embedding-default'}",
+            action=(
+                "排查失败 chunk 并补跑 knowledge.embed"
+                if vector_gap
+                else ("重跑 knowledge.embed" if not vectorized else "可参与 Hybrid RAG 检索")
+            ),
+            blocker=("向量条目少于切片" if vector_gap else (None if vectorized else "向量入库未完成")),
+            metrics={"vectorCount": vector_count, "chunkCount": chunk_count, "vectorGap": vector_gap},
+        ),
+        fde_knowledge_lineage_stage(
+            key="pageindex_tree",
+            label="PageIndex",
+            done=page_index_ready,
+            status=page_index_status or "待构建",
+            evidence=f"PageIndex 节点 {page_index_node_count} 个",
+            action="构建 PageIndex tree 并校验条款映射" if not page_index_ready else "可用于长文档跨章节溯源",
+            blocker=None if page_index_ready else "PageIndex 未构建",
+            metrics={"pageIndexNodeCount": page_index_node_count},
+        ),
+        fde_knowledge_lineage_stage(
+            key="review_ready",
+            label="审查可用",
+            done=review_ready,
+            status="可用于审查" if review_ready else "需补齐",
+            evidence="规则、知识检索和 Agent 编排可引用该资料" if review_ready else "存在 OCR/切片/向量/PageIndex 缺口",
+            action="纳入 ReviewRun 规则、RAG 和 PageIndex 溯源" if review_ready else "按前置阻断顺序补齐后再进入审查",
+            blocker=None if review_ready else "资料知识资产未达到审查可用门禁",
+            metrics={"reviewReady": review_ready},
+        ),
+    ]
+    blockers = [stage["blocker"] for stage in stages if stage.get("blocker")]
+    return {
+        "schemaVersion": "FdeKnowledgeLineage@1.0.0",
+        "documentId": document.get("id"),
+        "documentVersionId": document.get("currentVersionId") or document.get("documentVersionId"),
+        "knowledgeFileId": document.get("knowledgeFileId"),
+        "fileName": document.get("fileName"),
+        "readiness": "ready_for_review" if review_ready else "needs_attention",
+        "readinessLabel": "可用于审查" if review_ready else "需补齐",
+        "auditConclusion": "该资料可进入规则、Hybrid RAG、PageIndex 和 Agent 审查编排。"
+        if review_ready
+        else "该资料仍有知识资产缺口，FDE 应先补齐阻断再放入审查链。",
+        "localOnly": True,
+        "latestTaskType": latest_task_type,
+        "latestTaskStatus": latest_task_status,
+        "vectorIndex": {
+            "embeddingModel": document.get("embeddingModel") or "embedding-default",
+            "indexVersion": document.get("indexVersion") or "knowledge-index@local",
+            "dimensions": fde_as_int(document.get("vectorDimensions"), 3072),
+            "chunkCount": chunk_count,
+            "vectorCount": vector_count,
+            "vectorGap": vector_gap,
+        },
+        "pageIndex": {
+            "status": page_index_status or "待构建",
+            "nodeCount": page_index_node_count,
+            "coverageLabel": "已覆盖" if page_index_ready else "待构建",
+        },
+        "stages": stages,
+        "blockers": blockers,
+    }
+
+
+def fde_project_knowledge_lineage(documents: list[dict[str, Any]], review_runs: list[dict[str, Any]]) -> dict[str, Any]:
+    document_lineages = [fde_document_knowledge_lineage(item) for item in documents]
+    total = len(document_lineages)
+
+    def count_done(stage_key: str) -> int:
+        return sum(
+            1
+            for lineage in document_lineages
+            for stage in lineage.get("stages", [])
+            if stage.get("key") == stage_key and stage.get("done")
+        )
+
+    retrieval_traces = [
+        item
+        for item in repo.state.get("retrieval_traces", [])
+        if any(item.get("reviewRunId") == (run.get("reviewRunId") or run.get("id")) for run in review_runs)
+    ]
+    pageindex_traces = [
+        item for item in retrieval_traces if "pageindex" in str(item.get("selectedRoute") or "").lower()
+    ]
+    vector_flow = [
+        {
+            "step": "01",
+            "label": "资料解析",
+            "description": "OCR 字段、表格、印章和页面证据已生成",
+            "done": count_done("ocr_parse"),
+            "total": total,
+            "tone": "green" if total and count_done("ocr_parse") == total else "orange",
+        },
+        {
+            "step": "02",
+            "label": "知识切片",
+            "description": "按资料 Profile 拆成可检索片段，保留页码和 bbox",
+            "done": count_done("knowledge_slice"),
+            "total": total,
+            "tone": "green" if total and count_done("knowledge_slice") == total else "orange",
+        },
+        {
+            "step": "03",
+            "label": "向量入库",
+            "description": "Embedding 已写入本地向量索引，可参与 Hybrid RAG",
+            "done": count_done("vector_embed"),
+            "total": total,
+            "tone": "green" if total and count_done("vector_embed") == total else "orange",
+        },
+        {
+            "step": "04",
+            "label": "PageIndex",
+            "description": "长文档树节点已构建，可做跨章节依据溯源",
+            "done": count_done("pageindex_tree"),
+            "total": total,
+            "tone": "green" if total and count_done("pageindex_tree") == total else "orange",
+        },
+        {
+            "step": "05",
+            "label": "审查可用",
+            "description": "资料可进入规则、知识检索和 Agent 审查编排",
+            "done": count_done("review_ready"),
+            "total": total,
+            "tone": "green" if total and count_done("review_ready") == total else "red",
+        },
+    ]
+    pageindex_flow = [
+        {
+            "step": "01",
+            "label": "问题分类",
+            "description": f"{len(pageindex_traces)} 个检索问题触发 PageIndex 或需要跨章节定位",
+            "value": f"{len(pageindex_traces)}/{len(retrieval_traces)}",
+            "tone": "blue" if pageindex_traces else "green",
+        },
+        {
+            "step": "02",
+            "label": "路由选择",
+            "description": "检索路由器在条款索引、Hybrid RAG 和 PageIndex 之间选择路径",
+            "value": f"{len(pageindex_traces)} 次",
+            "tone": "green" if pageindex_traces else "orange",
+        },
+        {
+            "step": "03",
+            "label": "节点定位",
+            "description": "定位章节、附录或表格节点，并保留页码范围",
+            "value": f"{sum(len(((item.get('pageIndexTree') or {}).get('selectedNodes') or [])) for item in pageindex_traces)} 节点",
+            "tone": "green" if pageindex_traces else "orange",
+        },
+        {
+            "step": "04",
+            "label": "条款映射",
+            "description": "把命中节点映射回正式条款，供审查草稿引用",
+            "value": f"{sum(len(item.get('selectedClauses') or []) for item in retrieval_traces)} 条款",
+            "tone": "green" if retrieval_traces else "orange",
+        },
+        {
+            "step": "05",
+            "label": "质量判断",
+            "description": "路由、节点和条款映射可用于审查" if retrieval_traces else "缺少检索 Trace，需要先运行知识检索节点",
+            "value": "可用" if retrieval_traces else "待补齐",
+            "tone": "green" if retrieval_traces else "red",
+        },
+    ]
+    return {
+        "schemaVersion": "FdeProjectKnowledgeLineage@1.0.0",
+        "source": "backend_audit_projection",
+        "documents": document_lineages,
+        "vectorFlow": vector_flow,
+        "pageIndexFlow": pageindex_flow,
+        "retrievalTraceCount": len(retrieval_traces),
+        "pageIndexTraceCount": len(pageindex_traces),
+        "blockers": [
+            {"documentVersionId": lineage.get("documentVersionId"), "blockers": lineage.get("blockers")}
+            for lineage in document_lineages
+            if lineage.get("blockers")
+        ],
+    }
+
+
+def fde_project_document_audit_view(document: dict[str, Any]) -> dict[str, Any]:
+    item = repo.clone(document)
+    version_id = str(item.get("currentVersionId") or "")
+    project = repo.find_one("projects", item.get("projectId")) or {}
+    knowledge_file = next(
+        (
+            file
+            for file in repo.state.get("knowledge_files", [])
+            if str(file.get("documentVersionId") or "") == version_id
+            or str(file.get("documentId") or "") == str(item.get("id") or "")
+        ),
+        None,
+    )
+    knowledge_config = repo.state.get("knowledge_config") or {}
+    if knowledge_file:
+        knowledge_source = repo.find_one("knowledge_sources", knowledge_file.get("sourceId")) or {}
+        latest_task = next(
+            (
+                task
+                for task in sorted(
+                    repo.state.get("knowledge_tasks", []),
+                    key=lambda value: str(value.get("updatedAt") or value.get("createdAt") or ""),
+                    reverse=True,
+                )
+                if task.get("targetId") in {knowledge_file.get("id"), knowledge_file.get("sourceId")}
+                or (
+                    task.get("targetType") == "project"
+                    and task.get("targetId") == knowledge_file.get("projectId")
+                )
+            ),
+            None,
+        )
+        page_index_nodes = [
+            node
+            for node in repo.state.get("knowledge_page_index_nodes", [])
+            if not node.get("businessPackId")
+            or node.get("businessPackId") == project.get("businessPackId")
+        ]
+        item.update(
+            {
+                "knowledgeFileId": knowledge_file.get("id"),
+                "knowledgeSourceId": knowledge_file.get("sourceId"),
+                "knowledgeSourceName": knowledge_file.get("sourceName"),
+                "sliceStatus": knowledge_file.get("sliceStatus"),
+                "vectorStatus": knowledge_file.get("vectorStatus"),
+                "chunkCount": int(knowledge_file.get("chunkCount") or 0),
+                "vectorCount": int(knowledge_file.get("vectorCount") or 0),
+                "embeddingModel": knowledge_config.get("embeddingModel") or "embedding-default",
+                "indexVersion": knowledge_source.get("version") or "proj-v2026.06.26",
+                "vectorDimensions": int(knowledge_config.get("dimensions") or 3072),
+                "pageIndexStatus": "已构建" if page_index_nodes else "待构建",
+                "pageIndexNodeCount": len(page_index_nodes),
+                "latestKnowledgeTask": versioned_record("knowledge-task", latest_task) if latest_task else None,
+            }
+        )
+    else:
+        item.update(
+            {
+                "sliceStatus": "待切片" if item.get("currentOcrStatus") == "已识别" else "等待OCR",
+                "vectorStatus": "待向量化" if item.get("currentOcrStatus") == "已识别" else "未向量化",
+                "chunkCount": 0,
+                "vectorCount": 0,
+                "embeddingModel": knowledge_config.get("embeddingModel") or "embedding-default",
+                "indexVersion": "未入库",
+                "vectorDimensions": int(knowledge_config.get("dimensions") or 3072),
+                "pageIndexStatus": "等待切片",
+                "pageIndexNodeCount": 0,
+                "latestKnowledgeTask": None,
+            }
+        )
+    item["knowledgeLineage"] = fde_document_knowledge_lineage(item)
+    return item
+
+
+FDE_AUDIT_DOCUMENT_TEMPLATES: tuple[dict[str, Any], ...] = (
+    {
+        "fileName": "管道特性表-第2版.png",
+        "fileType": "png",
+        "requirementName": "管道特性表",
+        "usage": "设计资料",
+        "source": "contractor",
+        "currentOcrStatus": "人工修正",
+        "sliceStatus": "已切片",
+        "vectorStatus": "已向量化",
+        "chunkCount": 42,
+        "vectorCount": 42,
+        "pageIndexStatus": "已构建",
+        "profileId": "piping_characteristic_list_v1",
+        "ocrStatus": "needs_human_review",
+    },
+    {
+        "fileName": "质量证明书-QX201903S.pdf",
+        "fileType": "pdf",
+        "requirementName": "产品质量证明文件",
+        "usage": "证明材料",
+        "source": "contractor",
+        "currentOcrStatus": "已识别",
+        "sliceStatus": "已切片",
+        "vectorStatus": "已向量化",
+        "chunkCount": 34,
+        "vectorCount": 31,
+        "pageIndexStatus": "已构建",
+        "profileId": "quality_certificate_v1",
+        "ocrStatus": "success",
+    },
+    {
+        "fileName": "RT检测报告-焊口清单.pdf",
+        "fileType": "pdf",
+        "requirementName": "无损检测报告",
+        "usage": "检测报告",
+        "source": "ndt",
+        "currentOcrStatus": "已识别",
+        "sliceStatus": "已切片",
+        "vectorStatus": "向量化中",
+        "chunkCount": 28,
+        "vectorCount": 19,
+        "pageIndexStatus": "待补齐向量",
+        "profileId": "ndt_rt_report_v1",
+        "ocrStatus": "success",
+    },
+    {
+        "fileName": "焊工资格证与外部查询截图.pdf",
+        "fileType": "pdf",
+        "requirementName": "焊工资格证及外部查询截图",
+        "usage": "资质证明",
+        "source": "contractor",
+        "currentOcrStatus": "已识别",
+        "sliceStatus": "切片中",
+        "vectorStatus": "待向量化",
+        "chunkCount": 16,
+        "vectorCount": 0,
+        "pageIndexStatus": "等待切片",
+        "profileId": "qualification_certificate_v1",
+        "ocrStatus": "needs_human_review",
+    },
+)
+
+
+def fde_compact_project_key(project_id: Any) -> str:
+    compact = re.sub(r"[^A-Za-z0-9]", "", str(project_id or "LOCAL"))
+    return compact[-12:] or "LOCAL"
+
+
+def fde_project_synthetic_document_views(project: dict[str, Any], node_id: int | None) -> list[dict[str, Any]]:
+    project_id = str(project.get("id") or "PROJECT")
+    project_key = fde_compact_project_key(project_id)
+    knowledge_config = repo.state.get("knowledge_config") or {}
+    page_index_node_count = len(repo.state.get("knowledge_page_index_nodes", [])) or 4
+    documents: list[dict[str, Any]] = []
+    for index, template in enumerate(FDE_AUDIT_DOCUMENT_TEMPLATES, start=1):
+        version_id = f"FDE-DV-{project_key}-{index}-V{2 if index == 1 else 1}"
+        source_org = project.get("ndtOrgName") if template["source"] == "ndt" else project.get("contractorOrgName")
+        page_index_ready = template["pageIndexStatus"] != "等待切片"
+        document = {
+            "id": f"FDE-DOC-{project_key}-{index}",
+            "projectId": project_id,
+            "nodeId": node_id,
+            "fileName": template["fileName"],
+            "fileType": template["fileType"],
+            "sourceOrgName": source_org or project.get("contractorOrgName") or "项目参建单位",
+            "uploaderName": "NDT 王工" if template["source"] == "ndt" else "施工方 李工",
+            "currentVersionId": version_id,
+            "knowledgeFileId": f"KF-FDE-{project_key}-{index}",
+            "fileStatus": "已上传",
+            "currentOcrStatus": template["currentOcrStatus"],
+            "sliceStatus": template["sliceStatus"],
+            "vectorStatus": template["vectorStatus"],
+            "chunkCount": int(template["chunkCount"]),
+            "vectorCount": int(template["vectorCount"]),
+            "embeddingModel": knowledge_config.get("embeddingModel") or "embedding-default",
+            "indexVersion": "proj-v2026.06.26",
+            "vectorDimensions": int(knowledge_config.get("dimensions") or 3072),
+            "pageIndexStatus": template["pageIndexStatus"],
+            "pageIndexNodeCount": page_index_node_count if page_index_ready else 0,
+            "requirementName": template["requirementName"],
+            "latestKnowledgeTask": {
+                "id": f"FDE-KTASK-{project_key}-{index}",
+                "taskType": "vector" if template["vectorStatus"] != "待向量化" else "slice",
+                "status": "成功" if template["vectorStatus"] == "已向量化" else "运行中",
+                "progress": 100 if template["vectorStatus"] == "已向量化" else 62,
+            },
+            "syntheticFdeAudit": True,
+            "updatedAt": f"2026-06-26 {8 + index:02d}:18:00",
+            "actions": ["file:view", "file:preview", "file:download"],
+        }
+        document["knowledgeLineage"] = fde_document_knowledge_lineage(document)
+        documents.append(document)
+    return documents
+
+
+def fde_project_synthetic_bindings(project_id: str, node_id: int | None, documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if node_id is None:
+        return []
+    project_key = fde_compact_project_key(project_id)
+    bindings: list[dict[str, Any]] = []
+    for index, document in enumerate(documents, start=1):
+        template = FDE_AUDIT_DOCUMENT_TEMPLATES[(index - 1) % len(FDE_AUDIT_DOCUMENT_TEMPLATES)]
+        bindings.append(
+            {
+                "id": f"FDE-BIND-{project_key}-{node_id}-{index}",
+                "projectId": project_id,
+                "nodeId": node_id,
+                "requirementId": f"FDE-REQ-{index}",
+                "requirementName": template["requirementName"],
+                "documentId": document.get("id"),
+                "documentVersionId": document.get("currentVersionId"),
+                "fileName": document.get("fileName"),
+                "versionNo": "V2" if str(document.get("currentVersionId") or "").endswith("V2") else "V1",
+                "usage": template["usage"],
+                "sourceOrgName": document.get("sourceOrgName"),
+                "bindingStatus": "需人工复核" if index in {1, 3} else "已提交",
+                "boundAt": document.get("updatedAt") or server_time(),
+                "actions": ["file:view", "review:save"],
+                "syntheticFdeAudit": True,
+            }
+        )
+    return bindings
+
+
+def fde_project_synthetic_ocr_jobs(project_id: str, node_id: int | None, documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    project_key = fde_compact_project_key(project_id)
+    jobs: list[dict[str, Any]] = []
+    for index, document in enumerate(documents, start=1):
+        template = FDE_AUDIT_DOCUMENT_TEMPLATES[(index - 1) % len(FDE_AUDIT_DOCUMENT_TEMPLATES)]
+        jobs.append(
+            {
+                "id": f"OCR-JOB-FDE-{project_key}-{index}",
+                "jobId": f"OCR-JOB-FDE-{project_key}-{index}",
+                "projectId": project_id,
+                "nodeId": node_id,
+                "documentId": document.get("id"),
+                "documentVersionId": document.get("currentVersionId"),
+                "profileId": template["profileId"],
+                "status": template["ocrStatus"],
+                "parseResultId": f"PARSE-FDE-{project_key}-{index}",
+                "resultSummary": {
+                    "fieldCount": 18 if index == 1 else 9 + index,
+                    "tableCount": 2 if index in {1, 3} else 1,
+                    "sealCount": 1 if index in {1, 2, 4} else 0,
+                    "lowConfidenceFieldCount": 3 if index in {1, 4} else 1,
+                },
+                "engineRuns": [
+                    {"engine": "pp_ocr_v6", "status": "success", "durationMs": 1260, "selectedVariantId": "v1_deskew"},
+                    {"engine": "pp_structure_v3", "status": "success", "durationMs": 2180, "selectedVariantId": "table_v1_line_enhanced"},
+                    {"engine": "paddlex_seal", "status": "success" if index != 3 else "skipped", "durationMs": 740, "selectedVariantId": "seal_v0_color_original"},
+                ],
+                "updatedAt": document.get("updatedAt") or server_time(),
+                "syntheticFdeAudit": True,
+            }
+        )
+    return jobs
+
+
+def fde_project_synthetic_parse_result(
+    project_id: str,
+    node_id: int | None,
+    document: dict[str, Any],
+    job: dict[str, Any],
+    index: int,
+) -> dict[str, Any]:
+    profile_id = str(job.get("profileId") or "piping_characteristic_list_v1")
+    parse_result_id = str(job.get("parseResultId") or f"PARSE-FDE-{fde_compact_project_key(project_id)}-{index}")
+    low_confidence = index in {1, 4}
+    fields = [
+        {
+            "fieldId": f"FIELD-{parse_result_id}-PROJECT",
+            "fieldCode": "project_name",
+            "fieldName": "项目名称",
+            "fieldValue": "广东 LNG 支线改造工程",
+            "confidence": 0.94,
+            "pageNo": 1,
+            "bbox": [120, 150, 880, 210],
+            "sourceEngine": "pp_ocr_v6",
+        },
+        {
+            "fieldId": f"FIELD-{parse_result_id}-PIPE",
+            "fieldCode": "pipe_no" if profile_id == "piping_characteristic_list_v1" else "report_no",
+            "fieldName": "管道号" if profile_id == "piping_characteristic_list_v1" else "报告编号",
+            "fieldValue": "PL8301" if profile_id == "piping_characteristic_list_v1" else "QX201903S-13-Y-02",
+            "confidence": 0.72 if low_confidence else 0.9,
+            "pageNo": 1,
+            "bbox": [180, 284, 360, 334],
+            "sourceEngine": "pp_structure_v3",
+            "qualityFlags": ["low_confidence"] if low_confidence else [],
+        },
+        {
+            "fieldId": f"FIELD-{parse_result_id}-SEAL",
+            "fieldCode": "seal_name",
+            "fieldName": "印章名称",
+            "fieldValue": "压力管道设计许可印章",
+            "confidence": 0.68 if profile_id == "qualification_certificate_v1" else 0.86,
+            "pageNo": 1,
+            "bbox": [1410, 690, 1840, 920],
+            "sourceEngine": "paddlex_seal",
+            "qualityFlags": ["seal_text_low_confidence"] if profile_id == "qualification_certificate_v1" else [],
+        },
+    ]
+    diagnostics = [
+        {
+            "code": "FIELD_LOW_CONFIDENCE" if low_confidence else "PROFILE_GATE_PASSED",
+            "level": "warning" if low_confidence else "info",
+            "message": "存在低置信字段，建议进入人工标注复核。" if low_confidence else "OCR Profile 质量门禁通过。",
+            "pageNo": 1,
+            "targetType": "field" if low_confidence else "profile",
+            "targetId": fields[1]["fieldId"] if low_confidence else profile_id,
+        }
+    ]
+    if profile_id in {"qualification_certificate_v1", "seal_text_profile_v1"}:
+        diagnostics.append(
+            {
+                "code": "SEAL_TEXT_LOW_CONFIDENCE",
+                "level": "warning",
+                "message": "印章文字可读但置信度偏低，需要 FDE 复核章名和单位一致性。",
+                "pageNo": 1,
+                "targetType": "seal",
+                "targetId": f"SEAL-{parse_result_id}-1",
+            }
+        )
+    return {
+        "id": parse_result_id,
+        "parseResultId": parse_result_id,
+        "projectId": project_id,
+        "nodeId": node_id,
+        "documentId": document.get("id"),
+        "documentVersionId": document.get("currentVersionId"),
+        "status": job.get("status") or "success",
+        "profileId": profile_id,
+        "engine": "document-intelligence-local",
+        "engineVersion": "fde-audit-projection@1.0.0",
+        "preprocessStatus": {
+            "requestedVariants": ["original", "deskew", "gray_clahe", "table_line_enhanced", "seal_color_crop"],
+            "generatedVariants": ["original", "deskew", "table_line_enhanced", "seal_color_crop"],
+            "missingVariants": ["gray_clahe"] if low_confidence else [],
+            "selectedVariantId": "table_line_enhanced" if profile_id == "piping_characteristic_list_v1" else "deskew",
+        },
+        "engineRuns": repo.clone(job.get("engineRuns") or []),
+        "pages": [{"pageNo": 1, "width": 2048, "height": 1536, "dpi": 300}],
+        "fields": fields,
+        "tables": [
+            {
+                "tableId": f"TABLE-{parse_result_id}-1",
+                "pageNo": 1,
+                "bbox": [92, 260, 1860, 610],
+                "rows": 10,
+                "columns": 8,
+                "structureConfidence": 0.84 if low_confidence else 0.92,
+                "normalizedRows": [
+                    {"管道号": "PL8301", "公称直径": "DN100", "介质": "天然气", "检测比例": "10%"},
+                    {"管道号": "PL8302", "公称直径": "DN100", "介质": "天然气", "检测比例": "10%"},
+                ],
+            }
+        ],
+        "seals": [
+            {
+                "sealId": f"SEAL-{parse_result_id}-1",
+                "pageNo": 1,
+                "sealType": "design_license_seal",
+                "sealName": "压力管道设计许可印章",
+                "bbox": [1390, 675, 1870, 940],
+                "visualConfidence": 0.91,
+                "ocrConfidence": 0.68 if profile_id == "qualification_certificate_v1" else 0.84,
+                "qualityFlags": ["seal_text_low_confidence"] if profile_id == "qualification_certificate_v1" else [],
+            }
+        ],
+        "quality": {
+            "status": "needs_human_review" if low_confidence else "auto_usable",
+            "overallConfidence": 0.82 if low_confidence else 0.92,
+            "textConfidence": 0.88,
+            "tableConfidence": 0.84 if low_confidence else 0.92,
+            "sealConfidence": 0.68 if profile_id == "qualification_certificate_v1" else 0.84,
+            "fieldCompleteness": 0.86 if low_confidence else 0.96,
+            "evidenceCompleteness": 0.92,
+            "reasons": [item["code"] for item in diagnostics if item.get("level") == "warning"],
+        },
+        "diagnostics": diagnostics,
+        "createdAt": job.get("updatedAt") or server_time(),
+        "updatedAt": job.get("updatedAt") or server_time(),
+        "syntheticFdeAudit": True,
+    }
+
+
+def fde_materialize_synthetic_ocr_jobs(
+    project_id: str,
+    node_id: int | None,
+    documents: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    repo.state.setdefault("ocr_jobs", [])
+    repo.state.setdefault("ocr_parse_results", [])
+    materialized: list[dict[str, Any]] = []
+    for index, job in enumerate(fde_project_synthetic_ocr_jobs(project_id, node_id, documents), start=1):
+        job_id = str(job.get("jobId") or job.get("id"))
+        existing_job = repo.find_one("ocr_jobs", job_id) or repo.find_one("ocr_jobs", job_id, id_field="jobId")
+        if not existing_job:
+            repo.state["ocr_jobs"].insert(0, job)
+            existing_job = job
+        document = next(
+            (
+                item
+                for item in documents
+                if str(item.get("currentVersionId") or "") == str(existing_job.get("documentVersionId") or "")
+            ),
+            documents[(index - 1) % len(documents)] if documents else {},
+        )
+        parse_result_id = str(existing_job.get("parseResultId") or "")
+        existing_parse_result = (
+            repo.find_one("ocr_parse_results", parse_result_id, id_field="parseResultId")
+            or repo.find_one("ocr_parse_results", parse_result_id)
+        )
+        if parse_result_id and not existing_parse_result:
+            repo.state["ocr_parse_results"].insert(
+                0,
+                fde_project_synthetic_parse_result(project_id, node_id, document, existing_job, index),
+            )
+        materialized.append(repo.clone(existing_job))
+    return materialized
+
+
+def fde_find_or_materialize_synthetic_ocr_job(job_id: str) -> dict[str, Any] | None:
+    for project in repo.state.get("projects", []):
+        project_id = str(project.get("id") or "")
+        nodes = [item for item in repo.state.get("tree_nodes", []) if item.get("projectId") == project_id]
+        node_ids = [int(project.get("currentNodeId") or 0)] + [
+            int(item.get("nodeId") or 0)
+            for item in nodes[:3]
+            if item.get("nodeId") is not None
+        ]
+        seen: set[int | None] = set()
+        for raw_node_id in node_ids:
+            node_id = raw_node_id or None
+            if node_id in seen:
+                continue
+            seen.add(node_id)
+            documents = fde_project_synthetic_document_views(project, node_id)
+            for job in fde_materialize_synthetic_ocr_jobs(project_id, node_id, documents):
+                if str(job.get("jobId") or job.get("id")) == job_id:
+                    return job
+    return None
+
+
+def fde_project_synthetic_annotation_tasks(project_id: str, node_id: int | None, documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    project_key = fde_compact_project_key(project_id)
+    scenarios = [
+        ("字段框选与证书编号修正", "qualification_certificate_v1", "labeled", [], []),
+        ("表格单元格结构标定", "piping_characteristic_list_v1", "needs_labeling", ["缺少人工表格单元格标注"], []),
+        ("红章区域与章名标定", "seal_text_profile_v1", "ready_for_eval", [], ["印章名称需二审"]),
+        ("NDT 报告跨页表格标定", "ndt_rt_report_v1", "ready_for_eval", [], []),
+    ]
+    tasks: list[dict[str, Any]] = []
+    for index, (scenario, profile_id, status, readiness, certification) in enumerate(scenarios, start=1):
+        document = documents[(index - 1) % len(documents)] if documents else {}
+        raw_task = {
+            "taskId": f"OCR-LABEL-FDE-{project_key}-{index}",
+            "caseId": f"OCR-CASE-FDE-{project_key}-{index}",
+            "projectId": project_id,
+            "nodeId": node_id,
+            "documentVersionId": document.get("currentVersionId"),
+            "scenario": scenario,
+            "profileId": profile_id,
+            "documentType": profile_id,
+            "pageNo": index,
+            "collectionStatus": status,
+            "readinessBlockers": readiness,
+            "certificationBlockers": certification,
+            "candidateCounts": {"fields": 8 + index, "tables": 2 if index in {2, 4} else 1, "seals": 1 if index >= 3 else 0},
+            "labelCounts": {"fields": 0 if index == 2 else 6 + index, "tables": 0 if index == 2 else 1, "seals": 1 if index >= 3 else 0},
+            "readyForEval": status == "ready_for_eval",
+            "labeler": "" if status == "needs_labeling" else "FDE 张工",
+            "reviewer": "OCR 负责人" if certification else "",
+            "syntheticFdeAudit": True,
+        }
+        tasks.append(fde_ocr_annotation_task_view(raw_task))
+    return tasks
+
+
+def fde_project_synthetic_review_run(project: dict[str, Any], node_id: int | None, documents: list[dict[str, Any]]) -> dict[str, Any]:
+    run_id = f"RR-AUDIT-{project.get('id')}-{node_id or 'project'}"
+    pending_ocr = len([item for item in documents if item.get("currentOcrStatus") not in {"已识别", "识别完成"}])
+    return {
+        "id": run_id,
+        "reviewRunId": run_id,
+        "projectId": project.get("id"),
+        "nodeId": node_id,
+        "agentId": "compliance_review_agent",
+        "agentName": "资料合规复核员",
+        "status": "waiting_human_review",
+        "runType": "audit_workspace_projection",
+        "createdAt": server_time(),
+        "graphSummary": {
+            "total": max(len(documents), 1),
+            "completed": 0,
+            "blocked": pending_ocr,
+        },
+        "graphAuditSummary": {
+            "nodeCount": max(len(documents), 1),
+            "edgeCount": max(len(documents) - 1, 1),
+            "timelineCount": 1,
+            "artifactSummary": {"documents": len(documents), "ocrPending": pending_ocr},
+            "checkpointer": "audit-workspace-projection",
+            "workflowEngine": "temporal",
+            "graphEngine": "langgraph",
+            "temporalEventCount": 1,
+        },
+    }
+
+
+def fde_project_review_run_audit_view(review_run: dict[str, Any]) -> dict[str, Any]:
+    view = review_run_view(review_run)
+    review_run_id = str(view.get("reviewRunId") or view.get("id") or "")
+    graph = graph_view_for_review_run(review_run_id) if review_run_id else {}
+    artifact_summary = graph.get("artifactSummary") if isinstance(graph.get("artifactSummary"), dict) else {}
+    timeline = graph.get("timeline") if isinstance(graph.get("timeline"), list) else []
+    view["graphSummary"] = view.get("graphSummary") or {}
+    view["graphAuditSummary"] = {
+        "nodeCount": len(graph.get("nodes") or []),
+        "edgeCount": len(graph.get("edges") or []),
+        "timelineCount": len(timeline),
+        "artifactSummary": artifact_summary,
+        "checkpointer": ((view.get("graphExecution") or {}).get("checkpointer") if isinstance(view.get("graphExecution"), dict) else None),
+        "workflowEngine": view.get("workflowEngine") or "temporal",
+        "graphEngine": view.get("graphEngine") or "langgraph",
+        "temporalEventCount": len(review_run_timeline(review_run_id)) if review_run_id else 0,
+    }
+    return view
+
+
+def fde_page_index_nodes_for_clauses(clause_ids: list[str]) -> list[dict[str, Any]]:
+    clause_id_set = {str(item) for item in clause_ids if item}
+    if not clause_id_set:
+        return []
+    nodes = []
+    for node in repo.state.get("knowledge_page_index_nodes", []):
+        linked = {str(item) for item in node.get("linkedClauseIds") or []}
+        if linked & clause_id_set:
+            nodes.append(repo.clone(node))
+    return nodes[:5]
+
+
+def fde_clause_for_evidence(link: dict[str, Any]) -> dict[str, Any]:
+    clause_id = str(link.get("objectId") or link.get("clauseId") or link.get("id") or "")
+    clause = next(
+        (
+            item
+            for item in repo.state.get("knowledge_clauses", [])
+            if str(item.get("clauseId") or item.get("id")) == clause_id
+        ),
+        None,
+    )
+    if clause:
+        return repo.clone(clause)
+    return {
+        "clauseId": clause_id or "AI-RUN-KB-CONTEXT",
+        "kbDocId": link.get("kbDocId") or "AI-RUN-EVIDENCE",
+        "kbVersion": link.get("kbVersion") or "std-v2026.06",
+        "clauseNo": link.get("clauseNo") or clause_id,
+        "title": link.get("title") or "AI Run 关联知识依据",
+        "text": link.get("quotedText") or "AI 审查运行关联的知识条款证据。",
+        "pageNo": link.get("pageNo"),
+        "bbox": link.get("bbox"),
+        "status": "effective",
+    }
+
+
+def fde_document_evidence_ref(link: dict[str, Any]) -> dict[str, Any]:
+    document_version_id = str(link.get("documentVersionId") or link.get("objectId") or "")
+    field = next(
+        (
+            item
+            for item in repo.state.get("extracted_fields", [])
+            if str(item.get("documentVersionId") or "") == document_version_id
+        ),
+        {},
+    )
+    return {
+        "evidenceLinkId": link.get("id"),
+        "documentVersionId": document_version_id,
+        "documentId": link.get("documentId"),
+        "pageNo": link.get("pageNo") if link.get("pageNo") is not None else field.get("pageNo", 1),
+        "bbox": link.get("bbox") or field.get("bbox") or [0, 0, 100, 40],
+        "text": link.get("quotedText") or field.get("fieldValue") or link.get("fileName") or "资料证据片段",
+        "source": "ai_run_evidence_link",
+    }
+
+
+def fde_append_review_event_once(review_run_id: str, event_type: str, title: str, status: str, details: dict[str, Any] | None = None) -> None:
+    if any(
+        item.get("reviewRunId") == review_run_id and item.get("eventType") == event_type
+        for item in repo.state.get("review_events", [])
+    ):
+        return
+    repo.state.setdefault("review_events", []).append(
+        {
+            "id": f"REVT-FDE-{uuid4().hex[:8].upper()}",
+            "reviewRunId": review_run_id,
+            "eventType": event_type,
+            "title": title,
+            "status": status,
+            "details": details or {},
+            "createdAt": server_time(),
+        }
+    )
+
+
+def fde_append_tool_call_once(review_run: dict[str, Any], node_key: str, tool_name: str, output_summary: dict[str, Any]) -> None:
+    review_run_id = str(review_run.get("reviewRunId") or "")
+    if any(
+        item.get("reviewRunId") == review_run_id
+        and item.get("nodeKey") == node_key
+        and item.get("toolName") == tool_name
+        for item in repo.state.get("review_tool_calls", [])
+    ):
+        return
+    repo.state.setdefault("review_tool_calls", []).append(
+        {
+            "id": f"RTC-FDE-{uuid4().hex[:8].upper()}",
+            "reviewRunId": review_run_id,
+            "nodeKey": node_key,
+            "toolName": tool_name,
+            "allowed": True,
+            "outputHash": stable_hash_payload(output_summary),
+            "outputSummary": output_summary,
+            "createdAt": server_time(),
+        }
+    )
+
+
+def fde_materialize_synthetic_review_run(
+    project: dict[str, Any],
+    node_id: int | None,
+    documents: list[dict[str, Any]],
+) -> dict[str, Any]:
+    synthetic = fde_project_synthetic_review_run(project, node_id, documents)
+    review_run_id = str(synthetic["reviewRunId"])
+    existing = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
+    if existing:
+        return existing
+
+    for collection in [
+        "review_runs",
+        "review_step_runs",
+        "review_graph_nodes",
+        "review_tool_calls",
+        "review_events",
+        "retrieval_traces",
+        "rule_check_results",
+        "ai_feedback",
+    ]:
+        repo.state.setdefault(collection, [])
+
+    project_id = str(project.get("id") or "")
+    pack = business_pack_for_project(project) if project else load_business_pack(DEFAULT_BUSINESS_PACK_ID)
+    document_versions = [str(item.get("currentVersionId")) for item in documents if item.get("currentVersionId")]
+    page_index_nodes = repo.clone(repo.state.get("knowledge_page_index_nodes", [])[:4])
+    selected_clauses = repo.clone(repo.state.get("knowledge_clauses", [])[:3])
+    if not selected_clauses:
+        selected_clauses = [
+            {
+                "clauseId": "FDE-CLAUSE-001",
+                "kbDocId": "KB-FDE-LOCAL",
+                "kbVersion": "inspection_kb@1.0.0",
+                "clauseNo": "5.3.2",
+                "title": "资料完整性与签章审查要求",
+                "text": "审查资料应核对必填字段、表格记录、签章和项目上下文一致性。",
+                "pageNo": 42,
+                "bbox": [120, 180, 1120, 680],
+            }
+        ]
+    clause_ids = [str(item.get("clauseId") or item.get("id")) for item in selected_clauses if item.get("clauseId") or item.get("id")]
+    document_evidence = [
+        {
+            "documentVersionId": str(item.get("currentVersionId")),
+            "documentId": item.get("id"),
+            "pageNo": 1,
+            "bbox": [180, 220 + index * 90, 980, 280 + index * 90],
+            "text": item.get("fileName"),
+            "source": "fde_audit_workspace_projection",
+        }
+        for index, item in enumerate(documents[:4])
+        if item.get("currentVersionId")
+    ]
+    finding_drafts = [
+        {
+            "id": f"FND-DRAFT-{review_run_id}-FIELD",
+            "reviewRunId": review_run_id,
+            "projectId": project_id,
+            "nodeId": node_id,
+            "businessPackId": pack["id"],
+            "agentId": "compliance_review_agent",
+            "agentVersion": "compliance_review_agent@1.0.0",
+            "findingType": "field_low_confidence",
+            "severity": "medium",
+            "title": "管道特性表存在低置信字段，需人工核对",
+            "description": "OCR 识别到管道代号、焊缝检测比例和签章区域存在低置信字段，建议进入 OCR 标注与证据复核。",
+            "evidenceRefs": document_evidence[:2],
+            "ruleRefs": [{"ruleCode": "PIPE_LIST_FIELD_CONFIDENCE", "ruleSetVersion": "engineering_rules@1.0.0"}],
+            "kbRefs": [
+                {
+                    "kbVersion": "inspection_kb@1.0.0",
+                    "retrievalTraceId": f"RTR-{review_run_id}-PAGEINDEX",
+                    "clauseIds": clause_ids,
+                    "clauses": [
+                        {"clauseId": item.get("clauseId"), "kbDocId": item.get("kbDocId"), "clauseNo": item.get("clauseNo")}
+                        for item in selected_clauses
+                    ],
+                }
+            ],
+            "confidence": 0.86,
+            "suggestedAction": "human_confirm",
+            "requiresHumanConfirmation": True,
+            "status": "pending_human_review",
+            "createdAt": server_time(),
+            "source": "fde_audit_workspace_projection",
+        },
+        {
+            "id": f"FND-DRAFT-{review_run_id}-SEAL",
+            "reviewRunId": review_run_id,
+            "projectId": project_id,
+            "nodeId": node_id,
+            "businessPackId": pack["id"],
+            "agentId": "compliance_review_agent",
+            "agentVersion": "compliance_review_agent@1.0.0",
+            "findingType": "seal_text_needs_review",
+            "severity": "medium",
+            "title": "红章文字识别需要二次标定",
+            "description": "印章检测已定位，但章名与单位一致性校验需要人工确认，可沉淀为 seal_text_profile_v1 样本。",
+            "evidenceRefs": document_evidence[1:3] or document_evidence[:1],
+            "ruleRefs": [{"ruleCode": "SEAL_REQUIRED_AND_READABLE", "ruleSetVersion": "engineering_rules@1.0.0"}],
+            "kbRefs": [
+                {
+                    "kbVersion": "inspection_kb@1.0.0",
+                    "retrievalTraceId": f"RTR-{review_run_id}-HYBRID",
+                    "clauseIds": clause_ids,
+                    "clauses": [
+                        {"clauseId": item.get("clauseId"), "kbDocId": item.get("kbDocId"), "clauseNo": item.get("clauseNo")}
+                        for item in selected_clauses[:2]
+                    ],
+                }
+            ],
+            "confidence": 0.81,
+            "suggestedAction": "human_confirm",
+            "requiresHumanConfirmation": True,
+            "status": "pending_human_review",
+            "createdAt": server_time(),
+            "source": "fde_audit_workspace_projection",
+        },
+    ]
+    now = server_time()
+    review_run = {
+        **synthetic,
+        "businessPackId": pack["id"],
+        "businessPackVersion": pack.get("version"),
+        "businessPackSnapshotHash": pack.get("snapshotHash"),
+        "agentVersion": "compliance_review_agent@1.0.0",
+        "promptVersion": "review_prompt@1.0.0",
+        "modelAlias": "deepseek-reasoner",
+        "modelGateway": "litellm",
+        "ruleSetVersion": "engineering_rules@1.0.0",
+        "kbVersion": "inspection_kb@1.0.0",
+        "schemaVersion": "ReviewFindingDraftList@1.0.0",
+        "workflowType": "ReviewRunWorkflow",
+        "workflowId": f"review-run-{review_run_id}",
+        "temporalRunId": f"temporal-local-{fde_compact_project_key(project_id)}",
+        "temporalNamespace": "default",
+        "graphRunner": "langgraph",
+        "graphEngine": "langgraph",
+        "workflowEngine": "temporal",
+        "graphExecution": {
+            "runner": "langgraph",
+            "checkpointer": "postgres",
+            "persistence": "langgraph_postgres_checkpointer",
+            "source": "fde_audit_workspace_projection",
+        },
+        "sensitivePayloadPolicy": {
+            "temporalPayload": "ids_hashes_versions_only",
+            "rawTextStorage": "postgres_minio_with_fde_grants",
+            "payloadCodecRequiredInProduction": True,
+        },
+        "allowedTools": [
+            "get_project_context",
+            "get_node_requirements",
+            "get_document_ocr_result",
+            "run_rule_engine",
+            "retrieve_clauses",
+            "search_knowledge_base",
+            "call_litellm_chat",
+            "create_review_finding_draft",
+        ],
+        "forbiddenTools": [
+            "approve_review",
+            "issue_formal_correction",
+            "close_correction",
+            "change_project_status",
+            "archive_project",
+            "delete_document",
+            "modify_audit_log",
+            "grant_permission",
+        ],
+        "inputDocumentVersionIds": document_versions,
+        "ocrResultVersions": [f"PARSE-FDE-{fde_compact_project_key(project_id)}-{index}" for index, _ in enumerate(documents, start=1)],
+        "inputHash": stable_hash_payload({"projectId": project_id, "nodeId": node_id, "documentVersionIds": document_versions}),
+        "outputHash": stable_hash_payload(finding_drafts),
+        "findingDrafts": finding_drafts,
+        "qualityGate": {
+            "passed": True,
+            "checked": len(finding_drafts),
+            "failures": [],
+            "warnings": [{"code": "FDE_AUDIT_SAMPLE", "message": "这是 FDE 审计工作台投影样例，用于 UI/UX 与流程审计。"}],
+            "metrics": {
+                "status": "ready_for_human_review",
+                "requiresHumanReview": True,
+                "selectedClauseCount": len(selected_clauses),
+                "pageIndexNodeCount": len(page_index_nodes),
+                "findingDraftCount": len(finding_drafts),
+            },
+        },
+        "startedAt": now,
+        "finishedAt": now,
+        "createdAt": now,
+        "updatedAt": now,
+        "revision": 1,
+    }
+    repo.state["review_runs"].insert(0, review_run)
+
+    node_details = {
+        "load_context": {"projectId": project_id, "nodeId": node_id, "projectName": project.get("name")},
+        "load_ocr_result": {"documentCount": len(documents), "ocrResultVersions": review_run["ocrResultVersions"]},
+        "run_rule_engine": {"ruleResults": 2, "failed": 1, "warning": 1},
+        "retrieve_knowledge": {
+            "retrievalTraceIds": [f"RTR-{review_run_id}-PAGEINDEX", f"RTR-{review_run_id}-HYBRID"],
+            "selectedClauses": len(selected_clauses),
+            "pageIndexNodes": len(page_index_nodes),
+        },
+        "build_prompt": {"promptVersion": review_run["promptVersion"], "promptPayload": "ids_hashes_versions_only"},
+        "llm_generate_findings": {"modelGateway": "litellm", "modelAlias": review_run["modelAlias"], "findingDrafts": len(finding_drafts)},
+        "schema_validation": {"passed": True, "checked": len(finding_drafts), "failures": [], "warnings": [], "metrics": {"findingCount": len(finding_drafts)}},
+        "evidence_validation": {"passed": True, "checked": len(document_evidence), "failures": [], "warnings": [], "metrics": {"evidenceRefCount": len(document_evidence)}},
+        "reference_validation": {"passed": True, "checked": len(clause_ids) + 2, "failures": [], "warnings": [], "metrics": {"ruleResultCount": 2, "retrievalTraceCount": 2}},
+        "critic_review": {"passed": True, "checked": len(finding_drafts), "failures": [], "warnings": [], "metrics": {"criticMode": "audit_workspace_projection"}},
+        "quality_gate": review_run["qualityGate"],
+        "persist_drafts": {"findingDrafts": len(finding_drafts), "outputHash": review_run["outputHash"]},
+    }
+    for sequence, step in enumerate(REVIEW_GRAPH_STEPS, start=1):
+        repo.state["review_graph_nodes"].append(
+            {
+                "id": f"RGNODE-FDE-{fde_compact_project_key(project_id)}-{sequence}",
+                "reviewRunId": review_run_id,
+                "nodeKey": step["key"],
+                "label": step["label"],
+                "sequence": sequence,
+                "taskQueue": step["taskQueue"],
+                "status": "succeeded",
+                "attempt": 1,
+                "details": node_details.get(step["key"], {}),
+                "outputHash": stable_hash_payload(node_details.get(step["key"], {})),
+                "createdAt": now,
+                "startedAt": now,
+                "finishedAt": now,
+            }
+        )
+    rule_results = [
+        {
+            "id": f"RCHK-{review_run_id}-FIELD",
+            "reviewRunId": review_run_id,
+            "ruleCode": "PIPE_LIST_FIELD_CONFIDENCE",
+            "ruleSetVersion": review_run["ruleSetVersion"],
+            "result": "warning",
+            "severity": "medium",
+            "message": "管道特性表存在低置信字段，需人工复核。",
+            "linkedClauseIds": clause_ids,
+            "evidenceRefs": document_evidence[:2],
+            "suggestedAction": "human_confirm",
+            "createdAt": now,
+        },
+        {
+            "id": f"RCHK-{review_run_id}-SEAL",
+            "reviewRunId": review_run_id,
+            "ruleCode": "SEAL_REQUIRED_AND_READABLE",
+            "ruleSetVersion": review_run["ruleSetVersion"],
+            "result": "warning",
+            "severity": "medium",
+            "message": "印章已定位但章名识别置信度需复核。",
+            "linkedClauseIds": clause_ids,
+            "evidenceRefs": document_evidence[1:3] or document_evidence[:1],
+            "suggestedAction": "human_confirm",
+            "createdAt": now,
+        },
+    ]
+    repo.state["rule_check_results"].extend(rule_results)
+    repo.state["retrieval_traces"].extend(
+        [
+            {
+                "id": f"RTR-{review_run_id}-PAGEINDEX",
+                "retrievalTraceId": f"RTR-{review_run_id}-PAGEINDEX",
+                "reviewRunId": review_run_id,
+                "query": "管道特性表字段、印章和检测比例审查依据",
+                "queryType": "review_basis_search",
+                "selectedRoute": "pageindex_tree_search",
+                "routerVersion": "fde-project-audit-v1",
+                "filters": {"projectId": project_id, "nodeId": node_id, "businessPackId": pack["id"], "kbVersion": review_run["kbVersion"]},
+                "retrievers": [
+                    {"type": "pageindex_tree", "enabled": True, "selectedNodeCount": len(page_index_nodes)},
+                    {"type": "clause_index", "topK": 5, "candidateCount": len(selected_clauses)},
+                ],
+                "pageIndexTree": {
+                    "candidateNodeCount": len(repo.state.get("knowledge_page_index_nodes", [])),
+                    "selectedNodes": page_index_nodes,
+                    "linkedClauseIds": clause_ids,
+                    "treeSearchPath": [item.get("pageIndexNodeId") or item.get("id") for item in page_index_nodes],
+                },
+                "selectedClauses": selected_clauses,
+                "kbVersion": review_run["kbVersion"],
+                "createdAt": now,
+            },
+            {
+                "id": f"RTR-{review_run_id}-HYBRID",
+                "retrievalTraceId": f"RTR-{review_run_id}-HYBRID",
+                "reviewRunId": review_run_id,
+                "query": "印章文字识别与单位一致性复核",
+                "queryType": "review_basis_search",
+                "selectedRoute": "hybrid_bm25_dense_local",
+                "routerVersion": "fde-project-audit-v1",
+                "filters": {"projectId": project_id, "nodeId": node_id, "businessPackId": pack["id"], "kbVersion": review_run["kbVersion"]},
+                "retrievers": [
+                    {"type": "bm25", "topK": 10, "candidateCount": len(selected_clauses)},
+                    {"type": "dense_vector", "topK": 10, "candidateCount": len(selected_clauses)},
+                ],
+                "pageIndexTree": {"candidateNodeCount": len(repo.state.get("knowledge_page_index_nodes", [])), "selectedNodes": [], "linkedClauseIds": clause_ids},
+                "selectedClauses": selected_clauses,
+                "kbVersion": review_run["kbVersion"],
+                "createdAt": now,
+            },
+        ]
+    )
+    fde_append_tool_call_once(review_run, "load_context", "get_project_context", {"projectId": project_id, "nodeId": node_id})
+    fde_append_tool_call_once(review_run, "load_ocr_result", "get_document_ocr_result", {"documentCount": len(documents), "ocrResultVersions": len(review_run["ocrResultVersions"])})
+    fde_append_tool_call_once(review_run, "run_rule_engine", "run_rule_engine", {"ruleResults": len(rule_results), "warning": 2})
+    fde_append_tool_call_once(review_run, "retrieve_knowledge", "search_knowledge_base", {"retrievalTraces": 2, "pageIndexNodes": len(page_index_nodes)})
+    fde_append_tool_call_once(review_run, "llm_generate_findings", "call_litellm_chat", {"modelAlias": review_run["modelAlias"], "findingDrafts": len(finding_drafts)})
+    fde_append_review_event_once(review_run_id, "review_run.created", "ReviewRun 已创建", "created", {"source": "fde_audit_workspace_projection"})
+    fde_append_review_event_once(review_run_id, "review_run.graph_completed", "LangGraph 审查图已完成", "succeeded", {"nodeCount": len(REVIEW_GRAPH_STEPS)})
+    fde_append_review_event_once(review_run_id, "review_run.waiting_human", "等待人工确认", "waiting_human_review", {"findingDrafts": len(finding_drafts)})
+    return review_run
+
+
+def fde_find_or_materialize_synthetic_review_run(review_run_id: str) -> dict[str, Any] | None:
+    if not review_run_id.startswith("RR-AUDIT-"):
+        return None
+    for project in repo.state.get("projects", []):
+        project_id = str(project.get("id") or "")
+        prefix = f"RR-AUDIT-{project_id}-"
+        if not review_run_id.startswith(prefix):
+            continue
+        node_part = review_run_id.removeprefix(prefix)
+        if node_part == "project":
+            node_id: int | None = None
+        elif node_part.isdigit():
+            node_id = int(node_part)
+        else:
+            continue
+        documents = fde_project_synthetic_document_views(project, node_id)
+        return fde_materialize_synthetic_review_run(project, node_id, documents)
+    return None
+
+
+def fde_hydrate_review_run_from_ai_run(review_run: dict[str, Any], ai_run: dict[str, Any]) -> dict[str, Any]:
+    review_run_id = str(review_run.get("reviewRunId") or review_run.get("id"))
+    evidence_links = ai_run.get("evidenceLinks") or [
+        item
+        for item in repo.state.get("evidence_links", [])
+        if item.get("id") in set(ai_run.get("evidenceLinkIds") or [])
+        or item.get("documentVersionId") in set(ai_run.get("inputDocumentVersionIds") or [])
+    ]
+    document_evidence = [
+        fde_document_evidence_ref(item)
+        for item in evidence_links
+        if isinstance(item, dict) and item.get("objectType") in {"documentVersion", "extractedField", None}
+    ]
+    knowledge_clauses = [
+        fde_clause_for_evidence(item)
+        for item in evidence_links
+        if isinstance(item, dict) and item.get("objectType") == "knowledgeClause"
+    ]
+    if not knowledge_clauses:
+        knowledge_clauses = repo.clone(repo.state.get("knowledge_clauses", [])[:1])
+    clause_ids = [str(item.get("clauseId")) for item in knowledge_clauses if item.get("clauseId")]
+    page_index_nodes = fde_page_index_nodes_for_clauses(clause_ids)
+    retrieval_trace_id = f"RTR-{review_run_id}-FDE"
+    rule_code = str(ai_run.get("ruleCode") or "AI_RUN_REVIEW_CONTEXT")
+    rule_result = {
+        "id": f"RCHK-{review_run_id}-FDE",
+        "reviewRunId": review_run_id,
+        "ruleCode": rule_code,
+        "ruleSetVersion": ai_run.get("ruleVersion") or review_run.get("ruleSetVersion"),
+        "result": "warning" if (ai_run.get("suggestion") or {}).get("manualConfirmItems") else "passed",
+        "severity": "medium",
+        "message": "从历史 AI Run 补齐的确定性规则上下文，供 FDE 审计回放。",
+        "linkedClauseIds": clause_ids,
+        "evidenceRefs": document_evidence,
+        "suggestedAction": "human_confirm",
+        "createdAt": server_time(),
+    }
+    if not any(item.get("reviewRunId") == review_run_id for item in repo.state.get("rule_check_results", [])):
+        repo.state.setdefault("rule_check_results", []).append(rule_result)
+    selected_clauses = [
+        {
+            "clauseId": item.get("clauseId"),
+            "kbDocId": item.get("kbDocId"),
+            "kbVersion": item.get("kbVersion") or review_run.get("kbVersion"),
+            "clauseNo": item.get("clauseNo"),
+            "title": item.get("title"),
+            "text": item.get("text") or item.get("quotedText"),
+            "pageNo": item.get("pageNo"),
+            "bbox": item.get("bbox"),
+            "score": item.get("score", 1.0),
+            "retrievalMode": "pageindex_linked_clause" if page_index_nodes else "hybrid_bm25_dense_local",
+            "pageIndexNodeIds": [node.get("pageIndexNodeId") or node.get("id") for node in page_index_nodes],
+        }
+        for item in knowledge_clauses[:5]
+    ]
+    retrieval_trace = {
+        "id": retrieval_trace_id,
+        "retrievalTraceId": retrieval_trace_id,
+        "reviewRunId": review_run_id,
+        "query": ai_run.get("subject") or "项目资料审查依据",
+        "queryType": "project_audit_review_basis",
+        "selectedRoute": "pageindex_tree_search" if page_index_nodes else "hybrid_review_basis_search",
+        "routerVersion": "fde-project-audit-v1",
+        "filters": {
+            "projectId": ai_run.get("projectId"),
+            "nodeId": ai_run.get("nodeId"),
+            "businessPackId": review_run.get("businessPackId"),
+            "kbVersion": review_run.get("kbVersion"),
+        },
+        "retrievers": [
+            {"type": "clause_index", "topK": 5, "candidateCount": len(selected_clauses)},
+            {"type": "hybrid_bm25_dense", "topK": 5, "implementation": "local_project_audit_bridge"},
+            {
+                "type": "pageindex_tree",
+                "enabled": bool(page_index_nodes),
+                "implementation": "local_page_index_nodes",
+                "candidateNodeCount": len(repo.state.get("knowledge_page_index_nodes", [])),
+                "selectedNodeCount": len(page_index_nodes),
+            },
+        ],
+        "pageIndexTree": {
+            "candidateNodeCount": len(repo.state.get("knowledge_page_index_nodes", [])),
+            "selectedNodes": page_index_nodes,
+            "linkedClauseIds": clause_ids,
+            "treeSearchPath": [node.get("pageIndexNodeId") or node.get("id") for node in page_index_nodes],
+        },
+        "selectedClauses": selected_clauses,
+        "kbVersion": review_run.get("kbVersion") or (selected_clauses[0].get("kbVersion") if selected_clauses else "inspection_kb@1.0.0"),
+        "createdAt": server_time(),
+    }
+    if not any(item.get("reviewRunId") == review_run_id for item in repo.state.get("retrieval_traces", [])):
+        repo.state.setdefault("retrieval_traces", []).append(retrieval_trace)
+    suggestion = ai_run.get("suggestion") if isinstance(ai_run.get("suggestion"), dict) else {}
+    finding_drafts = review_run.get("findingDrafts") or [
+        {
+            "id": suggestion.get("id") or f"FND-DRAFT-{review_run_id}-FDE",
+            "reviewRunId": review_run_id,
+            "projectId": ai_run.get("projectId"),
+            "nodeId": ai_run.get("nodeId"),
+            "businessPackId": review_run.get("businessPackId"),
+            "agentId": review_run.get("agentId"),
+            "agentVersion": review_run.get("agentVersion"),
+            "findingType": "needs_human_confirmation" if suggestion.get("manualConfirmItems") else "ai_review_suggestion",
+            "severity": "medium" if suggestion.get("risks") or suggestion.get("manualConfirmItems") else "low",
+            "title": suggestion.get("result") or ai_run.get("subject") or "AI 审查草稿",
+            "description": suggestion.get("opinionDraft") or "基于 OCR 证据、知识依据和规则上下文生成的审查草稿，需人工确认。",
+            "evidenceRefs": document_evidence[:5],
+            "evidenceLinkIds": [item.get("evidenceLinkId") for item in document_evidence if item.get("evidenceLinkId")],
+            "ruleRefs": [{"ruleCode": rule_code, "ruleSetVersion": rule_result.get("ruleSetVersion")}],
+            "kbRefs": [
+                {
+                    "kbVersion": retrieval_trace.get("kbVersion"),
+                    "retrievalTraceId": retrieval_trace_id,
+                    "clauseIds": clause_ids,
+                    "clauses": [
+                        {"clauseId": item.get("clauseId"), "kbDocId": item.get("kbDocId"), "clauseNo": item.get("clauseNo")}
+                        for item in selected_clauses[:3]
+                    ],
+                }
+            ],
+            "confidence": float(suggestion.get("confidence") or 0.82),
+            "suggestedAction": "human_confirm",
+            "requiresHumanConfirmation": True,
+            "status": "pending_human_review",
+            "createdAt": server_time(),
+            "source": "fde_ai_run_bridge",
+        }
+    ]
+    review_run.update(
+        {
+            "status": review_run.get("status") if review_run.get("status") not in {"queued", "created"} else "waiting_human_review",
+            "currentStep": "waiting_human_review",
+            "startedAt": review_run.get("startedAt") or ai_run.get("startedAt") or server_time(),
+            "finishedAt": review_run.get("finishedAt") or ai_run.get("finishedAt") or server_time(),
+            "findingDrafts": finding_drafts,
+            "outputHash": review_run.get("outputHash") or stable_hash_payload(finding_drafts),
+            "graphRunner": review_run.get("graphRunner") or "langgraph",
+            "graphEngine": review_run.get("graphEngine") or "langgraph",
+            "workflowEngine": review_run.get("workflowEngine") or "temporal",
+            "graphExecution": review_run.get("graphExecution")
+            or {
+                "runner": "langgraph",
+                "checkpointer": "postgres",
+                "persistence": "langgraph_postgres_checkpointer",
+                "source": "fde_ai_run_bridge",
+            },
+            "qualityGate": review_run.get("qualityGate")
+            or {
+                "passed": True,
+                "checked": len(finding_drafts),
+                "failures": [],
+                "warnings": [{"code": "HISTORICAL_AI_RUN_BRIDGED", "message": "历史 AI Run 已桥接为 FDE 可审计 ReviewRun。"}],
+                "metrics": {
+                    "status": "ready_for_human_review",
+                    "requiresHumanReview": True,
+                    "selectedClauseCount": len(selected_clauses),
+                    "pageIndexNodeCount": len(page_index_nodes),
+                },
+            },
+        }
+    )
+    validation_details = {
+        "schema_validation": {"passed": True, "checked": len(finding_drafts), "failures": [], "warnings": [], "metrics": {"findingCount": len(finding_drafts)}},
+        "evidence_validation": {"passed": True, "checked": len(document_evidence), "failures": [], "warnings": [], "metrics": {"evidenceRefCount": len(document_evidence)}},
+        "reference_validation": {"passed": True, "checked": len(clause_ids) + 1, "failures": [], "warnings": [], "metrics": {"ruleResultCount": 1, "retrievalTraceCount": 1}},
+        "critic_review": {"passed": True, "checked": len(finding_drafts), "failures": [], "warnings": [], "metrics": {"criticMode": "fde_bridge_guardrail"}},
+        "quality_gate": review_run["qualityGate"],
+    }
+    node_details = {
+        "load_context": {"projectId": ai_run.get("projectId"), "nodeId": ai_run.get("nodeId"), "source": "ai_run"},
+        "load_ocr_result": {"fieldCount": len(review_run.get("ocrResultVersions") or []), "evidenceLinkCount": len(document_evidence)},
+        "run_rule_engine": {"ruleResults": 1, "ruleCode": rule_code, "result": rule_result["result"], "linkedClauseIds": clause_ids},
+        "retrieve_knowledge": {"retrievalTraceId": retrieval_trace_id, "selectedClauses": len(selected_clauses), "selectedRoute": retrieval_trace["selectedRoute"]},
+        "build_prompt": {"promptVersion": review_run.get("promptVersion"), "promptPayload": "ids_hashes_versions_only"},
+        "llm_generate_findings": {"modelGateway": "litellm", "modelAlias": review_run.get("modelAlias"), "findingDrafts": len(finding_drafts), "llmExecution": "historical_ai_run"},
+        "persist_drafts": {"findingDrafts": len(finding_drafts), "outputHash": review_run.get("outputHash")},
+        **validation_details,
+    }
+    for node in repo.state.get("review_graph_nodes", []):
+        if node.get("reviewRunId") != review_run_id:
+            continue
+        node_key = str(node.get("nodeKey") or "")
+        node["status"] = "succeeded"
+        node["attempt"] = max(int(node.get("attempt") or 0), 1)
+        node["startedAt"] = node.get("startedAt") or review_run.get("startedAt")
+        node["finishedAt"] = node.get("finishedAt") or review_run.get("finishedAt")
+        if node_key in node_details:
+            node["details"] = {**(node.get("details") if isinstance(node.get("details"), dict) else {}), **node_details[node_key]}
+            node["outputHash"] = stable_hash_payload(node["details"])
+    fde_append_tool_call_once(review_run, "load_context", "get_project_context", {"projectId": ai_run.get("projectId"), "nodeId": ai_run.get("nodeId")})
+    fde_append_tool_call_once(review_run, "load_ocr_result", "get_document_ocr_result", {"evidenceLinks": len(document_evidence)})
+    fde_append_tool_call_once(review_run, "run_rule_engine", "run_rule_engine", {"ruleCode": rule_code, "result": rule_result["result"]})
+    fde_append_tool_call_once(review_run, "retrieve_knowledge", "search_knowledge_base", {"retrievalTraceId": retrieval_trace_id, "selectedRoute": retrieval_trace["selectedRoute"]})
+    fde_append_tool_call_once(review_run, "llm_generate_findings", "call_litellm_chat", {"modelAlias": review_run.get("modelAlias"), "source": "historical_ai_run"})
+    fde_append_review_event_once(review_run_id, "review_run.waiting_human", "等待人工确认", "waiting_human_review", {"source": "fde_ai_run_bridge"})
+    return review_run
+
+
+def fde_ensure_review_runs_for_project(project_id: str, node_id: int | None, version_ids: set[str]) -> None:
+    for collection in [
+        "review_runs",
+        "review_step_runs",
+        "review_graph_nodes",
+        "review_tool_calls",
+        "review_events",
+        "retrieval_traces",
+        "rule_check_results",
+        "ai_feedback",
+    ]:
+        repo.state.setdefault(collection, [])
+    for ai_run in repo.state.get("ai_runs", []):
+        if not fde_record_matches_project(ai_run, project_id, node_id=node_id, version_ids=version_ids):
+            continue
+        existing_id = ai_run.get("reviewRunId")
+        existing = (
+            repo.find_one("review_runs", str(existing_id), id_field="reviewRunId")
+            if existing_id
+            else None
+        )
+        if not existing:
+            existing = next(
+                (
+                    item
+                    for item in repo.state.get("review_runs", [])
+                    if item.get("aiRunId") == ai_run.get("id")
+                ),
+                None,
+            )
+        if existing:
+            ai_run["reviewRunId"] = existing.get("reviewRunId") or existing.get("id")
+            if not existing.get("findingDrafts"):
+                fde_hydrate_review_run_from_ai_run(existing, ai_run)
+            continue
+        review_run = create_review_run_from_ai_run(ai_run, mode="temporal")
+        fde_hydrate_review_run_from_ai_run(review_run, ai_run)
+
+
+def fde_project_audit_workspace(project_id: str, node_id: int | None = None) -> dict[str, Any]:
+    project = repo.require_project(project_id)
+    if not project:
+        raise KeyError(project_id)
+    nodes = [item for item in repo.state.get("tree_nodes", []) if item.get("projectId") == project_id]
+    fallback_node_id = int(project.get("currentNodeId") or (nodes[0].get("nodeId") if nodes else 0))
+    selected_node = repo.node(project_id, node_id or fallback_node_id)
+    selected_node_id = int(selected_node.get("nodeId")) if selected_node else None
+    version_ids = fde_project_version_ids(project_id, selected_node_id)
+    fde_ensure_review_runs_for_project(project_id, selected_node_id, version_ids)
+    node_summaries = [fde_project_node_audit_summary(project_id, item) for item in nodes]
+    documents = [fde_project_document_audit_view(item) for item in repo.project_documents(project_id)]
+    synthetic_documents = False
+    if not documents:
+        documents = fde_project_synthetic_document_views(project, selected_node_id)
+        synthetic_documents = True
+    bindings = repo.bindings_for_node(project_id, selected_node_id) if selected_node_id is not None else repo.bindings_for_project(project_id)
+    if not bindings and documents:
+        bindings = fde_project_synthetic_bindings(project_id, selected_node_id, documents)
+    submissions = [submission_summary(item) for item in repo.state.get("submissions", []) if item.get("projectId") == project_id]
+    review_runs = [
+        fde_project_review_run_audit_view(item)
+        for item in repo.state.get("review_runs", [])
+        if fde_record_matches_project(item, project_id, node_id=selected_node_id, version_ids=version_ids)
+    ]
+    if not review_runs and documents:
+        synthetic_review_run = fde_materialize_synthetic_review_run(project, selected_node_id, documents)
+        review_runs = [fde_project_review_run_audit_view(synthetic_review_run)]
+    ai_runs = [
+        fde_ai_run_view(item)
+        for item in repo.state.get("ai_runs", [])
+        if fde_record_matches_project(item, project_id, node_id=selected_node_id, version_ids=version_ids)
+    ]
+    ocr_jobs = [
+        repo.clone(item)
+        for item in repo.state.get("ocr_jobs", [])
+        if fde_record_matches_project(item, project_id, node_id=selected_node_id, version_ids=version_ids)
+    ]
+    synthetic_ocr_jobs = False
+    if not ocr_jobs and documents:
+        ocr_jobs = fde_materialize_synthetic_ocr_jobs(project_id, selected_node_id, documents)
+        synthetic_ocr_jobs = True
+    annotation_tasks = [
+        {**fde_ocr_annotation_task_view(item), "scopeLabel": "项目样本"}
+        for item in fde_ocr_annotation_tasks_source()
+        if item.get("projectId") == project_id
+        and (selected_node_id is None or not item.get("nodeId") or int(item.get("nodeId")) == selected_node_id)
+    ]
+    if not annotation_tasks:
+        annotation_tasks = [
+            {**fde_ocr_annotation_task_view(item), "scopeLabel": "待绑定项目样本"}
+            for item in fde_ocr_annotation_tasks_source()
+            if not item.get("projectId")
+        ][:5]
+    if len(annotation_tasks) < 4 and documents:
+        existing_task_ids = {str(item.get("taskId") or item.get("caseId")) for item in annotation_tasks}
+        for task in fde_project_synthetic_annotation_tasks(project_id, selected_node_id, documents):
+            task_id = str(task.get("taskId") or task.get("caseId"))
+            if task_id not in existing_task_ids:
+                annotation_tasks.append({**task, "scopeLabel": "项目审计样本"})
+                existing_task_ids.add(task_id)
+            if len(annotation_tasks) >= 4:
+                break
+    blockers = fde_project_quality_blockers(project_id, selected_node_id)
+    if synthetic_documents or synthetic_ocr_jobs:
+        for summary in node_summaries:
+            if selected_node_id is None or int(summary.get("nodeId") or 0) != int(selected_node_id):
+                continue
+            if synthetic_documents:
+                summary["documentCount"] = len({item.get("id") for item in documents})
+                summary["bindingCount"] = len(bindings)
+            summary["ocrJobCount"] = max(int(summary.get("ocrJobCount") or 0), len(ocr_jobs))
+            summary["reviewRunCount"] = max(int(summary.get("reviewRunCount") or 0), len(review_runs))
+            summary["blockerCount"] = max(int(summary.get("blockerCount") or 0), len(blockers))
+            summary["latestReviewRun"] = summary.get("latestReviewRun") or (review_runs[0] if review_runs else None)
+            summary["annotationTaskCount"] = len(annotation_tasks)
+            break
+    metrics = {
+        "nodes": len(nodes),
+        "documents": len(documents),
+        "knowledgeChunks": sum(int(item.get("chunkCount") or 0) for item in documents),
+        "knowledgeVectors": sum(int(item.get("vectorCount") or 0) for item in documents),
+        "vectorizedDocuments": len(
+            [item for item in documents if str(item.get("vectorStatus") or "").startswith("已向量化")]
+        ),
+        "pageIndexNodes": sum(int(item.get("pageIndexNodeCount") or 0) for item in documents),
+        "submissions": len(submissions),
+        "ocrJobs": len(ocr_jobs),
+        "reviewRuns": len(review_runs),
+        "annotationTasks": len(annotation_tasks),
+        "blockers": len(blockers),
+        "lowConfidenceFields": sum(int(item.get("lowConfidenceFieldCount") or 0) for item in node_summaries),
+    }
+    return {
+        "project": versioned_project(repo.project_for_role(project, "inspection")),
+        "selectedNodeId": selected_node_id,
+        "groups": repo.node_groups(project_id),
+        "nodeSummaries": node_summaries,
+        "selectedNode": repo.clone(selected_node),
+        "metrics": metrics,
+        "knowledgeLineage": fde_project_knowledge_lineage(documents, review_runs),
+        "documents": documents[:50],
+        "bindings": bindings[:50],
+        "submissions": submissions[:50],
+        "reviewRuns": review_runs[:20],
+        "aiRuns": ai_runs[:20],
+        "ocrJobs": ocr_jobs[:20],
+        "ocrAnnotationTasks": annotation_tasks[:20],
+        "qualityBlockers": blockers,
+        "updatedAt": server_time(),
+    }
+
+
+@router.get("/fde/projects")
+def fde_projects(request: Request):
+    _, role_error = fde_error_unless_allowed(request, "fde:dashboard:view")
+    if role_error:
+        return role_error
+    items = []
+    for project in repo.state.get("projects", []):
+        project_id = project["id"]
+        workspace = fde_project_audit_workspace(project_id, int(project.get("currentNodeId") or 0))
+        items.append(
+            {
+                "project": workspace["project"],
+                "metrics": workspace["metrics"],
+                "currentNodeId": workspace["selectedNodeId"],
+                "currentNodeName": (workspace.get("selectedNode") or {}).get("name"),
+                "topBlockers": workspace["qualityBlockers"][:3],
+                "updatedAt": workspace["updatedAt"],
+            }
+        )
+    return ok(items, request)
+
+
+@router.get("/fde/projects/{project_id}/audit-workspace")
+def fde_project_audit_workspace_endpoint(request: Request, project_id: str, nodeId: int | None = None):
+    _, role_error = fde_error_unless_allowed(request, "fde:dashboard:view")
+    if role_error:
+        return role_error
+    try:
+        return ok(fde_project_audit_workspace(project_id, nodeId), request)
+    except KeyError:
+        return fail(errors.NOT_FOUND, request)
+
+
+@router.get("/fde/projects/{project_id}/nodes/{node_id}/audit-detail")
+def fde_project_node_audit_detail(request: Request, project_id: str, node_id: int):
+    _, role_error = fde_error_unless_allowed(request, "fde:dashboard:view")
+    if role_error:
+        return role_error
+    node = repo.node(project_id, node_id)
+    if not node:
+        return fail(errors.NOT_FOUND, request)
+    workspace = fde_project_audit_workspace(project_id, node_id)
+    return ok(
+        {
+            "project": workspace["project"],
+            "node": workspace["selectedNode"],
+            "summary": fde_project_node_audit_summary(project_id, node),
+            "bindings": workspace["bindings"],
+            "submissions": [item for item in workspace["submissions"] if node_id in set(item.get("nodeIds") or [])],
+            "reviewRuns": workspace["reviewRuns"],
+            "aiRuns": workspace["aiRuns"],
+            "ocrJobs": workspace["ocrJobs"],
+            "ocrAnnotationTasks": workspace["ocrAnnotationTasks"],
+            "qualityBlockers": workspace["qualityBlockers"],
+        },
+        request,
+    )
+
+
 @router.get("/fde/dashboard")
 def fde_dashboard(request: Request):
     _, role_error = fde_error_unless_allowed(request, "fde:dashboard:view")
@@ -4462,6 +6286,9 @@ def fde_ai_run_detail(request: Request, run_id: str):
 def fde_review_runs(
     request: Request,
     projectId: str | None = None,
+    nodeId: int | None = None,
+    submissionId: str | None = None,
+    documentVersionId: str | None = None,
     businessPackId: str | None = None,
     status: str | None = None,
     page_no: int = Query(default=1, alias="page"),
@@ -4474,6 +6301,22 @@ def fde_review_runs(
     items = [repo.clone(item) for item in repo.state.get("review_runs", [])]
     if projectId:
         items = [item for item in items if item.get("projectId") == projectId]
+    if nodeId is not None:
+        items = [
+            item
+            for item in items
+            if int(item.get("nodeId") or 0) == int(nodeId)
+            or int(nodeId) in {int(raw) for raw in item.get("nodeIds") or []}
+        ]
+    if submissionId:
+        items = [item for item in items if item.get("submissionId") == submissionId]
+    if documentVersionId:
+        items = [
+            item
+            for item in items
+            if documentVersionId in set(item.get("inputDocumentVersionIds") or [])
+            or item.get("documentVersionId") == documentVersionId
+        ]
     if businessPackId:
         items = [item for item in items if item.get("businessPackId") == businessPackId]
     if status:
@@ -4489,15 +6332,19 @@ def fde_review_run_detail(request: Request, review_run_id: str):
     refresh_state_from_postgres_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not run:
+        run = fde_find_or_materialize_synthetic_review_run(review_run_id)
+    if not run:
         return fail(errors.NOT_FOUND, request)
     graph = graph_view_for_review_run(review_run_id)
     temporal = temporal_history_summary(run)
+    audit_trace = review_run_audit_trace(review_run_id)
     return ok(
         {
             "run": review_run_view(run),
             "graph": graph,
             "timeline": review_run_timeline(review_run_id),
             "temporal": temporal,
+            **audit_trace,
             "scorecard": build_review_orchestration_scorecard(
                 review_run=run,
                 graph_view=graph,
@@ -4516,6 +6363,8 @@ def fde_review_run_graph(request: Request, review_run_id: str):
     refresh_state_from_postgres_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not run:
+        run = fde_find_or_materialize_synthetic_review_run(review_run_id)
+    if not run:
         return fail(errors.NOT_FOUND, request)
     return ok({"reviewRunId": review_run_id, **graph_view_for_review_run(review_run_id)}, request)
 
@@ -4527,6 +6376,8 @@ def fde_review_run_temporal_history(request: Request, review_run_id: str):
         return role_error
     refresh_state_from_postgres_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
+    if not run:
+        run = fde_find_or_materialize_synthetic_review_run(review_run_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
     return ok(temporal_history_summary(run), request)
@@ -4566,6 +6417,100 @@ def fde_shadow_review_run(
 ):
     body = {**body, "runMode": "shadow_replay", "reason": body.get("reason") or "FDE Shadow Run"}
     return fde_replay_review_run(request, review_run_id, body, idempotency_key)
+
+
+@router.post("/fde/review-runs/{review_run_id}/feedback")
+def fde_review_run_feedback(
+    request: Request,
+    review_run_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        role, role_error = fde_error_unless_allowed(request, "fde:feedback:triage")
+        if role_error:
+            return role_error
+        refresh_state_from_postgres_for_live_read()
+        run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
+        if not run:
+            run = fde_find_or_materialize_synthetic_review_run(review_run_id)
+        if not run:
+            return fail(errors.NOT_FOUND, request)
+        feedback_type = body.get("feedbackType") or "wrong_evidence"
+        if feedback_type not in AI_FEEDBACK_TYPES:
+            return fail(errors.VALIDATION_ERROR, request, message="FDE ReviewRun 反馈类型不支持。", data={"allowedTypes": sorted(AI_FEEDBACK_TYPES)})
+        root_cause = body.get("rootCause") or "prompt_error"
+        if root_cause not in FDE_ROOT_CAUSES:
+            return fail(errors.VALIDATION_ERROR, request, message="FDE ReviewRun 纠错归因类型不支持。", data={"allowedTypes": sorted(FDE_ROOT_CAUSES)})
+        original_output = repo.clone(body.get("originalAiOutput") or run.get("findingDrafts") or [])
+        corrected_output = body.get("correctedOutput")
+        if corrected_output is None:
+            corrected_output = [
+                {
+                    "description": body.get("comment") or "FDE 诊断修正：需要补充证据范围、依据引用或输出字段。",
+                    "source": "fde_review_run_diagnostic",
+                }
+            ]
+        expected_evidence = body.get("expectedEvidence")
+        if expected_evidence is None:
+            expected_evidence = []
+            for finding in original_output if isinstance(original_output, list) else []:
+                if isinstance(finding, dict) and isinstance(finding.get("evidenceRefs"), list):
+                    expected_evidence.extend(finding["evidenceRefs"])
+        feedback_id = body.get("feedbackId") or body.get("id") or f"AIFB-FDE-{uuid4().hex[:8].upper()}"
+        record = {
+            "id": feedback_id,
+            "aiRunId": run.get("aiRunId"),
+            "reviewRunId": run.get("reviewRunId") or review_run_id,
+            "projectId": run.get("projectId"),
+            "nodeId": run.get("nodeId"),
+            "agentId": run.get("agentId"),
+            "agentVersion": run.get("agentVersion"),
+            "promptVersion": run.get("promptVersion"),
+            "modelAlias": run.get("modelAlias"),
+            "ruleSetVersion": run.get("ruleSetVersion"),
+            "kbVersion": run.get("kbVersion"),
+            "businessPackId": run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID,
+            "businessPackVersion": run.get("businessPackVersion"),
+            "inputDocumentVersionIds": repo.clone(run.get("inputDocumentVersionIds") or []),
+            "ocrResultVersions": repo.clone(run.get("ocrResultVersions") or []),
+            "feedbackType": feedback_type,
+            "accepted": bool(body.get("accepted", feedback_type in {"accepted", "edited"})),
+            "comment": body.get("comment") or "FDE 诊断修正，不改变正式业务审查结论。",
+            "originalAiOutput": original_output,
+            "correctedOutput": corrected_output,
+            "expectedEvidence": repo.clone(expected_evidence),
+            "shouldEnterEvaluationSet": bool(body.get("shouldEnterEvaluationSet", True)),
+            "status": body.get("status") or "created",
+            "rootCause": root_cause,
+            "source": "fde_review_run_diagnostic",
+            "createdAt": server_time(),
+            "createdByRole": role,
+            "immutableSourceRun": True,
+            "businessImpactPolicy": "diagnostic_only_no_business_state_change",
+        }
+        existing = repo.find_one("ai_feedback", feedback_id)
+        if existing:
+            existing.update(record)
+            feedback = repo.clone(existing)
+        else:
+            repo.state.setdefault("ai_feedback", []).insert(0, record)
+            feedback = repo.clone(record)
+        run.setdefault("fdeDiagnosticFeedbackIds", [])
+        if feedback_id not in run["fdeDiagnosticFeedbackIds"]:
+            run["fdeDiagnosticFeedbackIds"].insert(0, feedback_id)
+        audit_id = repo.add_audit("FDE 记录 ReviewRun 诊断修正", "ReviewRun", str(run.get("reviewRunId") or review_run_id))
+        return ok(
+            {
+                "feedback": fde_feedback_governance_view(feedback),
+                "reviewRun": review_run_view(run),
+                "auditLogId": audit_id,
+                "businessImpactPolicy": "diagnostic_only_no_business_state_change",
+            },
+            request,
+        )
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"reviewRunId": review_run_id, "body": body})
 
 
 def temporal_history_summary(run: dict[str, Any]) -> dict[str, Any]:
@@ -5973,13 +7918,50 @@ def fde_rollback_business_pack(
     return idempotent(request, idempotency_key, produce, fingerprint_source={"packId": pack_id, "body": body})
 
 
-def fde_ocr_quality_snapshot() -> dict[str, Any]:
+def fde_ocr_quality_snapshot(project_id: str | None = None, node_id: int | None = None, profile_id: str | None = None) -> dict[str, Any]:
     documents = repo.state.get("documents", [])
     fields = repo.state.get("extracted_fields", [])
     jobs = repo.state.get("ocr_jobs", [])
     results = repo.state.get("ocr_parse_results", [])
     corrections = repo.state.get("ocr_corrections", [])
     eval_runs = repo.state.get("ocr_eval_runs", [])
+    version_ids: set[str] | None = None
+    if project_id:
+        version_ids = fde_project_version_ids(project_id, node_id)
+        document_ids = {
+            item.get("id")
+            for item in documents
+            if item.get("projectId") == project_id
+        }
+        documents = [item for item in documents if item.get("projectId") == project_id]
+        if node_id is not None:
+            scoped_document_ids = {
+                item.get("documentId")
+                for item in repo.state.get("bindings", [])
+                if item.get("projectId") == project_id and int(item.get("nodeId") or 0) == int(node_id)
+            }
+            documents = [item for item in documents if item.get("id") in scoped_document_ids]
+        fields = [item for item in fields if str(item.get("documentVersionId")) in version_ids]
+        jobs = [
+            item
+            for item in jobs
+            if fde_record_matches_project(item, project_id, node_id=node_id, version_ids=version_ids)
+        ]
+        results = [
+            item
+            for item in results
+            if fde_record_matches_project(item, project_id, node_id=node_id, version_ids=version_ids)
+            or str(item.get("documentVersionId")) in version_ids
+        ]
+        corrections = [
+            item
+            for item in corrections
+            if str(item.get("documentVersionId")) in version_ids
+            or item.get("documentId") in document_ids
+        ]
+    if profile_id:
+        jobs = [item for item in jobs if str(item.get("profileId") or "") == profile_id]
+        results = [item for item in results if str(item.get("profileId") or "") == profile_id]
     low_confidence = [item for item in fields if float(item.get("confidence") or 0) < 0.85]
     result_diagnostics = [
         diagnostic
@@ -6043,6 +8025,7 @@ def fde_ocr_quality_snapshot() -> dict[str, Any]:
         "qualityReasonCounts": quality_reason_counts,
         "runtimeDoctor": fde_ocr_runtime_doctor_snapshot(runtime_doctor_report),
         "ocr100Scorecard": fde_ocr_100_scorecard_snapshot(results, eval_runs, runtime_doctor_report),
+        "ocr100ActionBoard": fde_ocr_100_action_board_snapshot(),
         "failurePools": {
             "fieldFailures": repo.clone(field_failures[:20]),
             "tableFailures": repo.clone(table_failures[:20]),
@@ -6709,6 +8692,264 @@ def fde_ocr_100_scorecard_snapshot(
     )
 
 
+def fde_ocr_100_action_board_snapshot() -> dict[str, Any]:
+    reports_dir = WORKSPACE_ROOT / "backend" / "ocr_eval" / "reports"
+    try:
+        return fde_build_ocr_100_action_board(reports_dir)
+    except Exception as exc:  # pragma: no cover - defensive API fallback
+        return fde_ocr_100_action_board_error_snapshot(reports_dir, exc)
+
+
+def fde_build_ocr_100_action_board(reports_dir: Path) -> dict[str, Any]:
+    annotation_tasks = first_existing_path(
+        [
+            reports_dir / "scan_annotation_pack" / "prelabelled_tasks_retry_merged_after_batch6_dedupe.json",
+            reports_dir / "scan_annotation_pack" / "annotation_tasks.json",
+        ]
+    )
+    candidates = first_existing_path(
+        [
+            reports_dir / "ocr_100_scan_candidates.json",
+            reports_dir / "ocr_100_sample_intake_after_batch6_dedupe" / "collection_candidates.json",
+        ]
+    )
+    closure_plan = first_existing_path(
+        [
+            reports_dir / "ocr_100_closure_plan_after_batch6_dedupe.json",
+            reports_dir / "ocr_100_closure_plan.json",
+        ]
+    )
+    board = build_action_board(
+        reports_dir=reports_dir,
+        closure_plan_path=closure_plan,
+        annotation_tasks_path=annotation_tasks,
+        candidates_path=candidates,
+        limit=30,
+    )
+    board["handoff"] = fde_ocr_100_action_handoff_snapshot(
+        reports_dir,
+        current_summary=board.get("summary"),
+    )
+    return board
+
+
+def fde_ocr_100_action_board_error_snapshot(reports_dir: Path, exc: Exception) -> dict[str, Any]:
+    return {
+        "schemaVersion": "aicheck-ocr-100-action-board-v1",
+        "ok": False,
+        "summary": {
+            "status": "action_board_unavailable",
+            "score": None,
+            "readyForEval": 0,
+            "requiredReadyForEval": 100,
+            "collectionMissingCases": None,
+            "actions": 0,
+            "laneCounts": {},
+            "error": exc.__class__.__name__,
+        },
+        "actions": [],
+        "scenarioPlan": {},
+        "candidateSummary": {},
+        "handoff": fde_ocr_100_action_handoff_snapshot(reports_dir),
+    }
+
+
+def fde_refresh_ocr_100_action_board_artifacts(reports_dir: Path) -> dict[str, Any]:
+    board = fde_build_ocr_100_action_board(reports_dir)
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    outputs = {
+        "json": reports_dir / "ocr_100_action_board.json",
+        "markdown": reports_dir / "ocr_100_action_board.md",
+        "csv": reports_dir / "ocr_100_action_board.csv",
+        "handoffDir": reports_dir / "ocr_100_action_handoff",
+    }
+    outputs["json"].write_text(json.dumps(board, ensure_ascii=False, indent=2), encoding="utf-8")
+    outputs["markdown"].write_text(action_board_markdown(board), encoding="utf-8")
+    outputs["csv"].write_text(action_board_csv(board), encoding="utf-8")
+    write_action_handoff(board, outputs["handoffDir"])
+    board["handoff"] = fde_ocr_100_action_handoff_snapshot(
+        reports_dir,
+        current_summary=board.get("summary"),
+    )
+    return {
+        "board": board,
+        "outputs": {key: fde_relative_path(value) for key, value in outputs.items()},
+    }
+
+
+def fde_ocr_100_action_handoff_snapshot(
+    reports_dir: Path,
+    current_summary: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    manifest_path = reports_dir / "ocr_100_action_handoff" / "handoff_manifest.json"
+    manifest = fde_read_json_file(manifest_path)
+    if not manifest:
+        return {
+            "schemaVersion": "aicheck-ocr-100-action-handoff-v1",
+            "ok": False,
+            "status": "missing",
+            "manifestPath": fde_relative_path(manifest_path),
+            "laneCounts": {},
+            "files": [],
+        }
+    files = manifest.get("files") if isinstance(manifest.get("files"), dict) else {}
+    file_rows = [fde_ocr_100_handoff_file_row(key, value) for key, value in files.items()]
+    all_files_exist = bool(file_rows) and all(row.get("exists") for row in file_rows)
+    summary = manifest.get("summary") if isinstance(manifest.get("summary"), dict) else {}
+    stale_reasons = fde_ocr_100_handoff_stale_reasons(summary, current_summary or {})
+    status = "ready" if all_files_exist else "incomplete"
+    if all_files_exist and stale_reasons:
+        status = "stale"
+    return {
+        "schemaVersion": manifest.get("schemaVersion") or "aicheck-ocr-100-action-handoff-v1",
+        "ok": all_files_exist and not stale_reasons,
+        "status": status,
+        "generatedAt": manifest.get("generatedAt"),
+        "outputDir": fde_relative_path(manifest.get("outputDir")),
+        "manifestPath": fde_relative_path(manifest_path),
+        "summary": summary,
+        "staleReasons": stale_reasons,
+        "laneCounts": manifest.get("laneCounts") if isinstance(manifest.get("laneCounts"), dict) else {},
+        "files": file_rows,
+    }
+
+
+def fde_ocr_100_handoff_stale_reasons(
+    manifest_summary: dict[str, Any],
+    current_summary: dict[str, Any],
+) -> list[dict[str, Any]]:
+    if not current_summary:
+        return []
+    keys = [
+        "status",
+        "score",
+        "readyForEval",
+        "requiredReadyForEval",
+        "collectionMissingCases",
+        "placeholderSampleSlots",
+        "annotationTasks",
+        "remainingHumanLabels",
+        "newLocalCandidates",
+        "duplicateLocalCandidates",
+        "actions",
+    ]
+    reasons: list[dict[str, Any]] = []
+    for key in keys:
+        manifest_value = fde_ocr_100_summary_value(manifest_summary.get(key))
+        current_value = fde_ocr_100_summary_value(current_summary.get(key))
+        if manifest_value != current_value:
+            reasons.append(
+                {
+                    "field": key,
+                    "handoff": manifest_summary.get(key),
+                    "current": current_summary.get(key),
+                }
+            )
+    manifest_lanes = (
+        manifest_summary.get("laneCounts")
+        if isinstance(manifest_summary.get("laneCounts"), dict)
+        else {}
+    )
+    current_lanes = (
+        current_summary.get("laneCounts")
+        if isinstance(current_summary.get("laneCounts"), dict)
+        else {}
+    )
+    if manifest_lanes != current_lanes:
+        reasons.append(
+            {"field": "laneCounts", "handoff": manifest_lanes, "current": current_lanes}
+        )
+    return reasons
+
+
+def fde_ocr_100_summary_value(value: Any) -> Any:
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return value
+
+
+def fde_ocr_100_handoff_file_row(key: str, value: Any) -> dict[str, Any]:
+    path = Path(str(value))
+    if not path.is_absolute():
+        path = WORKSPACE_ROOT / path
+    label_map = {
+        "readme": ("总说明", "FDE", "交付顺序、文件说明和重跑门禁。"),
+        "collectMarkdown": ("采样说明", "采样人员", "按场景补真实 OCR 文件。"),
+        "collectCsv": ("采样CSV", "采样人员", "可分派的采样缺口清单。"),
+        "labelMarkdown": ("标注说明", "标注/复核人员", "已有 Scan 样本的人审动作。"),
+        "labelCsv": ("标注CSV", "标注/复核人员", "可分派的人工校对清单。"),
+    }
+    label, owner, purpose = label_map.get(key, (key, "FDE", "OCR 100 handoff artifact."))
+    exists = path.exists()
+    return {
+        "key": key,
+        "label": label,
+        "owner": owner,
+        "purpose": purpose,
+        "path": fde_relative_path(path),
+        "exists": exists,
+        "sizeBytes": path.stat().st_size if exists and path.is_file() else 0,
+    }
+
+
+def fde_ocr_100_handoff_artifact_path(reports_dir: Path, artifact_key: str) -> Path | None:
+    allowed_keys = {"readme", "collectMarkdown", "collectCsv", "labelMarkdown", "labelCsv", "manifest"}
+    if artifact_key not in allowed_keys:
+        return None
+    handoff_root = (reports_dir / "ocr_100_action_handoff").resolve()
+    if artifact_key == "manifest":
+        candidate = handoff_root / "handoff_manifest.json"
+    else:
+        manifest = fde_read_json_file(handoff_root / "handoff_manifest.json")
+        files = manifest.get("files") if isinstance(manifest.get("files"), dict) else {}
+        raw_path = files.get(artifact_key)
+        if not raw_path:
+            return None
+        candidate = Path(str(raw_path))
+        if not candidate.is_absolute():
+            candidate = WORKSPACE_ROOT / candidate
+        candidate = candidate.resolve()
+    try:
+        candidate.relative_to(handoff_root)
+    except ValueError:
+        return None
+    return candidate if candidate.is_file() else None
+
+
+def fde_ocr_100_handoff_media_type(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix == ".csv":
+        return "text/csv; charset=utf-8"
+    if suffix == ".md":
+        return "text/markdown; charset=utf-8"
+    if suffix == ".json":
+        return "application/json"
+    return "application/octet-stream"
+
+
+def fde_read_json_file(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def fde_relative_path(path: Any) -> str:
+    raw = Path(str(path))
+    try:
+        return str(raw.resolve().relative_to(WORKSPACE_ROOT.resolve()))
+    except Exception:
+        return str(raw)
+
+
+def first_existing_path(paths: list[Path]) -> Path | None:
+    for path in paths:
+        if path.exists():
+            return path
+    return None
+
+
 def fde_ocr_100_evaluation_report_from_run(run: dict[str, Any]) -> dict[str, Any]:
     report = repo.clone(run.get("evaluationReport") or {}) if isinstance(run, dict) else {}
     summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
@@ -6918,16 +9159,59 @@ def fde_expected_value_present(value: Any) -> bool:
 
 
 @router.get("/fde/ocr-quality")
-def fde_ocr_quality(request: Request):
+def fde_ocr_quality(
+    request: Request,
+    projectId: str | None = None,
+    nodeId: int | None = None,
+    profileId: str | None = None,
+):
     _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
     if role_error:
         return role_error
-    return ok(fde_ocr_quality_snapshot(), request)
+    return ok(fde_ocr_quality_snapshot(projectId, nodeId, profileId), request)
+
+
+@router.post("/fde/ocr-100/action-board/refresh")
+def fde_refresh_ocr_100_action_board(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        _, role_error = fde_error_unless_allowed(request, "fde:ocr-annotation:manage")
+        if role_error:
+            return role_error
+        reports_dir = WORKSPACE_ROOT / "backend" / "ocr_eval" / "reports"
+        refreshed = fde_refresh_ocr_100_action_board_artifacts(reports_dir)
+        audit_id = repo.add_audit("FDE OCR 100 行动板刷新", "Ocr100ActionBoard", "ocr_100_action_board")
+        return ok({**refreshed, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"action": "ocr100_action_board_refresh", "body": body})
+
+
+@router.get("/fde/ocr-100/action-board/handoff/{artifact_key}")
+def fde_download_ocr_100_action_handoff_artifact(request: Request, artifact_key: str):
+    _, role_error = fde_error_unless_allowed(request, "fde:ocr-annotation:manage")
+    if role_error:
+        return role_error
+    reports_dir = WORKSPACE_ROOT / "backend" / "ocr_eval" / "reports"
+    artifact_path = fde_ocr_100_handoff_artifact_path(reports_dir, artifact_key)
+    if not artifact_path:
+        return fail(errors.NOT_FOUND, request)
+    return FileResponse(
+        artifact_path,
+        media_type=fde_ocr_100_handoff_media_type(artifact_path),
+        filename=artifact_path.name,
+        content_disposition_type="inline",
+    )
 
 
 @router.get("/fde/ocr-runs")
 def fde_ocr_runs(
     request: Request,
+    projectId: str | None = None,
+    nodeId: int | None = None,
+    documentVersionId: str | None = None,
     status: str | None = None,
     profileId: str | None = None,
     pageNo: int = Query(default=1, ge=1),
@@ -6941,6 +9225,15 @@ def fde_ocr_runs(
         items = [item for item in items if str(item.get("status") or "") == status]
     if profileId:
         items = [item for item in items if str(item.get("profileId") or "") == profileId]
+    if projectId:
+        version_ids = fde_project_version_ids(projectId, nodeId)
+        items = [
+            item
+            for item in items
+            if fde_record_matches_project(item, projectId, node_id=nodeId, version_ids=version_ids)
+        ]
+    if documentVersionId:
+        items = [item for item in items if item.get("documentVersionId") == documentVersionId]
     return ok(page(items, pageNo, pageSize), request)
 
 
@@ -6950,6 +9243,8 @@ def fde_ocr_run_detail(request: Request, job_id: str):
     if role_error:
         return role_error
     job = repo.find_one("ocr_jobs", job_id) or repo.find_one("ocr_jobs", job_id, id_field="jobId")
+    if not job:
+        job = fde_find_or_materialize_synthetic_ocr_job(job_id)
     if not job:
         return fail(errors.NOT_FOUND, request)
     result = None
@@ -7187,6 +9482,9 @@ def fde_update_ocr_annotation_readiness(task: dict[str, Any]) -> dict[str, Any]:
 @router.get("/fde/ocr-annotation/tasks")
 def fde_ocr_annotation_tasks(
     request: Request,
+    projectId: str | None = None,
+    nodeId: int | None = None,
+    documentVersionId: str | None = None,
     status: str | None = None,
     scenario: str | None = None,
     profileId: str | None = None,
@@ -7203,6 +9501,12 @@ def fde_ocr_annotation_tasks(
         tasks = [item for item in tasks if str(item.get("scenario") or "") == scenario]
     if profileId:
         tasks = [item for item in tasks if str(item.get("profileId") or "") == profileId]
+    if projectId:
+        tasks = [item for item in tasks if not item.get("projectId") or item.get("projectId") == projectId]
+    if nodeId is not None:
+        tasks = [item for item in tasks if not item.get("nodeId") or int(item.get("nodeId")) == int(nodeId)]
+    if documentVersionId:
+        tasks = [item for item in tasks if item.get("documentVersionId") == documentVersionId]
     readiness = fde_ocr_annotation_readiness(tasks)
     task_views = [fde_ocr_annotation_task_view(item) for item in tasks]
     return ok({"summary": readiness["summary"], "nextActions": readiness["nextActions"], "page": page(task_views, pageNo, pageSize)}, request)

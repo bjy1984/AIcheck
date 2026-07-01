@@ -28,7 +28,7 @@ ROLE_DEFAULT_PATHS = {
     "ndt": "/workbench/ndt",
     "owner": "/workbench/owner",
     "admin": "/admin/overview",
-    "fde": "/fde/dashboard",
+    "fde": "/fde/projects",
     "test": "/workbench/inspection",
 }
 

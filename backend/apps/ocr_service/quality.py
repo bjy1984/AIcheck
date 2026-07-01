@@ -7,30 +7,38 @@ import textwrap
 from pathlib import Path
 from typing import Any
 
+from apps.ocr_service.pages import render_document_pages
+
 
 def probe_page_quality(source_path: Path, *, profile: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    pages = render_document_pages(source_path, profile=profile)
+    qualities = []
+    for page in pages:
+        page_path = Path(str(page.get("path") or source_path))
+        quality = probe_image_quality(page_path, profile=profile, page=page)
+        qualities.append(quality)
+    return qualities or [unreadable_quality(source_path, profile=profile, page_no=1)]
+
+
+def probe_image_quality(
+    source_path: Path,
+    *,
+    profile: dict[str, Any] | None = None,
+    page: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    page_no = int((page or {}).get("pageNo") or 1)
     image = load_image(source_path)
     if image is None:
         subprocess_quality = probe_page_quality_subprocess(source_path)
         if subprocess_quality is not None:
             quality = subprocess_quality[0].setdefault("quality", {})
+            subprocess_quality[0]["pageNo"] = page_no
             quality["hasTableCandidate"] = bool(quality.get("hasTableCandidate") or (profile or {}).get("requiredTables"))
             quality["hasSealCandidate"] = bool(
                 quality.get("hasSealCandidate") or ((profile or {}).get("sealRules") or {}).get("required")
             )
-            return subprocess_quality
-        return [
-            {
-                "pageNo": 1,
-                "quality": {
-                    "sourceType": source_path.suffix.lower().lstrip(".") or "unknown",
-                    "isImageReadable": False,
-                    "isLowQuality": False,
-                    "hasTableCandidate": bool((profile or {}).get("requiredTables")),
-                    "hasSealCandidate": bool(((profile or {}).get("sealRules") or {}).get("required")),
-                },
-            }
-        ]
+            return subprocess_quality[0]
+        return unreadable_quality(source_path, profile=profile, page_no=page_no, page=page)
     cv2, np, raw = image
     height, width = raw.shape[:2]
     gray = cv2.cvtColor(raw, cv2.COLOR_BGR2GRAY)
@@ -48,16 +56,16 @@ def probe_page_quality(source_path: Path, *, profile: dict[str, Any] | None = No
     is_low_quality = blur_score < 90 or contrast < 0.18 or background_unevenness > 0.35 or abs(skew_angle) > 1.0
     return [
         {
-            "pageNo": 1,
+            "pageNo": page_no,
             "quality": {
-                "sourceType": source_path.suffix.lower().lstrip(".") or "image",
+                "sourceType": (page or {}).get("sourceType") or source_path.suffix.lower().lstrip(".") or "image",
                 "isImageReadable": True,
                 "width": int(width),
                 "height": int(height),
-                "estimatedDpi": estimate_dpi(width, height),
+                "estimatedDpi": (page or {}).get("renderDpi") or estimate_dpi(width, height),
                 "blurScore": round(blur_score, 4),
                 "skewAngle": round(skew_angle, 4),
-                "orientation": 0,
+                "orientation": int((page or {}).get("rotation") or 0),
                 "brightness": round(brightness, 4),
                 "contrast": round(contrast, 4),
                 "backgroundUnevenness": round(background_unevenness, 4),
@@ -70,7 +78,26 @@ def probe_page_quality(source_path: Path, *, profile: dict[str, Any] | None = No
                 "isLowQuality": is_low_quality,
             },
         }
-    ]
+    ][0]
+
+
+def unreadable_quality(
+    source_path: Path,
+    *,
+    profile: dict[str, Any] | None,
+    page_no: int,
+    page: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "pageNo": page_no,
+        "quality": {
+            "sourceType": (page or {}).get("sourceType") or source_path.suffix.lower().lstrip(".") or "unknown",
+            "isImageReadable": False,
+            "isLowQuality": False,
+            "hasTableCandidate": bool((profile or {}).get("requiredTables")),
+            "hasSealCandidate": bool(((profile or {}).get("sealRules") or {}).get("required")),
+        },
+    }
 
 
 def probe_page_quality_subprocess(source_path: Path) -> list[dict[str, Any]] | None:

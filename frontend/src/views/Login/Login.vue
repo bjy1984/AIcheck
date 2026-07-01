@@ -117,10 +117,10 @@ const toLogin = () => {
 }
 
 .aicheck-login-brief {
-  display: flex;
   position: relative;
-  overflow: hidden;
+  display: flex;
   padding: 36px;
+  overflow: hidden;
   background: #06152f;
   border-right: 1px solid rgb(92 147 220 / 30%);
   flex-direction: column;
@@ -128,24 +128,24 @@ const toLogin = () => {
 
 .aicheck-login-brief::before {
   position: absolute;
-  inset: 0;
   pointer-events: none;
-  content: '';
   background-image: linear-gradient(rgb(122 207 255 / 24%) 1px, transparent 1px),
     linear-gradient(90deg, rgb(122 207 255 / 22%) 1px, transparent 1px);
   background-position: 0 0;
   background-size: 50px 50px;
+  content: '';
   box-shadow: inset 0 0 120px rgb(12 34 72 / 78%);
   animation: login-grid-scroll 0.92s linear infinite reverse;
+  inset: 0;
 }
 
 .aicheck-login-brief::after {
   position: absolute;
-  inset: 0;
   pointer-events: none;
-  content: '';
   background: radial-gradient(circle at 74% 30%, rgb(75 171 255 / 20%), transparent 28%),
     linear-gradient(90deg, rgb(3 14 31 / 82%) 0%, rgb(6 21 47 / 34%) 48%, rgb(3 14 31 / 68%) 100%);
+  content: '';
+  inset: 0;
 }
 
 .brand-row,

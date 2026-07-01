@@ -12,6 +12,7 @@ from .execution import (
     execute_review_run_inline,
     graph_view_for_review_run,
     human_decision_for_review_run,
+    review_run_audit_trace,
     review_run_timeline,
     review_run_view,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "graph_view_for_review_run",
     "human_decision_for_review_run",
     "review_orchestration_mode",
+    "review_run_audit_trace",
     "review_run_timeline",
     "review_run_view",
     "signal_review_run_cancel",

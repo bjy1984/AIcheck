@@ -54,6 +54,7 @@ def build_annotation_readiness_from_tasks(tasks: list[Any], *, source: str = "me
             blocker_counts[str(blocker)] += 1
     ready_count = len([item for item in items if item.get("readyForEval")])
     human_labeled_count = len([item for item in items if item.get("hasHumanLabel")])
+    scenario_gaps = scenario_gap_summary(items)
     report = {
         "schemaVersion": "aicheck-ocr-annotation-readiness-v1",
         "generatedAt": datetime.now(timezone.utc).isoformat(),
@@ -69,11 +70,75 @@ def build_annotation_readiness_from_tasks(tasks: list[Any], *, source: str = "me
             "readyScenarioCounts": dict(sorted(ready_by_scenario.items())),
             "statusCounts": dict(sorted(status_counts.items())),
             "blockerCounts": dict(sorted(blocker_counts.items())),
+            "scenarioGaps": scenario_gaps,
         },
+        "scenarioGaps": scenario_gaps,
         "nextActions": next_actions(items),
         "tasks": items,
     }
     return report
+
+
+def scenario_gap_summary(items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    output: dict[str, dict[str, Any]] = {}
+    for item in items:
+        scenario = str(item.get("scenario") or "unspecified")
+        bucket = output.setdefault(
+            scenario,
+            {
+                "scenario": scenario,
+                "tasks": 0,
+                "humanLabeled": 0,
+                "readyForEval": 0,
+                "missingHumanLabels": 0,
+                "reviewRequired": 0,
+                "machineSuggestions": 0,
+                "machineDraftLabels": 0,
+                "blockerCounts": {},
+                "evidenceBlockerCounts": {},
+                "nextHumanAction": "",
+            },
+        )
+        bucket["tasks"] += 1
+        if item.get("hasHumanLabel"):
+            bucket["humanLabeled"] += 1
+        else:
+            bucket["missingHumanLabels"] += 1
+        if item.get("readyForEval"):
+            bucket["readyForEval"] += 1
+        if item.get("hasMachineSuggestion"):
+            bucket["machineSuggestions"] += 1
+        if item.get("hasMachineDraftLabel"):
+            bucket["machineDraftLabels"] += 1
+        blockers = [str(blocker) for blocker in item.get("blockers") or []]
+        if blockers:
+            bucket["reviewRequired"] += 1
+        for blocker in blockers:
+            counts = bucket["blockerCounts"]
+            counts[blocker] = counts.get(blocker, 0) + 1
+            if blocker.endswith("_evidence_missing") or blocker in {"zero_area_bbox", "invalid_bbox", "bbox_out_of_bounds"}:
+                evidence_counts = bucket["evidenceBlockerCounts"]
+                evidence_counts[blocker] = evidence_counts.get(blocker, 0) + 1
+    for bucket in output.values():
+        bucket["blockerCounts"] = dict(sorted(bucket["blockerCounts"].items()))
+        bucket["evidenceBlockerCounts"] = dict(sorted(bucket["evidenceBlockerCounts"].items()))
+        bucket["nextHumanAction"] = scenario_next_action(bucket)
+    return dict(sorted(output.items()))
+
+
+def scenario_next_action(bucket: dict[str, Any]) -> str:
+    blockers = set(str(blocker) for blocker in (bucket.get("blockerCounts") or {}).keys())
+    if "missing_human_label" in blockers and bucket.get("machineSuggestions"):
+        return "Review machine suggestions, correct values and evidence boxes, then confirm with human labeler/reviewer."
+    if "missing_human_label" in blockers:
+        return "Create human labeledExpected values and positive-area evidence from the source document."
+    if any(blocker.endswith("_evidence_missing") or blocker == "zero_area_bbox" for blocker in blockers):
+        return "Draw or correct positive-area field/table/seal evidence boxes before export."
+    if "review_required" in blockers:
+        return "Set collectionStatus=ready_for_eval only after second review."
+    if bucket.get("readyForEval") == bucket.get("tasks"):
+        return "Ready to export into the OCR release eval set."
+    return "Review remaining blockers for this scenario."
 
 
 def resolve_tasks_path(path: Path) -> Path:
@@ -92,10 +157,14 @@ def annotation_task_status(task: dict[str, Any]) -> dict[str, Any]:
     template = task.get("expectedTemplate") if isinstance(task.get("expectedTemplate"), dict) else None
     expected = labeled or template or {}
     collection_status = str(task.get("collectionStatus") or "")
+    machine_draft = bool(labeled and is_machine_draft_label(task, labeled))
+    human_labeled = bool(labeled) and not machine_draft
     blockers = []
-    if not labeled:
+    if not human_labeled:
         blockers.append("missing_human_label")
-    elif collection_status != "ready_for_eval":
+    if machine_draft:
+        blockers.append("machine_draft_not_human_confirmed")
+    elif human_labeled and collection_status != "ready_for_eval":
         blockers.append("review_required")
     blockers.extend(certification_blockers(expected))
     blockers.extend(evidence_blockers(expected))
@@ -113,11 +182,26 @@ def annotation_task_status(task: dict[str, Any]) -> dict[str, Any]:
         "documentType": task.get("documentType"),
         "collectionStatus": task.get("collectionStatus"),
         "hasMachineSuggestion": bool(suggested),
-        "hasHumanLabel": bool(labeled),
-        "readyForEval": bool(labeled) and collection_status == "ready_for_eval" and not blockers,
+        "hasMachineDraftLabel": bool(machine_draft),
+        "hasHumanLabel": bool(human_labeled),
+        "readyForEval": bool(human_labeled) and collection_status == "ready_for_eval" and not blockers,
         "blockers": blockers,
         "previewPaths": task.get("previewPaths") or [],
     }
+
+
+def is_machine_draft_label(task: dict[str, Any], expected: dict[str, Any] | None = None) -> bool:
+    expected = expected if isinstance(expected, dict) else task.get("labeledExpected")
+    review = expected.get("review") if isinstance(expected, dict) and isinstance(expected.get("review"), dict) else {}
+    machine_draft = task.get("machineDraftLabel") if isinstance(task.get("machineDraftLabel"), dict) else {}
+    source = str(review.get("source") or machine_draft.get("source") or "").strip()
+    labeler = str(review.get("labeler") or task.get("labeler") or "").strip()
+    return bool(
+        machine_draft
+        or review.get("requiresHumanConfirmation") is True
+        or source in {"machine_suggestion_draft", "machine_prelabel_draft", "ocr_prelabel_draft"}
+        or labeler in {"machine_prelabel", "machine_suggestion", "ocr_prelabel"}
+    )
 
 
 def evidence_blockers(expected: dict[str, Any]) -> list[str]:
@@ -203,6 +287,8 @@ def next_actions(items: list[dict[str, Any]]) -> list[str]:
     actions: list[str] = []
     if any("missing_human_label" in (item.get("blockers") or []) for item in items):
         actions.append("Import the Label Studio package, correct machine predictions, and export human annotations.")
+    if any("machine_draft_not_human_confirmed" in (item.get("blockers") or []) for item in items):
+        actions.append("Review machine draft labels, correct values/bboxes, then set a real labeler and reviewer before ready_for_eval.")
     if any("machine_suggestion_not_confirmed" in (item.get("blockers") or []) for item in items):
         actions.append("Run ocr_100_label_studio_import.py so predictions become reviewed labeledExpected values.")
     if any("placeholder_labels" in (item.get("blockers") or []) for item in items):
@@ -237,6 +323,22 @@ def annotation_readiness_markdown(report: dict[str, Any]) -> str:
             lines.append(f"| {blocker} | {count} |")
     else:
         lines.append("No blockers.")
+    scenario_gaps = report.get("scenarioGaps") if isinstance(report.get("scenarioGaps"), dict) else {}
+    lines.extend(["", "## Scenario Gaps", ""])
+    if scenario_gaps:
+        lines.extend(["| Scenario | Tasks | Human labeled | Ready | Missing human labels | Review required | Top blockers | Next action |", "| --- | ---: | ---: | ---: | ---: | ---: | --- | --- |"])
+        for scenario, item in scenario_gaps.items():
+            if not isinstance(item, dict):
+                continue
+            blocker_counts = item.get("blockerCounts") if isinstance(item.get("blockerCounts"), dict) else {}
+            top_blockers = "; ".join(f"{name}:{count}" for name, count in list(blocker_counts.items())[:4])
+            lines.append(
+                f"| {scenario} | {item.get('tasks', 0)} | {item.get('humanLabeled', 0)} | "
+                f"{item.get('readyForEval', 0)} | {item.get('missingHumanLabels', 0)} | "
+                f"{item.get('reviewRequired', 0)} | {top_blockers or 'none'} | {item.get('nextHumanAction') or ''} |"
+            )
+    else:
+        lines.append("No scenario gaps.")
     lines.extend(["", "## Next Actions", ""])
     for action in report.get("nextActions") or []:
         lines.append(f"- {action}")

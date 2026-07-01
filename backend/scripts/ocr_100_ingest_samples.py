@@ -205,9 +205,10 @@ def classify_sample(
             "matchedTerms": [str(manifest_item.get("scenario"))],
         }
     normalized = normalize_text(path.name)
+    raw_name = path.name.casefold()
     best: tuple[str, list[str], float] | None = None
     for scenario, terms, confidence in SCENARIO_RULES:
-        matches = [term for term in terms if normalize_text(term) in normalized]
+        matches = [term for term in terms if scenario_term_matches(term, normalized=normalized, raw_name=raw_name)]
         if matches and (best is None or confidence > best[2]):
             best = (scenario, matches, confidence)
     if best:
@@ -223,6 +224,13 @@ def mime_type_for_suffix(path: Path) -> str:
 
 def normalize_text(value: str) -> str:
     return re.sub(r"\s+", "", value.casefold())
+
+
+def scenario_term_matches(term: str, *, normalized: str, raw_name: str) -> bool:
+    normalized_term = normalize_text(term)
+    if re.fullmatch(r"[a-z0-9]{1,3}", normalized_term):
+        return re.search(rf"(?<![a-z0-9]){re.escape(normalized_term)}(?![a-z0-9])", raw_name) is not None
+    return normalized_term in normalized
 
 
 def copy_sample(path: Path, *, copy_to: Path) -> Path:
