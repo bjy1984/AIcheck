@@ -397,34 +397,62 @@ def test_visual_seal_candidate_enriched_from_ocr_fragments_can_satisfy_required_
         {
             "status": "success",
             "fragments": [
-                {"text": "压力管道", "confidence": 0.99, "bbox": [4378, 2466, 4730, 2569]},
-                {"text": "杨道红", "confidence": 0.99, "bbox": [4428, 2540, 4685, 2626]},
-                {"text": "TS1810648-2021", "confidence": 0.99, "bbox": [4362, 2605, 4758, 2688]},
-                {"text": "2017年8月31日", "confidence": 0.99, "bbox": [4361, 2660, 4768, 2753]},
+                {
+                    "text": "压力管道",
+                    "confidence": 0.99,
+                    "bbox": [4378, 2466, 4730, 2569],
+                    "pageNo": 1,
+                    "coordinateSystem": "rendered_pixels",
+                },
+                {
+                    "text": "杨道红",
+                    "confidence": 0.99,
+                    "bbox": [4428, 2540, 4685, 2626],
+                    "pageNo": 1,
+                    "coordinateSystem": "rendered_pixels",
+                },
+                {
+                    "text": "TS1810648-2021",
+                    "confidence": 0.99,
+                    "bbox": [4362, 2605, 4758, 2688],
+                    "pageNo": 1,
+                    "coordinateSystem": "rendered_pixels",
+                },
+                {
+                    "text": "2017年8月31日",
+                    "confidence": 0.99,
+                    "bbox": [4361, 2660, 4768, 2753],
+                    "pageNo": 1,
+                    "coordinateSystem": "rendered_pixels",
+                },
             ],
-        "fields": [
-            {
-                "fieldCode": code,
-                "fieldName": code,
-                "fieldValue": {
-                    "company_name": "广东星燃石化设计院有限公司",
-                    "project_name": "项目",
-                    "document_title": "管道特性表",
-                    "drawing_no": "QX201903S-13-Y-07",
-                    "design_phase": "施工图",
-                    "pipe_no": "PL8301",
-                }[code],
-                "confidence": 0.9,
-                "bbox": [1, 1, 2, 2],
-            }
-            for code in required_fields
-        ],
+            "fields": [
+                {
+                    "fieldCode": code,
+                    "fieldName": code,
+                    "fieldValue": {
+                        "company_name": "广东星燃石化设计院有限公司",
+                        "project_name": "项目",
+                        "document_title": "管道特性表",
+                        "drawing_no": "QX201903S-13-Y-07",
+                        "design_phase": "施工图",
+                        "pipe_no": "PL8301",
+                    }[code],
+                    "confidence": 0.9,
+                    "bbox": [1, 1, 2, 2],
+                    "pageNo": 1,
+                    "coordinateSystem": "rendered_pixels",
+                }
+                for code in required_fields
+            ],
             "tables": [
                 {
                     "tableId": "grid",
                     "businessSchema": "piping_characteristic_table_v1",
                     "sourceEngine": "opencv_grid_text_aligned",
                     "bbox": [1, 1, 10, 10],
+                    "pageNo": 1,
+                    "coordinateSystem": "rendered_pixels",
                     "structureConfidence": 0.9,
                     "normalizedRows": [{"pipeNo": "PL8301"}],
                 }
@@ -435,6 +463,8 @@ def test_visual_seal_candidate_enriched_from_ocr_fragments_can_satisfy_required_
                     "sealName": "视觉印章候选",
                     "visualColor": "red",
                     "bbox": [4141, 2364, 4981, 2879],
+                    "pageNo": 1,
+                    "coordinateSystem": "rendered_pixels",
                     "pageWidth": 5712,
                     "pageHeight": 3213,
                     "visualConfidence": 0.95,
@@ -876,7 +906,7 @@ def test_piping_profile_infers_table_and_fields_from_fragments() -> None:
     )
 
     field_codes = {field["fieldCode"] for field in result["fields"]}
-    assert result["tables"][0]["tableId"] == "piping_characteristic_table_1"
+    assert result["tables"][0]["tableId"] == "page_1_piping_characteristic_table_1"
     assert result["tables"][0]["normalizedRows"][0]["pipeNo"] == "PL8301"
     assert "HEURISTIC_TABLE_INFERRED" in {item["code"] for item in result["diagnostics"] if isinstance(item, dict)}
     assert {"company_name", "project_name", "document_title", "drawing_no", "design_phase", "pipe_no"} <= field_codes
@@ -3142,6 +3172,8 @@ def test_ocr_fusion_ignores_weak_field_value_conflict_candidate() -> None:
                     "confidence": 0.94,
                     "sourceEngine": "paddle_ocr_subprocess",
                     "bbox": [0, 0, 10, 10],
+                    "pageNo": 1,
+                    "coordinateSystem": "rendered_pixels",
                 },
                 {
                     "fieldCode": "report_no",
@@ -3149,6 +3181,8 @@ def test_ocr_fusion_ignores_weak_field_value_conflict_candidate() -> None:
                     "confidence": 0.55,
                     "sourceEngine": "low_confidence_candidate",
                     "bbox": [0, 0, 10, 10],
+                    "pageNo": 1,
+                    "coordinateSystem": "rendered_pixels",
                 },
             ],
             "tables": [],
@@ -3320,12 +3354,54 @@ def test_ocr_fusion_valid_business_field_formats_do_not_block_auto_usable() -> N
         {
             "status": "success",
             "fields": [
-                {"fieldCode": "report_no", "fieldValue": "RT-2026-001", "confidence": 0.95, "bbox": [0, 0, 10, 10]},
-                {"fieldCode": "issue_date", "fieldValue": "2026年6月30日", "confidence": 0.95, "bbox": [0, 0, 10, 10]},
-                {"fieldCode": "pipe_no", "fieldValue": "PL8301,VT8302", "confidence": 0.95, "bbox": [0, 0, 10, 10]},
-                {"fieldCode": "design_pressure", "fieldValue": "0.55MPa", "confidence": 0.95, "bbox": [0, 0, 10, 10]},
-                {"fieldCode": "detection_method", "fieldValue": "RT", "confidence": 0.95, "bbox": [0, 0, 10, 10]},
-                {"fieldCode": "conclusion", "fieldValue": "合格", "confidence": 0.95, "bbox": [0, 0, 10, 10]},
+                {
+                    "fieldCode": "report_no",
+                    "fieldValue": "RT-2026-001",
+                    "confidence": 0.95,
+                    "bbox": [0, 0, 10, 10],
+                    "pageNo": 1,
+                    "coordinateSystem": "rendered_pixels",
+                },
+                {
+                    "fieldCode": "issue_date",
+                    "fieldValue": "2026年6月30日",
+                    "confidence": 0.95,
+                    "bbox": [0, 0, 10, 10],
+                    "pageNo": 1,
+                    "coordinateSystem": "rendered_pixels",
+                },
+                {
+                    "fieldCode": "pipe_no",
+                    "fieldValue": "PL8301,VT8302",
+                    "confidence": 0.95,
+                    "bbox": [0, 0, 10, 10],
+                    "pageNo": 1,
+                    "coordinateSystem": "rendered_pixels",
+                },
+                {
+                    "fieldCode": "design_pressure",
+                    "fieldValue": "0.55MPa",
+                    "confidence": 0.95,
+                    "bbox": [0, 0, 10, 10],
+                    "pageNo": 1,
+                    "coordinateSystem": "rendered_pixels",
+                },
+                {
+                    "fieldCode": "detection_method",
+                    "fieldValue": "RT",
+                    "confidence": 0.95,
+                    "bbox": [0, 0, 10, 10],
+                    "pageNo": 1,
+                    "coordinateSystem": "rendered_pixels",
+                },
+                {
+                    "fieldCode": "conclusion",
+                    "fieldValue": "合格",
+                    "confidence": 0.95,
+                    "bbox": [0, 0, 10, 10],
+                    "pageNo": 1,
+                    "coordinateSystem": "rendered_pixels",
+                },
             ],
             "tables": [],
             "seals": [],
@@ -3498,6 +3574,8 @@ def test_ocr_fusion_heuristic_table_requires_human_review() -> None:
     ]
     for index, field in enumerate(complete_fields):
         field["bbox"] = [index, index, index + 1, index + 1]
+        field["pageNo"] = 1
+        field["coordinateSystem"] = "rendered_pixels"
     result = fuse_parse_result(
         {
             "status": "success",
@@ -3507,6 +3585,8 @@ def test_ocr_fusion_heuristic_table_requires_human_review() -> None:
                     "tableId": "piping_characteristic_table_1",
                     "structureConfidence": 0.86,
                     "bbox": [0, 0, 10, 10],
+                    "pageNo": 1,
+                    "coordinateSystem": "rendered_pixels",
                     "sourceEngine": "heuristic_table_from_ocr_fragments",
                     "qualityFlags": ["heuristic_table_fallback"],
                 }
@@ -3517,6 +3597,8 @@ def test_ocr_fusion_heuristic_table_requires_human_review() -> None:
                     "sealName": "广东星燃石化设计院有限公司压力管道设计许可章",
                     "ocrConfidence": 0.88,
                     "bbox": [0, 0, 10, 10],
+                    "pageNo": 1,
+                    "coordinateSystem": "rendered_pixels",
                 }
             ],
             "diagnostics": [],

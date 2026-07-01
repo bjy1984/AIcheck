@@ -12,8 +12,11 @@ from uuid import uuid4
 from libs.contracts.responses import server_time
 
 
-RESULT_CACHE_SCHEMA = "aicheck-ocr-parse-result-cache-v3"
+RESULT_CACHE_SCHEMA = "aicheck-ocr-parse-result-cache-v4"
 ENGINE_RESULT_CACHE_SCHEMA = "aicheck-ocr-engine-result-cache-v1"
+EVIDENCE_CONTRACT_VERSION = "rendered_pixels_mapped_v1"
+PAGE_SELECTION_VERSION = "sparse_tail_pages_v1"
+REMEDIATION_VERSION = "crop_remediation_v1"
 
 
 def result_cache_enabled(options: dict[str, Any] | None = None) -> bool:
@@ -52,6 +55,7 @@ def build_result_cache_key(
         return None
     payload = {
         "schemaVersion": RESULT_CACHE_SCHEMA,
+        **cache_contract_versions(),
         "sourceHash": file_hash(source_path),
         "profileId": profile.get("profileId"),
         "documentType": profile.get("documentType"),
@@ -76,6 +80,7 @@ def build_engine_result_cache_key(
         return None
     payload = {
         "schemaVersion": ENGINE_RESULT_CACHE_SCHEMA,
+        **cache_contract_versions(),
         "sourceHash": file_hash(source_path),
         "engine": cacheable_engine_status(engine_status),
         "variant": cacheable_variant(variant),
@@ -128,6 +133,8 @@ def save_result_cache(cache_key: str | None, result: dict[str, Any]) -> None:
     result_cache_dir().mkdir(parents=True, exist_ok=True)
     payload = {
         "schemaVersion": RESULT_CACHE_SCHEMA,
+        **cache_contract_versions(),
+        **cache_page_selection_metadata(result),
         "savedAt": server_time(),
         "result": sanitized_cached_result(result),
     }
@@ -146,6 +153,7 @@ def save_engine_result_cache(cache_key: str | None, raw: dict[str, Any]) -> None
     engine_result_cache_dir().mkdir(parents=True, exist_ok=True)
     payload = {
         "schemaVersion": ENGINE_RESULT_CACHE_SCHEMA,
+        **cache_contract_versions(),
         "savedAt": server_time(),
         "raw": deepcopy(raw),
     }
@@ -206,12 +214,36 @@ def sanitized_cached_result(result: dict[str, Any]) -> dict[str, Any]:
     return cached
 
 
+def cache_contract_versions() -> dict[str, str]:
+    return {
+        "evidenceContractVersion": EVIDENCE_CONTRACT_VERSION,
+        "pageSelectionVersion": PAGE_SELECTION_VERSION,
+        "remediationVersion": REMEDIATION_VERSION,
+    }
+
+
+def cache_page_selection_metadata(result: dict[str, Any]) -> dict[str, Any]:
+    pages = [page for page in result.get("pages") or [] if isinstance(page, dict)]
+    total_pages = next((page.get("totalPages") for page in pages if page.get("totalPages") is not None), None)
+    rendered_pages = next((page.get("renderedPages") for page in pages if page.get("renderedPages") is not None), None)
+    truncated = next((page.get("truncated") for page in pages if page.get("truncated") is not None), None)
+    return {
+        "totalPages": total_pages,
+        "renderedPages": rendered_pages,
+        "truncated": truncated,
+    }
+
+
 def cache_relevant_options(options: dict[str, Any]) -> dict[str, Any]:
     ignored = {
         "disableEngineCache",
         "disableEngineResultCache",
         "disableResultCache",
         "disableVariantCache",
+        "runRemediation",
+        "remediationReasons",
+        "traceId",
+        "debug",
     }
     return {key: value for key, value in options.items() if key not in ignored}
 
@@ -240,13 +272,30 @@ def cacheable_engine_status(status: dict[str, Any]) -> dict[str, Any]:
 
 
 def cacheable_variant(variant: dict[str, Any]) -> dict[str, Any]:
-    return {
+    payload = {
         "variantId": variant.get("variantId"),
         "imageHash": variant.get("imageHash"),
         "preprocessChain": variant.get("preprocessChain") or [],
         "purpose": variant.get("purpose"),
         "source": variant.get("source"),
+        "coordinateTransformStatus": variant.get("coordinateTransformStatus"),
     }
+    if variant.get("source") == "remediation_crop":
+        payload.update(
+            {
+                "cropSourceVariantId": variant.get("cropSourceVariantId"),
+                "cropSourceTargetType": variant.get("cropSourceTargetType"),
+                "cropSourceTargetId": variant.get("cropSourceTargetId"),
+                "cropSourceBbox": variant.get("cropSourceBbox"),
+                "cropOffsetX": variant.get("cropOffsetX"),
+                "cropOffsetY": variant.get("cropOffsetY"),
+                "cropWidth": variant.get("cropWidth"),
+                "cropHeight": variant.get("cropHeight"),
+                "sourcePageWidth": variant.get("sourcePageWidth"),
+                "sourcePageHeight": variant.get("sourcePageHeight"),
+            }
+        )
+    return payload
 
 
 def engine_raw_is_cacheable(raw: dict[str, Any]) -> bool:

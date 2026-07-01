@@ -109,17 +109,24 @@ def test_public_document_pages_drops_internal_paths(tmp_path: Path) -> None:
 
     public = public_document_pages(pages)
 
-    assert public == [
-        {
-            "pageNo": 1,
-            "width": 80,
-            "height": 60,
-            "rotation": 0,
-            "renderDpi": None,
-            "sourceType": "png",
-            "imageHash": file_hash(source),
-        }
-    ]
+    assert public[0] == {
+        "pageNo": 1,
+        "width": 80,
+        "height": 60,
+        "rotation": 0,
+        "renderDpi": None,
+        "requestedRenderDpi": None,
+        "effectiveRenderDpi": None,
+        "sourceType": "png",
+        "coordinateSystem": "rendered_pixels",
+        "sourceCoordinateSystem": None,
+        "renderScaleX": None,
+        "renderScaleY": None,
+        "totalPages": None,
+        "renderedPages": None,
+        "truncated": None,
+        "imageHash": file_hash(source),
+    }
     assert "path" not in public[0]
     assert "documentPath" not in public[0]
 

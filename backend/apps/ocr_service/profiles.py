@@ -5,6 +5,21 @@ from typing import Any
 
 
 DEFAULT_PROFILE_ID = "generic_document_v1"
+DEFAULT_VLM_FALLBACK_REASONS = [
+    "REQUIRED_FIELD_MISSING",
+    "FIELD_LOW_CONFIDENCE",
+    "FIELD_FORMAT_INVALID",
+    "FIELD_EVIDENCE_MISSING",
+    "FIELD_VALUE_CONFLICT",
+    "REQUIRED_TABLE_MISSING",
+    "TABLE_STRUCTURE_LOW_CONFIDENCE",
+    "TABLE_EVIDENCE_MISSING",
+    "TABLE_ENGINE_CONFLICT",
+    "SEAL_NOT_FOUND",
+    "SEAL_TEXT_LOW_CONFIDENCE",
+    "SEAL_EVIDENCE_MISSING",
+    "EXPECTED_SEAL_TYPE_MISSING",
+]
 
 
 OCR_PROFILES: dict[str, dict[str, Any]] = {
@@ -48,6 +63,7 @@ OCR_PROFILES: dict[str, dict[str, Any]] = {
             "variants": ["original", "gray_clahe"],
             "table": {"preferEngine": "pp_structure_v3", "fallback": "heuristic_table_from_fragments"},
             "seal": {"enableColorCandidate": True, "enablePaddlexSeal": False},
+            "fallback": {"enableVlmWhen": DEFAULT_VLM_FALLBACK_REASONS},
         },
     },
     "quality_certificate_v1": {
@@ -294,6 +310,7 @@ OCR_PROFILES: dict[str, dict[str, Any]] = {
                 "design_pressure",
             ],
         },
+        "organizationAliases": [],
         "preprocessPolicy": {
             "renderDpi": 300,
             "maxLongSide": 2600,
@@ -431,20 +448,46 @@ def validate_profiles(profiles: dict[str, dict[str, Any]] | None = None) -> list
                         "seal-required profiles must enable color seal candidates",
                     )
                 )
+            if seal_required and not bool(seal_policy.get("enablePaddlexSeal") or seal_policy.get("enableSealTextRecognition")):
+                failures.append(
+                    profile_failure(
+                        profile_id,
+                        "preprocessPolicy.seal.enablePaddlexSeal",
+                        "seal-required profiles must enable a real seal text recognizer",
+                    )
+                )
+            if seal_required and int(seal_policy.get("maxPages") or 0) < 2:
+                failures.append(
+                    profile_failure(
+                        profile_id,
+                        "preprocessPolicy.seal.maxPages",
+                        "seal-required profiles must search at least first and last pages",
+                    )
+                )
+            fallback = preprocess_policy.get("fallback") if isinstance(preprocess_policy.get("fallback"), dict) else {}
+            fallback_reasons = {str(item) for item in fallback.get("enableVlmWhen") or []}
+            if seal_required and "SEAL_TEXT_LOW_CONFIDENCE" not in fallback_reasons:
+                failures.append(
+                    profile_failure(
+                        profile_id,
+                        "preprocessPolicy.fallback.enableVlmWhen",
+                        "seal-required profiles must include SEAL_TEXT_LOW_CONFIDENCE fallback",
+                    )
+                )
     return failures
 
 
 def merge_profile_from(source: dict[str, dict[str, Any]], profile_id: str) -> dict[str, Any]:
     base = deepcopy(source[DEFAULT_PROFILE_ID])
     if profile_id == DEFAULT_PROFILE_ID:
-        return base
+        return apply_profile_defaults(base)
     override = deepcopy(source[profile_id])
     for key, value in override.items():
         if isinstance(value, dict) and isinstance(base.get(key), dict):
             base[key].update(value)
         else:
             base[key] = value
-    return base
+    return apply_profile_defaults(base)
 
 
 def confidence_threshold_valid(value: Any) -> bool:
@@ -462,11 +505,19 @@ def profile_failure(profile_id: str, path: str, message: str) -> dict[str, Any]:
 def merged_profile(profile_id: str) -> dict[str, Any]:
     base = deepcopy(OCR_PROFILES[DEFAULT_PROFILE_ID])
     if profile_id == DEFAULT_PROFILE_ID:
-        return base
+        return apply_profile_defaults(base)
     override = deepcopy(OCR_PROFILES[profile_id])
     for key, value in override.items():
         if isinstance(value, dict) and isinstance(base.get(key), dict):
             base[key].update(value)
         else:
             base[key] = value
-    return base
+    return apply_profile_defaults(base)
+
+
+def apply_profile_defaults(profile: dict[str, Any]) -> dict[str, Any]:
+    policy = profile.setdefault("preprocessPolicy", {})
+    fallback = policy.setdefault("fallback", {})
+    configured = [str(item) for item in fallback.get("enableVlmWhen") or []]
+    fallback["enableVlmWhen"] = list(dict.fromkeys([*configured, *DEFAULT_VLM_FALLBACK_REASONS]))
+    return profile

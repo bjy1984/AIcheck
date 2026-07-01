@@ -7,6 +7,7 @@ TEXT_ENGINES = {"pymupdf_text_layer", "paddle_ocr_subprocess", "paddle_ocr_v6", 
 TABLE_ENGINES = {"pp_structure_v3", "opencv_table_grid_subprocess"}
 SEAL_ENGINES = {"paddlex_seal_recognition", "agentdesign_seal_ocr_subprocess", "visual_seal_candidate_subprocess"}
 FALLBACK_ENGINES = {"paddleocr_vl_1_6"}
+DOCUMENT_LEVEL_ENGINES = {"pymupdf_text_layer", "docling_local", "paddleocr_vl_1_6"}
 
 
 def route_engine_variants(
@@ -17,10 +18,11 @@ def route_engine_variants(
     page_quality: list[dict[str, Any]],
     options: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
+    document_path = str((options or {}).get("documentPath") or "")
     if not variants:
+        if engine_name in DOCUMENT_LEVEL_ENGINES and document_path.lower().endswith(".pdf"):
+            return [synthetic_document_variant(document_path)]
         return []
-    if bool((options or {}).get("runAllVariants")):
-        return variants
     originals = variants_by_name(variants, "original") or [variants[0]]
     quality_by_page = {
         int(item.get("pageNo") or 1): (item.get("quality") if isinstance(item.get("quality"), dict) else {})
@@ -28,6 +30,21 @@ def route_engine_variants(
         if isinstance(item, dict)
     }
     policy = profile.get("preprocessPolicy") or {}
+    if bool((options or {}).get("runRemediation")):
+        remediation_routed = remediation_crop_route(engine_name, variants)
+        if remediation_routed:
+            return remediation_routed
+    if engine_name in {"pymupdf_text_layer", "docling_local"}:
+        first = originals[0]
+        if str(first.get("sourceType") or "").lower() == "pdf" or str(first.get("documentPath") or document_path).lower().endswith(".pdf"):
+            return [document_variant(first)]
+        if bool((options or {}).get("runAllVariants")):
+            return originals
+        return originals[:1]
+    if engine_name in FALLBACK_ENGINES and document_path.lower().endswith(".pdf") and bool((options or {}).get("runAllVariants")):
+        return [synthetic_document_variant(document_path)]
+    if bool((options or {}).get("runAllVariants")):
+        return variants
     if engine_name == "pp_structure_v3":
         return structure_variants(variants, quality_by_page)
     if engine_name == "opencv_table_grid_subprocess":
@@ -46,10 +63,31 @@ def route_engine_variants(
             return originals
         return []
     if engine_name in TEXT_ENGINES:
-        if engine_name in {"pymupdf_text_layer", "docling_local"}:
-            return originals[:1]
         return text_variants_by_page(variants, quality_by_page)
     return originals
+
+
+def remediation_crop_route(engine_name: str, variants: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if engine_name in TABLE_ENGINES:
+        return remediation_crop_variants(variants, purpose="table")[:3]
+    if engine_name in SEAL_ENGINES:
+        return remediation_crop_variants(variants, purpose="seal")[:4]
+    if engine_name in TEXT_ENGINES:
+        return remediation_crop_variants(variants, purpose="field")[:6]
+    if engine_name in FALLBACK_ENGINES:
+        return remediation_crop_variants(variants)[:8]
+    return []
+
+
+def remediation_crop_variants(variants: list[dict[str, Any]], purpose: str | None = None) -> list[dict[str, Any]]:
+    crops = [
+        variant
+        for variant in variants
+        if isinstance(variant, dict)
+        and str(variant.get("source") or "") == "remediation_crop"
+        and (purpose is None or str(variant.get("purpose") or "") == purpose)
+    ]
+    return sorted(crops, key=lambda item: (variant_page_no(item), str(item.get("variantId") or "")))
 
 
 def variant_for_purpose(variants: list[dict[str, Any]], purpose: str) -> dict[str, Any] | None:
@@ -131,11 +169,16 @@ def purpose_variants_by_page(
     routed = []
     for page_no in sorted({variant_page_no(variant) for variant in variants}):
         quality = quality_by_page.get(page_no) or {}
-        if purpose == "table" and not quality.get("hasTableCandidate"):
+        purpose_variant = variant_for_page_purpose(variants, page_no, purpose)
+        if purpose == "table" and not (
+            quality.get("hasVisualTableCandidate") or quality.get("hasTableCandidate") or purpose_variant
+        ):
             continue
-        if purpose == "seal" and not quality.get("hasSealCandidate"):
+        if purpose == "seal" and not (
+            quality.get("hasVisualSealCandidate") or quality.get("hasSealCandidate") or purpose_variant
+        ):
             continue
-        match = next((variant for variant in variants_for_page(variants, page_no) if variant.get("purpose") == purpose), None)
+        match = purpose_variant
         if match:
             routed.append(match)
         elif fallback:
@@ -161,12 +204,13 @@ def seal_text_variants(
     candidate_pages = [
         page_no
         for page_no in all_pages
-        if (quality_by_page.get(page_no) or {}).get("hasSealCandidate") or variant_for_page_purpose(variants, page_no, "seal")
+        if (quality_by_page.get(page_no) or {}).get("hasVisualSealCandidate") or variant_for_page_purpose(variants, page_no, "seal")
     ]
     fallback_pages = [all_pages[0], all_pages[-1]] if required_seal else []
-    selected_pages = dedupe_page_order([*candidate_pages, *fallback_pages])[:max(max_pages, 1)]
+    ordered_pages = dedupe_page_order([*fallback_pages, *candidate_pages])
+    selected_pages = keep_required_edge_pages(ordered_pages, fallback_pages, max(max_pages, 1))
     if not selected_pages and required_seal:
-        selected_pages = all_pages[:max(max_pages, 1)]
+        selected_pages = keep_required_edge_pages(all_pages, fallback_pages, max(max_pages, 1))
     routed = []
     for page_no in selected_pages:
         original = original_for_page(variants, page_no)
@@ -193,6 +237,48 @@ def dedupe_page_order(page_numbers: list[int]) -> list[int]:
     return output
 
 
+def keep_required_edge_pages(page_numbers: list[int], required_pages: list[int], limit: int) -> list[int]:
+    if len(page_numbers) <= limit:
+        return page_numbers
+    selected = []
+    for page_no in required_pages:
+        if page_no not in selected:
+            selected.append(page_no)
+    for page_no in page_numbers:
+        if len(selected) >= limit:
+            break
+        if page_no not in selected:
+            selected.append(page_no)
+    return selected
+
+
+def document_variant(first: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **first,
+        "variantId": "document_original",
+        "pageNo": None,
+        "path": first.get("documentPath") or first.get("path"),
+        "preprocessChain": ["document_original"],
+        "purpose": "document",
+        "source": "document",
+        "engineScope": "document",
+    }
+
+
+def synthetic_document_variant(document_path: str) -> dict[str, Any]:
+    return {
+        "variantId": "document_original",
+        "pageNo": None,
+        "path": document_path,
+        "documentPath": document_path,
+        "sourceType": "pdf",
+        "preprocessChain": ["document_original"],
+        "purpose": "document",
+        "source": "document",
+        "engineScope": "document",
+    }
+
+
 def text_variant(variants: list[dict[str, Any]], quality: dict[str, Any]) -> dict[str, Any] | None:
     if quality.get("isLowQuality"):
         for name in ["gray_clahe", "deskew", "adaptive_threshold"]:
@@ -210,8 +296,8 @@ def merged_quality(quality_by_page: dict[int, dict[str, Any]]) -> dict[str, Any]
     qualities = list(quality_by_page.values())
     return {
         "isLowQuality": any(item.get("isLowQuality") for item in qualities),
-        "hasTableCandidate": any(item.get("hasTableCandidate") for item in qualities),
-        "hasSealCandidate": any(item.get("hasSealCandidate") for item in qualities),
+        "hasTableCandidate": any(item.get("hasVisualTableCandidate") or item.get("hasTableCandidate") for item in qualities),
+        "hasSealCandidate": any(item.get("hasVisualSealCandidate") or item.get("hasSealCandidate") for item in qualities),
     }
 
 

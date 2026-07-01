@@ -11,8 +11,13 @@ from pathlib import Path
 from typing import Any
 
 from apps.ocr_service.pages import render_document_pages
+from apps.ocr_service.result_cache import (
+    EVIDENCE_CONTRACT_VERSION,
+    PAGE_SELECTION_VERSION,
+    REMEDIATION_VERSION,
+)
 
-PREPROCESS_CACHE_SCHEMA = "aicheck-ocr-preprocess-cache-v1"
+PREPROCESS_CACHE_SCHEMA = "aicheck-ocr-preprocess-cache-v2"
 
 
 def generate_image_variants(
@@ -20,6 +25,7 @@ def generate_image_variants(
     *,
     profile: dict[str, Any],
     page_quality: list[dict[str, Any]],
+    pages: list[dict[str, Any]] | None = None,
     options: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     requested = requested_variant_names(profile, page_quality, options=options)
@@ -28,7 +34,7 @@ def generate_image_variants(
         for item in page_quality
         if isinstance(item, dict)
     }
-    pages = render_document_pages(source_path, profile=profile)
+    pages = pages if pages is not None else render_document_pages(source_path, profile=profile)
     variants = [build_original_variant(Path(str(page.get("path") or source_path)), page=page) for page in pages]
     cache_dir = variant_cache_dir(source_path, profile, requested, options=options)
     cached_variants = load_cached_variants(cache_dir)
@@ -82,11 +88,16 @@ def generate_image_variants(
                     "pageNo": page_no,
                     "path": str(target),
                     "documentPath": str(page.get("documentPath") or source_path),
+                    "sourceType": page.get("sourceType"),
+                    "coordinateSystem": page.get("coordinateSystem"),
+                    "sourceCoordinateSystem": page.get("sourceCoordinateSystem"),
+                    "renderScaleX": page.get("renderScaleX"),
+                    "renderScaleY": page.get("renderScaleY"),
                     "preprocessChain": preprocess_chain_for(name),
                     "imageHash": file_hash(target),
                     "purpose": purpose_for_variant(name),
                     "source": "generated",
-                    "coordinateTransformStatus": "unmapped" if name in {"deskew"} else "identity",
+                    "coordinateTransformStatus": "unmapped" if name in {"deskew"} else "original",
                 }
             )
     save_cached_variants(cache_dir, generated)
@@ -118,8 +129,8 @@ def merged_quality_flags(qualities: list[dict[str, Any]]) -> dict[str, Any]:
     if not qualities:
         return {}
     return {
-        "hasTableCandidate": any(item.get("hasTableCandidate") for item in qualities),
-        "hasSealCandidate": any(item.get("hasSealCandidate") for item in qualities),
+        "hasTableCandidate": any(item.get("hasVisualTableCandidate") or item.get("hasTableCandidate") for item in qualities),
+        "hasSealCandidate": any(item.get("hasVisualSealCandidate") or item.get("hasSealCandidate") for item in qualities),
         "isLowQuality": any(item.get("isLowQuality") for item in qualities),
         "skewAngle": max((abs(float(item.get("skewAngle") or 0.0)) for item in qualities), default=0.0),
     }
@@ -237,11 +248,12 @@ def generate_variants_subprocess(
                 "pageNo": page_no,
                 "path": str(path),
                 "documentPath": str(document_path or source_path),
+                "coordinateSystem": "rendered_pixels",
                 "preprocessChain": preprocess_chain_for(name),
                 "imageHash": file_hash(path),
                 "purpose": purpose_for_variant(name),
                 "source": "generated",
-                "coordinateTransformStatus": "unmapped" if name in {"deskew"} else "identity",
+                "coordinateTransformStatus": "unmapped" if name in {"deskew"} else "original",
             }
         )
     return variants
@@ -262,6 +274,9 @@ def variant_cache_dir(
     source_hash = file_hash(source_path)
     payload = {
         "schemaVersion": PREPROCESS_CACHE_SCHEMA,
+        "evidenceContractVersion": EVIDENCE_CONTRACT_VERSION,
+        "pageSelectionVersion": PAGE_SELECTION_VERSION,
+        "remediationVersion": REMEDIATION_VERSION,
         "sourceHash": source_hash,
         "profileId": profile.get("profileId"),
         "preprocessPolicy": profile.get("preprocessPolicy") or {},
@@ -309,6 +324,9 @@ def save_cached_variants(cache_dir: Path | None, variants: list[dict[str, Any]])
     cache_dir.mkdir(parents=True, exist_ok=True)
     payload = {
         "schemaVersion": PREPROCESS_CACHE_SCHEMA,
+        "evidenceContractVersion": EVIDENCE_CONTRACT_VERSION,
+        "pageSelectionVersion": PAGE_SELECTION_VERSION,
+        "remediationVersion": REMEDIATION_VERSION,
         "variants": cacheable,
     }
     try:
@@ -352,11 +370,18 @@ def build_original_variant(source_path: Path, *, page: dict[str, Any] | None = N
         "pageNo": page_no,
         "path": str(source_path),
         "documentPath": str((page or {}).get("documentPath") or source_path),
+        "sourceType": (page or {}).get("sourceType"),
+        "coordinateSystem": (page or {}).get("coordinateSystem"),
+        "sourceCoordinateSystem": (page or {}).get("sourceCoordinateSystem"),
+        "renderScaleX": (page or {}).get("renderScaleX"),
+        "renderScaleY": (page or {}).get("renderScaleY"),
+        "pageWidth": (page or {}).get("width"),
+        "pageHeight": (page or {}).get("height"),
         "preprocessChain": ["original"],
         "imageHash": file_hash(source_path) if source_path.exists() else None,
         "purpose": "general",
         "source": "original",
-        "coordinateTransformStatus": "identity",
+        "coordinateTransformStatus": "original",
     }
 
 

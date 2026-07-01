@@ -16,9 +16,8 @@ def render_document_pages(source_path: Path, *, profile: dict[str, Any] | None =
     max_pages = int(policy.get("maxPages") or os.getenv("AICHECK_OCR_MAX_RENDER_PAGES", "30"))
     suffix = source_path.suffix.lower()
     if suffix == ".pdf":
-        rendered = render_pdf_pages(source_path, dpi=dpi, max_pages=max_pages, max_long_side=max_long_side)
-        if rendered:
-            return rendered
+        rendered = render_pdf_pages(source_path, dpi=dpi, max_pages=max_pages, max_long_side=max_long_side, profile=profile)
+        return rendered
     if suffix in {".tif", ".tiff"}:
         rendered = render_tiff_pages(source_path, max_pages=max_pages, max_long_side=max_long_side)
         if rendered:
@@ -49,14 +48,30 @@ def public_document_pages(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "height": page.get("height"),
                 "rotation": page.get("rotation", 0),
                 "renderDpi": page.get("renderDpi"),
+                "requestedRenderDpi": page.get("requestedRenderDpi"),
+                "effectiveRenderDpi": page.get("effectiveRenderDpi"),
                 "sourceType": page.get("sourceType"),
+                "totalPages": page.get("totalPages"),
+                "renderedPages": page.get("renderedPages"),
+                "truncated": page.get("truncated"),
+                "coordinateSystem": page.get("coordinateSystem"),
+                "sourceCoordinateSystem": page.get("sourceCoordinateSystem"),
+                "renderScaleX": page.get("renderScaleX"),
+                "renderScaleY": page.get("renderScaleY"),
                 "imageHash": page.get("imageHash"),
             }
         )
     return output
 
 
-def render_pdf_pages(source_path: Path, *, dpi: int, max_pages: int, max_long_side: int = 0) -> list[dict[str, Any]]:
+def render_pdf_pages(
+    source_path: Path,
+    *,
+    dpi: int,
+    max_pages: int,
+    max_long_side: int = 0,
+    profile: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     try:
         import fitz  # type: ignore
     except Exception:
@@ -66,32 +81,91 @@ def render_pdf_pages(source_path: Path, *, dpi: int, max_pages: int, max_long_si
     except Exception:
         return []
     pages: list[dict[str, Any]] = []
-    out_dir = rendered_page_cache_dir(source_path, dpi=dpi, max_pages=max_pages)
+    out_dir = rendered_page_cache_dir(source_path, dpi=dpi, max_pages=max_pages, max_long_side=max_long_side)
     out_dir.mkdir(parents=True, exist_ok=True)
     try:
-        matrix = fitz.Matrix(dpi / 72.0, dpi / 72.0)
-        for page_index, page in enumerate(document):
-            if page_index >= max_pages:
-                break
+        total_pages = int(getattr(document, "page_count", 0) or len(document))
+        selected_indices = select_pdf_page_indices(total_pages, max_pages, profile=profile)
+        rendered_pages = [index + 1 for index in selected_indices]
+        truncated = len(selected_indices) < total_pages
+        for page_index in selected_indices:
+            page = document[page_index]
             page_no = page_index + 1
+            dpi_scale = dpi / 72.0
+            if max_long_side > 0:
+                max_scale = max_long_side / max(float(page.rect.width), float(page.rect.height), 1.0)
+                scale = min(dpi_scale, max_scale)
+            else:
+                scale = dpi_scale
+            matrix = fitz.Matrix(scale, scale)
             target = out_dir / f"page-{page_no}.png"
             if not target.exists():
                 pixmap = page.get_pixmap(matrix=matrix, alpha=False)
                 pixmap.save(str(target))
-            page_path = constrain_image_page(target, max_long_side=max_long_side, page_no=page_no, source_path=source_path)
+            page_path = target
             pages.append(
                 image_page_record(
                     page_path,
                     page_no=page_no,
                     source_type="pdf",
-                    render_dpi=dpi,
+                    render_dpi=int(round(scale * 72)),
                     document_path=source_path,
                     rotation=int(page.rotation or 0),
+                    source_width=float(page.rect.width),
+                    source_height=float(page.rect.height),
+                    source_coordinate_system="pdf_points",
+                    render_scale_x=scale,
+                    render_scale_y=scale,
+                    requested_render_dpi=dpi,
+                    effective_render_dpi=int(round(scale * 72)),
+                    total_pages=total_pages,
+                    rendered_pages=rendered_pages,
+                    truncated=truncated,
                 )
             )
     finally:
         document.close()
     return pages
+
+
+def select_pdf_page_indices(
+    total_pages: int,
+    max_pages: int,
+    *,
+    profile: dict[str, Any] | None = None,
+) -> list[int]:
+    total_pages = max(int(total_pages or 0), 0)
+    if total_pages <= 0:
+        return []
+    max_pages = max(int(max_pages or total_pages), 1)
+    if total_pages <= max_pages:
+        return list(range(total_pages))
+    requires_tail = profile_requires_tail_pages(profile)
+    if not requires_tail:
+        return list(range(min(total_pages, max_pages)))
+    protected = {0}
+    if total_pages >= 2:
+        protected.add(total_pages - 1)
+    if max_pages >= 3 and total_pages >= 3:
+        protected.add(total_pages - 2)
+    remaining_slots = max(max_pages - len(protected), 0)
+    body: list[int] = []
+    if remaining_slots > 0:
+        for index in range(total_pages):
+            if index in protected:
+                continue
+            body.append(index)
+            if len(body) >= remaining_slots:
+                break
+    return sorted(protected.union(body))
+
+
+def profile_requires_tail_pages(profile: dict[str, Any] | None) -> bool:
+    if not isinstance(profile, dict):
+        return False
+    seal_required = bool((profile.get("sealRules") or {}).get("required"))
+    signature_required = bool((profile.get("signatureRules") or {}).get("required"))
+    return seal_required or signature_required
 
 
 def render_tiff_pages(source_path: Path, *, max_pages: int, max_long_side: int = 0) -> list[dict[str, Any]]:
@@ -232,6 +306,16 @@ def image_page_record(
     render_dpi: int | None,
     document_path: Path | None = None,
     rotation: int = 0,
+    source_width: float | None = None,
+    source_height: float | None = None,
+    source_coordinate_system: str | None = None,
+    render_scale_x: float | None = None,
+    render_scale_y: float | None = None,
+    requested_render_dpi: int | None = None,
+    effective_render_dpi: int | None = None,
+    total_pages: int | None = None,
+    rendered_pages: list[int] | None = None,
+    truncated: bool | None = None,
 ) -> dict[str, Any]:
     width, height = image_size(path)
     return {
@@ -240,8 +324,19 @@ def image_page_record(
         "documentPath": str(document_path or path),
         "sourceType": source_type,
         "renderDpi": render_dpi,
+        "requestedRenderDpi": requested_render_dpi,
+        "effectiveRenderDpi": effective_render_dpi,
         "width": width,
         "height": height,
+        "totalPages": total_pages,
+        "renderedPages": rendered_pages,
+        "truncated": truncated,
+        "coordinateSystem": "rendered_pixels",
+        "sourceCoordinateSystem": source_coordinate_system,
+        "sourceWidth": source_width,
+        "sourceHeight": source_height,
+        "renderScaleX": render_scale_x,
+        "renderScaleY": render_scale_y,
         "rotation": rotation,
         "imageHash": file_hash(path) if path.exists() else None,
     }
@@ -267,9 +362,12 @@ def image_size(path: Path) -> tuple[int | None, int | None]:
         return None, None
 
 
-def rendered_page_cache_dir(source_path: Path, *, dpi: int, max_pages: int) -> Path:
+def rendered_page_cache_dir(source_path: Path, *, dpi: int, max_pages: int, max_long_side: int = 0) -> Path:
     base = Path(os.getenv("AICHECK_OCR_PAGE_CACHE_DIR") or (Path(tempfile.gettempdir()) / "aicheck-ocr-page-cache"))
-    payload = f"{source_path}:{file_hash(source_path) if source_path.exists() else ''}:dpi={dpi}:max={max_pages}"
+    payload = (
+        f"{source_path}:{file_hash(source_path) if source_path.exists() else ''}:"
+        f"dpi={dpi}:max={max_pages}:maxLongSide={max_long_side}"
+    )
     key = hashlib.sha256(payload.encode("utf-8")).hexdigest()
     return base / key
 

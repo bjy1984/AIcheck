@@ -136,6 +136,11 @@ class PyMuPdfTextLayerEngine(LocalOcrEngine):
             "text": "\n".join(item["text"] for item in fragments),
             "pages": pages,
             "fragments": fragments,
+            "metadata": {
+                "documentLevel": True,
+                "engineScope": "document",
+                "sourceCoordinateSystem": "pdf_points",
+            },
             "diagnostics": []
             if fragments
             else [{"code": "PDF_TEXT_LAYER_EMPTY", "level": "info", "message": "PDF text layer is empty."}],
@@ -1489,6 +1494,10 @@ class PaddleOcrVlEngine(LocalOcrEngine):
             "fragments": fragments,
             "tables": tables,
             "layoutBlocks": layout_blocks,
+            "metadata": {
+                "documentLevel": str(source_path).lower().endswith(".pdf"),
+                "engineScope": "document" if str(source_path).lower().endswith(".pdf") else "page",
+            },
             "diagnostics": [],
             "engine": self.name,
             "engineVersion": self.version,
@@ -1602,6 +1611,10 @@ class PaddleOcrVlEngine(LocalOcrEngine):
             "fragments": fragments,
             "tables": tables,
             "layoutBlocks": layout_blocks,
+            "metadata": {
+                "documentLevel": str(source_path).lower().endswith(".pdf"),
+                "engineScope": "document" if str(source_path).lower().endswith(".pdf") else "page",
+            },
             "diagnostics": [],
             "engine": self.name,
             "engineVersion": self.version,
@@ -1658,6 +1671,10 @@ class DoclingLocalEngine(LocalOcrEngine):
             "fragments": fragments,
             "tables": tables,
             "layoutBlocks": layout_blocks,
+            "metadata": {
+                "documentLevel": str(source_path).lower().endswith(".pdf"),
+                "engineScope": "document" if str(source_path).lower().endswith(".pdf") else "page",
+            },
             "diagnostics": [],
             "engine": self.name,
             "engineVersion": self.version,
@@ -1734,6 +1751,10 @@ class DoclingLocalEngine(LocalOcrEngine):
             "fragments": fragments,
             "tables": tables,
             "layoutBlocks": layout_blocks,
+            "metadata": {
+                "documentLevel": str(source_path).lower().endswith(".pdf"),
+                "engineScope": "document" if str(source_path).lower().endswith(".pdf") else "page",
+            },
             "diagnostics": [],
             "engine": self.name,
             "engineVersion": self.version,
@@ -1863,8 +1884,18 @@ def docling_table(item: dict[str, Any], *, index: int, page_no: int, bbox: list[
     for cell_index, cell in enumerate(cells):
         if not isinstance(cell, dict):
             continue
-        row = int(cell.get("row") or cell.get("row_header") or cell.get("start_row_offset_idx") or 0)
-        col = int(cell.get("col") or cell.get("col_header") or cell.get("start_col_offset_idx") or 0)
+        row = first_int(
+            cell.get("start_row_offset_idx"),
+            cell.get("row"),
+            cell.get("row_idx"),
+            default=0,
+        )
+        col = first_int(
+            cell.get("start_col_offset_idx"),
+            cell.get("col"),
+            cell.get("col_idx"),
+            default=0,
+        )
         text = str(cell.get("text") or cell.get("content") or "").strip()
         normalized_cells.append(
             {
@@ -1893,6 +1924,19 @@ def docling_table(item: dict[str, Any], *, index: int, page_no: int, bbox: list[
         "sourceEngine": engine_name,
         "qualityFlags": docling_table_quality_flags(normalized_cells, bbox),
     }
+
+
+def first_int(*values: Any, default: int = 0) -> int:
+    for value in values:
+        if isinstance(value, bool):
+            continue
+        try:
+            if value is None or value == "":
+                continue
+            return int(value)
+        except (TypeError, ValueError):
+            continue
+    return default
 
 
 def docling_table_confidence(cells: list[dict[str, Any]], bbox: list[float] | None) -> float:

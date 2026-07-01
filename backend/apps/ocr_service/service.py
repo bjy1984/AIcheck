@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,9 @@ from apps.ocr_service.preprocess import generate_image_variants, requested_varia
 from apps.ocr_service.profiles import profile_for
 from apps.ocr_service.quality import probe_page_quality
 from apps.ocr_service.result_cache import (
+    EVIDENCE_CONTRACT_VERSION,
+    PAGE_SELECTION_VERSION,
+    REMEDIATION_VERSION,
     build_engine_result_cache_key,
     build_result_cache_key,
     load_engine_result_cache,
@@ -80,16 +84,39 @@ STANDARD_NO_RE = re.compile(r"\b(?:GB|HG|NB|JB|SH|SY|TSG)\s*/?\s*T?\s*[\d.-]+(?:
 
 REMEDIATION_TRIGGER_REASONS = {
     "REQUIRED_FIELD_MISSING",
+    "FIELD_LOW_CONFIDENCE",
+    "FIELD_FORMAT_INVALID",
+    "FIELD_EVIDENCE_MISSING",
+    "FIELD_VALUE_CONFLICT",
     "REQUIRED_TABLE_MISSING",
     "TABLE_STRUCTURE_LOW_CONFIDENCE",
+    "TABLE_EVIDENCE_MISSING",
+    "TABLE_ENGINE_CONFLICT",
     "SEAL_TEXT_LOW_CONFIDENCE",
     "SEAL_NOT_FOUND",
+    "SEAL_EVIDENCE_MISSING",
     "EXPECTED_SEAL_TYPE_MISSING",
 }
 
-TABLE_REMEDIATION_REASONS = {"REQUIRED_TABLE_MISSING", "TABLE_STRUCTURE_LOW_CONFIDENCE"}
-TEXT_REMEDIATION_REASONS = {"REQUIRED_FIELD_MISSING"}
-SEAL_REMEDIATION_REASONS = {"SEAL_TEXT_LOW_CONFIDENCE", "SEAL_NOT_FOUND", "EXPECTED_SEAL_TYPE_MISSING"}
+TABLE_REMEDIATION_REASONS = {
+    "REQUIRED_TABLE_MISSING",
+    "TABLE_STRUCTURE_LOW_CONFIDENCE",
+    "TABLE_EVIDENCE_MISSING",
+    "TABLE_ENGINE_CONFLICT",
+}
+TEXT_REMEDIATION_REASONS = {
+    "REQUIRED_FIELD_MISSING",
+    "FIELD_LOW_CONFIDENCE",
+    "FIELD_FORMAT_INVALID",
+    "FIELD_EVIDENCE_MISSING",
+    "FIELD_VALUE_CONFLICT",
+}
+SEAL_REMEDIATION_REASONS = {
+    "SEAL_TEXT_LOW_CONFIDENCE",
+    "SEAL_NOT_FOUND",
+    "SEAL_EVIDENCE_MISSING",
+    "EXPECTED_SEAL_TYPE_MISSING",
+}
 
 
 class OcrService:
@@ -344,9 +371,23 @@ class OcrService:
         }
         document_pages = render_document_pages(source_path, profile=profile)
         merged["pages"] = public_document_pages(document_pages)
-        page_quality = probe_page_quality(source_path, profile=profile)
+        if not document_pages and source_path.suffix.lower() == ".pdf":
+            merged["diagnostics"].append(
+                diagnostic(
+                    "PDF_RENDER_FAILED",
+                    "PDF 页面渲染失败，OCR 页级预处理和证据定位无法继续。",
+                    level="error",
+                )
+            )
+        page_quality = call_probe_page_quality(source_path, profile=profile, pages=document_pages)
         requested_variants = requested_variant_names(profile, page_quality, options=options)
-        variants = generate_image_variants(source_path, profile=profile, page_quality=page_quality, options=options)
+        variants = call_generate_image_variants(
+            source_path,
+            profile=profile,
+            page_quality=page_quality,
+            pages=document_pages,
+            options=options,
+        )
         generated_variant_names = variant_names(variants)
         missing_variants = [
             name
@@ -398,7 +439,7 @@ class OcrService:
                 variants,
                 profile=profile,
                 page_quality=page_quality,
-                options=options,
+                options={**options, "documentPath": str(source_path)},
             )
             if not routed_variants:
                 merged["engineRuns"].append({**engine_status, "status": "skipped", "durationMs": 0})
@@ -421,7 +462,7 @@ class OcrService:
                         if isinstance(raw, dict):
                             save_engine_result_cache(engine_cache_key, raw)
                     normalized = normalize_ocr_result(raw, storage_key, file_name)
-                    attach_variant_metadata(normalized, engine.name, variant)
+                    attach_variant_metadata(normalized, engine.name, variant, document_pages=document_pages)
                     merge_parse_result(merged, normalized)
                     merged["engineRuns"].append(
                         {
@@ -482,7 +523,9 @@ class OcrService:
             document_version_id=document_version_id,
             business_pack_id=business_pack_id,
             options=options,
+            document_pages=document_pages,
         )
+        apply_contract_metadata(enriched)
         if not has_external_candidates:
             save_result_cache(result_cache_key, enriched)
         return enriched
@@ -501,6 +544,7 @@ class OcrService:
         document_version_id: str | None,
         business_pack_id: str | None,
         options: dict[str, Any],
+        document_pages: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         if bool(options.get("disableRemediation")):
             return result
@@ -520,10 +564,10 @@ class OcrService:
             remediation_options = {**options, "remediationReasons": sorted(reasons), "runRemediation": True}
             routed_variants = route_engine_variants(
                 engine.name,
-                variants,
+                remediation_variants_for_reasons(remediated, variants, reasons, profile=profile),
                 profile=profile,
                 page_quality=page_quality,
-                options=remediation_options,
+                options={**remediation_options, "documentPath": str(source_path)},
             )
             if not routed_variants:
                 remediated["remediationRuns"].append({**engine_status, "status": "skipped", "durationMs": 0})
@@ -546,7 +590,7 @@ class OcrService:
                         if isinstance(raw, dict):
                             save_engine_result_cache(engine_cache_key, raw)
                     normalized = normalize_ocr_result(raw, storage_key, file_name)
-                    attach_variant_metadata(normalized, engine.name, variant)
+                    attach_variant_metadata(normalized, engine.name, variant, document_pages=document_pages)
                     merge_parse_result(remediated, normalized)
                     remediated["remediationRuns"].append(
                         {
@@ -640,6 +684,7 @@ def normalize_ocr_result(raw: Any, storage_key: str, file_name: str | None = Non
         "diagnostics": diagnostics,
         "engineRuns": [],
         "modelManifest": {},
+        "metadata": raw.get("metadata", {}) if isinstance(raw, dict) and isinstance(raw.get("metadata"), dict) else {},
         "createdAt": server_time(),
     }
 
@@ -878,7 +923,10 @@ def normalize_fragments(raw: Any, text: str | None) -> list[dict[str, Any]]:
 
 
 def merge_parse_result(target: dict[str, Any], incoming: dict[str, Any]) -> None:
-    for key in ["pages", "fragments", "layoutBlocks", "fields", "tables", "seals", "signatures", "diagnostics"]:
+    target.setdefault("metadata", {})
+    if incoming.get("pages"):
+        target["metadata"].setdefault("enginePageInfo", []).extend(deepcopy(incoming.get("pages") or []))
+    for key in ["fragments", "layoutBlocks", "fields", "tables", "seals", "signatures", "diagnostics"]:
         target.setdefault(key, [])
         target[key].extend(deepcopy(incoming.get(key) or []))
     if isinstance(incoming.get("quality"), dict):
@@ -893,6 +941,12 @@ def attach_candidate_engine_metadata(result: dict[str, Any], engine_name: str) -
             item.setdefault("sourceEngine", engine_name)
             item.setdefault("variantId", engine_name)
             item.setdefault("selectedVariantId", item.get("variantId"))
+
+
+def apply_contract_metadata(result: dict[str, Any]) -> None:
+    result["evidenceContractVersion"] = EVIDENCE_CONTRACT_VERSION
+    result["pageSelectionVersion"] = PAGE_SELECTION_VERSION
+    result["remediationVersion"] = REMEDIATION_VERSION
 
 
 def engine_should_remediate(engine_name: str, reasons: set[str]) -> bool:
@@ -911,6 +965,290 @@ def has_parse_content(result: dict[str, Any]) -> bool:
     return any(result.get(key) for key in ["fragments", "fields", "tables", "seals", "layoutBlocks"])
 
 
+def remediation_variants_for_reasons(
+    result: dict[str, Any],
+    variants: list[dict[str, Any]],
+    reasons: set[str],
+    *,
+    profile: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    crop_variants: list[dict[str, Any]] = []
+    if reasons.intersection(TEXT_REMEDIATION_REASONS):
+        crop_variants.extend(
+            build_crop_variants(
+                field_remediation_targets(result, profile or {}),
+                variants,
+                target_type="field",
+                purpose="field",
+                padding_ratio=0.35,
+                max_items=6,
+            )
+        )
+    if reasons.intersection(TABLE_REMEDIATION_REASONS):
+        crop_variants.extend(
+            build_crop_variants(
+                result.get("tables") or [],
+                variants,
+                target_type="table",
+                purpose="table",
+                padding_ratio=0.08,
+                max_items=3,
+            )
+        )
+    if reasons.intersection(SEAL_REMEDIATION_REASONS):
+        crop_variants.extend(
+            build_crop_variants(
+                result.get("seals") or [],
+                variants,
+                target_type="seal",
+                purpose="seal",
+                padding_ratio=0.22,
+                max_items=4,
+            )
+        )
+    return [*crop_variants, *variants] if crop_variants else variants
+
+
+def field_remediation_targets(result: dict[str, Any], profile: dict[str, Any]) -> list[dict[str, Any]]:
+    targets = [
+        field
+        for field in result.get("fields") or []
+        if isinstance(field, dict) and (field.get("bbox") or field.get("polygon"))
+    ]
+    missing_fields = [str(item) for item in ((result.get("quality") or {}).get("missingFields") or []) if str(item).strip()]
+    if not missing_fields:
+        return targets
+    fragments = [fragment for fragment in result.get("fragments") or [] if isinstance(fragment, dict)]
+    for field_code in missing_fields:
+        target = missing_field_label_target(field_code, fragments)
+        if target:
+            targets.append(target)
+    return targets
+
+
+FIELD_LABEL_ALIASES = {
+    "report_no": ["报告编号", "报告号", "Report No", "Report No."],
+    "certificate_no": ["证书编号", "质量证明书编号", "Certificate No"],
+    "project_name": ["项目名称", "Project"],
+    "pipe_no": ["管道代号", "管线号", "管道号", "Line No", "Pipeline No"],
+    "weld_no": ["焊口编号", "焊口号", "Weld No"],
+    "detection_date": ["检测日期", "Date"],
+    "issue_date": ["签发日期", "出厂日期", "日期"],
+    "manufacturer": ["生产厂家", "制造单位", "厂家"],
+    "material_grade": ["材料牌号", "材质", "牌号"],
+    "batch_no": ["炉批号", "批号", "Heat No"],
+    "standard_no": ["标准号", "执行标准"],
+    "inspection_unit": ["检测单位", "检验单位"],
+}
+
+
+def missing_field_label_target(field_code: str, fragments: list[dict[str, Any]]) -> dict[str, Any] | None:
+    aliases = FIELD_LABEL_ALIASES.get(field_code, [field_code])
+    for fragment in fragments:
+        text = str(fragment.get("text") or "")
+        if not text:
+            continue
+        if any(alias and alias.lower() in text.lower() for alias in aliases):
+            bbox = rect_from_bbox(fragment.get("bbox") or fragment.get("polygon"))
+            if not bbox:
+                continue
+            page_width = float(fragment.get("pageWidth") or 0)
+            page_height = float(fragment.get("pageHeight") or 0)
+            x0, y0, x1, y1 = bbox
+            width = max(x1 - x0, 80.0)
+            height = max(y1 - y0, 32.0)
+            crop_bbox = [
+                x0,
+                max(0.0, y0 - height * 0.8),
+                x1 + width * 8.0,
+                y1 + height * 1.8,
+            ]
+            if page_width > 0:
+                crop_bbox[2] = min(crop_bbox[2], page_width)
+            if page_height > 0:
+                crop_bbox[3] = min(crop_bbox[3], page_height)
+            return {
+                "fieldId": field_code,
+                "fieldCode": field_code,
+                "bbox": crop_bbox,
+                "pageNo": page_no_from(fragment),
+                "coordinateSystem": fragment.get("coordinateSystem"),
+                "qualityFlags": ["missing_field_label_crop"],
+            }
+    return None
+
+
+def build_crop_variants(
+    items: list[Any],
+    variants: list[dict[str, Any]],
+    *,
+    target_type: str,
+    purpose: str,
+    padding_ratio: float,
+    max_items: int,
+) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    for item in items:
+        if len(output) >= max_items:
+            break
+        if not isinstance(item, dict):
+            continue
+        if item.get("coordinateSystem") != "rendered_pixels":
+            continue
+        bbox = rect_from_bbox(item.get("bbox") or item.get("polygon"))
+        if bbox is None:
+            continue
+        page_no = page_no_from(item)
+        source_variant = original_variant_for_page(variants, page_no)
+        if source_variant is None:
+            continue
+        crop = crop_variant_image(
+            Path(str(source_variant.get("path") or "")),
+            bbox,
+            padding_ratio=padding_ratio,
+            purpose=purpose,
+        )
+        if crop is None:
+            continue
+        crop_path = Path(str(crop["path"]))
+        target_id = str(item.get(f"{target_type}Id") or item.get("tableId") or item.get("sealId") or len(output) + 1)
+        variant_id = f"page_{page_no}_{purpose}_crop_{safe_variant_token(target_id)}"
+        output.append(
+            {
+                "variantId": variant_id,
+                "pageNo": page_no,
+                "path": str(crop_path),
+                "documentPath": source_variant.get("documentPath"),
+                "sourceType": source_variant.get("sourceType"),
+                "coordinateSystem": "crop_pixels",
+                "sourceCoordinateSystem": "rendered_pixels",
+                "preprocessChain": [purpose, "crop"],
+                "imageHash": file_sha256(crop_path),
+                "purpose": purpose,
+                "source": "remediation_crop",
+                "engineScope": "crop",
+                "cropSourceVariantId": source_variant.get("variantId"),
+                "cropSourceTargetType": target_type,
+                "cropSourceTargetId": target_id,
+                "cropSourceBbox": bbox,
+                "cropOffsetX": crop["cropOffsetX"],
+                "cropOffsetY": crop["cropOffsetY"],
+                "cropWidth": crop["cropWidth"],
+                "cropHeight": crop["cropHeight"],
+                "sourcePageWidth": crop["sourcePageWidth"],
+                "sourcePageHeight": crop["sourcePageHeight"],
+                "remediationTarget": {
+                    "type": target_type,
+                    "id": target_id,
+                    "fieldCode": item.get("fieldCode"),
+                    "reason": "remediation_crop",
+                },
+                "coordinateTransformStatus": "crop_local",
+            }
+        )
+    return output
+
+
+def original_variant_for_page(variants: list[dict[str, Any]], page_no: int) -> dict[str, Any] | None:
+    return next(
+        (
+            variant
+            for variant in variants
+            if int(variant.get("pageNo") or 1) == page_no
+            and str(variant.get("variantId") or "").endswith("_original")
+            and variant.get("path")
+        ),
+        None,
+    )
+
+
+def crop_variant_image(source_path: Path, bbox: list[float], *, padding_ratio: float, purpose: str) -> dict[str, Any] | None:
+    if not source_path.exists():
+        return None
+    try:
+        from PIL import Image  # type: ignore
+
+        with Image.open(str(source_path)) as image:
+            width, height = image.size
+            x0, y0, x1, y1 = bbox
+            pad_x = max((x1 - x0) * padding_ratio, 8.0)
+            pad_y = max((y1 - y0) * padding_ratio, 8.0)
+            crop_box = (
+                max(int(x0 - pad_x), 0),
+                max(int(y0 - pad_y), 0),
+                min(int(x1 + pad_x), width),
+                min(int(y1 + pad_y), height),
+            )
+            if crop_box[2] <= crop_box[0] or crop_box[3] <= crop_box[1]:
+                return None
+            out_dir = Path(tempfile.gettempdir()) / "aicheck-ocr-remediation-crops"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            source_hash = file_sha256(source_path)
+            key = hashlib.sha256(
+                f"{source_hash}:bbox={crop_box}:purpose={purpose}:transform=crop_remediation_v1".encode("utf-8")
+            ).hexdigest()[:20]
+            target = out_dir / f"{source_path.stem}-{key}.png"
+            if not target.exists():
+                image.crop(crop_box).save(target)
+            return {
+                "path": target,
+                "cropOffsetX": crop_box[0],
+                "cropOffsetY": crop_box[1],
+                "cropWidth": crop_box[2] - crop_box[0],
+                "cropHeight": crop_box[3] - crop_box[1],
+                "sourcePageWidth": width,
+                "sourcePageHeight": height,
+            }
+    except Exception:
+        return None
+
+
+def safe_variant_token(value: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9_-]+", "_", value).strip("_")[:80] or "target"
+
+
+def file_sha256(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return f"sha256:{hasher.hexdigest()}"
+
+
+def call_probe_page_quality(
+    source_path: Path,
+    *,
+    profile: dict[str, Any],
+    pages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    try:
+        return probe_page_quality(source_path, profile=profile, pages=pages)
+    except TypeError:
+        # Backward-compatible for tests and older local extensions monkeypatching this hook.
+        return probe_page_quality(source_path, profile=profile)
+
+
+def call_generate_image_variants(
+    source_path: Path,
+    *,
+    profile: dict[str, Any],
+    page_quality: list[dict[str, Any]],
+    pages: list[dict[str, Any]],
+    options: dict[str, Any],
+) -> list[dict[str, Any]]:
+    try:
+        return generate_image_variants(
+            source_path,
+            profile=profile,
+            page_quality=page_quality,
+            pages=pages,
+            options=options,
+        )
+    except TypeError:
+        # Backward-compatible for tests and older local extensions monkeypatching this hook.
+        return generate_image_variants(source_path, profile=profile, page_quality=page_quality, options=options)
+
+
 def public_variants(variants: list[dict[str, Any]]) -> list[dict[str, Any]]:
     public = []
     for variant in variants:
@@ -924,8 +1262,18 @@ def public_variants(variants: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "imageHash": variant.get("imageHash"),
                 "purpose": variant.get("purpose"),
                 "source": variant.get("source"),
+                "engineScope": variant.get("engineScope") or "page",
                 "cacheHit": bool(variant.get("cacheHit")),
                 "coordinateTransformStatus": variant.get("coordinateTransformStatus"),
+                "coordinateSystem": variant.get("coordinateSystem"),
+                "sourceCoordinateSystem": variant.get("sourceCoordinateSystem"),
+                "cropOffsetX": variant.get("cropOffsetX"),
+                "cropOffsetY": variant.get("cropOffsetY"),
+                "cropWidth": variant.get("cropWidth"),
+                "cropHeight": variant.get("cropHeight"),
+                "sourcePageWidth": variant.get("sourcePageWidth"),
+                "sourcePageHeight": variant.get("sourcePageHeight"),
+                "remediationTarget": variant.get("remediationTarget"),
             }
         )
     return public
@@ -943,10 +1291,19 @@ def variant_names(variants: list[dict[str, Any]]) -> set[str]:
     return names
 
 
-def attach_variant_metadata(result: dict[str, Any], engine_name: str, variant: dict[str, Any]) -> None:
+def attach_variant_metadata(
+    result: dict[str, Any],
+    engine_name: str,
+    variant: dict[str, Any],
+    *,
+    document_pages: list[dict[str, Any]] | None = None,
+) -> None:
     variant_id = variant.get("variantId")
     chain = variant.get("preprocessChain") or []
-    page_no = int(variant.get("pageNo") or 1)
+    engine_scope = str(variant.get("engineScope") or (result.get("metadata") or {}).get("engineScope") or "page")
+    document_level = engine_scope == "document" or bool((result.get("metadata") or {}).get("documentLevel"))
+    page_no = int(variant.get("pageNo") or 1) if not document_level else None
+    pages_by_no = {int(page.get("pageNo") or 0): page for page in document_pages or [] if isinstance(page, dict)}
     for key in ["fragments", "fields", "tables", "seals", "layoutBlocks"]:
         for item in result.get(key) or []:
             if not isinstance(item, dict):
@@ -955,12 +1312,189 @@ def attach_variant_metadata(result: dict[str, Any], engine_name: str, variant: d
             item["variantId"] = variant_id
             item["selectedVariantId"] = variant_id
             item["preprocessChain"] = chain
-            item["pageNo"] = page_no
-            if variant.get("coordinateTransformStatus") and variant.get("coordinateTransformStatus") != "identity":
+            item["engineScope"] = engine_scope
+            if page_no is not None:
+                item["pageNo"] = page_no
+            else:
+                item.setdefault("pageNo", int(item.get("pageNo") or 1))
+            normalize_item_coordinates(item, engine_name=engine_name, variant=variant, pages_by_no=pages_by_no)
+            if variant_has_unmapped_coordinates(variant, item):
                 flags = {str(flag) for flag in item.get("qualityFlags") or []}
                 flags.add("coordinate_transform_unmapped")
                 item["qualityFlags"] = sorted(flags)
                 item["coordinateTransformStatus"] = variant.get("coordinateTransformStatus")
+            normalize_nested_coordinates(
+                item,
+                engine_name=engine_name,
+                variant=variant,
+                pages_by_no=pages_by_no,
+                parent_page_no=int(item.get("pageNo") or 1),
+                parent_coordinate_system=str(item.get("coordinateSystem") or "rendered_pixels"),
+                skip_self=True,
+            )
+            prefix_item_identity(item, key=key, variant_id=str(variant_id or "document_original"))
+
+
+def normalize_item_coordinates(
+    item: dict[str, Any],
+    *,
+    engine_name: str,
+    variant: dict[str, Any],
+    pages_by_no: dict[int, dict[str, Any]],
+) -> None:
+    page_no = int(item.get("pageNo") or 1)
+    page = pages_by_no.get(page_no) or {}
+    if variant_is_remediation_crop(variant) and (item.get("bbox") or item.get("polygon")):
+        map_crop_item_to_page(item, variant)
+        return
+    if engine_name == "pymupdf_text_layer" and item.get("bbox") and page.get("renderScaleX"):
+        scale_x = float(page.get("renderScaleX") or 1.0)
+        scale_y = float(page.get("renderScaleY") or scale_x)
+        bbox = item.get("bbox")
+        if isinstance(bbox, list) and len(bbox) == 4:
+            item["bbox"] = [
+                round(float(bbox[0]) * scale_x, 4),
+                round(float(bbox[1]) * scale_y, 4),
+                round(float(bbox[2]) * scale_x, 4),
+                round(float(bbox[3]) * scale_y, 4),
+            ]
+            item["sourceCoordinateSystem"] = "pdf_points"
+            item["coordinateSystem"] = "rendered_pixels"
+            item["coordinateTransform"] = {"scaleX": round(scale_x, 6), "scaleY": round(scale_y, 6)}
+            item["coordinateTransformStatus"] = "mapped_from_pdf_points"
+            return
+    if str(variant.get("engineScope") or "") == "document" and (item.get("bbox") or item.get("polygon")):
+        item["coordinateSystem"] = f"{engine_name}_document"
+        if variant.get("sourceCoordinateSystem"):
+            item.setdefault("sourceCoordinateSystem", variant.get("sourceCoordinateSystem"))
+        flags = {str(flag) for flag in item.get("qualityFlags") or []}
+        flags.add("document_coordinate_unmapped")
+        item["qualityFlags"] = sorted(flags)
+        return
+    item.setdefault("coordinateSystem", variant.get("coordinateSystem"))
+    if variant.get("sourceCoordinateSystem"):
+        item.setdefault("sourceCoordinateSystem", variant.get("sourceCoordinateSystem"))
+    item.setdefault("coordinateTransformStatus", variant.get("coordinateTransformStatus"))
+
+
+def variant_is_remediation_crop(variant: dict[str, Any]) -> bool:
+    return str(variant.get("source") or "") == "remediation_crop" or str(variant.get("engineScope") or "") == "crop"
+
+
+def map_crop_item_to_page(item: dict[str, Any], variant: dict[str, Any]) -> None:
+    offset_x = float(variant.get("cropOffsetX") or 0.0)
+    offset_y = float(variant.get("cropOffsetY") or 0.0)
+    if isinstance(item.get("bbox"), list) and len(item["bbox"]) == 4:
+        item["bbox"] = map_crop_bbox_to_page(item["bbox"], offset_x=offset_x, offset_y=offset_y)
+    if isinstance(item.get("polygon"), list):
+        item["polygon"] = map_crop_polygon_to_page(item["polygon"], offset_x=offset_x, offset_y=offset_y)
+    item["pageNo"] = int(variant.get("pageNo") or item.get("pageNo") or 1)
+    item["coordinateSystem"] = "rendered_pixels"
+    item["sourceCoordinateSystem"] = "crop_pixels"
+    item["coordinateTransformStatus"] = "mapped_from_crop"
+    item["coordinateTransform"] = {"offsetX": offset_x, "offsetY": offset_y}
+    item["cropSourceVariantId"] = variant.get("cropSourceVariantId")
+    item["cropSourceBbox"] = variant.get("cropSourceBbox")
+
+
+def map_crop_bbox_to_page(bbox: list[Any], *, offset_x: float, offset_y: float) -> list[float]:
+    x0, y0, x1, y1 = [float(value) for value in bbox[:4]]
+    return [round(x0 + offset_x, 4), round(y0 + offset_y, 4), round(x1 + offset_x, 4), round(y1 + offset_y, 4)]
+
+
+def map_crop_polygon_to_page(polygon: list[Any], *, offset_x: float, offset_y: float) -> list[Any]:
+    output = []
+    for point in polygon:
+        if isinstance(point, (list, tuple)) and len(point) >= 2:
+            try:
+                output.append([round(float(point[0]) + offset_x, 4), round(float(point[1]) + offset_y, 4)])
+            except (TypeError, ValueError):
+                output.append(point)
+        else:
+            output.append(point)
+    return output
+
+
+def variant_has_unmapped_coordinates(variant: dict[str, Any], item: dict[str, Any]) -> bool:
+    status = str(variant.get("coordinateTransformStatus") or "")
+    if not status or status in {"identity", "original", "mapped", "mapped_from_crop", "mapped_from_pdf_points"}:
+        return False
+    item_status = str(item.get("coordinateTransformStatus") or "")
+    if item_status in {"original", "mapped", "mapped_from_crop", "mapped_from_pdf_points"}:
+        return False
+    return True
+
+
+def normalize_nested_coordinates(
+    obj: Any,
+    *,
+    engine_name: str,
+    variant: dict[str, Any],
+    pages_by_no: dict[int, dict[str, Any]],
+    parent_page_no: int,
+    parent_coordinate_system: str,
+    skip_self: bool = False,
+) -> None:
+    if isinstance(obj, dict):
+        if not skip_self:
+            obj.setdefault("pageNo", parent_page_no)
+            obj.setdefault("coordinateSystem", parent_coordinate_system)
+            obj.setdefault("sourceEngine", engine_name)
+            obj.setdefault("variantId", variant.get("variantId"))
+            obj.setdefault("selectedVariantId", variant.get("variantId"))
+            if obj.get("bbox") or obj.get("polygon"):
+                normalize_item_coordinates(obj, engine_name=engine_name, variant=variant, pages_by_no=pages_by_no)
+                if variant_has_unmapped_coordinates(variant, obj):
+                    flags = {str(flag) for flag in obj.get("qualityFlags") or []}
+                    flags.add("coordinate_transform_unmapped")
+                    obj["qualityFlags"] = sorted(flags)
+                    obj["coordinateTransformStatus"] = variant.get("coordinateTransformStatus")
+        for value in obj.values():
+            normalize_nested_coordinates(
+                value,
+                engine_name=engine_name,
+                variant=variant,
+                pages_by_no=pages_by_no,
+                parent_page_no=int(obj.get("pageNo") or parent_page_no),
+                parent_coordinate_system=str(obj.get("coordinateSystem") or parent_coordinate_system),
+            )
+        return
+    if not isinstance(obj, list):
+        return
+    for item in obj:
+        if isinstance(item, dict):
+            item.setdefault("pageNo", parent_page_no)
+            item.setdefault("coordinateSystem", parent_coordinate_system)
+            item.setdefault("sourceEngine", engine_name)
+            item.setdefault("variantId", variant.get("variantId"))
+            item.setdefault("selectedVariantId", variant.get("variantId"))
+            if item.get("bbox") or item.get("polygon"):
+                normalize_item_coordinates(item, engine_name=engine_name, variant=variant, pages_by_no=pages_by_no)
+                if variant_has_unmapped_coordinates(variant, item):
+                    flags = {str(flag) for flag in item.get("qualityFlags") or []}
+                    flags.add("coordinate_transform_unmapped")
+                    item["qualityFlags"] = sorted(flags)
+                    item["coordinateTransformStatus"] = variant.get("coordinateTransformStatus")
+            normalize_nested_coordinates(
+                item,
+                engine_name=engine_name,
+                variant=variant,
+                pages_by_no=pages_by_no,
+                parent_page_no=int(item.get("pageNo") or parent_page_no),
+                parent_coordinate_system=str(item.get("coordinateSystem") or parent_coordinate_system),
+            )
+
+
+def prefix_item_identity(item: dict[str, Any], *, key: str, variant_id: str) -> None:
+    page_no = int(item.get("pageNo") or 1)
+    if key == "tables":
+        raw_id = str(item.get("tableId") or "table")
+        if not raw_id.startswith("page_") and not raw_id.startswith("document_"):
+            item["tableId"] = f"page_{page_no}_{variant_id}_{raw_id}"
+    elif key == "seals":
+        raw_id = str(item.get("sealId") or "seal")
+        if not raw_id.startswith("page_") and not raw_id.startswith("document_"):
+            item["sealId"] = f"page_{page_no}_{variant_id}_{raw_id}"
 
 
 def variant_quality_score(variant: dict[str, Any], page_quality: list[dict[str, Any]]) -> float:
@@ -1011,18 +1545,22 @@ def enrich_parse_result(
 def apply_profile_postprocessing(result: dict[str, Any], profile: dict[str, Any]) -> None:
     if is_piping_characteristic_profile(result, profile):
         inferred_tables = infer_piping_tables(result.get("fragments") or [])
-        grid_table = best_opencv_grid_table(result.get("tables") or [])
-        if inferred_tables and grid_table:
-            aligned_table = align_piping_text_table_with_grid(inferred_tables[0], grid_table)
-            result.setdefault("tables", []).append(aligned_table)
-            result.setdefault("diagnostics", []).append(
-                diagnostic(
-                    "OPENCV_GRID_TABLE_ALIGNED",
-                    "已用本地 OpenCV 表格网格结构对齐 OCR 文本行，作为 PP-StructureV3 缺失时的本地结构化表格结果。",
-                    level="info",
-                    tableId=aligned_table["tableId"],
+        aligned_tables = []
+        for page_no, page_inferred_tables in group_tables_by_page(inferred_tables).items():
+            grid_table = best_opencv_grid_table(result.get("tables") or [], page_no=page_no)
+            if grid_table:
+                aligned_tables.append(align_piping_text_table_with_grid(page_inferred_tables[0], grid_table))
+        if aligned_tables:
+            result.setdefault("tables", []).extend(aligned_tables)
+            for aligned_table in aligned_tables:
+                result.setdefault("diagnostics", []).append(
+                    diagnostic(
+                        "OPENCV_GRID_TABLE_ALIGNED",
+                        "已用本地 OpenCV 表格网格结构对齐同页 OCR 文本行，作为 PP-StructureV3 缺失时的本地结构化表格结果。",
+                        level="info",
+                        tableId=aligned_table["tableId"],
+                    )
                 )
-            )
         elif inferred_tables and not result.get("tables"):
             result["tables"] = inferred_tables
             result.setdefault("diagnostics", []).append(
@@ -1034,7 +1572,7 @@ def apply_profile_postprocessing(result: dict[str, Any], profile: dict[str, Any]
                 )
             )
         normalize_piping_tables(result)
-        extract_piping_fields(result)
+        extract_piping_fields(result, profile)
         add_profile_quality_diagnostics(result, profile)
         return
     if is_quality_certificate_profile(result, profile):
@@ -1049,11 +1587,20 @@ def apply_profile_postprocessing(result: dict[str, Any], profile: dict[str, Any]
         return
 
 
-def best_opencv_grid_table(tables: list[Any]) -> dict[str, Any] | None:
+def group_tables_by_page(tables: list[Any]) -> dict[int, list[dict[str, Any]]]:
+    grouped: dict[int, list[dict[str, Any]]] = {}
+    for table in tables:
+        if isinstance(table, dict):
+            grouped.setdefault(page_no_from(table), []).append(table)
+    return grouped
+
+
+def best_opencv_grid_table(tables: list[Any], *, page_no: int | None = None) -> dict[str, Any] | None:
     candidates = [
         table
         for table in tables
         if isinstance(table, dict) and str(table.get("sourceEngine") or "") == "opencv_table_grid_subprocess"
+        and (page_no is None or page_no_from(table) == page_no)
     ]
     if not candidates:
         return None
@@ -1062,7 +1609,8 @@ def best_opencv_grid_table(tables: list[Any]) -> dict[str, Any] | None:
 
 def align_piping_text_table_with_grid(text_table: dict[str, Any], grid_table: dict[str, Any]) -> dict[str, Any]:
     aligned = deepcopy(text_table)
-    aligned["tableId"] = "piping_characteristic_table_1"
+    page_no = page_no_from(aligned)
+    aligned["tableId"] = f"page_{page_no}_piping_characteristic_table_1"
     aligned["sourceEngine"] = "opencv_grid_text_aligned"
     aligned["bbox"] = grid_table.get("bbox") or aligned.get("bbox")
     aligned["rows"] = max(int(aligned.get("rows") or 0), int(grid_table.get("rows") or 0))
@@ -1211,7 +1759,7 @@ def infer_piping_tables_for_page(items: list[dict[str, Any]], page_no: int) -> l
     structure_confidence = min(0.9, 0.58 + min(len(data_rows), 10) * 0.025)
     return [
         {
-            "tableId": "piping_characteristic_table_1",
+            "tableId": f"page_{page_no}_piping_characteristic_table_1",
             "pageNo": page_no,
             "bbox": [x0, y0, x1, y1],
             "rows": len(table_rows),
@@ -1554,7 +2102,7 @@ def piping_header_code(header: str) -> str | None:
     return None
 
 
-def extract_piping_fields(result: dict[str, Any]) -> None:
+def extract_piping_fields(result: dict[str, Any], profile: dict[str, Any] | None = None) -> None:
     fragments = [item for item in result.get("fragments") or [] if isinstance(item, dict)]
     text_items = [(str(item.get("text") or "").strip(), item) for item in fragments if str(item.get("text") or "").strip()]
     joined = "\n".join(text for text, _ in text_items)
@@ -1564,7 +2112,11 @@ def extract_piping_fields(result: dict[str, Any]) -> None:
         "文件标题",
         find_text_fragment(text_items, ["管道特性表", "PIPING CHARACTERISTIC LIST"]),
     )
-    add_field_if_missing(result, "company_name", "公司名称", find_text_fragment(text_items, ["广东星燃石化设计院有限公司"]))
+    organization_aliases = [str(item) for item in ((profile or {}).get("organizationAliases") or []) if str(item).strip()]
+    if organization_aliases:
+        add_field_if_missing(result, "company_name", "公司名称", find_text_fragment(text_items, organization_aliases))
+    else:
+        add_field_if_missing(result, "company_name", "公司名称", find_organization_fragment(text_items))
     project_fragment = find_project_fragment(text_items)
     add_field_if_missing(result, "project_name", "项目名称", project_fragment)
     drawing_match = DRAWING_NO_RE.search(joined)
@@ -1869,6 +2421,7 @@ def add_field_if_missing(result: dict[str, Any], field_code: str, field_name: st
     fragment = candidate.get("fragment") if isinstance(candidate, dict) else None
     if not text or not isinstance(fragment, dict):
         return
+    inherited_flags = [str(flag) for flag in fragment.get("qualityFlags") or []]
     fields.append(
         {
             "fieldCode": field_code,
@@ -1876,6 +2429,13 @@ def add_field_if_missing(result: dict[str, Any], field_code: str, field_name: st
             "fieldValue": str(text),
             "pageNo": page_no_from(fragment),
             "bbox": rect_from_bbox(fragment.get("bbox")),
+            "coordinateSystem": fragment.get("coordinateSystem"),
+            "sourceCoordinateSystem": fragment.get("sourceCoordinateSystem"),
+            "coordinateTransform": fragment.get("coordinateTransform"),
+            "coordinateTransformStatus": fragment.get("coordinateTransformStatus"),
+            "qualityFlags": inherited_flags,
+            "variantId": fragment.get("variantId"),
+            "selectedVariantId": fragment.get("selectedVariantId"),
             "confidence": first_present(fragment, "confidence", default=0.0),
             "extractionMethod": "profile_heuristic",
             "sourceEngine": first_present(fragment, "sourceEngine", default="profile_postprocessor"),
@@ -1888,6 +2448,15 @@ def find_text_fragment(text_items: list[tuple[str, dict[str, Any]]], needles: li
         for text, fragment in text_items:
             if needle in text or needle.upper() in text.upper():
                 return {"text": needle if needle in text else text, "fragment": fragment}
+    return None
+
+
+def find_organization_fragment(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    suffixes = ("有限公司", "设计院", "研究院", "工程公司", "检测有限公司", "集团公司")
+    for text, fragment in text_items:
+        cleaned = text.strip(" ：:")
+        if any(suffix in cleaned for suffix in suffixes) and "项目名称" not in cleaned:
+            return {"text": cleaned, "fragment": fragment}
     return None
 
 

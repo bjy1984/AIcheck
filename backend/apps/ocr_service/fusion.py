@@ -224,11 +224,15 @@ def choose_tables(tables: list[Any], *, profile: dict[str, Any]) -> list[dict[st
         best = deepcopy(best_source)
         if matched_candidates:
             best.setdefault("matchedRequiredTable", required)
+            best["matchedRequired"] = True
+            best["candidateOnly"] = False
         else:
             flags = {str(flag) for flag in best.get("qualityFlags") or []}
             flags.add("required_table_unmatched_candidate")
             best["qualityFlags"] = sorted(flags)
             best.setdefault("candidateForRequiredTables", [required])
+            best["matchedRequired"] = False
+            best["candidateOnly"] = True
         conflicts = [
             table.get("tableId")
             for table in candidates
@@ -256,7 +260,7 @@ def fuse_seals(seals: list[Any], *, profile: dict[str, Any]) -> list[dict[str, A
     seal_items = [seal for seal in seals if isinstance(seal, dict)]
     fused: list[dict[str, Any]] = []
     for seal in sorted(seal_items, key=lambda item: seal_score(item, profile), reverse=True):
-        if any(overlaps(seal.get("bbox"), existing.get("bbox")) for existing in fused):
+        if any(same_page_overlap(seal, existing) for existing in fused):
             continue
         output = deepcopy(seal)
         output["selectedVariantId"] = output.get("selectedVariantId") or output.get("variantId")
@@ -282,7 +286,7 @@ def enrich_visual_seals_from_fragments(
         if not seal_bbox:
             enriched.append(seal)
             continue
-        hits = fragments_for_seal(seal_bbox, fragments)
+        hits = fragments_for_seal(seal, fragments)
         if not seal_fragment_hits_are_readable(seal, hits, profile):
             enriched.append(seal)
             continue
@@ -324,8 +328,13 @@ def should_enrich_visual_seal(seal: dict[str, Any], profile: dict[str, Any]) -> 
     return visual_color in {"red", "blue"}
 
 
-def fragments_for_seal(seal_bbox: list[float], fragments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def fragments_for_seal(seal: dict[str, Any], fragments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seal_bbox = flat_bbox(seal.get("bbox"))
+    if not seal_bbox:
+        return []
     x0, y0, x1, y1 = seal_bbox
+    seal_page = int_from(seal.get("pageNo"), default=1)
+    seal_coordinate = str(seal.get("coordinateSystem") or "rendered_pixels")
     pad_x = max((x1 - x0) * 0.12, 60.0)
     pad_y = max((y1 - y0) * 0.12, 60.0)
     hits = []
@@ -334,6 +343,10 @@ def fragments_for_seal(seal_bbox: list[float], fragments: list[dict[str, Any]]) 
             continue
         text = normalize_text(fragment.get("text"))
         if not text or len(text) <= 1:
+            continue
+        if int_from(fragment.get("pageNo"), default=1) != seal_page:
+            continue
+        if str(fragment.get("coordinateSystem") or "rendered_pixels") != seal_coordinate:
             continue
         bbox = flat_bbox(fragment.get("bbox"))
         if not bbox:
@@ -450,6 +463,8 @@ def fragment_seal_candidates_from_text(
                     "bbox": bbox,
                     "polygon": bbox_to_polygon(bbox),
                     "ocrConfidence": round(min(0.88, max(0.68, average([float(item.get("confidence") or 0.0) for item in hits]) * 0.9)), 4),
+                    "candidateOnly": True,
+                    "canSatisfyRequiredSeal": False,
                     "fields": fragment_seal_fields(text, hits, bbox, 0.78),
                     "qualityFlags": ["fragment_seal_text", "text_only_seal_candidate"],
                     "sourceEngine": "fragment_seal_text_detector",
@@ -551,9 +566,9 @@ def build_quality_gate(result: dict[str, Any], profile: dict[str, Any]) -> dict[
     fields = [field for field in result.get("fields") or [] if isinstance(field, dict)]
     tables = [table for table in result.get("tables") or [] if isinstance(table, dict)]
     seals = [seal for seal in result.get("seals") or [] if isinstance(seal, dict)]
-    required_fields = [field for field in profile.get("requiredFields") or [] if field != "seal"]
-    field_codes = {str(field.get("fieldCode") or field.get("fieldName") or "") for field in fields}
-    missing_fields = [field for field in required_fields if field not in field_codes]
+    required_fields = [normalize_field_key(field) for field in profile.get("requiredFields") or [] if field != "seal"]
+    field_codes = {normalize_field_key(field.get("fieldCode") or field.get("fieldName") or "") for field in fields}
+    missing_fields = [field for field in required_fields if field and field not in field_codes]
     required_tables = [str(table) for table in profile.get("requiredTables") or []]
     missing_tables = missing_required_tables(tables, required_tables)
     required_seal = bool((profile.get("sealRules") or {}).get("required"))
@@ -706,7 +721,10 @@ def missing_required_tables(tables: list[dict[str, Any]], required_tables: list[
     return [
         required_table
         for required_table in required_tables
-        if not any(table_matches_required(table, required_table) for table in tables)
+        if not any(
+            not table.get("candidateOnly") and table_matches_required(table, required_table)
+            for table in tables
+        )
     ]
 
 
@@ -738,6 +756,10 @@ def flatten_table_candidates(candidates: list[Any]) -> list[Any]:
 
 
 def same_table_identity(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    if int_from(left.get("pageNo"), default=1) != int_from(right.get("pageNo"), default=1):
+        return False
+    if str(left.get("coordinateSystem") or "rendered_pixels") != str(right.get("coordinateSystem") or "rendered_pixels"):
+        return False
     if left.get("tableId") and right.get("tableId") and left.get("tableId") == right.get("tableId"):
         return True
     return left.get("sourceEngine") == right.get("sourceEngine") and left.get("bbox") == right.get("bbox")
@@ -759,7 +781,7 @@ def table_schema_match_score(table: dict[str, Any], required_table: str | None) 
     headers = table_header_tokens(table)
     if not headers:
         return 0.0
-    matched = {token for token in expected if any(token in header or header in token for header in headers)}
+    matched = {token for token in expected if any(header_token_matches(token, header) for header in headers)}
     return len(matched) / max(len(expected), 1)
 
 
@@ -772,7 +794,23 @@ def table_schema_match_count(table: dict[str, Any], required_table: str | None) 
     headers = table_header_tokens(table)
     if not headers:
         return 0
-    return len({token for token in expected if any(token in header or header in token for header in headers)})
+    return len({token for token in expected if any(header_token_matches(token, header) for header in headers)})
+
+
+def header_token_matches(expected: str, header: str) -> bool:
+    if not expected or not header:
+        return False
+    if len(expected) <= 2 or len(header) <= 2:
+        return expected == header
+    return expected in header or header in expected
+
+
+def same_page_overlap(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    if int_from(left.get("pageNo"), default=1) != int_from(right.get("pageNo"), default=1):
+        return False
+    if str(left.get("coordinateSystem") or "rendered_pixels") != str(right.get("coordinateSystem") or "rendered_pixels"):
+        return False
+    return overlaps(left.get("bbox"), right.get("bbox"))
 
 
 def table_header_tokens(table: dict[str, Any]) -> set[str]:
@@ -806,7 +844,7 @@ def int_from(value: Any, *, default: int = 0) -> int:
 def field_score(field: dict[str, Any], *, field_code: str | None = None) -> float:
     value = str(field.get("fieldValue") or "")
     confidence = float(field.get("confidence") or 0.0)
-    bbox_bonus = 0.05 if field.get("bbox") else 0.0
+    bbox_bonus = 0.05 if has_evidence_box(field) else -0.05 if field.get("bbox") or field.get("polygon") else 0.0
     value_bonus = min(len(value), 20) / 400.0
     validation_bonus = 0.0
     if field_code:
@@ -1153,7 +1191,8 @@ def table_score(table: dict[str, Any], required_table: str | None = None) -> flo
     source_bonus = 0.12 if table.get("sourceEngine") == "pp_structure_v3" else 0.0
     header_bonus = table_schema_match_score(table, required_table) * 0.22 if required_table else 0.0
     fill_bonus = table_fill_rate(table) * 0.08
-    return confidence + min(normalized_rows, 20) * 0.02 + min(cells, 200) * 0.0005 + source_bonus + header_bonus + fill_bonus
+    evidence_bonus = 0.06 if has_evidence_box(table) else -0.04 if table.get("bbox") or table.get("polygon") else 0.0
+    return confidence + min(normalized_rows, 20) * 0.02 + min(cells, 200) * 0.0005 + source_bonus + header_bonus + fill_bonus + evidence_bonus
 
 
 def table_fill_rate(table: dict[str, Any]) -> float:
@@ -1178,6 +1217,16 @@ def seal_score(seal: dict[str, Any], profile: dict[str, Any] | None = None) -> f
     name_bonus = 0.12 if str(seal.get("sealName") or "").strip() else 0.0
     flags = {str(flag) for flag in seal.get("qualityFlags") or []}
     formal_bonus = -0.3 if "visual_candidate_only" in flags else 0.25
+    if seal.get("canSatisfyRequiredSeal") is True:
+        formal_bonus += 1.0
+    if "text_only_seal_candidate" in flags:
+        formal_bonus -= 1.0
+    if seal.get("candidateOnly") is True:
+        formal_bonus -= 0.8
+    if has_evidence_box(seal):
+        formal_bonus += 0.08
+    elif seal.get("bbox") or seal.get("polygon"):
+        formal_bonus -= 0.05
     if "agentdesign_seal_ocr" in flags:
         formal_bonus += 0.2
     return confidence + name_bonus + formal_bonus + visual_profile_bonus(seal, profile or {})
@@ -1210,8 +1259,12 @@ def seal_in_bottom_right(seal: dict[str, Any]) -> bool:
 
 
 def seal_text_is_readable(seal: dict[str, Any]) -> bool:
-    flags = seal.get("qualityFlags") or []
-    if "visual_candidate_only" in flags or "requires_seal_ocr_text" in flags:
+    flags = {str(flag) for flag in seal.get("qualityFlags") or []}
+    if seal.get("candidateOnly") is True:
+        return False
+    if seal.get("canSatisfyRequiredSeal") is False:
+        return False
+    if {"visual_candidate_only", "requires_seal_ocr_text", "text_only_seal_candidate"}.intersection(flags):
         return False
     seal_name = str(seal.get("sealName") or "").strip()
     if not seal_name or seal_name.startswith("视觉"):
@@ -1281,11 +1334,25 @@ def evidence_completeness(result: dict[str, Any]) -> float:
     ]
     if not evidence_items:
         return 0.0
-    with_bbox = [item for item in evidence_items if item.get("bbox") or item.get("polygon")]
+    with_bbox = [item for item in evidence_items if has_evidence_box(item)]
     return len(with_bbox) / len(evidence_items)
 
 
 def has_evidence_box(item: dict[str, Any]) -> bool:
+    if not isinstance(item, dict):
+        return False
+    if item.get("candidateOnly") is True:
+        return False
+    flags = {str(flag) for flag in item.get("qualityFlags") or []}
+    if {"document_coordinate_unmapped", "coordinate_transform_unmapped", "external_coordinate_unverified"}.intersection(flags):
+        return False
+    if item.get("coordinateSystem") != "rendered_pixels":
+        return False
+    if not item.get("pageNo"):
+        return False
+    status = item.get("coordinateTransformStatus")
+    if status and status not in {"original", "mapped", "mapped_from_crop", "mapped_from_pdf_points"}:
+        return False
     return bool(flat_bbox(item.get("bbox")) or flat_bbox(item.get("polygon")))
 
 
