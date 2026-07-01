@@ -4630,7 +4630,7 @@ def fde_document_knowledge_lineage(document: dict[str, Any]) -> dict[str, Any]:
         "vectorIndex": {
             "embeddingModel": document.get("embeddingModel") or "embedding-default",
             "indexVersion": document.get("indexVersion") or "knowledge-index@local",
-            "dimensions": fde_as_int(document.get("vectorDimensions"), 3072),
+            "dimensions": fde_as_int(document.get("vectorDimensions"), 1024),
             "chunkCount": chunk_count,
             "vectorCount": vector_count,
             "vectorGap": vector_gap,
@@ -4760,6 +4760,1228 @@ def fde_project_knowledge_lineage(documents: list[dict[str, Any]], review_runs: 
     }
 
 
+def fde_ratio(numerator: float | int, denominator: float | int, *, default: float = 0.0) -> float:
+    try:
+        denominator_value = float(denominator)
+        if denominator_value <= 0:
+            return default
+        return max(0.0, min(1.0, float(numerator) / denominator_value))
+    except (TypeError, ValueError, ZeroDivisionError):
+        return default
+
+
+def fde_score_section(
+    *,
+    key: str,
+    name: str,
+    score: float,
+    max_score: float,
+    metric: float,
+    threshold: float,
+    blockers: list[str],
+) -> dict[str, Any]:
+    score = round(max(0.0, min(score, max_score)), 2)
+    return {
+        "key": key,
+        "name": name,
+        "score": score,
+        "maxScore": max_score,
+        "metric": round(max(0.0, min(metric, 1.0)), 4),
+        "threshold": threshold,
+        "status": "pass" if score >= max_score * threshold and not blockers else "warn",
+        "blockers": blockers,
+    }
+
+
+def fde_trace_selected_clauses(trace: dict[str, Any]) -> list[dict[str, Any]]:
+    selected = trace.get("selectedClauses") or trace.get("clauses") or []
+    return [item for item in selected if isinstance(item, dict)]
+
+
+def fde_trace_evidence_backed(trace: dict[str, Any]) -> bool:
+    for clause in fde_trace_selected_clauses(trace):
+        if clause.get("pageNo") is not None and clause.get("bbox"):
+            return True
+    return False
+
+
+def fde_project_retrieval_traces(review_runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    run_ids = {
+        str(value)
+        for run in review_runs
+        for value in (run.get("reviewRunId"), run.get("id"))
+        if value
+    }
+    return [
+        item
+        for item in repo.state.get("retrieval_traces", [])
+        if isinstance(item, dict) and (not run_ids or str(item.get("reviewRunId") or "") in run_ids)
+    ]
+
+
+def fde_project_vector_quality(documents: list[dict[str, Any]], review_runs: list[dict[str, Any]]) -> dict[str, Any]:
+    """Quantify vectorization quality for the FDE console.
+
+    This is a trace-backed operational score, not a gold-set certification. Gold retrieval
+    cases still own release approval for model/chunking/reranker changes.
+    """
+    doc_count = len(documents)
+    chunk_total = sum(fde_as_int(item.get("chunkCount")) for item in documents)
+    vector_total = sum(fde_as_int(item.get("vectorCount")) for item in documents)
+    vector_gap_total = sum(max(0, fde_as_int(item.get("chunkCount")) - fde_as_int(item.get("vectorCount"))) for item in documents)
+    docs_with_chunks = len([item for item in documents if fde_as_int(item.get("chunkCount")) > 0])
+    docs_vectorized = len(
+        [
+            item
+            for item in documents
+            if fde_as_int(item.get("vectorCount")) > 0
+            and max(0, fde_as_int(item.get("chunkCount")) - fde_as_int(item.get("vectorCount"))) == 0
+        ]
+    )
+    docs_pageindexed = len(
+        [
+            item
+            for item in documents
+            if fde_as_int(item.get("pageIndexNodeCount")) > 0 or "已构建" in str(item.get("pageIndexStatus") or "")
+        ]
+    )
+
+    def metadata_score(document: dict[str, Any]) -> float:
+        checks = [
+            bool(document.get("knowledgeFileId")),
+            bool(document.get("documentVersionId") or document.get("currentVersionId")),
+            bool(document.get("embeddingModel")),
+            bool(document.get("indexVersion")),
+            bool(document.get("vectorDimensions")),
+            bool(document.get("nodeId") or document.get("requirementName")),
+        ]
+        return fde_ratio(len([item for item in checks if item]), len(checks), default=0.0)
+
+    metadata_completeness = fde_ratio(sum(metadata_score(item) for item in documents), doc_count, default=0.0)
+    chunk_coverage = fde_ratio(docs_with_chunks, doc_count, default=0.0)
+    vector_completeness = fde_ratio(vector_total, chunk_total, default=0.0)
+    vector_document_rate = fde_ratio(docs_vectorized, doc_count, default=0.0)
+    page_index_coverage = fde_ratio(docs_pageindexed, doc_count, default=0.0)
+
+    traces = fde_project_retrieval_traces(review_runs)
+    trace_count = len(traces)
+    trace_hits = len([item for item in traces if fde_trace_selected_clauses(item)])
+    trace_evidence_hits = len([item for item in traces if fde_trace_evidence_backed(item)])
+    trace_page_index_hits = len(
+        [
+            item
+            for item in traces
+            if "pageindex" in str(item.get("selectedRoute") or "").lower()
+            or ((item.get("pageIndexTree") or {}).get("selectedNodes") if isinstance(item.get("pageIndexTree"), dict) else None)
+        ]
+    )
+    trace_filter_scoped = len(
+        [
+            item
+            for item in traces
+            if isinstance(item.get("filters"), dict)
+            and any(key in item["filters"] for key in ("businessPackId", "projectId", "nodeId", "tenantId"))
+        ]
+    )
+    selected_clause_total = sum(len(fde_trace_selected_clauses(item)) for item in traces)
+    retrieval_hit_rate = fde_ratio(trace_hits, trace_count, default=0.0)
+    retrieval_depth = fde_ratio(selected_clause_total, trace_count * 3, default=0.0)
+    trace_filter_rate = fde_ratio(trace_filter_scoped, trace_count, default=0.0)
+    evidence_hit_rate_value = fde_ratio(trace_evidence_hits, trace_count, default=0.0)
+    page_index_trace_rate = fde_ratio(trace_page_index_hits, trace_count, default=0.0)
+
+    related_file_ids = {str(item.get("knowledgeFileId")) for item in documents if item.get("knowledgeFileId")}
+    failed_tasks = [
+        item
+        for item in repo.state.get("knowledge_tasks", [])
+        if item.get("status") in {"失败", "failed"} and str(item.get("targetId") or "") in related_file_ids
+    ]
+    evaluation_reports = [item for item in repo.state.get("evaluation_reports", []) if isinstance(item, dict)]
+    latest_retrieval_report = next(
+        (
+            item
+            for item in evaluation_reports
+            if (item.get("caseSummary") or item.get("metrics") or {}).get("retrievalRecall") is not None
+        ),
+        None,
+    )
+    latest_metrics = (
+        latest_retrieval_report.get("caseSummary")
+        if isinstance((latest_retrieval_report or {}).get("caseSummary"), dict)
+        else (latest_retrieval_report or {}).get("metrics")
+    ) or {}
+    gold_cases = len(
+        [
+            item
+            for item in repo.state.get("evaluation_cases", [])
+            if isinstance(item, dict) and item.get("expectedClauseIds")
+        ]
+    )
+    report_recall = safe_float(latest_metrics.get("retrievalRecall")) if "retrievalRecall" in latest_metrics else None
+    wrong_reference_rate = (
+        safe_float(latest_metrics.get("wrongReferenceRate")) if "wrongReferenceRate" in latest_metrics else None
+    )
+    stability_metric = (
+        0.45 * (1.0 if vector_gap_total == 0 else fde_ratio(vector_total, vector_total + vector_gap_total, default=0.0))
+        + 0.25 * (1.0 if not failed_tasks else 0.0)
+        + 0.3 * (1.0 if latest_retrieval_report and report_recall is not None and report_recall >= 0.9 else 0.0)
+    )
+
+    section_metadata_blockers = []
+    if chunk_coverage < 0.95:
+        section_metadata_blockers.append("资料切片覆盖率低于 95%")
+    if metadata_completeness < 0.95:
+        section_metadata_blockers.append("部分资料缺少模型、版本或范围 metadata")
+    section_vector_blockers = []
+    if vector_completeness < 0.98:
+        section_vector_blockers.append("向量数量未覆盖全部切片")
+    if vector_document_rate < 0.95:
+        section_vector_blockers.append("部分资料未完成向量入库")
+    section_retrieval_blockers = []
+    if trace_count <= 0:
+        section_retrieval_blockers.append("缺少 RetrievalTrace，无法量化检索命中")
+    if trace_count > 0 and retrieval_hit_rate < 0.9:
+        section_retrieval_blockers.append("检索命中率低于 90%")
+    if trace_count > 0 and trace_filter_rate < 1.0:
+        section_retrieval_blockers.append("检索 Trace 缺少业务包/项目/节点过滤证据")
+    section_evidence_blockers = []
+    if evidence_hit_rate_value < 0.9:
+        section_evidence_blockers.append("检索依据页码或 bbox 覆盖低于 90%")
+    if page_index_coverage < 0.8:
+        section_evidence_blockers.append("PageIndex 覆盖不足，长文档溯源风险偏高")
+    section_stability_blockers = []
+    if failed_tasks:
+        section_stability_blockers.append(f"{len(failed_tasks)} 个知识任务失败")
+    if not latest_retrieval_report:
+        section_stability_blockers.append("缺少带 retrievalRecall 的评估报告")
+    if gold_cases <= 0:
+        section_stability_blockers.append("缺少人工标注的检索评估样本")
+
+    sections = [
+        fde_score_section(
+            key="corpus_metadata",
+            name="切片与 metadata",
+            score=15 * (0.45 * chunk_coverage + 0.4 * metadata_completeness + 0.15 * page_index_coverage),
+            max_score=15,
+            metric=(0.45 * chunk_coverage + 0.4 * metadata_completeness + 0.15 * page_index_coverage),
+            threshold=0.9,
+            blockers=section_metadata_blockers,
+        ),
+        fde_score_section(
+            key="vector_index",
+            name="向量完整性",
+            score=25 * (0.7 * vector_completeness + 0.3 * vector_document_rate),
+            max_score=25,
+            metric=(0.7 * vector_completeness + 0.3 * vector_document_rate),
+            threshold=0.95,
+            blockers=section_vector_blockers,
+        ),
+        fde_score_section(
+            key="retrieval",
+            name="检索命中",
+            score=30 * (0.55 * retrieval_hit_rate + 0.25 * retrieval_depth + 0.2 * trace_filter_rate),
+            max_score=30,
+            metric=(0.55 * retrieval_hit_rate + 0.25 * retrieval_depth + 0.2 * trace_filter_rate),
+            threshold=0.9,
+            blockers=section_retrieval_blockers,
+        ),
+        fde_score_section(
+            key="evidence",
+            name="证据可追溯",
+            score=20 * (0.65 * evidence_hit_rate_value + 0.35 * page_index_coverage),
+            max_score=20,
+            metric=(0.65 * evidence_hit_rate_value + 0.35 * page_index_coverage),
+            threshold=0.9,
+            blockers=section_evidence_blockers,
+        ),
+        fde_score_section(
+            key="stability",
+            name="稳定与门禁",
+            score=10 * stability_metric,
+            max_score=10,
+            metric=stability_metric,
+            threshold=0.9,
+            blockers=section_stability_blockers,
+        ),
+    ]
+    score = round(sum(float(item["score"]) for item in sections), 2)
+    blockers = [blocker for section in sections for blocker in section.get("blockers", [])]
+
+    document_scores = []
+    for document in documents:
+        document_version_id = str(document.get("documentVersionId") or document.get("currentVersionId") or "")
+        chunk_count = fde_as_int(document.get("chunkCount"))
+        vector_count = fde_as_int(document.get("vectorCount"))
+        vector_gap = max(0, chunk_count - vector_count)
+        page_index_ready = fde_as_int(document.get("pageIndexNodeCount")) > 0 or "已构建" in str(document.get("pageIndexStatus") or "")
+        document_metadata_score = metadata_score(document)
+        doc_metric = (
+            0.2 * (1.0 if chunk_count > 0 else 0.0)
+            + 0.35 * fde_ratio(vector_count, chunk_count, default=0.0)
+            + 0.2 * document_metadata_score
+            + 0.15 * (1.0 if page_index_ready else 0.0)
+            + 0.1 * (1.0 if vector_gap == 0 and vector_count > 0 else 0.0)
+        )
+        issue = "无"
+        if chunk_count <= 0:
+            issue = "未切片"
+        elif vector_count <= 0:
+            issue = "未向量化"
+        elif vector_gap:
+            issue = "向量缺口"
+        elif not page_index_ready:
+            issue = "PageIndex 未构建"
+
+        related_review_runs = []
+        for run in review_runs:
+            version_refs = [
+                str(value)
+                for key in ("inputDocumentVersionIds", "documentVersionIds", "ocrResultVersions")
+                for value in (run.get(key) or [])
+            ]
+            if document_version_id and document_version_id in version_refs:
+                related_review_runs.append(run)
+        related_run_ids = {
+            str(value)
+            for run in related_review_runs
+            for value in (run.get("reviewRunId"), run.get("id"))
+            if value
+        }
+        related_traces = [
+            trace
+            for trace in traces
+            if related_run_ids and str(trace.get("reviewRunId") or "") in related_run_ids
+        ]
+        trace_scope = "document_explicit" if related_traces else "project_proxy"
+        trace_rows = related_traces or traces[:3]
+        trace_hit_rate_for_document = fde_ratio(
+            len([item for item in trace_rows if fde_trace_selected_clauses(item)]),
+            len(trace_rows),
+            default=0.0,
+        )
+        trace_evidence_rate_for_document = fde_ratio(
+            len([item for item in trace_rows if fde_trace_evidence_backed(item)]),
+            len(trace_rows),
+            default=0.0,
+        )
+        lineage = fde_document_knowledge_lineage(document)
+        quality_dimensions = [
+            {
+                "key": "chunking",
+                "name": "知识切片",
+                "score": round((1.0 if chunk_count > 0 else 0.0) * 100, 2),
+                "metric": round(1.0 if chunk_count > 0 else 0.0, 4),
+                "status": "pass" if chunk_count > 0 else "warn",
+                "message": f"切片 {chunk_count} 条",
+            },
+            {
+                "key": "vector_integrity",
+                "name": "向量完整性",
+                "score": round(fde_ratio(vector_count, chunk_count, default=0.0) * 100, 2),
+                "metric": round(fde_ratio(vector_count, chunk_count, default=0.0), 4),
+                "status": "pass" if chunk_count > 0 and vector_gap == 0 else "warn",
+                "message": f"向量 {vector_count}/{chunk_count} 条，缺口 {vector_gap}",
+            },
+            {
+                "key": "metadata",
+                "name": "metadata 完整度",
+                "score": round(document_metadata_score * 100, 2),
+                "metric": round(document_metadata_score, 4),
+                "status": "pass" if document_metadata_score >= 0.95 else "warn",
+                "message": "模型、索引、版本、节点范围等元数据完整度",
+            },
+            {
+                "key": "pageindex",
+                "name": "PageIndex 溯源",
+                "score": 100 if page_index_ready else 0,
+                "metric": 1.0 if page_index_ready else 0.0,
+                "status": "pass" if page_index_ready else "warn",
+                "message": f"PageIndex 节点 {fde_as_int(document.get('pageIndexNodeCount'))} 个",
+            },
+            {
+                "key": "llm_retrieval",
+                "name": "LLM 检索证据",
+                "score": round((0.55 * trace_hit_rate_for_document + 0.45 * trace_evidence_rate_for_document) * 100, 2),
+                "metric": round((0.55 * trace_hit_rate_for_document + 0.45 * trace_evidence_rate_for_document), 4),
+                "status": "pass" if trace_rows and trace_hit_rate_for_document >= 0.9 and trace_evidence_rate_for_document >= 0.9 else "warn",
+                "message": "显式绑定 ReviewRun" if trace_scope == "document_explicit" else "当前以项目级 RetrievalTrace 作为代理",
+            },
+        ]
+        document_scores.append(
+            {
+                "documentId": document.get("id"),
+                "documentVersionId": document_version_id,
+                "knowledgeFileId": document.get("knowledgeFileId"),
+                "fileName": document.get("fileName"),
+                "requirementName": document.get("requirementName"),
+                "score": round(doc_metric * 100, 2),
+                "chunkCount": chunk_count,
+                "vectorCount": vector_count,
+                "vectorGap": vector_gap,
+                "metadataCompleteness": round(document_metadata_score, 4),
+                "pageIndexReady": page_index_ready,
+                "pageIndexNodeCount": fde_as_int(document.get("pageIndexNodeCount")),
+                "embeddingModel": document.get("embeddingModel") or "embedding-default",
+                "indexVersion": document.get("indexVersion") or "knowledge-index@local",
+                "vectorDimensions": fde_as_int(document.get("vectorDimensions"), 1024),
+                "vectorStatus": document.get("vectorStatus") or "待向量化",
+                "sliceStatus": document.get("sliceStatus") or "待切片",
+                "latestTaskStatus": lineage.get("latestTaskStatus"),
+                "readinessLabel": lineage.get("readinessLabel"),
+                "issue": issue,
+                "qualityDimensions": quality_dimensions,
+                "lineageStages": lineage.get("stages") or [],
+                "lineageBlockers": lineage.get("blockers") or [],
+                "llmTrace": {
+                    "scope": trace_scope,
+                    "relatedReviewRunCount": len(related_review_runs),
+                    "retrievalTraceCount": len(trace_rows),
+                    "hitRate": round(trace_hit_rate_for_document, 4),
+                    "evidenceHitRate": round(trace_evidence_rate_for_document, 4),
+                },
+                "retrievalTraceRows": [
+                    {
+                        "retrievalTraceId": item.get("retrievalTraceId") or item.get("id"),
+                        "query": item.get("query"),
+                        "selectedRoute": item.get("selectedRoute"),
+                        "selectedClauseCount": len(fde_trace_selected_clauses(item)),
+                        "evidenceBacked": fde_trace_evidence_backed(item),
+                        "filterScoped": isinstance(item.get("filters"), dict)
+                        and any(key in item["filters"] for key in ("businessPackId", "projectId", "nodeId", "tenantId")),
+                    }
+                    for item in trace_rows[:5]
+                ],
+            }
+        )
+
+    status = "pass" if score >= 90 and not [b for b in blockers if "缺少人工标注" not in b and "评估报告" not in b] else "needs_attention"
+    return {
+        "schemaVersion": "FdeVectorQuality@1.0.0",
+        "score": score,
+        "targetScore": 100,
+        "status": status,
+        "statusLabel": "可进入审查" if status == "pass" else "需补齐质量证据",
+        "evaluationMode": "trace_proxy_with_eval_gate",
+        "localOnly": True,
+        "sections": sections,
+        "blockers": blockers,
+        "metrics": {
+            "documentCount": doc_count,
+            "chunkCount": chunk_total,
+            "vectorCount": vector_total,
+            "vectorGap": vector_gap_total,
+            "chunkCoverage": round(chunk_coverage, 4),
+            "vectorCompleteness": round(vector_completeness, 4),
+            "metadataCompleteness": round(metadata_completeness, 4),
+            "pageIndexCoverage": round(page_index_coverage, 4),
+            "retrievalTraceCount": trace_count,
+            "recallAt5Proxy": round(retrieval_hit_rate, 4),
+            "retrievalDepth": round(retrieval_depth, 4),
+            "evidenceHitRate": round(evidence_hit_rate_value, 4),
+            "filterScopedRate": round(trace_filter_rate, 4),
+            "filterLeakageRate": 0.0 if trace_filter_rate >= 1.0 else round(1 - trace_filter_rate, 4),
+            "pageIndexTraceRate": round(page_index_trace_rate, 4),
+            "goldCaseCount": gold_cases,
+            "latestRetrievalRecall": report_recall,
+            "latestWrongReferenceRate": wrong_reference_rate,
+            "failedKnowledgeTasks": len(failed_tasks),
+        },
+        "thresholds": {
+            "recallAt5Proxy": 0.9,
+            "evidenceHitRate": 0.9,
+            "vectorCompleteness": 0.98,
+            "filterLeakageRate": 0.0,
+            "pageIndexCoverage": 0.8,
+        },
+        "documentScores": sorted(document_scores, key=lambda item: float(item.get("score") or 0), reverse=True),
+        "retrievalProbeRows": [
+            {
+                "retrievalTraceId": item.get("retrievalTraceId") or item.get("id"),
+                "query": item.get("query"),
+                "selectedRoute": item.get("selectedRoute"),
+                "selectedClauseCount": len(fde_trace_selected_clauses(item)),
+                "evidenceBacked": fde_trace_evidence_backed(item),
+                "filterScoped": isinstance(item.get("filters"), dict)
+                and any(key in item["filters"] for key in ("businessPackId", "projectId", "nodeId", "tenantId")),
+            }
+            for item in traces[:8]
+        ],
+        "updatedAt": server_time(),
+    }
+
+
+def fde_chunk_text_preview(text: Any, limit: int = 180) -> str:
+    normalized = re.sub(r"\s+", " ", str(text or "")).strip()
+    if len(normalized) <= limit:
+        return normalized
+    return f"{normalized[:limit]}..."
+
+
+def fde_chunk_text_hash(text: Any) -> str:
+    normalized = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not normalized:
+        return ""
+    return f"sha256:{hashlib.sha256(normalized.encode('utf-8')).hexdigest()[:16]}"
+
+
+def fde_trace_chunk_identifiers(trace: dict[str, Any]) -> set[str]:
+    identifiers: set[str] = set()
+    for clause in fde_trace_selected_clauses(trace):
+        for key in ("id", "clauseId", "chunkId"):
+            value = clause.get(key)
+            if not value:
+                continue
+            text = str(value)
+            identifiers.add(text)
+            if text.startswith("KC-"):
+                identifiers.add(text[3:])
+    return identifiers
+
+
+def fde_trace_matches_document(trace: dict[str, Any], *, file_id: str, document_version_id: str) -> bool:
+    for clause in fde_trace_selected_clauses(trace):
+        if file_id and str(clause.get("fileId") or "") == file_id:
+            return True
+        if document_version_id and str(clause.get("documentVersionId") or "") == document_version_id:
+            return True
+    return False
+
+
+def fde_chunk_quality_flags(chunk: dict[str, Any], *, vector_ready: bool, retrieval_hit_count: int, duplicate: bool) -> list[str]:
+    flags: list[str] = []
+    text = str(chunk.get("text") or "")
+    token_count = fde_as_int(chunk.get("tokenCount"))
+    if not chunk.get("materialized", True):
+        flags.append("not_materialized")
+    if not text.strip():
+        flags.append("empty_text")
+    elif token_count < 20 or len(text) < 40:
+        flags.append("too_short")
+    elif token_count > 1200 or len(text) > 2400:
+        flags.append("too_long")
+    if chunk.get("pageNo") is None:
+        flags.append("missing_page")
+    if not chunk.get("bbox"):
+        flags.append("missing_bbox")
+    if not vector_ready:
+        flags.append("missing_vector")
+    if retrieval_hit_count <= 0:
+        flags.append("not_retrieved")
+    if duplicate:
+        flags.append("duplicate_text")
+    return flags
+
+
+def fde_latest_ocr_parse_result(document_version_id: str) -> dict[str, Any] | None:
+    return next(
+        (
+            item
+            for item in repo.state.get("ocr_parse_results", [])
+            if isinstance(item, dict) and str(item.get("documentVersionId") or "") == document_version_id
+        ),
+        None,
+    )
+
+
+def fde_pipeline_source_view(document: dict[str, Any], version: dict[str, Any] | None) -> dict[str, Any]:
+    try:
+        preview = repo.document_preview(document)
+    except Exception:
+        preview = {
+            "url": f"mock://preview/documents/{document.get('id')}?versionId={document.get('currentVersionId')}",
+            "previewType": repo.document_preview_type(document),
+            "readonly": True,
+        }
+    return {
+        "stage": "image",
+        "label": "图片/原始文件",
+        "status": "ready" if version else "missing",
+        "fileName": document.get("fileName"),
+        "fileType": document.get("fileType"),
+        "documentId": document.get("id"),
+        "documentVersionId": document.get("currentVersionId") or (version or {}).get("id"),
+        "storageKey": (version or {}).get("storageKey"),
+        "storageBucket": (version or {}).get("storageBucket") or "documents",
+        "fileSize": (version or {}).get("fileSize"),
+        "contentHash": (version or {}).get("hash"),
+        "previewUrl": preview.get("url"),
+        "previewType": preview.get("previewType"),
+        "pageCount": preview.get("pageCount"),
+        "readonly": True,
+    }
+
+
+def fde_source_preview_view(
+    document: dict[str, Any],
+    version: dict[str, Any] | None,
+    parse_result: dict[str, Any] | None,
+) -> dict[str, Any]:
+    source = fde_pipeline_source_view(document, version)
+    pages = (parse_result or {}).get("pages") or []
+    preview_pages: list[dict[str, Any]] = []
+    if isinstance(pages, list):
+        for index, page_item in enumerate(pages[:20], start=1):
+            if not isinstance(page_item, dict):
+                continue
+            preview_pages.append(
+                {
+                    "pageNo": page_item.get("pageNo") or page_item.get("page") or index,
+                    "width": page_item.get("width") or page_item.get("imageWidth"),
+                    "height": page_item.get("height") or page_item.get("imageHeight"),
+                    "previewUrl": page_item.get("previewUrl") or page_item.get("imageUrl") or source.get("previewUrl"),
+                    "imageObjectKey": page_item.get("imageObjectKey") or page_item.get("objectKey"),
+                    "quality": page_item.get("quality") or {},
+                }
+            )
+    if not preview_pages:
+        preview_pages.append(
+            {
+                "pageNo": 1,
+                "width": None,
+                "height": None,
+                "previewUrl": source.get("previewUrl"),
+                "imageObjectKey": source.get("storageKey"),
+                "quality": {},
+            }
+        )
+    return {
+        **source,
+        "schemaVersion": "FdeSourcePreview@1.0.0",
+        "pageCount": source.get("pageCount") or len(preview_pages),
+        "pages": preview_pages,
+        "previewAvailable": bool(source.get("previewUrl")) and not str(source.get("previewUrl")).startswith("mock://"),
+        "previewUnavailableReason": ""
+        if bool(source.get("previewUrl")) and not str(source.get("previewUrl")).startswith("mock://")
+        else "当前文件只有审计投影或 mock preview，尚未生成可渲染图片/PDF 预览。",
+    }
+
+
+def fde_pipeline_ocr_view(
+    document_version_id: str,
+    parse_result: dict[str, Any] | None,
+    fields: list[dict[str, Any]],
+) -> dict[str, Any]:
+    parse_fields = (parse_result or {}).get("fields") or []
+    parse_fragments = (parse_result or {}).get("fragments") or []
+    parse_tables = (parse_result or {}).get("tables") or []
+    parse_seals = (parse_result or {}).get("seals") or []
+    source_fields = [item for item in parse_fields if isinstance(item, dict)] or fields
+    field_rows = [
+        {
+            "fieldName": item.get("fieldName") or item.get("name") or item.get("fieldCode"),
+            "fieldCode": item.get("fieldCode") or item.get("code"),
+            "fieldValue": item.get("fieldValue") or item.get("value"),
+            "pageNo": item.get("pageNo"),
+            "bbox": item.get("bbox"),
+            "confidence": item.get("confidence"),
+            "source": item.get("sourceEngine") or item.get("extractionMethod") or "extracted_fields",
+        }
+        for item in source_fields[:20]
+    ]
+    return {
+        "stage": "ocr",
+        "label": "OCR 结构化识别",
+        "status": (parse_result or {}).get("status") or ("field_only" if fields else "missing"),
+        "parseResultId": (parse_result or {}).get("parseResultId"),
+        "profileId": (parse_result or {}).get("profileId"),
+        "documentType": (parse_result or {}).get("documentType"),
+        "parserVersion": (parse_result or {}).get("parserVersion"),
+        "engineVersion": (parse_result or {}).get("engineVersion"),
+        "engineRuns": (parse_result or {}).get("engineRuns") or [],
+        "diagnostics": (parse_result or {}).get("diagnostics") or [],
+        "summary": {
+            "pageCount": len((parse_result or {}).get("pages") or []),
+            "fragmentCount": len(parse_fragments or []),
+            "fieldCount": len(source_fields),
+            "tableCount": len(parse_tables or []),
+            "sealCount": len(parse_seals or []),
+        },
+        "fieldRows": field_rows,
+        "fragmentRows": [
+            {
+                "fragmentId": item.get("fragmentId") or item.get("id") or f"fragment-{index}",
+                "pageNo": item.get("pageNo"),
+                "textPreview": fde_chunk_text_preview(item.get("text")),
+                "bbox": item.get("bbox"),
+                "confidence": item.get("confidence"),
+                "sourceEngine": item.get("sourceEngine"),
+            }
+            for index, item in enumerate(parse_fragments[:20], start=1)
+            if isinstance(item, dict)
+        ],
+        "quality": (parse_result or {}).get("quality") or {},
+        "documentVersionId": document_version_id,
+    }
+
+
+def fde_ocr_artifacts_view(
+    document_version_id: str,
+    parse_result: dict[str, Any] | None,
+    fields: list[dict[str, Any]],
+) -> dict[str, Any]:
+    ocr = fde_pipeline_ocr_view(document_version_id, parse_result, fields)
+    parse_tables = (parse_result or {}).get("tables") or []
+    parse_seals = (parse_result or {}).get("seals") or []
+    return {
+        "schemaVersion": "FdeOcrArtifacts@1.0.0",
+        **ocr,
+        "fields": ocr["fieldRows"],
+        "fragments": ocr["fragmentRows"],
+        "tables": [
+            {
+                "tableId": item.get("tableId") or item.get("id") or f"table-{index}",
+                "pageNo": item.get("pageNo"),
+                "bbox": item.get("bbox"),
+                "rowCount": item.get("rows") or item.get("rowCount"),
+                "columnCount": item.get("columns") or item.get("columnCount"),
+                "structureConfidence": item.get("structureConfidence") or item.get("confidence"),
+                "schema": item.get("businessSchema") or item.get("schema"),
+                "sourceEngine": item.get("sourceEngine"),
+            }
+            for index, item in enumerate(parse_tables[:20], start=1)
+            if isinstance(item, dict)
+        ],
+        "seals": [
+            {
+                "sealId": item.get("sealId") or item.get("id") or f"seal-{index}",
+                "pageNo": item.get("pageNo"),
+                "bbox": item.get("bbox"),
+                "sealType": item.get("sealType"),
+                "sealName": item.get("sealName") or item.get("text"),
+                "visualConfidence": item.get("visualConfidence"),
+                "ocrConfidence": item.get("ocrConfidence") or item.get("confidence"),
+                "qualityFlags": item.get("qualityFlags") or [],
+                "sourceEngine": item.get("sourceEngine"),
+            }
+            for index, item in enumerate(parse_seals[:20], start=1)
+            if isinstance(item, dict)
+        ],
+    }
+
+
+def fde_text_stage_rows(fields: list[dict[str, Any]], chunk_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for index, field in enumerate(fields[:20], start=1):
+        rows.append(
+            {
+                "id": field.get("id") or f"field-text-{index}",
+                "sourceType": "ocr_field",
+                "sourceLabel": field.get("fieldName") or f"字段 {index}",
+                "pageNo": field.get("pageNo"),
+                "text": f"{field.get('fieldName')}: {field.get('fieldValue')}",
+                "textHash": stable_hash_payload({"field": field.get("fieldName"), "value": field.get("fieldValue")}),
+                "bbox": field.get("bbox"),
+                "confidence": field.get("confidence"),
+            }
+        )
+    for chunk in chunk_rows[:20]:
+        rows.append(
+            {
+                "id": chunk.get("id"),
+                "sourceType": "knowledge_chunk",
+                "sourceLabel": f"Chunk {chunk.get('chunkNo')}",
+                "pageNo": chunk.get("pageNo"),
+                "text": chunk.get("textPreview"),
+                "textHash": chunk.get("textHash"),
+                "bbox": chunk.get("bbox"),
+                "confidence": None,
+                "tokenCount": chunk.get("tokenCount"),
+            }
+        )
+    return rows
+
+
+def fde_vector_format_rows(
+    chunk_rows: list[dict[str, Any]],
+    *,
+    project_id: str,
+    document: dict[str, Any],
+    knowledge_file_id: str,
+    embedding_model: str,
+    index_version: str,
+    dimensions: int,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for chunk in chunk_rows[:30]:
+        chunk_id = str(chunk.get("chunkId") or chunk.get("id") or "")
+        vector_id = f"VEC-{chunk_id or document.get('currentVersionId')}-{chunk.get('chunkNo')}"
+        metadata = {
+            "projectId": project_id,
+            "documentId": document.get("id"),
+            "documentVersionId": document.get("currentVersionId") or document.get("documentVersionId"),
+            "knowledgeFileId": knowledge_file_id,
+            "chunkId": chunk_id,
+            "chunkNo": chunk.get("chunkNo"),
+            "pageNo": chunk.get("pageNo"),
+            "bbox": chunk.get("bbox"),
+            "source": "aicheck_document_pipeline",
+        }
+        embedding_input = {
+            "model": embedding_model,
+            "input": chunk.get("textPreview") or "",
+            "encoding_format": "float",
+            "metadata": metadata,
+        }
+        vector_record = {
+            "id": vector_id,
+            "indexVersion": index_version,
+            "dimensions": dimensions,
+            "valuesPreview": "[float32 x %s hidden]" % dimensions,
+            "metadata": metadata,
+            "payloadHash": stable_hash_payload({"input": embedding_input, "indexVersion": index_version}),
+            "status": chunk.get("vectorStatus"),
+        }
+        rows.append(
+            {
+                "id": vector_id,
+                "chunkNo": chunk.get("chunkNo"),
+                "chunkId": chunk_id,
+                "vectorStatus": chunk.get("vectorStatus"),
+                "textPreview": chunk.get("textPreview"),
+                "embeddingInput": embedding_input,
+                "vectorRecord": vector_record,
+                "indexRecord": {
+                    "vectorId": vector_id,
+                    "indexVersion": index_version,
+                    "status": chunk.get("vectorStatus"),
+                    "documentVersionId": metadata["documentVersionId"],
+                    "chunkId": chunk_id,
+                    "payloadHash": vector_record["payloadHash"],
+                    "materialized": bool(chunk.get("materialized")),
+                },
+            },
+        )
+    return rows
+
+
+def fde_quality_issues_view(blockers: list[str], chunk_rows: list[dict[str, Any]], trace_rows_source: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    issues = [
+        {
+            "severity": "blocker",
+            "code": f"issue_{stable_hash_payload(blocker)[:10]}",
+            "message": blocker,
+            "targetType": "document_vector",
+        }
+        for blocker in blockers
+    ]
+    proxy_trace_count = len([item for item in trace_rows_source if item.get("_fdeTraceScope") == "project_proxy"])
+    if proxy_trace_count:
+        issues.append(
+            {
+                "severity": "warning",
+                "code": "project_proxy_trace",
+                "message": "当前文件缺少显式 ReviewRun 绑定，部分 LLM 检索引用使用项目级代理 Trace。",
+                "targetType": "retrieval_trace",
+                "count": proxy_trace_count,
+            }
+        )
+    virtual_count = len([item for item in chunk_rows if not item.get("materialized")])
+    if virtual_count:
+        issues.append(
+            {
+                "severity": "warning",
+                "code": "virtual_chunk_rows",
+                "message": "存在按文件计数推导的虚拟切片，不能作为真实可审计向量明细。",
+                "targetType": "knowledge_chunk",
+                "count": virtual_count,
+            }
+        )
+    return issues
+
+
+def fde_vector_file_detail(project_id: str, document_version_id: str, *, chunk_page: int = 1, chunk_page_size: int = 50) -> dict[str, Any]:
+    workspace = fde_project_audit_workspace(project_id)
+    document = next(
+        (
+            item
+            for item in workspace.get("documents", [])
+            if str(item.get("documentVersionId") or item.get("currentVersionId") or item.get("id") or "") == document_version_id
+        ),
+        None,
+    )
+    if not document:
+        raise KeyError(document_version_id)
+
+    document_id = str(document.get("id") or "")
+    version = repo.find_one("versions", document_version_id)
+    parse_result = fde_latest_ocr_parse_result(document_version_id)
+    extracted_fields = [
+        repo.clone(item)
+        for item in repo.state.get("extracted_fields", [])
+        if str(item.get("documentVersionId") or "") == document_version_id
+    ]
+    knowledge_file_id = str(document.get("knowledgeFileId") or "")
+    knowledge_file = repo.find_one("knowledge_files", knowledge_file_id) if knowledge_file_id else None
+    if not knowledge_file:
+        knowledge_file = next(
+            (
+                item
+                for item in repo.state.get("knowledge_files", [])
+                if str(item.get("documentVersionId") or "") == document_version_id
+                or str(item.get("documentId") or "") == str(document.get("id") or "")
+            ),
+            None,
+        )
+        knowledge_file_id = str((knowledge_file or {}).get("id") or knowledge_file_id)
+
+    review_runs = workspace.get("reviewRuns", [])
+    project_traces = fde_project_retrieval_traces(review_runs)
+    explicit_traces = [
+        trace
+        for trace in project_traces
+        if fde_trace_matches_document(trace, file_id=knowledge_file_id, document_version_id=document_version_id)
+    ]
+    trace_rows_source = [
+        {**trace, "_fdeTraceScope": "document_explicit"} for trace in explicit_traces
+    ] or [
+        {**trace, "_fdeTraceScope": "project_proxy"} for trace in project_traces[:5]
+    ]
+    trace_identifiers = {
+        trace_id
+        for trace in trace_rows_source
+        for trace_id in fde_trace_chunk_identifiers(trace)
+    }
+
+    chunks = [
+        repo.clone(item)
+        for item in repo.state.get("knowledge_chunks", [])
+        if knowledge_file_id and str(item.get("fileId") or "") == knowledge_file_id
+    ]
+    chunks.sort(key=lambda item: fde_as_int(item.get("chunkNo")))
+
+    declared_chunk_count = max(
+        fde_as_int(document.get("chunkCount")),
+        fde_as_int((knowledge_file or {}).get("chunkCount")),
+        len(chunks),
+    )
+    vector_count = max(
+        fde_as_int(document.get("vectorCount")),
+        fde_as_int((knowledge_file or {}).get("vectorCount")),
+    )
+    materialized_count = len(chunks)
+    duplicate_hashes = {
+        text_hash
+        for text_hash in [fde_chunk_text_hash(item.get("text")) for item in chunks]
+        if text_hash and len([chunk for chunk in chunks if fde_chunk_text_hash(chunk.get("text")) == text_hash]) > 1
+    }
+
+    chunk_rows: list[dict[str, Any]] = []
+    for index, chunk in enumerate(chunks, start=1):
+        chunk_no = fde_as_int(chunk.get("chunkNo"), index)
+        chunk_id = str(chunk.get("id") or f"chunk-{chunk_no}")
+        retrieval_hits = [
+            trace
+            for trace in trace_rows_source
+            if chunk_id in fde_trace_chunk_identifiers(trace)
+            or f"KC-{chunk_id}" in fde_trace_chunk_identifiers(trace)
+            or fde_trace_matches_document(trace, file_id=knowledge_file_id, document_version_id=document_version_id)
+        ]
+        vector_ready = chunk_no <= vector_count
+        text_hash = fde_chunk_text_hash(chunk.get("text"))
+        flags = fde_chunk_quality_flags(
+            {**chunk, "materialized": True},
+            vector_ready=vector_ready,
+            retrieval_hit_count=len(retrieval_hits),
+            duplicate=text_hash in duplicate_hashes,
+        )
+        chunk_rows.append(
+            {
+                "id": chunk_id,
+                "chunkId": chunk_id,
+                "chunkNo": chunk_no,
+                "materialized": True,
+                "pageNo": chunk.get("pageNo"),
+                "bbox": chunk.get("bbox"),
+                "textPreview": fde_chunk_text_preview(chunk.get("text")),
+                "textHash": text_hash,
+                "tokenCount": fde_as_int(chunk.get("tokenCount")),
+                "vectorStatus": "ready" if vector_ready else "missing",
+                "vectorStatusLabel": "已入库" if vector_ready else "缺向量",
+                "embeddingModel": document.get("embeddingModel") or "embedding-default",
+                "indexVersion": document.get("indexVersion") or "knowledge-index@local",
+                "retrievalHitCount": len(retrieval_hits),
+                "retrievalTraceIds": [
+                    item.get("retrievalTraceId") or item.get("id")
+                    for item in retrieval_hits[:5]
+                ],
+                "qualityFlags": flags,
+                "metadataCompleteness": round(
+                    fde_ratio(
+                        len(
+                            [
+                                value
+                                for value in [
+                                    chunk.get("fileId"),
+                                    chunk.get("documentVersionId"),
+                                    chunk.get("pageNo"),
+                                    chunk.get("bbox"),
+                                    chunk.get("tokenCount"),
+                                ]
+                                if value not in (None, "", [])
+                            ]
+                        ),
+                        5,
+                        default=0.0,
+                    ),
+                    4,
+                ),
+            }
+        )
+
+    missing_materialized = max(0, declared_chunk_count - materialized_count)
+    for offset in range(missing_materialized):
+        chunk_no = materialized_count + offset + 1
+        vector_ready = chunk_no <= vector_count
+        virtual_chunk = {
+            "chunkNo": chunk_no,
+            "materialized": False,
+            "text": "",
+            "pageNo": None,
+            "bbox": None,
+            "tokenCount": 0,
+        }
+        chunk_rows.append(
+            {
+                "id": f"virtual-{knowledge_file_id or document_version_id}-{chunk_no}",
+                "chunkId": "",
+                "chunkNo": chunk_no,
+                "materialized": False,
+                "pageNo": None,
+                "bbox": None,
+                "textPreview": "切片计数存在，但缺少可审计切片明细。",
+                "textHash": "",
+                "tokenCount": 0,
+                "vectorStatus": "ready" if vector_ready else "missing",
+                "vectorStatusLabel": "按文件计数推导已入库" if vector_ready else "缺向量",
+                "embeddingModel": document.get("embeddingModel") or "embedding-default",
+                "indexVersion": document.get("indexVersion") or "knowledge-index@local",
+                "retrievalHitCount": 0,
+                "retrievalTraceIds": [],
+                "qualityFlags": fde_chunk_quality_flags(
+                    virtual_chunk,
+                    vector_ready=vector_ready,
+                    retrieval_hit_count=0,
+                    duplicate=False,
+                ),
+                "metadataCompleteness": 0.0,
+            }
+        )
+
+    effective_count = len(chunk_rows)
+    page_covered = len([item for item in chunk_rows if item.get("pageNo") is not None])
+    bbox_covered = len([item for item in chunk_rows if item.get("bbox")])
+    text_covered = len([item for item in chunk_rows if item.get("materialized") and item.get("textHash")])
+    vector_ready_count = len([item for item in chunk_rows if item.get("vectorStatus") == "ready"])
+    retrieved_count = len([item for item in chunk_rows if fde_as_int(item.get("retrievalHitCount")) > 0])
+    flag_counts: dict[str, int] = {}
+    for item in chunk_rows:
+        for flag in item.get("qualityFlags") or []:
+            flag_counts[str(flag)] = flag_counts.get(str(flag), 0) + 1
+
+    blockers: list[str] = []
+    if declared_chunk_count <= 0:
+        blockers.append("未生成知识切片")
+    if declared_chunk_count > 0 and materialized_count <= 0:
+        blockers.append("文件声明已切片，但缺少可审计切片明细")
+    if missing_materialized:
+        blockers.append(f"{missing_materialized} 条切片缺少明细")
+    if vector_ready_count < declared_chunk_count:
+        blockers.append("向量数量未覆盖全部切片")
+    if effective_count and fde_ratio(page_covered, effective_count) < 0.95:
+        blockers.append("部分切片缺少页码")
+    if effective_count and fde_ratio(bbox_covered, effective_count) < 0.9:
+        blockers.append("部分切片缺少 bbox 证据")
+    if trace_rows_source and retrieved_count <= 0:
+        blockers.append("当前 RetrievalTrace 未命中该文件切片")
+
+    token_counts = [fde_as_int(item.get("tokenCount")) for item in chunk_rows if item.get("materialized")]
+    page_distribution: dict[str, int] = {}
+    for item in chunk_rows:
+        page_key = str(item.get("pageNo") if item.get("pageNo") is not None else "缺页码")
+        page_distribution[page_key] = page_distribution.get(page_key, 0) + 1
+    token_buckets = {
+        "0": len([value for value in token_counts if value <= 0]),
+        "1-80": len([value for value in token_counts if 0 < value <= 80]),
+        "81-200": len([value for value in token_counts if 80 < value <= 200]),
+        "201-500": len([value for value in token_counts if 200 < value <= 500]),
+        "500+": len([value for value in token_counts if value > 500]),
+    }
+
+    chunk_page_size = max(1, min(fde_as_int(chunk_page_size, 50), 200))
+    chunk_page = max(1, fde_as_int(chunk_page, 1))
+    paged_chunk_rows = page(chunk_rows, chunk_page, chunk_page_size)
+    embedding_model = str(document.get("embeddingModel") or "embedding-default")
+    index_version = str(document.get("indexVersion") or "knowledge-index@local")
+    vector_dimensions = fde_as_int(document.get("vectorDimensions"), 1024)
+    text_rows = fde_text_stage_rows(extracted_fields, chunk_rows)
+    vector_format_rows = fde_vector_format_rows(
+        chunk_rows,
+        project_id=project_id,
+        document=document,
+        knowledge_file_id=knowledge_file_id,
+        embedding_model=embedding_model,
+        index_version=index_version,
+        dimensions=vector_dimensions,
+    )
+    score = round(
+        100
+        * (
+            0.22 * fde_ratio(materialized_count, declared_chunk_count, default=0.0)
+            + 0.24 * fde_ratio(vector_ready_count, declared_chunk_count, default=0.0)
+            + 0.16 * fde_ratio(page_covered, effective_count, default=0.0)
+            + 0.16 * fde_ratio(bbox_covered, effective_count, default=0.0)
+            + 0.12 * fde_ratio(text_covered, effective_count, default=0.0)
+            + 0.10 * (fde_ratio(retrieved_count, effective_count, default=0.0) if trace_rows_source else 0.0)
+        ),
+        2,
+    )
+    source_preview = fde_source_preview_view({**document, "currentVersionId": document_version_id}, version, parse_result)
+    ocr_artifacts = fde_ocr_artifacts_view(document_version_id, parse_result, extracted_fields)
+    index_records = [row.get("indexRecord") for row in vector_format_rows if isinstance(row.get("indexRecord"), dict)]
+    llm_usage = {
+        "schemaVersion": "FdeDocumentLlmUsage@1.0.0",
+        "scope": "document_explicit" if explicit_traces else "project_proxy",
+        "relatedReviewRunCount": len(review_runs),
+        "retrievalTraceCount": len(trace_rows_source),
+        "retrievedChunkCount": retrieved_count,
+        "retrievalCoverage": round(fde_ratio(retrieved_count, effective_count, default=0.0), 4),
+        "proxyTrace": not bool(explicit_traces),
+        "proxyReason": "" if explicit_traces else "未找到显式绑定该文件的 ReviewRun，使用项目级 RetrievalTrace 作为临时排查线索。",
+    }
+    quality_issues = fde_quality_issues_view(blockers, chunk_rows, trace_rows_source)
+
+    return {
+        "schemaVersion": "FdeVectorFileDetail@1.1.0",
+        "compatibleSchemaVersion": "FdeVectorFileDetail@1.0.0",
+        "projectId": project_id,
+        "documentId": document_id,
+        "documentVersionId": document_version_id,
+        "knowledgeFileId": knowledge_file_id,
+        "fileName": document.get("fileName"),
+        "requirementName": document.get("requirementName"),
+        "score": score,
+        "status": "pass" if score >= 90 and not blockers else "needs_attention",
+        "sliceStatus": document.get("sliceStatus") or (knowledge_file or {}).get("sliceStatus") or "待切片",
+        "vectorStatus": document.get("vectorStatus") or (knowledge_file or {}).get("vectorStatus") or "待向量化",
+        "embeddingModel": embedding_model,
+        "indexVersion": index_version,
+        "vectorDimensions": vector_dimensions,
+        "sourcePreview": source_preview,
+        "ocrArtifacts": ocr_artifacts,
+        "textRecords": text_rows,
+        "vectorPayloads": vector_format_rows,
+        "indexRecords": index_records,
+        "llmUsage": llm_usage,
+        "qualityIssues": quality_issues,
+        "processingPipeline": {
+            "schemaVersion": "FdeDocumentProcessingPipeline@1.0.0",
+            "summary": [
+                {
+                    "key": "image",
+                    "label": "图片/文件",
+                    "status": "ready" if version else "mock_or_missing",
+                    "metric": document.get("fileType") or (version or {}).get("contentType") or "-",
+                },
+                {
+                    "key": "ocr",
+                    "label": "OCR",
+                    "status": (parse_result or {}).get("status") or ("field_only" if extracted_fields else "missing"),
+                    "metric": f"{len(extracted_fields)} 字段",
+                },
+                {
+                    "key": "text",
+                    "label": "文本",
+                    "status": "ready" if text_rows else "missing",
+                    "metric": f"{len(text_rows)} 条文本记录",
+                },
+                {
+                    "key": "vector_format",
+                    "label": "向量格式化",
+                    "status": "ready" if vector_format_rows else "missing",
+                    "metric": f"{len(vector_format_rows)} 条 payload",
+                },
+                {
+                    "key": "index",
+                    "label": "索引",
+                    "status": document.get("vectorStatus") or (knowledge_file or {}).get("vectorStatus") or "待向量化",
+                    "metric": index_version,
+                },
+            ],
+            "source": source_preview,
+            "ocr": ocr_artifacts,
+            "text": {
+                "stage": "text",
+                "label": "OCR 文本与切片文本",
+                "status": "ready" if text_rows else "missing",
+                "rows": text_rows[:40],
+                "textRecordCount": len(text_rows),
+                "sourceBreakdown": {
+                    "ocrFields": len(extracted_fields),
+                    "knowledgeChunks": len(chunk_rows),
+                },
+            },
+            "vectorFormat": {
+                "stage": "vector_format",
+                "label": "向量格式化数据",
+                "status": "ready" if vector_format_rows else "missing",
+                "embeddingModel": embedding_model,
+                "indexVersion": index_version,
+                "dimensions": vector_dimensions,
+                "rows": vector_format_rows,
+                "recordCount": len(vector_format_rows),
+                "note": "真实高维向量值不在 FDE 展示；这里展示 embedding input、metadata、payload hash 和索引记录格式。",
+            },
+            "index": {
+                "stage": "index",
+                "label": "向量索引记录",
+                "status": document.get("vectorStatus") or (knowledge_file or {}).get("vectorStatus") or "待向量化",
+                "rows": index_records,
+                "recordCount": len(index_records),
+                "indexVersion": index_version,
+            },
+            "llmUsage": llm_usage,
+        },
+        "chunkSummary": {
+            "declaredChunkCount": declared_chunk_count,
+            "materializedChunkCount": materialized_count,
+            "missingMaterializedChunkCount": missing_materialized,
+            "vectorReadyCount": vector_ready_count,
+            "vectorGap": max(0, declared_chunk_count - vector_ready_count),
+            "totalTokenCount": sum(token_counts),
+            "averageTokenCount": round((sum(token_counts) / len(token_counts)) if token_counts else 0.0, 2),
+            "pageCoverage": round(fde_ratio(page_covered, effective_count, default=0.0), 4),
+            "bboxCoverage": round(fde_ratio(bbox_covered, effective_count, default=0.0), 4),
+            "textCoverage": round(fde_ratio(text_covered, effective_count, default=0.0), 4),
+            "retrievedChunkCount": retrieved_count,
+            "retrievalCoverage": round(fde_ratio(retrieved_count, effective_count, default=0.0), 4),
+            "duplicateChunkCount": flag_counts.get("duplicate_text", 0),
+        },
+        "chunkRows": paged_chunk_rows["items"],
+        "chunkPage": paged_chunk_rows,
+        "chunkCharts": {
+            "tokenBuckets": token_buckets,
+            "pageDistribution": page_distribution,
+            "flagCounts": flag_counts,
+        },
+        "retrievalTraceRows": [
+            {
+                "retrievalTraceId": item.get("retrievalTraceId") or item.get("id"),
+                "query": item.get("query"),
+                "selectedRoute": item.get("selectedRoute"),
+                "scope": item.get("_fdeTraceScope") or "project_proxy",
+                "selectedClauseCount": len(fde_trace_selected_clauses(item)),
+                "selectedChunkCount": len(fde_trace_chunk_identifiers(item) & {str(row.get("chunkId")) for row in chunk_rows if row.get("chunkId")}),
+                "evidenceBacked": fde_trace_evidence_backed(item),
+                "filterScoped": isinstance(item.get("filters"), dict)
+                and any(key in item["filters"] for key in ("businessPackId", "projectId", "nodeId", "tenantId")),
+            }
+            for item in trace_rows_source[:8]
+        ],
+        "blockers": blockers,
+        "updatedAt": server_time(),
+    }
+
+
 def fde_project_document_audit_view(document: dict[str, Any]) -> dict[str, Any]:
     item = repo.clone(document)
     version_id = str(item.get("currentVersionId") or "")
@@ -4809,7 +6031,7 @@ def fde_project_document_audit_view(document: dict[str, Any]) -> dict[str, Any]:
                 "vectorCount": int(knowledge_file.get("vectorCount") or 0),
                 "embeddingModel": knowledge_config.get("embeddingModel") or "embedding-default",
                 "indexVersion": knowledge_source.get("version") or "proj-v2026.06.26",
-                "vectorDimensions": int(knowledge_config.get("dimensions") or 3072),
+                "vectorDimensions": int(knowledge_config.get("dimensions") or 1024),
                 "pageIndexStatus": "已构建" if page_index_nodes else "待构建",
                 "pageIndexNodeCount": len(page_index_nodes),
                 "latestKnowledgeTask": versioned_record("knowledge-task", latest_task) if latest_task else None,
@@ -4824,7 +6046,7 @@ def fde_project_document_audit_view(document: dict[str, Any]) -> dict[str, Any]:
                 "vectorCount": 0,
                 "embeddingModel": knowledge_config.get("embeddingModel") or "embedding-default",
                 "indexVersion": "未入库",
-                "vectorDimensions": int(knowledge_config.get("dimensions") or 3072),
+                "vectorDimensions": int(knowledge_config.get("dimensions") or 1024),
                 "pageIndexStatus": "等待切片",
                 "pageIndexNodeCount": 0,
                 "latestKnowledgeTask": None,
@@ -4931,7 +6153,7 @@ def fde_project_synthetic_document_views(project: dict[str, Any], node_id: int |
             "vectorCount": int(template["vectorCount"]),
             "embeddingModel": knowledge_config.get("embeddingModel") or "embedding-default",
             "indexVersion": "proj-v2026.06.26",
-            "vectorDimensions": int(knowledge_config.get("dimensions") or 3072),
+            "vectorDimensions": int(knowledge_config.get("dimensions") or 1024),
             "pageIndexStatus": template["pageIndexStatus"],
             "pageIndexNodeCount": page_index_node_count if page_index_ready else 0,
             "requirementName": template["requirementName"],
@@ -6053,6 +7275,9 @@ def fde_project_audit_workspace(project_id: str, node_id: int | None = None) -> 
         "blockers": len(blockers),
         "lowConfidenceFields": sum(int(item.get("lowConfidenceFieldCount") or 0) for item in node_summaries),
     }
+    vector_quality = fde_project_vector_quality(documents, review_runs)
+    metrics["vectorQualityScore"] = vector_quality["score"]
+    metrics["vectorQualityBlockers"] = len(vector_quality["blockers"])
     return {
         "project": versioned_project(repo.project_for_role(project, "inspection")),
         "selectedNodeId": selected_node_id,
@@ -6061,6 +7286,7 @@ def fde_project_audit_workspace(project_id: str, node_id: int | None = None) -> 
         "selectedNode": repo.clone(selected_node),
         "metrics": metrics,
         "knowledgeLineage": fde_project_knowledge_lineage(documents, review_runs),
+        "vectorQuality": vector_quality,
         "documents": documents[:50],
         "bindings": bindings[:50],
         "submissions": submissions[:50],
@@ -6102,6 +7328,31 @@ def fde_project_audit_workspace_endpoint(request: Request, project_id: str, node
         return role_error
     try:
         return ok(fde_project_audit_workspace(project_id, nodeId), request)
+    except KeyError:
+        return fail(errors.NOT_FOUND, request)
+
+
+@router.get("/fde/projects/{project_id}/documents/{document_version_id}/vector-detail")
+def fde_project_document_vector_detail(
+    request: Request,
+    project_id: str,
+    document_version_id: str,
+    page_no: int = Query(default=1, alias="page"),
+    page_size: int = Query(default=50, alias="pageSize"),
+):
+    _, role_error = fde_error_unless_allowed(request, "fde:dashboard:view")
+    if role_error:
+        return role_error
+    try:
+        return ok(
+            fde_vector_file_detail(
+                project_id,
+                document_version_id,
+                chunk_page=page_no,
+                chunk_page_size=page_size,
+            ),
+            request,
+        )
     except KeyError:
         return fail(errors.NOT_FOUND, request)
 
@@ -10109,7 +11360,7 @@ def knowledge_file_detail(request: Request, file_id: str):
                 "vectorStatus": file.get("vectorStatus"),
                 "vectorCount": file.get("vectorCount", 0),
                 "indexVersion": "proj-v2026.06.26",
-                "dimensions": 3072,
+                "dimensions": 1024,
                 "updatedAt": file.get("updatedAt"),
             },
         },
@@ -10141,7 +11392,7 @@ def knowledge_file_vectors(request: Request, file_id: str):
     scope_error = scope_error_for_record(request, file)
     if scope_error:
         return scope_error
-    return ok({"vectorStatus": file.get("vectorStatus"), "vectorCount": file.get("vectorCount", 0), "indexVersion": "proj-v2026.06.26", "dimensions": 3072, "updatedAt": file.get("updatedAt")}, request)
+    return ok({"vectorStatus": file.get("vectorStatus"), "vectorCount": file.get("vectorCount", 0), "indexVersion": "proj-v2026.06.26", "dimensions": 1024, "updatedAt": file.get("updatedAt")}, request)
 
 
 @router.get("/knowledge/files/{file_id}/reasoning-references")

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { EChartsOption } from 'echarts'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
@@ -99,6 +100,7 @@ import type {
   WorkbenchSummaryPayload
 } from '@/types/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
+import { Echart } from '@/components/Echart'
 import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import ArchiveDetailDrawer from './components/ArchiveDetailDrawer.vue'
 import DocumentBindDialog from './components/DocumentBindDialog.vue'
@@ -158,6 +160,7 @@ const nodeIssue = ref<WorkbenchStateIssue>()
 const projectOptions = ref<Project[]>([])
 const activeProjectId = ref('')
 const activeNodeId = ref(24)
+const activeWorkbenchSection = ref<'overview' | 'node'>('overview')
 const context = ref<WorkbenchContextPayload>()
 const summary = ref<WorkbenchSummaryPayload>()
 const treeGroups = ref<ProjectTreePayload['groups']>([])
@@ -280,6 +283,302 @@ const availableActions = computed<ActionCode[]>(() => {
   )
 })
 const unreadMessageCount = computed(() => messages.value.filter((message) => !message.read).length)
+const getMetricValue = (key: string, label: string) => {
+  const metric = metrics.value.find((item) => item.key === key || item.label.includes(label))
+  if (!metric) return 0
+  if (typeof metric.value === 'number') return metric.value
+  const parsed = Number.parseFloat(String(metric.value).replace(/[^\d.-]/g, ''))
+  return Number.isFinite(parsed) ? parsed : 0
+}
+const inspectionAuditMetricItems = computed(() => [
+  {
+    key: 'todo',
+    label: '待办',
+    value: getMetricValue('todo', '待办'),
+    color: '#f59e0b',
+    hint: '需要监检员处理'
+  },
+  {
+    key: 'correction',
+    label: '补正项',
+    value: getMetricValue('correction', '补正'),
+    color: '#dc2626',
+    hint: '影响当前节点通过'
+  },
+  {
+    key: 'evidence',
+    label: '证据引用',
+    value: getMetricValue('evidence', '证据'),
+    color: '#2563eb',
+    hint: '可回溯 OCR/字段证据'
+  },
+  {
+    key: 'passed',
+    label: '已通过节点',
+    value: getMetricValue('passed', '通过'),
+    color: '#16a34a',
+    hint: '已形成确认结论'
+  }
+])
+const inspectionClosureItems = computed(() => {
+  const todo = getMetricValue('todo', '待办')
+  const correction = getMetricValue('correction', '补正')
+  const passed = getMetricValue('passed', '通过')
+  const data = [
+    { name: '待办', value: todo, itemStyle: { color: '#f59e0b' } },
+    { name: '补正项', value: correction, itemStyle: { color: '#dc2626' } },
+    { name: '已通过节点', value: passed, itemStyle: { color: '#16a34a' } }
+  ]
+  return data.some((item) => item.value > 0)
+    ? data
+    : [{ name: '暂无处理项', value: 1, itemStyle: { color: '#d7dde8' } }]
+})
+const inspectionOpenIssueCount = computed(
+  () => getMetricValue('todo', '待办') + getMetricValue('correction', '补正')
+)
+const inspectionAuditBarOption = computed<EChartsOption>(() => ({
+  aria: {
+    enabled: true,
+    description: '当前审查对象的待办、补正项、证据引用和已通过节点数量柱状图。'
+  },
+  color: inspectionAuditMetricItems.value.map((item) => item.color),
+  tooltip: {
+    trigger: 'axis',
+    axisPointer: { type: 'shadow' },
+    formatter: (params) => {
+      const item = Array.isArray(params) ? params[0] : params
+      const name = String(item?.name || '')
+      const found = inspectionAuditMetricItems.value.find((metric) => metric.label === name)
+      return `${name}<br/>数量：${Number(item?.value || 0)}<br/>${found?.hint || ''}`
+    }
+  },
+  grid: { top: 26, right: 18, bottom: 34, left: 36, containLabel: true },
+  xAxis: {
+    type: 'category',
+    data: inspectionAuditMetricItems.value.map((item) => item.label),
+    axisTick: { show: false },
+    axisLine: { lineStyle: { color: '#d8e5f5' } },
+    axisLabel: { color: '#667085', fontWeight: 700 }
+  },
+  yAxis: {
+    type: 'value',
+    minInterval: 1,
+    splitLine: { lineStyle: { color: '#edf2f7' } },
+    axisLabel: { color: '#8a94a6' }
+  },
+  series: [
+    {
+      name: '审查态势',
+      type: 'bar',
+      barMaxWidth: 30,
+      data: inspectionAuditMetricItems.value.map((item) => ({
+        value: item.value,
+        itemStyle: {
+          color: item.color,
+          borderRadius: [6, 6, 0, 0]
+        }
+      })),
+      label: {
+        show: true,
+        position: 'top',
+        color: '#172033',
+        fontWeight: 900
+      }
+    }
+  ]
+}))
+const inspectionClosurePieOption = computed<EChartsOption>(() => ({
+  aria: {
+    enabled: true,
+    description: '当前审查对象的人工处理闭环环形图。'
+  },
+  tooltip: {
+    trigger: 'item',
+    formatter: '{b}<br/>数量：{c}（{d}%）'
+  },
+  legend: {
+    bottom: 0,
+    itemWidth: 8,
+    itemHeight: 8,
+    textStyle: { color: '#667085', fontWeight: 700 }
+  },
+  graphic: [
+    {
+      type: 'text',
+      left: 'center',
+      top: '39%',
+      silent: true,
+      style: {
+        text: inspectionOpenIssueCount.value
+          ? `${inspectionOpenIssueCount.value}\n待处理`
+          : '0\n阻断',
+        textAlign: 'center',
+        fill: '#172033',
+        font: '900 18px sans-serif',
+        lineHeight: 22
+      }
+    }
+  ],
+  series: [
+    {
+      name: '人工处理闭环',
+      type: 'pie',
+      radius: ['56%', '74%'],
+      center: ['50%', '40%'],
+      avoidLabelOverlap: true,
+      label: { show: false },
+      labelLine: { show: false },
+      data: inspectionClosureItems.value
+    }
+  ]
+}))
+const projectTreeNodes = computed<ProjectTreeNode[]>(() =>
+  treeGroups.value.flatMap((group) => group.nodes || [])
+)
+const inspectionProjectNodeStatusRows = computed(() => {
+  const counts: Record<string, number> = {}
+  for (const node of projectTreeNodes.value) {
+    counts[node.status] = (counts[node.status] || 0) + 1
+  }
+  const rows = Object.entries(counts).map(([status, count]) => ({ status, count }))
+  return rows.length ? rows : [{ status: '暂无节点', count: 0 }]
+})
+const inspectionProjectPassedNodes = computed(
+  () => projectTreeNodes.value.filter((node) => node.status === '已通过').length
+)
+const inspectionProjectBlockedNodes = computed(
+  () =>
+    projectTreeNodes.value.filter((node) =>
+      ['需补正', '补正中', '待人工确认'].includes(node.status)
+    ).length
+)
+const inspectionLowConfidenceFieldCount = computed(
+  () =>
+    extractedFields.value.filter((field) => {
+      const confidence = Number(field.confidence || 0)
+      return confidence > 0 && confidence < 0.82
+    }).length
+)
+const inspectionProjectOverviewCards = computed(() => {
+  const totalNodes = projectTreeNodes.value.length
+  const totalFiles = projectTreeNodes.value.reduce(
+    (sum, node) => sum + Number(node.fileCount || 0),
+    0
+  )
+  const totalRequired = projectTreeNodes.value.reduce(
+    (sum, node) => sum + Number(node.requiredProgress?.total || 0),
+    0
+  )
+  const totalDone = projectTreeNodes.value.reduce(
+    (sum, node) => sum + Number(node.requiredProgress?.done || 0),
+    0
+  )
+  return [
+    {
+      label: '项目进度',
+      value: `${inspectionProjectPassedNodes.value}/${totalNodes || 0} 节点`,
+      hint: `资料要求完成 ${totalDone}/${totalRequired || 0}`,
+      tone: 'blue'
+    },
+    {
+      label: '当前卡点',
+      value: `${inspectionProjectBlockedNodes.value} 个节点`,
+      hint: `${inspectionOpenIssueCount.value} 项待办/补正`,
+      tone: inspectionProjectBlockedNodes.value ? 'red' : 'green'
+    },
+    {
+      label: '资料证据',
+      value: `${totalFiles} 份文件`,
+      hint: `当前节点 ${bindings.value.length} 份，证据 ${evidenceLinks.value.length}`,
+      tone: 'green'
+    },
+    {
+      label: 'AI 复核',
+      value: latestAiRun.value?.suggestion.result || '等待预审',
+      hint: `${inspectionLowConfidenceFieldCount.value} 个低置信 OCR 字段需关注`,
+      tone: latestAiRun.value ? 'orange' : 'blue'
+    }
+  ]
+})
+const inspectionProjectNodeRows = computed(() =>
+  projectTreeNodes.value.slice(0, 8).map((node) => {
+    const total = Number(node.requiredProgress?.total || 0)
+    const done = Number(node.requiredProgress?.done || 0)
+    return {
+      node,
+      progress: total ? Math.round((done / total) * 100) : 0,
+      evidence: `资料 ${node.fileCount} · 要求 ${done}/${total || 0}`
+    }
+  })
+)
+const inspectionNodeStatusBarRows = computed(() => {
+  const totalCount = inspectionProjectNodeStatusRows.value.reduce(
+    (sum, row) => sum + Number(row.count || 0),
+    0
+  )
+  const maxCount = Math.max(...inspectionProjectNodeStatusRows.value.map((row) => row.count), 0)
+  return inspectionProjectNodeStatusRows.value.map((row) => {
+    const tone =
+      row.status === '已通过'
+        ? 'green'
+        : row.status.includes('补正') || row.status.includes('人工')
+          ? 'red'
+          : row.status.includes('预审') || row.status.includes('待审')
+            ? 'orange'
+            : 'blue'
+    return {
+      ...row,
+      tone,
+      percent: totalCount ? Math.round((row.count / totalCount) * 100) : 0,
+      barPercent: maxCount ? Math.max(3, Math.round((row.count / maxCount) * 100)) : 0,
+      ratioText: totalCount ? `${Math.round((row.count / totalCount) * 100)}%` : '0%'
+    }
+  })
+})
+const inspectionProjectNextActions = computed(() => {
+  const rows: Array<{ title: string; description: string; tag: string; tone: string }> = []
+  if (inspectionOpenIssueCount.value) {
+    rows.push({
+      title: '优先处理待办和补正',
+      description: `当前有 ${inspectionOpenIssueCount.value} 项未闭环，影响节点通过。`,
+      tag: '人工确认',
+      tone: 'red'
+    })
+  }
+  if (inspectionLowConfidenceFieldCount.value) {
+    rows.push({
+      title: '复核低置信 OCR 字段',
+      description: `${inspectionLowConfidenceFieldCount.value} 个字段置信度偏低，建议打开证据定位确认。`,
+      tag: 'OCR',
+      tone: 'orange'
+    })
+  }
+  if (hasAction('ai:recheck')) {
+    rows.push({
+      title: '重新触发 AI 预审',
+      description: '资料或补正更新后，可重新生成 AI 建议，正式结论仍由人工确认。',
+      tag: 'AI',
+      tone: 'blue'
+    })
+  }
+  if (hasAction('review:save')) {
+    rows.push({
+      title: '保存人工审查意见',
+      description: '确认 AI 建议、修正结论并沉淀为可追溯审查记录。',
+      tag: '审查',
+      tone: 'green'
+    })
+  }
+  if (!rows.length) {
+    rows.push({
+      title: '继续巡检项目节点',
+      description: '当前节点没有显著阻断，可按左侧项目树切换其他节点复核。',
+      tag: '项目',
+      tone: 'green'
+    })
+  }
+  return rows.slice(0, 4)
+})
 const canShowWorkspace = computed(() => !pageIssue.value && !!activeProjectId.value)
 const roleUserLabel = computed(() => {
   const labels: Record<RoleCode, string> = {
@@ -787,6 +1086,7 @@ const loadProjectBundle = async () => {
     summary.value = summaryRes.data
     treeGroups.value = treeRes.data.groups
     activeNodeId.value = contextRes.data.currentNodeId
+    activeWorkbenchSection.value = 'overview'
     if (role.value === 'ndt') {
       reports.value = []
       archiveItems.value = []
@@ -861,12 +1161,18 @@ const handleProjectChange = async () => {
   submissionDrafts.value = []
   submissionSnapshots.value = []
   restoredSubmissionDraft.value = undefined
+  activeWorkbenchSection.value = 'overview'
   await loadProjectBundle()
 }
 
 const handleNodeSelect = async (node: ProjectTreeNode) => {
+  activeWorkbenchSection.value = 'node'
   activeNodeId.value = node.nodeId
   await loadNodePackage(node.nodeId)
+}
+
+const handleProjectOverviewSelect = () => {
+  activeWorkbenchSection.value = 'overview'
 }
 
 const ensureWritableNode = () => {
@@ -1993,8 +2299,9 @@ onMounted(() => {
             </div>
             <ProjectNodeTree
               :groups="treeGroups"
-              :active-node-id="activeNodeId"
+              :active-node-id="activeWorkbenchSection === 'overview' ? 0 : activeNodeId"
               @select="handleNodeSelect"
+              @select-overview="handleProjectOverviewSelect"
             />
           </section>
 
@@ -2138,7 +2445,169 @@ onMounted(() => {
 
           <AuditSummaryGrid :cards="workbenchAuditCards" aria-label="业务工作台审计摘要" />
 
-          <section class="card">
+          <section
+            v-if="role === 'inspection' && activeWorkbenchSection === 'overview'"
+            class="inspection-project-overview"
+            aria-label="项目总览"
+          >
+            <div class="inspection-project-overview-head">
+              <div>
+                <span>项目总览</span>
+                <strong>{{ currentProject?.name || '未选择项目' }}</strong>
+                <small>先判断项目级卡点，再进入当前节点办理审查。</small>
+              </div>
+              <span :class="['pill', inspectionOpenIssueCount ? 'red' : 'green']">
+                {{
+                  inspectionOpenIssueCount ? `${inspectionOpenIssueCount} 项待处理` : '无待处理阻断'
+                }}
+              </span>
+            </div>
+
+            <div class="inspection-overview-card-grid">
+              <article
+                v-for="card in inspectionProjectOverviewCards"
+                :key="card.label"
+                :class="['inspection-overview-card', `inspection-overview-card--${card.tone}`]"
+              >
+                <span>{{ card.label }}</span>
+                <strong>{{ card.value }}</strong>
+                <small>{{ card.hint }}</small>
+              </article>
+            </div>
+
+            <div class="inspection-overview-main-grid">
+              <article class="inspection-overview-panel inspection-overview-panel--status">
+                <div class="inspection-chart-head">
+                  <div>
+                    <strong>节点状态分布</strong>
+                    <small>按项目树聚合节点状态，定位补正、预审和通过节点。</small>
+                  </div>
+                  <span class="pill blue">{{ projectTreeNodes.length }} 个节点</span>
+                </div>
+                <div class="inspection-node-status-bars" aria-label="项目节点状态分布图">
+                  <article
+                    v-for="row in inspectionNodeStatusBarRows"
+                    :key="row.status"
+                    :class="[
+                      'inspection-node-status-row',
+                      `inspection-node-status-row--${row.tone}`
+                    ]"
+                    :aria-label="`${row.status}：${row.count} 个节点，占比 ${row.percent}%`"
+                  >
+                    <span>{{ row.status }}</span>
+                    <div class="inspection-node-status-track">
+                      <i :style="{ width: `${row.barPercent}%` }"></i>
+                    </div>
+                    <strong>
+                      {{ row.count }}
+                      <small>{{ row.ratioText }}</small>
+                    </strong>
+                  </article>
+                </div>
+              </article>
+
+              <article class="inspection-overview-panel">
+                <div class="inspection-chart-head">
+                  <div>
+                    <strong>节点处理清单</strong>
+                    <small>与左侧项目树一致，按节点查看资料、要求和审查进度。</small>
+                  </div>
+                  <span class="pill green">可下钻</span>
+                </div>
+                <div class="inspection-node-progress-list">
+                  <button
+                    v-for="row in inspectionProjectNodeRows"
+                    :key="row.node.id"
+                    type="button"
+                    :class="[
+                      'inspection-node-progress-item',
+                      { active: row.node.nodeId === activeNodeId }
+                    ]"
+                    @click="handleNodeSelect(row.node)"
+                  >
+                    <span>{{ row.node.nodeId }}</span>
+                    <strong>{{ row.node.name }}</strong>
+                    <small>{{ row.evidence }}</small>
+                    <em>{{ row.progress }}%</em>
+                  </button>
+                </div>
+              </article>
+
+              <article class="inspection-overview-panel">
+                <div class="inspection-chart-head">
+                  <div>
+                    <strong>下一步建议</strong>
+                    <small>只提示处理顺序，不替代监检员形成正式结论。</small>
+                  </div>
+                  <span class="pill orange">人工确认</span>
+                </div>
+                <div class="inspection-next-action-list">
+                  <article
+                    v-for="row in inspectionProjectNextActions"
+                    :key="`${row.tag}-${row.title}`"
+                    :class="[
+                      'inspection-next-action-item',
+                      `inspection-next-action-item--${row.tone}`
+                    ]"
+                  >
+                    <span>{{ row.tag }}</span>
+                    <strong>{{ row.title }}</strong>
+                    <small>{{ row.description }}</small>
+                  </article>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section
+            v-if="role === 'inspection' && activeWorkbenchSection === 'node'"
+            class="inspection-audit-visual"
+            aria-label="审查态势图"
+          >
+            <article class="inspection-chart-panel inspection-chart-panel--wide">
+              <div class="inspection-chart-head">
+                <div>
+                  <strong>任务与证据分布</strong>
+                  <small>按当前项目节点聚合待办、补正、证据引用和已通过节点</small>
+                </div>
+                <span class="pill blue">当前节点</span>
+              </div>
+              <Echart
+                :options="inspectionAuditBarOption"
+                height="220px"
+                class="inspection-audit-echart"
+              />
+              <div class="inspection-metric-strip">
+                <span
+                  v-for="item in inspectionAuditMetricItems"
+                  :key="item.key"
+                  :style="{ '--metric-color': item.color }"
+                >
+                  <b>{{ item.value }}</b>
+                  {{ item.label }}
+                </span>
+              </div>
+            </article>
+
+            <article class="inspection-chart-panel">
+              <div class="inspection-chart-head">
+                <div>
+                  <strong>人工处理闭环</strong>
+                  <small>突出待办和补正压力，辅助监检员确定处理优先级</small>
+                </div>
+                <span :class="['pill', inspectionOpenIssueCount ? 'red' : 'green']">
+                  {{ inspectionOpenIssueCount ? `${inspectionOpenIssueCount} 项待处理` : '无阻断' }}
+                </span>
+              </div>
+              <Echart
+                :options="inspectionClosurePieOption"
+                height="220px"
+                class="inspection-audit-echart"
+              />
+            </article>
+          </section>
+
+          <section v-else-if="role !== 'inspection'" class="card">
             <div class="card-body">
               <div class="metrics">
                 <div v-for="metric in metrics.slice(0, 5)" :key="metric.key" class="metric">
@@ -2166,7 +2635,7 @@ onMounted(() => {
             :ndt-feedback="ndtFeedback"
           />
 
-          <section v-if="role === 'inspection'" class="card">
+          <section v-if="role === 'inspection' && activeWorkbenchSection === 'node'" class="card">
             <div class="card-head">
               <h2>一、业务核验链路</h2>
               <div class="sub">每一步都关联过程文件和 EvidenceLink</div>
@@ -2194,7 +2663,10 @@ onMounted(() => {
             </div>
           </section>
 
-          <section class="card node-package-card">
+          <section
+            v-if="role !== 'inspection' || activeWorkbenchSection === 'node'"
+            class="card node-package-card"
+          >
             <div class="card-head">
               <h2>
                 {{
@@ -2221,7 +2693,10 @@ onMounted(() => {
             </div>
           </section>
 
-          <section v-if="role === 'inspection'" class="result-band">
+          <section
+            v-if="role === 'inspection' && activeWorkbenchSection === 'node'"
+            class="result-band"
+          >
             <h2>三、AI 业务建议结果 <span class="sub">仅为建议，需监检人员确认</span></h2>
             <div class="result-grid">
               <div>
@@ -3064,6 +3539,7 @@ onMounted(() => {
   background: #fff;
 }
 
+.tree-wrap :deep(.node-overview-button),
 .tree-wrap :deep(.node-button) {
   display: grid;
   min-height: 40px;
@@ -3073,31 +3549,43 @@ onMounted(() => {
   color: #26364e;
   white-space: normal;
   background: transparent;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 6px;
   transition:
     color 0.18s ease,
     background-color 0.18s ease,
+    border-color 0.18s ease,
     box-shadow 0.18s ease;
   grid-template-columns: 34px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: start;
 }
 
-.tree-wrap :deep(.node-button:hover),
-.tree-wrap :deep(.node-button.is-active) {
-  color: var(--blue-2);
-  background: var(--blue-soft);
+.tree-wrap :deep(.node-overview-button) {
+  margin: 0 0 8px;
+  background: #f8fbff;
+  border-color: #dbe8f7;
 }
 
-.tree-wrap :deep(.node-button:focus-visible) {
+.tree-wrap :deep(.node-button:hover),
+.tree-wrap :deep(.node-button.is-active),
+.tree-wrap :deep(.node-overview-button:hover),
+.tree-wrap :deep(.node-overview-button.is-active) {
+  color: var(--blue-2);
+  background: var(--blue-soft);
+  border-color: #9dc0f7;
+}
+
+.tree-wrap :deep(.node-button:focus-visible),
+.tree-wrap :deep(.node-overview-button:focus-visible) {
   color: var(--blue-2);
   background: #f4f8ff;
   outline: 0;
   box-shadow: 0 0 0 3px rgb(31 102 216 / 14%);
 }
 
-.tree-wrap :deep(.node-button.is-active) {
+.tree-wrap :deep(.node-button.is-active),
+.tree-wrap :deep(.node-overview-button.is-active) {
   box-shadow: none;
 }
 
@@ -3387,6 +3875,448 @@ h3 {
 
 .metric-value.gray {
   color: #64748b;
+}
+
+.inspection-project-overview {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  margin-bottom: 16px;
+  background: linear-gradient(180deg, #fff, #f8fbff);
+  border: 1px solid #dbe6f5;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgb(20 34 56 / 4%);
+}
+
+.inspection-project-overview-head {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.inspection-project-overview-head div,
+.inspection-project-overview-head span,
+.inspection-project-overview-head strong,
+.inspection-project-overview-head small {
+  min-width: 0;
+}
+
+.inspection-project-overview-head div > span {
+  display: block;
+  font-size: 12px;
+  font-weight: 900;
+  color: #2563eb;
+}
+
+.inspection-project-overview-head strong {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 24px;
+  color: #172033;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspection-project-overview-head small {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 18px;
+  color: #667085;
+}
+
+.inspection-overview-card-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.inspection-overview-card {
+  min-width: 0;
+  min-height: 92px;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #dbe6f5;
+  border-radius: 8px;
+}
+
+.inspection-overview-card span,
+.inspection-overview-card strong,
+.inspection-overview-card small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspection-overview-card span {
+  font-size: 12px;
+  font-weight: 900;
+  color: #667085;
+}
+
+.inspection-overview-card strong {
+  margin-top: 8px;
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 26px;
+  color: #172033;
+}
+
+.inspection-overview-card small {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 17px;
+  color: #667085;
+}
+
+.inspection-overview-card--blue {
+  background: #f4f8ff;
+  border-color: #cfe0ff;
+}
+
+.inspection-overview-card--green {
+  background: #f3fbf7;
+  border-color: #c9ead8;
+}
+
+.inspection-overview-card--orange {
+  background: #fff8ed;
+  border-color: #f6d6a5;
+}
+
+.inspection-overview-card--red {
+  background: #fff3f1;
+  border-color: #ffc9c3;
+}
+
+.inspection-overview-main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.inspection-overview-panel {
+  min-width: 0;
+  min-height: 280px;
+  padding: 14px 16px 12px;
+  background: #fff;
+  border: 1px solid #e1eaf7;
+  border-radius: 8px;
+}
+
+.inspection-overview-panel--status {
+  grid-column: 1 / -1;
+  min-height: auto;
+}
+
+.inspection-overview-panel--status .inspection-audit-echart {
+  display: block;
+  width: 100% !important;
+  min-width: 0;
+}
+
+.inspection-node-status-bars {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 2px 4px;
+}
+
+.inspection-node-status-row {
+  display: grid;
+  grid-template-columns: minmax(82px, 136px) minmax(220px, 1fr) minmax(72px, auto);
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  min-height: 38px;
+  padding: 4px 0;
+}
+
+.inspection-node-status-row span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 22px;
+  color: #52617a;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspection-node-status-track {
+  position: relative;
+  height: 26px;
+  min-width: 0;
+  overflow: hidden;
+  background: repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent calc(20% - 1px),
+      #e5edf8 calc(20% - 1px),
+      #e5edf8 20%
+    ),
+    #f7faff;
+  border: 1px solid #dbe8f7;
+  border-radius: 8px;
+}
+
+.inspection-node-status-track i {
+  display: block;
+  height: 100%;
+  min-width: 3px;
+  background: #2563eb;
+  border-radius: 7px;
+  box-shadow: 0 7px 18px rgb(37 99 235 / 20%);
+}
+
+.inspection-node-status-track::after {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 55%);
+  content: '';
+}
+
+.inspection-node-status-row strong {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 22px;
+  color: #172033;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+.inspection-node-status-row strong small {
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 16px;
+  color: #7b8798;
+}
+
+.inspection-node-status-row--green .inspection-node-status-track i {
+  background: #16a34a;
+  box-shadow: 0 7px 18px rgb(22 163 74 / 20%);
+}
+
+.inspection-node-status-row--orange .inspection-node-status-track i {
+  background: #f59e0b;
+  box-shadow: 0 7px 18px rgb(245 158 11 / 20%);
+}
+
+.inspection-node-status-row--red .inspection-node-status-track i {
+  background: #dc2626;
+  box-shadow: 0 7px 18px rgb(220 38 38 / 18%);
+}
+
+.inspection-node-progress-list,
+.inspection-next-action-list {
+  display: grid;
+  gap: 8px;
+}
+
+.inspection-node-progress-item,
+.inspection-next-action-item {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 10px;
+  font: inherit;
+  text-align: left;
+  background: #f8fbff;
+  border: 1px solid #e1eaf7;
+  border-radius: 8px;
+}
+
+.inspection-node-progress-item {
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.inspection-node-progress-item:hover,
+.inspection-node-progress-item:focus-visible,
+.inspection-node-progress-item.active {
+  background: #eef5ff;
+  border-color: #9dc0f7;
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.inspection-node-progress-item span,
+.inspection-next-action-item span {
+  grid-row: span 2;
+  min-height: 28px;
+  padding: 6px 7px;
+  font-size: 12px;
+  font-weight: 900;
+  color: #1d4ed8;
+  text-align: center;
+  background: #eef5ff;
+  border: 1px solid #cfe0ff;
+  border-radius: 6px;
+}
+
+.inspection-node-progress-item strong,
+.inspection-next-action-item strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #172033;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspection-node-progress-item small,
+.inspection-next-action-item small {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 17px;
+  color: #667085;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspection-node-progress-item em {
+  grid-row: span 2;
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 900;
+  color: #2563eb;
+  font-variant-numeric: tabular-nums;
+}
+
+.inspection-next-action-item {
+  grid-template-columns: 62px minmax(0, 1fr);
+}
+
+.inspection-next-action-item--green {
+  background: #f3fbf7;
+  border-color: #c9ead8;
+}
+
+.inspection-next-action-item--blue {
+  background: #f4f8ff;
+  border-color: #cfe0ff;
+}
+
+.inspection-next-action-item--orange {
+  background: #fff8ed;
+  border-color: #f6d6a5;
+}
+
+.inspection-next-action-item--red {
+  background: #fff3f1;
+  border-color: #ffc9c3;
+}
+
+.inspection-audit-visual {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(280px, 0.95fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.inspection-chart-panel {
+  min-height: 304px;
+  padding: 14px 16px 12px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #fff, #f8fbff);
+  border: 1px solid #dbe6f5;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgb(20 34 56 / 4%);
+}
+
+.inspection-chart-panel--wide {
+  min-width: 0;
+}
+
+.inspection-chart-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.inspection-chart-head strong,
+.inspection-chart-head small {
+  display: block;
+}
+
+.inspection-chart-head strong {
+  font-size: 15px;
+  font-weight: 900;
+  color: #172033;
+}
+
+.inspection-chart-head small {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #667085;
+}
+
+.inspection-audit-echart {
+  width: 100%;
+}
+
+.inspection-metric-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.inspection-metric-strip span {
+  min-width: 0;
+  padding: 8px 10px;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 800;
+  color: #667085;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: #fff;
+  border: 1px solid #e6edf7;
+  border-radius: 6px;
+}
+
+.inspection-metric-strip span::before {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 7px;
+  vertical-align: 1px;
+  background: var(--metric-color, #2563eb);
+  border-radius: 999px;
+  content: '';
+}
+
+.inspection-metric-strip b {
+  margin-right: 4px;
+  font-size: 15px;
+  color: #172033;
+  font-variant-numeric: tabular-nums;
 }
 
 .pill {
@@ -3782,6 +4712,18 @@ h3 {
     grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
     overflow-y: auto;
   }
+
+  .inspection-audit-visual {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .inspection-overview-main-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .inspection-overview-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (width <= 900px) {
@@ -3798,6 +4740,15 @@ h3 {
 
   .topbar,
   .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .inspection-project-overview-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .inspection-overview-card-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -3852,12 +4803,35 @@ h3 {
   .result-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .inspection-metric-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (width <= 560px) {
   .workbench-audit-board,
   .metrics,
   .result-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .inspection-chart-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .inspection-node-status-row {
+    grid-template-columns: minmax(76px, 92px) minmax(120px, 1fr) minmax(62px, auto);
+    gap: 8px;
+  }
+
+  .inspection-node-status-row span {
+    font-size: 13px;
+    text-align: left;
+  }
+
+  .inspection-metric-strip {
     grid-template-columns: 1fr;
   }
 }

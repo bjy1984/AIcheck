@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from apps.ocr_service.utils import parse_bool
+
 
 TEXT_ENGINES = {"pymupdf_text_layer", "paddle_ocr_subprocess", "paddle_ocr_v6", "docling_local"}
 TABLE_ENGINES = {"pp_structure_v3", "opencv_table_grid_subprocess"}
@@ -43,6 +45,8 @@ def route_engine_variants(
         return originals[:1]
     if engine_name in FALLBACK_ENGINES and document_path.lower().endswith(".pdf") and bool((options or {}).get("runAllVariants")):
         return [synthetic_document_variant(document_path)]
+    if seal_engine_disabled(engine_name, profile):
+        return []
     if bool((options or {}).get("runAllVariants")):
         return variants
     if engine_name == "pp_structure_v3":
@@ -50,12 +54,6 @@ def route_engine_variants(
     if engine_name == "opencv_table_grid_subprocess":
         return purpose_variants_by_page(variants, "table", quality_by_page, fallback=False)
     if engine_name in SEAL_ENGINES:
-        seal_policy = ((profile.get("preprocessPolicy") or {}).get("seal") or {}) if isinstance(profile, dict) else {}
-        required_seal = bool(((profile.get("sealRules") or {}) if isinstance(profile, dict) else {}).get("required"))
-        if engine_name == "paddlex_seal_recognition" and not required_seal and not seal_policy.get("enablePaddlexSeal"):
-            return []
-        if engine_name == "visual_seal_candidate_subprocess" and not required_seal and not seal_policy.get("enableColorCandidate"):
-            return []
         if engine_name == "visual_seal_candidate_subprocess":
             return purpose_variants_by_page(variants, "seal", quality_by_page, fallback=True)
         return seal_text_variants(
@@ -73,13 +71,48 @@ def route_engine_variants(
     return originals
 
 
+def seal_engine_disabled(engine_name: str, profile: dict[str, Any]) -> bool:
+    if engine_name not in SEAL_ENGINES:
+        return False
+    seal_policy = ((profile.get("preprocessPolicy") or {}).get("seal") or {}) if isinstance(profile, dict) else {}
+    required_seal = bool(((profile.get("sealRules") or {}) if isinstance(profile, dict) else {}).get("required"))
+    default_enabled = required_seal
+    if engine_name == "paddlex_seal_recognition" and not seal_policy_enabled(
+        seal_policy,
+        "enablePaddlexSeal",
+        default=default_enabled,
+    ):
+        return True
+    if engine_name == "agentdesign_seal_ocr_subprocess" and not seal_policy_enabled(
+        seal_policy,
+        "enableAgentdesignSeal",
+        default=seal_policy_enabled(seal_policy, "enableSealTextRecognition", default=default_enabled),
+    ):
+        return True
+    if engine_name == "visual_seal_candidate_subprocess" and not seal_policy_enabled(
+        seal_policy,
+        "enableColorCandidate",
+        default=default_enabled,
+    ):
+        return True
+    return False
+
+
+def seal_policy_enabled(policy: dict[str, Any], key: str, *, default: bool) -> bool:
+    if key not in policy:
+        return default
+    return parse_bool(policy.get(key), default) is True
+
+
 def remediation_crop_route(engine_name: str, variants: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if engine_name in TABLE_ENGINES:
         return remediation_crop_variants(variants, purpose="table")[:3]
     if engine_name in SEAL_ENGINES:
-        return remediation_crop_variants(variants, purpose="seal")[:4]
+        return remediation_crop_variants(variants, purpose="seal")[:8]
     if engine_name in TEXT_ENGINES:
-        return remediation_crop_variants(variants, purpose="field")[:6]
+        field_crops = remediation_crop_variants(variants, purpose="field")[:6]
+        seal_crops = remediation_crop_variants(variants, purpose="seal")[:8]
+        return [*field_crops, *seal_crops]
     if engine_name in FALLBACK_ENGINES:
         return remediation_crop_variants(variants)[:8]
     return []

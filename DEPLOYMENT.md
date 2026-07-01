@@ -392,7 +392,7 @@ PostgreSQL 第一阶段使用 `aicheck_state`、`aicheck_singletons`、`idempote
 
 外部依赖：
 
-- 模型供应商密钥：AI 审查主链路使用 `DEEPSEEK_API_KEY`，默认模型为 DeepSeek `deepseek-reasoner`；`OPENAI_API_KEY` 仅在继续使用默认 `embedding-default` 时需要。
+- 模型供应商密钥：AI 审查主链路使用 `DEEPSEEK_API_KEY`，默认模型为 DeepSeek `deepseek-reasoner`；默认 `embedding-default` 已改为本地 Infinity `BAAI/bge-m3`，不依赖 `OPENAI_API_KEY`。
 - 可访问的域名和 HTTPS 证书。
 - 真实 OCR 默认由 `backend/apps/ocr_service` 的本地引擎链执行，需要提供离线 OCR 模型目录。`agentdesign` 只作为可选高精度印章 OCR 增强项；仅当 `AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR=true` 时，才需要通过 `AICHECK_AGENTDESIGN_HOST_PATH` 挂载完整 `agentdesign` checkout。
 
@@ -402,16 +402,17 @@ PostgreSQL 第一阶段使用 `aicheck_state`、`aicheck_singletons`、`idempote
 
 | 服务 | 容器端口 | 主机端口 | 说明 |
 | --- | ---: | ---: | --- |
-| `api-service` | 8000 | 8000 | FastAPI 主业务 API |
-| `ocr-service` | 8010 | 8010 | 内部 OCR API |
+| `api-service` | 8000 | `127.0.0.1:8000` | FastAPI 主业务 API；生产只由 Nginx `/api/*` 反代访问 |
+| `ocr-service` | 8010 | `127.0.0.1:8010` | 内部 OCR API；不得直接暴露公网 |
 | `review-worker-service` | - | - | Temporal/LangGraph 审查编排 worker，不直接暴露 HTTP |
-| `litellm-service` | 4000 | 4001 | LiteLLM Proxy，对内使用 |
-| `postgres` | 5432 | 5432 | 统一 PostgreSQL 数据库，包含 `aicheck`、`litellm`、`workflow` |
-| `redis` | 6379 | 6379 | Celery broker/result backend |
-| `minio` | 9000 | 9000 | 对象存储 API，浏览器签名上传需要访问 |
-| `minio` | 9001 | 9001 | MinIO 控制台 |
-| `temporal-service` | 7233 | 7233 | Temporal 内部 gRPC 服务 |
-| `temporal-ui` | 8080 | 8088 | Temporal 工作流调试 UI |
+| `embedding-service` | 7997 | `127.0.0.1:7997` | 本地 BGE-M3 embedding API；只供 LiteLLM 内网调用 |
+| `litellm-service` | 4000 | `127.0.0.1:4001` | LiteLLM Proxy，对内使用 |
+| `postgres` | 5432 | `127.0.0.1:5432` | 统一 PostgreSQL 数据库，包含 `aicheck`、`litellm`、`workflow` |
+| `redis` | 6379 | `127.0.0.1:6379` | Celery broker/result backend |
+| `minio` | 9000 | `127.0.0.1:9000` | 对象存储 API；有独立对象存储域名时由 Nginx/网关反代 |
+| `minio` | 9001 | `127.0.0.1:9001` | MinIO 控制台；不得直接暴露公网 |
+| `temporal-service` | 7233 | `127.0.0.1:7233` | Temporal 内部 gRPC 服务 |
+| `temporal-ui` | 8080 | `127.0.0.1:8088` | Temporal 工作流调试 UI；不得直接暴露公网 |
 
 健康检查：
 
@@ -427,14 +428,59 @@ Compose 已为 `api-service`、`worker-service`、`review-worker-service`、`ocr
 
 前端生产环境只需要暴露 Web 站点、`/api/*`、`/mock/*` 和 MinIO 签名上传访问地址。LiteLLM、PostgreSQL、Redis 不应暴露到公网。
 
+### IP 试运行模式
+
+没有域名和 HTTPS 时，可以先使用公网 IP 做受控试运行，但只应暴露：
+
+- `80/tcp`：Nginx 统一入口，反代前端、`/api/*` 和 `/healthz`。
+- MinIO S3 API：仅当浏览器 signed PUT/GET 仍直接使用 `AICHECK_MINIO_PUBLIC_ENDPOINT=<公网IP>:19000` 时临时开放。MinIO Console 必须保持 `127.0.0.1` 绑定。
+
+IP 试运行推荐 Nginx 边界：
+
+```nginx
+client_max_body_size 500M;
+proxy_read_timeout 300s;
+proxy_send_timeout 300s;
+add_header X-Content-Type-Options nosniff always;
+add_header X-Frame-Options SAMEORIGIN always;
+add_header Referrer-Policy no-referrer-when-downgrade always;
+```
+
+验收命令：
+
+```bash
+curl -I http://<public-ip>/
+curl http://<public-ip>/healthz
+curl -i http://<public-ip>/api/health
+```
+
+预期结果：
+
+- `/` 返回 `200`，并带 `X-Content-Type-Options`、`X-Frame-Options`、`Referrer-Policy`。
+- `/healthz` 返回 `code=0`、`authRequired=true`、`demoUsersEnabled=false`。
+- `/api/health` 未带 JWT 时返回 `401`，证明 API 不是匿名开放。
+
+IP 试运行不等于正式上线。正式上线前仍应补齐域名、HTTPS、对象存储域名/反代、访问日志、备份恢复演练和端口安全组收口。若发现 SSH 在 key exchange 前被关闭，先暂停高频重连，检查是否存在残留 Docker build、sshd MaxStartups 限制、系统资源耗尽或安全组/堡垒机策略；不要为了恢复 SSH 暴露业务数据库或内部服务端口。
+
 ## 4. 后端环境变量
 
 在 `backend/.env` 创建部署环境变量。Compose 在 `backend/` 目录运行时会自动读取该文件。
 
 ```bash
 DEEPSEEK_API_KEY=sk-...
-# Optional: only needed by the default embedding-default alias.
+# Optional: only needed if you add OpenAI-backed aliases yourself.
 OPENAI_API_KEY=
+INFINITY_API_KEY=replace-with-local-infinity-api-key
+
+AICHECK_EMBEDDING_MODEL_ID=BAAI/bge-m3
+AICHECK_EMBEDDING_ENGINE=torch
+AICHECK_EMBEDDING_CACHE_HOST_PATH=/tmp/aicheck-embedding-cache
+HF_ENDPOINT=https://hf-mirror.com
+
+# Optional build mirrors for China-hosted deployments.
+AICHECK_APT_DEBIAN_MIRROR=http://mirrors.aliyun.com/debian
+AICHECK_APT_SECURITY_MIRROR=http://mirrors.aliyun.com/debian-security
+AICHECK_PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
 AICHECK_POSTGRES_DB=aicheck
 AICHECK_POSTGRES_USER=aicheck
@@ -501,7 +547,7 @@ AICHECK_OCR_DISABLE_RESULT_CACHE=false
 LITELLM_BASE_URL=http://litellm-service:4000
 LITELLM_API_KEY=replace-with-litellm-master-key
 LITELLM_POSTGRES_DB=litellm
-AICHECK_LITELLM_NO_PROXY=127.0.0.1,localhost,::1,postgres
+AICHECK_LITELLM_NO_PROXY=127.0.0.1,localhost,::1,postgres,embedding-service
 AICHECK_LITELLM_STRICT_PROVIDER_HEALTH=true
 
 ```
@@ -516,7 +562,11 @@ OCR 离线模型目录支持两种布局：
 | 变量 | 必填 | 说明 |
 | --- | --- | --- |
 | `DEEPSEEK_API_KEY` | 是 | LiteLLM 转发到 DeepSeek 的密钥。`default-chat`、`review-chat`、`compare-fast` 和 `deepseek-reasoner` 默认都路由到 `deepseek/deepseek-reasoner`。 |
-| `OPENAI_API_KEY` | 条件必填 | 仅默认 `embedding-default` 使用。若更换 embedding provider，可不填但应关闭严格 provider 健康门禁或同步替换 `embedding-default`。 |
+| `OPENAI_API_KEY` | 否 | 默认配置不使用。仅当自行增加 OpenAI-backed alias 时填写。 |
+| `INFINITY_API_KEY` | 是 | 本地 Infinity embedding 服务 API key。只通过环境变量注入，不应出现在 `docker ps` 命令行参数中。 |
+| `AICHECK_EMBEDDING_MODEL_ID` / `AICHECK_EMBEDDING_ENGINE` | 是 | 本地 embedding 模型和推理引擎。默认 `BAAI/bge-m3` + `torch`，输出 1024 维向量。 |
+| `AICHECK_EMBEDDING_CACHE_HOST_PATH` | 是 | embedding 模型缓存目录，建议持久化到宿主机；首次启动下载后复用缓存。 |
+| `HF_ENDPOINT` | 否 | Hugging Face 镜像地址；中国大陆服务器可使用 `https://hf-mirror.com`。 |
 | `AICHECK_DATABASE_URL` | 是 | 主业务 PostgreSQL 连接串。Compose 默认指向 `postgres:5432/aicheck`。 |
 | `AICHECK_POSTGRES_DB` | 是 | 主业务数据库名。 |
 | `AICHECK_POSTGRES_USER` / `AICHECK_POSTGRES_PASSWORD` | 是 | 统一 PostgreSQL 用户与密码，供 AIcheck、LiteLLM、Temporal 和 LangGraph 使用。 |
@@ -554,6 +604,8 @@ OCR 离线模型目录支持两种布局：
 | `AICHECK_OCR_DISABLE_VARIANT_CACHE` | 否 | 设为 `true` 时禁用预处理候选缓存，用于排查图像策略问题。 |
 | `AICHECK_OCR_RESULT_CACHE_DIR` | 否 | 本地 OCR 成功解析结果缓存目录，默认 `/tmp/aicheck-ocr-result-cache`；缓存键包含源文件 hash、Profile、模型清单、预处理策略和引擎选项。 |
 | `AICHECK_OCR_DISABLE_RESULT_CACHE` | 否 | 设为 `true` 时禁用解析结果缓存，用于重新跑 OCR 引擎或排查模型变化。 |
+| `AICHECK_APT_DEBIAN_MIRROR` / `AICHECK_APT_SECURITY_MIRROR` | 否 | OCR 镜像构建时替换 Debian apt 源；中国大陆服务器建议使用就近镜像，避免构建长时间卡在 `apt-get update`。 |
+| `AICHECK_PIP_INDEX_URL` | 否 | OCR 镜像构建时配置 pip index；中国大陆服务器可使用清华源或企业内网 PyPI 镜像。该配置只影响 build，不影响 OCR 运行时联网策略。 |
 | `LITELLM_BASE_URL` | 是 | API/worker 访问 LiteLLM 的内部地址。 |
 | `LITELLM_API_KEY` | 是 | LiteLLM master key，需与 LiteLLM 配置保持一致。 |
 | `LITELLM_POSTGRES_DB` | 是 | LiteLLM PostgreSQL 数据库名。 |
@@ -568,8 +620,9 @@ Compose 对关键变量使用必填校验，缺少以下变量时服务不会启
 - `AICHECK_MINIO_SECRET_KEY`
 - `LITELLM_API_KEY`
 - `AICHECK_POSTGRES_PASSWORD`
+- `INFINITY_API_KEY`
 
-`OPENAI_API_KEY` 是条件必填：如果继续使用默认 `embedding-default` alias 并开启 `AICHECK_LITELLM_STRICT_PROVIDER_HEALTH=true`，则必须提供；如果 embedding provider 已替换为本地或其他供应商，应同步更新 `backend/config/litellm.yaml` 和验收脚本期望。
+默认 `embedding-default` 已对齐到本地 Infinity `BAAI/bge-m3`，开启 `AICHECK_LITELLM_STRICT_PROVIDER_HEALTH=true` 时要求 `embedding-service`、`INFINITY_API_KEY` 和 `backend/config/litellm.yaml` 一致，不要求 `OPENAI_API_KEY`。只有自行新增 OpenAI-backed alias 时才需要提供 `OPENAI_API_KEY`。
 
 `check_96_preflight.py --strict-production` 会额外检查内部密钥强度。`AICHECK_JWT_SECRET` 至少 32 个字符且至少 12 个不同字符；`AICHECK_MINIO_SECRET_KEY`、`LITELLM_API_KEY`、`AICHECK_POSTGRES_PASSWORD` 至少 16 个字符且至少 8 个不同字符。`DEEPSEEK_API_KEY` 等 provider key 只做存在和 placeholder 检查，因为格式由供应商决定。
 
@@ -1638,9 +1691,9 @@ curl http://127.0.0.1:4001/v1/models \
 
 `api-service` 和 `worker-service` 在 `AICHECK_REQUIRE_AUTH=true`、配置了 `AICHECK_DATABASE_URL` 或 `AICHECK_STRICT_PRODUCTION=true` 任一生产标志开启时，禁止使用内置开发 LiteLLM key；必须显式提供 `LITELLM_API_KEY`。
 
-LiteLLM DB-backed virtual key、预算和限流管理依赖 Prisma query-engine。query-engine 会在容器本机启动 HTTP 健康探针；如果宿主或容器注入了 HTTP proxy 且没有设置 `NO_PROXY/no_proxy`，`/key/generate` 可能返回 `DB not connected` 或启动卡住。Compose 会把 `AICHECK_LITELLM_NO_PROXY` 同时写入 `NO_PROXY` 和 `no_proxy`，默认值为 `127.0.0.1,localhost,::1,postgres`；生产环境可以追加内网域名，但不能删除 `127.0.0.1` 和 `localhost`。
+LiteLLM DB-backed virtual key、预算和限流管理依赖 Prisma query-engine。query-engine 会在容器本机启动 HTTP 健康探针；如果宿主或容器注入了 HTTP proxy 且没有设置 `NO_PROXY/no_proxy`，`/key/generate` 可能返回 `DB not connected` 或启动卡住。Compose 会把 `AICHECK_LITELLM_NO_PROXY` 同时写入 `NO_PROXY` 和 `no_proxy`，默认值为 `127.0.0.1,localhost,::1,postgres,embedding-service`；生产环境可以追加内网域名，但不能删除 `127.0.0.1`、`localhost` 和 `embedding-service`。
 
-如果 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY` 或供应商密钥无效：
+如果 `DEEPSEEK_API_KEY`、`INFINITY_API_KEY` 或供应商密钥无效：
 
 - AI 复核任务会映射为 `AI_RUN_FAILED`。
 - 向量化、模型对比等外部工具错误会映射为 `EXTERNAL_TOOL_FAILED`。
@@ -2105,7 +2158,7 @@ VITE_USE_MOCK=false
 检查：
 
 - `DEEPSEEK_API_KEY` 是否存在且有效；`deepseek-reasoner` 当前可能由 DeepSeek 侧解析为其兼容 reasoning 模型。
-- 如果失败发生在向量化或知识库 embedding，检查 `OPENAI_API_KEY` 或替换后的 embedding provider key。
+- 如果失败发生在向量化或知识库 embedding，检查 `embedding-service` 是否健康、`INFINITY_API_KEY` 是否一致、`embedding-default` 是否仍指向 `http://embedding-service:7997`。
 - `backend/config/litellm.yaml` 的模型名是否被供应商支持。
 - `LITELLM_API_KEY` 是否与 `general_settings.master_key` 一致。
 - `worker-service` 能否访问 `http://litellm-service:4000`。

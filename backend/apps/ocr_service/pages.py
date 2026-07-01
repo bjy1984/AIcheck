@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
+
+
+PAGE_RENDER_VERSION = "pymupdf_text_to_pixel_matrix_v2"
 
 
 def render_document_pages(source_path: Path, *, profile: dict[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -41,26 +45,37 @@ def render_document_pages(source_path: Path, *, profile: dict[str, Any] | None =
 def public_document_pages(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     output = []
     for page in pages:
-        output.append(
-            {
-                "pageNo": page.get("pageNo"),
-                "width": page.get("width"),
-                "height": page.get("height"),
-                "rotation": page.get("rotation", 0),
-                "renderDpi": page.get("renderDpi"),
-                "requestedRenderDpi": page.get("requestedRenderDpi"),
-                "effectiveRenderDpi": page.get("effectiveRenderDpi"),
-                "sourceType": page.get("sourceType"),
-                "totalPages": page.get("totalPages"),
-                "renderedPages": page.get("renderedPages"),
-                "truncated": page.get("truncated"),
-                "coordinateSystem": page.get("coordinateSystem"),
-                "sourceCoordinateSystem": page.get("sourceCoordinateSystem"),
-                "renderScaleX": page.get("renderScaleX"),
-                "renderScaleY": page.get("renderScaleY"),
-                "imageHash": page.get("imageHash"),
-            }
-        )
+        public = {
+            "pageNo": page.get("pageNo"),
+            "width": page.get("width"),
+            "height": page.get("height"),
+            "rotation": page.get("rotation", 0),
+            "renderDpi": page.get("renderDpi"),
+            "requestedRenderDpi": page.get("requestedRenderDpi"),
+            "effectiveRenderDpi": page.get("effectiveRenderDpi"),
+            "sourceType": page.get("sourceType"),
+            "totalPages": page.get("totalPages"),
+            "renderedPages": page.get("renderedPages"),
+            "truncated": page.get("truncated"),
+            "coordinateSystem": page.get("coordinateSystem"),
+            "sourceCoordinateSystem": page.get("sourceCoordinateSystem"),
+            "renderScaleX": page.get("renderScaleX"),
+            "renderScaleY": page.get("renderScaleY"),
+            "imageHash": page.get("imageHash"),
+        }
+        for key in [
+            "requestedMaxPages",
+            "effectiveMaxPages",
+            "protectedPages",
+            "pdfRenderMatrix",
+            "pdfTextToPixelMatrix",
+            "pdfPixmapX",
+            "pdfPixmapY",
+            "pageRenderVersion",
+        ]:
+            if page.get(key) is not None:
+                public[key] = page.get(key)
+        output.append(public)
     return output
 
 
@@ -88,6 +103,9 @@ def render_pdf_pages(
         selected_indices = select_pdf_page_indices(total_pages, max_pages, profile=profile)
         rendered_pages = [index + 1 for index in selected_indices]
         truncated = len(selected_indices) < total_pages
+        cached_pages = load_pdf_page_manifest(out_dir, rendered_pages=rendered_pages, total_pages=total_pages)
+        if cached_pages is not None:
+            return cached_pages
         for page_index in selected_indices:
             page = document[page_index]
             page_no = page_index + 1
@@ -97,10 +115,11 @@ def render_pdf_pages(
                 scale = min(dpi_scale, max_scale)
             else:
                 scale = dpi_scale
-            matrix = fitz.Matrix(scale, scale)
+            matrix = fitz.Matrix(scale, scale).prerotate(int(page.rotation or 0))
+            text_to_pixel_matrix = text_to_pixel_matrix_for_page(page, matrix)
             target = out_dir / f"page-{page_no}.png"
+            pixmap = page.get_pixmap(matrix=matrix, alpha=False)
             if not target.exists():
-                pixmap = page.get_pixmap(matrix=matrix, alpha=False)
                 pixmap.save(str(target))
             page_path = target
             pages.append(
@@ -116,13 +135,22 @@ def render_pdf_pages(
                     source_coordinate_system="pdf_points",
                     render_scale_x=scale,
                     render_scale_y=scale,
+                    pdf_render_matrix=pdf_matrix_values(matrix),
+                    pdf_text_to_pixel_matrix=pdf_matrix_values(text_to_pixel_matrix),
+                    pdf_pixmap_x=int(getattr(pixmap, "x", 0) or 0),
+                    pdf_pixmap_y=int(getattr(pixmap, "y", 0) or 0),
+                    page_render_version=PAGE_RENDER_VERSION,
                     requested_render_dpi=dpi,
                     effective_render_dpi=int(round(scale * 72)),
                     total_pages=total_pages,
                     rendered_pages=rendered_pages,
                     truncated=truncated,
+                    requested_max_pages=max_pages,
+                    effective_max_pages=len(selected_indices),
+                    protected_pages=protected_page_labels(selected_indices, total_pages),
                 )
             )
+        save_pdf_page_manifest(out_dir, pages)
     finally:
         document.close()
     return pages
@@ -316,6 +344,14 @@ def image_page_record(
     total_pages: int | None = None,
     rendered_pages: list[int] | None = None,
     truncated: bool | None = None,
+    requested_max_pages: int | None = None,
+    effective_max_pages: int | None = None,
+    protected_pages: list[str] | None = None,
+    pdf_render_matrix: list[float] | None = None,
+    pdf_text_to_pixel_matrix: list[float] | None = None,
+    pdf_pixmap_x: int | None = None,
+    pdf_pixmap_y: int | None = None,
+    page_render_version: str | None = None,
 ) -> dict[str, Any]:
     width, height = image_size(path)
     return {
@@ -331,15 +367,55 @@ def image_page_record(
         "totalPages": total_pages,
         "renderedPages": rendered_pages,
         "truncated": truncated,
+        "requestedMaxPages": requested_max_pages,
+        "effectiveMaxPages": effective_max_pages,
+        "protectedPages": protected_pages,
         "coordinateSystem": "rendered_pixels",
         "sourceCoordinateSystem": source_coordinate_system,
         "sourceWidth": source_width,
         "sourceHeight": source_height,
         "renderScaleX": render_scale_x,
         "renderScaleY": render_scale_y,
+        "pdfRenderMatrix": pdf_render_matrix,
+        "pdfTextToPixelMatrix": pdf_text_to_pixel_matrix,
+        "pdfPixmapX": pdf_pixmap_x,
+        "pdfPixmapY": pdf_pixmap_y,
+        "pageRenderVersion": page_render_version,
         "rotation": rotation,
         "imageHash": file_hash(path) if path.exists() else None,
     }
+
+
+def pdf_matrix_values(matrix: Any) -> list[float]:
+    return [
+        float(getattr(matrix, "a", 1.0)),
+        float(getattr(matrix, "b", 0.0)),
+        float(getattr(matrix, "c", 0.0)),
+        float(getattr(matrix, "d", 1.0)),
+        float(getattr(matrix, "e", 0.0)),
+        float(getattr(matrix, "f", 0.0)),
+    ]
+
+
+def text_to_pixel_matrix_for_page(page: Any, render_matrix: Any) -> Any:
+    rotation_matrix = getattr(page, "rotation_matrix", None)
+    if rotation_matrix is None:
+        return render_matrix
+    try:
+        return rotation_matrix * render_matrix
+    except Exception:
+        return render_matrix
+
+
+def protected_page_labels(selected_indices: list[int], total_pages: int) -> list[str]:
+    labels = []
+    if selected_indices and 0 in selected_indices:
+        labels.append("first")
+    if total_pages >= 2 and total_pages - 1 in selected_indices:
+        labels.append("last")
+    if total_pages >= 3 and total_pages - 2 in selected_indices:
+        labels.append("penultimate")
+    return labels
 
 
 def image_size(path: Path) -> tuple[int | None, int | None]:
@@ -366,10 +442,53 @@ def rendered_page_cache_dir(source_path: Path, *, dpi: int, max_pages: int, max_
     base = Path(os.getenv("AICHECK_OCR_PAGE_CACHE_DIR") or (Path(tempfile.gettempdir()) / "aicheck-ocr-page-cache"))
     payload = (
         f"{source_path}:{file_hash(source_path) if source_path.exists() else ''}:"
-        f"dpi={dpi}:max={max_pages}:maxLongSide={max_long_side}"
+        f"dpi={dpi}:max={max_pages}:maxLongSide={max_long_side}:"
+        f"pageRenderVersion={PAGE_RENDER_VERSION}"
     )
     key = hashlib.sha256(payload.encode("utf-8")).hexdigest()
     return base / key
+
+
+def pdf_page_manifest_path(out_dir: Path) -> Path:
+    return out_dir / "manifest.json"
+
+
+def load_pdf_page_manifest(out_dir: Path, *, rendered_pages: list[int], total_pages: int) -> list[dict[str, Any]] | None:
+    manifest_path = pdf_page_manifest_path(out_dir)
+    if not manifest_path.exists():
+        return None
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("pageRenderVersion") != PAGE_RENDER_VERSION:
+        return None
+    if payload.get("renderedPages") != rendered_pages or payload.get("totalPages") != total_pages:
+        return None
+    pages = payload.get("pages")
+    if not isinstance(pages, list):
+        return None
+    output = [page for page in pages if isinstance(page, dict)]
+    if len(output) != len(rendered_pages):
+        return None
+    if not all(Path(str(page.get("path") or "")).exists() for page in output):
+        return None
+    return output
+
+
+def save_pdf_page_manifest(out_dir: Path, pages: list[dict[str, Any]]) -> None:
+    rendered_pages = [int(page.get("pageNo") or 0) for page in pages if page.get("pageNo")]
+    total_pages = next((page.get("totalPages") for page in pages if page.get("totalPages") is not None), None)
+    payload = {
+        "pageRenderVersion": PAGE_RENDER_VERSION,
+        "totalPages": total_pages,
+        "renderedPages": rendered_pages,
+        "pages": pages,
+    }
+    try:
+        pdf_page_manifest_path(out_dir).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        return
 
 
 def file_hash(path: Path) -> str:

@@ -3,6 +3,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from apps.ocr_service.utils import parse_bool
+
 
 DEFAULT_PROFILE_ID = "generic_document_v1"
 DEFAULT_VLM_FALLBACK_REASONS = [
@@ -13,6 +15,7 @@ DEFAULT_VLM_FALLBACK_REASONS = [
     "FIELD_VALUE_CONFLICT",
     "REQUIRED_TABLE_MISSING",
     "TABLE_STRUCTURE_LOW_CONFIDENCE",
+    "TABLE_CELL_EVIDENCE_LOW",
     "TABLE_EVIDENCE_MISSING",
     "TABLE_ENGINE_CONFLICT",
     "SEAL_NOT_FOUND",
@@ -392,7 +395,7 @@ def validate_profiles(profiles: dict[str, dict[str, Any]] | None = None) -> list
         if not isinstance(quality_rules, dict):
             failures.append(profile_failure(profile_id, "qualityRules", "qualityRules must be an object"))
         else:
-            for key in ["minFieldConfidence", "minTableStructureConfidence"]:
+            for key in ["minFieldConfidence", "minTableStructureConfidence", "minTableCellEvidenceCoverage"]:
                 if not confidence_threshold_valid(quality_rules.get(key)):
                     failures.append(profile_failure(profile_id, f"qualityRules.{key}", f"{key} must be between 0 and 1"))
             critical = quality_rules.get("criticalConflictFields")
@@ -439,8 +442,8 @@ def validate_profiles(profiles: dict[str, dict[str, Any]] | None = None) -> list
                     )
                 )
             seal_policy = preprocess_policy.get("seal") if isinstance(preprocess_policy.get("seal"), dict) else {}
-            seal_required = bool((profile.get("sealRules") or {}).get("required"))
-            if seal_required and not bool(seal_policy.get("enableColorCandidate")):
+            seal_required = parse_bool((profile.get("sealRules") or {}).get("required"), False) is True
+            if seal_required and parse_bool(seal_policy.get("enableColorCandidate"), False) is not True:
                 failures.append(
                     profile_failure(
                         profile_id,
@@ -448,7 +451,11 @@ def validate_profiles(profiles: dict[str, dict[str, Any]] | None = None) -> list
                         "seal-required profiles must enable color seal candidates",
                     )
                 )
-            if seal_required and not bool(seal_policy.get("enablePaddlexSeal") or seal_policy.get("enableSealTextRecognition")):
+            if seal_required and not (
+                parse_bool(seal_policy.get("enablePaddlexSeal"), False)
+                or parse_bool(seal_policy.get("enableSealTextRecognition"), False)
+                or parse_bool(seal_policy.get("enableAgentdesignSeal"), False)
+            ):
                 failures.append(
                     profile_failure(
                         profile_id,
@@ -491,6 +498,8 @@ def merge_profile_from(source: dict[str, dict[str, Any]], profile_id: str) -> di
 
 
 def confidence_threshold_valid(value: Any) -> bool:
+    if value is None:
+        return True
     try:
         numeric = float(value)
     except (TypeError, ValueError):

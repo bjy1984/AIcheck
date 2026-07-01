@@ -4,7 +4,17 @@ import echarts from '@/plugins/echarts'
 import { debounce } from 'lodash-es'
 import 'echarts-wordcloud'
 import { propTypes } from '@/utils/propTypes'
-import { computed, PropType, ref, unref, watch, onMounted, onBeforeUnmount, onActivated } from 'vue'
+import {
+  computed,
+  PropType,
+  ref,
+  unref,
+  watch,
+  nextTick,
+  onMounted,
+  onBeforeUnmount,
+  onActivated
+} from 'vue'
 import { useAppStore } from '@/store/modules/app'
 import { isString } from '@/utils/is'
 import { useDesign } from '@/hooks/web/useDesign'
@@ -26,16 +36,13 @@ const props = defineProps({
 
 const isDark = computed(() => appStore.getIsDark)
 
-const theme = computed(() => {
-  const echartTheme: boolean | string = unref(isDark) ? true : 'auto'
-
-  return echartTheme
-})
+const theme = computed<boolean | 'auto'>(() => (unref(isDark) ? true : 'auto'))
 
 const options = computed(() => {
-  return Object.assign(props.options, {
+  return {
+    ...props.options,
     darkMode: unref(theme)
-  })
+  }
 })
 
 const elRef = ref<ElRef>()
@@ -43,6 +50,7 @@ const elRef = ref<ElRef>()
 let echartRef: Nullable<echarts.ECharts> = null
 
 const contentEl = ref<Element>()
+let chartResizeObserver: ResizeObserver | null = null
 
 const styles = computed(() => {
   const width = isString(props.width) ? props.width : `${props.width}px`
@@ -73,16 +81,26 @@ watch(
   }
 )
 
-const resizeHandler = debounce(() => {
+const resizeChart = () => {
   if (echartRef) {
+    const el = unref(elRef) as HTMLElement | undefined
+    const rect = el?.getBoundingClientRect()
+    if (rect && rect.width > 0 && rect.height > 0) {
+      echartRef.resize({ width: Math.floor(rect.width), height: Math.floor(rect.height) })
+      return
+    }
     echartRef.resize()
   }
+}
+
+const resizeHandler = debounce(() => {
+  resizeChart()
 }, 100)
 
 watch(
   () => [props.width, props.height],
   () => {
-    resizeHandler()
+    nextTick(() => resizeHandler())
   },
   { flush: 'post' }
 )
@@ -96,6 +114,14 @@ const contentResizeHandler = async (e: TransitionEvent) => {
 onMounted(() => {
   setTimeout(() => {
     initChart()
+    if (unref(elRef) && typeof ResizeObserver !== 'undefined') {
+      chartResizeObserver = new ResizeObserver(() => resizeHandler())
+      chartResizeObserver.observe(unref(elRef) as HTMLElement)
+      const parentElement = (unref(elRef) as HTMLElement).parentElement
+      if (parentElement) {
+        chartResizeObserver.observe(parentElement)
+      }
+    }
   }, 0)
 
   window.addEventListener('resize', resizeHandler)
@@ -107,14 +133,14 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', resizeHandler)
+  chartResizeObserver?.disconnect()
+  chartResizeObserver = null
   unref(contentEl) &&
     (unref(contentEl) as Element).removeEventListener('transitionend', contentResizeHandler)
 })
 
 onActivated(() => {
-  if (echartRef) {
-    echartRef.resize()
-  }
+  nextTick(() => resizeChart())
 })
 </script>
 

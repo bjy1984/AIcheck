@@ -1548,3 +1548,121 @@ def test_fde_incident_close_and_cost_budget_change_request() -> None:
     assert change["changeRequest"]["status"] == "pending_approval"
     assert closed["incident"]["status"] == "closed"
     assert any(item["id"] == change["changeRequest"]["id"] for item in costs["changeRequests"])
+
+
+def test_fde_vector_file_detail_returns_chunk_level_quality() -> None:
+    knowledge_file = repo.find_one("knowledge_files", "KF-DOC-20260625-001")
+    knowledge_file["chunkCount"] = 2
+    knowledge_file["vectorCount"] = 2
+    repo.state["knowledge_chunks"].extend(
+        [
+            {
+                "id": "CHK-KF-DOC-20260625-001-1",
+                "fileId": "KF-DOC-20260625-001",
+                "documentId": "DOC-20260625-001",
+                "documentVersionId": "DV-20260625-001-V2",
+                "chunkNo": 1,
+                "text": "焊工资格证编号 TS6J-2024-03158，姓名王建国，有效期覆盖项目施工周期。",
+                "pageNo": 1,
+                "bbox": [120, 220, 780, 310],
+                "tokenCount": 42,
+                "createdAt": "2026-06-27 00:00:00",
+            },
+            {
+                "id": "CHK-KF-DOC-20260625-001-2",
+                "fileId": "KF-DOC-20260625-001",
+                "documentId": "DOC-20260625-001",
+                "documentVersionId": "DV-20260625-001-V2",
+                "chunkNo": 2,
+                "text": "持证项目覆盖 SMAW 和 GTAW，需核对外部查询截图来源。",
+                "pageNo": 2,
+                "bbox": [160, 180, 860, 280],
+                "tokenCount": 36,
+                "createdAt": "2026-06-27 00:01:00",
+            },
+        ]
+    )
+    repo.state.setdefault("review_runs", []).append(
+        {
+            "id": "RR-CHUNK-001",
+            "reviewRunId": "RR-CHUNK-001",
+            "projectId": "P-2026-HDCP-001",
+            "nodeId": 24,
+            "inputDocumentVersionIds": ["DV-20260625-001-V2"],
+        }
+    )
+    repo.state.setdefault("retrieval_traces", []).append(
+        {
+            "id": "RTR-CHUNK-001",
+            "retrievalTraceId": "RTR-CHUNK-001",
+            "reviewRunId": "RR-CHUNK-001",
+            "query": "焊工资格证有效期如何校验？",
+            "selectedRoute": "hybrid_review_basis_search",
+            "filters": {"projectId": "P-2026-HDCP-001", "nodeId": 24, "businessPackId": "engineering_inspection_v1"},
+            "selectedClauses": [
+                {
+                    "id": "KC-CHK-KF-DOC-20260625-001-1",
+                    "clauseId": "CHK-KF-DOC-20260625-001-1",
+                    "fileId": "KF-DOC-20260625-001",
+                    "documentVersionId": "DV-20260625-001-V2",
+                    "pageNo": 1,
+                    "bbox": [120, 220, 780, 310],
+                }
+            ],
+        }
+    )
+
+    detail = assert_ok(
+        client.get(
+            "/api/fde/projects/P-2026-HDCP-001/documents/DV-20260625-001-V2/vector-detail",
+            headers={"X-Role": "fde"},
+        )
+    )
+    forbidden = assert_error(
+        client.get(
+            "/api/fde/projects/P-2026-HDCP-001/documents/DV-20260625-001-V2/vector-detail",
+            headers={"X-Role": "contractor"},
+        ),
+        "FORBIDDEN",
+    )
+
+    assert detail["schemaVersion"] == "FdeVectorFileDetail@1.1.0"
+    assert detail["compatibleSchemaVersion"] == "FdeVectorFileDetail@1.0.0"
+    assert detail["fileName"] == "焊工资格证-王建国.pdf"
+    assert detail["chunkSummary"]["materializedChunkCount"] == 2
+    assert detail["chunkSummary"]["pageCoverage"] == 1
+    assert detail["chunkSummary"]["bboxCoverage"] == 1
+    assert detail["chunkRows"][0]["chunkId"] == "CHK-KF-DOC-20260625-001-1"
+    assert detail["chunkRows"][0]["retrievalHitCount"] >= 1
+    assert detail["retrievalTraceRows"][0]["selectedChunkCount"] >= 1
+    assert detail["sourcePreview"]["schemaVersion"] == "FdeSourcePreview@1.0.0"
+    assert detail["ocrArtifacts"]["schemaVersion"] == "FdeOcrArtifacts@1.0.0"
+    assert detail["textRecords"]
+    assert detail["vectorPayloads"][0]["indexRecord"]["payloadHash"]
+    assert detail["indexRecords"][0]["vectorId"]
+    assert detail["llmUsage"]["scope"] == "document_explicit"
+    assert detail["processingPipeline"]["source"]["stage"] == "image"
+    assert detail["processingPipeline"]["ocr"]["summary"]["fieldCount"] >= 1
+    assert detail["processingPipeline"]["text"]["textRecordCount"] >= 1
+    assert detail["processingPipeline"]["vectorFormat"]["rows"][0]["embeddingInput"]["model"] == "embedding-default"
+    assert detail["processingPipeline"]["vectorFormat"]["rows"][0]["vectorRecord"]["payloadHash"]
+    assert forbidden["data"]["reason"] == "FORBIDDEN"
+
+
+def test_fde_vector_file_detail_exposes_declared_chunk_without_materialized_rows() -> None:
+    detail = assert_ok(
+        client.get(
+            "/api/fde/projects/P-2026-GDLNG-002/documents/FDE-DV-2026GDLNG002-4-V1/vector-detail",
+            headers={"X-Role": "fde"},
+        )
+    )
+
+    assert detail["schemaVersion"] == "FdeVectorFileDetail@1.1.0"
+    assert detail["chunkSummary"]["declaredChunkCount"] == 16
+    assert detail["chunkSummary"]["materializedChunkCount"] == 0
+    assert detail["chunkRows"][0]["materialized"] is False
+    assert detail["processingPipeline"]["summary"][0]["label"] == "图片/文件"
+    assert detail["processingPipeline"]["vectorFormat"]["rows"][0]["vectorRecord"]["status"] == "missing"
+    assert detail["vectorPayloads"][0]["indexRecord"]["materialized"] is False
+    assert any(issue["code"] == "virtual_chunk_rows" for issue in detail["qualityIssues"])
+    assert "文件声明已切片，但缺少可审计切片明细" in detail["blockers"]

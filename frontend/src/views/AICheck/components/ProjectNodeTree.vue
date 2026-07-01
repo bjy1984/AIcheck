@@ -9,6 +9,13 @@ type ProjectTreeViewNode =
   | {
       id: string
       label: string
+      type: 'overview'
+      nodeCount: number
+      fileCount: number
+    }
+  | {
+      id: string
+      label: string
       type: 'group'
       children: ProjectTreeViewNode[]
     }
@@ -26,6 +33,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   select: [node: ProjectTreeNode]
+  selectOverview: []
 }>()
 
 const treeProps = {
@@ -33,23 +41,46 @@ const treeProps = {
   label: 'label'
 } as const
 
-const treeData = computed<ProjectTreeViewNode[]>(() =>
-  props.groups.map((group, index) => ({
+const totalNodeCount = computed(() =>
+  props.groups.reduce((sum, group) => sum + group.nodes.length, 0)
+)
+const totalFileCount = computed(() =>
+  props.groups.reduce(
+    (sum, group) => sum + group.nodes.reduce((nodeSum, node) => nodeSum + node.fileCount, 0),
+    0
+  )
+)
+
+const treeData = computed<ProjectTreeViewNode[]>(() => [
+  {
+    id: 'overview',
+    label: '项目总览',
+    type: 'overview',
+    nodeCount: totalNodeCount.value,
+    fileCount: totalFileCount.value
+  },
+  ...props.groups.map((group, index) => ({
     id: `group-${index}`,
     label: group.groupName,
-    type: 'group',
+    type: 'group' as const,
     children: group.nodes.map((node) => ({
       id: `node-${node.nodeId}`,
       label: node.name,
-      type: 'node',
+      type: 'node' as const,
       node
     }))
   }))
+])
+
+const activeTreeKey = computed(() =>
+  props.activeNodeId ? `node-${props.activeNodeId}` : 'overview'
 )
 
-const activeTreeKey = computed(() => `node-${props.activeNodeId}`)
-
 const handleNodeClick = (data: ProjectTreeViewNode) => {
+  if (data.type === 'overview') {
+    emit('selectOverview')
+    return
+  }
   if (data.type === 'node') {
     emit('select', data.node)
   }
@@ -77,7 +108,19 @@ const handleNodeClick = (data: ProjectTreeViewNode) => {
       @node-click="handleNodeClick"
     >
       <template #default="{ data }">
-        <span v-if="data.type === 'group'" class="node-group-title">{{ data.label }}</span>
+        <span
+          v-if="data.type === 'overview'"
+          :aria-pressed="!activeNodeId"
+          :class="['node-overview-button', { 'is-active': !activeNodeId }]"
+        >
+          <span class="node-index">总</span>
+          <span class="node-main">
+            <span class="node-name">{{ data.label }}</span>
+            <span class="node-meta">节点 {{ data.nodeCount }} · 资料 {{ data.fileCount }}</span>
+          </span>
+          <ElTag type="primary" size="small" effect="plain">总览</ElTag>
+        </span>
+        <span v-else-if="data.type === 'group'" class="node-group-title">{{ data.label }}</span>
         <span
           v-else
           :aria-pressed="data.node.nodeId === activeNodeId"
@@ -138,7 +181,7 @@ const handleNodeClick = (data: ProjectTreeViewNode) => {
 
 .node-tree :deep(.el-tree-node__content) {
   height: auto;
-  min-height: 34px;
+  min-height: 32px;
   padding-left: 0 !important;
   line-height: 1.2;
   color: #26364e;
@@ -151,17 +194,21 @@ const handleNodeClick = (data: ProjectTreeViewNode) => {
 }
 
 .node-tree :deep(.el-tree-node__expand-icon) {
-  width: 28px;
-  height: 28px;
-  margin-right: 2px;
-  font-size: 18px;
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  margin-right: 4px;
+  font-size: 14px;
   color: #6e7d92;
-  flex: 0 0 28px;
+  border-radius: 6px;
+  flex: 0 0 22px;
+  align-items: center;
+  justify-content: center;
 }
 
 .node-tree :deep(.el-tree-node__expand-icon svg) {
-  width: 18px;
-  height: 18px;
+  width: 13px;
+  height: 13px;
 }
 
 .node-tree :deep(.el-tree-node__children .el-tree-node__content) {
@@ -176,6 +223,7 @@ const handleNodeClick = (data: ProjectTreeViewNode) => {
   visibility: hidden;
 }
 
+.node-overview-button,
 .node-button {
   --el-button-bg-color: #fff;
   --el-button-border-color: #e5e7eb;
@@ -188,10 +236,10 @@ const handleNodeClick = (data: ProjectTreeViewNode) => {
 
   display: grid;
   width: 100%;
-  min-height: 58px;
-  padding: 9px 8px;
-  margin-bottom: 6px;
-  margin-left: 8px;
+  min-height: 46px;
+  padding: 7px 8px;
+  margin-bottom: 5px;
+  margin-left: 4px;
   color: #26364e;
   text-align: left;
   white-space: normal;
@@ -199,30 +247,36 @@ const handleNodeClick = (data: ProjectTreeViewNode) => {
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: start;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
 }
 
 .node-button:hover,
 .node-button:focus-visible,
+.node-overview-button:hover,
+.node-overview-button:focus-visible,
+.node-overview-button.is-active,
 .node-button.is-active {
   background: #eff6ff;
   border-color: #2563eb;
   outline: none;
 }
 
-.node-button.is-active {
-  border-left-color: transparent;
+.node-overview-button {
+  margin-left: 0;
+  margin-bottom: 8px;
+  background: linear-gradient(180deg, #f8fbff, #eef5ff);
+  border-color: #cfe0ff;
 }
 
 .node-index {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
-  font-size: 13px;
+  width: 28px;
+  height: 28px;
+  font-size: 12px;
   font-weight: 700;
   color: #1d4ed8;
   background: #dbeafe;
@@ -237,16 +291,20 @@ const handleNodeClick = (data: ProjectTreeViewNode) => {
   display: block;
   font-size: 13px;
   font-weight: 700;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-  white-space: normal;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .node-meta {
   display: block;
-  margin-top: 4px;
-  font-size: 12px;
+  margin-top: 3px;
+  overflow: hidden;
+  font-size: 11px;
   color: #667085;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (width <= 1280px) {

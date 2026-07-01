@@ -21,8 +21,13 @@ model_list:
       api_base: https://api.deepseek.com
   - model_name: embedding-default
     litellm_params:
-      model: openai/text-embedding-3-large
-      api_key: os.environ/OPENAI_API_KEY
+      model: infinity/BAAI/bge-m3
+      api_base: http://embedding-service:7997
+      api_key: os.environ/INFINITY_API_KEY
+    model_info:
+      mode: embedding
+      input_cost_per_token: 0
+      output_cost_per_token: 0
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY

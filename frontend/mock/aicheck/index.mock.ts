@@ -593,7 +593,7 @@ const initialKnowledgeRuleVersions: KnowledgeRuleVersionMock[] = [
 ]
 
 const initialKnowledgeConfig: KnowledgeConfigMock = {
-  embeddingModel: 'text-embedding-3-large',
+  embeddingModel: 'BAAI/bge-m3',
   chunkSize: 900,
   chunkOverlap: 120,
   topKDefault: 5,
@@ -3266,7 +3266,7 @@ const buildMockFdeDocumentKnowledgeLineage = (document: Record<string, any>) => 
     vectorIndex: {
       embeddingModel: document.embeddingModel || 'embedding-default',
       indexVersion: document.indexVersion || 'knowledge-index@local',
-      dimensions: Number(document.vectorDimensions || 3072),
+      dimensions: Number(document.vectorDimensions || 1024),
       chunkCount,
       vectorCount,
       vectorGap
@@ -3361,6 +3361,228 @@ const buildMockFdeProjectKnowledgeLineage = (
   }
 }
 
+const buildMockFdeVectorQuality = (
+  documents: Array<Record<string, any>>,
+  reviewRuns: Array<Record<string, any>>
+) => {
+  const total = documents.length || 1
+  const chunkCount = documents.reduce((sum, document) => sum + Number(document.chunkCount || 0), 0)
+  const vectorCount = documents.reduce(
+    (sum, document) => sum + Number(document.vectorCount || 0),
+    0
+  )
+  const vectorGap = documents.reduce(
+    (sum, document) =>
+      sum + Math.max(0, Number(document.chunkCount || 0) - Number(document.vectorCount || 0)),
+    0
+  )
+  const chunkCoverage =
+    documents.filter((document) => Number(document.chunkCount || 0) > 0).length / total
+  const vectorCompleteness = chunkCount ? vectorCount / chunkCount : 0
+  const metadataCompleteness =
+    documents.filter(
+      (document) =>
+        document.knowledgeFileId &&
+        document.currentVersionId &&
+        document.embeddingModel &&
+        document.indexVersion
+    ).length / total
+  const pageIndexCoverage =
+    documents.filter((document) => Number(document.pageIndexNodeCount || 0) > 0).length / total
+  const retrievalTraceCount = Math.max(1, reviewRuns.length)
+  const recallAt5Proxy = reviewRuns.length ? 0.92 : 0.72
+  const evidenceHitRate = reviewRuns.length ? 0.9 : 0.68
+  const sections = [
+    {
+      key: 'corpus_metadata',
+      name: '切片与 metadata',
+      score: Math.round(
+        (0.45 * chunkCoverage + 0.4 * metadataCompleteness + 0.15 * pageIndexCoverage) * 15
+      ),
+      maxScore: 15,
+      metric: Number(
+        (0.45 * chunkCoverage + 0.4 * metadataCompleteness + 0.15 * pageIndexCoverage).toFixed(4)
+      ),
+      status: chunkCoverage >= 0.9 && metadataCompleteness >= 0.9 ? 'pass' : 'warn',
+      blockers: chunkCoverage >= 0.9 ? [] : ['切片覆盖不足']
+    },
+    {
+      key: 'vector_index',
+      name: '向量完整性',
+      score: Math.round(vectorCompleteness * 25),
+      maxScore: 25,
+      metric: Number(vectorCompleteness.toFixed(4)),
+      status: vectorCompleteness >= 0.95 ? 'pass' : 'warn',
+      blockers: vectorCompleteness >= 0.95 ? [] : ['向量数量未覆盖全部切片']
+    },
+    {
+      key: 'retrieval',
+      name: '检索命中',
+      score: Math.round((0.75 * recallAt5Proxy + 0.25) * 30),
+      maxScore: 30,
+      metric: Number((0.75 * recallAt5Proxy + 0.25).toFixed(4)),
+      status: recallAt5Proxy >= 0.9 ? 'pass' : 'warn',
+      blockers: recallAt5Proxy >= 0.9 ? [] : ['检索命中率低于 90%']
+    },
+    {
+      key: 'evidence',
+      name: '证据可追溯',
+      score: Math.round((0.65 * evidenceHitRate + 0.35 * pageIndexCoverage) * 20),
+      maxScore: 20,
+      metric: Number((0.65 * evidenceHitRate + 0.35 * pageIndexCoverage).toFixed(4)),
+      status: evidenceHitRate >= 0.9 ? 'pass' : 'warn',
+      blockers: evidenceHitRate >= 0.9 ? [] : ['检索依据页码或 bbox 覆盖低于 90%']
+    },
+    {
+      key: 'stability',
+      name: '稳定与门禁',
+      score: vectorGap ? 6 : 9,
+      maxScore: 10,
+      metric: vectorGap ? 0.6 : 0.9,
+      status: vectorGap ? 'warn' : 'pass',
+      blockers: vectorGap ? ['仍存在向量缺口'] : []
+    }
+  ]
+  const score = sections.reduce((sum, section) => sum + Number(section.score || 0), 0)
+  const blockers = sections.flatMap((section) => section.blockers || [])
+  return {
+    schemaVersion: 'FdeVectorQuality@1.0.0',
+    score,
+    targetScore: 100,
+    status: score >= 90 && blockers.length === 0 ? 'pass' : 'needs_attention',
+    statusLabel: score >= 90 && blockers.length === 0 ? '可进入审查' : '需补齐质量证据',
+    evaluationMode: 'trace_proxy_with_eval_gate',
+    localOnly: true,
+    sections,
+    blockers,
+    metrics: {
+      documentCount: documents.length,
+      chunkCount,
+      vectorCount,
+      vectorGap,
+      chunkCoverage,
+      vectorCompleteness,
+      metadataCompleteness,
+      pageIndexCoverage,
+      retrievalTraceCount,
+      recallAt5Proxy,
+      evidenceHitRate,
+      filterScopedRate: 1,
+      filterLeakageRate: 0,
+      pageIndexTraceRate: pageIndexCoverage,
+      goldCaseCount: 3,
+      failedKnowledgeTasks: vectorGap ? 1 : 0
+    },
+    documentScores: documents.map((document, index) => {
+      const docChunks = Number(document.chunkCount || 0)
+      const docVectors = Number(document.vectorCount || 0)
+      const docGap = Math.max(0, docChunks - docVectors)
+      const pageIndexReady = Number(document.pageIndexNodeCount || 0) > 0
+      const vectorRatio = docChunks ? docVectors / docChunks : 0
+      const issue = docGap ? '向量缺口' : pageIndexReady ? '无' : 'PageIndex 未构建'
+      const docScore = Math.round(
+        (0.25 * (docChunks > 0 ? 1 : 0) +
+          0.4 * vectorRatio +
+          0.2 * (pageIndexReady ? 1 : 0) +
+          0.15 * (docGap ? 0 : 1)) *
+          100
+      )
+      return {
+        documentId: document.id,
+        documentVersionId: document.currentVersionId,
+        knowledgeFileId: document.knowledgeFileId,
+        fileName: document.fileName,
+        requirementName: document.requirementName,
+        score: docScore,
+        chunkCount: docChunks,
+        vectorCount: docVectors,
+        vectorGap: docGap,
+        metadataCompleteness: 1,
+        pageIndexReady,
+        pageIndexNodeCount: Number(document.pageIndexNodeCount || 0),
+        embeddingModel: document.embeddingModel || state.knowledgeConfig.embeddingModel,
+        indexVersion: document.indexVersion || 'knowledge-index@local',
+        vectorDimensions: Number(document.vectorDimensions || 1024),
+        vectorStatus: document.vectorStatus,
+        sliceStatus: document.sliceStatus,
+        latestTaskStatus: document.latestKnowledgeTask?.status || '-',
+        readinessLabel: pageIndexReady && !docGap ? '可用于审查' : '需补齐',
+        issue,
+        qualityDimensions: [
+          {
+            key: 'chunking',
+            name: '知识切片',
+            score: docChunks > 0 ? 100 : 0,
+            metric: docChunks > 0 ? 1 : 0,
+            status: docChunks > 0 ? 'pass' : 'warn',
+            message: `切片 ${docChunks} 条`
+          },
+          {
+            key: 'vector_integrity',
+            name: '向量完整性',
+            score: Math.round(vectorRatio * 100),
+            metric: vectorRatio,
+            status: docGap ? 'warn' : 'pass',
+            message: `向量 ${docVectors}/${docChunks} 条，缺口 ${docGap}`
+          },
+          {
+            key: 'metadata',
+            name: 'metadata 完整度',
+            score: 100,
+            metric: 1,
+            status: 'pass',
+            message: '模型、索引、版本、节点范围等元数据完整'
+          },
+          {
+            key: 'pageindex',
+            name: 'PageIndex 溯源',
+            score: pageIndexReady ? 100 : 0,
+            metric: pageIndexReady ? 1 : 0,
+            status: pageIndexReady ? 'pass' : 'warn',
+            message: `PageIndex 节点 ${Number(document.pageIndexNodeCount || 0)} 个`
+          },
+          {
+            key: 'llm_retrieval',
+            name: 'LLM 检索证据',
+            score: Math.round((0.55 * recallAt5Proxy + 0.45 * evidenceHitRate) * 100),
+            metric: 0.55 * recallAt5Proxy + 0.45 * evidenceHitRate,
+            status: recallAt5Proxy >= 0.9 && evidenceHitRate >= 0.9 ? 'pass' : 'warn',
+            message: '项目级 RetrievalTrace 代理'
+          }
+        ],
+        lineageStages: document.knowledgeLineage?.stages || [],
+        lineageBlockers: issue === '无' ? [] : [issue],
+        llmTrace: {
+          scope: 'project_proxy',
+          relatedReviewRunCount: 0,
+          retrievalTraceCount,
+          hitRate: recallAt5Proxy,
+          evidenceHitRate
+        },
+        retrievalTraceRows: reviewRuns.slice(0, 5).map((run, traceIndex) => ({
+          retrievalTraceId: `MOCK-RTR-${index + 1}-${traceIndex + 1}`,
+          query: `${document.fileName} 检索依据`,
+          selectedRoute: traceIndex % 2 ? 'hybrid_review_basis_search' : 'pageindex_tree_search',
+          selectedClauseCount: 2,
+          evidenceBacked: true,
+          filterScoped: true,
+          reviewRunId: run.reviewRunId || run.id
+        })),
+        rowIndex: index + 1
+      }
+    }),
+    retrievalProbeRows: reviewRuns.slice(0, 5).map((run, index) => ({
+      retrievalTraceId: `MOCK-RTR-${index + 1}`,
+      query: `${run.agentId || 'review_agent'} 检索依据`,
+      selectedRoute: index % 2 ? 'hybrid_review_basis_search' : 'pageindex_tree_search',
+      selectedClauseCount: 2,
+      evidenceBacked: true,
+      filterScoped: true
+    })),
+    updatedAt: serverTime
+  }
+}
+
 const getFdeProjectDocuments = (id: string) => {
   const sourceDocuments = state.documents.filter((document) => document.projectId === id)
   const documentsForAudit =
@@ -3393,7 +3615,7 @@ const getFdeProjectDocuments = (id: string) => {
         knowledgeFile?.vectorCount || template.vectorCount || [42, 31, 19, 0][index] || 0,
       embeddingModel: state.knowledgeConfig.embeddingModel,
       indexVersion: knowledgeSource?.version || 'proj-v2026.06.26',
-      vectorDimensions: 3072,
+      vectorDimensions: 1024,
       pageIndexStatus: template.pageIndexStatus || (pageIndexNodes.length ? '已构建' : '待构建'),
       pageIndexNodeCount: template.pageIndexStatus === '等待切片' ? 0 : pageIndexNodes.length,
       latestKnowledgeTask: latestTask || null,
@@ -4459,6 +4681,7 @@ const buildMockFdeProjectWorkspace = (id: string, nodeId?: number) => {
     ocrAnnotationTasks: annotationTasks,
     qualityBlockers,
     knowledgeLineage: buildMockFdeProjectKnowledgeLineage(documents, reviewRuns),
+    vectorQuality: buildMockFdeVectorQuality(documents, reviewRuns),
     updatedAt: serverTime
   }
 }
@@ -4776,9 +4999,15 @@ export default [
     method: 'get',
     timeout,
     rawResponse: async (req, res) => {
-      const artifactKey = String(req.url || '').split('/').pop() || 'artifact'
+      const artifactKey =
+        String(req.url || '')
+          .split('/')
+          .pop() || 'artifact'
       const isCsv = artifactKey.toLowerCase().includes('csv')
-      res.setHeader('Content-Type', isCsv ? 'text/csv; charset=utf-8' : 'text/markdown; charset=utf-8')
+      res.setHeader(
+        'Content-Type',
+        isCsv ? 'text/csv; charset=utf-8' : 'text/markdown; charset=utf-8'
+      )
       res.end(
         isCsv
           ? 'lane,scenario,title\ncollect_samples,ndt_ut_profile,Collect real OCR sample\n'

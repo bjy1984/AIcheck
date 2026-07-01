@@ -1785,7 +1785,7 @@ onMounted(() => {
   <div class="admin-page" v-loading="loading">
     <StaticPageShell
       brand-mark="管"
-      title="管理后台治理台"
+      title="项目与权限配置"
       status="基础配置"
       status-tone="blue"
       search-placeholder="搜索项目、用户、权限、规则"
@@ -1814,8 +1814,10 @@ onMounted(() => {
     >
       <div class="page-toolbar">
         <div>
-          <div class="page-title">管理后台治理台</div>
-          <div class="page-subtitle">按配置对象查看影响范围、发布门禁和审计证据</div>
+          <div class="page-title">项目与权限配置</div>
+          <div class="page-subtitle"
+            >管理后台治理台 · 按配置对象查看影响范围、发布门禁和审计证据</div
+          >
         </div>
         <ElSpace wrap>
           <ElButton type="primary" plain @click="openProjectWizard">新建项目</ElButton>
@@ -1847,16 +1849,22 @@ onMounted(() => {
         </div>
       </div>
 
-      <div class="metric-grid">
-        <div
-          v-for="stat in projectStats"
-          :key="stat.key"
-          :class="`metric-card metric-card--${stat.tone}`"
-        >
-          <span>{{ stat.label }}</span>
-          <strong>{{ stat.value }}</strong>
+      <details class="secondary-summary-collapse">
+        <summary>
+          <span>配置统计明细</span>
+          <small>摘要卡已展示核心指标，展开查看完整配置计数</small>
+        </summary>
+        <div class="metric-grid">
+          <div
+            v-for="stat in projectStats"
+            :key="stat.key"
+            :class="`metric-card metric-card--${stat.tone}`"
+          >
+            <span>{{ stat.label }}</span>
+            <strong>{{ stat.value }}</strong>
+          </div>
         </div>
-      </div>
+      </details>
 
       <AdminKnowledgeStaticDeepSections
         mode="admin"
@@ -3633,12 +3641,65 @@ onMounted(() => {
   margin-bottom: 16px;
 }
 
+.secondary-summary-collapse {
+  padding: 0;
+  margin: 0 0 16px;
+  background: #fff;
+  border: 1px solid #dfe8f5;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgb(15 23 42 / 4%);
+}
+
+.secondary-summary-collapse summary {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 46px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 900;
+  color: #172033;
+  cursor: pointer;
+  list-style: none;
+}
+
+.secondary-summary-collapse summary::-webkit-details-marker {
+  display: none;
+}
+
+.secondary-summary-collapse summary::after {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 900;
+  color: #2563eb;
+  content: '展开';
+}
+
+.secondary-summary-collapse[open] summary::after {
+  content: '收起';
+}
+
+.secondary-summary-collapse summary small {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.secondary-summary-collapse .metric-grid {
+  padding: 0 14px 14px;
+  margin-bottom: 0;
+}
+
 .metric-card {
   min-height: 78px;
   padding: 14px 16px;
   background: #fff;
   border: 1px solid #e5e7eb;
-  border-left: 4px solid #64748b;
   border-radius: 8px;
 }
 
@@ -3655,23 +3716,28 @@ onMounted(() => {
 }
 
 .metric-card--blue {
-  border-left-color: #2563eb;
+  background: #f8fbff;
+  border-color: #cbdcf8;
 }
 
 .metric-card--green {
-  border-left-color: #16a34a;
+  background: #f8fdf9;
+  border-color: #cfe8d7;
 }
 
 .metric-card--orange {
-  border-left-color: #f59e0b;
+  background: #fffaf0;
+  border-color: #f0dfb8;
 }
 
 .metric-card--red {
-  border-left-color: #dc2626;
+  background: #fff7f7;
+  border-color: #efc8c8;
 }
 
 .metric-card--gray {
-  border-left-color: #64748b;
+  background: #f8fafc;
+  border-color: #d7dde8;
 }
 
 .panel {
@@ -3875,23 +3941,28 @@ onMounted(() => {
 }
 
 .integration-summary-card {
-  border-left: 4px solid #64748b;
+  background: #f8fafc;
+  border-color: #d7dde8;
 }
 
 .integration-summary-card--blue {
-  border-left-color: #2563eb;
+  background: #f8fbff;
+  border-color: #cbdcf8;
 }
 
 .integration-summary-card--green {
-  border-left-color: #16a34a;
+  background: #f8fdf9;
+  border-color: #cfe8d7;
 }
 
 .integration-summary-card--orange {
-  border-left-color: #f59e0b;
+  background: #fffaf0;
+  border-color: #f0dfb8;
 }
 
 .integration-summary-card--red {
-  border-left-color: #dc2626;
+  background: #fff7f7;
+  border-color: #efc8c8;
 }
 
 .integration-summary-card span,

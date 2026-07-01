@@ -11,6 +11,7 @@ import {
 } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/store/modules/user'
+import { Icon } from '@/components/Icon'
 
 type StaticShellTone = 'blue' | 'green' | 'orange' | 'red'
 
@@ -30,6 +31,7 @@ type StaticShellMenuSection = {
   id?: string
   title: string
   meta?: string
+  defaultOpen?: boolean
   chips?: ReadonlyArray<{ label: string; value: string | number; tone?: StaticShellTone }>
   items: ReadonlyArray<StaticShellMenuItem>
 }
@@ -139,12 +141,20 @@ const staticMenuActiveIndex = computed(() => {
 
 const staticMenuDefaultOpeneds = computed(() => {
   const opened = ['root']
+  for (const section of props.menuSections) {
+    if (section.defaultOpen) {
+      opened.push(getSectionIndex(section))
+    }
+  }
   const activeSection =
     props.menuSections.find((section) =>
       section.items.some((item) => getItemIndex(section, item) === staticMenuActiveIndex.value)
     ) || props.menuSections[0]
   if (activeSection) {
-    opened.push(getSectionIndex(activeSection))
+    const activeSectionIndex = getSectionIndex(activeSection)
+    if (!opened.includes(activeSectionIndex)) {
+      opened.push(activeSectionIndex)
+    }
   }
   return opened
 })
@@ -218,6 +228,7 @@ onBeforeUnmount(() => {
     ]"
   >
     <div class="aicheck-page app-shell">
+      <a class="skip-main" href="#aicheck-static-main">跳到主内容</a>
       <header class="topbar">
         <div class="brand">
           <div class="hamburger">≡</div>
@@ -328,7 +339,9 @@ onBeforeUnmount(() => {
               <ElSubMenu index="root" class="tree-root-menu">
                 <template #title>
                   <span class="tree-root" :title="menuRoot">
-                    <span>⌄</span>
+                    <span class="tree-root-caret" aria-hidden="true">
+                      <Icon icon="vi-ep:arrow-down" :size="12" />
+                    </span>
                     <span class="tree-label">{{ menuRoot }}</span>
                     <span></span>
                   </span>
@@ -345,7 +358,9 @@ onBeforeUnmount(() => {
                       :title="section.meta ? `${section.title} · ${section.meta}` : section.title"
                     >
                       <span class="tree-group">
-                        <span class="tree-group-caret">⌄</span>
+                        <span class="tree-group-caret" aria-hidden="true">
+                          <Icon icon="vi-ep:arrow-down" :size="12" />
+                        </span>
                         <span class="tree-group-title">{{ section.title }}</span>
                         <span class="tree-group-status">{{ section.meta }}</span>
                       </span>
@@ -367,6 +382,7 @@ onBeforeUnmount(() => {
                     :class="['tree-node', { active: item.active }]"
                     :title="item.hint ? `${item.label} · ${item.hint}` : item.label"
                     :aria-label="item.hint ? `${item.label}，${item.hint}` : item.label"
+                    :aria-current="item.active || item.route === route.path ? 'page' : undefined"
                   >
                     <span class="tree-node-marker" aria-hidden="true"></span>
                     <span class="tree-label-wrap">
@@ -407,7 +423,7 @@ onBeforeUnmount(() => {
           </section>
         </aside>
 
-        <main class="center">
+        <main id="aicheck-static-main" class="center" tabindex="-1">
           <slot></slot>
         </main>
 
@@ -506,8 +522,9 @@ onBeforeUnmount(() => {
   --red-soft: #fff0ee;
 
   width: 100%;
-  height: 100vh;
+  height: 100dvh;
   max-width: 100vw;
+  min-height: 640px;
   overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei',
     'Noto Sans CJK SC', Arial, sans-serif;
@@ -521,10 +538,39 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
 }
 
+.skip-main {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 7000;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 900;
+  color: #0c56c2;
+  text-decoration: none;
+  pointer-events: none;
+  background: #fff;
+  border: 1px solid #a9c8ff;
+  border-radius: 8px;
+  opacity: 0;
+  transform: translateY(-8px);
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+
+.skip-main:focus-visible {
+  pointer-events: auto;
+  opacity: 1;
+  outline: 0;
+  transform: translateY(0);
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 16%);
+}
+
 .app-shell {
   display: grid;
   width: 100%;
-  height: 100vh;
+  height: 100dvh;
   max-width: 100vw;
   min-width: 0;
   min-height: 0;
@@ -540,8 +586,8 @@ onBeforeUnmount(() => {
   padding: 0 20px;
   background: #fff;
   border-bottom: 1px solid var(--line);
-  grid-template-columns: minmax(220px, 404px) minmax(180px, 480px) max-content;
-  gap: 18px;
+  grid-template-columns: minmax(220px, 360px) minmax(150px, 340px) minmax(0, max-content);
+  gap: 14px;
   align-items: center;
 }
 
@@ -640,7 +686,7 @@ onBeforeUnmount(() => {
   --el-button-active-text-color: #52647d;
 
   display: flex;
-  width: min(480px, 100%);
+  width: min(340px, 100%);
   height: 40px;
   padding: 0 16px;
   margin: 0;
@@ -682,10 +728,10 @@ onBeforeUnmount(() => {
 .top-actions {
   display: flex;
   min-width: 0;
-  font-size: 15px;
+  font-size: 14px;
   color: #27364d;
   white-space: nowrap;
-  gap: 14px;
+  gap: 10px;
   align-items: center;
   justify-content: flex-end;
   flex-wrap: nowrap;
@@ -833,7 +879,7 @@ onBeforeUnmount(() => {
 }
 
 .shell-wide .global-search {
-  width: min(360px, 100%);
+  width: min(260px, 100%);
 }
 
 .shell-wide .node-files {
@@ -861,6 +907,10 @@ onBeforeUnmount(() => {
 .center,
 .right {
   min-height: 0;
+}
+
+.center:focus {
+  outline: none;
 }
 
 .left {
@@ -908,7 +958,7 @@ onBeforeUnmount(() => {
 .tree-controls {
   display: grid;
   gap: 8px;
-  padding: 0 18px 10px;
+  padding: 0 14px 8px;
 }
 
 .tree-search {
@@ -999,7 +1049,7 @@ onBeforeUnmount(() => {
 
 .tree-filter {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -1077,7 +1127,7 @@ onBeforeUnmount(() => {
   --el-menu-text-color: #26364e;
 
   height: calc(100% - 44px);
-  padding: 10px 12px 16px;
+  padding: 8px 10px 14px;
   overflow: auto;
   background: transparent;
   border-right: 0;
@@ -1156,7 +1206,7 @@ onBeforeUnmount(() => {
   display: grid;
   width: 100%;
   min-width: 0;
-  padding: 7px 8px;
+  padding: 7px 7px;
   background: linear-gradient(180deg, rgb(255 255 255 / 92%), rgb(248 251 255 / 92%)),
     radial-gradient(circle at 16px 12px, rgb(37 99 235 / 8%), transparent 42px);
   border: 1px solid #e4ecf7;
@@ -1190,9 +1240,10 @@ onBeforeUnmount(() => {
 
 .tree-root > span:first-child,
 .tree-group > span:first-child {
-  display: inline-flex;
+  display: inline-grid;
   align-items: center;
   justify-content: center;
+  place-items: center;
   place-self: center;
   width: 22px;
   height: 22px;
@@ -1202,6 +1253,27 @@ onBeforeUnmount(() => {
   background: #fff;
   border: 1px solid #d5e1f0;
   border-radius: 7px;
+}
+
+.tree-root-caret,
+.tree-group-caret {
+  display: inline-grid;
+  align-items: center;
+  justify-content: center;
+  place-items: center;
+  place-self: center;
+  line-height: 1;
+  transform: none;
+}
+
+.tree-root-caret :deep(.el-icon),
+.tree-group-caret :deep(.el-icon),
+.tree-root-caret :deep(svg),
+.tree-group-caret :deep(svg) {
+  display: block;
+  width: 12px;
+  height: 12px;
+  line-height: 1;
 }
 
 .tree-root > .tree-label {
@@ -1217,9 +1289,10 @@ onBeforeUnmount(() => {
 }
 
 .tree-group-caret {
-  display: inline-flex;
+  display: inline-grid;
   align-items: center;
   justify-content: center;
+  place-items: center;
   place-self: center;
   width: 20px;
   height: 20px;
@@ -1261,16 +1334,17 @@ onBeforeUnmount(() => {
 
 .tree-group-chips {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, max-content));
   gap: 4px;
   padding: 0 0 0 27px;
+  justify-content: start;
 }
 
 .tree-chip {
   display: inline-flex;
   max-width: 100%;
   min-height: 21px;
-  padding: 2px 5px;
+  padding: 2px 6px;
   overflow: hidden;
   font-size: 10.5px;
   font-weight: 800;
@@ -1311,7 +1385,7 @@ onBeforeUnmount(() => {
   position: relative;
   grid-template-columns: 7px minmax(0, 1fr) auto;
   min-height: 32px;
-  padding: 4px 7px 4px 8px;
+  padding: 5px 12px;
   margin: 0;
   font-weight: 600;
   border: 1px solid transparent;
@@ -1328,12 +1402,20 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 2px;
-  padding: 4px 0 6px 24px;
+  padding: 4px 0 6px 20px;
   overflow: visible;
 }
 
 .tree-section-menu :deep(> .el-menu.el-menu--inline > .el-menu-item) {
   width: 100%;
+}
+
+.tree-section-menu :deep(.el-menu-item.tree-node) {
+  padding: 5px 12px !important;
+}
+
+.shell-wide .tree-section-menu :deep(.el-menu-item.tree-node) {
+  padding: 8px 12px !important;
 }
 
 .tree-node::before,
@@ -1346,14 +1428,14 @@ onBeforeUnmount(() => {
 .tree-node::before {
   top: -3px;
   bottom: -3px;
-  left: -13px;
+  left: -11px;
   border-left: 1px solid #d8e5f5;
 }
 
 .tree-node::after {
   top: 50%;
-  left: -13px;
-  width: 12px;
+  left: -11px;
+  width: 10px;
   border-top: 1px solid #d8e5f5;
 }
 
@@ -1754,13 +1836,15 @@ onBeforeUnmount(() => {
 
 @media (width <= 900px) {
   .aicheck-static-viewport {
+    height: auto;
+    min-height: 100dvh;
     overflow-y: auto;
   }
 
   .app-shell {
     grid-template-rows: auto 1fr;
     height: auto;
-    min-height: 100vh;
+    min-height: 100dvh;
   }
 
   .topbar,

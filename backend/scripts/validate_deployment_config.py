@@ -21,6 +21,7 @@ REQUIRED_SERVICES = {
     "worker-service",
     "review-worker-service",
     "ocr-service",
+    "embedding-service",
     "redis",
     "minio",
     "postgres",
@@ -43,6 +44,7 @@ REQUIRED_HEALTHCHECKS = {
     "worker-service": "celery",
     "review-worker-service": "temporalio.client",
     "ocr-service": "8010/readyz",
+    "embedding-service": "7997/health",
     "postgres": "pg_isready",
     "redis": "redis-cli",
     "minio": "mc ready",
@@ -238,6 +240,15 @@ class DeploymentConfigValidator:
             failures.append("Dockerfile.ocr must copy base and OCR requirements together")
         if "pip install" not in text or "-r requirements.txt" not in text or "-r requirements-ocr.txt" not in text:
             failures.append("Dockerfile.ocr must install base and OCR requirements")
+        for arg in (
+            "AICHECK_APT_DEBIAN_MIRROR",
+            "AICHECK_APT_SECURITY_MIRROR",
+            "AICHECK_PIP_INDEX_URL",
+        ):
+            if f"ARG {arg}" not in text:
+                failures.append(f"Dockerfile.ocr must expose build arg {arg}")
+        if "pip config set global.index-url" not in text:
+            failures.append("Dockerfile.ocr must support configurable pip index for offline-friendly builds")
         for package in ("libgomp1", "libglib2.0-0"):
             if package not in text:
                 failures.append(f"Dockerfile.ocr must install system package {package}")
@@ -267,7 +278,7 @@ class DeploymentConfigValidator:
             "worker-service": {"postgres", "redis", "api-service", "minio", "ocr-service", "litellm-service"},
             "review-worker-service": {"postgres", "temporal-service", "litellm-service"},
             "ocr-service": {"minio"},
-            "litellm-service": {"postgres"},
+            "litellm-service": {"postgres", "embedding-service"},
             "temporal-service": {"postgres"},
             "temporal-ui": {"temporal-service"},
         }
@@ -282,7 +293,7 @@ class DeploymentConfigValidator:
             "worker-service": {"postgres", "redis", "api-service", "minio", "ocr-service", "litellm-service"},
             "review-worker-service": {"postgres", "temporal-service", "litellm-service"},
             "ocr-service": {"minio"},
-            "litellm-service": {"postgres"},
+            "litellm-service": {"postgres", "embedding-service"},
             "temporal-service": {"postgres"},
             "temporal-ui": {"temporal-service"},
         }
@@ -303,6 +314,7 @@ class DeploymentConfigValidator:
         review_worker_command = command_text(self.service("review-worker-service").get("command"))
         ocr_command = command_text(self.service("ocr-service").get("command"))
         litellm_command = command_text(self.service("litellm-service").get("command"))
+        embedding_command = command_text(self.service("embedding-service").get("command"))
         if "uvicorn apps.api.main:app" not in api_command or "--port 8000" not in api_command:
             failures.append("api-service command must run FastAPI on port 8000")
         if "celery" not in worker_command or "apps.worker.celery_app.celery_app" not in worker_command:
@@ -317,14 +329,19 @@ class DeploymentConfigValidator:
             failures.append("ocr-service command must run OCR API on port 8010")
         if "litellm.yaml" not in litellm_command or "--port 4000" not in litellm_command:
             failures.append("litellm-service command must load config/litellm.yaml on port 4000")
+        if "v2" not in embedding_command or "7997" not in embedding_command or "BAAI/bge-m3" not in embedding_command:
+            failures.append("embedding-service command must run Infinity v2 with BAAI/bge-m3 on port 7997")
+        if "--api-key" in embedding_command:
+            failures.append("embedding-service must read INFINITY_API_KEY from environment instead of exposing it in the process command")
         port_expectations = {
-            "api-service": "8000:8000",
-            "ocr-service": "8010:8010",
-            "minio": "9000:9000",
-            "litellm-service": "4001:4000",
-            "postgres": "5432:5432",
-            "temporal-service": "7233:7233",
-            "temporal-ui": "8088:8080",
+            "api-service": "127.0.0.1:8000:8000",
+            "ocr-service": "127.0.0.1:8010:8010",
+            "embedding-service": "127.0.0.1:7997:7997",
+            "minio": "127.0.0.1:9000:9000",
+            "litellm-service": "127.0.0.1:4001:4000",
+            "postgres": "127.0.0.1:5432:5432",
+            "temporal-service": "127.0.0.1:7233:7233",
+            "temporal-ui": "127.0.0.1:8088:8080",
         }
         for service_name, expected_port in port_expectations.items():
             if expected_port not in normalize_ports(self.service(service_name).get("ports")):
@@ -424,10 +441,19 @@ class DeploymentConfigValidator:
                 "DATABASE_URL",
                 "LITELLM_MASTER_KEY",
                 "DEEPSEEK_API_KEY",
-                "OPENAI_API_KEY",
+                "INFINITY_API_KEY",
                 "AICHECK_LITELLM_STRICT_PROVIDER_HEALTH",
                 "NO_PROXY",
                 "no_proxy",
+            },
+            "embedding-service": {
+                "DO_NOT_TRACK",
+                "HF_HOME",
+                "HF_ENDPOINT",
+                "TRANSFORMERS_CACHE",
+                "INFINITY_API_KEY",
+                "AICHECK_EMBEDDING_MODEL_ID",
+                "AICHECK_EMBEDDING_ENGINE",
             },
             "postgres": {
                 "POSTGRES_DB",
@@ -515,6 +541,17 @@ class DeploymentConfigValidator:
         build = ocr_service.get("build") or {}
         if not isinstance(build, dict) or str(build.get("dockerfile") or "") != "Dockerfile.ocr":
             failures.append("ocr-service must build from Dockerfile.ocr")
+        build_args = build.get("args") if isinstance(build, dict) else {}
+        if not isinstance(build_args, dict):
+            failures.append("ocr-service build args must be a mapping")
+        else:
+            for arg in (
+                "AICHECK_APT_DEBIAN_MIRROR",
+                "AICHECK_APT_SECURITY_MIRROR",
+                "AICHECK_PIP_INDEX_URL",
+            ):
+                if arg not in build_args:
+                    failures.append(f"ocr-service build must pass {arg}")
         ocr_env = environment_map(ocr_service.get("environment"))
         backend_path = default_value(ocr_env.get("AICHECK_AGENTDESIGN_BACKEND"))
         if backend_path != "/opt/agentdesign/mvp-system/backend":
@@ -567,6 +604,14 @@ class DeploymentConfigValidator:
             params = item.get("litellm_params") or {}
             if not isinstance(params, dict) or not params.get("model") or not params.get("api_key"):
                 failures.append(f"{name}: missing litellm_params.model/api_key")
+                continue
+            if name == "embedding-default":
+                if str(params.get("model") or "") != "infinity/BAAI/bge-m3":
+                    failures.append("embedding-default must use local Infinity BGE-M3 provider")
+                if str(params.get("api_base") or "") != "http://embedding-service:7997":
+                    failures.append("embedding-default api_base must target embedding-service:7997")
+                if str(params.get("api_key") or "") != "os.environ/INFINITY_API_KEY":
+                    failures.append("embedding-default api_key must read os.environ/INFINITY_API_KEY")
         settings = self.litellm.get("general_settings") or {}
         if settings.get("master_key") != "os.environ/LITELLM_MASTER_KEY":
             failures.append("general_settings.master_key must read os.environ/LITELLM_MASTER_KEY")

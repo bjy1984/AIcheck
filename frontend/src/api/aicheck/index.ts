@@ -1077,6 +1077,173 @@ export type FdeProjectKnowledgeLineage = {
   blockers?: Array<Record<string, unknown>>
 }
 
+export type FdeVectorQualityPayload = {
+  schemaVersion?: string
+  score?: number
+  targetScore?: number
+  status?: string
+  statusLabel?: string
+  evaluationMode?: string
+  localOnly?: boolean
+  sections?: Array<{
+    key?: string
+    name?: string
+    score?: number
+    maxScore?: number
+    metric?: number
+    threshold?: number
+    status?: string
+    blockers?: string[]
+  }>
+  blockers?: string[]
+  metrics?: Record<string, unknown>
+  thresholds?: Record<string, unknown>
+  documentScores?: Array<Record<string, unknown>>
+  retrievalProbeRows?: Array<Record<string, unknown>>
+  updatedAt?: string
+}
+
+export type FdeEvidenceBox = number[] | null | undefined
+
+export type FdeSourcePreviewPage = {
+  pageNo?: number
+  width?: number | null
+  height?: number | null
+  previewUrl?: string
+  imageObjectKey?: string
+  quality?: Record<string, unknown>
+}
+
+export type FdeSourcePreviewPayload = {
+  schemaVersion?: string
+  stage?: string
+  label?: string
+  status?: string
+  fileName?: string
+  fileType?: string
+  documentId?: string
+  documentVersionId?: string
+  storageKey?: string
+  storageBucket?: string
+  fileSize?: number
+  contentHash?: string
+  previewUrl?: string
+  previewType?: string
+  pageCount?: number
+  pages?: FdeSourcePreviewPage[]
+  previewAvailable?: boolean
+  previewUnavailableReason?: string
+}
+
+export type FdeOcrArtifactRow = {
+  id?: string
+  fieldName?: string
+  fieldCode?: string
+  fieldValue?: string
+  pageNo?: number | string
+  bbox?: FdeEvidenceBox
+  confidence?: number
+  source?: string
+  sourceEngine?: string
+  textPreview?: string
+}
+
+export type FdeTextRecord = {
+  id?: string
+  sourceType?: string
+  sourceLabel?: string
+  pageNo?: number | string
+  text?: string
+  textHash?: string
+  bbox?: FdeEvidenceBox
+  confidence?: number | null
+  tokenCount?: number
+}
+
+export type FdeVectorPayloadRow = {
+  id?: string
+  chunkNo?: number
+  chunkId?: string
+  vectorStatus?: string
+  textPreview?: string
+  embeddingInput?: Record<string, unknown>
+  vectorRecord?: Record<string, unknown>
+  indexRecord?: Record<string, unknown>
+}
+
+export type FdeOcrArtifactsPayload = {
+  schemaVersion?: string
+  stage?: string
+  label?: string
+  status?: string
+  parseResultId?: string
+  profileId?: string
+  documentType?: string
+  parserVersion?: string
+  engineVersion?: string
+  summary?: Record<string, unknown>
+  fields?: FdeOcrArtifactRow[]
+  fragments?: FdeOcrArtifactRow[]
+  tables?: Array<Record<string, unknown>>
+  seals?: Array<Record<string, unknown>>
+  fieldRows?: FdeOcrArtifactRow[]
+  fragmentRows?: FdeOcrArtifactRow[]
+  diagnostics?: Array<Record<string, unknown>>
+  quality?: Record<string, unknown>
+}
+
+export type FdeLlmUsagePayload = {
+  schemaVersion?: string
+  scope?: string
+  relatedReviewRunCount?: number
+  retrievalTraceCount?: number
+  retrievedChunkCount?: number
+  retrievalCoverage?: number
+  proxyTrace?: boolean
+  proxyReason?: string
+}
+
+export type FdeQualityIssuePayload = {
+  severity?: string
+  code?: string
+  message?: string
+  targetType?: string
+  count?: number
+}
+
+export type FdeVectorFileDetailPayload = {
+  schemaVersion?: string
+  compatibleSchemaVersion?: string
+  projectId?: string
+  documentId?: string
+  documentVersionId?: string
+  knowledgeFileId?: string
+  fileName?: string
+  requirementName?: string
+  score?: number
+  status?: string
+  sliceStatus?: string
+  vectorStatus?: string
+  embeddingModel?: string
+  indexVersion?: string
+  vectorDimensions?: number
+  chunkSummary?: Record<string, unknown>
+  chunkRows?: Array<Record<string, unknown>>
+  chunkPage?: PagePayload<Record<string, unknown>>
+  chunkCharts?: Record<string, Record<string, number>>
+  processingPipeline?: Record<string, unknown>
+  sourcePreview?: FdeSourcePreviewPayload
+  ocrArtifacts?: FdeOcrArtifactsPayload
+  textRecords?: FdeTextRecord[]
+  vectorPayloads?: FdeVectorPayloadRow[]
+  indexRecords?: Array<Record<string, unknown>>
+  llmUsage?: FdeLlmUsagePayload
+  qualityIssues?: FdeQualityIssuePayload[]
+  retrievalTraceRows?: Array<Record<string, unknown>>
+  blockers?: string[]
+  updatedAt?: string
+}
+
 export type FdeProjectAuditDocument = DocumentAsset & {
   knowledgeFileId?: string
   knowledgeSourceId?: string
@@ -1110,6 +1277,7 @@ export type FdeProjectAuditWorkspace = {
   ocrAnnotationTasks: Array<Record<string, unknown>>
   qualityBlockers: Array<Record<string, unknown>>
   knowledgeLineage?: FdeProjectKnowledgeLineage
+  vectorQuality?: FdeVectorQualityPayload
   updatedAt?: string
 }
 
@@ -2663,6 +2831,17 @@ export const getFdeProjectAuditWorkspaceApi = (
   params?: { nodeId?: number }
 ): Promise<IResponse<FdeProjectAuditWorkspace>> => {
   return request.get({ url: `/api/fde/projects/${projectId}/audit-workspace`, params })
+}
+
+export const getFdeProjectVectorFileDetailApi = (
+  projectId: string,
+  documentVersionId: string,
+  params?: { page?: number; pageSize?: number }
+): Promise<IResponse<FdeVectorFileDetailPayload>> => {
+  return request.get({
+    url: `/api/fde/projects/${projectId}/documents/${documentVersionId}/vector-detail`,
+    params
+  })
 }
 
 export const getFdeProjectNodeAuditDetailApi = (

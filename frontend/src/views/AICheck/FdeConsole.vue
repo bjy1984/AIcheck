@@ -18,6 +18,7 @@ import {
   ElInput,
   ElInputNumber,
   ElOption,
+  ElPagination,
   ElRow,
   ElSelect,
   ElSpace,
@@ -52,6 +53,7 @@ import {
   getFdeOcrRunApi,
   getFdeOcrQualityApi,
   getFdeProjectAuditWorkspaceApi,
+  getFdeProjectVectorFileDetailApi,
   importFdeOcrAnnotationPackApi,
   getFdeReleaseImpactApi,
   getFdeReviewRunApi,
@@ -103,7 +105,9 @@ import type {
   FdeProjectAuditWorkspace,
   FdeReviewRun,
   FdeReviewRunDetailPayload,
-  FdeReleasePayload
+  FdeReleasePayload,
+  FdeVectorFileDetailPayload,
+  FdeVectorQualityPayload
 } from '@/api/aicheck'
 import StaticPageShell from './components/StaticPageShell.vue'
 
@@ -133,6 +137,14 @@ const selectedRun = ref<FdeAiRunDetailPayload | null>(null)
 const reviewRuns = ref<FdeReviewRun[]>([])
 const selectedReviewRun = ref<FdeReviewRunDetailPayload | null>(null)
 const reviewAuditDrawerVisible = ref(false)
+const vectorFileQualityDrawerVisible = ref(false)
+const selectedVectorFileQuality = ref<Record<string, unknown> | null>(null)
+const selectedVectorFileDetail = ref<FdeVectorFileDetailPayload | null>(null)
+const vectorFileDetailLoading = ref(false)
+const vectorFileDetailError = ref('')
+const selectedVectorFileSourceRow = ref<Record<string, unknown> | null>(null)
+const selectedVectorEvidence = ref<Record<string, unknown> | null>(null)
+const selectedVectorEvidenceType = ref('source')
 const feedback = ref<FdeFeedback[]>([])
 const selectedFeedback = ref<FdeFeedback | null>(null)
 const evaluation = ref<FdeEvaluationPayload | null>(null)
@@ -456,19 +468,19 @@ const isFdeRoute = (...keys: string[]) => keys.includes(currentFdeRouteKey.value
 const chartBaseSizes: Record<FdeChartKey, { width: number; height: number }> = {
   ocrHeatmap: { width: 1100, height: 300 },
   vectorSankey: { width: 1280, height: 320 },
-  pageIndexTree: { width: 1500, height: 360 },
+  pageIndexTree: { width: 1720, height: 470 },
   reviewTimeline: { width: 1160, height: 300 },
-  langGraph: { width: 1080, height: 430 }
+  langGraph: { width: 1420, height: 620 }
 }
-const chartZoomStep = 0.03
-const chartGestureZoomSensitivity = 0.18
+const chartZoomStep = 0.02
+const chartGestureZoomSensitivity = 0.1
 const chartZoom = (key: FdeChartKey) => fdeChartZoom.value[key] || 1
 const chartPan = (key: FdeChartKey) => fdeChartPan.value[key] || { x: 0, y: 0 }
 const chartZoomPercent = (key: FdeChartKey) => `${Math.round(chartZoom(key) * 100)}%`
 const chartBaseWidth = (base: number) => `${base}px`
 const chartBaseHeight = (base: number) => `${base}px`
-const chartFrameStyle = (_key: FdeChartKey, width: number, height: number) => ({
-  width: `${width}px`,
+const chartFrameStyle = (_key: FdeChartKey, _width: number, height: number) => ({
+  width: '100%',
   height: `${height}px`
 })
 const chartContentStyle = (key: FdeChartKey, width: number, height: number) => ({
@@ -487,10 +499,9 @@ const clampChartPan = (
   shell?: HTMLElement | null,
   zoom = chartZoom(key)
 ) => {
-  const frame = chartFrameIn(shell)
   const base = chartBaseSizes[key]
-  const width = frame?.offsetWidth || base.width
-  const height = frame?.offsetHeight || base.height
+  const width = base.width
+  const height = base.height
   const viewportWidth = shell?.clientWidth || width
   const viewportHeight = shell?.clientHeight || height
   const minX = Math.min(0, viewportWidth - width * zoom)
@@ -600,6 +611,45 @@ const handleChartWheel = (event: WheelEvent, key: FdeChartKey) => {
   const shell = getChartShell(event)
   const delta = event.deltaY < 0 ? chartZoomStep : -chartZoomStep
   zoomChartAt(key, chartZoom(key) + delta, shell, event.clientX, event.clientY)
+}
+const handleChartKeydown = (event: KeyboardEvent, key: FdeChartKey) => {
+  const shell = getChartShell(event)
+  const pan = chartPan(key)
+  const panStep = event.shiftKey ? 80 : 32
+  if (event.key === '+' || event.key === '=') {
+    event.preventDefault()
+    setChartZoom(key, chartZoom(key) + chartZoomStep, shell)
+    return
+  }
+  if (event.key === '-' || event.key === '_') {
+    event.preventDefault()
+    setChartZoom(key, chartZoom(key) - chartZoomStep, shell)
+    return
+  }
+  if (event.key === '0') {
+    event.preventDefault()
+    resetChartZoom(key)
+    return
+  }
+  if (event.key === 'ArrowLeft') {
+    event.preventDefault()
+    setChartPan(key, { x: pan.x + panStep, y: pan.y }, shell)
+    return
+  }
+  if (event.key === 'ArrowRight') {
+    event.preventDefault()
+    setChartPan(key, { x: pan.x - panStep, y: pan.y }, shell)
+    return
+  }
+  if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    setChartPan(key, { x: pan.x, y: pan.y + panStep }, shell)
+    return
+  }
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    setChartPan(key, { x: pan.x, y: pan.y - panStep }, shell)
+  }
 }
 const startChartGesture = (event: PointerEvent, key: FdeChartKey) => {
   if (event.pointerType === 'mouse' && event.button !== 0) return
@@ -993,12 +1043,73 @@ const projectAuditMenuItemHint = (
 
 const fdeShellMenuSections = computed(() => {
   const projects = filteredProjectAuditMenuProjects.value
-
-  if (!projects.length) {
-    return []
+  const ocrAnnotationSummary = toRecord(ocrAnnotation.value?.summary)
+  const globalSection = {
+    id: 'fde-global-workbenches',
+    title: '全局控制台',
+    meta: '不绑定项目',
+    defaultOpen: route.path !== '/fde/projects',
+    chips: [
+      {
+        label: 'OCR样本',
+        value: Number(ocrAnnotationSummary.tasks || 0),
+        tone: 'orange' as const
+      },
+      {
+        label: '可评估',
+        value: Number(ocrAnnotationSummary.readyForEval || 0),
+        tone: Number(ocrAnnotationSummary.readyForEval || 0)
+          ? ('green' as const)
+          : ('orange' as const)
+      },
+      {
+        label: '运行',
+        value: ocrRuns.value.length,
+        tone: ocrRuns.value.length ? ('green' as const) : ('blue' as const)
+      }
+    ],
+    items: [
+      {
+        index: '00',
+        label: 'OCR 质量控制台',
+        hint:
+          route.path === '/fde/ocr-quality'
+            ? `样本 ${Number(ocrAnnotationSummary.tasks || 0)} · 可评估 ${Number(ocrAnnotationSummary.readyForEval || 0)}`
+            : '',
+        badge: route.path === '/fde/ocr-quality' ? '当前' : undefined,
+        tone: 'green' as const,
+        route: '/fde/ocr-quality',
+        active: route.path === '/fde/ocr-quality'
+      },
+      {
+        index: '01',
+        label: 'Agent 审查编排',
+        hint:
+          route.path === '/fde/review-runs'
+            ? `ReviewRun ${reviewRuns.value.length} · LangGraph`
+            : '',
+        badge: route.path === '/fde/review-runs' ? '当前' : undefined,
+        tone: 'green' as const,
+        route: '/fde/review-runs',
+        active: route.path === '/fde/review-runs'
+      },
+      {
+        index: '02',
+        label: 'FDE 总览',
+        hint: route.path === '/fde/dashboard' ? 'AI 交付与治理摘要' : '',
+        badge: route.path === '/fde/dashboard' ? '当前' : undefined,
+        tone: 'blue' as const,
+        route: '/fde/dashboard',
+        active: route.path === '/fde/dashboard'
+      }
+    ]
   }
 
-  return projects.map((item) => {
+  if (!projects.length) {
+    return [globalSection]
+  }
+
+  const projectSections = projects.map((item) => {
     const metrics = item.metrics || {}
     const blockerCount = Number(metrics.blockers || item.topBlockers?.length || 0)
     return {
@@ -1024,6 +1135,7 @@ const fdeShellMenuSections = computed(() => {
       ],
       items: projectAuditSubpageItems.value.map((subpage, subpageIndex) => {
         const isActive =
+          route.path === '/fde/projects' &&
           selectedFdeProjectId.value === item.project.id &&
           projectAuditSubpage.value === subpage.key
         return {
@@ -1048,6 +1160,7 @@ const fdeShellMenuSections = computed(() => {
       })
     }
   })
+  return [globalSection, ...projectSections]
 })
 const currentFdeRouteContext = computed(() => {
   return fdeRouteMeta[currentFdeRouteKey.value] || fdeRouteMeta.dashboard
@@ -3640,6 +3753,135 @@ const projectAuditLineageSourceLabel = computed(() => {
   if (source) return source
   return '前端推断'
 })
+const rawProjectAuditVectorQuality = computed<FdeVectorQualityPayload>(() => {
+  const payload = projectAuditWorkspace.value?.vectorQuality
+  return payload && typeof payload === 'object' ? payload : {}
+})
+const projectAuditVectorQualityMetrics = computed(() =>
+  toRecord(rawProjectAuditVectorQuality.value.metrics)
+)
+const projectAuditVectorQualityScore = computed(() =>
+  score100(rawProjectAuditVectorQuality.value.score, 0)
+)
+const projectAuditVectorQualityStatus = computed(() =>
+  String(rawProjectAuditVectorQuality.value.status || 'needs_attention')
+)
+const projectAuditVectorQualityTone = computed<FdeTone>(() => {
+  const score = projectAuditVectorQualityScore.value
+  if (projectAuditVectorQualityStatus.value === 'pass' && score >= 90) return 'green'
+  if (score >= 80) return 'orange'
+  return 'red'
+})
+const projectAuditVectorQualitySections = computed(() => {
+  const sections = toRecordArray(rawProjectAuditVectorQuality.value.sections)
+  if (sections.length) {
+    return sections.map((section) => ({
+      key: String(section.key || section.name || ''),
+      name: String(section.name || section.key || '-'),
+      score: Number(section.score || 0),
+      maxScore: Number(section.maxScore || 100),
+      metric: Number(section.metric || 0),
+      status: String(section.status || 'warn'),
+      blockers: Array.isArray(section.blockers) ? section.blockers.map((item) => String(item)) : []
+    }))
+  }
+  const rows = normalizedProjectAuditVectorRows.value
+  const total = rows.length || 1
+  const chunkReady = rows.filter((row) => Number(row.chunkCount || 0) > 0).length / total
+  const vectorReady = rows.filter((row) => row.readyForRag).length / total
+  const pageIndexReady = rows.filter((row) => row.readyForPageIndex).length / total
+  return [
+    {
+      key: 'corpus_metadata',
+      name: '切片与 metadata',
+      score: Math.round(chunkReady * 15),
+      maxScore: 15,
+      metric: chunkReady,
+      status: chunkReady >= 0.9 ? 'pass' : 'warn',
+      blockers: chunkReady >= 0.9 ? [] : ['切片覆盖不足']
+    },
+    {
+      key: 'vector_index',
+      name: '向量完整性',
+      score: Math.round(vectorReady * 25),
+      maxScore: 25,
+      metric: vectorReady,
+      status: vectorReady >= 0.95 ? 'pass' : 'warn',
+      blockers: vectorReady >= 0.95 ? [] : ['部分资料未完成向量入库']
+    },
+    {
+      key: 'retrieval',
+      name: '检索命中',
+      score: 0,
+      maxScore: 30,
+      metric: 0,
+      status: 'warn',
+      blockers: ['旧接口缺少 RetrievalTrace 评分']
+    },
+    {
+      key: 'evidence',
+      name: '证据可追溯',
+      score: Math.round(pageIndexReady * 20),
+      maxScore: 20,
+      metric: pageIndexReady,
+      status: pageIndexReady >= 0.8 ? 'pass' : 'warn',
+      blockers: pageIndexReady >= 0.8 ? [] : ['PageIndex 覆盖不足']
+    },
+    {
+      key: 'stability',
+      name: '稳定与门禁',
+      score: 0,
+      maxScore: 10,
+      metric: 0,
+      status: 'warn',
+      blockers: ['旧接口缺少评估门禁数据']
+    }
+  ]
+})
+const projectAuditVectorQualityBlockers = computed(() => {
+  const blockers = Array.isArray(rawProjectAuditVectorQuality.value.blockers)
+    ? rawProjectAuditVectorQuality.value.blockers
+    : []
+  if (blockers.length) return blockers.map((item) => String(item))
+  return projectAuditVectorQualitySections.value.flatMap((section) => section.blockers)
+})
+const projectAuditVectorQualityCards = computed(() => [
+  {
+    label: '质量评分',
+    value: `${projectAuditVectorQualityScore.value}/100`,
+    hint: String(rawProjectAuditVectorQuality.value.statusLabel || '按 FDE 向量质量口径量化'),
+    tone: projectAuditVectorQualityTone.value
+  },
+  {
+    label: 'Recall@5 代理',
+    value: scorePercent(projectAuditVectorQualityMetrics.value.recallAt5Proxy as number),
+    hint: `${Number(projectAuditVectorQualityMetrics.value.retrievalTraceCount || 0)} 条 RetrievalTrace`,
+    tone:
+      Number(projectAuditVectorQualityMetrics.value.recallAt5Proxy || 0) >= 0.9 ? 'green' : 'orange'
+  },
+  {
+    label: '证据命中',
+    value: scorePercent(projectAuditVectorQualityMetrics.value.evidenceHitRate as number),
+    hint: '页码 / bbox / 条款引用覆盖',
+    tone:
+      Number(projectAuditVectorQualityMetrics.value.evidenceHitRate || 0) >= 0.9
+        ? 'green'
+        : 'orange'
+  },
+  {
+    label: '过滤泄漏',
+    value: scorePercent(projectAuditVectorQualityMetrics.value.filterLeakageRate as number),
+    hint: '跨项目/业务包泄漏必须为 0',
+    tone:
+      Number(projectAuditVectorQualityMetrics.value.filterLeakageRate || 0) <= 0 ? 'green' : 'red'
+  },
+  {
+    label: '金标样本',
+    value: String(projectAuditVectorQualityMetrics.value.goldCaseCount || 0),
+    hint: '带 expectedClauseIds 的检索评估样本',
+    tone: Number(projectAuditVectorQualityMetrics.value.goldCaseCount || 0) > 0 ? 'green' : 'orange'
+  }
+])
 const projectAuditMetricCards = computed(() => [
   {
     label: '项目节点',
@@ -3795,72 +4037,6 @@ const projectAuditVectorIssueRows = computed(() =>
   normalizedProjectAuditVectorRows.value.filter((row) => row.issue !== '无')
 )
 
-const projectAuditDocumentLineageCards = computed(() =>
-  normalizedProjectAuditVectorRows.value.map((row, index) => {
-    const lineage = toRecord(row.knowledgeLineage)
-    const lineageStages = toRecordArray(lineage.stages)
-    const fallbackStages = [
-      {
-        key: 'ocr_parse',
-        label: '资料解析',
-        done: String(row.ocrStatus).includes('已识别'),
-        status: row.ocrStatus
-      },
-      {
-        key: 'knowledge_slice',
-        label: '知识切片',
-        done: String(row.sliceStatus).includes('已切片'),
-        status: row.sliceStatus
-      },
-      { key: 'vector_embed', label: '向量入库', done: row.readyForRag, status: row.vectorStatus },
-      {
-        key: 'pageindex_tree',
-        label: '章节溯源',
-        done: row.readyForPageIndex,
-        status: row.pageIndexStatus
-      },
-      {
-        key: 'review_ready',
-        label: '审查可用',
-        done: row.readyForRag && row.readyForPageIndex,
-        status: row.readinessLabel
-      }
-    ]
-    const stages = (lineageStages.length ? lineageStages : fallbackStages).map((stage) => {
-      const item = toRecord(stage)
-      return {
-        key: String(item.key || `stage-${index}`),
-        label: String(item.label || '-'),
-        done: Boolean(item.done),
-        status: friendlyStatus(item.status, '-'),
-        evidence: String(item.evidence || ''),
-        action: String(item.action || '')
-      }
-    })
-    const blockers = Array.isArray(lineage.blockers)
-      ? lineage.blockers.map((item) => shortText(item, '')).filter(Boolean)
-      : row.issue !== '无'
-        ? [String(row.issue)]
-        : []
-    return {
-      id: String(row.id || row.documentVersionId || `lineage-${index + 1}`),
-      fileName: String(row.fileName || '-'),
-      requirementName: String(row.requirementName || '-'),
-      readinessLabel: String(lineage.readinessLabel || row.readinessLabel || '-'),
-      ready:
-        String(lineage.readiness || '').includes('ready') ||
-        (row.readyForRag && row.readyForPageIndex),
-      conclusion: String(lineage.auditConclusion || row.lineageConclusion || '-'),
-      stages,
-      blockers
-    }
-  })
-)
-
-const projectAuditDocumentLineageVisibleCards = computed(() =>
-  projectAuditDocumentLineageCards.value.slice(0, 4)
-)
-
 const projectAuditVectorIndexProfile = computed(() => {
   const rows = normalizedProjectAuditVectorRows.value
   const first = rows[0] || {}
@@ -3925,6 +4101,573 @@ const projectAuditVectorCards = computed(() => {
       tone: issueCount ? 'red' : 'green'
     }
   ]
+})
+
+const projectAuditVectorQualityDocumentRows = computed<Array<Record<string, unknown>>>(() => {
+  const backendRows = toRecordArray(rawProjectAuditVectorQuality.value.documentScores)
+  if (backendRows.length) {
+    return backendRows.map((row, index) => ({
+      ...row,
+      id: String(row.documentVersionId || row.documentId || `vector-quality-doc-${index + 1}`),
+      fileName: String(row.fileName || `资料 ${index + 1}`),
+      score: score100(row.score, 0),
+      chunkCount: Number(row.chunkCount || 0),
+      vectorCount: Number(row.vectorCount || 0),
+      vectorGap: Number(row.vectorGap || 0),
+      issue: String(row.issue || '无')
+    }))
+  }
+  return normalizedProjectAuditVectorRows.value.map((row, index) => {
+    const rowRecord = toRecord(row)
+    const chunkCount = Number(row.chunkCount || 0)
+    const vectorCount = Number(row.vectorCount || 0)
+    const vectorRatio = chunkCount ? Math.min(1, vectorCount / chunkCount) : 0
+    const rowLineage = toRecord(row.knowledgeLineage)
+    const score = Math.round(
+      (0.25 * (chunkCount > 0 ? 1 : 0) +
+        0.4 * vectorRatio +
+        0.2 * (row.readyForPageIndex ? 1 : 0) +
+        0.15 * (row.issue === '无' ? 1 : 0)) *
+        100
+    )
+    return {
+      id: String(row.documentVersionId || row.id || `vector-quality-doc-${index + 1}`),
+      fileName: String(row.fileName || `资料 ${index + 1}`),
+      score,
+      chunkCount,
+      vectorCount,
+      vectorGap: Number(row.vectorGap || 0),
+      issue: String(row.issue || '无'),
+      embeddingModel: row.embeddingModel,
+      indexVersion: row.indexVersion,
+      vectorDimensions: row.vectorDimensions,
+      requirementName: row.requirementName,
+      knowledgeFileId: rowRecord.knowledgeFileId,
+      documentVersionId: row.documentVersionId,
+      qualityDimensions: [
+        {
+          key: 'chunking',
+          name: '知识切片',
+          score: chunkCount > 0 ? 100 : 0,
+          metric: chunkCount > 0 ? 1 : 0,
+          status: chunkCount > 0 ? 'pass' : 'warn',
+          message: `切片 ${chunkCount} 条`
+        },
+        {
+          key: 'vector_integrity',
+          name: '向量完整性',
+          score: Math.round(vectorRatio * 100),
+          metric: vectorRatio,
+          status: Number(row.vectorGap || 0) ? 'warn' : 'pass',
+          message: `向量 ${vectorCount}/${chunkCount} 条，缺口 ${Number(row.vectorGap || 0)}`
+        },
+        {
+          key: 'pageindex',
+          name: 'PageIndex 溯源',
+          score: row.readyForPageIndex ? 100 : 0,
+          metric: row.readyForPageIndex ? 1 : 0,
+          status: row.readyForPageIndex ? 'pass' : 'warn',
+          message: `PageIndex 节点 ${Number(row.pageIndexNodeCount || 0)} 个`
+        }
+      ],
+      lineageStages: toRecordArray(rowLineage.stages),
+      lineageBlockers: row.issue === '无' ? [] : [String(row.issue)],
+      llmTrace: {
+        scope: 'project_proxy',
+        retrievalTraceCount: Number(
+          projectAuditVectorQualityMetrics.value.retrievalTraceCount || 0
+        ),
+        hitRate: Number(projectAuditVectorQualityMetrics.value.recallAt5Proxy || 0),
+        evidenceHitRate: Number(projectAuditVectorQualityMetrics.value.evidenceHitRate || 0)
+      },
+      retrievalTraceRows: toRecordArray(rawProjectAuditVectorQuality.value.retrievalProbeRows)
+    }
+  })
+})
+
+const selectedVectorFileQualityRecord = computed(() => toRecord(selectedVectorFileQuality.value))
+const selectedVectorFileQualityDimensions = computed(() =>
+  toRecordArray(selectedVectorFileQualityRecord.value.qualityDimensions).map((row, index) => ({
+    id: String(row.key || row.name || `vector-file-dimension-${index + 1}`),
+    name: String(row.name || row.key || '-'),
+    score: score100(row.score, 0),
+    metric: row.metric === undefined ? '-' : scorePercent(row.metric as number),
+    status: String(row.status || 'warn'),
+    message: String(
+      row.message || (Array.isArray(row.blockers) ? row.blockers.join('；') : '') || '-'
+    )
+  }))
+)
+const selectedVectorFileLineageStages = computed(() => {
+  const stages = toRecordArray(selectedVectorFileQualityRecord.value.lineageStages)
+  if (stages.length) {
+    return stages.map((stage, index) => ({
+      id: String(stage.key || `vector-file-stage-${index + 1}`),
+      label: String(stage.label || '-'),
+      status: friendlyStatus(stage.status, '-'),
+      done: Boolean(stage.done),
+      evidence: String(stage.evidence || '-'),
+      action: String(stage.action || '-')
+    }))
+  }
+  return [
+    {
+      id: 'chunking',
+      label: '知识切片',
+      status: String(selectedVectorFileQualityRecord.value.sliceStatus || '-'),
+      done: Number(selectedVectorFileQualityRecord.value.chunkCount || 0) > 0,
+      evidence: `切片 ${Number(selectedVectorFileQualityRecord.value.chunkCount || 0)} 条`,
+      action: '切片完成后进入向量入库'
+    },
+    {
+      id: 'vector',
+      label: '向量入库',
+      status: String(selectedVectorFileQualityRecord.value.vectorStatus || '-'),
+      done: Number(selectedVectorFileQualityRecord.value.vectorGap || 0) === 0,
+      evidence: `向量 ${Number(selectedVectorFileQualityRecord.value.vectorCount || 0)}/${Number(selectedVectorFileQualityRecord.value.chunkCount || 0)} 条`,
+      action: '向量完整后可参与 Hybrid RAG'
+    },
+    {
+      id: 'pageindex',
+      label: 'PageIndex',
+      status: selectedVectorFileQualityRecord.value.pageIndexReady ? '已构建' : '待构建',
+      done: Boolean(selectedVectorFileQualityRecord.value.pageIndexReady),
+      evidence: `节点 ${Number(selectedVectorFileQualityRecord.value.pageIndexNodeCount || 0)} 个`,
+      action: '用于长文档跨章节溯源'
+    }
+  ]
+})
+const selectedVectorFileRetrievalRows = computed(() =>
+  toRecordArray(selectedVectorFileQualityRecord.value.retrievalTraceRows).map((row, index) => ({
+    id: String(row.retrievalTraceId || `vector-file-retrieval-${index + 1}`),
+    query: String(row.query || '-'),
+    selectedRoute: friendlyTechLabel(row.selectedRoute),
+    selectedClauseCount: Number(row.selectedClauseCount || 0),
+    evidenceBacked: Boolean(row.evidenceBacked),
+    filterScoped: Boolean(row.filterScoped)
+  }))
+)
+const selectedVectorFileDetailRecord = computed(() => toRecord(selectedVectorFileDetail.value))
+const selectedVectorFileLlmTrace = computed(() =>
+  toRecord(selectedVectorFileQualityRecord.value.llmTrace)
+)
+const selectedVectorFileBlockers = computed(() => {
+  const detailBlockers = selectedVectorFileDetail.value?.blockers
+  if (Array.isArray(detailBlockers) && detailBlockers.length) {
+    return detailBlockers.map((item) => String(item)).filter(Boolean)
+  }
+  const blockers = selectedVectorFileQualityRecord.value.lineageBlockers
+  if (Array.isArray(blockers)) return blockers.map((item) => String(item)).filter(Boolean)
+  const issue = String(selectedVectorFileQualityRecord.value.issue || '')
+  return issue && issue !== '无' ? [issue] : []
+})
+const selectedVectorFileSummaryCards = computed(() => [
+  {
+    label: '文件评分',
+    value: `${score100(selectedVectorFileQualityRecord.value.score, 0)}/100`,
+    hint: String(selectedVectorFileQualityRecord.value.issue || '无异常'),
+    tone: score100(selectedVectorFileQualityRecord.value.score, 0) >= 90 ? 'green' : 'orange'
+  },
+  {
+    label: '切片/向量',
+    value: `${Number(selectedVectorFileQualityRecord.value.chunkCount || 0)}/${Number(selectedVectorFileQualityRecord.value.vectorCount || 0)}`,
+    hint: `缺口 ${Number(selectedVectorFileQualityRecord.value.vectorGap || 0)} 条`,
+    tone: Number(selectedVectorFileQualityRecord.value.vectorGap || 0) ? 'red' : 'green'
+  },
+  {
+    label: '证据命中',
+    value: scorePercent(selectedVectorFileLlmTrace.value.evidenceHitRate as number),
+    hint:
+      selectedVectorFileLlmTrace.value.scope === 'document_explicit'
+        ? '文件级 ReviewRun'
+        : '项目级代理 Trace',
+    tone: Number(selectedVectorFileLlmTrace.value.evidenceHitRate || 0) >= 0.9 ? 'green' : 'orange'
+  },
+  {
+    label: '检索 Trace',
+    value: String(selectedVectorFileLlmTrace.value.retrievalTraceCount || 0),
+    hint: '用于判断 LLM 依据质量',
+    tone: Number(selectedVectorFileLlmTrace.value.retrievalTraceCount || 0) ? 'green' : 'orange'
+  }
+])
+const selectedVectorFileChunkSummary = computed(() =>
+  toRecord(selectedVectorFileDetailRecord.value.chunkSummary)
+)
+const selectedVectorFileChunkRows = computed(() =>
+  toRecordArray(
+    selectedVectorFileDetailRecord.value.chunkRows ||
+      toRecord(selectedVectorFileDetailRecord.value.chunkPage).items
+  ).map((row, index) => ({
+    id: String(row.id || row.chunkId || `chunk-${index + 1}`),
+    chunkNo: Number(row.chunkNo || index + 1),
+    materialized: Boolean(row.materialized),
+    pageNo: row.pageNo ?? '-',
+    bbox: row.bbox,
+    tokenCount: Number(row.tokenCount || 0),
+    textPreview: String(row.textPreview || '-'),
+    vectorStatus: String(row.vectorStatusLabel || row.vectorStatus || '-'),
+    retrievalHitCount: Number(row.retrievalHitCount || 0),
+    hasBbox: Boolean(row.bbox),
+    metadataCompleteness: scorePercent(Number(row.metadataCompleteness || 0)),
+    qualityFlags: Array.isArray(row.qualityFlags)
+      ? row.qualityFlags.map((item) => String(item))
+      : [],
+    evidenceLabel: `Chunk ${Number(row.chunkNo || index + 1)}`
+  }))
+)
+const selectedVectorFileDetailRetrievalRows = computed(() => {
+  const rows = toRecordArray(selectedVectorFileDetailRecord.value.retrievalTraceRows)
+  if (!rows.length) return selectedVectorFileRetrievalRows.value
+  return rows.map((row, index) => ({
+    id: String(row.retrievalTraceId || `vector-file-detail-retrieval-${index + 1}`),
+    query: String(row.query || '-'),
+    selectedRoute: friendlyTechLabel(row.selectedRoute),
+    scope: row.scope === 'document_explicit' ? '文件级' : '项目代理',
+    selectedClauseCount: Number(row.selectedClauseCount || 0),
+    selectedChunkCount: Number(row.selectedChunkCount || 0),
+    evidenceBacked: Boolean(row.evidenceBacked),
+    filterScoped: Boolean(row.filterScoped)
+  }))
+})
+const selectedVectorFileChunkCards = computed(() => [
+  {
+    label: '真实切片',
+    value: `${Number(selectedVectorFileChunkSummary.value.materializedChunkCount || 0)}/${Number(selectedVectorFileChunkSummary.value.declaredChunkCount || 0)}`,
+    hint: `缺明细 ${Number(selectedVectorFileChunkSummary.value.missingMaterializedChunkCount || 0)} 条`
+  },
+  {
+    label: '页码覆盖',
+    value: scorePercent(Number(selectedVectorFileChunkSummary.value.pageCoverage || 0)),
+    hint: '每个切片应能回溯页码'
+  },
+  {
+    label: 'bbox 覆盖',
+    value: scorePercent(Number(selectedVectorFileChunkSummary.value.bboxCoverage || 0)),
+    hint: '证据定位可点击的基础'
+  },
+  {
+    label: '检索覆盖',
+    value: scorePercent(Number(selectedVectorFileChunkSummary.value.retrievalCoverage || 0)),
+    hint: `${Number(selectedVectorFileChunkSummary.value.retrievedChunkCount || 0)} 条被 Trace 命中`
+  }
+])
+const selectedVectorFilePipeline = computed(() =>
+  toRecord(selectedVectorFileDetailRecord.value.processingPipeline)
+)
+const selectedVectorFilePipelineSummary = computed(() =>
+  toRecordArray(selectedVectorFilePipeline.value.summary).map((row, index) => ({
+    id: String(row.key || `pipeline-stage-${index + 1}`),
+    label: String(row.label || row.key || '-'),
+    status: friendlyStatus(row.status, '-'),
+    rawStatus: String(row.status || ''),
+    metric: String(row.metric || '-'),
+    done: ['ready', 'success', '已向量化', '已切片'].some((keyword) =>
+      String(row.status || '').includes(keyword)
+    )
+  }))
+)
+const selectedVectorFilePipelineSource = computed(() =>
+  toRecord(
+    selectedVectorFileDetailRecord.value.sourcePreview || selectedVectorFilePipeline.value.source
+  )
+)
+const selectedVectorFileSourcePages = computed(() =>
+  toRecordArray(selectedVectorFilePipelineSource.value.pages).map((page, index) => ({
+    id: String(page.pageNo || `page-${index + 1}`),
+    pageNo: Number(page.pageNo || index + 1),
+    width: Number(page.width || 1000),
+    height: Number(page.height || 1400),
+    previewUrl: String(page.previewUrl || selectedVectorFilePipelineSource.value.previewUrl || ''),
+    imageObjectKey: String(page.imageObjectKey || '')
+  }))
+)
+const selectedVectorActivePage = computed(() => {
+  const evidencePage = Number(toRecord(selectedVectorEvidence.value).pageNo || 0)
+  const pages = selectedVectorFileSourcePages.value
+  return pages.find((page) => page.pageNo === evidencePage) || pages[0] || null
+})
+const selectedVectorPreviewUrl = computed(() =>
+  String(
+    selectedVectorActivePage.value?.previewUrl ||
+      selectedVectorFilePipelineSource.value.previewUrl ||
+      ''
+  )
+)
+const selectedVectorPreviewType = computed(() =>
+  String(
+    selectedVectorFilePipelineSource.value.previewType ||
+      selectedVectorFilePipelineSource.value.fileType ||
+      ''
+  )
+)
+const selectedVectorPreviewCanRender = computed(() => {
+  const url = selectedVectorPreviewUrl.value
+  if (!url || url.startsWith('mock://')) return false
+  return /image|png|jpe?g|webp|gif|pdf/i.test(`${selectedVectorPreviewType.value} ${url}`)
+})
+const selectedVectorPreviewIsImage = computed(() =>
+  /image|png|jpe?g|webp|gif/i.test(
+    `${selectedVectorPreviewType.value} ${selectedVectorPreviewUrl.value}`
+  )
+)
+const selectedVectorFilePipelineOcr = computed(() => toRecord(selectedVectorFilePipeline.value.ocr))
+const selectedVectorFilePipelineOcrSummary = computed(() =>
+  toRecord(selectedVectorFilePipelineOcr.value.summary)
+)
+const selectedVectorFilePipelineFieldRows = computed(() =>
+  toRecordArray(selectedVectorFilePipelineOcr.value.fieldRows).map((row, index) => ({
+    id: String(row.fieldCode || row.fieldName || `pipeline-field-${index + 1}`),
+    fieldName: String(row.fieldName || row.fieldCode || '-'),
+    fieldValue: String(row.fieldValue ?? '-'),
+    pageNo: row.pageNo ?? '-',
+    confidence: row.confidence === undefined ? '-' : scorePercent(Number(row.confidence || 0)),
+    source: String(row.source || '-'),
+    hasBbox: Boolean(row.bbox),
+    bbox: row.bbox,
+    evidenceLabel: String(row.fieldName || row.fieldCode || `字段 ${index + 1}`)
+  }))
+)
+const selectedVectorFilePipelineTextRows = computed(() =>
+  toRecordArray(toRecord(selectedVectorFilePipeline.value.text).rows).map((row, index) => ({
+    id: String(row.id || `pipeline-text-${index + 1}`),
+    sourceType: String(row.sourceType || '-'),
+    sourceLabel: String(row.sourceLabel || '-'),
+    pageNo: row.pageNo ?? '-',
+    tokenCount: row.tokenCount ?? '-',
+    text: String(row.text || '-'),
+    hasBbox: Boolean(row.bbox),
+    bbox: row.bbox,
+    evidenceLabel: String(row.sourceLabel || `文本 ${index + 1}`)
+  }))
+)
+const selectedVectorFilePipelineVectorRows = computed(() =>
+  toRecordArray(toRecord(selectedVectorFilePipeline.value.vectorFormat).rows).map((row, index) => {
+    const embeddingInput = toRecord(row.embeddingInput)
+    const vectorRecord = toRecord(row.vectorRecord)
+    const indexRecord = toRecord(row.indexRecord)
+    const metadata = toRecord(vectorRecord.metadata)
+    return {
+      id: String(row.id || `pipeline-vector-${index + 1}`),
+      chunkNo: Number(row.chunkNo || index + 1),
+      vectorStatus: String(row.vectorStatus || '-'),
+      textPreview: String(row.textPreview || '-'),
+      model: String(embeddingInput.model || '-'),
+      payloadHash: String(vectorRecord.payloadHash || '-'),
+      dimensions: Number(vectorRecord.dimensions || 0),
+      indexVersion: String(vectorRecord.indexVersion || '-'),
+      vectorId: String(indexRecord.vectorId || vectorRecord.id || '-'),
+      pageNo: metadata.pageNo ?? '-',
+      bbox: metadata.bbox,
+      hasBbox: Boolean(metadata.bbox),
+      metadata: JSON.stringify(vectorRecord.metadata || {}, null, 2),
+      evidenceLabel: `Chunk ${Number(row.chunkNo || index + 1)}`
+    }
+  })
+)
+const selectedVectorEvidenceRecord = computed(() => toRecord(selectedVectorEvidence.value))
+const selectedVectorEvidenceBbox = computed(() => {
+  const bbox = selectedVectorEvidenceRecord.value.bbox
+  if (!Array.isArray(bbox) || bbox.length < 4) return null
+  const values = bbox.slice(0, 4).map((value) => Number(value))
+  return values.every((value) => Number.isFinite(value)) ? values : null
+})
+const selectedVectorEvidenceStyle = computed(() => {
+  const bbox = selectedVectorEvidenceBbox.value
+  const page = selectedVectorActivePage.value
+  if (!bbox || !page) return {}
+  const [x1, y1, x2, y2] = bbox
+  const width = x2 > x1 ? x2 - x1 : x2
+  const height = y2 > y1 ? y2 - y1 : y2
+  return {
+    left: `${Math.max(0, (x1 / page.width) * 100)}%`,
+    top: `${Math.max(0, (y1 / page.height) * 100)}%`,
+    width: `${Math.min(100, Math.max(2, (width / page.width) * 100))}%`,
+    height: `${Math.min(100, Math.max(2, (height / page.height) * 100))}%`
+  }
+})
+const selectedVectorEvidenceJson = computed(() =>
+  JSON.stringify(selectedVectorEvidenceRecord.value, null, 2)
+)
+const selectedVectorQualityIssues = computed(() =>
+  toRecordArray(selectedVectorFileDetailRecord.value.qualityIssues)
+)
+const vectorFileTokenBuckets = computed(() =>
+  toRecord(toRecord(selectedVectorFileDetailRecord.value.chunkCharts).tokenBuckets)
+)
+const vectorFilePageDistribution = computed(() =>
+  toRecord(toRecord(selectedVectorFileDetailRecord.value.chunkCharts).pageDistribution)
+)
+const vectorFileFlagCounts = computed(() =>
+  toRecord(toRecord(selectedVectorFileDetailRecord.value.chunkCharts).flagCounts)
+)
+const selectedVectorFileTokenOption = computed<EChartsOption>(() => {
+  const entries = Object.entries(vectorFileTokenBuckets.value)
+  return {
+    grid: { top: 26, right: 12, bottom: 34, left: 38 },
+    tooltip: { trigger: 'axis' },
+    xAxis: { type: 'category', data: entries.map(([name]) => name) },
+    yAxis: { type: 'value', minInterval: 1 },
+    series: [
+      { type: 'bar', data: entries.map(([, value]) => Number(value || 0)), color: '#2563eb' }
+    ]
+  }
+})
+const selectedVectorFilePageOption = computed<EChartsOption>(() => {
+  const entries = Object.entries(vectorFilePageDistribution.value).slice(0, 12)
+  return {
+    grid: { top: 26, right: 12, bottom: 34, left: 38 },
+    tooltip: { trigger: 'axis' },
+    xAxis: { type: 'category', data: entries.map(([name]) => name) },
+    yAxis: { type: 'value', minInterval: 1 },
+    series: [
+      { type: 'bar', data: entries.map(([, value]) => Number(value || 0)), color: '#16a34a' }
+    ]
+  }
+})
+const selectedVectorFileFlagOption = computed<EChartsOption>(() => {
+  const entries = Object.entries(vectorFileFlagCounts.value).slice(0, 12)
+  return {
+    grid: { top: 26, right: 12, bottom: 44, left: 38 },
+    tooltip: { trigger: 'axis' },
+    xAxis: {
+      type: 'category',
+      data: entries.map(([name]) => name),
+      axisLabel: { interval: 0, rotate: 24 }
+    },
+    yAxis: { type: 'value', minInterval: 1 },
+    series: [
+      { type: 'bar', data: entries.map(([, value]) => Number(value || 0)), color: '#ea580c' }
+    ]
+  }
+})
+
+const projectAuditVectorQualityRadarOption = computed<EChartsOption>(() => {
+  const sections = projectAuditVectorQualitySections.value
+  const indicators = sections.map((section) => ({
+    name: section.name,
+    max: section.maxScore || 100
+  }))
+  return {
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'item',
+      confine: true,
+      formatter: () =>
+        sections
+          .map(
+            (section) =>
+              `${section.name}：${Math.round(section.score * 10) / 10}/${section.maxScore}`
+          )
+          .join('<br/>')
+    },
+    radar: {
+      center: ['50%', '52%'],
+      radius: '68%',
+      indicator: indicators,
+      axisName: {
+        color: '#334155',
+        fontSize: 12,
+        fontWeight: 800
+      },
+      splitArea: {
+        areaStyle: {
+          color: ['#f8fbff', '#eef6ff']
+        }
+      },
+      splitLine: {
+        lineStyle: { color: '#d8e6f6' }
+      },
+      axisLine: {
+        lineStyle: { color: '#d8e6f6' }
+      }
+    },
+    series: [
+      {
+        type: 'radar',
+        data: [
+          {
+            value: sections.map((section) => Math.round(section.score * 100) / 100),
+            name: '向量化质量',
+            symbol: 'circle',
+            symbolSize: 6,
+            lineStyle: { color: '#2563eb', width: 3 },
+            areaStyle: { color: 'rgba(37, 99, 235, 0.18)' },
+            itemStyle: { color: '#2563eb' }
+          }
+        ]
+      }
+    ]
+  } as EChartsOption
+})
+
+const projectAuditVectorQualityBarOption = computed<EChartsOption>(() => {
+  const rows = projectAuditVectorQualityDocumentRows.value.slice(0, 10)
+  return {
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'axis',
+      confine: true,
+      axisPointer: { type: 'shadow' },
+      formatter: (params: any) => {
+        const item = Array.isArray(params) ? params[0] : params
+        const row = rows[item?.dataIndex || 0]
+        return [
+          `<strong>${shortText(row?.fileName, '-')}</strong>`,
+          `评分：${row?.score || 0}/100`,
+          `切片/向量：${row?.chunkCount || 0}/${row?.vectorCount || 0}`,
+          `缺口：${row?.vectorGap || 0}`,
+          `问题：${row?.issue || '无'}`
+        ].join('<br/>')
+      }
+    },
+    grid: { left: 28, right: 20, top: 28, bottom: 72 },
+    xAxis: {
+      type: 'category',
+      data: rows.map((row) => shortText(row.fileName, '-').slice(0, 10)),
+      axisTick: { show: false },
+      axisLine: { lineStyle: { color: '#d8e6f6' } },
+      axisLabel: {
+        color: '#64748b',
+        fontSize: 11,
+        fontWeight: 800,
+        rotate: rows.length > 5 ? 22 : 0,
+        interval: 0
+      }
+    },
+    yAxis: {
+      type: 'value',
+      min: 0,
+      max: 100,
+      axisLine: { show: false },
+      axisTick: { show: false },
+      splitLine: { lineStyle: { color: '#e6edf7' } },
+      axisLabel: { color: '#64748b', fontWeight: 800 }
+    },
+    series: [
+      {
+        type: 'bar',
+        barWidth: 22,
+        data: rows.map((row) => {
+          const score = Number(row.score || 0)
+          return {
+            value: score,
+            itemStyle: {
+              color: score >= 90 ? '#16a34a' : score >= 80 ? '#f59e0b' : '#dc2626',
+              borderRadius: [7, 7, 0, 0]
+            }
+          }
+        }),
+        label: {
+          show: true,
+          position: 'top',
+          color: '#334155',
+          fontSize: 11,
+          fontWeight: 900,
+          formatter: '{c}'
+        }
+      }
+    ]
+  } as EChartsOption
 })
 
 const projectAuditVectorFlowRows = computed(() => {
@@ -4193,9 +4936,9 @@ const projectAuditPageIndexFriendlyCards = computed(() =>
 )
 
 const projectAuditPageIndexTreeOption = computed<EChartsOption>(() => {
-  const traces = projectAuditPageIndexTraceRows.value.slice(0, 4)
+  const traces = projectAuditPageIndexTraceRows.value.slice(0, 3)
   const children = traces.map((trace, index) => {
-    const selectedNodes = toRecordArray(trace.selectedNodes).slice(0, 4)
+    const selectedNodes = toRecordArray(trace.selectedNodes).slice(0, 3)
     const nodeChildren = selectedNodes.length
       ? selectedNodes.map((node) => ({
           name: shortText(node.title || node.nodeId, '命中节点').slice(0, 28),
@@ -4268,16 +5011,19 @@ const projectAuditPageIndexTreeOption = computed<EChartsOption>(() => {
             children
           }
         ],
-        left: 18,
-        right: 150,
-        top: 20,
-        bottom: 20,
+        left: 36,
+        right: 260,
+        top: 32,
+        bottom: 32,
         orient: 'LR',
+        roam: true,
+        scaleLimit: { min: 0.7, max: 1.6 },
         expandAndCollapse: false,
         initialTreeDepth: 4,
         symbol: 'roundRect',
-        symbolSize: [86, 28],
+        symbolSize: [126, 34],
         edgeShape: 'polyline',
+        edgeForkPosition: '62%',
         lineStyle: {
           color: '#a7bddb',
           width: 1.5,
@@ -4288,16 +5034,18 @@ const projectAuditPageIndexTreeOption = computed<EChartsOption>(() => {
           color: '#ffffff',
           fontSize: 11,
           fontWeight: 800,
-          width: 78,
+          lineHeight: 14,
+          width: 108,
           overflow: 'truncate'
         },
         leaves: {
           label: {
             position: 'right',
             color: '#26364e',
-            fontSize: 12,
+            fontSize: 11,
             fontWeight: 800,
-            width: 116,
+            lineHeight: 14,
+            width: 150,
             overflow: 'truncate'
           }
         },
@@ -4816,10 +5564,10 @@ const reviewTimelineEchartOption = computed<EChartsOption>(() => {
 })
 
 const langGraphEchartOption = computed<EChartsOption>(() => {
-  const stageYGap = 58
-  const nodeXGap = 154
-  const centerX = 250
-  const baseY = 38
+  const stageYGap = 70
+  const nodeXGap = 214
+  const centerX = 760
+  const baseY = 48
   const chartNodes = langGraphFlowGroups.value.flatMap((group, groupIndex) => {
     const nodes = group.nodes.length
       ? group.nodes
@@ -4845,7 +5593,7 @@ const langGraphEchartOption = computed<EChartsOption>(() => {
       value: node.label,
       x: centerX + nodeIndex * nodeXGap - offset,
       y: baseY + groupIndex * stageYGap,
-      symbolSize: node.id.includes('-empty') ? [116, 34] : [142, 38],
+      symbolSize: node.id.includes('-empty') ? [154, 40] : [188, 46],
       category: group.label,
       itemStyle: {
         color: node.id.includes('-empty') ? '#ffffff' : langGraphToneColor(node.tone),
@@ -4861,7 +5609,7 @@ const langGraphEchartOption = computed<EChartsOption>(() => {
         fontSize: 12,
         fontWeight: 800,
         lineHeight: 16,
-        width: 110,
+        width: node.id.includes('-empty') ? 128 : 158,
         overflow: 'truncate' as const
       },
       meta: {
@@ -4888,17 +5636,17 @@ const langGraphEchartOption = computed<EChartsOption>(() => {
   }))
   const stageLabels = langGraphFlowGroups.value.map((group, index) => ({
     type: 'text',
-    left: 10,
-    top: baseY + index * stageYGap - 9,
+    left: 22,
+    top: baseY + index * stageYGap - 13,
     style: {
       text: `${String(group.index).padStart(2, '0')} ${group.label}`,
       fill: langGraphToneColor(group.tone as FdeTone),
-      font: '800 12px sans-serif',
+      font: '900 12px sans-serif',
       backgroundColor: '#ffffff',
       borderColor: '#dbe8f7',
       borderWidth: 1,
       borderRadius: 6,
-      padding: [4, 7]
+      padding: [5, 8]
     },
     silent: true
   }))
@@ -4926,7 +5674,8 @@ const langGraphEchartOption = computed<EChartsOption>(() => {
       {
         type: 'graph',
         layout: 'none',
-        roam: false,
+        roam: true,
+        scaleLimit: { min: 0.65, max: 1.8 },
         draggable: false,
         edgeSymbol: ['circle', 'arrow'],
         edgeSymbolSize: [3, 9],
@@ -5317,12 +6066,12 @@ const projectAuditSubpageItems = computed(() => [
   },
   {
     key: 'pageindex' as const,
-    label: '章节溯源',
+    label: 'PageIndex 溯源',
     description: '查看长文档树检索路径、命中节点和条款映射。'
   },
   {
     key: 'langgraph' as const,
-    label: 'Agent 编排图',
+    label: 'LangGraph 可视化',
     description: '查看流程编排、Agent 节点、边和检查点。'
   },
   {
@@ -5488,6 +6237,214 @@ const nodeStatusSummary = computed(() => {
   }
   return Object.entries(counts).map(([status, count]) => ({ status, count }))
 })
+const projectAuditNodeStatusBarRows = computed(() => {
+  const rows = nodeStatusSummary.value.length
+    ? nodeStatusSummary.value
+    : [{ status: '暂无节点', count: 0 }]
+  const total = rows.reduce((sum, row) => sum + Number(row.count || 0), 0)
+  const max = Math.max(...rows.map((row) => Number(row.count || 0)), 0)
+  return rows.map((row) => {
+    const status = String(row.status || '')
+    const tone =
+      status.includes('通过') || status.includes('归档')
+        ? 'green'
+        : status.includes('补正') || status.includes('人工') || status.includes('阻断')
+          ? 'red'
+          : status.includes('预审') || status.includes('待审') || status.includes('提交')
+            ? 'orange'
+            : 'blue'
+    const count = Number(row.count || 0)
+    return {
+      ...row,
+      tone,
+      percent: total ? Math.round((count / total) * 100) : 0,
+      barPercent: max ? Math.max(3, Math.round((count / max) * 100)) : 0,
+      ratioText: total ? `${Math.round((count / total) * 100)}%` : '0%'
+    }
+  })
+})
+const projectAuditCapabilityRows = computed(() => {
+  const documents = Math.max(projectAuditDocuments.value.length, 1)
+  const vectorized = Number(projectAuditMetrics.value.vectorizedDocuments || 0)
+  const pageIndexNodes = Number(projectAuditMetrics.value.pageIndexNodes || 0)
+  const lowConfidenceFields = Number(projectAuditMetrics.value.lowConfidenceFields || 0)
+  const rows = [
+    {
+      key: 'ocr',
+      label: 'OCR 解析',
+      value: `${projectAuditOcrJobs.value.length} 个任务`,
+      status: projectAuditOcrJobs.value.length ? '已接入' : '待接入',
+      evidence: `低置信字段 ${lowConfidenceFields}，标注样本 ${projectAuditAnnotationTasks.value.length}`,
+      blockers: projectAuditBlockers.value.filter((row) =>
+        String(row.type || '')
+          .toLowerCase()
+          .includes('ocr')
+      ).length,
+      tone: projectAuditOcrJobs.value.length ? ('green' as const) : ('orange' as const),
+      subpage: 'ocr-labeling' as ProjectAuditSubpage,
+      score: projectAuditOcrJobs.value.length ? (lowConfidenceFields ? 76 : 92) : 36
+    },
+    {
+      key: 'vectorization',
+      label: '资料向量化',
+      value: `${vectorized}/${documents} 份`,
+      status: vectorized >= documents ? '已完成' : '待补齐',
+      evidence: `切片 ${projectAuditMetrics.value.knowledgeChunks || 0}，向量 ${projectAuditMetrics.value.knowledgeVectors || 0}`,
+      blockers: projectAuditVectorIssueRows.value.length,
+      tone: vectorized >= documents ? ('green' as const) : ('orange' as const),
+      subpage: 'vectorization' as ProjectAuditSubpage,
+      score: Math.round((vectorized / documents) * 100)
+    },
+    {
+      key: 'pageindex',
+      label: 'PageIndex',
+      value: `${pageIndexNodes} 个节点`,
+      status: pageIndexNodes ? '已构建' : '待构建',
+      evidence: `Trace ${projectAuditPageIndexTraceRows.value.length}，依据 ${projectAuditPageIndexCards.value[2]?.value || 0}`,
+      blockers: projectAuditPageIndexIssueRows.value.length,
+      tone: pageIndexNodes ? ('green' as const) : ('orange' as const),
+      subpage: 'pageindex' as ProjectAuditSubpage,
+      score: pageIndexNodes ? (projectAuditPageIndexIssueRows.value.length ? 78 : 94) : 32
+    },
+    {
+      key: 'langgraph',
+      label: 'Agent 编排',
+      value: `${projectAuditReviewRuns.value.length} 个任务`,
+      status: projectAuditLangGraphIssueRows.value.length ? '需补证据' : '链路完整',
+      evidence: `Graph ${reviewGraphNodes.value.length} 节点，缺口 ${projectAuditLangGraphIssueRows.value.length}`,
+      blockers: projectAuditLangGraphIssueRows.value.length,
+      tone: projectAuditLangGraphIssueRows.value.length ? ('orange' as const) : ('green' as const),
+      subpage: 'langgraph' as ProjectAuditSubpage,
+      score: projectAuditLangGraphIssueRows.value.length ? 72 : 96
+    },
+    {
+      key: 'evaluation',
+      label: '准确率评估',
+      value: `${projectAuditEvaluationCards.value[0]?.value || '-'} / ${projectAuditEvaluationCards.value[1]?.value || '-'}`,
+      status: projectAuditEvaluationIssueRows.value.length ? '门禁待处理' : '可验收',
+      evidence: `评估门禁 ${projectAuditEvaluationGateRows.value.length}，阻断 ${projectAuditBlockers.value.length}`,
+      blockers: projectAuditEvaluationIssueRows.value.length,
+      tone: projectAuditEvaluationIssueRows.value.length ? ('red' as const) : ('green' as const),
+      subpage: 'evaluation' as ProjectAuditSubpage,
+      score: projectAuditEvaluationIssueRows.value.length ? 70 : 94
+    }
+  ]
+  return rows
+})
+const projectAuditCapabilityOption = computed<EChartsOption>(() => ({
+  aria: {
+    enabled: true,
+    description: 'AI 能力健康评分柱状图，展示 OCR、向量化、PageIndex、Agent 编排和准确率评估状态。'
+  },
+  color: ['#2563eb'],
+  tooltip: {
+    trigger: 'axis',
+    axisPointer: { type: 'shadow' },
+    formatter: (params) => {
+      const item = Array.isArray(params) ? params[0] : params
+      const row = projectAuditCapabilityRows.value.find((entry) => entry.label === item?.name)
+      return `${item?.name || '-'}<br/>评分：${Number(item?.value || 0)}/100<br/>${row?.evidence || ''}`
+    }
+  },
+  grid: { top: 12, right: 42, bottom: 12, left: 92, containLabel: true },
+  xAxis: {
+    type: 'value',
+    max: 100,
+    splitLine: { lineStyle: { color: '#edf2f7' } },
+    axisLabel: { color: '#8a94a6' }
+  },
+  yAxis: {
+    type: 'category',
+    data: projectAuditCapabilityRows.value.map((row) => row.label),
+    axisTick: { show: false },
+    axisLine: { lineStyle: { color: '#d8e5f5' } },
+    axisLabel: {
+      color: '#667085',
+      fontWeight: 700,
+      width: 78,
+      overflow: 'truncate'
+    }
+  },
+  series: [
+    {
+      name: '健康度',
+      type: 'bar',
+      barMaxWidth: 18,
+      data: projectAuditCapabilityRows.value.map((row) => ({
+        value: row.score,
+        itemStyle: {
+          color: row.tone === 'red' ? '#dc2626' : row.tone === 'orange' ? '#f59e0b' : '#16a34a',
+          borderRadius: [0, 7, 7, 0]
+        }
+      })),
+      label: { show: true, position: 'right', formatter: '{c}', color: '#172033', fontWeight: 900 }
+    }
+  ]
+}))
+const projectAuditRecentTaskRows = computed(() => {
+  const rows = [
+    ...projectAuditReviewRuns.value.slice(0, 3).map((row) => {
+      const raw = toRecord(row)
+      return {
+        type: 'Agent',
+        title: row.reviewRunId || row.id || 'ReviewRun',
+        status: row.status || raw.currentStep || '-',
+        time: raw.startedAt || raw.createdAt || raw.updatedAt || '-',
+        tone: projectAuditLangGraphIssueRows.value.length
+          ? ('orange' as const)
+          : ('green' as const),
+        subpage: 'langgraph' as ProjectAuditSubpage
+      }
+    }),
+    ...projectAuditOcrJobs.value.slice(0, 3).map((row) => ({
+      type: 'OCR',
+      title: row.jobId || row.id || row.documentVersionId || 'OCR Job',
+      status: row.status || row.parseStatus || '-',
+      time: row.finishedAt || row.startedAt || row.createdAt || '-',
+      tone: String(row.status || '').includes('fail') ? ('red' as const) : ('orange' as const),
+      subpage: 'ocr-labeling' as ProjectAuditSubpage
+    })),
+    ...projectAuditSubmissions.value.slice(0, 2).map((row) => ({
+      type: '批次',
+      title: row.batchName || row.submissionId || '提交批次',
+      status: row.status || '-',
+      time: row.submittedAt || row.updatedAt || '-',
+      tone: 'blue' as const,
+      subpage: 'overview' as ProjectAuditSubpage
+    })),
+    ...projectAuditAnnotationTasks.value.slice(0, 2).map((row) => ({
+      type: '标注',
+      title: row.title || row.taskId || row.id || 'OCR 标注样本',
+      status: row.collectionStatus || row.status || '-',
+      time: row.updatedAt || row.createdAt || '-',
+      tone: 'orange' as const,
+      subpage: 'ocr-labeling' as ProjectAuditSubpage
+    }))
+  ]
+  return rows.slice(0, 8)
+})
+const projectAuditNextActionRows = computed(() => {
+  const blockerActions = projectAuditBlockers.value.slice(0, 4).map((row) => ({
+    title: shortText(row.title, '质量阻断'),
+    description: shortText(row.action, '进入对应子页处理阻断项'),
+    tag: blockerTypeLabel(row.type),
+    tone: blockerLevelType(row.level) === 'danger' ? ('red' as const) : ('orange' as const),
+    subpage: String(row.type || '').includes('ocr')
+      ? ('ocr-labeling' as ProjectAuditSubpage)
+      : ('langgraph' as ProjectAuditSubpage)
+  }))
+  const capabilityActions = projectAuditCapabilityRows.value
+    .filter((row) => row.blockers || row.tone !== 'green')
+    .slice(0, 3)
+    .map((row) => ({
+      title: `${row.label}：${row.status}`,
+      description: row.evidence,
+      tag: row.value,
+      tone: row.tone,
+      subpage: row.subpage
+    }))
+  return [...blockerActions, ...capabilityActions].slice(0, 5)
+})
 
 const loadProjectAuditWorkspace = async (
   projectId = selectedFdeProjectId.value,
@@ -5528,6 +6485,9 @@ const loadProjectAuditWorkspace = async (
   projectAuditWorkspace.value = res.data
   selectedFdeProjectId.value = res.data.project.id
   selectedFdeNodeId.value = res.data.selectedNodeId
+  selectedVectorFileQuality.value = null
+  selectedVectorFileDetail.value = null
+  vectorFileQualityDrawerVisible.value = false
 
   const reviewRun = res.data.reviewRuns[0]
   const reviewRunId = String(reviewRun?.reviewRunId || reviewRun?.id || '')
@@ -5542,6 +6502,67 @@ const loadProjectAuditWorkspace = async (
   }
 }
 
+const openVectorFileQualityDrawer = async (row: Record<string, unknown>) => {
+  const versionId = String(row.documentVersionId || row.currentVersionId || '')
+  const fileName = String(row.fileName || '')
+  selectedVectorFileSourceRow.value = row
+  selectedVectorEvidence.value = null
+  selectedVectorEvidenceType.value = 'source'
+  vectorFileDetailError.value = ''
+  const qualityRow =
+    projectAuditVectorQualityDocumentRows.value.find(
+      (item) => String(item.documentVersionId || item.id || '') === versionId
+    ) ||
+    projectAuditVectorQualityDocumentRows.value.find(
+      (item) => String(item.fileName || '') === fileName
+    )
+  selectedVectorFileQuality.value = {
+    ...row,
+    ...(qualityRow || {}),
+    knowledgeLineage: row.knowledgeLineage || qualityRow?.knowledgeLineage
+  }
+  vectorFileQualityDrawerVisible.value = true
+  selectedVectorFileDetail.value = null
+  if (!selectedFdeProjectId.value || !versionId) return
+  vectorFileDetailLoading.value = true
+  try {
+    const res = await getFdeProjectVectorFileDetailApi(selectedFdeProjectId.value, versionId, {
+      pageSize: 80
+    })
+    if (res?.data) {
+      selectedVectorFileDetail.value = res.data
+      selectedVectorFileQuality.value = {
+        ...selectedVectorFileQuality.value,
+        ...res.data
+      }
+    }
+  } catch {
+    vectorFileDetailError.value =
+      '文件级切片详情加载失败，请检查后端 FDE vector-detail 接口或重试。'
+    selectedVectorFileDetail.value = {
+      schemaVersion: 'FdeVectorFileDetail@client-fallback',
+      documentVersionId: versionId,
+      fileName,
+      blockers: [vectorFileDetailError.value],
+      chunkRows: [],
+      retrievalTraceRows: []
+    }
+  } finally {
+    vectorFileDetailLoading.value = false
+  }
+}
+
+const retryVectorFileDetail = async () => {
+  if (selectedVectorFileSourceRow.value) {
+    await openVectorFileQualityDrawer(selectedVectorFileSourceRow.value)
+  }
+}
+
+const selectVectorEvidence = (row: Record<string, unknown>, type: string) => {
+  selectedVectorEvidence.value = row
+  selectedVectorEvidenceType.value = type
+}
+
 const selectFdeProject = async (projectId: string) => {
   selectedFdeProjectId.value = projectId
   selectedFdeNodeId.value = undefined
@@ -5553,6 +6574,11 @@ const selectFdeProjectNode = async (nodeId?: number) => {
   selectedFdeNodeId.value = nodeId
   await loadProjectAuditWorkspace(selectedFdeProjectId.value, nodeId)
   await syncProjectAuditRoute(selectedFdeProjectId.value, selectedFdeNodeId.value)
+}
+
+const goProjectAuditSubpage = (subpage: ProjectAuditSubpage) => {
+  projectAuditSubpage.value = subpage
+  void syncProjectAuditRoute(selectedFdeProjectId.value, selectedFdeNodeId.value, subpage)
 }
 
 const handleFdeShellMenuSelect = async (item: FdeShellMenuItemPayload) => {
@@ -6525,7 +7551,7 @@ onMounted(loadData)
     user-label="FDE 工程师"
     :top-stats="fdeTopStats"
     menu-title="FDE 菜单"
-    menu-root="AI Delivery & Governance"
+    menu-root="AI 交付与治理"
     :menu-sections="fdeShellMenuSections"
     menu-search-placeholder="搜索项目、编号、节点"
     :menu-search-value="projectAuditSearch"
@@ -6709,7 +7735,12 @@ onMounted(loadData)
               </template>
               <div
                 class="knowledge-chart-shell knowledge-chart-shell--heatmap"
+                role="img"
+                tabindex="0"
+                aria-label="OCR 场景质量热力图。拖动可平移，双指或按加减键可缩放，方向键可移动视图。"
+                title="拖动平移，双指或 Ctrl/Command + 滚轮缩放，方向键移动，加减键缩放，0 重置"
                 @wheel.capture="handleChartWheel($event, 'ocrHeatmap')"
+                @keydown="handleChartKeydown($event, 'ocrHeatmap')"
                 @gesturestart.capture="startNativeChartGesture($event, 'ocrHeatmap')"
                 @gesturechange.capture="changeNativeChartGesture($event, 'ocrHeatmap')"
                 @gestureend.capture="endNativeChartGesture($event, 'ocrHeatmap')"
@@ -6955,140 +7986,294 @@ onMounted(loadData)
             </div>
           </div>
 
-          <div class="project-audit-health-grid">
-            <ElCard shadow="never" class="panel project-audit-health-panel">
+          <div class="project-overview-command-grid">
+            <ElCard
+              shadow="never"
+              class="panel project-overview-chart-panel project-overview-chart-panel--full"
+            >
               <template #header>
                 <div class="panel-header">
-                  <span>审查链路健康</span>
-                  <ElTag effect="plain">{{ projectAuditLangGraphAuditRows.length }} 个环节</ElTag>
-                </div>
-              </template>
-              <div class="audit-health-list" aria-label="审查链路健康">
-                <article
-                  v-for="row in projectAuditLangGraphAuditRows"
-                  :key="row.stage"
-                  :class="['audit-health-item', row.healthy ? 'is-healthy' : 'is-warning']"
-                >
-                  <span class="audit-health-dot" aria-hidden="true"></span>
-                  <div class="audit-health-copy">
-                    <strong>{{ row.stage }}</strong>
-                    <small>{{ row.evidence }}</small>
-                    <em>{{ row.action }}</em>
-                  </div>
-                  <ElTag :type="row.healthy ? 'success' : 'warning'" effect="plain">
-                    {{ row.status }}
-                  </ElTag>
-                </article>
-              </div>
-            </ElCard>
-
-            <ElCard shadow="never" class="panel project-audit-issue-panel">
-              <template #header>
-                <div class="panel-header">
-                  <span>编排缺口与建议</span>
-                  <ElTag
-                    :type="projectAuditLangGraphIssueRows.length ? 'warning' : 'success'"
-                    effect="plain"
-                  >
-                    {{ projectAuditLangGraphIssueRows.length || '无' }} 个缺口
-                  </ElTag>
-                </div>
-              </template>
-              <div v-if="projectAuditLangGraphIssueRows.length" class="audit-issue-list">
-                <article
-                  v-for="row in projectAuditLangGraphIssueRows"
-                  :key="row.stage"
-                  class="audit-issue-item"
-                >
-                  <ElTag type="warning" effect="plain">{{ row.issue }}</ElTag>
-                  <strong>{{ row.stage }}</strong>
-                  <small>{{ row.evidence }}</small>
-                  <span>{{ row.action }}</span>
-                </article>
-              </div>
-              <div v-else class="audit-empty-state">
-                <strong>链路完整</strong>
-                <span>流程编排、Agent 图、工具证据、规则检索和质量门禁均已返回。</span>
-              </div>
-            </ElCard>
-          </div>
-
-          <div class="project-audit-node-grid">
-            <ElCard shadow="never" class="panel project-audit-node-panel">
-              <template #header>
-                <div class="panel-header">
-                  <span>节点审计进度</span>
+                  <span>项目节点态势</span>
                   <ElTag effect="plain">{{ projectAuditNodeRows.length }} 个节点</ElTag>
                 </div>
               </template>
-              <div class="audit-node-list" aria-label="项目节点审计进度">
-                <button
-                  v-for="row in projectAuditNodeRows.slice(0, 8)"
-                  :key="String(row.nodeId)"
-                  type="button"
-                  class="audit-node-item"
-                  @click="selectFdeProjectNode(Number(row.nodeId))"
+              <div class="project-overview-node-status-bars" aria-label="项目节点状态分布">
+                <article
+                  v-for="row in projectAuditNodeStatusBarRows"
+                  :key="row.status"
+                  :class="[
+                    'project-overview-node-status-row',
+                    `project-overview-node-status-row--${row.tone}`
+                  ]"
+                  :aria-label="`${row.status}：${row.count} 个节点，占比 ${row.percent}%`"
                 >
-                  <span>{{ shortText(row.groupName || '节点') }}</span>
-                  <strong>{{ row.nodeName }}</strong>
-                  <small>
-                    资料 {{ row.documentCount }} · Agent {{ row.reviewRunCount }} · OCR
-                    {{ row.ocrJobCount }}
-                  </small>
-                  <ElTag :type="statusType(String(row.status))" effect="plain">
-                    {{ friendlyStatus(row.status) }}
+                  <span>{{ row.status }}</span>
+                  <div class="project-overview-node-status-track">
+                    <i :style="{ width: `${row.barPercent}%` }"></i>
+                  </div>
+                  <strong>
+                    {{ row.count }}
+                    <small>{{ row.ratioText }}</small>
+                  </strong>
+                </article>
+              </div>
+            </ElCard>
+
+            <ElCard shadow="never" class="panel project-overview-chart-panel">
+              <template #header>
+                <div class="panel-header">
+                  <span>AI 能力健康</span>
+                  <ElTag
+                    :type="
+                      projectAuditCapabilityRows.some((row) => row.blockers) ? 'warning' : 'success'
+                    "
+                    effect="plain"
+                  >
+                    {{
+                      projectAuditCapabilityRows.some((row) => row.blockers) ? '需处理' : '可审查'
+                    }}
                   </ElTag>
-                  <em v-if="row.blockerCount">{{ row.blockerCount }} 个阻断</em>
+                </div>
+              </template>
+              <Echart
+                :options="projectAuditCapabilityOption"
+                height="240px"
+                class="project-overview-echart"
+              />
+            </ElCard>
+          </div>
+
+          <div class="project-overview-governance-grid">
+            <ElCard shadow="never" class="panel project-overview-governance-panel">
+              <template #header>
+                <div class="panel-header">
+                  <span>AI 能力处理清单</span>
+                  <ElTag effect="plain">{{ projectAuditCapabilityRows.length }} 类能力</ElTag>
+                </div>
+              </template>
+              <div class="project-overview-capability-list">
+                <button
+                  v-for="row in projectAuditCapabilityRows"
+                  :key="row.key"
+                  type="button"
+                  :class="[
+                    'project-overview-capability-item',
+                    `project-overview-item--${row.tone}`
+                  ]"
+                  @click="goProjectAuditSubpage(row.subpage)"
+                >
+                  <span>{{ row.label }}</span>
+                  <strong>{{ row.status }}</strong>
+                  <small>{{ row.value }} · {{ row.evidence }}</small>
+                  <ElTag :type="fdeTagType(row.tone)" effect="plain">
+                    {{ row.blockers ? `${row.blockers} 个缺口` : '正常' }}
+                  </ElTag>
                 </button>
               </div>
             </ElCard>
 
-            <div class="project-audit-side-stack">
-              <ElCard shadow="never" class="panel">
-                <template #header>当前节点上下文</template>
-                <ElDescriptions :column="1" border>
-                  <ElDescriptionsItem label="节点">
-                    {{ projectAuditWorkspace?.selectedNode?.name || '-' }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="状态">
-                    {{ friendlyStatus(projectAuditWorkspace?.selectedNode?.status) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="资料">
-                    {{ selectedProjectAuditNodeSummary?.documentCount || 0 }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="低置信字段">
-                    {{ selectedProjectAuditNodeSummary?.lowConfidenceFieldCount || 0 }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="Agent任务">
-                    {{ selectedProjectAuditNodeSummary?.reviewRunCount || 0 }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="OCR任务">
-                    {{ selectedProjectAuditNodeSummary?.ocrJobCount || 0 }}
-                  </ElDescriptionsItem>
-                </ElDescriptions>
-              </ElCard>
-              <ElCard shadow="never" class="panel">
-                <template #header>首要阻断</template>
-                <div v-if="projectAuditBlockers.length" class="audit-blocker-list">
-                  <article
-                    v-for="row in projectAuditBlockers.slice(0, 5)"
-                    :key="`${row.type}-${row.title}`"
-                    class="audit-blocker-item"
+            <ElCard shadow="never" class="panel project-overview-governance-panel">
+              <template #header>
+                <div class="panel-header">
+                  <span>最近任务流</span>
+                  <ElTag effect="plain">{{ projectAuditRecentTaskRows.length }} 条</ElTag>
+                </div>
+              </template>
+              <div class="project-overview-task-list">
+                <button
+                  v-for="row in projectAuditRecentTaskRows"
+                  :key="`${row.type}-${row.title}`"
+                  type="button"
+                  :class="['project-overview-task-item', `project-overview-item--${row.tone}`]"
+                  @click="goProjectAuditSubpage(row.subpage)"
+                >
+                  <span>{{ row.type }}</span>
+                  <strong>{{ row.title }}</strong>
+                  <small>{{ friendlyStatus(row.status) }} · {{ row.time }}</small>
+                </button>
+                <div v-if="!projectAuditRecentTaskRows.length" class="audit-empty-state">
+                  <strong>暂无任务</strong>
+                  <span>当前项目尚未返回 OCR、Agent 或提交批次任务。</span>
+                </div>
+              </div>
+            </ElCard>
+
+            <ElCard shadow="never" class="panel project-overview-governance-panel">
+              <template #header>
+                <div class="panel-header">
+                  <span>下一步动作</span>
+                  <ElTag
+                    :type="projectAuditNextActionRows.length ? 'warning' : 'success'"
+                    effect="plain"
                   >
-                    <ElTag :type="blockerLevelType(row.level)" effect="plain">
-                      {{ blockerTypeLabel(row.type) }}
+                    {{ projectAuditNextActionRows.length || '无' }}
+                  </ElTag>
+                </div>
+              </template>
+              <div class="project-overview-action-list">
+                <button
+                  v-for="row in projectAuditNextActionRows"
+                  :key="`${row.tag}-${row.title}`"
+                  type="button"
+                  :class="['project-overview-action-item', `project-overview-item--${row.tone}`]"
+                  @click="goProjectAuditSubpage(row.subpage)"
+                >
+                  <span>{{ row.tag }}</span>
+                  <strong>{{ row.title }}</strong>
+                  <small>{{ row.description }}</small>
+                </button>
+                <div v-if="!projectAuditNextActionRows.length" class="audit-empty-state">
+                  <strong>无待处理动作</strong>
+                  <span>当前项目的 OCR、向量化、PageIndex 和 Agent 门禁均未返回阻断。</span>
+                </div>
+              </div>
+            </ElCard>
+          </div>
+
+          <details class="project-overview-diagnostics">
+            <summary>
+              <span>详细诊断</span>
+              <small>
+                链路 {{ projectAuditLangGraphAuditRows.length }} 环节 · 缺口
+                {{ projectAuditLangGraphIssueRows.length }} · 阻断 {{ projectAuditBlockers.length }}
+              </small>
+            </summary>
+
+            <div class="project-audit-health-grid">
+              <ElCard shadow="never" class="panel project-audit-health-panel">
+                <template #header>
+                  <div class="panel-header">
+                    <span>审查链路健康</span>
+                    <ElTag effect="plain">{{ projectAuditLangGraphAuditRows.length }} 个环节</ElTag>
+                  </div>
+                </template>
+                <div class="audit-health-list" aria-label="审查链路健康">
+                  <article
+                    v-for="row in projectAuditLangGraphAuditRows"
+                    :key="row.stage"
+                    :class="['audit-health-item', row.healthy ? 'is-healthy' : 'is-warning']"
+                  >
+                    <span class="audit-health-dot" aria-hidden="true"></span>
+                    <div class="audit-health-copy">
+                      <strong>{{ row.stage }}</strong>
+                      <small>{{ row.evidence }}</small>
+                      <em>{{ row.action }}</em>
+                    </div>
+                    <ElTag :type="row.healthy ? 'success' : 'warning'" effect="plain">
+                      {{ row.status }}
                     </ElTag>
-                    <strong>{{ row.title }}</strong>
+                  </article>
+                </div>
+              </ElCard>
+
+              <ElCard shadow="never" class="panel project-audit-issue-panel">
+                <template #header>
+                  <div class="panel-header">
+                    <span>编排缺口与建议</span>
+                    <ElTag
+                      :type="projectAuditLangGraphIssueRows.length ? 'warning' : 'success'"
+                      effect="plain"
+                    >
+                      {{ projectAuditLangGraphIssueRows.length || '无' }} 个缺口
+                    </ElTag>
+                  </div>
+                </template>
+                <div v-if="projectAuditLangGraphIssueRows.length" class="audit-issue-list">
+                  <article
+                    v-for="row in projectAuditLangGraphIssueRows"
+                    :key="row.stage"
+                    class="audit-issue-item"
+                  >
+                    <ElTag type="warning" effect="plain">{{ row.issue }}</ElTag>
+                    <strong>{{ row.stage }}</strong>
+                    <small>{{ row.evidence }}</small>
                     <span>{{ row.action }}</span>
                   </article>
                 </div>
                 <div v-else class="audit-empty-state">
-                  <strong>暂无阻断</strong>
-                  <span>当前项目没有影响 OCR 或 Agent 审查的高优先级问题。</span>
+                  <strong>链路完整</strong>
+                  <span>流程编排、Agent 图、工具证据、规则检索和质量门禁均已返回。</span>
                 </div>
               </ElCard>
             </div>
-          </div>
+
+            <div class="project-audit-node-grid">
+              <ElCard shadow="never" class="panel project-audit-node-panel">
+                <template #header>
+                  <div class="panel-header">
+                    <span>节点审计进度</span>
+                    <ElTag effect="plain">{{ projectAuditNodeRows.length }} 个节点</ElTag>
+                  </div>
+                </template>
+                <div class="audit-node-list" aria-label="项目节点审计进度">
+                  <button
+                    v-for="row in projectAuditNodeRows.slice(0, 8)"
+                    :key="String(row.nodeId)"
+                    type="button"
+                    class="audit-node-item"
+                    @click="selectFdeProjectNode(Number(row.nodeId))"
+                  >
+                    <span>{{ shortText(row.groupName || '节点') }}</span>
+                    <strong>{{ row.nodeName }}</strong>
+                    <small>
+                      资料 {{ row.documentCount }} · Agent {{ row.reviewRunCount }} · OCR
+                      {{ row.ocrJobCount }}
+                    </small>
+                    <ElTag :type="statusType(String(row.status))" effect="plain">
+                      {{ friendlyStatus(row.status) }}
+                    </ElTag>
+                    <em v-if="row.blockerCount">{{ row.blockerCount }} 个阻断</em>
+                  </button>
+                </div>
+              </ElCard>
+
+              <div class="project-audit-side-stack">
+                <ElCard shadow="never" class="panel">
+                  <template #header>当前节点上下文</template>
+                  <ElDescriptions :column="1" border>
+                    <ElDescriptionsItem label="节点">
+                      {{ projectAuditWorkspace?.selectedNode?.name || '-' }}
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="状态">
+                      {{ friendlyStatus(projectAuditWorkspace?.selectedNode?.status) }}
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="资料">
+                      {{ selectedProjectAuditNodeSummary?.documentCount || 0 }}
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="低置信字段">
+                      {{ selectedProjectAuditNodeSummary?.lowConfidenceFieldCount || 0 }}
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="Agent任务">
+                      {{ selectedProjectAuditNodeSummary?.reviewRunCount || 0 }}
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="OCR任务">
+                      {{ selectedProjectAuditNodeSummary?.ocrJobCount || 0 }}
+                    </ElDescriptionsItem>
+                  </ElDescriptions>
+                </ElCard>
+                <ElCard shadow="never" class="panel">
+                  <template #header>首要阻断</template>
+                  <div v-if="projectAuditBlockers.length" class="audit-blocker-list">
+                    <article
+                      v-for="row in projectAuditBlockers.slice(0, 5)"
+                      :key="`${row.type}-${row.title}`"
+                      class="audit-blocker-item"
+                    >
+                      <ElTag :type="blockerLevelType(row.level)" effect="plain">
+                        {{ blockerTypeLabel(row.type) }}
+                      </ElTag>
+                      <strong>{{ row.title }}</strong>
+                      <span>{{ row.action }}</span>
+                    </article>
+                  </div>
+                  <div v-else class="audit-empty-state">
+                    <strong>暂无阻断</strong>
+                    <span>当前项目没有影响 OCR 或 Agent 审查的高优先级问题。</span>
+                  </div>
+                </ElCard>
+              </div>
+            </div>
+          </details>
         </template>
 
         <template v-else-if="projectAuditSubpage === 'vectorization'">
@@ -7104,6 +8289,19 @@ onMounted(loadData)
             </div>
           </div>
 
+          <section class="vector-lineage-intro" aria-label="资料知识资产溯源">
+            <div>
+              <span>资料知识资产溯源</span>
+              <strong>每份资料为什么能进入 Agent 审查</strong>
+              <small>
+                以资料版本为主线串联 OCR 解析、知识切片、向量入库、PageIndex 和审查可用性。
+              </small>
+            </div>
+            <ElTag :type="fdeTagType(projectAuditVectorQualityTone)" effect="plain">
+              {{ projectAuditVectorIndexProfile.issueSummary }}
+            </ElTag>
+          </section>
+
           <section class="audit-flow-strip" aria-label="资料向量化审计流程">
             <article
               v-for="row in projectAuditVectorFlowRows"
@@ -7118,6 +8316,67 @@ onMounted(loadData)
               <em>{{ row.done }}/{{ row.total }}</em>
             </article>
           </section>
+
+          <section class="vector-quality-board" aria-label="向量化质量量化">
+            <article
+              v-for="card in projectAuditVectorQualityCards"
+              :key="card.label"
+              :class="['vector-quality-card', `vector-quality-card--${card.tone}`]"
+            >
+              <span>{{ card.label }}</span>
+              <strong>{{ card.value }}</strong>
+              <small>{{ card.hint }}</small>
+            </article>
+          </section>
+
+          <ElRow :gutter="16" class="mb-16px">
+            <ElCol :xl="10" :lg="10" :md="24" :sm="24" :xs="24">
+              <ElCard shadow="never" class="panel vector-quality-panel">
+                <template #header>
+                  <div class="panel-header">
+                    <span>向量质量维度</span>
+                    <ElTag :type="fdeTagType(projectAuditVectorQualityTone)" effect="plain">
+                      {{ rawProjectAuditVectorQuality.statusLabel || '需补齐质量证据' }}
+                    </ElTag>
+                  </div>
+                </template>
+                <Echart
+                  :options="projectAuditVectorQualityRadarOption"
+                  height="300px"
+                  class="vector-quality-echart"
+                />
+              </ElCard>
+            </ElCol>
+            <ElCol :xl="14" :lg="14" :md="24" :sm="24" :xs="24">
+              <ElCard shadow="never" class="panel vector-quality-panel">
+                <template #header>
+                  <div class="panel-header">
+                    <span>资料级向量分数</span>
+                    <ElTag effect="plain">
+                      {{ projectAuditVectorQualityDocumentRows.length }} 个资料版本
+                    </ElTag>
+                  </div>
+                </template>
+                <Echart
+                  :options="projectAuditVectorQualityBarOption"
+                  height="300px"
+                  class="vector-quality-echart"
+                />
+              </ElCard>
+            </ElCol>
+          </ElRow>
+
+          <ElAlert
+            v-if="projectAuditVectorQualityBlockers.length"
+            class="mb-16px"
+            type="warning"
+            :closable="false"
+            show-icon
+          >
+            <template #title>
+              向量质量阻断：{{ projectAuditVectorQualityBlockers.slice(0, 3).join('；') }}
+            </template>
+          </ElAlert>
 
           <ElCard shadow="never" class="panel chart-panel mb-16px">
             <template #header>
@@ -7152,7 +8411,12 @@ onMounted(loadData)
             </template>
             <div
               class="knowledge-chart-shell knowledge-chart-shell--sankey"
+              role="img"
+              tabindex="0"
+              aria-label="资料向量化链路图。拖动可平移，双指或按加减键可缩放，方向键可移动视图。"
+              title="拖动平移，双指或 Ctrl/Command + 滚轮缩放，方向键移动，加减键缩放，0 重置"
               @wheel.capture="handleChartWheel($event, 'vectorSankey')"
+              @keydown="handleChartKeydown($event, 'vectorSankey')"
               @gesturestart.capture="startNativeChartGesture($event, 'vectorSankey')"
               @gesturechange.capture="changeNativeChartGesture($event, 'vectorSankey')"
               @gestureend.capture="endNativeChartGesture($event, 'vectorSankey')"
@@ -7177,43 +8441,8 @@ onMounted(loadData)
             </div>
           </ElCard>
 
-          <section class="lineage-document-grid" aria-label="资料知识资产溯源">
-            <article class="lineage-document-intro">
-              <span>资料知识资产溯源</span>
-              <strong>每份资料为什么能进入 Agent 审查</strong>
-              <small> 按 OCR、切片、向量、章节溯源和审查可用五个阶段检查证据完整性。 </small>
-            </article>
-            <article
-              v-for="card in projectAuditDocumentLineageVisibleCards"
-              :key="card.id"
-              class="lineage-document-card"
-            >
-              <div class="lineage-document-card__head">
-                <div>
-                  <span>{{ card.requirementName }}</span>
-                  <strong>{{ card.fileName }}</strong>
-                </div>
-                <ElTag :type="card.ready ? 'success' : 'warning'" effect="plain">
-                  {{ card.readinessLabel }}
-                </ElTag>
-              </div>
-              <div class="lineage-stage-row" aria-label="资料处理阶段">
-                <span
-                  v-for="stage in card.stages"
-                  :key="`${card.id}-${stage.key}`"
-                  :class="['lineage-stage-pill', stage.done ? 'is-done' : 'is-waiting']"
-                  :title="`${stage.label}：${stage.evidence || stage.status}`"
-                >
-                  {{ stage.label }}
-                </span>
-              </div>
-              <p>{{ card.conclusion }}</p>
-              <small v-if="card.blockers.length">阻断：{{ card.blockers.join('；') }}</small>
-            </article>
-          </section>
-
           <ElRow :gutter="16">
-            <ElCol :xl="16" :lg="16" :md="24" :sm="24" :xs="24">
+            <ElCol :span="24">
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
@@ -7263,6 +8492,17 @@ onMounted(loadData)
                       </ElTag>
                     </template>
                   </ElTableColumn>
+                  <ElTableColumn label="质量分" width="88">
+                    <template #default="{ row }">
+                      {{
+                        projectAuditVectorQualityDocumentRows.find(
+                          (item) =>
+                            String(item.documentVersionId || item.id) ===
+                            String(row.documentVersionId || row.id)
+                        )?.score ?? '-'
+                      }}
+                    </template>
+                  </ElTableColumn>
                   <ElTableColumn prop="chunkCount" label="切片数" width="88" />
                   <ElTableColumn prop="vectorCount" label="向量数" width="88" />
                   <ElTableColumn prop="vectorGap" label="缺口" width="76">
@@ -7288,9 +8528,25 @@ onMounted(loadData)
                     min-width="170"
                     show-overflow-tooltip
                   />
+                  <ElTableColumn label="操作" width="100" fixed="right">
+                    <template #default="{ row }">
+                      <ElButton
+                        size="small"
+                        text
+                        data-testid="fde-open-vector-file-detail"
+                        aria-label="查看文件向量质量详情"
+                        @click.stop="openVectorFileQualityDrawer(row)"
+                      >
+                        详情
+                      </ElButton>
+                    </template>
+                  </ElTableColumn>
                 </ElTable>
               </ElCard>
             </ElCol>
+          </ElRow>
+
+          <ElRow :gutter="16" class="mt-16px">
             <ElCol :xl="8" :lg="8" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>索引配置</template>
@@ -7321,7 +8577,9 @@ onMounted(loadData)
                   </ElDescriptionsItem>
                 </ElDescriptions>
               </ElCard>
-              <ElCard shadow="never" class="panel mt-16px">
+            </ElCol>
+            <ElCol :xl="8" :lg="8" :md="24" :sm="24" :xs="24">
+              <ElCard shadow="never" class="panel">
                 <template #header>向量入库状态</template>
                 <ElTable :data="normalizedProjectAuditVectorRows" border height="220">
                   <ElTableColumn
@@ -7341,7 +8599,9 @@ onMounted(loadData)
                   </ElTableColumn>
                 </ElTable>
               </ElCard>
-              <ElCard shadow="never" class="panel mt-16px">
+            </ElCol>
+            <ElCol :xl="8" :lg="8" :md="24" :sm="24" :xs="24">
+              <ElCard shadow="never" class="panel">
                 <template #header>异常与处理建议</template>
                 <ElTable
                   :data="projectAuditVectorIssueRows"
@@ -7424,7 +8684,12 @@ onMounted(loadData)
             </template>
             <div
               class="knowledge-chart-shell knowledge-chart-shell--tree"
+              role="img"
+              tabindex="0"
+              aria-label="PageIndex 章节溯源树。拖动可平移，双指或按加减键可缩放，方向键可移动视图。"
+              title="拖动平移，双指或 Ctrl/Command + 滚轮缩放，方向键移动，加减键缩放，0 重置"
               @wheel.capture="handleChartWheel($event, 'pageIndexTree')"
+              @keydown="handleChartKeydown($event, 'pageIndexTree')"
               @gesturestart.capture="startNativeChartGesture($event, 'pageIndexTree')"
               @gesturechange.capture="changeNativeChartGesture($event, 'pageIndexTree')"
               @gestureend.capture="endNativeChartGesture($event, 'pageIndexTree')"
@@ -7433,15 +8698,15 @@ onMounted(loadData)
               @pointerup.capture="endChartGesture($event, 'pageIndexTree')"
               @pointercancel.capture="endChartGesture($event, 'pageIndexTree')"
             >
-              <div class="chart-zoom-frame" :style="chartFrameStyle('pageIndexTree', 1500, 360)">
+              <div class="chart-zoom-frame" :style="chartFrameStyle('pageIndexTree', 1720, 470)">
                 <div
                   class="chart-zoom-content"
-                  :style="chartContentStyle('pageIndexTree', 1500, 360)"
+                  :style="chartContentStyle('pageIndexTree', 1720, 470)"
                 >
                   <Echart
                     :options="projectAuditPageIndexTreeOption"
-                    :width="chartBaseWidth(1500)"
-                    :height="chartBaseHeight(360)"
+                    :width="chartBaseWidth(1720)"
+                    :height="chartBaseHeight(470)"
                     class="knowledge-echart"
                   />
                 </div>
@@ -7487,7 +8752,7 @@ onMounted(loadData)
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
-                    <span>章节溯源路由追踪</span>
+                    <span>PageIndex 路由追踪（章节溯源路由追踪）</span>
                     <ElTag effect="plain">{{ projectAuditPageIndexTraceRows.length }} 条</ElTag>
                   </div>
                 </template>
@@ -7547,7 +8812,7 @@ onMounted(loadData)
                     </div>
                   </article>
                 </div>
-                <ElEmpty v-else description="暂无章节溯源路由追踪" />
+                <ElEmpty v-else description="暂无 PageIndex 路由追踪（章节溯源路由追踪）" />
               </ElCard>
             </ElCol>
             <ElCol :xl="10" :lg="10" :md="24" :sm="24" :xs="24">
@@ -7683,7 +8948,12 @@ onMounted(loadData)
             </template>
             <div
               class="knowledge-chart-shell knowledge-chart-shell--timeline"
+              role="img"
+              tabindex="0"
+              aria-label="Temporal 执行时间线。拖动可平移，双指或按加减键可缩放，方向键可移动视图。"
+              title="拖动平移，双指或 Ctrl/Command + 滚轮缩放，方向键移动，加减键缩放，0 重置"
               @wheel.capture="handleChartWheel($event, 'reviewTimeline')"
+              @keydown="handleChartKeydown($event, 'reviewTimeline')"
               @gesturestart.capture="startNativeChartGesture($event, 'reviewTimeline')"
               @gesturechange.capture="changeNativeChartGesture($event, 'reviewTimeline')"
               @gestureend.capture="endNativeChartGesture($event, 'reviewTimeline')"
@@ -7713,7 +8983,7 @@ onMounted(loadData)
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
-                    <span>Agent 审查编排图</span>
+                    <span>Agent 编排图</span>
                     <ElSpace wrap>
                       <ElTag effect="plain">{{
                         selectedReviewRun?.run.reviewRunId || '未选中'
@@ -7755,7 +9025,12 @@ onMounted(loadData)
                 <div
                   v-if="hasLangGraphFlowNodes"
                   class="langgraph-chart-shell"
+                  role="img"
+                  tabindex="0"
+                  aria-label="LangGraph Agent 编排图。拖动可平移，双指或按加减键可缩放，方向键可移动视图。"
+                  title="拖动平移，双指或 Ctrl/Command + 滚轮缩放，方向键移动，加减键缩放，0 重置"
                   @wheel.capture="handleChartWheel($event, 'langGraph')"
+                  @keydown="handleChartKeydown($event, 'langGraph')"
                   @gesturestart.capture="startNativeChartGesture($event, 'langGraph')"
                   @gesturechange.capture="changeNativeChartGesture($event, 'langGraph')"
                   @gestureend.capture="endNativeChartGesture($event, 'langGraph')"
@@ -7764,15 +9039,15 @@ onMounted(loadData)
                   @pointerup.capture="endChartGesture($event, 'langGraph')"
                   @pointercancel.capture="endChartGesture($event, 'langGraph')"
                 >
-                  <div class="chart-zoom-frame" :style="chartFrameStyle('langGraph', 1080, 430)">
+                  <div class="chart-zoom-frame" :style="chartFrameStyle('langGraph', 1420, 620)">
                     <div
                       class="chart-zoom-content"
-                      :style="chartContentStyle('langGraph', 1080, 430)"
+                      :style="chartContentStyle('langGraph', 1420, 620)"
                     >
                       <Echart
                         :options="langGraphEchartOption"
-                        :width="chartBaseWidth(1080)"
-                        :height="chartBaseHeight(430)"
+                        :width="chartBaseWidth(1420)"
+                        :height="chartBaseHeight(620)"
                         class="langgraph-echart"
                       />
                     </div>
@@ -11342,6 +12617,573 @@ onMounted(loadData)
       </ElTabs>
 
       <ElDrawer
+        v-model="vectorFileQualityDrawerVisible"
+        size="92vw"
+        class="fde-audit-drawer"
+        destroy-on-close
+        title="文件向量质量详情"
+      >
+        <template v-if="selectedVectorFileQuality">
+          <div class="audit-drawer-hero" data-testid="fde-vector-file-drawer">
+            <div>
+              <span>Document Vector</span>
+              <strong>{{ selectedVectorFileQualityRecord.fileName || '-' }}</strong>
+              <small>
+                {{ selectedVectorFileQualityRecord.requirementName || '资料要求未返回' }} ·
+                {{ selectedVectorFileQualityRecord.documentVersionId || '-' }}
+              </small>
+            </div>
+            <ElTag
+              :type="
+                score100(selectedVectorFileQualityRecord.score, 0) >= 90 ? 'success' : 'warning'
+              "
+              effect="plain"
+            >
+              {{ score100(selectedVectorFileQualityRecord.score, 0) }}/100
+            </ElTag>
+          </div>
+
+          <ElAlert
+            class="mb-12px"
+            type="info"
+            show-icon
+            :closable="false"
+            title="这里展示单文件从图片/文件、OCR、文本、切片、向量格式化、索引到 LLM 检索引用的证据链；项目级代理 Trace 会被明确标记。"
+          />
+          <ElAlert
+            v-if="vectorFileDetailError"
+            class="mb-12px"
+            type="error"
+            show-icon
+            :closable="false"
+            :title="vectorFileDetailError"
+          >
+            <template #default>
+              <ElButton
+                size="small"
+                type="primary"
+                :loading="vectorFileDetailLoading"
+                @click="retryVectorFileDetail"
+              >
+                重试加载
+              </ElButton>
+            </template>
+          </ElAlert>
+          <ElAlert
+            v-if="
+              selectedVectorFileDetailRecord.llmUsage &&
+              toRecord(selectedVectorFileDetailRecord.llmUsage).proxyTrace
+            "
+            class="mb-12px"
+            type="warning"
+            show-icon
+            :closable="false"
+            :title="
+              String(
+                toRecord(selectedVectorFileDetailRecord.llmUsage).proxyReason ||
+                  '当前使用项目级代理 Trace，不能等同于文件级真实引用。'
+              )
+            "
+          />
+
+          <div class="artifact-summary-grid mb-12px">
+            <div
+              v-for="item in selectedVectorFileSummaryCards"
+              :key="item.label"
+              class="artifact-summary-item"
+            >
+              <span>{{ item.label }}</span>
+              <strong>{{ item.value }}</strong>
+              <small>{{ item.hint }}</small>
+            </div>
+          </div>
+
+          <ElDescriptions :column="1" border class="mb-12px">
+            <ElDescriptionsItem label="Embedding 模型">
+              {{ selectedVectorFileQualityRecord.embeddingModel || 'embedding-default' }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="索引版本">
+              {{ selectedVectorFileQualityRecord.indexVersion || 'knowledge-index@local' }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="向量维度">
+              {{ selectedVectorFileQualityRecord.vectorDimensions || '-' }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="KnowledgeFile">
+              {{ selectedVectorFileQualityRecord.knowledgeFileId || '-' }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="最新任务">
+              {{ friendlyStatus(selectedVectorFileQualityRecord.latestTaskStatus, '-') }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="当前问题">
+              <span v-if="selectedVectorFileBlockers.length">
+                {{ selectedVectorFileBlockers.join('；') }}
+              </span>
+              <span v-else>无</span>
+            </ElDescriptionsItem>
+          </ElDescriptions>
+
+          <ElTabs v-loading="vectorFileDetailLoading" class="audit-drawer-tabs">
+            <ElTabPane label="加工链路" name="pipeline">
+              <div class="vector-pipeline-strip mb-12px">
+                <div
+                  v-for="stage in selectedVectorFilePipelineSummary"
+                  :key="stage.id"
+                  class="vector-pipeline-stage"
+                >
+                  <span>{{ stage.label }}</span>
+                  <strong>{{ stage.status }}</strong>
+                  <small>{{ stage.metric }}</small>
+                </div>
+              </div>
+
+              <div class="vector-evidence-workbench">
+                <ElCard shadow="never" class="vector-source-preview-card">
+                  <template #header>
+                    <div class="vector-card-header">
+                      <strong>图片/文件源</strong>
+                      <ElTag effect="plain">
+                        第 {{ selectedVectorActivePage?.pageNo || 1 }} 页
+                      </ElTag>
+                    </div>
+                  </template>
+                  <div class="vector-source-canvas">
+                    <img
+                      v-if="selectedVectorPreviewCanRender && selectedVectorPreviewIsImage"
+                      class="vector-source-media"
+                      :src="selectedVectorPreviewUrl"
+                      :alt="
+                        String(
+                          selectedVectorFilePipelineSource.fileName ||
+                            selectedVectorFileQualityRecord.fileName ||
+                            '文件预览'
+                        )
+                      "
+                    />
+                    <iframe
+                      v-else-if="selectedVectorPreviewCanRender"
+                      class="vector-source-media"
+                      :src="selectedVectorPreviewUrl"
+                      title="文件预览"
+                    ></iframe>
+                    <div v-else class="vector-source-placeholder">
+                      <strong>{{
+                        selectedVectorFilePipelineSource.fileName ||
+                        selectedVectorFileQualityRecord.fileName ||
+                        '-'
+                      }}</strong>
+                      <span>{{
+                        selectedVectorFilePipelineSource.previewUnavailableReason ||
+                        '未生成可渲染预览，仍可查看 OCR、文本和向量证据。'
+                      }}</span>
+                      <small>{{
+                        selectedVectorFilePipelineSource.storageKey ||
+                        selectedVectorFilePipelineSource.previewUrl ||
+                        '-'
+                      }}</small>
+                    </div>
+                    <div
+                      v-if="selectedVectorEvidenceBbox"
+                      class="vector-evidence-box"
+                      :style="selectedVectorEvidenceStyle"
+                    >
+                      <span>{{ selectedVectorEvidenceType }}</span>
+                    </div>
+                  </div>
+                  <ElDescriptions :column="1" border class="mt-12px">
+                    <ElDescriptionsItem label="Storage Key">
+                      {{ selectedVectorFilePipelineSource.storageKey || '-' }}
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="Preview">
+                      {{ selectedVectorFilePipelineSource.previewUrl || '-' }}
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="当前证据">
+                      {{
+                        selectedVectorEvidenceRecord.evidenceLabel ||
+                        selectedVectorEvidenceRecord.fieldName ||
+                        selectedVectorEvidenceRecord.sourceLabel ||
+                        '点击右侧行查看证据定位'
+                      }}
+                    </ElDescriptionsItem>
+                  </ElDescriptions>
+                </ElCard>
+
+                <div class="vector-evidence-panels">
+                  <ElCard shadow="never" class="vector-pipeline-card">
+                    <template #header>
+                      <div class="vector-card-header">
+                        <strong>OCR 结构化结果</strong>
+                        <span>
+                          字段 {{ selectedVectorFilePipelineOcrSummary.fieldCount || 0 }} · 片段
+                          {{ selectedVectorFilePipelineOcrSummary.fragmentCount || 0 }} · 表格
+                          {{ selectedVectorFilePipelineOcrSummary.tableCount || 0 }} · 印章
+                          {{ selectedVectorFilePipelineOcrSummary.sealCount || 0 }}
+                        </span>
+                      </div>
+                    </template>
+                    <ElTable
+                      :data="selectedVectorFilePipelineFieldRows"
+                      border
+                      height="220"
+                      highlight-current-row
+                      @row-click="(row) => selectVectorEvidence(row, 'OCR')"
+                    >
+                      <ElTableColumn
+                        prop="fieldName"
+                        label="字段"
+                        min-width="120"
+                        show-overflow-tooltip
+                      />
+                      <ElTableColumn
+                        prop="fieldValue"
+                        label="OCR值"
+                        min-width="180"
+                        show-overflow-tooltip
+                      />
+                      <ElTableColumn prop="pageNo" label="页" width="64" />
+                      <ElTableColumn prop="confidence" label="置信" width="82" />
+                      <ElTableColumn label="bbox" width="72">
+                        <template #default="{ row }">
+                          <ElTag :type="row.hasBbox ? 'success' : 'warning'" effect="plain">
+                            {{ row.hasBbox ? '有' : '缺' }}
+                          </ElTag>
+                        </template>
+                      </ElTableColumn>
+                    </ElTable>
+                  </ElCard>
+
+                  <ElCard shadow="never" class="vector-pipeline-card">
+                    <template #header>
+                      <div class="vector-card-header">
+                        <strong>文本与切片</strong>
+                        <span>{{ selectedVectorFilePipelineTextRows.length }} 条文本记录</span>
+                      </div>
+                    </template>
+                    <ElTable
+                      :data="selectedVectorFilePipelineTextRows"
+                      border
+                      height="220"
+                      highlight-current-row
+                      @row-click="(row) => selectVectorEvidence(row, 'Text')"
+                    >
+                      <ElTableColumn
+                        prop="sourceLabel"
+                        label="来源"
+                        width="140"
+                        show-overflow-tooltip
+                      />
+                      <ElTableColumn prop="pageNo" label="页" width="64" />
+                      <ElTableColumn
+                        prop="text"
+                        label="文本"
+                        min-width="260"
+                        show-overflow-tooltip
+                      />
+                      <ElTableColumn label="bbox" width="72">
+                        <template #default="{ row }">
+                          <ElTag :type="row.hasBbox ? 'success' : 'warning'" effect="plain">
+                            {{ row.hasBbox ? '有' : '缺' }}
+                          </ElTag>
+                        </template>
+                      </ElTableColumn>
+                    </ElTable>
+                  </ElCard>
+
+                  <ElCard shadow="never" class="vector-pipeline-card">
+                    <template #header>
+                      <div class="vector-card-header">
+                        <strong>向量格式化数据 / 索引</strong>
+                        <span>不展示真实高维向量，仅展示 payload hash 与索引记录</span>
+                      </div>
+                    </template>
+                    <ElTable
+                      :data="selectedVectorFilePipelineVectorRows"
+                      border
+                      height="240"
+                      highlight-current-row
+                      @row-click="(row) => selectVectorEvidence(row, 'Vector')"
+                    >
+                      <ElTableColumn prop="chunkNo" label="#" width="64" />
+                      <ElTableColumn
+                        prop="model"
+                        label="模型"
+                        min-width="130"
+                        show-overflow-tooltip
+                      />
+                      <ElTableColumn
+                        prop="indexVersion"
+                        label="索引"
+                        min-width="140"
+                        show-overflow-tooltip
+                      />
+                      <ElTableColumn prop="dimensions" label="维度" width="82" />
+                      <ElTableColumn
+                        prop="vectorId"
+                        label="Vector ID"
+                        min-width="150"
+                        show-overflow-tooltip
+                      />
+                      <ElTableColumn
+                        prop="payloadHash"
+                        label="Payload Hash"
+                        min-width="170"
+                        show-overflow-tooltip
+                      />
+                      <ElTableColumn
+                        prop="textPreview"
+                        label="输入文本"
+                        min-width="240"
+                        show-overflow-tooltip
+                      />
+                    </ElTable>
+                  </ElCard>
+                </div>
+
+                <ElCard shadow="never" class="vector-evidence-detail-card">
+                  <template #header>当前选中证据</template>
+                  <ElEmpty
+                    v-if="!Object.keys(selectedVectorEvidenceRecord).length"
+                    description="点击 OCR、文本、切片或向量行查看细节"
+                  />
+                  <template v-else>
+                    <ElDescriptions :column="1" border>
+                      <ElDescriptionsItem label="类型">{{
+                        selectedVectorEvidenceType
+                      }}</ElDescriptionsItem>
+                      <ElDescriptionsItem label="页码">{{
+                        selectedVectorEvidenceRecord.pageNo || '-'
+                      }}</ElDescriptionsItem>
+                      <ElDescriptionsItem label="bbox">{{
+                        selectedVectorEvidenceRecord.bbox
+                          ? JSON.stringify(selectedVectorEvidenceRecord.bbox)
+                          : '缺'
+                      }}</ElDescriptionsItem>
+                      <ElDescriptionsItem label="摘要">
+                        {{
+                          selectedVectorEvidenceRecord.fieldValue ||
+                          selectedVectorEvidenceRecord.text ||
+                          selectedVectorEvidenceRecord.textPreview ||
+                          '-'
+                        }}
+                      </ElDescriptionsItem>
+                    </ElDescriptions>
+                    <pre class="vector-evidence-json">{{ selectedVectorEvidenceJson }}</pre>
+                  </template>
+                </ElCard>
+              </div>
+            </ElTabPane>
+            <ElTabPane label="质量维度" name="dimensions">
+              <ElTable :data="selectedVectorFileQualityDimensions" border height="280">
+                <ElTableColumn prop="name" label="维度" min-width="150" show-overflow-tooltip />
+                <ElTableColumn label="评分" width="82">
+                  <template #default="{ row }">{{ row.score }}</template>
+                </ElTableColumn>
+                <ElTableColumn prop="metric" label="指标" width="96" />
+                <ElTableColumn prop="status" label="状态" width="96">
+                  <template #default="{ row }">
+                    <ElTag :type="row.status === 'pass' ? 'success' : 'warning'" effect="plain">
+                      {{ friendlyStatus(row.status) }}
+                    </ElTag>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn prop="message" label="说明" min-width="260" show-overflow-tooltip />
+              </ElTable>
+            </ElTabPane>
+            <ElTabPane label="切片明细" name="chunks">
+              <div class="artifact-summary-grid mb-12px">
+                <div
+                  v-for="item in selectedVectorFileChunkCards"
+                  :key="item.label"
+                  class="artifact-summary-item"
+                >
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.value }}</strong>
+                  <small>{{ item.hint }}</small>
+                </div>
+              </div>
+              <ElAlert
+                v-if="selectedVectorFileBlockers.length"
+                class="mb-12px"
+                type="warning"
+                show-icon
+                :closable="false"
+                :title="selectedVectorFileBlockers.slice(0, 3).join('；')"
+              />
+              <ElTable
+                :data="selectedVectorFileChunkRows"
+                border
+                height="360"
+                highlight-current-row
+                @row-click="(row) => selectVectorEvidence(row, 'Chunk')"
+              >
+                <ElTableColumn prop="chunkNo" label="#" width="70" />
+                <ElTableColumn label="状态" width="98">
+                  <template #default="{ row }">
+                    <ElTag :type="row.materialized ? 'success' : 'warning'" effect="plain">
+                      {{ row.materialized ? '真实' : '缺明细' }}
+                    </ElTag>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn prop="pageNo" label="页码" width="82" />
+                <ElTableColumn label="bbox" width="82">
+                  <template #default="{ row }">
+                    <ElTag :type="row.hasBbox ? 'success' : 'warning'" effect="plain">
+                      {{ row.hasBbox ? '有' : '缺' }}
+                    </ElTag>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn prop="tokenCount" label="Token" width="90" />
+                <ElTableColumn prop="vectorStatus" label="向量" width="116" />
+                <ElTableColumn prop="retrievalHitCount" label="Trace" width="82" />
+                <ElTableColumn prop="metadataCompleteness" label="Metadata" width="112" />
+                <ElTableColumn
+                  prop="textPreview"
+                  label="切片预览"
+                  min-width="280"
+                  show-overflow-tooltip
+                />
+                <ElTableColumn label="Flags" min-width="220" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    <ElSpace wrap size="small">
+                      <ElTag
+                        v-for="flag in row.qualityFlags.slice(0, 3)"
+                        :key="flag"
+                        type="warning"
+                        effect="plain"
+                      >
+                        {{ flag }}
+                      </ElTag>
+                      <span v-if="!row.qualityFlags.length">-</span>
+                    </ElSpace>
+                  </template>
+                </ElTableColumn>
+              </ElTable>
+              <ElPagination
+                class="vector-file-pagination"
+                small
+                background
+                layout="total"
+                :total="
+                  Number(
+                    toRecord(selectedVectorFileDetailRecord.chunkPage).total ||
+                      selectedVectorFileChunkRows.length
+                  )
+                "
+              />
+            </ElTabPane>
+            <ElTabPane label="质量问题" name="qualityIssues">
+              <ElEmpty
+                v-if="!selectedVectorQualityIssues.length"
+                description="当前文件没有结构化质量问题"
+              />
+              <div v-else class="vector-file-blocker-list">
+                <ElAlert
+                  v-for="issue in selectedVectorQualityIssues"
+                  :key="String(issue.code || issue.message)"
+                  :type="issue.severity === 'blocker' ? 'error' : 'warning'"
+                  show-icon
+                  :closable="false"
+                  :title="String(issue.message || issue.code || '-')"
+                />
+              </div>
+            </ElTabPane>
+            <ElTabPane label="切片图表" name="chunkCharts">
+              <div class="vector-file-chart-grid">
+                <ElCard shadow="never" class="vector-file-chart-card">
+                  <template #header>Token 长度分布</template>
+                  <Echart :options="selectedVectorFileTokenOption" height="240px" />
+                </ElCard>
+                <ElCard shadow="never" class="vector-file-chart-card">
+                  <template #header>页码覆盖</template>
+                  <Echart :options="selectedVectorFilePageOption" height="240px" />
+                </ElCard>
+                <ElCard shadow="never" class="vector-file-chart-card">
+                  <template #header>质量 Flags</template>
+                  <Echart :options="selectedVectorFileFlagOption" height="240px" />
+                </ElCard>
+              </div>
+            </ElTabPane>
+            <ElTabPane label="处理阶段" name="stages">
+              <ElTable :data="selectedVectorFileLineageStages" border height="280">
+                <ElTableColumn prop="label" label="阶段" min-width="120" show-overflow-tooltip />
+                <ElTableColumn prop="status" label="状态" width="120">
+                  <template #default="{ row }">
+                    <ElTag :type="row.done ? 'success' : 'warning'" effect="plain">
+                      {{ row.status }}
+                    </ElTag>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn prop="evidence" label="证据" min-width="260" show-overflow-tooltip />
+                <ElTableColumn prop="action" label="建议" min-width="260" show-overflow-tooltip />
+              </ElTable>
+            </ElTabPane>
+            <ElTabPane label="LLM 检索" name="retrieval">
+              <ElDescriptions :column="2" border class="mb-12px">
+                <ElDescriptionsItem label="Trace 范围">
+                  {{
+                    selectedVectorFileLlmTrace.scope === 'document_explicit'
+                      ? '文件级绑定'
+                      : '项目级代理'
+                  }}
+                </ElDescriptionsItem>
+                <ElDescriptionsItem label="ReviewRun">
+                  {{ selectedVectorFileLlmTrace.relatedReviewRunCount || 0 }}
+                </ElDescriptionsItem>
+                <ElDescriptionsItem label="命中率">
+                  {{ scorePercent(selectedVectorFileLlmTrace.hitRate as number) }}
+                </ElDescriptionsItem>
+                <ElDescriptionsItem label="证据命中">
+                  {{ scorePercent(selectedVectorFileLlmTrace.evidenceHitRate as number) }}
+                </ElDescriptionsItem>
+              </ElDescriptions>
+              <ElTable :data="selectedVectorFileDetailRetrievalRows" border height="240">
+                <ElTableColumn
+                  prop="query"
+                  label="检索问题"
+                  min-width="240"
+                  show-overflow-tooltip
+                />
+                <ElTableColumn prop="selectedRoute" label="路由" min-width="170" />
+                <ElTableColumn prop="scope" label="范围" width="90" />
+                <ElTableColumn prop="selectedClauseCount" label="条款" width="82" />
+                <ElTableColumn prop="selectedChunkCount" label="切片" width="82" />
+                <ElTableColumn label="证据" width="82">
+                  <template #default="{ row }">
+                    <ElTag :type="row.evidenceBacked ? 'success' : 'warning'" effect="plain">
+                      {{ row.evidenceBacked ? '有' : '缺' }}
+                    </ElTag>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn label="过滤" width="82">
+                  <template #default="{ row }">
+                    <ElTag :type="row.filterScoped ? 'success' : 'danger'" effect="plain">
+                      {{ row.filterScoped ? '有' : '缺' }}
+                    </ElTag>
+                  </template>
+                </ElTableColumn>
+              </ElTable>
+            </ElTabPane>
+            <ElTabPane label="阻断与建议" name="blockers">
+              <ElEmpty
+                v-if="!selectedVectorFileBlockers.length"
+                description="当前文件没有向量质量阻断"
+              />
+              <div v-else class="vector-file-blocker-list">
+                <ElAlert
+                  v-for="blocker in selectedVectorFileBlockers"
+                  :key="blocker"
+                  type="warning"
+                  show-icon
+                  :closable="false"
+                  :title="blocker"
+                />
+              </div>
+            </ElTabPane>
+          </ElTabs>
+        </template>
+        <ElEmpty v-else description="请选择资料文件" />
+      </ElDrawer>
+
+      <ElDrawer
         v-model="reviewAuditDrawerVisible"
         size="760px"
         class="fde-audit-drawer"
@@ -12275,6 +14117,314 @@ onMounted(loadData)
   grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
 }
 
+.project-overview-command-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 16px;
+}
+
+.project-overview-governance-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(260px, 0.94fr) minmax(260px, 0.94fr);
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 16px;
+}
+
+.project-overview-chart-panel,
+.project-overview-governance-panel {
+  min-width: 0;
+}
+
+.project-overview-chart-panel--full {
+  grid-column: 1 / -1;
+}
+
+.project-overview-echart {
+  width: 100%;
+  min-width: 0;
+}
+
+.project-overview-node-status-bars {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 2px 2px;
+}
+
+.project-overview-node-status-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 148px) minmax(240px, 1fr) minmax(74px, auto);
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  min-height: 36px;
+}
+
+.project-overview-node-status-row > span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 20px;
+  color: #52617a;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-overview-node-status-track {
+  position: relative;
+  height: 24px;
+  min-width: 0;
+  overflow: hidden;
+  background: repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent calc(10% - 1px),
+      #e7eef8 calc(10% - 1px),
+      #e7eef8 10%
+    ),
+    #f8fbff;
+  border: 1px solid #dbe8f7;
+  border-radius: 8px;
+}
+
+.project-overview-node-status-track i {
+  display: block;
+  height: 100%;
+  min-width: 4px;
+  background: #2563eb;
+  border-radius: 7px;
+  box-shadow: 0 7px 18px rgb(37 99 235 / 18%);
+}
+
+.project-overview-node-status-track::after {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 60%);
+  content: '';
+}
+
+.project-overview-node-status-row strong {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 22px;
+  color: #172033;
+  font-variant-numeric: tabular-nums;
+}
+
+.project-overview-node-status-row strong small {
+  font-size: 11px;
+  font-weight: 800;
+  color: #7b8798;
+}
+
+.project-overview-node-status-row--green .project-overview-node-status-track i {
+  background: #16a34a;
+  box-shadow: 0 7px 18px rgb(22 163 74 / 18%);
+}
+
+.project-overview-node-status-row--orange .project-overview-node-status-track i {
+  background: #f59e0b;
+  box-shadow: 0 7px 18px rgb(245 158 11 / 18%);
+}
+
+.project-overview-node-status-row--red .project-overview-node-status-track i {
+  background: #dc2626;
+  box-shadow: 0 7px 18px rgb(220 38 38 / 16%);
+}
+
+.project-overview-diagnostics {
+  margin-bottom: 16px;
+  background: #fff;
+  border: 1px solid #dbe8f7;
+  border-radius: 8px;
+}
+
+.project-overview-diagnostics summary {
+  display: flex;
+  min-height: 48px;
+  padding: 0 14px;
+  cursor: pointer;
+  list-style: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.project-overview-diagnostics summary::-webkit-details-marker {
+  display: none;
+}
+
+.project-overview-diagnostics summary::after {
+  font-size: 13px;
+  font-weight: 900;
+  color: #2563eb;
+  content: '展开';
+}
+
+.project-overview-diagnostics[open] summary {
+  border-bottom: 1px solid #e6edf7;
+}
+
+.project-overview-diagnostics[open] summary::after {
+  content: '收起';
+}
+
+.project-overview-diagnostics summary span {
+  font-size: 14px;
+  font-weight: 900;
+  color: #172033;
+}
+
+.project-overview-diagnostics summary small {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 800;
+  color: #667085;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-overview-diagnostics .project-audit-health-grid {
+  padding: 14px 14px 0;
+}
+
+.project-overview-diagnostics .project-audit-node-grid {
+  padding: 0 14px 14px;
+}
+
+.project-overview-capability-list,
+.project-overview-task-list,
+.project-overview-action-list {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.project-overview-capability-item,
+.project-overview-task-item,
+.project-overview-action-item {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  padding: 12px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid #dbe8f7;
+  border-radius: 8px;
+  outline: none;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.project-overview-capability-item {
+  grid-template-columns: minmax(84px, 0.38fr) minmax(90px, 0.45fr) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.project-overview-task-item,
+.project-overview-action-item {
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 6px 10px;
+  align-items: start;
+}
+
+.project-overview-task-item span,
+.project-overview-action-item span {
+  grid-row: span 2;
+  min-height: 26px;
+  padding: 5px 7px;
+  font-size: 12px;
+  font-weight: 900;
+  color: #1d4ed8;
+  text-align: center;
+  background: #eef5ff;
+  border: 1px solid #cfe0ff;
+  border-radius: 6px;
+}
+
+.project-overview-capability-item span,
+.project-overview-task-item strong,
+.project-overview-action-item strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #172033;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-overview-capability-item strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 18px;
+  color: #23314a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-overview-capability-item small,
+.project-overview-task-item small,
+.project-overview-action-item small {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 17px;
+  color: #667085;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-overview-capability-item:hover,
+.project-overview-task-item:hover,
+.project-overview-action-item:hover,
+.project-overview-capability-item:focus-visible,
+.project-overview-task-item:focus-visible,
+.project-overview-action-item:focus-visible {
+  background: #f8fbff;
+  border-color: #9dc0f7;
+  transform: translateY(-1px);
+}
+
+.project-overview-item--green {
+  background: #f3fbf7;
+  border-color: #c9ead8;
+}
+
+.project-overview-item--blue {
+  background: #f4f8ff;
+  border-color: #cfe0ff;
+}
+
+.project-overview-item--orange {
+  background: #fff8ed;
+  border-color: #f6d6a5;
+}
+
+.project-overview-item--red {
+  background: #fff3f1;
+  border-color: #ffc9c3;
+}
+
 .project-audit-side-stack {
   display: grid;
   gap: 16px;
@@ -12587,6 +14737,132 @@ onMounted(loadData)
   border-color: #ffc8c1;
 }
 
+.vector-quality-board {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 16px;
+}
+
+.vector-lineage-intro {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  background: linear-gradient(180deg, #f8fbff, #fff);
+  border: 1px solid #dbe8f7;
+  border-radius: 8px;
+  box-shadow: 0 8px 18px rgb(15 23 42 / 4%);
+}
+
+.vector-lineage-intro div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.vector-lineage-intro span,
+.vector-lineage-intro strong,
+.vector-lineage-intro small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vector-lineage-intro span {
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #2563eb;
+}
+
+.vector-lineage-intro strong {
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 22px;
+  color: #172033;
+}
+
+.vector-lineage-intro small {
+  font-size: 12px;
+  line-height: 18px;
+  color: #64748b;
+}
+
+.vector-quality-card {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  min-height: 112px;
+  padding: 15px;
+  background: #fff;
+  border: 1px solid #dfe8f5;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgb(15 23 42 / 4%);
+}
+
+.vector-quality-card span,
+.vector-quality-card strong,
+.vector-quality-card small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vector-quality-card span {
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.vector-quality-card strong {
+  font-size: 24px;
+  font-weight: 900;
+  line-height: 30px;
+  color: #172033;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.vector-quality-card small {
+  display: -webkit-box;
+  font-size: 12px;
+  line-height: 18px;
+  color: #64748b;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.vector-quality-card--green {
+  border-color: #c9ead8;
+}
+
+.vector-quality-card--blue {
+  border-color: #cbdcf8;
+}
+
+.vector-quality-card--orange {
+  border-color: #f6d6a5;
+}
+
+.vector-quality-card--red {
+  border-color: #ffc8c1;
+}
+
+.vector-quality-panel :deep(.el-card__body) {
+  padding: 12px;
+}
+
+.vector-quality-echart {
+  width: 100%;
+  min-width: 0;
+}
+
 .chart-panel :deep(.el-card__body) {
   padding: 10px;
 }
@@ -12796,6 +15072,32 @@ onMounted(loadData)
   scrollbar-width: thin;
 }
 
+.knowledge-chart-shell:focus-visible,
+.langgraph-chart-shell:focus-visible {
+  outline: 0;
+  border-color: #8eb8ff;
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 14%);
+}
+
+.knowledge-chart-shell::after,
+.langgraph-chart-shell::after {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  z-index: 2;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 16px;
+  color: #47627f;
+  pointer-events: none;
+  background: rgb(255 255 255 / 88%);
+  border: 1px solid #dbe8f7;
+  border-radius: 999px;
+  box-shadow: 0 6px 16px rgb(15 23 42 / 7%);
+  content: '拖动平移 · 双指/Ctrl滚轮缩放 · 0重置';
+}
+
 .knowledge-chart-shell.is-panning,
 .langgraph-chart-shell.is-panning {
   cursor: grabbing;
@@ -12803,8 +15105,11 @@ onMounted(loadData)
 
 .chart-zoom-frame {
   position: relative;
-  overflow: visible;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
   flex: 0 0 auto;
+  contain: strict;
 }
 
 .chart-zoom-content {
@@ -12812,6 +15117,7 @@ onMounted(loadData)
   inset: 0 auto auto 0;
   transform-origin: 0 0;
   will-change: transform;
+  backface-visibility: hidden;
 }
 
 .knowledge-chart-shell::-webkit-scrollbar,
@@ -12833,6 +15139,7 @@ onMounted(loadData)
 }
 
 .knowledge-chart-shell--tree {
+  height: 380px;
   background-size:
     42px 42px,
     42px 42px,
@@ -12850,7 +15157,7 @@ onMounted(loadData)
 }
 
 .knowledge-chart-shell--tree .knowledge-echart {
-  min-width: 1120px;
+  min-width: 1320px;
 }
 
 .knowledge-chart-shell--timeline .knowledge-echart {
@@ -13113,7 +15420,8 @@ onMounted(loadData)
 .langgraph-chart-shell {
   position: relative;
   max-width: 100%;
-  min-height: 462px;
+  height: 462px;
+  min-height: 0;
   padding: 8px;
   overflow: hidden;
   cursor: grab;
@@ -13136,7 +15444,7 @@ onMounted(loadData)
 
 .langgraph-echart {
   width: 100%;
-  min-width: 980px;
+  min-width: 1180px;
   touch-action: none;
 }
 
@@ -14297,6 +16605,211 @@ onMounted(loadData)
   margin-top: 12px;
 }
 
+.vector-file-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.vector-file-chart-card {
+  min-width: 0;
+  border-radius: 8px;
+}
+
+.vector-file-pagination {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.vector-file-blocker-list {
+  display: grid;
+  gap: 10px;
+}
+
+.vector-evidence-workbench {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.85fr) minmax(560px, 1.25fr) minmax(280px, 0.65fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.vector-source-preview-card,
+.vector-evidence-detail-card {
+  min-width: 0;
+  border-radius: 8px;
+}
+
+.vector-card-header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.vector-card-header strong,
+.vector-card-header span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vector-card-header span {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.vector-source-canvas {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 520px;
+  overflow: hidden;
+  background: linear-gradient(90deg, rgb(37 99 235 / 5%) 1px, transparent 1px),
+    linear-gradient(rgb(37 99 235 / 5%) 1px, transparent 1px), #f8fafc;
+  background-size: 32px 32px;
+  border: 1px solid #d7e2f1;
+  border-radius: 8px;
+}
+
+.vector-source-media {
+  width: 100%;
+  height: 520px;
+  border: 0;
+  object-fit: contain;
+  background: #fff;
+}
+
+.vector-source-placeholder {
+  display: grid;
+  gap: 8px;
+  max-width: 82%;
+  padding: 20px;
+  text-align: center;
+  background: #fff;
+  border: 1px dashed #cbd8ea;
+  border-radius: 8px;
+}
+
+.vector-source-placeholder strong,
+.vector-source-placeholder span,
+.vector-source-placeholder small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vector-source-placeholder strong {
+  color: #172033;
+}
+
+.vector-source-placeholder span,
+.vector-source-placeholder small {
+  color: #64748b;
+}
+
+.vector-evidence-box {
+  position: absolute;
+  min-width: 28px;
+  min-height: 22px;
+  border: 2px solid #2563eb;
+  border-radius: 4px;
+  box-shadow: 0 0 0 9999px rgb(15 23 42 / 12%);
+}
+
+.vector-evidence-box span {
+  position: absolute;
+  top: -26px;
+  left: -2px;
+  padding: 2px 7px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #fff;
+  white-space: nowrap;
+  background: #2563eb;
+  border-radius: 6px;
+}
+
+.vector-evidence-panels {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.vector-evidence-detail-card {
+  position: sticky;
+  top: 8px;
+}
+
+.vector-evidence-json {
+  max-height: 300px;
+  padding: 12px;
+  margin: 12px 0 0;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #172033;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #f8fafc;
+  border: 1px solid #e6edf7;
+  border-radius: 8px;
+}
+
+.vector-pipeline-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.vector-pipeline-stage {
+  min-width: 0;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #e6edf7;
+  border-radius: 8px;
+}
+
+.vector-pipeline-stage span,
+.vector-pipeline-stage strong,
+.vector-pipeline-stage small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vector-pipeline-stage span {
+  font-size: 12px;
+  font-weight: 800;
+  color: #64748b;
+}
+
+.vector-pipeline-stage strong {
+  margin-top: 4px;
+  font-size: 15px;
+  color: #172033;
+}
+
+.vector-pipeline-stage small {
+  margin-top: 3px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.vector-pipeline-two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.vector-pipeline-card {
+  min-width: 0;
+  border-radius: 8px;
+}
+
 :global(.fde-audit-drawer .el-drawer__header) {
   padding: 18px 20px 12px;
   margin-bottom: 0;
@@ -14491,6 +17004,10 @@ onMounted(loadData)
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   }
 
+  .vector-quality-board {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  }
+
   .lineage-document-grid,
   .pageindex-friendly-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -14508,6 +17025,8 @@ onMounted(loadData)
 }
 
 @media (width <= 1180px) {
+  .project-overview-command-grid,
+  .project-overview-governance-grid,
   .project-audit-health-grid,
   .project-audit-node-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -14544,6 +17063,14 @@ onMounted(loadData)
     width: 100%;
   }
 
+  .project-overview-capability-item {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .project-overview-capability-item small {
+    grid-column: 1 / -1;
+  }
+
   .project-audit-module-bar {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -14572,6 +17099,15 @@ onMounted(loadData)
 
   .audit-flow-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .vector-quality-board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .vector-lineage-intro {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .lineage-document-grid,
@@ -14635,6 +17171,26 @@ onMounted(loadData)
   .audit-drawer-hero {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .vector-file-chart-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .vector-pipeline-strip,
+  .vector-pipeline-two-col,
+  .vector-evidence-workbench {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .vector-evidence-detail-card {
+    position: static;
+  }
+
+  .vector-source-canvas,
+  .vector-source-media {
+    min-height: 360px;
+    height: 360px;
+  }
 }
 
 @media (width <= 520px) {
@@ -14645,6 +17201,10 @@ onMounted(loadData)
   }
 
   .audit-flow-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .vector-quality-board {
     grid-template-columns: minmax(0, 1fr);
   }
 

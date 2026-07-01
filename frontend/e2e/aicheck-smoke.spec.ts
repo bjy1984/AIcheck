@@ -755,24 +755,37 @@ test.describe('AIcheck deep route menu', () => {
     await expect(page.locator('.fde-console')).toContainText('PageIndex')
     await expect(page.locator('.fde-console')).toContainText('Lineage 来源')
     await expect(page.locator('.fde-console')).toContainText('后端审计投影')
+    await page.getByTestId('fde-open-vector-file-detail').first().click()
+    const vectorDrawer = page.getByRole('dialog', { name: '文件向量质量详情' })
+    await expect(page.getByTestId('fde-vector-file-drawer')).toBeVisible()
+    await expect(vectorDrawer).toContainText('图片/文件')
+    await expect(vectorDrawer).toContainText('OCR 结构化结果')
+    await expect(vectorDrawer).toContainText('文本与切片')
+    await expect(vectorDrawer).toContainText('向量格式化数据')
+    await expect(vectorDrawer).toContainText('索引')
+    await expect(vectorDrawer).toContainText('LLM 检索')
+    await vectorDrawer.getByRole('tab', { name: '切片明细' }).click()
+    await expect(vectorDrawer).toContainText('真实切片')
+    await page.keyboard.press('Escape')
+    await expect(vectorDrawer).toBeHidden()
 
     await page.goto('/#/fde/projects?view=pageindex')
     await page.waitForLoadState('networkidle')
     await waitForFdeProjectAuditReady(page)
-    await expect(page.locator('.fde-console')).toContainText('PageIndex 友好判读')
+    await expect(page.locator('.fde-console')).toContainText('章节溯源友好判读')
     await expect(page.locator('.fde-console')).toContainText('每次检索为什么这样走')
-    await expect(page.locator('.fde-console')).toContainText('PageIndex 检索溯源树')
+    await expect(page.locator('.fde-console')).toContainText('章节溯源检索树')
     await expect(page.locator('.fde-console .knowledge-chart-shell canvas').first()).toBeVisible()
     await expectFixedChartTransformZoom(
       page,
       page.locator('.fde-console .knowledge-chart-shell--tree').first(),
       {
-        zoomButtonName: '放大 PageIndex 检索溯源树',
-        resetButtonName: '重置 PageIndex 检索溯源树',
+        zoomButtonName: '放大章节溯源检索树',
+        resetButtonName: '重置章节溯源检索树',
         echartSelector: '.knowledge-echart'
       }
     )
-    await expect(page.locator('.fde-console')).toContainText('PageIndex 路由追踪')
+    await expect(page.locator('.fde-console')).toContainText('章节溯源路由追踪')
     await expect(page.locator('.fde-console')).toContainText('问题分类')
     await expect(page.locator('.fde-console')).toContainText('条款映射')
     await expect(page.locator('.fde-console .pageindex-trace-card').first()).toContainText(
@@ -784,7 +797,7 @@ test.describe('AIcheck deep route menu', () => {
     await page.goto('/#/fde/projects?view=langgraph')
     await page.waitForLoadState('networkidle')
     await waitForFdeProjectAuditReady(page)
-    await expect(page.locator('.fde-console')).toContainText('LangGraph 编排图')
+    await expect(page.locator('.fde-console')).toContainText('Agent 编排图')
     await expect(page.locator('.fde-console')).toContainText('Temporal 执行时间线')
     await expect(page.locator('.fde-console .knowledge-chart-shell canvas').first()).toBeVisible()
     await expectFixedChartTransformZoom(
@@ -803,8 +816,8 @@ test.describe('AIcheck deep route menu', () => {
       page,
       page.locator('.fde-console .langgraph-chart-shell').first(),
       {
-        zoomButtonName: '放大 LangGraph 编排图',
-        resetButtonName: '重置 LangGraph 编排图',
+        zoomButtonName: '放大 Agent 审查编排图',
+        resetButtonName: '重置 Agent 审查编排图',
         echartSelector: '.langgraph-echart'
       }
     )
@@ -2255,11 +2268,11 @@ test.describe('AIcheck business writeback flows', () => {
       .locator('.el-form-item')
       .filter({ hasText: 'Embedding 模型' })
       .locator('input')
-    await embeddingInput.fill('text-embedding-3-small')
+    await embeddingInput.fill('BAAI/bge-m3')
     await configPanel.getByRole('button', { name: '保存配置' }).click()
 
     await expect(page.locator('.el-message').filter({ hasText: '知识库配置已保存' })).toBeVisible()
-    await expect(embeddingInput).toHaveValue('text-embedding-3-small')
+    await expect(embeddingInput).toHaveValue('BAAI/bge-m3')
   })
 
   test('knowledge multi-model compare renders fresh result', async ({ page }) => {

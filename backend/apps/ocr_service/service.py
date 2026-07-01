@@ -12,7 +12,12 @@ from typing import Any
 from uuid import uuid4
 
 from apps.ocr_service.engines import local_engines
-from apps.ocr_service.fusion import fuse_parse_result, missing_required_tables
+from apps.ocr_service.fusion import (
+    fuse_parse_result,
+    missing_required_tables,
+    normalize_field_key,
+    validate_business_field_value,
+)
 from apps.ocr_service.jobs import DocumentParseJobStore
 from apps.ocr_service.pages import public_document_pages, render_document_pages
 from apps.ocr_service.preprocess import generate_image_variants, requested_variant_names
@@ -32,6 +37,7 @@ from apps.ocr_service.result_cache import (
 )
 from apps.ocr_service.routing import route_engine_variants
 from apps.ocr_service.runtime_doctor import build_runtime_doctor
+from apps.ocr_service.utils import parse_bool
 from libs.contracts.responses import server_time
 from libs.integrations.storage import object_storage, parse_storage_url
 
@@ -90,6 +96,7 @@ REMEDIATION_TRIGGER_REASONS = {
     "FIELD_VALUE_CONFLICT",
     "REQUIRED_TABLE_MISSING",
     "TABLE_STRUCTURE_LOW_CONFIDENCE",
+    "TABLE_CELL_EVIDENCE_LOW",
     "TABLE_EVIDENCE_MISSING",
     "TABLE_ENGINE_CONFLICT",
     "SEAL_TEXT_LOW_CONFIDENCE",
@@ -101,6 +108,7 @@ REMEDIATION_TRIGGER_REASONS = {
 TABLE_REMEDIATION_REASONS = {
     "REQUIRED_TABLE_MISSING",
     "TABLE_STRUCTURE_LOW_CONFIDENCE",
+    "TABLE_CELL_EVIDENCE_LOW",
     "TABLE_EVIDENCE_MISSING",
     "TABLE_ENGINE_CONFLICT",
 }
@@ -554,6 +562,7 @@ class OcrService:
             return result
         remediated = deepcopy(result)
         remediated["remediationRuns"] = []
+        base_remediation_variants = remediation_variants_for_reasons(remediated, variants, reasons, profile=profile)
         for engine in self.engines:
             if not engine_should_remediate(engine.name, reasons):
                 continue
@@ -564,7 +573,7 @@ class OcrService:
             remediation_options = {**options, "remediationReasons": sorted(reasons), "runRemediation": True}
             routed_variants = route_engine_variants(
                 engine.name,
-                remediation_variants_for_reasons(remediated, variants, reasons, profile=profile),
+                base_remediation_variants,
                 profile=profile,
                 page_quality=page_quality,
                 options={**remediation_options, "documentPath": str(source_path)},
@@ -784,16 +793,18 @@ def normalize_raw_fields(raw_fields: Any) -> list[dict[str, Any]]:
         raw_code = first_present(raw, "fieldCode", "code", "key", "field")
         field_code = canonical_field_code(raw_code or name)
         normalized.append(
-            {
-                "fieldCode": field_code,
-                "fieldName": str(name),
-                "fieldValue": str(value),
-                "pageNo": page_no_from(raw),
-                "bbox": first_present(raw, "bbox", "polygon", "box"),
-                "confidence": first_present(raw, "confidence", "calibrated_confidence", "score", default=0.0),
-                "extractionMethod": first_present(raw, "extractionMethod", "method", default="PaddleOCR"),
-                "sourceEngine": raw.get("sourceEngine"),
-            }
+            drop_none_fields(
+                {
+                    "fieldCode": field_code,
+                    "fieldName": str(name),
+                    "fieldValue": str(value),
+                    "pageNo": page_no_from(raw),
+                    "bbox": first_present(raw, "bbox", "polygon", "box"),
+                    "confidence": first_present(raw, "confidence", "calibrated_confidence", "score", default=0.0),
+                    "extractionMethod": first_present(raw, "extractionMethod", "method", default="PaddleOCR"),
+                    "sourceEngine": raw.get("sourceEngine"),
+                }
+            )
         )
     return normalized
 
@@ -805,9 +816,9 @@ def fields_from_seals(seals: Any) -> list[dict[str, Any]]:
     for seal in seals:
         if not isinstance(seal, dict):
             continue
-        if "visual_candidate_only" in (seal.get("qualityFlags") or []):
+        if seal_is_candidate_only(seal):
             continue
-        page_no = int(first_present(seal, "pageNo", default=None) or (int(first_present(seal, "page_index", default=0)) + 1))
+        page_no = page_no_from(seal)
         polygon = first_present(seal, "polygon", "bbox")
         seal_fields = seal.get("fields") or {}
         if isinstance(seal_fields, list):
@@ -824,8 +835,13 @@ def fields_from_seals(seals: Any) -> list[dict[str, Any]]:
                             "fieldValue": str(value),
                             "pageNo": page_no,
                             "bbox": first_present(item, "bbox", default=polygon),
+                            "coordinateSystem": item.get("coordinateSystem") or seal.get("coordinateSystem"),
+                            "sourceCoordinateSystem": item.get("sourceCoordinateSystem") or seal.get("sourceCoordinateSystem"),
+                            "coordinateTransformStatus": item.get("coordinateTransformStatus") or seal.get("coordinateTransformStatus"),
+                            "qualityFlags": item.get("qualityFlags") or seal.get("qualityFlags") or [],
                             "confidence": first_present(item, "confidence", "ocrConfidence", default=0.0),
                             "extractionMethod": "PaddleOCR+seal",
+                            "sourceEngine": item.get("sourceEngine") or seal.get("sourceEngine"),
                         }
                     )
             continue
@@ -842,11 +858,25 @@ def fields_from_seals(seals: Any) -> list[dict[str, Any]]:
                     "fieldValue": str(field_value),
                     "pageNo": page_no,
                     "bbox": polygon,
+                    "coordinateSystem": seal.get("coordinateSystem"),
+                    "sourceCoordinateSystem": seal.get("sourceCoordinateSystem"),
+                    "coordinateTransformStatus": seal.get("coordinateTransformStatus"),
+                    "qualityFlags": seal.get("qualityFlags") or [],
                     "confidence": first_present(value, "calibrated_confidence", "visual_confidence", "confidence", default=0.0),
                     "extractionMethod": "PaddleOCR+seal",
+                    "sourceEngine": seal.get("sourceEngine"),
                 }
             )
     return fields
+
+
+def seal_is_candidate_only(seal: dict[str, Any]) -> bool:
+    flags = {str(flag) for flag in seal.get("qualityFlags") or []}
+    if parse_bool(seal.get("candidateOnly"), False) is True:
+        return True
+    if parse_bool(seal.get("canSatisfyRequiredSeal"), None) is False:
+        return True
+    return bool({"text_only_seal_candidate", "visual_candidate_only", "requires_seal_ocr_text"}.intersection(flags))
 
 
 def normalize_raw_seals(seals: Any) -> list[dict[str, Any]]:
@@ -857,22 +887,32 @@ def normalize_raw_seals(seals: Any) -> list[dict[str, Any]]:
         if not isinstance(seal, dict):
             continue
         normalized.append(
-            {
-                "sealId": str(seal.get("sealId") or f"seal_{index}"),
-                "pageNo": int(first_present(seal, "pageNo", default=None) or (int(first_present(seal, "page_index", default=0)) + 1)),
-                "sealType": seal.get("sealType") or seal.get("type") or "unknown",
-                "sealName": str(first_present(seal, "sealName", "text", "name", default="")),
-                "bbox": first_present(seal, "bbox", "box"),
-                "polygon": first_present(seal, "polygon", "dt_poly"),
-                "pageWidth": seal.get("pageWidth"),
-                "pageHeight": seal.get("pageHeight"),
-                "visualColor": seal.get("visualColor"),
-                "cropObjectKey": seal.get("cropObjectKey"),
-                "visualConfidence": first_present(seal, "visualConfidence", "visual_confidence", "det_score", "score", default=0.0),
-                "ocrConfidence": first_present(seal, "ocrConfidence", "ocr_confidence", "rec_score", "score", default=0.0),
-                "fields": seal.get("fields") or [],
-                "qualityFlags": seal.get("qualityFlags") or [],
-            }
+            drop_none_fields(
+                {
+                    "sealId": str(seal.get("sealId") or f"seal_{index}"),
+                    "pageNo": page_no_from(seal),
+                    "sealType": seal.get("sealType") or seal.get("type") or "unknown",
+                    "sealName": str(first_present(seal, "sealName", "text", "name", default="")),
+                    "bbox": first_present(seal, "bbox", "box"),
+                    "polygon": first_present(seal, "polygon", "dt_poly"),
+                    "pageWidth": seal.get("pageWidth"),
+                    "pageHeight": seal.get("pageHeight"),
+                    "visualColor": seal.get("visualColor"),
+                    "cropObjectKey": seal.get("cropObjectKey"),
+                    "visualConfidence": first_present(seal, "visualConfidence", "visual_confidence", "det_score", "score", default=0.0),
+                    "ocrConfidence": first_present(seal, "ocrConfidence", "ocr_confidence", "rec_score", "score", default=0.0),
+                    "fields": seal.get("fields") or [],
+                    "qualityFlags": seal.get("qualityFlags") or [],
+                    "candidateOnly": parse_bool(seal.get("candidateOnly"), False),
+                    "canSatisfyRequiredSeal": parse_bool(seal.get("canSatisfyRequiredSeal"), None),
+                    "sealEvidenceLevel": seal.get("sealEvidenceLevel"),
+                    "coordinateSystem": seal.get("coordinateSystem"),
+                    "sourceCoordinateSystem": seal.get("sourceCoordinateSystem"),
+                    "coordinateTransform": seal.get("coordinateTransform"),
+                    "coordinateTransformStatus": seal.get("coordinateTransformStatus"),
+                    "sourceEngine": seal.get("sourceEngine"),
+                }
+            )
         )
     return normalized
 
@@ -955,8 +995,8 @@ def engine_should_remediate(engine_name: str, reasons: set[str]) -> bool:
     if engine_name in {"pp_structure_v3", "opencv_table_grid_subprocess"}:
         return bool(reasons.intersection(TABLE_REMEDIATION_REASONS))
     if engine_name in {"paddle_ocr_subprocess", "paddle_ocr_v6"}:
-        return bool(reasons.intersection(TEXT_REMEDIATION_REASONS))
-    if engine_name in {"paddlex_seal_recognition", "agentdesign_seal_ocr_subprocess"}:
+        return bool(reasons.intersection(TEXT_REMEDIATION_REASONS | SEAL_REMEDIATION_REASONS))
+    if engine_name in {"paddlex_seal_recognition", "agentdesign_seal_ocr_subprocess", "visual_seal_candidate_subprocess"}:
         return bool(reasons.intersection(SEAL_REMEDIATION_REASONS))
     return False
 
@@ -1011,7 +1051,7 @@ def remediation_variants_for_reasons(
                 target_type="seal",
                 purpose="seal",
                 padding_ratio=0.22,
-                max_items=4,
+                max_items=8,
                 reasons=reasons,
             )
         )
@@ -1065,7 +1105,7 @@ def missing_table_remediation_targets(
         return []
     targets = []
     required = [str(item) for item in (profile.get("requiredTables") or quality.get("missingTables") or []) if str(item).strip()]
-    for variant in original_page_variants(variants)[:3]:
+    for variant in ranked_table_remediation_pages(result, variants, required)[:4]:
         dims = variant_dimensions(variant)
         if not dims:
             continue
@@ -1101,18 +1141,18 @@ def missing_seal_remediation_targets(
     originals = original_page_variants(variants)
     if not originals:
         return []
-    edge_pages = dedupe_by_page([originals[0], originals[-1]])
+    originals_by_page = {variant_page_no(variant): variant for variant in originals}
+    candidate_pages = seal_remediation_page_order(result, variants, originals)
     targets = []
-    for variant in edge_pages:
+    for page_no in candidate_pages:
+        variant = originals_by_page.get(page_no)
+        if variant is None:
+            continue
         dims = variant_dimensions(variant)
         if not dims:
             continue
         width, height = dims
-        page_no = variant_page_no(variant)
-        for region_name, bbox in {
-            "bottom_right": [width * 0.48, height * 0.52, width * 0.98, height * 0.96],
-            "bottom_left": [width * 0.02, height * 0.52, width * 0.52, height * 0.96],
-        }.items():
+        for region_name, bbox in seal_region_bboxes_for_page(page_no, width, height, result, variants, candidate_pages):
             targets.append(
                 {
                     "sealId": f"missing_seal_{region_name}_page_{page_no}",
@@ -1120,10 +1160,141 @@ def missing_seal_remediation_targets(
                     "bbox": bbox,
                     "coordinateSystem": "rendered_pixels",
                     "coordinateTransformStatus": "original",
-                    "qualityFlags": ["missing_required_seal_region_crop"],
+                    "sourceKind": "generic_signature_region",
+                    "visualConfidence": 0.0,
+                    "qualityFlags": ["missing_required_seal_region_crop", "generic_seal_region_crop"],
                 }
             )
     return targets
+
+
+SEAL_REMEDIATION_KEYWORDS = ["盖章", "签发", "批准", "单位", "日期", "审核", "经办", "负责人", "签章", "印章"]
+
+
+def seal_remediation_page_order(
+    result: dict[str, Any],
+    variants: list[dict[str, Any]],
+    originals: list[dict[str, Any]],
+) -> list[int]:
+    original_pages = [variant_page_no(variant) for variant in originals]
+    if not original_pages:
+        return []
+    visual_pages = {
+        variant_page_no(variant)
+        for variant in variants
+        if isinstance(variant, dict) and str(variant.get("purpose") or "") == "seal"
+    }
+    for page_quality in result.get("pageQuality") or []:
+        quality = page_quality.get("quality") if isinstance(page_quality, dict) else {}
+        if isinstance(quality, dict) and quality.get("hasVisualSealCandidate"):
+            visual_pages.add(page_no_from(page_quality))
+    keyword_pages = {
+        page_no_from(fragment)
+        for fragment in result.get("fragments") or []
+        if isinstance(fragment, dict) and any(keyword in str(fragment.get("text") or "") for keyword in SEAL_REMEDIATION_KEYWORDS)
+    }
+    edge_pages = [original_pages[0], original_pages[-1]]
+    if len(original_pages) >= 2:
+        edge_pages.append(original_pages[-2])
+    ordered = [
+        *sorted(visual_pages),
+        *sorted(keyword_pages),
+        *edge_pages,
+    ]
+    available = set(original_pages)
+    return [page for page in dict.fromkeys(ordered) if page in available]
+
+
+def seal_region_bboxes_for_page(
+    page_no: int,
+    width: float,
+    height: float,
+    result: dict[str, Any],
+    variants: list[dict[str, Any]],
+    candidate_pages: list[int],
+) -> list[tuple[str, list[float]]]:
+    visual_pages = {
+        variant_page_no(variant)
+        for variant in variants
+        if isinstance(variant, dict) and str(variant.get("purpose") or "") == "seal"
+    }
+    keyword_pages = {
+        page_no_from(fragment)
+        for fragment in result.get("fragments") or []
+        if isinstance(fragment, dict) and any(keyword in str(fragment.get("text") or "") for keyword in SEAL_REMEDIATION_KEYWORDS)
+    }
+    if page_no in visual_pages:
+        return [
+            ("visual_full", [width * 0.05, height * 0.05, width * 0.95, height * 0.95]),
+            ("visual_top_right", [width * 0.48, height * 0.02, width * 0.98, height * 0.52]),
+            ("visual_bottom_right", [width * 0.48, height * 0.48, width * 0.98, height * 0.98]),
+        ]
+    if page_no in keyword_pages:
+        return [
+            ("keyword_signature_band", [width * 0.20, height * 0.30, width * 0.98, height * 0.96]),
+            ("keyword_right_half", [width * 0.48, height * 0.10, width * 0.98, height * 0.96]),
+        ]
+    return [
+        ("bottom_right", [width * 0.48, height * 0.52, width * 0.98, height * 0.96]),
+        ("bottom_left", [width * 0.02, height * 0.52, width * 0.52, height * 0.96]),
+        ("top_right", [width * 0.48, height * 0.02, width * 0.98, height * 0.46]),
+    ]
+
+
+TABLE_REMEDIATION_KEYWORDS = {
+    "piping_characteristic_table": ["管道特性", "管道代号", "管线号", "PIPING", "CHARACTERISTIC"],
+    "weld_detection_result_table": ["焊口编号", "检测方法", "评定级别", "RT", "UT", "检测比例"],
+    "material_chemical_composition_table": ["化学成分", "碳", "锰", "硅", "C", "Mn", "Si"],
+    "mechanical_property_table": ["力学性能", "抗拉强度", "屈服", "延伸率"],
+    "construction_record_table": ["施工记录", "施工日期", "施工内容", "检查结果"],
+    "welding_record_table": ["焊接记录", "焊口编号", "焊工", "焊接日期"],
+}
+
+
+def ranked_table_remediation_pages(
+    result: dict[str, Any],
+    variants: list[dict[str, Any]],
+    required_tables: list[str],
+) -> list[dict[str, Any]]:
+    originals = original_page_variants(variants)
+    if not originals:
+        return []
+    table_variant_pages = {variant_page_no(variant) for variant in variants if variant.get("purpose") == "table"}
+    layout_table_pages = {
+        page_no_from(block)
+        for block in result.get("layoutBlocks") or []
+        if isinstance(block, dict) and "table" in str(block.get("blockType") or block.get("type") or "").lower()
+    }
+    fragments_by_page: dict[int, list[str]] = {}
+    for fragment in result.get("fragments") or []:
+        if isinstance(fragment, dict):
+            fragments_by_page.setdefault(page_no_from(fragment), []).append(str(fragment.get("text") or ""))
+    keywords = table_keywords(required_tables)
+    first_page = variant_page_no(originals[0])
+    last_page = variant_page_no(originals[-1])
+
+    def rank(variant: dict[str, Any]) -> tuple[float, int]:
+        page_no = variant_page_no(variant)
+        text_blob = " ".join(fragments_by_page.get(page_no, []))
+        score = 0.0
+        if page_no in table_variant_pages:
+            score += 6.0
+        if page_no in layout_table_pages:
+            score += 5.0
+        score += min(sum(1 for keyword in keywords if keyword and keyword.lower() in text_blob.lower()), 8) * 1.25
+        if page_no in {first_page, last_page}:
+            score += 0.5
+        return (-score, page_no)
+
+    return sorted(originals, key=rank)
+
+
+def table_keywords(required_tables: list[str]) -> list[str]:
+    keywords: list[str] = []
+    for required in required_tables:
+        key = re.sub(r"_v\d+$", "", str(required or "").strip().lower())
+        keywords.extend(TABLE_REMEDIATION_KEYWORDS.get(key, []))
+    return list(dict.fromkeys([keyword for keyword in keywords if keyword]))
 
 
 def dedupe_crop_targets(targets: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1199,6 +1370,31 @@ FIELD_LABEL_ALIASES = {
     "batch_no": ["炉批号", "批号", "Heat No"],
     "standard_no": ["标准号", "执行标准"],
     "inspection_unit": ["检测单位", "检验单位"],
+}
+
+SEAL_CROP_TEXT_ENGINES = {"paddle_ocr_subprocess", "paddle_ocr_v6", "paddleocr_vl_1_6"}
+FIELD_CODES_WITH_STRONG_VALIDATORS = {
+    "report_no",
+    "certificate_no",
+    "record_no",
+    "drawing_no",
+    "welder_cert_no",
+    "batch_no",
+    "standard_no",
+    "issue_date",
+    "valid_until",
+    "detection_date",
+    "construction_date",
+    "welding_date",
+    "pipe_no",
+    "weld_no",
+    "design_pressure",
+    "test_pressure",
+    "pressure",
+    "detection_method",
+    "evaluation_level",
+    "conclusion",
+    "inspection_conclusion",
 }
 
 
@@ -1282,7 +1478,8 @@ def build_crop_variants(
             or item.get("sealId")
             or len(output) + 1
         )
-        variant_id = f"page_{page_no}_{purpose}_crop_{safe_variant_token(target_id)}"
+        bbox_token = short_hash({"bbox": bbox, "targetId": target_id, "purpose": purpose})
+        variant_id = f"page_{page_no}_{purpose}_crop_{safe_variant_token(target_id)}_{bbox_token}"
         reason_list = sorted(str(reason) for reason in (reasons or set()) if str(reason).strip())
         output.append(
             {
@@ -1312,13 +1509,35 @@ def build_crop_variants(
                     "type": target_type,
                     "id": target_id,
                     "fieldCode": item.get("fieldCode"),
+                    "fieldName": item.get("fieldName"),
                     "reason": reason_list[0] if len(reason_list) == 1 else "remediation_crop",
                     "reasons": reason_list,
+                    "sourceKind": crop_target_source_kind(item, target_type),
+                    "sourceVisualConfidence": item.get("visualConfidence"),
+                    "sourceQualityFlags": list(item.get("qualityFlags") or []),
+                    "sourceSealEvidenceLevel": item.get("sealEvidenceLevel"),
                 },
                 "coordinateTransformStatus": "crop_local",
             }
         )
     return output
+
+
+def crop_target_source_kind(item: dict[str, Any], target_type: str) -> str | None:
+    if target_type != "seal":
+        return None
+    if item.get("sourceKind"):
+        return str(item.get("sourceKind"))
+    flags = {str(flag) for flag in item.get("qualityFlags") or []}
+    if {"generic_seal_region_crop", "missing_required_seal_region_crop"}.intersection(flags):
+        return "generic_signature_region"
+    if (
+        float(item.get("visualConfidence") or 0.0) > 0.0
+        or "visual_candidate_only" in flags
+        or item.get("sealEvidenceLevel") in {"visual_candidate", "visual_plus_seal_crop", "visual_plus_seal_crop_ocr"}
+    ):
+        return "visual_seal_candidate"
+    return "generic_signature_region"
 
 
 def can_use_as_crop_target(item: dict[str, Any]) -> bool:
@@ -1333,6 +1552,10 @@ def can_use_as_crop_target(item: dict[str, Any]) -> bool:
     if status and status not in {"original", "mapped", "mapped_from_crop", "mapped_from_pdf_points"}:
         return False
     return bool(rect_from_bbox(item.get("bbox") or item.get("polygon")))
+
+
+def short_hash(value: Any) -> str:
+    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")).hexdigest()[:8]
 
 
 def original_variant_for_page(variants: list[dict[str, Any]], page_no: int) -> dict[str, Any] | None:
@@ -1494,7 +1717,8 @@ def attach_variant_metadata(
         for item in result.get(key) or []:
             if not isinstance(item, dict):
                 continue
-            item.setdefault("sourceEngine", engine_name)
+            if not item.get("sourceEngine"):
+                item["sourceEngine"] = engine_name
             item["variantId"] = variant_id
             item["selectedVariantId"] = variant_id
             item["preprocessChain"] = chain
@@ -1519,6 +1743,8 @@ def attach_variant_metadata(
                 skip_self=True,
             )
             prefix_item_identity(item, key=key, variant_id=str(variant_id or "document_original"))
+    result.setdefault("fields", []).extend(fields_from_field_crop_fragments(result, variant, engine_name))
+    result.setdefault("seals", []).extend(seals_from_seal_crop_fragments(result, variant, engine_name))
 
 
 def normalize_item_coordinates(
@@ -1534,19 +1760,34 @@ def normalize_item_coordinates(
         map_crop_item_to_page(item, variant)
         return
     if engine_name == "pymupdf_text_layer" and item.get("bbox") and page.get("renderScaleX"):
-        scale_x = float(page.get("renderScaleX") or 1.0)
-        scale_y = float(page.get("renderScaleY") or scale_x)
         bbox = item.get("bbox")
         if isinstance(bbox, list) and len(bbox) == 4:
-            item["bbox"] = [
-                round(float(bbox[0]) * scale_x, 4),
-                round(float(bbox[1]) * scale_y, 4),
-                round(float(bbox[2]) * scale_x, 4),
-                round(float(bbox[3]) * scale_y, 4),
-            ]
+            matrix = page.get("pdfTextToPixelMatrix") or page.get("pdfRenderMatrix")
+            if isinstance(matrix, list) and len(matrix) >= 6:
+                pixmap_x = float(page.get("pdfPixmapX") or 0.0)
+                pixmap_y = float(page.get("pdfPixmapY") or 0.0)
+                item["bbox"] = offset_pdf_pixmap_bbox(
+                    transform_pdf_bbox(bbox, matrix),
+                    pixmap_x=pixmap_x,
+                    pixmap_y=pixmap_y,
+                )
+                item["coordinateTransform"] = {
+                    "matrix": [round(float(value), 6) for value in matrix[:6]],
+                    "pixmapX": round(pixmap_x, 4),
+                    "pixmapY": round(pixmap_y, 4),
+                }
+            else:
+                scale_x = float(page.get("renderScaleX") or 1.0)
+                scale_y = float(page.get("renderScaleY") or scale_x)
+                item["bbox"] = [
+                    round(float(bbox[0]) * scale_x, 4),
+                    round(float(bbox[1]) * scale_y, 4),
+                    round(float(bbox[2]) * scale_x, 4),
+                    round(float(bbox[3]) * scale_y, 4),
+                ]
+                item["coordinateTransform"] = {"scaleX": round(scale_x, 6), "scaleY": round(scale_y, 6)}
             item["sourceCoordinateSystem"] = "pdf_points"
             item["coordinateSystem"] = "rendered_pixels"
-            item["coordinateTransform"] = {"scaleX": round(scale_x, 6), "scaleY": round(scale_y, 6)}
             item["coordinateTransformStatus"] = "mapped_from_pdf_points"
             return
     if str(variant.get("engineScope") or "") == "document" and (item.get("bbox") or item.get("polygon")):
@@ -1557,10 +1798,220 @@ def normalize_item_coordinates(
         flags.add("document_coordinate_unmapped")
         item["qualityFlags"] = sorted(flags)
         return
-    item.setdefault("coordinateSystem", variant.get("coordinateSystem"))
-    if variant.get("sourceCoordinateSystem"):
-        item.setdefault("sourceCoordinateSystem", variant.get("sourceCoordinateSystem"))
-    item.setdefault("coordinateTransformStatus", variant.get("coordinateTransformStatus"))
+    if not item.get("coordinateSystem"):
+        item["coordinateSystem"] = variant.get("coordinateSystem")
+    if variant.get("sourceCoordinateSystem") and not item.get("sourceCoordinateSystem"):
+        item["sourceCoordinateSystem"] = variant.get("sourceCoordinateSystem")
+    if not item.get("coordinateTransformStatus"):
+        item["coordinateTransformStatus"] = variant.get("coordinateTransformStatus")
+
+
+def fields_from_field_crop_fragments(
+    result: dict[str, Any],
+    variant: dict[str, Any],
+    engine_name: str,
+) -> list[dict[str, Any]]:
+    target = variant.get("remediationTarget") if isinstance(variant.get("remediationTarget"), dict) else {}
+    if target.get("type") != "field":
+        return []
+    field_code = normalize_field_key(target.get("fieldCode") or target.get("id") or "")
+    if not field_code:
+        return []
+    fragments = [fragment for fragment in result.get("fragments") or [] if isinstance(fragment, dict) and str(fragment.get("text") or "").strip()]
+    if not fragments:
+        return []
+    labels = FIELD_LABEL_ALIASES.get(field_code, [field_code])
+    candidates = []
+    for fragment in fragments:
+        raw_text = str(fragment.get("text") or "")
+        value = clean_field_crop_value(raw_text, labels)
+        if not value:
+            continue
+        valid, _ = validate_business_field_value(field_code, value)
+        candidates.append((valid, float(fragment.get("confidence") or 0.0), value, fragment))
+    if not candidates:
+        return []
+    valid_candidates = [candidate for candidate in candidates if candidate[0]]
+    selected = max(valid_candidates or candidates, key=lambda item: (item[0], item[1], len(item[2])))
+    valid, confidence, value, fragment = selected
+    bbox = rect_from_bbox(fragment.get("bbox") or fragment.get("polygon")) or rect_from_bbox(variant.get("cropSourceBbox"))
+    if not bbox:
+        return []
+    reason_set = {str(item) for item in target.get("reasons") or [] if str(item).strip()}
+    if target.get("reason"):
+        reason_set.add(str(target.get("reason")))
+    source_flags = {str(flag) for flag in target.get("sourceQualityFlags") or []} | {
+        str(flag) for flag in fragment.get("qualityFlags") or []
+    }
+    label_proximity = "missing_field_label_crop" in source_flags
+    has_strong_validator = field_code in FIELD_CODES_WITH_STRONG_VALIDATORS
+    formal_candidate = field_crop_candidate_is_formal(
+        field_code=field_code,
+        valid=valid,
+        confidence=confidence,
+        has_strong_validator=has_strong_validator,
+        label_proximity=label_proximity,
+        reasons=reason_set,
+    )
+    flags = {*map(str, fragment.get("qualityFlags") or []), "remediation_field_crop"}
+    if not formal_candidate:
+        flags.update({"remediation_field_crop_candidate", "needs_field_review"})
+        if confidence < 0.78:
+            flags.add("field_crop_low_confidence")
+    return [
+        {
+            "fieldCode": field_code,
+            "fieldName": str(target.get("fieldName") or field_code),
+            "fieldValue": value,
+            "pageNo": page_no_from(fragment) or int(variant.get("pageNo") or 1),
+            "bbox": bbox,
+            "coordinateSystem": "rendered_pixels",
+            "sourceCoordinateSystem": fragment.get("sourceCoordinateSystem") or "crop_pixels",
+            "coordinateTransform": fragment.get("coordinateTransform"),
+            "coordinateTransformStatus": fragment.get("coordinateTransformStatus") or "mapped_from_crop",
+            "confidence": round(confidence, 4),
+            "sourceEngine": engine_name,
+            "variantId": variant.get("variantId"),
+            "selectedVariantId": variant.get("variantId"),
+            "extractionMethod": "remediation_field_crop_ocr",
+            "remediationCandidateOnly": not formal_candidate,
+            "qualityFlags": sorted(flags),
+            "remediationTarget": deepcopy(target),
+        }
+    ]
+
+
+def field_crop_candidate_is_formal(
+    *,
+    field_code: str,
+    valid: bool,
+    confidence: float,
+    has_strong_validator: bool,
+    label_proximity: bool,
+    reasons: set[str],
+) -> bool:
+    if "FIELD_FORMAT_INVALID" in reasons:
+        return has_strong_validator and valid
+    if "FIELD_VALUE_CONFLICT" in reasons:
+        return False
+    if "REQUIRED_FIELD_MISSING" in reasons:
+        return (has_strong_validator and valid) or label_proximity or confidence >= 0.78
+    if has_strong_validator:
+        return valid and confidence >= 0.5
+    return confidence >= 0.78
+
+
+def clean_field_crop_value(text: str, labels: list[str]) -> str:
+    value = str(text or "").strip()
+    for label in sorted({str(label) for label in labels if str(label).strip()}, key=len, reverse=True):
+        value = re.sub(re.escape(label), "", value, flags=re.IGNORECASE)
+    return value.strip(" ：:：,，;；|/-")
+
+
+def seals_from_seal_crop_fragments(
+    result: dict[str, Any],
+    variant: dict[str, Any],
+    engine_name: str,
+) -> list[dict[str, Any]]:
+    if engine_name not in SEAL_CROP_TEXT_ENGINES:
+        return []
+    target = variant.get("remediationTarget") if isinstance(variant.get("remediationTarget"), dict) else {}
+    if target.get("type") != "seal" or str(variant.get("purpose") or "") != "seal":
+        return []
+    fragments = [
+        fragment
+        for fragment in result.get("fragments") or []
+        if isinstance(fragment, dict) and str(fragment.get("text") or "").strip()
+    ]
+    if not fragments:
+        return []
+    text = compact_seal_crop_text(" ".join(str(fragment.get("text") or "") for fragment in fragments))
+    if not text:
+        return []
+    confidence = average_confidence(fragments)
+    boxes = [rect_from_bbox(fragment.get("bbox") or fragment.get("polygon")) for fragment in fragments]
+    bbox = union_rectangles([box for box in boxes if box]) or rect_from_bbox(variant.get("cropSourceBbox"))
+    if not bbox:
+        return []
+    has_visual_source = seal_crop_has_visual_source(target)
+    formal = has_visual_source and confidence >= 0.65
+    flags = {"seal_crop_ocr"}
+    if confidence < 0.65:
+        flags.add("seal_crop_ocr_low_confidence")
+    if not has_visual_source:
+        flags.add("seal_crop_ocr_without_visual_evidence")
+    return [
+        {
+            "sealId": f"{variant.get('variantId')}_ocr_seal",
+            "pageNo": int(variant.get("pageNo") or page_no_from(fragments[0])),
+            "sealType": infer_seal_type_from_text(text),
+            "sealName": text,
+            "bbox": bbox,
+            "coordinateSystem": "rendered_pixels",
+            "sourceCoordinateSystem": "crop_pixels",
+            "coordinateTransformStatus": "mapped_from_crop",
+            "ocrConfidence": round(confidence, 4),
+            "visualConfidence": 0.0,
+            "sourceEngine": engine_name,
+            "variantId": variant.get("variantId"),
+            "selectedVariantId": variant.get("variantId"),
+            "sealEvidenceLevel": "visual_plus_seal_crop_ocr" if has_visual_source else "generic_region_seal_crop_ocr",
+            "candidateOnly": not formal,
+            "canSatisfyRequiredSeal": formal,
+            "qualityFlags": sorted(flags),
+            "remediationTarget": deepcopy(target),
+        }
+    ]
+
+
+def seal_crop_has_visual_source(target: dict[str, Any]) -> bool:
+    flags = {str(flag) for flag in target.get("sourceQualityFlags") or []}
+    return (
+        target.get("sourceKind") == "visual_seal_candidate"
+        or "visual_candidate_only" in flags
+        or float(target.get("sourceVisualConfidence") or 0.0) > 0.0
+        or target.get("sourceSealEvidenceLevel") in {"visual_candidate", "visual_plus_seal_crop", "visual_plus_seal_crop_ocr"}
+    )
+
+
+def compact_seal_crop_text(text: str) -> str:
+    value = " ".join(str(text or "").split())
+    value = re.sub(r"^[：:;；,，\s]+|[：:;；,，\s]+$", "", value)
+    return value[:120]
+
+
+def infer_seal_type_from_text(text: str) -> str:
+    value = str(text or "")
+    if "检测" in value or "检验" in value:
+        return "inspection_testing_seal"
+    if "质量" in value or "质检" in value:
+        return "quality_seal"
+    if "设计" in value and ("许可" in value or "压力管道" in value):
+        return "design_license_seal"
+    if "审图" in value or "施工图审查" in value:
+        return "drawing_approval_seal"
+    return "unknown"
+
+
+def average_confidence(items: list[dict[str, Any]]) -> float:
+    values = []
+    for item in items:
+        try:
+            values.append(float(item.get("confidence") or item.get("ocrConfidence") or 0.0))
+        except (TypeError, ValueError):
+            continue
+    return sum(values) / len(values) if values else 0.0
+
+
+def union_rectangles(boxes: list[list[float]]) -> list[float] | None:
+    if not boxes:
+        return None
+    return [
+        round(min(float(box[0]) for box in boxes), 4),
+        round(min(float(box[1]) for box in boxes), 4),
+        round(max(float(box[2]) for box in boxes), 4),
+        round(max(float(box[3]) for box in boxes), 4),
+    ]
 
 
 def variant_is_remediation_crop(variant: dict[str, Any]) -> bool:
@@ -1570,10 +2021,19 @@ def variant_is_remediation_crop(variant: dict[str, Any]) -> bool:
 def map_crop_item_to_page(item: dict[str, Any], variant: dict[str, Any]) -> None:
     offset_x = float(variant.get("cropOffsetX") or 0.0)
     offset_y = float(variant.get("cropOffsetY") or 0.0)
-    if isinstance(item.get("bbox"), list) and len(item["bbox"]) == 4:
-        item["bbox"] = map_crop_bbox_to_page(item["bbox"], offset_x=offset_x, offset_y=offset_y)
-    if isinstance(item.get("polygon"), list):
-        item["polygon"] = map_crop_polygon_to_page(item["polygon"], offset_x=offset_x, offset_y=offset_y)
+    bbox = item.get("bbox")
+    polygon = item.get("polygon")
+    if is_numeric_rect(bbox):
+        item["bbox"] = map_crop_bbox_to_page(bbox, offset_x=offset_x, offset_y=offset_y)
+    elif is_polygon(bbox):
+        mapped_polygon = map_crop_polygon_to_page(bbox, offset_x=offset_x, offset_y=offset_y)
+        item["polygon"] = mapped_polygon
+        item["bbox"] = rect_from_polygon(mapped_polygon)
+    if is_polygon(polygon):
+        mapped_polygon = map_crop_polygon_to_page(polygon, offset_x=offset_x, offset_y=offset_y)
+        item["polygon"] = mapped_polygon
+        if not is_numeric_rect(item.get("bbox")):
+            item["bbox"] = rect_from_polygon(mapped_polygon)
     item["pageNo"] = int(variant.get("pageNo") or item.get("pageNo") or 1)
     item["coordinateSystem"] = "rendered_pixels"
     item["sourceCoordinateSystem"] = "crop_pixels"
@@ -1586,6 +2046,70 @@ def map_crop_item_to_page(item: dict[str, Any], variant: dict[str, Any]) -> None
 def map_crop_bbox_to_page(bbox: list[Any], *, offset_x: float, offset_y: float) -> list[float]:
     x0, y0, x1, y1 = [float(value) for value in bbox[:4]]
     return [round(x0 + offset_x, 4), round(y0 + offset_y, 4), round(x1 + offset_x, 4), round(y1 + offset_y, 4)]
+
+
+def is_numeric_rect(value: Any) -> bool:
+    return (
+        isinstance(value, list)
+        and len(value) == 4
+        and all(isinstance(item, (int, float)) for item in value)
+    )
+
+
+def is_polygon(value: Any) -> bool:
+    return (
+        isinstance(value, list)
+        and bool(value)
+        and all(
+            isinstance(point, (list, tuple))
+            and len(point) >= 2
+            and isinstance(point[0], (int, float))
+            and isinstance(point[1], (int, float))
+            for point in value
+        )
+    )
+
+
+def rect_from_polygon(polygon: list[Any]) -> list[float] | None:
+    points = [(float(point[0]), float(point[1])) for point in polygon if isinstance(point, (list, tuple)) and len(point) >= 2]
+    if not points:
+        return None
+    return [
+        round(min(x for x, _ in points), 4),
+        round(min(y for _, y in points), 4),
+        round(max(x for x, _ in points), 4),
+        round(max(y for _, y in points), 4),
+    ]
+
+
+def transform_pdf_bbox(bbox: list[Any], matrix: list[Any]) -> list[float]:
+    x0, y0, x1, y1 = [float(value) for value in bbox[:4]]
+    points = [
+        transform_pdf_point(x0, y0, matrix),
+        transform_pdf_point(x1, y0, matrix),
+        transform_pdf_point(x1, y1, matrix),
+        transform_pdf_point(x0, y1, matrix),
+    ]
+    return [
+        round(min(point[0] for point in points), 4),
+        round(min(point[1] for point in points), 4),
+        round(max(point[0] for point in points), 4),
+        round(max(point[1] for point in points), 4),
+    ]
+
+
+def offset_pdf_pixmap_bbox(bbox: list[float], *, pixmap_x: float, pixmap_y: float) -> list[float]:
+    return [
+        round(float(bbox[0]) - pixmap_x, 4),
+        round(float(bbox[1]) - pixmap_y, 4),
+        round(float(bbox[2]) - pixmap_x, 4),
+        round(float(bbox[3]) - pixmap_y, 4),
+    ]
+
+
+def transform_pdf_point(x: float, y: float, matrix: list[Any]) -> tuple[float, float]:
+    a, b, c, d, e, f = [float(value) for value in matrix[:6]]
+    return a * x + c * y + e, b * x + d * y + f
 
 
 def map_crop_polygon_to_page(polygon: list[Any], *, offset_x: float, offset_y: float) -> list[Any]:
@@ -1622,27 +2146,36 @@ def normalize_nested_coordinates(
     skip_self: bool = False,
 ) -> None:
     if isinstance(obj, dict):
-        if not skip_self:
-            obj.setdefault("pageNo", parent_page_no)
-            obj.setdefault("coordinateSystem", parent_coordinate_system)
-            obj.setdefault("sourceEngine", engine_name)
-            obj.setdefault("variantId", variant.get("variantId"))
-            obj.setdefault("selectedVariantId", variant.get("variantId"))
-            if obj.get("bbox") or obj.get("polygon"):
-                normalize_item_coordinates(obj, engine_name=engine_name, variant=variant, pages_by_no=pages_by_no)
-                if variant_has_unmapped_coordinates(variant, obj):
-                    flags = {str(flag) for flag in obj.get("qualityFlags") or []}
-                    flags.add("coordinate_transform_unmapped")
-                    obj["qualityFlags"] = sorted(flags)
-                    obj["coordinateTransformStatus"] = variant.get("coordinateTransformStatus")
-        for value in obj.values():
+        is_spatial = has_spatial_shape(obj)
+        if not skip_self and is_spatial:
+            if not obj.get("pageNo"):
+                obj["pageNo"] = parent_page_no
+            if not obj.get("coordinateSystem"):
+                obj["coordinateSystem"] = parent_coordinate_system
+            if not obj.get("sourceEngine"):
+                obj["sourceEngine"] = engine_name
+            if not obj.get("variantId"):
+                obj["variantId"] = variant.get("variantId")
+            if not obj.get("selectedVariantId"):
+                obj["selectedVariantId"] = variant.get("variantId")
+            normalize_item_coordinates(obj, engine_name=engine_name, variant=variant, pages_by_no=pages_by_no)
+            if variant_has_unmapped_coordinates(variant, obj):
+                flags = {str(flag) for flag in obj.get("qualityFlags") or []}
+                flags.add("coordinate_transform_unmapped")
+                obj["qualityFlags"] = sorted(flags)
+                obj["coordinateTransformStatus"] = variant.get("coordinateTransformStatus")
+        child_page_no = int(obj.get("pageNo") or parent_page_no)
+        child_coordinate_system = str(obj.get("coordinateSystem") or parent_coordinate_system)
+        for key, value in obj.items():
+            if key in NON_SPATIAL_RECURSION_KEYS:
+                continue
             normalize_nested_coordinates(
                 value,
                 engine_name=engine_name,
                 variant=variant,
                 pages_by_no=pages_by_no,
-                parent_page_no=int(obj.get("pageNo") or parent_page_no),
-                parent_coordinate_system=str(obj.get("coordinateSystem") or parent_coordinate_system),
+                parent_page_no=child_page_no,
+                parent_coordinate_system=child_coordinate_system,
             )
         return
     if not isinstance(obj, list):
@@ -1657,6 +2190,21 @@ def normalize_nested_coordinates(
                 parent_page_no=int(item.get("pageNo") or parent_page_no),
                 parent_coordinate_system=str(item.get("coordinateSystem") or parent_coordinate_system),
             )
+
+
+NON_SPATIAL_RECURSION_KEYS = {
+    "coordinateTransform",
+    "remediationTarget",
+    "metadata",
+    "quality",
+    "diagnostics",
+    "modelManifest",
+    "engineRuns",
+}
+
+
+def has_spatial_shape(obj: dict[str, Any]) -> bool:
+    return bool(obj.get("bbox") or obj.get("polygon"))
 
 
 def prefix_item_identity(item: dict[str, Any], *, key: str, variant_id: str) -> None:
@@ -2559,8 +3107,16 @@ def add_profile_quality_diagnostics(result: dict[str, Any], profile: dict[str, A
     if (profile.get("sealRules") or {}).get("required") and not result.get("seals"):
         diagnostics.append(diagnostic("SEAL_NOT_FOUND", "当前 Profile 要求印章，但未检测到印章候选。", level="warning"))
     required_fields = profile.get("requiredFields") or []
-    field_codes = {str(item.get("fieldCode") or "") for item in result.get("fields") or [] if isinstance(item, dict)}
-    missing_fields = [field for field in required_fields if field != "seal" and field not in field_codes]
+    field_codes = {
+        normalize_field_key(item.get("fieldCode") or item.get("fieldName") or "")
+        for item in result.get("fields") or []
+        if isinstance(item, dict)
+    }
+    missing_fields = [
+        field
+        for field in required_fields
+        if field != "seal" and normalize_field_key(field) not in field_codes
+    ]
     if missing_fields:
         diagnostics.append(
             diagnostic(
@@ -2700,9 +3256,15 @@ def first_present(raw: dict[str, Any], *keys: str, default: Any = None) -> Any:
     return default
 
 
+def drop_none_fields(item: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in item.items() if value is not None}
+
+
 def page_no_from(raw: dict[str, Any]) -> int:
     if raw.get("pageNo") is not None:
         return int(raw["pageNo"])
+    if raw.get("page_no") is not None:
+        return int(raw["page_no"])
     if raw.get("page") is not None:
         return int(raw["page"])
     if raw.get("page_index") is not None:

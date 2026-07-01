@@ -16,6 +16,7 @@ from apps.ocr_service.result_cache import (
     PAGE_SELECTION_VERSION,
     REMEDIATION_VERSION,
 )
+from apps.ocr_service.utils import parse_bool
 
 PREPROCESS_CACHE_SCHEMA = "aicheck-ocr-preprocess-cache-v2"
 
@@ -118,10 +119,10 @@ def requested_variant_names(
     if quality.get("hasTableCandidate") and "table_line_enhanced" not in requested:
         requested.append("table_line_enhanced")
     seal_policy = (policy.get("seal") or {}) if isinstance(policy.get("seal"), dict) else {}
-    required_seal = bool((profile.get("sealRules") or {}).get("required"))
+    required_seal = parse_bool((profile.get("sealRules") or {}).get("required"), False) is True
     if (
         quality.get("hasSealCandidate")
-        and (required_seal or seal_policy.get("enableColorCandidate"))
+        and (required_seal or parse_bool(seal_policy.get("enableColorCandidate"), False))
         and "seal_color_mask" not in requested
     ):
         requested.append("seal_color_mask")
@@ -135,13 +136,13 @@ def requested_variant_names(
 def requested_variant_names_for_page(requested: list[str], profile: dict[str, Any], quality: dict[str, Any]) -> list[str]:
     policy = profile.get("preprocessPolicy") or {}
     seal_policy = (policy.get("seal") or {}) if isinstance(policy.get("seal"), dict) else {}
-    required_seal = bool((profile.get("sealRules") or {}).get("required"))
+    required_seal = parse_bool((profile.get("sealRules") or {}).get("required"), False) is True
     output = []
     for name in requested:
         if name == "table_line_enhanced" and not (quality.get("hasVisualTableCandidate") or quality.get("hasTableCandidate")):
             continue
         if name == "seal_color_mask":
-            if not (required_seal or seal_policy.get("enableColorCandidate")):
+            if not (required_seal or parse_bool(seal_policy.get("enableColorCandidate"), False)):
                 continue
             if not quality.get("hasVisualSealCandidate"):
                 continue

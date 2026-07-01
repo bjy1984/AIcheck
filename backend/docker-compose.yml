@@ -28,7 +28,7 @@ services:
       AICHECK_REQUIRE_AUTH: ${AICHECK_REQUIRE_AUTH:-true}
       AICHECK_ENABLE_DEMO_USERS: ${AICHECK_ENABLE_DEMO_USERS:-false}
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -133,6 +133,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.ocr
+      args:
+        AICHECK_APT_DEBIAN_MIRROR: ${AICHECK_APT_DEBIAN_MIRROR:-}
+        AICHECK_APT_SECURITY_MIRROR: ${AICHECK_APT_SECURITY_MIRROR:-}
+        AICHECK_PIP_INDEX_URL: ${AICHECK_PIP_INDEX_URL:-}
     command: uvicorn apps.ocr_service.main:app --host 0.0.0.0 --port 8010
     environment:
       AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_ENDPOINT:-minio:9000}
@@ -178,7 +182,7 @@ services:
       PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True"
       PADDLE_PDX_MODEL_SOURCE: local
     ports:
-      - "8010:8010"
+      - "127.0.0.1:8010:8010"
     volumes:
       - ${AICHECK_AGENTDESIGN_HOST_PATH:-./apps/ocr_service}:/opt/agentdesign:ro
       - ${AICHECK_OCR_MODELS_HOST_PATH:?AICHECK_OCR_MODELS_HOST_PATH is required}:/models:ro
@@ -198,7 +202,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -212,8 +216,8 @@ services:
       MINIO_ROOT_USER: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
       MINIO_ROOT_PASSWORD: ${AICHECK_MINIO_SECRET_KEY:?AICHECK_MINIO_SECRET_KEY is required}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - minio-data:/data
     healthcheck:
@@ -231,7 +235,7 @@ services:
       LITELLM_POSTGRES_DB: ${LITELLM_POSTGRES_DB:-litellm}
       WORKFLOW_POSTGRES_DB: ${WORKFLOW_POSTGRES_DB:-workflow}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./docker/postgres/init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
@@ -251,7 +255,7 @@ services:
       POSTGRES_SEEDS: postgres
       DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
     ports:
-      - "7233:7233"
+      - "127.0.0.1:7233:7233"
     depends_on:
       postgres:
         condition: service_healthy
@@ -267,10 +271,45 @@ services:
       TEMPORAL_ADDRESS: temporal-service:7233
       TEMPORAL_CORS_ORIGINS: http://localhost:4000,http://127.0.0.1:4000
     ports:
-      - "8088:8080"
+      - "127.0.0.1:8088:8080"
     depends_on:
       temporal-service:
         condition: service_healthy
+
+  embedding-service:
+    image: michaelf34/infinity:latest-cpu
+    command:
+      [
+        "v2",
+        "--model-id",
+        "${AICHECK_EMBEDDING_MODEL_ID:-BAAI/bge-m3}",
+        "--engine",
+        "${AICHECK_EMBEDDING_ENGINE:-torch}",
+        "--port",
+        "7997",
+      ]
+    environment:
+      DO_NOT_TRACK: "1"
+      HF_HOME: /app/.cache
+      HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
+      TRANSFORMERS_CACHE: /app/.cache
+      INFINITY_API_KEY: ${INFINITY_API_KEY:?INFINITY_API_KEY is required}
+      AICHECK_EMBEDDING_MODEL_ID: ${AICHECK_EMBEDDING_MODEL_ID:-BAAI/bge-m3}
+      AICHECK_EMBEDDING_ENGINE: ${AICHECK_EMBEDDING_ENGINE:-torch}
+    ports:
+      - "127.0.0.1:7997:7997"
+    volumes:
+      - ${AICHECK_EMBEDDING_CACHE_HOST_PATH:-/tmp/aicheck-embedding-cache}:/app/.cache
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:7997/health', timeout=5).read()\"",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 1800s
 
   litellm-service:
     image: ghcr.io/berriai/litellm:main-latest
@@ -280,15 +319,18 @@ services:
       LITELLM_MASTER_KEY: ${LITELLM_API_KEY:?LITELLM_API_KEY is required}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?DEEPSEEK_API_KEY is required}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      INFINITY_API_KEY: ${INFINITY_API_KEY:?INFINITY_API_KEY is required}
       AICHECK_LITELLM_STRICT_PROVIDER_HEALTH: ${AICHECK_LITELLM_STRICT_PROVIDER_HEALTH:-true}
-      NO_PROXY: ${AICHECK_LITELLM_NO_PROXY:-127.0.0.1,localhost,::1,postgres}
-      no_proxy: ${AICHECK_LITELLM_NO_PROXY:-127.0.0.1,localhost,::1,postgres}
+      NO_PROXY: ${AICHECK_LITELLM_NO_PROXY:-127.0.0.1,localhost,::1,postgres,embedding-service}
+      no_proxy: ${AICHECK_LITELLM_NO_PROXY:-127.0.0.1,localhost,::1,postgres,embedding-service}
     ports:
-      - "4001:4000"
+      - "127.0.0.1:4001:4000"
     volumes:
       - ./config:/app/config:ro
     depends_on:
       postgres:
+        condition: service_healthy
+      embedding-service:
         condition: service_healthy
     healthcheck:
       test:

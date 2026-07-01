@@ -5,6 +5,8 @@ import re
 from copy import deepcopy
 from typing import Any
 
+from apps.ocr_service.utils import parse_bool
+
 FIELD_ALIASES = {
     "公司名称": "company_name",
     "单位名称": "organization_name",
@@ -162,8 +164,14 @@ def fuse_fields(fields: list[Any]) -> list[dict[str, Any]]:
         grouped.setdefault(field_code, []).append(field)
     fused = []
     for field_code, candidates in grouped.items():
-        best = max(candidates, key=lambda item: field_score(item, field_code=field_code))
-        conflict = field_value_conflict(candidates, field_code=field_code)
+        formal_candidates = [
+            candidate
+            for candidate in candidates
+            if parse_bool(candidate.get("remediationCandidateOnly"), False) is not True
+        ]
+        selectable_candidates = formal_candidates or candidates
+        best = max(selectable_candidates, key=lambda item: field_score(item, field_code=field_code))
+        conflict = field_value_conflict(selectable_candidates, field_code=field_code)
         output = deepcopy(best)
         output["fieldCode"] = field_code
         output["selectedVariantId"] = output.get("selectedVariantId") or output.get("variantId")
@@ -181,6 +189,13 @@ def fuse_fields(fields: list[Any]) -> list[dict[str, Any]]:
                 "confidence": item.get("confidence"),
                 "sourceEngine": item.get("sourceEngine"),
                 "variantId": item.get("variantId") or item.get("selectedVariantId"),
+                "bbox": item.get("bbox"),
+                "polygon": item.get("polygon"),
+                "pageNo": item.get("pageNo"),
+                "coordinateSystem": item.get("coordinateSystem"),
+                "sourceCoordinateSystem": item.get("sourceCoordinateSystem"),
+                "coordinateTransformStatus": item.get("coordinateTransformStatus"),
+                "qualityFlags": list(item.get("qualityFlags") or []),
             }
             for item in candidates
         ]
@@ -590,7 +605,11 @@ def build_quality_gate(result: dict[str, Any], profile: dict[str, Any]) -> dict[
     tables = [table for table in result.get("tables") or [] if isinstance(table, dict)]
     seals = [seal for seal in result.get("seals") or [] if isinstance(seal, dict)]
     required_fields = [normalize_field_key(field) for field in profile.get("requiredFields") or [] if field != "seal"]
-    field_codes = {normalize_field_key(field.get("fieldCode") or field.get("fieldName") or "") for field in fields}
+    field_codes = {
+        normalize_field_key(field.get("fieldCode") or field.get("fieldName") or "")
+        for field in fields
+        if parse_bool(field.get("remediationCandidateOnly"), False) is not True
+    }
     missing_fields = [field for field in required_fields if field and field not in field_codes]
     required_tables = [str(table) for table in profile.get("requiredTables") or []]
     missing_tables = missing_required_tables(tables, required_tables)
@@ -598,6 +617,7 @@ def build_quality_gate(result: dict[str, Any], profile: dict[str, Any]) -> dict[
     expected_seal_types = [str(item) for item in (profile.get("sealRules") or {}).get("expectedSealTypes") or []]
     field_confidence = average([float(field.get("confidence") or 0) for field in fields])
     table_confidence = average([float(table.get("structureConfidence") or 0) for table in tables])
+    table_cell_evidence_coverage = average([table_cell_evidence_score(table) for table in tables])
     formal_seals = [seal for seal in seals if seal_text_is_readable(seal)]
     seal_confidence = (
         average([float(seal.get("ocrConfidence") or 0) for seal in formal_seals])
@@ -612,6 +632,16 @@ def build_quality_gate(result: dict[str, Any], profile: dict[str, Any]) -> dict[
     )
     field_completeness = 1.0 - (len(missing_fields) / max(len(required_fields), 1)) if required_fields else 1.0
     table_completeness = 1.0 - (len(missing_tables) / max(len(required_tables), 1)) if required_tables else 1.0
+    low_cell_evidence_tables = mark_low_table_cell_evidence(tables, required_tables, profile)
+    low_cell_table_codes = {
+        str(item.get("tableCode"))
+        for item in low_cell_evidence_tables
+        if item.get("tableCode") is not None
+    }
+    table_auto_blocked_count = len(set(missing_tables) | low_cell_table_codes)
+    table_auto_usable_completeness = (
+        1.0 - (table_auto_blocked_count / max(len(required_tables), 1)) if required_tables else 1.0
+    )
     seal_completeness = (
         1.0
         if not required_seal
@@ -651,6 +681,8 @@ def build_quality_gate(result: dict[str, Any], profile: dict[str, Any]) -> dict[
     min_table_confidence = float((profile.get("qualityRules") or {}).get("minTableStructureConfidence") or 0.0)
     if tables and min_table_confidence and table_confidence < min_table_confidence:
         reasons.append("TABLE_STRUCTURE_LOW_CONFIDENCE")
+    if low_cell_evidence_tables:
+        reasons.append("TABLE_CELL_EVIDENCE_LOW")
     if required_seal and not seals:
         reasons.append("SEAL_NOT_FOUND")
     if required_seal and seals and not formal_seals:
@@ -670,9 +702,11 @@ def build_quality_gate(result: dict[str, Any], profile: dict[str, Any]) -> dict[
         "overallConfidence": round(average([field_confidence, table_confidence or field_confidence, seal_confidence or field_confidence]), 4),
         "textConfidence": round(field_confidence, 4),
         "tableConfidence": round(table_confidence, 4),
+        "tableCellEvidenceCoverage": round(table_cell_evidence_coverage, 4),
         "sealConfidence": round(seal_confidence, 4),
         "fieldCompleteness": round(field_completeness, 4),
         "tableCompleteness": round(table_completeness, 4),
+        "tableAutoUsableCompleteness": round(table_auto_usable_completeness, 4),
         "sealCompleteness": round(seal_completeness, 4),
         "evidenceCompleteness": round(evidence_completeness(result), 4),
         "reasons": sorted(set(reasons)),
@@ -683,6 +717,7 @@ def build_quality_gate(result: dict[str, Any], profile: dict[str, Any]) -> dict[
         "lowConfidenceFields": low_confidence_fields,
         "invalidFields": invalid_fields,
         "missingEvidence": missing_evidence,
+        "lowTableCellEvidenceTables": low_cell_evidence_tables,
     }
 
 
@@ -745,10 +780,53 @@ def missing_required_tables(tables: list[dict[str, Any]], required_tables: list[
         required_table
         for required_table in required_tables
         if not any(
-            not table.get("candidateOnly") and table_matches_required(table, required_table)
+            not parse_bool(table.get("candidateOnly"), False) and table_matches_required(table, required_table)
             for table in tables
         )
     ]
+
+
+def mark_low_table_cell_evidence(
+    tables: list[dict[str, Any]],
+    required_tables: list[str],
+    profile: dict[str, Any],
+) -> list[dict[str, Any]]:
+    if not required_tables:
+        return []
+    threshold = float((profile.get("qualityRules") or {}).get("minTableCellEvidenceCoverage") or 0.5)
+    if threshold <= 0:
+        return []
+    low: list[dict[str, Any]] = []
+    for required_table in required_tables:
+        matched = [
+            table
+            for table in tables
+            if isinstance(table, dict)
+            and not parse_bool(table.get("candidateOnly"), False)
+            and not table_is_heuristic_fallback(table)
+            and table_matches_required(table, required_table)
+        ]
+        if not matched:
+            continue
+        best = max(matched, key=lambda table: table_score(table, required_table=required_table))
+        coverage = table_cell_evidence_score(best)
+        if coverage >= threshold:
+            continue
+        flags = {str(flag) for flag in best.get("qualityFlags") or []}
+        flags.add("table_cell_evidence_low")
+        best["qualityFlags"] = sorted(flags)
+        low.append(
+            {
+                "tableCode": required_table,
+                "tableId": best.get("tableId"),
+                "businessSchema": best.get("businessSchema"),
+                "cellEvidenceCoverage": round(coverage, 4),
+                "minCellEvidenceCoverage": threshold,
+                "sourceEngine": best.get("sourceEngine"),
+                "variantId": best.get("variantId") or best.get("selectedVariantId"),
+            }
+        )
+    return low
 
 
 def table_matches_required(table: dict[str, Any], required_table: str) -> bool:
@@ -910,6 +988,7 @@ def field_value_conflict(candidates: list[dict[str, Any]], *, field_code: str | 
         existing = by_value.get(normalized)
         if existing is None or confidence > float(existing.get("confidence") or 0.0):
             by_value[normalized] = {
+                **copy_spatial_metadata(candidate),
                 "value": candidate.get("fieldValue"),
                 "normalizedValue": normalized,
                 "confidence": confidence,
@@ -1230,8 +1309,26 @@ def table_score(table: dict[str, Any], required_table: str | None = None) -> flo
     source_bonus = 0.12 if table.get("sourceEngine") == "pp_structure_v3" else 0.0
     header_bonus = table_schema_match_score(table, required_table) * 0.22 if required_table else 0.0
     fill_bonus = table_fill_rate(table) * 0.08
+    cell_evidence_bonus = table_cell_evidence_score(table) * 0.08
     evidence_bonus = 0.06 if has_evidence_box(table) else -0.04 if table.get("bbox") or table.get("polygon") else 0.0
-    return confidence + min(normalized_rows, 20) * 0.02 + min(cells, 200) * 0.0005 + source_bonus + header_bonus + fill_bonus + evidence_bonus
+    return (
+        confidence
+        + min(normalized_rows, 20) * 0.02
+        + min(cells, 200) * 0.0005
+        + source_bonus
+        + header_bonus
+        + fill_bonus
+        + cell_evidence_bonus
+        + evidence_bonus
+    )
+
+
+def table_cell_evidence_score(table: dict[str, Any]) -> float:
+    cells = [cell for cell in table.get("cells") or [] if isinstance(cell, dict)]
+    if not cells:
+        return 0.0
+    valid = [cell for cell in cells if has_evidence_box(cell)]
+    return len(valid) / max(len(cells), 1)
 
 
 def table_fill_rate(table: dict[str, Any]) -> float:
@@ -1256,11 +1353,11 @@ def seal_score(seal: dict[str, Any], profile: dict[str, Any] | None = None) -> f
     name_bonus = 0.12 if str(seal.get("sealName") or "").strip() else 0.0
     flags = {str(flag) for flag in seal.get("qualityFlags") or []}
     formal_bonus = -0.3 if "visual_candidate_only" in flags else 0.25
-    if seal.get("canSatisfyRequiredSeal") is True:
+    if parse_bool(seal.get("canSatisfyRequiredSeal"), None) is True:
         formal_bonus += 1.0
     if "text_only_seal_candidate" in flags:
         formal_bonus -= 1.0
-    if seal.get("candidateOnly") is True:
+    if parse_bool(seal.get("candidateOnly"), False) is True:
         formal_bonus -= 0.8
     if has_evidence_box(seal):
         formal_bonus += 0.08
@@ -1299,9 +1396,9 @@ def seal_in_bottom_right(seal: dict[str, Any]) -> bool:
 
 def seal_text_is_readable(seal: dict[str, Any]) -> bool:
     flags = {str(flag) for flag in seal.get("qualityFlags") or []}
-    if seal.get("candidateOnly") is True:
+    if parse_bool(seal.get("candidateOnly"), False) is True:
         return False
-    if seal.get("canSatisfyRequiredSeal") is False:
+    if parse_bool(seal.get("canSatisfyRequiredSeal"), None) is False:
         return False
     if {"visual_candidate_only", "requires_seal_ocr_text", "text_only_seal_candidate"}.intersection(flags):
         return False
@@ -1380,7 +1477,7 @@ def evidence_completeness(result: dict[str, Any]) -> float:
 def has_evidence_box(item: dict[str, Any]) -> bool:
     if not isinstance(item, dict):
         return False
-    if item.get("candidateOnly") is True:
+    if parse_bool(item.get("candidateOnly"), False) is True:
         return False
     flags = {str(flag) for flag in item.get("qualityFlags") or []}
     if {"document_coordinate_unmapped", "coordinate_transform_unmapped", "external_coordinate_unverified"}.intersection(flags):

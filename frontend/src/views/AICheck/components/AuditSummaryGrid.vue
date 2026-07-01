@@ -37,13 +37,15 @@ defineProps<{
 }
 
 .audit-summary-card {
-  min-height: 112px;
+  min-width: 0;
+  min-height: 104px;
   padding: 15px 16px;
   background: linear-gradient(180deg, #fff, #f8fbff);
-  border: 1px solid #dbe6f5;
-  border-left: 4px solid #2563eb;
+  border: 0;
   border-radius: 8px;
-  box-shadow: 0 1px 2px rgb(20 34 56 / 4%);
+  box-shadow:
+    0 0 0 1px #dbe6f5,
+    0 8px 18px rgb(15 23 42 / 4%);
 }
 
 .audit-summary-card span,
@@ -55,7 +57,7 @@ defineProps<{
 }
 
 .audit-summary-card strong {
-  display: block;
+  display: -webkit-box;
   margin: 9px 0 8px;
   overflow: hidden;
   font-size: 18px;
@@ -63,19 +65,45 @@ defineProps<{
   line-height: 1.25;
   color: #172033;
   text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.audit-summary-card small {
+  overflow: hidden;
+  line-height: 1.35;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.audit-summary-card--blue {
+  background: linear-gradient(180deg, #fff, #f8fbff);
+  box-shadow:
+    0 0 0 1px #cbdcf8,
+    0 8px 18px rgb(15 23 42 / 4%);
+}
+
 .audit-summary-card--green {
-  border-left-color: #16a34a;
+  background: linear-gradient(180deg, #fff, #f8fdf9);
+  box-shadow:
+    0 0 0 1px #cfe8d7,
+    0 8px 18px rgb(15 23 42 / 4%);
 }
 
 .audit-summary-card--orange {
-  border-left-color: #f59e0b;
+  background: linear-gradient(180deg, #fff, #fffaf0);
+  box-shadow:
+    0 0 0 1px #f0dfb8,
+    0 8px 18px rgb(15 23 42 / 4%);
 }
 
 .audit-summary-card--red {
-  border-left-color: #dc2626;
+  background: linear-gradient(180deg, #fff, #fff7f7);
+  box-shadow:
+    0 0 0 1px #efc8c8,
+    0 8px 18px rgb(15 23 42 / 4%);
 }
 
 @media (width <= 1180px) {
