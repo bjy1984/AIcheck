@@ -521,11 +521,11 @@ class DeploymentConfigValidator:
             failures.append("ocr-service AICHECK_AGENTDESIGN_BACKEND must default to /opt/agentdesign/mvp-system/backend")
         volumes = normalize_volumes(ocr_service.get("volumes"))
         if not any(volume_targets_path(volume, "/opt/agentdesign") for volume in volumes):
-            failures.append("ocr-service must mount AICHECK_AGENTDESIGN_HOST_PATH to /opt/agentdesign:ro")
+            failures.append("ocr-service must mount optional AICHECK_AGENTDESIGN_HOST_PATH fallback to /opt/agentdesign:ro")
         if not any(volume_targets_path(volume, "/models") for volume in volumes):
             failures.append("ocr-service must mount AICHECK_OCR_MODELS_HOST_PATH to /models:ro")
-        if not any(str(volume).startswith("${AICHECK_AGENTDESIGN_HOST_PATH:?") for volume in volumes):
-            failures.append("ocr-service agentdesign mount must require AICHECK_AGENTDESIGN_HOST_PATH")
+        if any(str(volume).startswith("${AICHECK_AGENTDESIGN_HOST_PATH:?") for volume in volumes):
+            failures.append("ocr-service agentdesign mount must be optional unless AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR is enabled")
         if not any(str(volume).startswith("${AICHECK_OCR_MODELS_HOST_PATH:?") for volume in volumes):
             failures.append("ocr-service model mount must require AICHECK_OCR_MODELS_HOST_PATH")
         if not any(volume.endswith(":/opt/agentdesign:ro") or ":/opt/agentdesign:ro," in volume for volume in volumes):

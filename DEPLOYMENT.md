@@ -122,7 +122,7 @@ review-worker-service (Temporal + LangGraph)
   └── temporal-ui：工作流调试和任务可视化入口
 
 ocr-service
-  └── 导入 agentdesign 的 seal_ocr/parsing pipeline，失败时按配置生成可重试失败任务
+  └── 运行 backend/apps/ocr_service 本地 OCR 引擎链；agentdesign seal_ocr 仅作为可选印章增强
 
 litellm-service
   ├── 对 api/worker 暴露 OpenAI-compatible API
@@ -394,7 +394,7 @@ PostgreSQL 第一阶段使用 `aicheck_state`、`aicheck_singletons`、`idempote
 
 - 模型供应商密钥：AI 审查主链路使用 `DEEPSEEK_API_KEY`，默认模型为 DeepSeek `deepseek-reasoner`；`OPENAI_API_KEY` 仅在继续使用默认 `embedding-default` 时需要。
 - 可访问的域名和 HTTPS 证书。
-- 如果要启用真实 OCR，需要提供 `agentdesign` OCR 代码。当前 Compose 使用 `Dockerfile.ocr` 安装 `requirements-ocr.txt` 中的 PaddleOCR/PaddleX/PyMuPDF/OpenCV 依赖，并通过 `AICHECK_AGENTDESIGN_HOST_PATH` 把宿主机 `agentdesign` 目录只读挂载到 `/opt/agentdesign`；生产建议保持 `AICHECK_OCR_ALLOW_PLACEHOLDER=false`，无法导入 OCR 管线时任务会失败并进入可重试状态。
+- 真实 OCR 默认由 `backend/apps/ocr_service` 的本地引擎链执行，需要提供离线 OCR 模型目录。`agentdesign` 只作为可选高精度印章 OCR 增强项；仅当 `AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR=true` 时，才需要通过 `AICHECK_AGENTDESIGN_HOST_PATH` 挂载完整 `agentdesign` checkout。
 
 ## 3. 端口与路径
 
@@ -469,7 +469,8 @@ AICHECK_REQUIRE_AUTH=true
 AICHECK_ENABLE_DEMO_USERS=false
 
 AICHECK_OCR_BASE_URL=http://ocr-service:8010
-AICHECK_AGENTDESIGN_HOST_PATH=/Volumes/Volume/project/agentdesign
+# Optional: only needed when AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR=true.
+AICHECK_AGENTDESIGN_HOST_PATH=
 AICHECK_AGENTDESIGN_BACKEND=/opt/agentdesign/mvp-system/backend
 AICHECK_OCR_ALLOW_PLACEHOLDER=false
 AICHECK_OCR_OFFLINE_ONLY=true
@@ -508,7 +509,7 @@ AICHECK_LITELLM_STRICT_PROVIDER_HEALTH=true
 OCR 离线模型目录支持两种布局：
 
 - 标准 bundle：`AICHECK_OCR_MODELS_HOST_PATH` 下包含 `paddleocr/`、`paddlex/`、`paddleocr-vl/` 和 `docling/`，容器内分别通过 `/models/...` 引用。
-- PaddleX 官方缓存：`AICHECK_OCR_MODELS_HOST_PATH` 直接指向 `.paddlex-cache/official_models`，并把 `AICHECK_PADDLEOCR_*_MODEL_DIR`、`AICHECK_PPSTRUCTURE_*_MODEL_DIR`、`AICHECK_SEAL_*_MODEL_DIR`、`AICHECK_PADDLEOCR_VL_*_MODEL_DIR` 配成 `/models/<模型目录名>`。如果 Docling artifacts 放在 `agentdesign/docling`，则设置 `DOCLING_ARTIFACTS_PATH=/opt/agentdesign/docling`；Compose 已把 `AICHECK_AGENTDESIGN_HOST_PATH` 只读挂载到 `/opt/agentdesign`。
+- PaddleX 官方缓存：`AICHECK_OCR_MODELS_HOST_PATH` 直接指向 `.paddlex-cache/official_models`，并把 `AICHECK_PADDLEOCR_*_MODEL_DIR`、`AICHECK_PPSTRUCTURE_*_MODEL_DIR`、`AICHECK_SEAL_*_MODEL_DIR`、`AICHECK_PADDLEOCR_VL_*_MODEL_DIR` 配成 `/models/<模型目录名>`。如果 Docling artifacts 放在可选 agentdesign 目录下，则设置 `DOCLING_ARTIFACTS_PATH=/opt/agentdesign/docling` 并配置 `AICHECK_AGENTDESIGN_HOST_PATH`。
 
 变量说明：
 
@@ -537,8 +538,8 @@ OCR 离线模型目录支持两种布局：
 | `AICHECK_REQUIRE_AUTH` | 是 | 生产设为 `true`，非公开接口强制校验 JWT。 |
 | `AICHECK_ENABLE_DEMO_USERS` | 是 | 生产设为 `false`，禁止使用内置演示账号兜底登录。 |
 | `AICHECK_OCR_BASE_URL` | 是 | worker 访问 OCR 服务的内部地址。 |
-| `AICHECK_AGENTDESIGN_HOST_PATH` | 是 | 宿主机上的 `agentdesign` 项目路径，Compose 会挂载到 OCR 容器 `/opt/agentdesign:ro`。 |
-| `AICHECK_AGENTDESIGN_BACKEND` | 是 | OCR 服务导入 `agentdesign` 后端包的路径，容器内建议挂载到 `/opt/agentdesign/mvp-system/backend`。 |
+| `AICHECK_AGENTDESIGN_HOST_PATH` | 条件必填 | 仅 `AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR=true` 时需要；宿主机上的 `agentdesign` 项目路径，Compose 会挂载到 OCR 容器 `/opt/agentdesign:ro`。 |
+| `AICHECK_AGENTDESIGN_BACKEND` | 否 | 可选 agentdesign 印章 OCR 后端包路径，容器内默认 `/opt/agentdesign/mvp-system/backend`。 |
 | `AICHECK_OCR_ALLOW_PLACEHOLDER` | 否 | 生产设为 `false`；OCR 管线不可用时任务失败而不是生成占位成功结果。 |
 | `AICHECK_OCR_OFFLINE_ONLY` | 是 | 生产设为 `true`，OCR 只允许使用本地模型。 |
 | `AICHECK_OCR_DISABLE_NETWORK` | 是 | 生产设为 `true`，配合 `HF_HUB_OFFLINE=1`、`TRANSFORMERS_OFFLINE=1` 禁止运行时下载模型。 |
@@ -562,7 +563,6 @@ OCR 离线模型目录支持两种布局：
 Compose 对关键变量使用必填校验，缺少以下变量时服务不会启动；上线前必须提供强随机值、真实 provider key 或可访问的宿主机路径：
 
 - `DEEPSEEK_API_KEY`
-- `AICHECK_AGENTDESIGN_HOST_PATH`
 - `AICHECK_OCR_MODELS_HOST_PATH`
 - `AICHECK_JWT_SECRET`
 - `AICHECK_MINIO_SECRET_KEY`
@@ -577,7 +577,7 @@ Compose 对关键变量使用必填校验，缺少以下变量时服务不会启
 
 ```bash
 cd backend
-# 确认 backend/.env 中已设置 AICHECK_AGENTDESIGN_HOST_PATH，并且该目录包含 mvp-system/backend
+# 确认 backend/.env 中已设置 AICHECK_OCR_MODELS_HOST_PATH；如启用 agentdesign 印章 OCR，再设置 AICHECK_AGENTDESIGN_HOST_PATH
 docker compose pull
 docker compose up -d --build
 docker compose ps
@@ -589,7 +589,7 @@ docker compose ps
 - Compose 中的 PostgreSQL 使用一个服务承载 `aicheck`、`litellm`、`workflow` 三个数据库；首次启动时 `docker/postgres/init-databases.sh` 会创建辅助数据库。
 - `api-service` 会确保 MinIO bucket：`documents`、`previews`、`exports`、`ocr-artifacts`。
 - `worker-service` 会监听队列：`ocr.parse_document`、`ocr.recognize_seals`、`knowledge.slice`、`knowledge.embed`、`inspection.ai_recheck`、`llm.compare`、`export.package`。
-- `ocr-service` 会把 `${AICHECK_AGENTDESIGN_HOST_PATH}` 只读挂载到 `/opt/agentdesign`，并从 `/opt/agentdesign/mvp-system/backend` 导入 OCR pipeline。
+- `ocr-service` 会把 `${AICHECK_OCR_MODELS_HOST_PATH}` 只读挂载到 `/models`。如果配置了 `${AICHECK_AGENTDESIGN_HOST_PATH}`，也会只读挂载到 `/opt/agentdesign` 作为可选印章 OCR 增强后端。
 - `litellm-service` 使用 `backend/config/litellm.yaml` 中的模型别名：`default-chat`、`review-chat`、`deepseek-reasoner`、`compare-fast`、`embedding-default`。
 
 ### 5.1 角色账号与权限初始化
@@ -883,10 +883,10 @@ OCR 调用链：
 
 真实 OCR 注意事项：
 
-- `backend/apps/ocr_service/service.py` 会从 `AICHECK_AGENTDESIGN_BACKEND` 指定路径导入 `seal_ocr.pipeline`。
-- 当前 Compose 要求设置 `AICHECK_AGENTDESIGN_HOST_PATH`，并把该目录挂载为 `/opt/agentdesign:ro`；默认 `AICHECK_AGENTDESIGN_BACKEND=/opt/agentdesign/mvp-system/backend`。
+- `backend/apps/ocr_service/service.py` 是 OCR 服务主体；会先尝试从 `AICHECK_AGENTDESIGN_BACKEND` 导入可选 `seal_ocr.pipeline`，导入失败不会阻断本地引擎链。
+- 当前 Compose 会把 `${AICHECK_AGENTDESIGN_HOST_PATH:-./apps/ocr_service}` 只读挂载到 `/opt/agentdesign`；默认 `AICHECK_AGENTDESIGN_BACKEND=/opt/agentdesign/mvp-system/backend`。只有 `AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR=true` 时才需要该路径指向完整 agentdesign checkout。
 - `Dockerfile.ocr` 会安装 `requirements-ocr.txt`；该文件对齐本地 OCR 基线依赖：`PyMuPDF`、`paddlepaddle`、`paddleocr`、`paddlex[ocr]`、`opencv-python-headless`、`docling`、`transformers`。
-- OCR 服务已按 Document Intelligence 方向组织：优先使用本地 agentdesign 管线；无可解析内容时调用本地引擎链 `PaddleOCR subprocess -> PaddleOCR in-process -> PP-StructureV3 -> PaddleX Seal -> 视觉印章候选 -> PaddleOCR-VL/Docling adapter`。所有引擎都必须使用本地模型目录，缺模型时只标记 engine unavailable 或返回结构化诊断，不允许运行时联网下载。
+- OCR 服务已按 Document Intelligence 方向组织：默认调用本项目本地引擎链 `PaddleOCR subprocess -> PaddleOCR in-process -> PP-StructureV3 -> PaddleX Seal -> 视觉印章候选 -> PaddleOCR-VL/Docling adapter`；agentdesign 印章 OCR 是可选增强。所有引擎都必须使用本地模型目录，缺模型时只标记 engine unavailable 或返回结构化诊断，不允许运行时联网下载。
 - 本地模型目录建议结构：
 
 ```text
@@ -1473,7 +1473,7 @@ python scripts/deployment_report.py \
 
 `validate_deployment_config.py` 会静态解析 `Dockerfile`、`Dockerfile.ocr`、`requirements-ocr.txt`、`docker-compose.yml` 和 `config/litellm.yaml`，检查镜像基础契约、非 root 运行用户、API/OCR 端口、OCR PaddleOCR 基线依赖、服务拓扑、依赖、healthcheck、端口映射、Celery 队列、统一 PostgreSQL 服务、OCR artifact 只读挂载、持久化 volume、关键环境变量、LiteLLM 五个模型别名、数据库配置和 Prisma 本机代理旁路。它不需要 Docker，可在没有 Docker daemon 的 CI 环境中先挡住配置错误。
 
-`check_96_preflight.py` 用于 live probes 之前的宿主机预检，会检查 Docker CLI/Compose、`backend/.env`、必需密钥、生产开关、`AICHECK_AGENTDESIGN_HOST_PATH`、OCR 离线模型目录和默认端口占用。OCR 模型检查同时支持标准 bundle 布局和 PaddleX `official_models` 扁平缓存布局；容器路径 `/models/...` 会映射回 `AICHECK_OCR_MODELS_HOST_PATH`，`/opt/agentdesign/...` 会映射回 `AICHECK_AGENTDESIGN_HOST_PATH`。文本输出和 `--json` 输出都会在失败项上附带 `remediation`，用于明确下一步安装 Docker、复制 `.env.example`、替换占位密钥或修正本地路径。
+`check_96_preflight.py` 用于 live probes 之前的宿主机预检，会检查 Docker CLI/Compose、`backend/.env`、必需密钥、生产开关、OCR 离线模型目录和默认端口占用。仅当 `AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR=true` 时，预检才会要求 `AICHECK_AGENTDESIGN_HOST_PATH` 和 agentdesign baseline 文件。OCR 模型检查同时支持标准 bundle 布局和 PaddleX `official_models` 扁平缓存布局；容器路径 `/models/...` 会映射回 `AICHECK_OCR_MODELS_HOST_PATH`，`/opt/agentdesign/...` 会映射回 `AICHECK_AGENTDESIGN_HOST_PATH`。文本输出和 `--json` 输出都会在失败项上附带 `remediation`，用于明确下一步安装 Docker、复制 `.env.example`、替换占位密钥或修正本地路径。
 
 `backend/tests/test_check_96_preflight.py` 会校验 `backend/.env.example` 覆盖所有预检必需变量和生产开关；如果预检脚本新增必需变量但模板漏配，测试会直接失败。
 
@@ -1500,7 +1500,7 @@ python scripts/deployment_report.py \
 - `frontend.mutation-headers`：扫描 `frontend/src/api/aicheck/index.ts` 的 `request.post/put/patch/delete` 调用，真实 mutation 必须使用 `mutationHeaders()` 自动携带 `Idempotency-Key`，更新类操作可同时透传 `If-Match`。
 - `frontend.mutation-helper`：检查 `mutationHeaders()` 本身必须生成 `Idempotency-Key`，并在传入 `etag` 时写入 `If-Match`，防止前端并发控制 helper 被误删或降级。
 - `fde.governance-contract`：静态检查并由 `tests/test_fde_console.py` 覆盖 FDE 单角色登录、脱敏 AI Run、Trace、child run 重跑、原文访问授权、反馈归因、评估报告、发布门禁、高风险发布非 FDE 审批、先 shadow 后 canary、业务包 validate-all 100 分可迁移 scorecard、业务包安装演练、数据导出、事故 RCA 和禁止业务审批。
-- `check_96_preflight.py`：在 live probes 前检查 Docker/Compose、`.env`、placeholder、内部密钥强度、生产 flag、agentdesign OCR 基线文件和默认端口冲突；任何失败都会阻止 `probe.command-ready`。
+- `check_96_preflight.py`：在 live probes 前检查 Docker/Compose、`.env`、placeholder、内部密钥强度、生产 flag、OCR 模型目录、可选 agentdesign OCR 基线文件和默认端口冲突；任何失败都会阻止 `probe.command-ready`。
 
 前后端合同审计：
 
@@ -1818,7 +1818,7 @@ VITE_USE_MOCK=false
 
 ### OCR 任务完成但没有真实字段
 
-检查 `ocr-service` 日志。如果看到 `agentdesign OCR pipeline not importable`，先确认 `AICHECK_AGENTDESIGN_HOST_PATH` 已设置且挂载目录包含 `mvp-system/backend/seal_ocr`；如果路径正确，再确认 OCR 服务确实使用 `Dockerfile.ocr` 构建且 `requirements-ocr.txt` 安装成功。
+检查 `ocr-service` 日志。如果看到 `agentdesign OCR pipeline not importable` 且未启用 `AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR=true`，它只是可选增强不可用，不应单独阻断 OCR；优先检查本地 OCR 引擎状态和模型目录。如果启用了 agentdesign 印章 OCR，再确认 `AICHECK_AGENTDESIGN_HOST_PATH` 已设置且挂载目录包含 `mvp-system/backend/seal_ocr`。
 如果 OCR 有 `fragments` 但没有 `fields/tables/seals`，继续检查：
 
 - `/healthz` 的 `engines` 中 `paddle_ocr_subprocess` 是否 available，`detModelDir/recModelDir` 是否指向真实目录。

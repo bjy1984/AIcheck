@@ -73,7 +73,7 @@ const handleNodeClick = (data: ProjectTreeViewNode) => {
       :props="treeProps"
       :current-node-key="activeTreeKey"
       highlight-current
-      :expand-on-click-node="false"
+      :expand-on-click-node="true"
       @node-click="handleNodeClick"
     >
       <template #default="{ data }">
@@ -131,7 +131,9 @@ const handleNodeClick = (data: ProjectTreeViewNode) => {
   font-size: 13px;
   font-weight: 700;
   color: #475467;
+  cursor: pointer;
   background: #fff;
+  user-select: none;
 }
 
 .node-tree :deep(.el-tree-node__content) {

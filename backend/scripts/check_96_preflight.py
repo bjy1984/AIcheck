@@ -14,7 +14,6 @@ from typing import Mapping
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ENV_FILE = BACKEND_ROOT / ".env"
 REQUIRED_ENV = {
-    "AICHECK_AGENTDESIGN_HOST_PATH": "agentdesign source checkout",
     "AICHECK_OCR_MODELS_HOST_PATH": "local OCR model artifact directory",
     "AICHECK_MINIO_SECRET_KEY": "MinIO root password and signing secret",
     "AICHECK_JWT_SECRET": "JWT signing secret",
@@ -143,6 +142,13 @@ def is_placeholder(value: str | None) -> bool:
         return True
     lower_value = value.strip().lower()
     return any(marker in lower_value for marker in PLACEHOLDER_MARKERS)
+
+
+def env_bool(values: Mapping[str, str], name: str, default: bool = False) -> bool:
+    value = values.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def secret_strength_issues(value: str | None, *, min_length: int, min_unique: int) -> list[str]:
@@ -388,6 +394,14 @@ class PreflightChecker:
         )
 
     def check_agentdesign(self) -> None:
+        if not env_bool(self.env, "AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR", False):
+            self.add(
+                "agentdesign.path",
+                "pass",
+                "agentdesign seal OCR is disabled; backend-native OCR does not require seal_ocr/pipeline.py.",
+                {"enabled": False, "hostPath": self.env.get("AICHECK_AGENTDESIGN_HOST_PATH")},
+            )
+            return
         raw_path = self.env.get("AICHECK_AGENTDESIGN_HOST_PATH")
         if not raw_path:
             self.add(
@@ -395,8 +409,8 @@ class PreflightChecker:
                 "fail",
                 "AICHECK_AGENTDESIGN_HOST_PATH is missing.",
                 remediation=[
-                    "Set AICHECK_AGENTDESIGN_HOST_PATH to the host checkout of agentdesign.",
-                    "The path must contain mvp-system/backend/seal_ocr/pipeline.py.",
+                    "Set AICHECK_AGENTDESIGN_HOST_PATH when AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR=true.",
+                    "The path must contain requirements/mvp-ocr.txt and mvp-system/backend/seal_ocr/pipeline.py.",
                 ],
             )
             return
@@ -411,7 +425,7 @@ class PreflightChecker:
                 "Missing OCR reference files: " + ", ".join(missing),
                 {"missing": missing},
                 [
-                    "Point AICHECK_AGENTDESIGN_HOST_PATH at a complete agentdesign checkout.",
+                    "Point AICHECK_AGENTDESIGN_HOST_PATH at a complete agentdesign checkout, or set AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR=false.",
                     "Verify requirements/mvp-ocr.txt and mvp-system/backend/seal_ocr/pipeline.py exist.",
                 ],
             )

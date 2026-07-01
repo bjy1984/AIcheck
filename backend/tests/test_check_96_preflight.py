@@ -188,6 +188,58 @@ def test_preflight_passes_with_env_and_mocked_docker(tmp_path, monkeypatch) -> N
     assert any(item.name == "probe.command-ready" and item.status == "pass" for item in results)
 
 
+def test_preflight_skips_agentdesign_baseline_when_disabled(tmp_path, monkeypatch) -> None:
+    agentdesign = tmp_path / "agentdesign"
+    models = tmp_path / "models"
+    create_ocr_models(models)
+    env_file = tmp_path / ".env"
+    write_env(env_file, agentdesign, models)
+    monkeypatch.setattr("scripts.check_96_preflight.shutil.which", lambda name: "/usr/local/bin/docker")
+    monkeypatch.setattr("scripts.check_96_preflight.tcp_port_open", lambda port: False)
+
+    def fake_run(command, check, capture_output, text, timeout):
+        return subprocess.CompletedProcess(command, 0, stdout="Docker version 28.0.0", stderr="")
+
+    monkeypatch.setattr("scripts.check_96_preflight.subprocess.run", fake_run)
+
+    results = PreflightChecker(env_file=env_file, strict_production=True, env={}).run()
+    agentdesign_check = next(item for item in results if item.name == "agentdesign.path")
+
+    assert agentdesign_check.status == "pass"
+    assert all(item.ok for item in results)
+
+
+def test_preflight_requires_agentdesign_baseline_when_enabled(tmp_path, monkeypatch) -> None:
+    agentdesign = tmp_path / "agentdesign"
+    (agentdesign / "requirements").mkdir(parents=True)
+    (agentdesign / "requirements" / "mvp-ocr.txt").write_text("paddleocr\n", encoding="utf-8")
+    models = tmp_path / "models"
+    create_ocr_models(models)
+    env_file = tmp_path / ".env"
+    write_env(env_file, agentdesign, models)
+    env_file.write_text(
+        env_file.read_text(encoding="utf-8") + "\nAICHECK_ENABLE_AGENTDESIGN_SEAL_OCR=true\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("scripts.check_96_preflight.shutil.which", lambda name: "/usr/local/bin/docker")
+    monkeypatch.setattr("scripts.check_96_preflight.tcp_port_open", lambda port: False)
+
+    def fake_run(command, check, capture_output, text, timeout):
+        return subprocess.CompletedProcess(command, 0, stdout="Docker version 28.0.0", stderr="")
+
+    monkeypatch.setattr("scripts.check_96_preflight.subprocess.run", fake_run)
+
+    results = PreflightChecker(env_file=env_file, strict_production=True, env={}).run()
+    agentdesign_check = next(item for item in results if item.name == "agentdesign.path")
+    command_ready = next(item for item in results if item.name == "probe.command-ready")
+
+    assert agentdesign_check.status == "fail"
+    assert agentdesign_check.data
+    assert "seal_ocr/pipeline.py" in ",".join(agentdesign_check.data["missing"])
+    assert command_ready.status == "fail"
+    assert command_ready.data and "agentdesign.path" in command_ready.data["blockers"]
+
+
 def test_preflight_accepts_flat_explicit_ocr_model_cache(tmp_path, monkeypatch) -> None:
     agentdesign = tmp_path / "agentdesign"
     models = tmp_path / "official_models"

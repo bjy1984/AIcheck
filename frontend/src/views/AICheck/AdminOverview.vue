@@ -1756,7 +1756,7 @@ onMounted(() => {
         { label: '审计', value: auditPagination.total || 9, tone: 'red' }
       ]"
       menu-title="后台菜单"
-      menu-root="合同功能管理"
+      menu-root="后台管理功能"
       :menu-sections="adminShellMenuSections"
       boundary-title="后台边界"
       boundary-badge="无业务办理"
