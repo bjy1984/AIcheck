@@ -8260,8 +8260,15 @@ const openFirstOcrAnnotationTask = async () => {
 }
 
 const openOcrCapabilityTestPanel = async () => {
-  activeFdeTab.value = 'delivery'
+  ocrSubpage.value = 'capability-test'
   ocrCapabilityDialogVisible.value = true
+  if (!ocrCapabilityTestRuns.value.length) {
+    try {
+      await loadOcrCapabilityTestRuns()
+    } catch {
+      error.value = 'OCR 能力测试记录加载失败，可直接选择文件开始测试。'
+    }
+  }
 }
 
 const openOcrStatusDialog = (type: OcrStatusDialogType) => {
@@ -8685,10 +8692,21 @@ onBeforeUnmount(() => {
                   </div>
                   <div class="gate-summary-item">
                     <span>认证状态</span>
-                    <strong>
-                      <ElTag :type="ocr100Scorecard.ok ? 'success' : 'danger'" effect="plain">
-                        {{ ocr100Scorecard.ok ? '100分就绪' : '存在阻断' }}
-                      </ElTag>
+                    <strong
+                      class="gate-status-pill"
+                      :class="
+                        ocr100Scorecard.ok
+                          ? 'gate-status-pill--success'
+                          : 'gate-status-pill--danger'
+                      "
+                    >
+                      <i aria-hidden="true"></i>
+                      <span>{{ ocr100Scorecard.ok ? '100分就绪' : '存在阻断' }}</span>
+                      <small>{{
+                        ocr100Scorecard.ok
+                          ? '可作为交付基线'
+                          : `${ocr100Scorecard.blockers.length} 个阻断待处理`
+                      }}</small>
                     </strong>
                   </div>
                   <div class="gate-summary-item">
@@ -8920,10 +8938,21 @@ onBeforeUnmount(() => {
                   </div>
                   <div class="gate-summary-item">
                     <span>认证状态</span>
-                    <strong>
-                      <ElTag :type="ocr100Scorecard.ok ? 'success' : 'danger'" effect="plain">
-                        {{ ocr100Scorecard.ok ? '100分就绪' : '存在阻断' }}
-                      </ElTag>
+                    <strong
+                      class="gate-status-pill"
+                      :class="
+                        ocr100Scorecard.ok
+                          ? 'gate-status-pill--success'
+                          : 'gate-status-pill--danger'
+                      "
+                    >
+                      <i aria-hidden="true"></i>
+                      <span>{{ ocr100Scorecard.ok ? '100分就绪' : '存在阻断' }}</span>
+                      <small>{{
+                        ocr100Scorecard.ok
+                          ? '可作为交付基线'
+                          : `${ocr100Scorecard.blockers.length} 个阻断待处理`
+                      }}</small>
                     </strong>
                   </div>
                   <div class="gate-summary-item">
@@ -8993,6 +9022,208 @@ onBeforeUnmount(() => {
               <small>{{ tool.description }}</small>
             </button>
           </div>
+        </ElDialog>
+
+        <ElDialog
+          v-model="ocrCapabilityDialogVisible"
+          title="OCR 能力测试"
+          width="min(1180px, 96vw)"
+          class="ocr-capability-dialog"
+          destroy-on-close
+        >
+          <section class="ocr-capability-shell">
+            <div class="ocr-capability-hero">
+              <div>
+                <span>基础能力测试</span>
+                <strong>上传一份临时资料，验证 OCR 是否真的能识别。</strong>
+                <small>测试文件只用于 FDE 诊断，不进入正式项目资料，不改变审查结论。</small>
+              </div>
+              <ElSpace>
+                <ElButton plain @click="loadOcrCapabilityTestRuns">刷新记录</ElButton>
+                <ElButton
+                  type="primary"
+                  :loading="ocrCapabilityTestLoading"
+                  @click="startOcrCapabilityTest"
+                >
+                  开始测试
+                </ElButton>
+              </ElSpace>
+            </div>
+            <div class="ocr-capability-layout">
+              <section class="ocr-capability-card ocr-capability-card--setup">
+                <div class="ocr-capability-card__head">
+                  <strong>1. 选择测试文件</strong>
+                  <ElTag effect="plain">PDF / 图片</ElTag>
+                </div>
+                <input
+                  ref="ocrCapabilityFileInputRef"
+                  class="sr-only-input"
+                  type="file"
+                  accept="application/pdf,image/*,.pdf,.png,.jpg,.jpeg"
+                  @change="handleOcrCapabilityTestFileChange"
+                />
+                <button
+                  type="button"
+                  class="ocr-capability-upload"
+                  @click="chooseOcrCapabilityTestFile"
+                >
+                  <strong>{{ ocrCapabilityTestFile?.name || '点击选择 PDF 或图片' }}</strong>
+                  <span v-if="ocrCapabilityTestFile">
+                    {{ Math.ceil((ocrCapabilityTestFile.size || 0) / 1024) }} KB
+                  </span>
+                  <span v-else>建议用真实扫描件、表格照片或盖章资料做测试。</span>
+                </button>
+                <div class="ocr-capability-form">
+                  <label>
+                    <span>解析配置</span>
+                    <ElSelect v-model="ocrCapabilityTestForm.profileId" size="small">
+                      <ElOption
+                        label="管道特性表 / 工程表格"
+                        value="piping_characteristic_list_v1"
+                      />
+                      <ElOption label="质量证明书" value="quality_certificate_v1" />
+                      <ElOption label="NDT RT 报告" value="ndt_rt_report_v1" />
+                      <ElOption label="通用资料" value="all" />
+                    </ElSelect>
+                  </label>
+                  <label>
+                    <span>资料类型</span>
+                    <ElSelect v-model="ocrCapabilityTestForm.documentType" size="small">
+                      <ElOption label="工程表格照片" value="engineering_table_photo" />
+                      <ElOption label="质量证明文件" value="quality_certificate" />
+                      <ElOption label="NDT 检测报告" value="ndt_report" />
+                      <ElOption label="通用工程资料" value="engineering_document" />
+                    </ElSelect>
+                  </label>
+                </div>
+                <div class="ocr-capability-switches">
+                  <label>
+                    <input v-model="ocrCapabilityTestForm.enableTables" type="checkbox" />
+                    表格识别
+                  </label>
+                  <label>
+                    <input v-model="ocrCapabilityTestForm.enableSeals" type="checkbox" />
+                    印章识别
+                  </label>
+                  <label>
+                    <input v-model="ocrCapabilityTestForm.enableFallback" type="checkbox" />
+                    复杂页兜底
+                  </label>
+                </div>
+              </section>
+              <section class="ocr-capability-card">
+                <div class="ocr-capability-card__head">
+                  <strong>2. 最近测试</strong>
+                  <ElTag effect="plain">{{ ocrCapabilityTestRuns.length }} 条</ElTag>
+                </div>
+                <ElTable
+                  :data="ocrCapabilityTestRuns"
+                  class="ocr-capability-table"
+                  @row-click="(row) => loadOcrCapabilityTestDetail(String(row.runId || row.id))"
+                >
+                  <ElTableColumn
+                    prop="fileName"
+                    label="文件"
+                    min-width="180"
+                    show-overflow-tooltip
+                  />
+                  <ElTableColumn prop="status" label="状态" width="115">
+                    <template #default="{ row }">
+                      <ElTag :type="ocrCapabilityStatusType(row.status)" effect="plain">
+                        {{ friendlyStatus(row.status) }}
+                      </ElTag>
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn label="结果" width="105">
+                    <template #default="{ row }">
+                      {{
+                        Number(row.resultSummary?.fields || 0) +
+                        Number(row.resultSummary?.tables || 0) +
+                        Number(row.resultSummary?.seals || 0)
+                      }}
+                    </template>
+                  </ElTableColumn>
+                </ElTable>
+              </section>
+            </div>
+            <section class="ocr-capability-result">
+              <div class="ocr-capability-preview">
+                <div class="ocr-capability-card__head">
+                  <strong>3. 文件预览</strong>
+                  <ElTag v-if="selectedOcrCapabilityRun" effect="plain">
+                    {{ friendlyStatus(selectedOcrCapabilityRun.status) }}
+                  </ElTag>
+                </div>
+                <div v-if="selectedOcrCapabilityPreview?.url" class="ocr-preview-stage">
+                  <img
+                    v-if="selectedOcrCapabilityPreview.previewType === 'image'"
+                    :src="selectedOcrCapabilityPreview.url"
+                    alt="OCR 测试文件预览"
+                  />
+                  <iframe
+                    v-else-if="selectedOcrCapabilityPreview.previewType === 'pdf'"
+                    :src="selectedOcrCapabilityPreview.url"
+                    title="OCR 测试 PDF 预览"
+                  ></iframe>
+                  <ElEmpty v-else description="该文件类型暂不支持页面内预览，可查看 OCR 结果。" />
+                </div>
+                <ElEmpty v-else description="选择测试记录后显示文件预览。" />
+              </div>
+              <div class="ocr-capability-summary">
+                <div class="ocr-capability-card__head">
+                  <strong>4. 识别结果</strong>
+                  <ElSpace>
+                    <ElButton
+                      size="small"
+                      plain
+                      :disabled="!selectedOcrCapabilityCanPersist"
+                      :loading="actionLoading"
+                      @click="convertOcrCapabilityTestToAnnotation"
+                    >
+                      转入OCR标注
+                    </ElButton>
+                    <ElButton
+                      size="small"
+                      plain
+                      :disabled="!selectedOcrCapabilityCanPersist"
+                      :loading="actionLoading"
+                      @click="convertOcrCapabilityTestToEvaluationCase"
+                    >
+                      生成评估样本草稿
+                    </ElButton>
+                  </ElSpace>
+                </div>
+                <div class="ocr-capability-kpis">
+                  <div>
+                    <span>页数</span>
+                    <strong>{{ selectedOcrCapabilitySummary.pages }}</strong>
+                  </div>
+                  <div>
+                    <span>字段</span>
+                    <strong>{{ selectedOcrCapabilitySummary.fields }}</strong>
+                  </div>
+                  <div>
+                    <span>表格</span>
+                    <strong>{{ selectedOcrCapabilitySummary.tables }}</strong>
+                  </div>
+                  <div>
+                    <span>印章</span>
+                    <strong>{{ selectedOcrCapabilitySummary.seals }}</strong>
+                  </div>
+                  <div>
+                    <span>质量状态</span>
+                    <strong>{{
+                      friendlyStatus(selectedOcrCapabilitySummary.qualityStatus)
+                    }}</strong>
+                  </div>
+                  <div>
+                    <span>诊断</span>
+                    <strong>{{ selectedOcrCapabilitySummary.diagnostics }}</strong>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </section>
         </ElDialog>
 
         <div class="workbench-summary-grid ocr-command-kpis">
@@ -13521,10 +13752,21 @@ onBeforeUnmount(() => {
                       </div>
                       <div class="gate-summary-item">
                         <span>认证状态</span>
-                        <strong>
-                          <ElTag :type="ocr100Scorecard.ok ? 'success' : 'danger'" effect="plain">
-                            {{ ocr100Scorecard.ok ? '100分就绪' : '存在阻断' }}
-                          </ElTag>
+                        <strong
+                          class="gate-status-pill"
+                          :class="
+                            ocr100Scorecard.ok
+                              ? 'gate-status-pill--success'
+                              : 'gate-status-pill--danger'
+                          "
+                        >
+                          <i aria-hidden="true"></i>
+                          <span>{{ ocr100Scorecard.ok ? '100分就绪' : '存在阻断' }}</span>
+                          <small>{{
+                            ocr100Scorecard.ok
+                              ? '可作为交付基线'
+                              : `${ocr100Scorecard.blockers.length} 个阻断待处理`
+                          }}</small>
                         </strong>
                       </div>
                       <div class="gate-summary-item">
@@ -20150,6 +20392,71 @@ onBeforeUnmount(() => {
   margin-top: 8px;
   font-size: 18px;
   color: #172033;
+}
+
+.gate-summary-item .gate-status-pill {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: 2px 8px;
+  align-items: center;
+  width: 100%;
+  min-height: 46px;
+  padding: 9px 11px;
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.25;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 65%);
+}
+
+.gate-summary-item .gate-status-pill i {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+}
+
+.gate-summary-item .gate-status-pill span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 850;
+  color: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gate-summary-item .gate-status-pill small {
+  display: block;
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 650;
+  color: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.78;
+}
+
+.gate-summary-item .gate-status-pill--success {
+  color: #047857;
+  background: #ecfdf3;
+  border: 1px solid #a7f3d0;
+}
+
+.gate-summary-item .gate-status-pill--success i {
+  background: #10b981;
+}
+
+.gate-summary-item .gate-status-pill--danger {
+  color: #b42318;
+  background: #fff1f0;
+  border: 1px solid #fecaca;
+}
+
+.gate-summary-item .gate-status-pill--danger i {
+  background: #ef4444;
 }
 
 .annotation-canvas {
