@@ -5722,6 +5722,7 @@ const normalizedProjectAuditAnnotationRows = computed(() =>
     const blockers = [...readinessBlockers, ...certificationBlockers].filter(Boolean)
     return {
       ...item,
+      sourceTask: row,
       rowIndex: index + 1,
       taskId: item.taskId,
       caseId: item.caseId,
@@ -5739,7 +5740,24 @@ const normalizedProjectAuditAnnotationRows = computed(() =>
       labelTotal,
       gapTotal: Math.max(0, candidateTotal - labelTotal),
       blockerText: blockers.length ? blockers.map((item) => shortText(item, '')).join('；') : '无',
-      readyForEval: Boolean(item.readyForEval)
+      readyForEval: Boolean(item.readyForEval),
+      annotationTargetText: `字段 ${Number(candidateCounts.fields || 0)} · 表格 ${Number(candidateCounts.tables || 0)} · 印章 ${Number(candidateCounts.seals || 0)}`,
+      annotationProgressText: `${labelTotal}/${candidateTotal || 0}`,
+      annotationReasonText: blockers.length
+        ? blockers.map((item) => shortText(item, '')).join('；')
+        : candidateTotal > labelTotal
+          ? `还有 ${Math.max(0, candidateTotal - labelTotal)} 个候选对象未确认`
+          : item.readyForEval
+            ? '已形成标准答案，可进入评估集'
+            : '等待二审确认后入评估集',
+      annotationNextAction: blockers.length
+        ? '打开样本，处理阻断'
+        : candidateTotal > labelTotal
+          ? '补齐字段/表格/印章'
+          : item.readyForEval
+            ? '二审或入评估集'
+            : '提交二审',
+      priorityTone: blockers.length || candidateTotal > labelTotal ? 'orange' : 'green'
     }
   })
 )
@@ -5860,7 +5878,13 @@ const projectAuditAnnotationIssueRows = computed(() => {
     .map((row) => ({
       object: row.taskId || row.caseId || row.scenario,
       issue: row.gapTotal ? `缺 ${row.gapTotal} 个标注对象` : row.blockerText,
-      action: row.readyForEval ? '二审后进入评估集' : '补齐人工标注、bbox 和阻断归因',
+      action: row.gapTotal
+        ? '打开样本，补齐字段/表格/印章标准答案'
+        : row.blockerText !== '无'
+          ? '处理阻断原因后再提交二审'
+          : row.readyForEval
+            ? '二审后进入评估集'
+            : '补齐人工标注、bbox 和阻断归因',
       source: '标注样本'
     }))
   const coverageIssues = projectAuditAnnotationCoverageRows.value
@@ -5874,32 +5898,63 @@ const projectAuditAnnotationIssueRows = computed(() => {
   return [...sampleIssues, ...coverageIssues]
 })
 
-const projectAuditOcrLabelCards = computed(() => [
-  {
-    label: '标注样本',
-    value: String(projectAuditAnnotationSummary.value.total),
-    hint: '当前项目/节点 OCR 样本',
-    tone: 'blue'
-  },
-  {
-    label: '已人工标注',
-    value: String(projectAuditAnnotationSummary.value.humanLabeled),
-    hint: `完成率 ${scorePercent(projectAuditAnnotationSummary.value.completionRate)}`,
-    tone: projectAuditAnnotationSummary.value.missingHumanLabels ? 'orange' : 'green'
-  },
-  {
-    label: '可入评估',
-    value: String(projectAuditAnnotationSummary.value.readyForEval),
-    hint: '可进入 OCR Regression Set',
-    tone: projectAuditAnnotationSummary.value.readyForEval ? 'green' : 'orange'
-  },
-  {
-    label: '标注缺口',
-    value: String(projectAuditAnnotationSummary.value.gapTotal),
-    hint: `${projectAuditAnnotationSummary.value.labelTotal}/${projectAuditAnnotationSummary.value.candidateTotal} 已标`,
-    tone: projectAuditAnnotationSummary.value.gapTotal ? 'red' : 'green'
+const projectAuditAnnotationWorkflowRows = computed(() => {
+  const summary = projectAuditAnnotationSummary.value
+  const issueCount = projectAuditAnnotationIssueRows.value.length
+  return [
+    {
+      step: '01',
+      title: '选样本',
+      description: '先从低置信、缺 bbox、表格/印章异常的 OCR 结果里选样本。',
+      metric: `${summary.total} 个样本`,
+      done: summary.total > 0
+    },
+    {
+      step: '02',
+      title: '核对标准答案',
+      description: '确认字段值、表格单元格、印章名称和页面坐标是否正确。',
+      metric: `${summary.labelTotal}/${summary.candidateTotal || 0} 已确认`,
+      done: summary.gapTotal === 0 && summary.candidateTotal > 0
+    },
+    {
+      step: '03',
+      title: '处理缺口',
+      description: '缺字段、缺表格、缺印章或证据框不准的样本，先补齐再二审。',
+      metric: `${issueCount} 个待处理`,
+      done: issueCount === 0
+    },
+    {
+      step: '04',
+      title: '进入评估',
+      description: '二审通过的样本进入 OCR Regression Set，用来考核 Profile 和引擎版本。',
+      metric: `${summary.readyForEval} 个可入评估`,
+      done: summary.readyForEval > 0
+    }
+  ]
+})
+
+const projectAuditAnnotationPrimaryAction = computed(() => {
+  const firstIssue = projectAuditAnnotationIssueRows.value[0]
+  if (firstIssue) {
+    return {
+      title: firstIssue.issue,
+      description: firstIssue.action,
+      tone: 'orange' as const
+    }
   }
-])
+  if (projectAuditAnnotationSummary.value.readyForEval) {
+    return {
+      title: '样本已可用于评估',
+      description: '可以进入准确率评估页，重跑 OCR Regression Set。',
+      tone: 'green' as const
+    }
+  }
+  return {
+    title: '等待生成 OCR 标注样本',
+    description: '先运行 OCR 解析或从低置信字段创建样本。',
+    tone: 'blue' as const
+  }
+})
 
 const projectAuditEvaluationGateRows = computed(() => {
   const summary = latestEvaluationCaseSummary.value
@@ -9346,226 +9401,262 @@ onMounted(loadData)
         </template>
 
         <template v-else-if="projectAuditSubpage === 'ocr-labeling'">
-          <div class="workbench-summary-grid project-subpage-kpis">
-            <div
-              v-for="card in projectAuditOcrLabelCards"
-              :key="card.label"
-              :class="`workbench-summary-card workbench-summary-card--${card.tone}`"
-            >
-              <span>{{ card.label }}</span>
-              <strong>{{ card.value }}</strong>
-              <small>{{ card.hint }}</small>
+          <section class="ocr-labeling-focus" aria-label="OCR 打标工作台说明">
+            <div class="ocr-labeling-focus-copy">
+              <span>OCR 打标台</span>
+              <strong>把识别结果修成标准答案，用来评估和优化 OCR。</strong>
+              <small>本页不审批业务结论，只处理字段、表格、印章和 bbox 的人工标准答案。</small>
             </div>
-          </div>
+            <div class="ocr-labeling-focus-steps" aria-label="OCR 打标操作顺序">
+              <span
+                v-for="row in projectAuditAnnotationWorkflowRows.slice(0, 3)"
+                :key="row.step"
+                :class="{ done: row.done }"
+              >
+                {{ row.title }}
+              </span>
+            </div>
+            <div class="ocr-labeling-focus-progress">
+              <span>标准答案</span>
+              <strong>
+                {{ projectAuditAnnotationSummary.labelTotal }}/{{
+                  projectAuditAnnotationSummary.candidateTotal || 0
+                }}
+              </strong>
+              <small>可入评估 {{ projectAuditAnnotationSummary.readyForEval }} 个</small>
+            </div>
+          </section>
 
-          <ElRow :gutter="16" class="mb-16px">
-            <ElCol :xl="14" :lg="14" :md="24" :sm="24" :xs="24">
-              <ElCard shadow="never" class="panel">
-                <template #header>
-                  <div class="panel-header">
-                    <span>标注入评估健康</span>
-                    <ElTag effect="plain">{{ projectAuditAnnotationHealthRows.length }} 项</ElTag>
-                  </div>
-                </template>
-                <ElTable :data="projectAuditAnnotationHealthRows" border height="250">
-                  <ElTableColumn prop="item" label="检查项" width="150" />
-                  <ElTableColumn prop="status" label="状态" width="120">
-                    <template #default="{ row }">
-                      <ElTag :type="row.passed ? 'success' : 'warning'" effect="plain">
-                        {{ row.status }}
-                      </ElTag>
-                    </template>
-                  </ElTableColumn>
-                  <ElTableColumn
-                    prop="evidence"
-                    label="证据"
-                    min-width="230"
-                    show-overflow-tooltip
-                  />
-                  <ElTableColumn
-                    prop="action"
-                    label="处理口径"
-                    min-width="260"
-                    show-overflow-tooltip
-                  />
-                </ElTable>
-              </ElCard>
-            </ElCol>
-            <ElCol :xl="10" :lg="10" :md="24" :sm="24" :xs="24">
-              <ElCard shadow="never" class="panel">
-                <template #header>样本缺口与建议</template>
-                <ElTable
-                  :data="projectAuditAnnotationIssueRows"
-                  border
-                  height="250"
-                  empty-text="暂无缺口"
+          <section class="ocr-labeling-workspace" aria-label="OCR 打标任务区">
+            <ElCard shadow="never" class="panel ocr-labeling-queue-panel">
+              <template #header>
+                <div class="panel-header">
+                  <span>待处理样本</span>
+                  <ElTag
+                    :type="projectAuditAnnotationSummary.gapTotal ? 'warning' : 'success'"
+                    effect="plain"
+                  >
+                    缺口 {{ projectAuditAnnotationSummary.gapTotal }}
+                  </ElTag>
+                </div>
+              </template>
+              <div class="ocr-labeling-task-list">
+                <article
+                  v-for="row in normalizedProjectAuditAnnotationRows"
+                  :key="String(row.taskId || row.caseId || row.rowIndex)"
+                  :class="[
+                    'ocr-labeling-task-card',
+                    `ocr-labeling-task-card--${row.priorityTone}`,
+                    {
+                      active:
+                        String(selectedAnnotationTask?.taskId || '') === String(row.taskId || '')
+                    }
+                  ]"
+                  @click="openAnnotationEditor(row.sourceTask)"
                 >
-                  <ElTableColumn prop="source" label="来源" width="92" />
-                  <ElTableColumn prop="object" label="对象" min-width="160" show-overflow-tooltip />
-                  <ElTableColumn prop="issue" label="缺口" min-width="170" show-overflow-tooltip />
-                  <ElTableColumn prop="action" label="建议" min-width="210" show-overflow-tooltip />
-                </ElTable>
-              </ElCard>
-            </ElCol>
-          </ElRow>
-
-          <ElRow :gutter="16">
-            <ElCol :xl="15" :lg="15" :md="24" :sm="24" :xs="24">
-              <ElCard shadow="never" class="panel">
-                <template #header>
-                  <div class="panel-header">
-                    <span>OCR 人工打标样本</span>
-                    <ElButton
-                      size="small"
-                      plain
-                      :loading="actionLoading"
-                      @click="openFirstOcrAnnotationTask"
-                    >
-                      打开首个样本
-                    </ElButton>
+                  <div class="ocr-labeling-task-main">
+                    <span>{{ row.scenario || row.profileId || 'OCR 样本' }}</span>
+                    <strong>{{ row.taskId || row.caseId }}</strong>
+                    <small>{{ row.annotationReasonText }}</small>
                   </div>
-                </template>
-                <ElTable
-                  :data="normalizedProjectAuditAnnotationRows"
-                  border
-                  height="460"
-                  @row-click="(row) => openAnnotationEditor(row)"
-                >
-                  <ElTableColumn prop="taskId" label="任务" min-width="150" show-overflow-tooltip />
-                  <ElTableColumn
-                    prop="scenario"
-                    label="场景"
-                    min-width="180"
-                    show-overflow-tooltip
-                  />
-                  <ElTableColumn
-                    prop="profileId"
-                    label="Profile"
-                    min-width="200"
-                    show-overflow-tooltip
-                  />
-                  <ElTableColumn prop="pageNo" label="页" width="72" />
-                  <ElTableColumn label="候选" width="78">
-                    <template #default="{ row }">{{ row.candidateTotal }}</template>
-                  </ElTableColumn>
-                  <ElTableColumn label="已标" width="78">
-                    <template #default="{ row }">{{ row.labelTotal }}</template>
-                  </ElTableColumn>
-                  <ElTableColumn label="缺口" width="78">
-                    <template #default="{ row }">
-                      <ElTag :type="row.gapTotal ? 'warning' : 'success'" effect="plain">
-                        {{ row.gapTotal }}
-                      </ElTag>
-                    </template>
-                  </ElTableColumn>
-                  <ElTableColumn label="状态" width="130">
-                    <template #default="{ row }">
-                      <ElTag :type="statusType(String(row.collectionStatus))" effect="plain">
-                        {{ friendlyStatus(row.collectionStatus) }}
-                      </ElTag>
-                    </template>
-                  </ElTableColumn>
-                  <ElTableColumn label="阻断" min-width="240" show-overflow-tooltip>
-                    <template #default="{ row }">{{ row.blockerText }}</template>
-                  </ElTableColumn>
-                </ElTable>
-              </ElCard>
-            </ElCol>
-            <ElCol :xl="9" :lg="9" :md="24" :sm="24" :xs="24">
-              <ElCard shadow="never" class="panel">
-                <template #header>标注覆盖率</template>
-                <ElTable :data="projectAuditAnnotationCoverageRows" border height="178">
-                  <ElTableColumn prop="label" label="对象" width="82" />
-                  <ElTableColumn prop="candidates" label="候选" width="78" />
-                  <ElTableColumn prop="labeled" label="已标" width="78" />
-                  <ElTableColumn label="覆盖率" min-width="110">
-                    <template #default="{ row }">
-                      <ElTag :type="row.gap ? 'warning' : 'success'" effect="plain">
-                        {{ scorePercent(row.coverage) }}
-                      </ElTag>
-                    </template>
-                  </ElTableColumn>
-                  <ElTableColumn prop="gap" label="缺口" width="78" />
-                </ElTable>
-              </ElCard>
-              <ElCard shadow="never" class="panel mt-16px">
-                <template #header>阻断原因分布</template>
-                <ElTable :data="projectAuditAnnotationBlockerRows" border height="156">
-                  <ElTableColumn
-                    prop="blocker"
-                    label="阻断原因"
-                    min-width="190"
-                    show-overflow-tooltip
-                  />
-                  <ElTableColumn prop="count" label="数量" width="74" />
-                </ElTable>
+                  <div class="ocr-labeling-task-meta">
+                    <span>{{ row.annotationTargetText }}</span>
+                    <strong>{{ row.annotationProgressText }}</strong>
+                    <ElTag :type="statusType(String(row.collectionStatus))" effect="plain">
+                      {{ friendlyStatus(row.collectionStatus) }}
+                    </ElTag>
+                  </div>
+                  <ElButton
+                    size="small"
+                    type="primary"
+                    plain
+                    @click.stop="openAnnotationEditor(row.sourceTask)"
+                  >
+                    {{ row.annotationNextAction }}
+                  </ElButton>
+                </article>
                 <ElEmpty
-                  v-if="!projectAuditAnnotationBlockerRows.length"
-                  description="当前样本无标注阻断"
+                  v-if="!normalizedProjectAuditAnnotationRows.length"
+                  description="当前项目暂无 OCR 打标样本"
                 />
-              </ElCard>
-            </ElCol>
-          </ElRow>
+              </div>
+            </ElCard>
 
-          <ElRow :gutter="16" class="mt-16px">
-            <ElCol :xl="15" :lg="15" :md="24" :sm="24" :xs="24">
-              <ElCard shadow="never" class="panel">
-                <template #header>OCR Job 与候选图</template>
-                <ElTable
-                  :data="projectAuditOcrJobs"
-                  border
-                  height="250"
-                  @row-click="(row) => openOcrAuditDrawer(String(row.jobId || row.id))"
+            <aside class="ocr-labeling-action-panel" aria-label="OCR 打标操作面板">
+              <section
+                :class="[
+                  'ocr-labeling-action-card',
+                  `ocr-labeling-action-card--${projectAuditAnnotationPrimaryAction.tone}`
+                ]"
+              >
+                <span>下一步</span>
+                <strong>{{ projectAuditAnnotationPrimaryAction.title }}</strong>
+                <small>{{ projectAuditAnnotationPrimaryAction.description }}</small>
+                <ElButton
+                  type="primary"
+                  :loading="actionLoading"
+                  @click="openFirstOcrAnnotationTask"
                 >
-                  <ElTableColumn prop="jobId" label="Job" min-width="160" show-overflow-tooltip />
-                  <ElTableColumn
-                    prop="profileId"
-                    label="Profile"
-                    min-width="180"
-                    show-overflow-tooltip
+                  打开优先样本
+                </ElButton>
+              </section>
+
+              <section class="ocr-labeling-plain-guide">
+                <span>操作顺序</span>
+                <ol>
+                  <li>点开左侧样本。</li>
+                  <li>核对并修正 OCR 标准答案。</li>
+                  <li>二审通过后进入评估集。</li>
+                </ol>
+              </section>
+
+              <section class="ocr-labeling-mini-stats">
+                <article>
+                  <span>样本</span>
+                  <strong>{{ projectAuditAnnotationSummary.total }}</strong>
+                </article>
+                <article>
+                  <span>已标</span>
+                  <strong>{{ projectAuditAnnotationSummary.humanLabeled }}</strong>
+                </article>
+                <article>
+                  <span>评估</span>
+                  <strong>{{ projectAuditAnnotationSummary.readyForEval }}</strong>
+                </article>
+              </section>
+            </aside>
+          </section>
+
+          <details class="ocr-labeling-diagnostics">
+            <summary>
+              <span>高级诊断</span>
+              <small>覆盖率、完成标准、OCR Job、候选图和不能入评估的原因</small>
+            </summary>
+            <ElRow :gutter="16">
+              <ElCol :xl="8" :lg="8" :md="24" :sm="24" :xs="24">
+                <ElCard shadow="never" class="panel">
+                  <template #header>标准答案覆盖</template>
+                  <div class="ocr-labeling-coverage-card ocr-labeling-coverage-card--flat">
+                    <article
+                      v-for="row in projectAuditAnnotationCoverageRows"
+                      :key="row.label"
+                      class="ocr-labeling-coverage-row"
+                    >
+                      <span>{{ row.label }}</span>
+                      <div>
+                        <i
+                          :style="{ width: `${Math.round(Number(row.coverage || 0) * 100)}%` }"
+                        ></i>
+                      </div>
+                      <strong>{{ scorePercent(row.coverage) }}</strong>
+                    </article>
+                  </div>
+                </ElCard>
+              </ElCol>
+              <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
+                <ElCard shadow="never" class="panel">
+                  <template #header>完成标准</template>
+                  <ElTable :data="projectAuditAnnotationHealthRows" border height="230">
+                    <ElTableColumn prop="item" label="检查项" width="150" />
+                    <ElTableColumn prop="status" label="状态" width="120">
+                      <template #default="{ row }">
+                        <ElTag :type="row.passed ? 'success' : 'warning'" effect="plain">
+                          {{ row.status }}
+                        </ElTag>
+                      </template>
+                    </ElTableColumn>
+                    <ElTableColumn
+                      prop="evidence"
+                      label="证据"
+                      min-width="230"
+                      show-overflow-tooltip
+                    />
+                    <ElTableColumn
+                      prop="action"
+                      label="处理口径"
+                      min-width="260"
+                      show-overflow-tooltip
+                    />
+                  </ElTable>
+                </ElCard>
+              </ElCol>
+              <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
+                <ElCard shadow="never" class="panel">
+                  <template #header>不能入评估的原因</template>
+                  <ElTable :data="projectAuditAnnotationBlockerRows" border height="230">
+                    <ElTableColumn
+                      prop="blocker"
+                      label="原因"
+                      min-width="190"
+                      show-overflow-tooltip
+                    />
+                    <ElTableColumn prop="count" label="数量" width="74" />
+                  </ElTable>
+                  <ElEmpty
+                    v-if="!projectAuditAnnotationBlockerRows.length"
+                    description="当前样本无标注阻断"
                   />
-                  <ElTableColumn prop="status" label="状态" width="120">
-                    <template #default="{ row }">
-                      <ElTag :type="statusType(String(row.status))" effect="plain">
-                        {{ friendlyStatus(row.status) }}
-                      </ElTag>
-                    </template>
-                  </ElTableColumn>
-                  <ElTableColumn label="操作" width="92" fixed="right">
-                    <template #default="{ row }">
-                      <ElButton
-                        data-testid="fde-open-ocr-detail"
-                        size="small"
-                        text
-                        @click.stop="openOcrAuditDrawer(String(row.jobId || row.id))"
-                      >
-                        详情
-                      </ElButton>
-                    </template>
-                  </ElTableColumn>
-                </ElTable>
-              </ElCard>
-            </ElCol>
-            <ElCol :xl="9" :lg="9" :md="24" :sm="24" :xs="24">
-              <ElCard shadow="never" class="panel mt-16px">
-                <template #header>当前 OCR 结果</template>
-                <ElDescriptions :column="1" border>
-                  <ElDescriptionsItem label="字段">
-                    {{ selectedOcrResultSummary.fieldCount || 0 }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="表格">
-                    {{ selectedOcrResultSummary.tableCount || 0 }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="印章">
-                    {{ selectedOcrResultSummary.sealCount || 0 }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="候选图">
-                    {{ selectedOcrGeneratedVariants.join('、') || '-' }}
-                  </ElDescriptionsItem>
-                </ElDescriptions>
-              </ElCard>
-            </ElCol>
-          </ElRow>
+                </ElCard>
+              </ElCol>
+              <ElCol :xl="15" :lg="15" :md="24" :sm="24" :xs="24">
+                <ElCard shadow="never" class="panel mt-16px">
+                  <template #header>OCR 解析任务</template>
+                  <ElTable
+                    :data="projectAuditOcrJobs"
+                    border
+                    height="250"
+                    @row-click="(row) => openOcrAuditDrawer(String(row.jobId || row.id))"
+                  >
+                    <ElTableColumn prop="jobId" label="Job" min-width="160" show-overflow-tooltip />
+                    <ElTableColumn
+                      prop="profileId"
+                      label="Profile"
+                      min-width="180"
+                      show-overflow-tooltip
+                    />
+                    <ElTableColumn prop="status" label="状态" width="120">
+                      <template #default="{ row }">
+                        <ElTag :type="statusType(String(row.status))" effect="plain">
+                          {{ friendlyStatus(row.status) }}
+                        </ElTag>
+                      </template>
+                    </ElTableColumn>
+                    <ElTableColumn label="操作" width="92" fixed="right">
+                      <template #default="{ row }">
+                        <ElButton
+                          data-testid="fde-open-ocr-detail"
+                          size="small"
+                          text
+                          @click.stop="openOcrAuditDrawer(String(row.jobId || row.id))"
+                        >
+                          详情
+                        </ElButton>
+                      </template>
+                    </ElTableColumn>
+                  </ElTable>
+                </ElCard>
+              </ElCol>
+              <ElCol :xl="9" :lg="9" :md="24" :sm="24" :xs="24">
+                <ElCard shadow="never" class="panel mt-16px">
+                  <template #header>选中 OCR 结果快照</template>
+                  <ElDescriptions :column="1" border>
+                    <ElDescriptionsItem label="字段">
+                      {{ selectedOcrResultSummary.fieldCount || 0 }}
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="表格">
+                      {{ selectedOcrResultSummary.tableCount || 0 }}
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="印章">
+                      {{ selectedOcrResultSummary.sealCount || 0 }}
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="候选图">
+                      {{ selectedOcrGeneratedVariants.join('、') || '-' }}
+                    </ElDescriptionsItem>
+                  </ElDescriptions>
+                </ElCard>
+              </ElCol>
+            </ElRow>
+          </details>
         </template>
 
         <template v-else-if="projectAuditSubpage === 'evaluation'">
@@ -16810,6 +16901,694 @@ onMounted(loadData)
   border-radius: 8px;
 }
 
+.ocr-labeling-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+  gap: 14px;
+  align-items: stretch;
+  margin-bottom: 14px;
+}
+
+.ocr-labeling-hero--compact {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+}
+
+.ocr-labeling-hero-copy,
+.ocr-labeling-primary-action {
+  min-width: 0;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid #dbe8f7;
+  border-radius: 8px;
+  box-shadow: 0 8px 22px rgb(15 23 42 / 4%);
+}
+
+.ocr-labeling-hero-copy {
+  display: grid;
+  gap: 7px;
+  background: linear-gradient(180deg, rgb(248 251 255 / 96%), #fff),
+    radial-gradient(circle at 20px 14px, rgb(37 99 235 / 10%), transparent 72px);
+}
+
+.ocr-labeling-hero-copy span,
+.ocr-labeling-hero-copy strong,
+.ocr-labeling-hero-copy small,
+.ocr-labeling-primary-action span,
+.ocr-labeling-primary-action strong,
+.ocr-labeling-primary-action small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ocr-labeling-hero-copy span,
+.ocr-labeling-primary-action span {
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #2563eb;
+}
+
+.ocr-labeling-hero-copy strong,
+.ocr-labeling-primary-action strong {
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 25px;
+  color: #172033;
+}
+
+.ocr-labeling-hero-copy small,
+.ocr-labeling-primary-action small {
+  font-size: 13px;
+  line-height: 21px;
+  color: #64748b;
+  white-space: normal;
+}
+
+.ocr-labeling-primary-action {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.ocr-labeling-primary-action--green {
+  background: #f3fbf7;
+  border-color: #c9ead8;
+}
+
+.ocr-labeling-primary-action--blue {
+  background: #f4f8ff;
+  border-color: #cfe0ff;
+}
+
+.ocr-labeling-primary-action--orange {
+  background: #fff8ed;
+  border-color: #f6d6a5;
+}
+
+.ocr-labeling-primary-action--red {
+  background: #fff3f1;
+  border-color: #ffc9c3;
+}
+
+.ocr-labeling-mini-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.ocr-labeling-mini-flow span {
+  display: inline-flex;
+  min-height: 24px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 18px;
+  color: #52617a;
+  background: #f8fafc;
+  border: 1px solid #dbe8f7;
+  border-radius: 999px;
+  align-items: center;
+}
+
+.ocr-labeling-mini-flow span.done {
+  color: #15803d;
+  background: #eaf8ef;
+  border-color: #bfe8ce;
+}
+
+.ocr-labeling-workflow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.ocr-labeling-step {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 9px;
+  min-width: 0;
+  min-height: 118px;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #dbe8f7;
+  border-radius: 8px;
+}
+
+.ocr-labeling-step.done {
+  background: #f3fbf7;
+  border-color: #c9ead8;
+}
+
+.ocr-labeling-step > span {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  font-size: 12px;
+  font-weight: 900;
+  color: #1d4ed8;
+  background: #eef5ff;
+  border: 1px solid #cfe0ff;
+  border-radius: 8px;
+  place-items: center;
+}
+
+.ocr-labeling-step.done > span {
+  color: #15803d;
+  background: #eaf8ef;
+  border-color: #bfe8ce;
+}
+
+.ocr-labeling-step div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ocr-labeling-step strong,
+.ocr-labeling-step small,
+.ocr-labeling-step em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ocr-labeling-step strong {
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 20px;
+  color: #172033;
+  white-space: nowrap;
+}
+
+.ocr-labeling-step small {
+  display: -webkit-box;
+  font-size: 12px;
+  line-height: 18px;
+  color: #64748b;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.ocr-labeling-step em {
+  grid-column: 2;
+  justify-self: start;
+  min-height: 22px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 18px;
+  color: #475569;
+  background: #f8fafc;
+  border: 1px solid #dbe8f7;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ocr-labeling-main-grid {
+  align-items: start;
+}
+
+.ocr-labeling-side-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ocr-labeling-help-card,
+.ocr-labeling-coverage-card,
+.ocr-labeling-next-list {
+  min-width: 0;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid #dbe8f7;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgb(15 23 42 / 4%);
+}
+
+.ocr-labeling-help-card {
+  background: linear-gradient(180deg, #f8fbff, #fff);
+}
+
+.ocr-labeling-help-card > span {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 900;
+  color: #172033;
+}
+
+.ocr-labeling-help-card ol {
+  display: grid;
+  gap: 7px;
+  padding: 0 0 0 18px;
+  margin: 0;
+}
+
+.ocr-labeling-help-card li {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 19px;
+  color: #52617a;
+}
+
+.ocr-labeling-coverage-card,
+.ocr-labeling-next-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ocr-labeling-coverage-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 48px;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.ocr-labeling-coverage-row span,
+.ocr-labeling-coverage-row strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 900;
+  color: #52617a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocr-labeling-coverage-row div {
+  height: 10px;
+  min-width: 0;
+  overflow: hidden;
+  background: #eef4fb;
+  border-radius: 999px;
+}
+
+.ocr-labeling-coverage-row i {
+  display: block;
+  height: 100%;
+  min-width: 4px;
+  background: #2563eb;
+  border-radius: inherit;
+}
+
+.ocr-labeling-next-list article {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  background: #fff8ed;
+  border: 1px solid #f6d6a5;
+  border-radius: 8px;
+}
+
+.ocr-labeling-next-list strong,
+.ocr-labeling-next-list small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ocr-labeling-next-list strong {
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #172033;
+  white-space: nowrap;
+}
+
+.ocr-labeling-next-list small {
+  display: -webkit-box;
+  font-size: 12px;
+  line-height: 18px;
+  color: #64748b;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.ocr-labeling-diagnostics {
+  margin-top: 16px;
+  background: #fff;
+  border: 1px solid #dbe8f7;
+  border-radius: 8px;
+}
+
+.ocr-labeling-diagnostics summary {
+  display: flex;
+  min-height: 48px;
+  padding: 0 14px;
+  cursor: pointer;
+  list-style: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ocr-labeling-diagnostics summary::-webkit-details-marker {
+  display: none;
+}
+
+.ocr-labeling-diagnostics summary::after {
+  font-size: 13px;
+  font-weight: 900;
+  color: #2563eb;
+  content: '展开';
+}
+
+.ocr-labeling-diagnostics[open] summary {
+  border-bottom: 1px solid #e6edf7;
+}
+
+.ocr-labeling-diagnostics[open] summary::after {
+  content: '收起';
+}
+
+.ocr-labeling-diagnostics summary span {
+  font-size: 14px;
+  font-weight: 900;
+  color: #172033;
+}
+
+.ocr-labeling-diagnostics summary small {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 800;
+  color: #667085;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocr-labeling-diagnostics :deep(.el-row) {
+  padding: 14px;
+}
+
+.ocr-labeling-focus {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 0.72fr) minmax(190px, 0.32fr);
+  gap: 12px;
+  align-items: stretch;
+  margin-bottom: 14px;
+}
+
+.ocr-labeling-focus-copy,
+.ocr-labeling-focus-steps,
+.ocr-labeling-focus-progress {
+  min-width: 0;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid #dbe8f7;
+  border-radius: 8px;
+  box-shadow: 0 8px 22px rgb(15 23 42 / 4%);
+}
+
+.ocr-labeling-focus-copy {
+  display: grid;
+  gap: 5px;
+  background: linear-gradient(180deg, #f8fbff, #fff);
+}
+
+.ocr-labeling-focus-copy span,
+.ocr-labeling-focus-progress span {
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #2563eb;
+}
+
+.ocr-labeling-focus-copy strong {
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 25px;
+  color: #172033;
+}
+
+.ocr-labeling-focus-copy small,
+.ocr-labeling-focus-progress small {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 20px;
+  color: #64748b;
+}
+
+.ocr-labeling-focus-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-content: center;
+  background: #f8fafc;
+}
+
+.ocr-labeling-focus-steps span {
+  display: inline-flex;
+  min-height: 30px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 900;
+  color: #475569;
+  background: #fff;
+  border: 1px solid #dbe8f7;
+  border-radius: 999px;
+  align-items: center;
+}
+
+.ocr-labeling-focus-steps span.done {
+  color: #15803d;
+  background: #eaf8ef;
+  border-color: #bfe8ce;
+}
+
+.ocr-labeling-focus-progress {
+  display: grid;
+  gap: 3px;
+  align-content: center;
+  text-align: right;
+}
+
+.ocr-labeling-focus-progress strong {
+  font-size: 25px;
+  font-weight: 950;
+  line-height: 30px;
+  color: #172033;
+  font-variant-numeric: tabular-nums;
+}
+
+.ocr-labeling-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  gap: 16px;
+  align-items: start;
+}
+
+.ocr-labeling-queue-panel {
+  min-width: 0;
+}
+
+.ocr-labeling-task-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ocr-labeling-task-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 240px) auto;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  min-height: 74px;
+  padding: 12px;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid #dbe8f7;
+  border-radius: 8px;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    background 0.18s ease;
+}
+
+.ocr-labeling-task-card:hover,
+.ocr-labeling-task-card.active {
+  background: #f8fbff;
+  border-color: #9fc5ff;
+  box-shadow: 0 10px 24px rgb(37 99 235 / 8%);
+}
+
+.ocr-labeling-task-card--orange {
+  border-left: 3px solid #f59e0b;
+}
+
+.ocr-labeling-task-card--green {
+  border-left: 3px solid #16a34a;
+}
+
+.ocr-labeling-task-main,
+.ocr-labeling-task-meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ocr-labeling-task-main span,
+.ocr-labeling-task-meta span {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #64748b;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocr-labeling-task-main strong {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 950;
+  line-height: 22px;
+  color: #172033;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocr-labeling-task-main small {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 18px;
+  color: #52617a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocr-labeling-task-meta {
+  justify-items: end;
+  text-align: right;
+}
+
+.ocr-labeling-task-meta strong {
+  font-size: 18px;
+  font-weight: 950;
+  line-height: 24px;
+  color: #172033;
+  font-variant-numeric: tabular-nums;
+}
+
+.ocr-labeling-action-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ocr-labeling-action-card,
+.ocr-labeling-plain-guide,
+.ocr-labeling-mini-stats {
+  min-width: 0;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid #dbe8f7;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgb(15 23 42 / 4%);
+}
+
+.ocr-labeling-action-card {
+  display: grid;
+  gap: 8px;
+}
+
+.ocr-labeling-action-card--green {
+  background: #f3fbf7;
+  border-color: #c9ead8;
+}
+
+.ocr-labeling-action-card--blue {
+  background: #f4f8ff;
+  border-color: #cfe0ff;
+}
+
+.ocr-labeling-action-card--orange {
+  background: #fff8ed;
+  border-color: #f6d6a5;
+}
+
+.ocr-labeling-action-card--red {
+  background: #fff3f1;
+  border-color: #ffc9c3;
+}
+
+.ocr-labeling-action-card span,
+.ocr-labeling-plain-guide span,
+.ocr-labeling-mini-stats span {
+  font-size: 12px;
+  font-weight: 900;
+  color: #2563eb;
+}
+
+.ocr-labeling-action-card strong {
+  font-size: 16px;
+  font-weight: 950;
+  line-height: 23px;
+  color: #172033;
+}
+
+.ocr-labeling-action-card small {
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 19px;
+  color: #64748b;
+}
+
+.ocr-labeling-plain-guide {
+  display: grid;
+  gap: 8px;
+}
+
+.ocr-labeling-plain-guide ol {
+  display: grid;
+  gap: 7px;
+  padding-left: 18px;
+  margin: 0;
+}
+
+.ocr-labeling-plain-guide li {
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 19px;
+  color: #52617a;
+}
+
+.ocr-labeling-mini-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ocr-labeling-mini-stats article {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px;
+  text-align: center;
+  background: #f8fafc;
+  border: 1px solid #e6edf7;
+  border-radius: 8px;
+}
+
+.ocr-labeling-mini-stats strong {
+  font-size: 20px;
+  font-weight: 950;
+  color: #172033;
+  font-variant-numeric: tabular-nums;
+}
+
+.ocr-labeling-coverage-card--flat {
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+
 :global(.fde-audit-drawer .el-drawer__header) {
   padding: 18px 20px 12px;
   margin-bottom: 0;
@@ -17008,6 +17787,19 @@ onMounted(loadData)
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   }
 
+  .ocr-labeling-workflow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ocr-labeling-focus,
+  .ocr-labeling-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ocr-labeling-focus-progress {
+    text-align: left;
+  }
+
   .lineage-document-grid,
   .pageindex-friendly-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -17110,6 +17902,20 @@ onMounted(loadData)
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .ocr-labeling-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ocr-labeling-task-card {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .ocr-labeling-task-meta {
+    justify-items: start;
+    text-align: left;
+  }
+
   .lineage-document-grid,
   .pageindex-friendly-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -17205,6 +18011,15 @@ onMounted(loadData)
   }
 
   .vector-quality-board {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ocr-labeling-workflow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ocr-labeling-focus-steps,
+  .ocr-labeling-mini-stats {
     grid-template-columns: minmax(0, 1fr);
   }
 
