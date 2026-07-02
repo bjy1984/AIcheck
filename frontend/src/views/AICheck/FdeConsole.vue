@@ -131,6 +131,7 @@ const loading = ref(false)
 const actionLoading = ref(false)
 const error = ref('')
 const activeFdeTab = ref('dashboard')
+const selectedFdeDashboardTab = ref<'agent' | 'ocr'>('agent')
 const fdeChartZoom = ref<Record<FdeChartKey, number>>({
   ocrHeatmap: 1,
   vectorSankey: 1,
@@ -179,6 +180,8 @@ const selectedOcrCapabilityTest = ref<FdeOcrCapabilityTestDetailPayload | null>(
 const selectedOcrCapabilityTestRunId = ref('')
 const ocrCapabilityTestFile = ref<File | null>(null)
 const ocrCapabilityFileInputRef = ref<HTMLInputElement | null>(null)
+const ocrCapabilityDialogVisible = ref(false)
+const ocrSecondaryMenuVisible = ref(false)
 const ocrCapabilityTestLoading = ref(false)
 const ocrCapabilityTestPolling = ref<number | undefined>()
 const ocrCapabilityTestForm = ref({
@@ -235,6 +238,9 @@ type ProjectAuditTreeFilter =
   | 'evaluation'
 type AgentSubpage = 'runs' | 'reasoning' | 'quality' | 'trace'
 type OcrSubpage = 'overview' | 'capability-test' | 'annotation' | 'runtime' | 'evaluation'
+type OcrStatusTab = 'issue' | 'annotation' | 'runtime' | 'release'
+type OcrStatusDialogType = OcrStatusTab | 'quality'
+type OcrSecondaryTool = 'annotation' | 'runtime' | 'release' | 'quality'
 const fdeDemoMode = ref(false)
 const projectAuditSubpage = ref<ProjectAuditSubpage>('overview')
 const projectAuditSearch = ref('')
@@ -246,6 +252,9 @@ const selectedFdeNodeId = ref<number | undefined>()
 const projectAuditWorkspace = ref<FdeProjectAuditWorkspace | null>(null)
 const agentSubpage = ref<AgentSubpage>('runs')
 const ocrSubpage = ref<OcrSubpage>('overview')
+const ocrStatusDialogVisible = ref(false)
+const ocrStatusDialogType = ref<OcrStatusDialogType>('issue')
+const selectedOcrStatusTab = ref<OcrStatusTab>('issue')
 const incidentPayload = ref<FdeIncidentPayload | null>(null)
 const selectedIncidentId = ref('')
 const accessGrants = ref<Array<Record<string, unknown>>>([])
@@ -261,6 +270,8 @@ const businessPackDiff = ref<Record<string, unknown> | null>(null)
 
 type FdePageActionKey =
   | 'go-ocr-label'
+  | 'go-ocr-capability-test'
+  | 'go-ocr-tools'
   | 'start-ocr-evaluation'
   | 'triage-feedback'
   | 'create-review-diagnostic-feedback'
@@ -398,12 +409,12 @@ const fdeRouteMeta: Record<
     label: 'OCR 质量与标注',
     badge: '识别',
     tone: 'green',
-    title: 'OCR 质量与人工标定',
-    subtitle: '检查 OCR 质量、低置信字段、表格/印章问题，并人工标定可评估样本。',
-    nextAction: '优先打开待标注样本，补齐字段、表格和印章 bbox。',
+    title: 'OCR 工作台',
+    subtitle: '在线测试、识别问题定位、人工修正和发布前评测集中在这里。',
+    nextAction: '只想测一份资料时，点“在线测 OCR”。',
     actions: [
-      { key: 'go-ocr-label', label: '打开待标注样本', type: 'primary' },
-      { key: 'start-ocr-evaluation', label: 'OCR 评测', plain: true }
+      { key: 'go-ocr-capability-test', label: '在线测 OCR', type: 'primary' },
+      { key: 'go-ocr-tools', label: '更多工具', plain: true }
     ]
   },
   'capability-bundles': {
@@ -487,8 +498,25 @@ const syncTabFromRoute = () => {
   activeFdeTab.value = routeTabMap[currentFdeRouteKey.value] || 'dashboard'
 }
 
+const parseFdeHashPath = () => {
+  if (typeof window === 'undefined') return ''
+  const hashPath = window.location.hash.replace(/^#/, '').split('?')[0]
+  return hashPath.startsWith('/fde/') ? hashPath : ''
+}
+
+const parseFdeBrowserPath = () => {
+  if (typeof window === 'undefined') return ''
+  return window.location.pathname.startsWith('/fde/') ? window.location.pathname : ''
+}
+
+const currentFdePath = computed(() => {
+  const routeFullPath = route.fullPath
+  const routePath = routeFullPath.split('?')[0] || route.path
+  return parseFdeHashPath() || parseFdeBrowserPath() || routePath
+})
+
 const currentFdeRouteKey = computed(() =>
-  String(route.path.split('/').filter(Boolean).pop() || 'dashboard')
+  String(currentFdePath.value.split('/').filter(Boolean).pop() || 'dashboard')
 )
 
 const isFdeRoute = (...keys: string[]) => keys.includes(currentFdeRouteKey.value)
@@ -868,6 +896,15 @@ const buildProjectAuditRouteQuery = (
   return query
 }
 
+const buildProjectAuditRoutePath = (
+  projectId: string,
+  nodeId?: number,
+  subpage: ProjectAuditSubpage = projectAuditSubpage.value
+) => {
+  const query = new URLSearchParams(buildProjectAuditRouteQuery(projectId, nodeId, subpage))
+  return `/fde/projects?${query.toString()}`
+}
+
 const sameProjectAuditRouteQuery = (query: Record<string, string>) => {
   return (
     firstQueryValue(route.query.projectId) === query.projectId &&
@@ -887,7 +924,7 @@ const syncProjectAuditRoute = async (
 ) => {
   if (!projectId) return
   const query = buildProjectAuditRouteQuery(projectId, nodeId, subpage, detail)
-  if (route.path === '/fde/projects' && sameProjectAuditRouteQuery(query)) return
+  if (currentFdePath.value === '/fde/projects' && sameProjectAuditRouteQuery(query)) return
   await router[replace ? 'replace' : 'push']({
     path: '/fde/projects',
     query
@@ -915,7 +952,7 @@ const syncAuditDetailRoute = async (detail: { reviewRunId?: string; ocrJobId?: s
   if (detail.ocrJobId) {
     query.ocrJobId = detail.ocrJobId
   }
-  if (route.path === '/fde/projects' && selectedFdeProjectId.value) {
+  if (currentFdePath.value === '/fde/projects' && selectedFdeProjectId.value) {
     Object.assign(
       query,
       buildProjectAuditRouteQuery(selectedFdeProjectId.value, selectedFdeNodeId.value)
@@ -1092,11 +1129,12 @@ const projectAuditMenuItemHint = (
 const fdeShellMenuSections = computed(() => {
   const projects = filteredProjectAuditMenuProjects.value
   const ocrAnnotationSummary = toRecord(ocrAnnotation.value?.summary)
+  const activePath = currentFdePath.value
   const globalSection = {
     id: 'fde-global-workbenches',
     title: '全局控制台',
     meta: '不绑定项目',
-    defaultOpen: route.path !== '/fde/projects',
+    defaultOpen: activePath !== '/fde/projects',
     chips: [
       {
         label: 'OCR样本',
@@ -1121,34 +1159,34 @@ const fdeShellMenuSections = computed(() => {
         index: '00',
         label: 'OCR 质量控制台',
         hint:
-          route.path === '/fde/ocr-quality'
+          activePath === '/fde/ocr-quality'
             ? `样本 ${Number(ocrAnnotationSummary.tasks || 0)} · 可评估 ${Number(ocrAnnotationSummary.readyForEval || 0)}`
             : '',
-        badge: route.path === '/fde/ocr-quality' ? '当前' : undefined,
+        badge: activePath === '/fde/ocr-quality' ? '当前' : undefined,
         tone: 'green' as const,
         route: '/fde/ocr-quality',
-        active: route.path === '/fde/ocr-quality'
+        active: activePath === '/fde/ocr-quality'
       },
       {
         index: '01',
         label: 'Agent 审查编排',
         hint:
-          route.path === '/fde/review-runs'
+          activePath === '/fde/review-runs'
             ? `审查任务 ${reviewRuns.value.length} · Agent 编排图`
             : '',
-        badge: route.path === '/fde/review-runs' ? '当前' : undefined,
+        badge: activePath === '/fde/review-runs' ? '当前' : undefined,
         tone: 'green' as const,
         route: '/fde/review-runs',
-        active: route.path === '/fde/review-runs'
+        active: activePath === '/fde/review-runs'
       },
       {
         index: '02',
         label: 'FDE 总览',
-        hint: route.path === '/fde/dashboard' ? 'AI 交付与治理摘要' : '',
-        badge: route.path === '/fde/dashboard' ? '当前' : undefined,
+        hint: activePath === '/fde/dashboard' ? 'AI 交付与治理摘要' : '',
+        badge: activePath === '/fde/dashboard' ? '当前' : undefined,
         tone: 'blue' as const,
         route: '/fde/dashboard',
-        active: route.path === '/fde/dashboard'
+        active: activePath === '/fde/dashboard'
       }
     ]
   }
@@ -1183,7 +1221,7 @@ const fdeShellMenuSections = computed(() => {
       ],
       items: projectAuditSubpageItems.value.map((subpage, subpageIndex) => {
         const isActive =
-          route.path === '/fde/projects' &&
+          activePath === '/fde/projects' &&
           selectedFdeProjectId.value === item.project.id &&
           projectAuditSubpage.value === subpage.key
         return {
@@ -1203,6 +1241,7 @@ const fdeShellMenuSections = computed(() => {
                   : ('blue' as const),
           projectId: item.project.id,
           subpage: subpage.key,
+          route: buildProjectAuditRoutePath(item.project.id, undefined, subpage.key),
           active: isActive
         }
       })
@@ -2329,22 +2368,35 @@ const reviewRunConclusion = computed(() => {
   }
   return `当前 ${run.reviewRunId || run.id} 已生成可审计结果，可检查决策链、溯源和人工修正记录。`
 })
-const agentStatusCards = computed(() => [
+const agentStatusCards = computed<
+  Array<{
+    key: AgentSubpage
+    label: string
+    title: string
+    value: string
+    hint: string
+    tone: FdeTone
+  }>
+>(() => [
   {
-    label: '审查任务',
+    key: 'runs',
+    label: '任务',
+    title: '有没有可审查任务',
     value: String(reviewRuns.value.length),
     hint: hasReviewRuns.value ? '可追踪任务' : '等待业务触发',
     tone: hasReviewRuns.value ? 'green' : 'orange'
   },
   {
-    label: '当前结论',
+    key: 'reasoning',
+    label: '决策',
+    title: '为什么这么判断',
     value: selectedReviewRun.value
       ? reviewQualityEvaluation.value.status === 'pass'
         ? '可审查'
         : '需复核'
       : '无任务',
     hint: selectedReviewRun.value
-      ? friendlyStatus(selectedReviewRun.value.run.status)
+      ? `${normalizedReviewReasoningRows.value.length} 步摘要`
       : '未选中 Run',
     tone: selectedReviewRun.value
       ? reviewQualityEvaluation.value.status === 'pass'
@@ -2353,18 +2405,27 @@ const agentStatusCards = computed(() => [
       : 'orange'
   },
   {
-    label: '质量门禁',
+    key: 'quality',
+    label: '质量',
+    title: '能不能进入复核',
     value: String(reviewQualityGateRows.value.length),
-    hint: reviewQualityRows.value.length ? '已生成评估' : '等待 Run 结果',
+    hint: `${normalizedReviewHumanCorrectionRows.value.length} 条人工修正`,
     tone: reviewQualityRows.value.some((row) => row.status !== 'pass') ? 'red' : 'green'
   },
   {
-    label: '人工修正',
-    value: String(reviewHumanCorrectionRows.value.length),
-    hint: '可沉淀样本',
-    tone: reviewHumanCorrectionRows.value.length ? 'blue' : 'green'
+    key: 'trace',
+    label: '溯源',
+    title: '底层链路是否完整',
+    value: String(reviewGraphNodes.value.length),
+    hint: `${selectedReviewTemporal.value.eventCount || reviewGraphTimeline.value.length || 0} 个事件`,
+    tone: reviewGraphNodes.value.length ? 'blue' : 'orange'
   }
 ])
+const selectedAgentStatusCard = computed(
+  () =>
+    agentStatusCards.value.find((card) => card.key === agentSubpage.value) ||
+    agentStatusCards.value[0]
+)
 const agentEmptyGuideRows = computed(() => [
   {
     label: '当前状态',
@@ -2605,53 +2666,103 @@ const ocrAnnotationStatusType = (row: FdeOcrAnnotationTask): FdeElTagType => {
   if (row.collectionStatus === 'labeled' || row.collectionStatus === 'reviewed') return 'warning'
   return 'info'
 }
-const agentSubpageItems = computed(() => [
-  {
-    key: 'runs' as const,
-    label: '任务概览',
-    description: '审查任务列表、工作流摘要和编排门禁。'
-  },
-  {
-    key: 'reasoning' as const,
-    label: '决策链',
-    description: '可审计推理摘要、工具调用、证据和依据引用。'
-  },
-  {
-    key: 'quality' as const,
-    label: '质量与修正',
-    description: '质量评估、人工修正和样本回流。'
-  },
-  {
-    key: 'trace' as const,
-    label: '底层溯源',
-    description: 'AI 员工节点、流程时间线、规则和检索产物。'
-  }
-])
 const ocrSubpageItems = computed(() => [
   {
     key: 'overview' as const,
-    label: '质量总览',
-    description: 'OCR 100、运行时、待标注和首要阻断。'
+    label: '当前状态',
+    description: '服务、阻断、待修样本和发布分数。'
   },
   {
     key: 'capability-test' as const,
-    label: '能力测试',
-    description: '上传临时文件，预览本地 OCR 解析结果。'
+    label: '在线测 OCR',
+    description: '上传临时 PDF/图片，查看识别结果。'
   },
   {
     key: 'annotation' as const,
-    label: '人工标定',
-    description: '字段、表格、印章样本标注和二审。'
+    label: '修识别结果',
+    description: '修字段、表格、印章和证据框。'
   },
   {
     key: 'runtime' as const,
-    label: '运行诊断',
-    description: 'OCR 任务、候选图、引擎耗时、字段和证据问题。'
+    label: '查失败原因',
+    description: '看任务、引擎耗时、错误和诊断。'
   },
   {
     key: 'evaluation' as const,
-    label: '评估门禁',
-    description: 'OCR release evaluation、场景分数和阈值失败。'
+    label: '发布评测',
+    description: '用回归样本确认能不能上线。'
+  }
+])
+const ocrStatusDialogTitle = computed(() => {
+  if (ocrStatusDialogType.value === 'issue') return '当前问题明细'
+  if (ocrStatusDialogType.value === 'annotation') return '待人工修正明细'
+  if (ocrStatusDialogType.value === 'runtime') return 'OCR 服务与运行诊断'
+  if (ocrStatusDialogType.value === 'quality') return 'OCR 质量统计'
+  return '发布评测明细'
+})
+const ocrStatusDialogHint = computed(() => {
+  if (ocrStatusDialogType.value === 'issue') return '这里集中展示当前最需要先处理的阻断项。'
+  if (ocrStatusDialogType.value === 'annotation')
+    return '这里展示需要人工补字段、表格、印章或证据框的样本。'
+  if (ocrStatusDialogType.value === 'runtime')
+    return '这里用于判断 OCR 服务、模型路径和任务运行是否正常。'
+  if (ocrStatusDialogType.value === 'quality')
+    return '这里只放整体质量指标，日常在线测试不需要先看。'
+  return '这里用于判断 OCR 结果能否作为发布或交付基线。'
+})
+const ocrInlineStatusTitle = computed(() => {
+  if (selectedOcrStatusTab.value === 'issue') return '当前问题'
+  if (selectedOcrStatusTab.value === 'annotation') return '待人工修正'
+  if (selectedOcrStatusTab.value === 'runtime') return '服务诊断'
+  return '发布评测'
+})
+const ocrInlineStatusHint = computed(() => {
+  if (selectedOcrStatusTab.value === 'issue')
+    return '先看阻断项和对应处理动作，避免被其它指标分散注意力。'
+  if (selectedOcrStatusTab.value === 'annotation')
+    return '只列需要人工确认的样本；点击行可以直接进入标注。'
+  if (selectedOcrStatusTab.value === 'runtime')
+    return '用于判断 OCR 服务地址、运行任务和错误原因是否正常。'
+  return '用于判断当前 OCR 结果能不能作为发布或交付基线。'
+})
+const ocrSecondaryTools = computed<
+  Array<{
+    key: OcrSecondaryTool
+    label: string
+    description: string
+    stat: string
+    tone: 'blue' | 'green' | 'orange' | 'red'
+  }>
+>(() => [
+  {
+    key: 'annotation',
+    label: '样本标注',
+    description: '修 OCR 错误，补字段、表格、印章和证据框。',
+    stat: `${ocrAnnotationRows.value.length} 条`,
+    tone: ocrPendingAnnotationCount.value ? 'orange' : 'green'
+  },
+  {
+    key: 'runtime',
+    label: '运行诊断',
+    description: '排查服务地址、模型路径、引擎耗时和任务失败。',
+    stat: `${ocrRuntimeDoctor.value?.summary?.fail || 0} 失败`,
+    tone: ocrRuntimeDoctor.value?.ok ? 'green' : 'red'
+  },
+  {
+    key: 'release',
+    label: '发布评测',
+    description: '用回归样本判断这版 OCR 能不能上线交付。',
+    stat: ocr100Scorecard.value
+      ? `${ocr100Scorecard.value.score}/${ocr100Scorecard.value.targetScore}`
+      : '待评估',
+    tone: ocr100Scorecard.value?.ok ? 'green' : 'orange'
+  },
+  {
+    key: 'quality',
+    label: '质量统计',
+    description: '查看成功率、低置信字段、表格和印章整体指标。',
+    stat: `${ocrQuality.value?.fieldLevel?.lowConfidence || 0} 低置信`,
+    tone: Number(ocrQuality.value?.fieldLevel?.lowConfidence || 0) ? 'orange' : 'green'
   }
 ])
 
@@ -4054,9 +4165,11 @@ const dashboardMetricCards = computed(() =>
     tone: metricTone(String(metric.label || ''), index)
   }))
 )
+const dashboardMetricHighlights = computed(() => dashboardMetricCards.value.slice(0, 4))
 
 const fdeWorkflowCards = computed(() => [
   {
+    key: 'agent' as const,
     title: 'Agent 审查编排',
     description: '检查流程编排、Agent 节点、工具调用、规则和检索产物。',
     route: '/fde/review-runs',
@@ -4065,6 +4178,7 @@ const fdeWorkflowCards = computed(() => [
     metric: String(reviewRuns.value.length)
   },
   {
+    key: 'ocr' as const,
     title: '标定 OCR 样本',
     description: '补齐字段、表格和印章 bbox，让 OCR 评估集可用。',
     route: '/fde/ocr-quality',
@@ -4073,6 +4187,11 @@ const fdeWorkflowCards = computed(() => [
     metric: `${ocrAnnotationSummary.value?.humanLabeled || 0}/${ocrAnnotationSummary.value?.tasks || 0}`
   }
 ])
+const selectedFdeWorkflowCard = computed(
+  () =>
+    fdeWorkflowCards.value.find((card) => card.key === selectedFdeDashboardTab.value) ||
+    fdeWorkflowCards.value[0]
+)
 
 const selectedFdeProject = computed(
   () =>
@@ -7105,7 +7224,7 @@ const goProjectAuditSubpage = (subpage: ProjectAuditSubpage) => {
 
 const handleFdeShellMenuSelect = async (item: FdeShellMenuItemPayload) => {
   if (!item.projectId) {
-    if (item.route && item.route !== route.path) {
+    if (item.route && item.route !== currentFdePath.value) {
       await router.push(item.route)
     }
     return
@@ -7125,6 +7244,26 @@ const handleFdeShellMenuSelect = async (item: FdeShellMenuItemPayload) => {
     await loadProjectAuditWorkspace(item.projectId, selectedFdeNodeId.value)
   }
   await syncProjectAuditRoute(item.projectId, selectedFdeNodeId.value, projectAuditSubpage.value)
+}
+
+const normalizeFdeBrowserRoute = async () => {
+  if (typeof window === 'undefined') return
+  const browserPath = parseFdeBrowserPath()
+  if (!browserPath) return
+  const hashPath = parseFdeHashPath()
+  const hashHasQuery = window.location.hash.includes('?')
+  if (hashPath && (hashPath !== '/fde/projects' || hashHasQuery)) return
+  if (hashPath === browserPath) return
+  const query: Record<string, string> = {}
+  window.location.search
+    .replace(/^\?/, '')
+    .split('&')
+    .filter(Boolean)
+    .forEach((part) => {
+      const [key, value = ''] = part.split('=')
+      if (key) query[decodeURIComponent(key)] = decodeURIComponent(value)
+    })
+  await router.replace({ path: browserPath, query })
 }
 
 const loadData = async () => {
@@ -7221,7 +7360,7 @@ const loadData = async () => {
     }
     if (selectedFdeProjectId.value) {
       await loadProjectAuditWorkspace(selectedFdeProjectId.value, selectedFdeNodeId.value)
-      if (route.path === '/fde/projects') {
+      if (currentFdePath.value === '/fde/projects') {
         await syncProjectAuditRoute(
           selectedFdeProjectId.value,
           selectedFdeNodeId.value,
@@ -8120,8 +8259,42 @@ const openFirstOcrAnnotationTask = async () => {
   await importDemoOcrAnnotationPack()
 }
 
+const openOcrCapabilityTestPanel = async () => {
+  activeFdeTab.value = 'delivery'
+  ocrCapabilityDialogVisible.value = true
+}
+
+const openOcrStatusDialog = (type: OcrStatusDialogType) => {
+  ocrStatusDialogType.value = type
+  ocrStatusDialogVisible.value = true
+}
+
+const selectOcrStatusTab = (tab: OcrStatusTab) => {
+  selectedOcrStatusTab.value = tab
+}
+
+const openOcrSecondaryMenu = () => {
+  ocrSecondaryMenuVisible.value = true
+}
+
+const openOcrSecondaryTool = (tool: OcrSecondaryTool) => {
+  ocrSecondaryMenuVisible.value = false
+  if (tool === 'quality') return openOcrStatusDialog('quality')
+  selectOcrStatusTab(tool)
+}
+
+const selectOcrSubpage = (subpage: OcrSubpage) => {
+  if (subpage === 'capability-test') {
+    void openOcrCapabilityTestPanel()
+    return
+  }
+  ocrSubpage.value = subpage
+}
+
 const runFdePageAction = async (key: FdePageActionKey) => {
   if (key === 'go-ocr-label') return openFirstOcrAnnotationTask()
+  if (key === 'go-ocr-capability-test') return openOcrCapabilityTestPanel()
+  if (key === 'go-ocr-tools') return openOcrSecondaryMenu()
   if (key === 'start-ocr-evaluation') return startOcrEvaluation()
   if (key === 'triage-feedback') return triageFirstFeedback()
   if (key === 'start-evaluation') return startEvaluation()
@@ -8137,7 +8310,7 @@ const runFdePageAction = async (key: FdePageActionKey) => {
 }
 
 watch(
-  () => route.path,
+  () => route.fullPath,
   () => syncTabFromRoute(),
   { immediate: true }
 )
@@ -8145,7 +8318,7 @@ watch(
 watch(
   () => [route.path, route.query.projectId, route.query.view, route.query.nodeId],
   async () => {
-    if (route.path !== '/fde/projects') return
+    if (currentFdePath.value !== '/fde/projects') return
     if (!fdeProjects.value.length && !projectAuditWorkspace.value) return
     const routeState = getProjectAuditRouteState()
     if (routeState.subpage) {
@@ -8182,10 +8355,10 @@ watch(ocrAuditDrawerVisible, (visible) => {
 })
 
 watch(activeFdeTab, (tab) => {
-  const segment = String(route.path.split('/').filter(Boolean).pop() || 'dashboard')
+  const segment = currentFdeRouteKey.value
   if (routeTabMap[segment] === tab) return
   const target = fdeTabRouteMap[tab]
-  if (target && route.path !== target) {
+  if (target && currentFdePath.value !== target) {
     if (target === '/fde/projects' && selectedFdeProjectId.value) {
       void syncProjectAuditRoute()
       return
@@ -8194,7 +8367,10 @@ watch(activeFdeTab, (tab) => {
   }
 })
 
-onMounted(loadData)
+onMounted(async () => {
+  await normalizeFdeBrowserRoute()
+  await loadData()
+})
 
 onBeforeUnmount(() => {
   if (ocrCapabilityTestPolling.value) {
@@ -8288,56 +8464,68 @@ onBeforeUnmount(() => {
       />
 
       <div v-if="isFdeRoute('ocr-quality')" class="ocr-command-center">
-        <section class="ocr-goal-panel" aria-label="OCR 页面目标">
-          <div class="ocr-goal-copy">
-            <span>页面目标</span>
-            <strong>把低置信 OCR 输出变成可审计、可评估、可回归的标注样本</strong>
-            <small>
-              先看阻断和热力图，再处理待标注样本，最后用 OCR 评测确认是否达到发布门禁。
-            </small>
-          </div>
-          <div class="ocr-goal-actions">
-            <ElButton
-              type="primary"
-              plain
-              :loading="actionLoading"
-              @click="openFirstOcrAnnotationTask"
-            >
-              打开待标注样本
-            </ElButton>
-            <ElButton plain :disabled="!firstLowConfidenceField" @click="correctFirstOcrField">
-              字段纠错
-            </ElButton>
-            <ElButton plain :loading="actionLoading" @click="startOcrEvaluation">发起评测</ElButton>
-          </div>
-        </section>
-
-        <div class="ocr-step-grid" aria-label="OCR 治理流程">
-          <article class="ocr-step-card ocr-step-card--red">
-            <span>01</span>
-            <strong>看阻断</strong>
+        <div class="ocr-step-grid" role="tablist" aria-label="OCR 当前状态">
+          <button
+            type="button"
+            class="ocr-step-card ocr-step-card--red"
+            :class="{ 'is-active': selectedOcrStatusTab === 'issue' }"
+            role="tab"
+            aria-controls="ocr-status-panel"
+            :aria-selected="selectedOcrStatusTab === 'issue'"
+            aria-label="切换到当前问题明细"
+            @click="selectOcrStatusTab('issue')"
+          >
+            <span>问题</span>
+            <strong>最先处理什么</strong>
             <small>{{ firstOcrBlockingSummary }}</small>
-          </article>
-          <article class="ocr-step-card ocr-step-card--orange">
-            <span>02</span>
-            <strong>补标注</strong>
+          </button>
+          <button
+            type="button"
+            class="ocr-step-card ocr-step-card--orange"
+            :class="{ 'is-active': selectedOcrStatusTab === 'annotation' }"
+            role="tab"
+            aria-controls="ocr-status-panel"
+            :aria-selected="selectedOcrStatusTab === 'annotation'"
+            aria-label="切换到待人工修正明细"
+            @click="selectOcrStatusTab('annotation')"
+          >
+            <span>待修</span>
+            <strong>还有多少要人工看</strong>
             <small
               >待标注 {{ ocrPendingAnnotationCount }}，样本
               {{ ocrAnnotationSummary?.tasks || 0 }}</small
             >
-          </article>
-          <article class="ocr-step-card ocr-step-card--blue">
-            <span>03</span>
-            <strong>查运行时</strong>
+          </button>
+          <button
+            type="button"
+            class="ocr-step-card ocr-step-card--blue"
+            :class="{ 'is-active': selectedOcrStatusTab === 'runtime' }"
+            role="tab"
+            aria-controls="ocr-status-panel"
+            :aria-selected="selectedOcrStatusTab === 'runtime'"
+            aria-label="切换到 OCR 服务与运行诊断"
+            @click="selectOcrStatusTab('runtime')"
+          >
+            <span>服务</span>
+            <strong>OCR 服务是否健康</strong>
             <small>
               {{ friendlyStatus(ocrRuntimeDoctor?.status, '未知') }} ·
               {{ ocrRuntimeDoctor?.summary?.fail || 0 }} 失败 /
               {{ ocrRuntimeDoctor?.summary?.warn || 0 }} 告警
             </small>
-          </article>
-          <article class="ocr-step-card ocr-step-card--green">
-            <span>04</span>
-            <strong>过门禁</strong>
+          </button>
+          <button
+            type="button"
+            class="ocr-step-card ocr-step-card--green"
+            :class="{ 'is-active': selectedOcrStatusTab === 'release' }"
+            role="tab"
+            aria-controls="ocr-status-panel"
+            :aria-selected="selectedOcrStatusTab === 'release'"
+            aria-label="切换到发布评测明细"
+            @click="selectOcrStatusTab('release')"
+          >
+            <span>发布</span>
+            <strong>能不能作为交付基线</strong>
             <small>
               {{
                 ocr100Scorecard
@@ -8346,8 +8534,466 @@ onBeforeUnmount(() => {
               }}
               · 可评估 {{ ocrReadyForEvalCount }}
             </small>
-          </article>
+          </button>
         </div>
+
+        <section
+          id="ocr-status-panel"
+          class="ocr-status-tabs"
+          role="tabpanel"
+          aria-label="OCR 状态明细"
+          aria-live="polite"
+        >
+          <div class="ocr-status-tabs__header">
+            <div>
+              <span>状态明细</span>
+              <strong>{{ ocrInlineStatusTitle }}</strong>
+            </div>
+            <small>{{ ocrInlineStatusHint }}</small>
+          </div>
+
+          <div class="ocr-status-tabs__body">
+            <template v-if="selectedOcrStatusTab === 'issue'">
+              <ElTable v-if="ocrTopBlockerRows.length" :data="ocrTopBlockerRows" border>
+                <ElTableColumn prop="id" label="#" width="72" />
+                <ElTableColumn prop="source" label="来源" width="120" />
+                <ElTableColumn prop="blocker" label="问题" min-width="260" show-overflow-tooltip />
+                <ElTableColumn
+                  prop="action"
+                  label="处理动作"
+                  min-width="260"
+                  show-overflow-tooltip
+                />
+              </ElTable>
+              <ElEmpty v-else description="当前没有 OCR 阻断项。" />
+            </template>
+
+            <template v-else-if="selectedOcrStatusTab === 'annotation'">
+              <ElTable
+                v-if="ocrAnnotationRows.length"
+                :data="ocrAnnotationRows"
+                border
+                @row-click="(row) => openAnnotationEditor(row)"
+              >
+                <ElTableColumn prop="taskId" label="样本" min-width="150" show-overflow-tooltip />
+                <ElTableColumn prop="scenario" label="场景" min-width="170" show-overflow-tooltip>
+                  <template #default="{ row }">{{ friendlyTechLabel(row.scenario) }}</template>
+                </ElTableColumn>
+                <ElTableColumn
+                  prop="profileId"
+                  label="解析配置"
+                  min-width="170"
+                  show-overflow-tooltip
+                >
+                  <template #default="{ row }">{{ friendlyTechLabel(row.profileId) }}</template>
+                </ElTableColumn>
+                <ElTableColumn label="状态" width="130">
+                  <template #default="{ row }">
+                    <ElTag :type="ocrAnnotationStatusType(row)" effect="plain">
+                      {{ ocrAnnotationStatusLabel(row) }}
+                    </ElTag>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn label="操作" width="92" fixed="right">
+                  <template #default="{ row }">
+                    <ElButton size="small" text @click.stop="openAnnotationEditor(row)">
+                      标注
+                    </ElButton>
+                  </template>
+                </ElTableColumn>
+              </ElTable>
+              <ElEmpty v-else description="当前没有待人工修正样本。" />
+            </template>
+
+            <template v-else-if="selectedOcrStatusTab === 'runtime'">
+              <ElDescriptions :column="1" border>
+                <ElDescriptionsItem label="运行时状态">
+                  <ElTag :type="ocrRuntimeDoctor?.ok ? 'success' : 'warning'" effect="plain">
+                    {{ friendlyStatus(ocrRuntimeDoctor?.status, '未知') }}
+                  </ElTag>
+                </ElDescriptionsItem>
+                <ElDescriptionsItem label="体检结果">
+                  {{ ocrRuntimeDoctor?.summary?.fail || 0 }} 失败 /
+                  {{ ocrRuntimeDoctor?.summary?.warn || 0 }} 告警
+                </ElDescriptionsItem>
+                <ElDescriptionsItem v-if="firstRuntimeIssue" label="首要问题">
+                  {{ friendlyTechnicalText(firstRuntimeIssue.name) }}：{{
+                    friendlyTechnicalText(firstRuntimeIssue.message)
+                  }}
+                </ElDescriptionsItem>
+              </ElDescriptions>
+              <ElTable
+                v-if="ocrRuns.length"
+                :data="ocrRuns"
+                border
+                class="mt-12px"
+                @row-click="(row) => openOcrAuditDrawer(String(row.id || row.jobId))"
+              >
+                <ElTableColumn prop="id" label="任务编号" min-width="150" show-overflow-tooltip />
+                <ElTableColumn prop="status" label="状态" width="100">
+                  <template #default="{ row }">
+                    <ElTag :type="statusType(String(row.status))" effect="plain">
+                      {{ friendlyStatus(row.status) }}
+                    </ElTag>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn
+                  prop="profileId"
+                  label="解析配置"
+                  min-width="150"
+                  show-overflow-tooltip
+                >
+                  <template #default="{ row }">{{ friendlyTechLabel(row.profileId) }}</template>
+                </ElTableColumn>
+                <ElTableColumn label="操作" width="92" fixed="right">
+                  <template #default="{ row }">
+                    <ElButton
+                      size="small"
+                      text
+                      @click.stop="openOcrAuditDrawer(String(row.id || row.jobId))"
+                    >
+                      详情
+                    </ElButton>
+                  </template>
+                </ElTableColumn>
+              </ElTable>
+              <ElEmpty
+                v-else-if="!(ocrRuntimeDoctor?.topIssues || []).length"
+                description="暂无 OCR 任务。"
+              />
+              <ElTable
+                v-if="(ocrRuntimeDoctor?.topIssues || []).length"
+                :data="ocrRuntimeDoctor?.topIssues || []"
+                border
+                class="mt-12px"
+              >
+                <ElTableColumn label="问题" min-width="190" show-overflow-tooltip>
+                  <template #default="{ row }">{{ friendlyTechnicalText(row.name) }}</template>
+                </ElTableColumn>
+                <ElTableColumn label="说明" min-width="300" show-overflow-tooltip>
+                  <template #default="{ row }">{{ friendlyTechnicalText(row.message) }}</template>
+                </ElTableColumn>
+              </ElTable>
+            </template>
+
+            <template v-else>
+              <template v-if="ocr100Scorecard">
+                <div class="gate-summary">
+                  <div class="gate-summary-item">
+                    <span>OCR 100</span>
+                    <strong>{{ ocr100Scorecard.score }}/{{ ocr100Scorecard.targetScore }}</strong>
+                  </div>
+                  <div class="gate-summary-item">
+                    <span>认证状态</span>
+                    <strong>
+                      <ElTag :type="ocr100Scorecard.ok ? 'success' : 'danger'" effect="plain">
+                        {{ ocr100Scorecard.ok ? '100分就绪' : '存在阻断' }}
+                      </ElTag>
+                    </strong>
+                  </div>
+                  <div class="gate-summary-item">
+                    <span>可评估样本</span>
+                    <strong>{{ ocrReadyForEvalCount }}</strong>
+                  </div>
+                  <div class="gate-summary-item">
+                    <span>阻断项</span>
+                    <strong>{{ ocr100Scorecard.blockers.length }}</strong>
+                  </div>
+                </div>
+                <ElTable :data="ocr100SectionRows" border class="mt-12px">
+                  <ElTableColumn prop="name" label="评分域" min-width="150" show-overflow-tooltip />
+                  <ElTableColumn label="分数" width="105">
+                    <template #default="{ row }">{{ row.score }}/{{ row.maxScore }}</template>
+                  </ElTableColumn>
+                  <ElTableColumn prop="status" label="状态" width="100">
+                    <template #default="{ row }">
+                      <ElTag :type="row.status === 'pass' ? 'success' : 'danger'" effect="plain">
+                        {{ friendlyStatus(row.status) }}
+                      </ElTag>
+                    </template>
+                  </ElTableColumn>
+                </ElTable>
+                <ElTable
+                  v-if="ocr100BlockerRows.length"
+                  :data="ocr100BlockerRows"
+                  border
+                  class="mt-12px"
+                >
+                  <ElTableColumn prop="id" label="#" width="72" />
+                  <ElTableColumn
+                    prop="blocker"
+                    label="OCR 100 阻断项"
+                    min-width="260"
+                    show-overflow-tooltip
+                  />
+                </ElTable>
+              </template>
+              <ElEmpty v-else description="暂无 OCR 发布评测数据。" />
+            </template>
+          </div>
+        </section>
+
+        <ElDialog
+          v-model="ocrStatusDialogVisible"
+          :title="ocrStatusDialogTitle"
+          width="min(980px, 96vw)"
+          class="ocr-status-dialog"
+        >
+          <div class="ocr-status-dialog__body">
+            <ElAlert type="info" show-icon :closable="false" :title="ocrStatusDialogHint" />
+
+            <template v-if="ocrStatusDialogType === 'issue'">
+              <ElTable
+                v-if="ocrTopBlockerRows.length"
+                :data="ocrTopBlockerRows"
+                border
+                class="mt-12px"
+              >
+                <ElTableColumn prop="id" label="#" width="72" />
+                <ElTableColumn prop="source" label="来源" width="120" />
+                <ElTableColumn prop="blocker" label="问题" min-width="260" show-overflow-tooltip />
+                <ElTableColumn
+                  prop="action"
+                  label="处理动作"
+                  min-width="260"
+                  show-overflow-tooltip
+                />
+              </ElTable>
+              <ElEmpty v-else class="mt-12px" description="当前没有 OCR 阻断项。" />
+            </template>
+
+            <template v-else-if="ocrStatusDialogType === 'annotation'">
+              <ElTable
+                v-if="ocrAnnotationRows.length"
+                :data="ocrAnnotationRows"
+                border
+                class="mt-12px"
+                @row-click="(row) => openAnnotationEditor(row)"
+              >
+                <ElTableColumn prop="taskId" label="样本" min-width="150" show-overflow-tooltip />
+                <ElTableColumn prop="scenario" label="场景" min-width="170" show-overflow-tooltip>
+                  <template #default="{ row }">{{ friendlyTechLabel(row.scenario) }}</template>
+                </ElTableColumn>
+                <ElTableColumn
+                  prop="profileId"
+                  label="解析配置"
+                  min-width="170"
+                  show-overflow-tooltip
+                >
+                  <template #default="{ row }">{{ friendlyTechLabel(row.profileId) }}</template>
+                </ElTableColumn>
+                <ElTableColumn label="状态" width="130">
+                  <template #default="{ row }">
+                    <ElTag :type="ocrAnnotationStatusType(row)" effect="plain">
+                      {{ ocrAnnotationStatusLabel(row) }}
+                    </ElTag>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn label="操作" width="92" fixed="right">
+                  <template #default="{ row }">
+                    <ElButton size="small" text @click.stop="openAnnotationEditor(row)">
+                      标注
+                    </ElButton>
+                  </template>
+                </ElTableColumn>
+              </ElTable>
+              <ElEmpty v-else class="mt-12px" description="当前没有待人工修正样本。" />
+              <ElTable
+                v-if="ocrAnnotationBlockerRows.length"
+                :data="ocrAnnotationBlockerRows"
+                border
+                class="mt-12px"
+              >
+                <ElTableColumn
+                  prop="blocker"
+                  label="标注阻断项"
+                  min-width="220"
+                  show-overflow-tooltip
+                />
+                <ElTableColumn prop="count" label="数量" width="90" />
+              </ElTable>
+            </template>
+
+            <template v-else-if="ocrStatusDialogType === 'runtime'">
+              <ElDescriptions :column="1" border class="mt-12px">
+                <ElDescriptionsItem label="运行时状态">
+                  <ElTag :type="ocrRuntimeDoctor?.ok ? 'success' : 'warning'" effect="plain">
+                    {{ friendlyStatus(ocrRuntimeDoctor?.status, '未知') }}
+                  </ElTag>
+                </ElDescriptionsItem>
+                <ElDescriptionsItem label="体检结果">
+                  {{ ocrRuntimeDoctor?.summary?.fail || 0 }} 失败 /
+                  {{ ocrRuntimeDoctor?.summary?.warn || 0 }} 告警
+                </ElDescriptionsItem>
+                <ElDescriptionsItem v-if="firstRuntimeIssue" label="首要问题">
+                  {{ friendlyTechnicalText(firstRuntimeIssue.name) }}：{{
+                    friendlyTechnicalText(firstRuntimeIssue.message)
+                  }}
+                </ElDescriptionsItem>
+              </ElDescriptions>
+              <ElTable
+                v-if="(ocrRuntimeDoctor?.topIssues || []).length"
+                :data="ocrRuntimeDoctor?.topIssues || []"
+                border
+                class="mt-12px"
+              >
+                <ElTableColumn label="问题" min-width="190" show-overflow-tooltip>
+                  <template #default="{ row }">{{ friendlyTechnicalText(row.name) }}</template>
+                </ElTableColumn>
+                <ElTableColumn label="说明" min-width="300" show-overflow-tooltip>
+                  <template #default="{ row }">{{ friendlyTechnicalText(row.message) }}</template>
+                </ElTableColumn>
+              </ElTable>
+              <ElTable
+                v-if="ocrRuns.length"
+                :data="ocrRuns"
+                border
+                class="mt-12px"
+                @row-click="(row) => openOcrAuditDrawer(String(row.id || row.jobId))"
+              >
+                <ElTableColumn prop="id" label="任务编号" min-width="150" show-overflow-tooltip />
+                <ElTableColumn prop="status" label="状态" width="100">
+                  <template #default="{ row }">
+                    <ElTag :type="statusType(String(row.status))" effect="plain">
+                      {{ friendlyStatus(row.status) }}
+                    </ElTag>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn
+                  prop="profileId"
+                  label="解析配置"
+                  min-width="150"
+                  show-overflow-tooltip
+                >
+                  <template #default="{ row }">{{ friendlyTechLabel(row.profileId) }}</template>
+                </ElTableColumn>
+                <ElTableColumn label="操作" width="92" fixed="right">
+                  <template #default="{ row }">
+                    <ElButton
+                      size="small"
+                      text
+                      @click.stop="openOcrAuditDrawer(String(row.id || row.jobId))"
+                    >
+                      详情
+                    </ElButton>
+                  </template>
+                </ElTableColumn>
+              </ElTable>
+            </template>
+
+            <template v-else-if="ocrStatusDialogType === 'quality'">
+              <ElDescriptions :column="1" border class="mt-12px">
+                <ElDescriptionsItem label="文件成功">
+                  {{ ocrQuality?.fileLevel?.success || 0 }}/{{ ocrQuality?.fileLevel?.total || 0 }}
+                </ElDescriptionsItem>
+                <ElDescriptionsItem label="Job 成功">
+                  {{ ocrQuality?.jobLevel?.success || 0 }}/{{ ocrQuality?.jobLevel?.total || 0 }}
+                </ElDescriptionsItem>
+                <ElDescriptionsItem label="低置信度字段">
+                  {{ ocrQuality?.fieldLevel?.lowConfidence || 0 }}
+                </ElDescriptionsItem>
+                <ElDescriptionsItem label="必需字段缺失">
+                  {{ ocrQuality?.fieldLevel?.missingRequiredFieldCount || 0 }}
+                </ElDescriptionsItem>
+                <ElDescriptionsItem label="正式表格">
+                  {{ ocrQuality?.tableLevel?.formalTableCount || 0 }}/{{
+                    ocrQuality?.tableLevel?.tableCount || 0
+                  }}
+                </ElDescriptionsItem>
+                <ElDescriptionsItem label="印章可读">
+                  {{ ocrQuality?.sealLevel?.readableSealCount || 0 }}/{{
+                    ocrQuality?.sealLevel?.sealCount || 0
+                  }}
+                </ElDescriptionsItem>
+                <ElDescriptionsItem label="引擎耗时">
+                  {{ ocrQuality?.cacheMetrics?.totalDurationMs || 0 }} ms
+                </ElDescriptionsItem>
+              </ElDescriptions>
+            </template>
+
+            <template v-else>
+              <template v-if="ocr100Scorecard">
+                <div class="gate-summary mt-12px">
+                  <div class="gate-summary-item">
+                    <span>OCR 100</span>
+                    <strong>{{ ocr100Scorecard.score }}/{{ ocr100Scorecard.targetScore }}</strong>
+                  </div>
+                  <div class="gate-summary-item">
+                    <span>认证状态</span>
+                    <strong>
+                      <ElTag :type="ocr100Scorecard.ok ? 'success' : 'danger'" effect="plain">
+                        {{ ocr100Scorecard.ok ? '100分就绪' : '存在阻断' }}
+                      </ElTag>
+                    </strong>
+                  </div>
+                  <div class="gate-summary-item">
+                    <span>可评估样本</span>
+                    <strong>{{ ocrReadyForEvalCount }}</strong>
+                  </div>
+                  <div class="gate-summary-item">
+                    <span>阻断项</span>
+                    <strong>{{ ocr100Scorecard.blockers.length }}</strong>
+                  </div>
+                </div>
+                <ElTable :data="ocr100SectionRows" border class="mt-12px">
+                  <ElTableColumn prop="name" label="评分域" min-width="150" show-overflow-tooltip />
+                  <ElTableColumn label="分数" width="105">
+                    <template #default="{ row }">{{ row.score }}/{{ row.maxScore }}</template>
+                  </ElTableColumn>
+                  <ElTableColumn prop="status" label="状态" width="100">
+                    <template #default="{ row }">
+                      <ElTag :type="row.status === 'pass' ? 'success' : 'danger'" effect="plain">
+                        {{ friendlyStatus(row.status) }}
+                      </ElTag>
+                    </template>
+                  </ElTableColumn>
+                </ElTable>
+                <ElTable
+                  v-if="ocr100BlockerRows.length"
+                  :data="ocr100BlockerRows"
+                  border
+                  class="mt-12px"
+                >
+                  <ElTableColumn prop="id" label="#" width="72" />
+                  <ElTableColumn
+                    prop="blocker"
+                    label="OCR 100 阻断项"
+                    min-width="260"
+                    show-overflow-tooltip
+                  />
+                </ElTable>
+              </template>
+              <ElEmpty v-else class="mt-12px" description="暂无 OCR 发布评测数据。" />
+            </template>
+          </div>
+        </ElDialog>
+
+        <ElDialog
+          v-model="ocrSecondaryMenuVisible"
+          title="更多 OCR 工具"
+          width="min(720px, 94vw)"
+          class="ocr-secondary-dialog"
+        >
+          <div class="ocr-secondary-menu">
+            <ElAlert
+              type="info"
+              show-icon
+              :closable="false"
+              title="这些是低频或 FDE 专用工具，日常在线测试可以先不看。"
+            />
+            <button
+              v-for="tool in ocrSecondaryTools"
+              :key="tool.key"
+              type="button"
+              :class="`ocr-secondary-tool ocr-secondary-tool--${tool.tone}`"
+              @click="openOcrSecondaryTool(tool.key)"
+            >
+              <span>{{ tool.label }}</span>
+              <strong>{{ tool.stat }}</strong>
+              <small>{{ tool.description }}</small>
+            </button>
+          </div>
+        </ElDialog>
 
         <div class="workbench-summary-grid ocr-command-kpis">
           <div
@@ -8456,7 +9102,7 @@ onBeforeUnmount(() => {
                   <ElTag effect="plain">{{ ocrAnnotationRows.length }} 条</ElTag>
                 </div>
               </template>
-              <ElTable :data="ocrAnnotationRows.slice(0, 6)" border height="270">
+              <ElTable :data="ocrAnnotationRows.slice(0, 6)" border>
                 <ElTableColumn label="样本" min-width="180" show-overflow-tooltip>
                   <template #default="{ row }">
                     {{ row.caseId || row.taskId || '-' }}
@@ -8524,7 +9170,7 @@ onBeforeUnmount(() => {
 
       <div v-if="isFdeRoute('dashboard')" class="metric-grid">
         <div
-          v-for="metric in dashboardMetricCards"
+          v-for="metric in dashboardMetricHighlights"
           :key="metric.label"
           :class="`metric-card metric-card--${metric.tone}`"
         >
@@ -8533,20 +9179,160 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div v-if="isFdeRoute('dashboard')" class="workflow-grid">
+      <details
+        v-if="
+          isFdeRoute('dashboard') && dashboardMetricCards.length > dashboardMetricHighlights.length
+        "
+        class="project-overview-diagnostics fde-dashboard-secondary"
+      >
+        <summary>
+          <span>更多总览指标</span>
+          <small
+            >{{ dashboardMetricCards.length - dashboardMetricHighlights.length }} 个低频指标</small
+          >
+        </summary>
+        <div class="metric-grid metric-grid--secondary">
+          <div
+            v-for="metric in dashboardMetricCards.slice(dashboardMetricHighlights.length)"
+            :key="metric.label"
+            :class="`metric-card metric-card--${metric.tone}`"
+          >
+            <span>{{ metric.label }}</span>
+            <strong>{{ metric.suffix === '%' ? percent(metric.value) : metric.value }}</strong>
+          </div>
+        </div>
+      </details>
+
+      <div
+        v-if="isFdeRoute('dashboard')"
+        class="workflow-grid workflow-grid--tabs"
+        role="tablist"
+        aria-label="FDE 重点工作流"
+      >
         <button
           v-for="card in fdeWorkflowCards"
-          :key="card.title"
+          :key="card.key"
           type="button"
-          :class="`workflow-card workflow-card--${card.tone}`"
-          @click="goFdeRoute(card.route)"
+          :class="[
+            'workflow-card',
+            `workflow-card--${card.tone}`,
+            { 'is-active': selectedFdeDashboardTab === card.key }
+          ]"
+          role="tab"
+          aria-controls="fde-dashboard-workflow-panel"
+          :aria-selected="selectedFdeDashboardTab === card.key"
+          @click="selectedFdeDashboardTab = card.key"
         >
           <span>{{ card.title }}</span>
           <strong>{{ card.metric }}</strong>
           <small>{{ card.description }}</small>
-          <em>{{ card.action }}</em>
+          <em>{{ selectedFdeDashboardTab === card.key ? '当前' : card.action }}</em>
         </button>
       </div>
+
+      <section
+        v-if="isFdeRoute('dashboard')"
+        id="fde-dashboard-workflow-panel"
+        class="fde-dashboard-detail"
+        role="tabpanel"
+        aria-live="polite"
+      >
+        <div class="fde-dashboard-detail__header">
+          <div>
+            <span>当前重点</span>
+            <strong>{{ selectedFdeWorkflowCard?.title }}</strong>
+            <small>{{ selectedFdeWorkflowCard?.description }}</small>
+          </div>
+          <ElButton plain type="primary" @click="goFdeRoute(selectedFdeWorkflowCard.route)">
+            进入详情
+          </ElButton>
+        </div>
+
+        <template v-if="selectedFdeDashboardTab === 'agent'">
+          <ElAlert
+            :type="hasReviewRuns ? 'success' : 'warning'"
+            show-icon
+            :closable="false"
+            :title="reviewRunConclusion"
+          />
+          <ElTable
+            v-if="hasReviewRuns"
+            :data="reviewRuns.slice(0, 5)"
+            border
+            class="mt-12px"
+            @row-click="(row) => openReviewAuditDrawer(String(row.reviewRunId || row.id))"
+          >
+            <ElTableColumn
+              prop="reviewRunId"
+              label="审查任务"
+              min-width="190"
+              show-overflow-tooltip
+            />
+            <ElTableColumn prop="workflowEngine" label="外层" width="110">
+              <template #default="{ row }">{{ friendlyTechLabel(row.workflowEngine) }}</template>
+            </ElTableColumn>
+            <ElTableColumn prop="graphEngine" label="内层" width="110">
+              <template #default="{ row }">{{ friendlyTechLabel(row.graphEngine) }}</template>
+            </ElTableColumn>
+            <ElTableColumn prop="status" label="状态" width="120">
+              <template #default="{ row }">
+                <ElTag :type="statusType(String(row.status))" effect="plain">
+                  {{ friendlyStatus(row.status) }}
+                </ElTag>
+              </template>
+            </ElTableColumn>
+            <ElTableColumn label="操作" width="92" fixed="right">
+              <template #default="{ row }">
+                <ElButton
+                  size="small"
+                  text
+                  @click.stop="openReviewAuditDrawer(String(row.reviewRunId || row.id))"
+                >
+                  详情
+                </ElButton>
+              </template>
+            </ElTableColumn>
+          </ElTable>
+        </template>
+
+        <template v-else>
+          <div class="gate-summary">
+            <div class="gate-summary-item">
+              <span>待标注样本</span>
+              <strong>{{ ocrPendingAnnotationCount }}</strong>
+            </div>
+            <div class="gate-summary-item">
+              <span>可评估样本</span>
+              <strong>{{ ocrReadyForEvalCount }}</strong>
+            </div>
+            <div class="gate-summary-item">
+              <span>OCR 100</span>
+              <strong>
+                {{
+                  ocr100Scorecard
+                    ? `${ocr100Scorecard.score}/${ocr100Scorecard.targetScore}`
+                    : '待评估'
+                }}
+              </strong>
+            </div>
+            <div class="gate-summary-item">
+              <span>首要问题</span>
+              <strong>{{ ocrTopBlockerRows.length }}</strong>
+            </div>
+          </div>
+          <ElTable
+            v-if="ocrTopBlockerRows.length"
+            :data="ocrTopBlockerRows.slice(0, 4)"
+            border
+            class="mt-12px"
+          >
+            <ElTableColumn prop="source" label="来源" width="120" />
+            <ElTableColumn prop="blocker" label="问题" min-width="260" show-overflow-tooltip />
+            <ElTableColumn prop="action" label="处理动作" min-width="260" show-overflow-tooltip />
+          </ElTable>
+          <ElEmpty v-else class="mt-12px" description="当前没有 OCR 阻断项。" />
+        </template>
+      </section>
 
       <div v-if="isFdeRoute('projects')" class="project-audit-workbench">
         <ElCard
@@ -9163,7 +9949,7 @@ onBeforeUnmount(() => {
                     </ElTag>
                   </div>
                 </template>
-                <ElTable :data="normalizedProjectAuditVectorRows" border height="460">
+                <ElTable :data="normalizedProjectAuditVectorRows" border>
                   <ElTableColumn
                     prop="fileName"
                     label="资料文件"
@@ -9292,7 +10078,7 @@ onBeforeUnmount(() => {
             <ElCol :xl="8" :lg="8" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>向量入库状态</template>
-                <ElTable :data="normalizedProjectAuditVectorRows" border height="220">
+                <ElTable :data="normalizedProjectAuditVectorRows" border>
                   <ElTableColumn
                     prop="fileName"
                     label="资料"
@@ -9314,12 +10100,7 @@ onBeforeUnmount(() => {
             <ElCol :xl="8" :lg="8" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>异常与处理建议</template>
-                <ElTable
-                  :data="projectAuditVectorIssueRows"
-                  border
-                  height="220"
-                  empty-text="暂无异常"
-                >
+                <ElTable :data="projectAuditVectorIssueRows" border empty-text="暂无异常">
                   <ElTableColumn
                     prop="fileName"
                     label="资料"
@@ -9526,7 +10307,7 @@ onBeforeUnmount(() => {
             <ElCol :xl="10" :lg="10" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>章节溯源资料覆盖</template>
-                <ElTable :data="projectAuditPageIndexCoverageRows" border height="380">
+                <ElTable :data="projectAuditPageIndexCoverageRows" border>
                   <ElTableColumn
                     prop="fileName"
                     label="资料"
@@ -9556,7 +10337,7 @@ onBeforeUnmount(() => {
             <ElCol :xl="14" :lg="14" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>命中节点与条款</template>
-                <ElTable :data="projectAuditPageIndexNodeRows" border height="300">
+                <ElTable :data="projectAuditPageIndexNodeRows" border>
                   <ElTableColumn
                     prop="title"
                     label="节点标题"
@@ -9587,12 +10368,7 @@ onBeforeUnmount(() => {
             <ElCol :xl="10" :lg="10" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>异常与处理建议</template>
-                <ElTable
-                  :data="projectAuditPageIndexIssueRows"
-                  border
-                  height="300"
-                  empty-text="暂无异常"
-                >
+                <ElTable :data="projectAuditPageIndexIssueRows" border empty-text="暂无异常">
                   <ElTableColumn prop="source" label="来源" width="96" />
                   <ElTableColumn prop="object" label="对象" min-width="150" show-overflow-tooltip />
                   <ElTableColumn prop="issue" label="问题" min-width="150" show-overflow-tooltip />
@@ -9860,7 +10636,7 @@ onBeforeUnmount(() => {
                     上表展示节点之间的流向，下表展示最近事件和状态，用于定位卡在哪个节点或哪次工具调用。
                   </small>
                 </section>
-                <ElTable :data="reviewGraphEdges" border height="150">
+                <ElTable :data="reviewGraphEdges" border>
                   <ElTableColumn prop="source" label="来源" min-width="130" show-overflow-tooltip>
                     <template #default="{ row }">{{ friendlyTechLabel(row.source) }}</template>
                   </ElTableColumn>
@@ -9868,12 +10644,7 @@ onBeforeUnmount(() => {
                     <template #default="{ row }">{{ friendlyTechLabel(row.target) }}</template>
                   </ElTableColumn>
                 </ElTable>
-                <ElTable
-                  :data="reviewGraphTimeline.slice(0, 5)"
-                  border
-                  height="150"
-                  class="mt-12px"
-                >
+                <ElTable :data="reviewGraphTimeline.slice(0, 5)" border class="mt-12px">
                   <ElTableColumn prop="stepName" label="事件" min-width="150" show-overflow-tooltip>
                     <template #default="{ row }">{{ friendlyTechLabel(row.stepName) }}</template>
                   </ElTableColumn>
@@ -9994,7 +10765,7 @@ onBeforeUnmount(() => {
                     </ElTag>
                   </div>
                 </template>
-                <ElTable :data="normalizedReviewQualityRows" border height="240">
+                <ElTable :data="normalizedReviewQualityRows" border>
                   <ElTableColumn
                     prop="name"
                     label="门禁/维度"
@@ -10043,7 +10814,7 @@ onBeforeUnmount(() => {
                     </ElSpace>
                   </div>
                 </template>
-                <ElTable :data="normalizedReviewHumanCorrectionRows" border height="240">
+                <ElTable :data="normalizedReviewHumanCorrectionRows" border>
                   <ElTableColumn
                     prop="targetType"
                     label="对象"
@@ -10238,7 +11009,7 @@ onBeforeUnmount(() => {
               <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
                 <ElCard shadow="never" class="panel">
                   <template #header>完成标准</template>
-                  <ElTable :data="projectAuditAnnotationHealthRows" border height="230">
+                  <ElTable :data="projectAuditAnnotationHealthRows" border>
                     <ElTableColumn prop="item" label="检查项" width="150" />
                     <ElTableColumn prop="status" label="状态" width="120">
                       <template #default="{ row }">
@@ -10265,7 +11036,7 @@ onBeforeUnmount(() => {
               <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
                 <ElCard shadow="never" class="panel">
                   <template #header>不能入评估的原因</template>
-                  <ElTable :data="projectAuditAnnotationBlockerRows" border height="230">
+                  <ElTable :data="projectAuditAnnotationBlockerRows" border>
                     <ElTableColumn
                       prop="blocker"
                       label="原因"
@@ -10286,7 +11057,6 @@ onBeforeUnmount(() => {
                   <ElTable
                     :data="projectAuditOcrJobs"
                     border
-                    height="250"
                     @row-click="(row) => openOcrAuditDrawer(String(row.jobId || row.id))"
                   >
                     <ElTableColumn
@@ -10387,7 +11157,7 @@ onBeforeUnmount(() => {
             <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>准确率评估门禁</template>
-                <ElTable :data="projectAuditEvaluationGateRows" border height="260">
+                <ElTable :data="projectAuditEvaluationGateRows" border>
                   <ElTableColumn prop="item" label="门禁" min-width="160" show-overflow-tooltip />
                   <ElTableColumn prop="actual" label="当前" width="110" />
                   <ElTableColumn prop="target" label="目标" width="125" />
@@ -10405,7 +11175,7 @@ onBeforeUnmount(() => {
                     show-overflow-tooltip
                   />
                 </ElTable>
-                <ElTable :data="ocrScenarioRows" border height="180" class="mt-12px">
+                <ElTable :data="ocrScenarioRows" border class="mt-12px">
                   <ElTableColumn
                     prop="scenario"
                     label="OCR 场景"
@@ -10425,7 +11195,7 @@ onBeforeUnmount(() => {
             <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>失败样本与阻断项</template>
-                <ElTable :data="failedOcrCaseRows" border height="210">
+                <ElTable :data="failedOcrCaseRows" border>
                   <ElTableColumn prop="caseId" label="样本" min-width="150" show-overflow-tooltip />
                   <ElTableColumn prop="scenario" label="场景" min-width="140" show-overflow-tooltip>
                     <template #default="{ row }">{{ friendlyTechLabel(row.scenario) }}</template>
@@ -10440,12 +11210,7 @@ onBeforeUnmount(() => {
                     show-overflow-tooltip
                   />
                 </ElTable>
-                <ElTable
-                  :data="projectAuditEvaluationIssueRows"
-                  border
-                  height="230"
-                  class="mt-12px"
-                >
+                <ElTable :data="projectAuditEvaluationIssueRows" border class="mt-12px">
                   <ElTableColumn prop="source" label="来源" width="96" />
                   <ElTableColumn prop="object" label="对象" min-width="160" show-overflow-tooltip />
                   <ElTableColumn prop="issue" label="问题" min-width="210" show-overflow-tooltip />
@@ -10465,7 +11230,7 @@ onBeforeUnmount(() => {
           <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
             <ElCard shadow="never" class="panel">
               <template #header>节点挂载资料</template>
-              <ElTable :data="projectAuditBindings" border height="420">
+              <ElTable :data="projectAuditBindings" border>
                 <ElTableColumn
                   prop="requirementName"
                   label="资料要求"
@@ -10493,7 +11258,7 @@ onBeforeUnmount(() => {
           <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
             <ElCard shadow="never" class="panel">
               <template #header>资料版本与 OCR 状态</template>
-              <ElTable :data="projectAuditDocuments" border height="420">
+              <ElTable :data="projectAuditDocuments" border>
                 <ElTableColumn prop="fileName" label="文件" min-width="230" show-overflow-tooltip />
                 <ElTableColumn
                   prop="currentVersionId"
@@ -10529,7 +11294,7 @@ onBeforeUnmount(() => {
           <ElCol :span="24">
             <ElCard shadow="never" class="panel">
               <template #header>提交批次</template>
-              <ElTable :data="projectAuditSubmissions" border height="460">
+              <ElTable :data="projectAuditSubmissions" border>
                 <ElTableColumn prop="id" label="批次" min-width="150" show-overflow-tooltip />
                 <ElTableColumn
                   prop="batchName"
@@ -10574,7 +11339,6 @@ onBeforeUnmount(() => {
               <ElTable
                 :data="projectAuditReviewRuns"
                 border
-                height="420"
                 @row-click="(row) => openReviewAuditDrawer(String(row.reviewRunId || row.id))"
               >
                 <ElTableColumn
@@ -10643,7 +11407,7 @@ onBeforeUnmount(() => {
             </ElCard>
             <ElCard shadow="never" class="panel mt-16px">
               <template #header>决策链摘要</template>
-              <ElTable :data="reviewReasoningTraceRows" border height="220">
+              <ElTable :data="reviewReasoningTraceRows" border>
                 <ElTableColumn prop="stepName" label="步骤" min-width="150" show-overflow-tooltip />
                 <ElTableColumn
                   prop="reasoningSummary"
@@ -10670,7 +11434,6 @@ onBeforeUnmount(() => {
               <ElTable
                 :data="projectAuditOcrJobs"
                 border
-                height="420"
                 @row-click="(row) => openOcrAuditDrawer(String(row.jobId || row.id))"
               >
                 <ElTableColumn
@@ -10721,7 +11484,6 @@ onBeforeUnmount(() => {
               <ElTable
                 :data="projectAuditAnnotationTasks"
                 border
-                height="420"
                 @row-click="(row) => openAnnotationEditor(row)"
               >
                 <ElTableColumn prop="taskId" label="任务" min-width="150" show-overflow-tooltip />
@@ -10757,7 +11519,7 @@ onBeforeUnmount(() => {
           <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
             <ElCard shadow="never" class="panel">
               <template #header>质量阻断项</template>
-              <ElTable :data="projectAuditBlockers" border height="420">
+              <ElTable :data="projectAuditBlockers" border>
                 <ElTableColumn label="域" width="92">
                   <template #default="{ row }">
                     <ElTag :type="blockerLevelType(row.level)" effect="plain">
@@ -10784,7 +11546,7 @@ onBeforeUnmount(() => {
           <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
             <ElCard shadow="never" class="panel">
               <template #header>节点状态分布</template>
-              <ElTable :data="nodeStatusSummary" border height="200">
+              <ElTable :data="nodeStatusSummary" border>
                 <ElTableColumn prop="status" label="状态" min-width="150" />
                 <ElTableColumn prop="count" label="数量" width="90" />
               </ElTable>
@@ -10814,13 +11576,17 @@ onBeforeUnmount(() => {
         </ElRow>
       </div>
 
-      <ElTabs v-else-if="!isFdeRoute('ocr-quality')" v-model="activeFdeTab" class="fde-tabs">
+      <ElTabs
+        v-else-if="!isFdeRoute('dashboard', 'ocr-quality', 'projects')"
+        v-model="activeFdeTab"
+        :class="['fde-tabs', { 'fde-tabs--single-route': isFdeRoute('review-runs') }]"
+      >
         <ElTabPane label="AI 驾驶舱" name="dashboard">
           <ElRow :gutter="16">
             <ElCol :xl="24" :lg="24" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>Agent 绩效</template>
-                <ElTable :data="dashboard?.agentPerformance || []" border height="320">
+                <ElTable :data="dashboard?.agentPerformance || []" border>
                   <ElTableColumn
                     prop="agentId"
                     label="AI 员工"
@@ -10846,7 +11612,7 @@ onBeforeUnmount(() => {
             <ElCol :xl="14" :lg="14" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>风险告警</template>
-                <ElTable :data="dashboard?.alerts || []" border height="320">
+                <ElTable :data="dashboard?.alerts || []" border>
                   <ElTableColumn prop="severity" label="等级" width="90" />
                   <ElTableColumn prop="title" label="告警" min-width="210" show-overflow-tooltip />
                   <ElTableColumn prop="status" label="状态" width="110" />
@@ -10889,12 +11655,7 @@ onBeforeUnmount(() => {
                     </ElButton>
                   </div>
                 </template>
-                <ElTable
-                  :data="aiRuns"
-                  border
-                  height="360"
-                  @row-click="(row) => loadRunDetail(row.id)"
-                >
+                <ElTable :data="aiRuns" border @row-click="(row) => loadRunDetail(row.id)">
                   <ElTableColumn prop="id" label="运行编号" min-width="190" show-overflow-tooltip />
                   <ElTableColumn
                     prop="agentId"
@@ -10972,7 +11733,7 @@ onBeforeUnmount(() => {
                     <ElTag effect="plain">公开摘要</ElTag>
                   </div>
                 </template>
-                <ElTable :data="reviewReasoningTraceRows" border height="420">
+                <ElTable :data="reviewReasoningTraceRows" border>
                   <ElTableColumn prop="sequence" label="#" width="74" />
                   <ElTableColumn
                     prop="stepName"
@@ -11022,7 +11783,7 @@ onBeforeUnmount(() => {
             <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>溯源快照</template>
-                <ElTable :data="reviewLineageRows" border height="320">
+                <ElTable :data="reviewLineageRows" border>
                   <ElTableColumn prop="label" label="项" width="130" show-overflow-tooltip />
                   <ElTableColumn label="值" min-width="260" show-overflow-tooltip>
                     <template #default="{ row }">{{ shortText(row.value) }}</template>
@@ -11046,7 +11807,7 @@ onBeforeUnmount(() => {
                     </ElSpace>
                   </div>
                 </template>
-                <ElTable :data="normalizedReviewQualityRows" border height="320">
+                <ElTable :data="normalizedReviewQualityRows" border>
                   <ElTableColumn prop="name" label="评估项" min-width="150" show-overflow-tooltip />
                   <ElTableColumn prop="status" label="状态" width="95">
                     <template #default="{ row }">
@@ -11084,7 +11845,7 @@ onBeforeUnmount(() => {
                     </ElSpace>
                   </div>
                 </template>
-                <ElTable :data="normalizedReviewHumanCorrectionRows" border height="300">
+                <ElTable :data="normalizedReviewHumanCorrectionRows" border>
                   <ElTableColumn
                     prop="correctionType"
                     label="修正类型"
@@ -11144,7 +11905,7 @@ onBeforeUnmount(() => {
                     <ElTag effect="plain">公开摘要</ElTag>
                   </div>
                 </template>
-                <ElTable :data="reviewReasoningTraceRows" border height="420">
+                <ElTable :data="reviewReasoningTraceRows" border>
                   <ElTableColumn prop="sequence" label="#" width="74" />
                   <ElTableColumn
                     prop="stepName"
@@ -11194,7 +11955,7 @@ onBeforeUnmount(() => {
             <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>溯源快照</template>
-                <ElTable :data="reviewLineageRows" border height="320">
+                <ElTable :data="reviewLineageRows" border>
                   <ElTableColumn prop="label" label="项" width="130" show-overflow-tooltip />
                   <ElTableColumn label="值" min-width="260" show-overflow-tooltip>
                     <template #default="{ row }">{{ shortText(row.value) }}</template>
@@ -11218,7 +11979,7 @@ onBeforeUnmount(() => {
                     </ElSpace>
                   </div>
                 </template>
-                <ElTable :data="normalizedReviewQualityRows" border height="320">
+                <ElTable :data="normalizedReviewQualityRows" border>
                   <ElTableColumn prop="name" label="评估项" min-width="150" show-overflow-tooltip />
                   <ElTableColumn prop="status" label="状态" width="95">
                     <template #default="{ row }">
@@ -11246,7 +12007,7 @@ onBeforeUnmount(() => {
                     <ElTag effect="plain">{{ reviewHumanCorrectionRows.length }} 条</ElTag>
                   </div>
                 </template>
-                <ElTable :data="normalizedReviewHumanCorrectionRows" border height="300">
+                <ElTable :data="normalizedReviewHumanCorrectionRows" border>
                   <ElTableColumn
                     prop="correctionType"
                     label="修正类型"
@@ -11326,7 +12087,7 @@ onBeforeUnmount(() => {
                     <ElTag effect="plain">失败 {{ failedEvaluationCaseRows.length }}</ElTag>
                   </div>
                 </template>
-                <ElTable :data="evaluationCaseRows" border height="320">
+                <ElTable :data="evaluationCaseRows" border>
                   <ElTableColumn
                     prop="evaluationCaseId"
                     label="Case"
@@ -11391,16 +12152,30 @@ onBeforeUnmount(() => {
         </ElTabPane>
 
         <ElTabPane label="任务编排" name="orchestration">
-          <div class="workbench-summary-grid">
-            <div
+          <div
+            class="workbench-summary-grid agent-status-tabs"
+            role="tablist"
+            aria-label="Agent 审查状态"
+          >
+            <button
               v-for="card in agentStatusCards"
-              :key="card.label"
-              :class="`workbench-summary-card workbench-summary-card--${card.tone}`"
+              :key="card.key"
+              type="button"
+              :class="[
+                'workbench-summary-card',
+                'workbench-summary-card--button',
+                `workbench-summary-card--${card.tone}`,
+                { 'is-active': agentSubpage === card.key }
+              ]"
+              role="tab"
+              aria-controls="agent-status-panel"
+              :aria-selected="agentSubpage === card.key"
+              @click="agentSubpage = card.key"
             >
               <span>{{ card.label }}</span>
               <strong>{{ card.value }}</strong>
-              <small>{{ card.hint }}</small>
-            </div>
+              <small>{{ card.title }} · {{ card.hint }}</small>
+            </button>
           </div>
           <ElAlert
             class="mb-16px"
@@ -11409,18 +12184,18 @@ onBeforeUnmount(() => {
             :closable="false"
             :title="reviewRunConclusion"
           />
-          <div class="subpage-switch mb-16px">
-            <button
-              v-for="item in agentSubpageItems"
-              :key="item.key"
-              type="button"
-              :class="{ active: agentSubpage === item.key }"
-              @click="agentSubpage = item.key"
-            >
-              <span>{{ item.label }}</span>
-              <small>{{ item.description }}</small>
-            </button>
-          </div>
+          <section
+            id="agent-status-panel"
+            class="agent-status-panel mb-16px"
+            role="tabpanel"
+            aria-live="polite"
+          >
+            <div>
+              <span>当前明细</span>
+              <strong>{{ selectedAgentStatusCard?.title }}</strong>
+            </div>
+            <small>{{ selectedAgentStatusCard?.hint }}</small>
+          </section>
           <ElRow v-if="agentSubpage === 'runs'" :gutter="16">
             <ElCol :xl="24" :lg="24" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
@@ -11453,7 +12228,6 @@ onBeforeUnmount(() => {
                   v-if="hasReviewRuns"
                   :data="reviewRuns"
                   border
-                  height="360"
                   @row-click="(row) => openReviewAuditDrawer(String(row.reviewRunId || row.id))"
                 >
                   <ElTableColumn
@@ -11609,7 +12383,7 @@ onBeforeUnmount(() => {
                       <strong>{{ reviewScorecard.blockers.length }}</strong>
                     </div>
                   </div>
-                  <ElTable :data="reviewScorecardSections" border height="180" class="mt-12px">
+                  <ElTable :data="reviewScorecardSections" border class="mt-12px">
                     <ElTableColumn
                       prop="name"
                       label="评分域"
@@ -11631,7 +12405,6 @@ onBeforeUnmount(() => {
                     v-if="reviewScorecardBlockerRows.length"
                     :data="reviewScorecardBlockerRows"
                     border
-                    height="180"
                     class="mt-12px"
                   >
                     <ElTableColumn prop="id" label="#" width="112" />
@@ -11647,7 +12420,6 @@ onBeforeUnmount(() => {
                   v-if="reviewNodeStatusRows.length"
                   :data="reviewNodeStatusRows"
                   border
-                  height="160"
                   class="mt-12px"
                 >
                   <ElTableColumn label="节点状态">
@@ -11690,7 +12462,7 @@ onBeforeUnmount(() => {
                     <ElTag effect="plain">公开摘要</ElTag>
                   </div>
                 </template>
-                <ElTable :data="normalizedReviewReasoningRows" border height="360">
+                <ElTable :data="normalizedReviewReasoningRows" border>
                   <ElTableColumn prop="sequence" label="#" width="74" />
                   <ElTableColumn
                     prop="stepName"
@@ -11736,7 +12508,7 @@ onBeforeUnmount(() => {
             >
               <ElCard shadow="never" class="panel">
                 <template #header>溯源快照</template>
-                <ElTable :data="reviewLineageRows" border height="300">
+                <ElTable :data="reviewLineageRows" border>
                   <ElTableColumn prop="label" label="项" width="130" show-overflow-tooltip />
                   <ElTableColumn label="值" min-width="260" show-overflow-tooltip>
                     <template #default="{ row }">{{ shortText(row.value) }}</template>
@@ -11760,7 +12532,7 @@ onBeforeUnmount(() => {
                     <ElTag effect="plain">{{ reviewQualityGateRows.length }} 门禁</ElTag>
                   </div>
                 </template>
-                <ElTable :data="normalizedReviewQualityRows" border height="300">
+                <ElTable :data="normalizedReviewQualityRows" border>
                   <ElTableColumn prop="name" label="评估项" min-width="150" show-overflow-tooltip />
                   <ElTableColumn prop="status" label="状态" width="95">
                     <template #default="{ row }">
@@ -11796,7 +12568,7 @@ onBeforeUnmount(() => {
                     <ElTag effect="plain">{{ reviewHumanCorrectionRows.length }} 条</ElTag>
                   </div>
                 </template>
-                <ElTable :data="normalizedReviewHumanCorrectionRows" border height="260">
+                <ElTable :data="normalizedReviewHumanCorrectionRows" border>
                   <ElTableColumn
                     prop="correctionType"
                     label="修正类型"
@@ -11840,7 +12612,7 @@ onBeforeUnmount(() => {
                   AI 员工节点
                   <ElTag class="ml-8px" effect="plain">edges {{ reviewGraphEdges.length }}</ElTag>
                 </template>
-                <ElTable :data="reviewGraphNodes" border height="420">
+                <ElTable :data="reviewGraphNodes" border>
                   <ElTableColumn prop="sequence" label="#" width="112" />
                   <ElTableColumn prop="label" label="节点" min-width="180" show-overflow-tooltip />
                   <ElTableColumn
@@ -11921,7 +12693,7 @@ onBeforeUnmount(() => {
             <ElCol :xl="24" :lg="24" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>工作流时间线</template>
-                <ElTable :data="reviewGraphTimeline" border height="420">
+                <ElTable :data="reviewGraphTimeline" border>
                   <ElTableColumn
                     prop="createdAt"
                     label="时间"
@@ -11952,7 +12724,7 @@ onBeforeUnmount(() => {
             <ElCol :xl="24" :lg="24" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>规则结果</template>
-                <ElTable :data="reviewRuleResultRows" border height="260">
+                <ElTable :data="reviewRuleResultRows" border>
                   <ElTableColumn prop="ruleCode" label="规则" min-width="150" show-overflow-tooltip>
                     <template #default="{ row }">
                       {{ friendlyReferenceLabel(row.ruleCode) }}
@@ -11980,7 +12752,7 @@ onBeforeUnmount(() => {
                   检索溯源
                   <span class="panel-title-alias">检索 Trace</span>
                 </template>
-                <ElTable :data="reviewRetrievalTraceRows" border height="260">
+                <ElTable :data="reviewRetrievalTraceRows" border>
                   <ElTableColumn
                     prop="retrievalTraceId"
                     label="溯源记录"
@@ -12013,7 +12785,7 @@ onBeforeUnmount(() => {
                   审查问题草稿
                   <span class="panel-title-alias">Finding Draft</span>
                 </template>
-                <ElTable :data="normalizedReviewFindingRows" border height="260">
+                <ElTable :data="normalizedReviewFindingRows" border>
                   <ElTableColumn prop="id" label="草稿编号" min-width="145" show-overflow-tooltip />
                   <ElTableColumn
                     prop="findingType"
@@ -12066,7 +12838,7 @@ onBeforeUnmount(() => {
                     </ElButton>
                   </div>
                 </template>
-                <ElTable :data="feedback" border height="320" @row-click="selectFeedback">
+                <ElTable :data="feedback" border @row-click="selectFeedback">
                   <ElTableColumn label="类型" width="150">
                     <template #default="{ row }">{{ friendlyStatus(row.feedbackType) }}</template>
                   </ElTableColumn>
@@ -12135,7 +12907,7 @@ onBeforeUnmount(() => {
                     </ElButton>
                   </div>
                 </template>
-                <ElTable :data="evaluation?.sets || []" border height="320">
+                <ElTable :data="evaluation?.sets || []" border>
                   <ElTableColumn prop="name" label="评估集" min-width="220" show-overflow-tooltip />
                   <ElTableColumn prop="setType" label="类型" width="120" />
                   <ElTableColumn prop="caseCount" label="样本" width="90" />
@@ -12158,12 +12930,7 @@ onBeforeUnmount(() => {
             >
               <ElCard shadow="never" class="panel">
                 <template #header>能力版本组合</template>
-                <ElTable
-                  :data="bundles?.bundles || []"
-                  border
-                  height="320"
-                  @row-click="selectBundle"
-                >
+                <ElTable :data="bundles?.bundles || []" border @row-click="selectBundle">
                   <ElTableColumn prop="name" label="组合" min-width="220" show-overflow-tooltip />
                   <ElTableColumn prop="riskLevel" label="风险" width="100" />
                   <ElTableColumn prop="status" label="状态" width="130">
@@ -12212,12 +12979,7 @@ onBeforeUnmount(() => {
                     </ElSpace>
                   </div>
                 </template>
-                <ElTable
-                  :data="releases?.plans || []"
-                  border
-                  height="320"
-                  @row-click="selectRelease"
-                >
+                <ElTable :data="releases?.plans || []" border @row-click="selectRelease">
                   <ElTableColumn prop="id" label="发布单" min-width="170" show-overflow-tooltip />
                   <ElTableColumn prop="riskLevel" label="风险" width="100" />
                   <ElTableColumn prop="status" label="状态" width="150" />
@@ -12242,7 +13004,7 @@ onBeforeUnmount(() => {
             >
               <ElCard shadow="never" class="panel">
                 <template #header>能力组合差异</template>
-                <ElTable :data="bundleDiffRows" border height="240">
+                <ElTable :data="bundleDiffRows" border>
                   <ElTableColumn prop="field" label="组件" min-width="160" show-overflow-tooltip />
                   <ElTableColumn
                     prop="before"
@@ -12353,7 +13115,6 @@ onBeforeUnmount(() => {
                   v-if="packValidation?.results?.length"
                   :data="packValidation.results"
                   border
-                  height="220"
                   class="mt-12px"
                   @row-click="selectBusinessPack"
                 >
@@ -12375,7 +13136,6 @@ onBeforeUnmount(() => {
                   v-if="businessPackDiffRows.length"
                   :data="businessPackDiffRows"
                   border
-                  height="180"
                   class="mt-12px"
                 >
                   <ElTableColumn
@@ -12439,8 +13199,13 @@ onBeforeUnmount(() => {
                     v-for="item in ocrSubpageItems"
                     :key="item.key"
                     type="button"
-                    :class="{ active: ocrSubpage === item.key }"
-                    @click="ocrSubpage = item.key"
+                    :class="{
+                      active:
+                        (ocrSubpage === item.key &&
+                          (item.key === 'capability-test' || !ocrCapabilityDialogVisible)) ||
+                        (item.key === 'capability-test' && ocrCapabilityDialogVisible)
+                    }"
+                    @click="selectOcrSubpage(item.key)"
                   >
                     <span>{{ item.label }}</span>
                     <small>{{ item.description }}</small>
@@ -12485,7 +13250,6 @@ onBeforeUnmount(() => {
                     v-if="ocrTopBlockerRows.length"
                     :data="ocrTopBlockerRows"
                     border
-                    height="220"
                     class="mb-12px"
                   >
                     <ElTableColumn prop="id" label="#" width="72" />
@@ -12774,7 +13538,7 @@ onBeforeUnmount(() => {
                     </div>
                     <ElRow :gutter="12" class="mt-12px">
                       <ElCol :xl="24" :lg="24" :md="24" :sm="24" :xs="24">
-                        <ElTable :data="ocr100SectionRows" border height="180">
+                        <ElTable :data="ocr100SectionRows" border>
                           <ElTableColumn
                             prop="name"
                             label="评分域"
@@ -12799,12 +13563,7 @@ onBeforeUnmount(() => {
                         </ElTable>
                       </ElCol>
                       <ElCol :xl="24" :lg="24" :md="24" :sm="24" :xs="24">
-                        <ElTable
-                          v-if="ocr100BlockerRows.length"
-                          :data="ocr100BlockerRows"
-                          border
-                          height="180"
-                        >
+                        <ElTable v-if="ocr100BlockerRows.length" :data="ocr100BlockerRows" border>
                           <ElTableColumn prop="id" label="#" width="112" />
                           <ElTableColumn
                             prop="blocker"
@@ -12824,7 +13583,13 @@ onBeforeUnmount(() => {
                     </ElRow>
                   </template>
                 </template>
-                <template v-if="ocrSubpage === 'capability-test'">
+                <ElDialog
+                  v-model="ocrCapabilityDialogVisible"
+                  title="OCR 能力测试"
+                  width="min(1180px, 96vw)"
+                  class="ocr-capability-dialog"
+                  destroy-on-close
+                >
                   <section class="ocr-capability-shell">
                     <div class="ocr-capability-hero">
                       <div>
@@ -12916,7 +13681,6 @@ onBeforeUnmount(() => {
                         </div>
                         <ElTable
                           :data="ocrCapabilityTestRuns"
-                          height="290"
                           class="ocr-capability-table"
                           @row-click="
                             (row) => loadOcrCapabilityTestDetail(String(row.runId || row.id))
@@ -13027,7 +13791,7 @@ onBeforeUnmount(() => {
                         </div>
                         <ElTabs class="mt-12px">
                           <ElTabPane label="字段">
-                            <ElTable :data="selectedOcrCapabilityFields" height="210">
+                            <ElTable :data="selectedOcrCapabilityFields">
                               <ElTableColumn
                                 prop="fieldCode"
                                 label="字段"
@@ -13048,7 +13812,7 @@ onBeforeUnmount(() => {
                             </ElTable>
                           </ElTabPane>
                           <ElTabPane label="表格">
-                            <ElTable :data="selectedOcrCapabilityTables" height="210">
+                            <ElTable :data="selectedOcrCapabilityTables">
                               <ElTableColumn
                                 prop="tableId"
                                 label="表格"
@@ -13065,7 +13829,7 @@ onBeforeUnmount(() => {
                             </ElTable>
                           </ElTabPane>
                           <ElTabPane label="印章">
-                            <ElTable :data="selectedOcrCapabilitySeals" height="210">
+                            <ElTable :data="selectedOcrCapabilitySeals">
                               <ElTableColumn
                                 prop="sealName"
                                 label="章名"
@@ -13082,7 +13846,7 @@ onBeforeUnmount(() => {
                             </ElTable>
                           </ElTabPane>
                           <ElTabPane label="诊断">
-                            <ElTable :data="selectedOcrCapabilityDiagnostics" height="210">
+                            <ElTable :data="selectedOcrCapabilityDiagnostics">
                               <ElTableColumn
                                 prop="code"
                                 label="问题"
@@ -13105,7 +13869,7 @@ onBeforeUnmount(() => {
                       </div>
                     </section>
                   </section>
-                </template>
+                </ElDialog>
                 <div v-if="ocrSubpage === 'annotation'" class="sub-section mt-12px">
                   <div class="panel-header">
                     <span>人工标注门禁</span>
@@ -13157,7 +13921,7 @@ onBeforeUnmount(() => {
                   />
                   <ElRow :gutter="12" class="mt-12px">
                     <ElCol :xl="24" :lg="24" :md="24" :sm="24" :xs="24">
-                      <ElTable :data="ocrAnnotationRows" border height="180">
+                      <ElTable :data="ocrAnnotationRows" border>
                         <ElTableColumn
                           prop="caseId"
                           label="样本"
@@ -13219,7 +13983,6 @@ onBeforeUnmount(() => {
                         v-if="ocrAnnotationBlockerRows.length"
                         :data="ocrAnnotationBlockerRows"
                         border
-                        height="180"
                       >
                         <ElTableColumn
                           prop="blocker"
@@ -13243,7 +14006,6 @@ onBeforeUnmount(() => {
                   <ElTable
                     :data="ocrRuns"
                     border
-                    height="220"
                     class="mt-12px"
                     @row-click="(row) => openOcrAuditDrawer(String(row.id || row.jobId))"
                   >
@@ -13303,7 +14065,6 @@ onBeforeUnmount(() => {
                     v-if="selectedOcrEngineRows.length"
                     :data="selectedOcrEngineRows"
                     border
-                    height="180"
                     class="mt-12px"
                   >
                     <ElTableColumn prop="engine" label="引擎" min-width="180" show-overflow-tooltip>
@@ -13340,7 +14101,6 @@ onBeforeUnmount(() => {
                     v-if="ocrFieldFailureRows.length"
                     :data="ocrFieldFailureRows"
                     border
-                    height="180"
                     class="mt-12px"
                   >
                     <ElTableColumn
@@ -13373,7 +14133,6 @@ onBeforeUnmount(() => {
                     v-if="ocrMissingEvidenceRows.length"
                     :data="ocrMissingEvidenceRows"
                     border
-                    height="180"
                     class="mt-12px"
                   >
                     <ElTableColumn prop="targetType" label="缺证据类型" width="110" />
@@ -13449,7 +14208,6 @@ onBeforeUnmount(() => {
                   v-if="isFdeRoute('incidents')"
                   :data="incidents"
                   border
-                  height="180"
                   class="mt-12px"
                   @row-click="selectIncident"
                 >
@@ -13457,7 +14215,7 @@ onBeforeUnmount(() => {
                   <ElTableColumn prop="severity" label="等级" width="90" />
                   <ElTableColumn prop="status" label="状态" width="110" />
                 </ElTable>
-                <ElTable v-else :data="acceptanceReports" border height="220" class="mt-12px">
+                <ElTable v-else :data="acceptanceReports" border class="mt-12px">
                   <ElTableColumn prop="id" label="验收报告" min-width="190" show-overflow-tooltip />
                   <ElTableColumn
                     prop="businessPackId"
@@ -13546,7 +14304,7 @@ onBeforeUnmount(() => {
                   </div>
                   <ElRow :gutter="12" class="mt-12px">
                     <ElCol :xl="24" :lg="24" :md="24" :sm="24" :xs="24">
-                      <ElTable :data="ocrScenarioRows" border height="220">
+                      <ElTable :data="ocrScenarioRows" border>
                         <ElTableColumn
                           prop="scenario"
                           label="场景"
@@ -13578,7 +14336,6 @@ onBeforeUnmount(() => {
                         v-if="ocrThresholdFailureRows.length"
                         :data="ocrThresholdFailureRows"
                         border
-                        height="220"
                       >
                         <ElTableColumn
                           prop="scope"
@@ -13603,7 +14360,6 @@ onBeforeUnmount(() => {
                         v-else-if="ocrFindingCountRows.length"
                         :data="ocrFindingCountRows"
                         border
-                        height="220"
                       >
                         <ElTableColumn
                           prop="scope"
@@ -13621,7 +14377,7 @@ onBeforeUnmount(() => {
                         </ElTableColumn>
                         <ElTableColumn prop="count" label="次数" width="90" />
                       </ElTable>
-                      <ElTable v-else :data="failedOcrCaseRows" border height="220">
+                      <ElTable v-else :data="failedOcrCaseRows" border>
                         <ElTableColumn
                           prop="caseId"
                           label="Case"
@@ -13692,7 +14448,7 @@ onBeforeUnmount(() => {
                   }}</ElDescriptionsItem>
                   <ElDescriptionsItem label="审计事件">{{ auditEvents.length }}</ElDescriptionsItem>
                 </ElDescriptions>
-                <ElTable :data="maskingPolicies" border height="160" class="mt-12px">
+                <ElTable :data="maskingPolicies" border class="mt-12px">
                   <ElTableColumn
                     prop="fieldPath"
                     label="字段"
@@ -13702,7 +14458,7 @@ onBeforeUnmount(() => {
                   <ElTableColumn prop="strategy" label="策略" width="90" />
                   <ElTableColumn prop="status" label="状态" width="100" />
                 </ElTable>
-                <ElTable :data="auditEvents" border height="180" class="mt-12px">
+                <ElTable :data="auditEvents" border class="mt-12px">
                   <ElTableColumn
                     prop="createdAt"
                     label="时间"
@@ -13743,7 +14499,7 @@ onBeforeUnmount(() => {
                     costChangeRequests.length
                   }}</ElDescriptionsItem>
                 </ElDescriptions>
-                <ElTable :data="costChangeRequests" border height="180" class="mt-12px">
+                <ElTable :data="costChangeRequests" border class="mt-12px">
                   <ElTableColumn prop="id" label="申请" min-width="150" show-overflow-tooltip />
                   <ElTableColumn prop="status" label="状态" width="130">
                     <template #default="{ row }">{{ friendlyStatus(row.status) }}</template>
@@ -13970,7 +14726,6 @@ onBeforeUnmount(() => {
                     <ElTable
                       :data="selectedVectorFilePipelineFieldRows"
                       border
-                      height="220"
                       highlight-current-row
                       @row-click="(row) => selectVectorEvidence(row, 'OCR')"
                     >
@@ -14008,7 +14763,6 @@ onBeforeUnmount(() => {
                     <ElTable
                       :data="selectedVectorFilePipelineTextRows"
                       border
-                      height="220"
                       highlight-current-row
                       @row-click="(row) => selectVectorEvidence(row, 'Text')"
                     >
@@ -14045,7 +14799,6 @@ onBeforeUnmount(() => {
                     <ElTable
                       :data="selectedVectorFilePipelineVectorRows"
                       border
-                      height="240"
                       highlight-current-row
                       @row-click="(row) => selectVectorEvidence(row, 'Vector')"
                     >
@@ -14119,7 +14872,7 @@ onBeforeUnmount(() => {
               </div>
             </ElTabPane>
             <ElTabPane label="质量维度" name="dimensions">
-              <ElTable :data="selectedVectorFileQualityDimensions" border height="280">
+              <ElTable :data="selectedVectorFileQualityDimensions" border>
                 <ElTableColumn prop="name" label="维度" min-width="150" show-overflow-tooltip />
                 <ElTableColumn label="评分" width="82">
                   <template #default="{ row }">{{ row.score }}</template>
@@ -14158,7 +14911,6 @@ onBeforeUnmount(() => {
               <ElTable
                 :data="selectedVectorFileChunkRows"
                 border
-                height="360"
                 highlight-current-row
                 @row-click="(row) => selectVectorEvidence(row, 'Chunk')"
               >
@@ -14250,7 +15002,7 @@ onBeforeUnmount(() => {
               </div>
             </ElTabPane>
             <ElTabPane label="处理阶段" name="stages">
-              <ElTable :data="selectedVectorFileLineageStages" border height="280">
+              <ElTable :data="selectedVectorFileLineageStages" border>
                 <ElTableColumn prop="label" label="阶段" min-width="120" show-overflow-tooltip />
                 <ElTableColumn prop="status" label="状态" width="120">
                   <template #default="{ row }">
@@ -14282,7 +15034,7 @@ onBeforeUnmount(() => {
                   {{ scorePercent(selectedVectorFileLlmTrace.evidenceHitRate as number) }}
                 </ElDescriptionsItem>
               </ElDescriptions>
-              <ElTable :data="selectedVectorFileDetailRetrievalRows" border height="240">
+              <ElTable :data="selectedVectorFileDetailRetrievalRows" border>
                 <ElTableColumn
                   prop="query"
                   label="检索问题"
@@ -14453,7 +15205,7 @@ onBeforeUnmount(() => {
               <ElEmpty v-else description="暂无可审计推理摘要" />
             </ElTabPane>
             <ElTabPane label="结果" name="findings">
-              <ElTable :data="normalizedReviewFindingRows" border height="300">
+              <ElTable :data="normalizedReviewFindingRows" border>
                 <ElTableColumn
                   prop="findingType"
                   label="类型"
@@ -14493,7 +15245,7 @@ onBeforeUnmount(() => {
                   {{ reviewQualityEvaluation.score || 0 }}/100
                 </ElDescriptionsItem>
               </ElDescriptions>
-              <ElTable :data="normalizedReviewQualityRows" border height="220">
+              <ElTable :data="normalizedReviewQualityRows" border>
                 <ElTableColumn
                   prop="name"
                   label="门禁/维度"
@@ -14516,7 +15268,7 @@ onBeforeUnmount(() => {
               </ElTable>
             </ElTabPane>
             <ElTabPane label="溯源" name="lineage">
-              <ElTable :data="reviewLineageRows" border height="300">
+              <ElTable :data="reviewLineageRows" border>
                 <ElTableColumn prop="label" label="字段" width="130" />
                 <ElTableColumn label="值" min-width="320" show-overflow-tooltip>
                   <template #default="{ row }">
@@ -14526,7 +15278,7 @@ onBeforeUnmount(() => {
               </ElTable>
             </ElTabPane>
             <ElTabPane label="人工修正" name="human">
-              <ElTable :data="normalizedReviewHumanCorrectionRows" border height="300">
+              <ElTable :data="normalizedReviewHumanCorrectionRows" border>
                 <ElTableColumn prop="targetType" label="对象" min-width="120" show-overflow-tooltip>
                   <template #default="{ row }">{{ friendlyTechLabel(row.targetType) }}</template>
                 </ElTableColumn>
@@ -14613,7 +15365,7 @@ onBeforeUnmount(() => {
 
           <ElTabs class="audit-drawer-tabs">
             <ElTabPane label="引擎" name="engines">
-              <ElTable :data="selectedOcrEngineRows" border height="300">
+              <ElTable :data="selectedOcrEngineRows" border>
                 <ElTableColumn prop="engine" label="引擎" min-width="180" show-overflow-tooltip>
                   <template #default="{ row }">{{ friendlyTechLabel(row.engine) }}</template>
                 </ElTableColumn>
@@ -14633,7 +15385,7 @@ onBeforeUnmount(() => {
               </ElTable>
             </ElTabPane>
             <ElTabPane label="字段问题" name="fields">
-              <ElTable :data="ocrFieldFailureRows" border height="300">
+              <ElTable :data="ocrFieldFailureRows" border>
                 <ElTableColumn prop="code" label="问题" min-width="150" show-overflow-tooltip>
                   <template #default="{ row }">{{ friendlyTechLabel(row.code) }}</template>
                 </ElTableColumn>
@@ -14645,7 +15397,7 @@ onBeforeUnmount(() => {
               </ElTable>
             </ElTabPane>
             <ElTabPane label="证据缺口" name="evidence">
-              <ElTable :data="ocrMissingEvidenceRows" border height="300">
+              <ElTable :data="ocrMissingEvidenceRows" border>
                 <ElTableColumn prop="targetType" label="类型" width="110">
                   <template #default="{ row }">{{ friendlyTechLabel(row.targetType) }}</template>
                 </ElTableColumn>
@@ -14667,7 +15419,7 @@ onBeforeUnmount(() => {
               </ElTable>
             </ElTabPane>
             <ElTabPane label="诊断" name="diagnostics">
-              <ElTable :data="selectedOcrDiagnosticRows" border height="300">
+              <ElTable :data="selectedOcrDiagnosticRows" border>
                 <ElTableColumn prop="code" label="诊断码" min-width="150" show-overflow-tooltip>
                   <template #default="{ row }">{{ friendlyTechLabel(row.code) }}</template>
                 </ElTableColumn>
@@ -14680,7 +15432,7 @@ onBeforeUnmount(() => {
               </ElTable>
             </ElTabPane>
             <ElTabPane label="人工修正" name="corrections">
-              <ElTable :data="selectedOcrCorrectionRows" border height="300">
+              <ElTable :data="selectedOcrCorrectionRows" border>
                 <ElTableColumn prop="fieldCode" label="字段" min-width="130" show-overflow-tooltip>
                   <template #default="{ row }">{{ friendlyFieldLabel(row.fieldCode) }}</template>
                 </ElTableColumn>
@@ -15230,6 +15982,87 @@ onBeforeUnmount(() => {
 
 .workbench-summary-card--blue {
   border-color: #cbdcf8;
+}
+
+.workbench-summary-card--button {
+  display: grid;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  appearance: none;
+  cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease,
+    background-color 180ms ease;
+}
+
+.workbench-summary-card--button:hover,
+.workbench-summary-card--button:focus-visible,
+.workbench-summary-card--button.is-active {
+  background: #f8fbff;
+  border-color: #8db7f6;
+  box-shadow:
+    0 0 0 2px rgb(37 99 235 / 10%),
+    0 12px 24px rgb(15 23 42 / 8%);
+}
+
+.workbench-summary-card--button:hover,
+.workbench-summary-card--button:focus-visible {
+  transform: translateY(-1px);
+}
+
+.workbench-summary-card--button:focus-visible {
+  outline: 3px solid rgb(37 99 235 / 20%);
+  outline-offset: 2px;
+}
+
+.agent-status-tabs {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.agent-status-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 0.42fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  min-height: 74px;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid #dfe8f5;
+  border-radius: 8px;
+  box-shadow: 0 8px 18px rgb(15 23 42 / 4%);
+}
+
+.agent-status-panel div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.agent-status-panel span {
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #2563eb;
+}
+
+.agent-status-panel strong {
+  min-width: 0;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 26px;
+  color: #172033;
+}
+
+.agent-status-panel small {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: #64748b;
 }
 
 .project-subpage-kpis {
@@ -16122,50 +16955,6 @@ onBeforeUnmount(() => {
   margin: 0 0 18px;
 }
 
-.ocr-goal-panel {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 16px;
-  align-items: center;
-  padding: 16px;
-  background: linear-gradient(135deg, #f7fbff 0%, #eef6ff 100%);
-  border: 1px solid #cfe0f5;
-  border-radius: 8px;
-}
-
-.ocr-goal-copy {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-}
-
-.ocr-goal-copy span {
-  font-size: 12px;
-  font-weight: 900;
-  line-height: 18px;
-  color: #2563eb;
-}
-
-.ocr-goal-copy strong {
-  font-size: 18px;
-  font-weight: 900;
-  line-height: 26px;
-  color: #172033;
-}
-
-.ocr-goal-copy small {
-  font-size: 13px;
-  line-height: 20px;
-  color: #64748b;
-}
-
-.ocr-goal-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
 .ocr-step-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -16179,10 +16968,36 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 96px;
   padding: 13px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
   background: #fff;
   border: 1px solid #dfe8f5;
   border-radius: 8px;
   box-shadow: 0 7px 18px rgb(15 23 42 / 4%);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.ocr-step-card:hover,
+.ocr-step-card:focus-visible {
+  border-color: #8db7f6;
+  box-shadow: 0 10px 22px rgb(15 23 42 / 8%);
+  transform: translateY(-1px);
+}
+
+.ocr-step-card.is-active {
+  border-color: #2563eb;
+  box-shadow:
+    0 0 0 2px rgb(37 99 235 / 12%),
+    0 12px 24px rgb(15 23 42 / 9%);
+}
+
+.ocr-step-card:focus-visible {
+  outline: 3px solid rgb(37 99 235 / 20%);
+  outline-offset: 2px;
 }
 
 .ocr-step-card span {
@@ -16210,7 +17025,7 @@ onBeforeUnmount(() => {
   font-weight: 900;
   line-height: 20px;
   color: #172033;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .ocr-step-card small {
@@ -16241,6 +17056,144 @@ onBeforeUnmount(() => {
 .ocr-command-kpis {
   margin-bottom: 0;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.ocr-command-center > .ocr-command-kpis,
+.ocr-command-center > .el-row {
+  display: none;
+}
+
+.ocr-status-tabs {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid #dfe8f5;
+  border-radius: 8px;
+  box-shadow: 0 8px 18px rgb(15 23 42 / 4%);
+}
+
+.ocr-status-tabs__header {
+  display: grid;
+  grid-template-columns: minmax(0, 0.46fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.ocr-status-tabs__header div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ocr-status-tabs__header span {
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #2563eb;
+}
+
+.ocr-status-tabs__header strong {
+  min-width: 0;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 26px;
+  color: #172033;
+}
+
+.ocr-status-tabs__header small {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: #64748b;
+}
+
+.ocr-status-tabs__body {
+  min-width: 0;
+}
+
+.ocr-status-dialog__body {
+  display: grid;
+  max-height: min(72vh, 720px);
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.ocr-secondary-menu {
+  display: grid;
+  gap: 10px;
+}
+
+.ocr-secondary-tool {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  min-width: 0;
+  min-height: 84px;
+  padding: 13px 14px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid #dfe8f5;
+  border-radius: 8px;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.ocr-secondary-tool:hover,
+.ocr-secondary-tool:focus-visible {
+  border-color: #8db7f6;
+  box-shadow: 0 10px 22px rgb(15 23 42 / 8%);
+  transform: translateY(-1px);
+}
+
+.ocr-secondary-tool:focus-visible {
+  outline: 3px solid rgb(37 99 235 / 20%);
+  outline-offset: 2px;
+}
+
+.ocr-secondary-tool span {
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 20px;
+  color: #172033;
+}
+
+.ocr-secondary-tool strong {
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 20px;
+  color: #2563eb;
+}
+
+.ocr-secondary-tool small {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 18px;
+  color: #667085;
+  text-overflow: ellipsis;
+}
+
+.ocr-secondary-tool--green {
+  border-color: #c9ead8;
+}
+
+.ocr-secondary-tool--orange {
+  border-color: #f6d6a5;
+}
+
+.ocr-secondary-tool--red {
+  border-color: #ffc8c1;
+}
+
+.ocr-secondary-tool--blue {
+  border-color: #cbdcf8;
 }
 
 .chart-zoom-value {
@@ -17770,6 +18723,18 @@ onBeforeUnmount(() => {
   box-shadow: 0 12px 24px rgb(15 23 42 / 8%);
 }
 
+.workflow-card:focus-visible {
+  outline: 3px solid rgb(37 99 235 / 20%);
+  outline-offset: 2px;
+}
+
+.workflow-card.is-active {
+  border-color: #2563eb;
+  box-shadow:
+    0 0 0 2px rgb(37 99 235 / 10%),
+    0 12px 24px rgb(15 23 42 / 8%);
+}
+
 .workflow-card span,
 .workflow-card strong,
 .workflow-card small,
@@ -17823,6 +18788,92 @@ onBeforeUnmount(() => {
 
 .workflow-card--orange::after {
   background: rgb(217 119 6 / 9%);
+}
+
+.workflow-grid--tabs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 14px;
+}
+
+.fde-dashboard-secondary {
+  overflow: hidden;
+}
+
+.fde-dashboard-secondary .metric-grid {
+  padding: 14px;
+  margin-bottom: 0;
+}
+
+.metric-grid--secondary {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.metric-grid--secondary .metric-card {
+  min-height: 78px;
+  padding: 12px;
+}
+
+.metric-grid--secondary .metric-card span {
+  margin-bottom: 7px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.metric-grid--secondary .metric-card strong {
+  font-size: 22px;
+  line-height: 28px;
+}
+
+.fde-dashboard-detail {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  margin-bottom: 20px;
+  background: #fff;
+  border: 1px solid #dfe8f5;
+  border-radius: 8px;
+  box-shadow: 0 8px 18px rgb(15 23 42 / 4%);
+}
+
+.fde-dashboard-detail__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.fde-dashboard-detail__header div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.fde-dashboard-detail__header span {
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #2563eb;
+}
+
+.fde-dashboard-detail__header strong {
+  min-width: 0;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 26px;
+  color: #172033;
+}
+
+.fde-dashboard-detail__header small {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: #64748b;
+}
+
+.fde-tabs--single-route > :deep(.el-tabs__header) {
+  display: none;
 }
 
 .panel {
@@ -19256,6 +20307,10 @@ onBeforeUnmount(() => {
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   }
 
+  .agent-status-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .workbench-summary-grid.project-subpage-kpis {
     grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
   }
@@ -19291,7 +20346,8 @@ onBeforeUnmount(() => {
   }
 
   .ocr-step-grid,
-  .ocr-command-kpis {
+  .ocr-command-kpis,
+  .workflow-grid--tabs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -19313,17 +20369,9 @@ onBeforeUnmount(() => {
     grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
   }
 
-  .ocr-goal-panel {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .ocr-capability-layout,
   .ocr-capability-result {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .ocr-goal-actions {
-    justify-content: flex-start;
   }
 }
 
@@ -19353,6 +20401,19 @@ onBeforeUnmount(() => {
     grid-column: 1 / -1;
   }
 
+  .project-overview-node-status-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 10px;
+  }
+
+  .project-overview-node-status-row > span {
+    text-align: left;
+  }
+
+  .project-overview-node-status-track {
+    grid-column: 1 / -1;
+  }
+
   .project-audit-module-bar {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -19368,6 +20429,15 @@ onBeforeUnmount(() => {
   .metric-grid,
   .gate-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .agent-status-panel,
+  .fde-dashboard-detail__header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fde-dashboard-detail__header :deep(.el-button) {
+    justify-self: start;
   }
 
   .workbench-summary-grid.project-subpage-kpis {
@@ -19530,7 +20600,13 @@ onBeforeUnmount(() => {
   }
 
   .ocr-command-kpis,
-  .ocr-step-grid {
+  .ocr-step-grid,
+  .agent-status-tabs,
+  .workflow-grid--tabs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ocr-status-tabs__header {
     grid-template-columns: minmax(0, 1fr);
   }
 
