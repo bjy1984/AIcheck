@@ -282,7 +282,9 @@ services:
       [
         "v2",
         "--model-id",
-        "${AICHECK_EMBEDDING_MODEL_ID:-BAAI/bge-m3}",
+        "${AICHECK_EMBEDDING_MODEL_ID:-Qwen/Qwen3-Embedding-0.6B}",
+        "--served-model-name",
+        "${AICHECK_EMBEDDING_SERVED_MODEL_NAME:-embedding-default}",
         "--engine",
         "${AICHECK_EMBEDDING_ENGINE:-torch}",
         "--port",
@@ -294,7 +296,8 @@ services:
       HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
       TRANSFORMERS_CACHE: /app/.cache
       INFINITY_API_KEY: ${INFINITY_API_KEY:?INFINITY_API_KEY is required}
-      AICHECK_EMBEDDING_MODEL_ID: ${AICHECK_EMBEDDING_MODEL_ID:-BAAI/bge-m3}
+      AICHECK_EMBEDDING_MODEL_ID: ${AICHECK_EMBEDDING_MODEL_ID:-Qwen/Qwen3-Embedding-0.6B}
+      AICHECK_EMBEDDING_SERVED_MODEL_NAME: ${AICHECK_EMBEDDING_SERVED_MODEL_NAME:-embedding-default}
       AICHECK_EMBEDDING_ENGINE: ${AICHECK_EMBEDDING_ENGINE:-torch}
     ports:
       - "127.0.0.1:7997:7997"

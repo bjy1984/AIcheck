@@ -593,7 +593,7 @@ const initialKnowledgeRuleVersions: KnowledgeRuleVersionMock[] = [
 ]
 
 const initialKnowledgeConfig: KnowledgeConfigMock = {
-  embeddingModel: 'BAAI/bge-m3',
+  embeddingModel: 'embedding-default',
   chunkSize: 900,
   chunkOverlap: 120,
   topKDefault: 5,
@@ -1161,6 +1161,50 @@ const state = {
   submissionDrafts: [] as SubmissionDraftMock[],
   submissionSnapshots: [] as SubmissionSnapshotMock[],
   fdeReviewFeedbacks: [] as Array<Record<string, unknown>>,
+  fdeOcrCapabilityUploadSessions: [] as Array<Record<string, unknown>>,
+  fdeOcrCapabilityTestRuns: [
+    {
+      id: 'FDE-OCR-RUN-MOCK-001',
+      runId: 'FDE-OCR-RUN-MOCK-001',
+      uploadSessionId: 'FDE-OCR-UP-MOCK-001',
+      status: 'success',
+      capability: 'ocr',
+      scope: 'fde_capability_test',
+      retention: 'fde_capability_test_only',
+      profileId: 'piping_characteristic_list_v1',
+      documentType: 'engineering_table_photo',
+      fileName: '管道特性表测试样张.png',
+      contentType: 'image/png',
+      fileSize: 1843200,
+      storageKey: 'fde-capability-tests/ocr/mock/piping-characteristic.png',
+      parseResultId: 'PARSE-FDE-OCR-RUN-MOCK-001',
+      resultSummary: {
+        pages: 1,
+        fields: 6,
+        tables: 1,
+        seals: 1,
+        fragments: 42,
+        diagnostics: 1,
+        qualityStatus: 'needs_human_review',
+        overallConfidence: 0.88
+      },
+      diagnostics: [
+        {
+          code: 'TABLE_STRUCTURE_LOW_CONFIDENCE',
+          level: 'warning',
+          message: '表格跨列区域置信度偏低，建议转入标注补齐样本。'
+        }
+      ],
+      engineRuns: [
+        { engine: 'pp_ocr_v6', status: 'success', durationMs: 1260 },
+        { engine: 'pp_structure_v3', status: 'success', durationMs: 2180 },
+        { engine: 'paddlex_seal', status: 'success', durationMs: 740 }
+      ],
+      createdAt: serverTime,
+      startedAt: serverTime,
+      finishedAt: serverTime
+    }
+  ] as Array<Record<string, unknown>>,
   idempotencyKeys: new Set<string>(),
   auditLogs: [
     {
@@ -4176,6 +4220,117 @@ const buildMockOcrRunDetail = (jobId: string) => {
   }
 }
 
+const buildMockOcrCapabilityParseResult = (run: Record<string, unknown>) => ({
+  parseResultId: run.parseResultId || `PARSE-${run.runId}`,
+  status: run.status === 'success' ? 'success' : 'failed',
+  profileId: run.profileId,
+  documentType: run.documentType,
+  fileName: run.fileName,
+  pages: [{ pageNo: 1, width: 2480, height: 3508 }],
+  fragments: [
+    {
+      fragmentId: 'frag-001',
+      pageNo: 1,
+      text: '管道特性表 PIPING CHARACTERISTIC LIST',
+      confidence: 0.96
+    },
+    { fragmentId: 'frag-002', pageNo: 1, text: 'PL8301 DN100 M1B', confidence: 0.93 }
+  ],
+  fields: [
+    {
+      fieldCode: 'project_name',
+      fieldName: '项目名称',
+      fieldValue: '珠海恒基达基国际化工仓储股份有限公司装车站项目',
+      confidence: 0.92,
+      pageNo: 1
+    },
+    {
+      fieldCode: 'pipe_no',
+      fieldName: '管道编号',
+      fieldValue: 'PL8301',
+      confidence: 0.95,
+      pageNo: 1
+    },
+    {
+      fieldCode: 'design_pressure',
+      fieldName: '设计压力',
+      fieldValue: '0.1 MPa',
+      confidence: 0.89,
+      pageNo: 1
+    },
+    { fieldCode: 'medium', fieldName: '介质', fieldValue: '化工品', confidence: 0.86, pageNo: 1 },
+    {
+      fieldCode: 'seal_name',
+      fieldName: '印章名称',
+      fieldValue: '广东省建设工程勘察设计出图专用章',
+      confidence: 0.78,
+      pageNo: 1
+    }
+  ],
+  tables: [
+    {
+      tableId: 'table-001',
+      pageNo: 1,
+      rows: 10,
+      columns: 18,
+      structureConfidence: 0.84,
+      normalizedRows: [
+        { 管道编号: 'PL8301', 公称直径: 'DN100', 管道等级: 'M1B', 介质: '化工品', 检测方法: 'RT' },
+        { 管道编号: 'PL8302', 公称直径: 'DN100', 管道等级: 'M1B', 介质: '化工品', 检测方法: 'RT' }
+      ]
+    }
+  ],
+  seals: [
+    {
+      sealId: 'seal-001',
+      pageNo: 1,
+      sealName: '广东省建设工程勘察设计出图专用章',
+      sealType: 'drawing_review_seal',
+      ocrConfidence: 0.78,
+      visualConfidence: 0.91
+    }
+  ],
+  quality: {
+    status: 'needs_human_review',
+    overallConfidence: 0.88,
+    reasons: ['TABLE_STRUCTURE_LOW_CONFIDENCE', 'SEAL_TEXT_LOW_CONFIDENCE']
+  },
+  diagnostics: run.diagnostics || [],
+  engineRuns: run.engineRuns || []
+})
+
+const buildMockOcrCapabilityTestDetail = (runId: string) => {
+  const run =
+    state.fdeOcrCapabilityTestRuns.find((item) => item.runId === runId || item.id === runId) ||
+    state.fdeOcrCapabilityTestRuns[0]
+  const parseResult = buildMockOcrCapabilityParseResult(run)
+  return {
+    run,
+    job: {
+      id: `OCRJOB-${run.runId}`,
+      jobId: `JOB-${run.runId}`,
+      status: run.status,
+      parseResultId: run.parseResultId,
+      runType: 'fde_capability_test'
+    },
+    parseResult,
+    uploadSession: {
+      uploadSessionId: run.uploadSessionId,
+      fileName: run.fileName,
+      status: 'used'
+    },
+    preview: {
+      url: 'mock://preview/fde-capability-tests/ocr/piping-characteristic.png',
+      method: 'GET',
+      fileName: run.fileName,
+      contentType: run.contentType,
+      fileSize: run.fileSize,
+      previewType: 'image',
+      readonly: true
+    }
+  }
+}
+
 const buildMockOcrAnnotationTasks = (id?: string, nodeId?: number) =>
   buildMockOcrJobs(id, nodeId)
     .slice(0, 6)
@@ -4665,6 +4820,115 @@ const buildMockFdeProjectWorkspace = (id: string, nodeId?: number) => {
     blockers: qualityBlockers.length,
     lowConfidenceFields: 4
   }
+  const vectorQuality = buildMockFdeVectorQuality(documents, reviewRuns)
+  const technologyStack = {
+    schemaVersion: 'FdeTechnologyStack@1.0.0',
+    hotSwap: {
+      enabled: true,
+      stableAlias: 'embedding-default',
+      switchControl: 'AICHECK_EMBEDDING_MODEL_ID + AICHECK_EMBEDDING_SERVED_MODEL_NAME',
+      switchRequires: '重启 embedding-service 并为新模型重建独立索引'
+    },
+    active: {
+      embedding: {
+        component: '资料向量化模型',
+        provider: 'Infinity',
+        alias: 'embedding-default',
+        servedModelName: 'embedding-default',
+        modelId: 'Qwen/Qwen3-Embedding-0.6B',
+        engine: 'torch',
+        dimensions: 1024,
+        contextLength: 32768,
+        indexVersion: 'knowledge-index-qwen3-0.6b@1024',
+        fallbackModelId: 'BAAI/bge-m3',
+        localOnly: true,
+        hotSwappable: true
+      },
+      retrieval: {
+        component: '检索链路',
+        implementation: 'Hybrid BM25 + dense vector + PageIndex',
+        rerankEnabled: true,
+        evidenceStrictMode: true
+      }
+    },
+    sections: [
+      {
+        key: 'embedding',
+        title: '向量化',
+        primary: 'Qwen/Qwen3-Embedding-0.6B',
+        secondary: 'embedding-default / embedding-default',
+        detail: '1024维，32768 token，本地 Infinity',
+        status: 'active',
+        tone: 'green'
+      },
+      {
+        key: 'retrieval',
+        title: '检索',
+        primary: 'Hybrid RAG + PageIndex',
+        secondary: 'BM25 + dense vector + 章节树',
+        detail: 'FDE 用 RetrievalTrace 量化召回、证据命中和过滤范围',
+        status: 'active',
+        tone: 'blue'
+      },
+      {
+        key: 'ocr',
+        title: '文档智能',
+        primary: 'PaddleOCR / PP-StructureV3',
+        secondary: '表格、印章、Docling、VL 兜底',
+        detail: 'OCR 结果进入切片、向量和 PageIndex 证据链',
+        status: 'active',
+        tone: 'orange'
+      },
+      {
+        key: 'llm',
+        title: 'LLM',
+        primary: 'LiteLLM + DeepSeek',
+        secondary: 'review-chat / default-chat',
+        detail: '统一网关、预算、健康检查和 provider probe',
+        status: 'active',
+        tone: 'blue'
+      },
+      {
+        key: 'orchestration',
+        title: '编排',
+        primary: 'Temporal + LangGraph',
+        secondary: 'dispatch=celery',
+        detail: 'ReviewRun、图节点、人工确认和 FDE replay 可追踪',
+        status: 'active',
+        tone: 'green'
+      },
+      {
+        key: 'storage',
+        title: '基础设施',
+        primary: 'PostgreSQL / Redis / MinIO',
+        secondary: 'Temporal workflow store',
+        detail: '资料、索引、任务、审计和导出全链路落库',
+        status: 'active',
+        tone: 'blue'
+      }
+    ],
+    embeddingModelRegistry: [
+      {
+        modelId: 'Qwen/Qwen3-Embedding-0.6B',
+        label: 'Qwen3 Embedding 0.6B',
+        role: 'recommended_default',
+        dimensions: 1024,
+        contextLength: 32768,
+        provider: 'Infinity',
+        indexVersion: 'knowledge-index-qwen3-0.6b@1024'
+      },
+      {
+        modelId: 'BAAI/bge-m3',
+        label: 'BGE-M3',
+        role: 'stable_fallback',
+        dimensions: 1024,
+        contextLength: 8192,
+        provider: 'Infinity',
+        indexVersion: 'knowledge-index-bge-m3@1024'
+      }
+    ],
+    updatedAt: serverTime
+  }
   return {
     project,
     selectedNodeId,
@@ -4681,7 +4945,8 @@ const buildMockFdeProjectWorkspace = (id: string, nodeId?: number) => {
     ocrAnnotationTasks: annotationTasks,
     qualityBlockers,
     knowledgeLineage: buildMockFdeProjectKnowledgeLineage(documents, reviewRuns),
-    vectorQuality: buildMockFdeVectorQuality(documents, reviewRuns),
+    vectorQuality,
+    technologyStack,
     updatedAt: serverTime
   }
 }
@@ -5026,6 +5291,183 @@ export default [
       )
       return ok(makePage(items, Number(query?.page) || 1, Number(query?.pageSize) || 20))
     }
+  },
+  {
+    url: '/api/fde/capability-tests/ocr/upload-session',
+    method: 'post',
+    timeout,
+    response: ({ body }) => {
+      const file = body?.file || body?.files?.[0] || {}
+      const uploadSessionId = `FDE-OCR-UP-MOCK-${Date.now()}`
+      const session = {
+        id: uploadSessionId,
+        uploadSessionId,
+        uploadUrl: `mock://upload/fde-capability-tests/ocr/${uploadSessionId}`,
+        method: 'PUT',
+        headers: {
+          'Content-Type': file.contentType || file.fileType || 'application/octet-stream'
+        },
+        expiresAt: serverTime,
+        fileName: file.fileName || 'OCR测试文件.pdf',
+        contentType: file.contentType || file.fileType || 'application/octet-stream',
+        fileSize: file.fileSize || 1,
+        storageKey: `fde-capability-tests/ocr/${uploadSessionId}/${file.fileName || 'ocr-test-file'}`,
+        storageUrl: `mock://fde-capability-tests/ocr/${uploadSessionId}`
+      }
+      state.fdeOcrCapabilityUploadSessions.unshift(session)
+      return ok({
+        uploadSession: session,
+        auditLogId: addAuditLog(
+          'FDE OCR 能力测试上传会话',
+          'FdeOcrCapabilityUploadSession',
+          uploadSessionId
+        )
+      })
+    }
+  },
+  {
+    url: '/api/fde/capability-tests/ocr/runs',
+    method: 'get',
+    timeout,
+    response: ({ query }) => {
+      const profileId = String(query?.profileId || '')
+      let items = state.fdeOcrCapabilityTestRuns
+      if (profileId) {
+        items = items.filter((item) => String(item.profileId || '') === profileId)
+      }
+      return ok(makePage(items, Number(query?.page) || 1, Number(query?.pageSize) || 20))
+    }
+  },
+  {
+    url: '/api/fde/capability-tests/ocr/runs',
+    method: 'post',
+    timeout,
+    response: ({ body }) => {
+      const session = state.fdeOcrCapabilityUploadSessions.find(
+        (item) => item.uploadSessionId === body?.uploadSessionId
+      )
+      const runId = `FDE-OCR-RUN-MOCK-${Date.now()}`
+      const run = {
+        id: runId,
+        runId,
+        uploadSessionId: body?.uploadSessionId,
+        status: 'success',
+        capability: 'ocr',
+        scope: 'fde_capability_test',
+        retention: 'fde_capability_test_only',
+        profileId: body?.profileId || 'piping_characteristic_list_v1',
+        documentType: body?.documentType || 'engineering_table_photo',
+        fileName: session?.fileName || 'OCR测试文件.pdf',
+        contentType: session?.contentType || 'application/pdf',
+        fileSize: session?.fileSize || 1,
+        storageKey: session?.storageKey || `fde-capability-tests/ocr/${runId}`,
+        parseResultId: `PARSE-${runId}`,
+        resultSummary: {
+          pages: 1,
+          fields: 5,
+          tables: body?.enableTables === false ? 0 : 1,
+          seals: body?.enableSeals === false ? 0 : 1,
+          fragments: 42,
+          diagnostics: 1,
+          qualityStatus: 'needs_human_review',
+          overallConfidence: 0.88
+        },
+        diagnostics: [
+          {
+            code: 'FIELD_LOW_CONFIDENCE',
+            level: 'warning',
+            message: '测试样本存在低置信字段，建议转入标注。'
+          }
+        ],
+        engineRuns: [
+          { engine: 'pp_ocr_v6', status: 'success', durationMs: 1260 },
+          { engine: 'pp_structure_v3', status: 'success', durationMs: 2180 }
+        ],
+        createdAt: serverTime,
+        startedAt: serverTime,
+        finishedAt: serverTime
+      }
+      state.fdeOcrCapabilityTestRuns.unshift(run)
+      return ok({
+        run,
+        auditLogId: addAuditLog('FDE OCR 能力测试启动', 'FdeOcrCapabilityTestRun', runId)
+      })
+    }
+  },
+  {
+    url: /\/api\/fde\/capability-tests\/ocr\/runs\/[^/]+\/to-annotation$/,
+    method: 'post',
+    timeout,
+    response: ({ url }) => {
+      const runId = pathParts(url)[5]
+      const detail = buildMockOcrCapabilityTestDetail(runId)
+      const task = {
+        taskId: `ANNO-${runId}`,
+        caseId: `fde-ocr-capability-${runId}`,
+        sourceType: 'fde_capability_test',
+        sourceRunId: runId,
+        parseResultId: detail.run.parseResultId,
+        scenario: detail.run.profileId,
+        profileId: detail.run.profileId,
+        documentType: detail.run.documentType,
+        sourcePath: detail.run.fileName,
+        collectionStatus: 'needs_labeling',
+        suggestedExpected: {
+          fields: detail.parseResult.fields,
+          tables: detail.parseResult.tables,
+          seals: detail.parseResult.seals
+        },
+        candidateCounts: { fields: 5, tables: 1, seals: 1 },
+        labelCounts: { fields: 0, tables: 0, seals: 0 },
+        readyForEval: false
+      }
+      return ok({
+        task,
+        readiness: {
+          ok: false,
+          summary: {
+            tasks: 1,
+            humanLabeled: 0,
+            readyForEval: 0,
+            missingHumanLabels: 1,
+            completionRate: 0
+          },
+          nextActions: ['先完成字段、表格和印章标注']
+        },
+        auditLogId: addAuditLog('FDE OCR 能力测试转标注任务', 'OcrAnnotationTask', task.taskId)
+      })
+    }
+  },
+  {
+    url: /\/api\/fde\/capability-tests\/ocr\/runs\/[^/]+\/to-evaluation-case$/,
+    method: 'post',
+    timeout,
+    response: ({ url }) => {
+      const runId = pathParts(url)[5]
+      const evaluationCase = {
+        id: `ECASE-${runId}`,
+        caseId: `fde-ocr-capability-${runId}`,
+        source: 'fde_ocr_capability_test',
+        sourceRunId: runId,
+        status: 'draft',
+        canUseForEval: false,
+        dataSensitivity: 'masked'
+      }
+      return ok({
+        case: evaluationCase,
+        auditLogId: addAuditLog(
+          'FDE OCR 能力测试转评估样本草稿',
+          'EvaluationCase',
+          evaluationCase.id
+        )
+      })
+    }
+  },
+  {
+    url: /\/api\/fde\/capability-tests\/ocr\/runs\/[^/]+$/,
+    method: 'get',
+    timeout,
+    response: ({ url }) => ok(buildMockOcrCapabilityTestDetail(pathParts(url)[5] || ''))
   },
   {
     url: /\/api\/fde\/ocr-runs\/[^/]+$/,

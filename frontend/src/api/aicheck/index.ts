@@ -1103,6 +1103,15 @@ export type FdeVectorQualityPayload = {
   updatedAt?: string
 }
 
+export type FdeTechnologyStackPayload = {
+  schemaVersion?: string
+  updatedAt?: string
+  hotSwap?: Record<string, unknown>
+  active?: Record<string, Record<string, unknown>>
+  sections?: Array<Record<string, unknown>>
+  embeddingModelRegistry?: Array<Record<string, unknown>>
+}
+
 export type FdeEvidenceBox = number[] | null | undefined
 
 export type FdeSourcePreviewPage = {
@@ -1278,6 +1287,7 @@ export type FdeProjectAuditWorkspace = {
   qualityBlockers: Array<Record<string, unknown>>
   knowledgeLineage?: FdeProjectKnowledgeLineage
   vectorQuality?: FdeVectorQualityPayload
+  technologyStack?: FdeTechnologyStackPayload
   updatedAt?: string
 }
 
@@ -1648,6 +1658,62 @@ export type FdeOcrRunDetailPayload = {
   job: Record<string, unknown>
   parseResult: Record<string, unknown> | null
   corrections: Array<Record<string, unknown>>
+}
+
+export type FdeOcrCapabilityTestRun = {
+  id?: string
+  runId: string
+  uploadSessionId?: string
+  status: string
+  profileId?: string
+  documentType?: string
+  fileName?: string
+  contentType?: string
+  fileSize?: number
+  storageKey?: string
+  parseResultId?: string
+  annotationTaskId?: string
+  evaluationCaseId?: string
+  resultSummary?: Record<string, unknown>
+  diagnostics?: Array<Record<string, unknown> | string>
+  engineRuns?: Array<Record<string, unknown>>
+  createdAt?: string
+  startedAt?: string
+  finishedAt?: string
+}
+
+export type FdeOcrCapabilityUploadSessionPayload = {
+  uploadSession: {
+    id?: string
+    uploadSessionId: string
+    uploadUrl: string
+    method: 'PUT'
+    headers?: Record<string, string>
+    expiresAt?: string
+    fileName: string
+    contentType?: string
+    fileSize?: number
+    storageKey: string
+    storageUrl?: string
+  }
+  auditLogId: string
+}
+
+export type FdeOcrCapabilityTestDetailPayload = {
+  run: FdeOcrCapabilityTestRun
+  job?: Record<string, unknown> | null
+  parseResult?: Record<string, unknown> | null
+  uploadSession?: Record<string, unknown> | null
+  preview?: {
+    url?: string
+    method?: string
+    fileName?: string
+    contentType?: string
+    fileSize?: number
+    previewType?: 'pdf' | 'image' | 'office' | 'unsupported'
+    readonly?: boolean
+    storageUnavailable?: boolean
+  }
 }
 
 export type FdeOcrAnnotationTask = {
@@ -3373,6 +3439,84 @@ export const listFdeOcrRunsApi = (params?: {
 
 export const getFdeOcrRunApi = (jobId: string): Promise<IResponse<FdeOcrRunDetailPayload>> => {
   return request.get({ url: `/api/fde/ocr-runs/${jobId}` })
+}
+
+export const createFdeOcrCapabilityTestUploadSessionApi = (
+  data: {
+    file?: { fileName: string; fileType?: string; contentType?: string; fileSize: number }
+    files?: Array<{ fileName: string; fileType?: string; contentType?: string; fileSize: number }>
+  },
+  options?: MutationHeaderOptions
+): Promise<IResponse<FdeOcrCapabilityUploadSessionPayload>> => {
+  return request.post({
+    url: '/api/fde/capability-tests/ocr/upload-session',
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const createFdeOcrCapabilityTestRunApi = (
+  data: {
+    uploadSessionId: string
+    profileId?: string
+    documentType?: string
+    businessPackId?: string
+    enableTables?: boolean
+    enableSeals?: boolean
+    enableFallback?: boolean
+  },
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ run: FdeOcrCapabilityTestRun; auditLogId: string }>> => {
+  return request.post({
+    url: '/api/fde/capability-tests/ocr/runs',
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const listFdeOcrCapabilityTestRunsApi = (params?: {
+  pageNo?: number
+  pageSize?: number
+  status?: string
+  profileId?: string
+}): Promise<IResponse<PagePayload<FdeOcrCapabilityTestRun>>> => {
+  return request.get({ url: '/api/fde/capability-tests/ocr/runs', params })
+}
+
+export const getFdeOcrCapabilityTestRunApi = (
+  runId: string
+): Promise<IResponse<FdeOcrCapabilityTestDetailPayload>> => {
+  return request.get({ url: `/api/fde/capability-tests/ocr/runs/${runId}` })
+}
+
+export const convertFdeOcrCapabilityTestToAnnotationApi = (
+  runId: string,
+  data?: Record<string, unknown>,
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    task: FdeOcrAnnotationTask
+    readiness: FdeOcrAnnotationReadinessPayload
+    auditLogId: string
+  }>
+> => {
+  return request.post({
+    url: `/api/fde/capability-tests/ocr/runs/${runId}/to-annotation`,
+    data: data || {},
+    headers: mutationHeaders(options)
+  })
+}
+
+export const convertFdeOcrCapabilityTestToEvaluationCaseApi = (
+  runId: string,
+  data?: Record<string, unknown>,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ case: Record<string, unknown>; auditLogId: string }>> => {
+  return request.post({
+    url: `/api/fde/capability-tests/ocr/runs/${runId}/to-evaluation-case`,
+    data: data || {},
+    headers: mutationHeaders(options)
+  })
 }
 
 export const listFdeOcrAnnotationTasksApi = (params?: {

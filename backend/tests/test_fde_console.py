@@ -1322,6 +1322,7 @@ def test_fde_project_audit_workspace_groups_tasks_and_blockers() -> None:
     assert document["chunkCount"] >= 1
     assert document["vectorCount"] >= 1
     assert document["embeddingModel"] == "embedding-default"
+    assert document["embeddingModelId"] == "Qwen/Qwen3-Embedding-0.6B"
     assert document["indexVersion"]
     assert document["pageIndexStatus"] == "已构建"
     assert document["pageIndexNodeCount"] >= 1
@@ -1338,6 +1339,13 @@ def test_fde_project_audit_workspace_groups_tasks_and_blockers() -> None:
     assert workspace["knowledgeLineage"]["source"] == "backend_audit_projection"
     assert len(workspace["knowledgeLineage"]["vectorFlow"]) == 5
     assert len(workspace["knowledgeLineage"]["pageIndexFlow"]) == 5
+    assert workspace["technologyStack"]["schemaVersion"] == "FdeTechnologyStack@1.0.0"
+    assert workspace["technologyStack"]["hotSwap"]["enabled"] is True
+    assert workspace["technologyStack"]["active"]["embedding"]["alias"] == "embedding-default"
+    assert workspace["technologyStack"]["active"]["embedding"]["modelId"] == "Qwen/Qwen3-Embedding-0.6B"
+    assert {
+        item["modelId"] for item in workspace["technologyStack"]["embeddingModelRegistry"]
+    } >= {"Qwen/Qwen3-Embedding-0.6B", "BAAI/bge-m3"}
     assert detail["summary"]["nodeId"] == node_id
     assert "bindings" in detail
 

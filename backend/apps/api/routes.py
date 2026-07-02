@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import tempfile
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Body, Header, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Body, Header, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 from apps.api.adapters.engineering_inspection import (
@@ -32,9 +33,11 @@ from libs.contracts import errors
 from libs.contracts.responses import fail, ok, page, server_time
 from libs.db.repository import load_state, repo
 from libs.db.seed import PROJECT_ID, ROLE_NODE_MAP
+from libs.embedding_models import embedding_registry_payload, embedding_runtime_config
 from libs.integrations import task_dispatcher
 from libs.integrations.errors import IntegrationServiceError
 from libs.integrations.ocr_client import OcrClient
+from libs.integrations.storage import ObjectStorageUnavailable
 from libs.knowledge_readiness import build_knowledge_rule_scorecard
 from libs.knowledge_retrieval import answer_draft_from_clauses, retrieve_knowledge_clauses
 from libs.review_orchestrator import (
@@ -5982,6 +5985,145 @@ def fde_vector_file_detail(project_id: str, document_version_id: str, *, chunk_p
     }
 
 
+def fde_runtime_env_value(name: str, fallback: str) -> str:
+    value = os.getenv(name)
+    return value if value not in {None, ""} else fallback
+
+
+def fde_project_technology_stack(vector_quality: dict[str, Any] | None = None) -> dict[str, Any]:
+    embedding = embedding_runtime_config()
+    review_orchestration = fde_runtime_env_value("AICHECK_REVIEW_ORCHESTRATION", "temporal")
+    review_llm_execution = fde_runtime_env_value("AICHECK_REVIEW_LLM_EXECUTION", "litellm")
+    task_dispatch = fde_runtime_env_value("AICHECK_TASK_DISPATCH", "celery")
+    vector_quality_score = (vector_quality or {}).get("score")
+    return {
+        "schemaVersion": "FdeTechnologyStack@1.0.0",
+        "updatedAt": server_time(),
+        "hotSwap": {
+            "enabled": True,
+            "stableAlias": embedding["alias"],
+            "switchControl": embedding["switchControl"],
+            "switchRequires": embedding["switchRequires"],
+            "indexMigrationRequired": True,
+        },
+        "embeddingModelRegistry": embedding_registry_payload(),
+        "active": {
+            "embedding": {
+                "component": "资料向量化模型",
+                "provider": embedding["provider"],
+                "alias": embedding["alias"],
+                "servedModelName": embedding["servedModelName"],
+                "modelId": embedding["modelId"],
+                "engine": embedding["engine"],
+                "dimensions": embedding["dimensions"],
+                "contextLength": embedding["contextLength"],
+                "indexVersion": embedding["indexVersion"],
+                "fallbackModelId": embedding["fallbackModelId"],
+                "localOnly": True,
+                "hotSwappable": True,
+            },
+            "vectorIndex": {
+                "component": "向量索引",
+                "implementation": "local knowledge index",
+                "dimensions": embedding["dimensions"],
+                "indexVersion": embedding["indexVersion"],
+                "qualityScore": vector_quality_score,
+                "versioning": "modelId + dimensions + chunk policy + indexVersion",
+            },
+            "retrieval": {
+                "component": "检索链路",
+                "implementation": "Hybrid BM25 + dense vector + PageIndex",
+                "rerankEnabled": bool((repo.state.get("knowledge_config") or {}).get("rerankEnabled", True)),
+                "evidenceStrictMode": bool((repo.state.get("knowledge_config") or {}).get("evidenceStrictMode", True)),
+            },
+            "llm": {
+                "component": "LLM 网关",
+                "gateway": "LiteLLM",
+                "reviewModelAlias": "review-chat",
+                "defaultChatAlias": "default-chat",
+                "provider": "DeepSeek deepseek-reasoner",
+                "execution": review_llm_execution,
+            },
+            "ocr": {
+                "component": "OCR / 文档智能",
+                "primary": "PaddleOCR / PP-StructureV3",
+                "seal": "PaddleX Seal / visual seal candidate / crop OCR fallback",
+                "fallback": "Docling / PaddleOCR-VL / local remediation",
+                "localOnly": True,
+            },
+            "orchestration": {
+                "component": "审查编排",
+                "workflow": review_orchestration,
+                "graph": "LangGraph",
+                "taskQueue": task_dispatch,
+            },
+            "storage": {
+                "component": "数据底座",
+                "database": "PostgreSQL",
+                "objectStorage": "MinIO",
+                "queue": "Redis + Celery",
+                "workflowStore": "Temporal PostgreSQL",
+            },
+        },
+        "sections": [
+            {
+                "key": "embedding",
+                "title": "向量化",
+                "primary": embedding["modelId"],
+                "secondary": f"{embedding['alias']} / {embedding['servedModelName']}",
+                "detail": f"{embedding['dimensions']}维，{embedding['contextLength']} token，本地 Infinity",
+                "status": "active",
+                "tone": "green",
+            },
+            {
+                "key": "retrieval",
+                "title": "检索",
+                "primary": "Hybrid RAG + PageIndex",
+                "secondary": "BM25 + dense vector + 章节树",
+                "detail": "FDE 用 RetrievalTrace 量化召回、证据命中和过滤范围",
+                "status": "active",
+                "tone": "blue",
+            },
+            {
+                "key": "ocr",
+                "title": "文档智能",
+                "primary": "PaddleOCR / PP-StructureV3",
+                "secondary": "表格、印章、Docling、VL 兜底",
+                "detail": "OCR 结果进入切片、向量和 PageIndex 证据链",
+                "status": "active",
+                "tone": "orange",
+            },
+            {
+                "key": "llm",
+                "title": "LLM",
+                "primary": "LiteLLM + DeepSeek",
+                "secondary": "review-chat / default-chat",
+                "detail": "统一网关、预算、健康检查和 provider probe",
+                "status": "active",
+                "tone": "blue",
+            },
+            {
+                "key": "orchestration",
+                "title": "编排",
+                "primary": f"{review_orchestration} + LangGraph",
+                "secondary": f"dispatch={task_dispatch}",
+                "detail": "ReviewRun、图节点、人工确认和 FDE replay 可追踪",
+                "status": "active",
+                "tone": "green",
+            },
+            {
+                "key": "storage",
+                "title": "基础设施",
+                "primary": "PostgreSQL / Redis / MinIO",
+                "secondary": "Temporal workflow store",
+                "detail": "资料、索引、任务、审计和导出全链路落库",
+                "status": "active",
+                "tone": "blue",
+            },
+        ],
+    }
+
+
 def fde_project_document_audit_view(document: dict[str, Any]) -> dict[str, Any]:
     item = repo.clone(document)
     version_id = str(item.get("currentVersionId") or "")
@@ -5996,6 +6138,7 @@ def fde_project_document_audit_view(document: dict[str, Any]) -> dict[str, Any]:
         None,
     )
     knowledge_config = repo.state.get("knowledge_config") or {}
+    embedding = embedding_runtime_config()
     if knowledge_file:
         knowledge_source = repo.find_one("knowledge_sources", knowledge_file.get("sourceId")) or {}
         latest_task = next(
@@ -6029,9 +6172,12 @@ def fde_project_document_audit_view(document: dict[str, Any]) -> dict[str, Any]:
                 "vectorStatus": knowledge_file.get("vectorStatus"),
                 "chunkCount": int(knowledge_file.get("chunkCount") or 0),
                 "vectorCount": int(knowledge_file.get("vectorCount") or 0),
-                "embeddingModel": knowledge_config.get("embeddingModel") or "embedding-default",
+                "embeddingModel": knowledge_config.get("embeddingModel") or embedding["alias"],
+                "embeddingModelId": knowledge_config.get("embeddingModelId") or embedding["modelId"],
+                "embeddingProvider": knowledge_config.get("embeddingProvider") or embedding["provider"],
+                "embeddingServedModelName": knowledge_config.get("embeddingServedModelName") or embedding["servedModelName"],
                 "indexVersion": knowledge_source.get("version") or "proj-v2026.06.26",
-                "vectorDimensions": int(knowledge_config.get("dimensions") or 1024),
+                "vectorDimensions": int(knowledge_config.get("dimensions") or embedding["dimensions"]),
                 "pageIndexStatus": "已构建" if page_index_nodes else "待构建",
                 "pageIndexNodeCount": len(page_index_nodes),
                 "latestKnowledgeTask": versioned_record("knowledge-task", latest_task) if latest_task else None,
@@ -6044,9 +6190,12 @@ def fde_project_document_audit_view(document: dict[str, Any]) -> dict[str, Any]:
                 "vectorStatus": "待向量化" if item.get("currentOcrStatus") == "已识别" else "未向量化",
                 "chunkCount": 0,
                 "vectorCount": 0,
-                "embeddingModel": knowledge_config.get("embeddingModel") or "embedding-default",
+                "embeddingModel": knowledge_config.get("embeddingModel") or embedding["alias"],
+                "embeddingModelId": knowledge_config.get("embeddingModelId") or embedding["modelId"],
+                "embeddingProvider": knowledge_config.get("embeddingProvider") or embedding["provider"],
+                "embeddingServedModelName": knowledge_config.get("embeddingServedModelName") or embedding["servedModelName"],
                 "indexVersion": "未入库",
-                "vectorDimensions": int(knowledge_config.get("dimensions") or 1024),
+                "vectorDimensions": int(knowledge_config.get("dimensions") or embedding["dimensions"]),
                 "pageIndexStatus": "等待切片",
                 "pageIndexNodeCount": 0,
                 "latestKnowledgeTask": None,
@@ -6129,6 +6278,7 @@ def fde_project_synthetic_document_views(project: dict[str, Any], node_id: int |
     project_id = str(project.get("id") or "PROJECT")
     project_key = fde_compact_project_key(project_id)
     knowledge_config = repo.state.get("knowledge_config") or {}
+    embedding = embedding_runtime_config()
     page_index_node_count = len(repo.state.get("knowledge_page_index_nodes", [])) or 4
     documents: list[dict[str, Any]] = []
     for index, template in enumerate(FDE_AUDIT_DOCUMENT_TEMPLATES, start=1):
@@ -6151,9 +6301,12 @@ def fde_project_synthetic_document_views(project: dict[str, Any], node_id: int |
             "vectorStatus": template["vectorStatus"],
             "chunkCount": int(template["chunkCount"]),
             "vectorCount": int(template["vectorCount"]),
-            "embeddingModel": knowledge_config.get("embeddingModel") or "embedding-default",
+            "embeddingModel": knowledge_config.get("embeddingModel") or embedding["alias"],
+            "embeddingModelId": knowledge_config.get("embeddingModelId") or embedding["modelId"],
+            "embeddingProvider": knowledge_config.get("embeddingProvider") or embedding["provider"],
+            "embeddingServedModelName": knowledge_config.get("embeddingServedModelName") or embedding["servedModelName"],
             "indexVersion": "proj-v2026.06.26",
-            "vectorDimensions": int(knowledge_config.get("dimensions") or 1024),
+            "vectorDimensions": int(knowledge_config.get("dimensions") or embedding["dimensions"]),
             "pageIndexStatus": template["pageIndexStatus"],
             "pageIndexNodeCount": page_index_node_count if page_index_ready else 0,
             "requirementName": template["requirementName"],
@@ -7278,6 +7431,7 @@ def fde_project_audit_workspace(project_id: str, node_id: int | None = None) -> 
     vector_quality = fde_project_vector_quality(documents, review_runs)
     metrics["vectorQualityScore"] = vector_quality["score"]
     metrics["vectorQualityBlockers"] = len(vector_quality["blockers"])
+    technology_stack = fde_project_technology_stack(vector_quality)
     return {
         "project": versioned_project(repo.project_for_role(project, "inspection")),
         "selectedNodeId": selected_node_id,
@@ -7287,6 +7441,7 @@ def fde_project_audit_workspace(project_id: str, node_id: int | None = None) -> 
         "metrics": metrics,
         "knowledgeLineage": fde_project_knowledge_lineage(documents, review_runs),
         "vectorQuality": vector_quality,
+        "technologyStack": technology_stack,
         "documents": documents[:50],
         "bindings": bindings[:50],
         "submissions": submissions[:50],
@@ -10409,6 +10564,242 @@ def fde_expected_value_present(value: Any) -> bool:
     return value is not None and value != "" and value != []
 
 
+def fde_capability_test_file_preview_type(file_name: str, content_type: str | None = None) -> str:
+    suffix = Path(str(file_name or "")).suffix.lower().lstrip(".")
+    content = str(content_type or "").lower()
+    if suffix == "pdf" or "pdf" in content:
+        return "pdf"
+    if suffix in {"png", "jpg", "jpeg", "webp", "bmp"} or content.startswith("image/"):
+        return "image"
+    if suffix in {"doc", "docx", "xls", "xlsx"}:
+        return "office"
+    return "unsupported"
+
+
+def fde_capability_test_safe_file_name(file_name: str | None) -> str:
+    safe = re.sub(r"[^0-9A-Za-z_.\-\u4e00-\u9fff]+", "_", Path(str(file_name or "ocr-test-file")).name)
+    return safe[:120] or "ocr-test-file"
+
+
+def fde_capability_test_storage_url(storage_key: str) -> str:
+    raw = str(storage_key or "").strip()
+    if raw.startswith(("minio://", "s3://", "mock://", "http://", "https://", "file://")):
+        return raw
+    return f"minio://ocr-artifacts/{raw}"
+
+
+def fde_capability_test_result_summary(result: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(result, dict):
+        return {
+            "pages": 0,
+            "fields": 0,
+            "tables": 0,
+            "seals": 0,
+            "fragments": 0,
+            "diagnostics": 0,
+            "qualityStatus": "unknown",
+            "overallConfidence": 0,
+            "engineDurationMs": 0,
+        }
+    quality = result.get("quality") if isinstance(result.get("quality"), dict) else {}
+    engine_runs = [item for item in result.get("engineRuns") or [] if isinstance(item, dict)]
+    duration = sum(int(item.get("durationMs") or item.get("latencyMs") or 0) for item in engine_runs)
+    return {
+        "pages": len([item for item in result.get("pages") or [] if isinstance(item, dict)]),
+        "fields": len([item for item in result.get("fields") or [] if isinstance(item, dict)]),
+        "tables": len([item for item in result.get("tables") or [] if isinstance(item, dict)]),
+        "seals": len([item for item in result.get("seals") or [] if isinstance(item, dict)]),
+        "fragments": len([item for item in result.get("fragments") or [] if isinstance(item, dict)]),
+        "diagnostics": len(result.get("diagnostics") or []),
+        "qualityStatus": quality.get("status") or "unknown",
+        "overallConfidence": quality.get("overallConfidence") or quality.get("confidence") or 0,
+        "engineDurationMs": duration,
+    }
+
+
+def fde_capability_test_preview(run: dict[str, Any]) -> dict[str, Any]:
+    file_name = str(run.get("fileName") or "OCR测试文件")
+    content_type = str(run.get("contentType") or "application/octet-stream")
+    file_size = int(run.get("fileSize") or 0)
+    storage_url = fde_capability_test_storage_url(str(run.get("storageKey") or run.get("storageUrl") or ""))
+    try:
+        preview = repo.signed_get(file_name, storage_url, content_type, file_size)
+    except ObjectStorageUnavailable:
+        preview = {
+            "url": storage_url,
+            "method": "GET",
+            "fileName": file_name,
+            "contentType": content_type,
+            "fileSize": file_size,
+            "storageUnavailable": True,
+        }
+    return {
+        **preview,
+        "previewType": fde_capability_test_file_preview_type(file_name, content_type),
+        "readonly": True,
+        "retention": "fde_capability_test_only",
+    }
+
+
+def fde_capability_test_run_by_id(run_id: str) -> dict[str, Any] | None:
+    return next(
+        (
+            item
+            for item in repo.state.setdefault("fde_capability_test_runs", [])
+            if str(item.get("runId") or item.get("id") or "") == run_id
+        ),
+        None,
+    )
+
+
+def fde_capability_test_profile_document_type(file_name: str, body: dict[str, Any]) -> tuple[str, str]:
+    profile_id = str(body.get("profileId") or "").strip()
+    document_type = str(body.get("documentType") or "").strip()
+    suffix = Path(str(file_name)).suffix.lower()
+    if not profile_id:
+        profile_id = "piping_characteristic_list_v1" if suffix in {".png", ".jpg", ".jpeg"} else "quality_certificate_v1"
+    if not document_type:
+        document_type = "engineering_table_photo" if suffix in {".png", ".jpg", ".jpeg"} else "engineering_document"
+    return profile_id, document_type
+
+
+def fde_run_ocr_capability_test(run_id: str) -> None:
+    run = fde_capability_test_run_by_id(run_id)
+    if not run:
+        return
+    started_at = server_time()
+    run.update({"status": "ocr_running", "startedAt": started_at, "updatedAt": started_at})
+    storage_url = fde_capability_test_storage_url(str(run.get("storageKey") or run.get("storageUrl") or ""))
+    job = repo.create_ocr_job_record(
+        document_id=str(run.get("documentId") or f"FDETEST-DOC-{run_id}"),
+        version_id=str(run.get("documentVersionId") or f"FDETEST-VER-{run_id}"),
+        storage_key=storage_url,
+        file_name=str(run.get("fileName") or "OCR测试文件"),
+        profile_id=str(run.get("profileId") or "all"),
+        document_type=str(run.get("documentType") or "engineering_document"),
+    )
+    job.update(
+        {
+            "runType": "fde_capability_test",
+            "capabilityTestRunId": run_id,
+            "retention": "fde_capability_test_only",
+            "businessImpact": "none",
+        }
+    )
+    run["ocrJobRecordId"] = job.get("id")
+    try:
+        client = OcrClient()
+        if not client.enabled:
+            result = {
+                "status": "failed",
+                "storageKey": storage_url,
+                "fileName": run.get("fileName"),
+                "profileId": run.get("profileId"),
+                "documentType": run.get("documentType"),
+                "fields": [],
+                "tables": [],
+                "seals": [],
+                "fragments": [],
+                "pages": [],
+                "engineRuns": [],
+                "diagnostics": [
+                    {
+                        "code": "OCR_SERVICE_NOT_CONFIGURED",
+                        "level": "error",
+                        "message": "未配置 AICHECK_OCR_BASE_URL，无法调用本地 OCR 服务。",
+                    }
+                ],
+            }
+        else:
+            result = client.parse_via_job_sync(
+                {
+                    "tenantId": run.get("tenantId") or "fde-lab",
+                    "projectId": None,
+                    "documentId": job.get("documentId"),
+                    "documentVersionId": job.get("documentVersionId"),
+                    "businessPackId": run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID,
+                    "documentType": run.get("documentType"),
+                    "profileId": run.get("profileId"),
+                    "storageKey": storage_url,
+                    "fileName": run.get("fileName"),
+                    "options": run.get("options") or {},
+                    "runType": "fde_capability_test",
+                    "capabilityTestRunId": run_id,
+                },
+                timeout_seconds=180,
+            )
+        result.update(
+            {
+                "storageKey": result.get("storageKey") or storage_url,
+                "fileName": result.get("fileName") or run.get("fileName"),
+                "profileId": result.get("profileId") or run.get("profileId"),
+                "documentType": result.get("documentType") or run.get("documentType"),
+                "runType": "fde_capability_test",
+                "capabilityTestRunId": run_id,
+                "documentId": job.get("documentId"),
+                "documentVersionId": job.get("documentVersionId"),
+            }
+        )
+        result_record = repo.finish_ocr_job_record(job, result)
+        if result_record:
+            result_record.update(
+                {
+                    "runType": "fde_capability_test",
+                    "capabilityTestRunId": run_id,
+                    "retention": "fde_capability_test_only",
+                    "businessImpact": "none",
+                }
+            )
+        summary = fde_capability_test_result_summary(result_record or result)
+        finished_at = server_time()
+        run.update(
+            {
+                "status": "success" if (result_record or result).get("status") == "success" else "failed",
+                "parseResultId": (result_record or result).get("parseResultId"),
+                "externalJobId": result.get("jobId") or result.get("externalJobId"),
+                "resultSummary": summary,
+                "diagnostics": (result_record or result).get("diagnostics") or [],
+                "engineRuns": (result_record or result).get("engineRuns") or [],
+                "finishedAt": finished_at,
+                "updatedAt": finished_at,
+            }
+        )
+    except Exception as exc:  # pragma: no cover - integration boundary
+        failure = {
+            "status": "failed",
+            "storageKey": storage_url,
+            "fileName": run.get("fileName"),
+            "profileId": run.get("profileId"),
+            "documentType": run.get("documentType"),
+            "fields": [],
+            "tables": [],
+            "seals": [],
+            "fragments": [],
+            "pages": [],
+            "engineRuns": [],
+            "diagnostics": [
+                {
+                    "code": "OCR_CAPABILITY_TEST_FAILED",
+                    "level": "error",
+                    "message": f"OCR 能力测试失败：{exc.__class__.__name__}",
+                }
+            ],
+        }
+        result_record = repo.finish_ocr_job_record(job, failure)
+        finished_at = server_time()
+        run.update(
+            {
+                "status": "failed",
+                "parseResultId": (result_record or {}).get("parseResultId"),
+                "resultSummary": fde_capability_test_result_summary(result_record or failure),
+                "diagnostics": failure["diagnostics"],
+                "engineRuns": [],
+                "finishedAt": finished_at,
+                "updatedAt": finished_at,
+            }
+        )
+
+
 @router.get("/fde/ocr-quality")
 def fde_ocr_quality(
     request: Request,
@@ -10420,6 +10811,308 @@ def fde_ocr_quality(
     if role_error:
         return role_error
     return ok(fde_ocr_quality_snapshot(projectId, nodeId, profileId), request)
+
+
+@router.post("/fde/capability-tests/ocr/upload-session")
+def fde_create_ocr_capability_upload_session(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        role, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+        if role_error:
+            return role_error
+        files = body.get("files") if isinstance(body.get("files"), list) else [body.get("file") or body]
+        files = [item for item in files if isinstance(item, dict)]
+        validation_error = validate_upload_files(request, files)
+        if validation_error:
+            return validation_error
+        file = files[0]
+        session_id = f"FDE-OCR-UP-{uuid4().hex[:10].upper()}"
+        file_name = fde_capability_test_safe_file_name(str(file.get("fileName") or "ocr-test-file"))
+        content_type = str(file.get("contentType") or file.get("fileType") or "application/octet-stream")
+        file_size = int(file.get("fileSize") or 0)
+        storage_key = f"fde-capability-tests/ocr/{session_id}/{file_name}"
+        upload_url = repo.signed_put(
+            "ocr-artifacts",
+            storage_key,
+            f"mock://upload/fde-capability-tests/ocr/{session_id}/{file_name}",
+            content_type=content_type,
+        )
+        now = server_time()
+        upload_session = {
+            "id": session_id,
+            "uploadSessionId": session_id,
+            "status": "waiting_upload",
+            "scope": "fde_capability_test",
+            "capability": "ocr",
+            "retention": "fde_capability_test_only",
+            "businessImpact": "none",
+            "fileName": file_name,
+            "contentType": content_type,
+            "fileSize": file_size,
+            "storageBucket": "ocr-artifacts",
+            "storageKey": storage_key,
+            "storageUrl": fde_capability_test_storage_url(storage_key),
+            "uploadUrl": upload_url,
+            "method": "PUT",
+            "headers": {"Content-Type": content_type},
+            "createdByRole": role or "fde",
+            "createdAt": now,
+            "expiresAt": repo.signed_get(file_name, fde_capability_test_storage_url(storage_key), content_type, file_size).get("expiresAt"),
+        }
+        repo.state.setdefault("fde_capability_test_upload_sessions", []).insert(0, upload_session)
+        audit_id = repo.add_audit("FDE OCR 能力测试上传会话", "FdeOcrCapabilityUploadSession", session_id)
+        return ok({"uploadSession": upload_session, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
+
+
+@router.post("/fde/capability-tests/ocr/runs")
+def fde_create_ocr_capability_test_run(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        role, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+        if role_error:
+            return role_error
+        upload_session_id = str(body.get("uploadSessionId") or body.get("sessionId") or "").strip()
+        upload_session = next(
+            (
+                item
+                for item in repo.state.setdefault("fde_capability_test_upload_sessions", [])
+                if str(item.get("uploadSessionId") or item.get("id") or "") == upload_session_id
+            ),
+            None,
+        )
+        if not upload_session:
+            return fail(errors.NOT_FOUND, request, message="未找到 OCR 能力测试上传会话，请重新选择文件。")
+        file_name = str(upload_session.get("fileName") or "OCR测试文件")
+        profile_id, document_type = fde_capability_test_profile_document_type(file_name, body)
+        run_id = f"FDE-OCR-RUN-{uuid4().hex[:10].upper()}"
+        now = server_time()
+        options = {
+            "enableTables": bool(body.get("enableTables", True)),
+            "enableSeals": bool(body.get("enableSeals", True)),
+            "enableFallback": bool(body.get("enableFallback", True)),
+        }
+        run = {
+            "id": run_id,
+            "runId": run_id,
+            "uploadSessionId": upload_session_id,
+            "status": "ocr_queued",
+            "capability": "ocr",
+            "scope": "fde_capability_test",
+            "retention": "fde_capability_test_only",
+            "businessImpact": "none",
+            "profileId": profile_id,
+            "documentType": document_type,
+            "businessPackId": body.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID,
+            "fileName": file_name,
+            "contentType": upload_session.get("contentType"),
+            "fileSize": upload_session.get("fileSize"),
+            "storageBucket": upload_session.get("storageBucket"),
+            "storageKey": upload_session.get("storageKey"),
+            "storageUrl": upload_session.get("storageUrl"),
+            "options": options,
+            "resultSummary": fde_capability_test_result_summary(None),
+            "diagnostics": [],
+            "engineRuns": [],
+            "createdByRole": role or "fde",
+            "createdAt": now,
+            "updatedAt": now,
+        }
+        upload_session["status"] = "used"
+        upload_session["usedByRunId"] = run_id
+        upload_session["updatedAt"] = now
+        repo.state.setdefault("fde_capability_test_runs", []).insert(0, run)
+        audit_id = repo.add_audit("FDE OCR 能力测试启动", "FdeOcrCapabilityTestRun", run_id)
+        background_tasks.add_task(fde_run_ocr_capability_test, run_id)
+        return ok({"run": run, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
+
+
+@router.get("/fde/capability-tests/ocr/runs")
+def fde_ocr_capability_test_runs(
+    request: Request,
+    status: str | None = None,
+    profileId: str | None = None,
+    pageNo: int = Query(default=1, ge=1),
+    pageSize: int = Query(default=20, ge=1, le=100),
+):
+    _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+    if role_error:
+        return role_error
+    items = repo.clone(repo.state.setdefault("fde_capability_test_runs", []))
+    if status:
+        items = [item for item in items if str(item.get("status") or "") == status]
+    if profileId:
+        items = [item for item in items if str(item.get("profileId") or "") == profileId]
+    return ok(page(items, pageNo, pageSize), request)
+
+
+@router.get("/fde/capability-tests/ocr/runs/{run_id}")
+def fde_ocr_capability_test_run_detail(request: Request, run_id: str):
+    _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+    if role_error:
+        return role_error
+    run = fde_capability_test_run_by_id(run_id)
+    if not run:
+        return fail(errors.NOT_FOUND, request)
+    result = None
+    if run.get("parseResultId"):
+        result = repo.find_one("ocr_parse_results", str(run["parseResultId"]), id_field="parseResultId")
+    job = repo.find_one("ocr_jobs", str(run.get("ocrJobRecordId") or "")) if run.get("ocrJobRecordId") else None
+    upload_session = next(
+        (
+            item
+            for item in repo.state.setdefault("fde_capability_test_upload_sessions", [])
+            if str(item.get("uploadSessionId") or item.get("id") or "") == str(run.get("uploadSessionId") or "")
+        ),
+        None,
+    )
+    return ok(
+        {
+            "run": repo.clone(run),
+            "job": repo.clone(job),
+            "parseResult": repo.clone(result),
+            "uploadSession": repo.clone(upload_session),
+            "preview": fde_capability_test_preview(run),
+        },
+        request,
+    )
+
+
+@router.post("/fde/capability-tests/ocr/runs/{run_id}/to-annotation")
+def fde_ocr_capability_test_to_annotation(
+    request: Request,
+    run_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        role, role_error = fde_error_unless_allowed(request, "fde:ocr-annotation:manage")
+        if role_error:
+            return role_error
+        run = fde_capability_test_run_by_id(run_id)
+        if not run:
+            return fail(errors.NOT_FOUND, request)
+        result = repo.find_one("ocr_parse_results", str(run.get("parseResultId") or ""), id_field="parseResultId")
+        if not result:
+            return fail(errors.VALIDATION_ERROR, request, message="当前测试 Run 还没有可标注的 OCR 结果。")
+        expected = {
+            "qualityStatus": (result.get("quality") or {}).get("status") or "needs_human_review",
+            "fields": expected_fields_from_result(result),
+            "tables": expected_tables_from_result(result),
+            "seals": expected_seals_from_result(result),
+        }
+        existing = next(
+            (
+                item
+                for item in repo.state.setdefault("ocr_annotation_tasks", [])
+                if item.get("sourceRunId") == run_id and item.get("sourceType") == "fde_capability_test"
+            ),
+            None,
+        )
+        task = existing or {
+            "taskId": f"ANNO-FDE-{uuid4().hex[:8].upper()}",
+            "caseId": f"fde-ocr-capability-{run_id}",
+            "sourceType": "fde_capability_test",
+            "sourceRunId": run_id,
+            "parseResultId": result.get("parseResultId"),
+            "scenario": fde_ocr_annotation_scenario(result),
+            "profileId": result.get("profileId") or run.get("profileId"),
+            "documentType": result.get("documentType") or run.get("documentType"),
+            "sourcePath": run.get("fileName"),
+            "collectionStatus": "needs_labeling",
+            "pageCount": len(result.get("pages") or []) or 1,
+            "expectedTemplate": expected,
+            "suggestedExpected": expected,
+            "previewUrl": fde_capability_test_preview(run).get("url"),
+            "retention": "fde_capability_test_only",
+            "createdByRole": role or "fde",
+            "createdAt": server_time(),
+        }
+        task.update({"updatedAt": server_time(), "updatedByRole": role or "fde"})
+        if not existing:
+            repo.state.setdefault("ocr_annotation_tasks", []).insert(0, task)
+        readiness = fde_update_ocr_annotation_readiness(task)
+        run["annotationTaskId"] = task["taskId"]
+        run["updatedAt"] = server_time()
+        audit_id = repo.add_audit("FDE OCR 能力测试转标注任务", "OcrAnnotationTask", task["taskId"])
+        return ok({"task": fde_ocr_annotation_task_view(task), "readiness": readiness, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"runId": run_id, "body": body})
+
+
+@router.post("/fde/capability-tests/ocr/runs/{run_id}/to-evaluation-case")
+def fde_ocr_capability_test_to_evaluation_case(
+    request: Request,
+    run_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        role, role_error = fde_error_unless_allowed(request, "fde:evaluation:run")
+        if role_error:
+            return role_error
+        run = fde_capability_test_run_by_id(run_id)
+        if not run:
+            return fail(errors.NOT_FOUND, request)
+        result = repo.find_one("ocr_parse_results", str(run.get("parseResultId") or ""), id_field="parseResultId")
+        if not result:
+            return fail(errors.VALIDATION_ERROR, request, message="当前测试 Run 还没有可沉淀的 OCR 结果。")
+        existing = next(
+            (
+                item
+                for item in repo.state.setdefault("evaluation_cases", [])
+                if item.get("sourceRunId") == run_id and item.get("source") == "fde_ocr_capability_test"
+            ),
+            None,
+        )
+        now = server_time()
+        expected = {
+            "fields": expected_fields_from_result(result),
+            "tables": expected_tables_from_result(result),
+            "seals": expected_seals_from_result(result),
+            "qualityStatus": (result.get("quality") or {}).get("status"),
+        }
+        case = existing or {
+            "id": f"ECASE-FDE-OCR-{uuid4().hex[:8].upper()}",
+            "caseId": f"fde-ocr-capability-{run_id}",
+            "source": "fde_ocr_capability_test",
+            "sourceRunId": run_id,
+            "businessPackId": run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID,
+            "profileId": result.get("profileId") or run.get("profileId"),
+            "documentType": result.get("documentType") or run.get("documentType"),
+            "riskLevel": body.get("riskLevel") or "medium",
+            "dataSensitivity": body.get("dataSensitivity") or "masked",
+            "status": "draft",
+            "canUseForEval": False,
+            "canUseForTraining": False,
+            "expected": expected,
+            "resultSnapshot": repo.clone(result),
+            "retention": "fde_capability_test_only",
+            "createdByRole": role or "fde",
+            "createdAt": now,
+        }
+        case.update({"updatedAt": now, "updatedByRole": role or "fde"})
+        if existing:
+            existing.update(case)
+            case = existing
+        else:
+            repo.state.setdefault("evaluation_cases", []).insert(0, case)
+        run["evaluationCaseId"] = case.get("id")
+        run["updatedAt"] = now
+        audit_id = repo.add_audit("FDE OCR 能力测试转评估样本草稿", "EvaluationCase", str(case.get("id")))
+        return ok({"case": repo.clone(case), "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"runId": run_id, "body": body})
 
 
 @router.post("/fde/ocr-100/action-board/refresh")

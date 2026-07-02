@@ -52,6 +52,8 @@ STATE_COLLECTIONS = {
     "ocr_eval_runs": "ocr_eval_runs",
     "ocr_annotation_tasks": "ocr_annotation_tasks",
     "ocr_annotation_imports": "ocr_annotation_imports",
+    "fde_capability_test_upload_sessions": "fde_capability_test_upload_sessions",
+    "fde_capability_test_runs": "fde_capability_test_runs",
     "capability_bundles": "capability_bundles",
     "release_plans": "release_plans",
     "release_approvals": "release_approvals",
@@ -116,6 +118,8 @@ class InMemoryRepository:
         self.state.setdefault("ocr_eval_runs", [])
         self.state.setdefault("ocr_annotation_tasks", [])
         self.state.setdefault("ocr_annotation_imports", [])
+        self.state.setdefault("fde_capability_test_upload_sessions", [])
+        self.state.setdefault("fde_capability_test_runs", [])
         self.state.setdefault("review_runs", [])
         self.state.setdefault("review_step_runs", [])
         self.state.setdefault("review_graph_nodes", [])
@@ -142,6 +146,8 @@ class InMemoryRepository:
         self.state.setdefault("ocr_eval_runs", [])
         self.state.setdefault("ocr_annotation_tasks", [])
         self.state.setdefault("ocr_annotation_imports", [])
+        self.state.setdefault("fde_capability_test_upload_sessions", [])
+        self.state.setdefault("fde_capability_test_runs", [])
         self.state.setdefault("review_runs", [])
         self.state.setdefault("review_step_runs", [])
         self.state.setdefault("review_graph_nodes", [])
@@ -1112,6 +1118,8 @@ class InMemoryRepository:
         loaded.setdefault("ocr_eval_runs", [])
         loaded.setdefault("ocr_annotation_tasks", [])
         loaded.setdefault("ocr_annotation_imports", [])
+        loaded.setdefault("fde_capability_test_upload_sessions", [])
+        loaded.setdefault("fde_capability_test_runs", [])
         loaded.setdefault("review_runs", [])
         loaded.setdefault("review_step_runs", [])
         loaded.setdefault("review_graph_nodes", [])

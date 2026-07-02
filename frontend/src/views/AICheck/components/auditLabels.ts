@@ -21,26 +21,240 @@ export const reviewStatusLabels: Record<string, string> = {
   superseded: '已被替代'
 }
 
+export const statusLabelMap: Record<string, string> = {
+  ...reviewStatusLabels,
+  active: '启用',
+  accepted: '已接受',
+  approved_for_eval: '已准入评估集',
+  blocked_by_gate: '门禁阻断',
+  complete: '已完成',
+  completed: '已完成',
+  degraded: '降级运行',
+  draft: '草稿',
+  fail: '未通过',
+  high: '高',
+  incomplete: '不完整',
+  labeled: '待二审',
+  low: '低',
+  low_confidence_field: '字段识别置信度低',
+  medium: '中',
+  missing: '缺失',
+  needs_human_confirmation: '需要人工确认',
+  needs_human_review: '需人工复核',
+  needs_labeling: '待标注',
+  needs_triage: '待归因',
+  normal: '正常',
+  over_budget: '超预算',
+  pass: '通过',
+  passed: '通过',
+  production: '生产中',
+  production_approved: '生产已批准',
+  ready: '就绪',
+  ready_for_eval: '可入评估',
+  request_correction: '建议发起补正',
+  reviewed: '已复核',
+  running: '运行中',
+  stale: '需刷新',
+  success: '成功',
+  triaged: '已归因',
+  unknown: '未知',
+  warning: '告警',
+  shadow: '影子运行',
+  hybrid_rag: '混合检索',
+  pageindex: '章节溯源',
+  pageindex_tree_search: '章节树检索',
+  vector_search: '向量检索',
+  review_basis_search: '审查依据检索',
+  long_document_cross_section: '长文档跨章节检索'
+}
+
 export const techTermLabels: Record<string, string> = {
-  LangGraph: 'Agent 编排图',
-  PageIndex: '章节溯源',
-  Vectorization: '资料向量化',
-  RetrievalTrace: '检索轨迹',
-  QualityGate: '质量门禁',
-  Temporal: '流程编排',
+  Agent: 'AI 员工',
+  Bundle: '能力组合',
+  COG: '公开判断摘要',
+  Checkpoint: '检查点',
+  Draft: '草稿',
+  FDE: 'AI 交付工程师',
+  Flags: '标记',
+  Graph: '编排图',
+  Hash: '校验哈希',
   HybridRag: '混合检索',
+  Job: '任务编号',
+  Key: '键',
+  LangGraph: 'Agent 编排图',
+  LiteLLM: 'LiteLLM 模型网关',
+  LLM: '大模型审查',
+  Metadata: '元数据',
+  Model: '模型',
+  OCR: 'OCR 文字识别',
+  'Payload Hash': '载荷校验哈希',
+  PageIndex: '章节溯源',
+  'Postgres Checkpointer': 'PostgreSQL 检查点',
+  Profile: '解析配置',
+  Prompt: '提示词',
+  RAG: '知识检索',
+  ReviewRun: '审查任务',
+  'Run ID': '运行编号',
+  Schema: '结构约束',
+  Temporal: '流程编排',
+  Token: 'Token 用量',
+  Trace: '溯源记录',
+  Workflow: '工作流',
+  'Vector ID': '向量编号',
+  Vectorization: '资料向量化',
+  QualityGate: '质量门禁',
+  RetrievalTrace: '检索轨迹',
+  all: '全部配置',
+  chat_completions: '调用大模型',
+  'chat.completions': '调用大模型',
+  ActivityCompleted: '活动已完成',
+  cog_reasoning_summary: '公开判断摘要',
+  construction_record_v1: '施工记录解析配置',
+  document_intelligence: '文档智能服务',
+  document_intelligence_service: '文档智能服务',
+  evidence_validation: '证据校验',
+  field_extraction: '字段抽取',
+  field_inconsistent: '字段不一致',
+  field_missing: '字段缺失',
+  cross_document_consistency_warning: '跨资料一致性风险',
+  quality_certificate_profile: '质量证明文件解析场景',
+  ndt_rt_table_profile: '射线检测表格解析场景',
+  FIELD_LOW_CONFIDENCE: '字段识别置信度低',
+  get_extracted_fields: '读取抽取字段',
+  get_node_requirements: '读取节点资料要求',
+  get_document_ocr_result: '读取 OCR 结果',
+  get_ocr_result: '读取 OCR 结果',
+  get_project_context: '读取项目上下文',
+  hybrid_rag: '混合检索',
+  knowledge_rule_service: '知识规则服务',
+  langgraph_postgres: 'LangGraph + PostgreSQL 检查点',
+  load_context: '读取项目上下文',
+  load_document_context: '加载资料上下文',
+  load_ocr_result: '读取 OCR 结果',
+  llm_generate_findings: '大模型生成审查草稿',
+  llm_review: '生成审查草稿',
+  ndt_rt_report_v1: '射线检测报告解析配置',
+  overall: '全部场景',
+  'paddlex-seal-model': '印章识别模型',
   pageindex: '章节溯源',
   pageindex_tree_search: '章节树检索',
   langgraph: 'Agent 编排图',
-  vector: '资料向量化'
+  litellm: 'LiteLLM 模型网关',
+  low_confidence_field: '字段识别置信度低',
+  LOW_CONFIDENCE: '低置信内容',
+  BBOX_SHIFT: '证据框位置偏移',
+  TABLE_STRUCTURE_LOW_CONFIDENCE: '表格结构置信度低',
+  SEAL_TEXT_LOW_CONFIDENCE: '印章文字置信度低',
+  MISSING_FIELD_LABELS: '缺少字段标签',
+  MISSING_SEAL_BBOX: '缺少印章证据框',
+  MISSING_TABLE_CELL_LABELS: '缺少表格单元格标注',
+  piping_characteristic_list_v1: '管道特性表解析配置',
+  piping_table_profile: '管道表格解析场景',
+  quality_certificate_v1: '质量证明文件解析配置',
+  quality_gate: '质量门禁',
+  qualification_certificate_v1: '资质证书解析配置',
+  'postgres-checkpointer': 'PostgreSQL 检查点',
+  retrieve_knowledge: '检索知识依据',
+  review_orchestrator_service: '审查编排服务',
+  rule_checking: '规则校验中',
+  run_rule_checks: '执行规则检查',
+  run_rule_engine: '执行规则引擎',
+  human_confirmation_required: '需要人工确认',
+  seal_consistency_warning: '签章一致性风险',
+  sealNameAccuracy: '印章名称准确率',
+  seal_recognition: '印章识别',
+  seal_text_profile: '印章文字解析配置',
+  seal_text_profile_v1: '印章文字解析配置',
+  SignalWaiting: '等待人工信号',
+  search_knowledge_base: '检索知识库',
+  table_structure: '表格结构',
+  tableCellAccuracy: '表格单元格准确率',
+  validate_output: '校验证据与依据',
+  vector: '资料向量化',
+  vector_search: '向量检索',
+  waiting_human_review: '等待人工复核',
+  WorkflowStarted: '工作流已启动'
+}
+
+export const ruleCodeLabels: Record<string, string> = {
+  EVIDENCE_BBOX_REQUIRED: '证据框必须可定位',
+  FIELD_LOW_CONFIDENCE: '字段识别置信度低',
+  MISSING_FIELD_LABELS: '缺少字段标签',
+  MISSING_SEAL_BBOX: '缺少印章证据框',
+  MISSING_TABLE_CELL_LABELS: '缺少表格单元格标注',
+  OCR_FIELD_CONF_002: 'OCR 字段置信度过低',
+  QC_CERT_FIELD_003: '质量证明文件缺少关键字段',
+  SEAL_REQUIRED_001: '资料必须有有效签章',
+  SEAL_TEXT_LOW_CONFIDENCE: '印章文字置信度低',
+  TABLE_STRUCTURE_LOW_CONFIDENCE: '表格结构置信度低',
+  WELDER_CERT_001: '焊工资格证必须上传'
+}
+
+export const fieldLabelMap: Record<string, string> = {
+  agentId: 'AI 员工',
+  agentSopCount: 'AI 员工 SOP',
+  caseId: '样本编号',
+  checkpointer: '检查点',
+  collectionStatus: '采集状态',
+  currentStep: '当前步骤',
+  currentOcrStatus: 'OCR 文字识别',
+  eventType: '事件类型',
+  findingType: '问题类型',
+  graphEngine: '内层编排',
+  material_grade: '材料牌号',
+  weld_no: '焊口编号',
+  report_no: '报告编号',
+  certificate_no: '证书编号',
+  batch_no: '炉批号',
+  manufacturer: '生产厂家',
+  project_name: '项目名称',
+  detection_date: '检测日期',
+  inspection_unit: '检测单位',
+  seal_name: '印章名称',
+  seal_type: '印章类型',
+  valid_until: '有效期',
+  conclusion: '结论',
+  jobId: '任务编号',
+  nodeKey: '节点键',
+  parseResultId: '解析结果编号',
+  profileId: '解析配置',
+  prompt: '提示词',
+  promptVersion: '提示词版本',
+  retrievalHitCount: '检索命中',
+  reviewRunId: '审查任务编号',
+  ruleCode: '规则',
+  runId: '运行编号',
+  taskId: '任务编号',
+  tokenCount: 'Token 用量',
+  toolName: '工具名称',
+  workflowId: '工作流编号'
 }
 
 export const friendlyReviewStatus = (status?: string | null) => {
   if (!status) return '未知状态'
-  return reviewStatusLabels[status] || status
+  return statusLabelMap[status] || status
 }
 
 export const friendlyTechTerm = (value?: string | null) => {
   if (!value) return '未返回'
-  return techTermLabels[value] || value
+  return techTermLabels[value] || statusLabelMap[value] || ruleCodeLabels[value] || value
+}
+
+export const friendlyRuleCode = (value?: string | null, options: { keepCode?: boolean } = {}) => {
+  if (!value) return '未返回'
+  const label = ruleCodeLabels[value] || techTermLabels[value] || statusLabelMap[value]
+  if (!label) return value
+  return options.keepCode === true ? `${label}（${value}）` : label
+}
+
+export const friendlyFieldLabel = (value?: string | null) => {
+  if (!value) return '字段'
+  return fieldLabelMap[value] || techTermLabels[value] || value
+}
+
+export const friendlyToken = (value?: string | null, options: { keepCode?: boolean } = {}) => {
+  if (!value) return '未返回'
+  const label = ruleCodeLabels[value] || techTermLabels[value] || statusLabelMap[value]
+  if (!label) return value
+  return options.keepCode === true ? `${label}（${value}）` : label
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { EChartsOption } from 'echarts'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -30,9 +30,13 @@ import {
 } from 'element-plus'
 import {
   closeFdeIncidentApi,
+  convertFdeOcrCapabilityTestToAnnotationApi,
+  convertFdeOcrCapabilityTestToEvaluationCaseApi,
   createFdeDataExportApi,
   createFdeEvaluationRunApi,
   createFdeMaskingPolicyApi,
+  createFdeOcrCapabilityTestRunApi,
+  createFdeOcrCapabilityTestUploadSessionApi,
   createFdeOcrCorrectionApi,
   createFdeOcrEvaluationRunApi,
   createFdeReviewRunFeedbackApi,
@@ -50,6 +54,7 @@ import {
   getFdeMaskingPoliciesApi,
   getFdeOcrAnnotationTaskApi,
   getFdeOcr100HandoffArtifactApi,
+  getFdeOcrCapabilityTestRunApi,
   getFdeOcrRunApi,
   getFdeOcrQualityApi,
   getFdeProjectAuditWorkspaceApi,
@@ -65,6 +70,7 @@ import {
   listFdeIncidentsApi,
   listFdeProjectsApi,
   listFdeOcrAnnotationTasksApi,
+  listFdeOcrCapabilityTestRunsApi,
   listFdeOcrRunsApi,
   listFdeReviewRunsApi,
   listFdeReleasesApi,
@@ -97,6 +103,8 @@ import type {
   FdeFeedback,
   FdeOcrAnnotationTask,
   FdeIncidentPayload,
+  FdeOcrCapabilityTestDetailPayload,
+  FdeOcrCapabilityTestRun,
   FdeOcrAnnotationPayload,
   FdeOcrEvalRun,
   FdeOcrQualityPayload,
@@ -110,6 +118,12 @@ import type {
   FdeVectorQualityPayload
 } from '@/api/aicheck'
 import StaticPageShell from './components/StaticPageShell.vue'
+import {
+  friendlyFieldLabel,
+  friendlyRuleCode,
+  statusLabelMap as sharedStatusLabelMap,
+  techTermLabels as sharedTechTermLabels
+} from './components/auditLabels'
 
 const route = useRoute()
 const router = useRouter()
@@ -160,6 +174,20 @@ const ocr100ActionBoardRefreshing = ref(false)
 const ocr100HandoffOpening = ref('')
 const ocrAuditDrawerVisible = ref(false)
 const ocrAnnotation = ref<FdeOcrAnnotationPayload | null>(null)
+const ocrCapabilityTestRuns = ref<FdeOcrCapabilityTestRun[]>([])
+const selectedOcrCapabilityTest = ref<FdeOcrCapabilityTestDetailPayload | null>(null)
+const selectedOcrCapabilityTestRunId = ref('')
+const ocrCapabilityTestFile = ref<File | null>(null)
+const ocrCapabilityFileInputRef = ref<HTMLInputElement | null>(null)
+const ocrCapabilityTestLoading = ref(false)
+const ocrCapabilityTestPolling = ref<number | undefined>()
+const ocrCapabilityTestForm = ref({
+  profileId: 'piping_characteristic_list_v1',
+  documentType: 'engineering_table_photo',
+  enableTables: true,
+  enableSeals: true,
+  enableFallback: true
+})
 const labelStudioExportSummary = ref<Record<string, unknown> | null>(null)
 const annotationEditorVisible = ref(false)
 const annotationDetailLoading = ref(false)
@@ -206,7 +234,7 @@ type ProjectAuditTreeFilter =
   | 'ocr-labeling'
   | 'evaluation'
 type AgentSubpage = 'runs' | 'reasoning' | 'quality' | 'trace'
-type OcrSubpage = 'overview' | 'annotation' | 'runtime' | 'evaluation'
+type OcrSubpage = 'overview' | 'capability-test' | 'annotation' | 'runtime' | 'evaluation'
 const fdeDemoMode = ref(false)
 const projectAuditSubpage = ref<ProjectAuditSubpage>('overview')
 const projectAuditSearch = ref('')
@@ -324,11 +352,11 @@ const fdeRouteMeta: Record<
   'ai-runs': {
     group: '运行追踪',
     label: 'AI Run 追踪',
-    badge: 'Trace',
+    badge: '溯源',
     tone: 'blue',
     title: 'AI Run 追踪',
-    subtitle: '查看不可变 AI Run、Trace、输入输出 hash、脱敏策略和诊断重跑。',
-    nextAction: '先选中一条 Run，再查看 Trace 明细或发起诊断重跑。',
+    subtitle: '查看不可变 AI 运行、溯源明细、输入输出校验哈希、脱敏策略和诊断重跑。',
+    nextAction: '先选中一条运行记录，再查看溯源明细或发起诊断重跑。',
     actions: [{ key: 'replay-ai-run', label: '诊断重跑', plain: true }]
   },
   'review-runs': {
@@ -337,8 +365,8 @@ const fdeRouteMeta: Record<
     badge: '链路',
     tone: 'green',
     title: 'Agent 审查编排',
-    subtitle: '查看流程编排、Agent 节点和审查产物。',
-    nextAction: '先选中 ReviewRun，再检查 Workflow 时间线和校验失败。',
+    subtitle: '查看流程编排、AI 员工节点和审查产物。',
+    nextAction: '先选中审查任务，再检查工作流时间线和校验失败。',
     actions: [
       { key: 'replay-review-run', label: '诊断重跑', plain: true },
       { key: 'shadow-review-run', label: 'Shadow', plain: true },
@@ -361,7 +389,7 @@ const fdeRouteMeta: Record<
     badge: '门禁',
     tone: 'green',
     title: '评估实验室',
-    subtitle: '管理评估集、回归集和发布前门禁，用样本验证 Agent、Prompt 和模型版本。',
+    subtitle: '管理评估集、回归集和发布前门禁，用样本验证 AI 员工、提示词和模型版本。',
     nextAction: '选择评估集后发起评测。',
     actions: [{ key: 'start-evaluation', label: '发起评测', plain: true }]
   },
@@ -384,7 +412,7 @@ const fdeRouteMeta: Record<
     badge: 'Bundle',
     tone: 'blue',
     title: '能力版本组合',
-    subtitle: '管理 Agent、Prompt、模型路由、规则、知识库和 OCR Profile 的发布组合。',
+    subtitle: '管理 AI 员工、提示词、模型路由、规则、知识库和 OCR 解析配置的发布组合。',
     nextAction: '点击组合查看与生产基线的差异。'
   },
   releases: {
@@ -451,7 +479,7 @@ const fdeRouteMeta: Record<
 const fdeShellBoundaryRows = [
   { label: '聚焦', value: '按审计项目组织 OCR 与 Agent 编排数据' },
   { label: '层级', value: '项目 → 节点 → 批次/资料 → OCR/Agent 任务' },
-  { label: 'Agent', value: '流程编排 + Agent 节点追踪' },
+  { label: 'AI 员工', value: '流程编排 + AI 员工节点追踪' },
   { label: '边界', value: 'FDE 只做 AI 诊断、标注和治理，不办理业务审批' }
 ] as const
 
@@ -470,7 +498,7 @@ const chartBaseSizes: Record<FdeChartKey, { width: number; height: number }> = {
   vectorSankey: { width: 1280, height: 320 },
   pageIndexTree: { width: 1720, height: 470 },
   reviewTimeline: { width: 1160, height: 300 },
-  langGraph: { width: 1420, height: 620 }
+  langGraph: { width: 1080, height: 430 }
 }
 const chartZoomStep = 0.02
 const chartGestureZoomSensitivity = 0.1
@@ -1027,10 +1055,10 @@ const projectAuditMenuItemHint = (
     return `资料 ${Number(metrics.documents || 0)} · 向量 ${Number(metrics.knowledgeVectors || 0)}`
   }
   if (subpage === 'pageindex') {
-    return `PI节点 ${Number(metrics.pageIndexNodes || 0)} · ReviewRun ${Number(metrics.reviewRuns || 0)}`
+    return `章节节点 ${Number(metrics.pageIndexNodes || 0)} · 审查任务 ${Number(metrics.reviewRuns || 0)}`
   }
   if (subpage === 'langgraph') {
-    return `ReviewRun ${Number(metrics.reviewRuns || 0)} · Agent链路`
+    return `审查任务 ${Number(metrics.reviewRuns || 0)} · AI 员工链路`
   }
   if (subpage === 'ocr-labeling') {
     return `OCR ${Number(metrics.ocrJobs || 0)} · 样本 ${Number(metrics.annotationTasks || 0)}`
@@ -1086,7 +1114,7 @@ const fdeShellMenuSections = computed(() => {
         label: 'Agent 审查编排',
         hint:
           route.path === '/fde/review-runs'
-            ? `ReviewRun ${reviewRuns.value.length} · LangGraph`
+            ? `审查任务 ${reviewRuns.value.length} · Agent 编排图`
             : '',
         badge: route.path === '/fde/review-runs' ? '当前' : undefined,
         tone: 'green' as const,
@@ -1208,6 +1236,7 @@ const shortText = (value: unknown, fallback = '-') => {
 }
 
 const statusLabelMap: Record<string, string> = {
+  ...sharedStatusLabelMap,
   active: '启用',
   accepted: '已接受',
   blocked_by_gate: '门禁阻断',
@@ -1220,10 +1249,13 @@ const statusLabelMap: Record<string, string> = {
   fail: '未通过',
   labeled: '待二审',
   monitoring: '监控中',
+  needs_human_confirmation: '需要人工确认',
   needs_human_review: '需人工复核',
   needs_labeling: '待标注',
   needs_triage: '待归因',
   normal: '正常',
+  ocr_queued: 'OCR 排队中',
+  ocr_running: 'OCR 识别中',
   over_budget: '超预算',
   pass: '通过',
   passed: '通过',
@@ -1244,7 +1276,7 @@ const statusLabelMap: Record<string, string> = {
   incomplete: '不完整',
   missing: '缺失',
   unknown: '未知',
-  hybrid_rag: 'Hybrid RAG',
+  hybrid_rag: '混合检索',
   pageindex: '章节溯源',
   pageindex_tree_search: '章节树检索',
   vector_search: '向量检索',
@@ -1252,6 +1284,7 @@ const statusLabelMap: Record<string, string> = {
   long_document_cross_section: '长文档跨章节检索',
   shadow: '影子运行',
   waiting_human_review: '待人工复核',
+  waiting_upload: '等待上传',
   warning: '告警'
 }
 
@@ -1262,9 +1295,17 @@ const friendlyStatus = (status: unknown, fallback = '-') => {
 }
 
 const techLabelMap: Record<string, string> = {
+  ...sharedTechTermLabels,
   evidence_validation: '证据校验',
+  EVIDENCE_BBOX_REQUIRED: '证据框必须可定位',
   field_inconsistent: '字段不一致',
   field_missing: '字段缺失',
+  low_confidence_field: '字段识别置信度低',
+  needs_human_confirmation: '需要人工确认',
+  OCR_FIELD_CONF_002: 'OCR 字段置信度过低',
+  QC_CERT_FIELD_003: '质量证明文件缺少关键字段',
+  SEAL_REQUIRED_001: '资料必须有有效签章',
+  WELDER_CERT_001: '焊工资格证必须上传',
   load_context: '读取项目上下文',
   load_document_context: '加载资料上下文',
   load_ocr_result: '读取 OCR 结果',
@@ -1276,7 +1317,7 @@ const techLabelMap: Record<string, string> = {
   run_rule_checks: '执行规则检查',
   validate_output: '校验证据与依据',
   waiting_human_review: '等待人工复核',
-  hybrid_rag: 'Hybrid RAG',
+  hybrid_rag: '混合检索',
   pageindex: '章节溯源',
   pageindex_tree_search: '章节树检索',
   vector_search: '向量检索',
@@ -1292,6 +1333,43 @@ const friendlyTechLabel = (value: unknown, fallback = '-') => {
   const raw = String(value || '').trim()
   if (!raw) return fallback
   return techLabelMap[raw] || statusLabelMap[raw] || raw
+}
+
+const friendlyReferenceLabel = (value: unknown, fallback = '-') => {
+  const raw = String(value || '').trim()
+  if (!raw) return fallback
+  return friendlyRuleCode(raw)
+}
+
+const friendlyIssueLabel = (value: unknown, fallback = '-') => {
+  const raw = String(value || '').trim()
+  if (!raw) return fallback
+  const techLabel = friendlyTechLabel(raw, '')
+  if (techLabel && techLabel !== raw) return techLabel
+  return friendlyRuleCode(raw)
+}
+
+const friendlyIssueList = (value: unknown, fallback = '-') => {
+  const items = Array.isArray(value)
+    ? value
+    : String(value || '')
+        .split(/[;；/]/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+  if (!items.length) return fallback
+  return (
+    items
+      .map((item) => friendlyIssueLabel(item, ''))
+      .filter(Boolean)
+      .join('；') || fallback
+  )
+}
+
+const friendlyToolNames = (toolCalls: unknown) => {
+  const names = toRecordArray(toolCalls)
+    .map((tool) => friendlyTechLabel(tool.toolName || tool.name, ''))
+    .filter(Boolean)
+  return names.join('，')
 }
 
 const friendlyTaskQueueLabel = (value: unknown) => {
@@ -1341,8 +1419,10 @@ const statusType = (status?: string) => {
       'running',
       'degraded',
       'waiting_human_review',
+      'needs_human_confirmation',
       'needs_human_review',
       'needs_labeling',
+      'low_confidence_field',
       'labeled',
       'needs_triage',
       '排队中'
@@ -1411,14 +1491,14 @@ const ocr100SectionRows = computed(() => ocr100Scorecard.value?.sections || [])
 const ocr100BlockerRows = computed(() =>
   (ocr100Scorecard.value?.blockers || []).slice(0, 8).map((blocker, index) => ({
     id: index + 1,
-    blocker
+    blocker: friendlyIssueLabel(blocker)
   }))
 )
 const ocrAnnotationSummary = computed(() => ocrAnnotation.value?.summary || null)
 const ocrAnnotationRows = computed(() => ocrAnnotation.value?.page.items || [])
 const ocrAnnotationBlockerRows = computed(() =>
   Object.entries(ocrAnnotationSummary.value?.blockerCounts || {}).map(([blocker, count]) => ({
-    blocker,
+    blocker: friendlyIssueLabel(blocker),
     count
   }))
 )
@@ -1450,19 +1530,19 @@ const annotationOverlayItems = computed<AnnotationOverlayItem[]>(() => [
     ...item,
     index,
     type: 'fields' as const,
-    label: String(item.fieldCode || '字段')
+    label: friendlyFieldLabel(String(item.fieldCode || '字段'))
   })),
   ...annotationTables.value.map((item, index) => ({
     ...item,
     index,
     type: 'tables' as const,
-    label: String(item.businessSchema || '表格')
+    label: friendlyTechLabel(item.businessSchema, '表格')
   })),
   ...annotationSeals.value.map((item, index) => ({
     ...item,
     index,
     type: 'seals' as const,
-    label: String(item.nameContains || item.sealType || '印章')
+    label: friendlyTechLabel(item.nameContains || item.sealType, '印章')
   }))
 ])
 const selectedOcrResultSummary = computed(
@@ -1542,7 +1622,7 @@ const ocrScenarioRows = computed(() =>
   Object.entries(latestOcrScenarioMetrics.value).map(([scenario, item]) => {
     const summary = 'summary' in item && item.summary ? item.summary : item
     return {
-      scenario,
+      scenario: friendlyTechLabel(scenario),
       ok: Boolean(item?.ok),
       total: summary?.total || summary?.cases || 0,
       passed: summary?.passed || 0,
@@ -1654,11 +1734,19 @@ const ocrThresholdFailureRows = computed(() => {
   for (const item of latestOcrEvalCompact.value?.thresholdFailures ||
     latestOcrEvalReport.value?.thresholdFailures ||
     []) {
-    rows.push({ scope: 'overall', ...item })
+    rows.push({
+      scope: friendlyTechLabel('overall'),
+      ...item,
+      metric: friendlyTechLabel(item.metric)
+    })
   }
   for (const [scenario, item] of Object.entries(latestOcrScenarioMetrics.value)) {
     for (const failure of item?.thresholdFailures || []) {
-      rows.push({ scope: scenario, ...failure })
+      rows.push({
+        scope: friendlyTechLabel(scenario),
+        ...failure,
+        metric: friendlyTechLabel(failure.metric)
+      })
     }
   }
   return rows
@@ -1667,13 +1755,13 @@ const ocrFindingCountRows = computed(() => {
   const rows: Array<{ scope: string; code: string; count: number }> = Object.entries(
     latestOcrEvalCompact.value?.findingCounts || latestOcrEvalReport.value?.findingCounts || {}
   ).map(([code, count]) => ({
-    scope: 'overall',
+    scope: friendlyTechLabel('overall'),
     code,
     count: Number(count || 0)
   }))
   for (const [scenario, item] of Object.entries(latestOcrScenarioMetrics.value)) {
     for (const [code, count] of Object.entries(item?.findingCounts || {})) {
-      rows.push({ scope: scenario, code, count: Number(count || 0) })
+      rows.push({ scope: friendlyTechLabel(scenario), code, count: Number(count || 0) })
     }
   }
   return rows.sort((left, right) => Number(right.count || 0) - Number(left.count || 0)).slice(0, 8)
@@ -1690,12 +1778,12 @@ const failedOcrCaseRows = computed(() =>
       const firstFinding = item.findings?.[0]
       return {
         caseId: item.caseId,
-        scenario: item.scenario,
+        scenario: friendlyTechLabel(item.scenario),
         score: item.score || 0,
         finding:
           typeof firstFinding === 'string'
-            ? firstFinding
-            : String(firstFinding?.code || firstFinding?.message || '-')
+            ? friendlyIssueLabel(firstFinding)
+            : String(firstFinding?.message || friendlyIssueLabel(firstFinding?.code, '-'))
       }
     })
 )
@@ -1785,7 +1873,7 @@ const normalizedReviewReasoningRows = computed(() =>
     const ruleRefText = ruleRefs
       .map((ref) => {
         const rule = toRecord(ref)
-        return rule.ruleCode || rule.code || rule.id
+        return friendlyReferenceLabel(rule.ruleCode || rule.code || rule.id, '')
       })
       .filter(Boolean)
       .join('；')
@@ -1816,10 +1904,7 @@ const normalizedReviewReasoningRows = computed(() =>
         item.reasoningSummary || item.thought || item.summary || item.message || '-',
       evidence: evidenceText,
       toolCount: toolCalls.length,
-      toolNames: toolCalls
-        .map((tool) => tool.toolName || tool.name)
-        .filter(Boolean)
-        .join('，'),
+      toolNames: friendlyToolNames(toolCalls),
       evidenceCount: evidenceRefs.length || (rawEvidenceText ? 1 : 0),
       ruleCount: ruleRefs.length || (typeof item.ruleRefs === 'string' && item.ruleRefs ? 1 : 0),
       kbCount: kbRefs.length || (typeof item.kbRefs === 'string' && item.kbRefs ? 1 : 0),
@@ -1831,16 +1916,29 @@ const normalizedReviewReasoningRows = computed(() =>
 const normalizedReviewFindingRows = computed(() =>
   reviewFindingDraftRows.value.map((row, index) => {
     const item = toRecord(row)
+    const evidenceRefs = toRecordArray(item.evidenceRefs)
+    const ruleRefs = toRecordArray(item.ruleRefs)
+    const kbRefs = toRecordArray(item.kbRefs)
+    const confidence = Number(item.confidence ?? 0)
     return {
-      id: item.id || `finding-${index + 1}`,
-      findingType: item.findingType || item.type || '-',
-      severity: item.severity || '-',
-      title: item.title || item.description || item.finding || '-',
-      confidence: item.confidence,
-      evidenceCount: toRecordArray(item.evidenceRefs).length,
-      referenceCount: toRecordArray(item.ruleRefs).length + toRecordArray(item.kbRefs).length,
+      id: String(item.id || `finding-${index + 1}`),
+      findingType: String(item.findingType || item.type || '-'),
+      severity: String(item.severity || '-'),
+      title: String(item.title || item.description || item.finding || '-'),
+      confidence: Number.isNaN(confidence) ? 0 : confidence,
+      evidenceCount: evidenceRefs.length,
+      referenceCount: ruleRefs.length + kbRefs.length,
       requiresHumanConfirmation: Boolean(item.requiresHumanConfirmation),
-      suggestedAction: item.suggestedAction || '-'
+      suggestedAction: String(item.suggestedAction || '-'),
+      severityLabel: friendlyStatus(item.severity || '-', '-'),
+      evidenceText:
+        evidenceRefs.length || ruleRefs.length || kbRefs.length
+          ? `${evidenceRefs.length} 个证据位置 · ${ruleRefs.length + kbRefs.length} 条规则/依据`
+          : '暂无可追溯证据，需补齐后再采纳',
+      humanNextAction: item.requiresHumanConfirmation
+        ? '请监检员确认、修改或驳回'
+        : '可作为低风险建议进入人工复核',
+      suggestedActionLabel: friendlyStatus(item.suggestedAction || '-', '-')
     }
   })
 )
@@ -1894,10 +1992,10 @@ const projectAuditLangGraphAuditRows = computed(() => {
   const correctionCount = normalizedReviewHumanCorrectionRows.value.length
   const rows = [
     {
-      stage: 'Temporal Workflow',
-      status: workflowId ? '已持久化' : '缺少 Workflow',
+      stage: '流程工作流',
+      status: workflowId ? '已持久化' : '缺少工作流',
       evidence: workflowId
-        ? `事件 ${temporalEventCount} 个，Workflow ${workflowId}`
+        ? `事件 ${temporalEventCount} 个，工作流 ${workflowId}`
         : '未返回 workflowId',
       action: workflowId ? '可追踪外层长任务' : '检查 Temporal worker 和任务创建链路',
       healthy: Boolean(workflowId)
@@ -1921,7 +2019,7 @@ const projectAuditLangGraphAuditRows = computed(() => {
     {
       stage: '规则与知识检索',
       status: ruleCount || retrievalCount ? '已记录' : '缺少',
-      evidence: `规则 ${ruleCount} 条，检索 Trace ${retrievalCount} 条`,
+      evidence: `规则 ${ruleCount} 条，检索溯源 ${retrievalCount} 条`,
       action: ruleCount || retrievalCount ? '抽查依据条款和章节溯源路由' : '补跑规则和知识检索节点',
       healthy: ruleCount > 0 && retrievalCount > 0
     },
@@ -1967,20 +2065,20 @@ const reviewLineage = computed<Record<string, unknown>>(
   () => selectedReviewRun.value?.lineage || {}
 )
 const reviewLineageRows = computed(() => [
-  { label: '能力包 Hash', value: reviewLineage.value.capabilityBundleHash },
+  { label: '能力组合校验哈希', value: reviewLineage.value.capabilityBundleHash },
   { label: '业务包', value: reviewLineage.value.businessPackId },
   { label: '业务包版本', value: reviewLineage.value.businessPackVersion },
-  { label: 'Agent', value: reviewLineage.value.agentId },
-  { label: 'Agent 版本', value: reviewLineage.value.agentVersion },
-  { label: 'Prompt 版本', value: reviewLineage.value.promptVersion },
+  { label: 'AI 员工', value: reviewLineage.value.agentId },
+  { label: 'AI 员工版本', value: reviewLineage.value.agentVersion },
+  { label: '提示词版本', value: reviewLineage.value.promptVersion },
   { label: '模型网关', value: reviewLineage.value.modelGateway },
   { label: '模型别名', value: reviewLineage.value.modelAlias },
   { label: '规则版本', value: reviewLineage.value.ruleSetVersion },
   { label: '知识库版本', value: reviewLineage.value.kbVersion },
   { label: '输入资料版本', value: reviewLineage.value.inputDocumentVersionIds },
   { label: 'OCR 结果版本', value: reviewLineage.value.ocrResultVersions },
-  { label: '输入 Hash', value: reviewLineage.value.inputHash },
-  { label: '输出 Hash', value: reviewLineage.value.outputHash }
+  { label: '输入校验哈希', value: reviewLineage.value.inputHash },
+  { label: '输出校验哈希', value: reviewLineage.value.outputHash }
 ])
 const reviewQualityEvaluation = computed<Record<string, unknown>>(
   () => selectedReviewRun.value?.qualityEvaluation || {}
@@ -1995,7 +2093,7 @@ const reviewHumanCorrectionRows = computed(() => selectedReviewRun.value?.humanC
 const reviewArtifactRows = computed(() => [
   { label: '工具调用', value: recordNumber(reviewArtifactSummary.value, 'toolCalls') },
   { label: '规则结果', value: recordNumber(reviewArtifactSummary.value, 'ruleCheckResults') },
-  { label: '检索 Trace', value: recordNumber(reviewArtifactSummary.value, 'retrievalTraces') },
+  { label: '检索溯源', value: recordNumber(reviewArtifactSummary.value, 'retrievalTraces') },
   { label: '章节溯源', value: recordNumber(reviewArtifactSummary.value, 'pageIndexTraces') },
   { label: '草稿', value: recordNumber(reviewArtifactSummary.value, 'findingDrafts') },
   { label: '校验失败', value: recordNumber(reviewArtifactSummary.value, 'validationFailures') }
@@ -2007,7 +2105,7 @@ const reviewNodeStatusRows = computed(() => {
 const hasReviewRuns = computed(() => reviewRuns.value.length > 0)
 const reviewRunConclusion = computed(() => {
   if (!selectedReviewRun.value) {
-    return '暂无可审计 ReviewRun。请先从业务审查流程触发 AI 复核，或确认本地开发态已启用 Agent 编排。'
+    return '暂无可审计审查任务。请先从业务审查流程触发 AI 复核，或确认本地开发态已启用 Agent 编排。'
   }
   const run = selectedReviewRun.value.run
   const qualityStatus = String(reviewQualityEvaluation.value.status || '')
@@ -2022,7 +2120,7 @@ const reviewRunConclusion = computed(() => {
 })
 const agentStatusCards = computed(() => [
   {
-    label: 'ReviewRun',
+    label: '审查任务',
     value: String(reviewRuns.value.length),
     hint: hasReviewRuns.value ? '可追踪任务' : '等待业务触发',
     tone: hasReviewRuns.value ? 'green' : 'orange'
@@ -2059,12 +2157,12 @@ const agentStatusCards = computed(() => [
 const agentEmptyGuideRows = computed(() => [
   {
     label: '当前状态',
-    value: '没有 ReviewRun，Agent 决策链、质量评估、人工修正和溯源快照暂不可用。'
+    value: '没有审查任务，AI 判断依据、质量评估、人工修正和溯源快照暂不可用。'
   },
   {
     label: '如何触发任务',
     value:
-      '从监检员审查页面发起 AI 复核；本地开发态需启用审查编排服务、流程引擎和 Agent 图后再刷新。'
+      '从监检员审查页面发起 AI 复核；本地开发态需启用审查编排服务、流程引擎和 Agent 编排图后再刷新。'
   },
   {
     label: 'FDE 先做什么',
@@ -2083,7 +2181,7 @@ const firstOcrBlockingSummary = computed(() => {
     )}`
   }
   const ocr100Blocker = ocr100Scorecard.value?.blockers?.[0]
-  if (ocr100Blocker) return ocr100Blocker
+  if (ocr100Blocker) return friendlyIssueLabel(ocr100Blocker)
   const annotationBlocker = ocrAnnotationBlockerRows.value[0]
   if (annotationBlocker) return `${annotationBlocker.blocker} × ${annotationBlocker.count}`
   return '当前未发现首要阻断，建议发起 OCR 评测验证回归门禁。'
@@ -2157,7 +2255,7 @@ const ocrTopBlockerRows = computed<OcrTopBlockerRow[]>(() => {
   for (const blocker of ocr100Scorecard.value?.blockers || []) {
     rows.push({
       source: 'OCR 100',
-      blocker,
+      blocker: friendlyIssueLabel(blocker),
       action: '按门禁域补齐引擎、Profile、预处理、标注或评测。'
     })
   }
@@ -2216,7 +2314,7 @@ const ocr100ActionBoardRows = computed<Ocr100ActionBoardRow[]>(() =>
     const missingCases = Number(item.missingCases || 0)
     const checklistText = checklist.slice(0, 2).join(' / ') || '按场景 README 标注'
     const blockers = Array.isArray(item.blockers) ? item.blockers : []
-    const blockersText = blockers.slice(0, 2).join(' / ') || '待人工校对'
+    const blockersText = friendlyIssueList(blockers.slice(0, 2), '待人工校对')
     const humanActions = Array.isArray(item.humanActions) ? item.humanActions : []
     const detailText =
       lane === 'collect_samples'
@@ -2236,7 +2334,7 @@ const ocr100ActionBoardRows = computed<Ocr100ActionBoardRow[]>(() =>
       dropDirectory,
       missingCases,
       checklistText: checklist.join('; '),
-      blockersText: blockers.join('; '),
+      blockersText: friendlyIssueList(blockers, ''),
       humanActionsText: humanActions.join('; '),
       doneWhen: String(item.doneWhen || ''),
       laneLabel: ocr100ActionLaneLabel(lane),
@@ -2297,7 +2395,7 @@ const agentSubpageItems = computed(() => [
   {
     key: 'runs' as const,
     label: '任务概览',
-    description: 'ReviewRun 列表、Workflow 摘要和编排门禁。'
+    description: '审查任务列表、工作流摘要和编排门禁。'
   },
   {
     key: 'reasoning' as const,
@@ -2311,8 +2409,8 @@ const agentSubpageItems = computed(() => [
   },
   {
     key: 'trace' as const,
-    label: '底层 Trace',
-    description: 'Agent 节点、流程时间线、规则和检索产物。'
+    label: '底层溯源',
+    description: 'AI 员工节点、流程时间线、规则和检索产物。'
   }
 ])
 const ocrSubpageItems = computed(() => [
@@ -2322,6 +2420,11 @@ const ocrSubpageItems = computed(() => [
     description: 'OCR 100、运行时、待标注和首要阻断。'
   },
   {
+    key: 'capability-test' as const,
+    label: '能力测试',
+    description: '上传临时文件，预览本地 OCR 解析结果。'
+  },
+  {
     key: 'annotation' as const,
     label: '人工标定',
     description: '字段、表格、印章样本标注和二审。'
@@ -2329,7 +2432,7 @@ const ocrSubpageItems = computed(() => [
   {
     key: 'runtime' as const,
     label: '运行诊断',
-    description: 'OCR Job、候选图、引擎耗时、字段和证据问题。'
+    description: 'OCR 任务、候选图、引擎耗时、字段和证据问题。'
   },
   {
     key: 'evaluation' as const,
@@ -2337,6 +2440,58 @@ const ocrSubpageItems = computed(() => [
     description: 'OCR release evaluation、场景分数和阈值失败。'
   }
 ])
+
+const selectedOcrCapabilityRun = computed(() => selectedOcrCapabilityTest.value?.run || null)
+const selectedOcrCapabilityParseResult = computed(
+  () => selectedOcrCapabilityTest.value?.parseResult || null
+)
+const selectedOcrCapabilityPreview = computed(
+  () => selectedOcrCapabilityTest.value?.preview || null
+)
+const selectedOcrCapabilitySummary = computed(() => {
+  const result = selectedOcrCapabilityParseResult.value || {}
+  const runSummary = selectedOcrCapabilityRun.value?.resultSummary || {}
+  const quality = (result.quality as Record<string, unknown> | undefined) || {}
+  return {
+    pages: Number(runSummary.pages ?? (Array.isArray(result.pages) ? result.pages.length : 0)),
+    fields: Number(runSummary.fields ?? (Array.isArray(result.fields) ? result.fields.length : 0)),
+    tables: Number(runSummary.tables ?? (Array.isArray(result.tables) ? result.tables.length : 0)),
+    seals: Number(runSummary.seals ?? (Array.isArray(result.seals) ? result.seals.length : 0)),
+    fragments: Number(
+      runSummary.fragments ?? (Array.isArray(result.fragments) ? result.fragments.length : 0)
+    ),
+    diagnostics: Number(
+      runSummary.diagnostics ?? (Array.isArray(result.diagnostics) ? result.diagnostics.length : 0)
+    ),
+    qualityStatus: String(runSummary.qualityStatus || quality.status || 'unknown'),
+    confidence: Number(runSummary.overallConfidence ?? quality.overallConfidence ?? 0)
+  }
+})
+const selectedOcrCapabilityFields = computed(() => {
+  const fields = selectedOcrCapabilityParseResult.value?.fields
+  return Array.isArray(fields) ? (fields as Array<Record<string, unknown>>).slice(0, 80) : []
+})
+const selectedOcrCapabilityTables = computed(() => {
+  const tables = selectedOcrCapabilityParseResult.value?.tables
+  return Array.isArray(tables) ? (tables as Array<Record<string, unknown>>).slice(0, 40) : []
+})
+const selectedOcrCapabilitySeals = computed(() => {
+  const seals = selectedOcrCapabilityParseResult.value?.seals
+  return Array.isArray(seals) ? (seals as Array<Record<string, unknown>>).slice(0, 40) : []
+})
+const selectedOcrCapabilityDiagnostics = computed(() => {
+  const diagnostics =
+    selectedOcrCapabilityParseResult.value?.diagnostics ||
+    selectedOcrCapabilityRun.value?.diagnostics
+  return Array.isArray(diagnostics) ? diagnostics.slice(0, 40) : []
+})
+const selectedOcrCapabilityCanPersist = computed(
+  () =>
+    selectedOcrCapabilityRun.value?.status === 'success' &&
+    !!selectedOcrCapabilityRun.value?.parseResultId
+)
+const ocrCapabilityStatusType = (status: unknown): FdeElTagType =>
+  statusType(String(status)) as FdeElTagType
 
 const createDemoReviewRunDetail = (): FdeReviewRunDetailPayload => {
   const run: FdeReviewRun = {
@@ -2376,7 +2531,7 @@ const createDemoReviewRunDetail = (): FdeReviewRunDetailPayload => {
     {
       createdAt: '2026-06-29 10:18:20',
       eventType: 'WorkflowStarted',
-      title: 'Temporal Workflow 接收审查任务',
+      title: '流程工作流接收审查任务',
       status: 'completed'
     },
     {
@@ -2802,7 +2957,7 @@ const createDemoOcrQuality = (): FdeOcrQualityPayload => ({
       { name: '标注闭环', score: 13, maxScore: 15, status: 'pass' },
       { name: '评估门禁', score: 18, maxScore: 15, status: 'pass' }
     ],
-    blockers: ['印章文字准确率未达到 92% 目标。', 'seal_text_profile 样本“可入评估”数量不足 5 个。']
+    blockers: ['印章文字准确率未达到 92% 目标。', '印章文字解析样本“可入评估”数量不足 5 个。']
   },
   evalRuns: [
     {
@@ -2874,7 +3029,7 @@ const createDemoOcrAnnotationPayload = (): FdeOcrAnnotationPayload => ({
       MISSING_SEAL_BBOX: 1
     }
   },
-  nextActions: ['补齐 seal_text_profile 样本印章 bbox', '二审 labeled 样本后进入评估集'],
+  nextActions: ['补齐印章文字解析样本的印章框', '二审已标注样本后进入评估集'],
   page: {
     page: 1,
     pageSize: 20,
@@ -3215,7 +3370,7 @@ const createDemoProjectAuditWorkspace = (): FdeProjectAuditWorkspace => {
       level: 'warning',
       title: '印章 bbox 未标定',
       targetId: 'ANNO-DEMO-001',
-      targetName: 'seal_text_profile',
+      targetName: '印章文字解析样本',
       action: '进入 OCR 标注样本补齐印章框。'
     }
   ]
@@ -3610,7 +3765,7 @@ const ensureFdeDemoData = () => {
 
 const fdeTopStats = computed(() => [
   { label: '项目', value: fdeProjects.value.length || 0, tone: 'blue' as const },
-  { label: 'ReviewRun', value: reviewRuns.value.length || 0, tone: 'green' as const },
+  { label: '审查任务', value: reviewRuns.value.length || 0, tone: 'green' as const },
   { label: 'OCR任务', value: ocrAnnotationRows.value.length || 0, tone: 'orange' as const }
 ])
 
@@ -3757,6 +3912,57 @@ const rawProjectAuditVectorQuality = computed<FdeVectorQualityPayload>(() => {
   const payload = projectAuditWorkspace.value?.vectorQuality
   return payload && typeof payload === 'object' ? payload : {}
 })
+const projectAuditTechnologyStack = computed(() =>
+  toRecord(projectAuditWorkspace.value?.technologyStack)
+)
+const projectAuditTechnologyHotSwap = computed(() =>
+  toRecord(projectAuditTechnologyStack.value.hotSwap)
+)
+const projectAuditTechnologySections = computed(() => {
+  const sections = toRecordArray(projectAuditTechnologyStack.value.sections)
+  if (sections.length) {
+    return sections.map((section) => ({
+      key: String(section.key || section.title || ''),
+      title: String(section.title || section.key || '-'),
+      primary: String(section.primary || '-'),
+      secondary: String(section.secondary || ''),
+      detail: String(section.detail || ''),
+      status: String(section.status || 'active'),
+      tone: String(section.tone || 'blue') as FdeTone
+    }))
+  }
+  return [
+    {
+      key: 'embedding',
+      title: '向量化',
+      primary: String(projectAuditVectorIndexProfile.value.embeddingModel || 'embedding-default'),
+      secondary: '本地 embedding-service',
+      detail: `${projectAuditVectorIndexProfile.value.vectorDimensions || 1024}维，稳定别名可切换`,
+      status: 'active',
+      tone: 'green' as FdeTone
+    },
+    {
+      key: 'retrieval',
+      title: '检索',
+      primary: 'Hybrid RAG + PageIndex',
+      secondary: 'BM25 + dense vector',
+      detail: '按 RetrievalTrace 追踪召回和证据命中',
+      status: 'active',
+      tone: 'blue' as FdeTone
+    }
+  ]
+})
+const projectAuditEmbeddingRegistryRows = computed(() =>
+  toRecordArray(projectAuditTechnologyStack.value.embeddingModelRegistry).map((row) => ({
+    modelId: String(row.modelId || '-'),
+    label: String(row.label || row.modelId || '-'),
+    role: String(row.role || '-'),
+    dimensions: Number(row.dimensions || 0),
+    contextLength: Number(row.contextLength || 0),
+    provider: String(row.provider || '-'),
+    indexVersion: String(row.indexVersion || '-')
+  }))
+)
 const projectAuditVectorQualityMetrics = computed(() =>
   toRecord(rawProjectAuditVectorQuality.value.metrics)
 )
@@ -3953,8 +4159,11 @@ const projectAuditVectorRows = computed(() =>
       chunkCount,
       vectorCount,
       embeddingModel: raw.embeddingModel || raw.modelAlias || 'embedding-default',
+      embeddingModelId: raw.embeddingModelId || raw.modelId || '',
+      embeddingProvider: raw.embeddingProvider || '',
+      embeddingServedModelName: raw.embeddingServedModelName || '',
       indexVersion: raw.indexVersion || raw.vectorIndexVersion || 'knowledge-index@local',
-      vectorDimensions: Number(raw.vectorDimensions || 3072),
+      vectorDimensions: Number(raw.vectorDimensions || 1024),
       pageIndexStatus: raw.pageIndexStatus || (chunkCount > 0 ? '可构建' : '等待切片'),
       pageIndexNodeCount: Number(raw.pageIndexNodeCount || 0),
       latestTask: raw.latestTask || raw.latestKnowledgeTask || ocrJob?.status || '-',
@@ -4009,13 +4218,16 @@ const normalizedProjectAuditVectorRows = computed(() =>
       sliceStatus: item.sliceStatus || '-',
       vectorStatus: item.vectorStatus || '-',
       embeddingModel: item.embeddingModel || 'embedding-default',
+      embeddingModelId: item.embeddingModelId || '',
+      embeddingProvider: item.embeddingProvider || '',
+      embeddingServedModelName: item.embeddingServedModelName || '',
       indexVersion: item.indexVersion || 'knowledge-index@local',
       pageIndexStatus: item.pageIndexStatus || '-',
       rowIndex: index + 1,
       chunkCount,
       vectorCount,
       pageIndexNodeCount,
-      vectorDimensions: Number(item.vectorDimensions || 3072),
+      vectorDimensions: Number(item.vectorDimensions || 1024),
       vectorGap,
       readyForRag,
       readyForPageIndex,
@@ -4254,18 +4466,19 @@ const selectedVectorFileLlmTrace = computed(() =>
 const selectedVectorFileBlockers = computed(() => {
   const detailBlockers = selectedVectorFileDetail.value?.blockers
   if (Array.isArray(detailBlockers) && detailBlockers.length) {
-    return detailBlockers.map((item) => String(item)).filter(Boolean)
+    return detailBlockers.map((item) => friendlyIssueLabel(item, '')).filter(Boolean)
   }
   const blockers = selectedVectorFileQualityRecord.value.lineageBlockers
-  if (Array.isArray(blockers)) return blockers.map((item) => String(item)).filter(Boolean)
+  if (Array.isArray(blockers))
+    return blockers.map((item) => friendlyIssueLabel(item, '')).filter(Boolean)
   const issue = String(selectedVectorFileQualityRecord.value.issue || '')
-  return issue && issue !== '无' ? [issue] : []
+  return issue && issue !== '无' ? [friendlyIssueLabel(issue)] : []
 })
 const selectedVectorFileSummaryCards = computed(() => [
   {
     label: '文件评分',
     value: `${score100(selectedVectorFileQualityRecord.value.score, 0)}/100`,
-    hint: String(selectedVectorFileQualityRecord.value.issue || '无异常'),
+    hint: friendlyIssueLabel(selectedVectorFileQualityRecord.value.issue, '无异常'),
     tone: score100(selectedVectorFileQualityRecord.value.score, 0) >= 90 ? 'green' : 'orange'
   },
   {
@@ -4279,12 +4492,12 @@ const selectedVectorFileSummaryCards = computed(() => [
     value: scorePercent(selectedVectorFileLlmTrace.value.evidenceHitRate as number),
     hint:
       selectedVectorFileLlmTrace.value.scope === 'document_explicit'
-        ? '文件级 ReviewRun'
-        : '项目级代理 Trace',
+        ? '文件级审查任务'
+        : '项目级代理溯源',
     tone: Number(selectedVectorFileLlmTrace.value.evidenceHitRate || 0) >= 0.9 ? 'green' : 'orange'
   },
   {
-    label: '检索 Trace',
+    label: '检索溯源',
     value: String(selectedVectorFileLlmTrace.value.retrievalTraceCount || 0),
     hint: '用于判断 LLM 依据质量',
     tone: Number(selectedVectorFileLlmTrace.value.retrievalTraceCount || 0) ? 'green' : 'orange'
@@ -4310,7 +4523,7 @@ const selectedVectorFileChunkRows = computed(() =>
     hasBbox: Boolean(row.bbox),
     metadataCompleteness: scorePercent(Number(row.metadataCompleteness || 0)),
     qualityFlags: Array.isArray(row.qualityFlags)
-      ? row.qualityFlags.map((item) => String(item))
+      ? row.qualityFlags.map((item) => friendlyIssueLabel(item, '')).filter(Boolean)
       : [],
     evidenceLabel: `Chunk ${Number(row.chunkNo || index + 1)}`
   }))
@@ -4348,7 +4561,7 @@ const selectedVectorFileChunkCards = computed(() => [
   {
     label: '检索覆盖',
     value: scorePercent(Number(selectedVectorFileChunkSummary.value.retrievalCoverage || 0)),
-    hint: `${Number(selectedVectorFileChunkSummary.value.retrievedChunkCount || 0)} 条被 Trace 命中`
+    hint: `${Number(selectedVectorFileChunkSummary.value.retrievedChunkCount || 0)} 条被溯源命中`
   }
 ])
 const selectedVectorFilePipeline = computed(() =>
@@ -4488,8 +4701,13 @@ const selectedVectorEvidenceStyle = computed(() => {
 const selectedVectorEvidenceJson = computed(() =>
   JSON.stringify(selectedVectorEvidenceRecord.value, null, 2)
 )
-const selectedVectorQualityIssues = computed(() =>
-  toRecordArray(selectedVectorFileDetailRecord.value.qualityIssues)
+const selectedVectorQualityIssues = computed<Array<Record<string, unknown>>>(() =>
+  toRecordArray(selectedVectorFileDetailRecord.value.qualityIssues).map((issue) => ({
+    ...issue,
+    code: issue.code,
+    severity: issue.severity,
+    message: friendlyIssueLabel(issue.message || issue.code, '-')
+  }))
 )
 const vectorFileTokenBuckets = computed(() =>
   toRecord(toRecord(selectedVectorFileDetailRecord.value.chunkCharts).tokenBuckets)
@@ -4525,19 +4743,32 @@ const selectedVectorFilePageOption = computed<EChartsOption>(() => {
   }
 })
 const selectedVectorFileFlagOption = computed<EChartsOption>(() => {
-  const entries = Object.entries(vectorFileFlagCounts.value).slice(0, 12)
+  const entries = Object.entries(vectorFileFlagCounts.value)
+    .slice(0, 12)
+    .map(([name, value]) => ({
+      rawName: name,
+      label: friendlyIssueLabel(name),
+      value: Number(value || 0)
+    }))
   return {
     grid: { top: 26, right: 12, bottom: 44, left: 38 },
-    tooltip: { trigger: 'axis' },
+    tooltip: {
+      trigger: 'axis',
+      confine: true,
+      formatter: (params: any) => {
+        const item = Array.isArray(params) ? params[0] : params
+        const dataIndex = Number(item?.dataIndex || 0)
+        const entry = entries[dataIndex]
+        return `${entry?.label || item?.name || '-'}：${entry?.value ?? item?.value ?? 0}`
+      }
+    },
     xAxis: {
       type: 'category',
-      data: entries.map(([name]) => name),
+      data: entries.map((entry) => entry.label),
       axisLabel: { interval: 0, rotate: 24 }
     },
     yAxis: { type: 'value', minInterval: 1 },
-    series: [
-      { type: 'bar', data: entries.map(([, value]) => Number(value || 0)), color: '#ea580c' }
-    ]
+    series: [{ type: 'bar', data: entries.map((entry) => entry.value), color: '#ea580c' }]
   }
 })
 
@@ -5247,7 +5478,7 @@ const projectAuditLangGraphCards = computed(() => [
   {
     label: 'Temporal 事件',
     value: String(selectedReviewTemporal.value.eventCount || reviewGraphTimeline.value.length || 0),
-    hint: '外层持久化 Workflow',
+    hint: '外层持久化工作流',
     tone: 'green'
   },
   {
@@ -5564,10 +5795,10 @@ const reviewTimelineEchartOption = computed<EChartsOption>(() => {
 })
 
 const langGraphEchartOption = computed<EChartsOption>(() => {
-  const stageYGap = 70
-  const nodeXGap = 214
-  const centerX = 760
-  const baseY = 48
+  const stageYGap = 48
+  const nodeXGap = 178
+  const centerX = 430
+  const baseY = 34
   const chartNodes = langGraphFlowGroups.value.flatMap((group, groupIndex) => {
     const nodes = group.nodes.length
       ? group.nodes
@@ -5593,7 +5824,7 @@ const langGraphEchartOption = computed<EChartsOption>(() => {
       value: node.label,
       x: centerX + nodeIndex * nodeXGap - offset,
       y: baseY + groupIndex * stageYGap,
-      symbolSize: node.id.includes('-empty') ? [154, 40] : [188, 46],
+      symbolSize: node.id.includes('-empty') ? [136, 34] : [160, 38],
       category: group.label,
       itemStyle: {
         color: node.id.includes('-empty') ? '#ffffff' : langGraphToneColor(node.tone),
@@ -5606,10 +5837,10 @@ const langGraphEchartOption = computed<EChartsOption>(() => {
         show: true,
         formatter: node.label,
         color: node.id.includes('-empty') ? '#64748b' : '#ffffff',
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: 800,
-        lineHeight: 16,
-        width: node.id.includes('-empty') ? 128 : 158,
+        lineHeight: 15,
+        width: node.id.includes('-empty') ? 110 : 132,
         overflow: 'truncate' as const
       },
       meta: {
@@ -5636,17 +5867,17 @@ const langGraphEchartOption = computed<EChartsOption>(() => {
   }))
   const stageLabels = langGraphFlowGroups.value.map((group, index) => ({
     type: 'text',
-    left: 22,
-    top: baseY + index * stageYGap - 13,
+    left: 14,
+    top: baseY + index * stageYGap - 12,
     style: {
       text: `${String(group.index).padStart(2, '0')} ${group.label}`,
       fill: langGraphToneColor(group.tone as FdeTone),
-      font: '900 12px sans-serif',
+      font: '900 11px sans-serif',
       backgroundColor: '#ffffff',
       borderColor: '#dbe8f7',
       borderWidth: 1,
       borderRadius: 6,
-      padding: [5, 8]
+      padding: [4, 7]
     },
     silent: true
   }))
@@ -5739,12 +5970,12 @@ const normalizedProjectAuditAnnotationRows = computed(() =>
       candidateTotal,
       labelTotal,
       gapTotal: Math.max(0, candidateTotal - labelTotal),
-      blockerText: blockers.length ? blockers.map((item) => shortText(item, '')).join('；') : '无',
+      blockerText: blockers.length ? friendlyIssueList(blockers, '无') : '无',
       readyForEval: Boolean(item.readyForEval),
       annotationTargetText: `字段 ${Number(candidateCounts.fields || 0)} · 表格 ${Number(candidateCounts.tables || 0)} · 印章 ${Number(candidateCounts.seals || 0)}`,
       annotationProgressText: `${labelTotal}/${candidateTotal || 0}`,
       annotationReasonText: blockers.length
-        ? blockers.map((item) => shortText(item, '')).join('；')
+        ? friendlyIssueList(blockers, '无')
         : candidateTotal > labelTotal
           ? `还有 ${Math.max(0, candidateTotal - labelTotal)} 个候选对象未确认`
           : item.readyForEval
@@ -6008,7 +6239,7 @@ const projectAuditEvaluationGateRows = computed(() => {
       Number(summary.findingRecall || 0),
       0.85,
       'gte',
-      '补充漏检样本和规则/Prompt 修正'
+      '补充漏检样本和规则/提示词修正'
     ),
     buildRatioGate(
       '证据覆盖',
@@ -6132,7 +6363,7 @@ const projectAuditSubpageItems = computed(() => [
   {
     key: 'ocr-labeling' as const,
     label: 'OCR 打标',
-    description: '查看 OCR Job、标注样本、字段/表格/印章人工修正。'
+    description: '查看 OCR 任务、标注样本、字段/表格/印章人工修正。'
   },
   {
     key: 'evaluation' as const,
@@ -6178,7 +6409,7 @@ const projectAuditFocusFacts = computed(() => {
     return [
       ...base,
       {
-        label: '检索 Trace',
+        label: '检索溯源',
         value: String(projectAuditPageIndexTraceRows.value.length),
         tone: 'blue' as const
       },
@@ -6198,13 +6429,13 @@ const projectAuditFocusFacts = computed(() => {
     return [
       ...base,
       {
-        label: 'ReviewRun',
+        label: '审查任务',
         value: String(projectAuditReviewRuns.value.length),
         tone: 'blue' as const
       },
       { label: 'Graph节点', value: String(reviewGraphNodes.value.length), tone: 'green' as const },
       {
-        label: 'Checkpointer',
+        label: '检查点',
         value: shortText(selectedReviewRun.value?.run.graphExecution?.checkpointer, '-'),
         tone: selectedReviewRun.value?.run.graphExecution?.checkpointer
           ? ('green' as const)
@@ -6355,7 +6586,7 @@ const projectAuditCapabilityRows = computed(() => {
       label: 'PageIndex',
       value: `${pageIndexNodes} 个节点`,
       status: pageIndexNodes ? '已构建' : '待构建',
-      evidence: `Trace ${projectAuditPageIndexTraceRows.value.length}，依据 ${projectAuditPageIndexCards.value[2]?.value || 0}`,
+      evidence: `溯源 ${projectAuditPageIndexTraceRows.value.length}，依据 ${projectAuditPageIndexCards.value[2]?.value || 0}`,
       blockers: projectAuditPageIndexIssueRows.value.length,
       tone: pageIndexNodes ? ('green' as const) : ('orange' as const),
       subpage: 'pageindex' as ProjectAuditSubpage,
@@ -6442,7 +6673,7 @@ const projectAuditRecentTaskRows = computed(() => {
       const raw = toRecord(row)
       return {
         type: 'Agent',
-        title: row.reviewRunId || row.id || 'ReviewRun',
+        title: row.reviewRunId || row.id || '审查任务',
         status: row.status || raw.currentStep || '-',
         time: raw.startedAt || raw.createdAt || raw.updatedAt || '-',
         tone: projectAuditLangGraphIssueRows.value.length
@@ -6453,7 +6684,7 @@ const projectAuditRecentTaskRows = computed(() => {
     }),
     ...projectAuditOcrJobs.value.slice(0, 3).map((row) => ({
       type: 'OCR',
-      title: row.jobId || row.id || row.documentVersionId || 'OCR Job',
+      title: row.jobId || row.id || row.documentVersionId || 'OCR 任务',
       status: row.status || row.parseStatus || '-',
       time: row.finishedAt || row.startedAt || row.createdAt || '-',
       tone: String(row.status || '').includes('fail') ? ('red' as const) : ('orange' as const),
@@ -6675,6 +6906,7 @@ const loadData = async () => {
       ocrRes,
       ocrRunRes,
       ocrAnnotationRes,
+      ocrCapabilityTestRes,
       incidentRes,
       acceptanceRes,
       validationRes,
@@ -6694,6 +6926,7 @@ const loadData = async () => {
       getFdeOcrQualityApi(),
       listFdeOcrRunsApi({ pageSize: 20 }),
       listFdeOcrAnnotationTasksApi({ pageSize: 20 }),
+      listFdeOcrCapabilityTestRunsApi({ pageSize: 20 }),
       listFdeIncidentsApi(),
       listFdeAcceptanceReportsApi(),
       validateFdeBusinessPacksApi(),
@@ -6713,6 +6946,7 @@ const loadData = async () => {
     ocrQuality.value = ocrRes.data
     ocrRuns.value = ocrRunRes.data.items
     ocrAnnotation.value = ocrAnnotationRes.data
+    ocrCapabilityTestRuns.value = ocrCapabilityTestRes.data.items
     incidentPayload.value = incidentRes.data
     acceptanceReports.value = acceptanceRes.data
     packValidation.value = validationRes.data
@@ -6769,6 +7003,9 @@ const loadData = async () => {
     if (firstOcrJobId.value) {
       await loadOcrRunDetail(firstOcrJobId.value)
     }
+    if (!selectedOcrCapabilityTestRunId.value && ocrCapabilityTestRuns.value[0]?.runId) {
+      await loadOcrCapabilityTestDetail(ocrCapabilityTestRuns.value[0].runId)
+    }
     await restoreAuditDetailFromRoute()
     if (activeBundleId.value) {
       await loadCapabilityBundleDiff(activeBundleId.value)
@@ -6812,6 +7049,132 @@ const loadOcrRunDetail = async (jobId: string) => {
   }
   const res = await getFdeOcrRunApi(jobId)
   selectedOcrRun.value = res.data
+}
+
+const loadOcrCapabilityTestRuns = async () => {
+  const res = await listFdeOcrCapabilityTestRunsApi({ pageSize: 20 })
+  ocrCapabilityTestRuns.value = res.data.items
+}
+
+const loadOcrCapabilityTestDetail = async (runId: string, schedulePoll = true) => {
+  if (!runId) return
+  const res = await getFdeOcrCapabilityTestRunApi(runId)
+  selectedOcrCapabilityTest.value = res.data
+  selectedOcrCapabilityTestRunId.value = runId
+  if (schedulePoll) {
+    scheduleOcrCapabilityTestPolling(res.data.run)
+  }
+}
+
+const ocrCapabilityTerminalStatuses = new Set(['success', 'failed', 'cancelled'])
+
+const scheduleOcrCapabilityTestPolling = (run?: FdeOcrCapabilityTestRun) => {
+  if (ocrCapabilityTestPolling.value) {
+    window.clearTimeout(ocrCapabilityTestPolling.value)
+    ocrCapabilityTestPolling.value = undefined
+  }
+  const currentRun = run || selectedOcrCapabilityTest.value?.run
+  if (!currentRun || ocrCapabilityTerminalStatuses.has(String(currentRun.status))) return
+  const runId = String(currentRun.runId || currentRun.id || '')
+  if (!runId) return
+  ocrCapabilityTestPolling.value = window.setTimeout(async () => {
+    await loadOcrCapabilityTestRuns()
+    await loadOcrCapabilityTestDetail(runId)
+  }, 1800)
+}
+
+const handleOcrCapabilityTestFileChange = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  ocrCapabilityTestFile.value = input.files?.[0] || null
+}
+
+const chooseOcrCapabilityTestFile = () => {
+  ocrCapabilityFileInputRef.value?.click()
+}
+
+const startOcrCapabilityTest = async () => {
+  const file = ocrCapabilityTestFile.value
+  if (!file) {
+    error.value = '请先选择一个 PDF 或图片测试文件。'
+    return
+  }
+  error.value = ''
+  ocrCapabilityTestLoading.value = true
+  try {
+    const fileMeta = {
+      fileName: file.name,
+      fileType: file.type || file.name.split('.').pop() || 'application/octet-stream',
+      contentType: file.type || 'application/octet-stream',
+      fileSize: file.size
+    }
+    const sessionRes = await createFdeOcrCapabilityTestUploadSessionApi(
+      { file: fileMeta },
+      { idempotencyKey: `fde-ocr-test-upload-${file.name}-${file.size}-${Date.now()}` }
+    )
+    const uploadSession = sessionRes.data.uploadSession
+    const headers = uploadSession.headers || { 'Content-Type': fileMeta.contentType }
+    if (uploadSession.uploadUrl && !String(uploadSession.uploadUrl).startsWith('mock://')) {
+      const uploadRes = await fetch(uploadSession.uploadUrl, {
+        method: uploadSession.method || 'PUT',
+        headers,
+        body: file
+      })
+      if (!uploadRes.ok) {
+        throw new Error(`upload failed: ${uploadRes.status}`)
+      }
+    }
+    const runRes = await createFdeOcrCapabilityTestRunApi(
+      {
+        uploadSessionId: uploadSession.uploadSessionId,
+        ...ocrCapabilityTestForm.value
+      },
+      { idempotencyKey: `fde-ocr-test-run-${uploadSession.uploadSessionId}` }
+    )
+    await loadOcrCapabilityTestRuns()
+    await loadOcrCapabilityTestDetail(runRes.data.run.runId)
+  } catch (err) {
+    error.value =
+      err instanceof Error ? `OCR 能力测试启动失败：${err.message}` : 'OCR 能力测试启动失败。'
+  } finally {
+    ocrCapabilityTestLoading.value = false
+  }
+}
+
+const convertOcrCapabilityTestToAnnotation = async () => {
+  const runId = selectedOcrCapabilityTestRunId.value
+  if (!runId) return
+  actionLoading.value = true
+  try {
+    await convertFdeOcrCapabilityTestToAnnotationApi(
+      runId,
+      {},
+      { idempotencyKey: `fde-ocr-test-to-annotation-${runId}` }
+    )
+    await Promise.all([
+      loadOcrCapabilityTestDetail(runId, false),
+      listFdeOcrAnnotationTasksApi({ pageSize: 20 }).then((res) => {
+        ocrAnnotation.value = res.data
+      })
+    ])
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+const convertOcrCapabilityTestToEvaluationCase = async () => {
+  const runId = selectedOcrCapabilityTestRunId.value
+  if (!runId) return
+  actionLoading.value = true
+  try {
+    await convertFdeOcrCapabilityTestToEvaluationCaseApi(
+      runId,
+      {},
+      { idempotencyKey: `fde-ocr-test-to-eval-${runId}` }
+    )
+    await loadOcrCapabilityTestDetail(runId, false)
+  } finally {
+    actionLoading.value = false
+  }
 }
 
 const openReviewAuditDrawer = async (reviewRunId: string, updateRoute = true) => {
@@ -6919,7 +7282,7 @@ const replayFirstReviewRun = async () => {
   try {
     await replayFdeReviewRunApi(activeReviewRunId.value, {
       runMode: 'diagnostic_replay',
-      reason: 'FDE 诊断 ReviewRun 编排重跑'
+      reason: 'FDE 诊断审查任务编排重跑'
     })
     await loadData()
   } finally {
@@ -6932,7 +7295,7 @@ const shadowFirstReviewRun = async () => {
   actionLoading.value = true
   try {
     await shadowFdeReviewRunApi(activeReviewRunId.value, {
-      reason: 'FDE 验证新 Agent Graph / Prompt 组合'
+      reason: 'FDE 验证新 Agent 编排图 / 提示词组合'
     })
     await loadData()
   } finally {
@@ -7596,13 +7959,20 @@ watch(activeFdeTab, (tab) => {
 })
 
 onMounted(loadData)
+
+onBeforeUnmount(() => {
+  if (ocrCapabilityTestPolling.value) {
+    window.clearTimeout(ocrCapabilityTestPolling.value)
+    ocrCapabilityTestPolling.value = undefined
+  }
+})
 </script>
 
 <template>
   <StaticPageShell
     brand-mark="F"
     title="FDE 后台"
-    search-placeholder="⌕ 搜索 ReviewRun / OCR / 样本"
+    search-placeholder="⌕ 搜索审查任务 / OCR / 样本"
     user-label="FDE 工程师"
     :top-stats="fdeTopStats"
     menu-title="FDE 菜单"
@@ -7620,7 +7990,7 @@ onMounted(loadData)
     :boundary-rows="fdeShellBoundaryRows"
     :boundary-collapsed-default="true"
     right-title="治理摘要"
-    right-subtitle="Agent Orchestration / OCR"
+    right-subtitle="AI 审查编排 / OCR"
     :right-cards="fdeShellRightCards"
     right-panel-mode="drawer"
     :right-collapsed-default="true"
@@ -8042,10 +8412,7 @@ onMounted(loadData)
           </div>
 
           <div class="project-overview-command-grid">
-            <ElCard
-              shadow="never"
-              class="panel project-overview-chart-panel project-overview-chart-panel--full"
-            >
+            <ElCard shadow="never" class="panel project-overview-chart-panel">
               <template #header>
                 <div class="panel-header">
                   <span>项目节点态势</span>
@@ -8357,6 +8724,56 @@ onMounted(loadData)
             </ElTag>
           </section>
 
+          <ElCard shadow="never" class="panel technology-stack-panel mb-16px">
+            <template #header>
+              <div class="panel-header">
+                <span>当前技术选型</span>
+                <ElSpace wrap>
+                  <ElTag type="success" effect="plain">本地私有化</ElTag>
+                  <ElTag effect="plain">
+                    {{ projectAuditTechnologyHotSwap.stableAlias || 'embedding-default' }} 可切换
+                  </ElTag>
+                </ElSpace>
+              </div>
+            </template>
+            <section class="technology-stack-grid" aria-label="当前技术选型">
+              <article
+                v-for="section in projectAuditTechnologySections"
+                :key="section.key"
+                :class="['technology-stack-card', `technology-stack-card--${section.tone}`]"
+              >
+                <span>{{ section.title }}</span>
+                <strong>{{ section.primary }}</strong>
+                <em v-if="section.secondary">{{ section.secondary }}</em>
+                <small>{{ section.detail }}</small>
+              </article>
+            </section>
+            <ElTable
+              v-if="projectAuditEmbeddingRegistryRows.length"
+              :data="projectAuditEmbeddingRegistryRows"
+              border
+              class="technology-model-table"
+            >
+              <ElTableColumn
+                prop="label"
+                label="可切换模型"
+                min-width="190"
+                show-overflow-tooltip
+              />
+              <ElTableColumn prop="modelId" label="模型 ID" min-width="240" show-overflow-tooltip />
+              <ElTableColumn prop="role" label="角色" width="150" show-overflow-tooltip />
+              <ElTableColumn prop="dimensions" label="维度" width="90" />
+              <ElTableColumn prop="contextLength" label="上下文" width="105" />
+              <ElTableColumn prop="provider" label="服务" width="130" show-overflow-tooltip />
+              <ElTableColumn
+                prop="indexVersion"
+                label="索引版本"
+                min-width="210"
+                show-overflow-tooltip
+              />
+            </ElTable>
+          </ElCard>
+
           <section class="audit-flow-strip" aria-label="资料向量化审计流程">
             <article
               v-for="row in projectAuditVectorFlowRows"
@@ -8526,7 +8943,7 @@ onMounted(loadData)
                     min-width="150"
                     show-overflow-tooltip
                   />
-                  <ElTableColumn prop="ocrStatus" label="OCR" width="120">
+                  <ElTableColumn prop="ocrStatus" label="OCR 识别" width="120">
                     <template #default="{ row }">
                       <ElTag :type="statusType(String(row.ocrStatus))" effect="plain">
                         {{ friendlyStatus(row.ocrStatus) }}
@@ -8645,7 +9062,7 @@ onMounted(loadData)
                   />
                   <ElTableColumn prop="chunkCount" label="切片" width="82" />
                   <ElTableColumn prop="vectorCount" label="向量" width="82" />
-                  <ElTableColumn prop="readyForRag" label="RAG" width="76">
+                  <ElTableColumn prop="readyForRag" label="知识检索" width="92">
                     <template #default="{ row }">
                       <ElTag :type="row.readyForRag ? 'success' : 'warning'" effect="plain">
                         {{ row.readyForRag ? '可用' : '待补' }}
@@ -8773,9 +9190,7 @@ onMounted(loadData)
             <article class="pageindex-friendly-intro">
               <span>章节溯源友好判读</span>
               <strong>每次检索为什么这样走</strong>
-              <small>
-                先看问题类型、路由、节点、条款和回退策略；需要追责时再进入原始 Trace。
-              </small>
+              <small> 先看问题类型、路由、节点、条款和回退策略；需要追责时再进入原始溯源。 </small>
             </article>
             <article
               v-for="card in projectAuditPageIndexFriendlyCards"
@@ -9094,15 +9509,15 @@ onMounted(loadData)
                   @pointerup.capture="endChartGesture($event, 'langGraph')"
                   @pointercancel.capture="endChartGesture($event, 'langGraph')"
                 >
-                  <div class="chart-zoom-frame" :style="chartFrameStyle('langGraph', 1420, 620)">
+                  <div class="chart-zoom-frame" :style="chartFrameStyle('langGraph', 1080, 430)">
                     <div
                       class="chart-zoom-content"
-                      :style="chartContentStyle('langGraph', 1420, 620)"
+                      :style="chartContentStyle('langGraph', 1080, 430)"
                     >
                       <Echart
                         :options="langGraphEchartOption"
-                        :width="chartBaseWidth(1420)"
-                        :height="chartBaseHeight(620)"
+                        :width="chartBaseWidth(1080)"
+                        :height="chartBaseHeight(430)"
                         class="langgraph-echart"
                       />
                     </div>
@@ -9155,30 +9570,60 @@ onMounted(loadData)
                   </article>
                 </div>
               </ElCard>
-              <ElCard shadow="never" class="panel mt-16px">
-                <template #header>Temporal / Checkpoint</template>
+            </ElCol>
+          </ElRow>
+
+          <ElRow :gutter="16" class="mt-16px">
+            <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
+              <ElCard shadow="never" class="panel">
+                <template #header>
+                  <div class="panel-header">
+                    <span>流程恢复与检查点</span>
+                    <ElTag effect="plain">可重放</ElTag>
+                  </div>
+                </template>
+                <section class="agent-friendly-note mb-12px">
+                  <strong>用来回答：任务失败后能不能恢复？</strong>
+                  <small>
+                    这里记录外层工作流、运行编号、事件数和 LangGraph 检查点，便于 FDE
+                    判断是否可以重跑、回放和追责。
+                  </small>
+                </section>
                 <ElDescriptions :column="1" border>
-                  <ElDescriptionsItem label="Workflow">
+                  <ElDescriptionsItem label="工作流编号">
                     {{
                       selectedReviewTemporal.workflowId || selectedReviewRun?.run.workflowId || '-'
                     }}
                   </ElDescriptionsItem>
-                  <ElDescriptionsItem label="Run ID">
+                  <ElDescriptionsItem label="运行编号">
                     {{ selectedReviewRun?.run.temporalRunId || '-' }}
                   </ElDescriptionsItem>
                   <ElDescriptionsItem label="事件数">
                     {{ selectedReviewTemporal.eventCount || reviewGraphTimeline.length || 0 }}
                   </ElDescriptionsItem>
-                  <ElDescriptionsItem label="Graph Runner">
-                    {{ selectedReviewRun?.run.graphRunner || '-' }}
+                  <ElDescriptionsItem label="编排执行器">
+                    {{ friendlyTechLabel(selectedReviewRun?.run.graphRunner) }}
                   </ElDescriptionsItem>
-                  <ElDescriptionsItem label="Checkpointer">
-                    {{ selectedReviewRun?.run.graphExecution?.checkpointer || '-' }}
+                  <ElDescriptionsItem label="检查点">
+                    {{ friendlyTechLabel(selectedReviewRun?.run.graphExecution?.checkpointer) }}
                   </ElDescriptionsItem>
                 </ElDescriptions>
               </ElCard>
-              <ElCard shadow="never" class="panel mt-16px">
-                <template #header>执行边与时间线</template>
+            </ElCol>
+            <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
+              <ElCard shadow="never" class="panel">
+                <template #header>
+                  <div class="panel-header">
+                    <span>执行路径与事件时间线</span>
+                    <ElTag effect="plain">{{ reviewGraphEdges.length }} 条边</ElTag>
+                  </div>
+                </template>
+                <section class="agent-friendly-note mb-12px">
+                  <strong>用来回答：Agent 节点按什么顺序执行？</strong>
+                  <small>
+                    上表展示节点之间的流向，下表展示最近事件和状态，用于定位卡在哪个节点或哪次工具调用。
+                  </small>
+                </section>
                 <ElTable :data="reviewGraphEdges" border height="150">
                   <ElTableColumn prop="source" label="来源" min-width="130" show-overflow-tooltip>
                     <template #default="{ row }">{{ friendlyTechLabel(row.source) }}</template>
@@ -9209,17 +9654,16 @@ onMounted(loadData)
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
-                    <span>Agent 思考链与工具证据</span>
+                    <span>AI 判断依据</span>
                     <ElTag effect="plain">{{ normalizedReviewReasoningRows.length }} 步</ElTag>
                   </div>
                 </template>
-                <ElAlert
-                  class="mb-12px"
-                  type="info"
-                  show-icon
-                  :closable="false"
-                  title="展示的是可审计推理摘要、工具调用和证据引用，不展示模型内部隐式思维。"
-                />
+                <section class="agent-friendly-note mb-12px">
+                  <strong>用来回答：AI 为什么提出这些问题？</strong>
+                  <small>
+                    这里展示可公开审计的判断摘要、调用过的工具、引用的证据和规则；不展示模型内部隐式思维。
+                  </small>
+                </section>
                 <div v-if="normalizedReviewReasoningRows.length" class="audit-step-list">
                   <article
                     v-for="row in normalizedReviewReasoningRows"
@@ -9238,11 +9682,11 @@ onMounted(loadData)
                       </div>
                       <p>{{ row.reasoningSummary }}</p>
                       <div class="audit-step-evidence">
-                        <span>证据/依据</span>
+                        <span>AI 看过的证据/依据</span>
                         <strong>{{ shortText(row.evidence, '-') }}</strong>
                       </div>
                       <div class="audit-step-meta">
-                        <span class="audit-step-meta-label">证据/规则/条款</span>
+                        <span class="audit-step-meta-label">可追溯材料</span>
                         <span>工具 {{ row.toolCount }}</span>
                         <span>证据 {{ row.evidenceCount }}</span>
                         <span>规则 {{ row.ruleCount }}</span>
@@ -9260,42 +9704,42 @@ onMounted(loadData)
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
-                    <span>审查草稿结果</span>
+                    <span>待人工确认的问题</span>
                     <ElTag effect="plain">{{ normalizedReviewFindingRows.length }} 条</ElTag>
                   </div>
                 </template>
-                <ElTable :data="normalizedReviewFindingRows" border height="322">
-                  <ElTableColumn
-                    prop="findingType"
-                    label="类型"
-                    min-width="150"
-                    show-overflow-tooltip
+                <section class="agent-friendly-note mb-12px">
+                  <strong>用来回答：AI 建议监检员处理哪些问题？</strong>
+                  <small>
+                    这些只是审查建议草稿，不会直接改变业务结论。监检员需要确认、修改或驳回后才生效。
+                  </small>
+                </section>
+                <div v-if="normalizedReviewFindingRows.length" class="finding-friendly-list">
+                  <article
+                    v-for="row in normalizedReviewFindingRows"
+                    :key="row.id"
+                    class="finding-friendly-card"
                   >
-                    <template #default="{ row }">{{ friendlyTechLabel(row.findingType) }}</template>
-                  </ElTableColumn>
-                  <ElTableColumn prop="severity" label="等级" width="82" />
-                  <ElTableColumn
-                    prop="title"
-                    label="发现项"
-                    min-width="240"
-                    show-overflow-tooltip
-                  />
-                  <ElTableColumn label="置信度" width="90">
-                    <template #default="{ row }">{{ scorePercent(row.confidence) }}</template>
-                  </ElTableColumn>
-                  <ElTableColumn prop="evidenceCount" label="证据" width="72" />
-                  <ElTableColumn prop="referenceCount" label="依据" width="72" />
-                  <ElTableColumn label="人工" width="78">
-                    <template #default="{ row }">
+                    <div class="finding-friendly-main">
+                      <span
+                        >{{ friendlyTechLabel(row.findingType) }} · {{ row.severityLabel }}</span
+                      >
+                      <strong>{{ row.title }}</strong>
+                      <small>{{ row.evidenceText }}</small>
+                    </div>
+                    <div class="finding-friendly-side">
                       <ElTag
                         :type="row.requiresHumanConfirmation ? 'warning' : 'success'"
                         effect="plain"
                       >
-                        {{ row.requiresHumanConfirmation ? '需确认' : '可用' }}
+                        {{ row.requiresHumanConfirmation ? '需要人工确认' : '低风险建议' }}
                       </ElTag>
-                    </template>
-                  </ElTableColumn>
-                </ElTable>
+                      <strong>{{ scorePercent(row.confidence) }}</strong>
+                      <small>{{ row.humanNextAction }}</small>
+                    </div>
+                  </article>
+                </div>
+                <ElEmpty v-else description="暂无审查建议草稿" />
               </ElCard>
             </ElCol>
           </ElRow>
@@ -9455,7 +9899,9 @@ onMounted(loadData)
                   @click="openAnnotationEditor(row.sourceTask)"
                 >
                   <div class="ocr-labeling-task-main">
-                    <span>{{ row.scenario || row.profileId || 'OCR 样本' }}</span>
+                    <span>{{
+                      friendlyTechLabel(row.scenario || row.profileId || 'OCR 样本')
+                    }}</span>
                     <strong>{{ row.taskId || row.caseId }}</strong>
                     <small>{{ row.annotationReasonText }}</small>
                   </div>
@@ -9530,7 +9976,7 @@ onMounted(loadData)
           <details class="ocr-labeling-diagnostics">
             <summary>
               <span>高级诊断</span>
-              <small>覆盖率、完成标准、OCR Job、候选图和不能入评估的原因</small>
+              <small>覆盖率、完成标准、OCR 任务、候选图和不能入评估的原因</small>
             </summary>
             <ElRow :gutter="16">
               <ElCol :xl="8" :lg="8" :md="24" :sm="24" :xs="24">
@@ -9607,13 +10053,20 @@ onMounted(loadData)
                     height="250"
                     @row-click="(row) => openOcrAuditDrawer(String(row.jobId || row.id))"
                   >
-                    <ElTableColumn prop="jobId" label="Job" min-width="160" show-overflow-tooltip />
                     <ElTableColumn
-                      prop="profileId"
-                      label="Profile"
-                      min-width="180"
+                      prop="jobId"
+                      label="OCR 任务编号"
+                      min-width="160"
                       show-overflow-tooltip
                     />
+                    <ElTableColumn
+                      prop="profileId"
+                      label="解析配置"
+                      min-width="180"
+                      show-overflow-tooltip
+                    >
+                      <template #default="{ row }">{{ friendlyTechLabel(row.profileId) }}</template>
+                    </ElTableColumn>
                     <ElTableColumn prop="status" label="状态" width="120">
                       <template #default="{ row }">
                         <ElTag :type="statusType(String(row.status))" effect="plain">
@@ -9813,7 +10266,7 @@ onMounted(loadData)
                   min-width="140"
                   show-overflow-tooltip
                 />
-                <ElTableColumn prop="currentOcrStatus" label="OCR" width="120">
+                <ElTableColumn prop="currentOcrStatus" label="OCR 识别" width="120">
                   <template #default="{ row }">
                     <ElTag :type="statusType(String(row.currentOcrStatus))" effect="plain">
                       {{ friendlyStatus(row.currentOcrStatus) }}
@@ -9891,17 +10344,22 @@ onMounted(loadData)
               >
                 <ElTableColumn
                   prop="reviewRunId"
-                  label="ReviewRun"
+                  label="审查任务编号"
                   min-width="180"
                   show-overflow-tooltip
                 />
                 <ElTableColumn
                   prop="workflowId"
-                  label="Workflow"
+                  label="工作流编号"
                   min-width="190"
                   show-overflow-tooltip
                 />
-                <ElTableColumn prop="agentId" label="Agent" min-width="170" show-overflow-tooltip />
+                <ElTableColumn
+                  prop="agentId"
+                  label="AI 员工"
+                  min-width="170"
+                  show-overflow-tooltip
+                />
                 <ElTableColumn prop="status" label="状态" width="145">
                   <template #default="{ row }">
                     <ElTag :type="statusType(String(row.status))" effect="plain">
@@ -9930,22 +10388,22 @@ onMounted(loadData)
             <ElCard shadow="never" class="panel">
               <template #header>当前任务溯源</template>
               <ElDescriptions v-if="selectedReviewRun" :column="1" border>
-                <ElDescriptionsItem label="ReviewRun">
+                <ElDescriptionsItem label="审查任务编号">
                   {{ selectedReviewRun.run.reviewRunId || selectedReviewRun.run.id }}
                 </ElDescriptionsItem>
                 <ElDescriptionsItem label="模型">
                   {{ selectedReviewRun.run.modelAlias || '-' }}
                 </ElDescriptionsItem>
-                <ElDescriptionsItem label="Graph">
-                  {{ selectedReviewRun.run.graphEngine || '-' }}
+                <ElDescriptionsItem label="编排引擎">
+                  {{ friendlyTechLabel(selectedReviewRun.run.graphEngine) }}
                 </ElDescriptionsItem>
-                <ElDescriptionsItem label="Checkpoint">
-                  {{ selectedReviewRun.run.graphExecution?.checkpointer || '-' }}
+                <ElDescriptionsItem label="检查点">
+                  {{ friendlyTechLabel(selectedReviewRun.run.graphExecution?.checkpointer) }}
                 </ElDescriptionsItem>
-                <ElDescriptionsItem label="输入 Hash">
+                <ElDescriptionsItem label="输入校验哈希">
                   {{ selectedReviewRun.run.inputHash || '-' }}
                 </ElDescriptionsItem>
-                <ElDescriptionsItem label="输出 Hash">
+                <ElDescriptionsItem label="输出校验哈希">
                   {{ selectedReviewRun.run.outputHash || '-' }}
                 </ElDescriptionsItem>
               </ElDescriptions>
@@ -9983,13 +10441,20 @@ onMounted(loadData)
                 height="420"
                 @row-click="(row) => openOcrAuditDrawer(String(row.jobId || row.id))"
               >
-                <ElTableColumn prop="jobId" label="Job" min-width="160" show-overflow-tooltip />
                 <ElTableColumn
-                  prop="profileId"
-                  label="Profile"
-                  min-width="210"
+                  prop="jobId"
+                  label="OCR 任务编号"
+                  min-width="160"
                   show-overflow-tooltip
                 />
+                <ElTableColumn
+                  prop="profileId"
+                  label="解析配置"
+                  min-width="210"
+                  show-overflow-tooltip
+                >
+                  <template #default="{ row }">{{ friendlyTechLabel(row.profileId) }}</template>
+                </ElTableColumn>
                 <ElTableColumn prop="status" label="状态" width="145">
                   <template #default="{ row }">
                     <ElTag :type="statusType(String(row.status))" effect="plain">
@@ -10031,10 +10496,12 @@ onMounted(loadData)
                 <ElTableColumn prop="scenario" label="场景" min-width="180" show-overflow-tooltip />
                 <ElTableColumn
                   prop="profileId"
-                  label="Profile"
+                  label="解析配置"
                   min-width="190"
                   show-overflow-tooltip
-                />
+                >
+                  <template #default="{ row }">{{ friendlyTechLabel(row.profileId) }}</template>
+                </ElTableColumn>
                 <ElTableColumn label="状态" width="130">
                   <template #default="{ row }">
                     <ElTag :type="statusType(String(row.collectionStatus))" effect="plain">
@@ -10044,7 +10511,7 @@ onMounted(loadData)
                 </ElTableColumn>
                 <ElTableColumn label="阻断" min-width="160" show-overflow-tooltip>
                   <template #default="{ row }">
-                    {{ shortText(row.readinessBlockers || row.certificationBlockers) }}
+                    {{ friendlyIssueList(row.readinessBlockers || row.certificationBlockers) }}
                   </template>
                 </ElTableColumn>
               </ElTable>
@@ -10122,7 +10589,7 @@ onMounted(loadData)
                 <ElTable :data="dashboard?.agentPerformance || []" border height="320">
                   <ElTableColumn
                     prop="agentId"
-                    label="Agent"
+                    label="AI 员工"
                     min-width="190"
                     show-overflow-tooltip
                   />
@@ -10154,7 +10621,7 @@ onMounted(loadData)
               <ElCard shadow="never" class="panel">
                 <template #header>治理摘要</template>
                 <ElDescriptions :column="1" border>
-                  <ElDescriptionsItem label="Token">
+                  <ElDescriptionsItem label="Token 用量">
                     {{ dashboard?.cost.tokenEstimate || 0 }}
                   </ElDescriptionsItem>
                   <ElDescriptionsItem label="估算费用">
@@ -10192,10 +10659,10 @@ onMounted(loadData)
                   height="360"
                   @row-click="(row) => loadRunDetail(row.id)"
                 >
-                  <ElTableColumn prop="id" label="Run ID" min-width="190" show-overflow-tooltip />
+                  <ElTableColumn prop="id" label="运行编号" min-width="190" show-overflow-tooltip />
                   <ElTableColumn
                     prop="agentId"
-                    label="Agent"
+                    label="AI 员工"
                     min-width="160"
                     show-overflow-tooltip
                   />
@@ -10219,18 +10686,18 @@ onMounted(loadData)
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
-                    <span>Trace 明细</span>
+                    <span>溯源明细</span>
                     <ElButton size="small" plain :loading="actionLoading" @click="requestRawAccess">
                       申请原文
                     </ElButton>
                   </div>
                 </template>
                 <ElDescriptions v-if="selectedRun" :column="1" border>
-                  <ElDescriptionsItem label="Run">{{ selectedRun.run.id }}</ElDescriptionsItem>
-                  <ElDescriptionsItem label="输入 Hash">{{
+                  <ElDescriptionsItem label="运行编号">{{ selectedRun.run.id }}</ElDescriptionsItem>
+                  <ElDescriptionsItem label="输入校验哈希">{{
                     selectedRun.run.inputHash
                   }}</ElDescriptionsItem>
-                  <ElDescriptionsItem label="输出 Hash">{{
+                  <ElDescriptionsItem label="输出校验哈希">{{
                     selectedRun.run.outputHash
                   }}</ElDescriptionsItem>
                   <ElDescriptionsItem label="原文权限">
@@ -10264,7 +10731,7 @@ onMounted(loadData)
                 <template #header>
                   <div class="panel-header">
                     <span>Agent 决策链</span>
-                    <ElTag effect="plain">summary only</ElTag>
+                    <ElTag effect="plain">公开摘要</ElTag>
                   </div>
                 </template>
                 <ElTable :data="reviewReasoningTraceRows" border height="420">
@@ -10285,7 +10752,7 @@ onMounted(loadData)
                     <template #default="{ row }">
                       {{
                         (row.toolCalls || [])
-                          .map((item) => item.toolName)
+                          .map((item) => friendlyTechLabel(item.toolName))
                           .filter(Boolean)
                           .join('，') || '-'
                       }}
@@ -10304,7 +10771,7 @@ onMounted(loadData)
                       </ElTag>
                     </template>
                   </ElTableColumn>
-                  <ElTableColumn label="输出 Hash" min-width="220" show-overflow-tooltip>
+                  <ElTableColumn label="输出校验哈希" min-width="220" show-overflow-tooltip>
                     <template #default="{ row }">
                       {{ row.outputSummary?.outputHash || row.outputSummary?.detailsHash || '-' }}
                     </template>
@@ -10441,7 +10908,7 @@ onMounted(loadData)
                 <template #header>
                   <div class="panel-header">
                     <span>Agent 决策链</span>
-                    <ElTag effect="plain">summary only</ElTag>
+                    <ElTag effect="plain">公开摘要</ElTag>
                   </div>
                 </template>
                 <ElTable :data="reviewReasoningTraceRows" border height="420">
@@ -10462,7 +10929,7 @@ onMounted(loadData)
                     <template #default="{ row }">
                       {{
                         (row.toolCalls || [])
-                          .map((item) => item.toolName)
+                          .map((item) => friendlyTechLabel(item.toolName))
                           .filter(Boolean)
                           .join('，') || '-'
                       }}
@@ -10481,7 +10948,7 @@ onMounted(loadData)
                       </ElTag>
                     </template>
                   </ElTableColumn>
-                  <ElTableColumn label="输出 Hash" min-width="220" show-overflow-tooltip>
+                  <ElTableColumn label="输出校验哈希" min-width="220" show-overflow-tooltip>
                     <template #default="{ row }">
                       {{ row.outputSummary?.outputHash || row.outputSummary?.detailsHash || '-' }}
                     </template>
@@ -10728,7 +11195,7 @@ onMounted(loadData)
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
-                    <span>流程编排 / Agent Run</span>
+                    <span>流程编排 / AI 审查任务</span>
                     <ElSpace>
                       <ElButton
                         size="small"
@@ -10760,18 +11227,24 @@ onMounted(loadData)
                 >
                   <ElTableColumn
                     prop="reviewRunId"
-                    label="ReviewRun"
+                    label="审查任务编号"
                     min-width="190"
                     show-overflow-tooltip
                   />
                   <ElTableColumn
                     prop="workflowId"
-                    label="Workflow"
+                    label="工作流编号"
                     min-width="210"
                     show-overflow-tooltip
                   />
-                  <ElTableColumn prop="workflowEngine" label="外层" width="110" />
-                  <ElTableColumn prop="graphEngine" label="内层" width="110" />
+                  <ElTableColumn prop="workflowEngine" label="外层" width="110">
+                    <template #default="{ row }">{{
+                      friendlyTechLabel(row.workflowEngine)
+                    }}</template>
+                  </ElTableColumn>
+                  <ElTableColumn prop="graphEngine" label="内层" width="110">
+                    <template #default="{ row }">{{ friendlyTechLabel(row.graphEngine) }}</template>
+                  </ElTableColumn>
                   <ElTableColumn prop="status" label="状态" width="140">
                     <template #default="{ row }">
                       <ElTag :type="statusType(String(row.status))" effect="plain">
@@ -10798,10 +11271,10 @@ onMounted(loadData)
                 </ElTable>
                 <div v-else class="empty-workbench">
                   <div class="empty-workbench__copy">
-                    <strong>暂无 ReviewRun</strong>
+                    <strong>暂无审查任务</strong>
                     <span>
-                      当前没有可追踪的 Agent 审查任务。FDE 可以先处理 OCR 阻断，或从业务审查页触发
-                      AI 复核后回到这里审计决策链。
+                      当前没有可追踪的 AI 审查任务。FDE 可以先处理 OCR 阻断，或从业务审查页触发 AI
+                      复核后回到这里审计决策链。
                     </span>
                   </div>
                   <div class="empty-workbench__steps">
@@ -10823,34 +11296,37 @@ onMounted(loadData)
               <ElCard shadow="never" class="panel">
                 <template #header>编排审计摘要</template>
                 <ElDescriptions v-if="selectedReviewRun" :column="1" border>
-                  <ElDescriptionsItem label="ReviewRun">
+                  <ElDescriptionsItem label="审查任务编号">
                     {{ selectedReviewRun.run.reviewRunId }}
                   </ElDescriptionsItem>
-                  <ElDescriptionsItem label="AI Run">
+                  <ElDescriptionsItem label="AI 运行编号">
                     {{ selectedReviewRun.run.aiRunId || '-' }}
                   </ElDescriptionsItem>
                   <ElDescriptionsItem label="模型网关">
-                    {{ selectedReviewRun.run.modelGateway || 'litellm' }}
+                    {{ friendlyTechLabel(selectedReviewRun.run.modelGateway || 'litellm') }}
                   </ElDescriptionsItem>
                   <ElDescriptionsItem label="模型别名">
                     {{ selectedReviewRun.run.modelAlias || '-' }}
                   </ElDescriptionsItem>
-                  <ElDescriptionsItem label="Graph Runner">
+                  <ElDescriptionsItem label="编排执行器">
                     {{
-                      selectedReviewRun.run.graphRunner || selectedReviewRun.run.graphEngine || '-'
+                      friendlyTechLabel(
+                        selectedReviewRun.run.graphRunner || selectedReviewRun.run.graphEngine
+                      )
                     }}
                   </ElDescriptionsItem>
-                  <ElDescriptionsItem label="Checkpoint">
+                  <ElDescriptionsItem label="检查点">
                     {{
-                      selectedReviewRun.run.graphExecution?.checkpointer ||
-                      selectedReviewRun.run.graphExecution?.fallbackReason ||
-                      '-'
+                      friendlyTechLabel(
+                        selectedReviewRun.run.graphExecution?.checkpointer ||
+                          selectedReviewRun.run.graphExecution?.fallbackReason
+                      )
                     }}
                   </ElDescriptionsItem>
-                  <ElDescriptionsItem label="输入 Hash">
+                  <ElDescriptionsItem label="输入校验哈希">
                     {{ selectedReviewRun.run.inputHash || '-' }}
                   </ElDescriptionsItem>
-                  <ElDescriptionsItem label="输出 Hash">
+                  <ElDescriptionsItem label="输出校验哈希">
                     {{ selectedReviewRun.run.outputHash || '-' }}
                   </ElDescriptionsItem>
                   <ElDescriptionsItem label="Temporal">
@@ -10862,7 +11338,11 @@ onMounted(loadData)
                     {{ selectedReviewTemporal.eventCount || reviewGraphTimeline.length }}
                   </ElDescriptionsItem>
                   <ElDescriptionsItem label="Payload 策略">
-                    {{ selectedReviewTemporal.historyPolicy || 'ids_hashes_versions_only' }}
+                    {{
+                      friendlyTechLabel(
+                        selectedReviewTemporal.historyPolicy || 'ids_hashes_versions_only'
+                      )
+                    }}
                   </ElDescriptionsItem>
                 </ElDescriptions>
                 <div v-if="selectedReviewRun" class="artifact-summary-grid mt-12px">
@@ -10946,7 +11426,7 @@ onMounted(loadData)
                   </ElTableColumn>
                   <ElTableColumn prop="count" label="数量" width="90" />
                 </ElTable>
-                <ElEmpty v-if="!selectedReviewRun" description="请选择 ReviewRun" />
+                <ElEmpty v-if="!selectedReviewRun" description="请选择审查任务" />
               </ElCard>
             </ElCol>
           </ElRow>
@@ -10975,8 +11455,8 @@ onMounted(loadData)
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
-                    <span>Agent 决策链</span>
-                    <ElTag effect="plain">summary only</ElTag>
+                    <span>AI 判断依据</span>
+                    <ElTag effect="plain">公开摘要</ElTag>
                   </div>
                 </template>
                 <ElTable :data="normalizedReviewReasoningRows" border height="360">
@@ -11131,13 +11611,20 @@ onMounted(loadData)
             <ElCol :xl="24" :lg="24" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>
-                  Agent 节点
+                  AI 员工节点
                   <ElTag class="ml-8px" effect="plain">edges {{ reviewGraphEdges.length }}</ElTag>
                 </template>
                 <ElTable :data="reviewGraphNodes" border height="420">
                   <ElTableColumn prop="sequence" label="#" width="112" />
                   <ElTableColumn prop="label" label="节点" min-width="180" show-overflow-tooltip />
-                  <ElTableColumn prop="nodeKey" label="Key" min-width="170" show-overflow-tooltip />
+                  <ElTableColumn
+                    prop="nodeKey"
+                    label="节点键"
+                    min-width="170"
+                    show-overflow-tooltip
+                  >
+                    <template #default="{ row }">{{ friendlyTechLabel(row.nodeKey) }}</template>
+                  </ElTableColumn>
                   <ElTableColumn
                     prop="taskQueue"
                     label="队列"
@@ -11156,7 +11643,7 @@ onMounted(loadData)
                     <template #default="{ row }">
                       {{
                         (row.toolCalls || [])
-                          .map((item) => item.toolName)
+                          .map((item) => friendlyTechLabel(item.toolName))
                           .filter(Boolean)
                           .join(', ') || '-'
                       }}
@@ -11177,7 +11664,7 @@ onMounted(loadData)
                           type="primary"
                           effect="plain"
                         >
-                          Trace {{ nodeArtifactCount(row, 'retrievalTraces') }}
+                          溯源 {{ nodeArtifactCount(row, 'retrievalTraces') }}
                         </ElTag>
                         <ElTag v-if="nodeArtifactCount(row, 'toolCalls')" effect="plain">
                           工具 {{ nodeArtifactCount(row, 'toolCalls') }}
@@ -11207,7 +11694,7 @@ onMounted(loadData)
             </ElCol>
             <ElCol :xl="24" :lg="24" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
-                <template #header>Workflow 时间线</template>
+                <template #header>工作流时间线</template>
                 <ElTable :data="reviewGraphTimeline" border height="420">
                   <ElTableColumn
                     prop="createdAt"
@@ -11220,7 +11707,9 @@ onMounted(loadData)
                     label="事件"
                     min-width="170"
                     show-overflow-tooltip
-                  />
+                  >
+                    <template #default="{ row }">{{ friendlyTechLabel(row.eventType) }}</template>
+                  </ElTableColumn>
                   <ElTableColumn prop="title" label="说明" min-width="220" show-overflow-tooltip />
                   <ElTableColumn prop="status" label="状态" width="120">
                     <template #default="{ row }">
@@ -11238,12 +11727,11 @@ onMounted(loadData)
               <ElCard shadow="never" class="panel">
                 <template #header>规则结果</template>
                 <ElTable :data="reviewRuleResultRows" border height="260">
-                  <ElTableColumn
-                    prop="ruleCode"
-                    label="规则"
-                    min-width="150"
-                    show-overflow-tooltip
-                  />
+                  <ElTableColumn prop="ruleCode" label="规则" min-width="150" show-overflow-tooltip>
+                    <template #default="{ row }">
+                      {{ friendlyReferenceLabel(row.ruleCode) }}
+                    </template>
+                  </ElTableColumn>
                   <ElTableColumn prop="result" label="结果" width="90">
                     <template #default="{ row }">
                       <ElTag :type="row.result === 'passed' ? 'success' : 'danger'" effect="plain">
@@ -11262,11 +11750,11 @@ onMounted(loadData)
             </ElCol>
             <ElCol :xl="24" :lg="24" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
-                <template #header>检索 Trace</template>
+                <template #header>检索溯源</template>
                 <ElTable :data="reviewRetrievalTraceRows" border height="260">
                   <ElTableColumn
                     prop="retrievalTraceId"
-                    label="Trace"
+                    label="溯源记录"
                     min-width="170"
                     show-overflow-tooltip
                   />
@@ -11288,9 +11776,9 @@ onMounted(loadData)
             </ElCol>
             <ElCol :xl="24" :lg="24" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
-                <template #header>Finding Draft</template>
+                <template #header>审查问题草稿</template>
                 <ElTable :data="normalizedReviewFindingRows" border height="260">
-                  <ElTableColumn prop="id" label="Draft" min-width="145" show-overflow-tooltip />
+                  <ElTableColumn prop="id" label="草稿编号" min-width="145" show-overflow-tooltip />
                   <ElTableColumn
                     prop="findingType"
                     label="类型"
@@ -11534,7 +12022,7 @@ onMounted(loadData)
                   <ElDescriptionsItem label="项目数">
                     {{ releaseImpactSummary.affectedProjectCount || 0 }}
                   </ElDescriptionsItem>
-                  <ElDescriptionsItem label="ReviewRun">
+                  <ElDescriptionsItem label="审查任务编号">
                     {{ releaseImpactSummary.affectedReviewRunCount || 0 }}
                   </ElDescriptionsItem>
                   <ElDescriptionsItem label="门禁阻断">
@@ -11903,15 +12391,16 @@ onMounted(loadData)
                     <ElDescriptionsItem label="必需字段缺失">
                       {{ ocrQuality.fieldLevel.missingRequiredFieldCount || 0 }}
                       <span v-if="topMissingRequiredField">
-                        · {{ topMissingRequiredField.fieldCode }} ×
+                        · {{ friendlyFieldLabel(topMissingRequiredField.fieldCode) }} ×
                         {{ topMissingRequiredField.count }}
                       </span>
                     </ElDescriptionsItem>
                     <ElDescriptionsItem v-if="topOcrFieldCode" label="首要字段">
-                      {{ topOcrFieldCode.fieldCode }} · {{ topOcrFieldCode.count }}
+                      {{ friendlyFieldLabel(topOcrFieldCode.fieldCode) }} ·
+                      {{ topOcrFieldCode.count }}
                     </ElDescriptionsItem>
                     <ElDescriptionsItem v-if="topOcrFieldFlag" label="字段质量标记">
-                      {{ topOcrFieldFlag.flag }} · {{ topOcrFieldFlag.count }}
+                      {{ friendlyIssueLabel(topOcrFieldFlag.flag) }} · {{ topOcrFieldFlag.count }}
                     </ElDescriptionsItem>
                     <ElDescriptionsItem label="字段失败">{{
                       ocrQuality.failurePools?.fieldFailures?.length || 0
@@ -11974,7 +12463,8 @@ onMounted(loadData)
                       · {{ percent(ocrQuality.sealLevel?.visualCandidateReviewRate) }}
                     </ElDescriptionsItem>
                     <ElDescriptionsItem v-if="topOcrQualityReason" label="首要质量原因">
-                      {{ topOcrQualityReason.reason }} · {{ topOcrQualityReason.count }}
+                      {{ friendlyIssueLabel(topOcrQualityReason.reason) }} ·
+                      {{ topOcrQualityReason.count }}
                     </ElDescriptionsItem>
                     <ElDescriptionsItem label="人工修正率">{{
                       percent(ocrQuality.fieldLevel.manualCorrectionRate)
@@ -12008,7 +12498,9 @@ onMounted(loadData)
                       {{ ocrRuntimeDoctor?.summary?.warn || 0 }} warn</ElDescriptionsItem
                     >
                     <ElDescriptionsItem v-if="firstRuntimeIssue" label="首要问题">
-                      {{ firstRuntimeIssue.name }}：{{ firstRuntimeIssue.message }}
+                      {{ friendlyTechLabel(firstRuntimeIssue.name) }}：{{
+                        firstRuntimeIssue.message
+                      }}
                     </ElDescriptionsItem>
                   </ElDescriptions>
                   <template v-if="ocr100Scorecard">
@@ -12087,6 +12579,288 @@ onMounted(loadData)
                       </ElCol>
                     </ElRow>
                   </template>
+                </template>
+                <template v-if="ocrSubpage === 'capability-test'">
+                  <section class="ocr-capability-shell">
+                    <div class="ocr-capability-hero">
+                      <div>
+                        <span>基础能力测试</span>
+                        <strong>上传一份临时资料，验证 OCR 是否真的能识别。</strong>
+                        <small>
+                          测试文件只用于 FDE 诊断，不进入正式项目资料，不改变审查结论。
+                        </small>
+                      </div>
+                      <ElSpace>
+                        <ElButton plain @click="loadOcrCapabilityTestRuns">刷新记录</ElButton>
+                        <ElButton
+                          type="primary"
+                          :loading="ocrCapabilityTestLoading"
+                          @click="startOcrCapabilityTest"
+                        >
+                          开始测试
+                        </ElButton>
+                      </ElSpace>
+                    </div>
+                    <div class="ocr-capability-layout">
+                      <section class="ocr-capability-card ocr-capability-card--setup">
+                        <div class="ocr-capability-card__head">
+                          <strong>1. 选择测试文件</strong>
+                          <ElTag effect="plain">PDF / 图片</ElTag>
+                        </div>
+                        <input
+                          ref="ocrCapabilityFileInputRef"
+                          class="sr-only-input"
+                          type="file"
+                          accept="application/pdf,image/*,.pdf,.png,.jpg,.jpeg"
+                          @change="handleOcrCapabilityTestFileChange"
+                        />
+                        <button
+                          type="button"
+                          class="ocr-capability-upload"
+                          @click="chooseOcrCapabilityTestFile"
+                        >
+                          <strong>{{
+                            ocrCapabilityTestFile?.name || '点击选择 PDF 或图片'
+                          }}</strong>
+                          <span v-if="ocrCapabilityTestFile">
+                            {{ Math.ceil((ocrCapabilityTestFile.size || 0) / 1024) }} KB
+                          </span>
+                          <span v-else>建议用真实扫描件、表格照片或盖章资料做测试。</span>
+                        </button>
+                        <div class="ocr-capability-form">
+                          <label>
+                            <span>解析配置</span>
+                            <ElSelect v-model="ocrCapabilityTestForm.profileId" size="small">
+                              <ElOption
+                                label="管道特性表 / 工程表格"
+                                value="piping_characteristic_list_v1"
+                              />
+                              <ElOption label="质量证明书" value="quality_certificate_v1" />
+                              <ElOption label="NDT RT 报告" value="ndt_rt_report_v1" />
+                              <ElOption label="通用资料" value="all" />
+                            </ElSelect>
+                          </label>
+                          <label>
+                            <span>资料类型</span>
+                            <ElSelect v-model="ocrCapabilityTestForm.documentType" size="small">
+                              <ElOption label="工程表格照片" value="engineering_table_photo" />
+                              <ElOption label="质量证明文件" value="quality_certificate" />
+                              <ElOption label="NDT 检测报告" value="ndt_report" />
+                              <ElOption label="通用工程资料" value="engineering_document" />
+                            </ElSelect>
+                          </label>
+                        </div>
+                        <div class="ocr-capability-switches">
+                          <label>
+                            <input v-model="ocrCapabilityTestForm.enableTables" type="checkbox" />
+                            表格识别
+                          </label>
+                          <label>
+                            <input v-model="ocrCapabilityTestForm.enableSeals" type="checkbox" />
+                            印章识别
+                          </label>
+                          <label>
+                            <input v-model="ocrCapabilityTestForm.enableFallback" type="checkbox" />
+                            复杂页兜底
+                          </label>
+                        </div>
+                      </section>
+                      <section class="ocr-capability-card">
+                        <div class="ocr-capability-card__head">
+                          <strong>2. 最近测试</strong>
+                          <ElTag effect="plain">{{ ocrCapabilityTestRuns.length }} 条</ElTag>
+                        </div>
+                        <ElTable
+                          :data="ocrCapabilityTestRuns"
+                          height="290"
+                          class="ocr-capability-table"
+                          @row-click="
+                            (row) => loadOcrCapabilityTestDetail(String(row.runId || row.id))
+                          "
+                        >
+                          <ElTableColumn
+                            prop="fileName"
+                            label="文件"
+                            min-width="180"
+                            show-overflow-tooltip
+                          />
+                          <ElTableColumn prop="status" label="状态" width="115">
+                            <template #default="{ row }">
+                              <ElTag :type="ocrCapabilityStatusType(row.status)" effect="plain">
+                                {{ friendlyStatus(row.status) }}
+                              </ElTag>
+                            </template>
+                          </ElTableColumn>
+                          <ElTableColumn label="结果" width="105">
+                            <template #default="{ row }">
+                              {{
+                                Number(row.resultSummary?.fields || 0) +
+                                Number(row.resultSummary?.tables || 0) +
+                                Number(row.resultSummary?.seals || 0)
+                              }}
+                            </template>
+                          </ElTableColumn>
+                        </ElTable>
+                      </section>
+                    </div>
+                    <section class="ocr-capability-result">
+                      <div class="ocr-capability-preview">
+                        <div class="ocr-capability-card__head">
+                          <strong>3. 文件预览</strong>
+                          <ElTag v-if="selectedOcrCapabilityRun" effect="plain">
+                            {{ friendlyStatus(selectedOcrCapabilityRun.status) }}
+                          </ElTag>
+                        </div>
+                        <div v-if="selectedOcrCapabilityPreview?.url" class="ocr-preview-stage">
+                          <img
+                            v-if="selectedOcrCapabilityPreview.previewType === 'image'"
+                            :src="selectedOcrCapabilityPreview.url"
+                            alt="OCR 测试文件预览"
+                          />
+                          <iframe
+                            v-else-if="selectedOcrCapabilityPreview.previewType === 'pdf'"
+                            :src="selectedOcrCapabilityPreview.url"
+                            title="OCR 测试 PDF 预览"
+                          ></iframe>
+                          <ElEmpty
+                            v-else
+                            description="该文件类型暂不支持页面内预览，可查看 OCR 结果。"
+                          />
+                        </div>
+                        <ElEmpty v-else description="选择测试记录后显示文件预览。" />
+                      </div>
+                      <div class="ocr-capability-summary">
+                        <div class="ocr-capability-card__head">
+                          <strong>4. 识别结果</strong>
+                          <ElSpace>
+                            <ElButton
+                              size="small"
+                              plain
+                              :disabled="!selectedOcrCapabilityCanPersist"
+                              :loading="actionLoading"
+                              @click="convertOcrCapabilityTestToAnnotation"
+                            >
+                              转入OCR标注
+                            </ElButton>
+                            <ElButton
+                              size="small"
+                              plain
+                              :disabled="!selectedOcrCapabilityCanPersist"
+                              :loading="actionLoading"
+                              @click="convertOcrCapabilityTestToEvaluationCase"
+                            >
+                              生成评估样本草稿
+                            </ElButton>
+                          </ElSpace>
+                        </div>
+                        <div class="ocr-capability-kpis">
+                          <div>
+                            <span>页数</span>
+                            <strong>{{ selectedOcrCapabilitySummary.pages }}</strong>
+                          </div>
+                          <div>
+                            <span>字段</span>
+                            <strong>{{ selectedOcrCapabilitySummary.fields }}</strong>
+                          </div>
+                          <div>
+                            <span>表格</span>
+                            <strong>{{ selectedOcrCapabilitySummary.tables }}</strong>
+                          </div>
+                          <div>
+                            <span>印章</span>
+                            <strong>{{ selectedOcrCapabilitySummary.seals }}</strong>
+                          </div>
+                          <div>
+                            <span>质量状态</span>
+                            <strong>{{
+                              friendlyStatus(selectedOcrCapabilitySummary.qualityStatus)
+                            }}</strong>
+                          </div>
+                          <div>
+                            <span>诊断</span>
+                            <strong>{{ selectedOcrCapabilitySummary.diagnostics }}</strong>
+                          </div>
+                        </div>
+                        <ElTabs class="mt-12px">
+                          <ElTabPane label="字段">
+                            <ElTable :data="selectedOcrCapabilityFields" height="210">
+                              <ElTableColumn
+                                prop="fieldCode"
+                                label="字段"
+                                min-width="150"
+                                show-overflow-tooltip
+                              >
+                                <template #default="{ row }">{{
+                                  friendlyFieldLabel(row.fieldCode || row.fieldName)
+                                }}</template>
+                              </ElTableColumn>
+                              <ElTableColumn
+                                prop="fieldValue"
+                                label="识别值"
+                                min-width="180"
+                                show-overflow-tooltip
+                              />
+                              <ElTableColumn prop="confidence" label="置信度" width="95" />
+                            </ElTable>
+                          </ElTabPane>
+                          <ElTabPane label="表格">
+                            <ElTable :data="selectedOcrCapabilityTables" height="210">
+                              <ElTableColumn
+                                prop="tableId"
+                                label="表格"
+                                min-width="160"
+                                show-overflow-tooltip
+                              />
+                              <ElTableColumn prop="rows" label="行" width="70" />
+                              <ElTableColumn prop="columns" label="列" width="70" />
+                              <ElTableColumn
+                                prop="structureConfidence"
+                                label="结构置信"
+                                width="110"
+                              />
+                            </ElTable>
+                          </ElTabPane>
+                          <ElTabPane label="印章">
+                            <ElTable :data="selectedOcrCapabilitySeals" height="210">
+                              <ElTableColumn
+                                prop="sealName"
+                                label="章名"
+                                min-width="220"
+                                show-overflow-tooltip
+                              />
+                              <ElTableColumn
+                                prop="sealType"
+                                label="类型"
+                                min-width="130"
+                                show-overflow-tooltip
+                              />
+                              <ElTableColumn prop="ocrConfidence" label="置信度" width="100" />
+                            </ElTable>
+                          </ElTabPane>
+                          <ElTabPane label="诊断">
+                            <ElTable :data="selectedOcrCapabilityDiagnostics" height="210">
+                              <ElTableColumn
+                                prop="code"
+                                label="问题"
+                                min-width="180"
+                                show-overflow-tooltip
+                              >
+                                <template #default="{ row }">{{
+                                  friendlyIssueLabel(row.code || row)
+                                }}</template>
+                              </ElTableColumn>
+                              <ElTableColumn
+                                prop="message"
+                                label="说明"
+                                min-width="260"
+                                show-overflow-tooltip
+                              />
+                            </ElTable>
+                          </ElTabPane>
+                        </ElTabs>
+                      </div>
+                    </section>
+                  </section>
                 </template>
                 <div v-if="ocrSubpage === 'annotation'" class="sub-section mt-12px">
                   <div class="panel-header">
@@ -12225,7 +12999,12 @@ onMounted(loadData)
                     class="mt-12px"
                     @row-click="(row) => openOcrAuditDrawer(String(row.id || row.jobId))"
                   >
-                    <ElTableColumn prop="id" label="Job" min-width="150" show-overflow-tooltip />
+                    <ElTableColumn
+                      prop="id"
+                      label="任务编号"
+                      min-width="150"
+                      show-overflow-tooltip
+                    />
                     <ElTableColumn prop="status" label="状态" width="95">
                       <template #default="{ row }">
                         <ElTag :type="statusType(String(row.status))" effect="plain">
@@ -12235,10 +13014,12 @@ onMounted(loadData)
                     </ElTableColumn>
                     <ElTableColumn
                       prop="profileId"
-                      label="Profile"
+                      label="解析配置"
                       min-width="140"
                       show-overflow-tooltip
-                    />
+                    >
+                      <template #default="{ row }">{{ friendlyTechLabel(row.profileId) }}</template>
+                    </ElTableColumn>
                     <ElTableColumn label="操作" width="96" fixed="right">
                       <template #default="{ row }">
                         <ElButton
@@ -12322,13 +13103,19 @@ onMounted(loadData)
                       label="字段问题"
                       min-width="150"
                       show-overflow-tooltip
-                    />
+                    >
+                      <template #default="{ row }">{{ friendlyTechLabel(row.code) }}</template>
+                    </ElTableColumn>
                     <ElTableColumn
                       prop="fieldName"
                       label="字段"
                       min-width="110"
                       show-overflow-tooltip
-                    />
+                    >
+                      <template #default="{ row }">{{
+                        friendlyFieldLabel(row.fieldName)
+                      }}</template>
+                    </ElTableColumn>
                     <ElTableColumn
                       prop="fieldValue"
                       label="值"
@@ -12359,10 +13146,12 @@ onMounted(loadData)
                     />
                     <ElTableColumn
                       prop="profileId"
-                      label="Profile"
+                      label="解析配置"
                       min-width="140"
                       show-overflow-tooltip
-                    />
+                    >
+                      <template #default="{ row }">{{ friendlyTechLabel(row.profileId) }}</template>
+                    </ElTableColumn>
                   </ElTable>
                 </template>
               </ElCard>
@@ -12488,8 +13277,8 @@ onMounted(loadData)
                 <template v-else>
                   <div class="gate-summary">
                     <div class="gate-summary-item">
-                      <span>Profile</span>
-                      <strong>{{ latestOcrEvalRun.profileId || 'all' }}</strong>
+                      <span>解析配置</span>
+                      <strong>{{ friendlyTechLabel(latestOcrEvalRun.profileId || 'all') }}</strong>
                     </div>
                     <div class="gate-summary-item">
                       <span>平均分</span>
@@ -12574,7 +13363,9 @@ onMounted(loadData)
                           label="失败原因"
                           min-width="230"
                           show-overflow-tooltip
-                        />
+                        >
+                          <template #default="{ row }">{{ friendlyIssueLabel(row.code) }}</template>
+                        </ElTableColumn>
                         <ElTableColumn prop="count" label="次数" width="90" />
                       </ElTable>
                       <ElTable v-else :data="failedOcrCaseRows" border height="220">
@@ -12739,7 +13530,7 @@ onMounted(loadData)
             type="info"
             show-icon
             :closable="false"
-            title="这里展示单文件从图片/文件、OCR、文本、切片、向量格式化、索引到 LLM 检索引用的证据链；项目级代理 Trace 会被明确标记。"
+            title="这里展示单文件从图片/文件、OCR、文本、切片、向量格式化、索引到大模型检索引用的证据链；项目级代理溯源会被明确标记。"
           />
           <ElAlert
             v-if="vectorFileDetailError"
@@ -12772,7 +13563,7 @@ onMounted(loadData)
             :title="
               String(
                 toRecord(selectedVectorFileDetailRecord.llmUsage).proxyReason ||
-                  '当前使用项目级代理 Trace，不能等同于文件级真实引用。'
+                  '当前使用项目级代理溯源，不能等同于文件级真实引用。'
               )
             "
           />
@@ -13009,13 +13800,13 @@ onMounted(loadData)
                       <ElTableColumn prop="dimensions" label="维度" width="82" />
                       <ElTableColumn
                         prop="vectorId"
-                        label="Vector ID"
+                        label="向量编号"
                         min-width="150"
                         show-overflow-tooltip
                       />
                       <ElTableColumn
                         prop="payloadHash"
-                        label="Payload Hash"
+                        label="载荷校验哈希"
                         min-width="170"
                         show-overflow-tooltip
                       />
@@ -13122,17 +13913,17 @@ onMounted(loadData)
                     </ElTag>
                   </template>
                 </ElTableColumn>
-                <ElTableColumn prop="tokenCount" label="Token" width="90" />
+                <ElTableColumn prop="tokenCount" label="Token 用量" width="100" />
                 <ElTableColumn prop="vectorStatus" label="向量" width="116" />
-                <ElTableColumn prop="retrievalHitCount" label="Trace" width="82" />
-                <ElTableColumn prop="metadataCompleteness" label="Metadata" width="112" />
+                <ElTableColumn prop="retrievalHitCount" label="溯源" width="82" />
+                <ElTableColumn prop="metadataCompleteness" label="元数据" width="112" />
                 <ElTableColumn
                   prop="textPreview"
                   label="切片预览"
                   min-width="280"
                   show-overflow-tooltip
                 />
-                <ElTableColumn label="Flags" min-width="220" show-overflow-tooltip>
+                <ElTableColumn label="标记" min-width="220" show-overflow-tooltip>
                   <template #default="{ row }">
                     <ElSpace wrap size="small">
                       <ElTag
@@ -13209,14 +14000,14 @@ onMounted(loadData)
             </ElTabPane>
             <ElTabPane label="LLM 检索" name="retrieval">
               <ElDescriptions :column="2" border class="mb-12px">
-                <ElDescriptionsItem label="Trace 范围">
+                <ElDescriptionsItem label="溯源范围">
                   {{
                     selectedVectorFileLlmTrace.scope === 'document_explicit'
                       ? '文件级绑定'
                       : '项目级代理'
                   }}
                 </ElDescriptionsItem>
-                <ElDescriptionsItem label="ReviewRun">
+                <ElDescriptionsItem label="审查任务编号">
                   {{ selectedVectorFileLlmTrace.relatedReviewRunCount || 0 }}
                 </ElDescriptionsItem>
                 <ElDescriptionsItem label="命中率">
@@ -13284,7 +14075,7 @@ onMounted(loadData)
         <template v-if="selectedReviewRun">
           <div class="audit-drawer-hero" data-testid="fde-review-drawer">
             <div>
-              <span>ReviewRun</span>
+              <span>审查任务编号</span>
               <strong>{{ selectedReviewRun.run.reviewRunId || selectedReviewRun.run.id }}</strong>
               <small>
                 {{ selectedReviewRun.run.agentId || 'compliance_review_agent' }} ·
@@ -13317,23 +14108,28 @@ onMounted(loadData)
           </div>
 
           <ElDescriptions :column="1" border class="mb-12px">
-            <ElDescriptionsItem label="Workflow">
+            <ElDescriptionsItem label="工作流编号">
               {{ selectedReviewTemporal.workflowId || selectedReviewRun.run.workflowId || '-' }}
             </ElDescriptionsItem>
-            <ElDescriptionsItem label="Graph Runner">
-              {{ selectedReviewRun.run.graphRunner || selectedReviewRun.run.graphEngine || '-' }}
-            </ElDescriptionsItem>
-            <ElDescriptionsItem label="Checkpoint">
+            <ElDescriptionsItem label="编排执行器">
               {{
-                selectedReviewRun.run.graphExecution?.checkpointer ||
-                selectedReviewRun.run.graphExecution?.fallbackReason ||
-                '-'
+                friendlyTechLabel(
+                  selectedReviewRun.run.graphRunner || selectedReviewRun.run.graphEngine
+                )
               }}
             </ElDescriptionsItem>
-            <ElDescriptionsItem label="输入 Hash">
+            <ElDescriptionsItem label="检查点">
+              {{
+                friendlyTechLabel(
+                  selectedReviewRun.run.graphExecution?.checkpointer ||
+                    selectedReviewRun.run.graphExecution?.fallbackReason
+                )
+              }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="输入校验哈希">
               {{ selectedReviewRun.run.inputHash || '-' }}
             </ElDescriptionsItem>
-            <ElDescriptionsItem label="输出 Hash">
+            <ElDescriptionsItem label="输出校验哈希">
               {{ selectedReviewRun.run.outputHash || '-' }}
             </ElDescriptionsItem>
           </ElDescriptions>
@@ -13510,10 +14306,10 @@ onMounted(loadData)
         <template v-if="selectedOcrRun">
           <div class="audit-drawer-hero" data-testid="fde-ocr-drawer">
             <div>
-              <span>OCR Job</span>
+              <span>OCR 任务</span>
               <strong>{{ selectedOcrRun.job.jobId || selectedOcrRun.job.id }}</strong>
               <small
-                >{{ selectedOcrRun.job.profileId || '-' }} ·
+                >{{ friendlyTechLabel(selectedOcrRun.job.profileId) }} ·
                 {{ selectedOcrRun.job.documentType || '-' }}</small
               >
             </div>
@@ -13571,13 +14367,12 @@ onMounted(loadData)
             </ElTabPane>
             <ElTabPane label="字段问题" name="fields">
               <ElTable :data="ocrFieldFailureRows" border height="300">
-                <ElTableColumn prop="code" label="问题" min-width="150" show-overflow-tooltip />
-                <ElTableColumn
-                  prop="fieldName"
-                  label="字段"
-                  min-width="130"
-                  show-overflow-tooltip
-                />
+                <ElTableColumn prop="code" label="问题" min-width="150" show-overflow-tooltip>
+                  <template #default="{ row }">{{ friendlyTechLabel(row.code) }}</template>
+                </ElTableColumn>
+                <ElTableColumn prop="fieldName" label="字段" min-width="130" show-overflow-tooltip>
+                  <template #default="{ row }">{{ friendlyFieldLabel(row.fieldName) }}</template>
+                </ElTableColumn>
                 <ElTableColumn prop="fieldValue" label="值" min-width="160" show-overflow-tooltip />
                 <ElTableColumn prop="confidence" label="置信度" width="95" />
               </ElTable>
@@ -13594,27 +14389,28 @@ onMounted(loadData)
                 />
                 <ElTableColumn
                   prop="profileId"
-                  label="Profile"
+                  label="解析配置"
                   min-width="160"
                   show-overflow-tooltip
-                />
+                >
+                  <template #default="{ row }">{{ friendlyTechLabel(row.profileId) }}</template>
+                </ElTableColumn>
               </ElTable>
             </ElTabPane>
             <ElTabPane label="诊断" name="diagnostics">
               <ElTable :data="selectedOcrDiagnosticRows" border height="300">
-                <ElTableColumn prop="code" label="诊断码" min-width="150" show-overflow-tooltip />
+                <ElTableColumn prop="code" label="诊断码" min-width="150" show-overflow-tooltip>
+                  <template #default="{ row }">{{ friendlyTechLabel(row.code) }}</template>
+                </ElTableColumn>
                 <ElTableColumn prop="level" label="等级" width="100" />
                 <ElTableColumn prop="message" label="说明" min-width="280" show-overflow-tooltip />
               </ElTable>
             </ElTabPane>
             <ElTabPane label="人工修正" name="corrections">
               <ElTable :data="selectedOcrCorrectionRows" border height="300">
-                <ElTableColumn
-                  prop="fieldCode"
-                  label="字段"
-                  min-width="130"
-                  show-overflow-tooltip
-                />
+                <ElTableColumn prop="fieldCode" label="字段" min-width="130" show-overflow-tooltip>
+                  <template #default="{ row }">{{ friendlyFieldLabel(row.fieldCode) }}</template>
+                </ElTableColumn>
                 <ElTableColumn prop="oldValue" label="原值" min-width="170" show-overflow-tooltip />
                 <ElTableColumn prop="newValue" label="新值" min-width="170" show-overflow-tooltip />
                 <ElTableColumn prop="status" label="状态" width="110" />
@@ -13677,13 +14473,13 @@ onMounted(loadData)
                 {{ selectedAnnotationTask?.taskId || '-' }}
               </ElDescriptionsItem>
               <ElDescriptionsItem label="场景">
-                {{ selectedAnnotationTask?.scenario || '-' }}
+                {{ friendlyTechLabel(selectedAnnotationTask?.scenario) }}
               </ElDescriptionsItem>
               <ElDescriptionsItem label="页面尺寸">
                 {{ annotationPageSize.width }} × {{ annotationPageSize.height }}
               </ElDescriptionsItem>
               <ElDescriptionsItem label="阻断">
-                {{ selectedAnnotationTask?.readinessBlockers?.join('；') || '无' }}
+                {{ friendlyIssueList(selectedAnnotationTask?.readinessBlockers, '无') }}
               </ElDescriptionsItem>
             </ElDescriptions>
           </ElCol>
@@ -13699,7 +14495,7 @@ onMounted(loadData)
               <ElFormItem label="标签值">
                 <ElInput
                   v-model="annotationLabelValue"
-                  placeholder="字段 code / 表格 schema / 印章名称"
+                  placeholder="字段编码 / 表格结构 / 印章名称"
                 />
               </ElFormItem>
               <ElRow :gutter="8">
@@ -13766,11 +14562,11 @@ onMounted(loadData)
                 >
                   <span>
                     {{
-                      item.fieldCode ||
-                      item.businessSchema ||
-                      item.nameContains ||
-                      item.sealType ||
-                      '-'
+                      item.fieldCode
+                        ? friendlyFieldLabel(item.fieldCode as string)
+                        : friendlyTechLabel(
+                            item.businessSchema || item.nameContains || item.sealType
+                          )
                     }}
                   </span>
                   <small>{{ Array.isArray(item.bbox) ? item.bbox.join(',') : '无 bbox' }}</small>
@@ -14294,11 +15090,11 @@ onMounted(loadData)
 
 .project-overview-node-status-track::after {
   position: absolute;
-  inset: 0;
   pointer-events: none;
   border-radius: inherit;
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 60%);
   content: '';
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 60%);
+  inset: 0;
 }
 
 .project-overview-node-status-row strong {
@@ -14345,8 +15141,8 @@ onMounted(loadData)
   display: flex;
   min-height: 48px;
   padding: 0 14px;
-  cursor: pointer;
   list-style: none;
+  cursor: pointer;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -14835,6 +15631,95 @@ onMounted(loadData)
   margin: 0 0 16px;
 }
 
+.technology-stack-panel :deep(.el-card__body) {
+  display: grid;
+  gap: 14px;
+}
+
+.technology-stack-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.technology-stack-card {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  min-height: 126px;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #dbe8f7;
+  border-radius: 8px;
+}
+
+.technology-stack-card span,
+.technology-stack-card strong,
+.technology-stack-card em,
+.technology-stack-card small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.technology-stack-card span {
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.technology-stack-card strong {
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 20px;
+  color: #172033;
+  white-space: nowrap;
+}
+
+.technology-stack-card em {
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 18px;
+  color: #2563eb;
+  white-space: nowrap;
+}
+
+.technology-stack-card small {
+  display: -webkit-box;
+  font-size: 12px;
+  line-height: 18px;
+  color: #667085;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.technology-stack-card--green {
+  background: #f3fbf7;
+  border-color: #c9ead8;
+}
+
+.technology-stack-card--blue {
+  background: #f4f8ff;
+  border-color: #cfe0ff;
+}
+
+.technology-stack-card--orange {
+  background: #fff8ed;
+  border-color: #f6d6a5;
+}
+
+.technology-stack-card--red {
+  background: #fff4f3;
+  border-color: #ffc8c1;
+}
+
+.technology-model-table {
+  width: 100%;
+}
+
 .vector-lineage-intro {
   display: flex;
   gap: 12px;
@@ -15165,8 +16050,8 @@ onMounted(loadData)
 
 .knowledge-chart-shell:focus-visible,
 .langgraph-chart-shell:focus-visible {
-  outline: 0;
   border-color: #8eb8ff;
+  outline: 0;
   box-shadow: 0 0 0 3px rgb(37 99 235 / 14%);
 }
 
@@ -15185,8 +16070,8 @@ onMounted(loadData)
   background: rgb(255 255 255 / 88%);
   border: 1px solid #dbe8f7;
   border-radius: 999px;
-  box-shadow: 0 6px 16px rgb(15 23 42 / 7%);
   content: '拖动平移 · 双指/Ctrl滚轮缩放 · 0重置';
+  box-shadow: 0 6px 16px rgb(15 23 42 / 7%);
 }
 
 .knowledge-chart-shell.is-panning,
@@ -15257,6 +16142,230 @@ onMounted(loadData)
 
 .knowledge-chart-shell--heatmap .knowledge-echart {
   min-width: 820px;
+}
+
+.sr-only-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.ocr-capability-shell {
+  display: grid;
+  gap: 14px;
+}
+
+.ocr-capability-hero,
+.ocr-capability-card,
+.ocr-capability-preview,
+.ocr-capability-summary {
+  background: #fff;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+}
+
+.ocr-capability-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 18px;
+  background: linear-gradient(135deg, rgb(239 246 255 / 94%), rgb(255 255 255 / 98%)), #fff;
+}
+
+.ocr-capability-hero div,
+.ocr-capability-card__head {
+  min-width: 0;
+}
+
+.ocr-capability-hero span,
+.ocr-capability-hero strong,
+.ocr-capability-hero small {
+  display: block;
+}
+
+.ocr-capability-hero span {
+  font-size: 12px;
+  font-weight: 800;
+  color: #2563eb;
+}
+
+.ocr-capability-hero strong {
+  margin-top: 6px;
+  font-size: 20px;
+  line-height: 1.35;
+  color: #0f172a;
+}
+
+.ocr-capability-hero small {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.ocr-capability-layout,
+.ocr-capability-result {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.85fr) minmax(0, 1.15fr);
+  gap: 14px;
+}
+
+.ocr-capability-card,
+.ocr-capability-preview,
+.ocr-capability-summary {
+  min-width: 0;
+  padding: 14px;
+}
+
+.ocr-capability-card__head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.ocr-capability-card__head strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 15px;
+  color: #0f172a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocr-capability-upload {
+  width: 100%;
+  min-height: 118px;
+  padding: 18px;
+  color: #1e40af;
+  text-align: left;
+  cursor: pointer;
+  background: #f8fbff;
+  border: 1px dashed #93c5fd;
+  border-radius: 12px;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease;
+}
+
+.ocr-capability-upload:hover {
+  background: #eff6ff;
+  border-color: #2563eb;
+}
+
+.ocr-capability-upload strong,
+.ocr-capability-upload span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ocr-capability-upload strong {
+  font-size: 16px;
+  color: #0f172a;
+  white-space: nowrap;
+}
+
+.ocr-capability-upload span {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.ocr-capability-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.ocr-capability-form label {
+  display: grid;
+  font-size: 12px;
+  font-weight: 700;
+  color: #475569;
+  gap: 6px;
+}
+
+.ocr-capability-switches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.ocr-capability-switches label {
+  display: inline-flex;
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: #334155;
+  background: #f8fafc;
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  gap: 6px;
+  align-items: center;
+}
+
+.ocr-capability-table {
+  --el-table-border-color: #e2e8f0;
+}
+
+.ocr-preview-stage {
+  display: grid;
+  place-items: center;
+  height: 420px;
+  overflow: hidden;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.ocr-preview-stage img,
+.ocr-preview-stage iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.ocr-preview-stage img {
+  object-fit: contain;
+}
+
+.ocr-capability-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ocr-capability-kpis div {
+  min-width: 0;
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.ocr-capability-kpis span,
+.ocr-capability-kpis strong {
+  display: block;
+}
+
+.ocr-capability-kpis span {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.ocr-capability-kpis strong {
+  margin-top: 4px;
+  overflow: hidden;
+  font-size: 18px;
+  color: #0f172a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .lineage-document-grid,
@@ -15510,10 +16619,10 @@ onMounted(loadData)
 
 .langgraph-chart-shell {
   position: relative;
+  height: 410px;
   max-width: 100%;
-  height: 462px;
   min-height: 0;
-  padding: 8px;
+  padding: 6px;
   overflow: hidden;
   cursor: grab;
   background: linear-gradient(90deg, rgb(37 99 235 / 5%) 1px, transparent 1px),
@@ -15535,8 +16644,113 @@ onMounted(loadData)
 
 .langgraph-echart {
   width: 100%;
-  min-width: 1180px;
+  min-width: 900px;
   touch-action: none;
+}
+
+.agent-friendly-note {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 11px 12px;
+  background: linear-gradient(180deg, #f8fbff, #fff);
+  border: 1px solid #dbe8f7;
+  border-radius: 8px;
+}
+
+.agent-friendly-note strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 950;
+  line-height: 19px;
+  color: #172033;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-friendly-note small {
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 18px;
+  color: #64748b;
+}
+
+.finding-friendly-list {
+  display: grid;
+  gap: 10px;
+  max-height: 322px;
+  padding-right: 4px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #c7d5e8 transparent;
+}
+
+.finding-friendly-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 0.42fr);
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #e0e9f6;
+  border-radius: 8px;
+}
+
+.finding-friendly-main,
+.finding-friendly-side {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.finding-friendly-main span {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #2563eb;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finding-friendly-main strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 950;
+  line-height: 20px;
+  color: #172033;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finding-friendly-main small,
+.finding-friendly-side small {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 18px;
+  color: #64748b;
+  text-overflow: ellipsis;
+}
+
+.finding-friendly-main small {
+  white-space: nowrap;
+}
+
+.finding-friendly-side {
+  justify-items: end;
+  text-align: right;
+}
+
+.finding-friendly-side strong {
+  font-size: 22px;
+  font-weight: 950;
+  line-height: 26px;
+  color: #172033;
+  font-variant-numeric: tabular-nums;
 }
 
 .langgraph-cog-panel {
@@ -16767,9 +17981,9 @@ onMounted(loadData)
 .vector-source-media {
   width: 100%;
   height: 520px;
+  background: #fff;
   border: 0;
   object-fit: contain;
-  background: #fff;
 }
 
 .vector-source-placeholder {
@@ -16841,8 +18055,8 @@ onMounted(loadData)
   font-size: 12px;
   line-height: 1.5;
   color: #172033;
-  white-space: pre-wrap;
   word-break: break-word;
+  white-space: pre-wrap;
   background: #f8fafc;
   border: 1px solid #e6edf7;
   border-radius: 8px;
@@ -17240,8 +18454,8 @@ onMounted(loadData)
   display: flex;
   min-height: 48px;
   padding: 0 14px;
-  cursor: pointer;
   list-style: none;
+  cursor: pointer;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -17787,6 +19001,10 @@ onMounted(loadData)
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   }
 
+  .technology-stack-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .ocr-labeling-workflow {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -17829,6 +19047,11 @@ onMounted(loadData)
   }
 
   .ocr-goal-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ocr-capability-layout,
+  .ocr-capability-result {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -17889,11 +19112,27 @@ onMounted(loadData)
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .ocr-capability-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ocr-capability-hero .el-space {
+    justify-content: flex-start;
+  }
+
+  .ocr-capability-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .audit-flow-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .vector-quality-board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .technology-stack-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -17994,8 +19233,8 @@ onMounted(loadData)
 
   .vector-source-canvas,
   .vector-source-media {
-    min-height: 360px;
     height: 360px;
+    min-height: 360px;
   }
 }
 
@@ -18025,6 +19264,10 @@ onMounted(loadData)
 
   .ocr-command-kpis,
   .ocr-step-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ocr-capability-kpis {
     grid-template-columns: minmax(0, 1fr);
   }
 

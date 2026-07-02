@@ -392,7 +392,7 @@ PostgreSQL 第一阶段使用 `aicheck_state`、`aicheck_singletons`、`idempote
 
 外部依赖：
 
-- 模型供应商密钥：AI 审查主链路使用 `DEEPSEEK_API_KEY`，默认模型为 DeepSeek `deepseek-reasoner`；默认 `embedding-default` 已改为本地 Infinity `BAAI/bge-m3`，不依赖 `OPENAI_API_KEY`。
+- 模型供应商密钥：AI 审查主链路使用 `DEEPSEEK_API_KEY`，默认模型为 DeepSeek `deepseek-reasoner`；默认 `embedding-default` 指向本地 Infinity served-model alias，底层默认 `Qwen/Qwen3-Embedding-0.6B`，`BAAI/bge-m3` 保留为 fallback，不依赖 `OPENAI_API_KEY`。
 - 可访问的域名和 HTTPS 证书。
 - 真实 OCR 默认由 `backend/apps/ocr_service` 的本地引擎链执行，需要提供离线 OCR 模型目录。`agentdesign` 只作为可选高精度印章 OCR 增强项；仅当 `AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR=true` 时，才需要通过 `AICHECK_AGENTDESIGN_HOST_PATH` 挂载完整 `agentdesign` checkout。
 
@@ -405,7 +405,7 @@ PostgreSQL 第一阶段使用 `aicheck_state`、`aicheck_singletons`、`idempote
 | `api-service` | 8000 | `127.0.0.1:8000` | FastAPI 主业务 API；生产只由 Nginx `/api/*` 反代访问 |
 | `ocr-service` | 8010 | `127.0.0.1:8010` | 内部 OCR API；不得直接暴露公网 |
 | `review-worker-service` | - | - | Temporal/LangGraph 审查编排 worker，不直接暴露 HTTP |
-| `embedding-service` | 7997 | `127.0.0.1:7997` | 本地 BGE-M3 embedding API；只供 LiteLLM 内网调用 |
+| `embedding-service` | 7997 | `127.0.0.1:7997` | 本地 Infinity embedding API；默认 Qwen3-Embedding-0.6B，只供 LiteLLM 内网调用 |
 | `litellm-service` | 4000 | `127.0.0.1:4001` | LiteLLM Proxy，对内使用 |
 | `postgres` | 5432 | `127.0.0.1:5432` | 统一 PostgreSQL 数据库，包含 `aicheck`、`litellm`、`workflow` |
 | `redis` | 6379 | `127.0.0.1:6379` | Celery broker/result backend |
@@ -472,7 +472,8 @@ DEEPSEEK_API_KEY=sk-...
 OPENAI_API_KEY=
 INFINITY_API_KEY=replace-with-local-infinity-api-key
 
-AICHECK_EMBEDDING_MODEL_ID=BAAI/bge-m3
+AICHECK_EMBEDDING_MODEL_ID=Qwen/Qwen3-Embedding-0.6B
+AICHECK_EMBEDDING_SERVED_MODEL_NAME=embedding-default
 AICHECK_EMBEDDING_ENGINE=torch
 AICHECK_EMBEDDING_CACHE_HOST_PATH=/tmp/aicheck-embedding-cache
 HF_ENDPOINT=https://hf-mirror.com
@@ -564,7 +565,7 @@ OCR 离线模型目录支持两种布局：
 | `DEEPSEEK_API_KEY` | 是 | LiteLLM 转发到 DeepSeek 的密钥。`default-chat`、`review-chat`、`compare-fast` 和 `deepseek-reasoner` 默认都路由到 `deepseek/deepseek-reasoner`。 |
 | `OPENAI_API_KEY` | 否 | 默认配置不使用。仅当自行增加 OpenAI-backed alias 时填写。 |
 | `INFINITY_API_KEY` | 是 | 本地 Infinity embedding 服务 API key。只通过环境变量注入，不应出现在 `docker ps` 命令行参数中。 |
-| `AICHECK_EMBEDDING_MODEL_ID` / `AICHECK_EMBEDDING_ENGINE` | 是 | 本地 embedding 模型和推理引擎。默认 `BAAI/bge-m3` + `torch`，输出 1024 维向量。 |
+| `AICHECK_EMBEDDING_MODEL_ID` / `AICHECK_EMBEDDING_SERVED_MODEL_NAME` / `AICHECK_EMBEDDING_ENGINE` | 是 | 本地 embedding 模型、稳定服务别名和推理引擎。默认 `Qwen/Qwen3-Embedding-0.6B` + `embedding-default` + `torch`，输出 1024 维向量；可切回 `BAAI/bge-m3`，但必须使用独立索引版本并重建向量。 |
 | `AICHECK_EMBEDDING_CACHE_HOST_PATH` | 是 | embedding 模型缓存目录，建议持久化到宿主机；首次启动下载后复用缓存。 |
 | `HF_ENDPOINT` | 否 | Hugging Face 镜像地址；中国大陆服务器可使用 `https://hf-mirror.com`。 |
 | `AICHECK_DATABASE_URL` | 是 | 主业务 PostgreSQL 连接串。Compose 默认指向 `postgres:5432/aicheck`。 |
@@ -622,7 +623,7 @@ Compose 对关键变量使用必填校验，缺少以下变量时服务不会启
 - `AICHECK_POSTGRES_PASSWORD`
 - `INFINITY_API_KEY`
 
-默认 `embedding-default` 已对齐到本地 Infinity `BAAI/bge-m3`，开启 `AICHECK_LITELLM_STRICT_PROVIDER_HEALTH=true` 时要求 `embedding-service`、`INFINITY_API_KEY` 和 `backend/config/litellm.yaml` 一致，不要求 `OPENAI_API_KEY`。只有自行新增 OpenAI-backed alias 时才需要提供 `OPENAI_API_KEY`。
+默认 `embedding-default` 已对齐到本地 Infinity served-model alias，底层默认 `Qwen/Qwen3-Embedding-0.6B`。开启 `AICHECK_LITELLM_STRICT_PROVIDER_HEALTH=true` 时要求 `embedding-service`、`INFINITY_API_KEY` 和 `backend/config/litellm.yaml` 一致，不要求 `OPENAI_API_KEY`。只有自行新增 OpenAI-backed alias 时才需要提供 `OPENAI_API_KEY`。
 
 `check_96_preflight.py --strict-production` 会额外检查内部密钥强度。`AICHECK_JWT_SECRET` 至少 32 个字符且至少 12 个不同字符；`AICHECK_MINIO_SECRET_KEY`、`LITELLM_API_KEY`、`AICHECK_POSTGRES_PASSWORD` 至少 16 个字符且至少 8 个不同字符。`DEEPSEEK_API_KEY` 等 provider key 只做存在和 placeholder 检查，因为格式由供应商决定。
 

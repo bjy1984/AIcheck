@@ -14,6 +14,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.verify_deployment import REQUIRED_LITELLM_ALIASES
+from libs.embedding_models import EMBEDDING_DEFAULT_ALIAS, allowed_embedding_model_ids, embedding_runtime_config
 
 
 REQUIRED_SERVICES = {
@@ -329,8 +330,12 @@ class DeploymentConfigValidator:
             failures.append("ocr-service command must run OCR API on port 8010")
         if "litellm.yaml" not in litellm_command or "--port 4000" not in litellm_command:
             failures.append("litellm-service command must load config/litellm.yaml on port 4000")
-        if "v2" not in embedding_command or "7997" not in embedding_command or "BAAI/bge-m3" not in embedding_command:
-            failures.append("embedding-service command must run Infinity v2 with BAAI/bge-m3 on port 7997")
+        if "v2" not in embedding_command or "7997" not in embedding_command:
+            failures.append("embedding-service command must run Infinity v2 on port 7997")
+        if "AICHECK_EMBEDDING_MODEL_ID" not in embedding_command:
+            failures.append("embedding-service command must read AICHECK_EMBEDDING_MODEL_ID for hot-swappable models")
+        if "--served-model-name" not in embedding_command or EMBEDDING_DEFAULT_ALIAS not in embedding_command:
+            failures.append("embedding-service must expose the stable embedding-default served model name")
         if "--api-key" in embedding_command:
             failures.append("embedding-service must read INFINITY_API_KEY from environment instead of exposing it in the process command")
         port_expectations = {
@@ -453,6 +458,7 @@ class DeploymentConfigValidator:
                 "TRANSFORMERS_CACHE",
                 "INFINITY_API_KEY",
                 "AICHECK_EMBEDDING_MODEL_ID",
+                "AICHECK_EMBEDDING_SERVED_MODEL_NAME",
                 "AICHECK_EMBEDDING_ENGINE",
             },
             "postgres": {
@@ -606,12 +612,18 @@ class DeploymentConfigValidator:
                 failures.append(f"{name}: missing litellm_params.model/api_key")
                 continue
             if name == "embedding-default":
-                if str(params.get("model") or "") != "infinity/BAAI/bge-m3":
-                    failures.append("embedding-default must use local Infinity BGE-M3 provider")
+                runtime = embedding_runtime_config({})
+                if str(params.get("model") or "") != runtime["litellmModel"]:
+                    failures.append("embedding-default must use the stable local Infinity served-model alias")
                 if str(params.get("api_base") or "") != "http://embedding-service:7997":
                     failures.append("embedding-default api_base must target embedding-service:7997")
                 if str(params.get("api_key") or "") != "os.environ/INFINITY_API_KEY":
                     failures.append("embedding-default api_key must read os.environ/INFINITY_API_KEY")
+                info = item.get("model_info") or {}
+                if str(info.get("default_model_id") or "") not in allowed_embedding_model_ids():
+                    failures.append("embedding-default model_info.default_model_id must be a registered embedding model")
+                if info.get("hot_swappable") is not True:
+                    failures.append("embedding-default model_info.hot_swappable must be true")
         settings = self.litellm.get("general_settings") or {}
         if settings.get("master_key") != "os.environ/LITELLM_MASTER_KEY":
             failures.append("general_settings.master_key must read os.environ/LITELLM_MASTER_KEY")

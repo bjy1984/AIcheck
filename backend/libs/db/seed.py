@@ -1630,6 +1630,11 @@ RULE_VERSIONS = [
 
 KNOWLEDGE_CONFIG = {
     "embeddingModel": "embedding-default",
+    "embeddingModelId": "Qwen/Qwen3-Embedding-0.6B",
+    "embeddingProvider": "Infinity",
+    "embeddingServedModelName": "embedding-default",
+    "dimensions": 1024,
+    "embeddingHotSwapEnabled": True,
     "chunkSize": 900,
     "chunkOverlap": 120,
     "topKDefault": 5,
@@ -1885,6 +1890,8 @@ def fresh_state() -> dict[str, Any]:
             }
         ],
         "ocr_annotation_imports": [],
+        "fde_capability_test_upload_sessions": [],
+        "fde_capability_test_runs": [],
         "capability_bundles": deepcopy(CAPABILITY_BUNDLES),
         "release_plans": deepcopy(RELEASE_PLANS),
         "release_approvals": deepcopy(RELEASE_APPROVALS),
