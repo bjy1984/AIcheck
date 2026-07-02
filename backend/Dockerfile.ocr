@@ -3,6 +3,7 @@ FROM python:3.12-slim
 ARG AICHECK_APT_DEBIAN_MIRROR=
 ARG AICHECK_APT_SECURITY_MIRROR=
 ARG AICHECK_PIP_INDEX_URL=
+ARG AICHECK_OCR_REQUIREMENTS=requirements-ocr.txt
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -13,7 +14,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     TRANSFORMERS_OFFLINE=1
 
 WORKDIR /app
-COPY requirements.txt requirements-ocr.txt ./
+COPY requirements.txt requirements-ocr.txt requirements-ocr-core.txt ./
 RUN if [ -n "$AICHECK_APT_DEBIAN_MIRROR" ]; then \
         sed -i "s|http://deb.debian.org/debian|$AICHECK_APT_DEBIAN_MIRROR|g" /etc/apt/sources.list.d/debian.sources; \
     fi \
@@ -26,7 +27,11 @@ RUN if [ -n "$AICHECK_APT_DEBIAN_MIRROR" ]; then \
     && apt-get update \
     && apt-get install -y --no-install-recommends libgomp1 libglib2.0-0 libgl1 \
     && rm -rf /var/lib/apt/lists/* \
-    && pip install -r requirements.txt -r requirements-ocr.txt \
+    && if [ "$AICHECK_OCR_REQUIREMENTS" = "requirements-ocr.txt" ]; then \
+        pip install -r requirements.txt -r requirements-ocr.txt; \
+    else \
+        pip install -r requirements.txt -r "$AICHECK_OCR_REQUIREMENTS"; \
+    fi \
     && groupadd --system aicheck \
     && useradd --system --gid aicheck --home-dir /app aicheck
 COPY . .

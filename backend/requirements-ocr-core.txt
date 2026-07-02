@@ -1,0 +1,9 @@
+# Fast local OCR runtime used by the deploy compose by default.
+# It keeps real local OCR/table/seal capabilities without pulling Docling,
+# Transformers, or Torch during ordinary application deployments.
+PyMuPDF==1.27.2.3
+Pillow>=10.4.0
+paddlepaddle==3.3.1
+paddleocr==3.7.0
+paddlex[ocr]>=3.7.0,<3.8.0
+opencv-python-headless>=4.10,<5

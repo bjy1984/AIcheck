@@ -137,6 +137,7 @@ services:
         AICHECK_APT_DEBIAN_MIRROR: ${AICHECK_APT_DEBIAN_MIRROR:-}
         AICHECK_APT_SECURITY_MIRROR: ${AICHECK_APT_SECURITY_MIRROR:-}
         AICHECK_PIP_INDEX_URL: ${AICHECK_PIP_INDEX_URL:-}
+        AICHECK_OCR_REQUIREMENTS: ${AICHECK_OCR_REQUIREMENTS:-requirements-ocr-core.txt}
     command: uvicorn apps.ocr_service.main:app --host 0.0.0.0 --port 8010
     environment:
       AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_ENDPOINT:-minio:9000}
