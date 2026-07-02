@@ -385,8 +385,14 @@ def validate_profiles(profiles: dict[str, dict[str, Any]] | None = None) -> list
         if not isinstance(seal_rules, dict):
             failures.append(profile_failure(profile_id, "sealRules", "sealRules must be an object"))
         else:
-            if not isinstance(seal_rules.get("required"), bool):
-                failures.append(profile_failure(profile_id, "sealRules.required", "sealRules.required must be boolean"))
+            if parse_bool(seal_rules.get("required"), None) is None:
+                failures.append(
+                    profile_failure(
+                        profile_id,
+                        "sealRules.required",
+                        "sealRules.required must be a boolean or a parseable boolean string",
+                    )
+                )
             if not isinstance(seal_rules.get("expectedSealTypes"), list):
                 failures.append(
                     profile_failure(profile_id, "sealRules.expectedSealTypes", "expectedSealTypes must be a list")

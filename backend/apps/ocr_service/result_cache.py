@@ -217,6 +217,7 @@ def sanitized_cached_result(result: dict[str, Any]) -> dict[str, Any]:
 
 def cache_contract_versions() -> dict[str, str]:
     return {
+        "resultCacheSchema": RESULT_CACHE_SCHEMA,
         "evidenceContractVersion": EVIDENCE_CONTRACT_VERSION,
         "pageSelectionVersion": PAGE_SELECTION_VERSION,
         "remediationVersion": REMEDIATION_VERSION,

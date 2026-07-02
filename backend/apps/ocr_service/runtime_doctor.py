@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from apps.ocr_service.utils import parse_bool
+
 
 PACKAGE_CHECKS = {
     "cv2": "opencv-python-headless",
@@ -182,7 +184,7 @@ def model_dir_checks(model_manifest: dict[str, Any]) -> list[dict[str, Any]]:
     for env_key, item in sorted(model_dirs.items()):
         item = item if isinstance(item, dict) else {}
         exists = bool(item.get("exists"))
-        required = bool(item.get("required"))
+        required = parse_bool(item.get("required"), False) is True
         category = str(item.get("category") or "model")
         status = "pass" if exists else "fail" if required else "warn"
         fix_prefix = "Mount the required local model directory" if required else "Mount this local model directory to enable the related optional OCR capability"

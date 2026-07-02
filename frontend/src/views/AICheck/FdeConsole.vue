@@ -633,12 +633,32 @@ const zoomChartAt = (
   )
 }
 const handleChartWheel = (event: WheelEvent, key: FdeChartKey) => {
-  if (!event.ctrlKey && !event.metaKey) return
   event.preventDefault()
   event.stopPropagation()
   const shell = getChartShell(event)
-  const delta = event.deltaY < 0 ? chartZoomStep : -chartZoomStep
-  zoomChartAt(key, chartZoom(key) + delta, shell, event.clientX, event.clientY)
+  const unit = event.deltaMode === 1 ? 18 : event.deltaMode === 2 ? shell.clientHeight : 1
+  if (event.ctrlKey || event.metaKey) {
+    const normalizedDelta = Math.max(-3, Math.min(3, event.deltaY * unit * 0.01))
+    zoomChartAt(
+      key,
+      chartZoom(key) - normalizedDelta * chartZoomStep,
+      shell,
+      event.clientX,
+      event.clientY
+    )
+    return
+  }
+  const pan = chartPan(key)
+  const wheelX = event.shiftKey && !event.deltaX ? event.deltaY : event.deltaX
+  const wheelY = event.shiftKey && !event.deltaX ? 0 : event.deltaY
+  setChartPan(
+    key,
+    {
+      x: pan.x - wheelX * unit,
+      y: pan.y - wheelY * unit
+    },
+    shell
+  )
 }
 const handleChartKeydown = (event: KeyboardEvent, key: FdeChartKey) => {
   const shell = getChartShell(event)
@@ -1239,6 +1259,21 @@ const statusLabelMap: Record<string, string> = {
   ...sharedStatusLabelMap,
   active: '启用',
   accepted: '已接受',
+  edited: '人工已修改',
+  false_positive: '误报',
+  missed_issue: '漏检',
+  wrong_evidence: '证据位置错误',
+  wrong_rule_reference: '依据引用错误',
+  hallucination: '疑似幻觉',
+  ocr_error: 'OCR 识别错误',
+  kb_retrieval_error: '知识检索错误',
+  rule_error: '规则配置错误',
+  prompt_error: '提示词问题',
+  model_error: '模型推理问题',
+  business_pack_config_error: '业务包配置问题',
+  field_correction: '字段纠错',
+  evidence_correction: '证据纠错',
+  severity_correction: '等级修正',
   blocked_by_gate: '门禁阻断',
   cancelled: '已取消',
   completed: '已完成',
@@ -1296,15 +1331,97 @@ const friendlyStatus = (status: unknown, fallback = '-') => {
 
 const techLabelMap: Record<string, string> = {
   ...sharedTechTermLabels,
+  AICHECK_OCR_BASE_URL: 'OCR 服务地址',
+  AICHECK_REVIEW_ORCHESTRATION: '审查编排模式',
+  AICHECK_REVIEW_LLM_EXECUTION: 'LLM 调用模式',
+  AICHECK_TASK_DISPATCH: '任务分发模式',
+  OCR_SERVICE_NOT_CONFIGURED: 'OCR 服务地址未配置',
+  OCR_RUNTIME_DOCTOR_UNAVAILABLE: 'OCR 运行体检不可用',
+  'ocr.base-url': 'OCR 服务地址',
+  'ocr.runtime-doctor': 'OCR 运行体检',
+  'ocr-service': 'OCR 服务',
+  'base-url': '服务地址',
+  '/internal/ocr/doctor': 'OCR 运行体检接口',
+  RuntimeError: '运行时错误',
+  IntegrationServiceError: '集成服务错误',
+  overall: '整体',
+  all: '全部',
+  generic_document_v1: '通用资料',
+  piping_characteristic_list_v1: '管道特性表',
+  quality_certificate_v1: '质量证明文件',
+  ndt_rt_report_v1: '射线检测报告',
+  ndt_ut_report_v1: '超声检测报告',
+  construction_record_v1: '施工记录',
+  welding_record_v1: '焊接记录',
+  qualification_certificate_v1: '资质证书',
+  calibration_certificate_v1: '校验证书',
+  engineering_table_photo: '工程表格照片',
+  engineering_document: '通用工程资料',
+  quality_certificate: '质量证明文件',
+  ndt_report: 'NDT 检测报告',
+  scanned_pdf: '扫描 PDF',
+  electronic_pdf: '电子 PDF',
+  project_proxy: '项目级代理',
+  document_explicit: '文件级绑定',
+  chunking: '知识切片',
+  compliance_review_agent: '资料合规复核员',
+  deepseek_reasoner: 'DeepSeek 推理模型',
+  'deepseek-reasoner': 'DeepSeek 推理模型',
+  embedding_default: '默认本地向量模型',
+  'embedding-default': '默认本地向量模型',
+  vector_integrity: '向量完整性',
+  vector_ready: '向量已就绪',
+  vector_missing: '向量缺失',
+  metadata_missing: '元数据缺失',
+  source_document: '源资料',
+  ocr_result: 'OCR 解析结果',
+  vector_record: '向量记录',
+  knowledge_chunk: '知识切片',
+  field_accuracy: '字段准确率',
+  field_recall: '字段召回率',
+  table_structure_accuracy: '表格结构准确率',
+  seal_detection_recall: '印章检测召回率',
+  seal_text_accuracy: '印章文字准确率',
+  bbox_hit_rate: '证据框命中率',
   evidence_validation: '证据校验',
   EVIDENCE_BBOX_REQUIRED: '证据框必须可定位',
   field_inconsistent: '字段不一致',
   field_missing: '字段缺失',
+  cross_document_consistency_warning: '跨资料一致性风险',
+  required_field_missing: '必填字段缺失',
+  required_table_missing: '必需表格缺失',
   low_confidence_field: '字段识别置信度低',
   needs_human_confirmation: '需要人工确认',
+  FIELD_LOW_CONFIDENCE: '字段识别置信度低',
+  REQUIRED_FIELD_MISSING: '必填字段缺失',
+  FIELD_EVIDENCE_MISSING: '字段缺少证据定位',
+  FIELD_VALUE_CONFLICT: '字段值冲突',
+  FIELD_FORMAT_INVALID: '字段格式不符合要求',
   OCR_FIELD_CONF_002: 'OCR 字段置信度过低',
   QC_CERT_FIELD_003: '质量证明文件缺少关键字段',
+  SEAL_NOT_FOUND: '未检测到必需印章',
+  SEAL_TEXT_LOW_CONFIDENCE: '印章文字置信度低',
   SEAL_REQUIRED_001: '资料必须有有效签章',
+  TABLE_CELL_EVIDENCE_LOW: '表格单元格证据不足',
+  TABLE_STRUCTURE_LOW_CONFIDENCE: '表格结构置信度低',
+  TABLE_EVIDENCE_MISSING: '表格缺少证据定位',
+  TABLE_ENGINE_CONFLICT: '表格引擎结果冲突',
+  REQUIRED_TABLE_MISSING: '必需表格缺失',
+  SEAL_EVIDENCE_MISSING: '印章缺少证据定位',
+  EXPECTED_SEAL_TYPE_MISSING: '期望印章类型缺失',
+  MISSING_FIELD_LABELS: '缺少字段标签',
+  MISSING_SEAL_BBOX: '缺少印章证据框',
+  MISSING_TABLE_CELL_LABELS: '缺少表格单元格标注',
+  OCR_EVAL_FIELD_MISSING: '评估样本字段缺失',
+  OCR_EVAL_FIELD_VALUE_MISMATCH: '评估样本字段值不一致',
+  OCR_EVAL_FIELD_EVIDENCE_MISSING: '评估样本字段缺少证据',
+  OCR_EVAL_FIELD_BBOX_MISMATCH: '评估样本字段框不匹配',
+  OCR_EVAL_TABLE_MISSING: '评估样本表格缺失',
+  OCR_EVAL_TABLE_EVIDENCE_MISSING: '评估样本表格缺少证据',
+  OCR_EVAL_TABLE_BBOX_MISMATCH: '评估样本表格框不匹配',
+  OCR_EVAL_SEAL_MISSING: '评估样本印章缺失',
+  OCR_EVAL_SEAL_EVIDENCE_MISSING: '评估样本印章缺少证据',
+  OCR_EVAL_SEAL_BBOX_MISMATCH: '评估样本印章框不匹配',
   WELDER_CERT_001: '焊工资格证必须上传',
   load_context: '读取项目上下文',
   load_document_context: '加载资料上下文',
@@ -1321,6 +1438,9 @@ const techLabelMap: Record<string, string> = {
   pageindex: '章节溯源',
   pageindex_tree_search: '章节树检索',
   vector_search: '向量检索',
+  bm25: '关键词检索',
+  dense_vector: '语义向量检索',
+  reranker: '重排模型',
   review_basis_search: '审查依据检索',
   long_document_cross_section: '长文档跨章节检索',
   field_extraction: '字段抽取',
@@ -1332,7 +1452,80 @@ const techLabelMap: Record<string, string> = {
 const friendlyTechLabel = (value: unknown, fallback = '-') => {
   const raw = String(value || '').trim()
   if (!raw) return fallback
-  return techLabelMap[raw] || statusLabelMap[raw] || raw
+  const direct = techLabelMap[raw] || statusLabelMap[raw]
+  if (direct) return direct
+  if (/^[a-z0-9_]+_agent$/i.test(raw)) return `AI 员工：${raw.replace(/_agent$/i, '')}`
+  if (/^[a-z0-9_]+_service$/i.test(raw)) return `服务：${raw.replace(/_service$/i, '')}`
+  if (/^[a-z0-9_]+_profile$/i.test(raw)) return `解析场景：${raw.replace(/_profile$/i, '')}`
+  if (/^[a-z0-9_]+_v\d+$/i.test(raw)) return `配置版本：${raw}`
+  return raw
+}
+
+const technicalTextTokenMap: Record<string, string> = {
+  AICHECK_OCR_BASE_URL: 'OCR 服务地址（AICHECK_OCR_BASE_URL）',
+  AICHECK_REVIEW_ORCHESTRATION: '审查编排模式（AICHECK_REVIEW_ORCHESTRATION）',
+  AICHECK_REVIEW_LLM_EXECUTION: 'LLM 调用模式（AICHECK_REVIEW_LLM_EXECUTION）',
+  AICHECK_TASK_DISPATCH: '任务分发模式（AICHECK_TASK_DISPATCH）',
+  '/internal/ocr/doctor': 'OCR 运行体检接口（/internal/ocr/doctor）',
+  'ocr.runtime-doctor': 'OCR 运行体检',
+  'ocr.base-url': 'OCR 服务地址',
+  compliance_review_agent: '资料合规复核员',
+  engineering_table_photo: '工程表格照片',
+  engineering_document: '通用工程资料',
+  quality_certificate: '质量证明文件',
+  ndt_report: 'NDT 检测报告',
+  'deepseek-reasoner': 'DeepSeek 推理模型',
+  'embedding-default': '默认本地向量模型',
+  'OCR runtime doctor': 'OCR 运行体检',
+  'ocr-service': 'OCR 服务',
+  'API service': 'API 服务',
+  'base-url': '服务地址',
+  'not configured': '未配置',
+  'is unavailable': '不可用',
+  'Check ': '请检查 ',
+  'Set ': '请配置 '
+}
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const friendlyTechnicalText = (value: unknown, fallback = '-') => {
+  const raw = String(value || '').trim()
+  if (!raw) return fallback
+  const direct = friendlyTechLabel(raw, '')
+  if (direct && direct !== raw) return direct
+  let text = raw
+  for (const [token, label] of Object.entries(technicalTextTokenMap).sort(
+    (left, right) => right[0].length - left[0].length
+  )) {
+    const escaped = escapeRegExp(token)
+    if (/^[a-z0-9_.-]+$/i.test(token)) {
+      text = text.replace(
+        new RegExp(`(^|[^A-Za-z0-9_.-])${escaped}(?=$|[^A-Za-z0-9_.-])`, 'g'),
+        (_match: string, prefix: string) => `${prefix}${label}`
+      )
+    } else {
+      text = text.replace(new RegExp(escaped, 'g'), label)
+    }
+  }
+  for (const [token, label] of Object.entries(techLabelMap)
+    .filter(([token, label]) => token.length >= 4 && label !== token && /[_@.-]|[A-Z]/.test(token))
+    .sort((left, right) => right[0].length - left[0].length)) {
+    const escaped = escapeRegExp(token)
+    if (/^[a-z0-9_.@-]+$/i.test(token)) {
+      text = text.replace(
+        new RegExp(`(^|[^A-Za-z0-9_.@-])${escaped}(?=$|[^A-Za-z0-9_.@-])`, 'g'),
+        (_match: string, prefix: string) => `${prefix}${label}`
+      )
+    } else {
+      text = text.replace(new RegExp(escaped, 'g'), label)
+    }
+  }
+  text = text.replace(/\b[A-Z][A-Z0-9_]{2,}\b/g, (token) => friendlyTechLabel(token, token))
+  text = text.replace(/\b[a-z]+(?:[._-][a-z0-9]+)+\b/g, (token) => {
+    const label = friendlyTechLabel(token, token)
+    return label === token ? token : label
+  })
+  return text || fallback
 }
 
 const friendlyReferenceLabel = (value: unknown, fallback = '-') => {
@@ -1363,6 +1556,17 @@ const friendlyIssueList = (value: unknown, fallback = '-') => {
       .filter(Boolean)
       .join('；') || fallback
   )
+}
+
+const friendlyTechList = (value: unknown, fallback = '-') => {
+  const items = Array.isArray(value)
+    ? value
+    : String(value || '')
+        .split(/[;；,/]/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+  if (!items.length) return fallback
+  return items.map((item) => friendlyTechLabel(item)).join('、')
 }
 
 const friendlyToolNames = (toolCalls: unknown) => {
@@ -1783,7 +1987,9 @@ const failedOcrCaseRows = computed(() =>
         finding:
           typeof firstFinding === 'string'
             ? friendlyIssueLabel(firstFinding)
-            : String(firstFinding?.message || friendlyIssueLabel(firstFinding?.code, '-'))
+            : friendlyTechnicalText(
+                firstFinding?.message || friendlyIssueLabel(firstFinding?.code, '-')
+              )
       }
     })
 )
@@ -1948,11 +2154,13 @@ const normalizedReviewQualityRows = computed(() =>
       const item = toRecord(row)
       return {
         id: item.name || item.dimension || item.gate || `quality-${index + 1}`,
-        name: item.name || item.dimension || item.gate || `质量项 ${index + 1}`,
+        name: friendlyTechnicalText(
+          item.name || item.dimension || item.gate || `质量项 ${index + 1}`
+        ),
         status:
           item.status || (item.passed === true ? 'pass' : item.passed === false ? 'warning' : '-'),
         score: item.score,
-        message: item.message || item.finding || item.description || '-',
+        message: friendlyTechnicalText(item.message || item.finding || item.description || '-'),
         failureCount: item.failureCount,
         warningCount: item.warningCount
       }
@@ -1964,12 +2172,12 @@ const normalizedReviewHumanCorrectionRows = computed(() =>
     const item = toRecord(row)
     return {
       id: item.id || `correction-${index + 1}`,
-      targetType: item.targetType || '-',
-      correctionType: item.correctionType || item.feedbackType || '-',
-      before: item.before || item.original || '-',
-      after: item.after || item.corrected || '-',
-      rootCause: item.rootCause || '-',
-      status: item.status || '-',
+      targetType: friendlyTechnicalText(item.targetType || '-'),
+      correctionType: friendlyStatus(item.correctionType || item.feedbackType || '-', '-'),
+      before: friendlyTechnicalText(item.before || item.original || item.beforeSummary || '-'),
+      after: friendlyTechnicalText(item.after || item.corrected || item.afterSummary || '-'),
+      rootCause: friendlyTechnicalText(item.rootCause || '-'),
+      status: friendlyStatus(item.status || '-', '-'),
       shouldEnterEvaluationSet: Boolean(item.shouldEnterEvaluationSet)
     }
   })
@@ -2002,9 +2210,9 @@ const projectAuditLangGraphAuditRows = computed(() => {
     },
     {
       stage: 'Agent 检查点',
-      status: checkpointer ? `${shortText(checkpointer)} checkpointer` : '缺少 checkpoint',
+      status: checkpointer ? friendlyTechLabel(checkpointer) : '缺少检查点',
       evidence: selectedReviewRun.value?.run.graphExecution?.persistence || '未返回持久化配置',
-      action: checkpointer ? '可进行中断恢复和重放' : '启用 Agent Postgres 检查点',
+      action: checkpointer ? '可进行中断恢复和重放' : '启用 Agent 编排的 PostgreSQL 检查点',
       healthy: Boolean(checkpointer)
     },
     {
@@ -2065,16 +2273,19 @@ const reviewLineage = computed<Record<string, unknown>>(
   () => selectedReviewRun.value?.lineage || {}
 )
 const reviewLineageRows = computed(() => [
-  { label: '能力组合校验哈希', value: reviewLineage.value.capabilityBundleHash },
-  { label: '业务包', value: reviewLineage.value.businessPackId },
-  { label: '业务包版本', value: reviewLineage.value.businessPackVersion },
-  { label: 'AI 员工', value: reviewLineage.value.agentId },
-  { label: 'AI 员工版本', value: reviewLineage.value.agentVersion },
-  { label: '提示词版本', value: reviewLineage.value.promptVersion },
-  { label: '模型网关', value: reviewLineage.value.modelGateway },
-  { label: '模型别名', value: reviewLineage.value.modelAlias },
-  { label: '规则版本', value: reviewLineage.value.ruleSetVersion },
-  { label: '知识库版本', value: reviewLineage.value.kbVersion },
+  {
+    label: '能力组合校验哈希',
+    value: friendlyTechnicalText(reviewLineage.value.capabilityBundleHash)
+  },
+  { label: '业务包', value: friendlyTechnicalText(reviewLineage.value.businessPackId) },
+  { label: '业务包版本', value: friendlyTechnicalText(reviewLineage.value.businessPackVersion) },
+  { label: 'AI 员工', value: friendlyTechnicalText(reviewLineage.value.agentId) },
+  { label: 'AI 员工版本', value: friendlyTechnicalText(reviewLineage.value.agentVersion) },
+  { label: '提示词版本', value: friendlyTechnicalText(reviewLineage.value.promptVersion) },
+  { label: '模型网关', value: friendlyTechnicalText(reviewLineage.value.modelGateway) },
+  { label: '模型别名', value: friendlyTechnicalText(reviewLineage.value.modelAlias) },
+  { label: '规则版本', value: friendlyTechnicalText(reviewLineage.value.ruleSetVersion) },
+  { label: '知识库版本', value: friendlyTechnicalText(reviewLineage.value.kbVersion) },
   { label: '输入资料版本', value: reviewLineage.value.inputDocumentVersionIds },
   { label: 'OCR 结果版本', value: reviewLineage.value.ocrResultVersions },
   { label: '输入校验哈希', value: reviewLineage.value.inputHash },
@@ -2175,8 +2386,8 @@ const ocrPendingAnnotationCount = computed(() =>
 const ocrReadyForEvalCount = computed(() => Number(ocrAnnotationSummary.value?.readyForEval || 0))
 const firstOcrBlockingSummary = computed(() => {
   if (firstRuntimeIssue.value) {
-    return `${shortText(firstRuntimeIssue.value.name, 'runtime')}：${shortText(
-      firstRuntimeIssue.value.message,
+    return `${friendlyTechnicalText(firstRuntimeIssue.value.name, '运行时问题')}：${shortText(
+      friendlyTechnicalText(firstRuntimeIssue.value.message, '-'),
       '-'
     )}`
   }
@@ -2198,9 +2409,9 @@ const ocrPriorityCards = computed(() => [
   {
     label: '运行时',
     value: friendlyStatus(ocrRuntimeDoctor.value?.status, '未知'),
-    hint: `${ocrRuntimeDoctor.value?.summary?.fail || 0} fail / ${
+    hint: `${ocrRuntimeDoctor.value?.summary?.fail || 0} 失败 / ${
       ocrRuntimeDoctor.value?.summary?.warn || 0
-    } warn`,
+    } 告警`,
     tone: ocrRuntimeDoctor.value?.ok ? 'green' : 'orange'
   },
   {
@@ -2248,8 +2459,11 @@ const ocrTopBlockerRows = computed<OcrTopBlockerRow[]>(() => {
   for (const item of ocrRuntimeDoctor.value?.topIssues || []) {
     rows.push({
       source: '运行时',
-      blocker: `${shortText(item.name, 'issue')}：${shortText(item.message, '-')}`,
-      action: '先修复本地 OCR 引擎、模型路径或 API base-url。'
+      blocker: `${friendlyTechnicalText(item.name, '运行时问题')}：${shortText(
+        friendlyTechnicalText(item.message, '-'),
+        '-'
+      )}`,
+      action: '先修复本地 OCR 引擎、模型路径或 OCR 服务地址。'
     })
   }
   for (const blocker of ocr100Scorecard.value?.blockers || []) {
@@ -3944,9 +4158,9 @@ const projectAuditTechnologySections = computed(() => {
     {
       key: 'retrieval',
       title: '检索',
-      primary: 'Hybrid RAG + PageIndex',
-      secondary: 'BM25 + dense vector',
-      detail: '按 RetrievalTrace 追踪召回和证据命中',
+      primary: '混合检索 + 章节溯源',
+      secondary: '关键词检索 + 语义向量检索',
+      detail: '按检索轨迹追踪召回和证据命中',
       status: 'active',
       tone: 'blue' as FdeTone
     }
@@ -4022,7 +4236,7 @@ const projectAuditVectorQualitySections = computed(() => {
       maxScore: 30,
       metric: 0,
       status: 'warn',
-      blockers: ['旧接口缺少 RetrievalTrace 评分']
+      blockers: ['旧接口缺少检索轨迹评分']
     },
     {
       key: 'evidence',
@@ -4031,7 +4245,7 @@ const projectAuditVectorQualitySections = computed(() => {
       maxScore: 20,
       metric: pageIndexReady,
       status: pageIndexReady >= 0.8 ? 'pass' : 'warn',
-      blockers: pageIndexReady >= 0.8 ? [] : ['PageIndex 覆盖不足']
+      blockers: pageIndexReady >= 0.8 ? [] : ['章节溯源覆盖不足']
     },
     {
       key: 'stability',
@@ -4061,7 +4275,7 @@ const projectAuditVectorQualityCards = computed(() => [
   {
     label: 'Recall@5 代理',
     value: scorePercent(projectAuditVectorQualityMetrics.value.recallAt5Proxy as number),
-    hint: `${Number(projectAuditVectorQualityMetrics.value.retrievalTraceCount || 0)} 条 RetrievalTrace`,
+    hint: `${Number(projectAuditVectorQualityMetrics.value.retrievalTraceCount || 0)} 条检索轨迹`,
     tone:
       Number(projectAuditVectorQualityMetrics.value.recallAt5Proxy || 0) >= 0.9 ? 'green' : 'orange'
   },
@@ -4375,11 +4589,11 @@ const projectAuditVectorQualityDocumentRows = computed<Array<Record<string, unkn
         },
         {
           key: 'pageindex',
-          name: 'PageIndex 溯源',
+          name: '章节溯源',
           score: row.readyForPageIndex ? 100 : 0,
           metric: row.readyForPageIndex ? 1 : 0,
           status: row.readyForPageIndex ? 'pass' : 'warn',
-          message: `PageIndex 节点 ${Number(row.pageIndexNodeCount || 0)} 个`
+          message: `章节节点 ${Number(row.pageIndexNodeCount || 0)} 个`
         }
       ],
       lineageStages: toRecordArray(rowLineage.stages),
@@ -4401,11 +4615,12 @@ const selectedVectorFileQualityRecord = computed(() => toRecord(selectedVectorFi
 const selectedVectorFileQualityDimensions = computed(() =>
   toRecordArray(selectedVectorFileQualityRecord.value.qualityDimensions).map((row, index) => ({
     id: String(row.key || row.name || `vector-file-dimension-${index + 1}`),
-    name: String(row.name || row.key || '-'),
+    name: friendlyTechnicalText(row.name || row.key || '-'),
     score: score100(row.score, 0),
     metric: row.metric === undefined ? '-' : scorePercent(row.metric as number),
     status: String(row.status || 'warn'),
-    message: String(
+    statusLabel: friendlyStatus(row.status || 'warn', '-'),
+    message: friendlyTechnicalText(
       row.message || (Array.isArray(row.blockers) ? row.blockers.join('；') : '') || '-'
     )
   }))
@@ -4415,11 +4630,11 @@ const selectedVectorFileLineageStages = computed(() => {
   if (stages.length) {
     return stages.map((stage, index) => ({
       id: String(stage.key || `vector-file-stage-${index + 1}`),
-      label: String(stage.label || '-'),
+      label: friendlyTechnicalText(stage.label || '-'),
       status: friendlyStatus(stage.status, '-'),
       done: Boolean(stage.done),
-      evidence: String(stage.evidence || '-'),
-      action: String(stage.action || '-')
+      evidence: friendlyTechnicalText(stage.evidence || '-'),
+      action: friendlyTechnicalText(stage.action || '-')
     }))
   }
   return [
@@ -4437,11 +4652,11 @@ const selectedVectorFileLineageStages = computed(() => {
       status: String(selectedVectorFileQualityRecord.value.vectorStatus || '-'),
       done: Number(selectedVectorFileQualityRecord.value.vectorGap || 0) === 0,
       evidence: `向量 ${Number(selectedVectorFileQualityRecord.value.vectorCount || 0)}/${Number(selectedVectorFileQualityRecord.value.chunkCount || 0)} 条`,
-      action: '向量完整后可参与 Hybrid RAG'
+      action: '向量完整后可参与混合检索'
     },
     {
       id: 'pageindex',
-      label: 'PageIndex',
+      label: '章节溯源',
       status: selectedVectorFileQualityRecord.value.pageIndexReady ? '已构建' : '待构建',
       done: Boolean(selectedVectorFileQualityRecord.value.pageIndexReady),
       evidence: `节点 ${Number(selectedVectorFileQualityRecord.value.pageIndexNodeCount || 0)} 个`,
@@ -4630,21 +4845,21 @@ const selectedVectorFilePipelineOcrSummary = computed(() =>
 const selectedVectorFilePipelineFieldRows = computed(() =>
   toRecordArray(selectedVectorFilePipelineOcr.value.fieldRows).map((row, index) => ({
     id: String(row.fieldCode || row.fieldName || `pipeline-field-${index + 1}`),
-    fieldName: String(row.fieldName || row.fieldCode || '-'),
+    fieldName: friendlyFieldLabel(String(row.fieldName || row.fieldCode || '-')),
     fieldValue: String(row.fieldValue ?? '-'),
     pageNo: row.pageNo ?? '-',
     confidence: row.confidence === undefined ? '-' : scorePercent(Number(row.confidence || 0)),
-    source: String(row.source || '-'),
+    source: friendlyTechnicalText(row.source || '-'),
     hasBbox: Boolean(row.bbox),
     bbox: row.bbox,
-    evidenceLabel: String(row.fieldName || row.fieldCode || `字段 ${index + 1}`)
+    evidenceLabel: friendlyFieldLabel(String(row.fieldName || row.fieldCode || `字段 ${index + 1}`))
   }))
 )
 const selectedVectorFilePipelineTextRows = computed(() =>
   toRecordArray(toRecord(selectedVectorFilePipeline.value.text).rows).map((row, index) => ({
     id: String(row.id || `pipeline-text-${index + 1}`),
-    sourceType: String(row.sourceType || '-'),
-    sourceLabel: String(row.sourceLabel || '-'),
+    sourceType: friendlyTechnicalText(row.sourceType || '-'),
+    sourceLabel: friendlyTechnicalText(row.sourceLabel || '-'),
     pageNo: row.pageNo ?? '-',
     tokenCount: row.tokenCount ?? '-',
     text: String(row.text || '-'),
@@ -4662,7 +4877,10 @@ const selectedVectorFilePipelineVectorRows = computed(() =>
     return {
       id: String(row.id || `pipeline-vector-${index + 1}`),
       chunkNo: Number(row.chunkNo || index + 1),
-      vectorStatus: String(row.vectorStatus || '-'),
+      vectorStatus: friendlyStatus(
+        row.vectorStatus,
+        friendlyTechnicalText(row.vectorStatus || '-')
+      ),
       textPreview: String(row.textPreview || '-'),
       model: String(embeddingInput.model || '-'),
       payloadHash: String(vectorRecord.payloadHash || '-'),
@@ -4704,9 +4922,9 @@ const selectedVectorEvidenceJson = computed(() =>
 const selectedVectorQualityIssues = computed<Array<Record<string, unknown>>>(() =>
   toRecordArray(selectedVectorFileDetailRecord.value.qualityIssues).map((issue) => ({
     ...issue,
-    code: issue.code,
-    severity: issue.severity,
-    message: friendlyIssueLabel(issue.message || issue.code, '-')
+    code: friendlyIssueLabel(issue.code, '-'),
+    severity: friendlyStatus(issue.severity, '-'),
+    message: friendlyTechnicalText(issue.message || issue.code, '-')
   }))
 )
 const vectorFileTokenBuckets = computed(() =>
@@ -4719,27 +4937,44 @@ const vectorFileFlagCounts = computed(() =>
   toRecord(toRecord(selectedVectorFileDetailRecord.value.chunkCharts).flagCounts)
 )
 const selectedVectorFileTokenOption = computed<EChartsOption>(() => {
-  const entries = Object.entries(vectorFileTokenBuckets.value)
+  const entries = Object.entries(vectorFileTokenBuckets.value).map(([name, value]) => ({
+    label: friendlyTechnicalText(name),
+    value: Number(value || 0)
+  }))
   return {
     grid: { top: 26, right: 12, bottom: 34, left: 38 },
-    tooltip: { trigger: 'axis' },
-    xAxis: { type: 'category', data: entries.map(([name]) => name) },
+    tooltip: {
+      trigger: 'axis',
+      confine: true,
+      formatter: (params: any) => {
+        const item = Array.isArray(params) ? params[0] : params
+        const entry = entries[Number(item?.dataIndex || 0)]
+        return `${entry?.label || '-'}：${entry?.value ?? 0}`
+      }
+    },
+    xAxis: { type: 'category', data: entries.map((entry) => entry.label) },
     yAxis: { type: 'value', minInterval: 1 },
-    series: [
-      { type: 'bar', data: entries.map(([, value]) => Number(value || 0)), color: '#2563eb' }
-    ]
+    series: [{ type: 'bar', data: entries.map((entry) => entry.value), color: '#2563eb' }]
   }
 })
 const selectedVectorFilePageOption = computed<EChartsOption>(() => {
-  const entries = Object.entries(vectorFilePageDistribution.value).slice(0, 12)
+  const entries = Object.entries(vectorFilePageDistribution.value)
+    .slice(0, 12)
+    .map(([name, value]) => ({ label: friendlyTechnicalText(name), value: Number(value || 0) }))
   return {
     grid: { top: 26, right: 12, bottom: 34, left: 38 },
-    tooltip: { trigger: 'axis' },
-    xAxis: { type: 'category', data: entries.map(([name]) => name) },
+    tooltip: {
+      trigger: 'axis',
+      confine: true,
+      formatter: (params: any) => {
+        const item = Array.isArray(params) ? params[0] : params
+        const entry = entries[Number(item?.dataIndex || 0)]
+        return `${entry?.label || '-'}：${entry?.value ?? 0}`
+      }
+    },
+    xAxis: { type: 'category', data: entries.map((entry) => entry.label) },
     yAxis: { type: 'value', minInterval: 1 },
-    series: [
-      { type: 'bar', data: entries.map(([, value]) => Number(value || 0)), color: '#16a34a' }
-    ]
+    series: [{ type: 'bar', data: entries.map((entry) => entry.value), color: '#16a34a' }]
   }
 })
 const selectedVectorFileFlagOption = computed<EChartsOption>(() => {
@@ -4940,7 +5175,7 @@ const projectAuditVectorFlowRows = computed(() => {
     {
       step: '03',
       label: '向量入库',
-      description: 'Embedding 已写入本地向量索引，可参与 Hybrid RAG',
+      description: '向量已写入本地索引，可参与混合检索',
       done: vectorized,
       total,
       tone: vectorized === total ? 'green' : 'orange'
@@ -5099,7 +5334,7 @@ const projectAuditPageIndexTraceRows = computed<Array<Record<string, unknown>>>(
 
     if (selectedClauseCount <= 0) {
       issue = '未命中依据条款'
-      action = '补充条款索引或检查 metadata filter'
+      action = '补充条款索引或检查元数据过滤条件'
     } else if (pageIndexUsed && pageIndexNodeCount <= 0) {
       issue = '已触发章节溯源但缺少节点'
       action = '重建章节树并校验节点映射'
@@ -5483,8 +5718,8 @@ const projectAuditLangGraphCards = computed(() => [
   },
   {
     label: '检查点',
-    value: shortText(selectedReviewRun.value?.run.graphExecution?.checkpointer, '-'),
-    hint: '本地开发态建议 PostgreSQL checkpointer',
+    value: friendlyTechLabel(selectedReviewRun.value?.run.graphExecution?.checkpointer),
+    hint: '本地开发态建议使用 PostgreSQL 检查点',
     tone: selectedReviewRun.value?.run.graphExecution?.checkpointer ? 'green' : 'orange'
   },
   {
@@ -5957,8 +6192,8 @@ const normalizedProjectAuditAnnotationRows = computed(() =>
       rowIndex: index + 1,
       taskId: item.taskId,
       caseId: item.caseId,
-      scenario: item.scenario,
-      profileId: item.profileId,
+      scenario: friendlyTechLabel(item.scenario),
+      profileId: friendlyTechLabel(item.profileId),
       pageNo: item.pageNo,
       collectionStatus: item.collectionStatus,
       candidateFields: Number(candidateCounts.fields || 0),
@@ -6352,7 +6587,7 @@ const projectAuditSubpageItems = computed(() => [
   },
   {
     key: 'pageindex' as const,
-    label: 'PageIndex 溯源',
+    label: '章节溯源',
     description: '查看长文档树检索路径、命中节点和条款映射。'
   },
   {
@@ -6433,10 +6668,10 @@ const projectAuditFocusFacts = computed(() => {
         value: String(projectAuditReviewRuns.value.length),
         tone: 'blue' as const
       },
-      { label: 'Graph节点', value: String(reviewGraphNodes.value.length), tone: 'green' as const },
+      { label: '编排节点', value: String(reviewGraphNodes.value.length), tone: 'green' as const },
       {
         label: '检查点',
-        value: shortText(selectedReviewRun.value?.run.graphExecution?.checkpointer, '-'),
+        value: friendlyTechLabel(selectedReviewRun.value?.run.graphExecution?.checkpointer),
         tone: selectedReviewRun.value?.run.graphExecution?.checkpointer
           ? ('green' as const)
           : ('orange' as const)
@@ -6583,7 +6818,7 @@ const projectAuditCapabilityRows = computed(() => {
     },
     {
       key: 'pageindex',
-      label: 'PageIndex',
+      label: '章节溯源',
       value: `${pageIndexNodes} 个节点`,
       status: pageIndexNodes ? '已构建' : '待构建',
       evidence: `溯源 ${projectAuditPageIndexTraceRows.value.length}，依据 ${projectAuditPageIndexCards.value[2]?.value || 0}`,
@@ -6620,7 +6855,8 @@ const projectAuditCapabilityRows = computed(() => {
 const projectAuditCapabilityOption = computed<EChartsOption>(() => ({
   aria: {
     enabled: true,
-    description: 'AI 能力健康评分柱状图，展示 OCR、向量化、PageIndex、Agent 编排和准确率评估状态。'
+    description:
+      'AI 能力健康评分柱状图，展示 OCR、资料向量化、章节溯源、Agent 编排和准确率评估状态。'
   },
   color: ['#2563eb'],
   tooltip: {
@@ -8095,8 +8331,8 @@ onBeforeUnmount(() => {
             <strong>查运行时</strong>
             <small>
               {{ friendlyStatus(ocrRuntimeDoctor?.status, '未知') }} ·
-              {{ ocrRuntimeDoctor?.summary?.fail || 0 }} fail /
-              {{ ocrRuntimeDoctor?.summary?.warn || 0 }} warn
+              {{ ocrRuntimeDoctor?.summary?.fail || 0 }} 失败 /
+              {{ ocrRuntimeDoctor?.summary?.warn || 0 }} 告警
             </small>
           </article>
           <article class="ocr-step-card ocr-step-card--green">
@@ -8162,8 +8398,7 @@ onBeforeUnmount(() => {
                 class="knowledge-chart-shell knowledge-chart-shell--heatmap"
                 role="img"
                 tabindex="0"
-                aria-label="OCR 场景质量热力图。拖动可平移，双指或按加减键可缩放，方向键可移动视图。"
-                title="拖动平移，双指或 Ctrl/Command + 滚轮缩放，方向键移动，加减键缩放，0 重置"
+                aria-label="OCR 场景质量热力图"
                 @wheel.capture="handleChartWheel($event, 'ocrHeatmap')"
                 @keydown="handleChartKeydown($event, 'ocrHeatmap')"
                 @gesturestart.capture="startNativeChartGesture($event, 'ocrHeatmap')"
@@ -8202,7 +8437,7 @@ onBeforeUnmount(() => {
               </template>
               <div v-if="ocrTopBlockerRows.length" class="ocr-blocker-list">
                 <article v-for="row in ocrTopBlockerRows.slice(0, 4)" :key="String(row.id)">
-                  <ElTag type="warning" effect="plain">{{ row.source }}</ElTag>
+                  <ElTag type="warning" effect="plain">{{ friendlyTechLabel(row.source) }}</ElTag>
                   <strong>{{ row.blocker }}</strong>
                   <small>{{ row.action }}</small>
                 </article>
@@ -8229,7 +8464,7 @@ onBeforeUnmount(() => {
                 </ElTableColumn>
                 <ElTableColumn label="资料类型" min-width="160" show-overflow-tooltip>
                   <template #default="{ row }">{{
-                    row.documentType || row.scenario || '-'
+                    friendlyTechLabel(row.documentType || row.scenario || '-')
                   }}</template>
                 </ElTableColumn>
                 <ElTableColumn label="状态" width="120">
@@ -8372,7 +8607,7 @@ onBeforeUnmount(() => {
               {{ friendlyStatus(selectedFdeProject?.status, '未选择') }}
             </ElTag>
             <ElTag type="info" effect="plain">
-              业务包 {{ selectedFdeProject?.businessPackId || '-' }}
+              业务包 {{ friendlyTechLabel(selectedFdeProject?.businessPackId) }}
             </ElTag>
             <ElTag :type="projectAuditBlockers.length ? 'warning' : 'success'" effect="plain">
               {{ projectAuditBlockers.length ? '存在质量阻断' : '暂无阻断' }}
@@ -8546,7 +8781,7 @@ onBeforeUnmount(() => {
                 </button>
                 <div v-if="!projectAuditNextActionRows.length" class="audit-empty-state">
                   <strong>无待处理动作</strong>
-                  <span>当前项目的 OCR、向量化、PageIndex 和 Agent 门禁均未返回阻断。</span>
+                  <span>当前项目的 OCR、资料向量化、章节溯源和 Agent 门禁均未返回阻断。</span>
                 </div>
               </div>
             </ElCard>
@@ -8716,7 +8951,7 @@ onBeforeUnmount(() => {
               <span>资料知识资产溯源</span>
               <strong>每份资料为什么能进入 Agent 审查</strong>
               <small>
-                以资料版本为主线串联 OCR 解析、知识切片、向量入库、PageIndex 和审查可用性。
+                以资料版本为主线串联 OCR 解析、知识切片、向量入库、章节溯源和审查可用性。
               </small>
             </div>
             <ElTag :type="fdeTagType(projectAuditVectorQualityTone)" effect="plain">
@@ -8731,7 +8966,12 @@ onBeforeUnmount(() => {
                 <ElSpace wrap>
                   <ElTag type="success" effect="plain">本地私有化</ElTag>
                   <ElTag effect="plain">
-                    {{ projectAuditTechnologyHotSwap.stableAlias || 'embedding-default' }} 可切换
+                    {{
+                      friendlyTechLabel(
+                        projectAuditTechnologyHotSwap.stableAlias || 'embedding-default'
+                      )
+                    }}
+                    可切换
                   </ElTag>
                 </ElSpace>
               </div>
@@ -8885,8 +9125,7 @@ onBeforeUnmount(() => {
               class="knowledge-chart-shell knowledge-chart-shell--sankey"
               role="img"
               tabindex="0"
-              aria-label="资料向量化链路图。拖动可平移，双指或按加减键可缩放，方向键可移动视图。"
-              title="拖动平移，双指或 Ctrl/Command + 滚轮缩放，方向键移动，加减键缩放，0 重置"
+              aria-label="资料向量化链路图"
               @wheel.capture="handleChartWheel($event, 'vectorSankey')"
               @keydown="handleChartKeydown($event, 'vectorSankey')"
               @gesturestart.capture="startNativeChartGesture($event, 'vectorSankey')"
@@ -9023,8 +9262,8 @@ onBeforeUnmount(() => {
               <ElCard shadow="never" class="panel">
                 <template #header>索引配置</template>
                 <ElDescriptions :column="1" border>
-                  <ElDescriptionsItem label="Embedding 模型">
-                    {{ projectAuditVectorIndexProfile.embeddingModel }}
+                  <ElDescriptionsItem label="向量模型">
+                    {{ friendlyTechLabel(projectAuditVectorIndexProfile.embeddingModel) }}
                   </ElDescriptionsItem>
                   <ElDescriptionsItem label="向量维度">
                     {{ projectAuditVectorIndexProfile.vectorDimensions }}
@@ -9158,8 +9397,7 @@ onBeforeUnmount(() => {
               class="knowledge-chart-shell knowledge-chart-shell--tree"
               role="img"
               tabindex="0"
-              aria-label="PageIndex 章节溯源树。拖动可平移，双指或按加减键可缩放，方向键可移动视图。"
-              title="拖动平移，双指或 Ctrl/Command + 滚轮缩放，方向键移动，加减键缩放，0 重置"
+              aria-label="章节溯源树"
               @wheel.capture="handleChartWheel($event, 'pageIndexTree')"
               @keydown="handleChartKeydown($event, 'pageIndexTree')"
               @gesturestart.capture="startNativeChartGesture($event, 'pageIndexTree')"
@@ -9201,7 +9439,7 @@ onBeforeUnmount(() => {
                 <span>{{ card.sequence }}</span>
                 <div>
                   <strong>{{ card.query }}</strong>
-                  <small>{{ card.queryType }}</small>
+                  <small>{{ friendlyTechLabel(card.queryType) }}</small>
                 </div>
                 <ElTag :type="card.ok ? 'success' : 'warning'" effect="plain">
                   {{ card.ok ? '可用于审查' : '需处理' }}
@@ -9222,7 +9460,7 @@ onBeforeUnmount(() => {
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
-                    <span>PageIndex 路由追踪（章节溯源路由追踪）</span>
+                    <span>章节溯源路由追踪</span>
                     <ElTag effect="plain">{{ projectAuditPageIndexTraceRows.length }} 条</ElTag>
                   </div>
                 </template>
@@ -9282,7 +9520,7 @@ onBeforeUnmount(() => {
                     </div>
                   </article>
                 </div>
-                <ElEmpty v-else description="暂无 PageIndex 路由追踪（章节溯源路由追踪）" />
+                <ElEmpty v-else description="暂无章节溯源路由追踪" />
               </ElCard>
             </ElCol>
             <ElCol :xl="10" :lg="10" :md="24" :sm="24" :xs="24">
@@ -9420,8 +9658,7 @@ onBeforeUnmount(() => {
               class="knowledge-chart-shell knowledge-chart-shell--timeline"
               role="img"
               tabindex="0"
-              aria-label="Temporal 执行时间线。拖动可平移，双指或按加减键可缩放，方向键可移动视图。"
-              title="拖动平移，双指或 Ctrl/Command + 滚轮缩放，方向键移动，加减键缩放，0 重置"
+              aria-label="Temporal 执行时间线"
               @wheel.capture="handleChartWheel($event, 'reviewTimeline')"
               @keydown="handleChartKeydown($event, 'reviewTimeline')"
               @gesturestart.capture="startNativeChartGesture($event, 'reviewTimeline')"
@@ -9497,8 +9734,7 @@ onBeforeUnmount(() => {
                   class="langgraph-chart-shell"
                   role="img"
                   tabindex="0"
-                  aria-label="LangGraph Agent 编排图。拖动可平移，双指或按加减键可缩放，方向键可移动视图。"
-                  title="拖动平移，双指或 Ctrl/Command + 滚轮缩放，方向键移动，加减键缩放，0 重置"
+                  aria-label="LangGraph Agent 编排图"
                   @wheel.capture="handleChartWheel($event, 'langGraph')"
                   @keydown="handleChartKeydown($event, 'langGraph')"
                   @gesturestart.capture="startNativeChartGesture($event, 'langGraph')"
@@ -10175,7 +10411,9 @@ onBeforeUnmount(() => {
                     label="OCR 场景"
                     min-width="180"
                     show-overflow-tooltip
-                  />
+                  >
+                    <template #default="{ row }">{{ friendlyTechLabel(row.scenario) }}</template>
+                  </ElTableColumn>
                   <ElTableColumn label="平均分" width="100">
                     <template #default="{ row }">{{ scorePercent(row.averageScore) }}</template>
                   </ElTableColumn>
@@ -10189,12 +10427,9 @@ onBeforeUnmount(() => {
                 <template #header>失败样本与阻断项</template>
                 <ElTable :data="failedOcrCaseRows" border height="210">
                   <ElTableColumn prop="caseId" label="样本" min-width="150" show-overflow-tooltip />
-                  <ElTableColumn
-                    prop="scenario"
-                    label="场景"
-                    min-width="140"
-                    show-overflow-tooltip
-                  />
+                  <ElTableColumn prop="scenario" label="场景" min-width="140" show-overflow-tooltip>
+                    <template #default="{ row }">{{ friendlyTechLabel(row.scenario) }}</template>
+                  </ElTableColumn>
                   <ElTableColumn label="分数" width="90">
                     <template #default="{ row }">{{ scorePercent(row.score) }}</template>
                   </ElTableColumn>
@@ -10354,12 +10589,9 @@ onBeforeUnmount(() => {
                   min-width="190"
                   show-overflow-tooltip
                 />
-                <ElTableColumn
-                  prop="agentId"
-                  label="AI 员工"
-                  min-width="170"
-                  show-overflow-tooltip
-                />
+                <ElTableColumn prop="agentId" label="AI 员工" min-width="170" show-overflow-tooltip>
+                  <template #default="{ row }">{{ friendlyTechLabel(row.agentId) }}</template>
+                </ElTableColumn>
                 <ElTableColumn prop="status" label="状态" width="145">
                   <template #default="{ row }">
                     <ElTag :type="statusType(String(row.status))" effect="plain">
@@ -10392,7 +10624,7 @@ onBeforeUnmount(() => {
                   {{ selectedReviewRun.run.reviewRunId || selectedReviewRun.run.id }}
                 </ElDescriptionsItem>
                 <ElDescriptionsItem label="模型">
-                  {{ selectedReviewRun.run.modelAlias || '-' }}
+                  {{ friendlyTechLabel(selectedReviewRun.run.modelAlias) }}
                 </ElDescriptionsItem>
                 <ElDescriptionsItem label="编排引擎">
                   {{ friendlyTechLabel(selectedReviewRun.run.graphEngine) }}
@@ -10493,7 +10725,9 @@ onBeforeUnmount(() => {
                 @row-click="(row) => openAnnotationEditor(row)"
               >
                 <ElTableColumn prop="taskId" label="任务" min-width="150" show-overflow-tooltip />
-                <ElTableColumn prop="scenario" label="场景" min-width="180" show-overflow-tooltip />
+                <ElTableColumn prop="scenario" label="场景" min-width="180" show-overflow-tooltip>
+                  <template #default="{ row }">{{ friendlyTechLabel(row.scenario) }}</template>
+                </ElTableColumn>
                 <ElTableColumn
                   prop="profileId"
                   label="解析配置"
@@ -10592,7 +10826,9 @@ onBeforeUnmount(() => {
                     label="AI 员工"
                     min-width="190"
                     show-overflow-tooltip
-                  />
+                  >
+                    <template #default="{ row }">{{ friendlyTechLabel(row.agentId) }}</template>
+                  </ElTableColumn>
                   <ElTableColumn prop="version" label="版本" width="100" />
                   <ElTableColumn prop="riskLevel" label="风险" width="90" />
                   <ElTableColumn label="采纳率" width="95">
@@ -10665,7 +10901,9 @@ onBeforeUnmount(() => {
                     label="AI 员工"
                     min-width="160"
                     show-overflow-tooltip
-                  />
+                  >
+                    <template #default="{ row }">{{ friendlyTechLabel(row.agentId) }}</template>
+                  </ElTableColumn>
                   <ElTableColumn prop="status" label="状态" width="110">
                     <template #default="{ row }">
                       <ElTag :type="statusType(row.status)" effect="plain">{{
@@ -10808,13 +11046,8 @@ onBeforeUnmount(() => {
                     </ElSpace>
                   </div>
                 </template>
-                <ElTable :data="reviewQualityRows" border height="320">
-                  <ElTableColumn
-                    prop="dimension"
-                    label="评估项"
-                    min-width="150"
-                    show-overflow-tooltip
-                  />
+                <ElTable :data="normalizedReviewQualityRows" border height="320">
+                  <ElTableColumn prop="name" label="评估项" min-width="150" show-overflow-tooltip />
                   <ElTableColumn prop="status" label="状态" width="95">
                     <template #default="{ row }">
                       <ElTag :type="row.status === 'pass' ? 'success' : 'danger'" effect="plain">
@@ -10825,7 +11058,7 @@ onBeforeUnmount(() => {
                   <ElTableColumn prop="failureCount" label="失败" width="80" />
                   <ElTableColumn prop="warningCount" label="告警" width="80" />
                   <ElTableColumn
-                    prop="finding"
+                    prop="message"
                     label="首要问题"
                     min-width="170"
                     show-overflow-tooltip
@@ -10851,9 +11084,9 @@ onBeforeUnmount(() => {
                     </ElSpace>
                   </div>
                 </template>
-                <ElTable :data="reviewHumanCorrectionRows" border height="300">
+                <ElTable :data="normalizedReviewHumanCorrectionRows" border height="300">
                   <ElTableColumn
-                    prop="feedbackType"
+                    prop="correctionType"
                     label="修正类型"
                     min-width="140"
                     show-overflow-tooltip
@@ -10865,13 +11098,13 @@ onBeforeUnmount(() => {
                     show-overflow-tooltip
                   />
                   <ElTableColumn
-                    prop="beforeSummary"
+                    prop="before"
                     label="修正前"
                     min-width="260"
                     show-overflow-tooltip
                   />
                   <ElTableColumn label="修正后" min-width="260" show-overflow-tooltip>
-                    <template #default="{ row }">{{ shortText(row.afterSummary) }}</template>
+                    <template #default="{ row }">{{ shortText(row.after) }}</template>
                   </ElTableColumn>
                   <ElTableColumn prop="status" label="状态" width="120">
                     <template #default="{ row }">
@@ -10985,13 +11218,8 @@ onBeforeUnmount(() => {
                     </ElSpace>
                   </div>
                 </template>
-                <ElTable :data="reviewQualityRows" border height="320">
-                  <ElTableColumn
-                    prop="dimension"
-                    label="评估项"
-                    min-width="150"
-                    show-overflow-tooltip
-                  />
+                <ElTable :data="normalizedReviewQualityRows" border height="320">
+                  <ElTableColumn prop="name" label="评估项" min-width="150" show-overflow-tooltip />
                   <ElTableColumn prop="status" label="状态" width="95">
                     <template #default="{ row }">
                       <ElTag :type="row.status === 'pass' ? 'success' : 'danger'" effect="plain">
@@ -11002,7 +11230,7 @@ onBeforeUnmount(() => {
                   <ElTableColumn prop="failureCount" label="失败" width="80" />
                   <ElTableColumn prop="warningCount" label="告警" width="80" />
                   <ElTableColumn
-                    prop="finding"
+                    prop="message"
                     label="首要问题"
                     min-width="170"
                     show-overflow-tooltip
@@ -11018,9 +11246,9 @@ onBeforeUnmount(() => {
                     <ElTag effect="plain">{{ reviewHumanCorrectionRows.length }} 条</ElTag>
                   </div>
                 </template>
-                <ElTable :data="reviewHumanCorrectionRows" border height="300">
+                <ElTable :data="normalizedReviewHumanCorrectionRows" border height="300">
                   <ElTableColumn
-                    prop="feedbackType"
+                    prop="correctionType"
                     label="修正类型"
                     min-width="140"
                     show-overflow-tooltip
@@ -11032,13 +11260,13 @@ onBeforeUnmount(() => {
                     show-overflow-tooltip
                   />
                   <ElTableColumn
-                    prop="beforeSummary"
+                    prop="before"
                     label="修正前"
                     min-width="260"
                     show-overflow-tooltip
                   />
                   <ElTableColumn label="修正后" min-width="260" show-overflow-tooltip>
-                    <template #default="{ row }">{{ shortText(row.afterSummary) }}</template>
+                    <template #default="{ row }">{{ shortText(row.after) }}</template>
                   </ElTableColumn>
                   <ElTableColumn prop="status" label="状态" width="120" />
                   <ElTableColumn prop="shouldEnterEvaluationSet" label="入评估集" width="100">
@@ -11108,16 +11336,15 @@ onBeforeUnmount(() => {
                   <ElTableColumn prop="status" label="状态" width="110">
                     <template #default="{ row }">
                       <ElTag :type="statusType(String(row.status))" effect="plain">{{
-                        row.status
+                        friendlyStatus(row.status)
                       }}</ElTag>
                     </template>
                   </ElTableColumn>
-                  <ElTableColumn
-                    prop="rootCause"
-                    label="归因"
-                    min-width="150"
-                    show-overflow-tooltip
-                  />
+                  <ElTableColumn label="归因" min-width="150" show-overflow-tooltip>
+                    <template #default="{ row }">{{
+                      friendlyTechnicalText(row.rootCause)
+                    }}</template>
+                  </ElTableColumn>
                   <ElTableColumn prop="matchedFindingCount" label="命中" width="80" />
                   <ElTableColumn prop="expectedFindingCount" label="预期" width="80" />
                   <ElTableColumn prop="evidencePassed" label="证据" width="90">
@@ -11142,7 +11369,11 @@ onBeforeUnmount(() => {
                     label="路由"
                     min-width="170"
                     show-overflow-tooltip
-                  />
+                  >
+                    <template #default="{ row }">{{
+                      friendlyTechLabel(row.selectedRoute)
+                    }}</template>
+                  </ElTableColumn>
                   <ElTableColumn label="缺失条款" min-width="180" show-overflow-tooltip>
                     <template #default="{ row }">
                       {{ (row.missingClauseIds || []).join('；') || '-' }}
@@ -11150,7 +11381,7 @@ onBeforeUnmount(() => {
                   </ElTableColumn>
                   <ElTableColumn label="缺失 Finding" min-width="220" show-overflow-tooltip>
                     <template #default="{ row }">
-                      {{ (row.missingFindings || []).join('；') || '-' }}
+                      {{ friendlyIssueList(row.missingFindings, '-') }}
                     </template>
                   </ElTableColumn>
                 </ElTable>
@@ -11306,7 +11537,7 @@ onBeforeUnmount(() => {
                     {{ friendlyTechLabel(selectedReviewRun.run.modelGateway || 'litellm') }}
                   </ElDescriptionsItem>
                   <ElDescriptionsItem label="模型别名">
-                    {{ selectedReviewRun.run.modelAlias || '-' }}
+                    {{ friendlyTechLabel(selectedReviewRun.run.modelAlias) }}
                   </ElDescriptionsItem>
                   <ElDescriptionsItem label="编排执行器">
                     {{
@@ -11529,13 +11760,8 @@ onBeforeUnmount(() => {
                     <ElTag effect="plain">{{ reviewQualityGateRows.length }} 门禁</ElTag>
                   </div>
                 </template>
-                <ElTable :data="reviewQualityRows" border height="300">
-                  <ElTableColumn
-                    prop="dimension"
-                    label="评估项"
-                    min-width="150"
-                    show-overflow-tooltip
-                  />
+                <ElTable :data="normalizedReviewQualityRows" border height="300">
+                  <ElTableColumn prop="name" label="评估项" min-width="150" show-overflow-tooltip />
                   <ElTableColumn prop="status" label="状态" width="95">
                     <template #default="{ row }">
                       <ElTag :type="row.status === 'pass' ? 'success' : 'danger'" effect="plain">
@@ -11546,7 +11772,7 @@ onBeforeUnmount(() => {
                   <ElTableColumn prop="failureCount" label="失败" width="80" />
                   <ElTableColumn prop="warningCount" label="告警" width="80" />
                   <ElTableColumn
-                    prop="finding"
+                    prop="message"
                     label="首要问题"
                     min-width="170"
                     show-overflow-tooltip
@@ -11570,9 +11796,9 @@ onBeforeUnmount(() => {
                     <ElTag effect="plain">{{ reviewHumanCorrectionRows.length }} 条</ElTag>
                   </div>
                 </template>
-                <ElTable :data="reviewHumanCorrectionRows" border height="260">
+                <ElTable :data="normalizedReviewHumanCorrectionRows" border height="260">
                   <ElTableColumn
-                    prop="feedbackType"
+                    prop="correctionType"
                     label="修正类型"
                     min-width="140"
                     show-overflow-tooltip
@@ -11584,13 +11810,13 @@ onBeforeUnmount(() => {
                     show-overflow-tooltip
                   />
                   <ElTableColumn
-                    prop="beforeSummary"
+                    prop="before"
                     label="修正前"
                     min-width="260"
                     show-overflow-tooltip
                   />
                   <ElTableColumn label="修正后" min-width="260" show-overflow-tooltip>
-                    <template #default="{ row }">{{ shortText(row.afterSummary) }}</template>
+                    <template #default="{ row }">{{ shortText(row.after) }}</template>
                   </ElTableColumn>
                   <ElTableColumn prop="status" label="状态" width="120" />
                   <ElTableColumn prop="shouldEnterEvaluationSet" label="入评估集" width="100">
@@ -11750,7 +11976,10 @@ onBeforeUnmount(() => {
             </ElCol>
             <ElCol :xl="24" :lg="24" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
-                <template #header>检索溯源</template>
+                <template #header>
+                  检索溯源
+                  <span class="panel-title-alias">检索 Trace</span>
+                </template>
                 <ElTable :data="reviewRetrievalTraceRows" border height="260">
                   <ElTableColumn
                     prop="retrievalTraceId"
@@ -11763,7 +11992,11 @@ onBeforeUnmount(() => {
                     label="路由"
                     min-width="170"
                     show-overflow-tooltip
-                  />
+                  >
+                    <template #default="{ row }">{{
+                      friendlyTechLabel(row.selectedRoute)
+                    }}</template>
+                  </ElTableColumn>
                   <ElTableColumn prop="selectedClauseCount" label="条款" width="80" />
                   <ElTableColumn prop="pageIndexNodeCount" label="章节溯源" width="105" />
                   <ElTableColumn label="命中条款" min-width="180" show-overflow-tooltip>
@@ -11776,7 +12009,10 @@ onBeforeUnmount(() => {
             </ElCol>
             <ElCol :xl="24" :lg="24" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
-                <template #header>审查问题草稿</template>
+                <template #header>
+                  审查问题草稿
+                  <span class="panel-title-alias">Finding Draft</span>
+                </template>
                 <ElTable :data="normalizedReviewFindingRows" border height="260">
                   <ElTableColumn prop="id" label="草稿编号" min-width="145" show-overflow-tooltip />
                   <ElTableColumn
@@ -11831,9 +12067,17 @@ onBeforeUnmount(() => {
                   </div>
                 </template>
                 <ElTable :data="feedback" border height="320" @row-click="selectFeedback">
-                  <ElTableColumn prop="feedbackType" label="类型" width="150" />
-                  <ElTableColumn prop="rootCause" label="归因" width="160" />
-                  <ElTableColumn prop="status" label="状态" width="120" />
+                  <ElTableColumn label="类型" width="150">
+                    <template #default="{ row }">{{ friendlyStatus(row.feedbackType) }}</template>
+                  </ElTableColumn>
+                  <ElTableColumn label="归因" width="160">
+                    <template #default="{ row }">{{
+                      friendlyTechnicalText(row.rootCause)
+                    }}</template>
+                  </ElTableColumn>
+                  <ElTableColumn label="状态" width="120">
+                    <template #default="{ row }">{{ friendlyStatus(row.status) }}</template>
+                  </ElTableColumn>
                   <ElTableColumn prop="governanceState" label="治理" width="145">
                     <template #default="{ row }">
                       <ElTag
@@ -12493,13 +12737,13 @@ onBeforeUnmount(() => {
                         {{ friendlyStatus(ocrRuntimeDoctor?.status, '未知') }}
                       </ElTag>
                     </ElDescriptionsItem>
-                    <ElDescriptionsItem label="Doctor"
-                      >{{ ocrRuntimeDoctor?.summary?.fail || 0 }} fail /
-                      {{ ocrRuntimeDoctor?.summary?.warn || 0 }} warn</ElDescriptionsItem
+                    <ElDescriptionsItem label="运行体检"
+                      >{{ ocrRuntimeDoctor?.summary?.fail || 0 }} 失败 /
+                      {{ ocrRuntimeDoctor?.summary?.warn || 0 }} 告警</ElDescriptionsItem
                     >
                     <ElDescriptionsItem v-if="firstRuntimeIssue" label="首要问题">
-                      {{ friendlyTechLabel(firstRuntimeIssue.name) }}：{{
-                        firstRuntimeIssue.message
+                      {{ friendlyTechnicalText(firstRuntimeIssue.name) }}：{{
+                        friendlyTechnicalText(firstRuntimeIssue.message)
                       }}
                     </ElDescriptionsItem>
                   </ElDescriptions>
@@ -12925,7 +13169,11 @@ onBeforeUnmount(() => {
                           label="场景"
                           min-width="150"
                           show-overflow-tooltip
-                        />
+                        >
+                          <template #default="{ row }">{{
+                            friendlyTechLabel(row.scenario)
+                          }}</template>
+                        </ElTableColumn>
                         <ElTableColumn label="标签" width="115">
                           <template #default="{ row }">
                             {{
@@ -13048,7 +13296,7 @@ onBeforeUnmount(() => {
                       }}</ElDescriptionsItem
                     >
                     <ElDescriptionsItem v-if="selectedOcrMissingVariants.length" label="缺失候选">
-                      {{ selectedOcrMissingVariants.join(', ') }}
+                      {{ friendlyTechList(selectedOcrMissingVariants) }}
                     </ElDescriptionsItem>
                   </ElDescriptions>
                   <ElTable
@@ -13058,12 +13306,9 @@ onBeforeUnmount(() => {
                     height="180"
                     class="mt-12px"
                   >
-                    <ElTableColumn
-                      prop="engine"
-                      label="引擎"
-                      min-width="180"
-                      show-overflow-tooltip
-                    />
+                    <ElTableColumn prop="engine" label="引擎" min-width="180" show-overflow-tooltip>
+                      <template #default="{ row }">{{ friendlyTechLabel(row.engine) }}</template>
+                    </ElTableColumn>
                     <ElTableColumn prop="status" label="状态" width="90">
                       <template #default="{ row }">
                         <ElTag :type="statusType(String(row.status))" effect="plain">
@@ -13219,7 +13464,11 @@ onBeforeUnmount(() => {
                     label="业务包"
                     min-width="180"
                     show-overflow-tooltip
-                  />
+                  >
+                    <template #default="{ row }">{{
+                      friendlyTechLabel(row.businessPackId)
+                    }}</template>
+                  </ElTableColumn>
                   <ElTableColumn prop="status" label="状态" width="120">
                     <template #default="{ row }">
                       <ElTag :type="statusType(String(row.status))" effect="plain">
@@ -13303,7 +13552,11 @@ onBeforeUnmount(() => {
                           label="场景"
                           min-width="190"
                           show-overflow-tooltip
-                        />
+                        >
+                          <template #default="{ row }">{{
+                            friendlyTechLabel(row.scenario)
+                          }}</template>
+                        </ElTableColumn>
                         <ElTableColumn prop="averageScore" label="分数" width="95">
                           <template #default="{ row }">{{
                             scorePercent(row.averageScore)
@@ -13380,7 +13633,11 @@ onBeforeUnmount(() => {
                           label="场景"
                           min-width="160"
                           show-overflow-tooltip
-                        />
+                        >
+                          <template #default="{ row }">{{
+                            friendlyTechLabel(row.scenario)
+                          }}</template>
+                        </ElTableColumn>
                         <ElTableColumn prop="score" label="分数" width="95">
                           <template #default="{ row }">{{ scorePercent(row.score) }}</template>
                         </ElTableColumn>
@@ -13488,9 +13745,13 @@ onBeforeUnmount(() => {
                 </ElDescriptions>
                 <ElTable :data="costChangeRequests" border height="180" class="mt-12px">
                   <ElTableColumn prop="id" label="申请" min-width="150" show-overflow-tooltip />
-                  <ElTableColumn prop="status" label="状态" width="130" />
+                  <ElTableColumn prop="status" label="状态" width="130">
+                    <template #default="{ row }">{{ friendlyStatus(row.status) }}</template>
+                  </ElTableColumn>
                   <ElTableColumn prop="proposedLimit" label="建议额度" width="110" />
-                  <ElTableColumn prop="reason" label="原因" min-width="210" show-overflow-tooltip />
+                  <ElTableColumn label="原因" min-width="210" show-overflow-tooltip>
+                    <template #default="{ row }">{{ friendlyTechnicalText(row.reason) }}</template>
+                  </ElTableColumn>
                 </ElTable>
               </ElCard>
             </ElCol>
@@ -13581,8 +13842,12 @@ onBeforeUnmount(() => {
           </div>
 
           <ElDescriptions :column="1" border class="mb-12px">
-            <ElDescriptionsItem label="Embedding 模型">
-              {{ selectedVectorFileQualityRecord.embeddingModel || 'embedding-default' }}
+            <ElDescriptionsItem label="向量模型">
+              {{
+                friendlyTechLabel(
+                  selectedVectorFileQualityRecord.embeddingModel || 'embedding-default'
+                )
+              }}
             </ElDescriptionsItem>
             <ElDescriptionsItem label="索引版本">
               {{ selectedVectorFileQualityRecord.indexVersion || 'knowledge-index@local' }}
@@ -13590,7 +13855,7 @@ onBeforeUnmount(() => {
             <ElDescriptionsItem label="向量维度">
               {{ selectedVectorFileQualityRecord.vectorDimensions || '-' }}
             </ElDescriptionsItem>
-            <ElDescriptionsItem label="KnowledgeFile">
+            <ElDescriptionsItem label="知识文件编号">
               {{ selectedVectorFileQualityRecord.knowledgeFileId || '-' }}
             </ElDescriptionsItem>
             <ElDescriptionsItem label="最新任务">
@@ -13863,7 +14128,7 @@ onBeforeUnmount(() => {
                 <ElTableColumn prop="status" label="状态" width="96">
                   <template #default="{ row }">
                     <ElTag :type="row.status === 'pass' ? 'success' : 'warning'" effect="plain">
-                      {{ friendlyStatus(row.status) }}
+                      {{ row.statusLabel }}
                     </ElTag>
                   </template>
                 </ElTableColumn>
@@ -13979,7 +14244,7 @@ onBeforeUnmount(() => {
                   <Echart :options="selectedVectorFilePageOption" height="240px" />
                 </ElCard>
                 <ElCard shadow="never" class="vector-file-chart-card">
-                  <template #header>质量 Flags</template>
+                  <template #header>质量标记</template>
                   <Echart :options="selectedVectorFileFlagOption" height="240px" />
                 </ElCard>
               </div>
@@ -14078,8 +14343,8 @@ onBeforeUnmount(() => {
               <span>审查任务编号</span>
               <strong>{{ selectedReviewRun.run.reviewRunId || selectedReviewRun.run.id }}</strong>
               <small>
-                {{ selectedReviewRun.run.agentId || 'compliance_review_agent' }} ·
-                {{ selectedReviewRun.run.modelAlias || '-' }}
+                {{ friendlyTechLabel(selectedReviewRun.run.agentId || 'compliance_review_agent') }}
+                · {{ friendlyTechLabel(selectedReviewRun.run.modelAlias) }}
               </small>
             </div>
             <ElTag :type="statusType(String(selectedReviewRun.run.status))" effect="plain">
@@ -14254,34 +14519,34 @@ onBeforeUnmount(() => {
               <ElTable :data="reviewLineageRows" border height="300">
                 <ElTableColumn prop="label" label="字段" width="130" />
                 <ElTableColumn label="值" min-width="320" show-overflow-tooltip>
-                  <template #default="{ row }">{{ shortText(row.value) }}</template>
+                  <template #default="{ row }">
+                    {{ friendlyTechnicalText(shortText(row.value)) }}
+                  </template>
                 </ElTableColumn>
               </ElTable>
             </ElTabPane>
             <ElTabPane label="人工修正" name="human">
               <ElTable :data="normalizedReviewHumanCorrectionRows" border height="300">
-                <ElTableColumn
-                  prop="targetType"
-                  label="对象"
-                  min-width="120"
-                  show-overflow-tooltip
-                />
+                <ElTableColumn prop="targetType" label="对象" min-width="120" show-overflow-tooltip>
+                  <template #default="{ row }">{{ friendlyTechLabel(row.targetType) }}</template>
+                </ElTableColumn>
                 <ElTableColumn
                   prop="correctionType"
                   label="类型"
                   min-width="140"
                   show-overflow-tooltip
-                />
+                >
+                  <template #default="{ row }">
+                    {{ friendlyIssueLabel(row.correctionType) }}
+                  </template>
+                </ElTableColumn>
                 <ElTableColumn prop="before" label="修正前" min-width="220" show-overflow-tooltip />
                 <ElTableColumn label="修正后" min-width="220" show-overflow-tooltip>
                   <template #default="{ row }">{{ shortText(row.after) }}</template>
                 </ElTableColumn>
-                <ElTableColumn
-                  prop="rootCause"
-                  label="归因"
-                  min-width="150"
-                  show-overflow-tooltip
-                />
+                <ElTableColumn prop="rootCause" label="归因" min-width="150" show-overflow-tooltip>
+                  <template #default="{ row }">{{ friendlyIssueLabel(row.rootCause) }}</template>
+                </ElTableColumn>
                 <ElTableColumn label="入评估集" width="100">
                   <template #default="{ row }">
                     <ElTag :type="row.shouldEnterEvaluationSet ? 'success' : 'info'" effect="plain">
@@ -14310,7 +14575,7 @@ onBeforeUnmount(() => {
               <strong>{{ selectedOcrRun.job.jobId || selectedOcrRun.job.id }}</strong>
               <small
                 >{{ friendlyTechLabel(selectedOcrRun.job.profileId) }} ·
-                {{ selectedOcrRun.job.documentType || '-' }}</small
+                {{ friendlyTechLabel(selectedOcrRun.job.documentType) }}</small
               >
             </div>
             <ElTag :type="statusType(String(selectedOcrRun.job.status))" effect="plain">
@@ -14338,7 +14603,7 @@ onBeforeUnmount(() => {
             <ElDescriptionsItem label="候选图">
               {{ selectedOcrGeneratedVariants.length }}/{{ selectedOcrRequestedVariants.length }}
               <span v-if="selectedOcrMissingVariants.length">
-                · 缺失 {{ selectedOcrMissingVariants.join('、') }}
+                · 缺失 {{ friendlyTechList(selectedOcrMissingVariants) }}
               </span>
             </ElDescriptionsItem>
             <ElDescriptionsItem label="人工修正">
@@ -14349,7 +14614,9 @@ onBeforeUnmount(() => {
           <ElTabs class="audit-drawer-tabs">
             <ElTabPane label="引擎" name="engines">
               <ElTable :data="selectedOcrEngineRows" border height="300">
-                <ElTableColumn prop="engine" label="引擎" min-width="180" show-overflow-tooltip />
+                <ElTableColumn prop="engine" label="引擎" min-width="180" show-overflow-tooltip>
+                  <template #default="{ row }">{{ friendlyTechLabel(row.engine) }}</template>
+                </ElTableColumn>
                 <ElTableColumn prop="status" label="状态" width="110">
                   <template #default="{ row }">
                     <ElTag :type="statusType(String(row.status))" effect="plain">
@@ -14379,7 +14646,9 @@ onBeforeUnmount(() => {
             </ElTabPane>
             <ElTabPane label="证据缺口" name="evidence">
               <ElTable :data="ocrMissingEvidenceRows" border height="300">
-                <ElTableColumn prop="targetType" label="类型" width="110" />
+                <ElTableColumn prop="targetType" label="类型" width="110">
+                  <template #default="{ row }">{{ friendlyTechLabel(row.targetType) }}</template>
+                </ElTableColumn>
                 <ElTableColumn prop="targetId" label="目标" min-width="160" show-overflow-tooltip />
                 <ElTableColumn
                   prop="parseResultId"
@@ -14402,8 +14671,12 @@ onBeforeUnmount(() => {
                 <ElTableColumn prop="code" label="诊断码" min-width="150" show-overflow-tooltip>
                   <template #default="{ row }">{{ friendlyTechLabel(row.code) }}</template>
                 </ElTableColumn>
-                <ElTableColumn prop="level" label="等级" width="100" />
-                <ElTableColumn prop="message" label="说明" min-width="280" show-overflow-tooltip />
+                <ElTableColumn prop="level" label="等级" width="100">
+                  <template #default="{ row }">{{ friendlyStatus(row.level) }}</template>
+                </ElTableColumn>
+                <ElTableColumn prop="message" label="说明" min-width="280" show-overflow-tooltip>
+                  <template #default="{ row }">{{ friendlyTechnicalText(row.message) }}</template>
+                </ElTableColumn>
               </ElTable>
             </ElTabPane>
             <ElTabPane label="人工修正" name="corrections">
@@ -16053,25 +16326,6 @@ onBeforeUnmount(() => {
   border-color: #8eb8ff;
   outline: 0;
   box-shadow: 0 0 0 3px rgb(37 99 235 / 14%);
-}
-
-.knowledge-chart-shell::after,
-.langgraph-chart-shell::after {
-  position: absolute;
-  right: 10px;
-  bottom: 8px;
-  z-index: 2;
-  padding: 4px 8px;
-  font-size: 11px;
-  font-weight: 800;
-  line-height: 16px;
-  color: #47627f;
-  pointer-events: none;
-  background: rgb(255 255 255 / 88%);
-  border: 1px solid #dbe8f7;
-  border-radius: 999px;
-  content: '拖动平移 · 双指/Ctrl滚轮缩放 · 0重置';
-  box-shadow: 0 6px 16px rgb(15 23 42 / 7%);
 }
 
 .knowledge-chart-shell.is-panning,
@@ -17984,6 +18238,19 @@ onBeforeUnmount(() => {
   background: #fff;
   border: 0;
   object-fit: contain;
+}
+
+.panel-title-alias {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #5b6f91;
+  font-size: 12px;
+  font-weight: 600;
+  vertical-align: middle;
 }
 
 .vector-source-placeholder {

@@ -456,6 +456,7 @@ def test_cache_schema_versions_are_upgraded() -> None:
     assert PAGE_SELECTION_VERSION == "sparse_tail_pages_v1"
     assert REMEDIATION_VERSION == "crop_remediation_v2"
     assert PAGE_RENDER_VERSION == "pymupdf_text_to_pixel_matrix_v2"
+    assert cache_contract_versions()["resultCacheSchema"]
     assert cache_contract_versions()["pageRenderVersion"] == PAGE_RENDER_VERSION
 
     cache_path = rendered_page_cache_dir(Path("/tmp/missing.pdf"), dpi=300, max_pages=2, max_long_side=1200)
@@ -488,6 +489,63 @@ def test_pdf_page_render_manifest_round_trips_matrix_metadata(tmp_path: Path) ->
     assert loaded == pages
 
 
+def test_pdf_page_cache_hit_uses_manifest_not_get_pixmap(monkeypatch, tmp_path: Path) -> None:
+    import sys
+    import types
+
+    from PIL import Image
+    from apps.ocr_service.pages import PAGE_RENDER_VERSION, render_pdf_pages, rendered_page_cache_dir, save_pdf_page_manifest
+
+    source = tmp_path / "cached.pdf"
+    source.write_bytes(b"%PDF-1.7 cached")
+    monkeypatch.setenv("AICHECK_OCR_PAGE_CACHE_DIR", str(tmp_path / "page-cache"))
+
+    cache_dir = rendered_page_cache_dir(source, dpi=300, max_pages=1, max_long_side=0)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    page_path = cache_dir / "page-1.png"
+    Image.new("RGB", (40, 30), (255, 255, 255)).save(page_path)
+    expected_pages = [
+        {
+            "pageNo": 1,
+            "path": str(page_path),
+            "width": 40,
+            "height": 30,
+            "totalPages": 1,
+            "renderedPages": [1],
+            "pageRenderVersion": PAGE_RENDER_VERSION,
+            "pdfRenderMatrix": [1, 0, 0, 1, 0, 0],
+            "pdfTextToPixelMatrix": [1, 0, 0, 1, 0, 0],
+            "pdfPixmapX": 0,
+            "pdfPixmapY": 0,
+        }
+    ]
+    save_pdf_page_manifest(cache_dir, expected_pages)
+
+    class FakePage:
+        rotation = 0
+
+        def get_pixmap(self, *args, **kwargs):
+            raise AssertionError("cache hit must not render pixmap")
+
+    class FakeDocument:
+        page_count = 1
+
+        def __len__(self):
+            return 1
+
+        def __getitem__(self, index):
+            return FakePage()
+
+        def close(self):
+            return None
+
+    monkeypatch.setitem(sys.modules, "fitz", types.SimpleNamespace(open=lambda _path: FakeDocument()))
+
+    pages = render_pdf_pages(source, dpi=300, max_pages=1)
+
+    assert pages == expected_pages
+
+
 def test_profile_validator_checks_min_table_cell_evidence_coverage() -> None:
     from copy import deepcopy
     from apps.ocr_service.profiles import DEFAULT_PROFILE_ID, OCR_PROFILES, validate_profiles
@@ -498,6 +556,33 @@ def test_profile_validator_checks_min_table_cell_evidence_coverage() -> None:
     failures = validate_profiles({DEFAULT_PROFILE_ID: profile})
 
     assert any(item["path"] == "qualityRules.minTableCellEvidenceCoverage" for item in failures)
+
+    profile["qualityRules"]["minTableCellEvidenceCoverage"] = "0.72"
+    failures = validate_profiles({DEFAULT_PROFILE_ID: profile})
+
+    assert not any(item["path"] == "qualityRules.minTableCellEvidenceCoverage" for item in failures)
+
+    profile["qualityRules"]["minTableCellEvidenceCoverage"] = "not-a-number"
+    failures = validate_profiles({DEFAULT_PROFILE_ID: profile})
+
+    assert any(item["path"] == "qualityRules.minTableCellEvidenceCoverage" for item in failures)
+
+
+def test_profile_validator_accepts_parseable_boolean_strings_for_required_seal() -> None:
+    from copy import deepcopy
+    from apps.ocr_service.profiles import DEFAULT_PROFILE_ID, OCR_PROFILES, validate_profiles
+
+    profile = deepcopy(OCR_PROFILES[DEFAULT_PROFILE_ID])
+    profile["sealRules"]["required"] = "false"
+
+    failures = validate_profiles({DEFAULT_PROFILE_ID: profile})
+
+    assert not any(item["path"] == "sealRules.required" for item in failures)
+
+    profile["sealRules"]["required"] = "definitely"
+    failures = validate_profiles({DEFAULT_PROFILE_ID: profile})
+
+    assert any(item["path"] == "sealRules.required" for item in failures)
 
 
 def test_piping_table_helpers_are_page_scoped() -> None:
@@ -1227,6 +1312,11 @@ def test_seal_not_found_targets_middle_visual_seal_page(tmp_path: Path) -> None:
     seal_crops = [item for item in remediation_variants if item.get("purpose") == "seal" and item.get("source") == "remediation_crop"]
     assert seal_crops[0]["pageNo"] == 5
     assert any(item["pageNo"] == 5 and "visual_" in item["cropSourceTargetId"] for item in seal_crops)
+    visual_crops = [item for item in seal_crops if item["pageNo"] == 5 and "visual_" in item["cropSourceTargetId"]]
+    assert visual_crops
+    assert all((item.get("remediationTarget") or {}).get("sourceKind") == "visual_seal_candidate" for item in visual_crops)
+    assert all(float((item.get("remediationTarget") or {}).get("sourceVisualConfidence") or 0) > 0 for item in visual_crops)
+    assert all("visual_candidate_only" in set((item.get("remediationTarget") or {}).get("sourceQualityFlags") or []) for item in visual_crops)
 
 
 def test_missing_table_crop_targets_table_clue_pages_not_only_first_three(tmp_path: Path) -> None:
@@ -1598,6 +1688,43 @@ def test_run_all_variants_does_not_bypass_disabled_seal_policy() -> None:
     assert disabled_string_paddlex == []
 
 
+def test_string_false_required_seal_is_false_across_ocr_policy_paths(monkeypatch) -> None:
+    from apps.ocr_service.engines import seal_max_pages
+    from apps.ocr_service.fusion import fuse_parse_result
+    from apps.ocr_service.pages import profile_requires_tail_pages
+    from apps.ocr_service.quality import apply_business_need_flags, unreadable_quality
+    from apps.ocr_service.routing import route_engine_variants
+    from apps.ocr_service.service import missing_seal_remediation_targets
+
+    profile = {"requiredFields": [], "requiredTables": [], "sealRules": {"required": "false"}}
+    variants = [
+        {
+            "variantId": "page_1_original",
+            "pageNo": 1,
+            "path": "/tmp/page-1.png",
+            "width": 1000,
+            "height": 1000,
+            "preprocessChain": ["original"],
+        }
+    ]
+
+    assert profile_requires_tail_pages(profile) is False
+    assert route_engine_variants("paddlex_seal_recognition", variants, profile=profile, page_quality=[]) == []
+    assert missing_seal_remediation_targets({"quality": {"reasons": []}, "seals": []}, variants, profile) == []
+
+    quality = unreadable_quality(Path("/tmp/missing.png"), profile=profile, page_no=1)["quality"]
+    assert quality["requiresSealSearch"] is False
+    quality = {"hasSealCandidate": False}
+    apply_business_need_flags(quality, profile)
+    assert quality["requiresSealSearch"] is False
+
+    fused = fuse_parse_result({"fragments": [], "fields": [], "tables": [], "seals": []}, profile=profile)
+    assert "SEAL_NOT_FOUND" not in set(fused["quality"].get("reasons") or [])
+
+    monkeypatch.delenv("AICHECK_AGENTDESIGN_SEAL_MAX_PAGES", raising=False)
+    assert seal_max_pages(profile) == 1
+
+
 def test_pymupdf_bbox_uses_render_matrix_transform() -> None:
     from apps.ocr_service.service import attach_variant_metadata
 
@@ -1634,3 +1761,151 @@ def test_pymupdf_bbox_uses_render_matrix_transform() -> None:
         "pixmapX": -100.0,
         "pixmapY": 0.0,
     }
+
+
+def test_pymupdf_bbox_maps_all_rotation_matrices_to_rendered_pixels() -> None:
+    from apps.ocr_service.service import attach_variant_metadata
+
+    cases = [
+        ("0", [2, 0, 0, 2, 0, 0], 0, 0, [2.0, 4.0, 6.0, 8.0]),
+        ("90", [0, 2, -2, 0, 100, 0], -100, 0, [192.0, 2.0, 196.0, 6.0]),
+        ("180", [-2, 0, 0, -2, 100, 120], 0, 0, [94.0, 112.0, 98.0, 116.0]),
+        ("270", [0, -2, 2, 0, 0, 120], 0, 0, [4.0, 114.0, 8.0, 118.0]),
+    ]
+
+    for rotation, matrix, pixmap_x, pixmap_y, expected_bbox in cases:
+        result = {
+            "metadata": {"documentLevel": True},
+            "fragments": [{"pageNo": 1, "text": f"旋转{rotation}", "bbox": [1.0, 2.0, 3.0, 4.0]}],
+            "fields": [],
+            "tables": [],
+            "seals": [],
+            "layoutBlocks": [],
+        }
+
+        attach_variant_metadata(
+            result,
+            "pymupdf_text_layer",
+            {"variantId": "document_original", "engineScope": "document"},
+            document_pages=[
+                {
+                    "pageNo": 1,
+                    "renderScaleX": 2.0,
+                    "renderScaleY": 2.0,
+                    "pdfTextToPixelMatrix": matrix,
+                    "pdfPixmapX": pixmap_x,
+                    "pdfPixmapY": pixmap_y,
+                }
+            ],
+        )
+
+        fragment = result["fragments"][0]
+        assert fragment["bbox"] == expected_bbox
+        assert fragment["coordinateSystem"] == "rendered_pixels"
+        assert fragment["sourceCoordinateSystem"] == "pdf_points"
+        assert fragment["coordinateTransformStatus"] == "mapped_from_pdf_points"
+
+
+def test_observability_metrics_cover_profile_remediation_cache_and_rotation() -> None:
+    from apps.ocr_service.service import build_observability_metrics
+
+    before = {
+        "quality": {"reasons": ["FIELD_LOW_CONFIDENCE", "SEAL_NOT_FOUND", "TABLE_CELL_EVIDENCE_LOW"]},
+        "tables": [
+            {
+                "tableId": "t-before",
+                "cells": [{"text": "焊口编号"}, {"text": "W-001"}],
+            }
+        ],
+    }
+    result = {
+        "profileId": "engineering_table_photo",
+        "documentType": "piping_characteristic_list",
+        "quality": {"reasons": ["LOW_CONFIDENCE_FIELD_REVIEW"]},
+        "pages": [{"pageNo": 1, "rotation": 90}],
+        "fragments": [
+            {
+                "pageNo": 1,
+                "text": "旋转文本层",
+                "bbox": [10, 20, 90, 40],
+                "coordinateSystem": "rendered_pixels",
+                "sourceCoordinateSystem": "pdf_points",
+                "coordinateTransformStatus": "mapped_from_pdf_points",
+                "sourceEngine": "pymupdf_text_layer",
+            }
+        ],
+        "fields": [
+            {
+                "fieldCode": "report_no",
+                "fieldValue": "RT-001",
+                "extractionMethod": "remediation_field_crop_ocr",
+                "remediationCandidateOnly": False,
+            }
+        ],
+        "tables": [
+            {
+                "tableId": "t-after",
+                "variantId": "page_1_table_crop_t-after_abcd1234",
+                "cells": [
+                    {
+                        "text": "焊口编号",
+                        "pageNo": 1,
+                        "bbox": [10, 10, 60, 30],
+                        "coordinateSystem": "rendered_pixels",
+                        "coordinateTransformStatus": "mapped_from_crop",
+                    },
+                    {
+                        "text": "W-001",
+                        "pageNo": 1,
+                        "bbox": [60, 10, 110, 30],
+                        "coordinateSystem": "rendered_pixels",
+                        "coordinateTransformStatus": "mapped_from_crop",
+                    },
+                ],
+            }
+        ],
+        "seals": [
+            {
+                "sealId": "seal-1",
+                "sealEvidenceLevel": "visual_plus_seal_crop_ocr",
+                "canSatisfyRequiredSeal": True,
+            },
+            {
+                "sealId": "seal-2",
+                "sealEvidenceLevel": "generic_region_seal_crop_ocr",
+                "candidateOnly": True,
+                "canSatisfyRequiredSeal": False,
+            },
+        ],
+        "engineRuns": [
+            {"durationMs": 10, "engineCacheHit": True, "variantCacheHit": True},
+            {"durationMs": 30, "engineCacheHit": False, "variantCacheHit": False},
+        ],
+        "remediationRuns": [
+            {"durationMs": 50, "engineCacheHit": True, "variantId": "page_1_seal_crop_missing_seal_abcd1234"},
+        ],
+        "imageVariants": [{"cacheHit": True}, {"cacheHit": False}],
+    }
+
+    metrics = build_observability_metrics(result, before_remediation=before)
+
+    assert metrics["profileId"] == "engineering_table_photo"
+    assert metrics["fieldCropRemediationTriggered"] is True
+    assert metrics["fieldCropRemediationSucceeded"] == 1
+    assert metrics["fieldCropFalseFillRate"] is None
+    assert metrics["sealNotFoundTriggered"] is True
+    assert metrics["sealCropGenerated"] == 1
+    assert metrics["visualSealCropOcrSucceeded"] == 1
+    assert metrics["genericSealCropCandidateOnlyRate"] == 1.0
+    assert metrics["requiredSealFalsePassRate"] == 0.0
+    assert metrics["tableCellEvidenceLowTriggered"] is True
+    assert metrics["tableCropRemediationSucceeded"] == 1
+    assert metrics["tableCellEvidenceCoverageBefore"] == 0.0
+    assert metrics["tableCellEvidenceCoverageAfter"] == 1.0
+    assert metrics["pymupdfTextLayerBBoxValidRate"] == 1.0
+    assert metrics["rotatedPdfDetectedCount"] == 1
+    assert metrics["rotatedPdfOverlayErrorRate"] == 0.0
+    assert metrics["cacheHitRate"] == 0.666667
+    assert metrics["pageRenderCacheHitRate"] == 0.5
+    assert metrics["remediationPassLatency"] == 50
+    assert metrics["P95Latency"] == 50

@@ -75,7 +75,10 @@ def seal_engine_disabled(engine_name: str, profile: dict[str, Any]) -> bool:
     if engine_name not in SEAL_ENGINES:
         return False
     seal_policy = ((profile.get("preprocessPolicy") or {}).get("seal") or {}) if isinstance(profile, dict) else {}
-    required_seal = bool(((profile.get("sealRules") or {}) if isinstance(profile, dict) else {}).get("required"))
+    required_seal = parse_bool(
+        ((profile.get("sealRules") or {}) if isinstance(profile, dict) else {}).get("required"),
+        False,
+    ) is True
     default_enabled = required_seal
     if engine_name == "paddlex_seal_recognition" and not seal_policy_enabled(
         seal_policy,
@@ -238,7 +241,10 @@ def seal_text_variants(
     if not all_pages:
         return []
     seal_policy = ((profile.get("preprocessPolicy") or {}).get("seal") or {}) if isinstance(profile, dict) else {}
-    required_seal = bool(((profile.get("sealRules") or {}) if isinstance(profile, dict) else {}).get("required"))
+    required_seal = parse_bool(
+        ((profile.get("sealRules") or {}) if isinstance(profile, dict) else {}).get("required"),
+        False,
+    ) is True
     max_pages = int(seal_policy.get("maxPages") or (6 if required_seal else 2))
     candidate_pages = [
         page_no

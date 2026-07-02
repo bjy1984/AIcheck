@@ -9,6 +9,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from apps.ocr_service.utils import parse_bool
+
 
 PAGE_RENDER_VERSION = "pymupdf_text_to_pixel_matrix_v2"
 
@@ -191,8 +193,8 @@ def select_pdf_page_indices(
 def profile_requires_tail_pages(profile: dict[str, Any] | None) -> bool:
     if not isinstance(profile, dict):
         return False
-    seal_required = bool((profile.get("sealRules") or {}).get("required"))
-    signature_required = bool((profile.get("signatureRules") or {}).get("required"))
+    seal_required = parse_bool((profile.get("sealRules") or {}).get("required"), False) is True
+    signature_required = parse_bool((profile.get("signatureRules") or {}).get("required"), False) is True
     return seal_required or signature_required
 
 

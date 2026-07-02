@@ -613,7 +613,7 @@ def build_quality_gate(result: dict[str, Any], profile: dict[str, Any]) -> dict[
     missing_fields = [field for field in required_fields if field and field not in field_codes]
     required_tables = [str(table) for table in profile.get("requiredTables") or []]
     missing_tables = missing_required_tables(tables, required_tables)
-    required_seal = bool((profile.get("sealRules") or {}).get("required"))
+    required_seal = parse_bool((profile.get("sealRules") or {}).get("required"), False) is True
     expected_seal_types = [str(item) for item in (profile.get("sealRules") or {}).get("expectedSealTypes") or []]
     field_confidence = average([float(field.get("confidence") or 0) for field in fields])
     table_confidence = average([float(table.get("structureConfidence") or 0) for table in tables])

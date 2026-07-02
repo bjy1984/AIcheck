@@ -16,6 +16,7 @@ from apps.ocr_service.fusion import (
     fuse_parse_result,
     missing_required_tables,
     normalize_field_key,
+    table_cell_evidence_score,
     validate_business_field_value,
 )
 from apps.ocr_service.jobs import DocumentParseJobStore
@@ -519,6 +520,7 @@ class OcrService:
             business_pack_id=business_pack_id,
             model_manifest=model_manifest,
         )
+        before_remediation = deepcopy(enriched)
         enriched = self.run_remediation_pass(
             enriched,
             source_path=source_path,
@@ -534,6 +536,7 @@ class OcrService:
             document_pages=document_pages,
         )
         apply_contract_metadata(enriched)
+        attach_observability_metrics(enriched, before_remediation=before_remediation)
         if not has_external_candidates:
             save_result_cache(result_cache_key, enriched)
         return enriched
@@ -989,6 +992,215 @@ def apply_contract_metadata(result: dict[str, Any]) -> None:
     result["remediationVersion"] = REMEDIATION_VERSION
 
 
+def attach_observability_metrics(
+    result: dict[str, Any],
+    *,
+    before_remediation: dict[str, Any] | None = None,
+) -> None:
+    result["observabilityMetrics"] = build_observability_metrics(result, before_remediation=before_remediation)
+
+
+def build_observability_metrics(
+    result: dict[str, Any],
+    *,
+    before_remediation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    before = before_remediation if isinstance(before_remediation, dict) else result
+    before_reasons = quality_reason_set(before)
+    after_reasons = quality_reason_set(result)
+    fields = dict_items(result.get("fields"))
+    tables = dict_items(result.get("tables"))
+    seals = dict_items(result.get("seals"))
+    pages = dict_items(result.get("pages"))
+    image_variants = dict_items(result.get("imageVariants"))
+    engine_runs = dict_items(result.get("engineRuns"))
+    remediation_runs = dict_items(result.get("remediationRuns"))
+
+    field_remediation_succeeded = [
+        field
+        for field in fields
+        if field.get("extractionMethod") == "remediation_field_crop_ocr"
+        and parse_bool(field.get("remediationCandidateOnly"), False) is not True
+    ]
+    seal_crop_runs = [run for run in remediation_runs if "_seal_crop_" in str(run.get("variantId") or "")]
+    visual_seal_crop_ocr = [
+        seal
+        for seal in seals
+        if seal.get("sealEvidenceLevel") == "visual_plus_seal_crop_ocr"
+        and parse_bool(seal.get("candidateOnly"), False) is not True
+    ]
+    generic_crop_seals = [seal for seal in seals if seal.get("sealEvidenceLevel") == "generic_region_seal_crop_ocr"]
+    generic_candidate_only = [
+        seal
+        for seal in generic_crop_seals
+        if parse_bool(seal.get("candidateOnly"), False) is True
+        or parse_bool(seal.get("canSatisfyRequiredSeal"), False) is not True
+    ]
+    satisfying_seals = [seal for seal in seals if parse_bool(seal.get("canSatisfyRequiredSeal"), False) is True]
+    unsafe_required_satisfying = [seal for seal in satisfying_seals if not seal_has_required_visual_source(seal)]
+    table_crop_succeeded = [
+        table
+        for table in tables
+        if "_table_crop_" in str(table.get("variantId") or table.get("selectedVariantId") or "")
+        and table_cell_evidence_score(table) > 0
+    ]
+    cache_runs = [run for run in [*engine_runs, *remediation_runs] if "engineCacheHit" in run]
+    variant_cache_items = [item for item in [*engine_runs, *image_variants] if "variantCacheHit" in item or "cacheHit" in item]
+    remediation_latencies = [safe_float(run.get("durationMs")) for run in remediation_runs if safe_float(run.get("durationMs")) is not None]
+    run_latencies = [
+        safe_float(run.get("durationMs"))
+        for run in [*engine_runs, *remediation_runs]
+        if safe_float(run.get("durationMs")) is not None
+    ]
+
+    return {
+        "profileId": result.get("profileId"),
+        "documentType": result.get("documentType"),
+        "fieldCropRemediationTriggered": bool(before_reasons.intersection(TEXT_REMEDIATION_REASONS)),
+        "fieldCropRemediationSucceeded": len(field_remediation_succeeded),
+        "fieldCropFalseFillRate": None,
+        "sealNotFoundTriggered": "SEAL_NOT_FOUND" in before_reasons,
+        "sealCropGenerated": len(seal_crop_runs),
+        "visualSealCropOcrSucceeded": len(visual_seal_crop_ocr),
+        "genericSealCropCandidateOnlyRate": ratio(len(generic_candidate_only), len(generic_crop_seals)),
+        "requiredSealFalsePassRate": ratio(len(unsafe_required_satisfying), len(satisfying_seals)),
+        "tableCellEvidenceLowTriggered": "TABLE_CELL_EVIDENCE_LOW" in before_reasons,
+        "tableCropRemediationSucceeded": len(table_crop_succeeded),
+        "tableCellEvidenceCoverageBefore": table_cell_evidence_coverage(before),
+        "tableCellEvidenceCoverageAfter": table_cell_evidence_coverage(result),
+        "pymupdfTextLayerBBoxValidRate": pymupdf_text_layer_bbox_valid_rate(result),
+        "rotatedPdfDetectedCount": rotated_pdf_detected_count(pages),
+        "rotatedPdfOverlayErrorRate": rotated_pdf_overlay_error_rate(result),
+        "cacheHitRate": ratio(
+            len([run for run in cache_runs if parse_bool(run.get("engineCacheHit"), False) is True]),
+            len(cache_runs),
+        ),
+        "pageRenderCacheHitRate": ratio(
+            len(
+                [
+                    item
+                    for item in variant_cache_items
+                    if parse_bool(item.get("variantCacheHit", item.get("cacheHit")), False) is True
+                ]
+            ),
+            len(variant_cache_items),
+        ),
+        "remediationPassLatency": sum(remediation_latencies) if remediation_latencies else 0.0,
+        "P95Latency": percentile(run_latencies, 0.95) if len(run_latencies) >= 2 else None,
+        "qualityReasonsBefore": sorted(before_reasons),
+        "qualityReasonsAfter": sorted(after_reasons),
+    }
+
+
+def quality_reason_set(result: dict[str, Any]) -> set[str]:
+    quality = result.get("quality") if isinstance(result.get("quality"), dict) else {}
+    return {str(reason) for reason in quality.get("reasons") or [] if str(reason).strip()}
+
+
+def dict_items(value: Any) -> list[dict[str, Any]]:
+    return [item for item in value or [] if isinstance(item, dict)]
+
+
+def safe_float(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number != number:
+        return None
+    return number
+
+
+def ratio(numerator: int, denominator: int) -> float | None:
+    if denominator <= 0:
+        return None
+    return round(numerator / denominator, 6)
+
+
+def percentile(values: list[float], percentile_value: float) -> float | None:
+    clean = sorted(value for value in values if value >= 0)
+    if not clean:
+        return None
+    index = min(max(int(round((len(clean) - 1) * percentile_value)), 0), len(clean) - 1)
+    return round(clean[index], 3)
+
+
+def table_cell_evidence_coverage(result: dict[str, Any]) -> float | None:
+    tables = dict_items(result.get("tables"))
+    if not tables:
+        return None
+    scores = [table_cell_evidence_score(table) for table in tables]
+    return round(sum(scores) / len(scores), 6)
+
+
+def pymupdf_text_layer_bbox_valid_rate(result: dict[str, Any]) -> float | None:
+    candidates = [
+        item
+        for item in [*dict_items(result.get("fragments")), *dict_items(result.get("fields"))]
+        if is_pymupdf_text_layer_item(item)
+    ]
+    if not candidates:
+        return None
+    valid = [
+        item
+        for item in candidates
+        if item.get("coordinateSystem") == "rendered_pixels"
+        and rect_from_bbox(item.get("bbox") or item.get("polygon")) is not None
+        and "coordinate_transform_unmapped" not in {str(flag) for flag in item.get("qualityFlags") or []}
+    ]
+    return ratio(len(valid), len(candidates))
+
+
+def is_pymupdf_text_layer_item(item: dict[str, Any]) -> bool:
+    source = str(item.get("sourceEngine") or item.get("source") or "").lower()
+    status = str(item.get("coordinateTransformStatus") or "")
+    return (
+        "pymupdf" in source
+        or item.get("sourceCoordinateSystem") == "pdf_points"
+        or status == "mapped_from_pdf_points"
+    )
+
+
+def rotated_pdf_detected_count(pages: list[dict[str, Any]]) -> int:
+    count = 0
+    for page in pages:
+        rotation = safe_float(page.get("rotation") or page.get("pageRotation") or page.get("sourceRotation"))
+        if rotation is not None and int(rotation) % 360 != 0:
+            count += 1
+    return count
+
+
+def rotated_pdf_overlay_error_rate(result: dict[str, Any]) -> float | None:
+    rotated_pages = {
+        int(page.get("pageNo") or 0)
+        for page in dict_items(result.get("pages"))
+        if (safe_float(page.get("rotation") or page.get("pageRotation") or page.get("sourceRotation")) or 0) % 360 != 0
+    }
+    if not rotated_pages:
+        return None
+    candidates = [
+        item
+        for item in [*dict_items(result.get("fragments")), *dict_items(result.get("fields"))]
+        if int(item.get("pageNo") or 0) in rotated_pages and is_pymupdf_text_layer_item(item)
+    ]
+    if not candidates:
+        return None
+    invalid = [
+        item
+        for item in candidates
+        if rect_from_bbox(item.get("bbox") or item.get("polygon")) is None
+        or "coordinate_transform_unmapped" in {str(flag) for flag in item.get("qualityFlags") or []}
+    ]
+    return ratio(len(invalid), len(candidates))
+
+
+def seal_has_required_visual_source(seal: dict[str, Any]) -> bool:
+    if seal.get("sealEvidenceLevel") in {"visual_candidate", "visual_plus_seal_crop", "visual_plus_seal_crop_ocr"}:
+        return True
+    target = seal.get("remediationTarget") if isinstance(seal.get("remediationTarget"), dict) else {}
+    return seal_crop_has_visual_source(target) or seal_crop_has_visual_source(seal)
+
+
 def engine_should_remediate(engine_name: str, reasons: set[str]) -> bool:
     if engine_name == "paddleocr_vl_1_6":
         return True
@@ -1133,7 +1345,7 @@ def missing_seal_remediation_targets(
 ) -> list[dict[str, Any]]:
     quality = result.get("quality") if isinstance(result.get("quality"), dict) else {}
     reason_set = {str(item) for item in (reasons or set())} | {str(item) for item in quality.get("reasons") or []}
-    required_seal = bool((profile.get("sealRules") or {}).get("required"))
+    required_seal = parse_bool((profile.get("sealRules") or {}).get("required"), False) is True
     if result.get("seals") and "SEAL_NOT_FOUND" not in reason_set:
         return []
     if not required_seal and "SEAL_NOT_FOUND" not in reason_set:
@@ -1153,6 +1365,7 @@ def missing_seal_remediation_targets(
             continue
         width, height = dims
         for region_name, bbox in seal_region_bboxes_for_page(page_no, width, height, result, variants, candidate_pages):
+            source_kind, visual_confidence, quality_flags = seal_region_source_metadata(region_name)
             targets.append(
                 {
                     "sealId": f"missing_seal_{region_name}_page_{page_no}",
@@ -1160,15 +1373,29 @@ def missing_seal_remediation_targets(
                     "bbox": bbox,
                     "coordinateSystem": "rendered_pixels",
                     "coordinateTransformStatus": "original",
-                    "sourceKind": "generic_signature_region",
-                    "visualConfidence": 0.0,
-                    "qualityFlags": ["missing_required_seal_region_crop", "generic_seal_region_crop"],
+                    "sourceKind": source_kind,
+                    "visualConfidence": visual_confidence,
+                    "qualityFlags": quality_flags,
                 }
             )
     return targets
 
 
 SEAL_REMEDIATION_KEYWORDS = ["盖章", "签发", "批准", "单位", "日期", "审核", "经办", "负责人", "签章", "印章"]
+
+
+def seal_region_source_metadata(region_name: str) -> tuple[str, float, list[str]]:
+    if str(region_name or "").startswith("visual_"):
+        return (
+            "visual_seal_candidate",
+            0.65,
+            ["missing_required_seal_region_crop", "visual_candidate_only"],
+        )
+    return (
+        "generic_signature_region",
+        0.0,
+        ["missing_required_seal_region_crop", "generic_seal_region_crop"],
+    )
 
 
 def seal_remediation_page_order(
@@ -1233,6 +1460,7 @@ def seal_region_bboxes_for_page(
         return [
             ("keyword_signature_band", [width * 0.20, height * 0.30, width * 0.98, height * 0.96]),
             ("keyword_right_half", [width * 0.48, height * 0.10, width * 0.98, height * 0.96]),
+            ("keyword_bottom_band", [width * 0.02, height * 0.58, width * 0.98, height * 0.98]),
         ]
     return [
         ("bottom_right", [width * 0.48, height * 0.52, width * 0.98, height * 0.96]),
@@ -3104,7 +3332,7 @@ def regex_field_candidate(text_items: list[tuple[str, dict[str, Any]]], pattern:
 
 def add_profile_quality_diagnostics(result: dict[str, Any], profile: dict[str, Any]) -> None:
     diagnostics = result.setdefault("diagnostics", [])
-    if (profile.get("sealRules") or {}).get("required") and not result.get("seals"):
+    if parse_bool((profile.get("sealRules") or {}).get("required"), False) is True and not result.get("seals"):
         diagnostics.append(diagnostic("SEAL_NOT_FOUND", "当前 Profile 要求印章，但未检测到印章候选。", level="warning"))
     required_fields = profile.get("requiredFields") or []
     field_codes = {

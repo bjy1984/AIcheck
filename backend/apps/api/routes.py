@@ -10047,8 +10047,8 @@ def fde_ocr_runtime_doctor_report() -> dict[str, Any]:
                 {
                     "name": "ocr.base-url",
                     "status": "warn",
-                    "message": "AICHECK_OCR_BASE_URL is not configured for API service.",
-                    "fix": "Set AICHECK_OCR_BASE_URL so FDE can read OCR runtime doctor.",
+                    "message": "API 服务未配置 OCR 服务地址（AICHECK_OCR_BASE_URL）。",
+                    "fix": "在 API 服务环境变量中配置 AICHECK_OCR_BASE_URL，FDE 才能读取 OCR 运行体检结果。",
                 }
             ],
         }
@@ -10063,8 +10063,8 @@ def fde_ocr_runtime_doctor_report() -> dict[str, Any]:
                 {
                     "name": "ocr.runtime-doctor",
                     "status": "fail",
-                    "message": f"OCR runtime doctor is unavailable: {exc.__class__.__name__}",
-                    "fix": "Check ocr-service network, /internal/ocr/doctor, and AICHECK_OCR_BASE_URL.",
+                    "message": f"OCR 运行体检不可用：{exc.__class__.__name__}",
+                    "fix": "检查 OCR 服务网络、/internal/ocr/doctor 运行体检接口，以及 AICHECK_OCR_BASE_URL 配置。",
                 }
             ],
         }
@@ -10706,7 +10706,7 @@ def fde_run_ocr_capability_test(run_id: str) -> None:
                     {
                         "code": "OCR_SERVICE_NOT_CONFIGURED",
                         "level": "error",
-                        "message": "未配置 AICHECK_OCR_BASE_URL，无法调用本地 OCR 服务。",
+                        "message": "未配置 OCR 服务地址（AICHECK_OCR_BASE_URL），无法调用本地 OCR 服务。",
                     }
                 ],
             }

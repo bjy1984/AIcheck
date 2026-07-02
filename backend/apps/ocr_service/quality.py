@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.ocr_service.pages import render_document_pages
+from apps.ocr_service.utils import parse_bool
 
 
 def probe_page_quality(
@@ -82,7 +83,7 @@ def probe_image_quality(
                 "hasTableCandidate": has_table_candidate,
                 "tableClueScore": round(min(table_clue_score, 1.0), 4),
                 **line_clues,
-                "requiresSealSearch": bool(((profile or {}).get("sealRules") or {}).get("required")),
+                "requiresSealSearch": parse_bool(((profile or {}).get("sealRules") or {}).get("required"), False) is True,
                 "hasVisualSealCandidate": has_seal_candidate,
                 "hasSealCandidate": has_seal_candidate,
                 "isLowQuality": is_low_quality,
@@ -108,7 +109,7 @@ def unreadable_quality(
             "hasVisualTableCandidate": False,
             "hasTableCandidate": False,
             "tableClueScore": 0.0,
-            "requiresSealSearch": bool(((profile or {}).get("sealRules") or {}).get("required")),
+            "requiresSealSearch": parse_bool(((profile or {}).get("sealRules") or {}).get("required"), False) is True,
             "hasVisualSealCandidate": False,
             "hasSealCandidate": False,
         },
@@ -119,7 +120,7 @@ def apply_business_need_flags(quality: dict[str, Any], profile: dict[str, Any] |
     quality["requiresTableExtraction"] = bool((profile or {}).get("requiredTables"))
     quality["hasVisualTableCandidate"] = bool(quality.get("hasTableCandidate"))
     quality["tableClueScore"] = float(quality.get("tableClueScore") or quality.get("edgeDensity") or 0.0)
-    quality["requiresSealSearch"] = bool(((profile or {}).get("sealRules") or {}).get("required"))
+    quality["requiresSealSearch"] = parse_bool(((profile or {}).get("sealRules") or {}).get("required"), False) is True
     quality["hasVisualSealCandidate"] = bool(quality.get("hasSealCandidate"))
 
 

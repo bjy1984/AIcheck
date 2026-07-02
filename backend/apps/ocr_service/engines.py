@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from apps.ocr_service.utils import parse_bool
+
 
 def env_path(name: str, default: str) -> Path:
     return Path(os.getenv(name, default))
@@ -1008,10 +1010,11 @@ class PaddlexSealEngine(LocalOcrEngine):
         seals = normalize_seal_result(raw)
         diagnostics = []
         seal_rules = (profile or {}).get("sealRules") or {}
-        if seal_rules.get("required") and not seals:
+        required_seal = parse_bool(seal_rules.get("required"), False) is True
+        if required_seal and not seals:
             diagnostics.append({"code": "SEAL_NOT_FOUND", "level": "warning", "message": "未识别到必需印章。"})
         return {
-            "ok": bool(seals) or not seal_rules.get("required"),
+            "ok": bool(seals) or not required_seal,
             "seals": seals,
             "diagnostics": diagnostics,
             "engine": self.name,
@@ -1105,10 +1108,11 @@ class PaddlexSealEngine(LocalOcrEngine):
         seals = normalize_seal_result(raw)
         seal_rules = (profile or {}).get("sealRules") or {}
         diagnostics = []
-        if seal_rules.get("required") and not seals:
+        required_seal = parse_bool(seal_rules.get("required"), False) is True
+        if required_seal and not seals:
             diagnostics.append({"code": "SEAL_NOT_FOUND", "level": "warning", "message": "未识别到必需印章。"})
         return {
-            "ok": bool(seals) or not seal_rules.get("required"),
+            "ok": bool(seals) or not required_seal,
             "seals": seals,
             "diagnostics": diagnostics,
             "engine": self.name,
@@ -2019,7 +2023,7 @@ def seal_max_pages(profile: dict[str, Any] | None) -> int:
     seal_policy = ((profile or {}).get("preprocessPolicy") or {}).get("seal") or {}
     if seal_policy.get("maxPages"):
         return int(seal_policy["maxPages"])
-    if ((profile or {}).get("sealRules") or {}).get("required"):
+    if parse_bool(((profile or {}).get("sealRules") or {}).get("required"), False) is True:
         return int(os.getenv("AICHECK_AGENTDESIGN_SEAL_MAX_PAGES", "6"))
     return int(os.getenv("AICHECK_AGENTDESIGN_SEAL_MAX_PAGES", "1"))
 
