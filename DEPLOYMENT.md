@@ -940,7 +940,7 @@ OCR 调用链：
 - `backend/apps/ocr_service/service.py` 是 OCR 服务主体；会先尝试从 `AICHECK_AGENTDESIGN_BACKEND` 导入可选 `seal_ocr.pipeline`，导入失败不会阻断本地引擎链。
 - 当前 Compose 会把 `${AICHECK_AGENTDESIGN_HOST_PATH:-./apps/ocr_service}` 只读挂载到 `/opt/agentdesign`；默认 `AICHECK_AGENTDESIGN_BACKEND=/opt/agentdesign/mvp-system/backend`。只有 `AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR=true` 时才需要该路径指向完整 agentdesign checkout。
 - `Dockerfile.ocr` 会安装 `requirements-ocr.txt`；该文件对齐本地 OCR 基线依赖：`PyMuPDF`、`paddlepaddle`、`paddleocr`、`paddlex[ocr]`、`opencv-python-headless`、`docling`、`transformers`。
-- OCR 服务已按 Document Intelligence 方向组织：默认调用本项目本地引擎链 `PaddleOCR subprocess -> PaddleOCR in-process -> PP-StructureV3 -> PaddleX Seal -> 视觉印章候选 -> PaddleOCR-VL/Docling adapter`；agentdesign 印章 OCR 是可选增强。所有引擎都必须使用本地模型目录，缺模型时只标记 engine unavailable 或返回结构化诊断，不允许运行时联网下载。
+- OCR 服务已按 Document Intelligence 方向组织：默认调用本项目本地引擎链 `PaddleOCR subprocess -> PaddleOCR in-process -> PP-StructureV3 -> PaddleX Seal -> 视觉印章候选`；agentdesign 印章 OCR、PaddleOCR-VL、Docling 是可选增强。`AICHECK_ENABLE_PADDLEOCR_VL` 默认关闭，避免重型 VL 在普通线上 OCR 中自动触发；只建议在受控离线评估或手动复杂文档测试中打开。所有引擎都必须使用本地模型目录，缺模型时只标记 engine unavailable 或返回结构化诊断，不允许运行时联网下载。
 - 本地模型目录建议结构：
 
 ```text

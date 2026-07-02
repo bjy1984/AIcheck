@@ -1425,7 +1425,12 @@ class PaddleOcrVlEngine(LocalOcrEngine):
     version = "paddleocr-vl@1.6"
     required_package = "paddleocr"
 
+    def enabled(self) -> bool:
+        return env_bool("AICHECK_ENABLE_PADDLEOCR_VL", False)
+
     def available(self) -> bool:
+        if not self.enabled():
+            return False
         dirs = paddleocr_vl_model_dirs()
         required = ["layout", "vl_rec"]
         return self.package_available() and all(dirs[key].exists() for key in required)
@@ -1435,11 +1440,13 @@ class PaddleOcrVlEngine(LocalOcrEngine):
 
     def status(self) -> dict[str, Any]:
         dirs = paddleocr_vl_model_dirs()
+        enabled = self.enabled()
         return {
             "engine": self.name,
             "version": self.version,
             "available": self.available(),
-            "executionMode": "inprocess" if importlib.util.find_spec(self.required_package) is not None and importlib.util.find_spec("transformers") is not None else "subprocess" if subprocess_package_available("paddleocr") and subprocess_package_available("transformers") else "unavailable",
+            "enabled": str(enabled).lower(),
+            "executionMode": "disabled" if not enabled else "inprocess" if importlib.util.find_spec(self.required_package) is not None and importlib.util.find_spec("transformers") is not None else "subprocess" if subprocess_package_available("paddleocr") and subprocess_package_available("transformers") else "unavailable",
             "python": os.getenv("AICHECK_OCR_SUBPROCESS_PYTHON"),
             "modelDir": os.getenv("PADDLEOCR_VL_MODEL_DIR"),
             "modelDirs": {key: str(path) for key, path in dirs.items()},
