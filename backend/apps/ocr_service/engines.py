@@ -1325,11 +1325,13 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
                     "max_bbox_ratio": 0.12,
                 },
                 "blue": {
-                    "mask": cv2.inRange(hsv, np.array([85, 35, 35]), np.array([140, 255, 255])),
-                    "kernel": 13,
-                    "aspect": (0.45, 3.2),
-                    "max_area_ratio": 0.05,
-                    "max_bbox_ratio": 0.05,
+                    "mask": cv2.inRange(hsv, np.array([90, 45, 20]), np.array([130, 255, 205])),
+                    "kernel": 17,
+                    "aspect": (0.45, 6.0),
+                    "min_width": 70,
+                    "min_height": 70,
+                    "max_area_ratio": 0.08,
+                    "max_bbox_ratio": 0.055,
                 },
             }
 
@@ -1359,7 +1361,9 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
                     if area < max(1000.0, width * height * 0.00008):
                         continue
                     x, y, w, h = cv2.boundingRect(contour)
-                    if w < 40 or h < 25 or touches_border(x, y, w, h):
+                    min_width = int(config.get("min_width", 40))
+                    min_height = int(config.get("min_height", 25))
+                    if w < min_width or h < min_height or touches_border(x, y, w, h):
                         continue
                     aspect = w / float(h)
                     min_aspect, max_aspect = config["aspect"]

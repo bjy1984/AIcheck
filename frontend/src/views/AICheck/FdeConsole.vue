@@ -2891,6 +2891,21 @@ type OcrCapabilityStructuredRow = {
   source: string
 }
 
+type OcrCapabilitySealDisplayRow = {
+  id: string
+  title: string
+  colorLabel: string
+  typeLabel: string
+  status: string
+  tagType: 'success' | 'warning' | 'danger' | 'info'
+  pageNo: number
+  bboxText: string
+  confidence?: number
+  source: string
+  contentLines: string[]
+  meta: Array<{ label: string; value: string }>
+}
+
 const ocrCapabilityRoiToneTypeMap: Record<
   OcrCapabilityRoiTone,
   'primary' | 'success' | 'warning' | 'danger' | 'info'
@@ -2968,6 +2983,89 @@ const ocrCapabilityTableSummary = (record: Record<string, unknown>) => {
 const ocrCapabilityBboxText = (bbox: unknown) => {
   const normalized = normalizeOcrCapabilityBbox(bbox)
   return normalized ? normalized.map((value) => Math.round(value * 100) / 100).join(', ') : '-'
+}
+
+const normalizeOcrCapabilityTextLines = (value: unknown): string[] =>
+  stringifyOcrCapabilityText(value)
+    .split(/\n+/)
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+
+const uniqueOcrCapabilityLines = (lines: string[]) => {
+  const seen = new Set<string>()
+  return lines.filter((line) => {
+    const key = line.replace(/\s+/g, '').toLowerCase()
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+const isOcrCapabilityPlaceholderSealName = (value: unknown) => {
+  const text = String(value || '').trim()
+  return !text || text === '视觉印章候选' || text === '视觉蓝章候选' || /^visual_/i.test(text)
+}
+
+const ocrCapabilitySealColorLabel = (record: Record<string, unknown>) => {
+  const text =
+    `${record.visualColor || ''} ${record.sealType || ''} ${record.sealName || ''}`.toLowerCase()
+  if (text.includes('blue')) return '蓝章'
+  if (text.includes('red')) return '红章'
+  const colorField = Array.isArray(record.fields)
+    ? (record.fields as Array<Record<string, unknown>>).find((field) =>
+        String(field.fieldName || '').includes('颜色')
+      )
+    : null
+  const colorText = String(colorField?.fieldValue || '').toLowerCase()
+  if (colorText.includes('blue')) return '蓝章'
+  if (colorText.includes('red')) return '红章'
+  return '印章'
+}
+
+const ocrCapabilitySealTypeLabel = (record: Record<string, unknown>) => {
+  const type = String(record.sealType || '').toLowerCase()
+  if (type.includes('blue')) return '蓝色印章候选'
+  if (type.includes('red')) return '红色印章候选'
+  if (type.includes('candidate')) return '印章候选'
+  return String(record.sealType || record.type || '印章')
+}
+
+const ocrCapabilitySealFieldLines = (record: Record<string, unknown>) => {
+  const fields = Array.isArray(record.fields)
+    ? (record.fields as Array<Record<string, unknown>>)
+    : []
+  return fields.flatMap((field) => {
+    const name = String(field.fieldName || field.fieldCode || field.name || '').trim()
+    const value = stringifyOcrCapabilityText(field.fieldValue ?? field.value ?? field.text).trim()
+    if (!value || name.includes('颜色')) return []
+    return [`${name || '字段'}：${value}`]
+  })
+}
+
+const ocrCapabilityBboxOverlapRatio = (
+  first: [number, number, number, number],
+  second: [number, number, number, number]
+) => {
+  const left = Math.max(first[0], second[0])
+  const top = Math.max(first[1], second[1])
+  const right = Math.min(first[2], second[2])
+  const bottom = Math.min(first[3], second[3])
+  const width = Math.max(0, right - left)
+  const height = Math.max(0, bottom - top)
+  const overlap = width * height
+  if (!overlap) return 0
+  const firstArea = (first[2] - first[0]) * (first[3] - first[1])
+  const secondArea = (second[2] - second[0]) * (second[3] - second[1])
+  return overlap / Math.max(1, Math.min(firstArea, secondArea))
+}
+
+const ocrCapabilityBboxCenterInside = (
+  inner: [number, number, number, number],
+  outer: [number, number, number, number]
+) => {
+  const centerX = (inner[0] + inner[2]) / 2
+  const centerY = (inner[1] + inner[3]) / 2
+  return centerX >= outer[0] && centerX <= outer[2] && centerY >= outer[1] && centerY <= outer[3]
 }
 
 const createOcrCapabilityStructuredRow = (
@@ -3136,6 +3234,83 @@ const ocrCapabilityRoiLegend = computed(() => {
 const ocrCapabilityRoiTagType = (tone: OcrCapabilityRoiTone) =>
   ocrCapabilityRoiToneTypeMap[tone] || 'info'
 
+const selectedOcrCapabilitySealRows = computed<OcrCapabilitySealDisplayRow[]>(() => {
+  const result = selectedOcrCapabilityParseResult.value || {}
+  const fragments = Array.isArray(result.fragments)
+    ? (result.fragments as Array<Record<string, unknown>>)
+    : []
+  return selectedOcrCapabilitySeals.value.map((seal, index) => {
+    const bbox = normalizeOcrCapabilityBbox(seal.bbox)
+    const pageNo = Number(seal.pageNo || 1)
+    const directName = isOcrCapabilityPlaceholderSealName(seal.sealName)
+      ? ''
+      : String(seal.sealName || '').trim()
+    const directLines = normalizeOcrCapabilityTextLines(
+      seal.text ?? seal.fullText ?? seal.rawText ?? seal.content ?? directName
+    )
+    const fieldLines = ocrCapabilitySealFieldLines(seal)
+    const fragmentLines = bbox
+      ? fragments
+          .filter((fragment) => {
+            if (Number(fragment.pageNo || 1) !== pageNo) return false
+            const fragmentBbox = normalizeOcrCapabilityBbox(fragment.bbox)
+            if (!fragmentBbox) return false
+            return (
+              ocrCapabilityBboxCenterInside(fragmentBbox, bbox) ||
+              ocrCapabilityBboxOverlapRatio(fragmentBbox, bbox) >= 0.35
+            )
+          })
+          .sort((left, right) => {
+            const leftBbox = normalizeOcrCapabilityBbox(left.bbox) || [0, 0, 0, 0]
+            const rightBbox = normalizeOcrCapabilityBbox(right.bbox) || [0, 0, 0, 0]
+            return leftBbox[1] - rightBbox[1] || leftBbox[0] - rightBbox[0]
+          })
+          .flatMap((fragment) =>
+            normalizeOcrCapabilityTextLines(fragment.text ?? fragment.fullText ?? fragment.rawText)
+          )
+      : []
+    const contentLines = uniqueOcrCapabilityLines([
+      ...directLines,
+      ...fieldLines,
+      ...fragmentLines
+    ]).slice(0, 18)
+    const colorLabel = ocrCapabilitySealColorLabel(seal)
+    const typeLabel = ocrCapabilitySealTypeLabel(seal)
+    const confidence =
+      seal.ocrConfidence !== undefined ||
+      seal.visualConfidence !== undefined ||
+      seal.confidence !== undefined
+        ? Number(seal.ocrConfidence ?? seal.visualConfidence ?? seal.confidence)
+        : undefined
+    const source = String(seal.sourceEngine || seal.source || '-')
+    const bboxText = ocrCapabilityBboxText(seal.bbox)
+    const status = contentLines.length
+      ? '已提取文字'
+      : Array.isArray(seal.qualityFlags) && seal.qualityFlags.includes('requires_seal_ocr_text')
+        ? '文字待复核'
+        : '暂无可读文字'
+    return {
+      id: String(seal.sealId || seal.id || `seal-${index + 1}`),
+      title: directName || typeLabel,
+      colorLabel,
+      typeLabel,
+      status,
+      tagType: contentLines.length ? 'success' : 'warning',
+      pageNo,
+      bboxText,
+      confidence,
+      source,
+      contentLines,
+      meta: [
+        { label: '页码', value: String(pageNo) },
+        { label: '位置', value: bboxText },
+        { label: '置信度', value: confidence === undefined ? '-' : scorePercent(confidence) },
+        { label: '来源', value: source }
+      ]
+    }
+  })
+})
+
 const selectedOcrCapabilityStructuredRows = computed<OcrCapabilityStructuredRow[]>(() => {
   const result = selectedOcrCapabilityParseResult.value || {}
   const rows: OcrCapabilityStructuredRow[] = []
@@ -3155,7 +3330,18 @@ const selectedOcrCapabilityStructuredRows = computed<OcrCapabilityStructuredRow[
   pushRows(result.fragments, '文本', '文本')
   pushRows(result.fields, '字段', '字段')
   pushRows(result.tables, '表格', '表格')
-  pushRows(result.seals, '印章', '印章')
+  selectedOcrCapabilitySealRows.value.forEach((seal, index) => {
+    rows.push({
+      id: `印章-${seal.id || index}`,
+      pageNo: seal.pageNo,
+      type: '印章',
+      name: seal.title,
+      value: seal.contentLines.join('\n') || seal.status,
+      bboxText: seal.bboxText,
+      confidence: seal.confidence,
+      source: seal.source
+    })
+  })
   pushRows(result.layoutBlocks, '版面', '版面')
   return rows.slice(0, 120)
 })
@@ -10135,24 +10321,34 @@ onBeforeUnmount(() => {
                     <ElEmpty v-else description="暂无表格输出。" />
                   </ElTabPane>
                   <ElTabPane label="印章">
-                    <ElTable
-                      v-if="selectedOcrCapabilitySeals.length"
-                      :data="selectedOcrCapabilitySeals"
-                    >
-                      <ElTableColumn
-                        prop="sealName"
-                        label="章名"
-                        min-width="220"
-                        show-overflow-tooltip
-                      />
-                      <ElTableColumn
-                        prop="sealType"
-                        label="类型"
-                        min-width="130"
-                        show-overflow-tooltip
-                      />
-                      <ElTableColumn prop="ocrConfidence" label="置信度" width="100" />
-                    </ElTable>
+                    <div v-if="selectedOcrCapabilitySealRows.length" class="ocr-seal-result-list">
+                      <article
+                        v-for="seal in selectedOcrCapabilitySealRows"
+                        :key="seal.id"
+                        class="ocr-seal-result-card"
+                      >
+                        <div class="ocr-seal-result-card__head">
+                          <div>
+                            <span>{{ seal.colorLabel }} · {{ seal.typeLabel }}</span>
+                            <strong>{{ seal.title }}</strong>
+                          </div>
+                          <ElTag :type="seal.tagType" effect="plain">{{ seal.status }}</ElTag>
+                        </div>
+                        <dl class="ocr-seal-meta">
+                          <div v-for="item in seal.meta" :key="item.label">
+                            <dt>{{ item.label }}</dt>
+                            <dd>{{ item.value }}</dd>
+                          </div>
+                        </dl>
+                        <div class="ocr-seal-content">
+                          <span>格式化内容</span>
+                          <template v-if="seal.contentLines.length">
+                            <p v-for="line in seal.contentLines" :key="line">{{ line }}</p>
+                          </template>
+                          <small v-else>已定位印章框，但当前 OCR 未读出可格式化文字。</small>
+                        </div>
+                      </article>
+                    </div>
                     <ElEmpty v-else description="暂无印章输出。" />
                   </ElTabPane>
                   <ElTabPane label="诊断">
@@ -15251,24 +15447,41 @@ onBeforeUnmount(() => {
                             <ElEmpty v-else description="暂无表格输出。" />
                           </ElTabPane>
                           <ElTabPane label="印章">
-                            <ElTable
-                              v-if="selectedOcrCapabilitySeals.length"
-                              :data="selectedOcrCapabilitySeals"
+                            <div
+                              v-if="selectedOcrCapabilitySealRows.length"
+                              class="ocr-seal-result-list"
                             >
-                              <ElTableColumn
-                                prop="sealName"
-                                label="章名"
-                                min-width="220"
-                                show-overflow-tooltip
-                              />
-                              <ElTableColumn
-                                prop="sealType"
-                                label="类型"
-                                min-width="130"
-                                show-overflow-tooltip
-                              />
-                              <ElTableColumn prop="ocrConfidence" label="置信度" width="100" />
-                            </ElTable>
+                              <article
+                                v-for="seal in selectedOcrCapabilitySealRows"
+                                :key="seal.id"
+                                class="ocr-seal-result-card"
+                              >
+                                <div class="ocr-seal-result-card__head">
+                                  <div>
+                                    <span>{{ seal.colorLabel }} · {{ seal.typeLabel }}</span>
+                                    <strong>{{ seal.title }}</strong>
+                                  </div>
+                                  <ElTag :type="seal.tagType" effect="plain">{{
+                                    seal.status
+                                  }}</ElTag>
+                                </div>
+                                <dl class="ocr-seal-meta">
+                                  <div v-for="item in seal.meta" :key="item.label">
+                                    <dt>{{ item.label }}</dt>
+                                    <dd>{{ item.value }}</dd>
+                                  </div>
+                                </dl>
+                                <div class="ocr-seal-content">
+                                  <span>格式化内容</span>
+                                  <template v-if="seal.contentLines.length">
+                                    <p v-for="line in seal.contentLines" :key="line">{{ line }}</p>
+                                  </template>
+                                  <small v-else
+                                    >已定位印章框，但当前 OCR 未读出可格式化文字。</small
+                                  >
+                                </div>
+                              </article>
+                            </div>
                             <ElEmpty v-else description="暂无印章输出。" />
                           </ElTabPane>
                           <ElTabPane label="诊断">
@@ -19338,6 +19551,121 @@ onBeforeUnmount(() => {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
+}
+
+.ocr-seal-result-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ocr-seal-result-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.ocr-seal-result-card__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.ocr-seal-result-card__head > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ocr-seal-result-card__head span,
+.ocr-seal-content span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #2563eb;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocr-seal-result-card__head strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 950;
+  line-height: 20px;
+  color: #172033;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocr-seal-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.ocr-seal-meta div {
+  min-width: 0;
+  padding: 8px 9px;
+  background: #f8fafc;
+  border: 1px solid #e5edf7;
+  border-radius: 8px;
+}
+
+.ocr-seal-meta dt,
+.ocr-seal-meta dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocr-seal-meta dt {
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 16px;
+  color: #64748b;
+}
+
+.ocr-seal-meta dd {
+  margin-top: 3px;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 17px;
+  color: #172033;
+}
+
+.ocr-seal-content {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px;
+  background: #f8fbff;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+}
+
+.ocr-seal-content p,
+.ocr-seal-content small {
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  line-height: 19px;
+  color: #172033;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ocr-seal-content small {
+  color: #64748b;
 }
 
 .lineage-document-grid,
