@@ -1519,6 +1519,64 @@ def test_ocr_routing_visual_seal_detector_does_not_fallback_to_edge_pages() -> N
     assert routed == []
 
 
+def test_ocr_quick_mode_runs_visual_seal_only_on_first_page() -> None:
+    from apps.ocr_service.routing import route_engine_variants
+
+    variants = [
+        {"variantId": "page_1_original", "pageNo": 1, "path": "/tmp/p1.png", "purpose": "general"},
+        {"variantId": "page_2_original", "pageNo": 2, "path": "/tmp/p2.png", "purpose": "general"},
+    ]
+    profile = {
+        "sealRules": {"required": True},
+        "preprocessPolicy": {"seal": {"enableColorCandidate": True, "enablePaddlexSeal": True}},
+    }
+    page_quality = [
+        {"pageNo": 1, "quality": {"hasSealCandidate": False}},
+        {"pageNo": 2, "quality": {"hasSealCandidate": False}},
+    ]
+
+    assert (
+        route_engine_variants(
+            "paddlex_seal_recognition",
+            variants,
+            profile=profile,
+            page_quality=page_quality,
+            options={"quickMode": True, "enableSeals": True},
+        )
+        == []
+    )
+    assert (
+        route_engine_variants(
+            "agentdesign_seal_ocr_subprocess",
+            variants,
+            profile=profile,
+            page_quality=page_quality,
+            options={"quickMode": True, "enableSeals": True},
+        )
+        == []
+    )
+
+    visual = route_engine_variants(
+        "visual_seal_candidate_subprocess",
+        variants,
+        profile=profile,
+        page_quality=page_quality,
+        options={"quickMode": True, "enableSeals": True},
+    )
+    assert [item["variantId"] for item in visual] == ["page_1_original"]
+
+    assert (
+        route_engine_variants(
+            "visual_seal_candidate_subprocess",
+            variants,
+            profile=profile,
+            page_quality=page_quality,
+            options={"quickMode": True, "enableSeals": False},
+        )
+        == []
+    )
+
+
 def test_ocr_parse_document_merges_agentdesign_candidate_with_local_engines(monkeypatch, tmp_path) -> None:
     from apps.ocr_service.service import OcrService
 

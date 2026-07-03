@@ -13,8 +13,8 @@ from apps.ocr_service.pages import PAGE_RENDER_VERSION
 from libs.contracts.responses import server_time
 
 
-RESULT_CACHE_SCHEMA = "aicheck-ocr-parse-result-cache-v5"
-ENGINE_RESULT_CACHE_SCHEMA = "aicheck-ocr-engine-result-cache-v1"
+RESULT_CACHE_SCHEMA = "aicheck-ocr-parse-result-cache-v6"
+ENGINE_RESULT_CACHE_SCHEMA = "aicheck-ocr-engine-result-cache-v2"
 EVIDENCE_CONTRACT_VERSION = "rendered_pixels_mapped_v2"
 PAGE_SELECTION_VERSION = "sparse_tail_pages_v1"
 REMEDIATION_VERSION = "crop_remediation_v2"

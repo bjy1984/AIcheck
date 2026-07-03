@@ -10,7 +10,11 @@ TABLE_ENGINES = {"pp_structure_v3", "opencv_table_grid_subprocess"}
 SEAL_ENGINES = {"paddlex_seal_recognition", "agentdesign_seal_ocr_subprocess", "visual_seal_candidate_subprocess"}
 FALLBACK_ENGINES = {"paddleocr_vl_1_6"}
 DOCUMENT_LEVEL_ENGINES = {"pymupdf_text_layer", "docling_local", "paddleocr_vl_1_6"}
-QUICK_MODE_DISABLED_ENGINES = {"docling_local"}
+QUICK_MODE_DISABLED_ENGINES = {
+    "agentdesign_seal_ocr_subprocess",
+    "docling_local",
+    "paddlex_seal_recognition",
+}
 
 
 def route_engine_variants(
@@ -65,6 +69,8 @@ def route_engine_variants(
         return purpose_variants_by_page(variants, "table", quality_by_page, fallback=False)
     if engine_name in SEAL_ENGINES:
         if engine_name == "visual_seal_candidate_subprocess":
+            if quick_mode:
+                return originals[:1]
             return purpose_variants_by_page(variants, "seal", quality_by_page, fallback=True)
         return seal_text_variants(
             variants,

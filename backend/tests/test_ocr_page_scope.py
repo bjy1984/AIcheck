@@ -450,7 +450,7 @@ def test_cache_schema_versions_are_upgraded() -> None:
         cache_contract_versions,
     )
 
-    assert RESULT_CACHE_SCHEMA == "aicheck-ocr-parse-result-cache-v5"
+    assert RESULT_CACHE_SCHEMA == "aicheck-ocr-parse-result-cache-v6"
     assert PREPROCESS_CACHE_SCHEMA == "aicheck-ocr-preprocess-cache-v2"
     assert EVIDENCE_CONTRACT_VERSION == "rendered_pixels_mapped_v2"
     assert PAGE_SELECTION_VERSION == "sparse_tail_pages_v1"
