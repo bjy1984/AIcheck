@@ -184,6 +184,8 @@ const ocrCapabilityTestFile = ref<File | null>(null)
 const ocrCapabilityLocalPreviewUrl = ref('')
 const ocrCapabilityPdfPageObjectUrl = ref('')
 const ocrCapabilityPdfPageObjectKey = ref('')
+const ocrCapabilityPdfPagePreviewLoading = ref(false)
+const ocrCapabilityPdfPagePreviewError = ref('')
 const ocrCapabilityFileInputRef = ref<HTMLInputElement | null>(null)
 const ocrCapabilityDialogVisible = ref(false)
 const ocrSecondaryMenuVisible = ref(false)
@@ -8113,6 +8115,8 @@ const clearOcrCapabilityPdfPagePreview = () => {
     ocrCapabilityPdfPageObjectUrl.value = ''
   }
   ocrCapabilityPdfPageObjectKey.value = ''
+  ocrCapabilityPdfPagePreviewLoading.value = false
+  ocrCapabilityPdfPagePreviewError.value = ''
 }
 
 const loadOcrCapabilityPdfPagePreview = async (
@@ -8131,9 +8135,14 @@ const loadOcrCapabilityPdfPagePreview = async (
   }
   clearOcrCapabilityPdfPagePreview()
   ocrCapabilityPdfPageObjectKey.value = previewKey
+  ocrCapabilityPdfPagePreviewLoading.value = true
+  ocrCapabilityPdfPagePreviewError.value = ''
   try {
     const response = await getFdeOcrCapabilityTestPagePreviewApi(runId, { pageNo: 1 })
     const blob = response?.data instanceof Blob ? response.data : new Blob([response?.data || ''])
+    if (!String(blob.type || '').startsWith('image/')) {
+      throw new Error('PDF 页图预览返回的不是图片。')
+    }
     const objectUrl = URL.createObjectURL(blob)
     if (ocrCapabilityPdfPageObjectKey.value !== previewKey) {
       URL.revokeObjectURL(objectUrl)
@@ -8142,9 +8151,18 @@ const loadOcrCapabilityPdfPagePreview = async (
     ocrCapabilityPdfPageObjectUrl.value = objectUrl
   } catch (err) {
     if (ocrCapabilityPdfPageObjectKey.value === previewKey) {
-      clearOcrCapabilityPdfPagePreview()
+      if (ocrCapabilityPdfPageObjectUrl.value) {
+        URL.revokeObjectURL(ocrCapabilityPdfPageObjectUrl.value)
+        ocrCapabilityPdfPageObjectUrl.value = ''
+      }
+      ocrCapabilityPdfPagePreviewError.value =
+        err instanceof Error ? err.message : 'PDF 页面图预览生成失败。'
     }
     console.warn('OCR capability PDF page preview failed.', err)
+  } finally {
+    if (ocrCapabilityPdfPageObjectKey.value === previewKey) {
+      ocrCapabilityPdfPagePreviewLoading.value = false
+    }
   }
 }
 
@@ -10127,12 +10145,20 @@ onBeforeUnmount(() => {
                       </button>
                     </div>
                   </div>
-                  <iframe
+                  <div
                     v-else-if="selectedOcrCapabilityPreviewSource.previewType === 'pdf'"
                     class="ocr-preview-pdf-fallback"
-                    :src="selectedOcrCapabilityPreviewSource.url"
-                    title="OCR 测试 PDF 预览"
-                  ></iframe>
+                    v-loading="ocrCapabilityPdfPagePreviewLoading"
+                  >
+                    <ElEmpty
+                      :description="
+                        ocrCapabilityPdfPagePreviewError ||
+                        (ocrCapabilityPdfPagePreviewLoading
+                          ? '正在生成 PDF 页面图预览...'
+                          : 'PDF 页面图预览暂未生成，可先查看 OCR 结果。')
+                      "
+                    />
+                  </div>
                   <ElEmpty v-else description="该文件类型暂不支持页面内预览，可查看 OCR 结果。" />
                 </div>
                 <ElEmpty v-else description="选择测试记录后显示文件预览。" />
@@ -15234,12 +15260,20 @@ onBeforeUnmount(() => {
                               </button>
                             </div>
                           </div>
-                          <iframe
+                          <div
                             v-else-if="selectedOcrCapabilityPreviewSource.previewType === 'pdf'"
                             class="ocr-preview-pdf-fallback"
-                            :src="selectedOcrCapabilityPreviewSource.url"
-                            title="OCR 测试 PDF 预览"
-                          ></iframe>
+                            v-loading="ocrCapabilityPdfPagePreviewLoading"
+                          >
+                            <ElEmpty
+                              :description="
+                                ocrCapabilityPdfPagePreviewError ||
+                                (ocrCapabilityPdfPagePreviewLoading
+                                  ? '正在生成 PDF 页面图预览...'
+                                  : 'PDF 页面图预览暂未生成，可先查看 OCR 结果。')
+                              "
+                            />
+                          </div>
                           <ElEmpty
                             v-else
                             description="该文件类型暂不支持页面内预览，可查看 OCR 结果。"
@@ -19226,11 +19260,15 @@ onBeforeUnmount(() => {
   border-radius: 12px;
 }
 
-.ocr-preview-stage > iframe,
 .ocr-preview-pdf-fallback {
   width: 100%;
   height: 100%;
   border: 0;
+}
+
+.ocr-preview-pdf-fallback {
+  display: grid;
+  place-items: center;
 }
 
 .ocr-roi-legend {
