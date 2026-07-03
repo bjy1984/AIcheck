@@ -8328,6 +8328,88 @@ def fde_project_audit_workspace(project_id: str, node_id: int | None = None) -> 
     }
 
 
+def fde_project_audit_summary(project: dict[str, Any]) -> dict[str, Any]:
+    project_id = project["id"]
+    nodes = [item for item in repo.state.get("tree_nodes", []) if item.get("projectId") == project_id]
+    fallback_node_id = int(project.get("currentNodeId") or (nodes[0].get("nodeId") if nodes else 0))
+    selected_node = repo.node(project_id, fallback_node_id)
+    selected_node_id = int(selected_node.get("nodeId")) if selected_node else None
+    version_ids = fde_project_version_ids(project_id, selected_node_id)
+    documents = [fde_project_document_audit_view(item) for item in repo.project_documents(project_id)]
+    if not documents:
+        documents = fde_project_synthetic_document_views(project, selected_node_id)
+    submissions = [item for item in repo.state.get("submissions", []) if item.get("projectId") == project_id]
+    review_runs = [
+        fde_project_review_run_audit_view(item)
+        for item in repo.state.get("review_runs", [])
+        if fde_record_matches_project(item, project_id, node_id=selected_node_id, version_ids=version_ids)
+    ]
+    if not review_runs and documents:
+        review_runs = [
+            fde_project_review_run_audit_view(
+                fde_project_synthetic_review_run(project, selected_node_id, documents)
+            )
+        ]
+    ocr_jobs = [
+        item
+        for item in repo.state.get("ocr_jobs", [])
+        if fde_record_matches_project(item, project_id, node_id=selected_node_id, version_ids=version_ids)
+    ]
+    if not ocr_jobs and documents:
+        ocr_jobs = fde_project_synthetic_ocr_jobs(project_id, selected_node_id, documents)
+    annotation_tasks = [
+        item
+        for item in fde_ocr_annotation_tasks_source()
+        if item.get("projectId") == project_id
+        and (selected_node_id is None or not item.get("nodeId") or int(item.get("nodeId")) == selected_node_id)
+    ]
+    if len(annotation_tasks) < 4 and documents:
+        existing_task_ids = {str(item.get("taskId") or item.get("caseId")) for item in annotation_tasks}
+        for task in fde_project_synthetic_annotation_tasks(project_id, selected_node_id, documents):
+            task_id = str(task.get("taskId") or task.get("caseId"))
+            if task_id not in existing_task_ids:
+                annotation_tasks.append(task)
+                existing_task_ids.add(task_id)
+            if len(annotation_tasks) >= 4:
+                break
+    blockers = fde_project_quality_blockers(project_id, selected_node_id)
+    low_confidence_fields = [
+        item
+        for item in repo.state.get("extracted_fields", [])
+        if str(item.get("documentVersionId")) in version_ids
+        and (float(item.get("confidence") or 0) < 0.85 or item.get("reviewStatus") == "低置信度")
+    ]
+    vector_quality = fde_project_vector_quality(documents, review_runs)
+    metrics = {
+        "nodes": len(nodes),
+        "documents": len(documents),
+        "knowledgeChunks": sum(int(item.get("chunkCount") or 0) for item in documents),
+        "knowledgeVectors": sum(int(item.get("vectorCount") or 0) for item in documents),
+        "vectorizedDocuments": len(
+            [item for item in documents if str(item.get("vectorStatus") or "").startswith("已向量化")]
+        ),
+        "pageIndexNodes": sum(int(item.get("pageIndexNodeCount") or 0) for item in documents),
+        "submissions": len(submissions),
+        "ocrJobs": len(ocr_jobs),
+        "reviewRuns": len(review_runs),
+        "annotationTasks": len(annotation_tasks),
+        "blockers": len(blockers),
+        "lowConfidenceFields": len(low_confidence_fields),
+        "vectorQualityScore": vector_quality["score"],
+        "vectorQualityBlockers": len(vector_quality["blockers"]),
+    }
+    project_summary = versioned_project(repo.project_for_role(project, "inspection"))
+    project_summary.pop("businessPackSnapshot", None)
+    return {
+        "project": project_summary,
+        "metrics": metrics,
+        "currentNodeId": selected_node_id,
+        "currentNodeName": (selected_node or {}).get("name"),
+        "topBlockers": blockers[:3],
+        "updatedAt": server_time(),
+    }
+
+
 @router.get("/fde/projects")
 def fde_projects(request: Request):
     _, role_error = fde_error_unless_allowed(request, "fde:dashboard:view")
@@ -8335,18 +8417,7 @@ def fde_projects(request: Request):
         return role_error
     items = []
     for project in repo.state.get("projects", []):
-        project_id = project["id"]
-        workspace = fde_project_audit_workspace(project_id, int(project.get("currentNodeId") or 0))
-        items.append(
-            {
-                "project": workspace["project"],
-                "metrics": workspace["metrics"],
-                "currentNodeId": workspace["selectedNodeId"],
-                "currentNodeName": (workspace.get("selectedNode") or {}).get("name"),
-                "topBlockers": workspace["qualityBlockers"][:3],
-                "updatedAt": workspace["updatedAt"],
-            }
-        )
+        items.append(fde_project_audit_summary(project))
     return ok(items, request)
 
 

@@ -7349,130 +7349,152 @@ const normalizeFdeBrowserRoute = async () => {
   await router.replace({ path: browserPath, query })
 }
 
+const hydrateProjectAuditRoute = async () => {
+  if (!fdeProjects.value.length) {
+    ensureFdeDemoData()
+    return
+  }
+  const routeState = getProjectAuditRouteState()
+  if (routeState.subpage) {
+    projectAuditSubpage.value = routeState.subpage
+  }
+  if (routeState.projectId) {
+    selectedFdeProjectId.value = routeState.projectId
+  }
+  if (routeState.nodeId !== undefined) {
+    selectedFdeNodeId.value = routeState.nodeId
+  }
+  if (!selectedFdeProjectId.value && fdeProjects.value[0]) {
+    selectedFdeProjectId.value = fdeProjects.value[0].project.id
+  }
+  if (!selectedFdeProjectId.value) return
+  await loadProjectAuditWorkspace(selectedFdeProjectId.value, selectedFdeNodeId.value)
+  if (currentFdePath.value === '/fde/projects') {
+    await syncProjectAuditRoute(
+      selectedFdeProjectId.value,
+      selectedFdeNodeId.value,
+      projectAuditSubpage.value,
+      true,
+      getAuditDetailRouteState()
+    )
+  }
+}
+
+const loadFdeSupportingData = async () => {
+  const [
+    aiRunRes,
+    reviewRunRes,
+    feedbackRes,
+    evaluationRes,
+    bundleRes,
+    releaseRes,
+    ocrRes,
+    ocrRunRes,
+    ocrAnnotationRes,
+    ocrCapabilityTestRes,
+    incidentRes,
+    acceptanceRes,
+    validationRes,
+    accessRes,
+    costRes,
+    auditRes,
+    maskingRes
+  ] = await Promise.allSettled([
+    listFdeAiRunsApi({ pageSize: 20 }),
+    listFdeReviewRunsApi({ pageSize: 20 }),
+    listFdeFeedbackApi(),
+    getFdeEvaluationSetsApi(),
+    getFdeCapabilityBundlesApi(),
+    listFdeReleasesApi(),
+    getFdeOcrQualityApi(),
+    listFdeOcrRunsApi({ pageSize: 20 }),
+    listFdeOcrAnnotationTasksApi({ pageSize: 20 }),
+    listFdeOcrCapabilityTestRunsApi({ pageSize: 20 }),
+    listFdeIncidentsApi(),
+    listFdeAcceptanceReportsApi(),
+    validateFdeBusinessPacksApi(),
+    listFdeAccessGrantsApi(),
+    getFdeCostBudgetsApi(),
+    getFdeAuditEventsApi({ limit: 50 }),
+    getFdeMaskingPoliciesApi()
+  ])
+  if (aiRunRes.status === 'fulfilled') aiRuns.value = aiRunRes.value.data.items
+  if (reviewRunRes.status === 'fulfilled') reviewRuns.value = reviewRunRes.value.data.items
+  if (feedbackRes.status === 'fulfilled') feedback.value = feedbackRes.value.data
+  if (evaluationRes.status === 'fulfilled') evaluation.value = evaluationRes.value.data
+  if (bundleRes.status === 'fulfilled') bundles.value = bundleRes.value.data
+  if (releaseRes.status === 'fulfilled') releases.value = releaseRes.value.data
+  if (ocrRes.status === 'fulfilled') ocrQuality.value = ocrRes.value.data
+  if (ocrRunRes.status === 'fulfilled') ocrRuns.value = ocrRunRes.value.data.items
+  if (ocrAnnotationRes.status === 'fulfilled') ocrAnnotation.value = ocrAnnotationRes.value.data
+  if (ocrCapabilityTestRes.status === 'fulfilled') {
+    ocrCapabilityTestRuns.value = ocrCapabilityTestRes.value.data.items
+  }
+  if (incidentRes.status === 'fulfilled') incidentPayload.value = incidentRes.value.data
+  if (acceptanceRes.status === 'fulfilled') acceptanceReports.value = acceptanceRes.value.data
+  if (validationRes.status === 'fulfilled') packValidation.value = validationRes.value.data
+  if (accessRes.status === 'fulfilled') accessGrants.value = accessRes.value.data
+  if (costRes.status === 'fulfilled') costGovernance.value = costRes.value.data
+  if (auditRes.status === 'fulfilled') auditEvents.value = auditRes.value.data.events
+  if (maskingRes.status === 'fulfilled') maskingPolicies.value = maskingRes.value.data
+
+  selectedFeedback.value = selectedFeedback.value || feedback.value[0] || null
+  selectedBundleId.value = selectedBundleId.value || firstBundleId.value
+  selectedReleaseId.value = selectedReleaseId.value || firstReleaseId.value
+  selectedBusinessPackId.value = selectedBusinessPackId.value || firstPackId.value
+  selectedIncidentId.value = selectedIncidentId.value || String(incidents.value[0]?.id || '')
+
+  await Promise.allSettled([
+    aiRuns.value[0]?.id ? loadRunDetail(aiRuns.value[0].id) : Promise.resolve(),
+    firstReviewRunId.value ? loadReviewRunDetail(firstReviewRunId.value) : Promise.resolve(),
+    firstEvaluationRunId.value
+      ? loadEvaluationReportDetail(firstEvaluationRunId.value)
+      : Promise.resolve((selectedEvaluationReport.value = null)),
+    firstOcrJobId.value ? loadOcrRunDetail(firstOcrJobId.value) : Promise.resolve(),
+    !selectedOcrCapabilityTestRunId.value && ocrCapabilityTestRuns.value[0]?.runId
+      ? loadOcrCapabilityTestDetail(ocrCapabilityTestRuns.value[0].runId)
+      : Promise.resolve(),
+    activeBundleId.value ? loadCapabilityBundleDiff(activeBundleId.value) : Promise.resolve(),
+    activeReleaseId.value ? loadReleaseImpact(activeReleaseId.value) : Promise.resolve(),
+    activeBusinessPackId.value
+      ? loadBusinessPackDiff(activeBusinessPackId.value)
+      : Promise.resolve()
+  ])
+  await restoreAuditDetailFromRoute()
+}
+
+const loadProjectAuditPageData = async () => {
+  const [dashboardRes, projectRes] = await Promise.allSettled([
+    getFdeDashboardApi(),
+    listFdeProjectsApi()
+  ])
+  if (dashboardRes.status === 'fulfilled') {
+    dashboard.value = dashboardRes.value.data
+  }
+  if (projectRes.status !== 'fulfilled') {
+    throw projectRes.reason
+  }
+  fdeProjects.value = projectRes.value.data
+  await hydrateProjectAuditRoute()
+  void loadFdeSupportingData()
+}
+
+const loadFullFdeData = async () => {
+  const [dashboardRes, projectRes] = await Promise.all([getFdeDashboardApi(), listFdeProjectsApi()])
+  dashboard.value = dashboardRes.data
+  fdeProjects.value = projectRes.data
+  await loadFdeSupportingData()
+  await hydrateProjectAuditRoute()
+}
+
 const loadData = async () => {
   loading.value = true
   error.value = ''
   try {
-    const [
-      dashboardRes,
-      aiRunRes,
-      reviewRunRes,
-      feedbackRes,
-      evaluationRes,
-      bundleRes,
-      releaseRes,
-      ocrRes,
-      ocrRunRes,
-      ocrAnnotationRes,
-      ocrCapabilityTestRes,
-      incidentRes,
-      acceptanceRes,
-      validationRes,
-      accessRes,
-      costRes,
-      auditRes,
-      maskingRes,
-      projectRes
-    ] = await Promise.all([
-      getFdeDashboardApi(),
-      listFdeAiRunsApi({ pageSize: 20 }),
-      listFdeReviewRunsApi({ pageSize: 20 }),
-      listFdeFeedbackApi(),
-      getFdeEvaluationSetsApi(),
-      getFdeCapabilityBundlesApi(),
-      listFdeReleasesApi(),
-      getFdeOcrQualityApi(),
-      listFdeOcrRunsApi({ pageSize: 20 }),
-      listFdeOcrAnnotationTasksApi({ pageSize: 20 }),
-      listFdeOcrCapabilityTestRunsApi({ pageSize: 20 }),
-      listFdeIncidentsApi(),
-      listFdeAcceptanceReportsApi(),
-      validateFdeBusinessPacksApi(),
-      listFdeAccessGrantsApi(),
-      getFdeCostBudgetsApi(),
-      getFdeAuditEventsApi({ limit: 50 }),
-      getFdeMaskingPoliciesApi(),
-      listFdeProjectsApi()
-    ])
-    dashboard.value = dashboardRes.data
-    aiRuns.value = aiRunRes.data.items
-    reviewRuns.value = reviewRunRes.data.items
-    feedback.value = feedbackRes.data
-    evaluation.value = evaluationRes.data
-    bundles.value = bundleRes.data
-    releases.value = releaseRes.data
-    ocrQuality.value = ocrRes.data
-    ocrRuns.value = ocrRunRes.data.items
-    ocrAnnotation.value = ocrAnnotationRes.data
-    ocrCapabilityTestRuns.value = ocrCapabilityTestRes.data.items
-    incidentPayload.value = incidentRes.data
-    acceptanceReports.value = acceptanceRes.data
-    packValidation.value = validationRes.data
-    accessGrants.value = accessRes.data
-    costGovernance.value = costRes.data
-    auditEvents.value = auditRes.data.events
-    maskingPolicies.value = maskingRes.data
-    fdeProjects.value = projectRes.data
-    if (!fdeProjects.value.length) {
-      ensureFdeDemoData()
-      return
-    }
-    selectedFeedback.value = selectedFeedback.value || feedback.value[0] || null
-    selectedBundleId.value = selectedBundleId.value || firstBundleId.value
-    selectedReleaseId.value = selectedReleaseId.value || firstReleaseId.value
-    selectedBusinessPackId.value = selectedBusinessPackId.value || firstPackId.value
-    selectedIncidentId.value = selectedIncidentId.value || String(incidents.value[0]?.id || '')
-    if (aiRuns.value[0]) {
-      await loadRunDetail(aiRuns.value[0].id)
-    }
-    if (firstReviewRunId.value) {
-      await loadReviewRunDetail(firstReviewRunId.value)
-    }
-    const routeState = getProjectAuditRouteState()
-    if (routeState.subpage) {
-      projectAuditSubpage.value = routeState.subpage
-    }
-    if (routeState.projectId) {
-      selectedFdeProjectId.value = routeState.projectId
-    }
-    if (routeState.nodeId !== undefined) {
-      selectedFdeNodeId.value = routeState.nodeId
-    }
-    if (!selectedFdeProjectId.value && fdeProjects.value[0]) {
-      selectedFdeProjectId.value = fdeProjects.value[0].project.id
-    }
-    if (selectedFdeProjectId.value) {
-      await loadProjectAuditWorkspace(selectedFdeProjectId.value, selectedFdeNodeId.value)
-      if (currentFdePath.value === '/fde/projects') {
-        await syncProjectAuditRoute(
-          selectedFdeProjectId.value,
-          selectedFdeNodeId.value,
-          projectAuditSubpage.value,
-          true,
-          getAuditDetailRouteState()
-        )
-      }
-    }
-    if (firstEvaluationRunId.value) {
-      await loadEvaluationReportDetail(firstEvaluationRunId.value)
+    if (currentFdePath.value === '/fde/projects') {
+      await loadProjectAuditPageData()
     } else {
-      selectedEvaluationReport.value = null
-    }
-    if (firstOcrJobId.value) {
-      await loadOcrRunDetail(firstOcrJobId.value)
-    }
-    if (!selectedOcrCapabilityTestRunId.value && ocrCapabilityTestRuns.value[0]?.runId) {
-      await loadOcrCapabilityTestDetail(ocrCapabilityTestRuns.value[0].runId)
-    }
-    await restoreAuditDetailFromRoute()
-    if (activeBundleId.value) {
-      await loadCapabilityBundleDiff(activeBundleId.value)
-    }
-    if (activeReleaseId.value) {
-      await loadReleaseImpact(activeReleaseId.value)
-    }
-    if (activeBusinessPackId.value) {
-      await loadBusinessPackDiff(activeBusinessPackId.value)
+      await loadFullFdeData()
     }
     if (fdeDemoMode.value) {
       applyFdeDemoData()

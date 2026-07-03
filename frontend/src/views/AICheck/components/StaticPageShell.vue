@@ -424,7 +424,6 @@ onBeforeUnmount(() => {
                     :title="item.hint ? `${item.label} · ${item.hint}` : item.label"
                     :aria-label="item.hint ? `${item.label}，${item.hint}` : item.label"
                     :aria-current="item.active || item.route === route.path ? 'page' : undefined"
-                    @click.stop="handleStaticMenuSelect(getItemIndex(section, item))"
                   >
                     <span class="tree-node-marker" aria-hidden="true"></span>
                     <span class="tree-label-wrap">
