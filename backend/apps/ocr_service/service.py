@@ -3516,6 +3516,15 @@ def monotonic_ms() -> int:
 def apply_parse_options_to_profile(profile: dict[str, Any], options: dict[str, Any]) -> dict[str, Any]:
     adjusted = deepcopy(profile)
     policy = adjusted.setdefault("preprocessPolicy", {})
+    quick_mode = parse_bool(options.get("quickMode"), False) is True
+    if quick_mode:
+        policy["renderDpi"] = min(int(policy.get("renderDpi") or 300), 180)
+        policy["maxLongSide"] = min(int(policy.get("maxLongSide") or 2600), 1600)
+        ocr_policy = policy.setdefault("ocr", {})
+        ocr_policy["textDetLimitSideLen"] = min(int(ocr_policy.get("textDetLimitSideLen") or 2400), 1600)
+        ocr_policy["useDocOrientationClassify"] = False
+        ocr_policy["useDocUnwarping"] = False
+        ocr_policy["useTextlineOrientation"] = False
     if options.get("maxPages") is not None:
         try:
             policy["maxPages"] = max(1, min(int(options["maxPages"]), 30))
