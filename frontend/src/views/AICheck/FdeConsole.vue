@@ -184,6 +184,10 @@ const ocrCapabilityFileInputRef = ref<HTMLInputElement | null>(null)
 const ocrCapabilityDialogVisible = ref(false)
 const ocrSecondaryMenuVisible = ref(false)
 const ocrCapabilityTestLoading = ref(false)
+const ocrCapabilityRecordsLoading = ref(false)
+const ocrCapabilityDetailLoading = ref(false)
+const ocrCapabilityRecentOpen = ref(false)
+const ocrCapabilityTestStage = ref('')
 const ocrCapabilityTestPolling = ref<number | undefined>()
 const ocrCapabilityTestForm = ref({
   profileId: 'all',
@@ -2854,6 +2858,288 @@ const selectedOcrCapabilityDiagnostics = computed(() => {
     selectedOcrCapabilityRun.value?.diagnostics
   return Array.isArray(diagnostics) ? diagnostics.slice(0, 40) : []
 })
+
+type OcrCapabilityRoiTone = 'blue' | 'green' | 'orange' | 'red'
+
+type OcrCapabilityRoi = {
+  id: string
+  type: string
+  tone: OcrCapabilityRoiTone
+  pageNo: number
+  label: string
+  text: string
+  bbox: [number, number, number, number]
+  confidence?: number
+  source?: string
+}
+
+type OcrCapabilityStructuredRow = {
+  id: string
+  pageNo: number
+  type: string
+  name: string
+  value: string
+  bboxText: string
+  confidence?: number
+  source: string
+}
+
+const normalizeOcrCapabilityBbox = (bbox: unknown): [number, number, number, number] | null => {
+  if (!Array.isArray(bbox) || bbox.length < 4) return null
+  let values: number[] = []
+  if (Array.isArray(bbox[0])) {
+    const points = bbox
+      .filter((point): point is unknown[] => Array.isArray(point) && point.length >= 2)
+      .map((point) => [Number(point[0]), Number(point[1])])
+      .filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y))
+    if (!points.length) return null
+    const xs = points.map(([x]) => x)
+    const ys = points.map(([, y]) => y)
+    values = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]
+  } else {
+    values = bbox.slice(0, 4).map((value) => Number(value))
+  }
+  if (values.some((value) => !Number.isFinite(value))) return null
+  const [rawX1, rawY1, rawX2, rawY2] = values
+  const x1 = Math.min(rawX1, rawX2)
+  const y1 = Math.min(rawY1, rawY2)
+  const x2 = Math.max(rawX1, rawX2)
+  const y2 = Math.max(rawY1, rawY2)
+  if (x2 <= x1 || y2 <= y1) return null
+  return [x1, y1, x2, y2]
+}
+
+const ocrCapabilityRoiText = (record: Record<string, unknown>) =>
+  stringifyOcrCapabilityText(
+    record.text ??
+      record.fullText ??
+      record.fieldValue ??
+      record.value ??
+      record.sealName ??
+      record.sealType ??
+      record.label ??
+      record.type
+  )
+
+const ocrCapabilityStructuredValue = (record: Record<string, unknown>) =>
+  stringifyOcrCapabilityText(
+    record.fieldValue ??
+      record.value ??
+      record.text ??
+      record.fullText ??
+      record.rawText ??
+      record.content ??
+      record.sealName ??
+      record.sealType ??
+      record.tableName ??
+      record.label
+  )
+
+const ocrCapabilityTableSummary = (record: Record<string, unknown>) => {
+  const rowCount = Number(record.rowCount ?? record.rows ?? 0)
+  const columnCount = Number(record.columnCount ?? record.columns ?? 0)
+  const cellCount = Array.isArray(record.cells) ? record.cells.length : 0
+  const parts = [
+    rowCount ? `${rowCount} 行` : '',
+    columnCount ? `${columnCount} 列` : '',
+    cellCount ? `${cellCount} 单元格` : ''
+  ].filter(Boolean)
+  return parts.join(' / ') || ocrCapabilityStructuredValue(record) || '表格结构'
+}
+
+const ocrCapabilityBboxText = (bbox: unknown) => {
+  const normalized = normalizeOcrCapabilityBbox(bbox)
+  return normalized ? normalized.map((value) => Math.round(value * 100) / 100).join(', ') : '-'
+}
+
+const createOcrCapabilityStructuredRow = (
+  source: Record<string, unknown>,
+  type: string,
+  index: number,
+  fallbackName: string
+): OcrCapabilityStructuredRow | null => {
+  const rawName =
+    source.fieldName ||
+    source.fieldCode ||
+    source.name ||
+    source.tableId ||
+    source.sealName ||
+    source.sealType ||
+    source.type ||
+    source.label ||
+    fallbackName
+  const name =
+    type === '字段'
+      ? friendlyFieldLabel(String(rawName || fallbackName))
+      : String(rawName || fallbackName)
+  const value =
+    type === '表格' ? ocrCapabilityTableSummary(source) : ocrCapabilityStructuredValue(source)
+  if (!value && !source.bbox) return null
+  return {
+    id: `${type}-${source.id || source.fragmentId || source.fieldCode || source.tableId || source.sealId || index}`,
+    pageNo: Number(source.pageNo || 1),
+    type,
+    name,
+    value,
+    bboxText: ocrCapabilityBboxText(source.bbox),
+    confidence:
+      source.confidence !== undefined || source.ocrConfidence !== undefined
+        ? Number(source.confidence ?? source.ocrConfidence)
+        : undefined,
+    source: String(source.sourceEngine || source.source || source.extractionMethod || '-')
+  }
+}
+
+const createOcrCapabilityRoi = (
+  source: Record<string, unknown>,
+  type: string,
+  tone: OcrCapabilityRoiTone,
+  index: number,
+  fallbackLabel: string
+): OcrCapabilityRoi | null => {
+  const bbox = normalizeOcrCapabilityBbox(source.bbox)
+  if (!bbox) return null
+  const rawLabel =
+    source.fieldName ||
+    source.fieldCode ||
+    source.sealName ||
+    source.sealType ||
+    source.tableId ||
+    source.type ||
+    source.label ||
+    fallbackLabel
+  const label =
+    type === '字段'
+      ? friendlyFieldLabel(String(rawLabel || fallbackLabel))
+      : String(rawLabel || fallbackLabel)
+  return {
+    id: `${type}-${source.id || source.fragmentId || source.fieldCode || source.tableId || source.sealId || index}`,
+    type,
+    tone,
+    pageNo: Number(source.pageNo || 1),
+    label,
+    text: ocrCapabilityRoiText(source),
+    bbox,
+    confidence:
+      source.confidence !== undefined || source.ocrConfidence !== undefined
+        ? Number(source.confidence ?? source.ocrConfidence)
+        : undefined,
+    source: String(source.sourceEngine || source.source || '')
+  }
+}
+
+const selectedOcrCapabilityRawRois = computed<OcrCapabilityRoi[]>(() => {
+  const result = selectedOcrCapabilityParseResult.value || {}
+  const seen = new Set<string>()
+  const rows: OcrCapabilityRoi[] = []
+  const pushRows = (
+    value: unknown,
+    type: string,
+    tone: OcrCapabilityRoiTone,
+    labelPrefix: string
+  ) => {
+    if (!Array.isArray(value)) return
+    value.forEach((item, index) => {
+      if (!item || typeof item !== 'object') return
+      const roi = createOcrCapabilityRoi(
+        item as Record<string, unknown>,
+        type,
+        tone,
+        index + 1,
+        `${labelPrefix} ${index + 1}`
+      )
+      if (!roi) return
+      const key = `${roi.type}-${roi.pageNo}-${roi.bbox.map((point) => Math.round(point)).join(',')}`
+      if (seen.has(key)) return
+      seen.add(key)
+      rows.push(roi)
+    })
+  }
+  pushRows(result.fragments, '文本', 'blue', '文本')
+  pushRows(result.fields, '字段', 'green', '字段')
+  pushRows(result.tables, '表格', 'orange', '表格')
+  pushRows(result.seals, '印章', 'red', '印章')
+  pushRows(result.layoutBlocks, '版面', 'blue', '版面')
+  return rows.slice(0, 80)
+})
+
+const selectedOcrCapabilityRoiPageSize = computed(() => {
+  const result = selectedOcrCapabilityParseResult.value || {}
+  const pages = Array.isArray(result.pages) ? (result.pages as Array<Record<string, unknown>>) : []
+  const page = pages.find((item) => Number(item.pageNo || 1) === 1) || pages[0] || {}
+  const width = Number(
+    page.width || page.pageWidth || page.imageWidth || result.width || result.pageWidth || 0
+  )
+  const height = Number(
+    page.height || page.pageHeight || page.imageHeight || result.height || result.pageHeight || 0
+  )
+  if (width > 0 && height > 0) return { width, height }
+  const maxX = Math.max(0, ...selectedOcrCapabilityRawRois.value.map((roi) => roi.bbox[2]))
+  const maxY = Math.max(0, ...selectedOcrCapabilityRawRois.value.map((roi) => roi.bbox[3]))
+  return { width: maxX || 1, height: maxY || 1 }
+})
+
+const selectedOcrCapabilityRois = computed(() => selectedOcrCapabilityRawRois.value)
+const selectedOcrCapabilityImageRois = computed(() =>
+  selectedOcrCapabilityPreviewSource.value?.previewType === 'image'
+    ? selectedOcrCapabilityRois.value.filter((roi) => roi.pageNo === 1)
+    : []
+)
+
+const selectedOcrCapabilityStructuredRows = computed<OcrCapabilityStructuredRow[]>(() => {
+  const result = selectedOcrCapabilityParseResult.value || {}
+  const rows: OcrCapabilityStructuredRow[] = []
+  const pushRows = (value: unknown, type: string, labelPrefix: string) => {
+    if (!Array.isArray(value)) return
+    value.forEach((item, index) => {
+      if (!item || typeof item !== 'object') return
+      const row = createOcrCapabilityStructuredRow(
+        item as Record<string, unknown>,
+        type,
+        index + 1,
+        `${labelPrefix} ${index + 1}`
+      )
+      if (row) rows.push(row)
+    })
+  }
+  pushRows(result.fragments, '文本', '文本')
+  pushRows(result.fields, '字段', '字段')
+  pushRows(result.tables, '表格', '表格')
+  pushRows(result.seals, '印章', '印章')
+  pushRows(result.layoutBlocks, '版面', '版面')
+  return rows.slice(0, 120)
+})
+
+const ocrCapabilityRoiStyle = (roi: OcrCapabilityRoi) => {
+  const [x1, y1, x2, y2] = roi.bbox
+  const normalized = x2 <= 1.5 && y2 <= 1.5
+  const width = normalized ? 1 : selectedOcrCapabilityRoiPageSize.value.width
+  const height = normalized ? 1 : selectedOcrCapabilityRoiPageSize.value.height
+  const clamp = (value: number) => Math.max(0, Math.min(100, value))
+  return {
+    left: `${clamp((x1 / width) * 100)}%`,
+    top: `${clamp((y1 / height) * 100)}%`,
+    width: `${Math.max(1.4, clamp(((x2 - x1) / width) * 100))}%`,
+    height: `${Math.max(1.4, clamp(((y2 - y1) / height) * 100))}%`
+  }
+}
+
+const selectedOcrCapabilityRunning = computed(() => {
+  const status = String(selectedOcrCapabilityRun.value?.status || '')
+  return Boolean(status) && !ocrCapabilityTerminalStatuses.has(status)
+})
+
+const ocrCapabilityProgressHint = computed(() => {
+  if (ocrCapabilityTestStage.value) return ocrCapabilityTestStage.value
+  if (selectedOcrCapabilityRunning.value) return 'OCR 正在识别，完成后会自动显示文本和 ROI。'
+  return ''
+})
+const ocrCapabilityResultLoading = computed(
+  () =>
+    ocrCapabilityTestLoading.value ||
+    ocrCapabilityDetailLoading.value ||
+    selectedOcrCapabilityRunning.value
+)
 const selectedOcrCapabilityText = computed(() => {
   const result = selectedOcrCapabilityParseResult.value || {}
   const directText = stringifyOcrCapabilityText(
@@ -2888,6 +3174,8 @@ const selectedOcrCapabilityText = computed(() => {
 const selectedOcrCapabilityHasOutput = computed(
   () =>
     !!selectedOcrCapabilityText.value ||
+    selectedOcrCapabilityStructuredRows.value.length > 0 ||
+    selectedOcrCapabilityRois.value.length > 0 ||
     selectedOcrCapabilityFields.value.length > 0 ||
     selectedOcrCapabilityTables.value.length > 0 ||
     selectedOcrCapabilitySeals.value.length > 0 ||
@@ -7451,8 +7739,8 @@ const loadFdeSupportingData = async () => {
       ? loadEvaluationReportDetail(firstEvaluationRunId.value)
       : Promise.resolve((selectedEvaluationReport.value = null)),
     firstOcrJobId.value ? loadOcrRunDetail(firstOcrJobId.value) : Promise.resolve(),
-    !selectedOcrCapabilityTestRunId.value && ocrCapabilityTestRuns.value[0]?.runId
-      ? loadOcrCapabilityTestDetail(ocrCapabilityTestRuns.value[0].runId)
+    !selectedOcrCapabilityTestRunId.value && preferredOcrCapabilityTestRun()?.runId
+      ? loadOcrCapabilityTestDetail(String(preferredOcrCapabilityTestRun()?.runId))
       : Promise.resolve(),
     activeBundleId.value ? loadCapabilityBundleDiff(activeBundleId.value) : Promise.resolve(),
     activeReleaseId.value ? loadReleaseImpact(activeReleaseId.value) : Promise.resolve(),
@@ -7461,6 +7749,56 @@ const loadFdeSupportingData = async () => {
       : Promise.resolve()
   ])
   await restoreAuditDetailFromRoute()
+}
+
+const loadOcrQualitySnapshot = async () => {
+  const res = await getFdeOcrQualityApi()
+  ocrQuality.value = res.data
+}
+
+const loadOcrWorkbenchPageData = async () => {
+  ocrCapabilityRecordsLoading.value = true
+  try {
+    const [
+      dashboardRes,
+      projectRes,
+      reviewRunRes,
+      ocrRunRes,
+      ocrAnnotationRes,
+      ocrCapabilityTestRes
+    ] = await Promise.allSettled([
+      getFdeDashboardApi(),
+      listFdeProjectsApi(),
+      listFdeReviewRunsApi({ pageSize: 20 }),
+      listFdeOcrRunsApi({ pageSize: 20 }),
+      listFdeOcrAnnotationTasksApi({ pageSize: 20 }),
+      listFdeOcrCapabilityTestRunsApi({ pageSize: 20 })
+    ])
+
+    if (dashboardRes.status === 'fulfilled') {
+      dashboard.value = dashboardRes.value.data
+    }
+    if (projectRes.status !== 'fulfilled') {
+      throw projectRes.reason
+    }
+    fdeProjects.value = projectRes.value.data
+    if (reviewRunRes.status === 'fulfilled') reviewRuns.value = reviewRunRes.value.data.items
+    if (ocrRunRes.status === 'fulfilled') ocrRuns.value = ocrRunRes.value.data.items
+    if (ocrAnnotationRes.status === 'fulfilled') ocrAnnotation.value = ocrAnnotationRes.value.data
+    if (ocrCapabilityTestRes.status === 'fulfilled') {
+      ocrCapabilityTestRuns.value = ocrCapabilityTestRes.value.data.items
+    }
+  } finally {
+    ocrCapabilityRecordsLoading.value = false
+  }
+
+  const preferredRun = preferredOcrCapabilityTestRun()
+  if (!selectedOcrCapabilityTestRunId.value && preferredRun?.runId) {
+    void loadOcrCapabilityTestDetail(preferredRun.runId, false).catch(() => undefined)
+  }
+
+  void loadOcrQualitySnapshot().catch(() => undefined)
+  void hydrateProjectAuditRoute().catch(() => undefined)
 }
 
 const loadProjectAuditPageData = async () => {
@@ -7493,6 +7831,8 @@ const loadData = async () => {
   try {
     if (currentFdePath.value === '/fde/projects') {
       await loadProjectAuditPageData()
+    } else if (isFdeRoute('ocr-quality')) {
+      await loadOcrWorkbenchPageData()
     } else {
       await loadFullFdeData()
     }
@@ -7532,17 +7872,41 @@ const loadOcrRunDetail = async (jobId: string) => {
 }
 
 const loadOcrCapabilityTestRuns = async () => {
-  const res = await listFdeOcrCapabilityTestRunsApi({ pageSize: 20 })
-  ocrCapabilityTestRuns.value = res.data.items
+  ocrCapabilityRecordsLoading.value = true
+  try {
+    const res = await listFdeOcrCapabilityTestRunsApi({ pageSize: 20 })
+    ocrCapabilityTestRuns.value = res.data.items
+  } finally {
+    ocrCapabilityRecordsLoading.value = false
+  }
 }
+
+const preferredOcrCapabilityTestRun = () =>
+  ocrCapabilityTestRuns.value.find((run) => {
+    const summary = run.resultSummary || {}
+    const outputCount =
+      Number(summary.fields || 0) +
+      Number(summary.tables || 0) +
+      Number(summary.seals || 0) +
+      Number(summary.fragments || 0)
+    return String(run.status) === 'success' && (!!run.parseResultId || outputCount > 0)
+  }) || ocrCapabilityTestRuns.value[0]
 
 const loadOcrCapabilityTestDetail = async (runId: string, schedulePoll = true) => {
   if (!runId) return
-  const res = await getFdeOcrCapabilityTestRunApi(runId)
-  selectedOcrCapabilityTest.value = res.data
-  selectedOcrCapabilityTestRunId.value = runId
-  if (schedulePoll) {
-    scheduleOcrCapabilityTestPolling(res.data.run)
+  ocrCapabilityDetailLoading.value = true
+  try {
+    const res = await getFdeOcrCapabilityTestRunApi(runId)
+    selectedOcrCapabilityTest.value = res.data
+    selectedOcrCapabilityTestRunId.value = runId
+    if (ocrCapabilityTerminalStatuses.has(String(res.data.run?.status || ''))) {
+      ocrCapabilityTestStage.value = ''
+    }
+    if (schedulePoll) {
+      scheduleOcrCapabilityTestPolling(res.data.run)
+    }
+  } finally {
+    ocrCapabilityDetailLoading.value = false
   }
 }
 
@@ -7557,6 +7921,7 @@ const scheduleOcrCapabilityTestPolling = (run?: FdeOcrCapabilityTestRun) => {
   if (!currentRun || ocrCapabilityTerminalStatuses.has(String(currentRun.status))) return
   const runId = String(currentRun.runId || currentRun.id || '')
   if (!runId) return
+  ocrCapabilityTestStage.value = 'OCR 正在识别，完成后会自动显示文本和 ROI。'
   ocrCapabilityTestPolling.value = window.setTimeout(async () => {
     await loadOcrCapabilityTestRuns()
     await loadOcrCapabilityTestDetail(runId)
@@ -7574,6 +7939,7 @@ const handleOcrCapabilityTestFileChange = (event: Event) => {
     ocrCapabilityLocalPreviewUrl.value = URL.createObjectURL(ocrCapabilityTestFile.value)
     selectedOcrCapabilityTest.value = null
     selectedOcrCapabilityTestRunId.value = ''
+    ocrCapabilityTestStage.value = '文件已选择，点击“开始测试”上传并识别。'
   }
 }
 
@@ -7599,10 +7965,12 @@ const startOcrCapabilityTest = async () => {
   const file = ocrCapabilityTestFile.value
   if (!file) {
     error.value = '请先选择一个 PDF 或图片测试文件。'
+    ocrCapabilityTestStage.value = '请先选择一个 PDF 或图片测试文件。'
     return
   }
   error.value = ''
   ocrCapabilityTestLoading.value = true
+  ocrCapabilityTestStage.value = '正在创建上传会话...'
   try {
     const fileMeta = {
       fileName: file.name,
@@ -7617,6 +7985,7 @@ const startOcrCapabilityTest = async () => {
     const uploadSession = sessionRes.data.uploadSession
     const headers = uploadSession.headers || { 'Content-Type': fileMeta.contentType }
     if (uploadSession.uploadUrl && !String(uploadSession.uploadUrl).startsWith('mock://')) {
+      ocrCapabilityTestStage.value = '正在上传测试文件...'
       const uploadUrl = resolveOcrCapabilityUploadUrl(uploadSession.uploadUrl)
       const uploadRes = await fetch(uploadUrl, {
         method: uploadSession.method || 'PUT',
@@ -7627,6 +7996,7 @@ const startOcrCapabilityTest = async () => {
         throw new Error(`upload failed: ${uploadRes.status}`)
       }
     }
+    ocrCapabilityTestStage.value = '文件已上传，正在提交 OCR 识别任务...'
     const runRes = await createFdeOcrCapabilityTestRunApi(
       {
         uploadSessionId: uploadSession.uploadSessionId,
@@ -7634,11 +8004,19 @@ const startOcrCapabilityTest = async () => {
       },
       { idempotencyKey: `fde-ocr-test-run-${uploadSession.uploadSessionId}` }
     )
+    selectedOcrCapabilityTest.value = {
+      run: runRes.data.run,
+      parseResult: null,
+      uploadSession
+    }
+    selectedOcrCapabilityTestRunId.value = runRes.data.run.runId
+    ocrCapabilityTestStage.value = 'OCR 正在识别，完成后会自动显示文本和 ROI。'
     await loadOcrCapabilityTestRuns()
     await loadOcrCapabilityTestDetail(runRes.data.run.runId)
   } catch (err) {
     error.value =
       err instanceof Error ? `OCR 能力测试启动失败：${err.message}` : 'OCR 能力测试启动失败。'
+    ocrCapabilityTestStage.value = error.value
   } finally {
     ocrCapabilityTestLoading.value = false
   }
@@ -8397,6 +8775,15 @@ const openOcrCapabilityTestPanel = async () => {
     } catch {
       error.value = 'OCR 能力测试记录加载失败，可直接选择文件开始测试。'
     }
+  }
+  const preferredRun = preferredOcrCapabilityTestRun()
+  const selectedRunIsUseful =
+    selectedOcrCapabilityTestRunId.value &&
+    (selectedOcrCapabilityHasOutput.value ||
+      selectedOcrCapabilityRun.value?.status === 'success' ||
+      selectedOcrCapabilityRunning.value)
+  if (!selectedRunIsUseful && preferredRun?.runId) {
+    await loadOcrCapabilityTestDetail(preferredRun.runId, false)
   }
 }
 
@@ -9183,16 +9570,29 @@ onBeforeUnmount(() => {
                 <small>测试文件只用于 FDE 诊断，不进入正式项目资料，不改变审查结论。</small>
               </div>
               <ElSpace>
-                <ElButton plain @click="loadOcrCapabilityTestRuns">刷新记录</ElButton>
+                <ElButton
+                  plain
+                  :loading="ocrCapabilityRecordsLoading"
+                  @click="loadOcrCapabilityTestRuns"
+                >
+                  刷新记录
+                </ElButton>
                 <ElButton
                   type="primary"
                   :loading="ocrCapabilityTestLoading"
                   @click="startOcrCapabilityTest"
                 >
-                  开始测试
+                  {{ ocrCapabilityTestLoading ? '处理中' : '开始测试' }}
                 </ElButton>
               </ElSpace>
             </div>
+            <ElAlert
+              v-if="ocrCapabilityProgressHint"
+              type="info"
+              show-icon
+              :closable="false"
+              :title="ocrCapabilityProgressHint"
+            />
             <div class="ocr-capability-layout">
               <section class="ocr-capability-card ocr-capability-card--setup">
                 <div class="ocr-capability-card__head">
@@ -9255,12 +9655,29 @@ onBeforeUnmount(() => {
                   </label>
                 </div>
               </section>
-              <section class="ocr-capability-card">
+              <section
+                :class="[
+                  'ocr-capability-card',
+                  'ocr-capability-card--recent',
+                  { 'ocr-capability-card--collapsed': !ocrCapabilityRecentOpen }
+                ]"
+                v-loading="ocrCapabilityRecordsLoading"
+              >
                 <div class="ocr-capability-card__head">
                   <strong>2. 最近测试</strong>
-                  <ElTag effect="plain">{{ ocrCapabilityTestRuns.length }} 条</ElTag>
+                  <ElSpace>
+                    <ElTag effect="plain">{{ ocrCapabilityTestRuns.length }} 条</ElTag>
+                    <ElButton
+                      size="small"
+                      plain
+                      @click="ocrCapabilityRecentOpen = !ocrCapabilityRecentOpen"
+                    >
+                      {{ ocrCapabilityRecentOpen ? '收起' : '展开' }}
+                    </ElButton>
+                  </ElSpace>
                 </div>
                 <ElTable
+                  v-if="ocrCapabilityRecentOpen"
                   :data="ocrCapabilityTestRuns"
                   class="ocr-capability-table"
                   @row-click="(row) => loadOcrCapabilityTestDetail(String(row.runId || row.id))"
@@ -9291,19 +9708,39 @@ onBeforeUnmount(() => {
               </section>
             </div>
             <section class="ocr-capability-result">
-              <div class="ocr-capability-preview">
+              <div class="ocr-capability-preview" v-loading="ocrCapabilityResultLoading">
                 <div class="ocr-capability-card__head">
                   <strong>3. 文件预览</strong>
                   <ElTag v-if="selectedOcrCapabilityRun" effect="plain">
                     {{ friendlyStatus(selectedOcrCapabilityRun.status) }}
                   </ElTag>
+                  <ElTag v-if="selectedOcrCapabilityRois.length" type="success" effect="plain">
+                    ROI {{ selectedOcrCapabilityRois.length }}
+                  </ElTag>
                 </div>
                 <div v-if="selectedOcrCapabilityPreviewSource?.url" class="ocr-preview-stage">
-                  <img
+                  <div
                     v-if="selectedOcrCapabilityPreviewSource.previewType === 'image'"
-                    :src="selectedOcrCapabilityPreviewSource.url"
-                    alt="OCR 测试文件预览"
-                  />
+                    class="ocr-preview-image-frame"
+                  >
+                    <img :src="selectedOcrCapabilityPreviewSource.url" alt="OCR 测试文件预览" />
+                    <div
+                      v-if="selectedOcrCapabilityImageRois.length"
+                      class="ocr-roi-layer"
+                      aria-label="OCR ROI 标注"
+                    >
+                      <button
+                        v-for="roi in selectedOcrCapabilityImageRois"
+                        :key="roi.id"
+                        type="button"
+                        :class="['ocr-roi-box', `ocr-roi-box--${roi.tone}`]"
+                        :style="ocrCapabilityRoiStyle(roi)"
+                        :title="`${roi.type} · ${roi.label}${roi.text ? ` · ${roi.text}` : ''}`"
+                      >
+                        <span>{{ roi.text || roi.label || roi.type }}</span>
+                      </button>
+                    </div>
+                  </div>
                   <iframe
                     v-else-if="selectedOcrCapabilityPreviewSource.previewType === 'pdf'"
                     :src="selectedOcrCapabilityPreviewSource.url"
@@ -9313,7 +9750,7 @@ onBeforeUnmount(() => {
                 </div>
                 <ElEmpty v-else description="选择测试记录后显示文件预览。" />
               </div>
-              <div class="ocr-capability-summary">
+              <div class="ocr-capability-summary" v-loading="ocrCapabilityResultLoading">
                 <div class="ocr-capability-card__head">
                   <strong>4. 识别结果</strong>
                   <ElSpace>
@@ -9379,6 +9816,74 @@ onBeforeUnmount(() => {
                       selectedOcrCapabilityText
                     }}</pre>
                     <ElEmpty v-else description="开始测试后，这里显示 OCR 识别文本。" />
+                  </ElTabPane>
+                  <ElTabPane :label="`结构化 ${selectedOcrCapabilityStructuredRows.length || ''}`">
+                    <ElTable
+                      v-if="selectedOcrCapabilityStructuredRows.length"
+                      :data="selectedOcrCapabilityStructuredRows"
+                    >
+                      <ElTableColumn prop="pageNo" label="页" width="62" />
+                      <ElTableColumn prop="type" label="类型" width="82" />
+                      <ElTableColumn
+                        prop="name"
+                        label="名称"
+                        min-width="130"
+                        show-overflow-tooltip
+                      />
+                      <ElTableColumn
+                        prop="value"
+                        label="内容 / 值"
+                        min-width="220"
+                        show-overflow-tooltip
+                      />
+                      <ElTableColumn
+                        prop="bboxText"
+                        label="bbox"
+                        min-width="150"
+                        show-overflow-tooltip
+                      />
+                      <ElTableColumn label="置信度" width="96">
+                        <template #default="{ row }">
+                          {{ row.confidence === undefined ? '-' : scorePercent(row.confidence) }}
+                        </template>
+                      </ElTableColumn>
+                      <ElTableColumn
+                        prop="source"
+                        label="来源"
+                        min-width="150"
+                        show-overflow-tooltip
+                      />
+                    </ElTable>
+                    <ElEmpty v-else description="暂无可结构化的识别内容。" />
+                  </ElTabPane>
+                  <ElTabPane :label="`ROI ${selectedOcrCapabilityRois.length || ''}`">
+                    <ElTable
+                      v-if="selectedOcrCapabilityRois.length"
+                      :data="selectedOcrCapabilityRois"
+                    >
+                      <ElTableColumn prop="type" label="类型" width="82" />
+                      <ElTableColumn
+                        prop="label"
+                        label="对象"
+                        min-width="130"
+                        show-overflow-tooltip
+                      />
+                      <ElTableColumn
+                        prop="text"
+                        label="文本"
+                        min-width="180"
+                        show-overflow-tooltip
+                      />
+                      <ElTableColumn label="bbox" min-width="160" show-overflow-tooltip>
+                        <template #default="{ row }">{{ row.bbox.join(', ') }}</template>
+                      </ElTableColumn>
+                      <ElTableColumn label="置信度" width="96">
+                        <template #default="{ row }">
+                          {{ row.confidence === undefined ? '-' : scorePercent(row.confidence) }}
+                        </template>
+                      </ElTableColumn>
+                    </ElTable>
+                    <ElEmpty v-else description="OCR 结果暂无可标注 ROI。" />
                   </ElTabPane>
                   <ElTabPane label="字段">
                     <ElTable
@@ -14084,16 +14589,29 @@ onBeforeUnmount(() => {
                         </small>
                       </div>
                       <ElSpace>
-                        <ElButton plain @click="loadOcrCapabilityTestRuns">刷新记录</ElButton>
+                        <ElButton
+                          plain
+                          :loading="ocrCapabilityRecordsLoading"
+                          @click="loadOcrCapabilityTestRuns"
+                        >
+                          刷新记录
+                        </ElButton>
                         <ElButton
                           type="primary"
                           :loading="ocrCapabilityTestLoading"
                           @click="startOcrCapabilityTest"
                         >
-                          开始测试
+                          {{ ocrCapabilityTestLoading ? '处理中' : '开始测试' }}
                         </ElButton>
                       </ElSpace>
                     </div>
+                    <ElAlert
+                      v-if="ocrCapabilityProgressHint"
+                      type="info"
+                      show-icon
+                      :closable="false"
+                      :title="ocrCapabilityProgressHint"
+                    />
                     <div class="ocr-capability-layout">
                       <section class="ocr-capability-card ocr-capability-card--setup">
                         <div class="ocr-capability-card__head">
@@ -14158,12 +14676,29 @@ onBeforeUnmount(() => {
                           </label>
                         </div>
                       </section>
-                      <section class="ocr-capability-card">
+                      <section
+                        :class="[
+                          'ocr-capability-card',
+                          'ocr-capability-card--recent',
+                          { 'ocr-capability-card--collapsed': !ocrCapabilityRecentOpen }
+                        ]"
+                        v-loading="ocrCapabilityRecordsLoading"
+                      >
                         <div class="ocr-capability-card__head">
                           <strong>2. 最近测试</strong>
-                          <ElTag effect="plain">{{ ocrCapabilityTestRuns.length }} 条</ElTag>
+                          <ElSpace>
+                            <ElTag effect="plain">{{ ocrCapabilityTestRuns.length }} 条</ElTag>
+                            <ElButton
+                              size="small"
+                              plain
+                              @click="ocrCapabilityRecentOpen = !ocrCapabilityRecentOpen"
+                            >
+                              {{ ocrCapabilityRecentOpen ? '收起' : '展开' }}
+                            </ElButton>
+                          </ElSpace>
                         </div>
                         <ElTable
+                          v-if="ocrCapabilityRecentOpen"
                           :data="ocrCapabilityTestRuns"
                           class="ocr-capability-table"
                           @row-click="
@@ -14196,22 +14731,49 @@ onBeforeUnmount(() => {
                       </section>
                     </div>
                     <section class="ocr-capability-result">
-                      <div class="ocr-capability-preview">
+                      <div class="ocr-capability-preview" v-loading="ocrCapabilityResultLoading">
                         <div class="ocr-capability-card__head">
                           <strong>3. 文件预览</strong>
                           <ElTag v-if="selectedOcrCapabilityRun" effect="plain">
                             {{ friendlyStatus(selectedOcrCapabilityRun.status) }}
+                          </ElTag>
+                          <ElTag
+                            v-if="selectedOcrCapabilityRois.length"
+                            type="success"
+                            effect="plain"
+                          >
+                            ROI {{ selectedOcrCapabilityRois.length }}
                           </ElTag>
                         </div>
                         <div
                           v-if="selectedOcrCapabilityPreviewSource?.url"
                           class="ocr-preview-stage"
                         >
-                          <img
+                          <div
                             v-if="selectedOcrCapabilityPreviewSource.previewType === 'image'"
-                            :src="selectedOcrCapabilityPreviewSource.url"
-                            alt="OCR 测试文件预览"
-                          />
+                            class="ocr-preview-image-frame"
+                          >
+                            <img
+                              :src="selectedOcrCapabilityPreviewSource.url"
+                              alt="OCR 测试文件预览"
+                            />
+                            <div
+                              v-if="selectedOcrCapabilityImageRois.length"
+                              class="ocr-roi-layer"
+                              aria-label="OCR ROI 标注"
+                            >
+                              <button
+                                v-for="roi in selectedOcrCapabilityImageRois"
+                                :key="roi.id"
+                                type="button"
+                                :class="['ocr-roi-box', `ocr-roi-box--${roi.tone}`]"
+                                :style="ocrCapabilityRoiStyle(roi)"
+                                :title="`${roi.type} · ${roi.label}${roi.text ? ` · ${roi.text}` : ''}`"
+                              >
+                                <span>{{ roi.text || roi.label || roi.type }}</span>
+                              </button>
+                            </div>
+                          </div>
                           <iframe
                             v-else-if="selectedOcrCapabilityPreviewSource.previewType === 'pdf'"
                             :src="selectedOcrCapabilityPreviewSource.url"
@@ -14224,7 +14786,7 @@ onBeforeUnmount(() => {
                         </div>
                         <ElEmpty v-else description="选择测试记录后显示文件预览。" />
                       </div>
-                      <div class="ocr-capability-summary">
+                      <div class="ocr-capability-summary" v-loading="ocrCapabilityResultLoading">
                         <div class="ocr-capability-card__head">
                           <strong>4. 识别结果</strong>
                           <ElSpace>
@@ -14292,6 +14854,84 @@ onBeforeUnmount(() => {
                               >{{ selectedOcrCapabilityText }}</pre
                             >
                             <ElEmpty v-else description="开始测试后，这里显示 OCR 识别文本。" />
+                          </ElTabPane>
+                          <ElTabPane
+                            :label="`结构化 ${selectedOcrCapabilityStructuredRows.length || ''}`"
+                          >
+                            <ElTable
+                              v-if="selectedOcrCapabilityStructuredRows.length"
+                              :data="selectedOcrCapabilityStructuredRows"
+                            >
+                              <ElTableColumn prop="pageNo" label="页" width="62" />
+                              <ElTableColumn prop="type" label="类型" width="82" />
+                              <ElTableColumn
+                                prop="name"
+                                label="名称"
+                                min-width="130"
+                                show-overflow-tooltip
+                              />
+                              <ElTableColumn
+                                prop="value"
+                                label="内容 / 值"
+                                min-width="220"
+                                show-overflow-tooltip
+                              />
+                              <ElTableColumn
+                                prop="bboxText"
+                                label="bbox"
+                                min-width="150"
+                                show-overflow-tooltip
+                              />
+                              <ElTableColumn label="置信度" width="96">
+                                <template #default="{ row }">
+                                  {{
+                                    row.confidence === undefined
+                                      ? '-'
+                                      : scorePercent(row.confidence)
+                                  }}
+                                </template>
+                              </ElTableColumn>
+                              <ElTableColumn
+                                prop="source"
+                                label="来源"
+                                min-width="150"
+                                show-overflow-tooltip
+                              />
+                            </ElTable>
+                            <ElEmpty v-else description="暂无可结构化的识别内容。" />
+                          </ElTabPane>
+                          <ElTabPane :label="`ROI ${selectedOcrCapabilityRois.length || ''}`">
+                            <ElTable
+                              v-if="selectedOcrCapabilityRois.length"
+                              :data="selectedOcrCapabilityRois"
+                            >
+                              <ElTableColumn prop="type" label="类型" width="82" />
+                              <ElTableColumn
+                                prop="label"
+                                label="对象"
+                                min-width="130"
+                                show-overflow-tooltip
+                              />
+                              <ElTableColumn
+                                prop="text"
+                                label="文本"
+                                min-width="180"
+                                show-overflow-tooltip
+                              />
+                              <ElTableColumn label="bbox" min-width="160" show-overflow-tooltip>
+                                <template #default="{ row }">{{ row.bbox.join(', ') }}</template>
+                              </ElTableColumn>
+                              <ElTableColumn label="置信度" width="96">
+                                <template #default="{ row }">
+                                  {{
+                                    row.confidence === undefined
+                                      ? '-'
+                                      : scorePercent(row.confidence)
+                                  }}
+                                </template>
+                              </ElTableColumn>
+                            </ElTable>
+                            <ElEmpty v-else description="OCR 结果暂无可标注 ROI。" />
                           </ElTabPane>
                           <ElTabPane label="字段">
                             <ElTable
@@ -17988,6 +18628,14 @@ onBeforeUnmount(() => {
   padding: 14px;
 }
 
+.ocr-capability-card--collapsed {
+  align-self: start;
+}
+
+.ocr-capability-card--recent.ocr-capability-card--collapsed {
+  padding-bottom: 12px;
+}
+
 .ocr-capability-card__head {
   display: flex;
   gap: 10px;
@@ -18083,24 +18731,143 @@ onBeforeUnmount(() => {
 }
 
 .ocr-preview-stage {
+  position: relative;
   display: grid;
   place-items: center;
   height: 420px;
+  padding: 10px;
   overflow: hidden;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
 }
 
-.ocr-preview-stage img,
-.ocr-preview-stage iframe {
+.ocr-preview-stage > iframe {
   width: 100%;
   height: 100%;
   border: 0;
 }
 
-.ocr-preview-stage img {
+.ocr-preview-image-frame {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.ocr-preview-image-frame img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 398px;
   object-fit: contain;
+}
+
+.ocr-roi-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ocr-roi-box {
+  position: absolute;
+  min-width: 22px;
+  min-height: 18px;
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+  border: 1px solid rgb(37 99 235 / 78%);
+  border-radius: 2px;
+  box-shadow: none;
+  pointer-events: auto;
+}
+
+.ocr-roi-box span {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  display: inline-flex;
+  max-width: 260px;
+  min-height: 24px;
+  padding: 4px 8px;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #0f172a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  visibility: hidden;
+  background: rgb(255 255 255 / 96%);
+  border: 1px solid rgb(37 99 235 / 35%);
+  border-radius: 4px;
+  box-shadow: 0 8px 18px rgb(15 23 42 / 18%);
+  opacity: 0;
+  transform: translateY(3px);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease,
+    visibility 0.12s ease;
+}
+
+.ocr-roi-box:hover,
+.ocr-roi-box:focus-visible {
+  z-index: 3;
+  background: rgb(37 99 235 / 8%);
+  border-width: 2px;
+  border-color: #2563eb;
+  outline: none;
+}
+
+.ocr-roi-box:hover span,
+.ocr-roi-box:focus-visible span {
+  visibility: visible;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.ocr-roi-box--green {
+  border-color: rgb(22 163 74 / 78%);
+}
+
+.ocr-roi-box--green span {
+  border-color: rgb(22 163 74 / 35%);
+}
+
+.ocr-roi-box--orange {
+  border-color: rgb(234 88 12 / 78%);
+}
+
+.ocr-roi-box--orange span {
+  border-color: rgb(234 88 12 / 35%);
+}
+
+.ocr-roi-box--red {
+  border-color: rgb(220 38 38 / 78%);
+}
+
+.ocr-roi-box--red span {
+  border-color: rgb(220 38 38 / 35%);
+}
+
+.ocr-roi-box--green:hover,
+.ocr-roi-box--green:focus-visible {
+  background: rgb(22 163 74 / 8%);
+  border-color: #16a34a;
+}
+
+.ocr-roi-box--orange:hover,
+.ocr-roi-box--orange:focus-visible {
+  background: rgb(234 88 12 / 8%);
+  border-color: #ea580c;
+}
+
+.ocr-roi-box--red:hover,
+.ocr-roi-box--red:focus-visible {
+  background: rgb(220 38 38 / 8%);
+  border-color: #dc2626;
 }
 
 .ocr-capability-kpis {
