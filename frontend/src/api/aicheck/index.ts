@@ -3652,6 +3652,7 @@ export const createFdeOcrCapabilityTestRunApi = (
     enableSeals?: boolean
     enableFallback?: boolean
     disableRemediation?: boolean
+    quickMode?: boolean
   },
   options?: MutationHeaderOptions
 ): Promise<IResponse<{ run: FdeOcrCapabilityTestRun; auditLogId: string }>> => {

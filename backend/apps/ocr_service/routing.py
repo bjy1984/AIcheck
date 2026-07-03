@@ -10,6 +10,7 @@ TABLE_ENGINES = {"pp_structure_v3", "opencv_table_grid_subprocess"}
 SEAL_ENGINES = {"paddlex_seal_recognition", "agentdesign_seal_ocr_subprocess", "visual_seal_candidate_subprocess"}
 FALLBACK_ENGINES = {"paddleocr_vl_1_6"}
 DOCUMENT_LEVEL_ENGINES = {"pymupdf_text_layer", "docling_local", "paddleocr_vl_1_6"}
+QUICK_MODE_DISABLED_ENGINES = {"docling_local"}
 
 
 def route_engine_variants(
@@ -20,6 +21,9 @@ def route_engine_variants(
     page_quality: list[dict[str, Any]],
     options: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
+    quick_mode = parse_bool((options or {}).get("quickMode"), False) is True
+    if quick_mode and engine_name in QUICK_MODE_DISABLED_ENGINES:
+        return []
     if engine_name in TABLE_ENGINES and parse_bool((options or {}).get("enableTables"), True) is False:
         return []
     if engine_name in SEAL_ENGINES and parse_bool((options or {}).get("enableSeals"), True) is False:
@@ -73,6 +77,8 @@ def route_engine_variants(
             return originals
         return []
     if engine_name in TEXT_ENGINES:
+        if quick_mode:
+            return quick_text_variants_by_page(variants, quality_by_page)
         return text_variants_by_page(variants, quality_by_page)
     return originals
 
@@ -186,6 +192,15 @@ def text_variants_by_page(variants: list[dict[str, Any]], quality_by_page: dict[
         if original and original not in routed:
             routed.append(original)
     return routed
+
+
+def quick_text_variants_by_page(variants: list[dict[str, Any]], quality_by_page: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
+    routed = []
+    for page_no in sorted({variant_page_no(variant) for variant in variants}):
+        page_variants = variants_for_page(variants, page_no)
+        quality = quality_by_page.get(page_no) or {}
+        routed.append(text_variant(page_variants, quality) or original_for_page(variants, page_no) or page_variants[0])
+    return [variant for variant in routed if variant]
 
 
 def structure_variants(variants: list[dict[str, Any]], quality_by_page: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:

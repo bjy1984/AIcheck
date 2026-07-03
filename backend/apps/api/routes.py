@@ -11692,6 +11692,16 @@ def fde_capability_test_int(body: dict[str, Any], key: str, default: int, minimu
     return max(minimum, min(value, maximum))
 
 
+def fde_capability_test_timeout_seconds(options: dict[str, Any]) -> int:
+    max_pages = fde_capability_test_int(options, "maxPages", 1, 1, 10)
+    enabled_heavy_steps = sum(
+        1
+        for key in ("enableTables", "enableSeals", "enableFallback")
+        if parse_bool(options.get(key), False) is True
+    )
+    return max(300, min(900, 180 + max_pages * 90 + enabled_heavy_steps * 180))
+
+
 def fde_run_ocr_capability_test(run_id: str) -> None:
     run = fde_capability_test_run_by_id(run_id)
     if not run:
@@ -11755,7 +11765,7 @@ def fde_run_ocr_capability_test(run_id: str) -> None:
                     "runType": "fde_capability_test",
                     "capabilityTestRunId": run_id,
                 },
-                timeout_seconds=180,
+                timeout_seconds=fde_capability_test_timeout_seconds(run.get("options") or {}),
             )
         result.update(
             {
@@ -12017,11 +12027,12 @@ def fde_create_ocr_capability_test_run(
         run_id = f"FDE-OCR-RUN-{uuid4().hex[:10].upper()}"
         now = server_time()
         options = {
-            "enableTables": fde_capability_test_bool(body, "enableTables", True),
-            "enableSeals": fde_capability_test_bool(body, "enableSeals", True),
-            "enableFallback": fde_capability_test_bool(body, "enableFallback", True),
-            "maxPages": fde_capability_test_int(body, "maxPages", 3, 1, 10),
+            "enableTables": fde_capability_test_bool(body, "enableTables", False),
+            "enableSeals": fde_capability_test_bool(body, "enableSeals", False),
+            "enableFallback": fde_capability_test_bool(body, "enableFallback", False),
+            "maxPages": fde_capability_test_int(body, "maxPages", 1, 1, 10),
             "disableRemediation": fde_capability_test_bool(body, "disableRemediation", True),
+            "quickMode": fde_capability_test_bool(body, "quickMode", True),
         }
         run = {
             "id": run_id,

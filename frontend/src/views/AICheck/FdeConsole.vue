@@ -193,11 +193,12 @@ const ocrCapabilityTestPolling = ref<number | undefined>()
 const ocrCapabilityTestForm = ref({
   profileId: 'auto',
   documentType: 'auto',
-  maxPages: 3,
+  maxPages: 1,
   enableTables: false,
   enableSeals: false,
   enableFallback: false,
-  disableRemediation: true
+  disableRemediation: true,
+  quickMode: true
 })
 const labelStudioExportSummary = ref<Record<string, unknown> | null>(null)
 const annotationEditorVisible = ref(false)
