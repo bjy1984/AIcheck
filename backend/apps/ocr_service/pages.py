@@ -12,7 +12,7 @@ from typing import Any
 from apps.ocr_service.utils import parse_bool
 
 
-PAGE_RENDER_VERSION = "pymupdf_text_to_pixel_matrix_v2"
+PAGE_RENDER_VERSION = "pymupdf_text_to_pixel_matrix_v4"
 
 
 def render_document_pages(source_path: Path, *, profile: dict[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -92,11 +92,23 @@ def render_pdf_pages(
     try:
         import fitz  # type: ignore
     except Exception:
-        return []
+        return render_pdf_pages_with_subprocess(
+            source_path,
+            dpi=dpi,
+            max_pages=max_pages,
+            max_long_side=max_long_side,
+            profile=profile,
+        )
     try:
         document = fitz.open(str(source_path))
     except Exception:
-        return []
+        return render_pdf_pages_with_subprocess(
+            source_path,
+            dpi=dpi,
+            max_pages=max_pages,
+            max_long_side=max_long_side,
+            profile=profile,
+        )
     pages: list[dict[str, Any]] = []
     out_dir = rendered_page_cache_dir(source_path, dpi=dpi, max_pages=max_pages, max_long_side=max_long_side)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -117,7 +129,7 @@ def render_pdf_pages(
                 scale = min(dpi_scale, max_scale)
             else:
                 scale = dpi_scale
-            matrix = fitz.Matrix(scale, scale).prerotate(int(page.rotation or 0))
+            matrix = fitz.Matrix(scale, scale)
             text_to_pixel_matrix = text_to_pixel_matrix_for_page(page, matrix)
             target = out_dir / f"page-{page_no}.png"
             pixmap = page.get_pixmap(matrix=matrix, alpha=False)
@@ -158,6 +170,212 @@ def render_pdf_pages(
     return pages
 
 
+def render_pdf_pages_with_subprocess(
+    source_path: Path,
+    *,
+    dpi: int,
+    max_pages: int,
+    max_long_side: int = 0,
+    profile: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    python_bin = os.getenv("AICHECK_OCR_SUBPROCESS_PYTHON")
+    if not python_bin or not Path(python_bin).exists():
+        return []
+    out_dir = rendered_page_cache_dir(source_path, dpi=dpi, max_pages=max_pages, max_long_side=max_long_side)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    script = r"""
+import json
+import sys
+from pathlib import Path
+
+import fitz
+
+source_path = Path(sys.argv[1])
+out_dir = Path(sys.argv[2])
+dpi = int(sys.argv[3])
+max_pages = max(int(sys.argv[4]), 1)
+max_long_side = int(sys.argv[5])
+requires_tail = sys.argv[6].lower() == "true"
+page_render_version = sys.argv[7]
+
+
+def select_indices(total_pages, limit, tail):
+    total_pages = max(int(total_pages or 0), 0)
+    if total_pages <= 0:
+        return []
+    limit = max(int(limit or total_pages), 1)
+    if total_pages <= limit:
+        return list(range(total_pages))
+    if limit <= 1:
+        return [0]
+    if not tail:
+        return list(range(min(total_pages, limit)))
+    protected = {0}
+    if total_pages >= 2:
+        protected.add(total_pages - 1)
+    if limit >= 3 and total_pages >= 3:
+        protected.add(total_pages - 2)
+    remaining = max(limit - len(protected), 0)
+    body = []
+    if remaining > 0:
+        for index in range(total_pages):
+            if index in protected:
+                continue
+            body.append(index)
+            if len(body) >= remaining:
+                break
+    return sorted(protected.union(body))
+
+
+def matrix_values(matrix):
+    return [
+        float(getattr(matrix, "a", 1.0)),
+        float(getattr(matrix, "b", 0.0)),
+        float(getattr(matrix, "c", 0.0)),
+        float(getattr(matrix, "d", 1.0)),
+        float(getattr(matrix, "e", 0.0)),
+        float(getattr(matrix, "f", 0.0)),
+    ]
+
+
+def text_to_pixel_matrix(page, matrix):
+    rotation_matrix = getattr(page, "rotation_matrix", None)
+    if rotation_matrix is None:
+        return matrix
+    try:
+        return rotation_matrix * matrix
+    except Exception:
+        return matrix
+
+
+def protected_labels(indices, total_pages):
+    labels = []
+    if indices and 0 in indices:
+        labels.append("first")
+    if total_pages >= 2 and total_pages - 1 in indices:
+        labels.append("last")
+    if total_pages >= 3 and total_pages - 2 in indices:
+        labels.append("penultimate")
+    return labels
+
+
+doc = fitz.open(str(source_path))
+try:
+    total_pages = int(getattr(doc, "page_count", 0) or len(doc))
+    selected = select_indices(total_pages, max_pages, requires_tail)
+    rendered_pages = [index + 1 for index in selected]
+    records = []
+    for page_index in selected:
+        page = doc[page_index]
+        page_no = page_index + 1
+        dpi_scale = dpi / 72.0
+        if max_long_side > 0:
+            scale = min(dpi_scale, max_long_side / max(float(page.rect.width), float(page.rect.height), 1.0))
+        else:
+            scale = dpi_scale
+        matrix = fitz.Matrix(scale, scale)
+        text_matrix = text_to_pixel_matrix(page, matrix)
+        target = out_dir / f"page-{page_no}.png"
+        pixmap = page.get_pixmap(matrix=matrix, alpha=False)
+        if not target.exists():
+            pixmap.save(str(target))
+        records.append(
+            {
+                "path": str(target),
+                "pageNo": page_no,
+                "renderDpi": int(round(scale * 72)),
+                "rotation": int(page.rotation or 0),
+                "sourceWidth": float(page.rect.width),
+                "sourceHeight": float(page.rect.height),
+                "renderScaleX": scale,
+                "renderScaleY": scale,
+                "pdfRenderMatrix": matrix_values(matrix),
+                "pdfTextToPixelMatrix": matrix_values(text_matrix),
+                "pdfPixmapX": int(getattr(pixmap, "x", 0) or 0),
+                "pdfPixmapY": int(getattr(pixmap, "y", 0) or 0),
+                "requestedRenderDpi": dpi,
+                "effectiveRenderDpi": int(round(scale * 72)),
+                "totalPages": total_pages,
+                "renderedPages": rendered_pages,
+                "truncated": len(selected) < total_pages,
+                "requestedMaxPages": max_pages,
+                "effectiveMaxPages": len(selected),
+                "protectedPages": protected_labels(selected, total_pages),
+                "pageRenderVersion": page_render_version,
+            }
+        )
+    print(json.dumps({"records": records}, ensure_ascii=False), flush=True)
+finally:
+    doc.close()
+"""
+    completed = subprocess.run(
+        [
+            python_bin,
+            "-c",
+            script,
+            str(source_path),
+            str(out_dir),
+            str(int(dpi)),
+            str(int(max_pages)),
+            str(int(max_long_side)),
+            "true" if profile_requires_tail_pages(profile) else "false",
+            PAGE_RENDER_VERSION,
+        ],
+        check=False,
+        capture_output=True,
+        encoding="utf-8",
+        env=os.environ.copy(),
+        timeout=float(os.getenv("AICHECK_OCR_PDF_RENDER_TIMEOUT", "180")),
+    )
+    if completed.returncode != 0:
+        return []
+    lines = [line for line in completed.stdout.splitlines() if line.strip()]
+    if not lines:
+        return []
+    try:
+        payload = json.loads(lines[-1])
+    except json.JSONDecodeError:
+        return []
+    pages: list[dict[str, Any]] = []
+    for record in payload.get("records") or []:
+        if not isinstance(record, dict):
+            continue
+        page_path = Path(str(record.get("path") or ""))
+        if not page_path.exists():
+            continue
+        pages.append(
+            image_page_record(
+                page_path,
+                page_no=int(record.get("pageNo") or 1),
+                source_type="pdf",
+                render_dpi=int(record.get("renderDpi") or dpi),
+                document_path=source_path,
+                rotation=int(record.get("rotation") or 0),
+                source_width=float(record.get("sourceWidth") or 0),
+                source_height=float(record.get("sourceHeight") or 0),
+                source_coordinate_system="pdf_points",
+                render_scale_x=float(record.get("renderScaleX") or 1),
+                render_scale_y=float(record.get("renderScaleY") or 1),
+                pdf_render_matrix=record.get("pdfRenderMatrix"),
+                pdf_text_to_pixel_matrix=record.get("pdfTextToPixelMatrix"),
+                pdf_pixmap_x=int(record.get("pdfPixmapX") or 0),
+                pdf_pixmap_y=int(record.get("pdfPixmapY") or 0),
+                page_render_version=str(record.get("pageRenderVersion") or PAGE_RENDER_VERSION),
+                requested_render_dpi=int(record.get("requestedRenderDpi") or dpi),
+                effective_render_dpi=int(record.get("effectiveRenderDpi") or record.get("renderDpi") or dpi),
+                total_pages=int(record.get("totalPages") or 0) or None,
+                rendered_pages=record.get("renderedPages") if isinstance(record.get("renderedPages"), list) else None,
+                truncated=record.get("truncated") if isinstance(record.get("truncated"), bool) else None,
+                requested_max_pages=int(record.get("requestedMaxPages") or max_pages),
+                effective_max_pages=int(record.get("effectiveMaxPages") or len(payload.get("records") or [])),
+                protected_pages=record.get("protectedPages") if isinstance(record.get("protectedPages"), list) else None,
+            )
+        )
+    if pages:
+        save_pdf_page_manifest(out_dir, pages)
+    return pages
+
+
 def render_pdf_page_preview(
     source_path: Path,
     *,
@@ -168,11 +386,21 @@ def render_pdf_page_preview(
     try:
         import fitz  # type: ignore
     except Exception:
-        return None
+        return render_pdf_page_preview_with_subprocess(
+            source_path,
+            page_no=page_no,
+            dpi=dpi,
+            max_long_side=max_long_side,
+        )
     try:
         document = fitz.open(str(source_path))
     except Exception:
-        return None
+        return render_pdf_page_preview_with_subprocess(
+            source_path,
+            page_no=page_no,
+            dpi=dpi,
+            max_long_side=max_long_side,
+        )
     try:
         total_pages = int(getattr(document, "page_count", 0) or len(document))
         if total_pages <= 0:
@@ -193,7 +421,7 @@ def render_pdf_page_preview(
             scale = min(dpi_scale, max_scale)
         else:
             scale = dpi_scale
-        matrix = fitz.Matrix(scale, scale).prerotate(int(page.rotation or 0))
+        matrix = fitz.Matrix(scale, scale)
         text_to_pixel_matrix = text_to_pixel_matrix_for_page(page, matrix)
         pixmap = None
         if not target.exists():
@@ -227,6 +455,24 @@ def render_pdf_page_preview(
         )
     finally:
         document.close()
+
+
+def render_pdf_page_preview_with_subprocess(
+    source_path: Path,
+    *,
+    page_no: int = 1,
+    dpi: int = 180,
+    max_long_side: int = 1600,
+) -> dict[str, Any] | None:
+    pages = render_pdf_pages_with_subprocess(
+        source_path,
+        dpi=dpi,
+        max_pages=max(int(page_no or 1), 1),
+        max_long_side=max_long_side,
+        profile=None,
+    )
+    requested = max(int(page_no or 1), 1)
+    return next((page for page in pages if int(page.get("pageNo") or 0) == requested), pages[0] if pages else None)
 
 
 def select_pdf_page_indices(

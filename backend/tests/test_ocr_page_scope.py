@@ -451,12 +451,12 @@ def test_cache_schema_versions_are_upgraded() -> None:
         cache_contract_versions,
     )
 
-    assert RESULT_CACHE_SCHEMA == "aicheck-ocr-parse-result-cache-v6"
+    assert RESULT_CACHE_SCHEMA == "aicheck-ocr-parse-result-cache-v12"
     assert PREPROCESS_CACHE_SCHEMA == "aicheck-ocr-preprocess-cache-v2"
     assert EVIDENCE_CONTRACT_VERSION == "rendered_pixels_mapped_v2"
     assert PAGE_SELECTION_VERSION == "sparse_tail_pages_v2"
     assert REMEDIATION_VERSION == "crop_remediation_v2"
-    assert PAGE_RENDER_VERSION == "pymupdf_text_to_pixel_matrix_v2"
+    assert PAGE_RENDER_VERSION == "pymupdf_text_to_pixel_matrix_v4"
     assert cache_contract_versions()["resultCacheSchema"]
     assert cache_contract_versions()["pageRenderVersion"] == PAGE_RENDER_VERSION
 
@@ -547,6 +547,71 @@ def test_pdf_page_cache_hit_uses_manifest_not_get_pixmap(monkeypatch, tmp_path: 
     assert pages == expected_pages
 
 
+def test_pdf_page_render_falls_back_to_configured_subprocess(monkeypatch, tmp_path: Path) -> None:
+    import json
+    import subprocess
+    import sys
+
+    from PIL import Image
+    from apps.ocr_service.pages import PAGE_RENDER_VERSION, render_pdf_pages
+
+    source = tmp_path / "subprocess.pdf"
+    source.write_bytes(b"%PDF-1.7 subprocess")
+    monkeypatch.setenv("AICHECK_OCR_SUBPROCESS_PYTHON", sys.executable)
+    monkeypatch.setenv("AICHECK_OCR_PAGE_CACHE_DIR", str(tmp_path / "page-cache"))
+    monkeypatch.setitem(sys.modules, "fitz", None)
+
+    def fake_run(args, **_kwargs):
+        out_dir = Path(args[4])
+        out_dir.mkdir(parents=True, exist_ok=True)
+        page_path = out_dir / "page-1.png"
+        Image.new("RGB", (60, 40), (255, 255, 255)).save(page_path)
+        return subprocess.CompletedProcess(
+            args,
+            0,
+            stdout=json.dumps(
+                {
+                    "records": [
+                        {
+                            "path": str(page_path),
+                            "pageNo": 1,
+                            "renderDpi": 180,
+                            "rotation": 0,
+                            "sourceWidth": 120.0,
+                            "sourceHeight": 80.0,
+                            "renderScaleX": 1.5,
+                            "renderScaleY": 1.5,
+                            "pdfRenderMatrix": [1.5, 0, 0, 1.5, 0, 0],
+                            "pdfTextToPixelMatrix": [1.5, 0, 0, 1.5, 0, 0],
+                            "pdfPixmapX": 0,
+                            "pdfPixmapY": 0,
+                            "requestedRenderDpi": 180,
+                            "effectiveRenderDpi": 180,
+                            "totalPages": 1,
+                            "renderedPages": [1],
+                            "truncated": False,
+                            "requestedMaxPages": 1,
+                            "effectiveMaxPages": 1,
+                            "protectedPages": ["first"],
+                            "pageRenderVersion": PAGE_RENDER_VERSION,
+                        }
+                    ]
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    pages = render_pdf_pages(source, dpi=180, max_pages=1)
+
+    assert len(pages) == 1
+    assert pages[0]["width"] == 60
+    assert pages[0]["height"] == 40
+    assert pages[0]["sourceCoordinateSystem"] == "pdf_points"
+    assert pages[0]["pageRenderVersion"] == PAGE_RENDER_VERSION
+
+
 def test_profile_validator_checks_min_table_cell_evidence_coverage() -> None:
     from copy import deepcopy
     from apps.ocr_service.profiles import DEFAULT_PROFILE_ID, OCR_PROFILES, validate_profiles
@@ -600,6 +665,99 @@ def test_piping_table_helpers_are_page_scoped() -> None:
         {"tableId": "grid_p2", "pageNo": 2, "rows": 2, "columns": 3, "gridCellCount": 6},
     )
     assert aligned["tableId"] == "page_2_piping_characteristic_table_1"
+
+
+def test_opencv_grid_table_is_text_aligned_from_fragment_coordinates() -> None:
+    from apps.ocr_service.service import align_grid_tables_with_fragments
+
+    result = {
+        "fragments": [
+            {"pageNo": 1, "text": "序号", "bbox": [10, 8, 30, 22], "confidence": 0.95},
+            {"pageNo": 1, "text": "名称", "bbox": [70, 8, 105, 22], "confidence": 0.94},
+            {"pageNo": 1, "text": "图号", "bbox": [170, 8, 205, 22], "confidence": 0.94},
+            {"pageNo": 1, "text": "1", "bbox": [14, 38, 24, 52], "confidence": 0.92},
+            {"pageNo": 1, "text": "工艺图纸目录", "bbox": [62, 38, 128, 52], "confidence": 0.93},
+            {"pageNo": 1, "text": "QX-001", "bbox": [168, 38, 220, 52], "confidence": 0.93},
+            {"pageNo": 1, "text": "2", "bbox": [14, 68, 24, 82], "confidence": 0.92},
+            {"pageNo": 1, "text": "设备表", "bbox": [62, 68, 102, 82], "confidence": 0.93},
+            {"pageNo": 1, "text": "QX-002", "bbox": [168, 68, 220, 82], "confidence": 0.93},
+            {"pageNo": 1, "text": "孤立备注", "bbox": [62, 105, 120, 118], "confidence": 0.9},
+        ],
+        "tables": [
+            {
+                "tableId": "grid_1",
+                "pageNo": 1,
+                "sourceEngine": "opencv_table_grid_subprocess",
+                "bbox": [0, 0, 260, 130],
+                "rows": 4,
+                "columns": 3,
+                "gridCellCount": 12,
+                "gridLineXs": [0, 50, 150, 260],
+                "gridLineYs": [0, 30, 60, 90, 130],
+                "cells": [{"row": 0, "col": 0, "text": ""}],
+                "structureConfidence": 0.82,
+            }
+        ],
+        "diagnostics": [],
+    }
+
+    align_grid_tables_with_fragments(result)
+
+    assert len(result["tables"]) == 1
+    table = result["tables"][0]
+    assert table["sourceEngine"] == "opencv_grid_text_aligned"
+    assert table["rows"] == 3
+    assert table["columns"] == 3
+    assert table["bbox"] == [0.0, 0.0, 260.0, 90.0]
+    assert table["normalizedRows"][0]["名称"] == "工艺图纸目录"
+    assert table["normalizedRows"][1]["图号"] == "QX-002"
+    assert any(cell["text"] == "设备表" for cell in table["cells"])
+    assert result["diagnostics"][0]["code"] == "OPENCV_GRID_TEXT_ALIGNED"
+
+
+def test_pp_structure_model_names_follow_local_model_dirs(monkeypatch) -> None:
+    from pathlib import Path
+
+    from apps.ocr_service.engines import pp_structure_model_names
+
+    dirs = {
+        "layout": Path("/models/PP-DocLayout-L"),
+        "text_det": Path("/models/PP-OCRv6_medium_det"),
+        "text_rec": Path("/models/PP-OCRv6_medium_rec"),
+        "wired_table_structure": Path("/models/SLANeXt_wired"),
+        "wired_table_cells": Path("/models/RT-DETR-L_wired_table_cell_det"),
+        "wireless_table_structure": Path("/models/SLANeXt_wireless"),
+        "wireless_table_cells": Path("/models/RT-DETR-L_wireless_table_cell_det"),
+    }
+
+    names = pp_structure_model_names(dirs)
+
+    assert names["layout"] == "PP-DocLayout-L"
+    assert names["wired_table_structure"] == "SLANeXt_wired"
+
+    monkeypatch.setenv("AICHECK_PPSTRUCTURE_LAYOUT_MODEL_NAME", "PP-DocLayout_plus-L")
+    names = pp_structure_model_names(dirs)
+
+    assert names["layout"] == "PP-DocLayout_plus-L"
+
+
+def test_pp_structure_empty_table_blocks_are_not_formal_tables() -> None:
+    from apps.ocr_service.engines import normalize_structure_result
+
+    tables, blocks = normalize_structure_result(
+        [
+            {
+                "type": "table",
+                "bbox": [10, 10, 500, 500],
+                "res": {"html": ""},
+                "confidence": 0.95,
+            }
+        ],
+        "pp_structure_v3",
+    )
+
+    assert tables == []
+    assert blocks[0]["blockType"] == "table"
 
 
 def test_visual_plus_page_text_cannot_satisfy_required_seal_without_crop_ocr() -> None:

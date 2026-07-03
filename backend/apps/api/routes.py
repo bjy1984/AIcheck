@@ -42,7 +42,7 @@ from libs.business_pack import (
 )
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok, page, server_time
-from libs.db.repository import load_state, repo
+from libs.db.repository import flush_state, load_state, repo
 from libs.db.seed import PROJECT_ID, ROLE_NODE_MAP
 from libs.embedding_models import embedding_registry_payload, embedding_runtime_config
 from libs.integrations import task_dispatcher
@@ -11796,20 +11796,8 @@ def fde_capability_test_profile_document_type(file_name: str, body: dict[str, An
         profile_id = ""
     if document_type in {"all", "auto"}:
         document_type = ""
-    normalized_name = str(file_name or "").lower()
-    suffix = Path(str(file_name)).suffix.lower()
     if not profile_id:
-        if any(term in normalized_name for term in ["rt", "ut", "ndt", "检测", "探伤"]):
-            profile_id = "ndt_rt_report_v1"
-        elif any(term in normalized_name for term in ["质量", "证明", "材质", "合格证", "证书"]):
-            profile_id = "quality_certificate_v1"
-        elif suffix in {".png", ".jpg", ".jpeg"} or any(
-            term in normalized_name
-            for term in ["设计", "图纸", "图纸目录", "drawing", "dwg", "工艺", "管道", "特性表"]
-        ):
-            profile_id = "piping_characteristic_list_v1"
-        else:
-            profile_id = "generic_document_v1"
+        profile_id = "generic_document_v1"
     if not document_type:
         document_type = {
             "generic_document_v1": "generic_document",
@@ -11871,6 +11859,7 @@ def fde_run_ocr_capability_test(run_id: str) -> None:
         }
     )
     run["ocrJobRecordId"] = job.get("id")
+    flush_state()
     try:
         client = OcrClient()
         if not client.enabled:
@@ -11982,6 +11971,8 @@ def fde_run_ocr_capability_test(run_id: str) -> None:
                 "updatedAt": finished_at,
             }
         )
+    finally:
+        flush_state()
 
 
 @router.get("/fde/ocr-quality")
@@ -12173,7 +12164,7 @@ def fde_create_ocr_capability_test_run(
         run_id = f"FDE-OCR-RUN-{uuid4().hex[:10].upper()}"
         now = server_time()
         options = {
-            "enableTables": fde_capability_test_bool(body, "enableTables", False),
+            "enableTables": fde_capability_test_bool(body, "enableTables", True),
             "enableSeals": fde_capability_test_bool(body, "enableSeals", True),
             "enableFallback": fde_capability_test_bool(body, "enableFallback", False),
             "maxPages": fde_capability_test_int(body, "maxPages", 1, 1, 10),
@@ -12278,6 +12269,31 @@ def fde_ocr_capability_test_page_preview(
     if not run:
         return fail(errors.NOT_FOUND, request)
     storage_url = fde_capability_test_storage_url(str(run.get("storageKey") or run.get("storageUrl") or ""))
+    client = OcrClient()
+    if client.enabled:
+        try:
+            content, content_type = client.page_preview(
+                {
+                    "storageKey": storage_url,
+                    "fileName": run.get("fileName"),
+                    "profileId": run.get("profileId"),
+                    "documentType": run.get("documentType"),
+                    "options": run.get("options") or {},
+                    "pageNo": pageNo,
+                },
+                timeout=45,
+            )
+            return Response(
+                content=content,
+                media_type=content_type,
+                headers={
+                    "Cache-Control": "private, max-age=300",
+                    "X-Content-Type-Options": "nosniff",
+                    "X-AICheck-Preview-Source": "ocr-service",
+                },
+            )
+        except IntegrationServiceError:
+            pass
     local_preview = fde_render_local_capability_page_preview(run, pageNo)
     if local_preview:
         content, content_type = local_preview
@@ -12290,7 +12306,6 @@ def fde_ocr_capability_test_page_preview(
                 "X-AICheck-Preview-Source": "local-upload",
             },
         )
-    client = OcrClient()
     if not client.enabled:
         return fail(
             errors.EXTERNAL_TOOL_FAILED,
@@ -12298,32 +12313,11 @@ def fde_ocr_capability_test_page_preview(
             message="OCR 服务未配置，且本地文件无法生成 PDF 页图预览。",
             http_status=503,
         )
-    try:
-        content, content_type = client.page_preview(
-            {
-                "storageKey": storage_url,
-                "fileName": run.get("fileName"),
-                "profileId": run.get("profileId"),
-                "documentType": run.get("documentType"),
-                "options": run.get("options") or {},
-                "pageNo": pageNo,
-            },
-            timeout=45,
-        )
-    except IntegrationServiceError as exc:
-        return fail(
-            errors.EXTERNAL_TOOL_FAILED,
-            request,
-            message=f"OCR 页图预览生成失败：{exc.reason or exc.status_code or 'UNKNOWN'}",
-            http_status=502,
-        )
-    return Response(
-        content=content,
-        media_type=content_type,
-        headers={
-            "Cache-Control": "private, max-age=300",
-            "X-Content-Type-Options": "nosniff",
-        },
+    return fail(
+        errors.EXTERNAL_TOOL_FAILED,
+        request,
+        message="OCR 页图预览生成失败，且本地文件无法生成 PDF 页图预览。",
+        http_status=502,
     )
 
 

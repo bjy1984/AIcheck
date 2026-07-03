@@ -254,6 +254,7 @@ class PpStructureEngine(LocalOcrEngine):
     ) -> dict[str, Any]:
         source_path = variant_source_path(source_path, variant)
         dirs = pp_structure_model_dirs()
+        names = pp_structure_model_names(dirs)
         missing = [key for key, path in dirs.items() if not path.exists()]
         if missing:
             return {
@@ -274,12 +275,19 @@ class PpStructureEngine(LocalOcrEngine):
 
         runtime = paddle_runtime_options(profile)
         engine = PPStructureV3(
+            layout_detection_model_name=names["layout"],
             layout_detection_model_dir=str(dirs["layout"]),
+            text_detection_model_name=names["text_det"],
             text_detection_model_dir=str(dirs["text_det"]),
+            text_recognition_model_name=names["text_rec"],
             text_recognition_model_dir=str(dirs["text_rec"]),
+            wired_table_structure_recognition_model_name=names["wired_table_structure"],
             wired_table_structure_recognition_model_dir=str(dirs["wired_table_structure"]),
+            wired_table_cells_detection_model_name=names["wired_table_cells"],
             wired_table_cells_detection_model_dir=str(dirs["wired_table_cells"]),
+            wireless_table_structure_recognition_model_name=names["wireless_table_structure"],
             wireless_table_structure_recognition_model_dir=str(dirs["wireless_table_structure"]),
+            wireless_table_cells_detection_model_name=names["wireless_table_cells"],
             wireless_table_cells_detection_model_dir=str(dirs["wireless_table_cells"]),
             use_doc_orientation_classify=runtime["use_doc_orientation_classify"],
             use_doc_unwarping=runtime["use_doc_unwarping"],
@@ -288,6 +296,7 @@ class PpStructureEngine(LocalOcrEngine):
             use_seal_recognition=False,
             use_formula_recognition=False,
             use_chart_recognition=False,
+            use_region_detection=False,
         )
         raw = engine.predict(str(source_path))
         tables, layout_blocks = normalize_structure_result(raw, self.name)
@@ -310,6 +319,7 @@ class PpStructureEngine(LocalOcrEngine):
                 "engineVersion": self.version,
             }
         dirs = pp_structure_model_dirs()
+        names = pp_structure_model_names(dirs)
         script = textwrap.dedent(
             """
             import json
@@ -319,6 +329,7 @@ class PpStructureEngine(LocalOcrEngine):
             image_path = sys.argv[1]
             dirs = json.loads(sys.argv[2])
             runtime = json.loads(sys.argv[3])
+            names = json.loads(sys.argv[4])
 
             def basic(value):
                 if isinstance(value, (str, int, float, bool)) or value is None:
@@ -348,12 +359,19 @@ class PpStructureEngine(LocalOcrEngine):
                 return str(value)
 
             engine = PPStructureV3(
+                layout_detection_model_name=names["layout"],
                 layout_detection_model_dir=dirs["layout"],
+                text_detection_model_name=names["text_det"],
                 text_detection_model_dir=dirs["text_det"],
+                text_recognition_model_name=names["text_rec"],
                 text_recognition_model_dir=dirs["text_rec"],
+                wired_table_structure_recognition_model_name=names["wired_table_structure"],
                 wired_table_structure_recognition_model_dir=dirs["wired_table_structure"],
+                wired_table_cells_detection_model_name=names["wired_table_cells"],
                 wired_table_cells_detection_model_dir=dirs["wired_table_cells"],
+                wireless_table_structure_recognition_model_name=names["wireless_table_structure"],
                 wireless_table_structure_recognition_model_dir=dirs["wireless_table_structure"],
+                wireless_table_cells_detection_model_name=names["wireless_table_cells"],
                 wireless_table_cells_detection_model_dir=dirs["wireless_table_cells"],
                 use_doc_orientation_classify=bool(runtime.get("use_doc_orientation_classify")),
                 use_doc_unwarping=bool(runtime.get("use_doc_unwarping")),
@@ -362,6 +380,7 @@ class PpStructureEngine(LocalOcrEngine):
                 use_seal_recognition=False,
                 use_formula_recognition=False,
                 use_chart_recognition=False,
+                use_region_detection=False,
             )
             raw = [basic(item) for item in engine.predict(image_path)]
             print("AICHECK_PP_STRUCTURE_RESULT " + json.dumps(raw, ensure_ascii=False), flush=True)
@@ -376,6 +395,7 @@ class PpStructureEngine(LocalOcrEngine):
                     str(source_path),
                     json.dumps({key: str(path) for key, path in dirs.items()}),
                     json.dumps(paddle_runtime_options(profile)),
+                    json.dumps(names),
                 ],
                 check=False,
                 capture_output=True,
@@ -1271,7 +1291,7 @@ class AgentdesignSealOcrSubprocessEngine(LocalOcrEngine):
 
 class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
     name = "visual_seal_candidate_subprocess"
-    version = "opencv-color-candidate@1"
+    version = "opencv-color-candidate@5"
 
     def available(self) -> bool:
         python_bin = os.getenv("AICHECK_OCR_SUBPROCESS_PYTHON")
@@ -1306,6 +1326,7 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
             """
             import json
             import os
+            import re
             import sys
             import tempfile
             import cv2
@@ -1351,7 +1372,16 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
                 return False
 
             crop_ocr = None
-            seal_text_keywords = ["专用章", "单位名称", "业务范围", "资质证书", "有效期", "设计院", "有限公司"]
+            seal_text_keywords = [
+                "专用章",
+                "单位名称",
+                "业务范围",
+                "资质证书",
+                "有效期",
+                "设计院",
+                "有限公司",
+                "许可",
+            ]
 
             def object_to_dict(value):
                 if isinstance(value, dict):
@@ -1432,6 +1462,7 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
             def seal_fields_from_lines(lines, bbox):
                 field_bbox = [int(value) for value in bbox]
                 texts = [text for text, _ in lines]
+                line_scores = {text: float(score or 0.0) for text, score in lines}
                 fields = []
 
                 def add(name, value, confidence=0.9):
@@ -1439,9 +1470,11 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
                     if value:
                         fields.append({"fieldName": name, "fieldValue": value, "confidence": confidence, "bbox": field_bbox})
 
-                title = next((text for text in texts if "章" in text), texts[0] if texts else "")
-                add("印章名称", title)
+                title = next((text for text in texts if "章" in text), "")
+                if title:
+                    add("印章名称", title)
                 for text in texts:
+                    text_score = line_scores.get(text, 0.0)
                     matched_effective_date = False
                     for label, name in [
                         ("单位名称", "单位名称"),
@@ -1460,6 +1493,17 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
                         value = split_label_value(text, "业务范围")
                         if value:
                             add("业务范围", value)
+                    upper_text = text.upper().replace(" ", "")
+                    if "TS" in upper_text:
+                        match = re.search(r"TS\\d{6,}[-—]?\\d{4}", upper_text)
+                        add("许可证编号", match.group(0) if match else text)
+                    date_match = re.search(r"(?:19|20)\\d{2}年\\d{1,2}月\\d{1,2}日|(?:19|20)\\d{2}[-/.]\\d{1,2}[-/.]\\d{1,2}", text)
+                    if date_match and not any(field.get("fieldName") == "日期" for field in fields):
+                        add("日期", date_match.group(0), confidence=text_score or 0.8)
+                    if "有限公司" in text and not any(field.get("fieldName") == "单位名称" for field in fields):
+                        score = text_score
+                        if score >= 0.88:
+                            add("单位名称", text, confidence=max(score, 0.6))
                 business_index = next((index for index, text in enumerate(texts) if "业务范围" in text), -1)
                 if business_index >= 0 and not any(field.get("fieldName") == "业务范围" for field in fields):
                     following = []
@@ -1468,7 +1512,12 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
                             break
                         following.append(text)
                     add("业务范围", " ".join(following))
-                add("印章原文", "\\n".join(texts), confidence=sum(score for _, score in lines) / max(len(lines), 1) if lines else 0.0)
+                raw_texts = [
+                    text
+                    for text, score in lines
+                    if not ("有限公司" in text and float(score or 0.0) < 0.88)
+                ]
+                add("印章原文", "\\n".join(raw_texts), confidence=sum(score for _, score in lines) / max(len(lines), 1) if lines else 0.0)
                 return fields
 
             def extract_crop_seal_text(x, y, w_box, h_box):
@@ -1483,24 +1532,64 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
                 crop = image[y1:y2, x1:x2]
                 if crop.size == 0:
                     return {"lines": [], "fields": [], "confidence": 0.0}
+                lab = cv2.cvtColor(crop, cv2.COLOR_BGR2LAB)
+                l_channel, a_channel, b_channel = cv2.split(lab)
+                l_channel = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8)).apply(l_channel)
+                clahe_crop = cv2.cvtColor(cv2.merge([l_channel, a_channel, b_channel]), cv2.COLOR_LAB2BGR)
                 variants = {
                     "raw": crop,
+                    "raw_2x": cv2.resize(crop, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC),
+                    "clahe": clahe_crop,
+                    "clahe_2x": cv2.resize(clahe_crop, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC),
                     "cw": cv2.rotate(crop, cv2.ROTATE_90_CLOCKWISE),
                     "ccw": cv2.rotate(crop, cv2.ROTATE_90_COUNTERCLOCKWISE),
                     "180": cv2.rotate(crop, cv2.ROTATE_180),
                 }
+
+                def useful_seal_line(text, score):
+                    text = str(text or "").strip()
+                    if not text:
+                        return False
+                    upper_text = text.upper().replace(" ", "")
+                    if "TS" in upper_text:
+                        return True
+                    if "年" in text and "月" in text and "日" in text:
+                        return True
+                    if any(keyword in text for keyword in seal_text_keywords):
+                        return True
+                    if "有限公司" in text and float(score or 0.0) < 0.88:
+                        return False
+                    return float(score or 0.0) >= 0.88
+
+                def merge_lines(primary, candidates):
+                    merged = []
+                    seen = {}
+                    for text, score in [*primary, *candidates]:
+                        if not useful_seal_line(text, score):
+                            continue
+                        key = str(text).replace(" ", "")
+                        if key in seen:
+                            if score > merged[seen[key]][1]:
+                                merged[seen[key]] = (text, score)
+                            continue
+                        seen[key] = len(merged)
+                        merged.append((text, score))
+                    return merged
+
                 best_lines = []
+                all_lines = []
                 best_score = 0.0
                 with tempfile.TemporaryDirectory() as temp_dir:
                     for name, variant_image in variants.items():
                         variant_path = os.path.join(temp_dir, f"seal_{name}.png")
                         cv2.imwrite(variant_path, variant_image)
                         lines = ocr_image_lines(ocr, variant_path)
+                        all_lines.extend(lines)
                         score = score_seal_lines(lines)
                         if score > best_score:
                             best_score = score
                             best_lines = lines
-                useful_lines = [(text, score) for text, score in best_lines if score >= 0.2]
+                useful_lines = merge_lines(best_lines, all_lines)
                 confidence = sum(score for _, score in useful_lines) / max(len(useful_lines), 1) if useful_lines else 0.0
                 bbox = [int(x), int(y), int(x + w_box), int(y + h_box)]
                 return {
@@ -1546,11 +1635,12 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
                 for index, (area, x, y, w, h, fill_ratio) in enumerate(selected, start=1):
                     seal_type = "visual_red_seal_candidate" if color == "red" else "visual_blue_stamp_candidate"
                     confidence = min(0.95, 0.55 + area / float(width * height) * 50 + min(fill_ratio, 0.45) * 0.2)
-                    crop_text = extract_crop_seal_text(x, y, w, h) if color == "blue" else {"lines": [], "fields": [], "confidence": 0.0}
+                    crop_text = extract_crop_seal_text(x, y, w, h)
                     crop_lines = [text for text, _ in crop_text["lines"]]
-                    seal_name = crop_lines[0] if crop_lines else ("视觉印章候选" if color == "red" else "视觉蓝章候选")
                     fields = [{"fieldName": "印章颜色", "fieldValue": color, "confidence": 0.8, "bbox": [int(x), int(y), int(x + w), int(y + h)]}]
                     fields.extend(crop_text["fields"])
+                    field_title = next((field.get("fieldValue") for field in fields if field.get("fieldName") == "印章名称" and field.get("fieldValue")), "")
+                    seal_name = str(field_title or (crop_lines[0] if crop_lines else ("视觉印章候选" if color == "red" else "视觉蓝章候选")))
                     quality_flags = ["visual_candidate_only", "seal_text_from_crop_ocr"] if crop_lines else ["visual_candidate_only", "requires_seal_ocr_text"]
                     seals.append(
                         {
@@ -2253,6 +2343,33 @@ def pp_structure_model_dirs() -> dict[str, Path]:
     }
 
 
+def pp_structure_model_names(dirs: dict[str, Path]) -> dict[str, str]:
+    defaults = {
+        "layout": "PP-DocLayout-L",
+        "text_det": "PP-OCRv6_medium_det",
+        "text_rec": "PP-OCRv6_medium_rec",
+        "wired_table_structure": "SLANeXt_wired",
+        "wired_table_cells": "RT-DETR-L_wired_table_cell_det",
+        "wireless_table_structure": "SLANeXt_wireless",
+        "wireless_table_cells": "RT-DETR-L_wireless_table_cell_det",
+    }
+    env_names = {
+        "layout": "AICHECK_PPSTRUCTURE_LAYOUT_MODEL_NAME",
+        "text_det": "AICHECK_PADDLEOCR_DET_MODEL_NAME",
+        "text_rec": "AICHECK_PADDLEOCR_REC_MODEL_NAME",
+        "wired_table_structure": "AICHECK_PPSTRUCTURE_WIRED_TABLE_STRUCTURE_MODEL_NAME",
+        "wired_table_cells": "AICHECK_PPSTRUCTURE_WIRED_TABLE_CELLS_MODEL_NAME",
+        "wireless_table_structure": "AICHECK_PPSTRUCTURE_WIRELESS_TABLE_STRUCTURE_MODEL_NAME",
+        "wireless_table_cells": "AICHECK_PPSTRUCTURE_WIRELESS_TABLE_CELLS_MODEL_NAME",
+    }
+    names: dict[str, str] = {}
+    for key, default in defaults.items():
+        env_value = os.getenv(env_names[key])
+        dir_name = dirs.get(key).name if dirs.get(key) else ""
+        names[key] = str(env_value or dir_name or default)
+    return names
+
+
 def seal_model_dirs() -> dict[str, Path]:
     return {
         "seal_det": model_dir("AICHECK_SEAL_DET_MODEL_DIR", "PP-OCRv4_server_seal_det"),
@@ -2377,6 +2494,8 @@ def normalize_structure_result(raw: Any, source_engine: str) -> tuple[list[dict[
         if "table" in block_type.lower():
             html = item.get("html") or res_html
             table_structure = html_table_to_structure(str(html or ""))
+            if table_structure["rows"] <= 0 or table_structure["columns"] <= 0 or not table_structure["cells"]:
+                continue
             tables.append(
                 {
                     "tableId": f"table_{len(tables) + 1}",

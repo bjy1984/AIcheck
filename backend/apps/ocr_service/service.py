@@ -2552,6 +2552,8 @@ def apply_profile_postprocessing(result: dict[str, Any], profile: dict[str, Any]
         extract_piping_fields(result, profile)
         add_profile_quality_diagnostics(result, profile)
         return
+
+    align_grid_tables_with_fragments(result)
     if is_quality_certificate_profile(result, profile):
         tag_quality_certificate_tables(result)
         extract_quality_certificate_fields(result)
@@ -2570,6 +2572,348 @@ def group_tables_by_page(tables: list[Any]) -> dict[int, list[dict[str, Any]]]:
         if isinstance(table, dict):
             grouped.setdefault(page_no_from(table), []).append(table)
     return grouped
+
+
+def align_grid_tables_with_fragments(result: dict[str, Any]) -> None:
+    tables = result.get("tables") or []
+    fragments = result.get("fragments") or []
+    if not isinstance(tables, list) or not isinstance(fragments, list) or not tables or not fragments:
+        return
+
+    updated_tables: list[Any] = []
+    aligned_tables: list[dict[str, Any]] = []
+    replaced_table_ids: list[str] = []
+    for table in tables:
+        if not isinstance(table, dict) or str(table.get("sourceEngine") or "") != "opencv_table_grid_subprocess":
+            updated_tables.append(table)
+            continue
+        derived_tables = align_opencv_grid_table_with_fragments(table, fragments)
+        if not derived_tables:
+            updated_tables.append(table)
+            continue
+        if opencv_grid_table_has_cell_text(table):
+            updated_tables.append(table)
+        else:
+            replaced_table_ids.append(str(table.get("tableId") or "opencv_grid_table"))
+        updated_tables.extend(derived_tables)
+        aligned_tables.extend(derived_tables)
+
+    if not aligned_tables:
+        return
+    result["tables"] = updated_tables
+    result.setdefault("diagnostics", []).append(
+        diagnostic(
+            "OPENCV_GRID_TEXT_ALIGNED",
+            "已按 OpenCV 表格网格线与 OCR 文本坐标对齐单元格，替换空网格表并输出可读表格区域。",
+            level="info",
+            tableIds=[table["tableId"] for table in aligned_tables],
+            replacedTableIds=replaced_table_ids,
+        )
+    )
+
+
+def opencv_grid_table_has_cell_text(table: dict[str, Any]) -> bool:
+    return any(
+        isinstance(cell, dict) and str(cell.get("text") or "").strip()
+        for cell in table.get("cells") or []
+    )
+
+
+def align_opencv_grid_table_with_fragments(
+    grid_table: dict[str, Any],
+    fragments: list[Any],
+) -> list[dict[str, Any]]:
+    grid_xs = numeric_grid_lines(grid_table.get("gridLineXs"))
+    grid_ys = numeric_grid_lines(grid_table.get("gridLineYs"))
+    if len(grid_xs) < 2 or len(grid_ys) < 2:
+        return []
+    page_no = page_no_from(grid_table)
+    page_fragments = table_text_fragments_for_page(fragments, page_no)
+    if len(page_fragments) < 6:
+        return []
+
+    cell_map: dict[tuple[int, int], list[dict[str, Any]]] = {}
+    for fragment in page_fragments:
+        bbox = fragment["bbox"]
+        center_x = (bbox[0] + bbox[2]) / 2
+        center_y = (bbox[1] + bbox[3]) / 2
+        col = grid_interval_index(grid_xs, center_x)
+        row = grid_interval_index(grid_ys, center_y)
+        if row is None or col is None:
+            continue
+        cell_map.setdefault((row, col), []).append(fragment)
+    if not cell_map:
+        return []
+
+    segment = select_grid_text_segment(cell_map, grid_xs, grid_ys)
+    if not segment:
+        return []
+    return [build_text_aligned_grid_table(grid_table, cell_map, grid_xs, grid_ys, segment)]
+
+
+def numeric_grid_lines(raw_lines: Any) -> list[float]:
+    values: list[float] = []
+    if not isinstance(raw_lines, list):
+        return values
+    for value in raw_lines:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            continue
+        if not values or all(abs(numeric - existing) > 1.0 for existing in values):
+            values.append(numeric)
+    return sorted(values)
+
+
+def table_text_fragments_for_page(fragments: list[Any], page_no: int) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for fragment in fragments:
+        if not isinstance(fragment, dict) or page_no_from(fragment) != page_no:
+            continue
+        text = str(fragment.get("text") or fragment.get("fullText") or "").strip()
+        bbox = rect_from_bbox(fragment.get("bbox"))
+        if not text or bbox is None:
+            continue
+        if bbox[2] <= bbox[0] or bbox[3] <= bbox[1]:
+            continue
+        items.append(
+            {
+                "text": text,
+                "bbox": bbox,
+                "confidence": float(first_present(fragment, "confidence", "score", default=0.0) or 0.0),
+                "sourceEngine": fragment.get("sourceEngine"),
+                "fragmentId": fragment.get("fragmentId") or fragment.get("id"),
+            }
+        )
+    return items
+
+
+def grid_interval_index(lines: list[float], value: float, *, margin: float = 3.0) -> int | None:
+    for index in range(len(lines) - 1):
+        if lines[index] - margin <= value <= lines[index + 1] + margin:
+            return index
+    return None
+
+
+def select_grid_text_segment(
+    cell_map: dict[tuple[int, int], list[dict[str, Any]]],
+    grid_xs: list[float],
+    grid_ys: list[float],
+) -> dict[str, Any] | None:
+    row_stats = grid_row_stats(cell_map, grid_xs)
+    candidates: list[dict[str, Any]] = []
+    for row_index, stats in row_stats.items():
+        distinct_cols = len(stats["cols"])
+        if distinct_cols < 3 or stats["fragmentCount"] < 3:
+            continue
+        following_rows = following_dense_grid_rows(row_stats, row_index, distinct_cols)
+        if len(following_rows) < 2:
+            continue
+        score = (
+            distinct_cols * 100
+            + min(int(stats["fragmentCount"]), 30) * 4
+            + min(len(following_rows), 20) * 8
+            + min(float(stats["spanX"]) / 120.0, 20.0)
+            - row_index * 0.01
+        )
+        candidates.append(
+            {
+                "headerRow": row_index,
+                "dataRows": following_rows,
+                "score": score,
+                "headerCols": set(stats["cols"]),
+            }
+        )
+    if not candidates:
+        return None
+    best = max(candidates, key=lambda item: item["score"])
+    segment_rows = [int(best["headerRow"]), *[int(row) for row in best["dataRows"]]]
+    col_counts: dict[int, int] = {}
+    for row_index in segment_rows:
+        for col_index in row_stats.get(row_index, {}).get("cols", set()):
+            col_counts[col_index] = col_counts.get(col_index, 0) + 1
+    header_cols = set(best["headerCols"])
+    min_repeated_col_count = max(2, min(4, len(segment_rows) // 3))
+    used_cols = sorted(
+        col_index
+        for col_index, count in col_counts.items()
+        if col_index in header_cols or count >= min_repeated_col_count
+    )
+    if len(used_cols) < 2:
+        return None
+    return {
+        "headerRow": int(best["headerRow"]),
+        "rows": segment_rows,
+        "cols": used_cols,
+        "score": float(best["score"]),
+    }
+
+
+def grid_row_stats(
+    cell_map: dict[tuple[int, int], list[dict[str, Any]]],
+    grid_xs: list[float],
+) -> dict[int, dict[str, Any]]:
+    row_stats: dict[int, dict[str, Any]] = {}
+    for (row_index, col_index), fragments in cell_map.items():
+        stats = row_stats.setdefault(row_index, {"cols": set(), "fragmentCount": 0, "spanX": 0.0})
+        stats["cols"].add(col_index)
+        stats["fragmentCount"] += len(fragments)
+    for stats in row_stats.values():
+        cols = sorted(stats["cols"])
+        if cols:
+            stats["spanX"] = grid_xs[min(max(cols), len(grid_xs) - 2) + 1] - grid_xs[max(min(cols), 0)]
+    return row_stats
+
+
+def following_dense_grid_rows(
+    row_stats: dict[int, dict[str, Any]],
+    header_row: int,
+    header_col_count: int,
+) -> list[int]:
+    dense_rows: list[int] = []
+    min_cols = max(2, min(3, header_col_count // 2))
+    for row_index in range(header_row + 1, max(row_stats.keys(), default=header_row) + 1):
+        stats = row_stats.get(row_index)
+        if not stats or len(stats["cols"]) < min_cols:
+            break
+        dense_rows.append(row_index)
+    return dense_rows
+
+
+def build_text_aligned_grid_table(
+    grid_table: dict[str, Any],
+    cell_map: dict[tuple[int, int], list[dict[str, Any]]],
+    grid_xs: list[float],
+    grid_ys: list[float],
+    segment: dict[str, Any],
+) -> dict[str, Any]:
+    source_table_id = str(grid_table.get("tableId") or "opencv_grid_table")
+    page_no = page_no_from(grid_table)
+    segment_rows = [int(row) for row in segment["rows"]]
+    used_cols = [int(col) for col in segment["cols"]]
+    header_row = int(segment["headerRow"])
+    cells: list[dict[str, Any]] = []
+    normalized_rows: list[dict[str, str]] = []
+    header_labels: dict[int, str] = {}
+
+    for output_row, grid_row in enumerate(segment_rows):
+        row_values: dict[str, str] = {}
+        for output_col, grid_col in enumerate(used_cols):
+            fragments = sorted(
+                cell_map.get((grid_row, grid_col), []),
+                key=lambda item: (item["bbox"][1], item["bbox"][0]),
+            )
+            text = join_grid_cell_fragments(fragments, is_header=grid_row == header_row)
+            confidence = average_confidence([item.get("confidence") for item in fragments])
+            cell_bbox = fragment_union_bbox(fragments) or [
+                grid_xs[grid_col],
+                grid_ys[grid_row],
+                grid_xs[grid_col + 1],
+                grid_ys[grid_row + 1],
+            ]
+            if grid_row == header_row:
+                header_labels[grid_col] = normalize_grid_header_label(text) or f"列{output_col + 1}"
+            elif text:
+                row_values[header_labels.get(grid_col) or f"列{output_col + 1}"] = text
+            cells.append(
+                {
+                    "cellId": f"cell_{output_row + 1}_{output_col + 1}",
+                    "row": output_row,
+                    "col": output_col,
+                    "rowspan": 1,
+                    "colspan": 1,
+                    "text": text,
+                    "bbox": cell_bbox,
+                    "confidence": confidence,
+                    "isHeader": grid_row == header_row,
+                    "sourceGridRow": grid_row,
+                    "sourceGridCol": grid_col,
+                }
+            )
+        if grid_row != header_row and any(value.strip() for value in row_values.values()):
+            normalized_rows.append(row_values)
+
+    rows = len(segment_rows)
+    columns = len(used_cols)
+    text_cell_count = len([cell for cell in cells if str(cell.get("text") or "").strip()])
+    coverage = text_cell_count / max(rows * columns, 1)
+    structure_confidence = min(
+        0.97,
+        max(
+            float(grid_table.get("structureConfidence") or 0.0),
+            0.55 + coverage * 0.24 + min(max(rows - 1, 0), 12) * 0.012 + min(columns, 10) * 0.012,
+        ),
+    )
+    return {
+        "tableId": f"{source_table_id}_text_aligned_1",
+        "pageNo": page_no,
+        "bbox": [
+            grid_xs[min(used_cols)],
+            grid_ys[min(segment_rows)],
+            grid_xs[max(used_cols) + 1],
+            grid_ys[max(segment_rows) + 1],
+        ],
+        "rows": rows,
+        "columns": columns,
+        "structureConfidence": round(structure_confidence, 4),
+        "textCellCount": text_cell_count,
+        "cellTextCoverage": round(coverage, 4),
+        "cells": cells,
+        "normalizedRows": normalized_rows,
+        "sourceEngine": "opencv_grid_text_aligned",
+        "qualityFlags": ["opencv_grid_structure", "ocr_text_aligned"],
+        "gridEvidence": {
+            "tableId": grid_table.get("tableId"),
+            "rows": grid_table.get("rows"),
+            "columns": grid_table.get("columns"),
+            "gridCellCount": grid_table.get("gridCellCount"),
+            "gridLineXs": grid_table.get("gridLineXs"),
+            "gridLineYs": grid_table.get("gridLineYs"),
+            "structureConfidence": grid_table.get("structureConfidence"),
+            "selectedHeaderRow": header_row,
+            "selectedRows": segment_rows,
+            "selectedColumns": used_cols,
+        },
+    }
+
+
+def join_grid_cell_fragments(fragments: list[dict[str, Any]], *, is_header: bool) -> str:
+    texts = [str(item.get("text") or "").strip() for item in fragments if str(item.get("text") or "").strip()]
+    if not texts:
+        return ""
+    separator = "\n" if is_header and len(texts) > 1 else " "
+    return separator.join(texts)
+
+
+def average_confidence(values: list[Any]) -> float | None:
+    numbers = []
+    for value in values:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        if number > 0:
+            numbers.append(number)
+    if not numbers:
+        return None
+    return round(sum(numbers) / len(numbers), 4)
+
+
+def fragment_union_bbox(fragments: list[dict[str, Any]]) -> list[float] | None:
+    bboxes = [rect_from_bbox(item.get("bbox")) for item in fragments]
+    bboxes = [bbox for bbox in bboxes if bbox is not None]
+    if not bboxes:
+        return None
+    return [
+        min(bbox[0] for bbox in bboxes),
+        min(bbox[1] for bbox in bboxes),
+        max(bbox[2] for bbox in bboxes),
+        max(bbox[3] for bbox in bboxes),
+    ]
+
+
+def normalize_grid_header_label(text: Any) -> str:
+    return re.sub(r"\s+", " / ", str(text or "").strip()).strip(" /")
 
 
 def best_opencv_grid_table(tables: list[Any], *, page_no: int | None = None) -> dict[str, Any] | None:
@@ -2626,12 +2970,10 @@ def piping_alignment_confidence(aligned: dict[str, Any], grid_table: dict[str, A
 def is_piping_characteristic_profile(result: dict[str, Any], profile: dict[str, Any]) -> bool:
     profile_id = str(profile.get("profileId") or result.get("profileId") or "")
     document_type = str(profile.get("documentType") or result.get("documentType") or "")
-    if profile_id == "piping_characteristic_list_v1" or document_type == "engineering_table_photo":
-        return True
-    all_text = "\n".join(
-        str(item.get("text") or "") for item in result.get("fragments") or [] if isinstance(item, dict)
-    )
-    return "管道特性表" in all_text or "PIPING CHARACTERISTIC LIST" in all_text.upper()
+    return profile_id == "piping_characteristic_list_v1" or document_type in {
+        "engineering_table_photo",
+        "piping_characteristic_list",
+    }
 
 
 def infer_piping_tables(fragments: list[Any]) -> list[dict[str, Any]]:

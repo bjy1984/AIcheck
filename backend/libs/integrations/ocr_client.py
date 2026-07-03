@@ -9,9 +9,39 @@ import httpx
 from libs.integrations.errors import IntegrationServiceError, safe_reason
 
 
+DEFAULT_LOCAL_OCR_BASE_URL = "http://127.0.0.1:18010"
+
+
+def env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def ocr_client_production_mode_enabled() -> bool:
+    return bool(os.getenv("AICHECK_DATABASE_URL")) or any(
+        os.getenv(name, "").strip().lower() == "true"
+        for name in ["AICHECK_REQUIRE_AUTH", "AICHECK_STRICT_PRODUCTION"]
+    )
+
+
+def resolve_ocr_base_url(base_url: str | None = None) -> str:
+    configured = str(base_url or os.getenv("AICHECK_OCR_BASE_URL") or "").strip()
+    if configured:
+        return configured.rstrip("/")
+    fallback_configured = os.getenv("AICHECK_OCR_ENABLE_LOCAL_FALLBACK")
+    fallback_enabled = env_bool("AICHECK_OCR_ENABLE_LOCAL_FALLBACK", not ocr_client_production_mode_enabled())
+    if fallback_configured is not None and not fallback_enabled:
+        return ""
+    if fallback_enabled:
+        return str(os.getenv("AICHECK_LOCAL_OCR_BASE_URL") or DEFAULT_LOCAL_OCR_BASE_URL).rstrip("/")
+    return ""
+
+
 class OcrClient:
     def __init__(self, base_url: str | None = None, transport: Any | None = None) -> None:
-        self.base_url = (base_url or os.getenv("AICHECK_OCR_BASE_URL") or "").rstrip("/")
+        self.base_url = resolve_ocr_base_url(base_url)
         self.transport = transport
 
     @property

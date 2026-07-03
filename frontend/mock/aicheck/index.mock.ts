@@ -2166,8 +2166,9 @@ const normalizeKnowledgeRuleVersion = (
   const primaryNodeId =
     Number.isFinite(sourceSequence) && sourceSequence > 0 ? sourceSequence : nodeIds[0]
   const node = getRuleNodeTemplate(primaryNodeId)
-  const inspectionCategory =
-    String(values.inspectionCategory || source?.inspectionCategory || node?.groupName || '').trim()
+  const inspectionCategory = String(
+    values.inspectionCategory || source?.inspectionCategory || node?.groupName || ''
+  ).trim()
   const inspectionItem = String(
     values.inspectionItem ||
       source?.inspectionItem ||
@@ -5493,8 +5494,8 @@ export default [
         capability: 'ocr',
         scope: 'fde_capability_test',
         retention: 'fde_capability_test_only',
-        profileId: body?.profileId || 'piping_characteristic_list_v1',
-        documentType: body?.documentType || 'engineering_table_photo',
+        profileId: body?.profileId || 'generic_document_v1',
+        documentType: body?.documentType || 'generic_document',
         fileName: session?.fileName || 'OCR测试文件.pdf',
         contentType: session?.contentType || 'application/pdf',
         fileSize: session?.fileSize || 1,

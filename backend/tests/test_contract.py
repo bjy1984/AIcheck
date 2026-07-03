@@ -4670,6 +4670,48 @@ def test_ocr_client_reads_runtime_doctor() -> None:
     assert report["schemaVersion"] == "aicheck-ocr-runtime-doctor-v1"
 
 
+def test_ocr_client_uses_local_fallback_only_outside_production(monkeypatch) -> None:
+    from libs.integrations.ocr_client import DEFAULT_LOCAL_OCR_BASE_URL, OcrClient
+
+    monkeypatch.delenv("AICHECK_OCR_BASE_URL", raising=False)
+    monkeypatch.delenv("AICHECK_LOCAL_OCR_BASE_URL", raising=False)
+    monkeypatch.delenv("AICHECK_OCR_ENABLE_LOCAL_FALLBACK", raising=False)
+    monkeypatch.delenv("AICHECK_DATABASE_URL", raising=False)
+    monkeypatch.delenv("AICHECK_REQUIRE_AUTH", raising=False)
+    monkeypatch.delenv("AICHECK_STRICT_PRODUCTION", raising=False)
+
+    local_client = OcrClient()
+    assert local_client.enabled is True
+    assert local_client.base_url == DEFAULT_LOCAL_OCR_BASE_URL
+
+    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
+    production_client = OcrClient()
+    assert production_client.enabled is False
+    assert production_client.base_url == ""
+
+    monkeypatch.setenv("AICHECK_OCR_ENABLE_LOCAL_FALLBACK", "true")
+    explicit_fallback_client = OcrClient()
+    assert explicit_fallback_client.enabled is True
+    assert explicit_fallback_client.base_url == DEFAULT_LOCAL_OCR_BASE_URL
+
+
+def test_fde_ocr_capability_test_defaults_to_generic_profile() -> None:
+    from apps.api.routes import fde_capability_test_profile_document_type
+
+    profile_id, document_type = fde_capability_test_profile_document_type("设计资料.pdf", {})
+
+    assert profile_id == "generic_document_v1"
+    assert document_type == "generic_document"
+
+    explicit_profile_id, explicit_document_type = fde_capability_test_profile_document_type(
+        "设计资料.pdf",
+        {"profileId": "piping_characteristic_list_v1"},
+    )
+
+    assert explicit_profile_id == "piping_characteristic_list_v1"
+    assert explicit_document_type == "engineering_table_photo"
+
+
 def test_litellm_client_sanitizes_provider_response_body() -> None:
     from libs.integrations.errors import IntegrationServiceError
     from libs.integrations.litellm_client import LiteLLMClient

@@ -78,6 +78,7 @@ async def page_preview(request: Request, payload: dict):
         str(page_path),
         media_type="image/png",
         filename=f"ocr-page-{int(page.get('pageNo') or 1)}.png",
+        content_disposition_type="inline",
         headers={
             "Cache-Control": "private, max-age=300",
             "X-AICheck-Page-No": str(page.get("pageNo") or 1),

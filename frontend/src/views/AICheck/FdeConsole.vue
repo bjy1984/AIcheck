@@ -199,7 +199,7 @@ const ocrCapabilityTestForm = ref({
   profileId: 'auto',
   documentType: 'auto',
   maxPages: 1,
-  enableTables: false,
+  enableTables: true,
   enableSeals: true,
   enableFallback: false,
   disableRemediation: true,
@@ -2908,6 +2908,14 @@ type OcrCapabilitySealDisplayRow = {
   meta: Array<{ label: string; value: string }>
 }
 
+type OcrCapabilityTablePreview = {
+  id: string
+  title: string
+  meta: Array<{ label: string; value: string }>
+  columns: Array<{ key: string; label: string }>
+  rows: Array<{ id: string; cells: Record<string, string> }>
+}
+
 const ocrCapabilityRoiToneTypeMap: Record<
   OcrCapabilityRoiTone,
   'primary' | 'success' | 'warning' | 'danger' | 'info'
@@ -2981,6 +2989,142 @@ const ocrCapabilityTableSummary = (record: Record<string, unknown>) => {
   ].filter(Boolean)
   return parts.join(' / ') || ocrCapabilityStructuredValue(record) || '表格结构'
 }
+
+const cleanOcrCapabilityTableText = (value: unknown) =>
+  stringifyOcrCapabilityText(value)
+    .replace(/\s*\n+\s*/g, ' / ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+const uniqueOcrCapabilityTableKey = (base: string, used: Set<string>) => {
+  let key = base || `col_${used.size + 1}`
+  let index = 2
+  while (used.has(key)) {
+    key = `${base}_${index}`
+    index += 1
+  }
+  used.add(key)
+  return key
+}
+
+const createOcrCapabilityTablePreviewFromCells = (
+  record: Record<string, unknown>,
+  index: number
+): OcrCapabilityTablePreview | null => {
+  const cells = Array.isArray(record.cells) ? (record.cells as Array<Record<string, unknown>>) : []
+  if (!cells.length) return null
+  const rowIndexes = Array.from(
+    new Set(cells.map((cell) => Number(cell.row ?? cell.rowIndex ?? 0)).filter(Number.isFinite))
+  ).sort((left, right) => left - right)
+  const colIndexes = Array.from(
+    new Set(
+      cells
+        .map((cell) => Number(cell.col ?? cell.column ?? cell.colIndex ?? 0))
+        .filter(Number.isFinite)
+    )
+  ).sort((left, right) => left - right)
+  if (!rowIndexes.length || !colIndexes.length) return null
+  const headerRow =
+    rowIndexes.find((rowIndex) =>
+      cells.some((cell) => Number(cell.row ?? cell.rowIndex ?? 0) === rowIndex && cell.isHeader)
+    ) ?? rowIndexes[0]
+  const cellText = (rowIndex: number, colIndex: number) =>
+    cleanOcrCapabilityTableText(
+      cells.find(
+        (cell) =>
+          Number(cell.row ?? cell.rowIndex ?? 0) === rowIndex &&
+          Number(cell.col ?? cell.column ?? cell.colIndex ?? 0) === colIndex
+      )?.text
+    )
+  const usedKeys = new Set<string>()
+  const columns = colIndexes.slice(0, 14).map((colIndex, columnIndex) => {
+    const label = cellText(headerRow, colIndex) || `列 ${columnIndex + 1}`
+    return {
+      key: uniqueOcrCapabilityTableKey(`col_${colIndex}`, usedKeys),
+      label
+    }
+  })
+  const dataRows = rowIndexes
+    .filter((rowIndex) => rowIndex !== headerRow)
+    .map((rowIndex) => {
+      const cellsByKey: Record<string, string> = {}
+      columns.forEach((column, columnIndex) => {
+        cellsByKey[column.key] = cellText(rowIndex, colIndexes[columnIndex])
+      })
+      return {
+        id: `${record.tableId || 'table'}-${index}-${rowIndex}`,
+        cells: cellsByKey
+      }
+    })
+    .filter((row) => Object.values(row.cells).some(Boolean))
+    .slice(0, 30)
+  if (!dataRows.length) return null
+  return {
+    id: String(record.tableId || `table-${index + 1}`),
+    title: String(record.tableName || record.tableId || `表格 ${index + 1}`),
+    meta: [
+      { label: '规模', value: ocrCapabilityTableSummary(record) },
+      {
+        label: '置信度',
+        value:
+          record.structureConfidence === undefined
+            ? '-'
+            : scorePercent(Number(record.structureConfidence))
+      },
+      { label: '来源', value: String(record.sourceEngine || '-') },
+      { label: '位置', value: ocrCapabilityBboxText(record.bbox) }
+    ],
+    columns,
+    rows: dataRows
+  }
+}
+
+const createOcrCapabilityTablePreviewFromRows = (
+  record: Record<string, unknown>,
+  index: number
+): OcrCapabilityTablePreview | null => {
+  const rows = Array.isArray(record.normalizedRows)
+    ? (record.normalizedRows as Array<Record<string, unknown>>)
+    : []
+  const data = rows.filter((row) => row && typeof row === 'object').slice(0, 30)
+  if (!data.length) return null
+  const keys = Array.from(new Set(data.flatMap((row) => Object.keys(row)))).slice(0, 14)
+  if (!keys.length) return null
+  return {
+    id: String(record.tableId || `table-${index + 1}`),
+    title: String(record.tableName || record.tableId || `表格 ${index + 1}`),
+    meta: [
+      { label: '规模', value: ocrCapabilityTableSummary(record) },
+      {
+        label: '置信度',
+        value:
+          record.structureConfidence === undefined
+            ? '-'
+            : scorePercent(Number(record.structureConfidence))
+      },
+      { label: '来源', value: String(record.sourceEngine || '-') },
+      { label: '位置', value: ocrCapabilityBboxText(record.bbox) }
+    ],
+    columns: keys.map((key) => ({ key, label: key })),
+    rows: data.map((row, rowIndex) => ({
+      id: `${record.tableId || 'table'}-${index}-${rowIndex}`,
+      cells: Object.fromEntries(keys.map((key) => [key, cleanOcrCapabilityTableText(row[key])]))
+    }))
+  }
+}
+
+const createOcrCapabilityTablePreview = (
+  record: Record<string, unknown>,
+  index: number
+): OcrCapabilityTablePreview | null =>
+  createOcrCapabilityTablePreviewFromCells(record, index) ||
+  createOcrCapabilityTablePreviewFromRows(record, index)
+
+const selectedOcrCapabilityTablePreviews = computed<OcrCapabilityTablePreview[]>(() =>
+  selectedOcrCapabilityTables.value
+    .map((table, index) => createOcrCapabilityTablePreview(table, index))
+    .filter((table): table is OcrCapabilityTablePreview => Boolean(table))
+)
 
 const ocrCapabilityBboxText = (bbox: unknown) => {
   const normalized = normalizeOcrCapabilityBbox(bbox)
@@ -3068,6 +3212,70 @@ const ocrCapabilityBboxCenterInside = (
   const centerX = (inner[0] + inner[2]) / 2
   const centerY = (inner[1] + inner[3]) / 2
   return centerX >= outer[0] && centerX <= outer[2] && centerY >= outer[1] && centerY <= outer[3]
+}
+
+const ocrCapabilityRoiArea = (bbox: [number, number, number, number]) =>
+  Math.max(0, bbox[2] - bbox[0]) * Math.max(0, bbox[3] - bbox[1])
+
+const ocrCapabilityRoiOverlapRatio = (first: OcrCapabilityRoi, second: OcrCapabilityRoi) =>
+  ocrCapabilityBboxOverlapRatio(first.bbox, second.bbox)
+
+const ocrCapabilitySealRoiHasTextEvidence = (source: Record<string, unknown>) => {
+  const text = stringifyOcrCapabilityText(
+    source.text ?? source.fullText ?? source.rawText ?? source.content ?? source.sealName
+  ).replace(/\s+/g, '')
+  if (/专用章|印章|许可|单位名称|业务范围|资质证书|有效期|有限公司|TS\d+/i.test(text)) {
+    return true
+  }
+  const fields = Array.isArray(source.fields)
+    ? (source.fields as Array<Record<string, unknown>>)
+    : []
+  return fields.some((field) => {
+    const name = String(field.fieldName || field.fieldCode || '').trim()
+    const value = stringifyOcrCapabilityText(field.fieldValue ?? field.value ?? field.text).replace(
+      /\s+/g,
+      ''
+    )
+    return (
+      name !== '印章颜色' &&
+      /专用章|印章|许可|单位名称|业务范围|资质证书|有效期|有限公司|TS\d+/i.test(value)
+    )
+  })
+}
+
+const shouldKeepOcrCapabilityRoi = (source: Record<string, unknown>, roi: OcrCapabilityRoi) => {
+  if (roi.type !== '印章') return true
+  const flags = Array.isArray(source.qualityFlags) ? source.qualityFlags.map(String) : []
+  const candidateOnly =
+    flags.includes('visual_candidate_only') ||
+    flags.includes('requires_seal_ocr_text') ||
+    source.candidateOnly === true
+  if (!candidateOnly) return true
+  return ocrCapabilitySealRoiHasTextEvidence(source)
+}
+
+const dedupeOcrCapabilityRois = (items: OcrCapabilityRoi[]) => {
+  const sorted = [...items].sort((left, right) => {
+    const typeWeight = (roi: OcrCapabilityRoi) =>
+      roi.type === '表格' ? 4 : roi.type === '字段' ? 3 : roi.type === '印章' ? 2 : 1
+    const textWeight = (roi: OcrCapabilityRoi) => (roi.text ? 1 : 0)
+    return (
+      typeWeight(right) - typeWeight(left) ||
+      textWeight(right) - textWeight(left) ||
+      ocrCapabilityRoiArea(right.bbox) - ocrCapabilityRoiArea(left.bbox)
+    )
+  })
+  const kept: OcrCapabilityRoi[] = []
+  sorted.forEach((roi) => {
+    const duplicate = kept.some(
+      (existing) =>
+        existing.pageNo === roi.pageNo &&
+        existing.type === roi.type &&
+        ocrCapabilityRoiOverlapRatio(existing, roi) >= 0.68
+    )
+    if (!duplicate) kept.push(roi)
+  })
+  return kept.sort((left, right) => left.pageNo - right.pageNo || left.bbox[1] - right.bbox[1])
 }
 
 const createOcrCapabilityStructuredRow = (
@@ -3167,6 +3375,7 @@ const selectedOcrCapabilityRawRois = computed<OcrCapabilityRoi[]>(() => {
         `${labelPrefix} ${index + 1}`
       )
       if (!roi) return
+      if (!shouldKeepOcrCapabilityRoi(item as Record<string, unknown>, roi)) return
       const key = `${roi.type}-${roi.pageNo}-${roi.bbox.map((point) => Math.round(point)).join(',')}`
       if (seen.has(key)) return
       seen.add(key)
@@ -3178,7 +3387,7 @@ const selectedOcrCapabilityRawRois = computed<OcrCapabilityRoi[]>(() => {
   pushRows(result.fields, '字段', 'green', '字段')
   pushRows(result.layoutBlocks, '版面', 'purple', '版面')
   pushRows(result.fragments, '文字', 'blue', '文字')
-  return rows.slice(0, 80)
+  return dedupeOcrCapabilityRois(rows).slice(0, 80)
 })
 
 const selectedOcrCapabilityRoiPageSize = computed(() => {
@@ -3198,9 +3407,12 @@ const selectedOcrCapabilityRoiPageSize = computed(() => {
 })
 
 const selectedOcrCapabilityRois = computed(() => selectedOcrCapabilityRawRois.value)
+const selectedOcrCapabilityOverlayRois = computed(() =>
+  selectedOcrCapabilityRois.value.filter((roi) => roi.type !== '文字')
+)
 const selectedOcrCapabilityImageRois = computed(() =>
   selectedOcrCapabilityPreviewSource.value?.previewType === 'image'
-    ? selectedOcrCapabilityRois.value.filter((roi) => roi.pageNo === 1)
+    ? selectedOcrCapabilityOverlayRois.value.filter((roi) => roi.pageNo === 1)
     : []
 )
 const selectedOcrCapabilityPdfPagePreviewUrl = computed(() => {
@@ -3213,7 +3425,7 @@ const selectedOcrCapabilityPdfPagePreviewUrl = computed(() => {
 })
 const selectedOcrCapabilityPdfRois = computed(() =>
   selectedOcrCapabilityPdfPagePreviewUrl.value
-    ? selectedOcrCapabilityRois.value.filter((roi) => roi.pageNo === 1)
+    ? selectedOcrCapabilityOverlayRois.value.filter((roi) => roi.pageNo === 1)
     : []
 )
 
@@ -3228,7 +3440,7 @@ const ocrCapabilityRoiLegend = computed(() => {
   return definitions
     .map((item) => ({
       ...item,
-      count: selectedOcrCapabilityRois.value.filter((roi) => roi.type === item.type).length
+      count: selectedOcrCapabilityOverlayRois.value.filter((roi) => roi.type === item.type).length
     }))
     .filter((item) => item.count > 0)
 })
@@ -3248,29 +3460,37 @@ const selectedOcrCapabilitySealRows = computed<OcrCapabilitySealDisplayRow[]>(()
       ? ''
       : String(seal.sealName || '').trim()
     const directLines = normalizeOcrCapabilityTextLines(
-      seal.text ?? seal.fullText ?? seal.rawText ?? seal.content ?? directName
+      seal.text ?? seal.fullText ?? seal.rawText ?? seal.content
     )
     const fieldLines = ocrCapabilitySealFieldLines(seal)
-    const fragmentLines = bbox
-      ? fragments
-          .filter((fragment) => {
-            if (Number(fragment.pageNo || 1) !== pageNo) return false
-            const fragmentBbox = normalizeOcrCapabilityBbox(fragment.bbox)
-            if (!fragmentBbox) return false
-            return (
-              ocrCapabilityBboxCenterInside(fragmentBbox, bbox) ||
-              ocrCapabilityBboxOverlapRatio(fragmentBbox, bbox) >= 0.35
+    const qualityFlags = Array.isArray(seal.qualityFlags) ? seal.qualityFlags : []
+    const hasDedicatedSealText =
+      fieldLines.length > 0 ||
+      directLines.length > 0 ||
+      qualityFlags.includes('seal_text_from_crop_ocr')
+    const fragmentLines =
+      !hasDedicatedSealText && bbox
+        ? fragments
+            .filter((fragment) => {
+              if (Number(fragment.pageNo || 1) !== pageNo) return false
+              const fragmentBbox = normalizeOcrCapabilityBbox(fragment.bbox)
+              if (!fragmentBbox) return false
+              return (
+                ocrCapabilityBboxCenterInside(fragmentBbox, bbox) ||
+                ocrCapabilityBboxOverlapRatio(fragmentBbox, bbox) >= 0.35
+              )
+            })
+            .sort((left, right) => {
+              const leftBbox = normalizeOcrCapabilityBbox(left.bbox) || [0, 0, 0, 0]
+              const rightBbox = normalizeOcrCapabilityBbox(right.bbox) || [0, 0, 0, 0]
+              return leftBbox[1] - rightBbox[1] || leftBbox[0] - rightBbox[0]
+            })
+            .flatMap((fragment) =>
+              normalizeOcrCapabilityTextLines(
+                fragment.text ?? fragment.fullText ?? fragment.rawText
+              )
             )
-          })
-          .sort((left, right) => {
-            const leftBbox = normalizeOcrCapabilityBbox(left.bbox) || [0, 0, 0, 0]
-            const rightBbox = normalizeOcrCapabilityBbox(right.bbox) || [0, 0, 0, 0]
-            return leftBbox[1] - rightBbox[1] || leftBbox[0] - rightBbox[0]
-          })
-          .flatMap((fragment) =>
-            normalizeOcrCapabilityTextLines(fragment.text ?? fragment.fullText ?? fragment.rawText)
-          )
-      : []
+        : []
     const contentLines = uniqueOcrCapabilityLines([
       ...fieldLines,
       ...directLines,
@@ -3288,7 +3508,7 @@ const selectedOcrCapabilitySealRows = computed<OcrCapabilitySealDisplayRow[]>(()
     const bboxText = ocrCapabilityBboxText(seal.bbox)
     const status = contentLines.length
       ? '已提取文字'
-      : Array.isArray(seal.qualityFlags) && seal.qualityFlags.includes('requires_seal_ocr_text')
+      : qualityFlags.includes('requires_seal_ocr_text')
         ? '文字待复核'
         : '暂无可读文字'
     return {
@@ -3418,6 +3638,12 @@ const selectedOcrCapabilityHasOutput = computed(
     selectedOcrCapabilityTables.value.length > 0 ||
     selectedOcrCapabilitySeals.value.length > 0 ||
     selectedOcrCapabilityDiagnostics.value.length > 0
+)
+const selectedOcrCapabilityTerminalNoOutput = computed(
+  () =>
+    Boolean(selectedOcrCapabilityRun.value) &&
+    !selectedOcrCapabilityRunning.value &&
+    !selectedOcrCapabilityHasOutput.value
 )
 const selectedOcrCapabilityCanPersist = computed(
   () =>
@@ -10216,7 +10442,7 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
                 <ElAlert
-                  v-if="selectedOcrCapabilityRun && !selectedOcrCapabilityHasOutput"
+                  v-if="selectedOcrCapabilityTerminalNoOutput"
                   class="mt-12px"
                   type="warning"
                   show-icon
@@ -10330,20 +10556,42 @@ onBeforeUnmount(() => {
                     <ElEmpty v-else description="暂无结构化字段输出。" />
                   </ElTabPane>
                   <ElTabPane label="表格">
-                    <ElTable
-                      v-if="selectedOcrCapabilityTables.length"
-                      :data="selectedOcrCapabilityTables"
+                    <div
+                      v-if="selectedOcrCapabilityTablePreviews.length"
+                      class="ocr-table-result-list"
                     >
-                      <ElTableColumn
-                        prop="tableId"
-                        label="表格"
-                        min-width="160"
-                        show-overflow-tooltip
-                      />
-                      <ElTableColumn prop="rows" label="行" width="70" />
-                      <ElTableColumn prop="columns" label="列" width="70" />
-                      <ElTableColumn prop="structureConfidence" label="结构置信" width="110" />
-                    </ElTable>
+                      <article
+                        v-for="table in selectedOcrCapabilityTablePreviews"
+                        :key="table.id"
+                        class="ocr-table-result-card"
+                      >
+                        <div class="ocr-table-result-card__head">
+                          <strong>{{ table.title }}</strong>
+                          <dl class="ocr-table-meta">
+                            <div v-for="item in table.meta" :key="item.label">
+                              <dt>{{ item.label }}</dt>
+                              <dd>{{ item.value }}</dd>
+                            </div>
+                          </dl>
+                        </div>
+                        <table class="ocr-structured-table">
+                          <thead>
+                            <tr>
+                              <th v-for="column in table.columns" :key="column.key">
+                                {{ column.label }}
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr v-for="row in table.rows" :key="row.id">
+                              <td v-for="column in table.columns" :key="column.key">
+                                {{ row.cells[column.key] || '-' }}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </article>
+                    </div>
                     <ElEmpty v-else description="暂无表格输出。" />
                   </ElTabPane>
                   <ElTabPane label="印章">
@@ -15334,7 +15582,7 @@ onBeforeUnmount(() => {
                           </div>
                         </div>
                         <ElAlert
-                          v-if="selectedOcrCapabilityRun && !selectedOcrCapabilityHasOutput"
+                          v-if="selectedOcrCapabilityTerminalNoOutput"
                           class="mt-12px"
                           type="warning"
                           show-icon
@@ -15460,24 +15708,42 @@ onBeforeUnmount(() => {
                             <ElEmpty v-else description="暂无结构化字段输出。" />
                           </ElTabPane>
                           <ElTabPane label="表格">
-                            <ElTable
-                              v-if="selectedOcrCapabilityTables.length"
-                              :data="selectedOcrCapabilityTables"
+                            <div
+                              v-if="selectedOcrCapabilityTablePreviews.length"
+                              class="ocr-table-result-list"
                             >
-                              <ElTableColumn
-                                prop="tableId"
-                                label="表格"
-                                min-width="160"
-                                show-overflow-tooltip
-                              />
-                              <ElTableColumn prop="rows" label="行" width="70" />
-                              <ElTableColumn prop="columns" label="列" width="70" />
-                              <ElTableColumn
-                                prop="structureConfidence"
-                                label="结构置信"
-                                width="110"
-                              />
-                            </ElTable>
+                              <article
+                                v-for="table in selectedOcrCapabilityTablePreviews"
+                                :key="table.id"
+                                class="ocr-table-result-card"
+                              >
+                                <div class="ocr-table-result-card__head">
+                                  <strong>{{ table.title }}</strong>
+                                  <dl class="ocr-table-meta">
+                                    <div v-for="item in table.meta" :key="item.label">
+                                      <dt>{{ item.label }}</dt>
+                                      <dd>{{ item.value }}</dd>
+                                    </div>
+                                  </dl>
+                                </div>
+                                <table class="ocr-structured-table">
+                                  <thead>
+                                    <tr>
+                                      <th v-for="column in table.columns" :key="column.key">
+                                        {{ column.label }}
+                                      </th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    <tr v-for="row in table.rows" :key="row.id">
+                                      <td v-for="column in table.columns" :key="column.key">
+                                        {{ row.cells[column.key] || '-' }}
+                                      </td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </article>
+                            </div>
                             <ElEmpty v-else description="暂无表格输出。" />
                           </ElTabPane>
                           <ElTabPane label="印章">
@@ -19575,8 +19841,8 @@ onBeforeUnmount(() => {
 }
 
 .ocr-capability-text-output {
-  min-height: 220px;
   max-height: 420px;
+  min-height: 220px;
   padding: 12px;
   margin: 0;
   overflow: auto;
@@ -19584,11 +19850,118 @@ onBeforeUnmount(() => {
   font-size: 12px;
   line-height: 1.7;
   color: #172033;
-  white-space: pre-wrap;
   word-break: break-word;
+  white-space: pre-wrap;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
+}
+
+.ocr-table-result-list {
+  display: grid;
+  gap: 12px;
+}
+
+.ocr-table-result-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.ocr-table-result-card__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.ocr-table-result-card__head strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 950;
+  line-height: 20px;
+  color: #172033;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocr-table-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.ocr-table-meta div {
+  min-width: 0;
+  padding: 8px 9px;
+  background: #f8fafc;
+  border: 1px solid #e5edf7;
+  border-radius: 8px;
+}
+
+.ocr-table-meta dt,
+.ocr-table-meta dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocr-table-meta dt {
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 16px;
+  color: #64748b;
+}
+
+.ocr-table-meta dd {
+  margin-top: 3px;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 17px;
+  color: #172033;
+}
+
+.ocr-structured-table {
+  width: 100%;
+  border: 1px solid #dbe5f2;
+  border-collapse: collapse;
+  border-radius: 8px;
+  table-layout: fixed;
+}
+
+.ocr-structured-table th,
+.ocr-structured-table td {
+  min-width: 0;
+  padding: 8px 9px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+  border: 1px solid #dbe5f2;
+}
+
+.ocr-structured-table th {
+  font-size: 12px;
+  font-weight: 950;
+  line-height: 17px;
+  color: #172033;
+  text-align: left;
+  background: #f1f5f9;
+}
+
+.ocr-structured-table td {
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 18px;
+  color: #334155;
+  vertical-align: top;
+  background: #fff;
 }
 
 .ocr-seal-result-list {
