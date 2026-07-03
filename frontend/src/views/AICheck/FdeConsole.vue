@@ -2865,7 +2865,16 @@ const selectedOcrCapabilityDiagnostics = computed(() => {
   const diagnostics =
     selectedOcrCapabilityParseResult.value?.diagnostics ||
     selectedOcrCapabilityRun.value?.diagnostics
-  return Array.isArray(diagnostics) ? diagnostics.slice(0, 40) : []
+  if (!Array.isArray(diagnostics)) return []
+  return diagnostics.slice(0, 40).map((item) =>
+    item && typeof item === 'object'
+      ? (item as Record<string, unknown>)
+      : {
+          code: 'OCR_DIAGNOSTIC',
+          level: 'error',
+          message: String(item || 'OCR 诊断信息为空')
+        }
+  )
 })
 
 type OcrCapabilityRoiTone = 'blue' | 'green' | 'orange' | 'red' | 'purple'
@@ -8345,6 +8354,16 @@ const clearOcrCapabilityPdfPagePreview = () => {
   ocrCapabilityPdfPagePreviewError.value = ''
 }
 
+const ocrCapabilityBlobErrorMessage = async (blob: Blob) => {
+  if (!String(blob.type || '').includes('application/json')) return ''
+  try {
+    const payload = JSON.parse(await blob.text())
+    return String(payload?.message || payload?.data?.message || payload?.data?.reason || '')
+  } catch {
+    return ''
+  }
+}
+
 const loadOcrCapabilityPdfPagePreview = async (
   detail: FdeOcrCapabilityTestDetailPayload | null
 ) => {
@@ -8367,7 +8386,8 @@ const loadOcrCapabilityPdfPagePreview = async (
     const response = await getFdeOcrCapabilityTestPagePreviewApi(runId, { pageNo: 1 })
     const blob = response?.data instanceof Blob ? response.data : new Blob([response?.data || ''])
     if (!String(blob.type || '').startsWith('image/')) {
-      throw new Error('PDF 页图预览返回的不是图片。')
+      const message = await ocrCapabilityBlobErrorMessage(blob)
+      throw new Error(message || 'PDF 页图预览返回的不是图片。')
     }
     const objectUrl = URL.createObjectURL(blob)
     if (ocrCapabilityPdfPageObjectKey.value !== previewKey) {

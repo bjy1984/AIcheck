@@ -39,6 +39,35 @@ def resolve_ocr_base_url(base_url: str | None = None) -> str:
     return ""
 
 
+def ocr_diagnostic(code: str, message: str, *, level: str = "error", **extra: Any) -> dict[str, Any]:
+    return {
+        "code": code,
+        "level": level,
+        "message": message,
+        **extra,
+    }
+
+
+def normalize_ocr_diagnostics(raw: Any, *, default_code: str, default_message: str) -> list[dict[str, Any]]:
+    if not raw:
+        return [ocr_diagnostic(default_code, default_message)]
+    items = raw if isinstance(raw, list) else [raw]
+    diagnostics: list[dict[str, Any]] = []
+    for item in items:
+        if isinstance(item, dict):
+            diagnostics.append(
+                {
+                    "code": str(item.get("code") or default_code),
+                    "level": str(item.get("level") or "error"),
+                    "message": str(item.get("message") or default_message),
+                    **{key: value for key, value in item.items() if key not in {"code", "level", "message"}},
+                }
+            )
+        else:
+            diagnostics.append(ocr_diagnostic(default_code, str(item or default_message)))
+    return diagnostics or [ocr_diagnostic(default_code, default_message)]
+
+
 class OcrClient:
     def __init__(self, base_url: str | None = None, transport: Any | None = None) -> None:
         self.base_url = resolve_ocr_base_url(base_url)
@@ -145,6 +174,7 @@ class OcrClient:
                 result["externalJobId"] = job_id
                 return result
             if status in {"failed", "cancelled"}:
+                diagnostic_code = "OCR_JOB_CANCELLED" if status == "cancelled" else "OCR_JOB_FAILED"
                 return {
                     "jobId": job_id,
                     "externalJobId": job_id,
@@ -156,7 +186,11 @@ class OcrClient:
                     "fields": [],
                     "seals": [],
                     "tables": [],
-                    "diagnostics": last_job.get("diagnostics") or [f"OCR job {status}"],
+                    "diagnostics": normalize_ocr_diagnostics(
+                        last_job.get("diagnostics"),
+                        default_code=diagnostic_code,
+                        default_message=f"OCR job {status}",
+                    ),
                     "engineRuns": last_job.get("engineRuns") or [],
                 }
             time.sleep(poll_interval)
@@ -170,7 +204,14 @@ class OcrClient:
             "fields": [],
             "seals": [],
             "tables": [],
-            "diagnostics": [f"OCR job timeout after {timeout_seconds:g}s"],
+            "diagnostics": [
+                ocr_diagnostic(
+                    "OCR_JOB_TIMEOUT",
+                    f"OCR job timeout after {timeout_seconds:g}s",
+                    timeoutSeconds=timeout_seconds,
+                    lastStatus=last_job.get("status"),
+                )
+            ],
             "engineRuns": last_job.get("engineRuns") or [],
         }
 

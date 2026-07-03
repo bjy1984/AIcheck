@@ -2183,7 +2183,7 @@ def seals_from_seal_crop_fragments(
     text = compact_seal_crop_text(" ".join(str(fragment.get("text") or "") for fragment in fragments))
     if not text:
         return []
-    confidence = average_confidence(fragments)
+    confidence = average_confidence(fragments) or 0.0
     boxes = [rect_from_bbox(fragment.get("bbox") or fragment.get("polygon")) for fragment in fragments]
     bbox = union_rectangles([box for box in boxes if box]) or rect_from_bbox(variant.get("cropSourceBbox"))
     if not bbox:
@@ -2246,16 +2246,6 @@ def infer_seal_type_from_text(text: str) -> str:
     if "审图" in value or "施工图审查" in value:
         return "drawing_approval_seal"
     return "unknown"
-
-
-def average_confidence(items: list[dict[str, Any]]) -> float:
-    values = []
-    for item in items:
-        try:
-            values.append(float(item.get("confidence") or item.get("ocrConfidence") or 0.0))
-        except (TypeError, ValueError):
-            continue
-    return sum(values) / len(values) if values else 0.0
 
 
 def union_rectangles(boxes: list[list[float]]) -> list[float] | None:
@@ -2888,6 +2878,8 @@ def join_grid_cell_fragments(fragments: list[dict[str, Any]], *, is_header: bool
 def average_confidence(values: list[Any]) -> float | None:
     numbers = []
     for value in values:
+        if isinstance(value, dict):
+            value = value.get("confidence") if value.get("confidence") is not None else value.get("ocrConfidence")
         try:
             number = float(value)
         except (TypeError, ValueError):

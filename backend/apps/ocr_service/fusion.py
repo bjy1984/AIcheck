@@ -624,7 +624,10 @@ def build_quality_gate(result: dict[str, Any], profile: dict[str, Any]) -> dict[
         if formal_seals
         else average([float(seal.get("visualConfidence") or 0) for seal in seals])
     )
-    matched_seal_types = matched_expected_seal_types(formal_seals, expected_seal_types)
+    matched_seal_types = matched_expected_seal_types(
+        seal_type_evidence_candidates(formal_seals, seals),
+        expected_seal_types,
+    )
     missing_expected_seal_types = (
         expected_seal_types
         if required_seal and expected_seal_types and not matched_seal_types
@@ -731,6 +734,28 @@ def matched_expected_seal_types(seals: list[dict[str, Any]], expected_seal_types
             if key in expected_by_key and expected_by_key[key] not in matched:
                 matched.append(expected_by_key[key])
     return sorted(matched)
+
+
+def seal_type_evidence_candidates(
+    formal_seals: list[dict[str, Any]],
+    seals: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    candidates = list(formal_seals)
+    seen_ids = {str(seal.get("sealId") or id(seal)) for seal in candidates}
+    for seal in seals:
+        if not isinstance(seal, dict):
+            continue
+        flags = {str(flag) for flag in seal.get("qualityFlags") or []}
+        seal_id = str(seal.get("sealId") or id(seal))
+        if (
+            seal_id not in seen_ids
+            and seal.get("sourceEngine") == "fragment_seal_text_detector"
+            and "text_only_seal_candidate" in flags
+            and float(seal.get("ocrConfidence") or 0) >= 0.65
+        ):
+            candidates.append(seal)
+            seen_ids.add(seal_id)
+    return candidates
 
 
 def seal_type_candidate_keys(seal: dict[str, Any]) -> list[str]:
@@ -923,9 +948,11 @@ def header_token_matches(expected: str, header: str) -> bool:
 def same_page_overlap(left: dict[str, Any], right: dict[str, Any]) -> bool:
     if int_from(left.get("pageNo"), default=1) != int_from(right.get("pageNo"), default=1):
         return False
-    if not left.get("coordinateSystem") or not right.get("coordinateSystem"):
+    left_coordinate = left.get("coordinateSystem")
+    right_coordinate = right.get("coordinateSystem")
+    if bool(left_coordinate) != bool(right_coordinate):
         return False
-    if left.get("coordinateSystem") != right.get("coordinateSystem"):
+    if left_coordinate and right_coordinate and left_coordinate != right_coordinate:
         return False
     return overlaps(left.get("bbox"), right.get("bbox"))
 

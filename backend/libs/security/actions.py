@@ -72,6 +72,8 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/fde/ocr-corrections$", "fde:ocr-quality:view"),
     ("POST", r"/fde/ocr-evaluation-runs$", "fde:evaluation:run"),
     ("POST", r"/fde/capability-tests/ocr/upload-session$", "fde:ocr-quality:view"),
+    ("POST", r"/fde/capability-tests/ocr/upload-session/[^/]+/file$", "fde:ocr-quality:view"),
+    ("PUT", r"/fde/capability-tests/ocr/upload-session/[^/]+/file$", "fde:ocr-quality:view"),
     ("POST", r"/fde/capability-tests/ocr/runs$", "fde:ocr-quality:view"),
     ("POST", r"/fde/capability-tests/ocr/runs/[^/]+/to-annotation$", "fde:ocr-annotation:manage"),
     ("POST", r"/fde/capability-tests/ocr/runs/[^/]+/to-evaluation-case$", "fde:evaluation:run"),

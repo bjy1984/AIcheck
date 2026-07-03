@@ -11699,6 +11699,17 @@ def fde_capability_test_storage_url(storage_key: str) -> str:
     return f"minio://ocr-artifacts/{raw}"
 
 
+def fde_capability_test_upload_ready(upload_session: dict[str, Any]) -> bool:
+    status = str(upload_session.get("status") or "")
+    if status in {"uploaded", "used"}:
+        return True
+    upload_url = str(upload_session.get("uploadUrl") or "")
+    storage_url = str(upload_session.get("storageUrl") or upload_session.get("storageKey") or "")
+    if upload_url and not upload_url.startswith("mock://") and storage_url:
+        return True
+    return False
+
+
 def fde_capability_test_result_summary(result: dict[str, Any] | None) -> dict[str, Any]:
     if not isinstance(result, dict):
         return {
@@ -12046,6 +12057,7 @@ def fde_create_ocr_capability_upload_session(
 
 
 @router.post("/fde/capability-tests/ocr/upload-session/{session_id}/file")
+@router.put("/fde/capability-tests/ocr/upload-session/{session_id}/file")
 async def fde_upload_ocr_capability_test_file(
     request: Request,
     session_id: str,
@@ -12115,6 +12127,9 @@ async def fde_upload_ocr_capability_test_file(
 
 @router.get("/fde/capability-tests/ocr/upload-session/{session_id}/file")
 def fde_download_ocr_capability_test_file(request: Request, session_id: str):
+    _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+    if role_error:
+        return role_error
     upload_session = next(
         (
             item
@@ -12159,6 +12174,12 @@ def fde_create_ocr_capability_test_run(
         )
         if not upload_session:
             return fail(errors.NOT_FOUND, request, message="未找到 OCR 能力测试上传会话，请重新选择文件。")
+        if not fde_capability_test_upload_ready(upload_session):
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="OCR 测试文件尚未上传完成，请重新选择文件并等待上传成功后再开始测试。",
+            )
         file_name = str(upload_session.get("fileName") or "OCR测试文件")
         profile_id, document_type = fde_capability_test_profile_document_type(file_name, body)
         run_id = f"FDE-OCR-RUN-{uuid4().hex[:10].upper()}"
@@ -12265,6 +12286,9 @@ def fde_ocr_capability_test_page_preview(
     run_id: str,
     pageNo: int = Query(default=1, ge=1, le=100),
 ):
+    _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+    if role_error:
+        return role_error
     run = fde_capability_test_run_by_id(run_id)
     if not run:
         return fail(errors.NOT_FOUND, request)

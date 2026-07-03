@@ -4670,6 +4670,59 @@ def test_ocr_client_reads_runtime_doctor() -> None:
     assert report["schemaVersion"] == "aicheck-ocr-runtime-doctor-v1"
 
 
+def test_ocr_client_job_sync_returns_structured_failure_diagnostics() -> None:
+    from libs.integrations.ocr_client import OcrClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and request.url.path == "/internal/document-parse/jobs":
+            return httpx.Response(200, json={"code": 0, "data": {"jobId": "OCRJOB-FAIL"}})
+        if request.method == "GET" and request.url.path == "/internal/document-parse/jobs/OCRJOB-FAIL":
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {
+                        "jobId": "OCRJOB-FAIL",
+                        "status": "failed",
+                        "diagnostics": ["engine failed"],
+                    },
+                },
+            )
+        raise AssertionError(f"unexpected OCR client request: {request.method} {request.url.path}")
+
+    ocr_client = OcrClient(base_url="http://ocr", transport=httpx.MockTransport(handler))
+    result = ocr_client.parse_via_job_sync({"storageKey": "minio://documents/source.pdf"})
+
+    assert result["status"] == "failed"
+    assert result["diagnostics"][0]["code"] == "OCR_JOB_FAILED"
+    assert result["diagnostics"][0]["message"] == "engine failed"
+
+
+def test_ocr_client_job_sync_returns_structured_timeout_diagnostics() -> None:
+    from libs.integrations.ocr_client import OcrClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and request.url.path == "/internal/document-parse/jobs":
+            return httpx.Response(200, json={"code": 0, "data": {"jobId": "OCRJOB-SLOW"}})
+        if request.method == "GET" and request.url.path == "/internal/document-parse/jobs/OCRJOB-SLOW":
+            return httpx.Response(
+                200,
+                json={"code": 0, "data": {"jobId": "OCRJOB-SLOW", "status": "running"}},
+            )
+        raise AssertionError(f"unexpected OCR client request: {request.method} {request.url.path}")
+
+    ocr_client = OcrClient(base_url="http://ocr", transport=httpx.MockTransport(handler))
+    result = ocr_client.parse_via_job_sync(
+        {"storageKey": "minio://documents/source.pdf"},
+        timeout_seconds=0.01,
+        poll_interval=0.01,
+    )
+
+    assert result["status"] == "failed"
+    assert result["diagnostics"][0]["code"] == "OCR_JOB_TIMEOUT"
+    assert result["diagnostics"][0]["timeoutSeconds"] == 0.01
+
+
 def test_ocr_client_uses_local_fallback_only_outside_production(monkeypatch) -> None:
     from libs.integrations.ocr_client import DEFAULT_LOCAL_OCR_BASE_URL, OcrClient
 
@@ -5838,6 +5891,8 @@ def test_required_action_inference_covers_core_mutations() -> None:
         ("POST", "/api/fde/releases/REL-001/approve", "admin:config"),
         ("POST", "/api/fde/ocr-100/action-board/refresh", "fde:ocr-annotation:manage"),
         ("POST", "/api/fde/capability-tests/ocr/upload-session", "fde:ocr-quality:view"),
+        ("POST", "/api/fde/capability-tests/ocr/upload-session/FDE-OCR-UP-001/file", "fde:ocr-quality:view"),
+        ("PUT", "/api/fde/capability-tests/ocr/upload-session/FDE-OCR-UP-001/file", "fde:ocr-quality:view"),
         ("POST", "/api/fde/capability-tests/ocr/runs", "fde:ocr-quality:view"),
         ("POST", "/api/fde/capability-tests/ocr/runs/RUN-001/to-annotation", "fde:ocr-annotation:manage"),
         ("POST", "/api/fde/capability-tests/ocr/runs/RUN-001/to-evaluation-case", "fde:evaluation:run"),
@@ -5850,6 +5905,86 @@ def test_required_action_inference_covers_core_mutations() -> None:
     for method, path, expected in cases:
         assert required_action_for_request(method, path) == expected
     assert required_action_for_request("GET", "/api/admin/config-overview") is None
+
+
+def test_fde_ocr_capability_run_requires_uploaded_file_for_mock_session() -> None:
+    upload = assert_ok(
+        client.post(
+            "/api/fde/capability-tests/ocr/upload-session",
+            json={
+                "file": {
+                    "fileName": "设计资料.pdf",
+                    "fileType": "application/pdf",
+                    "contentType": "application/pdf",
+                    "fileSize": 128,
+                }
+            },
+            headers={"X-Role": "fde"},
+        )
+    )["uploadSession"]
+
+    payload = assert_error(
+        client.post(
+            "/api/fde/capability-tests/ocr/runs",
+            json={"uploadSessionId": upload["uploadSessionId"]},
+            headers={"X-Role": "fde"},
+        ),
+        "VALIDATION_ERROR",
+    )
+
+    assert "尚未上传" in payload["message"]
+
+
+def test_fde_ocr_capability_upload_file_accepts_declared_put_method() -> None:
+    upload = assert_ok(
+        client.post(
+            "/api/fde/capability-tests/ocr/upload-session",
+            json={
+                "file": {
+                    "fileName": "设计资料.pdf",
+                    "fileType": "application/pdf",
+                    "contentType": "application/pdf",
+                    "fileSize": 16,
+                }
+            },
+            headers={"X-Role": "fde"},
+        )
+    )["uploadSession"]
+
+    assert upload["method"] == "PUT"
+    saved = assert_ok(
+        client.put(
+            f"/api/fde/capability-tests/ocr/upload-session/{upload['uploadSessionId']}/file",
+            content=b"%PDF-1.4\nocr\n",
+            headers={"X-Role": "fde", "Content-Type": "application/pdf"},
+        )
+    )["uploadSession"]
+
+    assert saved["status"] == "uploaded"
+    assert saved["fileSize"] > 0
+
+
+def test_fde_ocr_capability_page_preview_requires_fde_permission(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
+    repo.state.setdefault("fde_capability_test_runs", []).append(
+        {
+            "id": "FDE-OCR-RUN-AUTH",
+            "runId": "FDE-OCR-RUN-AUTH",
+            "status": "success",
+            "fileName": "设计资料.pdf",
+            "contentType": "application/pdf",
+            "storageKey": "/tmp/missing.pdf",
+            "options": {},
+        }
+    )
+
+    assert_error(
+        client.get(
+            "/api/fde/capability-tests/ocr/runs/FDE-OCR-RUN-AUTH/page-preview?pageNo=1",
+            headers={"Authorization": "Bearer dev-token-contractor-contractor"},
+        ),
+        "FORBIDDEN",
+    )
 
 
 def test_all_non_public_mutating_routes_have_inferred_action_codes() -> None:
@@ -6880,6 +7015,8 @@ def test_upload_session_storage_failure_does_not_create_dirty_records(monkeypatc
 def test_worker_uses_ocr_http_client_when_configured(monkeypatch) -> None:
     from apps.worker import tasks
 
+    monkeypatch.setenv("AICHECK_OCR_BASE_URL", "http://ocr")
+
     class FakeOcrClient:
         enabled = True
 
@@ -6909,6 +7046,8 @@ def test_worker_uses_ocr_http_client_when_configured(monkeypatch) -> None:
 
 def test_worker_prefers_ocr_job_api_when_available(monkeypatch) -> None:
     from apps.worker import tasks
+
+    monkeypatch.setenv("AICHECK_OCR_BASE_URL", "http://ocr")
 
     class FakeOcrClient:
         enabled = True
@@ -7063,6 +7202,8 @@ def test_ocr_service_rejects_unapproved_local_file_path(tmp_path, monkeypatch) -
 
 def test_worker_records_ocr_client_failure_without_leaking_provider_details(monkeypatch) -> None:
     from apps.worker import tasks
+
+    monkeypatch.setenv("AICHECK_OCR_BASE_URL", "http://ocr")
 
     class FailingOcrClient:
         enabled = True

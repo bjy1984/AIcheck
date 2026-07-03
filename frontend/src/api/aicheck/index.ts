@@ -2595,6 +2595,15 @@ const safeHeaderValue = (value: string, fallback: string) => {
   return safe || fallback
 }
 
+const safeContentTypeHeaderValue = (value: string | undefined) => {
+  const contentType = String(value || '').trim()
+  return /^[A-Za-z0-9!#$%&'*+.^_`|~-]+\/[A-Za-z0-9!#$%&'*+.^_`|~-]+(?:\s*;\s*[A-Za-z0-9!#$%&'*+.^_`|~-]+=[A-Za-z0-9!#$%&'*+.^_`|~-]+)*$/.test(
+    contentType
+  )
+    ? contentType
+    : 'application/octet-stream'
+}
+
 const mutationHeaders = (options?: MutationHeaderOptions) => {
   const headers: Record<string, string> = {}
   if (options?.etag) headers['If-Match'] = options.etag
@@ -3636,7 +3645,7 @@ export const uploadFdeOcrCapabilityTestFileApi = (
     url: `/api/fde/capability-tests/ocr/upload-session/${encodeURIComponent(uploadSessionId)}/file`,
     data: file,
     headers: {
-      'Content-Type': file.type || 'application/octet-stream',
+      'Content-Type': safeContentTypeHeaderValue(file.type),
       ...mutationHeaders(options)
     }
   })

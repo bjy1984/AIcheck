@@ -1593,6 +1593,8 @@ CORE_RULE_VERSIONS = [
         "promptVersion": "prompt-ndt-v1.4",
         "outputSchemaVersion": "schema-ndt-v1.1",
         "description": "核验底片、检测比例、评片结论、返修闭环和报告签章。",
+        "standardText": "标准规范：NB/T 47013《承压设备无损检测》、TSG D7005 监督检验资料审查要求，以及项目设计文件中关于检测方法、检测比例、验收等级和报告签章的要求。",
+        "witnessText": "工作见证：需提供无损检测报告、检测委托单、检测底片或记录、返修及复检闭环资料、检测人员资格信息和检测单位签章。",
         "updatedAt": "2026-06-26 10:05:00",
         "actions": ["knowledge:view", "knowledge:manage"],
     },

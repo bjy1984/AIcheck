@@ -24,6 +24,12 @@ def flush_state() -> None:
     repo.flush_to_sync_postgres()
 
 
+def worker_ocr_http_enabled() -> bool:
+    if os.getenv("AICHECK_OCR_BASE_URL"):
+        return True
+    return os.getenv("AICHECK_WORKER_OCR_ENABLE_LOCAL_FALLBACK", "false").lower() in {"1", "true", "yes", "on"}
+
+
 def parse_with_ocr_service(
     storage_key: str,
     file_name: str | None = None,
@@ -33,8 +39,11 @@ def parse_with_ocr_service(
     profile_id: str | None = None,
     document_type: str | None = None,
 ) -> dict[str, Any]:
-    client = OcrClient()
-    if client.enabled:
+    if worker_ocr_http_enabled():
+        client = OcrClient()
+    else:
+        client = None
+    if client is not None and client.enabled:
         use_job_api = os.getenv("AICHECK_OCR_USE_JOB_API", "true").lower() != "false"
         if use_job_api and hasattr(client, "parse_via_job_sync"):
             return client.parse_via_job_sync(
