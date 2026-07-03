@@ -7,6 +7,7 @@ const request = (option: AxiosConfig) => {
 
   const userStore = useUserStoreWithOut()
   const userInfo = userStore.getUserInfo
+  const isFormData = typeof FormData !== 'undefined' && data instanceof FormData
   return service.request({
     url: url,
     method,
@@ -14,7 +15,7 @@ const request = (option: AxiosConfig) => {
     data: data,
     responseType: responseType,
     headers: {
-      'Content-Type': CONTENT_TYPE,
+      ...(isFormData ? {} : { 'Content-Type': CONTENT_TYPE }),
       [userStore.getTokenKey ?? 'Authorization']: userStore.getToken ?? '',
       'X-Role': userInfo?.role ?? '',
       'X-User-Id': userInfo?.id ?? '',

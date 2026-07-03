@@ -80,6 +80,8 @@ const props = defineProps<{
   menuTitle: string
   menuRoot: string
   menuSections: ReadonlyArray<StaticShellMenuSection>
+  peerNavTitle?: string
+  peerNavItems?: ReadonlyArray<StaticShellMenuItem>
   menuSearchPlaceholder?: string
   menuSearchValue?: string
   menuFilters?: ReadonlyArray<StaticShellMenuFilter>
@@ -127,6 +129,7 @@ const activeMenuFilter = computed(() => {
   return props.menuFilters?.find((filter) => filter.value === value) || props.menuFilters?.[0]
 })
 const activeMenuFilterLabel = computed(() => activeMenuFilter.value?.label || '全部')
+const peerNavTitleLabel = computed(() => props.peerNavTitle || '同级功能')
 
 const staticMenuActiveIndex = computed(() => {
   for (const section of props.menuSections) {
@@ -169,6 +172,19 @@ const handleStaticMenuSelect = (index: string) => {
       router.push(item.route)
       return
     }
+  }
+}
+
+const isPeerNavItemActive = (item: StaticShellMenuItem) => {
+  if (item.active) return true
+  if (!item.route) return false
+  return route.path === item.route || route.path.startsWith(`${item.route}/`)
+}
+
+const handlePeerNavSelect = (item: StaticShellMenuItem) => {
+  emit('menu-select', item)
+  if (item.route && item.route !== route.path) {
+    router.push(item.route)
   }
 }
 
@@ -281,6 +297,31 @@ onBeforeUnmount(() => {
             <div class="section-title">
               <span>{{ menuTitle }}</span>
               <span class="section-tools">{{ menuSections.length }} 项</span>
+            </div>
+            <div v-if="peerNavItems?.length" class="peer-nav" :aria-label="peerNavTitleLabel">
+              <div class="peer-nav-title">
+                <span>{{ peerNavTitleLabel }}</span>
+                <small>{{ peerNavItems.length }} 项</small>
+              </div>
+              <button
+                v-for="item in peerNavItems"
+                :key="item.index"
+                type="button"
+                :class="['peer-nav-item', { active: isPeerNavItemActive(item) }]"
+                :title="item.hint ? `${item.label} · ${item.hint}` : item.label"
+                :aria-current="isPeerNavItemActive(item) ? 'page' : undefined"
+                @click="handlePeerNavSelect(item)"
+              >
+                <span class="peer-nav-marker" aria-hidden="true"></span>
+                <span class="peer-nav-label">
+                  <span>{{ item.label }}</span>
+                  <small v-if="item.hint">{{ item.hint }}</small>
+                </span>
+                <span v-if="item.badge" :class="['pill', item.tone || 'blue']">
+                  {{ item.badge }}
+                </span>
+                <span v-else></span>
+              </button>
             </div>
             <div v-if="hasMenuControls" class="tree-controls">
               <label v-if="menuSearchPlaceholder" class="tree-search">
@@ -562,8 +603,8 @@ onBeforeUnmount(() => {
 
 .skip-main:focus-visible {
   pointer-events: auto;
-  opacity: 1;
   outline: 0;
+  opacity: 1;
   transform: translateY(0);
   box-shadow: 0 0 0 3px rgb(37 99 235 / 16%);
 }
@@ -944,6 +985,115 @@ onBeforeUnmount(() => {
   color: #6e7d92;
 }
 
+.peer-nav {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  padding: 0 12px 9px;
+  margin: 0 0 4px;
+  border-bottom: 1px solid #e8eef7;
+}
+
+.peer-nav-title {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 22px;
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #6a7890;
+}
+
+.peer-nav-title small {
+  font-size: 12px;
+  font-weight: 800;
+  color: #8a98ad;
+}
+
+.peer-nav-item {
+  display: grid;
+  grid-template-columns: 6px minmax(0, 1fr) auto;
+  gap: 5px;
+  align-items: center;
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #304158;
+  text-align: left;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid #e2ebf6;
+  border-radius: 7px;
+  transition:
+    color 0.18s ease,
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.peer-nav-item:hover,
+.peer-nav-item:focus-visible {
+  color: var(--blue-2);
+  background: #f5f9ff;
+  border-color: #bdd4f6;
+  outline: 0;
+  transform: translateY(-1px);
+  box-shadow: 0 7px 18px rgb(37 99 235 / 8%);
+}
+
+.peer-nav-item.active {
+  color: var(--blue-2);
+  background: linear-gradient(180deg, #eff6ff, #e8f1ff);
+  border-color: #a9c8ff;
+  box-shadow: inset 3px 0 0 var(--blue);
+}
+
+.peer-nav-marker {
+  display: inline-flex;
+  place-self: center;
+  width: 5px;
+  height: 5px;
+  background: #aab9cc;
+  border-radius: 999px;
+}
+
+.peer-nav-item.active .peer-nav-marker {
+  background: var(--blue);
+  box-shadow: 0 0 0 4px rgb(63 125 240 / 12%);
+}
+
+.peer-nav-label {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.peer-nav-label span,
+.peer-nav-label small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.peer-nav-label small {
+  display: none;
+}
+
+.peer-nav-item .pill {
+  max-width: 34px;
+  min-height: 17px;
+  padding: 2px 4px;
+  overflow: hidden;
+  font-size: 9.5px;
+  text-overflow: ellipsis;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -1141,6 +1291,12 @@ onBeforeUnmount(() => {
   height: calc(100% - 104px);
 }
 
+.peer-nav + .tree.static-tree-menu,
+.peer-nav + .tree-controls + .tree.static-tree-menu {
+  height: auto;
+  min-height: 0;
+}
+
 .static-tree-menu :deep(.el-menu) {
   background: transparent;
   border-right: 0;
@@ -1207,7 +1363,7 @@ onBeforeUnmount(() => {
   display: grid;
   width: 100%;
   min-width: 0;
-  padding: 7px 7px;
+  padding: 7px;
   background: linear-gradient(180deg, rgb(255 255 255 / 92%), rgb(248 251 255 / 92%)),
     radial-gradient(circle at 16px 12px, rgb(37 99 235 / 8%), transparent 42px);
   border: 1px solid #e4ecf7;
@@ -1244,7 +1400,6 @@ onBeforeUnmount(() => {
   display: inline-grid;
   align-items: center;
   justify-content: center;
-  place-items: center;
   place-self: center;
   width: 22px;
   height: 22px;
@@ -1261,7 +1416,6 @@ onBeforeUnmount(() => {
   display: inline-grid;
   align-items: center;
   justify-content: center;
-  place-items: center;
   place-self: center;
   line-height: 1;
   transform: none;
@@ -1293,7 +1447,6 @@ onBeforeUnmount(() => {
   display: inline-grid;
   align-items: center;
   justify-content: center;
-  place-items: center;
   place-self: center;
   width: 20px;
   height: 20px;

@@ -106,6 +106,25 @@ type KnowledgeRuleVersionMock = {
   version: string
   status: '草稿' | '待发布' | '已发布' | '已回滚'
   nodeIds: number[]
+  sourceSequence?: number
+  inspectionCategory?: string
+  inspectionItem?: string
+  inspectionClass?: string
+  standardText?: string
+  witnessText?: string
+  reviewClass?: string
+  criteria?: string
+  checkMethod?: string
+  aiExecution?: {
+    schemaVersion?: string
+    compiledAt?: string
+    requiredEvidence?: string[]
+    extractionTargets?: string[]
+    verificationSteps?: string[]
+    acceptanceCriteria?: string[]
+    humanConfirmation?: string[]
+    promptContext?: string
+  }
   promptVersion: string
   outputSchemaVersion: string
   description?: string
@@ -2088,6 +2107,125 @@ const knowledgeSourceTypes: KnowledgeSourceMock['sourceType'][] = [
 
 const getKnowledgeRuleVersion = (versionId: string) =>
   state.knowledgeRuleVersions.find((rule) => rule.id === versionId)
+
+const getRuleNodeTemplate = (nodeId?: number) =>
+  nodeId ? treeNodes.find((node) => Number(node.nodeId) === Number(nodeId)) : undefined
+
+const normalizeRuleClass = (value?: unknown, fallback = 'C') => {
+  const raw = String(value || fallback || 'C')
+    .replace('类', '')
+    .trim()
+    .toUpperCase()
+  if (raw === 'A' || raw === 'B' || raw === 'C' || raw === 'C/B') return raw
+  return fallback
+}
+
+const makeRuleKey = (item: Pick<KnowledgeRuleVersionMock, 'sourceSequence' | 'inspectionItem'>) => {
+  if (item.sourceSequence) {
+    return `inspection-rule-${String(item.sourceSequence).padStart(2, '0')}`
+  }
+  const text = item.inspectionItem || 'business-rule'
+  return `inspection-rule-${text
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 32)}`
+}
+
+const makeRuleExecution = (rule: KnowledgeRuleVersionMock) => ({
+  schemaVersion: 'business-rule-execution-v1',
+  compiledAt: serverTime,
+  requiredEvidence: [rule.witnessText || rule.description || rule.name].filter(Boolean),
+  extractionTargets: [
+    rule.inspectionItem || rule.name,
+    rule.inspectionCategory || '监检项目'
+  ].filter(Boolean),
+  verificationSteps: [rule.witnessText || rule.standardText || '按规则内容进行资料核验'].filter(
+    Boolean
+  ),
+  acceptanceCriteria: [rule.standardText || '符合判断准则和项目节点要求'].filter(Boolean),
+  humanConfirmation: ['证据不足、OCR 置信度不足或结论影响放行时需人工确认。'],
+  promptContext: [
+    `监检项目：${rule.inspectionItem || rule.name}`,
+    `类别：${rule.inspectionClass || rule.reviewClass || '-'}`,
+    `判断准则/标准规范：${rule.standardText || rule.criteria || '-'}`,
+    `方法及内容/工作见证：${rule.witnessText || rule.checkMethod || '-'}`
+  ].join('\n')
+})
+
+const normalizeKnowledgeRuleVersion = (
+  values: Record<string, any>,
+  source?: KnowledgeRuleVersionMock
+): KnowledgeRuleVersionMock => {
+  const sourceSequence = Number(values.sourceSequence || values.sequence || source?.sourceSequence)
+  const nodeIds = Array.isArray(values.nodeIds)
+    ? values.nodeIds.map((id) => Number(id)).filter(Boolean)
+    : source?.nodeIds?.length
+      ? [...source.nodeIds]
+      : []
+  const primaryNodeId =
+    Number.isFinite(sourceSequence) && sourceSequence > 0 ? sourceSequence : nodeIds[0]
+  const node = getRuleNodeTemplate(primaryNodeId)
+  const inspectionCategory =
+    String(values.inspectionCategory || source?.inspectionCategory || node?.groupName || '').trim()
+  const inspectionItem = String(
+    values.inspectionItem ||
+      source?.inspectionItem ||
+      node?.name ||
+      source?.name ||
+      '未命名监检项目'
+  ).trim()
+  const inspectionClass = normalizeRuleClass(
+    values.inspectionClass ||
+      source?.inspectionClass ||
+      source?.reviewClass ||
+      node?.inspectionType,
+    'C'
+  )
+  const standardText = String(
+    values.standardText || source?.standardText || source?.criteria || ''
+  ).trim()
+  const witnessText = String(
+    values.witnessText || source?.witnessText || source?.checkMethod || ''
+  ).trim()
+  const ruleKey =
+    String(values.ruleKey || source?.ruleKey || '').trim() ||
+    makeRuleKey({ sourceSequence: primaryNodeId, inspectionItem })
+  const versionSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const rule: KnowledgeRuleVersionMock = {
+    ...(source || {}),
+    id:
+      String(values.id || '').trim() ||
+      (source ? `${source.id}-DRAFT-${versionSuffix}` : `RULE-DRAFT-${versionSuffix}`),
+    name: inspectionItem,
+    ruleKey,
+    version: String(values.version || '').trim() || `${ruleKey}-draft-${versionSuffix}`,
+    status: (values.status as KnowledgeRuleVersionMock['status']) || '草稿',
+    nodeIds: primaryNodeId ? [primaryNodeId] : nodeIds,
+    sourceSequence: primaryNodeId,
+    inspectionCategory,
+    inspectionItem,
+    inspectionClass,
+    standardText,
+    witnessText,
+    reviewClass: inspectionClass,
+    criteria: standardText,
+    checkMethod: witnessText,
+    promptVersion:
+      String(values.promptVersion || source?.promptVersion || '').trim() || `prompt-${ruleKey}`,
+    outputSchemaVersion:
+      String(values.outputSchemaVersion || source?.outputSchemaVersion || '').trim() ||
+      'schema-review-v1.3',
+    description: String(
+      values.description || witnessText || standardText || source?.description || inspectionItem
+    ).trim(),
+    publishedAt: values.publishedAt,
+    updatedAt: serverTime,
+    actions: source?.actions || ['knowledge:view', 'knowledge:manage']
+  }
+  rule.aiExecution = makeRuleExecution(rule)
+  return rule
+}
 
 const isEmptyDiffValue = (value: unknown) =>
   value === undefined ||
@@ -7993,6 +8131,79 @@ export default [
         return true
       })
       return ok(makePage(items, Number(query?.page) || 1, Number(query?.pageSize) || 20))
+    }
+  },
+  {
+    url: '/api/rules/versions',
+    method: 'post',
+    timeout,
+    response: ({ body }) => {
+      const error = getForcedMutationError({ body, action: '新增业务规则草稿' })
+      if (error) return error
+      const rule = normalizeKnowledgeRuleVersion({ ...body, status: '草稿' })
+      if (!rule.inspectionItem) {
+        return fail(40086, '请填写监检项目（内容）。', { reason: 'RULE_ITEM_REQUIRED' })
+      }
+      if (!rule.standardText && !rule.witnessText) {
+        return fail(40087, '请填写判断准则 / 标准规范或方法及内容 / 工作见证。', {
+          reason: 'RULE_CONTENT_REQUIRED'
+        })
+      }
+      state.knowledgeRuleVersions.unshift(rule)
+      const auditLogId = addAuditLog('新增业务规则草稿', 'RuleVersion', rule.id)
+      return ok({ rule, auditLogId })
+    }
+  },
+  {
+    url: /\/api\/rules\/versions\/[^/]+$/,
+    method: 'put',
+    timeout,
+    response: ({ body, url }) => {
+      const error = getForcedMutationError({ body, action: '编辑业务规则草稿' })
+      if (error) return error
+      const versionId = pathParts(url)[3]
+      const ruleIndex = state.knowledgeRuleVersions.findIndex((item) => item.id === versionId)
+      if (ruleIndex < 0)
+        return fail(40484, '规则版本不存在。', { reason: 'RULE_VERSION_NOT_FOUND' })
+      const source = state.knowledgeRuleVersions[ruleIndex]
+      if (source.status === '已发布' || source.status === '已回滚') {
+        return fail(40088, '已发布或历史规则不能直接编辑，请基于当前规则创建草稿。', {
+          reason: 'RULE_VERSION_NOT_EDITABLE'
+        })
+      }
+      const rule = normalizeKnowledgeRuleVersion(
+        { ...body, id: source.id, status: source.status },
+        source
+      )
+      state.knowledgeRuleVersions.splice(ruleIndex, 1, rule)
+      const auditLogId = addAuditLog('编辑业务规则草稿', 'RuleVersion', rule.id)
+      return ok({ rule, auditLogId })
+    }
+  },
+  {
+    url: /\/api\/rules\/versions\/[^/]+\/fork/,
+    method: 'post',
+    timeout,
+    response: ({ body, url }) => {
+      const error = getForcedMutationError({ body, action: '创建规则草稿' })
+      if (error) return error
+      const versionId = pathParts(url)[3]
+      const source = getKnowledgeRuleVersion(versionId)
+      if (!source) return fail(40484, '规则版本不存在。', { reason: 'RULE_VERSION_NOT_FOUND' })
+      const draft = normalizeKnowledgeRuleVersion(
+        {
+          ...source,
+          ...body,
+          id: '',
+          status: '草稿',
+          version: body?.version || `${source.ruleKey}-draft-${Date.now()}`,
+          publishedAt: undefined
+        },
+        source
+      )
+      state.knowledgeRuleVersions.unshift(draft)
+      const auditLogId = addAuditLog('基于正式规则创建草稿', 'RuleVersion', draft.id)
+      return ok({ rule: draft, source, auditLogId })
     }
   },
   {

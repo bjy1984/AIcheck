@@ -71,13 +71,13 @@ const genericAuditCards = computed<AuditSummaryCard[]>(() => {
     {
       label: '当前项目',
       value: selectedProject.value?.name || workbench.value.project.name,
-      hint: selectedProject.value?.businessPackId || '默认业务包',
+      hint: selectedProject.value?.businessPackId || '默认业务类型',
       tone: 'blue'
     },
     {
       label: '审查节点',
       value: `${workbench.value.nodes.length} 个`,
-      hint: '节点模板来自业务包，可迁移复用',
+      hint: '节点模板来自业务类型，可迁移复用',
       tone: 'green'
     },
     {
@@ -107,7 +107,7 @@ const genericShellMenuSections = computed(() => [
       {
         index: '01',
         label: '项目总览',
-        hint: '当前业务包与审查对象',
+        hint: '当前业务类型与审查对象',
         badge: selectedGenericView.value === 'overview' ? '当前' : undefined,
         tone: 'blue' as const,
         active: selectedGenericView.value === 'overview',
@@ -116,7 +116,7 @@ const genericShellMenuSections = computed(() => [
       {
         index: '02',
         label: '资料要求',
-        hint: '业务包资料目录',
+        hint: '业务类型资料目录',
         active: selectedGenericView.value === 'requirements',
         subpage: 'requirements'
       },
@@ -156,14 +156,14 @@ const genericBoundaryRows = [
   { label: '平台语义', value: '项目、节点、资料、发现、证据、补正' },
   { label: '复用边界', value: '不写死工程监检角色和资料名称' },
   { label: 'AI 边界', value: '生成审查草稿，不替代人工结论' },
-  { label: '迁移方式', value: '替换业务包、规则、知识库和报告模板' }
+  { label: '迁移方式', value: '替换业务类型、规则、知识库和报告模板' }
 ] as const
 
 const genericRightCards = computed(() => [
   {
-    title: '业务包摘要',
+    title: '业务类型摘要',
     rows: [
-      { label: '业务包', value: workbench.value?.businessPack.name || '未选择' },
+      { label: '业务类型', value: workbench.value?.businessPack.name || '未选择' },
       { label: '领域', value: workbench.value?.businessPack.domainType || '-' },
       { label: '节点', value: `${workbench.value?.nodes.length || 0} 个` },
       {
@@ -241,7 +241,7 @@ onMounted(loadData)
       title="通用资料审查工作台"
       :status="loading ? '加载中' : '可复用内核'"
       :status-tone="loading ? 'orange' : 'green'"
-      search-placeholder="搜索业务包、节点、资料、发现"
+      search-placeholder="搜索业务类型、节点、资料、发现"
       user-label="审查平台管理员"
       workspace-mode="wide"
       right-panel-mode="drawer"
@@ -256,7 +256,7 @@ onMounted(loadData)
       menu-root="资料审查 OS"
       :menu-sections="genericShellMenuSections"
       boundary-title="平台边界"
-      boundary-badge="业务包化"
+      boundary-badge="业务类型化"
       boundary-tone="green"
       :boundary-rows="genericBoundaryRows"
       right-title="复用摘要"
@@ -267,7 +267,7 @@ onMounted(loadData)
       <div class="page-title">
         <div>
           <h1>通用资料审查工作台</h1>
-          <p>按业务包组织节点、资料要求、AI 发现和人工确认入口</p>
+          <p>按业务类型组织节点、资料要求、AI 发现和人工确认入口</p>
         </div>
         <ElTag :type="loading ? 'warning' : 'success'" effect="plain">
           {{ loading ? '加载中' : '已连接' }}
@@ -295,7 +295,7 @@ onMounted(loadData)
           <ElCard shadow="never" class="panel">
             <template #header>
               <div class="panel-header">
-                <span>业务包项目</span>
+                <span>业务类型项目</span>
                 <ElSpace>
                   <ElSelect
                     v-model="selectedProjectId"
@@ -306,7 +306,7 @@ onMounted(loadData)
                     <ElOption
                       v-for="project in projects"
                       :key="project.id"
-                      :label="`${project.name} / ${project.businessPackId || '默认业务包'}`"
+                      :label="`${project.name} / ${project.businessPackId || '默认业务类型'}`"
                       :value="project.id"
                     />
                   </ElSelect>
@@ -323,7 +323,7 @@ onMounted(loadData)
                 <strong>{{ selectedProject?.name || workbench.project.name }}</strong>
               </div>
               <div>
-                <div class="summary-label">业务包</div>
+                <div class="summary-label">业务类型</div>
                 <strong>{{ workbench.businessPack.name }}</strong>
               </div>
               <div>
@@ -335,7 +335,7 @@ onMounted(loadData)
                 <strong>{{ workbench.findings.length }}</strong>
               </div>
             </div>
-            <ElEmpty v-else description="请选择业务包项目" />
+            <ElEmpty v-else description="请选择业务类型项目" />
           </ElCard>
         </ElCol>
       </ElRow>

@@ -30,20 +30,26 @@ import {
   ElTable,
   ElTableColumn,
   ElTabs,
-  ElTag
+  ElTag,
+  ElTreeSelect
 } from 'element-plus'
 import {
   batchReindexKnowledgeApi,
   cancelKnowledgeTaskApi,
+  createKnowledgeRuleVersionApi,
   createKnowledgeSourceApi,
   disableKnowledgeSourceApi,
   enableKnowledgeSourceApi,
+  forkKnowledgeRuleVersionApi,
+  getBusinessPackApi,
   getKnowledgeConfigApi,
   getKnowledgeFileDetailApi,
   getKnowledgeFileVectorApi,
   getKnowledgeRuleVersionDiffApi,
   getLlmCompareRunApi,
   getReasoningLogDetailApi,
+  importBusinessRulesApi,
+  importKnowledgeFilesApi,
   listKnowledgeAuditLogsApi,
   listKnowledgeFileChunksApi,
   listKnowledgeFileReasoningReferencesApi,
@@ -60,10 +66,12 @@ import {
   rollbackKnowledgeRuleVersionApi,
   runKnowledgeRetrievalTestApi,
   runLlmCompareApi,
+  updateKnowledgeRuleVersionApi,
   updateKnowledgeConfigApi,
   updateKnowledgeSourceApi
 } from '@/api/aicheck'
 import type {
+  BusinessPackDetail,
   KnowledgeAuditLog,
   KnowledgeChunk,
   KnowledgeConfig,
@@ -75,6 +83,7 @@ import type {
   KnowledgeRetrievalTestPayload,
   KnowledgeRuleVersion,
   KnowledgeRuleVersionDiffPayload,
+  KnowledgeRuleVersionSavePayload,
   KnowledgeSource,
   KnowledgeSourceSavePayload,
   KnowledgeTask,
@@ -117,6 +126,36 @@ const emptySourceForm = (): KnowledgeSourceSavePayload => ({
   chunkCount: 0,
   vectorStatus: '待向量化'
 })
+
+const emptyRuleForm = (): KnowledgeRuleVersionSavePayload => ({
+  sequence: undefined,
+  sourceSequence: undefined,
+  inspectionCategory: '',
+  inspectionItem: '',
+  inspectionClass: 'C',
+  standardText: '',
+  witnessText: '',
+  nodeIds: []
+})
+
+const DEFAULT_RULE_BUSINESS_PACK_ID = 'engineering_inspection_v1'
+
+type RuleNodeSelectOption = {
+  value: string
+  label: string
+  disabled?: boolean
+  nodeId?: number
+  inspectionCategory?: string
+  inspectionItem?: string
+  children?: RuleNodeSelectOption[]
+}
+
+const ruleNodeTreeProps = {
+  label: 'label',
+  value: 'value',
+  children: 'children',
+  disabled: 'disabled'
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -201,6 +240,85 @@ const knowledgeShellMenuSectionsBase = [
   }
 ] as const
 
+const knowledgePeerNavItems = computed(
+  () =>
+    [
+      {
+        index: 'admin-peer-10',
+        label: '业务类型管理',
+        badge: '复用',
+        tone: 'green',
+        route: '/admin/business-packs'
+      },
+      {
+        index: 'admin-peer-11',
+        label: '审核节点维护',
+        hint: '项目审核节点',
+        badge: '69项',
+        tone: 'blue',
+        route: '/admin/permission'
+      },
+      {
+        index: 'admin-peer-12',
+        label: '节点角色矩阵',
+        hint: '动作级权限',
+        badge: '权限',
+        tone: 'blue',
+        route: '/admin/permission'
+      },
+      {
+        index: 'admin-peer-13',
+        label: 'AI 业务规则模板',
+        badge: '规则',
+        tone: 'orange',
+        route: '/admin/rules'
+      },
+      {
+        index: 'admin-peer-14',
+        label: 'AI 知识库管理',
+        badge: '当前',
+        tone: 'green',
+        route: '/knowledge/overview',
+        active: route.path.startsWith('/knowledge')
+      },
+      {
+        index: 'admin-peer-15',
+        label: '外部核验工具源',
+        badge: '工具',
+        tone: 'blue',
+        route: '/admin/fine-config'
+      },
+      {
+        index: 'admin-peer-16',
+        label: '证据字段映射',
+        badge: '字段',
+        tone: 'blue',
+        route: '/admin/fine-config'
+      },
+      {
+        index: 'admin-peer-17',
+        label: '角色单位人员',
+        badge: '基础',
+        tone: 'green',
+        route: '/admin/org'
+      },
+      {
+        index: 'admin-peer-18',
+        label: '联调清单',
+        badge: '对账',
+        tone: 'orange',
+        route: '/admin/integration'
+      },
+      {
+        index: 'admin-peer-19',
+        label: '操作日志',
+        badge: '审计',
+        tone: 'blue',
+        route: '/admin/audit'
+      }
+    ] as const
+)
+
 const knowledgeShellBoundaryRows = [
   { label: '不办理', value: '退回补正、审查意见、报告复核' },
   { label: '可管理', value: '知识源、OCR、向量、规则版本、推理日志' },
@@ -276,6 +394,7 @@ type OperationIssueKey =
   | 'ruleDiff'
   | 'config'
   | 'reindex'
+  | 'import'
   | 'file'
   | 'task'
   | 'pageIndex'
@@ -353,6 +472,7 @@ const operationIssues = reactive<Record<OperationIssueKey, SectionIssue | undefi
   ruleDiff: undefined,
   config: undefined,
   reindex: undefined,
+  import: undefined,
   file: undefined,
   task: undefined,
   pageIndex: undefined,
@@ -444,11 +564,77 @@ const ruleDiffVisible = ref(false)
 const ruleDiffLoading = ref(false)
 const ruleDiff = ref<KnowledgeRuleVersionDiffPayload | null>(null)
 const selectedRuleDiffVersion = ref<KnowledgeRuleVersion | null>(null)
+const ruleEditorVisible = ref(false)
+const ruleEditorMode = ref<'create' | 'edit'>('create')
+const ruleEditingId = ref('')
+const ruleEditingSource = ref<KnowledgeRuleVersion | null>(null)
+const ruleForm = reactive<KnowledgeRuleVersionSavePayload>(emptyRuleForm())
+const ruleBusinessPack = ref<BusinessPackDetail | null>(null)
+const ruleNodeTreeLoading = ref(false)
+const ruleNodeSelectValue = ref('')
+const ruleNodeSelectOptions = computed<RuleNodeSelectOption[]>(() => {
+  const groups: RuleNodeSelectOption[] = []
+  const groupMap = new Map<string, RuleNodeSelectOption>()
+  for (const template of ruleBusinessPack.value?.nodeTemplates || []) {
+    const nodeId = Number(template.nodeId)
+    if (!Number.isFinite(nodeId)) continue
+    const groupName = template.groupName || '未分组'
+    let group = groupMap.get(groupName)
+    if (!group) {
+      group = {
+        value: `group:${groupName}`,
+        label: groupName,
+        disabled: true,
+        children: []
+      }
+      groupMap.set(groupName, group)
+      groups.push(group)
+    }
+    group.children?.push({
+      value: String(nodeId),
+      label: `${nodeId}. ${template.name}`,
+      nodeId,
+      inspectionCategory: groupName,
+      inspectionItem: template.name
+    })
+  }
+  return groups
+})
+const ruleNodeOptionMap = computed(() => {
+  const options = new Map<string, RuleNodeSelectOption>()
+  const collect = (items: RuleNodeSelectOption[]) => {
+    for (const item of items) {
+      if (item.nodeId) {
+        options.set(item.value, item)
+      }
+      if (item.children?.length) collect(item.children)
+    }
+  }
+  collect(ruleNodeSelectOptions.value)
+  return options
+})
 
 const sourceDialogVisible = ref(false)
 const sourceDialogMode = ref<'create' | 'edit'>('create')
 const sourceEditingId = ref('')
 const sourceForm = reactive<KnowledgeSourceSavePayload>(emptySourceForm())
+type SourceUploadFileRow = {
+  id: string
+  file: File
+  fileName: string
+  relativePath: string
+  contextDescription: string
+  size: number
+  type: string
+}
+const sourceUploadFileInputRef = ref<HTMLInputElement>()
+const sourceUploadFiles = ref<SourceUploadFileRow[]>([])
+const knowledgeImportVisible = ref(false)
+const knowledgeImportFileInputRef = ref<HTMLInputElement>()
+const knowledgeImportDirectoryInputRef = ref<HTMLInputElement>()
+const knowledgeImportFiles = ref<File[]>([])
+const knowledgeImportDialogTitle = ref('从文件导入业务规则草稿')
+const businessRuleImportVersion = ref('')
 
 const sourceFilters = reactive({
   keyword: '',
@@ -509,6 +695,15 @@ const compareForm = reactive({
 
 const libraries = computed(() => overview.value.libraries)
 const metrics = computed(() => overview.value.metrics)
+const knowledgeImportFileRows = computed(() =>
+  knowledgeImportFiles.value.map((file) => ({
+    id: `${file.name}-${file.size}-${file.lastModified}`,
+    name: file.name,
+    relativePath: (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name,
+    size: file.size,
+    type: file.type || file.name.split('.').pop() || '-'
+  }))
+)
 const knowledgeScorecard = computed(() => overview.value.scorecard || null)
 const knowledgeScorecardSections = computed(() => knowledgeScorecard.value?.sections || [])
 const knowledgeScorecardBlockerRows = computed(() =>
@@ -571,6 +766,7 @@ const vectorStatusOptions: KnowledgeSource['vectorStatus'][] = [
   '向量化失败'
 ]
 const ruleStatusOptions: KnowledgeRuleVersion['status'][] = ['草稿', '待发布', '已发布', '已回滚']
+const ruleClassOptions = ['A', 'B', 'C', 'C/B']
 const auditObjectTypeOptions = [
   'KnowledgeSource',
   'KnowledgeTask',
@@ -613,7 +809,7 @@ const sourceTypeLabel = (type: KnowledgeSource['sourceType']) => {
   const map: Record<KnowledgeSource['sourceType'], string> = {
     standard: '标准规范',
     'project-file': '项目文件',
-    rule: '规则 Prompt',
+    rule: '业务规则（旧）',
     manual: '人工维护'
   }
   return map[type]
@@ -638,6 +834,55 @@ const formatPageRange = (row: { startPage?: number; endPage?: number }) => {
 const formatTextList = (items?: string[]) => {
   if (!items?.length) return '--'
   return items.join(' / ')
+}
+
+const formatFileSize = (size: number) => {
+  if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`
+  if (size >= 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${size} B`
+}
+
+const allowedKnowledgeImportExtensions = new Set([
+  'pdf',
+  'doc',
+  'docx',
+  'xls',
+  'xlsx',
+  'png',
+  'jpg',
+  'jpeg',
+  'md',
+  'txt'
+])
+const allowedBusinessRuleImportExtensions = new Set([
+  'docx',
+  'md',
+  'markdown',
+  'txt',
+  'yaml',
+  'yml',
+  'json'
+])
+
+const isAllowedKnowledgeImportFile = (file: File) => {
+  const extension = file.name.split('.').pop()?.toLowerCase() || ''
+  return allowedKnowledgeImportExtensions.has(extension)
+}
+
+const isAllowedBusinessRuleImportFile = (file: File) => {
+  const extension = file.name.split('.').pop()?.toLowerCase() || ''
+  return allowedBusinessRuleImportExtensions.has(extension)
+}
+
+const createClientKnowledgeSourceId = () => {
+  const random =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `KS-UPLOAD-${random
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .slice(0, 12)
+    .toUpperCase()}`
 }
 
 const routeLabel = (route?: string) => {
@@ -949,11 +1194,173 @@ const refreshKnowledgeState = async () => {
   ])
 }
 
+const openKnowledgeImportDialog = () => {
+  clearOperationIssue('import')
+  knowledgeImportDialogTitle.value = '从文件导入业务规则草稿'
+  const now = new Date()
+  const date = now.toISOString().slice(0, 10).replace(/-/g, '')
+  const time = `${now.getHours()}`.padStart(2, '0') + `${now.getMinutes()}`.padStart(2, '0')
+  businessRuleImportVersion.value = `rule-draft-${date}-${time}`
+  knowledgeImportFiles.value = []
+  knowledgeImportVisible.value = true
+}
+
+const triggerKnowledgeImportFileSelect = () => {
+  knowledgeImportFileInputRef.value?.click()
+}
+
+const triggerKnowledgeImportDirectorySelect = () => {
+  knowledgeImportDirectoryInputRef.value?.click()
+}
+
+const addKnowledgeImportFiles = (fileList: FileList | null) => {
+  if (!fileList?.length) return
+  const nextFiles = [...knowledgeImportFiles.value]
+  const existing = new Set(
+    nextFiles.map((file) => {
+      const relativePath =
+        (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name
+      return `${relativePath}-${file.size}-${file.lastModified}`
+    })
+  )
+  let skippedUnsupported = 0
+  Array.from(fileList).forEach((file) => {
+    const relativePath =
+      (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name
+    const key = `${relativePath}-${file.size}-${file.lastModified}`
+    if (!isAllowedBusinessRuleImportFile(file)) {
+      skippedUnsupported += 1
+      return
+    }
+    if (!existing.has(key)) {
+      existing.add(key)
+      nextFiles.push(file)
+    }
+  })
+  knowledgeImportFiles.value = nextFiles
+  if (skippedUnsupported) {
+    ElMessage.warning(`已跳过 ${skippedUnsupported} 个不支持的文件`)
+  }
+}
+
+const handleKnowledgeImportInputChange = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  addKnowledgeImportFiles(input.files)
+  input.value = ''
+}
+
+const removeKnowledgeImportFile = (rowId: string) => {
+  knowledgeImportFiles.value = knowledgeImportFiles.value.filter((file) => {
+    const relativePath =
+      (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name
+    return `${relativePath}-${file.size}-${file.lastModified}` !== rowId
+  })
+}
+
+const clearKnowledgeImportFiles = () => {
+  knowledgeImportFiles.value = []
+}
+
+const handleImportKnowledgeFiles = async () => {
+  if (!knowledgeImportFiles.value.length) {
+    ElMessage.warning('请选择业务规则文件')
+    return
+  }
+  actionLoading.value = 'knowledge-import'
+  clearOperationIssue('import')
+  try {
+    const res = await importBusinessRulesApi({
+      files: knowledgeImportFiles.value,
+      importVersion: businessRuleImportVersion.value.trim()
+    })
+    if (!res) {
+      setOperationIssue('import', buildOperationFailureMessage('业务规则导入'))
+      return
+    }
+    const importedCount = res.data?.importedRules?.length || res.data?.rules?.length || 0
+    const skippedCount = res.data?.skipped?.length || 0
+    ElMessage.success(
+      `已导入 ${importedCount} 条业务规则草稿${skippedCount ? `，跳过 ${skippedCount} 个文件` : ''}`
+    )
+    knowledgeImportVisible.value = false
+    knowledgeImportFiles.value = []
+    await Promise.all([loadRuleVersions(), loadKnowledgeAuditLogs()])
+  } catch (error) {
+    setOperationIssue('import', buildOperationFailureMessage('业务规则导入'), error)
+  } finally {
+    actionLoading.value = ''
+  }
+}
+
+const syncSourceUploadFileCount = () => {
+  if (sourceDialogMode.value === 'create') {
+    sourceForm.fileCount = sourceUploadFiles.value.length
+    if (sourceUploadFiles.value.length) {
+      sourceForm.vectorStatus = '待向量化'
+    }
+  }
+}
+
+const triggerSourceUploadFileSelect = () => {
+  sourceUploadFileInputRef.value?.click()
+}
+
+const addSourceUploadFiles = (fileList: FileList | null) => {
+  if (!fileList?.length) return
+  const nextRows = [...sourceUploadFiles.value]
+  const existing = new Set(
+    nextRows.map((row) => `${row.relativePath}-${row.size}-${row.file.lastModified}`)
+  )
+  let skippedUnsupported = 0
+  Array.from(fileList).forEach((file) => {
+    const relativePath =
+      (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name
+    const key = `${relativePath}-${file.size}-${file.lastModified}`
+    if (!isAllowedKnowledgeImportFile(file)) {
+      skippedUnsupported += 1
+      return
+    }
+    if (existing.has(key)) return
+    existing.add(key)
+    nextRows.push({
+      id: `${key}-${nextRows.length}`,
+      file,
+      fileName: file.name,
+      relativePath,
+      contextDescription: '',
+      size: file.size,
+      type: file.type || file.name.split('.').pop() || '-'
+    })
+  })
+  sourceUploadFiles.value = nextRows
+  syncSourceUploadFileCount()
+  if (skippedUnsupported) {
+    ElMessage.warning(`已跳过 ${skippedUnsupported} 个不支持的文件`)
+  }
+}
+
+const handleSourceUploadInputChange = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  addSourceUploadFiles(input.files)
+  input.value = ''
+}
+
+const removeSourceUploadFile = (rowId: string) => {
+  sourceUploadFiles.value = sourceUploadFiles.value.filter((row) => row.id !== rowId)
+  syncSourceUploadFileCount()
+}
+
+const clearSourceUploadFiles = () => {
+  sourceUploadFiles.value = []
+  syncSourceUploadFileCount()
+}
+
 const openCreateSourceDialog = () => {
   clearOperationIssue('source')
   sourceDialogMode.value = 'create'
   sourceEditingId.value = ''
   Object.assign(sourceForm, emptySourceForm())
+  sourceUploadFiles.value = []
   sourceDialogVisible.value = true
 }
 
@@ -961,6 +1368,7 @@ const openEditSourceDialog = (row: KnowledgeSource) => {
   clearOperationIssue('source')
   sourceDialogMode.value = 'edit'
   sourceEditingId.value = row.id
+  sourceUploadFiles.value = []
   Object.assign(sourceForm, {
     name: row.name,
     sourceType: row.sourceType,
@@ -974,20 +1382,59 @@ const openEditSourceDialog = (row: KnowledgeSource) => {
 }
 
 const handleSaveSource = async () => {
-  if (!sourceForm.name.trim()) {
-    ElMessage.warning('请输入知识源名称')
+  const sourceUploadRows = sourceUploadFiles.value
+  const sourceName = sourceForm.name.trim() || sourceUploadRows[0]?.fileName.trim() || ''
+  if (!sourceName) {
+    ElMessage.warning('请输入类别名称或选择上传文件')
+    return
+  }
+  if (sourceDialogMode.value === 'create' && sourceUploadRows.some((row) => !row.fileName.trim())) {
+    ElMessage.warning('请输入上传文件名称')
     return
   }
   actionLoading.value = 'source-save'
   clearOperationIssue('source')
   try {
     if (sourceDialogMode.value === 'create') {
-      const res = await createKnowledgeSourceApi(sourceForm)
-      if (!res) {
-        setOperationIssue('source', buildOperationFailureMessage('知识源新增'))
-        return
+      if (sourceUploadRows.length) {
+        const res = await importKnowledgeFilesApi({
+          files: sourceUploadRows.map((row) => row.file),
+          sourceId: createClientKnowledgeSourceId(),
+          sourceName,
+          sourceType: sourceForm.sourceType,
+          sourceVersion: sourceForm.version,
+          sourceStatus: sourceForm.status,
+          vectorStatus: '待向量化',
+          fileMetas: sourceUploadRows.map((row) => ({
+            fileName: row.fileName.trim(),
+            relativePath: row.relativePath,
+            contextDescription: row.contextDescription.trim()
+          }))
+        })
+        if (!res) {
+          setOperationIssue('source', buildOperationFailureMessage('知识源文件上传'))
+          return
+        }
+        const importedCount = res.data?.files?.length || 0
+        const skippedCount = res.data?.skipped?.length || 0
+        if (!importedCount && skippedCount) {
+          const skippedMessage =
+            res.data?.skipped?.map((item) => `${item.fileName}：${item.reason}`).join('；') ||
+            '文件未写入知识库。'
+          setOperationIssue('source', '知识源文件上传失败', new Error(skippedMessage))
+          return
+        }
+        ElMessage.success(
+          `知识源已新增，已上传 ${importedCount} 个文件${skippedCount ? `，跳过 ${skippedCount} 个` : ''}`
+        )
+      } else {
+        const res = await createKnowledgeSourceApi({ ...sourceForm, name: sourceName })
+        if (!res) {
+          setOperationIssue('source', buildOperationFailureMessage('知识源新增'))
+          return
+        }
+        ElMessage.success('知识源已新增')
       }
-      ElMessage.success('知识源已新增')
     } else {
       const currentSource = sources.value.find((item) => item.id === sourceEditingId.value)
       const res = await updateKnowledgeSourceApi(sourceEditingId.value, sourceForm, {
@@ -1000,6 +1447,7 @@ const handleSaveSource = async () => {
       ElMessage.success('知识源已更新')
     }
     sourceDialogVisible.value = false
+    sourceUploadFiles.value = []
     await refreshKnowledgeState()
   } catch (error) {
     setOperationIssue(
@@ -1055,6 +1503,186 @@ const handleToggleSourceStatus = async (row: KnowledgeSource) => {
 
 const getRollbackTargetVersion = (row: KnowledgeRuleVersion) =>
   ruleVersions.value.find((item) => item.ruleKey === row.ruleKey && item.id !== row.id)?.version
+
+const ruleDisplayName = (row: KnowledgeRuleVersion) => row.inspectionItem || row.name
+
+const normalizeRuleNodeSelectValue = (value?: string | number | null) =>
+  value === undefined || value === null || value === '' ? '' : String(value)
+
+const clearRuleNodeFields = () => {
+  ruleForm.sequence = undefined
+  ruleForm.sourceSequence = undefined
+  ruleForm.inspectionCategory = ''
+  ruleForm.inspectionItem = ''
+  ruleForm.nodeIds = []
+}
+
+const syncRuleFieldsFromNodeOption = (option: RuleNodeSelectOption) => {
+  if (!option.nodeId) return
+  ruleNodeSelectValue.value = option.value
+  ruleForm.sequence = option.nodeId
+  ruleForm.sourceSequence = option.nodeId
+  ruleForm.nodeIds = [option.nodeId]
+  ruleForm.inspectionCategory = option.inspectionCategory || ''
+  ruleForm.inspectionItem = option.inspectionItem || ''
+}
+
+const syncRuleFieldsFromSelectedNode = (
+  value: string | number | null | undefined = ruleNodeSelectValue.value,
+  clearWhenEmpty = false
+) => {
+  const normalizedValue = normalizeRuleNodeSelectValue(value)
+  if (!normalizedValue) {
+    if (clearWhenEmpty) clearRuleNodeFields()
+    ruleNodeSelectValue.value = ''
+    return
+  }
+  const option = ruleNodeOptionMap.value.get(normalizedValue)
+  if (!option) return
+  syncRuleFieldsFromNodeOption(option)
+}
+
+const loadRuleNodeTree = async () => {
+  if (ruleBusinessPack.value?.nodeTemplates?.length) return
+  ruleNodeTreeLoading.value = true
+  try {
+    const res = await getBusinessPackApi(DEFAULT_RULE_BUSINESS_PACK_ID)
+    if (!res?.data?.nodeTemplates?.length) {
+      setOperationIssue('rule', buildOperationFailureMessage('监检项目节点加载'))
+      return
+    }
+    ruleBusinessPack.value = res.data
+    syncRuleFieldsFromSelectedNode()
+  } catch (error) {
+    setOperationIssue('rule', buildOperationFailureMessage('监检项目节点加载'), error)
+  } finally {
+    ruleNodeTreeLoading.value = false
+  }
+}
+
+const handleRuleNodeSelectChange = (value?: string | number | null) => {
+  syncRuleFieldsFromSelectedNode(value, true)
+}
+
+const assignRuleForm = (row?: KnowledgeRuleVersion) => {
+  Object.assign(ruleForm, emptyRuleForm())
+  ruleNodeSelectValue.value = ''
+  if (!row) return
+  const sequence = row.sourceSequence || row.nodeIds?.[0]
+  Object.assign(ruleForm, {
+    sequence,
+    sourceSequence: sequence,
+    inspectionCategory: row.inspectionCategory || '',
+    inspectionItem: row.inspectionItem || row.name || '',
+    inspectionClass: row.inspectionClass || row.reviewClass || 'C',
+    standardText: row.standardText || row.criteria || '',
+    witnessText: row.witnessText || row.checkMethod || '',
+    nodeIds: row.nodeIds?.length ? [...row.nodeIds] : sequence ? [sequence] : []
+  })
+  if (sequence) {
+    ruleNodeSelectValue.value = String(sequence)
+    syncRuleFieldsFromSelectedNode(ruleNodeSelectValue.value)
+  }
+}
+
+const openCreateRuleEditor = async () => {
+  clearOperationIssue('rule')
+  ruleEditorMode.value = 'create'
+  ruleEditingId.value = ''
+  ruleEditingSource.value = null
+  assignRuleForm()
+  ruleEditorVisible.value = true
+  await loadRuleNodeTree()
+}
+
+const openEditRuleEditor = async (row: KnowledgeRuleVersion) => {
+  clearOperationIssue('rule')
+  await loadRuleNodeTree()
+  if (row.status === '已发布' || row.status === '已回滚') {
+    actionLoading.value = `rule-fork-${row.id}`
+    try {
+      const res = await forkKnowledgeRuleVersionApi(row.id, {}, { etag: row.etag })
+      if (!res?.data?.rule) {
+        setOperationIssue('rule', buildOperationFailureMessage('创建规则草稿'))
+        return
+      }
+      ruleEditorMode.value = 'edit'
+      ruleEditingId.value = res.data.rule.id
+      ruleEditingSource.value = res.data.rule
+      assignRuleForm(res.data.rule)
+      ruleEditorVisible.value = true
+      ElMessage.success('已基于正式规则创建草稿')
+      await Promise.all([loadRuleVersions(), loadKnowledgeAuditLogs()])
+    } catch (error) {
+      setOperationIssue('rule', buildOperationFailureMessage('创建规则草稿'), error)
+    } finally {
+      actionLoading.value = ''
+    }
+    return
+  }
+  ruleEditorMode.value = 'edit'
+  ruleEditingId.value = row.id
+  ruleEditingSource.value = row
+  assignRuleForm(row)
+  ruleEditorVisible.value = true
+}
+
+const buildRuleSavePayload = (): KnowledgeRuleVersionSavePayload => {
+  syncRuleFieldsFromSelectedNode()
+  const selectedNode = ruleNodeOptionMap.value.get(ruleNodeSelectValue.value)
+  const sequence = selectedNode?.nodeId || ruleForm.sequence || ruleForm.sourceSequence
+  return {
+    sequence,
+    sourceSequence: sequence,
+    inspectionCategory: selectedNode?.inspectionCategory || ruleForm.inspectionCategory?.trim(),
+    inspectionItem: selectedNode?.inspectionItem || ruleForm.inspectionItem.trim(),
+    inspectionClass: ruleForm.inspectionClass || 'C',
+    standardText: ruleForm.standardText?.trim(),
+    witnessText: ruleForm.witnessText?.trim(),
+    nodeIds: sequence ? [sequence] : ruleForm.nodeIds
+  }
+}
+
+const handleSaveRule = async () => {
+  const selectedNode = ruleNodeOptionMap.value.get(ruleNodeSelectValue.value)
+  if (!selectedNode?.nodeId) {
+    ElMessage.warning('请选择监检项目节点')
+    return
+  }
+  syncRuleFieldsFromNodeOption(selectedNode)
+  if (!ruleForm.inspectionItem.trim()) {
+    ElMessage.warning('请选择监检项目节点')
+    return
+  }
+  if (!ruleForm.standardText?.trim() && !ruleForm.witnessText?.trim()) {
+    ElMessage.warning('请填写判断准则 / 标准规范或方法及内容 / 工作见证')
+    return
+  }
+  actionLoading.value = 'rule-save'
+  clearOperationIssue('rule')
+  try {
+    const payload = buildRuleSavePayload()
+    const res =
+      ruleEditorMode.value === 'create'
+        ? await createKnowledgeRuleVersionApi(payload)
+        : await updateKnowledgeRuleVersionApi(ruleEditingId.value, payload, {
+            etag: ruleEditingSource.value?.etag
+          })
+    if (!res) {
+      setOperationIssue('rule', buildOperationFailureMessage('业务规则保存'))
+      return
+    }
+    ElMessage.success(
+      ruleEditorMode.value === 'create' ? '业务规则草稿已新增' : '业务规则草稿已保存'
+    )
+    ruleEditorVisible.value = false
+    await Promise.all([loadRuleVersions(), loadKnowledgeAuditLogs()])
+  } catch (error) {
+    setOperationIssue('rule', buildOperationFailureMessage('业务规则保存'), error)
+  } finally {
+    actionLoading.value = ''
+  }
+}
 
 const getRuleDiffTarget = (row: KnowledgeRuleVersion) =>
   ruleVersions.value.find(
@@ -1423,6 +2051,8 @@ onMounted(() => {
       ]"
       menu-title="知识库菜单"
       menu-root="AI 知识库管理"
+      peer-nav-title="后台同级功能"
+      :peer-nav-items="knowledgePeerNavItems"
       :menu-sections="knowledgeShellMenuSections"
       boundary-title="后台边界"
       boundary-badge="只管理"
@@ -1478,7 +2108,7 @@ onMounted(() => {
           :loading="actionLoading === 'reindex-all'"
           @click="handleReindexAll"
         >
-          重试重建
+          重试重建索引
         </ElButton>
       </div>
 
@@ -1647,7 +2277,7 @@ onMounted(() => {
                         :loading="actionLoading === `source-${row.key}`"
                         @click="handleReindexSource(row)"
                       >
-                        重建
+                        重建索引
                       </ElButton>
                     </template>
                   </ElTableColumn>
@@ -1683,7 +2313,6 @@ onMounted(() => {
                   >
                     <ElOption label="标准规范" value="standard" />
                     <ElOption label="项目文件" value="project-file" />
-                    <ElOption label="规则 Prompt" value="rule" />
                     <ElOption label="人工维护" value="manual" />
                   </ElSelect>
                   <ElSelect
@@ -1770,8 +2399,10 @@ onMounted(() => {
             <template #header>
               <div class="panel-header">
                 <span>标准库与知识源维护</span>
-                <ElTag effect="plain">{{ sourcePagination.total }} 个知识源</ElTag>
-                <ElButton type="primary" @click="openCreateSourceDialog">新增知识源</ElButton>
+                <ElSpace>
+                  <ElTag effect="plain">{{ sourcePagination.total }} 个知识源</ElTag>
+                  <ElButton type="primary" @click="openCreateSourceDialog">新增知识源</ElButton>
+                </ElSpace>
               </div>
             </template>
             <div class="filter-bar">
@@ -1789,7 +2420,6 @@ onMounted(() => {
               >
                 <ElOption label="标准规范" value="standard" />
                 <ElOption label="项目文件" value="project-file" />
-                <ElOption label="规则 Prompt" value="rule" />
                 <ElOption label="人工维护" value="manual" />
               </ElSelect>
               <ElSelect
@@ -1871,7 +2501,7 @@ onMounted(() => {
                       })
                     "
                   >
-                    重建
+                    重建索引
                   </ElButton>
                 </template>
               </ElTableColumn>
@@ -1895,15 +2525,26 @@ onMounted(() => {
           <ElCard shadow="never" class="panel">
             <template #header>
               <div class="panel-header">
-                <span>规则版本发布与回滚</span>
-                <ElTag effect="plain">{{ rulePagination.total }} 个版本</ElTag>
+                <span>业务规则管理</span>
+                <ElSpace>
+                  <ElTag effect="plain">{{ rulePagination.total }} 条规则</ElTag>
+                  <ElButton type="primary" @click="openCreateRuleEditor">新增规则</ElButton>
+                  <ElButton
+                    type="success"
+                    plain
+                    :loading="actionLoading === 'knowledge-import'"
+                    @click="openKnowledgeImportDialog"
+                  >
+                    从文件导入草稿
+                  </ElButton>
+                </ElSpace>
               </div>
             </template>
             <div class="filter-bar">
               <ElInput
                 v-model="ruleFilters.keyword"
                 clearable
-                placeholder="搜索规则、版本或说明"
+                placeholder="搜索大类、监检项目、标准或方法"
                 @change="handleFilterChange(rulePagination, loadRuleVersions)"
               />
               <ElSelect
@@ -1939,41 +2580,65 @@ onMounted(() => {
                 刷新规则
               </ElButton>
             </div>
-            <ElTable :data="ruleVersions" border height="430" empty-text="暂无规则版本">
-              <ElTableColumn prop="name" label="规则" min-width="220" show-overflow-tooltip />
-              <ElTableColumn prop="version" label="版本" min-width="190" show-overflow-tooltip />
+            <div v-if="operationIssues.import" class="section-error">
+              <div>
+                <strong>{{ operationIssues.import.title }}</strong>
+                <span>{{ operationIssues.import.message }}</span>
+              </div>
+              <ElButton size="small" type="primary" plain @click="openKnowledgeImportDialog">
+                重新导入
+              </ElButton>
+            </div>
+            <ElTable :data="ruleVersions" border height="430" empty-text="暂无业务规则">
+              <ElTableColumn label="序号" width="78">
+                <template #default="{ row }">{{
+                  row.sourceSequence || row.nodeIds?.[0] || '-'
+                }}</template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="inspectionCategory"
+                label="监检项目（大类）"
+                min-width="150"
+                show-overflow-tooltip
+              />
+              <ElTableColumn label="监检项目（内容）" min-width="220" show-overflow-tooltip>
+                <template #default="{ row }">{{ ruleDisplayName(row) }}</template>
+              </ElTableColumn>
+              <ElTableColumn label="类别" width="82">
+                <template #default="{ row }">{{
+                  row.inspectionClass || row.reviewClass || '-'
+                }}</template>
+              </ElTableColumn>
               <ElTableColumn label="状态" width="100">
                 <template #default="{ row }">
                   <ElTag :type="statusType(row.status)" effect="light">{{ row.status }}</ElTag>
                 </template>
               </ElTableColumn>
-              <ElTableColumn label="节点范围" min-width="160">
-                <template #default="{ row }">{{ row.nodeIds.join(', ') }}</template>
-              </ElTableColumn>
               <ElTableColumn
-                prop="promptVersion"
-                label="Prompt"
-                min-width="180"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                prop="outputSchemaVersion"
-                label="输出结构"
-                min-width="150"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                prop="description"
-                label="说明"
+                prop="standardText"
+                label="判断准则 / 标准规范"
                 min-width="260"
                 show-overflow-tooltip
               />
+              <ElTableColumn
+                prop="witnessText"
+                label="方法及内容 / 工作见证"
+                min-width="280"
+                show-overflow-tooltip
+              />
               <ElTableColumn prop="updatedAt" label="更新时间" width="170" />
-              <ElTableColumn label="操作" width="210" fixed="right">
+              <ElTableColumn label="操作" width="230" fixed="right">
                 <template #default="{ row }">
-                  <ElButton link type="primary" @click="handleOpenRuleDiff(row)">差异</ElButton>
                   <ElButton
-                    v-if="row.status !== '已发布'"
+                    link
+                    type="primary"
+                    :loading="actionLoading === `rule-fork-${row.id}`"
+                    @click="openEditRuleEditor(row)"
+                  >
+                    {{ row.status === '草稿' || row.status === '待发布' ? '编辑' : '基于此编辑' }}
+                  </ElButton>
+                  <ElButton
+                    v-if="row.status === '草稿' || row.status === '待发布'"
                     link
                     type="primary"
                     :loading="actionLoading === `rule-publish-${row.id}`"
@@ -1990,6 +2655,7 @@ onMounted(() => {
                   >
                     回滚
                   </ElButton>
+                  <ElButton link type="info" @click="handleOpenRuleDiff(row)">变更</ElButton>
                 </template>
               </ElTableColumn>
             </ElTable>
@@ -2172,11 +2838,11 @@ onMounted(() => {
           </ElRow>
         </ElTabPane>
 
-        <ElTabPane label="项目文件库" name="files">
+        <ElTabPane label="知识文件库" name="files">
           <ElCard shadow="never" class="panel">
             <template #header>
               <div class="panel-header">
-                <span>项目文件知识库</span>
+                <span>知识文件库</span>
                 <ElTag effect="plain">{{ filePagination.total }} 个文件</ElTag>
               </div>
             </template>
@@ -2184,7 +2850,7 @@ onMounted(() => {
               <ElInput
                 v-model="fileFilters.keyword"
                 clearable
-                placeholder="搜索文件、节点或项目"
+                placeholder="搜索文件、知识源、节点或项目"
                 @change="handleFilterChange(filePagination, loadFiles)"
               />
               <ElInputNumber
@@ -2227,11 +2893,14 @@ onMounted(() => {
             <ElTable :data="files" border height="430" empty-text="暂无项目知识文件">
               <ElTableColumn prop="fileName" label="文件" min-width="220" />
               <ElTableColumn
-                prop="projectName"
-                label="项目"
-                min-width="220"
+                prop="sourceName"
+                label="知识源"
+                min-width="180"
                 show-overflow-tooltip
               />
+              <ElTableColumn label="项目" min-width="220" show-overflow-tooltip>
+                <template #default="{ row }">{{ row.projectName || '标准/公共知识' }}</template>
+              </ElTableColumn>
               <ElTableColumn prop="nodeId" label="节点" width="76" />
               <ElTableColumn
                 prop="nodeName"
@@ -2273,7 +2942,7 @@ onMounted(() => {
                     :loading="actionLoading === `file-${row.id}`"
                     @click="handleReindexFile(row)"
                   >
-                    重建
+                    重建索引
                   </ElButton>
                 </template>
               </ElTableColumn>
@@ -2427,7 +3096,6 @@ onMounted(() => {
                     <ElCheckboxGroup v-model="retrievalForm.scope">
                       <ElCheckbox label="standard">标准规范</ElCheckbox>
                       <ElCheckbox label="project-file">项目文件</ElCheckbox>
-                      <ElCheckbox label="rule">规则 Prompt</ElCheckbox>
                     </ElCheckboxGroup>
                   </ElFormItem>
                   <ElFormItem label="Top K">
@@ -2827,7 +3495,7 @@ onMounted(() => {
       <ElDialog
         v-model="sourceDialogVisible"
         :title="sourceDialogMode === 'create' ? '新增知识源' : '编辑知识源'"
-        width="min(560px, 92vw)"
+        width="min(780px, 94vw)"
       >
         <ElForm label-position="top" class="source-form">
           <div v-if="operationIssues.source" class="section-error local-operation-error">
@@ -2845,20 +3513,79 @@ onMounted(() => {
               重试保存
             </ElButton>
           </div>
-          <ElFormItem label="名称">
-            <ElInput v-model="sourceForm.name" maxlength="80" show-word-limit />
+          <ElFormItem label="类别名称">
+            <ElInput
+              v-model="sourceForm.name"
+              maxlength="80"
+              show-word-limit
+              placeholder="默认为上传文件名"
+            />
           </ElFormItem>
           <ElFormItem label="类型">
             <ElSelect v-model="sourceForm.sourceType">
               <ElOption label="标准规范" value="standard" />
               <ElOption label="项目文件" value="project-file" />
-              <ElOption label="规则 Prompt" value="rule" />
               <ElOption label="人工维护" value="manual" />
             </ElSelect>
           </ElFormItem>
           <ElFormItem label="版本">
             <ElInput v-model="sourceForm.version" placeholder="例如 std-v2026.06" />
           </ElFormItem>
+          <template v-if="sourceDialogMode === 'create'">
+            <ElFormItem label="上传文件">
+              <div class="source-upload-panel">
+                <div class="knowledge-import-toolbar source-upload-toolbar">
+                  <ElButton type="primary" plain @click="triggerSourceUploadFileSelect">
+                    选择文件
+                  </ElButton>
+                  <ElButton :disabled="!sourceUploadFiles.length" @click="clearSourceUploadFiles">
+                    清空
+                  </ElButton>
+                  <ElTag effect="plain">{{ sourceUploadFiles.length }} 个待上传</ElTag>
+                </div>
+                <input
+                  ref="sourceUploadFileInputRef"
+                  class="hidden-file-input"
+                  type="file"
+                  multiple
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.md,.txt"
+                  @change="handleSourceUploadInputChange"
+                />
+                <div v-if="!sourceUploadFiles.length" class="source-upload-empty">
+                  尚未选择文件
+                </div>
+                <div v-for="row in sourceUploadFiles" :key="row.id" class="source-upload-row">
+                  <div class="source-upload-row-head">
+                    <span>{{ row.relativePath }}</span>
+                    <ElButton link type="danger" @click="removeSourceUploadFile(row.id)">
+                      移除
+                    </ElButton>
+                  </div>
+                  <div class="source-upload-grid">
+                    <label class="source-upload-field">
+                      <span>文件名称</span>
+                      <ElInput v-model="row.fileName" maxlength="180" show-word-limit />
+                    </label>
+                    <label class="source-upload-field">
+                      <span>上下文描述</span>
+                      <ElInput
+                        v-model="row.contextDescription"
+                        type="textarea"
+                        :rows="2"
+                        maxlength="500"
+                        show-word-limit
+                        placeholder="例如适用标准、业务节点、资料来源或检索上下文"
+                      />
+                    </label>
+                  </div>
+                  <div class="source-upload-meta">
+                    <span>{{ formatFileSize(row.size) }}</span>
+                    <span>{{ row.type }}</span>
+                  </div>
+                </div>
+              </div>
+            </ElFormItem>
+          </template>
           <ElRow :gutter="12">
             <ElCol :span="12">
               <ElFormItem label="状态">
@@ -2909,6 +3636,219 @@ onMounted(() => {
           </ElButton>
         </template>
       </ElDialog>
+
+      <ElDialog
+        v-model="knowledgeImportVisible"
+        :title="knowledgeImportDialogTitle"
+        width="min(760px, 94vw)"
+      >
+        <ElForm label-position="top" class="source-form">
+          <div v-if="operationIssues.import" class="section-error local-operation-error">
+            <div>
+              <strong>{{ operationIssues.import.title }}</strong>
+              <span>{{ operationIssues.import.message }}</span>
+            </div>
+            <ElButton
+              size="small"
+              type="primary"
+              plain
+              :loading="actionLoading === 'knowledge-import'"
+              @click="handleImportKnowledgeFiles"
+            >
+              重试导入
+            </ElButton>
+          </div>
+          <ElFormItem label="草稿版本号">
+            <ElInput
+              v-model="businessRuleImportVersion"
+              maxlength="80"
+              show-word-limit
+              placeholder="例如 rule-draft-20260702-0930"
+            />
+          </ElFormItem>
+          <div class="knowledge-import-toolbar">
+            <ElButton type="primary" plain @click="triggerKnowledgeImportFileSelect">
+              选择文件
+            </ElButton>
+            <ElButton type="primary" plain @click="triggerKnowledgeImportDirectorySelect">
+              选择文件夹
+            </ElButton>
+            <ElButton :disabled="!knowledgeImportFiles.length" @click="clearKnowledgeImportFiles">
+              清空
+            </ElButton>
+            <ElTag effect="plain">{{ knowledgeImportFiles.length }} 个待导入</ElTag>
+          </div>
+          <input
+            ref="knowledgeImportFileInputRef"
+            class="hidden-file-input"
+            type="file"
+            multiple
+            accept=".docx,.md,.markdown,.txt,.yaml,.yml,.json"
+            @change="handleKnowledgeImportInputChange"
+          />
+          <input
+            ref="knowledgeImportDirectoryInputRef"
+            class="hidden-file-input"
+            type="file"
+            multiple
+            webkitdirectory
+            directory
+            @change="handleKnowledgeImportInputChange"
+          />
+          <ElTable
+            :data="knowledgeImportFileRows"
+            border
+            height="280"
+            empty-text="请选择 Word、Markdown、YAML、JSON 或 TXT 格式业务规则文件"
+          >
+            <ElTableColumn prop="name" label="文件名" min-width="220" show-overflow-tooltip />
+            <ElTableColumn
+              prop="relativePath"
+              label="相对路径"
+              min-width="260"
+              show-overflow-tooltip
+            />
+            <ElTableColumn label="大小" width="110">
+              <template #default="{ row }">{{ formatFileSize(row.size) }}</template>
+            </ElTableColumn>
+            <ElTableColumn prop="type" label="类型" width="110" show-overflow-tooltip />
+            <ElTableColumn label="操作" width="90" fixed="right">
+              <template #default="{ row }">
+                <ElButton link type="danger" @click="removeKnowledgeImportFile(row.id)">
+                  移除
+                </ElButton>
+              </template>
+            </ElTableColumn>
+          </ElTable>
+        </ElForm>
+        <template #footer>
+          <ElButton @click="knowledgeImportVisible = false">取消</ElButton>
+          <ElButton
+            type="primary"
+            :disabled="!knowledgeImportFiles.length"
+            :loading="actionLoading === 'knowledge-import'"
+            @click="handleImportKnowledgeFiles"
+          >
+            开始导入
+          </ElButton>
+        </template>
+      </ElDialog>
+
+      <ElDrawer
+        v-model="ruleEditorVisible"
+        :title="ruleEditorMode === 'create' ? '新增业务规则' : '编辑业务规则草稿'"
+        size="min(860px, 96vw)"
+      >
+        <div class="drawer-content rule-editor-drawer">
+          <div v-if="operationIssues.rule" class="section-error local-operation-error">
+            <div>
+              <strong>{{ operationIssues.rule.title }}</strong>
+              <span>{{ operationIssues.rule.message }}</span>
+            </div>
+          </div>
+          <ElForm label-position="top" class="rule-editor-form">
+            <ElRow :gutter="16">
+              <ElCol :xl="16" :lg="16" :md="24" :sm="24" :xs="24">
+                <ElFormItem label="监检项目节点">
+                  <ElTreeSelect
+                    v-model="ruleNodeSelectValue"
+                    :data="ruleNodeSelectOptions"
+                    :props="ruleNodeTreeProps"
+                    node-key="value"
+                    filterable
+                    clearable
+                    default-expand-all
+                    :render-after-expand="false"
+                    :loading="ruleNodeTreeLoading"
+                    :empty-text="ruleNodeTreeLoading ? '加载中' : '暂无节点'"
+                    placeholder="请选择监检项目节点"
+                    @change="handleRuleNodeSelectChange"
+                  />
+                </ElFormItem>
+              </ElCol>
+              <ElCol :xl="8" :lg="8" :md="12" :sm="24" :xs="24">
+                <ElFormItem label="类别">
+                  <ElSelect v-model="ruleForm.inspectionClass" placeholder="类别">
+                    <ElOption
+                      v-for="item in ruleClassOptions"
+                      :key="item"
+                      :label="item"
+                      :value="item"
+                    />
+                  </ElSelect>
+                </ElFormItem>
+              </ElCol>
+              <ElCol :xl="6" :lg="6" :md="8" :sm="24" :xs="24">
+                <ElFormItem label="序号">
+                  <ElInput
+                    :model-value="ruleForm.sourceSequence || ''"
+                    disabled
+                    placeholder="选择节点后自动带出"
+                  />
+                </ElFormItem>
+              </ElCol>
+              <ElCol :xl="9" :lg="9" :md="8" :sm="24" :xs="24">
+                <ElFormItem label="监检项目（大类）">
+                  <ElInput
+                    :model-value="ruleForm.inspectionCategory || ''"
+                    disabled
+                    placeholder="选择节点后自动带出"
+                  />
+                </ElFormItem>
+              </ElCol>
+              <ElCol :xl="9" :lg="9" :md="8" :sm="24" :xs="24">
+                <ElFormItem label="监检项目（内容）">
+                  <ElInput
+                    :model-value="ruleForm.inspectionItem || ''"
+                    disabled
+                    placeholder="选择节点后自动带出"
+                  />
+                </ElFormItem>
+              </ElCol>
+            </ElRow>
+            <ElFormItem label="判断准则 / 标准规范">
+              <ElInput
+                v-model="ruleForm.standardText"
+                type="textarea"
+                :rows="6"
+                maxlength="3000"
+                show-word-limit
+              />
+            </ElFormItem>
+            <ElFormItem label="方法及内容 / 工作见证">
+              <ElInput
+                v-model="ruleForm.witnessText"
+                type="textarea"
+                :rows="8"
+                maxlength="3000"
+                show-word-limit
+              />
+            </ElFormItem>
+          </ElForm>
+          <ElDivider />
+          <ElDescriptions :column="2" border size="small">
+            <ElDescriptionsItem label="草稿 ID">
+              {{ ruleEditingId || '保存后生成' }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="适用节点">
+              {{ formatTextList((ruleForm.nodeIds || []).map(String)) }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="AI 执行结构" :span="2">
+              {{
+                ruleEditingSource?.aiExecution?.compiledAt
+                  ? `已生成：${ruleEditingSource.aiExecution.compiledAt}`
+                  : '保存或发布时生成'
+              }}
+            </ElDescriptionsItem>
+          </ElDescriptions>
+        </div>
+        <template #footer>
+          <ElButton @click="ruleEditorVisible = false">取消</ElButton>
+          <ElButton type="primary" :loading="actionLoading === 'rule-save'" @click="handleSaveRule">
+            保存草稿
+          </ElButton>
+        </template>
+      </ElDrawer>
 
       <ElDrawer v-model="ruleDiffVisible" title="规则版本差异" size="min(760px, 94vw)">
         <div v-loading="ruleDiffLoading" class="drawer-content rule-diff-drawer">
@@ -3170,8 +4110,8 @@ onMounted(() => {
   font-size: 13px;
   font-weight: 900;
   color: #172033;
-  cursor: pointer;
   list-style: none;
+  cursor: pointer;
 }
 
 .secondary-summary-collapse summary::-webkit-details-marker {
@@ -3469,6 +4409,99 @@ onMounted(() => {
   width: 100%;
 }
 
+.knowledge-import-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.source-upload-panel {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 10px;
+}
+
+.source-upload-toolbar {
+  margin-bottom: 0;
+}
+
+.source-upload-empty {
+  display: grid;
+  min-height: 54px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #667085;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  place-items: center;
+}
+
+.source-upload-row {
+  display: grid;
+  min-width: 0;
+  padding: 10px;
+  background: #fff;
+  border: 1px solid #e4ebf5;
+  border-radius: 8px;
+  gap: 8px;
+}
+
+.source-upload-row-head,
+.source-upload-meta {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.source-upload-row-head > span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 800;
+  color: #344054;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-upload-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.42fr) minmax(260px, 0.58fr);
+  gap: 10px;
+}
+
+.source-upload-field {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.source-upload-field > span,
+.source-upload-meta {
+  font-size: 12px;
+  font-weight: 800;
+  color: #667085;
+}
+
+.source-upload-meta {
+  justify-content: flex-start;
+}
+
+.hidden-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .config-switch-list {
   display: grid;
   grid-template-columns: 1fr;
@@ -3600,6 +4633,10 @@ onMounted(() => {
   .source-actions {
     justify-content: flex-start;
     width: 100%;
+  }
+
+  .source-upload-grid {
+    grid-template-columns: 1fr;
   }
 
   .rule-diff-summary {

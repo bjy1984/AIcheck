@@ -135,10 +135,18 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
         for item in state.get("knowledge_files", []) or []
         if isinstance(item, dict) and item.get("id")
     }
+    sources_by_id = {
+        item.get("id"): item
+        for item in state.get("knowledge_sources", []) or []
+        if isinstance(item, dict) and item.get("id")
+    }
     for chunk in state.get("knowledge_chunks", []) or []:
         if not isinstance(chunk, dict):
             continue
         file = files_by_id.get(chunk.get("fileId")) or {}
+        source = sources_by_id.get(file.get("sourceId")) or {}
+        if file.get("indexEnabled") is False or source.get("sourceType") == "rule":
+            continue
         source_id = file.get("sourceId") or "KS-PROJECT-FILE"
         candidates.append(
             normalize_clause(
@@ -155,26 +163,6 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
                     "documentVersionId": chunk.get("documentVersionId"),
                     "scope": {"projectId": file.get("projectId"), "nodeId": file.get("nodeId")},
                     "tags": [file.get("nodeName"), file.get("fileName")],
-                },
-                default_version=default_version,
-            )
-        )
-
-    for rule in state.get("rule_versions", []) or []:
-        if not isinstance(rule, dict):
-            continue
-        candidates.append(
-            normalize_clause(
-                {
-                    "id": f"KC-RULE-{rule.get('id')}",
-                    "clauseId": f"RULE-{rule.get('ruleKey') or rule.get('id')}",
-                    "kbDocId": "KS-RULE-PROMPT",
-                    "kbVersion": rule.get("version") or source_versions.get("KS-RULE-PROMPT") or default_version,
-                    "title": rule.get("name") or rule.get("ruleKey"),
-                    "text": rule.get("description") or rule.get("name"),
-                    "scope": {"nodeIds": rule.get("nodeIds") or [], "businessPackId": rule.get("businessPackId")},
-                    "tags": [rule.get("ruleKey"), rule.get("name")],
-                    "status": "effective" if rule.get("status") in {"已发布", "production", "published"} else "draft",
                 },
                 default_version=default_version,
             )

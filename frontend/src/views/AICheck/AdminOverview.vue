@@ -107,132 +107,80 @@ const router = useRouter()
 
 const adminShellMenuSectionsBase = [
   {
-    title: '项目管理与基础配置',
+    title: '基础管理',
     meta: '3页',
     items: [
-      { index: '01', label: '项目列表', badge: '多项目', tone: 'blue', route: '/admin/projects' },
+      { index: '01', label: '项目管理', badge: '多项目', tone: 'blue', route: '/admin/projects' },
       {
         index: '02',
-        label: '项目详情',
-        badge: '基础信息',
+        label: '组织用户',
+        badge: '68人',
         tone: 'green',
-        route: '/admin/projects'
+        route: '/admin/org'
       },
       {
         index: '03',
-        label: '项目立项向导',
-        badge: '新建',
-        tone: 'orange',
-        route: '/admin/projects'
-      }
-    ]
-  },
-  {
-    title: '用户中心与组织权限',
-    meta: '3页',
-    items: [
-      { index: '04', label: '组织用户', badge: '68人', tone: 'blue', route: '/admin/org' },
-      {
-        index: '05',
-        label: '角色权限配置',
+        label: '权限与节点',
         badge: '动作级',
         tone: 'blue',
         route: '/admin/permission'
-      },
-      {
-        index: '06',
-        label: '项目成员授权',
-        badge: '按项目',
-        tone: 'green',
-        route: '/admin/permission'
       }
     ]
   },
   {
-    title: '流程管理与待办任务',
+    title: '规则与业务配置',
     meta: '3页',
     items: [
-      { index: '07', label: '流程状态机', badge: '状态', tone: 'blue', route: '/admin/rules' },
       {
-        index: '08',
-        label: '待办规则配置',
-        badge: '规则',
-        tone: 'orange',
-        route: '/admin/fine-config'
-      },
-      { index: '09', label: '流程实例详情', badge: '流转', tone: 'green', route: '/admin/rules' }
-    ]
-  },
-  {
-    title: '规则、知识与审计配置',
-    meta: '9页',
-    items: [
-      {
-        index: '10',
-        label: '业务包管理',
+        index: '04',
+        label: '业务类型管理',
         badge: '复用',
         tone: 'green',
         route: '/admin/business-packs'
       },
       {
-        index: '11',
-        label: '项目审核节点维护',
-        badge: '69项',
+        index: '05',
+        label: '规则与流程',
+        badge: '发布',
         tone: 'blue',
-        route: '/admin/permission'
-      },
-      {
-        index: '12',
-        label: '节点与角色权限矩阵',
-        badge: '动作级',
-        tone: 'blue',
-        route: '/admin/permission'
-      },
-      {
-        index: '13',
-        label: 'AI 业务审查规则模板',
-        badge: '新增',
-        tone: 'orange',
         route: '/admin/rules'
       },
       {
-        index: '14',
+        index: '06',
+        label: '细项配置',
+        badge: '字段',
+        tone: 'orange',
+        route: '/admin/fine-config'
+      }
+    ]
+  },
+  {
+    title: '知识与审计',
+    meta: '3页',
+    items: [
+      {
+        index: '07',
         label: 'AI 知识库管理',
         badge: 'OCR/向量',
         tone: 'green',
         route: '/knowledge/overview'
       },
       {
-        index: '15',
-        label: '外部核验工具源配置',
-        badge: '4源',
-        tone: 'blue',
-        route: '/admin/fine-config'
-      },
-      {
-        index: '16',
-        label: '证据字段映射配置',
-        badge: '字段',
-        tone: 'blue',
-        route: '/admin/fine-config'
-      },
-      { index: '17', label: '角色单位人员维护', badge: '基础', tone: 'green', route: '/admin/org' },
-      {
-        index: '18',
+        index: '08',
         label: '联调清单',
         badge: '对账',
         tone: 'orange',
         route: '/admin/integration'
       },
-      { index: '19', label: '操作日志', badge: '审计', tone: 'blue', route: '/admin/audit' }
+      { index: '09', label: '审计日志', badge: '审计', tone: 'blue', route: '/admin/audit' }
     ]
   }
 ] as const
 
 const adminShellBoundaryRows = [
-  { label: '合同1', value: '项目列表、详情、立项向导' },
-  { label: '合同2', value: '组织用户、角色权限、成员授权' },
-  { label: '合同3', value: '流程状态机、待办规则、实例详情' },
+  { label: '合同1', value: '项目管理、组织用户、权限与节点' },
+  { label: '合同2', value: '业务类型、规则流程、细项配置' },
+  { label: '合同3', value: '知识库、联调清单、审计日志' },
   { label: '边界', value: '后台配置，不办理审查意见或报告确认' }
 ] as const
 
@@ -310,6 +258,7 @@ const configExporting = ref(false)
 const configPublishing = ref(false)
 
 const adminTabRouteMap = {
+  projects: '/admin/projects',
   org: '/admin/org',
   'business-pack': '/admin/business-packs',
   permission: '/admin/permission',
@@ -322,8 +271,8 @@ const adminTabRouteMap = {
 type AdminTabKey = keyof typeof adminTabRouteMap
 
 const adminRouteTabMap: Record<string, AdminTabKey> = {
-  '/admin/overview': 'org',
-  '/admin/projects': 'org',
+  '/admin/overview': 'projects',
+  '/admin/projects': 'projects',
   '/admin/org': 'org',
   '/admin/business-packs': 'business-pack',
   '/admin/permission': 'permission',
@@ -380,6 +329,44 @@ const configOperationError = ref('')
 const adminMenuActiveRoute = computed(() =>
   route.path === '/admin/overview' ? '/admin/projects' : route.path
 )
+
+const adminPageTitleMap: Record<AdminTabKey, { title: string; subtitle: string }> = {
+  projects: {
+    title: '项目管理',
+    subtitle: '管理项目清单、项目详情和立项向导'
+  },
+  org: {
+    title: '组织用户',
+    subtitle: '管理组织单位、用户账号和基础角色'
+  },
+  permission: {
+    title: '权限与节点',
+    subtitle: '维护角色权限矩阵和项目审核节点模板'
+  },
+  'business-pack': {
+    title: '业务类型管理',
+    subtitle: '管理可复用业务类型、节点、资料和规则配置'
+  },
+  rule: {
+    title: '规则与流程',
+    subtitle: '管理规则版本、流程状态机和发布差异'
+  },
+  'fine-config': {
+    title: '细项配置',
+    subtitle: '管理待办、消息、工具源和证据字段映射'
+  },
+  integration: {
+    title: '联调清单',
+    subtitle: '核对前后端字段、接口契约和阻断项'
+  },
+  audit: {
+    title: '审计日志',
+    subtitle: '查看后台配置变更、发布和操作审计记录'
+  }
+}
+
+const adminPageTitle = computed(() => adminPageTitleMap[activeTab.value].title)
+const adminPageSubtitle = computed(() => adminPageTitleMap[activeTab.value].subtitle)
 
 const adminShellMenuSections = computed(() => {
   let activeMatched = false
@@ -637,8 +624,8 @@ const configSummary = computed(() => [
   },
   { label: '权限模型', value: `${overview.value.permissionMatrix.length} 类角色矩阵` },
   {
-    label: '业务包',
-    value: `${(overview.value.businessPacks || []).length} 个业务包 / ${businessPackNodeTotal.value} 个节点`
+    label: '业务类型',
+    value: `${(overview.value.businessPacks || []).length} 个业务类型 / ${businessPackNodeTotal.value} 个节点`
   },
   { label: '规则版本', value: `${overview.value.ruleVersions.length} 个规则包` },
   { label: '状态机', value: `${overview.value.workflowStateMachines.length} 个流程版本` },
@@ -670,7 +657,7 @@ const pendingRuleCount = computed(
 const adminAuditCards = computed<AuditSummaryCard[]>(() => [
   {
     label: '当前治理对象',
-    value: '项目、组织、权限与业务包',
+    value: '项目、组织、权限与业务类型',
     hint: `${projects.value.length} 个项目 · ${overview.value.users.length} 个用户`,
     tone: 'blue'
   },
@@ -689,7 +676,7 @@ const adminAuditCards = computed<AuditSummaryCard[]>(() => [
   {
     label: '风险关注',
     value: `${auditPagination.total || 0} 条审计记录`,
-    hint: '重点关注权限、规则和业务包变更',
+    hint: '重点关注权限、规则和业务类型变更',
     tone: 'red'
   }
 ])
@@ -969,16 +956,16 @@ const handleValidateBusinessPacks = async () => {
     if (!res) {
       businessPackValidationError.value = getRequestErrorMessage(
         undefined,
-        '业务包校验失败，已保留当前配置列表。'
+        '业务类型校验失败，已保留当前配置列表。'
       )
       return
     }
     businessPackValidation.value = res.data
-    ElMessage.success(res.data.ok ? '业务包校验通过' : '业务包存在校验错误')
+    ElMessage.success(res.data.ok ? '业务类型校验通过' : '业务类型存在校验错误')
   } catch (error) {
     businessPackValidationError.value = getRequestErrorMessage(
       error,
-      '业务包校验失败，已保留当前配置列表。'
+      '业务类型校验失败，已保留当前配置列表。'
     )
   } finally {
     businessPackValidating.value = false
@@ -1814,13 +1801,13 @@ onMounted(() => {
     >
       <div class="page-toolbar">
         <div>
-          <div class="page-title">项目与权限配置</div>
-          <div class="page-subtitle"
-            >管理后台治理台 · 按配置对象查看影响范围、发布门禁和审计证据</div
-          >
+          <div class="page-title">{{ adminPageTitle }}</div>
+          <div class="page-subtitle">{{ adminPageSubtitle }}</div>
         </div>
         <ElSpace wrap>
-          <ElButton type="primary" plain @click="openProjectWizard">新建项目</ElButton>
+          <ElButton v-if="activeTab === 'projects'" type="primary" plain @click="openProjectWizard">
+            新建项目
+          </ElButton>
           <ElButton :loading="configExporting" @click="handleExportConfig">导出配置包</ElButton>
           <ElButton type="primary" :loading="configPublishing" @click="handlePublishConfig">
             发布配置
@@ -1873,114 +1860,125 @@ onMounted(() => {
         :admin-stats="projectStats"
       />
 
-      <ElRow :gutter="16">
-        <ElCol :xl="15" :lg="15" :md="24" :sm="24" :xs="24">
-          <ElCard shadow="never" class="panel">
-            <template #header>
-              <div class="panel-header">
-                <span>项目清单</span>
-                <ElTag type="info" effect="plain">{{ projects.length }} 个</ElTag>
-              </div>
-            </template>
-            <ElTable :data="projects" border height="360" empty-text="暂无项目配置">
-              <ElTableColumn prop="code" label="项目编号" width="150" />
-              <ElTableColumn prop="name" label="项目名称" min-width="220" show-overflow-tooltip />
-              <ElTableColumn prop="region" label="区域" width="100" />
-              <ElTableColumn
-                prop="contractorOrgName"
-                label="施工单位"
-                min-width="150"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                prop="inspectionOrgName"
-                label="监检机构"
-                min-width="150"
-                show-overflow-tooltip
-              />
-              <ElTableColumn label="状态" width="130">
-                <template #default="{ row }">
-                  <ElTag :type="statusType(row.status)" effect="light">{{ row.status }}</ElTag>
-                </template>
-              </ElTableColumn>
-              <ElTableColumn prop="todoCount" label="待办" width="76" />
-              <ElTableColumn prop="updatedAt" label="更新时间" width="170" />
-              <ElTableColumn label="操作" width="92" fixed="right">
-                <template #default="{ row }">
-                  <ElButton link type="primary" @click="handleOpenProjectDetail(row)"
-                    >详情</ElButton
-                  >
-                </template>
-              </ElTableColumn>
-            </ElTable>
-          </ElCard>
-        </ElCol>
-
-        <ElCol :xl="9" :lg="9" :md="24" :sm="24" :xs="24">
-          <ElCard shadow="never" class="panel config-panel">
-            <template #header>
-              <div class="panel-header">
-                <span>系统配置摘要</span>
-                <ElTag :type="pendingRuleCount ? 'warning' : 'success'" effect="plain">
-                  {{ pendingRuleCount ? `${pendingRuleCount} 待发布` : '已同步' }}
-                </ElTag>
-              </div>
-            </template>
-            <ElDescriptions :column="1" border>
-              <ElDescriptionsItem
-                v-for="config in configSummary"
-                :key="config.label"
-                :label="config.label"
-              >
-                {{ config.value }}
-              </ElDescriptionsItem>
-            </ElDescriptions>
-            <div v-if="selectedExportTask" class="export-task-card">
-              <div>
-                <strong>{{ selectedExportTask.fileName }}</strong>
-                <span>{{ selectedExportTask.id }} · {{ selectedExportTask.status }}</span>
-              </div>
-              <ElTag :type="statusType(selectedExportTask.status)" effect="light">
-                {{ selectedExportTask.progress }}%
-              </ElTag>
-            </div>
-            <div v-if="latestConfigDiff" class="export-task-card">
-              <div>
-                <strong>{{ latestConfigDiff.objectName }}</strong>
-                <span>{{ latestConfigDiff.objectId }} · {{ latestConfigDiff.previewedAt }}</span>
-              </div>
-              <ElButton link type="primary" @click="configDiffVisible = true"> 查看差异 </ElButton>
-            </div>
-            <div v-if="latestPublishResult" class="export-task-card publish-trace-card">
-              <div>
-                <strong>最近发布：{{ latestPublishResult.version }}</strong>
-                <span>
-                  影响 {{ latestPublishResult.impactSummary.totalAffected }} 项 ·
-                  {{ latestPublishResult.impactSummary.linkedProjects }} 个在检项目 · 推送
-                  {{ latestPublishResult.impactSummary.pushedMessages }} 条消息
-                </span>
-              </div>
-              <div class="publish-trace-actions">
-                <ElTag
-                  :type="latestPublishResult.impactSummary.warningCount ? 'warning' : 'success'"
-                  effect="plain"
-                >
-                  {{
-                    latestPublishResult.impactSummary.warningCount
-                      ? `${latestPublishResult.impactSummary.warningCount} 需复核`
-                      : '已同步'
-                  }}
-                </ElTag>
-                <ElButton link type="primary" @click="publishTraceVisible = true">
-                  查看联动
-                </ElButton>
-              </div>
-            </div>
-          </ElCard>
-        </ElCol>
-      </ElRow>
-
       <ElTabs v-model="activeTab" class="admin-tabs">
+        <ElTabPane label="项目管理" name="projects">
+          <ElRow :gutter="16">
+            <ElCol :xl="15" :lg="15" :md="24" :sm="24" :xs="24">
+              <ElCard shadow="never" class="panel">
+                <template #header>
+                  <div class="panel-header">
+                    <span>项目清单</span>
+                    <ElTag type="info" effect="plain">{{ projects.length }} 个</ElTag>
+                  </div>
+                </template>
+                <ElTable :data="projects" border height="360" empty-text="暂无项目配置">
+                  <ElTableColumn prop="code" label="项目编号" width="150" />
+                  <ElTableColumn
+                    prop="name"
+                    label="项目名称"
+                    min-width="220"
+                    show-overflow-tooltip
+                  />
+                  <ElTableColumn prop="region" label="区域" width="100" />
+                  <ElTableColumn
+                    prop="contractorOrgName"
+                    label="施工单位"
+                    min-width="150"
+                    show-overflow-tooltip
+                  />
+                  <ElTableColumn
+                    prop="inspectionOrgName"
+                    label="监检机构"
+                    min-width="150"
+                    show-overflow-tooltip
+                  />
+                  <ElTableColumn label="状态" width="130">
+                    <template #default="{ row }">
+                      <ElTag :type="statusType(row.status)" effect="light">{{ row.status }}</ElTag>
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn prop="todoCount" label="待办" width="76" />
+                  <ElTableColumn prop="updatedAt" label="更新时间" width="170" />
+                  <ElTableColumn label="操作" width="92" fixed="right">
+                    <template #default="{ row }">
+                      <ElButton link type="primary" @click="handleOpenProjectDetail(row)"
+                        >详情</ElButton
+                      >
+                    </template>
+                  </ElTableColumn>
+                </ElTable>
+              </ElCard>
+            </ElCol>
+
+            <ElCol :xl="9" :lg="9" :md="24" :sm="24" :xs="24">
+              <ElCard shadow="never" class="panel config-panel">
+                <template #header>
+                  <div class="panel-header">
+                    <span>系统配置摘要</span>
+                    <ElTag :type="pendingRuleCount ? 'warning' : 'success'" effect="plain">
+                      {{ pendingRuleCount ? `${pendingRuleCount} 待发布` : '已同步' }}
+                    </ElTag>
+                  </div>
+                </template>
+                <ElDescriptions :column="1" border>
+                  <ElDescriptionsItem
+                    v-for="config in configSummary"
+                    :key="config.label"
+                    :label="config.label"
+                  >
+                    {{ config.value }}
+                  </ElDescriptionsItem>
+                </ElDescriptions>
+                <div v-if="selectedExportTask" class="export-task-card">
+                  <div>
+                    <strong>{{ selectedExportTask.fileName }}</strong>
+                    <span>{{ selectedExportTask.id }} · {{ selectedExportTask.status }}</span>
+                  </div>
+                  <ElTag :type="statusType(selectedExportTask.status)" effect="light">
+                    {{ selectedExportTask.progress }}%
+                  </ElTag>
+                </div>
+                <div v-if="latestConfigDiff" class="export-task-card">
+                  <div>
+                    <strong>{{ latestConfigDiff.objectName }}</strong>
+                    <span
+                      >{{ latestConfigDiff.objectId }} · {{ latestConfigDiff.previewedAt }}</span
+                    >
+                  </div>
+                  <ElButton link type="primary" @click="configDiffVisible = true">
+                    查看差异
+                  </ElButton>
+                </div>
+                <div v-if="latestPublishResult" class="export-task-card publish-trace-card">
+                  <div>
+                    <strong>最近发布：{{ latestPublishResult.version }}</strong>
+                    <span>
+                      影响 {{ latestPublishResult.impactSummary.totalAffected }} 项 ·
+                      {{ latestPublishResult.impactSummary.linkedProjects }} 个在检项目 · 推送
+                      {{ latestPublishResult.impactSummary.pushedMessages }} 条消息
+                    </span>
+                  </div>
+                  <div class="publish-trace-actions">
+                    <ElTag
+                      :type="latestPublishResult.impactSummary.warningCount ? 'warning' : 'success'"
+                      effect="plain"
+                    >
+                      {{
+                        latestPublishResult.impactSummary.warningCount
+                          ? `${latestPublishResult.impactSummary.warningCount} 需复核`
+                          : '已同步'
+                      }}
+                    </ElTag>
+                    <ElButton link type="primary" @click="publishTraceVisible = true">
+                      查看联动
+                    </ElButton>
+                  </div>
+                </div>
+              </ElCard>
+            </ElCol>
+          </ElRow>
+        </ElTabPane>
+
         <ElTabPane label="组织用户" name="org">
           <ElRow :gutter="16">
             <ElCol :xl="11" :lg="11" :md="24" :sm="24" :xs="24">
@@ -2048,13 +2046,13 @@ onMounted(() => {
           </ElRow>
         </ElTabPane>
 
-        <ElTabPane label="业务包管理" name="business-pack">
+        <ElTabPane label="业务类型管理" name="business-pack">
           <ElRow :gutter="16">
             <ElCol :span="24">
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
-                    <span>业务包列表</span>
+                    <span>业务类型列表</span>
                     <ElSpace>
                       <ElTag
                         :type="businessPackValidation?.ok === false ? 'danger' : 'success'"
@@ -2082,8 +2080,13 @@ onMounted(() => {
                   :title="businessPackValidationError"
                   class="mb-12px"
                 />
-                <ElTable :data="businessPackRows" border height="380" empty-text="暂无业务包配置">
-                  <ElTableColumn prop="name" label="业务包" min-width="190" show-overflow-tooltip />
+                <ElTable :data="businessPackRows" border height="380" empty-text="暂无业务类型配置">
+                  <ElTableColumn
+                    prop="name"
+                    label="业务类型"
+                    min-width="190"
+                    show-overflow-tooltip
+                  />
                   <ElTableColumn prop="id" label="ID" min-width="210" show-overflow-tooltip />
                   <ElTableColumn prop="domainType" label="领域" min-width="150" />
                   <ElTableColumn prop="version" label="版本" width="120" />
@@ -2766,7 +2769,7 @@ onMounted(() => {
           </div>
 
           <div v-show="projectWizardStep === 0">
-            <ElFormItem label="业务包">
+            <ElFormItem label="业务类型">
               <ElSelect
                 v-model="projectWizardForm.businessPackId"
                 filterable
@@ -2856,7 +2859,7 @@ onMounted(() => {
               :title="
                 isEngineeringWizardPack
                   ? '立项后将生成工程监检节点，并按四类角色写入初始项目成员授权。'
-                  : '立项后将按业务包角色自动创建成员授权，并进入通用资料审查工作台。'
+                  : '立项后将按业务类型角色自动创建成员授权，并进入通用资料审查工作台。'
               "
             />
             <ElTable
@@ -2888,7 +2891,7 @@ onMounted(() => {
             </ElTable>
             <ElEmpty
               v-else
-              description="非工程业务包使用业务包角色定义自动授权，后续可在项目成员中细化。"
+              description="非工程业务类型使用业务类型角色定义自动授权，后续可在项目成员中细化。"
             />
           </div>
         </ElForm>

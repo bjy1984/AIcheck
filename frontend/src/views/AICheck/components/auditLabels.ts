@@ -128,7 +128,7 @@ export const techTermLabels: Record<string, string> = {
   embedding_default: '默认本地向量模型',
   'embedding-default': '默认本地向量模型',
   engineering_document: '通用工程资料',
-  engineering_inspection_v1: '工程监检业务包',
+  engineering_inspection_v1: '工程监检业务类型',
   engineering_rules: '工程监检规则集',
   'engineering_rules@1.0.0': '工程监检规则集 1.0.0',
   engineering_table_photo: '工程表格照片',

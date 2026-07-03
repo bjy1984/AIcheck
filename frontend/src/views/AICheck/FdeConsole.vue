@@ -438,12 +438,12 @@ const fdeRouteMeta: Record<
   },
   'business-packs': {
     group: '交付运维',
-    label: '业务包工厂',
+    label: '业务类型工厂',
     badge: '复用',
     tone: 'blue',
-    title: '业务包工厂',
-    subtitle: '校验业务包的角色、节点、资料目录、规则、知识库、模板和可迁移性。',
-    nextAction: '先查看业务包门禁分段和阻断项。',
+    title: '业务类型工厂',
+    subtitle: '校验业务类型的角色、节点、资料目录、规则、知识库、模板和可迁移性。',
+    nextAction: '先查看业务类型门禁分段和阻断项。',
     actions: [{ key: 'install-business-pack', label: '安装演练', plain: true }]
   },
   security: {
@@ -1309,7 +1309,7 @@ const statusLabelMap: Record<string, string> = {
   rule_error: '规则配置错误',
   prompt_error: '提示词问题',
   model_error: '模型推理问题',
-  business_pack_config_error: '业务包配置问题',
+  business_pack_config_error: '业务类型配置问题',
   field_correction: '字段纠错',
   evidence_correction: '证据纠错',
   severity_correction: '等级修正',
@@ -2316,8 +2316,8 @@ const reviewLineageRows = computed(() => [
     label: '能力组合校验哈希',
     value: friendlyTechnicalText(reviewLineage.value.capabilityBundleHash)
   },
-  { label: '业务包', value: friendlyTechnicalText(reviewLineage.value.businessPackId) },
-  { label: '业务包版本', value: friendlyTechnicalText(reviewLineage.value.businessPackVersion) },
+  { label: '业务类型', value: friendlyTechnicalText(reviewLineage.value.businessPackId) },
+  { label: '业务类型版本', value: friendlyTechnicalText(reviewLineage.value.businessPackVersion) },
   { label: 'AI 员工', value: friendlyTechnicalText(reviewLineage.value.agentId) },
   { label: 'AI 员工版本', value: friendlyTechnicalText(reviewLineage.value.agentVersion) },
   { label: '提示词版本', value: friendlyTechnicalText(reviewLineage.value.promptVersion) },
@@ -4410,7 +4410,7 @@ const projectAuditVectorQualityCards = computed(() => [
   {
     label: '过滤泄漏',
     value: scorePercent(projectAuditVectorQualityMetrics.value.filterLeakageRate as number),
-    hint: '跨项目/业务包泄漏必须为 0',
+    hint: '跨项目/业务类型泄漏必须为 0',
     tone:
       Number(projectAuditVectorQualityMetrics.value.filterLeakageRate || 0) <= 0 ? 'green' : 'red'
   },
@@ -9624,7 +9624,7 @@ onBeforeUnmount(() => {
               {{ friendlyStatus(selectedFdeProject?.status, '未选择') }}
             </ElTag>
             <ElTag type="info" effect="plain">
-              业务包 {{ friendlyTechLabel(selectedFdeProject?.businessPackId) }}
+              业务类型 {{ friendlyTechLabel(selectedFdeProject?.businessPackId) }}
             </ElTag>
             <ElTag :type="projectAuditBlockers.length ? 'warning' : 'success'" effect="plain">
               {{ projectAuditBlockers.length ? '存在质量阻断' : '暂无阻断' }}
@@ -13277,7 +13277,7 @@ onBeforeUnmount(() => {
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
-                    <span>业务包门禁</span>
+                    <span>业务类型门禁</span>
                     <ElButton
                       size="small"
                       plain
@@ -13305,7 +13305,7 @@ onBeforeUnmount(() => {
                       {{ packValidation.scorecard.ok ? '100分门禁' : '需整改' }}
                     </ElTag>
                   </ElDescriptionsItem>
-                  <ElDescriptionsItem label="业务包数量">{{
+                  <ElDescriptionsItem label="业务类型数量">{{
                     packValidation.results.length
                   }}</ElDescriptionsItem>
                   <ElDescriptionsItem v-if="packValidation.scorecard" label="门禁分段">
@@ -13349,7 +13349,7 @@ onBeforeUnmount(() => {
                   class="mt-12px"
                   @row-click="selectBusinessPack"
                 >
-                  <ElTableColumn label="业务包" min-width="190" show-overflow-tooltip>
+                  <ElTableColumn label="业务类型" min-width="190" show-overflow-tooltip>
                     <template #default="{ row }">{{ row.summary?.id || '-' }}</template>
                   </ElTableColumn>
                   <ElTableColumn label="版本" width="100">
@@ -14461,7 +14461,7 @@ onBeforeUnmount(() => {
                   <ElTableColumn prop="id" label="验收报告" min-width="190" show-overflow-tooltip />
                   <ElTableColumn
                     prop="businessPackId"
-                    label="业务包"
+                    label="业务类型"
                     min-width="180"
                     show-overflow-tooltip
                   >

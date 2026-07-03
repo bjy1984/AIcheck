@@ -486,6 +486,18 @@ export type KnowledgeFile = {
   actions: ActionCode[]
 }
 
+export type KnowledgeFileImportPayload = {
+  source: KnowledgeSource
+  files: KnowledgeFile[]
+  tasks: KnowledgeTask[]
+  dispatches?: Array<Record<string, unknown>>
+  skipped?: Array<{
+    fileName: string
+    reason: string
+  }>
+  auditLogId: string
+}
+
 export type KnowledgeTask = {
   id: string
   taskType: 'ocr' | 'slice' | 'vector' | 'reindex'
@@ -595,6 +607,25 @@ export type KnowledgeRuleVersion = {
   version: string
   status: '草稿' | '待发布' | '已发布' | '已回滚'
   nodeIds: number[]
+  sourceSequence?: number
+  inspectionCategory?: string
+  inspectionItem?: string
+  inspectionClass?: 'A' | 'B' | 'C' | 'C/B' | string
+  standardText?: string
+  witnessText?: string
+  reviewClass?: string
+  criteria?: string
+  checkMethod?: string
+  aiExecution?: {
+    schemaVersion?: string
+    compiledAt?: string
+    requiredEvidence?: string[]
+    extractionTargets?: string[]
+    verificationSteps?: string[]
+    acceptanceCriteria?: string[]
+    humanConfirmation?: string[]
+    promptContext?: string
+  }
   promptVersion: string
   outputSchemaVersion: string
   description?: string
@@ -606,12 +637,23 @@ export type KnowledgeRuleVersion = {
 }
 
 export type KnowledgeRuleVersionDiffChange = {
-  field: 'version' | 'status' | 'nodes' | 'prompt' | 'schema' | 'description'
+  field: string
   label: string
   before?: unknown
   after?: unknown
   severity: 'info' | 'warning'
   changeType: 'added' | 'changed' | 'removed'
+}
+
+export type KnowledgeRuleVersionSavePayload = {
+  sequence?: number
+  sourceSequence?: number
+  inspectionCategory?: string
+  inspectionItem: string
+  inspectionClass?: string
+  standardText?: string
+  witnessText?: string
+  nodeIds?: number[]
 }
 
 export type KnowledgeRuleVersionDiffPayload = {
@@ -625,6 +667,22 @@ export type KnowledgeRuleVersionDiffPayload = {
     warning: number
   }
   changes: KnowledgeRuleVersionDiffChange[]
+}
+
+export type BusinessRuleImportPayload = {
+  rules: KnowledgeRuleVersion[]
+  importedRules: KnowledgeRuleVersion[]
+  skipped: Array<{
+    fileName: string
+    reason: string
+  }>
+  summary: {
+    importVersion: string
+    imported: number
+    skipped: number
+    status: KnowledgeRuleVersion['status']
+  }
+  auditLogId: string
 }
 
 export type KnowledgeConfig = {
@@ -2599,6 +2657,67 @@ export const disableKnowledgeSourceApi = (
   })
 }
 
+export const importKnowledgeFilesApi = (
+  payload: {
+    files: File[]
+    sourceId?: string
+    sourceName?: string
+    sourceType?: KnowledgeSource['sourceType']
+    sourceVersion?: string
+    sourceStatus?: KnowledgeSource['status']
+    vectorStatus?: KnowledgeSource['vectorStatus']
+    fileMetas?: Array<{
+      fileName?: string
+      relativePath?: string
+      contextDescription?: string
+    }>
+  },
+  options?: MutationHeaderOptions
+): Promise<IResponse<KnowledgeFileImportPayload>> => {
+  const formData = new FormData()
+  if (payload.sourceId) formData.append('sourceId', payload.sourceId)
+  if (payload.sourceName) formData.append('sourceName', payload.sourceName)
+  if (payload.sourceType) formData.append('sourceType', payload.sourceType)
+  if (payload.sourceVersion) formData.append('sourceVersion', payload.sourceVersion)
+  if (payload.sourceStatus) formData.append('sourceStatus', payload.sourceStatus)
+  if (payload.vectorStatus) formData.append('vectorStatus', payload.vectorStatus)
+  payload.files.forEach((file, index) => {
+    const meta = payload.fileMetas?.[index]
+    const relativePath =
+      meta?.relativePath ||
+      (file as File & { webkitRelativePath?: string }).webkitRelativePath ||
+      file.name
+    formData.append('files', file)
+    formData.append('relativePaths', relativePath)
+    formData.append('fileNames', meta?.fileName || file.name)
+    formData.append('contextDescriptions', meta?.contextDescription || '')
+  })
+  return request.post({
+    url: '/api/knowledge/files/import',
+    data: formData,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const importBusinessRulesApi = (
+  payload: {
+    files: File[]
+    importVersion?: string
+  },
+  options?: MutationHeaderOptions
+): Promise<IResponse<BusinessRuleImportPayload>> => {
+  const formData = new FormData()
+  if (payload.importVersion) formData.append('importVersion', payload.importVersion)
+  payload.files.forEach((file) => {
+    formData.append('files', file)
+  })
+  return request.post({
+    url: '/api/business-rules/import',
+    data: formData,
+    headers: mutationHeaders(options)
+  })
+}
+
 export const listKnowledgeProjectFilesApi = (params?: {
   keyword?: string
   projectId?: string
@@ -2723,6 +2842,43 @@ export const listKnowledgeRuleVersionsApi = (params?: {
   pageSize?: number
 }): Promise<IResponse<PagePayload<KnowledgeRuleVersion>>> => {
   return request.get({ url: '/api/rules/versions', params })
+}
+
+export const createKnowledgeRuleVersionApi = (
+  payload: KnowledgeRuleVersionSavePayload,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ rule: KnowledgeRuleVersion; auditLogId: string }>> => {
+  return request.post({
+    url: '/api/rules/versions',
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const updateKnowledgeRuleVersionApi = (
+  versionId: string,
+  payload: KnowledgeRuleVersionSavePayload,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ rule: KnowledgeRuleVersion; auditLogId: string }>> => {
+  return request.put({
+    url: `/api/rules/versions/${versionId}`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const forkKnowledgeRuleVersionApi = (
+  versionId: string,
+  payload: Partial<KnowledgeRuleVersionSavePayload> = {},
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{ rule: KnowledgeRuleVersion; source: KnowledgeRuleVersion; auditLogId: string }>
+> => {
+  return request.post({
+    url: `/api/rules/versions/${versionId}/fork`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const getKnowledgeRuleVersionDiffApi = (

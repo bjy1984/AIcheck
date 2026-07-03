@@ -610,7 +610,7 @@ const globalSearchPlaceholder = computed(() => {
     ndt: '⌕ 全局搜索（项目 / 底片编号 / 焊口编号 / 检测报告 / 节点）',
     owner: '⌕ 全局搜索（项目 / 节点 / 资料状态 / 报告 / 归档资料）',
     admin: '⌕ 搜索（项目 / 单位 / 用户 / 角色 / 流程 / 待办 / 节点）',
-    fde: '⌕ 搜索（AI Run / Agent / 评估集 / 发布单 / 业务包）'
+    fde: '⌕ 搜索（AI Run / Agent / 评估集 / 发布单 / 业务类型）'
   }
   return placeholders[role.value]
 })

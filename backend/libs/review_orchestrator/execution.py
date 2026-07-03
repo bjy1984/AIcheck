@@ -78,6 +78,31 @@ def stable_hash_payload(value: Any) -> str:
     return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def review_rule_node_ids(rule: dict[str, Any]) -> set[int]:
+    node_ids: set[int] = set()
+    for raw in rule.get("nodeIds") or []:
+        if str(raw).isdigit():
+            node_ids.add(int(raw))
+    return node_ids
+
+
+def current_published_rule_for_node(node_id: int, *, business_pack_id: str | None = None) -> dict[str, Any] | None:
+    candidates = []
+    for rule in repo.state.get("rule_versions", []):
+        if rule.get("status") != "已发布":
+            continue
+        if node_id not in review_rule_node_ids(rule):
+            continue
+        if business_pack_id and rule.get("businessPackId") not in {None, "", business_pack_id}:
+            continue
+        candidates.append(rule)
+    candidates.sort(
+        key=lambda item: str(item.get("publishedAt") or item.get("updatedAt") or item.get("importedAt") or ""),
+        reverse=True,
+    )
+    return repo.clone(candidates[0]) if candidates else None
+
+
 def review_task_queues() -> dict[str, str]:
     return {
         "workflow": os.getenv("AICHECK_REVIEW_WORKFLOW_TASK_QUEUE", "review.workflow"),
@@ -371,10 +396,17 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         return {"fieldCount": len(fields), "evidenceLinkCount": len(evidence_links)}
     if node_key == "run_rule_engine":
         pack = load_business_pack(str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID))
-        rule = matching_rule_for_node(pack, int(review_run.get("nodeId") or 0)) or next(iter(pack.get("ruleSets") or []), {})
+        rule = (
+            current_published_rule_for_node(
+                int(review_run.get("nodeId") or 0),
+                business_pack_id=str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID),
+            )
+            or matching_rule_for_node(pack, int(review_run.get("nodeId") or 0))
+            or next(iter(pack.get("ruleSets") or []), {})
+        )
         rule_basis = retrieve_knowledge_clauses(
             repo.state,
-            query=str(rule.get("description") or rule.get("name") or "审查规则依据"),
+            query=str(rule.get("criteria") or rule.get("checkMethod") or rule.get("name") or "审查依据"),
             review_run_id=review_run["reviewRunId"],
             business_pack_id=str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID),
             node_id=int(review_run.get("nodeId") or 0),
@@ -397,6 +429,7 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             "createdAt": server_time(),
         }
         repo.state["rule_check_results"].append(result)
+        context["currentRule"] = rule
         context["ruleResults"] = [result]
         append_tool_call(review_run, node_key, "run_rule_engine", {"ruleCode": result["ruleCode"], "result": result["result"]})
         return {"ruleResults": 1, "ruleCode": result["ruleCode"], "result": result["result"], "linkedClauseIds": linked_clause_ids}
@@ -502,7 +535,8 @@ def build_review_messages(review_run: dict[str, Any], context: dict[str, Any]) -
     node = context.get("node") or {}
     fields = context.get("fields") or []
     rule_result = next(iter(context.get("ruleResults") or []), {})
-    prompt = build_ai_review_prompt(pack, node=node, fields=fields, rule=rule_result)
+    current_rule = context.get("currentRule") or rule_result
+    prompt = build_ai_review_prompt(pack, node=node, fields=fields, rule=current_rule)
     user_payload = {
         "task": "Generate ReviewFindingDraftList JSON only.",
         "requirements": [

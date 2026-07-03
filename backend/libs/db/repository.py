@@ -926,26 +926,31 @@ class InMemoryRepository:
                 }
             )
         if knowledge_file:
-            self.upsert_knowledge_task(
-                task_type="slice",
-                target_id=knowledge_file["id"],
-                target_name=knowledge_file["fileName"],
-                document_id=document_id,
-                version_id=version_id,
-            )
-            self.upsert_knowledge_task(
-                task_type="vector",
-                target_id=knowledge_file["id"],
-                target_name=knowledge_file["fileName"],
-                document_id=document_id,
-                version_id=version_id,
-            )
+            source = self.find_one("knowledge_sources", knowledge_file.get("sourceId"))
+            if (source or {}).get("sourceType") != "rule":
+                self.upsert_knowledge_task(
+                    task_type="slice",
+                    target_id=knowledge_file["id"],
+                    target_name=knowledge_file["fileName"],
+                    document_id=document_id,
+                    version_id=version_id,
+                )
+                self.upsert_knowledge_task(
+                    task_type="vector",
+                    target_id=knowledge_file["id"],
+                    target_name=knowledge_file["fileName"],
+                    document_id=document_id,
+                    version_id=version_id,
+                )
         return {"documentId": document_id, "versionId": version_id, "status": "success", "fieldCount": len(fields)}
 
     def apply_slice_result(self, file_id: str, fragments: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         file = self.find_one("knowledge_files", file_id)
         if not file:
             return {"fileId": file_id, "status": "missing", "chunkCount": 0}
+        source = self.find_one("knowledge_sources", file.get("sourceId"))
+        if (source or {}).get("sourceType") == "rule":
+            return {"fileId": file_id, "status": "skipped", "chunkCount": 0, "reason": "business_rule_not_indexed"}
         existing_ids = {
             item["id"] for item in self.state.get("knowledge_chunks", []) if item.get("fileId") == file_id
         }
@@ -990,6 +995,9 @@ class InMemoryRepository:
         file = self.find_one("knowledge_files", file_id)
         if not file:
             return {"fileId": file_id, "status": "missing", "vectorCount": 0}
+        source = self.find_one("knowledge_sources", file.get("sourceId"))
+        if (source or {}).get("sourceType") == "rule":
+            return {"fileId": file_id, "status": "skipped", "vectorCount": 0, "reason": "business_rule_not_indexed"}
         count = vector_count if vector_count is not None else len([item for item in self.state.get("knowledge_chunks", []) if item.get("fileId") == file_id]) or file.get("chunkCount", 1)
         file["vectorStatus"] = "已向量化"
         file["vectorCount"] = count

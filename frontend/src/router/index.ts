@@ -176,7 +176,7 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         component: AdminOverview,
         name: 'AdminBusinessPacks',
         meta: {
-          title: '业务包管理',
+          title: '业务类型管理',
           noCache: true,
           roles: ['admin']
         }
@@ -364,7 +364,7 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         },
         { path: 'releases', name: 'FdeReleases', title: '发布治理', hidden: true },
         { path: 'ocr-quality', name: 'FdeOcrQuality', title: 'OCR 质量与标注', hidden: true },
-        { path: 'business-packs', name: 'FdeBusinessPacks', title: '业务包工厂', hidden: true },
+        { path: 'business-packs', name: 'FdeBusinessPacks', title: '业务类型工厂', hidden: true },
         { path: 'security', name: 'FdeSecurity', title: '数据安全', hidden: true },
         { path: 'incidents', name: 'FdeIncidents', title: '事故复盘', hidden: true },
         { path: 'costs', name: 'FdeCosts', title: '成本预算', hidden: true },

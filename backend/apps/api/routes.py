@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import mimetypes
 import os
 import re
 import tempfile
+import zipfile
+from email import policy
+from email.parser import BytesParser
 from pathlib import Path
 from typing import Any
+from xml.etree import ElementTree as ET
 from uuid import uuid4
 
+import yaml
 from fastapi import APIRouter, BackgroundTasks, Body, Header, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 
@@ -37,7 +44,7 @@ from libs.embedding_models import embedding_registry_payload, embedding_runtime_
 from libs.integrations import task_dispatcher
 from libs.integrations.errors import IntegrationServiceError
 from libs.integrations.ocr_client import OcrClient
-from libs.integrations.storage import ObjectStorageUnavailable
+from libs.integrations.storage import ObjectStorageUnavailable, object_storage
 from libs.knowledge_readiness import build_knowledge_rule_scorecard
 from libs.knowledge_retrieval import answer_draft_from_clauses, retrieve_knowledge_clauses
 from libs.review_orchestrator import (
@@ -95,6 +102,30 @@ ALLOWED_UPLOAD_TYPES = {
     "application/x-7z-compressed",
 }
 ALLOWED_NDT_UPLOAD_TYPES = ALLOWED_UPLOAD_TYPES | {"dcm", "dicom", "application/dicom"}
+ALLOWED_KNOWLEDGE_UPLOAD_TYPES = ALLOWED_UPLOAD_TYPES | {
+    "md",
+    "markdown",
+    "txt",
+    "text/markdown",
+    "text/plain",
+    "application/octet-stream",
+}
+ALLOWED_RULE_UPLOAD_TYPES = {
+    "md",
+    "markdown",
+    "txt",
+    "yaml",
+    "yml",
+    "json",
+    "docx",
+    "text/markdown",
+    "text/plain",
+    "application/json",
+    "application/yaml",
+    "application/x-yaml",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/octet-stream",
+}
 CONFIG_METADATA_FIELDS = {"revision", "etag", "updatedAt", "lastPublishedVersion", "lastPublishedAt", "lastPublishedScope"}
 KNOWLEDGE_TASK_STATUS_ORDER = {
     "失败": 0,
@@ -103,6 +134,7 @@ KNOWLEDGE_TASK_STATUS_ORDER = {
     "已取消": 3,
     "成功": 4,
 }
+KNOWLEDGE_UPLOAD_ROOT = WORKSPACE_ROOT / "output" / "knowledge_uploads"
 
 
 def refresh_state_from_postgres_for_live_read() -> None:
@@ -184,6 +216,837 @@ def validate_upload_files(
             error = errors.UNSUPPORTED_NDT_FILE_TYPE if ndt else errors.UNSUPPORTED_FILE_TYPE
             return fail(error, request, message=f"{file_name} 文件类型不支持。", data={"fileName": file_name, "fileType": file.get("fileType")})
     return None
+
+
+def safe_upload_file_name(file_name: str) -> str:
+    normalized = str(file_name or "未命名文件").replace("\\", "/").split("/")[-1].strip()
+    normalized = re.sub(r"[\x00-\x1f]", "", normalized)
+    normalized = re.sub(r"[/:*?\"<>|]", "_", normalized)
+    return normalized or "未命名文件"
+
+
+def safe_relative_path(value: str | None, fallback_file_name: str) -> str:
+    raw = str(value or fallback_file_name or "").replace("\\", "/").strip("/")
+    parts = [safe_upload_file_name(part) for part in raw.split("/") if part and part not in {".", ".."}]
+    return "/".join(parts[-8:]) or safe_upload_file_name(fallback_file_name)
+
+
+def upload_file_type_tokens(file_name: str, content_type: str | None) -> set[str]:
+    tokens = file_type_tokens({"fileName": file_name, "contentType": content_type, "fileType": content_type})
+    suffix = Path(file_name).suffix.lower().lstrip(".")
+    if suffix:
+        tokens.add(suffix)
+    guessed, _ = mimetypes.guess_type(file_name)
+    if guessed:
+        tokens.add(guessed.lower())
+    return tokens
+
+
+def first_form_value(fields: dict[str, list[str]], key: str, default: str = "") -> str:
+    values = fields.get(key) or []
+    return str(values[0]).strip() if values else default
+
+
+def bounded_form_value(values: list[str], index: int, limit: int = 500) -> str:
+    value = str(values[index]).strip() if index < len(values) else ""
+    return value[:limit]
+
+
+def display_upload_file_name(raw_name: str | None, original_file_name: str) -> str:
+    display_name = safe_upload_file_name(raw_name or original_file_name)
+    original_suffix = Path(original_file_name).suffix
+    if original_suffix and not Path(display_name).suffix:
+        display_name = f"{display_name}{original_suffix}"
+    return display_name
+
+
+def parse_rule_node_ids(raw_value: Any, fallback: int | None = None) -> list[int]:
+    values: list[Any]
+    if isinstance(raw_value, list):
+        values = raw_value
+    elif isinstance(raw_value, tuple):
+        values = list(raw_value)
+    elif raw_value is None:
+        values = []
+    else:
+        values = re.split(r"[,，、\s]+", str(raw_value))
+    node_ids: list[int] = []
+    for value in values:
+        if str(value).strip().isdigit():
+            node_id = int(str(value).strip())
+            if node_id not in node_ids:
+                node_ids.append(node_id)
+    if not node_ids and fallback is not None:
+        node_ids.append(int(fallback))
+    return node_ids
+
+
+def normalize_rule_status(value: Any, default: str = "草稿") -> str:
+    raw = str(value or "").strip().lower()
+    if raw in {"已发布", "published", "production", "active", "启用"}:
+        return "已发布"
+    if raw in {"待发布", "candidate", "pending", "ready"}:
+        return "待发布"
+    if raw in {"已回滚", "rollback", "rolled_back", "retired"}:
+        return "已回滚"
+    if raw in {"草稿", "draft", ""}:
+        return default
+    return str(value or default)
+
+
+def compact_rule_text(value: Any, limit: int = 900) -> str:
+    text = re.sub(r"\n{3,}", "\n\n", str(value or "")).strip()
+    return text[:limit]
+
+
+def compact_plain_text(value: Any, limit: int = 2000) -> str:
+    text = re.sub(r"[ \t]+", " ", str(value or "").strip())
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text[:limit]
+
+
+def split_business_rule_sentences(value: Any, limit: int = 12) -> list[str]:
+    text = compact_plain_text(value, 3000)
+    if not text:
+        return []
+    chunks = [
+        item.strip(" ；;。.\n\t")
+        for item in re.split(r"[；;。\n]+", text)
+        if item.strip(" ；;。.\n\t")
+    ]
+    return chunks[:limit]
+
+
+def extract_business_rule_terms(text: str, patterns: list[str], *, limit: int = 10) -> list[str]:
+    terms: list[str] = []
+    seen: set[str] = set()
+    for pattern in patterns:
+        for match in re.finditer(pattern, text):
+            term = match.group(0).strip(" ，,；;。()（）")
+            if term and term not in seen:
+                seen.add(term)
+                terms.append(term)
+                if len(terms) >= limit:
+                    return terms
+    return terms
+
+
+BUSINESS_RULE_EVIDENCE_PATTERNS = [
+    r"[\u4e00-\u9fffA-Za-z0-9《》/（）()、]{0,16}(?:许可证|核准证|证书|报告|记录|方案|文件|图纸|印章|材料表|特性表|质量证明|合格证|照片|视频|铭牌|清单|报告曲线|检定证书)",
+    r"(?:PQR|WPS|RT|UT|MT|PT|MTC|OCR)",
+]
+BUSINESS_RULE_EXTRACTION_PATTERNS = [
+    r"(?:机构名称|单位名称|许可证号|证书编号|有效期|许可范围|核准项目代码|检测方法|管道级别|规格|型号|材质|批号|压力|温度|时间|保压时间|结论|签字|签章|数量|量程|精度|标准|焊缝编号|人员|日期)",
+]
+BUSINESS_RULE_ACTION_TERMS = ["核查", "审查", "检查", "抽查", "现场检查", "提取", "比对", "确认", "查询", "判断", "验证"]
+
+
+def normalize_business_rule_class(value: Any) -> str:
+    raw = compact_plain_text(value, 20).upper().replace("类", "")
+    if raw in {"A", "B", "C", "C/B", "B/C"}:
+        return "C/B" if raw in {"C/B", "B/C"} else raw
+    if "A" in raw:
+        return "A"
+    if "B" in raw and "C" in raw:
+        return "C/B"
+    if "B" in raw:
+        return "B"
+    return "C" if raw else ""
+
+
+def normalize_business_rule_source_fields(raw_rule: dict[str, Any]) -> dict[str, Any]:
+    source_sequence = (
+        raw_rule.get("sourceSequence")
+        or raw_rule.get("sequence")
+        or raw_rule.get("序号")
+        or raw_rule.get("nodeId")
+    )
+    sequence = None
+    if source_sequence is not None:
+        seq_match = re.search(r"\d+", str(source_sequence))
+        if seq_match:
+            sequence = int(seq_match.group(0))
+    category = compact_plain_text(
+        raw_rule.get("inspectionCategory")
+        or raw_rule.get("businessModule")
+        or raw_rule.get("监检项目（大类）")
+        or raw_rule.get("category"),
+        120,
+    )
+    item = compact_plain_text(
+        raw_rule.get("inspectionItem")
+        or raw_rule.get("name")
+        or raw_rule.get("title")
+        or raw_rule.get("监检项目（内容）")
+        or "未命名监检项目",
+        180,
+    )
+    rule_class = normalize_business_rule_class(
+        raw_rule.get("inspectionClass")
+        or raw_rule.get("reviewClass")
+        or raw_rule.get("类别")
+        or raw_rule.get("class")
+    )
+    standard_text = compact_plain_text(
+        raw_rule.get("standardText")
+        or raw_rule.get("criteria")
+        or raw_rule.get("判断准则 / 标准规范")
+        or raw_rule.get("判断准则")
+        or raw_rule.get("standard"),
+        3000,
+    )
+    witness_text = compact_plain_text(
+        raw_rule.get("witnessText")
+        or raw_rule.get("checkMethod")
+        or raw_rule.get("方法及内容 / 工作见证")
+        or raw_rule.get("方法及内容")
+        or raw_rule.get("工作见证")
+        or raw_rule.get("method"),
+        3000,
+    )
+    return {
+        "sourceSequence": sequence,
+        "inspectionCategory": category,
+        "inspectionItem": item,
+        "inspectionClass": rule_class,
+        "standardText": standard_text,
+        "witnessText": witness_text,
+    }
+
+
+def business_rule_node_ids_from_fields(fields: dict[str, Any], fallback: Any = None) -> list[int]:
+    node_ids = parse_rule_node_ids(fallback)
+    sequence = fields.get("sourceSequence")
+    if sequence and int(sequence) not in node_ids:
+        node_ids.insert(0, int(sequence))
+    return node_ids or ([int(sequence)] if sequence else [])
+
+
+def make_business_rule_key(fields: dict[str, Any], raw_rule: dict[str, Any] | None = None) -> str:
+    raw_key = compact_plain_text((raw_rule or {}).get("ruleKey"), 120)
+    if raw_key:
+        return raw_key
+    sequence = fields.get("sourceSequence")
+    if sequence:
+        return f"inspection-rule-{int(sequence):02d}"
+    digest = hashlib.sha1(fields.get("inspectionItem", "business-rule").encode("utf-8")).hexdigest()[:8]
+    return f"inspection-rule-{digest}"
+
+
+def compile_business_rule_execution(rule: dict[str, Any]) -> dict[str, Any]:
+    standard_text = compact_plain_text(rule.get("standardText") or rule.get("criteria"), 3000)
+    witness_text = compact_plain_text(rule.get("witnessText") or rule.get("checkMethod"), 3000)
+    combined = "\n".join(part for part in [standard_text, witness_text] if part)
+    method_sentences = split_business_rule_sentences(witness_text, limit=20)
+    standard_sentences = split_business_rule_sentences(standard_text, limit=12)
+    action_steps = [
+        sentence
+        for sentence in method_sentences
+        if any(term in sentence for term in BUSINESS_RULE_ACTION_TERMS) or sentence.startswith(("是否", "需", "应"))
+    ] or method_sentences[:6]
+    acceptance_criteria = [
+        sentence
+        for sentence in method_sentences + standard_sentences
+        if any(term in sentence for term in ["是否", "不得", "不应", "应当", "应", "符合", "覆盖", "一致", "有效", "合格", "不少于", "不低于", "范围"])
+    ][:10]
+    required_evidence = extract_business_rule_terms(combined, BUSINESS_RULE_EVIDENCE_PATTERNS, limit=12)
+    extraction_targets = extract_business_rule_terms(combined, BUSINESS_RULE_EXTRACTION_PATTERNS, limit=16)
+    if not required_evidence:
+        required_evidence = method_sentences[:3]
+    human_confirmation = []
+    if rule.get("inspectionClass") == "A" or rule.get("reviewClass") == "A":
+        human_confirmation.append("A 类监检项目发布或审查结论需人工确认。")
+    if any(term in witness_text for term in ["现场", "抽查", "照片", "视频", "目视", "实物"]):
+        human_confirmation.append("涉及现场检查、抽查或影像证据时，AI 只做辅助核验，需监检人员确认现场事实。")
+    if any(term in witness_text for term in ["如果不能", "必要时", "缺少", "不足", "不一致", "不能覆盖"]):
+        human_confirmation.append("证据缺失、范围不覆盖或跨文件不一致时生成补充资料项或联络单。")
+    return {
+        "schemaVersion": "business-rule-execution-v1",
+        "compiledAt": server_time(),
+        "sourceFields": {
+            "sequence": rule.get("sourceSequence"),
+            "inspectionCategory": rule.get("inspectionCategory") or rule.get("businessModule"),
+            "inspectionItem": rule.get("inspectionItem") or rule.get("name"),
+            "inspectionClass": rule.get("inspectionClass") or rule.get("reviewClass"),
+            "standardText": standard_text,
+            "witnessText": witness_text,
+        },
+        "requiredEvidence": required_evidence,
+        "extractionTargets": extraction_targets,
+        "verificationSteps": action_steps[:10],
+        "acceptanceCriteria": acceptance_criteria,
+        "humanConfirmation": human_confirmation or ["证据不足、OCR 置信度不足或结论影响放行时需人工确认。"],
+        "promptContext": compact_rule_text(
+            "\n".join(
+                [
+                    f"监检项目：{rule.get('inspectionItem') or rule.get('name')}",
+                    f"类别：{rule.get('inspectionClass') or rule.get('reviewClass') or '-'}",
+                    f"判断准则/标准规范：{standard_text or '-'}",
+                    f"方法及内容/工作见证：{witness_text or '-'}",
+                ]
+            ),
+            1600,
+        ),
+    }
+
+
+def normalize_business_rule_version_record(
+    raw_rule: dict[str, Any],
+    *,
+    import_version: str | None = None,
+    imported_at: str | None = None,
+    force_status: str | None = None,
+) -> dict[str, Any]:
+    now = imported_at or server_time()
+    fields = normalize_business_rule_source_fields(raw_rule)
+    rule_key = make_business_rule_key(fields, raw_rule)
+    source_sequence = fields.get("sourceSequence")
+    version = compact_plain_text(raw_rule.get("version"), 160)
+    if not version:
+        suffix = import_version or f"draft-{now[:16].replace('-', '').replace(':', '').replace(' ', '-')}"
+        version = f"{rule_key}-{suffix}"
+    rule_id = compact_plain_text(raw_rule.get("id"), 120) or f"RULE-{uuid4().hex[:10].upper()}"
+    status = normalize_rule_status(raw_rule.get("status"), default="草稿")
+    if force_status:
+        status = force_status
+    record = {
+        **raw_rule,
+        **fields,
+        "id": rule_id,
+        "name": fields["inspectionItem"],
+        "ruleKey": rule_key,
+        "version": version,
+        "status": status,
+        "nodeIds": business_rule_node_ids_from_fields(fields, raw_rule.get("nodeIds") or raw_rule.get("nodeId")),
+        "reviewClass": fields["inspectionClass"],
+        "criteria": fields["standardText"],
+        "checkMethod": fields["witnessText"],
+        "description": compact_rule_text(fields["witnessText"] or fields["standardText"] or fields["inspectionItem"], 500),
+        "promptVersion": compact_plain_text(raw_rule.get("promptVersion"), 120) or f"prompt-{rule_key}",
+        "outputSchemaVersion": compact_plain_text(raw_rule.get("outputSchemaVersion"), 120) or "schema-review-v1.3",
+        "schemaVersion": compact_plain_text(raw_rule.get("schemaVersion"), 80) or "business-rule-version-v1",
+        "updatedAt": now,
+        "actions": raw_rule.get("actions") or ["knowledge:view", "knowledge:manage"],
+        "revision": int(raw_rule.get("revision") or 1),
+    }
+    if source_sequence is not None:
+        record["sourceSequence"] = int(source_sequence)
+    if raw_rule.get("sourceFileName"):
+        record["sourceFileName"] = raw_rule["sourceFileName"]
+    if raw_rule.get("importedAt") or imported_at:
+        record["importedAt"] = raw_rule.get("importedAt") or imported_at
+    record["aiExecution"] = compile_business_rule_execution(record)
+    return record
+
+
+def extract_markdown_rule_field(section: str, title: str) -> str:
+    marker = re.escape(title)
+    pattern = rf"\*\*{marker}\*\*\s*(.*?)(?=\n\*\*|\n###\s+R\d+|\Z)"
+    match = re.search(pattern, section, re.S)
+    return compact_rule_text(match.group(1) if match else "")
+
+
+def parse_markdown_business_rules(
+    text: str,
+    *,
+    source_file_name: str,
+    import_version: str,
+    imported_at: str,
+) -> list[dict[str, Any]]:
+    sections = list(re.finditer(r"^###\s+(R\d+)\s*[｜|]\s*(.+?)\s*$", text, re.M))
+    parsed: list[dict[str, Any]] = []
+    for index, match in enumerate(sections):
+        source_rule_id = match.group(1).upper()
+        name = match.group(2).strip()
+        section_start = match.end()
+        section_end = sections[index + 1].start() if index + 1 < len(sections) else len(text)
+        section = text[section_start:section_end]
+        meta_line = next(
+            (line.strip("| ") for line in section.splitlines() if line.startswith("| 来源文档")),
+            "",
+        )
+        source_document = ""
+        business_module = ""
+        review_class = ""
+        source_sequence = None
+        if meta_line:
+            for part in [part.strip() for part in meta_line.split("|")]:
+                if part.startswith("来源文档"):
+                    source_document = part.removeprefix("来源文档").strip()
+                elif part.startswith("原位置"):
+                    seq_match = re.search(r"\d+", part)
+                    if seq_match:
+                        source_sequence = int(seq_match.group(0))
+                elif part.startswith("业务模块"):
+                    business_module = part.removeprefix("业务模块").strip()
+                elif part.startswith("类别"):
+                    review_class = part.removeprefix("类别").strip()
+        criteria = extract_markdown_rule_field(section, "判断准则（原文）") or extract_markdown_rule_field(section, "标准规范（原文）")
+        check_method = (
+            extract_markdown_rule_field(section, "方法（原文）")
+            or extract_markdown_rule_field(section, "方法及内容（原文）")
+            or extract_markdown_rule_field(section, "工作见证（原文）")
+        )
+        agent_thinking = extract_markdown_rule_field(section, "Agent思考方式（新增）")
+        toolchain_thinking = extract_markdown_rule_field(section, "工具集调用思考（新增）")
+        rule_number = int(source_rule_id.removeprefix("R"))
+        node_id = source_sequence or rule_number
+        rule_key = f"engineering-inspection-{source_rule_id.lower()}"
+        raw_record = {
+            "id": f"RULE-IMPORT-{source_rule_id}-{uuid4().hex[:6].upper()}",
+            "name": name,
+            "ruleKey": rule_key,
+            "version": f"{rule_key}-{import_version}",
+            "status": "草稿",
+            "nodeIds": [node_id],
+            "inspectionCategory": business_module,
+            "inspectionItem": name,
+            "inspectionClass": review_class or "C",
+            "standardText": criteria,
+            "witnessText": check_method,
+            "severity": "medium" if "A" in review_class else "low",
+            "reviewClass": review_class or "C",
+            "promptVersion": f"prompt-engineering-inspection-{import_version}",
+            "outputSchemaVersion": "schema-review-v1.3",
+            "sourceRuleId": source_rule_id,
+            "sourceDocument": source_document or source_file_name,
+            "sourceSequence": node_id,
+            "businessModule": business_module,
+            "criteria": criteria,
+            "checkMethod": check_method,
+            "agentThinking": agent_thinking,
+            "toolchainThinking": toolchain_thinking,
+            "description": compact_rule_text(agent_thinking or check_method or criteria or name, 500),
+            "requiredEvidence": [
+                f"{source_document or source_file_name} 序号{node_id}：{name}",
+                "与 nodeIds 绑定的项目文件、OCR 字段、原件/复印件、签字盖章、报告结论和证据链接",
+            ],
+            "humanConfirmation": {
+                "requiredWhen": [
+                    "证据缺失、OCR 置信度不足或原件/复印件真实性无法自动确认",
+                    "跨文件主体名称、规格型号、批号、焊缝编号、报告编号或结论不一致",
+                ]
+            },
+            "sourceFileName": source_file_name,
+            "parserVersion": "business-rule-importer-v1",
+            "schemaVersion": "business-rule-version-v1",
+            "importedAt": imported_at,
+            "updatedAt": imported_at,
+            "actions": ["knowledge:view", "knowledge:manage"],
+            "revision": 1,
+        }
+        parsed.append(
+            normalize_business_rule_version_record(
+                raw_record,
+                import_version=import_version,
+                imported_at=imported_at,
+                force_status="草稿",
+            )
+        )
+    return parsed
+
+
+def normalize_imported_rule_record(
+    raw_rule: dict[str, Any],
+    *,
+    source_file_name: str,
+    import_version: str,
+    imported_at: str,
+) -> dict[str, Any]:
+    source_rule_id = str(raw_rule.get("sourceRuleId") or raw_rule.get("ruleId") or raw_rule.get("id") or "").strip()
+    normalized = normalize_business_rule_version_record(
+        {
+            **raw_rule,
+            "sourceRuleId": source_rule_id or raw_rule.get("ruleKey"),
+            "sourceFileName": source_file_name,
+            "parserVersion": raw_rule.get("parserVersion") or "business-rule-importer-v1",
+        },
+        import_version=import_version,
+        imported_at=imported_at,
+        force_status="草稿",
+    )
+    normalized["importedAt"] = imported_at
+    return normalized
+
+
+def parse_structured_business_rules(
+    text: str,
+    *,
+    source_file_name: str,
+    import_version: str,
+    imported_at: str,
+) -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(text) if source_file_name.lower().endswith(".json") else yaml.safe_load(text)
+    except Exception:
+        payload = None
+    raw_rules: list[Any] = []
+    if isinstance(payload, dict):
+        candidate = payload.get("ruleSets") or payload.get("rules") or payload.get("items")
+        raw_rules = candidate if isinstance(candidate, list) else []
+    elif isinstance(payload, list):
+        raw_rules = payload
+    return [
+        normalize_imported_rule_record(
+            rule,
+            source_file_name=source_file_name,
+            import_version=import_version,
+            imported_at=imported_at,
+        )
+        for rule in raw_rules
+        if isinstance(rule, dict)
+    ]
+
+
+def parse_docx_business_rules(
+    data: bytes,
+    *,
+    source_file_name: str,
+    import_version: str,
+    imported_at: str,
+) -> list[dict[str, Any]]:
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            document_xml = archive.read("word/document.xml")
+    except Exception:
+        return []
+    try:
+        root = ET.fromstring(document_xml)
+    except Exception:
+        return []
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    rows: list[list[str]] = []
+    for tr in root.findall(".//w:tbl/w:tr", ns):
+        cells: list[str] = []
+        for tc in tr.findall("./w:tc", ns):
+            paragraphs = []
+            for paragraph in tc.findall(".//w:p", ns):
+                paragraph_text = "".join(node.text or "" for node in paragraph.findall(".//w:t", ns)).strip()
+                if paragraph_text:
+                    paragraphs.append(paragraph_text)
+            text = compact_plain_text("\n".join(paragraphs), 4000)
+            cells.append(text)
+        if any(cells):
+            rows.append(cells)
+    if len(rows) < 2:
+        return []
+    headers = rows[0]
+    normalized_headers = [re.sub(r"\s+", "", header) for header in headers]
+    if not any("监检项目" in header for header in normalized_headers):
+        return []
+
+    def cell(row: list[str], *names: str) -> str:
+        for name in names:
+            normalized_name = re.sub(r"\s+", "", name)
+            for index, header in enumerate(normalized_headers):
+                if normalized_name == header or normalized_name in header:
+                    return row[index] if index < len(row) else ""
+        return ""
+
+    parsed: list[dict[str, Any]] = []
+    for row in rows[1:]:
+        if not any(item.strip() for item in row):
+            continue
+        raw_rule = {
+            "sequence": cell(row, "序号"),
+            "inspectionCategory": cell(row, "监检项目（大类）", "监检项目大类"),
+            "inspectionItem": cell(row, "监检项目（内容）", "监检项目内容"),
+            "inspectionClass": cell(row, "类别"),
+            "standardText": cell(row, "判断准则 / 标准规范", "判断准则/标准规范"),
+            "witnessText": cell(row, "方法及内容 / 工作见证", "方法及内容/工作见证"),
+            "sourceFileName": source_file_name,
+            "sourceDocument": source_file_name,
+            "parserVersion": "business-rule-docx-table-v1",
+        }
+        if not raw_rule["inspectionItem"]:
+            continue
+        parsed.append(
+            normalize_business_rule_version_record(
+                raw_rule,
+                import_version=import_version,
+                imported_at=imported_at,
+                force_status="草稿",
+            )
+        )
+    return parsed
+
+
+def parse_business_rule_upload(
+    upload: dict[str, Any],
+    *,
+    import_version: str,
+    imported_at: str,
+) -> tuple[list[dict[str, Any]], str | None]:
+    source_file_name = safe_upload_file_name(upload["fileName"])
+    data = upload["data"]
+    content_type = str(upload.get("contentType") or mimetypes.guess_type(source_file_name)[0] or "application/octet-stream")
+    if not data:
+        return [], "文件内容为空"
+    if len(data) > MAX_UPLOAD_BYTES:
+        return [], f"超过 {MAX_UPLOAD_BYTES // 1024 // 1024}MB 上传限制"
+    if not (upload_file_type_tokens(source_file_name, content_type) & ALLOWED_RULE_UPLOAD_TYPES):
+        return [], "业务规则只支持 Word、Markdown、YAML、JSON 或 TXT"
+    suffix = Path(source_file_name).suffix.lower()
+    if suffix == ".docx":
+        rules = parse_docx_business_rules(
+            data,
+            source_file_name=source_file_name,
+            import_version=import_version,
+            imported_at=imported_at,
+        )
+        if not rules:
+            return [], "未解析到业务规则，请使用包含“序号、监检项目（大类）、监检项目（内容）、类别、判断准则 / 标准规范、方法及内容 / 工作见证”的 Word 表格"
+        return rules, None
+    text = data.decode("utf-8", errors="replace")
+    rules = (
+        parse_structured_business_rules(
+            text,
+            source_file_name=source_file_name,
+            import_version=import_version,
+            imported_at=imported_at,
+        )
+        if suffix in {".yaml", ".yml", ".json"}
+        else []
+    )
+    if not rules:
+        rules = parse_markdown_business_rules(
+            text,
+            source_file_name=source_file_name,
+            import_version=import_version,
+            imported_at=imported_at,
+        )
+    if not rules:
+        return [], "未解析到业务规则，请使用 Word 六列表格、rules.yaml 的 ruleSets 或 Markdown 的“### R01｜规则名称”格式"
+    return rules, None
+
+
+async def parse_multipart_uploads(request: Request) -> tuple[dict[str, list[str]], list[dict[str, Any]], JSONResponse | None]:
+    content_type = request.headers.get("content-type") or request.headers.get("Content-Type") or ""
+    if "multipart/form-data" not in content_type.lower():
+        return {}, [], fail(errors.VALIDATION_ERROR, request, message="请使用 multipart/form-data 上传知识库文件。")
+    body = await request.body()
+    if not body:
+        return {}, [], fail(errors.VALIDATION_ERROR, request, message="上传内容不能为空。")
+    try:
+        message = BytesParser(policy=policy.default).parsebytes(
+            f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode("utf-8") + body
+        )
+    except Exception as exc:
+        return {}, [], fail(errors.VALIDATION_ERROR, request, message=f"上传表单解析失败：{exc}")
+    if not message.is_multipart():
+        return {}, [], fail(errors.VALIDATION_ERROR, request, message="上传表单缺少 multipart 边界。")
+    fields: dict[str, list[str]] = {}
+    uploads: list[dict[str, Any]] = []
+    for part in message.iter_parts():
+        if part.get_content_disposition() != "form-data":
+            continue
+        field_name = part.get_param("name", header="content-disposition") or ""
+        file_name = part.get_filename()
+        payload = part.get_payload(decode=True) or b""
+        if file_name:
+            uploads.append(
+                {
+                    "fieldName": field_name,
+                    "fileName": safe_upload_file_name(file_name),
+                    "contentType": part.get_content_type(),
+                    "data": payload,
+                }
+            )
+        else:
+            fields.setdefault(field_name, []).append(payload.decode("utf-8", errors="replace"))
+    return fields, uploads, None
+
+
+def knowledge_source_for_import(
+    source_id: str | None,
+    source_name: str | None = None,
+    source_type: str | None = None,
+    source_version: str | None = None,
+    source_status: str | None = None,
+    vector_status: str | None = None,
+) -> dict[str, Any]:
+    effective_source_id = source_id or "KS-STANDARD-TSG"
+    source = repo.find_one("knowledge_sources", effective_source_id)
+    if source:
+        return source
+    source = {
+        "id": effective_source_id,
+        "name": source_name or "规则标准文件库",
+        "sourceType": source_type or "standard",
+        "version": source_version or f"upload-{server_time()[:10]}",
+        "status": source_status or "启用",
+        "fileCount": 0,
+        "chunkCount": 0,
+        "vectorStatus": vector_status or "待向量化",
+        "updatedAt": server_time(),
+        "actions": ["knowledge:view", "knowledge:manage", "knowledge:reindex"],
+        "revision": 1,
+    }
+    repo.state["knowledge_sources"].insert(0, source)
+    return source
+
+
+def current_business_rule_for_node(
+    node_id: int,
+    *,
+    business_pack_id: str | None = None,
+) -> dict[str, Any] | None:
+    candidates = []
+    for rule in repo.state.get("rule_versions", []):
+        if normalize_rule_status(rule.get("status")) != "已发布":
+            continue
+        if int(node_id) not in set(parse_rule_node_ids(rule.get("nodeIds"))):
+            continue
+        if business_pack_id and rule.get("businessPackId") not in {None, "", business_pack_id}:
+            continue
+        candidates.append(rule)
+    candidates.sort(
+        key=lambda item: str(item.get("publishedAt") or item.get("updatedAt") or item.get("importedAt") or ""),
+        reverse=True,
+    )
+    return candidates[0] if candidates else None
+
+
+def knowledge_file_is_business_rule(file: dict[str, Any] | None) -> bool:
+    if not file:
+        return False
+    source = repo.find_one("knowledge_sources", file.get("sourceId"))
+    return (source or {}).get("sourceType") == "rule" or file.get("sourceType") == "rule"
+
+
+def knowledge_task_is_business_rule(task: dict[str, Any] | None) -> bool:
+    if not task:
+        return False
+    target_type = str(task.get("targetType") or "").lower()
+    target_id = str(task.get("targetId") or "")
+    if target_type in {"file", "knowledgefile", "knowledge_file"}:
+        return knowledge_file_is_business_rule(repo.find_one("knowledge_files", target_id))
+    if target_type in {"source", "knowledgesource", "knowledge_source"}:
+        source = repo.find_one("knowledge_sources", target_id)
+        return (source or {}).get("sourceType") == "rule"
+    return False
+
+
+def store_knowledge_upload(
+    *,
+    source_id: str,
+    file_id: str,
+    file_name: str,
+    content_type: str,
+    data: bytes,
+) -> tuple[str, str]:
+    object_name = f"knowledge/{source_id}/{file_id}/{file_name}"
+    stored_url = object_storage.put_bytes("documents", object_name, data, content_type=content_type)
+    if stored_url:
+        return stored_url, "documents"
+    target_dir = KNOWLEDGE_UPLOAD_ROOT / source_id / file_id
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_path = target_dir / file_name
+    target_path.write_bytes(data)
+    return f"local://{target_path.relative_to(WORKSPACE_ROOT)}", "local"
+
+
+def create_imported_knowledge_records(
+    *,
+    source: dict[str, Any],
+    file_name: str,
+    content_type: str,
+    data: bytes,
+    relative_path: str,
+    original_file_name: str,
+    context_description: str,
+    uploader_name: str,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
+    now = server_time()
+    file_hash = hashlib.sha256(data).hexdigest()
+    source_id = str(source["id"])
+    seed = uuid4().hex[:10].upper()
+    document_id = f"KDOC-{seed}"
+    version_id = f"KDV-{seed}-V1"
+    file_id = f"KF-KB-{seed}"
+    storage_key, storage_bucket = store_knowledge_upload(
+        source_id=source_id,
+        file_id=file_id,
+        file_name=file_name,
+        content_type=content_type,
+        data=data,
+    )
+    file_type = Path(file_name).suffix.lower().lstrip(".") or content_type
+    document = {
+        "id": document_id,
+        "projectId": None,
+        "businessPackId": DEFAULT_BUSINESS_PACK_ID,
+        "materialTypeCode": "standard_reference",
+        "fileName": file_name,
+        "originalFileName": original_file_name,
+        "fileType": file_type,
+        "sourceOrgName": source.get("name") or "知识库导入",
+        "contextDescription": context_description,
+        "uploaderName": uploader_name,
+        "currentVersionId": version_id,
+        "fileStatus": "已上传",
+        "currentOcrStatus": "识别中",
+        "updatedAt": now,
+        "actions": ["file:view", "file:preview", "file:download"],
+    }
+    version = {
+        "id": version_id,
+        "documentId": document_id,
+        "versionNo": "V1",
+        "hash": file_hash,
+        "fileSize": len(data),
+        "fileName": file_name,
+        "originalFileName": original_file_name,
+        "contextDescription": context_description,
+        "storageKey": storage_key,
+        "storageBucket": storage_bucket,
+        "ocrStatus": "识别中",
+        "sliceStatus": "未切片",
+        "vectorStatus": "待向量化",
+        "uploaderName": uploader_name,
+        "uploadTime": now,
+        "isCurrent": True,
+    }
+    knowledge_file = {
+        "id": file_id,
+        "fileName": file_name,
+        "originalFileName": original_file_name,
+        "sourceId": source_id,
+        "sourceName": source.get("name") or source_id,
+        "contextDescription": context_description,
+        "projectId": None,
+        "projectName": "",
+        "nodeId": None,
+        "nodeName": "",
+        "documentId": document_id,
+        "documentVersionId": version_id,
+        "ocrStatus": "识别中",
+        "sliceStatus": "未切片",
+        "vectorStatus": "待向量化",
+        "chunkCount": 0,
+        "vectorCount": 0,
+        "updatedAt": now,
+        "sourceRelativePath": relative_path,
+        "actions": ["knowledge:view", "knowledge:reindex"],
+    }
+    task = {
+        "id": f"KT-{seed}",
+        "taskType": "ocr",
+        "targetType": "file",
+        "targetId": file_id,
+        "targetName": file_name,
+        "documentId": document_id,
+        "documentVersionId": version_id,
+        "status": "排队中",
+        "progress": 0,
+        "createdAt": now,
+        "updatedAt": now,
+        "revision": 1,
+        "actions": ["knowledge:task-retry"],
+    }
+    dispatch = task_dispatcher.dispatch_parse_document(document_id, version_id, storage_key, file_name)
+    task["lastDispatch"] = dispatch
+    return document, version, knowledge_file, task, {"storageKey": storage_key, "dispatch": dispatch}
 
 
 def missing_required_fields(item: dict[str, Any], fields: list[str]) -> list[str]:
@@ -2401,9 +3264,12 @@ def ai_recheck(
         project = repo.require_project(project_id)
         pack = business_pack_for_project(project)
         agent = (pack.get("agentSops") or [{}])[0]
-        rule = next(
-            (item for item in pack.get("ruleSets") or [] if node_id in set(item.get("nodeIds") or [])),
-            (pack.get("ruleSets") or [{}])[0],
+        rule = (
+            current_business_rule_for_node(node_id, business_pack_id=pack["id"])
+            or next(
+                (item for item in pack.get("ruleSets") or [] if node_id in set(item.get("nodeIds") or [])),
+                (pack.get("ruleSets") or [{}])[0],
+            )
         )
         run = {
             "id": run_id,
@@ -2752,7 +3618,15 @@ def date_compare(request: Request, project_id: str, node_id: int):
 
 @router.get("/projects/{project_id}/inspection/nodes/{node_id}/rules/current-version")
 def current_rule_version(request: Request, project_id: str, node_id: int):
-    rule = repo.state["rule_versions"][0]
+    project = repo.require_project(project_id)
+    business_pack_id = (project or {}).get("businessPackId") or DEFAULT_BUSINESS_PACK_ID
+    rule = current_business_rule_for_node(node_id, business_pack_id=business_pack_id)
+    if not rule:
+        pack = business_pack_for_project(project)
+        rule = next(
+            (item for item in pack.get("ruleSets") or [] if node_id in set(item.get("nodeIds") or [])),
+            repo.state["rule_versions"][0],
+        )
     return ok({"rule": repo.clone(rule)}, request)
 
 
@@ -11908,13 +12782,16 @@ def knowledge_overview(request: Request):
     sources = repo.state["knowledge_sources"]
     files = repo.state["knowledge_files"]
     tasks = repo.state["knowledge_tasks"]
+    indexable_sources = [source for source in sources if source.get("sourceType") != "rule"]
+    indexable_files = [file for file in files if not knowledge_file_is_business_rule(file)]
+    indexable_tasks = [task for task in tasks if not knowledge_task_is_business_rule(task)]
     return ok(
         {
             "metrics": [
-                {"key": "source", "label": "知识源", "value": len(sources), "tone": "blue"},
-                {"key": "file", "label": "项目文件", "value": len(files), "tone": "green"},
-                {"key": "task", "label": "运行任务", "value": len([item for item in tasks if item["status"] in {"排队中", "运行中"}]), "tone": "orange"},
-                {"key": "failed", "label": "失败任务", "value": len([item for item in tasks if item["status"] == "失败"]), "tone": "red"},
+                {"key": "source", "label": "知识源", "value": len(indexable_sources), "tone": "blue"},
+                {"key": "file", "label": "项目文件", "value": len(indexable_files), "tone": "green"},
+                {"key": "task", "label": "运行任务", "value": len([item for item in indexable_tasks if item["status"] in {"排队中", "运行中"}]), "tone": "orange"},
+                {"key": "failed", "label": "失败任务", "value": len([item for item in indexable_tasks if item["status"] == "失败"]), "tone": "red"},
             ],
             "libraries": [
                 {
@@ -11927,7 +12804,7 @@ def knowledge_overview(request: Request):
                     "status": source["status"],
                     "updatedAt": source["updatedAt"],
                 }
-                for source in sources
+                for source in indexable_sources
             ],
             "scorecard": build_knowledge_rule_scorecard(repo.state),
         },
@@ -11937,7 +12814,7 @@ def knowledge_overview(request: Request):
 
 @router.get("/knowledge/sources")
 def list_knowledge_sources(request: Request, keyword: str | None = None, sourceType: str | None = None, status: str | None = None, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    items = [versioned_record("knowledge-source", item) for item in repo.state["knowledge_sources"]]
+    items = [versioned_record("knowledge-source", item) for item in repo.state["knowledge_sources"] if item.get("sourceType") != "rule"]
     if sourceType:
         items = [item for item in items if item["sourceType"] == sourceType]
     if status:
@@ -11949,6 +12826,8 @@ def list_knowledge_sources(request: Request, keyword: str | None = None, sourceT
 @router.post("/knowledge/sources")
 def create_knowledge_source(request: Request, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     def produce():
+        if body.get("sourceType") == "rule":
+            return fail(errors.VALIDATION_ERROR, request, message="业务规则请通过业务规则版本管理导入，不进入知识库索引。")
         source = {
             "id": f"KS-{uuid4().hex[:8].upper()}",
             "name": body.get("name") or "新知识源",
@@ -11974,6 +12853,8 @@ def get_knowledge_source(request: Request, source_id: str):
     source = repo.find_one("knowledge_sources", source_id)
     if not source:
         return fail(errors.NOT_FOUND, request)
+    if source.get("sourceType") == "rule":
+        return fail(errors.NOT_FOUND, request, message="业务规则不作为知识源展示。")
     return ok({"source": versioned_record("knowledge-source", source)}, request)
 
 
@@ -11996,6 +12877,8 @@ def update_knowledge_source(
         changed = []
         for field in ["name", "sourceType", "version", "status", "fileCount", "chunkCount", "vectorStatus"]:
             if field in body and source.get(field) != body[field]:
+                if field == "sourceType" and body[field] == "rule":
+                    return fail(errors.VALIDATION_ERROR, request, message="业务规则请通过业务规则版本管理导入，不进入知识库索引。")
                 changed.append({"field": field, "before": source.get(field), "after": body[field]})
                 source[field] = body[field]
         if changed:
@@ -12016,12 +12899,191 @@ def disable_knowledge_source(request: Request, source_id: str, idempotency_key: 
     return update_knowledge_source(request, source_id, {"status": "停用"}, idempotency_key=idempotency_key, if_match=if_match)
 
 
+@router.post("/business-rules/import")
+async def import_business_rules(request: Request):
+    fields, uploads, parse_error = await parse_multipart_uploads(request)
+    if parse_error:
+        return parse_error
+    if not uploads:
+        return fail(errors.VALIDATION_ERROR, request, message="请选择要导入的业务规则文件。")
+
+    now = server_time()
+    import_version = first_form_value(fields, "importVersion", "")
+    if not import_version:
+        import_version = first_form_value(fields, "version", "")
+    if not import_version:
+        import_version = f"rule-draft-{now[:16].replace('-', '').replace(':', '').replace(' ', '-')}"
+    imported_rules: list[dict[str, Any]] = []
+    skipped: list[dict[str, str]] = []
+    existing_ids = {str(item.get("id")) for item in repo.state.get("rule_versions", [])}
+    existing_rule_versions = {
+        (str(item.get("ruleKey")), str(item.get("version")))
+        for item in repo.state.get("rule_versions", [])
+    }
+
+    for upload in uploads:
+        source_file_name = safe_upload_file_name(upload["fileName"])
+        parsed_rules, error_message = parse_business_rule_upload(
+            upload,
+            import_version=import_version,
+            imported_at=now,
+        )
+        if error_message:
+            skipped.append({"fileName": source_file_name, "reason": error_message})
+            continue
+        for parsed_rule in parsed_rules:
+            parsed_rule["status"] = "草稿"
+            parsed_rule["sourceFileName"] = source_file_name
+            parsed_rule["importBatchVersion"] = import_version
+            parsed_rule["importHash"] = hashlib.sha256(upload["data"]).hexdigest()
+            if str(parsed_rule.get("id")) in existing_ids:
+                parsed_rule["id"] = f"{parsed_rule['id']}-IMPORT-{uuid4().hex[:6].upper()}"
+            rule_version_key = (str(parsed_rule.get("ruleKey")), str(parsed_rule.get("version")))
+            if rule_version_key in existing_rule_versions:
+                parsed_rule["version"] = f"{parsed_rule['version']}-{uuid4().hex[:6].upper()}"
+                rule_version_key = (str(parsed_rule.get("ruleKey")), str(parsed_rule.get("version")))
+            existing_ids.add(str(parsed_rule.get("id")))
+            existing_rule_versions.add(rule_version_key)
+            repo.state["rule_versions"].insert(0, parsed_rule)
+            imported_rules.append(versioned_record("rule-version", parsed_rule))
+
+    if not imported_rules and skipped:
+        return fail(
+            errors.VALIDATION_ERROR,
+            request,
+            message="业务规则文件未导入。",
+            data={"skipped": skipped},
+        )
+    audit_id = repo.add_audit("导入业务规则文件", "RuleVersion", import_version)
+    return ok(
+        {
+            "rules": imported_rules,
+            "importedRules": imported_rules,
+            "skipped": skipped,
+            "summary": {
+                "importVersion": import_version,
+                "imported": len(imported_rules),
+                "skipped": len(skipped),
+                "status": "草稿",
+            },
+            "auditLogId": audit_id,
+        },
+        request,
+    )
+
+
+@router.post("/knowledge/files/import")
+async def import_knowledge_files(request: Request):
+    fields, uploads, parse_error = await parse_multipart_uploads(request)
+    if parse_error:
+        return parse_error
+    if not uploads:
+        return fail(errors.VALIDATION_ERROR, request, message="请选择要导入知识库的文件。")
+
+    source_id = first_form_value(fields, "sourceId", "KS-STANDARD-TSG") or "KS-STANDARD-TSG"
+    source_name = first_form_value(fields, "sourceName", "规则标准文件库")
+    source_type = first_form_value(fields, "sourceType", "standard")
+    if source_type == "rule":
+        return fail(errors.VALIDATION_ERROR, request, message="业务规则请通过业务规则版本管理导入，不进入知识库切片或向量索引。")
+    source_version = first_form_value(fields, "sourceVersion", "")
+    source_status = first_form_value(fields, "sourceStatus", "")
+    vector_status = first_form_value(fields, "vectorStatus", "")
+    source = knowledge_source_for_import(
+        source_id,
+        source_name=source_name,
+        source_type=source_type,
+        source_version=source_version,
+        source_status=source_status,
+        vector_status=vector_status,
+    )
+    relative_paths = fields.get("relativePaths") or []
+    display_names = fields.get("fileNames") or []
+    context_descriptions = fields.get("contextDescriptions") or []
+    uploader = admin_user_snapshot(request_user_id(request), role_from_query(x_role=request.headers.get("X-Role")))
+    uploader_name = uploader.get("name") or "知识库管理员"
+
+    imported_files: list[dict[str, Any]] = []
+    imported_tasks: list[dict[str, Any]] = []
+    dispatches: list[dict[str, Any]] = []
+    skipped: list[dict[str, str]] = []
+
+    for index, upload in enumerate(uploads):
+        original_file_name = safe_upload_file_name(upload["fileName"])
+        file_name = display_upload_file_name(
+            bounded_form_value(display_names, index, limit=180),
+            original_file_name,
+        )
+        context_description = bounded_form_value(context_descriptions, index, limit=500)
+        data = upload["data"]
+        content_type = str(upload.get("contentType") or mimetypes.guess_type(original_file_name)[0] or "application/octet-stream")
+        relative_path = safe_relative_path(relative_paths[index] if index < len(relative_paths) else None, file_name)
+        if not data:
+            skipped.append({"fileName": file_name, "reason": "文件内容为空"})
+            continue
+        if len(data) > MAX_UPLOAD_BYTES:
+            skipped.append({"fileName": file_name, "reason": f"超过 {MAX_UPLOAD_BYTES // 1024 // 1024}MB 上传限制"})
+            continue
+        if not (upload_file_type_tokens(original_file_name, content_type) & ALLOWED_KNOWLEDGE_UPLOAD_TYPES):
+            skipped.append({"fileName": file_name, "reason": "文件类型不支持"})
+            continue
+
+        file_hash = hashlib.sha256(data).hexdigest()
+        duplicate = next(
+            (
+                file
+                for file in repo.state.get("knowledge_files", [])
+                if file.get("sourceId") == source["id"]
+                and (repo.find_one("versions", file.get("documentVersionId")) or {}).get("hash") == file_hash
+            ),
+            None,
+        )
+        if duplicate:
+            skipped.append({"fileName": file_name, "reason": f"已存在相同内容：{duplicate.get('fileName')}"})
+            continue
+
+        document, version, knowledge_file, task, storage = create_imported_knowledge_records(
+            source=source,
+            file_name=file_name,
+            content_type=content_type,
+            data=data,
+            relative_path=relative_path,
+            original_file_name=original_file_name,
+            context_description=context_description,
+            uploader_name=uploader_name,
+        )
+        repo.state["documents"].insert(0, document)
+        repo.state["versions"].insert(0, version)
+        repo.state["knowledge_files"].insert(0, knowledge_file)
+        repo.state["knowledge_tasks"].insert(0, task)
+        imported_files.append(versioned_record("knowledge-file", knowledge_file))
+        imported_tasks.append(versioned_record("knowledge-task", task))
+        dispatches.append({"knowledgeTaskId": task["id"], **storage["dispatch"]})
+
+    if imported_files:
+        source["fileCount"] = int(source.get("fileCount") or 0) + len(imported_files)
+        source["vectorStatus"] = "待向量化"
+        source["updatedAt"] = server_time()
+        bump_record_revision(source)
+    audit_id = repo.add_audit("导入知识库文件", "KnowledgeSource", source["id"])
+    return ok(
+        {
+            "source": versioned_record("knowledge-source", source),
+            "files": imported_files,
+            "tasks": imported_tasks,
+            "dispatches": dispatches,
+            "skipped": skipped,
+            "auditLogId": audit_id,
+        },
+        request,
+    )
+
+
 @router.get("/knowledge/project-files")
 def list_knowledge_files(request: Request, keyword: str | None = None, projectId: str | None = None, nodeId: int | None = None, status: str | None = None, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
     items = [
         repo.clone(item)
         for item in repo.state["knowledge_files"]
-        if record_visible_for_request(request, item)
+        if record_visible_for_request(request, item) and not knowledge_file_is_business_rule(item)
     ]
     if projectId:
         items = [item for item in items if item.get("projectId") == projectId]
@@ -12038,6 +13100,8 @@ def knowledge_file_detail(request: Request, file_id: str):
     file = repo.find_one("knowledge_files", file_id)
     if not file:
         return fail(errors.NOT_FOUND, request)
+    if knowledge_file_is_business_rule(file):
+        return fail(errors.NOT_FOUND, request, message="业务规则不作为知识文件展示。")
     scope_error = scope_error_for_record(request, file)
     if scope_error:
         return scope_error
@@ -12065,6 +13129,8 @@ def knowledge_file_detail(request: Request, file_id: str):
 def knowledge_file_chunks(request: Request, file_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
     file = repo.find_one("knowledge_files", file_id)
     if file:
+        if knowledge_file_is_business_rule(file):
+            return fail(errors.NOT_FOUND, request, message="业务规则不参与知识库切片。")
         scope_error = scope_error_for_record(request, file)
         if scope_error:
             return scope_error
@@ -12082,6 +13148,8 @@ def knowledge_file_vectors(request: Request, file_id: str):
     file = repo.find_one("knowledge_files", file_id)
     if not file:
         return fail(errors.NOT_FOUND, request)
+    if knowledge_file_is_business_rule(file):
+        return fail(errors.NOT_FOUND, request, message="业务规则不参与知识库向量化。")
     scope_error = scope_error_for_record(request, file)
     if scope_error:
         return scope_error
@@ -12092,6 +13160,8 @@ def knowledge_file_vectors(request: Request, file_id: str):
 def knowledge_file_reasoning_refs(request: Request, file_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
     file = repo.find_one("knowledge_files", file_id)
     if file:
+        if knowledge_file_is_business_rule(file):
+            return fail(errors.NOT_FOUND, request, message="业务规则不作为知识文件引用。")
         scope_error = scope_error_for_record(request, file)
         if scope_error:
             return scope_error
@@ -12109,6 +13179,8 @@ def reindex_file(request: Request, file_id: str, body: dict[str, Any] = Body(def
         file = repo.find_one("knowledge_files", file_id)
         if not file:
             return fail(errors.NOT_FOUND, request)
+        if knowledge_file_is_business_rule(file):
+            return fail(errors.VALIDATION_ERROR, request, message="业务规则不参与知识库重建索引，请在业务规则版本管理中发布或回滚。")
         scope_error = scope_error_for_record(request, file)
         if scope_error:
             return scope_error
@@ -12121,7 +13193,11 @@ def reindex_file(request: Request, file_id: str, body: dict[str, Any] = Body(def
 
 @router.get("/knowledge/tasks")
 def list_knowledge_tasks(request: Request, taskType: str | None = None, status: str | None = None, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    items = [versioned_record("knowledge-task", item) for item in repo.state["knowledge_tasks"] if record_visible_for_request(request, item)]
+    items = [
+        versioned_record("knowledge-task", item)
+        for item in repo.state["knowledge_tasks"]
+        if record_visible_for_request(request, item) and not knowledge_task_is_business_rule(item)
+    ]
     if taskType:
         items = [item for item in items if item["taskType"] == taskType]
     if status:
@@ -12185,14 +13261,22 @@ def retry_dispatch_for_knowledge_task(request: Request, task: dict[str, Any]) ->
             )
         )
     elif task_type == "slice":
-        if not repo.find_one("knowledge_files", task.get("targetId")):
+        file = repo.find_one("knowledge_files", task.get("targetId"))
+        if not file:
             repo.mark_task_failed(task, "切片重试失败：找不到关联知识文件。")
             return [], fail(errors.NOT_FOUND, request, message="找不到关联知识文件。")
+        if knowledge_file_is_business_rule(file):
+            repo.mark_task_failed(task, "业务规则不参与知识库切片。")
+            return [], fail(errors.VALIDATION_ERROR, request, message="业务规则不参与知识库切片。")
         dispatches.append(task_dispatcher.dispatch_slice(task["targetId"]))
     elif task_type in {"vector", "embed"}:
-        if not repo.find_one("knowledge_files", task.get("targetId")):
+        file = repo.find_one("knowledge_files", task.get("targetId"))
+        if not file:
             repo.mark_task_failed(task, "向量化重试失败：找不到关联知识文件。")
             return [], fail(errors.NOT_FOUND, request, message="找不到关联知识文件。")
+        if knowledge_file_is_business_rule(file):
+            repo.mark_task_failed(task, "业务规则不参与知识库向量化。")
+            return [], fail(errors.VALIDATION_ERROR, request, message="业务规则不参与知识库向量化。")
         dispatches.append(task_dispatcher.dispatch_embed(task["targetId"]))
     elif task_type == "reindex":
         target_type = task.get("targetType")
@@ -12200,7 +13284,7 @@ def retry_dispatch_for_knowledge_task(request: Request, task: dict[str, Any]) ->
             targets = [repo.find_one("knowledge_files", task.get("targetId"))]
         else:
             targets = [item for item in repo.state["knowledge_files"] if item.get("sourceId") == task.get("targetId")]
-        targets = [item for item in targets if item]
+        targets = [item for item in targets if item and not knowledge_file_is_business_rule(item)]
         if not targets:
             repo.mark_task_failed(task, "重建索引失败：找不到可重建的知识文件。")
             return [], fail(errors.NOT_FOUND, request, message="找不到可重建的知识文件。")
@@ -12288,7 +13372,10 @@ def cancel_knowledge_task(
 def batch_reindex(request: Request, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     def produce():
         ids = []
-        targets = repo.state["knowledge_files"] if body.get("scope") != "source" else repo.state["knowledge_sources"]
+        if body.get("scope") == "source":
+            targets = [item for item in repo.state["knowledge_sources"] if item.get("sourceType") != "rule"]
+        else:
+            targets = [item for item in repo.state["knowledge_files"] if not knowledge_file_is_business_rule(item)]
         for target in targets[:3]:
             task = {"id": f"KT-{uuid4().hex[:8].upper()}", "taskType": "reindex", "targetType": "file" if "fileName" in target else "source", "targetId": target["id"], "targetName": target.get("fileName") or target.get("name"), "status": "排队中", "progress": 0, "createdAt": server_time(), "updatedAt": server_time(), "revision": 1, "actions": ["knowledge:task-retry"]}
             repo.state["knowledge_tasks"].insert(0, task)
@@ -12376,24 +13463,155 @@ def list_rule_versions(request: Request, keyword: str | None = None, status: str
     items = [versioned_record("rule-version", item) for item in repo.state["rule_versions"]]
     if status:
         items = [item for item in items if item["status"] == status]
-    items = filter_keyword(items, keyword, ["name", "ruleKey", "version"])
+    items = filter_keyword(items, keyword, ["name", "inspectionItem", "inspectionCategory", "standardText", "witnessText", "ruleKey", "version"])
     return ok(page(items, page_no, page_size), request)
+
+
+@router.get("/rules/versions/{version_id}")
+def get_rule_version(request: Request, version_id: str):
+    rule = repo.find_one("rule_versions", version_id)
+    if not rule:
+        return fail(errors.NOT_FOUND, request)
+    return ok({"rule": versioned_record("rule-version", rule)}, request)
+
+
+@router.post("/rules/versions")
+def create_rule_version(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        normalized = normalize_business_rule_version_record(
+            {
+                **body,
+                "status": "草稿",
+                "version": body.get("version") or f"{make_business_rule_key(normalize_business_rule_source_fields(body), body)}-draft-{server_time()[:16].replace('-', '').replace(':', '').replace(' ', '-')}",
+            },
+            force_status="草稿",
+        )
+        if not normalized.get("inspectionItem"):
+            return fail(errors.VALIDATION_ERROR, request, message="请填写监检项目（内容）。")
+        if not normalized.get("standardText") and not normalized.get("witnessText"):
+            return fail(errors.VALIDATION_ERROR, request, message="请填写判断准则 / 标准规范或方法及内容 / 工作见证。")
+        existing_ids = {str(item.get("id")) for item in repo.state.get("rule_versions", [])}
+        if normalized["id"] in existing_ids:
+            normalized["id"] = f"RULE-{uuid4().hex[:10].upper()}"
+        repo.state["rule_versions"].insert(0, normalized)
+        audit_id = repo.add_audit("新增业务规则草稿", "RuleVersion", normalized["id"])
+        return ok({"rule": versioned_record("rule-version", normalized), "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
+
+
+@router.put("/rules/versions/{version_id}")
+@router.patch("/rules/versions/{version_id}")
+def update_rule_version(
+    request: Request,
+    version_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    def produce():
+        rule = repo.find_one("rule_versions", version_id)
+        if not rule:
+            return fail(errors.NOT_FOUND, request)
+        if normalize_rule_status(rule.get("status")) in {"已发布", "已回滚"}:
+            return fail(errors.VALIDATION_ERROR, request, message="已发布或历史规则不能直接编辑，请基于当前规则创建草稿。")
+        if not record_if_match_valid("rule-version", rule, if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        merged = {**rule, **body, "id": rule["id"], "status": body.get("status") or rule.get("status") or "草稿"}
+        if normalize_rule_status(merged.get("status")) == "已发布":
+            return fail(errors.VALIDATION_ERROR, request, message="编辑接口不能直接发布规则，请使用发布操作。")
+        normalized = normalize_business_rule_version_record(merged)
+        normalized["revision"] = int(rule.get("revision") or 1)
+        rule.clear()
+        rule.update(normalized)
+        bump_record_revision(rule)
+        audit_id = repo.add_audit("编辑业务规则草稿", "RuleVersion", version_id)
+        return ok({"rule": versioned_record("rule-version", rule), "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"versionId": version_id, "body": body})
+
+
+@router.post("/rules/versions/{version_id}/fork")
+def fork_rule_version(
+    request: Request,
+    version_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        source = repo.find_one("rule_versions", version_id)
+        if not source:
+            return fail(errors.NOT_FOUND, request)
+        now = server_time()
+        draft = normalize_business_rule_version_record(
+            {
+                **repo.clone(source),
+                **body,
+                "id": f"RULE-{uuid4().hex[:10].upper()}",
+                "status": "草稿",
+                "version": body.get("version") or f"{source.get('ruleKey') or make_business_rule_key(normalize_business_rule_source_fields(source), source)}-draft-{now[:16].replace('-', '').replace(':', '').replace(' ', '-')}",
+                "publishedAt": None,
+                "forkedFromRuleVersionId": source.get("id"),
+                "forkedFromVersion": source.get("version"),
+                "createdAt": now,
+                "updatedAt": now,
+                "revision": 1,
+            },
+            force_status="草稿",
+        )
+        repo.state["rule_versions"].insert(0, draft)
+        audit_id = repo.add_audit("基于正式规则创建草稿", "RuleVersion", draft["id"], source.get("version"))
+        return ok({"rule": versioned_record("rule-version", draft), "source": versioned_record("rule-version", source), "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"versionId": version_id, "body": body})
 
 
 @router.get("/rules/versions/{version_id}/diff")
 def rule_version_diff(request: Request, version_id: str, targetVersionId: str | None = None, targetVersion: str | None = None):
+    if not repo.state["rule_versions"]:
+        return fail(errors.NOT_FOUND, request)
     base = repo.find_one("rule_versions", version_id) or repo.state["rule_versions"][0]
-    target = repo.find_one("rule_versions", targetVersionId or "") or repo.state["rule_versions"][-1]
+    target = repo.find_one("rule_versions", targetVersionId or "") or next((item for item in repo.state["rule_versions"] if item.get("version") == targetVersion), None) or repo.state["rule_versions"][-1]
+    compared_fields = [
+        ("inspectionCategory", "监检项目（大类）"),
+        ("inspectionItem", "监检项目（内容）"),
+        ("inspectionClass", "类别"),
+        ("standardText", "判断准则 / 标准规范"),
+        ("witnessText", "方法及内容 / 工作见证"),
+        ("nodeIds", "适用节点"),
+        ("status", "状态"),
+    ]
+    changes = []
+    for field, label in compared_fields:
+        before = target.get(field)
+        after = base.get(field)
+        if before != after:
+            changes.append(
+                {
+                    "field": field,
+                    "label": label,
+                    "before": before,
+                    "after": after,
+                    "severity": "warning" if field in {"nodeIds", "standardText", "witnessText"} else "info",
+                    "changeType": "added" if not before and after else "removed" if before and not after else "changed",
+                }
+            )
     return ok(
         {
             "base": versioned_record("rule-version", base),
             "target": versioned_record("rule-version", target),
             "comparedAt": server_time(),
-            "summary": {"added": 1, "changed": 2, "removed": 0, "warning": 1},
-            "changes": [
-                {"field": "version", "label": "版本号", "before": target.get("version"), "after": base.get("version"), "severity": "info", "changeType": "changed"},
-                {"field": "nodes", "label": "适用节点", "before": target.get("nodeIds"), "after": base.get("nodeIds"), "severity": "warning", "changeType": "changed"},
-            ],
+            "summary": {
+                "added": len([item for item in changes if item["changeType"] == "added"]),
+                "changed": len([item for item in changes if item["changeType"] == "changed"]),
+                "removed": len([item for item in changes if item["changeType"] == "removed"]),
+                "warning": len([item for item in changes if item["severity"] == "warning"]),
+            },
+            "changes": changes,
         },
         request,
     )
@@ -12413,8 +13631,24 @@ def publish_rule_version(
             return fail(errors.NOT_FOUND, request)
         if not record_if_match_valid("rule-version", rule, if_match):
             return fail(errors.ETAG_CONFLICT, request)
+        if not (rule.get("standardText") or rule.get("criteria")) and not (rule.get("witnessText") or rule.get("checkMethod")):
+            return fail(errors.VALIDATION_ERROR, request, message="发布前请填写判断准则 / 标准规范或方法及内容 / 工作见证。")
+        rule.update(normalize_business_rule_version_record(rule, force_status="已发布"))
+        rule["aiExecution"] = compile_business_rule_execution(rule)
+        overlapping_node_ids = set(parse_rule_node_ids(rule.get("nodeIds")))
+        for item in repo.state.get("rule_versions", []):
+            if item.get("id") == rule.get("id") or normalize_rule_status(item.get("status")) != "已发布":
+                continue
+            same_key = item.get("ruleKey") and item.get("ruleKey") == rule.get("ruleKey")
+            same_node = bool(overlapping_node_ids & set(parse_rule_node_ids(item.get("nodeIds"))))
+            if same_key or same_node:
+                item["status"] = "已回滚"
+                item["rolledBackAt"] = server_time()
+                item["rolledBackByRuleVersionId"] = rule.get("id")
+                bump_record_revision(item)
         rule["status"] = "已发布"
         rule["publishedAt"] = server_time()
+        rule["publishedReason"] = body.get("reason") or ""
         bump_record_revision(rule)
         result = repo.mutation_result("发布规则版本", "RuleVersion", version_id, next_status="已发布")
         return ok({**result, "rule": versioned_record("rule-version", rule)}, request)
