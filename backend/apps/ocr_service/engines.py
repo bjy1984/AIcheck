@@ -194,6 +194,7 @@ class PaddleOcrEngine(LocalOcrEngine):
             use_textline_orientation=runtime["use_textline_orientation"],
             text_det_limit_side_len=runtime["text_det_limit_side_len"],
             text_det_limit_type="max",
+            enable_mkldnn=False,
         )
         raw = ocr.predict(str(source_path))
         fragments: list[dict[str, Any]] = []
@@ -715,6 +716,7 @@ class PaddleOcrSubprocessEngine(LocalOcrEngine):
                 use_textline_orientation=bool(runtime.get("use_textline_orientation")),
                 text_det_limit_side_len=int(runtime.get("text_det_limit_side_len") or 2400),
                 text_det_limit_type="max",
+                enable_mkldnn=False,
             )
             raw = ocr.predict(image_path)
             fragments = []
@@ -872,6 +874,7 @@ def paddle_ocr_worker_script() -> str:
             use_textline_orientation=False,
             text_det_limit_side_len=2400,
             text_det_limit_type="max",
+            enable_mkldnn=False,
         )
 
         def parse_one(image_path):

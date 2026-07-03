@@ -179,16 +179,17 @@ const ocrCapabilityTestRuns = ref<FdeOcrCapabilityTestRun[]>([])
 const selectedOcrCapabilityTest = ref<FdeOcrCapabilityTestDetailPayload | null>(null)
 const selectedOcrCapabilityTestRunId = ref('')
 const ocrCapabilityTestFile = ref<File | null>(null)
+const ocrCapabilityLocalPreviewUrl = ref('')
 const ocrCapabilityFileInputRef = ref<HTMLInputElement | null>(null)
 const ocrCapabilityDialogVisible = ref(false)
 const ocrSecondaryMenuVisible = ref(false)
 const ocrCapabilityTestLoading = ref(false)
 const ocrCapabilityTestPolling = ref<number | undefined>()
 const ocrCapabilityTestForm = ref({
-  profileId: 'piping_characteristic_list_v1',
-  documentType: 'engineering_table_photo',
-  enableTables: true,
-  enableSeals: true,
+  profileId: 'all',
+  documentType: 'engineering_document',
+  enableTables: false,
+  enableSeals: false,
   enableFallback: true
 })
 const labelStudioExportSummary = ref<Record<string, unknown> | null>(null)
@@ -2773,6 +2774,49 @@ const selectedOcrCapabilityParseResult = computed(
 const selectedOcrCapabilityPreview = computed(
   () => selectedOcrCapabilityTest.value?.preview || null
 )
+const resolveOcrCapabilityPreviewType = (file?: File | null) => {
+  const text = `${file?.type || ''} ${file?.name || ''}`.toLowerCase()
+  if (/pdf/.test(text)) return 'pdf'
+  if (/image|png|jpe?g|webp|gif/.test(text)) return 'image'
+  return 'unsupported'
+}
+const selectedOcrCapabilityPreviewSource = computed(() => {
+  if (selectedOcrCapabilityPreview.value?.url) {
+    return selectedOcrCapabilityPreview.value
+  }
+  if (ocrCapabilityLocalPreviewUrl.value) {
+    return {
+      url: ocrCapabilityLocalPreviewUrl.value,
+      previewType: resolveOcrCapabilityPreviewType(ocrCapabilityTestFile.value),
+      fileName: ocrCapabilityTestFile.value?.name
+    }
+  }
+  return null
+})
+const stringifyOcrCapabilityText = (value: unknown): string => {
+  if (value === undefined || value === null) return ''
+  if (typeof value === 'string' || typeof value === 'number') return String(value)
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => stringifyOcrCapabilityText(item))
+      .filter(Boolean)
+      .join('\n')
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    return stringifyOcrCapabilityText(
+      record.text ??
+        record.fullText ??
+        record.rawText ??
+        record.plainText ??
+        record.content ??
+        record.value ??
+        record.fieldValue ??
+        record.ocrText
+    )
+  }
+  return ''
+}
 const selectedOcrCapabilitySummary = computed(() => {
   const result = selectedOcrCapabilityParseResult.value || {}
   const runSummary = selectedOcrCapabilityRun.value?.resultSummary || {}
@@ -2810,6 +2854,45 @@ const selectedOcrCapabilityDiagnostics = computed(() => {
     selectedOcrCapabilityRun.value?.diagnostics
   return Array.isArray(diagnostics) ? diagnostics.slice(0, 40) : []
 })
+const selectedOcrCapabilityText = computed(() => {
+  const result = selectedOcrCapabilityParseResult.value || {}
+  const directText = stringifyOcrCapabilityText(
+    result.fullText ??
+      result.text ??
+      result.rawText ??
+      result.plainText ??
+      result.ocrText ??
+      result.markdown ??
+      result.content
+  )
+  if (directText) return directText
+  const pageText = stringifyOcrCapabilityText(result.pages)
+  if (pageText) return pageText
+  const fragmentText = stringifyOcrCapabilityText(result.fragments)
+  if (fragmentText) return fragmentText
+  const layoutText = stringifyOcrCapabilityText(result.layoutBlocks)
+  if (layoutText) return layoutText
+  const tableText = stringifyOcrCapabilityText(result.tables)
+  if (tableText) return tableText
+  return selectedOcrCapabilityFields.value
+    .map((field) => {
+      const label = friendlyFieldLabel(
+        String(field.fieldCode || field.fieldName || field.name || '字段')
+      )
+      const value = stringifyOcrCapabilityText(field.fieldValue ?? field.value ?? field.text)
+      return value ? `${label}：${value}` : ''
+    })
+    .filter(Boolean)
+    .join('\n')
+})
+const selectedOcrCapabilityHasOutput = computed(
+  () =>
+    !!selectedOcrCapabilityText.value ||
+    selectedOcrCapabilityFields.value.length > 0 ||
+    selectedOcrCapabilityTables.value.length > 0 ||
+    selectedOcrCapabilitySeals.value.length > 0 ||
+    selectedOcrCapabilityDiagnostics.value.length > 0
+)
 const selectedOcrCapabilityCanPersist = computed(
   () =>
     selectedOcrCapabilityRun.value?.status === 'success' &&
@@ -7460,11 +7543,34 @@ const scheduleOcrCapabilityTestPolling = (run?: FdeOcrCapabilityTestRun) => {
 
 const handleOcrCapabilityTestFileChange = (event: Event) => {
   const input = event.target as HTMLInputElement
+  if (ocrCapabilityLocalPreviewUrl.value) {
+    URL.revokeObjectURL(ocrCapabilityLocalPreviewUrl.value)
+    ocrCapabilityLocalPreviewUrl.value = ''
+  }
   ocrCapabilityTestFile.value = input.files?.[0] || null
+  if (ocrCapabilityTestFile.value) {
+    ocrCapabilityLocalPreviewUrl.value = URL.createObjectURL(ocrCapabilityTestFile.value)
+    selectedOcrCapabilityTest.value = null
+    selectedOcrCapabilityTestRunId.value = ''
+  }
 }
 
 const chooseOcrCapabilityTestFile = () => {
   ocrCapabilityFileInputRef.value?.click()
+}
+
+const resolveOcrCapabilityUploadUrl = (uploadUrl: string) => {
+  const proxyOrigin = import.meta.env.VITE_MINIO_UPLOAD_PROXY_ORIGIN
+  if (!proxyOrigin) return uploadUrl
+  try {
+    const sourceUrl = new URL(uploadUrl)
+    const targetUrl = new URL(proxyOrigin)
+    sourceUrl.protocol = targetUrl.protocol
+    sourceUrl.host = targetUrl.host
+    return sourceUrl.toString()
+  } catch {
+    return uploadUrl
+  }
 }
 
 const startOcrCapabilityTest = async () => {
@@ -7489,7 +7595,8 @@ const startOcrCapabilityTest = async () => {
     const uploadSession = sessionRes.data.uploadSession
     const headers = uploadSession.headers || { 'Content-Type': fileMeta.contentType }
     if (uploadSession.uploadUrl && !String(uploadSession.uploadUrl).startsWith('mock://')) {
-      const uploadRes = await fetch(uploadSession.uploadUrl, {
+      const uploadUrl = resolveOcrCapabilityUploadUrl(uploadSession.uploadUrl)
+      const uploadRes = await fetch(uploadUrl, {
         method: uploadSession.method || 'PUT',
         headers,
         body: file
@@ -8384,6 +8491,10 @@ onBeforeUnmount(() => {
     window.clearTimeout(ocrCapabilityTestPolling.value)
     ocrCapabilityTestPolling.value = undefined
   }
+  if (ocrCapabilityLocalPreviewUrl.value) {
+    URL.revokeObjectURL(ocrCapabilityLocalPreviewUrl.value)
+    ocrCapabilityLocalPreviewUrl.value = ''
+  }
 })
 </script>
 
@@ -8471,6 +8582,17 @@ onBeforeUnmount(() => {
       />
 
       <div v-if="isFdeRoute('ocr-quality')" class="ocr-command-center">
+        <section class="ocr-online-entry" aria-label="OCR 在线测试入口">
+          <div class="ocr-online-entry__copy">
+            <span>在线测 OCR</span>
+            <strong>上传 PDF / 图片，立即看识别结果</strong>
+            <small>临时验证一份资料的识别效果，不进入正式项目资料。</small>
+          </div>
+          <ElButton type="primary" size="large" @click="openOcrCapabilityTestPanel">
+            在线测 OCR
+          </ElButton>
+        </section>
+
         <div class="ocr-step-grid" role="tablist" aria-label="OCR 当前状态">
           <button
             type="button"
@@ -9154,15 +9276,15 @@ onBeforeUnmount(() => {
                     {{ friendlyStatus(selectedOcrCapabilityRun.status) }}
                   </ElTag>
                 </div>
-                <div v-if="selectedOcrCapabilityPreview?.url" class="ocr-preview-stage">
+                <div v-if="selectedOcrCapabilityPreviewSource?.url" class="ocr-preview-stage">
                   <img
-                    v-if="selectedOcrCapabilityPreview.previewType === 'image'"
-                    :src="selectedOcrCapabilityPreview.url"
+                    v-if="selectedOcrCapabilityPreviewSource.previewType === 'image'"
+                    :src="selectedOcrCapabilityPreviewSource.url"
                     alt="OCR 测试文件预览"
                   />
                   <iframe
-                    v-else-if="selectedOcrCapabilityPreview.previewType === 'pdf'"
-                    :src="selectedOcrCapabilityPreview.url"
+                    v-else-if="selectedOcrCapabilityPreviewSource.previewType === 'pdf'"
+                    :src="selectedOcrCapabilityPreviewSource.url"
                     title="OCR 测试 PDF 预览"
                   ></iframe>
                   <ElEmpty v-else description="该文件类型暂不支持页面内预览，可查看 OCR 结果。" />
@@ -9221,6 +9343,104 @@ onBeforeUnmount(() => {
                     <strong>{{ selectedOcrCapabilitySummary.diagnostics }}</strong>
                   </div>
                 </div>
+                <ElAlert
+                  v-if="selectedOcrCapabilityRun && !selectedOcrCapabilityHasOutput"
+                  class="mt-12px"
+                  type="warning"
+                  show-icon
+                  :closable="false"
+                  title="本次测试还没有返回可展示的识别内容，请稍后刷新记录或检查 OCR 服务状态。"
+                />
+                <ElTabs class="ocr-capability-output-tabs">
+                  <ElTabPane label="全文">
+                    <pre v-if="selectedOcrCapabilityText" class="ocr-capability-text-output">{{
+                      selectedOcrCapabilityText
+                    }}</pre>
+                    <ElEmpty v-else description="开始测试后，这里显示 OCR 识别文本。" />
+                  </ElTabPane>
+                  <ElTabPane label="字段">
+                    <ElTable
+                      v-if="selectedOcrCapabilityFields.length"
+                      :data="selectedOcrCapabilityFields"
+                    >
+                      <ElTableColumn
+                        prop="fieldCode"
+                        label="字段"
+                        min-width="150"
+                        show-overflow-tooltip
+                      >
+                        <template #default="{ row }">{{
+                          friendlyFieldLabel(row.fieldCode || row.fieldName)
+                        }}</template>
+                      </ElTableColumn>
+                      <ElTableColumn
+                        prop="fieldValue"
+                        label="识别值"
+                        min-width="180"
+                        show-overflow-tooltip
+                      />
+                      <ElTableColumn prop="confidence" label="置信度" width="95" />
+                    </ElTable>
+                    <ElEmpty v-else description="暂无结构化字段输出。" />
+                  </ElTabPane>
+                  <ElTabPane label="表格">
+                    <ElTable
+                      v-if="selectedOcrCapabilityTables.length"
+                      :data="selectedOcrCapabilityTables"
+                    >
+                      <ElTableColumn
+                        prop="tableId"
+                        label="表格"
+                        min-width="160"
+                        show-overflow-tooltip
+                      />
+                      <ElTableColumn prop="rows" label="行" width="70" />
+                      <ElTableColumn prop="columns" label="列" width="70" />
+                      <ElTableColumn prop="structureConfidence" label="结构置信" width="110" />
+                    </ElTable>
+                    <ElEmpty v-else description="暂无表格输出。" />
+                  </ElTabPane>
+                  <ElTabPane label="印章">
+                    <ElTable
+                      v-if="selectedOcrCapabilitySeals.length"
+                      :data="selectedOcrCapabilitySeals"
+                    >
+                      <ElTableColumn
+                        prop="sealName"
+                        label="章名"
+                        min-width="220"
+                        show-overflow-tooltip
+                      />
+                      <ElTableColumn
+                        prop="sealType"
+                        label="类型"
+                        min-width="130"
+                        show-overflow-tooltip
+                      />
+                      <ElTableColumn prop="ocrConfidence" label="置信度" width="100" />
+                    </ElTable>
+                    <ElEmpty v-else description="暂无印章输出。" />
+                  </ElTabPane>
+                  <ElTabPane label="诊断">
+                    <ElTable
+                      v-if="selectedOcrCapabilityDiagnostics.length"
+                      :data="selectedOcrCapabilityDiagnostics"
+                    >
+                      <ElTableColumn prop="code" label="问题" min-width="180" show-overflow-tooltip>
+                        <template #default="{ row }">{{
+                          friendlyIssueLabel(row.code || row)
+                        }}</template>
+                      </ElTableColumn>
+                      <ElTableColumn
+                        prop="message"
+                        label="说明"
+                        min-width="260"
+                        show-overflow-tooltip
+                      />
+                    </ElTable>
+                    <ElEmpty v-else description="暂无诊断输出。" />
+                  </ElTabPane>
+                </ElTabs>
               </div>
             </section>
           </section>
@@ -13961,15 +14181,18 @@ onBeforeUnmount(() => {
                             {{ friendlyStatus(selectedOcrCapabilityRun.status) }}
                           </ElTag>
                         </div>
-                        <div v-if="selectedOcrCapabilityPreview?.url" class="ocr-preview-stage">
+                        <div
+                          v-if="selectedOcrCapabilityPreviewSource?.url"
+                          class="ocr-preview-stage"
+                        >
                           <img
-                            v-if="selectedOcrCapabilityPreview.previewType === 'image'"
-                            :src="selectedOcrCapabilityPreview.url"
+                            v-if="selectedOcrCapabilityPreviewSource.previewType === 'image'"
+                            :src="selectedOcrCapabilityPreviewSource.url"
                             alt="OCR 测试文件预览"
                           />
                           <iframe
-                            v-else-if="selectedOcrCapabilityPreview.previewType === 'pdf'"
-                            :src="selectedOcrCapabilityPreview.url"
+                            v-else-if="selectedOcrCapabilityPreviewSource.previewType === 'pdf'"
+                            :src="selectedOcrCapabilityPreviewSource.url"
                             title="OCR 测试 PDF 预览"
                           ></iframe>
                           <ElEmpty
@@ -14031,9 +14254,28 @@ onBeforeUnmount(() => {
                             <strong>{{ selectedOcrCapabilitySummary.diagnostics }}</strong>
                           </div>
                         </div>
-                        <ElTabs class="mt-12px">
+                        <ElAlert
+                          v-if="selectedOcrCapabilityRun && !selectedOcrCapabilityHasOutput"
+                          class="mt-12px"
+                          type="warning"
+                          show-icon
+                          :closable="false"
+                          title="本次测试还没有返回可展示的识别内容，请稍后刷新记录或检查 OCR 服务状态。"
+                        />
+                        <ElTabs class="ocr-capability-output-tabs">
+                          <ElTabPane label="全文">
+                            <pre
+                              v-if="selectedOcrCapabilityText"
+                              class="ocr-capability-text-output"
+                              >{{ selectedOcrCapabilityText }}</pre
+                            >
+                            <ElEmpty v-else description="开始测试后，这里显示 OCR 识别文本。" />
+                          </ElTabPane>
                           <ElTabPane label="字段">
-                            <ElTable :data="selectedOcrCapabilityFields">
+                            <ElTable
+                              v-if="selectedOcrCapabilityFields.length"
+                              :data="selectedOcrCapabilityFields"
+                            >
                               <ElTableColumn
                                 prop="fieldCode"
                                 label="字段"
@@ -14052,9 +14294,13 @@ onBeforeUnmount(() => {
                               />
                               <ElTableColumn prop="confidence" label="置信度" width="95" />
                             </ElTable>
+                            <ElEmpty v-else description="暂无结构化字段输出。" />
                           </ElTabPane>
                           <ElTabPane label="表格">
-                            <ElTable :data="selectedOcrCapabilityTables">
+                            <ElTable
+                              v-if="selectedOcrCapabilityTables.length"
+                              :data="selectedOcrCapabilityTables"
+                            >
                               <ElTableColumn
                                 prop="tableId"
                                 label="表格"
@@ -14069,9 +14315,13 @@ onBeforeUnmount(() => {
                                 width="110"
                               />
                             </ElTable>
+                            <ElEmpty v-else description="暂无表格输出。" />
                           </ElTabPane>
                           <ElTabPane label="印章">
-                            <ElTable :data="selectedOcrCapabilitySeals">
+                            <ElTable
+                              v-if="selectedOcrCapabilitySeals.length"
+                              :data="selectedOcrCapabilitySeals"
+                            >
                               <ElTableColumn
                                 prop="sealName"
                                 label="章名"
@@ -14086,9 +14336,13 @@ onBeforeUnmount(() => {
                               />
                               <ElTableColumn prop="ocrConfidence" label="置信度" width="100" />
                             </ElTable>
+                            <ElEmpty v-else description="暂无印章输出。" />
                           </ElTabPane>
                           <ElTabPane label="诊断">
-                            <ElTable :data="selectedOcrCapabilityDiagnostics">
+                            <ElTable
+                              v-if="selectedOcrCapabilityDiagnostics.length"
+                              :data="selectedOcrCapabilityDiagnostics"
+                            >
                               <ElTableColumn
                                 prop="code"
                                 label="问题"
@@ -14106,6 +14360,7 @@ onBeforeUnmount(() => {
                                 show-overflow-tooltip
                               />
                             </ElTable>
+                            <ElEmpty v-else description="暂无诊断输出。" />
                           </ElTabPane>
                         </ElTabs>
                       </div>
@@ -17197,6 +17452,48 @@ onBeforeUnmount(() => {
   margin: 0 0 18px;
 }
 
+.ocr-online-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 16px;
+  background: #f8fbff;
+  border: 1px solid #dbe7f7;
+  border-radius: 8px;
+}
+
+.ocr-online-entry__copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ocr-online-entry__copy span {
+  font-size: 12px;
+  font-weight: 850;
+  color: #2563eb;
+}
+
+.ocr-online-entry__copy strong {
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 22px;
+  color: #172033;
+}
+
+.ocr-online-entry__copy small {
+  min-width: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: #64748b;
+}
+
+.ocr-online-entry :deep(.el-button) {
+  min-width: 132px;
+}
+
 .ocr-step-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -17815,6 +18112,27 @@ onBeforeUnmount(() => {
   color: #0f172a;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.ocr-capability-output-tabs {
+  margin-top: 12px;
+}
+
+.ocr-capability-text-output {
+  min-height: 220px;
+  max-height: 420px;
+  padding: 12px;
+  margin: 0;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #172033;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
 }
 
 .lineage-document-grid,
@@ -20747,6 +21065,14 @@ onBeforeUnmount(() => {
     justify-self: start;
   }
 
+  .ocr-online-entry {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ocr-online-entry :deep(.el-button) {
+    justify-self: start;
+  }
+
   .workbench-summary-grid.project-subpage-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -20904,6 +21230,10 @@ onBeforeUnmount(() => {
   .ocr-labeling-focus-steps,
   .ocr-labeling-mini-stats {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ocr-online-entry :deep(.el-button) {
+    width: 100%;
   }
 
   .ocr-command-kpis,

@@ -81,6 +81,7 @@ declare global {
     readonly VITE_USE_MOCK: string
     readonly VITE_USE_CSS_SPLIT: string
     readonly VITE_USE_ONLINE_ICON: string
+    readonly VITE_MINIO_UPLOAD_PROXY_ORIGIN?: string
     readonly VITE_ICON_PREFIX: string
     readonly VITE_HIDE_GLOBAL_SETTING: string
   }

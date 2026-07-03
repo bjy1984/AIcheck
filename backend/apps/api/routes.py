@@ -11734,7 +11734,7 @@ def fde_create_ocr_capability_upload_session(
             "headers": {"Content-Type": content_type},
             "createdByRole": role or "fde",
             "createdAt": now,
-            "expiresAt": repo.signed_get(file_name, fde_capability_test_storage_url(storage_key), content_type, file_size).get("expiresAt"),
+            "expiresAt": object_storage.expires_at(),
         }
         repo.state.setdefault("fde_capability_test_upload_sessions", []).insert(0, upload_session)
         audit_id = repo.add_audit("FDE OCR 能力测试上传会话", "FdeOcrCapabilityUploadSession", session_id)

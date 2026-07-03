@@ -23,8 +23,10 @@ class ObjectStorage:
         self.access_key = os.getenv("AICHECK_MINIO_ACCESS_KEY", "aicheck")
         self.secret_key = os.getenv("AICHECK_MINIO_SECRET_KEY", "aicheck-dev-password")
         self.secure = os.getenv("AICHECK_MINIO_SECURE", "false").lower() == "true"
+        self.region = os.getenv("AICHECK_MINIO_REGION", "us-east-1").strip() or "us-east-1"
         self.public_endpoint = os.getenv("AICHECK_MINIO_PUBLIC_ENDPOINT", self.endpoint).strip()
         self._client: Any | None = None
+        self._buckets_ensured = False
 
     @property
     def enabled(self) -> bool:
@@ -58,6 +60,7 @@ class ObjectStorage:
             access_key=self.access_key,
             secret_key=self.secret_key,
             secure=self.secure,
+            region=self.region,
         )
         return self._client
 
@@ -77,21 +80,24 @@ class ObjectStorage:
             access_key=self.access_key,
             secret_key=self.secret_key,
             secure=secure,
+            region=self.region,
         )
 
     def ensure_buckets(self) -> None:
+        if self._buckets_ensured:
+            return
         client = self.client()
         if client is None:
             return
         for bucket in DEFAULT_BUCKETS:
             if not client.bucket_exists(bucket):
                 client.make_bucket(bucket)
+        self._buckets_ensured = True
 
     def presigned_put_url(self, bucket: str, object_name: str, *, content_type: str | None = None) -> str | None:
         client = self.presign_client()
         if client is None:
             return None
-        self.ensure_buckets()
         return client.presigned_put_object(bucket, object_name, expires=timedelta(minutes=30))
 
     def presigned_get_url(self, url: str, *, file_name: str | None = None) -> str | None:
@@ -102,7 +108,6 @@ class ObjectStorage:
         if client is None:
             return None
         bucket, object_name = parsed
-        self.ensure_buckets()
         return client.presigned_get_object(
             bucket,
             object_name,
