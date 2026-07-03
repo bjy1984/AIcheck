@@ -2859,7 +2859,7 @@ const selectedOcrCapabilityDiagnostics = computed(() => {
   return Array.isArray(diagnostics) ? diagnostics.slice(0, 40) : []
 })
 
-type OcrCapabilityRoiTone = 'blue' | 'green' | 'orange' | 'red'
+type OcrCapabilityRoiTone = 'blue' | 'green' | 'orange' | 'red' | 'purple'
 
 type OcrCapabilityRoi = {
   id: string
@@ -2882,6 +2882,17 @@ type OcrCapabilityStructuredRow = {
   bboxText: string
   confidence?: number
   source: string
+}
+
+const ocrCapabilityRoiToneTypeMap: Record<
+  OcrCapabilityRoiTone,
+  'primary' | 'success' | 'warning' | 'danger' | 'info'
+> = {
+  blue: 'primary',
+  green: 'success',
+  orange: 'warning',
+  red: 'danger',
+  purple: 'info'
 }
 
 const normalizeOcrCapabilityBbox = (bbox: unknown): [number, number, number, number] | null => {
@@ -3055,11 +3066,11 @@ const selectedOcrCapabilityRawRois = computed<OcrCapabilityRoi[]>(() => {
       rows.push(roi)
     })
   }
-  pushRows(result.fragments, '文本', 'blue', '文本')
+  pushRows(result.fragments, '文字', 'blue', '文字')
   pushRows(result.fields, '字段', 'green', '字段')
   pushRows(result.tables, '表格', 'orange', '表格')
   pushRows(result.seals, '印章', 'red', '印章')
-  pushRows(result.layoutBlocks, '版面', 'blue', '版面')
+  pushRows(result.layoutBlocks, '版面', 'purple', '版面')
   return rows.slice(0, 80)
 })
 
@@ -3085,6 +3096,25 @@ const selectedOcrCapabilityImageRois = computed(() =>
     ? selectedOcrCapabilityRois.value.filter((roi) => roi.pageNo === 1)
     : []
 )
+
+const ocrCapabilityRoiLegend = computed(() => {
+  const definitions: Array<{ type: string; tone: OcrCapabilityRoiTone; label: string }> = [
+    { type: '文字', tone: 'blue', label: '文字' },
+    { type: '字段', tone: 'green', label: '字段' },
+    { type: '表格', tone: 'orange', label: '表格' },
+    { type: '印章', tone: 'red', label: '印章' },
+    { type: '版面', tone: 'purple', label: '版面' }
+  ]
+  return definitions
+    .map((item) => ({
+      ...item,
+      count: selectedOcrCapabilityRois.value.filter((roi) => roi.type === item.type).length
+    }))
+    .filter((item) => item.count > 0)
+})
+
+const ocrCapabilityRoiTagType = (tone: OcrCapabilityRoiTone) =>
+  ocrCapabilityRoiToneTypeMap[tone] || 'info'
 
 const selectedOcrCapabilityStructuredRows = computed<OcrCapabilityStructuredRow[]>(() => {
   const result = selectedOcrCapabilityParseResult.value || {}
@@ -9718,6 +9748,21 @@ onBeforeUnmount(() => {
                     ROI {{ selectedOcrCapabilityRois.length }}
                   </ElTag>
                 </div>
+                <div
+                  v-if="ocrCapabilityRoiLegend.length"
+                  class="ocr-roi-legend"
+                  aria-label="ROI 类型图例"
+                >
+                  <span
+                    v-for="item in ocrCapabilityRoiLegend"
+                    :key="item.type"
+                    :class="['ocr-roi-legend__item', `ocr-roi-legend__item--${item.tone}`]"
+                  >
+                    <i aria-hidden="true"></i>
+                    <strong>{{ item.label }}</strong>
+                    <small>{{ item.count }}</small>
+                  </span>
+                </div>
                 <div v-if="selectedOcrCapabilityPreviewSource?.url" class="ocr-preview-stage">
                   <div
                     v-if="selectedOcrCapabilityPreviewSource.previewType === 'image'"
@@ -9736,6 +9781,7 @@ onBeforeUnmount(() => {
                         :class="['ocr-roi-box', `ocr-roi-box--${roi.tone}`]"
                         :style="ocrCapabilityRoiStyle(roi)"
                         :title="`${roi.type} · ${roi.label}${roi.text ? ` · ${roi.text}` : ''}`"
+                        :aria-label="`${roi.type} 标注：${roi.label}${roi.text ? `，${roi.text}` : ''}`"
                       >
                         <span>{{ roi.text || roi.label || roi.type }}</span>
                       </button>
@@ -9861,7 +9907,13 @@ onBeforeUnmount(() => {
                       v-if="selectedOcrCapabilityRois.length"
                       :data="selectedOcrCapabilityRois"
                     >
-                      <ElTableColumn prop="type" label="类型" width="82" />
+                      <ElTableColumn label="类型" width="96">
+                        <template #default="{ row }">
+                          <ElTag :type="ocrCapabilityRoiTagType(row.tone)" effect="plain">
+                            {{ row.type }}
+                          </ElTag>
+                        </template>
+                      </ElTableColumn>
                       <ElTableColumn
                         prop="label"
                         label="对象"
@@ -14746,6 +14798,21 @@ onBeforeUnmount(() => {
                           </ElTag>
                         </div>
                         <div
+                          v-if="ocrCapabilityRoiLegend.length"
+                          class="ocr-roi-legend"
+                          aria-label="ROI 类型图例"
+                        >
+                          <span
+                            v-for="item in ocrCapabilityRoiLegend"
+                            :key="item.type"
+                            :class="['ocr-roi-legend__item', `ocr-roi-legend__item--${item.tone}`]"
+                          >
+                            <i aria-hidden="true"></i>
+                            <strong>{{ item.label }}</strong>
+                            <small>{{ item.count }}</small>
+                          </span>
+                        </div>
+                        <div
                           v-if="selectedOcrCapabilityPreviewSource?.url"
                           class="ocr-preview-stage"
                         >
@@ -14769,6 +14836,7 @@ onBeforeUnmount(() => {
                                 :class="['ocr-roi-box', `ocr-roi-box--${roi.tone}`]"
                                 :style="ocrCapabilityRoiStyle(roi)"
                                 :title="`${roi.type} · ${roi.label}${roi.text ? ` · ${roi.text}` : ''}`"
+                                :aria-label="`${roi.type} 标注：${roi.label}${roi.text ? `，${roi.text}` : ''}`"
                               >
                                 <span>{{ roi.text || roi.label || roi.type }}</span>
                               </button>
@@ -14905,7 +14973,13 @@ onBeforeUnmount(() => {
                               v-if="selectedOcrCapabilityRois.length"
                               :data="selectedOcrCapabilityRois"
                             >
-                              <ElTableColumn prop="type" label="类型" width="82" />
+                              <ElTableColumn label="类型" width="96">
+                                <template #default="{ row }">
+                                  <ElTag :type="ocrCapabilityRoiTagType(row.tone)" effect="plain">
+                                    {{ row.type }}
+                                  </ElTag>
+                                </template>
+                              </ElTableColumn>
                               <ElTableColumn
                                 prop="label"
                                 label="对象"
@@ -18748,6 +18822,106 @@ onBeforeUnmount(() => {
   border: 0;
 }
 
+.ocr-roi-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 10px;
+}
+
+.ocr-roi-legend__item {
+  display: inline-flex;
+  min-height: 28px;
+  padding: 0 9px;
+  font-size: 12px;
+  line-height: 1;
+  color: #1e293b;
+  background: #f8fafc;
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  gap: 6px;
+  align-items: center;
+}
+
+.ocr-roi-legend__item i {
+  width: 10px;
+  height: 10px;
+  background: #2563eb;
+  border-radius: 999px;
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 12%);
+}
+
+.ocr-roi-legend__item strong {
+  font-weight: 800;
+}
+
+.ocr-roi-legend__item small {
+  min-width: 18px;
+  padding: 2px 5px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #1d4ed8;
+  text-align: center;
+  background: rgb(37 99 235 / 10%);
+  border-radius: 999px;
+}
+
+.ocr-roi-legend__item--green {
+  border-color: #bbf7d0;
+}
+
+.ocr-roi-legend__item--green i {
+  background: #16a34a;
+  box-shadow: 0 0 0 3px rgb(22 163 74 / 12%);
+}
+
+.ocr-roi-legend__item--green small {
+  color: #15803d;
+  background: rgb(22 163 74 / 10%);
+}
+
+.ocr-roi-legend__item--orange {
+  border-color: #fed7aa;
+}
+
+.ocr-roi-legend__item--orange i {
+  background: #ea580c;
+  box-shadow: 0 0 0 3px rgb(234 88 12 / 12%);
+}
+
+.ocr-roi-legend__item--orange small {
+  color: #c2410c;
+  background: rgb(234 88 12 / 10%);
+}
+
+.ocr-roi-legend__item--red {
+  border-color: #fecaca;
+}
+
+.ocr-roi-legend__item--red i {
+  background: #dc2626;
+  box-shadow: 0 0 0 3px rgb(220 38 38 / 12%);
+}
+
+.ocr-roi-legend__item--red small {
+  color: #b91c1c;
+  background: rgb(220 38 38 / 10%);
+}
+
+.ocr-roi-legend__item--purple {
+  border-color: #ddd6fe;
+}
+
+.ocr-roi-legend__item--purple i {
+  background: #7c3aed;
+  box-shadow: 0 0 0 3px rgb(124 58 237 / 12%);
+}
+
+.ocr-roi-legend__item--purple small {
+  color: #6d28d9;
+  background: rgb(124 58 237 / 10%);
+}
+
 .ocr-preview-image-frame {
   position: relative;
   display: inline-block;
@@ -18776,8 +18950,8 @@ onBeforeUnmount(() => {
   min-height: 18px;
   padding: 0;
   overflow: visible;
-  background: transparent;
-  border: 1px solid rgb(37 99 235 / 78%);
+  background: rgb(37 99 235 / 5%);
+  border: 1.5px solid rgb(37 99 235 / 82%);
   border-radius: 2px;
   box-shadow: none;
   pointer-events: auto;
@@ -18815,7 +18989,7 @@ onBeforeUnmount(() => {
 .ocr-roi-box:hover,
 .ocr-roi-box:focus-visible {
   z-index: 3;
-  background: rgb(37 99 235 / 8%);
+  background: rgb(37 99 235 / 12%);
   border-width: 2px;
   border-color: #2563eb;
   outline: none;
@@ -18828,7 +19002,17 @@ onBeforeUnmount(() => {
   transform: translateY(0);
 }
 
+.ocr-roi-box--blue {
+  background: rgb(37 99 235 / 5%);
+  border-color: rgb(37 99 235 / 82%);
+}
+
+.ocr-roi-box--blue span {
+  border-color: rgb(37 99 235 / 35%);
+}
+
 .ocr-roi-box--green {
+  background: rgb(22 163 74 / 5%);
   border-color: rgb(22 163 74 / 78%);
 }
 
@@ -18837,6 +19021,7 @@ onBeforeUnmount(() => {
 }
 
 .ocr-roi-box--orange {
+  background: rgb(234 88 12 / 5%);
   border-color: rgb(234 88 12 / 78%);
 }
 
@@ -18845,6 +19030,7 @@ onBeforeUnmount(() => {
 }
 
 .ocr-roi-box--red {
+  background: rgb(220 38 38 / 5%);
   border-color: rgb(220 38 38 / 78%);
 }
 
@@ -18852,22 +19038,43 @@ onBeforeUnmount(() => {
   border-color: rgb(220 38 38 / 35%);
 }
 
+.ocr-roi-box--purple {
+  background: rgb(124 58 237 / 5%);
+  border-color: rgb(124 58 237 / 78%);
+}
+
+.ocr-roi-box--purple span {
+  border-color: rgb(124 58 237 / 35%);
+}
+
+.ocr-roi-box--blue:hover,
+.ocr-roi-box--blue:focus-visible {
+  background: rgb(37 99 235 / 12%);
+  border-color: #2563eb;
+}
+
 .ocr-roi-box--green:hover,
 .ocr-roi-box--green:focus-visible {
-  background: rgb(22 163 74 / 8%);
+  background: rgb(22 163 74 / 12%);
   border-color: #16a34a;
 }
 
 .ocr-roi-box--orange:hover,
 .ocr-roi-box--orange:focus-visible {
-  background: rgb(234 88 12 / 8%);
+  background: rgb(234 88 12 / 12%);
   border-color: #ea580c;
 }
 
 .ocr-roi-box--red:hover,
 .ocr-roi-box--red:focus-visible {
-  background: rgb(220 38 38 / 8%);
+  background: rgb(220 38 38 / 12%);
   border-color: #dc2626;
+}
+
+.ocr-roi-box--purple:hover,
+.ocr-roi-box--purple:focus-visible {
+  background: rgb(124 58 237 / 12%);
+  border-color: #7c3aed;
 }
 
 .ocr-capability-kpis {
