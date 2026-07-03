@@ -11615,7 +11615,12 @@ def fde_capability_test_preview(run: dict[str, Any]) -> dict[str, Any]:
             "retention": "fde_capability_test_only",
         }
     try:
-        preview = repo.signed_get(file_name, storage_url, content_type, file_size)
+        inline_url = object_storage.presigned_get_url(storage_url)
+        base_preview = repo.signed_get(file_name, storage_url, content_type, file_size)
+        preview = {
+            **base_preview,
+            "url": inline_url or base_preview["url"],
+        }
     except ObjectStorageUnavailable:
         preview = {
             "url": storage_url,
@@ -11998,6 +12003,7 @@ def fde_download_ocr_capability_test_file(request: Request, session_id: str):
         str(local_path),
         media_type=str(upload_session.get("contentType") or "application/octet-stream"),
         filename=str(upload_session.get("fileName") or local_path.name),
+        content_disposition_type="inline",
     )
 
 
@@ -12028,7 +12034,7 @@ def fde_create_ocr_capability_test_run(
         now = server_time()
         options = {
             "enableTables": fde_capability_test_bool(body, "enableTables", False),
-            "enableSeals": fde_capability_test_bool(body, "enableSeals", False),
+            "enableSeals": fde_capability_test_bool(body, "enableSeals", True),
             "enableFallback": fde_capability_test_bool(body, "enableFallback", False),
             "maxPages": fde_capability_test_int(body, "maxPages", 1, 1, 10),
             "disableRemediation": fde_capability_test_bool(body, "disableRemediation", True),

@@ -195,7 +195,7 @@ const ocrCapabilityTestForm = ref({
   documentType: 'auto',
   maxPages: 1,
   enableTables: false,
-  enableSeals: false,
+  enableSeals: true,
   enableFallback: false,
   disableRemediation: true,
   quickMode: true
@@ -9745,7 +9745,7 @@ onBeforeUnmount(() => {
                   </label>
                   <label>
                     <input v-model="ocrCapabilityTestForm.enableSeals" type="checkbox" />
-                    印章识别
+                    印章识别（稍慢）
                   </label>
                   <label>
                     <input v-model="ocrCapabilityTestForm.enableFallback" type="checkbox" />
@@ -14800,7 +14800,7 @@ onBeforeUnmount(() => {
                           </label>
                           <label>
                             <input v-model="ocrCapabilityTestForm.enableSeals" type="checkbox" />
-                            印章识别
+                            印章识别（稍慢）
                           </label>
                           <label>
                             <input v-model="ocrCapabilityTestForm.enableFallback" type="checkbox" />
