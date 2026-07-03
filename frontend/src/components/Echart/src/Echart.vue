@@ -51,6 +51,7 @@ let echartRef: Nullable<echarts.ECharts> = null
 
 const contentEl = ref<Element>()
 let chartResizeObserver: ResizeObserver | null = null
+let initFrame = 0
 
 const styles = computed(() => {
   const width = isString(props.width) ? props.width : `${props.width}px`
@@ -62,11 +63,37 @@ const styles = computed(() => {
   }
 })
 
+const chartHostRect = () => {
+  const el = unref(elRef) as HTMLElement | undefined
+  const rect = el?.getBoundingClientRect()
+  if (!rect || rect.width <= 0 || rect.height <= 0) return null
+  return rect
+}
+
 const initChart = () => {
-  if (unref(elRef) && props.options) {
-    echartRef = echarts.init(unref(elRef) as HTMLElement)
-    echartRef?.setOption(unref(options))
+  const el = unref(elRef) as HTMLElement | undefined
+  const rect = chartHostRect()
+  if (!el || !props.options || !rect) return false
+  echartRef = echarts.init(el, undefined, {
+    width: Math.floor(rect.width),
+    height: Math.floor(rect.height)
+  })
+  echartRef?.setOption(unref(options))
+  return true
+}
+
+const ensureChart = () => {
+  if (echartRef) return true
+  if (initFrame) {
+    cancelAnimationFrame(initFrame)
+    initFrame = 0
   }
+  if (initChart()) return true
+  initFrame = requestAnimationFrame(() => {
+    initFrame = 0
+    initChart()
+  })
+  return false
 }
 
 watch(
@@ -74,6 +101,8 @@ watch(
   (options) => {
     if (echartRef) {
       echartRef?.setOption(options)
+    } else {
+      nextTick(() => ensureChart())
     }
   },
   {
@@ -82,9 +111,9 @@ watch(
 )
 
 const resizeChart = () => {
+  if (!echartRef && !ensureChart()) return
   if (echartRef) {
-    const el = unref(elRef) as HTMLElement | undefined
-    const rect = el?.getBoundingClientRect()
+    const rect = chartHostRect()
     if (rect && rect.width > 0 && rect.height > 0) {
       echartRef.resize({ width: Math.floor(rect.width), height: Math.floor(rect.height) })
       return
@@ -113,15 +142,21 @@ const contentResizeHandler = async (e: TransitionEvent) => {
 
 onMounted(() => {
   setTimeout(() => {
-    initChart()
     if (unref(elRef) && typeof ResizeObserver !== 'undefined') {
-      chartResizeObserver = new ResizeObserver(() => resizeHandler())
+      chartResizeObserver = new ResizeObserver(() => {
+        if (!echartRef) {
+          ensureChart()
+          return
+        }
+        resizeHandler()
+      })
       chartResizeObserver.observe(unref(elRef) as HTMLElement)
       const parentElement = (unref(elRef) as HTMLElement).parentElement
       if (parentElement) {
         chartResizeObserver.observe(parentElement)
       }
     }
+    ensureChart()
   }, 0)
 
   window.addEventListener('resize', resizeHandler)
@@ -133,6 +168,12 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', resizeHandler)
+  if (initFrame) {
+    cancelAnimationFrame(initFrame)
+    initFrame = 0
+  }
+  echartRef?.dispose()
+  echartRef = null
   chartResizeObserver?.disconnect()
   chartResizeObserver = null
   unref(contentEl) &&
