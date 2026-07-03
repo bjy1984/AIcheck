@@ -61,6 +61,37 @@ class OcrClient:
     def runtime_doctor(self) -> dict[str, Any]:
         return self._request_enveloped("GET", "/internal/ocr/doctor", timeout=10)
 
+    def page_preview(self, payload: dict[str, Any], *, timeout: float = 30) -> tuple[bytes, str]:
+        if not self.enabled:
+            raise RuntimeError("AICHECK_OCR_BASE_URL is not configured")
+        client_kwargs: dict[str, Any] = {"timeout": timeout}
+        if self.transport is not None:
+            client_kwargs["transport"] = self.transport
+        try:
+            with httpx.Client(**client_kwargs) as client:
+                response = client.post(f"{self.base_url}/internal/ocr/page-preview", json=payload)
+        except httpx.HTTPError as exc:
+            raise IntegrationServiceError("OCR service", "page-preview", reason=exc.__class__.__name__) from exc
+        if response.status_code >= 400:
+            raise IntegrationServiceError("OCR service", "page-preview", status_code=response.status_code)
+        content_type = response.headers.get("content-type") or "image/png"
+        if "application/json" in content_type:
+            try:
+                payload = response.json()
+            except ValueError as exc:
+                raise IntegrationServiceError("OCR service", "page-preview", reason="INVALID_JSON") from exc
+            if isinstance(payload, dict) and payload.get("code") != 0:
+                data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+                raise IntegrationServiceError(
+                    "OCR service",
+                    "page-preview",
+                    reason=safe_reason(data.get("reason")) or f"CODE_{payload.get('code')}",
+                )
+            raise IntegrationServiceError("OCR service", "page-preview", reason="INVALID_CONTENT_TYPE")
+        if not response.content:
+            raise IntegrationServiceError("OCR service", "page-preview", reason="EMPTY_RESPONSE")
+        return response.content, content_type
+
     def parse_via_job_sync(
         self,
         payload: dict[str, Any],

@@ -158,6 +158,77 @@ def render_pdf_pages(
     return pages
 
 
+def render_pdf_page_preview(
+    source_path: Path,
+    *,
+    page_no: int = 1,
+    dpi: int = 180,
+    max_long_side: int = 1600,
+) -> dict[str, Any] | None:
+    try:
+        import fitz  # type: ignore
+    except Exception:
+        return None
+    try:
+        document = fitz.open(str(source_path))
+    except Exception:
+        return None
+    try:
+        total_pages = int(getattr(document, "page_count", 0) or len(document))
+        if total_pages <= 0:
+            return None
+        page_no = max(1, min(int(page_no or 1), total_pages))
+        page = document[page_no - 1]
+        out_dir = rendered_pdf_page_preview_cache_dir(
+            source_path,
+            dpi=dpi,
+            page_no=page_no,
+            max_long_side=max_long_side,
+        )
+        out_dir.mkdir(parents=True, exist_ok=True)
+        target = out_dir / f"page-{page_no}.png"
+        dpi_scale = dpi / 72.0
+        if max_long_side > 0:
+            max_scale = max_long_side / max(float(page.rect.width), float(page.rect.height), 1.0)
+            scale = min(dpi_scale, max_scale)
+        else:
+            scale = dpi_scale
+        matrix = fitz.Matrix(scale, scale).prerotate(int(page.rotation or 0))
+        text_to_pixel_matrix = text_to_pixel_matrix_for_page(page, matrix)
+        pixmap = None
+        if not target.exists():
+            pixmap = page.get_pixmap(matrix=matrix, alpha=False)
+            pixmap.save(str(target))
+        return image_page_record(
+            target,
+            page_no=page_no,
+            source_type="pdf",
+            render_dpi=int(round(scale * 72)),
+            document_path=source_path,
+            rotation=int(page.rotation or 0),
+            source_width=float(page.rect.width),
+            source_height=float(page.rect.height),
+            source_coordinate_system="pdf_points",
+            render_scale_x=scale,
+            render_scale_y=scale,
+            pdf_render_matrix=pdf_matrix_values(matrix),
+            pdf_text_to_pixel_matrix=pdf_matrix_values(text_to_pixel_matrix),
+            pdf_pixmap_x=int(getattr(pixmap, "x", 0) or 0),
+            pdf_pixmap_y=int(getattr(pixmap, "y", 0) or 0),
+            page_render_version=PAGE_RENDER_VERSION,
+            requested_render_dpi=dpi,
+            effective_render_dpi=int(round(scale * 72)),
+            total_pages=total_pages,
+            rendered_pages=[page_no],
+            truncated=total_pages > 1,
+            requested_max_pages=1,
+            effective_max_pages=1,
+            protected_pages=protected_page_labels([page_no - 1], total_pages),
+        )
+    finally:
+        document.close()
+
+
 def select_pdf_page_indices(
     total_pages: int,
     max_pages: int,
@@ -451,6 +522,23 @@ def rendered_page_cache_dir(source_path: Path, *, dpi: int, max_pages: int, max_
     )
     key = hashlib.sha256(payload.encode("utf-8")).hexdigest()
     return base / key
+
+
+def rendered_pdf_page_preview_cache_dir(
+    source_path: Path,
+    *,
+    dpi: int,
+    page_no: int,
+    max_long_side: int = 0,
+) -> Path:
+    base = Path(os.getenv("AICHECK_OCR_PAGE_CACHE_DIR") or (Path(tempfile.gettempdir()) / "aicheck-ocr-page-cache"))
+    payload = (
+        f"{source_path}:{file_hash(source_path) if source_path.exists() else ''}:"
+        f"previewPage={page_no}:dpi={dpi}:maxLongSide={max_long_side}:"
+        f"pageRenderVersion={PAGE_RENDER_VERSION}"
+    )
+    key = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return base / f"preview-{key}"
 
 
 def pdf_page_manifest_path(out_dir: Path) -> Path:

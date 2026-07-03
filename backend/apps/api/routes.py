@@ -18,7 +18,7 @@ from uuid import uuid4
 
 import yaml
 from fastapi import APIRouter, Body, Header, Query, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from apps.api.adapters.engineering_inspection import (
     ENGINEERING_DOMAIN_TYPE,
@@ -11601,6 +11601,8 @@ def fde_capability_test_preview(run: dict[str, Any]) -> dict[str, Any]:
     content_type = str(run.get("contentType") or "application/octet-stream")
     file_size = int(run.get("fileSize") or 0)
     storage_url = fde_capability_test_storage_url(str(run.get("storageKey") or run.get("storageUrl") or ""))
+    preview_type = fde_capability_test_file_preview_type(file_name, content_type)
+    run_id = str(run.get("runId") or run.get("id") or "")
     local_path = fde_capability_test_local_path(storage_url)
     if local_path and local_path.is_file():
         session_id = str(run.get("uploadSessionId") or "")
@@ -11610,7 +11612,10 @@ def fde_capability_test_preview(run: dict[str, Any]) -> dict[str, Any]:
             "fileName": file_name,
             "contentType": content_type,
             "fileSize": file_size or local_path.stat().st_size,
-            "previewType": fde_capability_test_file_preview_type(file_name, content_type),
+            "previewType": preview_type,
+            "pagePreviewUrl": f"/api/fde/capability-tests/ocr/runs/{run_id}/page-preview?pageNo=1"
+            if preview_type == "pdf" and run_id
+            else None,
             "readonly": True,
             "retention": "fde_capability_test_only",
         }
@@ -11632,7 +11637,10 @@ def fde_capability_test_preview(run: dict[str, Any]) -> dict[str, Any]:
         }
     return {
         **preview,
-        "previewType": fde_capability_test_file_preview_type(file_name, content_type),
+        "previewType": preview_type,
+        "pagePreviewUrl": f"/api/fde/capability-tests/ocr/runs/{run_id}/page-preview?pageNo=1"
+        if preview_type == "pdf" and run_id
+        else None,
         "readonly": True,
         "retention": "fde_capability_test_only",
     }
@@ -12125,6 +12133,48 @@ def fde_ocr_capability_test_run_detail(request: Request, run_id: str):
             "preview": fde_capability_test_preview(run),
         },
         request,
+    )
+
+
+@router.get("/fde/capability-tests/ocr/runs/{run_id}/page-preview")
+def fde_ocr_capability_test_page_preview(
+    request: Request,
+    run_id: str,
+    pageNo: int = Query(default=1, ge=1, le=100),
+):
+    run = fde_capability_test_run_by_id(run_id)
+    if not run:
+        return fail(errors.NOT_FOUND, request)
+    client = OcrClient()
+    if not client.enabled:
+        return fail(errors.EXTERNAL_TOOL_FAILED, request, message="OCR 服务未配置，无法生成 PDF 页图预览。", http_status=503)
+    storage_url = fde_capability_test_storage_url(str(run.get("storageKey") or run.get("storageUrl") or ""))
+    try:
+        content, content_type = client.page_preview(
+            {
+                "storageKey": storage_url,
+                "fileName": run.get("fileName"),
+                "profileId": run.get("profileId"),
+                "documentType": run.get("documentType"),
+                "options": run.get("options") or {},
+                "pageNo": pageNo,
+            },
+            timeout=45,
+        )
+    except IntegrationServiceError as exc:
+        return fail(
+            errors.EXTERNAL_TOOL_FAILED,
+            request,
+            message=f"OCR 页图预览生成失败：{exc.reason or exc.status_code or 'UNKNOWN'}",
+            http_status=502,
+        )
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={
+            "Cache-Control": "private, max-age=300",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 

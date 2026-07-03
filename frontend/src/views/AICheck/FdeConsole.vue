@@ -3070,11 +3070,11 @@ const selectedOcrCapabilityRawRois = computed<OcrCapabilityRoi[]>(() => {
       rows.push(roi)
     })
   }
-  pushRows(result.fragments, '文字', 'blue', '文字')
-  pushRows(result.fields, '字段', 'green', '字段')
-  pushRows(result.tables, '表格', 'orange', '表格')
   pushRows(result.seals, '印章', 'red', '印章')
+  pushRows(result.tables, '表格', 'orange', '表格')
+  pushRows(result.fields, '字段', 'green', '字段')
   pushRows(result.layoutBlocks, '版面', 'purple', '版面')
+  pushRows(result.fragments, '文字', 'blue', '文字')
   return rows.slice(0, 80)
 })
 
@@ -3097,6 +3097,18 @@ const selectedOcrCapabilityRoiPageSize = computed(() => {
 const selectedOcrCapabilityRois = computed(() => selectedOcrCapabilityRawRois.value)
 const selectedOcrCapabilityImageRois = computed(() =>
   selectedOcrCapabilityPreviewSource.value?.previewType === 'image'
+    ? selectedOcrCapabilityRois.value.filter((roi) => roi.pageNo === 1)
+    : []
+)
+const selectedOcrCapabilityPdfPagePreviewUrl = computed(() => {
+  const preview = selectedOcrCapabilityPreviewSource.value as
+    | (Record<string, unknown> & { previewType?: string })
+    | null
+  if (preview?.previewType !== 'pdf') return ''
+  return String(preview.pagePreviewUrl || '')
+})
+const selectedOcrCapabilityPdfRois = computed(() =>
+  selectedOcrCapabilityPdfPagePreviewUrl.value
     ? selectedOcrCapabilityRois.value.filter((roi) => roi.pageNo === 1)
     : []
 )
@@ -9855,8 +9867,35 @@ onBeforeUnmount(() => {
                       </button>
                     </div>
                   </div>
+                  <div
+                    v-else-if="
+                      selectedOcrCapabilityPreviewSource.previewType === 'pdf' &&
+                      selectedOcrCapabilityPdfPagePreviewUrl
+                    "
+                    class="ocr-preview-image-frame ocr-preview-pdf-page-frame"
+                  >
+                    <img :src="selectedOcrCapabilityPdfPagePreviewUrl" alt="OCR 测试 PDF 页预览" />
+                    <div
+                      v-if="selectedOcrCapabilityPdfRois.length"
+                      class="ocr-roi-layer"
+                      aria-label="OCR PDF ROI 标注"
+                    >
+                      <button
+                        v-for="roi in selectedOcrCapabilityPdfRois"
+                        :key="roi.id"
+                        type="button"
+                        :class="['ocr-roi-box', `ocr-roi-box--${roi.tone}`]"
+                        :style="ocrCapabilityRoiStyle(roi)"
+                        :title="`${roi.type} · ${roi.label}${roi.text ? ` · ${roi.text}` : ''}`"
+                        :aria-label="`${roi.type} 标注：${roi.label}${roi.text ? `，${roi.text}` : ''}`"
+                      >
+                        <span>{{ roi.text || roi.label || roi.type }}</span>
+                      </button>
+                    </div>
+                  </div>
                   <iframe
                     v-else-if="selectedOcrCapabilityPreviewSource.previewType === 'pdf'"
+                    class="ocr-preview-pdf-fallback"
                     :src="selectedOcrCapabilityPreviewSource.url"
                     title="OCR 测试 PDF 预览"
                   ></iframe>
@@ -14922,8 +14961,38 @@ onBeforeUnmount(() => {
                               </button>
                             </div>
                           </div>
+                          <div
+                            v-else-if="
+                              selectedOcrCapabilityPreviewSource.previewType === 'pdf' &&
+                              selectedOcrCapabilityPdfPagePreviewUrl
+                            "
+                            class="ocr-preview-image-frame ocr-preview-pdf-page-frame"
+                          >
+                            <img
+                              :src="selectedOcrCapabilityPdfPagePreviewUrl"
+                              alt="OCR 测试 PDF 页预览"
+                            />
+                            <div
+                              v-if="selectedOcrCapabilityPdfRois.length"
+                              class="ocr-roi-layer"
+                              aria-label="OCR PDF ROI 标注"
+                            >
+                              <button
+                                v-for="roi in selectedOcrCapabilityPdfRois"
+                                :key="roi.id"
+                                type="button"
+                                :class="['ocr-roi-box', `ocr-roi-box--${roi.tone}`]"
+                                :style="ocrCapabilityRoiStyle(roi)"
+                                :title="`${roi.type} · ${roi.label}${roi.text ? ` · ${roi.text}` : ''}`"
+                                :aria-label="`${roi.type} 标注：${roi.label}${roi.text ? `，${roi.text}` : ''}`"
+                              >
+                                <span>{{ roi.text || roi.label || roi.type }}</span>
+                              </button>
+                            </div>
+                          </div>
                           <iframe
                             v-else-if="selectedOcrCapabilityPreviewSource.previewType === 'pdf'"
+                            class="ocr-preview-pdf-fallback"
                             :src="selectedOcrCapabilityPreviewSource.url"
                             title="OCR 测试 PDF 预览"
                           ></iframe>
@@ -18896,7 +18965,8 @@ onBeforeUnmount(() => {
   border-radius: 12px;
 }
 
-.ocr-preview-stage > iframe {
+.ocr-preview-stage > iframe,
+.ocr-preview-pdf-fallback {
   width: 100%;
   height: 100%;
   border: 0;
@@ -19016,6 +19086,17 @@ onBeforeUnmount(() => {
   height: auto;
   max-height: 398px;
   object-fit: contain;
+}
+
+.ocr-preview-pdf-page-frame {
+  max-width: 100%;
+  max-height: 100%;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 16%);
+}
+
+.ocr-preview-pdf-page-frame img {
+  max-height: 398px;
 }
 
 .ocr-roi-layer {

@@ -1770,6 +1770,7 @@ export type FdeOcrCapabilityTestDetailPayload = {
     contentType?: string
     fileSize?: number
     previewType?: 'pdf' | 'image' | 'office' | 'unsupported'
+    pagePreviewUrl?: string
     readonly?: boolean
     storageUnavailable?: boolean
   }

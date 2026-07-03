@@ -20,7 +20,7 @@ from apps.ocr_service.fusion import (
     validate_business_field_value,
 )
 from apps.ocr_service.jobs import DocumentParseJobStore
-from apps.ocr_service.pages import public_document_pages, render_document_pages
+from apps.ocr_service.pages import public_document_pages, render_document_pages, render_pdf_page_preview
 from apps.ocr_service.preprocess import generate_image_variants, requested_variant_names
 from apps.ocr_service.profiles import profile_for
 from apps.ocr_service.quality import probe_page_quality
@@ -207,6 +207,33 @@ class OcrService:
             network_disabled=self.disable_network,
             placeholder_allowed=self.placeholder_allowed,
         )
+
+    def render_page_preview(
+        self,
+        storage_key: str,
+        *,
+        file_name: str | None = None,
+        profile_id: str | None = None,
+        document_type: str | None = None,
+        options: dict[str, Any] | None = None,
+        page_no: int = 1,
+    ) -> dict[str, Any] | None:
+        source_path = resolve_source_path(storage_key, file_name)
+        if source_path is None:
+            return None
+        profile = apply_parse_options_to_profile(profile_for(profile_id, document_type), options or {})
+        policy = profile.get("preprocessPolicy") or {}
+        dpi = int(policy.get("renderDpi") or 180)
+        max_long_side = int(policy.get("maxLongSide") or 1600)
+        if source_path.suffix.lower() == ".pdf":
+            return render_pdf_page_preview(
+                source_path,
+                page_no=page_no,
+                dpi=dpi,
+                max_long_side=max_long_side,
+            )
+        pages = render_document_pages(source_path, profile=profile)
+        return pages[0] if pages else None
 
     def engine_status(self) -> list[dict[str, Any]]:
         return [engine.status() for engine in self.engines]

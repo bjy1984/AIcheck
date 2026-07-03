@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import BackgroundTasks, FastAPI, Request
+from fastapi.responses import FileResponse
 
 from apps.ocr_service.service import AGENTDESIGN_BACKEND, ocr_service
 from libs.contracts import errors
@@ -48,6 +51,39 @@ async def parse_document(request: Request, payload: dict):
             options=payload.get("options") if isinstance(payload.get("options"), dict) else None,
         ),
         request,
+    )
+
+
+@app.post("/internal/ocr/page-preview")
+async def page_preview(request: Request, payload: dict):
+    storage_key = str(payload.get("storageKey") or "").strip()
+    if not storage_key:
+        return fail(errors.VALIDATION_ERROR, request, message="storageKey 不能为空。")
+    try:
+        page_no = int(payload.get("pageNo") or 1)
+    except (TypeError, ValueError):
+        page_no = 1
+    page = ocr_service.render_page_preview(
+        storage_key,
+        file_name=payload.get("fileName"),
+        profile_id=payload.get("profileId"),
+        document_type=payload.get("documentType"),
+        options=payload.get("options") if isinstance(payload.get("options"), dict) else None,
+        page_no=page_no,
+    )
+    page_path = Path(str((page or {}).get("path") or ""))
+    if not page or not page_path.is_file():
+        return fail(errors.NOT_FOUND, request, message="OCR 页图预览不存在。")
+    return FileResponse(
+        str(page_path),
+        media_type="image/png",
+        filename=f"ocr-page-{int(page.get('pageNo') or 1)}.png",
+        headers={
+            "Cache-Control": "private, max-age=300",
+            "X-AICheck-Page-No": str(page.get("pageNo") or 1),
+            "X-AICheck-Page-Width": str(page.get("width") or ""),
+            "X-AICheck-Page-Height": str(page.get("height") or ""),
+        },
     )
 
 
