@@ -170,6 +170,8 @@ def select_pdf_page_indices(
     max_pages = max(int(max_pages or total_pages), 1)
     if total_pages <= max_pages:
         return list(range(total_pages))
+    if max_pages <= 1:
+        return [0]
     requires_tail = profile_requires_tail_pages(profile)
     if not requires_tail:
         return list(range(min(total_pages, max_pages)))

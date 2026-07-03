@@ -313,6 +313,7 @@ def test_long_pdf_page_selection_includes_real_tail_pages() -> None:
     profile = {"sealRules": {"required": True}}
 
     assert select_pdf_page_indices(18, 6, profile=profile) == [0, 1, 2, 3, 16, 17]
+    assert select_pdf_page_indices(18, 1, profile=profile) == [0]
     assert select_pdf_page_indices(18, 2, profile=profile) == [0, 17]
     assert select_pdf_page_indices(18, 3, profile=profile) == [0, 16, 17]
     assert select_pdf_page_indices(18, 6, profile={"sealRules": {"required": False}}) == [0, 1, 2, 3, 4, 5]
@@ -453,7 +454,7 @@ def test_cache_schema_versions_are_upgraded() -> None:
     assert RESULT_CACHE_SCHEMA == "aicheck-ocr-parse-result-cache-v6"
     assert PREPROCESS_CACHE_SCHEMA == "aicheck-ocr-preprocess-cache-v2"
     assert EVIDENCE_CONTRACT_VERSION == "rendered_pixels_mapped_v2"
-    assert PAGE_SELECTION_VERSION == "sparse_tail_pages_v1"
+    assert PAGE_SELECTION_VERSION == "sparse_tail_pages_v2"
     assert REMEDIATION_VERSION == "crop_remediation_v2"
     assert PAGE_RENDER_VERSION == "pymupdf_text_to_pixel_matrix_v2"
     assert cache_contract_versions()["resultCacheSchema"]
