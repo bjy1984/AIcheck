@@ -7991,6 +7991,38 @@ const resolveOcrCapabilityUploadUrl = (uploadUrl: string) => {
   }
 }
 
+const isOcrCapabilityHeaderNameSafe = (name: string) => /^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/.test(name)
+
+const isOcrCapabilityHeaderValueSafe = (value: string) => /^[\t\x20-\xff]*$/.test(value)
+
+const normalizeOcrCapabilityContentType = (value: string) => {
+  const contentType = String(value || '').trim()
+  return /^[A-Za-z0-9!#$%&'*+.^_`|~-]+\/[A-Za-z0-9!#$%&'*+.^_`|~-]+(?:\s*;\s*[A-Za-z0-9!#$%&'*+.^_`|~-]+=[A-Za-z0-9!#$%&'*+.^_`|~-]+)*$/.test(
+    contentType
+  )
+    ? contentType
+    : 'application/octet-stream'
+}
+
+const sanitizeOcrCapabilityUploadHeaders = (
+  rawHeaders: Record<string, string> | undefined,
+  fallbackContentType: string
+) => {
+  const headers: Record<string, string> = {}
+  Object.entries(rawHeaders || {}).forEach(([rawName, rawValue]) => {
+    const name = String(rawName || '').trim()
+    const value = String(rawValue ?? '').trim()
+    if (!name || !isOcrCapabilityHeaderNameSafe(name) || !isOcrCapabilityHeaderValueSafe(value)) {
+      return
+    }
+    headers[name] = value
+  })
+  if (!Object.keys(headers).some((name) => name.toLowerCase() === 'content-type')) {
+    headers['Content-Type'] = normalizeOcrCapabilityContentType(fallbackContentType)
+  }
+  return headers
+}
+
 const startOcrCapabilityTest = async () => {
   const file = ocrCapabilityTestFile.value
   if (!file) {
@@ -8010,10 +8042,10 @@ const startOcrCapabilityTest = async () => {
     }
     const sessionRes = await createFdeOcrCapabilityTestUploadSessionApi(
       { file: fileMeta },
-      { idempotencyKey: `fde-ocr-test-upload-${file.name}-${file.size}-${Date.now()}` }
+      { idempotencyKey: `fde-ocr-test-upload-${file.size}-${Date.now()}` }
     )
     const uploadSession = sessionRes.data.uploadSession
-    const headers = uploadSession.headers || { 'Content-Type': fileMeta.contentType }
+    const headers = sanitizeOcrCapabilityUploadHeaders(uploadSession.headers, fileMeta.contentType)
     if (uploadSession.uploadUrl && !String(uploadSession.uploadUrl).startsWith('mock://')) {
       ocrCapabilityTestStage.value = '正在上传测试文件...'
       const uploadUrl = resolveOcrCapabilityUploadUrl(uploadSession.uploadUrl)

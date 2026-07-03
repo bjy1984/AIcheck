@@ -2583,10 +2583,24 @@ const createIdempotencyKey = () => {
   return `aicheck-${random}`
 }
 
+const safeHeaderValue = (value: string, fallback: string) => {
+  const safe = String(value || '')
+    .replace(/[^\x20-\x7e]/g, '-')
+    .replace(/[^A-Za-z0-9._~:/@-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 180)
+  return safe || fallback
+}
+
 const mutationHeaders = (options?: MutationHeaderOptions) => {
   const headers: Record<string, string> = {}
   if (options?.etag) headers['If-Match'] = options.etag
-  headers['Idempotency-Key'] = options?.idempotencyKey || createIdempotencyKey()
+  const fallbackIdempotencyKey = createIdempotencyKey()
+  headers['Idempotency-Key'] = safeHeaderValue(
+    options?.idempotencyKey || fallbackIdempotencyKey,
+    fallbackIdempotencyKey
+  )
   return Object.keys(headers).length ? headers : undefined
 }
 
