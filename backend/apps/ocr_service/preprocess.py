@@ -116,12 +116,15 @@ def requested_variant_names(
     requested = list((options or {}).get("variants") or policy.get("variants") or ["original"])
     qualities = [(item.get("quality") if isinstance(item.get("quality"), dict) else {}) for item in page_quality]
     quality = merged_quality_flags(qualities)
-    if quality.get("hasTableCandidate") and "table_line_enhanced" not in requested:
+    enable_tables = parse_bool((options or {}).get("enableTables"), True) is not False
+    enable_seals = parse_bool((options or {}).get("enableSeals"), True) is not False
+    if enable_tables and quality.get("hasTableCandidate") and "table_line_enhanced" not in requested:
         requested.append("table_line_enhanced")
     seal_policy = (policy.get("seal") or {}) if isinstance(policy.get("seal"), dict) else {}
     required_seal = parse_bool((profile.get("sealRules") or {}).get("required"), False) is True
     if (
-        quality.get("hasSealCandidate")
+        enable_seals
+        and quality.get("hasSealCandidate")
         and (required_seal or parse_bool(seal_policy.get("enableColorCandidate"), False))
         and "seal_color_mask" not in requested
     ):

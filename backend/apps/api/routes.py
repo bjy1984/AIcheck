@@ -7,6 +7,7 @@ import mimetypes
 import os
 import re
 import tempfile
+import threading
 import zipfile
 from email import policy
 from email.parser import BytesParser
@@ -16,7 +17,7 @@ from xml.etree import ElementTree as ET
 from uuid import uuid4
 
 import yaml
-from fastapi import APIRouter, BackgroundTasks, Body, Header, Query, Request
+from fastapi import APIRouter, Body, Header, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 from apps.api.adapters.engineering_inspection import (
@@ -25,6 +26,7 @@ from apps.api.adapters.engineering_inspection import (
 )
 from apps.ocr_service.evaluation import compact_evaluation_report, evaluate_cases
 from apps.ocr_service.readiness import build_ocr_100_scorecard
+from apps.ocr_service.utils import parse_bool
 from libs.business_pack import (
     DEFAULT_BUSINESS_PACK_ID,
     build_project_requirements,
@@ -11526,8 +11528,40 @@ def fde_capability_test_safe_file_name(file_name: str | None) -> str:
     return safe[:120] or "ocr-test-file"
 
 
+def fde_capability_test_upload_root() -> Path:
+    return Path(
+        os.getenv(
+            "AICHECK_FDE_OCR_UPLOAD_DIR",
+            "/tmp/aicheck-fde-ocr-uploads",
+        )
+    ).expanduser()
+
+
+def fde_capability_test_local_path(path_value: str | None) -> Path | None:
+    raw = str(path_value or "").strip()
+    if not raw:
+        return None
+    path = Path(raw)
+    if not path.is_absolute():
+        return None
+    try:
+        root = fde_capability_test_upload_root().resolve()
+        resolved = path.expanduser().resolve()
+    except Exception:
+        return None
+    if resolved == root or root in resolved.parents:
+        return resolved
+    return None
+
+
+def fde_capability_test_direct_upload_url(session_id: str) -> str:
+    return f"/api/fde/capability-tests/ocr/upload-session/{session_id}/file"
+
+
 def fde_capability_test_storage_url(storage_key: str) -> str:
     raw = str(storage_key or "").strip()
+    if fde_capability_test_local_path(raw):
+        return raw
     if raw.startswith(("minio://", "s3://", "mock://", "http://", "https://", "file://")):
         return raw
     return f"minio://ocr-artifacts/{raw}"
@@ -11567,6 +11601,19 @@ def fde_capability_test_preview(run: dict[str, Any]) -> dict[str, Any]:
     content_type = str(run.get("contentType") or "application/octet-stream")
     file_size = int(run.get("fileSize") or 0)
     storage_url = fde_capability_test_storage_url(str(run.get("storageKey") or run.get("storageUrl") or ""))
+    local_path = fde_capability_test_local_path(storage_url)
+    if local_path and local_path.is_file():
+        session_id = str(run.get("uploadSessionId") or "")
+        return {
+            "url": fde_capability_test_direct_upload_url(session_id) if session_id else "",
+            "method": "GET",
+            "fileName": file_name,
+            "contentType": content_type,
+            "fileSize": file_size or local_path.stat().st_size,
+            "previewType": fde_capability_test_file_preview_type(file_name, content_type),
+            "readonly": True,
+            "retention": "fde_capability_test_only",
+        }
     try:
         preview = repo.signed_get(file_name, storage_url, content_type, file_size)
     except ObjectStorageUnavailable:
@@ -11600,12 +11647,49 @@ def fde_capability_test_run_by_id(run_id: str) -> dict[str, Any] | None:
 def fde_capability_test_profile_document_type(file_name: str, body: dict[str, Any]) -> tuple[str, str]:
     profile_id = str(body.get("profileId") or "").strip()
     document_type = str(body.get("documentType") or "").strip()
+    if profile_id in {"all", "auto"}:
+        profile_id = ""
+    if document_type in {"all", "auto"}:
+        document_type = ""
+    normalized_name = str(file_name or "").lower()
     suffix = Path(str(file_name)).suffix.lower()
     if not profile_id:
-        profile_id = "piping_characteristic_list_v1" if suffix in {".png", ".jpg", ".jpeg"} else "quality_certificate_v1"
+        if any(term in normalized_name for term in ["rt", "ut", "ndt", "检测", "探伤"]):
+            profile_id = "ndt_rt_report_v1"
+        elif any(term in normalized_name for term in ["质量", "证明", "材质", "合格证", "证书"]):
+            profile_id = "quality_certificate_v1"
+        elif suffix in {".png", ".jpg", ".jpeg"} or any(
+            term in normalized_name
+            for term in ["设计", "图纸", "图纸目录", "drawing", "dwg", "工艺", "管道", "特性表"]
+        ):
+            profile_id = "piping_characteristic_list_v1"
+        else:
+            profile_id = "generic_document_v1"
     if not document_type:
-        document_type = "engineering_table_photo" if suffix in {".png", ".jpg", ".jpeg"} else "engineering_document"
+        document_type = {
+            "generic_document_v1": "generic_document",
+            "piping_characteristic_list_v1": "engineering_table_photo",
+            "quality_certificate_v1": "quality_certificate",
+            "ndt_rt_report_v1": "ndt_report",
+        }.get(profile_id, "engineering_document")
     return profile_id, document_type
+
+
+def fde_start_ocr_capability_test_worker(run_id: str) -> None:
+    thread = threading.Thread(target=fde_run_ocr_capability_test, args=(run_id,), daemon=True)
+    thread.start()
+
+
+def fde_capability_test_bool(body: dict[str, Any], key: str, default: bool) -> bool:
+    return parse_bool(body.get(key), default) is True
+
+
+def fde_capability_test_int(body: dict[str, Any], key: str, default: int, minimum: int, maximum: int) -> int:
+    try:
+        value = int(body.get(key) or default)
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, min(value, maximum))
 
 
 def fde_run_ocr_capability_test(run_id: str) -> None:
@@ -11801,6 +11885,7 @@ def fde_create_ocr_capability_upload_session(
             "storageKey": storage_key,
             "storageUrl": fde_capability_test_storage_url(storage_key),
             "uploadUrl": upload_url,
+            "directUploadUrl": fde_capability_test_direct_upload_url(session_id),
             "method": "PUT",
             "headers": {"Content-Type": content_type},
             "createdByRole": role or "fde",
@@ -11814,10 +11899,101 @@ def fde_create_ocr_capability_upload_session(
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
+@router.post("/fde/capability-tests/ocr/upload-session/{session_id}/file")
+async def fde_upload_ocr_capability_test_file(
+    request: Request,
+    session_id: str,
+):
+    role, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+    if role_error:
+        return role_error
+    upload_session = next(
+        (
+            item
+            for item in repo.state.setdefault("fde_capability_test_upload_sessions", [])
+            if str(item.get("uploadSessionId") or item.get("id") or "") == session_id
+        ),
+        None,
+    )
+    if not upload_session:
+        return fail(errors.NOT_FOUND, request, message="未找到 OCR 能力测试上传会话，请重新选择文件。")
+    data = await request.body()
+    if len(data) < 1:
+        return fail(errors.VALIDATION_ERROR, request, message="上传文件不能为空。")
+    if len(data) > MAX_UPLOAD_BYTES:
+        return fail(errors.FILE_TOO_LARGE, request, message=f"文件超过 {MAX_UPLOAD_BYTES // 1024 // 1024}MB 上传限制。")
+    file_name = fde_capability_test_safe_file_name(str(upload_session.get("fileName") or "ocr-test-file"))
+    content_type = str(request.headers.get("content-type") or upload_session.get("contentType") or "application/octet-stream")
+    storage_key = str(upload_session.get("storageKey") or f"fde-capability-tests/ocr/{session_id}/{file_name}")
+    stored_url = None
+    try:
+        stored_url = object_storage.put_bytes("ocr-artifacts", storage_key, data, content_type=content_type)
+    except Exception:
+        stored_url = None
+    if stored_url:
+        upload_session.update(
+            {
+                "status": "uploaded",
+                "storageBucket": "ocr-artifacts",
+                "storageKey": storage_key,
+                "storageUrl": stored_url,
+                "contentType": content_type,
+                "fileSize": len(data),
+                "uploadedByRole": role or "fde",
+                "updatedAt": server_time(),
+            }
+        )
+    elif object_storage.required:
+        return fail(errors.OBJECT_STORAGE_REQUIRED, request, message="对象存储不可用，无法保存 OCR 测试文件。", http_status=503)
+    else:
+        target_dir = fde_capability_test_upload_root() / session_id
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_path = target_dir / file_name
+        target_path.write_bytes(data)
+        upload_session.update(
+            {
+                "status": "uploaded",
+                "storageBucket": "local",
+                "storageKey": str(target_path),
+                "storageUrl": str(target_path),
+                "localPath": str(target_path),
+                "contentType": content_type,
+                "fileSize": len(data),
+                "uploadedByRole": role or "fde",
+                "updatedAt": server_time(),
+            }
+        )
+    audit_id = repo.add_audit("FDE OCR 能力测试文件上传", "FdeOcrCapabilityUploadSession", session_id)
+    return ok({"uploadSession": repo.clone(upload_session), "auditLogId": audit_id}, request)
+
+
+@router.get("/fde/capability-tests/ocr/upload-session/{session_id}/file")
+def fde_download_ocr_capability_test_file(request: Request, session_id: str):
+    upload_session = next(
+        (
+            item
+            for item in repo.state.setdefault("fde_capability_test_upload_sessions", [])
+            if str(item.get("uploadSessionId") or item.get("id") or "") == session_id
+        ),
+        None,
+    )
+    if not upload_session:
+        return fail(errors.NOT_FOUND, request, message="未找到 OCR 能力测试上传会话。")
+    local_path = fde_capability_test_local_path(
+        str(upload_session.get("localPath") or upload_session.get("storageUrl") or upload_session.get("storageKey") or "")
+    )
+    if not local_path or not local_path.is_file():
+        return fail(errors.NOT_FOUND, request, message="本地 OCR 测试文件不存在或不可预览。")
+    return FileResponse(
+        str(local_path),
+        media_type=str(upload_session.get("contentType") or "application/octet-stream"),
+        filename=str(upload_session.get("fileName") or local_path.name),
+    )
+
+
 @router.post("/fde/capability-tests/ocr/runs")
 def fde_create_ocr_capability_test_run(
     request: Request,
-    background_tasks: BackgroundTasks,
     body: dict[str, Any] = Body(default_factory=dict),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -11841,9 +12017,11 @@ def fde_create_ocr_capability_test_run(
         run_id = f"FDE-OCR-RUN-{uuid4().hex[:10].upper()}"
         now = server_time()
         options = {
-            "enableTables": bool(body.get("enableTables", True)),
-            "enableSeals": bool(body.get("enableSeals", True)),
-            "enableFallback": bool(body.get("enableFallback", True)),
+            "enableTables": fde_capability_test_bool(body, "enableTables", True),
+            "enableSeals": fde_capability_test_bool(body, "enableSeals", True),
+            "enableFallback": fde_capability_test_bool(body, "enableFallback", True),
+            "maxPages": fde_capability_test_int(body, "maxPages", 3, 1, 10),
+            "disableRemediation": fde_capability_test_bool(body, "disableRemediation", True),
         }
         run = {
             "id": run_id,
@@ -11876,7 +12054,7 @@ def fde_create_ocr_capability_test_run(
         upload_session["updatedAt"] = now
         repo.state.setdefault("fde_capability_test_runs", []).insert(0, run)
         audit_id = repo.add_audit("FDE OCR 能力测试启动", "FdeOcrCapabilityTestRun", run_id)
-        background_tasks.add_task(fde_run_ocr_capability_test, run_id)
+        fde_start_ocr_capability_test_worker(run_id)
         return ok({"run": run, "auditLogId": audit_id}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)

@@ -87,6 +87,7 @@ import {
   submitFdeReleaseApi,
   triageFdeFeedbackApi,
   updateFdeIncidentRcaApi,
+  uploadFdeOcrCapabilityTestFileApi,
   validateFdeBusinessPacksApi,
   verifyFdeOcrAnnotationTaskApi
 } from '@/api/aicheck'
@@ -190,11 +191,13 @@ const ocrCapabilityRecentOpen = ref(false)
 const ocrCapabilityTestStage = ref('')
 const ocrCapabilityTestPolling = ref<number | undefined>()
 const ocrCapabilityTestForm = ref({
-  profileId: 'all',
-  documentType: 'engineering_document',
+  profileId: 'auto',
+  documentType: 'auto',
+  maxPages: 3,
   enableTables: false,
   enableSeals: false,
-  enableFallback: true
+  enableFallback: false,
+  disableRemediation: true
 })
 const labelStudioExportSummary = ref<Record<string, unknown> | null>(null)
 const annotationEditorVisible = ref(false)
@@ -8044,18 +8047,38 @@ const startOcrCapabilityTest = async () => {
       { file: fileMeta },
       { idempotencyKey: `fde-ocr-test-upload-${file.size}-${Date.now()}` }
     )
-    const uploadSession = sessionRes.data.uploadSession
+    let uploadSession = sessionRes.data.uploadSession
     const headers = sanitizeOcrCapabilityUploadHeaders(uploadSession.headers, fileMeta.contentType)
+    let signedUploadComplete = false
     if (uploadSession.uploadUrl && !String(uploadSession.uploadUrl).startsWith('mock://')) {
       ocrCapabilityTestStage.value = '正在上传测试文件...'
       const uploadUrl = resolveOcrCapabilityUploadUrl(uploadSession.uploadUrl)
-      const uploadRes = await fetch(uploadUrl, {
-        method: uploadSession.method || 'PUT',
-        headers,
-        body: file
-      })
-      if (!uploadRes.ok) {
-        throw new Error(`upload failed: ${uploadRes.status}`)
+      try {
+        const uploadRes = await fetch(uploadUrl, {
+          method: uploadSession.method || 'PUT',
+          headers,
+          body: file
+        })
+        signedUploadComplete = uploadRes.ok
+      } catch (uploadErr) {
+        console.warn(
+          'OCR capability presigned upload failed, falling back to backend upload.',
+          uploadErr
+        )
+      }
+    }
+    if (!signedUploadComplete) {
+      ocrCapabilityTestStage.value = String(uploadSession.uploadUrl).startsWith('mock://')
+        ? '正在通过后端保存测试文件...'
+        : '上传地址不可用，正在通过后端保存测试文件...'
+      const fallbackUploadRes = await uploadFdeOcrCapabilityTestFileApi(
+        uploadSession.uploadSessionId,
+        file,
+        { idempotencyKey: `fde-ocr-test-file-${uploadSession.uploadSessionId}` }
+      )
+      uploadSession = {
+        ...uploadSession,
+        ...fallbackUploadRes.data.uploadSession
       }
     }
     ocrCapabilityTestStage.value = '文件已上传，正在提交 OCR 识别任务...'
@@ -9683,6 +9706,7 @@ onBeforeUnmount(() => {
                   <label>
                     <span>解析配置</span>
                     <ElSelect v-model="ocrCapabilityTestForm.profileId" size="small">
+                      <ElOption label="自动判断" value="auto" />
                       <ElOption
                         label="管道特性表 / 工程表格"
                         value="piping_characteristic_list_v1"
@@ -9695,11 +9719,22 @@ onBeforeUnmount(() => {
                   <label>
                     <span>资料类型</span>
                     <ElSelect v-model="ocrCapabilityTestForm.documentType" size="small">
+                      <ElOption label="自动判断" value="auto" />
                       <ElOption label="工程表格照片" value="engineering_table_photo" />
                       <ElOption label="质量证明文件" value="quality_certificate" />
                       <ElOption label="NDT 检测报告" value="ndt_report" />
                       <ElOption label="通用工程资料" value="engineering_document" />
                     </ElSelect>
+                  </label>
+                  <label>
+                    <span>快速页数</span>
+                    <ElInputNumber
+                      v-model="ocrCapabilityTestForm.maxPages"
+                      size="small"
+                      :min="1"
+                      :max="10"
+                      controls-position="right"
+                    />
                   </label>
                 </div>
                 <div class="ocr-capability-switches">
@@ -14726,6 +14761,7 @@ onBeforeUnmount(() => {
                           <label>
                             <span>解析配置</span>
                             <ElSelect v-model="ocrCapabilityTestForm.profileId" size="small">
+                              <ElOption label="自动判断" value="auto" />
                               <ElOption
                                 label="管道特性表 / 工程表格"
                                 value="piping_characteristic_list_v1"
@@ -14738,11 +14774,22 @@ onBeforeUnmount(() => {
                           <label>
                             <span>资料类型</span>
                             <ElSelect v-model="ocrCapabilityTestForm.documentType" size="small">
+                              <ElOption label="自动判断" value="auto" />
                               <ElOption label="工程表格照片" value="engineering_table_photo" />
                               <ElOption label="质量证明文件" value="quality_certificate" />
                               <ElOption label="NDT 检测报告" value="ndt_report" />
                               <ElOption label="通用工程资料" value="engineering_document" />
                             </ElSelect>
+                          </label>
+                          <label>
+                            <span>快速页数</span>
+                            <ElInputNumber
+                              v-model="ocrCapabilityTestForm.maxPages"
+                              size="small"
+                              :min="1"
+                              :max="10"
+                              controls-position="right"
+                            />
                           </label>
                         </div>
                         <div class="ocr-capability-switches">

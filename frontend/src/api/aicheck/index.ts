@@ -1745,6 +1745,7 @@ export type FdeOcrCapabilityUploadSessionPayload = {
     id?: string
     uploadSessionId: string
     uploadUrl: string
+    directUploadUrl?: string
     method: 'PUT'
     headers?: Record<string, string>
     expiresAt?: string
@@ -3625,15 +3626,32 @@ export const createFdeOcrCapabilityTestUploadSessionApi = (
   })
 }
 
+export const uploadFdeOcrCapabilityTestFileApi = (
+  uploadSessionId: string,
+  file: File,
+  options?: MutationHeaderOptions
+): Promise<IResponse<FdeOcrCapabilityUploadSessionPayload>> => {
+  return request.post({
+    url: `/api/fde/capability-tests/ocr/upload-session/${encodeURIComponent(uploadSessionId)}/file`,
+    data: file,
+    headers: {
+      'Content-Type': file.type || 'application/octet-stream',
+      ...mutationHeaders(options)
+    }
+  })
+}
+
 export const createFdeOcrCapabilityTestRunApi = (
   data: {
     uploadSessionId: string
     profileId?: string
     documentType?: string
     businessPackId?: string
+    maxPages?: number
     enableTables?: boolean
     enableSeals?: boolean
     enableFallback?: boolean
+    disableRemediation?: boolean
   },
   options?: MutationHeaderOptions
 ): Promise<IResponse<{ run: FdeOcrCapabilityTestRun; auditLogId: string }>> => {

@@ -281,7 +281,7 @@ class OcrService:
                 file_name,
                 "OCR source file is unavailable. Check MinIO object key, credentials, or mounted file path.",
             )
-        profile = profile_for(profile_id, document_type)
+        profile = apply_parse_options_to_profile(profile_for(profile_id, document_type), options or {})
         candidate_results: list[dict[str, Any]] = []
         if self.pipeline is not None:
             try:
@@ -3511,6 +3511,41 @@ def monotonic_ms() -> int:
     import time
 
     return int(time.monotonic() * 1000)
+
+
+def apply_parse_options_to_profile(profile: dict[str, Any], options: dict[str, Any]) -> dict[str, Any]:
+    adjusted = deepcopy(profile)
+    policy = adjusted.setdefault("preprocessPolicy", {})
+    if options.get("maxPages") is not None:
+        try:
+            policy["maxPages"] = max(1, min(int(options["maxPages"]), 30))
+        except (TypeError, ValueError):
+            pass
+    if options.get("maxLongSide") is not None:
+        try:
+            policy["maxLongSide"] = max(800, min(int(options["maxLongSide"]), 4096))
+        except (TypeError, ValueError):
+            pass
+    if options.get("renderDpi") is not None:
+        try:
+            policy["renderDpi"] = max(150, min(int(options["renderDpi"]), 400))
+        except (TypeError, ValueError):
+            pass
+    if isinstance(options.get("variants"), list) and options["variants"]:
+        policy["variants"] = [str(item) for item in options["variants"] if str(item)]
+    if parse_bool(options.get("enableTables"), True) is False:
+        adjusted["requiredTables"] = []
+    if parse_bool(options.get("enableSeals"), True) is False:
+        adjusted.setdefault("sealRules", {})["required"] = False
+        adjusted["sealRules"]["expectedSealTypes"] = []
+        seal_policy = policy.setdefault("seal", {})
+        seal_policy["enableColorCandidate"] = False
+        seal_policy["enablePaddlexSeal"] = False
+        seal_policy["enableAgentdesignSeal"] = False
+        seal_policy["enableSealTextRecognition"] = False
+    if parse_bool(options.get("enableFallback"), True) is False:
+        policy.setdefault("fallback", {})["enableVlmWhen"] = []
+    return adjusted
 
 
 def directory_fingerprint(path: Path) -> str:

@@ -20,6 +20,12 @@ def route_engine_variants(
     page_quality: list[dict[str, Any]],
     options: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
+    if engine_name in TABLE_ENGINES and parse_bool((options or {}).get("enableTables"), True) is False:
+        return []
+    if engine_name in SEAL_ENGINES and parse_bool((options or {}).get("enableSeals"), True) is False:
+        return []
+    if engine_name in FALLBACK_ENGINES and parse_bool((options or {}).get("enableFallback"), True) is False:
+        return []
     document_path = str((options or {}).get("documentPath") or "")
     if not variants:
         if engine_name in DOCUMENT_LEVEL_ENGINES and document_path.lower().endswith(".pdf"):
