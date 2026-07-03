@@ -55,6 +55,28 @@ export const constantRouterMap: AppRouteRecordRaw[] = [
       title: '404',
       noTagsView: true
     }
+  },
+  {
+    path: '/fde/:fdePath(.*)*',
+    component: AICheckStaticLayout,
+    name: 'FdeStaticDeepLink',
+    meta: {
+      hidden: true,
+      noCache: true,
+      roles: ['fde']
+    },
+    children: [
+      {
+        path: '',
+        component: FdeConsole,
+        name: 'FdeStaticDeepLinkPage',
+        meta: {
+          hidden: true,
+          noCache: true,
+          roles: ['fde']
+        }
+      }
+    ]
   }
 ]
 
