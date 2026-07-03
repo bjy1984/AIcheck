@@ -3037,7 +3037,7 @@ const ocrCapabilitySealFieldLines = (record: Record<string, unknown>) => {
   return fields.flatMap((field) => {
     const name = String(field.fieldName || field.fieldCode || field.name || '').trim()
     const value = stringifyOcrCapabilityText(field.fieldValue ?? field.value ?? field.text).trim()
-    if (!value || name.includes('颜色')) return []
+    if (!value || name.includes('颜色') || name === '印章原文') return []
     return [`${name || '字段'}：${value}`]
   })
 }
@@ -3270,8 +3270,8 @@ const selectedOcrCapabilitySealRows = computed<OcrCapabilitySealDisplayRow[]>(()
           )
       : []
     const contentLines = uniqueOcrCapabilityLines([
-      ...directLines,
       ...fieldLines,
+      ...directLines,
       ...fragmentLines
     ]).slice(0, 18)
     const colorLabel = ocrCapabilitySealColorLabel(seal)

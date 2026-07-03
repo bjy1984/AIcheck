@@ -1305,7 +1305,9 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
         script = textwrap.dedent(
             """
             import json
+            import os
             import sys
+            import tempfile
             import cv2
             import numpy as np
 
@@ -1348,6 +1350,165 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
                         return True
                 return False
 
+            crop_ocr = None
+            seal_text_keywords = ["专用章", "单位名称", "业务范围", "资质证书", "有效期", "设计院", "有限公司"]
+
+            def object_to_dict(value):
+                if isinstance(value, dict):
+                    return value
+                json_value = getattr(value, "json", None)
+                if callable(json_value):
+                    return json_value()
+                if isinstance(json_value, dict):
+                    return json_value
+                dict_value = getattr(value, "dict", None)
+                if callable(dict_value):
+                    return dict_value()
+                return {}
+
+            def get_crop_ocr():
+                global crop_ocr
+                if crop_ocr is not None:
+                    return crop_ocr
+                det_dir = os.getenv("AICHECK_PADDLEOCR_DET_MODEL_DIR")
+                rec_dir = os.getenv("AICHECK_PADDLEOCR_REC_MODEL_DIR")
+                if not det_dir or not rec_dir:
+                    return None
+                try:
+                    from paddleocr import PaddleOCR
+
+                    crop_ocr = PaddleOCR(
+                        text_detection_model_dir=det_dir,
+                        text_recognition_model_dir=rec_dir,
+                        use_doc_orientation_classify=False,
+                        use_doc_unwarping=False,
+                        use_textline_orientation=False,
+                        text_det_limit_side_len=1200,
+                        text_det_limit_type="max",
+                        enable_mkldnn=False,
+                    )
+                    return crop_ocr
+                except Exception:
+                    return None
+
+            def ocr_image_lines(ocr, image_path):
+                try:
+                    raw = ocr.predict(image_path)
+                except Exception:
+                    return []
+                page = raw[0] if isinstance(raw, list) and raw else raw
+                page = object_to_dict(page)
+                texts = page.get("rec_texts") or page.get("texts") or []
+                scores = page.get("rec_scores") or page.get("scores") or []
+                lines = []
+                for index, text in enumerate(texts):
+                    text = str(text or "").strip()
+                    if not text:
+                        continue
+                    try:
+                        score = float(scores[index]) if index < len(scores) else 0.0
+                    except Exception:
+                        score = 0.0
+                    lines.append((text, score))
+                return lines
+
+            def score_seal_lines(lines):
+                if not lines:
+                    return 0.0
+                text_values = [text for text, score in lines if text and score >= 0.2]
+                if not text_values:
+                    return 0.0
+                avg_score = sum(score for _, score in lines) / max(len(lines), 1)
+                keyword_hits = sum(1 for text in text_values for keyword in seal_text_keywords if keyword in text)
+                cjk_count = sum(1 for text in text_values for char in text if "\\u4e00" <= char <= "\\u9fff")
+                return avg_score + min(len(text_values), 10) * 0.08 + keyword_hits * 0.35 + min(cjk_count / 120.0, 0.5)
+
+            def split_label_value(text, label):
+                if label not in text:
+                    return ""
+                value = text.split(label, 1)[1].lstrip("：:;； ").strip()
+                return value
+
+            def seal_fields_from_lines(lines, bbox):
+                field_bbox = [int(value) for value in bbox]
+                texts = [text for text, _ in lines]
+                fields = []
+
+                def add(name, value, confidence=0.9):
+                    value = str(value or "").strip()
+                    if value:
+                        fields.append({"fieldName": name, "fieldValue": value, "confidence": confidence, "bbox": field_bbox})
+
+                title = next((text for text in texts if "章" in text), texts[0] if texts else "")
+                add("印章名称", title)
+                for text in texts:
+                    matched_effective_date = False
+                    for label, name in [
+                        ("单位名称", "单位名称"),
+                        ("资质证书编号", "资质证书编号"),
+                        ("有效期至", "有效期至"),
+                        ("有效期", "有效期"),
+                    ]:
+                        if label == "有效期" and matched_effective_date:
+                            continue
+                        value = split_label_value(text, label)
+                        if value:
+                            add(name, value)
+                            if label == "有效期至":
+                                matched_effective_date = True
+                    if "业务范围" in text:
+                        value = split_label_value(text, "业务范围")
+                        if value:
+                            add("业务范围", value)
+                business_index = next((index for index, text in enumerate(texts) if "业务范围" in text), -1)
+                if business_index >= 0 and not any(field.get("fieldName") == "业务范围" for field in fields):
+                    following = []
+                    for text in texts[business_index + 1 :]:
+                        if any(stop in text for stop in ["资质证书", "有效期", "单位名称"]):
+                            break
+                        following.append(text)
+                    add("业务范围", " ".join(following))
+                add("印章原文", "\\n".join(texts), confidence=sum(score for _, score in lines) / max(len(lines), 1) if lines else 0.0)
+                return fields
+
+            def extract_crop_seal_text(x, y, w_box, h_box):
+                ocr = get_crop_ocr()
+                if ocr is None:
+                    return {"lines": [], "fields": [], "confidence": 0.0}
+                padding = max(6, int(max(w_box, h_box) * 0.03))
+                x1 = max(0, x - padding)
+                y1 = max(0, y - padding)
+                x2 = min(width, x + w_box + padding)
+                y2 = min(height, y + h_box + padding)
+                crop = image[y1:y2, x1:x2]
+                if crop.size == 0:
+                    return {"lines": [], "fields": [], "confidence": 0.0}
+                variants = {
+                    "raw": crop,
+                    "cw": cv2.rotate(crop, cv2.ROTATE_90_CLOCKWISE),
+                    "ccw": cv2.rotate(crop, cv2.ROTATE_90_COUNTERCLOCKWISE),
+                    "180": cv2.rotate(crop, cv2.ROTATE_180),
+                }
+                best_lines = []
+                best_score = 0.0
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    for name, variant_image in variants.items():
+                        variant_path = os.path.join(temp_dir, f"seal_{name}.png")
+                        cv2.imwrite(variant_path, variant_image)
+                        lines = ocr_image_lines(ocr, variant_path)
+                        score = score_seal_lines(lines)
+                        if score > best_score:
+                            best_score = score
+                            best_lines = lines
+                useful_lines = [(text, score) for text, score in best_lines if score >= 0.2]
+                confidence = sum(score for _, score in useful_lines) / max(len(useful_lines), 1) if useful_lines else 0.0
+                bbox = [int(x), int(y), int(x + w_box), int(y + h_box)]
+                return {
+                    "lines": useful_lines,
+                    "fields": seal_fields_from_lines(useful_lines, bbox),
+                    "confidence": confidence,
+                }
+
             seals = []
             for color, config in masks.items():
                 mask = config["mask"]
@@ -1385,21 +1546,29 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
                 for index, (area, x, y, w, h, fill_ratio) in enumerate(selected, start=1):
                     seal_type = "visual_red_seal_candidate" if color == "red" else "visual_blue_stamp_candidate"
                     confidence = min(0.95, 0.55 + area / float(width * height) * 50 + min(fill_ratio, 0.45) * 0.2)
+                    crop_text = extract_crop_seal_text(x, y, w, h) if color == "blue" else {"lines": [], "fields": [], "confidence": 0.0}
+                    crop_lines = [text for text, _ in crop_text["lines"]]
+                    seal_name = crop_lines[0] if crop_lines else ("视觉印章候选" if color == "red" else "视觉蓝章候选")
+                    fields = [{"fieldName": "印章颜色", "fieldValue": color, "confidence": 0.8, "bbox": [int(x), int(y), int(x + w), int(y + h)]}]
+                    fields.extend(crop_text["fields"])
+                    quality_flags = ["visual_candidate_only", "seal_text_from_crop_ocr"] if crop_lines else ["visual_candidate_only", "requires_seal_ocr_text"]
                     seals.append(
                         {
                             "sealId": f"{color}_candidate_{index}",
                             "pageNo": 1,
                             "sealType": seal_type,
-                            "sealName": "视觉印章候选" if color == "red" else "视觉蓝章候选",
+                            "sealName": seal_name,
+                            "text": "\\n".join(crop_lines),
+                            "fullText": "\\n".join(crop_lines),
                             "bbox": [int(x), int(y), int(x + w), int(y + h)],
                             "polygon": [[int(x), int(y)], [int(x + w), int(y)], [int(x + w), int(y + h)], [int(x), int(y + h)]],
                             "pageWidth": int(width),
                             "pageHeight": int(height),
                             "visualColor": color,
                             "visualConfidence": round(confidence, 4),
-                            "ocrConfidence": 0.0,
-                            "fields": [{"fieldName": "印章颜色", "fieldValue": color, "confidence": 0.8, "bbox": [int(x), int(y), int(x + w), int(y + h)]}],
-                            "qualityFlags": ["visual_candidate_only", "requires_seal_ocr_text"],
+                            "ocrConfidence": round(float(crop_text["confidence"]), 4),
+                            "fields": fields,
+                            "qualityFlags": quality_flags,
                         }
                     )
             print(json.dumps({"ok": bool(seals), "seals": seals, "diagnostics": []}, ensure_ascii=False))
