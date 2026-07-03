@@ -3679,6 +3679,17 @@ export const getFdeOcrCapabilityTestRunApi = (
   return request.get({ url: `/api/fde/capability-tests/ocr/runs/${runId}` })
 }
 
+export const getFdeOcrCapabilityTestPagePreviewApi = (
+  runId: string,
+  params?: { pageNo?: number }
+): Promise<any> => {
+  return request.get({
+    url: `/api/fde/capability-tests/ocr/runs/${encodeURIComponent(runId)}/page-preview`,
+    params,
+    responseType: 'blob'
+  })
+}
+
 export const convertFdeOcrCapabilityTestToAnnotationApi = (
   runId: string,
   data?: Record<string, unknown>,

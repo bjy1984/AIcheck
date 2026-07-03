@@ -54,6 +54,7 @@ import {
   getFdeMaskingPoliciesApi,
   getFdeOcrAnnotationTaskApi,
   getFdeOcr100HandoffArtifactApi,
+  getFdeOcrCapabilityTestPagePreviewApi,
   getFdeOcrCapabilityTestRunApi,
   getFdeOcrRunApi,
   getFdeOcrQualityApi,
@@ -181,6 +182,8 @@ const selectedOcrCapabilityTest = ref<FdeOcrCapabilityTestDetailPayload | null>(
 const selectedOcrCapabilityTestRunId = ref('')
 const ocrCapabilityTestFile = ref<File | null>(null)
 const ocrCapabilityLocalPreviewUrl = ref('')
+const ocrCapabilityPdfPageObjectUrl = ref('')
+const ocrCapabilityPdfPageObjectKey = ref('')
 const ocrCapabilityFileInputRef = ref<HTMLInputElement | null>(null)
 const ocrCapabilityDialogVisible = ref(false)
 const ocrSecondaryMenuVisible = ref(false)
@@ -3105,7 +3108,8 @@ const selectedOcrCapabilityPdfPagePreviewUrl = computed(() => {
     | (Record<string, unknown> & { previewType?: string })
     | null
   if (preview?.previewType !== 'pdf') return ''
-  return String(preview.pagePreviewUrl || '')
+  if (!preview.pagePreviewUrl) return ''
+  return ocrCapabilityPdfPageObjectUrl.value
 })
 const selectedOcrCapabilityPdfRois = computed(() =>
   selectedOcrCapabilityPdfPagePreviewUrl.value
@@ -7917,6 +7921,47 @@ const loadOcrRunDetail = async (jobId: string) => {
   selectedOcrRun.value = res.data
 }
 
+const clearOcrCapabilityPdfPagePreview = () => {
+  if (ocrCapabilityPdfPageObjectUrl.value) {
+    URL.revokeObjectURL(ocrCapabilityPdfPageObjectUrl.value)
+    ocrCapabilityPdfPageObjectUrl.value = ''
+  }
+  ocrCapabilityPdfPageObjectKey.value = ''
+}
+
+const loadOcrCapabilityPdfPagePreview = async (
+  detail: FdeOcrCapabilityTestDetailPayload | null
+) => {
+  const preview = detail?.preview
+  const runId = String(detail?.run?.runId || detail?.run?.id || '')
+  const pagePreviewUrl = String(preview?.pagePreviewUrl || '')
+  if (preview?.previewType !== 'pdf' || !runId || !pagePreviewUrl) {
+    clearOcrCapabilityPdfPagePreview()
+    return
+  }
+  const previewKey = `${runId}:${pagePreviewUrl}`
+  if (ocrCapabilityPdfPageObjectKey.value === previewKey && ocrCapabilityPdfPageObjectUrl.value) {
+    return
+  }
+  clearOcrCapabilityPdfPagePreview()
+  ocrCapabilityPdfPageObjectKey.value = previewKey
+  try {
+    const response = await getFdeOcrCapabilityTestPagePreviewApi(runId, { pageNo: 1 })
+    const blob = response?.data instanceof Blob ? response.data : new Blob([response?.data || ''])
+    const objectUrl = URL.createObjectURL(blob)
+    if (ocrCapabilityPdfPageObjectKey.value !== previewKey) {
+      URL.revokeObjectURL(objectUrl)
+      return
+    }
+    ocrCapabilityPdfPageObjectUrl.value = objectUrl
+  } catch (err) {
+    if (ocrCapabilityPdfPageObjectKey.value === previewKey) {
+      clearOcrCapabilityPdfPagePreview()
+    }
+    console.warn('OCR capability PDF page preview failed.', err)
+  }
+}
+
 const loadOcrCapabilityTestRuns = async () => {
   ocrCapabilityRecordsLoading.value = true
   try {
@@ -7945,6 +7990,7 @@ const loadOcrCapabilityTestDetail = async (runId: string, schedulePoll = true) =
     const res = await getFdeOcrCapabilityTestRunApi(runId)
     selectedOcrCapabilityTest.value = res.data
     selectedOcrCapabilityTestRunId.value = runId
+    await loadOcrCapabilityPdfPagePreview(res.data)
     if (ocrCapabilityTerminalStatuses.has(String(res.data.run?.status || ''))) {
       ocrCapabilityTestStage.value = ''
     }
@@ -7980,6 +8026,7 @@ const handleOcrCapabilityTestFileChange = (event: Event) => {
     URL.revokeObjectURL(ocrCapabilityLocalPreviewUrl.value)
     ocrCapabilityLocalPreviewUrl.value = ''
   }
+  clearOcrCapabilityPdfPagePreview()
   ocrCapabilityTestFile.value = input.files?.[0] || null
   if (ocrCapabilityTestFile.value) {
     ocrCapabilityLocalPreviewUrl.value = URL.createObjectURL(ocrCapabilityTestFile.value)
@@ -9002,6 +9049,7 @@ onBeforeUnmount(() => {
     URL.revokeObjectURL(ocrCapabilityLocalPreviewUrl.value)
     ocrCapabilityLocalPreviewUrl.value = ''
   }
+  clearOcrCapabilityPdfPagePreview()
 })
 </script>
 
