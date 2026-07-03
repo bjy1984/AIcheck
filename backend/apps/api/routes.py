@@ -6,6 +6,8 @@ import json
 import mimetypes
 import os
 import re
+import shutil
+import subprocess
 import tempfile
 import threading
 import zipfile
@@ -11554,6 +11556,136 @@ def fde_capability_test_local_path(path_value: str | None) -> Path | None:
     return None
 
 
+def fde_capability_test_run_local_path(run: dict[str, Any]) -> Path | None:
+    values = [run.get("localPath"), run.get("storageUrl"), run.get("storageKey")]
+    upload_session_id = str(run.get("uploadSessionId") or "")
+    if upload_session_id:
+        upload_session = next(
+            (
+                item
+                for item in repo.state.setdefault("fde_capability_test_upload_sessions", [])
+                if str(item.get("uploadSessionId") or item.get("id") or "") == upload_session_id
+            ),
+            None,
+        )
+        if isinstance(upload_session, dict):
+            values.extend(
+                [
+                    upload_session.get("localPath"),
+                    upload_session.get("storageUrl"),
+                    upload_session.get("storageKey"),
+                ]
+            )
+    for value in values:
+        local_path = fde_capability_test_local_path(str(value or ""))
+        if local_path and local_path.is_file():
+            return local_path
+    return None
+
+
+def fde_render_image_page_preview(local_path: Path) -> tuple[bytes, str] | None:
+    try:
+        from PIL import Image
+
+        with Image.open(local_path) as image:
+            image.thumbnail((1600, 1600))
+            output = io.BytesIO()
+            image.convert("RGB").save(output, format="PNG")
+            return output.getvalue(), "image/png"
+    except Exception:
+        return None
+
+
+def fde_render_pdf_page_preview_with_fitz(local_path: Path, page_no: int) -> tuple[bytes, str] | None:
+    try:
+        import fitz  # type: ignore
+
+        with fitz.open(str(local_path)) as doc:
+            if len(doc) < 1:
+                return None
+            page = doc[max(0, min(page_no - 1, len(doc) - 1))]
+            matrix = fitz.Matrix(2, 2)
+            pixmap = page.get_pixmap(matrix=matrix, alpha=False)
+            return pixmap.tobytes("png"), "image/png"
+    except Exception:
+        return None
+
+
+def fde_render_pdf_page_preview_with_pdfium(local_path: Path, page_no: int) -> tuple[bytes, str] | None:
+    try:
+        import pypdfium2 as pdfium  # type: ignore
+
+        pdf = pdfium.PdfDocument(str(local_path))
+        try:
+            if len(pdf) < 1:
+                return None
+            page = pdf[max(0, min(page_no - 1, len(pdf) - 1))]
+            bitmap = page.render(scale=2)
+            pil_image = bitmap.to_pil()
+            output = io.BytesIO()
+            pil_image.convert("RGB").save(output, format="PNG")
+            return output.getvalue(), "image/png"
+        finally:
+            pdf.close()
+    except Exception:
+        return None
+
+
+def fde_render_pdf_page_preview_with_qlmanage(local_path: Path, page_no: int) -> tuple[bytes, str] | None:
+    if page_no != 1 or not shutil.which("qlmanage"):
+        return None
+    with tempfile.TemporaryDirectory(prefix="aicheck-fde-pdf-preview-") as temp_dir:
+        completed = subprocess.run(
+            ["qlmanage", "-t", "-s", "1600", "-o", temp_dir, str(local_path)],
+            check=False,
+            capture_output=True,
+            timeout=30,
+        )
+        if completed.returncode != 0:
+            return None
+        candidates = sorted(
+            Path(temp_dir).glob("*.png"),
+            key=lambda item: item.stat().st_size,
+            reverse=True,
+        )
+        if not candidates:
+            return None
+        return candidates[0].read_bytes(), "image/png"
+
+
+def fde_render_pdf_page_preview_with_magick(local_path: Path, page_no: int) -> tuple[bytes, str] | None:
+    magick = shutil.which("magick") or shutil.which("convert")
+    if not magick:
+        return None
+    with tempfile.TemporaryDirectory(prefix="aicheck-fde-pdf-preview-") as temp_dir:
+        target = Path(temp_dir) / "page.png"
+        source = f"{local_path}[{max(0, page_no - 1)}]"
+        command = [magick, source, "-thumbnail", "1600x1600", str(target)]
+        completed = subprocess.run(command, check=False, capture_output=True, timeout=30)
+        if completed.returncode != 0 or not target.is_file():
+            return None
+        return target.read_bytes(), "image/png"
+
+
+def fde_render_local_capability_page_preview(run: dict[str, Any], page_no: int) -> tuple[bytes, str] | None:
+    local_path = fde_capability_test_run_local_path(run)
+    if not local_path:
+        return None
+    file_name = str(run.get("fileName") or local_path.name)
+    content_type = str(run.get("contentType") or mimetypes.guess_type(file_name)[0] or "")
+    preview_type = fde_capability_test_file_preview_type(file_name, content_type)
+    if preview_type == "image":
+        return fde_render_image_page_preview(local_path)
+    if preview_type != "pdf":
+        return None
+    return (
+        fde_render_pdf_page_preview_with_fitz(local_path, page_no)
+        or fde_render_pdf_page_preview_with_pdfium(local_path, page_no)
+        or fde_render_pdf_page_preview_with_qlmanage(local_path, page_no)
+        or fde_render_pdf_page_preview_with_magick(local_path, page_no)
+    )
+
+
 def fde_capability_test_direct_upload_url(session_id: str) -> str:
     return f"/api/fde/capability-tests/ocr/upload-session/{session_id}/file"
 
@@ -12145,10 +12277,27 @@ def fde_ocr_capability_test_page_preview(
     run = fde_capability_test_run_by_id(run_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
+    storage_url = fde_capability_test_storage_url(str(run.get("storageKey") or run.get("storageUrl") or ""))
+    local_preview = fde_render_local_capability_page_preview(run, pageNo)
+    if local_preview:
+        content, content_type = local_preview
+        return Response(
+            content=content,
+            media_type=content_type,
+            headers={
+                "Cache-Control": "private, max-age=300",
+                "X-Content-Type-Options": "nosniff",
+                "X-AICheck-Preview-Source": "local-upload",
+            },
+        )
     client = OcrClient()
     if not client.enabled:
-        return fail(errors.EXTERNAL_TOOL_FAILED, request, message="OCR 服务未配置，无法生成 PDF 页图预览。", http_status=503)
-    storage_url = fde_capability_test_storage_url(str(run.get("storageKey") or run.get("storageUrl") or ""))
+        return fail(
+            errors.EXTERNAL_TOOL_FAILED,
+            request,
+            message="OCR 服务未配置，且本地文件无法生成 PDF 页图预览。",
+            http_status=503,
+        )
     try:
         content, content_type = client.page_preview(
             {
