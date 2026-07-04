@@ -1000,9 +1000,7 @@ const formatTextList = (items?: string[]) => {
   return items.join(' / ')
 }
 
-const formatRuleReferencedStandards = (
-  standards?: KnowledgeRuleVersion['referencedStandards']
-) => {
+const formatRuleReferencedStandards = (standards?: KnowledgeRuleVersion['referencedStandards']) => {
   if (!standards?.length) return '--'
   return standards
     .map((item) => item.fileName || item.file || item.reference)
@@ -1050,12 +1048,18 @@ const reasoningPromptTemplateLabel = computed(() => {
 
 const reasoningProcessText = computed(() => {
   const fromMetadata = reasoningLlmMetadata.value.reasoningProcess
-  return formatAuditValue(fromMetadata || reasoningDetail.value?.log.reasoningProcess, '暂无推理过程记录')
+  return formatAuditValue(
+    fromMetadata || reasoningDetail.value?.log.reasoningProcess,
+    '暂无推理过程记录'
+  )
 })
 
 const reasoningResultText = computed(() => {
   const fromMetadata = reasoningLlmMetadata.value.resultText
-  return formatAuditValue(fromMetadata || reasoningDetail.value?.log.llmResultText, '暂无推理结果记录')
+  return formatAuditValue(
+    fromMetadata || reasoningDetail.value?.log.llmResultText,
+    '暂无推理结果记录'
+  )
 })
 
 const formatFileSize = (size: number) => {
@@ -4963,8 +4967,7 @@ onMounted(() => {
               </ElDescriptionsItem>
               <ElDescriptionsItem label="LLM 对话 ID">
                 {{
-                  reasoningDetail.log.llmConversationId ||
-                  reasoningMetadataText('conversationId')
+                  reasoningDetail.log.llmConversationId || reasoningMetadataText('conversationId')
                 }}
               </ElDescriptionsItem>
               <ElDescriptionsItem label="Prompt 模板">
