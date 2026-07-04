@@ -12335,21 +12335,233 @@ def expected_tables_from_result(result: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def expected_seals_from_result(result: dict[str, Any]) -> list[dict[str, Any]]:
-    expected = []
+    candidates: list[dict[str, Any]] = []
     for seal in result.get("seals") or []:
         if not isinstance(seal, dict):
             continue
-        seal_name = str(seal.get("sealName") or "")
+        item = expected_seal_item_from_result(seal)
+        if item:
+            candidates.append({"item": item, "source": seal})
+    return [candidate["item"] for candidate in dedupe_expected_seal_candidates(candidates)][:20]
+
+
+def expected_seal_item_from_result(seal: dict[str, Any]) -> dict[str, Any]:
+    seal_name = str(seal.get("sealName") or "").strip()
+    seal_text = expected_seal_text_from_result(seal)
+    page_no = safe_expected_page_no(seal.get("pageNo") or seal.get("page") or 1)
+    confidence = max(
+        expected_float(seal.get("ocrConfidence")),
+        expected_float(seal.get("visualConfidence")),
+        expected_float(seal.get("confidence")),
+        expected_float(seal.get("score")),
+    )
+    item: dict[str, Any] = {
+        "sealType": seal.get("sealType"),
+        "nameContains": seal_name,
+        "text": seal_text,
+        "content": seal_text,
+        "pageNo": page_no,
+        "minConfidence": min(confidence, 0.8),
+        "bboxLabel": "盖章位置",
+        "stampLocationRequired": True,
+    }
+    source_id = seal.get("sealId") or seal.get("id")
+    if source_id:
+        item["sourceSealId"] = source_id
+    if seal.get("sourceEngine") or seal.get("source"):
+        item["sourceEngine"] = seal.get("sourceEngine") or seal.get("source")
+    if seal.get("visualColor"):
+        item["visualColor"] = seal.get("visualColor")
+    seal_fields = expected_seal_fields_from_result(seal)
+    if seal_fields:
+        item["fields"] = seal_fields
+    if seal.get("bbox") or seal.get("polygon"):
+        item["bbox"] = seal.get("bbox") or seal.get("polygon")
+        item["bboxIouThreshold"] = 0.5
+    return {key: value for key, value in item.items() if fde_expected_value_present(value)}
+
+
+def expected_seal_text_from_result(seal: dict[str, Any]) -> str:
+    explicit = normalize_expected_text(
+        seal.get("text") or seal.get("fullText") or seal.get("rawText") or seal.get("content")
+    )
+    if explicit:
+        return explicit
+    seal_name = normalize_expected_text(seal.get("sealName"))
+    if seal_name and not expected_seal_name_is_placeholder(seal_name):
+        return seal_name
+    field_lines = []
+    for field in seal.get("fields") or []:
+        if not isinstance(field, dict):
+            continue
+        name = normalize_expected_text(field.get("fieldName") or field.get("fieldCode"))
+        value = normalize_expected_text(field.get("fieldValue") or field.get("value"))
+        if name and value:
+            field_lines.append(f"{name}：{value}")
+        elif value:
+            field_lines.append(value)
+    return "\n".join(field_lines)
+
+
+def expected_seal_fields_from_result(seal: dict[str, Any]) -> list[dict[str, Any]]:
+    fields: list[dict[str, Any]] = []
+    for field in seal.get("fields") or []:
+        if not isinstance(field, dict):
+            continue
+        name = normalize_expected_text(field.get("fieldCode") or field.get("fieldName"))
+        value = normalize_expected_text(field.get("fieldValue") or field.get("value"))
+        if not name and not value:
+            continue
         item: dict[str, Any] = {
-            "sealType": seal.get("sealType"),
-            "nameContains": seal_name,
-            "minConfidence": min(float(seal.get("ocrConfidence") or seal.get("visualConfidence") or 0), 0.8),
+            "fieldName": name,
+            "value": value,
+            "bbox": field.get("bbox"),
+            "minConfidence": field.get("confidence"),
         }
-        if seal.get("bbox") or seal.get("polygon"):
-            item["bbox"] = seal.get("bbox") or seal.get("polygon")
-            item["bboxIouThreshold"] = 0.5
-        expected.append({key: value for key, value in item.items() if fde_expected_value_present(value)})
-    return expected[:20]
+        fields.append({key: val for key, val in item.items() if fde_expected_value_present(val)})
+    return fields[:20]
+
+
+def expected_seal_name_is_placeholder(value: str) -> bool:
+    text = value.strip().lower()
+    return not text or text.startswith("视觉") or text.startswith("visual_") or text in {
+        "蓝章",
+        "红章",
+        "seal",
+        "stamp",
+    }
+
+
+def dedupe_expected_seal_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    for candidate in sorted(candidates, key=expected_seal_candidate_score, reverse=True):
+        existing_index = next(
+            (
+                index
+                for index, existing in enumerate(deduped)
+                if expected_seal_candidates_overlap(candidate["item"], existing["item"])
+            ),
+            None,
+        )
+        if existing_index is None:
+            deduped.append(candidate)
+            continue
+        existing = deduped[existing_index]
+        if expected_seal_candidate_score(candidate) > expected_seal_candidate_score(existing):
+            candidate["item"]["dedupedCandidateCount"] = int(existing["item"].get("dedupedCandidateCount") or 1) + 1
+            deduped[existing_index] = candidate
+        else:
+            existing["item"]["dedupedCandidateCount"] = int(existing["item"].get("dedupedCandidateCount") or 1) + 1
+    return sorted(deduped, key=lambda candidate: (safe_expected_page_no(candidate["item"].get("pageNo")), expected_bbox_sort_key(candidate["item"])))
+
+
+def expected_seal_candidates_overlap(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    if safe_expected_page_no(left.get("pageNo")) != safe_expected_page_no(right.get("pageNo")):
+        return False
+    left_box = expected_bbox_extents(left.get("bbox") or left.get("polygon"))
+    right_box = expected_bbox_extents(right.get("bbox") or right.get("polygon"))
+    if not left_box or not right_box:
+        return False
+    return expected_bbox_iou(left_box, right_box) >= 0.35 or expected_bbox_overlap_ratio(left_box, right_box) >= 0.55
+
+
+def expected_seal_candidate_score(candidate: dict[str, Any]) -> float:
+    item = candidate.get("item") if isinstance(candidate.get("item"), dict) else {}
+    source = candidate.get("source") if isinstance(candidate.get("source"), dict) else {}
+    confidence = 0.0
+    for key in ["ocrConfidence", "visualConfidence", "confidence", "score"]:
+        try:
+            confidence = max(confidence, float(source.get(key) or 0))
+        except (TypeError, ValueError):
+            continue
+    score = confidence
+    if normalize_expected_text(item.get("text") or item.get("content")):
+        score += 0.35
+    if normalize_expected_text(item.get("nameContains")) and not expected_seal_name_is_placeholder(
+        normalize_expected_text(item.get("nameContains"))
+    ):
+        score += 0.2
+    if expected_bbox_extents(item.get("bbox") or item.get("polygon")):
+        score += 0.1
+    if item.get("fields"):
+        score += 0.1
+    flags = {str(flag) for flag in source.get("qualityFlags") or []}
+    if "visual_candidate_only" in flags and not normalize_expected_text(item.get("text") or item.get("content")):
+        score -= 0.15
+    if source.get("sourceEngine") == "fragment_seal_text_fusion":
+        score += 0.08
+    return score
+
+
+def expected_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def expected_bbox_sort_key(item: dict[str, Any]) -> tuple[float, float]:
+    box = expected_bbox_extents(item.get("bbox") or item.get("polygon")) or [0.0, 0.0, 0.0, 0.0]
+    return (box[1], box[0])
+
+
+def expected_bbox_extents(raw: Any) -> list[float] | None:
+    if not isinstance(raw, list) or not raw:
+        return None
+    if len(raw) == 4 and all(isinstance(value, (int, float)) for value in raw):
+        x0, y0, x1, y1 = [float(value) for value in raw]
+        if x0 == x1 or y0 == y1:
+            return None
+        return [min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)]
+    if len(raw) >= 6 and all(isinstance(value, (int, float)) for value in raw):
+        xs = [float(value) for value in raw[0::2]]
+        ys = [float(value) for value in raw[1::2]]
+        if not xs or not ys or max(xs) <= min(xs) or max(ys) <= min(ys):
+            return None
+        return [min(xs), min(ys), max(xs), max(ys)]
+    points = []
+    for point in raw:
+        if isinstance(point, (list, tuple)) and len(point) >= 2:
+            try:
+                points.append((float(point[0]), float(point[1])))
+            except (TypeError, ValueError):
+                continue
+    if not points:
+        return None
+    return [min(x for x, _ in points), min(y for _, y in points), max(x for x, _ in points), max(y for _, y in points)]
+
+
+def expected_bbox_iou(left: list[float], right: list[float]) -> float:
+    intersection = expected_bbox_intersection_area(left, right)
+    if intersection <= 0:
+        return 0.0
+    left_area = expected_bbox_area(left)
+    right_area = expected_bbox_area(right)
+    union = left_area + right_area - intersection
+    return intersection / union if union > 0 else 0.0
+
+
+def expected_bbox_overlap_ratio(left: list[float], right: list[float]) -> float:
+    intersection = expected_bbox_intersection_area(left, right)
+    if intersection <= 0:
+        return 0.0
+    return intersection / max(min(expected_bbox_area(left), expected_bbox_area(right)), 1.0)
+
+
+def expected_bbox_intersection_area(left: list[float], right: list[float]) -> float:
+    lx0, ly0, lx1, ly1 = left
+    rx0, ry0, rx1, ry1 = right
+    x0 = max(lx0, rx0)
+    y0 = max(ly0, ry0)
+    x1 = min(lx1, rx1)
+    y1 = min(ly1, ry1)
+    if x1 <= x0 or y1 <= y0:
+        return 0.0
+    return (x1 - x0) * (y1 - y0)
+
+
+def expected_bbox_area(box: list[float]) -> float:
+    return max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1])
 
 
 def fde_expected_value_present(value: Any) -> bool:

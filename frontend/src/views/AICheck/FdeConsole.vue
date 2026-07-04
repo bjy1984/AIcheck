@@ -246,7 +246,7 @@ type AnnotationTypeOption = {
   hint: string
   example: string
 }
-type AnnotationObjectFilter = 'todo' | 'all' | AnnotationSection
+type AnnotationObjectFilter = 'todo' | 'done' | 'all' | AnnotationSection
 type AnnotationCanvasTool = 'select' | 'pan' | AnnotationSection
 type AnnotationCanvasPayload = {
   id: string
@@ -283,6 +283,7 @@ type OcrSubpage = 'overview' | 'capability-test' | 'annotation' | 'runtime' | 'e
 type OcrStatusTab = 'issue' | 'annotation' | 'runtime' | 'release'
 type OcrStatusDialogType = OcrStatusTab | 'quality'
 type OcrSecondaryTool = 'annotation' | 'runtime' | 'release' | 'quality'
+type OcrPrimaryTaskAction = 'annotation' | 'capability-test' | 'runtime' | 'release'
 const fdeDemoMode = ref(false)
 const projectAuditSubpage = ref<ProjectAuditSubpage>('overview')
 const projectAuditSearch = ref('')
@@ -1796,7 +1797,7 @@ const annotationItems = (section: AnnotationSection) => {
   return Array.isArray(value) ? (value as Array<Record<string, unknown>>) : []
 }
 const annotationSectionTitle = (section: AnnotationSection) =>
-  section === 'fields' ? '字段' : section === 'tables' ? '表格' : '印章'
+  section === 'fields' ? '文字字段' : section === 'tables' ? '表格区域' : '盖章/印章'
 const annotationFields = computed(() => annotationItems('fields'))
 const annotationTables = computed(() => annotationItems('tables'))
 const annotationSeals = computed(() => annotationItems('seals'))
@@ -1893,6 +1894,9 @@ const normalizeAnnotationBbox = (value: unknown): [number, number, number, numbe
       const y = Number(record.y || 0)
       numbers = [x, y, x + Number(record.width || 0), y + Number(record.height || 0)]
     }
+  } else if (typeof value === 'string') {
+    const matches = value.match(/-?\d+(?:\.\d+)?/g) || []
+    numbers = matches.map((item) => Number(item)).filter((item) => Number.isFinite(item))
   }
   numbers = numbers.filter((item) => Number.isFinite(item))
   if (numbers.length < 4) return [0, 0, 0, 0]
@@ -1985,19 +1989,19 @@ const annotationCurrentToolLabel = computed(() => {
 const annotationTypeOptions: AnnotationTypeOption[] = [
   {
     key: 'fields',
-    label: '字段',
+    label: '文字字段',
     hint: '单个文字值，例如单位名称、日期、证书编号。',
     example: '例：单位名称 / 许可证编号'
   },
   {
     key: 'tables',
-    label: '表格',
+    label: '表格区域',
     hint: '一块表格区域，例如清单、记录表、参数表。',
     example: '例：管道特性表'
   },
   {
     key: 'seals',
-    label: '印章',
+    label: '盖章/印章',
     hint: '红章、蓝章或许可章，含印章文字和外框。',
     example: '例：特种设备设计许可印章'
   }
@@ -2037,7 +2041,7 @@ const annotationCurrentStepText = computed(() => {
   if (!selectedAnnotationTask.value) return '先从在线标注列表选择一个样本。'
   if (!annotationTotalCount.value) return '先补字段、表格或印章框，至少保留一个标注对象。'
   if (annotationIncompleteItems.value.length)
-    return `补齐 ${annotationIncompleteItems.value.length} 个对象的位置和文字。`
+    return `确认 ${annotationIncompleteItems.value.length} 个对象的位置或文字。`
   if (!['labeled', 'reviewed', 'ready_for_eval'].includes(status))
     return '检查对象清单后保存标注样本。'
   if (!selectedAnnotationTask.value.readyForEval && status !== 'ready_for_eval')
@@ -2060,11 +2064,11 @@ const annotationWorkflowSteps = computed(() => {
     },
     {
       no: '2',
-      title: '补位置和文字',
+      title: '校正结果',
       hint: complete
         ? '所有对象都有位置和文字。'
         : hasBoxes
-          ? `已有 ${annotationTotalCount.value} 个对象。`
+          ? `还有 ${annotationIncompleteItems.value.length} 个对象要确认。`
           : '先框选对象，再填写对应文字。',
       done: complete
     },
@@ -2183,6 +2187,8 @@ const annotationItemEditableValue = (section: AnnotationSection, item: Record<st
     )
   return String(item.text || item.content || '')
 }
+const isGeneratedOcrTextItem = (section: AnnotationSection, item: Record<string, unknown>) =>
+  section === 'fields' && isGeneratedOcrFieldCode(item.fieldCode || item.fieldName)
 const annotationItemLabelPlaceholder = (section: AnnotationSection) => {
   if (section === 'fields') return '字段名，例如：单位名称'
   if (section === 'tables') return '表格名称，例如：管道特性表'
@@ -2196,19 +2202,28 @@ const annotationItemValuePlaceholder = (section: AnnotationSection) => {
 }
 const annotationItemValueLabel = (section: AnnotationSection) => {
   if (section === 'fields') return 'OCR 文字'
-  if (section === 'tables') return 'Markdown 表格内容'
+  if (section === 'tables') return '表格内容'
   return '印章文字'
+}
+const annotationItemPositionLabel = (section: AnnotationSection) => {
+  if (section === 'fields') return '文字位置'
+  if (section === 'tables') return '表格位置'
+  return '盖章位置'
 }
 const annotationItemHasBbox = (item: Record<string, unknown>) => {
   return isPositiveAnnotationBbox(annotationItemBbox(item))
 }
 const annotationItemMissingParts = (section: AnnotationSection, item: Record<string, unknown>) => {
   const parts: string[] = []
-  if (!annotationItemHasBbox(item)) parts.push('位置')
-  if (!annotationItemEditableLabel(section, item).trim()) {
+  const isGeneratedText = isGeneratedOcrTextItem(section, item)
+  const hasValue = Boolean(annotationItemEditableValue(section, item).trim())
+  if (!annotationItemHasBbox(item) && !(isGeneratedText && hasValue)) {
+    parts.push(annotationItemPositionLabel(section))
+  }
+  if (!annotationItemEditableLabel(section, item).trim() && !isGeneratedText) {
     parts.push(section === 'fields' ? '字段名' : section === 'tables' ? '表格名称' : '印章名称')
   }
-  if (!annotationItemEditableValue(section, item).trim()) {
+  if (!hasValue) {
     parts.push(section === 'tables' ? '表格内容' : '文字')
   }
   return parts
@@ -2218,7 +2233,7 @@ const annotationItemCompletionText = (
   item: Record<string, unknown>
 ) => {
   const missing = annotationItemMissingParts(section, item)
-  return missing.length ? `缺 ${missing.join('、')}` : '位置和文字已完整'
+  return missing.length ? `待补：${missing.join('、')}` : '位置和文字已完整'
 }
 const annotationIncompleteItems = computed(() =>
   annotationSections.flatMap((section) =>
@@ -2237,13 +2252,18 @@ const annotationIncompleteSummary = computed(() => {
   if (!annotationIncompleteItems.value.length) return '所有对象都有位置和文字。'
   return annotationIncompleteItems.value
     .slice(0, 4)
-    .map((item) => `${item.title}：缺 ${item.missing.join('、')}`)
+    .map((item) => `${item.title}：待补 ${item.missing.join('、')}`)
     .join('；')
 })
 const annotationObjectFilterOptions = computed<
   Array<{ key: AnnotationObjectFilter; label: string; count: number }>
 >(() => [
-  { key: 'todo', label: '待补', count: annotationIncompleteItems.value.length },
+  { key: 'todo', label: '待处理', count: annotationIncompleteItems.value.length },
+  {
+    key: 'done',
+    label: '已完成',
+    count: Math.max(0, annotationTotalCount.value - annotationIncompleteItems.value.length)
+  },
   { key: 'all', label: '全部', count: annotationTotalCount.value },
   ...annotationSections.map((section) => ({
     key: section,
@@ -2303,6 +2323,7 @@ const annotationObjectTreeSections = computed(() => {
         })
         .filter((row) => {
           if (filter === 'todo' && !row.missing.length) return false
+          if (filter === 'done' && row.missing.length) return false
           if (annotationSections.includes(filter as AnnotationSection) && filter !== section)
             return false
           if (query && !row.searchText.includes(query)) return false
@@ -2382,6 +2403,87 @@ const updateSelectedAnnotationValue = (value: string) => {
   if (!target) return
   updateAnnotationItemText(target.section, target.index, 'value', value)
 }
+
+const splitAnnotationMarkdownTableRow = (line: string) => {
+  const trimmed = line.trim()
+  if (!trimmed.includes('|')) return []
+  const normalized = trimmed.replace(/^\|/, '').replace(/\|$/, '')
+  return normalized.split('|').map((cell) => cell.trim())
+}
+const isAnnotationMarkdownSeparatorRow = (cells: string[]) =>
+  cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()))
+const normalizeAnnotationTableGrid = (grid: string[][]) => {
+  const rows = grid.length ? grid : [['']]
+  const columnCount = Math.max(1, ...rows.map((row) => row.length))
+  return rows.map((row) =>
+    Array.from({ length: columnCount }, (_, index) => String(row[index] ?? ''))
+  )
+}
+const parseAnnotationMarkdownTable = (value: string) => {
+  const rows = String(value || '')
+    .split(/\r?\n/)
+    .map(splitAnnotationMarkdownTableRow)
+    .filter((row) => row.length && !isAnnotationMarkdownSeparatorRow(row))
+  return normalizeAnnotationTableGrid(rows)
+}
+const annotationTableGridToMarkdown = (grid: string[][]) => {
+  const rows = normalizeAnnotationTableGrid(grid)
+  const escapeCell = (value: string) =>
+    String(value ?? '')
+      .replace(/\|/g, '/')
+      .trim()
+  const markdownRows = rows.map((row) => `| ${row.map(escapeCell).join(' | ')} |`)
+  if (rows.length > 1 && rows[0].length > 1) {
+    markdownRows.splice(1, 0, `| ${rows[0].map(() => '---').join(' | ')} |`)
+  }
+  return markdownRows.join('\n')
+}
+const selectedAnnotationTableGrid = computed(() => {
+  const target = selectedAnnotationCanvasTarget.value
+  if (!target || target.section !== 'tables') return []
+  return parseAnnotationMarkdownTable(annotationItemEditableValue(target.section, target.item))
+})
+const updateSelectedAnnotationTableGrid = (grid: string[][]) => {
+  const target = selectedAnnotationCanvasTarget.value
+  if (!target || target.section !== 'tables') return
+  updateAnnotationItemText(
+    target.section,
+    target.index,
+    'value',
+    annotationTableGridToMarkdown(grid)
+  )
+}
+const updateSelectedAnnotationTableCell = (
+  rowIndex: number,
+  columnIndex: number,
+  value: string
+) => {
+  const grid = selectedAnnotationTableGrid.value.map((row) => [...row])
+  if (!grid[rowIndex]) return
+  grid[rowIndex][columnIndex] = value
+  updateSelectedAnnotationTableGrid(grid)
+}
+const addSelectedAnnotationTableRow = () => {
+  const grid = normalizeAnnotationTableGrid(selectedAnnotationTableGrid.value)
+  const columnCount = Math.max(1, grid[0]?.length || 1)
+  updateSelectedAnnotationTableGrid([...grid, Array.from({ length: columnCount }, () => '')])
+}
+const addSelectedAnnotationTableColumn = () => {
+  const grid = normalizeAnnotationTableGrid(selectedAnnotationTableGrid.value)
+  updateSelectedAnnotationTableGrid(grid.map((row) => [...row, '']))
+}
+const removeSelectedAnnotationTableRow = (rowIndex: number) => {
+  const grid = normalizeAnnotationTableGrid(selectedAnnotationTableGrid.value)
+  if (grid.length <= 1) return
+  updateSelectedAnnotationTableGrid(grid.filter((_, index) => index !== rowIndex))
+}
+const removeSelectedAnnotationTableColumn = (columnIndex: number) => {
+  const grid = normalizeAnnotationTableGrid(selectedAnnotationTableGrid.value)
+  if ((grid[0]?.length || 0) <= 1) return
+  updateSelectedAnnotationTableGrid(
+    grid.map((row) => row.filter((_, index) => index !== columnIndex))
+  )
+}
 const fillSelectedAnnotationValueFromLabel = () => {
   const target = selectedAnnotationCanvasTarget.value
   if (!target || !selectedAnnotationSuggestedText.value) return
@@ -2400,6 +2502,12 @@ const focusSelectedAnnotationTextEditor = () => {
 }
 const selectAnnotationCanvasItem = (id: string, focusText = false) => {
   selectedAnnotationCanvasItemId.value = id
+  if (id && annotationObjectFilter.value === 'todo') {
+    const target = selectedAnnotationCanvasTarget.value
+    if (target && !annotationItemMissingParts(target.section, target.item).length) {
+      annotationObjectFilter.value = 'all'
+    }
+  }
   if (focusText && id) focusSelectedAnnotationTextEditor()
 }
 const quickEditAnnotationCanvasItem = (id: string) => {
@@ -3075,17 +3183,83 @@ const firstOcrBlockingSummary = computed(() => {
   if (annotationBlocker) return `${annotationBlocker.blocker} × ${annotationBlocker.count}`
   return '当前未发现首要阻断，建议发起 OCR 评测验证回归门禁。'
 })
+const ocrPrimaryTask = computed<{
+  eyebrow: string
+  title: string
+  description: string
+  actionLabel: string
+  action: OcrPrimaryTaskAction
+  tab: OcrStatusTab
+  tone: FdeTone
+}>(() => {
+  if (firstRuntimeIssue.value) {
+    return {
+      eyebrow: '当前任务',
+      title: '先确认 OCR 服务是否可用',
+      description: `${friendlyTechnicalText(firstRuntimeIssue.value.name, '运行时问题')}：${shortText(
+        friendlyTechnicalText(firstRuntimeIssue.value.message, '-'),
+        '-'
+      )}`,
+      actionLabel: '查看服务诊断',
+      action: 'runtime',
+      tab: 'runtime',
+      tone: 'red'
+    }
+  }
+  if (ocrPendingAnnotationCount.value > 0) {
+    return {
+      eyebrow: '当前任务',
+      title: `校正 ${ocrPendingAnnotationCount.value} 个待确认样本`,
+      description: '先打开在线标注，按“上传文件、系统预标注、人工校正、保存样本”的流程补齐结果。',
+      actionLabel: '打开在线标注',
+      action: 'annotation',
+      tab: 'annotation',
+      tone: 'orange'
+    }
+  }
+  if (!ocrReadyForEvalCount.value) {
+    return {
+      eyebrow: '当前任务',
+      title: '先准备可评估样本',
+      description: '当前没有可评估样本。上传真实资料并保存标注样本后，评估发布才有依据。',
+      actionLabel: '上传并标注样本',
+      action: 'annotation',
+      tab: 'annotation',
+      tone: 'orange'
+    }
+  }
+  if (ocr100Scorecard.value && !ocr100Scorecard.value.ok) {
+    return {
+      eyebrow: '当前任务',
+      title: '评估还没达到交付基线',
+      description: firstOcrBlockingSummary.value,
+      actionLabel: '查看评估发布',
+      action: 'release',
+      tab: 'release',
+      tone: 'red'
+    }
+  }
+  return {
+    eyebrow: '当前任务',
+    title: '可以继续在线测试或发起回归评估',
+    description: '服务、标注和评估没有明显阻断。可以上传一份新资料验证效果，或查看发布评估。',
+    actionLabel: '在线测 OCR',
+    action: 'capability-test',
+    tab: 'issue',
+    tone: 'green'
+  }
+})
 const ocrPriorityCards = computed(() => [
   {
-    label: 'OCR 100',
+    label: '当前评分',
     value: ocr100Scorecard.value
       ? `${ocr100Scorecard.value.score}/${ocr100Scorecard.value.targetScore}`
       : '-',
-    hint: ocr100Scorecard.value?.ok ? '门禁就绪' : '存在阻断',
+    hint: ocr100Scorecard.value?.ok ? '可作为基线' : '需要处理',
     tone: ocr100Scorecard.value?.ok ? 'green' : 'red'
   },
   {
-    label: '运行时',
+    label: '服务状态',
     value: friendlyStatus(ocrRuntimeDoctor.value?.status, '未知'),
     hint: `${ocrRuntimeDoctor.value?.summary?.fail || 0} 失败 / ${
       ocrRuntimeDoctor.value?.summary?.warn || 0
@@ -3328,18 +3502,18 @@ const ocrStatusDialogHint = computed(() => {
   return '这里用于判断 OCR 结果能否作为发布或交付基线。'
 })
 const ocrInlineStatusTitle = computed(() => {
-  if (selectedOcrStatusTab.value === 'issue') return '当前问题'
-  if (selectedOcrStatusTab.value === 'annotation') return '在线标注'
+  if (selectedOcrStatusTab.value === 'issue') return '当前任务'
+  if (selectedOcrStatusTab.value === 'annotation') return '标注样本'
   if (selectedOcrStatusTab.value === 'runtime') return '服务诊断'
-  return '发布评测'
+  return '评估发布'
 })
 const ocrInlineStatusHint = computed(() => {
   if (selectedOcrStatusTab.value === 'issue')
-    return '先看阻断项和对应处理动作，避免被其它指标分散注意力。'
+    return '只展示现在最该处理的一件事，技术明细默认折叠。'
   if (selectedOcrStatusTab.value === 'annotation')
-    return '只列需要人工确认的样本；点击行可以直接进入在线标注。'
+    return '上传、系统预标注、人工校正和保存样本都从这里进入。'
   if (selectedOcrStatusTab.value === 'runtime')
-    return '用于判断 OCR 服务地址、运行任务和错误原因是否正常。'
+    return '服务异常时再看这里；正常情况下不用先读诊断表。'
   return '用于判断当前 OCR 结果能不能作为发布或交付基线。'
 })
 const ocrSecondaryTools = computed<
@@ -3351,13 +3525,6 @@ const ocrSecondaryTools = computed<
     tone: 'blue' | 'green' | 'orange' | 'red'
   }>
 >(() => [
-  {
-    key: 'annotation',
-    label: '在线标注',
-    description: '修 OCR 错误，补字段、表格、印章和证据框。',
-    stat: `${ocrAnnotationRows.value.length} 条`,
-    tone: ocrPendingAnnotationCount.value ? 'orange' : 'green'
-  },
   {
     key: 'runtime',
     label: '运行诊断',
@@ -9870,6 +10037,298 @@ const emptyAnnotationExpected = (): Record<string, unknown> => ({
   seals: []
 })
 
+type AnnotationTextFragment = {
+  text: string
+  bbox: [number, number, number, number]
+  pageNo: number
+  centerX: number
+  centerY: number
+}
+
+const cleanAnnotationText = (value: unknown) =>
+  String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+const annotationRawFieldText = (item: Record<string, unknown>) =>
+  cleanAnnotationText(item.value || item.fieldValue || item.text || item.content)
+
+const annotationRawItemPageNo = (item: Record<string, unknown>) =>
+  Number(
+    item.pageNo ||
+      item.page ||
+      selectedAnnotationTask.value?.pageNo ||
+      annotationBoxForm.value.pageNo ||
+      1
+  )
+
+const annotationBboxCenter = (bbox: [number, number, number, number]) => ({
+  x: (bbox[0] + bbox[2]) / 2,
+  y: (bbox[1] + bbox[3]) / 2
+})
+
+const isAnnotationCenterInsideBbox = (
+  inner: [number, number, number, number],
+  outer: [number, number, number, number]
+) => {
+  const center = annotationBboxCenter(inner)
+  return (
+    center.x >= outer[0] && center.x <= outer[2] && center.y >= outer[1] && center.y <= outer[3]
+  )
+}
+
+const annotationTextFragmentsInBox = (
+  fields: Array<Record<string, unknown>>,
+  target: Record<string, unknown>
+) => {
+  const targetBbox = annotationItemBbox(target)
+  if (!isPositiveAnnotationBbox(targetBbox)) return []
+  const pageNo = annotationRawItemPageNo(target)
+  return fields
+    .map((field) => {
+      const text = annotationRawFieldText(field)
+      const bbox = annotationItemBbox(field)
+      const center = annotationBboxCenter(bbox)
+      return {
+        text,
+        bbox,
+        pageNo: annotationRawItemPageNo(field),
+        centerX: center.x,
+        centerY: center.y
+      } as AnnotationTextFragment
+    })
+    .filter(
+      (fragment) =>
+        fragment.text &&
+        isPositiveAnnotationBbox(fragment.bbox) &&
+        fragment.pageNo === pageNo &&
+        isAnnotationCenterInsideBbox(fragment.bbox, targetBbox)
+    )
+    .sort((a, b) => a.centerY - b.centerY || a.centerX - b.centerX)
+}
+
+const annotationTextFragmentRows = (
+  fragments: AnnotationTextFragment[],
+  target: Record<string, unknown>
+) => {
+  const targetBbox = annotationItemBbox(target)
+  const rowTolerance = Math.max(8, Math.min(24, (targetBbox[3] - targetBbox[1]) * 0.028))
+  const rows: AnnotationTextFragment[][] = []
+  fragments.forEach((fragment) => {
+    const row = rows.find((candidate) => {
+      const rowCenter =
+        candidate.reduce((sum, item) => sum + item.centerY, 0) / Math.max(1, candidate.length)
+      return Math.abs(rowCenter - fragment.centerY) <= rowTolerance
+    })
+    if (row) {
+      row.push(fragment)
+    } else {
+      rows.push([fragment])
+    }
+  })
+  return rows.map((row) => row.sort((a, b) => a.centerX - b.centerX).map((item) => item.text))
+}
+
+const annotationPlainTextFromFragments = (
+  fields: Array<Record<string, unknown>>,
+  target: Record<string, unknown>
+) =>
+  annotationTextFragmentRows(annotationTextFragmentsInBox(fields, target), target)
+    .map((row) => row.join('  '))
+    .join('\n')
+    .trim()
+
+const annotationMarkdownTableFromFragments = (
+  fields: Array<Record<string, unknown>>,
+  target: Record<string, unknown>
+) => {
+  const rows = annotationTextFragmentRows(annotationTextFragmentsInBox(fields, target), target)
+  if (!rows.length) return ''
+  const escapeCell = (value: string) => value.replace(/\|/g, '/').replace(/\s+/g, ' ').trim()
+  const markdownRows = rows.map((row) => `| ${row.map(escapeCell).join(' | ')} |`)
+  if (rows.length > 1 && rows[0].length > 1) {
+    markdownRows.splice(1, 0, `| ${rows[0].map(() => '---').join(' | ')} |`)
+  }
+  return markdownRows.join('\n')
+}
+
+const isGenericAnnotationCandidateText = (value: unknown) => {
+  const text = cleanAnnotationText(value)
+  return !text || ['字段', '表格', '印章', 'OCR 文本'].includes(text) || /^table_\d+$/i.test(text)
+}
+
+const annotationBboxArea = (bbox: [number, number, number, number]) =>
+  Math.max(0, bbox[2] - bbox[0]) * Math.max(0, bbox[3] - bbox[1])
+
+const annotationBboxIntersectionArea = (
+  a: [number, number, number, number],
+  b: [number, number, number, number]
+) => {
+  const x1 = Math.max(a[0], b[0])
+  const y1 = Math.max(a[1], b[1])
+  const x2 = Math.min(a[2], b[2])
+  const y2 = Math.min(a[3], b[3])
+  return Math.max(0, x2 - x1) * Math.max(0, y2 - y1)
+}
+
+const annotationBboxIou = (
+  a: [number, number, number, number],
+  b: [number, number, number, number]
+) => {
+  const intersection = annotationBboxIntersectionArea(a, b)
+  const union = annotationBboxArea(a) + annotationBboxArea(b) - intersection
+  return union > 0 ? intersection / union : 0
+}
+
+const annotationBboxContainment = (
+  a: [number, number, number, number],
+  b: [number, number, number, number]
+) => {
+  const intersection = annotationBboxIntersectionArea(a, b)
+  const smaller = Math.min(annotationBboxArea(a), annotationBboxArea(b))
+  return smaller > 0 ? intersection / smaller : 0
+}
+
+const annotationUnionBbox = (
+  a: [number, number, number, number],
+  b: [number, number, number, number]
+): [number, number, number, number] => [
+  Math.min(a[0], b[0]),
+  Math.min(a[1], b[1]),
+  Math.max(a[2], b[2]),
+  Math.max(a[3], b[3])
+]
+
+const annotationSealComparableText = (seal: Record<string, unknown>) =>
+  cleanAnnotationText(
+    seal.text ||
+      seal.content ||
+      seal.nameContains ||
+      seal.sealText ||
+      seal.recognizedText ||
+      seal.ocrText
+  ).replace(/\s+/g, '')
+
+const areAnnotationSealTextsRelated = (a: Record<string, unknown>, b: Record<string, unknown>) => {
+  const aText = annotationSealComparableText(a)
+  const bText = annotationSealComparableText(b)
+  if (Math.min(aText.length, bText.length) < 6) return false
+  return aText.includes(bText) || bText.includes(aText)
+}
+
+const shouldMergeAnnotationSeals = (a: Record<string, unknown>, b: Record<string, unknown>) => {
+  if (annotationRawItemPageNo(a) !== annotationRawItemPageNo(b)) return false
+  if (!areAnnotationSealTextsRelated(a, b)) return false
+  const aBbox = annotationItemBbox(a)
+  const bBbox = annotationItemBbox(b)
+  if (!isPositiveAnnotationBbox(aBbox) || !isPositiveAnnotationBbox(bBbox)) return false
+  return annotationBboxIou(aBbox, bBbox) >= 0.45 || annotationBboxContainment(aBbox, bBbox) >= 0.72
+}
+
+const mergeAnnotationSealRecords = (
+  base: Record<string, unknown>,
+  incoming: Record<string, unknown>
+) => {
+  const merged = { ...base, ...incoming }
+  const baseBbox = annotationItemBbox(base)
+  const incomingBbox = annotationItemBbox(incoming)
+  if (isPositiveAnnotationBbox(baseBbox) && isPositiveAnnotationBbox(incomingBbox)) {
+    merged.bbox = annotationUnionBbox(baseBbox, incomingBbox)
+  }
+  const bestText = [
+    base.text,
+    base.content,
+    incoming.text,
+    incoming.content,
+    base.nameContains,
+    incoming.nameContains
+  ]
+    .map(cleanAnnotationText)
+    .sort((a, b) => b.length - a.length)[0]
+  if (bestText) {
+    merged.text = bestText
+    merged.content = bestText
+  }
+  const bestName = [base.nameContains, incoming.nameContains, bestText]
+    .map(cleanAnnotationText)
+    .sort((a, b) => b.length - a.length)[0]
+  if (bestName) merged.nameContains = bestName
+  const sealTypes = [base.sealType, incoming.sealType].map((item) => String(item || ''))
+  merged.sealType =
+    sealTypes.find((item) => item && !/visual|candidate/i.test(item)) || sealTypes.find(Boolean)
+  merged.confidence = Math.max(Number(base.confidence || 0), Number(incoming.confidence || 0))
+  merged.source = 'merged_seal_candidate'
+  return merged
+}
+
+const mergeDuplicateAnnotationSeals = (seals: Array<Record<string, unknown>>) => {
+  const merged: Array<Record<string, unknown>> = []
+  seals.forEach((seal) => {
+    const matchIndex = merged.findIndex((item) => shouldMergeAnnotationSeals(item, seal))
+    if (matchIndex === -1) {
+      merged.push(seal)
+      return
+    }
+    merged[matchIndex] = mergeAnnotationSealRecords(merged[matchIndex], seal)
+  })
+  return merged
+}
+
+const hydrateAnnotationDraftCandidates = (expected: Record<string, unknown>) => {
+  const draft = cloneRecord(expected)
+  const fields = toRecordArray(draft.fields)
+  const tables = toRecordArray(draft.tables)
+  const seals = toRecordArray(draft.seals)
+
+  draft.tables = tables.map((table, index) => {
+    const next = { ...table }
+    const label = cleanAnnotationText(
+      next.businessSchema || next.caption || next.title || next.tableName
+    )
+    if (!label) {
+      next.businessSchema = `识别表格 ${index + 1}`
+    }
+    const currentContent = cleanAnnotationText(
+      next.contentMarkdown || next.markdown || next.content
+    )
+    if (!currentContent) {
+      const markdown = annotationMarkdownTableFromFragments(fields, next)
+      if (markdown) {
+        next.contentMarkdown = markdown
+        next.content = markdown
+      }
+    }
+    return next
+  })
+
+  draft.seals = mergeDuplicateAnnotationSeals(
+    seals.map((seal) => {
+      const next = { ...seal }
+      const currentText = cleanAnnotationText(next.text || next.content)
+      if (!currentText) {
+        const candidateTexts = [
+          next.nameContains,
+          next.sealText,
+          next.recognizedText,
+          next.ocrText,
+          annotationPlainTextFromFragments(fields, next)
+        ]
+          .map(cleanAnnotationText)
+          .filter((text, index, list) => text && list.indexOf(text) === index)
+          .filter((text) => !isGenericAnnotationCandidateText(text))
+        if (candidateTexts.length) {
+          const text = candidateTexts.join('\n')
+          next.text = text
+          next.content = text
+        }
+      }
+      return next
+    })
+  )
+
+  return draft
+}
+
 const normalizeAnnotationExpected = (value?: Record<string, unknown>) => {
   const expected = cloneRecord(value || emptyAnnotationExpected())
   expected.qualityStatus = expected.qualityStatus || 'needs_human_review'
@@ -9881,7 +10340,11 @@ const normalizeAnnotationExpected = (value?: Record<string, unknown>) => {
   expected.fields = normalizeItems(expected.fields)
   expected.tables = normalizeItems(expected.tables)
   expected.seals = normalizeItems(expected.seals)
-  return expected
+  return hydrateAnnotationDraftCandidates(expected)
+}
+
+const resetAnnotationObjectFilterForDraft = () => {
+  annotationObjectFilter.value = annotationIncompleteItems.value.length ? 'todo' : 'all'
 }
 
 const reloadOcrAnnotationTasks = async () => {
@@ -9913,6 +10376,7 @@ const openAnnotationEditor = async (row: FdeOcrAnnotationTask) => {
     annotationDraft.value = normalizeAnnotationExpected(
       res.data.task.labeledExpected || res.data.task.suggestedExpected
     )
+    resetAnnotationObjectFilterForDraft()
     annotationLabeler.value = res.data.task.labeler || '人工标注员'
     annotationReviewer.value = res.data.task.reviewer || 'FDE 工程师'
     annotationBoxForm.value.pageNo = Number(res.data.task.pageNo || 1)
@@ -9975,6 +10439,7 @@ const refreshAnnotationPrelabelFromEditor = async () => {
     annotationDraft.value = normalizeAnnotationExpected(
       res.data.task.suggestedExpected || res.data.task.labeledExpected
     )
+    resetAnnotationObjectFilterForDraft()
     annotationBoxForm.value.pageNo = Number(
       res.data.task.pageNo || annotationBoxForm.value.pageNo || 1
     )
@@ -10324,6 +10789,7 @@ const saveAnnotationDraft = async () => {
     )
     selectedAnnotationTask.value = res.data.task
     annotationDraft.value = normalizeAnnotationExpected(res.data.task.labeledExpected)
+    resetAnnotationObjectFilterForDraft()
     annotationDraftDirty.value = false
     annotationUndoStack.value = []
     annotationRedoStack.value = []
@@ -10382,6 +10848,7 @@ const verifyAnnotationFromEditor = async () => {
     )
     selectedAnnotationTask.value = res.data.task
     annotationDraft.value = normalizeAnnotationExpected(res.data.task.labeledExpected)
+    resetAnnotationObjectFilterForDraft()
     annotationDraftDirty.value = false
     annotationUndoStack.value = []
     annotationRedoStack.value = []
@@ -10514,6 +10981,18 @@ const openOcrStatusDialog = (type: OcrStatusDialogType) => {
 
 const selectOcrStatusTab = (tab: OcrStatusTab) => {
   selectedOcrStatusTab.value = tab
+}
+
+const runOcrPrimaryTaskAction = () => {
+  const task = ocrPrimaryTask.value
+  selectedOcrStatusTab.value = task.tab
+  if (task.action === 'annotation') {
+    void openOcrAnnotationPanel()
+    return
+  }
+  if (task.action === 'capability-test') {
+    void openOcrCapabilityTestPanel()
+  }
 }
 
 const openOcrSecondaryMenu = () => {
@@ -10669,7 +11148,7 @@ onBeforeUnmount(() => {
     @menu-filter-change="setProjectAuditFilter"
   >
     <div class="fde-console" v-loading="loading">
-      <div class="page-toolbar">
+      <div v-if="!isFdeRoute('ocr-quality')" class="page-toolbar">
         <div>
           <div class="page-title">{{ currentFdeRouteContext.title }}</div>
           <div class="page-subtitle">{{ currentFdeRouteContext.subtitle }}</div>
@@ -10722,16 +11201,44 @@ onBeforeUnmount(() => {
       <div v-if="isFdeRoute('ocr-quality')" class="ocr-command-center">
         <section class="ocr-online-entry" aria-label="OCR 在线测试入口">
           <div class="ocr-online-entry__copy">
-            <span>OCR 在线工作台</span>
-            <strong>先测试识别效果，再把结果转入在线标注。</strong>
-            <small>临时验证用“在线测 OCR”；已有待修样本或测试结果用“在线标注”。</small>
+            <span>OCR 工作台</span>
+            <strong>在线测试、在线标注、评估发布都从这里开始。</strong>
+            <small>默认只显示下一步要做的事；诊断、质量统计和历史记录收在更多工具里。</small>
           </div>
           <div class="ocr-online-entry__actions">
             <ElButton type="primary" size="large" @click="openOcrCapabilityTestPanel">
               在线测 OCR
             </ElButton>
             <ElButton size="large" plain @click="openOcrAnnotationPanel"> 在线标注 </ElButton>
+            <ElButton size="large" plain @click="openOcrSecondaryMenu"> 更多工具 </ElButton>
           </div>
+        </section>
+
+        <div class="ocr-console-kpis" aria-label="OCR 当前关键状态">
+          <article
+            v-for="card in ocrPriorityCards"
+            :key="card.label"
+            :class="`ocr-console-kpi ocr-console-kpi--${card.tone}`"
+          >
+            <span>{{ card.label }}</span>
+            <strong>{{ card.value }}</strong>
+            <small>{{ card.hint }}</small>
+          </article>
+        </div>
+
+        <section
+          class="ocr-primary-task-panel"
+          :class="`ocr-primary-task-panel--${ocrPrimaryTask.tone}`"
+          aria-label="OCR 下一步任务"
+        >
+          <div>
+            <span>{{ ocrPrimaryTask.eyebrow }}</span>
+            <strong>{{ ocrPrimaryTask.title }}</strong>
+            <small>{{ ocrPrimaryTask.description }}</small>
+          </div>
+          <ElButton type="primary" size="large" @click="runOcrPrimaryTaskAction">
+            {{ ocrPrimaryTask.actionLabel }}
+          </ElButton>
         </section>
 
         <div class="ocr-step-grid" role="tablist" aria-label="OCR 当前状态">
@@ -10745,8 +11252,8 @@ onBeforeUnmount(() => {
             aria-label="切换到当前问题明细"
             @click="selectOcrStatusTab('issue')"
           >
-            <span>问题</span>
-            <strong>最先处理什么</strong>
+            <span>任务</span>
+            <strong>当前要处理</strong>
             <small>{{ firstOcrBlockingSummary }}</small>
           </button>
           <button
@@ -10759,8 +11266,8 @@ onBeforeUnmount(() => {
             aria-label="切换到在线标注样本"
             @click="selectOcrStatusTab('annotation')"
           >
-            <span>在线标注</span>
-            <strong>需要人工确认的识别结果</strong>
+            <span>标注</span>
+            <strong>样本和人工校正</strong>
             <small
               >{{ ocrPendingAnnotationCount }} 个待标注样本 / 共
               {{ ocrAnnotationSummary?.tasks || 0 }} 个</small
@@ -10776,7 +11283,7 @@ onBeforeUnmount(() => {
             aria-label="切换到 OCR 服务与运行诊断"
             @click="selectOcrStatusTab('runtime')"
           >
-            <span>服务</span>
+            <span>诊断</span>
             <strong>OCR 服务是否健康</strong>
             <small>
               {{ friendlyStatus(ocrRuntimeDoctor?.status, '未知') }} ·
@@ -10794,8 +11301,8 @@ onBeforeUnmount(() => {
             aria-label="切换到发布评测明细"
             @click="selectOcrStatusTab('release')"
           >
-            <span>发布</span>
-            <strong>能不能作为交付基线</strong>
+            <span>评估</span>
+            <strong>能不能发布交付</strong>
             <small>
               {{
                 ocr100Scorecard
@@ -10824,18 +11331,29 @@ onBeforeUnmount(() => {
 
           <div class="ocr-status-tabs__body">
             <template v-if="selectedOcrStatusTab === 'issue'">
-              <ElTable v-if="ocrTopBlockerRows.length" :data="ocrTopBlockerRows" border>
-                <ElTableColumn prop="id" label="#" width="72" />
-                <ElTableColumn prop="source" label="来源" width="120" />
-                <ElTableColumn prop="blocker" label="问题" min-width="260" show-overflow-tooltip />
-                <ElTableColumn
-                  prop="action"
-                  label="处理动作"
-                  min-width="260"
-                  show-overflow-tooltip
-                />
-              </ElTable>
-              <ElEmpty v-else description="当前没有 OCR 阻断项。" />
+              <details v-if="ocrTopBlockerRows.length" class="ocr-technical-foldout">
+                <summary>
+                  <span>技术明细</span>
+                  <strong>{{ ocrTopBlockerRows.length }} 个问题来源</strong>
+                </summary>
+                <ElTable :data="ocrTopBlockerRows" border class="mt-12px">
+                  <ElTableColumn prop="id" label="#" width="72" />
+                  <ElTableColumn prop="source" label="来源" width="120" />
+                  <ElTableColumn
+                    prop="blocker"
+                    label="问题"
+                    min-width="260"
+                    show-overflow-tooltip
+                  />
+                  <ElTableColumn
+                    prop="action"
+                    label="处理动作"
+                    min-width="260"
+                    show-overflow-tooltip
+                  />
+                </ElTable>
+              </details>
+              <ElEmpty v-else class="mt-12px" description="当前没有 OCR 阻断项。" />
             </template>
 
             <template v-else-if="selectedOcrStatusTab === 'annotation'">
@@ -10864,17 +11382,14 @@ onBeforeUnmount(() => {
                 class="mt-12px"
                 @row-click="(row) => openAnnotationEditor(row)"
               >
-                <ElTableColumn prop="taskId" label="样本" min-width="150" show-overflow-tooltip />
-                <ElTableColumn prop="scenario" label="场景" min-width="170" show-overflow-tooltip>
-                  <template #default="{ row }">{{ friendlyTechLabel(row.scenario) }}</template>
-                </ElTableColumn>
-                <ElTableColumn
-                  prop="profileId"
-                  label="解析配置"
-                  min-width="170"
-                  show-overflow-tooltip
-                >
-                  <template #default="{ row }">{{ friendlyTechLabel(row.profileId) }}</template>
+                <ElTableColumn prop="taskId" label="样本" min-width="180" show-overflow-tooltip />
+                <ElTableColumn label="资料" min-width="220" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    {{
+                      row.sourcePath ||
+                      friendlyTechLabel(row.documentType || row.scenario || row.profileId || '-')
+                    }}
+                  </template>
                 </ElTableColumn>
                 <ElTableColumn label="状态" width="130">
                   <template #default="{ row }">
@@ -18899,7 +19414,7 @@ onBeforeUnmount(() => {
             type="warning"
             show-icon
             :closable="false"
-            :title="`还有 ${annotationIncompleteItems.length} 个对象缺位置或文字`"
+            :title="`还有 ${annotationIncompleteItems.length} 个对象需要人工确认`"
           >
             <template #default>
               {{ annotationIncompleteSummary }}
@@ -18960,216 +19475,11 @@ onBeforeUnmount(() => {
 
             <aside class="annotation-control-panel" aria-label="结构化标注属性">
               <section class="annotation-control-card">
-                <div class="annotation-panel-head annotation-selected-head">
-                  <div>
-                    <span>当前对象</span>
-                    <strong>{{ selectedAnnotationCanvasTitle }}</strong>
-                    <small v-if="selectedAnnotationCanvasTarget">
-                      {{
-                        annotationItemValuePreview(
-                          selectedAnnotationCanvasTarget.section,
-                          selectedAnnotationCanvasTarget.item
-                        )
-                      }}
-                    </small>
-                  </div>
-                  <ElTag
-                    v-if="selectedAnnotationCanvasTarget"
-                    :type="selectedAnnotationMissingParts.length ? 'warning' : 'success'"
-                    effect="plain"
-                  >
-                    {{
-                      selectedAnnotationMissingParts.length
-                        ? `待补 ${selectedAnnotationMissingParts.length}`
-                        : '已完整'
-                    }}
-                  </ElTag>
-                </div>
-                <div v-if="selectedAnnotationCanvasTarget" class="annotation-selected-editor">
-                  <div class="annotation-selected-summary">
-                    <span>
-                      <b>类型</b>
-                      {{ annotationSectionTitle(selectedAnnotationCanvasTarget.section) }}
-                    </span>
-                    <span>
-                      <b>页码</b>
-                      {{ selectedAnnotationCanvasTarget.item.pageNo || annotationBoxForm.pageNo }}
-                    </span>
-                    <span>
-                      <b>位置</b>
-                      {{ annotationItemBboxText(selectedAnnotationCanvasTarget.item) }}
-                    </span>
-                  </div>
-                  <ElAlert
-                    v-if="selectedAnnotationMissingParts.length"
-                    type="warning"
-                    show-icon
-                    :closable="false"
-                    :title="`缺少：${selectedAnnotationMissingParts.join('、')}`"
-                  />
-                  <ElForm label-position="top" class="annotation-form">
-                    <ElFormItem
-                      :label="
-                        selectedAnnotationCanvasTarget.section === 'fields'
-                          ? '字段名'
-                          : selectedAnnotationCanvasTarget.section === 'tables'
-                            ? '表格名称'
-                            : '印章名称'
-                      "
-                    >
-                      <ElInput
-                        :model-value="
-                          annotationItemEditableLabel(
-                            selectedAnnotationCanvasTarget.section,
-                            selectedAnnotationCanvasTarget.item
-                          )
-                        "
-                        :placeholder="
-                          annotationItemLabelPlaceholder(selectedAnnotationCanvasTarget.section)
-                        "
-                        @update:model-value="updateSelectedAnnotationLabel"
-                      />
-                    </ElFormItem>
-                    <div class="annotation-selected-quick-actions">
-                      <ElButton plain @click="focusSelectedAnnotationTextEditor">
-                        编辑文字
-                      </ElButton>
-                      <ElButton
-                        v-if="canFillSelectedAnnotationValueFromLabel"
-                        plain
-                        type="primary"
-                        @click="fillSelectedAnnotationValueFromLabel"
-                      >
-                        用识别标题填入文字
-                      </ElButton>
-                    </div>
-                    <ElFormItem
-                      :label="annotationItemValueLabel(selectedAnnotationCanvasTarget.section)"
-                    >
-                      <ElInput
-                        ref="annotationValueInputRef"
-                        type="textarea"
-                        :rows="selectedAnnotationCanvasTarget.section === 'tables' ? 7 : 4"
-                        :model-value="
-                          annotationItemEditableValue(
-                            selectedAnnotationCanvasTarget.section,
-                            selectedAnnotationCanvasTarget.item
-                          )
-                        "
-                        :placeholder="
-                          annotationItemValuePlaceholder(selectedAnnotationCanvasTarget.section)
-                        "
-                        @update:model-value="updateSelectedAnnotationValue"
-                      />
-                    </ElFormItem>
-                    <template v-if="selectedAnnotationCanvasTarget.section === 'tables'">
-                      <div class="annotation-coordinate-grid">
-                        <ElFormItem label="最少行数">
-                          <ElInputNumber
-                            :model-value="Number(selectedAnnotationCanvasTarget.item.minRows || 0)"
-                            :min="0"
-                            :controls="false"
-                            @update:model-value="
-                              (value) => updateSelectedAnnotationItemMeta('minRows', value || 0)
-                            "
-                          />
-                        </ElFormItem>
-                        <ElFormItem label="最少列数">
-                          <ElInputNumber
-                            :model-value="
-                              Number(selectedAnnotationCanvasTarget.item.minColumns || 0)
-                            "
-                            :min="0"
-                            :controls="false"
-                            @update:model-value="
-                              (value) => updateSelectedAnnotationItemMeta('minColumns', value || 0)
-                            "
-                          />
-                        </ElFormItem>
-                      </div>
-                    </template>
-                    <template v-if="selectedAnnotationCanvasTarget.section === 'seals'">
-                      <ElFormItem label="印章类型">
-                        <ElInput
-                          :model-value="String(selectedAnnotationCanvasTarget.item.sealType || '')"
-                          placeholder="例如：company_official_seal"
-                          @update:model-value="
-                            (value) => updateSelectedAnnotationItemMeta('sealType', value)
-                          "
-                        />
-                      </ElFormItem>
-                    </template>
-                    <details class="annotation-foldout">
-                      <summary>
-                        <span>位置坐标</span>
-                        <strong>{{
-                          annotationItemBboxText(selectedAnnotationCanvasTarget.item)
-                        }}</strong>
-                      </summary>
-                      <div class="annotation-coordinate-grid">
-                        <ElFormItem label="x1">
-                          <ElInputNumber
-                            :model-value="
-                              annotationItemBbox(selectedAnnotationCanvasTarget.item)[0]
-                            "
-                            :min="0"
-                            :controls="false"
-                            @update:model-value="(value) => updateSelectedAnnotationBbox(0, value)"
-                          />
-                        </ElFormItem>
-                        <ElFormItem label="y1">
-                          <ElInputNumber
-                            :model-value="
-                              annotationItemBbox(selectedAnnotationCanvasTarget.item)[1]
-                            "
-                            :min="0"
-                            :controls="false"
-                            @update:model-value="(value) => updateSelectedAnnotationBbox(1, value)"
-                          />
-                        </ElFormItem>
-                        <ElFormItem label="x2">
-                          <ElInputNumber
-                            :model-value="
-                              annotationItemBbox(selectedAnnotationCanvasTarget.item)[2]
-                            "
-                            :min="0"
-                            :controls="false"
-                            @update:model-value="(value) => updateSelectedAnnotationBbox(2, value)"
-                          />
-                        </ElFormItem>
-                        <ElFormItem label="y2">
-                          <ElInputNumber
-                            :model-value="
-                              annotationItemBbox(selectedAnnotationCanvasTarget.item)[3]
-                            "
-                            :min="0"
-                            :controls="false"
-                            @update:model-value="(value) => updateSelectedAnnotationBbox(3, value)"
-                          />
-                        </ElFormItem>
-                      </div>
-                    </details>
-                  </ElForm>
-                  <div class="annotation-selected-actions">
-                    <span>{{
-                      annotationItemCompletionText(
-                        selectedAnnotationCanvasTarget.section,
-                        selectedAnnotationCanvasTarget.item
-                      )
-                    }}</span>
-                    <ElButton link type="danger" @click="removeSelectedAnnotationItem">
-                      删除对象
-                    </ElButton>
-                  </div>
-                </div>
-                <ElEmpty v-else description="在画布或对象树中选择一个 ROI 后编辑文字和结构化信息" />
-              </section>
-
-              <section class="annotation-control-card">
                 <div class="annotation-panel-head">
                   <div>
-                    <span>待处理对象</span>
+                    <span>标注对象</span>
                     <strong>{{ annotationObjectVisibleCount }} / {{ annotationTotalCount }}</strong>
+                    <small>点一项即可在下方直接编辑文字、类型和位置。</small>
                   </div>
                   <ElTag
                     :type="annotationIncompleteItems.length ? 'warning' : 'success'"
@@ -19209,27 +19519,334 @@ onBeforeUnmount(() => {
                       <strong>{{ section.title }}</strong>
                       <ElTag effect="plain">{{ section.items.length }} / {{ section.total }}</ElTag>
                     </div>
-                    <button
+                    <article
                       v-for="row in section.items"
                       :key="row.id"
-                      type="button"
+                      class="annotation-object-row"
                       :class="{ active: selectedAnnotationCanvasItemId === row.id }"
-                      @click="selectAnnotationCanvasItem(row.id)"
-                      @dblclick="selectAnnotationCanvasItem(row.id, true)"
                     >
-                      <span>
-                        <b>{{ row.title }}</b>
-                        <em :class="{ 'is-complete': !row.missing.length }">
-                          {{ row.missing.length ? `缺 ${row.missing.join('、')}` : '已完整' }}
-                        </em>
-                      </span>
-                      <small>{{ row.secondary }}</small>
-                      <small class="annotation-object-tree__bbox">{{ row.bbox }}</small>
-                    </button>
+                      <button
+                        type="button"
+                        class="annotation-object-row__summary"
+                        @click="selectAnnotationCanvasItem(row.id)"
+                        @dblclick="selectAnnotationCanvasItem(row.id, true)"
+                      >
+                        <span>
+                          <b>{{ row.title }}</b>
+                          <em :class="{ 'is-complete': !row.missing.length }">
+                            {{ row.missing.length ? `待补 ${row.missing.join('、')}` : '已完成' }}
+                          </em>
+                        </span>
+                        <small>{{ row.secondary }}</small>
+                        <small class="annotation-object-tree__bbox">{{ row.bbox }}</small>
+                      </button>
+                      <div
+                        v-if="
+                          selectedAnnotationCanvasItemId === row.id &&
+                          selectedAnnotationCanvasTarget
+                        "
+                        class="annotation-selected-editor annotation-object-row__editor"
+                      >
+                        <div class="annotation-selected-summary">
+                          <span>
+                            <b>类型</b>
+                            {{ annotationSectionTitle(selectedAnnotationCanvasTarget.section) }}
+                          </span>
+                          <span>
+                            <b>页码</b>
+                            {{
+                              selectedAnnotationCanvasTarget.item.pageNo || annotationBoxForm.pageNo
+                            }}
+                          </span>
+                          <span>
+                            <b>{{
+                              annotationItemPositionLabel(selectedAnnotationCanvasTarget.section)
+                            }}</b>
+                            {{ annotationItemBboxText(selectedAnnotationCanvasTarget.item) }}
+                          </span>
+                        </div>
+                        <ElAlert
+                          v-if="selectedAnnotationMissingParts.length"
+                          type="warning"
+                          show-icon
+                          :closable="false"
+                          :title="`还需要：${selectedAnnotationMissingParts.join('、')}`"
+                        />
+                        <ElForm label-position="top" class="annotation-form">
+                          <ElFormItem
+                            :label="
+                              selectedAnnotationCanvasTarget.section === 'fields'
+                                ? '字段名'
+                                : selectedAnnotationCanvasTarget.section === 'tables'
+                                  ? '表格名称'
+                                  : '印章名称'
+                            "
+                          >
+                            <ElInput
+                              :model-value="
+                                annotationItemEditableLabel(
+                                  selectedAnnotationCanvasTarget.section,
+                                  selectedAnnotationCanvasTarget.item
+                                )
+                              "
+                              :placeholder="
+                                annotationItemLabelPlaceholder(
+                                  selectedAnnotationCanvasTarget.section
+                                )
+                              "
+                              @update:model-value="updateSelectedAnnotationLabel"
+                            />
+                          </ElFormItem>
+                          <div class="annotation-selected-quick-actions">
+                            <ElButton
+                              v-if="selectedAnnotationCanvasTarget.section !== 'tables'"
+                              plain
+                              @click="focusSelectedAnnotationTextEditor"
+                            >
+                              编辑文字
+                            </ElButton>
+                            <ElButton
+                              v-if="canFillSelectedAnnotationValueFromLabel"
+                              plain
+                              type="primary"
+                              @click="fillSelectedAnnotationValueFromLabel"
+                            >
+                              用识别标题填入文字
+                            </ElButton>
+                          </div>
+                          <ElFormItem
+                            :label="
+                              annotationItemValueLabel(selectedAnnotationCanvasTarget.section)
+                            "
+                          >
+                            <div
+                              v-if="selectedAnnotationCanvasTarget.section === 'tables'"
+                              class="annotation-table-editor"
+                              role="group"
+                              aria-label="表格内容编辑器"
+                            >
+                              <div class="annotation-table-editor__toolbar">
+                                <span>直接改单元格；保存时自动转成 Markdown。</span>
+                                <div>
+                                  <ElButton
+                                    size="small"
+                                    plain
+                                    @click="addSelectedAnnotationTableRow"
+                                  >
+                                    加一行
+                                  </ElButton>
+                                  <ElButton
+                                    size="small"
+                                    plain
+                                    @click="addSelectedAnnotationTableColumn"
+                                  >
+                                    加一列
+                                  </ElButton>
+                                </div>
+                              </div>
+                              <div class="annotation-table-editor__scroller">
+                                <table>
+                                  <thead>
+                                    <tr>
+                                      <th class="annotation-table-editor__row-head">行</th>
+                                      <th
+                                        v-for="(_, columnIndex) in selectedAnnotationTableGrid[0]"
+                                        :key="`table-column-${columnIndex}`"
+                                      >
+                                        <span>第 {{ columnIndex + 1 }} 列</span>
+                                        <ElButton
+                                          size="small"
+                                          text
+                                          type="danger"
+                                          :disabled="selectedAnnotationTableGrid[0].length <= 1"
+                                          @click="removeSelectedAnnotationTableColumn(columnIndex)"
+                                        >
+                                          删除
+                                        </ElButton>
+                                      </th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    <tr
+                                      v-for="(tableRow, rowIndex) in selectedAnnotationTableGrid"
+                                      :key="`table-row-${rowIndex}`"
+                                    >
+                                      <th class="annotation-table-editor__row-head">
+                                        <span>{{ rowIndex + 1 }}</span>
+                                        <ElButton
+                                          size="small"
+                                          text
+                                          type="danger"
+                                          :disabled="selectedAnnotationTableGrid.length <= 1"
+                                          @click="removeSelectedAnnotationTableRow(rowIndex)"
+                                        >
+                                          删除
+                                        </ElButton>
+                                      </th>
+                                      <td
+                                        v-for="(_, columnIndex) in tableRow"
+                                        :key="`table-cell-${rowIndex}-${columnIndex}`"
+                                      >
+                                        <ElInput
+                                          :model-value="tableRow[columnIndex]"
+                                          :aria-label="`第 ${rowIndex + 1} 行，第 ${
+                                            columnIndex + 1
+                                          } 列`"
+                                          @update:model-value="
+                                            (value) =>
+                                              updateSelectedAnnotationTableCell(
+                                                rowIndex,
+                                                columnIndex,
+                                                value
+                                              )
+                                          "
+                                        />
+                                      </td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                            <ElInput
+                              v-else
+                              ref="annotationValueInputRef"
+                              type="textarea"
+                              :rows="4"
+                              :model-value="
+                                annotationItemEditableValue(
+                                  selectedAnnotationCanvasTarget.section,
+                                  selectedAnnotationCanvasTarget.item
+                                )
+                              "
+                              :placeholder="
+                                annotationItemValuePlaceholder(
+                                  selectedAnnotationCanvasTarget.section
+                                )
+                              "
+                              @update:model-value="updateSelectedAnnotationValue"
+                            />
+                          </ElFormItem>
+                          <template v-if="selectedAnnotationCanvasTarget.section === 'tables'">
+                            <div class="annotation-coordinate-grid">
+                              <ElFormItem label="最少行数">
+                                <ElInputNumber
+                                  :model-value="
+                                    Number(selectedAnnotationCanvasTarget.item.minRows || 0)
+                                  "
+                                  :min="0"
+                                  :controls="false"
+                                  @update:model-value="
+                                    (value) =>
+                                      updateSelectedAnnotationItemMeta('minRows', value || 0)
+                                  "
+                                />
+                              </ElFormItem>
+                              <ElFormItem label="最少列数">
+                                <ElInputNumber
+                                  :model-value="
+                                    Number(selectedAnnotationCanvasTarget.item.minColumns || 0)
+                                  "
+                                  :min="0"
+                                  :controls="false"
+                                  @update:model-value="
+                                    (value) =>
+                                      updateSelectedAnnotationItemMeta('minColumns', value || 0)
+                                  "
+                                />
+                              </ElFormItem>
+                            </div>
+                          </template>
+                          <template v-if="selectedAnnotationCanvasTarget.section === 'seals'">
+                            <ElFormItem label="印章类型">
+                              <ElInput
+                                :model-value="
+                                  String(selectedAnnotationCanvasTarget.item.sealType || '')
+                                "
+                                placeholder="例如：company_official_seal"
+                                @update:model-value="
+                                  (value) => updateSelectedAnnotationItemMeta('sealType', value)
+                                "
+                              />
+                            </ElFormItem>
+                          </template>
+                          <details class="annotation-foldout">
+                            <summary>
+                              <span>{{
+                                annotationItemPositionLabel(selectedAnnotationCanvasTarget.section)
+                              }}</span>
+                              <strong>{{
+                                annotationItemBboxText(selectedAnnotationCanvasTarget.item)
+                              }}</strong>
+                            </summary>
+                            <div class="annotation-coordinate-grid">
+                              <ElFormItem label="x1">
+                                <ElInputNumber
+                                  :model-value="
+                                    annotationItemBbox(selectedAnnotationCanvasTarget.item)[0]
+                                  "
+                                  :min="0"
+                                  :controls="false"
+                                  @update:model-value="
+                                    (value) => updateSelectedAnnotationBbox(0, value)
+                                  "
+                                />
+                              </ElFormItem>
+                              <ElFormItem label="y1">
+                                <ElInputNumber
+                                  :model-value="
+                                    annotationItemBbox(selectedAnnotationCanvasTarget.item)[1]
+                                  "
+                                  :min="0"
+                                  :controls="false"
+                                  @update:model-value="
+                                    (value) => updateSelectedAnnotationBbox(1, value)
+                                  "
+                                />
+                              </ElFormItem>
+                              <ElFormItem label="x2">
+                                <ElInputNumber
+                                  :model-value="
+                                    annotationItemBbox(selectedAnnotationCanvasTarget.item)[2]
+                                  "
+                                  :min="0"
+                                  :controls="false"
+                                  @update:model-value="
+                                    (value) => updateSelectedAnnotationBbox(2, value)
+                                  "
+                                />
+                              </ElFormItem>
+                              <ElFormItem label="y2">
+                                <ElInputNumber
+                                  :model-value="
+                                    annotationItemBbox(selectedAnnotationCanvasTarget.item)[3]
+                                  "
+                                  :min="0"
+                                  :controls="false"
+                                  @update:model-value="
+                                    (value) => updateSelectedAnnotationBbox(3, value)
+                                  "
+                                />
+                              </ElFormItem>
+                            </div>
+                          </details>
+                        </ElForm>
+                        <div class="annotation-selected-actions">
+                          <span>{{
+                            annotationItemCompletionText(
+                              selectedAnnotationCanvasTarget.section,
+                              selectedAnnotationCanvasTarget.item
+                            )
+                          }}</span>
+                          <ElButton link type="danger" @click="removeSelectedAnnotationItem">
+                            删除对象
+                          </ElButton>
+                        </div>
+                      </div>
+                    </article>
                   </section>
                   <ElEmpty
                     v-if="!annotationObjectVisibleCount"
-                    description="当前筛选下没有对象。可以切到“全部”或清空搜索。"
+                    description="当前筛选下没有对象。可切到“全部”或清空搜索。"
                   />
                 </div>
               </section>
@@ -20723,6 +21340,133 @@ onBeforeUnmount(() => {
   margin-left: 0;
 }
 
+.ocr-console-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ocr-console-kpi {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  min-height: 78px;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #dfe8f5;
+  border-radius: 8px;
+}
+
+.ocr-console-kpi span,
+.ocr-primary-task-panel span,
+.ocr-current-task-card span {
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #64748b;
+}
+
+.ocr-console-kpi strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 20px;
+  font-weight: 950;
+  line-height: 26px;
+  color: #172033;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocr-console-kpi small,
+.ocr-primary-task-panel small,
+.ocr-current-task-card small {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 18px;
+  color: #64748b;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocr-console-kpi--green {
+  border-color: #bfe8ce;
+  background: #f6fdf8;
+}
+
+.ocr-console-kpi--orange {
+  border-color: #f6d6a5;
+  background: #fffaf0;
+}
+
+.ocr-console-kpi--red {
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
+.ocr-console-kpi--blue {
+  border-color: #cfe0ff;
+  background: #f8fbff;
+}
+
+.ocr-primary-task-panel,
+.ocr-current-task-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  min-width: 0;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid #dfe8f5;
+  border-radius: 8px;
+  box-shadow: 0 8px 18px rgb(15 23 42 / 4%);
+}
+
+.ocr-primary-task-panel > div,
+.ocr-current-task-card > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ocr-primary-task-panel strong,
+.ocr-current-task-card strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 18px;
+  font-weight: 950;
+  line-height: 26px;
+  color: #172033;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocr-primary-task-panel :deep(.el-button),
+.ocr-current-task-card :deep(.el-button) {
+  min-width: 150px;
+}
+
+.ocr-primary-task-panel--green,
+.ocr-current-task-card--green {
+  border-color: #bfe8ce;
+}
+
+.ocr-primary-task-panel--orange,
+.ocr-current-task-card--orange {
+  border-color: #f6d6a5;
+}
+
+.ocr-primary-task-panel--red,
+.ocr-current-task-card--red {
+  border-color: #fecaca;
+}
+
+.ocr-primary-task-panel--blue,
+.ocr-current-task-card--blue {
+  border-color: #cfe0ff;
+}
+
 .ocr-step-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -20878,6 +21622,61 @@ onBeforeUnmount(() => {
 
 .ocr-status-tabs__body {
   min-width: 0;
+}
+
+.ocr-technical-foldout {
+  min-width: 0;
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #e6edf7;
+  border-radius: 8px;
+}
+
+.ocr-technical-foldout summary {
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+  list-style: none;
+  cursor: pointer;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ocr-technical-foldout summary::-webkit-details-marker {
+  display: none;
+}
+
+.ocr-technical-foldout summary::after {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 900;
+  color: #64748b;
+  content: '展开';
+}
+
+.ocr-technical-foldout[open] summary::after {
+  content: '收起';
+}
+
+.ocr-technical-foldout span,
+.ocr-technical-foldout strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocr-technical-foldout span {
+  font-size: 12px;
+  font-weight: 900;
+  color: #64748b;
+}
+
+.ocr-technical-foldout strong {
+  font-size: 13px;
+  font-weight: 950;
+  color: #172033;
 }
 
 .ocr-annotation-inline-callout {
@@ -25131,7 +25930,7 @@ onBeforeUnmount(() => {
 .annotation-studio-layout,
 .annotation-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(340px, 400px);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   align-items: start;
 }
@@ -25557,6 +26356,124 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.annotation-table-editor {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.annotation-table-editor__toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.annotation-table-editor__toolbar span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 18px;
+  color: #64748b;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.annotation-table-editor__toolbar > div {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.annotation-table-editor__toolbar :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.annotation-table-editor__scroller {
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid #dbe8f7;
+  border-radius: 8px;
+}
+
+.annotation-table-editor table {
+  width: 100%;
+  min-width: max-content;
+  border-spacing: 0;
+  border-collapse: separate;
+  background: #fff;
+}
+
+.annotation-table-editor th,
+.annotation-table-editor td {
+  min-width: 132px;
+  padding: 6px;
+  border-right: 1px solid #e6edf7;
+  border-bottom: 1px solid #e6edf7;
+  vertical-align: top;
+}
+
+.annotation-table-editor th:last-child,
+.annotation-table-editor td:last-child {
+  border-right: 0;
+}
+
+.annotation-table-editor tbody tr:last-child th,
+.annotation-table-editor tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.annotation-table-editor thead th,
+.annotation-table-editor__row-head {
+  background: #f8fafc;
+}
+
+.annotation-table-editor thead th {
+  min-height: 40px;
+  font-size: 12px;
+  font-weight: 950;
+  color: #172033;
+}
+
+.annotation-table-editor thead th,
+.annotation-table-editor__row-head {
+  text-align: left;
+}
+
+.annotation-table-editor thead th span,
+.annotation-table-editor__row-head span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.annotation-table-editor__row-head {
+  min-width: 72px;
+  width: 72px;
+  font-size: 12px;
+  font-weight: 950;
+  color: #64748b;
+}
+
+.annotation-table-editor :deep(.el-input__wrapper) {
+  min-height: 34px;
+  box-shadow: none;
+  background: #fff;
+  border: 1px solid transparent;
+}
+
+.annotation-table-editor :deep(.el-input__wrapper:hover),
+.annotation-table-editor :deep(.el-input__wrapper.is-focus) {
+  border-color: #93b8ff;
+  box-shadow: 0 0 0 2px rgb(37 99 235 / 10%);
+}
+
 .annotation-object-tools {
   display: grid;
   gap: 10px;
@@ -25565,7 +26482,7 @@ onBeforeUnmount(() => {
 
 .annotation-object-filter {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
   gap: 6px;
 }
 
@@ -25620,7 +26537,22 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
-.annotation-object-tree button {
+.annotation-object-row {
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+  background: #f8fafc;
+  border: 1px solid #e6edf7;
+  border-radius: 8px;
+}
+
+.annotation-object-row.active {
+  background: #fff;
+  border-color: #93b8ff;
+  box-shadow: 0 8px 18px rgb(37 99 235 / 8%);
+}
+
+.annotation-object-row__summary {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 4px;
@@ -25629,32 +26561,29 @@ onBeforeUnmount(() => {
   padding: 9px 10px;
   text-align: left;
   cursor: pointer;
-  background: #f8fafc;
-  border: 1px solid #e6edf7;
-  border-radius: 8px;
+  background: transparent;
+  border: 0;
 }
 
-.annotation-object-tree button:hover,
-.annotation-object-tree button:focus-visible,
-.annotation-object-tree button.active {
+.annotation-object-row__summary:hover,
+.annotation-object-row__summary:focus-visible {
   background: #eef5ff;
-  border-color: #93b8ff;
 }
 
-.annotation-object-tree button:focus-visible {
+.annotation-object-row__summary:focus-visible {
   outline: 2px solid #2563eb;
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
-.annotation-object-tree button span,
-.annotation-object-tree button small {
+.annotation-object-row__summary span,
+.annotation-object-row__summary small {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.annotation-object-tree button span {
+.annotation-object-row__summary span {
   display: flex;
   gap: 6px;
   align-items: center;
@@ -25664,7 +26593,7 @@ onBeforeUnmount(() => {
   color: #172033;
 }
 
-.annotation-object-tree button span b {
+.annotation-object-row__summary span b {
   min-width: 0;
   overflow: hidden;
   font-weight: 950;
@@ -25672,7 +26601,7 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.annotation-object-tree button em {
+.annotation-object-row__summary em {
   display: inline-flex;
   flex: 0 0 auto;
   min-height: 20px;
@@ -25688,17 +26617,22 @@ onBeforeUnmount(() => {
   align-items: center;
 }
 
-.annotation-object-tree button em.is-complete {
+.annotation-object-row__summary em.is-complete {
   color: #15803d;
   background: #ecfdf3;
   border-color: #bfe8ce;
 }
 
-.annotation-object-tree button small {
+.annotation-object-row__summary small {
   font-size: 12px;
   font-weight: 750;
   line-height: 17px;
   color: #64748b;
+}
+
+.annotation-object-row__editor {
+  padding: 12px;
+  border-top: 1px solid #e6edf7;
 }
 
 .annotation-object-tree__bbox {
@@ -25964,6 +26898,7 @@ onBeforeUnmount(() => {
   }
 
   .ocr-step-grid,
+  .ocr-console-kpis,
   .ocr-command-kpis,
   .workflow-grid--tabs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -25994,24 +26929,8 @@ onBeforeUnmount(() => {
 
   .annotation-hero,
   .annotation-dialog-header,
-  .annotation-canvas-toolbar,
-  .annotation-studio-layout,
-  .annotation-layout {
+  .annotation-canvas-toolbar {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .annotation-studio-layout {
-    height: auto;
-  }
-
-  .annotation-studio-layout > .annotation-preview-panel,
-  .annotation-studio-layout > .annotation-control-panel {
-    height: auto;
-  }
-
-  .annotation-control-panel {
-    padding-right: 0;
-    overflow: visible;
   }
 
   .annotation-hero__actions,
@@ -26108,13 +27027,44 @@ onBeforeUnmount(() => {
     justify-self: start;
   }
 
+  .annotation-studio-layout,
+  .annotation-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .annotation-studio-layout {
+    height: auto;
+  }
+
+  .annotation-studio-layout > .annotation-preview-panel,
+  .annotation-studio-layout > .annotation-control-panel {
+    height: auto;
+  }
+
+  .annotation-control-panel {
+    padding-right: 0;
+    overflow: visible;
+  }
+
   .workbench-summary-grid.project-subpage-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .ocr-command-kpis,
+  .ocr-console-kpis,
   .ocr-step-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ocr-primary-task-panel,
+  .ocr-current-task-card {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .ocr-primary-task-panel :deep(.el-button),
+  .ocr-current-task-card :deep(.el-button) {
+    justify-self: start;
   }
 
   .ocr-capability-hero {
@@ -26297,7 +27247,13 @@ onBeforeUnmount(() => {
     width: 100%;
   }
 
+  .ocr-primary-task-panel :deep(.el-button),
+  .ocr-current-task-card :deep(.el-button) {
+    width: 100%;
+  }
+
   .ocr-command-kpis,
+  .ocr-console-kpis,
   .ocr-step-grid,
   .agent-status-tabs,
   .workflow-grid--tabs {

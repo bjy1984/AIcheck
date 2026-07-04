@@ -1171,6 +1171,73 @@ def test_fde_ocr_capability_pdf_annotation_uses_page_preview() -> None:
     assert detail["task"]["pageDimensions"]["1"] == [1132, 1600]
 
 
+def test_fde_ocr_capability_annotation_dedupes_stamp_candidates_and_keeps_location() -> None:
+    repo.state.setdefault("fde_capability_test_runs", []).insert(
+        0,
+        {
+            "runId": "FDE-OCR-RUN-SEAL-DEDUP-001",
+            "id": "FDE-OCR-RUN-SEAL-DEDUP-001",
+            "status": "success",
+            "fileName": "sealed.png",
+            "contentType": "image/png",
+            "parseResultId": "PARSE-SEAL-DEDUP-001",
+            "profileId": "seal_text_profile_v1",
+            "documentType": "sealed_document",
+        },
+    )
+    repo.state.setdefault("ocr_parse_results", []).append(
+        {
+            "parseResultId": "PARSE-SEAL-DEDUP-001",
+            "profileId": "seal_text_profile_v1",
+            "documentType": "sealed_document",
+            "quality": {"status": "needs_human_review"},
+            "pages": [{"pageNo": 1, "width": 1132, "height": 1600}],
+            "fields": [],
+            "fragments": [],
+            "tables": [],
+            "seals": [
+                {
+                    "sealId": "blue-visual-1",
+                    "sealName": "视觉蓝章候选",
+                    "sealType": "visual_blue_stamp_candidate",
+                    "visualColor": "blue",
+                    "visualConfidence": 0.86,
+                    "bbox": [630, 895, 1010, 1096],
+                    "pageNo": 1,
+                    "qualityFlags": ["visual_candidate_only", "requires_seal_ocr_text"],
+                },
+                {
+                    "sealId": "blue-ocr-1",
+                    "sealName": "广东省建设工程勘察设计出图专用章",
+                    "sealType": "drawing_approval_seal",
+                    "visualColor": "blue",
+                    "ocrConfidence": 0.91,
+                    "bbox": [640, 905, 1000, 1088],
+                    "pageNo": 1,
+                    "sourceEngine": "visual_seal_crop_ocr",
+                    "qualityFlags": ["visual_candidate_only", "seal_text_from_crop_ocr"],
+                },
+            ],
+        }
+    )
+
+    converted = assert_ok(
+        client.post(
+            "/api/fde/capability-tests/ocr/runs/FDE-OCR-RUN-SEAL-DEDUP-001/to-annotation",
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-seal-dedup-annotation-001"},
+        )
+    )
+
+    seals = converted["task"]["suggestedExpected"]["seals"]
+    assert len(seals) == 1
+    assert seals[0]["nameContains"] == "广东省建设工程勘察设计出图专用章"
+    assert seals[0]["text"] == "广东省建设工程勘察设计出图专用章"
+    assert seals[0]["bbox"] == [640, 905, 1000, 1088]
+    assert seals[0]["bboxLabel"] == "盖章位置"
+    assert seals[0]["stampLocationRequired"] is True
+    assert seals[0]["dedupedCandidateCount"] == 2
+
+
 def test_fde_ocr_capability_rerun_requeues_existing_run(monkeypatch) -> None:
     started: list[str] = []
     monkeypatch.setattr("apps.api.routes.fde_start_ocr_capability_test_worker", started.append)
