@@ -87,6 +87,7 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/fde/ocr-annotation/import-label-studio$", "fde:ocr-annotation:manage"),
     ("POST", r"/fde/ocr-annotation/export-label-studio$", "fde:ocr-annotation:manage"),
     ("PUT", r"/fde/ocr-annotation/tasks/[^/]+/label$", "fde:ocr-annotation:manage"),
+    ("DELETE", r"/fde/ocr-annotation/tasks/[^/]+$", "fde:ocr-annotation:manage"),
     ("POST", r"/fde/ocr-annotation/tasks/[^/]+/verify$", "fde:ocr-annotation:manage"),
     ("POST", r"/fde/ocr-annotation/tasks/[^/]+/review$", "fde:ocr-annotation:manage"),
     ("POST", r"/fde/capability-bundles$", "fde:capability-bundle:manage"),

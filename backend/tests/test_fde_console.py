@@ -1318,6 +1318,22 @@ def test_fde_builtin_ocr_annotation_label_verify_and_import_pack() -> None:
     assert imported["summary"]["importedTasks"] == 1
     assert imported["summary"]["totalTasks"] >= 2
 
+    deleted = assert_ok(
+        client.delete(
+            "/api/fde/ocr-annotation/tasks/ANNO-IMPORT-DEMO-001",
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-annotation-delete-001"},
+        )
+    )
+
+    assert deleted["deleted"] is True
+    assert deleted["taskId"] == "ANNO-IMPORT-DEMO-001"
+    assert all(item["taskId"] != "ANNO-IMPORT-DEMO-001" for item in deleted["page"]["items"])
+    missing_after_delete = client.get(
+        "/api/fde/ocr-annotation/tasks/ANNO-IMPORT-DEMO-001",
+        headers={"X-Role": "fde"},
+    )
+    assert missing_after_delete.status_code == 404
+
 
 def test_fde_ocr_annotation_label_blocks_non_fde_and_bad_schema() -> None:
     forbidden = assert_error(

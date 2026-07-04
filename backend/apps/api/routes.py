@@ -14012,6 +14012,42 @@ def fde_save_ocr_annotation_label(
     return idempotent(request, idempotency_key, produce, fingerprint_source={"taskId": task_id, "body": body})
 
 
+@router.delete("/fde/ocr-annotation/tasks/{task_id}")
+def fde_delete_ocr_annotation_task(
+    request: Request,
+    task_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        _, role_error = fde_error_unless_allowed(request, "fde:ocr-annotation:manage")
+        if role_error:
+            return role_error
+        tasks = repo.state.setdefault("ocr_annotation_tasks", [])
+        index = next(
+            (idx for idx, item in enumerate(tasks) if str(item.get("taskId") or item.get("caseId") or "") == task_id),
+            -1,
+        )
+        if index < 0:
+            return fail(errors.NOT_FOUND, request)
+        removed = tasks.pop(index)
+        readiness = fde_ocr_annotation_readiness(tasks)
+        audit_id = repo.add_audit("FDE OCR 标注样本删除", "OcrAnnotationTask", task_id)
+        return ok(
+            {
+                "deleted": True,
+                "taskId": task_id,
+                "task": fde_ocr_annotation_task_view(removed),
+                "summary": readiness["summary"],
+                "nextActions": readiness["nextActions"],
+                "page": page([fde_ocr_annotation_task_view(item) for item in tasks], 1, 20),
+                "auditLogId": audit_id,
+            },
+            request,
+        )
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"taskId": task_id})
+
+
 @router.post("/fde/ocr-annotation/tasks/{task_id}/verify")
 def fde_verify_ocr_annotation_task(
     request: Request,

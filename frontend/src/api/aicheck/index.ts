@@ -4323,6 +4323,26 @@ export const saveFdeOcrAnnotationLabelApi = (
   })
 }
 
+export const deleteFdeOcrAnnotationTaskApi = (
+  taskId: string,
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    deleted: boolean
+    taskId: string
+    task: FdeOcrAnnotationTask
+    summary: FdeOcrAnnotationReadinessPayload['summary']
+    nextActions: string[]
+    page: PagePayload<FdeOcrAnnotationTask>
+    auditLogId: string
+  }>
+> => {
+  return request.delete({
+    url: `/api/fde/ocr-annotation/tasks/${taskId}`,
+    headers: mutationHeaders(options)
+  })
+}
+
 export const verifyFdeOcrAnnotationTaskApi = (
   taskId: string,
   data: {

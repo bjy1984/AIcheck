@@ -265,7 +265,12 @@ def has_positive_evidence(item: dict[str, Any]) -> bool:
     bbox = item.get("bbox")
     if isinstance(bbox, list) and len(bbox) >= 4:
         try:
-            x1, y1, x2, y2 = [float(value) for value in bbox[:4]]
+            numbers = [float(value) for value in bbox]
+            if len(numbers) >= 6:
+                xs = numbers[0::2]
+                ys = numbers[1::2]
+                return bool(xs and ys and max(xs) > min(xs) and max(ys) > min(ys))
+            x1, y1, x2, y2 = numbers[:4]
             if x2 > x1 and y2 > y1:
                 return True
         except (TypeError, ValueError):

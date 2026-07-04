@@ -6041,6 +6041,7 @@ def test_required_action_inference_covers_core_mutations() -> None:
         ("POST", "/api/fde/capability-tests/ocr/runs/RUN-001/rerun", "fde:ocr-quality:view"),
         ("POST", "/api/fde/capability-tests/ocr/runs/RUN-001/to-annotation", "fde:ocr-annotation:manage"),
         ("POST", "/api/fde/capability-tests/ocr/runs/RUN-001/to-evaluation-case", "fde:evaluation:run"),
+        ("DELETE", "/api/fde/ocr-annotation/tasks/ANNO-001", "fde:ocr-annotation:manage"),
         ("PUT", "/api/admin/config-items/todo-rule/TR-001", "admin:config"),
         ("PATCH", "/api/knowledge/config", "knowledge:manage"),
         ("PUT", "/api/knowledge/config", "knowledge:manage"),

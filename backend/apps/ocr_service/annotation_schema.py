@@ -209,13 +209,28 @@ def list_items(value: Any) -> list[dict[str, Any]]:
 
 
 def positive_bbox(value: Any) -> bool:
-    if not isinstance(value, list) or len(value) < 4:
+    extents = bbox_extents(value)
+    if not extents:
         return False
-    try:
-        x1, y1, x2, y2 = [float(item) for item in value[:4]]
-    except (TypeError, ValueError):
-        return False
+    x1, y1, x2, y2 = extents
     return x2 > x1 and y2 > y1
+
+
+def bbox_extents(value: Any) -> tuple[float, float, float, float] | None:
+    if not isinstance(value, list) or len(value) < 4:
+        return None
+    try:
+        numbers = [float(item) for item in value]
+    except (TypeError, ValueError):
+        return None
+    if len(numbers) >= 6:
+        xs = numbers[0::2]
+        ys = numbers[1::2]
+        if not xs or not ys:
+            return None
+        return min(xs), min(ys), max(xs), max(ys)
+    x1, y1, x2, y2 = numbers[:4]
+    return min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)
 
 
 def positive_polygon(value: Any) -> bool:
@@ -230,10 +245,11 @@ def positive_polygon(value: Any) -> bool:
 
 
 def bbox_inside_page(value: Any, dimensions: tuple[int, int]) -> bool:
-    if not positive_bbox(value):
+    extents = bbox_extents(value)
+    if not extents:
         return False
     width, height = dimensions
-    x1, y1, x2, y2 = [float(item) for item in value[:4]]
+    x1, y1, x2, y2 = extents
     return x1 >= 0 and y1 >= 0 and x2 <= width and y2 <= height
 
 
