@@ -20,6 +20,7 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("DELETE", r"/projects/[^/]+/members/[^/]+$", "project:authorize-member"),
     ("POST", r"/projects/[^/]+/initialize-workflow$", "admin:config"),
     ("POST", r"/projects/[^/]+/documents/upload-session$", "file:upload"),
+    ("PUT", r"/projects/[^/]+/documents/upload-session/[^/]+/files/[^/]+$", "file:upload"),
     ("POST", r"/projects/[^/]+/documents/upload-session/[^/]+/complete$", "file:upload"),
     ("POST", r"/projects/[^/]+/documents/[^/]+/versions$", "file:upload"),
     ("POST", r"/projects/[^/]+/documents/bindings$", "file:bind"),

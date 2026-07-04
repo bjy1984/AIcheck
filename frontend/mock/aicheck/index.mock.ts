@@ -1605,6 +1605,30 @@ const getProjectActions = (project: Project, role: RoleCode) => {
   return roleActions[role]
 }
 
+const sortWorkbenchProjects = (items: Project[], role: RoleCode) => {
+  const contractorPriority: Partial<Record<Project['status'], number>> = {
+    退回补正中: 0,
+    资料提交中: 1,
+    监检审查中: 2,
+    'AI 预审中': 3,
+    '草稿/立项中': 4,
+    '报告生成/复核中': 5,
+    已归档: 9
+  }
+  const statusPriority =
+    role === 'contractor'
+      ? contractorPriority
+      : ({
+          已归档: 9
+        } as Partial<Record<Project['status'], number>>)
+  return [...items].sort((left, right) => {
+    const leftPriority = statusPriority[left.status] ?? 6
+    const rightPriority = statusPriority[right.status] ?? 6
+    if (leftPriority !== rightPriority) return leftPriority - rightPriority
+    return Date.parse(right.updatedAt || '') - Date.parse(left.updatedAt || '')
+  })
+}
+
 const getPreviewType = (fileType = '') => {
   const normalized = fileType.toLowerCase()
   if (normalized === 'pdf') return 'pdf'
@@ -6056,11 +6080,14 @@ export default [
     response: ({ query }) => {
       const role = getRole(query)
       return ok(
-        state.projects.map((project) => ({
-          ...project,
-          currentNodeId: roleNodeMap[role] || project.currentNodeId,
-          actions: getProjectActions(project, role)
-        }))
+        sortWorkbenchProjects(
+          state.projects.map((project) => ({
+            ...project,
+            currentNodeId: roleNodeMap[role] || project.currentNodeId,
+            actions: getProjectActions(project, role)
+          })),
+          role
+        )
       )
     }
   },

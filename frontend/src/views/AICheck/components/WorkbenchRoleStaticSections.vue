@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type {
   ArchiveItem,
   NdtFeedback,
@@ -21,11 +21,15 @@ type ReviewChainStep = {
   result: string
 }
 
+type ContractorFileStatus = '全部' | '待提交' | '审核中' | '需补正' | '已通过' | '已作废'
+type ContractorSortKey = 'updatedDesc' | 'updatedAsc' | 'status' | 'version'
+
 const props = defineProps<{
   role: RoleCode
   project?: Project
   node?: ProjectTreeNode
   packageData?: NodePackagePayload
+  readOnly?: boolean
   metrics: WorkbenchSummaryPayload['metrics']
   reviewSteps: ReviewChainStep[]
   aiConfidence: string
@@ -35,6 +39,12 @@ const props = defineProps<{
   ndtRecords: NdtRecord[]
   ndtReports: NdtReport[]
   ndtFeedback: NdtFeedback[]
+}>()
+
+const emit = defineEmits<{
+  upload: []
+  bind: []
+  rectify: []
 }>()
 
 const bindings = computed(() => props.packageData?.bindings || [])
@@ -47,6 +57,22 @@ const latestArchive = computed(() => props.archiveItems[0])
 const correctionFeedback = computed(() =>
   props.ndtFeedback.find((item) => item.status === '待反馈')
 )
+
+const contractorStatusFilter = ref<ContractorFileStatus>('全部')
+const contractorUsageFilter = ref('全部用途')
+const contractorKeyword = ref('')
+const contractorSort = ref<ContractorSortKey>('updatedDesc')
+const contractorPage = ref(1)
+const contractorPageSize = 5
+
+const contractorStatusOptions: ContractorFileStatus[] = [
+  '全部',
+  '待提交',
+  '审核中',
+  '需补正',
+  '已通过',
+  '已作废'
+]
 
 const currentNodeLabel = computed(() => {
   if (!props.node) return '未选择节点'
@@ -130,40 +156,155 @@ const ownerNodeRows = computed(() => {
   ]
 })
 
+const mapContractorFileStatus = (
+  fileStatus?: string,
+  relationStatus?: string
+): Exclude<ContractorFileStatus, '全部'> => {
+  if (fileStatus === '已作废' || fileStatus === '已替换') return '已作废'
+  if (relationStatus === '已通过') return '已通过'
+  if (relationStatus === '需补正') return '需补正'
+  if (relationStatus === '已提交') return '审核中'
+  return '待提交'
+}
+
+const getRelationNodeText = (binding?: (typeof bindings.value)[number]) => {
+  if (!binding) return '未关联审核环节'
+  return `${binding.nodeId}. ${binding.requirementName || props.node?.name || '审核环节'}`
+}
+
 const contractorFileRows = computed(() => {
-  const rows = projectFiles.value.slice(0, 6).map((file, index) => {
-    const binding = bindings.value[index]
+  const rows = projectFiles.value.map((file, index) => {
+    const binding =
+      bindings.value.find((item) => item.documentId === file.id) || bindings.value[index]
+    const status = mapContractorFileStatus(file.fileStatus, binding?.bindingStatus)
     return {
       id: file.id,
       fileName: file.fileName,
       usage: binding?.usage || '原始提交',
       version: binding?.versionNo || 'V1',
-      fileStatus: file.fileStatus,
-      bindStatus: binding?.bindingStatus || '未挂载',
+      status,
+      sourceOrgName: file.sourceOrgName,
+      relationNode: getRelationNodeText(binding),
+      feedback:
+        binding?.bindingStatus === '需补正' ? `FB-${String(index + 1).padStart(3, '0')}` : '-',
       ocr: file.currentOcrStatus,
       uploader: file.uploaderName,
-      relation: binding?.bindingStatus === '需补正' ? '1条' : binding ? '链路反馈' : '-'
+      updatedAt: file.updatedAt
     }
   })
   if (rows.length) return rows
-  return bindings.value.slice(0, 6).map((binding) => ({
+  return bindings.value.map((binding, index) => ({
     id: binding.id,
     fileName: binding.fileName,
     usage: binding.usage,
     version: binding.versionNo,
-    fileStatus: '已上传',
-    bindStatus: binding.bindingStatus,
+    status: mapContractorFileStatus('已上传', binding.bindingStatus),
+    sourceOrgName: binding.sourceOrgName,
+    relationNode: getRelationNodeText(binding),
+    feedback: binding.bindingStatus === '需补正' ? `FB-${String(index + 1).padStart(3, '0')}` : '-',
     ocr: '已识别',
     uploader: binding.sourceOrgName,
-    relation: binding.bindingStatus === '需补正' ? '1条' : '链路反馈'
+    updatedAt: binding.boundAt
   }))
 })
 
-const unboundFiles = computed(() =>
-  contractorFileRows.value
-    .filter((file) => ['未挂载', '草稿挂载'].includes(String(file.bindStatus)))
-    .slice(0, 3)
+const contractorFeedbackRows = computed(() =>
+  props.reviewSteps.map((step, index) => {
+    const needsCorrection = step.result.includes('补正')
+    const needsAttention = needsCorrection || step.result.includes('人工')
+    return {
+      id: `FB-${String(index + 1).padStart(3, '0')}`,
+      node: currentNodeLabel.value,
+      issue: step.title,
+      requirement: needsCorrection ? step.desc : '当前环节暂无补正材料要求。',
+      result: step.result,
+      status: needsCorrection ? '待处理' : needsAttention ? '处理中' : '已关闭',
+      linkedFiles: needsCorrection
+        ? contractorFileRows.value.filter((file) => file.status === '需补正').length
+        : contractorFileRows.value.filter((file) => file.status === '已通过').length,
+      feedbackAt: props.project?.updatedAt || '-',
+      dueAt: needsCorrection ? '按监检要求' : '-'
+    }
+  })
 )
+
+const contractorStatusCounts = computed<Record<ContractorFileStatus, number>>(() => {
+  const counts = contractorStatusOptions.reduce(
+    (result, status) => ({ ...result, [status]: 0 }),
+    {} as Record<ContractorFileStatus, number>
+  )
+  contractorFileRows.value.forEach((file) => {
+    counts[file.status] += 1
+    counts.全部 += 1
+  })
+  return counts
+})
+
+const contractorUsageOptions = computed(() => [
+  '全部用途',
+  ...Array.from(new Set(contractorFileRows.value.map((file) => file.usage)))
+])
+
+const filteredContractorFileRows = computed(() => {
+  const keyword = contractorKeyword.value.trim().toLowerCase()
+  const rows = contractorFileRows.value.filter((file) => {
+    const matchesStatus =
+      contractorStatusFilter.value === '全部' || file.status === contractorStatusFilter.value
+    const matchesUsage =
+      contractorUsageFilter.value === '全部用途' || file.usage === contractorUsageFilter.value
+    const haystack = [
+      file.fileName,
+      file.usage,
+      file.sourceOrgName,
+      file.relationNode,
+      file.feedback,
+      file.uploader
+    ]
+      .join(' ')
+      .toLowerCase()
+    return matchesStatus && matchesUsage && (!keyword || haystack.includes(keyword))
+  })
+  return rows.slice().sort((a, b) => {
+    if (contractorSort.value === 'updatedAsc') {
+      return Date.parse(a.updatedAt || '') - Date.parse(b.updatedAt || '')
+    }
+    if (contractorSort.value === 'status') return a.status.localeCompare(b.status, 'zh-Hans-CN')
+    if (contractorSort.value === 'version') return b.version.localeCompare(a.version, 'zh-Hans-CN')
+    return Date.parse(b.updatedAt || '') - Date.parse(a.updatedAt || '')
+  })
+})
+
+const contractorTotalPages = computed(() =>
+  Math.max(1, Math.ceil(filteredContractorFileRows.value.length / contractorPageSize))
+)
+const normalizedContractorPage = computed(() =>
+  Math.min(contractorPage.value, contractorTotalPages.value)
+)
+const pagedContractorFileRows = computed(() => {
+  const start = (normalizedContractorPage.value - 1) * contractorPageSize
+  return filteredContractorFileRows.value.slice(start, start + contractorPageSize)
+})
+
+const setContractorStatusFilter = (status: ContractorFileStatus) => {
+  contractorStatusFilter.value = status
+  contractorPage.value = 1
+}
+
+const resetContractorFilePage = () => {
+  contractorPage.value = 1
+}
+
+const requestUpload = () => {
+  if (!props.readOnly) emit('upload')
+}
+
+const requestBind = () => {
+  if (!props.readOnly) emit('bind')
+}
+
+const requestRectify = () => {
+  if (!props.readOnly) emit('rectify')
+}
 
 const ndtRecordRows = computed(() =>
   props.ndtRecords.slice(0, 5).map((record) => ({
@@ -218,221 +359,269 @@ const getPillClass = (value?: string) => {
     <template v-if="role === 'contractor'">
       <section class="card">
         <div class="card-head">
-          <h2>一、项目文件库</h2>
-          <div class="sub">本单位项目级文件、版本、OCR、提交状态和挂载状态</div>
+          <div>
+            <h2>一、项目文件上传区</h2>
+            <div class="sub">上传文件直接进入项目文件库，审核环节和反馈问题均为可选关联。</div>
+          </div>
+          <span :class="['pill', readOnly ? 'green' : 'blue']">{{
+            readOnly ? '只读查看' : '可上传'
+          }}</span>
         </div>
         <div class="card-body">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>文件名</th>
-                <th>文件用途</th>
-                <th>版本</th>
-                <th>文件状态</th>
-                <th>挂载状态</th>
-                <th>OCR</th>
-                <th>上传人</th>
-                <th>关联意见</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="(file, index) in contractorFileRows"
-                :key="file.id"
-                :class="{ selected: index === 0 }"
-              >
-                <td>{{ file.fileName }}</td>
-                <td>{{ file.usage }}</td>
-                <td>{{ file.version }}</td>
-                <td
-                  ><span :class="['pill', getPillClass(file.fileStatus)]">{{
-                    file.fileStatus
-                  }}</span></td
+          <div class="upload-layout">
+            <button type="button" class="upload-box" :disabled="readOnly" @click="requestUpload">
+              <span>{{ readOnly ? '当前项目只读，不能上传文件' : '点击打开上传窗口' }}</span>
+              <small>{{
+                readOnly
+                  ? '可查看项目文件库、审核反馈和归档资料'
+                  : '弹窗内支持拖拽多个 pdf、doc、docx、xls、xlsx、jpg、png、zip 文件'
+              }}</small>
+            </button>
+            <table class="table compact upload-meta">
+              <tbody>
+                <tr><th>文件用途</th><td>原始提交 / 补正附件 / 整改说明 / 证明材料</td></tr>
+                <tr><th>可选关联</th><td>审核环节、反馈问题；不选择也可入库</td></tr>
+                <tr
+                  ><th>当前环节</th><td>{{ currentNodeLabel }}</td></tr
                 >
-                <td
-                  ><span :class="['pill', getPillClass(file.bindStatus)]">{{
-                    file.bindStatus
-                  }}</span></td
+                <tr
+                  ><th>{{ readOnly ? '写入限制' : '入库后状态' }}</th
+                  ><td
+                    ><span :class="['pill', readOnly ? 'green' : 'orange']">{{
+                      readOnly ? '仅查看' : '待提交'
+                    }}</span></td
+                  ></tr
                 >
-                <td>{{ file.ocr }}</td>
-                <td>{{ file.uploader }}</td>
-                <td>{{ file.relation }}</td>
-                <td><span class="action-text">查看/替换</span></td>
-              </tr>
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 
-      <div class="split">
-        <section class="card">
-          <div class="card-head"><h2>二、项目文件上传区</h2></div>
-          <div class="card-body">
-            <div class="upload-box">
-              ⇧ 点击或拖拽多个文件到此处上传
-              <br />
-              <span class="sub"
-                >支持 pdf、doc、docx、xls、xlsx、jpg、png、zip；可批量设置来源、用途和备注</span
-              >
-            </div>
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>二、审核反馈列表</h2>
+            <div class="sub">按反馈问题处理补正，可上传新文件或关联项目文件库中的已有文件。</div>
           </div>
-        </section>
-        <section class="card">
-          <div class="card-head"><h2>三、批量挂载设置</h2></div>
-          <div class="card-body">
-            <table class="table compact">
-              <tbody>
+          <span class="pill orange"
+            >{{
+              contractorFeedbackRows.filter((item) => item.status !== '已关闭').length
+            }}
+            项待处理</span
+          >
+        </div>
+        <div class="card-body">
+          <div class="table-scroll">
+            <table class="table contractor-feedback-table">
+              <thead>
                 <tr>
-                  <th>批量节点</th>
+                  <th>反馈编号</th>
+                  <th>问题环节</th>
+                  <th>问题说明</th>
+                  <th>反馈状态</th>
+                  <th>关联文件</th>
+                  <th>反馈时间</th>
+                  <th>截止要求</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="(feedback, index) in contractorFeedbackRows"
+                  :key="feedback.id"
+                  :class="{ selected: feedback.status === '待处理' || index === 0 }"
+                >
+                  <td>{{ feedback.id }}</td>
+                  <td>{{ feedback.node }}</td>
                   <td>
-                    <span class="pill blue">{{ currentNodeLabel }}</span>
-                    <span class="pill blue">18. 材料复验报告、无损检测报告</span>
+                    <strong>{{ feedback.issue }}</strong>
+                    <div class="table-note">{{ feedback.requirement }}</div>
+                  </td>
+                  <td
+                    ><span :class="['pill', getPillClass(feedback.status)]">{{
+                      feedback.status
+                    }}</span></td
+                  >
+                  <td>{{ feedback.linkedFiles }} 个</td>
+                  <td>{{ feedback.feedbackAt }}</td>
+                  <td>{{ feedback.dueAt }}</td>
+                  <td>
+                    <div class="table-actions">
+                      <button
+                        type="button"
+                        class="action-text action-button"
+                        :disabled="readOnly"
+                        @click="requestUpload"
+                      >
+                        上传补正
+                      </button>
+                      <button
+                        type="button"
+                        class="action-text action-button"
+                        :disabled="readOnly"
+                        @click="requestBind"
+                      >
+                        关联文件
+                      </button>
+                      <button
+                        type="button"
+                        class="action-text action-button"
+                        :disabled="readOnly"
+                        @click="requestRectify"
+                      >
+                        填写说明
+                      </button>
+                    </div>
                   </td>
                 </tr>
-                <tr><th>默认用途</th><td>原始提交 / 补正附件 / 整改说明 / 证明材料</td></tr>
-                <tr
-                  ><th>提交规则</th
-                  ><td>至少 1 个文件已选择挂载节点；未挂载文件只能保存草稿。</td></tr
-                >
+                <tr v-if="!contractorFeedbackRows.length">
+                  <td colspan="8">暂无审核反馈</td>
+                </tr>
               </tbody>
             </table>
           </div>
-        </section>
-      </div>
-
-      <section class="card">
-        <div class="card-head">
-          <h2>四、监检业务链路反馈</h2>
-          <div class="sub">施工方只查看反馈和补正要求，不编辑 AI 审查链路</div>
-        </div>
-        <div class="card-body">
-          <table class="table">
-            <thead>
-              <tr
-                ><th>反馈节点</th><th>审查对象</th><th>链路结论</th><th>关键依据</th
-                ><th>施工方动作</th></tr
-              >
-            </thead>
-            <tbody>
-              <tr
-                v-for="(step, index) in reviewSteps.slice(0, 3)"
-                :key="step.title"
-                :class="{ selected: index === 0 }"
-              >
-                <td>{{ currentNodeLabel }}</td>
-                <td>{{ step.title }}</td>
-                <td
-                  ><span :class="['pill', getPillClass(step.result)]">{{ step.result }}</span></td
-                >
-                <td>{{ step.desc }}</td>
-                <td>{{
-                  step.result.includes('补正')
-                    ? '上传补正附件并提交挂载关系'
-                    : '无需补正，等待监检确认'
-                }}</td>
-              </tr>
-            </tbody>
-          </table>
         </div>
       </section>
 
       <section class="card">
         <div class="card-head">
-          <h2>五、上传挂载设置</h2>
-          <div class="sub">同一文件可挂载到多个节点，每个挂载关系分别保存资料项和用途</div>
+          <div>
+            <h2>三、项目文件库</h2>
+            <div class="sub">统一管理施工方项目文件，审核环节和反馈问题仅作为关联字段。</div>
+          </div>
+          <span class="pill blue"
+            >{{ filteredContractorFileRows.length }} / {{ contractorFileRows.length }} 个文件</span
+          >
         </div>
         <div class="card-body">
-          <table class="table">
-            <thead>
-              <tr
-                ><th>文件名</th><th>挂载节点</th><th>资料项</th><th>文件用途</th><th>必传</th
-                ><th>版本</th><th>文件状态</th><th>挂载状态</th></tr
+          <div class="file-library-tools">
+            <div class="status-filter-row">
+              <button
+                v-for="status in contractorStatusOptions"
+                :key="status"
+                type="button"
+                :class="['status-filter', { active: contractorStatusFilter === status }]"
+                @click="setContractorStatusFilter(status)"
               >
-            </thead>
-            <tbody>
-              <tr
-                v-for="(binding, index) in bindings.slice(0, 5)"
-                :key="binding.id"
-                :class="{ selected: index === 0 }"
+                {{ status }} {{ contractorStatusCounts[status] }}
+              </button>
+            </div>
+            <div class="filter-row">
+              <input
+                v-model="contractorKeyword"
+                class="filter-input"
+                type="search"
+                placeholder="搜索文件名、来源单位、审核环节或反馈编号"
+                @input="resetContractorFilePage"
+              />
+              <select
+                v-model="contractorUsageFilter"
+                class="filter-select"
+                @change="resetContractorFilePage"
               >
-                <td>{{ binding.fileName }}</td>
-                <td>{{ binding.nodeId }}. {{ node?.name || '当前节点' }}</td>
-                <td>{{ binding.requirementName || '节点资料项' }}</td>
-                <td>{{ binding.usage }}</td>
-                <td>{{ requirements[index]?.requiredType || '是' }}</td>
-                <td>{{ binding.versionNo }}</td>
-                <td><span class="pill blue">已上传</span></td>
-                <td
-                  ><span :class="['pill', getPillClass(binding.bindingStatus)]">{{
-                    binding.bindingStatus
-                  }}</span></td
-                >
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <div class="split">
-        <section class="card">
-          <div class="card-head">
-            <h2>六、未挂载文件池</h2>
-            <span class="pill orange">{{ unboundFiles.length }} 个文件</span>
-          </div>
-          <div class="card-body">
-            <table class="table compact">
-              <tbody>
-                <tr v-for="file in unboundFiles" :key="file.id">
-                  <th>{{ file.fileName }}</th>
-                  <td>{{ file.usage }}</td>
-                  <td><span class="pill orange">未挂载</span></td>
-                </tr>
-                <tr v-if="!unboundFiles.length">
-                  <th>当前无未挂载文件</th>
-                  <td>文件均已进入节点挂载关系</td>
-                  <td><span class="pill green">已处理</span></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-        <section class="card">
-          <div class="card-head"><h2>七、整改说明</h2></div>
-          <div class="card-body">
-            <div class="textarea-like">
-              已补充材料复验报告，并上传炉批号差异说明。补正资料将随本批文件提交并保持证据链可追溯。
+                <option v-for="usage in contractorUsageOptions" :key="usage" :value="usage">
+                  {{ usage }}
+                </option>
+              </select>
+              <select
+                v-model="contractorSort"
+                class="filter-select"
+                @change="resetContractorFilePage"
+              >
+                <option value="updatedDesc">更新时间从新到旧</option>
+                <option value="updatedAsc">更新时间从旧到新</option>
+                <option value="status">按状态排序</option>
+                <option value="version">按版本排序</option>
+              </select>
             </div>
           </div>
-        </section>
-      </div>
 
-      <section class="card">
-        <div class="card-head"><h2>八、文件批次摘要</h2></div>
-        <div class="card-body">
-          <div class="metrics">
-            <div class="metric"
-              ><div class="metric-label">本批文件</div
-              ><div class="metric-value">{{ contractorFileRows.length }}</div></div
-            >
-            <div class="metric"
-              ><div class="metric-label">已选择挂载</div
-              ><div class="metric-value green">{{ bindings.length }}</div></div
-            >
-            <div class="metric"
-              ><div class="metric-label">未挂载</div
-              ><div class="metric-value orange">{{ unboundFiles.length }}</div></div
-            >
-            <div class="metric"
-              ><div class="metric-label">需补正</div
-              ><div class="metric-value red">{{
-                bindings.filter((item) => item.bindingStatus === '需补正').length
-              }}</div></div
-            >
-            <div class="metric"
-              ><div class="metric-label">业务链路反馈</div
-              ><div class="metric-value green">{{ reviewSteps.length }}</div></div
-            >
+          <div class="table-scroll">
+            <table class="table contractor-files-table">
+              <thead>
+                <tr>
+                  <th>文件名</th>
+                  <th>文件用途</th>
+                  <th>来源单位</th>
+                  <th>状态</th>
+                  <th>版本</th>
+                  <th>关联审核环节</th>
+                  <th>关联反馈</th>
+                  <th>上传人</th>
+                  <th>更新时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="(file, index) in pagedContractorFileRows"
+                  :key="file.id"
+                  :class="{ selected: index === 0 }"
+                >
+                  <td>{{ file.fileName }}</td>
+                  <td>{{ file.usage }}</td>
+                  <td>{{ file.sourceOrgName }}</td>
+                  <td
+                    ><span :class="['pill', getPillClass(file.status)]">{{ file.status }}</span></td
+                  >
+                  <td>{{ file.version }}</td>
+                  <td>{{ file.relationNode }}</td>
+                  <td>{{ file.feedback }}</td>
+                  <td>{{ file.uploader }}</td>
+                  <td>{{ file.updatedAt }}</td>
+                  <td>
+                    <div class="table-actions">
+                      <button type="button" class="action-text action-button">查看</button>
+                      <button type="button" class="action-text action-button" :disabled="readOnly">
+                        编辑
+                      </button>
+                      <button
+                        type="button"
+                        class="action-text action-button"
+                        :disabled="readOnly"
+                        @click="requestUpload"
+                      >
+                        替换
+                      </button>
+                      <button
+                        type="button"
+                        class="action-text action-button"
+                        :disabled="readOnly"
+                        @click="requestBind"
+                      >
+                        关联环节
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                <tr v-if="!pagedContractorFileRows.length">
+                  <td colspan="10">当前筛选条件下暂无文件</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="pagination-row">
+            <span>第 {{ normalizedContractorPage }} / {{ contractorTotalPages }} 页</span>
+            <div class="pagination-actions">
+              <button
+                type="button"
+                class="action-text action-button"
+                :disabled="normalizedContractorPage <= 1"
+                @click="contractorPage -= 1"
+              >
+                上一页
+              </button>
+              <button
+                type="button"
+                class="action-text action-button"
+                :disabled="normalizedContractorPage >= contractorTotalPages"
+                @click="contractorPage += 1"
+              >
+                下一页
+              </button>
+            </div>
           </div>
         </div>
       </section>
@@ -1051,6 +1240,16 @@ p {
   table-layout: fixed;
 }
 
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.contractor-feedback-table,
+.contractor-files-table {
+  min-width: 1120px;
+}
+
 .table th,
 .table td {
   padding: 10px 11px;
@@ -1082,6 +1281,17 @@ p {
 .table tr.selected td,
 .table tr.selected th {
   background: var(--blue-soft);
+}
+
+.table-note {
+  margin-top: 4px;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pill {
@@ -1200,6 +1410,13 @@ p {
   border-color: #c4d5ee;
 }
 
+.upload-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
 .upload-box {
   display: grid;
   min-height: 128px;
@@ -1208,10 +1425,104 @@ p {
   font-weight: 900;
   color: #37506f;
   text-align: center;
+  cursor: pointer;
   background: #f8fbff;
   border: 1px dashed #9db8df;
   border-radius: 6px;
   place-items: center;
+}
+
+.upload-box small {
+  display: block;
+  margin-top: 8px;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+.upload-box:hover:not(:disabled) {
+  color: var(--blue-2);
+  background: #f3f8ff;
+  border-color: var(--blue);
+}
+
+.upload-box:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+  background: #f8fafc;
+  border-color: var(--line);
+}
+
+.upload-meta {
+  height: 100%;
+}
+
+.file-library-tools {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.status-filter-row,
+.filter-row,
+.table-actions,
+.pagination-row,
+.pagination-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.filter-row {
+  justify-content: space-between;
+}
+
+.filter-input,
+.filter-select {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #26364e;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+
+.filter-input {
+  flex: 1 1 320px;
+  min-width: 240px;
+}
+
+.filter-select {
+  flex: 0 0 180px;
+}
+
+.status-filter {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 900;
+  color: #485a73;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+
+.status-filter.active {
+  color: var(--blue-2);
+  background: var(--blue-soft);
+  border-color: #bcd4ff;
+}
+
+.pagination-row {
+  justify-content: space-between;
+  margin-top: 12px;
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--muted);
 }
 
 .textarea-like {
@@ -1236,6 +1547,18 @@ p {
     color 0.18s ease,
     background-color 0.18s ease;
   align-items: center;
+}
+
+.action-button {
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+}
+
+.action-button:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+  background: transparent;
 }
 
 .action-text:hover {

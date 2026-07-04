@@ -75,6 +75,10 @@ const nodeOptions = computed(() =>
     }))
   )
 )
+const isContractor = computed(() => props.role === 'contractor')
+const dialogTitle = computed(() =>
+  isContractor.value ? '关联项目文件到审核环节' : '挂载资料到节点'
+)
 
 const resetForm = () => {
   const firstFile = projectFiles.value[0]
@@ -98,7 +102,7 @@ const handleSubmit = () => {
     return
   }
   if (!form.targetNodeIds.length) {
-    ElMessage.warning('请选择至少一个目标节点')
+    ElMessage.warning(isContractor.value ? '请选择至少一个审核环节' : '请选择至少一个目标节点')
     return
   }
   emit('submit', {
@@ -127,7 +131,7 @@ watch(
 </script>
 
 <template>
-  <ElDialog v-model="visible" title="挂载资料到节点" width="760px" append-to-body>
+  <ElDialog v-model="visible" :title="dialogTitle" width="760px" append-to-body>
     <template v-if="packageData && projectFiles.length">
       <ElDescriptions :column="2" border class="node-summary">
         <ElDescriptionsItem label="当前节点">
@@ -146,11 +150,13 @@ watch(
         type="error"
         show-icon
         class="bind-alert bind-dialog-error"
-        title="资料挂载失败"
+        :title="isContractor ? '关联审核环节失败' : '资料挂载失败'"
       >
         <div class="dialog-error-content">
           <span>{{ operationError }}</span>
-          <ElButton link type="primary" :loading="loading" @click="handleRetry">重试挂载</ElButton>
+          <ElButton link type="primary" :loading="loading" @click="handleRetry">
+            {{ isContractor ? '重试关联' : '重试挂载' }}
+          </ElButton>
         </div>
       </ElAlert>
 
@@ -175,7 +181,7 @@ watch(
             />
           </ElSelect>
         </ElFormItem>
-        <ElFormItem label="挂载用途">
+        <ElFormItem :label="isContractor ? '文件用途' : '挂载用途'">
           <ElSelect v-model="form.usage">
             <ElOption label="原始提交" value="原始提交" />
             <ElOption label="补正附件" value="补正附件" />
@@ -185,7 +191,7 @@ watch(
             <ElOption label="检测报告" value="检测报告" />
           </ElSelect>
         </ElFormItem>
-        <ElFormItem label="目标节点" class="target-node-field">
+        <ElFormItem :label="isContractor ? '关联审核环节' : '目标节点'" class="target-node-field">
           <ElSelect
             v-model="form.targetNodeIds"
             multiple
@@ -222,7 +228,10 @@ watch(
       </div>
     </template>
 
-    <ElEmpty v-else description="资料池暂无可挂载文件" />
+    <ElEmpty
+      v-else
+      :description="isContractor ? '项目文件库暂无可关联文件' : '资料池暂无可挂载文件'"
+    />
 
     <template #footer>
       <ElButton @click="visible = false">取消</ElButton>
@@ -232,7 +241,7 @@ watch(
         :disabled="!projectFiles.length"
         @click="handleSubmit"
       >
-        确认挂载
+        {{ isContractor ? '确认关联' : '确认挂载' }}
       </ElButton>
     </template>
   </ElDialog>

@@ -37,7 +37,7 @@ const hasAction = (action: ActionCode) => actionSet.value.has(action)
       上传资料
     </ElButton>
     <ElButton v-if="canSubmit && hasAction('file:bind')" :loading="loading" @click="emit('bind')">
-      挂载资料
+      {{ role === 'contractor' ? '关联审核环节' : '挂载资料' }}
     </ElButton>
     <ElButton
       v-if="canSubmit && hasAction('submission:draft')"

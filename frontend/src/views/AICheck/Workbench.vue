@@ -17,6 +17,7 @@ import {
   archiveReportApi,
   bindDocumentsToNodeApi,
   completeTodoApi,
+  completeDocumentUploadSessionApi,
   createNdtFilmApi,
   createNdtReportUploadSessionApi,
   createDocumentUploadSessionApi,
@@ -75,7 +76,8 @@ import type {
   SubmissionDetailPayload,
   SubmissionDraftDetailPayload,
   SubmissionDraftSummary,
-  SubmissionSummary
+  SubmissionSummary,
+  UploadSessionPayload
 } from '@/api/aicheck'
 import type {
   ActionCode,
@@ -149,6 +151,8 @@ type WorkbenchStateIssue = {
   title: string
   message?: string
 }
+
+type DocumentUploadTarget = UploadSessionPayload['uploadUrls'][number]
 
 const route = useRoute()
 const userStore = useUserStore()
@@ -617,7 +621,7 @@ const globalSearchPlaceholder = computed(() => {
 const pageHeadline = computed(() => {
   const headlines: Record<RoleCode, string> = {
     inspection: 'AI 业务审查链路',
-    contractor: '项目文件上传与挂载',
+    contractor: '项目文件上传与补正',
     ndt: '无损检测资料维护',
     owner: '建设方项目概况',
     admin: '管理工作台',
@@ -628,7 +632,7 @@ const pageHeadline = computed(() => {
 const pageIntro = computed(() => {
   const intros: Record<RoleCode, string> = {
     inspection: '当前节点资料、AI 业务核验链路、人工审查意见和报告归档动作在同一工作区完成。',
-    contractor: '施工方以文件上传和项目文件库为主，可选择一个或多个授权检测节点并提交挂载关系。',
+    contractor: '施工方以文件上传、审核反馈处理和项目文件库管理为主，审核环节关联为可选业务定位。',
     ndt: '底片编号、检测记录、检测报告和图像资料直接挂载到明确的无损检测节点。',
     owner: '只读查看项目进展、节点资料状态、异常提醒、报告状态和归档资料。',
     admin: '后台只维护配置、权限、流程和审计，不替代工作台业务办理。',
@@ -649,7 +653,10 @@ const workbenchAuditCards = computed<AuditSummaryCard[]>(() => [
   },
   {
     label: '资料证据',
-    value: `${bindings.value.length} 份挂载资料`,
+    value:
+      role.value === 'contractor'
+        ? `${nodePackage.value?.projectFiles.length || bindings.value.length} 份项目文件`
+        : `${bindings.value.length} 份挂载资料`,
     hint: `${extractedFields.value.length} 个 OCR/字段证据可定位`,
     tone: 'green'
   },
@@ -708,7 +715,7 @@ const reviewChainSteps = computed(() => {
       result: latestAiRun.value?.suggestion.result || '待核验'
     },
     {
-      title: role.value === 'contractor' ? '挂载关系完整性' : '关键字段一致性',
+      title: role.value === 'contractor' ? '关联环节完整性' : '关键字段一致性',
       desc: fieldNames
         ? `已提取 ${fieldNames} 等字段，低置信度和需人工确认项保留在右侧证据链中。`
         : '当前节点暂未返回结构化字段，需等待 OCR 或人工补录后继续核验。',
@@ -774,6 +781,46 @@ const showUploadDrawerError = (fallback: string, error?: unknown) => {
   const message = getAicheckErrorMessage(error, fallback)
   uploadDrawerError.value = message
   ElMessage.error(message)
+}
+
+const uploadMimeByExtension: Record<string, string> = {
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  zip: 'application/zip'
+}
+
+const inferUploadFileType = (file: File) => {
+  if (file.type) return file.type
+  const extension = file.name.split('.').pop()?.toLowerCase() || ''
+  return uploadMimeByExtension[extension] || 'application/octet-stream'
+}
+
+const assertRealUploadTarget = (target: DocumentUploadTarget, file: File) => {
+  const url = String(target?.url || '')
+  if (!url) throw new Error(`${file.name} 未返回上传地址`)
+  if (url.startsWith('mock://')) {
+    throw new Error('真实上传地址不可用：后端返回 mock:// 地址，请配置对象存储后重试。')
+  }
+}
+
+const uploadFileToSignedUrl = async (target: DocumentUploadTarget, file: File) => {
+  assertRealUploadTarget(target, file)
+  const response = await fetch(target.url, {
+    method: target.method || 'PUT',
+    headers: target.headers || {},
+    body: file
+  })
+  if (!response.ok) {
+    throw new Error(
+      `${file.name} 上传失败：${response.status} ${response.statusText || '存储服务拒绝写入'}`
+    )
+  }
 }
 
 const showSubmissionDialogError = (fallback: string, error?: unknown) => {
@@ -862,7 +909,7 @@ const loadNodePackage = async (nodeId = activeNodeId.value) => {
         title: '节点资料包加载失败',
         message: getAicheckErrorMessage(
           undefined,
-          '接口返回失败，可能是权限不足、节点状态冲突或 mock 异常。'
+          '接口返回失败，可能是权限不足、节点状态冲突或服务暂不可用。'
         )
       }
       return
@@ -1077,7 +1124,7 @@ const loadProjectBundle = async () => {
         title: '工作台加载失败',
         message: getAicheckErrorMessage(
           undefined,
-          '接口返回失败，可能是当前角色无权访问或 mock 正在模拟异常。'
+          '接口返回失败，可能是当前角色无权访问或服务暂不可用。'
         )
       }
       return
@@ -1121,7 +1168,7 @@ const loadProjects = async () => {
         title: '项目列表加载失败',
         message: getAicheckErrorMessage(
           undefined,
-          '接口返回失败，可能是当前角色无授权项目或 mock 正在模拟权限异常。'
+          '接口返回失败，可能是当前角色无授权项目或服务暂不可用。'
         )
       }
       return
@@ -1176,6 +1223,10 @@ const handleProjectOverviewSelect = () => {
 }
 
 const ensureWritableNode = () => {
+  if (isReadOnly.value) {
+    ElMessage.warning(readonlyIssue.value?.message || '当前项目只读，只能查看、预览或下载。')
+    return false
+  }
   if (!activeProjectId.value || !selectedNode.value) {
     ElMessage.warning('请先选择项目和节点')
     return false
@@ -1270,7 +1321,7 @@ const openLocalArchiveDownloadTask = (item: ArchiveItem) => {
     downloadUrl: item.downloadUrl,
     createdAt: item.updatedAt,
     finishedAt: item.updatedAt,
-    expiresAt: 'mock 签名地址有效期内'
+    expiresAt: '签名地址有效期内'
   }
   activeExportTaskId.value = task.id
   exportTaskError.value = ''
@@ -1286,26 +1337,54 @@ const handleOpenUploadDrawer = () => {
   uploadDrawerVisible.value = true
 }
 
-const handleCreateUploadSession = async (
-  files: Array<{ fileName: string; fileType: string; fileSize: number }>
-) => {
+const handleCreateUploadSession = async (files: File[]) => {
   if (!ensureWritableNode()) return
+  if (!files.length) {
+    ElMessage.warning('请选择至少一个本地文件')
+    return
+  }
   actionLoading.value = true
   uploadDrawerError.value = ''
   try {
-    const res = await createDocumentUploadSessionApi(activeProjectId.value, files, {
+    const uploadFiles = files.map((file) => ({
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: inferUploadFileType(file)
+    }))
+    const res = await createDocumentUploadSessionApi(activeProjectId.value, uploadFiles, {
       etag: currentProject.value?.etag
     })
     if (!res) {
-      showUploadDrawerError('上传会话创建失败，请检查文件类型、大小和当前节点权限。')
+      showUploadDrawerError('上传会话创建失败，请检查文件类型、大小和当前项目权限。')
       return
     }
+    if (res.data.uploadUrls.length !== files.length) {
+      throw new Error('上传会话返回的文件数量与本地选择不一致，请重新选择文件。')
+    }
+    await Promise.all(
+      files.map((file, index) => uploadFileToSignedUrl(res.data.uploadUrls[index], file))
+    )
+    const completeRes = await completeDocumentUploadSessionApi(
+      activeProjectId.value,
+      res.data.uploadSessionId,
+      res.data.uploadUrls.map((target, index) => ({
+        documentVersionId: target.documentVersionId,
+        fileSize: files[index]?.size
+      })),
+      {
+        etag: currentProject.value?.etag,
+        idempotencyKey: `document-upload-complete-${res.data.uploadSessionId}`
+      }
+    )
+    if (!completeRes) {
+      throw new Error('上传完成确认失败，请刷新项目文件库后重试。')
+    }
     uploadDrawerError.value = ''
-    ElMessage.success(`上传会话已创建：${res.data.uploadSessionId}`)
+    ElMessage.success(`已上传 ${files.length} 个文件并写入项目文件库`)
     uploadDrawerVisible.value = false
-    await loadNodePackage(activeNodeId.value)
+    await loadProjectBundle()
   } catch (error) {
-    showUploadDrawerError('上传会话创建失败，请检查文件类型、大小和当前节点权限。', error)
+    showUploadDrawerError('文件上传失败，请检查对象存储、网络连接和当前项目权限。', error)
   } finally {
     actionLoading.value = false
   }
@@ -1398,9 +1477,13 @@ const handleBindDocuments = async (payload: {
       return
     }
     ElMessage.success(
-      payload.nodeIds.length > 1
-        ? `资料已挂载到 ${payload.nodeIds.length} 个节点`
-        : '资料已挂载到当前节点'
+      role.value === 'contractor'
+        ? payload.nodeIds.length > 1
+          ? `文件已关联 ${payload.nodeIds.length} 个审核环节`
+          : '文件已关联当前审核环节'
+        : payload.nodeIds.length > 1
+          ? `资料已挂载到 ${payload.nodeIds.length} 个节点`
+          : '资料已挂载到当前节点'
     )
     bindDialogVisible.value = false
     bindDialogError.value = ''
@@ -2435,7 +2518,7 @@ onMounted(() => {
                 :disabled="actionLoading || isReadOnly"
                 @click="handleOpenBindDialog"
               >
-                选择挂载节点
+                {{ role === 'contractor' ? '关联审核环节' : '选择挂载节点' }}
               </ElButton>
               <ElButton v-if="role === 'owner'" class="btn" @click="handleDownloadArchivePackage">
                 导出状态摘要
@@ -2624,6 +2707,7 @@ onMounted(() => {
             :project="currentProject"
             :node="selectedNode"
             :package-data="nodePackage"
+            :read-only="isReadOnly"
             :metrics="metrics"
             :review-steps="reviewChainSteps"
             :ai-confidence="aiConfidence"
@@ -2633,6 +2717,9 @@ onMounted(() => {
             :ndt-records="ndtRecords"
             :ndt-reports="ndtReports"
             :ndt-feedback="ndtFeedback"
+            @upload="handleOpenUploadDrawer"
+            @bind="handleOpenBindDialog"
+            @rectify="handleOpenRectificationDialog"
           />
 
           <section v-if="role === 'inspection' && activeWorkbenchSection === 'node'" class="card">
@@ -2676,10 +2763,10 @@ onMounted(() => {
                       ? '检测资料联动区'
                       : role === 'owner'
                         ? '只读节点资料联动区'
-                        : '项目文件与挂载联动区'
+                        : '项目文件与审核反馈联动区'
                 }}
               </h2>
-              <div class="sub">保留原有 mock 写回、抽屉和错误恢复能力</div>
+              <div class="sub">集中展示当前节点文件、审核反馈和错误恢复能力</div>
             </div>
             <div class="card-body">
               <NodePackagePanel
@@ -2736,6 +2823,7 @@ onMounted(() => {
             :project="currentProject"
             :node="selectedNode"
             :package-data="nodePackage"
+            :read-only="isReadOnly"
             :metrics="metrics"
             :review-steps="reviewChainSteps"
             :ai-confidence="aiConfidence"
@@ -4083,8 +4171,8 @@ h3 {
   inset: 0;
   pointer-events: none;
   border-radius: inherit;
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 55%);
   content: '';
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 55%);
 }
 
 .inspection-node-status-row strong {

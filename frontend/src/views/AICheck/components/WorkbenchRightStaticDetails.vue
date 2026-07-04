@@ -100,7 +100,7 @@ const contractorFeedback = computed(() => {
     opinion: riskyStep?.desc || '当前节点暂无监检反馈。',
     requirement:
       riskyStep && getPillClass(riskyStep.result) !== 'green'
-        ? '按监检意见补充资料并重新提交挂载关系。'
+        ? '按监检意见补充资料，并按需关联审核环节或反馈问题。'
         : '无需修改文件；如监检要求，可补充最新查询截图。',
     deadline: '2026-06-28 18:00',
     result: riskyStep?.result || '待反馈'
@@ -328,7 +328,7 @@ const getPillClass = (value?: string | number) => {
                 ></tr
               >
               <tr
-                ><th>挂载节点</th><td>{{ linkedNodeText }}</td></tr
+                ><th>关联审核环节</th><td>{{ linkedNodeText }}</td></tr
               >
               <tr
                 ><th>资料项</th><td>{{ firstBinding?.requirementName || '节点资料项' }}</td></tr
@@ -337,10 +337,10 @@ const getPillClass = (value?: string | number) => {
                 ><th>文件用途</th><td>{{ firstBinding?.usage || '原始提交' }}</td></tr
               >
               <tr
-                ><th>挂载状态</th
+                ><th>关联状态</th
                 ><td
-                  ><span :class="['pill', getPillClass(firstBinding?.bindingStatus || '未挂载')]">{{
-                    firstBinding?.bindingStatus || '未挂载'
+                  ><span :class="['pill', getPillClass(firstBinding?.bindingStatus || '未关联')]">{{
+                    firstBinding?.bindingStatus || '未关联'
                   }}</span></td
                 ></tr
               >
@@ -370,7 +370,7 @@ const getPillClass = (value?: string | number) => {
             >
             <div class="time-row"
               ><span class="time-dot"></span
-              ><div><strong>等待提交</strong><br />提交文件及挂载关系后进入重新审查。</div></div
+              ><div><strong>等待提交</strong><br />提交补正文件后进入重新审查。</div></div
             >
           </div>
         </div>

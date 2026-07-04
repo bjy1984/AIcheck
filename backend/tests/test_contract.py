@@ -52,10 +52,57 @@ def assert_error(response, reason: str):
 def test_response_envelope_and_api_prefix_compatibility() -> None:
     data = assert_ok(client.get("/workbench/projects?role=inspection"))
     prefixed = assert_ok(client.get("/api/workbench/projects?role=inspection"))
+    contractor = assert_ok(client.get("/api/workbench/projects?role=contractor"))
 
     assert data[0]["id"] == "P-2026-HDCP-001"
     assert prefixed[0]["currentNodeId"] == 24
     assert prefixed[0]["riskLevel"] == "高"
+    assert contractor[0]["id"] == "P-2026-GDLNG-002"
+    assert contractor[0]["status"] != "已归档"
+
+
+def test_business_role_project_visibility_matches_member_authorization() -> None:
+    role_users = {
+        "inspection": "USER-INSPECTION-001",
+        "contractor": "USER-CONTRACTOR-001",
+        "ndt": "USER-NDT-001",
+        "owner": "USER-OWNER-001",
+    }
+
+    for role, user_id in role_users.items():
+        projects = assert_ok(
+            client.get(
+                f"/api/workbench/projects?role={role}",
+                headers={"X-Role": role, "X-User-Id": user_id},
+            )
+        )
+        project_ids = {project["id"] for project in projects}
+        authorized_members = [
+            member
+            for member in repo.state["project_members"]
+            if member.get("userId") == user_id
+            and member.get("role") == role
+            and member.get("status") == "启用"
+        ]
+        authorized_project_ids = {member["projectId"] for member in authorized_members}
+        node_scopes = {
+            member["projectId"]: {int(node_id) for node_id in member.get("nodeScope") or []}
+            for member in authorized_members
+        }
+
+        assert project_ids == authorized_project_ids
+        for project in projects:
+            assert int(project["currentNodeId"]) in node_scopes[project["id"]]
+
+    assert "P-2026-GDLNG-002" in {
+        project["id"]
+        for project in assert_ok(
+            client.get(
+                "/api/workbench/projects?role=contractor",
+                headers={"X-Role": "contractor", "X-User-Id": "USER-CONTRACTOR-001"},
+            )
+        )
+    }
 
 
 def test_healthz_reports_runtime_flags(monkeypatch) -> None:
@@ -7402,6 +7449,76 @@ def test_upload_session_storage_failure_does_not_create_dirty_records(monkeypatc
 
     after = {collection: len(repo.state[collection]) for collection in tracked_collections}
     assert after == before
+
+
+def test_upload_session_uses_local_direct_upload_when_storage_optional(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REQUIRE_OBJECT_STORAGE", "false")
+    monkeypatch.setattr("libs.db.repository.object_storage.presigned_put_url", lambda *args, **kwargs: None)
+    body = b"%PDF-local-document-upload"
+
+    upload = assert_ok(
+        client.post(
+            "/projects/P-2026-HDCP-001/documents/upload-session",
+            json={
+                "files": [
+                    {
+                        "fileName": "local-direct-upload.pdf",
+                        "fileSize": len(body),
+                        "fileType": "application/pdf",
+                    }
+                ],
+                "requireSignedUrls": True,
+            },
+        )
+    )
+    target = upload["uploadUrls"][0]
+    assert target["url"].startswith("/api/projects/P-2026-HDCP-001/documents/upload-session/")
+    assert "mock://" not in target["url"]
+
+    stored = assert_ok(client.put(target["url"], content=body, headers=target["headers"]))
+    version = repo.find_one("versions", target["documentVersionId"])
+    assert stored["fileSize"] == len(body)
+    assert version["storageBucket"] == "local"
+    assert version["storageKey"].startswith("local://output/document_uploads/")
+    assert (Path(__file__).resolve().parents[2] / version["storageKey"].removeprefix("local://")).read_bytes() == body
+
+    completed = assert_ok(
+        client.post(
+            f"/projects/P-2026-HDCP-001/documents/upload-session/{upload['uploadSessionId']}/complete",
+            json={"completedFiles": [{"documentVersionId": target["documentVersionId"], "fileSize": len(body)}]},
+        )
+    )
+    assert completed["fileCount"] == 1
+
+
+def test_contractor_default_project_upload_uses_local_direct_upload(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REQUIRE_OBJECT_STORAGE", "false")
+    monkeypatch.setattr("libs.db.repository.object_storage.presigned_put_url", lambda *args, **kwargs: None)
+    body = b"contractor-default-project-upload"
+
+    upload = assert_ok(
+        client.post(
+            "/projects/P-2026-GDLNG-002/documents/upload-session",
+            json={
+                "files": [
+                    {
+                        "fileName": "contractor-default-project-auth.pdf",
+                        "fileSize": len(body),
+                        "fileType": "application/pdf",
+                    }
+                ],
+                "requireSignedUrls": True,
+            },
+            headers={"X-Role": "contractor", "X-User-Id": "USER-CONTRACTOR-001"},
+        )
+    )
+    target = upload["uploadUrls"][0]
+    assert target["url"].startswith("/api/projects/P-2026-GDLNG-002/documents/upload-session/")
+    assert target["headers"]["X-Role"] == "contractor"
+    assert target["headers"]["X-User-Id"] == "USER-CONTRACTOR-001"
+
+    stored = assert_ok(client.put(target["url"], content=body, headers=target["headers"]))
+    assert stored["storageBucket"] == "local"
 
 
 def test_worker_uses_ocr_http_client_when_configured(monkeypatch) -> None:

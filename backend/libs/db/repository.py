@@ -349,12 +349,22 @@ class InMemoryRepository:
             payload["fileSize"] = file_size
         return payload
 
-    def signed_put(self, bucket: str, object_name: str, fallback_url: str, *, content_type: str | None = None) -> str:
+    def signed_put(
+        self,
+        bucket: str,
+        object_name: str,
+        fallback_url: str,
+        *,
+        content_type: str | None = None,
+        require_signed: bool = False,
+    ) -> str:
         signed_url = object_storage.presigned_put_url(bucket, object_name, content_type=content_type)
         if signed_url:
             return signed_url
         if object_storage.required:
-            raise ObjectStorageUnavailable("Object storage is required in production but signed PUT could not be created.")
+            raise ObjectStorageUnavailable("对象存储不可用，无法生成真实上传地址。")
+        if require_signed and str(fallback_url or "").startswith("mock://"):
+            raise ObjectStorageUnavailable("对象存储不可用，无法生成真实上传地址。")
         return fallback_url
 
     def document_storage_url(self, document: dict[str, Any], *, fallback_prefix: str) -> str:
@@ -531,8 +541,17 @@ class InMemoryRepository:
         self.state["knowledge_files"].insert(0, knowledge_file)
         self.state["knowledge_tasks"].insert(0, knowledge_task)
 
-    def create_upload_session(self, project_id: str, files: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+    def create_upload_session(
+        self,
+        project_id: str,
+        files: list[dict[str, Any]],
+        *,
+        require_signed_urls: bool = False,
+        local_upload_url_prefix: str | None = None,
+        upload_headers: dict[str, str] | None = None,
+    ) -> tuple[str, list[dict[str, Any]]]:
         session_id = f"UPS-{uuid4().hex[:10].upper()}"
+        upload_token = uuid4().hex
         upload_urls = []
         session_files = []
         pending_records: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]] = []
@@ -543,13 +562,23 @@ class InMemoryRepository:
                 file.get("fileType") or "pdf",
             )
             content_type = file.get("fileType") or "application/octet-stream"
+            fallback_url = f"mock://upload/{session_id}/{doc['id']}"
+            local_upload = False
+            if local_upload_url_prefix and not object_storage.required:
+                fallback_url = f"{local_upload_url_prefix.rstrip('/')}/{session_id}/files/{version['id']}"
+                local_upload = True
             # signed_put wraps object_storage.presigned_put_url and enforces production storage.
             upload_url = self.signed_put(
                 "documents",
                 version["storageKey"],
-                f"mock://upload/{session_id}/{doc['id']}",
+                fallback_url,
                 content_type=content_type,
+                require_signed=require_signed_urls,
             )
+            headers = {"Content-Type": content_type}
+            if local_upload and upload_url == fallback_url:
+                headers.update(upload_headers or {})
+                headers["X-Upload-Session-Token"] = upload_token
             upload_urls.append(
                 {
                     "fileName": doc["fileName"],
@@ -558,7 +587,7 @@ class InMemoryRepository:
                     "url": upload_url,
                     "method": "PUT",
                     "expiresAt": object_storage.expires_at(),
-                    "headers": {"Content-Type": content_type},
+                    "headers": headers,
                 }
             )
             session_files.append(
@@ -568,6 +597,7 @@ class InMemoryRepository:
                     "fileName": doc["fileName"],
                     "storageBucket": "documents",
                     "storageKey": version["storageKey"],
+                    "status": "待上传",
                 }
             )
             pending_records.append((doc, version, knowledge_file, knowledge_task))
@@ -580,6 +610,7 @@ class InMemoryRepository:
                 "projectId": project_id,
                 "status": "待上传",
                 "files": session_files,
+                "uploadToken": upload_token,
                 "createdAt": server_time(),
                 "expiresAt": object_storage.expires_at(),
             },

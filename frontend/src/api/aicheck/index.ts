@@ -56,6 +56,11 @@ export type UploadSessionPayload = {
   }>
 }
 
+export type UploadSessionCompletePayload = MockMutationResult & {
+  queuedTasks: unknown[]
+  fileCount: number
+}
+
 export type SubmissionDraftPayload = {
   draftId: string
   savedAt: string
@@ -234,7 +239,14 @@ export type ProjectMemberMutationPayload = {
   auditLogIds?: string[]
 }
 
-export type AdminOrgUnitType = 'owner' | 'contractor' | 'ndt' | 'inspection' | 'supervision' | 'admin' | 'fde'
+export type AdminOrgUnitType =
+  | 'owner'
+  | 'contractor'
+  | 'ndt'
+  | 'inspection'
+  | 'supervision'
+  | 'admin'
+  | 'fde'
 
 export type AdminOrgUnit = {
   id: string
@@ -2254,7 +2266,15 @@ export const updateAdminProjectApi = (
 export const deleteAdminProjectApi = (
   projectId: string,
   options?: MutationHeaderOptions
-): Promise<IResponse<{ deleted: boolean; archived: boolean; projectId?: string; project?: Project; auditLogId: string }>> => {
+): Promise<
+  IResponse<{
+    deleted: boolean
+    archived: boolean
+    projectId?: string
+    project?: Project
+    auditLogId: string
+  }>
+> => {
   return request.delete({
     url: `/api/projects/${projectId}`,
     headers: mutationHeaders(options)
@@ -2329,7 +2349,20 @@ export const createDocumentUploadSessionApi = (
 ): Promise<IResponse<UploadSessionPayload>> => {
   return request.post({
     url: `/api/projects/${projectId}/documents/upload-session`,
-    data: { files },
+    data: { files, requireSignedUrls: true },
+    headers: mutationHeaders(options)
+  })
+}
+
+export const completeDocumentUploadSessionApi = (
+  projectId: string,
+  sessionId: string,
+  completedFiles: Array<{ documentVersionId: string; fileSize?: number; hash?: string }>,
+  options?: MutationHeaderOptions
+): Promise<IResponse<UploadSessionCompletePayload>> => {
+  return request.post({
+    url: `/api/projects/${projectId}/documents/upload-session/${sessionId}/complete`,
+    data: { completedFiles },
     headers: mutationHeaders(options)
   })
 }
@@ -3395,7 +3428,9 @@ export const listAdminOrgUnitsApi = (params?: {
 export const createAdminOrgUnitApi = (
   payload: AdminOrgUnitSavePayload,
   options?: MutationHeaderOptions
-): Promise<IResponse<{ orgUnit: AdminOrgUnit; auditLogId: string; revision: number; etag: string }>> => {
+): Promise<
+  IResponse<{ orgUnit: AdminOrgUnit; auditLogId: string; revision: number; etag: string }>
+> => {
   return request.post({
     url: '/api/admin/org-units',
     data: payload,
@@ -3407,7 +3442,9 @@ export const updateAdminOrgUnitApi = (
   orgId: string,
   payload: Partial<AdminOrgUnitSavePayload>,
   options?: MutationHeaderOptions
-): Promise<IResponse<{ orgUnit: AdminOrgUnit; auditLogId: string; revision: number; etag: string }>> => {
+): Promise<
+  IResponse<{ orgUnit: AdminOrgUnit; auditLogId: string; revision: number; etag: string }>
+> => {
   return request.put({
     url: `/api/admin/org-units/${orgId}`,
     data: payload,
@@ -3418,7 +3455,15 @@ export const updateAdminOrgUnitApi = (
 export const deleteAdminOrgUnitApi = (
   orgId: string,
   options?: MutationHeaderOptions
-): Promise<IResponse<{ deleted: boolean; orgUnitId: string; auditLogId: string; revision: number; etag: string }>> => {
+): Promise<
+  IResponse<{
+    deleted: boolean
+    orgUnitId: string
+    auditLogId: string
+    revision: number
+    etag: string
+  }>
+> => {
   return request.delete({
     url: `/api/admin/org-units/${orgId}`,
     headers: mutationHeaders(options)
@@ -3462,7 +3507,16 @@ export const updateAdminUserApi = (
 export const deleteAdminUserApi = (
   userId: string,
   options?: MutationHeaderOptions
-): Promise<IResponse<{ deleted: boolean; userId: string; user?: AdminUser; auditLogId: string; revision: number; etag: string }>> => {
+): Promise<
+  IResponse<{
+    deleted: boolean
+    userId: string
+    user?: AdminUser
+    auditLogId: string
+    revision: number
+    etag: string
+  }>
+> => {
   return request.delete({
     url: `/api/admin/users/${userId}`,
     headers: mutationHeaders(options)

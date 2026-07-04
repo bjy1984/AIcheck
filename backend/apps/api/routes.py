@@ -142,6 +142,7 @@ KNOWLEDGE_TASK_STATUS_ORDER = {
     "成功": 4,
 }
 KNOWLEDGE_UPLOAD_ROOT = WORKSPACE_ROOT / "output" / "knowledge_uploads"
+DOCUMENT_UPLOAD_ROOT = WORKSPACE_ROOT / "output" / "document_uploads"
 
 
 def refresh_state_from_postgres_for_live_read() -> None:
@@ -1573,10 +1574,12 @@ def ndt_submission_node_ids(project_id: str, body: dict[str, Any]) -> list[int]:
 
 def authorized_node_scope(request: Request, project_id: str) -> set[int] | None:
     claims = getattr(request.state, "auth", None)
-    if not claims or claims.get("role") == "admin":
+    role = claims.get("role") if claims else request.headers.get("X-Role")
+    if not role or role == "admin":
         return None
     user_id = request_user_id(request)
-    role = claims.get("role")
+    if not user_id:
+        return None
     member = next(
         (
             item
@@ -2604,6 +2607,22 @@ def list_workbench_projects(
     if role_error:
         return role_error
     items = [item for item in repo.state["projects"] if project_visible_for_request(request, item["id"])]
+    contractor_priority = {
+        "退回补正中": 0,
+        "资料提交中": 1,
+        "监检审查中": 2,
+        "AI 预审中": 3,
+        "草稿/立项中": 4,
+        "报告生成/复核中": 5,
+        "已归档": 99,
+    }
+
+    def workbench_project_priority(project: dict[str, Any]) -> int:
+        if resolved_role == "contractor":
+            return contractor_priority.get(project.get("status"), 10)
+        return 99 if project.get("status") == "已归档" else 0
+
+    items = sorted(items, key=workbench_project_priority)
     return ok([versioned_project(repo.project_for_role(item, resolved_role)) for item in items], request)
 
 
@@ -3244,7 +3263,19 @@ def create_upload_session(
         validation_error = validate_upload_files(request, files)
         if validation_error:
             return validation_error
-        session_id, upload_urls = repo.create_upload_session(project_id, files)
+        require_signed_urls = parse_bool(body.get("requireSignedUrls"), default=False)
+        upload_headers = {
+            key: value
+            for key in ("Authorization", "X-Role", "X-User-Id")
+            if (value := request.headers.get(key))
+        }
+        session_id, upload_urls = repo.create_upload_session(
+            project_id,
+            files,
+            require_signed_urls=require_signed_urls,
+            local_upload_url_prefix=f"/api/projects/{project_id}/documents/upload-session",
+            upload_headers=upload_headers,
+        )
         repo.add_audit("创建上传会话", "UploadSession", session_id)
         return ok({"uploadSessionId": session_id, "expiresAt": upload_urls[0]["expiresAt"], "uploadUrls": upload_urls}, request)
 
@@ -3253,6 +3284,84 @@ def create_upload_session(
         idempotency_key,
         produce,
         fingerprint_source=body,
+    )
+
+
+@router.put("/projects/{project_id}/documents/upload-session/{session_id}/files/{document_version_id}")
+async def upload_session_file(
+    request: Request,
+    project_id: str,
+    session_id: str,
+    document_version_id: str,
+    x_role: str | None = Header(default=None, alias="X-Role"),
+):
+    session = repo.find_one("upload_sessions", session_id)
+    if not session or session.get("projectId") != project_id:
+        return fail(errors.NOT_FOUND, request, message="未找到上传会话，请重新选择文件。")
+    upload_token = request.headers.get("X-Upload-Session-Token")
+    if not upload_token or upload_token != session.get("uploadToken"):
+        return fail(errors.FORBIDDEN, request, message="上传会话令牌无效，请重新选择文件。")
+    file_entry = next(
+        (
+            item
+            for item in session.get("files") or []
+            if str(item.get("documentVersionId") or "") == document_version_id
+        ),
+        None,
+    )
+    if not file_entry:
+        return fail(errors.NOT_FOUND, request, message="上传会话中未找到该文件。")
+    guard = mutation_guard(request, project_id, x_role=x_role)
+    if guard:
+        return guard
+    data = await request.body()
+    if not data:
+        return fail(errors.VALIDATION_ERROR, request, message="上传文件不能为空。")
+    if len(data) > MAX_UPLOAD_BYTES:
+        return fail(errors.FILE_TOO_LARGE, request, message=f"文件超过 {MAX_UPLOAD_BYTES // 1024 // 1024}MB 上传限制。")
+    file_name = safe_upload_file_name(str(file_entry.get("fileName") or f"{document_version_id}.bin"))
+    content_type = str(request.headers.get("content-type") or "application/octet-stream")
+    target_dir = DOCUMENT_UPLOAD_ROOT / project_id / session_id / document_version_id
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_path = target_dir / file_name
+    target_path.write_bytes(data)
+    storage_key = f"local://{target_path.relative_to(WORKSPACE_ROOT)}"
+    version = repo.find_one("versions", document_version_id)
+    if version:
+        version.update(
+            {
+                "storageBucket": "local",
+                "storageKey": storage_key,
+                "fileSize": len(data),
+                "hash": f"sha256-{hashlib.sha256(data).hexdigest()}",
+                "uploadTime": server_time(),
+            }
+        )
+    document = repo.find_one("documents", str(file_entry.get("documentId") or ""))
+    if document:
+        document["fileStatus"] = "已上传"
+        document["currentOcrStatus"] = "排队中"
+        document["updatedAt"] = server_time()
+    file_entry.update(
+        {
+            "status": "已上传",
+            "storageBucket": "local",
+            "storageKey": storage_key,
+            "fileSize": len(data),
+            "contentType": content_type,
+            "uploadedAt": server_time(),
+        }
+    )
+    session["updatedAt"] = server_time()
+    return ok(
+        {
+            "documentId": file_entry.get("documentId"),
+            "documentVersionId": document_version_id,
+            "storageBucket": "local",
+            "storageKey": storage_key,
+            "fileSize": len(data),
+        },
+        request,
     )
 
 

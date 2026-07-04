@@ -1925,6 +1925,18 @@ PROJECT_MEMBERS = [
         "status": "启用",
         "updatedAt": "2026-06-26 09:30:00",
     },
+    {
+        "id": "PM-CONTRACTOR-GDLNG-002",
+        "projectId": "P-2026-GDLNG-002",
+        "userId": "USER-CONTRACTOR-001",
+        "name": "李工",
+        "orgName": "粤海安装工程有限公司",
+        "role": "contractor",
+        "nodeScope": [16, 24, 25],
+        "actions": ROLE_ACTIONS["contractor"],
+        "status": "启用",
+        "updatedAt": "2026-06-26 11:10:00",
+    },
 ]
 
 ADMIN_CONFIG = {

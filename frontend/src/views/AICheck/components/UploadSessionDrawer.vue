@@ -1,24 +1,6 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
-import {
-  ElAlert,
-  ElButton,
-  ElDrawer,
-  ElInput,
-  ElInputNumber,
-  ElMessage,
-  ElOption,
-  ElSelect,
-  ElTable,
-  ElTableColumn
-} from 'element-plus'
-
-type UploadDraft = {
-  id: number
-  fileName: string
-  fileType: string
-  fileSizeKb: number
-}
+import { computed, ref, watch } from 'vue'
+import { ElAlert, ElButton, ElDrawer, ElMessage, ElTable, ElTableColumn } from 'element-plus'
 
 const props = defineProps<{
   modelValue: boolean
@@ -29,7 +11,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
-  submit: [files: Array<{ fileName: string; fileType: string; fileSize: number }>]
+  submit: [files: File[]]
 }>()
 
 const visible = computed({
@@ -37,49 +19,65 @@ const visible = computed({
   set: (value) => emit('update:modelValue', value)
 })
 
-const drafts = reactive<UploadDraft[]>([])
+const fileInputRef = ref<HTMLInputElement>()
+const selectedFiles = ref<File[]>([])
 
-const resetDrafts = () => {
-  drafts.splice(0, drafts.length, {
-    id: Date.now(),
-    fileName: `${props.nodeName || '节点资料'}-补充资料.pdf`,
-    fileType: 'pdf',
-    fileSizeKb: 240
-  })
+const fileRows = computed(() =>
+  selectedFiles.value.map((file, index) => ({
+    id: `${file.name}-${file.size}-${file.lastModified}-${index}`,
+    file,
+    fileName: file.name,
+    fileType: file.type || file.name.split('.').pop()?.toLowerCase() || 'unknown',
+    fileSizeKb: Math.max(1, Math.round(file.size / 1024))
+  }))
+)
+
+const resetFiles = () => {
+  selectedFiles.value = []
+  if (fileInputRef.value) fileInputRef.value.value = ''
 }
 
-const addDraft = () => {
-  drafts.push({
-    id: Date.now() + drafts.length,
-    fileName: '',
-    fileType: 'pdf',
-    fileSizeKb: 240
-  })
+const appendFiles = (fileList: FileList | File[]) => {
+  const incoming = Array.from(fileList)
+  if (!incoming.length) return
+  const existingKeys = new Set(
+    selectedFiles.value.map((file) => `${file.name}:${file.size}:${file.lastModified}`)
+  )
+  selectedFiles.value = [
+    ...selectedFiles.value,
+    ...incoming.filter((file) => {
+      const key = `${file.name}:${file.size}:${file.lastModified}`
+      if (existingKeys.has(key)) return false
+      existingKeys.add(key)
+      return true
+    })
+  ]
 }
 
-const removeDraft = (id: number) => {
-  if (drafts.length === 1) {
-    ElMessage.warning('至少保留一个待上传文件')
-    return
-  }
-  const index = drafts.findIndex((item) => item.id === id)
-  if (index >= 0) drafts.splice(index, 1)
+const handleFileChange = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  if (input.files) appendFiles(input.files)
+}
+
+const handleDrop = (event: DragEvent) => {
+  event.preventDefault()
+  if (event.dataTransfer?.files) appendFiles(event.dataTransfer.files)
+}
+
+const openFilePicker = () => {
+  fileInputRef.value?.click()
+}
+
+const removeFile = (id: string) => {
+  selectedFiles.value = fileRows.value.filter((row) => row.id !== id).map((row) => row.file)
 }
 
 const handleSubmit = () => {
-  const invalid = drafts.find((item) => !item.fileName.trim() || !item.fileType)
-  if (invalid) {
-    ElMessage.warning('请补齐文件名称和类型')
+  if (!selectedFiles.value.length) {
+    ElMessage.warning('请选择至少一个本地文件')
     return
   }
-  emit(
-    'submit',
-    drafts.map((item) => ({
-      fileName: item.fileName.trim(),
-      fileType: item.fileType,
-      fileSize: item.fileSizeKb * 1024
-    }))
-  )
+  emit('submit', selectedFiles.value)
 }
 
 const handleRetry = () => {
@@ -89,72 +87,67 @@ const handleRetry = () => {
 watch(
   () => props.modelValue,
   (open) => {
-    if (open) resetDrafts()
+    if (open) resetFiles()
   }
 )
 </script>
 
 <template>
-  <ElDrawer v-model="visible" title="创建上传会话" size="min(560px, 94vw)" append-to-body>
+  <ElDrawer v-model="visible" title="上传项目文件" size="min(560px, 94vw)" append-to-body>
     <div class="drawer-body">
-      <div class="helper-text">
-        当前为 mock 上传，会直接把文件写入项目资料池，并生成可挂载版本。
-      </div>
+      <div class="helper-text">选择本地文件后，系统将创建真实上传会话并写入项目资料池。</div>
 
       <ElAlert
         v-if="operationError"
         class="upload-drawer-error"
         type="error"
-        title="上传会话创建失败"
+        title="上传失败"
         :closable="false"
         show-icon
       >
         <div class="drawer-error-content">
           <span>{{ operationError }}</span>
-          <ElButton link type="primary" :loading="loading" @click="handleRetry">重试创建</ElButton>
+          <ElButton link type="primary" :loading="loading" @click="handleRetry">重试上传</ElButton>
         </div>
       </ElAlert>
 
+      <input
+        ref="fileInputRef"
+        class="native-file-input"
+        type="file"
+        multiple
+        accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.zip"
+        @change="handleFileChange"
+      />
+
+      <button
+        type="button"
+        class="file-drop-zone"
+        @click="openFilePicker"
+        @dragover.prevent
+        @drop="handleDrop"
+      >
+        <strong>选择或拖拽文件到此处</strong>
+        <span>支持 pdf、doc、docx、xls、xlsx、jpg、png、zip</span>
+      </button>
+
       <div class="upload-table-shell">
-        <ElTable class="upload-table" :data="drafts" border>
-          <ElTableColumn label="文件名称" min-width="220">
-            <template #default="{ row }">
-              <ElInput v-model="row.fileName" aria-label="文件名称" />
-            </template>
-          </ElTableColumn>
-          <ElTableColumn label="类型" width="110">
-            <template #default="{ row }">
-              <ElSelect v-model="row.fileType" aria-label="文件类型">
-                <ElOption label="PDF" value="pdf" />
-                <ElOption label="Excel" value="xlsx" />
-                <ElOption label="Word" value="docx" />
-                <ElOption label="图片" value="jpg" />
-              </ElSelect>
-            </template>
-          </ElTableColumn>
-          <ElTableColumn label="大小 KB" width="130">
-            <template #default="{ row }">
-              <ElInputNumber
-                v-model="row.fileSizeKb"
-                aria-label="文件大小 KB"
-                :min="1"
-                :max="51200"
-                controls-position="right"
-              />
-            </template>
-          </ElTableColumn>
+        <ElTable class="upload-table" :data="fileRows" border>
+          <ElTableColumn prop="fileName" label="文件名称" min-width="260" show-overflow-tooltip />
+          <ElTableColumn prop="fileType" label="类型" width="150" show-overflow-tooltip />
+          <ElTableColumn prop="fileSizeKb" label="大小 KB" width="120" />
           <ElTableColumn label="操作" width="80">
             <template #default="{ row }">
-              <ElButton link type="danger" @click="removeDraft(row.id)">移除</ElButton>
+              <ElButton link type="danger" @click="removeFile(row.id)">移除</ElButton>
             </template>
           </ElTableColumn>
         </ElTable>
       </div>
 
       <div class="drawer-actions">
-        <ElButton @click="addDraft">添加文件</ElButton>
+        <ElButton @click="openFilePicker">添加文件</ElButton>
         <ElButton @click="visible = false">取消</ElButton>
-        <ElButton type="primary" :loading="loading" @click="handleSubmit">创建并入库</ElButton>
+        <ElButton type="primary" :loading="loading" @click="handleSubmit">上传并入库</ElButton>
       </div>
     </div>
   </ElDrawer>
@@ -186,6 +179,53 @@ watch(
   align-items: flex-start;
   justify-content: space-between;
   line-height: 1.6;
+}
+
+.native-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+.file-drop-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  min-height: 172px;
+  padding: 24px;
+  color: #344054;
+  cursor: pointer;
+  background: #f8fbff;
+  border: 1px dashed #9ec5fe;
+  border-radius: 8px;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.file-drop-zone:hover,
+.file-drop-zone:focus-visible {
+  background: #eef6ff;
+  border-color: #2f6fed;
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(47 111 237 / 12%);
+}
+
+.file-drop-zone strong {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.file-drop-zone span {
+  color: #667085;
+  text-align: center;
 }
 
 .upload-table-shell {
