@@ -7861,6 +7861,43 @@ def test_litellm_failure_maps_to_ai_run_failed(monkeypatch) -> None:
     assert "sk-secret-litellm" not in stored["errorMessage"]
 
 
+def test_ai_recheck_downgrades_unsupported_litellm_claims(monkeypatch) -> None:
+    from apps.worker import tasks
+
+    class FakeLiteLLM:
+        def chat_sync(self, *args, **kwargs):
+            return {
+                "id": "chatcmpl-unsupported-claim",
+                "choices": [
+                    {
+                        "message": {
+                            "content": "焊工王建国证书编号、有效期和持证项目与焊接工艺要求匹配，建议通过。"
+                        }
+                    }
+                ],
+                "usage": {"total_tokens": 80},
+            }
+
+        @staticmethod
+        def first_message_text(response):
+            return response["choices"][0]["message"]["content"]
+
+    monkeypatch.setattr(tasks, "LiteLLMClient", FakeLiteLLM)
+
+    run = assert_ok(client.post("/projects/P-2026-HDCP-001/inspection/nodes/24/ai-recheck"))
+    result = tasks.ai_recheck.run("P-2026-HDCP-001", 24, run["runId"])
+    stored = repo.find_one("ai_runs", run["runId"])
+    draft = stored["findingDrafts"][0]
+
+    assert result["status"] == "完成"
+    assert draft["groundingStatus"] == "insufficient_evidence"
+    assert draft["unsupportedClaims"]
+    assert "证据不足" in draft["title"]
+    assert "王建国" not in draft["description"]
+    assert stored["suggestion"]["confidence"] <= 0.5
+    assert stored["llmMetadata"]["groundingStatus"] == "insufficient_evidence"
+
+
 def test_embed_and_compare_failures_do_not_leak_provider_details(monkeypatch) -> None:
     from apps.worker import tasks
 

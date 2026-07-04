@@ -12,6 +12,7 @@ from libs.db.repository import repo
 from libs.integrations.errors import IntegrationServiceError
 from libs.integrations.litellm_client import LiteLLMClient, production_mode_enabled
 from libs.knowledge_retrieval import retrieve_knowledge_clauses
+from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block
 
 REVIEW_GRAPH_STEPS: list[dict[str, Any]] = [
     {"key": "load_context", "label": "加载项目上下文", "taskQueue": "review.graph"},
@@ -411,12 +412,37 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         return {"projectId": review_run.get("projectId"), "nodeId": review_run.get("nodeId"), "nodeName": (node or {}).get("name")}
     if node_key == "load_ocr_result":
         version_ids = set(review_run.get("inputDocumentVersionIds") or [])
-        fields = [item for item in repo.state.get("extracted_fields", []) if item.get("documentVersionId") in version_ids]
-        evidence_links = repo.clone(repo.state.get("evidence_links", [])[:5])
+        grounding_input = build_grounded_review_input(repo.state, version_ids)
+        fields = grounding_input.get("fields") or []
+        evidence_links = grounding_input.get("evidenceLinks") or []
+        context["groundingInput"] = grounding_input
         context["fields"] = fields
+        context["tables"] = grounding_input.get("tables") or []
+        context["seals"] = grounding_input.get("seals") or []
+        context["fragments"] = grounding_input.get("fragments") or []
         context["evidenceLinks"] = evidence_links
-        append_tool_call(review_run, node_key, "get_document_ocr_result", {"fieldCount": len(fields), "evidenceLinks": len(evidence_links)})
-        return {"fieldCount": len(fields), "evidenceLinkCount": len(evidence_links)}
+        summary = grounding_input.get("summary") or {}
+        append_tool_call(
+            review_run,
+            node_key,
+            "get_document_ocr_result",
+            {
+                "fieldCount": summary.get("fieldCount", len(fields)),
+                "tableCount": summary.get("tableCount", 0),
+                "sealCount": summary.get("sealCount", 0),
+                "fragmentCount": summary.get("fragmentCount", 0),
+                "evidenceLinks": summary.get("evidenceLinkCount", len(evidence_links)),
+                "groundingStatus": grounding_input.get("groundingStatus"),
+            },
+        )
+        return {
+            "fieldCount": summary.get("fieldCount", len(fields)),
+            "tableCount": summary.get("tableCount", 0),
+            "sealCount": summary.get("sealCount", 0),
+            "fragmentCount": summary.get("fragmentCount", 0),
+            "evidenceLinkCount": summary.get("evidenceLinkCount", len(evidence_links)),
+            "groundingStatus": grounding_input.get("groundingStatus"),
+        }
     if node_key == "run_rule_engine":
         pack = load_business_pack(str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID))
         rule = (
@@ -566,6 +592,12 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
     pack = load_business_pack(str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID))
     node = context.get("node") or {}
     fields = context.get("fields") or []
+    grounding_input = context.get("groundingInput") or build_grounded_review_input(
+        repo.state,
+        set(review_run.get("inputDocumentVersionIds") or []),
+    )
+    context["groundingInput"] = grounding_input
+    grounding_block = grounding_prompt_block(grounding_input)
     rule_result = next(iter(context.get("ruleResults") or []), {})
     current_rule = context.get("currentRule") or rule_result
     prompt_template = select_prompt_template(review_run)
@@ -582,10 +614,14 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
             "Every finding must require human confirmation.",
             "Do not approve, reject, issue correction, close correction, archive, or change business status.",
             "Use evidenceRefs, ruleRefs, and kbRefs from the supplied IDs only.",
+            *grounding_block["requirements"],
         ],
+        "strictGroundingPolicy": grounding_block["strictGroundingPolicy"],
         "projectId": review_run.get("projectId"),
         "nodeId": review_run.get("nodeId"),
         "fieldCount": len(fields),
+        "groundingStatus": grounding_input.get("groundingStatus"),
+        "groundedOcrEvidence": grounding_block["groundedOcrEvidence"],
         "ruleResults": context.get("ruleResults") or [],
         "retrievalTraceIds": [item.get("retrievalTraceId") for item in context.get("retrievalTraces") or []],
         "evidenceLinkIds": [item.get("id") for item in context.get("evidenceLinks") or []],
@@ -598,8 +634,13 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
                     "severity": "low|medium|high",
                     "title": "string",
                     "description": "string",
+                    "evidenceRefs": [{"evidenceLinkId": "string", "documentVersionId": "string", "pageNo": "number", "bbox": [0, 0, 0, 0]}],
+                    "ruleRefs": [{"ruleCode": "string", "ruleSetVersion": "string"}],
+                    "kbRefs": [{"retrievalTraceId": "string", "clauseIds": ["string"]}],
                     "confidence": "0..1",
                     "suggestedAction": "human_confirm|request_correction",
+                    "groundingStatus": "grounded|insufficient_evidence",
+                    "unsupportedClaims": [],
                 }
             ]
         },
@@ -629,6 +670,8 @@ def build_review_prompt_shape(review_run: dict[str, Any], context: dict[str, Any
     fields = context.get("fields") or []
     rule_result = next(iter(context.get("ruleResults") or []), {})
     parts = build_review_prompt_parts(review_run, context)
+    grounding_input = context.get("groundingInput") or {}
+    grounding_summary = grounding_input.get("summary") or {}
     messages = parts["messages"]
     prompt_template = parts.get("promptTemplate") or {}
     prompt = parts.get("prompt") or {}
@@ -646,6 +689,10 @@ def build_review_prompt_shape(review_run: dict[str, Any], context: dict[str, Any
                 "projectId": project.get("id") or review_run.get("projectId"),
                 "nodeId": node.get("id") or review_run.get("nodeId"),
                 "fieldCount": len(fields),
+                "tableCount": grounding_summary.get("tableCount", 0),
+                "sealCount": grounding_summary.get("sealCount", 0),
+                "fragmentCount": grounding_summary.get("fragmentCount", 0),
+                "groundingStatus": grounding_input.get("groundingStatus"),
                 "ruleCode": rule_result.get("ruleCode"),
                 "kbVersion": review_run.get("kbVersion"),
             }
@@ -677,7 +724,8 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
             "resultText": "",
         }
         review_run["llmMetadata"] = repo.clone(metadata)
-        return [build_finding_draft(review_run, context)], metadata
+        drafts = apply_grounding_guardrails([build_finding_draft(review_run, context)], context.get("groundingInput") or {})
+        return drafts, metadata
     messages = build_review_messages(review_run, context)
     try:
         response = LiteLLMClient().chat_sync(
@@ -742,17 +790,18 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
 
 def normalize_llm_findings(review_run: dict[str, Any], context: dict[str, Any], content: str) -> list[dict[str, Any]]:
     base = build_finding_draft(review_run, context)
+    grounding_input = context.get("groundingInput") or {}
     if not content.strip():
-        return [base]
+        return apply_grounding_guardrails([base], grounding_input)
     try:
         parsed = json.loads(content)
     except ValueError:
         base["description"] = content[:800]
         base["llmResponseFormat"] = "free_text_wrapped"
-        return [base]
+        return apply_grounding_guardrails([base], grounding_input)
     raw_findings = parsed.get("findings") if isinstance(parsed, dict) else None
     if not isinstance(raw_findings, list) or not raw_findings:
-        return [base]
+        return apply_grounding_guardrails([base], grounding_input)
     drafts = []
     for item in raw_findings[:10]:
         if not isinstance(item, dict):
@@ -765,10 +814,12 @@ def normalize_llm_findings(review_run: dict[str, Any], context: dict[str, Any], 
         draft["description"] = str(item.get("description") or base["description"])[:1200]
         draft["confidence"] = bounded_confidence(item.get("confidence"), default=base["confidence"])
         draft["suggestedAction"] = str(item.get("suggestedAction") or item.get("suggested_action") or "human_confirm")
+        draft["groundingStatus"] = str(item.get("groundingStatus") or item.get("grounding_status") or base.get("groundingStatus") or "")
+        draft["unsupportedClaims"] = item.get("unsupportedClaims") if isinstance(item.get("unsupportedClaims"), list) else []
         draft["requiresHumanConfirmation"] = True
         draft["llmGenerated"] = True
         drafts.append(draft)
-    return drafts or [base]
+    return apply_grounding_guardrails(drafts or [base], grounding_input)
 
 
 def bounded_confidence(value: Any, *, default: float) -> float:
@@ -792,6 +843,8 @@ REVIEW_FINDING_REQUIRED_FIELDS = {
     "confidence",
     "suggestedAction",
     "requiresHumanConfirmation",
+    "groundingStatus",
+    "unsupportedClaims",
 }
 REVIEW_FINDING_SEVERITIES = {"low", "medium", "high", "critical"}
 REVIEW_FINDING_ACTIONS = {"human_confirm", "request_correction"}
@@ -847,6 +900,11 @@ def validate_review_schema(drafts: list[dict[str, Any]]) -> dict[str, Any]:
             failures.append({"code": "FINDING_KB_REFS_NOT_LIST", "index": index})
         if not isinstance(draft.get("evidenceRefs"), list):
             failures.append({"code": "FINDING_EVIDENCE_REFS_NOT_LIST", "index": index})
+        grounding_status = str(draft.get("groundingStatus") or "")
+        if grounding_status not in {"grounded", "insufficient_evidence"}:
+            failures.append({"code": "FINDING_SCHEMA_BAD_GROUNDING_STATUS", "index": index, "groundingStatus": grounding_status})
+        if not isinstance(draft.get("unsupportedClaims"), list):
+            failures.append({"code": "FINDING_UNSUPPORTED_CLAIMS_NOT_LIST", "index": index})
     return validation_payload(
         passed=not failures,
         checked=len(drafts),
@@ -1000,6 +1058,13 @@ def review_quality_gate(drafts: list[dict[str, Any]], validation_results: dict[s
 def build_finding_draft(review_run: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     evidence = context.get("evidenceLinks") or []
     rule_result = next(iter(context.get("ruleResults") or []), {})
+    grounding_input = context.get("groundingInput") or {}
+    grounding_status = str(grounding_input.get("groundingStatus") or "insufficient_evidence")
+    description = "已基于 OCR 字段、规则检查和知识检索生成审查草稿，需监检员人工确认。"
+    confidence = 0.82
+    if grounding_status != "grounded":
+        description = "当前 OCR 证据不足以支撑自动审查结论，需人工核对原件、字段、表格、印章和证据链。"
+        confidence = 0.5
     return {
         "id": f"FND-DRAFT-{uuid4().hex[:8].upper()}",
         "reviewRunId": review_run["reviewRunId"],
@@ -1011,7 +1076,7 @@ def build_finding_draft(review_run: dict[str, Any], context: dict[str, Any]) -> 
         "findingType": "ai_review_suggestion",
         "severity": rule_result.get("severity") or "medium",
         "title": "AI 证据化审查草稿",
-        "description": "已基于 OCR 字段、规则检查和知识检索生成审查草稿，需监检员人工确认。",
+        "description": description,
         "evidenceRefs": [
             {
                 "evidenceLinkId": item.get("id"),
@@ -1048,8 +1113,10 @@ def build_finding_draft(review_run: dict[str, Any], context: dict[str, Any]) -> 
             }
             for trace in context.get("retrievalTraces") or []
         ],
-        "confidence": 0.82,
+        "confidence": confidence,
         "suggestedAction": "human_confirm",
+        "groundingStatus": grounding_status,
+        "unsupportedClaims": [],
         "requiresHumanConfirmation": True,
         "status": "pending_human_review",
         "createdAt": server_time(),

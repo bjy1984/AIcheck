@@ -263,6 +263,46 @@ def test_review_run_can_call_litellm_and_normalize_structured_findings(monkeypat
     assert tool_calls and tool_calls[0]["allowed"] is True
 
 
+def test_review_run_downgrades_unsupported_structured_litellm_claims(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "inline")
+    monkeypatch.setenv("AICHECK_REVIEW_LLM_EXECUTION", "litellm")
+
+    def fake_chat_sync(self, messages, model="default-chat", **kwargs):
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            '{"findings":[{"findingType":"ai_review_suggestion","severity":"medium",'
+                            '"title":"资格证匹配","description":"焊工王建国证书编号、有效期和持证项目与焊接工艺要求匹配。",'
+                            '"confidence":0.94,"suggestedAction":"human_confirm"}]}'
+                        )
+                    }
+                }
+            ],
+            "usage": {"total_tokens": 118},
+        }
+
+    monkeypatch.setattr("libs.review_orchestrator.execution.LiteLLMClient.chat_sync", fake_chat_sync)
+
+    ai_run = assert_ok(
+        client.post(
+            "/api/projects/P-2026-HDCP-001/inspection/nodes/24/ai-recheck",
+            headers={"X-Role": "inspection", "Idempotency-Key": "review-run-grounding-001"},
+        )
+    )
+    review_run_id = ai_run["dispatch"]["reviewRunId"]
+    run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId")
+    draft = run["findingDrafts"][0]
+
+    assert run["status"] == "waiting_human_review"
+    assert draft["groundingStatus"] == "insufficient_evidence"
+    assert draft["unsupportedClaims"]
+    assert "证据不足" in draft["title"]
+    assert "王建国" not in draft["description"]
+    assert draft["confidence"] <= 0.5
+
+
 def test_fde_review_run_visualization_replay_and_shadow(monkeypatch) -> None:
     monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "inline")
     ai_run = assert_ok(

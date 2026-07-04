@@ -584,7 +584,7 @@ AI_RUNS = [
             {
                 "id": "STEP-24-001",
                 "title": "证书字段核验",
-                "inputSummary": "证书编号、姓名、有效期、持证项目",
+                "inputSummary": "证书编号；姓名、有效期、持证项目未形成 OCR 证据",
                 "action": "OCR 字段与规则库比对",
                 "conclusion": "待人工确认",
                 "evidenceLinkIds": ["EV-24-001"],
@@ -593,11 +593,11 @@ AI_RUNS = [
         "suggestion": {
             "id": "AIS-24-20260625-01",
             "result": "需人工确认",
-            "opinionDraft": "焊工王建国证书编号、有效期和持证项目与焊接工艺要求匹配，建议人工确认外部查询截图来源后通过。",
-            "risks": ["外部查询截图来源需确认"],
-            "rectificationSuggestion": "补充资格网站查询截图来源说明。",
-            "confidence": 0.88,
-            "manualConfirmItems": ["资格网站查询截图来源"],
+            "opinionDraft": "仅识别到证书编号 TS6J-2024-03158；未识别到姓名、有效期、持证项目等支撑字段，不能判断证书与焊接作业要求是否匹配，需人工核对原件和外部查询截图。",
+            "risks": ["姓名、有效期、持证项目缺少 OCR 证据", "外部查询截图来源需确认"],
+            "rectificationSuggestion": "补充或重新识别姓名、有效期、持证项目，并补充资格网站查询截图来源说明。",
+            "confidence": 0.5,
+            "manualConfirmItems": ["姓名", "有效期", "持证项目", "资格网站查询截图来源"],
         },
         "evidenceLinks": EVIDENCE_LINKS[:2],
     }
@@ -626,7 +626,9 @@ for run in AI_RUNS:
             "\"node\":{\"id\":24,\"name\":\"焊工资格证及持证合格项目\"},"
             "\"rule\":{\"id\":\"RULE-ENG-INSP-R12\",\"inspectionItem\":\"焊工资格证及持证合格项目 (B类)\"},"
             "\"ocrFields\":[{\"id\":\"FIELD-24-001\",\"fieldName\":\"证书编号\",\"fieldValue\":\"TS6J-2024-03158\"}]}\n\n"
-            "{\"task\":\"Generate ReviewFindingDraftList JSON only.\",\"evidenceLinkIds\":[\"EV-24-001\",\"EV-24-002\"]}"
+            "{\"task\":\"Generate ReviewFindingDraftList JSON only.\",\"groundingStatus\":\"insufficient_evidence\","
+            "\"requirements\":[\"Do not infer names, dates, validity or project coverage that are not present in OCR evidence.\"],"
+            "\"evidenceLinkIds\":[\"EV-24-001\",\"EV-24-002\"]}"
         ),
         "plannerPrompt": "Use the fixed AIcheck review graph plan and keep final business decisions under human confirmation.",
         "criticPrompt": "Check evidence, rule, and kb references before returning review drafts.",
@@ -642,7 +644,10 @@ for run in AI_RUNS:
         "promptHash": "sha256:prompt-demo-node24",
         "responseHash": "sha256:llm-output-demo",
         "usage": {"prompt_tokens": 1620, "completion_tokens": 210, "total_tokens": 1830},
-        "reasoningProcess": "公开推理摘要：读取焊工资格证字段，命中证书编号和标准条款，输出需人工确认外部查询截图来源。",
+        "groundingStatus": "insufficient_evidence",
+        "unsupportedClaims": [],
+        "groundingInputSummary": {"fieldCount": 1, "evidenceLinkCount": 2, "missingBusinessFacts": ["姓名", "有效期", "持证项目"]},
+        "reasoningProcess": "公开推理摘要：仅读取到证书编号字段；姓名、有效期、持证项目未形成 OCR 证据，因此只能输出待人工确认。",
         "resultText": run["suggestion"]["opinionDraft"],
     }
     run["reasoningProcess"] = run["llmMetadata"]["reasoningProcess"]
@@ -767,8 +772,8 @@ AI_TRACE_STEPS = [
         "conversationId": "chatcmpl-aicheck-demo-24-001",
         "promptHash": "sha256:prompt-demo-node24",
         "responseHash": "sha256:llm-output-demo",
-        "reasoningProcess": "公开推理摘要：读取焊工资格证字段，命中证书编号和标准条款，输出需人工确认外部查询截图来源。",
-        "resultText": "焊工王建国证书编号、有效期和持证项目与焊接工艺要求匹配，建议人工确认外部查询截图来源后通过。",
+        "reasoningProcess": "公开推理摘要：仅读取到证书编号字段；姓名、有效期、持证项目未形成 OCR 证据，因此只能输出待人工确认。",
+        "resultText": "仅识别到证书编号 TS6J-2024-03158；未识别到姓名、有效期、持证项目等支撑字段，不能判断证书与焊接作业要求是否匹配，需人工核对原件和外部查询截图。",
         "createdAt": "2026-06-25 09:01:10",
     },
 ]

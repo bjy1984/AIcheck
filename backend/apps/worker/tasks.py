@@ -12,6 +12,7 @@ from libs.contracts.responses import server_time
 from libs.db.repository import flush_state, load_state, repo
 from libs.integrations.litellm_client import LiteLLMClient
 from libs.integrations.ocr_client import OcrClient
+from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block
 
 
 def stable_hash_payload(value: Any) -> str:
@@ -228,21 +229,29 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
     node = repo.node(project_id, node_id)
     project = repo.require_project(project_id)
     pack = load_business_pack(run.get("businessPackId") or (project or {}).get("businessPackId") or "engineering_inspection_v1")
-    fields = [
-        item
-        for item in repo.state["extracted_fields"]
-        if item.get("documentVersionId") in set(run.get("inputDocumentVersionIds") or [])
-    ]
+    version_ids = set(run.get("inputDocumentVersionIds") or [])
+    grounding_input = build_grounded_review_input(repo.state, version_ids)
+    grounding_block = grounding_prompt_block(grounding_input)
+    fields = grounding_input.get("fields") or []
+    evidence_links = grounding_input.get("evidenceLinks") or []
     rule = matching_rule_for_node(pack, node_id)
     prompt_template = production_prompt_template_for_run(run)
     prompt = build_ai_review_prompt(pack, node=node, fields=fields, rule=rule, prompt_template=prompt_template)
     review_task_json = json.dumps(
         {
             "task": "Generate ReviewFindingDraftList JSON only.",
+            "requirements": [
+                "Every finding must require human confirmation.",
+                "Do not infer names, dates, validity, project coverage, certificate authenticity, seal text, or table values that are not present in evidence.",
+                *grounding_block["requirements"],
+            ],
+            "strictGroundingPolicy": grounding_block["strictGroundingPolicy"],
             "projectId": project_id,
             "nodeId": node_id,
             "fieldCount": len(fields),
-            "evidenceLinkIds": [item.get("id") for item in repo.state.get("evidence_links", [])[:5]],
+            "groundingStatus": grounding_input.get("groundingStatus"),
+            "groundedOcrEvidence": grounding_block["groundedOcrEvidence"],
+            "evidenceLinkIds": [item.get("id") for item in evidence_links],
         },
         ensure_ascii=False,
     )
@@ -283,6 +292,8 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
             "promptHash": run["promptAudit"]["messagesHash"],
             "responseHash": stable_hash_payload(response),
             "usage": response.get("usage") or {},
+            "groundingStatus": grounding_input.get("groundingStatus"),
+            "groundingInputSummary": grounding_input.get("summary") or {},
             "reasoningProcess": str(
                 message.get("reasoning_content")
                 or message.get("reasoning")
@@ -295,6 +306,46 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
         run["llmResultText"] = run["llmMetadata"]["resultText"]
         run["status"] = "完成"
         run["finishedAt"] = server_time()
+        rule_ref = {
+            "ruleCode": (rule or {}).get("ruleKey") or (rule or {}).get("id"),
+            "ruleSetVersion": run.get("ruleVersion") or (rule or {}).get("version"),
+        }
+        legacy_draft = {
+            "id": f"FND-DRAFT-{run_id}",
+            "projectId": project_id,
+            "nodeId": node_id,
+            "businessPackId": run.get("businessPackId"),
+            "businessPackVersion": run.get("businessPackVersion"),
+            "businessPackSnapshotHash": run.get("businessPackSnapshotHash"),
+            "agentId": run.get("agentId"),
+            "agentVersion": run.get("agentVersion"),
+            "findingType": "ai_review_suggestion",
+            "severity": "medium",
+            "title": "AI 资料复核建议",
+            "description": answer[:800],
+            "evidenceLinkIds": [item.get("id") for item in evidence_links[:3] if isinstance(item, dict)],
+            "evidenceRefs": [
+                {
+                    "evidenceLinkId": item.get("id"),
+                    "documentVersionId": item.get("documentVersionId"),
+                    "pageNo": item.get("pageNo"),
+                    "bbox": item.get("bbox"),
+                    "source": "evidence_link",
+                }
+                for item in evidence_links[:3]
+                if isinstance(item, dict)
+            ],
+            "ruleRefs": [rule_ref] if rule_ref.get("ruleCode") else [],
+            "kbRefs": [],
+            "confidence": 0.82,
+            "suggestedAction": "human_confirm",
+            "requiresHumanConfirmation": True,
+            "status": "pending_human_review",
+        }
+        guarded_drafts = apply_grounding_guardrails([legacy_draft], grounding_input)
+        guarded_draft = guarded_drafts[0] if guarded_drafts else legacy_draft
+        run["llmMetadata"]["groundingStatus"] = guarded_draft.get("groundingStatus")
+        run["llmMetadata"]["unsupportedClaims"] = guarded_draft.get("unsupportedClaims") or []
         run["steps"] = [
             {
                 "id": f"STEP-{run_id}",
@@ -302,18 +353,18 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
                 "inputSummary": f"{len(fields)} 个 OCR 字段",
                 "action": "chat.completions",
                 "conclusion": "完成",
-                "evidenceLinkIds": [item["id"] for item in repo.state["evidence_links"][:3]],
+                "evidenceLinkIds": [item.get("id") for item in evidence_links[:3] if isinstance(item, dict)],
             }
         ]
         run["suggestion"].update(
             {
                 "result": "需人工确认",
-                "opinionDraft": answer[:800],
-                "confidence": 0.82,
+                "opinionDraft": str(guarded_draft.get("description") or answer)[:800],
+                "confidence": guarded_draft.get("confidence", 0.5),
                 "manualConfirmItems": ["证据链和原件一致性"],
             }
         )
-        run["evidenceLinks"] = repo.clone(repo.state["evidence_links"][:5])
+        run["evidenceLinks"] = repo.clone(evidence_links[:5])
         repo.state.setdefault("ai_trace_steps", []).append(
             {
                 "id": f"TRACE-{run_id}-LLM-{stable_hash_payload(response)[7:13].upper()}",
@@ -331,33 +382,7 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
                 "createdAt": server_time(),
             }
         )
-        run["findingDrafts"] = [
-            {
-                "id": f"FND-DRAFT-{run_id}",
-                "projectId": project_id,
-                "nodeId": node_id,
-                "businessPackId": run.get("businessPackId"),
-                "businessPackVersion": run.get("businessPackVersion"),
-                "businessPackSnapshotHash": run.get("businessPackSnapshotHash"),
-                "agentId": run.get("agentId"),
-                "agentVersion": run.get("agentVersion"),
-                "findingType": "ai_review_suggestion",
-                "severity": "medium",
-                "title": "AI 资料复核建议",
-                "description": answer[:800],
-                "evidenceLinkIds": [item["id"] for item in repo.state["evidence_links"][:3]],
-                "ruleRefs": [
-                    {
-                        "ruleSetId": (rule or {}).get("id"),
-                        "ruleSetVersion": run.get("ruleVersion") or (rule or {}).get("version"),
-                    }
-                ],
-                "kbRefs": [],
-                "confidence": 0.82,
-                "suggestedAction": "human_confirm",
-                "status": "pending_human_review",
-            }
-        ]
+        run["findingDrafts"] = guarded_drafts
         status = "完成"
     except Exception:
         run["status"] = "失败"
