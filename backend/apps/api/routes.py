@@ -12276,7 +12276,13 @@ def fde_ocr_evaluation_cases_from_results(profile_id: str) -> list[dict[str, Any
     return cases
 
 
-def expected_fields_from_result(result: dict[str, Any]) -> list[dict[str, Any]]:
+def expected_fields_from_result(
+    result: dict[str, Any],
+    *,
+    include_text_fragments: bool = False,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    max_items = limit if limit is not None else (80 if include_text_fragments else 50)
     expected = []
     for field in result.get("fields") or []:
         if not isinstance(field, dict):
@@ -12289,7 +12295,131 @@ def expected_fields_from_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             item["bbox"] = field.get("bbox") or field.get("polygon")
             item["bboxIouThreshold"] = 0.5
         expected.append(item)
-    return expected[:50]
+        if len(expected) >= max_items:
+            return expected[:max_items]
+    if include_text_fragments and len(expected) < max_items:
+        used_codes = {str(item.get("fieldCode") or "") for item in expected}
+        expected.extend(
+            expected_text_fields_from_result(
+                result,
+                existing_codes=used_codes,
+                limit=max_items - len(expected),
+            )
+        )
+    return expected[:max_items]
+
+
+def expected_text_fields_from_result(
+    result: dict[str, Any],
+    *,
+    existing_codes: set[str],
+    limit: int,
+) -> list[dict[str, Any]]:
+    if limit <= 0:
+        return []
+    expected: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    sequence_by_page: dict[int, int] = {}
+    fragments = [item for item in result.get("fragments") or [] if isinstance(item, dict)]
+    for fragment in fragments:
+        text = normalize_expected_text(fragment.get("text") or fragment.get("fullText") or fragment.get("rawText"))
+        if not text:
+            continue
+        page_no = safe_expected_page_no(fragment.get("pageNo") or fragment.get("page") or 1)
+        bbox = fragment.get("bbox")
+        polygon = fragment.get("polygon")
+        dedupe_key = json.dumps([page_no, text, bbox, polygon], ensure_ascii=False, sort_keys=True)
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        sequence_by_page[page_no] = sequence_by_page.get(page_no, 0) + 1
+        field_code = unique_expected_field_code(f"ocr_text_p{page_no}_{sequence_by_page[page_no]}", existing_codes)
+        item: dict[str, Any] = {
+            "fieldCode": field_code,
+            "fieldName": f"OCR 文字 {sequence_by_page[page_no]}",
+            "value": text,
+            "pageNo": page_no,
+            "source": "ocr_fragment",
+        }
+        if bbox:
+            item["bbox"] = bbox
+            item["bboxIouThreshold"] = 0.5
+        elif polygon:
+            item["polygon"] = polygon
+            item["bboxIouThreshold"] = 0.5
+        if fragment.get("confidence") is not None:
+            item["confidence"] = fragment.get("confidence")
+        if fragment.get("sourceEngine") or fragment.get("source"):
+            item["sourceEngine"] = fragment.get("sourceEngine") or fragment.get("source")
+        expected.append(item)
+        if len(expected) >= limit:
+            return expected
+
+    full_text = normalize_expected_text(
+        result.get("fullText")
+        or result.get("text")
+        or result.get("rawText")
+        or result.get("plainText")
+        or result.get("ocrText")
+    )
+    if expected or not full_text or len(expected) >= limit:
+        return expected
+    page_bbox = expected_full_page_bbox(result)
+    if not page_bbox:
+        return expected
+    field_code = unique_expected_field_code("ocr_full_text", existing_codes)
+    expected.append(
+        {
+            "fieldCode": field_code,
+            "fieldName": "OCR 全文",
+            "value": full_text,
+            "pageNo": 1,
+            "bbox": page_bbox,
+            "bboxIouThreshold": 0.5,
+            "source": "ocr_full_text",
+        }
+    )
+    return expected
+
+
+def normalize_expected_text(value: Any) -> str:
+    if value is None:
+        return ""
+    return re.sub(r"\s+", " ", str(value)).strip()
+
+
+def safe_expected_page_no(value: Any) -> int:
+    try:
+        return max(1, int(float(value)))
+    except (TypeError, ValueError):
+        return 1
+
+
+def unique_expected_field_code(base: str, existing_codes: set[str]) -> str:
+    field_code = re.sub(r"[^A-Za-z0-9_:\-]+", "_", base).strip("_") or "ocr_text"
+    if not re.match(r"^[A-Za-z]", field_code):
+        field_code = f"ocr_{field_code}"
+    candidate = field_code
+    index = 2
+    while candidate in existing_codes:
+        candidate = f"{field_code}_{index}"
+        index += 1
+    existing_codes.add(candidate)
+    return candidate
+
+
+def expected_full_page_bbox(result: dict[str, Any]) -> list[int] | None:
+    pages = [item for item in result.get("pages") or [] if isinstance(item, dict)]
+    page = pages[0] if pages else {}
+    try:
+        width = int(float(page.get("width") or page.get("pageWidth") or page.get("imageWidth") or 0))
+        height = int(float(page.get("height") or page.get("pageHeight") or page.get("imageHeight") or 0))
+    except (TypeError, ValueError):
+        width = 0
+        height = 0
+    if width > 0 and height > 0:
+        return [0, 0, width, height]
+    return None
 
 
 def expected_tables_from_result(result: dict[str, Any]) -> list[dict[str, Any]]:
@@ -12309,26 +12439,391 @@ def expected_tables_from_result(result: dict[str, Any]) -> list[dict[str, Any]]:
         if table.get("bbox") or table.get("polygon"):
             item["bbox"] = table.get("bbox") or table.get("polygon")
             item["bboxIouThreshold"] = 0.5
+        content_markdown = expected_table_content_from_result(table)
+        if content_markdown:
+            item["contentMarkdown"] = content_markdown
+            item["content"] = content_markdown
         expected.append({key: value for key, value in item.items() if fde_expected_value_present(value)})
     return expected[:20]
+
+
+def expected_table_content_from_result(table: dict[str, Any]) -> str:
+    for key in ["contentMarkdown", "markdown", "content", "text"]:
+        value = normalize_expected_multiline_text(table.get(key))
+        if value:
+            return value
+    cells = table.get("cells") if isinstance(table.get("cells"), list) else []
+    content = expected_table_markdown_from_cells(cells)
+    if content:
+        return content
+    rows = table.get("businessRows") or table.get("normalizedRows") or table.get("dataRows") or []
+    return expected_table_markdown_from_rows(rows)
+
+
+def expected_table_markdown_from_cells(cells: list[Any]) -> str:
+    indexed_cells: list[tuple[int, int, str]] = []
+    row_values: list[int] = []
+    column_values: list[int] = []
+    for cell in cells:
+        if not isinstance(cell, dict):
+            continue
+        row_index = expected_table_cell_index(
+            cell,
+            ["rowIndex", "row", "rowNo", "rowNumber", "rowId", "row_id"],
+        )
+        column_index = expected_table_cell_index(
+            cell,
+            [
+                "columnIndex",
+                "colIndex",
+                "column",
+                "col",
+                "columnNo",
+                "colNo",
+                "columnId",
+                "col_id",
+            ],
+        )
+        if row_index is None or column_index is None:
+            continue
+        text = expected_table_cell_text(cell)
+        row_values.append(row_index)
+        column_values.append(column_index)
+        indexed_cells.append((row_index, column_index, text))
+    if not indexed_cells:
+        return ""
+    row_offset = 1 if row_values and min(row_values) >= 1 else 0
+    column_offset = 1 if column_values and min(column_values) >= 1 else 0
+    normalized = [
+        (max(0, row - row_offset), max(0, column - column_offset), text)
+        for row, column, text in indexed_cells
+    ]
+    row_count = max(row for row, _, _ in normalized) + 1
+    column_count = max(column for _, column, _ in normalized) + 1
+    grid = [["" for _ in range(column_count)] for _ in range(row_count)]
+    for row, column, text in normalized:
+        current = grid[row][column].strip()
+        grid[row][column] = " ".join(part for part in [current, text] if part).strip()
+    return expected_table_markdown_from_grid(grid)
+
+
+def expected_table_markdown_from_rows(rows: Any) -> str:
+    if not isinstance(rows, list) or not rows:
+        return ""
+    if all(isinstance(row, dict) for row in rows):
+        headers: list[str] = []
+        for row in rows:
+            for key, value in row.items():
+                if key not in headers and fde_expected_value_present(value):
+                    headers.append(str(key))
+        if not headers:
+            return ""
+        grid = [headers]
+        for row in rows:
+            grid.append([normalize_expected_inline_text(row.get(header)) for header in headers])
+        return expected_table_markdown_from_grid(grid)
+    if all(isinstance(row, list) for row in rows):
+        grid = [[normalize_expected_inline_text(cell) for cell in row] for row in rows]
+        return expected_table_markdown_from_grid(grid)
+    return ""
+
+
+def expected_table_markdown_from_grid(grid: list[list[str]]) -> str:
+    rows = [row for row in grid if any(normalize_expected_inline_text(cell) for cell in row)]
+    if not rows:
+        return ""
+    column_count = max(1, max(len(row) for row in rows))
+    normalized_rows = [
+        [expected_table_escape_cell(row[index] if index < len(row) else "") for index in range(column_count)]
+        for row in rows
+    ]
+    markdown_rows = [f"| {' | '.join(row)} |" for row in normalized_rows]
+    if len(normalized_rows) > 1 and column_count > 1:
+        markdown_rows.insert(1, f"| {' | '.join(['---'] * column_count)} |")
+    return "\n".join(markdown_rows)
+
+
+def expected_table_cell_index(cell: dict[str, Any], keys: list[str]) -> int | None:
+    for key in keys:
+        value = cell.get(key)
+        if value is None:
+            continue
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def expected_table_cell_text(cell: dict[str, Any]) -> str:
+    for key in ["text", "value", "content", "cellText", "rawText"]:
+        value = normalize_expected_inline_text(cell.get(key))
+        if value:
+            return value
+    lines = cell.get("lines") or cell.get("fragments")
+    if isinstance(lines, list):
+        parts = []
+        for line in lines:
+            if isinstance(line, dict):
+                parts.append(normalize_expected_inline_text(line.get("text") or line.get("value")))
+            else:
+                parts.append(normalize_expected_inline_text(line))
+        return " ".join(part for part in parts if part).strip()
+    return ""
+
+
+def normalize_expected_inline_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple)):
+        return " ".join(normalize_expected_inline_text(item) for item in value).strip()
+    if isinstance(value, dict):
+        return normalize_expected_inline_text(
+            value.get("text") or value.get("value") or json.dumps(value, ensure_ascii=False)
+        )
+    return re.sub(r"\s+", " ", str(value)).strip()
+
+
+def normalize_expected_multiline_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple)):
+        return "\n".join(normalize_expected_inline_text(item) for item in value).strip()
+    return str(value).strip()
+
+
+def expected_table_escape_cell(value: Any) -> str:
+    return normalize_expected_inline_text(value).replace("|", "/")
 
 
 def expected_seals_from_result(result: dict[str, Any]) -> list[dict[str, Any]]:
-    expected = []
+    candidates: list[dict[str, Any]] = []
     for seal in result.get("seals") or []:
         if not isinstance(seal, dict):
             continue
-        seal_name = str(seal.get("sealName") or "")
+        item = expected_seal_item_from_result(seal)
+        if item:
+            candidates.append({"item": item, "source": seal})
+    return [candidate["item"] for candidate in dedupe_expected_seal_candidates(candidates)][:20]
+
+
+def expected_seal_item_from_result(seal: dict[str, Any]) -> dict[str, Any]:
+    seal_name = str(seal.get("sealName") or "").strip()
+    seal_text = expected_seal_text_from_result(seal)
+    page_no = safe_expected_page_no(seal.get("pageNo") or seal.get("page") or 1)
+    confidence = max(
+        expected_float(seal.get("ocrConfidence")),
+        expected_float(seal.get("visualConfidence")),
+        expected_float(seal.get("confidence")),
+        expected_float(seal.get("score")),
+    )
+    item: dict[str, Any] = {
+        "sealType": seal.get("sealType"),
+        "nameContains": seal_name,
+        "text": seal_text,
+        "content": seal_text,
+        "pageNo": page_no,
+        "minConfidence": min(confidence, 0.8),
+        "bboxLabel": "盖章位置",
+        "stampLocationRequired": True,
+    }
+    source_id = seal.get("sealId") or seal.get("id")
+    if source_id:
+        item["sourceSealId"] = source_id
+    if seal.get("sourceEngine") or seal.get("source"):
+        item["sourceEngine"] = seal.get("sourceEngine") or seal.get("source")
+    if seal.get("visualColor"):
+        item["visualColor"] = seal.get("visualColor")
+    seal_fields = expected_seal_fields_from_result(seal)
+    if seal_fields:
+        item["fields"] = seal_fields
+    if seal.get("bbox") or seal.get("polygon"):
+        item["bbox"] = seal.get("bbox") or seal.get("polygon")
+        item["bboxIouThreshold"] = 0.5
+    return {key: value for key, value in item.items() if fde_expected_value_present(value)}
+
+
+def expected_seal_text_from_result(seal: dict[str, Any]) -> str:
+    explicit = normalize_expected_text(
+        seal.get("text") or seal.get("fullText") or seal.get("rawText") or seal.get("content")
+    )
+    if explicit:
+        return explicit
+    seal_name = normalize_expected_text(seal.get("sealName"))
+    if seal_name and not expected_seal_name_is_placeholder(seal_name):
+        return seal_name
+    field_lines = []
+    for field in seal.get("fields") or []:
+        if not isinstance(field, dict):
+            continue
+        name = normalize_expected_text(field.get("fieldName") or field.get("fieldCode"))
+        value = normalize_expected_text(field.get("fieldValue") or field.get("value"))
+        if name and value:
+            field_lines.append(f"{name}：{value}")
+        elif value:
+            field_lines.append(value)
+    return "\n".join(field_lines)
+
+
+def expected_seal_fields_from_result(seal: dict[str, Any]) -> list[dict[str, Any]]:
+    fields: list[dict[str, Any]] = []
+    for field in seal.get("fields") or []:
+        if not isinstance(field, dict):
+            continue
+        name = normalize_expected_text(field.get("fieldCode") or field.get("fieldName"))
+        value = normalize_expected_text(field.get("fieldValue") or field.get("value"))
+        if not name and not value:
+            continue
         item: dict[str, Any] = {
-            "sealType": seal.get("sealType"),
-            "nameContains": seal_name,
-            "minConfidence": min(float(seal.get("ocrConfidence") or seal.get("visualConfidence") or 0), 0.8),
+            "fieldName": name,
+            "value": value,
+            "bbox": field.get("bbox"),
+            "minConfidence": field.get("confidence"),
         }
-        if seal.get("bbox") or seal.get("polygon"):
-            item["bbox"] = seal.get("bbox") or seal.get("polygon")
-            item["bboxIouThreshold"] = 0.5
-        expected.append({key: value for key, value in item.items() if fde_expected_value_present(value)})
-    return expected[:20]
+        fields.append({key: val for key, val in item.items() if fde_expected_value_present(val)})
+    return fields[:20]
+
+
+def expected_seal_name_is_placeholder(value: str) -> bool:
+    text = value.strip().lower()
+    return not text or text.startswith("视觉") or text.startswith("visual_") or text in {
+        "蓝章",
+        "红章",
+        "seal",
+        "stamp",
+    }
+
+
+def dedupe_expected_seal_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    for candidate in sorted(candidates, key=expected_seal_candidate_score, reverse=True):
+        existing_index = next(
+            (
+                index
+                for index, existing in enumerate(deduped)
+                if expected_seal_candidates_overlap(candidate["item"], existing["item"])
+            ),
+            None,
+        )
+        if existing_index is None:
+            deduped.append(candidate)
+            continue
+        existing = deduped[existing_index]
+        if expected_seal_candidate_score(candidate) > expected_seal_candidate_score(existing):
+            candidate["item"]["dedupedCandidateCount"] = int(existing["item"].get("dedupedCandidateCount") or 1) + 1
+            deduped[existing_index] = candidate
+        else:
+            existing["item"]["dedupedCandidateCount"] = int(existing["item"].get("dedupedCandidateCount") or 1) + 1
+    return sorted(deduped, key=lambda candidate: (safe_expected_page_no(candidate["item"].get("pageNo")), expected_bbox_sort_key(candidate["item"])))
+
+
+def expected_seal_candidates_overlap(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    if safe_expected_page_no(left.get("pageNo")) != safe_expected_page_no(right.get("pageNo")):
+        return False
+    left_box = expected_bbox_extents(left.get("bbox") or left.get("polygon"))
+    right_box = expected_bbox_extents(right.get("bbox") or right.get("polygon"))
+    if not left_box or not right_box:
+        return False
+    return expected_bbox_iou(left_box, right_box) >= 0.35 or expected_bbox_overlap_ratio(left_box, right_box) >= 0.55
+
+
+def expected_seal_candidate_score(candidate: dict[str, Any]) -> float:
+    item = candidate.get("item") if isinstance(candidate.get("item"), dict) else {}
+    source = candidate.get("source") if isinstance(candidate.get("source"), dict) else {}
+    confidence = 0.0
+    for key in ["ocrConfidence", "visualConfidence", "confidence", "score"]:
+        try:
+            confidence = max(confidence, float(source.get(key) or 0))
+        except (TypeError, ValueError):
+            continue
+    score = confidence
+    if normalize_expected_text(item.get("text") or item.get("content")):
+        score += 0.35
+    if normalize_expected_text(item.get("nameContains")) and not expected_seal_name_is_placeholder(
+        normalize_expected_text(item.get("nameContains"))
+    ):
+        score += 0.2
+    if expected_bbox_extents(item.get("bbox") or item.get("polygon")):
+        score += 0.1
+    if item.get("fields"):
+        score += 0.1
+    flags = {str(flag) for flag in source.get("qualityFlags") or []}
+    if "visual_candidate_only" in flags and not normalize_expected_text(item.get("text") or item.get("content")):
+        score -= 0.15
+    if source.get("sourceEngine") == "fragment_seal_text_fusion":
+        score += 0.08
+    return score
+
+
+def expected_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def expected_bbox_sort_key(item: dict[str, Any]) -> tuple[float, float]:
+    box = expected_bbox_extents(item.get("bbox") or item.get("polygon")) or [0.0, 0.0, 0.0, 0.0]
+    return (box[1], box[0])
+
+
+def expected_bbox_extents(raw: Any) -> list[float] | None:
+    if not isinstance(raw, list) or not raw:
+        return None
+    if len(raw) == 4 and all(isinstance(value, (int, float)) for value in raw):
+        x0, y0, x1, y1 = [float(value) for value in raw]
+        if x0 == x1 or y0 == y1:
+            return None
+        return [min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)]
+    if len(raw) >= 6 and all(isinstance(value, (int, float)) for value in raw):
+        xs = [float(value) for value in raw[0::2]]
+        ys = [float(value) for value in raw[1::2]]
+        if not xs or not ys or max(xs) <= min(xs) or max(ys) <= min(ys):
+            return None
+        return [min(xs), min(ys), max(xs), max(ys)]
+    points = []
+    for point in raw:
+        if isinstance(point, (list, tuple)) and len(point) >= 2:
+            try:
+                points.append((float(point[0]), float(point[1])))
+            except (TypeError, ValueError):
+                continue
+    if not points:
+        return None
+    return [min(x for x, _ in points), min(y for _, y in points), max(x for x, _ in points), max(y for _, y in points)]
+
+
+def expected_bbox_iou(left: list[float], right: list[float]) -> float:
+    intersection = expected_bbox_intersection_area(left, right)
+    if intersection <= 0:
+        return 0.0
+    left_area = expected_bbox_area(left)
+    right_area = expected_bbox_area(right)
+    union = left_area + right_area - intersection
+    return intersection / union if union > 0 else 0.0
+
+
+def expected_bbox_overlap_ratio(left: list[float], right: list[float]) -> float:
+    intersection = expected_bbox_intersection_area(left, right)
+    if intersection <= 0:
+        return 0.0
+    return intersection / max(min(expected_bbox_area(left), expected_bbox_area(right)), 1.0)
+
+
+def expected_bbox_intersection_area(left: list[float], right: list[float]) -> float:
+    lx0, ly0, lx1, ly1 = left
+    rx0, ry0, rx1, ry1 = right
+    x0 = max(lx0, rx0)
+    y0 = max(ly0, ry0)
+    x1 = min(lx1, rx1)
+    y1 = min(ly1, ry1)
+    if x1 <= x0 or y1 <= y0:
+        return 0.0
+    return (x1 - x0) * (y1 - y0)
+
+
+def expected_bbox_area(box: list[float]) -> float:
+    return max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1])
 
 
 def fde_expected_value_present(value: Any) -> bool:
@@ -12340,7 +12835,7 @@ def fde_capability_test_file_preview_type(file_name: str, content_type: str | No
     content = str(content_type or "").lower()
     if suffix == "pdf" or "pdf" in content:
         return "pdf"
-    if suffix in {"png", "jpg", "jpeg", "webp", "bmp"} or content.startswith("image/"):
+    if suffix in {"png", "jpg", "jpeg", "webp", "bmp", "heic", "heif"} or content.startswith("image/"):
         return "image"
     if suffix in {"doc", "docx", "xls", "xlsx"}:
         return "office"
@@ -12416,6 +12911,25 @@ def fde_render_image_page_preview(local_path: Path) -> tuple[bytes, str] | None:
             return output.getvalue(), "image/png"
     except Exception:
         return None
+
+
+def fde_render_heic_page_preview(local_path: Path) -> tuple[bytes, str] | None:
+    pillow_preview = fde_render_image_page_preview(local_path)
+    if pillow_preview:
+        return pillow_preview
+    if not shutil.which("sips"):
+        return None
+    with tempfile.TemporaryDirectory(prefix="aicheck-fde-heic-preview-") as temp_dir:
+        target = Path(temp_dir) / "page.png"
+        completed = subprocess.run(
+            ["sips", "-s", "format", "png", str(local_path), "--out", str(target)],
+            check=False,
+            capture_output=True,
+            timeout=30,
+        )
+        if completed.returncode != 0 or not target.is_file():
+            return None
+        return fde_render_image_page_preview(target) or (target.read_bytes(), "image/png")
 
 
 def fde_render_pdf_page_preview_with_fitz(local_path: Path, page_no: int) -> tuple[bytes, str] | None:
@@ -13051,6 +13565,62 @@ def fde_create_ocr_capability_test_run(
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
+@router.post("/fde/capability-tests/ocr/runs/{run_id}/rerun")
+def fde_rerun_ocr_capability_test_run(
+    request: Request,
+    run_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        role, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+        if role_error:
+            return role_error
+        run = fde_capability_test_run_by_id(run_id)
+        if not run:
+            return fail(errors.NOT_FOUND, request)
+        status = str(run.get("status") or "")
+        if status in {"ocr_queued", "ocr_running"}:
+            return ok({"run": repo.clone(run), "alreadyRunning": True, "auditLogId": None}, request)
+
+        now = server_time()
+        previous_parse_result_id = run.get("parseResultId")
+        try:
+            rerun_count = int(run.get("rerunCount") or 0) + 1
+        except (TypeError, ValueError):
+            rerun_count = 1
+        run.update(
+            {
+                "status": "ocr_queued",
+                "previousParseResultId": previous_parse_result_id,
+                "parseResultId": None,
+                "ocrJobRecordId": None,
+                "externalJobId": None,
+                "resultSummary": fde_capability_test_result_summary(None),
+                "diagnostics": [],
+                "engineRuns": [],
+                "startedAt": None,
+                "finishedAt": None,
+                "rerunCount": rerun_count,
+                "rerunReason": str(body.get("reason") or "manual_prelabel_refresh"),
+                "rerunRequestedAt": now,
+                "updatedAt": now,
+                "updatedByRole": role or "fde",
+            }
+        )
+        audit_id = repo.add_audit("FDE OCR 能力测试重新预标注", "FdeOcrCapabilityTestRun", run_id)
+        flush_state()
+        fde_start_ocr_capability_test_worker(run_id)
+        return ok({"run": repo.clone(run), "alreadyRunning": False, "auditLogId": audit_id}, request)
+
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"runId": run_id, "body": body},
+    )
+
+
 @router.get("/fde/capability-tests/ocr/runs")
 def fde_ocr_capability_test_runs(
     request: Request,
@@ -13186,10 +13756,12 @@ def fde_ocr_capability_test_to_annotation(
             return fail(errors.VALIDATION_ERROR, request, message="当前测试 Run 还没有可标注的 OCR 结果。")
         expected = {
             "qualityStatus": (result.get("quality") or {}).get("status") or "needs_human_review",
-            "fields": expected_fields_from_result(result),
+            "fields": expected_fields_from_result(result, include_text_fragments=True),
             "tables": expected_tables_from_result(result),
             "seals": expected_seals_from_result(result),
         }
+        preview = fde_capability_test_preview(run)
+        page_dimensions = fde_ocr_annotation_result_page_dimensions(result)
         existing = next(
             (
                 item
@@ -13212,12 +13784,31 @@ def fde_ocr_capability_test_to_annotation(
             "pageCount": len(result.get("pages") or []) or 1,
             "expectedTemplate": expected,
             "suggestedExpected": expected,
-            "previewUrl": fde_capability_test_preview(run).get("url"),
+            "previewUrl": preview.get("url"),
+            "pagePreviewUrl": preview.get("pagePreviewUrl"),
+            "previewType": preview.get("previewType"),
+            "pageDimensions": page_dimensions or None,
             "retention": "fde_capability_test_only",
             "createdByRole": role or "fde",
             "createdAt": server_time(),
         }
-        task.update({"updatedAt": server_time(), "updatedByRole": role or "fde"})
+        existing_dimensions = task.get("pageDimensions")
+        should_refresh_dimensions = (
+            not isinstance(existing_dimensions, dict)
+            or not existing_dimensions
+            or existing_dimensions == {"1": [2000, 1500]}
+        )
+        update_payload = {
+            "pagePreviewUrl": task.get("pagePreviewUrl") or preview.get("pagePreviewUrl"),
+            "previewType": task.get("previewType") or preview.get("previewType"),
+            "pageDimensions": page_dimensions if page_dimensions and should_refresh_dimensions else existing_dimensions,
+            "updatedAt": server_time(),
+            "updatedByRole": role or "fde",
+        }
+        refresh_suggested = parse_bool(body.get("refreshSuggested", body.get("forceRefresh")), False) is True
+        if existing and (refresh_suggested or not isinstance(task.get("labeledExpected"), dict)):
+            update_payload.update({"expectedTemplate": expected, "suggestedExpected": expected})
+        task.update(update_payload)
         if not existing:
             repo.state.setdefault("ocr_annotation_tasks", []).insert(0, task)
         readiness = fde_update_ocr_annotation_readiness(task)
@@ -13467,7 +14058,7 @@ def fde_ocr_annotation_tasks_source() -> list[dict[str, Any]]:
         scenario = fde_ocr_annotation_scenario(result)
         expected = {
             "qualityStatus": (result.get("quality") or {}).get("status") or "needs_human_review",
-            "fields": expected_fields_from_result(result),
+            "fields": expected_fields_from_result(result, include_text_fragments=True),
             "tables": expected_tables_from_result(result),
             "seals": expected_seals_from_result(result),
         }
@@ -13531,9 +14122,141 @@ def fde_ocr_annotation_readiness(tasks: list[dict[str, Any]]) -> dict[str, Any]:
     return build_annotation_readiness_from_tasks(repo.clone(tasks), source="api:fde.ocr-annotation")
 
 
-def fde_ocr_annotation_task_view(task: dict[str, Any]) -> dict[str, Any]:
+def fde_ocr_annotation_source_run(task: dict[str, Any]) -> dict[str, Any] | None:
+    run_id = str(task.get("sourceRunId") or "").strip()
+    if not run_id:
+        return None
+    return fde_capability_test_run_by_id(run_id)
+
+
+def fde_ocr_annotation_result_page_dimensions(result: dict[str, Any] | None) -> dict[str, list[int]]:
+    dimensions: dict[str, list[int]] = {}
+    if not isinstance(result, dict):
+        return dimensions
+    for page_item in result.get("pages") or []:
+        if not isinstance(page_item, dict):
+            continue
+        page_no = str(page_item.get("pageNo") or page_item.get("page") or len(dimensions) + 1)
+        try:
+            width = int(float(page_item.get("width") or page_item.get("imageWidth") or 0))
+            height = int(float(page_item.get("height") or page_item.get("imageHeight") or 0))
+        except (TypeError, ValueError):
+            width = 0
+            height = 0
+        if width > 0 and height > 0:
+            dimensions[page_no] = [width, height]
+    return dimensions
+
+
+def fde_ocr_annotation_source_page_dimensions(task: dict[str, Any]) -> dict[str, list[int]]:
+    parse_result_id = str(task.get("parseResultId") or "").strip()
+    result = repo.find_one("ocr_parse_results", parse_result_id, id_field="parseResultId") if parse_result_id else None
+    dimensions = fde_ocr_annotation_result_page_dimensions(result)
+    if dimensions:
+        return dimensions
+    run = fde_ocr_annotation_source_run(task)
+    if not run or not run.get("parseResultId"):
+        return {}
+    result = repo.find_one("ocr_parse_results", str(run["parseResultId"]), id_field="parseResultId")
+    return fde_ocr_annotation_result_page_dimensions(result)
+
+
+def fde_ocr_annotation_source_parse_result(task: dict[str, Any]) -> dict[str, Any] | None:
+    parse_result_id = str(task.get("parseResultId") or "").strip()
+    if parse_result_id:
+        result = repo.find_one("ocr_parse_results", parse_result_id, id_field="parseResultId")
+        if isinstance(result, dict):
+            return result
+    run = fde_ocr_annotation_source_run(task)
+    if run and run.get("parseResultId"):
+        result = repo.find_one("ocr_parse_results", str(run["parseResultId"]), id_field="parseResultId")
+        if isinstance(result, dict):
+            return result
+    return None
+
+
+def fde_ocr_annotation_hydrate_expected_tables(
+    expected: Any,
+    result: dict[str, Any] | None,
+) -> Any:
+    if not isinstance(expected, dict) or not isinstance(result, dict):
+        return expected
+    tables = expected.get("tables")
+    if not isinstance(tables, list) or not tables:
+        return expected
+    generated_tables = expected_tables_from_result(result)
+    if not generated_tables:
+        return expected
+    hydrated = repo.clone(expected)
+    hydrated_tables = hydrated.get("tables") if isinstance(hydrated.get("tables"), list) else []
+    for table in hydrated_tables:
+        if not isinstance(table, dict) or fde_ocr_annotation_table_has_content(table):
+            continue
+        source_table = fde_ocr_annotation_matching_table(table, generated_tables, len(hydrated_tables))
+        if not source_table or not fde_ocr_annotation_table_has_content(source_table):
+            continue
+        for key in [
+            "contentMarkdown",
+            "content",
+            "markdown",
+            "minRows",
+            "minColumns",
+            "businessSchema",
+            "tableId",
+        ]:
+            if fde_expected_value_present(source_table.get(key)) and not fde_expected_value_present(table.get(key)):
+                table[key] = source_table.get(key)
+        if fde_expected_value_present(source_table.get("contentMarkdown")):
+            table.setdefault("content", source_table.get("contentMarkdown"))
+    return hydrated
+
+
+def fde_ocr_annotation_table_has_content(table: dict[str, Any]) -> bool:
+    return any(normalize_expected_multiline_text(table.get(key)) for key in ["contentMarkdown", "content", "markdown"])
+
+
+def fde_ocr_annotation_matching_table(
+    table: dict[str, Any],
+    generated_tables: list[dict[str, Any]],
+    existing_table_count: int,
+) -> dict[str, Any] | None:
+    table_id = str(table.get("tableId") or "").strip()
+    if table_id:
+        for generated in generated_tables:
+            if str(generated.get("tableId") or "").strip() == table_id:
+                return generated
+    source_box = expected_bbox_extents(table.get("bbox") or table.get("polygon"))
+    if source_box:
+        best_match: tuple[float, dict[str, Any]] | None = None
+        for generated in generated_tables:
+            generated_box = expected_bbox_extents(generated.get("bbox") or generated.get("polygon"))
+            if not generated_box:
+                continue
+            score = max(
+                expected_bbox_iou(source_box, generated_box),
+                expected_bbox_overlap_ratio(source_box, generated_box),
+            )
+            if score >= 0.35 and (best_match is None or score > best_match[0]):
+                best_match = (score, generated)
+        if best_match:
+            return best_match[1]
+    if existing_table_count == 1 and len(generated_tables) == 1:
+        return generated_tables[0]
+    return None
+
+
+def fde_ocr_annotation_task_view_hydrated(task: dict[str, Any]) -> dict[str, Any]:
     view = repo.clone(task)
-    readiness = fde_ocr_annotation_readiness([task])
+    result = fde_ocr_annotation_source_parse_result(view)
+    for key in ["expectedTemplate", "suggestedExpected", "labeledExpected"]:
+        if isinstance(view.get(key), dict):
+            view[key] = fde_ocr_annotation_hydrate_expected_tables(view[key], result)
+    return view
+
+
+def fde_ocr_annotation_task_view(task: dict[str, Any]) -> dict[str, Any]:
+    view = fde_ocr_annotation_task_view_hydrated(task)
+    readiness = fde_ocr_annotation_readiness([view])
     status = (readiness.get("tasks") or [{}])[0]
     view["readinessBlockers"] = status.get("blockers") or []
     view["readyForEval"] = bool(status.get("readyForEval"))
@@ -13543,6 +14266,21 @@ def fde_ocr_annotation_task_view(task: dict[str, Any]) -> dict[str, Any]:
     view["labelCounts"] = fde_ocr_annotation_expected_counts(
         view.get("labeledExpected") if isinstance(view.get("labeledExpected"), dict) else {}
     )
+    run = fde_ocr_annotation_source_run(view)
+    if run:
+        capability_preview = fde_capability_test_preview(run)
+        view["previewType"] = view.get("previewType") or capability_preview.get("previewType")
+        view["pagePreviewUrl"] = view.get("pagePreviewUrl") or capability_preview.get("pagePreviewUrl")
+        view["previewUrl"] = view.get("previewUrl") or capability_preview.get("url")
+    source_dimensions = fde_ocr_annotation_source_page_dimensions(view)
+    if source_dimensions:
+        current_dimensions = view.get("pageDimensions")
+        if (
+            not isinstance(current_dimensions, dict)
+            or not current_dimensions
+            or current_dimensions == {"1": [2000, 1500]}
+        ):
+            view["pageDimensions"] = source_dimensions
     view["previewUrl"] = view.get("previewUrl") or view.get("pagePreviewUrl") or fde_ocr_annotation_preview_url(view)
     view.setdefault("pageDimensions", fde_ocr_annotation_default_page_dimensions(view))
     return view
@@ -13557,6 +14295,10 @@ def fde_ocr_annotation_expected_counts(expected: dict[str, Any]) -> dict[str, in
 
 
 def fde_ocr_annotation_preview_url(task: dict[str, Any]) -> str | None:
+    source_run_id = str(task.get("sourceRunId") or "").strip()
+    if source_run_id:
+        page_no = int(task.get("pageNo") or 1)
+        return f"/api/fde/capability-tests/ocr/runs/{source_run_id}/page-preview?pageNo={page_no}"
     for key in ["pagePreviewUrl", "previewUrl", "previewDataUrl"]:
         value = str(task.get(key) or "").strip()
         if value:
@@ -13567,6 +14309,9 @@ def fde_ocr_annotation_preview_url(task: dict[str, Any]) -> str | None:
     return None
 
 
+FDE_OCR_ANNOTATION_PREVIEW_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".heic", ".heif", ".pdf")
+
+
 def fde_ocr_annotation_preview_path(task: dict[str, Any]) -> Path | None:
     preview_paths = task.get("previewPaths") if isinstance(task.get("previewPaths"), list) else []
     raw = str(task.get("pagePreviewPath") or (preview_paths[0] if preview_paths else None) or task.get("sourcePath") or "").strip()
@@ -13575,14 +14320,29 @@ def fde_ocr_annotation_preview_path(task: dict[str, Any]) -> Path | None:
     candidate = Path(raw).expanduser()
     if not candidate.is_absolute():
         candidate = WORKSPACE_ROOT / candidate
+    candidates = [candidate]
+    if candidate.suffix:
+        candidates.extend(candidate.with_suffix(suffix) for suffix in FDE_OCR_ANNOTATION_PREVIEW_SUFFIXES)
+    else:
+        candidates.extend(Path(f"{candidate}{suffix}") for suffix in FDE_OCR_ANNOTATION_PREVIEW_SUFFIXES)
+    seen: set[Path] = set()
+    unique_candidates = []
+    for item in candidates:
+        if item in seen:
+            continue
+        seen.add(item)
+        unique_candidates.append(item)
     try:
-        resolved = candidate.resolve()
         allowed_roots = [WORKSPACE_ROOT.resolve(), Path(tempfile.gettempdir()).resolve()]
-        if not any(resolved == root or root in resolved.parents for root in allowed_roots):
-            return None
-        if resolved.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".bmp"}:
-            return None
-        return resolved if resolved.exists() else None
+        for item in unique_candidates:
+            resolved = item.resolve()
+            if not any(resolved == root or root in resolved.parents for root in allowed_roots):
+                continue
+            if resolved.suffix.lower() not in FDE_OCR_ANNOTATION_PREVIEW_SUFFIXES:
+                continue
+            if resolved.exists():
+                return resolved
+        return None
     except OSError:
         return None
 
@@ -13636,16 +14396,60 @@ def fde_ocr_annotation_tasks(
 
 
 @router.get("/fde/ocr-annotation/tasks/{task_id}/preview")
-def fde_ocr_annotation_task_preview(request: Request, task_id: str):
+def fde_ocr_annotation_task_preview(
+    request: Request,
+    task_id: str,
+    pageNo: int = Query(default=1, ge=1, le=100),
+):
     _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
     if role_error:
         return role_error
     task = fde_ocr_annotation_task(task_id)
     if not task:
         return fail(errors.NOT_FOUND, request)
+    run = fde_ocr_annotation_source_run(task)
+    if run:
+        local_preview = fde_render_local_capability_page_preview(run, pageNo)
+        if local_preview:
+            content, content_type = local_preview
+            return Response(
+                content=content,
+                media_type=content_type,
+                headers={
+                    "Cache-Control": "private, max-age=300",
+                    "X-Content-Type-Options": "nosniff",
+                    "X-AICheck-Preview-Source": "annotation-capability-run",
+                },
+            )
     preview_path = fde_ocr_annotation_preview_path(task)
     if not preview_path:
         return fail(errors.NOT_FOUND, request)
+    suffix = preview_path.suffix.lower()
+    rendered_preview: tuple[bytes, str] | None = None
+    if suffix == ".pdf":
+        rendered_preview = (
+            fde_render_pdf_page_preview_with_fitz(preview_path, pageNo)
+            or fde_render_pdf_page_preview_with_pdfium(preview_path, pageNo)
+            or fde_render_pdf_page_preview_with_qlmanage(preview_path, pageNo)
+            or fde_render_pdf_page_preview_with_magick(preview_path, pageNo)
+        )
+    elif suffix in {".heic", ".heif"}:
+        rendered_preview = fde_render_heic_page_preview(preview_path)
+    else:
+        rendered_preview = fde_render_image_page_preview(preview_path)
+    if rendered_preview:
+        content, content_type = rendered_preview
+        return Response(
+            content=content,
+            media_type=content_type,
+            headers={
+                "Cache-Control": "private, max-age=300",
+                "X-Content-Type-Options": "nosniff",
+                "X-AICheck-Preview-Source": "annotation-source-path",
+            },
+        )
+    if suffix in {".pdf", ".heic", ".heif"}:
+        return fail(errors.VALIDATION_ERROR, request, message="标注页图预览生成失败，请重新上传文件生成预览。")
     return FileResponse(preview_path)
 
 
@@ -13773,6 +14577,42 @@ def fde_save_ocr_annotation_label(
         return ok({"task": fde_ocr_annotation_task_view(task), "readiness": readiness, "auditLogId": audit_id}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"taskId": task_id, "body": body})
+
+
+@router.delete("/fde/ocr-annotation/tasks/{task_id}")
+def fde_delete_ocr_annotation_task(
+    request: Request,
+    task_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        _, role_error = fde_error_unless_allowed(request, "fde:ocr-annotation:manage")
+        if role_error:
+            return role_error
+        tasks = repo.state.setdefault("ocr_annotation_tasks", [])
+        index = next(
+            (idx for idx, item in enumerate(tasks) if str(item.get("taskId") or item.get("caseId") or "") == task_id),
+            -1,
+        )
+        if index < 0:
+            return fail(errors.NOT_FOUND, request)
+        removed = tasks.pop(index)
+        readiness = fde_ocr_annotation_readiness(tasks)
+        audit_id = repo.add_audit("FDE OCR 标注样本删除", "OcrAnnotationTask", task_id)
+        return ok(
+            {
+                "deleted": True,
+                "taskId": task_id,
+                "task": fde_ocr_annotation_task_view(removed),
+                "summary": readiness["summary"],
+                "nextActions": readiness["nextActions"],
+                "page": page([fde_ocr_annotation_task_view(item) for item in tasks], 1, 20),
+                "auditLogId": audit_id,
+            },
+            request,
+        )
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"taskId": task_id})
 
 
 @router.post("/fde/ocr-annotation/tasks/{task_id}/verify")

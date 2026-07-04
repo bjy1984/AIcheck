@@ -1934,8 +1934,12 @@ export type FdeOcrAnnotationTask = {
   scenario?: string
   profileId?: string
   documentType?: string
+  sourceType?: string
+  sourceRunId?: string
+  parseResultId?: string
   sourcePath?: string
   pageNo?: number
+  pageCount?: number
   collectionStatus?: string
   labeledExpected?: Record<string, unknown>
   suggestedExpected?: Record<string, unknown>
@@ -1944,6 +1948,8 @@ export type FdeOcrAnnotationTask = {
   previewPaths?: string[]
   previewUrl?: string
   pagePreviewUrl?: string
+  pagePreviewPath?: string
+  previewType?: 'pdf' | 'image' | 'office' | 'unsupported' | string
   pageDimensions?: Record<string, [number, number]>
   candidateCounts?: Record<'fields' | 'tables' | 'seals', number>
   labelCounts?: Record<'fields' | 'tables' | 'seals', number>
@@ -4158,6 +4164,24 @@ export const createFdeOcrCapabilityTestRunApi = (
   })
 }
 
+export const rerunFdeOcrCapabilityTestRunApi = (
+  runId: string,
+  data?: { reason?: string },
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    run: FdeOcrCapabilityTestRun
+    alreadyRunning: boolean
+    auditLogId?: string | null
+  }>
+> => {
+  return request.post({
+    url: `/api/fde/capability-tests/ocr/runs/${encodeURIComponent(runId)}/rerun`,
+    data: data || {},
+    headers: mutationHeaders(options)
+  })
+}
+
 export const listFdeOcrCapabilityTestRunsApi = (params?: {
   pageNo?: number
   pageSize?: number
@@ -4313,6 +4337,26 @@ export const saveFdeOcrAnnotationLabelApi = (
   return request.put({
     url: `/api/fde/ocr-annotation/tasks/${taskId}/label`,
     data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const deleteFdeOcrAnnotationTaskApi = (
+  taskId: string,
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    deleted: boolean
+    taskId: string
+    task: FdeOcrAnnotationTask
+    summary: FdeOcrAnnotationReadinessPayload['summary']
+    nextActions: string[]
+    page: PagePayload<FdeOcrAnnotationTask>
+    auditLogId: string
+  }>
+> => {
+  return request.delete({
+    url: `/api/fde/ocr-annotation/tasks/${taskId}`,
     headers: mutationHeaders(options)
   })
 }

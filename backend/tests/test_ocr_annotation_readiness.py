@@ -128,6 +128,42 @@ def test_annotation_readiness_accepts_labeled_positive_evidence(tmp_path) -> Non
     assert report["nextActions"] == ["Export the tasks with ocr_100_annotation_export.py and run ocr_eval_set.py."]
 
 
+def test_annotation_readiness_accepts_flat_polygon_bbox(tmp_path) -> None:
+    tasks = tmp_path / "labeled_tasks.json"
+    tasks.write_text(
+        json.dumps(
+            {
+                "tasks": [
+                    {
+                        "taskId": "label-case-polygon",
+                        "caseId": "case-polygon",
+                        "scenario": "evidence",
+                        "collectionStatus": "ready_for_eval",
+                        "labeler": "标注员A",
+                        "reviewer": "复核员B",
+                        "labeledExpected": {
+                            "fields": [
+                                {
+                                    "fieldCode": "ocr_text_p1_1",
+                                    "value": "广东星燃石化设计院有限公司",
+                                    "bbox": [151, 15, 625, 15, 625, 73, 151, 73],
+                                }
+                            ]
+                        },
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    report = build_annotation_readiness_report(tasks)
+
+    assert report["summary"]["blockerCounts"] == {}
+    assert report["tasks"][0]["readyForEval"] is True
+
+
 def test_annotation_readiness_directory_prefers_labeled_tasks(tmp_path) -> None:
     pack = tmp_path / "pack"
     pack.mkdir()

@@ -1069,14 +1069,7 @@ const defaultPromptOutputSchema = () =>
   JSON.stringify(
     {
       type: 'ReviewFindingDraftList',
-      fields: [
-        'result',
-        'severity',
-        'ruleId',
-        'evidence',
-        'opinionDraft',
-        'manualConfirmItems'
-      ]
+      fields: ['result', 'severity', 'ruleId', 'evidence', 'opinionDraft', 'manualConfirmItems']
     },
     null,
     2
@@ -1085,8 +1078,7 @@ const defaultPromptOutputSchema = () =>
 const defaultPromptTemplateText = {
   system:
     '你是 {{agentName}}，负责按 {{businessPackId}}/{{businessPackVersion}} 的监检业务判断规则，对项目节点资料进行证据化审查。只输出基于规则和证据的审查建议，不替代人工最终确认。',
-  user:
-    '{{basePromptJson}}\n\n请基于以下审查任务生成结构化预审结果：\n{{reviewTaskJson}}',
+  user: '{{basePromptJson}}\n\n请基于以下审查任务生成结构化预审结果：\n{{reviewTaskJson}}',
   planner:
     '按固定计划执行：1. 读取项目、节点、业务规则上下文；2. 对齐 OCR 字段和资料证据；3. 执行确定性规则；4. 检索标准规范和项目文件知识库；5. 生成可追溯审查建议；6. 标注需人工确认项。',
   critic:
@@ -1316,7 +1308,9 @@ const handleSavePromptTemplate = async () => {
       )
       return
     }
-    ElMessage.success(promptTemplateDialogMode.value === 'create' ? 'Prompt 模板已新增' : 'Prompt 模板已保存')
+    ElMessage.success(
+      promptTemplateDialogMode.value === 'create' ? 'Prompt 模板已新增' : 'Prompt 模板已保存'
+    )
     promptTemplateDialogVisible.value = false
     await Promise.all([loadPromptTemplates(), loadAuditLogs()])
   } catch (error) {
@@ -3369,7 +3363,9 @@ onMounted(() => {
               <div class="panel-header">
                 <span>Prompt 模板管理</span>
                 <ElSpace>
-                  <ElTag type="info" effect="plain">{{ tableStates.promptTemplates.total }} 个</ElTag>
+                  <ElTag type="info" effect="plain"
+                    >{{ tableStates.promptTemplates.total }} 个</ElTag
+                  >
                   <ElButton type="primary" plain size="small" @click="openPromptTemplateDialog()">
                     新增模板
                   </ElButton>
@@ -3412,10 +3408,16 @@ onMounted(() => {
                 <ElOption label="生产" value="production" />
                 <ElOption label="已停用" value="retired" />
               </ElSelect>
-              <ElButton type="primary" :loading="promptTemplateLoading" @click="handlePromptTemplateFilter">
+              <ElButton
+                type="primary"
+                :loading="promptTemplateLoading"
+                @click="handlePromptTemplateFilter"
+              >
                 筛选
               </ElButton>
-              <ElButton :loading="promptTemplateLoading" @click="loadPromptTemplates">刷新</ElButton>
+              <ElButton :loading="promptTemplateLoading" @click="loadPromptTemplates"
+                >刷新</ElButton
+              >
             </div>
             <ElTable
               :data="sortedRows(promptTemplates, tableStates.promptTemplates)"
@@ -3441,11 +3443,7 @@ onMounted(() => {
               <ElTableColumn prop="version" label="版本" width="110" sortable="custom" />
               <ElTableColumn prop="status" label="状态" width="100" sortable="custom">
                 <template #default="{ row }">
-                  <ElTag
-                    :type="promptTemplateStatusType(row.status)"
-                    size="small"
-                    effect="plain"
-                  >
+                  <ElTag :type="promptTemplateStatusType(row.status)" size="small" effect="plain">
                     {{ promptTemplateStatusLabel(row.status) }}
                   </ElTag>
                 </template>

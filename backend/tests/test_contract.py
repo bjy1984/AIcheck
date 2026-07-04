@@ -540,6 +540,76 @@ def test_visual_seal_candidate_enriched_from_ocr_fragments_requires_crop_ocr_for
     assert fused["quality"]["status"] == "needs_human_review"
 
 
+def test_visual_red_design_license_seal_text_fields_are_structured() -> None:
+    from apps.ocr_service.seal_text import extract_structured_seal_fields_from_lines
+
+    fields = extract_structured_seal_fields_from_lines(
+        [
+            ("压力管道", 0.91),
+            ("杨道红", 0.86),
+            ("TS1810648-2021", 0.93),
+            ("2017年8月31日", 0.9),
+            ("广东星燃石化设计院有限公司", 0.58),
+        ],
+        [191, 758, 593, 1005],
+    )
+    values = {field["fieldName"]: field["fieldValue"] for field in fields}
+
+    assert values["印章名称"] == "特种设备设计许可印章"
+    assert values["许可项目"] == "压力管道"
+    assert values["许可人员"] == "杨道红"
+    assert values["许可证编号"] == "TS1810648-2021"
+    assert values["日期"] == "2017年8月31日"
+    assert values["单位名称"] == "广东星燃石化设计院有限公司"
+    assert "杨道红" in values["识别文字"]
+
+
+def test_visual_red_seal_unit_name_reconciles_with_document_organization_fragment() -> None:
+    from apps.ocr_service.fusion import fuse_parse_result
+
+    fused = fuse_parse_result(
+        {
+            "status": "success",
+            "fragments": [
+                {
+                    "text": "广东星燃石化设计院有限公司",
+                    "confidence": 0.96,
+                    "bbox": [250, 36, 610, 82],
+                    "pageNo": 1,
+                }
+            ],
+            "fields": [],
+            "tables": [],
+            "seals": [
+                {
+                    "sealId": "red_candidate",
+                    "sealName": "特种设备设计许可印章",
+                    "sealType": "visual_red_seal_candidate",
+                    "visualColor": "red",
+                    "ocrConfidence": 0.91,
+                    "bbox": [201, 796, 624, 1057],
+                    "fields": [
+                        {"fieldName": "单位名称", "fieldValue": "广东星燃石化设中股有限公司", "confidence": 0.74},
+                        {"fieldName": "单位名称", "fieldValue": "广东星衡石化设计股有限公司", "confidence": 0.73},
+                        {"fieldName": "许可证编号", "fieldValue": "TS1810648-2021", "confidence": 0.92},
+                    ],
+                    "qualityFlags": ["visual_candidate_only", "seal_text_from_crop_ocr"],
+                }
+            ],
+        },
+        profile={"profileId": "seal-test", "sealRules": {"required": False}},
+    )
+
+    unit_fields = [
+        field
+        for field in fused["seals"][0]["fields"]
+        if field.get("fieldName") == "单位名称"
+    ]
+    assert len(unit_fields) == 1
+    assert unit_fields[0]["fieldValue"] == "广东星燃石化设计院有限公司"
+    assert unit_fields[0]["originalFieldValue"] == "广东星燃石化设中股有限公司"
+
+
 def test_fragment_text_can_create_drawing_approval_seal_without_visual_candidate() -> None:
     from apps.ocr_service.fusion import fuse_parse_result
 
@@ -6015,8 +6085,10 @@ def test_required_action_inference_covers_core_mutations() -> None:
         ("POST", "/api/fde/capability-tests/ocr/upload-session/FDE-OCR-UP-001/file", "fde:ocr-quality:view"),
         ("PUT", "/api/fde/capability-tests/ocr/upload-session/FDE-OCR-UP-001/file", "fde:ocr-quality:view"),
         ("POST", "/api/fde/capability-tests/ocr/runs", "fde:ocr-quality:view"),
+        ("POST", "/api/fde/capability-tests/ocr/runs/RUN-001/rerun", "fde:ocr-quality:view"),
         ("POST", "/api/fde/capability-tests/ocr/runs/RUN-001/to-annotation", "fde:ocr-annotation:manage"),
         ("POST", "/api/fde/capability-tests/ocr/runs/RUN-001/to-evaluation-case", "fde:evaluation:run"),
+        ("DELETE", "/api/fde/ocr-annotation/tasks/ANNO-001", "fde:ocr-annotation:manage"),
         ("PUT", "/api/admin/config-items/todo-rule/TR-001", "admin:config"),
         ("PATCH", "/api/knowledge/config", "knowledge:manage"),
         ("PUT", "/api/knowledge/config", "knowledge:manage"),
