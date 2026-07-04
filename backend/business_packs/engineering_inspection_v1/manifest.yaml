@@ -1,6 +1,11 @@
 id: engineering_inspection_v1
-name: 工程监检业务包
+name: 工业管道
 version: 2026.06.99
 domainType: engineering_inspection
 status: published
-description: 工程监检资料审查业务包，承载角色、节点、资料目录、规则、报告和 AI SOP。
+pipelineTypeCode: GC类
+pipelineTypeName: 工业管道
+commonGrades: GC1、GC2、GCD
+scopeDescription: 工厂、装置区内工艺管道、公用工程管道等
+projectType: 工业压力管道
+description: GC 类工业压力管道业务类型，承载工业管道监督检验角色、节点、资料目录、规则、报告和 AI SOP。

@@ -21,6 +21,7 @@ import {
   ElMessage,
   ElOption,
   ElPagination,
+  ElPopconfirm,
   ElProgress,
   ElRow,
   ElSelect,
@@ -38,6 +39,7 @@ import {
   cancelKnowledgeTaskApi,
   createKnowledgeRuleVersionApi,
   createKnowledgeSourceApi,
+  deleteKnowledgeFileApi,
   disableKnowledgeSourceApi,
   enableKnowledgeSourceApi,
   forkKnowledgeRuleVersionApi,
@@ -50,6 +52,7 @@ import {
   getReasoningLogDetailApi,
   importBusinessRulesApi,
   importKnowledgeFilesApi,
+  importRulesStandardsApi,
   listKnowledgeAuditLogsApi,
   listKnowledgeFileChunksApi,
   listKnowledgeFileReasoningReferencesApi,
@@ -59,15 +62,18 @@ import {
   listKnowledgeSourcesApi,
   listKnowledgeTasksApi,
   listLlmCompareRunsApi,
+  listWorkbenchProjectsApi,
   listReasoningLogsApi,
   publishKnowledgeRuleVersionApi,
   reindexKnowledgeFileApi,
+  replaceKnowledgeFileVersionApi,
   retryKnowledgeTaskApi,
   rollbackKnowledgeRuleVersionApi,
   runKnowledgeRetrievalTestApi,
   runLlmCompareApi,
   updateKnowledgeRuleVersionApi,
   updateKnowledgeConfigApi,
+  updateKnowledgeFileApi,
   updateKnowledgeSourceApi
 } from '@/api/aicheck'
 import type {
@@ -77,6 +83,7 @@ import type {
   KnowledgeConfig,
   KnowledgeFile,
   KnowledgeFileDetailPayload,
+  KnowledgeFileSavePayload,
   KnowledgeOverviewPayload,
   KnowledgePageIndexNode,
   KnowledgeReasoningReference,
@@ -92,7 +99,7 @@ import type {
   ReasoningLogDetailPayload
 } from '@/api/aicheck'
 import { getKnowledgeOverviewApi } from '@/api/aicheck'
-import type { AiReviewRun } from '@/types/aicheck'
+import type { AiReviewRun, Project } from '@/types/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import AdminKnowledgeStaticDeepSections from './components/AdminKnowledgeStaticDeepSections.vue'
 import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
@@ -127,18 +134,43 @@ const emptySourceForm = (): KnowledgeSourceSavePayload => ({
   vectorStatus: '待向量化'
 })
 
+const emptyStandardFileForm = (): Required<KnowledgeFileSavePayload> => ({
+  fileName: '',
+  sourceRelativePath: '',
+  contextDescription: '',
+  projectId: '',
+  projectName: ''
+})
+
 const emptyRuleForm = (): KnowledgeRuleVersionSavePayload => ({
   sequence: undefined,
   sourceSequence: undefined,
+  sourceRuleId: '',
+  sourceDocument: '',
+  businessModule: '',
   inspectionCategory: '',
   inspectionItem: '',
   inspectionClass: 'C',
   standardText: '',
   witnessText: '',
+  sourceWitness: '',
+  agentThinking: '',
+  toolchainThinking: '',
+  referencedStandards: [],
+  materialTypeCodes: [],
+  thinkingModeIds: [],
+  toolIds: [],
+  aiExecution: undefined,
   nodeIds: []
 })
 
 const DEFAULT_RULE_BUSINESS_PACK_ID = 'engineering_inspection_v1'
+const DEFAULT_STANDARD_SOURCE_ID = 'KS-STANDARD-RULES'
+const DEFAULT_STANDARD_SOURCE_NAME = '标准规范库（业务规则引用标准）'
+const DEFAULT_STANDARD_SOURCE_VERSION = 'rules-standards-20260703'
+const DEFAULT_PROJECT_FILE_SOURCE_ID = 'KS-PROJECT-FILE'
+const DEFAULT_PROJECT_FILE_SOURCE_NAME = '项目文件知识库'
+const DEFAULT_PROJECT_FILE_SOURCE_VERSION = 'proj-v2026.06.26'
 
 type RuleNodeSelectOption = {
   value: string
@@ -163,7 +195,7 @@ const router = useRouter()
 const knowledgeShellMenuSectionsBase = [
   {
     title: '知识库管理',
-    meta: '11页',
+    meta: '10页',
     items: [
       {
         index: '01',
@@ -188,49 +220,42 @@ const knowledgeShellMenuSectionsBase = [
       },
       {
         index: '04',
-        label: '文件知识详情',
-        badge: '证据',
-        tone: 'green',
-        route: '/knowledge/files'
-      },
-      {
-        index: '05',
         label: 'OCR/向量任务中心',
         badge: '失败',
         tone: 'orange',
         route: '/knowledge/tasks'
       },
       {
-        index: '06',
-        label: '业务规则版本管理',
+        index: '05',
+        label: '监检业务判断规则管理',
         badge: '规则',
         tone: 'blue',
         route: '/knowledge/rules'
       },
       {
-        index: '07',
+        index: '06',
         label: '知识检索测试',
         badge: '测试',
         tone: 'blue',
         route: '/knowledge/retrieval'
       },
       {
-        index: '08',
+        index: '07',
         label: '推理链路历史日志',
         badge: '日志',
         tone: 'green',
         route: '/knowledge/reasoning'
       },
       {
-        index: '09',
+        index: '08',
         label: '多 LLM 反馈对比',
         badge: '评估',
         tone: 'green',
         route: '/knowledge/compare'
       },
-      { index: '10', label: '知识库配置', badge: '策略', tone: 'blue', route: '/knowledge/config' },
+      { index: '09', label: '知识库配置', badge: '策略', tone: 'blue', route: '/knowledge/config' },
       {
-        index: '11',
+        index: '10',
         label: '操作审计日志',
         badge: '审计',
         tone: 'blue',
@@ -375,6 +400,7 @@ type PaginationState = {
 
 type SectionKey =
   | 'sources'
+  | 'standardFiles'
   | 'files'
   | 'tasks'
   | 'rules'
@@ -402,6 +428,17 @@ type OperationIssueKey =
   | 'compare'
   | 'fileDetail'
   | 'reasoningDetail'
+
+type KnowledgeTopStatKey = 'sources' | 'vectorTasks' | 'failedTasks'
+
+type KnowledgeTopStat = {
+  key: KnowledgeTopStatKey
+  label: string
+  value: number
+  tone: 'blue' | 'green' | 'red'
+  clickable: true
+  title: string
+}
 
 const createPagination = (pageSize = 10): PaginationState => ({
   page: 1,
@@ -442,14 +479,29 @@ const getKnowledgeTabFromRoute = (path: string): KnowledgeTabKey =>
   knowledgeRouteTabMap[path] || 'overview'
 
 const activeTab = ref<KnowledgeTabKey>(getKnowledgeTabFromRoute(route.path))
+
+function loadKnowledgeTabData(tab: KnowledgeTabKey) {
+  if (tab === 'source-manage') return Promise.all([loadSources(), loadStandardFiles()])
+  if (tab === 'files') return loadFiles()
+  if (tab === 'tasks') return loadTasks()
+  if (tab === 'rules') return loadRuleVersions()
+  if (tab === 'config') return Promise.all([loadKnowledgeConfig(), loadKnowledgeAuditLogs()])
+  if (tab === 'reasoning') return loadReasoningLogs()
+  if (tab === 'compare') return loadCompareRuns()
+  if (tab === 'retrieval') return loadPageIndexNodes()
+  return loadOverview()
+}
+
 const pageIssue = ref<{
   type: 'error' | 'forbidden' | 'readonly' | 'empty'
   title: string
   message?: string
 }>()
 const overview = ref<KnowledgeOverviewPayload>(emptyOverview())
+const projects = ref<Project[]>([])
 const sources = ref<KnowledgeSource[]>([])
 const files = ref<KnowledgeFile[]>([])
+const standardFiles = ref<KnowledgeFile[]>([])
 const tasks = ref<KnowledgeTask[]>([])
 const reasoningLogs = ref<AiReviewRun[]>([])
 const compareRuns = ref<LlmCompareRunSummary[]>([])
@@ -458,6 +510,7 @@ const auditLogs = ref<KnowledgeAuditLog[]>([])
 const knowledgeConfig = reactive<KnowledgeConfig>(emptyKnowledgeConfig())
 const sectionIssues = reactive<Record<SectionKey, SectionIssue | undefined>>({
   sources: undefined,
+  standardFiles: undefined,
   files: undefined,
   tasks: undefined,
   rules: undefined,
@@ -518,7 +571,10 @@ watch(
     if (!path.startsWith('/knowledge')) return
     const nextTab = getKnowledgeTabFromRoute(path)
     if (activeTab.value !== nextTab) activeTab.value = nextTab
-    if (oldPath) scrollKnowledgeContentIntoView()
+    if (oldPath) {
+      scrollKnowledgeContentIntoView()
+      void loadKnowledgeTabData(nextTab)
+    }
   },
   { immediate: true }
 )
@@ -616,6 +672,7 @@ const ruleNodeOptionMap = computed(() => {
 
 const sourceDialogVisible = ref(false)
 const sourceDialogMode = ref<'create' | 'edit'>('create')
+const sourceDialogContext = ref<'source' | 'standard-file' | 'project-file'>('source')
 const sourceEditingId = ref('')
 const sourceForm = reactive<KnowledgeSourceSavePayload>(emptySourceForm())
 type SourceUploadFileRow = {
@@ -628,7 +685,15 @@ type SourceUploadFileRow = {
   type: string
 }
 const sourceUploadFileInputRef = ref<HTMLInputElement>()
+const sourceUploadDirectoryInputRef = ref<HTMLInputElement>()
 const sourceUploadFiles = ref<SourceUploadFileRow[]>([])
+const sourceUploadProjectId = ref('')
+const standardFileDialogVisible = ref(false)
+const standardFileDialogMode = ref<'edit' | 'replace'>('edit')
+const standardFileEditing = ref<KnowledgeFile | null>(null)
+const standardFileForm = reactive<Required<KnowledgeFileSavePayload>>(emptyStandardFileForm())
+const standardFileReplaceInputRef = ref<HTMLInputElement>()
+const standardFileReplacement = ref<File | null>(null)
 const knowledgeImportVisible = ref(false)
 const knowledgeImportFileInputRef = ref<HTMLInputElement>()
 const knowledgeImportDirectoryInputRef = ref<HTMLInputElement>()
@@ -638,14 +703,22 @@ const businessRuleImportVersion = ref('')
 
 const sourceFilters = reactive({
   keyword: '',
-  sourceType: '',
+  sourceType: 'standard',
   status: ''
 })
 
 const sourcePagination = reactive(createPagination(6))
 
+const standardFileFilters = reactive({
+  keyword: '',
+  status: ''
+})
+
+const standardFilePagination = reactive(createPagination(10))
+
 const fileFilters = reactive({
   keyword: '',
+  projectId: '',
   nodeId: undefined as number | undefined,
   status: ''
 })
@@ -658,6 +731,12 @@ const taskFilters = reactive({
 })
 
 const taskPagination = reactive(createPagination(10))
+const knowledgeTopTaskCounts = reactive({
+  vectorTotal: 0,
+  failedTotal: 0,
+  vectorLoaded: false,
+  failedLoaded: false
+})
 
 const reasoningFilters = reactive({
   nodeId: undefined as number | undefined,
@@ -695,6 +774,80 @@ const compareForm = reactive({
 
 const libraries = computed(() => overview.value.libraries)
 const metrics = computed(() => overview.value.metrics)
+const parseMetricNumber = (value: string | number | undefined) => {
+  if (typeof value === 'number') return value
+  if (!value) return undefined
+  const parsed = Number.parseInt(value, 10)
+  return Number.isNaN(parsed) ? undefined : parsed
+}
+const getOverviewMetricNumber = (key: string) =>
+  parseMetricNumber(metrics.value.find((metric) => metric.key === key)?.value)
+const knowledgeTopStats = computed<KnowledgeTopStat[]>(() => [
+  {
+    key: 'sources',
+    label: '知识源',
+    value: getOverviewMetricNumber('source') ?? (sourcePagination.total || sources.value.length),
+    tone: 'blue',
+    clickable: true,
+    title: '查看知识源和标准规范列表'
+  },
+  {
+    key: 'vectorTasks',
+    label: '向量任务',
+    value: knowledgeTopTaskCounts.vectorLoaded
+      ? knowledgeTopTaskCounts.vectorTotal
+      : tasks.value.filter((task) => task.taskType === 'vector').length,
+    tone: 'green',
+    clickable: true,
+    title: '查看向量任务'
+  },
+  {
+    key: 'failedTasks',
+    label: '失败任务',
+    value: knowledgeTopTaskCounts.failedLoaded
+      ? knowledgeTopTaskCounts.failedTotal
+      : (getOverviewMetricNumber('failed') ??
+        tasks.value.filter((task) => task.status === '失败').length),
+    tone: 'red',
+    clickable: true,
+    title: '查看失败任务'
+  }
+])
+const projectFileProjectOptions = computed(() => {
+  const optionMap = new Map<string, { id: string; name: string; code?: string }>()
+  projects.value.forEach((project) => {
+    optionMap.set(project.id, { id: project.id, name: project.name, code: project.code })
+  })
+  files.value.forEach((file) => {
+    if (file.projectId && !optionMap.has(file.projectId)) {
+      optionMap.set(file.projectId, {
+        id: file.projectId,
+        name: file.projectName || file.projectId
+      })
+    }
+  })
+  return Array.from(optionMap.values())
+})
+const selectedSourceUploadProject = computed(() =>
+  projects.value.find((project) => project.id === sourceUploadProjectId.value)
+)
+const selectedKnowledgeFileProjectName = computed(() => {
+  const project = projectFileProjectOptions.value.find(
+    (item) => item.id === standardFileForm.projectId
+  )
+  return project?.name || standardFileForm.projectName || ''
+})
+const isProjectKnowledgeFile = (row?: KnowledgeFile | null) =>
+  Boolean(row?.projectId) || row?.sourceId === DEFAULT_PROJECT_FILE_SOURCE_ID
+const currentKnowledgeFileKind = computed(() =>
+  isProjectKnowledgeFile(standardFileEditing.value) ? '项目文件' : '标准规范'
+)
+const knowledgeFileDialogTitle = computed(
+  () =>
+    `${standardFileDialogMode.value === 'edit' ? '编辑' : '替换'}${currentKnowledgeFileKind.value}${
+      standardFileDialogMode.value === 'replace' ? '版本' : ''
+    }`
+)
 const knowledgeImportFileRows = computed(() =>
   knowledgeImportFiles.value.map((file) => ({
     id: `${file.name}-${file.size}-${file.lastModified}`,
@@ -786,9 +939,20 @@ const statusType = (status?: string) => {
   }
   if (['失败', '需补正', '停用'].some((key) => status.includes(key))) return 'danger'
   if (
-    ['索引', '运行', '排队', '待复核', '人工修正', '识别中', '向量化中'].some((key) =>
-      status.includes(key)
-    )
+    [
+      '索引',
+      '运行',
+      '排队',
+      '待复核',
+      '待识别',
+      '待向量化',
+      '未识别',
+      '未切片',
+      '未向量化',
+      '人工修正',
+      '识别中',
+      '向量化中'
+    ].some((key) => status.includes(key))
   ) {
     return 'warning'
   }
@@ -836,11 +1000,72 @@ const formatTextList = (items?: string[]) => {
   return items.join(' / ')
 }
 
+const formatRuleReferencedStandards = (
+  standards?: KnowledgeRuleVersion['referencedStandards']
+) => {
+  if (!standards?.length) return '--'
+  return standards
+    .map((item) => item.fileName || item.file || item.reference)
+    .filter(Boolean)
+    .join(' / ')
+}
+
+const formatRuleExecution = (execution?: KnowledgeRuleVersion['aiExecution']) => {
+  if (!execution) return '保存或发布时生成'
+  return JSON.stringify(execution, null, 2)
+}
+
+const formatAuditValue = (value: unknown, fallback = '-') => {
+  if (value === undefined || value === null || value === '') return fallback
+  if (typeof value === 'string') return value
+  return JSON.stringify(value, null, 2)
+}
+
+const fieldText = (record: Record<string, unknown> | undefined, field: string, fallback = '-') =>
+  formatAuditValue(record?.[field], fallback)
+
+const reasoningPromptAudit = computed<Record<string, unknown>>(() => {
+  const detail = reasoningDetail.value
+  return ((detail?.promptAudit || detail?.log.promptAudit || {}) as Record<string, unknown>) || {}
+})
+
+const reasoningLlmMetadata = computed<Record<string, unknown>>(() => {
+  const detail = reasoningDetail.value
+  return ((detail?.llmMetadata || detail?.log.llmMetadata || {}) as Record<string, unknown>) || {}
+})
+
+const reasoningTraceSteps = computed<Array<Record<string, unknown>>>(() => {
+  return reasoningDetail.value?.traceSteps || []
+})
+
+const reasoningPromptText = (field: string) => fieldText(reasoningPromptAudit.value, field, '暂无')
+
+const reasoningMetadataText = (field: string) => fieldText(reasoningLlmMetadata.value, field, '-')
+
+const reasoningPromptTemplateLabel = computed(() => {
+  const name = fieldText(reasoningPromptAudit.value, 'promptTemplateName', '')
+  const id = fieldText(reasoningPromptAudit.value, 'promptTemplateId', '')
+  return [name, id].filter(Boolean).join(' / ') || '-'
+})
+
+const reasoningProcessText = computed(() => {
+  const fromMetadata = reasoningLlmMetadata.value.reasoningProcess
+  return formatAuditValue(fromMetadata || reasoningDetail.value?.log.reasoningProcess, '暂无推理过程记录')
+})
+
+const reasoningResultText = computed(() => {
+  const fromMetadata = reasoningLlmMetadata.value.resultText
+  return formatAuditValue(fromMetadata || reasoningDetail.value?.log.llmResultText, '暂无推理结果记录')
+})
+
 const formatFileSize = (size: number) => {
   if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`
   if (size >= 1024) return `${(size / 1024).toFixed(1)} KB`
   return `${size} B`
 }
+
+const standardFilePath = (row: KnowledgeFile) =>
+  row.sourceRelativePath || row.originalFileName || row.fileName
 
 const allowedKnowledgeImportExtensions = new Set([
   'pdf',
@@ -1002,9 +1227,24 @@ const handlePageSizeChange = async (
   await loader()
 }
 
+const readKnowledgeTaskTotal = (response?: Awaited<ReturnType<typeof listKnowledgeTasksApi>>) =>
+  response?.data?.total || 0
+
 const loadOverview = async () => {
   const res = assertApiResponse(await getKnowledgeOverviewApi(), '知识库总览接口未返回有效数据。')
   overview.value = res.data || emptyOverview()
+}
+
+const loadProjectOptions = async () => {
+  try {
+    const res = assertApiResponse(
+      await listWorkbenchProjectsApi('admin'),
+      '项目列表接口未返回有效数据。'
+    )
+    projects.value = res.data || []
+  } catch {
+    projects.value = []
+  }
 }
 
 const loadSources = async () => {
@@ -1023,11 +1263,28 @@ const loadSources = async () => {
   })
 }
 
+const loadStandardFiles = async () => {
+  await loadSection('standardFiles', '标准规范文件加载失败', async () => {
+    const res = assertApiResponse(
+      await listKnowledgeProjectFilesApi({
+        keyword: standardFileFilters.keyword || undefined,
+        status: standardFileFilters.status || undefined,
+        sourceType: 'standard',
+        page: standardFilePagination.page,
+        pageSize: standardFilePagination.pageSize
+      }),
+      '标准规范文件接口未返回有效数据。'
+    )
+    standardFiles.value = applyPagination(standardFilePagination, res.data)
+  })
+}
+
 const loadFiles = async () => {
   await loadSection('files', '项目文件加载失败', async () => {
     const res = assertApiResponse(
       await listKnowledgeProjectFilesApi({
         keyword: fileFilters.keyword || undefined,
+        projectId: fileFilters.projectId || undefined,
         nodeId: fileFilters.nodeId,
         status: fileFilters.status || undefined,
         page: filePagination.page,
@@ -1052,6 +1309,27 @@ const loadTasks = async () => {
     )
     tasks.value = applyPagination(taskPagination, res.data)
   })
+}
+
+const loadKnowledgeTopTaskCounts = async () => {
+  const [vectorResult, failedResult] = await Promise.allSettled([
+    listKnowledgeTasksApi({ taskType: 'vector', page: 1, pageSize: 1 }),
+    listKnowledgeTasksApi({ status: '失败', page: 1, pageSize: 1 })
+  ])
+
+  if (vectorResult.status === 'fulfilled') {
+    knowledgeTopTaskCounts.vectorTotal = readKnowledgeTaskTotal(vectorResult.value)
+    knowledgeTopTaskCounts.vectorLoaded = true
+  } else {
+    knowledgeTopTaskCounts.vectorLoaded = false
+  }
+
+  if (failedResult.status === 'fulfilled') {
+    knowledgeTopTaskCounts.failedTotal = readKnowledgeTaskTotal(failedResult.value)
+    knowledgeTopTaskCounts.failedLoaded = true
+  } else {
+    knowledgeTopTaskCounts.failedLoaded = false
+  }
 }
 
 const loadRuleVersions = async () => {
@@ -1144,9 +1422,12 @@ const loadData = async () => {
   try {
     await Promise.all([
       loadOverview(),
+      loadProjectOptions(),
       loadSources(),
+      loadStandardFiles(),
       loadFiles(),
       loadTasks(),
+      loadKnowledgeTopTaskCounts(),
       loadRuleVersions(),
       loadKnowledgeConfig(),
       loadKnowledgeAuditLogs(),
@@ -1165,7 +1446,7 @@ const loadData = async () => {
       pageIssue.value = {
         type: 'empty',
         title: '暂无知识库数据',
-        message: '当前环境没有返回知识源、项目文件或任务数据，可重新加载或先新增知识源。'
+        message: '当前环境没有返回标准规范、项目文件或任务数据，可重新加载或先上传标准规范。'
       }
     }
   } catch (error) {
@@ -1184,12 +1465,55 @@ const handleRetryLoad = () => {
   loadData()
 }
 
+const navigateKnowledgeTab = async (tab: KnowledgeTabKey) => {
+  const targetPath = knowledgeTabRouteMap[tab]
+  if (route.path === targetPath) {
+    activeTab.value = tab
+    await loadKnowledgeTabData(tab)
+    scrollKnowledgeContentIntoView()
+    return
+  }
+  await router.push(targetPath)
+}
+
+const handleKnowledgeTopStatClick = async (stat: KnowledgeTopStat) => {
+  if (stat.key === 'sources') {
+    sourceFilters.keyword = ''
+    sourceFilters.sourceType = ''
+    sourceFilters.status = ''
+    standardFileFilters.keyword = ''
+    standardFileFilters.status = ''
+    sourcePagination.page = 1
+    standardFilePagination.page = 1
+    await navigateKnowledgeTab('source-manage')
+    return
+  }
+
+  if (stat.key === 'vectorTasks') {
+    taskFilters.taskType = 'vector'
+    taskFilters.status = ''
+    taskPagination.page = 1
+    await navigateKnowledgeTab('tasks')
+    return
+  }
+
+  if (stat.key === 'failedTasks') {
+    taskFilters.taskType = ''
+    taskFilters.status = '失败'
+    taskPagination.page = 1
+    await navigateKnowledgeTab('tasks')
+  }
+}
+
 const refreshKnowledgeState = async () => {
   await Promise.all([
     loadOverview(),
+    loadProjectOptions(),
     loadSources(),
+    loadStandardFiles(),
     loadFiles(),
     loadTasks(),
+    loadKnowledgeTopTaskCounts(),
     loadKnowledgeAuditLogs()
   ])
 }
@@ -1305,6 +1629,10 @@ const triggerSourceUploadFileSelect = () => {
   sourceUploadFileInputRef.value?.click()
 }
 
+const triggerSourceUploadDirectorySelect = () => {
+  sourceUploadDirectoryInputRef.value?.click()
+}
+
 const addSourceUploadFiles = (fileList: FileList | null) => {
   if (!fileList?.length) return
   const nextRows = [...sourceUploadFiles.value]
@@ -1355,17 +1683,66 @@ const clearSourceUploadFiles = () => {
   syncSourceUploadFileCount()
 }
 
-const openCreateSourceDialog = () => {
+const getDefaultProjectFileUploadProjectId = () =>
+  fileFilters.projectId || projects.value[0]?.id || ''
+
+const openCreateSourceDialog = (
+  context: 'source' | 'standard-file' | 'project-file' = 'source'
+) => {
   clearOperationIssue('source')
+  sourceDialogContext.value = context
   sourceDialogMode.value = 'create'
   sourceEditingId.value = ''
-  Object.assign(sourceForm, emptySourceForm())
+  const isProjectFileUpload = context === 'project-file'
+  Object.assign(sourceForm, {
+    ...emptySourceForm(),
+    name: isProjectFileUpload ? DEFAULT_PROJECT_FILE_SOURCE_NAME : DEFAULT_STANDARD_SOURCE_NAME,
+    sourceType: isProjectFileUpload ? 'project-file' : 'standard',
+    version: isProjectFileUpload
+      ? DEFAULT_PROJECT_FILE_SOURCE_VERSION
+      : DEFAULT_STANDARD_SOURCE_VERSION,
+    status: '启用',
+    vectorStatus: '待向量化'
+  })
+  sourceUploadProjectId.value = isProjectFileUpload ? getDefaultProjectFileUploadProjectId() : ''
   sourceUploadFiles.value = []
   sourceDialogVisible.value = true
 }
 
+const handleImportRulesStandards = async () => {
+  actionLoading.value = 'rules-standards-import'
+  clearOperationIssue('source')
+  try {
+    const res = await importRulesStandardsApi({
+      sourceId: DEFAULT_STANDARD_SOURCE_ID,
+      sourceName: DEFAULT_STANDARD_SOURCE_NAME,
+      sourceVersion: DEFAULT_STANDARD_SOURCE_VERSION,
+      sourceStatus: '启用',
+      reset: true
+    })
+    if (!res) {
+      setOperationIssue('source', buildOperationFailureMessage('标准规范上传'))
+      return
+    }
+    const importedCount = res.data?.files?.length || res.data?.summary?.imported || 0
+    const skippedCount = res.data?.skipped?.length || res.data?.summary?.skipped || 0
+    const removedCount = res.data?.summary?.removed || 0
+    ElMessage.success(
+      `标准规范库已重新初始化，移除 ${removedCount} 个旧文件，导入 ${importedCount} 个文件${
+        skippedCount ? `，跳过 ${skippedCount} 个` : ''
+      }`
+    )
+    await refreshKnowledgeState()
+  } catch (error) {
+    setOperationIssue('source', buildOperationFailureMessage('标准规范上传'), error)
+  } finally {
+    actionLoading.value = ''
+  }
+}
+
 const openEditSourceDialog = (row: KnowledgeSource) => {
   clearOperationIssue('source')
+  sourceDialogContext.value = 'source'
   sourceDialogMode.value = 'edit'
   sourceEditingId.value = row.id
   sourceUploadFiles.value = []
@@ -1383,7 +1760,24 @@ const openEditSourceDialog = (row: KnowledgeSource) => {
 
 const handleSaveSource = async () => {
   const sourceUploadRows = sourceUploadFiles.value
-  const sourceName = sourceForm.name.trim() || sourceUploadRows[0]?.fileName.trim() || ''
+  const isStandardFileUpload = sourceDialogContext.value === 'standard-file'
+  const isProjectFileUpload = sourceDialogContext.value === 'project-file'
+  const sourceName =
+    (isStandardFileUpload
+      ? DEFAULT_STANDARD_SOURCE_NAME
+      : isProjectFileUpload
+        ? DEFAULT_PROJECT_FILE_SOURCE_NAME
+        : sourceForm.name.trim()) ||
+    sourceUploadRows[0]?.fileName.trim() ||
+    ''
+  if ((isStandardFileUpload || isProjectFileUpload) && !sourceUploadRows.length) {
+    ElMessage.warning(isProjectFileUpload ? '请选择要上传的项目文件' : '请选择要上传的标准规范文件')
+    return
+  }
+  if (isProjectFileUpload && !sourceUploadProjectId.value) {
+    ElMessage.warning('请选择项目')
+    return
+  }
   if (!sourceName) {
     ElMessage.warning('请输入类别名称或选择上传文件')
     return
@@ -1399,12 +1793,28 @@ const handleSaveSource = async () => {
       if (sourceUploadRows.length) {
         const res = await importKnowledgeFilesApi({
           files: sourceUploadRows.map((row) => row.file),
-          sourceId: createClientKnowledgeSourceId(),
+          sourceId: isProjectFileUpload
+            ? DEFAULT_PROJECT_FILE_SOURCE_ID
+            : isStandardFileUpload || sourceForm.sourceType === 'standard'
+              ? DEFAULT_STANDARD_SOURCE_ID
+              : createClientKnowledgeSourceId(),
           sourceName,
-          sourceType: sourceForm.sourceType,
-          sourceVersion: sourceForm.version,
-          sourceStatus: sourceForm.status,
+          sourceType: isProjectFileUpload
+            ? 'project-file'
+            : isStandardFileUpload
+              ? 'standard'
+              : sourceForm.sourceType,
+          sourceVersion: isProjectFileUpload
+            ? DEFAULT_PROJECT_FILE_SOURCE_VERSION
+            : isStandardFileUpload
+              ? DEFAULT_STANDARD_SOURCE_VERSION
+              : sourceForm.version,
+          sourceStatus: isStandardFileUpload || isProjectFileUpload ? '启用' : sourceForm.status,
           vectorStatus: '待向量化',
+          projectId: isProjectFileUpload ? sourceUploadProjectId.value : undefined,
+          projectName: isProjectFileUpload
+            ? selectedSourceUploadProject.value?.name || sourceUploadProjectId.value
+            : undefined,
           fileMetas: sourceUploadRows.map((row) => ({
             fileName: row.fileName.trim(),
             relativePath: row.relativePath,
@@ -1425,7 +1835,13 @@ const handleSaveSource = async () => {
           return
         }
         ElMessage.success(
-          `知识源已新增，已上传 ${importedCount} 个文件${skippedCount ? `，跳过 ${skippedCount} 个` : ''}`
+          `${
+            isProjectFileUpload
+              ? '项目文件已上传'
+              : isStandardFileUpload
+                ? '标准规范文件已上传'
+                : '知识源已新增'
+          }，已上传 ${importedCount} 个文件${skippedCount ? `，跳过 ${skippedCount} 个` : ''}`
         )
       } else {
         const res = await createKnowledgeSourceApi({ ...sourceForm, name: sourceName })
@@ -1448,6 +1864,7 @@ const handleSaveSource = async () => {
     }
     sourceDialogVisible.value = false
     sourceUploadFiles.value = []
+    sourceUploadProjectId.value = ''
     await refreshKnowledgeState()
   } catch (error) {
     setOperationIssue(
@@ -1572,11 +1989,22 @@ const assignRuleForm = (row?: KnowledgeRuleVersion) => {
   Object.assign(ruleForm, {
     sequence,
     sourceSequence: sequence,
+    sourceRuleId: row.sourceRuleId || '',
+    sourceDocument: row.sourceDocument || '',
+    businessModule: row.businessModule || row.inspectionCategory || '',
     inspectionCategory: row.inspectionCategory || '',
     inspectionItem: row.inspectionItem || row.name || '',
     inspectionClass: row.inspectionClass || row.reviewClass || 'C',
     standardText: row.standardText || row.criteria || '',
     witnessText: row.witnessText || row.checkMethod || '',
+    sourceWitness: row.sourceWitness || '',
+    agentThinking: row.agentThinking || '',
+    toolchainThinking: row.toolchainThinking || '',
+    referencedStandards: row.referencedStandards ? [...row.referencedStandards] : [],
+    materialTypeCodes: row.materialTypeCodes ? [...row.materialTypeCodes] : [],
+    thinkingModeIds: row.thinkingModeIds ? [...row.thinkingModeIds] : [],
+    toolIds: row.toolIds ? [...row.toolIds] : [],
+    aiExecution: row.aiExecution,
     nodeIds: row.nodeIds?.length ? [...row.nodeIds] : sequence ? [sequence] : []
   })
   if (sequence) {
@@ -1634,11 +2062,22 @@ const buildRuleSavePayload = (): KnowledgeRuleVersionSavePayload => {
   return {
     sequence,
     sourceSequence: sequence,
+    sourceRuleId: ruleForm.sourceRuleId?.trim(),
+    sourceDocument: ruleForm.sourceDocument?.trim(),
+    businessModule: ruleForm.businessModule?.trim() || ruleForm.inspectionCategory?.trim(),
     inspectionCategory: selectedNode?.inspectionCategory || ruleForm.inspectionCategory?.trim(),
     inspectionItem: selectedNode?.inspectionItem || ruleForm.inspectionItem.trim(),
     inspectionClass: ruleForm.inspectionClass || 'C',
     standardText: ruleForm.standardText?.trim(),
     witnessText: ruleForm.witnessText?.trim(),
+    sourceWitness: ruleForm.sourceWitness?.trim(),
+    agentThinking: ruleForm.agentThinking?.trim(),
+    toolchainThinking: ruleForm.toolchainThinking?.trim(),
+    referencedStandards: ruleForm.referencedStandards,
+    materialTypeCodes: ruleForm.materialTypeCodes,
+    thinkingModeIds: ruleForm.thinkingModeIds,
+    toolIds: ruleForm.toolIds,
+    aiExecution: ruleForm.aiExecution,
     nodeIds: sequence ? [sequence] : ruleForm.nodeIds
   }
 }
@@ -1834,6 +2273,51 @@ const handleReindexSource = async (row: KnowledgeOverviewPayload['libraries'][nu
   }
 }
 
+const loadKnowledgeFileDetailBundle = async (row: KnowledgeFile) => {
+  const [detailRes, chunksRes, vectorRes, refRes] = await Promise.all([
+    getKnowledgeFileDetailApi(row.id, { silentBusinessError: true }),
+    listKnowledgeFileChunksApi(row.id, { pageSize: 12 }, { silentBusinessError: true }),
+    getKnowledgeFileVectorApi(row.id, { silentBusinessError: true }),
+    listKnowledgeFileReasoningReferencesApi(row.id, { pageSize: 10 }, { silentBusinessError: true })
+  ])
+  if (!detailRes || !chunksRes || !vectorRes || !refRes) {
+    throw new Error('文件知识详情接口未返回有效数据。')
+  }
+  return { detailRes, chunksRes, vectorRes, refRes }
+}
+
+const findFreshStandardFile = async (row: KnowledgeFile) => {
+  const keyword = row.sourceRelativePath || row.originalFileName || row.fileName
+  if (!keyword) return undefined
+  const res = assertApiResponse(
+    await listKnowledgeProjectFilesApi({
+      keyword,
+      sourceType: 'standard',
+      page: 1,
+      pageSize: 200
+    }),
+    '标准规范文件接口未返回有效数据。'
+  )
+  const items = res.data?.items || []
+  const fresh =
+    items.find(
+      (item) => row.sourceRelativePath && item.sourceRelativePath === row.sourceRelativePath
+    ) ||
+    items.find((item) => row.originalFileName && item.originalFileName === row.originalFileName) ||
+    items.find((item) => item.fileName === row.fileName)
+  if (fresh) {
+    const index = standardFiles.value.findIndex(
+      (item) =>
+        item.id === row.id ||
+        Boolean(row.sourceRelativePath && item.sourceRelativePath === row.sourceRelativePath)
+    )
+    if (index >= 0) {
+      standardFiles.value.splice(index, 1, fresh)
+    }
+  }
+  return fresh
+}
+
 const handleOpenFile = async (row: KnowledgeFile) => {
   fileDrawerVisible.value = true
   fileDetailLoading.value = true
@@ -1842,16 +2326,18 @@ const handleOpenFile = async (row: KnowledgeFile) => {
   fileReferences.value = []
   clearOperationIssue('fileDetail')
   try {
-    const [detailRes, chunksRes, vectorRes, refRes] = await Promise.all([
-      getKnowledgeFileDetailApi(row.id),
-      listKnowledgeFileChunksApi(row.id, { pageSize: 12 }),
-      getKnowledgeFileVectorApi(row.id),
-      listKnowledgeFileReasoningReferencesApi(row.id, { pageSize: 10 })
-    ])
-    if (!detailRes || !chunksRes || !vectorRes || !refRes) {
-      setOperationIssue('fileDetail', buildOperationFailureMessage('文件知识详情加载'))
-      return
+    let target = row
+    let bundle
+    try {
+      bundle = await loadKnowledgeFileDetailBundle(target)
+    } catch (error) {
+      const fresh = await findFreshStandardFile(row)
+      if (!fresh || fresh.id === row.id) throw error
+      target = fresh
+      bundle = await loadKnowledgeFileDetailBundle(target)
+      ElMessage.info('列表数据已刷新，已打开最新标准规范详情')
     }
+    const { detailRes, chunksRes, vectorRes, refRes } = bundle
     fileDetail.value = {
       ...detailRes.data,
       vectorSummary: vectorRes.data
@@ -1863,6 +2349,15 @@ const handleOpenFile = async (row: KnowledgeFile) => {
   } finally {
     fileDetailLoading.value = false
   }
+}
+
+const openKnowledgeFileOriginal = (mode: 'preview' | 'download') => {
+  const target = mode === 'preview' ? fileDetail.value?.preview : fileDetail.value?.download
+  if (!target?.url) {
+    ElMessage.warning('原文地址尚未生成')
+    return
+  }
+  window.open(target.url, '_blank', 'noopener,noreferrer')
 }
 
 const handleReindexFile = async (row: KnowledgeFile) => {
@@ -1878,6 +2373,163 @@ const handleReindexFile = async (row: KnowledgeFile) => {
     await refreshKnowledgeState()
   } catch (error) {
     setOperationIssue('file', buildOperationFailureMessage('文件重建索引'), error)
+  } finally {
+    actionLoading.value = ''
+  }
+}
+
+const openEditStandardFileDialog = (row: KnowledgeFile) => {
+  clearOperationIssue('file')
+  standardFileDialogMode.value = 'edit'
+  standardFileEditing.value = row
+  standardFileReplacement.value = null
+  Object.assign(standardFileForm, {
+    fileName: row.fileName || '',
+    sourceRelativePath: row.sourceRelativePath || row.originalFileName || row.fileName || '',
+    contextDescription: row.contextDescription || '',
+    projectId: row.projectId || '',
+    projectName: row.projectName || ''
+  })
+  standardFileDialogVisible.value = true
+}
+
+const openReplaceStandardFileDialog = (row: KnowledgeFile) => {
+  clearOperationIssue('file')
+  standardFileDialogMode.value = 'replace'
+  standardFileEditing.value = row
+  standardFileReplacement.value = null
+  Object.assign(standardFileForm, {
+    fileName: row.fileName || '',
+    sourceRelativePath: row.sourceRelativePath || row.originalFileName || row.fileName || '',
+    contextDescription: row.contextDescription || '',
+    projectId: row.projectId || '',
+    projectName: row.projectName || ''
+  })
+  standardFileDialogVisible.value = true
+}
+
+const triggerStandardFileReplaceSelect = () => {
+  standardFileReplaceInputRef.value?.click()
+}
+
+const handleStandardFileReplaceInputChange = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  if (!isAllowedKnowledgeImportFile(file)) {
+    ElMessage.warning('文件类型不支持')
+    input.value = ''
+    return
+  }
+  standardFileReplacement.value = file
+  if (!standardFileForm.fileName.trim()) {
+    standardFileForm.fileName = file.name
+  }
+  const relativePath =
+    (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name
+  if (!standardFileForm.sourceRelativePath.trim()) {
+    standardFileForm.sourceRelativePath = relativePath
+  }
+  input.value = ''
+}
+
+const handleSaveStandardFile = async () => {
+  const current = standardFileEditing.value
+  if (!current) return
+  if (!standardFileForm.fileName.trim()) {
+    ElMessage.warning('请输入文件名称')
+    return
+  }
+  if (isProjectKnowledgeFile(current) && !standardFileForm.projectId) {
+    ElMessage.warning('请选择项目')
+    return
+  }
+  if (standardFileDialogMode.value === 'replace' && !standardFileReplacement.value) {
+    ElMessage.warning('请选择替换版本文件')
+    return
+  }
+  actionLoading.value = 'standard-file-save'
+  clearOperationIssue('file')
+  try {
+    if (standardFileDialogMode.value === 'edit') {
+      const res = await updateKnowledgeFileApi(
+        current.id,
+        {
+          fileName: standardFileForm.fileName.trim(),
+          sourceRelativePath: standardFileForm.sourceRelativePath.trim(),
+          contextDescription: standardFileForm.contextDescription.trim(),
+          projectId: isProjectKnowledgeFile(current) ? standardFileForm.projectId : undefined,
+          projectName: isProjectKnowledgeFile(current)
+            ? selectedKnowledgeFileProjectName.value
+            : undefined
+        },
+        { etag: current.etag }
+      )
+      if (!res) {
+        setOperationIssue(
+          'file',
+          buildOperationFailureMessage(`${currentKnowledgeFileKind.value}更新`)
+        )
+        return
+      }
+      ElMessage.success(`${currentKnowledgeFileKind.value}已更新`)
+    } else if (standardFileReplacement.value) {
+      const res = await replaceKnowledgeFileVersionApi(
+        current.id,
+        {
+          file: standardFileReplacement.value,
+          fileName: standardFileForm.fileName.trim(),
+          relativePath: standardFileForm.sourceRelativePath.trim(),
+          contextDescription: standardFileForm.contextDescription.trim()
+        },
+        { etag: current.etag }
+      )
+      if (!res) {
+        setOperationIssue(
+          'file',
+          buildOperationFailureMessage(`${currentKnowledgeFileKind.value}版本替换`)
+        )
+        return
+      }
+      ElMessage.success(`${currentKnowledgeFileKind.value}版本已替换，已重新进入识别队列`)
+    }
+    standardFileDialogVisible.value = false
+    standardFileReplacement.value = null
+    standardFileEditing.value = null
+    await refreshKnowledgeState()
+  } catch (error) {
+    setOperationIssue(
+      'file',
+      buildOperationFailureMessage(
+        standardFileDialogMode.value === 'edit'
+          ? `${currentKnowledgeFileKind.value}更新`
+          : `${currentKnowledgeFileKind.value}版本替换`
+      ),
+      error
+    )
+  } finally {
+    actionLoading.value = ''
+  }
+}
+
+const handleDeleteStandardFile = async (row: KnowledgeFile) => {
+  actionLoading.value = `file-delete-${row.id}`
+  clearOperationIssue('file')
+  const fileKind = isProjectKnowledgeFile(row) ? '项目文件' : '标准规范'
+  try {
+    const res = await deleteKnowledgeFileApi(
+      row.id,
+      { reason: `${fileKind}页面删除` },
+      { etag: row.etag }
+    )
+    if (!res) {
+      setOperationIssue('file', buildOperationFailureMessage(`${fileKind}删除`))
+      return
+    }
+    ElMessage.success(`${row.fileName} 已删除`)
+    await refreshKnowledgeState()
+  } catch (error) {
+    setOperationIssue('file', buildOperationFailureMessage(`${fileKind}删除`), error)
   } finally {
     actionLoading.value = ''
   }
@@ -2040,15 +2692,7 @@ onMounted(() => {
       right-toggle-label="运行摘要"
       right-collapsed-default
       boundary-collapsed-default
-      :top-stats="[
-        { label: '知识源', value: sources.length, tone: 'blue' },
-        {
-          label: '向量任务',
-          value: tasks.filter((task) => task.taskType === 'vector').length,
-          tone: 'green'
-        },
-        { label: '失败任务', value: taskPagination.total || 7, tone: 'red' }
-      ]"
+      :top-stats="knowledgeTopStats"
       menu-title="知识库菜单"
       menu-root="AI 知识库管理"
       peer-nav-title="后台同级功能"
@@ -2062,6 +2706,7 @@ onMounted(() => {
       right-subtitle="索引版本：proj-v2026.06.26"
       :right-cards="knowledgeShellRightCards"
       @menu-select="handleKnowledgeMenuSelect"
+      @top-stat-click="handleKnowledgeTopStatClick"
     >
       <div class="page-toolbar">
         <div>
@@ -2292,7 +2937,7 @@ onMounted(() => {
                     <span>知识源</span>
                     <ElSpace>
                       <ElTag type="success" effect="plain">{{ sources.length }} 个来源</ElTag>
-                      <ElButton size="small" type="primary" @click="openCreateSourceDialog">
+                      <ElButton size="small" type="primary" @click="openCreateSourceDialog()">
                         新增
                       </ElButton>
                     </ElSpace>
@@ -2394,72 +3039,100 @@ onMounted(() => {
           </ElRow>
         </ElTabPane>
 
-        <ElTabPane label="知识源管理" name="source-manage">
+        <ElTabPane label="标准规范库" name="source-manage">
           <ElCard shadow="never" class="panel">
             <template #header>
               <div class="panel-header">
-                <span>标准库与知识源维护</span>
+                <span>标准规范库</span>
                 <ElSpace>
-                  <ElTag effect="plain">{{ sourcePagination.total }} 个知识源</ElTag>
-                  <ElButton type="primary" @click="openCreateSourceDialog">新增知识源</ElButton>
+                  <ElTag effect="plain">{{ standardFilePagination.total }} 个标准规范</ElTag>
+                  <ElButton
+                    type="success"
+                    plain
+                    :loading="actionLoading === 'rules-standards-import'"
+                    @click="handleImportRulesStandards"
+                  >
+                    重新初始化标准库
+                  </ElButton>
+                  <ElButton type="primary" @click="openCreateSourceDialog('standard-file')">
+                    上传标准文件
+                  </ElButton>
                 </ElSpace>
               </div>
             </template>
-            <div class="filter-bar">
-              <ElInput
-                v-model="sourceFilters.keyword"
-                clearable
-                placeholder="搜索知识源或版本"
-                @change="handleFilterChange(sourcePagination, loadSources)"
-              />
-              <ElSelect
-                v-model="sourceFilters.sourceType"
-                clearable
-                placeholder="类型"
-                @change="handleFilterChange(sourcePagination, loadSources)"
-              >
-                <ElOption label="标准规范" value="standard" />
-                <ElOption label="项目文件" value="project-file" />
-                <ElOption label="人工维护" value="manual" />
-              </ElSelect>
-              <ElSelect
-                v-model="sourceFilters.status"
-                clearable
-                placeholder="状态"
-                @change="handleFilterChange(sourcePagination, loadSources)"
-              >
-                <ElOption
-                  v-for="status in sourceStatusOptions"
-                  :key="status"
-                  :label="status"
-                  :value="status"
-                />
-              </ElSelect>
-              <ElButton @click="loadSources">刷新</ElButton>
-            </div>
-            <div v-if="sectionIssues.sources" class="section-error">
+            <div v-if="sectionIssues.standardFiles" class="section-error">
               <div>
-                <strong>{{ sectionIssues.sources.title }}</strong>
-                <span>{{ sectionIssues.sources.message }}</span>
+                <strong>{{ sectionIssues.standardFiles.title }}</strong>
+                <span>{{ sectionIssues.standardFiles.message }}</span>
               </div>
-              <ElButton size="small" type="primary" plain @click="loadSources">重新加载</ElButton>
+              <ElButton size="small" type="primary" plain @click="loadStandardFiles">
+                重新加载
+              </ElButton>
             </div>
             <div v-if="operationIssues.source" class="section-error">
               <div>
                 <strong>{{ operationIssues.source.title }}</strong>
                 <span>{{ operationIssues.source.message }}</span>
               </div>
-              <ElButton size="small" type="primary" plain @click="loadSources">刷新列表</ElButton>
+              <ElButton size="small" type="primary" plain @click="loadStandardFiles">
+                刷新列表
+              </ElButton>
             </div>
-            <ElTable :data="sources" border height="430" empty-text="暂无知识源">
-              <ElTableColumn prop="name" label="知识源" min-width="240" show-overflow-tooltip />
-              <ElTableColumn label="类型" width="120">
-                <template #default="{ row }">{{ sourceTypeLabel(row.sourceType) }}</template>
+            <div v-if="operationIssues.file" class="section-error">
+              <div>
+                <strong>{{ operationIssues.file.title }}</strong>
+                <span>{{ operationIssues.file.message }}</span>
+              </div>
+              <ElButton size="small" type="primary" plain @click="loadStandardFiles">
+                刷新列表
+              </ElButton>
+            </div>
+            <div class="filter-bar">
+              <ElInput
+                v-model="standardFileFilters.keyword"
+                clearable
+                placeholder="搜索标准规范名称或路径"
+                @change="handleFilterChange(standardFilePagination, loadStandardFiles)"
+              />
+              <ElSelect
+                v-model="standardFileFilters.status"
+                clearable
+                placeholder="处理状态"
+                @change="handleFilterChange(standardFilePagination, loadStandardFiles)"
+              >
+                <ElOption label="待识别" value="待识别" />
+                <ElOption label="未识别" value="未识别" />
+                <ElOption label="识别中" value="识别中" />
+                <ElOption label="已识别" value="已识别" />
+                <ElOption label="未切片" value="未切片" />
+                <ElOption label="已切片" value="已切片" />
+                <ElOption label="待向量化" value="待向量化" />
+                <ElOption label="已向量化" value="已向量化" />
+              </ElSelect>
+              <ElButton @click="loadStandardFiles">刷新</ElButton>
+            </div>
+            <ElTable :data="standardFiles" border height="430" empty-text="暂无标准规范文件">
+              <ElTableColumn
+                prop="fileName"
+                label="标准规范"
+                min-width="280"
+                show-overflow-tooltip
+              />
+              <ElTableColumn label="来源路径" min-width="320" show-overflow-tooltip>
+                <template #default="{ row }">{{ standardFilePath(row) }}</template>
               </ElTableColumn>
-              <ElTableColumn prop="version" label="版本" min-width="170" show-overflow-tooltip />
-              <ElTableColumn label="状态" width="100">
+              <ElTableColumn label="OCR" width="110">
                 <template #default="{ row }">
-                  <ElTag :type="statusType(row.status)" effect="light">{{ row.status }}</ElTag>
+                  <ElTag :type="statusType(row.ocrStatus)" effect="light">{{
+                    row.ocrStatus
+                  }}</ElTag>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="切片" width="110">
+                <template #default="{ row }">
+                  <ElTag :type="statusType(row.sliceStatus)" effect="light">{{
+                    row.sliceStatus
+                  }}</ElTag>
                 </template>
               </ElTableColumn>
               <ElTableColumn label="向量" width="120">
@@ -2469,54 +3142,63 @@ onMounted(() => {
                   </ElTag>
                 </template>
               </ElTableColumn>
-              <ElTableColumn label="文件/切片" width="120">
-                <template #default="{ row }">{{ row.fileCount }} / {{ row.chunkCount }}</template>
+              <ElTableColumn label="切片/向量" width="120">
+                <template #default="{ row }">{{ row.chunkCount }} / {{ row.vectorCount }}</template>
               </ElTableColumn>
               <ElTableColumn prop="updatedAt" label="更新时间" width="170" />
-              <ElTableColumn label="操作" width="230" fixed="right">
+              <ElTableColumn label="操作" width="320" fixed="right">
                 <template #default="{ row }">
-                  <ElButton link type="primary" @click="openEditSourceDialog(row)">编辑</ElButton>
-                  <ElButton
-                    link
-                    :type="row.status === '启用' ? 'danger' : 'success'"
-                    :loading="actionLoading === `source-status-${row.id}`"
-                    @click="handleToggleSourceStatus(row)"
-                  >
-                    {{ row.status === '启用' ? '停用' : '启用' }}
-                  </ElButton>
-                  <ElButton
-                    link
-                    type="primary"
-                    :loading="actionLoading === `source-${row.id}`"
-                    @click="
-                      handleReindexSource({
-                        key: row.id,
-                        name: row.name,
-                        fileCount: row.fileCount,
-                        chunkCount: row.chunkCount,
-                        vectorCount: row.chunkCount,
-                        indexVersion: row.version || row.id,
-                        status: row.status,
-                        updatedAt: row.updatedAt
-                      })
-                    "
-                  >
-                    重建索引
-                  </ElButton>
+                  <div class="standard-file-actions">
+                    <ElButton link type="primary" @click="handleOpenFile(row)">详情</ElButton>
+                    <ElButton link type="primary" @click="openEditStandardFileDialog(row)">
+                      编辑
+                    </ElButton>
+                    <ElButton link type="primary" @click="openReplaceStandardFileDialog(row)">
+                      替换版本
+                    </ElButton>
+                    <ElButton
+                      link
+                      type="primary"
+                      :loading="actionLoading === `file-${row.id}`"
+                      @click="handleReindexFile(row)"
+                    >
+                      重建索引
+                    </ElButton>
+                    <ElPopconfirm
+                      title="确认删除这个标准规范？"
+                      confirm-button-text="删除"
+                      cancel-button-text="取消"
+                      @confirm="handleDeleteStandardFile(row)"
+                    >
+                      <template #reference>
+                        <ElButton
+                          link
+                          type="danger"
+                          :loading="actionLoading === `file-delete-${row.id}`"
+                        >
+                          删除
+                        </ElButton>
+                      </template>
+                    </ElPopconfirm>
+                  </div>
                 </template>
               </ElTableColumn>
             </ElTable>
             <ElPagination
-              v-if="sourcePagination.total > sourcePagination.pageSize"
-              v-model:current-page="sourcePagination.page"
-              v-model:page-size="sourcePagination.pageSize"
+              v-if="standardFilePagination.total > standardFilePagination.pageSize"
+              v-model:current-page="standardFilePagination.page"
+              v-model:page-size="standardFilePagination.pageSize"
               class="table-pagination"
               background
-              :page-sizes="[6, 10, 20, 50]"
+              :page-sizes="[10, 20, 50]"
               layout="total, sizes, prev, pager, next"
-              :total="sourcePagination.total"
-              @size-change="(size) => handlePageSizeChange(sourcePagination, loadSources, size)"
-              @current-change="(page) => handlePageChange(sourcePagination, loadSources, page)"
+              :total="standardFilePagination.total"
+              @size-change="
+                (size) => handlePageSizeChange(standardFilePagination, loadStandardFiles, size)
+              "
+              @current-change="
+                (page) => handlePageChange(standardFilePagination, loadStandardFiles, page)
+              "
             />
           </ElCard>
         </ElTabPane>
@@ -2525,7 +3207,7 @@ onMounted(() => {
           <ElCard shadow="never" class="panel">
             <template #header>
               <div class="panel-header">
-                <span>业务规则管理</span>
+                <span>业务判断规则管理</span>
                 <ElSpace>
                   <ElTag effect="plain">{{ rulePagination.total }} 条规则</ElTag>
                   <ElButton type="primary" @click="openCreateRuleEditor">新增规则</ElButton>
@@ -2838,21 +3520,43 @@ onMounted(() => {
           </ElRow>
         </ElTabPane>
 
-        <ElTabPane label="知识文件库" name="files">
+        <ElTabPane label="项目文件知识库" name="files">
           <ElCard shadow="never" class="panel">
             <template #header>
               <div class="panel-header">
-                <span>知识文件库</span>
-                <ElTag effect="plain">{{ filePagination.total }} 个文件</ElTag>
+                <span>项目文件知识库</span>
+                <ElSpace>
+                  <ElTag effect="plain">{{ filePagination.total }} 个文件</ElTag>
+                  <ElButton type="primary" @click="openCreateSourceDialog('project-file')">
+                    上传项目文件
+                  </ElButton>
+                </ElSpace>
               </div>
             </template>
             <div class="filter-bar">
               <ElInput
                 v-model="fileFilters.keyword"
                 clearable
-                placeholder="搜索文件、知识源、节点或项目"
+                placeholder="搜索文件、节点或项目"
                 @change="handleFilterChange(filePagination, loadFiles)"
               />
+              <ElSelect
+                v-model="fileFilters.projectId"
+                clearable
+                filterable
+                placeholder="按项目筛选"
+                @change="handleFilterChange(filePagination, loadFiles)"
+              >
+                <ElOption
+                  v-for="project in projectFileProjectOptions"
+                  :key="project.id"
+                  :label="project.name"
+                  :value="project.id"
+                >
+                  <span>{{ project.name }}</span>
+                  <span v-if="project.code" class="select-option-meta">{{ project.code }}</span>
+                </ElOption>
+              </ElSelect>
               <ElInputNumber
                 v-model="fileFilters.nodeId"
                 :min="1"
@@ -2867,6 +3571,8 @@ onMounted(() => {
                 placeholder="状态"
                 @change="handleFilterChange(filePagination, loadFiles)"
               >
+                <ElOption label="待识别" value="待识别" />
+                <ElOption label="未识别" value="未识别" />
                 <ElOption label="已识别" value="已识别" />
                 <ElOption label="识别中" value="识别中" />
                 <ElOption label="人工修正" value="人工修正" />
@@ -2891,15 +3597,8 @@ onMounted(() => {
               <ElButton size="small" type="primary" plain @click="loadFiles">刷新文件</ElButton>
             </div>
             <ElTable :data="files" border height="430" empty-text="暂无项目知识文件">
-              <ElTableColumn prop="fileName" label="文件" min-width="220" />
-              <ElTableColumn
-                prop="sourceName"
-                label="知识源"
-                min-width="180"
-                show-overflow-tooltip
-              />
               <ElTableColumn label="项目" min-width="220" show-overflow-tooltip>
-                <template #default="{ row }">{{ row.projectName || '标准/公共知识' }}</template>
+                <template #default="{ row }">{{ row.projectName || '未绑定项目' }}</template>
               </ElTableColumn>
               <ElTableColumn prop="nodeId" label="节点" width="76" />
               <ElTableColumn
@@ -2908,6 +3607,7 @@ onMounted(() => {
                 min-width="220"
                 show-overflow-tooltip
               />
+              <ElTableColumn prop="fileName" label="文件" min-width="240" show-overflow-tooltip />
               <ElTableColumn label="OCR" width="110">
                 <template #default="{ row }">
                   <ElTag :type="statusType(row.ocrStatus)" effect="light">{{
@@ -2933,17 +3633,41 @@ onMounted(() => {
                 <template #default="{ row }">{{ row.chunkCount }} / {{ row.vectorCount }}</template>
               </ElTableColumn>
               <ElTableColumn prop="updatedAt" label="更新时间" width="170" />
-              <ElTableColumn label="操作" width="150" fixed="right">
+              <ElTableColumn label="操作" width="320" fixed="right">
                 <template #default="{ row }">
-                  <ElButton link type="primary" @click="handleOpenFile(row)">详情</ElButton>
-                  <ElButton
-                    link
-                    type="primary"
-                    :loading="actionLoading === `file-${row.id}`"
-                    @click="handleReindexFile(row)"
-                  >
-                    重建索引
-                  </ElButton>
+                  <div class="standard-file-actions">
+                    <ElButton link type="primary" @click="handleOpenFile(row)">详情</ElButton>
+                    <ElButton link type="primary" @click="openEditStandardFileDialog(row)">
+                      编辑
+                    </ElButton>
+                    <ElButton link type="primary" @click="openReplaceStandardFileDialog(row)">
+                      替换版本
+                    </ElButton>
+                    <ElButton
+                      link
+                      type="primary"
+                      :loading="actionLoading === `file-${row.id}`"
+                      @click="handleReindexFile(row)"
+                    >
+                      重建索引
+                    </ElButton>
+                    <ElPopconfirm
+                      title="确认删除这个项目文件？"
+                      confirm-button-text="删除"
+                      cancel-button-text="取消"
+                      @confirm="handleDeleteStandardFile(row)"
+                    >
+                      <template #reference>
+                        <ElButton
+                          link
+                          type="danger"
+                          :loading="actionLoading === `file-delete-${row.id}`"
+                        >
+                          删除
+                        </ElButton>
+                      </template>
+                    </ElPopconfirm>
+                  </div>
                 </template>
               </ElTableColumn>
             </ElTable>
@@ -3494,7 +4218,15 @@ onMounted(() => {
 
       <ElDialog
         v-model="sourceDialogVisible"
-        :title="sourceDialogMode === 'create' ? '新增知识源' : '编辑知识源'"
+        :title="
+          sourceDialogMode === 'create'
+            ? sourceDialogContext === 'standard-file'
+              ? '上传标准规范文件'
+              : sourceDialogContext === 'project-file'
+                ? '上传项目文件'
+                : '新增知识源'
+            : '编辑标准源'
+        "
         width="min(780px, 94vw)"
       >
         <ElForm label-position="top" class="source-form">
@@ -3513,30 +4245,61 @@ onMounted(() => {
               重试保存
             </ElButton>
           </div>
-          <ElFormItem label="类别名称">
-            <ElInput
-              v-model="sourceForm.name"
-              maxlength="80"
-              show-word-limit
-              placeholder="默认为上传文件名"
-            />
-          </ElFormItem>
-          <ElFormItem label="类型">
-            <ElSelect v-model="sourceForm.sourceType">
-              <ElOption label="标准规范" value="standard" />
-              <ElOption label="项目文件" value="project-file" />
-              <ElOption label="人工维护" value="manual" />
-            </ElSelect>
-          </ElFormItem>
-          <ElFormItem label="版本">
-            <ElInput v-model="sourceForm.version" placeholder="例如 std-v2026.06" />
-          </ElFormItem>
+          <template v-if="sourceDialogContext === 'source'">
+            <ElFormItem label="类别名称">
+              <ElInput
+                v-model="sourceForm.name"
+                maxlength="80"
+                show-word-limit
+                placeholder="默认为标准规范库"
+              />
+            </ElFormItem>
+            <ElFormItem label="类型">
+              <ElSelect v-model="sourceForm.sourceType">
+                <ElOption label="标准规范" value="standard" />
+                <ElOption label="项目文件" value="project-file" />
+                <ElOption label="人工维护" value="manual" />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="版本">
+              <ElInput v-model="sourceForm.version" placeholder="例如 rules-standards-20260703" />
+            </ElFormItem>
+          </template>
           <template v-if="sourceDialogMode === 'create'">
-            <ElFormItem label="上传文件">
+            <ElFormItem v-if="sourceDialogContext === 'project-file'" label="所属项目">
+              <ElSelect
+                v-model="sourceUploadProjectId"
+                filterable
+                placeholder="选择项目"
+                class="full-width-control"
+              >
+                <ElOption
+                  v-for="project in projectFileProjectOptions"
+                  :key="project.id"
+                  :label="project.name"
+                  :value="project.id"
+                >
+                  <span>{{ project.name }}</span>
+                  <span v-if="project.code" class="select-option-meta">{{ project.code }}</span>
+                </ElOption>
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem
+              :label="
+                sourceDialogContext === 'standard-file'
+                  ? '标准规范文件'
+                  : sourceDialogContext === 'project-file'
+                    ? '项目文件'
+                    : '上传文件'
+              "
+            >
               <div class="source-upload-panel">
                 <div class="knowledge-import-toolbar source-upload-toolbar">
                   <ElButton type="primary" plain @click="triggerSourceUploadFileSelect">
                     选择文件
+                  </ElButton>
+                  <ElButton type="primary" plain @click="triggerSourceUploadDirectorySelect">
+                    选择文件夹
                   </ElButton>
                   <ElButton :disabled="!sourceUploadFiles.length" @click="clearSourceUploadFiles">
                     清空
@@ -3549,6 +4312,15 @@ onMounted(() => {
                   type="file"
                   multiple
                   accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.md,.txt"
+                  @change="handleSourceUploadInputChange"
+                />
+                <input
+                  ref="sourceUploadDirectoryInputRef"
+                  class="hidden-file-input"
+                  type="file"
+                  multiple
+                  webkitdirectory
+                  directory
                   @change="handleSourceUploadInputChange"
                 />
                 <div v-if="!sourceUploadFiles.length" class="source-upload-empty">
@@ -3586,44 +4358,46 @@ onMounted(() => {
               </div>
             </ElFormItem>
           </template>
-          <ElRow :gutter="12">
-            <ElCol :span="12">
-              <ElFormItem label="状态">
-                <ElSelect v-model="sourceForm.status">
-                  <ElOption
-                    v-for="status in sourceStatusOptions"
-                    :key="status"
-                    :label="status"
-                    :value="status"
-                  />
-                </ElSelect>
-              </ElFormItem>
-            </ElCol>
-            <ElCol :span="12">
-              <ElFormItem label="向量状态">
-                <ElSelect v-model="sourceForm.vectorStatus">
-                  <ElOption
-                    v-for="status in vectorStatusOptions"
-                    :key="status"
-                    :label="status"
-                    :value="status"
-                  />
-                </ElSelect>
-              </ElFormItem>
-            </ElCol>
-          </ElRow>
-          <ElRow :gutter="12">
-            <ElCol :span="12">
-              <ElFormItem label="文件数">
-                <ElInputNumber v-model="sourceForm.fileCount" :min="0" />
-              </ElFormItem>
-            </ElCol>
-            <ElCol :span="12">
-              <ElFormItem label="切片数">
-                <ElInputNumber v-model="sourceForm.chunkCount" :min="0" />
-              </ElFormItem>
-            </ElCol>
-          </ElRow>
+          <template v-if="sourceDialogContext === 'source'">
+            <ElRow :gutter="12">
+              <ElCol :span="12">
+                <ElFormItem label="状态">
+                  <ElSelect v-model="sourceForm.status">
+                    <ElOption
+                      v-for="status in sourceStatusOptions"
+                      :key="status"
+                      :label="status"
+                      :value="status"
+                    />
+                  </ElSelect>
+                </ElFormItem>
+              </ElCol>
+              <ElCol :span="12">
+                <ElFormItem label="向量状态">
+                  <ElSelect v-model="sourceForm.vectorStatus">
+                    <ElOption
+                      v-for="status in vectorStatusOptions"
+                      :key="status"
+                      :label="status"
+                      :value="status"
+                    />
+                  </ElSelect>
+                </ElFormItem>
+              </ElCol>
+            </ElRow>
+            <ElRow :gutter="12">
+              <ElCol :span="12">
+                <ElFormItem label="文件数">
+                  <ElInputNumber v-model="sourceForm.fileCount" :min="0" />
+                </ElFormItem>
+              </ElCol>
+              <ElCol :span="12">
+                <ElFormItem label="切片数">
+                  <ElInputNumber v-model="sourceForm.chunkCount" :min="0" />
+                </ElFormItem>
+              </ElCol>
+            </ElRow>
+          </template>
         </ElForm>
         <template #footer>
           <ElButton @click="sourceDialogVisible = false">取消</ElButton>
@@ -3631,6 +4405,87 @@ onMounted(() => {
             type="primary"
             :loading="actionLoading === 'source-save'"
             @click="handleSaveSource"
+          >
+            保存
+          </ElButton>
+        </template>
+      </ElDialog>
+
+      <ElDialog
+        v-model="standardFileDialogVisible"
+        :title="knowledgeFileDialogTitle"
+        width="min(680px, 94vw)"
+      >
+        <ElForm label-position="top" class="source-form">
+          <div v-if="operationIssues.file" class="section-error local-operation-error">
+            <div>
+              <strong>{{ operationIssues.file.title }}</strong>
+              <span>{{ operationIssues.file.message }}</span>
+            </div>
+          </div>
+          <ElFormItem :label="`${currentKnowledgeFileKind}名称`">
+            <ElInput v-model="standardFileForm.fileName" maxlength="180" show-word-limit />
+          </ElFormItem>
+          <ElFormItem v-if="isProjectKnowledgeFile(standardFileEditing)" label="所属项目">
+            <ElSelect
+              v-model="standardFileForm.projectId"
+              filterable
+              placeholder="选择项目"
+              class="full-width-control"
+            >
+              <ElOption
+                v-for="project in projectFileProjectOptions"
+                :key="project.id"
+                :label="project.name"
+                :value="project.id"
+              >
+                <span>{{ project.name }}</span>
+                <span v-if="project.code" class="select-option-meta">{{ project.code }}</span>
+              </ElOption>
+            </ElSelect>
+          </ElFormItem>
+          <ElFormItem label="来源路径">
+            <ElInput
+              v-model="standardFileForm.sourceRelativePath"
+              maxlength="240"
+              show-word-limit
+            />
+          </ElFormItem>
+          <ElFormItem label="上下文描述">
+            <ElInput
+              v-model="standardFileForm.contextDescription"
+              type="textarea"
+              :rows="3"
+              maxlength="500"
+              show-word-limit
+            />
+          </ElFormItem>
+          <ElFormItem v-if="standardFileDialogMode === 'replace'" label="新版本文件">
+            <div class="standard-file-replace-panel">
+              <input
+                ref="standardFileReplaceInputRef"
+                class="hidden-file-input"
+                type="file"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.md,.txt"
+                @change="handleStandardFileReplaceInputChange"
+              />
+              <ElButton type="primary" plain @click="triggerStandardFileReplaceSelect">
+                选择文件
+              </ElButton>
+              <span v-if="standardFileReplacement">
+                {{ standardFileReplacement.name }} ·
+                {{ formatFileSize(standardFileReplacement.size) }}
+              </span>
+              <span v-else>尚未选择文件</span>
+            </div>
+          </ElFormItem>
+        </ElForm>
+        <template #footer>
+          <ElButton @click="standardFileDialogVisible = false">取消</ElButton>
+          <ElButton
+            type="primary"
+            :loading="actionLoading === 'standard-file-save'"
+            @click="handleSaveStandardFile"
           >
             保存
           </ElButton>
@@ -3805,6 +4660,16 @@ onMounted(() => {
                   />
                 </ElFormItem>
               </ElCol>
+              <ElCol :xl="6" :lg="6" :md="8" :sm="24" :xs="24">
+                <ElFormItem label="来源规则">
+                  <ElInput :model-value="ruleForm.sourceRuleId || ''" disabled />
+                </ElFormItem>
+              </ElCol>
+              <ElCol :xl="18" :lg="18" :md="16" :sm="24" :xs="24">
+                <ElFormItem label="来源文档">
+                  <ElInput :model-value="ruleForm.sourceDocument || ''" disabled />
+                </ElFormItem>
+              </ElCol>
             </ElRow>
             <ElFormItem label="判断准则 / 标准规范">
               <ElInput
@@ -3822,6 +4687,40 @@ onMounted(() => {
                 :rows="8"
                 maxlength="3000"
                 show-word-limit
+              />
+            </ElFormItem>
+            <ElFormItem label="Agent 思考方式">
+              <ElInput
+                v-model="ruleForm.agentThinking"
+                type="textarea"
+                :rows="5"
+                maxlength="3000"
+                show-word-limit
+              />
+            </ElFormItem>
+            <ElFormItem label="工具集调用思考">
+              <ElInput
+                v-model="ruleForm.toolchainThinking"
+                type="textarea"
+                :rows="5"
+                maxlength="3000"
+                show-word-limit
+              />
+            </ElFormItem>
+            <ElFormItem label="引用标准文件">
+              <ElInput
+                :model-value="formatRuleReferencedStandards(ruleForm.referencedStandards)"
+                type="textarea"
+                :rows="3"
+                readonly
+              />
+            </ElFormItem>
+            <ElFormItem label="AI 解析版结构化规则">
+              <ElInput
+                :model-value="formatRuleExecution(ruleForm.aiExecution)"
+                type="textarea"
+                :rows="8"
+                readonly
               />
             </ElFormItem>
           </ElForm>
@@ -3961,10 +4860,54 @@ onMounted(() => {
               <ElDescriptionsItem label="维度">
                 {{ fileDetail.vectorSummary.dimensions }}
               </ElDescriptionsItem>
+              <ElDescriptionsItem label="来源路径">
+                {{
+                  fileDetail.file.sourceRelativePath || fileDetail.file.contextDescription || '-'
+                }}
+              </ElDescriptionsItem>
             </ElDescriptions>
 
+            <div class="file-original-panel">
+              <div>
+                <strong>文档原文</strong>
+                <span>
+                  {{
+                    fileDetail.preview?.contentType || fileDetail.document?.fileType || '原始文件'
+                  }}
+                  <template v-if="fileDetail.download?.expiresAt">
+                    · 有效期至 {{ fileDetail.download.expiresAt }}
+                  </template>
+                </span>
+              </div>
+              <ElSpace>
+                <ElButton
+                  type="primary"
+                  plain
+                  :disabled="!fileDetail.preview?.url"
+                  @click="openKnowledgeFileOriginal('preview')"
+                >
+                  查看原文
+                </ElButton>
+                <ElButton
+                  :disabled="!fileDetail.download?.url"
+                  @click="openKnowledgeFileOriginal('download')"
+                >
+                  下载原文
+                </ElButton>
+              </ElSpace>
+            </div>
+
             <ElDivider content-position="left">切片</ElDivider>
-            <ElTable :data="fileChunks" border height="260">
+            <ElAlert
+              v-if="!fileChunks.length"
+              class="chunk-empty-alert"
+              title="尚未生成真实切片"
+              description="当前文件没有可审计的切片明细，系统不会展示示例切片。请先完成 OCR/切片任务或重建索引。"
+              type="warning"
+              show-icon
+              :closable="false"
+            />
+            <ElTable :data="fileChunks" border height="260" empty-text="暂无真实切片">
               <ElTableColumn prop="chunkNo" label="#" width="70" />
               <ElTableColumn prop="pageNo" label="页码" width="80" />
               <ElTableColumn prop="text" label="文本" min-width="360" show-overflow-tooltip />
@@ -3973,7 +4916,7 @@ onMounted(() => {
             </ElTable>
 
             <ElDivider content-position="left">推理引用</ElDivider>
-            <ElTable :data="fileReferences" border height="220">
+            <ElTable :data="fileReferences" border height="220" empty-text="暂无真实推理引用">
               <ElTableColumn prop="runId" label="Run ID" width="180" />
               <ElTableColumn prop="nodeId" label="节点" width="70" />
               <ElTableColumn prop="subject" label="主题" min-width="180" show-overflow-tooltip />
@@ -4018,7 +4961,100 @@ onMounted(() => {
               <ElDescriptionsItem label="Prompt">
                 {{ reasoningDetail.log.promptVersion }}
               </ElDescriptionsItem>
+              <ElDescriptionsItem label="LLM 对话 ID">
+                {{
+                  reasoningDetail.log.llmConversationId ||
+                  reasoningMetadataText('conversationId')
+                }}
+              </ElDescriptionsItem>
+              <ElDescriptionsItem label="Prompt 模板">
+                {{ reasoningPromptTemplateLabel }}
+              </ElDescriptionsItem>
+              <ElDescriptionsItem label="Prompt Hash">
+                {{ reasoningMetadataText('promptHash') }}
+              </ElDescriptionsItem>
+              <ElDescriptionsItem label="Response Hash">
+                {{ reasoningMetadataText('responseHash') }}
+              </ElDescriptionsItem>
             </ElDescriptions>
+            <ElDivider content-position="left">Prompt 正文</ElDivider>
+            <div class="reasoning-audit-grid">
+              <div class="reasoning-audit-block">
+                <strong>System Prompt</strong>
+                <ElInput
+                  :model-value="reasoningPromptText('systemPrompt')"
+                  type="textarea"
+                  :rows="5"
+                  readonly
+                />
+              </div>
+              <div class="reasoning-audit-block">
+                <strong>User Prompt</strong>
+                <ElInput
+                  :model-value="reasoningPromptText('userPrompt')"
+                  type="textarea"
+                  :rows="8"
+                  readonly
+                />
+              </div>
+              <div class="reasoning-audit-block">
+                <strong>Plan 编排 Prompt</strong>
+                <ElInput
+                  :model-value="reasoningPromptText('plannerPrompt')"
+                  type="textarea"
+                  :rows="4"
+                  readonly
+                />
+              </div>
+              <div class="reasoning-audit-block">
+                <strong>Critic 复核 Prompt</strong>
+                <ElInput
+                  :model-value="reasoningPromptText('criticPrompt')"
+                  type="textarea"
+                  :rows="4"
+                  readonly
+                />
+              </div>
+            </div>
+            <ElDivider content-position="left">推理过程与结果</ElDivider>
+            <ElRow :gutter="12">
+              <ElCol :xs="24" :sm="12">
+                <div class="reasoning-audit-block">
+                  <strong>推理过程</strong>
+                  <ElInput :model-value="reasoningProcessText" type="textarea" :rows="6" readonly />
+                </div>
+              </ElCol>
+              <ElCol :xs="24" :sm="12">
+                <div class="reasoning-audit-block">
+                  <strong>推理结果</strong>
+                  <ElInput :model-value="reasoningResultText" type="textarea" :rows="6" readonly />
+                </div>
+              </ElCol>
+            </ElRow>
+            <ElDivider content-position="left">推理链路 Trace</ElDivider>
+            <ElTable :data="reasoningTraceSteps" border height="220" empty-text="暂无 Trace 记录">
+              <ElTableColumn prop="sequence" label="序号" width="76" />
+              <ElTableColumn prop="stepName" label="步骤" min-width="150" show-overflow-tooltip />
+              <ElTableColumn prop="stepType" label="类型" width="130" show-overflow-tooltip />
+              <ElTableColumn
+                prop="conversationId"
+                label="对话 ID"
+                min-width="180"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
+                prop="promptHash"
+                label="Prompt Hash"
+                min-width="150"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
+                prop="responseHash"
+                label="Response Hash"
+                min-width="150"
+                show-overflow-tooltip
+              />
+            </ElTable>
             <ElDivider content-position="left">模型建议</ElDivider>
             <div class="reasoning-suggestion">
               <ElTag :type="statusType(reasoningDetail.log.suggestion.result)" effect="light">
@@ -4273,6 +5309,17 @@ onMounted(() => {
   width: 180px;
 }
 
+.full-width-control {
+  width: 100%;
+}
+
+.select-option-meta {
+  float: right;
+  margin-left: 16px;
+  font-size: 12px;
+  color: #98a2b3;
+}
+
 .table-pagination {
   display: flex;
   flex-wrap: wrap;
@@ -4348,6 +5395,100 @@ onMounted(() => {
   gap: 6px;
   justify-content: flex-end;
   min-width: 150px;
+}
+
+.standard-source-summary {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.standard-source-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 76px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.standard-source-main {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 4px;
+}
+
+.standard-source-main strong,
+.standard-source-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.standard-source-main span {
+  font-size: 12px;
+  color: #667085;
+}
+
+.standard-source-controls {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 16px;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 380px;
+}
+
+.standard-source-status,
+.standard-source-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.standard-source-status {
+  min-width: 150px;
+}
+
+.standard-source-actions {
+  min-width: 170px;
+}
+
+.standard-source-actions :deep(.el-button) {
+  min-height: 28px;
+  margin-left: 0;
+  padding: 0 2px;
+}
+
+.standard-source-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.standard-file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+}
+
+.standard-file-actions :deep(.el-button) {
+  margin-left: 0;
+  padding: 0;
+}
+
+.standard-file-replace-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  min-height: 32px;
+  color: #667085;
 }
 
 .source-item strong,
@@ -4525,6 +5666,41 @@ onMounted(() => {
   min-height: 320px;
 }
 
+.file-original-panel {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  margin-top: 12px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.file-original-panel > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.file-original-panel strong {
+  line-height: 20px;
+  color: #1f2937;
+}
+
+.file-original-panel span {
+  overflow: hidden;
+  font-size: 12px;
+  color: #667085;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chunk-empty-alert {
+  margin-bottom: 10px;
+}
+
 .rule-diff-drawer :deep(.el-descriptions) {
   margin-bottom: 16px;
 }
@@ -4587,6 +5763,30 @@ onMounted(() => {
   color: #344054;
 }
 
+.reasoning-audit-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.reasoning-audit-block {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.reasoning-audit-block strong {
+  font-size: 13px;
+  line-height: 18px;
+  color: #344054;
+}
+
+.reasoning-audit-block :deep(.el-textarea__inner) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  line-height: 18px;
+}
+
 @media (width <= 768px) {
   .knowledge-page {
     padding: 0;
@@ -4633,6 +5833,30 @@ onMounted(() => {
   .source-actions {
     justify-content: flex-start;
     width: 100%;
+  }
+
+  .standard-source-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .standard-source-controls {
+    align-items: flex-start;
+    flex-direction: column;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .standard-source-status,
+  .standard-source-actions {
+    justify-content: flex-start;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .file-original-panel {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .source-upload-grid {

@@ -26,6 +26,8 @@ def setup_function() -> None:
     repo.postgres_enabled = False
     repo.sync_postgres = None
     repo.postgres_dsn = None
+    repo.sqlite_enabled = False
+    repo.sqlite_path = None
 
 
 def assert_ok(response):
@@ -5670,6 +5672,74 @@ def test_singleton_config_if_match_and_revision_guards() -> None:
     assert published_overview["etag"] == published["etag"]
 
 
+def test_prompt_template_management_api_and_audit_metadata() -> None:
+    templates = assert_ok(client.get("/admin/prompt-templates?pageSize=100"))
+    assert templates["total"] >= 1
+    assert templates["items"][0]["systemPrompt"]
+    assert templates["items"][0]["userPromptTemplate"]
+
+    create_headers = {"Idempotency-Key": "prompt-template-create-once"}
+    payload = {
+        "name": "合同测试 Prompt 模板",
+        "promptKey": "review_prompt",
+        "version": "2026.07-test",
+        "status": "draft",
+        "businessPackId": "engineering_inspection_v1",
+        "agentId": "compliance_review_agent",
+        "systemPrompt": "你是工程监检审查助手。",
+        "userPromptTemplate": "{{basePromptJson}}\n\n{{reviewTaskJson}}",
+        "plannerPromptTemplate": "先读取上下文，再执行规则、检索证据并生成建议。",
+        "criticPromptTemplate": "检查每条建议是否有规则和证据。",
+        "outputSchema": {"type": "ReviewFindingDraftList"},
+    }
+    created = assert_ok(client.post("/admin/prompt-templates", json=payload, headers=create_headers))
+    replayed_create = assert_ok(client.post("/admin/prompt-templates", json=payload, headers=create_headers))
+    assert created["template"]["id"] == replayed_create["template"]["id"]
+    assert created["auditLogId"] == replayed_create["auditLogId"]
+
+    template = created["template"]
+    updated = assert_ok(
+        client.put(
+            f"/admin/prompt-templates/{template['id']}",
+            json={"systemPrompt": "你是工程监检审查助手，必须保留证据引用。"},
+            headers={"If-Match": template["etag"], "Idempotency-Key": "prompt-template-update-once"},
+        )
+    )
+    assert updated["template"]["revision"] == template["revision"] + 1
+    assert "证据引用" in updated["template"]["systemPrompt"]
+
+    published = assert_ok(
+        client.post(
+            f"/admin/prompt-templates/{template['id']}/publish",
+            json={"reason": "合同测试发布"},
+            headers={"If-Match": updated["template"]["etag"], "Idempotency-Key": "prompt-template-publish-once"},
+        )
+    )
+    assert published["template"]["status"] == "production"
+    assert_error(
+        client.delete(
+            f"/admin/prompt-templates/{template['id']}",
+            headers={"If-Match": published["template"]["etag"], "Idempotency-Key": "prompt-template-delete-production"},
+        ),
+        "VALIDATION_ERROR",
+    )
+
+
+def test_reasoning_log_detail_exposes_prompt_and_llm_metadata() -> None:
+    detail = assert_ok(client.get("/reasoning/logs/AIRUN-24-20260625-01"))
+
+    assert detail["promptAudit"]["systemPrompt"]
+    assert detail["promptAudit"]["userPrompt"]
+    assert detail["promptAudit"]["plannerPrompt"]
+    assert detail["promptAudit"]["criticPrompt"]
+    assert detail["llmMetadata"]["conversationId"] == "chatcmpl-aicheck-demo-24-001"
+    assert detail["llmMetadata"]["promptHash"]
+    assert detail["llmMetadata"]["responseHash"]
+    assert detail["llmMetadata"]["reasoningProcess"]
+    assert detail["llmMetadata"]["resultText"]
+    assert any(step.get("conversationId") == "chatcmpl-aicheck-demo-24-001" for step in detail["traceSteps"])
+
+
 def test_knowledge_record_if_match_and_revision_guards() -> None:
     sources = assert_ok(client.get("/knowledge/sources"))
     source = sources["items"][0]
@@ -5730,7 +5800,11 @@ def test_knowledge_record_if_match_and_revision_guards() -> None:
     assert cancelled["task"]["revision"] == task["revision"] + 1
     assert cancelled["task"]["etag"] != task["etag"]
 
-    rule = next(item for item in assert_ok(client.get("/rules/versions"))["items"] if item["id"] == "RULE-NDT-202606")
+    rule = next(
+        item
+        for item in assert_ok(client.get("/rules/versions?pageSize=100"))["items"]
+        if item["id"] == "RULE-NDT-202606"
+    )
     assert_error(
         client.post(
             f"/rules/versions/{rule['id']}/publish",
@@ -6471,13 +6545,13 @@ def test_knowledge_retrieval_query_router_supports_exact_clause_and_pageindex_ro
     exact = assert_ok(
         client.post(
             "/knowledge/retrieval-test",
-            json={"question": "请解释第5.3.2条质量证明文件要求", "topK": 3},
+            json={"question": "请解释 TSG-D7006-D2.4.1 质量证明文件要求", "topK": 3},
         )
     )
     exact_trace = exact["retrievalTrace"]
     assert exact_trace["selectedRoute"] == "exact_clause_lookup"
-    assert exact_trace["routerSignals"]["exactClauseRefs"] == ["5.3.2"]
-    assert exact_trace["selectedClauses"][0]["clauseNo"] == "5.3.2"
+    assert exact_trace["routerSignals"]["exactClauseRefs"] == ["tsg-d7006-d2.4.1"]
+    assert exact_trace["selectedClauses"][0]["clauseNo"] == "D2.4.1"
     assert exact_trace["selectedClauses"][0]["retrievalMode"] == "exact_clause_lookup"
     assert any(item["type"] == "exact_clause_lookup" and item["enabled"] for item in exact_trace["retrievers"])
 
@@ -6493,13 +6567,13 @@ def test_knowledge_retrieval_query_router_supports_exact_clause_and_pageindex_ro
     assert any(item["type"] == "pageindex_tree" and item["enabled"] for item in pageindex_trace["retrievers"])
     assert pageindex_trace["selectedClauses"][0]["retrievalMode"] == "pageindex_tree_local"
     assert pageindex_trace["pageIndexTree"]["selectedNodes"]
-    assert pageindex_trace["pageIndexTree"]["selectedNodes"][0]["pageIndexNodeId"] == "PIN-TSG-D7005-7"
-    assert "TSG-D7005-7.4" in pageindex_trace["pageIndexTree"]["linkedClauseIds"]
-    assert pageindex_trace["selectedClauses"][0]["pageIndexNodeIds"] == ["PIN-TSG-D7005-7"]
+    assert pageindex_trace["pageIndexTree"]["selectedNodes"][0]["pageIndexNodeId"] == "PIN-NB-T-47013-NDT"
+    assert "NB-T-47013-NDT-REPORT" in pageindex_trace["pageIndexTree"]["linkedClauseIds"]
+    assert pageindex_trace["selectedClauses"][0]["pageIndexNodeIds"] == ["PIN-NB-T-47013-NDT"]
 
     nodes = assert_ok(client.get("/knowledge/page-index-nodes", params={"keyword": "无损检测"}))
     assert nodes["items"]
-    assert nodes["items"][0]["pageIndexNodeId"] == "PIN-TSG-D7005-7"
+    assert nodes["items"][0]["pageIndexNodeId"] == "PIN-NB-T-47013-NDT"
 
     overview = assert_ok(client.get("/knowledge/overview"))
     scorecard = overview["scorecard"]
@@ -6523,6 +6597,181 @@ def test_knowledge_retrieval_query_router_supports_exact_clause_and_pageindex_ro
     assert scorecard["score"] == 100
     assert scorecard["ok"] is True
     assert scorecard["blockers"] == []
+
+
+def test_import_rules_standards_folder_uploads_local_standard_files(monkeypatch, tmp_path) -> None:
+    import apps.api.routes as api_routes
+
+    workspace = tmp_path / "workspace"
+    standards_root = workspace / "rules" / "standards"
+    split_root = standards_root / "NB_T_47013_split"
+    split_root.mkdir(parents=True)
+    business_rules_path = workspace / "rules" / "业务规则.md"
+    business_rules_path.write_text("# 业务规则\n\n引用 TSG31-2025 和 NB/T 47013。", encoding="utf-8")
+    (standards_root / "TSG31-2025.pdf").write_bytes(b"%PDF-1.4\nstandard")
+    (split_root / "NB_T 47013.11-2023.md").write_text("射线数字成像检测", encoding="utf-8")
+    (standards_root / ".DS_Store").write_bytes(b"ignored")
+
+    monkeypatch.setattr(api_routes, "WORKSPACE_ROOT", workspace)
+    monkeypatch.setattr(api_routes, "RULES_STANDARDS_ROOT", standards_root)
+    monkeypatch.setattr(api_routes, "RULES_BUSINESS_RULES_PATH", business_rules_path)
+    monkeypatch.setattr(api_routes, "KNOWLEDGE_UPLOAD_ROOT", workspace / "output" / "knowledge_uploads")
+
+    imported = assert_ok(client.post("/knowledge/standards/import-from-rules", json={}))
+    assert imported["summary"]["scanned"] == 2
+    assert imported["summary"]["imported"] == 2
+    assert imported["summary"]["skipped"] == 0
+    assert imported["source"]["id"] == "KS-STANDARD-RULES"
+    assert imported["source"]["fileCount"] == 2
+    assert {item["sourceId"] for item in imported["files"]} == {"KS-STANDARD-RULES"}
+    assert {item["sourceRelativePath"] for item in imported["files"]} == {
+        "rules/standards/TSG31-2025.pdf",
+        "rules/standards/NB_T_47013_split/NB_T 47013.11-2023.md",
+    }
+    project_files = assert_ok(client.get("/knowledge/project-files?pageSize=100"))
+    assert all(item.get("sourceId") != "KS-STANDARD-RULES" for item in project_files["items"])
+
+    repeated = assert_ok(client.post("/knowledge/standards/import-from-rules", json={}))
+    assert repeated["summary"]["imported"] == 0
+    assert repeated["summary"]["skipped"] == 2
+    assert repeated["source"]["fileCount"] == 2
+    imported_ids_by_path = {item["sourceRelativePath"]: item["id"] for item in imported["files"]}
+
+    legacy_path = "rules/standards/TSG31-2025.pdf"
+    legacy_file = next(item for item in repo.state["knowledge_files"] if item.get("sourceRelativePath") == legacy_path)
+    old_file_id = legacy_file["id"]
+    legacy_file["id"] = "KF-KB-LEGACY-STANDARD"
+    for task in repo.state["knowledge_tasks"]:
+        if task.get("targetId") == old_file_id:
+            task["targetId"] = legacy_file["id"]
+
+    (standards_root / "TSG31-2025.pdf").write_bytes(b"%PDF-1.4\nstandard reset")
+    reset = assert_ok(client.post("/knowledge/standards/import-from-rules", json={"reset": True}))
+    assert reset["summary"]["reset"] is True
+    assert reset["summary"]["removed"] == 2
+    assert reset["summary"]["imported"] == 2
+    assert reset["summary"]["skipped"] == 0
+    assert reset["source"]["fileCount"] == 2
+    reset_ids_by_path = {item["sourceRelativePath"]: item["id"] for item in reset["files"]}
+    assert reset_ids_by_path["rules/standards/NB_T_47013_split/NB_T 47013.11-2023.md"] == imported_ids_by_path[
+        "rules/standards/NB_T_47013_split/NB_T 47013.11-2023.md"
+    ]
+    legacy_detail = assert_ok(client.get("/knowledge/files/KF-KB-LEGACY-STANDARD"))
+    assert legacy_detail["file"]["id"] == reset_ids_by_path[legacy_path]
+    assert legacy_detail["file"]["sourceRelativePath"] == legacy_path
+
+
+def test_standard_file_crud_replace_and_delete_refreshes_source_counts() -> None:
+    initial_count = repo.find_one("knowledge_sources", "KS-STANDARD-RULES")["fileCount"]
+    imported = assert_ok(
+        client.post(
+            "/knowledge/files/import",
+            data={
+                "sourceId": "KS-STANDARD-RULES",
+                "sourceName": "标准规范库（业务规则引用标准）",
+                "sourceType": "standard",
+                "sourceVersion": "rules-standards-test",
+                "sourceStatus": "启用",
+                "relativePaths": "rules/standards/old.md",
+                "fileNames": "旧标准.md",
+                "contextDescriptions": "旧版本",
+            },
+            files=[("files", ("old.md", b"# old standard", "text/markdown"))],
+        )
+    )
+    file = imported["files"][0]
+    file_id = file["id"]
+    assert imported["source"]["fileCount"] == initial_count + 1
+
+    updated = assert_ok(
+        client.patch(
+            f"/knowledge/files/{file_id}",
+            json={
+                "fileName": "新标准.md",
+                "sourceRelativePath": "rules/standards/new.md",
+                "contextDescription": "更新后的标准说明",
+            },
+        )
+    )
+    assert updated["file"]["fileName"] == "新标准.md"
+    assert updated["file"]["sourceRelativePath"] == "rules/standards/new.md"
+    assert updated["file"]["contextDescription"] == "更新后的标准说明"
+
+    repo.apply_slice_result(file_id, [{"pageNo": 1, "text": "旧切片"}])
+    repo.apply_embed_result(file_id, 1)
+    assert repo.find_one("knowledge_files", file_id)["chunkCount"] == 1
+
+    replaced = assert_ok(
+        client.post(
+            f"/knowledge/files/{file_id}/replace",
+            data={
+                "fileName": "替换标准.md",
+                "relativePath": "rules/standards/replaced.md",
+                "contextDescription": "替换后的标准说明",
+            },
+            files=[("files", ("replaced.md", b"# replacement standard", "text/markdown"))],
+        )
+    )
+    assert replaced["file"]["id"] == file_id
+    assert replaced["file"]["fileName"] == "替换标准.md"
+    assert replaced["file"]["sourceRelativePath"] == "rules/standards/replaced.md"
+    assert replaced["file"]["chunkCount"] == 0
+    assert replaced["file"]["vectorStatus"] == "待向量化"
+    assert replaced["currentVersion"]["versionNo"] == "V2"
+    assert repo.find_one("knowledge_sources", "KS-STANDARD-RULES")["fileCount"] == initial_count + 1
+    assert [item for item in repo.state["knowledge_chunks"] if item.get("fileId") == file_id] == []
+
+    original = client.get(f"/knowledge/files/{file_id}/original?disposition=inline")
+    assert original.status_code == 200
+    assert original.content == b"# replacement standard"
+
+    deleted = assert_ok(client.delete(f"/knowledge/files/{file_id}"))
+    assert deleted["removed"]["files"] == 1
+    assert deleted["removed"]["documents"] == 1
+    assert deleted["removed"]["versions"] == 2
+    assert deleted["source"]["fileCount"] == initial_count
+    assert_error(client.get(f"/knowledge/files/{file_id}"), "NOT_FOUND")
+
+
+def test_import_project_file_keeps_project_scope_and_filtering() -> None:
+    project_id = "P-2026-HDCP-001"
+
+    imported = assert_ok(
+        client.post(
+            "/knowledge/files/import",
+            data={
+                "sourceId": "KS-PROJECT-FILE",
+                "sourceName": "项目文件知识库",
+                "sourceType": "project-file",
+                "sourceVersion": "proj-test",
+                "sourceStatus": "启用",
+                "projectId": project_id,
+            },
+            files=[("files", ("project-file.md", b"# project file knowledge", "text/markdown"))],
+        )
+    )
+
+    knowledge_file = imported["files"][0]
+    file_id = knowledge_file["id"]
+    assert knowledge_file["sourceId"] == "KS-PROJECT-FILE"
+    assert knowledge_file["sourceType"] == "project-file"
+    assert knowledge_file["projectId"] == project_id
+    assert knowledge_file["projectName"] == "华东成品油管道改造工程"
+
+    scoped = assert_ok(client.get(f"/knowledge/project-files?projectId={project_id}&pageSize=100"))
+    assert any(item["id"] == file_id for item in scoped["items"])
+
+    keyword = assert_ok(client.get("/knowledge/project-files?keyword=华东成品油管道改造工程&pageSize=100"))
+    assert any(item["id"] == file_id for item in keyword["items"])
+
+    updated = assert_ok(
+        client.patch(
+            f"/knowledge/files/{file_id}",
+            json={"fileName": "项目文件-更新.md", "projectId": project_id},
+        )
+    )
+    assert updated["file"]["fileName"] == "项目文件-更新.md"
+    assert updated["file"]["projectId"] == project_id
 
 
 def test_upload_and_ndt_validation_errors_match_contract() -> None:
@@ -6915,6 +7164,101 @@ def test_project_creation_routes_are_idempotent_and_return_initial_members() -> 
     assert all_contracts["summary"]["aligned"] == all_contracts["summary"]["total"]
 
 
+def test_admin_user_org_crud_and_project_member_batch_authorization_defaults() -> None:
+    project_id = "P-2026-HDCP-001"
+
+    org = assert_ok(
+        client.post(
+            "/admin/org-units",
+            json={
+                "name": "合同测试施工组织",
+                "type": "contractor",
+                "contactName": "陈工",
+                "contactPhone": "13900001111",
+            },
+        )
+    )["orgUnit"]
+
+    assert_error(
+        client.post(
+            "/admin/users",
+            json={"username": "contractor_without_org", "name": "无组织施工", "role": "contractor"},
+        ),
+        "VALIDATION_ERROR",
+    )
+
+    user = assert_ok(
+        client.post(
+            "/admin/users",
+            json={
+                "username": "contractor_batch_user",
+                "name": "批量施工用户",
+                "role": "contractor",
+                "orgId": org["id"],
+                "mobile": "13900002222",
+                "password": "Contractor!2026",
+            },
+        )
+    )["user"]
+    assert user["role"] == "contractor"
+    assert user["orgId"] == org["id"]
+
+    login = assert_ok(client.post("/api/auth/login", json={"username": "contractor_batch_user", "password": "Contractor!2026"}))
+    assert login["user"]["role"] == "contractor"
+
+    project = assert_ok(client.get(f"/projects/{project_id}"))["project"]
+    batch = assert_ok(
+        client.post(
+            f"/projects/{project_id}/members",
+            json={"userIds": [user["id"]]},
+            headers={"X-Role": "admin", "X-User-Id": "USER-ADMIN-001", "If-Match": project["etag"]},
+        )
+    )
+    member = batch["members"][0]
+    assert batch["successCount"] == 1
+    assert member["userId"] == user["id"]
+    assert member["role"] == user["role"]
+    assert member["orgId"] == org["id"]
+    assert "submission:submit" in member["actions"]
+    assert len(member["nodeScope"]) > 10
+
+    assert_error(
+        client.delete(f"/admin/org-units/{org['id']}", headers={"If-Match": org["etag"]}),
+        "CONFLICT",
+    )
+
+    removed = assert_ok(
+        client.delete(
+            f"/projects/{project_id}/members/{member['id']}",
+            headers={"X-Role": "admin", "X-User-Id": "USER-ADMIN-001", "If-Match": member["etag"]},
+        )
+    )
+    assert removed["deleted"] is True
+    assert not any(item.get("id") == member["id"] for item in repo.state["project_members"])
+
+    deleted_user = assert_ok(client.delete(f"/admin/users/{user['id']}", headers={"If-Match": user["etag"]}))
+    assert deleted_user["deleted"] is True
+    deleted_org = assert_ok(client.delete(f"/admin/org-units/{org['id']}", headers={"If-Match": org["etag"]}))
+    assert deleted_org["deleted"] is True
+
+
+def test_project_delete_removes_empty_project_and_archives_project_with_business_data() -> None:
+    created = assert_ok(
+        client.post(
+            "/admin/projects",
+            json={"code": "P-DELETE-001", "name": "待删除空项目"},
+        )
+    )["project"]
+    deleted = assert_ok(client.delete(f"/projects/{created['id']}", headers={"If-Match": created["etag"]}))
+    assert deleted["deleted"] is True
+    assert not any(item["id"] == created["id"] for item in repo.state["projects"])
+
+    seeded = assert_ok(client.get("/projects/P-2026-HDCP-001"))["project"]
+    archived = assert_ok(client.delete(f"/projects/{seeded['id']}", headers={"If-Match": seeded["etag"]}))
+    assert archived["archived"] is True
+    assert archived["project"]["status"] == "已归档"
+
+
 def test_upload_complete_inline_ocr_writes_fields_and_slice_task(monkeypatch) -> None:
     from apps.worker import tasks
 
@@ -6985,6 +7329,54 @@ def test_document_preview_and_download_use_current_version_signed_get(monkeypatc
     assert "mock://" not in preview["url"]
     assert "mock://" not in download["url"]
     assert_error(client.get(f"/projects/NOT-A-PROJECT/documents/{document['id']}/download-url"), "NOT_FOUND")
+
+
+def test_knowledge_file_chunks_do_not_fabricate_and_original_streams_local_file() -> None:
+    workspace_root = Path(__file__).resolve().parents[2]
+    target = workspace_root / "tmp" / "knowledge-original-test.pdf"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    body = b"%PDF-1.4\n% local original test\n"
+    target.write_bytes(body)
+    try:
+        document, version = repo.create_document(
+            "P-2026-HDCP-001",
+            "knowledge-original-test.pdf",
+            "application/pdf",
+        )
+        file_id = f"KF-{document['id']}"
+        version["storageKey"] = f"local://{target.relative_to(workspace_root)}"
+        version["storageBucket"] = "local"
+        version["fileSize"] = len(body)
+
+        chunks = assert_ok(client.get(f"/knowledge/files/{file_id}/chunks?page=1&pageSize=5"))
+        assert chunks["total"] == 0
+        assert chunks["items"] == []
+        refs = assert_ok(client.get(f"/knowledge/files/{file_id}/reasoning-references?page=1&pageSize=5"))
+        assert refs["total"] == 0
+        assert refs["items"] == []
+
+        detail = assert_ok(client.get(f"/knowledge/files/{file_id}"))
+        assert detail["preview"]["url"].endswith(f"/knowledge/files/{file_id}/original?disposition=inline")
+        assert detail["download"]["url"].endswith(f"/knowledge/files/{file_id}/original?disposition=attachment")
+
+        original = client.get(f"/knowledge/files/{file_id}/original?disposition=inline")
+        assert original.status_code == 200
+        assert original.headers["content-type"].startswith("application/pdf")
+        assert original.content == body
+    finally:
+        target.unlink(missing_ok=True)
+
+
+def test_knowledge_file_reasoning_references_only_return_real_file_links() -> None:
+    refs = assert_ok(client.get("/knowledge/files/KF-DOC-20260625-001/reasoning-references?page=1&pageSize=5"))
+    assert refs["total"] == 1
+    assert refs["items"][0]["runId"] == "AIRUN-24-20260625-01"
+    assert refs["items"][0]["nodeId"] == 24
+    assert refs["items"][0]["quotedText"] == "TS6J-2024-03158"
+
+    unrelated = assert_ok(client.get("/knowledge/files/KF-DOC-20260625-004/reasoning-references?page=1&pageSize=5"))
+    assert unrelated["total"] == 0
+    assert unrelated["items"] == []
 
 
 def test_production_signed_url_rejects_mock_storage(monkeypatch) -> None:

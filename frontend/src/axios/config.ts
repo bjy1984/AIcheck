@@ -47,7 +47,12 @@ const defaultResponseInterceptors = (response: AxiosResponse) => {
       method: response.config?.method,
       url: response.config?.url
     })
-    ElMessage.error(getAicheckErrorMessage(undefined, response?.data?.message || '接口返回异常'))
+    const silentBusinessError =
+      response.config?.headers?.['X-Silent-Business-Error'] === 'true' ||
+      response.config?.headers?.['x-silent-business-error'] === 'true'
+    if (!silentBusinessError) {
+      ElMessage.error(getAicheckErrorMessage(undefined, response?.data?.message || '接口返回异常'))
+    }
     if (response?.data?.code === 401) {
       const userStore = useUserStoreWithOut()
       userStore.logout()

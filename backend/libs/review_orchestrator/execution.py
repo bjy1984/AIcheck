@@ -347,12 +347,35 @@ def execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
             ai_run["finishedAt"] = review_run["finishedAt"]
             ai_run["findingDrafts"] = repo.clone(review_run.get("findingDrafts") or [])
             ai_run["evidenceLinks"] = repo.clone(context.get("evidenceLinks") or [])
+            ai_run["reviewRunId"] = review_run.get("reviewRunId")
+            ai_run["promptAudit"] = repo.clone(review_run.get("promptAudit") or context.get("promptShape") or {})
+            ai_run["llmConversationId"] = review_run.get("llmConversationId")
+            ai_run["llmMetadata"] = repo.clone(review_run.get("llmMetadata") or {})
+            ai_run["reasoningProcess"] = (ai_run.get("llmMetadata") or {}).get("reasoningProcess")
+            ai_run["llmResultText"] = (ai_run.get("llmMetadata") or {}).get("resultText")
             ai_run.setdefault("suggestion", {}).update(
                 {
                     "result": "需人工确认",
                     "opinionDraft": (review_run.get("findingDrafts") or [{}])[0].get("description", "AI 审查草稿已生成。"),
                     "confidence": (review_run.get("findingDrafts") or [{}])[0].get("confidence", 0.82),
                     "manualConfirmItems": ["证据链、规则依据和条款适用性"],
+                }
+            )
+            repo.state.setdefault("ai_trace_steps", []).append(
+                {
+                    "id": f"TRACE-{ai_run['id']}-LLM-{uuid4().hex[:6].upper()}",
+                    "aiRunId": ai_run["id"],
+                    "traceId": f"TRACE-{ai_run['id']}",
+                    "sequence": len([item for item in repo.state.get("ai_trace_steps", []) if item.get("aiRunId") == ai_run["id"]]) + 1,
+                    "stepType": "llm_review",
+                    "name": "记录 LLM 对话与 Prompt 审计元数据",
+                    "status": "completed",
+                    "conversationId": ai_run.get("llmConversationId"),
+                    "promptHash": (ai_run.get("llmMetadata") or {}).get("promptHash"),
+                    "responseHash": (ai_run.get("llmMetadata") or {}).get("responseHash"),
+                    "reasoningProcess": ai_run.get("reasoningProcess"),
+                    "resultText": ai_run.get("llmResultText"),
+                    "createdAt": server_time(),
                 }
             )
             ai_run["steps"] = [
@@ -452,7 +475,8 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
     if node_key == "build_prompt":
         prompt_shape = build_review_prompt_shape(review_run, context)
         context["promptShape"] = prompt_shape
-        return {"promptVersion": review_run.get("promptVersion"), "promptPayload": "ids_hashes_versions_only"}
+        review_run["promptAudit"] = repo.clone(prompt_shape)
+        return prompt_shape
     if node_key == "llm_generate_findings":
         drafts, llm_details = generate_finding_drafts(review_run, context)
         context["findingDrafts"] = drafts
@@ -508,35 +532,50 @@ def review_llm_execution_mode() -> str:
     return "deterministic"
 
 
-def build_review_prompt_shape(review_run: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-    project = context.get("project") or {}
-    node = context.get("node") or {}
-    fields = context.get("fields") or []
-    rule_result = next(iter(context.get("ruleResults") or []), {})
-    return {
-        "system": "review_agent_sop",
-        "promptVersion": review_run.get("promptVersion"),
-        "schemaVersion": review_run.get("schemaVersion"),
-        "payloadHash": stable_hash_payload(
-            {
-                "projectId": project.get("id") or review_run.get("projectId"),
-                "nodeId": node.get("id") or review_run.get("nodeId"),
-                "fieldCount": len(fields),
-                "ruleCode": rule_result.get("ruleCode"),
-                "kbVersion": review_run.get("kbVersion"),
-            }
+def select_prompt_template(review_run: dict[str, Any]) -> dict[str, Any] | None:
+    templates = [item for item in repo.state.get("prompt_templates", []) if isinstance(item, dict)]
+    if not templates:
+        return None
+    prompt_version = str(review_run.get("promptVersion") or "")
+    business_pack_id = str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID)
+    candidates = [
+        item
+        for item in templates
+        if item.get("status") in {"production", "published", "active", "启用", "已发布"}
+        and item.get("businessPackId") in {None, "", business_pack_id}
+    ]
+    exact = next(
+        (
+            item
+            for item in candidates
+            if prompt_version
+            and (
+                item.get("id") == prompt_version
+                or item.get("promptVersionId") == prompt_version
+                or item.get("version") == prompt_version
+            )
         ),
-        "payloadPolicy": "ids_hashes_versions_only",
-    }
+        None,
+    )
+    if exact:
+        return repo.clone(exact)
+    return repo.clone(candidates[0] if candidates else templates[0])
 
 
-def build_review_messages(review_run: dict[str, Any], context: dict[str, Any]) -> list[dict[str, str]]:
+def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     pack = load_business_pack(str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID))
     node = context.get("node") or {}
     fields = context.get("fields") or []
     rule_result = next(iter(context.get("ruleResults") or []), {})
     current_rule = context.get("currentRule") or rule_result
-    prompt = build_ai_review_prompt(pack, node=node, fields=fields, rule=current_rule)
+    prompt_template = select_prompt_template(review_run)
+    prompt = build_ai_review_prompt(
+        pack,
+        node=node,
+        fields=fields,
+        rule=current_rule,
+        prompt_template=prompt_template,
+    )
     user_payload = {
         "task": "Generate ReviewFindingDraftList JSON only.",
         "requirements": [
@@ -550,6 +589,8 @@ def build_review_messages(review_run: dict[str, Any], context: dict[str, Any]) -
         "ruleResults": context.get("ruleResults") or [],
         "retrievalTraceIds": [item.get("retrievalTraceId") for item in context.get("retrievalTraces") or []],
         "evidenceLinkIds": [item.get("id") for item in context.get("evidenceLinks") or []],
+        "plannerPrompt": (prompt.get("template") or {}).get("plannerPrompt") or "",
+        "criticPrompt": (prompt.get("template") or {}).get("criticPrompt") or "",
         "outputSchema": {
             "findings": [
                 {
@@ -563,16 +604,80 @@ def build_review_messages(review_run: dict[str, Any], context: dict[str, Any]) -
             ]
         },
     }
-    return [
+    review_task_json = json.dumps(user_payload, ensure_ascii=False)
+    user_content = prompt["user"]
+    if "{{reviewTaskJson}}" in user_content:
+        user_content = user_content.replace("{{reviewTaskJson}}", review_task_json)
+    else:
+        user_content = user_content + "\n\n" + review_task_json
+    messages = [
         {"role": "system", "content": prompt["system"]},
-        {"role": "user", "content": prompt["user"] + "\n\n" + json.dumps(user_payload, ensure_ascii=False)},
+        {"role": "user", "content": user_content},
     ]
+    return {
+        "messages": messages,
+        "promptTemplate": prompt_template,
+        "prompt": prompt,
+        "userPayload": user_payload,
+        "pack": pack,
+    }
+
+
+def build_review_prompt_shape(review_run: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    project = context.get("project") or {}
+    node = context.get("node") or {}
+    fields = context.get("fields") or []
+    rule_result = next(iter(context.get("ruleResults") or []), {})
+    parts = build_review_prompt_parts(review_run, context)
+    messages = parts["messages"]
+    prompt_template = parts.get("promptTemplate") or {}
+    prompt = parts.get("prompt") or {}
+    system_prompt = messages[0]["content"]
+    user_prompt = messages[1]["content"]
+    return {
+        "system": "review_agent_sop",
+        "promptVersion": review_run.get("promptVersion"),
+        "promptTemplateId": prompt_template.get("id"),
+        "promptTemplateName": prompt_template.get("name"),
+        "promptTemplateVersion": prompt_template.get("version"),
+        "schemaVersion": review_run.get("schemaVersion"),
+        "payloadHash": stable_hash_payload(
+            {
+                "projectId": project.get("id") or review_run.get("projectId"),
+                "nodeId": node.get("id") or review_run.get("nodeId"),
+                "fieldCount": len(fields),
+                "ruleCode": rule_result.get("ruleCode"),
+                "kbVersion": review_run.get("kbVersion"),
+            }
+        ),
+        "messagesHash": stable_hash_payload(messages),
+        "systemPrompt": system_prompt,
+        "userPrompt": user_prompt,
+        "plannerPrompt": (prompt.get("template") or {}).get("plannerPrompt") or "",
+        "criticPrompt": (prompt.get("template") or {}).get("criticPrompt") or "",
+        "messages": messages,
+        "payloadPolicy": "full_prompt_stored_for_audit",
+    }
+
+
+def build_review_messages(review_run: dict[str, Any], context: dict[str, Any]) -> list[dict[str, str]]:
+    return build_review_prompt_parts(review_run, context)["messages"]
 
 
 def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     mode = review_llm_execution_mode()
     if mode in {"deterministic", "disabled", "mock"}:
-        return [build_finding_draft(review_run, context)], {"llmExecution": mode, "llmCalled": False}
+        prompt_shape = context.get("promptShape") or build_review_prompt_shape(review_run, context)
+        metadata = {
+            "llmExecution": mode,
+            "llmCalled": False,
+            "conversationId": None,
+            "promptHash": prompt_shape.get("messagesHash") or prompt_shape.get("payloadHash"),
+            "reasoningProcess": "本地确定性模式，未调用外部 LLM；基于规则结果生成待人工确认草稿。",
+            "resultText": "",
+        }
+        review_run["llmMetadata"] = repo.clone(metadata)
+        return [build_finding_draft(review_run, context)], metadata
     messages = build_review_messages(review_run, context)
     try:
         response = LiteLLMClient().chat_sync(
@@ -585,23 +690,54 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
         raise
     except Exception as exc:
         raise IntegrationServiceError("LiteLLM", "review.chat", reason=exc.__class__.__name__) from exc
+    content = LiteLLMClient.first_message_text(response)
+    message = ((response.get("choices") or [{}])[0].get("message") or {}) if isinstance(response.get("choices"), list) else {}
+    conversation_id = str(
+        response.get("id")
+        or response.get("conversation_id")
+        or response.get("conversationId")
+        or f"llm-{stable_hash_payload(response)[7:23]}"
+    )
+    reasoning_process = str(
+        message.get("reasoning_content")
+        or message.get("reasoning")
+        or message.get("reasoningSummary")
+        or "模型返回结构化审查草稿；未返回单独的公开推理摘要。"
+    )
+    response_hash = stable_hash_payload(response)
+    prompt_shape = context.get("promptShape") or build_review_prompt_shape(review_run, context)
+    llm_metadata = {
+        "llmExecution": "litellm",
+        "llmCalled": True,
+        "conversationId": conversation_id,
+        "modelAlias": review_run.get("modelAlias"),
+        "promptVersion": review_run.get("promptVersion"),
+        "promptTemplateId": prompt_shape.get("promptTemplateId"),
+        "promptHash": prompt_shape.get("messagesHash") or stable_hash_payload(messages),
+        "responseHash": response_hash,
+        "usage": response.get("usage") or {},
+        "reasoningProcess": reasoning_process[:3000],
+        "resultText": content[:4000],
+        "finishReason": ((response.get("choices") or [{}])[0] or {}).get("finish_reason")
+        if isinstance(response.get("choices"), list)
+        else None,
+    }
+    review_run["llmConversationId"] = conversation_id
+    review_run["llmMetadata"] = repo.clone(llm_metadata)
     append_tool_call(
         review_run,
         "llm_generate_findings",
         "call_litellm_chat",
         {
             "modelAlias": review_run.get("modelAlias"),
-            "responseHash": stable_hash_payload(response),
+            "conversationId": conversation_id,
+            "promptHash": llm_metadata["promptHash"],
+            "responseHash": response_hash,
+            "usage": response.get("usage") or {},
         },
     )
-    content = LiteLLMClient.first_message_text(response)
     drafts = normalize_llm_findings(review_run, context, content)
-    return drafts, {
-        "llmExecution": "litellm",
-        "llmCalled": True,
-        "responseHash": stable_hash_payload(response),
-        "usage": response.get("usage") or {},
-    }
+    return drafts, llm_metadata
 
 
 def normalize_llm_findings(review_run: dict[str, Any], context: dict[str, Any], content: str) -> list[dict[str, Any]]:

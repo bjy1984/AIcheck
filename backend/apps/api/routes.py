@@ -19,8 +19,8 @@ from xml.etree import ElementTree as ET
 from uuid import uuid4
 
 import yaml
-from fastapi import APIRouter, Body, Header, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi import APIRouter, BackgroundTasks, Body, Header, Query, Request
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 
 from apps.api.adapters.engineering_inspection import (
     ENGINEERING_DOMAIN_TYPE,
@@ -43,7 +43,7 @@ from libs.business_pack import (
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok, page, server_time
 from libs.db.repository import flush_state, load_state, repo
-from libs.db.seed import PROJECT_ID, ROLE_NODE_MAP
+from libs.db.seed import PROJECT_ID, ROLE_ACTIONS, ROLE_NODE_MAP, STANDARD_RULES_SOURCE_ID, STANDARD_RULES_VERSION
 from libs.embedding_models import embedding_registry_payload, embedding_runtime_config
 from libs.integrations import task_dispatcher
 from libs.integrations.errors import IntegrationServiceError
@@ -64,7 +64,7 @@ from libs.review_orchestrator import (
     signal_review_run_cancel,
     signal_review_run_human_decision,
 )
-from libs.security.auth import ROLE_DEFAULT_PATHS, USERS, authenticate, decode_token, issue_token, user_by_username
+from libs.security.auth import ROLE_DEFAULT_PATHS, USERS, authenticate, decode_token, hash_password, issue_token, user_by_username
 from scripts.ocr_100_label_studio_export import label_config_xml, label_studio_task, label_studio_task_without_image
 from scripts.ocr_100_label_studio_import import import_label_studio_annotations
 from scripts.ocr_100_action_board import (
@@ -78,6 +78,9 @@ from scripts.ocr_annotation_readiness import build_annotation_readiness_from_tas
 router = APIRouter(tags=["AIcheck API"])
 mock_router = APIRouter(tags=["Compatibility Mock"])
 WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
+RULES_STANDARDS_ROOT = WORKSPACE_ROOT / "rules" / "standards"
+RULES_BUSINESS_RULES_PATH = WORKSPACE_ROOT / "rules" / "业务规则.md"
+STANDARD_LIBRARY_SOURCE_NAME = "标准规范库（业务规则引用标准）"
 
 REPORT_GENERATION_BLOCKED_STATUSES = {"待提交", "需补正", "退回补正中", "部分提交", "AI 预审中"}
 MAX_UPLOAD_BYTES = 500 * 1024 * 1024
@@ -158,6 +161,33 @@ AI_FEEDBACK_TYPES = {
 }
 
 FDE_ROLES = {"fde"}
+
+ROLE_LABELS = {
+    "inspection": "监检人员",
+    "contractor": "施工方",
+    "ndt": "无损检测",
+    "owner": "建设方",
+    "admin": "系统管理员",
+    "fde": "FDE",
+    "auditor": "审核员",
+    "submitter": "提交方",
+    "observer": "观察者",
+}
+
+BUSINESS_ROLE_ORG_TYPES = {
+    "inspection": {"inspection", "supervision"},
+    "contractor": {"contractor"},
+    "ndt": {"ndt"},
+    "owner": {"owner"},
+}
+
+PLATFORM_ROLE_FALLBACKS = {
+    "inspection": {"reviewer", "auditor"},
+    "contractor": {"submitter"},
+    "ndt": {"specialist_submitter", "submitter"},
+    "owner": {"observer"},
+    "admin": {"admin"},
+}
 
 FDE_REPLAY_TYPES = {
     "diagnostic_replay",
@@ -426,6 +456,27 @@ def business_rule_node_ids_from_fields(fields: dict[str, Any], fallback: Any = N
     return node_ids or ([int(sequence)] if sequence else [])
 
 
+def business_rule_name_from_nodes(node_ids: list[int], fallback: str) -> str:
+    names: list[str] = []
+    for node_id in node_ids:
+        node = next(
+            (
+                item
+                for item in repo.state.get("tree_nodes", [])
+                if str(item.get("nodeId")) == str(node_id)
+            ),
+            None,
+        )
+        name = compact_plain_text((node or {}).get("name"), 120)
+        if name and name not in names:
+            names.append(name)
+    if not names:
+        return fallback
+    if len(names) == 1:
+        return names[0]
+    return f"{names[0]}等 {len(names)} 个节点"
+
+
 def make_business_rule_key(fields: dict[str, Any], raw_rule: dict[str, Any] | None = None) -> str:
     raw_key = compact_plain_text((raw_rule or {}).get("ruleKey"), 120)
     if raw_key:
@@ -440,8 +491,15 @@ def make_business_rule_key(fields: dict[str, Any], raw_rule: dict[str, Any] | No
 def compile_business_rule_execution(rule: dict[str, Any]) -> dict[str, Any]:
     standard_text = compact_plain_text(rule.get("standardText") or rule.get("criteria"), 3000)
     witness_text = compact_plain_text(rule.get("witnessText") or rule.get("checkMethod"), 3000)
-    combined = "\n".join(part for part in [standard_text, witness_text] if part)
-    method_sentences = split_business_rule_sentences(witness_text, limit=20)
+    agent_thinking = compact_plain_text(rule.get("agentThinking"), 3000)
+    toolchain_thinking = compact_plain_text(rule.get("toolchainThinking"), 3000)
+    combined = "\n".join(
+        part for part in [standard_text, witness_text, agent_thinking, toolchain_thinking] if part
+    )
+    method_sentences = split_business_rule_sentences(
+        witness_text or agent_thinking or toolchain_thinking,
+        limit=20,
+    )
     standard_sentences = split_business_rule_sentences(standard_text, limit=12)
     action_steps = [
         sentence
@@ -468,12 +526,16 @@ def compile_business_rule_execution(rule: dict[str, Any]) -> dict[str, Any]:
         "schemaVersion": "business-rule-execution-v1",
         "compiledAt": server_time(),
         "sourceFields": {
+            "sourceRuleId": rule.get("sourceRuleId"),
+            "sourceDocument": rule.get("sourceDocument") or rule.get("sourceFileName"),
             "sequence": rule.get("sourceSequence"),
             "inspectionCategory": rule.get("inspectionCategory") or rule.get("businessModule"),
             "inspectionItem": rule.get("inspectionItem") or rule.get("name"),
             "inspectionClass": rule.get("inspectionClass") or rule.get("reviewClass"),
             "standardText": standard_text,
             "witnessText": witness_text,
+            "agentThinking": agent_thinking,
+            "toolchainThinking": toolchain_thinking,
         },
         "requiredEvidence": required_evidence,
         "extractionTargets": extraction_targets,
@@ -487,6 +549,8 @@ def compile_business_rule_execution(rule: dict[str, Any]) -> dict[str, Any]:
                     f"类别：{rule.get('inspectionClass') or rule.get('reviewClass') or '-'}",
                     f"判断准则/标准规范：{standard_text or '-'}",
                     f"方法及内容/工作见证：{witness_text or '-'}",
+                    f"Agent思考方式：{agent_thinking or '-'}",
+                    f"工具集调用思考：{toolchain_thinking or '-'}",
                 ]
             ),
             1600,
@@ -513,15 +577,16 @@ def normalize_business_rule_version_record(
     status = normalize_rule_status(raw_rule.get("status"), default="草稿")
     if force_status:
         status = force_status
+    node_ids = business_rule_node_ids_from_fields(fields, raw_rule.get("nodeIds") or raw_rule.get("nodeId"))
     record = {
         **raw_rule,
         **fields,
         "id": rule_id,
-        "name": fields["inspectionItem"],
+        "name": business_rule_name_from_nodes(node_ids, fields["inspectionItem"]),
         "ruleKey": rule_key,
         "version": version,
         "status": status,
-        "nodeIds": business_rule_node_ids_from_fields(fields, raw_rule.get("nodeIds") or raw_rule.get("nodeId")),
+        "nodeIds": node_ids,
         "reviewClass": fields["inspectionClass"],
         "criteria": fields["standardText"],
         "checkMethod": fields["witnessText"],
@@ -869,13 +934,13 @@ def knowledge_source_for_import(
     source_status: str | None = None,
     vector_status: str | None = None,
 ) -> dict[str, Any]:
-    effective_source_id = source_id or "KS-STANDARD-TSG"
+    effective_source_id = source_id or STANDARD_RULES_SOURCE_ID
     source = repo.find_one("knowledge_sources", effective_source_id)
     if source:
         return source
     source = {
         "id": effective_source_id,
-        "name": source_name or "规则标准文件库",
+        "name": source_name or STANDARD_LIBRARY_SOURCE_NAME,
         "sourceType": source_type or "standard",
         "version": source_version or f"upload-{server_time()[:10]}",
         "status": source_status or "启用",
@@ -888,6 +953,63 @@ def knowledge_source_for_import(
     }
     repo.state["knowledge_sources"].insert(0, source)
     return source
+
+
+def iter_rules_standard_files() -> list[Path]:
+    if not RULES_STANDARDS_ROOT.exists():
+        return []
+    files = []
+    for path in RULES_STANDARDS_ROOT.rglob("*"):
+        if not path.is_file() or path.name.startswith("."):
+            continue
+        content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        if upload_file_type_tokens(path.name, content_type) & ALLOWED_KNOWLEDGE_UPLOAD_TYPES:
+            files.append(path)
+    return sorted(files, key=lambda item: str(item.relative_to(RULES_STANDARDS_ROOT)).lower())
+
+
+def existing_knowledge_file_by_hash(source_id: str, file_hash: str) -> dict[str, Any] | None:
+    for file in repo.state.get("knowledge_files", []):
+        if file.get("sourceId") != source_id:
+            continue
+        version = repo.find_one("versions", file.get("documentVersionId")) or {}
+        if version.get("hash") == file_hash:
+            return file
+    return None
+
+
+def sync_knowledge_source_counts(source: dict[str, Any]) -> None:
+    source_files = [item for item in repo.state.get("knowledge_files", []) if item.get("sourceId") == source.get("id")]
+    source["fileCount"] = len(source_files)
+    source["chunkCount"] = sum(int(item.get("chunkCount") or 0) for item in source_files)
+    if source_files:
+        if all(item.get("vectorStatus") == "已向量化" for item in source_files):
+            source["vectorStatus"] = "已向量化"
+        elif any(item.get("vectorStatus") == "向量化中" for item in source_files):
+            source["vectorStatus"] = "向量化中"
+        else:
+            source["vectorStatus"] = "待向量化"
+    else:
+        source["vectorStatus"] = source.get("vectorStatus") or "待向量化"
+    source["updatedAt"] = server_time()
+    bump_record_revision(source)
+
+
+def stable_knowledge_record_seed(source_id: str, relative_path: str) -> str:
+    return hashlib.sha1(f"{source_id}:{relative_path}".encode("utf-8")).hexdigest()[:10].upper()
+
+
+def resolve_knowledge_file_id(file_id: str) -> str:
+    if repo.find_one("knowledge_files", file_id):
+        return file_id
+    for source in repo.state.get("knowledge_sources", []):
+        aliases = source.get("fileIdAliases") or {}
+        if not isinstance(aliases, dict):
+            continue
+        resolved = aliases.get(file_id)
+        if resolved and repo.find_one("knowledge_files", str(resolved)):
+            return str(resolved)
+    return file_id
 
 
 def current_business_rule_for_node(
@@ -916,6 +1038,84 @@ def knowledge_file_is_business_rule(file: dict[str, Any] | None) -> bool:
         return False
     source = repo.find_one("knowledge_sources", file.get("sourceId"))
     return (source or {}).get("sourceType") == "rule" or file.get("sourceType") == "rule"
+
+
+def knowledge_file_source_type(file: dict[str, Any] | None) -> str:
+    if not file:
+        return ""
+    source = repo.find_one("knowledge_sources", file.get("sourceId")) or {}
+    return str(file.get("sourceType") or source.get("sourceType") or "")
+
+
+def remove_knowledge_file_records(file: dict[str, Any]) -> dict[str, int]:
+    file_id = str(file.get("id") or "")
+    document_id = str(file.get("documentId") or "")
+    version_ids = {
+        str(item.get("id"))
+        for item in repo.state.get("versions", [])
+        if document_id and item.get("documentId") == document_id and item.get("id")
+    }
+    if file.get("documentVersionId"):
+        version_ids.add(str(file["documentVersionId"]))
+    chunk_ids = {
+        str(item.get("id"))
+        for item in repo.state.get("knowledge_chunks", [])
+        if item.get("fileId") == file_id
+        or (document_id and item.get("documentId") == document_id)
+        or str(item.get("documentVersionId") or "") in version_ids
+    }
+
+    before = {
+        "files": len(repo.state.get("knowledge_files", [])),
+        "documents": len(repo.state.get("documents", [])),
+        "versions": len(repo.state.get("versions", [])),
+        "chunks": len(repo.state.get("knowledge_chunks", [])),
+        "tasks": len(repo.state.get("knowledge_tasks", [])),
+        "evidenceLinks": len(repo.state.get("evidence_links", [])),
+    }
+    repo.state["knowledge_files"] = [
+        item for item in repo.state.get("knowledge_files", []) if item.get("id") != file_id
+    ]
+    repo.state["documents"] = [
+        item for item in repo.state.get("documents", []) if item.get("id") != document_id
+    ]
+    repo.state["versions"] = [
+        item
+        for item in repo.state.get("versions", [])
+        if not (document_id and item.get("documentId") == document_id) and str(item.get("id") or "") not in version_ids
+    ]
+    repo.state["knowledge_chunks"] = [
+        item
+        for item in repo.state.get("knowledge_chunks", [])
+        if item.get("fileId") != file_id
+        and not (document_id and item.get("documentId") == document_id)
+        and str(item.get("documentVersionId") or "") not in version_ids
+    ]
+    repo.state["knowledge_tasks"] = [
+        item
+        for item in repo.state.get("knowledge_tasks", [])
+        if item.get("targetId") != file_id
+        and not (document_id and item.get("documentId") == document_id)
+        and str(item.get("documentVersionId") or "") not in version_ids
+    ]
+    repo.state["evidence_links"] = [
+        item
+        for item in repo.state.get("evidence_links", [])
+        if item.get("fileId") != file_id
+        and item.get("knowledgeFileId") != file_id
+        and not (document_id and item.get("documentId") == document_id)
+        and str(item.get("documentVersionId") or "") not in version_ids
+        and str(item.get("chunkId") or item.get("knowledgeChunkId") or "") not in chunk_ids
+    ]
+    after = {
+        "files": len(repo.state.get("knowledge_files", [])),
+        "documents": len(repo.state.get("documents", [])),
+        "versions": len(repo.state.get("versions", [])),
+        "chunks": len(repo.state.get("knowledge_chunks", [])),
+        "tasks": len(repo.state.get("knowledge_tasks", [])),
+        "evidenceLinks": len(repo.state.get("evidence_links", [])),
+    }
+    return {key: before[key] - after[key] for key in before}
 
 
 def knowledge_task_is_business_rule(task: dict[str, Any] | None) -> bool:
@@ -950,6 +1150,57 @@ def store_knowledge_upload(
     return f"local://{target_path.relative_to(WORKSPACE_ROOT)}", "local"
 
 
+def knowledge_file_original_context(request: Request, file_id: str):
+    file_id = resolve_knowledge_file_id(file_id)
+    file = repo.find_one("knowledge_files", file_id)
+    if not file:
+        return None, None, None, fail(errors.NOT_FOUND, request)
+    if knowledge_file_is_business_rule(file):
+        return None, None, None, fail(errors.NOT_FOUND, request, message="业务规则不作为知识文件展示。")
+    scope_error = scope_error_for_record(request, file)
+    if scope_error:
+        return None, None, None, scope_error
+    document = repo.find_one("documents", file.get("documentId"))
+    if not document:
+        return file, None, None, fail(errors.NOT_FOUND, request, message="未找到关联原始文档。")
+    version = repo.current_version(document["id"])
+    if not version:
+        return file, document, None, fail(errors.NOT_FOUND, request, message="未找到原始文档版本。")
+    return file, document, version, None
+
+
+def local_storage_path(storage_key: str | None) -> Path | None:
+    raw = str(storage_key or "")
+    if not raw.startswith("local://"):
+        return None
+    relative = raw.removeprefix("local://").lstrip("/")
+    target = (WORKSPACE_ROOT / relative).resolve()
+    try:
+        target.relative_to(WORKSPACE_ROOT.resolve())
+    except ValueError:
+        return None
+    return target
+
+
+def knowledge_file_original_payload(request: Request, file_id: str, document: dict[str, Any]) -> dict[str, Any]:
+    preview = repo.document_preview(document)
+    download = repo.document_download(document)
+    inline_url = str(request.url_for("knowledge_file_original", file_id=file_id)) + "?disposition=inline"
+    attachment_url = str(request.url_for("knowledge_file_original", file_id=file_id)) + "?disposition=attachment"
+    return {
+        "preview": {
+            **preview,
+            "url": inline_url,
+            "sourceUrl": preview.get("url"),
+        },
+        "download": {
+            **download,
+            "url": attachment_url,
+            "sourceUrl": download.get("url"),
+        },
+    }
+
+
 def create_imported_knowledge_records(
     *,
     source: dict[str, Any],
@@ -960,11 +1211,16 @@ def create_imported_knowledge_records(
     original_file_name: str,
     context_description: str,
     uploader_name: str,
+    record_seed: str | None = None,
+    project_id: str | None = None,
+    project_name: str | None = None,
+    node_id: int | None = None,
+    node_name: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
     now = server_time()
     file_hash = hashlib.sha256(data).hexdigest()
     source_id = str(source["id"])
-    seed = uuid4().hex[:10].upper()
+    seed = (record_seed or uuid4().hex[:10]).upper()[:10]
     document_id = f"KDOC-{seed}"
     version_id = f"KDV-{seed}-V1"
     file_id = f"KF-KB-{seed}"
@@ -978,9 +1234,9 @@ def create_imported_knowledge_records(
     file_type = Path(file_name).suffix.lower().lstrip(".") or content_type
     document = {
         "id": document_id,
-        "projectId": None,
+        "projectId": project_id,
         "businessPackId": DEFAULT_BUSINESS_PACK_ID,
-        "materialTypeCode": "standard_reference",
+        "materialTypeCode": "project_file" if project_id else "standard_reference",
         "fileName": file_name,
         "originalFileName": original_file_name,
         "fileType": file_type,
@@ -1017,11 +1273,12 @@ def create_imported_knowledge_records(
         "originalFileName": original_file_name,
         "sourceId": source_id,
         "sourceName": source.get("name") or source_id,
+        "sourceType": source.get("sourceType"),
         "contextDescription": context_description,
-        "projectId": None,
-        "projectName": "",
-        "nodeId": None,
-        "nodeName": "",
+        "projectId": project_id,
+        "projectName": project_name or "",
+        "nodeId": node_id,
+        "nodeName": node_name or "",
         "documentId": document_id,
         "documentVersionId": version_id,
         "ocrStatus": "识别中",
@@ -1041,6 +1298,8 @@ def create_imported_knowledge_records(
         "targetName": file_name,
         "documentId": document_id,
         "documentVersionId": version_id,
+        "projectId": project_id,
+        "nodeId": node_id,
         "status": "排队中",
         "progress": 0,
         "createdAt": now,
@@ -1641,6 +1900,235 @@ def filter_keyword(items: list[dict[str, Any]], keyword: str | None, fields: lis
     ]
 
 
+def admin_org_units() -> list[dict[str, Any]]:
+    return repo.state["admin_config"].setdefault("orgUnits", [])
+
+
+def admin_config_users() -> list[dict[str, Any]]:
+    return repo.state["admin_config"].setdefault("users", [])
+
+
+def demo_user_by_id(user_id: str | None) -> dict[str, Any] | None:
+    if not user_id:
+        return None
+    return next((user for user in USERS.values() if user.get("id") == user_id), None)
+
+
+def admin_user_by_id(user_id: str | None) -> dict[str, Any] | None:
+    if not user_id:
+        return None
+    return next((user for user in repo.state.get("users", []) if user.get("id") == user_id), None)
+
+
+def admin_user_projection(user: dict[str, Any]) -> dict[str, Any]:
+    role = str(user.get("role") or "inspection")
+    name = user.get("name") or user.get("displayName") or user.get("username") or "未命名用户"
+    org_name = user.get("orgName") or user.get("orgUnitName") or ""
+    org = find_org_unit(user.get("orgId"), org_name)
+    projected = {
+        "id": user.get("id") or f"USER-{uuid4().hex[:8].upper()}",
+        "username": user.get("username") or role,
+        "name": name,
+        "displayName": user.get("displayName") or name,
+        "orgId": user.get("orgId") or (org or {}).get("id"),
+        "orgName": org_name or (org or {}).get("name") or "",
+        "orgUnitName": user.get("orgUnitName") or org_name or (org or {}).get("name") or "",
+        "role": role,
+        "roleId": user.get("roleId") or role,
+        "roleLabel": user.get("roleLabel") or ROLE_LABELS.get(role, role),
+        "mobile": user.get("mobile") or "",
+        "status": user.get("status") or "启用",
+        "lastLoginAt": user.get("lastLoginAt") or "",
+        "updatedAt": user.get("updatedAt") or server_time(),
+        "revision": record_revision(user),
+    }
+    if user.get("etag"):
+        projected["etag"] = user["etag"]
+    return projected
+
+
+def upsert_admin_config_user(user: dict[str, Any]) -> None:
+    projected = admin_user_projection(user)
+    users = admin_config_users()
+    existing = next((item for item in users if item.get("id") == projected["id"]), None)
+    if existing:
+        existing.update(projected)
+    else:
+        users.insert(0, projected)
+
+
+def remove_admin_config_user(user_id: str) -> None:
+    users = admin_config_users()
+    users[:] = [item for item in users if item.get("id") != user_id]
+
+
+def list_admin_users() -> list[dict[str, Any]]:
+    merged: dict[str, dict[str, Any]] = {}
+    for user in admin_config_users():
+        projected = admin_user_projection(user)
+        merged[projected["id"]] = projected
+    for user in repo.state.get("users", []):
+        projected = admin_user_projection(user)
+        versioned = versioned_record("admin-user", {**user, "id": projected["id"]})
+        projected["revision"] = versioned["revision"]
+        projected["etag"] = versioned["etag"]
+        projected["updatedAt"] = versioned["updatedAt"]
+        merged[projected["id"]] = {**merged.get(projected["id"], {}), **projected}
+    return list(merged.values())
+
+
+def versioned_admin_user(user: dict[str, Any]) -> dict[str, Any]:
+    projected = admin_user_projection(user)
+    versioned = versioned_record("admin-user", {**user, "id": projected["id"]})
+    projected["revision"] = versioned["revision"]
+    projected["etag"] = versioned["etag"]
+    projected["updatedAt"] = versioned["updatedAt"]
+    return projected
+
+
+def list_admin_org_units() -> list[dict[str, Any]]:
+    return [versioned_record("org-unit", item) for item in admin_org_units()]
+
+
+def find_org_unit(org_id: str | None = None, org_name: str | None = None) -> dict[str, Any] | None:
+    return next(
+        (
+            org
+            for org in admin_org_units()
+            if (org_id and org.get("id") == org_id) or (org_name and org.get("name") == org_name)
+        ),
+        None,
+    )
+
+
+def org_type_matches_role(role: str, org_type: str | None) -> bool:
+    expected_types = BUSINESS_ROLE_ORG_TYPES.get(role)
+    return not expected_types or str(org_type or "") in expected_types
+
+
+def validate_user_org_binding(
+    request: Request,
+    role: str,
+    org_id: str | None,
+    org_name: str | None,
+) -> tuple[dict[str, Any] | None, JSONResponse | None]:
+    org = find_org_unit(org_id, org_name)
+    if role in BUSINESS_ROLE_ORG_TYPES and org is None:
+        return None, fail(errors.VALIDATION_ERROR, request, message="监检、施工方、无损检测、建设方用户必须绑定组织。")
+    if org is None:
+        return None, None
+    if org.get("status") == "停用":
+        return None, fail(errors.CONFLICT, request, message="停用组织不能绑定用户。")
+    if not org_type_matches_role(role, org.get("type")):
+        return None, fail(errors.VALIDATION_ERROR, request, message="用户角色与组织类型不匹配。")
+    return org, None
+
+
+def role_id_for_admin_user(role: str) -> str:
+    order = ["admin", "inspection", "contractor", "ndt", "owner", "fde"]
+    return str(order.index(role) + 1) if role in order else role
+
+
+def build_admin_user_record(
+    body: dict[str, Any],
+    *,
+    existing: dict[str, Any] | None = None,
+    org: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    role = str(body.get("role") or (existing or {}).get("role") or "inspection")
+    username = str(body.get("username") or (existing or {}).get("username") or role).strip()
+    name = str(body.get("name") or body.get("displayName") or (existing or {}).get("name") or (existing or {}).get("displayName") or username).strip()
+    org_id = (org or {}).get("id") or body.get("orgId") or (existing or {}).get("orgId")
+    org_name = (org or {}).get("name") or body.get("orgName") or (existing or {}).get("orgName") or (existing or {}).get("orgUnitName") or ""
+    password = body.get("password") or body.get("initialPassword")
+    password_hash = (existing or {}).get("passwordHash")
+    if password:
+        password_hash = hash_password(str(password))
+    elif not password_hash:
+        password_hash = f"plain:{username}"
+    user = {
+        **(existing or {}),
+        "id": body.get("id") or (existing or {}).get("id") or f"USER-{uuid4().hex[:8].upper()}",
+        "username": username,
+        "name": name,
+        "displayName": name,
+        "passwordHash": password_hash,
+        "role": role,
+        "roleId": role_id_for_admin_user(role),
+        "roleLabel": ROLE_LABELS.get(role, role),
+        "permissions": body.get("permissions") or (existing or {}).get("permissions") or repo.role_actions(role),
+        "orgId": org_id,
+        "orgName": org_name,
+        "orgUnitName": org_name,
+        "mobile": body.get("mobile") or (existing or {}).get("mobile") or "",
+        "status": body.get("status") or (existing or {}).get("status") or "启用",
+        "defaultPath": ROLE_DEFAULT_PATHS.get(role, ROLE_DEFAULT_PATHS["inspection"]),
+        "lastLoginAt": body.get("lastLoginAt") or (existing or {}).get("lastLoginAt") or "",
+        "updatedAt": server_time(),
+        "revision": record_revision(existing or {"id": body.get("id") or "new"}),
+    }
+    if existing:
+        user["revision"] = record_revision(existing)
+    return user
+
+
+def sync_user_references(user: dict[str, Any]) -> None:
+    for member in repo.state.get("project_members", []):
+        if member.get("userId") != user.get("id"):
+            continue
+        member["name"] = user.get("name") or user.get("displayName") or member.get("name")
+        member["orgId"] = user.get("orgId")
+        member["orgName"] = user.get("orgName") or member.get("orgName")
+        member["role"] = user.get("role") or member.get("role")
+        if user.get("status") != "启用" and member.get("status") == "启用":
+            member["status"] = "停用"
+        bump_record_revision(member)
+
+
+def unique_admin_value_conflict(
+    user_id: str | None,
+    *,
+    username: str | None = None,
+    mobile: str | None = None,
+) -> str | None:
+    for user in list_admin_users():
+        if user_id and user.get("id") == user_id:
+            continue
+        if username and user.get("username") == username:
+            return "用户名已存在。"
+        if mobile and user.get("mobile") and user.get("mobile") == mobile:
+            return "手机号已存在。"
+    return None
+
+
+def resolve_project_member_grant(project_id: str, role: str) -> dict[str, Any]:
+    project = repo.require_project(project_id)
+    role_def: dict[str, Any] | None = None
+    pack: dict[str, Any] | None = None
+    if project:
+        try:
+            pack = business_pack_for_project(project)
+        except Exception:
+            pack = None
+    if pack:
+        role_def = next((item for item in pack.get("roles") or [] if item.get("code") == role), None)
+        if role_def is None:
+            platform_roles = PLATFORM_ROLE_FALLBACKS.get(role) or set()
+            role_def = next((item for item in pack.get("roles") or [] if item.get("platformRole") in platform_roles), None)
+    node_scope = [
+        int(item["nodeId"])
+        for item in (pack or {}).get("nodeTemplates", [])
+        if item.get("nodeId") is not None
+    ]
+    if not node_scope:
+        node_scope = [int(ROLE_NODE_MAP.get(role, 1))]
+    return {
+        "role": role,
+        "nodeScope": list(dict.fromkeys(node_scope)),
+        "actions": list((role_def or {}).get("actions") or repo.role_actions(role)),
+    }
+
+
 def signed_url_for_task(task: dict[str, Any]) -> dict[str, Any] | JSONResponse:
     if task["status"] == "已过期":
         return {"error": errors.EXPORT_TASK_EXPIRED}
@@ -1654,13 +2142,28 @@ def signed_url_for_task(task: dict[str, Any]) -> dict[str, Any] | JSONResponse:
 
 
 def admin_user_snapshot(user_id: str | None, role: str | None = None) -> dict[str, Any]:
-    users = repo.state["admin_config"].get("users", [])
-    user = next((item for item in users if item.get("id") == user_id), None)
+    user = admin_user_by_id(user_id)
+    if user is None:
+        user = next((item for item in admin_config_users() if item.get("id") == user_id), None)
+    if user is None:
+        demo_user = demo_user_by_id(user_id)
+        if demo_user:
+            user = {
+                **demo_user,
+                "name": demo_user.get("displayName") or demo_user.get("username"),
+                "orgName": demo_user.get("orgUnitName"),
+            }
     if user is None and role:
-        user = next((item for item in users if item.get("role") == role), None)
+        user = next((item for item in list_admin_users() if item.get("role") == role), None)
     if user is None and role == "admin":
         user = {"id": user_id or "USER-ADMIN-001", "name": "系统管理员", "orgName": "省特检院平台组", "role": "admin"}
-    return user or {"id": user_id or "USER-UNKNOWN", "name": "新授权成员", "orgName": "联调组织", "role": role or "inspection"}
+    if user:
+        projected = admin_user_projection(user)
+        return {
+            **projected,
+            "permissions": user.get("permissions") or repo.role_actions(projected["role"]),
+        }
+    return {"id": user_id or "USER-UNKNOWN", "name": "新授权成员", "orgName": "联调组织", "role": role or "inspection"}
 
 
 def scoped_binding_ids(project_id: str, node_ids: list[int], binding_ids: list[str] | None) -> list[str]:
@@ -1709,19 +2212,68 @@ def project_member_snapshot(
     actions: list[str] | None = None,
 ) -> dict[str, Any]:
     user = admin_user_snapshot(user_id, role)
+    grant = resolve_project_member_grant(project_id, role)
     return {
         "id": f"PM-{uuid4().hex[:8].upper()}",
         "projectId": project_id,
         "userId": user_id or user["id"],
         "name": user.get("name") or "授权成员",
+        "orgId": user.get("orgId"),
         "orgName": org_name or user.get("orgName") or "联调组织",
         "role": role,
-        "nodeScope": node_scope or [ROLE_NODE_MAP.get(role, 1)],
-        "actions": actions or repo.role_actions(role),
+        "nodeScope": node_scope or grant["nodeScope"],
+        "actions": actions or grant["actions"],
         "status": "启用",
         "updatedAt": server_time(),
         "revision": 1,
     }
+
+
+def project_participant_units(project: dict[str, Any], members: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    role_to_project_field = {
+        "owner": "ownerOrgName",
+        "contractor": "contractorOrgName",
+        "ndt": "ndtOrgName",
+        "inspection": "inspectionOrgName",
+    }
+    rows: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for role in ["owner", "contractor", "ndt", "inspection"]:
+        scoped_members = [member for member in members if member.get("role") == role and member.get("status") != "停用"]
+        for member in scoped_members:
+            org_name = member.get("orgName") or project.get(role_to_project_field[role])
+            if not org_name:
+                continue
+            key = (role, org_name)
+            if key in seen:
+                continue
+            seen.add(key)
+            org = find_org_unit(member.get("orgId"), org_name)
+            rows.append(
+                {
+                    "unitType": role,
+                    "unitName": org_name,
+                    "orgId": member.get("orgId") or (org or {}).get("id"),
+                    "contactName": (org or {}).get("contactName") or member.get("name") or "",
+                    "contactPhone": (org or {}).get("contactPhone") or "",
+                    "memberCount": len([item for item in scoped_members if (item.get("orgName") or org_name) == org_name]),
+                }
+            )
+        if not any(row["unitType"] == role for row in rows):
+            org_name = project.get(role_to_project_field[role])
+            if org_name:
+                org = find_org_unit(org_name=org_name)
+                rows.append(
+                    {
+                        "unitType": role,
+                        "unitName": org_name,
+                        "orgId": (org or {}).get("id"),
+                        "contactName": (org or {}).get("contactName") or "",
+                        "contactPhone": (org or {}).get("contactPhone") or "",
+                        "memberCount": 0,
+                    }
+                )
+    return rows
 
 
 def project_detail_payload(project_id: str, request: Request | None = None) -> dict[str, Any] | None:
@@ -1749,12 +2301,7 @@ def project_detail_payload(project_id: str, request: Request | None = None) -> d
     return {
         "project": versioned_project(project),
         "members": members,
-        "participantUnits": [
-            {"unitType": "owner", "unitName": project["ownerOrgName"], "contactName": "赵经理", "contactPhone": "13800000001"},
-            {"unitType": "contractor", "unitName": project["contractorOrgName"], "contactName": "李工", "contactPhone": "13800000002"},
-            {"unitType": "ndt", "unitName": project["ndtOrgName"], "contactName": "王工", "contactPhone": "13800000003"},
-            {"unitType": "inspection", "unitName": project["inspectionOrgName"], "contactName": "张工", "contactPhone": "13800000004"},
-        ],
+        "participantUnits": project_participant_units(project, members),
         "nodeSummary": node_summary,
         "recentExportTasks": [repo.clone(item) for item in repo.state["export_tasks"] if item.get("projectId") == project_id],
     }
@@ -1774,13 +2321,15 @@ def business_pack_snapshot_for_project(project: dict[str, Any]) -> dict[str, Any
 
 def project_defaults_for_pack(pack: dict[str, Any]) -> dict[str, str]:
     if pack.get("domainType") == ENGINEERING_DOMAIN_TYPE:
-        return dict(ENGINEERING_PROJECT_DEFAULTS)
+        defaults = dict(ENGINEERING_PROJECT_DEFAULTS)
+        defaults["type"] = pack.get("projectType") or defaults["type"]
+        return defaults
     reviewer = next((role for role in pack.get("roles") or [] if role.get("platformRole") == "reviewer"), {})
     submitter = next((role for role in pack.get("roles") or [] if role.get("platformRole") == "submitter"), {})
     observer = next((role for role in pack.get("roles") or [] if role.get("platformRole") == "observer"), {})
     return {
         "name": f"新建{pack['name']}项目",
-        "type": pack["name"],
+        "type": pack.get("projectType") or pack["name"],
         "ownerOrgName": f"{observer.get('label') or '观察者'}单位",
         "contractorOrgName": f"{submitter.get('label') or '提交者'}单位",
         "ndtOrgName": "专项资料单位",
@@ -1848,7 +2397,7 @@ def simple_routes(role: str | None = None) -> list[dict[str, Any]]:
             "meta": {"title": "管理后台", "icon": "vi-ep:setting", "alwaysShow": True, "roles": ["admin"]},
             "children": [
                 {"path": item, "component": "views/AICheck/AdminOverview", "name": f"Admin{item.title().replace('-', '')}", "meta": {"title": "项目与权限配置", "roles": ["admin"]}}
-                for item in ["overview", "projects", "org", "permission", "rules", "fine-config", "integration", "audit"]
+                for item in ["overview", "projects", "org", "business-packs", "permission", "rules", "prompt-templates", "fine-config", "integration", "audit"]
             ],
         },
         {
@@ -2079,6 +2628,7 @@ def get_project_detail(request: Request, project_id: str):
 
 
 @router.patch("/projects/{project_id}")
+@router.put("/projects/{project_id}")
 def update_project(
     request: Request,
     project_id: str,
@@ -2095,7 +2645,7 @@ def update_project(
         if not project:
             return fail(errors.NOT_FOUND, request)
         changed = []
-        for field in ["name", "type", "region", "ownerOrgName", "contractorOrgName", "ndtOrgName", "inspectionOrgName"]:
+        for field in ["name", "type", "region", "ownerOrgName", "contractorOrgName", "ndtOrgName", "inspectionOrgName", "status"]:
             if field in body and project.get(field) != body[field]:
                 changed.append({"field": field, "before": project.get(field), "after": body[field]})
                 project[field] = body[field]
@@ -2104,6 +2654,68 @@ def update_project(
         return ok({"project": versioned_project(project), **repo.mutation_result("更新项目", "Project", project_id, changed=changed)}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"projectId": project_id, "body": body})
+
+
+@router.delete("/projects/{project_id}")
+def delete_project(
+    request: Request,
+    project_id: str,
+    x_role: str | None = Header(default=None, alias="X-Role"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        effective_role, identity_error = effective_role_for_request(request, x_role)
+        if identity_error:
+            return identity_error
+        if effective_role in FDE_ROLES or effective_role in {"owner"}:
+            return fail(errors.FORBIDDEN, request)
+        project = repo.require_project(project_id)
+        if not project:
+            return fail(errors.NOT_FOUND, request)
+        if not project_if_match_valid(project, if_match or request.headers.get("If-Match")):
+            return fail(errors.ETAG_CONFLICT, request)
+        business_collections = [
+            "documents",
+            "versions",
+            "bindings",
+            "submissions",
+            "submission_drafts",
+            "rectifications",
+            "review_opinions",
+            "review_findings",
+            "reports",
+            "archive_items",
+            "export_tasks",
+            "ndt_films",
+            "ndt_records",
+            "ndt_reports",
+            "ndt_feedback",
+        ]
+        has_business_data = any(
+            any(item.get("projectId") == project_id for item in repo.state.get(collection, []))
+            for collection in business_collections
+        )
+        if has_business_data:
+            before = project.get("status")
+            repo.touch_project(project_id, status="已归档")
+            audit_id = repo.add_audit("归档项目", "Project", project_id)
+            return ok(
+                {
+                    "deleted": False,
+                    "archived": True,
+                    "project": versioned_project(project),
+                    "auditLogId": audit_id,
+                    "changed": [{"field": "status", "before": before, "after": "已归档"}],
+                },
+                request,
+            )
+        for collection in ["projects", "tree_nodes", "requirements", "project_members"]:
+            repo.state[collection] = [item for item in repo.state.get(collection, []) if item.get("projectId", item.get("id")) != project_id and item.get("id") != project_id]
+        audit_id = repo.add_audit("删除项目", "Project", project_id)
+        return ok({"deleted": True, "archived": False, "projectId": project_id, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"projectId": project_id})
 
 
 @router.post("/projects/{project_id}/business-pack/apply")
@@ -2236,56 +2848,103 @@ def authorize_member(request: Request, project_id: str, body: dict[str, Any] = B
         guard = mutation_guard(request, project_id, x_role=x_role)
         if guard:
             return guard
-        role = body.get("role", "inspection")
-        user = admin_user_snapshot(body.get("userId"), role)
-        user_id = body.get("userId") or user["id"]
-        incoming_scope = body.get("nodeScope") or [ROLE_NODE_MAP.get(role, 24)]
-        existing = next(
-            (
-                item
-                for item in repo.state["project_members"]
-                if item.get("projectId") == project_id
-                and item.get("userId") == user_id
-                and item.get("role") == role
-            ),
-            None,
-        )
-        if existing:
-            merged_scope = list(dict.fromkeys([*(existing.get("nodeScope") or []), *incoming_scope]))
-            existing.update(
-                {
-                    "name": body.get("name") or existing.get("name") or user.get("name") or "新授权成员",
-                    "orgName": body.get("orgName") or existing.get("orgName") or user.get("orgName") or "联调组织",
-                    "nodeScope": merged_scope,
-                    "actions": body.get("actions") or existing.get("actions") or repo.role_actions(role),
-                    "status": "启用",
-                    "expiresAt": body.get("expiresAt") or existing.get("expiresAt"),
-                    "updatedAt": server_time(),
-                }
-            )
-            bump_record_revision(existing)
-            repo.touch_project(project_id)
-            audit_id = repo.add_audit("更新项目成员授权", "ProjectMember", existing["id"])
-            return ok({"member": versioned_record("project-member", existing), "auditLogId": audit_id}, request)
+        batch_mode = isinstance(body.get("userIds"), list)
+        requested_user_ids = [str(item) for item in (body.get("userIds") or []) if item]
+        if not requested_user_ids and body.get("userId"):
+            requested_user_ids = [str(body.get("userId"))]
+        if not requested_user_ids:
+            return fail(errors.VALIDATION_ERROR, request, message="请选择授权用户。")
 
-        member = {
-            "id": f"PM-{uuid4().hex[:8].upper()}",
-            "projectId": project_id,
-            "userId": user_id,
-            "name": body.get("name") or user.get("name") or "新授权成员",
-            "orgName": body.get("orgName") or user.get("orgName") or "联调组织",
-            "role": role,
-            "nodeScope": incoming_scope,
-            "actions": body.get("actions") or repo.role_actions(role),
-            "status": "启用",
-            "expiresAt": body.get("expiresAt"),
-            "updatedAt": server_time(),
-            "revision": 1,
+        created_or_updated: list[dict[str, Any]] = []
+        failed: list[dict[str, Any]] = []
+        audit_ids: list[str] = []
+
+        for user_id in requested_user_ids:
+            raw_user = (
+                admin_user_by_id(user_id)
+                or next((item for item in admin_config_users() if item.get("id") == user_id), None)
+                or demo_user_by_id(user_id)
+            )
+            if raw_user is None:
+                failed.append({"userId": user_id, "name": user_id, "message": "用户不存在。"})
+                continue
+            user = admin_user_snapshot(user_id, body.get("role"))
+            role = str(user.get("role") or body.get("role") or "inspection")
+            if body.get("role") and role != body.get("role"):
+                failed.append({"userId": user_id, "name": user.get("name") or user_id, "message": "项目成员角色必须等于用户角色。"})
+                continue
+            if user.get("status") != "启用":
+                failed.append({"userId": user_id, "name": user.get("name") or user_id, "message": "停用用户不能授权到项目。"})
+                continue
+            if role in BUSINESS_ROLE_ORG_TYPES and not user.get("orgName"):
+                failed.append({"userId": user_id, "name": user.get("name") or user_id, "message": "业务角色用户必须先绑定组织。"})
+                continue
+            grant = resolve_project_member_grant(project_id, role)
+            incoming_scope = grant["nodeScope"] if batch_mode else body.get("nodeScope") or grant["nodeScope"]
+            incoming_actions = grant["actions"] if batch_mode else body.get("actions") or grant["actions"]
+            existing = next(
+                (
+                    item
+                    for item in repo.state["project_members"]
+                    if item.get("projectId") == project_id
+                    and item.get("userId") == user_id
+                    and item.get("role") == role
+                ),
+                None,
+            )
+            if existing:
+                merged_scope = list(dict.fromkeys([*(existing.get("nodeScope") or []), *incoming_scope]))
+                existing.update(
+                    {
+                        "name": body.get("name") or existing.get("name") or user.get("name") or "新授权成员",
+                        "orgId": user.get("orgId") or existing.get("orgId"),
+                        "orgName": body.get("orgName") or user.get("orgName") or existing.get("orgName") or "联调组织",
+                        "role": role,
+                        "nodeScope": merged_scope,
+                        "actions": incoming_actions,
+                        "status": "启用",
+                        "expiresAt": body.get("expiresAt") or existing.get("expiresAt"),
+                        "updatedAt": server_time(),
+                    }
+                )
+                bump_record_revision(existing)
+                audit_ids.append(repo.add_audit("更新项目成员授权", "ProjectMember", existing["id"]))
+                created_or_updated.append(versioned_record("project-member", existing))
+                continue
+
+            member = {
+                "id": f"PM-{uuid4().hex[:8].upper()}",
+                "projectId": project_id,
+                "userId": user_id,
+                "name": body.get("name") or user.get("name") or "新授权成员",
+                "orgId": user.get("orgId"),
+                "orgName": body.get("orgName") or user.get("orgName") or "联调组织",
+                "role": role,
+                "nodeScope": incoming_scope,
+                "actions": incoming_actions,
+                "status": "启用",
+                "expiresAt": body.get("expiresAt"),
+                "updatedAt": server_time(),
+                "revision": 1,
+            }
+            repo.state["project_members"].insert(0, member)
+            audit_ids.append(repo.add_audit("项目成员授权", "ProjectMember", member["id"]))
+            created_or_updated.append(versioned_record("project-member", member))
+
+        if not created_or_updated and failed:
+            return fail(errors.VALIDATION_ERROR, request, message=failed[0]["message"], data={"failed": failed})
+        if created_or_updated:
+            repo.touch_project(project_id)
+        payload = {
+            "members": created_or_updated,
+            "successCount": len(created_or_updated),
+            "failed": failed,
+            "auditLogIds": audit_ids,
+            "auditLogId": audit_ids[0] if audit_ids else None,
         }
-        repo.state["project_members"].insert(0, member)
-        repo.touch_project(project_id)
-        audit_id = repo.add_audit("项目成员授权", "ProjectMember", member["id"])
-        return ok({"member": versioned_record("project-member", member), "auditLogId": audit_id}, request)
+        if not batch_mode and created_or_updated:
+            payload["member"] = created_or_updated[0]
+        return ok(payload, request)
 
     return idempotent(
         request,
@@ -2314,6 +2973,9 @@ def update_member(
             return fail(errors.NOT_FOUND, request, message="项目成员不存在。")
         if not record_if_match_valid("project-member", member, if_match):
             return fail(errors.ETAG_CONFLICT, request)
+        user = admin_user_snapshot(member.get("userId"), member.get("role"))
+        if body.get("role") and user.get("role") and body.get("role") != user.get("role"):
+            return fail(errors.VALIDATION_ERROR, request, message="项目成员角色必须等于用户角色。")
         changed = []
         for field in ["role", "nodeScope", "actions", "status", "expiresAt"]:
             if field in body and member.get(field) != body[field]:
@@ -2326,6 +2988,37 @@ def update_member(
         return ok({"member": versioned_record("project-member", member), "auditLogId": audit_id, "changed": changed}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"memberId": member_id, "body": body})
+
+
+@router.delete("/projects/{project_id}/members/{member_id}")
+def delete_member(
+    request: Request,
+    project_id: str,
+    member_id: str,
+    x_role: str | None = Header(default=None, alias="X-Role"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, if_match="*")
+        if guard:
+            return guard
+        member = repo.find_one("project_members", member_id)
+        if not member or member.get("projectId") != project_id:
+            return fail(errors.NOT_FOUND, request, message="项目成员不存在。")
+        if not record_if_match_valid("project-member", member, if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        repo.state["project_members"] = [item for item in repo.state["project_members"] if item.get("id") != member_id]
+        repo.touch_project(project_id)
+        audit_id = repo.add_audit("移除项目成员授权", "ProjectMember", member_id)
+        return ok({"deleted": True, "memberId": member_id, "auditLogId": audit_id}, request)
+
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"projectId": project_id, "memberId": member_id},
+    )
 
 
 @router.post("/projects/{project_id}/initialize-workflow")
@@ -3586,20 +4279,40 @@ def evidence_chain(request: Request, project_id: str, node_id: int):
 
 @router.get("/projects/{project_id}/inspection/nodes/{node_id}/standards")
 def standards(request: Request, project_id: str, node_id: int):
-    return ok(
-        [
-            {
-                "clauseId": "TSG-Z6002-3.2",
-                "standardName": "TSG Z6002 焊接人员考核细则",
-                "clauseNo": "3.2",
-                "title": "焊工资格覆盖要求",
-                "summary": "焊工持证项目应覆盖实际焊接方法、材料类别和焊接位置。",
-                "effectiveVersion": "2010",
-                "evidenceLinkId": "EV-24-002",
-            }
-        ],
-        request,
+    project = repo.require_project(project_id)
+    business_pack_id = (project or {}).get("businessPackId") or DEFAULT_BUSINESS_PACK_ID
+    rule = current_business_rule_for_node(node_id, business_pack_id=business_pack_id) or {}
+    query = " ".join(
+        str(part or "")
+        for part in [
+            rule.get("name"),
+            rule.get("standardText") or rule.get("criteria"),
+            rule.get("witnessText") or rule.get("checkMethod"),
+        ]
+    ).strip() or "审查依据"
+    retrieval = retrieve_knowledge_clauses(
+        repo.state,
+        query=query,
+        business_pack_id=business_pack_id,
+        node_id=node_id,
+        top_k=5,
+        query_type="node_standard_basis",
     )
+    standards_payload = []
+    for clause in retrieval["trace"]["selectedClauses"]:
+        section_path = clause.get("sectionPath") or []
+        standards_payload.append(
+            {
+                "clauseId": clause.get("clauseId"),
+                "standardName": section_path[0] if section_path else clause.get("kbDocId") or STANDARD_LIBRARY_SOURCE_NAME,
+                "clauseNo": clause.get("clauseNo"),
+                "title": clause.get("title"),
+                "summary": compact_plain_text(clause.get("text"), 180),
+                "effectiveVersion": clause.get("kbVersion") or STANDARD_RULES_VERSION,
+                "evidenceLinkId": clause.get("sourceEvidenceLinkId") or clause.get("id"),
+            }
+        )
+    return ok(standards_payload, request)
 
 
 @router.get("/projects/{project_id}/inspection/nodes/{node_id}/date-compare")
@@ -7565,7 +8278,7 @@ def fde_clause_for_evidence(link: dict[str, Any]) -> dict[str, Any]:
     return {
         "clauseId": clause_id or "AI-RUN-KB-CONTEXT",
         "kbDocId": link.get("kbDocId") or "AI-RUN-EVIDENCE",
-        "kbVersion": link.get("kbVersion") or "std-v2026.06",
+        "kbVersion": link.get("kbVersion") or STANDARD_RULES_VERSION,
         "clauseNo": link.get("clauseNo") or clause_id,
         "title": link.get("title") or "AI Run 关联知识依据",
         "text": link.get("quotedText") or "AI 审查运行关联的知识条款证据。",
@@ -13310,7 +14023,7 @@ def list_knowledge_sources(request: Request, keyword: str | None = None, sourceT
 def create_knowledge_source(request: Request, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     def produce():
         if body.get("sourceType") == "rule":
-            return fail(errors.VALIDATION_ERROR, request, message="业务规则请通过业务规则版本管理导入，不进入知识库索引。")
+            return fail(errors.VALIDATION_ERROR, request, message="业务判断规则请通过监检业务判断规则管理导入，不进入知识库索引。")
         source = {
             "id": f"KS-{uuid4().hex[:8].upper()}",
             "name": body.get("name") or "新知识源",
@@ -13361,7 +14074,7 @@ def update_knowledge_source(
         for field in ["name", "sourceType", "version", "status", "fileCount", "chunkCount", "vectorStatus"]:
             if field in body and source.get(field) != body[field]:
                 if field == "sourceType" and body[field] == "rule":
-                    return fail(errors.VALIDATION_ERROR, request, message="业务规则请通过业务规则版本管理导入，不进入知识库索引。")
+                    return fail(errors.VALIDATION_ERROR, request, message="业务判断规则请通过监检业务判断规则管理导入，不进入知识库索引。")
                 changed.append({"field": field, "before": source.get(field), "after": body[field]})
                 source[field] = body[field]
         if changed:
@@ -13380,6 +14093,167 @@ def enable_knowledge_source(request: Request, source_id: str, idempotency_key: s
 @router.post("/knowledge/sources/{source_id}/disable")
 def disable_knowledge_source(request: Request, source_id: str, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), if_match: str | None = Header(default=None, alias="If-Match")):
     return update_knowledge_source(request, source_id, {"status": "停用"}, idempotency_key=idempotency_key, if_match=if_match)
+
+
+@router.post("/knowledge/standards/import-from-rules")
+def import_standards_from_rules_folder(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        standard_files = iter_rules_standard_files()
+        if not RULES_STANDARDS_ROOT.exists():
+            return fail(
+                errors.NOT_FOUND,
+                request,
+                message="未找到 rules/standards 标准规范目录。",
+            )
+        if not standard_files:
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="rules/standards 目录中没有可导入的标准规范文件。",
+            )
+
+        source = knowledge_source_for_import(
+            str(body.get("sourceId") or STANDARD_RULES_SOURCE_ID),
+            source_name=str(body.get("sourceName") or STANDARD_LIBRARY_SOURCE_NAME),
+            source_type="standard",
+            source_version=str(body.get("sourceVersion") or STANDARD_RULES_VERSION),
+            source_status=str(body.get("sourceStatus") or "启用"),
+            vector_status="待向量化",
+        )
+        reset_existing = bool(body.get("reset") or body.get("reinitialize") or body.get("replaceExisting"))
+        removed_records = {"files": 0, "documents": 0, "versions": 0, "chunks": 0, "tasks": 0, "evidenceLinks": 0}
+        reset_aliases_by_path: dict[str, str] = {}
+        scanned_relative_paths = {
+            safe_relative_path(str(path.relative_to(WORKSPACE_ROOT)), path.name)
+            for path in standard_files
+        }
+        if reset_existing:
+            existing_files = [
+                item for item in list(repo.state.get("knowledge_files", [])) if item.get("sourceId") == source["id"]
+            ]
+            reset_aliases_by_path = {
+                str(item.get("sourceRelativePath") or item.get("originalFileName") or item.get("fileName") or ""): str(
+                    item.get("id") or ""
+                )
+                for item in existing_files
+                if item.get("id")
+            }
+            source["fileIdAliases"] = {}
+            for existing_file in existing_files:
+                removed = remove_knowledge_file_records(existing_file)
+                removed_records = {
+                    key: removed_records.get(key, 0) + int(removed.get(key, 0)) for key in removed_records
+                }
+        else:
+            stale_files = [
+                item
+                for item in list(repo.state.get("knowledge_files", []))
+                if item.get("sourceId") == source["id"]
+                and str(item.get("sourceRelativePath") or item.get("originalFileName") or item.get("fileName") or "") not in scanned_relative_paths
+            ]
+            for stale_file in stale_files:
+                removed = remove_knowledge_file_records(stale_file)
+                removed_records = {
+                    key: removed_records.get(key, 0) + int(removed.get(key, 0)) for key in removed_records
+                }
+        uploader = admin_user_snapshot(request_user_id(request), role_from_query(x_role=request.headers.get("X-Role")))
+        uploader_name = uploader.get("name") or "知识库管理员"
+
+        imported_files: list[dict[str, Any]] = []
+        imported_tasks: list[dict[str, Any]] = []
+        dispatches: list[dict[str, Any]] = []
+        skipped: list[dict[str, str]] = []
+
+        for path in standard_files:
+            relative_path = safe_relative_path(str(path.relative_to(WORKSPACE_ROOT)), path.name)
+            file_name = safe_upload_file_name(path.name)
+            file_size = path.stat().st_size
+            content_type = mimetypes.guess_type(file_name)[0] or "application/octet-stream"
+            if file_size < 1:
+                skipped.append({"fileName": file_name, "reason": "文件内容为空"})
+                continue
+            if file_size > MAX_UPLOAD_BYTES:
+                skipped.append({"fileName": file_name, "reason": f"超过 {MAX_UPLOAD_BYTES // 1024 // 1024}MB 上传限制"})
+                continue
+            if not (upload_file_type_tokens(file_name, content_type) & ALLOWED_KNOWLEDGE_UPLOAD_TYPES):
+                skipped.append({"fileName": file_name, "reason": "文件类型不支持"})
+                continue
+
+            data = path.read_bytes()
+            file_hash = hashlib.sha256(data).hexdigest()
+            record_seed = stable_knowledge_record_seed(str(source["id"]), relative_path)
+            stable_file_id = f"KF-KB-{record_seed}"
+            duplicate_path = repo.find_one("knowledge_files", stable_file_id)
+            if duplicate_path:
+                existing_version = repo.find_one("versions", duplicate_path.get("documentVersionId")) or {}
+                if existing_version.get("hash") == file_hash:
+                    skipped.append({"fileName": file_name, "reason": f"已存在相同路径：{duplicate_path.get('fileName')}"})
+                    continue
+                removed = remove_knowledge_file_records(duplicate_path)
+                removed_records = {
+                    key: removed_records.get(key, 0) + int(removed.get(key, 0)) for key in removed_records
+                }
+
+            document, version, knowledge_file, task, storage = create_imported_knowledge_records(
+                source=source,
+                file_name=file_name,
+                content_type=content_type,
+                data=data,
+                relative_path=relative_path,
+                original_file_name=file_name,
+                context_description=f"来自 {relative_path}；按 rules/业务规则.md 引用标准整理入库。",
+                uploader_name=uploader_name,
+                record_seed=record_seed,
+            )
+            old_file_id = reset_aliases_by_path.get(relative_path)
+            if old_file_id and old_file_id != knowledge_file["id"]:
+                source.setdefault("fileIdAliases", {})[old_file_id] = knowledge_file["id"]
+            repo.state["documents"].insert(0, document)
+            repo.state["versions"].insert(0, version)
+            repo.state["knowledge_files"].insert(0, knowledge_file)
+            repo.state["knowledge_tasks"].insert(0, task)
+            imported_files.append(versioned_record("knowledge-file", knowledge_file))
+            imported_tasks.append(versioned_record("knowledge-task", task))
+            dispatches.append({"knowledgeTaskId": task["id"], **storage["dispatch"]})
+
+        sync_knowledge_source_counts(source)
+        audit_id = repo.add_audit(
+            "重新初始化 rules 标准规范库" if reset_existing else "导入 rules 标准规范库",
+            "KnowledgeSource",
+            source["id"],
+        )
+        return ok(
+            {
+                "source": versioned_record("knowledge-source", source),
+                "files": imported_files,
+                "tasks": imported_tasks,
+                "dispatches": dispatches,
+                "skipped": skipped,
+                "summary": {
+                    "sourceId": source["id"],
+                    "standardsRoot": str(RULES_STANDARDS_ROOT.relative_to(WORKSPACE_ROOT)),
+                    "businessRulesPath": str(RULES_BUSINESS_RULES_PATH.relative_to(WORKSPACE_ROOT)),
+                    "scanned": len(standard_files),
+                    "imported": len(imported_files),
+                    "skipped": len(skipped),
+                    "reset": reset_existing,
+                    "removed": removed_records["files"],
+                },
+                "auditLogId": audit_id,
+            },
+            request,
+        )
+
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"action": "import_standards_from_rules_folder", "body": body},
+    )
 
 
 @router.post("/business-rules/import")
@@ -13463,14 +14337,22 @@ async def import_knowledge_files(request: Request):
     if not uploads:
         return fail(errors.VALIDATION_ERROR, request, message="请选择要导入知识库的文件。")
 
-    source_id = first_form_value(fields, "sourceId", "KS-STANDARD-TSG") or "KS-STANDARD-TSG"
-    source_name = first_form_value(fields, "sourceName", "规则标准文件库")
+    source_id = first_form_value(fields, "sourceId", STANDARD_RULES_SOURCE_ID) or STANDARD_RULES_SOURCE_ID
+    source_name = first_form_value(fields, "sourceName", STANDARD_LIBRARY_SOURCE_NAME)
     source_type = first_form_value(fields, "sourceType", "standard")
     if source_type == "rule":
-        return fail(errors.VALIDATION_ERROR, request, message="业务规则请通过业务规则版本管理导入，不进入知识库切片或向量索引。")
+        return fail(errors.VALIDATION_ERROR, request, message="业务判断规则请通过监检业务判断规则管理导入，不进入知识库切片或向量索引。")
     source_version = first_form_value(fields, "sourceVersion", "")
     source_status = first_form_value(fields, "sourceStatus", "")
     vector_status = first_form_value(fields, "vectorStatus", "")
+    project_id = first_form_value(fields, "projectId", "").strip()
+    project_name = first_form_value(fields, "projectName", "").strip()
+    project = None
+    if project_id:
+        project = repo.require_project(project_id)
+        if not project:
+            return fail(errors.NOT_FOUND, request, message="项目不存在或无权访问。")
+        project_name = str(project.get("name") or project_name or project_id)
     source = knowledge_source_for_import(
         source_id,
         source_name=source_name,
@@ -13533,6 +14415,8 @@ async def import_knowledge_files(request: Request):
             original_file_name=original_file_name,
             context_description=context_description,
             uploader_name=uploader_name,
+            project_id=project_id or None,
+            project_name=project_name,
         )
         repo.state["documents"].insert(0, document)
         repo.state["versions"].insert(0, version)
@@ -13543,10 +14427,7 @@ async def import_knowledge_files(request: Request):
         dispatches.append({"knowledgeTaskId": task["id"], **storage["dispatch"]})
 
     if imported_files:
-        source["fileCount"] = int(source.get("fileCount") or 0) + len(imported_files)
-        source["vectorStatus"] = "待向量化"
-        source["updatedAt"] = server_time()
-        bump_record_revision(source)
+        sync_knowledge_source_counts(source)
     audit_id = repo.add_audit("导入知识库文件", "KnowledgeSource", source["id"])
     return ok(
         {
@@ -13562,34 +14443,42 @@ async def import_knowledge_files(request: Request):
 
 
 @router.get("/knowledge/project-files")
-def list_knowledge_files(request: Request, keyword: str | None = None, projectId: str | None = None, nodeId: int | None = None, status: str | None = None, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    items = [
-        repo.clone(item)
-        for item in repo.state["knowledge_files"]
-        if record_visible_for_request(request, item) and not knowledge_file_is_business_rule(item)
-    ]
+def list_knowledge_files(request: Request, keyword: str | None = None, projectId: str | None = None, nodeId: int | None = None, status: str | None = None, sourceType: str | None = None, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
+    items = []
+    for item in repo.state["knowledge_files"]:
+        if not record_visible_for_request(request, item) or knowledge_file_is_business_rule(item):
+            continue
+        source = repo.find_one("knowledge_sources", item.get("sourceId")) or {}
+        item_source_type = item.get("sourceType") or source.get("sourceType") or "project-file"
+        if sourceType:
+            if item_source_type != sourceType:
+                continue
+        elif item_source_type != "project-file":
+            continue
+        items.append(repo.clone(item))
     if projectId:
         items = [item for item in items if item.get("projectId") == projectId]
     if nodeId:
         items = [item for item in items if int(item.get("nodeId") or 0) == int(nodeId)]
     if status:
         items = [item for item in items if status in {item.get("ocrStatus"), item.get("sliceStatus"), item.get("vectorStatus")}]
-    items = filter_keyword(items, keyword, ["fileName", "sourceName", "nodeName"])
+    items = filter_keyword(items, keyword, ["fileName", "projectName", "nodeName", "sourceRelativePath", "originalFileName"])
+    if sourceType == "standard":
+        items.sort(
+            key=lambda item: str(
+                item.get("sourceRelativePath") or item.get("originalFileName") or item.get("fileName") or ""
+            ).lower()
+        )
     return ok(page(items, page_no, page_size), request)
 
 
 @router.get("/knowledge/files/{file_id}")
 def knowledge_file_detail(request: Request, file_id: str):
-    file = repo.find_one("knowledge_files", file_id)
-    if not file:
-        return fail(errors.NOT_FOUND, request)
-    if knowledge_file_is_business_rule(file):
-        return fail(errors.NOT_FOUND, request, message="业务规则不作为知识文件展示。")
-    scope_error = scope_error_for_record(request, file)
-    if scope_error:
-        return scope_error
-    document = repo.find_one("documents", file.get("documentId"))
+    file, document, _, context_error = knowledge_file_original_context(request, file_id)
+    if context_error:
+        return context_error
     latest_task = next((item for item in repo.state["knowledge_tasks"] if item.get("targetId") == file_id), None)
+    original = knowledge_file_original_payload(request, file_id, document)
     return ok(
         {
             "file": repo.clone(file),
@@ -13603,13 +14492,307 @@ def knowledge_file_detail(request: Request, file_id: str):
                 "dimensions": 1024,
                 "updatedAt": file.get("updatedAt"),
             },
+            **original,
         },
         request,
     )
 
 
+@router.put("/knowledge/files/{file_id}")
+@router.patch("/knowledge/files/{file_id}")
+def update_knowledge_file(
+    request: Request,
+    file_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    def produce():
+        resolved_file_id = resolve_knowledge_file_id(file_id)
+        file = repo.find_one("knowledge_files", resolved_file_id)
+        if not file:
+            return fail(errors.NOT_FOUND, request)
+        if knowledge_file_is_business_rule(file):
+            return fail(errors.VALIDATION_ERROR, request, message="业务规则不作为知识文件管理。")
+        scope_error = scope_error_for_record(request, file)
+        if scope_error:
+            return scope_error
+        effective_if_match = if_match if if_match is not None else request.headers.get("If-Match")
+        if not record_if_match_valid("knowledge-file", file, effective_if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+
+        document = repo.find_one("documents", file.get("documentId"))
+        version = repo.find_one("versions", file.get("documentVersionId"))
+        changed = []
+        now = server_time()
+        if "fileName" in body:
+            next_name = display_upload_file_name(
+                str(body.get("fileName") or ""),
+                str(file.get("originalFileName") or file.get("fileName") or "未命名文件"),
+            )
+            if file.get("fileName") != next_name:
+                changed.append({"field": "fileName", "before": file.get("fileName"), "after": next_name})
+                file["fileName"] = next_name
+                if document:
+                    document["fileName"] = next_name
+                    document["updatedAt"] = now
+                if version:
+                    version["fileName"] = next_name
+        if "sourceRelativePath" in body:
+            next_path = safe_relative_path(str(body.get("sourceRelativePath") or ""), file.get("fileName") or resolved_file_id)
+            if file.get("sourceRelativePath") != next_path:
+                changed.append({"field": "sourceRelativePath", "before": file.get("sourceRelativePath"), "after": next_path})
+                file["sourceRelativePath"] = next_path
+        if "contextDescription" in body:
+            next_context = str(body.get("contextDescription") or "").strip()[:500]
+            if file.get("contextDescription") != next_context:
+                changed.append({"field": "contextDescription", "before": file.get("contextDescription"), "after": next_context})
+                file["contextDescription"] = next_context
+                if document:
+                    document["contextDescription"] = next_context
+                    document["updatedAt"] = now
+                if version:
+                    version["contextDescription"] = next_context
+        if "projectId" in body:
+            next_project_id = str(body.get("projectId") or "").strip()
+            next_project_name = str(body.get("projectName") or "").strip()
+            if next_project_id:
+                project = repo.require_project(next_project_id)
+                if not project:
+                    return fail(errors.NOT_FOUND, request, message="项目不存在或无权访问。")
+                next_project_name = str(project.get("name") or next_project_name or next_project_id)
+            else:
+                next_project_name = ""
+            if file.get("projectId") != (next_project_id or None):
+                changed.append({"field": "projectId", "before": file.get("projectId"), "after": next_project_id or None})
+                file["projectId"] = next_project_id or None
+                if document:
+                    document["projectId"] = next_project_id or None
+                    document["updatedAt"] = now
+            if file.get("projectName") != next_project_name:
+                changed.append({"field": "projectName", "before": file.get("projectName"), "after": next_project_name})
+                file["projectName"] = next_project_name
+        if changed:
+            bump_record_revision(file)
+            source = repo.find_one("knowledge_sources", file.get("sourceId"))
+            if source:
+                sync_knowledge_source_counts(source)
+        audit_id = repo.add_audit("更新知识库文件", "KnowledgeFile", resolved_file_id)
+        return ok({"file": versioned_record("knowledge-file", file), "auditLogId": audit_id, "changed": changed}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"fileId": file_id, "body": body})
+
+
+@router.delete("/knowledge/files/{file_id}")
+def delete_knowledge_file(
+    request: Request,
+    file_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    def produce():
+        resolved_file_id = resolve_knowledge_file_id(file_id)
+        file = repo.find_one("knowledge_files", resolved_file_id)
+        if not file:
+            return fail(errors.NOT_FOUND, request)
+        if knowledge_file_is_business_rule(file):
+            return fail(errors.VALIDATION_ERROR, request, message="业务规则不作为知识文件管理。")
+        scope_error = scope_error_for_record(request, file)
+        if scope_error:
+            return scope_error
+        effective_if_match = if_match if if_match is not None else request.headers.get("If-Match")
+        if not record_if_match_valid("knowledge-file", file, effective_if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        source = repo.find_one("knowledge_sources", file.get("sourceId"))
+        removed = remove_knowledge_file_records(file)
+        if source:
+            sync_knowledge_source_counts(source)
+        audit_id = repo.add_audit("删除知识库文件", "KnowledgeFile", resolved_file_id)
+        return ok(
+            {
+                "fileId": resolved_file_id,
+                "source": versioned_record("knowledge-source", source) if source else None,
+                "removed": removed,
+                "auditLogId": audit_id,
+            },
+            request,
+        )
+
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"fileId": file_id, "body": body},
+    )
+
+
+@router.post("/knowledge/files/{file_id}/replace")
+async def replace_knowledge_file_version(
+    request: Request,
+    file_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    fields, uploads, parse_error = await parse_multipart_uploads(request)
+    if parse_error:
+        return parse_error
+    if len(uploads) != 1:
+        return fail(errors.VALIDATION_ERROR, request, message="请选择 1 个文件作为新版本。")
+
+    body_fingerprint = {
+        "fileId": file_id,
+        "fileName": uploads[0].get("fileName"),
+        "size": len(uploads[0].get("data") or b""),
+        "hash": hashlib.sha256(uploads[0].get("data") or b"").hexdigest(),
+        "fields": fields,
+    }
+
+    def produce():
+        resolved_file_id = resolve_knowledge_file_id(file_id)
+        file = repo.find_one("knowledge_files", resolved_file_id)
+        if not file:
+            return fail(errors.NOT_FOUND, request)
+        if knowledge_file_is_business_rule(file):
+            return fail(errors.VALIDATION_ERROR, request, message="业务规则不作为知识文件管理。")
+        scope_error = scope_error_for_record(request, file)
+        if scope_error:
+            return scope_error
+        effective_if_match = if_match if if_match is not None else request.headers.get("If-Match")
+        if not record_if_match_valid("knowledge-file", file, effective_if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+
+        document = repo.find_one("documents", file.get("documentId"))
+        if not document:
+            return fail(errors.NOT_FOUND, request, message="未找到关联原始文档。")
+
+        upload = uploads[0]
+        original_file_name = safe_upload_file_name(upload["fileName"])
+        file_name = display_upload_file_name(first_form_value(fields, "fileName", file.get("fileName") or ""), original_file_name)
+        data = upload["data"]
+        content_type = str(upload.get("contentType") or mimetypes.guess_type(original_file_name)[0] or "application/octet-stream")
+        if not data:
+            return fail(errors.VALIDATION_ERROR, request, message="新版本文件内容为空。")
+        if len(data) > MAX_UPLOAD_BYTES:
+            return fail(errors.VALIDATION_ERROR, request, message=f"超过 {MAX_UPLOAD_BYTES // 1024 // 1024}MB 上传限制。")
+        if not (upload_file_type_tokens(original_file_name, content_type) & ALLOWED_KNOWLEDGE_UPLOAD_TYPES):
+            return fail(errors.VALIDATION_ERROR, request, message="文件类型不支持。")
+
+        source = repo.find_one("knowledge_sources", file.get("sourceId")) or {}
+        existing_versions = [
+            item for item in repo.state.get("versions", []) if item.get("documentId") == document["id"]
+        ]
+        version_numbers = []
+        for item in existing_versions:
+            match = re.search(r"(\d+)$", str(item.get("versionNo") or ""))
+            if match:
+                version_numbers.append(int(match.group(1)))
+        next_no = max(version_numbers or [1]) + 1
+        version_no = f"V{next_no}"
+        version_id = f"KDV-{uuid4().hex[:10].upper()}-{version_no}"
+        context_description = first_form_value(fields, "contextDescription", file.get("contextDescription") or "")[:500]
+        relative_path = safe_relative_path(first_form_value(fields, "relativePath", file.get("sourceRelativePath") or ""), file_name)
+        uploader = admin_user_snapshot(request_user_id(request), role_from_query(x_role=request.headers.get("X-Role")))
+        uploader_name = uploader.get("name") or "知识库管理员"
+        storage_key, storage_bucket = store_knowledge_upload(
+            source_id=str(file.get("sourceId") or STANDARD_RULES_SOURCE_ID),
+            file_id=resolved_file_id,
+            file_name=file_name,
+            content_type=content_type,
+            data=data,
+        )
+        now = server_time()
+        for item in existing_versions:
+            item["isCurrent"] = False
+        new_version = {
+            "id": version_id,
+            "documentId": document["id"],
+            "versionNo": version_no,
+            "hash": hashlib.sha256(data).hexdigest(),
+            "fileSize": len(data),
+            "fileName": file_name,
+            "originalFileName": original_file_name,
+            "contextDescription": context_description,
+            "storageKey": storage_key,
+            "storageBucket": storage_bucket,
+            "ocrStatus": "识别中",
+            "sliceStatus": "未切片",
+            "vectorStatus": "待向量化",
+            "uploaderName": uploader_name,
+            "uploadTime": now,
+            "isCurrent": True,
+        }
+        repo.state["versions"].insert(0, new_version)
+        document.update(
+            {
+                "fileName": file_name,
+                "originalFileName": original_file_name,
+                "fileType": Path(file_name).suffix.lower().lstrip(".") or content_type,
+                "contextDescription": context_description,
+                "currentVersionId": version_id,
+                "fileStatus": "已上传",
+                "currentOcrStatus": "识别中",
+                "updatedAt": now,
+            }
+        )
+        file.update(
+            {
+                "fileName": file_name,
+                "originalFileName": original_file_name,
+                "sourceName": source.get("name") or file.get("sourceName"),
+                "contextDescription": context_description,
+                "documentVersionId": version_id,
+                "ocrStatus": "识别中",
+                "sliceStatus": "未切片",
+                "vectorStatus": "待向量化",
+                "chunkCount": 0,
+                "vectorCount": 0,
+                "sourceRelativePath": relative_path,
+                "updatedAt": now,
+            }
+        )
+        bump_record_revision(file)
+        repo.state["knowledge_chunks"] = [
+            item for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") != resolved_file_id
+        ]
+        task = {
+            "id": f"KT-{uuid4().hex[:8].upper()}",
+            "taskType": "ocr",
+            "targetType": "file",
+            "targetId": resolved_file_id,
+            "targetName": file_name,
+            "documentId": document["id"],
+            "documentVersionId": version_id,
+            "status": "排队中",
+            "progress": 0,
+            "createdAt": now,
+            "updatedAt": now,
+            "revision": 1,
+            "actions": ["knowledge:task-retry"],
+        }
+        dispatch = task_dispatcher.dispatch_parse_document(document["id"], version_id, storage_key, file_name)
+        task["lastDispatch"] = dispatch
+        repo.state["knowledge_tasks"].insert(0, task)
+        if source:
+            sync_knowledge_source_counts(source)
+        audit_id = repo.add_audit("替换知识库文件版本", "KnowledgeFile", resolved_file_id)
+        return ok(
+            {
+                "file": versioned_record("knowledge-file", file),
+                "currentVersion": repo.clone(new_version),
+                "task": versioned_record("knowledge-task", task),
+                "dispatch": dispatch,
+                "auditLogId": audit_id,
+            },
+            request,
+        )
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body_fingerprint)
+
+
 @router.get("/knowledge/files/{file_id}/chunks")
 def knowledge_file_chunks(request: Request, file_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
+    file_id = resolve_knowledge_file_id(file_id)
     file = repo.find_one("knowledge_files", file_id)
     if file:
         if knowledge_file_is_business_rule(file):
@@ -13618,16 +14801,166 @@ def knowledge_file_chunks(request: Request, file_id: str, page_no: int = Query(d
         if scope_error:
             return scope_error
     chunks = [repo.clone(item) for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") == file_id]
-    if not chunks:
-        chunks = [
-            {"id": f"CHK-{file_id}-{idx}", "chunkNo": idx, "text": f"知识切片 {idx}：压力管道资料审查关键字段与证据定位。", "pageNo": idx, "evidenceLinkId": "EV-24-001", "tokenCount": 128}
-            for idx in range(1, 8)
-        ]
     return ok(page(chunks, page_no, page_size), request)
+
+
+@router.get("/knowledge/files/{file_id}/original")
+def knowledge_file_original(request: Request, file_id: str, disposition: str = Query(default="inline")):
+    _, document, version, context_error = knowledge_file_original_context(request, file_id)
+    if context_error:
+        return context_error
+    file_name = str(document.get("fileName") or version.get("fileName") or f"{file_id}.bin")
+    content_type = repo.document_content_type(document) or "application/octet-stream"
+    disposition_type = "attachment" if disposition == "attachment" else "inline"
+    local_path = local_storage_path(version.get("storageKey"))
+    if local_path:
+        if not local_path.is_file():
+            return fail(errors.NOT_FOUND, request, message="原文文件不存在或已被移除。")
+        return FileResponse(
+            local_path,
+            media_type=content_type,
+            filename=file_name,
+            content_disposition_type=disposition_type,
+        )
+    signed = repo.document_download(document)
+    signed_url = str(signed.get("url") or "")
+    if signed_url.startswith(("http://", "https://")):
+        return RedirectResponse(signed_url)
+    return fail(errors.NOT_FOUND, request, message="当前原文存储地址不可直接预览或下载。")
+
+
+def evidence_link_references_knowledge_file(link: dict[str, Any], file: dict[str, Any], chunk_ids: set[str]) -> bool:
+    file_id = str(file.get("id") or "")
+    document_id = str(file.get("documentId") or "")
+    version_id = str(file.get("documentVersionId") or "")
+    if file_id and str(link.get("fileId") or link.get("knowledgeFileId") or "") == file_id:
+        return True
+    if document_id and str(link.get("documentId") or "") == document_id:
+        return True
+    if version_id and str(link.get("documentVersionId") or "") == version_id:
+        return True
+    if chunk_ids and str(link.get("chunkId") or link.get("knowledgeChunkId") or "") in chunk_ids:
+        return True
+    object_type = str(link.get("objectType") or "").lower()
+    object_id = str(link.get("objectId") or "")
+    if object_type in {"document", "documentasset"} and document_id and object_id == document_id:
+        return True
+    if object_type in {"documentversion", "version"} and version_id and object_id == version_id:
+        return True
+    if object_type in {"knowledgefile", "file"} and file_id and object_id == file_id:
+        return True
+    if object_type in {"knowledgechunk", "chunk"} and chunk_ids and object_id in chunk_ids:
+        return True
+    return False
+
+
+def evidence_link_ids_from_run(run: dict[str, Any]) -> set[str]:
+    ids: set[str] = set()
+    for key in ("evidenceLinkId", "sourceEvidenceLinkId"):
+        if run.get(key):
+            ids.add(str(run[key]))
+    for key in ("evidenceLinkIds", "sourceEvidenceLinkIds"):
+        ids.update(str(item) for item in run.get(key) or [] if item)
+    for step in run.get("steps") or []:
+        if not isinstance(step, dict):
+            continue
+        for key in ("evidenceLinkId", "sourceEvidenceLinkId"):
+            if step.get(key):
+                ids.add(str(step[key]))
+        for key in ("evidenceLinkIds", "sourceEvidenceLinkIds"):
+            ids.update(str(item) for item in step.get(key) or [] if item)
+    return ids
+
+
+def trace_associated_with_run(trace: dict[str, Any], run: dict[str, Any]) -> bool:
+    run_id = str(run.get("id") or run.get("runId") or "")
+    if not run_id:
+        return False
+    trace_run_ids = {
+        str(trace.get("runId") or ""),
+        str(trace.get("aiRunId") or ""),
+        str(trace.get("reviewRunId") or ""),
+        str(trace.get("sourceRunId") or ""),
+    }
+    if run_id in trace_run_ids:
+        return True
+    run_trace_ids = {str(item) for item in run.get("retrievalTraceIds") or [] if item}
+    trace_id = str(trace.get("retrievalTraceId") or trace.get("id") or "")
+    return bool(trace_id and trace_id in run_trace_ids)
+
+
+def nested_reference_matches_knowledge_file(
+    value: Any,
+    *,
+    file: dict[str, Any],
+    chunk_ids: set[str],
+    matching_evidence_link_ids: set[str],
+) -> bool:
+    file_id = str(file.get("id") or "")
+    document_id = str(file.get("documentId") or "")
+    version_id = str(file.get("documentVersionId") or "")
+    if isinstance(value, list):
+        return any(
+            nested_reference_matches_knowledge_file(
+                item,
+                file=file,
+                chunk_ids=chunk_ids,
+                matching_evidence_link_ids=matching_evidence_link_ids,
+            )
+            for item in value
+        )
+    if not isinstance(value, dict):
+        return False
+
+    if file_id and str(value.get("fileId") or value.get("knowledgeFileId") or value.get("targetFileId") or "") == file_id:
+        return True
+    if document_id and str(value.get("documentId") or "") == document_id:
+        return True
+    if version_id and str(value.get("documentVersionId") or value.get("versionId") or "") == version_id:
+        return True
+    if chunk_ids and str(value.get("chunkId") or value.get("knowledgeChunkId") or value.get("kbChunkId") or "") in chunk_ids:
+        return True
+
+    object_type = str(value.get("objectType") or value.get("targetType") or "").lower()
+    object_id = str(value.get("objectId") or value.get("targetId") or "")
+    if object_type in {"document", "documentasset"} and document_id and object_id == document_id:
+        return True
+    if object_type in {"documentversion", "version"} and version_id and object_id == version_id:
+        return True
+    if object_type in {"knowledgefile", "file"} and file_id and object_id == file_id:
+        return True
+    if object_type in {"knowledgechunk", "chunk"} and chunk_ids and object_id in chunk_ids:
+        return True
+
+    evidence_id = str(value.get("evidenceLinkId") or value.get("sourceEvidenceLinkId") or "")
+    if evidence_id and evidence_id in matching_evidence_link_ids:
+        return True
+    evidence_ids = {str(item) for item in value.get("evidenceLinkIds") or [] if item}
+    if evidence_ids & matching_evidence_link_ids:
+        return True
+
+    return any(
+        nested_reference_matches_knowledge_file(
+            child,
+            file=file,
+            chunk_ids=chunk_ids,
+            matching_evidence_link_ids=matching_evidence_link_ids,
+        )
+        for child in value.values()
+        if isinstance(child, (dict, list))
+    )
+
+
+def reference_text_from_match(match: dict[str, Any]) -> str:
+    for key in ("quotedText", "text", "fieldValue", "title", "fileName"):
+        if match.get(key):
+            return str(match[key])
+    return "该推理运行引用了当前文件。"
 
 
 @router.get("/knowledge/files/{file_id}/vectors")
 def knowledge_file_vectors(request: Request, file_id: str):
+    file_id = resolve_knowledge_file_id(file_id)
     file = repo.find_one("knowledge_files", file_id)
     if not file:
         return fail(errors.NOT_FOUND, request)
@@ -13641,33 +14974,80 @@ def knowledge_file_vectors(request: Request, file_id: str):
 
 @router.get("/knowledge/files/{file_id}/reasoning-references")
 def knowledge_file_reasoning_refs(request: Request, file_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
+    file_id = resolve_knowledge_file_id(file_id)
     file = repo.find_one("knowledge_files", file_id)
-    if file:
-        if knowledge_file_is_business_rule(file):
-            return fail(errors.NOT_FOUND, request, message="业务规则不作为知识文件引用。")
-        scope_error = scope_error_for_record(request, file)
-        if scope_error:
-            return scope_error
-    refs = [
-        {"runId": run["id"], "nodeId": run["nodeId"], "subject": run["subject"], "model": run["model"], "quotedText": "证据链引用该文件的 OCR 字段。", "createdAt": run.get("finishedAt") or run.get("startedAt")}
-        for run in repo.state["ai_runs"]
-        if record_visible_for_request(request, run)
+    if not file:
+        return fail(errors.NOT_FOUND, request)
+    if knowledge_file_is_business_rule(file):
+        return fail(errors.NOT_FOUND, request, message="业务规则不作为知识文件引用。")
+    scope_error = scope_error_for_record(request, file)
+    if scope_error:
+        return scope_error
+
+    chunks = [item for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") == file_id]
+    chunk_ids = {str(item.get("id") or item.get("chunkId")) for item in chunks if item.get("id") or item.get("chunkId")}
+    matching_evidence_links = [
+        link
+        for link in repo.state.get("evidence_links", [])
+        if evidence_link_references_knowledge_file(link, file, chunk_ids)
     ]
+    matching_evidence_link_ids = {str(item.get("id")) for item in matching_evidence_links if item.get("id")}
+    refs = []
+    seen_run_ids: set[str] = set()
+    for run in repo.state["ai_runs"]:
+        if not record_visible_for_request(request, run):
+            continue
+        run_matches = [
+            link
+            for link in run.get("evidenceLinks") or []
+            if isinstance(link, dict) and evidence_link_references_knowledge_file(link, file, chunk_ids)
+        ]
+        run_evidence_ids = evidence_link_ids_from_run(run)
+        run_matches.extend(link for link in matching_evidence_links if str(link.get("id") or "") in run_evidence_ids)
+        trace_matches = [
+            trace
+            for trace in repo.state.get("retrieval_traces", [])
+            if trace_associated_with_run(trace, run)
+            and nested_reference_matches_knowledge_file(
+                trace,
+                file=file,
+                chunk_ids=chunk_ids,
+                matching_evidence_link_ids=matching_evidence_link_ids,
+            )
+        ]
+        if not run_matches and not trace_matches:
+            continue
+        run_id = str(run.get("id") or run.get("runId") or "")
+        if run_id in seen_run_ids:
+            continue
+        seen_run_ids.add(run_id)
+        quoted_texts = [reference_text_from_match(item) for item in [*run_matches, *trace_matches]]
+        refs.append(
+            {
+                "runId": run_id,
+                "nodeId": run.get("nodeId"),
+                "subject": run.get("subject"),
+                "model": run.get("model"),
+                "quotedText": "；".join(dict.fromkeys(quoted_texts)),
+                "createdAt": run.get("finishedAt") or run.get("startedAt") or run.get("createdAt"),
+            }
+        )
     return ok(page(refs, page_no, page_size), request)
 
 
 @router.post("/knowledge/files/{file_id}/reindex")
 def reindex_file(request: Request, file_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     def produce():
-        file = repo.find_one("knowledge_files", file_id)
+        resolved_file_id = resolve_knowledge_file_id(file_id)
+        file = repo.find_one("knowledge_files", resolved_file_id)
         if not file:
             return fail(errors.NOT_FOUND, request)
         if knowledge_file_is_business_rule(file):
-            return fail(errors.VALIDATION_ERROR, request, message="业务规则不参与知识库重建索引，请在业务规则版本管理中发布或回滚。")
+            return fail(errors.VALIDATION_ERROR, request, message="业务判断规则不参与知识库重建索引，请在监检业务判断规则管理中发布或回滚。")
         scope_error = scope_error_for_record(request, file)
         if scope_error:
             return scope_error
-        task = {"id": f"KT-{uuid4().hex[:8].upper()}", "taskType": "reindex", "targetType": "file", "targetId": file_id, "targetName": file["fileName"], "status": "排队中", "progress": 0, "createdAt": server_time(), "updatedAt": server_time(), "revision": 1, "actions": ["knowledge:task-retry"]}
+        task = {"id": f"KT-{uuid4().hex[:8].upper()}", "taskType": "reindex", "targetType": "file", "targetId": resolved_file_id, "targetName": file["fileName"], "status": "排队中", "progress": 0, "createdAt": server_time(), "updatedAt": server_time(), "revision": 1, "actions": ["knowledge:task-retry"]}
         repo.state["knowledge_tasks"].insert(0, task)
         return ok({"task": versioned_record("knowledge-task", task)}, request)
 
@@ -13947,7 +15327,21 @@ def list_rule_versions(request: Request, keyword: str | None = None, status: str
     if status:
         items = [item for item in items if item["status"] == status]
     items = filter_keyword(items, keyword, ["name", "inspectionItem", "inspectionCategory", "standardText", "witnessText", "ruleKey", "version"])
+    items.sort(key=rule_version_sort_key)
     return ok(page(items, page_no, page_size), request)
+
+
+def rule_version_sort_key(item: dict[str, Any]) -> tuple[int, int, str, str]:
+    sequence = item.get("sourceSequence")
+    if sequence is None:
+        node_ids = item.get("nodeIds") or []
+        sequence = min((int(node_id) for node_id in node_ids if str(node_id).isdigit()), default=9999)
+    try:
+        sequence_value = int(sequence)
+    except (TypeError, ValueError):
+        sequence_value = 9999
+    status_rank = {"草稿": 0, "待发布": 1, "已发布": 2, "已回滚": 3}.get(str(item.get("status") or ""), 9)
+    return (sequence_value, status_rank, str(item.get("updatedAt") or ""), str(item.get("id") or ""))
 
 
 @router.get("/rules/versions/{version_id}")
@@ -14196,6 +15590,168 @@ def update_knowledge_config(request: Request, body: dict[str, Any] = Body(defaul
     )
 
 
+PROMPT_TEMPLATE_STATUSES = {"draft", "production", "retired", "草稿", "已发布", "已停用"}
+
+
+def normalize_prompt_template_record(raw: dict[str, Any], existing: dict[str, Any] | None = None) -> dict[str, Any]:
+    now = server_time()
+    template_id = str(raw.get("id") or (existing or {}).get("id") or f"PTPL-{uuid4().hex[:10].upper()}")
+    status = str(raw.get("status") or (existing or {}).get("status") or "draft")
+    if status not in PROMPT_TEMPLATE_STATUSES:
+        status = "draft"
+    system_prompt = str(raw.get("systemPrompt") if raw.get("systemPrompt") is not None else (existing or {}).get("systemPrompt") or "").strip()
+    user_prompt_template = str(
+        raw.get("userPromptTemplate")
+        if raw.get("userPromptTemplate") is not None
+        else (existing or {}).get("userPromptTemplate") or "{{basePromptJson}}\n\n{{reviewTaskJson}}"
+    ).strip()
+    record = {
+        **repo.clone(existing or {}),
+        "id": template_id,
+        "name": compact_plain_text(raw.get("name") or (existing or {}).get("name") or "未命名 Prompt 模板", 120),
+        "promptKey": compact_plain_text(raw.get("promptKey") or (existing or {}).get("promptKey") or "review_prompt", 80),
+        "version": compact_plain_text(raw.get("version") or (existing or {}).get("version") or now[:10].replace("-", "."), 80),
+        "status": status,
+        "riskLevel": compact_plain_text(raw.get("riskLevel") or (existing or {}).get("riskLevel") or "medium", 40),
+        "businessPackId": compact_plain_text(raw.get("businessPackId") or (existing or {}).get("businessPackId") or DEFAULT_BUSINESS_PACK_ID, 120),
+        "agentId": compact_plain_text(raw.get("agentId") or (existing or {}).get("agentId") or "compliance_review_agent", 120),
+        "promptVersionId": compact_plain_text(raw.get("promptVersionId") or (existing or {}).get("promptVersionId") or "", 160),
+        "systemPrompt": system_prompt,
+        "userPromptTemplate": user_prompt_template,
+        "plannerPromptTemplate": str(raw.get("plannerPromptTemplate") if raw.get("plannerPromptTemplate") is not None else (existing or {}).get("plannerPromptTemplate") or "").strip(),
+        "criticPromptTemplate": str(raw.get("criticPromptTemplate") if raw.get("criticPromptTemplate") is not None else (existing or {}).get("criticPromptTemplate") or "").strip(),
+        "outputSchema": raw.get("outputSchema") if isinstance(raw.get("outputSchema"), dict) else repo.clone((existing or {}).get("outputSchema") or {}),
+        "variables": raw.get("variables") if isinstance(raw.get("variables"), list) else repo.clone((existing or {}).get("variables") or []),
+        "updatedAt": now,
+        "createdAt": (existing or {}).get("createdAt") or raw.get("createdAt") or now,
+        "revision": int((existing or {}).get("revision") or raw.get("revision") or 1),
+    }
+    return record
+
+
+@router.get("/admin/prompt-templates")
+def list_prompt_templates(
+    request: Request,
+    keyword: str | None = None,
+    status: str | None = None,
+    businessPackId: str | None = None,
+    page_no: int = Query(default=1, alias="page"),
+    page_size: int = Query(default=20, alias="pageSize"),
+):
+    items = [versioned_record("prompt-template", item) for item in repo.state.get("prompt_templates", [])]
+    if status:
+        items = [item for item in items if item.get("status") == status]
+    if businessPackId:
+        items = [item for item in items if item.get("businessPackId") == businessPackId]
+    items = filter_keyword(items, keyword, ["name", "promptKey", "version", "businessPackId", "agentId", "systemPrompt"])
+    return ok(page(items, page_no, page_size), request)
+
+
+@router.post("/admin/prompt-templates")
+def create_prompt_template(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        record = normalize_prompt_template_record(body)
+        if not record["systemPrompt"]:
+            return fail(errors.VALIDATION_ERROR, request, message="请填写 System Prompt。")
+        repo.state.setdefault("prompt_templates", []).insert(0, record)
+        audit_id = repo.add_audit("新增 Prompt 模板", "PromptTemplate", record["id"])
+        return ok({"template": versioned_record("prompt-template", record), "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
+
+
+@router.get("/admin/prompt-templates/{template_id}")
+def get_prompt_template(request: Request, template_id: str):
+    template = repo.find_one("prompt_templates", template_id)
+    if not template:
+        return fail(errors.NOT_FOUND, request)
+    return ok({"template": versioned_record("prompt-template", template)}, request)
+
+
+@router.put("/admin/prompt-templates/{template_id}")
+@router.patch("/admin/prompt-templates/{template_id}")
+def update_prompt_template(
+    request: Request,
+    template_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    def produce():
+        template = repo.find_one("prompt_templates", template_id)
+        if not template:
+            return fail(errors.NOT_FOUND, request)
+        if not record_if_match_valid("prompt-template", template, if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        normalized = normalize_prompt_template_record({**template, **body, "id": template_id}, existing=template)
+        if not normalized["systemPrompt"]:
+            return fail(errors.VALIDATION_ERROR, request, message="请填写 System Prompt。")
+        normalized["revision"] = int(template.get("revision") or 1)
+        template.clear()
+        template.update(normalized)
+        bump_record_revision(template)
+        audit_id = repo.add_audit("编辑 Prompt 模板", "PromptTemplate", template_id)
+        return ok({"template": versioned_record("prompt-template", template), "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"templateId": template_id, "body": body})
+
+
+@router.post("/admin/prompt-templates/{template_id}/publish")
+def publish_prompt_template(
+    request: Request,
+    template_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    def produce():
+        template = repo.find_one("prompt_templates", template_id)
+        if not template:
+            return fail(errors.NOT_FOUND, request)
+        if not record_if_match_valid("prompt-template", template, if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        template["status"] = "production"
+        template["publishedAt"] = server_time()
+        template["publishedReason"] = body.get("reason") or ""
+        for item in repo.state.get("prompt_templates", []):
+            if item.get("id") == template_id:
+                continue
+            if item.get("businessPackId") == template.get("businessPackId") and item.get("promptKey") == template.get("promptKey") and item.get("status") == "production":
+                item["status"] = "retired"
+                bump_record_revision(item)
+        bump_record_revision(template)
+        audit_id = repo.add_audit("发布 Prompt 模板", "PromptTemplate", template_id)
+        return ok({"template": versioned_record("prompt-template", template), "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"templateId": template_id, "body": body})
+
+
+@router.delete("/admin/prompt-templates/{template_id}")
+def delete_prompt_template(
+    request: Request,
+    template_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    def produce():
+        template = repo.find_one("prompt_templates", template_id)
+        if not template:
+            return fail(errors.NOT_FOUND, request)
+        if not record_if_match_valid("prompt-template", template, if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        if template.get("status") == "production":
+            return fail(errors.VALIDATION_ERROR, request, message="生产中的 Prompt 模板不能删除，请先发布替代版本。")
+        repo.state["prompt_templates"] = [item for item in repo.state.get("prompt_templates", []) if item.get("id") != template_id]
+        audit_id = repo.add_audit("删除 Prompt 模板", "PromptTemplate", template_id)
+        return ok({"deleted": True, "templateId": template_id, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"templateId": template_id})
+
+
 @router.get("/knowledge/audit-logs")
 def knowledge_audit_logs(request: Request, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), keyword: str | None = None, objectType: str | None = None, result: str | None = None):
     items = [repo.clone(item) for item in repo.state["audit_logs"]]
@@ -14227,7 +15783,30 @@ def reasoning_log_detail(request: Request, log_id: str):
     scope_error = scope_error_for_record(request, run)
     if scope_error:
         return scope_error
-    return ok({"log": repo.clone(run), "evidenceLinks": repo.clone(run.get("evidenceLinks") or repo.state["evidence_links"])}, request)
+    review_run_id = run.get("reviewRunId")
+    graph_nodes = [
+        repo.clone(item)
+        for item in repo.state.get("review_graph_nodes", [])
+        if review_run_id and item.get("reviewRunId") == review_run_id
+    ]
+    trace_steps = [
+        repo.clone(item)
+        for item in repo.state.get("ai_trace_steps", [])
+        if item.get("aiRunId") == log_id
+    ]
+    trace_steps.sort(key=lambda item: int(item.get("sequence") or 0))
+    graph_nodes.sort(key=lambda item: int(item.get("sequence") or 0))
+    return ok(
+        {
+            "log": repo.clone(run),
+            "evidenceLinks": repo.clone(run.get("evidenceLinks") or repo.state["evidence_links"]),
+            "traceSteps": trace_steps,
+            "graphNodes": graph_nodes,
+            "promptAudit": repo.clone(run.get("promptAudit") or {}),
+            "llmMetadata": repo.clone(run.get("llmMetadata") or {}),
+        },
+        request,
+    )
 
 
 @router.get("/reasoning/logs/{log_id}/evidence")
@@ -14308,6 +15887,9 @@ def compare_run_detail(request: Request, run_id: str):
 @router.get("/admin/config-overview")
 def admin_config_overview(request: Request):
     overview = repo.build_admin_overview()
+    overview["businessPacks"] = list_business_packs()
+    overview["orgUnits"] = list_admin_org_units()
+    overview["users"] = list_admin_users()
     overview.update(
         {
             "revision": singleton_revision(repo.state["admin_config"]),
@@ -14619,6 +16201,328 @@ def admin_config_export(request: Request, body: dict[str, Any] = Body(default_fa
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
+@router.get("/admin/org-units")
+def list_admin_org_units_endpoint(
+    request: Request,
+    page_no: int = Query(default=1, alias="page"),
+    page_size: int = Query(default=20, alias="pageSize"),
+    keyword: str | None = None,
+    org_type: str | None = Query(default=None, alias="type"),
+    status: str | None = None,
+):
+    items = list_admin_org_units()
+    if org_type:
+        items = [item for item in items if item.get("type") == org_type]
+    if status:
+        items = [item for item in items if item.get("status") == status]
+    items = filter_keyword(items, keyword, ["name", "type", "contactName", "contactPhone"])
+    return ok(page(items, page_no, page_size), request)
+
+
+@router.post("/admin/org-units")
+def create_admin_org_unit(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    def produce():
+        if not singleton_if_match_valid("admin-config", repo.state["admin_config"], if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        name = str(body.get("name") or "").strip()
+        org_type = str(body.get("type") or "").strip()
+        if not name or not org_type:
+            return fail(errors.VALIDATION_ERROR, request, message="组织名称和类型不能为空。")
+        if find_org_unit(org_name=name):
+            return fail(errors.CONFLICT, request, message="组织名称已存在。")
+        org = {
+            "id": body.get("id") or f"ORG-{uuid4().hex[:8].upper()}",
+            "name": name,
+            "type": org_type,
+            "contactName": body.get("contactName") or "",
+            "contactPhone": body.get("contactPhone") or "",
+            "status": body.get("status") or "启用",
+            "projectCount": int(body.get("projectCount") or 0),
+            "updatedAt": server_time(),
+            "revision": 1,
+        }
+        admin_org_units().insert(0, org)
+        bump_singleton_revision(repo.state["admin_config"])
+        audit_id = repo.add_audit("新增组织", "OrgUnit", org["id"])
+        return ok(
+            {
+                "orgUnit": versioned_record("org-unit", org),
+                "auditLogId": audit_id,
+                "revision": singleton_revision(repo.state["admin_config"]),
+                "etag": singleton_etag("admin-config", repo.state["admin_config"]),
+                "updatedAt": repo.state["admin_config"]["updatedAt"],
+            },
+            request,
+        )
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
+
+
+@router.patch("/admin/org-units/{org_id}")
+@router.put("/admin/org-units/{org_id}")
+def update_admin_org_unit(
+    request: Request,
+    org_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    def produce():
+        org = find_org_unit(org_id)
+        if not org:
+            return fail(errors.NOT_FOUND, request, message="组织不存在。")
+        if not record_if_match_valid("org-unit", org, if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        next_name = str(body.get("name") or org.get("name") or "").strip()
+        next_type = str(body.get("type") or org.get("type") or "").strip()
+        if next_type != org.get("type") and any(
+            user.get("orgId") == org_id or user.get("orgName") == org.get("name")
+            for user in list_admin_users()
+        ):
+            return fail(errors.CONFLICT, request, message="已有用户绑定该组织，不能修改组织类型。")
+        duplicated = next((item for item in admin_org_units() if item.get("id") != org_id and item.get("name") == next_name), None)
+        if duplicated:
+            return fail(errors.CONFLICT, request, message="组织名称已存在。")
+        changed = []
+        for field, value in {
+            "name": next_name,
+            "type": next_type,
+            "contactName": body.get("contactName", org.get("contactName") or ""),
+            "contactPhone": body.get("contactPhone", org.get("contactPhone") or ""),
+            "status": body.get("status", org.get("status") or "启用"),
+        }.items():
+            if org.get(field) != value:
+                changed.append({"field": field, "before": org.get(field), "after": value})
+                org[field] = value
+        if changed:
+            bump_record_revision(org)
+            bump_singleton_revision(repo.state["admin_config"])
+        audit_id = repo.add_audit("更新组织", "OrgUnit", org_id)
+        return ok(
+            {
+                "orgUnit": versioned_record("org-unit", org),
+                "auditLogId": audit_id,
+                "changed": changed,
+                "revision": singleton_revision(repo.state["admin_config"]),
+                "etag": singleton_etag("admin-config", repo.state["admin_config"]),
+                "updatedAt": repo.state["admin_config"].get("updatedAt"),
+            },
+            request,
+        )
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"orgId": org_id, "body": body})
+
+
+@router.delete("/admin/org-units/{org_id}")
+def delete_admin_org_unit(
+    request: Request,
+    org_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    def produce():
+        org = find_org_unit(org_id)
+        if not org:
+            return fail(errors.NOT_FOUND, request, message="组织不存在。")
+        if not record_if_match_valid("org-unit", org, if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        referenced = (
+            any(user.get("orgId") == org_id or user.get("orgName") == org.get("name") for user in list_admin_users())
+            or any(member.get("orgId") == org_id or member.get("orgName") == org.get("name") for member in repo.state["project_members"])
+            or any(org.get("name") in {project.get("ownerOrgName"), project.get("contractorOrgName"), project.get("ndtOrgName"), project.get("inspectionOrgName")} for project in repo.state["projects"])
+        )
+        if referenced:
+            return fail(errors.CONFLICT, request, message="组织仍被用户或项目引用，不能删除，请先停用。")
+        admin_org_units()[:] = [item for item in admin_org_units() if item.get("id") != org_id]
+        bump_singleton_revision(repo.state["admin_config"])
+        audit_id = repo.add_audit("删除组织", "OrgUnit", org_id)
+        return ok(
+            {
+                "deleted": True,
+                "orgUnitId": org_id,
+                "auditLogId": audit_id,
+                "revision": singleton_revision(repo.state["admin_config"]),
+                "etag": singleton_etag("admin-config", repo.state["admin_config"]),
+            },
+            request,
+        )
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"orgId": org_id})
+
+
+@router.get("/admin/users")
+def list_admin_users_endpoint(
+    request: Request,
+    page_no: int = Query(default=1, alias="page"),
+    page_size: int = Query(default=20, alias="pageSize"),
+    keyword: str | None = None,
+    role: str | None = None,
+    org_id: str | None = Query(default=None, alias="orgId"),
+    status: str | None = None,
+):
+    items = list_admin_users()
+    if role:
+        items = [item for item in items if item.get("role") == role]
+    if org_id:
+        items = [item for item in items if item.get("orgId") == org_id]
+    if status:
+        items = [item for item in items if item.get("status") == status]
+    items = filter_keyword(items, keyword, ["username", "name", "mobile", "orgName", "role"])
+    return ok(page(items, page_no, page_size), request)
+
+
+@router.post("/admin/users")
+def create_admin_user(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    def produce():
+        if not singleton_if_match_valid("admin-config", repo.state["admin_config"], if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        username = str(body.get("username") or "").strip()
+        role = str(body.get("role") or "").strip()
+        if not username or not role:
+            return fail(errors.VALIDATION_ERROR, request, message="用户名和角色不能为空。")
+        if role not in ROLE_ACTIONS:
+            return fail(errors.VALIDATION_ERROR, request, message="角色不存在。")
+        conflict = unique_admin_value_conflict(None, username=username, mobile=body.get("mobile"))
+        if conflict:
+            return fail(errors.CONFLICT, request, message=conflict)
+        org, org_error = validate_user_org_binding(request, role, body.get("orgId"), body.get("orgName"))
+        if org_error:
+            return org_error
+        user = build_admin_user_record(body, org=org)
+        repo.state["users"].insert(0, user)
+        upsert_admin_config_user(user)
+        bump_singleton_revision(repo.state["admin_config"])
+        audit_id = repo.add_audit("新增用户", "User", user["id"])
+        return ok(
+            {
+                "user": versioned_admin_user(user),
+                "auditLogId": audit_id,
+                "revision": singleton_revision(repo.state["admin_config"]),
+                "etag": singleton_etag("admin-config", repo.state["admin_config"]),
+                "updatedAt": repo.state["admin_config"].get("updatedAt"),
+            },
+            request,
+        )
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
+
+
+@router.patch("/admin/users/{user_id}")
+@router.put("/admin/users/{user_id}")
+def update_admin_user(
+    request: Request,
+    user_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    def produce():
+        existing = admin_user_by_id(user_id)
+        if existing is None:
+            display = next((item for item in admin_config_users() if item.get("id") == user_id), None)
+            if display is None:
+                return fail(errors.NOT_FOUND, request, message="用户不存在。")
+            existing = build_admin_user_record(display, existing=None, org=find_org_unit(display.get("orgId"), display.get("orgName")))
+            existing["id"] = user_id
+            repo.state["users"].append(existing)
+        if not record_if_match_valid("admin-user", existing, if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        role = str(body.get("role") or existing.get("role") or "").strip()
+        username = str(body.get("username") or existing.get("username") or "").strip()
+        conflict = unique_admin_value_conflict(user_id, username=username, mobile=body.get("mobile") or existing.get("mobile"))
+        if conflict:
+            return fail(errors.CONFLICT, request, message=conflict)
+        org, org_error = validate_user_org_binding(request, role, body.get("orgId") or existing.get("orgId"), body.get("orgName") or existing.get("orgName"))
+        if org_error:
+            return org_error
+        changed = []
+        before = repo.clone(existing)
+        updated = build_admin_user_record({**existing, **body, "id": user_id, "role": role, "username": username}, existing=existing, org=org)
+        updated["revision"] = record_revision(existing)
+        existing.update(updated)
+        bump_record_revision(existing)
+        for field in ["username", "name", "mobile", "role", "orgId", "orgName", "status"]:
+            if before.get(field) != existing.get(field):
+                changed.append({"field": field, "before": before.get(field), "after": existing.get(field)})
+        upsert_admin_config_user(existing)
+        sync_user_references(existing)
+        bump_singleton_revision(repo.state["admin_config"])
+        audit_id = repo.add_audit("更新用户", "User", user_id)
+        return ok(
+            {
+                "user": versioned_admin_user(existing),
+                "auditLogId": audit_id,
+                "changed": changed,
+                "revision": singleton_revision(repo.state["admin_config"]),
+                "etag": singleton_etag("admin-config", repo.state["admin_config"]),
+                "updatedAt": repo.state["admin_config"].get("updatedAt"),
+            },
+            request,
+        )
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"userId": user_id, "body": body})
+
+
+@router.delete("/admin/users/{user_id}")
+def delete_admin_user(
+    request: Request,
+    user_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    def produce():
+        existing = admin_user_by_id(user_id)
+        display = next((item for item in admin_config_users() if item.get("id") == user_id), None)
+        record_for_etag = existing or display
+        if not record_for_etag:
+            return fail(errors.NOT_FOUND, request, message="用户不存在。")
+        if not record_if_match_valid("admin-user", {**record_for_etag, "id": user_id}, if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        referenced = any(member.get("userId") == user_id for member in repo.state["project_members"])
+        if referenced:
+            if existing is None:
+                existing = build_admin_user_record(display or {"id": user_id}, existing=None)
+                existing["id"] = user_id
+                repo.state["users"].append(existing)
+            existing["status"] = "停用"
+            existing["deletedAt"] = server_time()
+            bump_record_revision(existing)
+            upsert_admin_config_user(existing)
+            sync_user_references(existing)
+            deleted = False
+            action = "停用用户"
+        else:
+            repo.state["users"] = [item for item in repo.state.get("users", []) if item.get("id") != user_id]
+            remove_admin_config_user(user_id)
+            deleted = True
+            action = "删除用户"
+        bump_singleton_revision(repo.state["admin_config"])
+        audit_id = repo.add_audit(action, "User", user_id)
+        return ok(
+            {
+                "deleted": deleted,
+                "userId": user_id,
+                "user": versioned_admin_user(existing) if existing and not deleted else None,
+                "auditLogId": audit_id,
+                "revision": singleton_revision(repo.state["admin_config"]),
+                "etag": singleton_etag("admin-config", repo.state["admin_config"]),
+            },
+            request,
+        )
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"userId": user_id})
+
+
 @router.get("/admin/{kind}")
 def admin_generic_list(request: Request, kind: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
     if kind == "audit-logs":
@@ -14770,19 +16674,19 @@ def node_audit_logs(request: Request, project_id: str, node_id: int, page_no: in
 
 @router.get("/admin/org-units")
 def org_units_alias(request: Request, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    return ok(page(repo.clone(repo.state["admin_config"]["orgUnits"]), page_no, page_size), request)
+    return ok(page(list_admin_org_units(), page_no, page_size), request)
 
 
 @router.get("/admin/users")
 def users_alias(request: Request, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    return ok(page(repo.clone(repo.state["admin_config"]["users"]), page_no, page_size), request)
+    return ok(page(list_admin_users(), page_no, page_size), request)
 
 
 @router.get("/orgs")
 def legacy_orgs(request: Request):
-    return ok(repo.clone(repo.state["admin_config"]["orgUnits"]), request)
+    return ok(list_admin_org_units(), request)
 
 
 @router.get("/users")
 def legacy_users(request: Request):
-    return ok(repo.clone(repo.state["admin_config"]["users"]), request)
+    return ok(list_admin_users(), request)

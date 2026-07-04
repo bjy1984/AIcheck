@@ -1,5 +1,6 @@
 import { SUCCESS_CODE } from '@/constants'
 import type { MockMethod } from 'vite-plugin-mock'
+import { generatedKnowledgeRuleVersions } from './generatedBusinessRules'
 import type {
   ActionCode,
   AiReviewRun,
@@ -49,6 +50,73 @@ import {
 
 const timeout = 240
 const serverTime = '2026-06-26 10:30:00'
+const standardLibrarySourceId = 'KS-STANDARD-RULES'
+const standardLibrarySourceName = '标准规范库（业务规则引用标准）'
+const standardLibraryVersion = 'rules-standards-20260703'
+
+const standardLibraryRelativePaths = `
+rules/standards/GB 50235-2010 工业金属管道工程施工规范.pdf
+rules/standards/GB 50236-2011 现场设备、工业管道焊接工程施工规范.pdf
+rules/standards/GB 50424-2015 油气管道工程设计规范.pdf
+rules/standards/GB 50460-2015 油气输送管道跨越工程施工规范 高清晰版.pdf
+rules/standards/GBT 12459-2025 钢制对焊管件 类型与参数.pdf
+rules/standards/GBT 13401-2025钢制对焊管件 技术规范.pdf
+rules/standards/GBT 26480-2011 阀门的检验和试验.pdf
+rules/standards/GBT 5117-2012 非合金钢及细晶粒钢焊条.pdf
+rules/standards/GBT 8163-2018 输送流体用无缝钢管.pdf
+rules/standards/GBT+14976-2025输送流体用不锈钢无缝钢管.pdf
+rules/standards/GBT+19285-2026埋地钢质管道腐蚀防护工程检验.pdf
+rules/standards/GBT+20801.1-2025.pdf
+rules/standards/GBT+3087-2022.pdf
+rules/standards/GBT+33378-2025阴极保护技术条件.pdf
+rules/standards/GBT+5310-2023.pdf
+rules/standards/GBT+9948-2025石化和化工装置用无缝钢管.pdf
+rules/standards/GB_50184-2011_工业金属管道工程施工质量验收规范(高清晰版).pdf
+rules/standards/GB_T 13927-2022+工业阀门·压力试验.pdf
+rules/standards/GB∕T 12771-2019 流体输送用不锈钢焊接钢管.pdf
+rules/standards/GB∕T 21448-2017 埋地钢质管道阴极保护技术规范.pdf
+rules/standards/GB∕T 8110-2020 熔化极气体保护电弧焊用非合金钢及细晶粒钢实心焊丝.pdf
+rules/standards/JB∕T 3223-2017 焊接材料质量管理规程.pdf
+rules/standards/NBT 47018-2017 承压设备用焊接材料订货技术条件.pdf
+rules/standards/NBT47014-2023《承压设备焊接工艺评定》.pdf
+rules/standards/NB_T 47013.8-2025 承压设备无损检测 第8部分 泄漏检测（临时替代-更新变化记录）.md
+rules/standards/NB_T_47013_split/NBT 47013.3-2023 承压设备无损检测 第3部分 超声检测.pdf
+rules/standards/NB_T_47013_split/NBT47013.11-2023 承压设备无损检测 第11部分：射线数字成像检测_可搜索.pdf
+rules/standards/NB_T_47013_split/NBT47013.14-2023 承压设备无损检测 第14部分： 射线计算机辅助成像检测_可搜索.pdf
+rules/standards/NB_T_47013_split/NBT47013.15-2021 承压设备无损检测 第15部分：相控阵超声检测_可搜索.pdf
+rules/standards/NB_T_47013_split/NBT47013.16-2024 承压设备无损检测 第16部分：红外热成像检测_可搜索.pdf
+rules/standards/NB_T_47013_split/NBT47013.17-2024 承压设备无损检测 第17部分：磁记忆检测_可搜索.pdf
+rules/standards/NB_T_47013_split/NBT47013.18-2024  承压设备无损检测 第18部分：阵列涡流检测_可搜索.pdf
+rules/standards/NB_T_47013_split/NB_T 47013.0-2015 承压设备无损检测 合集封面及目录.pdf
+rules/standards/NB_T_47013_split/NB_T 47013.1-2015 承压设备无损检测 第1部分 通用要求.pdf
+rules/standards/NB_T_47013_split/NB_T 47013.10-2015 承压设备无损检测 第10部分 衍射时差法超声检测.pdf
+rules/standards/NB_T_47013_split/NB_T 47013.11-2015 承压设备无损检测 第11部分 X射线数字成像检测（已被NB_T 47013.11-2023替代）.pdf
+rules/standards/NB_T_47013_split/NB_T 47013.12-2015 承压设备无损检测 第12部分 漏磁检测.pdf
+rules/standards/NB_T_47013_split/NB_T 47013.13-2015 承压设备无损检测 第13部分 脉冲涡流检测.pdf
+rules/standards/NB_T_47013_split/NB_T 47013.2-2015 承压设备无损检测 第2部分 射线检测.pdf
+rules/standards/NB_T_47013_split/NB_T 47013.3-2015 承压设备无损检测 第3部分 超声检测（已被NB_T 47013.3-2023替代）.pdf
+rules/standards/NB_T_47013_split/NB_T 47013.4-2015 承压设备无损检测 第4部分 磁粉检测.pdf
+rules/standards/NB_T_47013_split/NB_T 47013.5-2015 承压设备无损检测 第5部分 渗透检测.pdf
+rules/standards/NB_T_47013_split/NB_T 47013.6-2015 承压设备无损检测 第6部分 涡流检测.pdf
+rules/standards/NB_T_47013_split/NB_T 47013.7-2012 承压设备无损检测 第7部分 目视检测.pdf
+rules/standards/NB_T_47013_split/NB_T 47013.8-2012 承压设备无损检测 第8部分 泄漏检测（已被NB_T 47013.8-2025替代）.pdf
+rules/standards/NB_T_47013_split/NB_T 47013.9-2012 承压设备无损检测 第9部分 声发射检测.pdf
+rules/standards/NB／T 47013-2015 承压设备无损检测-修订版.pdf
+rules/standards/SYT 4113.11—2023 管道防腐层性能试验方法 第11部分：漏点检测.pdf
+rules/standards/TSG  92—2026《承压类特种设备安全附件安全技术规程》.pdf
+rules/standards/TSG 0-2019.pdf
+rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf
+rules/standards/TSG Z7002—2022.pdf
+rules/standards/TSG Z8001—2019.pdf
+rules/standards/TSG31-2025.pdf
+rules/standards/TSGZ6002-2010《焊接人员考核细则》.pdf
+rules/standards/市场监管总局关于特种设备行政许可有关事项的公告（2021年41号）.pdf
+rules/standards/特种设备检验人员考核规则.docx
+rules/standards/特种设备生产和充装单位许可规则TSG 07-2019.pdf
+rules/standards/特种设备生产和充装单位许可规则（第1号修改单）.docx
+`
+  .trim()
+  .split('\n')
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 
@@ -68,8 +136,11 @@ type KnowledgeSourceMock = {
 type KnowledgeFileMock = {
   id: string
   fileName: string
+  originalFileName?: string
   sourceId: string
   sourceName: string
+  sourceRelativePath?: string
+  contextDescription?: string
   projectId?: string
   projectName?: string
   nodeId?: number
@@ -106,18 +177,30 @@ type KnowledgeRuleVersionMock = {
   version: string
   status: '草稿' | '待发布' | '已发布' | '已回滚'
   nodeIds: number[]
+  sourceRuleId?: string
+  sourceDocument?: string
   sourceSequence?: number
+  businessModule?: string
   inspectionCategory?: string
   inspectionItem?: string
   inspectionClass?: string
   standardText?: string
   witnessText?: string
+  sourceWitness?: string
   reviewClass?: string
   criteria?: string
   checkMethod?: string
+  agentThinking?: string
+  toolchainThinking?: string
+  referencedStandards?: Array<Record<string, unknown>>
+  materialTypeCodes?: string[]
+  thinkingModeIds?: string[]
+  toolIds?: string[]
+  severity?: string
   aiExecution?: {
     schemaVersion?: string
     compiledAt?: string
+    sourceFields?: Record<string, unknown>
     requiredEvidence?: string[]
     extractionTargets?: string[]
     verificationSteps?: string[]
@@ -168,6 +251,27 @@ type KnowledgeConfigMock = {
   updatedAt: string
 }
 
+type BusinessPackMock = {
+  id: string
+  name: string
+  version: string
+  domainType: string
+  description: string
+  pipelineTypeCode: string
+  pipelineTypeName: string
+  commonGrades: string
+  scopeDescription: string
+  projectType: string
+  status: 'published'
+  snapshotHash: string
+  roleCount: number
+  nodeCount: number
+  materialTypeCount: number
+  ruleSetCount: number
+  agentSopCount: number
+  fixtureProjectCount: number
+}
+
 type ProjectMemberMock = {
   id: string
   projectId: string
@@ -194,6 +298,7 @@ type AdminOrgUnitMock = {
 
 type AdminUserMock = {
   id: string
+  username: string
   name: string
   orgName: string
   role: RoleCode
@@ -416,29 +521,54 @@ type ReportDetailMock = {
   }>
 }
 
+const buildInitialStandardKnowledgeFiles = (): KnowledgeFileMock[] =>
+  standardLibraryRelativePaths.map((relativePath, index) => {
+    const fileName = relativePath.split('/').pop() || relativePath
+    return {
+      id: `KF-STANDARD-${String(index + 1).padStart(3, '0')}`,
+      fileName,
+      originalFileName: fileName,
+      sourceId: standardLibrarySourceId,
+      sourceName: standardLibrarySourceName,
+      sourceRelativePath: relativePath,
+      contextDescription: '由 rules/standards 实际标准规范文件初始化。',
+      ocrStatus: '待识别',
+      sliceStatus: '未切片',
+      vectorStatus: '待向量化',
+      chunkCount: 0,
+      vectorCount: 0,
+      updatedAt: '2026-07-03 00:00:00',
+      actions: ['knowledge:view', 'knowledge:manage', 'knowledge:reindex']
+    }
+  })
+
+const initialStandardKnowledgeFiles = buildInitialStandardKnowledgeFiles()
+const buildInitialStandardKnowledgeTasks = (files: KnowledgeFileMock[]): KnowledgeTaskMock[] =>
+  files.map((file, index) => ({
+    id: `KT-STANDARD-${String(index + 1).padStart(3, '0')}`,
+    taskType: 'ocr',
+    targetType: 'file',
+    targetId: file.id,
+    targetName: file.fileName,
+    status: '排队中',
+    progress: 0,
+    createdAt: '2026-07-03 00:00:00',
+    actions: ['knowledge:task-retry']
+  }))
+
+const initialStandardKnowledgeTasks = buildInitialStandardKnowledgeTasks(initialStandardKnowledgeFiles)
+
 const initialKnowledgeSources: KnowledgeSourceMock[] = [
   {
-    id: 'KS-STANDARD-TSG',
-    name: 'TSG D7005 工业管道监督检验规则',
+    id: standardLibrarySourceId,
+    name: standardLibrarySourceName,
     sourceType: 'standard',
-    version: 'std-v2026.06',
+    version: standardLibraryVersion,
     status: '启用',
-    fileCount: 8,
-    chunkCount: 1420,
-    vectorStatus: '已向量化',
-    updatedAt: '2026-06-26 09:10:00',
-    actions: ['knowledge:view', 'knowledge:manage', 'knowledge:reindex']
-  },
-  {
-    id: 'KS-STANDARD-WELD',
-    name: '焊接与无损检测标准库',
-    sourceType: 'standard',
-    version: 'weld-v2026.04',
-    status: '启用',
-    fileCount: 6,
-    chunkCount: 1066,
-    vectorStatus: '已向量化',
-    updatedAt: '2026-06-25 17:20:00',
+    fileCount: initialStandardKnowledgeFiles.length,
+    chunkCount: 0,
+    vectorStatus: '待向量化',
+    updatedAt: '2026-07-03 00:00:00',
     actions: ['knowledge:view', 'knowledge:manage', 'knowledge:reindex']
   },
   {
@@ -452,22 +582,10 @@ const initialKnowledgeSources: KnowledgeSourceMock[] = [
     vectorStatus: '向量化中',
     updatedAt: '2026-06-26 09:31:00',
     actions: ['knowledge:view', 'knowledge:manage', 'knowledge:reindex']
-  },
-  {
-    id: 'KS-RULE-PROMPT',
-    name: 'AI 审查规则与 Prompt',
-    sourceType: 'rule',
-    version: 'rule-v2026.06',
-    status: '待复核',
-    fileCount: 12,
-    chunkCount: 384,
-    vectorStatus: '已向量化',
-    updatedAt: '2026-06-24 18:00:00',
-    actions: ['knowledge:view', 'knowledge:manage']
   }
 ]
 
-const initialKnowledgeFiles: KnowledgeFileMock[] = documents.map((document, index) => {
+const initialProjectKnowledgeFiles: KnowledgeFileMock[] = documents.map((document, index) => {
   const binding = bindings.find((item) => item.documentId === document.id)
   const node = binding ? treeNodes.find((item) => item.nodeId === binding.nodeId) : undefined
   const chunkCount = [18, 10, 24, 15][index] || 8
@@ -480,8 +598,10 @@ const initialKnowledgeFiles: KnowledgeFileMock[] = documents.map((document, inde
   return {
     id: `KF-${document.id}`,
     fileName: document.fileName,
+    originalFileName: document.fileName,
     sourceId: 'KS-PROJECT-FILE',
     sourceName: '项目文件知识库',
+    sourceRelativePath: document.fileName,
     projectId: document.projectId,
     projectName: projects.find((project) => project.id === document.projectId)?.name,
     nodeId: binding?.nodeId,
@@ -498,12 +618,22 @@ const initialKnowledgeFiles: KnowledgeFileMock[] = documents.map((document, inde
   }
 })
 
-initialKnowledgeSources[2].chunkCount = initialKnowledgeFiles.reduce(
-  (sum, file) => sum + file.chunkCount,
-  0
-)
+const initialKnowledgeFiles: KnowledgeFileMock[] = [
+  ...initialStandardKnowledgeFiles,
+  ...initialProjectKnowledgeFiles
+]
+
+const projectFileSource = initialKnowledgeSources.find((source) => source.id === 'KS-PROJECT-FILE')
+if (projectFileSource) {
+  projectFileSource.fileCount = initialProjectKnowledgeFiles.length
+  projectFileSource.chunkCount = initialProjectKnowledgeFiles.reduce(
+    (sum, file) => sum + file.chunkCount,
+    0
+  )
+}
 
 const initialKnowledgeTasks: KnowledgeTaskMock[] = [
+  ...initialStandardKnowledgeTasks,
   {
     id: 'KT-20260626-001',
     taskType: 'vector',
@@ -539,77 +669,10 @@ const initialKnowledgeTasks: KnowledgeTaskMock[] = [
     createdAt: '2026-06-26 10:12:00',
     actions: ['knowledge:task-retry']
   },
-  {
-    id: 'KT-20260625-004',
-    taskType: 'slice',
-    targetType: 'source',
-    targetId: 'KS-STANDARD-TSG',
-    targetName: 'TSG D7005 工业管道监督检验规则',
-    status: '成功',
-    progress: 100,
-    createdAt: '2026-06-25 16:00:00',
-    finishedAt: '2026-06-25 16:08:00',
-    actions: []
-  }
 ]
 
-const initialKnowledgeRuleVersions: KnowledgeRuleVersionMock[] = [
-  {
-    id: 'RULE-WELDER-202606',
-    name: '焊工资格核验规则',
-    ruleKey: 'welder-qualification',
-    version: 'Welder-Qualification-B-v2.1',
-    status: '已发布',
-    nodeIds: [24, 25, 27, 28],
-    promptVersion: 'prompt-welder-v2.1',
-    outputSchemaVersion: 'schema-review-v1.3',
-    description: '核验焊工资格证、持证项目、有效期与施工焊接方法覆盖关系。',
-    publishedAt: '2026-06-26 09:12:00',
-    updatedAt: '2026-06-26 09:12:00',
-    actions: ['knowledge:view', 'knowledge:manage']
-  },
-  {
-    id: 'RULE-WELDER-202605',
-    name: '焊工资格核验规则',
-    ruleKey: 'welder-qualification',
-    version: 'Welder-Qualification-B-v2.0',
-    status: '已回滚',
-    nodeIds: [24, 25, 27],
-    promptVersion: 'prompt-welder-v2.0',
-    outputSchemaVersion: 'schema-review-v1.2',
-    description: '上一版焊工资格核验规则，保留用于回滚演练。',
-    publishedAt: '2026-05-28 16:30:00',
-    updatedAt: '2026-06-26 09:12:00',
-    actions: ['knowledge:view', 'knowledge:manage']
-  },
-  {
-    id: 'RULE-MATERIAL-202606',
-    name: '材料质量证明核验规则',
-    ruleKey: 'material-certificate',
-    version: 'Material-Cert-C-v1.8',
-    status: '已发布',
-    nodeIds: [16, 17, 18, 39, 40],
-    promptVersion: 'prompt-material-v1.8',
-    outputSchemaVersion: 'schema-review-v1.3',
-    description: '核验材质、炉批号、标准号、质量证明书与设计文件一致性。',
-    publishedAt: '2026-06-25 17:40:00',
-    updatedAt: '2026-06-25 17:40:00',
-    actions: ['knowledge:view', 'knowledge:manage']
-  },
-  {
-    id: 'RULE-NDT-202606',
-    name: '无损检测报告核验规则',
-    ruleKey: 'ndt-report',
-    version: 'NDT-Report-C-v1.4',
-    status: '待发布',
-    nodeIds: [35, 36, 40, 41, 42],
-    promptVersion: 'prompt-ndt-v1.4',
-    outputSchemaVersion: 'schema-ndt-v1.1',
-    description: '核验底片、检测比例、评片结论、返修闭环和报告签章。',
-    updatedAt: '2026-06-26 10:05:00',
-    actions: ['knowledge:view', 'knowledge:manage']
-  }
-]
+const initialKnowledgeRuleVersions =
+  generatedKnowledgeRuleVersions as unknown as KnowledgeRuleVersionMock[]
 
 const initialKnowledgeConfig: KnowledgeConfigMock = {
   embeddingModel: 'embedding-default',
@@ -879,6 +942,7 @@ const makeInitialProjectMembers = (): ProjectMemberMock[] =>
 const initialAdminUsers: AdminUserMock[] = [
   {
     id: 'USR-INS-001',
+    username: 'inspection',
     name: '张工',
     orgName: '省特检院一部',
     role: 'inspection',
@@ -888,6 +952,7 @@ const initialAdminUsers: AdminUserMock[] = [
   },
   {
     id: 'USR-CON-001',
+    username: 'contractor',
     name: '李工',
     orgName: '中石化安装有限公司',
     role: 'contractor',
@@ -897,6 +962,7 @@ const initialAdminUsers: AdminUserMock[] = [
   },
   {
     id: 'USR-NDT-001',
+    username: 'ndt',
     name: '王工',
     orgName: '华测检测有限公司',
     role: 'ndt',
@@ -906,6 +972,7 @@ const initialAdminUsers: AdminUserMock[] = [
   },
   {
     id: 'USR-OWN-001',
+    username: 'owner',
     name: '陈总',
     orgName: '华东管网建设公司',
     role: 'owner',
@@ -915,12 +982,33 @@ const initialAdminUsers: AdminUserMock[] = [
   },
   {
     id: 'USR-ADM-001',
+    username: 'admin',
     name: '系统管理员',
     orgName: '省特检院平台部',
     role: 'admin',
     mobile: '13800020005',
     status: '启用',
     lastLoginAt: '2026-06-26 10:25:00'
+  },
+  {
+    id: 'USR-FDE-001',
+    username: 'fde',
+    name: 'FDE 工程师',
+    orgName: 'AI 交付治理组',
+    role: 'fde',
+    mobile: '13800020006',
+    status: '启用',
+    lastLoginAt: '2026-06-26 10:30:00'
+  },
+  {
+    id: 'USR-TEST-001',
+    username: 'test',
+    name: '测试用户',
+    orgName: '联调测试组',
+    role: 'inspection',
+    mobile: '13800020007',
+    status: '启用',
+    lastLoginAt: '2026-06-26 10:35:00'
   }
 ]
 
@@ -1121,6 +1209,69 @@ const initialAdminFieldMappings: AdminFieldMappingMock[] = [
     required: true,
     confidenceThreshold: 0.88,
     updatedAt: '2026-06-25 17:10:00'
+  }
+]
+
+const mockBusinessPacks: BusinessPackMock[] = [
+  {
+    id: 'compliance_audit_v1',
+    name: '长输管道',
+    version: '2026.06.01',
+    domainType: 'compliance_audit',
+    description: 'GA 类长输压力管道业务类型，覆盖长距离输送油、气等介质管道项目。',
+    pipelineTypeCode: 'GA类',
+    pipelineTypeName: '长输管道',
+    commonGrades: 'GA1、GA2',
+    scopeDescription: '长距离输送油、气等介质的管道',
+    projectType: '长输压力管道',
+    status: 'published',
+    snapshotHash: 'mock-pipeline-ga-202606',
+    roleCount: 4,
+    nodeCount: 4,
+    materialTypeCount: 4,
+    ruleSetCount: 2,
+    agentSopCount: 1,
+    fixtureProjectCount: 1
+  },
+  {
+    id: 'device_inspection_v1',
+    name: '公用管道',
+    version: '2026.06.01',
+    domainType: 'device_inspection',
+    description: 'GB 类公用压力管道业务类型，覆盖燃气管道、热力管道等项目。',
+    pipelineTypeCode: 'GB类',
+    pipelineTypeName: '公用管道',
+    commonGrades: 'GB1、GB2',
+    scopeDescription: '城镇燃气管道、热力管道等公用工程管道',
+    projectType: '公用压力管道',
+    status: 'published',
+    snapshotHash: 'mock-pipeline-gb-202606',
+    roleCount: 4,
+    nodeCount: 4,
+    materialTypeCount: 4,
+    ruleSetCount: 2,
+    agentSopCount: 1,
+    fixtureProjectCount: 1
+  },
+  {
+    id: 'engineering_inspection_v1',
+    name: '工业管道',
+    version: '2026.06.99',
+    domainType: 'engineering_inspection',
+    description: 'GC 类工业压力管道业务类型，承载工业管道监督检验角色、节点、资料目录、规则、报告和 AI SOP。',
+    pipelineTypeCode: 'GC类',
+    pipelineTypeName: '工业管道',
+    commonGrades: 'GC1、GC2、GCD',
+    scopeDescription: '工厂、装置区内工艺管道、公用工程管道等',
+    projectType: '工业压力管道',
+    status: 'published',
+    snapshotHash: 'mock-pipeline-gc-202606',
+    roleCount: 5,
+    nodeCount: 69,
+    materialTypeCount: 12,
+    ruleSetCount: 4,
+    agentSopCount: 2,
+    fixtureProjectCount: 6
   }
 ]
 
@@ -2098,6 +2249,55 @@ const getKnowledgeFile = (fileId: string) => state.knowledgeFiles.find((file) =>
 const getKnowledgeSource = (sourceId: string) =>
   state.knowledgeSources.find((source) => source.id === sourceId)
 
+const resetStandardLibraryMock = () => {
+  const oldStandardFileIds = new Set(
+    state.knowledgeFiles
+      .filter((file) => file.sourceId === standardLibrarySourceId)
+      .map((file) => file.id)
+  )
+  const standardFiles = buildInitialStandardKnowledgeFiles()
+  const standardTasks = buildInitialStandardKnowledgeTasks(standardFiles)
+  state.knowledgeFiles = [
+    ...standardFiles,
+    ...state.knowledgeFiles.filter((file) => !oldStandardFileIds.has(file.id))
+  ]
+  state.knowledgeTasks = [
+    ...standardTasks,
+    ...state.knowledgeTasks.filter((task) => !oldStandardFileIds.has(String(task.targetId)))
+  ]
+  const standardSource =
+    getKnowledgeSource(standardLibrarySourceId) ||
+    ({
+      id: standardLibrarySourceId,
+      name: standardLibrarySourceName,
+      sourceType: 'standard',
+      version: standardLibraryVersion,
+      status: '启用',
+      fileCount: 0,
+      chunkCount: 0,
+      vectorStatus: '待向量化',
+      updatedAt: serverTime,
+      actions: ['knowledge:view', 'knowledge:manage', 'knowledge:reindex']
+    } as KnowledgeSourceMock)
+  if (!getKnowledgeSource(standardLibrarySourceId)) {
+    state.knowledgeSources.unshift(standardSource)
+  }
+  standardSource.name = standardLibrarySourceName
+  standardSource.sourceType = 'standard'
+  standardSource.version = standardLibraryVersion
+  standardSource.status = '启用'
+  standardSource.fileCount = standardFiles.length
+  standardSource.chunkCount = 0
+  standardSource.vectorStatus = '待向量化'
+  standardSource.updatedAt = serverTime
+  return {
+    source: standardSource,
+    files: standardFiles,
+    tasks: standardTasks,
+    removed: oldStandardFileIds.size
+  }
+}
+
 const knowledgeSourceTypes: KnowledgeSourceMock['sourceType'][] = [
   'standard',
   'project-file',
@@ -2132,9 +2332,36 @@ const makeRuleKey = (item: Pick<KnowledgeRuleVersionMock, 'sourceSequence' | 'in
     .slice(0, 32)}`
 }
 
+const ruleVersionSequence = (rule: KnowledgeRuleVersionMock) =>
+  Number(rule.sourceSequence || rule.nodeIds?.[0] || 9999)
+
+const ruleStatusRank = (status: KnowledgeRuleVersionMock['status']) =>
+  ({ 草稿: 0, 待发布: 1, 已发布: 2, 已回滚: 3 })[status] ?? 9
+
+const sortKnowledgeRuleVersions = (items: KnowledgeRuleVersionMock[]) =>
+  [...items].sort((left, right) => {
+    const sequenceDelta = ruleVersionSequence(left) - ruleVersionSequence(right)
+    if (sequenceDelta) return sequenceDelta
+    const statusDelta = ruleStatusRank(left.status) - ruleStatusRank(right.status)
+    if (statusDelta) return statusDelta
+    return `${left.updatedAt || ''}${left.id}`.localeCompare(`${right.updatedAt || ''}${right.id}`)
+  })
+
 const makeRuleExecution = (rule: KnowledgeRuleVersionMock) => ({
   schemaVersion: 'business-rule-execution-v1',
   compiledAt: serverTime,
+  sourceFields: {
+    sourceRuleId: rule.sourceRuleId,
+    sourceDocument: rule.sourceDocument,
+    sequence: rule.sourceSequence,
+    inspectionCategory: rule.inspectionCategory,
+    inspectionItem: rule.inspectionItem || rule.name,
+    inspectionClass: rule.inspectionClass || rule.reviewClass,
+    standardText: rule.standardText || rule.criteria || '',
+    witnessText: rule.witnessText || rule.checkMethod || '',
+    agentThinking: rule.agentThinking || '',
+    toolchainThinking: rule.toolchainThinking || ''
+  },
   requiredEvidence: [rule.witnessText || rule.description || rule.name].filter(Boolean),
   extractionTargets: [
     rule.inspectionItem || rule.name,
@@ -2146,6 +2373,8 @@ const makeRuleExecution = (rule: KnowledgeRuleVersionMock) => ({
   acceptanceCriteria: [rule.standardText || '符合判断准则和项目节点要求'].filter(Boolean),
   humanConfirmation: ['证据不足、OCR 置信度不足或结论影响放行时需人工确认。'],
   promptContext: [
+    `来源规则：${rule.sourceRuleId || '-'}`,
+    `来源文档：${rule.sourceDocument || '-'}`,
     `监检项目：${rule.inspectionItem || rule.name}`,
     `类别：${rule.inspectionClass || rule.reviewClass || '-'}`,
     `判断准则/标准规范：${rule.standardText || rule.criteria || '-'}`,
@@ -2189,6 +2418,26 @@ const normalizeKnowledgeRuleVersion = (
   const witnessText = String(
     values.witnessText || source?.witnessText || source?.checkMethod || ''
   ).trim()
+  const sourceRuleId = String(values.sourceRuleId || source?.sourceRuleId || '').trim()
+  const sourceDocument = String(values.sourceDocument || source?.sourceDocument || '').trim()
+  const businessModule = String(
+    values.businessModule || source?.businessModule || inspectionCategory || ''
+  ).trim()
+  const sourceWitness = String(values.sourceWitness || source?.sourceWitness || '').trim()
+  const agentThinking = String(values.agentThinking || source?.agentThinking || '').trim()
+  const toolchainThinking = String(
+    values.toolchainThinking || source?.toolchainThinking || ''
+  ).trim()
+  const referencedStandards = Array.isArray(values.referencedStandards)
+    ? values.referencedStandards
+    : source?.referencedStandards
+  const materialTypeCodes = Array.isArray(values.materialTypeCodes)
+    ? values.materialTypeCodes
+    : source?.materialTypeCodes
+  const thinkingModeIds = Array.isArray(values.thinkingModeIds)
+    ? values.thinkingModeIds
+    : source?.thinkingModeIds
+  const toolIds = Array.isArray(values.toolIds) ? values.toolIds : source?.toolIds
   const ruleKey =
     String(values.ruleKey || source?.ruleKey || '').trim() ||
     makeRuleKey({ sourceSequence: primaryNodeId, inspectionItem })
@@ -2203,15 +2452,26 @@ const normalizeKnowledgeRuleVersion = (
     version: String(values.version || '').trim() || `${ruleKey}-draft-${versionSuffix}`,
     status: (values.status as KnowledgeRuleVersionMock['status']) || '草稿',
     nodeIds: primaryNodeId ? [primaryNodeId] : nodeIds,
+    sourceRuleId,
+    sourceDocument,
     sourceSequence: primaryNodeId,
+    businessModule,
     inspectionCategory,
     inspectionItem,
     inspectionClass,
     standardText,
     witnessText,
+    sourceWitness,
     reviewClass: inspectionClass,
     criteria: standardText,
     checkMethod: witnessText,
+    agentThinking,
+    toolchainThinking,
+    referencedStandards,
+    materialTypeCodes,
+    thinkingModeIds,
+    toolIds,
+    severity: String(values.severity || source?.severity || '').trim() || undefined,
     promptVersion:
       String(values.promptVersion || source?.promptVersion || '').trim() || `prompt-${ruleKey}`,
     outputSchemaVersion:
@@ -2872,19 +3132,8 @@ const buildAdminOrgUnits = (): AdminOrgUnitMock[] => {
 const buildAdminConfigOverview = () => {
   const activeProjects = state.projects.filter((project) => project.status !== '已归档')
   const orgUnits = buildAdminOrgUnits()
-  const ruleVersions = state.knowledgeRuleVersions.map((rule) => ({
-    id: rule.id,
-    name: rule.name,
-    ruleKey: rule.ruleKey,
-    version: rule.version,
-    status: rule.status,
-    nodeIds: rule.nodeIds,
-    promptVersion: rule.promptVersion,
-    outputSchemaVersion: rule.outputSchemaVersion,
-    description: rule.description,
-    publishedAt: rule.publishedAt,
-    updatedAt: rule.updatedAt,
-    actions: rule.actions
+  const ruleVersions = sortKnowledgeRuleVersions(state.knowledgeRuleVersions).map((rule) => ({
+    ...rule
   }))
   return {
     metrics: [
@@ -2907,7 +3156,8 @@ const buildAdminConfigOverview = () => {
     todoRules: state.adminTodoRules,
     messageTemplates: state.adminMessageTemplates,
     toolSources: state.adminToolSources,
-    fieldMappings: state.adminFieldMappings
+    fieldMappings: state.adminFieldMappings,
+    businessPacks: mockBusinessPacks
   }
 }
 
@@ -5682,23 +5932,82 @@ export default [
     response: () => ok([])
   },
   {
+    url: '/api/business-packs',
+    method: 'get',
+    timeout,
+    response: () => ok(mockBusinessPacks)
+  },
+  {
+    url: /\/api\/business-packs\/[^/]+$/,
+    method: 'get',
+    timeout,
+    response: ({ url }) => {
+      const packId = pathParts(url)[2]
+      const pack = mockBusinessPacks.find((item) => item.id === packId)
+      if (!pack) return fail(40490, '业务类型不存在。', { reason: 'BUSINESS_PACK_NOT_FOUND' })
+      return ok({
+        ...pack,
+        summary: pack,
+        roles: [],
+        nodeTemplates: [],
+        materialTypes: [],
+        workflowStateMachines: [],
+        ruleSets: [],
+        reportTemplates: [],
+        agentSops: []
+      })
+    }
+  },
+  {
+    url: '/api/business-packs/validate-all',
+    method: 'post',
+    timeout,
+    response: () =>
+      ok({
+        ok: true,
+        scorecard: {
+          targetScore: 100,
+          score: 100,
+          ok: true,
+          sections: [],
+          blockers: [],
+          packs: mockBusinessPacks.map((pack) => ({
+            packId: pack.id,
+            domainType: pack.domainType,
+            score: 100,
+            ok: true,
+            summary: pack,
+            blockers: []
+          }))
+        },
+        results: mockBusinessPacks.map((pack) => ({
+          summary: pack,
+          validation: { ok: true, errors: [], warnings: [] }
+        }))
+      })
+  },
+  {
+    url: /\/api\/business-packs\/[^/]+\/validate$/,
+    method: 'post',
+    timeout,
+    response: ({ url }) => {
+      const packId = pathParts(url)[2]
+      const pack = mockBusinessPacks.find((item) => item.id === packId)
+      if (!pack) return fail(40490, '业务类型不存在。', { reason: 'BUSINESS_PACK_NOT_FOUND' })
+      return ok({ summary: pack, validation: { ok: true, errors: [], warnings: [] } })
+    }
+  },
+  {
     url: '/api/fde/business-packs/validate-all',
     method: 'post',
     timeout,
     response: () =>
       ok({
-        summary: { total: 1, passed: 1, failed: 0, warning: 0 },
-        results: [
-          {
-            summary: {
-              id: 'engineering_inspection_v1',
-              name: '工程监检业务包',
-              version: '2026.06',
-              status: 'production'
-            },
-            validation: { status: 'passed', score: 0.96, blockers: [] }
-          }
-        ]
+        summary: { total: 3, passed: 3, failed: 0, warning: 0 },
+        results: mockBusinessPacks.map((pack) => ({
+          summary: pack,
+          validation: { status: 'passed', score: 0.96, blockers: [] }
+        }))
       })
   },
   {
@@ -7891,30 +8200,75 @@ export default [
     }
   },
   {
+    url: '/api/knowledge/standards/import-from-rules',
+    method: 'post',
+    timeout,
+    response: () => {
+      const imported = resetStandardLibraryMock()
+      const auditLogId = addAuditLog('重新初始化标准规范库', 'KnowledgeSource', imported.source.id)
+      return ok({
+        source: imported.source,
+        files: imported.files,
+        tasks: imported.tasks,
+        dispatches: [],
+        skipped: [],
+        summary: {
+          sourceId: imported.source.id,
+          standardsRoot: 'rules/standards',
+          businessRulesPath: 'rules/业务规则.md',
+          scanned: standardLibraryRelativePaths.length,
+          imported: imported.files.length,
+          skipped: 0,
+          reset: true,
+          removed: imported.removed
+        },
+        auditLogId
+      })
+    }
+  },
+  {
     url: '/api/knowledge/project-files',
     method: 'get',
     timeout,
     response: ({ query }) => {
       const keyword = String(query?.keyword || '').trim()
       const status = String(query?.status || '').trim()
+      const sourceType = String(query?.sourceType || '').trim()
       const nodeId = Number(query?.nodeId)
-      const items = state.knowledgeFiles.filter((file) => {
-        if (
-          keyword &&
-          !`${file.fileName}${file.nodeName || ''}${file.projectName || ''}`.includes(keyword)
-        )
-          return false
-        if (query?.projectId && file.projectId !== query.projectId) return false
-        if (Number.isFinite(nodeId) && nodeId > 0 && file.nodeId !== nodeId) return false
-        if (
-          status &&
-          file.ocrStatus !== status &&
-          file.sliceStatus !== status &&
-          file.vectorStatus !== status
-        )
-          return false
-        return true
-      })
+      const items = state.knowledgeFiles
+        .filter((file) => {
+          const source = getKnowledgeSource(file.sourceId)
+          const fileSourceType = source?.sourceType || (file.projectId ? 'project-file' : 'standard')
+          if (sourceType) {
+            if (fileSourceType !== sourceType) return false
+          } else if (fileSourceType !== 'project-file') {
+            return false
+          }
+          if (
+            keyword &&
+            !`${file.fileName}${file.sourceRelativePath || ''}${file.nodeName || ''}${
+              file.projectName || ''
+            }`.includes(keyword)
+          )
+            return false
+          if (query?.projectId && file.projectId !== query.projectId) return false
+          if (Number.isFinite(nodeId) && nodeId > 0 && file.nodeId !== nodeId) return false
+          if (
+            status &&
+            file.ocrStatus !== status &&
+            file.sliceStatus !== status &&
+            file.vectorStatus !== status
+          )
+            return false
+          return true
+        })
+        .sort((left, right) => {
+          if (sourceType !== 'standard') return 0
+          return String(left.sourceRelativePath || left.fileName).localeCompare(
+            String(right.sourceRelativePath || right.fileName),
+            'zh-Hans'
+          )
+        })
       return ok(makePage(items, Number(query?.page) || 1, Number(query?.pageSize) || 20))
     }
   },
@@ -8122,10 +8476,16 @@ export default [
     response: ({ query }) => {
       const keyword = String(query?.keyword || '').trim()
       const status = String(query?.status || '').trim()
-      const items = state.knowledgeRuleVersions.filter((rule) => {
+      const items = sortKnowledgeRuleVersions(state.knowledgeRuleVersions).filter((rule) => {
         if (
           keyword &&
-          !`${rule.name}${rule.ruleKey}${rule.version}${rule.description || ''}`.includes(keyword)
+          !`${rule.name}${rule.ruleKey}${rule.version}${rule.description || ''}${
+            rule.sourceRuleId || ''
+          }${rule.sourceDocument || ''}${rule.inspectionCategory || ''}${
+            rule.inspectionItem || ''
+          }${rule.standardText || ''}${rule.witnessText || ''}${rule.agentThinking || ''}${
+            rule.toolchainThinking || ''
+          }`.includes(keyword)
         )
           return false
         if (status && rule.status !== status) return false
@@ -8507,12 +8867,13 @@ export default [
         id: code,
         code,
         name,
-        type: String(body?.type || '工业管道工程'),
+        type: String(body?.type || '工业压力管道'),
         region: String(body?.region || '华东'),
         ownerOrgName: String(body?.ownerOrgName || '华东管网建设公司'),
         contractorOrgName: String(body?.contractorOrgName || '中石化安装有限公司'),
         ndtOrgName: String(body?.ndtOrgName || '华测检测有限公司'),
         inspectionOrgName: String(body?.inspectionOrgName || '省特检院一部'),
+        businessPackId: String(body?.businessPackId || 'engineering_inspection_v1'),
         status: '草稿/立项中',
         todoCount: 0,
         messageCount: 0,

@@ -4,7 +4,9 @@ import asyncio
 import hashlib
 import json
 import os
+import sqlite3
 from copy import deepcopy
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -44,6 +46,7 @@ STATE_COLLECTIONS = {
     "evaluation_reports": "evaluation_reports",
     "agent_versions": "agent_versions",
     "prompt_versions": "prompt_versions",
+    "prompt_templates": "prompt_templates",
     "model_route_versions": "model_route_versions",
     "ocr_profile_versions": "ocr_profile_versions",
     "ocr_jobs": "ocr_jobs",
@@ -127,11 +130,14 @@ class InMemoryRepository:
         self.state.setdefault("review_events", [])
         self.state.setdefault("retrieval_traces", [])
         self.state.setdefault("rule_check_results", [])
+        self.state.setdefault("prompt_templates", [])
         self.state.setdefault("cost_budget_change_requests", [])
         self.state.setdefault("masking_policies", [])
         self.postgres_dsn: str | None = None
         self.sync_postgres = None
         self.postgres_enabled = False
+        self.sqlite_path: str | None = None
+        self.sqlite_enabled = False
         self._flush_lock = asyncio.Lock()
 
     def reset(self) -> None:
@@ -155,6 +161,7 @@ class InMemoryRepository:
         self.state.setdefault("review_events", [])
         self.state.setdefault("retrieval_traces", [])
         self.state.setdefault("rule_check_results", [])
+        self.state.setdefault("prompt_templates", [])
         self.state.setdefault("cost_budget_change_requests", [])
         self.state.setdefault("masking_policies", [])
 
@@ -1056,6 +1063,226 @@ class InMemoryRepository:
             except Exception:
                 pass
 
+    def default_sqlite_path(self) -> Path:
+        backend_root = Path(__file__).resolve().parents[2]
+        configured = os.getenv("AICHECK_SQLITE_PATH")
+        if configured:
+            configured_path = Path(configured).expanduser()
+            if not configured_path.is_absolute():
+                configured_path = backend_root / configured_path
+            return configured_path.resolve()
+        return backend_root / "data" / "aicheck.sqlite3"
+
+    def configure_sqlite(self, path: str | os.PathLike[str] | None = None) -> None:
+        if os.getenv("AICHECK_SQLITE_DISABLE", "false").lower() == "true":
+            self.sqlite_enabled = False
+            self.sqlite_path = None
+            return
+        target_path = Path(path).expanduser().resolve() if path else self.default_sqlite_path()
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        self.sqlite_path = str(target_path)
+        self.sqlite_enabled = True
+
+    def sqlite_connection(self) -> sqlite3.Connection:
+        self.configure_sqlite(self.sqlite_path)
+        if not self.sqlite_path:
+            raise RuntimeError("AICHECK_SQLITE_PATH is required to use SQLite persistence.")
+        connection = sqlite3.connect(self.sqlite_path)
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA foreign_keys=ON")
+        return connection
+
+    def ensure_sqlite_schema(self) -> None:
+        with self.sqlite_connection() as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS aicheck_state (
+                    collection text NOT NULL,
+                    object_id text NOT NULL,
+                    payload text NOT NULL,
+                    updated_at text NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (collection, object_id)
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS aicheck_singletons (
+                    name text PRIMARY KEY,
+                    payload text NOT NULL,
+                    updated_at text NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS idempotency_records (
+                    scope text PRIMARY KEY,
+                    payload text NOT NULL,
+                    updated_at text NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_aicheck_state_collection ON aicheck_state (collection)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_idempotency_updated_at ON idempotency_records (updated_at DESC)"
+            )
+
+    def _fresh_state_for_persistence_load(self) -> dict[str, Any]:
+        loaded = fresh_state()
+        loaded.setdefault("knowledge_chunks", [])
+        loaded.setdefault("knowledge_clauses", [])
+        loaded.setdefault("knowledge_page_index_nodes", [])
+        loaded.setdefault("upload_sessions", [])
+        loaded.setdefault("ocr_jobs", [])
+        loaded.setdefault("ocr_parse_results", [])
+        loaded.setdefault("ocr_corrections", [])
+        loaded.setdefault("ocr_eval_runs", [])
+        loaded.setdefault("ocr_annotation_tasks", [])
+        loaded.setdefault("ocr_annotation_imports", [])
+        loaded.setdefault("fde_capability_test_upload_sessions", [])
+        loaded.setdefault("fde_capability_test_runs", [])
+        loaded.setdefault("review_runs", [])
+        loaded.setdefault("review_step_runs", [])
+        loaded.setdefault("review_graph_nodes", [])
+        loaded.setdefault("review_tool_calls", [])
+        loaded.setdefault("review_events", [])
+        loaded.setdefault("retrieval_traces", [])
+        loaded.setdefault("rule_check_results", [])
+        loaded.setdefault("prompt_templates", [])
+        loaded.setdefault("cost_budget_change_requests", [])
+        loaded.setdefault("masking_policies", [])
+        return loaded
+
+    def apply_seed_compatibility_defaults(self, loaded: dict[str, Any]) -> bool:
+        """Backfill fields added after an existing local database was initialized."""
+        changed = False
+        seeded = fresh_state()
+        if not loaded.get("prompt_templates"):
+            loaded["prompt_templates"] = seeded.get("prompt_templates", [])
+            changed = True
+
+        seeded_ai_runs = {
+            str(item.get("id")): item for item in seeded.get("ai_runs", []) if item.get("id")
+        }
+        for run in loaded.get("ai_runs", []):
+            if not isinstance(run, dict):
+                continue
+            seeded_run = seeded_ai_runs.get(str(run.get("id") or ""))
+            if not seeded_run:
+                continue
+            for field in [
+                "llmConversationId",
+                "promptAudit",
+                "llmMetadata",
+                "reasoningProcess",
+                "llmResultText",
+            ]:
+                if not run.get(field) and seeded_run.get(field):
+                    run[field] = self.clone(seeded_run[field])
+                    changed = True
+
+        seeded_trace_steps = {
+            str(item.get("id")): item
+            for item in seeded.get("ai_trace_steps", [])
+            if item.get("id")
+        }
+        for step in loaded.get("ai_trace_steps", []):
+            if not isinstance(step, dict):
+                continue
+            seeded_step = seeded_trace_steps.get(str(step.get("id") or ""))
+            if not seeded_step:
+                continue
+            for field in ["conversationId", "promptHash", "responseHash", "reasoningProcess", "resultText"]:
+                if not step.get(field) and seeded_step.get(field):
+                    step[field] = self.clone(seeded_step[field])
+                    changed = True
+        return changed
+
+    def persistence_object_id(self, collection_name: str, doc: dict[str, Any], index: int) -> str:
+        object_id = str(doc.get("id") or doc.get("reviewRunId") or doc.get("jobId") or doc.get("parseResultId") or index)
+        if collection_name == STATE_COLLECTIONS["requirements"] and doc.get("projectId") and doc.get("id"):
+            return f"{doc['projectId']}:{doc['id']}"
+        return object_id
+
+    def load_from_sqlite(self) -> None:
+        self.configure_sqlite(self.sqlite_path)
+        if not self.sqlite_enabled:
+            return
+        self.ensure_sqlite_schema()
+        loaded = self._fresh_state_for_persistence_load()
+        with self.sqlite_connection() as connection:
+            rows = connection.execute(
+                "SELECT collection, payload FROM aicheck_state ORDER BY collection, object_id"
+            ).fetchall()
+            has_project_seed = any(row[0] == STATE_COLLECTIONS["projects"] for row in rows)
+            grouped: dict[str, list[dict[str, Any]]] = {}
+            for collection_name, payload in rows:
+                grouped.setdefault(collection_name, []).append(json.loads(payload))
+            for state_key, collection_name in STATE_COLLECTIONS.items():
+                documents = grouped.get(collection_name, [])
+                if has_project_seed or documents:
+                    loaded[state_key] = documents
+            for name, payload in connection.execute("SELECT name, payload FROM aicheck_singletons").fetchall():
+                loaded[name] = json.loads(payload)
+            loaded["idempotency"] = {
+                scope: json.loads(payload)
+                for scope, payload in connection.execute("SELECT scope, payload FROM idempotency_records").fetchall()
+            }
+        backfilled = self.apply_seed_compatibility_defaults(loaded)
+        self.state = loaded
+        if not has_project_seed:
+            self.flush_to_sqlite()
+        elif backfilled:
+            self.flush_to_sqlite()
+
+    def flush_to_sqlite(self) -> None:
+        self.configure_sqlite(self.sqlite_path)
+        if not self.sqlite_enabled:
+            return
+        self.ensure_sqlite_schema()
+        with self.sqlite_connection() as connection:
+            connection.execute("BEGIN")
+            connection.execute("DELETE FROM aicheck_state")
+            connection.execute("DELETE FROM aicheck_singletons")
+            connection.execute("DELETE FROM idempotency_records")
+            for state_key, collection_name in STATE_COLLECTIONS.items():
+                docs = [self.clone(item) for item in self.state.get(state_key, [])]
+                for index, doc in enumerate(docs):
+                    object_id = self.persistence_object_id(collection_name, doc, index)
+                    connection.execute(
+                        """
+                        INSERT INTO aicheck_state (collection, object_id, payload, updated_at)
+                        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                        ON CONFLICT(collection, object_id)
+                        DO UPDATE SET payload = excluded.payload, updated_at = CURRENT_TIMESTAMP
+                        """,
+                        (collection_name, object_id, json.dumps(doc, ensure_ascii=False)),
+                    )
+            for state_key in SINGLETON_COLLECTIONS:
+                connection.execute(
+                    """
+                    INSERT INTO aicheck_singletons (name, payload, updated_at)
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(name)
+                    DO UPDATE SET payload = excluded.payload, updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (state_key, json.dumps(self.clone(self.state.get(state_key)), ensure_ascii=False)),
+                )
+            for scope, payload in self.state.get("idempotency", {}).items():
+                connection.execute(
+                    """
+                    INSERT INTO idempotency_records (scope, payload, updated_at)
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(scope)
+                    DO UPDATE SET payload = excluded.payload, updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (scope, json.dumps(self.clone(payload), ensure_ascii=False)),
+                )
+            connection.commit()
+
     def postgres_connection(self, dsn: str | None = None):
         try:
             import psycopg
@@ -1115,28 +1342,7 @@ class InMemoryRepository:
         if self.sync_postgres is None:
             return
         self.ensure_postgres_schema()
-        loaded = fresh_state()
-        loaded.setdefault("knowledge_chunks", [])
-        loaded.setdefault("knowledge_clauses", [])
-        loaded.setdefault("knowledge_page_index_nodes", [])
-        loaded.setdefault("upload_sessions", [])
-        loaded.setdefault("ocr_jobs", [])
-        loaded.setdefault("ocr_parse_results", [])
-        loaded.setdefault("ocr_corrections", [])
-        loaded.setdefault("ocr_eval_runs", [])
-        loaded.setdefault("ocr_annotation_tasks", [])
-        loaded.setdefault("ocr_annotation_imports", [])
-        loaded.setdefault("fde_capability_test_upload_sessions", [])
-        loaded.setdefault("fde_capability_test_runs", [])
-        loaded.setdefault("review_runs", [])
-        loaded.setdefault("review_step_runs", [])
-        loaded.setdefault("review_graph_nodes", [])
-        loaded.setdefault("review_tool_calls", [])
-        loaded.setdefault("review_events", [])
-        loaded.setdefault("retrieval_traces", [])
-        loaded.setdefault("rule_check_results", [])
-        loaded.setdefault("cost_budget_change_requests", [])
-        loaded.setdefault("masking_policies", [])
+        loaded = self._fresh_state_for_persistence_load()
         rows = self.sync_postgres.execute(
             "SELECT collection, payload FROM aicheck_state ORDER BY collection, object_id"
         ).fetchall()
@@ -1154,8 +1360,11 @@ class InMemoryRepository:
             scope: json.loads(json.dumps(payload))
             for scope, payload in self.sync_postgres.execute("SELECT scope, payload FROM idempotency_records").fetchall()
         }
+        backfilled = self.apply_seed_compatibility_defaults(loaded)
         self.state = loaded
         if not has_project_seed:
+            self.flush_to_sync_postgres()
+        elif backfilled:
             self.flush_to_sync_postgres()
 
     def flush_to_sync_postgres(self) -> None:
@@ -1170,7 +1379,7 @@ class InMemoryRepository:
             for state_key, collection_name in STATE_COLLECTIONS.items():
                 docs = [self.clone(item) for item in self.state.get(state_key, [])]
                 for index, doc in enumerate(docs):
-                    object_id = str(doc.get("id") or doc.get("reviewRunId") or doc.get("jobId") or doc.get("parseResultId") or index)
+                    object_id = self.persistence_object_id(collection_name, doc, index)
                     self.sync_postgres.execute(
                         """
                         INSERT INTO aicheck_state (collection, object_id, payload, updated_at)
@@ -1420,8 +1629,14 @@ repo = InMemoryRepository()
 
 
 def load_state() -> None:
-    repo.load_from_sync_postgres()
+    if repo.sync_postgres is not None or repo.postgres_dsn:
+        repo.load_from_sync_postgres()
+        return
+    repo.load_from_sqlite()
 
 
 def flush_state() -> None:
-    repo.flush_to_sync_postgres()
+    if repo.sync_postgres is not None or repo.postgres_dsn:
+        repo.flush_to_sync_postgres()
+        return
+    repo.flush_to_sqlite()

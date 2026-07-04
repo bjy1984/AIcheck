@@ -323,11 +323,16 @@ async def postgres_transaction_probe(request: Request):
 
 
 def health_payload() -> dict[str, object]:
+    database_backend = "postgres" if repo.postgres_enabled else "sqlite" if repo.sqlite_enabled else "memory"
     return {
         "status": "ok",
         "service": "api-service",
+        "databaseBackend": database_backend,
+        "databaseConnected": database_backend != "memory",
         "postgresEnabled": repo.postgres_enabled,
         "postgresTransactions": bool(repo.postgres_enabled),
+        "sqliteEnabled": repo.sqlite_enabled,
+        "sqlitePath": repo.sqlite_path,
         "authRequired": os.getenv("AICHECK_REQUIRE_AUTH", "false").lower() == "true",
         "demoUsersEnabled": demo_users_enabled(),
         "objectStorageEnabled": object_storage.enabled,

@@ -1,6 +1,11 @@
 id: compliance_audit_v1
-name: 合规审计业务包
+name: 长输管道
 version: 2026.06.01
 domainType: compliance_audit
 status: published
-description: 合规审计资料审查业务包，用于验证 AIcheck 平台内核的跨行业复用能力。
+pipelineTypeCode: GA类
+pipelineTypeName: 长输管道
+commonGrades: GA1、GA2
+scopeDescription: 长距离输送油、气等介质的管道
+projectType: 长输压力管道
+description: GA 类长输压力管道业务类型，覆盖长距离输送油、气等介质管道项目。

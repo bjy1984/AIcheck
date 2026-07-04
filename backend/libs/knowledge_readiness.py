@@ -6,7 +6,7 @@ from libs.knowledge_retrieval import retrieve_knowledge_clauses
 
 
 REQUIRED_KNOWLEDGE_ROUTES = {
-    "exact_clause_lookup": "5.3.2 条",
+    "exact_clause_lookup": "TSG-D7006-D2.4.1 条",
     "hybrid_review_basis_search": "焊工资格证有效期如何校验？",
     "pageindex_tree_search": "请结合正文和附录跨章节说明无损检测报告签章要求",
 }
@@ -40,6 +40,8 @@ def build_knowledge_rule_scorecard(state: dict[str, Any]) -> dict[str, Any]:
 def source_index_section(state: dict[str, Any]) -> dict[str, Any]:
     sources = [item for item in state.get("knowledge_sources") or [] if isinstance(item, dict)]
     tasks = [item for item in state.get("knowledge_tasks") or [] if isinstance(item, dict)]
+    clauses = [item for item in state.get("knowledge_clauses") or [] if isinstance(item, dict)]
+    has_structured_rule_index = len(clauses) >= 3
     blockers: list[str] = []
     points = 0.0
     if sources:
@@ -51,15 +53,22 @@ def source_index_section(state: dict[str, Any]) -> dict[str, Any]:
         points += 5
     else:
         blockers.append("no enabled knowledge source exists")
-    if sum(safe_int(item.get("chunkCount")) for item in sources) > 0:
+    if sum(safe_int(item.get("chunkCount")) for item in sources) > 0 or has_structured_rule_index:
         points += 5
     else:
-        blockers.append("knowledge chunks are missing")
-    vector_ready = [item for item in sources if item.get("vectorStatus") == "已向量化"]
-    if sources and len(vector_ready) / len(sources) >= 0.6:
+        blockers.append("knowledge chunks or structured rule clauses are missing")
+    vector_scope = [
+        item
+        for item in enabled_sources
+        if item.get("sourceType") not in {"project-file", "project_file"} and safe_int(item.get("chunkCount")) > 0
+    ]
+    vector_ready = [item for item in vector_scope if item.get("vectorStatus") == "已向量化"]
+    if vector_scope and len(vector_ready) / len(vector_scope) >= 0.6:
+        points += 5
+    elif not vector_scope and has_structured_rule_index:
         points += 5
     else:
-        blockers.append("less than 60% of knowledge sources are vectorized")
+        blockers.append("less than 60% of indexed rule-basis knowledge sources are vectorized")
     failed_tasks = [item for item in tasks if item.get("status") in {"失败", "failed"}]
     governed_failures = [
         item

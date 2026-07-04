@@ -62,6 +62,15 @@ type StaticShellTimelineRow = {
   tone?: StaticShellTone
 }
 
+type StaticShellTopStat = {
+  key?: string
+  label: string
+  value?: string | number
+  tone?: StaticShellTone
+  clickable?: boolean
+  title?: string
+}
+
 type StaticShellRightCard = {
   title: string
   rows?: ReadonlyArray<StaticShellRightRow>
@@ -76,7 +85,7 @@ const props = defineProps<{
   statusTone?: StaticShellTone
   searchPlaceholder: string
   userLabel: string
-  topStats: ReadonlyArray<{ label: string; value?: string | number; tone?: StaticShellTone }>
+  topStats: ReadonlyArray<StaticShellTopStat>
   menuTitle: string
   menuRoot: string
   menuSections: ReadonlyArray<StaticShellMenuSection>
@@ -105,6 +114,7 @@ const emit = defineEmits<{
   (event: 'menu-select', item: StaticShellMenuItem): void
   (event: 'menu-search-change', value: string): void
   (event: 'menu-filter-change', value: string): void
+  (event: 'top-stat-click', stat: StaticShellTopStat): void
 }>()
 
 const route = useRoute()
@@ -196,6 +206,12 @@ const handleMenuFilter = (value: string) => {
   emit('menu-filter-change', value)
 }
 
+const handleTopStatClick = (stat: StaticShellTopStat) => {
+  if (stat.clickable) {
+    emit('top-stat-click', stat)
+  }
+}
+
 const focusElementRef = (target: typeof rightPanelTriggerRef.value) => {
   const element = target instanceof HTMLElement ? target : target?.$el
   element?.focus?.()
@@ -258,12 +274,20 @@ onBeforeUnmount(() => {
           {{ searchPlaceholder }}
         </ElButton>
         <div class="top-actions">
-          <span v-for="stat in topStats" :key="stat.label">
+          <component
+            :is="stat.clickable ? 'button' : 'span'"
+            v-for="stat in topStats"
+            :key="stat.key || stat.label"
+            :class="['top-stat-item', { 'is-clickable': stat.clickable }]"
+            :type="stat.clickable ? 'button' : undefined"
+            :title="stat.title || (stat.clickable ? `查看${stat.label}` : undefined)"
+            @click="handleTopStatClick(stat)"
+          >
             {{ stat.label
             }}<span v-if="stat.value !== undefined" :class="['notice-dot', stat.tone || 'red']">
               {{ stat.value }}
             </span>
-          </span>
+          </component>
           <ElButton
             v-if="rightPanelIsDrawer"
             ref="rightPanelTriggerRef"
@@ -778,10 +802,41 @@ onBeforeUnmount(() => {
   flex-wrap: nowrap;
 }
 
-.top-actions > span,
+.top-stat-item,
 .right-panel-trigger,
 .user-menu {
   flex: 0 0 auto;
+}
+
+.top-stat-item {
+  display: inline-flex;
+  min-height: 34px;
+  padding: 0 4px;
+  font: inherit;
+  font-weight: 700;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.top-stat-item.is-clickable {
+  padding: 0 8px;
+  cursor: pointer;
+  transition:
+    color 0.18s ease,
+    background-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.top-stat-item.is-clickable:hover,
+.top-stat-item.is-clickable:focus-visible {
+  color: var(--blue-2);
+  background: #f4f8ff;
+  outline: 0;
+  box-shadow: 0 0 0 3px rgb(31 102 216 / 12%);
 }
 
 .right-panel-trigger {

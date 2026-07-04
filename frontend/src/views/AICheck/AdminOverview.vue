@@ -19,6 +19,7 @@ import {
   ElInput,
   ElInputNumber,
   ElMessage,
+  ElMessageBox,
   ElOption,
   ElPagination,
   ElRadioButton,
@@ -39,16 +40,31 @@ import {
   authorizeProjectMemberApi,
   createAdminConfigExportApi,
   createAdminConfigItemApi,
+  createAdminOrgUnitApi,
   createAdminProjectApi,
+  createAdminUserApi,
+  createPromptTemplateApi,
+  deleteAdminOrgUnitApi,
+  deleteAdminProjectApi,
+  deleteAdminUserApi,
+  deletePromptTemplateApi,
+  deleteProjectMemberApi,
   getAdminConfigOverviewApi,
   getAdminIntegrationContractApi,
   getAdminProjectDetailApi,
   getKnowledgeRuleVersionDiffApi,
   getAuditLogsApi,
+  listPromptTemplatesApi,
+  listBusinessPacksApi,
   listWorkbenchProjectsApi,
   previewAdminConfigDiffApi,
   publishAdminConfigApi,
+  publishPromptTemplateApi,
   saveAdminConfigItemApi,
+  updateAdminOrgUnitApi,
+  updateAdminProjectApi,
+  updateAdminUserApi,
+  updatePromptTemplateApi,
   updateProjectMemberApi,
   validateAllBusinessPacksApi
 } from '@/api/aicheck'
@@ -60,6 +76,9 @@ import type {
   AdminConfigTarget,
   AdminProjectCreatePayload,
   AdminProjectDetailPayload,
+  AdminOrgUnit,
+  AdminOrgUnitType,
+  AdminUser,
   AuditLogPayload,
   BusinessPackValidateAllPayload,
   IntegrationContractField,
@@ -67,7 +86,9 @@ import type {
   IntegrationContractPayload,
   IntegrationContractStatus,
   KnowledgeRuleVersionDiffPayload,
-  ProjectMember
+  ProjectMember,
+  PromptTemplate,
+  PromptTemplateSavePayload
 } from '@/api/aicheck'
 import type { ActionCode, ExportTask, Project, RoleCode } from '@/types/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
@@ -129,7 +150,7 @@ const adminShellMenuSectionsBase = [
   },
   {
     title: '规则与业务配置',
-    meta: '3页',
+    meta: '4页',
     items: [
       {
         index: '04',
@@ -140,13 +161,20 @@ const adminShellMenuSectionsBase = [
       },
       {
         index: '05',
-        label: '规则与流程',
+        label: 'AI业务规则与流程',
         badge: '发布',
         tone: 'blue',
         route: '/admin/rules'
       },
       {
         index: '06',
+        label: 'Prompt 模板管理',
+        badge: 'Prompt',
+        tone: 'blue',
+        route: '/admin/prompt-templates'
+      },
+      {
+        index: '07',
         label: '细项配置',
         badge: '字段',
         tone: 'orange',
@@ -159,27 +187,27 @@ const adminShellMenuSectionsBase = [
     meta: '3页',
     items: [
       {
-        index: '07',
+        index: '08',
         label: 'AI 知识库管理',
         badge: 'OCR/向量',
         tone: 'green',
         route: '/knowledge/overview'
       },
       {
-        index: '08',
+        index: '09',
         label: '联调清单',
         badge: '对账',
         tone: 'orange',
         route: '/admin/integration'
       },
-      { index: '09', label: '审计日志', badge: '审计', tone: 'blue', route: '/admin/audit' }
+      { index: '10', label: '审计日志', badge: '审计', tone: 'blue', route: '/admin/audit' }
     ]
   }
 ] as const
 
 const adminShellBoundaryRows = [
   { label: '合同1', value: '项目管理、组织用户、权限与节点' },
-  { label: '合同2', value: '业务类型、规则流程、细项配置' },
+  { label: '合同2', value: '业务类型、规则流程、Prompt 模板、细项配置' },
   { label: '合同3', value: '知识库、联调清单、审计日志' },
   { label: '边界', value: '后台配置，不办理审查意见或报告确认' }
 ] as const
@@ -239,17 +267,33 @@ type TodoRuleConfigRow = AdminConfigOverviewPayload['todoRules'][number]
 type MessageTemplateConfigRow = AdminConfigOverviewPayload['messageTemplates'][number]
 type ToolSourceConfigRow = AdminConfigOverviewPayload['toolSources'][number]
 type FieldMappingConfigRow = AdminConfigOverviewPayload['fieldMappings'][number]
+type BusinessPackRow = NonNullable<AdminConfigOverviewPayload['businessPacks']>[number]
 type ProjectWizardMemberRole = Extract<RoleCode, 'inspection' | 'contractor' | 'ndt' | 'owner'>
 type PaginationState = {
   page: number
   pageSize: number
   total: number
 }
+type TableSortOrder = 'ascending' | 'descending' | null
+type TableSortState = {
+  prop: string
+  order: TableSortOrder
+}
+type TableState = PaginationState & TableSortState
+
+const DEFAULT_PIPELINE_BUSINESS_PACK_ID = 'engineering_inspection_v1'
+const PIPELINE_TYPE_ORDER = ['GA类', 'GB类', 'GC类']
 
 const createPagination = (pageSize = 10): PaginationState => ({
   page: 1,
   pageSize,
   total: 0
+})
+
+const createTableState = (pageSize = 10): TableState => ({
+  ...createPagination(pageSize),
+  prop: '',
+  order: null
 })
 
 const loading = ref(false)
@@ -263,6 +307,7 @@ const adminTabRouteMap = {
   'business-pack': '/admin/business-packs',
   permission: '/admin/permission',
   rule: '/admin/rules',
+  'prompt-template': '/admin/prompt-templates',
   'fine-config': '/admin/fine-config',
   integration: '/admin/integration',
   audit: '/admin/audit'
@@ -277,6 +322,7 @@ const adminRouteTabMap: Record<string, AdminTabKey> = {
   '/admin/business-packs': 'business-pack',
   '/admin/permission': 'permission',
   '/admin/rules': 'rule',
+  '/admin/prompt-templates': 'prompt-template',
   '/admin/fine-config': 'fine-config',
   '/admin/integration': 'integration',
   '/admin/audit': 'audit'
@@ -290,6 +336,33 @@ const overview = ref<AdminConfigOverviewPayload>(emptyOverview())
 const integrationContract = ref<IntegrationContractPayload>(emptyIntegrationContract())
 const auditLogs = ref<AuditLogPayload['items']>([])
 const auditPagination = reactive(createPagination(10))
+const tablePageSizes = [5, 10, 20, 50]
+const tableStates = reactive({
+  projects: createTableState(8),
+  orgUnits: createTableState(10),
+  users: createTableState(10),
+  businessPacks: createTableState(10),
+  permissionMatrix: createTableState(8),
+  nodeTemplates: createTableState(8),
+  ruleVersions: createTableState(8),
+  workflowStateMachines: createTableState(8),
+  promptTemplates: createTableState(8),
+  todoRules: createTableState(8),
+  messageTemplates: createTableState(8),
+  toolSources: createTableState(8),
+  fieldMappings: createTableState(8),
+  integration: createTableState(10),
+  projectWizardRoles: createTableState(5),
+  configDiff: createTableState(8),
+  publishImpact: createTableState(8),
+  adminRuleDiff: createTableState(8),
+  projectParticipants: createTableState(6),
+  projectMembers: createTableState(8),
+  projectNodeSummary: createTableState(8),
+  projectExports: createTableState(8)
+})
+type TableKey = keyof typeof tableStates
+const auditSort = reactive<TableSortState>({ prop: '', order: null })
 const overviewError = ref('')
 const adminActionError = ref('')
 const integrationLoading = ref(false)
@@ -320,6 +393,17 @@ const projectWizardVisible = ref(false)
 const projectWizardStep = ref(0)
 const projectCreating = ref(false)
 const projectWizardError = ref('')
+const projectEditVisible = ref(false)
+const projectSaving = ref(false)
+const projectOperationError = ref('')
+const orgDialogVisible = ref(false)
+const orgDialogMode = ref<'create' | 'edit'>('create')
+const orgSaving = ref(false)
+const orgOperationError = ref('')
+const userDialogVisible = ref(false)
+const userDialogMode = ref<'create' | 'edit'>('create')
+const userSaving = ref(false)
+const userOperationError = ref('')
 const configDrawerVisible = ref(false)
 const configDiffVisible = ref(false)
 const configSaving = ref(false)
@@ -348,8 +432,12 @@ const adminPageTitleMap: Record<AdminTabKey, { title: string; subtitle: string }
     subtitle: '管理可复用业务类型、节点、资料和规则配置'
   },
   rule: {
-    title: '规则与流程',
-    subtitle: '管理规则版本、流程状态机和发布差异'
+    title: 'AI业务规则与流程',
+    subtitle: '管理AI业务规则版本、流程状态机和发布差异'
+  },
+  'prompt-template': {
+    title: 'Prompt 模板管理',
+    subtitle: '管理 System Prompt、User Prompt、Plan 编排和 Critic 模板版本'
   },
   'fine-config': {
     title: '细项配置',
@@ -421,6 +509,13 @@ const adminRuleDiffLoading = ref(false)
 const selectedRuleVersion = ref<RuleVersionConfigRow | null>(null)
 const adminRuleDiff = ref<KnowledgeRuleVersionDiffPayload | null>(null)
 const adminRuleDiffError = ref('')
+const promptTemplates = ref<PromptTemplate[]>([])
+const promptTemplateLoading = ref(false)
+const promptTemplateError = ref('')
+const promptTemplateSaving = ref(false)
+const promptTemplateDialogVisible = ref(false)
+const promptTemplateDialogMode = ref<'create' | 'edit'>('create')
+const promptTemplateOperationError = ref('')
 
 const auditFilters = reactive({
   keyword: '',
@@ -428,13 +523,18 @@ const auditFilters = reactive({
   objectType: ''
 })
 
+const promptTemplateFilters = reactive({
+  keyword: '',
+  status: ''
+})
+
 const projectWizardRoles: ProjectWizardMemberRole[] = ['inspection', 'contractor', 'ndt', 'owner']
 
 const projectWizardForm = reactive({
-  businessPackId: 'engineering_inspection_v1',
+  businessPackId: DEFAULT_PIPELINE_BUSINESS_PACK_ID,
   code: '',
   name: '',
-  type: '工业管道新建',
+  type: '工业压力管道',
   region: '华东',
   ownerOrgName: '华东管网建设公司',
   contractorOrgName: '中石化安装有限公司',
@@ -449,11 +549,46 @@ const projectWizardForm = reactive({
   } as Record<ProjectWizardMemberRole, string>
 })
 
+const projectEditForm = reactive({
+  id: '',
+  code: '',
+  name: '',
+  type: '',
+  region: '',
+  ownerOrgName: '',
+  contractorOrgName: '',
+  ndtOrgName: '',
+  inspectionOrgName: '',
+  status: '草稿/立项中' as Project['status'],
+  etag: ''
+})
+
+const orgForm = reactive({
+  id: '',
+  name: '',
+  type: 'contractor' as AdminOrgUnitType,
+  contactName: '',
+  contactPhone: '',
+  status: '启用' as AdminOrgUnit['status'],
+  etag: ''
+})
+
+const userForm = reactive({
+  id: '',
+  username: '',
+  name: '',
+  mobile: '',
+  role: 'contractor' as RoleCode,
+  orgId: '',
+  status: '启用' as AdminUser['status'],
+  password: '',
+  etag: ''
+})
+
 const memberForm = reactive({
   userId: '',
   role: 'inspection' as RoleCode,
-  nodeScopeText: '16,24,40',
-  actions: [] as ActionCode[],
+  orgId: '',
   expiresAt: ''
 })
 
@@ -495,6 +630,24 @@ const configForm = reactive({
   fieldRequired: true,
   confidenceThreshold: 0.85,
   reason: '按当前业务配置调整。'
+})
+
+const promptTemplateForm = reactive({
+  id: '',
+  name: '',
+  promptKey: 'review_prompt',
+  version: '2026.06',
+  status: 'draft' as PromptTemplate['status'],
+  riskLevel: 'high',
+  businessPackId: DEFAULT_PIPELINE_BUSINESS_PACK_ID,
+  agentId: 'compliance_review_agent',
+  promptVersionId: 'PROMPT-review-202606',
+  systemPrompt: '',
+  userPromptTemplate: '',
+  plannerPromptTemplate: '',
+  criticPromptTemplate: '',
+  outputSchemaText: '',
+  etag: ''
 })
 
 const roleActionOptions: Record<RoleCode, ActionCode[]> = {
@@ -604,6 +757,92 @@ const roleLabel = (role: RoleCode) => {
   return labels[role]
 }
 
+const tableSortCollator = new Intl.Collator('zh-Hans-CN', {
+  numeric: true,
+  sensitivity: 'base'
+})
+
+const getSortValue = (row: unknown, prop: string): unknown => {
+  if (!prop) return ''
+  if (prop === '__self') return row ?? ''
+  if (prop === '__wizardNodeScope') {
+    return row === 'ndt' ? '35, 36, 40, 41, 42' : '1, 16, 24, 40, 68'
+  }
+  if (!row || typeof row !== 'object') return row ?? ''
+  const source = row as Record<string, unknown>
+  if (prop === '__businessPackName') return source.pipelineTypeName || source.name || ''
+  if (prop === '__businessPackRange') {
+    return [source.commonGrades, source.scopeDescription, source.description]
+      .filter(Boolean)
+      .join('，')
+  }
+  if (prop === '__endpoint') return [source.method, source.endpoint].filter(Boolean).join(' ')
+  return prop.split('.').reduce<unknown>((target, key) => {
+    if (!target || typeof target !== 'object') return ''
+    return (target as Record<string, unknown>)[key] ?? ''
+  }, row)
+}
+
+const normalizeSortValue = (value: unknown): string | number => {
+  if (value === undefined || value === null) return ''
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+  if (typeof value === 'boolean') return value ? 1 : 0
+  if (value instanceof Date) return value.getTime()
+  if (Array.isArray(value)) return value.join(' ')
+  const text = String(value)
+  const timestamp = Date.parse(text)
+  if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(text) && !Number.isNaN(timestamp)) {
+    return timestamp
+  }
+  return text
+}
+
+const compareSortValues = (left: unknown, right: unknown) => {
+  const leftValue = normalizeSortValue(left)
+  const rightValue = normalizeSortValue(right)
+  if (typeof leftValue === 'number' && typeof rightValue === 'number') return leftValue - rightValue
+  return tableSortCollator.compare(String(leftValue), String(rightValue))
+}
+
+const sortedRows = <T,>(rows: readonly T[] | undefined, state: TableSortState) => {
+  const list = [...(rows || [])]
+  if (!state.prop || !state.order) return list
+  const direction = state.order === 'ascending' ? 1 : -1
+  return list.sort((left, right) => {
+    const result = compareSortValues(
+      getSortValue(left, state.prop),
+      getSortValue(right, state.prop)
+    )
+    return result * direction
+  })
+}
+
+const tableRows = <T,>(rows: readonly T[] | undefined, state: TableState) => {
+  const list = sortedRows(rows, state)
+  const start = (state.page - 1) * state.pageSize
+  return list.slice(start, start + state.pageSize)
+}
+
+const pageIndex = (state: TableState) => (index: number) => {
+  return (state.page - 1) * state.pageSize + index + 1
+}
+
+const handleTableSortChange = (key: TableKey, event: { prop?: string; order?: TableSortOrder }) => {
+  const state = tableStates[key]
+  state.prop = event.prop || ''
+  state.order = event.order || null
+  state.page = 1
+}
+
+const handleAuditSortChange = (event: { prop?: string; order?: TableSortOrder }) => {
+  auditSort.prop = event.prop || ''
+  auditSort.order = event.order || null
+}
+
+const resetTablePage = (key: TableKey) => {
+  tableStates[key].page = 1
+}
+
 const projectStats = computed(() => {
   if (overview.value.metrics.length) return overview.value.metrics
   const active = projects.value.filter((project) => project.status !== '已归档').length
@@ -617,38 +856,49 @@ const projectStats = computed(() => {
   ]
 })
 
-const configSummary = computed(() => [
-  {
-    label: '组织用户',
-    value: `${overview.value.orgUnits.length} 个组织 / ${overview.value.users.length} 个用户`
-  },
-  { label: '权限模型', value: `${overview.value.permissionMatrix.length} 类角色矩阵` },
-  {
-    label: '业务类型',
-    value: `${(overview.value.businessPacks || []).length} 个业务类型 / ${businessPackNodeTotal.value} 个节点`
-  },
-  { label: '规则版本', value: `${overview.value.ruleVersions.length} 个规则包` },
-  { label: '状态机', value: `${overview.value.workflowStateMachines.length} 个流程版本` },
-  {
-    label: '细项配置',
-    value: `${overview.value.todoRules.length + overview.value.messageTemplates.length + overview.value.toolSources.length + overview.value.fieldMappings.length} 项`
-  }
-])
-
-const businessPackRows = computed(() => overview.value.businessPacks || [])
-const businessPackNodeTotal = computed(() =>
-  businessPackRows.value.reduce((sum, pack) => sum + pack.nodeCount, 0)
+const businessPackRows = computed(() =>
+  [...(overview.value.businessPacks || [])].sort((left, right) => {
+    const leftIndex = PIPELINE_TYPE_ORDER.indexOf(left.pipelineTypeCode || '')
+    const rightIndex = PIPELINE_TYPE_ORDER.indexOf(right.pipelineTypeCode || '')
+    if (leftIndex !== -1 || rightIndex !== -1) {
+      return (leftIndex === -1 ? 99 : leftIndex) - (rightIndex === -1 ? 99 : rightIndex)
+    }
+    return left.name.localeCompare(right.name, 'zh-Hans-CN')
+  })
 )
 const selectedWizardBusinessPack = computed(
   () =>
     businessPackRows.value.find((pack) => pack.id === projectWizardForm.businessPackId) ||
-    businessPackRows.value.find((pack) => pack.id === 'engineering_inspection_v1') ||
+    businessPackRows.value.find((pack) => pack.id === DEFAULT_PIPELINE_BUSINESS_PACK_ID) ||
     null
 )
 const isEngineeringWizardPack = computed(
   () => selectedWizardBusinessPack.value?.domainType === 'engineering_inspection'
 )
 const selectedWizardNodeMax = computed(() => selectedWizardBusinessPack.value?.nodeCount || 69)
+const businessPackTypeLabel = (pack: BusinessPackRow) =>
+  [pack.pipelineTypeCode, pack.pipelineTypeName || pack.name].filter(Boolean).join(' ')
+const businessPackRangeText = (pack: BusinessPackRow) =>
+  [pack.commonGrades, pack.scopeDescription].filter(Boolean).join('，') || pack.description || '-'
+const businessPackOptionLabel = (pack: BusinessPackRow) =>
+  [businessPackTypeLabel(pack), pack.commonGrades].filter(Boolean).join(' / ')
+const projectTypeForPack = (pack?: BusinessPackRow | null) =>
+  pack?.projectType || pack?.pipelineTypeName || pack?.name || '工业压力管道'
+const businessPackStatusLabel = (status?: string) => {
+  const labels: Record<string, string> = {
+    published: '已发布',
+    draft: '草稿',
+    candidate: '候选',
+    deprecated: '已停用',
+    archived: '已归档'
+  }
+  return labels[status || ''] || status || '-'
+}
+const selectedWizardBusinessPackDescription = computed(() => {
+  const pack = selectedWizardBusinessPack.value
+  if (!pack) return ''
+  return `${businessPackTypeLabel(pack)}：${businessPackRangeText(pack)}。节点 ${pack.nodeCount} 个、资料 ${pack.materialTypeCount} 类、规则 ${pack.ruleSetCount} 套。`
+})
 
 const pendingRuleCount = computed(
   () => overview.value.ruleVersions.filter((item) => item.status === '待发布').length
@@ -681,9 +931,8 @@ const adminAuditCards = computed<AuditSummaryCard[]>(() => [
   }
 ])
 
-const currentRoleActions = computed(() => roleActionOptions[memberForm.role] || [])
-
 const selectedProjectMembers = computed(() => projectDetail.value?.members || [])
+const auditTableRows = computed(() => sortedRows(auditLogs.value, auditSort))
 
 const memberDialogTitle = computed(() =>
   memberDialogMode.value === 'batch' ? '批量项目成员授权' : '项目成员授权'
@@ -693,9 +942,31 @@ const selectedProjectMemberUserIds = computed(
   () => new Set(selectedProjectMembers.value.map((member) => member.userId))
 )
 
+const businessRoleOrgTypes: Partial<Record<RoleCode, AdminOrgUnitType[]>> = {
+  inspection: ['inspection', 'supervision'],
+  contractor: ['contractor'],
+  ndt: ['ndt'],
+  owner: ['owner']
+}
+
+const roleOrgOptions = (role: RoleCode) => {
+  const allowed = businessRoleOrgTypes[role]
+  return overview.value.orgUnits.filter(
+    (org) => org.status === '启用' && (!allowed || allowed.includes(org.type))
+  )
+}
+
+const orgNameById = (orgId?: string) =>
+  overview.value.orgUnits.find((org) => org.id === orgId)?.name || ''
+
 const batchMemberCandidateUsers = computed(() => {
-  const matched = overview.value.users.filter((user) => user.role === memberForm.role)
-  return matched.length ? matched : overview.value.users
+  const selectedOrgName = orgNameById(memberForm.orgId)
+  return overview.value.users.filter(
+    (user) =>
+      user.status === '启用' &&
+      user.role === memberForm.role &&
+      (!memberForm.orgId || user.orgId === memberForm.orgId || user.orgName === selectedOrgName)
+  )
 })
 
 const allActionOptions = computed(() =>
@@ -749,7 +1020,9 @@ const adminRuleDiffSummaryItems = computed(() => {
 })
 
 const wizardUsersByRole = (role: RoleCode) =>
-  overview.value.users.filter((user) => user.role === role || !overview.value.users.length)
+  overview.value.users.filter(
+    (user) => (user.role === role && user.status === '启用') || !overview.value.users.length
+  )
 
 const formatConfigValue = (value?: unknown) => {
   if (Array.isArray(value)) return value.join(', ')
@@ -766,6 +1039,133 @@ const formatRuleDiffValue = (value: unknown) => {
   if (value === undefined || value === null || value === '') return '-'
   if (typeof value === 'object') return JSON.stringify(value)
   return String(value)
+}
+
+const promptTemplateStatusLabel = (status?: PromptTemplate['status'] | string) => {
+  const labels: Record<string, string> = {
+    draft: '草稿',
+    production: '生产',
+    published: '已发布',
+    active: '启用',
+    retired: '已停用',
+    草稿: '草稿',
+    已发布: '已发布',
+    已停用: '已停用'
+  }
+  return labels[status || ''] || status || '-'
+}
+
+const promptTemplateStatusType = (
+  status?: PromptTemplate['status'] | string
+): 'primary' | 'success' | 'warning' | 'danger' | 'info' => {
+  if (!status) return 'info'
+  if (['production', 'published', 'active', '已发布', '启用'].includes(status)) return 'success'
+  if (['draft', '草稿'].includes(status)) return 'warning'
+  if (['retired', '已停用'].includes(status)) return 'info'
+  return 'info'
+}
+
+const defaultPromptOutputSchema = () =>
+  JSON.stringify(
+    {
+      type: 'ReviewFindingDraftList',
+      fields: [
+        'result',
+        'severity',
+        'ruleId',
+        'evidence',
+        'opinionDraft',
+        'manualConfirmItems'
+      ]
+    },
+    null,
+    2
+  )
+
+const defaultPromptTemplateText = {
+  system:
+    '你是 {{agentName}}，负责按 {{businessPackId}}/{{businessPackVersion}} 的监检业务判断规则，对项目节点资料进行证据化审查。只输出基于规则和证据的审查建议，不替代人工最终确认。',
+  user:
+    '{{basePromptJson}}\n\n请基于以下审查任务生成结构化预审结果：\n{{reviewTaskJson}}',
+  planner:
+    '按固定计划执行：1. 读取项目、节点、业务规则上下文；2. 对齐 OCR 字段和资料证据；3. 执行确定性规则；4. 检索标准规范和项目文件知识库；5. 生成可追溯审查建议；6. 标注需人工确认项。',
+  critic:
+    '复核输出时检查三点：每条结论必须有规则依据；每条证据必须能追溯到文件或字段；缺证据时只能给出补充材料或人工确认建议。'
+} as const
+
+const parsePromptSchema = () => {
+  const text = promptTemplateForm.outputSchemaText.trim()
+  if (!text) return undefined
+  try {
+    const parsed = JSON.parse(text)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      ElMessage.warning('输出结构必须是 JSON 对象')
+      return null
+    }
+    return parsed as Record<string, unknown>
+  } catch {
+    ElMessage.warning('输出结构不是有效 JSON')
+    return null
+  }
+}
+
+const resetPromptTemplateForm = (template?: PromptTemplate) => {
+  promptTemplateForm.id = template?.id || ''
+  promptTemplateForm.name = template?.name || '工程监检审查 Prompt 模板'
+  promptTemplateForm.promptKey = template?.promptKey || 'review_prompt'
+  promptTemplateForm.version = template?.version || '2026.06'
+  promptTemplateForm.status = template?.status || 'draft'
+  promptTemplateForm.riskLevel = template?.riskLevel || 'high'
+  promptTemplateForm.businessPackId = template?.businessPackId || DEFAULT_PIPELINE_BUSINESS_PACK_ID
+  promptTemplateForm.agentId = template?.agentId || 'compliance_review_agent'
+  promptTemplateForm.promptVersionId = template?.promptVersionId || 'PROMPT-review-202606'
+  promptTemplateForm.systemPrompt = template?.systemPrompt || defaultPromptTemplateText.system
+  promptTemplateForm.userPromptTemplate =
+    template?.userPromptTemplate || defaultPromptTemplateText.user
+  promptTemplateForm.plannerPromptTemplate =
+    template?.plannerPromptTemplate || defaultPromptTemplateText.planner
+  promptTemplateForm.criticPromptTemplate =
+    template?.criticPromptTemplate || defaultPromptTemplateText.critic
+  promptTemplateForm.outputSchemaText = template?.outputSchema
+    ? JSON.stringify(template.outputSchema, null, 2)
+    : defaultPromptOutputSchema()
+  promptTemplateForm.etag = template?.etag || ''
+  promptTemplateOperationError.value = ''
+}
+
+const buildPromptTemplatePayload = (): PromptTemplateSavePayload | null => {
+  if (!promptTemplateForm.name.trim()) {
+    ElMessage.warning('请填写模板名称')
+    return null
+  }
+  if (!promptTemplateForm.systemPrompt.trim() || !promptTemplateForm.userPromptTemplate.trim()) {
+    ElMessage.warning('请填写 System Prompt 和 User Prompt')
+    return null
+  }
+  const outputSchema = parsePromptSchema()
+  if (outputSchema === null) return null
+  return {
+    name: promptTemplateForm.name.trim(),
+    promptKey: promptTemplateForm.promptKey.trim() || 'review_prompt',
+    version: promptTemplateForm.version.trim() || '2026.06',
+    status: promptTemplateForm.status,
+    riskLevel: promptTemplateForm.riskLevel.trim() || 'high',
+    businessPackId: promptTemplateForm.businessPackId.trim() || DEFAULT_PIPELINE_BUSINESS_PACK_ID,
+    agentId: promptTemplateForm.agentId.trim() || 'compliance_review_agent',
+    promptVersionId: promptTemplateForm.promptVersionId.trim() || undefined,
+    systemPrompt: promptTemplateForm.systemPrompt,
+    userPromptTemplate: promptTemplateForm.userPromptTemplate,
+    plannerPromptTemplate: promptTemplateForm.plannerPromptTemplate,
+    criticPromptTemplate: promptTemplateForm.criticPromptTemplate,
+    outputSchema,
+    variables: [
+      'agentName',
+      'businessPackId',
+      'businessPackVersion',
+      'basePromptJson',
+      'reviewTaskJson'
+    ]
+  }
 }
 
 const diffChangeTypeLabel = (type: 'added' | 'changed' | 'removed') => {
@@ -820,12 +1220,6 @@ const formatFileSize = (size?: number) => {
   return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
 
-const parseNodeScope = () =>
-  memberForm.nodeScopeText
-    .split(',')
-    .map((item) => Number(item.trim()))
-    .filter((item) => Number.isFinite(item) && item > 0 && item <= 69)
-
 const applyPagination = <T,>(
   pagination: PaginationState,
   payload?: { items: T[]; page: number; pageSize: number; total: number }
@@ -856,6 +1250,143 @@ const loadAuditLogs = async () => {
     auditError.value = getRequestErrorMessage(error, '审计日志加载失败，筛选条件已保留。')
   } finally {
     auditLoading.value = false
+  }
+}
+
+const loadPromptTemplates = async () => {
+  promptTemplateLoading.value = true
+  promptTemplateError.value = ''
+  try {
+    const res = await listPromptTemplatesApi({
+      keyword: promptTemplateFilters.keyword || undefined,
+      status: promptTemplateFilters.status || undefined,
+      page: tableStates.promptTemplates.page,
+      pageSize: tableStates.promptTemplates.pageSize
+    })
+    if (!res) {
+      promptTemplateError.value = getRequestErrorMessage(
+        undefined,
+        'Prompt 模板列表加载失败，已保留当前筛选条件。'
+      )
+      return
+    }
+    promptTemplates.value = applyPagination(tableStates.promptTemplates, res.data)
+  } catch (error) {
+    promptTemplateError.value = getRequestErrorMessage(
+      error,
+      'Prompt 模板列表加载失败，已保留当前筛选条件。'
+    )
+  } finally {
+    promptTemplateLoading.value = false
+  }
+}
+
+const handlePromptTemplateFilter = () => {
+  tableStates.promptTemplates.page = 1
+  loadPromptTemplates()
+}
+
+const handlePromptTemplateSortChange = (event: { prop?: string; order?: TableSortOrder }) => {
+  tableStates.promptTemplates.prop = event.prop || ''
+  tableStates.promptTemplates.order = event.order || null
+}
+
+const openPromptTemplateDialog = (template?: PromptTemplate) => {
+  promptTemplateDialogMode.value = template ? 'edit' : 'create'
+  resetPromptTemplateForm(template)
+  promptTemplateDialogVisible.value = true
+}
+
+const handleSavePromptTemplate = async () => {
+  const payload = buildPromptTemplatePayload()
+  if (!payload) return
+  promptTemplateSaving.value = true
+  promptTemplateOperationError.value = ''
+  try {
+    const res =
+      promptTemplateDialogMode.value === 'create'
+        ? await createPromptTemplateApi(payload)
+        : await updatePromptTemplateApi(promptTemplateForm.id, payload, {
+            etag: promptTemplateForm.etag
+          })
+    if (!res) {
+      promptTemplateOperationError.value = getRequestErrorMessage(
+        undefined,
+        buildOperationFailureMessage('Prompt 模板保存')
+      )
+      return
+    }
+    ElMessage.success(promptTemplateDialogMode.value === 'create' ? 'Prompt 模板已新增' : 'Prompt 模板已保存')
+    promptTemplateDialogVisible.value = false
+    await Promise.all([loadPromptTemplates(), loadAuditLogs()])
+  } catch (error) {
+    promptTemplateOperationError.value = getRequestErrorMessage(
+      error,
+      buildOperationFailureMessage('Prompt 模板保存')
+    )
+  } finally {
+    promptTemplateSaving.value = false
+  }
+}
+
+const handlePublishPromptTemplate = async (template: PromptTemplate) => {
+  promptTemplateSaving.value = true
+  promptTemplateOperationError.value = ''
+  try {
+    const res = await publishPromptTemplateApi(
+      template.id,
+      { reason: '后台发布 Prompt 模板。' },
+      { etag: template.etag }
+    )
+    if (!res) {
+      promptTemplateOperationError.value = getRequestErrorMessage(
+        undefined,
+        buildOperationFailureMessage('Prompt 模板发布')
+      )
+      return
+    }
+    ElMessage.success('Prompt 模板已发布')
+    await Promise.all([loadPromptTemplates(), loadAuditLogs()])
+  } catch (error) {
+    promptTemplateOperationError.value = getRequestErrorMessage(
+      error,
+      buildOperationFailureMessage('Prompt 模板发布')
+    )
+  } finally {
+    promptTemplateSaving.value = false
+  }
+}
+
+const handleDeletePromptTemplate = async (template: PromptTemplate) => {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除 Prompt 模板「${template.name}」？生产状态模板不能删除。`,
+      '删除 Prompt 模板',
+      { type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  promptTemplateSaving.value = true
+  promptTemplateOperationError.value = ''
+  try {
+    const res = await deletePromptTemplateApi(template.id, { etag: template.etag })
+    if (!res) {
+      promptTemplateOperationError.value = getRequestErrorMessage(
+        undefined,
+        buildOperationFailureMessage('Prompt 模板删除')
+      )
+      return
+    }
+    ElMessage.success('Prompt 模板已删除')
+    await Promise.all([loadPromptTemplates(), loadAuditLogs()])
+  } catch (error) {
+    promptTemplateOperationError.value = getRequestErrorMessage(
+      error,
+      buildOperationFailureMessage('Prompt 模板删除')
+    )
+  } finally {
+    promptTemplateSaving.value = false
   }
 }
 
@@ -925,7 +1456,14 @@ const loadData = async () => {
       getAdminConfigOverviewApi()
     ])
     if (projectRes) projects.value = projectRes.data
-    if (configRes) overview.value = configRes.data
+    if (configRes) {
+      const nextOverview = { ...configRes.data }
+      if (!nextOverview.businessPacks?.length) {
+        const businessPackRes = await listBusinessPacksApi().catch(() => undefined)
+        if (businessPackRes) nextOverview.businessPacks = businessPackRes.data
+      }
+      overview.value = nextOverview
+    }
     if (!projectRes || !configRes) {
       overviewError.value = getRequestErrorMessage(
         undefined,
@@ -933,7 +1471,7 @@ const loadData = async () => {
       )
       return
     }
-    await Promise.all([loadAuditLogs(), loadIntegrationContract()])
+    await Promise.all([loadAuditLogs(), loadIntegrationContract(), loadPromptTemplates()])
   } catch (error) {
     overviewError.value = getRequestErrorMessage(
       error,
@@ -945,6 +1483,7 @@ const loadData = async () => {
 }
 
 const handleIntegrationFilterChange = () => {
+  resetTablePage('integration')
   loadIntegrationContract()
 }
 
@@ -978,9 +1517,9 @@ const getDefaultWizardUserId = (role: ProjectWizardMemberRole) =>
 
 const resetProjectWizardForm = () => {
   projectWizardForm.businessPackId =
-    businessPackRows.value.find((pack) => pack.id === 'engineering_inspection_v1')?.id ||
+    businessPackRows.value.find((pack) => pack.id === DEFAULT_PIPELINE_BUSINESS_PACK_ID)?.id ||
     businessPackRows.value[0]?.id ||
-    'engineering_inspection_v1'
+    DEFAULT_PIPELINE_BUSINESS_PACK_ID
   projectWizardForm.code = `P-2026-MOCK-${String(projects.value.length + 1).padStart(3, '0')}`
   projectWizardForm.name = ''
   projectWizardForm.region = '华东'
@@ -993,7 +1532,7 @@ const resetProjectWizardForm = () => {
 const applyBusinessPackDefaultsToWizard = () => {
   const pack = selectedWizardBusinessPack.value
   if (!pack || pack.domainType === 'engineering_inspection') {
-    projectWizardForm.type = '工业管道新建'
+    projectWizardForm.type = projectTypeForPack(pack)
     projectWizardForm.ownerOrgName = '华东管网建设公司'
     projectWizardForm.contractorOrgName = '中石化安装有限公司'
     projectWizardForm.ndtOrgName = '华测检测有限公司'
@@ -1001,7 +1540,7 @@ const applyBusinessPackDefaultsToWizard = () => {
     projectWizardForm.currentNodeId = 1
     return
   }
-  projectWizardForm.type = pack.name
+  projectWizardForm.type = projectTypeForPack(pack)
   projectWizardForm.ownerOrgName = '观察单位'
   projectWizardForm.contractorOrgName = '提交单位'
   projectWizardForm.ndtOrgName = '专项资料单位'
@@ -1022,6 +1561,10 @@ const openProjectWizard = () => {
 
 const validateProjectWizardStep = () => {
   if (projectWizardStep.value === 0) {
+    if (!projectWizardForm.businessPackId) {
+      ElMessage.warning('请选择压力管道类别')
+      return false
+    }
     if (!projectWizardForm.name.trim()) {
       ElMessage.warning('请填写项目名称')
       return false
@@ -1099,6 +1642,316 @@ const handleCreateProject = async () => {
     )
   } finally {
     projectCreating.value = false
+  }
+}
+
+const openProjectEditDialog = (row: Project) => {
+  projectEditForm.id = row.id
+  projectEditForm.code = row.code
+  projectEditForm.name = row.name
+  projectEditForm.type = row.type
+  projectEditForm.region = row.region
+  projectEditForm.ownerOrgName = row.ownerOrgName
+  projectEditForm.contractorOrgName = row.contractorOrgName
+  projectEditForm.ndtOrgName = row.ndtOrgName
+  projectEditForm.inspectionOrgName = row.inspectionOrgName
+  projectEditForm.status = row.status
+  projectEditForm.etag = row.etag || ''
+  projectOperationError.value = ''
+  projectEditVisible.value = true
+}
+
+const handleSaveProjectEdit = async () => {
+  if (!projectEditForm.name.trim()) {
+    ElMessage.warning('请填写项目名称')
+    return
+  }
+  projectSaving.value = true
+  projectOperationError.value = ''
+  try {
+    const res = await updateAdminProjectApi(
+      projectEditForm.id,
+      {
+        name: projectEditForm.name,
+        type: projectEditForm.type,
+        region: projectEditForm.region,
+        ownerOrgName: projectEditForm.ownerOrgName,
+        contractorOrgName: projectEditForm.contractorOrgName,
+        ndtOrgName: projectEditForm.ndtOrgName,
+        inspectionOrgName: projectEditForm.inspectionOrgName,
+        status: projectEditForm.status
+      },
+      { etag: projectEditForm.etag }
+    )
+    if (!res) {
+      projectOperationError.value = getRequestErrorMessage(
+        undefined,
+        buildOperationFailureMessage('项目保存')
+      )
+      return
+    }
+    ElMessage.success('项目已保存')
+    projectEditVisible.value = false
+    await Promise.all([loadData(), loadAuditLogs()])
+  } catch (error) {
+    projectOperationError.value = getRequestErrorMessage(
+      error,
+      buildOperationFailureMessage('项目保存')
+    )
+  } finally {
+    projectSaving.value = false
+  }
+}
+
+const handleDeleteProject = async (row: Project) => {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除或归档项目「${row.name}」？有业务数据的项目将自动归档。`,
+      '项目删除/归档',
+      { type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  projectSaving.value = true
+  projectOperationError.value = ''
+  try {
+    const res = await deleteAdminProjectApi(row.id, { etag: row.etag })
+    if (!res) {
+      projectOperationError.value = getRequestErrorMessage(
+        undefined,
+        buildOperationFailureMessage('项目删除/归档')
+      )
+      return
+    }
+    ElMessage.success(res.data.archived ? '项目已归档' : '项目已删除')
+    await Promise.all([loadData(), loadAuditLogs()])
+  } catch (error) {
+    projectOperationError.value = getRequestErrorMessage(
+      error,
+      buildOperationFailureMessage('项目删除/归档')
+    )
+  } finally {
+    projectSaving.value = false
+  }
+}
+
+const resetOrgForm = () => {
+  orgForm.id = ''
+  orgForm.name = ''
+  orgForm.type = 'contractor'
+  orgForm.contactName = ''
+  orgForm.contactPhone = ''
+  orgForm.status = '启用'
+  orgForm.etag = ''
+  orgOperationError.value = ''
+}
+
+const openOrgDialog = (row?: AdminOrgUnit) => {
+  resetOrgForm()
+  orgDialogMode.value = row ? 'edit' : 'create'
+  if (row) {
+    orgForm.id = row.id
+    orgForm.name = row.name
+    orgForm.type = row.type
+    orgForm.contactName = row.contactName
+    orgForm.contactPhone = row.contactPhone
+    orgForm.status = row.status
+    orgForm.etag = row.etag || ''
+  }
+  orgDialogVisible.value = true
+}
+
+const handleSaveOrg = async () => {
+  if (!orgForm.name.trim()) {
+    ElMessage.warning('请填写组织名称')
+    return
+  }
+  orgSaving.value = true
+  orgOperationError.value = ''
+  try {
+    const payload = {
+      name: orgForm.name,
+      type: orgForm.type,
+      contactName: orgForm.contactName,
+      contactPhone: orgForm.contactPhone,
+      status: orgForm.status
+    }
+    const res =
+      orgDialogMode.value === 'create'
+        ? await createAdminOrgUnitApi(payload, { etag: overview.value.etag })
+        : await updateAdminOrgUnitApi(orgForm.id, payload, { etag: orgForm.etag })
+    if (!res) {
+      orgOperationError.value = getRequestErrorMessage(
+        undefined,
+        buildOperationFailureMessage('组织保存')
+      )
+      return
+    }
+    ElMessage.success(orgDialogMode.value === 'create' ? '组织已新增' : '组织已保存')
+    orgDialogVisible.value = false
+    await Promise.all([loadData(), loadAuditLogs()])
+  } catch (error) {
+    orgOperationError.value = getRequestErrorMessage(
+      error,
+      buildOperationFailureMessage('组织保存')
+    )
+  } finally {
+    orgSaving.value = false
+  }
+}
+
+const handleDeleteOrg = async (row: AdminOrgUnit) => {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除组织「${row.name}」？仍被引用时后端会拒绝删除。`,
+      '删除组织',
+      {
+        type: 'warning'
+      }
+    )
+  } catch {
+    return
+  }
+  orgSaving.value = true
+  orgOperationError.value = ''
+  try {
+    const res = await deleteAdminOrgUnitApi(row.id, { etag: row.etag })
+    if (!res) {
+      orgOperationError.value = getRequestErrorMessage(
+        undefined,
+        buildOperationFailureMessage('组织删除')
+      )
+      return
+    }
+    ElMessage.success('组织已删除')
+    await Promise.all([loadData(), loadAuditLogs()])
+  } catch (error) {
+    orgOperationError.value = getRequestErrorMessage(
+      error,
+      buildOperationFailureMessage('组织删除')
+    )
+  } finally {
+    orgSaving.value = false
+  }
+}
+
+const resetUserForm = () => {
+  userForm.id = ''
+  userForm.username = ''
+  userForm.name = ''
+  userForm.mobile = ''
+  userForm.role = 'contractor'
+  userForm.orgId = ''
+  userForm.status = '启用'
+  userForm.password = ''
+  userForm.etag = ''
+  userOperationError.value = ''
+}
+
+const openUserDialog = (row?: AdminUser) => {
+  resetUserForm()
+  userDialogMode.value = row ? 'edit' : 'create'
+  if (row) {
+    userForm.id = row.id
+    userForm.username = row.username
+    userForm.name = row.name
+    userForm.mobile = row.mobile
+    userForm.role = row.role
+    userForm.orgId =
+      row.orgId || overview.value.orgUnits.find((org) => org.name === row.orgName)?.id || ''
+    userForm.status = row.status
+    userForm.etag = row.etag || ''
+  }
+  userDialogVisible.value = true
+}
+
+const handleUserRoleChange = () => {
+  if (!roleOrgOptions(userForm.role).some((org) => org.id === userForm.orgId)) {
+    userForm.orgId = ''
+  }
+}
+
+const handleSaveUser = async () => {
+  if (!userForm.username.trim() || !userForm.name.trim()) {
+    ElMessage.warning('请填写用户名和姓名')
+    return
+  }
+  const org = overview.value.orgUnits.find((item) => item.id === userForm.orgId)
+  if (businessRoleOrgTypes[userForm.role] && !org) {
+    ElMessage.warning('该角色必须绑定组织')
+    return
+  }
+  userSaving.value = true
+  userOperationError.value = ''
+  try {
+    const payload = {
+      username: userForm.username,
+      name: userForm.name,
+      mobile: userForm.mobile,
+      role: userForm.role,
+      orgId: userForm.orgId || undefined,
+      orgName: org?.name,
+      status: userForm.status,
+      password:
+        userDialogMode.value === 'create'
+          ? userForm.password || userForm.username
+          : userForm.password || undefined
+    }
+    const res =
+      userDialogMode.value === 'create'
+        ? await createAdminUserApi(payload, { etag: overview.value.etag })
+        : await updateAdminUserApi(userForm.id, payload, { etag: userForm.etag })
+    if (!res) {
+      userOperationError.value = getRequestErrorMessage(
+        undefined,
+        buildOperationFailureMessage('用户保存')
+      )
+      return
+    }
+    ElMessage.success(userDialogMode.value === 'create' ? '用户已新增' : '用户已保存')
+    userDialogVisible.value = false
+    await Promise.all([loadData(), loadAuditLogs()])
+  } catch (error) {
+    userOperationError.value = getRequestErrorMessage(
+      error,
+      buildOperationFailureMessage('用户保存')
+    )
+  } finally {
+    userSaving.value = false
+  }
+}
+
+const handleDeleteUser = async (row: AdminUser) => {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除用户「${row.name}」？如用户已有项目授权，后端会转为停用。`,
+      '删除用户',
+      { type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  userSaving.value = true
+  userOperationError.value = ''
+  try {
+    const res = await deleteAdminUserApi(row.id, { etag: row.etag })
+    if (!res) {
+      userOperationError.value = getRequestErrorMessage(
+        undefined,
+        buildOperationFailureMessage('用户删除')
+      )
+      return
+    }
+    ElMessage.success(res.data.deleted ? '用户已删除' : '用户已停用')
+    await Promise.all([loadData(), loadAuditLogs()])
+  } catch (error) {
+    userOperationError.value = getRequestErrorMessage(
+      error,
+      buildOperationFailureMessage('用户删除')
+    )
+  } finally {
+    userSaving.value = false
   }
 }
 
@@ -1250,7 +2103,7 @@ const openRuleVersionDiff = async (row: RuleVersionConfigRow) => {
     if (!res) {
       adminRuleDiffError.value = getRequestErrorMessage(
         undefined,
-        '规则版本差异加载失败，已保留规则版本列表。'
+        'AI业务规则版本差异加载失败，已保留AI业务规则版本列表。'
       )
       return
     }
@@ -1258,7 +2111,7 @@ const openRuleVersionDiff = async (row: RuleVersionConfigRow) => {
   } catch (error) {
     adminRuleDiffError.value = getRequestErrorMessage(
       error,
-      '规则版本差异加载失败，已保留规则版本列表。'
+      'AI业务规则版本差异加载失败，已保留AI业务规则版本列表。'
     )
   } finally {
     adminRuleDiffLoading.value = false
@@ -1558,7 +2411,9 @@ const retryConfigOperation = () => {
 }
 
 const getDefaultMemberUser = (role: RoleCode) =>
-  overview.value.users.find((user) => user.role === role) || overview.value.users[0]
+  batchMemberCandidateUsers.value.find((user) => user.role === role) ||
+  overview.value.users.find((user) => user.role === role && user.status === '启用') ||
+  overview.value.users[0]
 
 const getDefaultBatchMemberUserIds = () => {
   const users = batchMemberCandidateUsers.value
@@ -1570,8 +2425,7 @@ const getDefaultBatchMemberUserIds = () => {
 
 const resetMemberForm = (role: RoleCode = 'inspection') => {
   memberForm.role = role
-  memberForm.nodeScopeText = '16,24,40'
-  memberForm.actions = [...roleActionOptions[role]]
+  memberForm.orgId = ''
   memberForm.expiresAt = ''
   memberOperationError.value = ''
   memberBatchResult.value = null
@@ -1597,7 +2451,17 @@ const openMemberBatchDialog = () => {
 }
 
 const handleMemberRoleChange = () => {
-  memberForm.actions = [...roleActionOptions[memberForm.role]]
+  if (!roleOrgOptions(memberForm.role).some((org) => org.id === memberForm.orgId)) {
+    memberForm.orgId = ''
+  }
+  if (memberDialogMode.value === 'single') {
+    memberForm.userId = getDefaultMemberUser(memberForm.role)?.id || ''
+    return
+  }
+  memberBatchUserIds.value = getDefaultBatchMemberUserIds()
+}
+
+const handleMemberOrgChange = () => {
   if (memberDialogMode.value === 'single') {
     memberForm.userId = getDefaultMemberUser(memberForm.role)?.id || ''
     return
@@ -1607,7 +2471,6 @@ const handleMemberRoleChange = () => {
 
 const handleSaveMember = async () => {
   if (!projectDetail.value) return
-  const nodeScope = parseNodeScope()
   if (memberDialogMode.value === 'single' && !memberForm.userId) {
     ElMessage.warning('请选择授权用户')
     return
@@ -1616,84 +2479,34 @@ const handleSaveMember = async () => {
     ElMessage.warning('请选择批量授权用户')
     return
   }
-  if (!nodeScope.length) {
-    ElMessage.warning('请输入有效节点范围')
-    return
-  }
-  if (!memberForm.actions.length) {
-    ElMessage.warning('请选择动作权限')
-    return
-  }
   memberSaving.value = true
   memberOperationError.value = ''
   memberBatchResult.value = null
   try {
-    if (memberDialogMode.value === 'batch') {
-      const failed: Array<{ userId: string; name: string; message: string }> = []
-      let successCount = 0
-      for (const userId of memberBatchUserIds.value) {
-        const user = overview.value.users.find((item) => item.id === userId)
-        try {
-          const res = await authorizeProjectMemberApi(projectDetail.value.project.id, {
-            userId,
-            role: memberForm.role,
-            nodeScope,
-            actions: memberForm.actions,
-            expiresAt: memberForm.expiresAt || undefined
-          })
-          if (!res) {
-            failed.push({
-              userId,
-              name: user?.name || userId,
-              message: getRequestErrorMessage(
-                undefined,
-                buildOperationFailureMessage('项目成员批量授权')
-              )
-            })
-            continue
-          }
-          successCount += 1
-        } catch (error) {
-          failed.push({
-            userId,
-            name: user?.name || userId,
-            message: getRequestErrorMessage(error, buildOperationFailureMessage('项目成员批量授权'))
-          })
-        }
-      }
-      if (successCount) {
-        ElMessage.success(
-          `批量授权完成：${successCount} 人成功${failed.length ? `，${failed.length} 人失败` : ''}`
-        )
-        await Promise.all([loadProjectDetail(projectDetail.value.project.id), loadAuditLogs()])
-      }
-      if (failed.length) {
-        memberBatchResult.value = { successCount, failed }
-        memberOperationError.value = getRequestErrorMessage(
-          undefined,
-          buildOperationFailureMessage('项目成员批量授权')
-        )
-        return
-      }
-      memberDialogVisible.value = false
-      return
-    }
-
+    const userIds =
+      memberDialogMode.value === 'batch' ? memberBatchUserIds.value : [memberForm.userId]
     const res = await authorizeProjectMemberApi(projectDetail.value.project.id, {
-      userId: memberForm.userId,
-      role: memberForm.role,
-      nodeScope,
-      actions: memberForm.actions,
+      userIds,
       expiresAt: memberForm.expiresAt || undefined
     })
     if (!res) {
       memberOperationError.value = getRequestErrorMessage(
         undefined,
-        buildOperationFailureMessage('项目成员授权保存')
+        buildOperationFailureMessage('项目成员授权')
       )
       return
     }
-    ElMessage.success('项目成员授权已保存')
+    const failed = res.data.failed || []
+    const successCount = res.data.successCount || res.data.members?.length || 0
+    if (failed.length) {
+      memberBatchResult.value = { successCount, failed }
+      memberOperationError.value = buildOperationFailureMessage('项目成员授权')
+      if (successCount) {
+        await Promise.all([loadProjectDetail(projectDetail.value.project.id), loadAuditLogs()])
+      }
+      return
+    }
+    ElMessage.success(`项目成员授权已保存：${successCount} 人`)
     memberDialogVisible.value = false
     await Promise.all([loadProjectDetail(projectDetail.value.project.id), loadAuditLogs()])
   } catch (error) {
@@ -1739,6 +2552,40 @@ const handleToggleMemberStatus = async (row: ProjectMember) => {
   }
 }
 
+const handleDeleteMember = async (row: ProjectMember) => {
+  if (!projectDetail.value) return
+  try {
+    await ElMessageBox.confirm(`确认移除「${row.name}」的项目授权？`, '移除授权', {
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+  memberSaving.value = true
+  memberOperationError.value = ''
+  try {
+    const res = await deleteProjectMemberApi(projectDetail.value.project.id, row.id, {
+      etag: row.etag
+    })
+    if (!res) {
+      memberOperationError.value = getRequestErrorMessage(
+        undefined,
+        buildOperationFailureMessage('项目成员移除')
+      )
+      return
+    }
+    ElMessage.success('项目成员授权已移除')
+    await Promise.all([loadProjectDetail(projectDetail.value.project.id), loadAuditLogs()])
+  } catch (error) {
+    memberOperationError.value = getRequestErrorMessage(
+      error,
+      buildOperationFailureMessage('项目成员移除')
+    )
+  } finally {
+    memberSaving.value = false
+  }
+}
+
 const handleFilterAudit = () => {
   auditPagination.page = 1
   loadAuditLogs()
@@ -1769,7 +2616,11 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="admin-page" v-loading="loading">
+  <div
+    class="admin-page"
+    :class="{ 'admin-page--expanded': activeTab === 'org' || activeTab === 'permission' }"
+    v-loading="loading"
+  >
     <StaticPageShell
       brand-mark="管"
       title="项目与权限配置"
@@ -1817,7 +2668,16 @@ onMounted(() => {
 
       <AuditSummaryGrid :cards="adminAuditCards" aria-label="管理后台治理摘要" />
 
-      <div v-if="overviewError || adminActionError" class="error-stack">
+      <div
+        v-if="
+          overviewError ||
+          adminActionError ||
+          projectOperationError ||
+          orgOperationError ||
+          userOperationError
+        "
+        class="error-stack"
+      >
         <div v-if="overviewError" class="local-error">
           <ElAlert type="error" show-icon :closable="false" :title="overviewError" />
           <ElButton type="primary" plain :loading="loading" @click="loadData">重新加载</ElButton>
@@ -1834,6 +2694,27 @@ onMounted(() => {
             重试操作
           </ElButton>
         </div>
+        <ElAlert
+          v-if="projectOperationError"
+          type="error"
+          show-icon
+          :closable="false"
+          :title="projectOperationError"
+        />
+        <ElAlert
+          v-if="orgOperationError"
+          type="error"
+          show-icon
+          :closable="false"
+          :title="orgOperationError"
+        />
+        <ElAlert
+          v-if="userOperationError"
+          type="error"
+          show-icon
+          :closable="false"
+          :title="userOperationError"
+        />
       </div>
 
       <details class="secondary-summary-collapse">
@@ -1863,7 +2744,7 @@ onMounted(() => {
       <ElTabs v-model="activeTab" class="admin-tabs">
         <ElTabPane label="项目管理" name="projects">
           <ElRow :gutter="16">
-            <ElCol :xl="15" :lg="15" :md="24" :sm="24" :xs="24">
+            <ElCol :span="24">
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
@@ -1871,176 +2752,220 @@ onMounted(() => {
                     <ElTag type="info" effect="plain">{{ projects.length }} 个</ElTag>
                   </div>
                 </template>
-                <ElTable :data="projects" border height="360" empty-text="暂无项目配置">
-                  <ElTableColumn prop="code" label="项目编号" width="150" />
+                <ElTable
+                  :data="tableRows(projects, tableStates.projects)"
+                  border
+                  height="360"
+                  empty-text="暂无项目配置"
+                  @sort-change="handleTableSortChange('projects', $event)"
+                >
+                  <ElTableColumn
+                    type="index"
+                    label="序号"
+                    width="76"
+                    align="center"
+                    :index="pageIndex(tableStates.projects)"
+                  />
                   <ElTableColumn
                     prop="name"
                     label="项目名称"
                     min-width="220"
                     show-overflow-tooltip
+                    sortable="custom"
                   />
-                  <ElTableColumn prop="region" label="区域" width="100" />
                   <ElTableColumn
                     prop="contractorOrgName"
                     label="施工单位"
                     min-width="150"
                     show-overflow-tooltip
+                    sortable="custom"
                   />
                   <ElTableColumn
                     prop="inspectionOrgName"
                     label="监检机构"
                     min-width="150"
                     show-overflow-tooltip
+                    sortable="custom"
                   />
-                  <ElTableColumn label="状态" width="130">
+                  <ElTableColumn prop="status" label="状态" width="130" sortable="custom">
                     <template #default="{ row }">
                       <ElTag :type="statusType(row.status)" effect="light">{{ row.status }}</ElTag>
                     </template>
                   </ElTableColumn>
-                  <ElTableColumn prop="todoCount" label="待办" width="76" />
-                  <ElTableColumn prop="updatedAt" label="更新时间" width="170" />
-                  <ElTableColumn label="操作" width="92" fixed="right">
+                  <ElTableColumn prop="todoCount" label="待办" width="76" sortable="custom" />
+                  <ElTableColumn prop="updatedAt" label="更新时间" width="170" sortable="custom" />
+                  <ElTableColumn label="操作" width="180" fixed="right">
                     <template #default="{ row }">
                       <ElButton link type="primary" @click="handleOpenProjectDetail(row)"
                         >详情</ElButton
                       >
+                      <ElButton link type="primary" @click="openProjectEditDialog(row)"
+                        >编辑</ElButton
+                      >
+                      <ElButton
+                        link
+                        type="danger"
+                        :loading="projectSaving"
+                        @click="handleDeleteProject(row)"
+                      >
+                        归档/删除
+                      </ElButton>
                     </template>
                   </ElTableColumn>
                 </ElTable>
-              </ElCard>
-            </ElCol>
-
-            <ElCol :xl="9" :lg="9" :md="24" :sm="24" :xs="24">
-              <ElCard shadow="never" class="panel config-panel">
-                <template #header>
-                  <div class="panel-header">
-                    <span>系统配置摘要</span>
-                    <ElTag :type="pendingRuleCount ? 'warning' : 'success'" effect="plain">
-                      {{ pendingRuleCount ? `${pendingRuleCount} 待发布` : '已同步' }}
-                    </ElTag>
-                  </div>
-                </template>
-                <ElDescriptions :column="1" border>
-                  <ElDescriptionsItem
-                    v-for="config in configSummary"
-                    :key="config.label"
-                    :label="config.label"
-                  >
-                    {{ config.value }}
-                  </ElDescriptionsItem>
-                </ElDescriptions>
-                <div v-if="selectedExportTask" class="export-task-card">
-                  <div>
-                    <strong>{{ selectedExportTask.fileName }}</strong>
-                    <span>{{ selectedExportTask.id }} · {{ selectedExportTask.status }}</span>
-                  </div>
-                  <ElTag :type="statusType(selectedExportTask.status)" effect="light">
-                    {{ selectedExportTask.progress }}%
-                  </ElTag>
-                </div>
-                <div v-if="latestConfigDiff" class="export-task-card">
-                  <div>
-                    <strong>{{ latestConfigDiff.objectName }}</strong>
-                    <span
-                      >{{ latestConfigDiff.objectId }} · {{ latestConfigDiff.previewedAt }}</span
-                    >
-                  </div>
-                  <ElButton link type="primary" @click="configDiffVisible = true">
-                    查看差异
-                  </ElButton>
-                </div>
-                <div v-if="latestPublishResult" class="export-task-card publish-trace-card">
-                  <div>
-                    <strong>最近发布：{{ latestPublishResult.version }}</strong>
-                    <span>
-                      影响 {{ latestPublishResult.impactSummary.totalAffected }} 项 ·
-                      {{ latestPublishResult.impactSummary.linkedProjects }} 个在检项目 · 推送
-                      {{ latestPublishResult.impactSummary.pushedMessages }} 条消息
-                    </span>
-                  </div>
-                  <div class="publish-trace-actions">
-                    <ElTag
-                      :type="latestPublishResult.impactSummary.warningCount ? 'warning' : 'success'"
-                      effect="plain"
-                    >
-                      {{
-                        latestPublishResult.impactSummary.warningCount
-                          ? `${latestPublishResult.impactSummary.warningCount} 需复核`
-                          : '已同步'
-                      }}
-                    </ElTag>
-                    <ElButton link type="primary" @click="publishTraceVisible = true">
-                      查看联动
-                    </ElButton>
-                  </div>
-                </div>
+                <ElPagination
+                  v-model:current-page="tableStates.projects.page"
+                  v-model:page-size="tableStates.projects.pageSize"
+                  class="table-pagination"
+                  background
+                  :page-sizes="tablePageSizes"
+                  layout="total, sizes, prev, pager, next, jumper"
+                  :total="projects.length"
+                  @size-change="resetTablePage('projects')"
+                />
               </ElCard>
             </ElCol>
           </ElRow>
         </ElTabPane>
 
         <ElTabPane label="组织用户" name="org">
-          <ElRow :gutter="16">
-            <ElCol :xl="11" :lg="11" :md="24" :sm="24" :xs="24">
+          <ElRow :gutter="16" class="admin-stack-row">
+            <ElCol :span="24" class="admin-stack-col">
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
                     <span>组织单位</span>
-                    <ElTag type="info" effect="plain">{{ overview.orgUnits.length }} 个</ElTag>
+                    <ElSpace>
+                      <ElTag type="info" effect="plain">{{ overview.orgUnits.length }} 个</ElTag>
+                      <ElButton size="small" type="primary" plain @click="openOrgDialog()">
+                        新增组织
+                      </ElButton>
+                    </ElSpace>
                   </div>
                 </template>
-                <ElTable :data="overview.orgUnits" border height="320" empty-text="暂无组织单位">
+                <ElTable
+                  :data="tableRows(overview.orgUnits, tableStates.orgUnits)"
+                  border
+                  height="420"
+                  empty-text="暂无组织单位"
+                  @sort-change="handleTableSortChange('orgUnits', $event)"
+                >
                   <ElTableColumn
                     prop="name"
                     label="组织名称"
                     min-width="170"
                     show-overflow-tooltip
+                    sortable="custom"
                   />
-                  <ElTableColumn prop="type" label="类型" width="96" />
-                  <ElTableColumn prop="contactName" label="联系人" width="92" />
-                  <ElTableColumn prop="projectCount" label="项目" width="72" />
-                  <ElTableColumn label="状态" width="88">
+                  <ElTableColumn prop="type" label="类型" width="96" sortable="custom" />
+                  <ElTableColumn prop="contactName" label="联系人" width="92" sortable="custom" />
+                  <ElTableColumn prop="projectCount" label="项目" width="72" sortable="custom" />
+                  <ElTableColumn prop="status" label="状态" width="88" sortable="custom">
                     <template #default="{ row }">
                       <ElTag :type="statusType(row.status)" size="small" effect="plain">
                         {{ row.status }}
                       </ElTag>
                     </template>
                   </ElTableColumn>
+                  <ElTableColumn label="操作" width="116" fixed="right">
+                    <template #default="{ row }">
+                      <ElButton link type="primary" @click="openOrgDialog(row)">编辑</ElButton>
+                      <ElButton
+                        link
+                        type="danger"
+                        :loading="orgSaving"
+                        @click="handleDeleteOrg(row)"
+                      >
+                        删除
+                      </ElButton>
+                    </template>
+                  </ElTableColumn>
                 </ElTable>
+                <ElPagination
+                  v-model:current-page="tableStates.orgUnits.page"
+                  v-model:page-size="tableStates.orgUnits.pageSize"
+                  class="table-pagination"
+                  background
+                  :page-sizes="tablePageSizes"
+                  layout="total, sizes, prev, pager, next, jumper"
+                  :total="overview.orgUnits.length"
+                  @size-change="resetTablePage('orgUnits')"
+                />
               </ElCard>
             </ElCol>
 
-            <ElCol :xl="13" :lg="13" :md="24" :sm="24" :xs="24">
+            <ElCol :span="24" class="admin-stack-col">
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
                     <span>用户与角色</span>
-                    <ElTag type="info" effect="plain">{{ overview.users.length }} 人</ElTag>
+                    <ElSpace>
+                      <ElTag type="info" effect="plain">{{ overview.users.length }} 人</ElTag>
+                      <ElButton size="small" type="primary" plain @click="openUserDialog()">
+                        新增用户
+                      </ElButton>
+                    </ElSpace>
                   </div>
                 </template>
-                <ElTable :data="overview.users" border height="320" empty-text="暂无用户账号">
-                  <ElTableColumn prop="name" label="姓名" width="96" />
+                <ElTable
+                  :data="tableRows(overview.users, tableStates.users)"
+                  border
+                  height="460"
+                  empty-text="暂无用户账号"
+                  @sort-change="handleTableSortChange('users', $event)"
+                >
+                  <ElTableColumn prop="username" label="用户名" width="110" sortable="custom" />
+                  <ElTableColumn prop="name" label="姓名" width="96" sortable="custom" />
                   <ElTableColumn
                     prop="orgName"
                     label="所属组织"
                     min-width="170"
                     show-overflow-tooltip
+                    sortable="custom"
                   />
-                  <ElTableColumn label="角色" width="100">
+                  <ElTableColumn prop="role" label="角色" width="100" sortable="custom">
                     <template #default="{ row }">
                       <ElTag size="small" effect="plain">{{ roleLabel(row.role) }}</ElTag>
                     </template>
                   </ElTableColumn>
-                  <ElTableColumn prop="mobile" label="手机号" width="130" />
-                  <ElTableColumn label="状态" width="88">
+                  <ElTableColumn prop="mobile" label="手机号" width="130" sortable="custom" />
+                  <ElTableColumn prop="status" label="状态" width="88" sortable="custom">
                     <template #default="{ row }">
                       <ElTag :type="statusType(row.status)" size="small" effect="plain">
                         {{ row.status }}
                       </ElTag>
                     </template>
                   </ElTableColumn>
-                  <ElTableColumn prop="lastLoginAt" label="最近登录" width="170" />
+                  <ElTableColumn
+                    prop="lastLoginAt"
+                    label="最近登录"
+                    width="170"
+                    sortable="custom"
+                  />
+                  <ElTableColumn label="操作" width="116" fixed="right">
+                    <template #default="{ row }">
+                      <ElButton link type="primary" @click="openUserDialog(row)">编辑</ElButton>
+                      <ElButton
+                        link
+                        type="danger"
+                        :loading="userSaving"
+                        @click="handleDeleteUser(row)"
+                      >
+                        删除
+                      </ElButton>
+                    </template>
+                  </ElTableColumn>
                 </ElTable>
+                <ElPagination
+                  v-model:current-page="tableStates.users.page"
+                  v-model:page-size="tableStates.users.pageSize"
+                  class="table-pagination"
+                  background
+                  :page-sizes="tablePageSizes"
+                  layout="total, sizes, prev, pager, next, jumper"
+                  :total="overview.users.length"
+                  @size-change="resetTablePage('users')"
+                />
               </ElCard>
             </ElCol>
           </ElRow>
@@ -2080,47 +3005,87 @@ onMounted(() => {
                   :title="businessPackValidationError"
                   class="mb-12px"
                 />
-                <ElTable :data="businessPackRows" border height="380" empty-text="暂无业务类型配置">
+                <ElTable
+                  :data="tableRows(businessPackRows, tableStates.businessPacks)"
+                  border
+                  height="380"
+                  empty-text="暂无压力管道业务类型"
+                  @sort-change="handleTableSortChange('businessPacks', $event)"
+                >
                   <ElTableColumn
-                    prop="name"
-                    label="业务类型"
-                    min-width="190"
+                    prop="pipelineTypeCode"
+                    label="类型代号"
+                    width="120"
                     show-overflow-tooltip
+                    sortable="custom"
                   />
-                  <ElTableColumn prop="id" label="ID" min-width="210" show-overflow-tooltip />
-                  <ElTableColumn prop="domainType" label="领域" min-width="150" />
-                  <ElTableColumn prop="version" label="版本" width="120" />
-                  <ElTableColumn prop="roleCount" label="角色" width="72" />
-                  <ElTableColumn prop="nodeCount" label="节点" width="72" />
-                  <ElTableColumn prop="materialTypeCount" label="资料" width="72" />
-                  <ElTableColumn prop="ruleSetCount" label="规则" width="72" />
-                  <ElTableColumn prop="agentSopCount" label="Agent" width="78" />
-                  <ElTableColumn label="Fixtures" width="92">
+                  <ElTableColumn
+                    prop="__businessPackName"
+                    label="名称"
+                    min-width="160"
+                    show-overflow-tooltip
+                    sortable="custom"
+                  >
                     <template #default="{ row }">
-                      {{ row.fixtureProjectCount || 0 }}
+                      {{ row.pipelineTypeName || row.name }}
                     </template>
                   </ElTableColumn>
-                  <ElTableColumn label="状态" width="96">
+                  <ElTableColumn
+                    prop="__businessPackRange"
+                    label="常见分级/范围"
+                    min-width="360"
+                    show-overflow-tooltip
+                    sortable="custom"
+                  >
                     <template #default="{ row }">
-                      <ElTag :type="statusType(row.status)" size="small" effect="plain">
-                        {{ row.status }}
+                      {{ businessPackRangeText(row) }}
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn
+                    prop="projectType"
+                    label="项目属性"
+                    min-width="150"
+                    sortable="custom"
+                  />
+                  <ElTableColumn prop="version" label="版本" width="120" sortable="custom" />
+                  <ElTableColumn prop="nodeCount" label="节点" width="72" sortable="custom" />
+                  <ElTableColumn
+                    prop="materialTypeCount"
+                    label="资料"
+                    width="72"
+                    sortable="custom"
+                  />
+                  <ElTableColumn prop="ruleSetCount" label="规则" width="72" sortable="custom" />
+                  <ElTableColumn prop="status" label="状态" width="96" sortable="custom">
+                    <template #default="{ row }">
+                      <ElTag
+                        :type="statusType(businessPackStatusLabel(row.status))"
+                        size="small"
+                        effect="plain"
+                      >
+                        {{ businessPackStatusLabel(row.status) }}
                       </ElTag>
                     </template>
                   </ElTableColumn>
-                  <ElTableColumn label="快照" min-width="190" show-overflow-tooltip>
-                    <template #default="{ row }">
-                      {{ row.snapshotHash }}
-                    </template>
-                  </ElTableColumn>
                 </ElTable>
+                <ElPagination
+                  v-model:current-page="tableStates.businessPacks.page"
+                  v-model:page-size="tableStates.businessPacks.pageSize"
+                  class="table-pagination"
+                  background
+                  :page-sizes="tablePageSizes"
+                  layout="total, sizes, prev, pager, next, jumper"
+                  :total="businessPackRows.length"
+                  @size-change="resetTablePage('businessPacks')"
+                />
               </ElCard>
             </ElCol>
           </ElRow>
         </ElTabPane>
 
         <ElTabPane label="权限与节点" name="permission">
-          <ElRow :gutter="16">
-            <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
+          <ElRow :gutter="16" class="admin-stack-row">
+            <ElCol :span="24" class="admin-stack-col">
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
@@ -2131,25 +3096,28 @@ onMounted(() => {
                   </div>
                 </template>
                 <ElTable
-                  :data="overview.permissionMatrix"
+                  :data="tableRows(overview.permissionMatrix, tableStates.permissionMatrix)"
                   border
-                  height="360"
+                  height="460"
                   empty-text="暂无权限矩阵"
+                  @sort-change="handleTableSortChange('permissionMatrix', $event)"
                 >
-                  <ElTableColumn prop="label" label="角色" width="100" />
+                  <ElTableColumn prop="label" label="角色" width="100" sortable="custom" />
                   <ElTableColumn
                     prop="projectScope"
                     label="项目范围"
                     min-width="130"
                     show-overflow-tooltip
+                    sortable="custom"
                   />
                   <ElTableColumn
                     prop="nodeScope"
                     label="节点范围"
                     min-width="150"
                     show-overflow-tooltip
+                    sortable="custom"
                   />
-                  <ElTableColumn label="动作权限" min-width="220">
+                  <ElTableColumn prop="actions" label="动作权限" min-width="220" sortable="custom">
                     <template #default="{ row }">
                       <div class="tag-list">
                         <ElTag
@@ -2171,7 +3139,7 @@ onMounted(() => {
                       </div>
                     </template>
                   </ElTableColumn>
-                  <ElTableColumn label="只读" width="76">
+                  <ElTableColumn prop="readonly" label="只读" width="76" sortable="custom">
                     <template #default="{ row }">
                       <ElTag
                         :type="row.readonly ? 'warning' : 'success'"
@@ -2190,10 +3158,20 @@ onMounted(() => {
                     </template>
                   </ElTableColumn>
                 </ElTable>
+                <ElPagination
+                  v-model:current-page="tableStates.permissionMatrix.page"
+                  v-model:page-size="tableStates.permissionMatrix.pageSize"
+                  class="table-pagination"
+                  background
+                  :page-sizes="tablePageSizes"
+                  layout="total, sizes, prev, pager, next, jumper"
+                  :total="overview.permissionMatrix.length"
+                  @size-change="resetTablePage('permissionMatrix')"
+                />
               </ElCard>
             </ElCol>
 
-            <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
+            <ElCol :span="24" class="admin-stack-col">
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
@@ -2202,28 +3180,30 @@ onMounted(() => {
                   </div>
                 </template>
                 <ElTable
-                  :data="overview.nodeTemplates"
+                  :data="tableRows(overview.nodeTemplates, tableStates.nodeTemplates)"
                   border
-                  height="360"
+                  height="460"
                   empty-text="暂无节点模板"
+                  @sort-change="handleTableSortChange('nodeTemplates', $event)"
                 >
                   <ElTableColumn
                     prop="groupName"
                     label="业务分组"
                     min-width="170"
                     show-overflow-tooltip
+                    sortable="custom"
                   />
-                  <ElTableColumn prop="version" label="版本" width="130" />
-                  <ElTableColumn prop="nodeCount" label="节点" width="70" />
-                  <ElTableColumn prop="requiredCount" label="资料项" width="84" />
-                  <ElTableColumn label="状态" width="96">
+                  <ElTableColumn prop="version" label="版本" width="130" sortable="custom" />
+                  <ElTableColumn prop="nodeCount" label="节点" width="70" sortable="custom" />
+                  <ElTableColumn prop="requiredCount" label="资料项" width="84" sortable="custom" />
+                  <ElTableColumn prop="status" label="状态" width="96" sortable="custom">
                     <template #default="{ row }">
                       <ElTag :type="statusType(row.status)" size="small" effect="plain">
                         {{ row.status }}
                       </ElTag>
                     </template>
                   </ElTableColumn>
-                  <ElTableColumn prop="updatedAt" label="更新时间" width="170" />
+                  <ElTableColumn prop="updatedAt" label="更新时间" width="170" sortable="custom" />
                   <ElTableColumn label="操作" width="84" fixed="right">
                     <template #default="{ row }">
                       <ElButton link type="primary" @click="openNodeTemplateConfig(row)"
@@ -2232,64 +3212,79 @@ onMounted(() => {
                     </template>
                   </ElTableColumn>
                 </ElTable>
+                <ElPagination
+                  v-model:current-page="tableStates.nodeTemplates.page"
+                  v-model:page-size="tableStates.nodeTemplates.pageSize"
+                  class="table-pagination"
+                  background
+                  :page-sizes="tablePageSizes"
+                  layout="total, sizes, prev, pager, next, jumper"
+                  :total="overview.nodeTemplates.length"
+                  @size-change="resetTablePage('nodeTemplates')"
+                />
               </ElCard>
             </ElCol>
           </ElRow>
         </ElTabPane>
 
-        <ElTabPane label="规则与流程" name="rule">
+        <ElTabPane label="AI业务规则与流程" name="rule">
           <ElRow :gutter="16">
             <ElCol :xl="13" :lg="13" :md="24" :sm="24" :xs="24">
               <ElCard shadow="never" class="panel">
                 <template #header>
                   <div class="panel-header">
-                    <span>规则版本</span>
+                    <span>AI业务规则版本</span>
                     <ElTag :type="pendingRuleCount ? 'warning' : 'success'" effect="plain">
                       {{ pendingRuleCount ? `${pendingRuleCount} 待发布` : '全部发布' }}
                     </ElTag>
                   </div>
                 </template>
                 <ElTable
-                  :data="overview.ruleVersions"
+                  :data="tableRows(overview.ruleVersions, tableStates.ruleVersions)"
                   border
                   height="320"
-                  empty-text="暂无规则版本"
+                  empty-text="暂无AI业务规则版本"
+                  @sort-change="handleTableSortChange('ruleVersions', $event)"
                 >
                   <ElTableColumn
                     prop="name"
                     label="规则名称"
                     min-width="180"
                     show-overflow-tooltip
+                    sortable="custom"
                   />
                   <ElTableColumn
                     prop="version"
                     label="版本"
                     min-width="160"
                     show-overflow-tooltip
+                    sortable="custom"
                   />
                   <ElTableColumn
                     prop="promptVersion"
                     label="Prompt"
                     min-width="170"
                     show-overflow-tooltip
+                    sortable="custom"
                   />
                   <ElTableColumn
                     prop="outputSchemaVersion"
                     label="输出结构"
                     min-width="130"
                     show-overflow-tooltip
+                    sortable="custom"
                   />
-                  <ElTableColumn label="节点" min-width="130">
+                  <ElTableColumn prop="nodeIds" label="节点" min-width="130" sortable="custom">
                     <template #default="{ row }">{{ row.nodeIds.join('、') }}</template>
                   </ElTableColumn>
-                  <ElTableColumn label="状态" width="96">
+                  <ElTableColumn prop="status" label="状态" width="96" sortable="custom">
                     <template #default="{ row }">
                       <ElTag :type="statusType(row.status)" size="small" effect="plain">
                         {{ row.status }}
                       </ElTag>
                     </template>
                   </ElTableColumn>
-                  <ElTableColumn prop="updatedAt" label="更新时间" width="170" />
+                  <ElTableColumn prop="updatedAt" label="更新时间" width="170" sortable="custom" />
                   <ElTableColumn label="操作" width="112" fixed="right">
                     <template #default="{ row }">
                       <ElButton link type="primary" @click="openRuleVersionDetail(row)">
@@ -2301,6 +3296,16 @@ onMounted(() => {
                     </template>
                   </ElTableColumn>
                 </ElTable>
+                <ElPagination
+                  v-model:current-page="tableStates.ruleVersions.page"
+                  v-model:page-size="tableStates.ruleVersions.pageSize"
+                  class="table-pagination"
+                  background
+                  :page-sizes="tablePageSizes"
+                  layout="total, sizes, prev, pager, next, jumper"
+                  :total="overview.ruleVersions.length"
+                  @size-change="resetTablePage('ruleVersions')"
+                />
               </ElCard>
             </ElCol>
 
@@ -2312,12 +3317,25 @@ onMounted(() => {
                     <ElTag type="success" effect="plain">启用</ElTag>
                   </div>
                 </template>
-                <ElTable :data="overview.workflowStateMachines" border height="320">
-                  <ElTableColumn prop="name" label="流程" min-width="170" show-overflow-tooltip />
-                  <ElTableColumn prop="version" label="版本" width="140" />
-                  <ElTableColumn prop="states" label="状态" width="70" />
-                  <ElTableColumn prop="transitions" label="流转" width="70" />
-                  <ElTableColumn label="状态" width="86">
+                <ElTable
+                  :data="
+                    tableRows(overview.workflowStateMachines, tableStates.workflowStateMachines)
+                  "
+                  border
+                  height="320"
+                  @sort-change="handleTableSortChange('workflowStateMachines', $event)"
+                >
+                  <ElTableColumn
+                    prop="name"
+                    label="流程"
+                    min-width="170"
+                    show-overflow-tooltip
+                    sortable="custom"
+                  />
+                  <ElTableColumn prop="version" label="版本" width="140" sortable="custom" />
+                  <ElTableColumn prop="states" label="状态数" width="84" sortable="custom" />
+                  <ElTableColumn prop="transitions" label="流转" width="70" sortable="custom" />
+                  <ElTableColumn prop="status" label="状态" width="86" sortable="custom">
                     <template #default="{ row }">
                       <ElTag :type="statusType(row.status)" size="small" effect="plain">
                         {{ row.status }}
@@ -2330,9 +3348,168 @@ onMounted(() => {
                     </template>
                   </ElTableColumn>
                 </ElTable>
+                <ElPagination
+                  v-model:current-page="tableStates.workflowStateMachines.page"
+                  v-model:page-size="tableStates.workflowStateMachines.pageSize"
+                  class="table-pagination"
+                  background
+                  :page-sizes="tablePageSizes"
+                  layout="total, sizes, prev, pager, next, jumper"
+                  :total="overview.workflowStateMachines.length"
+                  @size-change="resetTablePage('workflowStateMachines')"
+                />
               </ElCard>
             </ElCol>
           </ElRow>
+        </ElTabPane>
+
+        <ElTabPane label="Prompt 模板管理" name="prompt-template">
+          <ElCard shadow="never" class="panel" v-loading="promptTemplateLoading">
+            <template #header>
+              <div class="panel-header">
+                <span>Prompt 模板管理</span>
+                <ElSpace>
+                  <ElTag type="info" effect="plain">{{ tableStates.promptTemplates.total }} 个</ElTag>
+                  <ElButton type="primary" plain size="small" @click="openPromptTemplateDialog()">
+                    新增模板
+                  </ElButton>
+                </ElSpace>
+              </div>
+            </template>
+            <div v-if="promptTemplateOperationError" class="local-error local-error--compact">
+              <ElAlert
+                type="error"
+                show-icon
+                :closable="false"
+                :title="promptTemplateOperationError"
+              />
+            </div>
+            <div v-if="promptTemplateError" class="local-error local-error--compact">
+              <ElAlert type="error" show-icon :closable="false" :title="promptTemplateError" />
+              <ElButton
+                type="primary"
+                plain
+                :loading="promptTemplateLoading"
+                @click="loadPromptTemplates"
+              >
+                重新加载
+              </ElButton>
+            </div>
+            <div class="prompt-template-filter-bar">
+              <ElInput
+                v-model="promptTemplateFilters.keyword"
+                clearable
+                placeholder="搜索模板名称、Prompt Key、业务类型或 Agent"
+                @keyup.enter="handlePromptTemplateFilter"
+              />
+              <ElSelect
+                v-model="promptTemplateFilters.status"
+                clearable
+                placeholder="状态"
+                @change="handlePromptTemplateFilter"
+              >
+                <ElOption label="草稿" value="draft" />
+                <ElOption label="生产" value="production" />
+                <ElOption label="已停用" value="retired" />
+              </ElSelect>
+              <ElButton type="primary" :loading="promptTemplateLoading" @click="handlePromptTemplateFilter">
+                筛选
+              </ElButton>
+              <ElButton :loading="promptTemplateLoading" @click="loadPromptTemplates">刷新</ElButton>
+            </div>
+            <ElTable
+              :data="sortedRows(promptTemplates, tableStates.promptTemplates)"
+              border
+              height="430"
+              empty-text="暂无 Prompt 模板"
+              @sort-change="handlePromptTemplateSortChange"
+            >
+              <ElTableColumn
+                prop="name"
+                label="模板名称"
+                min-width="220"
+                show-overflow-tooltip
+                sortable="custom"
+              />
+              <ElTableColumn
+                prop="promptKey"
+                label="Prompt Key"
+                min-width="150"
+                show-overflow-tooltip
+                sortable="custom"
+              />
+              <ElTableColumn prop="version" label="版本" width="110" sortable="custom" />
+              <ElTableColumn prop="status" label="状态" width="100" sortable="custom">
+                <template #default="{ row }">
+                  <ElTag
+                    :type="promptTemplateStatusType(row.status)"
+                    size="small"
+                    effect="plain"
+                  >
+                    {{ promptTemplateStatusLabel(row.status) }}
+                  </ElTag>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="businessPackId"
+                label="业务包"
+                min-width="190"
+                show-overflow-tooltip
+                sortable="custom"
+              />
+              <ElTableColumn
+                prop="agentId"
+                label="Agent"
+                min-width="170"
+                show-overflow-tooltip
+                sortable="custom"
+              />
+              <ElTableColumn
+                prop="promptVersionId"
+                label="Prompt 版本"
+                min-width="170"
+                show-overflow-tooltip
+                sortable="custom"
+              />
+              <ElTableColumn prop="updatedAt" label="更新时间" width="170" sortable="custom" />
+              <ElTableColumn label="操作" width="180" fixed="right">
+                <template #default="{ row }">
+                  <ElButton link type="primary" @click="openPromptTemplateDialog(row)">
+                    编辑
+                  </ElButton>
+                  <ElButton
+                    link
+                    type="success"
+                    :disabled="['production', '已发布'].includes(row.status)"
+                    :loading="promptTemplateSaving"
+                    @click="handlePublishPromptTemplate(row)"
+                  >
+                    发布
+                  </ElButton>
+                  <ElButton
+                    link
+                    type="danger"
+                    :disabled="['production', '已发布'].includes(row.status)"
+                    :loading="promptTemplateSaving"
+                    @click="handleDeletePromptTemplate(row)"
+                  >
+                    删除
+                  </ElButton>
+                </template>
+              </ElTableColumn>
+            </ElTable>
+            <ElPagination
+              v-model:current-page="tableStates.promptTemplates.page"
+              v-model:page-size="tableStates.promptTemplates.pageSize"
+              class="table-pagination"
+              background
+              :page-sizes="tablePageSizes"
+              layout="total, sizes, prev, pager, next, jumper"
+              :total="tableStates.promptTemplates.total"
+              @size-change="handlePromptTemplateFilter"
+              @current-change="loadPromptTemplates"
+            />
+          </ElCard>
         </ElTabPane>
 
         <ElTabPane label="细项配置" name="fine-config">
@@ -2347,24 +3524,31 @@ onMounted(() => {
                     </ElButton>
                   </div>
                 </template>
-                <ElTable :data="overview.todoRules" border height="300">
+                <ElTable
+                  :data="tableRows(overview.todoRules, tableStates.todoRules)"
+                  border
+                  height="300"
+                  @sort-change="handleTableSortChange('todoRules', $event)"
+                >
                   <ElTableColumn
                     prop="name"
                     label="规则名称"
                     min-width="160"
                     show-overflow-tooltip
+                    sortable="custom"
                   />
                   <ElTableColumn
                     prop="triggerStatus"
                     label="触发状态"
                     min-width="130"
                     show-overflow-tooltip
+                    sortable="custom"
                   />
-                  <ElTableColumn label="处理角色" width="110">
+                  <ElTableColumn prop="assigneeRole" label="处理角色" width="110" sortable="custom">
                     <template #default="{ row }">{{ roleLabel(row.assigneeRole) }}</template>
                   </ElTableColumn>
-                  <ElTableColumn prop="deadlineHours" label="时限/h" width="82" />
-                  <ElTableColumn label="状态" width="84">
+                  <ElTableColumn prop="deadlineHours" label="时限/h" width="82" sortable="custom" />
+                  <ElTableColumn prop="enabled" label="状态" width="84" sortable="custom">
                     <template #default="{ row }">
                       <ElTag :type="row.enabled ? 'success' : 'info'" size="small" effect="plain">
                         {{ row.enabled ? '启用' : '停用' }}
@@ -2377,6 +3561,16 @@ onMounted(() => {
                     </template>
                   </ElTableColumn>
                 </ElTable>
+                <ElPagination
+                  v-model:current-page="tableStates.todoRules.page"
+                  v-model:page-size="tableStates.todoRules.pageSize"
+                  class="table-pagination"
+                  background
+                  :page-sizes="tablePageSizes"
+                  layout="total, sizes, prev, pager, next, jumper"
+                  :total="overview.todoRules.length"
+                  @size-change="resetTablePage('todoRules')"
+                />
               </ElCard>
             </ElCol>
 
@@ -2395,23 +3589,35 @@ onMounted(() => {
                     </ElButton>
                   </div>
                 </template>
-                <ElTable :data="overview.messageTemplates" border height="300">
-                  <ElTableColumn prop="scene" label="场景" min-width="150" show-overflow-tooltip />
-                  <ElTableColumn prop="channel" label="渠道" width="86" />
+                <ElTable
+                  :data="tableRows(overview.messageTemplates, tableStates.messageTemplates)"
+                  border
+                  height="300"
+                  @sort-change="handleTableSortChange('messageTemplates', $event)"
+                >
+                  <ElTableColumn
+                    prop="scene"
+                    label="场景"
+                    min-width="150"
+                    show-overflow-tooltip
+                    sortable="custom"
+                  />
+                  <ElTableColumn prop="channel" label="渠道" width="86" sortable="custom" />
                   <ElTableColumn
                     prop="titleTemplate"
                     label="标题模板"
                     min-width="210"
                     show-overflow-tooltip
+                    sortable="custom"
                   />
-                  <ElTableColumn label="状态" width="84">
+                  <ElTableColumn prop="enabled" label="状态" width="84" sortable="custom">
                     <template #default="{ row }">
                       <ElTag :type="row.enabled ? 'success' : 'info'" size="small" effect="plain">
                         {{ row.enabled ? '启用' : '停用' }}
                       </ElTag>
                     </template>
                   </ElTableColumn>
-                  <ElTableColumn prop="updatedAt" label="更新时间" width="170" />
+                  <ElTableColumn prop="updatedAt" label="更新时间" width="170" sortable="custom" />
                   <ElTableColumn label="操作" width="84" fixed="right">
                     <template #default="{ row }">
                       <ElButton link type="primary" @click="openMessageTemplateConfig(row)"
@@ -2420,6 +3626,16 @@ onMounted(() => {
                     </template>
                   </ElTableColumn>
                 </ElTable>
+                <ElPagination
+                  v-model:current-page="tableStates.messageTemplates.page"
+                  v-model:page-size="tableStates.messageTemplates.pageSize"
+                  class="table-pagination"
+                  background
+                  :page-sizes="tablePageSizes"
+                  layout="total, sizes, prev, pager, next, jumper"
+                  :total="overview.messageTemplates.length"
+                  @size-change="resetTablePage('messageTemplates')"
+                />
               </ElCard>
             </ElCol>
 
@@ -2433,22 +3649,29 @@ onMounted(() => {
                     </ElButton>
                   </div>
                 </template>
-                <ElTable :data="overview.toolSources" border height="300">
+                <ElTable
+                  :data="tableRows(overview.toolSources, tableStates.toolSources)"
+                  border
+                  height="300"
+                  @sort-change="handleTableSortChange('toolSources', $event)"
+                >
                   <ElTableColumn
                     prop="name"
                     label="工具名称"
                     min-width="160"
                     show-overflow-tooltip
+                    sortable="custom"
                   />
-                  <ElTableColumn prop="toolType" label="类型" width="120" />
+                  <ElTableColumn prop="toolType" label="类型" width="120" sortable="custom" />
                   <ElTableColumn
                     prop="endpoint"
                     label="地址"
                     min-width="220"
                     show-overflow-tooltip
+                    sortable="custom"
                   />
-                  <ElTableColumn prop="authMode" label="鉴权" width="88" />
-                  <ElTableColumn label="状态" width="84">
+                  <ElTableColumn prop="authMode" label="鉴权" width="88" sortable="custom" />
+                  <ElTableColumn prop="status" label="状态" width="84" sortable="custom">
                     <template #default="{ row }">
                       <ElTag :type="statusType(row.status)" size="small" effect="plain">
                         {{ row.status }}
@@ -2463,6 +3686,16 @@ onMounted(() => {
                     </template>
                   </ElTableColumn>
                 </ElTable>
+                <ElPagination
+                  v-model:current-page="tableStates.toolSources.page"
+                  v-model:page-size="tableStates.toolSources.pageSize"
+                  class="table-pagination"
+                  background
+                  :page-sizes="tablePageSizes"
+                  layout="total, sizes, prev, pager, next, jumper"
+                  :total="overview.toolSources.length"
+                  @size-change="resetTablePage('toolSources')"
+                />
               </ElCard>
             </ElCol>
 
@@ -2476,34 +3709,47 @@ onMounted(() => {
                     </ElButton>
                   </div>
                 </template>
-                <ElTable :data="overview.fieldMappings" border height="300">
-                  <ElTableColumn prop="nodeId" label="节点" width="72" />
+                <ElTable
+                  :data="tableRows(overview.fieldMappings, tableStates.fieldMappings)"
+                  border
+                  height="300"
+                  @sort-change="handleTableSortChange('fieldMappings', $event)"
+                >
+                  <ElTableColumn prop="nodeId" label="节点" width="72" sortable="custom" />
                   <ElTableColumn
                     prop="fieldName"
                     label="字段"
                     min-width="140"
                     show-overflow-tooltip
+                    sortable="custom"
                   />
                   <ElTableColumn
                     prop="sourceField"
                     label="来源字段"
                     min-width="150"
                     show-overflow-tooltip
+                    sortable="custom"
                   />
                   <ElTableColumn
                     prop="targetField"
                     label="目标字段"
                     min-width="150"
                     show-overflow-tooltip
+                    sortable="custom"
                   />
-                  <ElTableColumn label="必填" width="76">
+                  <ElTableColumn prop="required" label="必填" width="76" sortable="custom">
                     <template #default="{ row }">
                       <ElTag :type="row.required ? 'warning' : 'info'" size="small" effect="plain">
                         {{ row.required ? '是' : '否' }}
                       </ElTag>
                     </template>
                   </ElTableColumn>
-                  <ElTableColumn prop="confidenceThreshold" label="阈值" width="76" />
+                  <ElTableColumn
+                    prop="confidenceThreshold"
+                    label="阈值"
+                    width="76"
+                    sortable="custom"
+                  />
                   <ElTableColumn label="操作" width="84" fixed="right">
                     <template #default="{ row }">
                       <ElButton link type="primary" @click="openFieldMappingConfig(row)"
@@ -2512,6 +3758,16 @@ onMounted(() => {
                     </template>
                   </ElTableColumn>
                 </ElTable>
+                <ElPagination
+                  v-model:current-page="tableStates.fieldMappings.page"
+                  v-model:page-size="tableStates.fieldMappings.pageSize"
+                  class="table-pagination"
+                  background
+                  :page-sizes="tablePageSizes"
+                  layout="total, sizes, prev, pager, next, jumper"
+                  :total="overview.fieldMappings.length"
+                  @size-change="resetTablePage('fieldMappings')"
+                />
               </ElCard>
             </ElCol>
           </ElRow>
@@ -2617,14 +3873,21 @@ onMounted(() => {
             </ElRow>
 
             <ElTable
-              :data="integrationRows"
+              :data="tableRows(integrationRows, tableStates.integration)"
               border
               height="430"
               class="integration-contract-table"
               empty-text="当前筛选下没有字段差异"
+              @sort-change="handleTableSortChange('integration', $event)"
             >
-              <ElTableColumn prop="moduleLabel" label="模块" width="130" />
-              <ElTableColumn label="接口" min-width="260" show-overflow-tooltip>
+              <ElTableColumn prop="moduleLabel" label="模块" width="130" sortable="custom" />
+              <ElTableColumn
+                prop="__endpoint"
+                label="接口"
+                min-width="260"
+                show-overflow-tooltip
+                sortable="custom"
+              >
                 <template #default="{ row }">
                   <span class="method-pill">{{ row.method }}</span>
                   <span>{{ row.endpoint }}</span>
@@ -2635,30 +3898,32 @@ onMounted(() => {
                 label="前端字段"
                 min-width="180"
                 show-overflow-tooltip
+                sortable="custom"
               />
               <ElTableColumn
                 prop="backendField"
                 label="后端字段"
                 min-width="180"
                 show-overflow-tooltip
+                sortable="custom"
               >
                 <template #default="{ row }">{{ row.backendField || '-' }}</template>
               </ElTableColumn>
-              <ElTableColumn label="必填" width="74">
+              <ElTableColumn prop="required" label="必填" width="74" sortable="custom">
                 <template #default="{ row }">
                   <ElTag :type="row.required ? 'warning' : 'info'" size="small" effect="plain">
                     {{ row.required ? '是' : '否' }}
                   </ElTag>
                 </template>
               </ElTableColumn>
-              <ElTableColumn label="状态" width="118">
+              <ElTableColumn prop="status" label="状态" width="118" sortable="custom">
                 <template #default="{ row }">
                   <ElTag :type="integrationStatusTagType(row.status)" size="small" effect="plain">
                     {{ row.status }}
                   </ElTag>
                 </template>
               </ElTableColumn>
-              <ElTableColumn label="级别" width="88">
+              <ElTableColumn prop="severity" label="级别" width="88" sortable="custom">
                 <template #default="{ row }">
                   <ElTag
                     :type="integrationSeverityTagType(row.severity)"
@@ -2669,9 +3934,25 @@ onMounted(() => {
                   </ElTag>
                 </template>
               </ElTableColumn>
-              <ElTableColumn prop="owner" label="负责人" width="116" />
-              <ElTableColumn prop="note" label="说明" min-width="260" show-overflow-tooltip />
+              <ElTableColumn prop="owner" label="负责人" width="116" sortable="custom" />
+              <ElTableColumn
+                prop="note"
+                label="说明"
+                min-width="260"
+                show-overflow-tooltip
+                sortable="custom"
+              />
             </ElTable>
+            <ElPagination
+              v-model:current-page="tableStates.integration.page"
+              v-model:page-size="tableStates.integration.pageSize"
+              class="table-pagination"
+              background
+              :page-sizes="tablePageSizes"
+              layout="total, sizes, prev, pager, next, jumper"
+              :total="integrationRows.length"
+              @size-change="resetTablePage('integration')"
+            />
           </ElCard>
         </ElTabPane>
 
@@ -2696,6 +3977,7 @@ onMounted(() => {
               <ElSelect v-model="auditFilters.objectType" clearable placeholder="对象类型">
                 <ElOption label="AdminConfig" value="AdminConfig" />
                 <ElOption label="AdminConfigExport" value="AdminConfigExport" />
+                <ElOption label="PromptTemplate" value="PromptTemplate" />
                 <ElOption label="ProjectMember" value="ProjectMember" />
                 <ElOption label="RuleTemplate" value="RuleTemplate" />
                 <ElOption label="ReportVersion" value="ReportVersion" />
@@ -2713,32 +3995,39 @@ onMounted(() => {
               </ElButton>
             </div>
             <ElTable
-              :data="auditLogs"
+              :data="auditTableRows"
               border
               height="360"
               v-loading="auditLoading"
               empty-text="当前筛选下暂无审计日志"
+              @sort-change="handleAuditSortChange"
             >
-              <ElTableColumn prop="actorName" label="操作人" width="110" />
-              <ElTableColumn prop="action" label="动作" min-width="180" show-overflow-tooltip />
-              <ElTableColumn prop="objectType" label="对象类型" width="130" />
+              <ElTableColumn prop="actorName" label="操作人" width="110" sortable="custom" />
+              <ElTableColumn
+                prop="action"
+                label="动作"
+                min-width="180"
+                show-overflow-tooltip
+                sortable="custom"
+              />
+              <ElTableColumn prop="objectType" label="对象类型" width="130" sortable="custom" />
               <ElTableColumn
                 prop="objectId"
                 label="对象 ID"
                 min-width="160"
                 show-overflow-tooltip
+                sortable="custom"
               />
-              <ElTableColumn label="结果" width="88">
+              <ElTableColumn prop="result" label="结果" width="88" sortable="custom">
                 <template #default="{ row }">
                   <ElTag :type="statusType(row.result)" size="small" effect="plain">
                     {{ row.result }}
                   </ElTag>
                 </template>
               </ElTableColumn>
-              <ElTableColumn prop="createdAt" label="时间" width="170" />
+              <ElTableColumn prop="createdAt" label="时间" width="170" sortable="custom" />
             </ElTable>
             <ElPagination
-              v-if="auditPagination.total > auditPagination.pageSize"
               v-model:current-page="auditPagination.page"
               v-model:page-size="auditPagination.pageSize"
               class="table-pagination"
@@ -2769,18 +4058,24 @@ onMounted(() => {
           </div>
 
           <div v-show="projectWizardStep === 0">
-            <ElFormItem label="业务类型">
+            <ElFormItem label="压力管道类别">
               <ElSelect
                 v-model="projectWizardForm.businessPackId"
                 filterable
+                placeholder="请选择压力管道类别"
                 @change="handleWizardBusinessPackChange"
               >
                 <ElOption
                   v-for="pack in businessPackRows"
                   :key="pack.id"
-                  :label="`${pack.name} / ${pack.version}`"
+                  :label="businessPackOptionLabel(pack)"
                   :value="pack.id"
-                />
+                >
+                  <div class="business-pack-option">
+                    <span>{{ businessPackTypeLabel(pack) }}</span>
+                    <small>{{ businessPackRangeText(pack) }}</small>
+                  </div>
+                </ElOption>
               </ElSelect>
             </ElFormItem>
             <ElAlert
@@ -2788,7 +4083,7 @@ onMounted(() => {
               type="info"
               show-icon
               :closable="false"
-              :title="`${selectedWizardBusinessPack.name}：${selectedWizardBusinessPack.nodeCount} 个节点、${selectedWizardBusinessPack.materialTypeCount} 类资料、${selectedWizardBusinessPack.ruleSetCount} 套规则。`"
+              :title="selectedWizardBusinessPackDescription"
               class="mb-12px"
             />
             <ElRow :gutter="12">
@@ -2805,8 +4100,8 @@ onMounted(() => {
             </ElRow>
             <ElRow :gutter="12">
               <ElCol :xs="24" :sm="12">
-                <ElFormItem label="项目类型">
-                  <ElInput v-model="projectWizardForm.type" />
+                <ElFormItem label="压力管道属性">
+                  <ElInput v-model="projectWizardForm.type" disabled />
                 </ElFormItem>
               </ElCol>
               <ElCol :xs="24" :sm="12">
@@ -2858,17 +4153,18 @@ onMounted(() => {
               :closable="false"
               :title="
                 isEngineeringWizardPack
-                  ? '立项后将生成工程监检节点，并按四类角色写入初始项目成员授权。'
-                  : '立项后将按业务类型角色自动创建成员授权，并进入通用资料审查工作台。'
+                  ? '立项后将生成 GC 工业管道监检节点，并按四类角色写入初始项目成员授权。'
+                  : '立项后将按 GA/GB 类业务类型角色自动创建成员授权，并进入通用资料审查工作台。'
               "
             />
             <ElTable
               v-if="isEngineeringWizardPack"
-              :data="projectWizardRoles"
+              :data="tableRows(projectWizardRoles, tableStates.projectWizardRoles)"
               border
               class="wizard-member-table"
+              @sort-change="handleTableSortChange('projectWizardRoles', $event)"
             >
-              <ElTableColumn label="角色" width="120">
+              <ElTableColumn prop="__self" label="角色" width="120" sortable="custom">
                 <template #default="{ row }">{{ roleLabel(row) }}</template>
               </ElTableColumn>
               <ElTableColumn label="初始成员" min-width="260">
@@ -2883,15 +4179,31 @@ onMounted(() => {
                   </ElSelect>
                 </template>
               </ElTableColumn>
-              <ElTableColumn label="节点范围" min-width="180">
+              <ElTableColumn
+                prop="__wizardNodeScope"
+                label="节点范围"
+                min-width="180"
+                sortable="custom"
+              >
                 <template #default="{ row }">
                   {{ row === 'ndt' ? '35, 36, 40, 41, 42' : '1, 16, 24, 40, 68' }}
                 </template>
               </ElTableColumn>
             </ElTable>
+            <ElPagination
+              v-if="isEngineeringWizardPack"
+              v-model:current-page="tableStates.projectWizardRoles.page"
+              v-model:page-size="tableStates.projectWizardRoles.pageSize"
+              class="table-pagination"
+              background
+              :page-sizes="tablePageSizes"
+              layout="total, sizes, prev, pager, next, jumper"
+              :total="projectWizardRoles.length"
+              @size-change="resetTablePage('projectWizardRoles')"
+            />
             <ElEmpty
               v-else
-              description="非工程业务类型使用业务类型角色定义自动授权，后续可在项目成员中细化。"
+              description="GA/GB 类使用业务类型角色定义自动授权，后续可在项目成员中细化。"
             />
           </div>
         </ElForm>
@@ -2905,6 +4217,209 @@ onMounted(() => {
           <ElButton v-else type="primary" :loading="projectCreating" @click="handleCreateProject">
             创建项目
           </ElButton>
+        </template>
+      </ElDialog>
+
+      <ElDialog v-model="projectEditVisible" title="编辑项目" width="min(720px, 94vw)">
+        <ElForm label-position="top" class="wizard-form">
+          <div v-if="projectOperationError" class="local-error local-error--compact">
+            <ElAlert type="error" show-icon :closable="false" :title="projectOperationError" />
+          </div>
+          <ElRow :gutter="12">
+            <ElCol :xs="24" :sm="12">
+              <ElFormItem label="项目编号">
+                <ElInput v-model="projectEditForm.code" disabled />
+              </ElFormItem>
+            </ElCol>
+            <ElCol :xs="24" :sm="12">
+              <ElFormItem label="项目名称">
+                <ElInput v-model="projectEditForm.name" />
+              </ElFormItem>
+            </ElCol>
+          </ElRow>
+          <ElRow :gutter="12">
+            <ElCol :xs="24" :sm="12">
+              <ElFormItem label="项目类型">
+                <ElInput v-model="projectEditForm.type" />
+              </ElFormItem>
+            </ElCol>
+            <ElCol :xs="24" :sm="12">
+              <ElFormItem label="区域">
+                <ElInput v-model="projectEditForm.region" />
+              </ElFormItem>
+            </ElCol>
+          </ElRow>
+          <ElRow :gutter="12">
+            <ElCol :xs="24" :sm="12">
+              <ElFormItem label="建设单位快照">
+                <ElInput v-model="projectEditForm.ownerOrgName" />
+              </ElFormItem>
+            </ElCol>
+            <ElCol :xs="24" :sm="12">
+              <ElFormItem label="施工单位快照">
+                <ElInput v-model="projectEditForm.contractorOrgName" />
+              </ElFormItem>
+            </ElCol>
+          </ElRow>
+          <ElRow :gutter="12">
+            <ElCol :xs="24" :sm="12">
+              <ElFormItem label="无损检测单位快照">
+                <ElInput v-model="projectEditForm.ndtOrgName" />
+              </ElFormItem>
+            </ElCol>
+            <ElCol :xs="24" :sm="12">
+              <ElFormItem label="监检机构快照">
+                <ElInput v-model="projectEditForm.inspectionOrgName" />
+              </ElFormItem>
+            </ElCol>
+          </ElRow>
+          <ElFormItem label="状态">
+            <ElSelect v-model="projectEditForm.status">
+              <ElOption label="草稿/立项中" value="草稿/立项中" />
+              <ElOption label="资料提交中" value="资料提交中" />
+              <ElOption label="AI 预审中" value="AI 预审中" />
+              <ElOption label="监检审查中" value="监检审查中" />
+              <ElOption label="退回补正中" value="退回补正中" />
+              <ElOption label="报告生成/复核中" value="报告生成/复核中" />
+              <ElOption label="已归档" value="已归档" />
+            </ElSelect>
+          </ElFormItem>
+        </ElForm>
+        <template #footer>
+          <ElButton @click="projectEditVisible = false">取消</ElButton>
+          <ElButton type="primary" :loading="projectSaving" @click="handleSaveProjectEdit">
+            保存
+          </ElButton>
+        </template>
+      </ElDialog>
+
+      <ElDialog
+        v-model="orgDialogVisible"
+        :title="orgDialogMode === 'create' ? '新增组织' : '编辑组织'"
+        width="min(560px, 92vw)"
+      >
+        <ElForm label-position="top" class="wizard-form">
+          <div v-if="orgOperationError" class="local-error local-error--compact">
+            <ElAlert type="error" show-icon :closable="false" :title="orgOperationError" />
+          </div>
+          <ElFormItem label="组织名称">
+            <ElInput v-model="orgForm.name" />
+          </ElFormItem>
+          <ElRow :gutter="12">
+            <ElCol :xs="24" :sm="12">
+              <ElFormItem label="组织类型">
+                <ElSelect v-model="orgForm.type">
+                  <ElOption label="监检机构" value="inspection" />
+                  <ElOption label="施工方" value="contractor" />
+                  <ElOption label="无损检测" value="ndt" />
+                  <ElOption label="建设方" value="owner" />
+                  <ElOption label="平台管理" value="admin" />
+                  <ElOption label="FDE" value="fde" />
+                </ElSelect>
+              </ElFormItem>
+            </ElCol>
+            <ElCol :xs="24" :sm="12">
+              <ElFormItem label="状态">
+                <ElSelect v-model="orgForm.status">
+                  <ElOption label="启用" value="启用" />
+                  <ElOption label="停用" value="停用" />
+                  <ElOption label="待授权" value="待授权" />
+                </ElSelect>
+              </ElFormItem>
+            </ElCol>
+          </ElRow>
+          <ElRow :gutter="12">
+            <ElCol :xs="24" :sm="12">
+              <ElFormItem label="联系人">
+                <ElInput v-model="orgForm.contactName" />
+              </ElFormItem>
+            </ElCol>
+            <ElCol :xs="24" :sm="12">
+              <ElFormItem label="联系电话">
+                <ElInput v-model="orgForm.contactPhone" />
+              </ElFormItem>
+            </ElCol>
+          </ElRow>
+        </ElForm>
+        <template #footer>
+          <ElButton @click="orgDialogVisible = false">取消</ElButton>
+          <ElButton type="primary" :loading="orgSaving" @click="handleSaveOrg">保存</ElButton>
+        </template>
+      </ElDialog>
+
+      <ElDialog
+        v-model="userDialogVisible"
+        :title="userDialogMode === 'create' ? '新增用户' : '编辑用户'"
+        width="min(640px, 92vw)"
+      >
+        <ElForm label-position="top" class="wizard-form">
+          <div v-if="userOperationError" class="local-error local-error--compact">
+            <ElAlert type="error" show-icon :closable="false" :title="userOperationError" />
+          </div>
+          <ElRow :gutter="12">
+            <ElCol :xs="24" :sm="12">
+              <ElFormItem label="用户名">
+                <ElInput v-model="userForm.username" :disabled="userDialogMode === 'edit'" />
+              </ElFormItem>
+            </ElCol>
+            <ElCol :xs="24" :sm="12">
+              <ElFormItem label="姓名">
+                <ElInput v-model="userForm.name" />
+              </ElFormItem>
+            </ElCol>
+          </ElRow>
+          <ElRow :gutter="12">
+            <ElCol :xs="24" :sm="12">
+              <ElFormItem label="角色">
+                <ElSelect v-model="userForm.role" @change="handleUserRoleChange">
+                  <ElOption label="监检人员" value="inspection" />
+                  <ElOption label="施工方" value="contractor" />
+                  <ElOption label="无损检测" value="ndt" />
+                  <ElOption label="建设方" value="owner" />
+                  <ElOption label="系统管理员" value="admin" />
+                  <ElOption label="FDE" value="fde" />
+                </ElSelect>
+              </ElFormItem>
+            </ElCol>
+            <ElCol :xs="24" :sm="12">
+              <ElFormItem label="所属组织">
+                <ElSelect v-model="userForm.orgId" clearable filterable>
+                  <ElOption
+                    v-for="org in roleOrgOptions(userForm.role)"
+                    :key="org.id"
+                    :label="org.name"
+                    :value="org.id"
+                  />
+                </ElSelect>
+              </ElFormItem>
+            </ElCol>
+          </ElRow>
+          <ElRow :gutter="12">
+            <ElCol :xs="24" :sm="12">
+              <ElFormItem label="手机号">
+                <ElInput v-model="userForm.mobile" />
+              </ElFormItem>
+            </ElCol>
+            <ElCol :xs="24" :sm="12">
+              <ElFormItem label="状态">
+                <ElSelect v-model="userForm.status">
+                  <ElOption label="启用" value="启用" />
+                  <ElOption label="停用" value="停用" />
+                </ElSelect>
+              </ElFormItem>
+            </ElCol>
+          </ElRow>
+          <ElFormItem :label="userDialogMode === 'create' ? '初始密码' : '重置密码'">
+            <ElInput
+              v-model="userForm.password"
+              show-password
+              :placeholder="userDialogMode === 'create' ? '留空默认等于用户名' : '留空则不修改密码'"
+            />
+          </ElFormItem>
+        </ElForm>
+        <template #footer>
+          <ElButton @click="userDialogVisible = false">取消</ElButton>
+          <ElButton type="primary" :loading="userSaving" @click="handleSaveUser">保存</ElButton>
         </template>
       </ElDialog>
 
@@ -3148,6 +4663,133 @@ onMounted(() => {
         </div>
       </ElDrawer>
 
+      <ElDrawer
+        v-model="promptTemplateDialogVisible"
+        :title="promptTemplateDialogMode === 'create' ? '新增 Prompt 模板' : '编辑 Prompt 模板'"
+        size="min(900px, 94vw)"
+      >
+        <ElForm label-position="top" class="prompt-template-form">
+          <ElAlert
+            type="info"
+            show-icon
+            :closable="false"
+            title="模板正文会在 AI Check 推理链路中完整留痕，用于审计、复盘和版本对比。"
+          />
+          <div v-if="promptTemplateOperationError" class="local-error local-error--compact">
+            <ElAlert
+              type="error"
+              show-icon
+              :closable="false"
+              :title="promptTemplateOperationError"
+            />
+          </div>
+          <ElRow :gutter="12">
+            <ElCol :xs="24" :sm="12">
+              <ElFormItem label="模板名称">
+                <ElInput v-model="promptTemplateForm.name" />
+              </ElFormItem>
+            </ElCol>
+            <ElCol :xs="24" :sm="12">
+              <ElFormItem label="Prompt Key">
+                <ElInput v-model="promptTemplateForm.promptKey" />
+              </ElFormItem>
+            </ElCol>
+          </ElRow>
+          <ElRow :gutter="12">
+            <ElCol :xs="24" :sm="8">
+              <ElFormItem label="版本">
+                <ElInput v-model="promptTemplateForm.version" />
+              </ElFormItem>
+            </ElCol>
+            <ElCol :xs="24" :sm="8">
+              <ElFormItem label="状态">
+                <ElSelect v-model="promptTemplateForm.status">
+                  <ElOption label="草稿" value="draft" />
+                  <ElOption label="生产" value="production" />
+                  <ElOption label="已停用" value="retired" />
+                </ElSelect>
+              </ElFormItem>
+            </ElCol>
+            <ElCol :xs="24" :sm="8">
+              <ElFormItem label="风险等级">
+                <ElSelect v-model="promptTemplateForm.riskLevel">
+                  <ElOption label="高" value="high" />
+                  <ElOption label="中" value="medium" />
+                  <ElOption label="低" value="low" />
+                </ElSelect>
+              </ElFormItem>
+            </ElCol>
+          </ElRow>
+          <ElRow :gutter="12">
+            <ElCol :xs="24" :sm="8">
+              <ElFormItem label="业务包 ID">
+                <ElInput v-model="promptTemplateForm.businessPackId" />
+              </ElFormItem>
+            </ElCol>
+            <ElCol :xs="24" :sm="8">
+              <ElFormItem label="Agent ID">
+                <ElInput v-model="promptTemplateForm.agentId" />
+              </ElFormItem>
+            </ElCol>
+            <ElCol :xs="24" :sm="8">
+              <ElFormItem label="关联 Prompt 版本">
+                <ElInput v-model="promptTemplateForm.promptVersionId" />
+              </ElFormItem>
+            </ElCol>
+          </ElRow>
+          <ElFormItem label="System Prompt">
+            <ElInput
+              v-model="promptTemplateForm.systemPrompt"
+              type="textarea"
+              :rows="5"
+              resize="vertical"
+            />
+          </ElFormItem>
+          <ElFormItem label="User Prompt 模板">
+            <ElInput
+              v-model="promptTemplateForm.userPromptTemplate"
+              type="textarea"
+              :rows="8"
+              resize="vertical"
+            />
+          </ElFormItem>
+          <ElFormItem label="Plan 编排 Prompt">
+            <ElInput
+              v-model="promptTemplateForm.plannerPromptTemplate"
+              type="textarea"
+              :rows="4"
+              resize="vertical"
+            />
+          </ElFormItem>
+          <ElFormItem label="Critic 复核 Prompt">
+            <ElInput
+              v-model="promptTemplateForm.criticPromptTemplate"
+              type="textarea"
+              :rows="4"
+              resize="vertical"
+            />
+          </ElFormItem>
+          <ElFormItem label="输出结构 JSON">
+            <ElInput
+              v-model="promptTemplateForm.outputSchemaText"
+              type="textarea"
+              :rows="7"
+              resize="vertical"
+            />
+          </ElFormItem>
+        </ElForm>
+        <div class="drawer-footer">
+          <ElButton @click="promptTemplateDialogVisible = false">取消</ElButton>
+          <ElButton
+            type="primary"
+            :loading="promptTemplateSaving"
+            @click="handleSavePromptTemplate"
+          >
+            保存模板
+          </ElButton>
+        </div>
+      </ElDrawer>
+
       <ElDialog v-model="configDiffVisible" title="配置差异" width="min(720px, 94vw)">
         <ElEmpty v-if="!latestConfigDiff" description="暂无配置差异" />
         <template v-else>
@@ -3159,15 +4801,32 @@ onMounted(() => {
             <ElDescriptionsItem label="类型">{{ latestConfigDiff.target }}</ElDescriptionsItem>
             <ElDescriptionsItem label="时间">{{ latestConfigDiff.previewedAt }}</ElDescriptionsItem>
           </ElDescriptions>
-          <ElTable :data="configDiffRows" border class="diff-table">
-            <ElTableColumn prop="label" label="字段" width="120" />
-            <ElTableColumn label="变更前" min-width="210" show-overflow-tooltip>
+          <ElTable
+            :data="tableRows(configDiffRows, tableStates.configDiff)"
+            border
+            class="diff-table"
+            @sort-change="handleTableSortChange('configDiff', $event)"
+          >
+            <ElTableColumn prop="label" label="字段" width="120" sortable="custom" />
+            <ElTableColumn
+              prop="before"
+              label="变更前"
+              min-width="210"
+              show-overflow-tooltip
+              sortable="custom"
+            >
               <template #default="{ row }">{{ formatConfigValue(row.before) }}</template>
             </ElTableColumn>
-            <ElTableColumn label="变更后" min-width="210" show-overflow-tooltip>
+            <ElTableColumn
+              prop="after"
+              label="变更后"
+              min-width="210"
+              show-overflow-tooltip
+              sortable="custom"
+            >
               <template #default="{ row }">{{ formatConfigValue(row.after) }}</template>
             </ElTableColumn>
-            <ElTableColumn label="等级" width="90">
+            <ElTableColumn prop="severity" label="等级" width="90" sortable="custom">
               <template #default="{ row }">
                 <ElTag :type="row.severity === 'warning' ? 'warning' : 'info'" effect="plain">
                   {{ row.severity === 'warning' ? '需复核' : '信息' }}
@@ -3175,6 +4834,16 @@ onMounted(() => {
               </template>
             </ElTableColumn>
           </ElTable>
+          <ElPagination
+            v-model:current-page="tableStates.configDiff.page"
+            v-model:page-size="tableStates.configDiff.pageSize"
+            class="table-pagination"
+            background
+            :page-sizes="tablePageSizes"
+            layout="total, sizes, prev, pager, next, jumper"
+            :total="configDiffRows.length"
+            @size-change="resetTablePage('configDiff')"
+          />
           <ElEmpty v-if="!configDiffRows.length" description="当前表单与已保存配置一致" />
         </template>
       </ElDialog>
@@ -3208,18 +4877,39 @@ onMounted(() => {
               {{ latestPublishResult.impactSummary.reviewTodos }} 条
             </ElDescriptionsItem>
           </ElDescriptions>
-          <ElTable :data="publishImpactRows" border class="publish-impact-table">
-            <ElTableColumn prop="label" label="配置域" width="118" />
-            <ElTableColumn prop="affectedCount" label="影响项" width="86" />
-            <ElTableColumn label="状态" width="96">
+          <ElTable
+            :data="tableRows(publishImpactRows, tableStates.publishImpact)"
+            border
+            class="publish-impact-table"
+            @sort-change="handleTableSortChange('publishImpact', $event)"
+          >
+            <ElTableColumn prop="label" label="配置域" width="118" sortable="custom" />
+            <ElTableColumn prop="affectedCount" label="影响项" width="86" sortable="custom" />
+            <ElTableColumn prop="status" label="状态" width="96" sortable="custom">
               <template #default="{ row }">
                 <ElTag :type="row.status === '需复核' ? 'warning' : 'success'" effect="plain">
                   {{ row.status }}
                 </ElTag>
               </template>
             </ElTableColumn>
-            <ElTableColumn prop="trace" label="联动追溯" min-width="320" show-overflow-tooltip />
+            <ElTableColumn
+              prop="trace"
+              label="联动追溯"
+              min-width="320"
+              show-overflow-tooltip
+              sortable="custom"
+            />
           </ElTable>
+          <ElPagination
+            v-model:current-page="tableStates.publishImpact.page"
+            v-model:page-size="tableStates.publishImpact.pageSize"
+            class="table-pagination"
+            background
+            :page-sizes="tablePageSizes"
+            layout="total, sizes, prev, pager, next, jumper"
+            :total="publishImpactRows.length"
+            @size-change="resetTablePage('publishImpact')"
+          />
         </template>
       </ElDialog>
 
@@ -3229,7 +4919,7 @@ onMounted(() => {
         size="min(720px, 94vw)"
       >
         <div class="drawer-content">
-          <ElEmpty v-if="!selectedRuleVersion" description="暂无规则版本详情" />
+          <ElEmpty v-if="!selectedRuleVersion" description="暂无AI业务规则版本详情" />
           <template v-else>
             <ElDescriptions :column="2" border>
               <ElDescriptionsItem label="规则名称">{{
@@ -3238,7 +4928,7 @@ onMounted(() => {
               <ElDescriptionsItem label="规则 Key">{{
                 selectedRuleVersion.ruleKey
               }}</ElDescriptionsItem>
-              <ElDescriptionsItem label="规则版本">{{
+              <ElDescriptionsItem label="AI业务规则版本">{{
                 selectedRuleVersion.version
               }}</ElDescriptionsItem>
               <ElDescriptionsItem label="状态">
@@ -3292,7 +4982,7 @@ onMounted(() => {
         </div>
       </ElDrawer>
 
-      <ElDrawer v-model="adminRuleDiffVisible" title="规则版本差异" size="min(760px, 94vw)">
+      <ElDrawer v-model="adminRuleDiffVisible" title="AI业务规则版本差异" size="min(760px, 94vw)">
         <div v-loading="adminRuleDiffLoading" class="drawer-content rule-diff-drawer">
           <div v-if="adminRuleDiffError" class="local-error local-error--compact">
             <ElAlert type="error" show-icon :closable="false" :title="adminRuleDiffError" />
@@ -3335,30 +5025,43 @@ onMounted(() => {
             </div>
 
             <ElTable
-              :data="adminRuleDiffRows"
+              :data="tableRows(adminRuleDiffRows, tableStates.adminRuleDiff)"
               border
               height="360"
               empty-text="当前对比未发现字段差异"
+              @sort-change="handleTableSortChange('adminRuleDiff', $event)"
             >
-              <ElTableColumn prop="label" label="字段" width="130" />
-              <ElTableColumn label="类型" width="96">
+              <ElTableColumn prop="label" label="字段" width="130" sortable="custom" />
+              <ElTableColumn prop="changeType" label="类型" width="96" sortable="custom">
                 <template #default="{ row }">
                   <ElTag :type="diffChangeTagType(row.changeType)" effect="light">
                     {{ diffChangeTypeLabel(row.changeType) }}
                   </ElTag>
                 </template>
               </ElTableColumn>
-              <ElTableColumn label="基线值" min-width="220" show-overflow-tooltip>
+              <ElTableColumn
+                prop="before"
+                label="基线值"
+                min-width="220"
+                show-overflow-tooltip
+                sortable="custom"
+              >
                 <template #default="{ row }">
                   <span class="diff-value">{{ formatRuleDiffValue(row.before) }}</span>
                 </template>
               </ElTableColumn>
-              <ElTableColumn label="当前值" min-width="220" show-overflow-tooltip>
+              <ElTableColumn
+                prop="after"
+                label="当前值"
+                min-width="220"
+                show-overflow-tooltip
+                sortable="custom"
+              >
                 <template #default="{ row }">
                   <span class="diff-value">{{ formatRuleDiffValue(row.after) }}</span>
                 </template>
               </ElTableColumn>
-              <ElTableColumn label="关注" width="90">
+              <ElTableColumn prop="severity" label="关注" width="90" sortable="custom">
                 <template #default="{ row }">
                   <ElTag :type="row.severity === 'warning' ? 'warning' : 'info'" effect="plain">
                     {{ row.severity === 'warning' ? '需复核' : '信息' }}
@@ -3366,6 +5069,16 @@ onMounted(() => {
                 </template>
               </ElTableColumn>
             </ElTable>
+            <ElPagination
+              v-model:current-page="tableStates.adminRuleDiff.page"
+              v-model:page-size="tableStates.adminRuleDiff.pageSize"
+              class="table-pagination"
+              background
+              :page-sizes="tablePageSizes"
+              layout="total, sizes, prev, pager, next, jumper"
+              :total="adminRuleDiffRows.length"
+              @size-change="resetTablePage('adminRuleDiff')"
+            />
           </template>
         </div>
       </ElDrawer>
@@ -3410,12 +5123,33 @@ onMounted(() => {
             </ElDescriptions>
 
             <ElDivider content-position="left">参建单位</ElDivider>
-            <ElTable :data="projectDetail.participantUnits" border height="210">
-              <ElTableColumn prop="unitName" label="单位" min-width="220" show-overflow-tooltip />
-              <ElTableColumn prop="unitType" label="类型" width="110" />
-              <ElTableColumn prop="contactName" label="联系人" width="100" />
-              <ElTableColumn prop="contactPhone" label="电话" width="140" />
+            <ElTable
+              :data="tableRows(projectDetail.participantUnits, tableStates.projectParticipants)"
+              border
+              height="210"
+              @sort-change="handleTableSortChange('projectParticipants', $event)"
+            >
+              <ElTableColumn
+                prop="unitName"
+                label="单位"
+                min-width="220"
+                show-overflow-tooltip
+                sortable="custom"
+              />
+              <ElTableColumn prop="unitType" label="类型" width="110" sortable="custom" />
+              <ElTableColumn prop="contactName" label="联系人" width="100" sortable="custom" />
+              <ElTableColumn prop="contactPhone" label="电话" width="140" sortable="custom" />
             </ElTable>
+            <ElPagination
+              v-model:current-page="tableStates.projectParticipants.page"
+              v-model:page-size="tableStates.projectParticipants.pageSize"
+              class="table-pagination"
+              background
+              :page-sizes="tablePageSizes"
+              layout="total, sizes, prev, pager, next, jumper"
+              :total="projectDetail.participantUnits.length"
+              @size-change="resetTablePage('projectParticipants')"
+            />
 
             <ElDivider content-position="left">成员授权</ElDivider>
             <div v-if="memberOperationError" class="local-error local-error--compact">
@@ -3428,18 +5162,29 @@ onMounted(() => {
                 <ElButton type="primary" @click="openMemberDialog">新增授权</ElButton>
               </ElSpace>
             </div>
-            <ElTable :data="selectedProjectMembers" border height="280">
-              <ElTableColumn prop="name" label="姓名" width="96" />
-              <ElTableColumn prop="orgName" label="组织" min-width="190" show-overflow-tooltip />
-              <ElTableColumn label="角色" width="100">
+            <ElTable
+              :data="tableRows(selectedProjectMembers, tableStates.projectMembers)"
+              border
+              height="280"
+              @sort-change="handleTableSortChange('projectMembers', $event)"
+            >
+              <ElTableColumn prop="name" label="姓名" width="96" sortable="custom" />
+              <ElTableColumn
+                prop="orgName"
+                label="组织"
+                min-width="190"
+                show-overflow-tooltip
+                sortable="custom"
+              />
+              <ElTableColumn prop="role" label="角色" width="100" sortable="custom">
                 <template #default="{ row }">
                   <ElTag effect="plain">{{ roleLabel(row.role) }}</ElTag>
                 </template>
               </ElTableColumn>
-              <ElTableColumn label="节点范围" min-width="160">
+              <ElTableColumn prop="nodeScope" label="节点范围" min-width="160" sortable="custom">
                 <template #default="{ row }">{{ row.nodeScope.join(', ') }}</template>
               </ElTableColumn>
-              <ElTableColumn label="动作" min-width="220">
+              <ElTableColumn prop="actions" label="动作" min-width="220" sortable="custom">
                 <template #default="{ row }">
                   <div class="tag-list">
                     <ElTag
@@ -3456,14 +5201,14 @@ onMounted(() => {
                   </div>
                 </template>
               </ElTableColumn>
-              <ElTableColumn label="状态" width="96">
+              <ElTableColumn prop="status" label="状态" width="96" sortable="custom">
                 <template #default="{ row }">
                   <ElTag :type="statusType(row.status)" size="small" effect="plain">
                     {{ row.status }}
                   </ElTag>
                 </template>
               </ElTableColumn>
-              <ElTableColumn label="操作" width="92" fixed="right">
+              <ElTableColumn label="操作" width="124" fixed="right">
                 <template #default="{ row }">
                   <ElButton
                     link
@@ -3473,38 +5218,99 @@ onMounted(() => {
                   >
                     {{ row.status === '启用' ? '停用' : '启用' }}
                   </ElButton>
+                  <ElButton
+                    link
+                    type="danger"
+                    :loading="memberSaving"
+                    @click="handleDeleteMember(row)"
+                  >
+                    移除
+                  </ElButton>
                 </template>
               </ElTableColumn>
             </ElTable>
+            <ElPagination
+              v-model:current-page="tableStates.projectMembers.page"
+              v-model:page-size="tableStates.projectMembers.pageSize"
+              class="table-pagination"
+              background
+              :page-sizes="tablePageSizes"
+              layout="total, sizes, prev, pager, next, jumper"
+              :total="selectedProjectMembers.length"
+              @size-change="resetTablePage('projectMembers')"
+            />
 
             <ElDivider content-position="left">节点概况</ElDivider>
-            <ElTable :data="projectDetail.nodeSummary" border height="260">
+            <ElTable
+              :data="tableRows(projectDetail.nodeSummary, tableStates.projectNodeSummary)"
+              border
+              height="260"
+              @sort-change="handleTableSortChange('projectNodeSummary', $event)"
+            >
               <ElTableColumn
                 prop="groupName"
                 label="业务分组"
                 min-width="190"
                 show-overflow-tooltip
+                sortable="custom"
               />
-              <ElTableColumn prop="total" label="节点" width="76" />
-              <ElTableColumn prop="passed" label="已通过" width="86" />
-              <ElTableColumn prop="correction" label="补正" width="76" />
-              <ElTableColumn prop="pending" label="待处理" width="86" />
+              <ElTableColumn prop="total" label="节点" width="76" sortable="custom" />
+              <ElTableColumn prop="passed" label="已通过" width="86" sortable="custom" />
+              <ElTableColumn prop="correction" label="补正" width="76" sortable="custom" />
+              <ElTableColumn prop="pending" label="待处理" width="86" sortable="custom" />
             </ElTable>
+            <ElPagination
+              v-model:current-page="tableStates.projectNodeSummary.page"
+              v-model:page-size="tableStates.projectNodeSummary.pageSize"
+              class="table-pagination"
+              background
+              :page-sizes="tablePageSizes"
+              layout="total, sizes, prev, pager, next, jumper"
+              :total="projectDetail.nodeSummary.length"
+              @size-change="resetTablePage('projectNodeSummary')"
+            />
 
             <ElDivider content-position="left">近期导出</ElDivider>
-            <ElTable :data="projectDetail.recentExportTasks" border height="220">
-              <ElTableColumn prop="id" label="任务号" min-width="170" show-overflow-tooltip />
-              <ElTableColumn prop="fileName" label="文件" min-width="220" show-overflow-tooltip />
-              <ElTableColumn label="状态" width="100">
+            <ElTable
+              :data="tableRows(projectDetail.recentExportTasks, tableStates.projectExports)"
+              border
+              height="220"
+              @sort-change="handleTableSortChange('projectExports', $event)"
+            >
+              <ElTableColumn
+                prop="id"
+                label="任务号"
+                min-width="170"
+                show-overflow-tooltip
+                sortable="custom"
+              />
+              <ElTableColumn
+                prop="fileName"
+                label="文件"
+                min-width="220"
+                show-overflow-tooltip
+                sortable="custom"
+              />
+              <ElTableColumn prop="status" label="状态" width="100" sortable="custom">
                 <template #default="{ row }">
                   <ElTag :type="statusType(row.status)" effect="light">{{ row.status }}</ElTag>
                 </template>
               </ElTableColumn>
-              <ElTableColumn label="大小" width="100">
+              <ElTableColumn prop="fileSize" label="大小" width="100" sortable="custom">
                 <template #default="{ row }">{{ formatFileSize(row.fileSize) }}</template>
               </ElTableColumn>
-              <ElTableColumn prop="createdAt" label="创建时间" width="170" />
+              <ElTableColumn prop="createdAt" label="创建时间" width="170" sortable="custom" />
             </ElTable>
+            <ElPagination
+              v-model:current-page="tableStates.projectExports.page"
+              v-model:page-size="tableStates.projectExports.pageSize"
+              class="table-pagination"
+              background
+              :page-sizes="tablePageSizes"
+              layout="total, sizes, prev, pager, next, jumper"
+              :total="projectDetail.recentExportTasks.length"
+              @size-change="resetTablePage('projectExports')"
+            />
           </template>
         </div>
       </ElDrawer>
@@ -3533,47 +5339,7 @@ onMounted(() => {
 
           <ElRow :gutter="12">
             <ElCol :xs="24" :sm="12">
-              <ElFormItem v-if="memberDialogMode === 'single'" label="用户">
-                <ElSelect v-model="memberForm.userId" filterable>
-                  <ElOption
-                    v-for="user in overview.users"
-                    :key="user.id"
-                    :label="`${user.name} / ${user.orgName}`"
-                    :value="user.id"
-                  />
-                </ElSelect>
-              </ElFormItem>
-              <ElFormItem v-else label="批量用户">
-                <ElSelect
-                  v-model="memberBatchUserIds"
-                  multiple
-                  filterable
-                  collapse-tags
-                  collapse-tags-tooltip
-                  placeholder="选择要写入相同授权的用户"
-                >
-                  <ElOption
-                    v-for="user in batchMemberCandidateUsers"
-                    :key="user.id"
-                    :label="`${user.name} / ${user.orgName}`"
-                    :value="user.id"
-                  >
-                    <span>{{ user.name }} / {{ user.orgName }}</span>
-                    <ElTag
-                      v-if="selectedProjectMemberUserIds.has(user.id)"
-                      class="member-option-tag"
-                      size="small"
-                      type="warning"
-                      effect="plain"
-                    >
-                      将更新
-                    </ElTag>
-                  </ElOption>
-                </ElSelect>
-              </ElFormItem>
-            </ElCol>
-            <ElCol :xs="24" :sm="12">
-              <ElFormItem label="角色">
+              <ElFormItem label="角色筛选">
                 <ElSelect v-model="memberForm.role" @change="handleMemberRoleChange">
                   <ElOption label="监检" value="inspection" />
                   <ElOption label="施工" value="contractor" />
@@ -3583,19 +5349,64 @@ onMounted(() => {
                 </ElSelect>
               </ElFormItem>
             </ElCol>
+            <ElCol :xs="24" :sm="12">
+              <ElFormItem label="组织筛选">
+                <ElSelect
+                  v-model="memberForm.orgId"
+                  clearable
+                  filterable
+                  @change="handleMemberOrgChange"
+                >
+                  <ElOption
+                    v-for="org in roleOrgOptions(memberForm.role)"
+                    :key="org.id"
+                    :label="org.name"
+                    :value="org.id"
+                  />
+                </ElSelect>
+              </ElFormItem>
+            </ElCol>
           </ElRow>
-          <ElFormItem label="节点范围">
-            <ElInput v-model="memberForm.nodeScopeText" placeholder="例如 16,24,40" />
+          <ElFormItem v-if="memberDialogMode === 'single'" label="用户">
+            <ElSelect v-model="memberForm.userId" filterable>
+              <ElOption
+                v-for="user in batchMemberCandidateUsers"
+                :key="user.id"
+                :label="`${user.name} / ${user.orgName}`"
+                :value="user.id"
+              />
+            </ElSelect>
+          </ElFormItem>
+          <ElFormItem v-else label="批量用户">
+            <ElSelect
+              v-model="memberBatchUserIds"
+              multiple
+              filterable
+              collapse-tags
+              collapse-tags-tooltip
+              placeholder="选择要授权到项目的用户"
+            >
+              <ElOption
+                v-for="user in batchMemberCandidateUsers"
+                :key="user.id"
+                :label="`${user.name} / ${user.orgName}`"
+                :value="user.id"
+              >
+                <span>{{ user.name }} / {{ user.orgName }}</span>
+                <ElTag
+                  v-if="selectedProjectMemberUserIds.has(user.id)"
+                  class="member-option-tag"
+                  size="small"
+                  type="warning"
+                  effect="plain"
+                >
+                  将更新
+                </ElTag>
+              </ElOption>
+            </ElSelect>
           </ElFormItem>
           <ElFormItem label="到期时间">
             <ElInput v-model="memberForm.expiresAt" placeholder="例如 2026-12-31 18:00:00" />
-          </ElFormItem>
-          <ElFormItem label="动作权限">
-            <ElCheckboxGroup v-model="memberForm.actions" class="action-checkbox-grid">
-              <ElCheckbox v-for="action in currentRoleActions" :key="action" :label="action">
-                {{ action }}
-              </ElCheckbox>
-            </ElCheckboxGroup>
           </ElFormItem>
         </ElForm>
         <template #footer>
@@ -3748,6 +5559,18 @@ onMounted(() => {
   border-radius: 8px;
 }
 
+.admin-page--expanded :deep(.el-tabs__content) {
+  min-height: 980px;
+}
+
+.admin-stack-row {
+  row-gap: 16px;
+}
+
+.admin-stack-col .panel {
+  margin-bottom: 0;
+}
+
 .panel-header {
   display: flex;
   gap: 12px;
@@ -3858,12 +5681,15 @@ onMounted(() => {
 .config-edit-form :deep(.el-select),
 .config-edit-form :deep(.el-input),
 .config-edit-form :deep(.el-input-number),
+.prompt-template-form :deep(.el-select),
+.prompt-template-form :deep(.el-input),
 .integration-filter-bar :deep(.el-select) {
   width: 100%;
 }
 
 .wizard-form,
-.config-edit-form {
+.config-edit-form,
+.prompt-template-form {
   margin-top: 18px;
 }
 
@@ -4078,9 +5904,37 @@ onMounted(() => {
   margin-left: 8px;
 }
 
+.business-pack-option {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.business-pack-option span {
+  font-weight: 800;
+  line-height: 18px;
+}
+
+.business-pack-option small {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 16px;
+  color: #64748b;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .filter-bar {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) 140px 150px auto auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.prompt-template-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(140px, 180px) auto auto;
   gap: 10px;
   align-items: center;
   margin-bottom: 12px;
@@ -4102,6 +5956,10 @@ onMounted(() => {
   }
 
   .filter-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .prompt-template-filter-bar {
     grid-template-columns: 1fr;
   }
 

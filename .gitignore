@@ -15,8 +15,13 @@ backend/.env
 backend/.env.*
 !backend/.env.*.example
 backend/deployment-reports/
+backend/data/*.sqlite
+backend/data/*.sqlite3
+backend/data/*.sqlite-*
+backend/data/*.sqlite3-*
 backend/ocr_eval/reports/
 backend/ocr_eval/public_datasets/
 backend/ocr_eval/public_reports/
 
 output/**/*.inspect.ndjson
+output/knowledge_uploads/

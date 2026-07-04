@@ -135,7 +135,14 @@ export type DocumentAsset = {
   uploaderName: string
   currentVersionId: string
   fileStatus: '草稿' | '已上传' | '已撤回' | '已替换' | '已作废'
-  currentOcrStatus: '未识别' | '识别中' | '已识别' | '识别失败' | '人工修正'
+  currentOcrStatus:
+    | '待识别'
+    | '未识别'
+    | '排队中'
+    | '识别中'
+    | '已识别'
+    | '识别失败'
+    | '人工修正'
   updatedAt: string
   actions: ActionCode[]
 }
@@ -198,6 +205,11 @@ export type AiReviewRun = {
   model: string
   promptVersion: string
   ruleVersion: string
+  llmConversationId?: string
+  promptAudit?: Record<string, unknown>
+  llmMetadata?: Record<string, unknown>
+  reasoningProcess?: string
+  llmResultText?: string
   status: '推理中' | '完成' | '失败' | '已人工确认'
   suggestion: {
     id: string

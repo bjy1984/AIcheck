@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -109,6 +110,12 @@ def business_pack_summary(pack: dict[str, Any]) -> dict[str, Any]:
         "name": pack["name"],
         "version": pack["version"],
         "domainType": pack["domainType"],
+        "description": pack.get("description", ""),
+        "pipelineTypeCode": pack.get("pipelineTypeCode", ""),
+        "pipelineTypeName": pack.get("pipelineTypeName") or pack["name"],
+        "commonGrades": pack.get("commonGrades", ""),
+        "scopeDescription": pack.get("scopeDescription", ""),
+        "projectType": pack.get("projectType") or pack["name"],
         "status": pack.get("status", "published"),
         "snapshotHash": pack.get("snapshotHash") or snapshot_hash(pack),
         "roleCount": len(pack.get("roles") or []),
@@ -447,12 +454,30 @@ def default_agent_sop(pack: dict[str, Any]) -> dict[str, Any] | None:
     return next(iter(pack.get("agentSops") or []), None)
 
 
+def _template_value(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False)
+
+
+def render_prompt_template(template: str, context: dict[str, Any]) -> str:
+    def replace_double(match: re.Match[str]) -> str:
+        key = match.group(1).strip()
+        return _template_value(context.get(key, match.group(0)))
+
+    rendered = re.sub(r"\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}", replace_double, template or "")
+    for key, value in context.items():
+        rendered = rendered.replace("{" + key + "}", _template_value(value))
+    return rendered
+
+
 def build_ai_review_prompt(
     pack: dict[str, Any],
     *,
     node: dict[str, Any] | None,
     fields: list[dict[str, Any]],
     rule: dict[str, Any] | None = None,
+    prompt_template: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     agent = default_agent_sop(pack) or {}
     effective_rule = rule or matching_rule_for_node(pack, int((node or {}).get("nodeId") or 0)) or {}
@@ -462,7 +487,7 @@ def build_ai_review_prompt(
         for material in pack.get("materialTypes") or []
         if material.get("name")
     ][:8]
-    system = (
+    default_system = (
         f"You are {agent.get('name') or 'review assistant'} for business pack "
         f"{pack['id']} version {pack['version']}. "
         "Return evidence-backed review suggestions only. Do not approve final business state."
@@ -494,4 +519,40 @@ def build_ai_review_prompt(
         "ocrFields": fields[:12],
         "requiredOutput": "ReviewFindingDraftList with findingType, severity, description, evidenceLinkIds, ruleRefs, confidence, suggestedAction.",
     }
-    return {"system": system, "user": json.dumps(user, ensure_ascii=False)}
+    base_prompt_json = json.dumps(user, ensure_ascii=False)
+    template_context = {
+        "agentName": agent.get("name") or "review assistant",
+        "agentId": agent.get("id") or "",
+        "agentVersion": agent.get("version") or "",
+        "businessPackId": pack["id"],
+        "businessPackName": pack["name"],
+        "businessPackVersion": pack["version"],
+        "domainType": pack.get("domainType") or "",
+        "nodeId": (node or {}).get("nodeId"),
+        "nodeName": node_name,
+        "groupName": (node or {}).get("groupName") or "",
+        "ruleId": effective_rule.get("id") or "",
+        "ruleVersion": effective_rule.get("version") or "",
+        "basePromptJson": base_prompt_json,
+        "ocrFieldCount": len(fields),
+    }
+    system_template = (prompt_template or {}).get("systemPrompt") or default_system
+    user_template = (prompt_template or {}).get("userPromptTemplate") or "{{basePromptJson}}"
+    return {
+        "system": render_prompt_template(system_template, template_context),
+        "user": render_prompt_template(user_template, template_context),
+        "template": {
+            "id": (prompt_template or {}).get("id"),
+            "name": (prompt_template or {}).get("name"),
+            "version": (prompt_template or {}).get("version"),
+            "promptKey": (prompt_template or {}).get("promptKey"),
+            "plannerPrompt": render_prompt_template(
+                (prompt_template or {}).get("plannerPromptTemplate") or "",
+                template_context,
+            ),
+            "criticPrompt": render_prompt_template(
+                (prompt_template or {}).get("criticPromptTemplate") or "",
+                template_context,
+            ),
+        },
+    }

@@ -32,7 +32,8 @@ const adminDeepRouteCases = [
   { path: '/admin/projects', menu: '项目列表', tab: '组织用户' },
   { path: '/admin/org', menu: '组织用户', tab: '组织用户' },
   { path: '/admin/permission', menu: '角色权限配置', tab: '权限与节点' },
-  { path: '/admin/rules', menu: '流程状态机', tab: '规则与流程' },
+  { path: '/admin/rules', menu: 'AI业务规则与流程', tab: 'AI业务规则与流程' },
+  { path: '/admin/prompt-templates', menu: 'Prompt 模板管理', tab: 'Prompt 模板管理' },
   { path: '/admin/fine-config', menu: '待办规则配置', tab: '细项配置' },
   { path: '/admin/integration', menu: '联调清单', tab: '联调清单' },
   { path: '/admin/audit', menu: '操作日志', tab: '审计日志' }
@@ -42,7 +43,7 @@ const knowledgeDeepRouteCases = [
   { path: '/knowledge/sources', menu: '标准规范库', tab: '知识源管理' },
   { path: '/knowledge/files', menu: '项目文件知识库', tab: '项目文件库' },
   { path: '/knowledge/tasks', menu: 'OCR/向量任务中心', tab: '任务中心' },
-  { path: '/knowledge/rules', menu: '业务规则版本管理', tab: '规则配置' },
+  { path: '/knowledge/rules', menu: '监检业务判断规则管理', tab: '规则配置' },
   { path: '/knowledge/retrieval', menu: '知识检索测试', tab: '检索测试' },
   { path: '/knowledge/reasoning', menu: '推理链路历史日志', tab: '推理日志' },
   { path: '/knowledge/compare', menu: '多 LLM 反馈对比', tab: '多模型对比' },
@@ -2087,7 +2088,7 @@ test.describe('AIcheck business writeback flows', () => {
   }) => {
     await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/admin/overview')!)
 
-    await page.getByRole('tab', { name: '规则与流程' }).click()
+    await page.getByRole('tab', { name: 'AI业务规则与流程' }).click()
     const workflowPanel = page.locator('.panel').filter({ hasText: '流程状态机' })
     await workflowPanel.getByRole('button', { name: '编辑' }).first().click()
 

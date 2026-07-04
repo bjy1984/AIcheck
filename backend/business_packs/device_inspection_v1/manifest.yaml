@@ -1,6 +1,11 @@
 id: device_inspection_v1
-name: 设备年检业务包
+name: 公用管道
 version: 2026.06.01
 domainType: device_inspection
 status: published
-description: 设备年检资料核验业务包，用于验证平台内核可迁移到非工程监检资料审查场景。
+pipelineTypeCode: GB类
+pipelineTypeName: 公用管道
+commonGrades: GB1、GB2
+scopeDescription: 城镇燃气管道、热力管道等公用工程管道
+projectType: 公用压力管道
+description: GB 类公用压力管道业务类型，覆盖燃气管道、热力管道等项目。

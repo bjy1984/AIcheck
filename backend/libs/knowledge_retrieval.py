@@ -83,7 +83,7 @@ def normalize_clause(candidate: dict[str, Any], *, default_version: str = "inspe
     return {
         "id": str(candidate.get("id") or clause_id),
         "clauseId": clause_id,
-        "kbDocId": candidate.get("kbDocId") or candidate.get("sourceId") or "KS-STANDARD-TSG",
+        "kbDocId": candidate.get("kbDocId") or candidate.get("sourceId") or "KS-STANDARD-RULES",
         "kbVersion": candidate.get("kbVersion") or candidate.get("version") or default_version,
         "clauseNo": candidate.get("clauseNo") or clause_id.split("-")[-1],
         "title": candidate.get("title") or candidate.get("name") or clause_id,
@@ -117,8 +117,8 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
                 {
                     "id": f"KC-{link.get('objectId') or link.get('id')}",
                     "clauseId": link.get("objectId") or link.get("id"),
-                    "kbDocId": link.get("kbDocId") or "KS-STANDARD-TSG",
-                    "kbVersion": link.get("kbVersion") or source_versions.get("KS-STANDARD-TSG") or default_version,
+                    "kbDocId": link.get("kbDocId") or "KS-STANDARD-RULES",
+                    "kbVersion": link.get("kbVersion") or source_versions.get("KS-STANDARD-RULES") or default_version,
                     "title": link.get("title") or link.get("objectId") or "知识条款",
                     "text": link.get("quotedText"),
                     "pageNo": link.get("pageNo"),
@@ -182,7 +182,7 @@ def normalize_page_index_node(candidate: dict[str, Any], *, default_version: str
     return {
         "id": str(candidate.get("id") or node_id),
         "pageIndexNodeId": node_id,
-        "kbDocId": candidate.get("kbDocId") or candidate.get("sourceId") or "KS-STANDARD-TSG",
+        "kbDocId": candidate.get("kbDocId") or candidate.get("sourceId") or "KS-STANDARD-RULES",
         "kbVersion": candidate.get("kbVersion") or candidate.get("version") or default_version,
         "nodeId": str(candidate.get("nodeId") or node_id),
         "parentNodeId": candidate.get("parentNodeId"),

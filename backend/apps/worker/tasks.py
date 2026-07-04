@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from typing import Any
 
@@ -7,21 +9,43 @@ from apps.ocr_service.service import ocr_service
 from apps.worker.celery_app import celery_app
 from libs.business_pack import build_ai_review_prompt, load_business_pack, matching_rule_for_node
 from libs.contracts.responses import server_time
-from libs.db.repository import repo
+from libs.db.repository import flush_state, load_state, repo
 from libs.integrations.litellm_client import LiteLLMClient
 from libs.integrations.ocr_client import OcrClient
 
 
+def stable_hash_payload(value: Any) -> str:
+    raw = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def production_prompt_template_for_run(run: dict[str, Any]) -> dict[str, Any] | None:
+    business_pack_id = run.get("businessPackId")
+    prompt_version = str(run.get("promptVersion") or "")
+    templates = [
+        item
+        for item in repo.state.get("prompt_templates", [])
+        if item.get("businessPackId") in {None, "", business_pack_id}
+        and item.get("status") in {"production", "published", "active", "启用", "已发布"}
+    ]
+    exact = next(
+        (
+            item
+            for item in templates
+            if prompt_version
+            and (
+                item.get("id") == prompt_version
+                or item.get("promptVersionId") == prompt_version
+                or item.get("version") == prompt_version
+            )
+        ),
+        None,
+    )
+    return repo.clone(exact or (templates[0] if templates else None))
+
+
 def service_failure_message(service: str) -> str:
     return f"{service} 调用失败，请检查服务健康、模型配置、凭据和网络连通性。"
-
-
-def load_state() -> None:
-    repo.load_from_sync_postgres()
-
-
-def flush_state() -> None:
-    repo.flush_to_sync_postgres()
 
 
 def worker_ocr_http_enabled() -> bool:
@@ -210,14 +234,65 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
         if item.get("documentVersionId") in set(run.get("inputDocumentVersionIds") or [])
     ]
     rule = matching_rule_for_node(pack, node_id)
-    prompt = build_ai_review_prompt(pack, node=node, fields=fields, rule=rule)
+    prompt_template = production_prompt_template_for_run(run)
+    prompt = build_ai_review_prompt(pack, node=node, fields=fields, rule=rule, prompt_template=prompt_template)
+    review_task_json = json.dumps(
+        {
+            "task": "Generate ReviewFindingDraftList JSON only.",
+            "projectId": project_id,
+            "nodeId": node_id,
+            "fieldCount": len(fields),
+            "evidenceLinkIds": [item.get("id") for item in repo.state.get("evidence_links", [])[:5]],
+        },
+        ensure_ascii=False,
+    )
+    user_prompt = prompt["user"].replace("{{reviewTaskJson}}", review_task_json)
+    if review_task_json not in user_prompt:
+        user_prompt = f"{user_prompt}\n\n{review_task_json}"
+    messages = [{"role": "system", "content": prompt["system"]}, {"role": "user", "content": user_prompt}]
+    run["promptAudit"] = {
+        "promptVersion": run.get("promptVersion"),
+        "promptTemplateId": (prompt_template or {}).get("id"),
+        "promptTemplateName": (prompt_template or {}).get("name"),
+        "promptTemplateVersion": (prompt_template or {}).get("version"),
+        "messagesHash": stable_hash_payload(messages),
+        "systemPrompt": prompt["system"],
+        "userPrompt": user_prompt,
+        "plannerPrompt": (prompt.get("template") or {}).get("plannerPrompt") or "",
+        "criticPrompt": (prompt.get("template") or {}).get("criticPrompt") or "",
+        "messages": messages,
+        "payloadPolicy": "full_prompt_stored_for_audit",
+    }
     try:
         response = LiteLLMClient().chat_sync(
-            [{"role": "system", "content": prompt["system"]}, {"role": "user", "content": prompt["user"]}],
+            messages,
             model=run.get("model") or "review-chat",
             temperature=0.1,
         )
         answer = LiteLLMClient.first_message_text(response) or "AI 复核完成，建议人工确认关键证据链。"
+        message = ((response.get("choices") or [{}])[0].get("message") or {}) if isinstance(response.get("choices"), list) else {}
+        conversation_id = str(response.get("id") or response.get("conversation_id") or f"llm-{stable_hash_payload(response)[7:23]}")
+        run["llmConversationId"] = conversation_id
+        run["llmMetadata"] = {
+            "llmExecution": "litellm",
+            "llmCalled": True,
+            "conversationId": conversation_id,
+            "modelAlias": run.get("model") or "review-chat",
+            "promptVersion": run.get("promptVersion"),
+            "promptTemplateId": (prompt_template or {}).get("id"),
+            "promptHash": run["promptAudit"]["messagesHash"],
+            "responseHash": stable_hash_payload(response),
+            "usage": response.get("usage") or {},
+            "reasoningProcess": str(
+                message.get("reasoning_content")
+                or message.get("reasoning")
+                or message.get("reasoningSummary")
+                or "模型返回审查建议；未返回单独的公开推理摘要。"
+            )[:3000],
+            "resultText": answer[:4000],
+        }
+        run["reasoningProcess"] = run["llmMetadata"]["reasoningProcess"]
+        run["llmResultText"] = run["llmMetadata"]["resultText"]
         run["status"] = "完成"
         run["finishedAt"] = server_time()
         run["steps"] = [
@@ -239,6 +314,23 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
             }
         )
         run["evidenceLinks"] = repo.clone(repo.state["evidence_links"][:5])
+        repo.state.setdefault("ai_trace_steps", []).append(
+            {
+                "id": f"TRACE-{run_id}-LLM-{stable_hash_payload(response)[7:13].upper()}",
+                "aiRunId": run_id,
+                "traceId": f"TRACE-{run_id}",
+                "sequence": len([item for item in repo.state.get("ai_trace_steps", []) if item.get("aiRunId") == run_id]) + 1,
+                "stepType": "llm_review",
+                "name": "LiteLLM 对话与 Prompt 审计",
+                "status": "completed",
+                "conversationId": run.get("llmConversationId"),
+                "promptHash": (run.get("llmMetadata") or {}).get("promptHash"),
+                "responseHash": (run.get("llmMetadata") or {}).get("responseHash"),
+                "reasoningProcess": run.get("reasoningProcess"),
+                "resultText": run.get("llmResultText"),
+                "createdAt": server_time(),
+            }
+        )
         run["findingDrafts"] = [
             {
                 "id": f"FND-DRAFT-{run_id}",

@@ -20,14 +20,33 @@ def postgres_enabled() -> bool:
 async def init_postgres_if_configured(app: Any) -> None:
     dsn = postgres_dsn()
     if not dsn:
+        repo.configure_sqlite()
+        repo.load_from_sqlite()
         bootstrap_local_roles_if_configured()
         app.state.postgres = None
+        app.state.postgres_error = None
+        app.state.sqlite = repo.sqlite_path
         return
-    repo.configure_sync_postgres(dsn)
-    repo.ensure_postgres_schema()
-    repo.load_from_sync_postgres()
-    object_storage.ensure_buckets()
-    app.state.postgres = dsn
+    try:
+        repo.configure_sync_postgres(dsn)
+        repo.ensure_postgres_schema()
+        repo.load_from_sync_postgres()
+        object_storage.ensure_buckets()
+        app.state.postgres = dsn
+        app.state.postgres_error = None
+        app.state.sqlite = None
+    except Exception as exc:
+        if os.getenv("AICHECK_SQLITE_FALLBACK", "true").lower() == "false":
+            raise
+        repo.close_sync_postgres()
+        repo.postgres_dsn = None
+        repo.postgres_enabled = False
+        repo.configure_sqlite()
+        repo.load_from_sqlite()
+        bootstrap_local_roles_if_configured()
+        app.state.postgres = None
+        app.state.postgres_error = str(exc)
+        app.state.sqlite = repo.sqlite_path
 
 
 def bootstrap_local_roles_if_configured() -> None:
@@ -48,6 +67,7 @@ def bootstrap_local_roles_if_configured() -> None:
 async def close_postgres(app: Any) -> None:
     repo.close_sync_postgres()
     app.state.postgres = None
+    app.state.sqlite = None
 
 
 async def run_transaction_probe(dsn: str | None = None) -> dict[str, Any]:

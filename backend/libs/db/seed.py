@@ -3,6 +3,12 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from libs.business_rule_generation import (
+    STANDARD_VERSION as GENERATED_STANDARD_RULES_VERSION,
+    build_standard_knowledge_seed,
+    list_standard_files,
+    repo_root_from_backend,
+)
 from libs.business_pack import (
     DEFAULT_BUSINESS_PACK_ID,
     business_pack_fixtures,
@@ -18,6 +24,8 @@ from libs.business_pack import (
 
 PROJECT_ID = "P-2026-HDCP-001"
 DEFAULT_BUSINESS_PACK = default_business_pack()
+STANDARD_RULES_SOURCE_ID = "KS-STANDARD-RULES"
+STANDARD_RULES_VERSION = GENERATED_STANDARD_RULES_VERSION
 
 ROLE_ACTIONS = role_actions_map(DEFAULT_BUSINESS_PACK)
 ROLE_NODE_MAP = role_default_node_map(DEFAULT_BUSINESS_PACK)
@@ -25,6 +33,11 @@ for pack_summary in list_business_packs():
     pack = load_business_pack(pack_summary["id"])
     ROLE_ACTIONS.update({key: value for key, value in role_actions_map(pack).items() if key not in ROLE_ACTIONS})
     ROLE_NODE_MAP.update({key: value for key, value in role_default_node_map(pack).items() if key not in ROLE_NODE_MAP})
+
+WORKSPACE_ROOT = repo_root_from_backend()
+RULES_STANDARDS_ROOT = WORKSPACE_ROOT / "rules" / "standards"
+STANDARD_RULE_FILES = list_standard_files(RULES_STANDARDS_ROOT, workspace_root=WORKSPACE_ROOT)
+STANDARD_KNOWLEDGE_SEED = build_standard_knowledge_seed(STANDARD_RULE_FILES, DEFAULT_BUSINESS_PACK["ruleSets"])
 
 FDE_ROLES = ("fde",)
 FDE_ROLE_LABELS = {"fde": "FDE"}
@@ -63,6 +76,26 @@ ROLE_ACTIONS.update(
     }
 )
 ROLE_NODE_MAP.update({role: DEFAULT_BUSINESS_PACK["nodeTemplates"][0]["nodeId"] for role in FDE_ROLES})
+
+
+DEFAULT_NODE_NAME_BY_ID = {
+    int(template["nodeId"]): str(template.get("name") or "").strip()
+    for template in DEFAULT_BUSINESS_PACK["nodeTemplates"]
+    if template.get("nodeId") is not None
+}
+
+
+def rule_name_from_node_ids(node_ids: list[int] | None, fallback: str = "") -> str:
+    names: list[str] = []
+    for node_id in node_ids or []:
+        name = DEFAULT_NODE_NAME_BY_ID.get(int(node_id), "").strip()
+        if name and name not in names:
+            names.append(name)
+    if not names:
+        return fallback
+    if len(names) == 1:
+        return names[0]
+    return f"{names[0]}等 {len(names)} 个节点"
 
 
 def business_pack_project_fields(pack: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -576,6 +609,44 @@ for run in AI_RUNS:
     run["businessPackSnapshotHash"] = DEFAULT_BUSINESS_PACK["snapshotHash"]
     run["agentId"] = "compliance_review_agent"
     run["agentVersion"] = "1.0.0"
+    run["llmConversationId"] = "chatcmpl-aicheck-demo-24-001"
+    run["promptAudit"] = {
+        "promptVersion": run["promptVersion"],
+        "promptTemplateId": "PTPL-review-202606",
+        "promptTemplateName": "工程监检审查 Prompt 模板",
+        "promptTemplateVersion": "2026.06",
+        "messagesHash": "sha256:prompt-demo-node24",
+        "systemPrompt": (
+            "You are 资料合规复核员 for business pack engineering_inspection_v1 version "
+            f"{DEFAULT_BUSINESS_PACK['version']}. Return evidence-backed review suggestions only. "
+            "Do not approve final business state."
+        ),
+        "userPrompt": (
+            "{\"businessPack\":{\"id\":\"engineering_inspection_v1\",\"name\":\"工业管道\"},"
+            "\"node\":{\"id\":24,\"name\":\"焊工资格证及持证合格项目\"},"
+            "\"rule\":{\"id\":\"RULE-ENG-INSP-R12\",\"inspectionItem\":\"焊工资格证及持证合格项目 (B类)\"},"
+            "\"ocrFields\":[{\"id\":\"FIELD-24-001\",\"fieldName\":\"证书编号\",\"fieldValue\":\"TS6J-2024-03158\"}]}\n\n"
+            "{\"task\":\"Generate ReviewFindingDraftList JSON only.\",\"evidenceLinkIds\":[\"EV-24-001\",\"EV-24-002\"]}"
+        ),
+        "plannerPrompt": "Use the fixed AIcheck review graph plan and keep final business decisions under human confirmation.",
+        "criticPrompt": "Check evidence, rule, and kb references before returning review drafts.",
+        "payloadPolicy": "full_prompt_stored_for_audit",
+    }
+    run["llmMetadata"] = {
+        "llmExecution": "litellm",
+        "llmCalled": True,
+        "conversationId": run["llmConversationId"],
+        "modelAlias": run["model"],
+        "promptVersion": run["promptVersion"],
+        "promptTemplateId": "PTPL-review-202606",
+        "promptHash": "sha256:prompt-demo-node24",
+        "responseHash": "sha256:llm-output-demo",
+        "usage": {"prompt_tokens": 1620, "completion_tokens": 210, "total_tokens": 1830},
+        "reasoningProcess": "公开推理摘要：读取焊工资格证字段，命中证书编号和标准条款，输出需人工确认外部查询截图来源。",
+        "resultText": run["suggestion"]["opinionDraft"],
+    }
+    run["reasoningProcess"] = run["llmMetadata"]["reasoningProcess"]
+    run["llmResultText"] = run["llmMetadata"]["resultText"]
 
 REVIEW_OPINIONS = [
     {
@@ -596,7 +667,7 @@ REVIEW_OPINIONS = [
 for opinion in REVIEW_OPINIONS:
     opinion["findingType"] = "rule_passed"
     opinion["ruleRefs"] = [{"ruleSetId": "RULE-WELDER-202606", "ruleCode": "welder-qualification"}]
-    opinion["kbRefs"] = [{"kbDocId": "KS-STANDARD-TSG", "clause": opinion.get("basis")}]
+    opinion["kbRefs"] = [{"kbDocId": STANDARD_RULES_SOURCE_ID, "clause": opinion.get("basis")}]
 
 def fixture_review_findings() -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
@@ -693,6 +764,11 @@ AI_TRACE_STEPS = [
         "latencyMs": 8700,
         "inputHash": "sha256:llm-input-demo",
         "outputHash": "sha256:llm-output-demo",
+        "conversationId": "chatcmpl-aicheck-demo-24-001",
+        "promptHash": "sha256:prompt-demo-node24",
+        "responseHash": "sha256:llm-output-demo",
+        "reasoningProcess": "公开推理摘要：读取焊工资格证字段，命中证书编号和标准条款，输出需人工确认外部查询截图来源。",
+        "resultText": "焊工王建国证书编号、有效期和持证项目与焊接工艺要求匹配，建议人工确认外部查询截图来源后通过。",
         "createdAt": "2026-06-25 09:01:10",
     },
 ]
@@ -842,6 +918,58 @@ PROMPT_VERSIONS = [
         "riskLevel": "high",
         "businessPackId": DEFAULT_BUSINESS_PACK_ID,
         "updatedAt": "2026-06-26 10:00:00",
+    }
+]
+
+PROMPT_TEMPLATES = [
+    {
+        "id": "PTPL-review-202606",
+        "name": "工程监检审查 Prompt 模板",
+        "promptKey": "review_prompt",
+        "version": "2026.06",
+        "status": "production",
+        "riskLevel": "high",
+        "businessPackId": DEFAULT_BUSINESS_PACK_ID,
+        "agentId": "compliance_review_agent",
+        "promptVersionId": "PROMPT-review-202606",
+        "systemPrompt": (
+            "You are {{agentName}} for business pack {{businessPackId}} version {{businessPackVersion}}. "
+            "Return evidence-backed review suggestions only. Do not approve final business state."
+        ),
+        "userPromptTemplate": "{{basePromptJson}}\n\n{{reviewTaskJson}}",
+        "plannerPromptTemplate": (
+            "Use the fixed AIcheck review graph plan: load project context, load OCR evidence, run deterministic rules, "
+            "retrieve knowledge clauses, build prompt, generate finding drafts, validate schema/evidence/references, "
+            "run critic review, evaluate quality gate, then persist drafts. Do not skip human confirmation."
+        ),
+        "criticPromptTemplate": (
+            "Check whether each finding is evidence-backed, references only supplied rule/kb IDs, and keeps all final "
+            "business decisions under human control."
+        ),
+        "outputSchema": {
+            "type": "ReviewFindingDraftList",
+            "fields": [
+                "findingType",
+                "severity",
+                "title",
+                "description",
+                "confidence",
+                "suggestedAction",
+                "evidenceRefs",
+                "ruleRefs",
+                "kbRefs",
+            ],
+        },
+        "variables": [
+            "agentName",
+            "businessPackId",
+            "businessPackVersion",
+            "basePromptJson",
+            "reviewTaskJson",
+        ],
+        "createdAt": "2026-06-26 10:00:00",
+        "updatedAt": "2026-06-26 10:00:00",
+        "revision": 1,
     }
 ]
 
@@ -1280,18 +1408,7 @@ def build_knowledge_files(documents: list[dict[str, Any]], bindings: list[dict[s
 
 
 KNOWLEDGE_SOURCES = [
-    {
-        "id": "KS-STANDARD-TSG",
-        "name": "TSG D7005 工业管道监督检验规则",
-        "sourceType": "standard",
-        "version": "std-v2026.06",
-        "status": "启用",
-        "fileCount": 8,
-        "chunkCount": 1420,
-        "vectorStatus": "已向量化",
-        "updatedAt": "2026-06-26 09:10:00",
-        "actions": ["knowledge:view", "knowledge:manage", "knowledge:reindex"],
-    },
+    STANDARD_KNOWLEDGE_SEED["source"],
     {
         "id": "KS-PROJECT-FILE",
         "name": "项目文件知识库",
@@ -1304,32 +1421,20 @@ KNOWLEDGE_SOURCES = [
         "updatedAt": "2026-06-26 09:31:00",
         "actions": ["knowledge:view", "knowledge:manage", "knowledge:reindex"],
     },
-    {
-        "id": "KS-RULE-PROMPT",
-        "name": "AI 审查规则与 Prompt",
-        "sourceType": "rule",
-        "version": "rule-v2026.06",
-        "status": "待复核",
-        "fileCount": 12,
-        "chunkCount": 384,
-        "vectorStatus": "已向量化",
-        "updatedAt": "2026-06-24 18:00:00",
-        "actions": ["knowledge:view", "knowledge:manage"],
-    },
 ]
 
 KNOWLEDGE_CLAUSES = [
     {
         "id": "KC-TSG-Z6002-3.2",
         "clauseId": "TSG-Z6002-3.2",
-        "kbDocId": "KS-STANDARD-TSG",
-        "kbVersion": "std-v2026.06",
+        "kbDocId": STANDARD_RULES_SOURCE_ID,
+        "kbVersion": STANDARD_RULES_VERSION,
         "clauseNo": "3.2",
         "title": "焊工资格覆盖要求",
         "text": "焊工持证项目应覆盖实际焊接方法，证书编号、有效期和持证项目应与施工记录一致。",
         "pageNo": 32,
         "bbox": [120, 260, 980, 420],
-        "sectionPath": ["TSG D7005", "3 监督检验资料", "3.2 焊工资格"],
+        "sectionPath": ["TSG Z6002-2010 焊接人员考核细则", "3 焊工考试与合格项目", "3.2 资格覆盖"],
         "scope": {
             "businessPackId": DEFAULT_BUSINESS_PACK_ID,
             "nodeIds": [24, 25, 27, 28],
@@ -1339,16 +1444,16 @@ KNOWLEDGE_CLAUSES = [
         "status": "effective",
     },
     {
-        "id": "KC-TSG-D7005-5.3.2",
-        "clauseId": "TSG-D7005-5.3.2",
-        "kbDocId": "KS-STANDARD-TSG",
-        "kbVersion": "std-v2026.06",
-        "clauseNo": "5.3.2",
+        "id": "KC-TSG-D7006-D2.4.1",
+        "clauseId": "TSG-D7006-D2.4.1",
+        "kbDocId": STANDARD_RULES_SOURCE_ID,
+        "kbVersion": STANDARD_RULES_VERSION,
+        "clauseNo": "D2.4.1",
         "title": "质量证明文件审查要求",
         "text": "质量证明文件应包含材料牌号、炉批号、规格、生产厂家、检验结论及有效签章。",
         "pageNo": 42,
         "bbox": [100, 200, 1200, 800],
-        "sectionPath": ["TSG D7005", "5 资料审查", "5.3.2 质量证明文件"],
+        "sectionPath": ["TSG D7006-2020 压力管道监督检验规则", "附件 D", "D2.4.1 压力管道元件及安全附件"],
         "scope": {
             "businessPackId": DEFAULT_BUSINESS_PACK_ID,
             "nodeIds": [16, 17, 18],
@@ -1358,16 +1463,16 @@ KNOWLEDGE_CLAUSES = [
         "status": "effective",
     },
     {
-        "id": "KC-TSG-D7005-7.4",
-        "clauseId": "TSG-D7005-7.4",
-        "kbDocId": "KS-STANDARD-TSG",
-        "kbVersion": "std-v2026.06",
-        "clauseNo": "7.4",
+        "id": "KC-NB-T-47013-NDT-REPORT",
+        "clauseId": "NB-T-47013-NDT-REPORT",
+        "kbDocId": STANDARD_RULES_SOURCE_ID,
+        "kbVersion": STANDARD_RULES_VERSION,
+        "clauseNo": "报告",
         "title": "无损检测报告审查要求",
         "text": "无损检测报告应核验报告编号、检测比例、焊口编号、检测日期、评定级别、检测结论和检测单位签章。",
         "pageNo": 78,
         "bbox": [96, 220, 1180, 760],
-        "sectionPath": ["TSG D7005", "7 无损检测", "7.4 检测报告"],
+        "sectionPath": ["NB/T 47013 承压设备无损检测", "检测记录与报告", "报告关键字段"],
         "scope": {
             "businessPackId": DEFAULT_BUSINESS_PACK_ID,
             "nodeIds": [35, 36, 40, 41, 42],
@@ -1380,19 +1485,19 @@ KNOWLEDGE_CLAUSES = [
 
 KNOWLEDGE_PAGE_INDEX_NODES = [
     {
-        "id": "PIN-TSG-D7005-ROOT",
-        "pageIndexNodeId": "PIN-TSG-D7005-ROOT",
-        "kbDocId": "KS-STANDARD-TSG",
-        "kbVersion": "std-v2026.06",
+        "id": "PIN-RULE-STANDARDS-ROOT",
+        "pageIndexNodeId": "PIN-RULE-STANDARDS-ROOT",
+        "kbDocId": STANDARD_RULES_SOURCE_ID,
+        "kbVersion": STANDARD_RULES_VERSION,
         "nodeId": "root",
         "parentNodeId": None,
-        "title": "TSG D7005 监督检验资料审查总览",
-        "summary": "覆盖监督检验资料、质量证明文件、无损检测报告、正文与附录引用关系。",
+        "title": "业务规则引用标准规范总览",
+        "summary": "覆盖业务规则引用的 TSG、GB、NB/T、JB/T、SY/T 标准规范及公告文件。",
         "startPage": 1,
         "endPage": 90,
-        "sectionPath": ["TSG D7005"],
-        "children": ["PIN-TSG-D7005-3", "PIN-TSG-D7005-5", "PIN-TSG-D7005-7"],
-        "linkedClauseIds": ["TSG-Z6002-3.2", "TSG-D7005-5.3.2", "TSG-D7005-7.4"],
+        "sectionPath": ["业务规则引用标准规范库"],
+        "children": ["PIN-TSG-Z6002-3", "PIN-TSG-D7006-D2", "PIN-NB-T-47013-NDT"],
+        "linkedClauseIds": ["TSG-Z6002-3.2", "TSG-D7006-D2.4.1", "NB-T-47013-NDT-REPORT"],
         "businessPackId": DEFAULT_BUSINESS_PACK_ID,
         "nodeTypes": ["inspection_review"],
         "materialTypes": ["welder_certificate", "quality_certificate", "ndt_report"],
@@ -1400,17 +1505,17 @@ KNOWLEDGE_PAGE_INDEX_NODES = [
         "status": "effective",
     },
     {
-        "id": "PIN-TSG-D7005-3",
-        "pageIndexNodeId": "PIN-TSG-D7005-3",
-        "kbDocId": "KS-STANDARD-TSG",
-        "kbVersion": "std-v2026.06",
+        "id": "PIN-TSG-Z6002-3",
+        "pageIndexNodeId": "PIN-TSG-Z6002-3",
+        "kbDocId": STANDARD_RULES_SOURCE_ID,
+        "kbVersion": STANDARD_RULES_VERSION,
         "nodeId": "3",
         "parentNodeId": "root",
-        "title": "监督检验资料与焊工资格",
+        "title": "TSG Z6002 焊工资格覆盖",
         "summary": "焊工资格证、有效期、持证项目与施工记录一致性审查。",
         "startPage": 28,
         "endPage": 36,
-        "sectionPath": ["TSG D7005", "3 监督检验资料"],
+        "sectionPath": ["TSG Z6002-2010 焊接人员考核细则", "3 焊工考试与合格项目"],
         "children": [],
         "linkedClauseIds": ["TSG-Z6002-3.2"],
         "businessPackId": DEFAULT_BUSINESS_PACK_ID,
@@ -1420,19 +1525,19 @@ KNOWLEDGE_PAGE_INDEX_NODES = [
         "status": "effective",
     },
     {
-        "id": "PIN-TSG-D7005-5",
-        "pageIndexNodeId": "PIN-TSG-D7005-5",
-        "kbDocId": "KS-STANDARD-TSG",
-        "kbVersion": "std-v2026.06",
-        "nodeId": "5",
+        "id": "PIN-TSG-D7006-D2",
+        "pageIndexNodeId": "PIN-TSG-D7006-D2",
+        "kbDocId": STANDARD_RULES_SOURCE_ID,
+        "kbVersion": STANDARD_RULES_VERSION,
+        "nodeId": "D2",
         "parentNodeId": "root",
-        "title": "质量证明文件审查",
+        "title": "TSG D7006 压力管道元件资料",
         "summary": "质量证明文件应核对材料牌号、炉批号、规格、生产厂家、检验结论和有效签章。",
         "startPage": 40,
         "endPage": 46,
-        "sectionPath": ["TSG D7005", "5 资料审查"],
+        "sectionPath": ["TSG D7006-2020 压力管道监督检验规则", "附件 D"],
         "children": [],
-        "linkedClauseIds": ["TSG-D7005-5.3.2"],
+        "linkedClauseIds": ["TSG-D7006-D2.4.1"],
         "businessPackId": DEFAULT_BUSINESS_PACK_ID,
         "nodeTypes": ["material_review"],
         "materialTypes": ["quality_certificate"],
@@ -1440,19 +1545,19 @@ KNOWLEDGE_PAGE_INDEX_NODES = [
         "status": "effective",
     },
     {
-        "id": "PIN-TSG-D7005-7",
-        "pageIndexNodeId": "PIN-TSG-D7005-7",
-        "kbDocId": "KS-STANDARD-TSG",
-        "kbVersion": "std-v2026.06",
-        "nodeId": "7",
+        "id": "PIN-NB-T-47013-NDT",
+        "pageIndexNodeId": "PIN-NB-T-47013-NDT",
+        "kbDocId": STANDARD_RULES_SOURCE_ID,
+        "kbVersion": STANDARD_RULES_VERSION,
+        "nodeId": "NDT",
         "parentNodeId": "root",
-        "title": "无损检测报告正文与附录审查",
+        "title": "NB/T 47013 无损检测报告",
         "summary": "跨章节核验正文、附录、无损检测报告、检测比例、焊口编号、检测单位签章要求。",
         "startPage": 70,
         "endPage": 82,
-        "sectionPath": ["TSG D7005", "7 无损检测"],
+        "sectionPath": ["NB/T 47013 承压设备无损检测", "检测记录与报告"],
         "children": [],
-        "linkedClauseIds": ["TSG-D7005-7.4"],
+        "linkedClauseIds": ["NB-T-47013-NDT-REPORT"],
         "businessPackId": DEFAULT_BUSINESS_PACK_ID,
         "nodeTypes": ["ndt_review"],
         "materialTypes": ["ndt_report", "rt_report", "ut_report"],
@@ -1512,8 +1617,8 @@ RETRIEVAL_TRACES = [
         "selectedClauses": [
             {
                 "clauseId": "TSG-Z6002-3.2",
-                "kbDocId": "KS-STANDARD-TSG",
-                "kbVersion": "std-v2026.06",
+                "kbDocId": STANDARD_RULES_SOURCE_ID,
+                "kbVersion": STANDARD_RULES_VERSION,
                 "clauseNo": "3.2",
                 "title": "焊工资格覆盖要求",
                 "text": "焊工持证项目应覆盖实际焊接方法，证书编号、有效期和持证项目应与施工记录一致。",
@@ -1525,7 +1630,7 @@ RETRIEVAL_TRACES = [
                 "sourceEvidenceLinkId": None,
             }
         ],
-        "kbVersion": "std-v2026.06",
+        "kbVersion": STANDARD_RULES_VERSION,
         "createdAt": "2026-06-26 11:02:30",
     }
 ]
@@ -1576,6 +1681,7 @@ CORE_RULE_VERSIONS = [
         "version": "Welder-Qualification-B-v2.1",
         "status": "已发布",
         "nodeIds": [24, 25, 27, 28],
+        "sourceRuleId": "R12",
         "promptVersion": "prompt-welder-v2.1",
         "outputSchemaVersion": "schema-review-v1.3",
         "description": "核验焊工资格证、持证项目、有效期与施工焊接方法覆盖关系。",
@@ -1590,6 +1696,7 @@ CORE_RULE_VERSIONS = [
         "version": "NDT-Report-C-v1.4",
         "status": "待发布",
         "nodeIds": [35, 36, 40, 41, 42],
+        "sourceRuleId": "R28",
         "promptVersion": "prompt-ndt-v1.4",
         "outputSchemaVersion": "schema-ndt-v1.1",
         "description": "核验底片、检测比例、评片结论、返修闭环和报告签章。",
@@ -1600,34 +1707,128 @@ CORE_RULE_VERSIONS = [
     },
 ]
 
-RULE_VERSIONS = [
+
+CORE_RULE_VERSION_OVERRIDES_BY_SOURCE_ID = {
+    rule["sourceRuleId"]: rule
+    for rule in CORE_RULE_VERSIONS
+    if rule.get("sourceRuleId")
+}
+BUSINESS_PACK_RULES_BY_SOURCE_ID = {
+    rule.get("sourceRuleId"): rule
+    for rule in DEFAULT_BUSINESS_PACK["ruleSets"]
+    if rule.get("sourceRuleId")
+}
+RULE_VERSION_SOURCE_ORDER = [
+    *CORE_RULE_VERSION_OVERRIDES_BY_SOURCE_ID.keys(),
     *[
-        {
-            **rule,
-            "revision": rule.get("revision", 1),
-        }
-        for rule in CORE_RULE_VERSIONS
+        rule.get("sourceRuleId")
+        for rule in DEFAULT_BUSINESS_PACK["ruleSets"]
+        if rule.get("sourceRuleId") not in CORE_RULE_VERSION_OVERRIDES_BY_SOURCE_ID
     ],
-    *[
-    {
-        "id": rule["id"],
-        "name": rule["name"],
-        "ruleKey": rule["ruleKey"],
-        "version": rule["version"],
-        "status": rule["status"],
-        "nodeIds": rule["nodeIds"],
-        "promptVersion": rule.get("promptVersion"),
-        "outputSchemaVersion": rule.get("outputSchemaVersion"),
-        "description": rule.get("description"),
+]
+
+
+def build_rule_version(
+    rule: dict[str, Any],
+    *,
+    source: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    source_rule = source or rule
+    criteria = (
+        source_rule.get("standardText")
+        or source_rule.get("criteria")
+        or rule.get("standardText")
+        or rule.get("criteria")
+        or ""
+    )
+    check_method = (
+        source_rule.get("witnessText")
+        or source_rule.get("checkMethod")
+        or rule.get("witnessText")
+        or rule.get("checkMethod")
+        or ""
+    )
+    inspection_item = (
+        source_rule.get("inspectionItem")
+        or source_rule.get("name")
+        or rule.get("inspectionItem")
+        or rule.get("name")
+    )
+    node_ids = [
+        int(item)
+        for item in (rule.get("nodeIds") or source_rule.get("nodeIds") or [])
+        if str(item).isdigit()
+    ]
+    display_name = rule_name_from_node_ids(node_ids, inspection_item)
+    inspection_class = (
+        source_rule.get("inspectionClass")
+        or source_rule.get("reviewClass")
+        or rule.get("inspectionClass")
+        or rule.get("reviewClass")
+        or ""
+    )
+    record = {
+        **source_rule,
+        **rule,
         "businessPackId": DEFAULT_BUSINESS_PACK_ID,
         "businessPackVersion": DEFAULT_BUSINESS_PACK["version"],
-        "publishedAt": "2026-06-26 09:12:00" if rule["status"] == "已发布" else None,
-        "updatedAt": "2026-06-26 09:12:00",
-        "actions": ["knowledge:view", "knowledge:manage"],
-        "revision": 1,
+        "sourceRuleId": source_rule.get("sourceRuleId") or rule.get("sourceRuleId"),
+        "sourceDocument": source_rule.get("sourceDocument") or rule.get("sourceDocument"),
+        "sourceSequence": source_rule.get("sourceSequence") or rule.get("sourceSequence"),
+        "businessModule": source_rule.get("businessModule") or rule.get("businessModule"),
+        "inspectionCategory": (
+            source_rule.get("inspectionCategory")
+            or source_rule.get("businessModule")
+            or rule.get("inspectionCategory")
+            or rule.get("businessModule")
+            or ""
+        ),
+        "inspectionItem": inspection_item,
+        "name": display_name,
+        "inspectionClass": inspection_class,
+        "reviewClass": inspection_class,
+        "criteria": criteria,
+        "standardText": criteria,
+        "checkMethod": check_method,
+        "witnessText": check_method,
+        "publishedAt": rule.get("publishedAt")
+        or ("2026-06-26 09:12:00" if rule.get("status") == "已发布" else None),
+        "updatedAt": rule.get("updatedAt") or "2026-06-26 09:12:00",
+        "actions": rule.get("actions") or ["knowledge:view", "knowledge:manage"],
+        "revision": rule.get("revision", 1),
     }
-    for rule in DEFAULT_BUSINESS_PACK["ruleSets"]
-    ],
+    if not record.get("description"):
+        record["description"] = check_method or criteria or inspection_item
+    generated_ai_execution = source_rule.get("aiExecution") or rule.get("aiExecution")
+    record["aiExecution"] = deepcopy(generated_ai_execution) if generated_ai_execution else {
+        "schemaVersion": "business-rule-execution-v1",
+        "sourceFields": {
+            "sequence": record.get("sourceSequence"),
+            "inspectionCategory": record.get("inspectionCategory"),
+            "inspectionItem": record.get("inspectionItem"),
+            "inspectionClass": record.get("inspectionClass"),
+            "standardText": criteria,
+            "witnessText": check_method,
+        },
+        "promptContext": "\n".join(
+            [
+                f"监检项目：{record.get('inspectionItem') or record.get('name')}",
+                f"类别：{record.get('inspectionClass') or '-'}",
+                f"判断准则/标准规范：{criteria or '-'}",
+                f"方法及内容/工作见证：{check_method or '-'}",
+            ]
+        ),
+    }
+    return record
+
+
+RULE_VERSIONS = [
+    build_rule_version(
+        CORE_RULE_VERSION_OVERRIDES_BY_SOURCE_ID.get(source_rule_id)
+        or BUSINESS_PACK_RULES_BY_SOURCE_ID[source_rule_id],
+        source=BUSINESS_PACK_RULES_BY_SOURCE_ID[source_rule_id],
+    )
+    for source_rule_id in RULE_VERSION_SOURCE_ORDER
 ]
 
 KNOWLEDGE_CONFIG = {
@@ -1735,12 +1936,13 @@ ADMIN_CONFIG = {
         {"id": "ORG-FDE-001", "name": "AI 交付治理组", "type": "fde", "contactName": "FDE", "contactPhone": "13800000061", "status": "启用", "projectCount": 0},
     ],
     "users": [
-        {"id": "USER-INSPECTION-001", "name": "张工", "orgName": "省特检院一部", "role": "inspection", "mobile": "13800000004", "status": "启用", "lastLoginAt": "2026-06-26 09:05:00"},
-        {"id": "USER-CONTRACTOR-001", "name": "李工", "orgName": "中石化安装有限公司", "role": "contractor", "mobile": "13800000002", "status": "启用", "lastLoginAt": "2026-06-26 08:50:00"},
-        {"id": "USER-NDT-001", "name": "王工", "orgName": "华测检测有限公司", "role": "ndt", "mobile": "13800000003", "status": "启用", "lastLoginAt": "2026-06-25 17:10:00"},
-        {"id": "USER-OWNER-001", "name": "赵经理", "orgName": "华东管网建设公司", "role": "owner", "mobile": "13800000001", "status": "启用", "lastLoginAt": "2026-06-25 16:40:00"},
-        {"id": "USER-ADMIN-001", "name": "系统管理员", "orgName": "省特检院平台组", "role": "admin", "mobile": "13800000000", "status": "启用", "lastLoginAt": "2026-06-26 10:00:00"},
-        {"id": "USER-FDE-001", "name": "FDE 工程师", "orgName": "AI 交付治理组", "role": "fde", "mobile": "13800000061", "status": "启用", "lastLoginAt": "2026-06-26 10:30:00"},
+        {"id": "USER-INSPECTION-001", "username": "inspection", "name": "张工", "orgName": "省特检院一部", "role": "inspection", "mobile": "13800000004", "status": "启用", "lastLoginAt": "2026-06-26 09:05:00"},
+        {"id": "USER-CONTRACTOR-001", "username": "contractor", "name": "李工", "orgName": "中石化安装有限公司", "role": "contractor", "mobile": "13800000002", "status": "启用", "lastLoginAt": "2026-06-26 08:50:00"},
+        {"id": "USER-NDT-001", "username": "ndt", "name": "王工", "orgName": "华测检测有限公司", "role": "ndt", "mobile": "13800000003", "status": "启用", "lastLoginAt": "2026-06-25 17:10:00"},
+        {"id": "USER-OWNER-001", "username": "owner", "name": "赵经理", "orgName": "华东管网建设公司", "role": "owner", "mobile": "13800000001", "status": "启用", "lastLoginAt": "2026-06-25 16:40:00"},
+        {"id": "USER-ADMIN-001", "username": "admin", "name": "系统管理员", "orgName": "省特检院平台组", "role": "admin", "mobile": "13800000000", "status": "启用", "lastLoginAt": "2026-06-26 10:00:00"},
+        {"id": "USER-FDE-001", "username": "fde", "name": "FDE 工程师", "orgName": "AI 交付治理组", "role": "fde", "mobile": "13800000061", "status": "启用", "lastLoginAt": "2026-06-26 10:30:00"},
+        {"id": "USER-TEST-001", "username": "test", "name": "测试用户", "orgName": "联调测试组", "role": "inspection", "mobile": "13800000062", "status": "启用", "lastLoginAt": "2026-06-26 10:35:00"},
     ],
     "permissionMatrix": [
         {"role": role, "label": label, "projectScope": "授权项目", "nodeScope": "授权节点", "actions": actions, "readonly": role == "owner"}
@@ -1821,12 +2023,16 @@ def fresh_state() -> dict[str, Any]:
         tree_nodes.extend(build_tree(project["id"]))
         requirements.extend(build_project_requirements(pack, project_id=project["id"]))
     knowledge_files = build_knowledge_files(DOCUMENTS, BINDINGS, tree_nodes)
+    standard_documents = deepcopy(STANDARD_KNOWLEDGE_SEED["documents"])
+    standard_versions = deepcopy(STANDARD_KNOWLEDGE_SEED["versions"])
+    standard_knowledge_files = deepcopy(STANDARD_KNOWLEDGE_SEED["knowledgeFiles"])
+    standard_knowledge_tasks = deepcopy(STANDARD_KNOWLEDGE_SEED["knowledgeTasks"])
     state = {
         "projects": deepcopy(PROJECTS),
         "tree_nodes": tree_nodes,
         "requirements": requirements,
-        "documents": deepcopy(DOCUMENTS),
-        "versions": deepcopy(VERSIONS),
+        "documents": [*deepcopy(DOCUMENTS), *standard_documents],
+        "versions": [*deepcopy(VERSIONS), *standard_versions],
         "bindings": deepcopy(BINDINGS),
         "evidence_links": deepcopy(EVIDENCE_LINKS),
         "extracted_fields": deepcopy(EXTRACTED_FIELDS),
@@ -1836,7 +2042,7 @@ def fresh_state() -> dict[str, Any]:
         "review_graph_nodes": [],
         "review_tool_calls": [],
         "review_events": [],
-        "retrieval_traces": deepcopy(RETRIEVAL_TRACES),
+        "retrieval_traces": deepcopy(STANDARD_KNOWLEDGE_SEED["retrievalTraces"]),
         "rule_check_results": [],
         "review_opinions": deepcopy(REVIEW_OPINIONS),
         "review_findings": deepcopy(REVIEW_FINDINGS),
@@ -1853,6 +2059,7 @@ def fresh_state() -> dict[str, Any]:
         "evaluation_reports": deepcopy(EVALUATION_REPORTS),
         "agent_versions": deepcopy(AGENT_VERSIONS),
         "prompt_versions": deepcopy(PROMPT_VERSIONS),
+        "prompt_templates": deepcopy(PROMPT_TEMPLATES),
         "model_route_versions": deepcopy(MODEL_ROUTE_VERSIONS),
         "ocr_profile_versions": deepcopy(OCR_PROFILE_VERSIONS),
         "ocr_jobs": [],
@@ -1917,11 +2124,11 @@ def fresh_state() -> dict[str, Any]:
         "todos": deepcopy(TODOS),
         "messages": deepcopy(MESSAGES),
         "knowledge_sources": deepcopy(KNOWLEDGE_SOURCES),
-        "knowledge_files": knowledge_files,
-        "knowledge_tasks": deepcopy(KNOWLEDGE_TASKS),
+        "knowledge_files": [*standard_knowledge_files, *knowledge_files],
+        "knowledge_tasks": [*standard_knowledge_tasks, *deepcopy(KNOWLEDGE_TASKS)],
         "knowledge_chunks": [],
-        "knowledge_clauses": deepcopy(KNOWLEDGE_CLAUSES),
-        "knowledge_page_index_nodes": deepcopy(KNOWLEDGE_PAGE_INDEX_NODES),
+        "knowledge_clauses": deepcopy(STANDARD_KNOWLEDGE_SEED["clauses"]),
+        "knowledge_page_index_nodes": deepcopy(STANDARD_KNOWLEDGE_SEED["pageIndexNodes"]),
         "rule_versions": deepcopy(RULE_VERSIONS),
         "knowledge_config": deepcopy(KNOWLEDGE_CONFIG),
         "llm_compare_runs": deepcopy(LLM_COMPARE_RUNS),

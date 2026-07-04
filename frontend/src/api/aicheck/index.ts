@@ -204,6 +204,7 @@ export type ProjectMember = {
   projectId: string
   userId: string
   name: string
+  orgId?: string
   orgName: string
   role: RoleCode
   nodeScope: number[]
@@ -216,11 +217,73 @@ export type ProjectMember = {
 }
 
 export type ProjectMemberSavePayload = {
-  userId: string
-  role: RoleCode
-  nodeScope: number[]
-  actions: ActionCode[]
+  userId?: string
+  userIds?: string[]
+  role?: RoleCode
+  nodeScope?: number[]
+  actions?: ActionCode[]
   expiresAt?: string
+}
+
+export type ProjectMemberMutationPayload = {
+  member?: ProjectMember
+  members: ProjectMember[]
+  successCount: number
+  failed: Array<{ userId: string; name: string; message: string }>
+  auditLogId?: string
+  auditLogIds?: string[]
+}
+
+export type AdminOrgUnitType = 'owner' | 'contractor' | 'ndt' | 'inspection' | 'supervision' | 'admin' | 'fde'
+
+export type AdminOrgUnit = {
+  id: string
+  name: string
+  type: AdminOrgUnitType
+  contactName: string
+  contactPhone: string
+  status: '启用' | '停用' | '待授权'
+  projectCount: number
+  updatedAt?: string
+  revision?: number
+  etag?: string
+}
+
+export type AdminUser = {
+  id: string
+  username: string
+  name: string
+  displayName?: string
+  orgId?: string
+  orgName: string
+  role: RoleCode
+  roleLabel?: string
+  mobile: string
+  status: '启用' | '停用'
+  lastLoginAt: string
+  updatedAt?: string
+  revision?: number
+  etag?: string
+}
+
+export type AdminOrgUnitSavePayload = {
+  name: string
+  type: AdminOrgUnitType
+  contactName?: string
+  contactPhone?: string
+  status?: AdminOrgUnit['status']
+}
+
+export type AdminUserSavePayload = {
+  username: string
+  name: string
+  mobile?: string
+  role: RoleCode
+  orgId?: string
+  orgName?: string
+  status?: AdminUser['status']
+  password?: string
+  initialPassword?: string
 }
 
 export type AdminProjectDetailPayload = {
@@ -229,8 +292,10 @@ export type AdminProjectDetailPayload = {
   participantUnits: Array<{
     unitType: 'owner' | 'contractor' | 'ndt' | 'inspection'
     unitName: string
+    orgId?: string
     contactName: string
     contactPhone: string
+    memberCount?: number
   }>
   nodeSummary: Array<{
     groupName: string
@@ -469,8 +534,11 @@ export type KnowledgeSourceSavePayload = {
 export type KnowledgeFile = {
   id: string
   fileName: string
+  originalFileName?: string
   sourceId: string
   sourceName: string
+  sourceRelativePath?: string
+  contextDescription?: string
   projectId?: string
   projectName?: string
   nodeId?: number
@@ -483,7 +551,17 @@ export type KnowledgeFile = {
   chunkCount: number
   vectorCount: number
   updatedAt: string
+  revision?: number
+  etag?: string
   actions: ActionCode[]
+}
+
+export type KnowledgeFileSavePayload = {
+  fileName?: string
+  sourceRelativePath?: string
+  contextDescription?: string
+  projectId?: string
+  projectName?: string
 }
 
 export type KnowledgeFileImportPayload = {
@@ -491,6 +569,16 @@ export type KnowledgeFileImportPayload = {
   files: KnowledgeFile[]
   tasks: KnowledgeTask[]
   dispatches?: Array<Record<string, unknown>>
+  summary?: {
+    sourceId?: string
+    standardsRoot?: string
+    businessRulesPath?: string
+    scanned?: number
+    imported?: number
+    skipped?: number
+    reset?: boolean
+    removed?: number
+  }
   skipped?: Array<{
     fileName: string
     reason: string
@@ -547,6 +635,8 @@ export type KnowledgeFileDetailPayload = {
   currentVersion?: DocumentVersion
   latestTask?: KnowledgeTask
   vectorSummary: KnowledgeVectorSummary
+  preview?: DocumentPreviewPayload
+  download?: SignedUrlPayload
 }
 
 export type KnowledgePageIndexNode = {
@@ -607,18 +697,35 @@ export type KnowledgeRuleVersion = {
   version: string
   status: '草稿' | '待发布' | '已发布' | '已回滚'
   nodeIds: number[]
+  sourceRuleId?: string
+  sourceDocument?: string
   sourceSequence?: number
+  businessModule?: string
   inspectionCategory?: string
   inspectionItem?: string
   inspectionClass?: 'A' | 'B' | 'C' | 'C/B' | string
   standardText?: string
   witnessText?: string
+  sourceWitness?: string
   reviewClass?: string
   criteria?: string
   checkMethod?: string
+  agentThinking?: string
+  toolchainThinking?: string
+  referencedStandards?: Array<{
+    reference?: string
+    file?: string
+    fileName?: string
+    [key: string]: unknown
+  }>
+  materialTypeCodes?: string[]
+  thinkingModeIds?: string[]
+  toolIds?: string[]
+  severity?: string
   aiExecution?: {
     schemaVersion?: string
     compiledAt?: string
+    sourceFields?: Record<string, unknown>
     requiredEvidence?: string[]
     extractionTargets?: string[]
     verificationSteps?: string[]
@@ -648,11 +755,22 @@ export type KnowledgeRuleVersionDiffChange = {
 export type KnowledgeRuleVersionSavePayload = {
   sequence?: number
   sourceSequence?: number
+  sourceRuleId?: string
+  sourceDocument?: string
+  businessModule?: string
   inspectionCategory?: string
   inspectionItem: string
   inspectionClass?: string
   standardText?: string
   witnessText?: string
+  sourceWitness?: string
+  agentThinking?: string
+  toolchainThinking?: string
+  referencedStandards?: KnowledgeRuleVersion['referencedStandards']
+  materialTypeCodes?: string[]
+  thinkingModeIds?: string[]
+  toolIds?: string[]
+  aiExecution?: KnowledgeRuleVersion['aiExecution']
   nodeIds?: number[]
 }
 
@@ -713,6 +831,38 @@ export type KnowledgeAuditLog = {
 export type ReasoningLogDetailPayload = {
   log: AiReviewRun
   evidenceLinks: EvidenceLink[]
+  traceSteps?: Array<Record<string, unknown>>
+  graphNodes?: Array<Record<string, unknown>>
+  promptAudit?: Record<string, unknown>
+  llmMetadata?: Record<string, unknown>
+}
+
+export type PromptTemplate = {
+  id: string
+  name: string
+  promptKey: string
+  version: string
+  status: 'draft' | 'production' | 'retired' | '草稿' | '已发布' | '已停用'
+  riskLevel: string
+  businessPackId: string
+  agentId: string
+  promptVersionId?: string
+  systemPrompt: string
+  userPromptTemplate: string
+  plannerPromptTemplate?: string
+  criticPromptTemplate?: string
+  outputSchema?: Record<string, unknown>
+  variables?: string[]
+  createdAt?: string
+  updatedAt: string
+  revision?: number
+  etag?: string
+}
+
+export type PromptTemplateSavePayload = Partial<Omit<PromptTemplate, 'revision' | 'etag'>> & {
+  name: string
+  systemPrompt: string
+  userPromptTemplate: string
 }
 
 export type LlmComparePayload = {
@@ -809,24 +959,8 @@ export type AdminConfigOverviewPayload = {
     value: string | number
     tone: 'blue' | 'green' | 'orange' | 'red' | 'gray'
   }>
-  orgUnits: Array<{
-    id: string
-    name: string
-    type: 'owner' | 'contractor' | 'ndt' | 'inspection' | 'supervision'
-    contactName: string
-    contactPhone: string
-    status: '启用' | '停用' | '待授权'
-    projectCount: number
-  }>
-  users: Array<{
-    id: string
-    name: string
-    orgName: string
-    role: RoleCode
-    mobile: string
-    status: '启用' | '停用'
-    lastLoginAt: string
-  }>
+  orgUnits: AdminOrgUnit[]
+  users: AdminUser[]
   permissionMatrix: Array<{
     role: RoleCode
     label: string
@@ -879,6 +1013,12 @@ export type BusinessPackSummary = {
   name: string
   version: string
   domainType: string
+  description?: string
+  pipelineTypeCode?: string
+  pipelineTypeName?: string
+  commonGrades?: string
+  scopeDescription?: string
+  projectType?: string
   status: 'draft' | 'candidate' | 'published' | 'deprecated' | 'archived' | string
   snapshotHash: string
   roleCount: number
@@ -2056,7 +2196,7 @@ export const authorizeProjectMemberApi = (
   projectId: string,
   payload: ProjectMemberSavePayload,
   options?: MutationHeaderOptions
-): Promise<IResponse<{ member: ProjectMember; auditLogId: string }>> => {
+): Promise<IResponse<ProjectMemberMutationPayload>> => {
   return request.post({
     url: `/api/projects/${projectId}/members`,
     data: payload,
@@ -2077,6 +2217,17 @@ export const updateProjectMemberApi = (
   })
 }
 
+export const deleteProjectMemberApi = (
+  projectId: string,
+  memberId: string,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ deleted: boolean; memberId: string; auditLogId: string }>> => {
+  return request.delete({
+    url: `/api/projects/${projectId}/members/${memberId}`,
+    headers: mutationHeaders(options)
+  })
+}
+
 export const createAdminProjectApi = (
   payload: AdminProjectCreatePayload,
   options?: MutationHeaderOptions
@@ -2084,6 +2235,28 @@ export const createAdminProjectApi = (
   return request.post({
     url: '/api/admin/projects',
     data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const updateAdminProjectApi = (
+  projectId: string,
+  payload: Partial<AdminProjectCreatePayload> & { status?: Project['status'] },
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ project: Project; auditLogId: string }>> => {
+  return request.put({
+    url: `/api/projects/${projectId}`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const deleteAdminProjectApi = (
+  projectId: string,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ deleted: boolean; archived: boolean; projectId?: string; project?: Project; auditLogId: string }>> => {
+  return request.delete({
+    url: `/api/projects/${projectId}`,
     headers: mutationHeaders(options)
   })
 }
@@ -2577,6 +2750,10 @@ type MutationHeaderOptions = {
   idempotencyKey?: string
 }
 
+type RequestHeaderOptions = {
+  silentBusinessError?: boolean
+}
+
 const createIdempotencyKey = () => {
   const random =
     typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -2612,6 +2789,12 @@ const mutationHeaders = (options?: MutationHeaderOptions) => {
     options?.idempotencyKey || fallbackIdempotencyKey,
     fallbackIdempotencyKey
   )
+  return Object.keys(headers).length ? headers : undefined
+}
+
+const requestHeaders = (options?: RequestHeaderOptions) => {
+  const headers: Record<string, string> = {}
+  if (options?.silentBusinessError) headers['X-Silent-Business-Error'] = 'true'
   return Object.keys(headers).length ? headers : undefined
 }
 
@@ -2691,6 +2874,8 @@ export const importKnowledgeFilesApi = (
     sourceVersion?: string
     sourceStatus?: KnowledgeSource['status']
     vectorStatus?: KnowledgeSource['vectorStatus']
+    projectId?: string
+    projectName?: string
     fileMetas?: Array<{
       fileName?: string
       relativePath?: string
@@ -2706,6 +2891,8 @@ export const importKnowledgeFilesApi = (
   if (payload.sourceVersion) formData.append('sourceVersion', payload.sourceVersion)
   if (payload.sourceStatus) formData.append('sourceStatus', payload.sourceStatus)
   if (payload.vectorStatus) formData.append('vectorStatus', payload.vectorStatus)
+  if (payload.projectId) formData.append('projectId', payload.projectId)
+  if (payload.projectName) formData.append('projectName', payload.projectName)
   payload.files.forEach((file, index) => {
     const meta = payload.fileMetas?.[index]
     const relativePath =
@@ -2720,6 +2907,23 @@ export const importKnowledgeFilesApi = (
   return request.post({
     url: '/api/knowledge/files/import',
     data: formData,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const importRulesStandardsApi = (
+  payload?: {
+    sourceId?: string
+    sourceName?: string
+    sourceVersion?: string
+    sourceStatus?: KnowledgeSource['status']
+    reset?: boolean
+  },
+  options?: MutationHeaderOptions
+): Promise<IResponse<KnowledgeFileImportPayload>> => {
+  return request.post({
+    url: '/api/knowledge/standards/import-from-rules',
+    data: payload || {},
     headers: mutationHeaders(options)
   })
 }
@@ -2748,6 +2952,7 @@ export const listKnowledgeProjectFilesApi = (params?: {
   projectId?: string
   nodeId?: number
   status?: string
+  sourceType?: KnowledgeSource['sourceType']
   page?: number
   pageSize?: number
 }): Promise<IResponse<PagePayload<KnowledgeFile>>> => {
@@ -2755,29 +2960,107 @@ export const listKnowledgeProjectFilesApi = (params?: {
 }
 
 export const getKnowledgeFileDetailApi = (
-  fileId: string
+  fileId: string,
+  options?: RequestHeaderOptions
 ): Promise<IResponse<KnowledgeFileDetailPayload>> => {
-  return request.get({ url: `/api/knowledge/files/${fileId}` })
+  return request.get({ url: `/api/knowledge/files/${fileId}`, headers: requestHeaders(options) })
+}
+
+export const updateKnowledgeFileApi = (
+  fileId: string,
+  payload: KnowledgeFileSavePayload,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ file: KnowledgeFile; auditLogId: string; changed: unknown[] }>> => {
+  return request.put({
+    url: `/api/knowledge/files/${fileId}`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const replaceKnowledgeFileVersionApi = (
+  fileId: string,
+  payload: {
+    file: File
+    fileName?: string
+    relativePath?: string
+    contextDescription?: string
+  },
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    file: KnowledgeFile
+    currentVersion: DocumentVersion
+    task: KnowledgeTask
+    dispatch?: Record<string, unknown>
+    auditLogId: string
+  }>
+> => {
+  const formData = new FormData()
+  formData.append('files', payload.file)
+  if (payload.fileName) formData.append('fileName', payload.fileName)
+  if (payload.relativePath) formData.append('relativePath', payload.relativePath)
+  if (payload.contextDescription) {
+    formData.append('contextDescription', payload.contextDescription)
+  }
+  return request.post({
+    url: `/api/knowledge/files/${fileId}/replace`,
+    data: formData,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const deleteKnowledgeFileApi = (
+  fileId: string,
+  payload?: { reason?: string },
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    fileId: string
+    source?: KnowledgeSource
+    removed: Record<string, number>
+    auditLogId: string
+  }>
+> => {
+  return request.delete({
+    url: `/api/knowledge/files/${fileId}`,
+    data: payload || {},
+    headers: mutationHeaders(options)
+  })
 }
 
 export const listKnowledgeFileChunksApi = (
   fileId: string,
-  params?: { page?: number; pageSize?: number }
+  params?: { page?: number; pageSize?: number },
+  options?: RequestHeaderOptions
 ): Promise<IResponse<PagePayload<KnowledgeChunk>>> => {
-  return request.get({ url: `/api/knowledge/files/${fileId}/chunks`, params })
+  return request.get({
+    url: `/api/knowledge/files/${fileId}/chunks`,
+    params,
+    headers: requestHeaders(options)
+  })
 }
 
 export const getKnowledgeFileVectorApi = (
-  fileId: string
+  fileId: string,
+  options?: RequestHeaderOptions
 ): Promise<IResponse<KnowledgeVectorSummary>> => {
-  return request.get({ url: `/api/knowledge/files/${fileId}/vectors` })
+  return request.get({
+    url: `/api/knowledge/files/${fileId}/vectors`,
+    headers: requestHeaders(options)
+  })
 }
 
 export const listKnowledgeFileReasoningReferencesApi = (
   fileId: string,
-  params?: { page?: number; pageSize?: number }
+  params?: { page?: number; pageSize?: number },
+  options?: RequestHeaderOptions
 ): Promise<IResponse<PagePayload<KnowledgeReasoningReference>>> => {
-  return request.get({ url: `/api/knowledge/files/${fileId}/reasoning-references`, params })
+  return request.get({
+    url: `/api/knowledge/files/${fileId}/reasoning-references`,
+    params,
+    headers: requestHeaders(options)
+  })
 }
 
 export const listKnowledgeTasksApi = (params?: {
@@ -2994,6 +3277,67 @@ export const getReasoningLogEvidenceApi = (logId: string): Promise<IResponse<Evi
   return request.get({ url: `/api/reasoning/logs/${logId}/evidence` })
 }
 
+export const listPromptTemplatesApi = (params?: {
+  keyword?: string
+  status?: string
+  businessPackId?: string
+  page?: number
+  pageSize?: number
+}): Promise<IResponse<PagePayload<PromptTemplate>>> => {
+  return request.get({ url: '/api/admin/prompt-templates', params })
+}
+
+export const getPromptTemplateApi = (
+  templateId: string
+): Promise<IResponse<{ template: PromptTemplate }>> => {
+  return request.get({ url: `/api/admin/prompt-templates/${templateId}` })
+}
+
+export const createPromptTemplateApi = (
+  payload: PromptTemplateSavePayload,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ template: PromptTemplate; auditLogId: string }>> => {
+  return request.post({
+    url: '/api/admin/prompt-templates',
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const updatePromptTemplateApi = (
+  templateId: string,
+  payload: Partial<PromptTemplateSavePayload>,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ template: PromptTemplate; auditLogId: string }>> => {
+  return request.put({
+    url: `/api/admin/prompt-templates/${templateId}`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const publishPromptTemplateApi = (
+  templateId: string,
+  payload: { reason?: string } = {},
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ template: PromptTemplate; auditLogId: string }>> => {
+  return request.post({
+    url: `/api/admin/prompt-templates/${templateId}/publish`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const deletePromptTemplateApi = (
+  templateId: string,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ deleted: boolean; templateId: string; auditLogId: string }>> => {
+  return request.delete({
+    url: `/api/admin/prompt-templates/${templateId}`,
+    headers: mutationHeaders(options)
+  })
+}
+
 export const runLlmCompareApi = (
   payload: {
     question: string
@@ -3036,6 +3380,93 @@ export const getAuditLogsApi = (params?: {
 
 export const getAdminConfigOverviewApi = (): Promise<IResponse<AdminConfigOverviewPayload>> => {
   return request.get({ url: '/api/admin/config-overview' })
+}
+
+export const listAdminOrgUnitsApi = (params?: {
+  keyword?: string
+  type?: AdminOrgUnitType
+  status?: AdminOrgUnit['status']
+  page?: number
+  pageSize?: number
+}): Promise<IResponse<PagePayload<AdminOrgUnit>>> => {
+  return request.get({ url: '/api/admin/org-units', params })
+}
+
+export const createAdminOrgUnitApi = (
+  payload: AdminOrgUnitSavePayload,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ orgUnit: AdminOrgUnit; auditLogId: string; revision: number; etag: string }>> => {
+  return request.post({
+    url: '/api/admin/org-units',
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const updateAdminOrgUnitApi = (
+  orgId: string,
+  payload: Partial<AdminOrgUnitSavePayload>,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ orgUnit: AdminOrgUnit; auditLogId: string; revision: number; etag: string }>> => {
+  return request.put({
+    url: `/api/admin/org-units/${orgId}`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const deleteAdminOrgUnitApi = (
+  orgId: string,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ deleted: boolean; orgUnitId: string; auditLogId: string; revision: number; etag: string }>> => {
+  return request.delete({
+    url: `/api/admin/org-units/${orgId}`,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const listAdminUsersApi = (params?: {
+  keyword?: string
+  role?: RoleCode
+  orgId?: string
+  status?: AdminUser['status']
+  page?: number
+  pageSize?: number
+}): Promise<IResponse<PagePayload<AdminUser>>> => {
+  return request.get({ url: '/api/admin/users', params })
+}
+
+export const createAdminUserApi = (
+  payload: AdminUserSavePayload,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ user: AdminUser; auditLogId: string; revision: number; etag: string }>> => {
+  return request.post({
+    url: '/api/admin/users',
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const updateAdminUserApi = (
+  userId: string,
+  payload: Partial<AdminUserSavePayload>,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ user: AdminUser; auditLogId: string; revision: number; etag: string }>> => {
+  return request.put({
+    url: `/api/admin/users/${userId}`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const deleteAdminUserApi = (
+  userId: string,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ deleted: boolean; userId: string; user?: AdminUser; auditLogId: string; revision: number; etag: string }>> => {
+  return request.delete({
+    url: `/api/admin/users/${userId}`,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const listBusinessPacksApi = (): Promise<IResponse<BusinessPackSummary[]>> => {

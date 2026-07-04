@@ -609,14 +609,14 @@ const getPillClass = (value?: string | number) => {
       <section class="static-card">
         <div class="static-card-head">
           <h2>三、项目文件知识库</h2>
-          <div class="sub">从项目文件库、节点文件包、无损检测资料和监检资料同步入库</div>
+          <div class="sub">从项目文件知识库、节点文件包、无损检测资料和监检资料同步入库</div>
         </div>
         <div class="static-card-body">
           <table aria-hidden="true" class="table">
             <thead
               ><tr
-                ><th>项目</th><th>节点</th><th>文件</th><th>来源单位</th><th>OCR</th><th>切片</th
-                ><th>向量</th><th>索引</th></tr
+                ><th>项目</th><th>节点</th><th>文件</th><th>OCR</th><th>切片</th><th>向量</th
+                ><th>索引</th></tr
               ></thead
             >
             <tbody>
@@ -625,10 +625,9 @@ const getPillClass = (value?: string | number) => {
                 :key="file.id"
                 :class="{ selected: index === 0 }"
               >
-                <td>{{ file.projectName || '标准规范库' }}</td>
+                <td>{{ file.projectName || '未绑定项目' }}</td>
                 <td>{{ file.nodeName || '-' }}</td>
                 <td>{{ file.fileName }}</td>
-                <td>{{ file.sourceName }}</td>
                 <td
                   ><span :class="['pill', getPillClass(file.ocrStatus)]">{{
                     file.ocrStatus
@@ -648,15 +647,7 @@ const getPillClass = (value?: string | number) => {
               </tr>
             </tbody>
           </table>
-        </div>
-      </section>
-
-      <section class="static-card">
-        <div class="static-card-head">
-          <h2>四、文件知识详情</h2>
-          <div class="sub">单文件的 OCR 文本、切片结果、向量索引和推理引用</div>
-        </div>
-        <div class="static-card-body">
+          <div class="subsection-title">选中文件知识详情</div>
           <table aria-hidden="true" class="table compact">
             <tbody>
               <tr
@@ -683,7 +674,7 @@ const getPillClass = (value?: string | number) => {
       <div class="split">
         <section class="static-card">
           <div class="static-card-head">
-            <h2>五、OCR/向量任务中心</h2>
+            <h2>四、OCR/向量任务中心</h2>
             <span class="pill orange"
               >{{
                 knowledgeTasks.filter((task) => task.status === '失败').length || 7
@@ -711,7 +702,7 @@ const getPillClass = (value?: string | number) => {
         </section>
         <section class="static-card">
           <div class="static-card-head">
-            <h2>六、知识检索测试</h2>
+            <h2>五、知识检索测试</h2>
             <span class="pill blue">召回验证</span>
           </div>
           <div class="static-card-body">
@@ -729,7 +720,7 @@ const getPillClass = (value?: string | number) => {
 
       <section class="static-card">
         <div class="static-card-head">
-          <h2>七、业务规则版本管理</h2>
+          <h2>六、监检业务判断规则管理</h2>
           <div class="sub">规则模板、Prompt、字段映射和工具源版本统一发布和回滚</div>
         </div>
         <div class="static-card-body">
@@ -767,7 +758,7 @@ const getPillClass = (value?: string | number) => {
 
       <section class="static-card">
         <div class="static-card-head">
-          <h2>八、推理链路历史日志</h2>
+          <h2>七、推理链路历史日志</h2>
           <div class="sub">回溯每次 AI 审查链路的输入、规则、召回、模型输出和人工处理结果</div>
         </div>
         <div class="static-card-body">
@@ -804,7 +795,7 @@ const getPillClass = (value?: string | number) => {
 
       <section class="static-card">
         <div class="static-card-head">
-          <h2>九、多 LLM 反馈对比</h2>
+          <h2>八、多 LLM 反馈对比</h2>
           <div class="sub">同一审查对象在不同模型下的建议结果对比，仅用于规则优化和质量评估</div>
         </div>
         <div class="static-card-body">
@@ -825,7 +816,7 @@ const getPillClass = (value?: string | number) => {
 
       <div class="split">
         <section class="static-card">
-          <div class="static-card-head"><h2>十、知识库配置</h2></div>
+          <div class="static-card-head"><h2>九、知识库配置</h2></div>
           <div class="static-card-body">
             <table aria-hidden="true" class="table compact">
               <tbody>
@@ -860,7 +851,7 @@ const getPillClass = (value?: string | number) => {
           </div>
         </section>
         <section class="static-card">
-          <div class="static-card-head"><h2>十一、操作审计日志</h2></div>
+          <div class="static-card-head"><h2>十、操作审计日志</h2></div>
           <div class="static-card-body">
             <table aria-hidden="true" class="table compact">
               <tbody>
@@ -997,6 +988,13 @@ p {
 
 .module-table {
   margin-top: 12px;
+}
+
+.subsection-title {
+  margin: 14px 0 10px;
+  font-size: 13px;
+  font-weight: 800;
+  color: #344054;
 }
 
 .table {

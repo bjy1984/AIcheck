@@ -218,7 +218,17 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         component: AdminOverview,
         name: 'AdminRules',
         meta: {
-          title: '规则与流程',
+          title: 'AI业务规则与流程',
+          noCache: true,
+          roles: ['admin']
+        }
+      },
+      {
+        path: 'prompt-templates',
+        component: AdminOverview,
+        name: 'AdminPromptTemplates',
+        meta: {
+          title: 'Prompt 模板管理',
           noCache: true,
           roles: ['admin']
         }
@@ -282,7 +292,7 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         component: KnowledgeOverview,
         name: 'KnowledgeSources',
         meta: {
-          title: '知识源管理',
+          title: '标准规范库',
           noCache: true,
           roles: ['admin']
         }
@@ -292,7 +302,7 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         component: KnowledgeOverview,
         name: 'KnowledgeFiles',
         meta: {
-          title: '项目文件库',
+          title: '项目文件知识库',
           noCache: true,
           roles: ['admin']
         }
