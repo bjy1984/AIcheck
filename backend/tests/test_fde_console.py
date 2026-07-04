@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 
 from fastapi.testclient import TestClient
@@ -1097,6 +1098,147 @@ def test_fde_ocr_annotation_queue_import_and_review() -> None:
 
     assert reviewed["readiness"]["ok"] is True
     assert reviewed["task"]["collectionStatus"] == "ready_for_eval"
+
+
+def test_fde_ocr_capability_pdf_annotation_uses_page_preview() -> None:
+    repo.state.setdefault("fde_capability_test_runs", []).insert(
+        0,
+        {
+            "runId": "FDE-OCR-RUN-PDF-001",
+            "id": "FDE-OCR-RUN-PDF-001",
+            "uploadSessionId": "FDE-OCR-UP-PDF-001",
+            "status": "completed",
+            "fileName": "sample.pdf",
+            "contentType": "application/pdf",
+            "fileSize": 1024,
+            "storageKey": "fde-capability-tests/ocr/FDE-OCR-UP-PDF-001/sample.pdf",
+            "storageUrl": "minio://ocr-artifacts/fde-capability-tests/ocr/FDE-OCR-UP-PDF-001/sample.pdf",
+            "parseResultId": "PARSE-PDF-001",
+            "profileId": "generic_document_v1",
+            "documentType": "generic_document",
+        },
+    )
+    repo.state.setdefault("ocr_parse_results", []).append(
+        {
+            "parseResultId": "PARSE-PDF-001",
+            "profileId": "generic_document_v1",
+            "documentType": "generic_document",
+            "quality": {"status": "needs_human_review"},
+            "pages": [{"pageNo": 1, "width": 1132, "height": 1600}],
+            "fields": [],
+            "fragments": [
+                {
+                    "text": "广东星燃石化设计院有限公司",
+                    "bbox": [110, 90, 460, 132],
+                    "pageNo": 1,
+                    "confidence": 0.92,
+                    "sourceEngine": "pp_ocr_v6",
+                }
+            ],
+            "tables": [
+                {
+                    "tableId": "table-1",
+                    "bbox": [82, 266, 1047, 700],
+                    "rows": 10,
+                    "columns": 2,
+                }
+            ],
+            "seals": [],
+        }
+    )
+
+    converted = assert_ok(
+        client.post(
+            "/api/fde/capability-tests/ocr/runs/FDE-OCR-RUN-PDF-001/to-annotation",
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-pdf-annotation-preview-001"},
+        )
+    )
+
+    task = converted["task"]
+    assert task["previewType"] == "pdf"
+    assert task["pagePreviewUrl"] == "/api/fde/capability-tests/ocr/runs/FDE-OCR-RUN-PDF-001/page-preview?pageNo=1"
+    assert task["pageDimensions"]["1"] == [1132, 1600]
+    text_fields = [
+        item
+        for item in task["suggestedExpected"]["fields"]
+        if str(item.get("fieldCode", "")).startswith("ocr_text_")
+    ]
+    assert text_fields[0]["value"] == "广东星燃石化设计院有限公司"
+    assert text_fields[0]["bbox"] == [110, 90, 460, 132]
+
+    detail = assert_ok(client.get(f"/api/fde/ocr-annotation/tasks/{task['taskId']}", headers={"X-Role": "fde"}))
+    assert detail["task"]["pagePreviewUrl"] == task["pagePreviewUrl"]
+    assert detail["task"]["pageDimensions"]["1"] == [1132, 1600]
+
+
+def test_fde_ocr_capability_rerun_requeues_existing_run(monkeypatch) -> None:
+    started: list[str] = []
+    monkeypatch.setattr("apps.api.routes.fde_start_ocr_capability_test_worker", started.append)
+    repo.state.setdefault("fde_capability_test_runs", []).append(
+        {
+            "runId": "FDE-OCR-RUN-RERUN-001",
+            "id": "FDE-OCR-RUN-RERUN-001",
+            "uploadSessionId": "FDE-OCR-UP-RERUN-001",
+            "status": "success",
+            "fileName": "sample.pdf",
+            "contentType": "application/pdf",
+            "storageKey": "fde-capability-tests/ocr/FDE-OCR-UP-RERUN-001/sample.pdf",
+            "parseResultId": "PARSE-OLD-001",
+            "ocrJobRecordId": "OCRJOB-OLD-001",
+            "resultSummary": {"pages": 1, "fields": 2},
+            "diagnostics": [{"code": "OLD"}],
+            "engineRuns": [{"engine": "old"}],
+            "profileId": "generic_document_v1",
+            "documentType": "generic_document",
+        }
+    )
+
+    rerun = assert_ok(
+        client.post(
+            "/api/fde/capability-tests/ocr/runs/FDE-OCR-RUN-RERUN-001/rerun",
+            json={"reason": "test_refresh"},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-ocr-rerun-001"},
+        )
+    )
+
+    assert rerun["alreadyRunning"] is False
+    assert rerun["run"]["status"] == "ocr_queued"
+    assert rerun["run"]["parseResultId"] is None
+    assert rerun["run"]["previousParseResultId"] == "PARSE-OLD-001"
+    assert rerun["run"]["rerunCount"] == 1
+    assert rerun["run"]["diagnostics"] == []
+    assert started == ["FDE-OCR-RUN-RERUN-001"]
+
+
+def test_fde_ocr_annotation_preview_resolves_sibling_heic(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("apps.api.routes.WORKSPACE_ROOT", tmp_path)
+    repo.state["ocr_annotation_tasks"][0]["sourcePath"] = "Scan/IMG_6509.png"
+    scan_dir = tmp_path / "Scan"
+    scan_dir.mkdir()
+    # Tiny PNG payload with a .heic name exercises extension fallback without relying on
+    # platform-specific HEIC codecs in CI.
+    (scan_dir / "IMG_6509.heic").write_bytes(
+        base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lwN5nAAAAABJRU5ErkJggg=="
+        )
+    )
+    monkeypatch.setattr(
+        "apps.api.routes.fde_render_heic_page_preview",
+        lambda _path: (base64.b64decode("iVBORw0KGgo="), "image/png"),
+    )
+
+    detail = assert_ok(
+        client.get("/api/fde/ocr-annotation/tasks/ANNO-SEED-PIPING-001", headers={"X-Role": "fde"})
+    )
+
+    assert detail["task"]["previewUrl"] == "/api/fde/ocr-annotation/tasks/ANNO-SEED-PIPING-001/preview"
+    preview = client.get(
+        "/api/fde/ocr-annotation/tasks/ANNO-SEED-PIPING-001/preview",
+        headers={"X-Role": "fde"},
+    )
+    assert preview.status_code == 200
+    assert preview.headers["content-type"].startswith("image/png")
+    assert preview.content.startswith(b"\x89PNG")
 
 
 def test_fde_builtin_ocr_annotation_label_verify_and_import_pack() -> None:

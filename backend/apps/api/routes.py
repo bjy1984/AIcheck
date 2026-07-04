@@ -12167,7 +12167,13 @@ def fde_ocr_evaluation_cases_from_results(profile_id: str) -> list[dict[str, Any
     return cases
 
 
-def expected_fields_from_result(result: dict[str, Any]) -> list[dict[str, Any]]:
+def expected_fields_from_result(
+    result: dict[str, Any],
+    *,
+    include_text_fragments: bool = False,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    max_items = limit if limit is not None else (80 if include_text_fragments else 50)
     expected = []
     for field in result.get("fields") or []:
         if not isinstance(field, dict):
@@ -12180,7 +12186,131 @@ def expected_fields_from_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             item["bbox"] = field.get("bbox") or field.get("polygon")
             item["bboxIouThreshold"] = 0.5
         expected.append(item)
-    return expected[:50]
+        if len(expected) >= max_items:
+            return expected[:max_items]
+    if include_text_fragments and len(expected) < max_items:
+        used_codes = {str(item.get("fieldCode") or "") for item in expected}
+        expected.extend(
+            expected_text_fields_from_result(
+                result,
+                existing_codes=used_codes,
+                limit=max_items - len(expected),
+            )
+        )
+    return expected[:max_items]
+
+
+def expected_text_fields_from_result(
+    result: dict[str, Any],
+    *,
+    existing_codes: set[str],
+    limit: int,
+) -> list[dict[str, Any]]:
+    if limit <= 0:
+        return []
+    expected: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    sequence_by_page: dict[int, int] = {}
+    fragments = [item for item in result.get("fragments") or [] if isinstance(item, dict)]
+    for fragment in fragments:
+        text = normalize_expected_text(fragment.get("text") or fragment.get("fullText") or fragment.get("rawText"))
+        if not text:
+            continue
+        page_no = safe_expected_page_no(fragment.get("pageNo") or fragment.get("page") or 1)
+        bbox = fragment.get("bbox")
+        polygon = fragment.get("polygon")
+        dedupe_key = json.dumps([page_no, text, bbox, polygon], ensure_ascii=False, sort_keys=True)
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        sequence_by_page[page_no] = sequence_by_page.get(page_no, 0) + 1
+        field_code = unique_expected_field_code(f"ocr_text_p{page_no}_{sequence_by_page[page_no]}", existing_codes)
+        item: dict[str, Any] = {
+            "fieldCode": field_code,
+            "fieldName": f"OCR 文字 {sequence_by_page[page_no]}",
+            "value": text,
+            "pageNo": page_no,
+            "source": "ocr_fragment",
+        }
+        if bbox:
+            item["bbox"] = bbox
+            item["bboxIouThreshold"] = 0.5
+        elif polygon:
+            item["polygon"] = polygon
+            item["bboxIouThreshold"] = 0.5
+        if fragment.get("confidence") is not None:
+            item["confidence"] = fragment.get("confidence")
+        if fragment.get("sourceEngine") or fragment.get("source"):
+            item["sourceEngine"] = fragment.get("sourceEngine") or fragment.get("source")
+        expected.append(item)
+        if len(expected) >= limit:
+            return expected
+
+    full_text = normalize_expected_text(
+        result.get("fullText")
+        or result.get("text")
+        or result.get("rawText")
+        or result.get("plainText")
+        or result.get("ocrText")
+    )
+    if expected or not full_text or len(expected) >= limit:
+        return expected
+    page_bbox = expected_full_page_bbox(result)
+    if not page_bbox:
+        return expected
+    field_code = unique_expected_field_code("ocr_full_text", existing_codes)
+    expected.append(
+        {
+            "fieldCode": field_code,
+            "fieldName": "OCR 全文",
+            "value": full_text,
+            "pageNo": 1,
+            "bbox": page_bbox,
+            "bboxIouThreshold": 0.5,
+            "source": "ocr_full_text",
+        }
+    )
+    return expected
+
+
+def normalize_expected_text(value: Any) -> str:
+    if value is None:
+        return ""
+    return re.sub(r"\s+", " ", str(value)).strip()
+
+
+def safe_expected_page_no(value: Any) -> int:
+    try:
+        return max(1, int(float(value)))
+    except (TypeError, ValueError):
+        return 1
+
+
+def unique_expected_field_code(base: str, existing_codes: set[str]) -> str:
+    field_code = re.sub(r"[^A-Za-z0-9_:\-]+", "_", base).strip("_") or "ocr_text"
+    if not re.match(r"^[A-Za-z]", field_code):
+        field_code = f"ocr_{field_code}"
+    candidate = field_code
+    index = 2
+    while candidate in existing_codes:
+        candidate = f"{field_code}_{index}"
+        index += 1
+    existing_codes.add(candidate)
+    return candidate
+
+
+def expected_full_page_bbox(result: dict[str, Any]) -> list[int] | None:
+    pages = [item for item in result.get("pages") or [] if isinstance(item, dict)]
+    page = pages[0] if pages else {}
+    try:
+        width = int(float(page.get("width") or page.get("pageWidth") or page.get("imageWidth") or 0))
+        height = int(float(page.get("height") or page.get("pageHeight") or page.get("imageHeight") or 0))
+    except (TypeError, ValueError):
+        width = 0
+        height = 0
+    if width > 0 and height > 0:
+        return [0, 0, width, height]
+    return None
 
 
 def expected_tables_from_result(result: dict[str, Any]) -> list[dict[str, Any]]:
@@ -12231,7 +12361,7 @@ def fde_capability_test_file_preview_type(file_name: str, content_type: str | No
     content = str(content_type or "").lower()
     if suffix == "pdf" or "pdf" in content:
         return "pdf"
-    if suffix in {"png", "jpg", "jpeg", "webp", "bmp"} or content.startswith("image/"):
+    if suffix in {"png", "jpg", "jpeg", "webp", "bmp", "heic", "heif"} or content.startswith("image/"):
         return "image"
     if suffix in {"doc", "docx", "xls", "xlsx"}:
         return "office"
@@ -12307,6 +12437,25 @@ def fde_render_image_page_preview(local_path: Path) -> tuple[bytes, str] | None:
             return output.getvalue(), "image/png"
     except Exception:
         return None
+
+
+def fde_render_heic_page_preview(local_path: Path) -> tuple[bytes, str] | None:
+    pillow_preview = fde_render_image_page_preview(local_path)
+    if pillow_preview:
+        return pillow_preview
+    if not shutil.which("sips"):
+        return None
+    with tempfile.TemporaryDirectory(prefix="aicheck-fde-heic-preview-") as temp_dir:
+        target = Path(temp_dir) / "page.png"
+        completed = subprocess.run(
+            ["sips", "-s", "format", "png", str(local_path), "--out", str(target)],
+            check=False,
+            capture_output=True,
+            timeout=30,
+        )
+        if completed.returncode != 0 or not target.is_file():
+            return None
+        return fde_render_image_page_preview(target) or (target.read_bytes(), "image/png")
 
 
 def fde_render_pdf_page_preview_with_fitz(local_path: Path, page_no: int) -> tuple[bytes, str] | None:
@@ -12942,6 +13091,62 @@ def fde_create_ocr_capability_test_run(
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
+@router.post("/fde/capability-tests/ocr/runs/{run_id}/rerun")
+def fde_rerun_ocr_capability_test_run(
+    request: Request,
+    run_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        role, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+        if role_error:
+            return role_error
+        run = fde_capability_test_run_by_id(run_id)
+        if not run:
+            return fail(errors.NOT_FOUND, request)
+        status = str(run.get("status") or "")
+        if status in {"ocr_queued", "ocr_running"}:
+            return ok({"run": repo.clone(run), "alreadyRunning": True, "auditLogId": None}, request)
+
+        now = server_time()
+        previous_parse_result_id = run.get("parseResultId")
+        try:
+            rerun_count = int(run.get("rerunCount") or 0) + 1
+        except (TypeError, ValueError):
+            rerun_count = 1
+        run.update(
+            {
+                "status": "ocr_queued",
+                "previousParseResultId": previous_parse_result_id,
+                "parseResultId": None,
+                "ocrJobRecordId": None,
+                "externalJobId": None,
+                "resultSummary": fde_capability_test_result_summary(None),
+                "diagnostics": [],
+                "engineRuns": [],
+                "startedAt": None,
+                "finishedAt": None,
+                "rerunCount": rerun_count,
+                "rerunReason": str(body.get("reason") or "manual_prelabel_refresh"),
+                "rerunRequestedAt": now,
+                "updatedAt": now,
+                "updatedByRole": role or "fde",
+            }
+        )
+        audit_id = repo.add_audit("FDE OCR 能力测试重新预标注", "FdeOcrCapabilityTestRun", run_id)
+        flush_state()
+        fde_start_ocr_capability_test_worker(run_id)
+        return ok({"run": repo.clone(run), "alreadyRunning": False, "auditLogId": audit_id}, request)
+
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"runId": run_id, "body": body},
+    )
+
+
 @router.get("/fde/capability-tests/ocr/runs")
 def fde_ocr_capability_test_runs(
     request: Request,
@@ -13077,10 +13282,12 @@ def fde_ocr_capability_test_to_annotation(
             return fail(errors.VALIDATION_ERROR, request, message="当前测试 Run 还没有可标注的 OCR 结果。")
         expected = {
             "qualityStatus": (result.get("quality") or {}).get("status") or "needs_human_review",
-            "fields": expected_fields_from_result(result),
+            "fields": expected_fields_from_result(result, include_text_fragments=True),
             "tables": expected_tables_from_result(result),
             "seals": expected_seals_from_result(result),
         }
+        preview = fde_capability_test_preview(run)
+        page_dimensions = fde_ocr_annotation_result_page_dimensions(result)
         existing = next(
             (
                 item
@@ -13103,12 +13310,31 @@ def fde_ocr_capability_test_to_annotation(
             "pageCount": len(result.get("pages") or []) or 1,
             "expectedTemplate": expected,
             "suggestedExpected": expected,
-            "previewUrl": fde_capability_test_preview(run).get("url"),
+            "previewUrl": preview.get("url"),
+            "pagePreviewUrl": preview.get("pagePreviewUrl"),
+            "previewType": preview.get("previewType"),
+            "pageDimensions": page_dimensions or None,
             "retention": "fde_capability_test_only",
             "createdByRole": role or "fde",
             "createdAt": server_time(),
         }
-        task.update({"updatedAt": server_time(), "updatedByRole": role or "fde"})
+        existing_dimensions = task.get("pageDimensions")
+        should_refresh_dimensions = (
+            not isinstance(existing_dimensions, dict)
+            or not existing_dimensions
+            or existing_dimensions == {"1": [2000, 1500]}
+        )
+        update_payload = {
+            "pagePreviewUrl": task.get("pagePreviewUrl") or preview.get("pagePreviewUrl"),
+            "previewType": task.get("previewType") or preview.get("previewType"),
+            "pageDimensions": page_dimensions if page_dimensions and should_refresh_dimensions else existing_dimensions,
+            "updatedAt": server_time(),
+            "updatedByRole": role or "fde",
+        }
+        refresh_suggested = parse_bool(body.get("refreshSuggested", body.get("forceRefresh")), False) is True
+        if existing and (refresh_suggested or not isinstance(task.get("labeledExpected"), dict)):
+            update_payload.update({"expectedTemplate": expected, "suggestedExpected": expected})
+        task.update(update_payload)
         if not existing:
             repo.state.setdefault("ocr_annotation_tasks", []).insert(0, task)
         readiness = fde_update_ocr_annotation_readiness(task)
@@ -13358,7 +13584,7 @@ def fde_ocr_annotation_tasks_source() -> list[dict[str, Any]]:
         scenario = fde_ocr_annotation_scenario(result)
         expected = {
             "qualityStatus": (result.get("quality") or {}).get("status") or "needs_human_review",
-            "fields": expected_fields_from_result(result),
+            "fields": expected_fields_from_result(result, include_text_fragments=True),
             "tables": expected_tables_from_result(result),
             "seals": expected_seals_from_result(result),
         }
@@ -13422,6 +13648,45 @@ def fde_ocr_annotation_readiness(tasks: list[dict[str, Any]]) -> dict[str, Any]:
     return build_annotation_readiness_from_tasks(repo.clone(tasks), source="api:fde.ocr-annotation")
 
 
+def fde_ocr_annotation_source_run(task: dict[str, Any]) -> dict[str, Any] | None:
+    run_id = str(task.get("sourceRunId") or "").strip()
+    if not run_id:
+        return None
+    return fde_capability_test_run_by_id(run_id)
+
+
+def fde_ocr_annotation_result_page_dimensions(result: dict[str, Any] | None) -> dict[str, list[int]]:
+    dimensions: dict[str, list[int]] = {}
+    if not isinstance(result, dict):
+        return dimensions
+    for page_item in result.get("pages") or []:
+        if not isinstance(page_item, dict):
+            continue
+        page_no = str(page_item.get("pageNo") or page_item.get("page") or len(dimensions) + 1)
+        try:
+            width = int(float(page_item.get("width") or page_item.get("imageWidth") or 0))
+            height = int(float(page_item.get("height") or page_item.get("imageHeight") or 0))
+        except (TypeError, ValueError):
+            width = 0
+            height = 0
+        if width > 0 and height > 0:
+            dimensions[page_no] = [width, height]
+    return dimensions
+
+
+def fde_ocr_annotation_source_page_dimensions(task: dict[str, Any]) -> dict[str, list[int]]:
+    parse_result_id = str(task.get("parseResultId") or "").strip()
+    result = repo.find_one("ocr_parse_results", parse_result_id, id_field="parseResultId") if parse_result_id else None
+    dimensions = fde_ocr_annotation_result_page_dimensions(result)
+    if dimensions:
+        return dimensions
+    run = fde_ocr_annotation_source_run(task)
+    if not run or not run.get("parseResultId"):
+        return {}
+    result = repo.find_one("ocr_parse_results", str(run["parseResultId"]), id_field="parseResultId")
+    return fde_ocr_annotation_result_page_dimensions(result)
+
+
 def fde_ocr_annotation_task_view(task: dict[str, Any]) -> dict[str, Any]:
     view = repo.clone(task)
     readiness = fde_ocr_annotation_readiness([task])
@@ -13434,6 +13699,21 @@ def fde_ocr_annotation_task_view(task: dict[str, Any]) -> dict[str, Any]:
     view["labelCounts"] = fde_ocr_annotation_expected_counts(
         view.get("labeledExpected") if isinstance(view.get("labeledExpected"), dict) else {}
     )
+    run = fde_ocr_annotation_source_run(view)
+    if run:
+        capability_preview = fde_capability_test_preview(run)
+        view["previewType"] = view.get("previewType") or capability_preview.get("previewType")
+        view["pagePreviewUrl"] = view.get("pagePreviewUrl") or capability_preview.get("pagePreviewUrl")
+        view["previewUrl"] = view.get("previewUrl") or capability_preview.get("url")
+    source_dimensions = fde_ocr_annotation_source_page_dimensions(view)
+    if source_dimensions:
+        current_dimensions = view.get("pageDimensions")
+        if (
+            not isinstance(current_dimensions, dict)
+            or not current_dimensions
+            or current_dimensions == {"1": [2000, 1500]}
+        ):
+            view["pageDimensions"] = source_dimensions
     view["previewUrl"] = view.get("previewUrl") or view.get("pagePreviewUrl") or fde_ocr_annotation_preview_url(view)
     view.setdefault("pageDimensions", fde_ocr_annotation_default_page_dimensions(view))
     return view
@@ -13448,6 +13728,10 @@ def fde_ocr_annotation_expected_counts(expected: dict[str, Any]) -> dict[str, in
 
 
 def fde_ocr_annotation_preview_url(task: dict[str, Any]) -> str | None:
+    source_run_id = str(task.get("sourceRunId") or "").strip()
+    if source_run_id:
+        page_no = int(task.get("pageNo") or 1)
+        return f"/api/fde/capability-tests/ocr/runs/{source_run_id}/page-preview?pageNo={page_no}"
     for key in ["pagePreviewUrl", "previewUrl", "previewDataUrl"]:
         value = str(task.get(key) or "").strip()
         if value:
@@ -13458,6 +13742,9 @@ def fde_ocr_annotation_preview_url(task: dict[str, Any]) -> str | None:
     return None
 
 
+FDE_OCR_ANNOTATION_PREVIEW_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".heic", ".heif", ".pdf")
+
+
 def fde_ocr_annotation_preview_path(task: dict[str, Any]) -> Path | None:
     preview_paths = task.get("previewPaths") if isinstance(task.get("previewPaths"), list) else []
     raw = str(task.get("pagePreviewPath") or (preview_paths[0] if preview_paths else None) or task.get("sourcePath") or "").strip()
@@ -13466,14 +13753,29 @@ def fde_ocr_annotation_preview_path(task: dict[str, Any]) -> Path | None:
     candidate = Path(raw).expanduser()
     if not candidate.is_absolute():
         candidate = WORKSPACE_ROOT / candidate
+    candidates = [candidate]
+    if candidate.suffix:
+        candidates.extend(candidate.with_suffix(suffix) for suffix in FDE_OCR_ANNOTATION_PREVIEW_SUFFIXES)
+    else:
+        candidates.extend(Path(f"{candidate}{suffix}") for suffix in FDE_OCR_ANNOTATION_PREVIEW_SUFFIXES)
+    seen: set[Path] = set()
+    unique_candidates = []
+    for item in candidates:
+        if item in seen:
+            continue
+        seen.add(item)
+        unique_candidates.append(item)
     try:
-        resolved = candidate.resolve()
         allowed_roots = [WORKSPACE_ROOT.resolve(), Path(tempfile.gettempdir()).resolve()]
-        if not any(resolved == root or root in resolved.parents for root in allowed_roots):
-            return None
-        if resolved.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".bmp"}:
-            return None
-        return resolved if resolved.exists() else None
+        for item in unique_candidates:
+            resolved = item.resolve()
+            if not any(resolved == root or root in resolved.parents for root in allowed_roots):
+                continue
+            if resolved.suffix.lower() not in FDE_OCR_ANNOTATION_PREVIEW_SUFFIXES:
+                continue
+            if resolved.exists():
+                return resolved
+        return None
     except OSError:
         return None
 
@@ -13527,16 +13829,60 @@ def fde_ocr_annotation_tasks(
 
 
 @router.get("/fde/ocr-annotation/tasks/{task_id}/preview")
-def fde_ocr_annotation_task_preview(request: Request, task_id: str):
+def fde_ocr_annotation_task_preview(
+    request: Request,
+    task_id: str,
+    pageNo: int = Query(default=1, ge=1, le=100),
+):
     _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
     if role_error:
         return role_error
     task = fde_ocr_annotation_task(task_id)
     if not task:
         return fail(errors.NOT_FOUND, request)
+    run = fde_ocr_annotation_source_run(task)
+    if run:
+        local_preview = fde_render_local_capability_page_preview(run, pageNo)
+        if local_preview:
+            content, content_type = local_preview
+            return Response(
+                content=content,
+                media_type=content_type,
+                headers={
+                    "Cache-Control": "private, max-age=300",
+                    "X-Content-Type-Options": "nosniff",
+                    "X-AICheck-Preview-Source": "annotation-capability-run",
+                },
+            )
     preview_path = fde_ocr_annotation_preview_path(task)
     if not preview_path:
         return fail(errors.NOT_FOUND, request)
+    suffix = preview_path.suffix.lower()
+    rendered_preview: tuple[bytes, str] | None = None
+    if suffix == ".pdf":
+        rendered_preview = (
+            fde_render_pdf_page_preview_with_fitz(preview_path, pageNo)
+            or fde_render_pdf_page_preview_with_pdfium(preview_path, pageNo)
+            or fde_render_pdf_page_preview_with_qlmanage(preview_path, pageNo)
+            or fde_render_pdf_page_preview_with_magick(preview_path, pageNo)
+        )
+    elif suffix in {".heic", ".heif"}:
+        rendered_preview = fde_render_heic_page_preview(preview_path)
+    else:
+        rendered_preview = fde_render_image_page_preview(preview_path)
+    if rendered_preview:
+        content, content_type = rendered_preview
+        return Response(
+            content=content,
+            media_type=content_type,
+            headers={
+                "Cache-Control": "private, max-age=300",
+                "X-Content-Type-Options": "nosniff",
+                "X-AICheck-Preview-Source": "annotation-source-path",
+            },
+        )
+    if suffix in {".pdf", ".heic", ".heif"}:
+        return fail(errors.VALIDATION_ERROR, request, message="标注页图预览生成失败，请重新上传文件生成预览。")
     return FileResponse(preview_path)
 
 

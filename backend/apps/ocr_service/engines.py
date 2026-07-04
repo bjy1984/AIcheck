@@ -1331,6 +1331,10 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
             import tempfile
             import cv2
             import numpy as np
+            try:
+                from apps.ocr_service.seal_text import extract_structured_seal_fields_from_lines
+            except Exception:
+                extract_structured_seal_fields_from_lines = None
 
             image_path = sys.argv[1]
             image = cv2.imread(image_path)
@@ -1460,6 +1464,8 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
                 return value
 
             def seal_fields_from_lines(lines, bbox):
+                if extract_structured_seal_fields_from_lines is not None:
+                    return extract_structured_seal_fields_from_lines(lines, [int(value) for value in bbox])
                 field_bbox = [int(value) for value in bbox]
                 texts = [text for text, _ in lines]
                 line_scores = {text: float(score or 0.0) for text, score in lines}
@@ -1502,7 +1508,7 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
                         add("日期", date_match.group(0), confidence=text_score or 0.8)
                     if "有限公司" in text and not any(field.get("fieldName") == "单位名称" for field in fields):
                         score = text_score
-                        if score >= 0.88:
+                        if score >= 0.45:
                             add("单位名称", text, confidence=max(score, 0.6))
                 business_index = next((index for index, text in enumerate(texts) if "业务范围" in text), -1)
                 if business_index >= 0 and not any(field.get("fieldName") == "业务范围" for field in fields):
@@ -1515,7 +1521,7 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
                 raw_texts = [
                     text
                     for text, score in lines
-                    if not ("有限公司" in text and float(score or 0.0) < 0.88)
+                    if not ("有限公司" in text and float(score or 0.0) < 0.45)
                 ]
                 add("印章原文", "\\n".join(raw_texts), confidence=sum(score for _, score in lines) / max(len(lines), 1) if lines else 0.0)
                 return fields
@@ -1557,7 +1563,7 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
                         return True
                     if any(keyword in text for keyword in seal_text_keywords):
                         return True
-                    if "有限公司" in text and float(score or 0.0) < 0.88:
+                    if "有限公司" in text and float(score or 0.0) < 0.45:
                         return False
                     return float(score or 0.0) >= 0.88
 
@@ -1666,6 +1672,8 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
         )
         env = os.environ.copy()
         env.update({"PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK": "True", "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"})
+        backend_root = str(Path(__file__).resolve().parents[2])
+        env["PYTHONPATH"] = f"{backend_root}{os.pathsep}{env.get('PYTHONPATH', '')}"
         completed = subprocess.run(
             [python_bin, "-c", script, str(source_path)],
             check=False,

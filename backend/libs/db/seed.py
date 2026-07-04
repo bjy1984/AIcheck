@@ -2073,7 +2073,7 @@ def fresh_state() -> dict[str, Any]:
                 "scenario": "piping_table_profile",
                 "profileId": "piping_characteristic_list_v1",
                 "documentType": "engineering_table_photo",
-                "sourcePath": "Scan/IMG_6509.png",
+                "sourcePath": "Scan/IMG_6509.heic",
                 "collectionStatus": "needs_labeling",
                 "pageCount": 1,
                 "expectedTemplate": {

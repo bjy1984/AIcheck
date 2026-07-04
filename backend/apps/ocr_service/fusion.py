@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from difflib import SequenceMatcher
 import re
 from copy import deepcopy
 from typing import Any
@@ -123,6 +124,11 @@ def fuse_parse_result(result: dict[str, Any], *, profile: dict[str, Any]) -> dic
         profile=profile,
     )
     seal_candidates.extend(fragment_seal_candidates_from_text(fused.get("fragments") or [], existing_seals=seal_candidates))
+    seal_candidates = reconcile_seal_organization_fields(
+        seal_candidates,
+        fragments=fused.get("fragments") or [],
+        fields=fused.get("fields") or [],
+    )
     fused["seals"] = fuse_seals(
         seal_candidates,
         profile=profile,
@@ -580,6 +586,115 @@ def fragment_seal_fields(
             }
         )
     return fields
+
+
+def reconcile_seal_organization_fields(
+    seals: list[dict[str, Any]],
+    *,
+    fragments: list[dict[str, Any]],
+    fields: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    organization_candidates = document_organization_candidates(fragments, fields)
+    if not organization_candidates:
+        return seals
+    output: list[dict[str, Any]] = []
+    for seal in seals:
+        candidate = deepcopy(seal)
+        seal_fields = [item for item in candidate.get("fields") or [] if isinstance(item, dict)]
+        if not seal_fields:
+            output.append(candidate)
+            continue
+        reconciled_fields: list[dict[str, Any]] = []
+        seen_organization_values: set[str] = set()
+        for field in seal_fields:
+            name = str(field.get("fieldName") or field.get("fieldCode") or "")
+            value = str(field.get("fieldValue") or field.get("value") or "").strip()
+            if "单位名称" in name or is_organization_text(value):
+                best = best_matching_organization(value, organization_candidates)
+                if best and best["score"] >= 0.58:
+                    normalized_value = best["value"]
+                    key = normalize_text(normalized_value)
+                    if key in seen_organization_values:
+                        continue
+                    seen_organization_values.add(key)
+                    updated = {
+                        **field,
+                        "fieldName": "单位名称",
+                        "fieldValue": normalized_value,
+                        "confidence": max(safe_float(field.get("confidence")), best["confidence"]),
+                        "source": "document_organization_reconciliation",
+                    }
+                    if normalize_text(value) != normalize_text(normalized_value):
+                        updated["originalFieldValue"] = value
+                    reconciled_fields.append(updated)
+                    continue
+            reconciled_fields.append(field)
+        candidate["fields"] = reconciled_fields
+        output.append(candidate)
+    return output
+
+
+def document_organization_candidates(
+    fragments: list[dict[str, Any]],
+    fields: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+
+    def add(value: Any, confidence: Any) -> None:
+        organization = extract_organization_text(str(value or ""))
+        if not organization:
+            return
+        key = normalize_text(organization)
+        if any(item["key"] == key for item in candidates):
+            return
+        candidates.append(
+            {
+                "key": key,
+                "value": organization,
+                "confidence": safe_float(confidence),
+            }
+        )
+
+    for field in fields:
+        if not isinstance(field, dict):
+            continue
+        name = str(field.get("fieldCode") or field.get("fieldName") or "")
+        if any(token in name for token in ["company", "organization", "单位", "公司", "设计院"]):
+            add(field.get("fieldValue") or field.get("value"), field.get("confidence"))
+    for fragment in fragments:
+        if not isinstance(fragment, dict):
+            continue
+        add(fragment.get("text") or fragment.get("fullText"), fragment.get("confidence"))
+    return sorted(candidates, key=lambda item: item["confidence"], reverse=True)
+
+
+def best_matching_organization(value: str, candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not value:
+        return None
+    normalized_value = normalize_text(value)
+    best: dict[str, Any] | None = None
+    for candidate in candidates:
+        score = SequenceMatcher(None, normalized_value, candidate["key"]).ratio()
+        if not best or score > best["score"]:
+            best = {**candidate, "score": score}
+    return best
+
+
+def extract_organization_text(value: str) -> str:
+    compact = normalize_text(value)
+    match = re.search(r"[\u4e00-\u9fff（）()]{4,}?(?:设计院有限公司|设计有限公司|有限责任公司|有限公司)", compact)
+    return match.group(0) if match else ""
+
+
+def is_organization_text(value: str) -> bool:
+    return bool(extract_organization_text(value))
+
+
+def safe_float(value: Any) -> float:
+    try:
+        return float(value or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def copy_spatial_metadata(src: dict[str, Any], *, bbox: Any | None = None, polygon: Any | None = None) -> dict[str, Any]:
