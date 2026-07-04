@@ -12330,8 +12330,161 @@ def expected_tables_from_result(result: dict[str, Any]) -> list[dict[str, Any]]:
         if table.get("bbox") or table.get("polygon"):
             item["bbox"] = table.get("bbox") or table.get("polygon")
             item["bboxIouThreshold"] = 0.5
+        content_markdown = expected_table_content_from_result(table)
+        if content_markdown:
+            item["contentMarkdown"] = content_markdown
+            item["content"] = content_markdown
         expected.append({key: value for key, value in item.items() if fde_expected_value_present(value)})
     return expected[:20]
+
+
+def expected_table_content_from_result(table: dict[str, Any]) -> str:
+    for key in ["contentMarkdown", "markdown", "content", "text"]:
+        value = normalize_expected_multiline_text(table.get(key))
+        if value:
+            return value
+    cells = table.get("cells") if isinstance(table.get("cells"), list) else []
+    content = expected_table_markdown_from_cells(cells)
+    if content:
+        return content
+    rows = table.get("businessRows") or table.get("normalizedRows") or table.get("dataRows") or []
+    return expected_table_markdown_from_rows(rows)
+
+
+def expected_table_markdown_from_cells(cells: list[Any]) -> str:
+    indexed_cells: list[tuple[int, int, str]] = []
+    row_values: list[int] = []
+    column_values: list[int] = []
+    for cell in cells:
+        if not isinstance(cell, dict):
+            continue
+        row_index = expected_table_cell_index(
+            cell,
+            ["rowIndex", "row", "rowNo", "rowNumber", "rowId", "row_id"],
+        )
+        column_index = expected_table_cell_index(
+            cell,
+            [
+                "columnIndex",
+                "colIndex",
+                "column",
+                "col",
+                "columnNo",
+                "colNo",
+                "columnId",
+                "col_id",
+            ],
+        )
+        if row_index is None or column_index is None:
+            continue
+        text = expected_table_cell_text(cell)
+        row_values.append(row_index)
+        column_values.append(column_index)
+        indexed_cells.append((row_index, column_index, text))
+    if not indexed_cells:
+        return ""
+    row_offset = 1 if row_values and min(row_values) >= 1 else 0
+    column_offset = 1 if column_values and min(column_values) >= 1 else 0
+    normalized = [
+        (max(0, row - row_offset), max(0, column - column_offset), text)
+        for row, column, text in indexed_cells
+    ]
+    row_count = max(row for row, _, _ in normalized) + 1
+    column_count = max(column for _, column, _ in normalized) + 1
+    grid = [["" for _ in range(column_count)] for _ in range(row_count)]
+    for row, column, text in normalized:
+        current = grid[row][column].strip()
+        grid[row][column] = " ".join(part for part in [current, text] if part).strip()
+    return expected_table_markdown_from_grid(grid)
+
+
+def expected_table_markdown_from_rows(rows: Any) -> str:
+    if not isinstance(rows, list) or not rows:
+        return ""
+    if all(isinstance(row, dict) for row in rows):
+        headers: list[str] = []
+        for row in rows:
+            for key, value in row.items():
+                if key not in headers and fde_expected_value_present(value):
+                    headers.append(str(key))
+        if not headers:
+            return ""
+        grid = [headers]
+        for row in rows:
+            grid.append([normalize_expected_inline_text(row.get(header)) for header in headers])
+        return expected_table_markdown_from_grid(grid)
+    if all(isinstance(row, list) for row in rows):
+        grid = [[normalize_expected_inline_text(cell) for cell in row] for row in rows]
+        return expected_table_markdown_from_grid(grid)
+    return ""
+
+
+def expected_table_markdown_from_grid(grid: list[list[str]]) -> str:
+    rows = [row for row in grid if any(normalize_expected_inline_text(cell) for cell in row)]
+    if not rows:
+        return ""
+    column_count = max(1, max(len(row) for row in rows))
+    normalized_rows = [
+        [expected_table_escape_cell(row[index] if index < len(row) else "") for index in range(column_count)]
+        for row in rows
+    ]
+    markdown_rows = [f"| {' | '.join(row)} |" for row in normalized_rows]
+    if len(normalized_rows) > 1 and column_count > 1:
+        markdown_rows.insert(1, f"| {' | '.join(['---'] * column_count)} |")
+    return "\n".join(markdown_rows)
+
+
+def expected_table_cell_index(cell: dict[str, Any], keys: list[str]) -> int | None:
+    for key in keys:
+        value = cell.get(key)
+        if value is None:
+            continue
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def expected_table_cell_text(cell: dict[str, Any]) -> str:
+    for key in ["text", "value", "content", "cellText", "rawText"]:
+        value = normalize_expected_inline_text(cell.get(key))
+        if value:
+            return value
+    lines = cell.get("lines") or cell.get("fragments")
+    if isinstance(lines, list):
+        parts = []
+        for line in lines:
+            if isinstance(line, dict):
+                parts.append(normalize_expected_inline_text(line.get("text") or line.get("value")))
+            else:
+                parts.append(normalize_expected_inline_text(line))
+        return " ".join(part for part in parts if part).strip()
+    return ""
+
+
+def normalize_expected_inline_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple)):
+        return " ".join(normalize_expected_inline_text(item) for item in value).strip()
+    if isinstance(value, dict):
+        return normalize_expected_inline_text(
+            value.get("text") or value.get("value") or json.dumps(value, ensure_ascii=False)
+        )
+    return re.sub(r"\s+", " ", str(value)).strip()
+
+
+def normalize_expected_multiline_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple)):
+        return "\n".join(normalize_expected_inline_text(item) for item in value).strip()
+    return str(value).strip()
+
+
+def expected_table_escape_cell(value: Any) -> str:
+    return normalize_expected_inline_text(value).replace("|", "/")
 
 
 def expected_seals_from_result(result: dict[str, Any]) -> list[dict[str, Any]]:
@@ -13899,9 +14052,102 @@ def fde_ocr_annotation_source_page_dimensions(task: dict[str, Any]) -> dict[str,
     return fde_ocr_annotation_result_page_dimensions(result)
 
 
-def fde_ocr_annotation_task_view(task: dict[str, Any]) -> dict[str, Any]:
+def fde_ocr_annotation_source_parse_result(task: dict[str, Any]) -> dict[str, Any] | None:
+    parse_result_id = str(task.get("parseResultId") or "").strip()
+    if parse_result_id:
+        result = repo.find_one("ocr_parse_results", parse_result_id, id_field="parseResultId")
+        if isinstance(result, dict):
+            return result
+    run = fde_ocr_annotation_source_run(task)
+    if run and run.get("parseResultId"):
+        result = repo.find_one("ocr_parse_results", str(run["parseResultId"]), id_field="parseResultId")
+        if isinstance(result, dict):
+            return result
+    return None
+
+
+def fde_ocr_annotation_hydrate_expected_tables(
+    expected: Any,
+    result: dict[str, Any] | None,
+) -> Any:
+    if not isinstance(expected, dict) or not isinstance(result, dict):
+        return expected
+    tables = expected.get("tables")
+    if not isinstance(tables, list) or not tables:
+        return expected
+    generated_tables = expected_tables_from_result(result)
+    if not generated_tables:
+        return expected
+    hydrated = repo.clone(expected)
+    hydrated_tables = hydrated.get("tables") if isinstance(hydrated.get("tables"), list) else []
+    for table in hydrated_tables:
+        if not isinstance(table, dict) or fde_ocr_annotation_table_has_content(table):
+            continue
+        source_table = fde_ocr_annotation_matching_table(table, generated_tables, len(hydrated_tables))
+        if not source_table or not fde_ocr_annotation_table_has_content(source_table):
+            continue
+        for key in [
+            "contentMarkdown",
+            "content",
+            "markdown",
+            "minRows",
+            "minColumns",
+            "businessSchema",
+            "tableId",
+        ]:
+            if fde_expected_value_present(source_table.get(key)) and not fde_expected_value_present(table.get(key)):
+                table[key] = source_table.get(key)
+        if fde_expected_value_present(source_table.get("contentMarkdown")):
+            table.setdefault("content", source_table.get("contentMarkdown"))
+    return hydrated
+
+
+def fde_ocr_annotation_table_has_content(table: dict[str, Any]) -> bool:
+    return any(normalize_expected_multiline_text(table.get(key)) for key in ["contentMarkdown", "content", "markdown"])
+
+
+def fde_ocr_annotation_matching_table(
+    table: dict[str, Any],
+    generated_tables: list[dict[str, Any]],
+    existing_table_count: int,
+) -> dict[str, Any] | None:
+    table_id = str(table.get("tableId") or "").strip()
+    if table_id:
+        for generated in generated_tables:
+            if str(generated.get("tableId") or "").strip() == table_id:
+                return generated
+    source_box = expected_bbox_extents(table.get("bbox") or table.get("polygon"))
+    if source_box:
+        best_match: tuple[float, dict[str, Any]] | None = None
+        for generated in generated_tables:
+            generated_box = expected_bbox_extents(generated.get("bbox") or generated.get("polygon"))
+            if not generated_box:
+                continue
+            score = max(
+                expected_bbox_iou(source_box, generated_box),
+                expected_bbox_overlap_ratio(source_box, generated_box),
+            )
+            if score >= 0.35 and (best_match is None or score > best_match[0]):
+                best_match = (score, generated)
+        if best_match:
+            return best_match[1]
+    if existing_table_count == 1 and len(generated_tables) == 1:
+        return generated_tables[0]
+    return None
+
+
+def fde_ocr_annotation_task_view_hydrated(task: dict[str, Any]) -> dict[str, Any]:
     view = repo.clone(task)
-    readiness = fde_ocr_annotation_readiness([task])
+    result = fde_ocr_annotation_source_parse_result(view)
+    for key in ["expectedTemplate", "suggestedExpected", "labeledExpected"]:
+        if isinstance(view.get(key), dict):
+            view[key] = fde_ocr_annotation_hydrate_expected_tables(view[key], result)
+    return view
+
+
+def fde_ocr_annotation_task_view(task: dict[str, Any]) -> dict[str, Any]:
+    view = fde_ocr_annotation_task_view_hydrated(task)
+    readiness = fde_ocr_annotation_readiness([view])
     status = (readiness.get("tasks") or [{}])[0]
     view["readinessBlockers"] = status.get("blockers") or []
     view["readyForEval"] = bool(status.get("readyForEval"))

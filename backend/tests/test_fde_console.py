@@ -1171,6 +1171,107 @@ def test_fde_ocr_capability_pdf_annotation_uses_page_preview() -> None:
     assert detail["task"]["pageDimensions"]["1"] == [1132, 1600]
 
 
+def test_fde_ocr_capability_annotation_keeps_full_table_content() -> None:
+    table_rows = [
+        ["序号", "名称", "图号"],
+        ["1", "工艺图纸目录", "QX201903S-13-Y-00"],
+        ["2", "工艺设计说明书", "QX201903S-13-Y-01"],
+        ["3", "卸车改造带控制点流程图", "QX201903S-13-Y-02"],
+        ["4", "设备表一览表", "QX201903S-13-Y-03"],
+        ["5", "卸车鹤管平面布置图", "QX201903S-13-Y-04"],
+        ["6", "卸车台配管平面图", "QX201903S-13-Y-05"],
+        ["7", "管道安装材料表", "QX201903S-13-Y-06"],
+        ["8", "管道特性表", "QX201903S-13-Y-07"],
+        ["9", "设备及管道油漆保温一览表", "QX201903S-13-Y-08"],
+        ["10", "综合材料表", "QX201903S-13-Y-09"],
+    ]
+    table_cells = [
+        {"row": row_index, "col": column_index, "text": text}
+        for row_index, row in enumerate(table_rows)
+        for column_index, text in enumerate(row)
+    ]
+    repo.state.setdefault("fde_capability_test_runs", []).insert(
+        0,
+        {
+            "runId": "FDE-OCR-RUN-TABLE-CELLS-001",
+            "id": "FDE-OCR-RUN-TABLE-CELLS-001",
+            "status": "completed",
+            "fileName": "table.pdf",
+            "contentType": "application/pdf",
+            "parseResultId": "PARSE-TABLE-CELLS-001",
+            "profileId": "generic_document_v1",
+            "documentType": "generic_document",
+        },
+    )
+    repo.state.setdefault("ocr_parse_results", []).append(
+        {
+            "parseResultId": "PARSE-TABLE-CELLS-001",
+            "profileId": "generic_document_v1",
+            "documentType": "generic_document",
+            "quality": {"status": "needs_human_review"},
+            "pages": [{"pageNo": 1, "width": 1132, "height": 1600}],
+            "fields": [],
+            "fragments": [],
+            "tables": [
+                {
+                    "tableId": "table-1",
+                    "bbox": [82, 266, 1047, 700],
+                    "rows": len(table_rows),
+                    "columns": len(table_rows[0]),
+                    "cells": table_cells,
+                }
+            ],
+            "seals": [],
+        }
+    )
+
+    converted = assert_ok(
+        client.post(
+            "/api/fde/capability-tests/ocr/runs/FDE-OCR-RUN-TABLE-CELLS-001/to-annotation",
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-table-cells-annotation-001"},
+        )
+    )
+
+    table = converted["task"]["suggestedExpected"]["tables"][0]
+    assert "| 10 | 综合材料表 | QX201903S-13-Y-09 |" in table["contentMarkdown"]
+    assert table["content"] == table["contentMarkdown"]
+
+    stale_expected = {
+        "fields": [],
+        "tables": [
+            {
+                "tableId": "table-1",
+                "bbox": [82, 266, 1047, 700],
+                "minRows": 11,
+                "minColumns": 3,
+            }
+        ],
+        "seals": [],
+    }
+    repo.state.setdefault("ocr_annotation_tasks", []).append(
+        {
+            "taskId": "ANNO-TABLE-CELLS-STALE-001",
+            "caseId": "fde-ocr-capability-table-stale",
+            "sourceType": "fde_capability_test",
+            "parseResultId": "PARSE-TABLE-CELLS-001",
+            "collectionStatus": "needs_labeling",
+            "expectedTemplate": stale_expected,
+            "suggestedExpected": stale_expected,
+        }
+    )
+
+    detail = assert_ok(
+        client.get(
+            "/api/fde/ocr-annotation/tasks/ANNO-TABLE-CELLS-STALE-001",
+            headers={"X-Role": "fde"},
+        )
+    )
+
+    hydrated_table = detail["task"]["suggestedExpected"]["tables"][0]
+    assert "| 10 | 综合材料表 | QX201903S-13-Y-09 |" in hydrated_table["contentMarkdown"]
+    assert detail["task"]["readinessBlockers"] != ["OCR_ANNOTATION_EXPECTED_TABLE_CONTENT_MISSING"]
+
+
 def test_fde_ocr_capability_annotation_dedupes_stamp_candidates_and_keeps_location() -> None:
     repo.state.setdefault("fde_capability_test_runs", []).insert(
         0,
