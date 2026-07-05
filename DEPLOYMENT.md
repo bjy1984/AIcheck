@@ -935,11 +935,57 @@ OCR 调用链：
 5. `worker-service` 消费 `ocr.parse_document`，通过 `AICHECK_OCR_BASE_URL` 调用 `ocr-service`。
 6. OCR 结果回写 `extracted_fields`、`knowledge_files`、`knowledge_chunks`、`evidence_links` 和任务状态。
 
+本地准生产安装：
+
+```bash
+cd backend
+
+# OCR 等 Docker 镜像体积较大，本地 Docker/Colima 数据目录必须放在 7up 外挂盘。
+# setup_local_ocr.py 会默认阻止在非 /Volumes/7up 存储上构建镜像。
+
+# 前置条件：backend/.env 已配置 AICHECK_TASK_DISPATCH=celery、MinIO/PostgreSQL/OCR 模型目录等变量；
+# PostgreSQL、Redis、MinIO 已通过 Docker 暴露到宿主机端口。
+python scripts/setup_local_ocr.py
+
+# 检查通过后启动本地 OCR 服务和 OCR worker。
+python scripts/setup_local_ocr.py --start
+
+# 已启动时可单独复验 health/ready/doctor。
+python scripts/setup_local_ocr.py --verify
+
+# 查看本地 OCR 容器日志。
+docker compose --env-file .env -f docker-compose.local-ocr.yml logs -f local-ocr-service local-ocr-worker
+```
+
+`docker-compose.local-ocr.yml` 只用于“宿主机运行 API，Docker 提供 PostgreSQL/Redis/MinIO”的本地联调形态。
+它不启动 `api-service`、`litellm-service` 或完整生产依赖；`local-ocr-worker` 通过
+`host.docker.internal` 连接宿主机映射端口，默认使用 PostgreSQL `15432`、Redis `6379`、MinIO `9000`。
+如果端口不同，在 `backend/.env` 中设置 `AICHECK_LOCAL_POSTGRES_PORT`、`AICHECK_LOCAL_REDIS_PORT`
+或 `AICHECK_LOCAL_MINIO_PORT`。完整服务器部署仍使用主 `docker-compose.yml`，其中 `worker-service`
+和 `ocr-service` 按内部服务名 `redis`、`minio`、`ocr-service` 通信。
+
+如果本机使用 Colima，推荐先把 Colima 数据目录迁移到外挂盘，保证 OCR、worker、PostgreSQL、
+MinIO、Redis 等镜像和卷都落在 7up：
+
+```bash
+colima stop
+mkdir -p /Volumes/7up/docker
+mv ~/.colima /Volumes/7up/docker/.colima
+ln -s /Volumes/7up/docker/.colima ~/.colima
+colima start --runtime docker --disk 100 --mount /Volumes/7up:w
+```
+
+`setup_local_ocr.py` 默认检查当前 Docker context 的宿主机存储路径是否位于 `/Volumes/7up`。
+同时会检查 Colima 是否挂载了 OCR 模型目录所在的 7up 路径；否则 Docker bind mount 会显示成功，
+但 OCR 容器内的 `/models` 会是空目录，`readyz` 将因缺少 `PP-OCRv6_medium_det` 和
+`PP-OCRv6_medium_rec` 返回 503。
+只有临时排障时才使用 `--allow-non-7up-docker-storage` 跳过该检查；正式本地准生产测试不要跳过。
+
 真实 OCR 注意事项：
 
 - `backend/apps/ocr_service/service.py` 是 OCR 服务主体；会先尝试从 `AICHECK_AGENTDESIGN_BACKEND` 导入可选 `seal_ocr.pipeline`，导入失败不会阻断本地引擎链。
 - 当前 Compose 会把 `${AICHECK_AGENTDESIGN_HOST_PATH:-./apps/ocr_service}` 只读挂载到 `/opt/agentdesign`；默认 `AICHECK_AGENTDESIGN_BACKEND=/opt/agentdesign/mvp-system/backend`。只有 `AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR=true` 时才需要该路径指向完整 agentdesign checkout。
-- `Dockerfile.ocr` 会安装 `requirements-ocr.txt`；该文件对齐本地 OCR 基线依赖：`PyMuPDF`、`paddlepaddle`、`paddleocr`、`paddlex[ocr]`、`opencv-python-headless`、`docling`、`transformers`。
+- `Dockerfile.ocr` 默认安装 `requirements-ocr-core.txt`；该文件对齐本地 OCR 基线依赖：`PyMuPDF`、`paddlepaddle>=3.2.2,<3.4`、`paddleocr`、`paddlex[ocr]`、`opencv-python-headless`。如需 Docling、Transformers 和 PaddleOCR-VL 等完整离线能力，构建时设置 `AICHECK_OCR_REQUIREMENTS=requirements-ocr.txt`。
 - OCR 服务已按 Document Intelligence 方向组织：默认调用本项目本地引擎链 `PaddleOCR subprocess -> PaddleOCR in-process -> PP-StructureV3 -> PaddleX Seal -> 视觉印章候选`；agentdesign 印章 OCR、PaddleOCR-VL、Docling 是可选增强。`AICHECK_ENABLE_PADDLEOCR_VL` 默认关闭，避免重型 VL 在普通线上 OCR 中自动触发；只建议在受控离线评估或手动复杂文档测试中打开。所有引擎都必须使用本地模型目录，缺模型时只标记 engine unavailable 或返回结构化诊断，不允许运行时联网下载。
 - 本地模型目录建议结构：
 

@@ -35,7 +35,7 @@ const fileRows = computed(() =>
 
 const primaryActionLabel = computed(() => {
   const fileCount = selectedFiles.value.length
-  return fileCount > 0 ? `上传 ${fileCount} 个文件并入库` : '选择文件'
+  return fileCount > 0 ? `上传 ${fileCount} 个文件` : '选择文件'
 })
 
 const resetFiles = () => {
@@ -109,7 +109,6 @@ watch(
 <template>
   <ElDrawer v-model="visible" title="上传项目文件" size="min(560px, 94vw)" append-to-body>
     <div class="drawer-body">
-      <div class="helper-text">选择本地文件后，系统将创建真实上传会话并写入项目资料池。</div>
       <div v-if="materialCategory" class="target-category">
         <span>资料类别</span>
         <strong>{{ materialCategory }}</strong>
@@ -177,15 +176,6 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 14px;
-}
-
-.helper-text {
-  padding: 10px 12px;
-  line-height: 1.6;
-  color: #475467;
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
 }
 
 .target-category {

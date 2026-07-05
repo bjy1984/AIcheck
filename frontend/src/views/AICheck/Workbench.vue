@@ -1527,13 +1527,13 @@ const handleCreateUploadSession = async (files: File[]) => {
   }
 }
 
-const handleCreateNdtFilm = async (payload: {
-  filmNo: string
-  weldNo: string
-  method: NdtFilm['method']
-  pipelineNo?: string
-  testDate?: string
-}) => {
+const handleCreateNdtFilm = async (
+  payload: {
+    filmNo: string
+    weldNo: string
+    method: NdtFilm['method']
+  } & Partial<NdtFilm>
+) => {
   if (!activeProjectId.value) return
   if (!payload.filmNo || !payload.weldNo) {
     ElMessage.warning('请填写底片编号和焊口编号')
@@ -1559,10 +1559,12 @@ const handleCreateNdtFilm = async (payload: {
   }
 }
 
-const handleUploadNdtReport = async (payload: {
-  files: Array<{ fileName: string; fileType: string; fileSize: number }>
-  relatedFilmIds: string[]
-}) => {
+const handleUploadNdtReport = async (
+  payload: {
+    files: Array<{ fileName: string; fileType: string; fileSize: number }>
+    relatedFilmIds: string[]
+  } & Partial<NdtReport>
+) => {
   if (!activeProjectId.value) return
   if (!payload.files[0]?.fileName) {
     ElMessage.warning('请填写检测报告文件名')
@@ -3111,6 +3113,7 @@ onMounted(() => {
             @create-film="handleCreateNdtFilm"
             @import-records="handleImportNdtRecords"
             @upload-report="handleUploadNdtReport"
+            @upload-material="handleOpenUploadDrawer"
             @submit-ndt="handleSubmitNdt"
             @rectify-ndt="handleRectifyNdt"
             @open-report-detail="handleOpenNdtReportDetail"

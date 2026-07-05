@@ -5701,7 +5701,26 @@ def test_ndt_import_and_update_mutations_are_idempotent_and_etag_guarded() -> No
     film_payload = {
         "nodeId": 40,
         "rows": [
-            {"filmNo": "RT-IMP-001", "weldNo": "W-IMP-001", "method": "RT"},
+            {
+                "filmNo": "RT-IMP-001",
+                "weldNo": "W-IMP-001",
+                "method": "RT",
+                "pipelineNo": "PL-IMP-001",
+                "reportNo": "RT-IMP-RPT-001",
+                "entrustNo": "WT-IMP-001",
+                "filmPackageNo": "FILM-PKG-IMP-001",
+                "imageFileName": "RT-IMP-001.dcm",
+                "detectionRatio": "10%",
+                "standardCode": "NB/T 47013.2-2015",
+                "imageQualityIndicator": "Fe 10",
+                "sensitivity": "2.0%",
+                "density": "2.8",
+                "geometricUnsharpness": "0.2mm",
+                "evaluationLevel": "II",
+                "defectLocation": "W-IMP-001 3 点方向",
+                "evaluatorName": "王工",
+                "reviewerName": "赵工",
+            },
             {"filmNo": "UT-IMP-002", "weldNo": "W-IMP-002", "method": "UT"},
         ],
     }
@@ -5709,6 +5728,9 @@ def test_ndt_import_and_update_mutations_are_idempotent_and_etag_guarded() -> No
     film_import_replay = assert_ok(client.post(f"/projects/{project_id}/ndt/films/import", json=film_payload, headers=film_import_headers))
     assert film_import["imported"] == 2
     assert [item["id"] for item in film_import["films"]] == [item["id"] for item in film_import_replay["films"]]
+    assert film_import["films"][0]["entrustNo"] == "WT-IMP-001"
+    assert film_import["films"][0]["density"] == "2.8"
+    assert film_import["films"][0]["imageFileName"] == "RT-IMP-001.dcm"
     assert len(repo.state["ndt_films"]) == film_before + 2
 
     update_headers = {"If-Match": project["etag"], "Idempotency-Key": "ndt-film-update-once"}
@@ -5735,7 +5757,23 @@ def test_ndt_import_and_update_mutations_are_idempotent_and_etag_guarded() -> No
     record_payload = {
         "nodeId": 40,
         "rows": [
-            {"recordNo": "REC-IMP-001", "weldNo": "W-IMP-001", "method": "RT"},
+            {
+                "recordNo": "REC-IMP-001",
+                "weldNo": "W-IMP-001",
+                "method": "RT",
+                "pipelineNo": "PL-IMP-001",
+                "entrustNo": "WT-IMP-001",
+                "reportNo": "RT-IMP-RPT-001",
+                "techniqueNo": "NDT-WI-IMP-001",
+                "equipmentNo": "XRY-IMP-001",
+                "personnelCertificateNo": "RT-II-IMP-001",
+                "detectionRatio": "10%",
+                "standardCode": "NB/T 47013.2-2015",
+                "reviewerName": "赵工",
+                "evaluationLevel": "II",
+                "signatureStatus": "已签字",
+                "stampStatus": "已盖章",
+            },
             {"recordNo": "REC-IMP-002", "weldNo": "W-IMP-002", "method": "UT"},
         ],
     }
@@ -5743,6 +5781,9 @@ def test_ndt_import_and_update_mutations_are_idempotent_and_etag_guarded() -> No
     record_import_replay = assert_ok(client.post(f"/projects/{project_id}/ndt/records/import", json=record_payload, headers=record_import_headers))
     assert record_import["imported"] == 2
     assert [item["id"] for item in record_import["records"]] == [item["id"] for item in record_import_replay["records"]]
+    assert record_import["records"][0]["reportNo"] == "RT-IMP-RPT-001"
+    assert record_import["records"][0]["equipmentNo"] == "XRY-IMP-001"
+    assert record_import["records"][0]["signatureStatus"] == "已签字"
     assert len(repo.state["ndt_records"]) == record_before + 2
 
 
@@ -7046,6 +7087,25 @@ def test_upload_and_ndt_validation_errors_match_contract() -> None:
             json={"files": [{"fileName": "match.pdf", "fileSize": 1024, "fileType": "application/pdf"}]},
         )
     )
+    ndt_material_upload = assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/upload-session",
+            json={
+                "files": [
+                    {
+                        "fileName": "ndt-original-record.pdf",
+                        "fileSize": 2048,
+                        "fileType": "application/pdf",
+                        "materialCategory": "检测记录",
+                    }
+                ]
+            },
+            headers={"X-Role": "ndt", "X-User-Id": "USER-NDT-001"},
+        )
+    )
+    ndt_material_doc = repo.find_one("documents", ndt_material_upload["uploadUrls"][0]["documentId"])
+    assert ndt_material_doc["materialCategory"] == "检测记录"
+    assert ndt_material_doc["sourceOrgName"] == "华测检测有限公司"
     assert_error(
         client.post(f"/projects/NOT-A-PROJECT/documents/upload-session/{upload['uploadSessionId']}/complete"),
         "NOT_FOUND",
@@ -7092,6 +7152,14 @@ def test_upload_and_ndt_validation_errors_match_contract() -> None:
     document_count = len(repo.state["documents"])
     upload_payload = {
         "nodeId": 40,
+        "reportNo": "RT-IDEMPOTENT-001",
+        "entrustNo": "WT-IDEMPOTENT-001",
+        "method": "RT",
+        "detectionRatio": "10%",
+        "standardCode": "NB/T 47013.2-2015",
+        "evaluatorName": "王工",
+        "reviewerName": "赵工",
+        "conclusion": "检测报告字段完整，报告与底片对应关系完整。",
         "files": [{"fileName": "RT-IDEMPOTENT.pdf", "fileSize": 2048, "fileType": "application/pdf"}],
     }
     upload_headers = {"If-Match": project["etag"], "Idempotency-Key": "ndt-report-upload-once"}
@@ -7101,6 +7169,12 @@ def test_upload_and_ndt_validation_errors_match_contract() -> None:
     assert upload_replay["uploadUrls"][0]["documentId"] == upload["uploadUrls"][0]["documentId"]
     assert len(repo.state["ndt_reports"]) == report_count + 1
     assert len(repo.state["documents"]) == document_count + 1
+    created_report = next(item for item in repo.state["ndt_reports"] if item["reportNo"] == "RT-IDEMPOTENT-001")
+    assert created_report["entrustNo"] == "WT-IDEMPOTENT-001"
+    assert created_report["standardCode"] == "NB/T 47013.2-2015"
+    created_document = repo.find_one("documents", upload["uploadUrls"][0]["documentId"])
+    assert created_document["materialCategory"] == "检测报告"
+    assert created_document["sourceOrgName"] == "华测检测有限公司"
 
 
 def test_cross_node_submission_scope_expands_empty_binding_ids() -> None:

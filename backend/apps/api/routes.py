@@ -3534,12 +3534,21 @@ def create_upload_session(
             for key in ("Authorization", "X-Role", "X-User-Id")
             if (value := request.headers.get(key))
         }
+        role_for_upload = str(x_role or request.headers.get("X-Role") or "").lower()
+        project = repo.find_one("projects", project_id) or {}
+        source_org_name = None
+        uploader_name = None
+        if role_for_upload == "ndt":
+            source_org_name = project.get("ndtOrgName") or "无损检测机构"
+            uploader_name = "王工"
         session_id, upload_urls = repo.create_upload_session(
             project_id,
             files,
             require_signed_urls=require_signed_urls,
             local_upload_url_prefix=f"/api/projects/{project_id}/documents/upload-session",
             upload_headers=upload_headers,
+            source_org_name=source_org_name,
+            uploader_name=uploader_name,
         )
         repo.add_audit("创建上传会话", "UploadSession", session_id)
         return ok({"uploadSessionId": session_id, "expiresAt": upload_urls[0]["expiresAt"], "uploadUrls": upload_urls}, request)
@@ -5165,6 +5174,58 @@ def ndt_summary(request: Request, project_id: str):
     return ok({"filmCount": len(films), "recordCount": len(records), "reportCount": len(reports), "feedbackCount": len(feedback)}, request)
 
 
+NDT_FILM_METADATA_FIELDS = [
+    "pipelineNo",
+    "reportNo",
+    "entrustNo",
+    "filmPackageNo",
+    "imageFileName",
+    "testDate",
+    "detectionRatio",
+    "standardCode",
+    "imageQualityIndicator",
+    "sensitivity",
+    "density",
+    "geometricUnsharpness",
+    "evaluationLevel",
+    "defectCode",
+    "defectLocation",
+    "evaluatorName",
+    "reviewerName",
+]
+
+NDT_RECORD_METADATA_FIELDS = [
+    "filmId",
+    "reportId",
+    "pipelineNo",
+    "entrustNo",
+    "reportNo",
+    "techniqueNo",
+    "equipmentNo",
+    "personnelCertificateNo",
+    "detectionRatio",
+    "standardCode",
+    "testDate",
+    "evaluatorName",
+    "reviewerName",
+    "result",
+    "evaluationLevel",
+    "signatureStatus",
+    "stampStatus",
+    "sampleStatus",
+    "conclusion",
+]
+
+NDT_REPORT_METADATA_FIELDS = [
+    "entrustNo",
+    "detectionRatio",
+    "standardCode",
+    "evaluatorName",
+    "reviewerName",
+    "conclusion",
+]
+
+
 @router.get("/projects/{project_id}/ndt/films")
 def list_ndt_films(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), status: str | None = None, method: str | None = None, keyword: str | None = None):
     scope = authorized_node_scope(request, project_id)
@@ -5177,7 +5238,7 @@ def list_ndt_films(request: Request, project_id: str, page_no: int = Query(defau
         items = [item for item in items if item["status"] == status]
     if method:
         items = [item for item in items if item["method"] == method]
-    items = filter_keyword(items, keyword, ["filmNo", "weldNo", "pipelineNo"])
+    items = filter_keyword(items, keyword, ["filmNo", "weldNo", "pipelineNo", "reportNo", "entrustNo", "filmPackageNo", "imageFileName", "evaluatorName", "reviewerName"])
     return ok(page(items, page_no, page_size), request)
 
 
@@ -5199,12 +5260,11 @@ def create_ndt_film(request: Request, project_id: str, body: dict[str, Any] = Bo
             "nodeId": node_id,
             "filmNo": body.get("filmNo"),
             "weldNo": body.get("weldNo"),
-            "pipelineNo": body.get("pipelineNo"),
             "method": body.get("method"),
-            "testDate": body.get("testDate"),
             "status": "待提交",
             "actions": ["ndt:submit"],
         }
+        film.update({field: body.get(field) for field in NDT_FILM_METADATA_FIELDS if body.get(field) is not None})
         repo.state["ndt_films"].insert(0, film)
         return ok({"film": film}, request)
 
@@ -5262,7 +5322,17 @@ def import_ndt_films(request: Request, project_id: str, body: dict[str, Any] = B
         created = []
         node_id = node_ids[0] if node_ids else 40
         for row in rows:
-            film = {"id": f"FILM-{uuid4().hex[:8].upper()}", "projectId": project_id, "nodeId": int(row.get("nodeId") or node_id), "filmNo": row.get("filmNo"), "weldNo": row.get("weldNo"), "method": row.get("method"), "status": "待提交", "actions": ["ndt:submit"]}
+            film = {
+                "id": f"FILM-{uuid4().hex[:8].upper()}",
+                "projectId": project_id,
+                "nodeId": int(row.get("nodeId") or node_id),
+                "filmNo": row.get("filmNo"),
+                "weldNo": row.get("weldNo"),
+                "method": row.get("method"),
+                "status": "待提交",
+                "actions": ["ndt:submit"],
+            }
+            film.update({field: row.get(field) for field in NDT_FILM_METADATA_FIELDS if row.get(field) is not None})
             repo.state["ndt_films"].insert(0, film)
             created.append(film)
         return ok({"imported": len(created), "failed": [], "films": created}, request)
@@ -5276,7 +5346,7 @@ def import_ndt_films(request: Request, project_id: str, body: dict[str, Any] = B
 
 
 @router.get("/projects/{project_id}/ndt/records")
-def list_ndt_records(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), filmId: str | None = None, reportId: str | None = None, sampleStatus: str | None = None):
+def list_ndt_records(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), filmId: str | None = None, reportId: str | None = None, sampleStatus: str | None = None, keyword: str | None = None):
     scope = authorized_node_scope(request, project_id)
     items = [
         repo.clone(item)
@@ -5289,6 +5359,7 @@ def list_ndt_records(request: Request, project_id: str, page_no: int = Query(def
         items = [item for item in items if item.get("reportId") == reportId]
     if sampleStatus:
         items = [item for item in items if item.get("sampleStatus") == sampleStatus]
+    items = filter_keyword(items, keyword, ["recordNo", "weldNo", "pipelineNo", "reportNo", "entrustNo", "techniqueNo", "equipmentNo", "personnelCertificateNo", "evaluatorName", "reviewerName"])
     return ok(page(items, page_no, page_size), request)
 
 
@@ -5317,19 +5388,16 @@ def import_ndt_records(request: Request, project_id: str, body: dict[str, Any] =
                 "projectId": project_id,
                 "nodeId": node_ids[0] if node_ids else 40,
                 "recordNo": row.get("recordNo"),
-                "filmId": row.get("filmId"),
-                "reportId": row.get("reportId"),
                 "weldNo": row.get("weldNo"),
-                "pipelineNo": row.get("pipelineNo"),
                 "method": row.get("method"),
                 "testDate": row.get("testDate") or "2026-06-26",
                 "evaluatorName": row.get("evaluatorName") or "王工",
                 "result": row.get("result") or "待复核",
                 "sampleStatus": row.get("sampleStatus") or "未抽查",
-                "conclusion": row.get("conclusion"),
                 "importedAt": server_time(),
                 "actions": ["ndt:record-import"],
             }
+            record.update({field: row.get(field) for field in NDT_RECORD_METADATA_FIELDS if row.get(field) is not None})
             repo.state["ndt_records"].insert(0, record)
             created.append(record)
         return ok({"imported": len(created), "failed": [], "records": created}, request)
@@ -5343,7 +5411,7 @@ def import_ndt_records(request: Request, project_id: str, body: dict[str, Any] =
 
 
 @router.get("/projects/{project_id}/ndt/reports")
-def list_ndt_reports(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), status: str | None = None, method: str | None = None):
+def list_ndt_reports(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), status: str | None = None, method: str | None = None, keyword: str | None = None):
     scope = authorized_node_scope(request, project_id)
     items = [
         repo.clone(item)
@@ -5354,6 +5422,7 @@ def list_ndt_reports(request: Request, project_id: str, page_no: int = Query(def
         items = [item for item in items if item["status"] == status]
     if method:
         items = [item for item in items if item["method"] == method]
+    items = filter_keyword(items, keyword, ["reportNo", "entrustNo", "standardCode", "evaluatorName", "reviewerName", "conclusion"])
     return ok(page(items, page_no, page_size), request)
 
 
@@ -5372,24 +5441,38 @@ def ndt_report_upload_session(request: Request, project_id: str, body: dict[str,
             return validation_error
         session_id = f"UPS-NDT-{uuid4().hex[:8].upper()}"
         upload_urls = []
+        project = repo.find_one("projects", project_id) or {}
+        source_org_name = project.get("ndtOrgName") or "无损检测机构"
+        uploader_name = body.get("uploaderName") or "王工"
         for file in files:
-            doc, version = repo.create_document(project_id, file.get("fileName", "RT检测报告.pdf"), file.get("fileType", "pdf"), source_org_name="华测检测有限公司", uploader_name="王工")
+            file_name = file.get("fileName") or "RT检测报告.pdf"
+            doc, version = repo.create_document(
+                project_id,
+                file_name,
+                file.get("fileType", "pdf"),
+                source_org_name=source_org_name,
+                uploader_name=uploader_name,
+                material_category=file.get("materialCategory") or body.get("materialCategory") or "检测报告",
+            )
             doc["nodeId"] = node_id
             knowledge_file = repo.find_one("knowledge_files", f"KF-{doc['id']}")
             if knowledge_file:
                 knowledge_file["nodeId"] = node_id
+            report_no = body.get("reportNo") or file.get("reportNo") or file_name.split(".")[0]
+            method = body.get("method") or file.get("method") or ("UT" if "UT" in file_name else "RT")
             report = {
                 "id": f"NDT-RPT-{uuid4().hex[:8].upper()}",
                 "projectId": project_id,
                 "nodeId": node_id,
-                "reportNo": file.get("fileName", "RT检测报告").split(".")[0],
-                "method": "UT" if "UT" in file.get("fileName", "") else "RT",
+                "reportNo": report_no,
+                "method": method,
                 "fileId": doc["id"],
                 "relatedFilmIds": body.get("relatedFilmIds") or [],
                 "status": "待提交",
                 "uploadedAt": server_time(),
                 "actions": ["ndt:submit"],
             }
+            report.update({field: body.get(field) for field in NDT_REPORT_METADATA_FIELDS if body.get(field) is not None})
             repo.state["ndt_reports"].insert(0, report)
             content_type = file.get("fileType") or "application/pdf"
             upload_urls.append({"fileName": doc["fileName"], "documentId": doc["id"], "documentVersionId": version["id"], "url": repo.signed_put("documents", version["storageKey"], f"mock://upload/ndt/{session_id}/{doc['id']}", content_type=content_type), "method": "PUT", "expiresAt": "2026-06-27 18:00:00", "headers": {"Content-Type": content_type}})

@@ -2690,10 +2690,30 @@ export const listNdtFilmsApi = (
 
 export const createNdtFilmApi = (
   projectId: string,
-  payload: Pick<NdtFilm, 'filmNo' | 'weldNo' | 'method'> & {
-    pipelineNo?: string
-    testDate?: string
-  },
+  payload: Pick<NdtFilm, 'filmNo' | 'weldNo' | 'method'> &
+    Partial<
+      Pick<
+        NdtFilm,
+        | 'nodeId'
+        | 'pipelineNo'
+        | 'reportNo'
+        | 'entrustNo'
+        | 'filmPackageNo'
+        | 'imageFileName'
+        | 'testDate'
+        | 'detectionRatio'
+        | 'standardCode'
+        | 'imageQualityIndicator'
+        | 'sensitivity'
+        | 'density'
+        | 'geometricUnsharpness'
+        | 'evaluationLevel'
+        | 'defectCode'
+        | 'defectLocation'
+        | 'evaluatorName'
+        | 'reviewerName'
+      >
+    >,
   options?: MutationHeaderOptions
 ): Promise<IResponse<{ film: NdtFilm }>> => {
   return request.post({
@@ -2709,6 +2729,7 @@ export const listNdtRecordsApi = (
     filmId?: string
     reportId?: string
     sampleStatus?: NdtRecord['sampleStatus']
+    keyword?: string
     page?: number
     pageSize?: number
   }
@@ -2737,6 +2758,7 @@ export const listNdtReportsApi = (
   params?: {
     status?: NdtReport['status']
     method?: NdtReport['method']
+    keyword?: string
     page?: number
     pageSize?: number
   }
@@ -2756,7 +2778,19 @@ export const createNdtReportUploadSessionApi = (
   payload: {
     files: Array<{ fileName: string; fileSize: number; fileType: string }>
     relatedFilmIds?: string[]
-  },
+  } & Partial<
+    Pick<
+      NdtReport,
+      | 'reportNo'
+      | 'entrustNo'
+      | 'method'
+      | 'detectionRatio'
+      | 'standardCode'
+      | 'evaluatorName'
+      | 'reviewerName'
+      | 'conclusion'
+    >
+  >,
   options?: MutationHeaderOptions
 ): Promise<IResponse<NdtReportUploadPayload>> => {
   return request.post({

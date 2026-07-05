@@ -1,0 +1,103 @@
+services:
+  local-ocr-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.ocr
+      args:
+        AICHECK_APT_DEBIAN_MIRROR: ${AICHECK_APT_DEBIAN_MIRROR:-}
+        AICHECK_APT_SECURITY_MIRROR: ${AICHECK_APT_SECURITY_MIRROR:-}
+        AICHECK_PIP_INDEX_URL: ${AICHECK_PIP_INDEX_URL:-}
+        AICHECK_OCR_REQUIREMENTS: ${AICHECK_OCR_REQUIREMENTS:-requirements-ocr-core.txt}
+    command: uvicorn apps.ocr_service.main:app --host 0.0.0.0 --port 8010
+    environment:
+      AICHECK_MINIO_ENDPOINT: ${AICHECK_LOCAL_MINIO_HOST:-host.docker.internal}:${AICHECK_LOCAL_MINIO_PORT:-9000}
+      AICHECK_MINIO_ACCESS_KEY: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
+      AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:?AICHECK_MINIO_SECRET_KEY is required}
+      AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
+      AICHECK_AGENTDESIGN_BACKEND: ${AICHECK_AGENTDESIGN_BACKEND:-/opt/agentdesign/mvp-system/backend}
+      AICHECK_OCR_ALLOW_PLACEHOLDER: ${AICHECK_OCR_ALLOW_PLACEHOLDER:-false}
+      AICHECK_OCR_OFFLINE_ONLY: ${AICHECK_OCR_OFFLINE_ONLY:-true}
+      AICHECK_OCR_DISABLE_NETWORK: ${AICHECK_OCR_DISABLE_NETWORK:-true}
+      PADDLEOCR_MODEL_DIR: ${PADDLEOCR_MODEL_DIR:-/models/paddleocr}
+      PADDLEX_MODEL_DIR: ${PADDLEX_MODEL_DIR:-/models/paddlex}
+      AICHECK_PADDLEX_MODEL_CACHE: ${AICHECK_PADDLEX_MODEL_CACHE:-/models/paddlex}
+      AICHECK_PADDLEOCR_DET_MODEL_DIR: ${AICHECK_PADDLEOCR_DET_MODEL_DIR:-/models/paddleocr/PP-OCRv6_medium_det}
+      AICHECK_PADDLEOCR_REC_MODEL_DIR: ${AICHECK_PADDLEOCR_REC_MODEL_DIR:-/models/paddleocr/PP-OCRv6_medium_rec}
+      AICHECK_OCR_SUBPROCESS_PYTHON: ${AICHECK_OCR_SUBPROCESS_PYTHON:-/usr/local/bin/python}
+      AICHECK_OCR_ENABLE_PERSISTENT_SUBPROCESS: ${AICHECK_OCR_ENABLE_PERSISTENT_SUBPROCESS:-true}
+      AICHECK_OCR_PERSISTENT_WORKER_TIMEOUT: ${AICHECK_OCR_PERSISTENT_WORKER_TIMEOUT:-180}
+      AICHECK_PPSTRUCTURE_LAYOUT_MODEL_DIR: ${AICHECK_PPSTRUCTURE_LAYOUT_MODEL_DIR:-/models/paddlex/PP-DocLayout-L}
+      AICHECK_PPSTRUCTURE_WIRED_TABLE_STRUCTURE_MODEL_DIR: ${AICHECK_PPSTRUCTURE_WIRED_TABLE_STRUCTURE_MODEL_DIR:-/models/paddlex/SLANeXt_wired}
+      AICHECK_PPSTRUCTURE_WIRED_TABLE_CELLS_MODEL_DIR: ${AICHECK_PPSTRUCTURE_WIRED_TABLE_CELLS_MODEL_DIR:-/models/paddlex/RT-DETR-L_wired_table_cell_det}
+      AICHECK_PPSTRUCTURE_WIRELESS_TABLE_STRUCTURE_MODEL_DIR: ${AICHECK_PPSTRUCTURE_WIRELESS_TABLE_STRUCTURE_MODEL_DIR:-/models/paddlex/SLANeXt_wireless}
+      AICHECK_PPSTRUCTURE_WIRELESS_TABLE_CELLS_MODEL_DIR: ${AICHECK_PPSTRUCTURE_WIRELESS_TABLE_CELLS_MODEL_DIR:-/models/paddlex/RT-DETR-L_wireless_table_cell_det}
+      AICHECK_ENABLE_OPENCV_TABLE_GRID: ${AICHECK_ENABLE_OPENCV_TABLE_GRID:-true}
+      AICHECK_OPENCV_TABLE_GRID_MAX_CELLS: ${AICHECK_OPENCV_TABLE_GRID_MAX_CELLS:-1800}
+      AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE: ${AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE:-false}
+      AICHECK_SEAL_DET_MODEL_DIR: ${AICHECK_SEAL_DET_MODEL_DIR:-/models/paddlex/PP-OCRv4_server_seal_det}
+      AICHECK_SEAL_REC_MODEL_DIR: ${AICHECK_SEAL_REC_MODEL_DIR:-/models/paddleocr/PP-OCRv4_server_rec}
+      AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR: ${AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR:-false}
+      AICHECK_AGENTDESIGN_SEAL_TIMEOUT: ${AICHECK_AGENTDESIGN_SEAL_TIMEOUT:-140}
+      AICHECK_AGENTDESIGN_SEAL_MAX_CANDIDATES: ${AICHECK_AGENTDESIGN_SEAL_MAX_CANDIDATES:-6}
+      AICHECK_AGENTDESIGN_SEAL_MAX_OCR_CANDIDATES: ${AICHECK_AGENTDESIGN_SEAL_MAX_OCR_CANDIDATES:-3}
+      AICHECK_OCR_PREPROCESS_CACHE_DIR: ${AICHECK_OCR_PREPROCESS_CACHE_DIR:-/tmp/aicheck-ocr-preprocess-cache}
+      AICHECK_OCR_DISABLE_VARIANT_CACHE: ${AICHECK_OCR_DISABLE_VARIANT_CACHE:-false}
+      AICHECK_OCR_RESULT_CACHE_DIR: ${AICHECK_OCR_RESULT_CACHE_DIR:-/tmp/aicheck-ocr-result-cache}
+      AICHECK_OCR_DISABLE_RESULT_CACHE: ${AICHECK_OCR_DISABLE_RESULT_CACHE:-false}
+      AICHECK_OCR_ENGINE_RESULT_CACHE_DIR: ${AICHECK_OCR_ENGINE_RESULT_CACHE_DIR:-/tmp/aicheck-ocr-engine-result-cache}
+      AICHECK_OCR_DISABLE_ENGINE_RESULT_CACHE: ${AICHECK_OCR_DISABLE_ENGINE_RESULT_CACHE:-false}
+      PADDLEOCR_VL_MODEL_DIR: ${PADDLEOCR_VL_MODEL_DIR:-/models/paddleocr-vl}
+      AICHECK_ENABLE_PADDLEOCR_VL: ${AICHECK_ENABLE_PADDLEOCR_VL:-false}
+      DOCLING_ARTIFACTS_PATH: ${DOCLING_ARTIFACTS_PATH:-/models/docling}
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True"
+      PADDLE_PDX_MODEL_SOURCE: local
+    ports:
+      - "127.0.0.1:${AICHECK_LOCAL_OCR_PORT:-8010}:8010"
+    volumes:
+      - ${AICHECK_AGENTDESIGN_HOST_PATH:-./apps/ocr_service}:/opt/agentdesign:ro
+      - ${AICHECK_OCR_MODELS_HOST_PATH:?AICHECK_OCR_MODELS_HOST_PATH is required}:/models:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/readyz', timeout=3).read()\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  local-ocr-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO -Q ocr.parse_document,ocr.recognize_seals,knowledge.slice,knowledge.embed
+    environment:
+      AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@${AICHECK_LOCAL_POSTGRES_HOST:-host.docker.internal}:${AICHECK_LOCAL_POSTGRES_PORT:-15432}/${AICHECK_POSTGRES_DB:-aicheck}
+      AICHECK_REDIS_URL: redis://${AICHECK_LOCAL_REDIS_HOST:-host.docker.internal}:${AICHECK_LOCAL_REDIS_PORT:-6379}/0
+      AICHECK_TASK_DISPATCH: celery
+      AICHECK_REVIEW_ORCHESTRATION: ${AICHECK_REVIEW_ORCHESTRATION:-legacy}
+      AICHECK_MINIO_ENDPOINT: ${AICHECK_LOCAL_MINIO_HOST:-host.docker.internal}:${AICHECK_LOCAL_MINIO_PORT:-9000}
+      AICHECK_MINIO_ACCESS_KEY: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
+      AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:?AICHECK_MINIO_SECRET_KEY is required}
+      AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
+      AICHECK_OCR_BASE_URL: http://local-ocr-service:8010
+      LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://host.docker.internal:4001}
+      LITELLM_API_KEY: ${LITELLM_API_KEY:-local-ocr-worker-only}
+    depends_on:
+      local-ocr-service:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "celery -A apps.worker.celery_app.celery_app inspect ping -d celery@$$HOSTNAME --timeout=5 | grep -q pong",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 6

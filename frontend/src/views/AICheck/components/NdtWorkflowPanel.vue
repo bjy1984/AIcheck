@@ -18,6 +18,24 @@ import type { NdtFeedback, NdtFilm, NdtRecord, NdtReport, ProjectTreeNode } from
 import { getStatusTagType } from './status'
 
 type NdtMaterialStatus = '已覆盖' | '待上传' | '需补正'
+type NdtMaterialAction =
+  | { key: 'upload'; label: string; category: string }
+  | { key: 'rectify'; label: string }
+type NdtMaterialChecklistItem = {
+  category: string
+  requiredItems: string
+  uploadedCount: number
+  missing: string
+  status: NdtMaterialStatus
+  nodeRefs: string
+  actions: NdtMaterialAction[]
+}
+type NdtOcrMetadataRow = {
+  category: string
+  source: string
+  fields: string
+  status: string
+}
 
 const props = defineProps<{
   node?: ProjectTreeNode
@@ -39,15 +57,13 @@ const emit = defineEmits<{
       filmNo: string
       weldNo: string
       method: NdtFilm['method']
-      pipelineNo?: string
-      testDate?: string
-    }
+    } & Partial<NdtFilm>
   ]
   uploadReport: [
     payload: {
       files: Array<{ fileName: string; fileType: string; fileSize: number }>
       relatedFilmIds: string[]
-    }
+    } & Partial<NdtReport>
   ]
   importRecords: [
     payload: {
@@ -65,30 +81,8 @@ const emit = defineEmits<{
   ]
   openReportDetail: [reportId: string]
   openFeedbackDetail: [feedbackId: string]
+  uploadMaterial: [materialCategory: string]
 }>()
-
-const filmForm = reactive({
-  filmNo: 'RT-R2-021-01',
-  weldNo: 'W-41-RT-021',
-  pipelineNo: 'PL-HD-04',
-  method: 'RT' as NdtFilm['method'],
-  testDate: '2026-06-26'
-})
-
-const reportForm = reactive({
-  fileName: 'RT检测报告-补充.pdf',
-  fileType: 'pdf',
-  fileSize: 245760,
-  relatedFilmIds: [] as string[]
-})
-
-const recordForm = reactive({
-  recordNo: 'REC-RT-20260626-003',
-  weldNo: 'W-42-RT-022',
-  pipelineNo: 'PL-HD-04',
-  method: 'RT' as NdtFilm['method'],
-  result: '合格' as NdtRecord['result']
-})
 
 const rectificationForm = reactive({
   rectificationId: '',
@@ -108,21 +102,15 @@ const selectedRectificationId = computed(
 )
 const ndtMaterialChecklist = computed(() => {
   const openFeedbackCount = openFeedback.value.length
-  const rows: Array<{
-    category: string
-    requiredItems: string
-    uploadedCount: number
-    missing: string
-    status: NdtMaterialStatus
-    nodeRefs: string
-  }> = [
+  const rows: NdtMaterialChecklistItem[] = [
     {
       category: '机构与人员资质',
       requiredItems: '无损检测机构核准证、检测人员资格证、执业注册证、项目人员任命',
       uploadedCount: 0,
       missing: '当前接口未返回资质文件，需在无损检测资料库中补充或核验',
       status: '待上传',
-      nodeRefs: 'R23、R24、R25'
+      nodeRefs: 'R23、R24、R25',
+      actions: [{ key: 'upload', label: '上传资料', category: '机构与人员资质' }]
     },
     {
       category: '检测方案与工艺',
@@ -130,7 +118,8 @@ const ndtMaterialChecklist = computed(() => {
       uploadedCount: 0,
       missing: '需补充检测方案、工艺文件和操作指导书',
       status: '待上传',
-      nodeRefs: 'R23、R27、R28'
+      nodeRefs: 'R23、R27、R28',
+      actions: [{ key: 'upload', label: '上传资料', category: '检测方案与工艺' }]
     },
     {
       category: '检测设备与校准',
@@ -138,7 +127,8 @@ const ndtMaterialChecklist = computed(() => {
       uploadedCount: 0,
       missing: '需补充设备检定或校准证明',
       status: '待上传',
-      nodeRefs: 'R26'
+      nodeRefs: 'R26',
+      actions: [{ key: 'upload', label: '上传资料', category: '检测设备与校准' }]
     },
     {
       category: '底片与影像资料',
@@ -150,7 +140,8 @@ const ndtMaterialChecklist = computed(() => {
         : props.films.length
           ? '已覆盖'
           : '待上传',
-      nodeRefs: 'R28、R53'
+      nodeRefs: 'R28、R53',
+      actions: [{ key: 'upload', label: '上传底片/影像', category: '底片与影像资料' }]
     },
     {
       category: '检测记录',
@@ -158,7 +149,8 @@ const ndtMaterialChecklist = computed(() => {
       uploadedCount: props.records.length,
       missing: props.records.length ? '已导入检测记录，等待监检核验' : '需导入检测记录和原始记录',
       status: props.records.length ? '已覆盖' : '待上传',
-      nodeRefs: 'R28、R29'
+      nodeRefs: 'R28、R29',
+      actions: [{ key: 'upload', label: '上传检测记录', category: '检测记录' }]
     },
     {
       category: '检测报告',
@@ -170,7 +162,8 @@ const ndtMaterialChecklist = computed(() => {
         : props.reports.length
           ? '已覆盖'
           : '待上传',
-      nodeRefs: 'R28、R53'
+      nodeRefs: 'R28、R53',
+      actions: [{ key: 'upload', label: '上传检测报告', category: '检测报告' }]
     },
     {
       category: '问题处理闭环',
@@ -178,13 +171,14 @@ const ndtMaterialChecklist = computed(() => {
       uploadedCount: openFeedbackCount,
       missing: openFeedbackCount ? `${openFeedbackCount} 项监检反馈待处理` : '暂无待处理反馈',
       status: openFeedbackCount ? '需补正' : '已覆盖',
-      nodeRefs: 'R29、R30'
+      nodeRefs: 'R29、R30',
+      actions: [
+        { key: 'upload', label: '上传补正', category: '问题处理闭环' },
+        { key: 'rectify', label: '提交反馈' }
+      ]
     }
   ]
-  return rows.sort((a, b) => {
-    const priority: Record<NdtMaterialStatus, number> = { 需补正: 0, 待上传: 1, 已覆盖: 2 }
-    return priority[a.status] - priority[b.status]
-  })
+  return rows
 })
 const ndtChecklistSummary = computed(() => ({
   covered: ndtMaterialChecklist.value.filter((item) => item.status === '已覆盖').length,
@@ -199,6 +193,9 @@ const ndtAssetRows = computed(() => [
     name: film.filmNo,
     relation: film.weldNo,
     method: film.method,
+    documentNo: film.reportNo || film.entrustNo || '-',
+    standardCode: film.standardCode || '-',
+    operator: [film.evaluatorName, film.reviewerName].filter(Boolean).join(' / ') || '-',
     status: film.status,
     updatedAt: film.testDate || '-',
     detailId: ''
@@ -209,6 +206,9 @@ const ndtAssetRows = computed(() => [
     name: record.recordNo,
     relation: record.weldNo,
     method: record.method,
+    documentNo: record.reportNo || record.entrustNo || '-',
+    standardCode: record.standardCode || '-',
+    operator: [record.evaluatorName, record.reviewerName].filter(Boolean).join(' / ') || '-',
     status: record.sampleStatus,
     updatedAt: record.importedAt,
     detailId: ''
@@ -221,49 +221,46 @@ const ndtAssetRows = computed(() => [
       ? `${report.relatedFilmIds.length} 个底片`
       : '未关联底片',
     method: report.method,
+    documentNo: report.reportNo || report.entrustNo || '-',
+    standardCode: report.standardCode || '-',
+    operator: [report.evaluatorName, report.reviewerName].filter(Boolean).join(' / ') || '-',
     status: report.status,
     updatedAt: report.uploadedAt,
     detailId: report.id
   }))
 ])
 
-const handleCreateFilm = () => {
-  emit('createFilm', {
-    filmNo: filmForm.filmNo.trim(),
-    weldNo: filmForm.weldNo.trim(),
-    pipelineNo: filmForm.pipelineNo.trim(),
-    method: filmForm.method,
-    testDate: filmForm.testDate
-  })
+const ocrMetadataRows = computed<NdtOcrMetadataRow[]>(() => [
+  {
+    category: '底片与影像资料',
+    source: '底片、数字影像、底片包索引',
+    fields: '底片编号、焊口编号、底片包索引、影像文件名、评定级别、缺陷位置',
+    status: props.films.length ? '已识别' : '待上传'
+  },
+  {
+    category: '检测记录',
+    source: '委托单、检测记录、原始记录',
+    fields: '记录编号、委托单号、报告编号、工艺编号、设备编号、人员证书、检测结论',
+    status: props.records.length ? '已识别' : '待上传'
+  },
+  {
+    category: '检测报告',
+    source: 'RT/UT/MT/PT 检测报告',
+    fields: '报告编号、检测方法、检测比例、执行标准、报告结论、检测/复核人员',
+    status: props.reports.length ? '已识别' : '待上传'
+  }
+])
+
+const scrollToNdtSection = (sectionId: string) => {
+  document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-const handleUploadReport = () => {
-  emit('uploadReport', {
-    files: [
-      {
-        fileName: reportForm.fileName.trim(),
-        fileType: reportForm.fileType,
-        fileSize: Number(reportForm.fileSize) || 1024
-      }
-    ],
-    relatedFilmIds: reportForm.relatedFilmIds
-  })
-}
-
-const handleImportRecords = () => {
-  emit('importRecords', {
-    rows: [
-      {
-        recordNo: recordForm.recordNo.trim(),
-        weldNo: recordForm.weldNo.trim(),
-        pipelineNo: recordForm.pipelineNo.trim(),
-        method: recordForm.method,
-        result: recordForm.result,
-        sampleStatus: '已抽查',
-        conclusion: '导入记录已进入监检抽查样本。'
-      }
-    ]
-  })
+const handleMaterialAction = (action: NdtMaterialAction) => {
+  if (action.key === 'upload') {
+    emit('uploadMaterial', action.category)
+    return
+  }
+  scrollToNdtSection('ndt-feedback-list')
 }
 
 const handleSubmitNdt = () => {
@@ -328,8 +325,25 @@ const handleRectifyNdt = () => {
             {{ ndtChecklistSummary.covered }} / {{ ndtChecklistSummary.total }} 类已有资料
           </ElTag>
         </div>
-        <ElTable :data="ndtMaterialChecklist" border height="255">
+        <ElTable :data="ndtMaterialChecklist" border height="300">
+          <ElTableColumn type="index" label="序号" width="72" />
           <ElTableColumn prop="category" label="资料类别" min-width="150" show-overflow-tooltip />
+          <ElTableColumn label="操作" min-width="170">
+            <template #default="{ row }">
+              <div class="ndt-table-actions">
+                <ElButton
+                  v-for="action in row.actions"
+                  :key="`${row.category}-${action.key}-${action.label}`"
+                  link
+                  type="primary"
+                  :loading="loading"
+                  @click="handleMaterialAction(action)"
+                >
+                  {{ action.label }}
+                </ElButton>
+              </div>
+            </template>
+          </ElTableColumn>
           <ElTableColumn
             prop="requiredItems"
             label="标准要求资料"
@@ -351,124 +365,29 @@ const handleRectifyNdt = () => {
         </ElTable>
       </section>
 
-      <section class="ndt-action-grid">
-        <div class="ndt-action-box">
-          <div class="section-title">新增底片编号</div>
-          <ElAlert
-            v-if="filmError"
-            class="ndt-film-error"
-            type="error"
-            title="底片编号新增失败"
-            :closable="false"
-            show-icon
-          >
-            <div class="ndt-error-content">
-              <span>{{ filmError }}</span>
-              <ElButton link type="primary" :loading="loading" @click="handleCreateFilm">
-                重试新增底片
-              </ElButton>
-            </div>
-          </ElAlert>
-          <ElForm label-position="top" class="inline-form">
-            <ElFormItem label="底片编号">
-              <ElInput v-model="filmForm.filmNo" />
-            </ElFormItem>
-            <ElFormItem label="焊口编号">
-              <ElInput v-model="filmForm.weldNo" />
-            </ElFormItem>
-            <ElFormItem label="方法">
-              <ElSelect v-model="filmForm.method">
-                <ElOption label="RT" value="RT" />
-                <ElOption label="UT" value="UT" />
-                <ElOption label="MT" value="MT" />
-                <ElOption label="PT" value="PT" />
-              </ElSelect>
-            </ElFormItem>
-            <ElButton type="primary" :loading="loading" @click="handleCreateFilm">
-              新增底片
-            </ElButton>
-          </ElForm>
+      <section class="ndt-ocr-panel">
+        <div class="ndt-section-head">
+          <div>
+            <strong>OCR 字段确认</strong>
+            <p
+              >底片、检测记录和检测报告的关键字段由资料识别结果进入台账，人工只处理低置信度和监检反馈项。</p
+            >
+          </div>
+          <ElTag type="warning" effect="plain">字段待确认</ElTag>
         </div>
-
-        <div class="ndt-action-box">
-          <div class="section-title">检测记录导入</div>
-          <ElAlert
-            v-if="recordImportError"
-            class="ndt-record-import-error"
-            type="error"
-            title="检测记录导入失败"
-            :closable="false"
-            show-icon
-          >
-            <div class="ndt-error-content">
-              <span>{{ recordImportError }}</span>
-              <ElButton link type="primary" :loading="loading" @click="handleImportRecords">
-                重试导入记录
-              </ElButton>
-            </div>
-          </ElAlert>
-          <ElForm label-position="top" class="record-form">
-            <ElFormItem label="记录编号">
-              <ElInput v-model="recordForm.recordNo" />
-            </ElFormItem>
-            <ElFormItem label="焊口编号">
-              <ElInput v-model="recordForm.weldNo" />
-            </ElFormItem>
-            <ElFormItem label="方法">
-              <ElSelect v-model="recordForm.method">
-                <ElOption label="RT" value="RT" />
-                <ElOption label="UT" value="UT" />
-                <ElOption label="MT" value="MT" />
-                <ElOption label="PT" value="PT" />
-              </ElSelect>
-            </ElFormItem>
-            <ElButton type="primary" plain :loading="loading" @click="handleImportRecords">
-              导入检测记录
-            </ElButton>
-          </ElForm>
-        </div>
-
-        <div class="ndt-action-box">
-          <div class="section-title">检测报告上传</div>
-          <ElAlert
-            v-if="reportUploadError"
-            class="ndt-report-upload-error"
-            type="error"
-            title="检测报告上传会话创建失败"
-            :closable="false"
-            show-icon
-          >
-            <div class="ndt-error-content">
-              <span>{{ reportUploadError }}</span>
-              <ElButton link type="primary" :loading="loading" @click="handleUploadReport">
-                重试上传会话
-              </ElButton>
-            </div>
-          </ElAlert>
-          <ElForm label-position="top" class="report-form">
-            <ElFormItem label="报告文件名">
-              <ElInput v-model="reportForm.fileName" />
-            </ElFormItem>
-            <ElFormItem label="关联底片">
-              <ElSelect
-                v-model="reportForm.relatedFilmIds"
-                multiple
-                collapse-tags
-                collapse-tags-tooltip
-              >
-                <ElOption
-                  v-for="film in films"
-                  :key="film.id"
-                  :label="`${film.filmNo} / ${film.weldNo}`"
-                  :value="film.id"
-                />
-              </ElSelect>
-            </ElFormItem>
-            <ElButton type="primary" plain :loading="loading" @click="handleUploadReport">
-              创建报告上传会话
-            </ElButton>
-          </ElForm>
-        </div>
+        <ElTable :data="ocrMetadataRows" border>
+          <ElTableColumn type="index" label="序号" width="72" />
+          <ElTableColumn prop="category" label="资料类别" width="150" show-overflow-tooltip />
+          <ElTableColumn prop="source" label="识别来源" min-width="220" show-overflow-tooltip />
+          <ElTableColumn prop="fields" label="关键字段" min-width="360" show-overflow-tooltip />
+          <ElTableColumn label="识别状态" width="120">
+            <template #default="{ row }">
+              <ElTag :type="getStatusTagType(row.status)" size="small" effect="plain">
+                {{ row.status }}
+              </ElTag>
+            </template>
+          </ElTableColumn>
+        </ElTable>
       </section>
 
       <section class="ndt-library">
@@ -511,6 +430,24 @@ const handleRectifyNdt = () => {
           <ElTableColumn prop="name" label="资料名称/编号" min-width="180" show-overflow-tooltip />
           <ElTableColumn prop="assetType" label="资料类型" width="110" />
           <ElTableColumn prop="method" label="方法" width="80" />
+          <ElTableColumn
+            prop="documentNo"
+            label="委托/报告号"
+            min-width="150"
+            show-overflow-tooltip
+          />
+          <ElTableColumn
+            prop="standardCode"
+            label="执行标准"
+            min-width="160"
+            show-overflow-tooltip
+          />
+          <ElTableColumn
+            prop="operator"
+            label="检测/复核人"
+            min-width="130"
+            show-overflow-tooltip
+          />
           <ElTableColumn prop="relation" label="关联对象" min-width="150" show-overflow-tooltip />
           <ElTableColumn label="状态" width="110">
             <template #default="{ row }">
@@ -693,6 +630,7 @@ const handleRectifyNdt = () => {
 }
 
 .ndt-checklist,
+.ndt-ocr-panel,
 .ndt-library {
   display: grid;
   gap: 10px;
@@ -718,24 +656,6 @@ const handleRectifyNdt = () => {
   color: #667085;
 }
 
-.ndt-action-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 14px;
-}
-
-.ndt-action-box {
-  min-width: 0;
-  padding: 12px;
-  background: #fbfdff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-}
-
-.ndt-film-error,
-.ndt-record-import-error,
-.ndt-report-upload-error,
 .ndt-submit-error,
 .ndt-rectify-error {
   margin-bottom: 10px;
@@ -758,28 +678,17 @@ const handleRectifyNdt = () => {
   overflow-wrap: anywhere;
 }
 
-.inline-form,
-.report-form,
-.record-form {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  align-items: end;
+.ndt-table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
 }
 
-.inline-form :deep(.el-button),
-.record-form :deep(.el-button) {
-  grid-column: 1 / -1;
-  min-height: 36px;
-  margin-left: 0;
-}
-
-.report-form,
 .rectify-form {
   grid-template-columns: 1fr;
 }
 
-.report-form :deep(.el-button),
 .rectify-form :deep(.el-button) {
   min-height: 36px;
   margin-left: 0;
@@ -817,10 +726,6 @@ const handleRectifyNdt = () => {
 @media (width <= 768px) {
   .ndt-metrics,
   .ndt-section-head,
-  .ndt-action-grid,
-  .inline-form,
-  .report-form,
-  .record-form,
   .rectify-form {
     grid-template-columns: 1fr;
   }

@@ -573,6 +573,8 @@ class InMemoryRepository:
         require_signed_urls: bool = False,
         local_upload_url_prefix: str | None = None,
         upload_headers: dict[str, str] | None = None,
+        source_org_name: str | None = None,
+        uploader_name: str | None = None,
     ) -> tuple[str, list[dict[str, Any]]]:
         session_id = f"UPS-{uuid4().hex[:10].upper()}"
         upload_token = uuid4().hex
@@ -584,6 +586,8 @@ class InMemoryRepository:
                 project_id,
                 file.get("fileName") or "未命名资料.pdf",
                 file.get("fileType") or "pdf",
+                source_org_name=source_org_name,
+                uploader_name=uploader_name,
                 material_category=file.get("materialCategory"),
             )
             content_type = file.get("fileType") or "application/octet-stream"

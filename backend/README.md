@@ -163,9 +163,26 @@ Local OCR sample probe:
 
 ```bash
 cd backend
+python scripts/setup_local_ocr.py
+python scripts/setup_local_ocr.py --start
+python scripts/setup_local_ocr.py --verify
 python scripts/ocr_runtime_doctor.py --json
 python scripts/ocr_runtime_doctor.py --strict-production
 ```
+
+`setup_local_ocr.py` is the local installation entrypoint for the common developer topology where the API
+runs on the host while PostgreSQL, Redis, and MinIO are already exposed on host ports. It uses
+`docker-compose.local-ocr.yml` to start only `local-ocr-service` and `local-ocr-worker`; the worker connects
+to host dependencies through `host.docker.internal` and calls the OCR service at `http://local-ocr-service:8010`.
+The default host ports are PostgreSQL `15432`, Redis `6379`, and MinIO `9000`; set
+`AICHECK_LOCAL_POSTGRES_PORT`, `AICHECK_LOCAL_REDIS_PORT`, or `AICHECK_LOCAL_MINIO_PORT` in `.env` if your
+local ports differ. Keep `AICHECK_TASK_DISPATCH=celery` in the host API environment so upload-complete
+requests enqueue `ocr.parse_document` tasks for the local worker.
+
+OCR images and related local Docker state should live on the 7up external disk. The installer blocks image builds
+unless it can verify the active Docker context storage under `/Volumes/7up`. For Colima, stop it and move
+`~/.colima` to `/Volumes/7up/docker/.colima`, then symlink `~/.colima` back before restarting Colima with
+`--mount /Volumes/7up:w`. The mount flag is required so OCR model bind mounts are visible inside containers.
 
 The doctor does not run OCR inference. It checks local packages, `AICHECK_OCR_SUBPROCESS_PYTHON`, model
 directories, engine availability, offline policy, and whether preprocess variants can be generated. Use it before

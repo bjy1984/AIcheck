@@ -288,13 +288,27 @@ export type ExportTask = {
 export type NdtFilm = {
   id: string
   projectId: string
+  nodeId?: number
   filmNo: string
   weldNo: string
   pipelineNo?: string
+  reportNo?: string
+  entrustNo?: string
+  filmPackageNo?: string
+  imageFileName?: string
   method: 'RT' | 'UT' | 'MT' | 'PT'
   testDate?: string
+  detectionRatio?: string
+  standardCode?: string
+  imageQualityIndicator?: string
+  sensitivity?: string
+  density?: string
+  geometricUnsharpness?: string
   evaluationLevel?: string
   defectCode?: string
+  defectLocation?: string
+  evaluatorName?: string
+  reviewerName?: string
   status: '草稿' | '待提交' | '待审查' | '需补正' | '已通过'
   actions: ActionCode[]
 }
@@ -308,10 +322,21 @@ export type NdtRecord = {
   reportId?: string
   weldNo: string
   pipelineNo?: string
+  entrustNo?: string
+  reportNo?: string
+  techniqueNo?: string
+  equipmentNo?: string
+  personnelCertificateNo?: string
+  detectionRatio?: string
+  standardCode?: string
   method: NdtFilm['method']
   testDate: string
   evaluatorName: string
+  reviewerName?: string
   result: '合格' | '不合格' | '待复核'
+  evaluationLevel?: string
+  signatureStatus?: string
+  stampStatus?: string
   sampleStatus: '未抽查' | '已抽查' | '需复核'
   conclusion?: string
   importedAt: string
@@ -325,6 +350,11 @@ export type NdtReport = {
   method: NdtFilm['method']
   fileId: string
   relatedFilmIds: string[]
+  entrustNo?: string
+  detectionRatio?: string
+  standardCode?: string
+  evaluatorName?: string
+  reviewerName?: string
   status: NdtFilm['status']
   conclusion?: string
   uploadedAt: string
