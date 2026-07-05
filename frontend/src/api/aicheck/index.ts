@@ -2841,6 +2841,19 @@ export const createNdtReportUploadSessionApi = (
   })
 }
 
+export const completeNdtReportUploadSessionApi = (
+  projectId: string,
+  sessionId: string,
+  completedFiles: Array<{ documentVersionId: string; fileSize?: number; hash?: string }>,
+  options?: MutationHeaderOptions
+): Promise<IResponse<UploadSessionCompletePayload & { reports?: NdtReport[] }>> => {
+  return request.post({
+    url: `/api/projects/${projectId}/ndt/reports/upload-session/${sessionId}/complete`,
+    data: { completedFiles },
+    headers: mutationHeaders(options)
+  })
+}
+
 export const submitNdtSubmissionApi = (
   projectId: string,
   payload: { reportIds: string[]; filmIds?: string[]; nodeId: number },

@@ -10,6 +10,7 @@ from apps.worker.celery_app import celery_app
 from libs.business_pack import build_ai_review_prompt, load_business_pack, matching_rule_for_node
 from libs.contracts.responses import server_time
 from libs.db.repository import flush_state, load_state, repo
+from libs.integrations import task_dispatcher
 from libs.integrations.litellm_client import LiteLLMClient
 from libs.integrations.ocr_client import OcrClient
 from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block, unsupported_claims
@@ -156,9 +157,15 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
     parse_result_record = repo.finish_ocr_job_record(ocr_job_record, result)
     applied = repo.apply_ocr_result(document_id, version_id, result)
     flush_state()
+    next_dispatch = None
+    if applied.get("status") == "success":
+        knowledge_file = repo.knowledge_file_for_version(version_id)
+        if knowledge_file:
+            next_dispatch = task_dispatcher.dispatch_slice(knowledge_file["id"])
     return {
         **result,
         "applied": applied,
+        "nextDispatch": next_dispatch,
         "ocrJobRecordId": ocr_job_record.get("id"),
         "ocrParseResultId": (parse_result_record or {}).get("parseResultId"),
     }
@@ -211,12 +218,15 @@ def slice_knowledge(self, file_id: str) -> dict[str, Any]:
     ]
     result = repo.apply_slice_result(file_id, fragments or None)
     flush_state()
+    if result.get("status") == "success":
+        result["nextDispatch"] = task_dispatcher.dispatch_embed(file_id)
     return result
 
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 def embed_knowledge(self, file_id: str) -> dict[str, Any]:
     chunks = [item for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") == file_id]
+    embedding_model = "embedding-default"
     task = next((item for item in repo.state["knowledge_tasks"] if item.get("taskType") == "vector" and item.get("targetId") == file_id), None)
     file = repo.find_one("knowledge_files", file_id)
     if task is None and file is None and not chunks:
@@ -237,9 +247,24 @@ def embed_knowledge(self, file_id: str) -> dict[str, Any]:
         flush_state()
         return {"fileId": file_id, "status": "missing", "vectorCount": 0}
     try:
+        vectors: list[dict[str, Any]] = []
         if chunks:
-            LiteLLMClient().embed_sync([item["text"] for item in chunks[:16]], model="embedding-default")
-        result = repo.apply_embed_result(file_id, vector_count)
+            embedding_response = LiteLLMClient().embed_sync(
+                [item["text"] for item in chunks[:16]],
+                model=embedding_model,
+            )
+            vectors = [
+                item
+                for item in embedding_response.get("data", [])
+                if isinstance(item, dict)
+            ]
+            vector_count = len(vectors)
+        result = repo.apply_embed_result(
+            file_id,
+            vector_count,
+            vectors=vectors,
+            embedding_model=embedding_model,
+        )
     except Exception:
         message = f"EXTERNAL_TOOL_FAILED: {service_failure_message('LiteLLM embedding')}"
         result = {"fileId": file_id, "status": "failed", "errorMessage": message}

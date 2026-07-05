@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { EChartsOption } from 'echarts'
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   ElButton,
@@ -20,7 +20,6 @@ import {
   completeTodoApi,
   completeDocumentUploadSessionApi,
   createNdtFilmApi,
-  createNdtReportUploadSessionApi,
   createDocumentUploadSessionApi,
   deleteProjectDocumentApi,
   getArchivePackageApi,
@@ -155,6 +154,10 @@ type WorkbenchStateIssue = {
 }
 
 type DocumentUploadTarget = UploadSessionPayload['uploadUrls'][number]
+type LoadProjectBundleOptions = {
+  silent?: boolean
+  preserveSelection?: boolean
+}
 
 const route = useRoute()
 const userStore = useUserStore()
@@ -247,6 +250,8 @@ const reviewResult = ref<ReviewOpinion['result']>('满足要求')
 const reviewOpinion = ref('资料、证据链与规则要求一致，同意通过。')
 const correctionReason = ref('证据链或资料内容与规则要求不一致，需补充说明。')
 const latestSubmissionIds = ref<Record<number, string>>({})
+const pipelinePollTimer = ref<number>()
+const pipelinePolling = ref(false)
 
 const role = computed<RoleCode>(() => {
   const path = route.path
@@ -785,6 +790,16 @@ const workbenchAuditCards = computed<AuditSummaryCard[]>(() => {
 })
 const nodeBindingsPreview = computed(() => bindings.value.slice(0, 5))
 const projectFilesPreview = computed(() => (nodePackage.value?.projectFiles || []).slice(0, 5))
+const postUploadProcessingFiles = computed(() =>
+  (nodePackage.value?.projectFiles || []).filter((file) => {
+    if (['排队中', '识别中'].includes(file.currentOcrStatus)) return true
+    if (file.currentOcrStatus !== '已识别') return false
+    if (['未切片', '待切片'].includes(file.sliceStatus || '')) return true
+    if (['未向量化', '待向量化'].includes(file.vectorStatus || '')) return true
+    return false
+  })
+)
+const hasPostUploadProcessing = computed(() => postUploadProcessingFiles.value.length > 0)
 const firstBinding = computed(() => bindings.value[0])
 const previewFileName = computed(() => {
   if (role.value === 'owner') return '项目资料状态摘要'
@@ -965,12 +980,6 @@ const showNdtFilmError = (fallback: string, error?: unknown) => {
 const showNdtRecordImportError = (fallback: string, error?: unknown) => {
   const message = getAicheckErrorMessage(error, fallback)
   ndtRecordImportError.value = message
-  ElMessage.error(message)
-}
-
-const showNdtReportUploadError = (fallback: string, error?: unknown) => {
-  const message = getAicheckErrorMessage(error, fallback)
-  ndtReportUploadError.value = message
   ElMessage.error(message)
 }
 
@@ -1218,11 +1227,11 @@ const handleLocateQuickResult = async (result: SearchResult) => {
   ElMessage.success('已定位到相关业务对象')
 }
 
-const loadProjectBundle = async () => {
+const loadProjectBundle = async (options: LoadProjectBundleOptions = {}) => {
   if (!activeProjectId.value) return
-  loading.value = true
+  if (!options.silent) loading.value = true
   try {
-    pageIssue.value = undefined
+    if (!options.silent) pageIssue.value = undefined
     const [contextRes, summaryRes, treeRes] = await Promise.all([
       getWorkbenchContextApi(activeProjectId.value, role.value),
       getWorkbenchSummaryApi(activeProjectId.value, role.value),
@@ -1242,8 +1251,10 @@ const loadProjectBundle = async () => {
     context.value = contextRes.data
     summary.value = summaryRes.data
     treeGroups.value = treeRes.data.groups
-    activeNodeId.value = contextRes.data.currentNodeId
-    activeWorkbenchSection.value = 'overview'
+    if (!options.preserveSelection) {
+      activeNodeId.value = contextRes.data.currentNodeId
+      activeWorkbenchSection.value = 'overview'
+    }
     if (role.value === 'ndt') {
       reports.value = []
       archiveItems.value = []
@@ -1252,18 +1263,22 @@ const loadProjectBundle = async () => {
       await loadReportArchive()
       await loadNdtData()
     }
-    await loadNodePackage(activeNodeId.value)
+    await loadNodePackage(
+      options.preserveSelection ? activeNodeId.value : contextRes.data.currentNodeId
+    )
     if (!pageIssue.value) {
       pageIssue.value = undefined
     }
   } catch (error) {
-    pageIssue.value = {
-      type: 'error',
-      title: '工作台加载失败',
-      message: getErrorMessage(error)
+    if (!options.silent) {
+      pageIssue.value = {
+        type: 'error',
+        title: '工作台加载失败',
+        message: getErrorMessage(error)
+      }
     }
   } finally {
-    loading.value = false
+    if (!options.silent) loading.value = false
   }
 }
 
@@ -1517,7 +1532,7 @@ const handleCreateUploadSession = async (files: File[]) => {
       throw new Error('上传完成确认失败，请刷新项目文件库后重试。')
     }
     uploadDrawerError.value = ''
-    ElMessage.success(`已上传 ${files.length} 个文件并写入项目文件库`)
+    ElMessage.success(`已上传 ${files.length} 个文件，OCR 和索引处理已进入队列`)
     uploadDrawerVisible.value = false
     await loadProjectBundle()
   } catch (error) {
@@ -1554,40 +1569,6 @@ const handleCreateNdtFilm = async (
     await loadNdtData()
   } catch (error) {
     showNdtFilmError('底片编号新增失败，请检查底片编号、焊口编号和当前节点状态。', error)
-  } finally {
-    actionLoading.value = false
-  }
-}
-
-const handleUploadNdtReport = async (
-  payload: {
-    files: Array<{ fileName: string; fileType: string; fileSize: number }>
-    relatedFilmIds: string[]
-  } & Partial<NdtReport>
-) => {
-  if (!activeProjectId.value) return
-  if (!payload.files[0]?.fileName) {
-    ElMessage.warning('请填写检测报告文件名')
-    return
-  }
-  actionLoading.value = true
-  ndtReportUploadError.value = ''
-  try {
-    const res = await createNdtReportUploadSessionApi(activeProjectId.value, payload, {
-      etag: currentProject.value?.etag
-    })
-    if (!res) {
-      showNdtReportUploadError('检测报告上传会话创建失败，请检查文件类型、大小和检测资料权限。')
-      return
-    }
-    ndtReportUploadError.value = ''
-    ElMessage.success(`检测报告上传会话已创建：${res.data.uploadSessionId}`)
-    await Promise.all([loadNdtData(), loadNodePackage(activeNodeId.value)])
-  } catch (error) {
-    showNdtReportUploadError(
-      '检测报告上传会话创建失败，请检查文件类型、大小和检测资料权限。',
-      error
-    )
   } finally {
     actionLoading.value = false
   }
@@ -2490,6 +2471,33 @@ const handleArchiveReport = async (reportId: string) => {
   }
 }
 
+const refreshPostUploadPipelineStatus = async () => {
+  if (!activeProjectId.value || pipelinePolling.value) return
+  if (!hasPostUploadProcessing.value) {
+    stopPostUploadPolling()
+    return
+  }
+  pipelinePolling.value = true
+  try {
+    await loadProjectBundle({ silent: true, preserveSelection: true })
+  } finally {
+    pipelinePolling.value = false
+  }
+}
+
+const startPostUploadPolling = () => {
+  if (pipelinePollTimer.value) return
+  pipelinePollTimer.value = window.setInterval(() => {
+    void refreshPostUploadPipelineStatus()
+  }, 4000)
+}
+
+const stopPostUploadPolling = () => {
+  if (!pipelinePollTimer.value) return
+  window.clearInterval(pipelinePollTimer.value)
+  pipelinePollTimer.value = undefined
+}
+
 watch(
   () => role.value,
   () => {
@@ -2534,8 +2542,24 @@ watch(
   }
 )
 
+watch(
+  () => hasPostUploadProcessing.value,
+  (processing) => {
+    if (processing) {
+      startPostUploadPolling()
+    } else {
+      stopPostUploadPolling()
+    }
+  },
+  { immediate: true }
+)
+
 onMounted(() => {
   loadProjects()
+})
+
+onBeforeUnmount(() => {
+  stopPostUploadPolling()
 })
 </script>
 
@@ -3104,6 +3128,7 @@ onMounted(() => {
             :records="ndtRecords"
             :reports="ndtReports"
             :feedback="ndtFeedback"
+            :project-files="nodePackage?.projectFiles || []"
             :loading="actionLoading"
             :film-error="ndtFilmError"
             :record-import-error="ndtRecordImportError"
@@ -3112,7 +3137,6 @@ onMounted(() => {
             :rectify-error="ndtRectifyError"
             @create-film="handleCreateNdtFilm"
             @import-records="handleImportNdtRecords"
-            @upload-report="handleUploadNdtReport"
             @upload-material="handleOpenUploadDrawer"
             @submit-ndt="handleSubmitNdt"
             @rectify-ndt="handleRectifyNdt"

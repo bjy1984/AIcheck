@@ -85,6 +85,7 @@ STATE_COLLECTIONS = {
     "knowledge_files": "knowledge_files",
     "knowledge_tasks": "knowledge_tasks",
     "knowledge_chunks": "knowledge_chunks",
+    "knowledge_vectors": "knowledge_vectors",
     "knowledge_clauses": "knowledge_clauses",
     "knowledge_page_index_nodes": "knowledge_page_index_nodes",
     "rule_versions": "rule_versions",
@@ -112,6 +113,7 @@ class InMemoryRepository:
     def __init__(self) -> None:
         self.state = fresh_state()
         self.state.setdefault("knowledge_chunks", [])
+        self.state.setdefault("knowledge_vectors", [])
         self.state.setdefault("knowledge_clauses", [])
         self.state.setdefault("knowledge_page_index_nodes", [])
         self.state.setdefault("upload_sessions", [])
@@ -143,6 +145,7 @@ class InMemoryRepository:
     def reset(self) -> None:
         self.state = fresh_state()
         self.state.setdefault("knowledge_chunks", [])
+        self.state.setdefault("knowledge_vectors", [])
         self.state.setdefault("knowledge_clauses", [])
         self.state.setdefault("knowledge_page_index_nodes", [])
         self.state.setdefault("upload_sessions", [])
@@ -255,7 +258,28 @@ class InMemoryRepository:
         return groups
 
     def project_documents(self, project_id: str) -> list[dict[str, Any]]:
-        return [self.clone(item) for item in self.state["documents"] if item["projectId"] == project_id]
+        documents = []
+        for item in self.state["documents"]:
+            if item["projectId"] != project_id:
+                continue
+            cloned = self.clone(item)
+            knowledge_file = next(
+                (
+                    file
+                    for file in self.state.get("knowledge_files", [])
+                    if file.get("documentId") == item.get("id")
+                    or file.get("documentVersionId") == item.get("currentVersionId")
+                ),
+                None,
+            )
+            if knowledge_file:
+                cloned["sliceStatus"] = knowledge_file.get("sliceStatus")
+                cloned["vectorStatus"] = knowledge_file.get("vectorStatus")
+                cloned["chunkCount"] = knowledge_file.get("chunkCount", 0)
+                cloned["vectorCount"] = knowledge_file.get("vectorCount", 0)
+                cloned["embeddingModel"] = knowledge_file.get("embeddingModel")
+            documents.append(cloned)
+        return documents
 
     def versions_for_document(self, document_id: str) -> list[dict[str, Any]]:
         return [self.clone(item) for item in self.state["versions"] if item["documentId"] == document_id]
@@ -726,6 +750,12 @@ class InMemoryRepository:
             None,
         )
 
+    def knowledge_file_for_version(self, version_id: str) -> dict[str, Any] | None:
+        return next(
+            (item for item in self.state.get("knowledge_files", []) if item.get("documentVersionId") == version_id),
+            None,
+        )
+
     def mark_task_running(self, task: dict[str, Any] | None, message: str) -> None:
         if not task:
             return
@@ -931,7 +961,7 @@ class InMemoryRepository:
         if knowledge_file:
             knowledge_file["ocrStatus"] = status
             knowledge_file["sliceStatus"] = "待切片" if success else "未切片"
-            knowledge_file["vectorStatus"] = "待向量化" if success else "待向量化"
+            knowledge_file["vectorStatus"] = "待向量化" if success else "未向量化"
             knowledge_file["updatedAt"] = now
         if task:
             task["status"] = "成功" if success else "失败"
@@ -1060,16 +1090,35 @@ class InMemoryRepository:
             self.append_task_log(task, "info", "切片任务完成。")
         return {"fileId": file_id, "status": "success", "chunkCount": file["chunkCount"]}
 
-    def apply_embed_result(self, file_id: str, vector_count: int | None = None) -> dict[str, Any]:
+    def apply_embed_result(
+        self,
+        file_id: str,
+        vector_count: int | None = None,
+        *,
+        vectors: list[dict[str, Any]] | None = None,
+        embedding_model: str = "embedding-default",
+    ) -> dict[str, Any]:
         file = self.find_one("knowledge_files", file_id)
         if not file:
             return {"fileId": file_id, "status": "missing", "vectorCount": 0}
         source = self.find_one("knowledge_sources", file.get("sourceId"))
         if (source or {}).get("sourceType") == "rule":
             return {"fileId": file_id, "status": "skipped", "vectorCount": 0, "reason": "business_rule_not_indexed"}
-        count = vector_count if vector_count is not None else len([item for item in self.state.get("knowledge_chunks", []) if item.get("fileId") == file_id]) or file.get("chunkCount", 1)
+        chunks = [item for item in self.state.get("knowledge_chunks", []) if item.get("fileId") == file_id]
+        vector_rows = self._build_knowledge_vector_rows(
+            file,
+            chunks,
+            vectors or [],
+            embedding_model=embedding_model,
+        )
+        self.state["knowledge_vectors"] = [
+            item for item in self.state.get("knowledge_vectors", []) if item.get("fileId") != file_id
+        ]
+        self.state.setdefault("knowledge_vectors", []).extend(vector_rows)
+        count = vector_count if vector_count is not None else len(vector_rows)
         file["vectorStatus"] = "已向量化"
         file["vectorCount"] = count
+        file["embeddingModel"] = embedding_model
         file["updatedAt"] = server_time()
         task = next(
             (item for item in self.state["knowledge_tasks"] if item.get("taskType") == "vector" and item.get("targetId") == file_id),
@@ -1083,6 +1132,41 @@ class InMemoryRepository:
             self._bump_revision(task)
             self.append_task_log(task, "info", "向量化任务完成。")
         return {"fileId": file_id, "status": "success", "vectorCount": count}
+
+    def _build_knowledge_vector_rows(
+        self,
+        file: dict[str, Any],
+        chunks: list[dict[str, Any]],
+        vectors: list[dict[str, Any]],
+        *,
+        embedding_model: str,
+    ) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        now = server_time()
+        vectors_by_index = {int(item.get("index") or index): item for index, item in enumerate(vectors)}
+        for index, chunk in enumerate(chunks):
+            vector = vectors_by_index.get(index) or {}
+            embedding = vector.get("embedding") if isinstance(vector, dict) else None
+            if not isinstance(embedding, list):
+                continue
+            rows.append(
+                {
+                    "id": f"KV-{chunk['id']}",
+                    "fileId": file["id"],
+                    "chunkId": chunk["id"],
+                    "documentId": file.get("documentId"),
+                    "documentVersionId": file.get("documentVersionId"),
+                    "projectId": file.get("projectId"),
+                    "vectorNo": index + 1,
+                    "embedding": embedding,
+                    "dimensions": len(embedding),
+                    "embeddingModel": embedding_model,
+                    "indexVersion": "proj-v2026.06.26",
+                    "createdAt": now,
+                    "updatedAt": now,
+                }
+            )
+        return rows
 
     def attach_export_artifact(self, task: dict[str, Any], *, content_type: str | None = None, body: bytes | None = None) -> dict[str, Any]:
         file_name = task.get("fileName") or f"{task['id']}.zip"
@@ -1195,6 +1279,7 @@ class InMemoryRepository:
     def _fresh_state_for_persistence_load(self) -> dict[str, Any]:
         loaded = fresh_state()
         loaded.setdefault("knowledge_chunks", [])
+        loaded.setdefault("knowledge_vectors", [])
         loaded.setdefault("knowledge_clauses", [])
         loaded.setdefault("knowledge_page_index_nodes", [])
         loaded.setdefault("upload_sessions", [])

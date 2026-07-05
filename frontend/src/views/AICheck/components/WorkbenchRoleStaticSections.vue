@@ -45,6 +45,7 @@ type ContractorFileRow = {
   relationNode: string
   feedback: string
   ocr: string
+  processingStatus: string
   uploader: string
   updatedAt: string
 }
@@ -277,6 +278,17 @@ const getRelationNodeText = (binding?: (typeof bindings.value)[number]) => {
 
 const normalizeSearchText = (...parts: Array<string | undefined>) => parts.join(' ').toLowerCase()
 
+const pipelineStatusForFile = (file: NodePackagePayload['projectFiles'][number]) => {
+  const statuses = [file.currentOcrStatus, file.sliceStatus, file.vectorStatus].filter(Boolean)
+  if (statuses.some((status) => String(status).includes('失败'))) return '失败可重试'
+  if (file.currentOcrStatus === '排队中') return '排队中'
+  if (file.currentOcrStatus && file.currentOcrStatus !== '已识别') return 'OCR 中'
+  if (file.sliceStatus && file.sliceStatus !== '已切片') return '切片中'
+  if (file.vectorStatus && file.vectorStatus !== '已向量化') return '向量化中'
+  if (file.vectorStatus === '已向量化') return '已完成'
+  return file.currentOcrStatus || '排队中'
+}
+
 const inferMaterialCategory = (text: string) => {
   const normalized = text.toLowerCase()
   return (
@@ -316,6 +328,7 @@ const contractorFileRows = computed<ContractorFileRow[]>(() => {
       feedback:
         binding?.bindingStatus === '需补正' ? `FB-${String(index + 1).padStart(3, '0')}` : '-',
       ocr: file.currentOcrStatus,
+      processingStatus: pipelineStatusForFile(file),
       uploader: file.uploaderName,
       updatedAt: file.updatedAt
     }
@@ -341,6 +354,7 @@ const contractorFileRows = computed<ContractorFileRow[]>(() => {
     relationNode: getRelationNodeText(binding),
     feedback: binding.bindingStatus === '需补正' ? `FB-${String(index + 1).padStart(3, '0')}` : '-',
     ocr: '已识别',
+    processingStatus: '等待入库',
     uploader: binding.sourceOrgName,
     updatedAt: binding.boundAt
   }))
@@ -559,7 +573,8 @@ const getPillClass = (value?: string) => {
     value.includes('满足') ||
     value.includes('归档') ||
     value.includes('只读') ||
-    value.includes('合格')
+    value.includes('合格') ||
+    value.includes('完成')
   ) {
     return 'green'
   }
@@ -578,7 +593,8 @@ const getPillClass = (value?: string) => {
     value.includes('草稿') ||
     value.includes('复核') ||
     value.includes('确认') ||
-    value.includes('生成')
+    value.includes('生成') ||
+    value.includes('中')
   ) {
     return 'orange'
   }
@@ -742,6 +758,7 @@ const getPillClass = (value?: string) => {
                   <th>文件用途</th>
                   <th>来源单位</th>
                   <th>状态</th>
+                  <th>处理状态</th>
                   <th>版本</th>
                   <th>关联审核环节</th>
                   <th>关联反馈</th>
@@ -770,6 +787,11 @@ const getPillClass = (value?: string) => {
                   <td
                     ><span :class="['pill', getPillClass(file.status)]">{{ file.status }}</span></td
                   >
+                  <td>
+                    <span :class="['pill', getPillClass(file.processingStatus)]">
+                      {{ file.processingStatus }}
+                    </span>
+                  </td>
                   <td>{{ file.version }}</td>
                   <td>{{ file.relationNode }}</td>
                   <td>{{ file.feedback }}</td>
@@ -838,7 +860,7 @@ const getPillClass = (value?: string) => {
                   </td>
                 </tr>
                 <tr v-if="!pagedContractorFileRows.length">
-                  <td colspan="14">当前筛选条件下暂无文件</td>
+                  <td colspan="15">当前筛选条件下暂无文件</td>
                 </tr>
               </tbody>
             </table>

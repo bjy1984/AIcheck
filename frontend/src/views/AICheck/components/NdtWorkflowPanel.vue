@@ -14,7 +14,14 @@ import {
   ElTableColumn,
   ElTag
 } from 'element-plus'
-import type { NdtFeedback, NdtFilm, NdtRecord, NdtReport, ProjectTreeNode } from '@/types/aicheck'
+import type {
+  DocumentAsset,
+  NdtFeedback,
+  NdtFilm,
+  NdtRecord,
+  NdtReport,
+  ProjectTreeNode
+} from '@/types/aicheck'
 import { getStatusTagType } from './status'
 
 type NdtMaterialStatus = '已覆盖' | '待上传' | '需补正'
@@ -43,6 +50,7 @@ const props = defineProps<{
   records: NdtRecord[]
   reports: NdtReport[]
   feedback: NdtFeedback[]
+  projectFiles: DocumentAsset[]
   loading: boolean
   filmError?: string
   recordImportError?: string
@@ -58,12 +66,6 @@ const emit = defineEmits<{
       weldNo: string
       method: NdtFilm['method']
     } & Partial<NdtFilm>
-  ]
-  uploadReport: [
-    payload: {
-      files: Array<{ fileName: string; fileType: string; fileSize: number }>
-      relatedFilmIds: string[]
-    } & Partial<NdtReport>
   ]
   importRecords: [
     payload: {
@@ -100,68 +102,96 @@ const defaultFeedback = computed(() => openFeedback.value[0])
 const selectedRectificationId = computed(
   () => rectificationForm.rectificationId || defaultFeedback.value?.id || ''
 )
+const filesByCategory = (category: string) =>
+  props.projectFiles.filter((file) => file.materialCategory === category)
+const statusForCategory = (category: string, fallbackCount = 0): NdtMaterialStatus => {
+  const files = filesByCategory(category)
+  if (files.length || fallbackCount) return '已覆盖'
+  return '待上传'
+}
+const pipelineStatusForFile = (file: DocumentAsset) => {
+  const statuses = [file.currentOcrStatus, file.sliceStatus, file.vectorStatus].filter(Boolean)
+  if (statuses.some((status) => String(status).includes('失败'))) return '失败可重试'
+  if (file.currentOcrStatus === '排队中') return '排队中'
+  if (file.currentOcrStatus && file.currentOcrStatus !== '已识别') return 'OCR 中'
+  if (file.sliceStatus && file.sliceStatus !== '已切片') return '切片中'
+  if (file.vectorStatus && file.vectorStatus !== '已向量化') return '向量化中'
+  if (file.vectorStatus === '已向量化') return '已完成'
+  return file.currentOcrStatus || '排队中'
+}
 const ndtMaterialChecklist = computed(() => {
   const openFeedbackCount = openFeedback.value.length
   const rows: NdtMaterialChecklistItem[] = [
     {
       category: '机构与人员资质',
       requiredItems: '无损检测机构核准证、检测人员资格证、执业注册证、项目人员任命',
-      uploadedCount: 0,
-      missing: '当前接口未返回资质文件，需在无损检测资料库中补充或核验',
-      status: '待上传',
+      uploadedCount: filesByCategory('机构与人员资质').length,
+      missing: filesByCategory('机构与人员资质').length
+        ? '已上传资质资料，等待监检核验'
+        : '当前接口未返回资质文件，需在无损检测资料库中补充或核验',
+      status: statusForCategory('机构与人员资质'),
       nodeRefs: 'R23、R24、R25',
       actions: [{ key: 'upload', label: '上传资料', category: '机构与人员资质' }]
     },
     {
       category: '检测方案与工艺',
       requiredItems: '无损检测方案、单项检测工艺文件、操作指导书、受控表格',
-      uploadedCount: 0,
-      missing: '需补充检测方案、工艺文件和操作指导书',
-      status: '待上传',
+      uploadedCount: filesByCategory('检测方案与工艺').length,
+      missing: filesByCategory('检测方案与工艺').length
+        ? '已上传检测方案与工艺资料'
+        : '需补充检测方案、工艺文件和操作指导书',
+      status: statusForCategory('检测方案与工艺'),
       nodeRefs: 'R23、R27、R28',
       actions: [{ key: 'upload', label: '上传资料', category: '检测方案与工艺' }]
     },
     {
       category: '检测设备与校准',
       requiredItems: '检测设备台账、检定/校准报告、设备有效期证明',
-      uploadedCount: 0,
-      missing: '需补充设备检定或校准证明',
-      status: '待上传',
+      uploadedCount: filesByCategory('检测设备与校准').length,
+      missing: filesByCategory('检测设备与校准').length
+        ? '已上传设备与校准资料'
+        : '需补充设备检定或校准证明',
+      status: statusForCategory('检测设备与校准'),
       nodeRefs: 'R26',
       actions: [{ key: 'upload', label: '上传资料', category: '检测设备与校准' }]
     },
     {
       category: '底片与影像资料',
       requiredItems: '底片编号、射线底片或数字影像、底片包索引',
-      uploadedCount: props.films.length,
-      missing: props.films.length ? '已登记底片，等待监检核验' : '需上传或登记底片编号和影像资料',
+      uploadedCount: filesByCategory('底片与影像资料').length + props.films.length,
+      missing:
+        filesByCategory('底片与影像资料').length || props.films.length
+          ? '已登记或上传底片影像，等待监检核验'
+          : '需上传或登记底片编号和影像资料',
       status: props.films.some((film) => film.status === '需补正')
         ? '需补正'
-        : props.films.length
-          ? '已覆盖'
-          : '待上传',
+        : statusForCategory('底片与影像资料', props.films.length),
       nodeRefs: 'R28、R53',
       actions: [{ key: 'upload', label: '上传底片/影像', category: '底片与影像资料' }]
     },
     {
       category: '检测记录',
       requiredItems: '无损检测委托单、检测记录、原始记录、抽查样本记录',
-      uploadedCount: props.records.length,
-      missing: props.records.length ? '已导入检测记录，等待监检核验' : '需导入检测记录和原始记录',
-      status: props.records.length ? '已覆盖' : '待上传',
+      uploadedCount: filesByCategory('检测记录').length + props.records.length,
+      missing:
+        filesByCategory('检测记录').length || props.records.length
+          ? '已上传或导入检测记录，等待监检核验'
+          : '需导入检测记录和原始记录',
+      status: statusForCategory('检测记录', props.records.length),
       nodeRefs: 'R28、R29',
       actions: [{ key: 'upload', label: '上传检测记录', category: '检测记录' }]
     },
     {
       category: '检测报告',
       requiredItems: 'RT/UT/MT/PT 检测报告、检测结论、报告与底片对应关系',
-      uploadedCount: props.reports.length,
-      missing: props.reports.length ? '已上传检测报告，等待监检核验' : '需上传检测报告',
+      uploadedCount: filesByCategory('检测报告').length + props.reports.length,
+      missing:
+        filesByCategory('检测报告').length || props.reports.length
+          ? '已上传检测报告，等待监检核验'
+          : '需上传检测报告',
       status: props.reports.some((report) => report.status === '需补正')
         ? '需补正'
-        : props.reports.length
-          ? '已覆盖'
-          : '待上传',
+        : statusForCategory('检测报告', props.reports.length),
       nodeRefs: 'R28、R53',
       actions: [{ key: 'upload', label: '上传检测报告', category: '检测报告' }]
     },
@@ -186,49 +216,67 @@ const ndtChecklistSummary = computed(() => ({
   correction: ndtMaterialChecklist.value.filter((item) => item.status === '需补正').length,
   total: ndtMaterialChecklist.value.length
 }))
-const ndtAssetRows = computed(() => [
-  ...props.films.map((film) => ({
-    id: film.id,
-    assetType: '底片编号',
-    name: film.filmNo,
-    relation: film.weldNo,
-    method: film.method,
-    documentNo: film.reportNo || film.entrustNo || '-',
-    standardCode: film.standardCode || '-',
-    operator: [film.evaluatorName, film.reviewerName].filter(Boolean).join(' / ') || '-',
-    status: film.status,
-    updatedAt: film.testDate || '-',
-    detailId: ''
-  })),
-  ...props.records.map((record) => ({
-    id: record.id,
-    assetType: '检测记录',
-    name: record.recordNo,
-    relation: record.weldNo,
-    method: record.method,
-    documentNo: record.reportNo || record.entrustNo || '-',
-    standardCode: record.standardCode || '-',
-    operator: [record.evaluatorName, record.reviewerName].filter(Boolean).join(' / ') || '-',
-    status: record.sampleStatus,
-    updatedAt: record.importedAt,
-    detailId: ''
-  })),
-  ...props.reports.map((report) => ({
-    id: report.id,
-    assetType: '检测报告',
-    name: report.reportNo,
-    relation: report.relatedFilmIds.length
-      ? `${report.relatedFilmIds.length} 个底片`
-      : '未关联底片',
-    method: report.method,
-    documentNo: report.reportNo || report.entrustNo || '-',
-    standardCode: report.standardCode || '-',
-    operator: [report.evaluatorName, report.reviewerName].filter(Boolean).join(' / ') || '-',
-    status: report.status,
-    updatedAt: report.uploadedAt,
-    detailId: report.id
-  }))
-])
+const ndtAssetRows = computed(() => {
+  const reportFileIds = new Set(props.reports.map((report) => report.fileId))
+  return [
+    ...props.films.map((film) => ({
+      id: film.id,
+      assetType: '底片编号',
+      name: film.filmNo,
+      relation: film.weldNo,
+      method: film.method,
+      documentNo: film.reportNo || film.entrustNo || '-',
+      standardCode: film.standardCode || '-',
+      operator: [film.evaluatorName, film.reviewerName].filter(Boolean).join(' / ') || '-',
+      status: film.status,
+      updatedAt: film.testDate || '-',
+      detailId: ''
+    })),
+    ...props.records.map((record) => ({
+      id: record.id,
+      assetType: '检测记录',
+      name: record.recordNo,
+      relation: record.weldNo,
+      method: record.method,
+      documentNo: record.reportNo || record.entrustNo || '-',
+      standardCode: record.standardCode || '-',
+      operator: [record.evaluatorName, record.reviewerName].filter(Boolean).join(' / ') || '-',
+      status: record.sampleStatus,
+      updatedAt: record.importedAt,
+      detailId: ''
+    })),
+    ...props.reports.map((report) => ({
+      id: report.id,
+      assetType: '检测报告',
+      name: report.reportNo,
+      relation: report.relatedFilmIds.length
+        ? `${report.relatedFilmIds.length} 个底片`
+        : '未关联底片',
+      method: report.method,
+      documentNo: report.reportNo || report.entrustNo || '-',
+      standardCode: report.standardCode || '-',
+      operator: [report.evaluatorName, report.reviewerName].filter(Boolean).join(' / ') || '-',
+      status: report.status,
+      updatedAt: report.uploadedAt,
+      detailId: report.id
+    })),
+    ...props.projectFiles
+      .filter((file) => !reportFileIds.has(file.id))
+      .map((file) => ({
+        id: file.id,
+        assetType: file.materialCategory || '项目文件',
+        name: file.fileName,
+        relation: file.currentVersionId,
+        method: '-',
+        documentNo: file.currentVersionId,
+        standardCode: file.embeddingModel || '-',
+        operator: file.uploaderName || '-',
+        status: pipelineStatusForFile(file),
+        updatedAt: file.updatedAt,
+        detailId: ''
+      }))
+  ]
+})
 
 const ocrMetadataRows = computed<NdtOcrMetadataRow[]>(() => [
   {
@@ -325,9 +373,9 @@ const handleRectifyNdt = () => {
             {{ ndtChecklistSummary.covered }} / {{ ndtChecklistSummary.total }} 类已有资料
           </ElTag>
         </div>
-        <ElTable :data="ndtMaterialChecklist" border height="300">
+        <ElTable :data="ndtMaterialChecklist" border class="ndt-checklist-table">
           <ElTableColumn type="index" label="序号" width="72" />
-          <ElTableColumn prop="category" label="资料类别" min-width="150" show-overflow-tooltip />
+          <ElTableColumn prop="category" label="资料类别" min-width="150" />
           <ElTableColumn label="操作" min-width="170">
             <template #default="{ row }">
               <div class="ndt-table-actions">
@@ -344,16 +392,11 @@ const handleRectifyNdt = () => {
               </div>
             </template>
           </ElTableColumn>
-          <ElTableColumn
-            prop="requiredItems"
-            label="标准要求资料"
-            min-width="260"
-            show-overflow-tooltip
-          />
+          <ElTableColumn prop="requiredItems" label="标准要求资料" min-width="260" />
           <ElTableColumn label="已上传/登记" width="110">
             <template #default="{ row }">{{ row.uploadedCount }} 项</template>
           </ElTableColumn>
-          <ElTableColumn prop="missing" label="缺口/待核验" min-width="260" show-overflow-tooltip />
+          <ElTableColumn prop="missing" label="缺口/待核验" min-width="260" />
           <ElTableColumn label="状态" width="110">
             <template #default="{ row }">
               <ElTag :type="getStatusTagType(row.status)" size="small" effect="plain">
@@ -683,6 +726,17 @@ const handleRectifyNdt = () => {
   flex-wrap: wrap;
   gap: 6px 10px;
   align-items: center;
+}
+
+.ndt-checklist-table :deep(.el-table__body-wrapper) {
+  overflow-y: visible;
+}
+
+.ndt-checklist-table :deep(.el-table__cell .cell) {
+  overflow: visible;
+  line-height: 1.45;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .rectify-form {

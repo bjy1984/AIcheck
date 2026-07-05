@@ -5542,6 +5542,14 @@ def test_document_mutations_are_idempotent_and_project_etag_guarded() -> None:
     )
     document_id = removable_target["documentId"]
     version_id = removable_target["documentVersionId"]
+    knowledge_file_id = f"KF-{document_id}"
+    repo.apply_slice_result(knowledge_file_id, [{"pageNo": 1, "text": "删除前切片"}])
+    repo.apply_embed_result(
+        knowledge_file_id,
+        vectors=[{"index": 0, "embedding": [0.1, 0.2, 0.3]}],
+    )
+    assert any(item.get("fileId") == knowledge_file_id for item in repo.state.get("knowledge_chunks", []))
+    assert any(item.get("fileId") == knowledge_file_id for item in repo.state.get("knowledge_vectors", []))
     deleted_document = assert_ok(
         client.delete(
             f"/projects/{project_id}/documents/{document_id}",
@@ -5559,6 +5567,8 @@ def test_document_mutations_are_idempotent_and_project_etag_guarded() -> None:
     assert deleted_document["removed"]["documents"] == 1
     assert deleted_document["removed"]["versions"] == 1
     assert deleted_document["removed"]["knowledgeFiles"] == 1
+    assert deleted_document["removed"]["knowledgeChunks"] == 1
+    assert deleted_document["removed"]["knowledgeVectors"] == 1
     assert deleted_document["removed"]["knowledgeTasks"] == 1
     assert deleted_document["removed"]["uploadSessionFiles"] == 1
     assert repo.find_one("documents", document_id) is None
@@ -7174,8 +7184,18 @@ def test_upload_and_ndt_validation_errors_match_contract() -> None:
     upload_replay = assert_ok(client.post(f"/projects/{project_id}/ndt/reports/upload-session", json=upload_payload, headers=upload_headers))
     assert upload_replay["uploadSessionId"] == upload["uploadSessionId"]
     assert upload_replay["uploadUrls"][0]["documentId"] == upload["uploadUrls"][0]["documentId"]
-    assert len(repo.state["ndt_reports"]) == report_count + 1
+    assert not str(upload["uploadUrls"][0]["url"]).startswith("mock://")
+    assert len(repo.state["ndt_reports"]) == report_count
     assert len(repo.state["documents"]) == document_count + 1
+    complete = assert_ok(
+        client.post(
+            f"/projects/{project_id}/ndt/reports/upload-session/{upload['uploadSessionId']}/complete",
+            headers={"If-Match": project["etag"], "Idempotency-Key": "ndt-report-complete-once"},
+        )
+    )
+    assert len(repo.state["ndt_reports"]) == report_count + 1
+    assert complete["fileCount"] == 1
+    assert complete["queuedTasks"][0]["mode"] in {"disabled", "inline", "celery"}
     created_report = next(item for item in repo.state["ndt_reports"] if item["reportNo"] == "RT-IDEMPOTENT-001")
     assert created_report["entrustNo"] == "WT-IDEMPOTENT-001"
     assert created_report["standardCode"] == "NB/T 47013.2-2015"
@@ -7596,7 +7616,18 @@ def test_upload_complete_inline_ocr_writes_fields_and_slice_task(monkeypatch) ->
             "diagnostics": [],
         }
 
+    class FakeLiteLLMClient:
+        def embed_sync(self, inputs, model: str = "embedding-default"):
+            return {
+                "data": [
+                    {"index": index, "embedding": [0.1 + index, 0.2 + index, 0.3 + index]}
+                    for index, _ in enumerate(inputs)
+                ],
+                "model": model,
+            }
+
     monkeypatch.setattr(tasks.ocr_service, "parse_document", fake_parse)
+    monkeypatch.setattr(tasks, "LiteLLMClient", lambda: FakeLiteLLMClient())
     upload = assert_ok(
         client.post(
             "/projects/P-2026-HDCP-001/documents/upload-session",
@@ -7616,12 +7647,18 @@ def test_upload_complete_inline_ocr_writes_fields_and_slice_task(monkeypatch) ->
     slice_task = next(
         item for item in repo.state["knowledge_tasks"] if item["taskType"] == "slice" and item["targetId"] == knowledge_file_id
     )
-    assert slice_task["status"] == "排队中"
+    assert slice_task["status"] == "成功"
 
-    sliced = tasks.slice_knowledge.run(knowledge_file_id)
     chunks = assert_ok(client.get(f"/knowledge/files/{knowledge_file_id}/chunks"))
-    assert sliced["chunkCount"] == chunks["total"]
+    assert chunks["total"] == 1
     assert chunks["items"][0]["text"].startswith("证书编号")
+    vector_task = next(
+        item for item in repo.state["knowledge_tasks"] if item["taskType"] == "vector" and item["targetId"] == knowledge_file_id
+    )
+    assert vector_task["status"] == "成功"
+    vectors = assert_ok(client.get(f"/knowledge/files/{knowledge_file_id}/vectors"))
+    assert vectors["storedVectorCount"] == 1
+    assert repo.state["knowledge_vectors"][0]["embedding"] == [0.1, 0.2, 0.3]
 
 
 def test_document_preview_and_download_use_current_version_signed_get(monkeypatch) -> None:

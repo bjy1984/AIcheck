@@ -1085,6 +1085,7 @@ def remove_knowledge_file_records(file: dict[str, Any]) -> dict[str, int]:
         "documents": len(repo.state.get("documents", [])),
         "versions": len(repo.state.get("versions", [])),
         "chunks": len(repo.state.get("knowledge_chunks", [])),
+        "vectors": len(repo.state.get("knowledge_vectors", [])),
         "tasks": len(repo.state.get("knowledge_tasks", [])),
         "evidenceLinks": len(repo.state.get("evidence_links", [])),
     }
@@ -1103,6 +1104,14 @@ def remove_knowledge_file_records(file: dict[str, Any]) -> dict[str, int]:
         item
         for item in repo.state.get("knowledge_chunks", [])
         if item.get("fileId") != file_id
+        and not (document_id and item.get("documentId") == document_id)
+        and str(item.get("documentVersionId") or "") not in version_ids
+    ]
+    repo.state["knowledge_vectors"] = [
+        item
+        for item in repo.state.get("knowledge_vectors", [])
+        if item.get("fileId") != file_id
+        and str(item.get("chunkId") or "") not in chunk_ids
         and not (document_id and item.get("documentId") == document_id)
         and str(item.get("documentVersionId") or "") not in version_ids
     ]
@@ -1127,6 +1136,7 @@ def remove_knowledge_file_records(file: dict[str, Any]) -> dict[str, int]:
         "documents": len(repo.state.get("documents", [])),
         "versions": len(repo.state.get("versions", [])),
         "chunks": len(repo.state.get("knowledge_chunks", [])),
+        "vectors": len(repo.state.get("knowledge_vectors", [])),
         "tasks": len(repo.state.get("knowledge_tasks", [])),
         "evidenceLinks": len(repo.state.get("evidence_links", [])),
     }
@@ -1581,6 +1591,14 @@ def remove_project_document_records(project_id: str, document_id: str) -> dict[s
         lambda item: str(item.get("fileId") or "") in knowledge_file_ids
         or item.get("documentId") == document_id
         or str(item.get("documentVersionId") or "") in version_ids,
+    )
+    prune(
+        "knowledge_vectors",
+        "knowledgeVectors",
+        lambda item: str(item.get("fileId") or "") in knowledge_file_ids
+        or item.get("documentId") == document_id
+        or str(item.get("documentVersionId") or "") in version_ids
+        or str(item.get("chunkId") or "") in chunk_ids,
     )
     prune(
         "knowledge_tasks",
@@ -3671,6 +3689,65 @@ async def upload_session_file(
     )
 
 
+def dispatch_completed_upload_files(files: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    dispatches = []
+    for file in files:
+        dispatches.append(
+            task_dispatcher.dispatch_parse_document(
+                file["documentId"],
+                file["documentVersionId"],
+                file["storageKey"],
+                file.get("fileName"),
+            )
+        )
+    return dispatches
+
+
+def create_ndt_reports_for_completed_session(
+    project_id: str,
+    session: dict[str, Any] | None,
+    files: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    context = (session or {}).get("ndtReportContext") or {}
+    if context.get("kind") != "report":
+        return []
+    created = []
+    for file in files:
+        document = repo.find_one("documents", str(file.get("documentId") or ""))
+        if not document:
+            continue
+        existing = next(
+            (
+                report
+                for report in repo.state.get("ndt_reports", [])
+                if report.get("fileId") == document["id"]
+            ),
+            None,
+        )
+        if existing:
+            created.append(repo.clone(existing))
+            continue
+        file_name = document.get("fileName") or file.get("fileName") or "RT检测报告.pdf"
+        report_no = context.get("reportNo") or Path(str(file_name)).stem
+        method = context.get("method") or ("UT" if "UT" in str(file_name).upper() else "RT")
+        report = {
+            "id": f"NDT-RPT-{uuid4().hex[:8].upper()}",
+            "projectId": project_id,
+            "nodeId": int(context.get("nodeId") or document.get("nodeId") or 40),
+            "reportNo": report_no,
+            "method": method,
+            "fileId": document["id"],
+            "relatedFilmIds": context.get("relatedFilmIds") or [],
+            "status": "待提交",
+            "uploadedAt": server_time(),
+            "actions": ["ndt:submit"],
+        }
+        report.update({field: context.get(field) for field in NDT_REPORT_METADATA_FIELDS if context.get(field) is not None})
+        repo.state["ndt_reports"].insert(0, report)
+        created.append(repo.clone(report))
+    return created
+
+
 @router.post("/projects/{project_id}/documents/upload-session/{session_id}/complete")
 def complete_upload_session(
     request: Request,
@@ -3688,18 +3765,13 @@ def complete_upload_session(
         if not session or session.get("projectId") != project_id:
             return fail(errors.NOT_FOUND, request)
         files = repo.complete_upload_session(session_id)
-        dispatches = []
-        for file in files:
-            dispatches.append(
-                task_dispatcher.dispatch_parse_document(
-                    file["documentId"],
-                    file["documentVersionId"],
-                    file["storageKey"],
-                    file.get("fileName"),
-                )
-            )
+        dispatches = dispatch_completed_upload_files(files)
+        ndt_reports = create_ndt_reports_for_completed_session(project_id, session, files)
         result = repo.mutation_result("完成上传会话", "UploadSession", session_id, next_status="排队中")
-        return ok({**result, "queuedTasks": dispatches, "fileCount": len(files)}, request)
+        return ok(
+            {**result, "queuedTasks": dispatches, "fileCount": len(files), "ndtReports": ndt_reports},
+            request,
+        )
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"sessionId": session_id, "body": body})
 
@@ -5471,46 +5543,71 @@ def ndt_report_upload_session(request: Request, project_id: str, body: dict[str,
         validation_error = validate_upload_files(request, files, ndt=True)
         if validation_error:
             return validation_error
-        session_id = f"UPS-NDT-{uuid4().hex[:8].upper()}"
-        upload_urls = []
         project = repo.find_one("projects", project_id) or {}
         source_org_name = project.get("ndtOrgName") or "无损检测机构"
         uploader_name = body.get("uploaderName") or "王工"
-        for file in files:
-            file_name = file.get("fileName") or "RT检测报告.pdf"
-            doc, version = repo.create_document(
-                project_id,
-                file_name,
-                file.get("fileType", "pdf"),
-                source_org_name=source_org_name,
-                uploader_name=uploader_name,
-                material_category=file.get("materialCategory") or body.get("materialCategory") or "检测报告",
-            )
-            doc["nodeId"] = node_id
-            knowledge_file = repo.find_one("knowledge_files", f"KF-{doc['id']}")
-            if knowledge_file:
-                knowledge_file["nodeId"] = node_id
-            report_no = body.get("reportNo") or file.get("reportNo") or file_name.split(".")[0]
-            method = body.get("method") or file.get("method") or ("UT" if "UT" in file_name else "RT")
-            report = {
-                "id": f"NDT-RPT-{uuid4().hex[:8].upper()}",
-                "projectId": project_id,
-                "nodeId": node_id,
-                "reportNo": report_no,
-                "method": method,
-                "fileId": doc["id"],
-                "relatedFilmIds": body.get("relatedFilmIds") or [],
-                "status": "待提交",
-                "uploadedAt": server_time(),
-                "actions": ["ndt:submit"],
+        upload_headers = {
+            key: value
+            for key in ("Authorization", "X-Role", "X-User-Id")
+            if (value := request.headers.get(key))
+        }
+        upload_files = [
+            {
+                **file,
+                "fileName": file.get("fileName") or "RT检测报告.pdf",
+                "fileType": file.get("fileType") or "application/pdf",
+                "materialCategory": file.get("materialCategory") or body.get("materialCategory") or "检测报告",
             }
-            report.update({field: body.get(field) for field in NDT_REPORT_METADATA_FIELDS if body.get(field) is not None})
-            repo.state["ndt_reports"].insert(0, report)
-            content_type = file.get("fileType") or "application/pdf"
-            upload_urls.append({"fileName": doc["fileName"], "documentId": doc["id"], "documentVersionId": version["id"], "url": repo.signed_put("documents", version["storageKey"], f"mock://upload/ndt/{session_id}/{doc['id']}", content_type=content_type), "method": "PUT", "expiresAt": "2026-06-27 18:00:00", "headers": {"Content-Type": content_type}})
-        return ok({"uploadSessionId": session_id, "expiresAt": "2026-06-27 18:00:00", "uploadUrls": upload_urls}, request)
+            for file in files
+        ]
+        session_id, upload_urls = repo.create_upload_session(
+            project_id,
+            upload_files,
+            require_signed_urls=parse_bool(body.get("requireSignedUrls"), default=True),
+            local_upload_url_prefix=f"/api/projects/{project_id}/documents/upload-session",
+            upload_headers=upload_headers,
+            source_org_name=source_org_name,
+            uploader_name=uploader_name,
+        )
+        session = repo.find_one("upload_sessions", session_id)
+        if session:
+            session["ndtReportContext"] = {
+                "kind": "report",
+                "nodeId": node_id,
+                "reportNo": body.get("reportNo"),
+                "method": body.get("method"),
+                "relatedFilmIds": body.get("relatedFilmIds") or [],
+                **{field: body.get(field) for field in NDT_REPORT_METADATA_FIELDS if body.get(field) is not None},
+            }
+            for session_file in session.get("files") or []:
+                document = repo.find_one("documents", str(session_file.get("documentId") or ""))
+                knowledge_file = repo.find_one("knowledge_files", f"KF-{session_file.get('documentId')}")
+                if document:
+                    document["nodeId"] = node_id
+                if knowledge_file:
+                    knowledge_file["nodeId"] = node_id
+        return ok({"uploadSessionId": session_id, "expiresAt": object_storage.expires_at(), "uploadUrls": upload_urls}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
+
+
+@router.post("/projects/{project_id}/ndt/reports/upload-session/{session_id}/complete")
+def complete_ndt_report_upload_session(request: Request, project_id: str, session_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
+    def produce():
+        session = repo.find_one("upload_sessions", session_id)
+        node_id = int(((session or {}).get("ndtReportContext") or {}).get("nodeId") or 40)
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
+        if guard:
+            return guard
+        if not session or session.get("projectId") != project_id:
+            return fail(errors.NOT_FOUND, request)
+        files = repo.complete_upload_session(session_id)
+        dispatches = dispatch_completed_upload_files(files)
+        reports = create_ndt_reports_for_completed_session(project_id, session, files)
+        result = repo.mutation_result("完成无损检测报告上传会话", "UploadSession", session_id, next_status="排队中")
+        return ok({**result, "queuedTasks": dispatches, "fileCount": len(files), "reports": reports}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"sessionId": session_id, "body": body})
 
 
 @router.get("/projects/{project_id}/ndt/reports/{report_id}")
@@ -16547,6 +16644,9 @@ async def replace_knowledge_file_version(
         repo.state["knowledge_chunks"] = [
             item for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") != resolved_file_id
         ]
+        repo.state["knowledge_vectors"] = [
+            item for item in repo.state.get("knowledge_vectors", []) if item.get("fileId") != resolved_file_id
+        ]
         task = {
             "id": f"KT-{uuid4().hex[:8].upper()}",
             "taskType": "ocr",
@@ -16761,7 +16861,29 @@ def knowledge_file_vectors(request: Request, file_id: str):
     scope_error = scope_error_for_record(request, file)
     if scope_error:
         return scope_error
-    return ok({"vectorStatus": file.get("vectorStatus"), "vectorCount": file.get("vectorCount", 0), "indexVersion": "proj-v2026.06.26", "dimensions": 1024, "updatedAt": file.get("updatedAt")}, request)
+    vectors = [
+        {
+            key: value
+            for key, value in repo.clone(item).items()
+            if key != "embedding"
+        }
+        for item in repo.state.get("knowledge_vectors", [])
+        if item.get("fileId") == file_id
+    ]
+    dimensions = next((item.get("dimensions") for item in vectors if item.get("dimensions")), 1024)
+    return ok(
+        {
+            "vectorStatus": file.get("vectorStatus"),
+            "vectorCount": file.get("vectorCount", len(vectors)),
+            "storedVectorCount": len(vectors),
+            "indexVersion": "proj-v2026.06.26",
+            "dimensions": dimensions,
+            "embeddingModel": file.get("embeddingModel") or "embedding-default",
+            "updatedAt": file.get("updatedAt"),
+            "vectors": vectors,
+        },
+        request,
+    )
 
 
 @router.get("/knowledge/files/{file_id}/reasoning-references")

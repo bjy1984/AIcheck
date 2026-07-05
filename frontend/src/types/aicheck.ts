@@ -137,6 +137,11 @@ export type DocumentAsset = {
   currentVersionId: string
   fileStatus: '草稿' | '已上传' | '已撤回' | '已替换' | '已作废'
   currentOcrStatus: '待识别' | '未识别' | '排队中' | '识别中' | '已识别' | '识别失败' | '人工修正'
+  sliceStatus?: '未切片' | '待切片' | '已切片' | '切片失败'
+  vectorStatus?: '未向量化' | '待向量化' | '已向量化' | '向量化失败'
+  chunkCount?: number
+  vectorCount?: number
+  embeddingModel?: string
   updatedAt: string
   actions: ActionCode[]
 }
