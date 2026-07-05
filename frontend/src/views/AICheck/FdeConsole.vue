@@ -20246,6 +20246,16 @@ onBeforeUnmount(() => {
 
 <style scoped lang="less">
 .fde-console {
+  --fde-surface: var(--aicheck-surface, #fff);
+  --fde-surface-soft: var(--aicheck-surface-soft, #f8fbff);
+  --fde-surface-muted: var(--aicheck-surface-muted, #f2f6fb);
+  --fde-border: var(--aicheck-border, #d4deeb);
+  --fde-border-soft: var(--aicheck-border-soft, #e5ecf6);
+  --fde-border-strong: var(--aicheck-border-strong, #c2d1e3);
+  --fde-shadow-xs: var(--aicheck-shadow-xs, 0 1px 2px rgb(20 34 56 / 5%));
+  --fde-shadow-sm: var(--aicheck-shadow-sm, 0 6px 16px rgb(15 23 42 / 6%));
+  --fde-shadow-md: var(--aicheck-shadow-md, 0 14px 32px rgb(15 23 42 / 9%));
+
   min-height: 100%;
   color: #1f2937;
 }
@@ -20350,8 +20360,9 @@ onBeforeUnmount(() => {
 .project-audit-card {
   max-width: 100%;
   min-width: 0;
-  border: 1px solid #e6edf7;
+  border: 1px solid var(--fde-border);
   border-radius: 8px;
+  box-shadow: var(--fde-shadow-sm);
 }
 
 .project-audit-card--hero {
@@ -20453,9 +20464,10 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 52px;
   padding: 12px 14px;
-  background: #fff;
-  border: 1px solid #e6edf7;
+  background: var(--fde-surface);
+  border: 1px solid var(--fde-border);
   border-radius: 8px;
+  box-shadow: var(--fde-shadow-xs);
   grid-template-columns: minmax(260px, 1fr) minmax(360px, 1.25fr);
   gap: 14px;
   align-items: center;
@@ -20500,8 +20512,8 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 48px;
   padding: 8px 9px;
-  background: #f8fbff;
-  border: 1px solid #e3edf9;
+  background: var(--fde-surface-soft);
+  border: 1px solid var(--fde-border-soft);
   border-radius: 8px;
 }
 
@@ -20561,10 +20573,10 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 108px;
   padding: 16px;
-  background: #fff;
-  border: 1px solid #e6edf7;
+  background: var(--fde-surface);
+  border: 1px solid var(--fde-border);
   border-radius: 8px;
-  box-shadow: 0 8px 18px rgb(15 23 42 / 4%);
+  box-shadow: var(--fde-shadow-sm);
 }
 
 .workbench-summary-card span,
@@ -20633,11 +20645,11 @@ onBeforeUnmount(() => {
 .workbench-summary-card--button:hover,
 .workbench-summary-card--button:focus-visible,
 .workbench-summary-card--button.is-active {
-  background: #f8fbff;
+  background: var(--fde-surface-soft);
   border-color: #8db7f6;
   box-shadow:
     0 0 0 2px rgb(37 99 235 / 10%),
-    0 12px 24px rgb(15 23 42 / 8%);
+    var(--fde-shadow-md);
 }
 
 .workbench-summary-card--button:hover,
@@ -20662,10 +20674,10 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 74px;
   padding: 14px 16px;
-  background: #fff;
-  border: 1px solid #dfe8f5;
+  background: var(--fde-surface);
+  border: 1px solid var(--fde-border);
   border-radius: 8px;
-  box-shadow: 0 8px 18px rgb(15 23 42 / 4%);
+  box-shadow: var(--fde-shadow-sm);
 }
 
 .agent-status-panel div {
@@ -21690,23 +21702,23 @@ onBeforeUnmount(() => {
 }
 
 .ocr-console-kpi--green {
-  border-color: #bfe8ce;
   background: #f6fdf8;
+  border-color: #bfe8ce;
 }
 
 .ocr-console-kpi--orange {
-  border-color: #f6d6a5;
   background: #fffaf0;
+  border-color: #f6d6a5;
 }
 
 .ocr-console-kpi--red {
-  border-color: #fecaca;
   background: #fff7f7;
+  border-color: #fecaca;
 }
 
 .ocr-console-kpi--blue {
-  border-color: #cfe0ff;
   background: #f8fbff;
+  border-color: #cfe0ff;
 }
 
 .ocr-primary-task-panel,
@@ -21926,8 +21938,8 @@ onBeforeUnmount(() => {
 
 .ocr-technical-foldout {
   min-width: 0;
-  margin-top: 12px;
   padding: 10px 12px;
+  margin-top: 12px;
   background: #f8fafc;
   border: 1px solid #e6edf7;
   border-radius: 8px;
@@ -24946,8 +24958,8 @@ onBeforeUnmount(() => {
 }
 
 .llm-audit-inline {
-  margin-top: 14px;
   padding-top: 14px;
+  margin-top: 14px;
   border-top: 1px solid #e2e8f0;
 }
 
@@ -24996,9 +25008,9 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 8px;
   padding: 12px;
+  background: #f8fafc;
   border: 1px solid #dbe5f3;
   border-radius: 8px;
-  background: #f8fafc;
 }
 
 .llm-audit-card > strong {
@@ -25024,9 +25036,9 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 4px;
   padding: 10px;
+  background: #eff6ff;
   border: 1px solid #bfdbfe;
   border-radius: 8px;
-  background: #eff6ff;
 }
 
 .llm-audit-note span,
@@ -26343,9 +26355,10 @@ onBeforeUnmount(() => {
 .annotation-object-panel {
   min-width: 0;
   padding: 14px;
-  background: #fff;
-  border: 1px solid #dbe8f7;
+  background: var(--fde-surface);
+  border: 1px solid var(--fde-border);
   border-radius: 8px;
+  box-shadow: var(--fde-shadow-sm);
 }
 
 .annotation-studio-layout > .annotation-preview-panel,
@@ -26440,8 +26453,8 @@ onBeforeUnmount(() => {
   font-weight: 900;
   line-height: 18px;
   color: #1f2d3d;
-  background: #f8fafc;
-  border: 1px solid #dbe8f7;
+  background: var(--fde-surface-soft);
+  border: 1px solid var(--fde-border-soft);
   border-radius: 999px;
   align-items: center;
   gap: 5px;
@@ -26475,10 +26488,10 @@ onBeforeUnmount(() => {
   position: relative;
   min-height: 420px;
   overflow: hidden;
-  background: linear-gradient(90deg, rgb(37 99 235 / 7%) 1px, transparent 1px),
-    linear-gradient(rgb(37 99 235 / 7%) 1px, transparent 1px), #f8fafc;
+  background: linear-gradient(90deg, rgb(37 99 235 / 6%) 1px, transparent 1px),
+    linear-gradient(rgb(37 99 235 / 6%) 1px, transparent 1px), var(--fde-surface-muted);
   background-size: 40px 40px;
-  border: 1px solid #cbd8ea;
+  border: 1px solid var(--fde-border-strong);
   border-radius: 8px;
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / 70%);
 }
@@ -26573,8 +26586,8 @@ onBeforeUnmount(() => {
 .annotation-meta-grid div {
   min-width: 0;
   padding: 10px;
-  background: #f8fafc;
-  border: 1px solid #e6edf7;
+  background: var(--fde-surface-soft);
+  border: 1px solid var(--fde-border-soft);
   border-radius: 8px;
 }
 
@@ -26613,8 +26626,8 @@ onBeforeUnmount(() => {
   padding: 9px;
   text-align: left;
   cursor: pointer;
-  background: #f8fafc;
-  border: 1px solid #dbe8f7;
+  background: var(--fde-surface-soft);
+  border: 1px solid var(--fde-border-soft);
   border-radius: 8px;
 }
 
@@ -26702,8 +26715,8 @@ onBeforeUnmount(() => {
   gap: 3px;
   min-width: 0;
   padding: 8px;
-  background: #f8fafc;
-  border: 1px solid #e6edf7;
+  background: var(--fde-surface-soft);
+  border: 1px solid var(--fde-border-soft);
   border-radius: 8px;
 }
 
@@ -26757,8 +26770,8 @@ onBeforeUnmount(() => {
 .annotation-table-editor {
   display: grid;
   gap: 8px;
-  min-width: 0;
   width: 100%;
+  min-width: 0;
 }
 
 .annotation-table-editor__toolbar {
@@ -26793,25 +26806,25 @@ onBeforeUnmount(() => {
 .annotation-table-editor__scroller {
   min-width: 0;
   overflow-x: auto;
-  border: 1px solid #dbe8f7;
+  border: 1px solid var(--fde-border);
   border-radius: 8px;
 }
 
 .annotation-table-editor table {
   width: 100%;
   min-width: max-content;
-  border-spacing: 0;
-  border-collapse: separate;
   background: #fff;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
 .annotation-table-editor th,
 .annotation-table-editor td {
   min-width: 132px;
   padding: 6px;
+  vertical-align: top;
   border-right: 1px solid #e6edf7;
   border-bottom: 1px solid #e6edf7;
-  vertical-align: top;
 }
 
 .annotation-table-editor th:last-child,
@@ -26826,7 +26839,7 @@ onBeforeUnmount(() => {
 
 .annotation-table-editor thead th,
 .annotation-table-editor__row-head {
-  background: #f8fafc;
+  background: var(--fde-surface-muted);
 }
 
 .annotation-table-editor thead th {
@@ -26852,8 +26865,8 @@ onBeforeUnmount(() => {
 }
 
 .annotation-table-editor__row-head {
-  min-width: 72px;
   width: 72px;
+  min-width: 72px;
   font-size: 12px;
   font-weight: 950;
   color: #64748b;
@@ -26861,9 +26874,9 @@ onBeforeUnmount(() => {
 
 .annotation-table-editor :deep(.el-input__wrapper) {
   min-height: 34px;
-  box-shadow: none;
   background: #fff;
   border: 1px solid transparent;
+  box-shadow: none;
 }
 
 .annotation-table-editor :deep(.el-input__wrapper:hover),
@@ -26891,8 +26904,8 @@ onBeforeUnmount(() => {
   padding: 6px 8px;
   color: #1f2d3d;
   cursor: pointer;
-  background: #f8fafc;
-  border: 1px solid #dbe8f7;
+  background: var(--fde-surface-soft);
+  border: 1px solid var(--fde-border-soft);
   border-radius: 8px;
   align-items: center;
   justify-content: space-between;
@@ -26939,15 +26952,15 @@ onBeforeUnmount(() => {
   display: grid;
   min-width: 0;
   overflow: hidden;
-  background: #f8fafc;
-  border: 1px solid #e6edf7;
+  background: var(--fde-surface-soft);
+  border: 1px solid var(--fde-border-soft);
   border-radius: 8px;
 }
 
 .annotation-object-row.active {
-  background: #fff;
+  background: var(--fde-surface);
   border-color: #93b8ff;
-  box-shadow: 0 8px 18px rgb(37 99 235 / 8%);
+  box-shadow: 0 10px 22px rgb(37 99 235 / 10%);
 }
 
 .annotation-object-row__summary {
@@ -27030,7 +27043,7 @@ onBeforeUnmount(() => {
 
 .annotation-object-row__editor {
   padding: 12px;
-  border-top: 1px solid #e6edf7;
+  border-top: 1px solid var(--fde-border-soft);
 }
 
 .annotation-object-tree__bbox {
@@ -27045,8 +27058,8 @@ onBeforeUnmount(() => {
 
 .annotation-foldout {
   padding: 9px;
-  background: #f8fafc;
-  border: 1px solid #e6edf7;
+  background: var(--fde-surface-soft);
+  border: 1px solid var(--fde-border-soft);
   border-radius: 8px;
 }
 
@@ -27138,9 +27151,9 @@ onBeforeUnmount(() => {
   display: grid;
   min-height: 46px;
   padding: 10px 12px;
-  background: #fff;
-  border: 1px solid #e8edf5;
-  border-radius: 6px;
+  background: var(--fde-surface);
+  border: 1px solid var(--fde-border-soft);
+  border-radius: 8px;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
   gap: 12px;
@@ -27182,8 +27195,9 @@ onBeforeUnmount(() => {
   top: 0;
   z-index: 20;
   padding-bottom: 12px;
-  background: #fff;
-  border-bottom: 1px solid #e8edf5;
+  background: var(--aicheck-surface, #fff);
+  border-bottom: 1px solid var(--aicheck-border-soft, #e8edf5);
+  box-shadow: 0 8px 22px rgb(15 23 42 / 5%);
 }
 
 :global(.ocr-annotation-dialog .el-dialog__body) {

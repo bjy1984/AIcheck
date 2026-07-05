@@ -569,11 +569,17 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .aicheck-static-viewport {
-  --bg: #f4f7fb;
-  --panel: #fff;
-  --line: #d9e2ef;
-  --line-soft: #e9eef6;
-  --head: #f3f6fa;
+  --bg: var(--aicheck-bg, #eef3f8);
+  --panel: var(--aicheck-surface, #fff);
+  --panel-soft: var(--aicheck-surface-soft, #f8fbff);
+  --panel-muted: var(--aicheck-surface-muted, #f2f6fb);
+  --line: var(--aicheck-border, #d4deeb);
+  --line-soft: var(--aicheck-border-soft, #e5ecf6);
+  --line-strong: var(--aicheck-border-strong, #c2d1e3);
+  --head: var(--aicheck-surface-muted, #f2f6fb);
+  --shadow-xs: var(--aicheck-shadow-xs, 0 1px 2px rgb(20 34 56 / 5%));
+  --shadow-sm: var(--aicheck-shadow-sm, 0 6px 16px rgb(15 23 42 / 6%));
+  --shadow-md: var(--aicheck-shadow-md, 0 14px 32px rgb(15 23 42 / 9%));
   --ink: #172033;
   --muted: #6a7890;
   --blue: #1f66d8;
@@ -645,12 +651,15 @@ onBeforeUnmount(() => {
 }
 
 .topbar {
+  position: relative;
+  z-index: 2;
   display: grid;
   min-width: 0;
   min-height: 68px;
   padding: 0 20px;
-  background: #fff;
+  background: var(--panel);
   border-bottom: 1px solid var(--line);
+  box-shadow: 0 8px 22px rgb(15 23 42 / 5%);
   grid-template-columns: minmax(220px, 360px) minmax(150px, 340px) minmax(0, max-content);
   gap: 14px;
   align-items: center;
@@ -741,9 +750,9 @@ onBeforeUnmount(() => {
 }
 
 .global-search {
-  --el-button-bg-color: #fff;
-  --el-button-border-color: #cbd8ea;
-  --el-button-hover-bg-color: #f8fbff;
+  --el-button-bg-color: var(--panel-soft);
+  --el-button-border-color: var(--line-strong);
+  --el-button-hover-bg-color: var(--panel);
   --el-button-hover-border-color: #9db8df;
   --el-button-hover-text-color: #52647d;
   --el-button-active-bg-color: #eef5ff;
@@ -759,8 +768,8 @@ onBeforeUnmount(() => {
   color: #8b98aa;
   text-align: left;
   cursor: pointer;
-  background: #fff;
-  border: 1px solid #cbd8ea;
+  background: var(--panel-soft);
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
   transition:
     color 0.18s ease,
@@ -815,11 +824,11 @@ onBeforeUnmount(() => {
   font: inherit;
   font-weight: 700;
   color: inherit;
+  white-space: nowrap;
   background: transparent;
   border: 0;
   border-radius: 999px;
   align-items: center;
-  white-space: nowrap;
 }
 
 .top-stat-item.is-clickable {
@@ -840,8 +849,8 @@ onBeforeUnmount(() => {
 }
 
 .right-panel-trigger {
-  --el-button-bg-color: #fff;
-  --el-button-border-color: #cbd8ea;
+  --el-button-bg-color: var(--panel);
+  --el-button-border-color: var(--line-strong);
   --el-button-hover-bg-color: #f4f8ff;
   --el-button-hover-border-color: #9db8df;
   --el-button-hover-text-color: var(--blue-2);
@@ -945,8 +954,8 @@ onBeforeUnmount(() => {
 }
 
 .shell-wide .left {
-  background: #f8fafc;
-  border-right: 0;
+  background: var(--panel-muted);
+  border-right: 1px solid var(--line);
   grid-template-rows: minmax(0, 1fr) auto;
 }
 
@@ -956,8 +965,8 @@ onBeforeUnmount(() => {
 }
 
 .shell-wide .right {
-  background: #f8fafc;
-  border-left: 0;
+  background: var(--panel-muted);
+  border-left: 1px solid var(--line);
 }
 
 .shell-wide .tree.static-tree-menu {
@@ -1013,7 +1022,7 @@ onBeforeUnmount(() => {
   display: grid;
   height: 100%;
   overflow: hidden auto;
-  background: #fff;
+  background: var(--panel-muted);
   border-right: 1px solid var(--line);
   grid-template-rows: minmax(560px, 1fr) 394px;
 }
@@ -1418,11 +1427,10 @@ onBeforeUnmount(() => {
   width: 100%;
   min-width: 0;
   padding: 7px;
-  background: linear-gradient(180deg, rgb(255 255 255 / 92%), rgb(248 251 255 / 92%)),
-    radial-gradient(circle at 16px 12px, rgb(37 99 235 / 8%), transparent 42px);
-  border: 1px solid #e4ecf7;
+  background: linear-gradient(180deg, rgb(255 255 255 / 96%), rgb(248 251 255 / 96%));
+  border: 1px solid var(--line-soft);
   border-radius: 9px;
-  box-shadow: 0 6px 16px rgb(15 23 42 / 4%);
+  box-shadow: var(--shadow-xs);
   transition:
     border-color 0.18s ease,
     box-shadow 0.18s ease,
@@ -1446,7 +1454,8 @@ onBeforeUnmount(() => {
   padding: 0 10px;
   color: #1e3a5f;
   background: #eef5ff;
-  border: 1px solid #d4e3f8;
+  border: 1px solid #c7d8ef;
+  box-shadow: var(--shadow-xs);
 }
 
 .tree-root > span:first-child,
@@ -1720,7 +1729,7 @@ onBeforeUnmount(() => {
 }
 
 .node-files {
-  background: #fff;
+  background: var(--panel);
   border-top: 1px solid var(--line);
 }
 
@@ -1739,7 +1748,7 @@ onBeforeUnmount(() => {
   font-weight: 800;
   color: #172033;
   cursor: pointer;
-  background: #fff;
+  background: var(--panel);
   border: 0;
   border-bottom: 1px solid #e7eef8;
   transition:
@@ -1772,6 +1781,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   padding: 18px 20px 24px;
   overflow: hidden auto;
+  background: var(--bg);
 }
 
 .right {
@@ -1779,7 +1789,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   padding: 18px 20px 24px;
   overflow: hidden auto;
-  background: #fff;
+  background: var(--panel-muted);
   border-left: 1px solid var(--line);
 }
 
@@ -1832,9 +1842,10 @@ onBeforeUnmount(() => {
 
 .right-card {
   margin-top: 12px;
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 8px;
+  box-shadow: var(--shadow-xs);
   transition:
     border-color 0.18s ease,
     box-shadow 0.18s ease;
@@ -1842,8 +1853,8 @@ onBeforeUnmount(() => {
 
 .right-card:hover,
 .right-card:focus-within {
-  border-color: #c4d5ee;
-  box-shadow: 0 2px 8px rgb(20 34 56 / 8%);
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-sm);
 }
 
 .right-card h3 {
@@ -1851,6 +1862,7 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: 18px;
   line-height: 1.2;
+  background: var(--panel-soft);
   border-bottom: 1px solid var(--line-soft);
 }
 
@@ -1884,7 +1896,7 @@ onBeforeUnmount(() => {
 
 .table tbody tr:hover th,
 .table tbody tr:hover td {
-  background: #f4f8ff;
+  background: var(--panel-soft);
 }
 
 .table tr.selected th,

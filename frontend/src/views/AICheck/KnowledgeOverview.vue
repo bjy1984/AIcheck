@@ -5098,7 +5098,7 @@ onMounted(() => {
   min-height: 100vh;
   padding: 0;
   color: #1f2937;
-  background: #f5f7fb;
+  background: var(--aicheck-bg, #eef3f8);
 }
 
 .page-toolbar {
@@ -5133,10 +5133,10 @@ onMounted(() => {
 .secondary-summary-collapse {
   padding: 0;
   margin: 0 0 16px;
-  background: #fff;
-  border: 1px solid #dfe8f5;
+  background: var(--aicheck-surface, #fff);
+  border: 1px solid var(--aicheck-border, #d4deeb);
   border-radius: 8px;
-  box-shadow: 0 6px 18px rgb(15 23 42 / 4%);
+  box-shadow: var(--aicheck-shadow-sm, 0 6px 16px rgb(15 23 42 / 6%));
 }
 
 .secondary-summary-collapse summary {
@@ -5187,9 +5187,10 @@ onMounted(() => {
 .metric-card {
   min-height: 78px;
   padding: 14px 16px;
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--aicheck-surface, #fff);
+  border: 1px solid var(--aicheck-border-soft, #e5ecf6);
   border-radius: 8px;
+  box-shadow: var(--aicheck-shadow-xs, 0 1px 2px rgb(20 34 56 / 5%));
 }
 
 .metric-card span {
@@ -5205,7 +5206,7 @@ onMounted(() => {
 }
 
 .metric-card--blue {
-  background: #f8fbff;
+  background: var(--aicheck-surface-soft, #f8fbff);
   border-color: #cbdcf8;
 }
 
@@ -5225,7 +5226,7 @@ onMounted(() => {
 }
 
 .metric-card--gray {
-  background: #f8fafc;
+  background: var(--aicheck-surface-muted, #f2f6fb);
   border-color: #d7dde8;
 }
 
@@ -5238,9 +5239,10 @@ onMounted(() => {
 .scorecard-item {
   min-height: 72px;
   padding: 12px;
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
+  background: var(--aicheck-surface-soft, #f8fbff);
+  border: 1px solid var(--aicheck-border-soft, #e5ecf6);
   border-radius: 8px;
+  box-shadow: var(--aicheck-shadow-xs, 0 1px 2px rgb(20 34 56 / 5%));
 }
 
 .scorecard-item span {
@@ -5465,8 +5467,8 @@ onMounted(() => {
 
 .standard-source-actions :deep(.el-button) {
   min-height: 28px;
-  margin-left: 0;
   padding: 0 2px;
+  margin-left: 0;
 }
 
 .standard-source-actions :deep(.el-button + .el-button) {
@@ -5481,8 +5483,8 @@ onMounted(() => {
 }
 
 .standard-file-actions :deep(.el-button) {
-  margin-left: 0;
   padding: 0;
+  margin-left: 0;
 }
 
 .standard-file-replace-panel {
@@ -5846,15 +5848,15 @@ onMounted(() => {
   .standard-source-controls {
     align-items: flex-start;
     flex-direction: column;
-    min-width: 0;
     width: 100%;
+    min-width: 0;
   }
 
   .standard-source-status,
   .standard-source-actions {
     justify-content: flex-start;
-    min-width: 0;
     width: 100%;
+    min-width: 0;
   }
 
   .file-original-panel {

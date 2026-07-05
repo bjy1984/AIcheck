@@ -3466,11 +3466,14 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .aicheck-static-viewport {
-  --bg: #f4f7fb;
-  --panel: #fff;
-  --line: #d9e2ef;
-  --line-soft: #e9eef6;
-  --head: #f3f6fa;
+  --bg: var(--aicheck-bg, #eef3f8);
+  --panel: var(--aicheck-surface, #fff);
+  --panel-soft: var(--aicheck-surface-soft, #f8fbff);
+  --panel-muted: var(--aicheck-surface-muted, #f2f6fb);
+  --line: var(--aicheck-border, #d4deeb);
+  --line-soft: var(--aicheck-border-soft, #e5ecf6);
+  --line-strong: var(--aicheck-border-strong, #c2d1e3);
+  --head: var(--aicheck-surface-muted, #f2f6fb);
   --ink: #172033;
   --muted: #6a7890;
   --blue: #1f66d8;
@@ -3482,7 +3485,9 @@ onBeforeUnmount(() => {
   --orange-soft: #fff4e3;
   --red: #ff4d3d;
   --red-soft: #fff0ee;
-  --shadow: 0 1px 2px rgb(20 34 56 / 4%);
+  --shadow: var(--aicheck-shadow-xs, 0 1px 2px rgb(20 34 56 / 5%));
+  --shadow-sm: var(--aicheck-shadow-sm, 0 6px 16px rgb(15 23 42 / 6%));
+  --shadow-md: var(--aicheck-shadow-md, 0 14px 32px rgb(15 23 42 / 9%));
 
   width: 100%;
   height: 100vh;
@@ -3514,12 +3519,15 @@ onBeforeUnmount(() => {
 }
 
 .topbar {
+  position: relative;
+  z-index: 2;
   display: grid;
   min-width: 0;
   min-height: 68px;
   padding: 0 20px;
-  background: #fff;
+  background: var(--panel);
   border-bottom: 1px solid var(--line);
+  box-shadow: 0 8px 22px rgb(15 23 42 / 5%);
   grid-template-columns: minmax(280px, 404px) minmax(260px, 1fr) minmax(260px, 520px);
   gap: 18px;
   align-items: center;
@@ -4217,9 +4225,9 @@ h3 {
 
 .card {
   margin-bottom: 12px;
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 8px;
   box-shadow: var(--shadow);
   transition:
     border-color 0.18s ease,
@@ -4228,8 +4236,8 @@ h3 {
 
 .card:hover,
 .card:focus-within {
-  border-color: #c4d5ee;
-  box-shadow: 0 2px 8px rgb(20 34 56 / 8%);
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-sm);
 }
 
 .card-head {
@@ -4239,6 +4247,7 @@ h3 {
   justify-content: space-between;
   min-height: 50px;
   padding: 13px 16px;
+  background: var(--panel-soft);
   border-bottom: 1px solid var(--line-soft);
 }
 
@@ -4255,9 +4264,9 @@ h3 {
 .metric {
   min-height: 72px;
   padding: 14px;
-  background: #fbfdff;
+  background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 8px;
 }
 
 .metric-label {
@@ -4295,10 +4304,10 @@ h3 {
   gap: 12px;
   padding: 14px;
   margin-bottom: 16px;
-  background: linear-gradient(180deg, #fff, #f8fbff);
-  border: 1px solid #dbe6f5;
+  background: linear-gradient(180deg, var(--panel), var(--panel-soft));
+  border: 1px solid var(--line);
   border-radius: 8px;
-  box-shadow: 0 1px 2px rgb(20 34 56 / 4%);
+  box-shadow: var(--shadow);
 }
 
 .inspection-project-overview-head {
