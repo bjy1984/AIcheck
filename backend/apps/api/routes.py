@@ -13119,7 +13119,7 @@ def expected_tables_from_result(result: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def expected_table_content_from_result(table: dict[str, Any]) -> str:
-    for key in ["contentMarkdown", "markdown", "content", "text"]:
+    for key in ["contentMarkdown", "markdown", "content"]:
         value = normalize_expected_multiline_text(table.get(key))
         if value:
             return value
@@ -13128,7 +13128,10 @@ def expected_table_content_from_result(table: dict[str, Any]) -> str:
     if content:
         return content
     rows = table.get("businessRows") or table.get("normalizedRows") or table.get("dataRows") or []
-    return expected_table_markdown_from_rows(rows)
+    content = expected_table_markdown_from_rows(rows)
+    if content:
+        return content
+    return normalize_expected_multiline_text(table.get("text"))
 
 
 def expected_table_markdown_from_cells(cells: list[Any]) -> str:
@@ -13318,11 +13321,7 @@ def expected_seal_text_from_result(seal: dict[str, Any]) -> str:
     explicit = normalize_expected_text(
         seal.get("text") or seal.get("fullText") or seal.get("rawText") or seal.get("content")
     )
-    if explicit:
-        return explicit
     seal_name = normalize_expected_text(seal.get("sealName"))
-    if seal_name and not expected_seal_name_is_placeholder(seal_name):
-        return seal_name
     field_lines = []
     for field in seal.get("fields") or []:
         if not isinstance(field, dict):
@@ -13333,7 +13332,12 @@ def expected_seal_text_from_result(seal: dict[str, Any]) -> str:
             field_lines.append(f"{name}：{value}")
         elif value:
             field_lines.append(value)
-    return "\n".join(field_lines)
+    lines: list[str] = []
+    for line in [explicit, seal_name if not expected_seal_name_is_placeholder(seal_name) else "", *field_lines]:
+        value = normalize_expected_text(line)
+        if value and value not in lines:
+            lines.append(value)
+    return "\n".join(lines)
 
 
 def expected_seal_fields_from_result(seal: dict[str, Any]) -> list[dict[str, Any]]:

@@ -715,6 +715,61 @@ def test_opencv_grid_table_is_text_aligned_from_fragment_coordinates() -> None:
     assert result["diagnostics"][0]["code"] == "OPENCV_GRID_TEXT_ALIGNED"
 
 
+def test_opencv_grid_alignment_keeps_multiple_text_segments() -> None:
+    from apps.ocr_service.service import align_opencv_grid_table_with_fragments
+
+    grid_table = {
+        "tableId": "grid_1",
+        "pageNo": 1,
+        "sourceEngine": "opencv_table_grid_subprocess",
+        "bbox": [0, 0, 520, 380],
+        "rows": 9,
+        "columns": 3,
+        "gridCellCount": 27,
+        "gridLineXs": [0, 120, 320, 520],
+        "gridLineYs": [0, 40, 80, 120, 180, 220, 260, 300, 340, 380],
+        "structureConfidence": 0.82,
+    }
+    fragments = []
+
+    def add_fragment(row: int, col: int, text: str) -> None:
+        x0 = grid_table["gridLineXs"][col] + 12
+        y0 = grid_table["gridLineYs"][row] + 10
+        fragments.append(
+            {
+                "pageNo": 1,
+                "text": text,
+                "bbox": [x0, y0, x0 + 80, y0 + 18],
+                "confidence": 0.92,
+            }
+        )
+
+    for col, text in enumerate(["字段", "值", "备注"]):
+        add_fragment(0, col, text)
+    for row, values in [(1, ["项目", "卸车站", "A"]), (2, ["阶段", "施工图", "B"])]:
+        for col, text in enumerate(values):
+            add_fragment(row, col, text)
+
+    for col, text in enumerate(["序号", "名称", "图号"]):
+        add_fragment(5, col, text)
+    for row, values in [
+        (6, ["1", "工艺图纸目录", "QX-001"]),
+        (7, ["2", "设备表", "QX-002"]),
+        (8, ["3", "管道特性表", "QX-003"]),
+    ]:
+        for col, text in enumerate(values):
+            add_fragment(row, col, text)
+
+    tables = align_opencv_grid_table_with_fragments(grid_table, fragments)
+
+    assert [table["tableId"] for table in tables] == ["grid_1_text_aligned_1", "grid_1_text_aligned_2"]
+    assert [table["rows"] for table in tables] == [3, 4]
+    assert tables[0]["bbox"] == [0.0, 0.0, 520.0, 120.0]
+    assert tables[1]["bbox"] == [0.0, 220.0, 520.0, 380.0]
+    assert tables[0]["normalizedRows"][0]["字段"] == "项目"
+    assert tables[1]["normalizedRows"][2]["图号"] == "QX-003"
+
+
 def test_piping_profile_keeps_drawing_title_block_table_candidate() -> None:
     from apps.ocr_service.profiles import profile_for
     from apps.ocr_service.service import enrich_parse_result

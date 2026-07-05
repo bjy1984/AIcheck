@@ -2652,10 +2652,20 @@ def align_opencv_grid_table_with_fragments(
     if not cell_map:
         return []
 
-    segment = select_grid_text_segment(cell_map, grid_xs, grid_ys)
-    if not segment:
+    segments = select_grid_text_segments(cell_map, grid_xs, grid_ys)
+    if not segments:
         return []
-    return [build_text_aligned_grid_table(grid_table, cell_map, grid_xs, grid_ys, segment)]
+    return [
+        build_text_aligned_grid_table(
+            grid_table,
+            cell_map,
+            grid_xs,
+            grid_ys,
+            segment,
+            segment_index=index,
+        )
+        for index, segment in enumerate(segments, start=1)
+    ]
 
 
 def numeric_grid_lines(raw_lines: Any) -> list[float]:
@@ -2707,6 +2717,17 @@ def select_grid_text_segment(
     grid_xs: list[float],
     grid_ys: list[float],
 ) -> dict[str, Any] | None:
+    segments = select_grid_text_segments(cell_map, grid_xs, grid_ys, max_segments=1)
+    return segments[0] if segments else None
+
+
+def select_grid_text_segments(
+    cell_map: dict[tuple[int, int], list[dict[str, Any]]],
+    grid_xs: list[float],
+    grid_ys: list[float],
+    *,
+    max_segments: int = 6,
+) -> list[dict[str, Any]]:
     row_stats = grid_row_stats(cell_map, grid_xs)
     candidates: list[dict[str, Any]] = []
     for row_index, stats in row_stats.items():
@@ -2732,28 +2753,53 @@ def select_grid_text_segment(
             }
         )
     if not candidates:
-        return None
-    best = max(candidates, key=lambda item: item["score"])
-    segment_rows = [int(best["headerRow"]), *[int(row) for row in best["dataRows"]]]
+        return []
+
+    selected_segments: list[dict[str, Any]] = []
+    selected_rows: set[int] = set()
+    for candidate in sorted(candidates, key=lambda item: item["score"], reverse=True):
+        segment_rows = [int(candidate["headerRow"]), *[int(row) for row in candidate["dataRows"]]]
+        row_set = set(segment_rows)
+        if not row_set:
+            continue
+        if len(row_set & selected_rows) / len(row_set) > 0.35:
+            continue
+        used_cols = grid_segment_columns(row_stats, segment_rows, set(candidate["headerCols"]))
+        if len(used_cols) < 2:
+            continue
+        selected_segments.append(
+            {
+                "headerRow": int(candidate["headerRow"]),
+                "rows": segment_rows,
+                "cols": used_cols,
+                "score": float(candidate["score"]),
+            }
+        )
+        selected_rows.update(row_set)
+        if len(selected_segments) >= max_segments:
+            break
+
+    return sorted(
+        selected_segments,
+        key=lambda item: (min(item["rows"]), min(item["cols"]), -float(item["score"])),
+    )
+
+
+def grid_segment_columns(
+    row_stats: dict[int, dict[str, Any]],
+    segment_rows: list[int],
+    header_cols: set[int],
+) -> list[int]:
     col_counts: dict[int, int] = {}
     for row_index in segment_rows:
         for col_index in row_stats.get(row_index, {}).get("cols", set()):
-            col_counts[col_index] = col_counts.get(col_index, 0) + 1
-    header_cols = set(best["headerCols"])
+            col_counts[int(col_index)] = col_counts.get(int(col_index), 0) + 1
     min_repeated_col_count = max(2, min(4, len(segment_rows) // 3))
-    used_cols = sorted(
+    return sorted(
         col_index
         for col_index, count in col_counts.items()
         if col_index in header_cols or count >= min_repeated_col_count
     )
-    if len(used_cols) < 2:
-        return None
-    return {
-        "headerRow": int(best["headerRow"]),
-        "rows": segment_rows,
-        "cols": used_cols,
-        "score": float(best["score"]),
-    }
 
 
 def grid_row_stats(
@@ -2793,6 +2839,8 @@ def build_text_aligned_grid_table(
     grid_xs: list[float],
     grid_ys: list[float],
     segment: dict[str, Any],
+    *,
+    segment_index: int = 1,
 ) -> dict[str, Any]:
     source_table_id = str(grid_table.get("tableId") or "opencv_grid_table")
     page_no = page_no_from(grid_table)
@@ -2852,7 +2900,7 @@ def build_text_aligned_grid_table(
         ),
     )
     return {
-        "tableId": f"{source_table_id}_text_aligned_1",
+        "tableId": f"{source_table_id}_text_aligned_{segment_index}",
         "pageNo": page_no,
         "bbox": [
             grid_xs[min(used_cols)],

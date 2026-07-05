@@ -1282,6 +1282,7 @@ def test_fde_ocr_capability_annotation_keeps_full_table_content() -> None:
                     "rows": len(table_rows),
                     "columns": len(table_rows[0]),
                     "cells": table_cells,
+                    "text": "| 序号 | 名称 | 图号 |\n| --- | --- | --- |\n| 1 | 工艺图纸目录 | QX201903S-13-Y-00 |",
                 }
             ],
             "seals": [],
@@ -1379,6 +1380,7 @@ def test_fde_ocr_capability_annotation_dedupes_stamp_candidates_and_keeps_locati
                     "bbox": [640, 905, 1000, 1088],
                     "pageNo": 1,
                     "sourceEngine": "visual_seal_crop_ocr",
+                    "fields": [{"fieldName": "资质证书编号", "fieldValue": "A244010070"}],
                     "qualityFlags": ["visual_candidate_only", "seal_text_from_crop_ocr"],
                 },
             ],
@@ -1395,7 +1397,7 @@ def test_fde_ocr_capability_annotation_dedupes_stamp_candidates_and_keeps_locati
     seals = converted["task"]["suggestedExpected"]["seals"]
     assert len(seals) == 1
     assert seals[0]["nameContains"] == "广东省建设工程勘察设计出图专用章"
-    assert seals[0]["text"] == "广东省建设工程勘察设计出图专用章"
+    assert seals[0]["text"] == "广东省建设工程勘察设计出图专用章\n资质证书编号：A244010070"
     assert seals[0]["bbox"] == [640, 905, 1000, 1088]
     assert seals[0]["bboxLabel"] == "盖章位置"
     assert seals[0]["stampLocationRequired"] is True

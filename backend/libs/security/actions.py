@@ -23,6 +23,7 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("PUT", r"/projects/[^/]+/documents/upload-session/[^/]+/files/[^/]+$", "file:upload"),
     ("POST", r"/projects/[^/]+/documents/upload-session/[^/]+/complete$", "file:upload"),
     ("POST", r"/projects/[^/]+/documents/[^/]+/versions$", "file:upload"),
+    ("DELETE", r"/projects/[^/]+/documents/[^/]+$", "file:withdraw"),
     ("POST", r"/projects/[^/]+/documents/bindings$", "file:bind"),
     ("PATCH", r"/projects/[^/]+/documents/bindings/[^/]+$", "file:bind"),
     ("DELETE", r"/projects/[^/]+/documents/bindings/[^/]+$", "file:bind"),

@@ -2104,7 +2104,7 @@ const annotationSectionSummaries = computed(() =>
       key: section,
       label: annotationSectionTitle(section),
       value: labels,
-      hint: missingText ? `待补 ${missingText}` : candidates ? `候选 ${candidates}` : '已完整',
+      hint: missingText ? `待确认 ${missingText}` : candidates ? `候选 ${candidates}` : '已完整',
       tone: section === 'fields' ? 'blue' : section === 'tables' ? 'green' : 'red'
     }
   })
@@ -2163,9 +2163,28 @@ const annotationItemValue = (section: AnnotationSection, item: Record<string, un
   }
   return String(item.text || item.content || '')
 }
+const annotationItemHasMachineSuggestion = (
+  section: AnnotationSection,
+  item: Record<string, unknown>
+) => {
+  if (annotationItemValue(section, item).trim()) return true
+  if (section === 'fields' && isGeneratedOcrFieldCode(item.fieldCode || item.fieldName)) return true
+  return Boolean(
+    item.source ||
+      item.sourceEngine ||
+      item.contentStatus ||
+      item.textSource ||
+      item.machineExtracted ||
+      item.confidence ||
+      item.minConfidence ||
+      item.ocrConfidence ||
+      item.visualConfidence
+  )
+}
 const annotationItemValuePreview = (section: AnnotationSection, item: Record<string, unknown>) => {
   const value = annotationItemValue(section, item).trim()
-  return value ? compactAnnotationText(value, '已填写文字', 44) : '待填写文字'
+  if (value) return compactAnnotationText(value, '已填写文字', 44)
+  return annotationItemHasMachineSuggestion(section, item) ? '机器已识别，待人工确认' : '待填写文字'
 }
 const annotationItemBboxText = (item: Record<string, unknown>) => {
   const bbox = annotationItemBbox(item)
@@ -2235,7 +2254,9 @@ const annotationItemCompletionText = (
   item: Record<string, unknown>
 ) => {
   const missing = annotationItemMissingParts(section, item)
-  return missing.length ? `待补：${missing.join('、')}` : '位置和文字已完整'
+  return missing.length
+    ? `${annotationItemHasMachineSuggestion(section, item) ? '待确认' : '待补'}：${missing.join('、')}`
+    : '位置和文字已完整'
 }
 const annotationIncompleteItems = computed(() =>
   annotationSections.flatMap((section) =>
@@ -2254,7 +2275,7 @@ const annotationIncompleteSummary = computed(() => {
   if (!annotationIncompleteItems.value.length) return '所有对象都有位置和文字。'
   return annotationIncompleteItems.value
     .slice(0, 4)
-    .map((item) => `${item.title}：待补 ${item.missing.join('、')}`)
+    .map((item) => `${item.title}：待确认 ${item.missing.join('、')}`)
     .join('；')
 })
 const annotationObjectFilterOptions = computed<
@@ -19728,7 +19749,7 @@ onBeforeUnmount(() => {
                   >
                     {{
                       annotationIncompleteItems.length
-                        ? `待补 ${annotationIncompleteItems.length}`
+                        ? `待确认 ${annotationIncompleteItems.length}`
                         : '已完整'
                     }}
                   </ElTag>
@@ -19775,7 +19796,7 @@ onBeforeUnmount(() => {
                         <span>
                           <b>{{ row.title }}</b>
                           <em :class="{ 'is-complete': !row.missing.length }">
-                            {{ row.missing.length ? `待补 ${row.missing.join('、')}` : '已完成' }}
+                            {{ row.missing.length ? `待确认 ${row.missing.join('、')}` : '已完成' }}
                           </em>
                         </span>
                         <small>{{ row.secondary }}</small>
