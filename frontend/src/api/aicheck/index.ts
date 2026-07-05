@@ -1267,6 +1267,28 @@ export type FdeReviewRunDetailPayload = {
   }
 }
 
+export type FdeReviewRunAuditPackagePayload = {
+  schemaVersion: string
+  packageId?: string
+  fileName?: string
+  reviewRunId: string
+  generatedAt?: string
+  visibility?: string
+  redactionPolicy?: string
+  chainOfThoughtPolicy?: Record<string, unknown>
+  run: FdeReviewRun
+  lineage: Record<string, unknown>
+  llmAudit?: FdeLlmAuditPayload
+  reasoningTrace: Array<Record<string, unknown>>
+  qualityEvaluation: Record<string, unknown>
+  humanCorrections: Array<Record<string, unknown>>
+  graph: Record<string, unknown>
+  timeline: Array<Record<string, unknown>>
+  temporal: Record<string, unknown>
+  scorecard?: FdeReviewRunDetailPayload['scorecard']
+  integrity?: Record<string, unknown>
+}
+
 export type FdeProjectAuditSummary = {
   project: Project
   metrics: Record<string, number>
@@ -3714,6 +3736,12 @@ export const getFdeReviewRunTemporalHistoryApi = (
   reviewRunId: string
 ): Promise<IResponse<Record<string, unknown>>> => {
   return request.get({ url: `/api/fde/review-runs/${reviewRunId}/temporal-history` })
+}
+
+export const getFdeReviewRunAuditPackageApi = (
+  reviewRunId: string
+): Promise<IResponse<FdeReviewRunAuditPackagePayload>> => {
+  return request.get({ url: `/api/fde/review-runs/${reviewRunId}/audit-package` })
 }
 
 export const listFdeAccessGrantsApi = (): Promise<IResponse<Array<Record<string, unknown>>>> => {

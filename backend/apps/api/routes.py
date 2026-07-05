@@ -6458,6 +6458,63 @@ def fde_review_run_view(run: dict[str, Any], *, raw_access: bool = False) -> dic
     return view
 
 
+def fde_review_run_audit_package(review_run_id: str, *, raw_access: bool = False) -> dict[str, Any] | None:
+    run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
+    if not run:
+        run = fde_find_or_materialize_synthetic_review_run(review_run_id)
+    if not run:
+        return None
+    graph = graph_view_for_review_run(review_run_id)
+    temporal = temporal_history_summary(run)
+    audit_trace = review_run_audit_trace(review_run_id)
+    linked_ai_run = repo.find_one("ai_runs", str(run.get("aiRunId") or ""))
+    llm_audit = fde_llm_audit_view(
+        run,
+        run_type="review_run",
+        raw_access=raw_access,
+        linked_ai_run=linked_ai_run,
+        trace_steps=audit_trace.get("reasoningTrace") or [],
+    )
+    package_body = {
+        "schemaVersion": "FdeReviewRunAuditPackage@1.0.0",
+        "reviewRunId": review_run_id,
+        "generatedAt": server_time(),
+        "visibility": "raw" if raw_access else "masked",
+        "redactionPolicy": LLM_AUDIT_REDACTION_POLICY,
+        "chainOfThoughtPolicy": {
+            "rawChainOfThoughtIncluded": False,
+            "reason": "仅导出公开审计摘要、输入输出哈希、证据引用、工具调用和质量门禁，不导出模型内部原始隐式思维链。",
+        },
+        "run": fde_review_run_view(run, raw_access=raw_access),
+        "lineage": audit_trace.get("lineage") or {},
+        "llmAudit": llm_audit,
+        "reasoningTrace": audit_trace.get("reasoningTrace") or [],
+        "qualityEvaluation": audit_trace.get("qualityEvaluation") or {},
+        "humanCorrections": audit_trace.get("humanCorrections") or [],
+        "graph": {
+            "nodes": graph.get("nodes") or [],
+            "edges": graph.get("edges") or [],
+            "artifactSummary": graph.get("artifactSummary") or {},
+            "artifacts": graph.get("artifacts") or {},
+        },
+        "timeline": review_run_timeline(review_run_id),
+        "temporal": temporal,
+        "scorecard": build_review_orchestration_scorecard(
+            review_run=run,
+            graph_view=graph,
+            temporal_history=temporal,
+        ),
+    }
+    package_body["integrity"] = {
+        "inputHash": run.get("inputHash"),
+        "outputHash": run.get("outputHash"),
+        "packageHash": stable_hash_payload(package_body),
+    }
+    package_body["packageId"] = "AUDPKG-" + str(package_body["integrity"]["packageHash"])[7:19].upper()
+    package_body["fileName"] = f"{review_run_id}-audit-package.json"
+    return package_body
+
+
 def fde_metric(label: str, value: Any, tone: str = "blue", suffix: str = "") -> dict[str, Any]:
     return {"label": label, "value": value, "tone": tone, "suffix": suffix}
 
@@ -10201,6 +10258,19 @@ def fde_review_run_detail(request: Request, review_run_id: str):
         },
         request,
     )
+
+
+@router.get("/fde/review-runs/{review_run_id}/audit-package")
+def fde_review_run_audit_package_download(request: Request, review_run_id: str):
+    _, role_error = fde_error_unless_allowed(request, "fde:ai-run:view-masked")
+    if role_error:
+        return role_error
+    refresh_state_from_postgres_for_live_read()
+    raw = has_raw_access(request, "review_run", review_run_id)
+    package = fde_review_run_audit_package(review_run_id, raw_access=raw)
+    if not package:
+        return fail(errors.NOT_FOUND, request)
+    return ok(package, request)
 
 
 @router.get("/fde/review-runs/{review_run_id}/graph")

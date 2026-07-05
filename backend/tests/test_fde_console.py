@@ -329,6 +329,9 @@ def test_fde_review_run_visualization_replay_and_shadow(monkeypatch) -> None:
     detail = assert_ok(client.get(f"/api/fde/review-runs/{review_run_id}", headers={"X-Role": "fde"}))
     graph = assert_ok(client.get(f"/api/fde/review-runs/{review_run_id}/graph", headers={"X-Role": "fde"}))
     temporal = assert_ok(client.get(f"/api/fde/review-runs/{review_run_id}/temporal-history", headers={"X-Role": "fde"}))
+    audit_package = assert_ok(
+        client.get(f"/api/fde/review-runs/{review_run_id}/audit-package", headers={"X-Role": "fde"})
+    )
     replay = assert_ok(
         client.post(
             f"/api/fde/review-runs/{review_run_id}/replay",
@@ -355,6 +358,16 @@ def test_fde_review_run_visualization_replay_and_shadow(monkeypatch) -> None:
     assert detail["llmAudit"]["outputs"]["available"] is True
     assert detail["llmAudit"]["reasoning"]["redactionPolicy"] == "audit_summary_only_no_raw_chain_of_thought"
     assert detail["llmAudit"]["reasoning"]["rawChainOfThoughtAvailable"] is False
+    assert audit_package["schemaVersion"] == "FdeReviewRunAuditPackage@1.0.0"
+    assert audit_package["reviewRunId"] == review_run_id
+    assert audit_package["visibility"] == "masked"
+    assert audit_package["chainOfThoughtPolicy"]["rawChainOfThoughtIncluded"] is False
+    assert audit_package["integrity"]["packageHash"].startswith("sha256:")
+    assert audit_package["lineage"]["inputHash"] == detail["lineage"]["inputHash"]
+    assert audit_package["llmAudit"]["outputs"]["available"] is True
+    assert audit_package["llmAudit"]["reasoning"]["rawChainOfThoughtAvailable"] is False
+    assert audit_package["scorecard"]["targetScore"] == 100
+    assert all("rawChainOfThought" not in item for item in audit_package["reasoningTrace"])
     assert detail["temporal"]["historyPolicy"] == "ids_hashes_versions_only"
     assert detail["scorecard"]["targetScore"] == 100
     assert detail["scorecard"]["sections"]

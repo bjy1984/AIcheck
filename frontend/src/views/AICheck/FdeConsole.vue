@@ -64,6 +64,7 @@ import {
   getFdeProjectVectorFileDetailApi,
   importFdeOcrAnnotationPackApi,
   getFdeReleaseImpactApi,
+  getFdeReviewRunAuditPackageApi,
   getFdeReviewRunApi,
   installFdeBusinessPackApi,
   listFdeAcceptanceReportsApi,
@@ -117,6 +118,7 @@ import type {
   FdeProjectAuditSummary,
   FdeProjectAuditWorkspace,
   FdeReviewRun,
+  FdeReviewRunAuditPackagePayload,
   FdeReviewRunDetailPayload,
   FdeReleasePayload,
   FdeVectorFileDetailPayload,
@@ -158,6 +160,7 @@ const aiRuns = ref<FdeAiRun[]>([])
 const selectedRun = ref<FdeAiRunDetailPayload | null>(null)
 const reviewRuns = ref<FdeReviewRun[]>([])
 const selectedReviewRun = ref<FdeReviewRunDetailPayload | null>(null)
+const selectedReviewAuditPackage = ref<FdeReviewRunAuditPackagePayload | null>(null)
 const reviewAuditDrawerVisible = ref(false)
 const vectorFileQualityDrawerVisible = ref(false)
 const selectedVectorFileQuality = ref<Record<string, unknown> | null>(null)
@@ -9263,6 +9266,7 @@ const loadRunDetail = async (runId: string) => {
 }
 
 const loadReviewRunDetail = async (reviewRunId: string) => {
+  selectedReviewAuditPackage.value = null
   if (fdeDemoMode.value && reviewRunId.startsWith('RR-DEMO')) {
     selectedReviewRun.value = createDemoReviewRunDetail()
     selectedReviewRun.value.run.reviewRunId = reviewRunId
@@ -10580,6 +10584,21 @@ const downloadTextFile = (filename: string, content: string, type = 'text/csv;ch
   link.click()
   link.remove()
   URL.revokeObjectURL(url)
+}
+
+const exportSelectedReviewAuditPackage = async () => {
+  const reviewRunId = activeReviewRunId.value
+  if (!reviewRunId) return
+  actionLoading.value = true
+  try {
+    const res = await getFdeReviewRunAuditPackageApi(reviewRunId)
+    selectedReviewAuditPackage.value = res.data
+    const filename = res.data.fileName || `${reviewRunId}-audit-package.json`
+    downloadTextFile(filename, JSON.stringify(res.data, null, 2), 'application/json;charset=utf-8')
+    ElMessage.success('审计包已生成。')
+  } finally {
+    actionLoading.value = false
+  }
 }
 
 const exportOcr100ActionBoardCsv = () => {
@@ -19126,6 +19145,14 @@ onBeforeUnmount(() => {
           />
 
           <div class="audit-drawer-actions">
+            <ElButton
+              type="primary"
+              plain
+              :loading="actionLoading"
+              @click="exportSelectedReviewAuditPackage"
+            >
+              导出审计包
+            </ElButton>
             <ElButton plain :loading="actionLoading" @click="replayFirstReviewRun">
               诊断重跑
             </ElButton>
@@ -19161,6 +19188,17 @@ onBeforeUnmount(() => {
             </ElDescriptionsItem>
             <ElDescriptionsItem label="输出校验哈希">
               {{ selectedReviewRun.run.outputHash || '-' }}
+            </ElDescriptionsItem>
+          </ElDescriptions>
+          <ElDescriptions v-if="selectedReviewAuditPackage" :column="1" border class="mb-12px">
+            <ElDescriptionsItem label="审计包编号">
+              {{ selectedReviewAuditPackage.packageId || '-' }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="可见性">
+              {{ friendlyTechLabel(selectedReviewAuditPackage.visibility) }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="包校验哈希">
+              {{ selectedReviewAuditPackage.integrity?.packageHash || '-' }}
             </ElDescriptionsItem>
           </ElDescriptions>
 
