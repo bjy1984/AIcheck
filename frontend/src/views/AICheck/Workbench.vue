@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { EChartsOption } from 'echarts'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   ElButton,
@@ -9,6 +9,7 @@ import {
   ElDropdownItem,
   ElDropdownMenu,
   ElMessage,
+  ElMessageBox,
   ElOption,
   ElSelect
 } from 'element-plus'
@@ -21,6 +22,7 @@ import {
   createNdtFilmApi,
   createNdtReportUploadSessionApi,
   createDocumentUploadSessionApi,
+  deleteProjectDocumentApi,
   getArchivePackageApi,
   getArchiveItemDetailApi,
   getDocumentDetailApi,
@@ -139,8 +141,8 @@ type PreviewDrawerTarget = {
 
 const roleConfig: Record<RoleCode, { title: string; subtitle: string }> = {
   inspection: { title: '监检工作台', subtitle: '资料审查、AI 复核、补正闭环' },
-  contractor: { title: '施工方工作台', subtitle: '资料上传、节点提交、补正反馈' },
-  ndt: { title: '无损检测工作台', subtitle: '检测报告提交、证据链维护' },
+  contractor: { title: '施工方工作台', subtitle: '施工资料上传、项目文件库、补正反馈' },
+  ndt: { title: '无损检测工作台', subtitle: '检测资料上传、资料库、补正反馈' },
   owner: { title: '建设方工作台', subtitle: '项目进度、报告与归档资料查看' },
   admin: { title: '管理工作台', subtitle: '系统配置与审计' },
   fde: { title: 'FDE 后台', subtitle: 'AI 交付、效果监控与治理' }
@@ -188,8 +190,10 @@ const previewDrawerTarget = ref<PreviewDrawerTarget>({
 })
 const uploadDrawerVisible = ref(false)
 const uploadDrawerError = ref('')
+const uploadDrawerMaterialCategory = ref('')
 const bindDialogVisible = ref(false)
 const bindDialogError = ref('')
+const bindDialogDocumentId = ref('')
 const submissionDialogVisible = ref(false)
 const submissionDialogError = ref('')
 const submissionHistoryVisible = ref(false)
@@ -197,6 +201,7 @@ const submissionHistoryLoading = ref(false)
 const withdrawSuccessMessage = ref('')
 const evidenceDialogVisible = ref(false)
 const rectificationDialogVisible = ref(false)
+const activeRectificationId = ref('')
 const fileDetailVisible = ref(false)
 const fileDetailLoading = ref(false)
 const submissionDetailVisible = ref(false)
@@ -264,6 +269,7 @@ const messages = computed(() => summary.value?.messages || [])
 const selectedNode = computed<ProjectTreeNode | undefined>(() => nodePackage.value?.node)
 const bindings = computed(() => nodePackage.value?.bindings || [])
 const extractedFields = computed(() => nodePackage.value?.extractedFields || [])
+const rectifications = computed(() => nodePackage.value?.rectifications || [])
 const reviewOpinions = computed(() => nodePackage.value?.reviewOpinions || [])
 const latestAiRun = computed(() => nodePackage.value?.aiRuns[0])
 const evidenceLinks = computed(() => latestAiRun.value?.evidenceLinks || [])
@@ -438,6 +444,42 @@ const inspectionClosurePieOption = computed<EChartsOption>(() => ({
 }))
 const projectTreeNodes = computed<ProjectTreeNode[]>(() =>
   treeGroups.value.flatMap((group) => group.nodes || [])
+)
+const feedbackNodeIds = computed(() => {
+  const nodeIds = new Set<number>()
+  for (const todo of todos.value) {
+    if (
+      todo.nodeId &&
+      todo.status === '待处理' &&
+      (todo.targetType === 'rectification' || todo.actions?.includes('rectification:submit'))
+    ) {
+      nodeIds.add(todo.nodeId)
+    }
+  }
+  for (const node of projectTreeNodes.value) {
+    if (['需补正', '补正中'].includes(node.status)) {
+      nodeIds.add(node.nodeId)
+    }
+  }
+  for (const feedback of ndtFeedback.value) {
+    if (feedback.status !== '已关闭') {
+      nodeIds.add(feedback.nodeId)
+    }
+  }
+  return nodeIds
+})
+const contractorFeedbackTreeGroups = computed<ProjectTreePayload['groups']>(() =>
+  treeGroups.value
+    .map((group) => ({
+      ...group,
+      nodes: group.nodes.filter((node) => feedbackNodeIds.value.has(node.nodeId))
+    }))
+    .filter((group) => group.nodes.length)
+)
+const visibleTreeGroups = computed<ProjectTreePayload['groups']>(() =>
+  role.value === 'contractor' || role.value === 'ndt'
+    ? contractorFeedbackTreeGroups.value
+    : treeGroups.value
 )
 const inspectionProjectNodeStatusRows = computed(() => {
   const counts: Record<string, number> = {}
@@ -621,8 +663,8 @@ const globalSearchPlaceholder = computed(() => {
 const pageHeadline = computed(() => {
   const headlines: Record<RoleCode, string> = {
     inspection: 'AI 业务审查链路',
-    contractor: '项目文件上传与补正',
-    ndt: '无损检测资料维护',
+    contractor: '项目文件库与补正反馈',
+    ndt: '检测资料库与补正反馈',
     owner: '建设方项目概况',
     admin: '管理工作台',
     fde: 'AI 交付治理后台'
@@ -632,8 +674,9 @@ const pageHeadline = computed(() => {
 const pageIntro = computed(() => {
   const intros: Record<RoleCode, string> = {
     inspection: '当前节点资料、AI 业务核验链路、人工审查意见和报告归档动作在同一工作区完成。',
-    contractor: '施工方以文件上传、审核反馈处理和项目文件库管理为主，审核环节关联为可选业务定位。',
-    ndt: '底片编号、检测记录、检测报告和图像资料直接挂载到明确的无损检测节点。',
+    contractor:
+      '施工方以项目文件库为主办理资料上传、资料齐套、提交和补正反馈，审核环节仅作为可选定位字段。',
+    ndt: '无损检测单位以检测资料库为主办理底片、检测记录、检测报告和监检反馈，节点仅作为反馈定位。',
     owner: '只读查看项目进展、节点资料状态、异常提醒、报告状态和归档资料。',
     admin: '后台只维护配置、权限、流程和审计，不替代工作台业务办理。',
     fde: 'FDE 只管理 AI 能力、评估、发布和治理，不替代业务人员作出正式结论。'
@@ -644,35 +687,102 @@ const currentNodeLabel = computed(() => {
   if (!selectedNode.value) return '未选择节点'
   return `${selectedNode.value.nodeId}. ${selectedNode.value.name}`
 })
-const workbenchAuditCards = computed<AuditSummaryCard[]>(() => [
-  {
-    label: '当前审查对象',
-    value: selectedNode.value?.name || currentNodeLabel.value,
-    hint: currentProject.value?.name || '未选择项目',
-    tone: 'blue'
-  },
-  {
-    label: '资料证据',
-    value:
-      role.value === 'contractor'
-        ? `${nodePackage.value?.projectFiles.length || bindings.value.length} 份项目文件`
-        : `${bindings.value.length} 份挂载资料`,
-    hint: `${extractedFields.value.length} 个 OCR/字段证据可定位`,
-    tone: 'green'
-  },
-  {
-    label: 'AI 审查',
-    value: latestAiRun.value?.suggestion.result || '等待预审',
-    hint: 'AI 只生成建议，正式结论由人工确认',
-    tone: 'orange'
-  },
-  {
-    label: '人工确认',
-    value: `${latestAiRun.value?.suggestion.manualConfirmItems.length || 0} 项`,
-    hint: role.value === 'owner' ? '只读查看，不办理审批' : '低置信和阻断项优先处理',
-    tone: 'red'
+const workbenchAuditCards = computed<AuditSummaryCard[]>(() => {
+  if (role.value === 'contractor') {
+    const projectFileCount = nodePackage.value?.projectFiles.length || bindings.value.length
+    const correctionCount = rectifications.value.filter((item) => item.status !== '已关闭').length
+    const pendingSubmitCount = bindings.value.filter((item) =>
+      ['草稿挂载', '需补正'].includes(item.bindingStatus)
+    ).length
+    return [
+      {
+        label: '办理对象',
+        value: '项目文件库',
+        hint: currentProject.value?.name || '未选择项目',
+        tone: 'blue'
+      },
+      {
+        label: '项目文件',
+        value: `${projectFileCount} 份`,
+        hint: `${extractedFields.value.length} 个 OCR/字段证据可定位`,
+        tone: 'green'
+      },
+      {
+        label: '待提交/补正',
+        value: pendingSubmitCount,
+        hint: '文件可先入库，审核环节可后续选择',
+        tone: 'orange'
+      },
+      {
+        label: '监检反馈',
+        value: `${correctionCount} 项`,
+        hint: '按反馈逐条上传补正或关联已有文件',
+        tone: correctionCount ? 'red' : 'green'
+      }
+    ]
   }
-])
+  if (role.value === 'ndt') {
+    const openFeedbackCount = ndtFeedback.value.filter((item) => item.status !== '已关闭').length
+    const pendingReportCount = ndtReports.value.filter((item) =>
+      ['草稿', '待提交', '需补正'].includes(item.status)
+    ).length
+    const pendingFilmCount = ndtFilms.value.filter((item) =>
+      ['草稿', '待提交', '需补正'].includes(item.status)
+    ).length
+    return [
+      {
+        label: '办理对象',
+        value: '检测资料库',
+        hint: currentProject.value?.name || '未选择项目',
+        tone: 'blue'
+      },
+      {
+        label: '检测资料',
+        value: `${ndtFilms.value.length + ndtRecords.value.length + ndtReports.value.length} 项`,
+        hint: `底片 ${ndtFilms.value.length}，记录 ${ndtRecords.value.length}，报告 ${ndtReports.value.length}`,
+        tone: 'green'
+      },
+      {
+        label: '待提交',
+        value: pendingReportCount + pendingFilmCount,
+        hint: '底片、记录和报告统一提交给监检方',
+        tone: 'orange'
+      },
+      {
+        label: '监检反馈',
+        value: `${openFeedbackCount} 项`,
+        hint: '按反馈补充报告、底片、记录或说明',
+        tone: openFeedbackCount ? 'red' : 'green'
+      }
+    ]
+  }
+  return [
+    {
+      label: '当前审查对象',
+      value: selectedNode.value?.name || currentNodeLabel.value,
+      hint: currentProject.value?.name || '未选择项目',
+      tone: 'blue'
+    },
+    {
+      label: '资料证据',
+      value: `${bindings.value.length} 份挂载资料`,
+      hint: `${extractedFields.value.length} 个 OCR/字段证据可定位`,
+      tone: 'green'
+    },
+    {
+      label: 'AI 审查',
+      value: latestAiRun.value?.suggestion.result || '等待预审',
+      hint: 'AI 只生成建议，正式结论由人工确认',
+      tone: 'orange'
+    },
+    {
+      label: '人工确认',
+      value: `${latestAiRun.value?.suggestion.manualConfirmItems.length || 0} 项`,
+      hint: role.value === 'owner' ? '只读查看，不办理审批' : '低置信和阻断项优先处理',
+      tone: 'red'
+    }
+  ]
+})
 const nodeBindingsPreview = computed(() => bindings.value.slice(0, 5))
 const projectFilesPreview = computed(() => (nodePackage.value?.projectFiles || []).slice(0, 5))
 const firstBinding = computed(() => bindings.value[0])
@@ -1204,6 +1314,11 @@ const handleRetryNodeLoad = async () => {
   await loadNodePackage(activeNodeId.value)
 }
 
+const scrollToRoleFeedbackList = async (elementId: string) => {
+  await nextTick()
+  document.getElementById(elementId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 const handleProjectChange = async () => {
   submissionDrafts.value = []
   submissionSnapshots.value = []
@@ -1216,6 +1331,12 @@ const handleNodeSelect = async (node: ProjectTreeNode) => {
   activeWorkbenchSection.value = 'node'
   activeNodeId.value = node.nodeId
   await loadNodePackage(node.nodeId)
+  if (role.value === 'contractor') {
+    await scrollToRoleFeedbackList('contractor-feedback-list')
+  }
+  if (role.value === 'ndt') {
+    await scrollToRoleFeedbackList('ndt-feedback-list')
+  }
 }
 
 const handleProjectOverviewSelect = () => {
@@ -1229,6 +1350,18 @@ const ensureWritableNode = () => {
   }
   if (!activeProjectId.value || !selectedNode.value) {
     ElMessage.warning('请先选择项目和节点')
+    return false
+  }
+  return true
+}
+
+const ensureWritableProject = () => {
+  if (isReadOnly.value) {
+    ElMessage.warning(readonlyIssue.value?.message || '当前项目只读，只能查看、预览或下载。')
+    return false
+  }
+  if (!activeProjectId.value) {
+    ElMessage.warning('请先选择项目')
     return false
   }
   return true
@@ -1331,14 +1464,15 @@ const openLocalArchiveDownloadTask = (item: ArchiveItem) => {
   exportTaskVisible.value = true
 }
 
-const handleOpenUploadDrawer = () => {
-  if (!ensureWritableNode()) return
+const handleOpenUploadDrawer = (materialCategory?: string) => {
+  if (!ensureWritableProject()) return
   uploadDrawerError.value = ''
+  uploadDrawerMaterialCategory.value = materialCategory || ''
   uploadDrawerVisible.value = true
 }
 
 const handleCreateUploadSession = async (files: File[]) => {
-  if (!ensureWritableNode()) return
+  if (!ensureWritableProject()) return
   if (!files.length) {
     ElMessage.warning('请选择至少一个本地文件')
     return
@@ -1349,7 +1483,10 @@ const handleCreateUploadSession = async (files: File[]) => {
     const uploadFiles = files.map((file) => ({
       fileName: file.name,
       fileSize: file.size,
-      fileType: inferUploadFileType(file)
+      fileType: inferUploadFileType(file),
+      ...(uploadDrawerMaterialCategory.value
+        ? { materialCategory: uploadDrawerMaterialCategory.value }
+        : {})
     }))
     const res = await createDocumentUploadSessionApi(activeProjectId.value, uploadFiles, {
       etag: currentProject.value?.etag
@@ -1454,10 +1591,86 @@ const handleUploadNdtReport = async (payload: {
   }
 }
 
-const handleOpenBindDialog = () => {
+const handleOpenBindDialog = (documentId?: string) => {
   if (!ensureWritableNode()) return
+  bindDialogDocumentId.value = documentId || ''
   bindDialogError.value = ''
   bindDialogVisible.value = true
+}
+
+const handleSubmitProjectFile = async (documentId: string) => {
+  if (!ensureWritableNode()) return
+  if (!documentId) {
+    ElMessage.warning('请选择需要提交的项目文件')
+    return
+  }
+  actionLoading.value = true
+  try {
+    const res = await submitNodePackageApi(
+      activeProjectId.value,
+      {
+        nodeId: activeNodeId.value,
+        nodeIds: [activeNodeId.value],
+        bindingIds: [],
+        documentIds: [documentId],
+        batchName: `节点 ${activeNodeId.value} 文件直接提交`,
+        submitterComment: '从项目文件库直接提交。'
+      },
+      {
+        etag: currentProject.value?.etag,
+        idempotencyKey: `project-file-submit-${activeProjectId.value}-${activeNodeId.value}-${documentId}`
+      }
+    )
+    if (!res) {
+      showActionError('项目文件提交失败，请检查文件状态、节点范围和当前项目权限。')
+      return
+    }
+    ElMessage.success('项目文件已提交，等待监检审核')
+    await loadProjectBundle()
+    await loadSubmissionHistory()
+  } catch (error) {
+    showActionError('项目文件提交失败，请检查文件状态、节点范围和当前项目权限。', error)
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+const handleDeleteProjectFile = async (documentId: string) => {
+  if (!ensureWritableProject()) return
+  if (!documentId) {
+    ElMessage.warning('请选择需要删除的项目文件')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      '删除后该文件将从项目文件库移除。仅未提交审核的文件允许删除。',
+      '删除未提交文件',
+      {
+        type: 'warning',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消'
+      }
+    )
+  } catch {
+    return
+  }
+  actionLoading.value = true
+  try {
+    const res = await deleteProjectDocumentApi(activeProjectId.value, documentId, {
+      etag: currentProject.value?.etag,
+      idempotencyKey: `project-file-delete-${activeProjectId.value}-${documentId}`
+    })
+    if (!res) {
+      showActionError('项目文件删除失败，请刷新项目文件库后重试。')
+      return
+    }
+    ElMessage.success('未提交文件已删除')
+    await loadProjectBundle()
+  } catch (error) {
+    showActionError('项目文件删除失败，仅未提交文件允许删除。', error)
+  } finally {
+    actionLoading.value = false
+  }
 }
 
 const handleBindDocuments = async (payload: {
@@ -1725,8 +1938,9 @@ const handleWithdrawSubmission = async (payload: { bindingIds: string[]; reason:
   }
 }
 
-const handleOpenRectificationDialog = () => {
+const handleOpenRectificationDialog = (rectificationId?: string) => {
   if (!ensureWritableNode()) return
+  activeRectificationId.value = rectificationId || ''
   rectificationDialogVisible.value = true
 }
 
@@ -1860,7 +2074,11 @@ const handleOpenNdtFeedbackDetail = async (feedbackId: string) => {
   }
 }
 
-const handleSubmitRectification = async (payload: { comment: string; bindingIds: string[] }) => {
+const handleSubmitRectification = async (payload: {
+  comment: string
+  bindingIds: string[]
+  rectificationId?: string
+}) => {
   if (!ensureWritableNode()) return
   if (!payload.comment) {
     ElMessage.warning('请填写补正反馈说明')
@@ -1873,7 +2091,8 @@ const handleSubmitRectification = async (payload: { comment: string; bindingIds:
       {
         nodeId: activeNodeId.value,
         bindingIds: payload.bindingIds.length ? payload.bindingIds : bindingIds(),
-        comment: payload.comment
+        comment: payload.comment,
+        rectificationId: payload.rectificationId || activeRectificationId.value || undefined
       },
       { etag: currentProject.value?.etag }
     )
@@ -1883,6 +2102,7 @@ const handleSubmitRectification = async (payload: { comment: string; bindingIds:
     }
     ElMessage.success('补正反馈已提交')
     rectificationDialogVisible.value = false
+    activeRectificationId.value = ''
     await loadProjectBundle()
   } finally {
     actionLoading.value = false
@@ -2278,14 +2498,27 @@ watch(
 watch(
   () => bindDialogVisible.value,
   (open) => {
-    if (!open) bindDialogError.value = ''
+    if (!open) {
+      bindDialogError.value = ''
+      bindDialogDocumentId.value = ''
+    }
+  }
+)
+
+watch(
+  () => rectificationDialogVisible.value,
+  (open) => {
+    if (!open) activeRectificationId.value = ''
   }
 )
 
 watch(
   () => uploadDrawerVisible.value,
   (open) => {
-    if (!open) uploadDrawerError.value = ''
+    if (!open) {
+      uploadDrawerError.value = ''
+      uploadDrawerMaterialCategory.value = ''
+    }
   }
 )
 
@@ -2373,16 +2606,29 @@ onMounted(() => {
         />
       </div>
 
-      <div v-else-if="canShowWorkspace" class="workspace">
-        <aside :class="['left', { 'with-project-package': role === 'inspection' }]">
+      <div
+        v-else-if="canShowWorkspace"
+        :class="['workspace', { 'no-left-nav': role === 'contractor' || role === 'ndt' }]"
+      >
+        <aside
+          v-if="role !== 'contractor' && role !== 'ndt'"
+          :class="[
+            'left',
+            {
+              'with-project-package': role === 'inspection'
+            }
+          ]"
+        >
           <section class="tree-wrap">
             <div class="section-title">
               <span>项目审核节点</span>
               <span class="section-tools">{{ role === 'owner' ? '只读 ⓘ' : '↻ ⚙' }}</span>
             </div>
             <ProjectNodeTree
-              :groups="treeGroups"
+              :groups="visibleTreeGroups"
               :active-node-id="activeWorkbenchSection === 'overview' ? 0 : activeNodeId"
+              :show-overview="true"
+              empty-description="暂无项目审核节点"
               @select="handleNodeSelect"
               @select-overview="handleProjectOverviewSelect"
             />
@@ -2391,9 +2637,7 @@ onMounted(() => {
           <section class="node-files">
             <div class="node-file-head">
               <span>
-                {{
-                  role === 'ndt' ? '检测资料包' : role === 'owner' ? '只读资料摘要' : '节点文件包'
-                }}
+                {{ role === 'owner' ? '只读资料摘要' : '节点文件包' }}
                 <small>{{ currentNodeLabel }}</small>
               </span>
               <span :class="['pill', getPillClass(selectedNode?.status)]">
@@ -2403,7 +2647,7 @@ onMounted(() => {
             <table class="table compact">
               <thead>
                 <tr>
-                  <th>{{ role === 'ndt' ? '资料/记录' : '文件名' }}</th>
+                  <th>文件名</th>
                   <th>来源</th>
                   <th>版本</th>
                   <th>状态</th>
@@ -2472,8 +2716,18 @@ onMounted(() => {
           <div class="page-head">
             <div>
               <div class="crumbs">
-                当前位置：{{ currentRoleConfig.title }} / {{ currentNodeLabel }}
-                <span :class="['pill', getPillClass(selectedNode?.inspectionType)]">
+                当前位置：{{ currentRoleConfig.title }} /
+                {{
+                  role === 'contractor'
+                    ? '项目文件库'
+                    : role === 'ndt'
+                      ? '无损检测资料库'
+                      : currentNodeLabel
+                }}
+                <span
+                  v-if="role !== 'contractor' && role !== 'ndt'"
+                  :class="['pill', getPillClass(selectedNode?.inspectionType)]"
+                >
                   {{ selectedNode?.inspectionType || '-' }}类节点
                 </span>
               </div>
@@ -2494,7 +2748,7 @@ onMounted(() => {
                 class="btn primary"
                 type="primary"
                 :disabled="actionLoading || isReadOnly"
-                @click="handleOpenUploadDrawer"
+                @click="handleOpenUploadDrawer()"
               >
                 批量上传文件
               </ElButton>
@@ -2513,12 +2767,12 @@ onMounted(() => {
                 提交检测资料
               </ElButton>
               <ElButton
-                v-if="role !== 'owner'"
+                v-if="role !== 'owner' && role !== 'contractor' && role !== 'ndt'"
                 class="btn"
                 :disabled="actionLoading || isReadOnly"
-                @click="handleOpenBindDialog"
+                @click="() => handleOpenBindDialog()"
               >
-                {{ role === 'contractor' ? '关联审核环节' : '选择挂载节点' }}
+                选择挂载节点
               </ElButton>
               <ElButton v-if="role === 'owner'" class="btn" @click="handleDownloadArchivePackage">
                 导出状态摘要
@@ -2690,7 +2944,7 @@ onMounted(() => {
             </article>
           </section>
 
-          <section v-else-if="role !== 'inspection'" class="card">
+          <section v-else-if="role === 'owner'" class="card">
             <div class="card-body">
               <div class="metrics">
                 <div v-for="metric in metrics.slice(0, 5)" :key="metric.key" class="metric">
@@ -2702,7 +2956,7 @@ onMounted(() => {
           </section>
 
           <WorkbenchRoleStaticSections
-            v-if="role !== 'inspection'"
+            v-if="role === 'contractor' || role === 'owner'"
             :role="role"
             :project="currentProject"
             :node="selectedNode"
@@ -2720,6 +2974,10 @@ onMounted(() => {
             @upload="handleOpenUploadDrawer"
             @bind="handleOpenBindDialog"
             @rectify="handleOpenRectificationDialog"
+            @file-view="handleOpenFileDetail"
+            @file-bind="handleOpenBindDialog"
+            @file-submit="handleSubmitProjectFile"
+            @file-delete="handleDeleteProjectFile"
           />
 
           <section v-if="role === 'inspection' && activeWorkbenchSection === 'node'" class="card">
@@ -2751,7 +3009,7 @@ onMounted(() => {
           </section>
 
           <section
-            v-if="role !== 'inspection' || activeWorkbenchSection === 'node'"
+            v-if="(role === 'inspection' && activeWorkbenchSection === 'node') || role === 'owner'"
             class="card node-package-card"
           >
             <div class="card-head">
@@ -2759,11 +3017,9 @@ onMounted(() => {
                 {{
                   role === 'inspection'
                     ? '二、监检工作区'
-                    : role === 'ndt'
-                      ? '检测资料联动区'
-                      : role === 'owner'
-                        ? '只读节点资料联动区'
-                        : '项目文件与审核反馈联动区'
+                    : role === 'owner'
+                      ? '只读节点资料联动区'
+                      : '项目文件与审核反馈联动区'
                 }}
               </h2>
               <div class="sub">集中展示当前节点文件、审核反馈和错误恢复能力</div>
@@ -2833,6 +3089,10 @@ onMounted(() => {
             :ndt-records="ndtRecords"
             :ndt-reports="ndtReports"
             :ndt-feedback="ndtFeedback"
+            @file-view="handleOpenFileDetail"
+            @file-bind="handleOpenBindDialog"
+            @file-submit="handleSubmitProjectFile"
+            @file-delete="handleDeleteProjectFile"
           />
 
           <NdtWorkflowPanel
@@ -2858,7 +3118,7 @@ onMounted(() => {
           />
 
           <ReportArchivePanel
-            v-if="role !== 'ndt'"
+            v-if="role !== 'ndt' && role !== 'contractor'"
             :role="role"
             :actions="availableActions"
             :package-data="nodePackage"
@@ -2878,7 +3138,7 @@ onMounted(() => {
             @open-export-task="handleOpenExportTask"
           />
 
-          <section class="center-support-grid">
+          <section v-if="role !== 'contractor' && role !== 'ndt'" class="center-support-grid">
             <WorkbenchRightStaticDetails
               :role="role"
               :project="currentProject"
@@ -2920,7 +3180,6 @@ onMounted(() => {
             </section>
 
             <RoleContextPanel
-              v-if="role !== 'ndt'"
               :role="role"
               :project="currentProject"
               :package-data="nodePackage"
@@ -3021,6 +3280,7 @@ onMounted(() => {
       <UploadSessionDrawer
         v-model="uploadDrawerVisible"
         :node-name="selectedNode?.name"
+        :material-category="uploadDrawerMaterialCategory"
         :loading="actionLoading"
         :operation-error="uploadDrawerError"
         @submit="handleCreateUploadSession"
@@ -3033,6 +3293,7 @@ onMounted(() => {
         :role="role"
         :loading="actionLoading"
         :operation-error="bindDialogError"
+        :initial-document-id="bindDialogDocumentId"
         @submit="handleBindDocuments"
       />
 
@@ -3121,6 +3382,7 @@ onMounted(() => {
         :node="selectedNode"
         :bindings="bindings"
         :todos="todos"
+        :rectification-id="activeRectificationId"
         :loading="actionLoading"
         @submit="handleSubmitRectification"
       />
@@ -3508,6 +3770,10 @@ onMounted(() => {
   min-height: 0;
   overflow: hidden;
   grid-template-columns: minmax(300px, 404px) minmax(0, 1fr);
+}
+
+.workspace.no-left-nav {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .left,

@@ -5,6 +5,7 @@ import { ElAlert, ElButton, ElDrawer, ElMessage, ElTable, ElTableColumn } from '
 const props = defineProps<{
   modelValue: boolean
   nodeName?: string
+  materialCategory?: string
   loading: boolean
   operationError?: string
 }>()
@@ -31,6 +32,11 @@ const fileRows = computed(() =>
     fileSizeKb: Math.max(1, Math.round(file.size / 1024))
   }))
 )
+
+const primaryActionLabel = computed(() => {
+  const fileCount = selectedFiles.value.length
+  return fileCount > 0 ? `上传 ${fileCount} 个文件并入库` : '选择文件'
+})
 
 const resetFiles = () => {
   selectedFiles.value = []
@@ -80,6 +86,14 @@ const handleSubmit = () => {
   emit('submit', selectedFiles.value)
 }
 
+const handlePrimaryAction = () => {
+  if (!selectedFiles.value.length) {
+    openFilePicker()
+    return
+  }
+  handleSubmit()
+}
+
 const handleRetry = () => {
   handleSubmit()
 }
@@ -96,6 +110,10 @@ watch(
   <ElDrawer v-model="visible" title="上传项目文件" size="min(560px, 94vw)" append-to-body>
     <div class="drawer-body">
       <div class="helper-text">选择本地文件后，系统将创建真实上传会话并写入项目资料池。</div>
+      <div v-if="materialCategory" class="target-category">
+        <span>资料类别</span>
+        <strong>{{ materialCategory }}</strong>
+      </div>
 
       <ElAlert
         v-if="operationError"
@@ -145,9 +163,10 @@ watch(
       </div>
 
       <div class="drawer-actions">
-        <ElButton @click="openFilePicker">添加文件</ElButton>
         <ElButton @click="visible = false">取消</ElButton>
-        <ElButton type="primary" :loading="loading" @click="handleSubmit">上传并入库</ElButton>
+        <ElButton type="primary" :loading="loading" @click="handlePrimaryAction">
+          {{ primaryActionLabel }}
+        </ElButton>
       </div>
     </div>
   </ElDrawer>
@@ -167,6 +186,21 @@ watch(
   background: #f8fafc;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
+}
+
+.target-category {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  color: #1d4ed8;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+}
+
+.target-category span {
+  color: #475467;
 }
 
 .upload-drawer-error {

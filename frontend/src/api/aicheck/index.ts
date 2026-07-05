@@ -47,6 +47,7 @@ export type UploadSessionPayload = {
   expiresAt: string
   uploadUrls: Array<{
     fileName: string
+    materialCategory?: string | null
     documentId: string
     documentVersionId: string
     url: string
@@ -54,6 +55,13 @@ export type UploadSessionPayload = {
     expiresAt: string
     headers: Record<string, string>
   }>
+}
+
+export type DocumentUploadSessionFile = {
+  fileName: string
+  fileSize: number
+  fileType: string
+  materialCategory?: string
 }
 
 export type UploadSessionCompletePayload = MockMutationResult & {
@@ -65,6 +73,7 @@ export type SubmissionDraftPayload = {
   draftId: string
   savedAt: string
   bindingIds: string[]
+  createdBindingIds?: string[]
 }
 
 export type SubmissionDraftSummary = {
@@ -94,6 +103,8 @@ export type SubmissionPayload = {
   snapshotId: string
   nextStatus: string
   createdTodos: TodoItem[]
+  bindingIds?: string[]
+  createdBindingIds?: string[]
 }
 
 export type SubmissionSummary = {
@@ -2350,7 +2361,7 @@ export const getDocumentDownloadUrlApi = (
 
 export const createDocumentUploadSessionApi = (
   projectId: string,
-  files: Array<{ fileName: string; fileSize: number; fileType: string }>,
+  files: DocumentUploadSessionFile[],
   options?: MutationHeaderOptions
 ): Promise<IResponse<UploadSessionPayload>> => {
   return request.post({
@@ -2385,6 +2396,19 @@ export const bindDocumentsToNodeApi = (
   return request.post({
     url: `/api/projects/${projectId}/documents/bindings`,
     data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const deleteProjectDocumentApi = (
+  projectId: string,
+  documentId: string,
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<MockMutationResult & { documentId: string; removed: Record<string, number> }>
+> => {
+  return request.delete({
+    url: `/api/projects/${projectId}/documents/${documentId}`,
     headers: mutationHeaders(options)
   })
 }
@@ -2426,6 +2450,7 @@ export const submitNodePackageApi = (
     nodeId?: number
     nodeIds?: number[]
     bindingIds: string[]
+    documentIds?: string[]
     submitterComment?: string
     batchName?: string
   },
@@ -2460,7 +2485,7 @@ export const withdrawSubmissionItemsApi = (
 
 export const submitRectificationApi = (
   projectId: string,
-  payload: { nodeId: number; bindingIds: string[]; comment: string },
+  payload: { nodeId: number; bindingIds: string[]; comment: string; rectificationId?: string },
   options?: MutationHeaderOptions
 ): Promise<IResponse<RectificationPayload>> => {
   return request.post({

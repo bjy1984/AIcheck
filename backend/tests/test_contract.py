@@ -7,6 +7,7 @@ import inspect
 import sys
 import zipfile
 from argparse import Namespace
+from copy import deepcopy
 from pathlib import Path
 
 import httpx
@@ -93,6 +94,20 @@ def test_business_role_project_visibility_matches_member_authorization() -> None
         assert project_ids == authorized_project_ids
         for project in projects:
             assert int(project["currentNodeId"]) in node_scopes[project["id"]]
+        if role == "inspection":
+            assert project_ids == {project["id"] for project in repo.state["projects"]}
+            for project in repo.state["projects"]:
+                member = next(
+                    item
+                    for item in authorized_members
+                    if item["projectId"] == project["id"]
+                )
+                project_node_ids = {
+                    int(node["nodeId"])
+                    for node in repo.state["tree_nodes"]
+                    if node["projectId"] == project["id"]
+                }
+                assert project_node_ids.issubset({int(node_id) for node_id in member["nodeScope"]})
 
     assert "P-2026-GDLNG-002" in {
         project["id"]
@@ -103,6 +118,28 @@ def test_business_role_project_visibility_matches_member_authorization() -> None
             )
         )
     }
+
+
+def test_seed_compatibility_backfills_inspection_authorization_for_existing_projects() -> None:
+    loaded = deepcopy(repo.state)
+    loaded["project_members"] = [
+        member
+        for member in loaded["project_members"]
+        if member.get("userId") != "USER-INSPECTION-001"
+    ]
+
+    changed = repo.apply_seed_compatibility_defaults(loaded)
+    project_ids = {project["id"] for project in loaded["projects"]}
+    inspection_project_ids = {
+        member["projectId"]
+        for member in loaded["project_members"]
+        if member.get("userId") == "USER-INSPECTION-001"
+        and member.get("role") == "inspection"
+        and member.get("status") == "启用"
+    }
+
+    assert changed is True
+    assert inspection_project_ids == project_ids
 
 
 def test_healthz_reports_runtime_flags(monkeypatch) -> None:
@@ -5017,6 +5054,30 @@ def test_submission_idempotency_replays_same_response() -> None:
     )
 
 
+def test_project_file_direct_submit_creates_node_binding() -> None:
+    project_id = "P-2026-HDCP-001"
+    payload = {
+        "nodeId": 25,
+        "nodeIds": [25],
+        "bindingIds": [],
+        "documentIds": ["DOC-20260625-005"],
+        "submitterComment": "direct library submit",
+    }
+
+    result = assert_ok(client.post(f"/projects/{project_id}/submissions", json=payload))
+    created_binding_ids = result["createdBindingIds"]
+    created_binding = repo.find_one("bindings", created_binding_ids[0])
+    stored_submission = next(item for item in repo.state["submissions"] if item["submissionId"] == result["submissionId"])
+
+    assert result["nextStatus"] == "AI 预审中"
+    assert len(created_binding_ids) == 1
+    assert created_binding["documentId"] == "DOC-20260625-005"
+    assert created_binding["nodeId"] == 25
+    assert created_binding["bindingStatus"] == "已提交"
+    assert stored_submission["bindingIds"] == created_binding_ids
+    assert repo.node(project_id, 25)["status"] == "AI 预审中"
+
+
 def test_global_idempotency_covers_mutations_without_explicit_route_parameter() -> None:
     project_id = "P-2026-HDCP-001"
     document_id = "DOC-20260625-003"
@@ -5445,6 +5506,66 @@ def test_document_mutations_are_idempotent_and_project_etag_guarded() -> None:
     assert deleted["nextStatus"] == "已解除挂载"
     assert deleted_replay["id"] == deleted["id"]
     assert repo.find_one("bindings", "BIND-24-002") is None
+
+    submitted_delete = client.delete(
+        f"/projects/{project_id}/documents/DOC-20260625-001",
+        headers={"If-Match": project["etag"], "Idempotency-Key": "submitted-document-delete"},
+    )
+    assert_error(submitted_delete, "CONFLICT")
+
+    removable_upload = assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/upload-session",
+            json={
+                "files": [
+                    {
+                        "fileName": "未提交可删除资料.pdf",
+                        "fileSize": 1024,
+                        "fileType": "application/pdf",
+                    }
+                ]
+            },
+            headers={"If-Match": project["etag"], "Idempotency-Key": "document-delete-upload"},
+        )
+    )
+    removable_target = removable_upload["uploadUrls"][0]
+    complete_url = (
+        f"/projects/{project_id}/documents/upload-session/"
+        f"{removable_upload['uploadSessionId']}/complete"
+    )
+    assert_ok(
+        client.post(
+            complete_url,
+            json={"completedFiles": []},
+            headers={"If-Match": project["etag"], "Idempotency-Key": "document-delete-complete"},
+        )
+    )
+    document_id = removable_target["documentId"]
+    version_id = removable_target["documentVersionId"]
+    deleted_document = assert_ok(
+        client.delete(
+            f"/projects/{project_id}/documents/{document_id}",
+            headers={"If-Match": project["etag"], "Idempotency-Key": "document-delete-once"},
+        )
+    )
+    deleted_document_replay = assert_ok(
+        client.delete(
+            f"/projects/{project_id}/documents/{document_id}",
+            headers={"If-Match": project["etag"], "Idempotency-Key": "document-delete-once"},
+        )
+    )
+    assert deleted_document["nextStatus"] == "已删除"
+    assert deleted_document_replay["id"] == deleted_document["id"]
+    assert deleted_document["removed"]["documents"] == 1
+    assert deleted_document["removed"]["versions"] == 1
+    assert deleted_document["removed"]["knowledgeFiles"] == 1
+    assert deleted_document["removed"]["knowledgeTasks"] == 1
+    assert deleted_document["removed"]["uploadSessionFiles"] == 1
+    assert repo.find_one("documents", document_id) is None
+    assert repo.find_one("versions", version_id) is None
+    assert not any(
+        item.get("documentId") == document_id for item in repo.state.get("knowledge_files", [])
+    )
 
 
 def test_project_mutations_reject_stale_if_match_header() -> None:
@@ -7577,6 +7698,7 @@ def test_contractor_default_project_upload_uses_local_direct_upload(monkeypatch)
                         "fileName": "contractor-default-project-auth.pdf",
                         "fileSize": len(body),
                         "fileType": "application/pdf",
+                        "materialCategory": "设计资料",
                     }
                 ],
                 "requireSignedUrls": True,
@@ -7586,11 +7708,32 @@ def test_contractor_default_project_upload_uses_local_direct_upload(monkeypatch)
     )
     target = upload["uploadUrls"][0]
     assert target["url"].startswith("/api/projects/P-2026-GDLNG-002/documents/upload-session/")
+    assert target["materialCategory"] == "设计资料"
     assert target["headers"]["X-Role"] == "contractor"
     assert target["headers"]["X-User-Id"] == "USER-CONTRACTOR-001"
 
     stored = assert_ok(client.put(target["url"], content=body, headers=target["headers"]))
+    document = repo.find_one("documents", target["documentId"])
     assert stored["storageBucket"] == "local"
+    assert document["sourceOrgName"] == "粤海安装工程有限公司"
+    assert document["materialCategory"] == "设计资料"
+
+    completed = assert_ok(
+        client.post(
+            f"/projects/P-2026-GDLNG-002/documents/upload-session/{upload['uploadSessionId']}/complete",
+            json={"completedFiles": [{"documentVersionId": target["documentVersionId"], "fileSize": len(body)}]},
+            headers={"X-Role": "contractor", "X-User-Id": "USER-CONTRACTOR-001"},
+        )
+    )
+    inspection_files = assert_ok(
+        client.get(
+            "/projects/P-2026-GDLNG-002/documents?page=1&pageSize=100",
+            headers={"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"},
+        )
+    )
+    assert completed["fileCount"] == 1
+    uploaded_document = next(item for item in inspection_files["items"] if item["id"] == target["documentId"])
+    assert uploaded_document["materialCategory"] == "设计资料"
 
 
 def test_worker_uses_ocr_http_client_when_configured(monkeypatch) -> None:
@@ -8378,10 +8521,14 @@ class FakePostgresConnection:
         self.idempotency_rows: dict[str, dict] = {}
         self.transactions_started = 0
         self.transactions_closed = 0
+        self.commits = 0
         self.executed: list[str] = []
 
     def transaction(self):
         return FakePostgresTransaction(self)
+
+    def commit(self):
+        self.commits += 1
 
     def execute(self, sql, params=None):
         normalized = " ".join(str(sql).split())
@@ -8454,6 +8601,7 @@ def test_postgres_flush_uses_transaction() -> None:
 
     assert database.transactions_started >= 1
     assert database.transactions_closed >= 1
+    assert database.commits == 1
     assert database.state_rows
     assert database.singleton_rows
 

@@ -131,18 +131,12 @@ export type DocumentAsset = {
   projectId: string
   fileName: string
   fileType: string
+  materialCategory?: string | null
   sourceOrgName: string
   uploaderName: string
   currentVersionId: string
   fileStatus: '草稿' | '已上传' | '已撤回' | '已替换' | '已作废'
-  currentOcrStatus:
-    | '待识别'
-    | '未识别'
-    | '排队中'
-    | '识别中'
-    | '已识别'
-    | '识别失败'
-    | '人工修正'
+  currentOcrStatus: '待识别' | '未识别' | '排队中' | '识别中' | '已识别' | '识别失败' | '人工修正'
   updatedAt: string
   actions: ActionCode[]
 }
@@ -231,6 +225,18 @@ export type ReviewOpinion = {
   evidenceLinkIds: string[]
   reviewerName: string
   createdAt: string
+}
+
+export type RectificationItem = {
+  id: string
+  projectId: string
+  nodeId: number
+  status: '待反馈' | '已反馈' | '已关闭' | string
+  comment: string
+  createdAt: string
+  bindingIds?: string[]
+  feedbackAt?: string
+  feedbackByName?: string
 }
 
 export type ReportVersion = {
@@ -414,6 +420,7 @@ export type NodePackagePayload = {
   availableVersions: DocumentVersion[]
   extractedFields: ExtractedField[]
   reviewOpinions: ReviewOpinion[]
+  rectifications: RectificationItem[]
   aiRuns: AiReviewRun[]
   actions: ActionCode[]
 }

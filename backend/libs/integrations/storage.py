@@ -125,6 +125,34 @@ class ObjectStorage:
         client.put_object(bucket, object_name, io.BytesIO(data), length=len(data), content_type=content_type)
         return f"minio://{bucket}/{object_name}"
 
+    def remove_object(self, bucket: str, object_name: str) -> bool:
+        client = self.client()
+        if client is None:
+            if self.required:
+                raise ObjectStorageUnavailable("对象存储不可用，无法删除文件对象。")
+            return False
+        try:
+            from minio.error import S3Error
+        except Exception:
+            S3Error = None  # type: ignore[assignment]
+        existed = True
+        try:
+            client.stat_object(bucket, object_name)
+        except Exception as exc:
+            if S3Error is not None and isinstance(exc, S3Error) and exc.code == "NoSuchKey":
+                existed = False
+            elif self.required:
+                raise ObjectStorageUnavailable(f"对象存储对象检查失败：{exc}")
+        try:
+            client.remove_object(bucket, object_name)
+            return existed
+        except Exception as exc:
+            if S3Error is not None and isinstance(exc, S3Error) and exc.code == "NoSuchKey":
+                return False
+            if self.required:
+                raise ObjectStorageUnavailable(f"对象存储删除失败：{exc}")
+            return False
+
     def download_to_temp(self, bucket: str, object_name: str, *, suffix: str = "") -> Path | None:
         client = self.client()
         if client is None:

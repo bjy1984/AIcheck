@@ -6294,6 +6294,7 @@ export default [
         reviewOpinions: state.reviewOpinions.filter(
           (item) => item.projectId === id && item.nodeId === node.nodeId
         ),
+        rectifications: [],
         aiRuns: state.aiRuns.filter((item) => item.projectId === id && item.nodeId === node.nodeId),
         actions: node.actions
       })
@@ -6627,6 +6628,45 @@ export default [
       })
       if (mutationError) return mutationError
       const selectedBindingIds = Array.isArray(body?.bindingIds) ? body.bindingIds : []
+      const selectedDocumentIds = Array.isArray(body?.documentIds) ? body.documentIds : []
+      const createdBindingIds: string[] = []
+      selectedDocumentIds.forEach((documentId) => {
+        const document = state.documents.find((item) => item.projectId === id && item.id === documentId)
+        if (!document) return
+        nodeIds.forEach((currentNodeId) => {
+          const existing = state.bindings.find(
+            (binding) =>
+              binding.projectId === id &&
+              binding.nodeId === currentNodeId &&
+              binding.documentId === document.id
+          )
+          if (existing) {
+            if (!selectedBindingIds.includes(existing.id)) selectedBindingIds.push(existing.id)
+            return
+          }
+          const requirement = requirements.find((item) => item.nodeId === currentNodeId)
+          const version = state.versions.find((item) => item.id === document.currentVersionId)
+          const binding: NodeFileBinding = {
+            id: `BIND-${currentNodeId}-${Date.now()}-${createdBindingIds.length}`,
+            projectId: id,
+            nodeId: currentNodeId,
+            requirementId: requirement?.id,
+            requirementName: requirement?.name,
+            documentId: document.id,
+            documentVersionId: document.currentVersionId,
+            fileName: document.fileName,
+            versionNo: version?.versionNo || 'V1',
+            usage: body?.usage || '原始提交',
+            sourceOrgName: document.sourceOrgName,
+            bindingStatus: '草稿挂载',
+            boundAt: serverTime,
+            actions: ['submission:submit', 'submission:withdraw']
+          }
+          state.bindings.unshift(binding)
+          selectedBindingIds.push(binding.id)
+          createdBindingIds.push(binding.id)
+        })
+      })
       const selectedBindings = state.bindings.filter((binding) => {
         if (binding.projectId !== id || !nodeIds.includes(binding.nodeId)) return false
         return selectedBindingIds.length ? selectedBindingIds.includes(binding.id) : true
@@ -6687,7 +6727,9 @@ export default [
         snapshotId,
         nextStatus: 'AI 预审中',
         changed,
-        createdTodos: [createdTodo]
+        createdTodos: [createdTodo],
+        bindingIds: selectedBindings.map((binding) => binding.id),
+        createdBindingIds
       })
     }
   },

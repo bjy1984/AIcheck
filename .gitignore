@@ -25,3 +25,4 @@ backend/ocr_eval/public_reports/
 
 output/**/*.inspect.ndjson
 output/knowledge_uploads/
+output/document_uploads/

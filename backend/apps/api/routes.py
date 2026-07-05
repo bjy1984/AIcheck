@@ -48,7 +48,7 @@ from libs.embedding_models import embedding_registry_payload, embedding_runtime_
 from libs.integrations import task_dispatcher
 from libs.integrations.errors import IntegrationServiceError
 from libs.integrations.ocr_client import OcrClient
-from libs.integrations.storage import ObjectStorageUnavailable, object_storage
+from libs.integrations.storage import ObjectStorageUnavailable, object_storage, parse_storage_url
 from libs.knowledge_readiness import build_knowledge_rule_scorecard
 from libs.knowledge_retrieval import answer_draft_from_clauses, retrieve_knowledge_clauses
 from libs.review_orchestrator import (
@@ -162,6 +162,7 @@ AI_FEEDBACK_TYPES = {
 }
 
 FDE_ROLES = {"fde"}
+SUBMITTED_DOCUMENT_BINDING_STATUSES = {"已提交", "需补正", "已通过"}
 
 ROLE_LABELS = {
     "inspection": "监检人员",
@@ -1454,6 +1455,182 @@ def document_node_ids(project_id: str, document_id: str) -> list[int]:
     return sorted(node_ids)
 
 
+def document_bindings(project_id: str, document_id: str) -> list[dict[str, Any]]:
+    return [
+        item
+        for item in repo.state["bindings"]
+        if item.get("projectId") == project_id and item.get("documentId") == document_id
+    ]
+
+
+def document_has_submitted_binding(project_id: str, document_id: str) -> bool:
+    return any(
+        binding.get("bindingStatus") in SUBMITTED_DOCUMENT_BINDING_STATUSES
+        for binding in document_bindings(project_id, document_id)
+    )
+
+
+def document_storage_targets(document_id: str) -> set[tuple[str, str]]:
+    targets: set[tuple[str, str]] = set()
+    for version in repo.state.get("versions", []):
+        if version.get("documentId") != document_id:
+            continue
+        storage_key = str(version.get("storageKey") or "")
+        parsed = parse_storage_url(storage_key)
+        if parsed:
+            targets.add(parsed)
+            continue
+        storage_bucket = str(version.get("storageBucket") or "")
+        if (
+            storage_bucket
+            and storage_key
+            and not storage_key.startswith(("local://", "mock://", "http://", "https://"))
+        ):
+            targets.add((storage_bucket, storage_key))
+    return targets
+
+
+def remove_document_storage_objects(document_id: str) -> int:
+    removed = 0
+    for bucket, object_name in sorted(document_storage_targets(document_id)):
+        if object_storage.remove_object(bucket, object_name):
+            removed += 1
+    return removed
+
+
+def remove_project_document_records(project_id: str, document_id: str) -> dict[str, int]:
+    version_ids = {
+        str(item.get("id"))
+        for item in repo.state.get("versions", [])
+        if item.get("documentId") == document_id and item.get("id")
+    }
+    binding_ids = {
+        str(item.get("id"))
+        for item in repo.state.get("bindings", [])
+        if item.get("projectId") == project_id
+        and item.get("documentId") == document_id
+        and item.get("id")
+    }
+    knowledge_file_ids = {
+        str(item.get("id"))
+        for item in repo.state.get("knowledge_files", [])
+        if item.get("documentId") == document_id
+        or str(item.get("documentVersionId") or "") in version_ids
+    }
+    chunk_ids = {
+        str(item.get("id"))
+        for item in repo.state.get("knowledge_chunks", [])
+        if item.get("fileId") in knowledge_file_ids
+        or item.get("documentId") == document_id
+        or str(item.get("documentVersionId") or "") in version_ids
+    }
+    removed: dict[str, int] = {}
+
+    def prune(collection: str, key: str, predicate) -> None:
+        before = len(repo.state.get(collection, []))
+        repo.state[collection] = [
+            item for item in repo.state.get(collection, []) if not predicate(item)
+        ]
+        removed[key] = before - len(repo.state.get(collection, []))
+
+    removed["storageObjects"] = remove_document_storage_objects(document_id)
+    prune("documents", "documents", lambda item: item.get("id") == document_id)
+    prune("versions", "versions", lambda item: item.get("documentId") == document_id)
+    prune(
+        "bindings",
+        "bindings",
+        lambda item: item.get("projectId") == project_id and item.get("documentId") == document_id,
+    )
+    prune(
+        "extracted_fields",
+        "extractedFields",
+        lambda item: str(item.get("documentVersionId") or "") in version_ids,
+    )
+    prune(
+        "evidence_links",
+        "evidenceLinks",
+        lambda item: item.get("documentId") == document_id
+        or str(item.get("documentVersionId") or "") in version_ids
+        or str(item.get("objectId") or "") in version_ids
+        or str(item.get("fileId") or "") in knowledge_file_ids
+        or str(item.get("knowledgeFileId") or "") in knowledge_file_ids
+        or str(item.get("chunkId") or item.get("knowledgeChunkId") or "") in chunk_ids,
+    )
+    prune(
+        "knowledge_files",
+        "knowledgeFiles",
+        lambda item: item.get("documentId") == document_id
+        or str(item.get("documentVersionId") or "") in version_ids,
+    )
+    prune(
+        "knowledge_chunks",
+        "knowledgeChunks",
+        lambda item: str(item.get("fileId") or "") in knowledge_file_ids
+        or item.get("documentId") == document_id
+        or str(item.get("documentVersionId") or "") in version_ids,
+    )
+    prune(
+        "knowledge_tasks",
+        "knowledgeTasks",
+        lambda item: str(item.get("targetId") or "") in knowledge_file_ids
+        or item.get("documentId") == document_id
+        or str(item.get("documentVersionId") or "") in version_ids,
+    )
+    prune(
+        "ocr_jobs",
+        "ocrJobs",
+        lambda item: item.get("documentId") == document_id
+        or str(item.get("documentVersionId") or "") in version_ids,
+    )
+    prune(
+        "ocr_parse_results",
+        "ocrParseResults",
+        lambda item: item.get("documentId") == document_id
+        or str(item.get("documentVersionId") or "") in version_ids,
+    )
+    prune(
+        "ocr_corrections",
+        "ocrCorrections",
+        lambda item: item.get("documentId") == document_id
+        or str(item.get("documentVersionId") or "") in version_ids,
+    )
+
+    upload_file_before = sum(
+        len(session.get("files") or [])
+        for session in repo.state.get("upload_sessions", [])
+        if session.get("projectId") == project_id
+    )
+    for session in repo.state.get("upload_sessions", []):
+        if session.get("projectId") != project_id:
+            continue
+        session["files"] = [
+            item
+            for item in session.get("files") or []
+            if item.get("documentId") != document_id
+            and str(item.get("documentVersionId") or "") not in version_ids
+        ]
+    upload_file_after = sum(
+        len(session.get("files") or [])
+        for session in repo.state.get("upload_sessions", [])
+        if session.get("projectId") == project_id
+    )
+    removed["uploadSessionFiles"] = upload_file_before - upload_file_after
+
+    draft_binding_before = 0
+    draft_binding_after = 0
+    for draft in repo.state.get("submission_drafts", []):
+        if draft.get("projectId") != project_id:
+            continue
+        draft_binding_before += len(draft.get("bindingIds") or [])
+        draft["bindingIds"] = [
+            item for item in draft.get("bindingIds") or [] if str(item) not in binding_ids
+        ]
+        draft_binding_after += len(draft.get("bindingIds") or [])
+    removed["draftBindings"] = draft_binding_before - draft_binding_after
+
+    return removed
+
+
 def report_node_ids(project_id: str, report_id: str) -> list[int]:
     report = repo.find_one("reports", report_id)
     if not report or report.get("projectId") != project_id:
@@ -2180,6 +2357,89 @@ def scoped_binding_ids(project_id: str, node_ids: list[int], binding_ids: list[s
         and item.get("bindingStatus") != "已通过"
     ]
     return scoped
+
+
+def ensure_submission_document_bindings(
+    project_id: str,
+    node_ids: list[int],
+    document_ids: list[str],
+    *,
+    usage: str = "原始提交",
+) -> tuple[list[str], list[str], list[str]]:
+    binding_ids: list[str] = []
+    created_ids: list[str] = []
+    invalid_ids: list[str] = []
+    for raw_document_id in document_ids:
+        document_id = str(raw_document_id or "").strip()
+        if not document_id:
+            continue
+        document = repo.find_one("documents", document_id)
+        if not document or document.get("projectId") != project_id:
+            invalid_ids.append(document_id)
+            continue
+        version_id = document.get("currentVersionId")
+        version = repo.find_one("versions", version_id) if version_id else None
+        if not version_id:
+            invalid_ids.append(document_id)
+            continue
+        for node_id in node_ids:
+            existing = next(
+                (
+                    item
+                    for item in repo.state["bindings"]
+                    if item.get("projectId") == project_id
+                    and int(item.get("nodeId") or 0) == int(node_id)
+                    and item.get("documentId") == document_id
+                    and item.get("documentVersionId") == version_id
+                ),
+                None,
+            )
+            if existing:
+                binding_ids.append(existing["id"])
+                continue
+            requirements = [item for item in repo.state["requirements"] if int(item["nodeId"]) == int(node_id)]
+            requirement = requirements[len(created_ids) % len(requirements)] if requirements else None
+            binding = {
+                "id": f"BIND-{node_id}-{uuid4().hex[:6].upper()}",
+                "projectId": project_id,
+                "nodeId": node_id,
+                "requirementId": requirement.get("id") if requirement else None,
+                "requirementName": requirement.get("name") if requirement else None,
+                "documentId": document_id,
+                "documentVersionId": version_id,
+                "fileName": document["fileName"],
+                "versionNo": (version or {}).get("versionNo") or "V1",
+                "usage": usage,
+                "sourceOrgName": document["sourceOrgName"],
+                "bindingStatus": "草稿挂载",
+                "boundByName": document.get("uploaderName") or "李工",
+                "boundAt": server_time(),
+                "actions": ["submission:submit", "submission:withdraw"],
+            }
+            repo.state["bindings"].insert(0, binding)
+            binding_ids.append(binding["id"])
+            created_ids.append(binding["id"])
+    return binding_ids, created_ids, invalid_ids
+
+
+def submission_binding_ids_from_body(
+    project_id: str,
+    node_ids: list[int],
+    body: dict[str, Any],
+) -> tuple[list[str], list[str], list[str]]:
+    binding_ids = scoped_binding_ids(project_id, node_ids, body.get("bindingIds") or [])
+    document_ids = [str(item) for item in (body.get("documentIds") or []) if item]
+    created_binding_ids: list[str] = []
+    invalid_document_ids: list[str] = []
+    if document_ids:
+        document_binding_ids, created_binding_ids, invalid_document_ids = ensure_submission_document_bindings(
+            project_id,
+            node_ids,
+            document_ids,
+            usage=body.get("usage") or "原始提交",
+        )
+        binding_ids.extend(document_binding_ids)
+    return list(dict.fromkeys(binding_ids)), created_binding_ids, invalid_document_ids
 
 
 def build_config_diff(target: str, object_id: str, values: dict[str, Any], *, object_name: str | None = None) -> dict[str, Any]:
@@ -3084,7 +3344,7 @@ def workbench_context(request: Request, project_id: str, role: str = Query(defau
         for item in repo.state["messages"]
         if item.get("projectId") == project_id and record_visible_for_scope(item, scope, project_id=project_id)
     ]
-    current_node_id = ROLE_NODE_MAP.get(resolved_role, project.get("currentNodeId", 24))
+    current_node_id = repo.role_current_node_id(project, resolved_role)
     role_project = repo.project_for_role(project, resolved_role)
     return ok(
         {
@@ -3209,6 +3469,11 @@ def node_package(request: Request, project_id: str, node_id: int):
             ],
             "extractedFields": repo.fields_for_versions(version_ids),
             "reviewOpinions": [repo.clone(item) for item in repo.state["review_opinions"] if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)],
+            "rectifications": [
+                repo.clone(item)
+                for item in repo.state["rectifications"]
+                if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)
+            ],
             "aiRuns": [repo.clone(item) for item in repo.state["ai_runs"] if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)],
             "actions": repo.clone(node.get("actions", [])),
         },
@@ -3232,7 +3497,7 @@ def list_documents(request: Request, project_id: str, page_no: int = Query(defau
             if binding.get("projectId") == effective_project_id and int(binding.get("nodeId")) == int(nodeId)
         }
         items = [item for item in items if item["id"] in document_ids]
-    items = filter_keyword(items, keyword, ["fileName", "sourceOrgName"])
+    items = filter_keyword(items, keyword, ["fileName", "sourceOrgName", "materialCategory"])
     return ok(page(items, page_no, page_size), request)
 
 
@@ -3603,6 +3868,60 @@ def delete_binding(
     return idempotent(request, idempotency_key, produce, fingerprint_source={"bindingId": binding_id})
 
 
+@router.delete("/projects/{project_id}/documents/{document_id}")
+def delete_project_document(
+    request: Request,
+    project_id: str,
+    document_id: str,
+    x_role: str | None = Header(default=None, alias="X-Role"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role)
+        if guard:
+            return guard
+        doc = repo.find_one("documents", document_id)
+        if not doc or doc.get("projectId") != project_id:
+            return fail(errors.NOT_FOUND, request)
+        if document_has_submitted_binding(project_id, document_id):
+            return fail(
+                errors.CONFLICT,
+                request,
+                message=(
+                    "文件已提交审核，不能直接删除。"
+                    "请按撤回或补正流程处理。"
+                ),
+            )
+        removed = remove_project_document_records(project_id, document_id)
+        return ok(
+            {
+                **repo.mutation_result(
+                    "删除未提交文件",
+                    "Document",
+                    document_id,
+                    next_status="已删除",
+                    changed=[
+                        {
+                            "field": "fileStatus",
+                            "before": doc.get("fileStatus"),
+                            "after": "已删除",
+                        }
+                    ],
+                ),
+                "documentId": document_id,
+                "removed": removed,
+            },
+            request,
+        )
+
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"documentId": document_id},
+    )
+
+
 @router.post("/projects/{project_id}/documents/{document_id}/withdraw")
 def withdraw_document(
     request: Request,
@@ -3684,7 +4003,9 @@ def save_submission_draft(
         if guard:
             return guard
         draft_id = f"DRAFT-{uuid4().hex[:8].upper()}"
-        binding_ids = scoped_binding_ids(project_id, node_ids, body.get("bindingIds") or [])
+        binding_ids, created_binding_ids, invalid_document_ids = submission_binding_ids_from_body(project_id, node_ids, body)
+        if invalid_document_ids:
+            return fail(errors.NOT_FOUND, request, data={"invalidDocumentIds": invalid_document_ids})
         if not binding_ids:
             return fail(errors.EMPTY_NODE_PACKAGE, request)
         draft = {
@@ -3698,7 +4019,7 @@ def save_submission_draft(
         }
         repo.state["submission_drafts"].insert(0, draft)
         repo.add_audit("保存提交草稿", "SubmissionDraft", draft_id)
-        return ok({"draftId": draft_id, "savedAt": draft["savedAt"], "bindingIds": binding_ids}, request)
+        return ok({"draftId": draft_id, "savedAt": draft["savedAt"], "bindingIds": binding_ids, "createdBindingIds": created_binding_ids}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
@@ -3768,7 +4089,9 @@ def submit_node_package(
             return guard
         submission_id = f"SUB-{uuid4().hex[:8].upper()}"
         snapshot_id = f"SNAP-{uuid4().hex[:8].upper()}"
-        binding_ids = scoped_binding_ids(project_id, node_ids, body.get("bindingIds") or [])
+        binding_ids, created_binding_ids, invalid_document_ids = submission_binding_ids_from_body(project_id, node_ids, body)
+        if invalid_document_ids:
+            return fail(errors.NOT_FOUND, request, data={"invalidDocumentIds": invalid_document_ids})
         if not binding_ids:
             return fail(errors.EMPTY_NODE_PACKAGE, request)
         changed = []
@@ -3805,9 +4128,10 @@ def submit_node_package(
             "submittedAt": server_time(),
             "createdTodoIds": [todo_id],
             "changed": changed,
+            "createdBindingIds": created_binding_ids,
         }
         repo.state["submissions"].insert(0, submission)
-        return ok({"submissionId": submission_id, "snapshotId": snapshot_id, "nextStatus": "AI 预审中", "createdTodos": [repo.state["todos"][0]]}, request)
+        return ok({"submissionId": submission_id, "snapshotId": snapshot_id, "nextStatus": "AI 预审中", "createdTodos": [repo.state["todos"][0]], "bindingIds": binding_ids, "createdBindingIds": created_binding_ids}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 

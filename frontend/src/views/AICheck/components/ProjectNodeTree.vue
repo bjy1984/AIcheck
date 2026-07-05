@@ -29,6 +29,8 @@ type ProjectTreeViewNode =
 const props = defineProps<{
   groups: ProjectTreePayload['groups']
   activeNodeId: number
+  showOverview?: boolean
+  emptyDescription?: string
 }>()
 
 const emit = defineEmits<{
@@ -51,15 +53,8 @@ const totalFileCount = computed(() =>
   )
 )
 
-const treeData = computed<ProjectTreeViewNode[]>(() => [
-  {
-    id: 'overview',
-    label: '项目总览',
-    type: 'overview',
-    nodeCount: totalNodeCount.value,
-    fileCount: totalFileCount.value
-  },
-  ...props.groups.map((group, index) => ({
+const treeData = computed<ProjectTreeViewNode[]>(() => {
+  const groups = props.groups.map((group, index) => ({
     id: `group-${index}`,
     label: group.groupName,
     type: 'group' as const,
@@ -70,7 +65,18 @@ const treeData = computed<ProjectTreeViewNode[]>(() => [
       node
     }))
   }))
-])
+  if (props.showOverview === false) return groups
+  return [
+    {
+      id: 'overview',
+      label: '项目总览',
+      type: 'overview',
+      nodeCount: totalNodeCount.value,
+      fileCount: totalFileCount.value
+    },
+    ...groups
+  ]
+})
 
 const activeTreeKey = computed(() =>
   props.activeNodeId ? `node-${props.activeNodeId}` : 'overview'
@@ -97,7 +103,7 @@ const handleNodeClick = (data: ProjectTreeViewNode) => {
     </template>
 
     <ElTree
-      v-if="groups.length"
+      v-if="treeData.length"
       class="tree-scroll node-tree"
       :data="treeData"
       node-key="id"
@@ -141,7 +147,7 @@ const handleNodeClick = (data: ProjectTreeViewNode) => {
         </span>
       </template>
     </ElTree>
-    <ElEmpty v-else description="暂无节点" />
+    <ElEmpty v-else :description="emptyDescription || '暂无节点'" />
   </ElCard>
 </template>
 
@@ -264,8 +270,8 @@ const handleNodeClick = (data: ProjectTreeViewNode) => {
 }
 
 .node-overview-button {
-  margin-left: 0;
   margin-bottom: 8px;
+  margin-left: 0;
   background: linear-gradient(180deg, #f8fbff, #eef5ff);
   border-color: #cfe0ff;
 }
@@ -289,10 +295,10 @@ const handleNodeClick = (data: ProjectTreeViewNode) => {
 
 .node-name {
   display: block;
+  overflow: hidden;
   font-size: 13px;
   font-weight: 700;
   line-height: 1.25;
-  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

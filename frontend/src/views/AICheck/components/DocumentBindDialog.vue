@@ -32,6 +32,7 @@ const props = defineProps<{
   role: RoleCode
   loading: boolean
   operationError?: string
+  initialDocumentId?: string
 }>()
 
 const emit = defineEmits<{
@@ -81,7 +82,10 @@ const dialogTitle = computed(() =>
 )
 
 const resetForm = () => {
-  const firstFile = projectFiles.value[0]
+  const initialFile = props.initialDocumentId
+    ? projectFiles.value.find((item) => item.id === props.initialDocumentId)
+    : undefined
+  const firstFile = initialFile || projectFiles.value[0]
   form.documentId = firstFile?.id || ''
   form.documentVersionId = firstFile?.currentVersionId || ''
   form.usage = props.role === 'ndt' ? '检测报告' : '原始提交'
@@ -123,8 +127,8 @@ const handleRetry = () => {
 }
 
 watch(
-  () => props.modelValue,
-  (open) => {
+  () => [props.modelValue, props.initialDocumentId] as const,
+  ([open]) => {
     if (open) resetForm()
   }
 )

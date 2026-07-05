@@ -1944,6 +1944,107 @@ PROJECT_MEMBERS = [
     },
 ]
 
+INSPECTION_TEST_USER_ID = "USER-INSPECTION-001"
+INSPECTION_TEST_USER_NAME = "张工"
+INSPECTION_TEST_ORG_NAME = "省特检院一部"
+
+
+def _stable_inspection_member_id(project_id: str, used_ids: set[str]) -> str:
+    suffix = "".join(char if char.isalnum() else "-" for char in project_id).strip("-").upper()
+    candidate = f"PM-INSPECTION-{suffix or 'PROJECT'}"
+    if candidate not in used_ids:
+        return candidate
+    index = 2
+    while f"{candidate}-{index}" in used_ids:
+        index += 1
+    return f"{candidate}-{index}"
+
+
+def _inspection_actions_for_project(project: dict[str, Any]) -> list[str]:
+    pack = load_business_pack(project.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID)
+    return role_actions_map(pack).get("inspection") or ROLE_ACTIONS["inspection"]
+
+
+def _inspection_node_scope_for_project(
+    project: dict[str, Any],
+    tree_nodes_by_project: dict[str, list[int]] | None = None,
+) -> list[int]:
+    project_id = str(project.get("id") or "")
+    node_ids = list((tree_nodes_by_project or {}).get(project_id) or [])
+    if not node_ids and project_id:
+        pack = load_business_pack(project.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID)
+        node_ids = [int(node["nodeId"]) for node in build_project_tree(project_id, pack)]
+    if project.get("currentNodeId") is not None:
+        node_ids.append(int(project["currentNodeId"]))
+    return list(dict.fromkeys(node_ids))
+
+
+def ensure_inspection_project_members(
+    projects: list[dict[str, Any]],
+    project_members: list[dict[str, Any]],
+    tree_nodes: list[dict[str, Any]] | None = None,
+) -> bool:
+    """Test data rule: the default inspection account can review every test project."""
+    changed = False
+    used_ids = {str(member.get("id")) for member in project_members if member.get("id")}
+    tree_nodes_by_project: dict[str, list[int]] = {}
+    for node in tree_nodes or []:
+        project_id = str(node.get("projectId") or "")
+        node_id = node.get("nodeId")
+        if not project_id or node_id is None:
+            continue
+        tree_nodes_by_project.setdefault(project_id, []).append(int(node_id))
+
+    members_by_project = {
+        str(member.get("projectId")): member
+        for member in project_members
+        if member.get("userId") == INSPECTION_TEST_USER_ID
+        and member.get("role") == "inspection"
+        and member.get("projectId")
+    }
+    for project in projects:
+        project_id = str(project.get("id") or "")
+        if not project_id:
+            continue
+        node_scope = _inspection_node_scope_for_project(project, tree_nodes_by_project)
+        actions = _inspection_actions_for_project(project)
+        member = members_by_project.get(project_id)
+        if member is None:
+            member_id = _stable_inspection_member_id(project_id, used_ids)
+            used_ids.add(member_id)
+            project_members.append(
+                {
+                    "id": member_id,
+                    "projectId": project_id,
+                    "userId": INSPECTION_TEST_USER_ID,
+                    "name": INSPECTION_TEST_USER_NAME,
+                    "orgName": project.get("inspectionOrgName") or INSPECTION_TEST_ORG_NAME,
+                    "role": "inspection",
+                    "nodeScope": node_scope,
+                    "actions": actions,
+                    "status": "启用",
+                    "updatedAt": project.get("updatedAt") or "2026-06-26 09:30:00",
+                }
+            )
+            changed = True
+            continue
+
+        desired_fields = {
+            "userId": INSPECTION_TEST_USER_ID,
+            "name": member.get("name") or INSPECTION_TEST_USER_NAME,
+            "orgName": member.get("orgName") or project.get("inspectionOrgName") or INSPECTION_TEST_ORG_NAME,
+            "role": "inspection",
+            "status": "启用",
+        }
+        existing_scope = [int(node_id) for node_id in member.get("nodeScope") or []]
+        desired_fields["nodeScope"] = list(dict.fromkeys([*existing_scope, *node_scope]))
+        desired_fields["actions"] = list(dict.fromkeys([*actions, *(member.get("actions") or [])]))
+        for key, value in desired_fields.items():
+            if member.get(key) != value:
+                member[key] = value
+                changed = True
+    return changed
+
 ADMIN_CONFIG = {
     "orgUnits": [
         {"id": "ORG-OWNER-001", "name": "华东管网建设公司", "type": "owner", "contactName": "赵经理", "contactPhone": "13800000001", "status": "启用", "projectCount": 1},
@@ -2044,6 +2145,8 @@ def fresh_state() -> dict[str, Any]:
     standard_versions = deepcopy(STANDARD_KNOWLEDGE_SEED["versions"])
     standard_knowledge_files = deepcopy(STANDARD_KNOWLEDGE_SEED["knowledgeFiles"])
     standard_knowledge_tasks = deepcopy(STANDARD_KNOWLEDGE_SEED["knowledgeTasks"])
+    project_members = deepcopy(PROJECT_MEMBERS)
+    ensure_inspection_project_members(PROJECTS, project_members, tree_nodes)
     state = {
         "projects": deepcopy(PROJECTS),
         "tree_nodes": tree_nodes,
@@ -2149,7 +2252,7 @@ def fresh_state() -> dict[str, Any]:
         "rule_versions": deepcopy(RULE_VERSIONS),
         "knowledge_config": deepcopy(KNOWLEDGE_CONFIG),
         "llm_compare_runs": deepcopy(LLM_COMPARE_RUNS),
-        "project_members": deepcopy(PROJECT_MEMBERS),
+        "project_members": project_members,
         "users": [],
         "roles": [],
         "business_packs": list_business_packs(),

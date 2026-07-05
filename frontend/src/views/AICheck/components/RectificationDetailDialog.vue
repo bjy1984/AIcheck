@@ -19,12 +19,13 @@ const props = defineProps<{
   node?: ProjectTreeNode
   bindings: NodeFileBinding[]
   todos: TodoItem[]
+  rectificationId?: string
   loading: boolean
 }>()
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
-  submit: [payload: { comment: string; bindingIds: string[] }]
+  submit: [payload: { comment: string; bindingIds: string[]; rectificationId?: string }]
 }>()
 
 const comment = ref('已根据监检意见补充证明材料，请复审。')
@@ -44,7 +45,8 @@ const nodeTodos = computed(() => props.todos.filter((todo) => todo.nodeId === pr
 const handleSubmit = () => {
   emit('submit', {
     comment: comment.value.trim(),
-    bindingIds: correctionBindings.value.map((binding) => binding.id)
+    bindingIds: correctionBindings.value.map((binding) => binding.id),
+    rectificationId: props.rectificationId
   })
 }
 
@@ -69,6 +71,9 @@ watch(
         </ElDescriptionsItem>
         <ElDescriptionsItem label="补正资料">
           {{ correctionBindings.length }} 份
+        </ElDescriptionsItem>
+        <ElDescriptionsItem v-if="rectificationId" label="补正单">
+          {{ rectificationId }}
         </ElDescriptionsItem>
       </ElDescriptions>
 

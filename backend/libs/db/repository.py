@@ -13,7 +13,7 @@ from uuid import uuid4
 from libs.contracts.responses import server_time
 from libs.integrations.storage import ObjectStorageUnavailable, object_storage, parse_storage_url
 
-from .seed import ROLE_ACTIONS, ROLE_NODE_MAP, fresh_state
+from .seed import ROLE_ACTIONS, ROLE_NODE_MAP, ensure_inspection_project_members, fresh_state
 
 
 STATE_COLLECTIONS = {
@@ -180,9 +180,25 @@ class InMemoryRepository:
     def role_actions(self, role: str) -> list[str]:
         return list(ROLE_ACTIONS.get(role, ROLE_ACTIONS["inspection"]))
 
+    def role_current_node_id(self, project: dict[str, Any], role: str) -> int:
+        project_id = project.get("id")
+        node_ids = {
+            int(node["nodeId"])
+            for node in self.state.get("tree_nodes", [])
+            if node.get("projectId") == project_id and node.get("nodeId") is not None
+        }
+        role_node_id = ROLE_NODE_MAP.get(role)
+        if role_node_id is not None and (not node_ids or int(role_node_id) in node_ids):
+            return int(role_node_id)
+        if project.get("currentNodeId") is not None:
+            return int(project["currentNodeId"])
+        if node_ids:
+            return sorted(node_ids)[0]
+        return int(ROLE_NODE_MAP.get("inspection", 24))
+
     def project_for_role(self, project: dict[str, Any], role: str) -> dict[str, Any]:
         cloned = self.clone(project)
-        cloned["currentNodeId"] = ROLE_NODE_MAP.get(role, project.get("currentNodeId", 24))
+        cloned["currentNodeId"] = self.role_current_node_id(project, role)
         cloned["riskLevel"] = self.project_risk_level(project["id"])
         if project.get("status") == "已归档":
             cloned["actions"] = ["project:view", "archive:view", "archive:download"]
@@ -441,6 +457,7 @@ class InMemoryRepository:
         *,
         source_org_name: str = "中石化安装有限公司",
         uploader_name: str = "李工",
+        material_category: str | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         doc, version, knowledge_file, knowledge_task = self._build_document_records(
             project_id,
@@ -448,6 +465,7 @@ class InMemoryRepository:
             file_type,
             source_org_name=source_org_name,
             uploader_name=uploader_name,
+            material_category=material_category,
         )
         self._insert_document_records(doc, version, knowledge_file, knowledge_task)
         return doc, version
@@ -458,8 +476,9 @@ class InMemoryRepository:
         file_name: str,
         file_type: str,
         *,
-        source_org_name: str = "中石化安装有限公司",
-        uploader_name: str = "李工",
+        source_org_name: str | None = None,
+        uploader_name: str | None = None,
+        material_category: str | None = None,
         seed: str | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
         seed = seed or uuid4().hex[:8].upper()
@@ -467,15 +486,19 @@ class InMemoryRepository:
         version_id = f"DV-{seed}-V1"
         now = server_time()
         project = self.require_project(project_id)
+        resolved_source_org_name = source_org_name or (project or {}).get("contractorOrgName") or "项目参建单位"
+        resolved_uploader_name = uploader_name or "李工"
+        resolved_material_category = str(material_category or "").strip()
         doc = {
             "id": document_id,
             "projectId": project_id,
             "businessPackId": (project or {}).get("businessPackId"),
             "materialTypeCode": "generic_review_material",
+            "materialCategory": resolved_material_category or None,
             "fileName": file_name,
             "fileType": file_type or file_name.split(".")[-1],
-            "sourceOrgName": source_org_name,
-            "uploaderName": uploader_name,
+            "sourceOrgName": resolved_source_org_name,
+            "uploaderName": resolved_uploader_name,
             "currentVersionId": version_id,
             "fileStatus": "已上传",
             "currentOcrStatus": "排队中",
@@ -493,7 +516,7 @@ class InMemoryRepository:
             "ocrStatus": "排队中",
             "sliceStatus": "未切片",
             "vectorStatus": "未向量化",
-            "uploaderName": uploader_name,
+            "uploaderName": resolved_uploader_name,
             "uploadTime": now,
             "isCurrent": True,
         }
@@ -506,6 +529,7 @@ class InMemoryRepository:
             "projectName": project.get("name") if project else "",
             "documentId": document_id,
             "documentVersionId": version_id,
+            "materialCategory": resolved_material_category or None,
             "ocrStatus": "排队中",
             "sliceStatus": "未切片",
             "vectorStatus": "待向量化",
@@ -560,6 +584,7 @@ class InMemoryRepository:
                 project_id,
                 file.get("fileName") or "未命名资料.pdf",
                 file.get("fileType") or "pdf",
+                material_category=file.get("materialCategory"),
             )
             content_type = file.get("fileType") or "application/octet-stream"
             fallback_url = f"mock://upload/{session_id}/{doc['id']}"
@@ -582,6 +607,7 @@ class InMemoryRepository:
             upload_urls.append(
                 {
                     "fileName": doc["fileName"],
+                    "materialCategory": doc.get("materialCategory"),
                     "documentId": doc["id"],
                     "documentVersionId": version["id"],
                     "url": upload_url,
@@ -595,6 +621,7 @@ class InMemoryRepository:
                     "documentId": doc["id"],
                     "documentVersionId": version["id"],
                     "fileName": doc["fileName"],
+                    "materialCategory": doc.get("materialCategory"),
                     "storageBucket": "documents",
                     "storageKey": version["storageKey"],
                     "status": "待上传",
@@ -1230,6 +1257,12 @@ class InMemoryRepository:
                 if not step.get(field) and seeded_step.get(field):
                     step[field] = self.clone(seeded_step[field])
                     changed = True
+        if ensure_inspection_project_members(
+            loaded.get("projects", []),
+            loaded.setdefault("project_members", []),
+            loaded.get("tree_nodes", []),
+        ):
+            changed = True
         return changed
 
     def persistence_object_id(self, collection_name: str, doc: dict[str, Any], index: int) -> str:
@@ -1440,6 +1473,7 @@ class InMemoryRepository:
                     """,
                     (scope, json.dumps(self.clone(payload), ensure_ascii=False)),
                 )
+        self.sync_postgres.commit()
 
     def build_admin_overview(self) -> dict[str, Any]:
         config = self.clone(self.state["admin_config"])
