@@ -1,0 +1,196 @@
+{
+  "entrypoint": "openapi/aicheck.yaml",
+  "operationCount": 22,
+  "operations": [
+    {
+      "operationId": "admin_get_config_overview",
+      "method": "GET",
+      "path": "/api/admin/config/overview",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "operationId": "knowledge_get_overview",
+      "method": "GET",
+      "path": "/api/knowledge/overview",
+      "tags": [
+        "knowledge"
+      ]
+    },
+    {
+      "operationId": "knowledge_retry_task",
+      "method": "POST",
+      "path": "/api/knowledge/tasks/{taskId}/retry",
+      "tags": [
+        "knowledge"
+      ]
+    },
+    {
+      "operationId": "archive_list_items",
+      "method": "GET",
+      "path": "/api/projects/{projectId}/archive",
+      "tags": [
+        "archive"
+      ]
+    },
+    {
+      "operationId": "archive_create_evidence_package",
+      "method": "GET",
+      "path": "/api/projects/{projectId}/archive/evidence-package",
+      "tags": [
+        "archive",
+        "exports"
+      ]
+    },
+    {
+      "operationId": "archive_create_package",
+      "method": "GET",
+      "path": "/api/projects/{projectId}/archive/package",
+      "tags": [
+        "archive",
+        "exports"
+      ]
+    },
+    {
+      "operationId": "documents_get_detail",
+      "method": "GET",
+      "path": "/api/projects/{projectId}/documents/{documentId}",
+      "tags": [
+        "documents"
+      ]
+    },
+    {
+      "operationId": "documents_get_download_url",
+      "method": "GET",
+      "path": "/api/projects/{projectId}/documents/{documentId}/download-url",
+      "tags": [
+        "documents"
+      ]
+    },
+    {
+      "operationId": "documents_get_preview_url",
+      "method": "GET",
+      "path": "/api/projects/{projectId}/documents/{documentId}/preview-url",
+      "tags": [
+        "documents"
+      ]
+    },
+    {
+      "operationId": "exports_get_task",
+      "method": "GET",
+      "path": "/api/projects/{projectId}/export-tasks/{exportId}",
+      "tags": [
+        "exports"
+      ]
+    },
+    {
+      "operationId": "inspection_create_report_review",
+      "method": "POST",
+      "path": "/api/projects/{projectId}/inspection/nodes/{nodeId}/report-review",
+      "tags": [
+        "inspection",
+        "reports"
+      ]
+    },
+    {
+      "operationId": "owner_list_reports",
+      "method": "GET",
+      "path": "/api/projects/{projectId}/owner/reports",
+      "tags": [
+        "owner",
+        "reports"
+      ]
+    },
+    {
+      "operationId": "reports_get_detail",
+      "method": "GET",
+      "path": "/api/projects/{projectId}/reports/{reportId}",
+      "tags": [
+        "reports"
+      ]
+    },
+    {
+      "operationId": "reports_update_draft",
+      "method": "PATCH",
+      "path": "/api/projects/{projectId}/reports/{reportId}",
+      "tags": [
+        "reports"
+      ]
+    },
+    {
+      "operationId": "reports_archive_report",
+      "method": "POST",
+      "path": "/api/projects/{projectId}/reports/{reportId}/archive",
+      "tags": [
+        "reports",
+        "archive"
+      ]
+    },
+    {
+      "operationId": "reports_create_export",
+      "method": "POST",
+      "path": "/api/projects/{projectId}/reports/{reportId}/export",
+      "tags": [
+        "reports",
+        "exports"
+      ]
+    },
+    {
+      "operationId": "submissions_list_history",
+      "method": "GET",
+      "path": "/api/projects/{projectId}/submissions",
+      "tags": [
+        "submissions"
+      ]
+    },
+    {
+      "operationId": "submissions_submit_node_package",
+      "method": "POST",
+      "path": "/api/projects/{projectId}/submissions/submit",
+      "tags": [
+        "submissions"
+      ]
+    },
+    {
+      "operationId": "workbench_get_project_tree",
+      "method": "GET",
+      "path": "/api/projects/{projectId}/tree",
+      "tags": [
+        "workbench"
+      ]
+    },
+    {
+      "operationId": "workbench_get_context",
+      "method": "GET",
+      "path": "/api/projects/{projectId}/workbench/context",
+      "tags": [
+        "workbench"
+      ]
+    },
+    {
+      "operationId": "workbench_get_summary",
+      "method": "GET",
+      "path": "/api/projects/{projectId}/workbench/summary",
+      "tags": [
+        "workbench"
+      ]
+    },
+    {
+      "operationId": "workbench_list_projects",
+      "method": "GET",
+      "path": "/api/workbench/projects",
+      "tags": [
+        "workbench"
+      ]
+    }
+  ],
+  "codegenTargets": [
+    {
+      "name": "frontend-aicheck-client",
+      "source": "openapi/aicheck.yaml",
+      "target": "frontend/src/api/aicheck/generated/operation-map.ts",
+      "recommendedGenerator": "scripts/openapi_contract.py --write-frontend; orval/openapi-typescript can replace this map later"
+    }
+  ]
+}

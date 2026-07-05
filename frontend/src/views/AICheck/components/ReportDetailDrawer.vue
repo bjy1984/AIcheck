@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import {
   ElAlert,
   ElButton,
@@ -7,6 +7,9 @@ import {
   ElDescriptionsItem,
   ElDrawer,
   ElEmpty,
+  ElForm,
+  ElFormItem,
+  ElInput,
   ElSkeleton,
   ElTabPane,
   ElTabs,
@@ -14,14 +17,19 @@ import {
   ElTableColumn,
   ElTag
 } from 'element-plus'
-import type { ReportDetailPayload } from '@/api/aicheck'
+import type { ReportDetailPayload, ReportSection } from '@/api/aicheck'
 import type { EvidenceLink } from '@/types/aicheck'
 import { getStatusTagType } from './status'
+
+type EditableReportSection = ReportSection & {
+  evidenceText: string
+}
 
 const props = defineProps<{
   modelValue: boolean
   detail?: ReportDetailPayload
   loading: boolean
+  saving?: boolean
   issue?: string
 }>()
 
@@ -29,6 +37,7 @@ const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   locateEvidence: [evidence: EvidenceLink]
   retry: []
+  save: [payload: { sections: ReportSection[]; remark?: string }]
 }>()
 
 const visible = computed({
@@ -40,9 +49,81 @@ const report = computed(() => props.detail?.report)
 const evidenceMap = computed(
   () => new Map((props.detail?.evidenceLinks || []).map((evidence) => [evidence.id, evidence]))
 )
+const isEditing = ref(false)
+const editableSections = ref<EditableReportSection[]>([])
+const saveRemark = ref('')
+const evidenceIdOptions = computed(() => (props.detail?.evidenceLinks || []).map((item) => item.id))
+const canEdit = computed(
+  () =>
+    Boolean(report.value?.actions?.includes('report:review')) &&
+    !['已签发', '已归档'].includes(report.value?.status || '')
+)
 
 const getEvidenceItems = (ids: string[]) =>
   ids.map((id) => evidenceMap.value.get(id)).filter(Boolean) as EvidenceLink[]
+
+const toEditableSection = (section: ReportSection): EditableReportSection => ({
+  ...section,
+  evidenceLinkIds: [...section.evidenceLinkIds],
+  evidenceText: section.evidenceLinkIds.join(', ')
+})
+
+const resetEditor = () => {
+  editableSections.value = (props.detail?.sections || []).map(toEditableSection)
+  saveRemark.value = ''
+}
+
+watch(
+  () => props.detail?.report?.etag,
+  () => {
+    isEditing.value = false
+    resetEditor()
+  },
+  { immediate: true }
+)
+
+const startEdit = () => {
+  resetEditor()
+  isEditing.value = true
+}
+
+const cancelEdit = () => {
+  resetEditor()
+  isEditing.value = false
+}
+
+const addSection = () => {
+  editableSections.value.push({
+    key: `section-${editableSections.value.length + 1}`,
+    title: '',
+    content: '',
+    evidenceLinkIds: [],
+    evidenceText: ''
+  })
+}
+
+const removeSection = (index: number) => {
+  if (editableSections.value.length <= 1) return
+  editableSections.value.splice(index, 1)
+}
+
+const splitEvidenceIds = (value: string) =>
+  value
+    .split(/[,，\s]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+
+const saveEdit = () => {
+  emit('save', {
+    sections: editableSections.value.map((section, index) => ({
+      key: section.key || `section-${index + 1}`,
+      title: section.title,
+      content: section.content,
+      evidenceLinkIds: splitEvidenceIds(section.evidenceText)
+    })),
+    remark: saveRemark.value || '编辑报告章节'
+  })
+}
 </script>
 
 <template>
@@ -69,9 +150,18 @@ const getEvidenceItems = (ids: string[]) =>
           <span>报告编号</span>
           <strong>{{ report.reportNo }} · {{ report.versionNo }}</strong>
         </div>
-        <ElTag :type="getStatusTagType(report.status)" effect="plain">
-          {{ report.status }}
-        </ElTag>
+        <div class="report-head-actions">
+          <ElTag :type="getStatusTagType(report.status)" effect="plain">
+            {{ report.status }}
+          </ElTag>
+          <ElButton v-if="canEdit && !isEditing" type="primary" plain @click="startEdit">
+            编辑报告
+          </ElButton>
+          <template v-else-if="isEditing">
+            <ElButton :disabled="saving" @click="cancelEdit">取消</ElButton>
+            <ElButton type="primary" :loading="saving" @click="saveEdit">保存</ElButton>
+          </template>
+        </div>
       </div>
 
       <ElDescriptions :column="2" border class="report-descriptions">
@@ -87,7 +177,62 @@ const getEvidenceItems = (ids: string[]) =>
 
       <ElTabs class="detail-tabs">
         <ElTabPane label="报告章节" name="sections">
-          <div class="section-list">
+          <div v-if="isEditing" class="section-editor">
+            <ElAlert
+              type="info"
+              :closable="false"
+              show-icon
+              title="编辑章节正文和证据引用，证据 ID 用逗号分隔。"
+            />
+            <div v-if="evidenceIdOptions.length" class="evidence-id-strip">
+              <span>可用证据</span>
+              <code v-for="id in evidenceIdOptions" :key="id">{{ id }}</code>
+            </div>
+            <ElForm label-position="top" class="report-section-form">
+              <section
+                v-for="(section, index) in editableSections"
+                :key="section.key || index"
+                class="section-edit-block"
+              >
+                <div class="section-edit-head">
+                  <strong>章节 {{ index + 1 }}</strong>
+                  <ElButton
+                    v-if="editableSections.length > 1"
+                    type="danger"
+                    link
+                    @click="removeSection(index)"
+                  >
+                    删除
+                  </ElButton>
+                </div>
+                <ElFormItem label="标题">
+                  <ElInput v-model="section.title" placeholder="例如：检验结论" />
+                </ElFormItem>
+                <ElFormItem label="正文">
+                  <ElInput
+                    v-model="section.content"
+                    type="textarea"
+                    :rows="5"
+                    placeholder="填写报告正文"
+                  />
+                </ElFormItem>
+                <ElFormItem label="证据 ID">
+                  <ElInput
+                    v-model="section.evidenceText"
+                    placeholder="例如：EV-24-001, EV-24-002"
+                  />
+                </ElFormItem>
+              </section>
+              <div class="section-editor-actions">
+                <ElButton plain @click="addSection">新增章节</ElButton>
+              </div>
+              <ElFormItem label="保存说明">
+                <ElInput v-model="saveRemark" placeholder="例如：补充检验结论和证据引用" />
+              </ElFormItem>
+            </ElForm>
+          </div>
+
+          <div v-else class="section-list">
             <div v-for="section in detail.sections" :key="section.key" class="section-block">
               <div class="section-title">{{ section.title }}</div>
               <p>{{ section.content }}</p>
@@ -165,6 +310,18 @@ const getEvidenceItems = (ids: string[]) =>
   margin-bottom: 12px;
 }
 
+.report-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.report-head-actions :deep(.el-button) {
+  margin-left: 0;
+}
+
 .report-head span {
   display: block;
   margin-bottom: 4px;
@@ -188,6 +345,67 @@ const getEvidenceItems = (ids: string[]) =>
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.section-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.evidence-id-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 10px 12px;
+  color: #667085;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.evidence-id-strip span {
+  margin-right: 4px;
+  font-size: 12px;
+}
+
+.evidence-id-strip code {
+  padding: 2px 6px;
+  font-size: 12px;
+  color: #1f2937;
+  background: #fff;
+  border: 1px solid #d0d5dd;
+  border-radius: 4px;
+}
+
+.report-section-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.section-edit-block {
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+}
+
+.section-edit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.section-edit-head strong {
+  color: #1f2937;
+}
+
+.section-editor-actions {
+  display: flex;
+  justify-content: flex-start;
 }
 
 .section-block {

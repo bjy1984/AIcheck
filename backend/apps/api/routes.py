@@ -1711,6 +1711,103 @@ def report_if_match_valid(report: dict[str, Any], if_match: str | None) -> bool:
     return if_match in {"*", str(revision), f'W/"{revision}"', report_etag(report)}
 
 
+def default_report_sections(report: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "key": "summary",
+            "title": "检验结论",
+            "content": "资料、证据链与规则要求一致，建议复核后签发。",
+            "evidenceLinkIds": ["EV-24-001"],
+        },
+        {
+            "key": f"node-{(report.get('nodeIds') or [24])[0]}",
+            "title": "焊工资格证及持证合格项目",
+            "content": "证书有效期覆盖施工周期，持证项目覆盖焊接方法。",
+            "evidenceLinkIds": ["EV-24-001", "EV-24-002"],
+        },
+    ]
+
+
+def report_sections(report: dict[str, Any]) -> list[dict[str, Any]]:
+    sections = report.get("sections")
+    if not isinstance(sections, list) or not sections:
+        sections = default_report_sections(report)
+    return repo.clone(sections)
+
+
+def report_version_history(report: dict[str, Any]) -> list[dict[str, Any]]:
+    history = repo.clone(report.get("versionHistory") or [])
+    current = {
+        "id": report["id"],
+        "versionNo": report.get("versionNo", "V1"),
+        "status": report["status"],
+        "generatedAt": report.get("updatedAt") or report.get("generatedAt"),
+        "summary": "当前版本",
+    }
+    return [current, *history]
+
+
+def report_review_trail(report: dict[str, Any]) -> list[dict[str, Any]]:
+    trail = repo.clone(report.get("reviewTrail") or [])
+    generated = {
+        "title": "生成报告草稿",
+        "actorName": report.get("generatedByName", "张工"),
+        "result": report["status"],
+        "createdAt": report["generatedAt"],
+    }
+    return [*trail, generated]
+
+
+def normalize_report_sections(
+    raw_sections: Any,
+    *,
+    valid_evidence_ids: set[str],
+) -> tuple[list[dict[str, Any]] | None, str | None]:
+    if not isinstance(raw_sections, list) or not raw_sections:
+        return None, "请至少保留一个报告章节。"
+    if len(raw_sections) > 20:
+        return None, "报告章节不能超过 20 个。"
+
+    normalized: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    for index, raw in enumerate(raw_sections, start=1):
+        if not isinstance(raw, dict):
+            return None, "报告章节格式不正确。"
+        title = compact_plain_text(raw.get("title"), 120)
+        content = compact_plain_text(raw.get("content"), 6000)
+        if not title:
+            return None, f"第 {index} 个章节缺少标题。"
+        if not content:
+            return None, f"第 {index} 个章节缺少正文。"
+        key = compact_plain_text(raw.get("key"), 80) or f"section-{index}"
+        if key in seen_keys:
+            key = f"{key}-{index}"
+        seen_keys.add(key)
+
+        evidence_ids: list[str] = []
+        raw_evidence_ids = raw.get("evidenceLinkIds") or []
+        if not isinstance(raw_evidence_ids, list):
+            return None, f"第 {index} 个章节的证据引用必须是数组。"
+        for evidence_id in raw_evidence_ids:
+            normalized_id = compact_plain_text(evidence_id, 80)
+            if not normalized_id:
+                continue
+            if normalized_id not in valid_evidence_ids:
+                return None, f"第 {index} 个章节引用了不存在的证据：{normalized_id}"
+            if normalized_id not in evidence_ids:
+                evidence_ids.append(normalized_id)
+
+        normalized.append(
+            {
+                "key": key,
+                "title": title,
+                "content": content,
+                "evidenceLinkIds": evidence_ids,
+            }
+        )
+    return normalized, None
+
+
 def singleton_revision(config: dict[str, Any]) -> int:
     return int(config.get("revision") or 1)
 
@@ -4931,6 +5028,9 @@ def generate_report_review(request: Request, project_id: str, node_id: int, body
             "previewUrl": "mock://preview/reports/new",
             "actions": ["report:view", "report:export", "report:archive"],
         }
+        report["sections"] = default_report_sections(report)
+        report["reviewTrail"] = []
+        report["versionHistory"] = []
         repo.state["reports"].insert(0, report)
         repo.touch_project(project_id, "报告生成/复核中", node_id)
         todo = {"id": f"TODO-{uuid4().hex[:8].upper()}", "title": "报告复核", "projectId": project_id, "targetType": "report", "targetId": report["id"], "status": "待处理", "priority": "中", "assigneeName": "张工", "actions": ["report:review"]}
@@ -4974,13 +5074,10 @@ def report_detail(request: Request, project_id: str, report_id: str):
     return ok(
         {
             "report": versioned_report(report),
-            "sections": [
-                {"key": "summary", "title": "检验结论", "content": "资料、证据链与规则要求一致，建议复核后签发。", "evidenceLinkIds": ["EV-24-001"]},
-                {"key": "node-24", "title": "焊工资格证及持证合格项目", "content": "证书有效期覆盖施工周期，持证项目覆盖焊接方法。", "evidenceLinkIds": ["EV-24-001", "EV-24-002"]},
-            ],
+            "sections": report_sections(report),
             "evidenceLinks": repo.clone(repo.state["evidence_links"]),
-            "reviewTrail": [{"title": "生成报告草稿", "actorName": report.get("generatedByName", "张工"), "result": report["status"], "createdAt": report["generatedAt"]}],
-            "versionHistory": [{"id": report["id"], "versionNo": report.get("versionNo", "V1"), "status": report["status"], "generatedAt": report["generatedAt"], "summary": "当前版本"}],
+            "reviewTrail": report_review_trail(report),
+            "versionHistory": report_version_history(report),
         },
         request,
     )
@@ -5005,14 +5102,56 @@ def update_report(
             return fail(errors.NOT_FOUND, request)
         if not report_if_match_valid(report, if_match):
             return fail(errors.ETAG_CONFLICT, request)
+        normalized_sections = None
+        if "sections" in body:
+            valid_evidence_ids = {str(item.get("id")) for item in repo.state["evidence_links"] if item.get("id")}
+            normalized_sections, section_error = normalize_report_sections(
+                body.get("sections"),
+                valid_evidence_ids=valid_evidence_ids,
+            )
+            if section_error:
+                return fail(errors.VALIDATION_ERROR, request, message=section_error)
+
         changed = []
         for field in ["title", "status"]:
             if field in body:
                 changed.append({"field": field, "before": report.get(field), "after": body[field]})
                 report[field] = body[field]
+        if normalized_sections is not None and normalized_sections != report_sections(report):
+            changed.append(
+                {
+                    "field": "sections",
+                    "before": stable_hash_payload(report_sections(report)),
+                    "after": stable_hash_payload(normalized_sections),
+                }
+            )
+            report["sections"] = normalized_sections
         if changed:
+            now = server_time()
+            previous_revision = int(report.get("revision") or 1)
+            remark = compact_plain_text(body.get("remark"), 500) or "保存报告内容"
+            report.setdefault("versionHistory", []).insert(
+                0,
+                {
+                    "id": f"{report_id}-r{previous_revision}",
+                    "versionNo": f"{report.get('versionNo', 'V1')}.r{previous_revision}",
+                    "status": report["status"],
+                    "generatedAt": report.get("updatedAt") or report.get("generatedAt"),
+                    "summary": remark,
+                },
+            )
+            report.setdefault("reviewTrail", []).insert(
+                0,
+                {
+                    "title": "保存报告",
+                    "actorName": compact_plain_text(body.get("editorName"), 80) or "张工",
+                    "result": report["status"],
+                    "createdAt": now,
+                    "comment": remark,
+                },
+            )
             report["revision"] = int(report.get("revision") or 1) + 1
-            report["updatedAt"] = server_time()
+            report["updatedAt"] = now
         return ok({"report": versioned_report(report), **repo.mutation_result("保存报告", "Report", report_id, changed=changed)}, request)
 
     return idempotent(
@@ -5122,10 +5261,146 @@ def list_archive(request: Request, project_id: str, page_no: int = Query(default
     return ok(page(items, page_no, page_size), request)
 
 
+def archive_package_export_id(project_id: str) -> str:
+    return f"EXP-ARCHIVE-{stable_hash_payload(project_id)[7:17].upper()}"
+
+
+def evidence_package_export_id(project_id: str, node_id: int) -> str:
+    return f"EXP-EVIDENCE-{stable_hash_payload({'projectId': project_id, 'nodeId': node_id})[7:17].upper()}"
+
+
+def project_document_lookup(project_id: str) -> tuple[set[str], set[str]]:
+    document_ids = {
+        str(item.get("id"))
+        for item in repo.state.get("documents", [])
+        if item.get("projectId") == project_id and item.get("id")
+    }
+    version_ids = {
+        str(item.get("id"))
+        for item in repo.state.get("versions", [])
+        if item.get("documentId") in document_ids and item.get("id")
+    }
+    return document_ids, version_ids
+
+
+def node_document_version_ids(project_id: str, node_id: int) -> set[str]:
+    return {
+        str(item.get("documentVersionId"))
+        for item in repo.state.get("bindings", [])
+        if item.get("projectId") == project_id
+        and int(item.get("nodeId") or 0) == int(node_id)
+        and item.get("documentVersionId")
+    }
+
+
+def archive_package_rows(project_id: str, scope: set[int] | None) -> list[dict[str, Any]]:
+    return [
+        repo.clone(item)
+        for item in repo.state["archive_items"]
+        if item.get("projectId") == project_id and archive_visible_in_scope(item, scope)
+    ]
+
+
+def evidence_package_rows(project_id: str, *, node_id: int | None = None) -> list[dict[str, Any]]:
+    document_ids, version_ids = project_document_lookup(project_id)
+    node_versions = node_document_version_ids(project_id, node_id) if node_id is not None else set()
+    rows: list[dict[str, Any]] = []
+    for evidence in repo.state.get("evidence_links", []):
+        evidence_project_id = evidence.get("projectId")
+        evidence_document_id = str(evidence.get("documentId") or "")
+        evidence_version_id = str(evidence.get("documentVersionId") or evidence.get("objectId") or "")
+        if evidence_project_id and evidence_project_id != project_id:
+            continue
+        if not evidence_project_id and evidence_document_id and evidence_document_id not in document_ids:
+            continue
+        if not evidence_project_id and evidence_version_id and evidence_version_id not in version_ids:
+            continue
+        if node_id is not None:
+            evidence_node_id = evidence.get("nodeId")
+            if evidence_node_id is not None and int(evidence_node_id or 0) != int(node_id):
+                continue
+            if evidence_node_id is None and evidence_version_id not in node_versions:
+                continue
+        rows.append(repo.clone(evidence))
+    return rows
+
+
+def package_csv(rows: list[dict[str, Any]], columns: list[str]) -> str:
+    def cell(value: Any) -> str:
+        text = str(value if value is not None else "")
+        return f'"{text.replace(chr(34), chr(34) + chr(34))}"' if re.search(r'[",\n\r]', text) else text
+
+    lines = [",".join(columns)]
+    for row in rows:
+        lines.append(",".join(cell(row.get(column)) for column in columns))
+    return "\n".join(lines) + "\n"
+
+
+def build_archive_zip_artifact(*, manifest: dict[str, Any], files: dict[str, Any]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as package:
+        package.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+        for path, payload in files.items():
+            if isinstance(payload, bytes):
+                package.writestr(path, payload)
+            elif isinstance(payload, str):
+                package.writestr(path, payload)
+            else:
+                package.writestr(path, json.dumps(payload, ensure_ascii=False, indent=2))
+        package.writestr(
+            "README.txt",
+            "AIcheck export package. See manifest.json for lineage, counts, integrity hashes and included files.\n",
+        )
+    return buffer.getvalue()
+
+
 @router.get("/projects/{project_id}/archive/package")
 def archive_package(request: Request, project_id: str):
     scope = authorized_node_scope(request, project_id)
-    export_id = "EXP-ARCHIVE-QUEUE-001"
+    export_id = archive_package_export_id(project_id)
+    rows = archive_package_rows(project_id, scope)
+    reports = [
+        repo.clone(item)
+        for item in repo.state.get("reports", [])
+        if item.get("projectId") == project_id and report_visible_in_scope(item, scope)
+    ]
+    export_tasks = [
+        repo.clone(item)
+        for item in repo.state.get("export_tasks", [])
+        if item.get("projectId") == project_id and scope_error_for_record(request, item, project_id) is None
+    ]
+    manifest = {
+        "schemaVersion": "aicheck-archive-package-v2",
+        "generatedAt": server_time(),
+        "exportId": export_id,
+        "exportType": "archive-package",
+        "projectId": project_id,
+        "visibility": "node-scoped" if scope is not None else "project",
+        "nodeScope": sorted(scope) if scope is not None else None,
+        "counts": {
+            "archiveItems": len(rows),
+            "reports": len(reports),
+            "exportTasks": len(export_tasks),
+        },
+        "contents": [
+            "manifest.json",
+            "archive_items.json",
+            "archive_items.csv",
+            "reports.json",
+            "export_tasks.json",
+            "README.txt",
+        ],
+    }
+    manifest["manifestHash"] = stable_hash_payload(manifest)
+    body = build_archive_zip_artifact(
+        manifest=manifest,
+        files={
+            "archive_items.json": rows,
+            "archive_items.csv": package_csv(rows, ["id", "name", "type", "nodeId", "status", "updatedAt"]),
+            "reports.json": reports,
+            "export_tasks.json": export_tasks,
+        },
+    )
     existing_task = repo.find_one("export_tasks", export_id)
     task = existing_task or {
         "id": export_id,
@@ -5144,10 +5419,11 @@ def archive_package(request: Request, project_id: str):
     task["progress"] = 100
     task["finishedAt"] = server_time()
     task["updatedAt"] = task["finishedAt"]
-    repo.attach_export_artifact(task, content_type="application/zip")
-    item_count = len([item for item in repo.state["archive_items"] if item.get("projectId") == project_id and archive_visible_in_scope(item, scope)])
+    task["manifest"] = manifest
+    task["manifestHash"] = manifest["manifestHash"]
+    repo.attach_export_artifact(task, content_type="application/zip", body=body)
     download_url = task.get("downloadUrl") or f"mock://download/archive/{project_id}.zip"
-    return ok({**repo.signed_get(task["fileName"], download_url, "application/zip", task.get("fileSize")), "exportId": export_id, "projectId": project_id, "packageType": "archive", "itemCount": item_count, "generatedAt": server_time()}, request)
+    return ok({**repo.signed_get(task["fileName"], download_url, "application/zip", task.get("fileSize")), "exportId": export_id, "projectId": project_id, "packageType": "archive", "itemCount": len(rows), "generatedAt": task["finishedAt"], "manifest": manifest, "manifestHash": manifest["manifestHash"]}, request)
 
 
 @router.get("/projects/{project_id}/archive/evidence-package")
@@ -5156,8 +5432,46 @@ def evidence_package(request: Request, project_id: str, nodeId: int | None = Non
     effective_node_id = nodeId or 24
     if scope is not None and effective_node_id not in scope:
         return fail(errors.FORBIDDEN, request, message="用户不在该节点授权范围内。")
-    export_id = "EXP-EVIDENCE-RUNNING-001"
+    export_id = evidence_package_export_id(project_id, effective_node_id)
     file_name = f"{project_id}-节点{effective_node_id}-证据定位包.zip"
+    evidence_rows = evidence_package_rows(project_id, node_id=effective_node_id)
+    related_version_ids = sorted(
+        {
+            str(item.get("documentVersionId") or item.get("objectId"))
+            for item in evidence_rows
+            if item.get("documentVersionId") or item.get("objectId")
+        }
+    )
+    manifest = {
+        "schemaVersion": "aicheck-evidence-package-v2",
+        "generatedAt": server_time(),
+        "exportId": export_id,
+        "exportType": "evidence-package",
+        "projectId": project_id,
+        "nodeId": effective_node_id,
+        "counts": {
+            "evidenceLinks": len(evidence_rows),
+            "documentVersions": len(related_version_ids),
+        },
+        "documentVersionIds": related_version_ids,
+        "contents": [
+            "manifest.json",
+            "evidence_links.json",
+            "evidence_links.csv",
+            "README.txt",
+        ],
+    }
+    manifest["manifestHash"] = stable_hash_payload(manifest)
+    body = build_archive_zip_artifact(
+        manifest=manifest,
+        files={
+            "evidence_links.json": evidence_rows,
+            "evidence_links.csv": package_csv(
+                evidence_rows,
+                ["id", "objectType", "documentId", "documentVersionId", "fileName", "pageNo", "fieldName", "quotedText", "confidence"],
+            ),
+        },
+    )
     task = repo.find_one("export_tasks", export_id) or {"id": export_id, "projectId": project_id, "exportType": "evidence-package", "status": "排队中", "progress": 0, "fileName": file_name, "fileSize": 786432, "downloadUrl": f"mock://download/archive/{project_id}-evidence.zip", "createdAt": server_time()}
     if not repo.find_one("export_tasks", export_id):
         repo.state["export_tasks"].insert(0, task)
@@ -5165,8 +5479,11 @@ def evidence_package(request: Request, project_id: str, nodeId: int | None = Non
     task["progress"] = 100
     task["finishedAt"] = server_time()
     task["updatedAt"] = task["finishedAt"]
-    repo.attach_export_artifact(task, content_type="application/zip")
-    return ok({**repo.signed_get(file_name, task["downloadUrl"], "application/zip", task.get("fileSize")), "exportId": export_id, "projectId": project_id, "packageType": "evidence", "itemCount": len(repo.state["evidence_links"]), "generatedAt": server_time()}, request)
+    task["nodeId"] = effective_node_id
+    task["manifest"] = manifest
+    task["manifestHash"] = manifest["manifestHash"]
+    repo.attach_export_artifact(task, content_type="application/zip", body=body)
+    return ok({**repo.signed_get(file_name, task["downloadUrl"], "application/zip", task.get("fileSize")), "exportId": export_id, "projectId": project_id, "packageType": "evidence", "itemCount": len(evidence_rows), "generatedAt": task["finishedAt"], "manifest": manifest, "manifestHash": manifest["manifestHash"]}, request)
 
 
 @router.get("/projects/{project_id}/archive/{archive_item_id}")

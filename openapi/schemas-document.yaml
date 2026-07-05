@@ -1,0 +1,194 @@
+components:
+  schemas:
+    SignedUrlPayload:
+      type: object
+      required: [url, method, expiresAt, fileName]
+      properties:
+        url:
+          type: string
+        method:
+          type: string
+          enum: [GET]
+        expiresAt:
+          type: string
+        fileName:
+          type: string
+        contentType:
+          type: string
+        fileSize:
+          type: integer
+    DocumentAsset:
+      type: object
+      required: [id, projectId, fileName, fileType, sourceOrgName, uploaderName, currentVersionId, fileStatus, currentOcrStatus, updatedAt, actions]
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        fileName:
+          type: string
+        fileType:
+          type: string
+        materialCategory:
+          type: [string, 'null']
+        sourceOrgName:
+          type: string
+        uploaderName:
+          type: string
+        currentVersionId:
+          type: string
+        fileStatus:
+          type: string
+          enum: [草稿, 已上传, 已撤回, 已替换, 已作废]
+        currentOcrStatus:
+          type: string
+          enum: [待识别, 未识别, 排队中, 识别中, 已识别, 识别失败, 人工修正]
+        updatedAt:
+          type: string
+        actions:
+          type: array
+          items:
+            $ref: './schemas-project.yaml#/components/schemas/ActionCode'
+    DocumentVersion:
+      type: object
+      required: [id, documentId, versionNo, hash, fileSize, uploaderName, uploadTime, isCurrent]
+      properties:
+        id:
+          type: string
+        documentId:
+          type: string
+        versionNo:
+          type: string
+        hash:
+          type: string
+        fileSize:
+          type: integer
+        uploaderName:
+          type: string
+        uploadTime:
+          type: string
+        isCurrent:
+          type: boolean
+    NodeFileBinding:
+      type: object
+      required: [id, projectId, nodeId, documentId, documentVersionId, fileName, versionNo, usage, sourceOrgName, bindingStatus, boundAt, actions]
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        nodeId:
+          type: integer
+        requirementId:
+          type: string
+        requirementName:
+          type: string
+        documentId:
+          type: string
+        documentVersionId:
+          type: string
+        fileName:
+          type: string
+        versionNo:
+          type: string
+        usage:
+          type: string
+          enum: [原始提交, 补正附件, 整改说明, 证明材料, 监检资料, 检测报告]
+        sourceOrgName:
+          type: string
+        bindingStatus:
+          type: string
+          enum: [草稿挂载, 已提交, 需补正, 已通过]
+        boundAt:
+          type: string
+        actions:
+          type: array
+          items:
+            $ref: './schemas-project.yaml#/components/schemas/ActionCode'
+    EvidenceLink:
+      type: object
+      required: [id, objectType, objectId]
+      properties:
+        id:
+          type: string
+        objectType:
+          type: string
+          enum: [documentVersion, extractedField, knowledgeClause, aiRun, reviewOpinion]
+        objectId:
+          type: string
+        documentId:
+          type: string
+        documentVersionId:
+          type: string
+        fileName:
+          type: string
+        pageNo:
+          type: integer
+        fieldName:
+          type: string
+        quotedText:
+          type: string
+        confidence:
+          type: number
+    ExtractedField:
+      type: object
+      required: [id, documentVersionId, fieldName, fieldValue, confidence, reviewStatus, evidenceLinkId]
+      properties:
+        id:
+          type: string
+        documentVersionId:
+          type: string
+        fieldName:
+          type: string
+        fieldValue:
+          type: string
+        pageNo:
+          type: integer
+        confidence:
+          type: number
+        reviewStatus:
+          type: string
+          enum: [未复核, 已确认, 已修正, 低置信度]
+        evidenceLinkId:
+          type: string
+    DocumentPreviewPayload:
+      allOf:
+        - $ref: '#/components/schemas/SignedUrlPayload'
+        - type: object
+          required: [previewType, readonly]
+          properties:
+            previewType:
+              type: string
+              enum: [pdf, office, image, unsupported]
+            readonly:
+              type: boolean
+            pageCount:
+              type: integer
+    DocumentDetailPayload:
+      type: object
+      required: [document, versions, bindings, extractedFields, evidenceLinks, preview, download]
+      properties:
+        document:
+          $ref: '#/components/schemas/DocumentAsset'
+        currentVersion:
+          $ref: '#/components/schemas/DocumentVersion'
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DocumentVersion'
+        bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/NodeFileBinding'
+        extractedFields:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExtractedField'
+        evidenceLinks:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvidenceLink'
+        preview:
+          $ref: '#/components/schemas/DocumentPreviewPayload'
+        download:
+          $ref: '#/components/schemas/SignedUrlPayload'

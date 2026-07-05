@@ -1,0 +1,281 @@
+paths:
+  /api/projects/{projectId}/owner/reports:
+    get:
+      tags: [owner, reports]
+      operationId: owner_list_reports
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './common.yaml#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Owner-visible report list.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: './schemas-review.yaml#/components/schemas/ReportVersion'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data: []
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+
+  /api/projects/{projectId}/archive:
+    get:
+      tags: [archive]
+      operationId: archive_list_items
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './common.yaml#/components/parameters/ProjectId'
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: nodeId
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paged archive items.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: './common.yaml#/components/schemas/Page'
+                          - type: object
+                            properties:
+                              items:
+                                type: array
+                                items:
+                                  $ref: './schemas-review.yaml#/components/schemas/ArchiveItem'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data:
+                      items: []
+                      page: 1
+                      pageSize: 20
+                      total: 0
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+
+  /api/projects/{projectId}/archive/package:
+    get:
+      tags: [archive, exports]
+      operationId: archive_create_package
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './common.yaml#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Structured archive package export.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: './schemas-review.yaml#/components/schemas/ArchivePackagePayload'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data:
+                      url: mock://download/archive/P-2026-HDCP-001.zip
+                      method: GET
+                      expiresAt: '2026-06-27 18:00:00'
+                      fileName: P-2026-HDCP-001-归档包.zip
+                      exportId: EXP-ARCHIVE-A1B2C3D4E5
+                      projectId: P-2026-HDCP-001
+                      packageType: archive
+                      itemCount: 3
+                      generatedAt: '2026-06-25 10:00:00'
+                      manifestHash: sha256:abc
+                      manifest:
+                        schemaVersion: aicheck-archive-package-v2
+                        generatedAt: '2026-06-25 10:00:00'
+                        exportId: EXP-ARCHIVE-A1B2C3D4E5
+                        exportType: archive-package
+                        projectId: P-2026-HDCP-001
+                        counts:
+                          archiveItems: 3
+                        contents: [manifest.json, archive_items.json, archive_items.csv]
+                        manifestHash: sha256:abc
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+
+  /api/projects/{projectId}/archive/evidence-package:
+    get:
+      tags: [archive, exports]
+      operationId: archive_create_evidence_package
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './common.yaml#/components/parameters/ProjectId'
+        - name: nodeId
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Structured evidence locator package export.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: './schemas-review.yaml#/components/schemas/ArchivePackagePayload'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data:
+                      url: mock://download/archive/P-2026-HDCP-001-evidence.zip
+                      method: GET
+                      expiresAt: '2026-06-27 18:00:00'
+                      fileName: P-2026-HDCP-001-节点24-证据定位包.zip
+                      exportId: EXP-EVIDENCE-A1B2C3D4E5
+                      projectId: P-2026-HDCP-001
+                      packageType: evidence
+                      itemCount: 2
+                      generatedAt: '2026-06-25 10:00:00'
+                      manifestHash: sha256:def
+                      manifest:
+                        schemaVersion: aicheck-evidence-package-v2
+                        generatedAt: '2026-06-25 10:00:00'
+                        exportId: EXP-EVIDENCE-A1B2C3D4E5
+                        exportType: evidence-package
+                        projectId: P-2026-HDCP-001
+                        nodeId: 24
+                        counts:
+                          evidenceLinks: 2
+                        contents: [manifest.json, evidence_links.json, evidence_links.csv]
+                        manifestHash: sha256:def
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+
+  /api/projects/{projectId}/export-tasks/{exportId}:
+    get:
+      tags: [exports]
+      operationId: exports_get_task
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './common.yaml#/components/parameters/ProjectId'
+        - $ref: './common.yaml#/components/parameters/ExportId'
+      responses:
+        '200':
+          description: Export task detail.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: './schemas-review.yaml#/components/schemas/ExportTaskPayload'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data:
+                      task:
+                        id: EXP-ARCHIVE-A1B2C3D4E5
+                        projectId: P-2026-HDCP-001
+                        exportType: archive-package
+                        status: 可下载
+                        progress: 100
+                        fileName: P-2026-HDCP-001-归档包.zip
+                        createdAt: '2026-06-25 10:00:00'
+                        manifestHash: sha256:abc
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'

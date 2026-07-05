@@ -1,0 +1,150 @@
+paths:
+  /api/knowledge/overview:
+    get:
+      tags: [knowledge]
+      operationId: knowledge_get_overview
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Knowledge base overview.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [metrics, libraries]
+                        properties:
+                          metrics:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+                          libraries:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data:
+                      metrics: []
+                      libraries: []
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+
+  /api/knowledge/tasks/{taskId}/retry:
+    post:
+      tags: [knowledge]
+      operationId: knowledge_retry_task
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: './common.yaml#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Knowledge task retry requested.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: './common.yaml#/components/schemas/MockMutationResult'
+                          - type: object
+                            properties:
+                              task:
+                                type: object
+                                additionalProperties: true
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data:
+                      auditLogId: AUD-KB-001
+                      task:
+                        id: KB-TASK-001
+                        status: 排队中
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+
+  /api/admin/config/overview:
+    get:
+      tags: [admin]
+      operationId: admin_get_config_overview
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Admin configuration overview.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        additionalProperties: true
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data:
+                      revision: 1
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'

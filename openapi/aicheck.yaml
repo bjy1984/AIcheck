@@ -1,0 +1,70 @@
+openapi: 3.1.0
+info:
+  title: AIcheck Backend API
+  version: 0.2.0
+  description: >
+    Contract-first OpenAPI entrypoint for AIcheck workbench, documents,
+    submissions, inspection, reports, archive exports, knowledge and admin APIs.
+servers:
+  - url: http://127.0.0.1:8000
+    description: Local FastAPI
+security:
+  - bearerAuth: []
+tags:
+  - name: workbench
+  - name: documents
+  - name: submissions
+  - name: inspection
+  - name: reports
+  - name: archive
+  - name: exports
+  - name: owner
+  - name: knowledge
+  - name: admin
+paths:
+  /api/workbench/projects:
+    $ref: './paths-workbench.yaml#/paths/~1api~1workbench~1projects'
+  /api/projects/{projectId}/workbench/context:
+    $ref: './paths-workbench.yaml#/paths/~1api~1projects~1{projectId}~1workbench~1context'
+  /api/projects/{projectId}/workbench/summary:
+    $ref: './paths-workbench.yaml#/paths/~1api~1projects~1{projectId}~1workbench~1summary'
+  /api/projects/{projectId}/tree:
+    $ref: './paths-workbench.yaml#/paths/~1api~1projects~1{projectId}~1tree'
+  /api/projects/{projectId}/documents/{documentId}:
+    $ref: './paths-documents.yaml#/paths/~1api~1projects~1{projectId}~1documents~1{documentId}'
+  /api/projects/{projectId}/documents/{documentId}/preview-url:
+    $ref: './paths-documents.yaml#/paths/~1api~1projects~1{projectId}~1documents~1{documentId}~1preview-url'
+  /api/projects/{projectId}/documents/{documentId}/download-url:
+    $ref: './paths-documents.yaml#/paths/~1api~1projects~1{projectId}~1documents~1{documentId}~1download-url'
+  /api/projects/{projectId}/submissions:
+    $ref: './paths-submissions.yaml#/paths/~1api~1projects~1{projectId}~1submissions'
+  /api/projects/{projectId}/submissions/submit:
+    $ref: './paths-submissions.yaml#/paths/~1api~1projects~1{projectId}~1submissions~1submit'
+  /api/projects/{projectId}/inspection/nodes/{nodeId}/report-review:
+    $ref: './paths-inspection.yaml#/paths/~1api~1projects~1{projectId}~1inspection~1nodes~1{nodeId}~1report-review'
+  /api/projects/{projectId}/reports/{reportId}:
+    $ref: './paths-inspection.yaml#/paths/~1api~1projects~1{projectId}~1reports~1{reportId}'
+  /api/projects/{projectId}/reports/{reportId}/export:
+    $ref: './paths-inspection.yaml#/paths/~1api~1projects~1{projectId}~1reports~1{reportId}~1export'
+  /api/projects/{projectId}/reports/{reportId}/archive:
+    $ref: './paths-inspection.yaml#/paths/~1api~1projects~1{projectId}~1reports~1{reportId}~1archive'
+  /api/projects/{projectId}/owner/reports:
+    $ref: './paths-ndt-owner-report.yaml#/paths/~1api~1projects~1{projectId}~1owner~1reports'
+  /api/projects/{projectId}/archive:
+    $ref: './paths-ndt-owner-report.yaml#/paths/~1api~1projects~1{projectId}~1archive'
+  /api/projects/{projectId}/archive/package:
+    $ref: './paths-ndt-owner-report.yaml#/paths/~1api~1projects~1{projectId}~1archive~1package'
+  /api/projects/{projectId}/archive/evidence-package:
+    $ref: './paths-ndt-owner-report.yaml#/paths/~1api~1projects~1{projectId}~1archive~1evidence-package'
+  /api/projects/{projectId}/export-tasks/{exportId}:
+    $ref: './paths-ndt-owner-report.yaml#/paths/~1api~1projects~1{projectId}~1export-tasks~1{exportId}'
+  /api/knowledge/overview:
+    $ref: './paths-knowledge-admin.yaml#/paths/~1api~1knowledge~1overview'
+  /api/knowledge/tasks/{taskId}/retry:
+    $ref: './paths-knowledge-admin.yaml#/paths/~1api~1knowledge~1tasks~1{taskId}~1retry'
+  /api/admin/config/overview:
+    $ref: './paths-knowledge-admin.yaml#/paths/~1api~1admin~1config~1overview'
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: './common.yaml#/components/securitySchemes/bearerAuth'

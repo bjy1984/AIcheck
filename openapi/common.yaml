@@ -1,0 +1,200 @@
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+      example: P-2026-HDCP-001
+    NodeId:
+      name: nodeId
+      in: path
+      required: true
+      schema:
+        type: integer
+      example: 24
+    ReportId:
+      name: reportId
+      in: path
+      required: true
+      schema:
+        type: string
+      example: RPT-20260625-001
+    ExportId:
+      name: exportId
+      in: path
+      required: true
+      schema:
+        type: string
+      example: EXP-ARCHIVE-A1B2C3D4E5
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 180
+      example: aicheck-report-save-001
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema:
+        type: string
+      example: W/"report-RPT-20260625-001-r1"
+    RoleHeader:
+      name: X-Role
+      in: header
+      required: false
+      schema:
+        $ref: './schemas-project.yaml#/components/schemas/RoleCode'
+    UserIdHeader:
+      name: X-User-Id
+      in: header
+      required: false
+      schema:
+        type: string
+
+  headers:
+    XRequestId:
+      description: Request trace id.
+      schema:
+        type: string
+    ETag:
+      description: Entity revision token.
+      schema:
+        type: string
+
+  schemas:
+    ApiError:
+      type: object
+      required: [code, reason, message]
+      properties:
+        code:
+          type: integer
+          example: 40902
+        reason:
+          type: string
+          example: ETAG_CONFLICT
+        message:
+          type: string
+          example: 资源已被其他人修改，请刷新后重试。
+        data:
+          type: object
+          additionalProperties: true
+    ApiResult:
+      type: object
+      required: [code, success, message]
+      properties:
+        code:
+          type: integer
+          example: 0
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: ok
+        data:
+          nullable: true
+    MockMutationResult:
+      type: object
+      properties:
+        auditLogId:
+          type: string
+        auditLogIds:
+          type: array
+          items:
+            type: string
+        changed:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    Page:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items: {}
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+
+  responses:
+    BadRequest:
+      description: Request validation failed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          examples:
+            validation:
+              value:
+                code: 40001
+                reason: VALIDATION_ERROR
+                message: 请求字段校验失败。
+    Unauthorized:
+      description: Authentication is required.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          examples:
+            authRequired:
+              value:
+                code: 40101
+                reason: AUTH_REQUIRED
+                message: 请先登录。
+    Forbidden:
+      description: The current role is not allowed to use the operation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          examples:
+            forbidden:
+              value:
+                code: 40301
+                reason: FORBIDDEN
+                message: 无权限执行该操作。
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          examples:
+            notFound:
+              value:
+                code: 40401
+                reason: NOT_FOUND
+                message: 资源不存在。
+    Conflict:
+      description: Business conflict or stale revision.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          examples:
+            etagConflict:
+              value:
+                code: 40902
+                reason: ETAG_CONFLICT
+                message: 资源已被其他人修改，请刷新后重试。

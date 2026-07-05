@@ -654,8 +654,8 @@ type AuditLog = {
 | `POST`  | `/api/projects/{projectId}/reports/{reportId}/export`               | 导出 Word/PDF          |
 | `POST`  | `/api/projects/{projectId}/reports/{reportId}/archive`              | 报告归档               |
 | `GET`   | `/api/projects/{projectId}/archive`                                 | 归档资料浏览           |
-| `GET`   | `/api/projects/{projectId}/archive/package`                         | 归档包下载地址         |
-| `GET`   | `/api/projects/{projectId}/archive/evidence-package`                | 证据定位包下载地址     |
+| `GET`   | `/api/projects/{projectId}/archive/package`                         | 结构化归档包导出       |
+| `GET`   | `/api/projects/{projectId}/archive/evidence-package`                | 结构化证据定位包导出   |
 
 ## 13. 导出和下载 API
 
@@ -1586,6 +1586,7 @@ type NdtFeedbackDetailPayload = {
 type ExportTask = {
   id: string;
   projectId?: string;
+  nodeId?: number;
   exportType:
     | "report"
     | "archive-package"
@@ -1601,6 +1602,33 @@ type ExportTask = {
   finishedAt?: string;
   expiresAt?: string;
   errorMessage?: string;
+  manifest?: ArchivePackageManifest;
+  manifestHash?: string;
+};
+
+type ArchivePackageManifest = {
+  schemaVersion: "aicheck-archive-package-v2" | "aicheck-evidence-package-v2";
+  generatedAt: string;
+  exportId: string;
+  exportType: "archive-package" | "evidence-package";
+  projectId: string;
+  nodeId?: number;
+  visibility?: "project" | "node-scoped";
+  nodeScope?: number[] | null;
+  counts: Record<string, number>;
+  contents: string[];
+  documentVersionIds?: string[];
+  manifestHash: string;
+};
+
+type ArchivePackagePayload = SignedUrlPayload & {
+  exportId: string;
+  projectId: string;
+  packageType: "archive" | "evidence";
+  itemCount: number;
+  generatedAt: string;
+  manifest: ArchivePackageManifest;
+  manifestHash: string;
 };
 
 type ArchiveItemDetailPayload = {
@@ -1627,14 +1655,16 @@ type OwnerDashboardPayload = {
   readonly: true;
 };
 
+type ReportSection = {
+  key: string;
+  title: string;
+  content: string;
+  evidenceLinkIds: string[];
+};
+
 type ReportDetailPayload = {
   report: ReportVersion;
-  sections: Array<{
-    key: string;
-    title: string;
-    content: string;
-    evidenceLinkIds: string[];
-  }>;
+  sections: ReportSection[];
   evidenceLinks: EvidenceLink[];
   reviewTrail: Array<{
     title: string;
@@ -1650,6 +1680,10 @@ type ReportDetailPayload = {
     generatedAt: string;
     summary: string;
   }>;
+};
+
+type ReportUpdatePayload = MockMutationResult & {
+  report: ReportVersion;
 };
 ```
 
@@ -1674,13 +1708,13 @@ type ReportDetailPayload = {
 | `GET /api/projects/{projectId}/owner/reports`                        | `projectId` 必填                                                                                        | `ReportVersion[]`                                                                        | 无                         |
 | `GET /api/projects/{projectId}/reports`                              | `status/page/pageSize` 可选                                                                             | `Page<ReportVersion>`                                                                    | 无                         |
 | `GET /api/projects/{projectId}/reports/{reportId}`                   | `reportId` 必填                                                                                         | `ReportDetailPayload`                                                                    | 无                         |
-| `PATCH /api/projects/{projectId}/reports/{reportId}`                 | Header `If-Match/Idempotency-Key` 可选但生产建议必填；`{ sections?: unknown[]; remark?: string }`       | `{ report: ReportVersion }`                                                              | 保存报告草稿               |
+| `PATCH /api/projects/{projectId}/reports/{reportId}`                 | Header `If-Match/Idempotency-Key` 可选但生产建议必填；`{ title?: string; status?: ReportVersion['status']; sections?: ReportSection[]; remark?: string }` | `ReportUpdatePayload`；保存章节时会写入 `reviewTrail` 和 `versionHistory`                 | 保存报告草稿               |
 | `POST /api/projects/{projectId}/reports/{reportId}/export`           | Header `Idempotency-Key` 可选但生产建议必填；`{ format: 'docx' \| 'pdf' }`                              | `{ exportId: string; report: ReportVersion }`                                            | 创建可查询导出任务         |
 | `POST /api/projects/{projectId}/reports/{reportId}/archive`          | Header `If-Match/Idempotency-Key` 可选但生产建议必填；`{ archiveNote?: string }`                        | `{ report: ReportVersion; nextStatus: '已归档' }`                                        | 报告归档                   |
 | `GET /api/projects/{projectId}/archive`                              | `keyword/nodeId/page/pageSize` 可选                                                                     | `Page<ArchiveItem>`                                                                      | 无                         |
 | `GET /api/projects/{projectId}/archive/{archiveItemId}`              | `archiveItemId` 必填                                                                                    | `ArchiveItemDetailPayload`                                                               | 无                         |
-| `GET /api/projects/{projectId}/archive/package`                      | `projectId` 必填                                                                                        | `ArchivePackagePayload`                                                                  | 创建可查询导出任务         |
-| `GET /api/projects/{projectId}/archive/evidence-package`             | `nodeId` 可选                                                                                           | `ArchivePackagePayload`                                                                  | 创建可查询导出任务         |
+| `GET /api/projects/{projectId}/archive/package`                      | `projectId` 必填                                                                                        | `ArchivePackagePayload`；zip 包含 `manifest.json`、`archive_items.json/csv`、`reports.json`、`export_tasks.json` 和 `README.txt` | 创建可查询导出任务         |
+| `GET /api/projects/{projectId}/archive/evidence-package`             | `nodeId` 可选                                                                                           | `ArchivePackagePayload`；zip 包含 `manifest.json`、`evidence_links.json/csv` 和 `README.txt` | 创建可查询导出任务         |
 | `GET /api/projects/{projectId}/export-tasks/{exportId}`              | `exportId` 必填                                                                                         | `{ task: ExportTask }`                                                                   | 无                         |
 
 ### 22.9 AI 知识库和后台配置输出
@@ -2378,7 +2412,15 @@ type ForbiddenDetail = {
 
 ### 23.9 OpenAPI 拆分建议
 
-进入真实后端联调前，建议将本文档拆为以下 OpenAPI 文件：
+进入真实后端联调前，已先落地一版 OpenAPI 3.1 拆分文件。总入口为
+`openapi/aicheck.yaml`，本地校验和生成 codegen 索引用：
+
+```bash
+python scripts/openapi_contract.py --write-index --write-frontend
+pytest backend/tests/test_openapi_contract.py -q
+```
+
+当前拆分文件：
 
 | 文件                                  | 内容                                                                        |
 | ------------------------------------- | --------------------------------------------------------------------------- |

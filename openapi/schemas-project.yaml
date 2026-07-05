@@ -1,0 +1,147 @@
+components:
+  schemas:
+    RoleCode:
+      type: string
+      enum: [inspection, contractor, ndt, owner, admin, fde]
+    ActionCode:
+      type: string
+    ProjectStatus:
+      type: string
+      enum: [草稿/立项中, 资料提交中, AI 预审中, 监检审查中, 退回补正中, 报告生成/复核中, 已归档]
+    NodeStatus:
+      type: string
+      enum: [待提交, 部分提交, 已提交, AI 预审中, 待审查, 待人工确认, 需补正, 补正中, 复审中, 已通过, 报告生成/复核中, 已归档]
+    Project:
+      type: object
+      required: [id, code, name, type, region, status, currentNodeId, actions]
+      properties:
+        id:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        region:
+          type: string
+        ownerOrgName:
+          type: string
+        contractorOrgName:
+          type: string
+        ndtOrgName:
+          type: string
+        inspectionOrgName:
+          type: string
+        businessPackId:
+          type: string
+        businessPackVersion:
+          type: string
+        status:
+          $ref: '#/components/schemas/ProjectStatus'
+        todoCount:
+          type: integer
+        messageCount:
+          type: integer
+        currentNodeId:
+          type: integer
+        riskLevel:
+          type: string
+          enum: [低, 中, 高]
+        updatedAt:
+          type: string
+        revision:
+          type: integer
+        etag:
+          type: string
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActionCode'
+    ProjectTreeNode:
+      type: object
+      required: [id, projectId, nodeId, code, name, groupName, inspectionType, status, fileCount, requiredProgress, actions]
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        nodeId:
+          type: integer
+        code:
+          type: string
+        name:
+          type: string
+        groupName:
+          type: string
+        inspectionType:
+          type: string
+          enum: [A, B, C, C/B, 需确认]
+        status:
+          $ref: '#/components/schemas/NodeStatus'
+        fileCount:
+          type: integer
+        requiredProgress:
+          type: object
+          required: [done, total]
+          properties:
+            done:
+              type: integer
+            total:
+              type: integer
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActionCode'
+    WorkbenchContextPayload:
+      type: object
+      required: [role, readonly, actions]
+      properties:
+        role:
+          $ref: '#/components/schemas/RoleCode'
+        readonly:
+          type: boolean
+        readonlyReason:
+          type: string
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActionCode'
+    WorkbenchSummaryPayload:
+      type: object
+      required: [metrics]
+      properties:
+        metrics:
+          type: array
+          items:
+            type: object
+            required: [key, label, value]
+            properties:
+              key:
+                type: string
+              label:
+                type: string
+              value:
+                oneOf:
+                  - type: string
+                  - type: number
+              tone:
+                type: string
+    ProjectTreePayload:
+      type: object
+      required: [project, groups]
+      properties:
+        project:
+          $ref: '#/components/schemas/Project'
+        groups:
+          type: array
+          items:
+            type: object
+            required: [groupName, nodes]
+            properties:
+              groupName:
+                type: string
+              nodes:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectTreeNode'

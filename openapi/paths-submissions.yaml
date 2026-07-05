@@ -1,0 +1,127 @@
+paths:
+  /api/projects/{projectId}/submissions:
+    get:
+      tags: [submissions]
+      operationId: submissions_list_history
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './common.yaml#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Submission drafts and submitted batches.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [drafts, submissions]
+                        properties:
+                          drafts:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+                          submissions:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data:
+                      drafts: []
+                      submissions: []
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+
+  /api/projects/{projectId}/submissions/submit:
+    post:
+      tags: [submissions]
+      operationId: submissions_submit_node_package
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './common.yaml#/components/parameters/ProjectId'
+        - $ref: './common.yaml#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nodeId, bindingIds]
+              properties:
+                nodeId:
+                  type: integer
+                bindingIds:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                submitterComment:
+                  type: string
+      responses:
+        '200':
+          description: Submission created and node enters review.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: './common.yaml#/components/schemas/MockMutationResult'
+                          - type: object
+                            required: [submissionId, snapshotId, nextStatus, createdTodos]
+                            properties:
+                              submissionId:
+                                type: string
+                              snapshotId:
+                                type: string
+                              nextStatus:
+                                type: string
+                              createdTodos:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data:
+                      submissionId: SUB-24-001
+                      snapshotId: SNAP-24-001
+                      nextStatus: 待审查
+                      createdTodos: []
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'

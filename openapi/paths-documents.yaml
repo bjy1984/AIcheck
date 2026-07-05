@@ -1,0 +1,168 @@
+paths:
+  /api/projects/{projectId}/documents/{documentId}:
+    get:
+      tags: [documents]
+      operationId: documents_get_detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './common.yaml#/components/parameters/ProjectId'
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: DOC-24-001
+      responses:
+        '200':
+          description: Document detail with versions, OCR fields and evidence links.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: './schemas-document.yaml#/components/schemas/DocumentDetailPayload'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data:
+                      document:
+                        id: DOC-24-001
+                        projectId: P-2026-HDCP-001
+                        fileName: 焊工资格证.pdf
+                        fileType: application/pdf
+                        sourceOrgName: 施工单位
+                        uploaderName: 李工
+                        currentVersionId: VER-24-001
+                        fileStatus: 已上传
+                        currentOcrStatus: 已识别
+                        updatedAt: '2026-06-24 10:00:00'
+                        actions: [file:view]
+                      versions: []
+                      bindings: []
+                      extractedFields: []
+                      evidenceLinks: []
+                      preview:
+                        url: mock://preview/DOC-24-001
+                        method: GET
+                        expiresAt: '2026-06-27 18:00:00'
+                        fileName: 焊工资格证.pdf
+                        previewType: pdf
+                        readonly: true
+                      download:
+                        url: mock://download/DOC-24-001
+                        method: GET
+                        expiresAt: '2026-06-27 18:00:00'
+                        fileName: 焊工资格证.pdf
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+
+  /api/projects/{projectId}/documents/{documentId}/preview-url:
+    get:
+      tags: [documents]
+      operationId: documents_get_preview_url
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './common.yaml#/components/parameters/ProjectId'
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Signed preview URL.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: './schemas-document.yaml#/components/schemas/DocumentPreviewPayload'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data:
+                      url: mock://preview/DOC-24-001
+                      method: GET
+                      expiresAt: '2026-06-27 18:00:00'
+                      fileName: 焊工资格证.pdf
+                      previewType: pdf
+                      readonly: true
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+
+  /api/projects/{projectId}/documents/{documentId}/download-url:
+    get:
+      tags: [documents]
+      operationId: documents_get_download_url
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './common.yaml#/components/parameters/ProjectId'
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Signed download URL.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: './schemas-document.yaml#/components/schemas/SignedUrlPayload'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data:
+                      url: mock://download/DOC-24-001
+                      method: GET
+                      expiresAt: '2026-06-27 18:00:00'
+                      fileName: 焊工资格证.pdf
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'

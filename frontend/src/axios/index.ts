@@ -37,6 +37,9 @@ export default {
   put: <T = any>(option: AxiosConfig) => {
     return request({ method: 'put', ...option }) as Promise<IResponse<T>>
   },
+  patch: <T = any>(option: AxiosConfig) => {
+    return request({ method: 'patch', ...option }) as Promise<IResponse<T>>
+  },
   cancelRequest: (url: string | string[]) => {
     return service.cancelRequest(url)
   },

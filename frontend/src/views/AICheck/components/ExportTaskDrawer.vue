@@ -133,6 +133,9 @@ const taskIssue = computed(() => {
         <ElDescriptionsItem label="创建时间">{{ task.createdAt }}</ElDescriptionsItem>
         <ElDescriptionsItem label="完成时间">{{ task.finishedAt || '-' }}</ElDescriptionsItem>
         <ElDescriptionsItem label="过期时间">{{ task.expiresAt || '-' }}</ElDescriptionsItem>
+        <ElDescriptionsItem v-if="task.manifestHash" label="清单哈希">
+          <span class="download-url">{{ task.manifestHash }}</span>
+        </ElDescriptionsItem>
         <ElDescriptionsItem label="下载地址">
           <span class="download-url">{{ task.downloadUrl || '-' }}</span>
         </ElDescriptionsItem>

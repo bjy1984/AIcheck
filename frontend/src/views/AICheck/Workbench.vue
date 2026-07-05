@@ -63,6 +63,7 @@ import {
   submitNdtSubmissionApi,
   submitNodePackageApi,
   submitRectificationApi,
+  updateReportApi,
   withdrawSubmissionItemsApi
 } from '@/api/aicheck'
 import type {
@@ -73,6 +74,7 @@ import type {
   NdtReportDetailPayload,
   ProjectTreePayload,
   ReportDetailPayload,
+  ReportSection,
   StandardReference,
   SubmissionDetailPayload,
   SubmissionDraftDetailPayload,
@@ -2383,6 +2385,28 @@ const handleRetryReportDetail = () => {
   if (activeReportDetailId.value) handleOpenReportDetail(activeReportDetailId.value)
 }
 
+const handleSaveReportDetail = async (payload: { sections: ReportSection[]; remark?: string }) => {
+  if (!activeProjectId.value || !reportDetail.value?.report) return
+  actionLoading.value = true
+  const reportId = reportDetail.value.report.id
+  try {
+    const res = await updateReportApi(activeProjectId.value, reportId, payload, {
+      etag: reportDetail.value.report.etag
+    })
+    if (!res) {
+      showReportDetailError('报告保存失败，请检查章节内容和证据引用。')
+      return
+    }
+    ElMessage.success('报告内容已保存')
+    await handleOpenReportDetail(reportId)
+    await loadReportArchive()
+  } catch (error) {
+    showReportDetailError('报告保存失败，请检查章节内容和证据引用。', error)
+  } finally {
+    actionLoading.value = false
+  }
+}
+
 const handleRetryArchiveDetail = () => {
   if (activeArchiveItemId.value) handleOpenArchiveItemDetail(activeArchiveItemId.value)
 }
@@ -2412,6 +2436,8 @@ const handleDownloadUrl = (url: string) => {
   openBusinessUrl('下载地址', url)
 }
 
+const exportManifestHint = (hash?: string) => (hash ? ` · ${hash.slice(0, 18)}` : '')
+
 const handleDownloadArchivePackage = async () => {
   if (!activeProjectId.value) return
   actionLoading.value = true
@@ -2421,7 +2447,9 @@ const handleDownloadArchivePackage = async () => {
       showActionError('归档包生成失败，请检查项目归档状态和下载权限。')
       return
     }
-    ElMessage.success(`归档包导出任务已创建（${res.data.itemCount} 项）`)
+    ElMessage.success(
+      `归档包导出任务已创建（${res.data.itemCount} 项${exportManifestHint(res.data.manifestHash)}）`
+    )
     await handleOpenExportTask(res.data.exportId)
   } finally {
     actionLoading.value = false
@@ -2437,7 +2465,9 @@ const handleDownloadEvidencePackage = async () => {
       showActionError('证据定位包生成失败，请检查节点证据和下载权限。')
       return
     }
-    ElMessage.success(`证据包导出任务已创建（${res.data.itemCount} 项）`)
+    ElMessage.success(
+      `证据包导出任务已创建（${res.data.itemCount} 项${exportManifestHint(res.data.manifestHash)}）`
+    )
     await handleOpenExportTask(res.data.exportId)
   } finally {
     actionLoading.value = false
@@ -3371,9 +3401,11 @@ onBeforeUnmount(() => {
         v-model="reportDetailVisible"
         :detail="reportDetail"
         :loading="reportDetailLoading"
+        :saving="actionLoading"
         :issue="reportDetailError"
         @locate-evidence="handleLocateEvidence"
         @retry="handleRetryReportDetail"
+        @save="handleSaveReportDetail"
       />
 
       <NdtDetailDrawer

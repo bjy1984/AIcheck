@@ -199,6 +199,8 @@ export type ArchivePackagePayload = SignedUrlPayload & {
   packageType: 'archive' | 'evidence'
   itemCount: number
   generatedAt: string
+  manifest?: Record<string, unknown>
+  manifestHash?: string
 }
 
 export type ArchiveItemDetailPayload = {
@@ -468,14 +470,16 @@ export type DateComparisonItem = {
   evidenceLinkIds: string[]
 }
 
+export type ReportSection = {
+  key: string
+  title: string
+  content: string
+  evidenceLinkIds: string[]
+}
+
 export type ReportDetailPayload = {
   report: ReportVersion
-  sections: Array<{
-    key: string
-    title: string
-    content: string
-    evidenceLinkIds: string[]
-  }>
+  sections: ReportSection[]
   evidenceLinks: EvidenceLink[]
   reviewTrail: Array<{
     title: string
@@ -491,6 +495,10 @@ export type ReportDetailPayload = {
     generatedAt: string
     summary: string
   }>
+}
+
+export type ReportUpdatePayload = MockMutationResult & {
+  report: ReportVersion
 }
 
 export type KnowledgeOverviewPayload = {
@@ -2675,6 +2683,24 @@ export const getReportDetailApi = (
   reportId: string
 ): Promise<IResponse<ReportDetailPayload>> => {
   return request.get({ url: `/api/projects/${projectId}/reports/${reportId}` })
+}
+
+export const updateReportApi = (
+  projectId: string,
+  reportId: string,
+  payload: {
+    title?: string
+    status?: ReportVersion['status']
+    sections?: ReportSection[]
+    remark?: string
+  },
+  options?: MutationHeaderOptions
+): Promise<IResponse<ReportUpdatePayload>> => {
+  return request.patch({
+    url: `/api/projects/${projectId}/reports/${reportId}`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
 }
 
 export const getArchivePackageApi = (

@@ -1,0 +1,299 @@
+paths:
+  /api/projects/{projectId}/inspection/nodes/{nodeId}/report-review:
+    post:
+      tags: [inspection, reports]
+      operationId: inspection_create_report_review
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './common.yaml#/components/parameters/ProjectId'
+        - $ref: './common.yaml#/components/parameters/NodeId'
+        - $ref: './common.yaml#/components/parameters/IdempotencyKey'
+        - $ref: './common.yaml#/components/parameters/RoleHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './schemas-review.yaml#/components/schemas/ReportReviewRequest'
+      responses:
+        '200':
+          description: Report draft generated for review.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: './schemas-review.yaml#/components/schemas/ReportReviewPayload'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data:
+                      report:
+                        id: RPT-NEW-001
+                        projectId: P-2026-HDCP-001
+                        reportNo: GDJ-JJ-2026-001
+                        versionNo: V1
+                        title: 监督检验报告
+                        status: 复核中
+                        scope: currentNode
+                        nodeIds: [24]
+                        generatedAt: '2026-06-25 10:00:00'
+                        actions: [report:view, report:export, report:archive]
+                      nextStatus: 报告生成/复核中
+                      createdTodos: []
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+
+  /api/projects/{projectId}/reports/{reportId}:
+    get:
+      tags: [reports]
+      operationId: reports_get_detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './common.yaml#/components/parameters/ProjectId'
+        - $ref: './common.yaml#/components/parameters/ReportId'
+      responses:
+        '200':
+          description: Report detail, sections, evidence, trail and versions.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: './schemas-review.yaml#/components/schemas/ReportDetailPayload'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data:
+                      report:
+                        id: RPT-20260625-001
+                        projectId: P-2026-HDCP-001
+                        reportNo: GDJ-JJ-2026-001
+                        versionNo: V1
+                        title: 监督检验报告
+                        status: 复核中
+                        scope: currentNode
+                        nodeIds: [24]
+                        generatedAt: '2026-06-25 10:00:00'
+                        actions: [report:view, report:review]
+                      sections:
+                        - key: summary
+                          title: 检验结论
+                          content: 资料、证据链与规则要求一致。
+                          evidenceLinkIds: [EV-24-001]
+                      evidenceLinks: []
+                      reviewTrail: []
+                      versionHistory: []
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+    patch:
+      tags: [reports]
+      operationId: reports_update_draft
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './common.yaml#/components/parameters/ProjectId'
+        - $ref: './common.yaml#/components/parameters/ReportId'
+        - $ref: './common.yaml#/components/parameters/IfMatch'
+        - $ref: './common.yaml#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './schemas-review.yaml#/components/schemas/ReportUpdateRequest'
+      responses:
+        '200':
+          description: Report draft saved and revision incremented.
+          headers:
+            ETag:
+              $ref: './common.yaml#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: './schemas-review.yaml#/components/schemas/ReportUpdatePayload'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data:
+                      auditLogId: AUD-001
+                      changed:
+                        - field: sections
+                      report:
+                        id: RPT-20260625-001
+                        projectId: P-2026-HDCP-001
+                        reportNo: GDJ-JJ-2026-001
+                        versionNo: V1
+                        title: 监督检验报告
+                        status: 复核中
+                        scope: currentNode
+                        nodeIds: [24]
+                        generatedAt: '2026-06-25 10:00:00'
+                        revision: 2
+                        etag: W/"report-RPT-20260625-001-r2"
+                        actions: [report:view, report:review]
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+
+  /api/projects/{projectId}/reports/{reportId}/export:
+    post:
+      tags: [reports, exports]
+      operationId: reports_create_export
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './common.yaml#/components/parameters/ProjectId'
+        - $ref: './common.yaml#/components/parameters/ReportId'
+        - $ref: './common.yaml#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './schemas-review.yaml#/components/schemas/ReportExportRequest'
+      responses:
+        '200':
+          description: Report export task created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: './schemas-review.yaml#/components/schemas/ReportExportPayload'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data:
+                      exportId: EXP-RPT-001
+                      report:
+                        id: RPT-20260625-001
+                        projectId: P-2026-HDCP-001
+                        reportNo: GDJ-JJ-2026-001
+                        versionNo: V1
+                        title: 监督检验报告
+                        status: 复核中
+                        scope: currentNode
+                        nodeIds: [24]
+                        generatedAt: '2026-06-25 10:00:00'
+                        actions: [report:view]
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+
+  /api/projects/{projectId}/reports/{reportId}/archive:
+    post:
+      tags: [reports, archive]
+      operationId: reports_archive_report
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './common.yaml#/components/parameters/ProjectId'
+        - $ref: './common.yaml#/components/parameters/ReportId'
+        - $ref: './common.yaml#/components/parameters/IfMatch'
+        - $ref: './common.yaml#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './schemas-review.yaml#/components/schemas/ReportArchiveRequest'
+      responses:
+        '200':
+          description: Report archived.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: './schemas-review.yaml#/components/schemas/ReportArchivePayload'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data:
+                      report:
+                        id: RPT-20260625-001
+                        projectId: P-2026-HDCP-001
+                        reportNo: GDJ-JJ-2026-001
+                        versionNo: V1
+                        title: 监督检验报告
+                        status: 已归档
+                        scope: currentNode
+                        nodeIds: [24]
+                        generatedAt: '2026-06-25 10:00:00'
+                        actions: [report:view]
+                      nextStatus: 已归档
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'

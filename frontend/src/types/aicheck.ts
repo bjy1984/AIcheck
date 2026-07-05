@@ -278,6 +278,7 @@ export type ArchiveItem = {
 export type ExportTask = {
   id: string
   projectId?: string
+  nodeId?: number
   exportType: 'report' | 'archive-package' | 'evidence-package' | 'document' | 'config-package'
   status: '排队中' | '生成中' | '可下载' | '失败' | '已过期'
   progress: number
@@ -288,6 +289,8 @@ export type ExportTask = {
   finishedAt?: string
   expiresAt?: string
   errorMessage?: string
+  manifest?: Record<string, unknown>
+  manifestHash?: string
 }
 
 export type NdtFilm = {

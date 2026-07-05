@@ -5314,6 +5314,32 @@ def test_report_update_if_match_increments_revision() -> None:
     assert updated["report"]["revision"] == revision + 1
     assert updated["report"]["etag"] != etag
 
+    updated_detail = assert_ok(client.get(f"/projects/{project_id}/reports/{report_id}"))
+    sections = updated_detail["sections"]
+    sections[0]["content"] = "复核后补充：证据链完整，报告结论可签发。"
+    sections[0]["evidenceLinkIds"] = ["EV-24-001"]
+    section_saved = assert_ok(
+        client.patch(
+            f"/projects/{project_id}/reports/{report_id}",
+            json={"sections": sections, "remark": "补充检验结论"},
+            headers={"If-Match": updated_detail["report"]["etag"], "Idempotency-Key": "report-section-update-once"},
+        )
+    )
+    saved_detail = assert_ok(client.get(f"/projects/{project_id}/reports/{report_id}"))
+    assert section_saved["report"]["revision"] == revision + 2
+    assert saved_detail["sections"][0]["content"] == "复核后补充：证据链完整，报告结论可签发。"
+    assert saved_detail["reviewTrail"][0]["title"] == "保存报告"
+    assert saved_detail["reviewTrail"][0]["comment"] == "补充检验结论"
+    assert saved_detail["versionHistory"][1]["summary"] == "补充检验结论"
+    assert_error(
+        client.patch(
+            f"/projects/{project_id}/reports/{report_id}",
+            json={"sections": [{**sections[0], "evidenceLinkIds": ["EV-NOT-FOUND"]}]},
+            headers={"If-Match": saved_detail["report"]["etag"]},
+        ),
+        "VALIDATION_ERROR",
+    )
+
 
 def test_owner_write_forbidden_and_archived_readonly() -> None:
     project_id = "P-2026-HDCP-001"
@@ -8599,17 +8625,32 @@ def test_archive_and_evidence_packages_write_queryable_audit_artifacts(monkeypat
 
     assert archive_task["status"] == "可下载"
     assert archive_task["progress"] == 100
+    assert archive_task["manifestHash"] == archive["manifestHash"]
     assert archive_task["storageKey"] in stored
     assert evidence_task["status"] == "可下载"
+    assert evidence_task["manifestHash"] == evidence["manifestHash"]
     assert evidence_task["storageKey"] in stored
     with zipfile.ZipFile(io.BytesIO(stored[archive_task["storageKey"]])) as archive_zip:
+        assert {"manifest.json", "archive_items.json", "archive_items.csv", "reports.json", "export_tasks.json"}.issubset(
+            set(archive_zip.namelist())
+        )
         manifest = json.loads(archive_zip.read("manifest.json").decode("utf-8"))
         assert manifest["exportType"] == "archive-package"
+        assert manifest["schemaVersion"] == "aicheck-archive-package-v2"
+        assert manifest["manifestHash"] == archive["manifestHash"]
         assert manifest["counts"]["archiveItems"] >= 1
     with zipfile.ZipFile(io.BytesIO(stored[evidence_task["storageKey"]])) as evidence_zip:
+        assert {"manifest.json", "evidence_links.json", "evidence_links.csv"}.issubset(
+            set(evidence_zip.namelist())
+        )
         manifest = json.loads(evidence_zip.read("manifest.json").decode("utf-8"))
         assert manifest["exportType"] == "evidence-package"
+        assert manifest["schemaVersion"] == "aicheck-evidence-package-v2"
+        assert manifest["manifestHash"] == evidence["manifestHash"]
+        assert manifest["nodeId"] == 24
         assert manifest["counts"]["evidenceLinks"] >= 1
+        evidence_rows = json.loads(evidence_zip.read("evidence_links.json").decode("utf-8"))
+        assert all(row.get("documentVersionId") in set(manifest["documentVersionIds"]) for row in evidence_rows)
 
 
 class FakeCursor:

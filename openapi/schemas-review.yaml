@@ -1,0 +1,323 @@
+components:
+  schemas:
+    ReportStatus:
+      type: string
+      enum: [草稿, 复核中, 待签发, 已签发, 已归档]
+    ReportVersion:
+      type: object
+      required: [id, projectId, reportNo, versionNo, title, status, scope, nodeIds, generatedAt, actions]
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        reportNo:
+          type: string
+        versionNo:
+          type: string
+        title:
+          type: string
+        status:
+          $ref: '#/components/schemas/ReportStatus'
+        scope:
+          type: string
+          enum: [currentNode, project]
+        nodeIds:
+          type: array
+          items:
+            type: integer
+        generatedAt:
+          type: string
+        revision:
+          type: integer
+        etag:
+          type: string
+        updatedAt:
+          type: string
+        reviewerName:
+          type: string
+        previewUrl:
+          type: string
+        exportUrl:
+          type: string
+        actions:
+          type: array
+          items:
+            $ref: './schemas-project.yaml#/components/schemas/ActionCode'
+    ReportSection:
+      type: object
+      required: [key, title, content, evidenceLinkIds]
+      properties:
+        key:
+          type: string
+          maxLength: 80
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        content:
+          type: string
+          minLength: 1
+          maxLength: 6000
+        evidenceLinkIds:
+          type: array
+          items:
+            type: string
+    ReportDetailPayload:
+      type: object
+      required: [report, sections, evidenceLinks, reviewTrail, versionHistory]
+      properties:
+        report:
+          $ref: '#/components/schemas/ReportVersion'
+        sections:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportSection'
+        evidenceLinks:
+          type: array
+          items:
+            $ref: './schemas-document.yaml#/components/schemas/EvidenceLink'
+        reviewTrail:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportReviewTrailItem'
+        versionHistory:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportVersionHistoryItem'
+    ReportReviewTrailItem:
+      type: object
+      required: [title, actorName, result, createdAt]
+      properties:
+        title:
+          type: string
+        actorName:
+          type: string
+        result:
+          type: string
+        createdAt:
+          type: string
+        comment:
+          type: string
+    ReportVersionHistoryItem:
+      type: object
+      required: [id, versionNo, status, generatedAt, summary]
+      properties:
+        id:
+          type: string
+        versionNo:
+          type: string
+        status:
+          $ref: '#/components/schemas/ReportStatus'
+        generatedAt:
+          type: string
+        summary:
+          type: string
+    ReportUpdateRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 120
+        status:
+          $ref: '#/components/schemas/ReportStatus'
+        sections:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/ReportSection'
+        remark:
+          type: string
+          maxLength: 500
+    ReportUpdatePayload:
+      allOf:
+        - $ref: './common.yaml#/components/schemas/MockMutationResult'
+        - type: object
+          required: [report]
+          properties:
+            report:
+              $ref: '#/components/schemas/ReportVersion'
+    ReportReviewRequest:
+      type: object
+      required: [includeEvidence, reportScope]
+      properties:
+        includeEvidence:
+          type: boolean
+        reportScope:
+          type: string
+          enum: [currentNode, project]
+        reviewerNote:
+          type: string
+    ReportReviewPayload:
+      type: object
+      required: [report, nextStatus, createdTodos]
+      properties:
+        report:
+          $ref: '#/components/schemas/ReportVersion'
+        nextStatus:
+          type: string
+          enum: [报告生成/复核中]
+        createdTodos:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    ReportExportRequest:
+      type: object
+      required: [format]
+      properties:
+        format:
+          type: string
+          enum: [docx, pdf]
+    ReportExportPayload:
+      type: object
+      required: [exportId, report]
+      properties:
+        exportId:
+          type: string
+        report:
+          $ref: '#/components/schemas/ReportVersion'
+    ReportArchiveRequest:
+      type: object
+      properties:
+        archiveNote:
+          type: string
+          maxLength: 500
+    ReportArchivePayload:
+      type: object
+      required: [report, nextStatus]
+      properties:
+        report:
+          $ref: '#/components/schemas/ReportVersion'
+        nextStatus:
+          type: string
+          enum: [已归档]
+    ArchiveItem:
+      type: object
+      required: [id, name, type, updatedAt]
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [document, report, evidence]
+        nodeId:
+          type: integer
+        sourceOrgName:
+          type: string
+        status:
+          type: string
+        updatedAt:
+          type: string
+        downloadUrl:
+          type: string
+    ArchivePackageManifest:
+      type: object
+      required: [schemaVersion, generatedAt, exportId, exportType, projectId, counts, contents, manifestHash]
+      properties:
+        schemaVersion:
+          type: string
+          enum: [aicheck-archive-package-v2, aicheck-evidence-package-v2]
+        generatedAt:
+          type: string
+        exportId:
+          type: string
+        exportType:
+          type: string
+          enum: [archive-package, evidence-package]
+        projectId:
+          type: string
+        nodeId:
+          type: integer
+        visibility:
+          type: string
+          enum: [project, node-scoped]
+        nodeScope:
+          type: [array, 'null']
+          items:
+            type: integer
+        counts:
+          type: object
+          additionalProperties:
+            type: integer
+        contents:
+          type: array
+          items:
+            type: string
+        documentVersionIds:
+          type: array
+          items:
+            type: string
+        manifestHash:
+          type: string
+    ArchivePackagePayload:
+      allOf:
+        - $ref: './schemas-document.yaml#/components/schemas/SignedUrlPayload'
+        - type: object
+          required: [exportId, projectId, packageType, itemCount, generatedAt, manifest, manifestHash]
+          properties:
+            exportId:
+              type: string
+            projectId:
+              type: string
+            packageType:
+              type: string
+              enum: [archive, evidence]
+            itemCount:
+              type: integer
+              minimum: 0
+            generatedAt:
+              type: string
+            manifest:
+              $ref: '#/components/schemas/ArchivePackageManifest'
+            manifestHash:
+              type: string
+    ExportTask:
+      type: object
+      required: [id, exportType, status, progress, fileName, createdAt]
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        nodeId:
+          type: integer
+        exportType:
+          type: string
+          enum: [report, archive-package, evidence-package, document, config-package]
+        status:
+          type: string
+          enum: [排队中, 生成中, 可下载, 失败, 已过期]
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        fileName:
+          type: string
+        fileSize:
+          type: integer
+        downloadUrl:
+          type: string
+        createdAt:
+          type: string
+        finishedAt:
+          type: string
+        expiresAt:
+          type: string
+        errorMessage:
+          type: string
+        manifest:
+          $ref: '#/components/schemas/ArchivePackageManifest'
+        manifestHash:
+          type: string
+    ExportTaskPayload:
+      type: object
+      required: [task]
+      properties:
+        task:
+          $ref: '#/components/schemas/ExportTask'

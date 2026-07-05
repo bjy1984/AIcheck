@@ -1,0 +1,181 @@
+paths:
+  /api/workbench/projects:
+    get:
+      tags: [workbench]
+      operationId: workbench_list_projects
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './common.yaml#/components/parameters/RoleHeader'
+      responses:
+        '200':
+          description: Visible projects for current role.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: './schemas-project.yaml#/components/schemas/Project'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data:
+                      - id: P-2026-HDCP-001
+                        code: HDCP-001
+                        name: 惠东压力管道安装监督检验
+                        type: 压力管道
+                        region: 广东
+                        status: 监检审查中
+                        currentNodeId: 24
+                        actions: [project:view]
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+
+  /api/projects/{projectId}/workbench/context:
+    get:
+      tags: [workbench]
+      operationId: workbench_get_context
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './common.yaml#/components/parameters/ProjectId'
+        - $ref: './common.yaml#/components/parameters/RoleHeader'
+      responses:
+        '200':
+          description: Role context and allowed actions.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: './schemas-project.yaml#/components/schemas/WorkbenchContextPayload'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data:
+                      role: inspection
+                      readonly: false
+                      actions: [project:view, report:review]
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+
+  /api/projects/{projectId}/workbench/summary:
+    get:
+      tags: [workbench]
+      operationId: workbench_get_summary
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './common.yaml#/components/parameters/ProjectId'
+        - $ref: './common.yaml#/components/parameters/RoleHeader'
+      responses:
+        '200':
+          description: Project dashboard metrics.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: './schemas-project.yaml#/components/schemas/WorkbenchSummaryPayload'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data:
+                      metrics:
+                        - key: pending
+                          label: 待处理
+                          value: 3
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+
+  /api/projects/{projectId}/tree:
+    get:
+      tags: [workbench]
+      operationId: workbench_get_project_tree
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './common.yaml#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Project tree.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: './schemas-project.yaml#/components/schemas/ProjectTreePayload'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data:
+                      project:
+                        id: P-2026-HDCP-001
+                        code: HDCP-001
+                        name: 惠东压力管道安装监督检验
+                        type: 压力管道
+                        region: 广东
+                        status: 监检审查中
+                        currentNodeId: 24
+                        actions: [project:view]
+                      groups: []
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
