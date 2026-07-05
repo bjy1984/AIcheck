@@ -129,8 +129,20 @@ def test_fde_dashboard_and_masked_ai_run_detail() -> None:
     assert detail["run"]["rawAccess"] is False
     assert detail["run"]["inputHash"].startswith("sha256:")
     assert detail["run"]["outputHash"].startswith("sha256:")
+    assert detail["run"]["llmAuditAvailable"] is True
+    assert "promptAudit" not in detail["run"]
+    assert "llmMetadata" not in detail["run"]
     assert detail["traceSteps"]
     assert detail["accessPolicy"]["rawAccessRequiresGrant"] is True
+    assert detail["llmAudit"]["runType"] == "ai_run"
+    assert detail["llmAudit"]["visibility"] == "masked"
+    assert detail["llmAudit"]["inputs"]["systemPrompt"]
+    assert detail["llmAudit"]["inputs"]["messagesHash"].startswith("sha256:")
+    assert detail["llmAudit"]["outputs"]["resultText"]
+    assert detail["llmAudit"]["metadata"]["conversationId"] == "chatcmpl-aicheck-demo-24-001"
+    assert "reasoningProcess" not in detail["llmAudit"]["metadata"]
+    assert detail["llmAudit"]["reasoning"]["redactionPolicy"] == "audit_summary_only_no_raw_chain_of_thought"
+    assert detail["llmAudit"]["reasoning"]["rawChainOfThoughtAvailable"] is False
 
 
 def test_fde_replay_creates_child_run_without_overwriting_parent() -> None:
@@ -334,6 +346,15 @@ def test_fde_review_run_visualization_replay_and_shadow(monkeypatch) -> None:
 
     assert any(item["reviewRunId"] == review_run_id for item in page["items"])
     assert detail["run"]["reviewRunId"] == review_run_id
+    assert detail["run"]["llmAuditAvailable"] is True
+    assert "promptAudit" not in detail["run"]
+    assert "llmMetadata" not in detail["run"]
+    assert detail["llmAudit"]["runType"] == "review_run"
+    assert detail["llmAudit"]["visibility"] == "masked"
+    assert detail["llmAudit"]["inputs"]["messages"]
+    assert detail["llmAudit"]["outputs"]["available"] is True
+    assert detail["llmAudit"]["reasoning"]["redactionPolicy"] == "audit_summary_only_no_raw_chain_of_thought"
+    assert detail["llmAudit"]["reasoning"]["rawChainOfThoughtAvailable"] is False
     assert detail["temporal"]["historyPolicy"] == "ids_hashes_versions_only"
     assert detail["scorecard"]["targetScore"] == 100
     assert detail["scorecard"]["sections"]
@@ -482,9 +503,11 @@ def test_fde_access_grant_controls_raw_ai_run_view() -> None:
     raw = assert_ok(client.get("/api/fde/ai-runs/AIRUN-24-20260625-01", headers={"X-Role": "fde"}))
 
     assert masked["run"]["rawAccess"] is False
+    assert masked["llmAudit"]["visibility"] == "masked"
     assert grant["grant"]["status"] == "pending"
     assert approved["grant"]["status"] == "approved"
     assert raw["run"]["rawAccess"] is True
+    assert raw["llmAudit"]["visibility"] == "raw"
 
 
 def test_fde_evaluation_report_and_release_state_machine() -> None:

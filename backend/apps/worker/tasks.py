@@ -12,12 +12,34 @@ from libs.contracts.responses import server_time
 from libs.db.repository import flush_state, load_state, repo
 from libs.integrations.litellm_client import LiteLLMClient
 from libs.integrations.ocr_client import OcrClient
-from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block
+from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block, unsupported_claims
 
 
 def stable_hash_payload(value: Any) -> str:
     raw = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))
     return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def compare_document_version_ids(run: dict[str, Any]) -> set[str]:
+    version_ids = {str(item) for item in run.get("documentVersionIds") or [] if item}
+    evidence_ids = {str(item) for item in run.get("evidenceLinkIds") or [] if item}
+    if evidence_ids:
+        version_ids.update(
+            str(item.get("documentVersionId"))
+            for item in repo.state.get("evidence_links", [])
+            if str(item.get("id") or "") in evidence_ids and item.get("documentVersionId")
+        )
+    if version_ids:
+        return version_ids
+    project_id = run.get("projectId")
+    node_id = run.get("nodeId")
+    for ai_run in repo.state.get("ai_runs", []):
+        if project_id and ai_run.get("projectId") != project_id:
+            continue
+        if node_id is not None and int(ai_run.get("nodeId") or -1) != int(node_id):
+            continue
+        version_ids.update(str(item) for item in ai_run.get("inputDocumentVersionIds") or [] if item)
+    return version_ids
 
 
 def production_prompt_template_for_run(run: dict[str, Any]) -> dict[str, Any] | None:
@@ -88,12 +110,15 @@ def parse_with_ocr_service(
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 def parse_document(self, document_id: str, version_id: str, storage_key: str, file_name: str | None = None) -> dict[str, Any]:
-    load_state()
     task = repo.ocr_task_for(document_id, version_id, file_name)
+    version = repo.find_one("versions", version_id)
+    if task is None and version is None:
+        load_state()
+        task = repo.ocr_task_for(document_id, version_id, file_name)
+        version = repo.find_one("versions", version_id)
     if task and task.get("status") == "已取消":
         flush_state()
         return {"documentId": document_id, "versionId": version_id, "status": "canceled"}
-    version = repo.find_one("versions", version_id)
     if task and task.get("status") == "成功" and (version or {}).get("ocrStatus") == "已识别":
         flush_state()
         return {"documentId": document_id, "versionId": version_id, "status": "success", "alreadyCompleted": True}
@@ -156,12 +181,15 @@ def recognize_seals(self, document_id: str, version_id: str) -> dict[str, Any]:
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 def slice_knowledge(self, file_id: str) -> dict[str, Any]:
-    load_state()
     task = next((item for item in repo.state["knowledge_tasks"] if item.get("taskType") == "slice" and item.get("targetId") == file_id), None)
+    file = repo.find_one("knowledge_files", file_id)
+    if task is None and file is None:
+        load_state()
+        task = next((item for item in repo.state["knowledge_tasks"] if item.get("taskType") == "slice" and item.get("targetId") == file_id), None)
+        file = repo.find_one("knowledge_files", file_id)
     if task and task.get("status") == "已取消":
         flush_state()
         return {"fileId": file_id, "status": "canceled", "chunkCount": 0}
-    file = repo.find_one("knowledge_files", file_id)
     if task and task.get("status") == "成功" and (file or {}).get("sliceStatus") == "已切片":
         chunk_count = len([item for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") == file_id])
         flush_state()
@@ -188,14 +216,18 @@ def slice_knowledge(self, file_id: str) -> dict[str, Any]:
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 def embed_knowledge(self, file_id: str) -> dict[str, Any]:
-    load_state()
     chunks = [item for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") == file_id]
-    vector_count = len(chunks) or 1
     task = next((item for item in repo.state["knowledge_tasks"] if item.get("taskType") == "vector" and item.get("targetId") == file_id), None)
+    file = repo.find_one("knowledge_files", file_id)
+    if task is None and file is None and not chunks:
+        load_state()
+        chunks = [item for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") == file_id]
+        task = next((item for item in repo.state["knowledge_tasks"] if item.get("taskType") == "vector" and item.get("targetId") == file_id), None)
+        file = repo.find_one("knowledge_files", file_id)
+    vector_count = len(chunks) or 1
     if task and task.get("status") == "已取消":
         flush_state()
         return {"fileId": file_id, "status": "canceled", "vectorCount": 0}
-    file = repo.find_one("knowledge_files", file_id)
     if task and task.get("status") == "成功" and (file or {}).get("vectorStatus") == "已向量化":
         flush_state()
         return {"fileId": file_id, "status": "success", "vectorCount": int((file or {}).get("vectorCount") or vector_count), "alreadyCompleted": True}
@@ -219,8 +251,10 @@ def embed_knowledge(self, file_id: str) -> dict[str, Any]:
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 2})
 def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, Any]:
-    load_state()
     run = repo.find_one("ai_runs", run_id)
+    if not run:
+        load_state()
+        run = repo.find_one("ai_runs", run_id)
     if not run:
         return {"projectId": project_id, "nodeId": node_id, "runId": run_id, "status": "missing"}
     if run.get("status") in {"完成", "失败"} and run.get("finishedAt"):
@@ -396,8 +430,10 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 2})
 def llm_compare(self, run_id: str) -> dict[str, Any]:
-    load_state()
     run = repo.find_one("llm_compare_runs", run_id, id_field="runId")
+    if not run:
+        load_state()
+        run = repo.find_one("llm_compare_runs", run_id, id_field="runId")
     if not run:
         return {"runId": run_id, "status": "missing"}
     if run.get("status") in {"完成", "失败"} and run.get("finishedAt"):
@@ -406,18 +442,62 @@ def llm_compare(self, run_id: str) -> dict[str, Any]:
     results = []
     try:
         run["status"] = "运行中"
+        version_ids = compare_document_version_ids(run)
+        grounding_input = build_grounded_review_input(repo.state, version_ids)
+        grounding_block = grounding_prompt_block(grounding_input)
+        compare_payload = {
+            "task": "Compare model answers for a human reviewer. Do not issue a final business approval, rejection, or compliance conclusion.",
+            "compareOnly": True,
+            "question": run.get("question") or "请对比审查意见。",
+            "strictGroundingPolicy": grounding_block["strictGroundingPolicy"],
+            "requirements": [
+                "Answer only as a model comparison assistant.",
+                "Do not state that documents are compliant, valid, authentic, covered, or pass unless the exact fact is present in groundedOcrEvidence.",
+                "If OCR evidence is insufficient, say that the comparison requires human confirmation.",
+                *grounding_block["requirements"],
+            ],
+            "groundedOcrEvidence": grounding_block["groundedOcrEvidence"],
+            "evidenceLinkIds": run.get("evidenceLinkIds") or [],
+            "requiredOutput": {
+                "answer": "Short compare-only response in Chinese.",
+                "mustInclude": ["groundingStatus", "requiresHumanConfirmation"],
+            },
+        }
+        messages = [
+            {
+                "role": "system",
+                "content": "You compare LLM answers for reviewers. You must stay evidence-only and compare-only.",
+            },
+            {"role": "user", "content": json.dumps(compare_payload, ensure_ascii=False)},
+        ]
+        run["groundingStatus"] = grounding_input.get("groundingStatus")
+        run["groundingInputSummary"] = grounding_input.get("summary") or {}
+        run["promptAudit"] = {
+            "messagesHash": stable_hash_payload(messages),
+            "payloadPolicy": "compare_only_grounded_ocr_evidence",
+            "messages": messages,
+        }
         for model in run.get("modelCodes") or ["default-chat", "compare-fast"]:
             response = LiteLLMClient().chat_sync(
-                [{"role": "user", "content": run.get("question") or "请对比审查意见。"}],
+                messages,
                 model=model,
                 temperature=0.1,
             )
+            answer = LiteLLMClient.first_message_text(response)
+            unsupported = unsupported_claims(answer or "", [str(item) for item in grounding_input.get("evidenceTextCorpus") or []])
+            result_grounding_status = "grounded" if grounding_input.get("groundingStatus") == "grounded" and not unsupported else "insufficient_evidence"
+            if result_grounding_status != "grounded":
+                answer = f"证据不足，以下仅作为模型回答对比参考，不能作为业务通过结论：{str(answer or '')[:1200]}"
             results.append(
                 {
                     "modelCode": model,
-                    "answer": LiteLLMClient.first_message_text(response),
-                    "confidence": 0.8,
+                    "answer": answer,
+                    "confidence": 0.8 if result_grounding_status == "grounded" else 0.5,
                     "evidenceLinkIds": run.get("evidenceLinkIds") or ["EV-24-001"],
+                    "groundingStatus": result_grounding_status,
+                    "unsupportedClaims": unsupported,
+                    "requiresHumanConfirmation": True,
+                    "compareOnly": True,
                     "latencyMs": 0,
                 }
             )
@@ -435,8 +515,10 @@ def llm_compare(self, run_id: str) -> dict[str, Any]:
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 def export_package(self, export_id: str) -> dict[str, Any]:
-    load_state()
     task = repo.find_one("export_tasks", export_id)
+    if not task:
+        load_state()
+        task = repo.find_one("export_tasks", export_id)
     if task:
         if task.get("status") == "已取消":
             flush_state()

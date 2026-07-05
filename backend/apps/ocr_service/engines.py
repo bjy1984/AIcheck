@@ -1700,7 +1700,14 @@ class PaddleOcrVlEngine(LocalOcrEngine):
     required_package = "paddleocr"
 
     def enabled(self) -> bool:
-        return env_bool("AICHECK_ENABLE_PADDLEOCR_VL", False)
+        if env_bool("AICHECK_ENABLE_PADDLEOCR_VL", False):
+            return True
+        explicit_model_envs = (
+            "PADDLEOCR_VL_MODEL_DIR",
+            "AICHECK_PADDLEOCR_VL_LAYOUT_MODEL_DIR",
+            "AICHECK_PADDLEOCR_VL_REC_MODEL_DIR",
+        )
+        return any(bool(os.getenv(name)) for name in explicit_model_envs)
 
     def available(self) -> bool:
         if not self.enabled():

@@ -1529,7 +1529,9 @@ const techLabelMap: Record<string, string> = {
   field_extraction: '字段抽取',
   table_structure: '表格结构',
   seal_recognition: '印章识别',
-  pageindex_evidence: '章节溯源证据'
+  pageindex_evidence: '章节溯源证据',
+  audit_summary_only_no_raw_chain_of_thought: '只展示公开审计摘要，不展示原始思维链',
+  full_prompt_stored_for_audit: '完整 Prompt 已存档，按权限脱敏展示'
 }
 
 const friendlyTechLabel = (value: unknown, fallback = '-') => {
@@ -3073,6 +3075,80 @@ const reviewArtifactRows = computed(() => [
   { label: '草稿', value: recordNumber(reviewArtifactSummary.value, 'findingDrafts') },
   { label: '校验失败', value: recordNumber(reviewArtifactSummary.value, 'validationFailures') }
 ])
+
+const formatAuditJson = (value: unknown, fallback = '-') => {
+  if (value === undefined || value === null || value === '') return fallback
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return shortText(value, fallback)
+  }
+}
+
+const llmAuditText = (value: unknown, fallback = '-') => {
+  if (value === undefined || value === null || value === '') return fallback
+  if (typeof value === 'object') return formatAuditJson(value, fallback)
+  return String(value)
+}
+
+const selectedReviewLlmAudit = computed<Record<string, unknown>>(() =>
+  toRecord(selectedReviewRun.value?.llmAudit)
+)
+const reviewLlmAuditInputs = computed(() => toRecord(selectedReviewLlmAudit.value.inputs))
+const reviewLlmAuditOutputs = computed(() => toRecord(selectedReviewLlmAudit.value.outputs))
+const reviewLlmAuditReasoning = computed(() => toRecord(selectedReviewLlmAudit.value.reasoning))
+const reviewLlmAuditAvailable = computed(
+  () =>
+    Boolean(selectedReviewLlmAudit.value.schemaVersion) ||
+    Boolean(reviewLlmAuditInputs.value.available) ||
+    Boolean(reviewLlmAuditOutputs.value.available)
+)
+const reviewLlmAuditMessageRows = computed(() =>
+  toRecordArray(reviewLlmAuditInputs.value.messages).map((message, index) => ({
+    index: index + 1,
+    role: friendlyTechLabel(message.role || '-'),
+    content: message.content || '-',
+    contentLength: message.contentLength || 0,
+    contentHash: message.contentHash || '-'
+  }))
+)
+const llmAuditMetadataRows = (audit: Record<string, unknown>) => {
+  const inputs = toRecord(audit.inputs)
+  const outputs = toRecord(audit.outputs)
+  const metadata = toRecord(audit.metadata)
+  const reasoning = toRecord(audit.reasoning)
+  return [
+    { label: '可见范围', value: audit.visibility === 'raw' ? '原文授权' : '脱敏查看' },
+    { label: '模型', value: friendlyTechLabel(metadata.modelAlias || '-') },
+    { label: '调用模式', value: friendlyTechLabel(metadata.llmExecution || '-') },
+    { label: '会话编号', value: metadata.conversationId || '-' },
+    { label: 'Prompt 哈希', value: metadata.promptHash || inputs.messagesHash || '-' },
+    { label: '输出哈希', value: metadata.responseHash || outputs.responseHash || '-' },
+    { label: '证据状态', value: friendlyStatus(metadata.groundingStatus || '-') },
+    { label: 'Token 用量', value: llmAuditText(metadata.usage || outputs.usage || {}) },
+    {
+      label: '思维链策略',
+      value: friendlyTechLabel(reasoning.redactionPolicy || audit.redactionPolicy || '-')
+    }
+  ]
+}
+const reviewLlmAuditMetadataRows = computed(() =>
+  llmAuditMetadataRows(selectedReviewLlmAudit.value)
+)
+
+const selectedAiRunLlmAudit = computed<Record<string, unknown>>(() =>
+  toRecord(selectedRun.value?.llmAudit)
+)
+const aiRunLlmAuditInputs = computed(() => toRecord(selectedAiRunLlmAudit.value.inputs))
+const aiRunLlmAuditOutputs = computed(() => toRecord(selectedAiRunLlmAudit.value.outputs))
+const aiRunLlmAuditReasoning = computed(() => toRecord(selectedAiRunLlmAudit.value.reasoning))
+const aiRunLlmAuditAvailable = computed(
+  () =>
+    Boolean(selectedAiRunLlmAudit.value.schemaVersion) ||
+    Boolean(aiRunLlmAuditInputs.value.available) ||
+    Boolean(aiRunLlmAuditOutputs.value.available)
+)
+const aiRunLlmAuditMetadataRows = computed(() => llmAuditMetadataRows(selectedAiRunLlmAudit.value))
 const reviewNodeStatusRows = computed(() => {
   const counts = selectedReviewRun.value?.run?.graphSummary?.statusCounts || {}
   return Object.entries(counts).map(([status, count]) => ({ status, count }))
@@ -15266,7 +15342,67 @@ onBeforeUnmount(() => {
                   <ElTableColumn prop="status" label="状态" width="110" />
                   <ElTableColumn prop="latencyMs" label="耗时" width="110" />
                 </ElTable>
-                <ElEmpty v-else description="请选择 AI Run" />
+                <section v-if="selectedRun && aiRunLlmAuditAvailable" class="llm-audit-inline">
+                  <div class="llm-audit-section-head">
+                    <div>
+                      <span>LLM 输入输出</span>
+                      <strong>本次模型调用审计</strong>
+                    </div>
+                    <ElTag effect="plain">
+                      {{ selectedAiRunLlmAudit.visibility === 'raw' ? '原文授权' : '脱敏查看' }}
+                    </ElTag>
+                  </div>
+                  <ElAlert
+                    class="mb-12px"
+                    type="info"
+                    show-icon
+                    :closable="false"
+                    title="展示 Prompt、证据摘要、模型输出和公开推理摘要；不展示模型内部原始隐式思维链。"
+                  />
+                  <div class="llm-audit-grid llm-audit-grid--compact">
+                    <section class="llm-audit-card">
+                      <span>请求 Prompt</span>
+                      <strong>System</strong>
+                      <ElInput
+                        :model-value="llmAuditText(aiRunLlmAuditInputs.systemPrompt)"
+                        type="textarea"
+                        :rows="4"
+                        readonly
+                      />
+                      <strong>User</strong>
+                      <ElInput
+                        :model-value="llmAuditText(aiRunLlmAuditInputs.userPrompt)"
+                        type="textarea"
+                        :rows="5"
+                        readonly
+                      />
+                    </section>
+                    <section class="llm-audit-card">
+                      <span>输出与公开摘要</span>
+                      <strong>模型输出</strong>
+                      <ElInput
+                        :model-value="llmAuditText(aiRunLlmAuditOutputs.resultText)"
+                        type="textarea"
+                        :rows="5"
+                        readonly
+                      />
+                      <strong>COG 公开摘要</strong>
+                      <ElInput
+                        :model-value="llmAuditText(aiRunLlmAuditReasoning.summary)"
+                        type="textarea"
+                        :rows="4"
+                        readonly
+                      />
+                    </section>
+                  </div>
+                  <ElTable :data="aiRunLlmAuditMetadataRows" border class="mt-12px">
+                    <ElTableColumn prop="label" label="审计字段" width="130" />
+                    <ElTableColumn label="值" min-width="260" show-overflow-tooltip>
+                      <template #default="{ row }">{{ shortText(row.value) }}</template>
+                    </ElTableColumn>
+                  </ElTable>
+                </section>
+                <ElEmpty v-if="!selectedRun" description="请选择 AI Run" />
               </ElCard>
             </ElCol>
           </ElRow>
@@ -19015,6 +19151,111 @@ onBeforeUnmount(() => {
           </div>
 
           <ElTabs class="audit-drawer-tabs">
+            <ElTabPane label="LLM 输入输出" name="llm-io">
+              <ElAlert
+                class="mb-12px"
+                type="info"
+                show-icon
+                :closable="false"
+                title="这里按审计视角展示模型请求、证据输入、模型输出和 COG 公开摘要；不展示模型内部原始隐式思维链。"
+              />
+              <template v-if="reviewLlmAuditAvailable">
+                <div class="llm-audit-grid">
+                  <section class="llm-audit-card">
+                    <span>1. 请求给模型什么</span>
+                    <strong>System Prompt</strong>
+                    <ElInput
+                      :model-value="llmAuditText(reviewLlmAuditInputs.systemPrompt)"
+                      type="textarea"
+                      :rows="5"
+                      readonly
+                    />
+                    <strong>User Prompt</strong>
+                    <ElInput
+                      :model-value="llmAuditText(reviewLlmAuditInputs.userPrompt)"
+                      type="textarea"
+                      :rows="7"
+                      readonly
+                    />
+                  </section>
+                  <section class="llm-audit-card">
+                    <span>2. 证据输入是否充分</span>
+                    <strong>OCR / 规则 / 知识证据摘要</strong>
+                    <ElInput
+                      :model-value="llmAuditText(reviewLlmAuditInputs.groundedEvidenceSummary)"
+                      type="textarea"
+                      :rows="6"
+                      readonly
+                    />
+                    <strong>结构化任务 Payload</strong>
+                    <ElInput
+                      :model-value="llmAuditText(reviewLlmAuditInputs.userPayload)"
+                      type="textarea"
+                      :rows="6"
+                      readonly
+                    />
+                  </section>
+                  <section class="llm-audit-card">
+                    <span>3. 模型返回什么</span>
+                    <strong>输出文本</strong>
+                    <ElInput
+                      :model-value="llmAuditText(reviewLlmAuditOutputs.resultText)"
+                      type="textarea"
+                      :rows="6"
+                      readonly
+                    />
+                    <strong>结构化草稿</strong>
+                    <ElInput
+                      :model-value="llmAuditText(reviewLlmAuditOutputs.findingDrafts)"
+                      type="textarea"
+                      :rows="6"
+                      readonly
+                    />
+                  </section>
+                  <section class="llm-audit-card">
+                    <span>4. COG 公开摘要</span>
+                    <strong>可展示推理摘要</strong>
+                    <ElInput
+                      :model-value="llmAuditText(reviewLlmAuditReasoning.summary)"
+                      type="textarea"
+                      :rows="6"
+                      readonly
+                    />
+                    <div class="llm-audit-note">
+                      <span>策略</span>
+                      <strong>
+                        {{ friendlyTechLabel(reviewLlmAuditReasoning.redactionPolicy) }}
+                      </strong>
+                      <small>{{ llmAuditText(reviewLlmAuditReasoning.note) }}</small>
+                    </div>
+                  </section>
+                </div>
+                <ElTable :data="reviewLlmAuditMessageRows" border class="mt-12px">
+                  <ElTableColumn prop="index" label="#" width="64" />
+                  <ElTableColumn prop="role" label="角色" width="95" />
+                  <ElTableColumn
+                    prop="content"
+                    label="消息内容"
+                    min-width="260"
+                    show-overflow-tooltip
+                  />
+                  <ElTableColumn prop="contentLength" label="长度" width="90" />
+                  <ElTableColumn
+                    prop="contentHash"
+                    label="哈希"
+                    min-width="180"
+                    show-overflow-tooltip
+                  />
+                </ElTable>
+                <ElTable :data="reviewLlmAuditMetadataRows" border class="mt-12px">
+                  <ElTableColumn prop="label" label="审计字段" width="130" />
+                  <ElTableColumn label="值" min-width="320" show-overflow-tooltip>
+                    <template #default="{ row }">{{ shortText(row.value) }}</template>
+                  </ElTableColumn>
+                </ElTable>
+              </template>
+              <ElEmpty v-else description="当前审查任务没有可展示的 LLM 输入输出审计记录" />
+            </ElTabPane>
             <ElTabPane label="思考链" name="reasoning">
               <ElAlert
                 class="mb-12px"
@@ -24643,6 +24884,104 @@ onBeforeUnmount(() => {
 
 .audit-drawer-tabs {
   margin-top: 12px;
+}
+
+.llm-audit-inline {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.llm-audit-section-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.llm-audit-section-head div,
+.llm-audit-card {
+  min-width: 0;
+}
+
+.llm-audit-section-head span,
+.llm-audit-card > span {
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 18px;
+  color: #2563eb;
+}
+
+.llm-audit-section-head strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 22px;
+  color: #172033;
+}
+
+.llm-audit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.llm-audit-grid--compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.llm-audit-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #dbe5f3;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.llm-audit-card > strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #172033;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.llm-audit-card :deep(.el-textarea__inner) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  line-height: 18px;
+  color: #172033;
+  background: #fff;
+}
+
+.llm-audit-note {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+}
+
+.llm-audit-note span,
+.llm-audit-note small {
+  font-size: 12px;
+  line-height: 18px;
+  color: #64748b;
+}
+
+.llm-audit-note strong {
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #172033;
 }
 
 .vector-file-chart-grid {

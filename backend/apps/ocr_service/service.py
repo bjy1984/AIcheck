@@ -2511,6 +2511,23 @@ def enrich_parse_result(
 
 def apply_profile_postprocessing(result: dict[str, Any], profile: dict[str, Any]) -> None:
     if is_piping_characteristic_profile(result, profile):
+        title_block_tables = infer_engineering_drawing_title_block_tables(result.get("fragments") or [])
+        if title_block_tables:
+            existing_tables = result.setdefault("tables", [])
+            appended_title_blocks = []
+            for table in title_block_tables:
+                if should_keep_engineering_title_block_table(table, existing_tables):
+                    existing_tables.append(table)
+                    appended_title_blocks.append(table)
+            if appended_title_blocks:
+                result.setdefault("diagnostics", []).append(
+                    diagnostic(
+                        "ENGINEERING_DRAWING_TITLE_BLOCK_INFERRED",
+                        "已根据 OCR 文本位置识别工程图纸标题栏/签审栏表格候选，避免只保留下方明细表。",
+                        level="info",
+                        tableIds=[table["tableId"] for table in appended_title_blocks],
+                    )
+                )
         inferred_tables = infer_piping_tables(result.get("fragments") or [])
         aligned_tables = []
         for page_no, page_inferred_tables in group_tables_by_page(inferred_tables).items():
@@ -2966,6 +2983,190 @@ def is_piping_characteristic_profile(result: dict[str, Any], profile: dict[str, 
         "engineering_table_photo",
         "piping_characteristic_list",
     }
+
+
+TITLE_BLOCK_KEYWORDS = {
+    "职责",
+    "姓名",
+    "日期",
+    "项目名称",
+    "装置名称",
+    "图纸编号",
+    "设计阶段",
+    "版次",
+    "工艺图纸目录",
+    "DRAWING LIST",
+    "PROJECT",
+    "DUTY",
+    "NAME",
+    "DATE",
+    "DWG",
+    "DESIGN",
+    "REV",
+}
+
+
+def infer_engineering_drawing_title_block_tables(fragments: list[Any]) -> list[dict[str, Any]]:
+    candidates = []
+    for fragment in fragments:
+        if not isinstance(fragment, dict):
+            continue
+        text = str(fragment.get("text") or fragment.get("fullText") or "").strip()
+        bbox = rect_from_bbox(fragment.get("bbox"))
+        if not text or bbox is None:
+            continue
+        candidates.append(
+            {
+                "text": text,
+                "bbox": bbox,
+                "pageNo": page_no_from(fragment),
+                "confidence": float(first_present(fragment, "confidence", "score", default=0.0) or 0.0),
+                "sourceEngine": fragment.get("sourceEngine"),
+            }
+        )
+    tables: list[dict[str, Any]] = []
+    for page_no in sorted({int(item["pageNo"]) for item in candidates}):
+        page_items = [item for item in candidates if int(item["pageNo"]) == page_no]
+        table = infer_engineering_drawing_title_block_for_page(page_items, page_no)
+        if table:
+            tables.append(table)
+    return tables
+
+
+def infer_engineering_drawing_title_block_for_page(items: list[dict[str, Any]], page_no: int) -> dict[str, Any] | None:
+    keyword_hits = [item for item in items if title_block_keyword_hit(item["text"])]
+    if len(keyword_hits) < 5:
+        return None
+    page_top = min(item["bbox"][1] for item in items)
+    page_bottom = max(item["bbox"][3] for item in items)
+    page_height = max(page_bottom - page_top, 1.0)
+    median_height = sorted(max(1.0, item["bbox"][3] - item["bbox"][1]) for item in items)[len(items) // 2]
+    top_band_limit = page_top + page_height * 0.45
+    top_hits = [item for item in keyword_hits if item["bbox"][1] <= top_band_limit]
+    if len(top_hits) < 5:
+        return None
+    y0 = max(page_top, min(item["bbox"][1] for item in top_hits) - median_height * 1.8)
+    y1 = min(page_bottom, max(item["bbox"][3] for item in top_hits) + median_height * 1.8)
+    x0 = min(item["bbox"][0] for item in top_hits)
+    x1 = max(item["bbox"][2] for item in top_hits)
+    band_items = [
+        item
+        for item in items
+        if item["bbox"][1] <= y1
+        and item["bbox"][3] >= y0
+        and (title_block_keyword_hit(item["text"]) or text_box_overlap_ratio(item["bbox"], [x0, y0, x1, y1]) > 0)
+    ]
+    if len(band_items) < 8:
+        return None
+    x0 = min(item["bbox"][0] for item in band_items)
+    y0 = min(item["bbox"][1] for item in band_items)
+    x1 = max(item["bbox"][2] for item in band_items)
+    y1 = max(item["bbox"][3] for item in band_items)
+    rows = group_text_items_into_rows(band_items)
+    cells = []
+    normalized_rows = []
+    for row_index, row in enumerate(rows):
+        row_texts = []
+        for col_index, cell in enumerate(sorted(row, key=lambda value: value["bbox"][0])):
+            row_texts.append(cell["text"])
+            cells.append(
+                {
+                    "cellId": f"cell_{row_index + 1}_{col_index + 1}",
+                    "row": row_index,
+                    "col": col_index,
+                    "rowspan": 1,
+                    "colspan": 1,
+                    "text": cell["text"],
+                    "bbox": cell["bbox"],
+                    "confidence": cell["confidence"],
+                    "isHeader": row_index <= 1 or title_block_keyword_hit(cell["text"]),
+                }
+            )
+        if row_texts:
+            normalized_rows.append({"rowText": " ".join(row_texts), "sourceRowIndex": row_index})
+    return {
+        "tableId": f"page_{page_no}_engineering_drawing_title_block_1",
+        "pageNo": page_no,
+        "bbox": [x0, y0, x1, y1],
+        "rows": len(rows),
+        "columns": max((len(row) for row in rows), default=0),
+        "structureConfidence": round(min(0.92, 0.76 + min(len(top_hits), 12) * 0.012), 4),
+        "cells": cells,
+        "normalizedRows": normalized_rows,
+        "businessSchema": "engineering_drawing_title_block_v1",
+        "tableType": "engineering_drawing_title_block",
+        "auxiliaryTable": True,
+        "sourceEngine": "fragment_title_block_detector",
+        "qualityFlags": ["title_block_region", "ocr_text_aligned"],
+    }
+
+
+def title_block_keyword_hit(text: Any) -> bool:
+    value = str(text or "").strip()
+    compact = re.sub(r"[\s:：./_-]+", "", value).upper()
+    for keyword in TITLE_BLOCK_KEYWORDS:
+        normalized = re.sub(r"[\s:：./_-]+", "", keyword).upper()
+        if normalized and normalized in compact:
+            return True
+    return False
+
+
+def group_text_items_into_rows(items: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    if not items:
+        return []
+    heights = [max(1.0, item["bbox"][3] - item["bbox"][1]) for item in items]
+    tolerance = max(10.0, sorted(heights)[len(heights) // 2] * 0.75)
+    rows: list[list[dict[str, Any]]] = []
+    for item in sorted(items, key=lambda value: ((value["bbox"][1] + value["bbox"][3]) / 2, value["bbox"][0])):
+        center_y = (item["bbox"][1] + item["bbox"][3]) / 2
+        for row in rows:
+            row_center = sum((cell["bbox"][1] + cell["bbox"][3]) / 2 for cell in row) / len(row)
+            if abs(center_y - row_center) <= tolerance:
+                row.append(item)
+                break
+        else:
+            rows.append([item])
+    return [sorted(row, key=lambda value: value["bbox"][0]) for row in rows]
+
+
+def tables_spatially_overlap(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    if page_no_from(left) != page_no_from(right):
+        return False
+    left_box = rect_from_bbox(left.get("bbox") or left.get("polygon"))
+    right_box = rect_from_bbox(right.get("bbox") or right.get("polygon"))
+    if left_box is None or right_box is None:
+        return False
+    return max(text_box_overlap_ratio(left_box, right_box), text_box_overlap_ratio(right_box, left_box)) >= 0.72
+
+
+def should_keep_engineering_title_block_table(candidate: dict[str, Any], existing_tables: list[Any]) -> bool:
+    candidate_box = rect_from_bbox(candidate.get("bbox") or candidate.get("polygon"))
+    if candidate_box is None:
+        return False
+    for existing in existing_tables:
+        if not isinstance(existing, dict) or page_no_from(existing) != page_no_from(candidate):
+            continue
+        existing_schema = str(existing.get("businessSchema") or existing.get("tableType") or "")
+        if existing_schema == "engineering_drawing_title_block_v1" and tables_spatially_overlap(candidate, existing):
+            return False
+        existing_box = rect_from_bbox(existing.get("bbox") or existing.get("polygon"))
+        if existing_box is None:
+            continue
+        if existing.get("sourceEngine") == candidate.get("sourceEngine") and candidate_box == existing_box:
+            return False
+    return True
+
+
+def text_box_overlap_ratio(left: list[float], right: list[float]) -> float:
+    x0 = max(float(left[0]), float(right[0]))
+    y0 = max(float(left[1]), float(right[1]))
+    x1 = min(float(left[2]), float(right[2]))
+    y1 = min(float(left[3]), float(right[3]))
+    if x1 <= x0 or y1 <= y0:
+        return 0.0
+    intersection = (x1 - x0) * (y1 - y0)
+    left_area = max((float(left[2]) - float(left[0])) * (float(left[3]) - float(left[1])), 1.0)
+    return intersection / left_area
 
 
 def infer_piping_tables(fragments: list[Any]) -> list[dict[str, Any]]:

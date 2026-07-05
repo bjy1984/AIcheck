@@ -219,7 +219,7 @@ def choose_tables(tables: list[Any], *, profile: dict[str, Any]) -> list[dict[st
     selected: list[dict[str, Any]] = []
     for required in required_tables:
         matched_candidates = [table for table in table_items if table_matches_required(table, required)]
-        candidates = matched_candidates or table_items
+        candidates = matched_candidates or non_auxiliary_table_candidates(table_items) or table_items
         best_source = max(candidates, key=lambda item: table_score(item, required_table=required))
         existing = next((table for table in selected if same_table_selection_identity(table, best_source)), None)
         if existing is not None:
@@ -271,7 +271,7 @@ def choose_tables(tables: list[Any], *, profile: dict[str, Any]) -> list[dict[st
         table
         for table in table_items
         if not any(same_table_selection_identity(table, selected_item) for selected_item in selected)
-        and table_score(table) >= 0.72
+        and (table_score(table) >= 0.72 or table_is_auxiliary_candidate(table))
     ]
     selected.extend(deepcopy(table) for table in unmatched)
     if not selected:
@@ -994,6 +994,20 @@ def flatten_table_candidates(candidates: list[Any]) -> list[Any]:
         else:
             flattened.append(candidate)
     return flattened
+
+
+def table_is_auxiliary_candidate(table: dict[str, Any]) -> bool:
+    schema = normalize_table_key(table.get("businessSchema") or table.get("tableType") or "")
+    flags = {str(flag) for flag in table.get("qualityFlags") or []}
+    return (
+        parse_bool(table.get("auxiliaryTable"), False)
+        or schema in {"engineering_drawing_title_block", "engineering_drawing_title_block_v1"}
+        or "title_block_region" in flags
+    )
+
+
+def non_auxiliary_table_candidates(tables: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [table for table in tables if not table_is_auxiliary_candidate(table)]
 
 
 def same_table_identity(left: dict[str, Any], right: dict[str, Any]) -> bool:

@@ -6004,18 +6004,25 @@ def test_prompt_template_management_api_and_audit_metadata() -> None:
     )
 
 
-def test_reasoning_log_detail_exposes_prompt_and_llm_metadata() -> None:
+def test_reasoning_log_detail_exposes_masked_llm_audit_projection() -> None:
     detail = assert_ok(client.get("/reasoning/logs/AIRUN-24-20260625-01"))
 
+    assert "promptAudit" not in detail["log"]
+    assert "llmMetadata" not in detail["log"]
+    assert detail["accessPolicy"]["rawAccess"] is False
+    assert detail["llmAudit"]["visibility"] == "masked"
     assert detail["promptAudit"]["systemPrompt"]
     assert detail["promptAudit"]["userPrompt"]
     assert detail["promptAudit"]["plannerPrompt"]
     assert detail["promptAudit"]["criticPrompt"]
+    assert detail["promptAudit"]["messagesHash"].startswith("sha256:")
     assert detail["llmMetadata"]["conversationId"] == "chatcmpl-aicheck-demo-24-001"
     assert detail["llmMetadata"]["promptHash"]
     assert detail["llmMetadata"]["responseHash"]
-    assert detail["llmMetadata"]["reasoningProcess"]
     assert detail["llmMetadata"]["resultText"]
+    assert "reasoningProcess" not in detail["llmMetadata"]
+    assert detail["llmAudit"]["reasoning"]["redactionPolicy"] == "audit_summary_only_no_raw_chain_of_thought"
+    assert detail["llmAudit"]["reasoning"]["rawChainOfThoughtAvailable"] is False
     assert any(step.get("conversationId") == "chatcmpl-aicheck-demo-24-001" for step in detail["traceSteps"])
 
 
@@ -8078,6 +8085,79 @@ def test_litellm_failure_maps_to_ai_run_failed(monkeypatch) -> None:
     assert "sk-secret-litellm" not in stored["errorMessage"]
 
 
+def test_grounded_review_input_formats_table_and_blocks_weak_ocr_evidence() -> None:
+    from libs.review_grounding import build_grounded_review_input, unsupported_claims
+
+    state = {
+        "extracted_fields": [
+            {
+                "id": "FIELD-GROUND-1",
+                "documentVersionId": "DV-GROUND-1",
+                "fieldName": "证书编号",
+                "fieldValue": "TS1810648-2021",
+                "pageNo": 1,
+                "bbox": [10, 20, 180, 42],
+                "confidence": 0.96,
+                "evidenceLinkId": "EV-GROUND-1",
+            }
+        ],
+        "ocr_parse_results": [
+            {
+                "parseResultId": "PARSE-GROUND-1",
+                "documentVersionId": "DV-GROUND-1",
+                "status": "success",
+                "tables": [
+                    {
+                        "tableId": "TBL-GROUND-1",
+                        "pageNo": 1,
+                        "bbox": [80, 260, 1040, 700],
+                        "structureConfidence": 0.94,
+                        "cells": [
+                            {"rowIndex": 0, "columnIndex": 0, "text": "名称", "confidence": 0.95},
+                            {"rowIndex": 0, "columnIndex": 1, "text": "图号", "confidence": 0.95},
+                            {"rowIndex": 1, "columnIndex": 0, "text": "工艺图纸目录", "confidence": 0.94},
+                            {"rowIndex": 1, "columnIndex": 1, "text": "QX201903S-13-Y-00", "confidence": 0.94},
+                        ],
+                    }
+                ],
+                "seals": [
+                    {
+                        "sealId": "SEAL-GROUND-1",
+                        "sealName": "红章候选",
+                        "pageNo": 1,
+                        "bbox": [190, 758, 593, 1005],
+                        "visualConfidence": 0.91,
+                        "qualityFlags": ["visual_candidate_only"],
+                    }
+                ],
+                "fragments": [],
+            }
+        ],
+        "evidence_links": [
+            {
+                "id": "EV-GROUND-1",
+                "documentVersionId": "DV-GROUND-1",
+                "pageNo": 1,
+                "quotedText": "TS1810648-2021",
+                "bbox": [10, 20, 180, 42],
+                "confidence": 0.96,
+            }
+        ],
+    }
+
+    grounded = build_grounded_review_input(state, {"DV-GROUND-1"})
+    table = grounded["tables"][0]
+    issue_codes = {item["code"] for item in grounded["blockingIssues"]}
+    unsupported = unsupported_claims("资料符合要求，建议通过。", grounded["evidenceTextCorpus"])
+
+    assert "| 名称 | 图号 |" in table["contentMarkdown"]
+    assert "QX201903S-13-Y-00" in table["contentMarkdown"]
+    assert table["cellsSummary"][0]["text"] == "名称"
+    assert grounded["groundingStatus"] == "insufficient_evidence"
+    assert "OCR_GROUNDING_SEAL_TEXT_RISK" in issue_codes
+    assert unsupported[0]["reason"] == "positive_claim_without_specific_evidence_token"
+
+
 def test_ai_recheck_downgrades_unsupported_litellm_claims(monkeypatch) -> None:
     from apps.worker import tasks
 
@@ -8186,6 +8266,47 @@ def test_llm_compare_dispatches_to_worker_inline(monkeypatch) -> None:
     assert compare["dispatch"]["mode"] == "inline"
     assert stored["status"] == "完成"
     assert len(stored["results"]) == 2
+
+
+def test_llm_compare_uses_grounded_compare_only_payload(monkeypatch) -> None:
+    from apps.worker import tasks
+
+    captured_messages = []
+
+    class FakeLiteLLM:
+        def chat_sync(self, messages, *args, **kwargs):
+            captured_messages.append(messages)
+            return {"choices": [{"message": {"content": "证书有效，资料符合要求，建议通过。"}}]}
+
+        @staticmethod
+        def first_message_text(response):
+            return response["choices"][0]["message"]["content"]
+
+    monkeypatch.setattr(tasks, "LiteLLMClient", FakeLiteLLM)
+    compare = assert_ok(
+        client.post(
+            "/llm/compare",
+            json={
+                "question": "焊工资格证是否可以作为通过依据？",
+                "modelCodes": ["default-chat"],
+                "evidenceLinkIds": ["EV-24-001"],
+            },
+        )
+    )
+    result = tasks.llm_compare.run(compare["runId"])
+    stored = repo.find_one("llm_compare_runs", compare["runId"], id_field="runId")
+    payload = json.loads(captured_messages[0][1]["content"])
+
+    assert result["status"] == "完成"
+    assert payload["compareOnly"] is True
+    assert payload["strictGroundingPolicy"] == "evidence_only"
+    assert "groundedOcrEvidence" in payload
+    assert stored["promptAudit"]["payloadPolicy"] == "compare_only_grounded_ocr_evidence"
+    assert stored["results"][0]["compareOnly"] is True
+    assert stored["results"][0]["requiresHumanConfirmation"] is True
+    assert stored["results"][0]["groundingStatus"] == "insufficient_evidence"
+    assert stored["results"][0]["confidence"] <= 0.5
+    assert "证据不足" in stored["results"][0]["answer"]
 
 
 def test_completed_ocr_worker_is_idempotent(monkeypatch) -> None:

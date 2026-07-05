@@ -74,23 +74,26 @@ const currentPageItems = computed(() =>
 
 const toneMap: Record<
   OcrAnnotationCanvasSection,
-  { stroke: string; fill: string; label: string; text: string }
+  { stroke: string; idleFill: string; activeFill: string; label: string; text: string }
 > = {
   fields: {
     stroke: '#2563eb',
-    fill: 'rgba(37, 99, 235, 0.14)',
+    idleFill: 'rgba(37, 99, 235, 0.04)',
+    activeFill: 'rgba(37, 99, 235, 0.1)',
     label: '#1d4ed8',
     text: '#ffffff'
   },
   tables: {
     stroke: '#16a34a',
-    fill: 'rgba(22, 163, 74, 0.13)',
+    idleFill: 'rgba(22, 163, 74, 0.04)',
+    activeFill: 'rgba(22, 163, 74, 0.1)',
     label: '#15803d',
     text: '#ffffff'
   },
   seals: {
     stroke: '#dc2626',
-    fill: 'rgba(220, 38, 38, 0.13)',
+    idleFill: 'rgba(220, 38, 38, 0.04)',
+    activeFill: 'rgba(220, 38, 38, 0.1)',
     label: '#b42318',
     text: '#ffffff'
   }
@@ -233,6 +236,21 @@ const textWidth = (value: string, fontSize = 13) => {
 }
 
 const previewText = (item: OcrAnnotationCanvasItem) => {
+  if (item.type === 'tables') {
+    const raw = String(item.value || '').trim()
+    if (!raw) return '待填写表格内容'
+    const rows = raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.includes('|') && !/^\|?\s*:?-{3,}/.test(line))
+    const columnCount = rows[0]
+      ? rows[0].replace(/^\|/, '').replace(/\|$/, '').split('|').length
+      : 0
+    if (rows.length) {
+      return `已识别表格内容：${rows.length} 行${columnCount ? ` × ${columnCount} 列` : ''}`
+    }
+    return '已填写表格内容'
+  }
   const text = String(item.value || '')
     .replace(/\s+/g, ' ')
     .trim()
@@ -269,9 +287,11 @@ const addItemNode = (item: OcrAnnotationCanvasItem) => {
   const rect = new Konva.Rect({
     width: box.width,
     height: box.height,
-    fill: tone.fill,
+    fill: isSelected ? tone.activeFill : tone.idleFill,
     stroke: tone.stroke,
-    strokeWidth: isSelected ? 3 : 2,
+    strokeWidth: isSelected ? 2 : 1,
+    opacity: isSelected ? 1 : 0.46,
+    hitStrokeWidth: 10,
     cornerRadius: 3,
     name: 'roi-rect'
   })
@@ -284,7 +304,8 @@ const addItemNode = (item: OcrAnnotationCanvasItem) => {
     height: 22,
     fill: tone.label,
     cornerRadius: 4,
-    opacity: 0.96
+    opacity: 1,
+    visible: isSelected
   })
   const text = new Konva.Text({
     x: 8,
@@ -296,7 +317,8 @@ const addItemNode = (item: OcrAnnotationCanvasItem) => {
     fontSize: 13,
     fontStyle: 'bold',
     wrap: 'none',
-    ellipsis: true
+    ellipsis: true,
+    visible: isSelected
   })
   const valuePreview = previewText(item)
   const previewWidth = Math.max(120, Math.min(420, textWidth(valuePreview) + 26))
@@ -304,7 +326,7 @@ const addItemNode = (item: OcrAnnotationCanvasItem) => {
   const previewGroup = new Konva.Group({
     x: 0,
     y: previewY,
-    visible: false,
+    visible: isSelected,
     listening: false
   })
   const previewBackground = new Konva.Rect({
@@ -335,12 +357,12 @@ const addItemNode = (item: OcrAnnotationCanvasItem) => {
   group.add(rect, badge, text, previewGroup)
   group.on('mouseenter', () => {
     setCursor(props.tool === 'select' ? 'move' : currentCursor())
-    previewGroup.visible(true)
+    previewGroup.visible(isSelected)
     roiLayer?.batchDraw()
   })
   group.on('mouseleave', () => {
     setCursor(currentCursor())
-    previewGroup.visible(false)
+    previewGroup.visible(isSelected)
     roiLayer?.batchDraw()
   })
   group.on('click tap', (event) => {
@@ -528,9 +550,10 @@ const startDrawing = () => {
     y: position.y,
     width: 1,
     height: 1,
-    fill: toneMap[props.tool].fill,
+    fill: toneMap[props.tool].activeFill,
     stroke: toneMap[props.tool].stroke,
-    strokeWidth: 2,
+    strokeWidth: 1.5,
+    opacity: 0.78,
     dash: [6, 4],
     cornerRadius: 3,
     listening: false

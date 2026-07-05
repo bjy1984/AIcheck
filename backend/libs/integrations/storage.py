@@ -98,6 +98,7 @@ class ObjectStorage:
         client = self.presign_client()
         if client is None:
             return None
+        self.ensure_buckets()
         return client.presigned_put_object(bucket, object_name, expires=timedelta(minutes=30))
 
     def presigned_get_url(self, url: str, *, file_name: str | None = None) -> str | None:
@@ -107,6 +108,7 @@ class ObjectStorage:
         client = self.presign_client()
         if client is None:
             return None
+        self.ensure_buckets()
         bucket, object_name = parsed
         return client.presigned_get_object(
             bucket,

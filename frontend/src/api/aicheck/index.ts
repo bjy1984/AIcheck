@@ -1162,8 +1162,23 @@ export type FdeAiRun = AiReviewRun & {
   outputHash?: string
   immutable?: boolean
   rawAccess?: boolean
+  llmAuditAvailable?: boolean
   parentRunId?: string
   runType?: string
+}
+
+export type FdeLlmAuditPayload = {
+  schemaVersion?: string
+  runType?: string
+  runId?: string
+  linkedAiRunId?: string
+  visibility?: string
+  redactionPolicy?: string
+  inputs?: Record<string, unknown>
+  outputs?: Record<string, unknown>
+  metadata?: Record<string, unknown>
+  reasoning?: Record<string, unknown>
+  trace?: Record<string, unknown>
 }
 
 export type FdeAiRunDetailPayload = {
@@ -1172,6 +1187,7 @@ export type FdeAiRunDetailPayload = {
   replays: Array<Record<string, unknown>>
   feedback: FdeFeedback[]
   accessPolicy: { rawAccess: boolean; rawAccessRequiresGrant: boolean }
+  llmAudit?: FdeLlmAuditPayload
 }
 
 export type FdeReviewRun = {
@@ -1201,6 +1217,8 @@ export type FdeReviewRun = {
   graphExecution?: Record<string, unknown>
   createdAt?: string
   updatedAt?: string
+  rawAccess?: boolean
+  llmAuditAvailable?: boolean
 }
 
 export type ReviewGraphPayload = {
@@ -1232,6 +1250,7 @@ export type FdeReviewRunDetailPayload = {
   }
   humanCorrections?: Array<Record<string, unknown>>
   redactionPolicy?: string
+  llmAudit?: FdeLlmAuditPayload
   scorecard?: {
     schemaVersion?: string
     targetScore: number
@@ -2879,8 +2898,11 @@ const safeContentTypeHeaderValue = (value: string | undefined) => {
     : 'application/octet-stream'
 }
 
-const mutationHeaders = (options?: MutationHeaderOptions) => {
-  const headers: Record<string, string> = {}
+const mutationHeaders = (
+  options?: MutationHeaderOptions,
+  extraHeaders?: Record<string, string>
+) => {
+  const headers: Record<string, string> = { ...(extraHeaders || {}) }
   if (options?.etag) headers['If-Match'] = options.etag
   const fallbackIdempotencyKey = createIdempotencyKey()
   headers['Idempotency-Key'] = safeHeaderValue(
@@ -4194,10 +4216,7 @@ export const uploadFdeOcrCapabilityTestFileApi = (
   return request.post({
     url: `/api/fde/capability-tests/ocr/upload-session/${encodeURIComponent(uploadSessionId)}/file`,
     data: file,
-    headers: {
-      'Content-Type': safeContentTypeHeaderValue(file.type),
-      ...mutationHeaders(options)
-    }
+    headers: mutationHeaders(options, { 'Content-Type': safeContentTypeHeaderValue(file.type) })
   })
 }
 

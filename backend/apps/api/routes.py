@@ -14,7 +14,7 @@ import zipfile
 from email import policy
 from email.parser import BytesParser
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 from xml.etree import ElementTree as ET
 from uuid import uuid4
 
@@ -928,6 +928,19 @@ async def parse_multipart_uploads(request: Request) -> tuple[dict[str, list[str]
     return fields, uploads, None
 
 
+def multipart_upload_fingerprint(uploads: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "fieldName": upload.get("fieldName"),
+            "fileName": upload.get("fileName"),
+            "contentType": upload.get("contentType"),
+            "size": len(upload.get("data") or b""),
+            "sha256": hashlib.sha256(upload.get("data") or b"").hexdigest(),
+        }
+        for upload in uploads
+    ]
+
+
 def knowledge_source_for_import(
     source_id: str | None,
     source_name: str | None = None,
@@ -1757,6 +1770,8 @@ def authorized_node_scope(request: Request, project_id: str) -> set[int] | None:
     user_id = request_user_id(request)
     if not user_id:
         return None
+    auth_user = getattr(request.state, "auth_user", None) if claims else None
+    auth_org_name = str((auth_user or {}).get("orgName") or (auth_user or {}).get("orgUnitName") or "").strip()
     member = next(
         (
             item
@@ -1765,6 +1780,11 @@ def authorized_node_scope(request: Request, project_id: str) -> set[int] | None:
             and item.get("userId") == user_id
             and item.get("role") == role
             and item.get("status") == "启用"
+            and (
+                not auth_org_name
+                or not str(item.get("orgName") or "").strip()
+                or str(item.get("orgName") or "").strip() == auth_org_name
+            )
         ),
         None,
     )
@@ -2944,16 +2964,12 @@ def delete_project(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     def produce():
-        effective_role, identity_error = effective_role_for_request(request, x_role)
-        if identity_error:
-            return identity_error
-        if effective_role in FDE_ROLES or effective_role in {"owner"}:
-            return fail(errors.FORBIDDEN, request)
+        guard = mutation_guard(request, project_id, x_role=x_role, if_match=if_match)
+        if guard:
+            return guard
         project = repo.require_project(project_id)
         if not project:
             return fail(errors.NOT_FOUND, request)
-        if not project_if_match_valid(project, if_match or request.headers.get("If-Match")):
-            return fail(errors.ETAG_CONFLICT, request)
         business_collections = [
             "documents",
             "versions",
@@ -3568,6 +3584,7 @@ async def upload_session_file(
     session_id: str,
     document_version_id: str,
     x_role: str | None = Header(default=None, alias="X-Role"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     session = repo.find_one("upload_sessions", session_id)
     if not session or session.get("projectId") != project_id:
@@ -3593,49 +3610,64 @@ async def upload_session_file(
         return fail(errors.VALIDATION_ERROR, request, message="上传文件不能为空。")
     if len(data) > MAX_UPLOAD_BYTES:
         return fail(errors.FILE_TOO_LARGE, request, message=f"文件超过 {MAX_UPLOAD_BYTES // 1024 // 1024}MB 上传限制。")
-    file_name = safe_upload_file_name(str(file_entry.get("fileName") or f"{document_version_id}.bin"))
-    content_type = str(request.headers.get("content-type") or "application/octet-stream")
-    target_dir = DOCUMENT_UPLOAD_ROOT / project_id / session_id / document_version_id
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target_path = target_dir / file_name
-    target_path.write_bytes(data)
-    storage_key = f"local://{target_path.relative_to(WORKSPACE_ROOT)}"
-    version = repo.find_one("versions", document_version_id)
-    if version:
-        version.update(
+
+    def produce():
+        file_name = safe_upload_file_name(str(file_entry.get("fileName") or f"{document_version_id}.bin"))
+        content_type = str(request.headers.get("content-type") or "application/octet-stream")
+        target_dir = DOCUMENT_UPLOAD_ROOT / project_id / session_id / document_version_id
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_path = target_dir / file_name
+        target_path.write_bytes(data)
+        storage_key = f"local://{target_path.relative_to(WORKSPACE_ROOT)}"
+        version = repo.find_one("versions", document_version_id)
+        if version:
+            version.update(
+                {
+                    "storageBucket": "local",
+                    "storageKey": storage_key,
+                    "fileSize": len(data),
+                    "hash": f"sha256-{hashlib.sha256(data).hexdigest()}",
+                    "uploadTime": server_time(),
+                }
+            )
+        document = repo.find_one("documents", str(file_entry.get("documentId") or ""))
+        if document:
+            document["fileStatus"] = "已上传"
+            document["currentOcrStatus"] = "排队中"
+            document["updatedAt"] = server_time()
+        file_entry.update(
             {
+                "status": "已上传",
                 "storageBucket": "local",
                 "storageKey": storage_key,
                 "fileSize": len(data),
-                "hash": f"sha256-{hashlib.sha256(data).hexdigest()}",
-                "uploadTime": server_time(),
+                "contentType": content_type,
+                "uploadedAt": server_time(),
             }
         )
-    document = repo.find_one("documents", str(file_entry.get("documentId") or ""))
-    if document:
-        document["fileStatus"] = "已上传"
-        document["currentOcrStatus"] = "排队中"
-        document["updatedAt"] = server_time()
-    file_entry.update(
-        {
-            "status": "已上传",
-            "storageBucket": "local",
-            "storageKey": storage_key,
-            "fileSize": len(data),
-            "contentType": content_type,
-            "uploadedAt": server_time(),
-        }
-    )
-    session["updatedAt"] = server_time()
-    return ok(
-        {
-            "documentId": file_entry.get("documentId"),
-            "documentVersionId": document_version_id,
-            "storageBucket": "local",
-            "storageKey": storage_key,
-            "fileSize": len(data),
-        },
+        session["updatedAt"] = server_time()
+        return ok(
+            {
+                "documentId": file_entry.get("documentId"),
+                "documentVersionId": document_version_id,
+                "storageBucket": "local",
+                "storageKey": storage_key,
+                "fileSize": len(data),
+            },
+            request,
+        )
+
+    return idempotent(
         request,
+        idempotency_key,
+        produce,
+        fingerprint_source={
+            "projectId": project_id,
+            "sessionId": session_id,
+            "documentVersionId": document_version_id,
+            "size": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+        },
     )
 
 
@@ -6184,6 +6216,205 @@ def mask_text(value: Any, *, visible: int = 24) -> Any:
     return f"{value[:visible]}...<masked>"
 
 
+LLM_AUDIT_REDACTION_POLICY = "audit_summary_only_no_raw_chain_of_thought"
+
+
+def fde_mask_llm_value(value: Any, *, raw_access: bool, visible: int = 240) -> Any:
+    if raw_access:
+        return repo.clone(value)
+    if isinstance(value, str):
+        if visible <= 0:
+            return "<masked>" if value else ""
+        return mask_text(value, visible=visible)
+    if isinstance(value, list):
+        return [fde_mask_llm_value(item, raw_access=raw_access, visible=visible) for item in value[:30]]
+    if isinstance(value, dict):
+        return {
+            str(key): fde_mask_llm_value(item, raw_access=raw_access, visible=visible)
+            for key, item in value.items()
+        }
+    return repo.clone(value)
+
+
+def fde_llm_message_view(message: Any, *, raw_access: bool) -> dict[str, Any]:
+    item = message if isinstance(message, dict) else {}
+    content = str(item.get("content") or "")
+    return {
+        "role": item.get("role") or "unknown",
+        "content": content if raw_access else mask_text(content, visible=360),
+        "contentLength": len(content),
+        "contentHash": stable_hash_payload(content) if content else None,
+    }
+
+
+def fde_grounded_evidence_summary(prompt_audit: dict[str, Any], llm_metadata: dict[str, Any]) -> dict[str, Any]:
+    payload = prompt_audit.get("userPayload") if isinstance(prompt_audit.get("userPayload"), dict) else {}
+    grounded = payload.get("groundedOcrEvidence") if isinstance(payload, dict) else None
+    metadata_summary = llm_metadata.get("groundingInputSummary") if isinstance(llm_metadata.get("groundingInputSummary"), dict) else {}
+    summary: dict[str, Any] = {
+        "available": bool(grounded or metadata_summary or prompt_audit.get("userPrompt")),
+        "groundingStatus": llm_metadata.get("groundingStatus") or payload.get("groundingStatus"),
+        "source": "userPayload.groundedOcrEvidence" if grounded else "llmMetadata.groundingInputSummary" if metadata_summary else "promptAudit.userPrompt",
+    }
+    if isinstance(grounded, dict):
+        summary.update(
+            {
+                "fieldCount": len(grounded.get("fields") or []),
+                "tableCount": len(grounded.get("tables") or []),
+                "sealCount": len(grounded.get("seals") or []),
+                "fragmentCount": len(grounded.get("textFragments") or grounded.get("fragments") or []),
+            }
+        )
+    if metadata_summary:
+        summary.update(repo.clone(metadata_summary))
+    return summary
+
+
+def fde_prompt_audit_view(prompt_audit: Any, llm_metadata: Any, *, raw_access: bool) -> dict[str, Any]:
+    prompt = prompt_audit if isinstance(prompt_audit, dict) else {}
+    metadata = llm_metadata if isinstance(llm_metadata, dict) else {}
+    messages = prompt.get("messages") if isinstance(prompt.get("messages"), list) else []
+    return {
+        "promptVersion": prompt.get("promptVersion"),
+        "promptTemplateId": prompt.get("promptTemplateId"),
+        "promptTemplateName": prompt.get("promptTemplateName"),
+        "promptTemplateVersion": prompt.get("promptTemplateVersion"),
+        "payloadPolicy": prompt.get("payloadPolicy"),
+        "payloadHash": prompt.get("payloadHash"),
+        "messagesHash": prompt.get("messagesHash") or metadata.get("promptHash"),
+        "systemPrompt": fde_mask_llm_value(prompt.get("systemPrompt") or "", raw_access=raw_access, visible=480),
+        "userPrompt": fde_mask_llm_value(prompt.get("userPrompt") or "", raw_access=raw_access, visible=720),
+        "plannerPrompt": fde_mask_llm_value(prompt.get("plannerPrompt") or "", raw_access=raw_access, visible=240),
+        "criticPrompt": fde_mask_llm_value(prompt.get("criticPrompt") or "", raw_access=raw_access, visible=240),
+        "messages": [fde_llm_message_view(message, raw_access=raw_access) for message in messages],
+        "userPayload": fde_mask_llm_value(prompt.get("userPayload") or {}, raw_access=raw_access, visible=0),
+        "groundedEvidenceSummary": fde_grounded_evidence_summary(prompt, metadata),
+    }
+
+
+def fde_public_reasoning_summary(run: dict[str, Any], llm_metadata: dict[str, Any], trace_steps: list[dict[str, Any]]) -> dict[str, Any]:
+    explicit = str(
+        llm_metadata.get("publicReasoningSummary")
+        or run.get("publicReasoningSummary")
+        or ""
+    ).strip()
+    stored = str(llm_metadata.get("reasoningProcess") or run.get("reasoningProcess") or "").strip()
+    if explicit:
+        summary = explicit
+        source = "publicReasoningSummary"
+    elif stored.startswith(("公开推理摘要", "本地确定性模式", "模型返回结构化审查草稿")):
+        summary = stored
+        source = "stored_public_summary"
+    elif trace_steps:
+        step_names = [
+            str(item.get("name") or item.get("stepName") or item.get("nodeKey") or item.get("stepType") or "").strip()
+            for item in trace_steps[:6]
+        ]
+        summary = "公开审计摘要：已记录 " + "、".join([item for item in step_names if item] or ["审查执行步骤"]) + "。"
+        source = "trace_steps"
+    else:
+        summary = "公开审计摘要：系统已记录 LLM 输入、输出、证据和质量门禁；原始隐式思维链按策略隐藏。"
+        source = "redacted_fallback"
+    return {
+        "summary": mask_text(summary, visible=1200),
+        "source": source,
+        "redactionPolicy": LLM_AUDIT_REDACTION_POLICY,
+        "rawChainOfThoughtAvailable": False,
+        "note": "这里展示可审计公开摘要，不展示模型内部原始隐式思维链。",
+    }
+
+
+def fde_llm_metadata_view(llm_metadata: Any, *, raw_access: bool) -> dict[str, Any]:
+    metadata = llm_metadata if isinstance(llm_metadata, dict) else {}
+    return {
+        "llmExecution": metadata.get("llmExecution"),
+        "llmCalled": metadata.get("llmCalled"),
+        "conversationId": metadata.get("conversationId"),
+        "modelAlias": metadata.get("modelAlias"),
+        "promptVersion": metadata.get("promptVersion"),
+        "promptTemplateId": metadata.get("promptTemplateId"),
+        "promptHash": metadata.get("promptHash"),
+        "responseHash": metadata.get("responseHash"),
+        "usage": repo.clone(metadata.get("usage") or {}),
+        "groundingStatus": metadata.get("groundingStatus"),
+        "groundingInputSummary": repo.clone(metadata.get("groundingInputSummary") or {}),
+        "unsupportedClaims": repo.clone(metadata.get("unsupportedClaims") or []),
+        "finishReason": metadata.get("finishReason"),
+        "resultText": fde_mask_llm_value(metadata.get("resultText") or "", raw_access=raw_access, visible=800),
+        "redactionPolicy": LLM_AUDIT_REDACTION_POLICY,
+        "rawChainOfThoughtAvailable": False,
+    }
+
+
+def fde_llm_audit_view(
+    run: dict[str, Any],
+    *,
+    run_type: str,
+    raw_access: bool = False,
+    linked_ai_run: dict[str, Any] | None = None,
+    trace_steps: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    source_run = run if run.get("promptAudit") or run.get("llmMetadata") else (linked_ai_run or run)
+    prompt_audit = source_run.get("promptAudit") if isinstance(source_run.get("promptAudit"), dict) else {}
+    llm_metadata = source_run.get("llmMetadata") if isinstance(source_run.get("llmMetadata"), dict) else {}
+    trace = trace_steps or []
+    prompt_view = fde_prompt_audit_view(prompt_audit, llm_metadata, raw_access=raw_access)
+    metadata_view = fde_llm_metadata_view(llm_metadata, raw_access=raw_access)
+    finding_drafts = repo.clone(run.get("findingDrafts") or source_run.get("findingDrafts") or [])
+    suggestion = repo.clone(source_run.get("suggestion") or {})
+    if not raw_access:
+        if isinstance(suggestion, dict):
+            suggestion["opinionDraft"] = mask_text(suggestion.get("opinionDraft"), visible=240)
+        for finding in finding_drafts:
+            if isinstance(finding, dict):
+                finding["description"] = mask_text(finding.get("description"), visible=240)
+    run_id = str(run.get("reviewRunId") or run.get("id") or source_run.get("id") or "")
+    return {
+        "schemaVersion": "FdeLlmAudit@1.0.0",
+        "runType": run_type,
+        "runId": run_id,
+        "linkedAiRunId": run.get("aiRunId") or source_run.get("aiRunId") or source_run.get("id"),
+        "visibility": "raw" if raw_access else "masked",
+        "redactionPolicy": LLM_AUDIT_REDACTION_POLICY,
+        "inputs": {
+            **prompt_view,
+            "available": bool(prompt_audit),
+        },
+        "outputs": {
+            "available": bool(llm_metadata or finding_drafts or suggestion),
+            "resultText": metadata_view.get("resultText") or (suggestion.get("opinionDraft") if isinstance(suggestion, dict) else ""),
+            "findingDrafts": finding_drafts,
+            "suggestion": suggestion,
+            "usage": metadata_view.get("usage") or {},
+            "finishReason": metadata_view.get("finishReason"),
+            "responseHash": metadata_view.get("responseHash"),
+            "rawProviderResponseAvailable": False,
+            "rawProviderResponseNote": "当前未持久化完整供应商原始响应；保留输出文本、用量、哈希和公开审计摘要。",
+        },
+        "metadata": {
+            **metadata_view,
+            "promptAuditPresent": bool(prompt_audit),
+            "llmMetadataPresent": bool(llm_metadata),
+            "promptStoredForAudit": bool(prompt_audit),
+        },
+        "reasoning": fde_public_reasoning_summary(source_run, llm_metadata, trace),
+        "trace": {
+            "stepCount": len(trace),
+            "steps": [
+                {
+                    "sequence": item.get("sequence"),
+                    "name": item.get("name") or item.get("stepName") or item.get("nodeKey"),
+                    "status": item.get("status"),
+                    "promptHash": item.get("promptHash"),
+                    "responseHash": item.get("responseHash"),
+                }
+                for item in trace[:20]
+                if isinstance(item, dict)
+            ],
+        },
+    }
+
+
 def fde_ai_run_view(run: dict[str, Any], *, raw_access: bool = False) -> dict[str, Any]:
     snapshot = ai_run_snapshot(run)
     view = repo.clone(run)
@@ -6194,6 +6425,11 @@ def fde_ai_run_view(run: dict[str, Any], *, raw_access: bool = False) -> dict[st
     )
     view["immutable"] = True
     view["rawAccess"] = raw_access
+    view["llmAuditAvailable"] = bool(run.get("promptAudit") or run.get("llmMetadata"))
+    view.pop("promptAudit", None)
+    view.pop("llmMetadata", None)
+    view.pop("reasoningProcess", None)
+    view.pop("llmResultText", None)
     if not raw_access:
         suggestion = view.get("suggestion") or {}
         if isinstance(suggestion, dict):
@@ -6204,6 +6440,21 @@ def fde_ai_run_view(run: dict[str, Any], *, raw_access: bool = False) -> dict[st
         for finding in view.get("findingDrafts") or []:
             if isinstance(finding, dict):
                 finding["description"] = mask_text(finding.get("description"), visible=80)
+    return view
+
+
+def fde_review_run_view(run: dict[str, Any], *, raw_access: bool = False) -> dict[str, Any]:
+    view = review_run_view(run)
+    view["rawAccess"] = raw_access
+    view["llmAuditAvailable"] = bool(run.get("promptAudit") or run.get("llmMetadata"))
+    view.pop("promptAudit", None)
+    view.pop("llmMetadata", None)
+    view.pop("reasoningProcess", None)
+    view.pop("llmResultText", None)
+    if not raw_access:
+        for finding in view.get("findingDrafts") or []:
+            if isinstance(finding, dict):
+                finding["description"] = mask_text(finding.get("description"), visible=120)
     return view
 
 
@@ -6571,7 +6822,7 @@ def fde_project_node_audit_summary(project_id: str, node: dict[str, Any]) -> dic
     version_ids = fde_project_version_ids(project_id, node_id)
     bindings = repo.bindings_for_node(project_id, node_id)
     review_runs = [
-        review_run_view(item)
+        fde_review_run_view(item)
         for item in repo.state.get("review_runs", [])
         if fde_record_matches_project(item, project_id, node_id=node_id, version_ids=version_ids)
     ]
@@ -8748,7 +8999,7 @@ def fde_project_synthetic_review_run(project: dict[str, Any], node_id: int | Non
 
 
 def fde_project_review_run_audit_view(review_run: dict[str, Any]) -> dict[str, Any]:
-    view = review_run_view(review_run)
+    view = fde_review_run_view(review_run)
     review_run_id = str(view.get("reviewRunId") or view.get("id") or "")
     graph = graph_view_for_review_run(review_run_id) if review_run_id else {}
     artifact_summary = graph.get("artifactSummary") if isinstance(graph.get("artifactSummary"), dict) else {}
@@ -9854,13 +10105,15 @@ def fde_ai_run_detail(request: Request, run_id: str):
     if not run:
         return fail(errors.NOT_FOUND, request)
     raw = has_raw_access(request, "ai_run", run_id)
+    trace_steps = fde_trace_steps_for_run(run)
     return ok(
         {
             "run": fde_ai_run_view(run, raw_access=raw),
-            "traceSteps": fde_trace_steps_for_run(run),
+            "traceSteps": trace_steps,
             "replays": [repo.clone(item) for item in repo.state.get("ai_run_replays", []) if item.get("parentRunId") == run_id],
             "feedback": [repo.clone(item) for item in repo.state.get("ai_feedback", []) if item.get("aiRunId") == run_id],
             "accessPolicy": {"rawAccess": raw, "rawAccessRequiresGrant": not raw},
+            "llmAudit": fde_llm_audit_view(run, run_type="ai_run", raw_access=raw, trace_steps=trace_steps),
         },
         request,
     )
@@ -9905,7 +10158,7 @@ def fde_review_runs(
         items = [item for item in items if item.get("businessPackId") == businessPackId]
     if status:
         items = [item for item in items if item.get("status") == status]
-    return ok(page([review_run_view(item) for item in items], page_no, page_size), request)
+    return ok(page([fde_review_run_view(item) for item in items], page_no, page_size), request)
 
 
 @router.get("/fde/review-runs/{review_run_id}")
@@ -9922,9 +10175,13 @@ def fde_review_run_detail(request: Request, review_run_id: str):
     graph = graph_view_for_review_run(review_run_id)
     temporal = temporal_history_summary(run)
     audit_trace = review_run_audit_trace(review_run_id)
+    linked_ai_run = repo.find_one("ai_runs", str(run.get("aiRunId") or ""))
+    raw = has_raw_access(request, "review_run", review_run_id) or (
+        bool(run.get("aiRunId")) and has_raw_access(request, "ai_run", str(run.get("aiRunId")))
+    )
     return ok(
         {
-            "run": review_run_view(run),
+            "run": fde_review_run_view(run, raw_access=raw),
             "graph": graph,
             "timeline": review_run_timeline(review_run_id),
             "temporal": temporal,
@@ -9933,6 +10190,13 @@ def fde_review_run_detail(request: Request, review_run_id: str):
                 review_run=run,
                 graph_view=graph,
                 temporal_history=temporal,
+            ),
+            "llmAudit": fde_llm_audit_view(
+                run,
+                run_type="review_run",
+                raw_access=raw,
+                linked_ai_run=linked_ai_run,
+                trace_steps=audit_trace.get("reasoningTrace") or [],
             ),
         },
         request,
@@ -13804,6 +14068,7 @@ def fde_create_ocr_capability_upload_session(
 async def fde_upload_ocr_capability_test_file(
     request: Request,
     session_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     role, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
     if role_error:
@@ -13823,49 +14088,58 @@ async def fde_upload_ocr_capability_test_file(
         return fail(errors.VALIDATION_ERROR, request, message="上传文件不能为空。")
     if len(data) > MAX_UPLOAD_BYTES:
         return fail(errors.FILE_TOO_LARGE, request, message=f"文件超过 {MAX_UPLOAD_BYTES // 1024 // 1024}MB 上传限制。")
-    file_name = fde_capability_test_safe_file_name(str(upload_session.get("fileName") or "ocr-test-file"))
-    content_type = str(request.headers.get("content-type") or upload_session.get("contentType") or "application/octet-stream")
-    storage_key = str(upload_session.get("storageKey") or f"fde-capability-tests/ocr/{session_id}/{file_name}")
-    stored_url = None
-    try:
-        stored_url = object_storage.put_bytes("ocr-artifacts", storage_key, data, content_type=content_type)
-    except Exception:
+
+    def produce():
+        file_name = fde_capability_test_safe_file_name(str(upload_session.get("fileName") or "ocr-test-file"))
+        content_type = str(request.headers.get("content-type") or upload_session.get("contentType") or "application/octet-stream")
+        storage_key = str(upload_session.get("storageKey") or f"fde-capability-tests/ocr/{session_id}/{file_name}")
         stored_url = None
-    if stored_url:
-        upload_session.update(
-            {
-                "status": "uploaded",
-                "storageBucket": "ocr-artifacts",
-                "storageKey": storage_key,
-                "storageUrl": stored_url,
-                "contentType": content_type,
-                "fileSize": len(data),
-                "uploadedByRole": role or "fde",
-                "updatedAt": server_time(),
-            }
-        )
-    elif object_storage.required:
-        return fail(errors.OBJECT_STORAGE_REQUIRED, request, message="对象存储不可用，无法保存 OCR 测试文件。", http_status=503)
-    else:
-        target_dir = fde_capability_test_upload_root() / session_id
-        target_dir.mkdir(parents=True, exist_ok=True)
-        target_path = target_dir / file_name
-        target_path.write_bytes(data)
-        upload_session.update(
-            {
-                "status": "uploaded",
-                "storageBucket": "local",
-                "storageKey": str(target_path),
-                "storageUrl": str(target_path),
-                "localPath": str(target_path),
-                "contentType": content_type,
-                "fileSize": len(data),
-                "uploadedByRole": role or "fde",
-                "updatedAt": server_time(),
-            }
-        )
-    audit_id = repo.add_audit("FDE OCR 能力测试文件上传", "FdeOcrCapabilityUploadSession", session_id)
-    return ok({"uploadSession": repo.clone(upload_session), "auditLogId": audit_id}, request)
+        try:
+            stored_url = object_storage.put_bytes("ocr-artifacts", storage_key, data, content_type=content_type)
+        except Exception:
+            stored_url = None
+        if stored_url:
+            upload_session.update(
+                {
+                    "status": "uploaded",
+                    "storageBucket": "ocr-artifacts",
+                    "storageKey": storage_key,
+                    "storageUrl": stored_url,
+                    "contentType": content_type,
+                    "fileSize": len(data),
+                    "uploadedByRole": role or "fde",
+                    "updatedAt": server_time(),
+                }
+            )
+        elif object_storage.required:
+            return fail(errors.OBJECT_STORAGE_REQUIRED, request, message="对象存储不可用，无法保存 OCR 测试文件。", http_status=503)
+        else:
+            target_dir = fde_capability_test_upload_root() / session_id
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target_path = target_dir / file_name
+            target_path.write_bytes(data)
+            upload_session.update(
+                {
+                    "status": "uploaded",
+                    "storageBucket": "local",
+                    "storageKey": str(target_path),
+                    "storageUrl": str(target_path),
+                    "localPath": str(target_path),
+                    "contentType": content_type,
+                    "fileSize": len(data),
+                    "uploadedByRole": role or "fde",
+                    "updatedAt": server_time(),
+                }
+            )
+        audit_id = repo.add_audit("FDE OCR 能力测试文件上传", "FdeOcrCapabilityUploadSession", session_id)
+        return ok({"uploadSession": repo.clone(upload_session), "auditLogId": audit_id}, request)
+
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"sessionId": session_id, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()},
+    )
 
 
 @router.get("/fde/capability-tests/ocr/upload-session/{session_id}/file")
@@ -14453,8 +14727,46 @@ def fde_create_ocr_evaluation_run(
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
+def fde_ocr_annotation_deleted_task_ids() -> set[str]:
+    raw_ids = repo.state.setdefault("ocr_annotation_deleted_task_ids", [])
+    return {str(item).strip() for item in raw_ids if str(item).strip()}
+
+
+def fde_ocr_annotation_task_identity(task: dict[str, Any]) -> str:
+    return str(task.get("taskId") or task.get("caseId") or "").strip()
+
+
+def fde_ocr_annotation_task_deleted(task_id: str) -> bool:
+    return str(task_id or "").strip() in fde_ocr_annotation_deleted_task_ids()
+
+
+def fde_ocr_annotation_forget_deleted_task_ids(task_ids: Iterable[str]) -> None:
+    incoming = {str(item).strip() for item in task_ids if str(item).strip()}
+    if not incoming:
+        return
+    repo.state["ocr_annotation_deleted_task_ids"] = [
+        item
+        for item in repo.state.setdefault("ocr_annotation_deleted_task_ids", [])
+        if str(item).strip() not in incoming
+    ]
+
+
+def fde_ocr_annotation_remember_deleted_task_id(task_id: str) -> None:
+    identity = str(task_id or "").strip()
+    if not identity:
+        return
+    deleted_ids = repo.state.setdefault("ocr_annotation_deleted_task_ids", [])
+    if identity not in {str(item).strip() for item in deleted_ids}:
+        deleted_ids.append(identity)
+
+
 def fde_ocr_annotation_tasks_source() -> list[dict[str, Any]]:
-    tasks = repo.clone(repo.state.setdefault("ocr_annotation_tasks", []))
+    deleted_ids = fde_ocr_annotation_deleted_task_ids()
+    tasks = [
+        item
+        for item in repo.clone(repo.state.setdefault("ocr_annotation_tasks", []))
+        if fde_ocr_annotation_task_identity(item) not in deleted_ids
+    ]
     if tasks:
         return tasks
     derived: list[dict[str, Any]] = []
@@ -14469,22 +14781,22 @@ def fde_ocr_annotation_tasks_source() -> list[dict[str, Any]]:
             "tables": expected_tables_from_result(result),
             "seals": expected_seals_from_result(result),
         }
-        derived.append(
-            {
-                "taskId": f"ANNO-{parse_id}",
-                "caseId": f"real-{scenario}-{parse_id}",
-                "scenario": scenario,
-                "profileId": result.get("profileId") or "all",
-                "documentType": result.get("documentType") or "unknown",
-                "documentVersionId": result.get("documentVersionId"),
-                "sourcePath": result.get("storageKey") or result.get("fileName"),
-                "collectionStatus": "needs_labeling",
-                "pageCount": len(result.get("pages") or []) or 1,
-                "expectedTemplate": expected,
-                "suggestedExpected": expected,
-                "parseResultId": parse_id,
-            }
-        )
+        task = {
+            "taskId": f"ANNO-{parse_id}",
+            "caseId": f"real-{scenario}-{parse_id}",
+            "scenario": scenario,
+            "profileId": result.get("profileId") or "all",
+            "documentType": result.get("documentType") or "unknown",
+            "documentVersionId": result.get("documentVersionId"),
+            "sourcePath": result.get("storageKey") or result.get("fileName"),
+            "collectionStatus": "needs_labeling",
+            "pageCount": len(result.get("pages") or []) or 1,
+            "expectedTemplate": expected,
+            "suggestedExpected": expected,
+            "parseResultId": parse_id,
+        }
+        if fde_ocr_annotation_task_identity(task) not in deleted_ids:
+            derived.append(task)
     return derived
 
 
@@ -14501,11 +14813,13 @@ def fde_ocr_annotation_scenario(result: dict[str, Any]) -> str:
 
 
 def fde_ocr_annotation_task(task_id: str) -> dict[str, Any] | None:
+    if fde_ocr_annotation_task_deleted(task_id):
+        return None
     existing = next(
         (
             item
             for item in repo.state.setdefault("ocr_annotation_tasks", [])
-            if str(item.get("taskId") or item.get("caseId") or "") == task_id
+            if fde_ocr_annotation_task_identity(item) == task_id
         ),
         None,
     )
@@ -14515,7 +14829,7 @@ def fde_ocr_annotation_task(task_id: str) -> dict[str, Any] | None:
         (
             item
             for item in fde_ocr_annotation_tasks_source()
-            if str(item.get("taskId") or item.get("caseId") or "") == task_id
+            if fde_ocr_annotation_task_identity(item) == task_id
         ),
         None,
     )
@@ -14869,12 +15183,12 @@ def fde_ocr_annotation_task_detail(request: Request, task_id: str):
         (
             item
             for item in fde_ocr_annotation_tasks_source()
-            if str(item.get("taskId") or item.get("caseId") or "") == task_id
+            if fde_ocr_annotation_task_identity(item) == task_id
         ),
         None,
     )
     if not task:
-        return fail(errors.NOT_FOUND, request)
+        return fail(errors.NOT_FOUND, request, http_status=404)
     readiness = fde_ocr_annotation_readiness([task])
     return ok({"task": fde_ocr_annotation_task_view(task), "readiness": readiness}, request)
 
@@ -14920,6 +15234,7 @@ def fde_import_ocr_annotation_pack(
             task.setdefault("collectionStatus", "needs_labeling")
             task["importedAt"] = now
             task["updatedAt"] = now
+        fde_ocr_annotation_forget_deleted_task_ids(fde_ocr_annotation_task_identity(task) for task in incoming)
         if body.get("replace"):
             repo.state["ocr_annotation_tasks"] = incoming
         else:
@@ -15002,8 +15317,33 @@ def fde_delete_ocr_annotation_task(
             -1,
         )
         if index < 0:
-            return fail(errors.NOT_FOUND, request)
+            derived = next(
+                (
+                    item
+                    for item in fde_ocr_annotation_tasks_source()
+                    if fde_ocr_annotation_task_identity(item) == task_id
+                ),
+                None,
+            )
+            if not derived:
+                return fail(errors.NOT_FOUND, request)
+            fde_ocr_annotation_remember_deleted_task_id(task_id)
+            readiness = fde_ocr_annotation_readiness(tasks)
+            audit_id = repo.add_audit("FDE OCR 标注样本删除", "OcrAnnotationTask", task_id)
+            return ok(
+                {
+                    "deleted": True,
+                    "taskId": task_id,
+                    "task": fde_ocr_annotation_task_view(derived),
+                    "summary": readiness["summary"],
+                    "nextActions": readiness["nextActions"],
+                    "page": page([fde_ocr_annotation_task_view(item) for item in tasks], 1, 20),
+                    "auditLogId": audit_id,
+                },
+                request,
+            )
         removed = tasks.pop(index)
+        fde_ocr_annotation_remember_deleted_task_id(task_id)
         readiness = fde_ocr_annotation_readiness(tasks)
         audit_id = repo.add_audit("FDE OCR 标注样本删除", "OcrAnnotationTask", task_id)
         return ok(
@@ -15613,188 +15953,210 @@ def import_standards_from_rules_folder(
 
 
 @router.post("/business-rules/import")
-async def import_business_rules(request: Request):
+async def import_business_rules(
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
     fields, uploads, parse_error = await parse_multipart_uploads(request)
     if parse_error:
         return parse_error
     if not uploads:
         return fail(errors.VALIDATION_ERROR, request, message="请选择要导入的业务规则文件。")
 
-    now = server_time()
-    import_version = first_form_value(fields, "importVersion", "")
-    if not import_version:
-        import_version = first_form_value(fields, "version", "")
-    if not import_version:
-        import_version = f"rule-draft-{now[:16].replace('-', '').replace(':', '').replace(' ', '-')}"
-    imported_rules: list[dict[str, Any]] = []
-    skipped: list[dict[str, str]] = []
-    existing_ids = {str(item.get("id")) for item in repo.state.get("rule_versions", [])}
-    existing_rule_versions = {
-        (str(item.get("ruleKey")), str(item.get("version")))
-        for item in repo.state.get("rule_versions", [])
-    }
+    def produce():
+        now = server_time()
+        import_version = first_form_value(fields, "importVersion", "")
+        if not import_version:
+            import_version = first_form_value(fields, "version", "")
+        if not import_version:
+            import_version = f"rule-draft-{now[:16].replace('-', '').replace(':', '').replace(' ', '-')}"
+        imported_rules: list[dict[str, Any]] = []
+        skipped: list[dict[str, str]] = []
+        existing_ids = {str(item.get("id")) for item in repo.state.get("rule_versions", [])}
+        existing_rule_versions = {
+            (str(item.get("ruleKey")), str(item.get("version")))
+            for item in repo.state.get("rule_versions", [])
+        }
 
-    for upload in uploads:
-        source_file_name = safe_upload_file_name(upload["fileName"])
-        parsed_rules, error_message = parse_business_rule_upload(
-            upload,
-            import_version=import_version,
-            imported_at=now,
-        )
-        if error_message:
-            skipped.append({"fileName": source_file_name, "reason": error_message})
-            continue
-        for parsed_rule in parsed_rules:
-            parsed_rule["status"] = "草稿"
-            parsed_rule["sourceFileName"] = source_file_name
-            parsed_rule["importBatchVersion"] = import_version
-            parsed_rule["importHash"] = hashlib.sha256(upload["data"]).hexdigest()
-            if str(parsed_rule.get("id")) in existing_ids:
-                parsed_rule["id"] = f"{parsed_rule['id']}-IMPORT-{uuid4().hex[:6].upper()}"
-            rule_version_key = (str(parsed_rule.get("ruleKey")), str(parsed_rule.get("version")))
-            if rule_version_key in existing_rule_versions:
-                parsed_rule["version"] = f"{parsed_rule['version']}-{uuid4().hex[:6].upper()}"
+        for upload in uploads:
+            source_file_name = safe_upload_file_name(upload["fileName"])
+            parsed_rules, error_message = parse_business_rule_upload(
+                upload,
+                import_version=import_version,
+                imported_at=now,
+            )
+            if error_message:
+                skipped.append({"fileName": source_file_name, "reason": error_message})
+                continue
+            for parsed_rule in parsed_rules:
+                parsed_rule["status"] = "草稿"
+                parsed_rule["sourceFileName"] = source_file_name
+                parsed_rule["importBatchVersion"] = import_version
+                parsed_rule["importHash"] = hashlib.sha256(upload["data"]).hexdigest()
+                if str(parsed_rule.get("id")) in existing_ids:
+                    parsed_rule["id"] = f"{parsed_rule['id']}-IMPORT-{uuid4().hex[:6].upper()}"
                 rule_version_key = (str(parsed_rule.get("ruleKey")), str(parsed_rule.get("version")))
-            existing_ids.add(str(parsed_rule.get("id")))
-            existing_rule_versions.add(rule_version_key)
-            repo.state["rule_versions"].insert(0, parsed_rule)
-            imported_rules.append(versioned_record("rule-version", parsed_rule))
+                if rule_version_key in existing_rule_versions:
+                    parsed_rule["version"] = f"{parsed_rule['version']}-{uuid4().hex[:6].upper()}"
+                    rule_version_key = (str(parsed_rule.get("ruleKey")), str(parsed_rule.get("version")))
+                existing_ids.add(str(parsed_rule.get("id")))
+                existing_rule_versions.add(rule_version_key)
+                repo.state["rule_versions"].insert(0, parsed_rule)
+                imported_rules.append(versioned_record("rule-version", parsed_rule))
 
-    if not imported_rules and skipped:
-        return fail(
-            errors.VALIDATION_ERROR,
-            request,
-            message="业务规则文件未导入。",
-            data={"skipped": skipped},
-        )
-    audit_id = repo.add_audit("导入业务规则文件", "RuleVersion", import_version)
-    return ok(
-        {
-            "rules": imported_rules,
-            "importedRules": imported_rules,
-            "skipped": skipped,
-            "summary": {
-                "importVersion": import_version,
-                "imported": len(imported_rules),
-                "skipped": len(skipped),
-                "status": "草稿",
+        if not imported_rules and skipped:
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="业务规则文件未导入。",
+                data={"skipped": skipped},
+            )
+        audit_id = repo.add_audit("导入业务规则文件", "RuleVersion", import_version)
+        return ok(
+            {
+                "rules": imported_rules,
+                "importedRules": imported_rules,
+                "skipped": skipped,
+                "summary": {
+                    "importVersion": import_version,
+                    "imported": len(imported_rules),
+                    "skipped": len(skipped),
+                    "status": "草稿",
+                },
+                "auditLogId": audit_id,
             },
-            "auditLogId": audit_id,
-        },
+            request,
+        )
+
+    return idempotent(
         request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"fields": fields, "uploads": multipart_upload_fingerprint(uploads)},
     )
 
 
 @router.post("/knowledge/files/import")
-async def import_knowledge_files(request: Request):
+async def import_knowledge_files(
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
     fields, uploads, parse_error = await parse_multipart_uploads(request)
     if parse_error:
         return parse_error
     if not uploads:
         return fail(errors.VALIDATION_ERROR, request, message="请选择要导入知识库的文件。")
 
-    source_id = first_form_value(fields, "sourceId", STANDARD_RULES_SOURCE_ID) or STANDARD_RULES_SOURCE_ID
-    source_name = first_form_value(fields, "sourceName", STANDARD_LIBRARY_SOURCE_NAME)
-    source_type = first_form_value(fields, "sourceType", "standard")
-    if source_type == "rule":
-        return fail(errors.VALIDATION_ERROR, request, message="业务判断规则请通过监检业务判断规则管理导入，不进入知识库切片或向量索引。")
-    source_version = first_form_value(fields, "sourceVersion", "")
-    source_status = first_form_value(fields, "sourceStatus", "")
-    vector_status = first_form_value(fields, "vectorStatus", "")
-    project_id = first_form_value(fields, "projectId", "").strip()
-    project_name = first_form_value(fields, "projectName", "").strip()
-    project = None
-    if project_id:
-        project = repo.require_project(project_id)
-        if not project:
-            return fail(errors.NOT_FOUND, request, message="项目不存在或无权访问。")
-        project_name = str(project.get("name") or project_name or project_id)
-    source = knowledge_source_for_import(
-        source_id,
-        source_name=source_name,
-        source_type=source_type,
-        source_version=source_version,
-        source_status=source_status,
-        vector_status=vector_status,
-    )
-    relative_paths = fields.get("relativePaths") or []
-    display_names = fields.get("fileNames") or []
-    context_descriptions = fields.get("contextDescriptions") or []
-    uploader = admin_user_snapshot(request_user_id(request), role_from_query(x_role=request.headers.get("X-Role")))
-    uploader_name = uploader.get("name") or "知识库管理员"
-
-    imported_files: list[dict[str, Any]] = []
-    imported_tasks: list[dict[str, Any]] = []
-    dispatches: list[dict[str, Any]] = []
-    skipped: list[dict[str, str]] = []
-
-    for index, upload in enumerate(uploads):
-        original_file_name = safe_upload_file_name(upload["fileName"])
-        file_name = display_upload_file_name(
-            bounded_form_value(display_names, index, limit=180),
-            original_file_name,
+    def produce():
+        source_id = first_form_value(fields, "sourceId", STANDARD_RULES_SOURCE_ID) or STANDARD_RULES_SOURCE_ID
+        source_name = first_form_value(fields, "sourceName", STANDARD_LIBRARY_SOURCE_NAME)
+        source_type = first_form_value(fields, "sourceType", "standard")
+        if source_type == "rule":
+            return fail(errors.VALIDATION_ERROR, request, message="业务判断规则请通过监检业务判断规则管理导入，不进入知识库切片或向量索引。")
+        source_version = first_form_value(fields, "sourceVersion", "")
+        source_status = first_form_value(fields, "sourceStatus", "")
+        vector_status = first_form_value(fields, "vectorStatus", "")
+        project_id = first_form_value(fields, "projectId", "").strip()
+        project_name = first_form_value(fields, "projectName", "").strip()
+        project = None
+        if project_id:
+            project = repo.require_project(project_id)
+            if not project:
+                return fail(errors.NOT_FOUND, request, message="项目不存在或无权访问。")
+            project_name = str(project.get("name") or project_name or project_id)
+        source = knowledge_source_for_import(
+            source_id,
+            source_name=source_name,
+            source_type=source_type,
+            source_version=source_version,
+            source_status=source_status,
+            vector_status=vector_status,
         )
-        context_description = bounded_form_value(context_descriptions, index, limit=500)
-        data = upload["data"]
-        content_type = str(upload.get("contentType") or mimetypes.guess_type(original_file_name)[0] or "application/octet-stream")
-        relative_path = safe_relative_path(relative_paths[index] if index < len(relative_paths) else None, file_name)
-        if not data:
-            skipped.append({"fileName": file_name, "reason": "文件内容为空"})
-            continue
-        if len(data) > MAX_UPLOAD_BYTES:
-            skipped.append({"fileName": file_name, "reason": f"超过 {MAX_UPLOAD_BYTES // 1024 // 1024}MB 上传限制"})
-            continue
-        if not (upload_file_type_tokens(original_file_name, content_type) & ALLOWED_KNOWLEDGE_UPLOAD_TYPES):
-            skipped.append({"fileName": file_name, "reason": "文件类型不支持"})
-            continue
+        relative_paths = fields.get("relativePaths") or []
+        display_names = fields.get("fileNames") or []
+        context_descriptions = fields.get("contextDescriptions") or []
+        uploader = admin_user_snapshot(request_user_id(request), role_from_query(x_role=request.headers.get("X-Role")))
+        uploader_name = uploader.get("name") or "知识库管理员"
 
-        file_hash = hashlib.sha256(data).hexdigest()
-        duplicate = next(
-            (
-                file
-                for file in repo.state.get("knowledge_files", [])
-                if file.get("sourceId") == source["id"]
-                and (repo.find_one("versions", file.get("documentVersionId")) or {}).get("hash") == file_hash
-            ),
-            None,
+        imported_files: list[dict[str, Any]] = []
+        imported_tasks: list[dict[str, Any]] = []
+        dispatches: list[dict[str, Any]] = []
+        skipped: list[dict[str, str]] = []
+
+        for index, upload in enumerate(uploads):
+            original_file_name = safe_upload_file_name(upload["fileName"])
+            file_name = display_upload_file_name(
+                bounded_form_value(display_names, index, limit=180),
+                original_file_name,
+            )
+            context_description = bounded_form_value(context_descriptions, index, limit=500)
+            data = upload["data"]
+            content_type = str(upload.get("contentType") or mimetypes.guess_type(original_file_name)[0] or "application/octet-stream")
+            relative_path = safe_relative_path(relative_paths[index] if index < len(relative_paths) else None, file_name)
+            if not data:
+                skipped.append({"fileName": file_name, "reason": "文件内容为空"})
+                continue
+            if len(data) > MAX_UPLOAD_BYTES:
+                skipped.append({"fileName": file_name, "reason": f"超过 {MAX_UPLOAD_BYTES // 1024 // 1024}MB 上传限制"})
+                continue
+            if not (upload_file_type_tokens(original_file_name, content_type) & ALLOWED_KNOWLEDGE_UPLOAD_TYPES):
+                skipped.append({"fileName": file_name, "reason": "文件类型不支持"})
+                continue
+
+            file_hash = hashlib.sha256(data).hexdigest()
+            duplicate = next(
+                (
+                    file
+                    for file in repo.state.get("knowledge_files", [])
+                    if file.get("sourceId") == source["id"]
+                    and (repo.find_one("versions", file.get("documentVersionId")) or {}).get("hash") == file_hash
+                ),
+                None,
+            )
+            if duplicate:
+                skipped.append({"fileName": file_name, "reason": f"已存在相同内容：{duplicate.get('fileName')}"})
+                continue
+
+            document, version, knowledge_file, task, storage = create_imported_knowledge_records(
+                source=source,
+                file_name=file_name,
+                content_type=content_type,
+                data=data,
+                relative_path=relative_path,
+                original_file_name=original_file_name,
+                context_description=context_description,
+                uploader_name=uploader_name,
+                project_id=project_id or None,
+                project_name=project_name,
+            )
+            repo.state["documents"].insert(0, document)
+            repo.state["versions"].insert(0, version)
+            repo.state["knowledge_files"].insert(0, knowledge_file)
+            repo.state["knowledge_tasks"].insert(0, task)
+            imported_files.append(versioned_record("knowledge-file", knowledge_file))
+            imported_tasks.append(versioned_record("knowledge-task", task))
+            dispatches.append({"knowledgeTaskId": task["id"], **storage["dispatch"]})
+
+        if imported_files:
+            sync_knowledge_source_counts(source)
+        audit_id = repo.add_audit("导入知识库文件", "KnowledgeSource", source["id"])
+        return ok(
+            {
+                "source": versioned_record("knowledge-source", source),
+                "files": imported_files,
+                "tasks": imported_tasks,
+                "dispatches": dispatches,
+                "skipped": skipped,
+                "auditLogId": audit_id,
+            },
+            request,
         )
-        if duplicate:
-            skipped.append({"fileName": file_name, "reason": f"已存在相同内容：{duplicate.get('fileName')}"})
-            continue
 
-        document, version, knowledge_file, task, storage = create_imported_knowledge_records(
-            source=source,
-            file_name=file_name,
-            content_type=content_type,
-            data=data,
-            relative_path=relative_path,
-            original_file_name=original_file_name,
-            context_description=context_description,
-            uploader_name=uploader_name,
-            project_id=project_id or None,
-            project_name=project_name,
-        )
-        repo.state["documents"].insert(0, document)
-        repo.state["versions"].insert(0, version)
-        repo.state["knowledge_files"].insert(0, knowledge_file)
-        repo.state["knowledge_tasks"].insert(0, task)
-        imported_files.append(versioned_record("knowledge-file", knowledge_file))
-        imported_tasks.append(versioned_record("knowledge-task", task))
-        dispatches.append({"knowledgeTaskId": task["id"], **storage["dispatch"]})
-
-    if imported_files:
-        sync_knowledge_source_counts(source)
-    audit_id = repo.add_audit("导入知识库文件", "KnowledgeSource", source["id"])
-    return ok(
-        {
-            "source": versioned_record("knowledge-source", source),
-            "files": imported_files,
-            "tasks": imported_tasks,
-            "dispatches": dispatches,
-            "skipped": skipped,
-            "auditLogId": audit_id,
-        },
+    return idempotent(
         request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"fields": fields, "uploads": multipart_upload_fingerprint(uploads)},
     )
 
 
@@ -17152,14 +17514,18 @@ def reasoning_log_detail(request: Request, log_id: str):
     ]
     trace_steps.sort(key=lambda item: int(item.get("sequence") or 0))
     graph_nodes.sort(key=lambda item: int(item.get("sequence") or 0))
+    raw = has_raw_access(request, "ai_run", log_id)
+    llm_audit = fde_llm_audit_view(run, run_type="ai_run", raw_access=raw, trace_steps=trace_steps)
     return ok(
         {
-            "log": repo.clone(run),
+            "log": fde_ai_run_view(run, raw_access=raw),
             "evidenceLinks": repo.clone(run.get("evidenceLinks") or repo.state["evidence_links"]),
             "traceSteps": trace_steps,
             "graphNodes": graph_nodes,
-            "promptAudit": repo.clone(run.get("promptAudit") or {}),
-            "llmMetadata": repo.clone(run.get("llmMetadata") or {}),
+            "promptAudit": repo.clone(llm_audit["inputs"]),
+            "llmMetadata": repo.clone(llm_audit["metadata"]),
+            "llmAudit": llm_audit,
+            "accessPolicy": {"rawAccess": raw, "rawAccessRequiresGrant": not raw},
         },
         request,
     )

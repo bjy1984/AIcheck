@@ -715,6 +715,73 @@ def test_opencv_grid_table_is_text_aligned_from_fragment_coordinates() -> None:
     assert result["diagnostics"][0]["code"] == "OPENCV_GRID_TEXT_ALIGNED"
 
 
+def test_piping_profile_keeps_drawing_title_block_table_candidate() -> None:
+    from apps.ocr_service.profiles import profile_for
+    from apps.ocr_service.service import enrich_parse_result
+
+    fragments = [
+        {"pageNo": 1, "text": "广东星燃石化设计院有限公司", "bbox": [120, 12, 430, 42], "confidence": 0.95},
+        {"pageNo": 1, "text": "项目名称", "bbox": [610, 32, 690, 54], "confidence": 0.94},
+        {"pageNo": 1, "text": "PROJECT", "bbox": [610, 55, 690, 74], "confidence": 0.94},
+        {"pageNo": 1, "text": "职责", "bbox": [55, 102, 95, 122], "confidence": 0.93},
+        {"pageNo": 1, "text": "姓名", "bbox": [145, 102, 190, 122], "confidence": 0.93},
+        {"pageNo": 1, "text": "日期", "bbox": [280, 102, 330, 122], "confidence": 0.93},
+        {"pageNo": 1, "text": "DUTY", "bbox": [55, 124, 95, 140], "confidence": 0.93},
+        {"pageNo": 1, "text": "NAME", "bbox": [145, 124, 190, 140], "confidence": 0.93},
+        {"pageNo": 1, "text": "DATE", "bbox": [280, 124, 330, 140], "confidence": 0.93},
+        {"pageNo": 1, "text": "编制", "bbox": [55, 150, 95, 170], "confidence": 0.92},
+        {"pageNo": 1, "text": "张三", "bbox": [145, 150, 190, 170], "confidence": 0.92},
+        {"pageNo": 1, "text": "2021.3", "bbox": [280, 150, 335, 170], "confidence": 0.92},
+        {"pageNo": 1, "text": "工艺图纸目录", "bbox": [420, 175, 550, 202], "confidence": 0.95},
+        {"pageNo": 1, "text": "DRAWING LIST", "bbox": [420, 205, 560, 226], "confidence": 0.95},
+        {"pageNo": 1, "text": "图纸编号", "bbox": [690, 150, 760, 170], "confidence": 0.94},
+        {"pageNo": 1, "text": "QX201903S-13-Y-00", "bbox": [815, 150, 980, 170], "confidence": 0.94},
+    ]
+    result = enrich_parse_result(
+        {
+            "status": "success",
+            "fragments": fragments,
+            "fields": [],
+            "tables": [
+                {
+                    "tableId": "large_grid_covering_title_and_drawing_list",
+                    "pageNo": 1,
+                    "bbox": [35, 0, 1040, 620],
+                    "rows": 6,
+                    "columns": 6,
+                    "structureConfidence": 0.86,
+                    "sourceEngine": "opencv_grid_text_aligned",
+                    "cells": [
+                        {"row": 0, "col": 0, "text": "序号", "bbox": [40, 270, 80, 292], "isHeader": True},
+                        {"row": 0, "col": 1, "text": "名称", "bbox": [120, 270, 170, 292], "isHeader": True},
+                        {"row": 1, "col": 0, "text": "1", "bbox": [40, 305, 80, 327]},
+                        {"row": 1, "col": 1, "text": "工艺图纸目录", "bbox": [120, 305, 250, 327]},
+                    ],
+                    "normalizedRows": [{"名称": "工艺图纸目录"}],
+                    "qualityFlags": ["opencv_grid_structure", "ocr_text_aligned"],
+                }
+            ],
+            "seals": [],
+            "diagnostics": [],
+        },
+        profile=profile_for("piping_characteristic_list_v1"),
+        document_version_id="docv-title-block",
+        business_pack_id="engineering_inspection_v1",
+        model_manifest={},
+    )
+
+    table_ids = {table["tableId"] for table in result["tables"]}
+    schemas = {table.get("businessSchema") for table in result["tables"]}
+
+    assert "page_1_engineering_drawing_title_block_1" in table_ids
+    assert "engineering_drawing_title_block_v1" in schemas
+    assert len(result["tables"]) >= 2
+    title_block = next(table for table in result["tables"] if table["tableId"] == "page_1_engineering_drawing_title_block_1")
+    assert title_block["auxiliaryTable"] is True
+    assert title_block["bbox"][3] < 260
+    assert any(item["code"] == "ENGINEERING_DRAWING_TITLE_BLOCK_INFERRED" for item in result["diagnostics"])
+
+
 def test_pp_structure_model_names_follow_local_model_dirs(monkeypatch) -> None:
     from pathlib import Path
 
