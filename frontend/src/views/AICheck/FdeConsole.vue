@@ -225,6 +225,7 @@ const annotationCanvasTool = ref<'select' | 'pan' | 'fields' | 'tables' | 'seals
 const annotationCanvasZoom = ref(1)
 const annotationObjectSearch = ref('')
 const annotationObjectFilter = ref<AnnotationObjectFilter>('todo')
+const annotationObjectTreeRef = ref<HTMLElement | null>(null)
 const selectedAnnotationCanvasItemId = ref('')
 const annotationUndoStack = ref<Array<Record<string, unknown>>>([])
 const annotationRedoStack = ref<Array<Record<string, unknown>>>([])
@@ -2526,7 +2527,39 @@ const focusSelectedAnnotationTextEditor = () => {
     annotationValueInputRef.value?.focus?.()
   })
 }
-const selectAnnotationCanvasItem = (id: string, focusText = false) => {
+const scrollAnnotationObjectRowIntoView = (id: string) => {
+  if (!id) return
+  nextTick(() => {
+    const target = annotationObjectTreeRef.value?.querySelector<HTMLElement>(
+      `[data-annotation-object-id="${id}"]`
+    )
+    target?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
+  })
+}
+const revealAnnotationObjectRow = (id: string) => {
+  const target = parseAnnotationCanvasItemId(id)
+  if (!target) return
+  const item = annotationItems(target.section)[target.index]
+  if (!item) return
+  const missing = annotationItemMissingParts(target.section, item)
+  const filter = annotationObjectFilter.value
+
+  if (annotationObjectSearch.value.trim()) {
+    annotationObjectSearch.value = ''
+  }
+  if (filter === 'todo' && !missing.length) {
+    annotationObjectFilter.value = 'all'
+  } else if (filter === 'done' && missing.length) {
+    annotationObjectFilter.value = 'all'
+  } else if (
+    annotationSections.includes(filter as AnnotationSection) &&
+    filter !== target.section
+  ) {
+    annotationObjectFilter.value = target.section
+  }
+  scrollAnnotationObjectRowIntoView(id)
+}
+const selectAnnotationCanvasItem = (id: string, focusText = false, revealObjectRow = false) => {
   selectedAnnotationCanvasItemId.value = id
   if (id && annotationObjectFilter.value === 'todo') {
     const target = selectedAnnotationCanvasTarget.value
@@ -2534,10 +2567,11 @@ const selectAnnotationCanvasItem = (id: string, focusText = false) => {
       annotationObjectFilter.value = 'all'
     }
   }
+  if (id && revealObjectRow) revealAnnotationObjectRow(id)
   if (focusText && id) focusSelectedAnnotationTextEditor()
 }
 const quickEditAnnotationCanvasItem = (id: string) => {
-  selectAnnotationCanvasItem(id, true)
+  selectAnnotationCanvasItem(id, true, true)
 }
 const selectedOcrResultSummary = computed(
   () => (selectedOcrRun.value?.job?.resultSummary || {}) as Record<string, unknown>
@@ -19748,7 +19782,7 @@ onBeforeUnmount(() => {
                 :tool="annotationCanvasTool"
                 :zoom="annotationCanvasZoom"
                 :disabled="!selectedAnnotationPreviewUrl"
-                @select="selectAnnotationCanvasItem"
+                @select="(id) => selectAnnotationCanvasItem(id, false, true)"
                 @quick-edit="quickEditAnnotationCanvasItem"
                 @create="createAnnotationItemFromCanvas"
                 @update="updateAnnotationItemBboxFromCanvas"
@@ -19813,7 +19847,7 @@ onBeforeUnmount(() => {
                     </button>
                   </div>
                 </div>
-                <div class="annotation-object-tree">
+                <div ref="annotationObjectTreeRef" class="annotation-object-tree">
                   <section v-for="section in annotationObjectTreeSections" :key="section.key">
                     <div class="annotation-section-head">
                       <strong>{{ section.title }}</strong>
@@ -19824,6 +19858,7 @@ onBeforeUnmount(() => {
                       :key="row.id"
                       class="annotation-object-row"
                       :class="{ active: selectedAnnotationCanvasItemId === row.id }"
+                      :data-annotation-object-id="row.id"
                     >
                       <button
                         type="button"
