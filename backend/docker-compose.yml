@@ -7,7 +7,7 @@ services:
     environment:
       AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${AICHECK_POSTGRES_DB:-aicheck}
       AICHECK_SQLITE_FALLBACK: ${AICHECK_SQLITE_FALLBACK:-false}
-      AICHECK_REDIS_URL: ${AICHECK_REDIS_URL:-redis://redis:6379/0}
+      AICHECK_REDIS_URL: ${AICHECK_REDIS_INTERNAL_URL:-redis://redis:6379/0}
       AICHECK_TASK_DISPATCH: ${AICHECK_TASK_DISPATCH:-celery}
       AICHECK_REVIEW_ORCHESTRATION: ${AICHECK_REVIEW_ORCHESTRATION:-temporal}
       TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-temporal-service:7233}
@@ -18,7 +18,7 @@ services:
       AICHECK_LANGGRAPH_CHECKPOINT_DISABLE: ${AICHECK_LANGGRAPH_CHECKPOINT_DISABLE:-false}
       AICHECK_LANGGRAPH_CHECKPOINT_SETUP: ${AICHECK_LANGGRAPH_CHECKPOINT_SETUP:-false}
       LANGGRAPH_CHECKPOINT_DSN: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${WORKFLOW_POSTGRES_DB:-workflow}
-      AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_ENDPOINT:-minio:9000}
+      AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_INTERNAL_ENDPOINT:-minio:9000}
       AICHECK_MINIO_PUBLIC_ENDPOINT: ${AICHECK_MINIO_PUBLIC_ENDPOINT:-127.0.0.1:9000}
       AICHECK_MINIO_ACCESS_KEY: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
       AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:?AICHECK_MINIO_SECRET_KEY is required}
@@ -59,10 +59,10 @@ services:
     environment:
       AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${AICHECK_POSTGRES_DB:-aicheck}
       AICHECK_SQLITE_FALLBACK: ${AICHECK_SQLITE_FALLBACK:-false}
-      AICHECK_REDIS_URL: ${AICHECK_REDIS_URL:-redis://redis:6379/0}
+      AICHECK_REDIS_URL: ${AICHECK_REDIS_INTERNAL_URL:-redis://redis:6379/0}
       AICHECK_TASK_DISPATCH: ${AICHECK_TASK_DISPATCH:-celery}
       AICHECK_REVIEW_ORCHESTRATION: ${AICHECK_REVIEW_ORCHESTRATION:-temporal}
-      AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_ENDPOINT:-minio:9000}
+      AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_INTERNAL_ENDPOINT:-minio:9000}
       AICHECK_MINIO_ACCESS_KEY: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
       AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:?AICHECK_MINIO_SECRET_KEY is required}
       AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
@@ -143,7 +143,7 @@ services:
         AICHECK_OCR_REQUIREMENTS: ${AICHECK_OCR_REQUIREMENTS:-requirements-ocr-core.txt}
     command: uvicorn apps.ocr_service.main:app --host 0.0.0.0 --port 8010
     environment:
-      AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_ENDPOINT:-minio:9000}
+      AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_INTERNAL_ENDPOINT:-minio:9000}
       AICHECK_MINIO_ACCESS_KEY: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
       AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:?AICHECK_MINIO_SECRET_KEY is required}
       AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
@@ -240,7 +240,7 @@ services:
       LITELLM_POSTGRES_DB: ${LITELLM_POSTGRES_DB:-litellm}
       WORKFLOW_POSTGRES_DB: ${WORKFLOW_POSTGRES_DB:-workflow}
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${AICHECK_POSTGRES_HOST_PORT:-15432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./docker/postgres/init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
@@ -258,14 +258,13 @@ services:
       POSTGRES_USER: ${AICHECK_POSTGRES_USER:-aicheck}
       POSTGRES_PWD: ${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}
       POSTGRES_SEEDS: postgres
-      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
     ports:
       - "127.0.0.1:7233:7233"
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "tctl --address 127.0.0.1:7233 cluster health | grep -q SERVING"]
+      test: ["CMD-SHELL", "tctl --address \"$$(hostname -i):7233\" cluster health | grep -q SERVING"]
       interval: 10s
       timeout: 5s
       retries: 24
@@ -340,7 +339,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "python -c \"import json, os, sys, urllib.request; req=urllib.request.Request('http://127.0.0.1:4000/health', headers={'Authorization': 'Bearer ' + os.environ['LITELLM_MASTER_KEY']}); data=json.loads(urllib.request.urlopen(req, timeout=3).read() or b'{}'); unhealthy_count=int(data.get('unhealthy_count') or 0); strict=os.getenv('AICHECK_LITELLM_STRICT_PROVIDER_HEALTH','true').lower()=='true'; sys.exit(1 if strict and unhealthy_count else 0)\"",
+          "python -c \"import json, os, sys, urllib.request; headers={'Authorization': 'Bearer ' + os.environ['LITELLM_MASTER_KEY']}; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:4000/health/readiness', headers=headers), timeout=3).read(); strict=os.getenv('AICHECK_LITELLM_STRICT_PROVIDER_HEALTH','true').lower()=='true'; data={} if not strict else json.loads(urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:4000/health', headers=headers), timeout=3).read() or b'{}'); unhealthy_count=int(data.get('unhealthy_count') or 0); sys.exit(1 if strict and unhealthy_count else 0)\"",
         ]
       interval: 10s
       timeout: 5s
