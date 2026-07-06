@@ -3,7 +3,6 @@ __MACOSX/
 ._*
 .playwright-cli/
 tmp/
-rules/
 files/
 
 __pycache__/
