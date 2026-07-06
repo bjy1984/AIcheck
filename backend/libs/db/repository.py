@@ -411,6 +411,8 @@ class InMemoryRepository:
         version = self.current_version(document["id"])
         bucket = (version or {}).get("storageBucket")
         storage_key = (version or {}).get("storageKey")
+        if isinstance(storage_key, str) and parse_storage_url(storage_key):
+            return storage_key
         if bucket and storage_key:
             return f"minio://{bucket}/{storage_key}"
         if object_storage.required:
@@ -1526,6 +1528,7 @@ class InMemoryRepository:
             return
         self.ensure_postgres_schema()
         with self.sync_postgres.transaction():
+            self.sync_postgres.execute("SELECT pg_advisory_xact_lock(hashtext('aicheck_state_flush'))")
             self.sync_postgres.execute("DELETE FROM aicheck_state")
             self.sync_postgres.execute("DELETE FROM aicheck_singletons")
             self.sync_postgres.execute("DELETE FROM idempotency_records")
@@ -1782,15 +1785,19 @@ def pdf_escape(value: str) -> str:
 repo = InMemoryRepository()
 
 
+def postgres_persistence_configured() -> bool:
+    return bool(repo.sync_postgres is not None or repo.postgres_dsn or os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL"))
+
+
 def load_state() -> None:
-    if repo.sync_postgres is not None or repo.postgres_dsn:
+    if postgres_persistence_configured():
         repo.load_from_sync_postgres()
         return
     repo.load_from_sqlite()
 
 
 def flush_state() -> None:
-    if repo.sync_postgres is not None or repo.postgres_dsn:
+    if postgres_persistence_configured():
         repo.flush_to_sync_postgres()
         return
     repo.flush_to_sqlite()

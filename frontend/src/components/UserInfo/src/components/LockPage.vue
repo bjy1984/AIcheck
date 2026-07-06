@@ -49,14 +49,12 @@ async function unLock() {
 
 // 返回登录
 async function goLogin() {
-  const res = await loginOutApi().catch(() => {})
-  if (res) {
-    clear()
-    tagsViewStore.delAllViews()
-    resetRouter() // 重置静态路由表
-    lockStore.resetLockInfo()
-    replace('/login')
-  }
+  await loginOutApi().catch(() => undefined)
+  clear()
+  tagsViewStore.delAllViews()
+  resetRouter() // 重置静态路由表
+  lockStore.resetLockInfo()
+  replace('/login')
 }
 
 const passwordInputRef = ref<ComponentRef<typeof ElInput>>()

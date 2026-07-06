@@ -511,6 +511,7 @@ export type KnowledgeOverviewPayload = {
   libraries: Array<{
     key: string
     name: string
+    sourceType?: KnowledgeSource['sourceType']
     fileCount: number
     chunkCount: number
     vectorCount: number
@@ -3279,7 +3280,7 @@ export const cancelKnowledgeTaskApi = (
 
 export const reindexKnowledgeFileApi = (
   fileId: string,
-  payload?: { force?: boolean },
+  payload?: { force?: boolean; includeOcr?: boolean },
   options?: MutationHeaderOptions
 ): Promise<IResponse<{ task: KnowledgeTask }>> => {
   return request.post({
@@ -3294,9 +3295,19 @@ export const batchReindexKnowledgeApi = (
     scope: 'all' | 'project' | 'source'
     projectId?: string
     sourceId?: string
+    sourceType?: KnowledgeSource['sourceType']
+    includeOcr?: boolean
+    onlyIncomplete?: boolean
+    limit?: number
   },
   options?: MutationHeaderOptions
-): Promise<IResponse<{ taskIds: string[] }>> => {
+): Promise<
+  IResponse<{
+    taskIds: string[]
+    dispatches?: Array<Record<string, unknown>>
+    summary?: Record<string, unknown>
+  }>
+> => {
   return request.post({
     url: '/api/knowledge/reindex',
     data: payload,

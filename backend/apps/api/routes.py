@@ -1167,7 +1167,7 @@ def store_knowledge_upload(
     object_name = f"knowledge/{source_id}/{file_id}/{file_name}"
     stored_url = object_storage.put_bytes("documents", object_name, data, content_type=content_type)
     if stored_url:
-        return stored_url, "documents"
+        return object_name, "documents"
     target_dir = KNOWLEDGE_UPLOAD_ROOT / source_id / file_id
     target_dir.mkdir(parents=True, exist_ok=True)
     target_path = target_dir / file_name
@@ -1332,9 +1332,167 @@ def create_imported_knowledge_records(
         "revision": 1,
         "actions": ["knowledge:task-retry"],
     }
-    dispatch = task_dispatcher.dispatch_parse_document(document_id, version_id, storage_key, file_name)
+    return document, version, knowledge_file, task, {"storageKey": storage_key, "storageBucket": storage_bucket}
+
+
+def reset_knowledge_file_derived_index(file_id: str) -> None:
+    repo.state["knowledge_chunks"] = [
+        item for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") != file_id
+    ]
+    repo.state["knowledge_vectors"] = [
+        item for item in repo.state.get("knowledge_vectors", []) if item.get("fileId") != file_id
+    ]
+
+
+def knowledge_ocr_storage_key(version: dict[str, Any]) -> str:
+    storage_key = str(version.get("storageKey") or version.get("id") or "")
+    if parse_storage_url(storage_key) or storage_key.startswith(("local://", "mock://", "http://", "https://")):
+        return storage_key
+    storage_bucket = str(version.get("storageBucket") or "")
+    if storage_bucket and storage_key:
+        return f"minio://{storage_bucket}/{storage_key}"
+    return storage_key
+
+
+def migrate_local_knowledge_version_to_object_storage(
+    file: dict[str, Any],
+    document: dict[str, Any],
+    version: dict[str, Any],
+) -> dict[str, Any] | None:
+    storage_key = str(version.get("storageKey") or "")
+    if not storage_key.startswith("local://") or not object_storage.enabled:
+        return None
+    local_path = local_storage_path(storage_key)
+    if not local_path or not local_path.is_file():
+        return None
+    file_name = str(
+        version.get("fileName")
+        or document.get("fileName")
+        or file.get("fileName")
+        or local_path.name
+        or version.get("id")
+        or "source.bin"
+    )
+    object_file_name = Path(file_name).name or local_path.name
+    object_name = f"knowledge/{file.get('sourceId') or 'unknown-source'}/{file['id']}/{object_file_name}"
+    content_type = (
+        repo.document_content_type(document)
+        or mimetypes.guess_type(object_file_name)[0]
+        or "application/octet-stream"
+    )
+    stored_url = object_storage.put_bytes(
+        "documents",
+        object_name,
+        local_path.read_bytes(),
+        content_type=content_type,
+    )
+    if not stored_url:
+        return None
+    now = server_time()
+    version["storageKey"] = object_name
+    version["storageBucket"] = "documents"
+    version["fileSize"] = version.get("fileSize") or local_path.stat().st_size
+    document["updatedAt"] = now
+    file["updatedAt"] = now
+    bump_record_revision(file)
+    return {
+        "storageMigrated": True,
+        "fromStorageKey": storage_key,
+        "storageKey": object_name,
+        "storageBucket": "documents",
+    }
+
+
+def dispatch_knowledge_file_ocr_pipeline(file: dict[str, Any], *, reason: str) -> dict[str, Any]:
+    document = repo.find_one("documents", file.get("documentId"))
+    version = repo.find_one("versions", file.get("documentVersionId"))
+    if not document or not version:
+        raise ValueError("missing_document_version")
+    file_id = str(file["id"])
+    now = server_time()
+    reset_knowledge_file_derived_index(file_id)
+    storage_migration = migrate_local_knowledge_version_to_object_storage(file, document, version)
+    document["currentOcrStatus"] = "识别中"
+    document["updatedAt"] = now
+    version["ocrStatus"] = "识别中"
+    version["sliceStatus"] = "未切片"
+    version["vectorStatus"] = "待向量化"
+    file["ocrStatus"] = "识别中"
+    file["sliceStatus"] = "未切片"
+    file["vectorStatus"] = "待向量化"
+    file["chunkCount"] = 0
+    file["vectorCount"] = 0
+    file["updatedAt"] = now
+    bump_record_revision(file)
+    task = repo.upsert_knowledge_task(
+        task_type="ocr",
+        target_id=file_id,
+        target_name=str(file.get("fileName") or document.get("fileName") or file_id),
+        document_id=document["id"],
+        version_id=version["id"],
+    )
+    task["documentId"] = document["id"]
+    task["documentVersionId"] = version["id"]
+    task["targetName"] = str(file.get("fileName") or document.get("fileName") or task.get("targetName") or file_id)
+    task.pop("finishedAt", None)
+    task.pop("errorMessage", None)
+    repo.append_task_log(task, "info", reason)
+    if storage_migration:
+        repo.append_task_log(task, "info", f"源文件已迁移到对象存储：{storage_migration['storageBucket']}/{storage_migration['storageKey']}")
+    dispatch = task_dispatcher.dispatch_parse_document(
+        document["id"],
+        version["id"],
+        knowledge_ocr_storage_key(version),
+        document.get("fileName") or file.get("fileName"),
+    )
     task["lastDispatch"] = dispatch
-    return document, version, knowledge_file, task, {"storageKey": storage_key, "dispatch": dispatch}
+    payload = {"knowledgeTaskId": task["id"], "taskType": "ocr", **dispatch}
+    if storage_migration:
+        payload["storageMigration"] = {
+            "storageKey": storage_migration["storageKey"],
+            "storageBucket": storage_migration["storageBucket"],
+        }
+    return payload
+
+
+def dispatch_knowledge_file_index_pipeline(file: dict[str, Any], *, reason: str) -> list[dict[str, Any]]:
+    document = repo.find_one("documents", file.get("documentId"))
+    version = repo.find_one("versions", file.get("documentVersionId"))
+    if not document or not version:
+        raise ValueError("missing_document_version")
+    file_id = str(file["id"])
+    reset_knowledge_file_derived_index(file_id)
+    file["sliceStatus"] = "待切片"
+    file["vectorStatus"] = "待向量化"
+    file["chunkCount"] = 0
+    file["vectorCount"] = 0
+    file["updatedAt"] = server_time()
+    version["sliceStatus"] = "待切片"
+    version["vectorStatus"] = "待向量化"
+    bump_record_revision(file)
+    slice_task = repo.upsert_knowledge_task(
+        task_type="slice",
+        target_id=file_id,
+        target_name=str(file.get("fileName") or file_id),
+        document_id=document["id"],
+        version_id=version["id"],
+    )
+    vector_task = repo.upsert_knowledge_task(
+        task_type="vector",
+        target_id=file_id,
+        target_name=str(file.get("fileName") or file_id),
+        document_id=document["id"],
+        version_id=version["id"],
+    )
+    for task in (slice_task, vector_task):
+        task["documentId"] = document["id"]
+        task["documentVersionId"] = version["id"]
+        task.pop("finishedAt", None)
+        task.pop("errorMessage", None)
+        repo.append_task_log(task, "info", reason)
+    dispatch = task_dispatcher.dispatch_slice(file_id)
+    slice_task["lastDispatch"] = dispatch
+    return [{"knowledgeTaskId": slice_task["id"], "taskType": "slice", **dispatch}]
 
 
 def missing_required_fields(item: dict[str, Any], fields: list[str]) -> list[str]:
@@ -16177,6 +16335,7 @@ def knowledge_overview(request: Request):
                 {
                     "key": source["id"],
                     "name": source["name"],
+                    "sourceType": source.get("sourceType"),
                     "fileCount": source["fileCount"],
                     "chunkCount": source["chunkCount"],
                     "vectorCount": source["chunkCount"],
@@ -16382,7 +16541,7 @@ def import_standards_from_rules_folder(
                     key: removed_records.get(key, 0) + int(removed.get(key, 0)) for key in removed_records
                 }
 
-            document, version, knowledge_file, task, storage = create_imported_knowledge_records(
+            document, version, knowledge_file, task, _storage = create_imported_knowledge_records(
                 source=source,
                 file_name=file_name,
                 content_type=content_type,
@@ -16400,9 +16559,13 @@ def import_standards_from_rules_folder(
             repo.state["versions"].insert(0, version)
             repo.state["knowledge_files"].insert(0, knowledge_file)
             repo.state["knowledge_tasks"].insert(0, task)
+            dispatch = dispatch_knowledge_file_ocr_pipeline(
+                knowledge_file,
+                reason=f"管理员导入 rules 标准规范后自动投递 OCR：{task['id']}",
+            )
             imported_files.append(versioned_record("knowledge-file", knowledge_file))
             imported_tasks.append(versioned_record("knowledge-task", task))
-            dispatches.append({"knowledgeTaskId": task["id"], **storage["dispatch"]})
+            dispatches.append({"knowledgeTaskId": task["id"], **dispatch})
 
         sync_knowledge_source_counts(source)
         audit_id = repo.add_audit(
@@ -16605,7 +16768,7 @@ async def import_knowledge_files(
                 skipped.append({"fileName": file_name, "reason": f"已存在相同内容：{duplicate.get('fileName')}"})
                 continue
 
-            document, version, knowledge_file, task, storage = create_imported_knowledge_records(
+            document, version, knowledge_file, task, _storage = create_imported_knowledge_records(
                 source=source,
                 file_name=file_name,
                 content_type=content_type,
@@ -16621,9 +16784,13 @@ async def import_knowledge_files(
             repo.state["versions"].insert(0, version)
             repo.state["knowledge_files"].insert(0, knowledge_file)
             repo.state["knowledge_tasks"].insert(0, task)
+            dispatch = dispatch_knowledge_file_ocr_pipeline(
+                knowledge_file,
+                reason=f"管理员导入知识库文件后自动投递 OCR：{task['id']}",
+            )
             imported_files.append(versioned_record("knowledge-file", knowledge_file))
             imported_tasks.append(versioned_record("knowledge-task", task))
-            dispatches.append({"knowledgeTaskId": task["id"], **storage["dispatch"]})
+            dispatches.append({"knowledgeTaskId": task["id"], **dispatch})
 
         if imported_files:
             sync_knowledge_source_counts(source)
@@ -17280,7 +17447,29 @@ def reindex_file(request: Request, file_id: str, body: dict[str, Any] = Body(def
             return scope_error
         task = {"id": f"KT-{uuid4().hex[:8].upper()}", "taskType": "reindex", "targetType": "file", "targetId": resolved_file_id, "targetName": file["fileName"], "status": "排队中", "progress": 0, "createdAt": server_time(), "updatedAt": server_time(), "revision": 1, "actions": ["knowledge:task-retry"]}
         repo.state["knowledge_tasks"].insert(0, task)
-        return ok({"task": versioned_record("knowledge-task", task)}, request)
+        try:
+            include_ocr = bool(body.get("includeOcr") or body.get("ocr"))
+            if include_ocr:
+                dispatches = [
+                    dispatch_knowledge_file_ocr_pipeline(
+                        file,
+                        reason=f"管理员触发重建索引，重新投递 OCR：{task['id']}",
+                    )
+                ]
+            else:
+                dispatches = dispatch_knowledge_file_index_pipeline(
+                    file,
+                    reason=f"管理员触发重建索引，重新投递切片和向量化：{task['id']}",
+                )
+            task["status"] = "成功"
+            task["progress"] = 100
+            task["finishedAt"] = server_time()
+            task["lastDispatch"] = {"dispatches": dispatches}
+            repo.append_task_log(task, "info", f"重建索引已创建 {len(dispatches)} 个子任务。")
+        except ValueError:
+            repo.mark_task_failed(task, "重建索引失败：找不到关联文档版本。")
+            return fail(errors.NOT_FOUND, request, message="找不到关联文档版本。")
+        return ok({"task": versioned_record("knowledge-task", task), "dispatches": dispatches}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
@@ -17346,14 +17535,22 @@ def retry_dispatch_for_knowledge_task(request: Request, task: dict[str, Any]) ->
             return [], fail(errors.NOT_FOUND, request, message="找不到关联文档版本。")
         task["documentId"] = document["id"]
         task["documentVersionId"] = version["id"]
-        dispatches.append(
-            task_dispatcher.dispatch_parse_document(
-                document["id"],
-                version["id"],
-                version.get("storageKey") or version["id"],
-                document.get("fileName") or task.get("targetName"),
+        if file:
+            dispatches.append(
+                dispatch_knowledge_file_ocr_pipeline(
+                    file,
+                    reason=f"管理员重试 OCR 任务：{task['id']}",
+                )
             )
-        )
+        else:
+            dispatches.append(
+                task_dispatcher.dispatch_parse_document(
+                    document["id"],
+                    version["id"],
+                    knowledge_ocr_storage_key(version),
+                    document.get("fileName") or task.get("targetName"),
+                )
+            )
     elif task_type == "slice":
         file = repo.find_one("knowledge_files", task.get("targetId"))
         if not file:
@@ -17382,23 +17579,17 @@ def retry_dispatch_for_knowledge_task(request: Request, task: dict[str, Any]) ->
         if not targets:
             repo.mark_task_failed(task, "重建索引失败：找不到可重建的知识文件。")
             return [], fail(errors.NOT_FOUND, request, message="找不到可重建的知识文件。")
-        for file in targets:
-            slice_task = repo.upsert_knowledge_task(
-                task_type="slice",
-                target_id=file["id"],
-                target_name=file["fileName"],
-                document_id=file.get("documentId"),
-                version_id=file.get("documentVersionId"),
-            )
-            vector_task = repo.upsert_knowledge_task(
-                task_type="vector",
-                target_id=file["id"],
-                target_name=file["fileName"],
-                document_id=file.get("documentId"),
-                version_id=file.get("documentVersionId"),
-            )
-            dispatches.append({"knowledgeTaskId": slice_task["id"], **task_dispatcher.dispatch_slice(file["id"])})
-            dispatches.append({"knowledgeTaskId": vector_task["id"], **task_dispatcher.dispatch_embed(file["id"])})
+        try:
+            for file in targets:
+                dispatches.extend(
+                    dispatch_knowledge_file_index_pipeline(
+                        file,
+                        reason=f"管理员重试重建索引任务：{task['id']}",
+                    )
+                )
+        except ValueError:
+            repo.mark_task_failed(task, "重建索引失败：找不到关联文档版本。")
+            return [], fail(errors.NOT_FOUND, request, message="找不到关联文档版本。")
         task["status"] = "成功"
         task["progress"] = 100
         task["finishedAt"] = server_time()
@@ -17465,16 +17656,93 @@ def cancel_knowledge_task(
 @router.post("/knowledge/reindex")
 def batch_reindex(request: Request, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     def produce():
-        ids = []
-        if body.get("scope") == "source":
-            targets = [item for item in repo.state["knowledge_sources"] if item.get("sourceType") != "rule"]
-        else:
-            targets = [item for item in repo.state["knowledge_files"] if not knowledge_file_is_business_rule(item)]
-        for target in targets[:3]:
-            task = {"id": f"KT-{uuid4().hex[:8].upper()}", "taskType": "reindex", "targetType": "file" if "fileName" in target else "source", "targetId": target["id"], "targetName": target.get("fileName") or target.get("name"), "status": "排队中", "progress": 0, "createdAt": server_time(), "updatedAt": server_time(), "revision": 1, "actions": ["knowledge:task-retry"]}
+        scope = str(body.get("scope") or "all")
+        include_ocr = bool(body.get("includeOcr") or body.get("ocr"))
+        source_id = str(body.get("sourceId") or "").strip()
+        source_type = str(body.get("sourceType") or "").strip()
+        project_id = str(body.get("projectId") or "").strip()
+
+        targets = [item for item in repo.state["knowledge_files"] if not knowledge_file_is_business_rule(item)]
+        if scope == "source" and source_id:
+            targets = [item for item in targets if item.get("sourceId") == source_id]
+        elif scope == "source":
+            source_ids = {
+                item["id"]
+                for item in repo.state["knowledge_sources"]
+                if item.get("sourceType") != "rule" and (not source_type or item.get("sourceType") == source_type)
+            }
+            targets = [item for item in targets if item.get("sourceId") in source_ids]
+        if source_type:
+            targets = [
+                item
+                for item in targets
+                if knowledge_file_source_type(item) == source_type
+            ]
+        if scope == "project" and project_id:
+            targets = [item for item in targets if item.get("projectId") == project_id]
+        if body.get("onlyIncomplete"):
+            targets = [
+                item
+                for item in targets
+                if item.get("ocrStatus") != "已识别"
+                or item.get("sliceStatus") != "已切片"
+                or item.get("vectorStatus") != "已向量化"
+            ]
+        limit = int(body.get("limit") or 0)
+        if limit > 0:
+            targets = targets[:limit]
+
+        ids: list[str] = []
+        dispatches: list[dict[str, Any]] = []
+        failed: list[dict[str, str]] = []
+        for target in targets:
+            task = {"id": f"KT-{uuid4().hex[:8].upper()}", "taskType": "reindex", "targetType": "file", "targetId": target["id"], "targetName": target.get("fileName") or target.get("name"), "status": "排队中", "progress": 0, "createdAt": server_time(), "updatedAt": server_time(), "revision": 1, "actions": ["knowledge:task-retry"]}
             repo.state["knowledge_tasks"].insert(0, task)
             ids.append(task["id"])
-        return ok({"taskIds": ids}, request)
+            try:
+                if include_ocr:
+                    child_dispatches = [
+                        dispatch_knowledge_file_ocr_pipeline(
+                            target,
+                            reason=f"管理员批量重建知识库，重新投递 OCR：{task['id']}",
+                        )
+                    ]
+                else:
+                    child_dispatches = dispatch_knowledge_file_index_pipeline(
+                        target,
+                        reason=f"管理员批量重建知识库，重新投递切片和向量化：{task['id']}",
+                    )
+                task["status"] = "成功"
+                task["progress"] = 100
+                task["finishedAt"] = server_time()
+                task["lastDispatch"] = {"dispatches": child_dispatches}
+                repo.append_task_log(task, "info", f"重建索引已创建 {len(child_dispatches)} 个子任务。")
+                dispatches.extend({"parentTaskId": task["id"], **item} for item in child_dispatches)
+            except ValueError:
+                repo.mark_task_failed(task, "重建索引失败：找不到关联文档版本。")
+                failed.append({"taskId": task["id"], "targetId": str(target.get("id") or ""), "reason": "找不到关联文档版本"})
+
+        source = repo.find_one("knowledge_sources", source_id) if source_id else None
+        if source:
+            sync_knowledge_source_counts(source)
+        return ok(
+            {
+                "taskIds": ids,
+                "dispatches": dispatches,
+                "summary": {
+                    "scope": scope,
+                    "sourceId": source_id or None,
+                    "sourceType": source_type or None,
+                    "projectId": project_id or None,
+                    "includeOcr": include_ocr,
+                    "matched": len(targets),
+                    "dispatched": len(dispatches),
+                    "failed": len(failed),
+                },
+                "failed": failed,
+            },
+            request,
+        )
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 

@@ -6,6 +6,7 @@ services:
     command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000
     environment:
       AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${AICHECK_POSTGRES_DB:-aicheck}
+      AICHECK_SQLITE_FALLBACK: ${AICHECK_SQLITE_FALLBACK:-false}
       AICHECK_REDIS_URL: ${AICHECK_REDIS_URL:-redis://redis:6379/0}
       AICHECK_TASK_DISPATCH: ${AICHECK_TASK_DISPATCH:-celery}
       AICHECK_REVIEW_ORCHESTRATION: ${AICHECK_REVIEW_ORCHESTRATION:-temporal}
@@ -54,9 +55,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO -Q ocr.parse_document,ocr.recognize_seals,knowledge.slice,knowledge.embed,inspection.ai_recheck,llm.compare,export.package
+    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=${AICHECK_WORKER_CONCURRENCY:-1} --prefetch-multiplier=1 -Q ocr.parse_document,ocr.recognize_seals,knowledge.slice,knowledge.embed,inspection.ai_recheck,llm.compare,export.package
     environment:
       AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${AICHECK_POSTGRES_DB:-aicheck}
+      AICHECK_SQLITE_FALLBACK: ${AICHECK_SQLITE_FALLBACK:-false}
       AICHECK_REDIS_URL: ${AICHECK_REDIS_URL:-redis://redis:6379/0}
       AICHECK_TASK_DISPATCH: ${AICHECK_TASK_DISPATCH:-celery}
       AICHECK_REVIEW_ORCHESTRATION: ${AICHECK_REVIEW_ORCHESTRATION:-temporal}
@@ -97,6 +99,7 @@ services:
     command: python -m apps.review_worker.main
     environment:
       AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${AICHECK_POSTGRES_DB:-aicheck}
+      AICHECK_SQLITE_FALLBACK: ${AICHECK_SQLITE_FALLBACK:-false}
       AICHECK_REVIEW_ORCHESTRATION: temporal
       TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-temporal-service:7233}
       TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
@@ -279,19 +282,12 @@ services:
         condition: service_healthy
 
   embedding-service:
-    image: michaelf34/infinity:latest-cpu
-    command:
-      [
-        "v2",
-        "--model-id",
-        "${AICHECK_EMBEDDING_MODEL_ID:-Qwen/Qwen3-Embedding-0.6B}",
-        "--served-model-name",
-        "${AICHECK_EMBEDDING_SERVED_MODEL_NAME:-embedding-default}",
-        "--engine",
-        "${AICHECK_EMBEDDING_ENGINE:-torch}",
-        "--port",
-        "7997",
-      ]
+    build:
+      context: .
+      dockerfile: Dockerfile.embedding
+      args:
+        AICHECK_PIP_INDEX_URL: ${AICHECK_PIP_INDEX_URL:-}
+    command: uvicorn apps.embedding_service.main:app --host 0.0.0.0 --port 7997
     environment:
       DO_NOT_TRACK: "1"
       HF_HOME: /app/.cache
@@ -301,6 +297,9 @@ services:
       AICHECK_EMBEDDING_MODEL_ID: ${AICHECK_EMBEDDING_MODEL_ID:-Qwen/Qwen3-Embedding-0.6B}
       AICHECK_EMBEDDING_SERVED_MODEL_NAME: ${AICHECK_EMBEDDING_SERVED_MODEL_NAME:-embedding-default}
       AICHECK_EMBEDDING_ENGINE: ${AICHECK_EMBEDDING_ENGINE:-torch}
+      AICHECK_EMBEDDING_DEVICE: ${AICHECK_EMBEDDING_DEVICE:-cpu}
+      AICHECK_EMBEDDING_NORMALIZE: ${AICHECK_EMBEDDING_NORMALIZE:-true}
+      AICHECK_EMBEDDING_PRELOAD: ${AICHECK_EMBEDDING_PRELOAD:-false}
     ports:
       - "127.0.0.1:7997:7997"
     volumes:

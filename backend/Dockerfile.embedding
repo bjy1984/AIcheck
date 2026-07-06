@@ -1,0 +1,23 @@
+FROM python:3.11-slim
+
+ARG AICHECK_PIP_INDEX_URL=
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+COPY requirements-embedding.txt .
+RUN if [ -n "$AICHECK_PIP_INDEX_URL" ]; then \
+        pip config set global.index-url "$AICHECK_PIP_INDEX_URL"; \
+    fi \
+    && pip install -r requirements-embedding.txt \
+    && groupadd --system aicheck \
+    && useradd --system --gid aicheck --home-dir /app aicheck
+
+COPY apps/embedding_service ./apps/embedding_service
+RUN chown -R aicheck:aicheck /app
+
+USER aicheck
+
+EXPOSE 7997

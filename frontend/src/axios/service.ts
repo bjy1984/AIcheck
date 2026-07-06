@@ -34,7 +34,12 @@ axiosInstance.interceptors.response.use(
   },
   (error: AxiosError) => {
     console.log('err： ' + error) // for debug
-    ElMessage.error(error.message)
+    const silentHttpError =
+      error.config?.headers?.['X-Silent-Http-Error'] === 'true' ||
+      error.config?.headers?.['x-silent-http-error'] === 'true'
+    if (!silentHttpError) {
+      ElMessage.error(error.message)
+    }
     return Promise.reject(error)
   }
 )

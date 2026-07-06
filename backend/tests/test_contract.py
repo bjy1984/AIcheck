@@ -2951,6 +2951,141 @@ def test_ocr_parse_document_preserves_local_diagnostics_on_failure(monkeypatch, 
     assert "PREPROCESS_VARIANT_GENERATION_UNAVAILABLE" in diagnostic_codes
 
 
+def test_ocr_parse_document_reads_text_documents_directly(monkeypatch, tmp_path) -> None:
+    from apps.ocr_service.service import OcrService
+
+    source = tmp_path / "standard-update.md"
+    source.write_text("# 标准更新\n\n直接进入知识库切片。", encoding="utf-8")
+    monkeypatch.setenv("AICHECK_OCR_ALLOWED_LOCAL_DIRS", str(tmp_path))
+
+    service = OcrService()
+    service.pipeline = None
+    service.engines = []
+    result = service.parse_document(
+        str(source),
+        file_name="standard-update.md",
+        options={"disableResultCache": True},
+    )
+
+    assert result["status"] == "success"
+    assert result["fragments"][0]["text"].startswith("# 标准更新")
+    assert result["pages"][0]["sourceType"] == "md"
+    assert result["metadata"]["textDocument"] is True
+    assert any(item.get("code") == "TEXT_DOCUMENT_DIRECT_PARSE" for item in result["diagnostics"] if isinstance(item, dict))
+
+
+def test_ocr_parse_document_reads_docx_documents_directly(monkeypatch, tmp_path) -> None:
+    from apps.ocr_service.service import OcrService
+
+    source = tmp_path / "standard.docx"
+    with zipfile.ZipFile(source, "w") as archive:
+        archive.writestr(
+            "word/document.xml",
+            """
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p><w:r><w:t>标准规范 Word 文本</w:t></w:r></w:p>
+              </w:body>
+            </w:document>
+            """,
+        )
+    monkeypatch.setenv("AICHECK_OCR_ALLOWED_LOCAL_DIRS", str(tmp_path))
+
+    service = OcrService()
+    service.pipeline = None
+    service.engines = []
+    result = service.parse_document(
+        str(source),
+        file_name="standard.docx",
+        options={"disableResultCache": True},
+    )
+
+    assert result["status"] == "success"
+    assert result["fragments"][0]["text"] == "标准规范 Word 文本"
+    assert result["pages"][0]["sourceType"] == "docx"
+    assert result["metadata"]["officeTextDocument"] is True
+    assert any(item.get("code") == "DOCX_TEXT_DIRECT_PARSE" for item in result["diagnostics"] if isinstance(item, dict))
+
+
+def test_ocr_parse_document_uses_pdf_text_layer_fast_path(monkeypatch, tmp_path) -> None:
+    from apps.ocr_service.service import OcrService
+
+    source = tmp_path / "standard.pdf"
+    source.write_bytes(b"%PDF-1.4\n")
+    monkeypatch.setenv("AICHECK_OCR_ALLOWED_LOCAL_DIRS", str(tmp_path))
+
+    class FakePdfTextLayerEngine:
+        name = "pymupdf_text_layer"
+        version = "fitz"
+
+        def available(self):
+            return True
+
+        def status(self):
+            return {"engine": self.name, "version": self.version, "available": True}
+
+        def parse(self, source_path, *, file_name=None, profile=None, variant=None):
+            return {
+                "ok": True,
+                "text": "Pressure pipeline standard text layer",
+                "pages": [{"pageNo": 1, "width": 100, "height": 100}],
+                "fragments": [{"pageNo": 1, "text": "Pressure pipeline standard text layer", "confidence": 1.0}],
+                "diagnostics": [],
+            }
+
+    service = OcrService()
+    service.pipeline = None
+    service.engines = [FakePdfTextLayerEngine()]
+    result = service.parse_document(str(source), file_name="standard.pdf", options={"disableResultCache": True})
+
+    assert result["status"] == "success"
+    assert any("Pressure" in item.get("text", "") for item in result["fragments"])
+    assert result["engineRuns"][0]["variantId"] == "pdf_text_layer_fast_path"
+    assert any(item.get("code") == "PDF_TEXT_LAYER_FAST_PATH" for item in result["diagnostics"] if isinstance(item, dict))
+
+
+def test_ocr_parse_document_text_layer_only_does_not_run_visual_ocr(monkeypatch, tmp_path) -> None:
+    from apps.ocr_service.service import OcrService
+
+    source = tmp_path / "scanned-standard.pdf"
+    source.write_bytes(b"%PDF-1.4\n")
+    monkeypatch.setenv("AICHECK_OCR_ALLOWED_LOCAL_DIRS", str(tmp_path))
+
+    class EmptyPdfTextLayerEngine:
+        name = "pymupdf_text_layer"
+        version = "fitz"
+
+        def available(self):
+            return True
+
+        def status(self):
+            return {"engine": self.name, "version": self.version, "available": True}
+
+        def parse(self, source_path, *, file_name=None, profile=None, variant=None):
+            return {"ok": True, "text": "", "fragments": [], "diagnostics": []}
+
+    class VisualEngineShouldNotRun:
+        name = "paddle_ocr_subprocess"
+
+        def available(self):
+            return True
+
+        def parse(self, *args, **kwargs):
+            raise AssertionError("visual OCR should not run for textLayerOnly standard PDFs")
+
+    service = OcrService()
+    service.pipeline = None
+    service.engines = [EmptyPdfTextLayerEngine(), VisualEngineShouldNotRun()]
+    result = service.parse_document(
+        str(source),
+        file_name="scanned-standard.pdf",
+        options={"disableResultCache": True, "textLayerOnly": True},
+    )
+
+    assert result["status"] == "failed"
+    assert any(item.get("code") == "PDF_TEXT_LAYER_UNAVAILABLE" for item in result["diagnostics"] if isinstance(item, dict))
+
+
 def test_ocr_fusion_quality_gate_marks_missing_required_data_for_review() -> None:
     from apps.ocr_service.fusion import fuse_parse_result
     from apps.ocr_service.profiles import profile_for
@@ -4998,6 +5133,21 @@ def test_persistent_user_login_when_demo_users_disabled(monkeypatch) -> None:
     assert login["user"]["username"] == "persistent"
     assert login["user"]["role"] == "inspection"
     assert_error(client.post("/api/auth/login", json={"username": "inspection", "password": "inspection"}), "AUTH_REQUIRED")
+
+
+def test_auth_login_logout_are_public_and_do_not_flush_state(monkeypatch) -> None:
+    from apps.api import main as api_main
+
+    flush_calls: list[str] = []
+    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
+    monkeypatch.setattr(api_main, "flush_state", lambda: flush_calls.append("flush"))
+
+    login = assert_ok(client.post("/api/auth/login", json={"username": "ndt", "password": "ndt"}))
+
+    assert_ok(client.post("/api/auth/logout", headers={"Authorization": f"Bearer {login['token']}"}))
+    assert_ok(client.post("/api/auth/logout"))
+    assert_ok(client.post("/auth/logout"))
+    assert flush_calls == []
 
 
 def test_frontend_route_groups_return_success() -> None:
@@ -7057,6 +7207,186 @@ def test_standard_file_crud_replace_and_delete_refreshes_source_counts() -> None
     assert_error(client.get(f"/knowledge/files/{file_id}"), "NOT_FOUND")
 
 
+def test_standard_source_reindex_can_requeue_ocr_pipeline() -> None:
+    imported = assert_ok(
+        client.post(
+            "/knowledge/files/import",
+            data={
+                "sourceId": "KS-STANDARD-REINDEX-TEST",
+                "sourceName": "标准规范库重建测试",
+                "sourceType": "standard",
+                "sourceVersion": "rules-standards-reindex-test",
+                "sourceStatus": "启用",
+                "relativePaths": "rules/standards/reindex.md",
+                "fileNames": "重建标准.md",
+            },
+            files=[("files", ("reindex.md", b"# standard reindex", "text/markdown"))],
+        )
+    )
+    file_id = imported["files"][0]["id"]
+    repo.apply_slice_result(file_id, [{"pageNo": 1, "text": "旧标准切片"}])
+    repo.apply_embed_result(file_id, 1)
+
+    result = assert_ok(
+        client.post(
+            "/knowledge/reindex",
+            json={
+                "scope": "source",
+                "sourceId": "KS-STANDARD-REINDEX-TEST",
+                "sourceType": "standard",
+                "includeOcr": True,
+                "onlyIncomplete": True,
+            },
+        )
+    )
+
+    file = repo.find_one("knowledge_files", file_id)
+    ocr_task = next(
+        item
+        for item in repo.state["knowledge_tasks"]
+        if item.get("taskType") == "ocr" and item.get("targetId") == file_id
+    )
+
+    assert result["summary"]["matched"] == 1
+    assert result["summary"]["includeOcr"] is True
+    assert result["summary"]["dispatched"] == 1
+    assert result["dispatches"][0]["taskType"] == "ocr"
+    assert result["dispatches"][0]["knowledgeTaskId"] == ocr_task["id"]
+    assert file["ocrStatus"] == "识别中"
+    assert file["sliceStatus"] == "未切片"
+    assert file["vectorStatus"] == "待向量化"
+    assert file["chunkCount"] == 0
+    assert file["vectorCount"] == 0
+    assert [item for item in repo.state["knowledge_chunks"] if item.get("fileId") == file_id] == []
+    assert [item for item in repo.state["knowledge_vectors"] if item.get("fileId") == file_id] == []
+    assert ocr_task["status"] == "排队中"
+    assert ocr_task["lastDispatch"]["mode"] == "disabled"
+
+
+def test_standard_source_reindex_migrates_local_file_to_object_storage(monkeypatch, tmp_path) -> None:
+    import apps.api.routes as api_routes
+
+    workspace = tmp_path / "workspace"
+    monkeypatch.setattr(api_routes, "WORKSPACE_ROOT", workspace)
+    monkeypatch.setattr(api_routes, "KNOWLEDGE_UPLOAD_ROOT", workspace / "output" / "knowledge_uploads")
+
+    imported = assert_ok(
+        client.post(
+            "/knowledge/files/import",
+            data={
+                "sourceId": "KS-STANDARD-LOCAL-MIGRATION",
+                "sourceName": "标准规范本地迁移测试",
+                "sourceType": "standard",
+                "sourceVersion": "rules-standards-local-migration",
+                "sourceStatus": "启用",
+                "relativePaths": "rules/standards/local-migration.pdf",
+                "fileNames": "本地标准.pdf",
+            },
+            files=[("files", ("local-migration.pdf", b"%PDF-1.4\nlocal standard", "application/pdf"))],
+        )
+    )
+    file_id = imported["files"][0]["id"]
+    version = repo.find_one("versions", imported["files"][0]["documentVersionId"])
+    assert version["storageKey"].startswith("local://")
+
+    stored_objects: list[tuple[str, str, bytes, str]] = []
+
+    def fake_put_bytes(bucket: str, object_name: str, data: bytes, *, content_type: str):
+        stored_objects.append((bucket, object_name, data, content_type))
+        return f"minio://{bucket}/{object_name}"
+
+    dispatch_args: list[tuple[str, str, str, str | None]] = []
+
+    def fake_dispatch_parse_document(document_id: str, version_id: str, storage_key: str, file_name: str | None = None):
+        dispatch_args.append((document_id, version_id, storage_key, file_name))
+        return {"mode": "disabled", "taskId": None}
+
+    monkeypatch.setattr(api_routes.object_storage, "endpoint", "minio:9000")
+    monkeypatch.setattr(api_routes.object_storage, "put_bytes", fake_put_bytes)
+    monkeypatch.setattr(api_routes.task_dispatcher, "dispatch_parse_document", fake_dispatch_parse_document)
+
+    result = assert_ok(
+        client.post(
+            "/knowledge/reindex",
+            json={
+                "scope": "source",
+                "sourceId": "KS-STANDARD-LOCAL-MIGRATION",
+                "sourceType": "standard",
+                "includeOcr": True,
+                "onlyIncomplete": True,
+            },
+        )
+    )
+
+    migrated_version = repo.find_one("versions", version["id"])
+    assert result["summary"]["dispatched"] == 1
+    assert result["dispatches"][0]["storageMigration"]["storageBucket"] == "documents"
+    assert stored_objects == [
+        (
+            "documents",
+            f"knowledge/KS-STANDARD-LOCAL-MIGRATION/{file_id}/本地标准.pdf",
+            b"%PDF-1.4\nlocal standard",
+            "application/pdf",
+        )
+    ]
+    assert migrated_version["storageBucket"] == "documents"
+    assert migrated_version["storageKey"] == stored_objects[0][1]
+    assert dispatch_args[-1][2] == f"minio://documents/{stored_objects[0][1]}"
+
+
+def test_slice_knowledge_uses_latest_ocr_parse_fragments_for_index_text(monkeypatch) -> None:
+    from apps.worker import tasks
+
+    monkeypatch.setattr(tasks, "refresh_worker_state", lambda: None)
+
+    imported = assert_ok(
+        client.post(
+            "/knowledge/files/import",
+            data={
+                "sourceId": "KS-STANDARD-SLICE-FRAGMENTS",
+                "sourceName": "标准规范切片测试",
+                "sourceType": "standard",
+                "sourceVersion": "rules-standards-slice-fragments",
+                "sourceStatus": "启用",
+                "relativePaths": "rules/standards/slice.md",
+                "fileNames": "切片标准.md",
+            },
+            files=[("files", ("slice.md", b"# fallback", "text/markdown"))],
+        )
+    )
+    file = imported["files"][0]
+    file_id = file["id"]
+    long_text = "标准正文片段 " * 500
+    repo.state.setdefault("ocr_parse_results", []).insert(
+        0,
+        {
+            "id": "PARSE-SLICE-FRAGMENTS",
+            "parseResultId": "PARSE-SLICE-FRAGMENTS",
+            "documentId": file["documentId"],
+            "documentVersionId": file["documentVersionId"],
+            "status": "success",
+            "fragments": [{"pageNo": 1, "text": long_text}],
+            "createdAt": "2026-07-05 00:00:00",
+            "finishedAt": "2026-07-05 00:00:00",
+        },
+    )
+    repo.upsert_knowledge_task(
+        task_type="slice",
+        target_id=file_id,
+        target_name=file["fileName"],
+        document_id=file["documentId"],
+        version_id=file["documentVersionId"],
+    )
+
+    result = tasks.slice_knowledge.run(file_id)
+    chunks = [item for item in repo.state["knowledge_chunks"] if item.get("fileId") == file_id]
+
+    assert result["status"] == "success"
+    assert len(chunks) >= 2
+    assert chunks[0]["text"].startswith("标准正文片段")
+    assert all("OCR文本:" not in item["text"] for item in chunks)
+
+
 def test_import_project_file_keeps_project_scope_and_filtering() -> None:
     project_id = "P-2026-HDCP-001"
 
@@ -8862,6 +9192,35 @@ def test_postgres_state_round_trip_persists_planned_collections() -> None:
     assert any(key[0] == "document_versions" for key in database.state_rows)
     assert any(key[0] == "node_bindings" for key in database.state_rows)
     assert "admin_config" in database.singleton_rows
+
+
+def test_load_state_uses_postgres_when_database_url_is_configured(monkeypatch) -> None:
+    from libs.db.repository import load_state
+
+    database = FakePostgresConnection()
+    repo.sync_postgres = database
+    repo.postgres_dsn = "postgresql://fake"
+    repo.postgres_enabled = True
+    repo.state["projects"][0]["name"] = "Loaded from env postgres"
+    repo.flush_to_sync_postgres()
+
+    repo.reset()
+    repo.sync_postgres = None
+    repo.postgres_dsn = None
+    repo.postgres_enabled = False
+    monkeypatch.setenv("AICHECK_DATABASE_URL", "postgresql://fake")
+
+    def fake_configure_sync_postgres(dsn=None):
+        repo.sync_postgres = database
+        repo.postgres_dsn = dsn or "postgresql://fake"
+        repo.postgres_enabled = True
+
+    monkeypatch.setattr(repo, "configure_sync_postgres", fake_configure_sync_postgres)
+
+    load_state()
+
+    assert repo.require_project("P-2026-HDCP-001")["name"] == "Loaded from env postgres"
+    assert repo.postgres_enabled is True
 
 
 def test_postgres_flush_uses_transaction() -> None:

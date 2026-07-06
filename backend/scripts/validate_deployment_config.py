@@ -316,6 +316,7 @@ class DeploymentConfigValidator:
         ocr_command = command_text(self.service("ocr-service").get("command"))
         litellm_command = command_text(self.service("litellm-service").get("command"))
         embedding_command = command_text(self.service("embedding-service").get("command"))
+        embedding_env = self.service("embedding-service").get("environment") or {}
         if "uvicorn apps.api.main:app" not in api_command or "--port 8000" not in api_command:
             failures.append("api-service command must run FastAPI on port 8000")
         if "celery" not in worker_command or "apps.worker.celery_app.celery_app" not in worker_command:
@@ -330,11 +331,13 @@ class DeploymentConfigValidator:
             failures.append("ocr-service command must run OCR API on port 8010")
         if "litellm.yaml" not in litellm_command or "--port 4000" not in litellm_command:
             failures.append("litellm-service command must load config/litellm.yaml on port 4000")
-        if "v2" not in embedding_command or "7997" not in embedding_command:
-            failures.append("embedding-service command must run Infinity v2 on port 7997")
-        if "AICHECK_EMBEDDING_MODEL_ID" not in embedding_command:
-            failures.append("embedding-service command must read AICHECK_EMBEDDING_MODEL_ID for hot-swappable models")
-        if "--served-model-name" not in embedding_command or EMBEDDING_DEFAULT_ALIAS not in embedding_command:
+        if "uvicorn apps.embedding_service.main:app" not in embedding_command or "7997" not in embedding_command:
+            failures.append("embedding-service command must run local embedding API on port 7997")
+        if "AICHECK_EMBEDDING_MODEL_ID" not in embedding_env:
+            failures.append("embedding-service must read AICHECK_EMBEDDING_MODEL_ID from environment")
+        if str(embedding_env.get("AICHECK_EMBEDDING_SERVED_MODEL_NAME") or "") and EMBEDDING_DEFAULT_ALIAS not in str(
+            embedding_env.get("AICHECK_EMBEDDING_SERVED_MODEL_NAME")
+        ):
             failures.append("embedding-service must expose the stable embedding-default served model name")
         if "--api-key" in embedding_command:
             failures.append("embedding-service must read INFINITY_API_KEY from environment instead of exposing it in the process command")

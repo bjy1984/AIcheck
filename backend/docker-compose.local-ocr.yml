@@ -74,9 +74,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO -Q ocr.parse_document,ocr.recognize_seals,knowledge.slice,knowledge.embed
+    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=${AICHECK_WORKER_CONCURRENCY:-1} --prefetch-multiplier=1 -Q ocr.parse_document,ocr.recognize_seals,knowledge.slice,knowledge.embed
     environment:
       AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@${AICHECK_LOCAL_POSTGRES_HOST:-host.docker.internal}:${AICHECK_LOCAL_POSTGRES_PORT:-15432}/${AICHECK_POSTGRES_DB:-aicheck}
+      AICHECK_SQLITE_FALLBACK: ${AICHECK_SQLITE_FALLBACK:-false}
       AICHECK_REDIS_URL: redis://${AICHECK_LOCAL_REDIS_HOST:-host.docker.internal}:${AICHECK_LOCAL_REDIS_PORT:-6379}/0
       AICHECK_TASK_DISPATCH: celery
       AICHECK_REVIEW_ORCHESTRATION: ${AICHECK_REVIEW_ORCHESTRATION:-legacy}

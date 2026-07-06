@@ -2263,12 +2263,20 @@ const handleReindexSource = async (row: KnowledgeOverviewPayload['libraries'][nu
   actionLoading.value = `source-${row.key}`
   clearOperationIssue('reindex')
   try {
-    const res = await batchReindexKnowledgeApi({ scope: 'source', sourceId: row.key })
+    const includeOcr = row.sourceType === 'standard'
+    const res = await batchReindexKnowledgeApi({
+      scope: 'source',
+      sourceId: row.key,
+      sourceType: row.sourceType,
+      includeOcr,
+      onlyIncomplete: includeOcr
+    })
     if (!res) {
       setOperationIssue('reindex', buildOperationFailureMessage('知识源重建索引'))
       return
     }
-    ElMessage.success(`${row.name} 已加入索引任务队列`)
+    const dispatched = Number(res.data?.summary?.dispatched || res.data?.taskIds?.length || 0)
+    ElMessage.success(`${row.name} 已加入${includeOcr ? ' OCR 和索引' : '索引'}任务队列（${dispatched} 个任务）`)
     await refreshKnowledgeState()
   } catch (error) {
     setOperationIssue('reindex', buildOperationFailureMessage('知识源重建索引'), error)

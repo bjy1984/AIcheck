@@ -78,6 +78,62 @@ def worker_ocr_http_enabled() -> bool:
     return os.getenv("AICHECK_WORKER_OCR_ENABLE_LOCAL_FALLBACK", "false").lower() in {"1", "true", "yes", "on"}
 
 
+def refresh_worker_state() -> None:
+    if (
+        repo.sync_postgres is not None
+        or repo.postgres_dsn
+        or os.getenv("AICHECK_DATABASE_URL")
+        or os.getenv("DATABASE_URL")
+        or repo.sqlite_enabled
+    ):
+        load_state()
+
+
+def split_text_fragments(text: str, *, page_no: int = 1, max_chars: int = 1600) -> list[dict[str, Any]]:
+    normalized = " ".join(str(text or "").split())
+    if not normalized:
+        return []
+    chunks = []
+    for offset in range(0, len(normalized), max_chars):
+        chunk_text = normalized[offset : offset + max_chars].strip()
+        if chunk_text:
+            chunks.append({"pageNo": page_no, "text": chunk_text})
+    return chunks
+
+
+def latest_successful_ocr_parse_result(version_id: str | None) -> dict[str, Any] | None:
+    if not version_id:
+        return None
+    results = [
+        item
+        for item in repo.state.get("ocr_parse_results", [])
+        if item.get("documentVersionId") == version_id and item.get("status") == "success"
+    ]
+    results.sort(key=lambda item: str(item.get("finishedAt") or item.get("createdAt") or ""), reverse=True)
+    return results[0] if results else None
+
+
+def knowledge_slice_fragments_from_ocr(file: dict[str, Any]) -> list[dict[str, Any]]:
+    result = latest_successful_ocr_parse_result(file.get("documentVersionId"))
+    raw_fragments = [item for item in (result or {}).get("fragments") or [] if isinstance(item, dict)]
+    if not raw_fragments:
+        return []
+    if len(raw_fragments) == 1:
+        fragment = raw_fragments[0]
+        return split_text_fragments(str(fragment.get("text") or ""), page_no=int(fragment.get("pageNo") or 1))
+    pages: dict[int, list[str]] = {}
+    for fragment in raw_fragments:
+        text = str(fragment.get("text") or "").strip()
+        if not text:
+            continue
+        page_no = int(fragment.get("pageNo") or 1)
+        pages.setdefault(page_no, []).append(text)
+    fragments: list[dict[str, Any]] = []
+    for page_no in sorted(pages):
+        fragments.extend(split_text_fragments(" ".join(pages[page_no]), page_no=page_no))
+    return fragments
+
+
 def parse_with_ocr_service(
     storage_key: str,
     file_name: str | None = None,
@@ -86,6 +142,7 @@ def parse_with_ocr_service(
     version_id: str | None = None,
     profile_id: str | None = None,
     document_type: str | None = None,
+    options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if worker_ocr_http_enabled():
         client = OcrClient()
@@ -102,15 +159,16 @@ def parse_with_ocr_service(
                     "profileId": profile_id,
                     "storageKey": storage_key,
                     "fileName": file_name,
-                    "options": {"enableTables": True, "enableSeals": True, "enableFallback": True},
+                    "options": {"enableTables": True, "enableSeals": True, "enableFallback": True, **(options or {})},
                 }
             )
         return client.parse_sync(storage_key, file_name=file_name)
-    return ocr_service.parse_document(storage_key, file_name=file_name)
+    return ocr_service.parse_document(storage_key, file_name=file_name, options=options)
 
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 def parse_document(self, document_id: str, version_id: str, storage_key: str, file_name: str | None = None) -> dict[str, Any]:
+    refresh_worker_state()
     task = repo.ocr_task_for(document_id, version_id, file_name)
     version = repo.find_one("versions", version_id)
     if task is None and version is None:
@@ -127,6 +185,10 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
     document = repo.find_one("documents", document_id)
     profile_id = (version or {}).get("ocrProfileId") or (document or {}).get("ocrProfileId")
     document_type = (version or {}).get("documentType") or (document or {}).get("documentType")
+    knowledge_file = repo.knowledge_file_for_version(version_id)
+    ocr_options: dict[str, Any] = {}
+    if (knowledge_file or {}).get("sourceType") == "standard":
+        ocr_options["textLayerOnly"] = True
     ocr_job_record = repo.create_ocr_job_record(
         document_id=document_id,
         version_id=version_id,
@@ -143,6 +205,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
             version_id=version_id,
             profile_id=profile_id,
             document_type=document_type,
+            options=ocr_options,
         )
     except Exception:
         result = {
@@ -159,7 +222,6 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
     flush_state()
     next_dispatch = None
     if applied.get("status") == "success":
-        knowledge_file = repo.knowledge_file_for_version(version_id)
         if knowledge_file:
             next_dispatch = task_dispatcher.dispatch_slice(knowledge_file["id"])
     return {
@@ -173,6 +235,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 def recognize_seals(self, document_id: str, version_id: str) -> dict[str, Any]:
+    refresh_worker_state()
     load_state()
     version = repo.find_one("versions", version_id)
     storage_key = version.get("storageKey") if version else version_id
@@ -188,6 +251,7 @@ def recognize_seals(self, document_id: str, version_id: str) -> dict[str, Any]:
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 def slice_knowledge(self, file_id: str) -> dict[str, Any]:
+    refresh_worker_state()
     task = next((item for item in repo.state["knowledge_tasks"] if item.get("taskType") == "slice" and item.get("targetId") == file_id), None)
     file = repo.find_one("knowledge_files", file_id)
     if task is None and file is None:
@@ -206,16 +270,17 @@ def slice_knowledge(self, file_id: str) -> dict[str, Any]:
         repo.mark_task_failed(task, "切片任务失败：找不到关联知识文件。")
         flush_state()
         return {"fileId": file_id, "status": "missing", "chunkCount": 0}
-    fragments = []
-    fields = [
-        item
-        for item in repo.state["extracted_fields"]
-        if item.get("documentVersionId") == file.get("documentVersionId")
-    ]
-    fragments = [
-        {"pageNo": item.get("pageNo") or 1, "text": f"{item.get('fieldName')}: {item.get('fieldValue')}"}
-        for item in fields
-    ]
+    fragments = knowledge_slice_fragments_from_ocr(file)
+    if not fragments:
+        fields = [
+            item
+            for item in repo.state["extracted_fields"]
+            if item.get("documentVersionId") == file.get("documentVersionId")
+        ]
+        fragments = [
+            {"pageNo": item.get("pageNo") or 1, "text": f"{item.get('fieldName')}: {item.get('fieldValue')}"}
+            for item in fields
+        ]
     result = repo.apply_slice_result(file_id, fragments or None)
     flush_state()
     if result.get("status") == "success":
@@ -225,6 +290,7 @@ def slice_knowledge(self, file_id: str) -> dict[str, Any]:
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 def embed_knowledge(self, file_id: str) -> dict[str, Any]:
+    refresh_worker_state()
     chunks = [item for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") == file_id]
     embedding_model = "embedding-default"
     task = next((item for item in repo.state["knowledge_tasks"] if item.get("taskType") == "vector" and item.get("targetId") == file_id), None)
@@ -276,6 +342,7 @@ def embed_knowledge(self, file_id: str) -> dict[str, Any]:
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 2})
 def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, Any]:
+    refresh_worker_state()
     run = repo.find_one("ai_runs", run_id)
     if not run:
         load_state()
@@ -455,6 +522,7 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 2})
 def llm_compare(self, run_id: str) -> dict[str, Any]:
+    refresh_worker_state()
     run = repo.find_one("llm_compare_runs", run_id, id_field="runId")
     if not run:
         load_state()
@@ -540,6 +608,7 @@ def llm_compare(self, run_id: str) -> dict[str, Any]:
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 def export_package(self, export_id: str) -> dict[str, Any]:
+    refresh_worker_state()
     task = repo.find_one("export_tasks", export_id)
     if not task:
         load_state()

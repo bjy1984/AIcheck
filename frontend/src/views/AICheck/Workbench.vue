@@ -254,6 +254,7 @@ const correctionReason = ref('证据链或资料内容与规则要求不一致�
 const latestSubmissionIds = ref<Record<number, string>>({})
 const pipelinePollTimer = ref<number>()
 const pipelinePolling = ref(false)
+const POST_UPLOAD_PIPELINE_POLL_INTERVAL_MS = 10000
 
 const role = computed<RoleCode>(() => {
   const path = route.path
@@ -2519,7 +2520,7 @@ const startPostUploadPolling = () => {
   if (pipelinePollTimer.value) return
   pipelinePollTimer.value = window.setInterval(() => {
     void refreshPostUploadPipelineStatus()
-  }, 4000)
+  }, POST_UPLOAD_PIPELINE_POLL_INTERVAL_MS)
 }
 
 const stopPostUploadPolling = () => {

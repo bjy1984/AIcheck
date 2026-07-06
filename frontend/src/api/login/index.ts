@@ -29,9 +29,13 @@ export const loginApi = async (data: UserLoginType): Promise<IResponse<LoginResu
 }
 
 export const loginOutApi = (): Promise<IResponse> => {
+  const headers = {
+    'X-Silent-Business-Error': 'true',
+    'X-Silent-Http-Error': 'true'
+  }
   return import.meta.env.VITE_USE_MOCK === 'true'
-    ? request.get({ url: '/mock/user/loginOut' })
-    : request.post({ url: '/api/auth/logout' })
+    ? request.get({ url: '/mock/user/loginOut', headers })
+    : request.post({ url: '/api/auth/logout', headers })
 }
 
 export const getUserListApi = ({ params }: AxiosConfig) => {

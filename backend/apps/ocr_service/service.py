@@ -6,9 +6,11 @@ import os
 import re
 import sys
 import tempfile
+import zipfile
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
+from xml.etree import ElementTree
 from uuid import uuid4
 
 from apps.ocr_service.engines import local_engines
@@ -113,6 +115,9 @@ TABLE_REMEDIATION_REASONS = {
     "TABLE_EVIDENCE_MISSING",
     "TABLE_ENGINE_CONFLICT",
 }
+
+TEXT_DOCUMENT_SUFFIXES = {".md", ".markdown", ".txt", ".csv", ".json", ".yaml", ".yml"}
+OFFICE_TEXT_DOCUMENT_SUFFIXES = {".docx"}
 TEXT_REMEDIATION_REASONS = {
     "REQUIRED_FIELD_MISSING",
     "FIELD_LOW_CONFIDENCE",
@@ -300,6 +305,7 @@ class OcrService:
     ) -> dict[str, Any]:
         # Keep these explicit calls in this method: resolve_source_path, AICHECK_OCR_ALLOW_PLACEHOLDER,
         # failed_result, and normalize_ocr_result are part of the legacy deployment contract.
+        options = options or {}
         source_path = resolve_source_path(storage_key, file_name)
         os.getenv("AICHECK_OCR_ALLOW_PLACEHOLDER", "false")
         if source_path is None:
@@ -308,7 +314,35 @@ class OcrService:
                 file_name,
                 "OCR source file is unavailable. Check MinIO object key, credentials, or mounted file path.",
             )
-        profile = apply_parse_options_to_profile(profile_for(profile_id, document_type), options or {})
+        suffix = source_path.suffix.lower()
+        if suffix in TEXT_DOCUMENT_SUFFIXES:
+            return parse_text_document(source_path, storage_key, file_name)
+        if suffix in OFFICE_TEXT_DOCUMENT_SUFFIXES:
+            return parse_docx_document(source_path, storage_key, file_name)
+        profile = apply_parse_options_to_profile(profile_for(profile_id, document_type), options)
+        if suffix == ".pdf" and parse_bool(
+            os.getenv("AICHECK_OCR_PDF_TEXT_LAYER_FAST_PATH", "true")
+        ):
+            fast_result = self.parse_pdf_text_layer_fast_path(
+                source_path,
+                storage_key=storage_key,
+                file_name=file_name,
+                profile=profile,
+                document_version_id=document_version_id,
+                business_pack_id=business_pack_id,
+            )
+            if fast_result is not None:
+                return fast_result
+            if parse_bool(options.get("textLayerOnly"), False):
+                return failed_result(
+                    storage_key,
+                    file_name,
+                    diagnostic(
+                        "PDF_TEXT_LAYER_UNAVAILABLE",
+                        "PDF 未检测到可抽取文本层，标准规范库已跳过高内存视觉 OCR。",
+                        level="error",
+                    ),
+                )
         candidate_results: list[dict[str, Any]] = []
         if self.pipeline is not None:
             try:
@@ -335,7 +369,7 @@ class OcrService:
             profile=profile,
             document_version_id=document_version_id,
             business_pack_id=business_pack_id,
-            options=options or {},
+            options=options,
             candidate_results=candidate_results,
         )
         if normalized.get("status") == "success":
@@ -359,6 +393,61 @@ class OcrService:
             diagnostics = [*diagnostics, pipeline_error]
         normalized["diagnostics"] = normalize_diagnostics(diagnostics)
         return normalized
+
+    def parse_pdf_text_layer_fast_path(
+        self,
+        source_path: Path,
+        *,
+        storage_key: str,
+        file_name: str | None,
+        profile: dict[str, Any],
+        document_version_id: str | None,
+        business_pack_id: str | None,
+    ) -> dict[str, Any] | None:
+        engine = next((item for item in self.engines if item.name == "pymupdf_text_layer" and item.available()), None)
+        if engine is None:
+            return None
+        started = monotonic_ms()
+        try:
+            raw = engine.parse(
+                source_path,
+                file_name=file_name,
+                profile=profile,
+                variant={"variantId": "pdf_text_layer_fast_path", "documentPath": str(source_path)},
+            )
+        except Exception:
+            return None
+        normalized = normalize_ocr_result(raw, storage_key, file_name)
+        if not has_parse_content(normalized):
+            return None
+        attach_candidate_engine_metadata(normalized, engine.name)
+        normalized["engineRuns"] = [
+            {
+                **engine.status(),
+                "status": "success",
+                "durationMs": max(monotonic_ms() - started, 0),
+                "variantId": "pdf_text_layer_fast_path",
+                "workerMode": "inprocess",
+                "qualityScore": 0.9,
+            }
+        ]
+        normalized.setdefault("diagnostics", []).append(
+            diagnostic(
+                "PDF_TEXT_LAYER_FAST_PATH",
+                "PDF 文本层已直接抽取，跳过视觉 OCR。",
+                level="info",
+            )
+        )
+        enriched = enrich_parse_result(
+            normalized,
+            profile=profile,
+            document_version_id=document_version_id,
+            business_pack_id=business_pack_id,
+            model_manifest=self.model_manifest(),
+        )
+        apply_contract_metadata(enriched)
+        attach_observability_metrics(enriched, before_remediation=deepcopy(enriched))
+        return enriched
 
     def parse_with_local_engines(
         self,
@@ -748,6 +837,80 @@ def failed_result(storage_key: str, file_name: str | None, message: Any) -> dict
         "modelManifest": {},
         "createdAt": server_time(),
     }
+
+
+def parse_text_document(source_path: Path, storage_key: str, file_name: str | None) -> dict[str, Any]:
+    try:
+        text = source_path.read_text(encoding="utf-8", errors="ignore").strip()
+    except OSError as exc:
+        return failed_result(storage_key, file_name, f"Text document read failed: {exc.__class__.__name__}")
+    if not text:
+        return failed_result(storage_key, file_name, "Text document is empty.")
+    return normalize_ocr_result(
+        {
+            "text": text,
+            "pages": [
+                {
+                    "pageNo": 1,
+                    "sourceType": source_path.suffix.lower().lstrip(".") or "text",
+                    "coordinateSystem": "text",
+                }
+            ],
+            "diagnostics": [
+                diagnostic(
+                    "TEXT_DOCUMENT_DIRECT_PARSE",
+                    "文本类资料已直接抽取，无需视觉 OCR。",
+                    level="info",
+                )
+            ],
+            "metadata": {"textDocument": True},
+        },
+        storage_key,
+        file_name,
+    )
+
+
+def parse_docx_document(source_path: Path, storage_key: str, file_name: str | None) -> dict[str, Any]:
+    try:
+        with zipfile.ZipFile(source_path) as archive:
+            document_xml = archive.read("word/document.xml")
+    except (OSError, KeyError, zipfile.BadZipFile) as exc:
+        return failed_result(storage_key, file_name, f"DOCX text read failed: {exc.__class__.__name__}")
+    try:
+        root = ElementTree.fromstring(document_xml)
+    except ElementTree.ParseError as exc:
+        return failed_result(storage_key, file_name, f"DOCX XML parse failed: {exc.__class__.__name__}")
+    namespace = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    paragraphs: list[str] = []
+    for paragraph in root.findall(".//w:p", namespace):
+        text = "".join(node.text or "" for node in paragraph.findall(".//w:t", namespace)).strip()
+        if text:
+            paragraphs.append(text)
+    content = "\n".join(paragraphs).strip()
+    if not content:
+        return failed_result(storage_key, file_name, "DOCX document has no extractable text.")
+    return normalize_ocr_result(
+        {
+            "text": content,
+            "pages": [
+                {
+                    "pageNo": 1,
+                    "sourceType": "docx",
+                    "coordinateSystem": "text",
+                }
+            ],
+            "diagnostics": [
+                diagnostic(
+                    "DOCX_TEXT_DIRECT_PARSE",
+                    "Word 文档已直接抽取文本，无需视觉 OCR。",
+                    level="info",
+                )
+            ],
+            "metadata": {"officeTextDocument": True},
+        },
+        storage_key,
+        file_name,
+    )
 
 
 ocr_service = OcrService()

@@ -72,7 +72,7 @@ async def attach_operation_id(request: Request, call_next):
         return cached_idempotency
     response = await call_next(request)
     response = await finalize_mutation_response(request, response)
-    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+    if should_flush_state(request):
         flush_state()
     return response
 
@@ -85,6 +85,8 @@ def auth_required(request: Request) -> bool:
         "/api/healthz",
         "/auth/login",
         "/api/auth/login",
+        "/auth/logout",
+        "/api/auth/logout",
         "/mock/",
         "/api/mock/",
         "/docs",
@@ -101,6 +103,12 @@ def idempotency_scope(request: Request) -> str | None:
     if normalized_path.startswith(("/auth/", "/mock/")):
         return None
     return f"{request.method}:{request.url.path}:{key}"
+
+
+def should_flush_state(request: Request) -> bool:
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return False
+    return audit_scope(request) is not None
 
 
 async def request_fingerprint(request: Request) -> str:
