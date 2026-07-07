@@ -9,6 +9,7 @@ from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.responses import FileResponse
 
 from apps.ocr_service.service import AGENTDESIGN_BACKEND, ocr_service
+from apps.ocr_service.welder_certificate_tool import extract_welder_certificate_from_payload
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 
@@ -132,6 +133,29 @@ async def page_preview(request: Request, payload: dict):
             "X-AICheck-Page-Height": str(page.get("height") or ""),
         },
     )
+
+
+@app.post("/internal/tools/ocr/welder-certificate/extract")
+async def extract_welder_certificate(request: Request, payload: dict):
+    storage_key = str(payload.get("storageKey") or "").strip()
+    if storage_key:
+        parse_result = ocr_service.parse_document(
+            storage_key,
+            file_name=payload.get("fileName"),
+            profile_id=payload.get("profileId") or "welder_certificate_v1",
+            document_type=payload.get("documentType") or "welder_certificate",
+            document_version_id=payload.get("documentVersionId"),
+            business_pack_id=payload.get("businessPackId"),
+            options=payload.get("options") if isinstance(payload.get("options"), dict) else None,
+        )
+        return ok(extract_welder_certificate_from_payload({"ocrResult": parse_result}), request)
+    if not any(key in payload for key in ["ocrResult", "parseResult", "text", "fragments"]):
+        return fail(
+            errors.VALIDATION_ERROR,
+            request,
+            message="请提供 storageKey、ocrResult、parseResult 或 text。",
+        )
+    return ok(extract_welder_certificate_from_payload(payload), request)
 
 
 @app.post("/internal/document-parse/jobs")

@@ -96,7 +96,18 @@ agentSops:
     taskType: review_recheck
     inputSchema: ReviewTaskInput
     outputSchema: ReviewFindingDraftList
-    allowedTools: [get_project_context, get_document_ocr_result, search_knowledge_base, create_review_finding_draft]
+    allowedTools:
+      - get_project_context
+      - search_project_documents
+      - get_document_ocr_result
+      - recognize_document_seals
+      - extract_structured_fields
+      - extract_welder_certificate
+      - verify_license_or_certificate
+      - verify_welder_certificate_authenticity
+      - search_knowledge_base
+      - run_rule_engine
+      - create_review_finding_draft
     allowedToolIds: [T01, T02, T03, T04, T05, T06, T07, T08, T09, T10, T11, T12]
     defaultThinkingChain: [T01, T02, T03, T04, T06, T07, T08, T11, T12]
     qualityClassRouting:

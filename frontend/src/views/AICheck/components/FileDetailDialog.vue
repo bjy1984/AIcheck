@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import {
   ElAlert,
   ElButton,
@@ -11,7 +11,9 @@ import {
   ElTableColumn,
   ElTag
 } from 'element-plus'
+import { getDocumentOriginalBlobApi } from '@/api/aicheck'
 import type { DocumentDetailPayload } from '@/api/aicheck'
+import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import { getStatusTagType } from './status'
 
 const props = defineProps<{
@@ -39,6 +41,9 @@ const evidenceLinks = computed(() => props.detail?.evidenceLinks || [])
 const versions = computed(() => props.detail?.versions || [])
 const preview = computed(() => props.detail?.preview)
 const download = computed(() => props.detail?.download)
+const previewObjectUrl = ref('')
+const previewLoadingOriginal = ref(false)
+const previewOriginalError = ref('')
 
 const fileSizeText = computed(() => {
   const size = currentVersion.value?.fileSize || download.value?.fileSize || 0
@@ -61,6 +66,52 @@ const previewTitle = computed(() => {
 const previewAvailable = computed(
   () => !!preview.value?.url && preview.value.previewType !== 'unsupported'
 )
+const previewEmbeddable = computed(() => {
+  const url = String(preview.value?.url || '')
+  return previewAvailable.value && !url.startsWith('mock://')
+})
+const previewFrameUrl = computed(() => previewObjectUrl.value || preview.value?.url || '')
+
+const revokePreviewObjectUrl = () => {
+  if (!previewObjectUrl.value) return
+  URL.revokeObjectURL(previewObjectUrl.value)
+  previewObjectUrl.value = ''
+}
+
+const loadPreviewOriginal = async () => {
+  revokePreviewObjectUrl()
+  previewOriginalError.value = ''
+  const url = String(preview.value?.url || '')
+  if (!previewEmbeddable.value || !url.startsWith('/api/')) return
+  previewLoadingOriginal.value = true
+  try {
+    const res = await getDocumentOriginalBlobApi(url)
+    previewObjectUrl.value = URL.createObjectURL(res.data)
+  } catch (error) {
+    previewOriginalError.value = getAicheckErrorMessage(
+      error,
+      '原文预览加载失败，请尝试下载后查看。'
+    )
+  } finally {
+    previewLoadingOriginal.value = false
+  }
+}
+
+watch(
+  () => [visible.value, preview.value?.url, preview.value?.previewType] as const,
+  ([open]) => {
+    if (open) {
+      void loadPreviewOriginal()
+    } else {
+      revokePreviewObjectUrl()
+      previewOriginalError.value = ''
+    }
+  }
+)
+
+onBeforeUnmount(() => {
+  revokePreviewObjectUrl()
+})
 
 const confidenceText = (confidence?: number) => {
   if (typeof confidence !== 'number') return '-'
@@ -107,10 +158,31 @@ const confidenceText = (confidence?: number) => {
             </div>
             <div class="preview-body" :class="{ 'preview-body--disabled': !previewAvailable }">
               <template v-if="previewAvailable">
-                <strong>{{ document.fileName }}</strong>
-                <span>{{ preview?.contentType || document.fileType }} · {{ fileSizeText }}</span>
-                <span>有效期至 {{ preview?.expiresAt }}</span>
-                <code>{{ preview?.url }}</code>
+                <div
+                  v-if="previewEmbeddable"
+                  class="preview-frame-host"
+                  v-loading="previewLoadingOriginal"
+                >
+                  <ElAlert
+                    v-if="previewOriginalError"
+                    :title="previewOriginalError"
+                    type="warning"
+                    :closable="false"
+                    show-icon
+                  />
+                  <iframe
+                    v-else
+                    class="preview-frame"
+                    :src="previewFrameUrl"
+                    :title="document.fileName"
+                  />
+                </div>
+                <template v-else>
+                  <strong>{{ document.fileName }}</strong>
+                  <span>{{ preview?.contentType || document.fileType }} · {{ fileSizeText }}</span>
+                  <span>有效期至 {{ preview?.expiresAt }}</span>
+                  <code>{{ preview?.url }}</code>
+                </template>
               </template>
               <ElAlert
                 v-else
@@ -261,6 +333,19 @@ const confidenceText = (confidence?: number) => {
   justify-content: center;
   padding: 18px;
   color: #475467;
+}
+
+.preview-frame-host {
+  width: 100%;
+  min-height: 360px;
+}
+
+.preview-frame {
+  width: 100%;
+  min-height: 360px;
+  background: #fff;
+  border: 1px solid #d5deea;
+  border-radius: 4px;
 }
 
 .preview-body strong {

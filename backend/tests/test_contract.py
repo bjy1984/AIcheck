@@ -8294,6 +8294,16 @@ def test_upload_session_uses_local_direct_upload_when_storage_optional(monkeypat
     )
     assert completed["fileCount"] == 1
 
+    preview = assert_ok(client.get(f"/projects/P-2026-HDCP-001/documents/{target['documentId']}/preview-url"))
+    download = assert_ok(client.get(f"/projects/P-2026-HDCP-001/documents/{target['documentId']}/download-url"))
+    assert preview["url"] == f"/api/projects/P-2026-HDCP-001/documents/{target['documentId']}/original?disposition=inline"
+    assert download["url"] == f"/api/projects/P-2026-HDCP-001/documents/{target['documentId']}/original?disposition=attachment"
+    assert preview["fileSize"] == len(body)
+    assert download["fileSize"] == len(body)
+    original = client.get(f"/api/projects/P-2026-HDCP-001/documents/{target['documentId']}/original")
+    assert original.status_code == 200
+    assert original.content == body
+
 
 def test_contractor_default_project_upload_uses_local_direct_upload(monkeypatch) -> None:
     monkeypatch.setenv("AICHECK_REQUIRE_OBJECT_STORAGE", "false")

@@ -15,12 +15,13 @@ from email import policy
 from email.parser import BytesParser
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import quote
 from xml.etree import ElementTree as ET
 from uuid import uuid4
 
 import yaml
 from fastapi import APIRouter, BackgroundTasks, Body, Header, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
 from apps.api.adapters.engineering_inspection import (
     ENGINEERING_DOMAIN_TYPE,
@@ -4240,7 +4241,7 @@ def document_detail(request: Request, project_id: str, document_id: str):
         return fail(errors.NOT_FOUND, request)
     versions = repo.versions_for_document(document_id)
     version_ids = {item["id"] for item in versions}
-    preview = repo.document_preview(document)
+    original = project_document_original_payload(request, project_id, document)
     return ok(
         {
             "document": repo.clone(document),
@@ -4249,8 +4250,8 @@ def document_detail(request: Request, project_id: str, document_id: str):
             "bindings": [item for item in repo.bindings_for_project(document["projectId"]) if item["documentId"] == document_id],
             "extractedFields": repo.fields_for_versions(version_ids),
             "evidenceLinks": repo.evidence_for_versions(version_ids),
-            "preview": preview,
-            "download": repo.document_download(document),
+            "preview": original["preview"],
+            "download": original["download"],
         },
         request,
     )
@@ -4261,12 +4262,141 @@ def document_versions(request: Request, project_id: str, document_id: str):
     return ok(repo.versions_for_document(document_id), request)
 
 
+def project_document_original_context(request: Request, project_id: str, document_id: str):
+    document = repo.find_one("documents", document_id)
+    if not document or document.get("projectId") != project_id:
+        return None, None, fail(errors.NOT_FOUND, request)
+    version = repo.current_version(document_id)
+    if not version:
+        return document, None, fail(errors.NOT_FOUND, request, message="未找到原始文档版本。")
+    return document, version, None
+
+
+def project_document_storage_object(version: dict[str, Any] | None) -> tuple[str, str] | None:
+    if not version:
+        return None
+    storage_key = str(version.get("storageKey") or "")
+    parsed = parse_storage_url(storage_key)
+    if parsed:
+        return parsed
+    if storage_key.startswith(("local://", "mock://", "http://", "https://")):
+        return None
+    storage_bucket = str(version.get("storageBucket") or "")
+    if storage_bucket and storage_key:
+        return storage_bucket, storage_key
+    return None
+
+
+def project_document_original_api_url(project_id: str, document_id: str, disposition: str) -> str:
+    return (
+        f"/api/projects/{quote(project_id, safe='')}/documents/"
+        f"{quote(document_id, safe='')}/original?disposition={quote(disposition, safe='')}"
+    )
+
+
+def content_disposition_header(disposition: str, file_name: str) -> str:
+    disposition_type = "attachment" if disposition == "attachment" else "inline"
+    encoded = quote(file_name)
+    return f"{disposition_type}; filename*=UTF-8''{encoded}"
+
+
+def stream_object_storage_file(
+    bucket: str,
+    object_name: str,
+    *,
+    content_type: str,
+    file_name: str,
+    disposition: str,
+):
+    client = object_storage.client()
+    if client is None:
+        return None
+    try:
+        response = client.get_object(bucket, object_name)
+    except Exception:
+        return None
+
+    def body_iter():
+        try:
+            for chunk in response.stream(1024 * 1024):
+                if chunk:
+                    yield chunk
+        finally:
+            response.close()
+            response.release_conn()
+
+    return StreamingResponse(
+        body_iter(),
+        media_type=content_type,
+        headers={"Content-Disposition": content_disposition_header(disposition, file_name)},
+    )
+
+
+def project_document_original_payload(
+    request: Request,
+    project_id: str,
+    document: dict[str, Any],
+) -> dict[str, Any]:
+    preview = repo.document_preview(document)
+    download = repo.document_download(document)
+    version = repo.current_version(document["id"]) or {}
+    has_local_file = local_storage_path(version.get("storageKey")) is not None
+    has_object_file = object_storage.enabled and project_document_storage_object(version) is not None
+    if has_local_file or has_object_file:
+        inline_url = project_document_original_api_url(project_id, document["id"], "inline")
+        attachment_url = project_document_original_api_url(project_id, document["id"], "attachment")
+        preview = {**preview, "url": inline_url, "sourceUrl": preview.get("url")}
+        download = {**download, "url": attachment_url, "sourceUrl": download.get("url")}
+    return {"preview": preview, "download": download}
+
+
+@router.get("/projects/{project_id}/documents/{document_id}/original")
+def project_document_original(
+    request: Request,
+    project_id: str,
+    document_id: str,
+    disposition: str = Query(default="inline"),
+):
+    document, version, context_error = project_document_original_context(request, project_id, document_id)
+    if context_error:
+        return context_error
+    file_name = str(document.get("fileName") or version.get("fileName") or f"{document_id}.bin")
+    content_type = repo.document_content_type(document) or "application/octet-stream"
+    disposition_type = "attachment" if disposition == "attachment" else "inline"
+    local_path = local_storage_path(version.get("storageKey"))
+    if local_path:
+        if not local_path.is_file():
+            return fail(errors.NOT_FOUND, request, message="原文文件不存在或已被移除。")
+        return FileResponse(
+            local_path,
+            media_type=content_type,
+            filename=file_name,
+            content_disposition_type=disposition_type,
+        )
+    storage_object = project_document_storage_object(version)
+    if storage_object:
+        streamed = stream_object_storage_file(
+            storage_object[0],
+            storage_object[1],
+            content_type=content_type,
+            file_name=file_name,
+            disposition=disposition,
+        )
+        if streamed is not None:
+            return streamed
+    signed = repo.document_download(document)
+    signed_url = str(signed.get("url") or "")
+    if signed_url.startswith(("http://", "https://")):
+        return RedirectResponse(signed_url)
+    return fail(errors.NOT_FOUND, request, message="当前原文存储地址不可直接预览或下载。")
+
+
 @router.get("/projects/{project_id}/documents/{document_id}/preview-url")
 def document_preview_url(request: Request, project_id: str, document_id: str):
     document = repo.find_one("documents", document_id)
     if not document or document.get("projectId") != project_id:
         return fail(errors.NOT_FOUND, request)
-    return ok(repo.document_preview(document), request)
+    return ok(project_document_original_payload(request, project_id, document)["preview"], request)
 
 
 @router.get("/projects/{project_id}/documents/{document_id}/download-url")
@@ -4274,7 +4404,7 @@ def document_download_url(request: Request, project_id: str, document_id: str):
     document = repo.find_one("documents", document_id)
     if not document or document.get("projectId") != project_id:
         return fail(errors.NOT_FOUND, request)
-    return ok(repo.document_download(document), request)
+    return ok(project_document_original_payload(request, project_id, document)["download"], request)
 
 
 @router.get("/projects/{project_id}/documents/{document_id}/ocr-fields")

@@ -2409,6 +2409,17 @@ export const getDocumentDownloadUrlApi = (
   return request.get({ url: `/api/projects/${projectId}/documents/${documentId}/download-url` })
 }
 
+export const getDocumentOriginalBlobApi = (url: string): Promise<{ data: Blob }> => {
+  return request.get({
+    url,
+    responseType: 'blob',
+    headers: {
+      'X-Silent-Http-Error': 'true',
+      'X-Silent-Business-Error': 'true'
+    }
+  }) as unknown as Promise<{ data: Blob }>
+}
+
 export const createDocumentUploadSessionApi = (
   projectId: string,
   files: DocumentUploadSessionFile[],

@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
+  ElAlert,
   ElButton,
   ElDrawer,
   ElDropdown,
@@ -26,6 +27,7 @@ import {
   getArchivePackageApi,
   getArchiveItemDetailApi,
   getDocumentDetailApi,
+  getDocumentOriginalBlobApi,
   getEvidencePackageApi,
   getExportTaskApi,
   getInspectionDateCompareApi,
@@ -71,6 +73,7 @@ import type {
   ArchiveItemDetailPayload,
   DateComparisonItem,
   DocumentDetailPayload,
+  DocumentPreviewPayload,
   NdtFeedbackDetailPayload,
   NdtReportDetailPayload,
   ProjectTreePayload,
@@ -168,6 +171,7 @@ type PreviewDrawerTarget = {
   title: string
   url?: string
   meta?: string
+  previewType?: DocumentPreviewPayload['previewType']
 }
 
 const roleConfig: Record<RoleCode, { title: string; subtitle: string }> = {
@@ -223,6 +227,9 @@ const previewDrawerTarget = ref<PreviewDrawerTarget>({
   source: 'node',
   title: '当前节点资料预览'
 })
+const previewDrawerObjectUrl = ref('')
+const previewDrawerLoadingOriginal = ref(false)
+const previewDrawerOriginalError = ref('')
 const uploadDrawerVisible = ref(false)
 const uploadDrawerError = ref('')
 const uploadDrawerMaterialCategory = ref('')
@@ -803,6 +810,14 @@ const previewDrawerMeta = computed(() => {
   if (previewDrawerTarget.value.url) return previewDrawerTarget.value.url
   return '当前节点内嵌预览'
 })
+const previewDrawerCanEmbedOriginal = computed(() => {
+  const url = String(previewDrawerTarget.value.url || '')
+  if (!url || url.startsWith('mock://')) return false
+  return previewDrawerTarget.value.previewType !== 'unsupported'
+})
+const previewDrawerFrameUrl = computed(
+  () => previewDrawerObjectUrl.value || previewDrawerTarget.value.url || ''
+)
 const aiConfidence = computed(() => {
   const confidence = latestAiRun.value?.suggestion.confidence
   if (confidence === undefined) return '-'
@@ -1611,7 +1626,8 @@ const openPreviewDrawer = (target?: Partial<PreviewDrawerTarget>) => {
     source: target?.source || 'node',
     title: target?.title || previewFileName.value,
     url: target?.url,
-    meta: target?.meta
+    meta: target?.meta,
+    previewType: target?.previewType
   }
   previewDrawerVisible.value = true
 }
@@ -1644,12 +1660,38 @@ const handlePreviewFile = (url: string) => {
     source: 'file',
     title: fileDetail.value?.document.fileName || previewFileName.value,
     url,
+    previewType: fileDetail.value?.preview?.previewType,
     meta: fileDetail.value?.preview
       ? `${fileDetail.value.preview.contentType || fileDetail.value.document.fileType} · 有效期至 ${
           fileDetail.value.preview.expiresAt
         }`
       : url
   })
+}
+
+const revokePreviewDrawerObjectUrl = () => {
+  if (!previewDrawerObjectUrl.value) return
+  URL.revokeObjectURL(previewDrawerObjectUrl.value)
+  previewDrawerObjectUrl.value = ''
+}
+
+const loadPreviewDrawerOriginal = async () => {
+  revokePreviewDrawerObjectUrl()
+  previewDrawerOriginalError.value = ''
+  const url = String(previewDrawerTarget.value.url || '')
+  if (!previewDrawerCanEmbedOriginal.value || !url.startsWith('/api/')) return
+  previewDrawerLoadingOriginal.value = true
+  try {
+    const res = await getDocumentOriginalBlobApi(url)
+    previewDrawerObjectUrl.value = URL.createObjectURL(res.data)
+  } catch (error) {
+    previewDrawerOriginalError.value = getAicheckErrorMessage(
+      error,
+      '原文预览加载失败，请尝试下载后查看。'
+    )
+  } finally {
+    previewDrawerLoadingOriginal.value = false
+  }
 }
 
 const handleDownloadFile = (url: string) => {
@@ -2804,6 +2846,23 @@ watch(
 )
 
 watch(
+  () =>
+    [
+      previewDrawerVisible.value,
+      previewDrawerTarget.value.url,
+      previewDrawerTarget.value.previewType
+    ] as const,
+  ([open]) => {
+    if (open) {
+      void loadPreviewDrawerOriginal()
+    } else {
+      revokePreviewDrawerObjectUrl()
+      previewDrawerOriginalError.value = ''
+    }
+  }
+)
+
+watch(
   () => hasPostUploadProcessing.value,
   (processing) => {
     if (processing) {
@@ -2821,6 +2880,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   stopPostUploadPolling()
+  revokePreviewDrawerObjectUrl()
 })
 </script>
 
@@ -3701,7 +3761,26 @@ onBeforeUnmount(() => {
               <span>⛶</span>
             </div>
             <div class="doc-canvas">
-              <div class="doc-paper">
+              <div
+                v-if="previewDrawerCanEmbedOriginal"
+                class="doc-original-host"
+                v-loading="previewDrawerLoadingOriginal"
+              >
+                <ElAlert
+                  v-if="previewDrawerOriginalError"
+                  :title="previewDrawerOriginalError"
+                  type="warning"
+                  :closable="false"
+                  show-icon
+                />
+                <iframe
+                  v-else
+                  class="doc-original-frame"
+                  :src="previewDrawerFrameUrl"
+                  :title="previewDrawerTarget.title"
+                />
+              </div>
+              <div v-else class="doc-paper">
                 <div class="paper-title">
                   {{ role === 'owner' ? '监督检验项目状态摘要' : previewDrawerTarget.title }}
                 </div>
@@ -5717,6 +5796,18 @@ h3 {
 .doc-canvas {
   min-height: 340px;
   padding: 18px;
+}
+
+.doc-original-host {
+  min-height: 520px;
+}
+
+.doc-original-frame {
+  width: 100%;
+  min-height: 520px;
+  background: #fff;
+  border: 1px solid #d5deea;
+  border-radius: 4px;
 }
 
 .doc-paper {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
@@ -10,7 +11,15 @@ from fastapi.responses import JSONResponse
 
 from .errors import BusinessErrorCode
 
-SERVER_TZ = ZoneInfo("America/Los_Angeles")
+
+def resolve_server_tz() -> ZoneInfo:
+    try:
+        return ZoneInfo(os.getenv("AICHECK_SERVER_TZ", "Asia/Shanghai"))
+    except Exception:
+        return ZoneInfo("Asia/Shanghai")
+
+
+SERVER_TZ = resolve_server_tz()
 
 
 def server_time() -> str:

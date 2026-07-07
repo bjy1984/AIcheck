@@ -41,6 +41,12 @@ from apps.ocr_service.result_cache import (
 from apps.ocr_service.routing import route_engine_variants
 from apps.ocr_service.runtime_doctor import build_runtime_doctor
 from apps.ocr_service.utils import parse_bool
+from apps.ocr_service.welder_certificate_tool import (
+    extract_welder_certificate_from_ocr_result,
+    extraction_metadata as welder_certificate_extraction_metadata,
+    welder_certificate_ocr_fields,
+    welder_certificate_ocr_tables,
+)
 from libs.contracts.responses import server_time
 from libs.integrations.storage import object_storage, parse_storage_url
 
@@ -2770,6 +2776,10 @@ def apply_profile_postprocessing(result: dict[str, Any], profile: dict[str, Any]
         extract_welding_record_fields(result)
         add_profile_quality_diagnostics(result, profile)
         return
+    if is_welder_certificate_profile(result, profile):
+        extract_welder_certificate_fields_and_tables(result)
+        add_profile_quality_diagnostics(result, profile)
+        return
 
 
 def group_tables_by_page(tables: list[Any]) -> dict[int, list[dict[str, Any]]]:
@@ -3941,6 +3951,12 @@ def is_welding_record_profile(result: dict[str, Any], profile: dict[str, Any]) -
     return str(profile.get("profileId") or result.get("profileId") or "") == "welding_record_v1"
 
 
+def is_welder_certificate_profile(result: dict[str, Any], profile: dict[str, Any]) -> bool:
+    profile_id = str(profile.get("profileId") or result.get("profileId") or "")
+    document_type = str(profile.get("documentType") or result.get("documentType") or "")
+    return profile_id == "welder_certificate_v1" or document_type == "welder_certificate"
+
+
 def quality_certificate_evidence_text(text_items: list[tuple[str, dict[str, Any]]]) -> str:
     joined = "\n".join(text for text, _ in text_items)
     if "质量证明" in joined or "合格证" in joined or "质检专用章" in joined:
@@ -4063,6 +4079,52 @@ def tag_welding_record_tables(result: dict[str, Any]) -> None:
         flags = {str(flag) for flag in table.get("qualityFlags") or []}
         flags.add("welding_record_schema_match")
         table["qualityFlags"] = sorted(flags)
+
+
+def extract_welder_certificate_fields_and_tables(result: dict[str, Any]) -> None:
+    extraction = extract_welder_certificate_from_ocr_result(result)
+    result.setdefault("metadata", {})[
+        "welderCertificateExtraction"
+    ] = welder_certificate_extraction_metadata(extraction)
+    for field in welder_certificate_ocr_fields(extraction):
+        append_field_if_code_missing(result, field)
+    existing_schemas = {
+        str(schema)
+        for table in result.get("tables") or []
+        if isinstance(table, dict)
+        for schema in [table.get("businessSchema"), *(table.get("businessSchemas") or [])]
+        if schema
+    }
+    for table in welder_certificate_ocr_tables(extraction):
+        schema = str(table.get("businessSchema") or "")
+        if schema and schema in existing_schemas:
+            continue
+        result.setdefault("tables", []).append(table)
+    result.setdefault("diagnostics", []).append(
+        diagnostic(
+            "WELDER_CERTIFICATE_TOOL_APPLIED",
+            "已使用焊工资格证专用工具提取证件编号、档案编号、"
+            "发证机关和作业项目有效期。",
+            level="info",
+            verificationSignals=(extraction.get("verificationSignals") or {}),
+        )
+    )
+    for item in extraction.get("diagnostics") or []:
+        if isinstance(item, dict):
+            result.setdefault("diagnostics", []).append(item)
+
+
+def append_field_if_code_missing(result: dict[str, Any], field: dict[str, Any]) -> None:
+    field_code = str(field.get("fieldCode") or "")
+    if not field_code:
+        return
+    fields = result.setdefault("fields", [])
+    if any(
+        isinstance(item, dict) and str(item.get("fieldCode") or "") == field_code
+        for item in fields
+    ):
+        return
+    fields.append(field)
 
 
 def table_text(table: dict[str, Any]) -> str:

@@ -425,6 +425,8 @@ class InMemoryRepository:
         storage_key = (version or {}).get("storageKey")
         if isinstance(storage_key, str) and parse_storage_url(storage_key):
             return storage_key
+        if isinstance(storage_key, str) and storage_key.startswith(("local://", "mock://", "http://", "https://")):
+            return storage_key
         if bucket and storage_key:
             return f"minio://{bucket}/{storage_key}"
         if object_storage.required:
@@ -472,11 +474,12 @@ class InMemoryRepository:
 
     def document_signed_get(self, document: dict[str, Any], *, fallback_prefix: str) -> dict[str, Any]:
         content_type = self.document_content_type(document)
+        version = self.current_version(document["id"]) or {}
         primary = self.signed_get(
             document["fileName"],
             self.document_storage_url(document, fallback_prefix=fallback_prefix),
             content_type,
-            file_size=245760,
+            file_size=int(version.get("fileSize") or 0) or None,
         )
         if not str(primary.get("url") or "").startswith("minio://"):
             return primary
@@ -484,7 +487,7 @@ class InMemoryRepository:
             document["fileName"],
             f"mock://{fallback_prefix}/documents/{document['id']}?versionId={document.get('currentVersionId')}",
             content_type,
-            file_size=245760,
+            file_size=int(version.get("fileSize") or 0) or None,
         )
 
     def create_document(

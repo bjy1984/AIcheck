@@ -13,6 +13,7 @@ from libs.integrations.errors import IntegrationServiceError
 from libs.integrations.litellm_client import LiteLLMClient, production_mode_enabled
 from libs.knowledge_retrieval import retrieve_knowledge_clauses
 from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block
+from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
 
 REVIEW_GRAPH_STEPS: list[dict[str, Any]] = [
     {"key": "load_context", "label": "加载项目上下文", "taskQueue": "review.graph"},
@@ -60,6 +61,12 @@ ALLOWED_AGENT_TOOLS = {
     "get_project_context",
     "get_node_requirements",
     "get_document_ocr_result",
+    "recognize_document_seals",
+    "search_project_documents",
+    "extract_structured_fields",
+    "extract_welder_certificate",
+    "verify_license_or_certificate",
+    "verify_welder_certificate_authenticity",
     "run_rule_engine",
     "retrieve_clauses",
     "search_knowledge_base",
@@ -422,23 +429,36 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         context["fragments"] = grounding_input.get("fragments") or []
         context["evidenceLinks"] = evidence_links
         summary = grounding_input.get("summary") or {}
-        append_tool_call(
+        ocr_tool = execute_agent_tool(
             review_run,
             node_key,
             "get_document_ocr_result",
-            {
-                "fieldCount": summary.get("fieldCount", len(fields)),
-                "tableCount": summary.get("tableCount", 0),
-                "sealCount": summary.get("sealCount", 0),
-                "fragmentCount": summary.get("fragmentCount", 0),
-                "evidenceLinks": summary.get("evidenceLinkCount", len(evidence_links)),
-                "groundingStatus": grounding_input.get("groundingStatus"),
-            },
+            {"documentVersionIds": sorted(version_ids)},
+            context,
         )
+        seal_tool = execute_agent_tool(
+            review_run,
+            node_key,
+            "recognize_document_seals",
+            {"documentVersionIds": sorted(version_ids)},
+            context,
+        )
+        structured_tool = execute_agent_tool(
+            review_run,
+            node_key,
+            "extract_structured_fields",
+            {"documentVersionIds": sorted(version_ids), "materialTypeCode": "welder_certificate"},
+            context,
+        )
+        context.setdefault("runtimeToolResults", {})["get_document_ocr_result"] = ocr_tool
+        context["runtimeToolResults"]["recognize_document_seals"] = seal_tool
+        context["runtimeToolResults"]["extract_structured_fields"] = structured_tool
         return {
             "fieldCount": summary.get("fieldCount", len(fields)),
             "tableCount": summary.get("tableCount", 0),
             "sealCount": summary.get("sealCount", 0),
+            "recognizedSealCount": seal_tool.get("sealCount", 0),
+            "welderCertificateCount": structured_tool.get("welderCertificateCount", 0),
             "fragmentCount": summary.get("fragmentCount", 0),
             "evidenceLinkCount": summary.get("evidenceLinkCount", len(evidence_links)),
             "groundingStatus": grounding_input.get("groundingStatus"),
@@ -480,8 +500,32 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         repo.state["rule_check_results"].append(result)
         context["currentRule"] = rule
         context["ruleResults"] = [result]
-        append_tool_call(review_run, node_key, "run_rule_engine", {"ruleCode": result["ruleCode"], "result": result["result"]})
-        return {"ruleResults": 1, "ruleCode": result["ruleCode"], "result": result["result"], "linkedClauseIds": linked_clause_ids}
+        verification_tool = execute_agent_tool(
+            review_run,
+            node_key,
+            "verify_license_or_certificate",
+            {
+                "documentVersionIds": list(review_run.get("inputDocumentVersionIds") or []),
+                "materialTypeCode": "welder_certificate",
+            },
+            context,
+        )
+        context.setdefault("runtimeToolResults", {})[
+            "verify_license_or_certificate"
+        ] = verification_tool
+        append_tool_call(
+            review_run,
+            node_key,
+            "run_rule_engine",
+            {"ruleCode": result["ruleCode"], "result": result["result"]},
+        )
+        return {
+            "ruleResults": 1,
+            "ruleCode": result["ruleCode"],
+            "result": result["result"],
+            "linkedClauseIds": linked_clause_ids,
+            "certificateVerificationCount": verification_tool.get("verificationCount", 0),
+        }
     if node_key == "retrieve_knowledge":
         retrieval = retrieve_knowledge_clauses(
             repo.state,
@@ -610,10 +654,18 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
     )
     user_payload = {
         "task": "Generate ReviewFindingDraftList JSON only.",
+        "availableRuntimeTools": runtime_tool_catalog(),
+        "runtimeToolResults": {
+            key: compact_tool_output(value)
+            for key, value in (context.get("runtimeToolResults") or {}).items()
+            if isinstance(value, dict)
+        },
         "requirements": [
             "Every finding must require human confirmation.",
             "Do not approve, reject, issue correction, close correction, archive, or change business status.",
             "Use evidenceRefs, ruleRefs, and kbRefs from the supplied IDs only.",
+            "When more evidence is needed, plan only with availableRuntimeTools "
+            "and do not invent tools.",
             *grounding_block["requirements"],
         ],
         "strictGroundingPolicy": grounding_block["strictGroundingPolicy"],
@@ -1136,6 +1188,71 @@ def append_tool_call(review_run: dict[str, Any], node_key: str, tool_name: str, 
             "createdAt": server_time(),
         }
     )
+
+
+def execute_agent_tool(
+    review_run: dict[str, Any],
+    node_key: str,
+    tool_name: str,
+    arguments: dict[str, Any] | None,
+    context: dict[str, Any],
+) -> dict[str, Any]:
+    if tool_name in FORBIDDEN_AGENT_TOOLS:
+        result = {
+            "toolName": tool_name,
+            "status": "rejected",
+            "errorCode": "FORBIDDEN_AGENT_TOOL",
+        }
+        append_tool_call(review_run, node_key, tool_name, result)
+        return result
+    if tool_name not in ALLOWED_AGENT_TOOLS:
+        result = {
+            "toolName": tool_name,
+            "status": "rejected",
+            "errorCode": "AGENT_TOOL_NOT_ALLOWED",
+        }
+        append_tool_call(review_run, node_key, tool_name, result)
+        return result
+    result = dispatch_runtime_tool(
+        repo.state,
+        tool_name,
+        arguments or {},
+        context={
+            **context,
+            "reviewRun": review_run,
+            "inputDocumentVersionIds": review_run.get("inputDocumentVersionIds") or [],
+        },
+    )
+    append_tool_call(review_run, node_key, tool_name, compact_tool_output(result))
+    return result
+
+
+def compact_tool_output(result: dict[str, Any]) -> dict[str, Any]:
+    summary_keys = [
+        "toolCallId",
+        "toolName",
+        "status",
+        "errorCode",
+        "fieldCount",
+        "tableCount",
+        "sealCount",
+        "fragmentCount",
+        "welderCertificateCount",
+        "verificationCount",
+        "qualifiedItemCount",
+        "matchedIssuerSealCount",
+        "recognizedSealCount",
+        "groundingStatus",
+    ]
+    summary = {key: result.get(key) for key in summary_keys if key in result}
+    if result.get("verificationCount") is not None:
+        summary["riskFlags"] = [
+            flag
+            for item in result.get("verifications") or []
+            if isinstance(item, dict)
+            for flag in item.get("riskFlags") or []
+        ][:12]
+    return summary
 
 
 def graph_nodes_for_review_run(review_run_id: str) -> list[dict[str, Any]]:
