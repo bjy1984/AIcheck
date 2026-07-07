@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { EChartsOption } from 'echarts'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
@@ -8,9 +7,11 @@ import {
   ElDropdown,
   ElDropdownItem,
   ElDropdownMenu,
+  ElInput,
   ElMessage,
   ElMessageBox,
   ElOption,
+  ElPagination,
   ElSelect
 } from 'element-plus'
 import {
@@ -105,7 +106,36 @@ import type {
   WorkbenchSummaryPayload
 } from '@/types/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
-import { Echart } from '@/components/Echart'
+
+type InspectionNodeSortKey = 'review' | 'nodeId' | 'material'
+type SortDirection = 'asc' | 'desc'
+type InspectionReviewProgressLabel = '未提交' | '待审查' | '未补正' | '已通过'
+type NodeRequirementDisplayRow = {
+  id: string
+  rowNo: number
+  name: string
+  requiredType: string
+  materialType: string
+  responsibleParty: string
+  applicability: string
+  matchedFileNames: string[]
+  status: string
+}
+type AiExecutionDisplayStep = {
+  title: string
+  input: string
+  feedback: string
+  tools: string[]
+  evidenceLinks: EvidenceLink[]
+  status: string
+}
+type ReviewConclusionPoint = {
+  order: string
+  title: string
+  conclusion: string
+  description: string
+  evidenceLinks: EvidenceLink[]
+}
 import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import ArchiveDetailDrawer from './components/ArchiveDetailDrawer.vue'
 import DocumentBindDialog from './components/DocumentBindDialog.vue'
@@ -255,6 +285,18 @@ const latestSubmissionIds = ref<Record<number, string>>({})
 const pipelinePollTimer = ref<number>()
 const pipelinePolling = ref(false)
 const POST_UPLOAD_PIPELINE_POLL_INTERVAL_MS = 10000
+const overviewFileKeyword = ref('')
+const overviewFilePage = ref(1)
+const overviewFilePageSize = ref(8)
+const inspectionNodePage = ref(1)
+const inspectionNodePageSize = ref(6)
+const inspectionNodeSortKey = ref<InspectionNodeSortKey>('review')
+const inspectionNodeSortDirection = ref<SortDirection>('asc')
+const inspectionOverviewJumpItems = [
+  { id: 'inspection-overview-status', label: '节点状态分布' },
+  { id: 'inspection-overview-nodes', label: '节点处理清单' },
+  { id: 'inspection-overview-files', label: '上传文件列表' }
+]
 
 const role = computed<RoleCode>(() => {
   const path = route.path
@@ -281,6 +323,7 @@ const rectifications = computed(() => nodePackage.value?.rectifications || [])
 const reviewOpinions = computed(() => nodePackage.value?.reviewOpinions || [])
 const latestAiRun = computed(() => nodePackage.value?.aiRuns[0])
 const evidenceLinks = computed(() => latestAiRun.value?.evidenceLinks || [])
+const businessBasis = computed(() => nodePackage.value?.businessBasis)
 const isReadOnly = computed(
   () => role.value === 'owner' || currentProject.value?.status === '已归档'
 )
@@ -301,155 +344,6 @@ const availableActions = computed<ActionCode[]>(() => {
   )
 })
 const unreadMessageCount = computed(() => messages.value.filter((message) => !message.read).length)
-const getMetricValue = (key: string, label: string) => {
-  const metric = metrics.value.find((item) => item.key === key || item.label.includes(label))
-  if (!metric) return 0
-  if (typeof metric.value === 'number') return metric.value
-  const parsed = Number.parseFloat(String(metric.value).replace(/[^\d.-]/g, ''))
-  return Number.isFinite(parsed) ? parsed : 0
-}
-const inspectionAuditMetricItems = computed(() => [
-  {
-    key: 'todo',
-    label: '待办',
-    value: getMetricValue('todo', '待办'),
-    color: '#f59e0b',
-    hint: '需要监检员处理'
-  },
-  {
-    key: 'correction',
-    label: '补正项',
-    value: getMetricValue('correction', '补正'),
-    color: '#dc2626',
-    hint: '影响当前节点通过'
-  },
-  {
-    key: 'evidence',
-    label: '证据引用',
-    value: getMetricValue('evidence', '证据'),
-    color: '#2563eb',
-    hint: '可回溯 OCR/字段证据'
-  },
-  {
-    key: 'passed',
-    label: '已通过节点',
-    value: getMetricValue('passed', '通过'),
-    color: '#16a34a',
-    hint: '已形成确认结论'
-  }
-])
-const inspectionClosureItems = computed(() => {
-  const todo = getMetricValue('todo', '待办')
-  const correction = getMetricValue('correction', '补正')
-  const passed = getMetricValue('passed', '通过')
-  const data = [
-    { name: '待办', value: todo, itemStyle: { color: '#f59e0b' } },
-    { name: '补正项', value: correction, itemStyle: { color: '#dc2626' } },
-    { name: '已通过节点', value: passed, itemStyle: { color: '#16a34a' } }
-  ]
-  return data.some((item) => item.value > 0)
-    ? data
-    : [{ name: '暂无处理项', value: 1, itemStyle: { color: '#d7dde8' } }]
-})
-const inspectionOpenIssueCount = computed(
-  () => getMetricValue('todo', '待办') + getMetricValue('correction', '补正')
-)
-const inspectionAuditBarOption = computed<EChartsOption>(() => ({
-  aria: {
-    enabled: true,
-    description: '当前审查对象的待办、补正项、证据引用和已通过节点数量柱状图。'
-  },
-  color: inspectionAuditMetricItems.value.map((item) => item.color),
-  tooltip: {
-    trigger: 'axis',
-    axisPointer: { type: 'shadow' },
-    formatter: (params) => {
-      const item = Array.isArray(params) ? params[0] : params
-      const name = String(item?.name || '')
-      const found = inspectionAuditMetricItems.value.find((metric) => metric.label === name)
-      return `${name}<br/>数量：${Number(item?.value || 0)}<br/>${found?.hint || ''}`
-    }
-  },
-  grid: { top: 26, right: 18, bottom: 34, left: 36, containLabel: true },
-  xAxis: {
-    type: 'category',
-    data: inspectionAuditMetricItems.value.map((item) => item.label),
-    axisTick: { show: false },
-    axisLine: { lineStyle: { color: '#d8e5f5' } },
-    axisLabel: { color: '#667085', fontWeight: 700 }
-  },
-  yAxis: {
-    type: 'value',
-    minInterval: 1,
-    splitLine: { lineStyle: { color: '#edf2f7' } },
-    axisLabel: { color: '#8a94a6' }
-  },
-  series: [
-    {
-      name: '审查态势',
-      type: 'bar',
-      barMaxWidth: 30,
-      data: inspectionAuditMetricItems.value.map((item) => ({
-        value: item.value,
-        itemStyle: {
-          color: item.color,
-          borderRadius: [6, 6, 0, 0]
-        }
-      })),
-      label: {
-        show: true,
-        position: 'top',
-        color: '#172033',
-        fontWeight: 900
-      }
-    }
-  ]
-}))
-const inspectionClosurePieOption = computed<EChartsOption>(() => ({
-  aria: {
-    enabled: true,
-    description: '当前审查对象的人工处理闭环环形图。'
-  },
-  tooltip: {
-    trigger: 'item',
-    formatter: '{b}<br/>数量：{c}（{d}%）'
-  },
-  legend: {
-    bottom: 0,
-    itemWidth: 8,
-    itemHeight: 8,
-    textStyle: { color: '#667085', fontWeight: 700 }
-  },
-  graphic: [
-    {
-      type: 'text',
-      left: 'center',
-      top: '39%',
-      silent: true,
-      style: {
-        text: inspectionOpenIssueCount.value
-          ? `${inspectionOpenIssueCount.value}\n待处理`
-          : '0\n阻断',
-        textAlign: 'center',
-        fill: '#172033',
-        font: '900 18px sans-serif',
-        lineHeight: 22
-      }
-    }
-  ],
-  series: [
-    {
-      name: '人工处理闭环',
-      type: 'pie',
-      radius: ['56%', '74%'],
-      center: ['50%', '40%'],
-      avoidLabelOverlap: true,
-      label: { show: false },
-      labelLine: { show: false },
-      data: inspectionClosureItems.value
-    }
-  ]
-}))
 const projectTreeNodes = computed<ProjectTreeNode[]>(() =>
   treeGroups.value.flatMap((group) => group.nodes || [])
 )
@@ -497,74 +391,92 @@ const inspectionProjectNodeStatusRows = computed(() => {
   const rows = Object.entries(counts).map(([status, count]) => ({ status, count }))
   return rows.length ? rows : [{ status: '暂无节点', count: 0 }]
 })
-const inspectionProjectPassedNodes = computed(
-  () => projectTreeNodes.value.filter((node) => node.status === '已通过').length
-)
-const inspectionProjectBlockedNodes = computed(
-  () =>
-    projectTreeNodes.value.filter((node) =>
-      ['需补正', '补正中', '待人工确认'].includes(node.status)
-    ).length
-)
-const inspectionLowConfidenceFieldCount = computed(
-  () =>
-    extractedFields.value.filter((field) => {
-      const confidence = Number(field.confidence || 0)
-      return confidence > 0 && confidence < 0.82
-    }).length
-)
-const inspectionProjectOverviewCards = computed(() => {
-  const totalNodes = projectTreeNodes.value.length
-  const totalFiles = projectTreeNodes.value.reduce(
-    (sum, node) => sum + Number(node.fileCount || 0),
-    0
-  )
-  const totalRequired = projectTreeNodes.value.reduce(
-    (sum, node) => sum + Number(node.requiredProgress?.total || 0),
-    0
-  )
-  const totalDone = projectTreeNodes.value.reduce(
-    (sum, node) => sum + Number(node.requiredProgress?.done || 0),
-    0
-  )
-  return [
-    {
-      label: '项目进度',
-      value: `${inspectionProjectPassedNodes.value}/${totalNodes || 0} 节点`,
-      hint: `资料要求完成 ${totalDone}/${totalRequired || 0}`,
-      tone: 'blue'
-    },
-    {
-      label: '当前卡点',
-      value: `${inspectionProjectBlockedNodes.value} 个节点`,
-      hint: `${inspectionOpenIssueCount.value} 项待办/补正`,
-      tone: inspectionProjectBlockedNodes.value ? 'red' : 'green'
-    },
-    {
-      label: '资料证据',
-      value: `${totalFiles} 份文件`,
-      hint: `当前节点 ${bindings.value.length} 份，证据 ${evidenceLinks.value.length}`,
-      tone: 'green'
-    },
-    {
-      label: 'AI 复核',
-      value: latestAiRun.value?.suggestion.result || '等待预审',
-      hint: `${inspectionLowConfidenceFieldCount.value} 个低置信 OCR 字段需关注`,
-      tone: latestAiRun.value ? 'orange' : 'blue'
-    }
-  ]
-})
-const inspectionProjectNodeRows = computed(() =>
-  projectTreeNodes.value.slice(0, 8).map((node) => {
-    const total = Number(node.requiredProgress?.total || 0)
-    const done = Number(node.requiredProgress?.done || 0)
+const getInspectionReviewProgress = (
+  status?: string
+): { label: InspectionReviewProgressLabel; rank: number } => {
+  if (!status) return { label: '未提交', rank: 3 }
+  if (status.includes('通过')) return { label: '已通过', rank: 4 }
+  if (status.includes('补正')) return { label: '未补正', rank: 2 }
+  if (['待审查', 'AI 预审中', '待人工确认', '复审中', '已提交'].includes(status)) {
+    return { label: '待审查', rank: 1 }
+  }
+  return { label: '未提交', rank: 3 }
+}
+const getInspectionNodeMissingText = (
+  missingCount: number,
+  missingNames: string[],
+  hasRequirementDetails: boolean
+) => {
+  if (missingCount <= 0) return '资料已齐'
+  if (missingNames.length) {
+    const visibleNames = missingNames.slice(0, 2).join('、')
+    return `缺：${visibleNames}${missingNames.length > 2 ? `等 ${missingNames.length} 项` : ''}`
+  }
+  return hasRequirementDetails ? `缺 ${missingCount} 项资料` : '缺失资料项待明细配置'
+}
+const handleInspectionNodeSort = (key: InspectionNodeSortKey) => {
+  inspectionNodePage.value = 1
+  if (inspectionNodeSortKey.value === key) {
+    inspectionNodeSortDirection.value = inspectionNodeSortDirection.value === 'asc' ? 'desc' : 'asc'
+    return
+  }
+  inspectionNodeSortKey.value = key
+  inspectionNodeSortDirection.value = 'asc'
+}
+const getInspectionNodeSortIndicator = (key: InspectionNodeSortKey) => {
+  if (inspectionNodeSortKey.value !== key) return ''
+  return inspectionNodeSortDirection.value === 'asc' ? '↑' : '↓'
+}
+const inspectionProjectNodeRows = computed(() => {
+  const rows = projectTreeNodes.value.map((node) => {
+    const summary = node.requirementsSummary
+    const total = Number(summary?.requiredCount ?? node.requiredProgress?.total ?? 0)
+    const done = Number(summary?.satisfiedCount ?? node.requiredProgress?.done ?? 0)
+    const progress = Number(
+      summary?.progressPercent ?? (total ? Math.round((done / total) * 100) : 0)
+    )
+    const missingCount = Number(summary?.missingCount ?? Math.max(total - done, 0))
+    const missingNames = (summary?.missingRequirements || [])
+      .map((requirement) => requirement.name)
+      .filter(Boolean)
+    const reviewProgress = getInspectionReviewProgress(node.status)
     return {
       node,
-      progress: total ? Math.round((done / total) * 100) : 0,
-      evidence: `资料 ${node.fileCount} · 要求 ${done}/${total || 0}`
+      materialDone: done,
+      materialTotal: total,
+      materialPercent: progress,
+      missingCount,
+      missingText: total
+        ? getInspectionNodeMissingText(
+            missingCount,
+            missingNames,
+            Boolean(summary?.hasRequirementDetails)
+          )
+        : '无资料要求',
+      reviewProgress: reviewProgress.label,
+      reviewRank: reviewProgress.rank
     }
   })
-)
+  return rows.sort((left, right) => {
+    const sortKey = inspectionNodeSortKey.value
+    let comparison = 0
+    if (sortKey === 'nodeId') {
+      comparison = left.node.nodeId - right.node.nodeId
+    } else if (sortKey === 'material') {
+      comparison =
+        left.materialPercent - right.materialPercent ||
+        left.missingCount - right.missingCount ||
+        left.node.nodeId - right.node.nodeId
+    } else {
+      comparison = left.reviewRank - right.reviewRank || left.node.nodeId - right.node.nodeId
+    }
+    return inspectionNodeSortDirection.value === 'asc' ? comparison : -comparison
+  })
+})
+const pagedInspectionProjectNodeRows = computed(() => {
+  const start = (inspectionNodePage.value - 1) * inspectionNodePageSize.value
+  return inspectionProjectNodeRows.value.slice(start, start + inspectionNodePageSize.value)
+})
 const inspectionNodeStatusBarRows = computed(() => {
   const totalCount = inspectionProjectNodeStatusRows.value.reduce(
     (sum, row) => sum + Number(row.count || 0),
@@ -588,50 +500,6 @@ const inspectionNodeStatusBarRows = computed(() => {
       ratioText: totalCount ? `${Math.round((row.count / totalCount) * 100)}%` : '0%'
     }
   })
-})
-const inspectionProjectNextActions = computed(() => {
-  const rows: Array<{ title: string; description: string; tag: string; tone: string }> = []
-  if (inspectionOpenIssueCount.value) {
-    rows.push({
-      title: '优先处理待办和补正',
-      description: `当前有 ${inspectionOpenIssueCount.value} 项未闭环，影响节点通过。`,
-      tag: '人工确认',
-      tone: 'red'
-    })
-  }
-  if (inspectionLowConfidenceFieldCount.value) {
-    rows.push({
-      title: '复核低置信 OCR 字段',
-      description: `${inspectionLowConfidenceFieldCount.value} 个字段置信度偏低，建议打开证据定位确认。`,
-      tag: 'OCR',
-      tone: 'orange'
-    })
-  }
-  if (hasAction('ai:recheck')) {
-    rows.push({
-      title: '重新触发 AI 预审',
-      description: '资料或补正更新后，可重新生成 AI 建议，正式结论仍由人工确认。',
-      tag: 'AI',
-      tone: 'blue'
-    })
-  }
-  if (hasAction('review:save')) {
-    rows.push({
-      title: '保存人工审查意见',
-      description: '确认 AI 建议、修正结论并沉淀为可追溯审查记录。',
-      tag: '审查',
-      tone: 'green'
-    })
-  }
-  if (!rows.length) {
-    rows.push({
-      title: '继续巡检项目节点',
-      description: '当前节点没有显著阻断，可按左侧项目树切换其他节点复核。',
-      tag: '项目',
-      tone: 'green'
-    })
-  }
-  return rows.slice(0, 4)
 })
 const canShowWorkspace = computed(() => !pageIssue.value && !!activeProjectId.value)
 const roleUserLabel = computed(() => {
@@ -699,9 +567,10 @@ const workbenchAuditCards = computed<AuditSummaryCard[]>(() => {
   if (role.value === 'contractor') {
     const projectFileCount = nodePackage.value?.projectFiles.length || bindings.value.length
     const correctionCount = rectifications.value.filter((item) => item.status !== '已关闭').length
-    const pendingSubmitCount = bindings.value.filter((item) =>
-      ['草稿挂载', '需补正'].includes(item.bindingStatus)
-    ).length
+    const pendingSubmitCount = (nodePackage.value?.projectFiles || []).filter((file) => {
+      const binding = file.primaryBinding || file.bindings?.[0]
+      return !binding || ['草稿挂载', '需补正'].includes(binding.bindingStatus)
+    }).length
     return [
       {
         label: '办理对象',
@@ -791,8 +660,118 @@ const workbenchAuditCards = computed<AuditSummaryCard[]>(() => {
     }
   ]
 })
-const nodeBindingsPreview = computed(() => bindings.value.slice(0, 5))
-const projectFilesPreview = computed(() => (nodePackage.value?.projectFiles || []).slice(0, 5))
+const overviewFileVersionMap = computed(
+  () => new Map((nodePackage.value?.availableVersions || []).map((item) => [item.id, item]))
+)
+const overviewFileMaterialTypeLabels: Record<string, string> = {
+  generic_review_material: '审查资料',
+  design_license: '设计单位许可证',
+  construction_license: '施工单位安装许可证',
+  manufacturing_license: '制造单位许可证',
+  ndt_org_certificate: '无损检测机构核准证',
+  ndt_person_certificate: '无损检测人员资格证和执业注册证',
+  design_document: '设计文件',
+  drawing_review_record: '施工图审查手续',
+  calculation_report: '强度计算书或应力分析报告',
+  design_change_document: '设计变更和书面批准文件',
+  construction_organization_design: '施工组织设计',
+  construction_schedule: '施工计划工期文件',
+  quality_certificate: '产品质量证明书',
+  manufacturing_supervision_certificate: '制造监督检验证书',
+  type_test_report: '型式试验证书或型式试验报告',
+  factory_inspection_report: '出厂检验报告',
+  overseas_material_certificate: '境外制造或境外牌号材料证明文件',
+  acceptance_witness_record: '到货验收见证资料',
+  material_retest_report: '材料复验报告',
+  material_mark_transfer_record: '材料标志移植记录',
+  material_substitution_approval: '材料代用批准文件',
+  technical_review_approval: '技术评审和批准手续',
+  valve_test_report: '阀门施工资料和耐压试验报告',
+  welder_certificate: '焊工资格证',
+  welder_roster: '焊工名册',
+  wps_pqr: '焊接工艺评定报告和焊接作业指导书',
+  welding_material_certificate: '焊接材料质量证明文件',
+  welding_material_management_record: '焊材验收保管发放回收记录',
+  welding_record: '焊接记录和焊缝标识资料',
+  weld_repair_record: '焊缝返修记录',
+  heat_treatment_procedure: '焊后热处理工艺文件',
+  heat_treatment_record: '热处理记录、曲线和硬度检测报告',
+  instrument_calibration_certificate: '仪表检定或校准证书',
+  ndt_plan: '无损检测方案',
+  ndt_procedure: '无损检测工艺文件',
+  ndt_report: '无损检测报告',
+  radiographic_film: '射线检测底片',
+  anticorrosion_insulation_material_certificate: '防腐及保温材料质量证明文件',
+  anticorrosion_insulation_record: '防腐补口补伤和保温施工记录',
+  cathodic_protection_record: '阴极保护和杂散电流排流装置资料',
+  grounding_test_record: '静电接地施工和测试记录',
+  installation_record: '管道安装和现场制作记录',
+  safety_accessory_record: '安全附件安装、校验或性能测试资料',
+  pressure_test_plan: '耐压试验方案',
+  pressure_test_report: '耐压试验记录或报告',
+  leakage_test_report: '泄漏试验记录或报告',
+  purge_cleaning_record: '吹扫清洗方案和记录',
+  field_photo: '现场照片、底片或实物核验证据',
+  quality_system_document: '质量保证体系文件和实施记录',
+  external_query_screenshot: '外部查询截图'
+}
+const getOverviewFileMaterialCategory = (file: {
+  materialCategory?: string | null
+  materialTypeCode?: string | null
+}) => {
+  const materialCategory = String(file.materialCategory || '').trim()
+  if (materialCategory) return materialCategory
+  const materialTypeCode = String(file.materialTypeCode || '').trim()
+  if (materialTypeCode) return overviewFileMaterialTypeLabels[materialTypeCode] || materialTypeCode
+  return '未分类'
+}
+const inspectionOverviewFileRows = computed(() =>
+  (nodePackage.value?.projectFiles || []).map((file) => {
+    const currentVersion = overviewFileVersionMap.value.get(file.currentVersionId)
+    const sourceOrgName = file.sourceOrgName || ''
+    const sourceRole =
+      /无损|检测|NDT|华测/i.test(sourceOrgName) || file.materialCategory === '无损检测资料'
+        ? '无损检测机构'
+        : /施工|安装|承包|工程/i.test(sourceOrgName)
+          ? '施工方'
+          : '参建单位'
+    return {
+      ...file,
+      uploadTimeText: currentVersion?.uploadTime || file.updatedAt || '-',
+      materialCategoryText: getOverviewFileMaterialCategory(file),
+      sourceRole
+    }
+  })
+)
+const filteredInspectionOverviewFiles = computed(() => {
+  const keyword = overviewFileKeyword.value.trim().toLowerCase()
+  const rows = [...inspectionOverviewFileRows.value].sort((left, right) =>
+    String(right.uploadTimeText).localeCompare(String(left.uploadTimeText))
+  )
+  if (!keyword) return rows
+  return rows.filter((file) =>
+    [
+      file.fileName,
+      file.sourceOrgName,
+      file.uploaderName,
+      file.materialCategory,
+      file.materialCategoryText,
+      file.fileStatus,
+      file.sourceRole
+    ]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(keyword))
+  )
+})
+const pagedInspectionOverviewFiles = computed(() => {
+  const start = (overviewFilePage.value - 1) * overviewFilePageSize.value
+  return filteredInspectionOverviewFiles.value
+    .slice(start, start + overviewFilePageSize.value)
+    .map((file, index) => ({
+      ...file,
+      rowNo: start + index + 1
+    }))
+})
 const postUploadProcessingFiles = computed(() =>
   (nodePackage.value?.projectFiles || []).filter((file) => {
     if (['排队中', '识别中'].includes(file.currentOcrStatus)) return true
@@ -828,6 +807,225 @@ const aiConfidence = computed(() => {
   const confidence = latestAiRun.value?.suggestion.confidence
   if (confidence === undefined) return '-'
   return `${confidence <= 1 ? Math.round(confidence * 100) : Math.round(confidence)}%`
+})
+const compactText = (value?: string, fallback = '暂无配置') => {
+  const text = String(value || '').trim()
+  return text || fallback
+}
+const requirementResponsibleParty = (requirement: {
+  responsibleParty?: string
+  materialTypeCode?: string
+  name?: string
+}) => {
+  const explicit = String(requirement.responsibleParty || '').trim()
+  if (explicit) return explicit
+  const content = `${requirement.materialTypeCode || ''} ${requirement.name || ''}`
+  if (/标准|规范|条款|standard/i.test(content)) return '标准规范库引用'
+  if (/(无损|检测|底片|射线|(^|_)ndt($|_)|(^|_)rt($|_)|(^|_)ut($|_))/i.test(content)) {
+    return '无损检测机构上传'
+  }
+  if (/现场|照片|见证|监检|检查记录/i.test(content)) return '监检人员现场补充'
+  return '施工方上传'
+}
+const nodeBasisMetaRows = computed(() => {
+  const basis = businessBasis.value
+  return [
+    { label: '规则编号', value: basis?.ruleId || selectedNode.value?.code || '-' },
+    {
+      label: '来源',
+      value: basis?.sourceDocument
+        ? `${basis.sourceDocument}${basis.sourceSequence ? ` / 序号${basis.sourceSequence}` : ''}`
+        : '-'
+    },
+    {
+      label: '类别',
+      value: basis?.inspectionClass || selectedNode.value?.inspectionType || '-'
+    },
+    {
+      label: '业务模块',
+      value: basis?.businessModule || selectedNode.value?.groupName || '-'
+    }
+  ]
+})
+const nodeRequirementRows = computed<NodeRequirementDisplayRow[]>(() => {
+  const summaryRequirements = selectedNode.value?.requirementsSummary?.requirements || []
+  const requirements = summaryRequirements.length
+    ? summaryRequirements
+    : (nodePackage.value?.requirements || []).map((requirement) => ({
+        ...requirement,
+        matchedFileNames: [],
+        fulfilled: false
+      }))
+  return requirements.map((requirement, index) => ({
+    id: requirement.id || `${requirement.nodeId}-${index}`,
+    rowNo: index + 1,
+    name: requirement.name,
+    requiredType: requirement.requiredType,
+    materialType: requirement.materialTypeCode
+      ? overviewFileMaterialTypeLabels[requirement.materialTypeCode] || requirement.materialTypeCode
+      : '未配置',
+    responsibleParty: requirementResponsibleParty(requirement),
+    applicability: requirement.applicability || requirement.note || '按当前节点规则判断',
+    matchedFileNames: requirement.matchedFileNames || [],
+    status: requirement.fulfilled ? '已匹配' : '待补充'
+  }))
+})
+const nodeReferencedStandards = computed(() => {
+  const standards = businessBasis.value?.referencedStandards || []
+  if (standards.length) {
+    const seen = new Set<string>()
+    return standards.filter((standard) => {
+      const key = standard.fileName || standard.file || standard.reference
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }
+  return standardReferences.value.map((standard) => ({
+    reference: `${standard.standardName} ${standard.clauseNo}`,
+    fileName: standard.title,
+    file: undefined
+  }))
+})
+const aiExecutionSteps = computed<AiExecutionDisplayStep[]>(() => {
+  const basis = businessBasis.value
+  const verificationSteps = basis?.aiExecution?.verificationSteps || []
+  const manualItems = latestAiRun.value?.suggestion.manualConfirmItems || []
+  const missingCount = selectedNode.value?.requirementsSummary?.missingCount || 0
+  const statusFor = (index: number, title: string) => {
+    const runStatus = latestAiRun.value?.status
+    if (!runStatus) return '待执行'
+    if (runStatus === '失败') return index <= 3 ? '完成' : '异常'
+    if (runStatus === '推理中') return index <= 2 ? '完成' : index === 3 ? '执行中' : '待执行'
+    if (manualItems.length && /人工|缺项/.test(title)) return '需人工确认'
+    return '完成'
+  }
+  const steps: Omit<AiExecutionDisplayStep, 'status'>[] = [
+    {
+      title: '读取项目和节点上下文',
+      input: currentNodeLabel.value,
+      feedback: `${currentProject.value?.name || '当前项目'} / ${selectedNode.value?.groupName || '未分组'}`,
+      tools: ['T01'],
+      evidenceLinks: []
+    },
+    {
+      title: '定位业务规则与资料要求',
+      input: basis?.ruleId || selectedNode.value?.code || '-',
+      feedback: `已加载 ${nodeRequirementRows.value.length} 项审查所需资料，规则版本 ${basis?.ruleVersion || latestAiRun.value?.ruleVersion || '-'}`,
+      tools: ['T01', 'T02'],
+      evidenceLinks: []
+    },
+    {
+      title: '检索项目文件与证据链',
+      input: `${bindings.value.length} 份节点挂载资料`,
+      feedback: `命中 ${evidenceLinks.value.length} 条 EvidenceLink，项目文件库 ${nodePackage.value?.projectFiles.length || 0} 份文件`,
+      tools: ['T02'],
+      evidenceLinks: evidenceLinks.value.slice(0, 3)
+    },
+    {
+      title: '抽取 OCR 字段和结构化信息',
+      input: `${extractedFields.value.length} 个字段`,
+      feedback: extractedFields.value.length
+        ? extractedFields.value
+            .slice(0, 4)
+            .map((field) => `${field.fieldName}:${field.fieldValue}`)
+            .join('；')
+        : '暂未返回结构化字段，等待 OCR 或人工补录',
+      tools: ['T03', 'T04'],
+      evidenceLinks: evidenceLinks.value.slice(0, 2)
+    },
+    {
+      title: '执行规则核验',
+      input: basis?.inspectionItem || selectedNode.value?.name || '-',
+      feedback: verificationSteps.length
+        ? verificationSteps.slice(0, 2).join('；')
+        : compactText(
+            latestAiRun.value?.suggestion.opinionDraft,
+            '按当前节点规则执行一致性、完整性和适用性核验'
+          ),
+      tools: ['T07', 'T08'],
+      evidenceLinks: evidenceLinks.value.slice(0, 3)
+    },
+    {
+      title: '生成缺项与人工确认项',
+      input: `${missingCount} 项资料缺口 / ${manualItems.length} 项人工确认`,
+      feedback: manualItems.length
+        ? manualItems.slice(0, 3).join('；')
+        : missingCount
+          ? '存在资料缺口，需结合责任方补充或人工确认'
+          : '未生成阻断性人工确认项',
+      tools: ['T11'],
+      evidenceLinks: []
+    },
+    {
+      title: '证据链与结论回写',
+      input: latestAiRun.value?.id || '等待 AI Run',
+      feedback: latestAiRun.value
+        ? `${latestAiRun.value.suggestion.result} / 置信度 ${aiConfidence.value}`
+        : '尚未形成 AI 审查结果',
+      tools: ['T12'],
+      evidenceLinks: evidenceLinks.value.slice(0, 3)
+    }
+  ]
+  return steps.map((step, index) => ({ ...step, status: statusFor(index, step.title) }))
+})
+const evidenceLabel = (evidence: EvidenceLink) => {
+  const title = evidence.fileName || evidence.fieldName || evidence.objectId
+  return evidence.pageNo ? `${title} P${evidence.pageNo}` : title
+}
+const chineseOrder = ['一', '二', '三', '四', '五', '六']
+const reviewConclusionOverall = computed(() => {
+  if (latestAiRun.value?.suggestion.opinionDraft) return latestAiRun.value.suggestion.opinionDraft
+  const summary = selectedNode.value?.requirementsSummary
+  if (summary?.missingCount) {
+    return `当前节点已有 ${summary.satisfiedCount}/${summary.requiredCount} 项资料匹配，仍有 ${summary.missingCount} 项资料需要补充或人工确认。`
+  }
+  if (latestAiRun.value) return `当前节点 AI 审查结果为${latestAiRun.value.suggestion.result}。`
+  return '当前节点尚未形成 AI 审查结论，需先完成资料匹配、OCR 字段抽取和规则核验。'
+})
+const reviewConclusionPoints = computed<ReviewConclusionPoint[]>(() => {
+  const summary = selectedNode.value?.requirementsSummary
+  const manualItems = latestAiRun.value?.suggestion.manualConfirmItems || []
+  const points = [
+    {
+      title: '资料齐全性',
+      conclusion: summary?.missingCount ? '需补充' : summary ? '通过' : '待确认',
+      description: summary
+        ? `审查所需资料已匹配 ${summary.satisfiedCount}/${summary.requiredCount} 项，缺项 ${summary.missingCount} 项。`
+        : '当前节点尚未返回资料要求明细。',
+      evidenceLinks: evidenceLinks.value.slice(0, 2)
+    },
+    {
+      title: '字段与证据识别',
+      conclusion: extractedFields.value.some((field) => field.reviewStatus === '低置信度')
+        ? '需人工确认'
+        : extractedFields.value.length
+          ? '通过'
+          : '待识别',
+      description: extractedFields.value.length
+        ? `已抽取 ${extractedFields.value.length} 个结构化字段，低置信字段需人工复核。`
+        : '暂未返回结构化 OCR 字段，不能单独支撑自动结论。',
+      evidenceLinks: evidenceLinks.value.slice(0, 3)
+    },
+    {
+      title: '规则核验结论',
+      conclusion: latestAiRun.value?.suggestion.result || '待审查',
+      description: latestAiRun.value
+        ? `依据 ${businessBasis.value?.ruleId || latestAiRun.value.ruleVersion} 执行核验，运行状态为 ${latestAiRun.value.status}。`
+        : '尚未获取当前节点 AI Run。',
+      evidenceLinks: evidenceLinks.value.slice(0, 3)
+    },
+    {
+      title: '人工确认事项',
+      conclusion: manualItems.length ? '需人工确认' : '无阻断项',
+      description: manualItems.length ? manualItems.join('；') : '当前 AI Run 未返回人工确认事项。',
+      evidenceLinks: []
+    }
+  ]
+  return points.map((point, index) => ({
+    ...point,
+    order: chineseOrder[index] || String(index + 1)
+  }))
 })
 const reviewChainSteps = computed(() => {
   const fieldNames = extractedFields.value.map((field) => field.fieldName).join('、')
@@ -1335,6 +1533,15 @@ const handleRetryNodeLoad = async () => {
 const scrollToRoleFeedbackList = async (elementId: string) => {
   await nextTick()
   document.getElementById(elementId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+const handleInspectionOverviewJump = async (elementId: string) => {
+  await nextTick()
+  document.getElementById(elementId)?.scrollIntoView({
+    behavior: 'smooth',
+    block: 'start',
+    inline: 'nearest'
+  })
 }
 
 const handleProjectChange = async () => {
@@ -2537,6 +2744,29 @@ watch(
 )
 
 watch(
+  () => overviewFileKeyword.value,
+  () => {
+    overviewFilePage.value = 1
+  }
+)
+
+watch(
+  () => [inspectionProjectNodeRows.value.length, inspectionNodePageSize.value] as const,
+  ([total, pageSize]) => {
+    const maxPage = Math.max(1, Math.ceil(total / pageSize))
+    if (inspectionNodePage.value > maxPage) inspectionNodePage.value = maxPage
+  }
+)
+
+watch(
+  () => [filteredInspectionOverviewFiles.value.length, overviewFilePageSize.value] as const,
+  ([total, pageSize]) => {
+    const maxPage = Math.max(1, Math.ceil(total / pageSize))
+    if (overviewFilePage.value > maxPage) overviewFilePage.value = maxPage
+  }
+)
+
+watch(
   () => bindDialogVisible.value,
   (open) => {
     if (!open) {
@@ -2667,15 +2897,7 @@ onBeforeUnmount(() => {
         v-else-if="canShowWorkspace"
         :class="['workspace', { 'no-left-nav': role === 'contractor' || role === 'ndt' }]"
       >
-        <aside
-          v-if="role !== 'contractor' && role !== 'ndt'"
-          :class="[
-            'left',
-            {
-              'with-project-package': role === 'inspection'
-            }
-          ]"
-        >
+        <aside v-if="role !== 'contractor' && role !== 'ndt'" class="left">
           <section class="tree-wrap">
             <div class="section-title">
               <span>项目审核节点</span>
@@ -2689,75 +2911,6 @@ onBeforeUnmount(() => {
               @select="handleNodeSelect"
               @select-overview="handleProjectOverviewSelect"
             />
-          </section>
-
-          <section class="node-files">
-            <div class="node-file-head">
-              <span>
-                {{ role === 'owner' ? '只读资料摘要' : '节点文件包' }}
-                <small>{{ currentNodeLabel }}</small>
-              </span>
-              <span :class="['pill', getPillClass(selectedNode?.status)]">
-                {{ selectedNode?.status || '-' }}
-              </span>
-            </div>
-            <table class="table compact">
-              <thead>
-                <tr>
-                  <th>文件名</th>
-                  <th>来源</th>
-                  <th>版本</th>
-                  <th>状态</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="binding in nodeBindingsPreview" :key="binding.id">
-                  <td>{{ binding.fileName }}</td>
-                  <td>{{ binding.sourceOrgName }}</td>
-                  <td>{{ binding.versionNo }}</td>
-                  <td>
-                    <span :class="['pill', getPillClass(binding.bindingStatus)]">
-                      {{ binding.bindingStatus }}
-                    </span>
-                  </td>
-                </tr>
-                <tr v-if="!nodeBindingsPreview.length">
-                  <td colspan="4">当前节点暂无文件</td>
-                </tr>
-              </tbody>
-            </table>
-          </section>
-
-          <section v-if="role === 'inspection'" class="project-files">
-            <div class="node-file-head">
-              <span>项目文件包 <small>项目级文件库</small></span>
-              <span class="pill blue">{{ nodePackage?.projectFiles.length || 0 }}文件</span>
-            </div>
-            <table class="table compact">
-              <thead>
-                <tr>
-                  <th>文件名</th>
-                  <th>来源</th>
-                  <th>OCR</th>
-                  <th>状态</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="file in projectFilesPreview" :key="file.id">
-                  <td>{{ file.fileName }}</td>
-                  <td>{{ file.sourceOrgName }}</td>
-                  <td>{{ file.currentOcrStatus }}</td>
-                  <td>
-                    <span :class="['pill', getPillClass(file.fileStatus)]">
-                      {{ file.fileStatus }}
-                    </span>
-                  </td>
-                </tr>
-                <tr v-if="!projectFilesPreview.length">
-                  <td colspan="4">项目文件包等待加载</td>
-                </tr>
-              </tbody>
-            </table>
           </section>
         </aside>
 
@@ -2779,21 +2932,51 @@ onBeforeUnmount(() => {
                     ? '项目文件库'
                     : role === 'ndt'
                       ? '无损检测资料库'
-                      : currentNodeLabel
+                      : role === 'inspection' && activeWorkbenchSection === 'overview'
+                        ? '项目总览'
+                        : currentNodeLabel
                 }}
                 <span
-                  v-if="role !== 'contractor' && role !== 'ndt'"
+                  v-if="
+                    role !== 'contractor' &&
+                    role !== 'ndt' &&
+                    !(role === 'inspection' && activeWorkbenchSection === 'overview')
+                  "
                   :class="['pill', getPillClass(selectedNode?.inspectionType)]"
                 >
                   {{ selectedNode?.inspectionType || '-' }}类节点
                 </span>
               </div>
               <h1 class="page-title">{{ currentRoleConfig.title }} · {{ pageHeadline }}</h1>
-              <div class="sub">{{ pageIntro }}</div>
+              <nav
+                v-if="role === 'inspection' && activeWorkbenchSection === 'overview'"
+                class="inspection-overview-jump-menu"
+                aria-label="项目总览快捷跳转"
+              >
+                <button
+                  v-for="item in inspectionOverviewJumpItems"
+                  :key="item.id"
+                  type="button"
+                  class="inspection-overview-jump-button"
+                  @click="handleInspectionOverviewJump(item.id)"
+                >
+                  {{ item.label }}
+                </button>
+              </nav>
+              <div
+                v-else-if="!(role === 'inspection' && activeWorkbenchSection === 'node')"
+                class="sub"
+              >
+                {{ pageIntro }}
+              </div>
             </div>
             <div class="actions">
               <ElButton
-                v-if="role === 'inspection' && hasAction('ai:recheck')"
+                v-if="
+                  role === 'inspection' &&
+                  activeWorkbenchSection === 'node' &&
+                  hasAction('ai:recheck')
+                "
                 class="btn"
                 :disabled="actionLoading || isReadOnly"
                 @click="handleAiRecheck"
@@ -2824,7 +3007,12 @@ onBeforeUnmount(() => {
                 提交检测资料
               </ElButton>
               <ElButton
-                v-if="role !== 'owner' && role !== 'contractor' && role !== 'ndt'"
+                v-if="
+                  role !== 'owner' &&
+                  role !== 'contractor' &&
+                  role !== 'ndt' &&
+                  !(role === 'inspection' && activeWorkbenchSection === 'overview')
+                "
                 class="btn"
                 :disabled="actionLoading || isReadOnly"
                 @click="() => handleOpenBindDialog()"
@@ -2837,40 +3025,27 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <AuditSummaryGrid :cards="workbenchAuditCards" aria-label="业务工作台审计摘要" />
+          <AuditSummaryGrid
+            v-if="
+              !(
+                role === 'inspection' &&
+                (activeWorkbenchSection === 'overview' || activeWorkbenchSection === 'node')
+              )
+            "
+            :cards="workbenchAuditCards"
+            aria-label="业务工作台审计摘要"
+          />
 
           <section
             v-if="role === 'inspection' && activeWorkbenchSection === 'overview'"
             class="inspection-project-overview"
             aria-label="项目总览"
           >
-            <div class="inspection-project-overview-head">
-              <div>
-                <span>项目总览</span>
-                <strong>{{ currentProject?.name || '未选择项目' }}</strong>
-                <small>先判断项目级卡点，再进入当前节点办理审查。</small>
-              </div>
-              <span :class="['pill', inspectionOpenIssueCount ? 'red' : 'green']">
-                {{
-                  inspectionOpenIssueCount ? `${inspectionOpenIssueCount} 项待处理` : '无待处理阻断'
-                }}
-              </span>
-            </div>
-
-            <div class="inspection-overview-card-grid">
-              <article
-                v-for="card in inspectionProjectOverviewCards"
-                :key="card.label"
-                :class="['inspection-overview-card', `inspection-overview-card--${card.tone}`]"
-              >
-                <span>{{ card.label }}</span>
-                <strong>{{ card.value }}</strong>
-                <small>{{ card.hint }}</small>
-              </article>
-            </div>
-
             <div class="inspection-overview-main-grid">
-              <article class="inspection-overview-panel inspection-overview-panel--status">
+              <article
+                id="inspection-overview-status"
+                class="inspection-overview-panel inspection-overview-panel--status"
+              >
                 <div class="inspection-chart-head">
                   <div>
                     <strong>节点状态分布</strong>
@@ -2900,108 +3075,192 @@ onBeforeUnmount(() => {
                 </div>
               </article>
 
-              <article class="inspection-overview-panel">
+              <article id="inspection-overview-nodes" class="inspection-overview-panel">
                 <div class="inspection-chart-head">
                   <div>
                     <strong>节点处理清单</strong>
                     <small>与左侧项目树一致，按节点查看资料、要求和审查进度。</small>
                   </div>
-                  <span class="pill green">可下钻</span>
+                  <span class="pill green">{{ inspectionProjectNodeRows.length }} 个节点</span>
                 </div>
-                <div class="inspection-node-progress-list">
-                  <button
-                    v-for="row in inspectionProjectNodeRows"
-                    :key="row.node.id"
-                    type="button"
-                    :class="[
-                      'inspection-node-progress-item',
-                      { active: row.node.nodeId === activeNodeId }
-                    ]"
-                    @click="handleNodeSelect(row.node)"
-                  >
-                    <span>{{ row.node.nodeId }}</span>
-                    <strong>{{ row.node.name }}</strong>
-                    <small>{{ row.evidence }}</small>
-                    <em>{{ row.progress }}%</em>
-                  </button>
+                <div class="inspection-node-table-wrap">
+                  <table class="table compact inspection-node-table">
+                    <thead>
+                      <tr>
+                        <th>
+                          <button
+                            type="button"
+                            class="inspection-node-sort-button"
+                            @click="handleInspectionNodeSort('nodeId')"
+                          >
+                            序号 {{ getInspectionNodeSortIndicator('nodeId') }}
+                          </button>
+                        </th>
+                        <th>节点名称</th>
+                        <th>类别</th>
+                        <th>
+                          <button
+                            type="button"
+                            class="inspection-node-sort-button"
+                            @click="handleInspectionNodeSort('material')"
+                          >
+                            资料齐全度 {{ getInspectionNodeSortIndicator('material') }}
+                          </button>
+                        </th>
+                        <th>
+                          <button
+                            type="button"
+                            class="inspection-node-sort-button"
+                            @click="handleInspectionNodeSort('review')"
+                          >
+                            审查进度 {{ getInspectionNodeSortIndicator('review') }}
+                          </button>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr
+                        v-for="row in pagedInspectionProjectNodeRows"
+                        :key="row.node.id"
+                        :class="{ active: row.node.nodeId === activeNodeId }"
+                      >
+                        <td>{{ row.node.nodeId }}</td>
+                        <td>
+                          <a
+                            href=""
+                            class="inspection-node-link"
+                            @click.prevent="handleNodeSelect(row.node)"
+                          >
+                            {{ row.node.name }}
+                          </a>
+                        </td>
+                        <td>
+                          <span :class="['pill', getPillClass(row.node.inspectionType)]">
+                            {{ row.node.inspectionType }}
+                          </span>
+                        </td>
+                        <td>
+                          <div class="inspection-node-material">
+                            <strong>{{ row.materialDone }}/{{ row.materialTotal }}</strong>
+                            <span>{{ row.materialPercent }}%</span>
+                          </div>
+                          <div class="inspection-node-material-bar">
+                            <i :style="{ width: `${row.materialPercent}%` }"></i>
+                          </div>
+                          <small class="inspection-node-missing" :title="row.missingText">
+                            {{ row.missingText }}
+                          </small>
+                        </td>
+                        <td>
+                          <span :class="['pill', getPillClass(row.reviewProgress)]">
+                            {{ row.reviewProgress }}
+                          </span>
+                        </td>
+                      </tr>
+                      <tr v-if="!inspectionProjectNodeRows.length">
+                        <td colspan="5">暂无节点</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
+                <ElPagination
+                  v-model:current-page="inspectionNodePage"
+                  v-model:page-size="inspectionNodePageSize"
+                  class="inspection-node-pagination"
+                  :page-sizes="[6, 10, 20, 50]"
+                  :total="inspectionProjectNodeRows.length"
+                  layout="total, sizes, prev, pager, next"
+                  small
+                />
               </article>
 
-              <article class="inspection-overview-panel">
+              <article
+                id="inspection-overview-files"
+                class="inspection-overview-panel inspection-overview-panel--files"
+              >
                 <div class="inspection-chart-head">
                   <div>
-                    <strong>下一步建议</strong>
-                    <small>只提示处理顺序，不替代监检员形成正式结论。</small>
+                    <strong>施工方/无损检测机构上传文件列表</strong>
+                    <small>按项目文件库展示上传资料，支持查找、分页和查看原文。</small>
                   </div>
-                  <span class="pill orange">人工确认</span>
+                  <span class="pill blue">{{ filteredInspectionOverviewFiles.length }} 份文件</span>
                 </div>
-                <div class="inspection-next-action-list">
-                  <article
-                    v-for="row in inspectionProjectNextActions"
-                    :key="`${row.tag}-${row.title}`"
-                    :class="[
-                      'inspection-next-action-item',
-                      `inspection-next-action-item--${row.tone}`
-                    ]"
-                  >
-                    <span>{{ row.tag }}</span>
-                    <strong>{{ row.title }}</strong>
-                    <small>{{ row.description }}</small>
-                  </article>
+
+                <div class="overview-file-toolbar">
+                  <ElInput
+                    v-model="overviewFileKeyword"
+                    clearable
+                    placeholder="查找文件名、上传单位、上传人、资料类别或状态"
+                    aria-label="查找上传文件"
+                  />
                 </div>
+
+                <div class="overview-file-table-wrap">
+                  <table class="table compact overview-file-table">
+                    <thead>
+                      <tr>
+                        <th>序号</th>
+                        <th>文件名</th>
+                        <th>来源</th>
+                        <th>上传人</th>
+                        <th>资料类别</th>
+                        <th>状态</th>
+                        <th>上传时间</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="file in pagedInspectionOverviewFiles" :key="file.id">
+                        <td>{{ file.rowNo }}</td>
+                        <td>
+                          <span class="overview-file-name" :title="file.fileName">
+                            {{ file.fileName }}
+                          </span>
+                        </td>
+                        <td>
+                          <span>{{ file.sourceRole }}</span>
+                          <small>{{ file.sourceOrgName }}</small>
+                        </td>
+                        <td>{{ file.uploaderName || '-' }}</td>
+                        <td>{{ file.materialCategoryText }}</td>
+                        <td>
+                          <span :class="['pill', getPillClass(file.fileStatus)]">
+                            {{ file.fileStatus }}
+                          </span>
+                        </td>
+                        <td>{{ file.uploadTimeText }}</td>
+                        <td>
+                          <ElButton
+                            class="overview-file-action"
+                            text
+                            type="primary"
+                            @click="handleOpenFileDetail(file.id)"
+                          >
+                            查看原文
+                          </ElButton>
+                        </td>
+                      </tr>
+                      <tr v-if="!pagedInspectionOverviewFiles.length">
+                        <td colspan="8">暂无匹配文件</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <ElPagination
+                  v-model:current-page="overviewFilePage"
+                  v-model:page-size="overviewFilePageSize"
+                  class="overview-file-pagination"
+                  :page-sizes="[5, 8, 10, 20]"
+                  :total="filteredInspectionOverviewFiles.length"
+                  layout="total, sizes, prev, pager, next"
+                  small
+                />
               </article>
             </div>
           </section>
 
-          <section
-            v-if="role === 'inspection' && activeWorkbenchSection === 'node'"
-            class="inspection-audit-visual"
-            aria-label="审查态势图"
-          >
-            <article class="inspection-chart-panel inspection-chart-panel--wide">
-              <div class="inspection-chart-head">
-                <div>
-                  <strong>任务与证据分布</strong>
-                  <small>按当前项目节点聚合待办、补正、证据引用和已通过节点</small>
-                </div>
-                <span class="pill blue">当前节点</span>
-              </div>
-              <Echart
-                :options="inspectionAuditBarOption"
-                height="220px"
-                class="inspection-audit-echart"
-              />
-              <div class="inspection-metric-strip">
-                <span
-                  v-for="item in inspectionAuditMetricItems"
-                  :key="item.key"
-                  :style="{ '--metric-color': item.color }"
-                >
-                  <b>{{ item.value }}</b>
-                  {{ item.label }}
-                </span>
-              </div>
-            </article>
-
-            <article class="inspection-chart-panel">
-              <div class="inspection-chart-head">
-                <div>
-                  <strong>人工处理闭环</strong>
-                  <small>突出待办和补正压力，辅助监检员确定处理优先级</small>
-                </div>
-                <span :class="['pill', inspectionOpenIssueCount ? 'red' : 'green']">
-                  {{ inspectionOpenIssueCount ? `${inspectionOpenIssueCount} 项待处理` : '无阻断' }}
-                </span>
-              </div>
-              <Echart
-                :options="inspectionClosurePieOption"
-                height="220px"
-                class="inspection-audit-echart"
-              />
-            </article>
-          </section>
-
-          <section v-else-if="role === 'owner'" class="card">
+          <section v-if="role === 'owner'" class="card">
             <div class="card-body">
               <div class="metrics">
                 <div v-for="metric in metrics.slice(0, 5)" :key="metric.key" class="metric">
@@ -3039,46 +3298,239 @@ onBeforeUnmount(() => {
 
           <section v-if="role === 'inspection' && activeWorkbenchSection === 'node'" class="card">
             <div class="card-head">
-              <h2>一、业务核验链路</h2>
-              <div class="sub">每一步都关联过程文件和 EvidenceLink</div>
+              <h2>一、监检项目开展依据</h2>
+              <div class="sub">{{ businessBasis?.ruleName || selectedNode?.name }}</div>
             </div>
             <div class="card-body">
-              <div class="review-chain">
-                <div
-                  v-for="(step, index) in reviewChainSteps"
+              <div class="basis-meta-grid">
+                <div v-for="item in nodeBasisMetaRows" :key="item.label" class="basis-meta-item">
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.value }}</strong>
+                </div>
+              </div>
+
+              <div class="basis-block-grid">
+                <article class="basis-block">
+                  <h3>监检判断准则</h3>
+                  <p>{{ compactText(businessBasis?.criteria) }}</p>
+                </article>
+                <article class="basis-block">
+                  <h3>核查方法与工作见证</h3>
+                  <p>{{ compactText(businessBasis?.checkMethod || businessBasis?.witnessText) }}</p>
+                </article>
+              </div>
+
+              <article class="basis-table-block">
+                <div class="block-title-row">
+                  <h3>审查所需资料</h3>
+                  <span class="pill blue">{{ nodeRequirementRows.length }} 项</span>
+                </div>
+                <div class="basis-table-wrap">
+                  <table class="basis-table">
+                    <thead>
+                      <tr>
+                        <th>序号</th>
+                        <th>资料名称</th>
+                        <th>资料类别</th>
+                        <th>责任方</th>
+                        <th>要求</th>
+                        <th>当前匹配</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="row in nodeRequirementRows" :key="row.id">
+                        <td>{{ row.rowNo }}</td>
+                        <td>
+                          <strong>{{ row.name }}</strong>
+                          <small>{{ row.applicability }}</small>
+                        </td>
+                        <td>{{ row.materialType }}</td>
+                        <td>{{ row.responsibleParty }}</td>
+                        <td>{{ row.requiredType }}</td>
+                        <td>
+                          <span :class="['pill', getPillClass(row.status)]">{{ row.status }}</span>
+                          <small v-if="row.matchedFileNames.length">
+                            {{ row.matchedFileNames.slice(0, 2).join('、') }}
+                          </small>
+                        </td>
+                      </tr>
+                      <tr v-if="!nodeRequirementRows.length">
+                        <td colspan="6">暂无资料要求明细</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+
+              <article class="standard-reference-block">
+                <div class="block-title-row">
+                  <h3>引用标准文件</h3>
+                  <span class="pill blue">{{ nodeReferencedStandards.length }} 项</span>
+                </div>
+                <div class="standard-reference-list">
+                  <span
+                    v-for="standard in nodeReferencedStandards"
+                    :key="`${standard.reference}-${standard.fileName || standard.file || ''}`"
+                    class="standard-reference-chip"
+                    :title="standard.file || standard.fileName"
+                  >
+                    <strong>{{ standard.reference }}</strong>
+                    <small>{{ standard.fileName || standard.file || '标准规范库' }}</small>
+                  </span>
+                  <span v-if="!nodeReferencedStandards.length" class="empty-inline">
+                    暂无引用标准文件
+                  </span>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section
+            v-if="role === 'inspection' && activeWorkbenchSection === 'node'"
+            class="card node-package-card"
+          >
+            <div class="card-head">
+              <h2>二、AI 审查执行过程</h2>
+              <div class="sub">LangGraph 编排执行步骤与操作反馈</div>
+            </div>
+            <div class="card-body">
+              <div class="execution-timeline">
+                <article
+                  v-for="(step, index) in aiExecutionSteps"
                   :key="step.title"
-                  class="review-step"
+                  class="execution-step"
                 >
                   <div class="step-no">{{ index + 1 }}</div>
-                  <div>
-                    <div class="step-title">{{ step.title }}</div>
-                    <div class="step-desc">{{ step.desc }}</div>
+                  <div class="execution-step-main">
+                    <div class="execution-step-head">
+                      <h3>{{ step.title }}</h3>
+                      <span :class="['pill', getPillClass(step.status)]">{{ step.status }}</span>
+                    </div>
+                    <dl class="execution-step-detail">
+                      <div>
+                        <dt>输入</dt>
+                        <dd>{{ step.input }}</dd>
+                      </div>
+                      <div>
+                        <dt>反馈</dt>
+                        <dd>{{ step.feedback }}</dd>
+                      </div>
+                    </dl>
                     <div class="evidence-row">
-                      <span v-for="tag in step.tags" :key="tag" class="pill blue">
-                        {{ tag }}
+                      <span v-for="tool in step.tools" :key="tool" class="pill blue">
+                        {{ tool }}
                       </span>
+                      <button
+                        v-for="evidence in step.evidenceLinks"
+                        :key="evidence.id"
+                        class="evidence-link-button"
+                        type="button"
+                        @click="handleLocateEvidence(evidence)"
+                      >
+                        {{ evidenceLabel(evidence) }}
+                      </button>
                     </div>
                   </div>
-                  <span :class="['pill', getPillClass(step.result)]">{{ step.result }}</span>
-                </div>
+                </article>
               </div>
             </div>
           </section>
 
           <section
-            v-if="(role === 'inspection' && activeWorkbenchSection === 'node') || role === 'owner'"
-            class="card node-package-card"
+            v-if="role === 'inspection' && activeWorkbenchSection === 'node'"
+            class="card conclusion-card"
           >
             <div class="card-head">
-              <h2>
-                {{
-                  role === 'inspection'
-                    ? '二、监检工作区'
-                    : role === 'owner'
-                      ? '只读节点资料联动区'
-                      : '项目文件与审核反馈联动区'
-                }}
-              </h2>
+              <h2>三、审查结论</h2>
+              <div class="sub">{{
+                latestAiRun?.finishedAt || latestAiRun?.status || '等待审查'
+              }}</div>
+            </div>
+            <div class="card-body">
+              <div class="overall-conclusion">
+                <span>总体意见</span>
+                <p>{{ reviewConclusionOverall }}</p>
+              </div>
+              <div class="conclusion-points">
+                <article
+                  v-for="point in reviewConclusionPoints"
+                  :key="point.title"
+                  class="conclusion-point"
+                >
+                  <div class="conclusion-point-order">{{ point.order }}</div>
+                  <div>
+                    <div class="conclusion-point-head">
+                      <h3>{{ point.title }}</h3>
+                      <span :class="['pill', getPillClass(point.conclusion)]">
+                        {{ point.conclusion }}
+                      </span>
+                    </div>
+                    <p>{{ point.description }}</p>
+                    <div v-if="point.evidenceLinks.length" class="evidence-row">
+                      <button
+                        v-for="evidence in point.evidenceLinks"
+                        :key="evidence.id"
+                        class="evidence-link-button"
+                        type="button"
+                        @click="handleLocateEvidence(evidence)"
+                      >
+                        {{ evidenceLabel(evidence) }}
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </section>
+
+          <section
+            v-if="role === 'inspection' && activeWorkbenchSection === 'node'"
+            class="manual-review-section"
+          >
+            <div class="card-head manual-review-head">
+              <h2>四、人工审查操作区</h2>
+              <div class="sub">人工结论、补正要求和审查意见提交</div>
+            </div>
+            <div class="manual-review-grid">
+              <section class="right-card action-card">
+                <h3>办理操作</h3>
+                <div class="body">
+                  <WorkbenchActionBar
+                    :role="role"
+                    :actions="availableActions"
+                    :loading="actionLoading"
+                    :read-only="isReadOnly"
+                    @upload="handleOpenUploadDrawer"
+                    @bind="handleOpenBindDialog"
+                    @save-draft="handleSaveDraft"
+                    @submit="handleOpenSubmissionDialog"
+                    @withdraw="handleOpenSubmissionDialog"
+                    @history="handleOpenSubmissionHistory"
+                    @rectify="handleOpenRectificationDialog"
+                    @ai-recheck="handleAiRecheck"
+                  />
+                </div>
+              </section>
+              <ReviewDecisionPanel
+                v-model:review-result="reviewResult"
+                v-model:review-opinion="reviewOpinion"
+                v-model:correction-reason="correctionReason"
+                :role="role"
+                :actions="availableActions"
+                :latest-ai-run="undefined"
+                :evidence-count="evidenceLinks.length"
+                :loading="actionLoading"
+                @save-review="handleSaveReviewOpinion"
+                @return-correction="handleReturnCorrection"
+                @adopt-ai="handleAdoptAiSuggestion"
+                @reject-ai="handleRejectAiSuggestion"
+              />
+            </div>
+          </section>
+
+          <section v-if="role === 'owner'" class="card node-package-card">
+            <div class="card-head">
+              <h2>只读节点资料联动区</h2>
               <div class="sub">集中展示当前节点文件、审核反馈和错误恢复能力</div>
             </div>
             <div class="card-body">
@@ -3092,65 +3544,6 @@ onBeforeUnmount(() => {
               />
             </div>
           </section>
-
-          <section
-            v-if="role === 'inspection' && activeWorkbenchSection === 'node'"
-            class="result-band"
-          >
-            <h2>三、AI 业务建议结果 <span class="sub">仅为建议，需监检人员确认</span></h2>
-            <div class="result-grid">
-              <div>
-                建议结论
-                <b>{{ latestAiRun?.suggestion.result || '-' }}</b>
-              </div>
-              <div>
-                风险等级
-                <b>{{ latestAiRun?.suggestion.result === '需补正' ? '中' : '低' }}</b>
-              </div>
-              <div>
-                置信度
-                <b class="blue">{{ aiConfidence }}</b>
-              </div>
-              <div>
-                人工确认
-                <b>{{ latestAiRun?.suggestion.manualConfirmItems.length || 0 }}项</b>
-              </div>
-            </div>
-            <div class="ai-suggestion-editor">
-              <div class="ai-suggestion-head">
-                <strong>建议意见</strong>
-                <span class="pill blue">可编辑草稿</span>
-              </div>
-              <textarea
-                v-model="reviewOpinion"
-                class="ai-suggestion-textarea"
-                rows="4"
-                aria-label="AI 建议意见"
-              ></textarea>
-            </div>
-          </section>
-
-          <WorkbenchRoleStaticSections
-            v-if="role === 'inspection'"
-            :role="role"
-            :project="currentProject"
-            :node="selectedNode"
-            :package-data="nodePackage"
-            :read-only="isReadOnly"
-            :metrics="metrics"
-            :review-steps="reviewChainSteps"
-            :ai-confidence="aiConfidence"
-            :reports="reports"
-            :archive-items="archiveItems"
-            :ndt-films="ndtFilms"
-            :ndt-records="ndtRecords"
-            :ndt-reports="ndtReports"
-            :ndt-feedback="ndtFeedback"
-            @file-view="handleOpenFileDetail"
-            @file-bind="handleOpenBindDialog"
-            @file-submit="handleSubmitProjectFile"
-            @file-delete="handleDeleteProjectFile"
-          />
 
           <NdtWorkflowPanel
             v-if="role === 'ndt'"
@@ -3176,7 +3569,7 @@ onBeforeUnmount(() => {
           />
 
           <ReportArchivePanel
-            v-if="role !== 'ndt' && role !== 'contractor'"
+            v-if="role !== 'inspection' && role !== 'ndt' && role !== 'contractor'"
             :role="role"
             :actions="availableActions"
             :package-data="nodePackage"
@@ -3196,7 +3589,10 @@ onBeforeUnmount(() => {
             @open-export-task="handleOpenExportTask"
           />
 
-          <section v-if="role !== 'contractor' && role !== 'ndt'" class="center-support-grid">
+          <section
+            v-if="role !== 'inspection' && role !== 'contractor' && role !== 'ndt'"
+            class="center-support-grid"
+          >
             <WorkbenchRightStaticDetails
               :role="role"
               :project="currentProject"
@@ -3855,16 +4251,10 @@ onBeforeUnmount(() => {
   overflow: hidden auto;
   background: #fff;
   border-right: 1px solid var(--line);
-  grid-template-rows: minmax(560px, 1fr) 394px;
+  grid-template-rows: minmax(0, 1fr);
 }
 
-.left.with-project-package {
-  grid-template-rows: minmax(430px, 1fr) 286px 300px;
-}
-
-.tree-wrap,
-.node-files,
-.project-files {
+.tree-wrap {
   min-height: 0;
   overflow: hidden auto;
 }
@@ -4035,30 +4425,6 @@ onBeforeUnmount(() => {
   color: var(--muted);
 }
 
-.node-files {
-  background: #fff;
-  border-top: 1px solid var(--line);
-}
-
-.project-files {
-  background: #fbfdff;
-  border-top: 1px solid var(--line);
-}
-
-.node-file-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 44px;
-  padding: 0 18px;
-  font-weight: 800;
-}
-
-.node-file-head small {
-  font-weight: 700;
-  color: var(--muted);
-}
-
 .center {
   height: 100%;
   min-width: 0;
@@ -4119,6 +4485,39 @@ h3 {
   font-size: 14px;
   font-weight: 700;
   color: var(--muted);
+}
+
+.inspection-overview-jump-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.inspection-overview-jump-button {
+  min-height: 34px;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 900;
+  color: #1f66d8;
+  cursor: pointer;
+  background: #f8fbff;
+  border: 1px solid #b9d2fb;
+  border-radius: 6px;
+  transition:
+    color 0.18s ease,
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.inspection-overview-jump-button:hover,
+.inspection-overview-jump-button:focus-visible {
+  color: #0f4fb9;
+  background: #eef5ff;
+  border-color: #85acec;
+  outline: 0;
+  box-shadow: 0 0 0 3px rgb(31 102 216 / 12%);
 }
 
 .actions {
@@ -4421,7 +4820,7 @@ h3 {
 
 .inspection-overview-main-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   align-items: start;
 }
@@ -4433,6 +4832,7 @@ h3 {
   background: #fff;
   border: 1px solid #e1eaf7;
   border-radius: 8px;
+  scroll-margin-top: 16px;
 }
 
 .inspection-overview-panel--status {
@@ -4440,10 +4840,8 @@ h3 {
   min-height: auto;
 }
 
-.inspection-overview-panel--status .inspection-audit-echart {
-  display: block;
-  width: 100% !important;
-  min-width: 0;
+.inspection-overview-panel--files {
+  min-height: 0;
 }
 
 .inspection-node-status-bars {
@@ -4544,10 +4942,151 @@ h3 {
   box-shadow: 0 7px 18px rgb(220 38 38 / 18%);
 }
 
+.inspection-node-table-wrap {
+  margin-top: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid #e1eaf7;
+  border-radius: 8px;
+}
+
+.inspection-node-table {
+  min-width: 860px;
+  border: 0;
+}
+
+.inspection-node-table th,
+.inspection-node-table td {
+  vertical-align: middle;
+}
+
+.inspection-node-table th:first-child,
+.inspection-node-table td:first-child {
+  width: 72px;
+  text-align: center;
+}
+
+.inspection-node-table th:nth-child(3),
+.inspection-node-table td:nth-child(3),
+.inspection-node-table th:nth-child(5),
+.inspection-node-table td:nth-child(5) {
+  width: 108px;
+  text-align: center;
+}
+
+.inspection-node-table tbody tr.active {
+  background: #f8fbff;
+}
+
+.inspection-node-sort-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 28px;
+  padding: 0;
+  font: inherit;
+  font-weight: 900;
+  color: inherit;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+}
+
+.inspection-node-sort-button:hover,
+.inspection-node-sort-button:focus-visible {
+  color: #1f66d8;
+  outline: 0;
+}
+
+.inspection-node-link {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+  font: inherit;
+  font-weight: 900;
+  color: #1f66d8;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+}
+
+.inspection-node-link:hover,
+.inspection-node-link:focus-visible {
+  color: #0f4fb9;
+  outline: 0;
+}
+
+.inspection-node-material {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+  font-variant-numeric: tabular-nums;
+}
+
+.inspection-node-material strong {
+  font-size: 14px;
+  font-weight: 900;
+  color: #172033;
+}
+
+.inspection-node-material span {
+  font-size: 12px;
+  font-weight: 900;
+  color: #1f66d8;
+}
+
+.inspection-node-material-bar {
+  height: 7px;
+  margin-top: 6px;
+  overflow: hidden;
+  background: #eef4fb;
+  border-radius: 999px;
+}
+
+.inspection-node-material-bar i {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  background: #1f66d8;
+  border-radius: inherit;
+}
+
+.inspection-node-missing {
+  display: block;
+  max-width: 280px;
+  margin-top: 5px;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 16px;
+  color: #667085;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspection-node-pagination {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
 .inspection-node-progress-list,
 .inspection-next-action-list {
   display: grid;
   gap: 8px;
+}
+
+.inspection-node-progress-list {
+  max-height: 360px;
+  padding-right: 4px;
+  overflow: auto;
 }
 
 .inspection-node-progress-item,
@@ -4652,25 +5191,65 @@ h3 {
   border-color: #ffc9c3;
 }
 
-.inspection-audit-visual {
-  display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(280px, 0.95fr);
-  gap: 12px;
-  margin-bottom: 16px;
+.overview-file-toolbar {
+  display: flex;
+  align-items: center;
+  max-width: 560px;
+  margin: 10px 0 12px;
 }
 
-.inspection-chart-panel {
-  min-height: 304px;
-  padding: 14px 16px 12px;
-  overflow: hidden;
-  background: linear-gradient(180deg, #fff, #f8fbff);
-  border: 1px solid #dbe6f5;
+.overview-file-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #e1eaf7;
   border-radius: 8px;
-  box-shadow: 0 1px 2px rgb(20 34 56 / 4%);
 }
 
-.inspection-chart-panel--wide {
-  min-width: 0;
+.overview-file-table {
+  min-width: 980px;
+  border: 0;
+}
+
+.overview-file-table th,
+.overview-file-table td {
+  vertical-align: middle;
+}
+
+.overview-file-table th:first-child,
+.overview-file-table td:first-child {
+  width: 64px;
+  text-align: center;
+}
+
+.overview-file-table td:nth-child(3) span,
+.overview-file-table td:nth-child(3) small {
+  display: block;
+}
+
+.overview-file-table td:nth-child(3) small {
+  margin-top: 2px;
+  color: #7b8798;
+}
+
+.overview-file-name {
+  display: inline-block;
+  max-width: 280px;
+  overflow: hidden;
+  font-weight: 900;
+  color: #172033;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.overview-file-action {
+  padding: 0;
+  font-weight: 900;
+}
+
+.overview-file-pagination {
+  justify-content: flex-end;
+  margin-top: 12px;
 }
 
 .inspection-chart-head {
@@ -4697,49 +5276,6 @@ h3 {
   font-size: 12px;
   line-height: 1.5;
   color: #667085;
-}
-
-.inspection-audit-echart {
-  width: 100%;
-}
-
-.inspection-metric-strip {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 6px;
-}
-
-.inspection-metric-strip span {
-  min-width: 0;
-  padding: 8px 10px;
-  overflow: hidden;
-  font-size: 12px;
-  font-weight: 800;
-  color: #667085;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  background: #fff;
-  border: 1px solid #e6edf7;
-  border-radius: 6px;
-}
-
-.inspection-metric-strip span::before {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-right: 7px;
-  vertical-align: 1px;
-  background: var(--metric-color, #2563eb);
-  border-radius: 999px;
-  content: '';
-}
-
-.inspection-metric-strip b {
-  margin-right: 4px;
-  font-size: 15px;
-  color: #172033;
-  font-variant-numeric: tabular-nums;
 }
 
 .pill {
@@ -4829,15 +5365,168 @@ h3 {
   gap: 10px;
 }
 
-.review-step {
+.basis-meta-grid {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: start;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.basis-meta-item {
+  min-height: 72px;
   padding: 12px;
-  background: #fbfdff;
+  background: #f8fbff;
   border: 1px solid var(--line-soft);
   border-radius: 6px;
+}
+
+.basis-meta-item span,
+.overall-conclusion span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+.basis-meta-item strong {
+  display: block;
+  font-size: 16px;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.basis-block-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.basis-block,
+.basis-table-block,
+.standard-reference-block,
+.overall-conclusion,
+.conclusion-point,
+.execution-step {
+  padding: 14px;
+  background: #fff;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+}
+
+.basis-block h3,
+.basis-table-block h3,
+.standard-reference-block h3,
+.execution-step h3,
+.conclusion-point h3 {
+  margin: 0;
+  font-size: 17px;
+  color: var(--ink);
+}
+
+.basis-block p,
+.overall-conclusion p,
+.conclusion-point p {
+  margin: 8px 0 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.7;
+  color: #344054;
+  white-space: pre-wrap;
+}
+
+.block-title-row,
+.execution-step-head,
+.conclusion-point-head,
+.manual-review-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.basis-table-block {
+  margin-bottom: 14px;
+}
+
+.basis-table-wrap {
+  margin-top: 12px;
+  overflow-x: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+}
+
+.basis-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+}
+
+.basis-table th,
+.basis-table td {
+  padding: 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.basis-table th {
+  font-size: 14px;
+  color: #42536b;
+  background: #f3f7fc;
+}
+
+.basis-table td {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.basis-table small,
+.standard-reference-chip small {
+  display: block;
+  margin-top: 4px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.standard-reference-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.standard-reference-chip {
+  max-width: min(420px, 100%);
+  padding: 9px 10px;
+  background: #f8fbff;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+}
+
+.standard-reference-chip strong {
+  display: block;
+  color: var(--blue);
+}
+
+.empty-inline {
+  font-weight: 800;
+  color: var(--muted);
+}
+
+.execution-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.execution-step {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
 }
 
 .step-no {
@@ -4855,6 +5544,35 @@ h3 {
   font-weight: 900;
 }
 
+.execution-step-detail {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 10px 0 0;
+}
+
+.execution-step-detail div {
+  padding: 10px;
+  background: #f8fbff;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+}
+
+.execution-step-detail dt {
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+.execution-step-detail dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
 .step-desc {
   margin-top: 6px;
   font-size: 14px;
@@ -4869,65 +5587,61 @@ h3 {
   margin-top: 8px;
 }
 
-.result-band {
-  padding: 16px;
-  margin-bottom: 12px;
-  background: #fff;
-  border: 1px solid #bcd4ff;
-  border-radius: 6px;
-  box-shadow: var(--shadow);
+.evidence-link-button {
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--blue);
+  text-decoration: underline;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
 }
 
-.result-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+.conclusion-points {
+  display: flex;
+  flex-direction: column;
   gap: 10px;
   margin-top: 12px;
 }
 
-.result-grid div {
-  min-height: 62px;
-  padding: 12px;
-  font-weight: 800;
-  color: var(--muted);
-  background: #fbfdff;
+.conclusion-point {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.conclusion-point-order {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  font-weight: 900;
+  color: var(--blue);
+  background: #eef5ff;
+  border: 1px solid #bcd4ff;
+  border-radius: 6px;
+  place-items: center;
+}
+
+.manual-review-section {
+  margin-bottom: 12px;
+}
+
+.manual-review-head {
+  padding: 16px;
+  margin-bottom: 10px;
+  background: #fff;
   border: 1px solid var(--line-soft);
   border-radius: 6px;
+  box-shadow: var(--shadow);
 }
 
-.result-grid b {
-  display: block;
-  margin-top: 8px;
-  font-size: 20px;
-  color: var(--ink);
-}
-
-.result-grid b.blue {
-  color: var(--blue);
-}
-
-.ai-suggestion-editor {
-  margin-top: 12px;
-}
-
-.ai-suggestion-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.ai-suggestion-textarea {
-  width: 100%;
-  min-height: 92px;
-  padding: 9px 10px;
-  font-weight: 700;
-  line-height: 1.55;
-  color: var(--ink);
-  background: #fff;
-  border: 1px solid #cbd8ea;
-  border-radius: 5px;
-  resize: vertical;
+.manual-review-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(420px, 1.2fr);
+  gap: 12px;
+  align-items: start;
 }
 
 .preview-name {
@@ -5136,10 +5850,6 @@ h3 {
     overflow-y: auto;
   }
 
-  .inspection-audit-visual {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .inspection-overview-main-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -5200,9 +5910,8 @@ h3 {
     min-height: auto;
   }
 
-  .left,
-  .left.with-project-package {
-    grid-template-rows: auto auto auto;
+  .left {
+    grid-template-rows: auto;
     height: auto;
     border-right: 0;
     border-bottom: 1px solid var(--line);
@@ -5226,10 +5935,6 @@ h3 {
   .result-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-
-  .inspection-metric-strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 @media (width <= 560px) {
@@ -5237,11 +5942,6 @@ h3 {
   .metrics,
   .result-grid {
     grid-template-columns: 1fr;
-  }
-
-  .inspection-chart-head {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
   }
 
   .inspection-node-status-row {
@@ -5252,10 +5952,6 @@ h3 {
   .inspection-node-status-row span {
     font-size: 13px;
     text-align: left;
-  }
-
-  .inspection-metric-strip {
-    grid-template-columns: 1fr;
   }
 }
 

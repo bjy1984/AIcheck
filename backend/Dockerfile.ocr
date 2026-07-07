@@ -25,7 +25,7 @@ RUN if [ -n "$AICHECK_APT_DEBIAN_MIRROR" ]; then \
         pip config set global.index-url "$AICHECK_PIP_INDEX_URL"; \
     fi \
     && apt-get update \
-    && apt-get install -y --no-install-recommends libgomp1 libglib2.0-0 libgl1 \
+    && apt-get install -y --no-install-recommends libgomp1 libglib2.0-0 libgl1 tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-sim \
     && rm -rf /var/lib/apt/lists/* \
     && if [ "$AICHECK_OCR_REQUIREMENTS" = "requirements-ocr.txt" ]; then \
         pip install -r requirements.txt -r requirements-ocr.txt; \

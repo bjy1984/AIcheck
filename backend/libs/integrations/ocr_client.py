@@ -155,9 +155,11 @@ class OcrClient:
         self,
         payload: dict[str, Any],
         *,
-        timeout_seconds: float = 120,
+        timeout_seconds: float | None = None,
         poll_interval: float = 0.5,
     ) -> dict[str, Any]:
+        if timeout_seconds is None:
+            timeout_seconds = float(os.getenv("AICHECK_OCR_JOB_TIMEOUT_SECONDS", "240"))
         job = self.create_parse_job(payload)
         job_id = str(job.get("jobId") or "")
         if not job_id:

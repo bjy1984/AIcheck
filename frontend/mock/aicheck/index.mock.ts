@@ -14,7 +14,9 @@ import type {
   NdtFilm,
   NdtRecord,
   NdtReport,
+  NodeBusinessBasis,
   NodeFileBinding,
+  NodeDocumentRequirement,
   NodeStatus,
   Project,
   ProjectStatus,
@@ -1598,6 +1600,155 @@ const getNode = (projectId: string, nodeId: number) =>
   state.treeNodes.find((node) => node.projectId === projectId) ||
   state.treeNodes[0]
 
+const mockMaterialTypeInfo: Record<
+  string,
+  { name: string; requiredType: NodeDocumentRequirement['requiredType'] }
+> = {
+  generic_review_material: { name: '审查资料', requiredType: '必传' },
+  design_license: { name: '设计单位许可证', requiredType: '条件必传' },
+  construction_license: { name: '施工单位安装许可证', requiredType: '条件必传' },
+  manufacturing_license: { name: '制造单位许可证', requiredType: '条件必传' },
+  ndt_org_certificate: { name: '无损检测机构核准证', requiredType: '条件必传' },
+  ndt_person_certificate: { name: '无损检测人员资格证和执业注册证', requiredType: '条件必传' },
+  design_document: { name: '设计文件', requiredType: '条件必传' },
+  drawing_review_record: { name: '施工图审查手续', requiredType: '条件必传' },
+  calculation_report: { name: '强度计算书或应力分析报告', requiredType: '条件必传' },
+  design_change_document: { name: '设计变更和书面批准文件', requiredType: '条件必传' },
+  construction_organization_design: { name: '施工组织设计', requiredType: '条件必传' },
+  construction_schedule: { name: '施工计划工期文件', requiredType: '条件必传' },
+  quality_certificate: { name: '产品质量证明书', requiredType: '必传' },
+  manufacturing_supervision_certificate: { name: '制造监督检验证书', requiredType: '条件必传' },
+  type_test_report: { name: '型式试验证书或型式试验报告', requiredType: '条件必传' },
+  factory_inspection_report: { name: '出厂检验报告', requiredType: '条件必传' },
+  overseas_material_certificate: { name: '境外制造或境外牌号材料证明文件', requiredType: '条件必传' },
+  acceptance_witness_record: { name: '到货验收见证资料', requiredType: '条件必传' },
+  material_retest_report: { name: '材料复验报告', requiredType: '条件必传' },
+  material_mark_transfer_record: { name: '材料标志移植记录', requiredType: '条件必传' },
+  material_substitution_approval: { name: '材料代用批准文件', requiredType: '条件必传' },
+  technical_review_approval: { name: '技术评审和批准手续', requiredType: '条件必传' },
+  valve_test_report: { name: '阀门施工资料和耐压试验报告', requiredType: '条件必传' },
+  welder_certificate: { name: '焊工资格证', requiredType: '必传' },
+  welder_roster: { name: '焊工名册', requiredType: '必传' },
+  wps_pqr: { name: '焊接工艺评定报告和焊接作业指导书', requiredType: '条件必传' },
+  welding_material_certificate: { name: '焊接材料质量证明文件', requiredType: '条件必传' },
+  welding_material_management_record: { name: '焊材验收保管发放回收记录', requiredType: '条件必传' },
+  welding_record: { name: '焊接记录和焊缝标识资料', requiredType: '条件必传' },
+  weld_repair_record: { name: '焊缝返修记录', requiredType: '条件必传' },
+  heat_treatment_procedure: { name: '焊后热处理工艺文件', requiredType: '条件必传' },
+  heat_treatment_record: { name: '热处理记录、曲线和硬度检测报告', requiredType: '条件必传' },
+  instrument_calibration_certificate: { name: '仪表检定或校准证书', requiredType: '条件必传' },
+  ndt_plan: { name: '无损检测方案', requiredType: '条件必传' },
+  ndt_procedure: { name: '无损检测工艺文件', requiredType: '条件必传' },
+  ndt_report: { name: '无损检测报告', requiredType: '必传' },
+  radiographic_film: { name: '射线检测底片', requiredType: '条件必传' },
+  anticorrosion_insulation_material_certificate: { name: '防腐及保温材料质量证明文件', requiredType: '条件必传' },
+  anticorrosion_insulation_record: { name: '防腐补口补伤和保温施工记录', requiredType: '条件必传' },
+  cathodic_protection_record: { name: '阴极保护和杂散电流排流装置资料', requiredType: '条件必传' },
+  grounding_test_record: { name: '静电接地施工和测试记录', requiredType: '条件必传' },
+  installation_record: { name: '管道安装和现场制作记录', requiredType: '条件必传' },
+  safety_accessory_record: { name: '安全附件安装、校验或性能测试资料', requiredType: '条件必传' },
+  pressure_test_plan: { name: '耐压试验方案', requiredType: '条件必传' },
+  pressure_test_report: { name: '耐压试验记录或报告', requiredType: '条件必传' },
+  leakage_test_report: { name: '泄漏试验记录或报告', requiredType: '条件必传' },
+  purge_cleaning_record: { name: '吹扫清洗方案和记录', requiredType: '条件必传' },
+  field_photo: { name: '现场照片、底片或实物核验证据', requiredType: '条件必传' },
+  quality_system_document: { name: '质量保证体系文件和实施记录', requiredType: '条件必传' },
+  external_query_screenshot: { name: '外部查询截图', requiredType: '条件必传' }
+}
+
+const mockSpecialRequirementCodes: Record<number, string[]> = {
+  37: ['quality_system_document', 'ndt_report'],
+  65: ['ndt_report', 'radiographic_film']
+}
+
+const mockNdtRequirementCodes = new Set([
+  'ndt_org_certificate',
+  'ndt_person_certificate',
+  'ndt_plan',
+  'ndt_procedure',
+  'ndt_report',
+  'radiographic_film'
+])
+const mockInspectionRequirementCodes = new Set(['field_photo', 'external_query_screenshot'])
+
+const getRequirementParty = (code: string, nodeId: number) => {
+  const node = state.treeNodes.find((item) => item.nodeId === nodeId)
+  if (mockNdtRequirementCodes.has(code) || node?.groupName === '无损检测') return '无损检测机构上传'
+  if (mockInspectionRequirementCodes.has(code)) return '监检人员现场补充'
+  return '施工方上传'
+}
+
+const getGeneratedRequirementName = (code: string, nodeId: number) => {
+  const node = state.treeNodes.find((item) => item.nodeId === nodeId)
+  const materialName = mockMaterialTypeInfo[code]?.name || code
+  if (code === 'design_document') {
+    if (nodeId === 1) return '相关设计文件、施工说明及管道特性表'
+    return `${node?.name || '当前节点'}相关设计文件`
+  }
+  return materialName
+}
+
+const getNodeRequirements = (nodeId: number) => {
+  const configured = requirements.filter((requirement) => requirement.nodeId === nodeId)
+  if (configured.length) return clone(configured)
+  if (nodeId === 69) return []
+  const rule = getBusinessRuleForNode(nodeId)
+  const codes =
+    mockSpecialRequirementCodes[nodeId] ||
+    (rule?.materialTypeCodes || []).filter((code) => code !== 'generic_review_material')
+  const effectiveCodes = codes.length ? codes : ['generic_review_material']
+  return effectiveCodes.map((code, index) => ({
+    id: `REQ-${String(nodeId).padStart(2, '0')}-${String(index + 1).padStart(2, '0')}`,
+    nodeId,
+    name: getGeneratedRequirementName(code, nodeId),
+    requiredType: mockMaterialTypeInfo[code]?.requiredType || '条件必传',
+    materialTypeCode: code,
+    responsibleParty: getRequirementParty(code, nodeId),
+    applicability: '按当前节点规则适用条件判断',
+    note: `依据 ${rule?.sourceRuleId || `节点${nodeId}`}，用于支撑${rule?.inspectionItem || '当前节点'}中${mockMaterialTypeInfo[code]?.name || code}相关核查。`
+  }))
+}
+
+const getBusinessRuleForNode = (nodeId: number) =>
+  generatedKnowledgeRuleVersions.find((rule) =>
+    (rule.nodeIds || []).some((item) => Number(item) === Number(nodeId))
+  )
+
+const getNodeBusinessBasis = (nodeId: number): NodeBusinessBasis | undefined => {
+  const rule = getBusinessRuleForNode(nodeId)
+  if (!rule) return undefined
+  const aiExecution = rule.aiExecution || {}
+  return {
+    ruleId: rule.sourceRuleId || rule.id,
+    ruleName: rule.name || rule.inspectionItem,
+    ruleKey: rule.ruleKey,
+    ruleVersion: rule.version,
+    sourceDocument: rule.sourceDocument,
+    sourceSequence: rule.sourceSequence,
+    businessModule: rule.businessModule,
+    inspectionCategory: rule.inspectionCategory,
+    inspectionItem: rule.inspectionItem,
+    inspectionClass: rule.inspectionClass || rule.reviewClass,
+    reviewClass: rule.reviewClass,
+    criteria: rule.criteria || rule.standardText || '',
+    checkMethod: rule.checkMethod || '',
+    witnessText: rule.witnessText || '',
+    materialTypeCodes: clone(rule.materialTypeCodes || []),
+    toolIds: clone(rule.toolIds || []),
+    referencedStandards: clone(rule.referencedStandards || []),
+    aiExecution: {
+      schemaVersion: aiExecution.schemaVersion,
+      sourceFields: clone(aiExecution.sourceFields || {}),
+      requiredEvidence: clone(aiExecution.requiredEvidence || []),
+      extractionTargets: clone(aiExecution.extractionTargets || []),
+      verificationSteps: clone(aiExecution.verificationSteps || []),
+      acceptanceCriteria: clone(aiExecution.acceptanceCriteria || []),
+      humanConfirmation: clone(aiExecution.humanConfirmation || []),
+      promptContext: aiExecution.promptContext || ''
+    }
+  }
+}
+
 const getProjectActions = (project: Project, role: RoleCode) => {
   if (role === 'owner' || project.status === '已归档') {
     return ['project:view', 'report:view', 'archive:view', 'archive:download'] as ActionCode[]
@@ -1673,12 +1824,87 @@ const getNodeId = (query?: Record<string, string>, fallback = 24) => {
   return Number.isFinite(fromQuery) && fromQuery > 0 ? fromQuery : fallback
 }
 
+const requirementMatchesBinding = (
+  requirement: NodeDocumentRequirement,
+  binding: NodeFileBinding
+) =>
+  (!!requirement.id && requirement.id === binding.requirementId) ||
+  (!!requirement.name && requirement.name === binding.requirementName)
+
+const buildNodeRequirementsSummary = (projectId: string, node: ProjectTreeNode) => {
+  const nodeRequirements = getNodeRequirements(node.nodeId)
+  const nodeBindings = state.bindings.filter(
+    (binding) => binding.projectId === projectId && binding.nodeId === node.nodeId
+  )
+  const matchedRequirements = nodeRequirements.map((requirement) => {
+    const matches = nodeBindings.filter((binding) => requirementMatchesBinding(requirement, binding))
+    return {
+      ...clone(requirement),
+      matchedBindingCount: matches.length,
+      matchedFileNames: Array.from(new Set(matches.map((binding) => binding.fileName))).sort(),
+      fulfilled: matches.length > 0
+    }
+  })
+  const activeRequirements = matchedRequirements.filter(
+    (requirement) => requirement.requiredType !== '可选'
+  )
+  const hasRequirementDetails = nodeRequirements.length > 0
+  const requiredCount = hasRequirementDetails
+    ? activeRequirements.length
+    : Number(node.requiredProgress?.total || 0)
+  const satisfiedCount = hasRequirementDetails
+    ? activeRequirements.filter((requirement) => requirement.fulfilled).length
+    : Math.min(requiredCount, Number(node.requiredProgress?.done || 0))
+  const missingRequirements = hasRequirementDetails
+    ? activeRequirements.filter((requirement) => !requirement.fulfilled)
+    : requiredCount > satisfiedCount
+      ? [
+          {
+            id: `REQ-${node.nodeId}-UNSPECIFIED`,
+            nodeId: node.nodeId,
+            name: '资料要求明细未配置',
+            requiredType: '必传' as const,
+            note: '当前节点仅返回进度摘要，未返回具体资料要求名称。',
+            matchedBindingCount: 0,
+            matchedFileNames: [],
+            fulfilled: false
+          }
+        ]
+      : []
+  return {
+    requiredCount,
+    satisfiedCount,
+    missingCount: Math.max(requiredCount - satisfiedCount, 0),
+    progressPercent: requiredCount ? Math.round((satisfiedCount / requiredCount) * 100) : 0,
+    hasRequirementDetails,
+    requirements: matchedRequirements,
+    missingRequirements
+  }
+}
+
+const enrichNodeWithRequirementsSummary = (projectId: string, node: ProjectTreeNode) => {
+  const enriched = clone<ProjectTreeNode>(node)
+  const nodeBindings = state.bindings.filter(
+    (binding) => binding.projectId === projectId && binding.nodeId === node.nodeId
+  )
+  const summary = buildNodeRequirementsSummary(projectId, node)
+  enriched.requirementsSummary = summary
+  enriched.fileCount = nodeBindings.length
+  if (summary.hasRequirementDetails) {
+    enriched.requiredProgress = {
+      done: summary.satisfiedCount,
+      total: summary.requiredCount
+    }
+  }
+  return enriched
+}
+
 const getProjectGroups = (projectId: string) =>
   nodeGroups.map((group) => ({
     groupName: group.name,
-    nodes: state.treeNodes.filter(
-      (node) => node.projectId === projectId && node.groupName === group.name
-    )
+    nodes: state.treeNodes
+      .filter((node) => node.projectId === projectId && node.groupName === group.name)
+      .map((node) => enrichNodeWithRequirementsSummary(projectId, node))
   }))
 
 const refreshProjectCounters = (projectId: string) => {
@@ -6277,14 +6503,15 @@ export default [
       const id = parts[2] || projectId
       const nodeId = Number(parts[4]) || 24
       updateNodeFileProgress(id, nodeId)
-      const node = getNode(id, nodeId)
+      const node = enrichNodeWithRequirementsSummary(id, getNode(id, nodeId))
       const nodeBindings = state.bindings.filter(
         (binding) => binding.projectId === id && binding.nodeId === node.nodeId
       )
       const projectFiles = state.documents.filter((document) => document.projectId === id)
       return ok({
         node,
-        requirements: requirements.filter((item) => item.nodeId === node.nodeId),
+        businessBasis: getNodeBusinessBasis(node.nodeId),
+        requirements: getNodeRequirements(node.nodeId),
         bindings: nodeBindings,
         projectFiles,
         availableVersions: state.versions.filter((version) =>
@@ -6409,6 +6636,7 @@ export default [
           projectId: id,
           fileName: file.fileName || '未命名文件.pdf',
           fileType: file.fileType || 'pdf',
+          materialCategory: file.materialCategory || '未分类',
           sourceOrgName: getProject(id).contractorOrgName,
           uploaderName: '李工',
           currentVersionId: documentVersionId,
@@ -6431,6 +6659,7 @@ export default [
         state.versions.unshift(version)
         return {
           fileName: document.fileName,
+          materialCategory: document.materialCategory,
           documentId,
           documentVersionId,
           url: `mock://upload/${seed}`,
@@ -6496,7 +6725,7 @@ export default [
         return fail(40420, '选择的项目资料不存在或已被移除。', { reason: 'DOCUMENT_NOT_FOUND' })
       }
       const createdBindings: NodeFileBinding[] = nodeIds.flatMap((currentNodeId, nodeIndex) => {
-        const nodeRequirements = requirements.filter((item) => item.nodeId === currentNodeId)
+        const nodeRequirements = getNodeRequirements(currentNodeId)
         return payloadBindings.map((item, index) => {
           const document = state.documents.find((candidate) => candidate.id === item.documentId)
           const version = state.versions.find(
@@ -7723,6 +7952,7 @@ export default [
           projectId: id,
           fileName: file.fileName || '无损检测报告.pdf',
           fileType: file.fileType || 'pdf',
+          materialCategory: file.materialCategory || '检测报告',
           sourceOrgName: getProject(id).ndtOrgName,
           uploaderName: '王工',
           currentVersionId: documentVersionId,
@@ -7760,6 +7990,7 @@ export default [
         state.ndtReports.unshift(report)
         return {
           fileName: document.fileName,
+          materialCategory: document.materialCategory,
           documentId,
           documentVersionId,
           url: `mock://upload/ndt/${seed}`,

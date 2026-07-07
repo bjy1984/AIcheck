@@ -2875,6 +2875,50 @@ def business_pack_snapshot_for_project(project: dict[str, Any]) -> dict[str, Any
     return business_pack_snapshot(business_pack_for_project(project))
 
 
+def business_rule_for_node(project: dict[str, Any] | None, node_id: int) -> dict[str, Any] | None:
+    pack = business_pack_for_project(project)
+    for rule in pack.get("ruleSets") or []:
+        if int(node_id) in {int(item) for item in rule.get("nodeIds") or []}:
+            return repo.clone(rule)
+    return None
+
+
+def node_business_basis(project: dict[str, Any] | None, node_id: int) -> dict[str, Any] | None:
+    rule = business_rule_for_node(project, node_id)
+    if not rule:
+        return None
+    ai_execution = rule.get("aiExecution") if isinstance(rule.get("aiExecution"), dict) else {}
+    return {
+        "ruleId": rule.get("sourceRuleId") or rule.get("id") or "",
+        "ruleName": rule.get("name") or rule.get("inspectionItem") or "",
+        "ruleKey": rule.get("ruleKey"),
+        "ruleVersion": rule.get("version"),
+        "sourceDocument": rule.get("sourceDocument"),
+        "sourceSequence": rule.get("sourceSequence"),
+        "businessModule": rule.get("businessModule"),
+        "inspectionCategory": rule.get("inspectionCategory"),
+        "inspectionItem": rule.get("inspectionItem"),
+        "inspectionClass": rule.get("inspectionClass") or rule.get("reviewClass"),
+        "reviewClass": rule.get("reviewClass"),
+        "criteria": rule.get("criteria") or rule.get("standardText") or "",
+        "checkMethod": rule.get("checkMethod") or "",
+        "witnessText": rule.get("witnessText") or "",
+        "materialTypeCodes": repo.clone(rule.get("materialTypeCodes") or []),
+        "toolIds": repo.clone(rule.get("toolIds") or []),
+        "referencedStandards": repo.clone(rule.get("referencedStandards") or []),
+        "aiExecution": {
+            "schemaVersion": ai_execution.get("schemaVersion"),
+            "sourceFields": repo.clone(ai_execution.get("sourceFields") or {}),
+            "requiredEvidence": repo.clone(ai_execution.get("requiredEvidence") or []),
+            "extractionTargets": repo.clone(ai_execution.get("extractionTargets") or []),
+            "verificationSteps": repo.clone(ai_execution.get("verificationSteps") or []),
+            "acceptanceCriteria": repo.clone(ai_execution.get("acceptanceCriteria") or []),
+            "humanConfirmation": repo.clone(ai_execution.get("humanConfirmation") or []),
+            "promptContext": ai_execution.get("promptContext") or "",
+        },
+    }
+
+
 def project_defaults_for_pack(pack: dict[str, Any]) -> dict[str, str]:
     if pack.get("domainType") == ENGINEERING_DOMAIN_TYPE:
         defaults = dict(ENGINEERING_PROJECT_DEFAULTS)
@@ -2906,6 +2950,116 @@ def project_requirements_for_node(project_id: str, node_id: int) -> list[dict[st
         for item in repo.state["requirements"]
         if int(item["nodeId"]) == int(node_id) and not item.get("projectId")
     ]
+    if fallback:
+        return fallback
+    project = repo.require_project(project_id)
+    try:
+        pack = business_pack_for_project(project)
+    except Exception:
+        return []
+    return [
+        repo.clone(item)
+        for item in build_project_requirements(pack, project_id=project_id)
+        if int(item["nodeId"]) == int(node_id)
+    ]
+
+
+def requirement_matches_binding(requirement: dict[str, Any], binding: dict[str, Any]) -> bool:
+    requirement_id = str(requirement.get("id") or "").strip()
+    binding_requirement_id = str(binding.get("requirementId") or "").strip()
+    if requirement_id and binding_requirement_id and requirement_id == binding_requirement_id:
+        return True
+    requirement_name = str(requirement.get("name") or "").strip()
+    binding_requirement_name = str(binding.get("requirementName") or "").strip()
+    return bool(requirement_name and binding_requirement_name and requirement_name == binding_requirement_name)
+
+
+def build_node_requirements_summary(
+    project_id: str,
+    node: dict[str, Any],
+    *,
+    node_bindings: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    requirements = project_requirements_for_node(project_id, int(node["nodeId"]))
+    bindings = node_bindings if node_bindings is not None else repo.bindings_for_node(project_id, int(node["nodeId"]))
+    matched_requirements: list[dict[str, Any]] = []
+    missing_requirements: list[dict[str, Any]] = []
+    active_required_count = 0
+    satisfied_count = 0
+
+    for requirement in requirements:
+        matches = [binding for binding in bindings if requirement_matches_binding(requirement, binding)]
+        matched = {
+            **repo.clone(requirement),
+            "matchedBindingCount": len(matches),
+            "matchedFileNames": sorted({str(binding.get("fileName") or "") for binding in matches if binding.get("fileName")}),
+            "fulfilled": bool(matches),
+        }
+        matched_requirements.append(matched)
+        if requirement.get("requiredType") != "可选":
+            active_required_count += 1
+            if matched["fulfilled"]:
+                satisfied_count += 1
+            else:
+                missing_requirements.append(matched)
+
+    has_requirement_details = bool(requirements)
+    if not has_requirement_details:
+        progress = node.get("requiredProgress") or {}
+        active_required_count = int(progress.get("total") or 0)
+        satisfied_count = min(active_required_count, int(progress.get("done") or 0))
+        missing_count = max(active_required_count - satisfied_count, 0)
+        if missing_count:
+            missing_requirements.append(
+                {
+                    "id": f"REQ-{node['nodeId']}-UNSPECIFIED",
+                    "projectId": project_id,
+                    "nodeId": int(node["nodeId"]),
+                    "name": "资料要求明细未配置",
+                    "requiredType": "必传",
+                    "materialTypeCode": None,
+                    "note": "当前节点仅返回进度摘要，未返回具体资料要求名称。",
+                    "matchedBindingCount": 0,
+                    "matchedFileNames": [],
+                    "fulfilled": False,
+                }
+            )
+    else:
+        missing_count = len(missing_requirements)
+
+    progress_percent = round((satisfied_count / active_required_count) * 100) if active_required_count else 0
+    return {
+        "requiredCount": active_required_count,
+        "satisfiedCount": satisfied_count,
+        "missingCount": missing_count,
+        "progressPercent": progress_percent,
+        "hasRequirementDetails": has_requirement_details,
+        "requirements": matched_requirements,
+        "missingRequirements": missing_requirements,
+    }
+
+
+def enrich_node_with_requirements_summary(
+    project_id: str,
+    node: dict[str, Any],
+    *,
+    project_bindings: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    enriched = repo.clone(node)
+    node_bindings = [
+        binding
+        for binding in (project_bindings if project_bindings is not None else repo.bindings_for_node(project_id, int(node["nodeId"])))
+        if int(binding.get("nodeId") or 0) == int(node["nodeId"])
+    ]
+    summary = build_node_requirements_summary(project_id, enriched, node_bindings=node_bindings)
+    enriched["requirementsSummary"] = summary
+    enriched["fileCount"] = len(node_bindings)
+    if summary["hasRequirementDetails"]:
+        enriched["requiredProgress"] = {
+            "done": summary["satisfiedCount"],
+            "total": summary["requiredCount"],
+        }
+    return enriched
 
 
 def attach_business_pack_project_scaffold(project: dict[str, Any], pack: dict[str, Any]) -> tuple[int, int]:
@@ -3713,7 +3867,17 @@ def project_tree(request: Request, project_id: str):
     if not project:
         return fail(errors.NOT_FOUND, request)
     scope = authorized_node_scope(request, project_id)
+    project_bindings = [
+        binding
+        for binding in repo.bindings_for_project(project_id)
+        if record_visible_for_scope(binding, scope, project_id=project_id)
+    ]
     groups = filter_node_groups_for_scope(repo.node_groups(project_id), scope)
+    for group in groups:
+        group["nodes"] = [
+            enrich_node_with_requirements_summary(project_id, node, project_bindings=project_bindings)
+            for node in group.get("nodes", [])
+        ]
     return ok({"project": repo.clone(project), "groups": groups}, request)
 
 
@@ -3733,21 +3897,36 @@ def node_requirements(request: Request, project_id: str, node_id: int):
 @router.get("/projects/{project_id}/nodes/{node_id}/package")
 def node_package(request: Request, project_id: str, node_id: int):
     effective_project_id = project_id
+    project = repo.require_project(effective_project_id)
     node = repo.node(effective_project_id, node_id)
     if not node:
         return fail(errors.NOT_FOUND, request)
     scope = authorized_node_scope(request, project_id)
     bindings = repo.bindings_for_node(effective_project_id, node_id)
     version_ids = {item["documentVersionId"] for item in bindings}
+    project_bindings = [
+        binding
+        for binding in repo.bindings_for_project(effective_project_id)
+        if record_visible_for_scope(binding, scope, project_id=effective_project_id)
+    ]
     project_files = [
         item
         for item in repo.project_documents(effective_project_id)
         if document_visible_in_scope(item, scope)
     ]
+    for file in project_files:
+        file_bindings = [binding for binding in project_bindings if binding.get("documentId") == file.get("id")]
+        file["bindings"] = file_bindings
+        file["primaryBinding"] = file_bindings[0] if file_bindings else None
     visible_document_ids = {item["id"] for item in project_files}
     return ok(
         {
-            "node": repo.clone(node),
+            "node": enrich_node_with_requirements_summary(
+                effective_project_id,
+                node,
+                project_bindings=project_bindings,
+            ),
+            "businessBasis": node_business_basis(project, node_id),
             "requirements": project_requirements_for_node(project_id, node_id),
             "bindings": bindings,
             "projectFiles": project_files,

@@ -34,6 +34,8 @@ const selectedNode = computed(() => props.packageData?.node)
 const requirements = computed(() => props.packageData?.requirements || [])
 const bindings = computed(() => props.packageData?.bindings || [])
 const projectFiles = computed(() => props.packageData?.projectFiles || [])
+const projectFileStatus = (file: NodePackagePayload['projectFiles'][number]) =>
+  file.primaryBinding?.bindingStatus || file.bindings?.[0]?.bindingStatus || file.fileStatus
 const boundProgress = computed(() => {
   const total = selectedNode.value?.requiredProgress.total || requirements.value.length || 0
   const done = selectedNode.value?.requiredProgress.done || bindings.value.length
@@ -127,6 +129,13 @@ const alertType = computed(() => {
         <ElTableColumn prop="fileName" label="文件" min-width="190" show-overflow-tooltip />
         <ElTableColumn prop="sourceOrgName" label="来源" width="120" show-overflow-tooltip />
         <ElTableColumn prop="currentOcrStatus" label="OCR" width="90" />
+        <ElTableColumn label="状态" width="100">
+          <template #default="{ row }">
+            <ElTag :type="getStatusTagType(projectFileStatus(row))" size="small" effect="plain">
+              {{ projectFileStatus(row) }}
+            </ElTag>
+          </template>
+        </ElTableColumn>
         <ElTableColumn prop="updatedAt" label="更新时间" width="160" />
         <ElTableColumn label="操作" width="82" fixed="right">
           <template #default="{ row }">

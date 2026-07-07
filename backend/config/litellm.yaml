@@ -19,6 +19,11 @@ model_list:
       model: deepseek/deepseek-reasoner
       api_key: os.environ/DEEPSEEK_API_KEY
       api_base: https://api.deepseek.com
+  - model_name: qwen3.7-plus
+    litellm_params:
+      model: openai/qwen3.7-plus
+      api_key: os.environ/QWEN_API_KEY
+      api_base: os.environ/QWEN_API_BASE
   - model_name: embedding-default
     litellm_params:
       model: infinity/embedding-default

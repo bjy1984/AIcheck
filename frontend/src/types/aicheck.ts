@@ -115,6 +115,7 @@ export type ProjectTreeNode = {
   status: NodeStatus
   fileCount: number
   requiredProgress: { done: number; total: number }
+  requirementsSummary?: NodeRequirementsSummary
   actions: ActionCode[]
 }
 
@@ -123,7 +124,26 @@ export type NodeDocumentRequirement = {
   nodeId: number
   name: string
   requiredType: '必传' | '条件必传' | '可选'
+  materialTypeCode?: string
+  responsibleParty?: string
+  applicability?: string
   note?: string
+}
+
+export type NodeRequirementMatch = NodeDocumentRequirement & {
+  matchedBindingCount: number
+  matchedFileNames: string[]
+  fulfilled: boolean
+}
+
+export type NodeRequirementsSummary = {
+  requiredCount: number
+  satisfiedCount: number
+  missingCount: number
+  progressPercent: number
+  hasRequirementDetails: boolean
+  requirements: NodeRequirementMatch[]
+  missingRequirements: NodeRequirementMatch[]
 }
 
 export type DocumentAsset = {
@@ -131,6 +151,7 @@ export type DocumentAsset = {
   projectId: string
   fileName: string
   fileType: string
+  materialTypeCode?: string | null
   materialCategory?: string | null
   sourceOrgName: string
   uploaderName: string
@@ -142,6 +163,8 @@ export type DocumentAsset = {
   chunkCount?: number
   vectorCount?: number
   embeddingModel?: string
+  bindings?: NodeFileBinding[]
+  primaryBinding?: NodeFileBinding | null
   updatedAt: string
   actions: ActionCode[]
 }
@@ -219,6 +242,40 @@ export type AiReviewRun = {
   }
   evidenceLinks: EvidenceLink[]
   finishedAt?: string
+}
+
+export type NodeBusinessBasis = {
+  ruleId: string
+  ruleName: string
+  ruleKey?: string
+  ruleVersion?: string
+  sourceDocument?: string
+  sourceSequence?: number | string
+  businessModule?: string
+  inspectionCategory?: string
+  inspectionItem?: string
+  inspectionClass?: string
+  reviewClass?: string
+  criteria?: string
+  checkMethod?: string
+  witnessText?: string
+  materialTypeCodes?: string[]
+  toolIds?: string[]
+  referencedStandards?: Array<{
+    reference: string
+    file?: string
+    fileName?: string
+  }>
+  aiExecution?: {
+    schemaVersion?: string
+    sourceFields?: Record<string, unknown>
+    requiredEvidence?: string[]
+    extractionTargets?: string[]
+    verificationSteps?: string[]
+    acceptanceCriteria?: string[]
+    humanConfirmation?: string[]
+    promptContext?: string
+  }
 }
 
 export type ReviewOpinion = {
@@ -452,6 +509,7 @@ export type WorkbenchSummaryPayload = {
 
 export type NodePackagePayload = {
   node: ProjectTreeNode
+  businessBasis?: NodeBusinessBasis
   requirements: NodeDocumentRequirement[]
   bindings: NodeFileBinding[]
   projectFiles: DocumentAsset[]

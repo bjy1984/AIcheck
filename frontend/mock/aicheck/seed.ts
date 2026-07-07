@@ -321,12 +321,12 @@ export const treeNodes: ProjectTreeNode[] = groupDefinitions.flatMap((group) =>
 )
 
 export const requirements: NodeDocumentRequirement[] = [
-  { id: 'REQ-16-01', nodeId: 16, name: '产品质量证明书', requiredType: '必传' },
-  { id: 'REQ-16-02', nodeId: 16, name: '材料复验报告', requiredType: '条件必传' },
-  { id: 'REQ-24-01', nodeId: 24, name: '焊工资格证', requiredType: '必传' },
-  { id: 'REQ-24-02', nodeId: 24, name: '焊工名册', requiredType: '必传' },
-  { id: 'REQ-24-03', nodeId: 24, name: '外部查询截图', requiredType: '条件必传' },
-  { id: 'REQ-40-01', nodeId: 40, name: '无损检测报告', requiredType: '必传' }
+  { id: 'REQ-16-01', nodeId: 16, name: '产品质量证明书', requiredType: '必传', materialTypeCode: 'quality_certificate' },
+  { id: 'REQ-16-02', nodeId: 16, name: '材料复验报告', requiredType: '条件必传', materialTypeCode: 'material_retest_report' },
+  { id: 'REQ-24-01', nodeId: 24, name: '焊工资格证', requiredType: '必传', materialTypeCode: 'welder_certificate' },
+  { id: 'REQ-24-02', nodeId: 24, name: '焊工名册', requiredType: '必传', materialTypeCode: 'welder_roster' },
+  { id: 'REQ-24-03', nodeId: 24, name: '外部查询截图', requiredType: '条件必传', materialTypeCode: 'external_query_screenshot' },
+  { id: 'REQ-40-01', nodeId: 40, name: '无损检测报告', requiredType: '必传', materialTypeCode: 'ndt_report' }
 ]
 
 export const documents: DocumentAsset[] = [

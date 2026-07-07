@@ -271,6 +271,11 @@ const mapContractorFileStatus = (
   return '待提交'
 }
 
+const bindingForProjectFile = (file: NodePackagePayload['projectFiles'][number]) =>
+  file.primaryBinding ||
+  file.bindings?.[0] ||
+  bindings.value.find((item) => item.documentId === file.id)
+
 const getRelationNodeText = (binding?: (typeof bindings.value)[number]) => {
   if (!binding) return '未关联审核环节'
   return `${binding.nodeId}. ${binding.requirementName || props.node?.name || '审核环节'}`
@@ -306,7 +311,7 @@ const inferNecessity = (category: string): ContractorFileRow['necessity'] => {
 
 const contractorFileRows = computed<ContractorFileRow[]>(() => {
   const rows = projectFiles.value.map((file, index) => {
-    const binding = bindings.value.find((item) => item.documentId === file.id)
+    const binding = bindingForProjectFile(file)
     const status = mapContractorFileStatus(file.fileStatus, binding?.bindingStatus)
     const materialCategory =
       file.materialCategory ||
