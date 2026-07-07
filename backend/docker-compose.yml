@@ -322,6 +322,8 @@ services:
       LITELLM_MASTER_KEY: ${LITELLM_API_KEY:?LITELLM_API_KEY is required}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?DEEPSEEK_API_KEY is required}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
+      QWEN_API_BASE: ${QWEN_API_BASE:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       INFINITY_API_KEY: ${INFINITY_API_KEY:?INFINITY_API_KEY is required}
       AICHECK_LITELLM_STRICT_PROVIDER_HEALTH: ${AICHECK_LITELLM_STRICT_PROVIDER_HEALTH:-true}
       NO_PROXY: ${AICHECK_LITELLM_NO_PROXY:-127.0.0.1,localhost,::1,postgres,embedding-service}

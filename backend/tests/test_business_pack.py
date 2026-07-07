@@ -61,6 +61,31 @@ def test_business_pack_loader_validates_engineering_and_compliance_packs() -> No
         assert business_pack_fixtures(pack)["projects"]
 
 
+def test_engineering_pack_nodes_all_have_document_requirements() -> None:
+    pack = load_business_pack("engineering_inspection_v1")
+    nodes = build_project_tree("P-ENG-REQ", pack)
+    requirements = build_project_requirements(pack, project_id="P-ENG-REQ")
+    evaluation_only_node_ids = {69}
+    requirement_codes_by_node: dict[int, set[str]] = {}
+    for requirement in requirements:
+        requirement_codes_by_node.setdefault(int(requirement["nodeId"]), set()).add(requirement["materialTypeCode"])
+        assert requirement.get("responsibleParty")
+        assert requirement.get("applicability")
+
+    missing_nodes = [
+        int(node["nodeId"])
+        for node in nodes
+        if int(node["nodeId"]) not in evaluation_only_node_ids
+        and int(node["nodeId"]) not in requirement_codes_by_node
+    ]
+    assert missing_nodes == []
+
+    assert {"design_license", "design_document"} <= requirement_codes_by_node[1]
+    assert {"quality_system_document", "ndt_report"} <= requirement_codes_by_node[37]
+    assert {"ndt_report", "radiographic_film"} <= requirement_codes_by_node[65]
+    assert 69 not in requirement_codes_by_node
+
+
 def test_business_pack_api_and_compliance_project_generation() -> None:
     packs = assert_ok(client.get("/api/business-packs"))
     assert {item["id"] for item in packs} >= {
@@ -92,6 +117,14 @@ def test_business_pack_api_and_compliance_project_generation() -> None:
     node_count = sum(len(group["nodes"]) for group in tree["groups"])
     assert node_count == 8
     assert tree["project"]["domainType"] == "compliance_audit"
+    first_node = tree["groups"][0]["nodes"][0]
+    assert first_node["requirementsSummary"]["hasRequirementDetails"] is True
+    assert first_node["requirementsSummary"]["requiredCount"] == 2
+    assert first_node["requirementsSummary"]["satisfiedCount"] == 0
+    assert {item["materialTypeCode"] for item in first_node["requirementsSummary"]["missingRequirements"]} == {
+        "policy_document",
+        "org_chart",
+    }
 
     requirements = assert_ok(client.get("/api/projects/P-CA-TEST-001/nodes/1/requirements"))
     assert {item["materialTypeCode"] for item in requirements} == {"policy_document", "org_chart"}

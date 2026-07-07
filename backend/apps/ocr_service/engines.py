@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import select
+import shutil
 import subprocess
 import textwrap
 import threading
@@ -32,6 +33,22 @@ def inprocess_paddle_enabled() -> bool:
     if env_bool("AICHECK_OCR_ENABLE_INPROCESS_PADDLE", False):
         return True
     return not bool(os.getenv("AICHECK_OCR_SUBPROCESS_PYTHON"))
+
+
+def subprocess_resource_limit_preamble(env_name: str, default_mb: int) -> str:
+    return textwrap.dedent(
+        f"""
+        import os
+        try:
+            import resource
+            _limit_mb = int(os.getenv("{env_name}", os.getenv("AICHECK_OCR_SUBPROCESS_MEMORY_LIMIT_MB", "{default_mb}")) or 0)
+            if _limit_mb > 0:
+                _limit_bytes = _limit_mb * 1024 * 1024
+                resource.setrlimit(resource.RLIMIT_AS, (_limit_bytes, _limit_bytes))
+        except Exception:
+            pass
+        """
+    )
 
 
 class LocalOcrEngine:
@@ -320,7 +337,7 @@ class PpStructureEngine(LocalOcrEngine):
             }
         dirs = pp_structure_model_dirs()
         names = pp_structure_model_names(dirs)
-        script = textwrap.dedent(
+        script = subprocess_resource_limit_preamble("AICHECK_PP_STRUCTURE_MEMORY_LIMIT_MB", 1536) + textwrap.dedent(
             """
             import json
             import sys
@@ -483,7 +500,7 @@ class OpenCvTableGridSubprocessEngine(LocalOcrEngine):
                 "engineVersion": self.version,
             }
         source_path = variant_source_path(source_path, variant)
-        script = textwrap.dedent(
+        script = subprocess_resource_limit_preamble("AICHECK_OPENCV_TABLE_GRID_MEMORY_LIMIT_MB", 768) + textwrap.dedent(
             """
             import json
             import sys
@@ -715,13 +732,31 @@ class PaddleOcrSubprocessEngine(LocalOcrEngine):
         det_dir = subprocess_model_dir("AICHECK_PADDLEOCR_DET_MODEL_DIR", "PP-OCRv6_medium_det")
         rec_dir = subprocess_model_dir("AICHECK_PADDLEOCR_REC_MODEL_DIR", "PP-OCRv6_medium_rec")
         runtime = paddle_runtime_options(profile)
-        if env_bool("AICHECK_OCR_ENABLE_PERSISTENT_SUBPROCESS", False):
+        persistent_safe = not (
+            runtime.get("use_doc_orientation_classify")
+            or runtime.get("use_doc_unwarping")
+            or runtime.get("use_textline_orientation")
+        )
+        if env_bool("AICHECK_OCR_ENABLE_PERSISTENT_SUBPROCESS", False) and persistent_safe:
             try:
                 return self.parse_with_persistent_worker(Path(python_bin), source_path, det_dir, rec_dir, runtime)
-            except Exception:
+            except Exception as exc:
                 self.reset_worker()
-                # Fall through to the one-shot subprocess path. The caller still receives a normal engine result.
-        script = textwrap.dedent(
+                if not env_bool("AICHECK_OCR_FALLBACK_TO_ONESHOT", False):
+                    return {
+                        "ok": False,
+                        "diagnostics": [
+                            {
+                                "code": "PERSISTENT_SUBPROCESS_OCR_FAILED",
+                                "level": "warning",
+                                "message": f"PaddleOCR persistent worker failed: {exc.__class__.__name__}",
+                            }
+                        ],
+                        "engine": self.name,
+                        "engineVersion": self.version,
+                    }
+                # Optional compatibility fallback for environments that prefer slow one-shot OCR over fast failure.
+        script = subprocess_resource_limit_preamble("AICHECK_PADDLEOCR_MEMORY_LIMIT_MB", 1536) + textwrap.dedent(
             """
             import json
             import sys
@@ -971,6 +1006,87 @@ def paddle_ocr_worker_script() -> str:
     )
 
 
+class TesseractCliEngine(LocalOcrEngine):
+    name = "tesseract_cli"
+    version = "tesseract-cli"
+
+    def available(self) -> bool:
+        return shutil.which(os.getenv("AICHECK_TESSERACT_BIN", "tesseract")) is not None
+
+    def status(self) -> dict[str, Any]:
+        return {
+            "engine": self.name,
+            "version": self.version,
+            "available": self.available(),
+            "binary": shutil.which(os.getenv("AICHECK_TESSERACT_BIN", "tesseract")),
+            "languages": os.getenv("AICHECK_TESSERACT_LANG", "chi_sim+eng"),
+        }
+
+    def parse(
+        self,
+        source_path: Path,
+        *,
+        file_name: str | None = None,
+        profile: dict[str, Any] | None = None,
+        variant: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        binary = shutil.which(os.getenv("AICHECK_TESSERACT_BIN", "tesseract"))
+        if not binary:
+            return {
+                "ok": False,
+                "diagnostics": [{"code": "TESSERACT_NOT_CONFIGURED", "level": "info", "message": "tesseract binary is not available."}],
+                "engine": self.name,
+                "engineVersion": self.version,
+            }
+        source_path = variant_source_path(source_path, variant)
+        try:
+            completed = subprocess.run(
+                [
+                    binary,
+                    str(source_path),
+                    "stdout",
+                    "-l",
+                    os.getenv("AICHECK_TESSERACT_LANG", "chi_sim+eng"),
+                    "--psm",
+                    os.getenv("AICHECK_TESSERACT_PSM", "6"),
+                ],
+                check=False,
+                capture_output=True,
+                encoding="utf-8",
+                timeout=float(os.getenv("AICHECK_TESSERACT_TIMEOUT", "45")),
+            )
+        except subprocess.TimeoutExpired:
+            return {
+                "ok": False,
+                "diagnostics": [{"code": "TESSERACT_TIMEOUT", "level": "warning", "message": "Tesseract OCR timed out."}],
+                "engine": self.name,
+                "engineVersion": self.version,
+            }
+        text = (completed.stdout or "").strip()
+        if completed.returncode != 0 and not text:
+            return {
+                "ok": False,
+                "diagnostics": [{"code": "TESSERACT_FAILED", "level": "warning", "message": (completed.stderr or "Tesseract OCR failed.")[-1200:]}],
+                "engine": self.name,
+                "engineVersion": self.version,
+            }
+        if not text:
+            return {
+                "ok": False,
+                "diagnostics": [{"code": "TESSERACT_EMPTY", "level": "info", "message": "Tesseract returned no text."}],
+                "engine": self.name,
+                "engineVersion": self.version,
+            }
+        return {
+            "ok": True,
+            "text": text,
+            "fragments": [{"pageNo": 1, "text": text, "bbox": None, "confidence": 0.55, "sourceEngine": self.name}],
+            "diagnostics": [],
+            "engine": self.name,
+            "engineVersion": self.version,
+        }
+
+
 def ocr_subprocess_env() -> dict[str, str]:
     env = os.environ.copy()
     env.update(
@@ -1073,7 +1189,7 @@ class PaddlexSealEngine(LocalOcrEngine):
                 "engine": self.name,
                 "engineVersion": self.version,
             }
-        script = textwrap.dedent(
+        script = subprocess_resource_limit_preamble("AICHECK_PADDLEX_SEAL_MEMORY_LIMIT_MB", 1536) + textwrap.dedent(
             """
             import json
             import sys
@@ -1222,7 +1338,7 @@ class AgentdesignSealOcrSubprocessEngine(LocalOcrEngine):
             "enable_ppocr5": env_bool("AICHECK_AGENTDESIGN_SEAL_ENABLE_PPOCR5", False),
             "debug_arc_artifacts": False,
         }
-        script = textwrap.dedent(
+        script = subprocess_resource_limit_preamble("AICHECK_AGENTDESIGN_SEAL_MEMORY_LIMIT_MB", 1536) + textwrap.dedent(
             """
             import json
             import os
@@ -1342,7 +1458,7 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
                 "engineVersion": self.version,
             }
         source_path = variant_source_path(source_path, variant)
-        script = textwrap.dedent(
+        script = subprocess_resource_limit_preamble("AICHECK_VISUAL_SEAL_MEMORY_LIMIT_MB", 1024) + textwrap.dedent(
             """
             import json
             import os
@@ -1357,6 +1473,8 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
                 extract_structured_seal_fields_from_lines = None
 
             image_path = sys.argv[1]
+            max_candidates = max(0, int(os.getenv("AICHECK_OCR_VISUAL_SEAL_MAX_CANDIDATES", "2") or 0))
+            max_ocr_candidates = max(0, int(os.getenv("AICHECK_OCR_VISUAL_SEAL_MAX_OCR_CANDIDATES", "1") or 0))
             image = cv2.imread(image_path)
             if image is None:
                 print(json.dumps({"ok": False, "diagnostics": [{"code": "IMAGE_READ_FAILED", "level": "error", "message": "image read failed"}]}, ensure_ascii=False))
@@ -1625,6 +1743,7 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
                 }
 
             seals = []
+            ocr_candidate_count = 0
             for color, config in masks.items():
                 mask = config["mask"]
                 kernel = np.ones((config["kernel"], config["kernel"]), np.uint8)
@@ -1656,12 +1775,16 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
                     if contained_by_existing(candidate, selected):
                         continue
                     selected.append(candidate)
-                    if len(selected) >= 4:
+                    if len(selected) >= max_candidates:
                         break
                 for index, (area, x, y, w, h, fill_ratio) in enumerate(selected, start=1):
                     seal_type = "visual_red_seal_candidate" if color == "red" else "visual_blue_stamp_candidate"
                     confidence = min(0.95, 0.55 + area / float(width * height) * 50 + min(fill_ratio, 0.45) * 0.2)
-                    crop_text = extract_crop_seal_text(x, y, w, h)
+                    if ocr_candidate_count < max_ocr_candidates:
+                        crop_text = extract_crop_seal_text(x, y, w, h)
+                        ocr_candidate_count += 1
+                    else:
+                        crop_text = {"lines": [], "fields": [], "confidence": 0.0}
                     crop_lines = [text for text, _ in crop_text["lines"]]
                     fields = [{"fieldName": "印章颜色", "fieldValue": color, "confidence": 0.8, "bbox": [int(x), int(y), int(x + w), int(y + h)]}]
                     fields.extend(crop_text["fields"])
@@ -1694,14 +1817,22 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
         env.update({"PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK": "True", "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"})
         backend_root = str(Path(__file__).resolve().parents[2])
         env["PYTHONPATH"] = f"{backend_root}{os.pathsep}{env.get('PYTHONPATH', '')}"
-        completed = subprocess.run(
-            [python_bin, "-c", script, str(source_path)],
-            check=False,
-            capture_output=True,
-            encoding="utf-8",
-            env=env,
-            timeout=float(os.getenv("AICHECK_OCR_VISUAL_SEAL_TIMEOUT", "60")),
-        )
+        try:
+            completed = subprocess.run(
+                [python_bin, "-c", script, str(source_path)],
+                check=False,
+                capture_output=True,
+                encoding="utf-8",
+                env=env,
+                timeout=float(os.getenv("AICHECK_OCR_VISUAL_SEAL_TIMEOUT", "60")),
+            )
+        except subprocess.TimeoutExpired:
+            return {
+                "ok": False,
+                "diagnostics": [{"code": "VISUAL_SEAL_TIMEOUT", "level": "warning", "message": "visual seal detection timed out."}],
+                "engine": self.name,
+                "engineVersion": self.version,
+            }
         if completed.returncode != 0:
             return {
                 "ok": False,
@@ -2290,6 +2421,7 @@ def local_engines() -> list[LocalOcrEngine]:
     return [
         PyMuPdfTextLayerEngine(),
         PaddleOcrSubprocessEngine(),
+        TesseractCliEngine(),
         PaddleOcrEngine(),
         PpStructureEngine(),
         OpenCvTableGridSubprocessEngine(),

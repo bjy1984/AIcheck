@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { ElCard, ElEmpty, ElTag, ElTree } from 'element-plus'
 import type { ProjectTreePayload } from '@/api/aicheck'
 import type { ProjectTreeNode } from '@/types/aicheck'
@@ -42,6 +42,8 @@ const treeProps = {
   children: 'children',
   label: 'label'
 } as const
+const treeRef = ref<InstanceType<typeof ElTree>>()
+const expandedTreeKeys = ref<string[]>([])
 
 const totalNodeCount = computed(() =>
   props.groups.reduce((sum, group) => sum + group.nodes.length, 0)
@@ -55,7 +57,7 @@ const totalFileCount = computed(() =>
 
 const treeData = computed<ProjectTreeViewNode[]>(() => {
   const groups = props.groups.map((group, index) => ({
-    id: `group-${index}`,
+    id: `group-${group.groupName || index}`,
     label: group.groupName,
     type: 'group' as const,
     children: group.nodes.map((node) => ({
@@ -81,6 +83,28 @@ const treeData = computed<ProjectTreeViewNode[]>(() => {
 const activeTreeKey = computed(() =>
   props.activeNodeId ? `node-${props.activeNodeId}` : 'overview'
 )
+const groupTreeKeys = computed(() =>
+  treeData.value.filter((item) => item.type === 'group').map((item) => item.id)
+)
+
+const restoreExpandedKeys = async () => {
+  await nextTick()
+  const tree = treeRef.value
+  if (!tree) return
+  const currentKeys = new Set(expandedTreeKeys.value)
+  for (const key of groupTreeKeys.value) {
+    const node = tree.getNode(key)
+    if (node) node.expanded = currentKeys.has(key)
+  }
+}
+
+watch(
+  () => props.groups,
+  () => {
+    void restoreExpandedKeys()
+  },
+  { deep: true }
+)
 
 const handleNodeClick = (data: ProjectTreeViewNode) => {
   if (data.type === 'overview') {
@@ -90,6 +114,18 @@ const handleNodeClick = (data: ProjectTreeViewNode) => {
   if (data.type === 'node') {
     emit('select', data.node)
   }
+}
+
+const handleNodeExpand = (data: ProjectTreeViewNode) => {
+  if (data.type !== 'group') return
+  if (!expandedTreeKeys.value.includes(data.id)) {
+    expandedTreeKeys.value = [...expandedTreeKeys.value, data.id]
+  }
+}
+
+const handleNodeCollapse = (data: ProjectTreeViewNode) => {
+  if (data.type !== 'group') return
+  expandedTreeKeys.value = expandedTreeKeys.value.filter((key) => key !== data.id)
 }
 </script>
 
@@ -104,14 +140,18 @@ const handleNodeClick = (data: ProjectTreeViewNode) => {
 
     <ElTree
       v-if="treeData.length"
+      ref="treeRef"
       class="tree-scroll node-tree"
       :data="treeData"
       node-key="id"
       :props="treeProps"
       :current-node-key="activeTreeKey"
+      :default-expanded-keys="expandedTreeKeys"
       highlight-current
       :expand-on-click-node="true"
       @node-click="handleNodeClick"
+      @node-expand="handleNodeExpand"
+      @node-collapse="handleNodeCollapse"
     >
       <template #default="{ data }">
         <span

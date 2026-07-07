@@ -559,6 +559,20 @@ class OcrService:
             if not engine.available():
                 merged["engineRuns"].append({**engine_status, "status": "unavailable", "durationMs": 0})
                 continue
+            if (
+                parse_bool(options.get("quickMode"), False) is True
+                and engine.name in {"paddle_ocr_subprocess", "paddle_ocr_v6"}
+                and text_layer_content_sufficient(merged)
+            ):
+                merged["engineRuns"].append(
+                    {
+                        **engine_status,
+                        "status": "skipped",
+                        "durationMs": 0,
+                        "reason": "quick_mode_text_layer_sufficient",
+                    }
+                )
+                continue
             routed_variants = route_engine_variants(
                 engine.name,
                 variants,
@@ -1405,6 +1419,28 @@ def engine_should_remediate(engine_name: str, reasons: set[str]) -> bool:
 
 def has_parse_content(result: dict[str, Any]) -> bool:
     return any(result.get(key) for key in ["fragments", "fields", "tables", "seals", "layoutBlocks"])
+
+
+def text_layer_content_sufficient(result: dict[str, Any]) -> bool:
+    fragments = [
+        item
+        for item in result.get("fragments") or []
+        if isinstance(item, dict)
+        and str(item.get("sourceEngine") or "") == "pymupdf_text_layer"
+        and str(item.get("text") or "").strip()
+    ]
+    if not fragments:
+        return False
+    try:
+        min_fragments = int(os.getenv("AICHECK_QUICK_TEXT_LAYER_MIN_FRAGMENTS", "20"))
+    except (TypeError, ValueError):
+        min_fragments = 20
+    try:
+        min_chars = int(os.getenv("AICHECK_QUICK_TEXT_LAYER_MIN_CHARS", "400"))
+    except (TypeError, ValueError):
+        min_chars = 400
+    total_chars = sum(len(str(item.get("text") or "").strip()) for item in fragments)
+    return len(fragments) >= max(min_fragments, 1) or total_chars >= max(min_chars, 1)
 
 
 def remediation_variants_for_reasons(

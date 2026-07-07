@@ -5,7 +5,7 @@ from typing import Any
 from apps.ocr_service.utils import parse_bool
 
 
-TEXT_ENGINES = {"pymupdf_text_layer", "paddle_ocr_subprocess", "paddle_ocr_v6", "docling_local"}
+TEXT_ENGINES = {"pymupdf_text_layer", "paddle_ocr_subprocess", "paddle_ocr_v6", "tesseract_cli", "docling_local"}
 TABLE_ENGINES = {"pp_structure_v3", "opencv_table_grid_subprocess"}
 SEAL_ENGINES = {"paddlex_seal_recognition", "agentdesign_seal_ocr_subprocess", "visual_seal_candidate_subprocess"}
 FALLBACK_ENGINES = {"paddleocr_vl_1_6"}
@@ -64,7 +64,9 @@ def route_engine_variants(
     if bool((options or {}).get("runAllVariants")):
         return variants
     if engine_name == "pp_structure_v3":
-        return structure_variants(variants, quality_by_page)
+        if table_engine_disabled(profile):
+            return []
+        return structure_variants(variants, quality_by_page, profile=profile)
     if engine_name == "opencv_table_grid_subprocess":
         return purpose_variants_by_page(variants, "table", quality_by_page, fallback=False)
     if engine_name in SEAL_ENGINES:
@@ -117,6 +119,14 @@ def seal_engine_disabled(engine_name: str, profile: dict[str, Any]) -> bool:
     ):
         return True
     return False
+
+
+def table_engine_disabled(profile: dict[str, Any]) -> bool:
+    table_policy = ((profile.get("preprocessPolicy") or {}).get("table") or {}) if isinstance(profile, dict) else {}
+    required_tables = profile.get("requiredTables") or []
+    if "enabled" not in table_policy:
+        return False
+    return parse_bool(table_policy.get("enabled"), bool(required_tables)) is False
 
 
 def seal_policy_enabled(policy: dict[str, Any], key: str, *, default: bool) -> bool:
@@ -209,9 +219,23 @@ def quick_text_variants_by_page(variants: list[dict[str, Any]], quality_by_page:
     return [variant for variant in routed if variant]
 
 
-def structure_variants(variants: list[dict[str, Any]], quality_by_page: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
+def structure_variants(
+    variants: list[dict[str, Any]],
+    quality_by_page: dict[int, dict[str, Any]],
+    *,
+    profile: dict[str, Any],
+) -> list[dict[str, Any]]:
     routed = []
-    for page_no in sorted({variant_page_no(variant) for variant in variants}):
+    table_policy = ((profile.get("preprocessPolicy") or {}).get("table") or {}) if isinstance(profile, dict) else {}
+    required_tables = profile.get("requiredTables") or []
+    try:
+        max_pages = int(table_policy.get("maxPages") or (4 if required_tables else 2))
+    except (TypeError, ValueError):
+        max_pages = 4 if required_tables else 2
+    page_numbers = sorted({variant_page_no(variant) for variant in variants})
+    if max_pages > 0:
+        page_numbers = keep_required_edge_pages(page_numbers, [], max_pages)
+    for page_no in page_numbers:
         page_variants = variants_for_page(variants, page_no)
         quality = quality_by_page.get(page_no) or {}
         preferred_names = (

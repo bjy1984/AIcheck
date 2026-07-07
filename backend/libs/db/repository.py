@@ -1205,6 +1205,7 @@ class InMemoryRepository:
                 task["progress"] = 100
                 task["finishedAt"] = server_time()
                 task["updatedAt"] = task["finishedAt"]
+                task.pop("errorMessage", None)
                 self._bump_revision(task)
                 self.append_task_log(task, "info", "向量化任务完成。")
             else:
@@ -1600,6 +1601,9 @@ class InMemoryRepository:
         }
         backfilled = self.apply_seed_compatibility_defaults(loaded)
         self.state = loaded
+        # psycopg starts a transaction for the SELECTs above when autocommit is off.
+        # End that read transaction before any writer tries to flush the JSONB state.
+        self.sync_postgres.commit()
         if not has_project_seed:
             self.flush_to_sync_postgres()
         elif backfilled:

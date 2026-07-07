@@ -4,6 +4,8 @@ import os
 import threading
 import time
 from typing import Any
+import hashlib
+import math
 
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -16,6 +18,8 @@ HF_HOME = os.getenv("HF_HOME") or os.getenv("TRANSFORMERS_CACHE") or "/app/.cach
 DEVICE = os.getenv("AICHECK_EMBEDDING_DEVICE", "cpu")
 NORMALIZE = os.getenv("AICHECK_EMBEDDING_NORMALIZE", "true").lower() != "false"
 PRELOAD = os.getenv("AICHECK_EMBEDDING_PRELOAD", "false").lower() == "true"
+ENGINE = os.getenv("AICHECK_EMBEDDING_ENGINE", "torch").strip().lower()
+HASH_DIMENSION = int(os.getenv("AICHECK_EMBEDDING_HASH_DIMENSION", "384"))
 
 app = FastAPI(title="AIcheck Local Embedding Service")
 
@@ -39,6 +43,9 @@ def _authorize(authorization: str | None) -> None:
 
 def _load_model() -> Any:
     global _model, _model_error
+    if ENGINE in {"hash", "deterministic", "local_hash"}:
+        _model_error = None
+        return "hash"
     if _model is not None:
         return _model
     with _model_lock:
@@ -61,12 +68,29 @@ def _startup() -> None:
         _load_model()
 
 
+def _hash_embedding(text: str) -> list[float]:
+    dimension = max(8, HASH_DIMENSION)
+    values = [0.0] * dimension
+    tokens = text.lower().split() or [text]
+    for token in tokens:
+        digest = hashlib.sha256(token.encode("utf-8")).digest()
+        for offset in range(0, len(digest), 4):
+            slot = int.from_bytes(digest[offset : offset + 2], "big") % dimension
+            raw = int.from_bytes(digest[offset + 2 : offset + 4], "big", signed=False)
+            values[slot] += (raw / 32767.5) - 1.0
+    if NORMALIZE:
+        norm = math.sqrt(sum(value * value for value in values)) or 1.0
+        values = [value / norm for value in values]
+    return values
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "model": MODEL_ID,
         "servedModelName": SERVED_MODEL_NAME,
+        "engine": ENGINE,
         "modelLoaded": _model is not None,
         "lastModelError": _model_error,
     }
@@ -82,18 +106,22 @@ def embeddings(payload: EmbeddingRequest, authorization: str | None = Header(def
 
     started = time.time()
     try:
-        model = _load_model()
-        vectors = model.encode(inputs, normalize_embeddings=NORMALIZE, convert_to_numpy=True)
+        if ENGINE in {"hash", "deterministic", "local_hash"}:
+            vectors = [_hash_embedding(item) for item in inputs]
+        else:
+            model = _load_model()
+            vectors = model.encode(inputs, normalize_embeddings=NORMALIZE, convert_to_numpy=True)
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"embedding model unavailable: {exc}") from exc
 
     data = []
     for index, vector in enumerate(vectors):
+        embedding = vector if isinstance(vector, list) else vector.astype(float).tolist()
         data.append(
             {
                 "object": "embedding",
                 "index": index,
-                "embedding": vector.astype(float).tolist(),
+                "embedding": embedding,
             }
         )
     return {

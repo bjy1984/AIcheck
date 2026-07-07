@@ -296,7 +296,18 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
     profile_id = (version or {}).get("ocrProfileId") or (document or {}).get("ocrProfileId")
     document_type = (version or {}).get("documentType") or (document or {}).get("documentType")
     knowledge_file = repo.knowledge_file_for_version(version_id)
+    has_business_ocr_profile = bool(profile_id and profile_id != "generic_document_v1") or bool(document_type)
     ocr_options: dict[str, Any] = {}
+    if not has_business_ocr_profile:
+        ocr_options.update(
+            {
+                "quickMode": True,
+                "enableTables": False,
+                "enableSeals": False,
+                "enableFallback": False,
+                "disableRemediation": True,
+            }
+        )
     if (knowledge_file or {}).get("sourceType") == "standard":
         ocr_options.update(
             {
@@ -435,6 +446,7 @@ def embed_knowledge(self, file_id: str) -> dict[str, Any]:
         flush_state()
         return {"fileId": file_id, "status": "canceled", "vectorCount": 0}
     if task and task.get("status") == "成功" and (file or {}).get("vectorStatus") == "已向量化":
+        task.pop("errorMessage", None)
         flush_state()
         return {"fileId": file_id, "status": "success", "vectorCount": int((file or {}).get("vectorCount") or vector_count), "alreadyCompleted": True}
     repo.mark_task_running(task, "向量化 worker 开始处理。")

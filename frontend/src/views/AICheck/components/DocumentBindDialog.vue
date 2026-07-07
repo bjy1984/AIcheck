@@ -59,6 +59,8 @@ const visible = computed({
 })
 
 const projectFiles = computed(() => props.packageData?.projectFiles || [])
+const projectFileStatus = (file: DocumentAsset) =>
+  file.primaryBinding?.bindingStatus || file.bindings?.[0]?.bindingStatus || file.fileStatus
 const selectedFile = computed<DocumentAsset | undefined>(() =>
   projectFiles.value.find((item) => item.id === form.documentId)
 )
@@ -220,8 +222,8 @@ watch(
         <ElTableColumn prop="currentOcrStatus" label="OCR" width="100" />
         <ElTableColumn label="状态" width="100">
           <template #default="{ row }">
-            <ElTag :type="getStatusTagType(row.fileStatus)" size="small" effect="plain">
-              {{ row.fileStatus }}
+            <ElTag :type="getStatusTagType(projectFileStatus(row))" size="small" effect="plain">
+              {{ projectFileStatus(row) }}
             </ElTag>
           </template>
         </ElTableColumn>

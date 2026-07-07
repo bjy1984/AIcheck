@@ -434,6 +434,8 @@ def build_project_requirements(
                     "businessPackVersion": source["version"],
                     "templateNodeCode": template["code"],
                     "note": requirement.get("note"),
+                    "responsibleParty": requirement.get("responsibleParty"),
+                    "applicability": requirement.get("applicability"),
                 }
             )
     return requirements
