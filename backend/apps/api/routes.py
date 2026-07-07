@@ -8911,6 +8911,256 @@ def fde_quality_issues_view(blockers: list[str], chunk_rows: list[dict[str, Any]
     return issues
 
 
+VECTOR_CORRECTION_TYPES = {"text", "pageNo", "bbox", "sectionPath", "sourceMethod", "ignoreChunk"}
+VECTOR_CORRECTION_STATUS_LABELS = {
+    "pending_review": "待审核",
+    "approved": "已通过",
+    "rejected": "已驳回",
+    "applied": "已应用",
+}
+
+
+def fde_vector_corrections_for_file(knowledge_file_id: str, document_version_id: str) -> list[dict[str, Any]]:
+    corrections = [
+        repo.clone(item)
+        for item in repo.state.get("knowledge_vector_corrections", [])
+        if (knowledge_file_id and str(item.get("knowledgeFileId") or item.get("fileId") or "") == knowledge_file_id)
+        or (document_version_id and str(item.get("documentVersionId") or "") == document_version_id)
+    ]
+    corrections.sort(key=lambda item: str(item.get("updatedAt") or item.get("createdAt") or ""), reverse=True)
+    return corrections
+
+
+def fde_vector_correction_view(correction: dict[str, Any]) -> dict[str, Any]:
+    status = str(correction.get("status") or "pending_review")
+    before = correction.get("before")
+    after = correction.get("after")
+    before_text = before if isinstance(before, str) else json.dumps(before, ensure_ascii=False, default=str)
+    after_text = after if isinstance(after, str) else json.dumps(after, ensure_ascii=False, default=str)
+    return {
+        **repo.clone(correction),
+        "statusLabel": VECTOR_CORRECTION_STATUS_LABELS.get(status, status),
+        "beforePreview": fde_chunk_text_preview(before_text, 160),
+        "afterPreview": fde_chunk_text_preview(after_text, 160),
+    }
+
+
+def fde_vector_correction_summary(corrections: list[dict[str, Any]]) -> dict[str, Any]:
+    status_counts: dict[str, int] = {}
+    type_counts: dict[str, int] = {}
+    for item in corrections:
+        status = str(item.get("status") or "pending_review")
+        correction_type = str(item.get("correctionType") or "text")
+        status_counts[status] = status_counts.get(status, 0) + 1
+        type_counts[correction_type] = type_counts.get(correction_type, 0) + 1
+    return {
+        "total": len(corrections),
+        "pending": status_counts.get("pending_review", 0),
+        "approved": status_counts.get("approved", 0),
+        "applied": status_counts.get("applied", 0),
+        "rejected": status_counts.get("rejected", 0),
+        "statusCounts": status_counts,
+        "typeCounts": type_counts,
+    }
+
+
+def fde_resolve_vector_correction_file(body: dict[str, Any]) -> tuple[dict[str, Any] | None, str, str]:
+    file_id = str(body.get("knowledgeFileId") or body.get("fileId") or "")
+    if file_id:
+        resolved_file_id = resolve_knowledge_file_id(file_id)
+        file = repo.find_one("knowledge_files", resolved_file_id)
+        return file, resolved_file_id, str((file or {}).get("documentVersionId") or body.get("documentVersionId") or "")
+    document_version_id = str(body.get("documentVersionId") or body.get("versionId") or "")
+    file = next(
+        (
+            item
+            for item in repo.state.get("knowledge_files", [])
+            if document_version_id and str(item.get("documentVersionId") or "") == document_version_id
+        ),
+        None,
+    )
+    return file, str((file or {}).get("id") or ""), document_version_id
+
+
+def fde_vector_chunk_before_value(chunk: dict[str, Any] | None, correction_type: str) -> Any:
+    if not chunk:
+        return None
+    if correction_type == "text":
+        return {"text": chunk.get("text") or ""}
+    if correction_type == "pageNo":
+        return {"pageNo": chunk.get("pageNo")}
+    if correction_type == "bbox":
+        return {"pageNo": chunk.get("pageNo"), "bbox": chunk.get("bbox")}
+    if correction_type == "sectionPath":
+        return {"sectionPath": chunk.get("sectionPath")}
+    if correction_type == "sourceMethod":
+        return {"sourceMethod": chunk.get("sourceMethod")}
+    if correction_type == "ignoreChunk":
+        return {"ignoredByFde": bool(chunk.get("ignoredByFde")), "ignoreReason": chunk.get("ignoreReason")}
+    return repo.clone(chunk)
+
+
+def fde_normalize_vector_correction_after(body: dict[str, Any], correction_type: str) -> dict[str, Any]:
+    raw_after = body.get("after")
+    after = raw_after if isinstance(raw_after, dict) else {}
+    if correction_type == "text":
+        text = body.get("correctedText")
+        if text is None:
+            text = body.get("text")
+        if text is None and isinstance(raw_after, str):
+            text = raw_after
+        if text is not None:
+            after = {**after, "text": str(text)}
+    elif correction_type == "pageNo":
+        page_no = body.get("correctedPageNo", body.get("pageNo", after.get("pageNo")))
+        if page_no not in {None, ""}:
+            after = {**after, "pageNo": fde_as_int(page_no)}
+    elif correction_type == "bbox":
+        if "correctedPageNo" in body or "pageNo" in body:
+            after = {**after, "pageNo": fde_as_int(body.get("correctedPageNo", body.get("pageNo")))}
+        if body.get("correctedBbox") is not None:
+            after = {**after, "bbox": body.get("correctedBbox")}
+        elif body.get("bbox") is not None:
+            after = {**after, "bbox": body.get("bbox")}
+    elif correction_type == "sectionPath":
+        value = body.get("sectionPath", after.get("sectionPath"))
+        if value is not None:
+            after = {**after, "sectionPath": value}
+    elif correction_type == "sourceMethod":
+        value = body.get("sourceMethod", after.get("sourceMethod"))
+        if value is not None:
+            after = {**after, "sourceMethod": str(value)}
+    elif correction_type == "ignoreChunk":
+        after = {**after, "ignoredByFde": True, "ignoreReason": body.get("reason") or after.get("ignoreReason") or "FDE 标记忽略"}
+    return repo.clone(after)
+
+
+def fde_update_clause_from_chunk(chunk: dict[str, Any]) -> None:
+    chunk_id = str(chunk.get("id") or "")
+    if not chunk_id:
+        return
+    for clause in repo.state.get("knowledge_clauses", []):
+        if str(clause.get("chunkId") or clause.get("sourceChunkId") or "") != chunk_id:
+            continue
+        if chunk.get("text") is not None:
+            clause["text"] = chunk.get("text")
+            clause["summary"] = fde_chunk_text_preview(chunk.get("text"), 180)
+        if chunk.get("pageNo") is not None:
+            clause["pageNo"] = chunk.get("pageNo")
+            clause["startPage"] = chunk.get("pageNo")
+            clause["endPage"] = chunk.get("pageNo")
+        if chunk.get("bbox") is not None:
+            clause["bbox"] = chunk.get("bbox")
+        if chunk.get("sectionPath") is not None:
+            clause["sectionPath"] = chunk.get("sectionPath")
+        clause["updatedAt"] = server_time()
+
+
+def fde_apply_vector_correction_record(correction: dict[str, Any], *, role: str, reason: str | None = None) -> dict[str, Any]:
+    status = str(correction.get("status") or "pending_review")
+    if status in {"rejected", "applied"}:
+        raise ValueError(f"invalid_status:{status}")
+    file, knowledge_file_id, document_version_id = fde_resolve_vector_correction_file(correction)
+    if not file:
+        raise KeyError("knowledge_file")
+    correction_type = str(correction.get("correctionType") or "text")
+    chunk_id = str(correction.get("chunkId") or "")
+    chunk = next(
+        (
+            item
+            for item in repo.state.get("knowledge_chunks", [])
+            if chunk_id and str(item.get("id") or item.get("chunkId") or "") == chunk_id
+        ),
+        None,
+    )
+    if chunk_id and not chunk:
+        raise KeyError("knowledge_chunk")
+    after = correction.get("after") if isinstance(correction.get("after"), dict) else {}
+    now = server_time()
+    changed_fields: list[str] = []
+    if chunk:
+        if correction_type == "text" and "text" in after:
+            chunk["text"] = str(after.get("text") or "")
+            if after.get("tokenCount") is not None:
+                chunk["tokenCount"] = fde_as_int(after.get("tokenCount"))
+            changed_fields.append("text")
+        if correction_type in {"pageNo", "bbox"} and after.get("pageNo") not in {None, ""}:
+            chunk["pageNo"] = fde_as_int(after.get("pageNo"))
+            changed_fields.append("pageNo")
+        if correction_type == "bbox" and "bbox" in after:
+            chunk["bbox"] = after.get("bbox")
+            changed_fields.append("bbox")
+        if correction_type == "sectionPath" and "sectionPath" in after:
+            chunk["sectionPath"] = after.get("sectionPath")
+            changed_fields.append("sectionPath")
+        if correction_type == "sourceMethod" and "sourceMethod" in after:
+            chunk["sourceMethod"] = str(after.get("sourceMethod") or "")
+            changed_fields.append("sourceMethod")
+        if correction_type == "ignoreChunk":
+            chunk["ignoredByFde"] = True
+            chunk["ignoreReason"] = str(after.get("ignoreReason") or correction.get("reason") or "FDE 标记忽略")
+            chunk["qualityFlags"] = list(dict.fromkeys([*(chunk.get("qualityFlags") or []), "fde_ignored"]))
+            changed_fields.extend(["ignoredByFde", "qualityFlags"])
+        chunk["updatedAt"] = now
+        chunk["lastVectorCorrectionId"] = correction["id"]
+        fde_update_clause_from_chunk(chunk)
+
+    repo.state["knowledge_vectors"] = [
+        item
+        for item in repo.state.get("knowledge_vectors", [])
+        if not (
+            str(item.get("fileId") or "") == knowledge_file_id
+            and (not chunk_id or str(item.get("chunkId") or "") == chunk_id)
+        )
+    ]
+    file["vectorCount"] = len([item for item in repo.state.get("knowledge_vectors", []) if item.get("fileId") == knowledge_file_id])
+    file["vectorStatus"] = "待向量化"
+    file["vectorStatusReason"] = "fde_vector_correction_pending_reindex"
+    file["lastVectorCorrectionId"] = correction["id"]
+    file["updatedAt"] = now
+    bump_record_revision(file)
+    version = repo.find_one("versions", document_version_id)
+    if version:
+        version["vectorStatus"] = "待向量化"
+        version["updatedAt"] = now
+    source = repo.find_one("knowledge_sources", file.get("sourceId"))
+    if source:
+        repo.sync_standard_page_index_for_source(str(source.get("id")))
+        sync_knowledge_source_counts(source)
+
+    vector_task = repo.upsert_knowledge_task(
+        task_type="vector",
+        target_id=knowledge_file_id,
+        target_name=str(file.get("fileName") or knowledge_file_id),
+        document_id=str(file.get("documentId") or ""),
+        version_id=document_version_id,
+    )
+    vector_task.pop("finishedAt", None)
+    vector_task.pop("errorMessage", None)
+    vector_task["status"] = "排队中"
+    vector_task["progress"] = 0
+    vector_task["correctionId"] = correction["id"]
+    repo.append_task_log(vector_task, "info", f"FDE 向量校对已应用，等待重新向量化：{correction['id']}")
+    dispatch = task_dispatcher.dispatch_embed(knowledge_file_id)
+    vector_task["lastDispatch"] = dispatch
+
+    correction["status"] = "applied"
+    correction["statusLabel"] = VECTOR_CORRECTION_STATUS_LABELS["applied"]
+    correction["appliedByRole"] = role or "fde"
+    correction["appliedAt"] = now
+    correction["updatedAt"] = now
+    correction["applyReason"] = reason or correction.get("reviewReason") or correction.get("reason")
+    correction["changedFields"] = list(dict.fromkeys(changed_fields))
+    correction["taskId"] = vector_task["id"]
+    correction["dispatch"] = dispatch
+    return {
+        "correction": fde_vector_correction_view(correction),
+        "file": versioned_record("knowledge-file", file),
+        "task": versioned_record("knowledge-task", vector_task),
+        "dispatch": dispatch,
+    }
+
+
 def fde_vector_file_detail(project_id: str, document_version_id: str, *, chunk_page: int = 1, chunk_page_size: int = 50) -> dict[str, Any]:
     workspace = fde_project_audit_workspace(project_id)
     document = next(
@@ -8970,6 +9220,13 @@ def fde_vector_file_detail(project_id: str, document_version_id: str, *, chunk_p
         if knowledge_file_id and str(item.get("fileId") or "") == knowledge_file_id
     ]
     chunks.sort(key=lambda item: fde_as_int(item.get("chunkNo")))
+    vector_corrections = fde_vector_corrections_for_file(knowledge_file_id, document_version_id)
+    correction_views = [fde_vector_correction_view(item) for item in vector_corrections]
+    corrections_by_chunk: dict[str, list[dict[str, Any]]] = {}
+    for correction in correction_views:
+        correction_chunk_id = str(correction.get("chunkId") or "")
+        if correction_chunk_id:
+            corrections_by_chunk.setdefault(correction_chunk_id, []).append(correction)
 
     declared_chunk_count = max(
         fde_as_int(document.get("chunkCount")),
@@ -9006,6 +9263,7 @@ def fde_vector_file_detail(project_id: str, document_version_id: str, *, chunk_p
             retrieval_hit_count=len(retrieval_hits),
             duplicate=text_hash in duplicate_hashes,
         )
+        chunk_corrections = corrections_by_chunk.get(chunk_id, [])
         chunk_rows.append(
             {
                 "id": chunk_id,
@@ -9014,6 +9272,9 @@ def fde_vector_file_detail(project_id: str, document_version_id: str, *, chunk_p
                 "materialized": True,
                 "pageNo": chunk.get("pageNo"),
                 "bbox": chunk.get("bbox"),
+                "sectionPath": chunk.get("sectionPath"),
+                "sourceMethod": chunk.get("sourceMethod"),
+                "text": chunk.get("text") or "",
                 "textPreview": fde_chunk_text_preview(chunk.get("text")),
                 "textHash": text_hash,
                 "tokenCount": fde_as_int(chunk.get("tokenCount")),
@@ -9026,6 +9287,10 @@ def fde_vector_file_detail(project_id: str, document_version_id: str, *, chunk_p
                     item.get("retrievalTraceId") or item.get("id")
                     for item in retrieval_hits[:5]
                 ],
+                "correctionCount": len(chunk_corrections),
+                "correctionIds": [str(item.get("id")) for item in chunk_corrections[:5]],
+                "latestCorrectionStatus": str((chunk_corrections[0] if chunk_corrections else {}).get("status") or ""),
+                "latestCorrectionStatusLabel": str((chunk_corrections[0] if chunk_corrections else {}).get("statusLabel") or ""),
                 "qualityFlags": flags,
                 "metadataCompleteness": round(
                     fde_ratio(
@@ -9070,6 +9335,9 @@ def fde_vector_file_detail(project_id: str, document_version_id: str, *, chunk_p
                 "materialized": False,
                 "pageNo": None,
                 "bbox": None,
+                "sectionPath": None,
+                "sourceMethod": None,
+                "text": "",
                 "textPreview": "切片计数存在，但缺少可审计切片明细。",
                 "textHash": "",
                 "tokenCount": 0,
@@ -9195,6 +9463,8 @@ def fde_vector_file_detail(project_id: str, document_version_id: str, *, chunk_p
         "indexRecords": index_records,
         "llmUsage": llm_usage,
         "qualityIssues": quality_issues,
+        "corrections": correction_views,
+        "correctionSummary": fde_vector_correction_summary(correction_views),
         "processingPipeline": {
             "schemaVersion": "FdeDocumentProcessingPipeline@1.0.0",
             "summary": [
@@ -9296,6 +9566,641 @@ def fde_vector_file_detail(project_id: str, document_version_id: str, *, chunk_p
                 "evidenceBacked": fde_trace_evidence_backed(item),
                 "filterScoped": isinstance(item.get("filters"), dict)
                 and any(key in item["filters"] for key in ("businessPackId", "projectId", "nodeId", "tenantId")),
+            }
+            for item in trace_rows_source[:8]
+        ],
+        "blockers": blockers,
+        "updatedAt": server_time(),
+    }
+
+
+def fde_standard_file_page_index_nodes(file: dict[str, Any], page_nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    file_id = str(file.get("id") or "")
+    source_path = str(file.get("sourceRelativePath") or "")
+    file_node_ids = {
+        str(node.get("id") or node.get("pageIndexNodeId") or "")
+        for node in page_nodes
+        if str(node.get("nodeId") or "") == file_id
+        or (source_path and str(node.get("sourceRelativePath") or "") == source_path and str(node.get("parentNodeId") or ""))
+    }
+    if not file_node_ids and source_path:
+        file_node_ids = {
+            str(node.get("id") or node.get("pageIndexNodeId") or "")
+            for node in page_nodes
+            if str(node.get("sourceRelativePath") or "") == source_path
+        }
+    return [
+        node
+        for node in page_nodes
+        if str(node.get("id") or node.get("pageIndexNodeId") or "") in file_node_ids
+        or str(node.get("parentNodeId") or "") in file_node_ids
+        or (source_path and str(node.get("sourceRelativePath") or "") == source_path)
+    ]
+
+
+def fde_standard_vector_row(
+    file: dict[str, Any],
+    *,
+    chunks: list[dict[str, Any]],
+    vectors: list[dict[str, Any]],
+    page_nodes: list[dict[str, Any]],
+    corrections: list[dict[str, Any]],
+    latest_task: dict[str, Any] | None,
+) -> dict[str, Any]:
+    file_id = str(file.get("id") or "")
+    chunk_count = max(fde_as_int(file.get("chunkCount")), len(chunks))
+    vector_count = max(fde_as_int(file.get("vectorCount")), len(vectors))
+    vector_gap = max(0, chunk_count - vector_count)
+    page_index_nodes = fde_standard_file_page_index_nodes(file, page_nodes)
+    page_index_count = len(page_index_nodes)
+    correction_views = [fde_vector_correction_view(item) for item in corrections]
+    blockers: list[str] = []
+    if chunk_count <= 0:
+        blockers.append("未生成知识切片")
+    if vector_gap:
+        blockers.append(f"向量缺口 {vector_gap} 条")
+    if str(file.get("vectorStatus") or "") != "已向量化":
+        blockers.append(str(file.get("vectorStatusReason") or file.get("vectorStatus") or "未完成向量化"))
+    if chunk_count and page_index_count <= 0:
+        blockers.append("缺少 PageIndex 节点")
+    vector_ratio = fde_ratio(vector_count, chunk_count, default=0.0)
+    score = round(
+        100
+        * (
+            0.28 * (1.0 if chunk_count > 0 else 0.0)
+            + 0.36 * vector_ratio
+            + 0.22 * (1.0 if page_index_count > 0 else 0.0)
+            + 0.14 * (1.0 if not blockers else 0.0)
+        ),
+        2,
+    )
+    return {
+        "id": file_id,
+        "knowledgeFileId": file_id,
+        "documentId": file.get("documentId"),
+        "documentVersionId": file.get("documentVersionId"),
+        "fileName": file.get("fileName") or file.get("originalFileName") or file_id,
+        "sourceId": file.get("sourceId"),
+        "sourceName": file.get("sourceName"),
+        "sourceType": file.get("sourceType"),
+        "contextType": file.get("contextType") or "standard_reference",
+        "sourceRelativePath": file.get("sourceRelativePath"),
+        "ocrStatus": file.get("ocrStatus"),
+        "sliceStatus": file.get("sliceStatus"),
+        "vectorStatus": file.get("vectorStatus"),
+        "vectorStatusReason": file.get("vectorStatusReason"),
+        "chunkCount": chunk_count,
+        "vectorCount": vector_count,
+        "vectorGap": vector_gap,
+        "pageIndexNodeCount": page_index_count,
+        "pageIndexNodeIds": [
+            str(node.get("id") or node.get("pageIndexNodeId") or "")
+            for node in page_index_nodes[:20]
+        ],
+        "embeddingModel": file.get("embeddingModel") or OFFLINE_EMBEDDING_MODEL,
+        "indexVersion": file.get("indexVersion") or "knowledge-index@local",
+        "vectorDimensions": fde_as_int(file.get("vectorDimensions"), 1024),
+        "score": score,
+        "issue": "无" if not blockers else "；".join(blockers[:3]),
+        "blockers": blockers,
+        "correctionSummary": fde_vector_correction_summary(correction_views),
+        "latestTaskId": (latest_task or {}).get("id"),
+        "latestTaskType": (latest_task or {}).get("type"),
+        "latestTaskStatus": (latest_task or {}).get("status"),
+        "latestTaskProgress": (latest_task or {}).get("progress"),
+        "updatedAt": file.get("updatedAt"),
+    }
+
+
+def fde_standards_vectorization_payload(
+    *,
+    keyword: str | None = None,
+    page_no: int = 1,
+    page_size: int = 100,
+) -> dict[str, Any]:
+    source = repo.find_one("knowledge_sources", STANDARD_RULES_SOURCE_ID) or {
+        "id": STANDARD_RULES_SOURCE_ID,
+        "name": "标准规范库（业务规则引用标准）",
+    }
+    keyword_text = str(keyword or "").strip().lower()
+    files = [
+        repo.clone(item)
+        for item in repo.state.get("knowledge_files", [])
+        if str(item.get("sourceId") or "") == STANDARD_RULES_SOURCE_ID
+    ]
+    if keyword_text:
+        files = [
+            item
+            for item in files
+            if keyword_text
+            in " ".join(
+                [
+                    str(item.get("fileName") or ""),
+                    str(item.get("sourceRelativePath") or ""),
+                    str(item.get("contextType") or ""),
+                    str(item.get("vectorStatus") or ""),
+                ]
+            ).lower()
+        ]
+    chunks_by_file: dict[str, list[dict[str, Any]]] = {}
+    for chunk in repo.state.get("knowledge_chunks", []):
+        file_id = str(chunk.get("fileId") or "")
+        if file_id:
+            chunks_by_file.setdefault(file_id, []).append(chunk)
+    vectors_by_file: dict[str, list[dict[str, Any]]] = {}
+    for vector in repo.state.get("knowledge_vectors", []):
+        file_id = str(vector.get("fileId") or "")
+        if file_id:
+            vectors_by_file.setdefault(file_id, []).append(vector)
+    corrections_by_file: dict[str, list[dict[str, Any]]] = {}
+    for correction in repo.state.get("knowledge_vector_corrections", []):
+        file_id = str(correction.get("knowledgeFileId") or correction.get("fileId") or "")
+        if file_id:
+            corrections_by_file.setdefault(file_id, []).append(correction)
+    latest_task_by_file: dict[str, dict[str, Any]] = {}
+    for task in repo.state.get("knowledge_tasks", []):
+        target_id = str(task.get("targetId") or "")
+        if not target_id or target_id in latest_task_by_file:
+            continue
+        latest_task_by_file[target_id] = task
+    page_nodes = [
+        item
+        for item in repo.state.get("knowledge_page_index_nodes", [])
+        if str(item.get("kbDocId") or "") == STANDARD_RULES_SOURCE_ID
+    ]
+    rows = [
+        fde_standard_vector_row(
+            file,
+            chunks=chunks_by_file.get(str(file.get("id") or ""), []),
+            vectors=vectors_by_file.get(str(file.get("id") or ""), []),
+            page_nodes=page_nodes,
+            corrections=corrections_by_file.get(str(file.get("id") or ""), []),
+            latest_task=latest_task_by_file.get(str(file.get("id") or "")),
+        )
+        for file in files
+    ]
+    rows.sort(key=lambda item: (0 if item.get("contextType") == "standard_reference" else 1, str(item.get("sourceRelativePath") or item.get("fileName") or "")))
+    file_page = page(rows, max(1, fde_as_int(page_no, 1)), max(1, min(fde_as_int(page_size, 100), 200)))
+    all_corrections = [view for row in rows for view in [*([row.get("correctionSummary")] if row.get("correctionSummary") else [])]]
+    chunk_count = sum(fde_as_int(item.get("chunkCount")) for item in rows)
+    vector_count = sum(fde_as_int(item.get("vectorCount")) for item in rows)
+    vectorized_files = len(
+        [
+            item
+            for item in rows
+            if str(item.get("vectorStatus") or "") == "已向量化"
+            and fde_as_int(item.get("chunkCount")) == fde_as_int(item.get("vectorCount"))
+            and fde_as_int(item.get("chunkCount")) > 0
+        ]
+    )
+    correction_totals = {
+        "total": sum(fde_as_int((item.get("correctionSummary") or {}).get("total")) for item in rows),
+        "pending": sum(fde_as_int((item.get("correctionSummary") or {}).get("pending")) for item in rows),
+        "approved": sum(fde_as_int((item.get("correctionSummary") or {}).get("approved")) for item in rows),
+        "applied": sum(fde_as_int((item.get("correctionSummary") or {}).get("applied")) for item in rows),
+        "rejected": sum(fde_as_int((item.get("correctionSummary") or {}).get("rejected")) for item in rows),
+    }
+    index_versions: dict[str, int] = {}
+    embedding_models: dict[str, int] = {}
+    for item in rows:
+        index_versions[str(item.get("indexVersion") or "knowledge-index@local")] = index_versions.get(str(item.get("indexVersion") or "knowledge-index@local"), 0) + 1
+        embedding_models[str(item.get("embeddingModel") or OFFLINE_EMBEDDING_MODEL)] = embedding_models.get(str(item.get("embeddingModel") or OFFLINE_EMBEDDING_MODEL), 0) + 1
+    active_index_version = max(index_versions.items(), key=lambda pair: pair[1])[0] if index_versions else "knowledge-index@local"
+    active_embedding_model = max(embedding_models.items(), key=lambda pair: pair[1])[0] if embedding_models else OFFLINE_EMBEDDING_MODEL
+    issue_rows = [item for item in rows if item.get("issue") and item.get("issue") != "无"]
+    score = round(
+        100
+        * (
+            0.35 * fde_ratio(vectorized_files, len(rows), default=0.0)
+            + 0.35 * fde_ratio(vector_count, chunk_count, default=0.0)
+            + 0.20 * fde_ratio(len([item for item in rows if fde_as_int(item.get("pageIndexNodeCount")) > 0]), len(rows), default=0.0)
+            + 0.10 * (1.0 if not issue_rows else fde_ratio(len(rows) - len(issue_rows), len(rows), default=0.0))
+        ),
+        2,
+    )
+    return {
+        "schemaVersion": "FdeStandardsVectorization@1.0.0",
+        "source": versioned_record("knowledge-source", source),
+        "sourceId": STANDARD_RULES_SOURCE_ID,
+        "sourceName": source.get("name"),
+        "metrics": {
+            "fileCount": len(rows),
+            "standardFileCount": len([item for item in rows if item.get("contextType") == "standard_reference"]),
+            "businessRuleContextCount": len([item for item in rows if item.get("contextType") == "business_rule_context"]),
+            "vectorizedFileCount": vectorized_files,
+            "chunkCount": chunk_count,
+            "vectorCount": vector_count,
+            "vectorGap": max(0, chunk_count - vector_count),
+            "pageIndexNodeCount": len(page_nodes),
+            "issueFileCount": len(issue_rows),
+            "qualityScore": score,
+            "activeEmbeddingModel": active_embedding_model,
+            "activeIndexVersion": active_index_version,
+            "vectorDimensions": 1024,
+        },
+        "correctionSummary": correction_totals,
+        "files": file_page["items"],
+        "filePage": file_page,
+        "storage": {
+            "sqliteEnabled": bool(getattr(repo, "sqlite_enabled", False)),
+            "sqlitePath": getattr(repo, "sqlite_path", None),
+            "postgresConfigured": bool(os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL")),
+            "vectorTable": "knowledge_vector_index",
+            "jsonCollections": [
+                "knowledge_files",
+                "knowledge_chunks",
+                "knowledge_vectors",
+                "knowledge_page_index_nodes",
+                "knowledge_vector_corrections",
+            ],
+        },
+        "qualityIssues": [
+            {
+                "severity": "warning",
+                "code": "standards_vectorization_issue_files",
+                "message": f"{len(issue_rows)} 个规范库文件需要关注",
+                "targetType": "knowledge_file",
+                "count": len(issue_rows),
+            }
+        ]
+        if issue_rows
+        else [],
+        "updatedAt": server_time(),
+    }
+
+
+def fde_standard_vector_file_detail(
+    file_id: str,
+    *,
+    chunk_page: int = 1,
+    chunk_page_size: int = 80,
+) -> dict[str, Any]:
+    resolved_file_id = resolve_knowledge_file_id(file_id)
+    file = repo.find_one("knowledge_files", resolved_file_id)
+    if not file or str(file.get("sourceId") or "") != STANDARD_RULES_SOURCE_ID:
+        raise KeyError(file_id)
+    knowledge_file_id = str(file.get("id") or resolved_file_id)
+    document_version_id = str(file.get("documentVersionId") or "")
+    version = repo.find_one("versions", document_version_id)
+    chunks = [
+        repo.clone(item)
+        for item in repo.state.get("knowledge_chunks", [])
+        if str(item.get("fileId") or "") == knowledge_file_id
+    ]
+    chunks.sort(key=lambda item: fde_as_int(item.get("chunkNo")))
+    vectors = [
+        item
+        for item in repo.state.get("knowledge_vectors", [])
+        if str(item.get("fileId") or "") == knowledge_file_id
+    ]
+    vector_chunk_ids = {str(item.get("chunkId") or "") for item in vectors if item.get("chunkId")}
+    vector_count = max(fde_as_int(file.get("vectorCount")), len(vectors))
+    declared_chunk_count = max(fde_as_int(file.get("chunkCount")), len(chunks))
+    vector_corrections = fde_vector_corrections_for_file(knowledge_file_id, document_version_id)
+    correction_views = [fde_vector_correction_view(item) for item in vector_corrections]
+    corrections_by_chunk: dict[str, list[dict[str, Any]]] = {}
+    for correction in correction_views:
+        correction_chunk_id = str(correction.get("chunkId") or "")
+        if correction_chunk_id:
+            corrections_by_chunk.setdefault(correction_chunk_id, []).append(correction)
+    text_hashes = [fde_chunk_text_hash(item.get("text")) for item in chunks]
+    duplicate_hashes = {text_hash for text_hash in text_hashes if text_hash and text_hashes.count(text_hash) > 1}
+    trace_rows_source = [
+        trace
+        for trace in repo.state.get("retrieval_traces", [])
+        if fde_trace_matches_document(trace, file_id=knowledge_file_id, document_version_id=document_version_id)
+    ]
+    chunk_rows: list[dict[str, Any]] = []
+    for index, chunk in enumerate(chunks, start=1):
+        chunk_no = fde_as_int(chunk.get("chunkNo"), index)
+        chunk_id = str(chunk.get("id") or f"chunk-{chunk_no}")
+        retrieval_hits = [
+            trace
+            for trace in trace_rows_source
+            if chunk_id in fde_trace_chunk_identifiers(trace)
+            or f"KC-{chunk_id}" in fde_trace_chunk_identifiers(trace)
+            or fde_trace_matches_document(trace, file_id=knowledge_file_id, document_version_id=document_version_id)
+        ]
+        vector_ready = chunk_id in vector_chunk_ids or chunk_no <= vector_count
+        text_hash = fde_chunk_text_hash(chunk.get("text"))
+        flags = fde_chunk_quality_flags(
+            {**chunk, "materialized": True},
+            vector_ready=vector_ready,
+            retrieval_hit_count=len(retrieval_hits),
+            duplicate=text_hash in duplicate_hashes,
+        )
+        chunk_corrections = corrections_by_chunk.get(chunk_id, [])
+        chunk_rows.append(
+            {
+                "id": chunk_id,
+                "chunkId": chunk_id,
+                "chunkNo": chunk_no,
+                "materialized": True,
+                "pageNo": chunk.get("pageNo"),
+                "bbox": chunk.get("bbox"),
+                "sectionPath": chunk.get("sectionPath"),
+                "sourceMethod": chunk.get("sourceMethod"),
+                "text": chunk.get("text") or "",
+                "textPreview": fde_chunk_text_preview(chunk.get("text")),
+                "textHash": text_hash,
+                "tokenCount": fde_as_int(chunk.get("tokenCount")),
+                "vectorStatus": "ready" if vector_ready else "missing",
+                "vectorStatusLabel": "已入库" if vector_ready else "缺向量",
+                "embeddingModel": file.get("embeddingModel") or OFFLINE_EMBEDDING_MODEL,
+                "indexVersion": file.get("indexVersion") or "knowledge-index@local",
+                "retrievalHitCount": len(retrieval_hits),
+                "retrievalTraceIds": [
+                    item.get("retrievalTraceId") or item.get("id")
+                    for item in retrieval_hits[:5]
+                ],
+                "correctionCount": len(chunk_corrections),
+                "correctionIds": [str(item.get("id")) for item in chunk_corrections[:5]],
+                "latestCorrectionStatus": str((chunk_corrections[0] if chunk_corrections else {}).get("status") or ""),
+                "latestCorrectionStatusLabel": str((chunk_corrections[0] if chunk_corrections else {}).get("statusLabel") or ""),
+                "qualityFlags": flags,
+                "metadataCompleteness": round(
+                    fde_ratio(
+                        len(
+                            [
+                                value
+                                for value in [
+                                    chunk.get("fileId"),
+                                    chunk.get("documentVersionId"),
+                                    chunk.get("pageNo"),
+                                    chunk.get("bbox"),
+                                    chunk.get("sectionPath"),
+                                    chunk.get("tokenCount"),
+                                ]
+                                if value not in (None, "", [])
+                            ]
+                        ),
+                        6,
+                        default=0.0,
+                    ),
+                    4,
+                ),
+            }
+        )
+    missing_materialized = max(0, declared_chunk_count - len(chunks))
+    for offset in range(missing_materialized):
+        chunk_no = len(chunks) + offset + 1
+        vector_ready = chunk_no <= vector_count
+        chunk_rows.append(
+            {
+                "id": f"virtual-{knowledge_file_id}-{chunk_no}",
+                "chunkId": "",
+                "chunkNo": chunk_no,
+                "materialized": False,
+                "pageNo": None,
+                "bbox": None,
+                "sectionPath": None,
+                "sourceMethod": None,
+                "text": "",
+                "textPreview": "切片计数存在，但缺少可审计切片明细。",
+                "textHash": "",
+                "tokenCount": 0,
+                "vectorStatus": "ready" if vector_ready else "missing",
+                "vectorStatusLabel": "按文件计数推导已入库" if vector_ready else "缺向量",
+                "embeddingModel": file.get("embeddingModel") or OFFLINE_EMBEDDING_MODEL,
+                "indexVersion": file.get("indexVersion") or "knowledge-index@local",
+                "retrievalHitCount": 0,
+                "retrievalTraceIds": [],
+                "correctionCount": 0,
+                "correctionIds": [],
+                "latestCorrectionStatus": "",
+                "latestCorrectionStatusLabel": "",
+                "qualityFlags": ["not_materialized"] + ([] if vector_ready else ["missing_vector"]),
+                "metadataCompleteness": 0.0,
+            }
+        )
+    effective_count = len(chunk_rows)
+    page_covered = len([item for item in chunk_rows if item.get("pageNo") is not None])
+    bbox_covered = len([item for item in chunk_rows if item.get("bbox")])
+    text_covered = len([item for item in chunk_rows if item.get("materialized") and item.get("textHash")])
+    vector_ready_count = len([item for item in chunk_rows if item.get("vectorStatus") == "ready"])
+    retrieved_count = len([item for item in chunk_rows if fde_as_int(item.get("retrievalHitCount")) > 0])
+    page_nodes = fde_standard_file_page_index_nodes(
+        file,
+        [
+            item
+            for item in repo.state.get("knowledge_page_index_nodes", [])
+            if str(item.get("kbDocId") or "") == STANDARD_RULES_SOURCE_ID
+        ],
+    )
+    blockers: list[str] = []
+    if declared_chunk_count <= 0:
+        blockers.append("未生成知识切片")
+    if missing_materialized:
+        blockers.append(f"{missing_materialized} 条切片缺少明细")
+    if vector_ready_count < declared_chunk_count:
+        blockers.append("向量数量未覆盖全部切片")
+    if effective_count and fde_ratio(page_covered, effective_count) < 0.95:
+        blockers.append("部分切片缺少页码")
+    if effective_count and fde_ratio(bbox_covered, effective_count) < 0.9:
+        blockers.append("部分切片缺少 bbox 证据")
+    if declared_chunk_count and not page_nodes:
+        blockers.append("缺少 PageIndex 节点")
+    flag_counts: dict[str, int] = {}
+    for item in chunk_rows:
+        for flag in item.get("qualityFlags") or []:
+            flag_counts[str(flag)] = flag_counts.get(str(flag), 0) + 1
+    token_counts = [fde_as_int(item.get("tokenCount")) for item in chunk_rows if item.get("materialized")]
+    page_distribution: dict[str, int] = {}
+    for item in chunk_rows:
+        page_key = str(item.get("pageNo") if item.get("pageNo") is not None else "缺页码")
+        page_distribution[page_key] = page_distribution.get(page_key, 0) + 1
+    token_buckets = {
+        "0": len([value for value in token_counts if value <= 0]),
+        "1-80": len([value for value in token_counts if 0 < value <= 80]),
+        "81-200": len([value for value in token_counts if 80 < value <= 200]),
+        "201-500": len([value for value in token_counts if 200 < value <= 500]),
+        "500+": len([value for value in token_counts if value > 500]),
+    }
+    chunk_page_size = max(1, min(fde_as_int(chunk_page_size, 80), 200))
+    chunk_page = max(1, fde_as_int(chunk_page, 1))
+    paged_chunk_rows = page(chunk_rows, chunk_page, chunk_page_size)
+    embedding_model = str(file.get("embeddingModel") or OFFLINE_EMBEDDING_MODEL)
+    index_version = str(file.get("indexVersion") or "knowledge-index@local")
+    vector_dimensions = fde_as_int(file.get("vectorDimensions"), 1024)
+    document_view = {
+        "id": file.get("documentId"),
+        "currentVersionId": document_version_id,
+        "documentVersionId": document_version_id,
+        "fileName": file.get("fileName"),
+        "fileType": Path(str(file.get("fileName") or "")).suffix.lstrip("."),
+        "embeddingModel": embedding_model,
+        "indexVersion": index_version,
+        "vectorDimensions": vector_dimensions,
+    }
+    vector_format_rows = fde_vector_format_rows(
+        chunk_rows,
+        project_id="",
+        document=document_view,
+        knowledge_file_id=knowledge_file_id,
+        embedding_model=embedding_model,
+        index_version=index_version,
+        dimensions=vector_dimensions,
+    )
+    index_records = [row.get("indexRecord") for row in vector_format_rows if isinstance(row.get("indexRecord"), dict)]
+    score = round(
+        100
+        * (
+            0.24 * fde_ratio(len(chunks), declared_chunk_count, default=0.0)
+            + 0.28 * fde_ratio(vector_ready_count, declared_chunk_count, default=0.0)
+            + 0.18 * fde_ratio(page_covered, effective_count, default=0.0)
+            + 0.12 * fde_ratio(bbox_covered, effective_count, default=0.0)
+            + 0.10 * fde_ratio(text_covered, effective_count, default=0.0)
+            + 0.08 * (1.0 if page_nodes else 0.0)
+        ),
+        2,
+    )
+    source_preview = {
+        "schemaVersion": "FdeSourcePreview@1.0.0",
+        "stage": "knowledge_file",
+        "label": "规范原始文件",
+        "status": "ready" if version else "knowledge_state",
+        "fileName": file.get("fileName"),
+        "fileType": document_view["fileType"],
+        "documentId": file.get("documentId"),
+        "documentVersionId": document_version_id,
+        "storageKey": file.get("sourceRelativePath"),
+        "storageBucket": "rules",
+        "previewUrl": "",
+        "previewType": document_view["fileType"],
+        "pageCount": max([fde_as_int(item.get("pageNo")) for item in chunks] or [1]),
+        "pages": [
+            {
+                "pageNo": item.get("startPage") or item.get("pageNo") or index + 1,
+                "width": None,
+                "height": None,
+                "previewUrl": "",
+                "imageObjectKey": file.get("sourceRelativePath"),
+                "quality": {},
+            }
+            for index, item in enumerate(page_nodes[:20])
+        ]
+        or [{"pageNo": 1, "width": None, "height": None, "previewUrl": "", "imageObjectKey": file.get("sourceRelativePath"), "quality": {}}],
+        "previewAvailable": False,
+        "previewUnavailableReason": "规范库详情展示切片、PageIndex 和向量校验，不绑定项目资料预览。",
+    }
+    return {
+        "schemaVersion": "FdeStandardVectorFileDetail@1.0.0",
+        "compatibleSchemaVersion": "FdeVectorFileDetail@1.0.0",
+        "scope": "standards",
+        "projectId": "",
+        "documentId": file.get("documentId"),
+        "documentVersionId": document_version_id,
+        "knowledgeFileId": knowledge_file_id,
+        "fileName": file.get("fileName"),
+        "requirementName": file.get("sourceRelativePath"),
+        "score": score,
+        "status": "pass" if score >= 90 and not blockers else "needs_attention",
+        "sliceStatus": file.get("sliceStatus") or "待切片",
+        "vectorStatus": file.get("vectorStatus") or "待向量化",
+        "embeddingModel": embedding_model,
+        "indexVersion": index_version,
+        "vectorDimensions": vector_dimensions,
+        "sourceRelativePath": file.get("sourceRelativePath"),
+        "contextType": file.get("contextType"),
+        "sourcePreview": source_preview,
+        "textRecords": fde_text_stage_rows([], chunk_rows),
+        "vectorPayloads": vector_format_rows,
+        "indexRecords": index_records,
+        "llmUsage": {
+            "schemaVersion": "FdeDocumentLlmUsage@1.0.0",
+            "scope": "standards_knowledge_base",
+            "relatedReviewRunCount": 0,
+            "retrievalTraceCount": len(trace_rows_source),
+            "retrievedChunkCount": retrieved_count,
+            "retrievalCoverage": round(fde_ratio(retrieved_count, effective_count, default=0.0), 4),
+            "proxyTrace": False,
+            "proxyReason": "",
+        },
+        "qualityIssues": fde_quality_issues_view(blockers, chunk_rows, []),
+        "corrections": correction_views,
+        "correctionSummary": fde_vector_correction_summary(correction_views),
+        "processingPipeline": {
+            "schemaVersion": "FdeStandardVectorPipeline@1.0.0",
+            "summary": [
+                {"key": "source", "label": "规范来源", "status": "ready", "metric": file.get("sourceRelativePath") or "-"},
+                {"key": "text", "label": "原文切片", "status": file.get("sliceStatus") or "待切片", "metric": f"{len(chunks)} 条"},
+                {"key": "pageindex", "label": "PageIndex", "status": "ready" if page_nodes else "missing", "metric": f"{len(page_nodes)} 节点"},
+                {"key": "index", "label": "向量索引", "status": file.get("vectorStatus") or "待向量化", "metric": index_version},
+            ],
+            "source": source_preview,
+            "text": {
+                "stage": "text",
+                "label": "规范原文切片",
+                "status": "ready" if chunk_rows else "missing",
+                "rows": fde_text_stage_rows([], chunk_rows),
+                "textRecordCount": len(chunk_rows),
+                "sourceBreakdown": {"knowledgeChunks": len(chunk_rows)},
+            },
+            "vectorFormat": {
+                "stage": "vector_format",
+                "label": "向量格式化数据",
+                "status": "ready" if vector_format_rows else "missing",
+                "embeddingModel": embedding_model,
+                "indexVersion": index_version,
+                "dimensions": vector_dimensions,
+                "rows": vector_format_rows,
+                "recordCount": len(vector_format_rows),
+                "note": "真实高维向量值不在 FDE 展示；这里展示 embedding input、metadata、payload hash 和索引记录格式。",
+            },
+            "index": {
+                "stage": "index",
+                "label": "向量索引记录",
+                "status": file.get("vectorStatus") or "待向量化",
+                "rows": index_records,
+                "recordCount": len(index_records),
+                "indexVersion": index_version,
+            },
+        },
+        "pageIndexNodes": [
+            {
+                "id": node.get("id") or node.get("pageIndexNodeId"),
+                "title": node.get("title"),
+                "summary": fde_chunk_text_preview(node.get("summary"), 220),
+                "startPage": node.get("startPage"),
+                "endPage": node.get("endPage"),
+                "sectionPath": node.get("sectionPath"),
+                "linkedClauseIds": node.get("linkedClauseIds") or [],
+                "tags": node.get("tags") or [],
+            }
+            for node in page_nodes[:120]
+        ],
+        "chunkSummary": {
+            "declaredChunkCount": declared_chunk_count,
+            "materializedChunkCount": len(chunks),
+            "missingMaterializedChunkCount": missing_materialized,
+            "vectorReadyCount": vector_ready_count,
+            "vectorGap": max(0, declared_chunk_count - vector_ready_count),
+            "totalTokenCount": sum(token_counts),
+            "averageTokenCount": round((sum(token_counts) / len(token_counts)) if token_counts else 0.0, 2),
+            "pageCoverage": round(fde_ratio(page_covered, effective_count, default=0.0), 4),
+            "bboxCoverage": round(fde_ratio(bbox_covered, effective_count, default=0.0), 4),
+            "textCoverage": round(fde_ratio(text_covered, effective_count, default=0.0), 4),
+            "retrievedChunkCount": retrieved_count,
+            "retrievalCoverage": round(fde_ratio(retrieved_count, effective_count, default=0.0), 4),
+            "duplicateChunkCount": flag_counts.get("duplicate_text", 0),
+        },
+        "chunkRows": paged_chunk_rows["items"],
+        "chunkPage": paged_chunk_rows,
+        "chunkCharts": {
+            "tokenBuckets": token_buckets,
+            "pageDistribution": page_distribution,
+            "flagCounts": flag_counts,
+        },
+        "retrievalTraceRows": [
+            {
+                "retrievalTraceId": item.get("retrievalTraceId") or item.get("id"),
+                "query": item.get("query"),
+                "selectedRoute": item.get("selectedRoute"),
+                "scope": "standards",
+                "selectedClauseCount": len(fde_trace_selected_clauses(item)),
+                "selectedChunkCount": len(fde_trace_chunk_identifiers(item) & {str(row.get("chunkId")) for row in chunk_rows if row.get("chunkId")}),
+                "evidenceBacked": fde_trace_evidence_backed(item),
+                "filterScoped": True,
             }
             for item in trace_rows_source[:8]
         ],
@@ -10885,7 +11790,7 @@ def fde_project_document_vector_detail(
     page_no: int = Query(default=1, alias="page"),
     page_size: int = Query(default=50, alias="pageSize"),
 ):
-    _, role_error = fde_error_unless_allowed(request, "fde:dashboard:view")
+    _, role_error = fde_error_unless_allowed(request, "fde:vector-quality:view")
     if role_error:
         return role_error
     try:
@@ -10900,6 +11805,203 @@ def fde_project_document_vector_detail(
         )
     except KeyError:
         return fail(errors.NOT_FOUND, request)
+
+
+@router.get("/fde/standards/vectorization")
+def fde_standards_vectorization(
+    request: Request,
+    keyword: str | None = None,
+    page_no: int = Query(default=1, alias="page"),
+    page_size: int = Query(default=100, alias="pageSize"),
+):
+    _, role_error = fde_error_unless_allowed(request, "fde:vector-quality:view")
+    if role_error:
+        return role_error
+    return ok(
+        fde_standards_vectorization_payload(
+            keyword=keyword,
+            page_no=page_no,
+            page_size=page_size,
+        ),
+        request,
+    )
+
+
+@router.get("/fde/standards/files/{file_id}/vector-detail")
+def fde_standard_file_vector_detail(
+    request: Request,
+    file_id: str,
+    page_no: int = Query(default=1, alias="page"),
+    page_size: int = Query(default=80, alias="pageSize"),
+):
+    _, role_error = fde_error_unless_allowed(request, "fde:vector-quality:view")
+    if role_error:
+        return role_error
+    try:
+        return ok(
+            fde_standard_vector_file_detail(
+                file_id,
+                chunk_page=page_no,
+                chunk_page_size=page_size,
+            ),
+            request,
+        )
+    except KeyError:
+        return fail(errors.NOT_FOUND, request)
+
+
+@router.post("/fde/vector-corrections")
+def fde_create_vector_correction(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        role, role_error = fde_error_unless_allowed(request, "fde:vector-quality:review")
+        if role_error:
+            return role_error
+        correction_type = str(body.get("correctionType") or body.get("field") or "text")
+        if correction_type not in VECTOR_CORRECTION_TYPES:
+            return fail(errors.VALIDATION_ERROR, request, message="不支持的向量校对类型。")
+        file, knowledge_file_id, document_version_id = fde_resolve_vector_correction_file(body)
+        if not file:
+            return fail(errors.NOT_FOUND, request, message="未找到对应知识文件。")
+        if knowledge_file_is_business_rule(file):
+            return fail(errors.VALIDATION_ERROR, request, message="业务规则上下文不允许作为标准原文 chunk 校对。")
+        chunk_id = str(body.get("chunkId") or "")
+        chunk = next(
+            (
+                item
+                for item in repo.state.get("knowledge_chunks", [])
+                if chunk_id
+                and str(item.get("fileId") or "") == knowledge_file_id
+                and str(item.get("id") or item.get("chunkId") or "") == chunk_id
+            ),
+            None,
+        )
+        if not chunk:
+            return fail(errors.NOT_FOUND, request, message="未找到可校对的知识切片。")
+        after = fde_normalize_vector_correction_after(body, correction_type)
+        if correction_type != "ignoreChunk" and not after:
+            return fail(errors.VALIDATION_ERROR, request, message="校对后的目标值不能为空。")
+        now = server_time()
+        correction = {
+            "id": str(body.get("id") or f"KVCR-{uuid4().hex[:8].upper()}"),
+            "projectId": body.get("projectId") or file.get("projectId"),
+            "documentId": file.get("documentId"),
+            "documentVersionId": document_version_id,
+            "knowledgeFileId": knowledge_file_id,
+            "fileId": knowledge_file_id,
+            "chunkId": chunk_id,
+            "chunkNo": chunk.get("chunkNo"),
+            "pageNo": chunk.get("pageNo"),
+            "bbox": chunk.get("bbox"),
+            "correctionType": correction_type,
+            "before": body.get("before") if body.get("before") is not None else fde_vector_chunk_before_value(chunk, correction_type),
+            "after": after,
+            "reason": compact_plain_text(body.get("reason") or "FDE 向量资料校对", 500),
+            "status": "pending_review",
+            "statusLabel": VECTOR_CORRECTION_STATUS_LABELS["pending_review"],
+            "createdByRole": role or "fde",
+            "createdAt": now,
+            "updatedAt": now,
+            "revision": 1,
+        }
+        fde_state_list("knowledge_vector_corrections").insert(0, correction)
+        audit_id = repo.add_audit("FDE 提交向量资料校对", "KnowledgeVectorCorrection", correction["id"])
+        return ok({"correction": fde_vector_correction_view(correction), "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
+
+
+@router.post("/fde/vector-corrections/{correction_id}/approve")
+def fde_approve_vector_correction(
+    request: Request,
+    correction_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        role, role_error = fde_error_unless_allowed(request, "fde:vector-quality:review")
+        if role_error:
+            return role_error
+        correction = repo.find_one("knowledge_vector_corrections", correction_id)
+        if not correction:
+            return fail(errors.NOT_FOUND, request)
+        if correction.get("status") in {"applied", "rejected"}:
+            return fail(errors.VALIDATION_ERROR, request, message="当前校对状态不能通过。")
+        now = server_time()
+        correction["status"] = "approved"
+        correction["statusLabel"] = VECTOR_CORRECTION_STATUS_LABELS["approved"]
+        correction["reviewedByRole"] = role or "fde"
+        correction["reviewedAt"] = now
+        correction["reviewReason"] = compact_plain_text(body.get("reason") or "FDE 校对通过", 500)
+        correction["updatedAt"] = now
+        bump_record_revision(correction)
+        audit_id = repo.add_audit("FDE 通过向量资料校对", "KnowledgeVectorCorrection", correction_id)
+        return ok({"correction": fde_vector_correction_view(correction), "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"correctionId": correction_id, "body": body})
+
+
+@router.post("/fde/vector-corrections/{correction_id}/reject")
+def fde_reject_vector_correction(
+    request: Request,
+    correction_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        role, role_error = fde_error_unless_allowed(request, "fde:vector-quality:review")
+        if role_error:
+            return role_error
+        correction = repo.find_one("knowledge_vector_corrections", correction_id)
+        if not correction:
+            return fail(errors.NOT_FOUND, request)
+        if correction.get("status") == "applied":
+            return fail(errors.VALIDATION_ERROR, request, message="已应用的校对不能驳回。")
+        now = server_time()
+        correction["status"] = "rejected"
+        correction["statusLabel"] = VECTOR_CORRECTION_STATUS_LABELS["rejected"]
+        correction["reviewedByRole"] = role or "fde"
+        correction["reviewedAt"] = now
+        correction["reviewReason"] = compact_plain_text(body.get("reason") or "FDE 校对驳回", 500)
+        correction["updatedAt"] = now
+        bump_record_revision(correction)
+        audit_id = repo.add_audit("FDE 驳回向量资料校对", "KnowledgeVectorCorrection", correction_id)
+        return ok({"correction": fde_vector_correction_view(correction), "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"correctionId": correction_id, "body": body})
+
+
+@router.post("/fde/vector-corrections/{correction_id}/apply")
+def fde_apply_vector_correction(
+    request: Request,
+    correction_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        role, role_error = fde_error_unless_allowed(request, "fde:vector-quality:apply")
+        if role_error:
+            return role_error
+        correction = repo.find_one("knowledge_vector_corrections", correction_id)
+        if not correction:
+            return fail(errors.NOT_FOUND, request)
+        try:
+            result = fde_apply_vector_correction_record(
+                correction,
+                role=role or "fde",
+                reason=compact_plain_text(body.get("reason") or "", 500) or None,
+            )
+        except KeyError:
+            return fail(errors.NOT_FOUND, request, message="校对目标知识文件或切片不存在。")
+        except ValueError as exc:
+            return fail(errors.VALIDATION_ERROR, request, message=f"校对状态不允许应用：{exc}")
+        audit_id = repo.add_audit("FDE 应用向量资料校对", "KnowledgeVectorCorrection", correction_id)
+        return ok({**result, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"correctionId": correction_id, "body": body})
 
 
 @router.get("/fde/projects/{project_id}/nodes/{node_id}/audit-detail")

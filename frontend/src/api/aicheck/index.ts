@@ -1494,6 +1494,7 @@ export type FdeQualityIssuePayload = {
 export type FdeVectorFileDetailPayload = {
   schemaVersion?: string
   compatibleSchemaVersion?: string
+  scope?: string
   projectId?: string
   documentId?: string
   documentVersionId?: string
@@ -1519,9 +1520,54 @@ export type FdeVectorFileDetailPayload = {
   indexRecords?: Array<Record<string, unknown>>
   llmUsage?: FdeLlmUsagePayload
   qualityIssues?: FdeQualityIssuePayload[]
+  corrections?: FdeVectorCorrectionPayload[]
+  correctionSummary?: Record<string, unknown>
   retrievalTraceRows?: Array<Record<string, unknown>>
+  pageIndexNodes?: Array<Record<string, unknown>>
+  sourceRelativePath?: string
+  contextType?: string
   blockers?: string[]
   updatedAt?: string
+}
+
+export type FdeStandardsVectorizationPayload = {
+  schemaVersion?: string
+  sourceId?: string
+  sourceName?: string
+  source?: Record<string, unknown>
+  metrics?: Record<string, unknown>
+  correctionSummary?: Record<string, unknown>
+  files?: Array<Record<string, unknown>>
+  filePage?: PagePayload<Record<string, unknown>>
+  storage?: Record<string, unknown>
+  qualityIssues?: FdeQualityIssuePayload[]
+  updatedAt?: string
+}
+
+export type FdeVectorCorrectionPayload = {
+  id: string
+  projectId?: string
+  documentId?: string
+  documentVersionId?: string
+  knowledgeFileId?: string
+  fileId?: string
+  chunkId?: string
+  chunkNo?: number
+  pageNo?: number
+  bbox?: unknown
+  correctionType?: string
+  before?: unknown
+  after?: unknown
+  reason?: string
+  status?: string
+  statusLabel?: string
+  beforePreview?: string
+  afterPreview?: string
+  taskId?: string
+  createdAt?: string
+  updatedAt?: string
+  reviewedAt?: string
+  appliedAt?: string
 }
 
 export type FdeProjectAuditDocument = DocumentAsset & {
@@ -3743,6 +3789,88 @@ export const getFdeProjectVectorFileDetailApi = (
   return request.get({
     url: `/api/fde/projects/${projectId}/documents/${documentVersionId}/vector-detail`,
     params
+  })
+}
+
+export const getFdeStandardsVectorizationApi = (params?: {
+  keyword?: string
+  page?: number
+  pageSize?: number
+}): Promise<IResponse<FdeStandardsVectorizationPayload>> => {
+  return request.get({ url: '/api/fde/standards/vectorization', params })
+}
+
+export const getFdeStandardVectorFileDetailApi = (
+  fileId: string,
+  params?: { page?: number; pageSize?: number }
+): Promise<IResponse<FdeVectorFileDetailPayload>> => {
+  return request.get({
+    url: `/api/fde/standards/files/${fileId}/vector-detail`,
+    params
+  })
+}
+
+export const createFdeVectorCorrectionApi = (
+  data: {
+    projectId?: string
+    documentVersionId?: string
+    knowledgeFileId?: string
+    chunkId?: string
+    correctionType?: string
+    before?: unknown
+    after?: unknown
+    reason?: string
+  },
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ correction: FdeVectorCorrectionPayload; auditLogId: string }>> => {
+  return request.post({
+    url: '/api/fde/vector-corrections',
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const approveFdeVectorCorrectionApi = (
+  correctionId: string,
+  data?: { reason?: string },
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ correction: FdeVectorCorrectionPayload; auditLogId: string }>> => {
+  return request.post({
+    url: `/api/fde/vector-corrections/${correctionId}/approve`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const rejectFdeVectorCorrectionApi = (
+  correctionId: string,
+  data?: { reason?: string },
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ correction: FdeVectorCorrectionPayload; auditLogId: string }>> => {
+  return request.post({
+    url: `/api/fde/vector-corrections/${correctionId}/reject`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const applyFdeVectorCorrectionApi = (
+  correctionId: string,
+  data?: { reason?: string },
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    correction: FdeVectorCorrectionPayload
+    file: Record<string, unknown>
+    task: Record<string, unknown>
+    dispatch: Record<string, unknown>
+    auditLogId: string
+  }>
+> => {
+  return request.post({
+    url: `/api/fde/vector-corrections/${correctionId}/apply`,
+    data,
+    headers: mutationHeaders(options)
   })
 }
 

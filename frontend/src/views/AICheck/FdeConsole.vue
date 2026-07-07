@@ -30,6 +30,8 @@ import {
   ElTag
 } from 'element-plus'
 import {
+  applyFdeVectorCorrectionApi,
+  approveFdeVectorCorrectionApi,
   closeFdeIncidentApi,
   convertFdeOcrCapabilityTestToAnnotationApi,
   convertFdeOcrCapabilityTestToEvaluationCaseApi,
@@ -41,6 +43,7 @@ import {
   createFdeOcrCapabilityTestUploadSessionApi,
   createFdeOcrCorrectionApi,
   createFdeOcrEvaluationRunApi,
+  createFdeVectorCorrectionApi,
   createFdeReviewRunFeedbackApi,
   expireFdeDataExportApi,
   exportFdeOcrAnnotationLabelStudioApi,
@@ -62,6 +65,8 @@ import {
   getFdeOcrQualityApi,
   getFdeProjectAuditWorkspaceApi,
   getFdeProjectVectorFileDetailApi,
+  getFdeStandardVectorFileDetailApi,
+  getFdeStandardsVectorizationApi,
   importFdeOcrAnnotationPackApi,
   getFdeReleaseImpactApi,
   getFdeReviewRunAuditPackageApi,
@@ -82,6 +87,7 @@ import {
   proposeFdeCostBudgetChangeApi,
   requestFdeAccessGrantApi,
   refreshFdeOcr100ActionBoardApi,
+  rejectFdeVectorCorrectionApi,
   rerunFdeOcrCapabilityTestRunApi,
   reviewFdeOcrAnnotationTaskApi,
   replayFdeAiRunApi,
@@ -121,6 +127,7 @@ import type {
   FdeReviewRunAuditPackagePayload,
   FdeReviewRunDetailPayload,
   FdeReleasePayload,
+  FdeStandardsVectorizationPayload,
   FdeVectorFileDetailPayload,
   FdeVectorQualityPayload
 } from '@/api/aicheck'
@@ -170,6 +177,26 @@ const vectorFileDetailError = ref('')
 const selectedVectorFileSourceRow = ref<Record<string, unknown> | null>(null)
 const selectedVectorEvidence = ref<Record<string, unknown> | null>(null)
 const selectedVectorEvidenceType = ref('source')
+const vectorChunkPreviewDialogVisible = ref(false)
+const selectedVectorChunkPreview = ref<Record<string, unknown> | null>(null)
+const standardsVectorization = ref<FdeStandardsVectorizationPayload | null>(null)
+const standardsVectorizationLoading = ref(false)
+const standardsVectorKeyword = ref('')
+const standardsVectorTypeFilter = ref<'all' | 'standard_reference' | 'business_rule_context'>('all')
+const standardsVectorFocusFilter = ref<'all' | 'issues' | 'pending' | 'notVectorized'>('all')
+const selectedVectorCorrectionScope = ref<'project' | 'standards'>('project')
+const vectorCorrectionDialogVisible = ref(false)
+const vectorCorrectionLoading = ref(false)
+const selectedVectorCorrectionTarget = ref<Record<string, unknown> | null>(null)
+const vectorCorrectionForm = ref({
+  correctionType: 'text',
+  text: '',
+  pageNo: undefined as number | undefined,
+  bbox: '',
+  sectionPath: '',
+  sourceMethod: '',
+  reason: ''
+})
 const feedback = ref<FdeFeedback[]>([])
 const selectedFeedback = ref<FdeFeedback | null>(null)
 const evaluation = ref<FdeEvaluationPayload | null>(null)
@@ -358,6 +385,7 @@ const routeTabMap: Record<string, string> = {
   'capability-bundles': 'release',
   releases: 'release',
   'ocr-quality': 'delivery',
+  'standards-vectorization': 'delivery',
   'business-packs': 'delivery',
   security: 'delivery',
   incidents: 'delivery',
@@ -464,6 +492,16 @@ const fdeRouteMeta: Record<
       { key: 'go-ocr-label', label: '在线标注', plain: true },
       { key: 'go-ocr-tools', label: '更多工具', plain: true }
     ]
+  },
+  'standards-vectorization': {
+    group: '全局规范库',
+    label: '规范库向量化',
+    badge: '标准',
+    tone: 'green',
+    title: '规范库向量化',
+    subtitle:
+      '查看 rules/standards 和业务规则上下文的切片、向量、PageIndex、索引版本和人工校对闭环。',
+    nextAction: '先打开有问题的规范文件，再核对 chunk 文本、页码、bbox 和索引状态。'
   },
   'capability-bundles': {
     group: '版本发布',
@@ -1217,6 +1255,18 @@ const fdeShellMenuSections = computed(() => {
       },
       {
         index: '01',
+        label: '规范库向量化',
+        hint:
+          activePath === '/fde/standards-vectorization'
+            ? `文件 ${Number(toRecord(standardsVectorization.value?.metrics).fileCount || 0)} · 向量 ${Number(toRecord(standardsVectorization.value?.metrics).vectorCount || 0)}`
+            : '',
+        badge: activePath === '/fde/standards-vectorization' ? '当前' : undefined,
+        tone: 'green' as const,
+        route: '/fde/standards-vectorization',
+        active: activePath === '/fde/standards-vectorization'
+      },
+      {
+        index: '02',
         label: 'Agent 审查编排',
         hint:
           activePath === '/fde/review-runs'
@@ -1228,7 +1278,7 @@ const fdeShellMenuSections = computed(() => {
         active: activePath === '/fde/review-runs'
       },
       {
-        index: '02',
+        index: '03',
         label: 'FDE 总览',
         hint: activePath === '/fde/dashboard' ? 'AI 交付与治理摘要' : '',
         badge: activePath === '/fde/dashboard' ? '当前' : undefined,
@@ -6613,6 +6663,273 @@ const selectedVectorFileRetrievalRows = computed(() =>
   }))
 )
 const selectedVectorFileDetailRecord = computed(() => toRecord(selectedVectorFileDetail.value))
+const selectedVectorFileCorrectionSummary = computed(() =>
+  toRecord(selectedVectorFileDetailRecord.value.correctionSummary)
+)
+const selectedVectorFileCorrectionRows = computed(() =>
+  toRecordArray(selectedVectorFileDetailRecord.value.corrections).map((row, index) => ({
+    id: String(row.id || `vector-correction-${index + 1}`),
+    correctionType: String(row.correctionType || '-'),
+    correctionTypeLabel: friendlyStatus(
+      row.correctionType || '-',
+      friendlyTechnicalText(row.correctionType || '-')
+    ),
+    status: String(row.status || 'pending_review'),
+    statusLabel: String(row.statusLabel || friendlyStatus(row.status || 'pending_review')),
+    chunkId: String(row.chunkId || '-'),
+    chunkNo: row.chunkNo ?? '-',
+    pageNo: row.pageNo ?? '-',
+    beforePreview: String(row.beforePreview || '-'),
+    afterPreview: String(row.afterPreview || '-'),
+    reason: String(row.reason || '-'),
+    taskId: String(row.taskId || '-'),
+    createdAt: String(row.createdAt || '-'),
+    updatedAt: String(row.updatedAt || '-'),
+    raw: row
+  }))
+)
+const selectedVectorCorrectionTargetRecord = computed(() =>
+  toRecord(selectedVectorCorrectionTarget.value)
+)
+const selectedVectorChunkPreviewRecord = computed(() => toRecord(selectedVectorChunkPreview.value))
+const selectedVectorChunkPreviewText = computed(() => {
+  const record = selectedVectorChunkPreviewRecord.value
+  return String(record.text || toRecord(record.raw).text || record.textPreview || '-')
+})
+const selectedVectorChunkPreviewBboxText = computed(() => {
+  const bbox =
+    selectedVectorChunkPreviewRecord.value.bbox ||
+    toRecord(selectedVectorChunkPreviewRecord.value.raw).bbox
+  return bbox ? JSON.stringify(bbox) : '缺'
+})
+const selectedVectorChunkPreviewQualityFlags = computed(() =>
+  Array.isArray(selectedVectorChunkPreviewRecord.value.qualityFlags)
+    ? selectedVectorChunkPreviewRecord.value.qualityFlags
+        .map((item) => String(item))
+        .filter(Boolean)
+    : []
+)
+const selectedVectorChunkPreviewJson = computed(() => {
+  const record = selectedVectorChunkPreviewRecord.value
+  const raw = toRecord(record.raw)
+  return JSON.stringify(Object.keys(raw).length ? raw : record, null, 2)
+})
+const standardsVectorizationMetrics = computed(() =>
+  toRecord(standardsVectorization.value?.metrics)
+)
+const standardsVectorizationCorrectionSummary = computed(() =>
+  toRecord(standardsVectorization.value?.correctionSummary)
+)
+const standardsVectorHealthScore = computed(() =>
+  score100(standardsVectorizationMetrics.value.qualityScore, 0)
+)
+const standardsVectorFileProgress = computed(() => {
+  const total = Number(standardsVectorizationMetrics.value.fileCount || 0)
+  return total
+    ? Math.round(
+        (Number(standardsVectorizationMetrics.value.vectorizedFileCount || 0) / total) * 100
+      )
+    : 0
+})
+const standardsVectorParityProgress = computed(() => {
+  const chunks = Number(standardsVectorizationMetrics.value.chunkCount || 0)
+  return chunks
+    ? Math.round((Number(standardsVectorizationMetrics.value.vectorCount || 0) / chunks) * 100)
+    : 0
+})
+const standardsVectorHealth = computed(() => {
+  const vectorGap = Number(standardsVectorizationMetrics.value.vectorGap || 0)
+  const issueCount = Number(standardsVectorizationMetrics.value.issueFileCount || 0)
+  const pendingCorrections = Number(standardsVectorizationCorrectionSummary.value.pending || 0)
+  if (!standardsVectorizationMetrics.value.fileCount) {
+    return {
+      label: '待加载',
+      tone: 'info' as const,
+      headline: '规范库状态待刷新',
+      summary: '等待标准文件、切片和向量索引数据返回。'
+    }
+  }
+  if (vectorGap || issueCount) {
+    return {
+      label: '需处理',
+      tone: 'warning' as const,
+      headline: '规范库存在治理缺口',
+      summary: `向量缺口 ${vectorGap} 条，问题文件 ${issueCount} 个。`
+    }
+  }
+  if (pendingCorrections) {
+    return {
+      label: '待复核',
+      tone: 'warning' as const,
+      headline: '规范库索引已完成，存在待审校对',
+      summary: `当前有 ${pendingCorrections} 条人工校对等待复核。`
+    }
+  }
+  return {
+    label: '生产可用',
+    tone: 'success' as const,
+    headline: '规范库索引完整可审计',
+    summary: `${standardsVectorizationMetrics.value.fileCount || 0} 个文件全部向量化，切片与向量计数一致。`
+  }
+})
+const standardsVectorizationFiles = computed(() =>
+  toRecordArray(standardsVectorization.value?.files).map((row, index) => {
+    const correctionSummary = toRecord(row.correctionSummary)
+    const chunkCount = Number(row.chunkCount || 0)
+    const vectorCount = Number(row.vectorCount || 0)
+    const vectorGap = Number(row.vectorGap || Math.max(0, chunkCount - vectorCount))
+    return {
+      id: String(row.knowledgeFileId || row.id || `standard-vector-file-${index + 1}`),
+      knowledgeFileId: String(row.knowledgeFileId || row.id || ''),
+      documentVersionId: String(row.documentVersionId || ''),
+      fileName: String(row.fileName || '-'),
+      sourceRelativePath: String(row.sourceRelativePath || '-'),
+      contextType: String(row.contextType || 'standard_reference'),
+      contextLabel: row.contextType === 'business_rule_context' ? '业务上下文' : '标准原文',
+      vectorStatus: String(row.vectorStatus || '-'),
+      sliceStatus: String(row.sliceStatus || '-'),
+      chunkCount,
+      vectorCount,
+      vectorGap,
+      pageIndexNodeCount: Number(row.pageIndexNodeCount || 0),
+      embeddingModel: String(row.embeddingModel || 'embedding-default'),
+      indexVersion: String(row.indexVersion || 'knowledge-index@local'),
+      vectorDimensions: Number(row.vectorDimensions || 0),
+      score: Number(row.score || 0),
+      issue: String(row.issue || '无'),
+      correctionCount: Number(correctionSummary.total || 0),
+      pendingCorrectionCount: Number(correctionSummary.pending || 0),
+      latestTaskStatus: String(row.latestTaskStatus || ''),
+      raw: row
+    }
+  })
+)
+const standardsVectorizationVisibleFiles = computed(() =>
+  standardsVectorizationFiles.value.filter((row) => {
+    const typeMatched =
+      standardsVectorTypeFilter.value === 'all' ||
+      row.contextType === standardsVectorTypeFilter.value
+    const focusMatched =
+      standardsVectorFocusFilter.value === 'all' ||
+      (standardsVectorFocusFilter.value === 'issues' && row.issue !== '无') ||
+      (standardsVectorFocusFilter.value === 'pending' && row.pendingCorrectionCount > 0) ||
+      (standardsVectorFocusFilter.value === 'notVectorized' &&
+        (row.vectorGap > 0 || row.vectorStatus !== '已向量化'))
+    return typeMatched && focusMatched
+  })
+)
+const standardsVectorizationFocusRows = computed(() =>
+  standardsVectorizationFiles.value
+    .filter((row) => row.issue !== '无' || row.pendingCorrectionCount > 0 || row.vectorGap > 0)
+    .slice(0, 6)
+)
+const standardsVectorizationSourceFacts = computed(() => {
+  const storage = toRecord(standardsVectorization.value?.storage)
+  return [
+    {
+      label: '知识源',
+      value: String(standardsVectorization.value?.sourceName || 'KS-STANDARD-RULES')
+    },
+    {
+      label: 'SQLite',
+      value: String(storage.sqlitePath || '-')
+    },
+    {
+      label: 'pgvector',
+      value: storage.postgresConfigured ? '已配置' : '未配置'
+    },
+    {
+      label: '更新',
+      value: String(standardsVectorization.value?.updatedAt || '-')
+    }
+  ]
+})
+const standardsVectorJsonCollectionCount = computed(() => {
+  const collections = toRecord(standardsVectorization.value?.storage).jsonCollections
+  return Array.isArray(collections) ? collections.length : 0
+})
+const standardsVectorizationPipeline = computed(() => [
+  {
+    key: 'source',
+    label: '文件',
+    value: `${standardsVectorizationMetrics.value.vectorizedFileCount || 0}/${standardsVectorizationMetrics.value.fileCount || 0}`,
+    percent: standardsVectorFileProgress.value,
+    tone: standardsVectorFileProgress.value >= 100 ? 'green' : 'orange'
+  },
+  {
+    key: 'vector',
+    label: '向量',
+    value: `${standardsVectorizationMetrics.value.vectorCount || 0}/${standardsVectorizationMetrics.value.chunkCount || 0}`,
+    percent: standardsVectorParityProgress.value,
+    tone: standardsVectorParityProgress.value >= 100 ? 'green' : 'orange'
+  },
+  {
+    key: 'pageindex',
+    label: 'PageIndex',
+    value: String(standardsVectorizationMetrics.value.pageIndexNodeCount || 0),
+    percent: Number(standardsVectorizationMetrics.value.pageIndexNodeCount || 0) ? 100 : 0,
+    tone: Number(standardsVectorizationMetrics.value.pageIndexNodeCount || 0) ? 'green' : 'orange'
+  },
+  {
+    key: 'correction',
+    label: '校对',
+    value: `${standardsVectorizationCorrectionSummary.value.pending || 0} 待审`,
+    percent: Number(standardsVectorizationCorrectionSummary.value.pending || 0) ? 35 : 100,
+    tone: Number(standardsVectorizationCorrectionSummary.value.pending || 0) ? 'orange' : 'green'
+  }
+])
+const standardsVectorizationCards = computed(() => [
+  {
+    label: '规范文件',
+    value: String(standardsVectorizationMetrics.value.fileCount || 0),
+    hint: `标准 ${standardsVectorizationMetrics.value.standardFileCount || 0} · 业务上下文 ${standardsVectorizationMetrics.value.businessRuleContextCount || 0}`,
+    tone: 'blue' as const
+  },
+  {
+    label: '已向量化',
+    value: String(standardsVectorizationMetrics.value.vectorizedFileCount || 0),
+    hint: `缺口 ${standardsVectorizationMetrics.value.vectorGap || 0} 条`,
+    tone: Number(standardsVectorizationMetrics.value.vectorGap || 0)
+      ? ('orange' as const)
+      : ('green' as const)
+  },
+  {
+    label: '切片/向量',
+    value: `${standardsVectorizationMetrics.value.chunkCount || 0}/${standardsVectorizationMetrics.value.vectorCount || 0}`,
+    hint: String(standardsVectorizationMetrics.value.activeIndexVersion || '-'),
+    tone: 'green' as const
+  },
+  {
+    label: 'PageIndex',
+    value: String(standardsVectorizationMetrics.value.pageIndexNodeCount || 0),
+    hint: String(standardsVectorizationMetrics.value.activeEmbeddingModel || '-'),
+    tone: 'blue' as const
+  },
+  {
+    label: '校对待审',
+    value: String(standardsVectorizationCorrectionSummary.value.pending || 0),
+    hint: `总计 ${standardsVectorizationCorrectionSummary.value.total || 0}`,
+    tone: Number(standardsVectorizationCorrectionSummary.value.pending || 0)
+      ? ('orange' as const)
+      : ('green' as const)
+  }
+])
+const selectedVectorScopeLabel = computed(() =>
+  selectedVectorCorrectionScope.value === 'standards' ? '规范库文件' : '项目资料'
+)
+const vectorDetailInfoTitle = computed(() =>
+  selectedVectorCorrectionScope.value === 'standards'
+    ? '这里展示规范库文件从原文切片、PageIndex、向量格式化、索引到检索引用的证据链；校对应用后会清理受影响向量并派发重建任务。'
+    : '这里展示单文件从图片/文件、OCR、文本、切片、向量格式化、索引到大模型检索引用的证据链；项目级代理溯源会被明确标记。'
+)
+const vectorCorrectionTypeOptions = [
+  { value: 'text', label: '修改文本' },
+  { value: 'pageNo', label: '修正页码' },
+  { value: 'bbox', label: '修正 bbox' },
+  { value: 'sectionPath', label: '修正章节路径' },
+  { value: 'sourceMethod', label: '修正来源方法' },
+  { value: 'ignoreChunk', label: '忽略切片' }
+]
 const selectedVectorFileLlmTrace = computed(() =>
   toRecord(selectedVectorFileQualityRecord.value.llmTrace)
 )
@@ -6665,20 +6982,49 @@ const selectedVectorFileChunkRows = computed(() =>
       toRecord(selectedVectorFileDetailRecord.value.chunkPage).items
   ).map((row, index) => ({
     id: String(row.id || row.chunkId || `chunk-${index + 1}`),
+    chunkId: String(row.chunkId || row.id || `chunk-${index + 1}`),
     chunkNo: Number(row.chunkNo || index + 1),
     materialized: Boolean(row.materialized),
     pageNo: row.pageNo ?? '-',
     bbox: row.bbox,
+    sectionPath: Array.isArray(row.sectionPath)
+      ? row.sectionPath.join(' / ')
+      : String(row.sectionPath || '-'),
+    sourceMethod: String(row.sourceMethod || '-'),
     tokenCount: Number(row.tokenCount || 0),
+    text: String(row.text || row.textPreview || '-'),
     textPreview: String(row.textPreview || '-'),
+    textHash: String(row.textHash || '-'),
     vectorStatus: String(row.vectorStatusLabel || row.vectorStatus || '-'),
+    embeddingModel: String(row.embeddingModel || '-'),
+    indexVersion: String(row.indexVersion || '-'),
     retrievalHitCount: Number(row.retrievalHitCount || 0),
+    retrievalTraceIds: Array.isArray(row.retrievalTraceIds) ? row.retrievalTraceIds : [],
+    correctionCount: Number(row.correctionCount || 0),
+    correctionIds: Array.isArray(row.correctionIds) ? row.correctionIds : [],
+    latestCorrectionStatus: String(row.latestCorrectionStatus || ''),
+    latestCorrectionStatusLabel: String(row.latestCorrectionStatusLabel || ''),
     hasBbox: Boolean(row.bbox),
     metadataCompleteness: scorePercent(Number(row.metadataCompleteness || 0)),
     qualityFlags: Array.isArray(row.qualityFlags)
       ? row.qualityFlags.map((item) => friendlyIssueLabel(item, '')).filter(Boolean)
       : [],
-    evidenceLabel: `Chunk ${Number(row.chunkNo || index + 1)}`
+    evidenceLabel: `Chunk ${Number(row.chunkNo || index + 1)}`,
+    raw: row
+  }))
+)
+const selectedVectorFilePageIndexRows = computed(() =>
+  toRecordArray(selectedVectorFileDetailRecord.value.pageIndexNodes).map((row, index) => ({
+    id: String(row.id || row.pageIndexNodeId || `pageindex-node-${index + 1}`),
+    title: String(row.title || '-'),
+    summary: String(row.summary || '-'),
+    startPage: row.startPage ?? '-',
+    endPage: row.endPage ?? row.startPage ?? '-',
+    sectionPath: Array.isArray(row.sectionPath)
+      ? row.sectionPath.join(' / ')
+      : String(row.sectionPath || '-'),
+    linkedClauseCount: Array.isArray(row.linkedClauseIds) ? row.linkedClauseIds.length : 0,
+    tags: Array.isArray(row.tags) ? row.tags : []
   }))
 )
 const selectedVectorFileDetailRetrievalRows = computed(() => {
@@ -6688,13 +7034,26 @@ const selectedVectorFileDetailRetrievalRows = computed(() => {
     id: String(row.retrievalTraceId || `vector-file-detail-retrieval-${index + 1}`),
     query: String(row.query || '-'),
     selectedRoute: friendlyTechLabel(row.selectedRoute),
-    scope: row.scope === 'document_explicit' ? '文件级' : '项目代理',
+    scope:
+      row.scope === 'standards'
+        ? '规范库'
+        : row.scope === 'document_explicit'
+          ? '文件级'
+          : '项目代理',
     selectedClauseCount: Number(row.selectedClauseCount || 0),
     selectedChunkCount: Number(row.selectedChunkCount || 0),
     evidenceBacked: Boolean(row.evidenceBacked),
     filterScoped: Boolean(row.filterScoped)
   }))
 })
+const standardsVectorFileTableRowClassName = ({ row }: { row: Record<string, unknown> }) => {
+  if (Number(row.pendingCorrectionCount || 0) > 0) return 'standards-vector-row--pending'
+  if (Number(row.vectorGap || 0) > 0 || String(row.issue || '') !== '无') {
+    return 'standards-vector-row--issue'
+  }
+  if (row.contextType === 'business_rule_context') return 'standards-vector-row--context'
+  return ''
+}
 const selectedVectorFileChunkCards = computed(() => [
   {
     label: '真实切片',
@@ -8963,11 +9322,14 @@ const loadProjectAuditWorkspace = async (
 }
 
 const openVectorFileQualityDrawer = async (row: Record<string, unknown>) => {
+  selectedVectorCorrectionScope.value = 'project'
   const versionId = String(row.documentVersionId || row.currentVersionId || '')
   const fileName = String(row.fileName || '')
   selectedVectorFileSourceRow.value = row
   selectedVectorEvidence.value = null
   selectedVectorEvidenceType.value = 'source'
+  selectedVectorChunkPreview.value = null
+  vectorChunkPreviewDialogVisible.value = false
   vectorFileDetailError.value = ''
   const qualityRow =
     projectAuditVectorQualityDocumentRows.value.find(
@@ -9012,7 +9374,70 @@ const openVectorFileQualityDrawer = async (row: Record<string, unknown>) => {
   }
 }
 
+const loadStandardsVectorization = async () => {
+  standardsVectorizationLoading.value = true
+  try {
+    const res = await getFdeStandardsVectorizationApi({
+      keyword: standardsVectorKeyword.value || undefined,
+      pageSize: 120
+    })
+    standardsVectorization.value = res.data
+  } finally {
+    standardsVectorizationLoading.value = false
+  }
+}
+
+const openStandardsVectorFileDrawer = async (row: Record<string, unknown>) => {
+  selectedVectorCorrectionScope.value = 'standards'
+  const fileId = String(row.knowledgeFileId || row.id || '')
+  selectedVectorFileSourceRow.value = row
+  selectedVectorEvidence.value = null
+  selectedVectorEvidenceType.value = 'source'
+  selectedVectorChunkPreview.value = null
+  vectorChunkPreviewDialogVisible.value = false
+  vectorFileDetailError.value = ''
+  selectedVectorFileQuality.value = {
+    ...row,
+    knowledgeFileId: fileId,
+    requirementName: row.sourceRelativePath || row.fileName
+  }
+  vectorFileQualityDrawerVisible.value = true
+  selectedVectorFileDetail.value = null
+  if (!fileId) return
+  vectorFileDetailLoading.value = true
+  try {
+    const res = await getFdeStandardVectorFileDetailApi(fileId, { pageSize: 80 })
+    if (res?.data) {
+      selectedVectorFileDetail.value = res.data
+      selectedVectorFileQuality.value = {
+        ...selectedVectorFileQuality.value,
+        ...res.data
+      }
+    }
+  } catch {
+    vectorFileDetailError.value =
+      '规范库文件切片详情加载失败，请检查 FDE standards vector-detail 接口或重试。'
+    selectedVectorFileDetail.value = {
+      schemaVersion: 'FdeStandardVectorFileDetail@client-fallback',
+      scope: 'standards',
+      knowledgeFileId: fileId,
+      documentVersionId: String(row.documentVersionId || ''),
+      fileName: String(row.fileName || ''),
+      blockers: [vectorFileDetailError.value],
+      chunkRows: [],
+      retrievalTraceRows: []
+    }
+  } finally {
+    vectorFileDetailLoading.value = false
+  }
+}
+
 const retryVectorFileDetail = async () => {
+  if (selectedVectorCorrectionScope.value === 'standards' && selectedVectorFileSourceRow.value) {
+    await openStandardsVectorFileDrawer(selectedVectorFileSourceRow.value)
+    await loadStandardsVectorization()
+    return
+  }
   if (selectedVectorFileSourceRow.value) {
     await openVectorFileQualityDrawer(selectedVectorFileSourceRow.value)
   }
@@ -9021,6 +9446,143 @@ const retryVectorFileDetail = async () => {
 const selectVectorEvidence = (row: Record<string, unknown>, type: string) => {
   selectedVectorEvidence.value = row
   selectedVectorEvidenceType.value = type
+}
+
+const openVectorChunkPreview = (row: Record<string, unknown>) => {
+  selectedVectorChunkPreview.value = row
+  selectVectorEvidence(row, 'Chunk')
+  vectorChunkPreviewDialogVisible.value = true
+}
+
+const openVectorChunkCorrectionFromPreview = (correctionType = 'text') => {
+  const row = selectedVectorChunkPreviewRecord.value
+  if (!Object.keys(row).length) return
+  vectorChunkPreviewDialogVisible.value = false
+  openVectorCorrectionDialog(row, correctionType)
+}
+
+const resetVectorCorrectionForm = () => {
+  vectorCorrectionForm.value = {
+    correctionType: 'text',
+    text: '',
+    pageNo: undefined,
+    bbox: '',
+    sectionPath: '',
+    sourceMethod: '',
+    reason: ''
+  }
+}
+
+const openVectorCorrectionDialog = (row: Record<string, unknown>, correctionType = 'text') => {
+  selectedVectorCorrectionTarget.value = row
+  vectorCorrectionForm.value = {
+    correctionType,
+    text: String(row.text || row.textPreview || ''),
+    pageNo: typeof row.pageNo === 'number' ? row.pageNo : undefined,
+    bbox: row.bbox ? JSON.stringify(row.bbox) : '',
+    sectionPath: String(row.sectionPath || ''),
+    sourceMethod: String(row.sourceMethod || ''),
+    reason: ''
+  }
+  vectorCorrectionDialogVisible.value = true
+}
+
+const submitVectorCorrection = async () => {
+  const target = selectedVectorCorrectionTargetRecord.value
+  const correctionType = vectorCorrectionForm.value.correctionType
+  const chunkId = String(target.chunkId || target.id || '')
+  if (!chunkId || !selectedVectorFileQualityRecord.value.knowledgeFileId) {
+    ElMessage.error('缺少可校对的知识文件或 chunk 编号')
+    return
+  }
+  let after: Record<string, unknown> = {}
+  if (correctionType === 'text') {
+    after = { text: vectorCorrectionForm.value.text }
+  } else if (correctionType === 'pageNo') {
+    after = { pageNo: vectorCorrectionForm.value.pageNo }
+  } else if (correctionType === 'bbox') {
+    try {
+      after = {
+        pageNo: vectorCorrectionForm.value.pageNo,
+        bbox: vectorCorrectionForm.value.bbox
+          ? JSON.parse(vectorCorrectionForm.value.bbox)
+          : undefined
+      }
+    } catch {
+      ElMessage.error('bbox 必须是 JSON 数组或对象')
+      return
+    }
+  } else if (correctionType === 'sectionPath') {
+    after = { sectionPath: vectorCorrectionForm.value.sectionPath }
+  } else if (correctionType === 'sourceMethod') {
+    after = { sourceMethod: vectorCorrectionForm.value.sourceMethod }
+  } else if (correctionType === 'ignoreChunk') {
+    after = {
+      ignoredByFde: true,
+      ignoreReason: vectorCorrectionForm.value.reason || 'FDE 标记忽略'
+    }
+  }
+  vectorCorrectionLoading.value = true
+  try {
+    await createFdeVectorCorrectionApi(
+      {
+        projectId:
+          selectedVectorCorrectionScope.value === 'project'
+            ? selectedFdeProjectId.value
+            : undefined,
+        documentVersionId: String(selectedVectorFileQualityRecord.value.documentVersionId || ''),
+        knowledgeFileId: String(selectedVectorFileQualityRecord.value.knowledgeFileId || ''),
+        chunkId,
+        correctionType,
+        after,
+        reason: vectorCorrectionForm.value.reason || 'FDE 向量资料校对'
+      },
+      { idempotencyKey: `fde-vector-correction-${chunkId}-${Date.now()}` }
+    )
+    ElMessage.success('校对已提交，等待审核或应用')
+    vectorCorrectionDialogVisible.value = false
+    resetVectorCorrectionForm()
+    await retryVectorFileDetail()
+  } catch (err) {
+    ElMessage.error(getAicheckErrorMessage(err, '校对提交失败'))
+  } finally {
+    vectorCorrectionLoading.value = false
+  }
+}
+
+const handleVectorCorrectionAction = async (
+  row: Record<string, unknown>,
+  action: 'approve' | 'reject' | 'apply'
+) => {
+  const correctionId = String(row.id || '')
+  if (!correctionId) return
+  const actionLabel = action === 'approve' ? '通过' : action === 'reject' ? '驳回' : '应用'
+  await ElMessageBox.confirm(`确认${actionLabel}该向量资料校对？`, '校对闭环', {
+    confirmButtonText: actionLabel,
+    cancelButtonText: '取消',
+    type: action === 'reject' ? 'warning' : 'info'
+  })
+  vectorCorrectionLoading.value = true
+  try {
+    const options = {
+      idempotencyKey: `fde-vector-correction-${action}-${correctionId}-${Date.now()}`
+    }
+    if (action === 'approve') {
+      await approveFdeVectorCorrectionApi(correctionId, { reason: 'FDE 校对通过' }, options)
+    } else if (action === 'reject') {
+      await rejectFdeVectorCorrectionApi(correctionId, { reason: 'FDE 校对驳回' }, options)
+    } else {
+      await applyFdeVectorCorrectionApi(correctionId, { reason: 'FDE 应用校对并重建向量' }, options)
+    }
+    ElMessage.success(`校对已${actionLabel}`)
+    await retryVectorFileDetail()
+  } catch (err) {
+    if (err !== 'cancel') {
+      ElMessage.error(getAicheckErrorMessage(err, `校对${actionLabel}失败`))
+    }
+  } finally {
+    vectorCorrectionLoading.value = false
+  }
 }
 
 const selectFdeProject = async (projectId: string) => {
@@ -9281,6 +9843,14 @@ const loadData = async () => {
       await loadProjectAuditPageData()
     } else if (isFdeRoute('ocr-quality')) {
       await loadOcrWorkbenchPageData()
+    } else if (isFdeRoute('standards-vectorization')) {
+      const [dashboardRes, projectRes] = await Promise.allSettled([
+        getFdeDashboardApi(),
+        listFdeProjectsApi()
+      ])
+      if (dashboardRes.status === 'fulfilled') dashboard.value = dashboardRes.value.data
+      if (projectRes.status === 'fulfilled') fdeProjects.value = projectRes.value.data
+      await loadStandardsVectorization()
     } else {
       await loadFullFdeData()
     }
@@ -15280,8 +15850,253 @@ onBeforeUnmount(() => {
         </ElRow>
       </div>
 
+      <div
+        v-else-if="isFdeRoute('standards-vectorization')"
+        v-loading="standardsVectorizationLoading"
+        class="standards-vectorization-workbench"
+      >
+        <section class="standards-vector-hero">
+          <div class="standards-vector-hero__main">
+            <div class="standards-vector-eyebrow">
+              <span>KS-STANDARD-RULES</span>
+              <ElTag :type="standardsVectorHealth.tone" effect="plain">
+                {{ standardsVectorHealth.label }}
+              </ElTag>
+            </div>
+            <h2>{{ standardsVectorHealth.headline }}</h2>
+            <p>{{ standardsVectorHealth.summary }}</p>
+            <div class="standards-vector-healthbar" aria-label="规范库质量分">
+              <i :style="{ width: `${standardsVectorHealthScore}%` }"></i>
+            </div>
+            <dl class="standards-vector-source-facts">
+              <div v-for="fact in standardsVectorizationSourceFacts" :key="fact.label">
+                <dt>{{ fact.label }}</dt>
+                <dd>{{ fact.value }}</dd>
+              </div>
+            </dl>
+          </div>
+          <div class="standards-vector-score">
+            <span>质量分</span>
+            <strong>{{ standardsVectorHealthScore }}</strong>
+            <small>{{ standardsVectorizationMetrics.activeIndexVersion || '-' }}</small>
+          </div>
+        </section>
+
+        <div class="standards-vector-pipeline">
+          <div
+            v-for="stage in standardsVectorizationPipeline"
+            :key="stage.key"
+            :class="['standards-vector-stage', `standards-vector-stage--${stage.tone}`]"
+          >
+            <div>
+              <span>{{ stage.label }}</span>
+              <strong>{{ stage.value }}</strong>
+            </div>
+            <i><b :style="{ width: `${stage.percent}%` }"></b></i>
+          </div>
+        </div>
+
+        <div class="artifact-summary-grid standards-vector-kpis mb-16px">
+          <div
+            v-for="item in standardsVectorizationCards"
+            :key="item.label"
+            class="artifact-summary-item"
+          >
+            <span>{{ item.label }}</span>
+            <strong>{{ item.value }}</strong>
+            <small>{{ item.hint }}</small>
+          </div>
+        </div>
+
+        <div class="standards-vector-layout">
+          <section class="standards-vector-table-panel">
+            <div class="standards-vector-panel-head">
+              <div>
+                <strong>rules/standards 规范资料</strong>
+                <span
+                  >{{ standardsVectorizationVisibleFiles.length }} /
+                  {{ standardsVectorizationFiles.length }} 个文件</span
+                >
+              </div>
+              <ElSpace wrap>
+                <ElInput
+                  v-model="standardsVectorKeyword"
+                  clearable
+                  placeholder="搜索标准号、文件名、状态"
+                  class="standards-vector-search"
+                  @clear="loadStandardsVectorization"
+                  @keyup.enter="loadStandardsVectorization"
+                />
+                <ElSelect v-model="standardsVectorTypeFilter" class="standards-vector-filter">
+                  <ElOption label="全部类型" value="all" />
+                  <ElOption label="标准原文" value="standard_reference" />
+                  <ElOption label="业务上下文" value="business_rule_context" />
+                </ElSelect>
+                <ElSelect v-model="standardsVectorFocusFilter" class="standards-vector-filter">
+                  <ElOption label="全部状态" value="all" />
+                  <ElOption label="仅问题" value="issues" />
+                  <ElOption label="待审校对" value="pending" />
+                  <ElOption label="未完成向量" value="notVectorized" />
+                </ElSelect>
+                <ElButton
+                  type="primary"
+                  plain
+                  :loading="standardsVectorizationLoading"
+                  @click="loadStandardsVectorization"
+                >
+                  刷新
+                </ElButton>
+              </ElSpace>
+            </div>
+            <ElAlert
+              v-if="toRecordArray(standardsVectorization?.qualityIssues).length"
+              class="mb-12px"
+              type="warning"
+              show-icon
+              :closable="false"
+              :title="
+                String(toRecordArray(standardsVectorization?.qualityIssues)[0]?.message || '')
+              "
+            />
+            <ElTable
+              :data="standardsVectorizationVisibleFiles"
+              :row-class-name="standardsVectorFileTableRowClassName"
+              border
+              highlight-current-row
+            >
+              <ElTableColumn type="index" label="#" width="54" />
+              <ElTableColumn label="规范文件" min-width="360" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <div class="standards-file-cell">
+                    <div>
+                      <strong>{{ row.fileName }}</strong>
+                      <span>{{ row.sourceRelativePath }}</span>
+                    </div>
+                    <ElTag
+                      :type="row.contextType === 'business_rule_context' ? 'warning' : 'success'"
+                      effect="plain"
+                    >
+                      {{ row.contextLabel }}
+                    </ElTag>
+                  </div>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="切片/向量" width="150">
+                <template #default="{ row }">
+                  <div class="standards-vector-count">
+                    <strong>{{ row.chunkCount }}/{{ row.vectorCount }}</strong>
+                    <i
+                      ><b
+                        :style="{
+                          width: `${row.chunkCount ? Math.min(100, Math.round((row.vectorCount / row.chunkCount) * 100)) : 0}%`
+                        }"
+                      ></b
+                    ></i>
+                  </div>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn prop="pageIndexNodeCount" label="PageIndex" width="104" />
+              <ElTableColumn label="状态" width="118">
+                <template #default="{ row }">
+                  <ElTag :type="row.vectorGap ? 'warning' : 'success'" effect="plain">
+                    {{ row.vectorStatus }}
+                  </ElTag>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="indexVersion"
+                label="索引版本"
+                min-width="190"
+                show-overflow-tooltip
+              />
+              <ElTableColumn label="校对" width="116">
+                <template #default="{ row }">
+                  <ElTag :type="row.pendingCorrectionCount ? 'warning' : 'info'" effect="plain">
+                    {{
+                      row.pendingCorrectionCount
+                        ? `${row.pendingCorrectionCount} 待审`
+                        : row.correctionCount
+                    }}
+                  </ElTag>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn prop="issue" label="问题" min-width="210" show-overflow-tooltip />
+              <ElTableColumn label="操作" width="128" fixed="right">
+                <template #default="{ row }">
+                  <ElButton
+                    size="small"
+                    type="primary"
+                    plain
+                    @click="openStandardsVectorFileDrawer(row.raw || row)"
+                  >
+                    查看/校对
+                  </ElButton>
+                </template>
+              </ElTableColumn>
+            </ElTable>
+          </section>
+
+          <aside class="standards-vector-side-panel">
+            <div class="standards-vector-side-section">
+              <div class="standards-vector-side-head">
+                <strong>治理焦点</strong>
+                <ElTag
+                  :type="standardsVectorizationFocusRows.length ? 'warning' : 'success'"
+                  effect="plain"
+                >
+                  {{ standardsVectorizationFocusRows.length ? '待处理' : '稳定' }}
+                </ElTag>
+              </div>
+              <ElEmpty
+                v-if="!standardsVectorizationFocusRows.length"
+                description="暂无问题文件或待审校对"
+              />
+              <template v-else>
+                <button
+                  v-for="row in standardsVectorizationFocusRows"
+                  :key="row.id"
+                  class="standards-vector-focus-item"
+                  type="button"
+                  @click="openStandardsVectorFileDrawer(row.raw || row)"
+                >
+                  <strong>{{ row.fileName }}</strong>
+                  <span>{{
+                    row.pendingCorrectionCount
+                      ? `${row.pendingCorrectionCount} 条校对待审`
+                      : row.issue
+                  }}</span>
+                </button>
+              </template>
+            </div>
+            <div class="standards-vector-side-section">
+              <div class="standards-vector-side-head">
+                <strong>索引配置</strong>
+              </div>
+              <dl class="standards-vector-config-list">
+                <div>
+                  <dt>向量模型</dt>
+                  <dd>{{ standardsVectorizationMetrics.activeEmbeddingModel || '-' }}</dd>
+                </div>
+                <div>
+                  <dt>向量维度</dt>
+                  <dd>{{ standardsVectorizationMetrics.vectorDimensions || '-' }}</dd>
+                </div>
+                <div>
+                  <dt>向量表</dt>
+                  <dd>{{ toRecord(standardsVectorization?.storage).vectorTable || '-' }}</dd>
+                </div>
+                <div>
+                  <dt>JSON Collection</dt>
+                  <dd>{{ standardsVectorJsonCollectionCount }}</dd>
+                </div>
+              </dl>
+            </div>
+          </aside>
+        </div>
+      </div>
+
       <ElTabs
-        v-else-if="!isFdeRoute('dashboard', 'ocr-quality', 'projects')"
+        v-else-if="!isFdeRoute('dashboard', 'ocr-quality', 'projects', 'standards-vectorization')"
         v-model="activeFdeTab"
         :class="['fde-tabs', { 'fde-tabs--single-route': isFdeRoute('review-runs') }]"
       >
@@ -18586,12 +19401,16 @@ onBeforeUnmount(() => {
         size="92vw"
         class="fde-audit-drawer"
         destroy-on-close
-        title="文件向量质量详情"
+        :title="`${selectedVectorScopeLabel}向量质量详情`"
       >
         <template v-if="selectedVectorFileQuality">
           <div class="audit-drawer-hero" data-testid="fde-vector-file-drawer">
             <div>
-              <span>Document Vector</span>
+              <span>{{
+                selectedVectorCorrectionScope === 'standards'
+                  ? 'Standards Vector'
+                  : 'Document Vector'
+              }}</span>
               <strong>{{ selectedVectorFileQualityRecord.fileName || '-' }}</strong>
               <small>
                 {{ selectedVectorFileQualityRecord.requirementName || '资料要求未返回' }} ·
@@ -18613,7 +19432,7 @@ onBeforeUnmount(() => {
             type="info"
             show-icon
             :closable="false"
-            title="这里展示单文件从图片/文件、OCR、文本、切片、向量格式化、索引到大模型检索引用的证据链；项目级代理溯源会被明确标记。"
+            :title="vectorDetailInfoTitle"
           />
           <ElAlert
             v-if="vectorFileDetailError"
@@ -18954,6 +19773,30 @@ onBeforeUnmount(() => {
                 <ElTableColumn prop="message" label="说明" min-width="260" show-overflow-tooltip />
               </ElTable>
             </ElTabPane>
+            <ElTabPane
+              v-if="selectedVectorCorrectionScope === 'standards'"
+              label="PageIndex 节点"
+              name="pageindexNodes"
+            >
+              <ElEmpty
+                v-if="!selectedVectorFilePageIndexRows.length"
+                description="当前规范文件暂无 PageIndex 节点"
+              />
+              <ElTable v-else :data="selectedVectorFilePageIndexRows" border>
+                <ElTableColumn prop="title" label="节点" min-width="240" show-overflow-tooltip />
+                <ElTableColumn
+                  prop="sectionPath"
+                  label="章节路径"
+                  min-width="240"
+                  show-overflow-tooltip
+                />
+                <ElTableColumn label="页码" width="110">
+                  <template #default="{ row }">{{ row.startPage }}-{{ row.endPage }}</template>
+                </ElTableColumn>
+                <ElTableColumn prop="linkedClauseCount" label="条款" width="82" />
+                <ElTableColumn prop="summary" label="摘要" min-width="320" show-overflow-tooltip />
+              </ElTable>
+            </ElTabPane>
             <ElTabPane label="切片明细" name="chunks">
               <div class="artifact-summary-grid mb-12px">
                 <div
@@ -18999,13 +19842,30 @@ onBeforeUnmount(() => {
                 <ElTableColumn prop="tokenCount" label="Token 用量" width="100" />
                 <ElTableColumn prop="vectorStatus" label="向量" width="116" />
                 <ElTableColumn prop="retrievalHitCount" label="溯源" width="82" />
+                <ElTableColumn label="校对" width="104">
+                  <template #default="{ row }">
+                    <ElTag :type="row.correctionCount ? 'warning' : 'info'" effect="plain">
+                      {{
+                        row.correctionCount
+                          ? row.latestCorrectionStatusLabel || row.correctionCount
+                          : '无'
+                      }}
+                    </ElTag>
+                  </template>
+                </ElTableColumn>
                 <ElTableColumn prop="metadataCompleteness" label="元数据" width="112" />
-                <ElTableColumn
-                  prop="textPreview"
-                  label="切片预览"
-                  min-width="280"
-                  show-overflow-tooltip
-                />
+                <ElTableColumn label="切片预览" min-width="280" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    <button
+                      class="vector-chunk-preview-trigger"
+                      type="button"
+                      @click.stop="openVectorChunkPreview(row)"
+                    >
+                      <span>{{ row.textPreview }}</span>
+                      <small>点击预览</small>
+                    </button>
+                  </template>
+                </ElTableColumn>
                 <ElTableColumn label="标记" min-width="220" show-overflow-tooltip>
                   <template #default="{ row }">
                     <ElSpace wrap size="small">
@@ -19018,6 +19878,37 @@ onBeforeUnmount(() => {
                         {{ flag }}
                       </ElTag>
                       <span v-if="!row.qualityFlags.length">-</span>
+                    </ElSpace>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn label="操作" width="230">
+                  <template #default="{ row }">
+                    <ElSpace wrap size="small">
+                      <ElButton
+                        size="small"
+                        plain
+                        :disabled="!row.materialized"
+                        @click.stop="openVectorCorrectionDialog(row, 'text')"
+                      >
+                        改文本
+                      </ElButton>
+                      <ElButton
+                        size="small"
+                        plain
+                        :disabled="!row.materialized"
+                        @click.stop="openVectorCorrectionDialog(row, 'bbox')"
+                      >
+                        页/bbox
+                      </ElButton>
+                      <ElButton
+                        size="small"
+                        plain
+                        type="warning"
+                        :disabled="!row.materialized"
+                        @click.stop="openVectorCorrectionDialog(row, 'ignoreChunk')"
+                      >
+                        忽略
+                      </ElButton>
                     </ElSpace>
                   </template>
                 </ElTableColumn>
@@ -19034,6 +19925,100 @@ onBeforeUnmount(() => {
                   )
                 "
               />
+            </ElTabPane>
+            <ElTabPane label="校对闭环" name="corrections">
+              <div class="artifact-summary-grid mb-12px">
+                <div class="artifact-summary-item">
+                  <span>校对总数</span>
+                  <strong>{{ selectedVectorFileCorrectionSummary.total || 0 }}</strong>
+                  <small>按当前知识文件聚合</small>
+                </div>
+                <div class="artifact-summary-item">
+                  <span>待审核</span>
+                  <strong>{{ selectedVectorFileCorrectionSummary.pending || 0 }}</strong>
+                  <small>提交后可通过或驳回</small>
+                </div>
+                <div class="artifact-summary-item">
+                  <span>已应用</span>
+                  <strong>{{ selectedVectorFileCorrectionSummary.applied || 0 }}</strong>
+                  <small>应用后进入重新向量化</small>
+                </div>
+              </div>
+              <ElEmpty
+                v-if="!selectedVectorFileCorrectionRows.length"
+                description="暂无人工校对记录，可在切片明细中选择 chunk 发起校对"
+              />
+              <ElTable
+                v-else
+                :data="selectedVectorFileCorrectionRows"
+                border
+                v-loading="vectorCorrectionLoading"
+              >
+                <ElTableColumn prop="chunkNo" label="#" width="64" />
+                <ElTableColumn prop="correctionTypeLabel" label="类型" width="110" />
+                <ElTableColumn label="状态" width="100">
+                  <template #default="{ row }">
+                    <ElTag
+                      :type="
+                        row.status === 'applied'
+                          ? 'success'
+                          : row.status === 'rejected'
+                            ? 'danger'
+                            : 'warning'
+                      "
+                      effect="plain"
+                    >
+                      {{ row.statusLabel }}
+                    </ElTag>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn
+                  prop="beforePreview"
+                  label="校对前"
+                  min-width="220"
+                  show-overflow-tooltip
+                />
+                <ElTableColumn
+                  prop="afterPreview"
+                  label="校对后"
+                  min-width="220"
+                  show-overflow-tooltip
+                />
+                <ElTableColumn prop="reason" label="原因" min-width="180" show-overflow-tooltip />
+                <ElTableColumn prop="taskId" label="任务" min-width="130" show-overflow-tooltip />
+                <ElTableColumn label="操作" width="210" fixed="right">
+                  <template #default="{ row }">
+                    <ElSpace wrap size="small">
+                      <ElButton
+                        size="small"
+                        plain
+                        :disabled="!['pending_review'].includes(row.status)"
+                        @click="handleVectorCorrectionAction(row, 'approve')"
+                      >
+                        通过
+                      </ElButton>
+                      <ElButton
+                        size="small"
+                        plain
+                        type="danger"
+                        :disabled="['applied', 'rejected'].includes(row.status)"
+                        @click="handleVectorCorrectionAction(row, 'reject')"
+                      >
+                        驳回
+                      </ElButton>
+                      <ElButton
+                        size="small"
+                        plain
+                        type="primary"
+                        :disabled="['applied', 'rejected'].includes(row.status)"
+                        @click="handleVectorCorrectionAction(row, 'apply')"
+                      >
+                        应用
+                      </ElButton>
+                    </ElSpace>
+                  </template>
+                </ElTableColumn>
+              </ElTable>
             </ElTabPane>
             <ElTabPane label="质量问题" name="qualityIssues">
               <ElEmpty
@@ -19147,6 +20132,198 @@ onBeforeUnmount(() => {
         </template>
         <ElEmpty v-else description="请选择资料文件" />
       </ElDrawer>
+
+      <ElDialog
+        v-model="vectorChunkPreviewDialogVisible"
+        title="切片完整预览"
+        width="760px"
+        class="vector-chunk-preview-dialog"
+        append-to-body
+        destroy-on-close
+      >
+        <template v-if="Object.keys(selectedVectorChunkPreviewRecord).length">
+          <div class="vector-chunk-preview-head">
+            <div>
+              <span>Chunk {{ selectedVectorChunkPreviewRecord.chunkNo || '-' }}</span>
+              <strong>{{
+                selectedVectorFileQualityRecord.fileName ||
+                selectedVectorFileDetailRecord.fileName ||
+                '-'
+              }}</strong>
+            </div>
+            <ElTag
+              :type="selectedVectorChunkPreviewRecord.materialized ? 'success' : 'warning'"
+              effect="plain"
+            >
+              {{ selectedVectorChunkPreviewRecord.materialized ? '真实切片' : '缺明细' }}
+            </ElTag>
+          </div>
+
+          <ElDescriptions :column="1" border class="mb-12px">
+            <ElDescriptionsItem label="Chunk ID">
+              {{ selectedVectorChunkPreviewRecord.chunkId || selectedVectorChunkPreviewRecord.id }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="页码">
+              {{ selectedVectorChunkPreviewRecord.pageNo || '-' }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="bbox">
+              {{ selectedVectorChunkPreviewBboxText }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="Token">
+              {{ selectedVectorChunkPreviewRecord.tokenCount || 0 }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="章节路径">
+              {{ selectedVectorChunkPreviewRecord.sectionPath || '-' }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="来源方法">
+              {{ selectedVectorChunkPreviewRecord.sourceMethod || '-' }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="向量状态">
+              {{ selectedVectorChunkPreviewRecord.vectorStatus || '-' }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="溯源命中">
+              {{ selectedVectorChunkPreviewRecord.retrievalHitCount || 0 }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="索引版本">
+              {{ selectedVectorChunkPreviewRecord.indexVersion || '-' }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="文本哈希">
+              {{ selectedVectorChunkPreviewRecord.textHash || '-' }}
+            </ElDescriptionsItem>
+          </ElDescriptions>
+
+          <div
+            v-if="selectedVectorChunkPreviewQualityFlags.length"
+            class="vector-chunk-preview-flags"
+          >
+            <ElTag
+              v-for="flag in selectedVectorChunkPreviewQualityFlags"
+              :key="flag"
+              type="warning"
+              effect="plain"
+            >
+              {{ flag }}
+            </ElTag>
+          </div>
+
+          <div class="vector-chunk-preview-text">
+            <pre>{{ selectedVectorChunkPreviewText }}</pre>
+          </div>
+
+          <details class="vector-chunk-preview-json">
+            <summary>查看原始 chunk JSON</summary>
+            <pre>{{ selectedVectorChunkPreviewJson }}</pre>
+          </details>
+        </template>
+        <ElEmpty v-else description="请选择切片" />
+        <template #footer>
+          <ElButton @click="vectorChunkPreviewDialogVisible = false">关闭</ElButton>
+          <ElButton
+            plain
+            :disabled="!selectedVectorChunkPreviewRecord.materialized"
+            @click="openVectorChunkCorrectionFromPreview('bbox')"
+          >
+            修正页/bbox
+          </ElButton>
+          <ElButton
+            type="primary"
+            plain
+            :disabled="!selectedVectorChunkPreviewRecord.materialized"
+            @click="openVectorChunkCorrectionFromPreview('text')"
+          >
+            校对文本
+          </ElButton>
+        </template>
+      </ElDialog>
+
+      <ElDialog
+        v-model="vectorCorrectionDialogVisible"
+        title="提交向量资料校对"
+        width="720px"
+        destroy-on-close
+      >
+        <ElDescriptions :column="1" border class="mb-12px">
+          <ElDescriptionsItem label="知识文件">
+            {{ selectedVectorScopeLabel }}：{{
+              selectedVectorFileQualityRecord.knowledgeFileId || '-'
+            }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="Chunk">
+            {{
+              selectedVectorCorrectionTargetRecord.chunkId ||
+              selectedVectorCorrectionTargetRecord.id ||
+              '-'
+            }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="当前文本">
+            {{
+              selectedVectorCorrectionTargetRecord.text ||
+              selectedVectorCorrectionTargetRecord.textPreview ||
+              '-'
+            }}
+          </ElDescriptionsItem>
+        </ElDescriptions>
+        <ElForm label-width="96px">
+          <ElFormItem label="校对类型">
+            <ElSelect v-model="vectorCorrectionForm.correctionType" class="w-100%">
+              <ElOption
+                v-for="option in vectorCorrectionTypeOptions"
+                :key="option.value"
+                :label="option.label"
+                :value="option.value"
+              />
+            </ElSelect>
+          </ElFormItem>
+          <ElFormItem v-if="vectorCorrectionForm.correctionType === 'text'" label="校对文本">
+            <ElInput
+              v-model="vectorCorrectionForm.text"
+              type="textarea"
+              :autosize="{ minRows: 4, maxRows: 10 }"
+            />
+          </ElFormItem>
+          <ElFormItem
+            v-if="['pageNo', 'bbox'].includes(vectorCorrectionForm.correctionType)"
+            label="页码"
+          >
+            <ElInputNumber v-model="vectorCorrectionForm.pageNo" :min="1" />
+          </ElFormItem>
+          <ElFormItem v-if="vectorCorrectionForm.correctionType === 'bbox'" label="bbox">
+            <ElInput
+              v-model="vectorCorrectionForm.bbox"
+              type="textarea"
+              :autosize="{ minRows: 2, maxRows: 5 }"
+              placeholder="[x1, y1, x2, y2]"
+            />
+          </ElFormItem>
+          <ElFormItem v-if="vectorCorrectionForm.correctionType === 'sectionPath'" label="章节路径">
+            <ElInput v-model="vectorCorrectionForm.sectionPath" />
+          </ElFormItem>
+          <ElFormItem
+            v-if="vectorCorrectionForm.correctionType === 'sourceMethod'"
+            label="来源方法"
+          >
+            <ElInput v-model="vectorCorrectionForm.sourceMethod" />
+          </ElFormItem>
+          <ElFormItem label="原因">
+            <ElInput
+              v-model="vectorCorrectionForm.reason"
+              type="textarea"
+              :autosize="{ minRows: 2, maxRows: 4 }"
+              placeholder="说明校对依据，便于审计追踪"
+            />
+          </ElFormItem>
+        </ElForm>
+        <template #footer>
+          <ElButton @click="vectorCorrectionDialogVisible = false">取消</ElButton>
+          <ElButton
+            type="primary"
+            :loading="vectorCorrectionLoading"
+            @click="submitVectorCorrection"
+          >
+            提交校对
+          </ElButton>
+        </template>
+      </ElDialog>
 
       <ElDrawer
         v-model="reviewAuditDrawerVisible"
@@ -24937,6 +26114,413 @@ onBeforeUnmount(() => {
   color: #172033;
 }
 
+.standards-vectorization-workbench {
+  display: grid;
+  gap: 16px;
+}
+
+.standards-vector-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 220px);
+  gap: 16px;
+  align-items: stretch;
+  padding: 18px;
+  background: #f8fbff;
+  border: 1px solid #dbe7f6;
+  border-radius: 8px;
+}
+
+.standards-vector-hero__main {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.standards-vector-eyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.standards-vector-eyebrow span {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 18px;
+  letter-spacing: 0;
+  color: #1d4ed8;
+}
+
+.standards-vector-hero h2,
+.standards-vector-hero p {
+  min-width: 0;
+  margin: 0;
+}
+
+.standards-vector-hero h2 {
+  font-size: 22px;
+  font-weight: 950;
+  line-height: 30px;
+  color: #172033;
+}
+
+.standards-vector-hero p {
+  max-width: 860px;
+  font-size: 14px;
+  line-height: 22px;
+  color: #475569;
+}
+
+.standards-vector-healthbar,
+.standards-vector-stage > i,
+.standards-vector-count i {
+  display: block;
+  width: 100%;
+  height: 6px;
+  overflow: hidden;
+  background: #e6edf7;
+  border-radius: 999px;
+}
+
+.standards-vector-healthbar i,
+.standards-vector-stage b,
+.standards-vector-count b {
+  display: block;
+  height: 100%;
+  background: #1e40af;
+  border-radius: inherit;
+}
+
+.standards-vector-source-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 2px 0 0;
+}
+
+.standards-vector-source-facts div,
+.standards-vector-config-list div {
+  min-width: 0;
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.standards-vector-source-facts dt,
+.standards-vector-source-facts dd,
+.standards-vector-config-list dt,
+.standards-vector-config-list dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.standards-vector-source-facts dt,
+.standards-vector-config-list dt {
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 16px;
+  color: #64748b;
+}
+
+.standards-vector-source-facts dd,
+.standards-vector-config-list dd {
+  margin-top: 3px;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 18px;
+  color: #172033;
+}
+
+.standards-vector-score {
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  min-width: 0;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid #dbe7f6;
+  border-radius: 8px;
+}
+
+.standards-vector-score span,
+.standards-vector-score small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.standards-vector-score span {
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #64748b;
+}
+
+.standards-vector-score strong {
+  margin-top: 4px;
+  font-size: 42px;
+  font-weight: 950;
+  line-height: 48px;
+  color: #0f172a;
+}
+
+.standards-vector-score small {
+  max-width: 100%;
+  margin-top: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  line-height: 18px;
+  color: #475569;
+}
+
+.standards-vector-pipeline {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.standards-vector-stage {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.standards-vector-stage > div {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.standards-vector-stage span,
+.standards-vector-stage strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.standards-vector-stage span {
+  font-size: 12px;
+  font-weight: 850;
+  color: #64748b;
+}
+
+.standards-vector-stage strong {
+  font-size: 15px;
+  font-weight: 950;
+  color: #172033;
+}
+
+.standards-vector-stage--green b {
+  background: #15803d;
+}
+
+.standards-vector-stage--orange b {
+  background: #d97706;
+}
+
+.standards-vector-kpis {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.standards-vector-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  gap: 16px;
+  align-items: start;
+}
+
+.standards-vector-table-panel,
+.standards-vector-side-panel {
+  min-width: 0;
+}
+
+.standards-vector-table-panel,
+.standards-vector-side-section {
+  padding: 14px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.standards-vector-panel-head,
+.standards-vector-side-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  margin-bottom: 12px;
+}
+
+.standards-vector-panel-head > div,
+.standards-vector-side-head > div {
+  min-width: 0;
+}
+
+.standards-vector-panel-head strong,
+.standards-vector-side-head strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 950;
+  line-height: 22px;
+  color: #172033;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.standards-vector-panel-head span {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 18px;
+  color: #64748b;
+}
+
+.standards-vector-search {
+  width: 260px;
+}
+
+.standards-vector-filter {
+  width: 132px;
+}
+
+.standards-file-cell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.standards-file-cell > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.standards-file-cell strong,
+.standards-file-cell span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.standards-file-cell strong {
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 20px;
+  color: #172033;
+}
+
+.standards-file-cell span {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: 11px;
+  line-height: 17px;
+  color: #64748b;
+}
+
+.standards-vector-count {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.standards-vector-count strong {
+  font-size: 13px;
+  font-weight: 950;
+  line-height: 18px;
+  color: #172033;
+}
+
+.standards-vector-count b {
+  background: #15803d;
+}
+
+.fde-console :deep(.standards-vector-row--pending td.el-table__cell) {
+  background: #fffbeb;
+}
+
+.fde-console :deep(.standards-vector-row--issue td.el-table__cell) {
+  background: #fff7ed;
+}
+
+.fde-console :deep(.standards-vector-row--context td.el-table__cell) {
+  background: #f8fafc;
+}
+
+.standards-vector-side-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.standards-vector-focus-item {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px;
+  margin: 0 0 8px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: #f8fbff;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.standards-vector-focus-item:hover,
+.standards-vector-focus-item:focus-visible {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  outline: none;
+}
+
+.standards-vector-focus-item strong,
+.standards-vector-focus-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.standards-vector-focus-item strong {
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 19px;
+  color: #172033;
+}
+
+.standards-vector-focus-item span {
+  font-size: 12px;
+  line-height: 18px;
+  color: #92400e;
+}
+
+.standards-vector-config-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
 .audit-drawer-hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -25109,6 +26693,144 @@ onBeforeUnmount(() => {
 .vector-file-blocker-list {
   display: grid;
   gap: 10px;
+}
+
+.vector-chunk-preview-trigger {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+}
+
+.vector-chunk-preview-trigger span,
+.vector-chunk-preview-trigger small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vector-chunk-preview-trigger span {
+  font-size: 13px;
+  line-height: 20px;
+  color: #172033;
+}
+
+.vector-chunk-preview-trigger small {
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 18px;
+  color: #2563eb;
+}
+
+.vector-chunk-preview-trigger:hover span,
+.vector-chunk-preview-trigger:focus-visible span {
+  color: #1d4ed8;
+}
+
+.vector-chunk-preview-trigger:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+:global(.vector-chunk-preview-dialog) {
+  max-width: calc(100vw - 24px);
+}
+
+.vector-chunk-preview-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  margin-bottom: 12px;
+  background: #f8fbff;
+  border: 1px solid #dbe7f6;
+  border-radius: 8px;
+}
+
+.vector-chunk-preview-head > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.vector-chunk-preview-head span,
+.vector-chunk-preview-head strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vector-chunk-preview-head span {
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #2563eb;
+}
+
+.vector-chunk-preview-head strong {
+  font-size: 15px;
+  font-weight: 950;
+  line-height: 22px;
+  color: #172033;
+}
+
+.vector-chunk-preview-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.vector-chunk-preview-text {
+  max-height: 48vh;
+  padding: 14px;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #dbe7f6;
+  border-radius: 8px;
+}
+
+.vector-chunk-preview-text pre,
+.vector-chunk-preview-json pre {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #172033;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.vector-chunk-preview-json {
+  padding: 10px 12px;
+  margin-top: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.vector-chunk-preview-json summary {
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 18px;
+  color: #475569;
+  cursor: pointer;
+}
+
+.vector-chunk-preview-json pre {
+  max-height: 220px;
+  margin-top: 10px;
+  overflow: auto;
+  font-size: 12px;
 }
 
 .vector-evidence-workbench {
@@ -27351,6 +29073,14 @@ onBeforeUnmount(() => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .standards-vector-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .standards-vector-side-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .lineage-document-intro,
   .pageindex-friendly-intro {
     grid-column: 1 / -1;
@@ -27393,6 +29123,11 @@ onBeforeUnmount(() => {
 
   .ocr-annotation-pipeline__steps,
   .ocr-annotation-pipeline__actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .standards-vector-source-facts,
+  .standards-vector-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -27451,6 +29186,45 @@ onBeforeUnmount(() => {
   .metric-grid,
   .gate-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .standards-vector-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .standards-vector-score {
+    justify-items: start;
+  }
+
+  .standards-vector-pipeline,
+  .standards-vector-side-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .standards-vector-panel-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .standards-vector-panel-head .el-space,
+  .standards-vector-search,
+  .standards-vector-filter {
+    width: 100%;
+  }
+
+  .standards-vector-panel-head :deep(.el-space__item) {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .standards-vector-panel-head :deep(.el-button),
+  .standards-vector-panel-head :deep(.el-input),
+  .standards-vector-panel-head :deep(.el-select) {
+    width: 100%;
+  }
+
+  .vector-chunk-preview-head {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .agent-status-panel,
@@ -27667,6 +29441,28 @@ onBeforeUnmount(() => {
   .gate-summary,
   .artifact-summary-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .standards-vector-pipeline,
+  .standards-vector-source-facts,
+  .standards-vector-side-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .standards-vector-hero,
+  .standards-vector-table-panel,
+  .standards-vector-side-section {
+    padding: 12px;
+  }
+
+  .standards-vector-score strong {
+    font-size: 34px;
+    line-height: 40px;
+  }
+
+  .standards-file-cell {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
   }
 
   .audit-flow-strip {

@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from apps.api.main import app
 from apps.api.routes import fde_ocr_100_action_handoff_snapshot
 from libs.db.repository import repo
+from libs.db.seed import STANDARD_RULES_SOURCE_ID
 
 
 client = TestClient(app)
@@ -2058,6 +2059,227 @@ def test_fde_vector_file_detail_returns_chunk_level_quality() -> None:
     assert detail["processingPipeline"]["text"]["textRecordCount"] >= 1
     assert detail["processingPipeline"]["vectorFormat"]["rows"][0]["embeddingInput"]["model"] == "embedding-default"
     assert detail["processingPipeline"]["vectorFormat"]["rows"][0]["vectorRecord"]["payloadHash"]
+    assert forbidden["data"]["reason"] == "FORBIDDEN"
+
+
+def test_fde_standards_vectorization_is_global_rules_source() -> None:
+    repo.state["knowledge_files"].append(
+        {
+            "id": "KF-KB-FDE-STANDARD-001",
+            "fileName": "GBT 3087-2022 低中压锅炉用无缝钢管.pdf",
+            "sourceId": STANDARD_RULES_SOURCE_ID,
+            "sourceName": "标准规范库（业务规则引用标准）",
+            "sourceType": "standard",
+            "contextType": "standard_reference",
+            "documentId": "KDOC-FDE-STANDARD-001",
+            "documentVersionId": "KDV-FDE-STANDARD-001-V1",
+            "sourceRelativePath": "rules/standards/GBT 3087-2022 低中压锅炉用无缝钢管.pdf",
+            "ocrStatus": "已识别",
+            "sliceStatus": "已切片",
+            "vectorStatus": "已向量化",
+            "chunkCount": 1,
+            "vectorCount": 1,
+            "embeddingModel": "Qwen/Qwen3-Embedding-0.6B",
+            "indexVersion": "knowledge-index-qwen3-0.6b@1024",
+            "vectorDimensions": 1024,
+        }
+    )
+    repo.state["knowledge_chunks"].append(
+        {
+            "id": "CHK-KF-KB-FDE-STANDARD-001-1",
+            "fileId": "KF-KB-FDE-STANDARD-001",
+            "documentId": "KDOC-FDE-STANDARD-001",
+            "documentVersionId": "KDV-FDE-STANDARD-001-V1",
+            "chunkNo": 1,
+            "text": "GB/T 3087-2022 规定低中压锅炉用无缝钢管的订货内容、尺寸、外形和技术要求。",
+            "pageNo": 1,
+            "bbox": [40, 80, 560, 180],
+            "sectionPath": ["范围"],
+            "sourceMethod": "pymupdf_text_layer",
+            "tokenCount": 48,
+        }
+    )
+    repo.state["knowledge_vectors"].append(
+        {
+            "id": "KV-CHK-KF-KB-FDE-STANDARD-001-1",
+            "fileId": "KF-KB-FDE-STANDARD-001",
+            "chunkId": "CHK-KF-KB-FDE-STANDARD-001-1",
+            "documentVersionId": "KDV-FDE-STANDARD-001-V1",
+            "dimensions": 1024,
+            "embeddingModel": "Qwen/Qwen3-Embedding-0.6B",
+            "indexVersion": "knowledge-index-qwen3-0.6b@1024",
+            "embedding": [0.0] * 1024,
+        }
+    )
+    repo.state["knowledge_page_index_nodes"].append(
+        {
+            "id": "PIN-FDE-STANDARD-001",
+            "pageIndexNodeId": "PIN-FDE-STANDARD-001",
+            "kbDocId": STANDARD_RULES_SOURCE_ID,
+            "kbVersion": "rules-standards-test",
+            "nodeId": "KF-KB-FDE-STANDARD-001",
+            "parentNodeId": "PIN-ROOT-TEST",
+            "title": "GBT 3087-2022 低中压锅炉用无缝钢管.pdf",
+            "summary": "低中压锅炉用无缝钢管标准首页。",
+            "startPage": 1,
+            "endPage": 1,
+            "sectionPath": ["标准规范库", "GBT 3087-2022"],
+            "linkedClauseIds": ["CHK-KF-KB-FDE-STANDARD-001-1"],
+            "sourceRelativePath": "rules/standards/GBT 3087-2022 低中压锅炉用无缝钢管.pdf",
+            "indexVersion": "pageindex-standard-rules-v1",
+        }
+    )
+
+    overview = assert_ok(
+        client.get(
+            "/api/fde/standards/vectorization?keyword=3087",
+            headers={"X-Role": "fde"},
+        )
+    )
+    detail = assert_ok(
+        client.get(
+            "/api/fde/standards/files/KF-KB-FDE-STANDARD-001/vector-detail",
+            headers={"X-Role": "fde"},
+        )
+    )
+    forbidden = assert_error(
+        client.get(
+            "/api/fde/standards/vectorization",
+            headers={"X-Role": "contractor"},
+        ),
+        "FORBIDDEN",
+    )
+
+    assert overview["sourceId"] == STANDARD_RULES_SOURCE_ID
+    assert overview["metrics"]["fileCount"] >= 1
+    assert overview["metrics"]["vectorCount"] >= 1
+    assert overview["files"][0]["sourceRelativePath"].startswith("rules/standards/")
+    assert all(item.get("sourceId") == STANDARD_RULES_SOURCE_ID for item in overview["files"])
+    assert all(not item.get("projectId") for item in overview["files"])
+    assert detail["scope"] == "standards"
+    assert detail["knowledgeFileId"] == "KF-KB-FDE-STANDARD-001"
+    assert detail["sourceRelativePath"].startswith("rules/standards/")
+    assert detail["chunkRows"][0]["text"].startswith("GB/T 3087-2022")
+    assert detail["chunkRows"][0]["sourceMethod"] == "pymupdf_text_layer"
+    assert detail["pageIndexNodes"][0]["id"] == "PIN-FDE-STANDARD-001"
+    assert detail["llmUsage"]["scope"] == "standards_knowledge_base"
+    assert forbidden["data"]["reason"] == "FORBIDDEN"
+
+
+def test_fde_vector_corrections_review_apply_and_reject() -> None:
+    knowledge_file = repo.find_one("knowledge_files", "KF-DOC-20260625-001")
+    knowledge_file["chunkCount"] = 1
+    knowledge_file["vectorCount"] = 1
+    knowledge_file["vectorStatus"] = "已向量化"
+    repo.state["knowledge_chunks"].append(
+        {
+            "id": "CHK-FDE-CORR-001",
+            "fileId": "KF-DOC-20260625-001",
+            "documentId": "DOC-20260625-001",
+            "documentVersionId": "DV-20260625-001-V2",
+            "chunkNo": 1,
+            "text": "原始切片文本",
+            "pageNo": 1,
+            "bbox": [10, 20, 100, 120],
+            "tokenCount": 12,
+        }
+    )
+    repo.state["knowledge_vectors"].append(
+        {
+            "id": "KV-CHK-FDE-CORR-001",
+            "fileId": "KF-DOC-20260625-001",
+            "chunkId": "CHK-FDE-CORR-001",
+            "documentVersionId": "DV-20260625-001-V2",
+            "dimensions": 1024,
+            "embeddingModel": "Qwen/Qwen3-Embedding-0.6B",
+            "indexVersion": "knowledge-index-qwen3-0.6b@1024",
+            "embedding": [0.0] * 1024,
+        }
+    )
+
+    created = assert_ok(
+        client.post(
+            "/api/fde/vector-corrections",
+            json={
+                "documentVersionId": "DV-20260625-001-V2",
+                "knowledgeFileId": "KF-DOC-20260625-001",
+                "chunkId": "CHK-FDE-CORR-001",
+                "correctionType": "text",
+                "after": {"text": "人工校对后的切片文本"},
+                "reason": "抽查发现 OCR 文本缺字",
+            },
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-vector-correction-create-001"},
+        )
+    )
+    correction_id = created["correction"]["id"]
+    detail_after_create = assert_ok(
+        client.get(
+            "/api/fde/projects/P-2026-HDCP-001/documents/DV-20260625-001-V2/vector-detail",
+            headers={"X-Role": "fde"},
+        )
+    )
+    assert detail_after_create["correctionSummary"]["pending"] == 1
+    assert detail_after_create["chunkRows"][0]["correctionCount"] == 1
+
+    approved = assert_ok(
+        client.post(
+            f"/api/fde/vector-corrections/{correction_id}/approve",
+            json={"reason": "复核通过"},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-vector-correction-approve-001"},
+        )
+    )
+    assert approved["correction"]["status"] == "approved"
+
+    applied = assert_ok(
+        client.post(
+            f"/api/fde/vector-corrections/{correction_id}/apply",
+            json={"reason": "应用并重建向量"},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-vector-correction-apply-001"},
+        )
+    )
+    chunk = next(item for item in repo.state["knowledge_chunks"] if item["id"] == "CHK-FDE-CORR-001")
+    assert chunk["text"] == "人工校对后的切片文本"
+    assert applied["correction"]["status"] == "applied"
+    assert applied["file"]["vectorStatus"] == "待向量化"
+    assert applied["task"]["taskType"] == "vector"
+    assert [item for item in repo.state["knowledge_vectors"] if item.get("chunkId") == "CHK-FDE-CORR-001"] == []
+
+    rejected_seed = assert_ok(
+        client.post(
+            "/api/fde/vector-corrections",
+            json={
+                "documentVersionId": "DV-20260625-001-V2",
+                "knowledgeFileId": "KF-DOC-20260625-001",
+                "chunkId": "CHK-FDE-CORR-001",
+                "correctionType": "ignoreChunk",
+                "after": {"ignoredByFde": True},
+                "reason": "测试驳回",
+            },
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-vector-correction-create-002"},
+        )
+    )
+    rejected = assert_ok(
+        client.post(
+            f"/api/fde/vector-corrections/{rejected_seed['correction']['id']}/reject",
+            json={"reason": "保留切片"},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-vector-correction-reject-001"},
+        )
+    )
+    assert rejected["correction"]["status"] == "rejected"
+    forbidden = assert_error(
+        client.post(
+            "/api/fde/vector-corrections",
+            json={
+                "documentVersionId": "DV-20260625-001-V2",
+                "knowledgeFileId": "KF-DOC-20260625-001",
+                "chunkId": "CHK-FDE-CORR-001",
+                "correctionType": "text",
+                "after": {"text": "无权限"},
+            },
+            headers={"X-Role": "contractor"},
+        ),
+        "FORBIDDEN",
+    )
     assert forbidden["data"]["reason"] == "FORBIDDEN"
 
 

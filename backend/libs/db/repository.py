@@ -100,6 +100,7 @@ STATE_COLLECTIONS = {
     "knowledge_vectors": "knowledge_vectors",
     "knowledge_clauses": "knowledge_clauses",
     "knowledge_page_index_nodes": "knowledge_page_index_nodes",
+    "knowledge_vector_corrections": "knowledge_vector_corrections",
     "rule_versions": "rule_versions",
     "llm_compare_runs": "llm_compare_runs",
     "project_members": "project_members",
@@ -128,6 +129,7 @@ class InMemoryRepository:
         self.state.setdefault("knowledge_vectors", [])
         self.state.setdefault("knowledge_clauses", [])
         self.state.setdefault("knowledge_page_index_nodes", [])
+        self.state.setdefault("knowledge_vector_corrections", [])
         self.state.setdefault("upload_sessions", [])
         self.state.setdefault("ocr_jobs", [])
         self.state.setdefault("ocr_parse_results", [])
@@ -1371,6 +1373,7 @@ class InMemoryRepository:
         loaded.setdefault("knowledge_vectors", [])
         loaded.setdefault("knowledge_clauses", [])
         loaded.setdefault("knowledge_page_index_nodes", [])
+        loaded.setdefault("knowledge_vector_corrections", [])
         loaded.setdefault("upload_sessions", [])
         loaded.setdefault("ocr_jobs", [])
         loaded.setdefault("ocr_parse_results", [])

@@ -53,6 +53,9 @@ FDE_BASE_ACTIONS = [
     "fde:business-pack:view",
     "fde:release:view",
     "fde:ocr-quality:view",
+    "fde:vector-quality:view",
+    "fde:vector-quality:review",
+    "fde:vector-quality:apply",
 ]
 
 ROLE_ACTIONS.update(
@@ -2300,6 +2303,7 @@ def fresh_state() -> dict[str, Any]:
         "knowledge_vectors": [],
         "knowledge_clauses": deepcopy(STANDARD_KNOWLEDGE_SEED["clauses"]),
         "knowledge_page_index_nodes": deepcopy(STANDARD_KNOWLEDGE_SEED["pageIndexNodes"]),
+        "knowledge_vector_corrections": [],
         "rule_versions": deepcopy(RULE_VERSIONS),
         "knowledge_config": deepcopy(KNOWLEDGE_CONFIG),
         "llm_compare_runs": deepcopy(LLM_COMPARE_RUNS),
