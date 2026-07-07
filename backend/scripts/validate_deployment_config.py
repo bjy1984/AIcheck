@@ -342,18 +342,19 @@ class DeploymentConfigValidator:
         if "--api-key" in embedding_command:
             failures.append("embedding-service must read INFINITY_API_KEY from environment instead of exposing it in the process command")
         port_expectations = {
-            "api-service": "127.0.0.1:8000:8000",
-            "ocr-service": "127.0.0.1:8010:8010",
-            "embedding-service": "127.0.0.1:7997:7997",
-            "minio": "127.0.0.1:9000:9000",
-            "litellm-service": "127.0.0.1:4001:4000",
-            "postgres": "127.0.0.1:5432:5432",
-            "temporal-service": "127.0.0.1:7233:7233",
-            "temporal-ui": "127.0.0.1:8088:8080",
+            "api-service": ("127.0.0.1:8000:8000",),
+            "ocr-service": ("127.0.0.1:8010:8010",),
+            "embedding-service": ("127.0.0.1:7997:7997",),
+            "minio": ("127.0.0.1:9000:9000",),
+            "litellm-service": ("127.0.0.1:4001:4000",),
+            "postgres": ("127.0.0.1:5432:5432", "127.0.0.1:${AICHECK_POSTGRES_HOST_PORT:-15432}:5432"),
+            "temporal-service": ("127.0.0.1:7233:7233",),
+            "temporal-ui": ("127.0.0.1:8088:8080",),
         }
-        for service_name, expected_port in port_expectations.items():
-            if expected_port not in normalize_ports(self.service(service_name).get("ports")):
-                failures.append(f"{service_name} missing port mapping {expected_port}")
+        for service_name, expected_ports in port_expectations.items():
+            ports = normalize_ports(self.service(service_name).get("ports"))
+            if not any(expected_port in ports for expected_port in expected_ports):
+                failures.append(f"{service_name} missing port mapping {' or '.join(expected_ports)}")
         self.add(
             "compose.commands-ports",
             "fail" if failures else "pass",

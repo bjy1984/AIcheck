@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 import os
 import time
+from base64 import urlsafe_b64encode
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -104,6 +107,44 @@ class OcrClient:
             reason = data.get("reason") if isinstance(data, dict) else None
             raise IntegrationServiceError("OCR service", "parse", reason=safe_reason(reason) or f"CODE_{payload.get('code')}")
         return payload.get("data") or {}
+
+    def parse_upload_sync(self, path: str | os.PathLike[str], payload: dict[str, Any], *, timeout: float = 300) -> dict[str, Any]:
+        if not self.enabled:
+            raise RuntimeError("AICHECK_OCR_BASE_URL is not configured")
+        source_path = Path(path)
+        if not source_path.is_file():
+            raise IntegrationServiceError("OCR service", "parse-upload", reason="LOCAL_FILE_MISSING")
+        client_kwargs: dict[str, Any] = {"timeout": timeout}
+        if self.transport is not None:
+            client_kwargs["transport"] = self.transport
+        metadata = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        metadata_header = urlsafe_b64encode(metadata).decode("ascii")
+        try:
+            with source_path.open("rb") as handle:
+                with httpx.Client(**client_kwargs) as client:
+                    response = client.post(
+                        f"{self.base_url}/internal/ocr/parse-upload",
+                        headers={"X-AICheck-Ocr-Metadata-B64": metadata_header},
+                        content=handle.read(),
+                    )
+        except httpx.HTTPError as exc:
+            raise IntegrationServiceError("OCR service", "parse-upload", reason=exc.__class__.__name__) from exc
+        if response.status_code >= 400:
+            raise IntegrationServiceError("OCR service", "parse-upload", status_code=response.status_code)
+        try:
+            envelope = response.json()
+        except ValueError as exc:
+            raise IntegrationServiceError("OCR service", "parse-upload", reason="INVALID_JSON") from exc
+        if not isinstance(envelope, dict):
+            raise IntegrationServiceError("OCR service", "parse-upload", reason="INVALID_RESPONSE")
+        if envelope.get("code") != 0:
+            data = envelope.get("data") if isinstance(envelope.get("data"), dict) else {}
+            raise IntegrationServiceError(
+                "OCR service",
+                "parse-upload",
+                reason=safe_reason(data.get("reason")) or f"CODE_{envelope.get('code')}",
+            )
+        return envelope.get("data") or {}
 
     def create_parse_job(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request_enveloped("POST", "/internal/document-parse/jobs", json=payload, timeout=30)

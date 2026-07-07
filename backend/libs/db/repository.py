@@ -12,6 +12,18 @@ from uuid import uuid4
 
 from libs.contracts.responses import server_time
 from libs.integrations.storage import ObjectStorageUnavailable, object_storage, parse_storage_url
+from libs.knowledge_indexing import (
+    OFFLINE_EMBEDDING_MODEL,
+    OFFLINE_VECTOR_DIMENSIONS,
+    PAGE_INDEX_VERSION,
+    STANDARD_INDEX_VERSION,
+    build_chunks_for_file,
+    build_page_index_nodes_for_source,
+    build_vector_rows,
+    clause_from_chunk,
+    cosine_similarity,
+    vector_payload_for_pg,
+)
 
 from .seed import ROLE_ACTIONS, ROLE_NODE_MAP, ensure_inspection_project_members, fresh_state
 
@@ -1052,33 +1064,39 @@ class InMemoryRepository:
         source = self.find_one("knowledge_sources", file.get("sourceId"))
         if (source or {}).get("sourceType") == "rule":
             return {"fileId": file_id, "status": "skipped", "chunkCount": 0, "reason": "business_rule_not_indexed"}
-        existing_ids = {
-            item["id"] for item in self.state.get("knowledge_chunks", []) if item.get("fileId") == file_id
-        }
-        chunks = []
-        source_fragments = fragments or [{"pageNo": 1, "text": f"{file['fileName']} OCR 文本切片。"}]
-        for index, fragment in enumerate(source_fragments, start=1):
-            chunk_id = f"CHK-{file_id}-{index}"
-            if chunk_id in existing_ids:
-                continue
-            chunks.append(
-                {
-                    "id": chunk_id,
-                    "fileId": file_id,
-                    "documentId": file.get("documentId"),
-                    "documentVersionId": file.get("documentVersionId"),
-                    "chunkNo": index,
-                    "text": str(fragment.get("text") or "")[:1800],
-                    "pageNo": int(fragment.get("pageNo") or 1),
-                    "bbox": fragment.get("bbox"),
-                    "tokenCount": max(1, len(str(fragment.get("text") or "")) // 2),
-                    "createdAt": server_time(),
-                }
+        source_fragments = [item for item in fragments or [] if isinstance(item, dict) and str(item.get("text") or "").strip()]
+        if not source_fragments:
+            file["sliceStatus"] = "切片失败"
+            file["chunkCount"] = 0
+            file["vectorStatus"] = "向量化失败"
+            file["vectorCount"] = 0
+            file["updatedAt"] = server_time()
+            task = next(
+                (item for item in self.state["knowledge_tasks"] if item.get("taskType") == "slice" and item.get("targetId") == file_id),
+                None,
             )
+            self.mark_task_failed(task, "切片任务失败：未抽取到可切片文本。")
+            return {"fileId": file_id, "status": "failed", "chunkCount": 0, "errorMessage": "empty_text"}
+        chunks = build_chunks_for_file(file, source_fragments, index_version=STANDARD_INDEX_VERSION)
+        now = server_time()
+        for chunk in chunks:
+            chunk["createdAt"] = now
+            chunk["updatedAt"] = now
+        self.state["knowledge_chunks"] = [
+            item for item in self.state.get("knowledge_chunks", []) if item.get("fileId") != file_id
+        ]
+        self.state["knowledge_vectors"] = [
+            item for item in self.state.get("knowledge_vectors", []) if item.get("fileId") != file_id
+        ]
         self.state.setdefault("knowledge_chunks", []).extend(chunks)
         file["sliceStatus"] = "已切片"
         file["chunkCount"] = len([item for item in self.state["knowledge_chunks"] if item.get("fileId") == file_id])
+        file["vectorStatus"] = "待向量化"
+        file["vectorCount"] = 0
+        file["indexVersion"] = STANDARD_INDEX_VERSION
         file["updatedAt"] = server_time()
+        if source:
+            self.sync_standard_page_index_for_source(str(source.get("id")))
         task = next(
             (item for item in self.state["knowledge_tasks"] if item.get("taskType") == "slice" and item.get("targetId") == file_id),
             None,
@@ -1092,13 +1110,51 @@ class InMemoryRepository:
             self.append_task_log(task, "info", "切片任务完成。")
         return {"fileId": file_id, "status": "success", "chunkCount": file["chunkCount"]}
 
+    def sync_standard_page_index_for_source(self, source_id: str) -> None:
+        source = self.find_one("knowledge_sources", source_id)
+        if not source or source.get("sourceType") == "rule":
+            return
+        source_files = [item for item in self.state.get("knowledge_files", []) if item.get("sourceId") == source_id]
+        if not source_files:
+            return
+        file_ids = {str(item.get("id")) for item in source_files}
+        source_chunks = [item for item in self.state.get("knowledge_chunks", []) if str(item.get("fileId") or "") in file_ids]
+        if not source_chunks:
+            return
+        generated_nodes = build_page_index_nodes_for_source(source, source_files, source_chunks)
+        source_version = str(source.get("version") or "inspection_kb@1.0.0")
+        files_by_id = {str(item.get("id")): item for item in source_files}
+        generated_clauses = [
+            clause_from_chunk(files_by_id[str(chunk.get("fileId"))], chunk, source_version)
+            for chunk in source_chunks
+            if str(chunk.get("fileId") or "") in files_by_id
+        ]
+        self.state["knowledge_page_index_nodes"] = [
+            item
+            for item in self.state.get("knowledge_page_index_nodes", [])
+            if not (item.get("kbDocId") == source_id and item.get("indexVersion") == PAGE_INDEX_VERSION)
+        ]
+        self.state.setdefault("knowledge_page_index_nodes", []).extend(generated_nodes)
+        self.state["knowledge_clauses"] = [
+            item
+            for item in self.state.get("knowledge_clauses", [])
+            if not (
+                item.get("kbDocId") == source_id
+                and str(item.get("chunkId") or item.get("clauseId") or "").startswith(("CHK-", "VCHK-"))
+            )
+        ]
+        self.state.setdefault("knowledge_clauses", []).extend(generated_clauses)
+
     def apply_embed_result(
         self,
         file_id: str,
         vector_count: int | None = None,
         *,
         vectors: list[dict[str, Any]] | None = None,
-        embedding_model: str = "embedding-default",
+        embedding_model: str = OFFLINE_EMBEDDING_MODEL,
+        index_version: str = STANDARD_INDEX_VERSION,
+        expected_dimensions: int = OFFLINE_VECTOR_DIMENSIONS,
+        vector_status_reason: str | None = None,
     ) -> dict[str, Any]:
         file = self.find_one("knowledge_files", file_id)
         if not file:
@@ -1106,34 +1162,61 @@ class InMemoryRepository:
         source = self.find_one("knowledge_sources", file.get("sourceId"))
         if (source or {}).get("sourceType") == "rule":
             return {"fileId": file_id, "status": "skipped", "vectorCount": 0, "reason": "business_rule_not_indexed"}
-        chunks = [item for item in self.state.get("knowledge_chunks", []) if item.get("fileId") == file_id]
-        vector_rows = self._build_knowledge_vector_rows(
+        chunks = sorted(
+            [item for item in self.state.get("knowledge_chunks", []) if item.get("fileId") == file_id],
+            key=lambda item: int(item.get("chunkNo") or 0),
+        )
+        vector_rows = build_vector_rows(
             file,
             chunks,
             vectors or [],
             embedding_model=embedding_model,
+            index_version=index_version,
         )
         self.state["knowledge_vectors"] = [
             item for item in self.state.get("knowledge_vectors", []) if item.get("fileId") != file_id
         ]
+        now = server_time()
+        for row in vector_rows:
+            row["createdAt"] = now
+            row["updatedAt"] = now
         self.state.setdefault("knowledge_vectors", []).extend(vector_rows)
-        count = vector_count if vector_count is not None else len(vector_rows)
-        file["vectorStatus"] = "已向量化"
+        count = len(vector_rows)
+        expected_count = len(chunks)
+        dimensions = {int(item.get("dimensions") or 0) for item in vector_rows if item.get("dimensions")}
+        complete = bool(expected_count) and count == expected_count and dimensions == {int(expected_dimensions)}
+        if vector_count is not None and vector_count != count:
+            complete = False
+        file["vectorStatus"] = "已向量化" if complete else "向量化失败"
         file["vectorCount"] = count
         file["embeddingModel"] = embedding_model
+        file["indexVersion"] = index_version
+        file["vectorStatusReason"] = vector_status_reason or ("complete" if complete else "vector_count_or_dimension_mismatch")
+        if dimensions:
+            file["vectorDimensions"] = next(iter(dimensions))
         file["updatedAt"] = server_time()
         task = next(
             (item for item in self.state["knowledge_tasks"] if item.get("taskType") == "vector" and item.get("targetId") == file_id),
             None,
         )
         if task:
-            task["status"] = "成功"
-            task["progress"] = 100
-            task["finishedAt"] = server_time()
-            task["updatedAt"] = task["finishedAt"]
-            self._bump_revision(task)
-            self.append_task_log(task, "info", "向量化任务完成。")
-        return {"fileId": file_id, "status": "success", "vectorCount": count}
+            if complete:
+                task["status"] = "成功"
+                task["progress"] = 100
+                task["finishedAt"] = server_time()
+                task["updatedAt"] = task["finishedAt"]
+                self._bump_revision(task)
+                self.append_task_log(task, "info", "向量化任务完成。")
+            else:
+                self.mark_task_failed(task, f"向量化任务失败：向量 {count}/{expected_count} 条，维度集合 {sorted(dimensions)}。")
+        return {
+            "fileId": file_id,
+            "status": "success" if complete else "failed",
+            "vectorCount": count,
+            "embeddingModel": embedding_model,
+            "indexVersion": index_version,
+            "vectorStatusReason": file.get("vectorStatusReason"),
+        }
 
     def _build_knowledge_vector_rows(
         self,
@@ -1566,6 +1649,212 @@ class InMemoryRepository:
                     (scope, json.dumps(self.clone(payload), ensure_ascii=False)),
                 )
         self.sync_postgres.commit()
+        if self.state.get("knowledge_vectors"):
+            self.flush_knowledge_vectors_to_pgvector()
+
+    def ensure_pgvector_schema(self) -> bool:
+        if self.sync_postgres is None:
+            return False
+        try:
+            self.sync_postgres.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            self.sync_postgres.execute(
+                """
+                CREATE TABLE IF NOT EXISTS knowledge_vector_index (
+                    id text PRIMARY KEY,
+                    file_id text,
+                    chunk_id text,
+                    document_id text,
+                    document_version_id text,
+                    source_id text,
+                    embedding vector(1024) NOT NULL,
+                    dimensions integer NOT NULL,
+                    embedding_model text NOT NULL,
+                    index_version text NOT NULL,
+                    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+                    updated_at timestamptz NOT NULL DEFAULT now()
+                )
+                """
+            )
+            self.sync_postgres.execute("CREATE INDEX IF NOT EXISTS idx_kvi_source ON knowledge_vector_index (source_id)")
+            self.sync_postgres.execute("CREATE INDEX IF NOT EXISTS idx_kvi_index_version ON knowledge_vector_index (index_version)")
+            self.sync_postgres.execute(
+                "CREATE INDEX IF NOT EXISTS idx_kvi_embedding_cosine ON knowledge_vector_index USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)"
+            )
+            self.sync_postgres.commit()
+            return True
+        except Exception:
+            try:
+                self.sync_postgres.rollback()
+            except Exception:
+                pass
+            return False
+
+    def flush_knowledge_vectors_to_pgvector(self) -> None:
+        if self.sync_postgres is None or not self.ensure_pgvector_schema():
+            return
+        try:
+            self.sync_postgres.execute("DELETE FROM knowledge_vector_index")
+            for row in self.state.get("knowledge_vectors", []) or []:
+                if int(row.get("dimensions") or 0) != OFFLINE_VECTOR_DIMENSIONS:
+                    continue
+                payload = vector_payload_for_pg(row)
+                embedding = payload.get("embedding")
+                if not isinstance(embedding, list) or not embedding:
+                    continue
+                embedding_literal = "[" + ",".join(str(float(item)) for item in embedding) + "]"
+                self.sync_postgres.execute(
+                    """
+                    INSERT INTO knowledge_vector_index (
+                        id, file_id, chunk_id, document_id, document_version_id, source_id,
+                        embedding, dimensions, embedding_model, index_version, metadata, updated_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s::vector, %s, %s, %s, %s::jsonb, now())
+                    ON CONFLICT (id)
+                    DO UPDATE SET
+                        file_id = EXCLUDED.file_id,
+                        chunk_id = EXCLUDED.chunk_id,
+                        document_id = EXCLUDED.document_id,
+                        document_version_id = EXCLUDED.document_version_id,
+                        source_id = EXCLUDED.source_id,
+                        embedding = EXCLUDED.embedding,
+                        dimensions = EXCLUDED.dimensions,
+                        embedding_model = EXCLUDED.embedding_model,
+                        index_version = EXCLUDED.index_version,
+                        metadata = EXCLUDED.metadata,
+                        updated_at = now()
+                    """,
+                    (
+                        payload["id"],
+                        payload["file_id"],
+                        payload["chunk_id"],
+                        payload["document_id"],
+                        payload["document_version_id"],
+                        payload["source_id"],
+                        embedding_literal,
+                        payload["dimensions"],
+                        payload["embedding_model"],
+                        payload["index_version"],
+                        payload["metadata"],
+                    ),
+                )
+            self.sync_postgres.commit()
+        except Exception:
+            try:
+                self.sync_postgres.rollback()
+            except Exception:
+                pass
+
+    def search_knowledge_vectors(
+        self,
+        embedding: list[float],
+        *,
+        top_k: int = 5,
+        source_id: str | None = None,
+        index_version: str | None = None,
+    ) -> list[dict[str, Any]]:
+        self.configure_sync_postgres()
+        if self.sync_postgres is None or len(embedding) != OFFLINE_VECTOR_DIMENSIONS or not self.ensure_pgvector_schema():
+            return []
+        embedding_literal = "[" + ",".join(str(float(item)) for item in embedding) + "]"
+        filters = []
+        params: list[Any] = []
+        if source_id:
+            filters.append("source_id = %s")
+            params.append(source_id)
+        if index_version:
+            filters.append("index_version = %s")
+            params.append(index_version)
+        where = "WHERE " + " AND ".join(filters) if filters else ""
+        rows = self.sync_postgres.execute(
+            f"""
+            SELECT id, file_id, chunk_id, document_id, document_version_id, source_id,
+                   dimensions, embedding_model, index_version, metadata,
+                   embedding <=> %s::vector AS distance
+            FROM knowledge_vector_index
+            {where}
+            ORDER BY embedding <=> %s::vector
+            LIMIT %s
+            """,
+            (embedding_literal, *params, embedding_literal, int(top_k or 5)),
+        ).fetchall()
+        hits: list[dict[str, Any]] = []
+        for row in rows:
+            (
+                vector_id,
+                file_id,
+                chunk_id,
+                document_id,
+                document_version_id,
+                row_source_id,
+                dimensions,
+                embedding_model,
+                row_index_version,
+                metadata,
+                distance,
+            ) = row
+            hits.append(
+                {
+                    "id": vector_id,
+                    "fileId": file_id,
+                    "chunkId": chunk_id,
+                    "documentId": document_id,
+                    "documentVersionId": document_version_id,
+                    "sourceId": row_source_id,
+                    "dimensions": dimensions,
+                    "embeddingModel": embedding_model,
+                    "indexVersion": row_index_version,
+                    "metadata": json.loads(json.dumps(metadata, ensure_ascii=False, default=str)),
+                    "distance": float(distance) if distance is not None else None,
+                }
+            )
+        return hits
+
+    def search_local_knowledge_vectors(
+        self,
+        embedding: list[float],
+        *,
+        top_k: int = 5,
+        source_id: str | None = None,
+        index_version: str | None = None,
+    ) -> list[dict[str, Any]]:
+        if not embedding:
+            return []
+        hits: list[dict[str, Any]] = []
+        query_embedding = [float(item) for item in embedding]
+        for row in self.state.get("knowledge_vectors", []) or []:
+            if source_id and row.get("sourceId") != source_id:
+                continue
+            if index_version and row.get("indexVersion") != index_version:
+                continue
+            row_embedding = row.get("embedding")
+            if not isinstance(row_embedding, list) or len(row_embedding) != len(query_embedding):
+                continue
+            score = cosine_similarity(query_embedding, [float(item) for item in row_embedding])
+            payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+            hits.append(
+                {
+                    "id": row.get("id"),
+                    "fileId": row.get("fileId"),
+                    "chunkId": row.get("chunkId"),
+                    "documentId": row.get("documentId"),
+                    "documentVersionId": row.get("documentVersionId"),
+                    "sourceId": row.get("sourceId"),
+                    "sourceRelativePath": row.get("sourceRelativePath"),
+                    "dimensions": row.get("dimensions"),
+                    "embeddingModel": row.get("embeddingModel"),
+                    "indexVersion": row.get("indexVersion"),
+                    "metadata": {
+                        **self.clone(payload),
+                        "pageNo": row.get("pageNo"),
+                        "sectionPath": row.get("sectionPath") or [],
+                        "pageIndexNodeIds": row.get("pageIndexNodeIds") or [],
+                    },
+                    "score": score,
+                    "distance": 1.0 - score,
+                }
+            )
+        hits.sort(key=lambda item: float(item.get("score") or 0.0), reverse=True)
+        return hits[: int(top_k or 5)]
 
     def build_admin_overview(self) -> dict[str, Any]:
         config = self.clone(self.state["admin_config"])
@@ -1799,5 +2088,7 @@ def load_state() -> None:
 def flush_state() -> None:
     if postgres_persistence_configured():
         repo.flush_to_sync_postgres()
+        return
+    if not (repo.sqlite_enabled or repo.sqlite_path or os.getenv("AICHECK_SQLITE_PATH")):
         return
     repo.flush_to_sqlite()

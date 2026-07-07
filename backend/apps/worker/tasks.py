@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 from apps.ocr_service.service import ocr_service
@@ -11,9 +12,22 @@ from libs.business_pack import build_ai_review_prompt, load_business_pack, match
 from libs.contracts.responses import server_time
 from libs.db.repository import flush_state, load_state, repo
 from libs.integrations import task_dispatcher
+from libs.integrations.embedding_client import EmbeddingClient
 from libs.integrations.litellm_client import LiteLLMClient
 from libs.integrations.ocr_client import OcrClient
+from libs.knowledge_indexing import (
+    EMBED_BATCH_SIZE,
+    OFFLINE_EMBEDDING_MODEL,
+    STANDARD_INDEX_VERSION,
+    active_embedding_target,
+    local_path_from_storage_key,
+    offline_hash_embeddings,
+    units_from_local_file,
+)
 from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block, unsupported_claims
+
+
+WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
 
 
 def stable_hash_payload(value: Any) -> str:
@@ -78,18 +92,35 @@ def worker_ocr_http_enabled() -> bool:
     return os.getenv("AICHECK_WORKER_OCR_ENABLE_LOCAL_FALLBACK", "false").lower() in {"1", "true", "yes", "on"}
 
 
-def refresh_worker_state() -> None:
-    if (
+def worker_state_persistence_enabled() -> bool:
+    return (
         repo.sync_postgres is not None
         or repo.postgres_dsn
         or os.getenv("AICHECK_DATABASE_URL")
         or os.getenv("DATABASE_URL")
         or repo.sqlite_enabled
-    ):
+    )
+
+
+def env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def refresh_worker_state() -> None:
+    if worker_state_persistence_enabled():
         load_state()
 
 
-def split_text_fragments(text: str, *, page_no: int = 1, max_chars: int = 1600) -> list[dict[str, Any]]:
+def split_text_fragments(
+    text: str,
+    *,
+    page_no: int = 1,
+    max_chars: int = 1600,
+    metadata: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     normalized = " ".join(str(text or "").split())
     if not normalized:
         return []
@@ -97,7 +128,7 @@ def split_text_fragments(text: str, *, page_no: int = 1, max_chars: int = 1600) 
     for offset in range(0, len(normalized), max_chars):
         chunk_text = normalized[offset : offset + max_chars].strip()
         if chunk_text:
-            chunks.append({"pageNo": page_no, "text": chunk_text})
+            chunks.append({"pageNo": page_no, "text": chunk_text, **(metadata or {})})
     return chunks
 
 
@@ -118,20 +149,84 @@ def knowledge_slice_fragments_from_ocr(file: dict[str, Any]) -> list[dict[str, A
     raw_fragments = [item for item in (result or {}).get("fragments") or [] if isinstance(item, dict)]
     if not raw_fragments:
         return []
+    engine_runs = [item for item in (result or {}).get("engineRuns") or [] if isinstance(item, dict)]
+    engine_name = next(
+        (
+            str(item.get("engine") or item.get("name") or "")
+            for item in engine_runs
+            if item.get("engine") or item.get("name")
+        ),
+        "",
+    )
+    diagnostic_codes = {
+        str(item.get("code") or "")
+        for item in (result or {}).get("diagnostics") or []
+        if isinstance(item, dict)
+    }
+    source_method = "pymupdf_text_layer" if "PDF_TEXT_LAYER_FAST_PATH" in diagnostic_codes else "remote_ocr"
     if len(raw_fragments) == 1:
         fragment = raw_fragments[0]
-        return split_text_fragments(str(fragment.get("text") or ""), page_no=int(fragment.get("pageNo") or 1))
-    pages: dict[int, list[str]] = {}
+        metadata = {
+            "bbox": fragment.get("bbox"),
+            "sourceMethod": fragment.get("sourceMethod") or source_method,
+            "ocrEngine": fragment.get("ocrEngine") or fragment.get("sourceEngine") or engine_name or "ocr_service",
+            "ocrConfidence": fragment.get("ocrConfidence") or fragment.get("confidence"),
+        }
+        return split_text_fragments(str(fragment.get("text") or ""), page_no=int(fragment.get("pageNo") or 1), metadata=metadata)
+    pages: dict[int, list[dict[str, Any]]] = {}
     for fragment in raw_fragments:
         text = str(fragment.get("text") or "").strip()
         if not text:
             continue
         page_no = int(fragment.get("pageNo") or 1)
-        pages.setdefault(page_no, []).append(text)
+        pages.setdefault(page_no, []).append(fragment)
     fragments: list[dict[str, Any]] = []
     for page_no in sorted(pages):
-        fragments.extend(split_text_fragments(" ".join(pages[page_no]), page_no=page_no))
+        page_fragments = pages[page_no]
+        texts = [str(item.get("text") or "").strip() for item in page_fragments if str(item.get("text") or "").strip()]
+        confidence_values = [
+            float(item.get("ocrConfidence") or item.get("confidence") or 0)
+            for item in page_fragments
+            if str(item.get("ocrConfidence") or item.get("confidence") or "").strip()
+        ]
+        metadata = {
+            "bbox": page_fragments[0].get("bbox"),
+            "sourceMethod": page_fragments[0].get("sourceMethod") or source_method,
+            "ocrEngine": page_fragments[0].get("ocrEngine") or page_fragments[0].get("sourceEngine") or engine_name or "ocr_service",
+            "ocrConfidence": round(sum(confidence_values) / len(confidence_values), 4) if confidence_values else None,
+        }
+        fragments.extend(split_text_fragments(" ".join(texts), page_no=page_no, metadata=metadata))
     return fragments
+
+
+def embedding_batches_for_chunks(chunks: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str, str, int, str | None]:
+    texts = [str(chunk.get("text") or "") for chunk in chunks]
+    force_offline = env_bool("AICHECK_EMBEDDING_FORCE_OFFLINE_HASH", False)
+    client = EmbeddingClient()
+    if client.enabled and not force_offline:
+        vectors: list[dict[str, Any]] = []
+        try:
+            for offset in range(0, len(texts), EMBED_BATCH_SIZE):
+                for item in client.embed_sync(texts[offset : offset + EMBED_BATCH_SIZE]):
+                    if not isinstance(item, dict):
+                        continue
+                    vectors.append({**item, "index": offset + int(item.get("index") or 0)})
+            return vectors, client.model_id, client.index_version, client.dimensions, None
+        except Exception as exc:
+            if not env_bool("AICHECK_EMBEDDING_ALLOW_HASH_FALLBACK", False):
+                raise RuntimeError("remote_embedding_unavailable") from exc
+            target = active_embedding_target()
+            fallback_reason = "remote_embedding_unavailable_hash_fallback"
+            vectors = []
+            for offset in range(0, len(texts), EMBED_BATCH_SIZE):
+                for item in offline_hash_embeddings(texts[offset : offset + EMBED_BATCH_SIZE]):
+                    vectors.append({**item, "index": offset + int(item.get("index") or 0)})
+            return vectors, OFFLINE_EMBEDDING_MODEL, STANDARD_INDEX_VERSION, int(target["dimensions"]), fallback_reason
+    vectors = []
+    for offset in range(0, len(texts), EMBED_BATCH_SIZE):
+        for item in offline_hash_embeddings(texts[offset : offset + EMBED_BATCH_SIZE]):
+            vectors.append({**item, "index": offset + int(item.get("index") or 0)})
+    return vectors, OFFLINE_EMBEDDING_MODEL, STANDARD_INDEX_VERSION, int(active_embedding_target()["dimensions"]), None
 
 
 def parse_with_ocr_service(
@@ -149,6 +244,21 @@ def parse_with_ocr_service(
     else:
         client = None
     if client is not None and client.enabled:
+        local_source_path = local_path_from_storage_key(storage_key, WORKSPACE_ROOT)
+        upload_local_file = env_bool("AICHECK_OCR_UPLOAD_LOCAL_FILES", True)
+        if local_source_path and upload_local_file and hasattr(client, "parse_upload_sync"):
+            return client.parse_upload_sync(
+                local_source_path,
+                {
+                    "documentId": document_id,
+                    "documentVersionId": version_id,
+                    "documentType": document_type,
+                    "profileId": profile_id,
+                    "storageKey": storage_key,
+                    "fileName": file_name,
+                    "options": {"enableTables": True, "enableSeals": True, "enableFallback": True, **(options or {})},
+                },
+            )
         use_job_api = os.getenv("AICHECK_OCR_USE_JOB_API", "true").lower() != "false"
         if use_job_api and hasattr(client, "parse_via_job_sync"):
             return client.parse_via_job_sync(
@@ -188,7 +298,13 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
     knowledge_file = repo.knowledge_file_for_version(version_id)
     ocr_options: dict[str, Any] = {}
     if (knowledge_file or {}).get("sourceType") == "standard":
-        ocr_options["textLayerOnly"] = True
+        ocr_options.update(
+            {
+                "standardIndexingStrategy": "auto_text_layer_then_remote_ocr",
+                "preferTextLayer": True,
+                "enableFallback": True,
+            }
+        )
     ocr_job_record = repo.create_ocr_job_record(
         document_id=document_id,
         version_id=version_id,
@@ -272,6 +388,11 @@ def slice_knowledge(self, file_id: str) -> dict[str, Any]:
         return {"fileId": file_id, "status": "missing", "chunkCount": 0}
     fragments = knowledge_slice_fragments_from_ocr(file)
     if not fragments:
+        version = repo.find_one("versions", file.get("documentVersionId"))
+        source_path = local_path_from_storage_key((version or {}).get("storageKey"), WORKSPACE_ROOT)
+        if source_path:
+            fragments = units_from_local_file(source_path)
+    if not fragments:
         fields = [
             item
             for item in repo.state["extracted_fields"]
@@ -290,14 +411,23 @@ def slice_knowledge(self, file_id: str) -> dict[str, Any]:
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 def embed_knowledge(self, file_id: str) -> dict[str, Any]:
+    # Deployment contract marker: embedding_batches_for_chunks keeps offline_hash_embeddings / offline_hash fallback.
     refresh_worker_state()
-    chunks = [item for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") == file_id]
-    embedding_model = "embedding-default"
+    chunks = sorted(
+        [item for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") == file_id],
+        key=lambda item: int(item.get("chunkNo") or 0),
+    )
+    embedding_model = OFFLINE_EMBEDDING_MODEL
+    index_version = STANDARD_INDEX_VERSION
+    expected_dimensions = int(active_embedding_target()["dimensions"])
     task = next((item for item in repo.state["knowledge_tasks"] if item.get("taskType") == "vector" and item.get("targetId") == file_id), None)
     file = repo.find_one("knowledge_files", file_id)
     if task is None and file is None and not chunks:
         load_state()
-        chunks = [item for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") == file_id]
+        chunks = sorted(
+            [item for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") == file_id],
+            key=lambda item: int(item.get("chunkNo") or 0),
+        )
         task = next((item for item in repo.state["knowledge_tasks"] if item.get("taskType") == "vector" and item.get("targetId") == file_id), None)
         file = repo.find_one("knowledge_files", file_id)
     vector_count = len(chunks) or 1
@@ -314,25 +444,21 @@ def embed_knowledge(self, file_id: str) -> dict[str, Any]:
         return {"fileId": file_id, "status": "missing", "vectorCount": 0}
     try:
         vectors: list[dict[str, Any]] = []
+        fallback_reason = None
         if chunks:
-            embedding_response = LiteLLMClient().embed_sync(
-                [item["text"] for item in chunks[:16]],
-                model=embedding_model,
-            )
-            vectors = [
-                item
-                for item in embedding_response.get("data", [])
-                if isinstance(item, dict)
-            ]
+            vectors, embedding_model, index_version, expected_dimensions, fallback_reason = embedding_batches_for_chunks(chunks)
             vector_count = len(vectors)
         result = repo.apply_embed_result(
             file_id,
             vector_count,
             vectors=vectors,
             embedding_model=embedding_model,
+            index_version=index_version,
+            expected_dimensions=expected_dimensions,
+            vector_status_reason=fallback_reason,
         )
     except Exception:
-        message = f"EXTERNAL_TOOL_FAILED: {service_failure_message('LiteLLM embedding')}"
+        message = "EXTERNAL_TOOL_FAILED: embedding 向量化失败，请检查远程 Qwen3 服务、隧道和向量索引状态。"
         result = {"fileId": file_id, "status": "failed", "errorMessage": message}
         if task:
             repo.mark_task_failed(task, message)

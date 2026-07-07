@@ -1,0 +1,78 @@
+services:
+  aicheck-ocr-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.ocr
+      args:
+        AICHECK_OCR_REQUIREMENTS: requirements-ocr-core.txt
+        AICHECK_PIP_INDEX_URL: ${AICHECK_PIP_INDEX_URL:-}
+    command: uvicorn apps.ocr_service.main:app --host 0.0.0.0 --port 8010
+    environment:
+      AICHECK_OCR_ALLOW_PLACEHOLDER: "false"
+      AICHECK_OCR_OFFLINE_ONLY: ${AICHECK_OCR_OFFLINE_ONLY:-false}
+      AICHECK_OCR_DISABLE_NETWORK: ${AICHECK_OCR_DISABLE_NETWORK:-false}
+      AICHECK_OCR_PDF_TEXT_LAYER_FAST_PATH: "true"
+      AICHECK_OCR_ALLOW_DIRECT_PATHS: "false"
+      AICHECK_OCR_ALLOWED_LOCAL_DIRS: /tmp,/var/tmp
+      PADDLEOCR_MODEL_DIR: /models/paddleocr
+      PADDLEX_MODEL_DIR: /models/paddlex
+      AICHECK_PADDLEX_MODEL_CACHE: /models/paddlex
+      AICHECK_PADDLEOCR_DET_MODEL_DIR: /models/paddleocr/PP-OCRv6_medium_det
+      AICHECK_PADDLEOCR_REC_MODEL_DIR: /models/paddleocr/PP-OCRv6_medium_rec
+      AICHECK_OCR_SUBPROCESS_PYTHON: /usr/local/bin/python
+      AICHECK_OCR_ENABLE_PERSISTENT_SUBPROCESS: "true"
+      AICHECK_OCR_PERSISTENT_WORKER_TIMEOUT: "240"
+      AICHECK_PPSTRUCTURE_LAYOUT_MODEL_DIR: /models/paddlex/PP-DocLayout-L
+      AICHECK_PPSTRUCTURE_WIRED_TABLE_STRUCTURE_MODEL_DIR: /models/paddlex/SLANeXt_wired
+      AICHECK_PPSTRUCTURE_WIRED_TABLE_CELLS_MODEL_DIR: /models/paddlex/RT-DETR-L_wired_table_cell_det
+      AICHECK_PPSTRUCTURE_WIRELESS_TABLE_STRUCTURE_MODEL_DIR: /models/paddlex/SLANeXt_wireless
+      AICHECK_PPSTRUCTURE_WIRELESS_TABLE_CELLS_MODEL_DIR: /models/paddlex/RT-DETR-L_wireless_table_cell_det
+      AICHECK_ENABLE_OPENCV_TABLE_GRID: "true"
+      AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE: ${AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE:-false}
+      PADDLEOCR_VL_MODEL_DIR: /models/paddleocr-vl
+      AICHECK_ENABLE_PADDLEOCR_VL: ${AICHECK_ENABLE_PADDLEOCR_VL:-false}
+      HF_HOME: /cache/huggingface
+      TRANSFORMERS_CACHE: /cache/huggingface
+      HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-0}
+      TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE:-0}
+      PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True"
+      PADDLE_PDX_MODEL_SOURCE: ${PADDLE_PDX_MODEL_SOURCE:-local}
+    ports:
+      - "127.0.0.1:8010:8010"
+    volumes:
+      - /data/aicheck-models:/models
+      - /data/aicheck-cache:/cache
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/healthz', timeout=5).read()\""]
+      interval: 15s
+      timeout: 8s
+      retries: 20
+
+  aicheck-embedding-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.embedding
+      args:
+        AICHECK_PIP_INDEX_URL: ${AICHECK_PIP_INDEX_URL:-}
+    command: uvicorn apps.embedding_service.main:app --host 0.0.0.0 --port 7997
+    environment:
+      AICHECK_EMBEDDING_MODEL_ID: ${AICHECK_EMBEDDING_MODEL_ID:-Qwen/Qwen3-Embedding-0.6B}
+      AICHECK_EMBEDDING_SERVED_MODEL_NAME: ${AICHECK_EMBEDDING_SERVED_MODEL_NAME:-embedding-default}
+      AICHECK_EMBEDDING_DEVICE: ${AICHECK_EMBEDDING_DEVICE:-cpu}
+      AICHECK_EMBEDDING_NORMALIZE: "true"
+      AICHECK_EMBEDDING_PRELOAD: ${AICHECK_EMBEDDING_PRELOAD:-true}
+      INFINITY_API_KEY: ${INFINITY_API_KEY:-}
+      HF_HOME: /models/huggingface
+      TRANSFORMERS_CACHE: /models/huggingface
+      HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-0}
+      TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE:-0}
+    ports:
+      - "127.0.0.1:7997:7997"
+    volumes:
+      - /data/aicheck-models:/models
+      - /data/aicheck-cache:/cache
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:7997/health', timeout=5).read()\""]
+      interval: 15s
+      timeout: 8s
+      retries: 20

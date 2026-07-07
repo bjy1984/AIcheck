@@ -670,6 +670,7 @@ class PaddleOcrSubprocessEngine(LocalOcrEngine):
 
     def __init__(self) -> None:
         self._worker: subprocess.Popen[str] | None = None
+        self._worker_key: str | None = None
         self._worker_lock = threading.Lock()
 
     def available(self) -> bool:
@@ -714,9 +715,9 @@ class PaddleOcrSubprocessEngine(LocalOcrEngine):
         det_dir = subprocess_model_dir("AICHECK_PADDLEOCR_DET_MODEL_DIR", "PP-OCRv6_medium_det")
         rec_dir = subprocess_model_dir("AICHECK_PADDLEOCR_REC_MODEL_DIR", "PP-OCRv6_medium_rec")
         runtime = paddle_runtime_options(profile)
-        if env_bool("AICHECK_OCR_ENABLE_PERSISTENT_SUBPROCESS", False) and runtime == paddle_runtime_options(None):
+        if env_bool("AICHECK_OCR_ENABLE_PERSISTENT_SUBPROCESS", False):
             try:
-                return self.parse_with_persistent_worker(Path(python_bin), source_path, det_dir, rec_dir)
+                return self.parse_with_persistent_worker(Path(python_bin), source_path, det_dir, rec_dir, runtime)
             except Exception:
                 self.reset_worker()
                 # Fall through to the one-shot subprocess path. The caller still receives a normal engine result.
@@ -809,9 +810,10 @@ class PaddleOcrSubprocessEngine(LocalOcrEngine):
         source_path: Path,
         det_dir: Path,
         rec_dir: Path,
+        runtime: dict[str, Any],
     ) -> dict[str, Any]:
         with self._worker_lock:
-            worker = self.ensure_worker(python_bin, det_dir, rec_dir)
+            worker = self.ensure_worker(python_bin, det_dir, rec_dir, runtime)
             if worker.stdin is None:
                 raise RuntimeError("PaddleOCR worker stdin is unavailable.")
             request_id = uuid4().hex
@@ -826,12 +828,28 @@ class PaddleOcrSubprocessEngine(LocalOcrEngine):
                 "workerMode": "persistent",
             }
 
-    def ensure_worker(self, python_bin: Path, det_dir: Path, rec_dir: Path) -> subprocess.Popen[str]:
-        if self._worker is not None and self._worker.poll() is None:
+    def ensure_worker(
+        self,
+        python_bin: Path,
+        det_dir: Path,
+        rec_dir: Path,
+        runtime: dict[str, Any],
+    ) -> subprocess.Popen[str]:
+        worker_key = json.dumps(
+            {
+                "detDir": str(det_dir),
+                "recDir": str(rec_dir),
+                "runtime": runtime,
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        if self._worker is not None and self._worker.poll() is None and self._worker_key == worker_key:
             return self._worker
         self.reset_worker()
+        self._worker_key = worker_key
         self._worker = subprocess.Popen(
-            [str(python_bin), "-u", "-c", paddle_ocr_worker_script(), str(det_dir), str(rec_dir)],
+            [str(python_bin), "-u", "-c", paddle_ocr_worker_script(), str(det_dir), str(rec_dir), json.dumps(runtime)],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -868,6 +886,7 @@ class PaddleOcrSubprocessEngine(LocalOcrEngine):
     def reset_worker(self) -> None:
         worker = self._worker
         self._worker = None
+        self._worker_key = None
         if worker is None:
             return
         if worker.poll() is None:
@@ -886,13 +905,14 @@ def paddle_ocr_worker_script() -> str:
         from paddleocr import PaddleOCR
 
         det_dir, rec_dir = sys.argv[1:3]
+        runtime = json.loads(sys.argv[3]) if len(sys.argv) > 3 else {}
         ocr = PaddleOCR(
             text_detection_model_dir=det_dir,
             text_recognition_model_dir=rec_dir,
-            use_doc_orientation_classify=False,
-            use_doc_unwarping=False,
-            use_textline_orientation=False,
-            text_det_limit_side_len=2400,
+            use_doc_orientation_classify=bool(runtime.get("use_doc_orientation_classify")),
+            use_doc_unwarping=bool(runtime.get("use_doc_unwarping")),
+            use_textline_orientation=bool(runtime.get("use_textline_orientation")),
+            text_det_limit_side_len=int(runtime.get("text_det_limit_side_len") or 2400),
             text_det_limit_type="max",
             enable_mkldnn=False,
         )

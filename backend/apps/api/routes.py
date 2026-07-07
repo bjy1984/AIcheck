@@ -46,9 +46,11 @@ from libs.db.repository import flush_state, load_state, repo
 from libs.db.seed import PROJECT_ID, ROLE_ACTIONS, ROLE_NODE_MAP, STANDARD_RULES_SOURCE_ID, STANDARD_RULES_VERSION
 from libs.embedding_models import embedding_registry_payload, embedding_runtime_config
 from libs.integrations import task_dispatcher
+from libs.integrations.embedding_client import EmbeddingClient
 from libs.integrations.errors import IntegrationServiceError
 from libs.integrations.ocr_client import OcrClient
 from libs.integrations.storage import ObjectStorageUnavailable, object_storage, parse_storage_url
+from libs.knowledge_indexing import OFFLINE_EMBEDDING_MODEL, STANDARD_INDEX_VERSION, active_embedding_target, offline_hash_embedding
 from libs.knowledge_readiness import build_knowledge_rule_scorecard
 from libs.knowledge_retrieval import answer_draft_from_clauses, retrieve_knowledge_clauses
 from libs.review_orchestrator import (
@@ -983,6 +985,16 @@ def iter_rules_standard_files() -> list[Path]:
     return sorted(files, key=lambda item: str(item.relative_to(RULES_STANDARDS_ROOT)).lower())
 
 
+def iter_rules_import_files() -> list[dict[str, Any]]:
+    files = [
+        {"path": path, "contextType": "standard_reference", "label": "standard"}
+        for path in iter_rules_standard_files()
+    ]
+    if RULES_BUSINESS_RULES_PATH.exists() and RULES_BUSINESS_RULES_PATH.is_file():
+        files.append({"path": RULES_BUSINESS_RULES_PATH, "contextType": "business_rule_context", "label": "business_rule_context"})
+    return sorted(files, key=lambda item: str(item["path"].relative_to(WORKSPACE_ROOT)).lower())
+
+
 def existing_knowledge_file_by_hash(source_id: str, file_hash: str) -> dict[str, Any] | None:
     for file in repo.state.get("knowledge_files", []):
         if file.get("sourceId") != source_id:
@@ -1002,6 +1014,8 @@ def sync_knowledge_source_counts(source: dict[str, Any]) -> None:
             source["vectorStatus"] = "已向量化"
         elif any(item.get("vectorStatus") == "向量化中" for item in source_files):
             source["vectorStatus"] = "向量化中"
+        elif any(item.get("vectorStatus") == "向量化失败" for item in source_files):
+            source["vectorStatus"] = "部分失败"
         else:
             source["vectorStatus"] = "待向量化"
     else:
@@ -1241,6 +1255,9 @@ def create_imported_knowledge_records(
     project_name: str | None = None,
     node_id: int | None = None,
     node_name: str | None = None,
+    storage_key_override: str | None = None,
+    storage_bucket_override: str | None = None,
+    context_type: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
     now = server_time()
     file_hash = hashlib.sha256(data).hexdigest()
@@ -1249,13 +1266,16 @@ def create_imported_knowledge_records(
     document_id = f"KDOC-{seed}"
     version_id = f"KDV-{seed}-V1"
     file_id = f"KF-KB-{seed}"
-    storage_key, storage_bucket = store_knowledge_upload(
-        source_id=source_id,
-        file_id=file_id,
-        file_name=file_name,
-        content_type=content_type,
-        data=data,
-    )
+    if storage_key_override:
+        storage_key, storage_bucket = storage_key_override, storage_bucket_override or "local"
+    else:
+        storage_key, storage_bucket = store_knowledge_upload(
+            source_id=source_id,
+            file_id=file_id,
+            file_name=file_name,
+            content_type=content_type,
+            data=data,
+        )
     file_type = Path(file_name).suffix.lower().lstrip(".") or content_type
     document = {
         "id": document_id,
@@ -1313,6 +1333,9 @@ def create_imported_knowledge_records(
         "vectorCount": 0,
         "updatedAt": now,
         "sourceRelativePath": relative_path,
+        "contextType": context_type or "standard_reference",
+        "embeddingModel": OFFLINE_EMBEDDING_MODEL,
+        "indexVersion": STANDARD_INDEX_VERSION,
         "actions": ["knowledge:view", "knowledge:reindex"],
     }
     task = {
@@ -7572,7 +7595,7 @@ def fde_document_knowledge_lineage(document: dict[str, Any]) -> dict[str, Any]:
             label="向量入库",
             done=vectorized,
             status=vector_status or "待向量化",
-            evidence=f"向量 {vector_count}/{chunk_count} 条，模型 {document.get('embeddingModel') or 'embedding-default'}",
+            evidence=f"向量 {vector_count}/{chunk_count} 条，模型 {document.get('embeddingModel') or OFFLINE_EMBEDDING_MODEL}",
             action=(
                 "排查失败 chunk 并补跑 knowledge.embed"
                 if vector_gap
@@ -7618,7 +7641,7 @@ def fde_document_knowledge_lineage(document: dict[str, Any]) -> dict[str, Any]:
         "latestTaskType": latest_task_type,
         "latestTaskStatus": latest_task_status,
         "vectorIndex": {
-            "embeddingModel": document.get("embeddingModel") or "embedding-default",
+            "embeddingModel": document.get("embeddingModel") or OFFLINE_EMBEDDING_MODEL,
             "indexVersion": document.get("indexVersion") or "knowledge-index@local",
             "dimensions": fde_as_int(document.get("vectorDimensions"), 1024),
             "chunkCount": chunk_count,
@@ -8111,7 +8134,7 @@ def fde_project_vector_quality(documents: list[dict[str, Any]], review_runs: lis
                 "metadataCompleteness": round(document_metadata_score, 4),
                 "pageIndexReady": page_index_ready,
                 "pageIndexNodeCount": fde_as_int(document.get("pageIndexNodeCount")),
-                "embeddingModel": document.get("embeddingModel") or "embedding-default",
+                "embeddingModel": document.get("embeddingModel") or OFFLINE_EMBEDDING_MODEL,
                 "indexVersion": document.get("indexVersion") or "knowledge-index@local",
                 "vectorDimensions": fde_as_int(document.get("vectorDimensions"), 1024),
                 "vectorStatus": document.get("vectorStatus") or "待向量化",
@@ -8687,7 +8710,7 @@ def fde_vector_file_detail(project_id: str, document_version_id: str, *, chunk_p
                 "tokenCount": fde_as_int(chunk.get("tokenCount")),
                 "vectorStatus": "ready" if vector_ready else "missing",
                 "vectorStatusLabel": "已入库" if vector_ready else "缺向量",
-                "embeddingModel": document.get("embeddingModel") or "embedding-default",
+                "embeddingModel": document.get("embeddingModel") or OFFLINE_EMBEDDING_MODEL,
                 "indexVersion": document.get("indexVersion") or "knowledge-index@local",
                 "retrievalHitCount": len(retrieval_hits),
                 "retrievalTraceIds": [
@@ -8743,7 +8766,7 @@ def fde_vector_file_detail(project_id: str, document_version_id: str, *, chunk_p
                 "tokenCount": 0,
                 "vectorStatus": "ready" if vector_ready else "missing",
                 "vectorStatusLabel": "按文件计数推导已入库" if vector_ready else "缺向量",
-                "embeddingModel": document.get("embeddingModel") or "embedding-default",
+                "embeddingModel": document.get("embeddingModel") or OFFLINE_EMBEDDING_MODEL,
                 "indexVersion": document.get("indexVersion") or "knowledge-index@local",
                 "retrievalHitCount": 0,
                 "retrievalTraceIds": [],
@@ -8800,7 +8823,7 @@ def fde_vector_file_detail(project_id: str, document_version_id: str, *, chunk_p
     chunk_page_size = max(1, min(fde_as_int(chunk_page_size, 50), 200))
     chunk_page = max(1, fde_as_int(chunk_page, 1))
     paged_chunk_rows = page(chunk_rows, chunk_page, chunk_page_size)
-    embedding_model = str(document.get("embeddingModel") or "embedding-default")
+    embedding_model = str(document.get("embeddingModel") or OFFLINE_EMBEDDING_MODEL)
     index_version = str(document.get("indexVersion") or "knowledge-index@local")
     vector_dimensions = fde_as_int(document.get("vectorDimensions"), 1024)
     text_rows = fde_text_stage_rows(extracted_fields, chunk_rows)
@@ -16445,13 +16468,20 @@ def import_standards_from_rules_folder(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     def produce():
-        standard_files = iter_rules_standard_files()
         if not RULES_STANDARDS_ROOT.exists():
             return fail(
                 errors.NOT_FOUND,
                 request,
                 message="未找到 rules/standards 标准规范目录。",
             )
+        if not RULES_BUSINESS_RULES_PATH.exists():
+            return fail(
+                errors.NOT_FOUND,
+                request,
+                message="未找到 rules/业务规则.md 业务规则上下文文件。",
+            )
+        import_files = iter_rules_import_files()
+        standard_files = [item for item in import_files if item.get("contextType") == "standard_reference"]
         if not standard_files:
             return fail(
                 errors.VALIDATION_ERROR,
@@ -16471,8 +16501,8 @@ def import_standards_from_rules_folder(
         removed_records = {"files": 0, "documents": 0, "versions": 0, "chunks": 0, "tasks": 0, "evidenceLinks": 0}
         reset_aliases_by_path: dict[str, str] = {}
         scanned_relative_paths = {
-            safe_relative_path(str(path.relative_to(WORKSPACE_ROOT)), path.name)
-            for path in standard_files
+            safe_relative_path(str(item["path"].relative_to(WORKSPACE_ROOT)), item["path"].name)
+            for item in import_files
         }
         if reset_existing:
             existing_files = [
@@ -16511,7 +16541,10 @@ def import_standards_from_rules_folder(
         dispatches: list[dict[str, Any]] = []
         skipped: list[dict[str, str]] = []
 
-        for path in standard_files:
+        rebuild_index = bool(body.get("rebuildIndex") or body.get("buildIndex") or body.get("dispatchIndex"))
+        for import_item in import_files:
+            path = import_item["path"]
+            context_type = str(import_item.get("contextType") or "standard_reference")
             relative_path = safe_relative_path(str(path.relative_to(WORKSPACE_ROOT)), path.name)
             file_name = safe_upload_file_name(path.name)
             file_size = path.stat().st_size
@@ -16551,6 +16584,9 @@ def import_standards_from_rules_folder(
                 context_description=f"来自 {relative_path}；按 rules/业务规则.md 引用标准整理入库。",
                 uploader_name=uploader_name,
                 record_seed=record_seed,
+                storage_key_override=f"local://{relative_path}",
+                storage_bucket_override="local",
+                context_type=context_type,
             )
             old_file_id = reset_aliases_by_path.get(relative_path)
             if old_file_id and old_file_id != knowledge_file["id"]:
@@ -16566,6 +16602,11 @@ def import_standards_from_rules_folder(
             imported_files.append(versioned_record("knowledge-file", knowledge_file))
             imported_tasks.append(versioned_record("knowledge-task", task))
             dispatches.append({"knowledgeTaskId": task["id"], **dispatch})
+            if rebuild_index:
+                slice_dispatch = task_dispatcher.dispatch_slice(knowledge_file["id"])
+                vector_dispatch = task_dispatcher.dispatch_embed(knowledge_file["id"])
+                dispatches.append({"knowledgeTaskId": knowledge_file["id"], "pipelineStage": "slice", **slice_dispatch})
+                dispatches.append({"knowledgeTaskId": knowledge_file["id"], "pipelineStage": "vector", **vector_dispatch})
 
         sync_knowledge_source_counts(source)
         audit_id = repo.add_audit(
@@ -16584,10 +16625,13 @@ def import_standards_from_rules_folder(
                     "sourceId": source["id"],
                     "standardsRoot": str(RULES_STANDARDS_ROOT.relative_to(WORKSPACE_ROOT)),
                     "businessRulesPath": str(RULES_BUSINESS_RULES_PATH.relative_to(WORKSPACE_ROOT)),
-                    "scanned": len(standard_files),
+                    "scanned": len(import_files),
+                    "standardFiles": len(standard_files),
+                    "businessRuleContextFiles": len(import_files) - len(standard_files),
                     "imported": len(imported_files),
                     "skipped": len(skipped),
                     "reset": reset_existing,
+                    "rebuildIndex": rebuild_index,
                     "removed": removed_records["files"],
                 },
                 "auditLogId": audit_id,
@@ -17362,7 +17406,7 @@ def knowledge_file_vectors(request: Request, file_id: str):
             "storedVectorCount": len(vectors),
             "indexVersion": "proj-v2026.06.26",
             "dimensions": dimensions,
-            "embeddingModel": file.get("embeddingModel") or "embedding-default",
+            "embeddingModel": file.get("embeddingModel") or OFFLINE_EMBEDDING_MODEL,
             "updatedAt": file.get("updatedAt"),
             "vectors": vectors,
         },
@@ -17750,6 +17794,34 @@ def batch_reindex(request: Request, body: dict[str, Any] = Body(default_factory=
 @router.post("/knowledge/retrieval-test")
 def retrieval_test(request: Request, body: dict[str, Any] = Body(default_factory=dict)):
     question = body.get("question") or "焊工资格证有效期如何校验？"
+    dense_hits: list[dict[str, Any]] = []
+    embedding_model = OFFLINE_EMBEDDING_MODEL
+    index_version = body.get("indexVersion") or STANDARD_INDEX_VERSION
+    vector_status_reason = None
+    if os.getenv("AICHECK_RETRIEVAL_DENSE_DISABLE", "false").lower() != "true":
+        query_embedding = None
+        embedding_client = EmbeddingClient()
+        if embedding_client.enabled and os.getenv("AICHECK_EMBEDDING_FORCE_OFFLINE_HASH", "false").lower() != "true":
+            try:
+                vectors = embedding_client.embed_sync([str(question)], timeout=30)
+                query_embedding = (vectors[0] if vectors else {}).get("embedding")
+                embedding_model = embedding_client.model_id
+                index_version = body.get("indexVersion") or embedding_client.index_version
+            except Exception:
+                vector_status_reason = "remote_embedding_unavailable_hash_fallback"
+        if not isinstance(query_embedding, list) or not query_embedding:
+            query_embedding = offline_hash_embedding(str(question))
+            embedding_model = OFFLINE_EMBEDDING_MODEL
+            index_version = body.get("indexVersion") or STANDARD_INDEX_VERSION
+        search_args = {
+            "top_k": int(body.get("topK") or 5),
+            "source_id": body.get("sourceId"),
+            "index_version": index_version,
+        }
+        if repo.postgres_enabled and repo.sync_postgres is not None:
+            dense_hits = repo.search_knowledge_vectors(query_embedding, **search_args)
+        if not dense_hits:
+            dense_hits = repo.search_local_knowledge_vectors(query_embedding, **search_args)
     retrieval = retrieve_knowledge_clauses(
         repo.state,
         query=str(question),
@@ -17758,6 +17830,7 @@ def retrieval_test(request: Request, body: dict[str, Any] = Body(default_factory
         kb_version=body.get("kbVersion"),
         top_k=int(body.get("topK") or 5),
         query_type="interactive_retrieval_test",
+        dense_chunk_ids=[str(item.get("chunkId")) for item in dense_hits if item.get("chunkId")],
     )
     return ok(
         {
@@ -17765,6 +17838,12 @@ def retrieval_test(request: Request, body: dict[str, Any] = Body(default_factory
             "hits": retrieval["trace"]["selectedClauses"],
             "retrievalTrace": retrieval["trace"],
             "latencyMs": 12,
+            "denseHits": dense_hits,
+            "embeddingModel": embedding_model,
+            "indexVersion": index_version,
+            "activeEmbeddingModel": active_embedding_target()["embeddingModel"],
+            "activeIndexVersion": active_embedding_target()["indexVersion"],
+            "vectorStatusReason": vector_status_reason or "ok",
             "usedIndexVersions": sorted({item.get("kbVersion") for item in retrieval["clauses"] if item.get("kbVersion")}),
         },
         request,

@@ -197,7 +197,7 @@ REQUIRED_LITELLM_CLIENT_METHODS = {
     "first_message_text": ["choices", "message", "content"],
 }
 REQUIRED_LITELLM_WORKER_USAGE = {
-    "embed_knowledge": ["LiteLLMClient().embed_sync", "embedding-default", "EXTERNAL_TOOL_FAILED"],
+    "embed_knowledge": ["offline_hash_embeddings", "OFFLINE_EMBEDDING_MODEL", "offline_hash"],
     "ai_recheck": ["LiteLLMClient().chat_sync", "review-chat", "AI_RUN_FAILED", "first_message_text"],
     "llm_compare": ["LiteLLMClient().chat_sync", "default-chat", "compare-fast", "EXTERNAL_TOOL_FAILED"],
 }

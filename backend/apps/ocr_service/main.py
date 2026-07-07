@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import tempfile
+from base64 import urlsafe_b64decode
 from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, Request
@@ -52,6 +55,49 @@ async def parse_document(request: Request, payload: dict):
         ),
         request,
     )
+
+
+@app.post("/internal/ocr/parse-upload")
+async def parse_uploaded_document(request: Request):
+    metadata = "{}"
+    encoded_metadata = request.headers.get("X-AICheck-Ocr-Metadata-B64")
+    if encoded_metadata:
+        try:
+            metadata = urlsafe_b64decode(encoded_metadata.encode("ascii")).decode("utf-8")
+        except Exception:
+            return fail(errors.VALIDATION_ERROR, request, message="X-AICheck-Ocr-Metadata-B64 无效。")
+    try:
+        payload = json.loads(metadata or "{}")
+    except json.JSONDecodeError:
+        return fail(errors.VALIDATION_ERROR, request, message="metadata 必须是 JSON。")
+    body = await request.body()
+    if not body:
+        return fail(errors.VALIDATION_ERROR, request, message="上传文件内容不能为空。")
+    file_name = str(payload.get("fileName") or "document").strip() or "document"
+    suffix = Path(file_name).suffix
+    tmp_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(prefix="aicheck-ocr-upload-", suffix=suffix, delete=False) as tmp:
+            tmp.write(body)
+            tmp_path = tmp.name
+        return ok(
+            ocr_service.parse_document(
+                tmp_path,
+                file_name=file_name,
+                profile_id=payload.get("profileId"),
+                document_type=payload.get("documentType"),
+                document_version_id=payload.get("documentVersionId"),
+                business_pack_id=payload.get("businessPackId"),
+                options=payload.get("options") if isinstance(payload.get("options"), dict) else None,
+            ),
+            request,
+        )
+    finally:
+        try:
+            if tmp_path:
+                Path(tmp_path).unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 @app.post("/internal/ocr/page-preview")

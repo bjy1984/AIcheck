@@ -17,6 +17,13 @@ from libs.db.indexes import POSTGRES_INDEXES
 from libs.db.postgres import bootstrap_local_roles_if_configured, run_transaction_probe
 from apps.api.main import app
 from libs.db.repository import IDEMPOTENCY_COLLECTION, SINGLETON_COLLECTIONS, STATE_COLLECTIONS, repo
+from libs.knowledge_retrieval import (
+    canonical_standard_text,
+    retrieval_quality_bias,
+    standard_alias_candidate_matches,
+    standard_alias_match_score,
+    standard_alias_matches,
+)
 
 
 client = TestClient(app)
@@ -7015,6 +7022,77 @@ def test_upload_creates_knowledge_task_and_retrieval_works() -> None:
     assert clauses["items"][0]["clauseId"]
 
 
+def test_standard_aliases_normalize_ocr_glyphs_and_business_phrases() -> None:
+    normalized = canonical_standard_text("犌犅／犜３０８７—２０２２").replace(" ", "")
+    assert "GB/T3087-2022" in normalized
+
+    low_pressure_candidate = {
+        "sourceRelativePath": "rules/standards/GBT+3087-2022.pdf",
+        "title": "GBT+3087-2022.pdf",
+        "tags": [],
+    }
+    high_pressure_candidate = {
+        "sourceRelativePath": "rules/standards/GBT+5310-2023.pdf",
+        "title": "GBT+5310-2023.pdf",
+        "tags": [],
+    }
+
+    assert standard_alias_matches("低中压锅炉管验收依据")[0]["number"] == "3087"
+    assert standard_alias_match_score(low_pressure_candidate, "低中压锅炉管验收依据") >= 100
+    assert standard_alias_match_score(low_pressure_candidate, "高压锅炉管验收依据") == 0
+    assert standard_alias_match_score(high_pressure_candidate, "高压锅炉管验收依据") >= 100
+
+    welding_storage_candidate = {
+        "sourceRelativePath": "rules/standards/JB∕T 3223-2017 焊接材料质量管理规程.pdf",
+        "title": "焊接材料质量管理规程",
+        "tags": [],
+    }
+    paut_candidate = {
+        "sourceRelativePath": "rules/standards/NB_T_47013_split/NBT47013.15-2021 承压设备无损检测 第15部分：相控阵超声检测_可搜索.pdf",
+        "title": "相控阵超声检测",
+        "tags": [],
+    }
+    tofd_candidate = {
+        "sourceRelativePath": "rules/standards/NB_T_47013_split/NB_T 47013.10-2015 承压设备无损检测 第10部分 衍射时差法超声检测.pdf",
+        "title": "衍射时差法超声检测",
+        "tags": [],
+    }
+    ut_candidate = {
+        "sourceRelativePath": "rules/standards/NB_T_47013_split/NBT 47013.3-2023 承压设备无损检测 第3部分 超声检测.pdf",
+        "title": "超声检测",
+        "tags": [],
+    }
+
+    welding_matches = standard_alias_matches("焊材烘干和保管依据是什么？")
+    assert welding_matches[0]["aliasId"] == "jbt-3223-welding-material-quality-management"
+    assert welding_matches[0]["targetStandard"] == "JB/T 3223-2017"
+    assert standard_alias_match_score(welding_storage_candidate, "焊材烘干和保管依据是什么？") >= 100
+    assert standard_alias_candidate_matches(welding_storage_candidate, "焊材烘干和保管依据是什么？")[0]["source"]
+
+    assert standard_alias_match_score(ut_candidate, "普通超声检测报告依据") >= 100
+    assert standard_alias_match_score(ut_candidate, "相控阵检测报告依据") == 0
+    assert standard_alias_match_score(paut_candidate, "相控阵检测报告依据") >= 100
+    assert standard_alias_match_score(tofd_candidate, "TOFD 超声检测报告依据") >= 100
+
+    business_bias = retrieval_quality_bias(
+        {
+            "sourceRelativePath": "rules/业务规则.md",
+            "scope": {"contextType": "business_rule_context"},
+            "tags": ["业务规则上下文"],
+        },
+        "锅炉钢管复验报告应该引用什么标准？",
+    )
+    standard_bias = retrieval_quality_bias(
+        {
+            "sourceRelativePath": "rules/standards/GBT+3087-2022.pdf",
+            "scope": {"contextType": "standard_reference", "sourceMethod": "remote_ocr"},
+            "tags": ["标准规范"],
+        },
+        "锅炉钢管复验报告应该引用什么标准？",
+    )
+    assert business_bias < standard_bias
+
+
 def test_knowledge_retrieval_query_router_supports_exact_clause_and_pageindex_routes() -> None:
     exact = assert_ok(
         client.post(
@@ -7092,23 +7170,28 @@ def test_import_rules_standards_folder_uploads_local_standard_files(monkeypatch,
     monkeypatch.setattr(api_routes, "KNOWLEDGE_UPLOAD_ROOT", workspace / "output" / "knowledge_uploads")
 
     imported = assert_ok(client.post("/knowledge/standards/import-from-rules", json={}))
-    assert imported["summary"]["scanned"] == 2
-    assert imported["summary"]["imported"] == 2
+    assert imported["summary"]["scanned"] == 3
+    assert imported["summary"]["standardFiles"] == 2
+    assert imported["summary"]["businessRuleContextFiles"] == 1
+    assert imported["summary"]["imported"] == 3
     assert imported["summary"]["skipped"] == 0
     assert imported["source"]["id"] == "KS-STANDARD-RULES"
-    assert imported["source"]["fileCount"] == 2
+    assert imported["source"]["fileCount"] == 3
     assert {item["sourceId"] for item in imported["files"]} == {"KS-STANDARD-RULES"}
     assert {item["sourceRelativePath"] for item in imported["files"]} == {
+        "rules/业务规则.md",
         "rules/standards/TSG31-2025.pdf",
         "rules/standards/NB_T_47013_split/NB_T 47013.11-2023.md",
     }
+    business_file = next(item for item in imported["files"] if item["sourceRelativePath"] == "rules/业务规则.md")
+    assert business_file["contextType"] == "business_rule_context"
     project_files = assert_ok(client.get("/knowledge/project-files?pageSize=100"))
     assert all(item.get("sourceId") != "KS-STANDARD-RULES" for item in project_files["items"])
 
     repeated = assert_ok(client.post("/knowledge/standards/import-from-rules", json={}))
     assert repeated["summary"]["imported"] == 0
-    assert repeated["summary"]["skipped"] == 2
-    assert repeated["source"]["fileCount"] == 2
+    assert repeated["summary"]["skipped"] == 3
+    assert repeated["source"]["fileCount"] == 3
     imported_ids_by_path = {item["sourceRelativePath"]: item["id"] for item in imported["files"]}
 
     legacy_path = "rules/standards/TSG31-2025.pdf"
@@ -7122,10 +7205,10 @@ def test_import_rules_standards_folder_uploads_local_standard_files(monkeypatch,
     (standards_root / "TSG31-2025.pdf").write_bytes(b"%PDF-1.4\nstandard reset")
     reset = assert_ok(client.post("/knowledge/standards/import-from-rules", json={"reset": True}))
     assert reset["summary"]["reset"] is True
-    assert reset["summary"]["removed"] == 2
-    assert reset["summary"]["imported"] == 2
+    assert reset["summary"]["removed"] == 3
+    assert reset["summary"]["imported"] == 3
     assert reset["summary"]["skipped"] == 0
-    assert reset["source"]["fileCount"] == 2
+    assert reset["source"]["fileCount"] == 3
     reset_ids_by_path = {item["sourceRelativePath"]: item["id"] for item in reset["files"]}
     assert reset_ids_by_path["rules/standards/NB_T_47013_split/NB_T 47013.11-2023.md"] == imported_ids_by_path[
         "rules/standards/NB_T_47013_split/NB_T 47013.11-2023.md"
@@ -7133,6 +7216,62 @@ def test_import_rules_standards_folder_uploads_local_standard_files(monkeypatch,
     legacy_detail = assert_ok(client.get("/knowledge/files/KF-KB-LEGACY-STANDARD"))
     assert legacy_detail["file"]["id"] == reset_ids_by_path[legacy_path]
     assert legacy_detail["file"]["sourceRelativePath"] == legacy_path
+
+
+def test_offline_hash_vectorizer_is_stable_normalized_and_rankable() -> None:
+    from libs.knowledge_indexing import OFFLINE_VECTOR_DIMENSIONS, cosine_similarity, offline_hash_embedding
+
+    text = "无损检测报告签章要求"
+    same = offline_hash_embedding(text)
+    related = offline_hash_embedding("无损检测报告签章和页码证据")
+    unrelated = offline_hash_embedding("焊接热处理温度记录")
+
+    assert len(same) == OFFLINE_VECTOR_DIMENSIONS
+    assert same == offline_hash_embedding(text)
+    assert abs(sum(value * value for value in same) ** 0.5 - 1.0) < 0.0001
+    assert cosine_similarity(same, related) > cosine_similarity(same, unrelated)
+
+
+def test_embed_knowledge_batches_all_chunks_offline(monkeypatch) -> None:
+    from apps.worker import tasks
+    from libs.knowledge_indexing import OFFLINE_EMBEDDING_MODEL, OFFLINE_VECTOR_DIMENSIONS
+
+    knowledge_file = repo.find_one("knowledge_files", "KF-DOC-20260625-004")
+    repo.state["knowledge_chunks"] = [
+        item for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") != knowledge_file["id"]
+    ]
+    for index in range(35):
+        repo.state["knowledge_chunks"].append(
+            {
+                "id": f"CHK-BATCH-{index + 1}",
+                "fileId": knowledge_file["id"],
+                "documentId": knowledge_file["documentId"],
+                "documentVersionId": knowledge_file["documentVersionId"],
+                "chunkNo": index + 1,
+                "text": f"批量向量化文本 {index + 1}",
+                "pageNo": index + 1,
+                "sectionPath": ["批量标准", f"第 {index + 1} 页"],
+                "tokenCount": 12,
+                "createdAt": "2026-07-05 00:00:00",
+            }
+        )
+    knowledge_file["sliceStatus"] = "已切片"
+    knowledge_file["chunkCount"] = 35
+
+    class FailingLiteLLM:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("knowledge embedding must stay offline")
+
+    monkeypatch.setattr(tasks, "LiteLLMClient", FailingLiteLLM)
+    result = tasks.embed_knowledge.run(knowledge_file["id"])
+    vectors = [item for item in repo.state["knowledge_vectors"] if item.get("fileId") == knowledge_file["id"]]
+
+    assert result["status"] == "success"
+    assert len(vectors) == 35
+    assert all(item["embeddingModel"] == OFFLINE_EMBEDDING_MODEL for item in vectors)
+    assert all(item["dimensions"] == OFFLINE_VECTOR_DIMENSIONS for item in vectors)
+    assert knowledge_file["vectorStatus"] == "已向量化"
+    assert knowledge_file["vectorCount"] == 35
 
 
 def test_standard_file_crud_replace_and_delete_refreshes_source_counts() -> None:
@@ -7958,10 +8097,11 @@ def test_project_delete_removes_empty_project_and_archives_project_with_business
 
 def test_upload_complete_inline_ocr_writes_fields_and_slice_task(monkeypatch) -> None:
     from apps.worker import tasks
+    from libs.knowledge_indexing import OFFLINE_EMBEDDING_MODEL, OFFLINE_VECTOR_DIMENSIONS
 
     monkeypatch.setenv("AICHECK_TASK_DISPATCH", "inline")
 
-    def fake_parse(storage_key: str, *, file_name: str | None = None):
+    def fake_parse(storage_key: str, *, file_name: str | None = None, **kwargs):
         return {
             "storageKey": storage_key,
             "fileName": file_name,
@@ -7972,18 +8112,12 @@ def test_upload_complete_inline_ocr_writes_fields_and_slice_task(monkeypatch) ->
             "diagnostics": [],
         }
 
-    class FakeLiteLLMClient:
-        def embed_sync(self, inputs, model: str = "embedding-default"):
-            return {
-                "data": [
-                    {"index": index, "embedding": [0.1 + index, 0.2 + index, 0.3 + index]}
-                    for index, _ in enumerate(inputs)
-                ],
-                "model": model,
-            }
+    class FailingLiteLLMClient:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("knowledge embedding must stay offline")
 
     monkeypatch.setattr(tasks.ocr_service, "parse_document", fake_parse)
-    monkeypatch.setattr(tasks, "LiteLLMClient", lambda: FakeLiteLLMClient())
+    monkeypatch.setattr(tasks, "LiteLLMClient", FailingLiteLLMClient)
     upload = assert_ok(
         client.post(
             "/projects/P-2026-HDCP-001/documents/upload-session",
@@ -8014,7 +8148,10 @@ def test_upload_complete_inline_ocr_writes_fields_and_slice_task(monkeypatch) ->
     assert vector_task["status"] == "成功"
     vectors = assert_ok(client.get(f"/knowledge/files/{knowledge_file_id}/vectors"))
     assert vectors["storedVectorCount"] == 1
-    assert repo.state["knowledge_vectors"][0]["embedding"] == [0.1, 0.2, 0.3]
+    vector = next(item for item in repo.state["knowledge_vectors"] if item.get("fileId") == knowledge_file_id)
+    assert vector["embeddingModel"] == OFFLINE_EMBEDDING_MODEL
+    assert vector["dimensions"] == OFFLINE_VECTOR_DIMENSIONS
+    assert len(vector["embedding"]) == OFFLINE_VECTOR_DIMENSIONS
 
 
 def test_document_preview_and_download_use_current_version_signed_get(monkeypatch) -> None:
@@ -8289,7 +8426,7 @@ def test_failed_knowledge_task_retry_dispatches_worker_and_is_idempotent(monkeyp
     monkeypatch.setenv("AICHECK_TASK_DISPATCH", "inline")
     monkeypatch.delenv("AICHECK_OCR_BASE_URL", raising=False)
 
-    def fake_parse(storage_key: str, *, file_name: str | None = None):
+    def fake_parse(storage_key: str, *, file_name: str | None = None, **kwargs):
         return {
             "storageKey": storage_key,
             "fileName": file_name,
@@ -8588,15 +8725,12 @@ def test_ai_recheck_downgrades_unsupported_litellm_claims(monkeypatch) -> None:
     assert stored["llmMetadata"]["groundingStatus"] == "insufficient_evidence"
 
 
-def test_embed_and_compare_failures_do_not_leak_provider_details(monkeypatch) -> None:
+def test_offline_embed_and_compare_failures_do_not_leak_provider_details(monkeypatch) -> None:
     from apps.worker import tasks
 
     class FailingLiteLLM:
         def chat_sync(self, *args, **kwargs):
             raise RuntimeError("chat failed sk-secret-chat")
-
-        def embed_sync(self, *args, **kwargs):
-            raise RuntimeError("embed failed sk-secret-embed")
 
     repo.state.setdefault("knowledge_chunks", []).append(
         {
@@ -8624,10 +8758,8 @@ def test_embed_and_compare_failures_do_not_leak_provider_details(monkeypatch) ->
     compared = tasks.llm_compare.run(compare["runId"])
     compare_run = repo.find_one("llm_compare_runs", compare["runId"], id_field="runId")
 
-    assert embedded["status"] == "failed"
-    assert vector_task["status"] == "失败"
-    assert "EXTERNAL_TOOL_FAILED" in vector_task["errorMessage"]
-    assert "sk-secret-embed" not in vector_task["errorMessage"]
+    assert embedded["status"] == "success"
+    assert vector_task["status"] == "成功"
     assert compared["status"] == "失败"
     assert compare_run["errorCode"] == "EXTERNAL_TOOL_FAILED"
     assert "LiteLLM 模型对比 调用失败" in compare_run["errorMessage"]
@@ -8707,7 +8839,7 @@ def test_completed_ocr_worker_is_idempotent(monkeypatch) -> None:
 
     calls = {"ocr": 0}
 
-    def fake_parse(storage_key: str, *, file_name: str | None = None):
+    def fake_parse(storage_key: str, *, file_name: str | None = None, **kwargs):
         calls["ocr"] += 1
         return {
             "storageKey": storage_key,
@@ -8740,7 +8872,7 @@ def test_completed_ocr_worker_is_idempotent(monkeypatch) -> None:
 def test_completed_slice_and_embed_workers_are_idempotent(monkeypatch) -> None:
     from apps.worker import tasks
 
-    def fake_parse(storage_key: str, *, file_name: str | None = None):
+    def fake_parse(storage_key: str, *, file_name: str | None = None, **kwargs):
         return {
             "storageKey": storage_key,
             "fileName": file_name,
@@ -8751,15 +8883,12 @@ def test_completed_slice_and_embed_workers_are_idempotent(monkeypatch) -> None:
             "diagnostics": [],
         }
 
-    class FakeLiteLLM:
-        calls = 0
-
-        def embed_sync(self, *args, **kwargs):
-            FakeLiteLLM.calls += 1
-            return {"data": [{"embedding": [0.1, 0.2, 0.3]}]}
+    class FailingLiteLLM:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("knowledge embedding must stay offline")
 
     monkeypatch.setattr(tasks.ocr_service, "parse_document", fake_parse)
-    monkeypatch.setattr(tasks, "LiteLLMClient", FakeLiteLLM)
+    monkeypatch.setattr(tasks, "LiteLLMClient", FailingLiteLLM)
     doc, version = repo.create_document("P-2026-HDCP-001", "slice-embed-idempotent.pdf", "application/pdf")
     tasks.parse_document.run(doc["id"], version["id"], version["storageKey"], doc["fileName"])
     file_id = f"KF-{doc['id']}"
@@ -8773,6 +8902,7 @@ def test_completed_slice_and_embed_workers_are_idempotent(monkeypatch) -> None:
     first_embed = tasks.embed_knowledge.run(file_id)
     vector_task = next(item for item in repo.state["knowledge_tasks"] if item["taskType"] == "vector" and item["targetId"] == file_id)
     vector_logs_after_first = list(vector_task.get("logs", []))
+    vector_count_after_first = len([item for item in repo.state["knowledge_vectors"] if item.get("fileId") == file_id])
     second_embed = tasks.embed_knowledge.run(file_id)
 
     assert first_slice["status"] == "success"
@@ -8781,7 +8911,7 @@ def test_completed_slice_and_embed_workers_are_idempotent(monkeypatch) -> None:
     assert len([item for item in repo.state["knowledge_chunks"] if item.get("fileId") == file_id]) == chunk_count_after_first
     assert first_embed["status"] == "success"
     assert second_embed["alreadyCompleted"] is True
-    assert FakeLiteLLM.calls == 1
+    assert len([item for item in repo.state["knowledge_vectors"] if item.get("fileId") == file_id]) == vector_count_after_first
     assert vector_task.get("logs") == vector_logs_after_first
 
 

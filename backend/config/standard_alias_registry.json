@@ -1,0 +1,349 @@
+{
+  "schemaVersion": "aicheck-standard-alias-registry-v1",
+  "description": "Business phrase to standard-number registry for rules knowledge retrieval. Sources are filename/title/rules context/manual curation; this file does not define knowledge sources.",
+  "rules": [
+    {
+      "id": "gbt-3087-low-medium-boiler-tubes",
+      "source": "manual+filename+business_rules",
+      "phrases": ["低中压锅炉用无缝钢管", "低中压锅炉管", "低中压锅炉钢管", "低中压锅炉管验收", "低中压锅炉管质量证明书"],
+      "exclude": ["高压"],
+      "target": {"prefix": "GBT", "number": "3087", "year": "2022"},
+      "boost": 120
+    },
+    {
+      "id": "gbt-3087-boiler-tube-acceptance",
+      "source": "manual+business_rules",
+      "phrases": ["锅炉管质量证明书", "锅炉管验收依据", "锅炉管验收", "锅炉管质量证明", "锅炉钢管复验", "锅炉管复验", "锅炉钢管复验报告"],
+      "exclude": ["高压"],
+      "target": {"prefix": "GBT", "number": "3087", "year": "2022"},
+      "boost": 100
+    },
+    {
+      "id": "gbt-5310-high-pressure-boiler-tubes",
+      "source": "manual+filename+business_rules",
+      "phrases": ["高压锅炉用无缝钢管", "高压锅炉用钢管", "高压锅炉管", "高压锅炉钢管", "高压锅炉管验收", "高压锅炉钢管复验", "高压锅炉管质量证明书"],
+      "target": {"prefix": "GBT", "number": "5310", "year": "2023"},
+      "boost": 120
+    },
+    {
+      "id": "gbt-8163-fluid-seamless-tubes",
+      "source": "manual+filename",
+      "phrases": ["输送流体用无缝钢管", "流体输送无缝钢管", "流体管无缝钢管", "无缝钢管质量证明书", "无缝钢管质保书"],
+      "exclude": ["锅炉", "高压", "低中压", "石化", "化工", "不锈钢"],
+      "target": {"prefix": "GBT", "number": "8163", "year": "2018"},
+      "boost": 86
+    },
+    {
+      "id": "gbt-9948-petrochemical-seamless-tubes",
+      "source": "manual+filename",
+      "phrases": ["石化用无缝钢管", "化工装置用无缝钢管", "石化和化工装置用无缝钢管", "石油裂化无缝钢管"],
+      "target": {"prefix": "GBT", "number": "9948", "year": "2025"},
+      "boost": 110
+    },
+    {
+      "id": "gbt-14976-stainless-seamless-tubes",
+      "source": "manual+filename",
+      "phrases": ["不锈钢无缝钢管", "输送流体用不锈钢无缝钢管", "不锈钢无缝管"],
+      "target": {"prefix": "GBT", "number": "14976", "year": "2025"},
+      "boost": 110
+    },
+    {
+      "id": "gbt-12771-stainless-welded-tubes",
+      "source": "manual+filename",
+      "phrases": ["不锈钢焊接钢管", "流体输送用不锈钢焊接钢管", "不锈钢焊管"],
+      "target": {"prefix": "GBT", "number": "12771", "year": "2019"},
+      "boost": 110
+    },
+    {
+      "id": "gbt-8110-solid-welding-wire",
+      "source": "manual+filename+business_rules",
+      "phrases": ["气体保护电弧焊实心焊丝", "熔化极气体保护电弧焊", "熔化极气体保护焊丝", "实心焊丝", "气保焊丝"],
+      "target": {"prefix": "GBT", "number": "8110", "year": "2020"},
+      "boost": 110
+    },
+    {
+      "id": "jbt-3223-welding-material-quality-management",
+      "source": "manual+filename+business_rules",
+      "phrases": ["焊材烘干", "焊材保管", "焊材储存", "焊接材料烘干", "焊接材料保管", "焊接材料储存", "焊条烘干", "焊条保温", "焊材库管理", "焊接材料质量管理"],
+      "target": {"prefix": "JBT", "number": "3223", "year": "2017"},
+      "boost": 120
+    },
+    {
+      "id": "nbt-47018-welding-material-ordering",
+      "source": "manual+filename+business_rules",
+      "phrases": ["焊接材料订货", "焊材订货", "承压设备用焊接材料", "焊接材料订货技术条件", "焊材验收技术条件"],
+      "target": {"prefix": "NBT", "number": "47018", "year": "2017"},
+      "boost": 112
+    },
+    {
+      "id": "gbt-5117-covered-electrodes",
+      "source": "manual+filename",
+      "phrases": ["非合金钢焊条", "细晶粒钢焊条", "焊条型号", "焊条验收"],
+      "target": {"prefix": "GBT", "number": "5117", "year": "2012"},
+      "boost": 105
+    },
+    {
+      "id": "nbt-47014-welding-procedure-qualification",
+      "source": "manual+filename+business_rules",
+      "phrases": ["焊接工艺评定", "承压设备焊接工艺评定", "焊评", "PQR"],
+      "target": {"prefix": "NBT", "number": "47014", "year": "2023"},
+      "boost": 112
+    },
+    {
+      "id": "tsg31-pressure-piping-component-license",
+      "source": "manual+filename+business_rules",
+      "phrases": ["压力管道元件型式试验", "压力管道元件许可", "型式试验", "管道元件许可", "压力管道元件证书许可项目"],
+      "requireAny": ["压力管道", "管道元件", "许可"],
+      "target": {"prefix": "TSG", "number": "31", "year": "2025"},
+      "boost": 115
+    },
+    {
+      "id": "tsg-d7006-pressure-piping-supervision",
+      "source": "manual+filename+business_rules",
+      "phrases": ["压力管道监督检验", "管道监督检验范围", "监督检验规则", "监检范围"],
+      "target": {"prefix": "TSG", "number": "D7006", "year": "2020"},
+      "boost": 110
+    },
+    {
+      "id": "tsg-92-safety-accessories",
+      "source": "manual+filename+business_rules",
+      "phrases": ["安全附件安全技术规程", "安全附件检验", "安全附件验收", "安全阀校验", "安全阀校验报告", "安全阀检验", "承压类特种设备安全附件"],
+      "target": {"prefix": "TSG", "number": "92", "year": "2026"},
+      "boost": 112
+    },
+    {
+      "id": "gbt-13927-valve-pressure-test",
+      "source": "manual+filename",
+      "phrases": ["阀门压力试验", "工业阀门压力试验", "阀门壳体试验", "阀门密封试验"],
+      "target": {"prefix": "GBT", "number": "13927", "year": "2022"},
+      "boost": 110
+    },
+    {
+      "id": "gbt-26480-valve-inspection-test",
+      "source": "manual+filename",
+      "phrases": ["阀门检验和试验", "阀门的检验和试验", "阀门检验试验", "阀门出厂检验"],
+      "target": {"prefix": "GBT", "number": "26480", "year": "2011"},
+      "boost": 108
+    },
+    {
+      "id": "nbt-47013-3-ut",
+      "source": "manual+filename+business_rules",
+      "phrases": ["普通超声检测", "超声检测报告", "超声检测验收", "超声检测依据", "超声波检测"],
+      "exclude": ["衍射时差", "TOFD", "相控阵", "PAUT"],
+      "target": {"prefix": "NBT", "number": "47013.3", "year": "2023"},
+      "boost": 105
+    },
+    {
+      "id": "nbt-47013-10-tofd",
+      "source": "manual+filename",
+      "phrases": ["TOFD", "衍射时差", "衍射时差法超声", "衍射时差法超声检测"],
+      "target": {"prefix": "NBT", "number": "47013.10", "year": "2015"},
+      "boost": 115
+    },
+    {
+      "id": "nbt-47013-15-paut",
+      "source": "manual+filename",
+      "phrases": ["相控阵检测", "相控阵超声", "PAUT", "相控阵超声检测"],
+      "target": {"prefix": "NBT", "number": "47013.15", "year": "2021"},
+      "boost": 115
+    },
+    {
+      "id": "nbt-47013-2-rt",
+      "source": "manual+filename",
+      "phrases": ["射线检测", "底片质量", "底片黑度", "射线底片", "像质计", "RT检测", "射线照相检测"],
+      "exclude": ["数字成像", "计算机辅助成像", "DR", "CR"],
+      "target": {"prefix": "NBT", "number": "47013.2", "year": "2015"},
+      "boost": 102
+    },
+    {
+      "id": "nbt-47013-11-dr",
+      "source": "manual+filename",
+      "phrases": ["射线数字成像", "数字成像检测", "DR检测", "X射线数字成像"],
+      "target": {"prefix": "NBT", "number": "47013.11", "year": "2023"},
+      "boost": 112
+    },
+    {
+      "id": "nbt-47013-14-cr",
+      "source": "manual+filename",
+      "phrases": ["射线计算机辅助成像", "计算机辅助成像检测", "CR检测"],
+      "target": {"prefix": "NBT", "number": "47013.14", "year": "2023"},
+      "boost": 112
+    },
+    {
+      "id": "nbt-47013-4-mt",
+      "source": "manual+filename",
+      "phrases": ["磁粉检测", "MT检测", "磁粉探伤"],
+      "target": {"prefix": "NBT", "number": "47013.4", "year": "2015"},
+      "boost": 104
+    },
+    {
+      "id": "nbt-47013-5-pt",
+      "source": "manual+filename",
+      "phrases": ["渗透检测", "PT检测", "渗透探伤"],
+      "target": {"prefix": "NBT", "number": "47013.5", "year": "2015"},
+      "boost": 104
+    },
+    {
+      "id": "nbt-47013-6-eddy-current",
+      "source": "manual+filename",
+      "phrases": ["涡流检测", "ET检测", "涡流探伤"],
+      "exclude": ["阵列", "脉冲"],
+      "target": {"prefix": "NBT", "number": "47013.6", "year": "2015"},
+      "boost": 104
+    },
+    {
+      "id": "nbt-47013-7-visual-testing",
+      "source": "manual+filename",
+      "phrases": ["目视检测", "VT检测", "外观检测"],
+      "target": {"prefix": "NBT", "number": "47013.7", "year": "2012"},
+      "boost": 104
+    },
+    {
+      "id": "nbt-47013-8-leak-testing",
+      "source": "manual+filename",
+      "phrases": ["泄漏检测", "泄漏试验", "密封性检测", "泄漏检测附录"],
+      "target": {"prefix": "NBT", "number": "47013.8", "year": "2025"},
+      "boost": 112
+    },
+    {
+      "id": "nbt-47013-9-acoustic-emission",
+      "source": "manual+filename",
+      "phrases": ["声发射检测", "AE检测", "声发射报告"],
+      "target": {"prefix": "NBT", "number": "47013.9", "year": "2012"},
+      "boost": 104
+    },
+    {
+      "id": "nbt-47013-12-magnetic-flux-leakage",
+      "source": "manual+filename",
+      "phrases": ["漏磁检测", "MFL检测", "漏磁报告"],
+      "target": {"prefix": "NBT", "number": "47013.12", "year": "2015"},
+      "boost": 104
+    },
+    {
+      "id": "nbt-47013-13-pulsed-eddy-current",
+      "source": "manual+filename",
+      "phrases": ["脉冲涡流检测", "脉冲涡流", "PECT检测"],
+      "target": {"prefix": "NBT", "number": "47013.13", "year": "2015"},
+      "boost": 106
+    },
+    {
+      "id": "nbt-47013-16-infrared-thermal",
+      "source": "manual+filename",
+      "phrases": ["红外热成像检测", "红外热成像", "红外检测"],
+      "target": {"prefix": "NBT", "number": "47013.16", "year": "2024"},
+      "boost": 108
+    },
+    {
+      "id": "nbt-47013-17-magnetic-memory",
+      "source": "manual+filename",
+      "phrases": ["磁记忆检测", "磁记忆", "金属磁记忆"],
+      "target": {"prefix": "NBT", "number": "47013.17", "year": "2024"},
+      "boost": 108
+    },
+    {
+      "id": "nbt-47013-18-array-eddy-current",
+      "source": "manual+filename",
+      "phrases": ["阵列涡流检测", "阵列涡流", "AECT检测"],
+      "target": {"prefix": "NBT", "number": "47013.18", "year": "2024"},
+      "boost": 108
+    },
+    {
+      "id": "syt-4113-11-coating-holiday-test",
+      "source": "manual+filename",
+      "phrases": ["防腐层漏点检测", "漏点检测电压", "防腐层性能试验", "管道防腐层漏点", "电火花检漏"],
+      "target": {"prefix": "SYT", "number": "4113.11", "year": "2023"},
+      "boost": 112
+    },
+    {
+      "id": "gbt-19285-buried-pipeline-corrosion-inspection",
+      "source": "manual+filename",
+      "phrases": ["埋地钢质管道腐蚀防护工程检验", "腐蚀防护工程检验", "管道腐蚀防护检验"],
+      "target": {"prefix": "GBT", "number": "19285", "year": "2026"},
+      "boost": 110
+    },
+    {
+      "id": "gbt-21448-cathodic-protection",
+      "source": "manual+filename",
+      "phrases": ["阴极保护技术规范", "埋地钢质管道阴极保护", "阴极保护检查"],
+      "target": {"prefix": "GBT", "number": "21448", "year": "2017"},
+      "boost": 108
+    },
+    {
+      "id": "gbt-33378-cathodic-protection-conditions",
+      "source": "manual+filename",
+      "phrases": ["阴极保护技术条件", "阴极保护技术条件审查"],
+      "target": {"prefix": "GBT", "number": "33378", "year": "2025"},
+      "boost": 108
+    },
+    {
+      "id": "gbt-12459-butt-welding-fittings-type",
+      "source": "manual+filename",
+      "phrases": ["钢制对焊管件类型与参数", "管件类型与参数", "对焊管件类型参数"],
+      "target": {"prefix": "GBT", "number": "12459", "year": "2025"},
+      "boost": 108
+    },
+    {
+      "id": "gbt-13401-butt-welding-fittings-spec",
+      "source": "manual+filename",
+      "phrases": ["钢制对焊管件技术规范", "对焊管件技术规范", "钢制管件技术规范"],
+      "target": {"prefix": "GBT", "number": "13401", "year": "2025"},
+      "boost": 108
+    },
+    {
+      "id": "gb-50424-oil-gas-pipeline-design",
+      "source": "manual+filename",
+      "phrases": ["油气管道工程设计规范", "油气管道设计规范", "管道工程设计规范"],
+      "target": {"prefix": "GB", "number": "50424", "year": "2015"},
+      "boost": 105
+    },
+    {
+      "id": "gb-50460-oil-gas-crossing-construction",
+      "source": "manual+filename",
+      "phrases": ["油气输送管道跨越工程施工", "管道跨越工程施工", "油气管道跨越施工"],
+      "target": {"prefix": "GB", "number": "50460", "year": "2015"},
+      "boost": 105
+    },
+    {
+      "id": "gb-50235-industrial-piping-construction",
+      "source": "manual+filename",
+      "phrases": ["工业金属管道工程施工规范", "工业管道施工规范", "管道施工规范"],
+      "target": {"prefix": "GB", "number": "50235", "year": "2010"},
+      "boost": 105
+    },
+    {
+      "id": "gb-50184-industrial-piping-acceptance",
+      "source": "manual+filename",
+      "phrases": ["工业金属管道工程施工质量验收", "工业管道施工质量验收", "管道施工质量验收规范"],
+      "target": {"prefix": "GB", "number": "50184", "year": "2011"},
+      "boost": 105
+    },
+    {
+      "id": "gb-50236-piping-welding-construction",
+      "source": "manual+filename",
+      "phrases": ["工业管道焊接工程施工规范", "现场设备工业管道焊接", "管道焊接施工规范"],
+      "target": {"prefix": "GB", "number": "50236", "year": "2011"},
+      "boost": 105
+    },
+    {
+      "id": "tsg-07-production-filling-license",
+      "source": "manual+filename+business_rules",
+      "phrases": ["特种设备生产许可规则", "特种设备生产和充装单位许可规则", "生产和充装单位许可", "充装单位许可规则"],
+      "target": {"prefix": "TSG", "number": "07", "year": "2019"},
+      "boost": 108
+    },
+    {
+      "id": "tsgz6002-welder-exam",
+      "source": "manual+filename+business_rules",
+      "phrases": ["焊接人员考核", "焊工考试", "焊工资格证", "焊接人员考试规则", "焊工证考核"],
+      "target": {"prefix": "TSG", "number": "Z6002", "year": "2010"},
+      "boost": 108
+    },
+    {
+      "id": "tsg-z7002-inspection-agency-approval",
+      "source": "manual+filename+business_rules",
+      "phrases": ["检验机构核准", "特种设备检验机构核准", "检验机构核准规则"],
+      "target": {"prefix": "TSG", "number": "Z7002", "year": "2022"},
+      "boost": 108
+    }
+  ]
+}
