@@ -285,6 +285,9 @@ def test_ai_recheck_requires_pending_evidence_decisions_first() -> None:
     readiness = assert_ok(client.get(f"/api/projects/{PROJECT_ID}/nodes/1/evidence-readiness"))
     assert readiness["nodeEvidenceLinks"]
     assert readiness["readyForAi"] is False
+    assert readiness["readyForAiFormal"] is False
+    assert readiness["readyForGapPrecheck"] is False
+    assert {item["code"] for item in readiness["blockingReasons"]} >= {"PENDING_EVIDENCE_DECISION", "MISSING_REQUIRED_EVIDENCE"}
 
     response = client.post(f"/api/projects/{PROJECT_ID}/inspection/nodes/1/ai-recheck")
     payload = response.json()

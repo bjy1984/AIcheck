@@ -260,6 +260,8 @@ class PaddleOcrEngine(LocalOcrEngine):
         det_dir = str(model_dir("AICHECK_PADDLEOCR_DET_MODEL_DIR", "PP-OCRv6_medium_det"))
         rec_dir = str(model_dir("AICHECK_PADDLEOCR_REC_MODEL_DIR", "PP-OCRv6_medium_rec"))
         runtime = paddle_runtime_options(profile)
+        if isinstance(variant, dict) and isinstance(variant.get("ocrRuntimeOverrides"), dict):
+            runtime.update(variant["ocrRuntimeOverrides"])
         ocr = PaddleOCR(
             text_detection_model_dir=det_dir,
             text_recognition_model_dir=rec_dir,
@@ -783,6 +785,8 @@ class PaddleOcrSubprocessEngine(LocalOcrEngine):
         det_dir = subprocess_model_dir("AICHECK_PADDLEOCR_DET_MODEL_DIR", "PP-OCRv6_medium_det")
         rec_dir = subprocess_model_dir("AICHECK_PADDLEOCR_REC_MODEL_DIR", "PP-OCRv6_medium_rec")
         runtime = paddle_runtime_options(profile)
+        if isinstance(variant, dict) and isinstance(variant.get("ocrRuntimeOverrides"), dict):
+            runtime.update(variant["ocrRuntimeOverrides"])
         persistent_safe = not (
             runtime.get("use_doc_orientation_classify")
             or runtime.get("use_doc_unwarping")

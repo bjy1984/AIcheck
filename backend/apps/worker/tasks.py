@@ -102,6 +102,10 @@ def worker_ocr_http_enabled() -> bool:
     return os.getenv("AICHECK_WORKER_OCR_ENABLE_LOCAL_FALLBACK", "false").lower() in {"1", "true", "yes", "on"}
 
 
+def worker_ocr_in_process_allowed() -> bool:
+    return os.getenv("AICHECK_WORKER_OCR_ALLOW_IN_PROCESS", "false").lower() in {"1", "true", "yes", "on"}
+
+
 def worker_state_persistence_enabled() -> bool:
     return (
         repo.sync_postgres is not None
@@ -304,8 +308,27 @@ def parse_with_ocr_service(
                     "options": {"enableTables": True, "enableSeals": True, "enableFallback": True, **(options or {})},
                 }
             )
-        return client.parse_sync(storage_key, file_name=file_name)
-    return ocr_service.parse_document(storage_key, file_name=file_name, options=options)
+        return client.parse_sync(
+            storage_key,
+            file_name=file_name,
+            profile_id=profile_id,
+            document_type=document_type,
+            document_version_id=version_id,
+            options={"enableTables": True, "enableSeals": True, "enableFallback": True, **(options or {})},
+        )
+    if not worker_ocr_in_process_allowed():
+        raise RuntimeError(
+            "OCR service is not configured. Set AICHECK_OCR_BASE_URL for remote OCR "
+            "or explicitly set AICHECK_WORKER_OCR_ALLOW_IN_PROCESS=true in development."
+        )
+    return ocr_service.parse_document(
+        storage_key,
+        file_name=file_name,
+        profile_id=profile_id,
+        document_type=document_type,
+        document_version_id=version_id,
+        options=options,
+    )
 
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
@@ -797,7 +820,7 @@ def llm_compare(self, run_id: str) -> dict[str, Any]:
                     "qwenRuntime": qwen_runtime,
                     "answer": answer,
                     "confidence": 0.8 if result_grounding_status == "grounded" else 0.5,
-                    "evidenceLinkIds": run.get("evidenceLinkIds") or ["EV-24-001"],
+                    "evidenceLinkIds": run.get("evidenceLinkIds") or [],
                     "groundingStatus": result_grounding_status,
                     "unsupportedClaims": unsupported,
                     "requiresHumanConfirmation": True,

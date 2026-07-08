@@ -80,17 +80,36 @@ class OcrClient:
     def enabled(self) -> bool:
         return bool(self.base_url)
 
-    def parse_sync(self, storage_key: str, *, file_name: str | None = None) -> dict[str, Any]:
+    def parse_sync(
+        self,
+        storage_key: str,
+        *,
+        file_name: str | None = None,
+        profile_id: str | None = None,
+        document_type: str | None = None,
+        document_version_id: str | None = None,
+        business_pack_id: str | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         if not self.enabled:
             raise RuntimeError("AICHECK_OCR_BASE_URL is not configured")
         client_kwargs: dict[str, Any] = {"timeout": 120}
         if self.transport is not None:
             client_kwargs["transport"] = self.transport
+        payload = {
+            "storageKey": storage_key,
+            "fileName": file_name,
+            "profileId": profile_id,
+            "documentType": document_type,
+            "documentVersionId": document_version_id,
+            "businessPackId": business_pack_id,
+            "options": options or {},
+        }
         try:
             with httpx.Client(**client_kwargs) as client:
                 response = client.post(
                     f"{self.base_url}/internal/ocr/parse",
-                    json={"storageKey": storage_key, "fileName": file_name},
+                    json=payload,
                 )
         except httpx.HTTPError as exc:
             raise IntegrationServiceError("OCR service", "parse", reason=exc.__class__.__name__) from exc

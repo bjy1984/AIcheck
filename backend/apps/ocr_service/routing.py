@@ -6,6 +6,7 @@ from apps.ocr_service.utils import parse_bool
 
 
 TEXT_ENGINES = {"pymupdf_text_layer", "paddle_ocr_subprocess", "paddle_ocr_v6", "tesseract_cli", "docling_local"}
+RASTER_TEXT_ENGINES = {"paddle_ocr_subprocess", "paddle_ocr_v6", "tesseract_cli"}
 TABLE_ENGINES = {"pp_structure_v3", "opencv_table_grid_subprocess"}
 SEAL_ENGINES = {"paddlex_seal_recognition", "agentdesign_seal_ocr_subprocess", "visual_seal_candidate_subprocess"}
 FALLBACK_ENGINES = {"paddleocr_vl_1_6"}
@@ -28,6 +29,13 @@ def route_engine_variants(
     quick_mode = parse_bool((options or {}).get("quickMode"), False) is True
     if quick_mode and engine_name in QUICK_MODE_DISABLED_ENGINES:
         return []
+    remediation_mode = bool((options or {}).get("runRemediation"))
+    if (
+        engine_name in RASTER_TEXT_ENGINES
+        and parse_bool((options or {}).get("enableRasterTextOcr"), True) is False
+        and not remediation_mode
+    ):
+        return []
     if engine_name in TABLE_ENGINES and parse_bool((options or {}).get("enableTables"), True) is False:
         return []
     if engine_name in SEAL_ENGINES and parse_bool((options or {}).get("enableSeals"), True) is False:
@@ -46,7 +54,7 @@ def route_engine_variants(
         if isinstance(item, dict)
     }
     policy = profile.get("preprocessPolicy") or {}
-    if bool((options or {}).get("runRemediation")):
+    if remediation_mode:
         remediation_routed = remediation_crop_route(engine_name, variants)
         if remediation_routed:
             return remediation_routed
@@ -57,7 +65,10 @@ def route_engine_variants(
         if bool((options or {}).get("runAllVariants")):
             return originals
         return originals[:1]
-    if engine_name in FALLBACK_ENGINES and document_path.lower().endswith(".pdf") and bool((options or {}).get("runAllVariants")):
+    if engine_name in FALLBACK_ENGINES and document_path.lower().endswith(".pdf") and (
+        bool((options or {}).get("runAllVariants"))
+        or parse_bool((options or {}).get("forceFallbackOcr"), False) is True
+    ):
         return [synthetic_document_variant(document_path)]
     if seal_engine_disabled(engine_name, profile):
         return []
@@ -141,7 +152,7 @@ def remediation_crop_route(engine_name: str, variants: list[dict[str, Any]]) -> 
     if engine_name in SEAL_ENGINES:
         return remediation_crop_variants(variants, purpose="seal")[:8]
     if engine_name in TEXT_ENGINES:
-        field_crops = remediation_crop_variants(variants, purpose="field")[:6]
+        field_crops = remediation_crop_variants(variants, purpose="field")[:10]
         seal_crops = remediation_crop_variants(variants, purpose="seal")[:8]
         return [*field_crops, *seal_crops]
     if engine_name in FALLBACK_ENGINES:

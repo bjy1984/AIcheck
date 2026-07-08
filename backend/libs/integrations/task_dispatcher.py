@@ -50,6 +50,31 @@ def dispatch_embed(file_id: str) -> dict[str, Any]:
     return {"mode": mode, "taskId": None}
 
 
+def ai_recheck_dispatch_readiness() -> dict[str, Any]:
+    orchestration_mode = os.getenv("AICHECK_REVIEW_ORCHESTRATION", "legacy").strip().lower() or "legacy"
+    if orchestration_mode in {"temporal", "inline"}:
+        return {
+            "ready": True,
+            "mode": orchestration_mode,
+            "orchestrationMode": orchestration_mode,
+            "statusReason": "review_orchestration_enabled",
+        }
+    mode = dispatch_mode()
+    if mode in {"inline", "celery"}:
+        return {
+            "ready": True,
+            "mode": mode,
+            "orchestrationMode": orchestration_mode,
+            "statusReason": "task_dispatch_enabled",
+        }
+    return {
+        "ready": False,
+        "mode": mode,
+        "orchestrationMode": orchestration_mode,
+        "statusReason": "AICHECK_TASK_DISPATCH is disabled; AI recheck will not be queued.",
+    }
+
+
 def dispatch_ai_recheck(project_id: str, node_id: int, run_id: str) -> dict[str, Any]:
     orchestration_mode = os.getenv("AICHECK_REVIEW_ORCHESTRATION", "legacy").strip().lower() or "legacy"
     if orchestration_mode in {"temporal", "inline"}:

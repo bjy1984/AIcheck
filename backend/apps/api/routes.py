@@ -1914,19 +1914,211 @@ def report_if_match_valid(report: dict[str, Any], if_match: str | None) -> bool:
     return if_match in {"*", str(revision), f'W/"{revision}"', report_etag(report)}
 
 
+def compact_id_list(raw_ids: Any, *, limit: int = 100) -> list[str]:
+    if not isinstance(raw_ids, list):
+        return []
+    ids: list[str] = []
+    for raw_id in raw_ids[:limit]:
+        evidence_id = compact_plain_text(raw_id, 120)
+        if evidence_id and evidence_id not in ids:
+            ids.append(evidence_id)
+    return ids
+
+
+def latest_review_opinion_for_node(project_id: str, node_id: int) -> dict[str, Any] | None:
+    return next(
+        (
+            item
+            for item in repo.state.get("review_opinions", [])
+            if item.get("projectId") == project_id and int(item.get("nodeId") or 0) == int(node_id)
+        ),
+        None,
+    )
+
+
+def business_rule_version_for_node(project_id: str, node_id: int) -> str | None:
+    project = repo.require_project(project_id)
+    pack = business_pack_for_project(project)
+    rule = current_business_rule_for_node(node_id, business_pack_id=pack["id"])
+    return str((rule or {}).get("version") or (rule or {}).get("id") or "")
+
+
+def confirmed_node_evidence_links(project_id: str, node_id: int) -> list[dict[str, Any]]:
+    return [
+        repo.clone(item)
+        for item in node_evidence_links_for_node(repo, project_id, node_id)
+        if str(item.get("manualStatus") or "").lower() == "confirmed"
+    ]
+
+
+def _node_evidence_as_report_evidence(link: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": str(link.get("id") or ""),
+        "objectType": "nodeEvidenceLink",
+        "objectId": link.get("id"),
+        "projectId": link.get("projectId"),
+        "nodeId": link.get("nodeId"),
+        "documentId": link.get("documentId"),
+        "documentVersionId": link.get("documentVersionId"),
+        "fileName": link.get("fileName"),
+        "pageNo": link.get("pageNo"),
+        "bbox": link.get("bbox"),
+        "fieldName": link.get("fieldName"),
+        "quotedText": link.get("quotedText") or "；".join(str(item) for item in link.get("matchedEvidenceItems") or []),
+        "confidence": link.get("confidence"),
+        "manualStatus": link.get("manualStatus"),
+        "reviewPointId": link.get("reviewPointId"),
+        "source": link.get("source") or "node_evidence_links",
+    }
+
+
+def _matching_evidence_links_for_node_evidence(link: dict[str, Any]) -> list[dict[str, Any]]:
+    evidence_by_id = {str(item.get("id")): item for item in repo.state.get("evidence_links", []) if item.get("id")}
+    matches: list[dict[str, Any]] = []
+    for field in repo.state.get("extracted_fields", []):
+        if link.get("fieldId") and str(field.get("id") or "") == str(link.get("fieldId")):
+            evidence_id = str(field.get("evidenceLinkId") or "")
+            if evidence_id and evidence_id in evidence_by_id:
+                matches.append(evidence_by_id[evidence_id])
+        elif link.get("documentVersionId") and str(field.get("documentVersionId") or "") == str(link.get("documentVersionId")):
+            same_field = not link.get("fieldName") or str(field.get("fieldName") or "") == str(link.get("fieldName"))
+            if same_field and field.get("evidenceLinkId") and str(field["evidenceLinkId"]) in evidence_by_id:
+                matches.append(evidence_by_id[str(field["evidenceLinkId"])])
+    quoted = compact_plain_text(link.get("quotedText"), 500)
+    for evidence in repo.state.get("evidence_links", []):
+        if link.get("documentVersionId") and str(evidence.get("documentVersionId") or evidence.get("objectId") or "") != str(link.get("documentVersionId")):
+            continue
+        if link.get("fieldName") and str(evidence.get("fieldName") or "") != str(link.get("fieldName")):
+            continue
+        if quoted and quoted not in compact_plain_text(evidence.get("quotedText"), 1000):
+            continue
+        matches.append(evidence)
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for evidence in matches:
+        evidence_id = str(evidence.get("id") or "")
+        if evidence_id and evidence_id not in seen:
+            deduped.append(repo.clone(evidence))
+            seen.add(evidence_id)
+    return deduped
+
+
+def confirmed_node_evidence_scope(project_id: str, node_id: int) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    allowed_ids: set[str] = set()
+    confirmed_links = confirmed_node_evidence_links(project_id, node_id)
+    for link in confirmed_links:
+        node_row = _node_evidence_as_report_evidence(link)
+        if node_row["id"]:
+            rows.append(node_row)
+            allowed_ids.add(node_row["id"])
+        for evidence in _matching_evidence_links_for_node_evidence(link):
+            evidence_id = str(evidence.get("id") or "")
+            if evidence_id and evidence_id not in allowed_ids:
+                rows.append(evidence)
+                allowed_ids.add(evidence_id)
+    return {
+        "projectId": project_id,
+        "nodeId": node_id,
+        "source": "confirmed_node_evidence",
+        "nodeEvidenceLinks": confirmed_links,
+        "evidenceLinks": rows,
+        "allowedEvidenceIds": sorted(allowed_ids),
+        "confirmedCount": len(confirmed_links),
+    }
+
+
+def validate_node_evidence_selection(
+    project_id: str,
+    node_id: int,
+    evidence_ids: Any,
+    *,
+    require_non_empty: bool = False,
+) -> dict[str, Any]:
+    requested = compact_id_list(evidence_ids)
+    scope = confirmed_node_evidence_scope(project_id, node_id)
+    allowed = set(scope["allowedEvidenceIds"])
+    invalid = [item for item in requested if item not in allowed]
+    accepted = [item for item in requested if item in allowed]
+    missing_required_selection = require_non_empty and not accepted
+    return {
+        "schemaVersion": "node-evidence-selection-validation-v1",
+        "passed": not invalid and not missing_required_selection,
+        "acceptedEvidenceLinkIds": accepted,
+        "invalidEvidenceLinkIds": invalid,
+        "requiresEvidenceSelection": missing_required_selection,
+        "availableEvidenceLinkIds": scope["allowedEvidenceIds"],
+        "confirmedNodeEvidenceCount": scope["confirmedCount"],
+        "message": (
+            "请选择当前节点已确认的证据。"
+            if missing_required_selection
+            else "存在不属于当前节点 confirmed 证据范围的引用。"
+            if invalid
+            else "证据引用校验通过。"
+        ),
+    }
+
+
+def report_evidence_links(report: dict[str, Any]) -> list[dict[str, Any]]:
+    scope = report.get("evidenceScope") or {}
+    scoped_rows = scope.get("evidenceLinks")
+    if isinstance(scoped_rows, list) and scoped_rows:
+        return repo.clone(scoped_rows)
+
+    evidence_ids = set(compact_id_list(scope.get("evidenceLinkIds")))
+    for section in report.get("sections") or []:
+        evidence_ids.update(compact_id_list((section or {}).get("evidenceLinkIds")))
+    rows = [
+        repo.clone(item)
+        for item in repo.state.get("evidence_links", [])
+        if str(item.get("id") or "") in evidence_ids
+    ]
+    row_ids = {str(item.get("id") or "") for item in rows}
+    for node_id in report.get("nodeIds") or []:
+        node_scope = confirmed_node_evidence_scope(str(report.get("projectId")), int(node_id))
+        for evidence in node_scope["evidenceLinks"]:
+            evidence_id = str(evidence.get("id") or "")
+            if evidence_id in evidence_ids and evidence_id not in row_ids:
+                rows.append(repo.clone(evidence))
+                row_ids.add(evidence_id)
+    return rows
+
+
+def report_allowed_evidence_ids(report: dict[str, Any]) -> set[str]:
+    return {str(item.get("id") or "") for item in report_evidence_links(report) if item.get("id")}
+
+
+def report_evidence_validation(report: dict[str, Any]) -> dict[str, Any]:
+    evidence_rows = report_evidence_links(report)
+    evidence_ids = {str(item.get("id") or "") for item in evidence_rows if item.get("id")}
+    referenced_ids = set()
+    for section in report_sections(report):
+        referenced_ids.update(compact_id_list(section.get("evidenceLinkIds")))
+    invalid = sorted(referenced_ids - evidence_ids)
+    return {
+        "schemaVersion": "report-evidence-validation-v1",
+        "passed": bool(evidence_rows) and not invalid,
+        "evidenceCount": len(evidence_rows),
+        "referencedEvidenceLinkIds": sorted(referenced_ids),
+        "invalidEvidenceLinkIds": invalid,
+    }
+
+
 def default_report_sections(report: dict[str, Any]) -> list[dict[str, Any]]:
+    evidence_ids = compact_id_list((report.get("evidenceScope") or {}).get("evidenceLinkIds"))
+    node_id = (report.get("nodeIds") or [None])[0]
     return [
         {
             "key": "summary",
             "title": "检验结论",
-            "content": "资料、证据链与规则要求一致，建议复核后签发。",
-            "evidenceLinkIds": ["EV-24-001"],
+            "content": "报告草稿基于已确认资料证据和人工审查意见生成，请复核后签发。",
+            "evidenceLinkIds": evidence_ids,
         },
         {
-            "key": f"node-{(report.get('nodeIds') or [24])[0]}",
-            "title": "焊工资格证及持证合格项目",
-            "content": "证书有效期覆盖施工周期，持证项目覆盖焊接方法。",
-            "evidenceLinkIds": ["EV-24-001", "EV-24-002"],
+            "key": f"node-{node_id or 'current'}",
+            "title": "节点审查意见",
+            "content": "本章节仅引用当前报告 scope 内 confirmed 证据，不包含全局或待确认资料。",
+            "evidenceLinkIds": evidence_ids,
         },
     ]
 
@@ -2078,6 +2270,119 @@ def ndt_submission_node_ids(project_id: str, body: dict[str, Any]) -> list[int]:
         if film and film.get("projectId") == project_id:
             node_ids.update(record_node_ids(project_id, film))
     return sorted(node_ids)
+
+
+def ndt_report_readiness(report: dict[str, Any], submitted_film_ids: set[str]) -> dict[str, Any]:
+    blockers: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
+    document = repo.find_one("documents", report.get("fileId"))
+    version_id = str((document or {}).get("currentVersionId") or report.get("documentVersionId") or "")
+    fields = [
+        item
+        for item in repo.state.get("extracted_fields", [])
+        if version_id and str(item.get("documentVersionId") or "") == version_id
+    ]
+    ocr_status = str((document or {}).get("currentOcrStatus") or report.get("ocrStatus") or "")
+    if not document:
+        blockers.append({"code": "NDT_REPORT_DOCUMENT_MISSING", "message": "无损检测报告未关联上传文件。"})
+    elif ocr_status not in {"已识别", "人工修正"}:
+        blockers.append(
+            {
+                "code": "NDT_REPORT_OCR_NOT_COMPLETE",
+                "message": "无损检测报告 OCR 未完成，不能提交待审查。",
+                "documentId": document.get("id"),
+                "ocrStatus": ocr_status,
+            }
+        )
+    if document and ocr_status in {"已识别", "人工修正"} and not fields:
+        blockers.append({"code": "NDT_REPORT_FIELDS_MISSING", "message": "无损检测报告缺少 OCR 结构化字段。"})
+
+    required_fields = ["reportNo", "method"]
+    missing_fields = [field for field in required_fields if not compact_plain_text(report.get(field), 120)]
+    if missing_fields:
+        blockers.append({"code": "NDT_REQUIRED_FIELDS_MISSING", "message": "无损检测报告关键字段缺失。", "fields": missing_fields})
+
+    has_bbox = any(item.get("bbox") for item in fields)
+    if fields and not has_bbox:
+        blockers.append({"code": "NDT_FIELD_BBOX_MISSING", "message": "无损检测报告关键字段缺少 bbox 证据。"})
+
+    method = compact_plain_text(report.get("method"), 20).upper()
+    if method == "RT":
+        if not compact_plain_text(report.get("detectionRatio"), 80):
+            blockers.append({"code": "RT_DETECTION_RATIO_MISSING", "message": "RT 报告缺少检测比例。"})
+        conclusion = compact_plain_text(report.get("conclusion"), 500)
+        if not re.search(r"\b(?:I{1,3}|[一二三]级|AB)\b", conclusion, flags=re.IGNORECASE):
+            blockers.append({"code": "RT_ACCEPTANCE_LEVEL_MISSING", "message": "RT 报告缺少合格级别或底片质量等级。"})
+        linked_films = {str(item) for item in report.get("relatedFilmIds") or [] if item}
+        if not (linked_films or submitted_film_ids):
+            blockers.append({"code": "RT_FILM_LINK_MISSING", "message": "RT 报告缺少底片/影像关联。"})
+
+    if document and ocr_status in {"已识别", "人工修正"} and not has_bbox:
+        warnings.append({"code": "NDT_BBOX_REVIEW_RECOMMENDED", "message": "建议人工复核 OCR 字段定位框。"})
+    return {
+        "reportId": report.get("id"),
+        "documentId": (document or {}).get("id"),
+        "documentVersionId": version_id or None,
+        "ocrStatus": ocr_status or None,
+        "fieldCount": len(fields),
+        "bboxFieldCount": len([item for item in fields if item.get("bbox")]),
+        "method": method or None,
+        "passed": not blockers,
+        "blockingReasons": blockers,
+        "warnings": warnings,
+    }
+
+
+def ndt_submission_readiness(reports: list[dict[str, Any]], submitted_film_ids: set[str]) -> dict[str, Any]:
+    report_rows = [ndt_report_readiness(report, submitted_film_ids) for report in reports]
+    blocking_reasons = [
+        {"reportId": row.get("reportId"), **reason}
+        for row in report_rows
+        for reason in row.get("blockingReasons") or []
+    ]
+    return {
+        "schemaVersion": "ndt-submission-readiness-v1",
+        "passed": not blocking_reasons,
+        "reports": report_rows,
+        "blockingReasons": blocking_reasons,
+    }
+
+
+def upsert_ndt_node_evidence_links(project_id: str, node_id: int, reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    created: list[dict[str, Any]] = []
+    existing_by_id = {str(item.get("id")): item for item in repo.state.get("node_evidence_links", []) if item.get("id")}
+    for report in reports:
+        document = repo.find_one("documents", report.get("fileId")) or {}
+        link_id = f"NEL-NDT-{stable_hash_payload([project_id, node_id, report.get('id')])[7:17].upper()}"
+        link = existing_by_id.get(link_id)
+        if not link:
+            link = {
+                "id": link_id,
+                "projectId": project_id,
+                "nodeId": node_id,
+                "nodeName": (repo.node(project_id, node_id) or {}).get("name"),
+                "reviewPointId": f"NDT-{node_id}",
+                "reviewContent": "无损检测报告提交审查",
+                "materialTypeCode": "ndt_report",
+                "materialTypeName": "无损检测报告",
+                "requiredType": "必传",
+                "documentId": document.get("id") or report.get("fileId"),
+                "documentVersionId": document.get("currentVersionId") or report.get("documentVersionId"),
+                "fileName": document.get("fileName") or report.get("fileName") or report.get("reportNo"),
+                "pageNo": 1,
+                "fieldName": "报告编号",
+                "quotedText": report.get("reportNo"),
+                "matchedEvidenceItems": [item for item in [report.get("reportNo"), report.get("method"), report.get("detectionRatio")] if item],
+                "supportStatus": "partial",
+                "confidence": 0.82,
+                "manualStatus": "pending",
+                "manualStatusLabel": "待确认",
+                "source": "ndt_submission",
+                "createdAt": server_time(),
+            }
+            repo.state.setdefault("node_evidence_links", []).insert(0, link)
+        created.append(repo.clone(link))
+    return created
 
 
 def authorized_node_scope(request: Request, project_id: str) -> set[int] | None:
@@ -5372,8 +5677,27 @@ def ai_recheck(
         except RuntimeError as exc:
             return fail(errors.VALIDATION_ERROR, request, message=str(exc))
         evidence_readiness = build_node_evidence_readiness(repo, project_id, node_id)
-        if audit_runtime["useOcrEvidence"] and int(evidence_readiness.get("pendingCount") or 0) > 0:
-            return fail(errors.CONFLICT, request, message="请先完成候选证据确认或不采用，再进入 AI 复核。")
+        if audit_runtime["useOcrEvidence"] and not evidence_readiness.get("readyForAiFormal"):
+            blocking_reasons = evidence_readiness.get("blockingReasons") or []
+            message = "资料证据未满足正式 AI 复核条件，只能进行缺项预审或补正提示。"
+            if any(item.get("code") == "PENDING_EVIDENCE_DECISION" for item in blocking_reasons):
+                message = "请先完成候选证据确认或不采用，再进入 AI 复核。"
+            elif any(item.get("code") == "MISSING_REQUIRED_EVIDENCE" for item in blocking_reasons):
+                message = "仍有必传审查点缺少已确认资料证据，不能形成满足要求类 AI 建议。"
+            return fail(
+                errors.CONFLICT,
+                request,
+                message=message,
+                data={"evidenceReadiness": evidence_readiness},
+            )
+        dispatch_readiness = task_dispatcher.ai_recheck_dispatch_readiness()
+        if not dispatch_readiness.get("ready"):
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="AI 复核任务调度未启用，未创建复核任务，节点状态未变更。",
+                data={"dispatch": dispatch_readiness},
+            )
         node_evidence_links = [
             link
             for link in node_evidence_links_for_node(repo, project_id, node_id)
@@ -5419,8 +5743,19 @@ def ai_recheck(
             "findingDrafts": [],
         }
         repo.state["ai_runs"].insert(0, run)
-        repo.set_node_status(project_id, node_id, "业务核验中")
         dispatch = task_dispatcher.dispatch_ai_recheck(project_id, node_id, run_id)
+        if not dispatch.get("taskId") and not dispatch.get("result") and not dispatch.get("reviewRunId") and not dispatch.get("workflowId"):
+            run["status"] = "失败"
+            run["errorCode"] = "TASK_DISPATCH_UNAVAILABLE"
+            run["errorMessage"] = "AI 复核任务调度未创建可执行任务。"
+            run["finishedAt"] = server_time()
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="AI 复核任务调度未创建可执行任务，节点状态未变更。",
+                data={"dispatch": dispatch, "latestRun": run},
+            )
+        repo.set_node_status(project_id, node_id, "业务核验中")
         if dispatch.get("reviewRunId"):
             run["reviewRunId"] = dispatch.get("reviewRunId")
         if dispatch.get("workflowId"):
@@ -5588,16 +5923,41 @@ def save_review_opinion(request: Request, project_id: str, node_id: int, body: d
         guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
         if guard:
             return guard
+        result = body.get("result") or "满足要求"
+        readiness = build_node_evidence_readiness(repo, project_id, node_id)
+        evidence_validation = validate_node_evidence_selection(
+            project_id,
+            node_id,
+            body.get("evidenceLinkIds") or [],
+            require_non_empty=result == "满足要求",
+        )
+        if not evidence_validation["passed"]:
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message=evidence_validation["message"],
+                data={"evidenceValidation": evidence_validation, "evidenceReadiness": readiness},
+            )
+        if result == "满足要求" and not readiness.get("readyForAiFormal"):
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="仍有 pending 或 missing 资料证据，不能保存“满足要求”审查意见。",
+                data={"evidenceReadiness": readiness, "evidenceValidation": evidence_validation},
+            )
         opinion = {
             "id": f"OPN-{uuid4().hex[:8].upper()}",
             "projectId": project_id,
             "nodeId": node_id,
-            "result": body.get("result") or "满足要求",
+            "result": result,
             "opinion": body.get("opinion") or "资料、证据链与规则要求一致，同意通过。",
             "basis": body.get("basis"),
             "riskLevel": body.get("riskLevel", "低"),
             "closeStatus": "未关闭",
-            "evidenceLinkIds": body.get("evidenceLinkIds") or [],
+            "evidenceLinkIds": evidence_validation["acceptedEvidenceLinkIds"],
+            "readinessSnapshot": readiness,
+            "evidenceValidation": evidence_validation,
+            "businessRuleVersion": business_rule_version_for_node(project_id, node_id),
             "reviewerName": "张工",
             "createdAt": server_time(),
         }
@@ -5620,13 +5980,33 @@ def adopt_ai_suggestion(request: Request, project_id: str, node_id: int, suggest
         guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
         if guard:
             return guard
+        latest_run = next(
+            (
+                item
+                for item in repo.state.get("ai_runs", [])
+                if item.get("projectId") == project_id and int(item.get("nodeId") or 0) == int(node_id)
+            ),
+            None,
+        )
+        if not latest_run or str((latest_run.get("suggestion") or {}).get("id") or "") != str(suggestion_id):
+            return fail(errors.NOT_FOUND, request, message="未找到当前节点最新 AI 建议。")
+        allowed_ids = set(confirmed_node_evidence_scope(project_id, node_id)["allowedEvidenceIds"])
+        requested_ids = compact_id_list(body.get("evidenceLinkIds"))
+        if not requested_ids:
+            for evidence in latest_run.get("evidenceLinks") or []:
+                evidence_id = compact_plain_text((evidence or {}).get("id"), 120)
+                if evidence_id:
+                    requested_ids.append(evidence_id)
+        selected_ids = [item for item in requested_ids if item in allowed_ids]
+        requires_evidence_selection = not selected_ids
         draft = {
             "id": f"OPN-DRAFT-{uuid4().hex[:8].upper()}",
             "projectId": project_id,
             "nodeId": node_id,
             "result": body.get("result") or "满足要求",
             "opinion": body.get("opinion") or "采纳 AI 建议。",
-            "evidenceLinkIds": body.get("evidenceLinkIds") or ["EV-24-001"],
+            "evidenceLinkIds": selected_ids,
+            "requiresEvidenceSelection": requires_evidence_selection,
             "reviewerName": "张工",
             "createdAt": server_time(),
         }
@@ -5743,6 +6123,7 @@ def standards(request: Request, project_id: str, node_id: int):
 
 @router.get("/projects/{project_id}/inspection/nodes/{node_id}/date-compare")
 def date_compare(request: Request, project_id: str, node_id: int):
+    evidence_ids = confirmed_node_evidence_scope(project_id, node_id)["allowedEvidenceIds"]
     return ok(
         [
             {
@@ -5752,7 +6133,7 @@ def date_compare(request: Request, project_id: str, node_id: int):
                 "rightLabel": "施工周期",
                 "rightValue": "2026-06-01 至 2026-12-31",
                 "result": "覆盖",
-                "evidenceLinkIds": ["EV-24-001"],
+                "evidenceLinkIds": evidence_ids[:3],
             }
         ],
         request,
@@ -5794,6 +6175,34 @@ def generate_report_review(request: Request, project_id: str, node_id: int, body
                 message=f"节点状态 {node.get('status')} 不允许生成报告草稿。",
                 data={"nodeId": node_id, "status": node.get("status")},
             )
+        latest_opinion = latest_review_opinion_for_node(project_id, node_id)
+        if not latest_opinion:
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="生成报告前必须先保存人工审查意见。",
+                data={"nodeId": node_id},
+            )
+        evidence_validation = validate_node_evidence_selection(
+            project_id,
+            node_id,
+            latest_opinion.get("evidenceLinkIds") or [],
+            require_non_empty=True,
+        )
+        if not evidence_validation["passed"]:
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="人工审查意见的证据引用未通过 confirmed-only 校验，不能生成报告。",
+                data={"evidenceValidation": evidence_validation, "reviewOpinionId": latest_opinion.get("id")},
+            )
+        scope = confirmed_node_evidence_scope(project_id, node_id)
+        evidence_ids = evidence_validation["acceptedEvidenceLinkIds"]
+        scoped_evidence = [
+            item
+            for item in scope["evidenceLinks"]
+            if str(item.get("id") or "") in set(evidence_ids)
+        ]
         report = {
             "id": f"RPT-{uuid4().hex[:8].upper()}",
             "projectId": project_id,
@@ -5809,6 +6218,20 @@ def generate_report_review(request: Request, project_id: str, node_id: int, body
             "reviewerName": "张工",
             "dataSnapshotId": f"SNAP-RPT-{uuid4().hex[:8].upper()}",
             "previewUrl": "mock://preview/reports/new",
+            "sourceReviewOpinionId": latest_opinion.get("id"),
+            "evidenceScope": {
+                "schemaVersion": "report-evidence-scope-v1",
+                "source": "review_opinion_confirmed_node_evidence",
+                "nodeIds": [node_id],
+                "evidenceLinkIds": evidence_ids,
+                "evidenceLinks": scoped_evidence,
+            },
+            "evidenceValidation": {
+                "schemaVersion": "report-evidence-validation-v1",
+                "passed": bool(scoped_evidence) and len(scoped_evidence) == len(evidence_ids),
+                "sourceValidation": evidence_validation,
+                "evidenceCount": len(scoped_evidence),
+            },
             "actions": ["report:view", "report:export", "report:archive"],
         }
         report["sections"] = default_report_sections(report)
@@ -5858,7 +6281,9 @@ def report_detail(request: Request, project_id: str, report_id: str):
         {
             "report": versioned_report(report),
             "sections": report_sections(report),
-            "evidenceLinks": repo.clone(repo.state["evidence_links"]),
+            "evidenceLinks": report_evidence_links(report),
+            "evidenceScope": repo.clone(report.get("evidenceScope") or {}),
+            "evidenceValidation": report_evidence_validation(report),
             "reviewTrail": report_review_trail(report),
             "versionHistory": report_version_history(report),
         },
@@ -5887,7 +6312,7 @@ def update_report(
             return fail(errors.ETAG_CONFLICT, request)
         normalized_sections = None
         if "sections" in body:
-            valid_evidence_ids = {str(item.get("id")) for item in repo.state["evidence_links"] if item.get("id")}
+            valid_evidence_ids = report_allowed_evidence_ids(report)
             normalized_sections, section_error = normalize_report_sections(
                 body.get("sections"),
                 valid_evidence_ids=valid_evidence_ids,
@@ -6009,6 +6434,21 @@ def archive_report(
             return fail(errors.NOT_FOUND, request)
         if not report_if_match_valid(report, if_match):
             return fail(errors.ETAG_CONFLICT, request)
+        if report.get("status") not in {"待签发", "已签发", "复核完成"}:
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="报告归档前必须完成复核或签发。",
+                data={"reportId": report_id, "status": report.get("status")},
+            )
+        evidence_validation = report_evidence_validation(report)
+        if not evidence_validation.get("passed"):
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="报告证据校验未通过，不能归档。",
+                data={"reportId": report_id, "evidenceValidation": evidence_validation},
+            )
         report["status"] = "已归档"
         report["revision"] = int(report.get("revision") or 1) + 1
         report["updatedAt"] = server_time()
@@ -6048,8 +6488,8 @@ def archive_package_export_id(project_id: str) -> str:
     return f"EXP-ARCHIVE-{stable_hash_payload(project_id)[7:17].upper()}"
 
 
-def evidence_package_export_id(project_id: str, node_id: int) -> str:
-    return f"EXP-EVIDENCE-{stable_hash_payload({'projectId': project_id, 'nodeId': node_id})[7:17].upper()}"
+def evidence_package_export_id(project_id: str, scope_id: Any) -> str:
+    return f"EXP-EVIDENCE-{stable_hash_payload({'projectId': project_id, 'scopeId': scope_id})[7:17].upper()}"
 
 
 def project_document_lookup(project_id: str) -> tuple[set[str], set[str]]:
@@ -6084,28 +6524,20 @@ def archive_package_rows(project_id: str, scope: set[int] | None) -> list[dict[s
     ]
 
 
-def evidence_package_rows(project_id: str, *, node_id: int | None = None) -> list[dict[str, Any]]:
-    document_ids, version_ids = project_document_lookup(project_id)
-    node_versions = node_document_version_ids(project_id, node_id) if node_id is not None else set()
-    rows: list[dict[str, Any]] = []
-    for evidence in repo.state.get("evidence_links", []):
-        evidence_project_id = evidence.get("projectId")
-        evidence_document_id = str(evidence.get("documentId") or "")
-        evidence_version_id = str(evidence.get("documentVersionId") or evidence.get("objectId") or "")
-        if evidence_project_id and evidence_project_id != project_id:
-            continue
-        if not evidence_project_id and evidence_document_id and evidence_document_id not in document_ids:
-            continue
-        if not evidence_project_id and evidence_version_id and evidence_version_id not in version_ids:
-            continue
-        if node_id is not None:
-            evidence_node_id = evidence.get("nodeId")
-            if evidence_node_id is not None and int(evidence_node_id or 0) != int(node_id):
-                continue
-            if evidence_node_id is None and evidence_version_id not in node_versions:
-                continue
-        rows.append(repo.clone(evidence))
-    return rows
+def evidence_package_rows(
+    project_id: str,
+    *,
+    node_id: int | None = None,
+    report_id: str | None = None,
+) -> list[dict[str, Any]]:
+    if report_id:
+        report = repo.find_one("reports", report_id)
+        if not report or report.get("projectId") != project_id:
+            return []
+        return report_evidence_links(report)
+    if node_id is not None:
+        return confirmed_node_evidence_scope(project_id, node_id)["evidenceLinks"]
+    return []
 
 
 def package_csv(rows: list[dict[str, Any]], columns: list[str]) -> str:
@@ -6210,14 +6642,20 @@ def archive_package(request: Request, project_id: str):
 
 
 @router.get("/projects/{project_id}/archive/evidence-package")
-def evidence_package(request: Request, project_id: str, nodeId: int | None = None):
+def evidence_package(request: Request, project_id: str, nodeId: int | None = None, reportId: str | None = None):
     scope = authorized_node_scope(request, project_id)
-    effective_node_id = nodeId or 24
-    if scope is not None and effective_node_id not in scope:
+    if nodeId is None and not reportId:
+        return fail(errors.VALIDATION_ERROR, request, message="导出证据定位包必须显式传 nodeId 或 reportId。")
+    report = repo.find_one("reports", reportId) if reportId else None
+    if reportId and (not report or report.get("projectId") != project_id):
+        return fail(errors.NOT_FOUND, request)
+    effective_node_ids = [int(nodeId)] if nodeId is not None else [int(item) for item in (report or {}).get("nodeIds") or []]
+    if scope is not None and (not effective_node_ids or not set(effective_node_ids).issubset(scope)):
         return fail(errors.FORBIDDEN, request, message="用户不在该节点授权范围内。")
-    export_id = evidence_package_export_id(project_id, effective_node_id)
-    file_name = f"{project_id}-节点{effective_node_id}-证据定位包.zip"
-    evidence_rows = evidence_package_rows(project_id, node_id=effective_node_id)
+    scope_key = reportId or f"node-{nodeId}"
+    export_id = evidence_package_export_id(project_id, scope_key)
+    file_name = f"{project_id}-{reportId or '节点' + str(nodeId)}-证据定位包.zip"
+    evidence_rows = evidence_package_rows(project_id, node_id=nodeId, report_id=reportId)
     related_version_ids = sorted(
         {
             str(item.get("documentVersionId") or item.get("objectId"))
@@ -6231,7 +6669,9 @@ def evidence_package(request: Request, project_id: str, nodeId: int | None = Non
         "exportId": export_id,
         "exportType": "evidence-package",
         "projectId": project_id,
-        "nodeId": effective_node_id,
+        "nodeId": nodeId,
+        "reportId": reportId,
+        "nodeIds": effective_node_ids,
         "counts": {
             "evidenceLinks": len(evidence_rows),
             "documentVersions": len(related_version_ids),
@@ -6262,7 +6702,8 @@ def evidence_package(request: Request, project_id: str, nodeId: int | None = Non
     task["progress"] = 100
     task["finishedAt"] = server_time()
     task["updatedAt"] = task["finishedAt"]
-    task["nodeId"] = effective_node_id
+    task["nodeId"] = nodeId
+    task["reportId"] = reportId
     task["manifest"] = manifest
     task["manifestHash"] = manifest["manifestHash"]
     repo.attach_export_artifact(task, content_type="application/zip", body=body)
@@ -6767,6 +7208,14 @@ def submit_ndt(
         ]
         if submitted_film_ids and len(submitable_films) != len(submitted_film_ids):
             return fail(errors.NDT_FILM_REQUIRED, request, message="未找到可提交的无损检测底片。")
+        ndt_readiness = ndt_submission_readiness(submitable_reports, submitted_film_ids)
+        if not ndt_readiness.get("passed"):
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="无损检测资料未满足提交待审查条件。",
+                data={"ndtReadiness": ndt_readiness},
+            )
         for report in submitable_reports:
             report["status"] = "待审查"
             report["submittedAt"] = submitted_at
@@ -6774,6 +7223,7 @@ def submit_ndt(
             film["status"] = "待审查"
             film["submittedAt"] = submitted_at
         changed = [repo.set_node_status(project_id, node_id, "待审查")]
+        node_evidence_links = upsert_ndt_node_evidence_links(project_id, node_id, submitable_reports)
         todo = {
             "id": f"TODO-{uuid4().hex[:8].upper()}",
             "title": "无损检测资料待审查",
@@ -6808,6 +7258,8 @@ def submit_ndt(
             "createdTodoIds": [todo["id"]],
             "reportIds": sorted(submitted_report_ids),
             "filmIds": sorted(submitted_film_ids),
+            "ndtReadiness": ndt_readiness,
+            "nodeEvidenceLinkIds": [item["id"] for item in node_evidence_links if item.get("id")],
             "changed": changed,
             "snapshot": {
                 "reports": [repo.clone(report) for report in submitable_reports],
@@ -6824,6 +7276,8 @@ def submit_ndt(
                 "createdTodos": [todo],
                 "submittedReportIds": sorted(submitted_report_ids),
                 "submittedFilmIds": sorted(submitted_film_ids),
+                "ndtReadiness": ndt_readiness,
+                "nodeEvidenceLinks": node_evidence_links,
             },
             request,
         )
@@ -20715,7 +21169,7 @@ def llm_compare(request: Request, body: dict[str, Any] = Body(default_factory=di
             "createdAt": server_time(),
             "projectId": body.get("projectId"),
             "nodeId": body.get("nodeId"),
-            "evidenceLinkIds": body.get("evidenceLinkIds") or ["EV-24-001"],
+            "evidenceLinkIds": compact_id_list(body.get("evidenceLinkIds")),
             "status": "排队中",
             "results": [],
         }

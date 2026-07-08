@@ -751,6 +751,35 @@ def build_node_evidence_readiness(repo: Any, project_id: str, node_id: int) -> d
     missing_count = len(missing)
     progress_percent = round((satisfied_count / required_count) * 100) if required_count else 0
     input_version_ids = sorted({str(link.get("documentVersionId")) for link in links if link.get("documentVersionId")})
+    blocking_reasons: list[dict[str, Any]] = []
+    if not points:
+        blocking_reasons.append(
+            {
+                "code": "NO_REVIEW_POINTS",
+                "message": "当前节点未配置必传审查点，不能进入正式 AI 复核。",
+                "severity": "blocker",
+            }
+        )
+    if pending_count:
+        blocking_reasons.append(
+            {
+                "code": "PENDING_EVIDENCE_DECISION",
+                "message": "仍有候选证据未确认或不采用，不能进入正式 AI 复核。",
+                "count": pending_count,
+                "severity": "blocker",
+            }
+        )
+    if missing_count:
+        blocking_reasons.append(
+            {
+                "code": "MISSING_REQUIRED_EVIDENCE",
+                "message": "仍有必传审查点缺少已确认资料证据，不能形成满足要求类结论。",
+                "count": missing_count,
+                "severity": "blocker",
+            }
+        )
+    ready_for_gap_precheck = bool(points) and pending_count == 0
+    ready_for_ai_formal = ready_for_gap_precheck and missing_count == 0
     return {
         "schemaVersion": "node-evidence-readiness-v1",
         "hasReviewPoints": bool(points),
@@ -761,7 +790,10 @@ def build_node_evidence_readiness(repo: Any, project_id: str, node_id: int) -> d
         "rejectedCount": rejected_count,
         "progressPercent": progress_percent,
         "evidenceReviewComplete": bool(points) and pending_count == 0,
-        "readyForAi": bool(points) and pending_count == 0,
+        "readyForAi": ready_for_ai_formal,
+        "readyForAiFormal": ready_for_ai_formal,
+        "readyForGapPrecheck": ready_for_gap_precheck,
+        "blockingReasons": blocking_reasons,
         "requirements": rows,
         "missingRequirements": missing,
         "nodeEvidenceLinks": links,

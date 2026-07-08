@@ -33,6 +33,52 @@ def assert_error(response, reason: str):
     return payload
 
 
+def seed_confirmed_node_24_evidence(project_id: str = "P-2026-HDCP-001") -> None:
+    from libs.material_targeting import review_points_for_project
+
+    project = repo.require_project(project_id)
+    points = [
+        point
+        for point in review_points_for_project(repo, project, node_id=24)
+        if point.get("requiredType") != "可选"
+    ]
+    for index, point in enumerate(points, start=1):
+        link_id = f"NEL-FDE-TEST-24-{index}"
+        if repo.find_one("node_evidence_links", link_id):
+            continue
+        is_certificate = point.get("materialTypeCode") == "welder_certificate"
+        repo.state["node_evidence_links"].append(
+            {
+                "id": link_id,
+                "projectId": project_id,
+                "nodeId": 24,
+                "nodeName": point.get("nodeName"),
+                "reviewPointId": point.get("id"),
+                "reviewContent": point.get("reviewContent"),
+                "materialTypeCode": point.get("materialTypeCode"),
+                "materialTypeName": point.get("materialTypeName"),
+                "requiredType": point.get("requiredType"),
+                "documentId": "DOC-20260625-001" if is_certificate else "DOC-20260625-002",
+                "documentVersionId": "DV-20260625-001-V2" if is_certificate else "DV-20260625-002-V1",
+                "fileName": "焊工资格证-王建国.pdf" if is_certificate else "焊工名册.xlsx",
+                "pageNo": 1,
+                "bbox": [10, 20, 180, 42],
+                "fieldName": "证书编号" if is_certificate else "焊工姓名",
+                "fieldId": "FIELD-24-001" if is_certificate else None,
+                "quotedText": "TS6J-2024-03158" if is_certificate else "王建国 焊工名册",
+                "matchedEvidenceItems": ["TS6J-2024-03158"] if is_certificate else ["王建国"],
+                "supportStatus": "supported",
+                "confidence": 0.96,
+                "manualStatus": "confirmed",
+                "manualStatusLabel": "已确认",
+                "confirmedByName": "张工",
+                "confirmedAt": "2026-07-08 00:00:00",
+                "source": "test_confirmed_evidence",
+                "createdAt": "2026-07-08 00:00:00",
+            }
+        )
+
+
 def test_fde_ocr_action_handoff_marks_stale_when_board_summary_changes(tmp_path) -> None:
     handoff_dir = tmp_path / "ocr_100_action_handoff"
     handoff_dir.mkdir()
@@ -166,6 +212,7 @@ def test_fde_replay_creates_child_run_without_overwriting_parent() -> None:
 
 def test_review_run_orchestration_graph_and_human_decision(monkeypatch) -> None:
     monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "inline")
+    seed_confirmed_node_24_evidence()
     ai_run = assert_ok(
         client.post(
             "/api/projects/P-2026-HDCP-001/inspection/nodes/24/ai-recheck",
@@ -235,6 +282,7 @@ def test_review_run_orchestration_graph_and_human_decision(monkeypatch) -> None:
 def test_review_run_can_call_litellm_and_normalize_structured_findings(monkeypatch) -> None:
     monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "inline")
     monkeypatch.setenv("AICHECK_REVIEW_LLM_EXECUTION", "litellm")
+    seed_confirmed_node_24_evidence()
 
     def fake_chat_sync(self, messages, model="default-chat", **kwargs):
         return {
@@ -279,6 +327,7 @@ def test_review_run_can_call_litellm_and_normalize_structured_findings(monkeypat
 def test_review_run_downgrades_unsupported_structured_litellm_claims(monkeypatch) -> None:
     monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "inline")
     monkeypatch.setenv("AICHECK_REVIEW_LLM_EXECUTION", "litellm")
+    seed_confirmed_node_24_evidence()
 
     def fake_chat_sync(self, messages, model="default-chat", **kwargs):
         return {
@@ -318,6 +367,7 @@ def test_review_run_downgrades_unsupported_structured_litellm_claims(monkeypatch
 
 def test_fde_review_run_visualization_replay_and_shadow(monkeypatch) -> None:
     monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "inline")
+    seed_confirmed_node_24_evidence()
     ai_run = assert_ok(
         client.post(
             "/api/projects/P-2026-HDCP-001/inspection/nodes/24/ai-recheck",
@@ -415,6 +465,7 @@ def test_fde_review_run_visualization_replay_and_shadow(monkeypatch) -> None:
 
 def test_fde_review_run_diagnostic_feedback_does_not_change_business_state(monkeypatch) -> None:
     monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "inline")
+    seed_confirmed_node_24_evidence()
     ai_run = assert_ok(
         client.post(
             "/api/projects/P-2026-HDCP-001/inspection/nodes/24/ai-recheck",

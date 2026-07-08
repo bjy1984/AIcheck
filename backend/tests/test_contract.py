@@ -11,12 +11,14 @@ from copy import deepcopy
 from pathlib import Path
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from libs.db.indexes import POSTGRES_INDEXES
 from libs.db.postgres import bootstrap_local_roles_if_configured, run_transaction_probe
 from apps.api.main import app
 from libs.db.repository import IDEMPOTENCY_COLLECTION, SINGLETON_COLLECTIONS, STATE_COLLECTIONS, repo
+from libs.integrations import task_dispatcher
 from libs.knowledge_retrieval import (
     canonical_standard_text,
     retrieval_quality_bias,
@@ -55,6 +57,149 @@ def assert_error(response, reason: str):
     assert "operationId" in payload
     assert "serverTime" in payload
     return payload
+
+
+def allow_test_ai_dispatch(monkeypatch) -> None:
+    monkeypatch.setattr(
+        task_dispatcher,
+        "ai_recheck_dispatch_readiness",
+        lambda: {"ready": True, "mode": "test", "statusReason": "test_dispatch"},
+    )
+    monkeypatch.setattr(
+        task_dispatcher,
+        "dispatch_ai_recheck",
+        lambda project_id, node_id, run_id: {"mode": "test", "taskId": f"TEST-{run_id}"},
+    )
+
+
+def seed_confirmed_node_24_evidence(project_id: str = "P-2026-HDCP-001") -> list[str]:
+    from libs.material_targeting import review_points_for_project
+
+    project = repo.require_project(project_id)
+    points = [
+        point
+        for point in review_points_for_project(repo, project, node_id=24)
+        if point.get("requiredType") != "可选"
+    ]
+    evidence_ids: list[str] = []
+    for index, point in enumerate(points, start=1):
+        link_id = f"NEL-TEST-24-{index}"
+        existing = repo.find_one("node_evidence_links", link_id)
+        if existing:
+            evidence_ids.append(link_id)
+            continue
+        is_certificate = point.get("materialTypeCode") == "welder_certificate"
+        document_id = "DOC-20260625-001" if is_certificate else "DOC-20260625-002"
+        version_id = "DV-20260625-001-V2" if is_certificate else "DV-20260625-002-V1"
+        repo.state["node_evidence_links"].append(
+            {
+                "id": link_id,
+                "projectId": project_id,
+                "nodeId": 24,
+                "nodeName": point.get("nodeName"),
+                "reviewPointId": point.get("id"),
+                "reviewContent": point.get("reviewContent"),
+                "materialTypeCode": point.get("materialTypeCode"),
+                "materialTypeName": point.get("materialTypeName"),
+                "requiredType": point.get("requiredType"),
+                "documentId": document_id,
+                "documentVersionId": version_id,
+                "fileName": "焊工资格证-王建国.pdf" if is_certificate else "焊工名册.xlsx",
+                "pageNo": 1,
+                "bbox": [10, 20, 180, 42],
+                "fieldName": "证书编号" if is_certificate else "焊工姓名",
+                "fieldId": "FIELD-24-001" if is_certificate else None,
+                "quotedText": "TS6J-2024-03158" if is_certificate else "王建国 焊工名册",
+                "matchedEvidenceItems": ["TS6J-2024-03158"] if is_certificate else ["王建国"],
+                "supportStatus": "supported",
+                "confidence": 0.96,
+                "manualStatus": "confirmed",
+                "manualStatusLabel": "已确认",
+                "confirmedByName": "张工",
+                "confirmedAt": "2026-07-08 00:00:00",
+                "source": "test_confirmed_evidence",
+                "createdAt": "2026-07-08 00:00:00",
+            }
+        )
+        evidence_ids.append(link_id)
+    return evidence_ids
+
+
+def seed_reviewed_node_24(project_id: str = "P-2026-HDCP-001") -> list[str]:
+    evidence_ids = seed_confirmed_node_24_evidence(project_id)
+    repo.state["review_opinions"].insert(
+        0,
+        {
+            "id": "OPN-TEST-24",
+            "projectId": project_id,
+            "nodeId": 24,
+            "result": "满足要求",
+            "opinion": "测试审查意见：已基于 confirmed 证据核验。",
+            "riskLevel": "低",
+            "closeStatus": "未关闭",
+            "evidenceLinkIds": evidence_ids,
+            "reviewerName": "张工",
+            "createdAt": "2026-07-08 00:00:00",
+        },
+    )
+    repo.set_node_status(project_id, 24, "已通过")
+    return evidence_ids
+
+
+def seed_report_scope(report_id: str = "RPT-20260625-001", project_id: str = "P-2026-HDCP-001") -> list[str]:
+    evidence_ids = seed_reviewed_node_24(project_id)
+    report = repo.find_one("reports", report_id)
+    assert report is not None
+    rows = [item for item in repo.state["node_evidence_links"] if item.get("id") in set(evidence_ids)]
+    report["status"] = "待签发"
+    report["evidenceScope"] = {
+        "schemaVersion": "report-evidence-scope-v1",
+        "source": "test_confirmed_node_evidence",
+        "nodeIds": [24],
+        "evidenceLinkIds": evidence_ids,
+        "evidenceLinks": rows,
+    }
+    report["evidenceValidation"] = {"schemaVersion": "report-evidence-validation-v1", "passed": True, "evidenceCount": len(rows)}
+    report["sections"] = [
+        {
+            "key": "summary",
+            "title": "检验结论",
+            "content": "测试报告章节。",
+            "evidenceLinkIds": evidence_ids[:1],
+        }
+    ]
+    return evidence_ids
+
+
+def mark_ndt_report_ready(report_id: str = "NDT-RPT-001") -> None:
+    report = repo.find_one("ndt_reports", report_id)
+    assert report is not None
+    document = repo.find_one("documents", report["fileId"])
+    assert document is not None
+    document["currentOcrStatus"] = "已识别"
+    version_id = document["currentVersionId"]
+    report["detectionRatio"] = report.get("detectionRatio") or "10%"
+    report["conclusion"] = report.get("conclusion") or "RT II 级合格。"
+    existing = {item["id"] for item in repo.state["extracted_fields"]}
+    for suffix, name, value, bbox in [
+        ("REPORTNO", "报告编号", report["reportNo"], [10, 10, 180, 42]),
+        ("RATIO", "检测比例", report["detectionRatio"], [190, 10, 280, 42]),
+        ("LEVEL", "合格级别", "II 级", [290, 10, 360, 42]),
+    ]:
+        field_id = f"FIELD-{report_id}-{suffix}"
+        if field_id not in existing:
+            repo.state["extracted_fields"].append(
+                {
+                    "id": field_id,
+                    "documentVersionId": version_id,
+                    "fieldName": name,
+                    "fieldValue": value,
+                    "pageNo": 1,
+                    "bbox": bbox,
+                    "confidence": 0.95,
+                    "reviewStatus": "已确认",
+                }
+            )
 
 
 def test_response_envelope_and_api_prefix_compatibility() -> None:
@@ -1324,7 +1469,7 @@ def test_visual_seal_subprocess_normalizes_candidates(monkeypatch, tmp_path) -> 
     sample = tmp_path / "seal.png"
     sample.write_bytes(b"png")
     monkeypatch.setenv("AICHECK_OCR_SUBPROCESS_PYTHON", sys.executable)
-    monkeypatch.setattr("apps.ocr_service.engines.subprocess.run", fake_run)
+    monkeypatch.setattr("apps.ocr_service.engines.run_ocr_subprocess", fake_run)
 
     result = VisualSealCandidateSubprocessEngine().parse(sample)
 
@@ -3049,6 +3194,121 @@ def test_ocr_parse_document_uses_pdf_text_layer_fast_path(monkeypatch, tmp_path)
     assert any("Pressure" in item.get("text", "") for item in result["fragments"])
     assert result["engineRuns"][0]["variantId"] == "pdf_text_layer_fast_path"
     assert any(item.get("code") == "PDF_TEXT_LAYER_FAST_PATH" for item in result["diagnostics"] if isinstance(item, dict))
+
+
+def test_ocr_parse_document_deep_scan_options_skip_pdf_text_layer_fast_path(monkeypatch, tmp_path) -> None:
+    from apps.ocr_service.service import OcrService
+
+    source = tmp_path / "welding-pqr.pdf"
+    source.write_bytes(b"%PDF-1.4\n")
+    monkeypatch.setenv("AICHECK_OCR_ALLOWED_LOCAL_DIRS", str(tmp_path))
+
+    service = OcrService()
+    service.pipeline = None
+    captured = {}
+
+    def fail_fast_path(*args, **kwargs):
+        raise AssertionError("pdf text layer fast path must be skipped for deep scan requests")
+
+    def fake_parse_with_local_engines(
+        source_path,
+        *,
+        storage_key,
+        file_name,
+        profile,
+        document_version_id,
+        business_pack_id,
+        options,
+        candidate_results,
+    ):
+        captured["candidate_results"] = candidate_results
+        return {
+            "status": "success",
+            "storageKey": storage_key,
+            "fileName": file_name,
+            "fragments": [{"pageNo": 1, "text": "承压设备焊接工艺评定报告 PQR-2021-001"}],
+            "fields": [],
+            "tables": [],
+            "seals": [],
+            "diagnostics": candidate_results[0]["diagnostics"],
+            "metadata": candidate_results[0]["metadata"],
+        }
+
+    monkeypatch.setattr(service, "parse_pdf_text_layer_fast_path", fail_fast_path)
+    monkeypatch.setattr(service, "parse_with_local_engines", fake_parse_with_local_engines)
+
+    result = service.parse_document(
+        str(source),
+        file_name="welding-pqr.pdf",
+        profile_id="welding_procedure_qualification_v1",
+        options={"disableResultCache": True, "fullOcr": True, "deepScanPdf": True},
+    )
+
+    assert result["status"] == "success"
+    assert captured["candidate_results"][0]["metadata"]["pdfTextLayerFastPathSkipped"] is True
+    assert result["metadata"]["pageCoverageMode"] == "deep_scan"
+    assert any(
+        item.get("code") == "PDF_TEXT_LAYER_FAST_PATH_SKIPPED"
+        for item in result["diagnostics"]
+        if isinstance(item, dict)
+    )
+
+
+def test_ocr_parse_document_business_pdf_profile_defaults_to_deep_scan(monkeypatch, tmp_path) -> None:
+    from apps.ocr_service.service import OcrService
+
+    source = tmp_path / "quality-certificate.pdf"
+    source.write_bytes(b"%PDF-1.4\n")
+    monkeypatch.setenv("AICHECK_OCR_ALLOWED_LOCAL_DIRS", str(tmp_path))
+
+    service = OcrService()
+    service.pipeline = None
+    captured = {}
+
+    def fail_fast_path(*args, **kwargs):
+        raise AssertionError("business PDF profiles must not return from text-layer fast path by default")
+
+    def fake_parse_with_local_engines(
+        source_path,
+        *,
+        storage_key,
+        file_name,
+        profile,
+        document_version_id,
+        business_pack_id,
+        options,
+        candidate_results,
+    ):
+        captured["options"] = options
+        captured["profile"] = profile
+        return {
+            "status": "success",
+            "storageKey": storage_key,
+            "fileName": file_name,
+            "fragments": [{"pageNo": 1, "text": "产品质量证明书 GB/T 8163-2018"}],
+            "fields": [],
+            "tables": [],
+            "seals": [],
+            "diagnostics": candidate_results[0]["diagnostics"],
+            "metadata": candidate_results[0]["metadata"],
+        }
+
+    monkeypatch.setattr(service, "parse_pdf_text_layer_fast_path", fail_fast_path)
+    monkeypatch.setattr(service, "parse_with_local_engines", fake_parse_with_local_engines)
+
+    result = service.parse_document(
+        str(source),
+        file_name="quality-certificate.pdf",
+        profile_id="quality_certificate_v1",
+        options={"disableResultCache": True},
+    )
+
+    assert result["status"] == "success"
+    assert captured["profile"]["profileId"] == "quality_certificate_v1"
+    assert captured["options"]["deepScanPdf"] is True
+    assert captured["options"]["forceTableOcr"] is True
+    assert captured["options"]["forceSealOcr"] is True
+    assert result["metadata"]["pageCoverageMode"] == "deep_scan"
 
 
 def test_ocr_parse_document_text_layer_only_does_not_run_visual_ocr(monkeypatch, tmp_path) -> None:
@@ -4968,6 +5228,33 @@ def test_ocr_client_reads_runtime_doctor() -> None:
     assert report["schemaVersion"] == "aicheck-ocr-runtime-doctor-v1"
 
 
+def test_ocr_client_parse_sync_sends_profile_and_options_payload() -> None:
+    from libs.integrations.ocr_client import OcrClient
+
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.update(json.loads(request.content.decode("utf-8")))
+        return httpx.Response(200, json={"code": 0, "data": {"status": "success", "fragments": []}})
+
+    http_client = OcrClient(base_url="http://ocr", transport=httpx.MockTransport(handler))
+    result = http_client.parse_sync(
+        "minio://documents/source.pdf",
+        file_name="source.pdf",
+        profile_id="quality_certificate_v1",
+        document_type="quality_certificate",
+        document_version_id="DOCV-CLIENT-001",
+        options={"deepScanPdf": True},
+    )
+
+    assert result["status"] == "success"
+    assert captured["storageKey"] == "minio://documents/source.pdf"
+    assert captured["profileId"] == "quality_certificate_v1"
+    assert captured["documentType"] == "quality_certificate"
+    assert captured["documentVersionId"] == "DOCV-CLIENT-001"
+    assert captured["options"]["deepScanPdf"] is True
+
+
 def test_ocr_client_job_sync_returns_structured_failure_diagnostics() -> None:
     from libs.integrations.ocr_client import OcrClient
 
@@ -5257,8 +5544,10 @@ def test_global_idempotency_covers_mutations_without_explicit_route_parameter() 
     )
 
 
-def test_global_audit_covers_mutations_without_explicit_audit_log() -> None:
+def test_global_audit_covers_mutations_without_explicit_audit_log(monkeypatch) -> None:
     project_id = "P-2026-HDCP-001"
+    seed_reviewed_node_24(project_id)
+    allow_test_ai_dispatch(monkeypatch)
     before = len(repo.state["audit_logs"])
 
     run = assert_ok(client.post(f"/projects/{project_id}/inspection/nodes/24/ai-recheck"))
@@ -5375,6 +5664,7 @@ def test_submit_rectification_updates_pending_item_and_enforces_scope() -> None:
 
 def test_generate_report_review_requires_existing_ready_node() -> None:
     project_id = "P-2026-HDCP-001"
+    seed_reviewed_node_24(project_id)
     payload = {"includeEvidence": True, "reportScope": "currentNode"}
 
     assert_error(
@@ -5399,6 +5689,7 @@ def test_generate_report_review_requires_existing_ready_node() -> None:
 def test_report_detail_scope_and_archive_if_match() -> None:
     project_id = "P-2026-HDCP-001"
     report_id = "RPT-20260625-001"
+    seed_report_scope(report_id, project_id)
 
     assert_error(client.get(f"/projects/NOT-A-PROJECT/reports/{report_id}"), "NOT_FOUND")
     detail = assert_ok(client.get(f"/projects/{project_id}/reports/{report_id}"))
@@ -5438,6 +5729,7 @@ def test_report_detail_scope_and_archive_if_match() -> None:
 def test_report_update_if_match_increments_revision() -> None:
     project_id = "P-2026-HDCP-001"
     report_id = "RPT-20260625-001"
+    evidence_ids = seed_report_scope(report_id, project_id)
     detail = assert_ok(client.get(f"/projects/{project_id}/reports/{report_id}"))
     etag = detail["report"]["etag"]
     revision = detail["report"]["revision"]
@@ -5474,7 +5766,7 @@ def test_report_update_if_match_increments_revision() -> None:
     updated_detail = assert_ok(client.get(f"/projects/{project_id}/reports/{report_id}"))
     sections = updated_detail["sections"]
     sections[0]["content"] = "复核后补充：证据链完整，报告结论可签发。"
-    sections[0]["evidenceLinkIds"] = ["EV-24-001"]
+    sections[0]["evidenceLinkIds"] = evidence_ids[:1]
     section_saved = assert_ok(
         client.patch(
             f"/projects/{project_id}/reports/{report_id}",
@@ -5496,6 +5788,52 @@ def test_report_update_if_match_increments_revision() -> None:
         ),
         "VALIDATION_ERROR",
     )
+
+
+def test_review_opinion_requires_current_node_confirmed_evidence() -> None:
+    evidence_ids = seed_confirmed_node_24_evidence()
+
+    no_evidence = assert_error(
+        client.post(
+            "/projects/P-2026-HDCP-001/inspection/nodes/24/review-opinions",
+            json={"result": "满足要求", "opinion": "无证据通过", "evidenceLinkIds": []},
+        ),
+        "VALIDATION_ERROR",
+    )
+    assert no_evidence["data"]["evidenceValidation"]["requiresEvidenceSelection"] is True
+
+    cross_node = assert_error(
+        client.post(
+            "/projects/P-2026-HDCP-001/inspection/nodes/24/review-opinions",
+            json={"result": "满足要求", "opinion": "跨节点证据", "evidenceLinkIds": ["EV-16-001"]},
+        ),
+        "VALIDATION_ERROR",
+    )
+    assert cross_node["data"]["evidenceValidation"]["invalidEvidenceLinkIds"] == ["EV-16-001"]
+
+    saved = assert_ok(
+        client.post(
+            "/projects/P-2026-HDCP-001/inspection/nodes/24/review-opinions",
+            json={"result": "满足要求", "opinion": "confirmed evidence only", "evidenceLinkIds": evidence_ids},
+        )
+    )
+    assert saved["opinion"]["evidenceValidation"]["passed"] is True
+    assert saved["opinion"]["readinessSnapshot"]["readyForAiFormal"] is True
+
+
+def test_ai_recheck_dispatch_disabled_fails_closed_without_status_change() -> None:
+    seed_reviewed_node_24()
+    before_status = repo.node("P-2026-HDCP-001", 24)["status"]
+    before_run_count = len(repo.state["ai_runs"])
+
+    failed = assert_error(
+        client.post("/projects/P-2026-HDCP-001/inspection/nodes/24/ai-recheck"),
+        "CONFLICT",
+    )
+
+    assert failed["data"]["dispatch"]["ready"] is False
+    assert repo.node("P-2026-HDCP-001", 24)["status"] == before_status
+    assert len(repo.state["ai_runs"]) == before_run_count
 
 
 def test_owner_write_forbidden_and_archived_readonly() -> None:
@@ -6658,6 +6996,7 @@ def test_inferred_action_codes_block_role_bypass_when_auth_required(monkeypatch)
         "FORBIDDEN",
     )
 
+    mark_ndt_report_ready("NDT-RPT-001")
     ndt_submit = assert_ok(
         client.post(
             f"/api/projects/{project_id}/ndt/submissions",
@@ -7724,6 +8063,7 @@ def test_cross_node_submission_scope_expands_empty_binding_ids() -> None:
 
 def test_ndt_submit_updates_reports_films_and_traceable_snapshot() -> None:
     project_id = "P-2026-HDCP-001"
+    mark_ndt_report_ready("NDT-RPT-001")
     project = assert_ok(client.get(f"/projects/{project_id}"))["project"]
     film = assert_ok(
         client.post(
@@ -8104,6 +8444,7 @@ def test_upload_complete_inline_ocr_writes_fields_and_slice_task(monkeypatch) ->
     from libs.knowledge_indexing import OFFLINE_EMBEDDING_MODEL, OFFLINE_VECTOR_DIMENSIONS
 
     monkeypatch.setenv("AICHECK_TASK_DISPATCH", "inline")
+    monkeypatch.setenv("AICHECK_WORKER_OCR_ALLOW_IN_PROCESS", "true")
 
     def fake_parse(storage_key: str, *, file_name: str | None = None, **kwargs):
         return {
@@ -8475,7 +8816,7 @@ def test_worker_uses_ocr_http_client_when_configured(monkeypatch) -> None:
     class FakeOcrClient:
         enabled = True
 
-        def parse_sync(self, storage_key: str, *, file_name: str | None = None):
+        def parse_sync(self, storage_key: str, *, file_name: str | None = None, **kwargs):
             return {
                 "storageKey": storage_key,
                 "fileName": file_name,
@@ -8497,6 +8838,17 @@ def test_worker_uses_ocr_http_client_when_configured(monkeypatch) -> None:
     assert repo.state["ocr_parse_results"][0]["documentVersionId"] == version["id"]
     fields = assert_ok(client.get(f"/projects/P-2026-HDCP-001/documents/{doc['id']}/ocr-fields"))
     assert any(field["fieldValue"] == "TS-HTTP" for field in fields)
+
+
+def test_worker_in_process_ocr_requires_explicit_development_switch(monkeypatch) -> None:
+    from apps.worker import tasks
+
+    monkeypatch.delenv("AICHECK_OCR_BASE_URL", raising=False)
+    monkeypatch.delenv("AICHECK_WORKER_OCR_ALLOW_IN_PROCESS", raising=False)
+    monkeypatch.setenv("AICHECK_WORKER_OCR_ENABLE_LOCAL_FALLBACK", "false")
+
+    with pytest.raises(RuntimeError, match="AICHECK_OCR_BASE_URL"):
+        tasks.parse_with_ocr_service("local://fake.pdf", file_name="fake.pdf")
 
 
 def test_worker_prefers_ocr_job_api_when_available(monkeypatch) -> None:
@@ -8527,7 +8879,7 @@ def test_worker_prefers_ocr_job_api_when_available(monkeypatch) -> None:
                 "engineRuns": [{"engine": "job-api", "status": "success"}],
             }
 
-        def parse_sync(self, storage_key: str, *, file_name: str | None = None):
+        def parse_sync(self, storage_key: str, *, file_name: str | None = None, **kwargs):
             raise AssertionError("parse_sync should not be used when job API is available")
 
     monkeypatch.setattr(tasks, "OcrClient", lambda: FakeOcrClient())
@@ -8540,11 +8892,97 @@ def test_worker_prefers_ocr_job_api_when_available(monkeypatch) -> None:
     assert repo.state["ocr_parse_results"][0]["parseResultId"] == "PARSE-REMOTE-001"
 
 
+def test_worker_ocr_job_api_preserves_business_profile_and_options(monkeypatch) -> None:
+    from apps.worker import tasks
+
+    monkeypatch.setenv("AICHECK_OCR_BASE_URL", "http://ocr")
+    captured = {}
+
+    class FakeOcrClient:
+        enabled = True
+
+        def parse_via_job_sync(self, payload, **kwargs):
+            captured.update(payload)
+            return {
+                "jobId": "OCRJOB-BUSINESS-001",
+                "externalJobId": "OCRJOB-BUSINESS-001",
+                "parseResultId": "PARSE-BUSINESS-001",
+                "storageKey": payload["storageKey"],
+                "fileName": payload["fileName"],
+                "status": "success",
+                "fragments": [{"pageNo": 1, "text": "产品质量证明书 GB/T 8163-2018", "confidence": 0.93}],
+                "fields": [{"fieldName": "执行标准", "fieldValue": "GB/T 8163-2018", "confidence": 0.95}],
+                "tables": [],
+                "seals": [],
+                "diagnostics": [],
+                "engineRuns": [{"engine": "job-api", "status": "success"}],
+            }
+
+        def parse_sync(self, storage_key: str, *, file_name: str | None = None, **kwargs):
+            raise AssertionError("parse_sync should not be used when job API is available")
+
+    monkeypatch.setattr(tasks, "OcrClient", lambda: FakeOcrClient())
+    doc, version = repo.create_document("P-2026-HDCP-001", "quality-certificate.pdf", "application/pdf")
+    doc["ocrProfileId"] = "quality_certificate_v1"
+    doc["documentType"] = "quality_certificate"
+    version["ocrProfileId"] = "quality_certificate_v1"
+    version["documentType"] = "quality_certificate"
+
+    result = tasks.parse_document.run(doc["id"], version["id"], version["storageKey"], doc["fileName"])
+
+    assert result["parseResultId"] == "PARSE-BUSINESS-001"
+    assert captured["documentId"] == doc["id"]
+    assert captured["documentVersionId"] == version["id"]
+    assert captured["profileId"] == "quality_certificate_v1"
+    assert captured["documentType"] == "quality_certificate"
+    assert captured["options"]["enableTables"] is True
+    assert captured["options"]["enableSeals"] is True
+    assert captured["options"]["enableFallback"] is True
+
+
+def test_worker_local_ocr_fallback_preserves_business_profile(monkeypatch) -> None:
+    from apps.worker import tasks
+
+    monkeypatch.delenv("AICHECK_OCR_BASE_URL", raising=False)
+    monkeypatch.setenv("AICHECK_WORKER_OCR_ENABLE_LOCAL_FALLBACK", "false")
+    monkeypatch.setenv("AICHECK_WORKER_OCR_ALLOW_IN_PROCESS", "true")
+    captured = {}
+
+    def fake_parse(storage_key: str, *, file_name: str | None = None, **kwargs):
+        captured.update({"storageKey": storage_key, "fileName": file_name, **kwargs})
+        return {
+            "storageKey": storage_key,
+            "fileName": file_name,
+            "status": "success",
+            "fragments": [{"pageNo": 1, "text": "产品质量证明书 GB/T 8163-2018", "confidence": 0.94}],
+            "fields": [{"fieldName": "执行标准", "fieldValue": "GB/T 8163-2018", "confidence": 0.94}],
+            "tables": [],
+            "seals": [],
+            "diagnostics": [],
+        }
+
+    monkeypatch.setattr(tasks.ocr_service, "parse_document", fake_parse)
+    doc, version = repo.create_document("P-2026-HDCP-001", "quality-certificate.pdf", "application/pdf")
+    doc["ocrProfileId"] = "quality_certificate_v1"
+    doc["documentType"] = "quality_certificate"
+    version["ocrProfileId"] = "quality_certificate_v1"
+    version["documentType"] = "quality_certificate"
+
+    result = tasks.parse_document.run(doc["id"], version["id"], version["storageKey"], doc["fileName"])
+
+    assert result["applied"]["status"] == "success"
+    assert captured["profile_id"] == "quality_certificate_v1"
+    assert captured["document_type"] == "quality_certificate"
+    assert captured["document_version_id"] == version["id"]
+    assert captured["options"] == {}
+
+
 def test_failed_knowledge_task_retry_dispatches_worker_and_is_idempotent(monkeypatch) -> None:
     from apps.worker import tasks
 
     monkeypatch.setenv("AICHECK_TASK_DISPATCH", "inline")
     monkeypatch.delenv("AICHECK_OCR_BASE_URL", raising=False)
+    monkeypatch.setenv("AICHECK_WORKER_OCR_ALLOW_IN_PROCESS", "true")
 
     def fake_parse(storage_key: str, *, file_name: str | None = None, **kwargs):
         return {
@@ -8663,7 +9101,7 @@ def test_worker_records_ocr_client_failure_without_leaking_provider_details(monk
     class FailingOcrClient:
         enabled = True
 
-        def parse_sync(self, storage_key: str, *, file_name: str | None = None):
+        def parse_sync(self, storage_key: str, *, file_name: str | None = None, **kwargs):
             raise RuntimeError("provider failed with sk-secret-ocr")
 
     monkeypatch.setattr(tasks, "OcrClient", lambda: FailingOcrClient())
@@ -8718,6 +9156,8 @@ def test_missing_knowledge_file_workers_mark_tasks_failed() -> None:
 def test_litellm_failure_maps_to_ai_run_failed(monkeypatch) -> None:
     from apps.worker import tasks
 
+    seed_reviewed_node_24()
+    allow_test_ai_dispatch(monkeypatch)
     run = assert_ok(client.post("/projects/P-2026-HDCP-001/inspection/nodes/24/ai-recheck"))
 
     class FailingLiteLLM:
@@ -8731,7 +9171,7 @@ def test_litellm_failure_maps_to_ai_run_failed(monkeypatch) -> None:
     assert result["status"] == "失败"
     assert stored["status"] == "失败"
     assert stored["errorCode"] == "AI_RUN_FAILED"
-    assert "LiteLLM AI 复核 调用失败" in stored["errorMessage"]
+    assert "QwenRuntime AI 复核 调用失败" in stored["errorMessage"]
     assert "sk-secret-litellm" not in stored["errorMessage"]
 
 
@@ -8831,6 +9271,8 @@ def test_ai_recheck_downgrades_unsupported_litellm_claims(monkeypatch) -> None:
 
     monkeypatch.setattr(tasks, "LiteLLMClient", FakeLiteLLM)
 
+    seed_reviewed_node_24()
+    allow_test_ai_dispatch(monkeypatch)
     run = assert_ok(client.post("/projects/P-2026-HDCP-001/inspection/nodes/24/ai-recheck"))
     result = tasks.ai_recheck.run("P-2026-HDCP-001", 24, run["runId"])
     stored = repo.find_one("ai_runs", run["runId"])
@@ -8882,7 +9324,7 @@ def test_offline_embed_and_compare_failures_do_not_leak_provider_details(monkeyp
     assert vector_task["status"] == "成功"
     assert compared["status"] == "失败"
     assert compare_run["errorCode"] == "EXTERNAL_TOOL_FAILED"
-    assert "LiteLLM 模型对比 调用失败" in compare_run["errorMessage"]
+    assert "QwenRuntime 模型对比 调用失败" in compare_run["errorMessage"]
     assert "sk-secret-chat" not in compare_run["errorMessage"]
 
 
@@ -8957,6 +9399,7 @@ def test_llm_compare_uses_grounded_compare_only_payload(monkeypatch) -> None:
 def test_completed_ocr_worker_is_idempotent(monkeypatch) -> None:
     from apps.worker import tasks
 
+    monkeypatch.setenv("AICHECK_WORKER_OCR_ALLOW_IN_PROCESS", "true")
     calls = {"ocr": 0}
 
     def fake_parse(storage_key: str, *, file_name: str | None = None, **kwargs):
@@ -8992,6 +9435,7 @@ def test_completed_ocr_worker_is_idempotent(monkeypatch) -> None:
 def test_completed_slice_and_embed_workers_are_idempotent(monkeypatch) -> None:
     from apps.worker import tasks
 
+    monkeypatch.setenv("AICHECK_WORKER_OCR_ALLOW_IN_PROCESS", "true")
     def fake_parse(storage_key: str, *, file_name: str | None = None, **kwargs):
         return {
             "storageKey": storage_key,
@@ -9051,6 +9495,8 @@ def test_completed_ai_and_compare_workers_are_idempotent(monkeypatch) -> None:
 
     monkeypatch.setattr(tasks, "LiteLLMClient", FakeLiteLLM)
 
+    seed_reviewed_node_24()
+    allow_test_ai_dispatch(monkeypatch)
     ai_run = assert_ok(client.post("/projects/P-2026-HDCP-001/inspection/nodes/24/ai-recheck"))
     first_ai = tasks.ai_recheck.run("P-2026-HDCP-001", 24, ai_run["runId"])
     second_ai = tasks.ai_recheck.run("P-2026-HDCP-001", 24, ai_run["runId"])
@@ -9190,6 +9636,7 @@ def test_export_artifact_uses_object_storage_when_available(monkeypatch) -> None
 
 
 def test_archive_and_evidence_packages_write_queryable_audit_artifacts(monkeypatch) -> None:
+    seed_confirmed_node_24_evidence()
     stored: dict[str, bytes | str | int] = {}
 
     def fake_put(bucket: str, object_name: str, data: bytes, *, content_type: str):
@@ -9231,6 +9678,13 @@ def test_archive_and_evidence_packages_write_queryable_audit_artifacts(monkeypat
         assert manifest["counts"]["evidenceLinks"] >= 1
         evidence_rows = json.loads(evidence_zip.read("evidence_links.json").decode("utf-8"))
         assert all(row.get("documentVersionId") in set(manifest["documentVersionIds"]) for row in evidence_rows)
+
+
+def test_evidence_package_requires_explicit_node_or_report_scope() -> None:
+    assert_error(
+        client.get("/projects/P-2026-HDCP-001/archive/evidence-package"),
+        "VALIDATION_ERROR",
+    )
 
 
 class FakeCursor:

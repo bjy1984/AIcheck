@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from typing import Any
 from uuid import uuid4
 
@@ -608,11 +609,25 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         context.setdefault("validationResults", {})[node_key] = result
         return result
     if node_key == "evidence_validation":
+        drafts = context.get("findingDrafts") or []
         result = validate_review_evidence_refs(
-            context.get("findingDrafts") or [],
+            drafts,
             context.get("evidenceLinks") or [],
             audit_runtime=audit_runtime,
         )
+        mismatched_indexes = {
+            int(failure.get("index"))
+            for failure in result.get("failures") or []
+            if failure.get("code") == "CLAIM_TO_EVIDENCE_MISMATCH" and failure.get("index") is not None
+        }
+        for index in mismatched_indexes:
+            if 0 <= index < len(drafts):
+                draft = drafts[index]
+                draft["groundingStatus"] = "insufficient_evidence"
+                draft["confidence"] = min(float(draft.get("confidence") or 0), 0.55)
+                draft["requiresHumanConfirmation"] = True
+                draft.setdefault("unsupportedClaims", []).append("claim_to_evidence_mismatch")
+                draft["description"] = "证据不足，需人工确认；审查草稿中的关键数字、日期、证书号、标准号或单位名未能在引用证据中匹配。"
         context.setdefault("validationResults", {})[node_key] = result
         return result
     if node_key == "reference_validation":
@@ -1086,6 +1101,51 @@ def validate_bbox(value: Any) -> bool:
     return x2 >= x1 and y2 >= y1 and x1 >= 0 and y1 >= 0
 
 
+def normalize_claim_text(value: Any) -> str:
+    text = str(value or "").upper()
+    return re.sub(r"[\s\u3000:：/／\\\-_.，。,、()（）\[\]【】]+", "", text)
+
+
+def extract_claim_tokens(draft: dict[str, Any]) -> list[str]:
+    text = "\n".join(
+        str(draft.get(key) or "")
+        for key in ["title", "description", "opinionDraft", "resultText", "suggestedAction"]
+    )
+    patterns = [
+        r"\b[A-Z]{1,6}\s*/?\s*T?\s*\d{2,6}(?:\.\d+)?(?:-\d{4})?\b",
+        r"\bTS[A-Z0-9\-]{6,}\b",
+        r"\bA\d{6,}\b",
+        r"\b\d{4}[年\-/.]\d{1,2}[月\-/.]\d{1,2}日?\b",
+        r"\b\d+(?:\.\d+)?\s*(?:%|MPA|MM|℃|级|类)\b",
+        r"[\u4e00-\u9fa5]{2,30}(?:公司|院|中心|厂|集团|有限责任公司)",
+    ]
+    tokens: list[str] = []
+    for pattern in patterns:
+        for match in re.findall(pattern, text, flags=re.IGNORECASE):
+            token = match if isinstance(match, str) else "".join(match)
+            normalized = normalize_claim_text(token)
+            if normalized and normalized not in tokens:
+                tokens.append(normalized)
+    return tokens[:20]
+
+
+def evidence_text_corpus(evidence_links: list[dict[str, Any]], refs: list[dict[str, Any]]) -> str:
+    ref_ids = {str(ref.get("evidenceLinkId")) for ref in refs if isinstance(ref, dict) and ref.get("evidenceLinkId")}
+    rows = [
+        item
+        for item in evidence_links
+        if isinstance(item, dict) and (not ref_ids or str(item.get("id") or "") in ref_ids)
+    ]
+    values: list[str] = []
+    for row in rows:
+        for key in ["quotedText", "fieldName", "fieldValue", "fileName", "standardCode", "reportNo", "conclusion"]:
+            if row.get(key):
+                values.append(str(row.get(key)))
+        for item in row.get("matchedEvidenceItems") or []:
+            values.append(str(item))
+    return normalize_claim_text("\n".join(values))
+
+
 def validate_review_evidence_refs(
     drafts: list[dict[str, Any]],
     evidence_links: list[dict[str, Any]],
@@ -1130,6 +1190,19 @@ def validate_review_evidence_refs(
         if not refs:
             warnings.append({"code": "NO_EVIDENCE_REFS", "index": draft_index, "message": "Finding has no direct evidence references."})
             continue
+        claim_tokens = extract_claim_tokens(draft)
+        if claim_tokens:
+            corpus = evidence_text_corpus(evidence_links, refs)
+            missing_tokens = [token for token in claim_tokens if token not in corpus]
+            if missing_tokens:
+                failures.append(
+                    {
+                        "code": "CLAIM_TO_EVIDENCE_MISMATCH",
+                        "index": draft_index,
+                        "missingTokens": missing_tokens[:10],
+                        "message": "Finding contains explicit numbers/dates/certificates/standards/entities not found in cited evidence text.",
+                    }
+                )
         for ref_index, ref in enumerate(refs):
             checked_refs += 1
             if not isinstance(ref, dict):

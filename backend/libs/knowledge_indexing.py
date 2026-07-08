@@ -94,7 +94,7 @@ def quarantine_interference_reasons(value: Any, *, context_type: str | None = No
     return [
         reason
         for reason in reasons
-        if reason in {"empty_text", "noise_like_watermark", "low_value_short", "symbol_ascii_only", "business_rule_low_value"}
+        if reason in {"empty_text", "noise_like_watermark", "symbol_ascii_only", "business_rule_low_value"}
     ]
 
 

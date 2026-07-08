@@ -2,6 +2,7 @@ from apps.ocr_service.fusion import fragment_seal_candidates_from_text, fuse_par
 from apps.ocr_service.profiles import profile_for
 from apps.ocr_service.service import (
     attach_variant_metadata,
+    apply_business_pdf_deep_scan_default_options,
     apply_fast_first_default_options,
     apply_profile_postprocessing,
     detect_engineering_drawing_profile,
@@ -30,6 +31,180 @@ def test_engineering_photo_profile_enables_fast_first_defaults() -> None:
     assert options["variants"] == ["original", "gray_clahe", "seal_color_mask"]
 
 
+def test_business_pdf_profile_enables_deep_scan_defaults_without_touching_standard_text_layer() -> None:
+    quality_profile = profile_for("quality_certificate_v1")
+
+    options = apply_business_pdf_deep_scan_default_options({}, quality_profile, suffix=".pdf")
+
+    assert options["fullOcr"] is True
+    assert options["deepScanPdf"] is True
+    assert options["disablePdfTextLayerFastPath"] is True
+    assert options["forceTableOcr"] is True
+    assert options["forceSealOcr"] is True
+    assert options["pageCoverageMode"] == "deep_scan"
+    assert options["maxPages"] == 6
+
+    standard_options = apply_business_pdf_deep_scan_default_options(
+        {"standardIndexingStrategy": "auto_text_layer_then_remote_ocr", "preferTextLayer": True},
+        quality_profile,
+        suffix=".pdf",
+    )
+    assert "deepScanPdf" not in standard_options
+    assert "disablePdfTextLayerFastPath" not in standard_options
+
+
+def test_business_pdf_deep_scan_defaults_respect_explicit_text_layer_only() -> None:
+    profile = profile_for("quality_certificate_v1")
+
+    options = apply_business_pdf_deep_scan_default_options({"textLayerOnly": True}, profile, suffix=".pdf")
+
+    assert options == {"textLayerOnly": True}
+
+
+def test_license_pdf_deep_scan_default_is_seal_focused_not_full_ocr() -> None:
+    profile = profile_for("qualification_certificate_v1")
+
+    options = apply_business_pdf_deep_scan_default_options({}, profile, suffix=".pdf")
+
+    assert options["deepScanPdf"] is True
+    assert options["disablePdfTextLayerFastPath"] is True
+    assert options["forceSealOcr"] is True
+    assert options["maxPages"] == 2
+    assert options["enablePaddlexSeal"] is False
+    assert options["enableSealTextRecognition"] is False
+    assert options["enableRasterTextOcr"] is False
+    assert options["enableTables"] is False
+    assert options["forceFallbackOcr"] is True
+    assert options["disableRemediation"] is False
+    assert options["enableVlLayoutTextRemediation"] is True
+    assert options["renderDpi"] == 250
+    assert options["maxLongSide"] == 1800
+    assert options["textDetLimitSideLen"] == 1800
+    assert options["variants"] == ["original"]
+    assert "fullOcr" not in options
+    assert "forceTableOcr" not in options
+
+
+def test_license_pdf_default_skips_raster_text_and_forces_vl_fallback(monkeypatch, tmp_path) -> None:
+    from apps.ocr_service.service import OcrService
+
+    source = tmp_path / "license.pdf"
+    source.write_bytes(b"%PDF-1.4\n")
+    page = tmp_path / "page-1.png"
+    page.write_bytes(b"fake-image")
+    monkeypatch.setenv("AICHECK_OCR_ALLOWED_LOCAL_DIRS", str(tmp_path))
+    calls = {"vl": 0}
+
+    class RasterTextEngineShouldNotRun:
+        name = "paddle_ocr_subprocess"
+        version = "test"
+
+        def available(self):
+            return True
+
+        def status(self):
+            return {"engine": self.name, "version": self.version, "available": True}
+
+        def parse(self, *args, **kwargs):
+            raise AssertionError("license PDF default must skip raster text OCR")
+
+    class FakePaddleOcrVlEngine:
+        name = "paddleocr_vl_1_6"
+        version = "test"
+
+        def available(self):
+            return True
+
+        def status(self):
+            return {"engine": self.name, "version": self.version, "available": True}
+
+        def parse(self, source_path, *, file_name=None, profile=None, variant=None):
+            calls["vl"] += 1
+            assert str(variant.get("variantId")) == "document_original"
+            assert str(variant.get("engineScope")) == "document"
+            assert str(variant.get("path")).endswith("license.pdf")
+            return {
+                "ok": True,
+                "text": "中华人民共和国特种设备生产许可证 许可证编号 TS3810436-2021 有效期至 2024年6月21日",
+                "fragments": [
+                    {
+                        "pageNo": 1,
+                        "text": "许可证编号 TS3810436-2021",
+                        "confidence": 0.91,
+                        "sourceEngine": self.name,
+                    }
+                ],
+                "fields": [],
+                "tables": [],
+                "seals": [],
+                "metadata": {"documentLevel": True, "engineScope": "document"},
+            }
+
+    class TableEngineShouldNotRun:
+        name = "pp_structure_v3"
+        version = "test"
+
+        def available(self):
+            return True
+
+        def status(self):
+            return {"engine": self.name, "version": self.version, "available": True}
+
+        def parse(self, *args, **kwargs):
+            raise AssertionError("license PDF default must skip table OCR before VL fallback")
+
+    monkeypatch.setattr(
+        "apps.ocr_service.service.render_document_pages",
+        lambda source_path, profile=None: [
+            {
+                "pageNo": 1,
+                "path": str(page),
+                "width": 100,
+                "height": 100,
+                "sourceType": "pdf",
+                "documentPath": str(source),
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "apps.ocr_service.service.call_probe_page_quality",
+        lambda source_path, profile=None, pages=None: [{"pageNo": 1, "quality": {"isLowQuality": True}}],
+    )
+    monkeypatch.setattr(
+        "apps.ocr_service.service.call_generate_image_variants",
+        lambda source_path, profile=None, page_quality=None, pages=None, options=None: [
+            {
+                "variantId": "page_1_original",
+                "pageNo": 1,
+                "path": str(page),
+                "documentPath": str(source),
+                "sourceType": "pdf",
+                "preprocessChain": ["original"],
+            }
+        ],
+    )
+
+    service = OcrService()
+    service.pipeline = None
+    service.engines = [RasterTextEngineShouldNotRun(), TableEngineShouldNotRun(), FakePaddleOcrVlEngine()]
+
+    result = service.parse_document(
+        str(source),
+        file_name="license.pdf",
+        profile_id="qualification_certificate_v1",
+        options={"disableResultCache": True, "disableEngineResultCache": True, "disableRemediation": True},
+    )
+
+    assert calls["vl"] == 1
+    assert result["status"] == "success"
+    assert result["metadata"]["deepScanDefaultReason"] == "business_pdf_profile:qualification_certificate_v1"
+    assert result["metadata"]["rasterTextOcrEnabled"] is False
+    assert result["metadata"]["fallbackOcrForced"] is True
+    assert any(item.get("engine") == "paddle_ocr_subprocess" and item.get("status") == "skipped" for item in result["engineRuns"])
+    assert any(item.get("engine") == "pp_structure_v3" and item.get("status") == "skipped" for item in result["engineRuns"])
+    assert any(item.get("engine") == "paddleocr_vl_1_6" and item.get("status") == "success" for item in result["engineRuns"])
+
+
 def test_fast_first_defer_heavy_engines_after_text_evidence() -> None:
     profile = profile_for("piping_characteristic_list_v1")
     options = apply_fast_first_default_options({}, profile)
@@ -47,6 +222,41 @@ def test_fast_first_defer_heavy_engines_after_text_evidence() -> None:
     assert should_defer_heavy_engine("paddleocr_vl_1_6", result, profile=profile, options=options) is True
     assert should_defer_heavy_engine("opencv_table_grid_subprocess", result, profile=profile, options=options) is True
     assert should_defer_heavy_engine("visual_seal_candidate_subprocess", result, profile=profile, options=options) is True
+
+
+def test_paddleocr_vl_document_bbox_can_drive_crop_remediation() -> None:
+    result = {
+        "layoutBlocks": [
+            {
+                "blockId": "layout_1",
+                "blockType": "text",
+                "pageNo": 1,
+                "bbox": [100, 120, 420, 180],
+                "sourceEngine": "paddleocr_vl_1_6",
+            }
+        ],
+        "fields": [],
+        "fragments": [],
+        "tables": [],
+        "seals": [],
+    }
+    variant = {
+        "variantId": "document_original",
+        "engineScope": "document",
+        "preprocessChain": ["document_original"],
+    }
+
+    attach_variant_metadata(
+        result,
+        "paddleocr_vl_1_6",
+        variant,
+        document_pages=[{"pageNo": 1, "width": 800, "height": 1000}],
+    )
+
+    block = result["layoutBlocks"][0]
+    assert block["coordinateSystem"] == "rendered_pixels"
+    assert block["coordinateTransformStatus"] == "vl_document_pixels_match_rendered_page"
+    assert "document_coordinate_unmapped" not in block.get("qualityFlags", [])
 
 
 def test_project_name_can_join_lines_after_project_label() -> None:
@@ -224,6 +434,133 @@ def test_generic_profile_routes_scan_pdf_quality_and_rt_documents() -> None:
     assert quality_route["profile"]["profileId"] == "quality_certificate_v1"
     assert rt_route is not None
     assert rt_route["profile"]["profileId"] == "ndt_rt_report_v1"
+
+
+def test_generic_profile_routes_scan_pdf_ut_documents() -> None:
+    requested = profile_for("generic_document_v1")
+
+    routed = detect_scan_business_document_profile(
+        {
+            "fragments": [
+                {"text": "超声检测报告 UT"},
+                {"text": "报告编号 UTBG-2021-001"},
+                {"text": "焊口编号 W-002"},
+                {"text": "探头 评定级别 II 检测比例 10%"},
+            ]
+        },
+        requested,
+    )
+
+    assert routed is not None
+    assert routed["profile"]["profileId"] == "ndt_ut_report_v1"
+
+
+def test_generic_profile_routes_construction_plan_without_confusing_welding_record() -> None:
+    requested = profile_for("generic_document_v1")
+
+    routed = detect_scan_business_document_profile(
+        {
+            "fragments": [
+                {"text": "工艺管道施工方案"},
+                {"text": "项目名称 二期装车站新增两套卸车系统项目"},
+                {"text": "施工单位 广东政和工程有限公司"},
+                {"text": "编制依据 施工方法 质量保证措施 安全技术措施"},
+                {"text": "2021年4月15日"},
+            ]
+        },
+        requested,
+    )
+
+    assert routed is not None
+    assert routed["profile"]["profileId"] == "construction_plan_v1"
+
+
+def test_construction_plan_profile_extracts_basic_consistency_fields() -> None:
+    result = {
+        "fragments": [
+            {"text": "工艺管道施工方案", "bbox": [10, 10, 160, 30], "confidence": 0.98, "pageNo": 1},
+            {"text": "项目名称", "bbox": [10, 40, 80, 60], "confidence": 0.98, "pageNo": 1},
+            {"text": "二期装车站新增两套卸车系统项目", "bbox": [90, 40, 320, 60], "confidence": 0.97, "pageNo": 1},
+            {"text": "施工单位", "bbox": [10, 70, 80, 90], "confidence": 0.98, "pageNo": 1},
+            {"text": "广东政和工程有限公司", "bbox": [90, 70, 260, 90], "confidence": 0.97, "pageNo": 1},
+            {"text": "2021年4月15日", "bbox": [10, 100, 120, 120], "confidence": 0.96, "pageNo": 1},
+            {"text": "编制依据 施工方法 质量保证措施", "bbox": [10, 130, 240, 150], "confidence": 0.95, "pageNo": 1},
+        ],
+        "fields": [],
+        "tables": [],
+        "seals": [],
+        "diagnostics": [],
+    }
+
+    apply_profile_postprocessing(result, profile_for("construction_plan_v1"))
+    fields = {item["fieldCode"]: item["fieldValue"] for item in result["fields"]}
+
+    assert fields["document_title"] == "管道施工方案"
+    assert fields["project_name"] == "二期装车站新增两套卸车系统项目"
+    assert fields["construction_unit"] == "广东政和工程有限公司"
+    assert fields["issue_date"] == "2021年4月15日"
+
+
+def test_generic_profile_routes_welding_procedure_qualification_separately_from_record() -> None:
+    requested = profile_for("generic_document_v1")
+
+    routed = detect_scan_business_document_profile(
+        {
+            "fragments": [
+                {"text": "承压设备焊接工艺评定报告"},
+                {"text": "PQR-2021-001 WPS-2021-001"},
+                {"text": "焊接方法 GTAW/SMAW"},
+                {"text": "母材 Q345R 厚度范围 3-12mm"},
+                {"text": "评定日期 2021年4月12日"},
+            ]
+        },
+        requested,
+    )
+
+    assert routed is not None
+    assert routed["profile"]["profileId"] == "welding_procedure_qualification_v1"
+
+
+def test_welding_procedure_qualification_profile_extracts_scope_fields_and_table_schema() -> None:
+    result = {
+        "fragments": [
+            {"text": "承压设备焊接工艺评定报告", "bbox": [10, 10, 220, 35], "confidence": 0.94, "pageNo": 1},
+            {"text": "报告编号 PQR-2021-001", "bbox": [10, 45, 180, 65], "confidence": 0.93, "pageNo": 1},
+            {"text": "项目名称", "bbox": [10, 75, 90, 95], "confidence": 0.95, "pageNo": 1},
+            {"text": "二期装车站新增两套卸车系统项目", "bbox": [100, 75, 350, 95], "confidence": 0.94, "pageNo": 1},
+            {"text": "WPS编号 WPS-2021-001", "bbox": [10, 105, 170, 125], "confidence": 0.93, "pageNo": 1},
+            {"text": "焊接方法 GTAW/SMAW", "bbox": [10, 135, 180, 155], "confidence": 0.92, "pageNo": 1},
+            {"text": "母材 Q345R", "bbox": [10, 165, 120, 185], "confidence": 0.92, "pageNo": 1},
+            {"text": "厚度范围 3-12mm", "bbox": [10, 195, 150, 215], "confidence": 0.91, "pageNo": 1},
+            {"text": "评定日期 2021年4月12日", "bbox": [10, 225, 190, 245], "confidence": 0.93, "pageNo": 1},
+        ],
+        "fields": [],
+        "tables": [
+            {
+                "tableId": "pqr_table_1",
+                "cells": [
+                    {"text": "PQR", "row": 0, "col": 0},
+                    {"text": "焊接方法", "row": 0, "col": 1},
+                    {"text": "母材", "row": 0, "col": 2},
+                    {"text": "厚度范围", "row": 0, "col": 3},
+                ],
+            }
+        ],
+        "seals": [],
+        "diagnostics": [],
+    }
+
+    apply_profile_postprocessing(result, profile_for("welding_procedure_qualification_v1"))
+    fields = {item["fieldCode"]: item["fieldValue"] for item in result["fields"]}
+
+    assert fields["report_no"] == "PQR-2021-001"
+    assert fields["project_name"] == "二期装车站新增两套卸车系统项目"
+    assert fields["procedure_no"] == "WPS-2021-001"
+    assert fields["welding_method"] == "GTAW/SMAW"
+    assert fields["base_material"] == "Q345R"
+    assert fields["thickness_range"] == "3-12mm"
+    assert fields["qualification_date"] == "2021年4月12日"
+    assert result["tables"][0]["businessSchema"] == "welding_procedure_qualification_table"
 
 
 def test_scan_business_router_does_not_override_explicit_profile() -> None:

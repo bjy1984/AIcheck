@@ -110,6 +110,7 @@ TABLE_HEADER_ALIASES = {
     "mechanical_property_table": {"力学性能", "机械性能", "抗拉强度", "屈服强度", "伸长率", "tensile", "yield", "elongation"},
     "construction_record_table": {"施工日期", "施工内容", "责任人", "检查结果", "记录编号", "project"},
     "welding_record_table": {"焊口编号", "焊口号", "焊工", "焊工资格", "资格证号", "焊接日期", "wps", "pqr"},
+    "welding_procedure_qualification_table": {"焊接工艺评定", "评定报告", "pqr", "wps", "焊接方法", "母材", "焊材", "厚度范围", "适用范围"},
 }
 
 

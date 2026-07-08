@@ -148,9 +148,43 @@ AUTO_ROUTE_PROFILE_IDS = {
     *ENGINEERING_DRAWING_PROFILE_IDS,
     "quality_certificate_v1",
     "ndt_rt_report_v1",
+    "ndt_ut_report_v1",
     "qualification_certificate_v1",
+    "construction_plan_v1",
     "welding_record_v1",
+    "welding_procedure_qualification_v1",
     "welder_certificate_v1",
+}
+BUSINESS_PDF_DEEP_SCAN_PROFILE_IDS = {
+    "quality_certificate_v1",
+    "ndt_rt_report_v1",
+    "ndt_ut_report_v1",
+    "qualification_certificate_v1",
+    "welding_procedure_qualification_v1",
+    "welder_certificate_v1",
+}
+BUSINESS_PDF_DEEP_SCAN_DOCUMENT_TYPES = {
+    "quality_certificate",
+    "ndt_report",
+    "qualification_certificate",
+    "welding_procedure_qualification",
+    "welder_certificate",
+}
+BUSINESS_PDF_DEEP_SCAN_DEFAULT_MAX_PAGES = {
+    "qualification_certificate_v1": 2,
+    "quality_certificate_v1": 6,
+    "ndt_rt_report_v1": 4,
+    "ndt_ut_report_v1": 4,
+    "welder_certificate_v1": 4,
+    "welding_procedure_qualification_v1": 6,
+}
+PDF_DEEP_SCAN_PRIMARY_OPTION_KEYS = {
+    "fullOcr",
+    "deepScan",
+    "deepScanPdf",
+    "forceVisualOcr",
+    "disablePdfTextLayerFastPath",
+    "textLayerOnly",
 }
 FAST_FIRST_PROFILE_IDS = set(ENGINEERING_DRAWING_PROFILE_IDS)
 FAST_FIRST_DOCUMENT_TYPES = set(ENGINEERING_DRAWING_DOCUMENT_TYPES)
@@ -187,6 +221,82 @@ SEAL_REMEDIATION_REASONS = {
     "SEAL_EVIDENCE_MISSING",
     "EXPECTED_SEAL_TYPE_MISSING",
 }
+
+
+def pdf_deep_scan_requested(options: dict[str, Any]) -> bool:
+    return any(
+        parse_bool(options.get(key), False) is True
+        for key in [
+            "fullOcr",
+            "deepScan",
+            "deepScanPdf",
+            "forceVisualOcr",
+            "forceTableOcr",
+            "forceSealOcr",
+            "disablePdfTextLayerFastPath",
+        ]
+    )
+
+
+def pdf_text_layer_fast_path_enabled(options: dict[str, Any]) -> bool:
+    if parse_bool(os.getenv("AICHECK_OCR_PDF_TEXT_LAYER_FAST_PATH", "true"), True) is not True:
+        return False
+    if pdf_deep_scan_requested(options):
+        return False
+    return True
+
+
+def apply_business_pdf_deep_scan_default_options(
+    options: dict[str, Any],
+    profile: dict[str, Any],
+    *,
+    suffix: str,
+) -> dict[str, Any]:
+    if suffix != ".pdf":
+        return options
+    if parse_bool(options.get("disablePdfDeepScanDefault"), False) is True:
+        return options
+    if any(key in options for key in PDF_DEEP_SCAN_PRIMARY_OPTION_KEYS):
+        return options
+    if str(options.get("standardIndexingStrategy") or "") or parse_bool(options.get("preferTextLayer"), False) is True:
+        return options
+    profile_id = str(profile.get("profileId") or "")
+    document_type = str(profile.get("documentType") or "")
+    if profile_id not in BUSINESS_PDF_DEEP_SCAN_PROFILE_IDS and document_type not in BUSINESS_PDF_DEEP_SCAN_DOCUMENT_TYPES:
+        return options
+
+    adjusted = deepcopy(options)
+    adjusted.setdefault("deepScanPdf", True)
+    adjusted.setdefault("disablePdfTextLayerFastPath", True)
+    adjusted.setdefault("enableFallback", True)
+    adjusted.setdefault("enableSealCropEvidence", True)
+    adjusted.setdefault("pageCoverageMode", "deep_scan")
+    adjusted.setdefault("deepScanDefaultReason", f"business_pdf_profile:{profile_id or document_type}")
+    if adjusted.get("maxPages") is None:
+        adjusted["maxPages"] = BUSINESS_PDF_DEEP_SCAN_DEFAULT_MAX_PAGES.get(profile_id, 4)
+    if profile_id == "qualification_certificate_v1":
+        adjusted.setdefault("enablePaddlexSeal", False)
+        adjusted.setdefault("enableSealTextRecognition", False)
+        adjusted.setdefault("enableRasterTextOcr", False)
+        adjusted.setdefault("enableTables", False)
+        adjusted.setdefault("forceFallbackOcr", True)
+        adjusted.setdefault("disableRemediation", False)
+        adjusted.setdefault("enableVlLayoutTextRemediation", True)
+        adjusted.setdefault("engineBudgetSeconds", 120)
+        adjusted.setdefault("renderDpi", 250)
+        adjusted.setdefault("maxLongSide", 1800)
+        adjusted.setdefault("textDetLimitSideLen", 1800)
+        adjusted.setdefault("variants", ["original"])
+
+    if profile.get("requiredTables") and parse_bool(adjusted.get("enableTables"), True) is not False:
+        adjusted.setdefault("fullOcr", True)
+        adjusted.setdefault("enableTables", True)
+        adjusted.setdefault("forceTableOcr", True)
+    seal_required = parse_bool((profile.get("sealRules") or {}).get("required"), False) is True
+    if seal_required and parse_bool(adjusted.get("enableSeals"), True) is not False:
+        adjusted.setdefault("enableSeals", True)
+        adjusted.setdefault("forceSealOcr", True)
+    return adjusted
 
 
 class OcrService:
@@ -376,11 +486,10 @@ class OcrService:
         if suffix in OFFICE_TEXT_DOCUMENT_SUFFIXES:
             return parse_docx_document(source_path, storage_key, file_name)
         base_profile = profile_for(profile_id, document_type)
+        options = apply_business_pdf_deep_scan_default_options(options, base_profile, suffix=suffix)
         options = apply_fast_first_default_options(options, base_profile)
         profile = apply_parse_options_to_profile(base_profile, options)
-        if suffix == ".pdf" and parse_bool(
-            os.getenv("AICHECK_OCR_PDF_TEXT_LAYER_FAST_PATH", "true")
-        ):
+        if suffix == ".pdf" and pdf_text_layer_fast_path_enabled(options):
             fast_result = self.parse_pdf_text_layer_fast_path(
                 source_path,
                 storage_key=storage_key,
@@ -402,6 +511,28 @@ class OcrService:
                     ),
                 )
         candidate_results: list[dict[str, Any]] = []
+        if suffix == ".pdf" and pdf_deep_scan_requested(options):
+            candidate_results.append(
+                {
+                    "ok": True,
+                    "status": "success",
+                    "metadata": {
+                        "deepScanMode": "requested",
+                        "pageCoverageMode": "deep_scan",
+                        "pdfTextLayerFastPathSkipped": True,
+                        "deepScanDefaultReason": options.get("deepScanDefaultReason"),
+                        "rasterTextOcrEnabled": parse_bool(options.get("enableRasterTextOcr"), True) is True,
+                        "fallbackOcrForced": parse_bool(options.get("forceFallbackOcr"), False) is True,
+                    },
+                    "diagnostics": [
+                        diagnostic(
+                            "PDF_TEXT_LAYER_FAST_PATH_SKIPPED",
+                            "已按请求跳过 PDF 文本层 fast path，继续执行 OCR/表格/印章深扫。",
+                            level="info",
+                        )
+                    ],
+                }
+            )
         if self.pipeline is not None:
             try:
                 if callable(self.pipeline):
@@ -1410,6 +1541,11 @@ def normalize_fragments(raw: Any, text: str | None) -> list[dict[str, Any]]:
 
 def merge_parse_result(target: dict[str, Any], incoming: dict[str, Any]) -> None:
     target.setdefault("metadata", {})
+    if isinstance(incoming.get("metadata"), dict):
+        for key, value in incoming["metadata"].items():
+            if key == "enginePageInfo":
+                continue
+            target["metadata"].setdefault(key, deepcopy(value))
     if incoming.get("pages"):
         target["metadata"].setdefault("enginePageInfo", []).extend(deepcopy(incoming.get("pages") or []))
     for key in ["fragments", "layoutBlocks", "fields", "tables", "seals", "signatures", "diagnostics"]:
@@ -1743,6 +1879,9 @@ def field_remediation_targets(result: dict[str, Any], profile: dict[str, Any]) -
         target = missing_field_label_target(field_code, fragments)
         if target:
             targets.append(target)
+    if missing_fields:
+        vl_max_items = 3 if str((profile or {}).get("profileId") or "") == "qualification_certificate_v1" else 10
+        targets.extend(vl_layout_text_remediation_targets(result, profile, max_items=max(vl_max_items - len(targets), 0)))
     fields = [field for field in result.get("fields") or [] if isinstance(field, dict) and (field.get("bbox") or field.get("polygon"))]
     quality = result.get("quality") if isinstance(result.get("quality"), dict) else {}
     low_confidence = {str(item.get("fieldCode") or item.get("fieldName") or "") for item in quality.get("lowConfidenceFields") or [] if isinstance(item, dict)}
@@ -1767,6 +1906,55 @@ def field_remediation_targets(result: dict[str, Any], profile: dict[str, Any]) -
 
     targets.extend(sorted(fields, key=field_priority))
     return dedupe_crop_targets(targets)
+
+
+def vl_layout_text_remediation_targets(
+    result: dict[str, Any],
+    profile: dict[str, Any],
+    *,
+    max_items: int,
+) -> list[dict[str, Any]]:
+    if max_items <= 0:
+        return []
+    if str((profile or {}).get("profileId") or "") != "qualification_certificate_v1":
+        return []
+    metadata = result.get("metadata") if isinstance(result.get("metadata"), dict) else {}
+    if parse_bool(metadata.get("enableVlLayoutTextRemediation"), True) is False:
+        return []
+    candidates: list[dict[str, Any]] = []
+    for block in result.get("layoutBlocks") or []:
+        if not isinstance(block, dict):
+            continue
+        if str(block.get("sourceEngine") or "") != "paddleocr_vl_1_6":
+            continue
+        if str(block.get("text") or "").strip():
+            continue
+        if not can_use_as_crop_target(block):
+            continue
+        block_type = str(block.get("blockType") or block.get("type") or "").lower()
+        if not any(token in block_type for token in ("text", "title", "table")):
+            continue
+        target = deepcopy(block)
+        target["fieldId"] = str(block.get("blockId") or f"vl_layout_block_{len(candidates) + 1}")
+        target["fieldCode"] = None
+        target["fieldName"] = "vl_layout_text_block"
+        target["ocrRuntimeOverrides"] = {
+            "use_doc_orientation_classify": False,
+            "use_doc_unwarping": False,
+            "use_textline_orientation": False,
+            "text_det_limit_side_len": 960,
+        }
+        flags = {*map(str, target.get("qualityFlags") or []), "vl_layout_text_crop"}
+        target["qualityFlags"] = sorted(flags)
+        candidates.append(target)
+    return sorted(candidates, key=vl_layout_crop_priority)[:max_items]
+
+
+def vl_layout_crop_priority(block: dict[str, Any]) -> tuple[int, float, float]:
+    block_type = str(block.get("blockType") or block.get("type") or "").lower()
+    bbox = rect_from_bbox(block.get("bbox") or block.get("polygon")) or [0.0, 0.0, 0.0, 0.0]
+    type_priority = 0 if "title" in block_type else 1 if "text" in block_type else 2
+    return (type_priority, float(bbox[1]), float(bbox[0]))
 
 
 def missing_table_remediation_targets(
@@ -2174,8 +2362,7 @@ def build_crop_variants(
         bbox_token = short_hash({"bbox": bbox, "targetId": target_id, "purpose": purpose})
         variant_id = f"page_{page_no}_{purpose}_crop_{safe_variant_token(target_id)}_{bbox_token}"
         reason_list = sorted(str(reason) for reason in (reasons or set()) if str(reason).strip())
-        output.append(
-            {
+        variant_payload = {
                 "variantId": variant_id,
                 "pageNo": page_no,
                 "path": str(crop_path),
@@ -2212,8 +2399,10 @@ def build_crop_variants(
                     "sourceSealType": item.get("sealType"),
                 },
                 "coordinateTransformStatus": "crop_local",
-            }
-        )
+        }
+        if isinstance(item.get("ocrRuntimeOverrides"), dict):
+            variant_payload["ocrRuntimeOverrides"] = deepcopy(item["ocrRuntimeOverrides"])
+        output.append(variant_payload)
     return output
 
 
@@ -2486,6 +2675,21 @@ def normalize_item_coordinates(
             item["coordinateSystem"] = "rendered_pixels"
             item["coordinateTransformStatus"] = "mapped_from_pdf_points"
             return
+    if (
+        engine_name == "paddleocr_vl_1_6"
+        and str(variant.get("engineScope") or "") == "document"
+        and item.get("bbox")
+        and paddleocr_vl_bbox_matches_rendered_page(item, page)
+    ):
+        item["bbox"] = [round(float(value), 4) for value in rect_from_bbox(item.get("bbox")) or item["bbox"]]
+        item["coordinateSystem"] = "rendered_pixels"
+        item["sourceCoordinateSystem"] = "paddleocr_vl_document_pixels"
+        item["coordinateTransformStatus"] = "vl_document_pixels_match_rendered_page"
+        flags = {str(flag) for flag in item.get("qualityFlags") or []}
+        flags.discard("document_coordinate_unmapped")
+        flags.discard("coordinate_transform_unmapped")
+        item["qualityFlags"] = sorted(flags)
+        return
     if str(variant.get("engineScope") or "") == "document" and (item.get("bbox") or item.get("polygon")):
         item["coordinateSystem"] = f"{engine_name}_document"
         if variant.get("sourceCoordinateSystem"):
@@ -2500,6 +2704,22 @@ def normalize_item_coordinates(
         item["sourceCoordinateSystem"] = variant.get("sourceCoordinateSystem")
     if not item.get("coordinateTransformStatus"):
         item["coordinateTransformStatus"] = variant.get("coordinateTransformStatus")
+
+
+def paddleocr_vl_bbox_matches_rendered_page(item: dict[str, Any], page: dict[str, Any]) -> bool:
+    bbox = rect_from_bbox(item.get("bbox") or item.get("polygon"))
+    if bbox is None:
+        return False
+    width = safe_float(page.get("width"))
+    height = safe_float(page.get("height"))
+    if not width or not height:
+        return False
+    x0, y0, x1, y1 = bbox
+    if x1 <= x0 or y1 <= y0:
+        return False
+    margin_x = max(width * 0.02, 8.0)
+    margin_y = max(height * 0.02, 8.0)
+    return -margin_x <= x0 <= width + margin_x and -margin_y <= y0 <= height + margin_y and x1 <= width + margin_x and y1 <= height + margin_y
 
 
 def fields_from_field_crop_fragments(
@@ -3331,6 +3551,19 @@ def detect_scan_business_document_profile(
             "negative": ["质量证明", "产品质量", "特种设备生产许可证"],
         },
         {
+            "profileId": "ndt_ut_report_v1",
+            "reason": "ndt_ut_report_text",
+            "threshold": 5,
+            "signals": [
+                (4, ["超声检测报告", "超声检测", "UT报告", "ULTRASONIC"]),
+                (2, ["探头", "耦合剂", "DAC", "检测灵敏度"]),
+                (2, ["评定级别", "合格级别", "质量等级"]),
+                (1, ["焊口编号", "焊口号", "检件名", "检件编号"]),
+                (1, ["检测比例", "报告编号", "委托单位"]),
+            ],
+            "negative": ["射线检测", "质量证明", "产品质量", "特种设备生产许可证"],
+        },
+        {
             "profileId": "qualification_certificate_v1",
             "reason": "qualification_certificate_text",
             "threshold": 5,
@@ -3344,16 +3577,39 @@ def detect_scan_business_document_profile(
             "negative": ["出图专用章", "射线检测", "质量证明书"],
         },
         {
+            "profileId": "welding_procedure_qualification_v1",
+            "reason": "welding_procedure_qualification_text",
+            "threshold": 5,
+            "signals": [
+                (4, ["焊接工艺评定", "焊接工艺评定报告", "焊评报告", "PQR"]),
+                (2, ["WPS", "焊接工艺规程", "工艺评定编号", "评定报告编号"]),
+                (1, ["母材", "焊材", "厚度范围", "适用范围"]),
+                (1, ["焊接方法", "试件", "评定日期", "报告日期"]),
+            ],
+            "negative": ["射线检测", "质量证明书"],
+        },
+        {
             "profileId": "welding_record_v1",
             "reason": "welding_record_text",
             "threshold": 5,
             "signals": [
-                (4, ["焊接工艺评定", "焊接工艺评定报告", "焊评报告", "PQR"]),
-                (2, ["WPS", "焊接方法", "焊接工艺"]),
-                (1, ["母材", "焊材", "厚度范围", "适用范围"]),
-                (1, ["焊口编号", "焊缝编号", "焊工"]),
+                (4, ["焊接记录", "焊接施工记录", "焊口记录"]),
+                (2, ["焊口编号", "焊缝编号", "焊工"]),
+                (1, ["焊接日期", "焊工证号", "资格证号", "施焊人"]),
             ],
-            "negative": ["射线检测", "质量证明书"],
+            "negative": ["焊接工艺评定", "焊接工艺评定报告", "PQR", "射线检测", "质量证明书"],
+        },
+        {
+            "profileId": "construction_plan_v1",
+            "reason": "construction_plan_text",
+            "threshold": 5,
+            "signals": [
+                (4, ["施工组织设计", "施工方案", "专项施工方案", "管道施工方案"]),
+                (2, ["施工单位", "编制单位", "承包单位"]),
+                (1, ["编制依据", "施工方法", "质量保证措施", "安全技术措施"]),
+                (1, ["项目名称", "工程名称", "审批", "审核", "编制"]),
+            ],
+            "negative": ["施工记录", "焊接工艺评定", "射线检测", "质量证明书", "特种设备生产许可证"],
         },
         {
             "profileId": "welder_certificate_v1",
@@ -3505,6 +3761,15 @@ def apply_profile_postprocessing(result: dict[str, Any], profile: dict[str, Any]
         return
     if is_qualification_certificate_profile(result, profile):
         extract_qualification_certificate_fields(result)
+        add_profile_quality_diagnostics(result, profile)
+        return
+    if is_construction_plan_profile(result, profile):
+        extract_construction_plan_fields(result)
+        add_profile_quality_diagnostics(result, profile)
+        return
+    if is_welding_procedure_qualification_profile(result, profile):
+        tag_welding_procedure_qualification_tables(result)
+        extract_welding_procedure_qualification_fields(result)
         add_profile_quality_diagnostics(result, profile)
         return
     if is_welding_record_profile(result, profile):
@@ -5263,6 +5528,18 @@ def is_welding_record_profile(result: dict[str, Any], profile: dict[str, Any]) -
     return str(profile.get("profileId") or result.get("profileId") or "") == "welding_record_v1"
 
 
+def is_welding_procedure_qualification_profile(result: dict[str, Any], profile: dict[str, Any]) -> bool:
+    profile_id = str(profile.get("profileId") or result.get("profileId") or "")
+    document_type = str(profile.get("documentType") or result.get("documentType") or "")
+    return profile_id == "welding_procedure_qualification_v1" or document_type == "welding_procedure_qualification"
+
+
+def is_construction_plan_profile(result: dict[str, Any], profile: dict[str, Any]) -> bool:
+    profile_id = str(profile.get("profileId") or result.get("profileId") or "")
+    document_type = str(profile.get("documentType") or result.get("documentType") or "")
+    return profile_id == "construction_plan_v1" or document_type == "construction_plan"
+
+
 def is_welder_certificate_profile(result: dict[str, Any], profile: dict[str, Any]) -> bool:
     profile_id = str(profile.get("profileId") or result.get("profileId") or "")
     document_type = str(profile.get("documentType") or result.get("documentType") or "")
@@ -5653,6 +5930,166 @@ def find_license_scope_fragment(text_items: list[tuple[str, dict[str, Any]]]) ->
         if any(term in text for term in scope_terms):
             return {"text": text.strip(" ：:"), "fragment": fragment}
     return None
+
+
+def extract_construction_plan_fields(result: dict[str, Any]) -> None:
+    fragments = [item for item in result.get("fragments") or [] if isinstance(item, dict)]
+    text_items = [(str(item.get("text") or "").strip(), item) for item in fragments if str(item.get("text") or "").strip()]
+    joined = "\n".join(text for text, _ in text_items)
+    if not construction_plan_evidence_text(joined):
+        return
+    add_field_if_missing(
+        result,
+        "document_title",
+        "文件标题",
+        find_text_fragment(text_items, ["施工组织设计", "专项施工方案", "管道施工方案", "施工方案"]),
+    )
+    add_field_if_missing(
+        result,
+        "project_name",
+        "项目名称",
+        next_value_after_label(text_items, ["项目名称", "工程名称"], max_steps=8) or find_project_fragment(text_items),
+    )
+    add_field_if_missing(
+        result,
+        "construction_unit",
+        "施工单位",
+        value_from_labeled_text(text_items, ["施工单位", "编制单位", "承包单位"], max_steps=8, max_length=90)
+        or construction_unit_candidate(text_items),
+    )
+    add_field_if_missing(
+        result,
+        "issue_date",
+        "编制日期",
+        value_from_labeled_text(text_items, ["编制日期", "日期", "报审日期"], DATE_CN_RE, max_steps=5)
+        or regex_field_candidate(text_items, DATE_CN_RE),
+    )
+
+
+def construction_plan_evidence_text(joined: str) -> str:
+    if any(token in joined for token in ["施工组织设计", "施工方案", "专项施工方案", "管道施工方案"]):
+        return joined
+    if "编制依据" in joined and "施工方法" in joined and any(token in joined for token in ["施工单位", "项目名称", "工程名称"]):
+        return joined
+    return ""
+
+
+def construction_unit_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    for text, fragment in text_items:
+        cleaned = text.strip(" ：:")
+        if any(suffix in cleaned for suffix in ["建设有限公司", "工程有限公司", "安装有限公司", "施工有限公司"]):
+            return {"text": cleaned, "fragment": fragment}
+    return find_organization_fragment(text_items)
+
+
+def extract_welding_procedure_qualification_fields(result: dict[str, Any]) -> None:
+    fragments = [item for item in result.get("fragments") or [] if isinstance(item, dict)]
+    text_items = [(str(item.get("text") or "").strip(), item) for item in fragments if str(item.get("text") or "").strip()]
+    joined = "\n".join(text for text, _ in text_items)
+    if not welding_procedure_qualification_evidence_text(joined):
+        return
+    add_field_if_missing(
+        result,
+        "report_no",
+        "评定报告编号",
+        value_from_labeled_text(text_items, ["评定报告编号", "报告编号", "报告号", "编号"], PQR_WPS_NO_RE, max_steps=6)
+        or regex_field_candidate(text_items, PQR_WPS_NO_RE),
+    )
+    add_field_if_missing(
+        result,
+        "project_name",
+        "项目名称",
+        next_value_after_label(text_items, ["项目名称", "工程名称"], max_steps=8) or find_project_fragment(text_items),
+    )
+    add_field_if_missing(
+        result,
+        "procedure_no",
+        "WPS/PQR编号",
+        value_from_labeled_text(
+            text_items,
+            ["WPS编号", "PQR编号", "焊接工艺规程编号", "工艺评定编号", "工艺编号"],
+            PQR_WPS_NO_RE,
+            max_steps=6,
+        )
+        or regex_field_candidate(text_items, PQR_WPS_NO_RE),
+    )
+    add_field_if_missing(
+        result,
+        "welding_method",
+        "焊接方法",
+        welding_method_candidate(text_items)
+        or value_from_labeled_text(text_items, ["焊接方法"], max_steps=6, max_length=80),
+    )
+    add_field_if_missing(
+        result,
+        "base_material",
+        "母材",
+        value_from_labeled_text(text_items, ["母材", "母材牌号", "材料牌号", "钢号"], max_steps=8, max_length=100),
+    )
+    add_field_if_missing(
+        result,
+        "thickness_range",
+        "适用厚度范围",
+        value_from_labeled_text(text_items, ["厚度范围", "适用厚度", "适用范围", "母材厚度"], max_steps=8, max_length=100)
+        or thickness_range_candidate(text_items),
+    )
+    add_field_if_missing(
+        result,
+        "qualification_date",
+        "评定日期",
+        value_from_labeled_text(text_items, ["评定日期", "报告日期", "批准日期", "日期"], DATE_CN_RE, max_steps=6)
+        or regex_field_candidate(text_items, DATE_CN_RE),
+    )
+
+
+PQR_WPS_NO_RE = re.compile(r"\b(?:PQR|WPS)[A-Z0-9_./-]*\b", re.IGNORECASE)
+
+
+def welding_procedure_qualification_evidence_text(joined: str) -> str:
+    if any(token in joined for token in ["焊接工艺评定", "焊评报告", "焊接工艺评定报告"]):
+        return joined
+    if re.search(r"\bPQR\b|\bWPS\b", joined, flags=re.I) and any(token in joined for token in ["母材", "焊接方法", "厚度范围", "适用范围"]):
+        return joined
+    return ""
+
+
+def welding_method_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    patterns = [
+        re.compile(r"\b(?:GTAW|SMAW|GMAW|SAW|FCAW|PAW)(?:\s*[+/]\s*(?:GTAW|SMAW|GMAW|SAW|FCAW|PAW))*\b", re.I),
+        re.compile(r"(?:钨极氩弧焊|焊条电弧焊|气体保护焊|埋弧焊|手工电弧焊)"),
+    ]
+    for text, fragment in text_items:
+        for pattern in patterns:
+            match = pattern.search(text)
+            if match:
+                return {"text": match.group(0).upper() if match.group(0).isascii() else match.group(0), "fragment": fragment}
+    return None
+
+
+def thickness_range_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    pattern = re.compile(r"(?:厚度|适用).*?(\d+(?:\.\d+)?\s*(?:[-~～至]\s*)?\d*(?:\.\d+)?\s*mm)", re.I)
+    for text, fragment in text_items:
+        match = pattern.search(text)
+        if match:
+            return {"text": re.sub(r"\s+", "", match.group(1)), "fragment": fragment}
+    return None
+
+
+def tag_welding_procedure_qualification_tables(result: dict[str, Any]) -> None:
+    tables = [table for table in result.get("tables") or [] if isinstance(table, dict)]
+    for table in tables:
+        text = table_text(table)
+        compact = text.replace(" ", "").upper()
+        if not any(token in compact for token in ["PQR", "WPS", "焊接工艺评定", "焊接方法", "母材", "厚度范围", "适用范围"]):
+            continue
+        schemas = set(str(item) for item in table.get("businessSchemas") or [] if item)
+        schemas.add("welding_procedure_qualification_table")
+        table["businessSchemas"] = sorted(schemas)
+        if not table.get("businessSchema"):
+            table["businessSchema"] = "welding_procedure_qualification_table"
+        flags = {str(flag) for flag in table.get("qualityFlags") or []}
+        flags.add("welding_procedure_qualification_schema_match")
+        table["qualityFlags"] = sorted(flags)
 
 
 def extract_welding_record_fields(result: dict[str, Any]) -> None:
@@ -6242,6 +6679,13 @@ def apply_parse_options_to_profile(profile: dict[str, Any], options: dict[str, A
             policy["renderDpi"] = max(150, min(int(options["renderDpi"]), 400))
         except (TypeError, ValueError):
             pass
+    if options.get("textDetLimitSideLen") is not None:
+        try:
+            det_limit = max(800, min(int(options["textDetLimitSideLen"]), 4096))
+            policy["textDetLimitSideLen"] = det_limit
+            policy.setdefault("ocr", {})["textDetLimitSideLen"] = det_limit
+        except (TypeError, ValueError):
+            pass
     if isinstance(options.get("variants"), list) and options["variants"]:
         policy["variants"] = [str(item) for item in options["variants"] if str(item)]
     if parse_bool(options.get("enableTables"), True) is False:
@@ -6254,6 +6698,16 @@ def apply_parse_options_to_profile(profile: dict[str, Any], options: dict[str, A
         seal_policy["enablePaddlexSeal"] = False
         seal_policy["enableAgentdesignSeal"] = False
         seal_policy["enableSealTextRecognition"] = False
+    else:
+        seal_policy = policy.setdefault("seal", {})
+        for key in [
+            "enableColorCandidate",
+            "enablePaddlexSeal",
+            "enableAgentdesignSeal",
+            "enableSealTextRecognition",
+        ]:
+            if key in options:
+                seal_policy[key] = parse_bool(options.get(key), parse_bool(seal_policy.get(key), False))
     if parse_bool(options.get("enableFallback"), True) is False:
         policy.setdefault("fallback", {})["enableVlmWhen"] = []
     return adjusted

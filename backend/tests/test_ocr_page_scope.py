@@ -59,6 +59,56 @@ def test_document_engines_route_to_document_variant_for_pdf() -> None:
     assert routed[0]["path"] == "/tmp/sample.pdf"
 
 
+def test_disable_raster_text_ocr_keeps_document_and_fallback_pdf_routes() -> None:
+    from apps.ocr_service.routing import route_engine_variants
+
+    variants = [
+        {
+            "variantId": "page_1_original",
+            "pageNo": 1,
+            "path": "/tmp/page-1.png",
+            "documentPath": "/tmp/license.pdf",
+            "sourceType": "pdf",
+            "preprocessChain": ["original"],
+        }
+    ]
+    options = {
+        "documentPath": "/tmp/license.pdf",
+        "enableRasterTextOcr": False,
+        "enableFallback": True,
+        "forceFallbackOcr": True,
+    }
+
+    assert route_engine_variants("paddle_ocr_subprocess", variants, profile={}, page_quality=[], options=options) == []
+    text_layer = route_engine_variants("pymupdf_text_layer", variants, profile={}, page_quality=[], options=options)
+    fallback = route_engine_variants("paddleocr_vl_1_6", variants, profile={}, page_quality=[], options=options)
+
+    assert text_layer[0]["variantId"] == "document_original"
+    assert text_layer[0]["engineScope"] == "document"
+    assert fallback[0]["variantId"] == "document_original"
+    assert fallback[0]["engineScope"] == "document"
+
+    crop_options = {**options, "runRemediation": True}
+    crop_variants = [
+        {
+            "variantId": "page_1_field_crop_certificate_no",
+            "pageNo": 1,
+            "path": "/tmp/crop.png",
+            "source": "remediation_crop",
+            "purpose": "field",
+            "engineScope": "crop",
+        }
+    ]
+    crop_routes = route_engine_variants(
+        "paddle_ocr_subprocess",
+        crop_variants,
+        profile={},
+        page_quality=[],
+        options=crop_options,
+    )
+    assert crop_routes == crop_variants
+
+
 def test_required_seal_routing_keeps_first_and_last_pages() -> None:
     from apps.ocr_service.routing import route_engine_variants
 
@@ -106,6 +156,37 @@ def test_table_and_seal_identity_do_not_cross_pages() -> None:
     )
 
     assert len(fused["seals"]) == 2
+
+
+def test_merge_parse_result_preserves_candidate_metadata_without_overwriting_existing() -> None:
+    from apps.ocr_service.service import merge_parse_result
+
+    target = {
+        "metadata": {"fastFirstMode": True, "pageCoverageMode": "fast_first"},
+        "fragments": [],
+        "layoutBlocks": [],
+        "fields": [],
+        "tables": [],
+        "seals": [],
+        "signatures": [],
+        "diagnostics": [],
+    }
+    incoming = {
+        "metadata": {
+            "pageCoverageMode": "deep_scan",
+            "pdfTextLayerFastPathSkipped": True,
+            "fallbackOcrForced": True,
+        },
+        "fragments": [{"pageNo": 1, "text": "许可证"}],
+    }
+
+    merge_parse_result(target, incoming)
+
+    assert target["metadata"]["fastFirstMode"] is True
+    assert target["metadata"]["pageCoverageMode"] == "fast_first"
+    assert target["metadata"]["pdfTextLayerFastPathSkipped"] is True
+    assert target["metadata"]["fallbackOcrForced"] is True
+    assert target["fragments"][0]["text"] == "许可证"
 
 
 def test_visual_seal_fragment_enrichment_is_same_page_only() -> None:
