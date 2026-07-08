@@ -1,0 +1,28 @@
+schemaVersion: aicheck-qwen-runtime@1
+modeEnv: AICHECK_QWEN_CALL_MODE
+defaultMode: server
+
+providers:
+  server:
+    baseUrlEnv: AICHECK_QWEN_SERVER_BASE_URL
+    apiKeyEnv: AICHECK_QWEN_SERVER_API_KEY
+    aliases:
+      review: review-chat
+      default: default-chat
+      compareFast: compare-fast
+      visionReview: qwen-vision-review
+
+  official_api:
+    baseUrlEnv: QWEN_API_BASE
+    apiKeyEnv: QWEN_API_KEY
+    defaultBaseUrl: https://dashscope.aliyuncs.com/compatible-mode/v1
+    models:
+      review: qwen3.7-max
+      default: qwen3.7-plus
+      compareFast: qwen3.6-flash
+      visionReview: qwen3.7-plus
+      coder: qwen3-coder-plus
+      embeddingOptional: text-embedding-v4
+
+fallback:
+  allowFallbackToServer: false

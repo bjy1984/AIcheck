@@ -36,7 +36,7 @@ def review_run(status: str = "waiting_human_review") -> dict:
         "graphEngine": "langgraph",
         "graphRunner": "langgraph",
         "graphExecution": {"runner": "langgraph", "checkpointer": "postgres"},
-        "modelGateway": "litellm",
+        "modelGateway": "qwen_runtime",
     }
 
 

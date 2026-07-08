@@ -5468,6 +5468,35 @@ const buildMockFdeProjectWorkspace = (id: string, nodeId?: number) => {
       switchControl: 'AICHECK_EMBEDDING_MODEL_ID + AICHECK_EMBEDDING_SERVED_MODEL_NAME',
       switchRequires: '重启 embedding-service 并为新模型重建独立索引'
     },
+    qwenRuntime: {
+      schemaVersion: 'aicheck-qwen-runtime@1',
+      mode: 'server',
+      modeEnv: 'AICHECK_QWEN_CALL_MODE',
+      provider: 'server',
+      baseUrl: '',
+      baseUrlEnv: 'AICHECK_QWEN_SERVER_BASE_URL',
+      apiKeyEnv: 'AICHECK_QWEN_SERVER_API_KEY',
+      apiKeyConfigured: false,
+      activeModels: {
+        review: 'review-chat',
+        default: 'default-chat',
+        compareFast: 'compare-fast',
+        visionReview: 'qwen-vision-review'
+      },
+      allowFallbackToServer: false,
+      embeddingOptional: 'text-embedding-v4',
+      embeddingSwitchDefault: false
+    },
+    auditRuntime: {
+      schemaVersion: 'aicheck-audit-runtime@1',
+      mode: 'ocr_llm',
+      modeEnv: 'AICHECK_AUDIT_INPUT_MODE',
+      label: 'OCR + LLM',
+      useOcrEvidence: true,
+      requireEvidenceRefs: true,
+      groundingPolicy: 'evidence_only',
+      evidenceValidationMode: 'strict'
+    },
     active: {
       embedding: {
         component: '资料向量化模型',
@@ -5519,11 +5548,20 @@ const buildMockFdeProjectWorkspace = (id: string, nodeId?: number) => {
         tone: 'orange'
       },
       {
+        key: 'audit-runtime',
+        title: '审计输入',
+        primary: 'OCR + LLM',
+        secondary: 'mode=ocr_llm',
+        detail: 'useOcrEvidence=true，evidenceValidation=strict',
+        status: 'active',
+        tone: 'blue'
+      },
+      {
         key: 'llm',
         title: 'LLM',
-        primary: 'LiteLLM + DeepSeek',
+        primary: 'QwenRuntime / server',
         secondary: 'review-chat / default-chat',
-        detail: '统一网关、预算、健康检查和 provider probe',
+        detail: 'server，fallbackToServer=false',
         status: 'active',
         tone: 'blue'
       },

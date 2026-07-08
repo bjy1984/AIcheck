@@ -89,6 +89,7 @@ MODEL_ENV_KEYS = {
 
 PIPE_CODE_RE = re.compile(r"\b(?:PL|VT)\d{3,5}\b", re.IGNORECASE)
 DRAWING_NO_RE = re.compile(r"\b[A-Z]{1,4}\d{6,}[A-Z0-9.-]*\b")
+ENGINEERING_DRAWING_NO_RE = re.compile(r"\b[A-Z]{1,6}\d{4,}[A-Z0-9]*(?:[-.][A-Z0-9]+){2,}\b", re.IGNORECASE)
 DESIGN_PHASE_RE = re.compile(r"(施工图|初步设计|详细设计|竣工图)")
 DRAWING_LIST_SEQUENCE_RE = re.compile(r"\b[A-Z]{1,4}\d{6,}[A-Z0-9-]*-\d{2}\b", re.IGNORECASE)
 DN_RE = re.compile(r"\bDN\s*\d+\b", re.IGNORECASE)
@@ -97,6 +98,7 @@ PID_RE = re.compile(r"\b[A-Z]-\d+\b", re.IGNORECASE)
 NUMBER_RE = re.compile(r"^-?\d+(?:\.\d+)?$")
 DATE_CN_RE = re.compile(r"\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日")
 STANDARD_NO_RE = re.compile(r"\b(?:GB|HG|NB|JB|SH|SY|TSG)\s*/?\s*T?\s*[\d.-]+(?:-\d{4})?\b", re.IGNORECASE)
+LICENSE_NO_RE = re.compile(r"\b(?:TS|A)\s*[A-Z0-9]{6,12}(?:-\d{4})?\b", re.IGNORECASE)
 CHINESE_TEXT_RE = re.compile(r"[\u4e00-\u9fff]")
 
 REMEDIATION_TRIGGER_REASONS = {
@@ -126,6 +128,7 @@ ENGINEERING_DRAWING_PROFILE_IDS = {
     "equipment_list_v1",
     "paint_insulation_list_v1",
     "comprehensive_material_list_v1",
+    "site_layout_drawing_v1",
 }
 ENGINEERING_DRAWING_DOCUMENT_TYPES = {
     "engineering_table_photo",
@@ -137,6 +140,17 @@ ENGINEERING_DRAWING_DOCUMENT_TYPES = {
     "equipment_list",
     "paint_insulation_list",
     "comprehensive_material_list",
+    "site_layout_drawing",
+}
+GENERIC_PROFILE_IDS = {"", "generic_document", "generic_document_v1"}
+GENERIC_DOCUMENT_TYPES = {"", "generic_document"}
+AUTO_ROUTE_PROFILE_IDS = {
+    *ENGINEERING_DRAWING_PROFILE_IDS,
+    "quality_certificate_v1",
+    "ndt_rt_report_v1",
+    "qualification_certificate_v1",
+    "welding_record_v1",
+    "welder_certificate_v1",
 }
 FAST_FIRST_PROFILE_IDS = set(ENGINEERING_DRAWING_PROFILE_IDS)
 FAST_FIRST_DOCUMENT_TYPES = set(ENGINEERING_DRAWING_DOCUMENT_TYPES)
@@ -3131,6 +3145,8 @@ def enrich_parse_result(
 def route_profile_after_ocr(result: dict[str, Any], requested_profile: dict[str, Any]) -> dict[str, Any]:
     route = detect_engineering_drawing_profile(result, requested_profile)
     if route is None:
+        route = detect_scan_business_document_profile(result, requested_profile)
+    if route is None:
         result.setdefault("metadata", {}).setdefault(
             "requestedProfileId",
             requested_profile.get("profileId"),
@@ -3141,11 +3157,11 @@ def route_profile_after_ocr(result: dict[str, Any], requested_profile: dict[str,
     metadata["requestedProfileId"] = requested_profile.get("profileId")
     metadata["detectedProfileId"] = detected_profile.get("profileId")
     metadata["profileRouteReason"] = route["reason"]
-    metadata["profileRoutingVersion"] = "ocr-profile-router-v2"
+    metadata["profileRoutingVersion"] = "ocr-profile-router-v3"
     result.setdefault("diagnostics", []).append(
         diagnostic(
             "PROFILE_ROUTED_BY_OCR_TEXT",
-            "已根据 OCR 文本将工程照片从请求 Profile 自动切换到更匹配的工程图 Profile。",
+            "已根据 OCR 文本将资料从请求 Profile 自动切换到更匹配的专用 Profile。",
             level="info",
             requestedProfileId=requested_profile.get("profileId"),
             detectedProfileId=detected_profile.get("profileId"),
@@ -3155,15 +3171,23 @@ def route_profile_after_ocr(result: dict[str, Any], requested_profile: dict[str,
     return detected_profile
 
 
+def generic_profile_requested(requested_profile: dict[str, Any]) -> bool:
+    requested_profile_id = str(requested_profile.get("profileId") or "")
+    requested_document_type = str(requested_profile.get("documentType") or "")
+    return requested_profile_id in GENERIC_PROFILE_IDS or requested_document_type in GENERIC_DOCUMENT_TYPES
+
+
 def detect_engineering_drawing_profile(
     result: dict[str, Any],
     requested_profile: dict[str, Any],
 ) -> dict[str, Any] | None:
     requested_profile_id = str(requested_profile.get("profileId") or result.get("profileId") or "")
     requested_document_type = str(requested_profile.get("documentType") or result.get("documentType") or "")
+    requested_is_generic = generic_profile_requested(requested_profile)
     if (
         requested_profile_id not in ENGINEERING_DRAWING_PROFILE_IDS
         and requested_document_type not in ENGINEERING_DRAWING_DOCUMENT_TYPES
+        and not requested_is_generic
     ):
         return None
     fragments = [item for item in result.get("fragments") or [] if isinstance(item, dict)]
@@ -3235,6 +3259,12 @@ def detect_engineering_drawing_profile(
             ["综合材料表"],
             ["COMPREHENSIVEMATERIALLIST"],
         ),
+        (
+            "site_layout_drawing_v1",
+            "site_layout_drawing_title",
+            ["总平面图", "平面布置图", "设备布置图", "装置平面", "总图", "布置图"],
+            ["SITELAYOUT", "PLOTPLAN", "LAYOUTDRAWING", "GENERALARRANGEMENT"],
+        ),
     ]
     for profile_id, reason, cn_keywords, normalized_keywords in route_specs:
         if profile_id == requested_profile_id:
@@ -3251,9 +3281,138 @@ def detect_engineering_drawing_profile(
             "profile": profile_for("engineering_drawing_list_v1"),
             "reason": "drawing_list_numbered_rows",
         }
+    if requested_profile_id != "site_layout_drawing_v1" and site_layout_signal(joined, normalized):
+        return {
+            "profile": profile_for("site_layout_drawing_v1"),
+            "reason": "site_layout_spatial_tokens",
+        }
     if not title_block_signal:
         return None
     return None
+
+
+def detect_scan_business_document_profile(
+    result: dict[str, Any],
+    requested_profile: dict[str, Any],
+) -> dict[str, Any] | None:
+    if not generic_profile_requested(requested_profile):
+        return None
+    fragments = [item for item in result.get("fragments") or [] if isinstance(item, dict)]
+    joined = "\n".join(str(item.get("text") or item.get("fullText") or "") for item in fragments)
+    if not joined.strip():
+        return None
+    normalized = normalize_route_text(joined)
+    specs = [
+        {
+            "profileId": "quality_certificate_v1",
+            "reason": "quality_certificate_text",
+            "threshold": 5,
+            "signals": [
+                (4, ["质量证明书", "产品质量证明书", "产品质量", "质量证明", "合格证"]),
+                (2, ["化学成分", "化学成份"]),
+                (2, ["力学性能", "机械性能", "抗拉强度", "屈服强度"]),
+                (2, ["执行标准", "标准号", "GB/T", "HG/T"]),
+                (1, ["炉批号", "批号", "材质", "规格"]),
+                (2, ["质检专用章", "检验合格", "检验结论"]),
+            ],
+            "negative": ["射线检测", "超声检测", "焊接工艺评定", "施工方案"],
+        },
+        {
+            "profileId": "ndt_rt_report_v1",
+            "reason": "ndt_rt_report_text",
+            "threshold": 5,
+            "signals": [
+                (4, ["射线检测报告", "射线检测", "RT报告", "RADIOGRAPHIC"]),
+                (2, ["底片", "评片", "像质计"]),
+                (2, ["评定级别", "合格级别", "质量等级"]),
+                (1, ["焊口编号", "焊口号", "检件名", "检件编号"]),
+                (1, ["检测比例", "报告编号", "委托单位"]),
+            ],
+            "negative": ["质量证明", "产品质量", "特种设备生产许可证"],
+        },
+        {
+            "profileId": "qualification_certificate_v1",
+            "reason": "qualification_certificate_text",
+            "threshold": 5,
+            "signals": [
+                (4, ["特种设备生产许可证", "中华人民共和国特种设备生产许可证", "生产许可证"]),
+                (2, ["许可证编号", "证书编号", "编号TS"]),
+                (2, ["许可项目", "许可范围", "业务范围"]),
+                (2, ["有效期至", "有效期限至", "发证机关"]),
+                (1, ["压力管道元件", "压力管道安装", "压力管道设计", "制造"]),
+            ],
+            "negative": ["出图专用章", "射线检测", "质量证明书"],
+        },
+        {
+            "profileId": "welding_record_v1",
+            "reason": "welding_record_text",
+            "threshold": 5,
+            "signals": [
+                (4, ["焊接工艺评定", "焊接工艺评定报告", "焊评报告", "PQR"]),
+                (2, ["WPS", "焊接方法", "焊接工艺"]),
+                (1, ["母材", "焊材", "厚度范围", "适用范围"]),
+                (1, ["焊口编号", "焊缝编号", "焊工"]),
+            ],
+            "negative": ["射线检测", "质量证明书"],
+        },
+        {
+            "profileId": "welder_certificate_v1",
+            "reason": "welder_certificate_text",
+            "threshold": 5,
+            "signals": [
+                (4, ["特种设备焊接作业人员证", "焊接作业人员证", "焊工合格证"]),
+                (2, ["作业项目", "合格项目", "项目代号"]),
+                (2, ["焊工档案编号", "档案编号", "身份证号"]),
+                (1, ["有效期", "批准日期", "考试机构"]),
+            ],
+            "negative": ["焊接工艺评定", "射线检测报告"],
+        },
+    ]
+    scored_routes = []
+    for spec in specs:
+        score = profile_route_score(joined, normalized, spec)
+        if score >= int(spec["threshold"]):
+            scored_routes.append((score, spec))
+    if not scored_routes:
+        return None
+    scored_routes.sort(key=lambda item: item[0], reverse=True)
+    best_score, best_spec = scored_routes[0]
+    if len(scored_routes) > 1 and best_score == scored_routes[1][0]:
+        return None
+    return {
+        "profile": profile_for(str(best_spec["profileId"])),
+        "reason": str(best_spec["reason"]),
+        "score": best_score,
+    }
+
+
+def normalize_route_text(value: str) -> str:
+    return re.sub(r"[\s:：,，。./_-]+", "", str(value or "")).upper()
+
+
+def profile_route_score(joined: str, normalized: str, spec: dict[str, Any]) -> int:
+    score = 0
+    for points, terms in spec.get("signals") or []:
+        if any(route_term_hit(joined, normalized, term) for term in terms):
+            score += int(points)
+    for term in spec.get("negative") or []:
+        if route_term_hit(joined, normalized, term):
+            score -= 4
+    return score
+
+
+def route_term_hit(joined: str, normalized: str, term: str) -> bool:
+    if not term:
+        return False
+    return term in joined or normalize_route_text(term) in normalized
+
+
+def site_layout_signal(joined: str, normalized: str) -> bool:
+    tank_count = len(re.findall(r"\bTK\s*\d{3,4}", joined, flags=re.I))
+    road_or_area = any(token in joined for token in ["消防道路", "装车站", "泵区", "罐区", "防火堤", "临海路"])
+    spatial_terms = any(token in joined for token in ["总平面", "布置图", "平面布置", "总图", "方位图"])
+    normalized_spatial = any(token in normalized for token in ["SITELAYOUT", "PLOTPLAN", "GENERALARRANGEMENT", "LAYOUT"])
+    return bool(spatial_terms or normalized_spatial or (tank_count >= 2 and road_or_area))
 
 
 def detect_engineering_drawing_list_profile(
@@ -3342,6 +3501,10 @@ def apply_profile_postprocessing(result: dict[str, Any], profile: dict[str, Any]
         tag_ndt_rt_report_tables(result)
         append_ndt_rt_report_summary_table(result)
         extract_ndt_rt_report_fields(result)
+        add_profile_quality_diagnostics(result, profile)
+        return
+    if is_qualification_certificate_profile(result, profile):
+        extract_qualification_certificate_fields(result)
         add_profile_quality_diagnostics(result, profile)
         return
     if is_welding_record_profile(result, profile):
@@ -4483,9 +4646,7 @@ def extract_piping_fields(result: dict[str, Any], profile: dict[str, Any] | None
         add_field_if_missing(result, "company_name", "公司名称", find_organization_fragment(text_items))
     project_fragment = find_project_fragment(text_items)
     add_field_if_missing(result, "project_name", "项目名称", project_fragment)
-    drawing_match = DRAWING_NO_RE.search(joined)
-    if drawing_match:
-        add_field_if_missing(result, "drawing_no", "图纸编号", match_to_fragment(text_items, drawing_match.group(0)))
+    add_field_if_missing(result, "drawing_no", "图纸编号", drawing_no_candidate(text_items))
     phase_match = DESIGN_PHASE_RE.search(joined)
     if phase_match:
         add_field_if_missing(result, "design_phase", "设计阶段", match_to_fragment(text_items, phase_match.group(0)))
@@ -4613,6 +4774,9 @@ def extract_piping_requirement_fields(result: dict[str, Any]) -> None:
     for field_code, field_name, row_keys, pattern, normalizer in requirement_specs:
         value = first_row_requirement_value(row_values, row_keys)
         candidate = None
+        row_candidate = piping_detection_row_candidate(text_items, field_code)
+        if row_candidate is not None:
+            candidate = row_candidate
         if value:
             normalized_value = normalizer(str(value))
             candidate = match_to_fragment(text_items, str(value)) or match_to_fragment(text_items, normalized_value)
@@ -4649,6 +4813,76 @@ def first_row_requirement_value(rows: list[dict[str, Any]], keys: list[str]) -> 
     return None
 
 
+def piping_detection_row_candidate(text_items: list[tuple[str, dict[str, Any]]], field_code: str) -> dict[str, Any] | None:
+    rows = ocr_rows_by_method_fragment(text_items)
+    for row in rows:
+        method_text, method_fragment = row["method"]
+        if field_code == "weld_detection_method":
+            return {"text": method_text.upper(), "fragment": method_fragment}
+        right_items = row["rightItems"]
+        if field_code == "weld_detection_ratio":
+            match = first_row_text_candidate(right_items, re.compile(r"^\d{1,3}\s*[％%]$"))
+            if match:
+                text, fragment = match
+                return {"text": text.replace("％", "%").replace(" ", ""), "fragment": fragment}
+        if field_code == "weld_acceptance_level":
+            match = first_row_text_candidate(right_items, re.compile(r"^(?:I|II|III|IV|Ⅰ|Ⅱ|Ⅲ|Ⅳ)$", re.I))
+            if match:
+                text, fragment = match
+                return {"text": normalize_roman_level(text), "fragment": fragment}
+        if field_code == "weld_tech_level":
+            match = first_row_text_candidate(right_items, re.compile(r"^(?:AB|A|B|C)$", re.I), prefer_longest=True)
+            if match:
+                text, fragment = match
+                return {"text": text.upper(), "fragment": fragment}
+    return None
+
+
+def ocr_rows_by_method_fragment(text_items: list[tuple[str, dict[str, Any]]]) -> list[dict[str, Any]]:
+    rows = []
+    indexed = []
+    for text, fragment in text_items:
+        bbox = rect_from_bbox(fragment.get("bbox"))
+        if not bbox:
+            continue
+        indexed.append((text.strip(), fragment, bbox))
+    for text, fragment, bbox in indexed:
+        upper = text.upper().strip()
+        if upper not in {"RT", "UT", "MT", "PT"}:
+            continue
+        x0, y0, x1, y1 = bbox
+        center_y = (y0 + y1) / 2
+        tolerance = max((y1 - y0) * 1.5, 18.0)
+        right_items = []
+        for other_text, other_fragment, other_bbox in indexed:
+            ox0, oy0, ox1, oy1 = other_bbox
+            other_center_y = (oy0 + oy1) / 2
+            if other_fragment is fragment:
+                continue
+            if ox0 < x0 - 5:
+                continue
+            if abs(other_center_y - center_y) > tolerance:
+                continue
+            right_items.append((other_text, other_fragment, other_bbox))
+        right_items.sort(key=lambda item: (item[2][0], item[2][1]))
+        rows.append({"method": (upper, fragment), "rightItems": [(text, fragment) for text, fragment, _ in right_items]})
+    return rows
+
+
+def first_row_text_candidate(
+    items: list[tuple[str, dict[str, Any]]],
+    pattern: re.Pattern[str],
+    *,
+    prefer_longest: bool = False,
+) -> tuple[str, dict[str, Any]] | None:
+    matches = [(text.strip(), fragment) for text, fragment in items if pattern.fullmatch(text.strip())]
+    if not matches:
+        return None
+    if prefer_longest:
+        matches.sort(key=lambda item: len(item[0]), reverse=True)
+    return matches[0]
+
+
 def normalize_roman_level(value: str) -> str:
     normalized = str(value or "").upper()
     return normalized.replace("Ⅰ", "I").replace("Ⅱ", "II").replace("Ⅲ", "III").replace("Ⅳ", "IV")
@@ -4677,9 +4911,7 @@ def extract_engineering_drawing_common_fields(result: dict[str, Any], profile: d
     else:
         add_field_if_missing(result, "company_name", "公司名称", find_organization_fragment(text_items))
     add_field_if_missing(result, "project_name", "项目名称", find_project_fragment(text_items))
-    drawing_match = DRAWING_NO_RE.search(joined)
-    if drawing_match:
-        add_field_if_missing(result, "drawing_no", "图纸编号", match_to_fragment(text_items, drawing_match.group(0)))
+    add_field_if_missing(result, "drawing_no", "图纸编号", drawing_no_candidate(text_items))
     phase_match = DESIGN_PHASE_RE.search(joined)
     if phase_match:
         add_field_if_missing(result, "design_phase", "设计阶段", match_to_fragment(text_items, phase_match.group(0)))
@@ -4698,6 +4930,7 @@ def find_engineering_document_title_fragment(
         "equipment_list_v1": ["设备表一览表", "设备一览表", "设备表", "EQUIPMENT LIST"],
         "paint_insulation_list_v1": ["油漆保温一览表", "油漆保温"],
         "comprehensive_material_list_v1": ["综合材料表", "COMPREHENSIVE MATERIAL LIST"],
+        "site_layout_drawing_v1": ["总平面图", "平面布置图", "设备布置图", "布置图", "总图"],
     }
     direct = find_text_fragment(text_items, keywords_by_profile.get(profile_id, []))
     if direct:
@@ -4711,6 +4944,9 @@ def find_engineering_document_title_fragment(
         "设备表一览表",
         "油漆保温一览表",
         "综合材料表",
+        "总平面图",
+        "平面布置图",
+        "设备布置图",
     ]
     return find_text_fragment(text_items, generic_keywords)
 
@@ -4751,9 +4987,7 @@ def extract_engineering_drawing_list_fields(result: dict[str, Any], profile: dic
     else:
         add_field_if_missing(result, "company_name", "公司名称", find_organization_fragment(text_items))
     add_field_if_missing(result, "project_name", "项目名称", find_project_fragment(text_items))
-    drawing_match = DRAWING_NO_RE.search(joined)
-    if drawing_match:
-        add_field_if_missing(result, "drawing_no", "图纸编号", match_to_fragment(text_items, drawing_match.group(0)))
+    add_field_if_missing(result, "drawing_no", "图纸编号", drawing_no_candidate(text_items))
     phase_match = DESIGN_PHASE_RE.search(joined)
     if phase_match:
         add_field_if_missing(result, "design_phase", "设计阶段", match_to_fragment(text_items, phase_match.group(0)))
@@ -5019,6 +5253,10 @@ def is_quality_certificate_profile(result: dict[str, Any], profile: dict[str, An
 
 def is_ndt_rt_report_profile(result: dict[str, Any], profile: dict[str, Any]) -> bool:
     return str(profile.get("profileId") or result.get("profileId") or "") == "ndt_rt_report_v1"
+
+
+def is_qualification_certificate_profile(result: dict[str, Any], profile: dict[str, Any]) -> bool:
+    return str(profile.get("profileId") or result.get("profileId") or "") == "qualification_certificate_v1"
 
 
 def is_welding_record_profile(result: dict[str, Any], profile: dict[str, Any]) -> bool:
@@ -5293,7 +5531,7 @@ def ndt_detection_date_candidate(text_items: list[tuple[str, dict[str, Any]]]) -
 
 def ndt_report_year(text_items: list[tuple[str, dict[str, Any]]]) -> str | None:
     for text, _ in text_items:
-        match = re.search(r"\b(20\d{2})\b", text)
+        match = re.search(r"(20\d{2})", text)
         if match:
             return match.group(1)
     return None
@@ -5340,6 +5578,81 @@ def ndt_inspection_unit_candidate(text_items: list[tuple[str, dict[str, Any]]]) 
         if "检测" in cleaned and "有限公司" in cleaned:
             return {"text": cleaned, "fragment": fragment}
     return next_value_after_label(text_items, ["检测单位", "检验单位"], max_steps=6)
+
+
+def extract_qualification_certificate_fields(result: dict[str, Any]) -> None:
+    fragments = [item for item in result.get("fragments") or [] if isinstance(item, dict)]
+    text_items = [(str(item.get("text") or "").strip(), item) for item in fragments if str(item.get("text") or "").strip()]
+    joined = "\n".join(text for text, _ in text_items)
+    if not qualification_certificate_evidence_text(joined):
+        return
+    add_field_if_missing(result, "certificate_no", "许可证编号", qualification_certificate_no_candidate(text_items))
+    add_field_if_missing(result, "organization_name", "单位名称", qualification_organization_candidate(text_items))
+    add_field_if_missing(result, "license_scope", "许可范围", qualification_scope_candidate(text_items))
+    add_field_if_missing(result, "valid_until", "有效期至", qualification_valid_until_candidate(text_items))
+    add_field_if_missing(result, "issuer", "发证机关", qualification_issuer_candidate(text_items))
+    add_field_if_missing(result, "issue_date", "发证日期", qualification_issue_date_candidate(text_items))
+
+
+def qualification_certificate_evidence_text(joined: str) -> str:
+    if any(token in joined for token in ["特种设备生产许可证", "生产许可证", "许可证编号", "许可项目", "许可范围"]):
+        return joined
+    if re.search(r"\bTS\s*\d{6,12}(?:-\d{4})?\b", joined, flags=re.I) and "有效期" in joined:
+        return joined
+    return ""
+
+
+def qualification_certificate_no_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    labeled = value_from_labeled_text(text_items, ["许可证编号", "证书编号", "编号"], LICENSE_NO_RE)
+    if labeled:
+        return labeled
+    return regex_field_candidate(text_items, LICENSE_NO_RE)
+
+
+def qualification_organization_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    return value_from_labeled_text(
+        text_items,
+        ["单位名称", "获证单位", "制造单位", "施工单位", "申请单位", "单位"],
+        max_length=80,
+    ) or find_organization_fragment(text_items)
+
+
+def qualification_scope_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    return value_from_labeled_text(
+        text_items,
+        ["许可范围", "许可项目", "业务范围", "获准从事"],
+        max_steps=10,
+        max_length=180,
+    ) or find_license_scope_fragment(text_items)
+
+
+def qualification_valid_until_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    labeled = value_from_labeled_text(text_items, ["有效期至", "有效期限至", "有效期"], DATE_CN_RE)
+    if labeled:
+        return labeled
+    for text, fragment in text_items:
+        if "有效期" not in text:
+            continue
+        match = DATE_CN_RE.search(text)
+        if match:
+            return {"text": re.sub(r"\s+", "", match.group(0)), "fragment": fragment}
+    return None
+
+
+def qualification_issuer_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    return value_from_labeled_text(text_items, ["发证机关", "签发机构", "批准机关", "发证单位"], max_steps=5, max_length=80)
+
+
+def qualification_issue_date_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    return value_from_labeled_text(text_items, ["发证日期", "签发日期", "批准日期"], DATE_CN_RE, max_steps=5)
+
+
+def find_license_scope_fragment(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    scope_terms = ["压力管道安装", "压力管道元件", "压力管道设计", "管件制造", "钢管制造", "工业管道"]
+    for text, fragment in text_items:
+        if any(term in text for term in scope_terms):
+            return {"text": text.strip(" ：:"), "fragment": fragment}
+    return None
 
 
 def extract_welding_record_fields(result: dict[str, Any]) -> None:
@@ -5510,6 +5823,53 @@ def next_value_after_label(
     return None
 
 
+def value_from_labeled_text(
+    text_items: list[tuple[str, dict[str, Any]]],
+    labels: list[str],
+    value_pattern: re.Pattern[str] | None = None,
+    *,
+    max_steps: int = 5,
+    max_length: int = 120,
+) -> dict[str, Any] | None:
+    for index, (text, fragment) in enumerate(text_items):
+        raw = str(text or "").strip()
+        if not raw:
+            continue
+        for label in labels:
+            if label not in raw:
+                continue
+            suffix = raw.split(label, 1)[1].strip(" ：:，,")
+            candidate = value_from_text_suffix(suffix, value_pattern, max_length=max_length)
+            if candidate:
+                return {"text": candidate, "fragment": fragment}
+            next_candidate = next_value_after_label(text_items[index : index + max_steps + 1], labels, max_steps=max_steps)
+            if next_candidate:
+                if value_pattern:
+                    matched = value_pattern.search(str(next_candidate.get("text") or ""))
+                    if not matched:
+                        continue
+                    next_candidate["text"] = re.sub(r"\s+", "", matched.group(0))
+                return next_candidate
+    return None
+
+
+def value_from_text_suffix(
+    suffix: str,
+    value_pattern: re.Pattern[str] | None,
+    *,
+    max_length: int,
+) -> str | None:
+    value = str(suffix or "").strip(" ：:，,")
+    if value_pattern:
+        match = value_pattern.search(value)
+        return re.sub(r"\s+", "", match.group(0)) if match else None
+    if not value:
+        return None
+    if len(value) > max_length:
+        value = value[:max_length].rstrip(" ：:，,")
+    return value or None
+
+
 def regex_field_candidate(text_items: list[tuple[str, dict[str, Any]]], pattern: re.Pattern[str]) -> dict[str, Any] | None:
     for text, fragment in text_items:
         match = pattern.search(text)
@@ -5634,6 +5994,44 @@ def find_project_fragment(text_items: list[tuple[str, dict[str, Any]]]) -> dict[
         if "有限公司" in text and ("项目" in text or "新增" in text):
             return {"text": text, "fragment": fragment}
     return None
+
+
+def drawing_no_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    for pattern in [ENGINEERING_DRAWING_NO_RE, DRAWING_LIST_SEQUENCE_RE]:
+        for text, fragment in text_items:
+            for match in pattern.finditer(text):
+                value = normalize_drawing_no(match.group(0))
+                if valid_engineering_drawing_no(value):
+                    return {"text": value, "fragment": fragment}
+    for text, fragment in text_items:
+        for match in DRAWING_NO_RE.finditer(text):
+            value = normalize_drawing_no(match.group(0))
+            if valid_engineering_drawing_no(value):
+                return {"text": value, "fragment": fragment}
+    return None
+
+
+def normalize_drawing_no(value: str) -> str:
+    return re.sub(r"\s+", "", str(value or "")).upper()
+
+
+def valid_engineering_drawing_no(value: str) -> bool:
+    normalized = normalize_drawing_no(value)
+    if not normalized:
+        return False
+    if LICENSE_NO_RE.fullmatch(normalized):
+        return False
+    if re.fullmatch(r"A\d{6,12}", normalized):
+        return False
+    if re.fullmatch(r"TS\d{6,12}(?:-\d{4})?", normalized):
+        return False
+    if re.match(r"^(?:PL|VT)\d", normalized):
+        return False
+    if re.fullmatch(r"T\d+(?:\.\d+)?-\d{4}", normalized):
+        return False
+    if re.fullmatch(r"(?:GB|HG|NB|JB|SH|SY|TSG)[A-Z0-9.-]+", normalized):
+        return False
+    return bool(ENGINEERING_DRAWING_NO_RE.fullmatch(normalized) or DRAWING_LIST_SEQUENCE_RE.fullmatch(normalized))
 
 
 def project_fragments_after_label(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:

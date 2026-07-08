@@ -112,10 +112,10 @@ def evidence_section(review_run: dict[str, Any], graph_view: dict[str, Any]) -> 
     summary = graph_view.get("artifactSummary") if isinstance(graph_view.get("artifactSummary"), dict) else {}
     points = 0.0
     blockers: list[str] = []
-    if review_run.get("modelGateway") == "litellm":
+    if review_run.get("modelGateway") in {"qwen_runtime", "litellm"}:
         points += 5
     else:
-        blockers.append("modelGateway must be litellm")
+        blockers.append("modelGateway must be qwen_runtime")
     gates = [
         ("toolCalls", 3, "tool gateway calls are missing"),
         ("ruleCheckResults", 1, "rule engine result is missing"),

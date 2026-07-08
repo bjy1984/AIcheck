@@ -189,7 +189,7 @@ def test_review_run_orchestration_graph_and_human_decision(monkeypatch) -> None:
     assert business_view["run"]["workflowEngine"] == "inline_temporal_compatible"
     assert business_view["run"]["graphEngine"] in {"langgraph", "langgraph_fallback"}
     assert business_view["run"]["graphRunner"] in {"langgraph", "manual"}
-    assert business_view["run"]["modelGateway"] == "litellm"
+    assert business_view["run"]["modelGateway"] == "qwen_runtime"
     assert business_view["run"]["qualityGate"]["passed"] is True
     assert business_view["run"]["qualityGate"]["metrics"]["status"] == "ready_for_human_review"
     assert len(graph["nodes"]) >= 12
@@ -265,7 +265,7 @@ def test_review_run_can_call_litellm_and_normalize_structured_findings(monkeypat
     tool_calls = [
         item
         for item in repo.state["review_tool_calls"]
-        if item.get("reviewRunId") == review_run_id and item.get("toolName") == "call_litellm_chat"
+        if item.get("reviewRunId") == review_run_id and item.get("toolName") == "call_qwen_runtime_chat"
     ]
 
     assert run["status"] == "waiting_human_review"
@@ -1748,6 +1748,12 @@ def test_fde_project_audit_workspace_groups_tasks_and_blockers() -> None:
     assert workspace["technologyStack"]["hotSwap"]["enabled"] is True
     assert workspace["technologyStack"]["active"]["embedding"]["alias"] == "embedding-default"
     assert workspace["technologyStack"]["active"]["embedding"]["modelId"] == "Qwen/Qwen3-Embedding-0.6B"
+    assert workspace["technologyStack"]["qwenRuntime"]["mode"] == "server"
+    assert workspace["technologyStack"]["qwenRuntime"]["activeModels"]["review"] == "review-chat"
+    assert workspace["technologyStack"]["qwenRuntime"]["embeddingOptional"] == "text-embedding-v4"
+    assert workspace["technologyStack"]["qwenRuntime"]["embeddingSwitchDefault"] is False
+    assert workspace["technologyStack"]["auditRuntime"]["mode"] == "ocr_llm"
+    assert workspace["technologyStack"]["auditRuntime"]["useOcrEvidence"] is True
     assert {
         item["modelId"] for item in workspace["technologyStack"]["embeddingModelRegistry"]
     } >= {"Qwen/Qwen3-Embedding-0.6B", "BAAI/bge-m3"}

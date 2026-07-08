@@ -10,6 +10,7 @@ from apps.ocr_service.service import ocr_service
 from apps.worker.celery_app import celery_app
 from libs.business_pack import build_ai_review_prompt, load_business_pack, matching_rule_for_node
 from libs.contracts.responses import server_time
+from libs.audit_runtime import audit_runtime_for_run, audit_runtime_public_config
 from libs.db.repository import flush_state, load_state, repo
 from libs.integrations import task_dispatcher
 from libs.integrations.embedding_client import EmbeddingClient
@@ -26,6 +27,7 @@ from libs.knowledge_indexing import (
     units_from_local_file,
 )
 from libs.material_targeting import run_material_targeting
+from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_config, qwen_runtime_public_config
 from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block, unsupported_claims
 
 
@@ -35,6 +37,12 @@ WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
 def stable_hash_payload(value: Any) -> str:
     raw = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))
     return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def qwen_runtime_client() -> QwenRuntimeClient:
+    config = qwen_runtime_config()
+    server_client = LiteLLMClient() if config["mode"] == "server" or config.get("allowFallbackToServer") else None
+    return QwenRuntimeClient(config=config, server_client=server_client)
 
 
 def compare_document_version_ids(run: dict[str, Any]) -> set[str]:
@@ -529,8 +537,28 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
     node = repo.node(project_id, node_id)
     project = repo.require_project(project_id)
     pack = load_business_pack(run.get("businessPackId") or (project or {}).get("businessPackId") or "engineering_inspection_v1")
+    audit_runtime = audit_runtime_for_run(run)
     version_ids = set(run.get("inputDocumentVersionIds") or [])
-    grounding_input = build_grounded_review_input(repo.state, version_ids)
+    if audit_runtime["useOcrEvidence"]:
+        grounding_input = build_grounded_review_input(repo.state, version_ids)
+    else:
+        grounding_input = {
+            "schemaVersion": "PureLlmReviewInput@1.0.0",
+            "documentVersionIds": sorted(version_ids),
+            "auditInputMode": audit_runtime["mode"],
+            "groundingPolicy": audit_runtime["groundingPolicy"],
+            "groundingStatus": "insufficient_evidence",
+            "blockingIssues": [{"code": "PURE_LLM_REVIEW_NO_OCR_EVIDENCE"}],
+            "fields": [],
+            "tables": [],
+            "seals": [],
+            "fragments": [],
+            "evidenceLinks": [],
+            "quality": [],
+            "evidenceTextCorpus": [],
+            "summary": {"groundingStatus": "insufficient_evidence", "auditInputMode": audit_runtime["mode"]},
+            "reviewWarnings": [{"code": "PURE_LLM_REVIEW_ADVISORY_ONLY"}],
+        }
     grounding_block = grounding_prompt_block(grounding_input)
     fields = grounding_input.get("fields") or []
     evidence_links = grounding_input.get("evidenceLinks") or []
@@ -546,6 +574,8 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
                 *grounding_block["requirements"],
             ],
             "strictGroundingPolicy": grounding_block["strictGroundingPolicy"],
+            "auditInputMode": audit_runtime["mode"],
+            "auditRuntime": audit_runtime_public_config(mode=audit_runtime["mode"]),
             "projectId": project_id,
             "nodeId": node_id,
             "fieldCount": len(fields),
@@ -573,26 +603,30 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
         "payloadPolicy": "full_prompt_stored_for_audit",
     }
     try:
-        response = LiteLLMClient().chat_sync(
+        qwen_runtime = qwen_runtime_public_config()
+        response = qwen_runtime_client().chat_sync(
             messages,
             model=run.get("model") or "review-chat",
             temperature=0.1,
         )
-        answer = LiteLLMClient.first_message_text(response) or "AI 复核完成，建议人工确认关键证据链。"
+        answer = QwenRuntimeClient.first_message_text(response) or "AI 复核完成，建议人工确认关键证据链。"
         message = ((response.get("choices") or [{}])[0].get("message") or {}) if isinstance(response.get("choices"), list) else {}
         conversation_id = str(response.get("id") or response.get("conversation_id") or f"llm-{stable_hash_payload(response)[7:23]}")
         run["llmConversationId"] = conversation_id
         run["llmMetadata"] = {
-            "llmExecution": "litellm",
+            "llmExecution": "qwen_runtime",
             "llmCalled": True,
             "conversationId": conversation_id,
             "modelAlias": run.get("model") or "review-chat",
+            "modelResolved": response.get("model") or run.get("model") or "review-chat",
+            "qwenRuntime": qwen_runtime,
             "promptVersion": run.get("promptVersion"),
             "promptTemplateId": (prompt_template or {}).get("id"),
             "promptHash": run["promptAudit"]["messagesHash"],
             "responseHash": stable_hash_payload(response),
             "usage": response.get("usage") or {},
             "groundingStatus": grounding_input.get("groundingStatus"),
+            "auditInputMode": audit_runtime["mode"],
             "groundingInputSummary": grounding_input.get("summary") or {},
             "reasoningProcess": str(
                 message.get("reasoning_content")
@@ -649,7 +683,7 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
         run["steps"] = [
             {
                 "id": f"STEP-{run_id}",
-                "title": "LiteLLM 复核",
+                "title": "QwenRuntime 复核",
                 "inputSummary": f"{len(fields)} 个 OCR 字段",
                 "action": "chat.completions",
                 "conclusion": "完成",
@@ -672,7 +706,7 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
                 "traceId": f"TRACE-{run_id}",
                 "sequence": len([item for item in repo.state.get("ai_trace_steps", []) if item.get("aiRunId") == run_id]) + 1,
                 "stepType": "llm_review",
-                "name": "LiteLLM 对话与 Prompt 审计",
+                "name": "QwenRuntime 对话与 Prompt 审计",
                 "status": "completed",
                 "conversationId": run.get("llmConversationId"),
                 "promptHash": (run.get("llmMetadata") or {}).get("promptHash"),
@@ -688,7 +722,7 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
         run["status"] = "失败"
         run["finishedAt"] = server_time()
         run["errorCode"] = "AI_RUN_FAILED"
-        run["errorMessage"] = service_failure_message("LiteLLM AI 复核")
+        run["errorMessage"] = service_failure_message("QwenRuntime AI 复核")
         status = "失败"
     flush_state()
     return {"projectId": project_id, "nodeId": node_id, "runId": run_id, "status": status}
@@ -745,12 +779,13 @@ def llm_compare(self, run_id: str) -> dict[str, Any]:
             "messages": messages,
         }
         for model in run.get("modelCodes") or ["default-chat", "compare-fast"]:
-            response = LiteLLMClient().chat_sync(
+            qwen_runtime = qwen_runtime_public_config()
+            response = qwen_runtime_client().chat_sync(
                 messages,
                 model=model,
                 temperature=0.1,
             )
-            answer = LiteLLMClient.first_message_text(response)
+            answer = QwenRuntimeClient.first_message_text(response)
             unsupported = unsupported_claims(answer or "", [str(item) for item in grounding_input.get("evidenceTextCorpus") or []])
             result_grounding_status = "grounded" if grounding_input.get("groundingStatus") == "grounded" and not unsupported else "insufficient_evidence"
             if result_grounding_status != "grounded":
@@ -758,6 +793,8 @@ def llm_compare(self, run_id: str) -> dict[str, Any]:
             results.append(
                 {
                     "modelCode": model,
+                    "modelResolved": response.get("model") or model,
+                    "qwenRuntime": qwen_runtime,
                     "answer": answer,
                     "confidence": 0.8 if result_grounding_status == "grounded" else 0.5,
                     "evidenceLinkIds": run.get("evidenceLinkIds") or ["EV-24-001"],
@@ -774,7 +811,7 @@ def llm_compare(self, run_id: str) -> dict[str, Any]:
     except Exception:
         run["status"] = "失败"
         run["errorCode"] = "EXTERNAL_TOOL_FAILED"
-        run["errorMessage"] = service_failure_message("LiteLLM 模型对比")
+        run["errorMessage"] = service_failure_message("QwenRuntime 模型对比")
         run["finishedAt"] = server_time()
     flush_state()
     return {"runId": run_id, "status": run.get("status")}

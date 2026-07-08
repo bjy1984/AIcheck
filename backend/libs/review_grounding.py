@@ -33,6 +33,15 @@ STRICT_GROUNDING_REQUIREMENTS = [
     "Return JSON only with findings, unsupportedClaims, and groundingStatus; no free-text answer.",
 ]
 
+PURE_LLM_REVIEW_REQUIREMENTS = [
+    "This run is configured as pure_llm: OCR evidence is not loaded or required.",
+    "Do not claim document text, seal text, table values, bbox/page evidence, certificate authenticity, validity, or project coverage was verified by OCR.",
+    "Use project context, ruleResults, kbRefs, and explicitly supplied non-OCR context only.",
+    "Set groundingStatus to insufficient_evidence and suggestedAction to human_confirm.",
+    "Every finding is advisory and must require human confirmation; do not issue a final business approval or correction.",
+    "Return JSON only with findings, unsupportedClaims, and groundingStatus; no free-text answer.",
+]
+
 LOW_CONFIDENCE_THRESHOLD = 0.85
 MAX_TABLE_MARKDOWN_CHARS = 6000
 MAX_TABLE_ROWS = 60
@@ -147,6 +156,7 @@ def apply_grounding_guardrails(drafts: list[dict[str, Any]], grounding_input: di
     allowed_version_ids = {str(item) for item in grounding_input.get("documentVersionIds") or [] if item}
     evidence_texts = [str(item) for item in grounding_input.get("evidenceTextCorpus") or [] if str(item).strip()]
     input_status = str(grounding_input.get("groundingStatus") or "insufficient_evidence")
+    grounding_policy = str(grounding_input.get("groundingPolicy") or "evidence_only")
     guarded: list[dict[str, Any]] = []
     for draft in drafts or []:
         item = dict(draft)
@@ -159,6 +169,22 @@ def apply_grounding_guardrails(drafts: list[dict[str, Any]], grounding_input: di
         item["requiresHumanConfirmation"] = True
         if item.get("suggestedAction") not in {"human_confirm", "request_correction"}:
             item["suggestedAction"] = "human_confirm"
+        if grounding_policy == "llm_only_human_review":
+            item["unsupportedClaims"] = item.get("unsupportedClaims") if isinstance(item.get("unsupportedClaims"), list) else []
+            item["groundingStatus"] = "insufficient_evidence"
+            item["suggestedAction"] = "human_confirm"
+            item["confidence"] = min(_safe_float(item.get("confidence"), default=0.55), 0.55)
+            item["evidenceRefs"] = []
+            item["evidenceLinkIds"] = []
+            item["sourceMethod"] = "pure_llm_review"
+            item.setdefault("llmGroundingWarnings", []).append(
+                {
+                    "code": "PURE_LLM_REVIEW_NO_OCR_EVIDENCE",
+                    "message": "Pure LLM mode is advisory only; no OCR/page/bbox evidence was loaded for this finding.",
+                }
+            )
+            guarded.append(item)
+            continue
         unsupported = unsupported_claims(
             " ".join(str(item.get(key) or "") for key in ["title", "description"]),
             evidence_texts,
@@ -209,6 +235,48 @@ def unsupported_claims(text: str, evidence_texts: list[str]) -> list[dict[str, A
 
 
 def grounding_prompt_block(grounding_input: dict[str, Any]) -> dict[str, Any]:
+    grounding_policy = str(grounding_input.get("groundingPolicy") or "evidence_only")
+    if grounding_policy == "llm_only_human_review":
+        return {
+            "strictGroundingPolicy": "llm_only_human_review",
+            "requirements": PURE_LLM_REVIEW_REQUIREMENTS,
+            "groundedOcrEvidence": {
+                key: grounding_input.get(key)
+                for key in [
+                    "schemaVersion",
+                    "documentVersionIds",
+                    "groundingStatus",
+                    "blockingIssues",
+                    "fields",
+                    "tables",
+                    "seals",
+                    "fragments",
+                    "evidenceLinks",
+                    "quality",
+                    "summary",
+                    "reviewWarnings",
+                    "groundingPolicy",
+                    "auditInputMode",
+                ]
+            },
+            "requiredOutput": {
+                "findings": [
+                    {
+                        "findingType": "string",
+                        "severity": "low|medium|high",
+                        "title": "string",
+                        "description": "string",
+                        "evidenceRefs": [],
+                        "ruleRefs": [{"ruleCode": "string", "ruleSetVersion": "string"}],
+                        "kbRefs": [{"retrievalTraceId": "string", "clauseIds": ["string"]}],
+                        "confidence": "0..0.55",
+                        "suggestedAction": "human_confirm",
+                        "groundingStatus": "insufficient_evidence",
+                        "unsupportedClaims": [],
+                    }
+                ]
+            },
+        }
     return {
         "strictGroundingPolicy": "evidence_only",
         "requirements": STRICT_GROUNDING_REQUIREMENTS,

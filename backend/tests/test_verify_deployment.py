@@ -165,7 +165,7 @@ def api_transport(request: httpx.Request) -> httpx.Response:
                         "workflowId": f"review-run-{review_run_id}",
                         "workflowEngine": "temporal",
                         "graphEngine": "langgraph",
-                        "modelGateway": "litellm",
+                        "modelGateway": "qwen_runtime",
                     },
                     "dispatch": {
                         "mode": "temporal",
@@ -191,7 +191,7 @@ def api_transport(request: httpx.Request) -> httpx.Response:
                     "workflowType": "ReviewRunWorkflow",
                     "workflowId": "review-run-RRUN-VERIFY",
                     "graphEngine": "langgraph",
-                    "modelGateway": "litellm",
+                    "modelGateway": "qwen_runtime",
                     "modelAlias": "review-chat",
                     "graphSummary": {"total": 3, "statusCounts": {"succeeded": 3}},
                 }
@@ -240,7 +240,7 @@ def api_transport(request: httpx.Request) -> httpx.Response:
                     "reviewRunId": "RRUN-VERIFY",
                     "workflowEngine": "temporal",
                     "graphEngine": "langgraph",
-                    "modelGateway": "litellm",
+                    "modelGateway": "qwen_runtime",
                 },
                 "graph": {
                     "nodes": [{"nodeKey": "load_context", "status": "succeeded"}],
@@ -524,7 +524,7 @@ def api_review_run_no_progress_transport(request: httpx.Request) -> httpx.Respon
                     "workflowType": "ReviewRunWorkflow",
                     "workflowId": "review-run-RRUN-VERIFY",
                     "graphEngine": "langgraph",
-                    "modelGateway": "litellm",
+                    "modelGateway": "qwen_runtime",
                     "modelAlias": "review-chat",
                     "graphSummary": {"total": 3, "statusCounts": {"pending": 3}},
                 }
@@ -557,7 +557,7 @@ def api_review_run_low_scorecard_transport(request: httpx.Request) -> httpx.Resp
                     "reviewRunId": "RRUN-VERIFY",
                     "workflowEngine": "temporal",
                     "graphEngine": "langgraph",
-                    "modelGateway": "litellm",
+                    "modelGateway": "qwen_runtime",
                 },
                 "graph": {
                     "nodes": [{"nodeKey": "load_context", "status": "succeeded"}],
@@ -612,6 +612,7 @@ def verify_args(**overrides):
         "review_run_wait_seconds": 0.0,
         "litellm_management_probes": False,
         "litellm_provider_probes": False,
+        "qwen_official_probe": False,
     }
     values.update(overrides)
     return Namespace(**values)
@@ -694,6 +695,7 @@ def test_deployment_verifier_redacts_sensitive_result_fields(capsys) -> None:
         review_run_wait_seconds=0.0,
         litellm_management_probes=False,
         litellm_provider_probes=False,
+        qwen_official_probe=False,
     )
     verifier = DeploymentVerifier(
         config,
@@ -751,6 +753,7 @@ def test_deployment_verifier_passes_happy_path() -> None:
         review_run_wait_seconds=0.0,
         litellm_management_probes=True,
         litellm_provider_probes=True,
+        qwen_official_probe=False,
     )
     verifier = DeploymentVerifier(
         config,
@@ -794,6 +797,7 @@ def test_deployment_verifier_passes_happy_path() -> None:
     assert any(item.name == "ocr.bad-request" and item.status == "pass" for item in results)
     assert any(item.name == "litellm.models" and item.status == "pass" for item in results)
     assert any(item.name == "litellm.aliases" and item.status == "pass" for item in results)
+    assert any(item.name == "qwen.official-probe" and item.status == "skip" for item in results)
     management_probe = next(item for item in results if item.name == "litellm.management-probes")
     assert management_probe.status == "pass"
     assert management_probe.data
@@ -821,6 +825,7 @@ def test_deployment_verifier_fails_strict_production_when_ocr_uses_placeholder()
         review_run_wait_seconds=0.0,
         litellm_management_probes=False,
         litellm_provider_probes=False,
+        qwen_official_probe=False,
     )
     verifier = DeploymentVerifier(
         config,
@@ -857,6 +862,7 @@ def test_deployment_verifier_fails_strict_production_when_postgres_transaction_p
         review_run_wait_seconds=0.0,
         litellm_management_probes=False,
         litellm_provider_probes=False,
+        qwen_official_probe=False,
     )
     verifier = DeploymentVerifier(
         config,
@@ -892,6 +898,7 @@ def test_deployment_verifier_fails_review_run_probe_when_worker_does_not_progres
         review_run_wait_seconds=0.0,
         litellm_management_probes=False,
         litellm_provider_probes=False,
+        qwen_official_probe=False,
     )
     verifier = DeploymentVerifier(
         config,
@@ -926,6 +933,7 @@ def test_deployment_verifier_fails_review_run_probe_when_scorecard_is_not_100() 
         review_run_wait_seconds=0.0,
         litellm_management_probes=False,
         litellm_provider_probes=False,
+        qwen_official_probe=False,
     )
     verifier = DeploymentVerifier(
         config,
@@ -963,6 +971,7 @@ def test_deployment_verifier_fails_litellm_provider_probe_without_leaking_provid
         review_run_wait_seconds=0.0,
         litellm_management_probes=False,
         litellm_provider_probes=True,
+        qwen_official_probe=False,
     )
     verifier = DeploymentVerifier(
         config,
@@ -1001,6 +1010,7 @@ def test_deployment_verifier_fails_litellm_management_probe_when_db_is_not_conne
         review_run_wait_seconds=0.0,
         litellm_management_probes=True,
         litellm_provider_probes=False,
+        qwen_official_probe=False,
     )
     verifier = DeploymentVerifier(
         config,
@@ -1038,6 +1048,7 @@ def test_deployment_verifier_fails_litellm_health_when_proxy_reports_unhealthy_m
         review_run_wait_seconds=0.0,
         litellm_management_probes=False,
         litellm_provider_probes=False,
+        qwen_official_probe=False,
     )
     verifier = DeploymentVerifier(
         config,

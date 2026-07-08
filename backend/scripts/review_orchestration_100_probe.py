@@ -188,8 +188,8 @@ class ReviewOrchestration100Probe:
             raise ProbeFailure("ReviewRun graphRunner must be langgraph.", data={"graphRunner": run.get("graphRunner")})
         if (run.get("graphExecution") or {}).get("checkpointer") != "postgres":
             raise ProbeFailure("LangGraph Postgres checkpointer must be active.", data={"graphExecution": run.get("graphExecution")})
-        if run.get("modelGateway") != "litellm":
-            raise ProbeFailure("ReviewRun modelGateway must be litellm.", data={"modelGateway": run.get("modelGateway")})
+        if run.get("modelGateway") != "qwen_runtime":
+            raise ProbeFailure("ReviewRun modelGateway must be qwen_runtime.", data={"modelGateway": run.get("modelGateway")})
         if run.get("status") not in HUMAN_REVIEW_STATUSES:
             raise ProbeFailure("ReviewRun has not reached a human-review state.", data={"status": run.get("status")})
         nodes = graph.get("nodes") if isinstance(graph.get("nodes"), list) else []

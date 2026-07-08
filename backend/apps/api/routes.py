@@ -44,6 +44,7 @@ from libs.business_pack import (
 )
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok, page, server_time
+from libs.audit_runtime import audit_runtime_public_config
 from libs.db.repository import flush_state, load_state, repo
 from libs.db.seed import PROJECT_ID, ROLE_ACTIONS, ROLE_NODE_MAP, STANDARD_RULES_SOURCE_ID, STANDARD_RULES_VERSION
 from libs.embedding_models import embedding_registry_payload, embedding_runtime_config
@@ -69,6 +70,7 @@ from libs.material_targeting import (
     run_material_targeting,
     set_node_evidence_link_manual_status,
 )
+from libs.qwen_runtime import qwen_runtime_public_config
 from libs.review_orchestrator import (
     REVIEW_GRAPH_STEPS,
     build_review_orchestration_scorecard,
@@ -5350,6 +5352,7 @@ def ai_recheck(
     request: Request,
     project_id: str,
     node_id: int,
+    body: dict[str, Any] = Body(default_factory=dict),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     x_role: str | None = Header(default=None, alias="X-Role"),
 ):
@@ -5362,8 +5365,14 @@ def ai_recheck(
         project = repo.require_project(project_id)
         pack = business_pack_for_project(project)
         agent = (pack.get("agentSops") or [{}])[0]
+        try:
+            audit_runtime = audit_runtime_public_config(
+                mode=str(body.get("auditInputMode") or body.get("auditRuntimeMode") or "") or None
+            )
+        except RuntimeError as exc:
+            return fail(errors.VALIDATION_ERROR, request, message=str(exc))
         evidence_readiness = build_node_evidence_readiness(repo, project_id, node_id)
-        if int(evidence_readiness.get("pendingCount") or 0) > 0:
+        if audit_runtime["useOcrEvidence"] and int(evidence_readiness.get("pendingCount") or 0) > 0:
             return fail(errors.CONFLICT, request, message="请先完成候选证据确认或不采用，再进入 AI 复核。")
         node_evidence_links = [
             link
@@ -5389,6 +5398,8 @@ def ai_recheck(
             "agentVersion": agent.get("version") or "1.0.0",
             "subject": node["name"] if node else "节点 AI 复核",
             "model": "review-chat",
+            "auditInputMode": audit_runtime["mode"],
+            "auditRuntime": audit_runtime,
             "promptVersion": f"node-{node_id}-v1",
             "ruleVersion": rule.get("version") or "ruleset-v1",
             "inputDocumentVersionIds": input_document_version_ids,
@@ -5420,7 +5431,11 @@ def ai_recheck(
         request,
         idempotency_key,
         produce,
-        fingerprint_source={"projectId": project_id, "nodeId": node_id},
+        fingerprint_source={
+            "projectId": project_id,
+            "nodeId": node_id,
+            "auditInputMode": body.get("auditInputMode") or body.get("auditRuntimeMode"),
+        },
     )
 
 
@@ -11033,6 +11048,8 @@ def fde_runtime_env_value(name: str, fallback: str) -> str:
 
 def fde_project_technology_stack(vector_quality: dict[str, Any] | None = None) -> dict[str, Any]:
     embedding = embedding_runtime_config()
+    qwen_runtime = qwen_runtime_public_config()
+    audit_runtime = audit_runtime_public_config()
     review_orchestration = fde_runtime_env_value("AICHECK_REVIEW_ORCHESTRATION", "temporal")
     review_llm_execution = fde_runtime_env_value("AICHECK_REVIEW_LLM_EXECUTION", "litellm")
     task_dispatch = fde_runtime_env_value("AICHECK_TASK_DISPATCH", "celery")
@@ -11048,6 +11065,8 @@ def fde_project_technology_stack(vector_quality: dict[str, Any] | None = None) -
             "indexMigrationRequired": True,
         },
         "embeddingModelRegistry": embedding_registry_payload(),
+        "qwenRuntime": qwen_runtime,
+        "auditRuntime": audit_runtime,
         "active": {
             "embedding": {
                 "component": "资料向量化模型",
@@ -11078,11 +11097,15 @@ def fde_project_technology_stack(vector_quality: dict[str, Any] | None = None) -
                 "evidenceStrictMode": bool((repo.state.get("knowledge_config") or {}).get("evidenceStrictMode", True)),
             },
             "llm": {
-                "component": "LLM 网关",
-                "gateway": "LiteLLM",
-                "reviewModelAlias": "review-chat",
-                "defaultChatAlias": "default-chat",
-                "provider": "DeepSeek deepseek-reasoner",
+                "component": "审计 LLM / Qwen Runtime",
+                "gateway": "QwenRuntime",
+                "mode": qwen_runtime["mode"],
+                "provider": qwen_runtime["provider"],
+                "reviewModelAlias": qwen_runtime["activeModels"].get("review", "review-chat"),
+                "defaultChatAlias": qwen_runtime["activeModels"].get("default", "default-chat"),
+                "compareFastAlias": qwen_runtime["activeModels"].get("compareFast", "compare-fast"),
+                "visionReviewAlias": qwen_runtime["activeModels"].get("visionReview", "qwen-vision-review"),
+                "fallbackToServer": qwen_runtime["allowFallbackToServer"],
                 "execution": review_llm_execution,
             },
             "ocr": {
@@ -11091,6 +11114,8 @@ def fde_project_technology_stack(vector_quality: dict[str, Any] | None = None) -
                 "seal": "PaddleX Seal / visual seal candidate / crop OCR fallback",
                 "fallback": "Docling / PaddleOCR-VL / local remediation",
                 "localOnly": True,
+                "auditInputMode": audit_runtime["mode"],
+                "enabledForAudit": audit_runtime["useOcrEvidence"],
             },
             "orchestration": {
                 "component": "审查编排",
@@ -11131,15 +11156,24 @@ def fde_project_technology_stack(vector_quality: dict[str, Any] | None = None) -
                 "primary": "PaddleOCR / PP-StructureV3",
                 "secondary": "表格、印章、Docling、VL 兜底",
                 "detail": "OCR 结果进入切片、向量和 PageIndex 证据链",
-                "status": "active",
+                "status": "active" if audit_runtime["useOcrEvidence"] else "available",
                 "tone": "orange",
+            },
+            {
+                "key": "audit-runtime",
+                "title": "审计输入",
+                "primary": audit_runtime["label"],
+                "secondary": f"mode={audit_runtime['mode']}",
+                "detail": f"useOcrEvidence={audit_runtime['useOcrEvidence']}，evidenceValidation={audit_runtime['evidenceValidationMode']}",
+                "status": "active",
+                "tone": "blue",
             },
             {
                 "key": "llm",
                 "title": "LLM",
-                "primary": "LiteLLM + DeepSeek",
-                "secondary": "review-chat / default-chat",
-                "detail": "统一网关、预算、健康检查和 provider probe",
+                "primary": f"QwenRuntime / {qwen_runtime['mode']}",
+                "secondary": f"{qwen_runtime['activeModels'].get('review', 'review-chat')} / {qwen_runtime['activeModels'].get('default', 'default-chat')}",
+                "detail": f"{qwen_runtime['provider']}，fallbackToServer={qwen_runtime['allowFallbackToServer']}",
                 "status": "active",
                 "tone": "blue",
             },
@@ -11929,8 +11963,8 @@ def fde_materialize_synthetic_review_run(
         "businessPackSnapshotHash": pack.get("snapshotHash"),
         "agentVersion": "compliance_review_agent@1.0.0",
         "promptVersion": "review_prompt@1.0.0",
-        "modelAlias": "deepseek-reasoner",
-        "modelGateway": "litellm",
+        "modelAlias": "review-chat",
+        "modelGateway": "qwen_runtime",
         "ruleSetVersion": "engineering_rules@1.0.0",
         "kbVersion": "inspection_kb@1.0.0",
         "schemaVersion": "ReviewFindingDraftList@1.0.0",
@@ -11959,7 +11993,7 @@ def fde_materialize_synthetic_review_run(
             "run_rule_engine",
             "retrieve_clauses",
             "search_knowledge_base",
-            "call_litellm_chat",
+            "call_qwen_runtime_chat",
             "create_review_finding_draft",
         ],
         "forbiddenTools": [
@@ -12008,7 +12042,7 @@ def fde_materialize_synthetic_review_run(
             "pageIndexNodes": len(page_index_nodes),
         },
         "build_prompt": {"promptVersion": review_run["promptVersion"], "promptPayload": "ids_hashes_versions_only"},
-        "llm_generate_findings": {"modelGateway": "litellm", "modelAlias": review_run["modelAlias"], "findingDrafts": len(finding_drafts)},
+        "llm_generate_findings": {"modelGateway": "qwen_runtime", "modelAlias": review_run["modelAlias"], "findingDrafts": len(finding_drafts)},
         "schema_validation": {"passed": True, "checked": len(finding_drafts), "failures": [], "warnings": [], "metrics": {"findingCount": len(finding_drafts)}},
         "evidence_validation": {"passed": True, "checked": len(document_evidence), "failures": [], "warnings": [], "metrics": {"evidenceRefCount": len(document_evidence)}},
         "reference_validation": {"passed": True, "checked": len(clause_ids) + 2, "failures": [], "warnings": [], "metrics": {"ruleResultCount": 2, "retrievalTraceCount": 2}},
@@ -12112,7 +12146,7 @@ def fde_materialize_synthetic_review_run(
     fde_append_tool_call_once(review_run, "load_ocr_result", "get_document_ocr_result", {"documentCount": len(documents), "ocrResultVersions": len(review_run["ocrResultVersions"])})
     fde_append_tool_call_once(review_run, "run_rule_engine", "run_rule_engine", {"ruleResults": len(rule_results), "warning": 2})
     fde_append_tool_call_once(review_run, "retrieve_knowledge", "search_knowledge_base", {"retrievalTraces": 2, "pageIndexNodes": len(page_index_nodes)})
-    fde_append_tool_call_once(review_run, "llm_generate_findings", "call_litellm_chat", {"modelAlias": review_run["modelAlias"], "findingDrafts": len(finding_drafts)})
+    fde_append_tool_call_once(review_run, "llm_generate_findings", "call_qwen_runtime_chat", {"modelAlias": review_run["modelAlias"], "findingDrafts": len(finding_drafts)})
     fde_append_review_event_once(review_run_id, "review_run.created", "ReviewRun 已创建", "created", {"source": "fde_audit_workspace_projection"})
     fde_append_review_event_once(review_run_id, "review_run.graph_completed", "LangGraph 审查图已完成", "succeeded", {"nodeCount": len(REVIEW_GRAPH_STEPS)})
     fde_append_review_event_once(review_run_id, "review_run.waiting_human", "等待人工确认", "waiting_human_review", {"findingDrafts": len(finding_drafts)})
@@ -12313,7 +12347,7 @@ def fde_hydrate_review_run_from_ai_run(review_run: dict[str, Any], ai_run: dict[
         "run_rule_engine": {"ruleResults": 1, "ruleCode": rule_code, "result": rule_result["result"], "linkedClauseIds": clause_ids},
         "retrieve_knowledge": {"retrievalTraceId": retrieval_trace_id, "selectedClauses": len(selected_clauses), "selectedRoute": retrieval_trace["selectedRoute"]},
         "build_prompt": {"promptVersion": review_run.get("promptVersion"), "promptPayload": "ids_hashes_versions_only"},
-        "llm_generate_findings": {"modelGateway": "litellm", "modelAlias": review_run.get("modelAlias"), "findingDrafts": len(finding_drafts), "llmExecution": "historical_ai_run"},
+        "llm_generate_findings": {"modelGateway": "qwen_runtime", "modelAlias": review_run.get("modelAlias"), "findingDrafts": len(finding_drafts), "llmExecution": "historical_ai_run"},
         "persist_drafts": {"findingDrafts": len(finding_drafts), "outputHash": review_run.get("outputHash")},
         **validation_details,
     }
@@ -12332,7 +12366,7 @@ def fde_hydrate_review_run_from_ai_run(review_run: dict[str, Any], ai_run: dict[
     fde_append_tool_call_once(review_run, "load_ocr_result", "get_document_ocr_result", {"evidenceLinks": len(document_evidence)})
     fde_append_tool_call_once(review_run, "run_rule_engine", "run_rule_engine", {"ruleCode": rule_code, "result": rule_result["result"]})
     fde_append_tool_call_once(review_run, "retrieve_knowledge", "search_knowledge_base", {"retrievalTraceId": retrieval_trace_id, "selectedRoute": retrieval_trace["selectedRoute"]})
-    fde_append_tool_call_once(review_run, "llm_generate_findings", "call_litellm_chat", {"modelAlias": review_run.get("modelAlias"), "source": "historical_ai_run"})
+    fde_append_tool_call_once(review_run, "llm_generate_findings", "call_qwen_runtime_chat", {"modelAlias": review_run.get("modelAlias"), "source": "historical_ai_run"})
     fde_append_review_event_once(review_run_id, "review_run.waiting_human", "等待人工确认", "waiting_human_review", {"source": "fde_ai_run_bridge"})
     return review_run
 

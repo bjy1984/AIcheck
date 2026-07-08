@@ -198,8 +198,8 @@ REQUIRED_LITELLM_CLIENT_METHODS = {
 }
 REQUIRED_LITELLM_WORKER_USAGE = {
     "embed_knowledge": ["offline_hash_embeddings", "OFFLINE_EMBEDDING_MODEL", "offline_hash"],
-    "ai_recheck": ["LiteLLMClient().chat_sync", "review-chat", "AI_RUN_FAILED", "first_message_text"],
-    "llm_compare": ["LiteLLMClient().chat_sync", "default-chat", "compare-fast", "EXTERNAL_TOOL_FAILED"],
+    "ai_recheck": ["qwen_runtime_client().chat_sync", "review-chat", "AI_RUN_FAILED", "first_message_text"],
+    "llm_compare": ["qwen_runtime_client().chat_sync", "default-chat", "compare-fast", "EXTERNAL_TOOL_FAILED"],
 }
 REQUIRED_REVIEW_RUN_ROUTES = [
     {"method": "POST", "suffix": "/projects/{project_id}/inspection/nodes/{node_id}/ai-recheck"},
@@ -246,7 +246,7 @@ REQUIRED_REVIEW_ALLOWED_TOOLS = {
     "run_rule_engine",
     "retrieve_clauses",
     "search_knowledge_base",
-    "call_litellm_chat",
+    "call_qwen_runtime_chat",
     "create_review_finding_draft",
 }
 REQUIRED_REVIEW_FORBIDDEN_TOOLS = {
@@ -416,6 +416,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--review-run-wait-seconds", type=float, default=float(os.getenv("AICHECK_VERIFY_REVIEW_RUN_WAIT_SECONDS", "20")))
     parser.add_argument("--litellm-management-probes", action="store_true")
     parser.add_argument("--litellm-provider-probes", action="store_true")
+    parser.add_argument("--qwen-official-probe", action="store_true")
     parser.add_argument("--timeout", type=float, default=8.0)
     parser.add_argument("--output-dir", help="Optional directory for report.json and report.md.")
     parser.add_argument("--json", action="store_true", help="Print JSON instead of Markdown.")
@@ -631,6 +632,7 @@ class DeploymentReportBuilder:
             review_run_wait_seconds=max(0.0, float(self.args.review_run_wait_seconds or 0.0)),
             litellm_management_probes=bool(self.args.litellm_management_probes),
             litellm_provider_probes=bool(self.args.litellm_provider_probes),
+            qwen_official_probe=bool(getattr(self.args, "qwen_official_probe", False)),
         )
         with httpx.Client(base_url=config.api_base, timeout=self.args.timeout) as api_client:
             storage_client = httpx.Client(timeout=self.args.timeout)
@@ -1918,7 +1920,7 @@ def review_orchestration_contract_check(
             "workflowEngine",
             "ReviewRunWorkflow",
             "modelGateway",
-            "litellm",
+            "qwen_runtime",
             "ids_hashes_versions_only",
             "payloadCodecRequiredInProduction",
             "stable_hash_payload",
@@ -1955,10 +1957,10 @@ def review_orchestration_contract_check(
         "generate_finding_drafts",
         source_for_callable(getattr(execution_module, "generate_finding_drafts", None)),
         [
-            "LiteLLMClient().chat_sync",
+            "qwen_runtime_client().chat_sync",
             "review-chat",
             "response_format",
-            "call_litellm_chat",
+            "call_qwen_runtime_chat",
             "stable_hash_payload",
             "normalize_llm_findings",
         ],

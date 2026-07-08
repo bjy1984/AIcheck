@@ -1,0 +1,26 @@
+schemaVersion: aicheck-audit-runtime@1
+modeEnv: AICHECK_AUDIT_INPUT_MODE
+defaultMode: ocr_llm
+
+modes:
+  ocr_llm:
+    label: OCR + LLM
+    useOcrEvidence: true
+    requireEvidenceRefs: true
+    groundingPolicy: evidence_only
+    evidenceValidationMode: strict
+
+  pure_llm:
+    label: Pure LLM
+    useOcrEvidence: false
+    requireEvidenceRefs: false
+    groundingPolicy: llm_only_human_review
+    evidenceValidationMode: advisory
+
+aliases:
+  ocr: ocr_llm
+  with_ocr: ocr_llm
+  ocr+llm: ocr_llm
+  llm: pure_llm
+  llm_only: pure_llm
+  pure: pure_llm

@@ -8,10 +8,12 @@ from uuid import uuid4
 
 from libs.business_pack import DEFAULT_BUSINESS_PACK_ID, build_ai_review_prompt, load_business_pack, matching_rule_for_node
 from libs.contracts.responses import server_time
+from libs.audit_runtime import audit_runtime_config, audit_runtime_for_run, audit_runtime_public_config
 from libs.db.repository import repo
 from libs.integrations.errors import IntegrationServiceError
 from libs.integrations.litellm_client import LiteLLMClient, production_mode_enabled
 from libs.knowledge_retrieval import retrieve_knowledge_clauses
+from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_config, qwen_runtime_public_config
 from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
 
@@ -21,7 +23,7 @@ REVIEW_GRAPH_STEPS: list[dict[str, Any]] = [
     {"key": "run_rule_engine", "label": "执行确定性规则", "taskQueue": "review.validation"},
     {"key": "retrieve_knowledge", "label": "检索知识依据", "taskQueue": "review.retrieval"},
     {"key": "build_prompt", "label": "构造审查 Prompt", "taskQueue": "review.graph"},
-    {"key": "llm_generate_findings", "label": "LiteLLM 生成审查草稿", "taskQueue": "review.llm"},
+    {"key": "llm_generate_findings", "label": "QwenRuntime 生成审查草稿", "taskQueue": "review.llm"},
     {"key": "schema_validation", "label": "Schema 校验", "taskQueue": "review.validation"},
     {"key": "evidence_validation", "label": "证据校验", "taskQueue": "review.validation"},
     {"key": "reference_validation", "label": "依据校验", "taskQueue": "review.validation"},
@@ -29,6 +31,12 @@ REVIEW_GRAPH_STEPS: list[dict[str, Any]] = [
     {"key": "quality_gate", "label": "质量门禁", "taskQueue": "review.validation"},
     {"key": "persist_drafts", "label": "持久化草稿", "taskQueue": "review.graph"},
 ]
+
+
+def qwen_runtime_client() -> QwenRuntimeClient:
+    config = qwen_runtime_config()
+    server_client = LiteLLMClient() if config["mode"] == "server" or config.get("allowFallbackToServer") else None
+    return QwenRuntimeClient(config=config, server_client=server_client)
 
 REVIEW_GRAPH_EDGES = [
     {"source": REVIEW_GRAPH_STEPS[index]["key"], "target": REVIEW_GRAPH_STEPS[index + 1]["key"]}
@@ -70,7 +78,7 @@ ALLOWED_AGENT_TOOLS = {
     "run_rule_engine",
     "retrieve_clauses",
     "search_knowledge_base",
-    "call_litellm_chat",
+    "call_qwen_runtime_chat",
     "create_review_finding_draft",
     "create_ai_diagnostic",
 }
@@ -133,6 +141,7 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
     task_queues = review_task_queues()
     workflow_id = f"review-run-{review_run_id}"
     now = server_time()
+    audit_runtime = audit_runtime_public_config(mode=str(ai_run.get("auditInputMode") or "") or None)
     record = {
         "id": review_run_id,
         "reviewRunId": review_run_id,
@@ -146,7 +155,9 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
         "agentVersion": ai_run.get("agentVersion") or "1.0.0",
         "promptVersion": ai_run.get("promptVersion") or "review_prompt@1.0.0",
         "modelAlias": ai_run.get("model") or "review-chat",
-        "modelGateway": "litellm",
+        "modelGateway": "qwen_runtime",
+        "auditInputMode": audit_runtime["mode"],
+        "auditRuntime": audit_runtime,
         "ruleSetVersion": ai_run.get("ruleVersion") or "ruleset-v1",
         "kbVersion": ai_run.get("knowledgeBaseVersion") or "inspection_kb@1.0.0",
         "ocrResultVersions": ai_run.get("ocrResultVersions") or [],
@@ -210,13 +221,16 @@ def seed_graph_nodes(review_run: dict[str, Any]) -> None:
     for sequence, step in enumerate(REVIEW_GRAPH_STEPS, start=1):
         if step["key"] in existing:
             continue
+        label = step["label"]
+        if step["key"] == "load_ocr_result" and str(review_run.get("auditInputMode") or "") == "pure_llm":
+            label = "跳过 OCR 证据（纯 LLM）"
         repo.state["review_graph_nodes"].append(
             {
                 "id": f"RGNODE-{uuid4().hex[:8].upper()}",
                 "reviewRunId": review_run["reviewRunId"],
                 "aiRunId": review_run.get("aiRunId"),
                 "nodeKey": step["key"],
-                "label": step["label"],
+                "label": label,
                 "sequence": sequence,
                 "taskQueue": step["taskQueue"],
                 "status": "pending",
@@ -411,6 +425,8 @@ def execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
 
 
 def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any]) -> dict[str, Any]:
+    audit_runtime = audit_runtime_for_run(review_run)
+    context["auditRuntime"] = audit_runtime
     if node_key == "load_context":
         project = repo.require_project(str(review_run.get("projectId")))
         node = repo.node(str(review_run.get("projectId")), int(review_run.get("nodeId") or 0))
@@ -419,6 +435,34 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         return {"projectId": review_run.get("projectId"), "nodeId": review_run.get("nodeId"), "nodeName": (node or {}).get("name")}
     if node_key == "load_ocr_result":
         version_ids = set(review_run.get("inputDocumentVersionIds") or [])
+        if not audit_runtime["useOcrEvidence"]:
+            grounding_input = pure_llm_grounding_input(version_ids, audit_runtime)
+            context["groundingInput"] = grounding_input
+            context["fields"] = []
+            context["tables"] = []
+            context["seals"] = []
+            context["fragments"] = []
+            context["evidenceLinks"] = []
+            context.setdefault("runtimeToolResults", {})["audit_runtime"] = {
+                "toolName": "audit_runtime",
+                "status": "skipped_ocr",
+                "auditInputMode": audit_runtime["mode"],
+                "groundingPolicy": audit_runtime["groundingPolicy"],
+            }
+            return {
+                "auditInputMode": audit_runtime["mode"],
+                "sourceMethod": "pure_llm_review",
+                "ocrSkipped": True,
+                "fieldCount": 0,
+                "tableCount": 0,
+                "sealCount": 0,
+                "recognizedSealCount": 0,
+                "welderCertificateCount": 0,
+                "fragmentCount": 0,
+                "evidenceLinkCount": 0,
+                "groundingStatus": grounding_input.get("groundingStatus"),
+                "reviewWarnings": grounding_input.get("reviewWarnings") or [],
+            }
         grounding_input = build_grounded_review_input(repo.state, version_ids)
         fields = grounding_input.get("fields") or []
         evidence_links = grounding_input.get("evidenceLinks") or []
@@ -489,9 +533,15 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             "reviewRunId": review_run["reviewRunId"],
             "ruleCode": rule.get("ruleKey") or rule.get("id") or "generic-review",
             "ruleSetVersion": rule.get("version") or review_run.get("ruleSetVersion"),
-            "result": "passed" if context.get("fields") else "warning",
+            "result": "passed" if context.get("fields") else "advisory" if audit_runtime["mode"] == "pure_llm" else "warning",
             "severity": rule.get("severity") or "medium",
-            "message": "规则检查完成，待人工确认。" if context.get("fields") else "未发现可用 OCR 字段，需人工复核。",
+            "message": (
+                "规则检查完成，待人工确认。"
+                if context.get("fields")
+                else "纯 LLM 模式未加载 OCR 证据，规则结果仅作为人工复核提示。"
+                if audit_runtime["mode"] == "pure_llm"
+                else "未发现可用 OCR 字段，需人工复核。"
+            ),
             "linkedClauseIds": linked_clause_ids,
             "evidenceRefs": [{"source": "ocr_fields", "count": len(context.get("fields") or [])}],
             "suggestedAction": "human_confirm",
@@ -552,13 +602,17 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         context["findingDrafts"] = drafts
         for draft in drafts:
             append_tool_call(review_run, node_key, "create_review_finding_draft", {"findingDraftId": draft["id"]})
-        return {"modelGateway": "litellm", "modelAlias": review_run.get("modelAlias"), "findingDrafts": len(drafts), **llm_details}
+        return {"modelGateway": "qwen_runtime", "modelAlias": review_run.get("modelAlias"), "findingDrafts": len(drafts), **llm_details}
     if node_key == "schema_validation":
         result = validate_review_schema(context.get("findingDrafts") or [])
         context.setdefault("validationResults", {})[node_key] = result
         return result
     if node_key == "evidence_validation":
-        result = validate_review_evidence_refs(context.get("findingDrafts") or [], context.get("evidenceLinks") or [])
+        result = validate_review_evidence_refs(
+            context.get("findingDrafts") or [],
+            context.get("evidenceLinks") or [],
+            audit_runtime=audit_runtime,
+        )
         context.setdefault("validationResults", {})[node_key] = result
         return result
     if node_key == "reference_validation":
@@ -602,6 +656,50 @@ def review_llm_execution_mode() -> str:
     return "deterministic"
 
 
+def pure_llm_grounding_input(version_ids: set[str], audit_runtime: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "schemaVersion": "PureLlmReviewInput@1.0.0",
+        "documentVersionIds": sorted(version_ids),
+        "auditInputMode": audit_runtime["mode"],
+        "groundingPolicy": audit_runtime["groundingPolicy"],
+        "groundingStatus": "insufficient_evidence",
+        "blockingIssues": [
+            {
+                "code": "PURE_LLM_REVIEW_NO_OCR_EVIDENCE",
+                "message": "This audit run is configured to skip OCR evidence; all findings are advisory and require human confirmation.",
+            }
+        ],
+        "fields": [],
+        "tables": [],
+        "seals": [],
+        "fragments": [],
+        "evidenceLinks": [],
+        "quality": [],
+        "evidenceTextCorpus": [],
+        "summary": {
+            "fieldCount": 0,
+            "tableCount": 0,
+            "sealCount": 0,
+            "fragmentCount": 0,
+            "evidenceLinkCount": 0,
+            "lowConfidenceEvidenceCount": 0,
+            "missingPositionEvidenceCount": 0,
+            "tableContentMissingCount": 0,
+            "sealTextRiskCount": 0,
+            "criticalQualityFlagCount": 0,
+            "blockingIssueCount": 1,
+            "groundingStatus": "insufficient_evidence",
+            "auditInputMode": audit_runtime["mode"],
+        },
+        "reviewWarnings": [
+            {
+                "code": "PURE_LLM_REVIEW_ADVISORY_ONLY",
+                "message": "Pure LLM mode does not provide OCR/page/bbox evidence and cannot support automatic compliance conclusions.",
+            }
+        ],
+    }
+
+
 def select_prompt_template(review_run: dict[str, Any]) -> dict[str, Any] | None:
     templates = [item for item in repo.state.get("prompt_templates", []) if isinstance(item, dict)]
     if not templates:
@@ -633,6 +731,8 @@ def select_prompt_template(review_run: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    audit_runtime = context.get("auditRuntime") or audit_runtime_for_run(review_run)
+    context["auditRuntime"] = audit_runtime
     pack = load_business_pack(str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID))
     node = context.get("node") or {}
     fields = context.get("fields") or []
@@ -654,6 +754,8 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
     )
     user_payload = {
         "task": "Generate ReviewFindingDraftList JSON only.",
+        "auditInputMode": audit_runtime["mode"],
+        "auditRuntime": audit_runtime_public_config(mode=audit_runtime["mode"]),
         "availableRuntimeTools": runtime_tool_catalog(),
         "runtimeToolResults": {
             key: compact_tool_output(value)
@@ -723,6 +825,7 @@ def build_review_prompt_shape(review_run: dict[str, Any], context: dict[str, Any
     rule_result = next(iter(context.get("ruleResults") or []), {})
     parts = build_review_prompt_parts(review_run, context)
     grounding_input = context.get("groundingInput") or {}
+    audit_runtime = context.get("auditRuntime") or audit_runtime_for_run(review_run)
     grounding_summary = grounding_input.get("summary") or {}
     messages = parts["messages"]
     prompt_template = parts.get("promptTemplate") or {}
@@ -745,6 +848,7 @@ def build_review_prompt_shape(review_run: dict[str, Any], context: dict[str, Any
                 "sealCount": grounding_summary.get("sealCount", 0),
                 "fragmentCount": grounding_summary.get("fragmentCount", 0),
                 "groundingStatus": grounding_input.get("groundingStatus"),
+                "auditInputMode": audit_runtime["mode"],
                 "ruleCode": rule_result.get("ruleCode"),
                 "kbVersion": review_run.get("kbVersion"),
             }
@@ -779,8 +883,9 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
         drafts = apply_grounding_guardrails([build_finding_draft(review_run, context)], context.get("groundingInput") or {})
         return drafts, metadata
     messages = build_review_messages(review_run, context)
+    qwen_runtime = qwen_runtime_public_config()
     try:
-        response = LiteLLMClient().chat_sync(
+        response = qwen_runtime_client().chat_sync(
             messages,
             model=str(review_run.get("modelAlias") or "review-chat"),
             temperature=0.1,
@@ -789,8 +894,8 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
     except IntegrationServiceError:
         raise
     except Exception as exc:
-        raise IntegrationServiceError("LiteLLM", "review.chat", reason=exc.__class__.__name__) from exc
-    content = LiteLLMClient.first_message_text(response)
+        raise IntegrationServiceError("QwenRuntime", "review.chat", reason=exc.__class__.__name__) from exc
+    content = QwenRuntimeClient.first_message_text(response)
     message = ((response.get("choices") or [{}])[0].get("message") or {}) if isinstance(response.get("choices"), list) else {}
     conversation_id = str(
         response.get("id")
@@ -807,10 +912,12 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
     response_hash = stable_hash_payload(response)
     prompt_shape = context.get("promptShape") or build_review_prompt_shape(review_run, context)
     llm_metadata = {
-        "llmExecution": "litellm",
+        "llmExecution": "qwen_runtime",
         "llmCalled": True,
         "conversationId": conversation_id,
         "modelAlias": review_run.get("modelAlias"),
+        "modelResolved": response.get("model") or review_run.get("modelAlias"),
+        "qwenRuntime": qwen_runtime,
         "promptVersion": review_run.get("promptVersion"),
         "promptTemplateId": prompt_shape.get("promptTemplateId"),
         "promptHash": prompt_shape.get("messagesHash") or stable_hash_payload(messages),
@@ -818,6 +925,7 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
         "usage": response.get("usage") or {},
         "reasoningProcess": reasoning_process[:3000],
         "resultText": content[:4000],
+        "auditInputMode": (context.get("auditRuntime") or audit_runtime_for_run(review_run))["mode"],
         "finishReason": ((response.get("choices") or [{}])[0] or {}).get("finish_reason")
         if isinstance(response.get("choices"), list)
         else None,
@@ -827,9 +935,11 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
     append_tool_call(
         review_run,
         "llm_generate_findings",
-        "call_litellm_chat",
+        "call_qwen_runtime_chat",
         {
             "modelAlias": review_run.get("modelAlias"),
+            "modelResolved": response.get("model") or review_run.get("modelAlias"),
+            "qwenRuntimeMode": qwen_runtime.get("mode"),
             "conversationId": conversation_id,
             "promptHash": llm_metadata["promptHash"],
             "responseHash": response_hash,
@@ -976,7 +1086,41 @@ def validate_bbox(value: Any) -> bool:
     return x2 >= x1 and y2 >= y1 and x1 >= 0 and y1 >= 0
 
 
-def validate_review_evidence_refs(drafts: list[dict[str, Any]], evidence_links: list[dict[str, Any]]) -> dict[str, Any]:
+def validate_review_evidence_refs(
+    drafts: list[dict[str, Any]],
+    evidence_links: list[dict[str, Any]],
+    *,
+    audit_runtime: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    runtime = audit_runtime or audit_runtime_config()
+    if runtime.get("requireEvidenceRefs") is False:
+        warnings = []
+        for draft_index, draft in enumerate(drafts):
+            if draft.get("evidenceRefs"):
+                warnings.append(
+                    {
+                        "code": "PURE_LLM_EVIDENCE_REFS_IGNORED",
+                        "index": draft_index,
+                        "message": "Pure LLM mode does not require evidenceRefs; OCR/page/bbox evidence was not loaded.",
+                    }
+                )
+        warnings.append(
+            {
+                "code": "PURE_LLM_REVIEW_ADVISORY_ONLY",
+                "message": "Evidence validation is advisory because auditInputMode does not require OCR evidence.",
+            }
+        )
+        return validation_payload(
+            passed=True,
+            checked=0,
+            warnings=warnings,
+            metrics={
+                "evidenceRefCount": 0,
+                "availableEvidenceLinks": len(evidence_links),
+                "auditInputMode": runtime.get("mode"),
+                "evidenceValidationMode": runtime.get("evidenceValidationMode"),
+            },
+        )
     failures: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
     evidence_ids = {str(item.get("id")) for item in evidence_links if isinstance(item, dict) and item.get("id")}
@@ -1111,12 +1255,21 @@ def build_finding_draft(review_run: dict[str, Any], context: dict[str, Any]) -> 
     evidence = context.get("evidenceLinks") or []
     rule_result = next(iter(context.get("ruleResults") or []), {})
     grounding_input = context.get("groundingInput") or {}
+    audit_runtime = context.get("auditRuntime") or audit_runtime_for_run(review_run)
     grounding_status = str(grounding_input.get("groundingStatus") or "insufficient_evidence")
     description = "已基于 OCR 字段、规则检查和知识检索生成审查草稿，需监检员人工确认。"
     confidence = 0.82
+    source_method = "ocr_llm_review"
+    if audit_runtime["mode"] == "pure_llm":
+        description = "当前为纯 LLM 审计模式，未加载 OCR/page/bbox 证据；以下建议只能作为人工复核提示，不能作为自动审计结论。"
+        confidence = 0.55
+        source_method = "pure_llm_review"
     if grounding_status != "grounded":
         description = "当前 OCR 证据不足以支撑自动审查结论，需人工核对原件、字段、表格、印章和证据链。"
         confidence = 0.5
+        if audit_runtime["mode"] == "pure_llm":
+            description = "当前为纯 LLM 审计模式，未加载 OCR/page/bbox 证据；以下建议只能作为人工复核提示，不能作为自动审计结论。"
+            confidence = 0.55
     return {
         "id": f"FND-DRAFT-{uuid4().hex[:8].upper()}",
         "reviewRunId": review_run["reviewRunId"],
@@ -1169,6 +1322,8 @@ def build_finding_draft(review_run: dict[str, Any], context: dict[str, Any]) -> 
         "suggestedAction": "human_confirm",
         "groundingStatus": grounding_status,
         "unsupportedClaims": [],
+        "auditInputMode": audit_runtime["mode"],
+        "sourceMethod": source_method,
         "requiresHumanConfirmation": True,
         "status": "pending_human_review",
         "createdAt": server_time(),
@@ -1412,7 +1567,7 @@ def _summarize_node_decision(
         "run_rule_engine": "执行确定性规则，得到缺项、字段、签章和状态约束结果。",
         "retrieve_knowledge": "按业务包、节点、资料类型和知识库版本检索可引用条款。",
         "build_prompt": "将上下文、规则结果、证据 ID 和条款 ID 组装为受控 Prompt 载荷。",
-        "llm_generate_findings": "通过 LiteLLM 生成结构化审查草稿，输出必须绑定证据、规则和知识依据。",
+        "llm_generate_findings": "通过 QwenRuntime 生成结构化审查草稿，输出必须绑定证据、规则和知识依据。",
         "schema_validation": "校验 Finding Draft 的字段、枚举、置信度和人工确认要求。",
         "evidence_validation": "校验证据引用是否存在，bbox/page/documentVersion 是否可回放。",
         "reference_validation": "校验规则和知识条款引用是否来自本次规则结果和检索 Trace。",
@@ -1598,8 +1753,10 @@ def review_run_audit_trace(review_run_id: str) -> dict[str, Any]:
         "agentId": review_run.get("agentId"),
         "agentVersion": review_run.get("agentVersion"),
         "promptVersion": review_run.get("promptVersion"),
-        "modelGateway": review_run.get("modelGateway") or "litellm",
+        "modelGateway": review_run.get("modelGateway") or "qwen_runtime",
         "modelAlias": review_run.get("modelAlias"),
+        "auditInputMode": review_run.get("auditInputMode") or (review_run.get("auditRuntime") or {}).get("mode"),
+        "auditRuntime": repo.clone(review_run.get("auditRuntime") or {}),
         "ruleSetVersion": review_run.get("ruleSetVersion"),
         "kbVersion": review_run.get("kbVersion"),
         "workflowEngine": review_run.get("workflowEngine"),

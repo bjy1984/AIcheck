@@ -394,6 +394,7 @@ class DeploymentConfigValidator:
                 "AICHECK_REDIS_URL",
                 "AICHECK_TASK_DISPATCH",
                 "AICHECK_REVIEW_ORCHESTRATION",
+                "AICHECK_AUDIT_INPUT_MODE",
                 "TEMPORAL_ADDRESS",
                 "TEMPORAL_NAMESPACE",
                 "AICHECK_REVIEW_WORKFLOW_TASK_QUEUE",
@@ -408,19 +409,29 @@ class DeploymentConfigValidator:
                 "AICHECK_ENABLE_DEMO_USERS",
                 "LITELLM_BASE_URL",
                 "LITELLM_API_KEY",
+                "AICHECK_QWEN_CALL_MODE",
+                "AICHECK_QWEN_ALLOW_SERVER_FALLBACK",
+                "QWEN_API_BASE",
+                "QWEN_API_KEY",
             },
             "worker-service": {
                 "AICHECK_DATABASE_URL",
                 "AICHECK_REDIS_URL",
                 "AICHECK_TASK_DISPATCH",
                 "AICHECK_REVIEW_ORCHESTRATION",
+                "AICHECK_AUDIT_INPUT_MODE",
                 "AICHECK_OCR_BASE_URL",
                 "LITELLM_BASE_URL",
                 "LITELLM_API_KEY",
+                "AICHECK_QWEN_CALL_MODE",
+                "AICHECK_QWEN_ALLOW_SERVER_FALLBACK",
+                "QWEN_API_BASE",
+                "QWEN_API_KEY",
             },
             "review-worker-service": {
                 "AICHECK_DATABASE_URL",
                 "AICHECK_REVIEW_ORCHESTRATION",
+                "AICHECK_AUDIT_INPUT_MODE",
                 "TEMPORAL_ADDRESS",
                 "TEMPORAL_NAMESPACE",
                 "AICHECK_REVIEW_WORKFLOW_TASK_QUEUE",
@@ -435,6 +446,10 @@ class DeploymentConfigValidator:
                 "LANGGRAPH_CHECKPOINT_DSN",
                 "LITELLM_BASE_URL",
                 "LITELLM_API_KEY",
+                "AICHECK_QWEN_CALL_MODE",
+                "AICHECK_QWEN_ALLOW_SERVER_FALLBACK",
+                "QWEN_API_BASE",
+                "QWEN_API_KEY",
             },
             "ocr-service": {
                 "AICHECK_AGENTDESIGN_BACKEND",
@@ -505,6 +520,12 @@ class DeploymentConfigValidator:
             failures.append("review-worker-service AICHECK_REVIEW_ORCHESTRATION must be temporal")
         if default_value(review_worker_env.get("AICHECK_REVIEW_LLM_EXECUTION")) != "litellm":
             failures.append("review-worker-service default AICHECK_REVIEW_LLM_EXECUTION must be litellm")
+        if default_value(api_env.get("AICHECK_AUDIT_INPUT_MODE")) != "ocr_llm":
+            failures.append("api-service default AICHECK_AUDIT_INPUT_MODE must be ocr_llm")
+        if default_value(worker_env.get("AICHECK_AUDIT_INPUT_MODE")) != "ocr_llm":
+            failures.append("worker-service default AICHECK_AUDIT_INPUT_MODE must be ocr_llm")
+        if default_value(review_worker_env.get("AICHECK_AUDIT_INPUT_MODE")) != "ocr_llm":
+            failures.append("review-worker-service default AICHECK_AUDIT_INPUT_MODE must be ocr_llm")
         if default_value(review_worker_env.get("AICHECK_LANGGRAPH_DISABLE")) != "false":
             failures.append("review-worker-service default AICHECK_LANGGRAPH_DISABLE must be false")
         if "postgres:5432" not in default_value(api_env.get("LANGGRAPH_CHECKPOINT_DSN")):

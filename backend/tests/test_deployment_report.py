@@ -52,6 +52,7 @@ def report_args(**overrides):
         "review_run_wait_seconds": 0.0,
         "litellm_management_probes": False,
         "litellm_provider_probes": False,
+        "qwen_official_probe": False,
         "timeout": 1.0,
         "output_dir": None,
         "json": False,

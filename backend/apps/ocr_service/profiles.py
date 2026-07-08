@@ -16,6 +16,7 @@ PROFILE_ALIASES = {
     "equipment_list": "equipment_list_v1",
     "paint_insulation_list": "paint_insulation_list_v1",
     "comprehensive_material_list": "comprehensive_material_list_v1",
+    "site_layout_drawing": "site_layout_drawing_v1",
 }
 DEFAULT_VLM_FALLBACK_REASONS = [
     "REQUIRED_FIELD_MISSING",
@@ -544,6 +545,11 @@ OCR_PROFILES: dict[str, dict[str, Any]] = {
     "comprehensive_material_list_v1": engineering_drawing_profile(
         "comprehensive_material_list_v1",
         "comprehensive_material_list",
+    ),
+    "site_layout_drawing_v1": engineering_drawing_profile(
+        "site_layout_drawing_v1",
+        "site_layout_drawing",
+        ["company_name", "drawing_no", "design_phase", "document_title"],
     ),
 }
 

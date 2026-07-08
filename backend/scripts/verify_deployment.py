@@ -19,6 +19,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from libs.db.seed import PROJECT_ID
+from libs.qwen_runtime import qwen_runtime_config
 from libs.security.auth import ROLE_DEFAULT_PATHS
 
 
@@ -133,6 +134,7 @@ class VerifyConfig:
     review_run_wait_seconds: float
     litellm_management_probes: bool
     litellm_provider_probes: bool
+    qwen_official_probe: bool
 
 
 def parse_args() -> argparse.Namespace:
@@ -155,6 +157,11 @@ def parse_args() -> argparse.Namespace:
         "--litellm-provider-probes",
         action="store_true",
         help="Run real chat and embedding calls through LiteLLM. This may consume provider quota.",
+    )
+    parser.add_argument(
+        "--qwen-official-probe",
+        action="store_true",
+        help="Run a real Qwen official API chat completion probe. This may consume provider quota.",
     )
     parser.add_argument(
         "--litellm-management-probes",
@@ -214,6 +221,7 @@ def config_from_args(args: argparse.Namespace) -> VerifyConfig:
         review_run_wait_seconds=max(0.0, float(args.review_run_wait_seconds or 0.0)),
         litellm_management_probes=args.litellm_management_probes,
         litellm_provider_probes=args.litellm_provider_probes,
+        qwen_official_probe=args.qwen_official_probe,
     )
 
 
@@ -255,6 +263,7 @@ class DeploymentVerifier:
         self.check_ocr_parse_contract()
         self.check_ocr_bad_request_contract()
         self.check_litellm_health()
+        self.check_qwen_official_probe()
         return self.results
 
     def add(self, name: str, status: str, detail: str = "", data: dict[str, Any] | None = None) -> None:
@@ -566,8 +575,8 @@ class DeploymentVerifier:
             run_failures.append("workflowEngine is missing")
         if not run.get("graphEngine"):
             run_failures.append("graphEngine is missing")
-        if run.get("modelGateway") != "litellm":
-            run_failures.append(f"modelGateway expected litellm, got {run.get('modelGateway')!r}")
+        if run.get("modelGateway") != "qwen_runtime":
+            run_failures.append(f"modelGateway expected qwen_runtime, got {run.get('modelGateway')!r}")
         if run_failures:
             self.add("api.review-run-probe", "fail", "; ".join(run_failures), {"run": run})
             return
@@ -1333,6 +1342,61 @@ class DeploymentVerifier:
             f"embedding-default returned vector dimension={len(embedding)}.",
             {"model": "embedding-default", "dimension": len(embedding)},
         )
+
+    def check_qwen_official_probe(self) -> None:
+        if not self.config.qwen_official_probe:
+            self.add("qwen.official-probe", "skip", "Pass --qwen-official-probe to verify the official Qwen API.")
+            return
+        runtime = qwen_runtime_config()
+        official = runtime.get("officialProvider") or {}
+        base_url = str(os.getenv(str(official.get("baseUrlEnv") or "QWEN_API_BASE")) or official.get("defaultBaseUrl") or "").rstrip("/")
+        api_key_env = str(official.get("apiKeyEnv") or "QWEN_API_KEY")
+        api_key = os.getenv(api_key_env)
+        model = str(((official.get("models") or {}).get("default")) or "qwen3.7-plus")
+        if not base_url:
+            self.add("qwen.official-probe", "fail", "Qwen official API base URL is not configured.")
+            return
+        if not api_key:
+            self.add("qwen.official-probe", "fail", f"{api_key_env} is required for Qwen official API probe.")
+            return
+        try:
+            response = httpx.post(
+                f"{base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": "You are a deployment verifier. Reply briefly."},
+                        {"role": "user", "content": "Reply with: AIcheck Qwen verifier ok"},
+                    ],
+                    "max_tokens": 16,
+                    "temperature": 0,
+                },
+                timeout=15,
+            )
+        except Exception as exc:
+            self.add("qwen.official-probe", "fail", str(exc), {"model": model, "baseUrl": base_url})
+            return
+        if response.status_code >= 400:
+            self.add(
+                "qwen.official-probe",
+                "fail",
+                f"HTTP {response.status_code}",
+                self.safe_response_error_data(response),
+            )
+            return
+        try:
+            payload = response.json()
+        except Exception as exc:
+            self.add("qwen.official-probe", "fail", f"Non-JSON response: {exc}")
+            return
+        choices = payload.get("choices") if isinstance(payload, dict) else None
+        message = choices[0].get("message", {}) if isinstance(choices, list) and choices else {}
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, str) or not content.strip():
+            self.add("qwen.official-probe", "fail", "Qwen official API returned no assistant content.")
+            return
+        self.add("qwen.official-probe", "pass", "Qwen official API returned assistant content.", {"model": model, "baseUrl": base_url})
 
 
 def print_results(results: list[CheckResult], *, as_json: bool) -> None:

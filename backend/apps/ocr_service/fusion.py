@@ -505,6 +505,11 @@ def fragment_seal_candidates_from_text(
             ("质量", "证明"),
             ("质量证明", "出厂检验", "质量专用章", "质量", "证明"),
         ),
+        (
+            "quality_seal",
+            ("质检专用章",),
+            ("质检专用章", "检验合格", "出厂检验", "合格证"),
+        ),
     ]
     for page_no, page_fragments in grouped.items():
         for seal_type, required_terms, optional_terms in specs:
