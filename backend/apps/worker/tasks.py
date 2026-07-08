@@ -25,6 +25,7 @@ from libs.knowledge_indexing import (
     offline_hash_embeddings,
     units_from_local_file,
 )
+from libs.material_targeting import run_material_targeting
 from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block, unsupported_claims
 
 
@@ -369,6 +370,17 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
         }
     parse_result_record = repo.finish_ocr_job_record(ocr_job_record, result)
     applied = repo.apply_ocr_result(document_id, version_id, result)
+    targeting = None
+    if applied.get("status") == "success":
+        document = repo.find_one("documents", document_id)
+        if document and document.get("projectId"):
+            targeting = run_material_targeting(
+                repo,
+                str(document["projectId"]),
+                document_id,
+                version_id,
+                triggered_by="ocr_worker",
+            )
     flush_state()
     next_dispatch = None
     if applied.get("status") == "success":
@@ -378,6 +390,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
         **result,
         "applied": applied,
         "nextDispatch": next_dispatch,
+        "targeting": targeting,
         "ocrJobRecordId": ocr_job_record.get("id"),
         "ocrParseResultId": (parse_result_record or {}).get("parseResultId"),
     }

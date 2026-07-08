@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { ElDescriptions, ElDescriptionsItem, ElDialog, ElEmpty, ElTag } from 'element-plus'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { ElAlert, ElDescriptions, ElDescriptionsItem, ElDialog, ElEmpty, ElTag } from 'element-plus'
+import { getDocumentDetailApi, getDocumentOriginalBlobApi } from '@/api/aicheck'
+import type { DocumentDetailPayload } from '@/api/aicheck'
 import type { EvidenceLink, ExtractedField } from '@/types/aicheck'
+import { getAicheckErrorMessage } from '@/utils/aicheckError'
 
 const props = defineProps<{
   modelValue: boolean
+  projectId?: string
   evidence?: EvidenceLink
   extractedFields: ExtractedField[]
 }>()
@@ -32,14 +36,125 @@ const locationTitle = computed(() => {
   if (props.evidence.objectType === 'extractedField') return 'OCR 字段定位'
   return '文件证据定位'
 })
+
+const previewDetail = ref<DocumentDetailPayload>()
+const previewObjectUrl = ref('')
+const previewLoading = ref(false)
+const previewError = ref('')
+let previewRequestSeq = 0
+
+const evidenceTypeLabel = computed(() => props.evidence?.objectType || 'nodeEvidenceLink')
+const evidenceProjectId = computed(() => props.projectId || props.evidence?.projectId || '')
+const evidenceDocumentId = computed(() => props.evidence?.documentId || '')
+const filePreview = computed(() => previewDetail.value?.preview)
+const canLoadFilePreview = computed(
+  () =>
+    visible.value &&
+    !!props.evidence &&
+    props.evidence.objectType !== 'knowledgeClause' &&
+    !!evidenceProjectId.value &&
+    !!evidenceDocumentId.value
+)
+const filePreviewAvailable = computed(
+  () => !!filePreview.value?.url && filePreview.value.previewType !== 'unsupported'
+)
+const filePreviewRequiresBlob = computed(
+  () => filePreviewAvailable.value && String(filePreview.value?.url || '').startsWith('/api/')
+)
+const filePreviewFrameUrl = computed(() => {
+  const url = String(filePreview.value?.url || '')
+  if (filePreviewRequiresBlob.value) return previewObjectUrl.value
+  return previewObjectUrl.value || url
+})
+const filePreviewSrc = computed(() => {
+  const url = filePreviewFrameUrl.value
+  if (!url || filePreview.value?.previewType !== 'pdf') return url
+  const pageNo = Number(props.evidence?.pageNo || 0)
+  return pageNo > 0 ? `${url}#page=${pageNo}` : url
+})
+const filePreviewIsImage = computed(() => filePreview.value?.previewType === 'image')
+const filePreviewIsPdf = computed(() => filePreview.value?.previewType === 'pdf')
+const filePreviewUnavailableText = computed(() => {
+  if (!evidenceDocumentId.value) return '当前证据没有关联项目文件，无法加载原文。'
+  if (!filePreview.value?.url) return '当前文件详情没有返回原文地址。'
+  if (String(filePreview.value.url).startsWith('mock://')) return '当前文件只有占位地址，尚未生成真实原文预览。'
+  if (filePreview.value.previewType === 'unsupported') return '当前文件类型暂不支持在线预览。'
+  return '当前文件没有可预览的真实原文。'
+})
+
+const revokePreviewObjectUrl = () => {
+  if (!previewObjectUrl.value) return
+  URL.revokeObjectURL(previewObjectUrl.value)
+  previewObjectUrl.value = ''
+}
+
+const resetPreviewState = () => {
+  previewRequestSeq += 1
+  revokePreviewObjectUrl()
+  previewDetail.value = undefined
+  previewError.value = ''
+  previewLoading.value = false
+}
+
+const loadFilePreview = async () => {
+  const requestSeq = ++previewRequestSeq
+  revokePreviewObjectUrl()
+  previewDetail.value = undefined
+  previewError.value = ''
+  if (!canLoadFilePreview.value) return
+  previewLoading.value = true
+  try {
+    const detail = await getDocumentDetailApi(evidenceProjectId.value, evidenceDocumentId.value)
+    if (requestSeq !== previewRequestSeq) return
+    previewDetail.value = detail.data
+    const url = String(detail.data.preview?.url || '')
+    if (!url || url.startsWith('mock://') || detail.data.preview?.previewType === 'unsupported') return
+    if (url.startsWith('/api/')) {
+      const res = await getDocumentOriginalBlobApi(url)
+      if (requestSeq !== previewRequestSeq) return
+      previewObjectUrl.value = URL.createObjectURL(res.data)
+    }
+  } catch (error) {
+    if (requestSeq !== previewRequestSeq) return
+    previewError.value = getAicheckErrorMessage(error, '原文预览加载失败，请尝试下载后查看。')
+  } finally {
+    if (requestSeq === previewRequestSeq) previewLoading.value = false
+  }
+}
+
+const handlePreviewImageError = () => {
+  previewError.value = '图片预览加载失败，请尝试下载后查看。'
+}
+
+watch(
+  () =>
+    [
+      visible.value,
+      props.evidence?.id,
+      props.evidence?.documentId,
+      props.evidence?.objectType,
+      props.projectId
+    ] as const,
+  ([open]) => {
+    if (open) {
+      void loadFilePreview()
+    } else {
+      resetPreviewState()
+    }
+  }
+)
+
+onBeforeUnmount(() => {
+  resetPreviewState()
+})
 </script>
 
 <template>
-  <ElDialog v-model="visible" :title="locationTitle" width="720px" append-to-body>
+  <ElDialog v-model="visible" :title="locationTitle" width="1040px" append-to-body>
     <template v-if="evidence">
       <ElDescriptions :column="2" border class="evidence-summary">
         <ElDescriptionsItem label="证据类型">
-          <ElTag type="info" effect="plain">{{ evidence.objectType }}</ElTag>
+          <ElTag type="info" effect="plain">{{ evidenceTypeLabel }}</ElTag>
         </ElDescriptionsItem>
         <ElDescriptionsItem label="置信度">
           {{ evidence.confidence ? `${Math.round(evidence.confidence * 100)}%` : '-' }}
@@ -65,12 +180,46 @@ const locationTitle = computed(() => {
             <strong>{{ evidence.objectId }}</strong>
             <p>{{ evidence.quotedText || '标准条款内容将在真实知识库服务接入后展示。' }}</p>
           </div>
-          <div v-else class="file-preview">
-            <div class="mock-page">
-              <span>{{ evidence.fileName || evidence.objectId }}</span>
-              <strong>第 {{ evidence.pageNo || 1 }} 页</strong>
-              <mark>{{ evidence.quotedText || linkedField?.fieldValue || '证据片段' }}</mark>
-            </div>
+          <div v-else class="file-preview" v-loading="previewLoading">
+            <ElAlert
+              v-if="previewError"
+              :title="previewError"
+              type="warning"
+              :closable="false"
+              show-icon
+            />
+            <template v-else-if="filePreviewAvailable">
+              <div v-if="!filePreviewFrameUrl" class="preview-placeholder">原文预览加载中</div>
+              <img
+                v-else-if="filePreviewIsImage"
+                class="file-preview-image"
+                :src="filePreviewSrc"
+                :alt="evidence.fileName || '证据原文'"
+                @error="handlePreviewImageError"
+              />
+              <iframe
+                v-else-if="filePreviewIsPdf"
+                class="file-preview-frame"
+                :src="filePreviewSrc"
+                :title="evidence.fileName || '证据原文'"
+              ></iframe>
+              <ElAlert
+                v-else
+                title="当前文件类型暂不支持在线定位预览"
+                :description="filePreviewUnavailableText"
+                type="warning"
+                :closable="false"
+                show-icon
+              />
+            </template>
+            <ElAlert
+              v-else
+              title="当前文件没有可预览的真实原文"
+              :description="filePreviewUnavailableText"
+              type="warning"
+              :closable="false"
+              show-icon
+            />
           </div>
         </section>
 
@@ -129,30 +278,40 @@ const locationTitle = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 210px;
+  min-height: 520px;
   background: #f8fafc;
   border: 1px dashed #cbd5e1;
   border-radius: 8px;
 }
 
-.mock-page {
+.preview-placeholder {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 78%;
-  min-height: 160px;
-  padding: 18px;
-  color: #344054;
+  width: 100%;
+  min-height: 520px;
+  align-items: center;
+  justify-content: center;
+  color: #667085;
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 6px;
 }
 
-.mock-page mark {
-  padding: 4px 6px;
-  color: #7c2d12;
-  background: #fef3c7;
-  border-radius: 4px;
+.file-preview-frame {
+  width: 100%;
+  min-height: 520px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+}
+
+.file-preview-image {
+  display: block;
+  width: 100%;
+  max-height: 620px;
+  object-fit: contain;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
 }
 
 .clause-preview p {

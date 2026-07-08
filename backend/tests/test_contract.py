@@ -8186,6 +8186,112 @@ def test_document_preview_and_download_use_current_version_signed_get(monkeypatc
     assert_error(client.get(f"/projects/NOT-A-PROJECT/documents/{document['id']}/download-url"), "NOT_FOUND")
 
 
+def test_project_document_detail_streams_existing_local_original_file() -> None:
+    body = b"%PDF-1.4\nexisting-local-original\n%%EOF\n"
+    document, version = repo.create_document("P-2026-GDLNG-002", "existing-local.pdf", "application/pdf")
+    workspace_root = Path(__file__).resolve().parents[2]
+    target = workspace_root / "output" / "document_uploads" / "test-contract" / version["id"] / "existing-local.pdf"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(body)
+    version["storageKey"] = f"local://{target.relative_to(workspace_root)}"
+    version["storageBucket"] = "local"
+    version["fileSize"] = len(body)
+    try:
+        detail = assert_ok(client.get(f"/projects/P-2026-GDLNG-002/documents/{document['id']}"))
+        preview = assert_ok(client.get(f"/projects/P-2026-GDLNG-002/documents/{document['id']}/preview-url"))
+        download = assert_ok(client.get(f"/projects/P-2026-GDLNG-002/documents/{document['id']}/download-url"))
+
+        expected_preview_url = f"/api/projects/P-2026-GDLNG-002/documents/{document['id']}/original?disposition=inline"
+        expected_download_url = f"/api/projects/P-2026-GDLNG-002/documents/{document['id']}/original?disposition=attachment"
+        assert detail["preview"]["url"] == expected_preview_url
+        assert preview["url"] == expected_preview_url
+        assert download["url"] == expected_download_url
+        assert preview["sourceUrl"].startswith("local://output/document_uploads/")
+        assert "mock://" not in preview["url"]
+        original = client.get(expected_preview_url)
+        assert original.status_code == 200
+        assert original.content == body
+    finally:
+        target.unlink(missing_ok=True)
+        for parent in (target.parent, target.parent.parent):
+            try:
+                parent.rmdir()
+            except OSError:
+                pass
+
+
+def test_project_document_local_heic_inline_preview_renders_png(monkeypatch) -> None:
+    body = b"fake-heic-original"
+    rendered = b"\x89PNG\r\n\x1a\nrendered-preview"
+    document, version = repo.create_document("P-2026-GDLNG-002", "IMG_6528.heic", "heic")
+    workspace_root = Path(__file__).resolve().parents[2]
+    target = workspace_root / "output" / "document_uploads" / "test-contract" / version["id"] / "IMG_6528.heic"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(body)
+    version["storageKey"] = f"local://{target.relative_to(workspace_root)}"
+    version["storageBucket"] = "local"
+    version["fileSize"] = len(body)
+    monkeypatch.setattr("apps.api.routes.fde_render_heic_page_preview", lambda path: (rendered, "image/png"))
+    try:
+        detail = assert_ok(client.get(f"/projects/P-2026-GDLNG-002/documents/{document['id']}"))
+        preview_url = f"/api/projects/P-2026-GDLNG-002/documents/{document['id']}/original?disposition=inline"
+        download_url = f"/api/projects/P-2026-GDLNG-002/documents/{document['id']}/original?disposition=attachment"
+
+        assert detail["preview"]["url"] == preview_url
+        assert detail["preview"]["previewType"] == "image"
+        assert detail["preview"]["contentType"] == "image/png"
+        assert detail["preview"]["sourceContentType"] == "image/heic"
+        assert detail["download"]["url"] == download_url
+        assert detail["download"]["contentType"] == "image/heic"
+
+        original = client.get(preview_url)
+        assert original.status_code == 200
+        assert original.content == rendered
+        assert original.headers["content-type"].startswith("image/png")
+        assert original.headers["content-disposition"].startswith("inline")
+
+        download = client.get(download_url)
+        assert download.status_code == 200
+        assert download.content == body
+        assert download.headers["content-type"].startswith("image/heic")
+        assert download.headers["content-disposition"].startswith("attachment")
+    finally:
+        target.unlink(missing_ok=True)
+        for parent in (target.parent, target.parent.parent):
+            try:
+                parent.rmdir()
+            except OSError:
+                pass
+
+
+def test_heic_preview_sips_fallback_caps_preview_size(monkeypatch, tmp_path) -> None:
+    import apps.api.routes as routes
+
+    source = tmp_path / "source.heic"
+    source.write_bytes(b"heic")
+    captured: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        captured.append([str(item) for item in command])
+        Path(command[-1]).write_bytes(b"\x89PNG\r\n\x1a\nsmall-preview")
+
+        class Result:
+            returncode = 0
+
+        return Result()
+
+    monkeypatch.setattr(routes, "fde_render_image_page_preview", lambda _path: None)
+    monkeypatch.setattr(routes.shutil, "which", lambda name: "/usr/bin/sips" if name == "sips" else None)
+    monkeypatch.setattr(routes.subprocess, "run", fake_run)
+
+    content, content_type = routes.fde_render_heic_page_preview(source) or (b"", "")
+
+    assert content.startswith(b"\x89PNG")
+    assert content_type == "image/png"
+    assert captured
+    assert captured[0][:4] == ["sips", "-Z", "1600", "-s"]
+
+
 def test_knowledge_file_chunks_do_not_fabricate_and_original_streams_local_file() -> None:
     workspace_root = Path(__file__).resolve().parents[2]
     target = workspace_root / "tmp" / "knowledge-original-test.pdf"

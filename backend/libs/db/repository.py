@@ -36,6 +36,8 @@ STATE_COLLECTIONS = {
     "versions": "document_versions",
     "bindings": "node_bindings",
     "evidence_links": "evidence_links",
+    "node_evidence_links": "node_evidence_links",
+    "material_targeting_runs": "material_targeting_runs",
     "extracted_fields": "extracted_fields",
     "ai_runs": "ai_runs",
     "review_runs": "review_runs",
@@ -132,6 +134,8 @@ class InMemoryRepository:
         self.state.setdefault("knowledge_page_index_nodes", [])
         self.state.setdefault("knowledge_vector_corrections", [])
         self.state.setdefault("knowledge_chunk_quarantines", [])
+        self.state.setdefault("node_evidence_links", [])
+        self.state.setdefault("material_targeting_runs", [])
         self.state.setdefault("upload_sessions", [])
         self.state.setdefault("ocr_jobs", [])
         self.state.setdefault("ocr_parse_results", [])
@@ -166,6 +170,8 @@ class InMemoryRepository:
         self.state.setdefault("knowledge_page_index_nodes", [])
         self.state.setdefault("knowledge_vector_corrections", [])
         self.state.setdefault("knowledge_chunk_quarantines", [])
+        self.state.setdefault("node_evidence_links", [])
+        self.state.setdefault("material_targeting_runs", [])
         self.state.setdefault("upload_sessions", [])
         self.state.setdefault("ocr_jobs", [])
         self.state.setdefault("ocr_parse_results", [])
@@ -267,7 +273,11 @@ class InMemoryRepository:
 
     def node_groups(self, project_id: str) -> list[dict[str, Any]]:
         groups: list[dict[str, Any]] = []
-        for node in [item for item in self.state["tree_nodes"] if item["projectId"] == project_id]:
+        project_nodes = sorted(
+            [item for item in self.state["tree_nodes"] if item["projectId"] == project_id],
+            key=lambda item: int(item.get("nodeId") or 0),
+        )
+        for node in project_nodes:
             group = next((item for item in groups if item["groupName"] == node["groupName"]), None)
             if not group:
                 group = {"groupName": node["groupName"], "nodes": []}
@@ -449,6 +459,10 @@ class InMemoryRepository:
             "png": "image/png",
             "jpg": "image/jpeg",
             "jpeg": "image/jpeg",
+            "webp": "image/webp",
+            "bmp": "image/bmp",
+            "heic": "image/heic",
+            "heif": "image/heif",
             "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         }
@@ -460,7 +474,7 @@ class InMemoryRepository:
         suffix = file_name.rsplit(".", 1)[-1] if "." in file_name else raw_type
         if raw_type == "application/pdf" or suffix == "pdf":
             return "pdf"
-        if raw_type.startswith("image/") or suffix in {"png", "jpg", "jpeg"}:
+        if raw_type.startswith("image/") or suffix in {"png", "jpg", "jpeg", "webp", "bmp", "heic", "heif"}:
             return "image"
         if suffix in {"xlsx", "docx"}:
             return "office"
@@ -1379,6 +1393,8 @@ class InMemoryRepository:
         loaded.setdefault("knowledge_page_index_nodes", [])
         loaded.setdefault("knowledge_vector_corrections", [])
         loaded.setdefault("knowledge_chunk_quarantines", [])
+        loaded.setdefault("node_evidence_links", [])
+        loaded.setdefault("material_targeting_runs", [])
         loaded.setdefault("upload_sessions", [])
         loaded.setdefault("ocr_jobs", [])
         loaded.setdefault("ocr_parse_results", [])
@@ -1406,6 +1422,11 @@ class InMemoryRepository:
         seeded = fresh_state()
         if not loaded.get("prompt_templates"):
             loaded["prompt_templates"] = seeded.get("prompt_templates", [])
+            changed = True
+        if not loaded.get("admin_config", {}).get("materialReviewPoints"):
+            loaded.setdefault("admin_config", {})["materialReviewPoints"] = self.clone(
+                seeded.get("admin_config", {}).get("materialReviewPoints", [])
+            )
             changed = True
 
         seeded_ai_runs = {

@@ -70,7 +70,23 @@ const previewEmbeddable = computed(() => {
   const url = String(preview.value?.url || '')
   return previewAvailable.value && !url.startsWith('mock://')
 })
-const previewFrameUrl = computed(() => previewObjectUrl.value || preview.value?.url || '')
+const previewRequiresBlob = computed(
+  () => previewEmbeddable.value && String(preview.value?.url || '').startsWith('/api/')
+)
+const previewFrameUrl = computed(() => {
+  const url = String(preview.value?.url || '')
+  if (previewRequiresBlob.value) return previewObjectUrl.value
+  return previewObjectUrl.value || url
+})
+const previewIsImage = computed(() => preview.value?.previewType === 'image')
+const previewUnavailableText = computed(() => {
+  const url = String(preview.value?.url || '')
+  if (!url) return '当前文件详情没有返回原文地址。'
+  if (url.startsWith('mock://'))
+    return '当前接口返回的是 mock 占位地址，还没有拿到可预览的真实原文。'
+  if (preview.value?.previewType === 'unsupported') return '当前文件类型暂不支持在线预览。'
+  return '当前文件没有可预览的真实原文。'
+})
 
 const revokePreviewObjectUrl = () => {
   if (!previewObjectUrl.value) return
@@ -82,7 +98,7 @@ const loadPreviewOriginal = async () => {
   revokePreviewObjectUrl()
   previewOriginalError.value = ''
   const url = String(preview.value?.url || '')
-  if (!previewEmbeddable.value || !url.startsWith('/api/')) return
+  if (!previewRequiresBlob.value) return
   previewLoadingOriginal.value = true
   try {
     const res = await getDocumentOriginalBlobApi(url)
@@ -95,6 +111,10 @@ const loadPreviewOriginal = async () => {
   } finally {
     previewLoadingOriginal.value = false
   }
+}
+
+const handlePreviewImageError = () => {
+  previewOriginalError.value = '图片预览加载失败，请尝试下载后查看。'
 }
 
 watch(
@@ -133,7 +153,7 @@ const confidenceText = (confidence?: number) => {
           </div>
           <div class="file-actions">
             <ElButton
-              :disabled="!previewAvailable"
+              :disabled="!previewEmbeddable"
               @click="preview?.url && emit('preview', preview.url)"
             >
               预览
@@ -170,17 +190,31 @@ const confidenceText = (confidence?: number) => {
                     :closable="false"
                     show-icon
                   />
+                  <div v-else-if="!previewFrameUrl" class="preview-placeholder">
+                    原文预览加载中
+                  </div>
+                  <img
+                    v-else-if="previewIsImage"
+                    class="preview-image"
+                    :src="previewFrameUrl"
+                    :alt="document.fileName"
+                    @error="handlePreviewImageError"
+                  />
                   <iframe
                     v-else
                     class="preview-frame"
                     :src="previewFrameUrl"
                     :title="document.fileName"
-                  />
+                  ></iframe>
                 </div>
                 <template v-else>
-                  <strong>{{ document.fileName }}</strong>
-                  <span>{{ preview?.contentType || document.fileType }} · {{ fileSizeText }}</span>
-                  <span>有效期至 {{ preview?.expiresAt }}</span>
+                  <ElAlert
+                    title="当前文件没有可预览的真实原文"
+                    :description="previewUnavailableText"
+                    type="warning"
+                    :closable="false"
+                    show-icon
+                  />
                   <code>{{ preview?.url }}</code>
                 </template>
               </template>
@@ -338,6 +372,27 @@ const confidenceText = (confidence?: number) => {
 .preview-frame-host {
   width: 100%;
   min-height: 360px;
+}
+
+.preview-placeholder {
+  display: flex;
+  min-height: 360px;
+  align-items: center;
+  justify-content: center;
+  color: #667085;
+  background: #fff;
+  border: 1px solid #d5deea;
+  border-radius: 4px;
+}
+
+.preview-image {
+  display: block;
+  width: 100%;
+  max-height: 520px;
+  object-fit: contain;
+  background: #fff;
+  border: 1px solid #d5deea;
+  border-radius: 4px;
 }
 
 .preview-frame {

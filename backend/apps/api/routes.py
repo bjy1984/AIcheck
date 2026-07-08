@@ -61,6 +61,14 @@ from libs.knowledge_indexing import (
 )
 from libs.knowledge_readiness import build_knowledge_rule_scorecard
 from libs.knowledge_retrieval import answer_draft_from_clauses, retrieve_knowledge_clauses
+from libs.material_targeting import (
+    build_node_evidence_readiness,
+    node_evidence_links_for_node,
+    recompute_project_material_targeting,
+    review_points_for_project,
+    run_material_targeting,
+    set_node_evidence_link_manual_status,
+)
 from libs.review_orchestrator import (
     REVIEW_GRAPH_STEPS,
     build_review_orchestration_scorecard,
@@ -104,6 +112,8 @@ ALLOWED_UPLOAD_TYPES = {
     "png",
     "jpg",
     "jpeg",
+    "heic",
+    "heif",
     "zip",
     "7z",
     "application/pdf",
@@ -114,6 +124,8 @@ ALLOWED_UPLOAD_TYPES = {
     "image/png",
     "image/jpg",
     "image/jpeg",
+    "image/heic",
+    "image/heif",
     "application/zip",
     "application/x-zip-compressed",
     "application/x-7z-compressed",
@@ -2968,7 +2980,28 @@ def project_defaults_for_pack(pack: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def review_point_requirement(point: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": point.get("id"),
+        "projectId": None,
+        "nodeId": int(point.get("nodeId") or 0),
+        "name": point.get("reviewContent") or point.get("materialTypeName") or "业务资料审查点",
+        "requiredType": point.get("requiredType") or "条件必传",
+        "materialTypeCode": point.get("materialTypeCode"),
+        "materialTypeName": point.get("materialTypeName"),
+        "materialCategory": point.get("materialCategory"),
+        "responsibleParty": point.get("responsibleParty"),
+        "evidenceItems": repo.clone(point.get("evidenceItems") or []),
+        "note": point.get("fileContent") or point.get("mappingRelation"),
+        "source": "materialReviewPoint",
+    }
+
+
 def project_requirements_for_node(project_id: str, node_id: int) -> list[dict[str, Any]]:
+    project = repo.require_project(project_id)
+    review_points = review_points_for_project(repo, project, node_id=node_id)
+    if review_points:
+        return [review_point_requirement(point) for point in review_points]
     scoped = [
         repo.clone(item)
         for item in repo.state["requirements"]
@@ -2981,9 +3014,6 @@ def project_requirements_for_node(project_id: str, node_id: int) -> list[dict[st
         for item in repo.state["requirements"]
         if int(item["nodeId"]) == int(node_id) and not item.get("projectId")
     ]
-    if fallback:
-        return fallback
-    project = repo.require_project(project_id)
     try:
         pack = business_pack_for_project(project)
     except Exception:
@@ -3011,6 +3041,20 @@ def build_node_requirements_summary(
     *,
     node_bindings: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    evidence_readiness = build_node_evidence_readiness(repo, project_id, int(node["nodeId"]))
+    if evidence_readiness.get("hasReviewPoints"):
+        return {
+            "requiredCount": evidence_readiness["requiredCount"],
+            "satisfiedCount": evidence_readiness["satisfiedCount"],
+            "missingCount": evidence_readiness["missingCount"],
+            "progressPercent": evidence_readiness["progressPercent"],
+            "hasRequirementDetails": True,
+            "source": "nodeEvidenceLinks",
+            "readyForAi": evidence_readiness["readyForAi"],
+            "supportingDocumentCount": evidence_readiness["supportingDocumentCount"],
+            "requirements": evidence_readiness["requirements"],
+            "missingRequirements": evidence_readiness["missingRequirements"],
+        }
     requirements = project_requirements_for_node(project_id, int(node["nodeId"]))
     bindings = node_bindings if node_bindings is not None else repo.bindings_for_node(project_id, int(node["nodeId"]))
     matched_requirements: list[dict[str, Any]] = []
@@ -3138,7 +3182,7 @@ def simple_routes(role: str | None = None) -> list[dict[str, Any]]:
             "meta": {"title": "管理后台", "icon": "vi-ep:setting", "alwaysShow": True, "roles": ["admin"]},
             "children": [
                 {"path": item, "component": "views/AICheck/AdminOverview", "name": f"Admin{item.title().replace('-', '')}", "meta": {"title": "项目与权限配置", "roles": ["admin"]}}
-                for item in ["overview", "projects", "org", "business-packs", "permission", "rules", "prompt-templates", "fine-config", "integration", "audit"]
+                for item in ["overview", "projects", "org", "business-packs", "permission", "rules", "material-review-points", "prompt-templates", "fine-config", "integration", "audit"]
             ],
         },
         {
@@ -3950,6 +3994,7 @@ def node_package(request: Request, project_id: str, node_id: int):
         file["bindings"] = file_bindings
         file["primaryBinding"] = file_bindings[0] if file_bindings else None
     visible_document_ids = {item["id"] for item in project_files}
+    evidence_readiness = build_node_evidence_readiness(repo, effective_project_id, node_id)
     return ok(
         {
             "node": enrich_node_with_requirements_summary(
@@ -3959,6 +4004,8 @@ def node_package(request: Request, project_id: str, node_id: int):
             ),
             "businessBasis": node_business_basis(project, node_id),
             "requirements": project_requirements_for_node(project_id, node_id),
+            "evidenceReadiness": evidence_readiness,
+            "nodeEvidenceLinks": evidence_readiness.get("nodeEvidenceLinks", []),
             "bindings": bindings,
             "projectFiles": project_files,
             "availableVersions": [
@@ -4264,6 +4311,159 @@ def document_detail(request: Request, project_id: str, document_id: str):
     )
 
 
+@router.get("/projects/{project_id}/documents/{document_id}/targeting")
+def document_targeting(request: Request, project_id: str, document_id: str):
+    document = repo.find_one("documents", document_id)
+    if not document or document.get("projectId") != project_id:
+        return fail(errors.NOT_FOUND, request)
+    version_id = document.get("currentVersionId")
+    links = [
+        repo.clone(item)
+        for item in repo.state.get("node_evidence_links", [])
+        if item.get("projectId") == project_id and item.get("documentId") == document_id
+    ]
+    runs = [
+        repo.clone(item)
+        for item in repo.state.get("material_targeting_runs", [])
+        if item.get("projectId") == project_id and item.get("documentId") == document_id
+    ][:10]
+    return ok(
+        {
+            "document": repo.clone(document),
+            "documentVersionId": version_id,
+            "nodeEvidenceLinks": links,
+            "runs": runs,
+        },
+        request,
+    )
+
+
+@router.post("/projects/{project_id}/documents/{document_id}/targeting/recompute")
+def recompute_document_targeting(
+    request: Request,
+    project_id: str,
+    document_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        document = repo.find_one("documents", document_id)
+        if not document or document.get("projectId") != project_id:
+            return fail(errors.NOT_FOUND, request)
+        run = run_material_targeting(
+            repo,
+            project_id,
+            document_id,
+            body.get("documentVersionId") or document.get("currentVersionId"),
+            triggered_by="manual_api",
+        )
+        return ok({"run": run, "auditLogId": repo.add_audit("重算资料打靶", "MaterialTargetingRun", run["id"])}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"projectId": project_id, "documentId": document_id, "body": body})
+
+
+@router.post("/projects/{project_id}/material-targeting/recompute")
+def recompute_project_targeting(
+    request: Request,
+    project_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        if not repo.require_project(project_id):
+            return fail(errors.NOT_FOUND, request)
+        result = recompute_project_material_targeting(repo, project_id, triggered_by="manual_api")
+        audit_id = repo.add_audit("重算项目资料打靶", "MaterialTargetingRun", project_id)
+        return ok({**result, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"projectId": project_id})
+
+
+@router.get("/projects/{project_id}/nodes/{node_id}/evidence-readiness")
+def node_evidence_readiness(request: Request, project_id: str, node_id: int):
+    if not repo.node(project_id, node_id):
+        return fail(errors.NOT_FOUND, request)
+    return ok(build_node_evidence_readiness(repo, project_id, node_id), request)
+
+
+def update_node_evidence_manual_status(
+    request: Request,
+    project_id: str,
+    node_id: int,
+    evidence_link_id: str,
+    manual_status: str,
+    body: dict[str, Any],
+    x_role: str | None,
+):
+    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
+    if guard:
+        return guard
+    if not repo.node(project_id, node_id):
+        return fail(errors.NOT_FOUND, request)
+    actor = getattr(request.state, "auth_user", None) or {}
+    actor_name = str(body.get("actorName") or actor.get("name") or actor.get("username") or "").strip()
+    link = set_node_evidence_link_manual_status(
+        repo,
+        project_id,
+        node_id,
+        evidence_link_id,
+        manual_status,
+        actor_name=actor_name,
+        comment=str(body.get("comment") or ""),
+    )
+    if not link:
+        return fail(errors.NOT_FOUND, request)
+    audit_action = "确认证据" if manual_status == "confirmed" else "不采用证据"
+    audit_id = repo.add_audit(audit_action, "NodeEvidenceLink", evidence_link_id)
+    return ok(
+        {
+            "evidenceLink": link,
+            "evidenceReadiness": build_node_evidence_readiness(repo, project_id, node_id),
+            "auditLogId": audit_id,
+        },
+        request,
+    )
+
+
+@router.post("/projects/{project_id}/nodes/{node_id}/evidence-links/{evidence_link_id}/confirm")
+def confirm_node_evidence_link(
+    request: Request,
+    project_id: str,
+    node_id: int,
+    evidence_link_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+):
+    return idempotent(
+        request,
+        idempotency_key,
+        lambda: update_node_evidence_manual_status(
+            request, project_id, node_id, evidence_link_id, "confirmed", body, x_role
+        ),
+        fingerprint_source={"projectId": project_id, "nodeId": node_id, "evidenceLinkId": evidence_link_id, "status": "confirmed", "body": body},
+    )
+
+
+@router.post("/projects/{project_id}/nodes/{node_id}/evidence-links/{evidence_link_id}/reject")
+def reject_node_evidence_link(
+    request: Request,
+    project_id: str,
+    node_id: int,
+    evidence_link_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+):
+    return idempotent(
+        request,
+        idempotency_key,
+        lambda: update_node_evidence_manual_status(
+            request, project_id, node_id, evidence_link_id, "rejected", body, x_role
+        ),
+        fingerprint_source={"projectId": project_id, "nodeId": node_id, "evidenceLinkId": evidence_link_id, "status": "rejected", "body": body},
+    )
+
+
 @router.get("/projects/{project_id}/documents/{document_id}/versions")
 def document_versions(request: Request, project_id: str, document_id: str):
     return ok(repo.versions_for_document(document_id), request)
@@ -4294,6 +4494,27 @@ def project_document_storage_object(version: dict[str, Any] | None) -> tuple[str
     return None
 
 
+def project_document_local_original_path(
+    document: dict[str, Any],
+    version: dict[str, Any] | None,
+) -> Path | None:
+    local_path = local_storage_path((version or {}).get("storageKey"))
+    if local_path and local_path.is_file():
+        return local_path
+    file_name = Path(str(document.get("fileName") or (version or {}).get("fileName") or "")).name
+    if not file_name:
+        return None
+    for root in (WORKSPACE_ROOT / "Scan",):
+        candidate = (root / file_name).resolve()
+        try:
+            candidate.relative_to(root.resolve())
+        except ValueError:
+            continue
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def project_document_original_api_url(project_id: str, document_id: str, disposition: str) -> str:
     return (
         f"/api/projects/{quote(project_id, safe='')}/documents/"
@@ -4305,6 +4526,36 @@ def content_disposition_header(disposition: str, file_name: str) -> str:
     disposition_type = "attachment" if disposition == "attachment" else "inline"
     encoded = quote(file_name)
     return f"{disposition_type}; filename*=UTF-8''{encoded}"
+
+
+def project_document_inline_render_content_type(local_path: Path | None, file_name: str) -> str | None:
+    if local_path is None:
+        return None
+    suffix = (local_path.suffix if local_path else Path(file_name).suffix).lower()
+    if suffix in {".heic", ".heif"}:
+        return "image/png"
+    return None
+
+
+def project_document_render_inline_original(local_path: Path, file_name: str):
+    suffix = local_path.suffix.lower() or Path(file_name).suffix.lower()
+    if suffix not in {".heic", ".heif"}:
+        return None
+    rendered_preview = fde_render_heic_page_preview(local_path)
+    if not rendered_preview:
+        return None
+    content, content_type = rendered_preview
+    preview_name = f"{Path(file_name).stem or 'preview'}.png"
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={
+            "Cache-Control": "private, max-age=300",
+            "Content-Disposition": content_disposition_header("inline", preview_name),
+            "X-Content-Type-Options": "nosniff",
+            "X-AICheck-Preview-Source": "document-original-rendered",
+        },
+    )
 
 
 def stream_object_storage_file(
@@ -4347,12 +4598,20 @@ def project_document_original_payload(
     preview = repo.document_preview(document)
     download = repo.document_download(document)
     version = repo.current_version(document["id"]) or {}
-    has_local_file = local_storage_path(version.get("storageKey")) is not None
+    local_file = project_document_local_original_path(document, version)
+    has_local_file = local_file is not None
     has_object_file = object_storage.enabled and project_document_storage_object(version) is not None
     if has_local_file or has_object_file:
         inline_url = project_document_original_api_url(project_id, document["id"], "inline")
         attachment_url = project_document_original_api_url(project_id, document["id"], "attachment")
         preview = {**preview, "url": inline_url, "sourceUrl": preview.get("url")}
+        inline_render_content_type = project_document_inline_render_content_type(local_file, str(document.get("fileName") or ""))
+        if inline_render_content_type:
+            preview = {
+                **preview,
+                "contentType": inline_render_content_type,
+                "sourceContentType": preview.get("contentType"),
+            }
         download = {**download, "url": attachment_url, "sourceUrl": download.get("url")}
     return {"preview": preview, "download": download}
 
@@ -4370,10 +4629,12 @@ def project_document_original(
     file_name = str(document.get("fileName") or version.get("fileName") or f"{document_id}.bin")
     content_type = repo.document_content_type(document) or "application/octet-stream"
     disposition_type = "attachment" if disposition == "attachment" else "inline"
-    local_path = local_storage_path(version.get("storageKey"))
+    local_path = project_document_local_original_path(document, version)
     if local_path:
-        if not local_path.is_file():
-            return fail(errors.NOT_FOUND, request, message="原文文件不存在或已被移除。")
+        if disposition_type == "inline":
+            rendered_preview = project_document_render_inline_original(local_path, file_name)
+            if rendered_preview is not None:
+                return rendered_preview
         return FileResponse(
             local_path,
             media_type=content_type,
@@ -5101,6 +5362,15 @@ def ai_recheck(
         project = repo.require_project(project_id)
         pack = business_pack_for_project(project)
         agent = (pack.get("agentSops") or [{}])[0]
+        evidence_readiness = build_node_evidence_readiness(repo, project_id, node_id)
+        if int(evidence_readiness.get("pendingCount") or 0) > 0:
+            return fail(errors.CONFLICT, request, message="请先完成候选证据确认或不采用，再进入 AI 复核。")
+        node_evidence_links = [
+            link
+            for link in node_evidence_links_for_node(repo, project_id, node_id)
+            if str(link.get("manualStatus") or "") == "confirmed"
+        ]
+        input_document_version_ids = sorted({str(link.get("documentVersionId")) for link in node_evidence_links if link.get("documentVersionId")})
         rule = (
             current_business_rule_for_node(node_id, business_pack_id=pack["id"])
             or next(
@@ -5121,7 +5391,8 @@ def ai_recheck(
             "model": "review-chat",
             "promptVersion": f"node-{node_id}-v1",
             "ruleVersion": rule.get("version") or "ruleset-v1",
-            "inputDocumentVersionIds": [item["documentVersionId"] for item in repo.bindings_for_node(project_id, node_id)],
+            "inputDocumentVersionIds": input_document_version_ids,
+            "evidenceReadiness": evidence_readiness,
             "status": "推理中",
             "startedAt": server_time(),
             "steps": [],
@@ -5133,7 +5404,7 @@ def ai_recheck(
                 "confidence": 0.0,
                 "manualConfirmItems": [],
             },
-            "evidenceLinks": [],
+            "evidenceLinks": node_evidence_links,
             "findingDrafts": [],
         }
         repo.state["ai_runs"].insert(0, run)
@@ -16250,7 +16521,7 @@ def fde_render_heic_page_preview(local_path: Path) -> tuple[bytes, str] | None:
     with tempfile.TemporaryDirectory(prefix="aicheck-fde-heic-preview-") as temp_dir:
         target = Path(temp_dir) / "page.png"
         completed = subprocess.run(
-            ["sips", "-s", "format", "png", str(local_path), "--out", str(target)],
+            ["sips", "-Z", "1600", "-s", "format", "png", str(local_path), "--out", str(target)],
             check=False,
             capture_output=True,
             timeout=30,
@@ -20737,6 +21008,26 @@ def save_admin_config_item(request: Request, target: str, item_id: str, body: di
     )
 
 
+@router.delete("/admin/config-items/{target}/{item_id}")
+def delete_admin_config_item(request: Request, target: str, item_id: str, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), if_match: str | None = Header(default=None, alias="If-Match")):
+    def produce():
+        if not singleton_if_match_valid("admin-config", repo.state["admin_config"], if_match):
+            return fail(errors.ETAG_CONFLICT, request)
+        collection_name = admin_collection_for(target)
+        collection = repo.state["admin_config"].setdefault(collection_name, [])
+        index = next((idx for idx, item in enumerate(collection) if str(item.get("id") or item.get("role") or "") == str(item_id)), None)
+        if index is None:
+            return fail(errors.NOT_FOUND, request)
+        item = collection.pop(index)
+        bump_singleton_revision(repo.state["admin_config"])
+        overview = repo.build_admin_overview()
+        overview.update({"revision": singleton_revision(repo.state["admin_config"]), "etag": singleton_etag("admin-config", repo.state["admin_config"]), "updatedAt": repo.state["admin_config"]["updatedAt"]})
+        audit_id = repo.add_audit("删除配置项", "AdminConfig", item_id)
+        return ok({"item": item, "overview": overview, "auditLogId": audit_id, "revision": overview["revision"], "etag": overview["etag"], "updatedAt": overview["updatedAt"]}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"target": target, "itemId": item_id})
+
+
 def admin_collection_for(kind: str) -> str:
     return {
         "todo-rule": "todoRules",
@@ -20755,6 +21046,8 @@ def admin_collection_for(kind: str) -> str:
         "node-role-mappings": "permissionMatrix",
         "roles": "permissionMatrix",
         "rules": "ruleVersions",
+        "material-review-point": "materialReviewPoints",
+        "material-review-points": "materialReviewPoints",
     }.get(kind, kind)
 
 

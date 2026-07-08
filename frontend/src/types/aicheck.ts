@@ -131,9 +131,18 @@ export type NodeDocumentRequirement = {
 }
 
 export type NodeRequirementMatch = NodeDocumentRequirement & {
+  matchedLinkCount?: number
   matchedBindingCount: number
   matchedFileNames: string[]
+  supportStatus?: string
+  evidenceReviewStatus?: string
+  confirmedLinkCount?: number
+  pendingLinkCount?: number
+  rejectedLinkCount?: number
   fulfilled: boolean
+  bestConfidence?: number
+  evidenceLinkIds?: string[]
+  confirmedEvidenceLinkIds?: string[]
 }
 
 export type NodeRequirementsSummary = {
@@ -199,13 +208,31 @@ export type NodeFileBinding = {
 
 export type EvidenceLink = {
   id: string
-  objectType: 'documentVersion' | 'extractedField' | 'knowledgeClause' | 'aiRun' | 'reviewOpinion'
-  objectId: string
+  projectId?: string
+  objectType?:
+    | 'documentVersion'
+    | 'extractedField'
+    | 'knowledgeClause'
+    | 'aiRun'
+    | 'reviewOpinion'
+    | 'nodeEvidenceLink'
+  objectId?: string
+  documentId?: string
+  documentVersionId?: string
   fileName?: string
   pageNo?: number
   fieldName?: string
   quotedText?: string
   confidence?: number
+  nodeId?: number
+  reviewPointId?: string
+  supportStatus?: string
+  matchedEvidenceItems?: string[]
+  manualStatus?: 'pending' | 'confirmed' | 'rejected' | string
+  manualStatusLabel?: string
+  manualComment?: string
+  scoreReasons?: string[]
+  evidenceCoverage?: number
 }
 
 export type ExtractedField = {
@@ -511,6 +538,8 @@ export type NodePackagePayload = {
   node: ProjectTreeNode
   businessBasis?: NodeBusinessBasis
   requirements: NodeDocumentRequirement[]
+  evidenceReadiness?: NodeEvidenceReadiness
+  nodeEvidenceLinks?: EvidenceLink[]
   bindings: NodeFileBinding[]
   projectFiles: DocumentAsset[]
   availableVersions: DocumentVersion[]
@@ -519,6 +548,24 @@ export type NodePackagePayload = {
   rectifications: RectificationItem[]
   aiRuns: AiReviewRun[]
   actions: ActionCode[]
+}
+
+export type NodeEvidenceReadiness = {
+  schemaVersion: string
+  hasReviewPoints: boolean
+  requiredCount: number
+  satisfiedCount: number
+  missingCount: number
+  pendingCount?: number
+  rejectedCount?: number
+  progressPercent: number
+  readyForAi: boolean
+  evidenceReviewComplete?: boolean
+  requirements: NodeRequirementMatch[]
+  missingRequirements: NodeRequirementMatch[]
+  nodeEvidenceLinks: EvidenceLink[]
+  inputDocumentVersionIds: string[]
+  supportingDocumentCount: number
 }
 
 export type MockMutationResult = {

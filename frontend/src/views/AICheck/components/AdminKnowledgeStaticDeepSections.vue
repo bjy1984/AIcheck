@@ -52,7 +52,8 @@ const adminOverview = computed<AdminConfigOverviewPayload>(() => {
       todoRules: [],
       messageTemplates: [],
       toolSources: [],
-      fieldMappings: []
+      fieldMappings: [],
+      materialReviewPoints: []
     }
   )
 })

@@ -9,6 +9,7 @@ import type {
   ExtractedField,
   MessageItem,
   MockMutationResult,
+  NodeEvidenceReadiness,
   NodeFileBinding,
   NodePackagePayload,
   NdtFeedback,
@@ -978,6 +979,32 @@ export type AdminFieldMapping = {
   updatedAt: string
 }
 
+export type AdminMaterialReviewPoint = {
+  id: string
+  businessPackId: string
+  nodeId: number
+  nodeName: string
+  ruleId?: string
+  businessModule?: string
+  reviewClass?: string
+  reviewContent: string
+  materialCategory: string
+  materialTypeCode: string
+  materialTypeName: string
+  fileContent?: string
+  evidenceItemText?: string
+  evidenceItems: string[]
+  responsibleParty: RoleCode | 'inspection'
+  responsiblePartyLabel?: string
+  requiredType: '必传' | '条件必传' | '可选'
+  mappingRelation?: string
+  minConfidence: number
+  enabled: boolean
+  source?: string
+  updatedAt: string
+  revision?: number
+}
+
 export type AdminConfigOverviewPayload = {
   revision?: number
   etag?: string
@@ -1037,6 +1064,7 @@ export type AdminConfigOverviewPayload = {
   messageTemplates: AdminMessageTemplate[]
   toolSources: AdminToolSource[]
   fieldMappings: AdminFieldMapping[]
+  materialReviewPoints: AdminMaterialReviewPoint[]
   businessPacks?: BusinessPackSummary[]
 }
 
@@ -2102,6 +2130,7 @@ export type AdminConfigTarget =
   | 'message-template'
   | 'tool-source'
   | 'field-mapping'
+  | 'material-review-point'
 
 export type AdminConfigPermissionValues = Partial<
   AdminConfigOverviewPayload['permissionMatrix'][number]
@@ -2122,6 +2151,8 @@ export type AdminMessageTemplateValues = Partial<AdminMessageTemplate>
 export type AdminToolSourceValues = Partial<AdminToolSource>
 
 export type AdminFieldMappingValues = Partial<AdminFieldMapping>
+
+export type AdminMaterialReviewPointValues = Partial<AdminMaterialReviewPoint>
 
 export type AdminConfigChangePayload =
   | {
@@ -2166,6 +2197,12 @@ export type AdminConfigChangePayload =
       values: AdminFieldMappingValues
       reason: string
     }
+  | {
+      target: 'material-review-point'
+      id: string
+      values: AdminMaterialReviewPointValues
+      reason: string
+    }
 
 export type AdminConfigCreatePayload =
   | {
@@ -2188,6 +2225,11 @@ export type AdminConfigCreatePayload =
       values: AdminFieldMappingValues
       reason: string
     }
+  | {
+      target: 'material-review-point'
+      values: AdminMaterialReviewPointValues
+      reason: string
+    }
 
 export type AdminConfigDiffPayload = {
   target: AdminConfigTarget
@@ -2206,6 +2248,15 @@ export type AdminConfigDiffPayload = {
 export type AdminConfigSaveResult = {
   overview: AdminConfigOverviewPayload
   diff: AdminConfigDiffPayload
+  auditLogId: string
+  updatedAt: string
+  revision?: number
+  etag?: string
+}
+
+export type AdminConfigDeleteResult = {
+  item: Record<string, unknown>
+  overview: AdminConfigOverviewPayload
   auditLogId: string
   updatedAt: string
   revision?: number
@@ -2299,6 +2350,12 @@ export type AdminPublishConfigPayload = {
 export type TodoDetailPayload = TodoItem & {
   relatedObject?: unknown
   evidenceLinks?: EvidenceLink[]
+}
+
+export type NodeEvidenceDecisionPayload = {
+  evidenceLink: EvidenceLink
+  evidenceReadiness: NodeEvidenceReadiness
+  auditLogId: string
 }
 
 export const listWorkbenchProjectsApi = (role: RoleCode): Promise<IResponse<Project[]>> => {
@@ -2609,6 +2666,34 @@ export const requestAiRecheckApi = (
 ): Promise<IResponse<AiRecheckPayload>> => {
   return request.post({
     url: `/api/projects/${projectId}/inspection/nodes/${nodeId}/ai-recheck`,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const confirmNodeEvidenceLinkApi = (
+  projectId: string,
+  nodeId: number,
+  evidenceLinkId: string,
+  payload: { comment?: string } = {},
+  options?: MutationHeaderOptions
+): Promise<IResponse<NodeEvidenceDecisionPayload>> => {
+  return request.post({
+    url: `/api/projects/${projectId}/nodes/${nodeId}/evidence-links/${evidenceLinkId}/confirm`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const rejectNodeEvidenceLinkApi = (
+  projectId: string,
+  nodeId: number,
+  evidenceLinkId: string,
+  payload: { comment?: string } = {},
+  options?: MutationHeaderOptions
+): Promise<IResponse<NodeEvidenceDecisionPayload>> => {
+  return request.post({
+    url: `/api/projects/${projectId}/nodes/${nodeId}/evidence-links/${evidenceLinkId}/reject`,
+    data: payload,
     headers: mutationHeaders(options)
   })
 }
@@ -4828,6 +4913,12 @@ export const listAdminFieldMappingsApi = (): Promise<IResponse<PagePayload<Admin
   return request.get({ url: '/api/admin/field-mappings', params: { pageSize: 100 } })
 }
 
+export const listAdminMaterialReviewPointsApi = (): Promise<
+  IResponse<PagePayload<AdminMaterialReviewPoint>>
+> => {
+  return request.get({ url: '/api/admin/material-review-points', params: { pageSize: 100 } })
+}
+
 export const previewAdminConfigDiffApi = (
   payload: AdminConfigChangePayload
 ): Promise<IResponse<AdminConfigDiffPayload>> => {
@@ -4852,6 +4943,16 @@ export const saveAdminConfigItemApi = (
   return request.put({
     url: `/api/admin/config-items/${payload.target}/${payload.id}`,
     data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const deleteAdminConfigItemApi = (
+  payload: { target: AdminConfigTarget; id: string },
+  options?: MutationHeaderOptions
+): Promise<IResponse<AdminConfigDeleteResult>> => {
+  return request.delete({
+    url: `/api/admin/config-items/${payload.target}/${payload.id}`,
     headers: mutationHeaders(options)
   })
 }

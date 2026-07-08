@@ -224,6 +224,16 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         }
       },
       {
+        path: 'material-review-points',
+        component: AdminOverview,
+        name: 'AdminMaterialReviewPoints',
+        meta: {
+          title: '业务资料审查点',
+          noCache: true,
+          roles: ['admin']
+        }
+      },
+      {
         path: 'prompt-templates',
         component: AdminOverview,
         name: 'AdminPromptTemplates',

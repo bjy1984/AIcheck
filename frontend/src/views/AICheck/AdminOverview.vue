@@ -47,6 +47,7 @@ import {
   deleteAdminOrgUnitApi,
   deleteAdminProjectApi,
   deleteAdminUserApi,
+  deleteAdminConfigItemApi,
   deletePromptTemplateApi,
   deleteProjectMemberApi,
   getAdminConfigOverviewApi,
@@ -74,6 +75,7 @@ import type {
   AdminConfigOverviewPayload,
   AdminPublishConfigPayload,
   AdminConfigTarget,
+  AdminMaterialReviewPoint,
   AdminProjectCreatePayload,
   AdminProjectDetailPayload,
   AdminOrgUnit,
@@ -108,6 +110,7 @@ const emptyOverview = (): AdminConfigOverviewPayload => ({
   messageTemplates: [],
   toolSources: [],
   fieldMappings: [],
+  materialReviewPoints: [],
   businessPacks: []
 })
 
@@ -150,7 +153,7 @@ const adminShellMenuSectionsBase = [
   },
   {
     title: '规则与业务配置',
-    meta: '4页',
+    meta: '5页',
     items: [
       {
         index: '04',
@@ -168,13 +171,20 @@ const adminShellMenuSectionsBase = [
       },
       {
         index: '06',
+        label: '业务资料审查点',
+        badge: '打靶',
+        tone: 'orange',
+        route: '/admin/material-review-points'
+      },
+      {
+        index: '07',
         label: 'Prompt 模板管理',
         badge: 'Prompt',
         tone: 'blue',
         route: '/admin/prompt-templates'
       },
       {
-        index: '07',
+        index: '08',
         label: '细项配置',
         badge: '字段',
         tone: 'orange',
@@ -267,6 +277,7 @@ type TodoRuleConfigRow = AdminConfigOverviewPayload['todoRules'][number]
 type MessageTemplateConfigRow = AdminConfigOverviewPayload['messageTemplates'][number]
 type ToolSourceConfigRow = AdminConfigOverviewPayload['toolSources'][number]
 type FieldMappingConfigRow = AdminConfigOverviewPayload['fieldMappings'][number]
+type MaterialReviewPointRow = AdminConfigOverviewPayload['materialReviewPoints'][number]
 type BusinessPackRow = NonNullable<AdminConfigOverviewPayload['businessPacks']>[number]
 type ProjectWizardMemberRole = Extract<RoleCode, 'inspection' | 'contractor' | 'ndt' | 'owner'>
 type PaginationState = {
@@ -307,6 +318,7 @@ const adminTabRouteMap = {
   'business-pack': '/admin/business-packs',
   permission: '/admin/permission',
   rule: '/admin/rules',
+  'material-review-point': '/admin/material-review-points',
   'prompt-template': '/admin/prompt-templates',
   'fine-config': '/admin/fine-config',
   integration: '/admin/integration',
@@ -322,6 +334,7 @@ const adminRouteTabMap: Record<string, AdminTabKey> = {
   '/admin/business-packs': 'business-pack',
   '/admin/permission': 'permission',
   '/admin/rules': 'rule',
+  '/admin/material-review-points': 'material-review-point',
   '/admin/prompt-templates': 'prompt-template',
   '/admin/fine-config': 'fine-config',
   '/admin/integration': 'integration',
@@ -345,6 +358,7 @@ const tableStates = reactive({
   permissionMatrix: createTableState(8),
   nodeTemplates: createTableState(8),
   ruleVersions: createTableState(8),
+  materialReviewPoints: createTableState(10),
   workflowStateMachines: createTableState(8),
   promptTemplates: createTableState(8),
   todoRules: createTableState(8),
@@ -434,6 +448,10 @@ const adminPageTitleMap: Record<AdminTabKey, { title: string; subtitle: string }
   rule: {
     title: 'AI业务规则与流程',
     subtitle: '管理AI业务规则版本、流程状态机和发布差异'
+  },
+  'material-review-point': {
+    title: '业务资料审查点',
+    subtitle: '维护业务节点、资料类型、OCR证据项和审查点的对应关系'
   },
   'prompt-template': {
     title: 'Prompt 模板管理',
@@ -629,6 +647,22 @@ const configForm = reactive({
   targetField: '',
   fieldRequired: true,
   confidenceThreshold: 0.85,
+  reviewPointBusinessPackId: DEFAULT_PIPELINE_BUSINESS_PACK_ID,
+  reviewPointNodeId: 16,
+  reviewPointNodeName: '',
+  reviewPointRuleId: '',
+  reviewPointBusinessModule: '',
+  reviewPointReviewClass: 'C',
+  reviewPointReviewContent: '',
+  reviewPointMaterialCategory: '',
+  reviewPointMaterialTypeCode: '',
+  reviewPointMaterialTypeName: '',
+  reviewPointFileContent: '',
+  reviewPointEvidenceItemText: '',
+  reviewPointResponsibleParty: 'contractor' as RoleCode,
+  reviewPointRequiredType: '必传' as AdminMaterialReviewPoint['requiredType'],
+  reviewPointMappingRelation: '',
+  reviewPointMinConfidence: 0.65,
   reason: '按当前业务配置调整。'
 })
 
@@ -755,6 +789,18 @@ const roleLabel = (role: RoleCode) => {
     fde: 'FDE'
   }
   return labels[role]
+}
+
+const responsiblePartyLabel = (role?: string) => {
+  const labels: Record<string, string> = {
+    inspection: '监检',
+    contractor: '施工',
+    ndt: '无损检测',
+    owner: '建设方',
+    admin: '管理',
+    fde: 'FDE'
+  }
+  return labels[role || ''] || role || '-'
 }
 
 const tableSortCollator = new Intl.Collator('zh-Hans-CN', {
@@ -980,6 +1026,7 @@ const configTargetLabel = computed(() => {
   if (configEditTarget.value === 'todo-rule') return '待办规则'
   if (configEditTarget.value === 'message-template') return '消息模板'
   if (configEditTarget.value === 'tool-source') return '工具源'
+  if (configEditTarget.value === 'material-review-point') return '业务资料审查点'
   return '字段映射'
 })
 
@@ -1452,6 +1499,7 @@ const loadData = async () => {
     if (projectRes) projects.value = projectRes.data
     if (configRes) {
       const nextOverview = { ...configRes.data }
+      nextOverview.materialReviewPoints = nextOverview.materialReviewPoints || []
       if (!nextOverview.businessPacks?.length) {
         const businessPackRes = await listBusinessPacksApi().catch(() => undefined)
         if (businessPackRes) nextOverview.businessPacks = businessPackRes.data
@@ -2183,6 +2231,44 @@ const openFieldMappingConfig = (row?: FieldMappingConfigRow) => {
   configDrawerVisible.value = true
 }
 
+const splitReviewPointEvidenceItems = (text: string) =>
+  text
+    .split(/[、，,；;]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+
+const materialReviewPointAuditContent = (row: MaterialReviewPointRow) =>
+  row.fileContent || row.mappingRelation || '-'
+
+const openMaterialReviewPointConfig = (row?: MaterialReviewPointRow) => {
+  configEditTarget.value = 'material-review-point'
+  configEditMode.value = row ? 'edit' : 'create'
+  configOperationError.value = ''
+  configOperationRetry.value = null
+  configForm.id = row?.id || ''
+  configForm.reviewPointBusinessPackId = row?.businessPackId || DEFAULT_PIPELINE_BUSINESS_PACK_ID
+  configForm.reviewPointNodeId = row?.nodeId || 16
+  configForm.reviewPointNodeName = row?.nodeName || ''
+  configForm.reviewPointRuleId = row?.ruleId || ''
+  configForm.reviewPointBusinessModule = row?.businessModule || ''
+  configForm.reviewPointReviewClass = row?.reviewClass || 'C'
+  configForm.reviewPointReviewContent = row?.reviewContent || ''
+  configForm.reviewPointMaterialCategory = row?.materialCategory || ''
+  configForm.reviewPointMaterialTypeCode = row?.materialTypeCode || ''
+  configForm.reviewPointMaterialTypeName = row?.materialTypeName || ''
+  configForm.reviewPointFileContent = row?.fileContent || ''
+  configForm.reviewPointEvidenceItemText =
+    row?.evidenceItemText || (row?.evidenceItems || []).join('、')
+  configForm.reviewPointResponsibleParty = (row?.responsibleParty as RoleCode) || 'contractor'
+  configForm.reviewPointRequiredType = row?.requiredType || '必传'
+  configForm.reviewPointMappingRelation = row?.mappingRelation || 'OCR证据支撑'
+  configForm.reviewPointMinConfidence = row?.minConfidence || 0.65
+  configForm.fineEnabled = row?.enabled ?? true
+  configForm.reason = row ? '调整业务资料审查点。' : '新增业务资料审查点。'
+  latestConfigDiff.value = null
+  configDrawerVisible.value = true
+}
+
 const buildAdminConfigChangePayload = (): AdminConfigChangePayload => {
   const reason = configForm.reason.trim()
   if (configEditTarget.value === 'permission') {
@@ -2266,6 +2352,35 @@ const buildAdminConfigChangePayload = (): AdminConfigChangePayload => {
         endpoint: configForm.endpoint,
         authMode: configForm.authMode,
         status: configForm.toolStatus
+      }
+    }
+  }
+  if (configEditTarget.value === 'material-review-point') {
+    const evidenceItems = splitReviewPointEvidenceItems(configForm.reviewPointEvidenceItemText)
+    return {
+      target: 'material-review-point',
+      id: configForm.id,
+      reason,
+      values: {
+        businessPackId: configForm.reviewPointBusinessPackId,
+        nodeId: Number(configForm.reviewPointNodeId) || 1,
+        nodeName: configForm.reviewPointNodeName,
+        ruleId: configForm.reviewPointRuleId,
+        businessModule: configForm.reviewPointBusinessModule,
+        reviewClass: configForm.reviewPointReviewClass,
+        reviewContent: configForm.reviewPointReviewContent,
+        materialCategory: configForm.reviewPointMaterialCategory,
+        materialTypeCode: configForm.reviewPointMaterialTypeCode,
+        materialTypeName: configForm.reviewPointMaterialTypeName,
+        fileContent: configForm.reviewPointFileContent,
+        evidenceItemText: configForm.reviewPointEvidenceItemText,
+        evidenceItems,
+        responsibleParty: configForm.reviewPointResponsibleParty,
+        responsiblePartyLabel: roleLabel(configForm.reviewPointResponsibleParty),
+        requiredType: configForm.reviewPointRequiredType,
+        mappingRelation: configForm.reviewPointMappingRelation,
+        minConfidence: Number(configForm.reviewPointMinConfidence) || 0.65,
+        enabled: configForm.fineEnabled
       }
     }
   }
@@ -2389,6 +2504,47 @@ const handleSaveConfigItem = async () => {
       buildOperationFailureMessage(`${configTargetLabel.value}保存`)
     )
     configOperationRetry.value = 'save'
+  } finally {
+    configSaving.value = false
+  }
+}
+
+const handleDeleteMaterialReviewPoint = async (row: MaterialReviewPointRow) => {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除审查点「${row.reviewContent || row.materialTypeName}」？`,
+      '删除业务资料审查点',
+      {
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+  } catch {
+    return
+  }
+  configSaving.value = true
+  configOperationError.value = ''
+  try {
+    const res = await deleteAdminConfigItemApi(
+      { target: 'material-review-point', id: row.id },
+      { etag: overview.value.etag }
+    )
+    if (!res) {
+      configOperationError.value = getRequestErrorMessage(
+        undefined,
+        buildOperationFailureMessage('业务资料审查点删除')
+      )
+      return
+    }
+    overview.value = res.data.overview
+    ElMessage.success('业务资料审查点已删除')
+    await loadAuditLogs()
+  } catch (error) {
+    configOperationError.value = getRequestErrorMessage(
+      error,
+      buildOperationFailureMessage('业务资料审查点删除')
+    )
   } finally {
     configSaving.value = false
   }
@@ -3355,6 +3511,114 @@ onMounted(() => {
               </ElCard>
             </ElCol>
           </ElRow>
+        </ElTabPane>
+
+        <ElTabPane label="业务资料审查点" name="material-review-point">
+          <ElCard shadow="never" class="panel">
+            <template #header>
+              <div class="panel-header">
+                <span>资料与审查点对应关系</span>
+                <ElSpace>
+                  <ElTag type="info" effect="plain">
+                    {{ overview.materialReviewPoints.length }} 项
+                  </ElTag>
+                  <ElButton type="primary" size="small" plain @click="openMaterialReviewPointConfig()">
+                    新增
+                  </ElButton>
+                </ElSpace>
+              </div>
+            </template>
+            <ElTable
+              :data="tableRows(overview.materialReviewPoints, tableStates.materialReviewPoints)"
+              border
+              height="520"
+              empty-text="暂无业务资料审查点"
+              @sort-change="handleTableSortChange('materialReviewPoints', $event)"
+            >
+              <ElTableColumn prop="nodeId" label="节点" width="78" sortable="custom" />
+              <ElTableColumn
+                prop="reviewContent"
+                label="审查点"
+                min-width="190"
+                show-overflow-tooltip
+                sortable="custom"
+              />
+              <ElTableColumn
+                prop="fileContent"
+                label="审查内容"
+                min-width="260"
+                show-overflow-tooltip
+                sortable="custom"
+              >
+                <template #default="{ row }">
+                  {{ materialReviewPointAuditContent(row) }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="materialTypeName"
+                label="资料类型"
+                min-width="190"
+                show-overflow-tooltip
+                sortable="custom"
+              >
+                <template #default="{ row }">
+                  <div class="stacked-cell">
+                    <span>{{ row.materialTypeName || '-' }}</span>
+                    <small>{{ row.materialTypeCode || '-' }}</small>
+                  </div>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="evidenceItemText"
+                label="OCR证据项"
+                min-width="260"
+                show-overflow-tooltip
+              />
+              <ElTableColumn prop="responsibleParty" label="责任方" width="110" sortable="custom">
+                <template #default="{ row }">{{ responsiblePartyLabel(row.responsibleParty) }}</template>
+              </ElTableColumn>
+              <ElTableColumn prop="requiredType" label="口径" width="98" sortable="custom">
+                <template #default="{ row }">
+                  <ElTag :type="row.requiredType === '可选' ? 'info' : 'warning'" size="small" effect="plain">
+                    {{ row.requiredType }}
+                  </ElTag>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="minConfidence"
+                label="阈值"
+                width="86"
+                sortable="custom"
+              />
+              <ElTableColumn prop="enabled" label="状态" width="84" sortable="custom">
+                <template #default="{ row }">
+                  <ElTag :type="row.enabled ? 'success' : 'info'" size="small" effect="plain">
+                    {{ row.enabled ? '启用' : '停用' }}
+                  </ElTag>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="操作" width="132" fixed="right">
+                <template #default="{ row }">
+                  <ElButton link type="primary" @click="openMaterialReviewPointConfig(row)">
+                    编辑
+                  </ElButton>
+                  <ElButton link type="danger" @click="handleDeleteMaterialReviewPoint(row)">
+                    删除
+                  </ElButton>
+                </template>
+              </ElTableColumn>
+            </ElTable>
+            <ElPagination
+              v-model:current-page="tableStates.materialReviewPoints.page"
+              v-model:page-size="tableStates.materialReviewPoints.pageSize"
+              class="table-pagination"
+              background
+              :page-sizes="tablePageSizes"
+              layout="total, sizes, prev, pager, next, jumper"
+              :total="overview.materialReviewPoints.length"
+              @size-change="resetTablePage('materialReviewPoints')"
+            />
+          </ElCard>
         </ElTabPane>
 
         <ElTabPane label="Prompt 模板管理" name="prompt-template">
@@ -4606,6 +4870,109 @@ onMounted(() => {
             </ElFormItem>
           </template>
 
+          <template v-else-if="configEditTarget === 'material-review-point'">
+            <ElRow :gutter="12">
+              <ElCol :xs="24" :sm="12">
+                <ElFormItem label="业务包">
+                  <ElInput v-model="configForm.reviewPointBusinessPackId" />
+                </ElFormItem>
+              </ElCol>
+              <ElCol :xs="24" :sm="12">
+                <ElFormItem label="节点编号">
+                  <ElInputNumber v-model="configForm.reviewPointNodeId" :min="1" :max="69" />
+                </ElFormItem>
+              </ElCol>
+            </ElRow>
+            <ElFormItem label="节点名称">
+              <ElInput v-model="configForm.reviewPointNodeName" />
+            </ElFormItem>
+            <ElRow :gutter="12">
+              <ElCol :xs="24" :sm="12">
+                <ElFormItem label="规则">
+                  <ElInput v-model="configForm.reviewPointRuleId" />
+                </ElFormItem>
+              </ElCol>
+              <ElCol :xs="24" :sm="12">
+                <ElFormItem label="类别">
+                  <ElInput v-model="configForm.reviewPointReviewClass" />
+                </ElFormItem>
+              </ElCol>
+            </ElRow>
+            <ElFormItem label="业务模块">
+              <ElInput v-model="configForm.reviewPointBusinessModule" />
+            </ElFormItem>
+            <ElFormItem label="审查点">
+              <ElInput v-model="configForm.reviewPointReviewContent" />
+            </ElFormItem>
+            <ElRow :gutter="12">
+              <ElCol :xs="24" :sm="12">
+                <ElFormItem label="资料大类">
+                  <ElInput v-model="configForm.reviewPointMaterialCategory" />
+                </ElFormItem>
+              </ElCol>
+              <ElCol :xs="24" :sm="12">
+                <ElFormItem label="资料类型编码">
+                  <ElInput v-model="configForm.reviewPointMaterialTypeCode" />
+                </ElFormItem>
+              </ElCol>
+            </ElRow>
+            <ElFormItem label="资料类型名称">
+              <ElInput v-model="configForm.reviewPointMaterialTypeName" />
+            </ElFormItem>
+            <ElFormItem label="审查内容">
+              <ElInput v-model="configForm.reviewPointFileContent" type="textarea" :rows="2" />
+            </ElFormItem>
+            <ElFormItem label="OCR证据项">
+              <ElInput
+                v-model="configForm.reviewPointEvidenceItemText"
+                type="textarea"
+                :rows="3"
+              />
+            </ElFormItem>
+            <ElRow :gutter="12">
+              <ElCol :xs="24" :sm="12">
+                <ElFormItem label="责任方">
+                  <ElSelect v-model="configForm.reviewPointResponsibleParty">
+                    <ElOption label="施工" value="contractor" />
+                    <ElOption label="无损检测" value="ndt" />
+                    <ElOption label="监检" value="inspection" />
+                    <ElOption label="建设方" value="owner" />
+                  </ElSelect>
+                </ElFormItem>
+              </ElCol>
+              <ElCol :xs="24" :sm="12">
+                <ElFormItem label="必传口径">
+                  <ElSelect v-model="configForm.reviewPointRequiredType">
+                    <ElOption label="必传" value="必传" />
+                    <ElOption label="条件必传" value="条件必传" />
+                    <ElOption label="可选" value="可选" />
+                  </ElSelect>
+                </ElFormItem>
+              </ElCol>
+            </ElRow>
+            <ElRow :gutter="12">
+              <ElCol :xs="24" :sm="12">
+                <ElFormItem label="命中阈值">
+                  <ElInputNumber
+                    v-model="configForm.reviewPointMinConfidence"
+                    :min="0"
+                    :max="1"
+                    :step="0.01"
+                    :precision="2"
+                  />
+                </ElFormItem>
+              </ElCol>
+              <ElCol :xs="24" :sm="12">
+                <ElFormItem label="启用状态">
+                  <ElSwitch v-model="configForm.fineEnabled" active-text="启用" inactive-text="停用" />
+                </ElFormItem>
+              </ElCol>
+            </ElRow>
+            <ElFormItem label="映射关系">
+              <ElInput v-model="configForm.reviewPointMappingRelation" />
+            </ElFormItem>
+          </template>
+
           <template v-else>
             <ElRow :gutter="12">
               <ElCol :xs="24" :sm="12">
@@ -5670,6 +6037,19 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   margin-top: 12px;
+}
+
+.stacked-cell {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stacked-cell small {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.2;
 }
 
 .member-form :deep(.el-select),

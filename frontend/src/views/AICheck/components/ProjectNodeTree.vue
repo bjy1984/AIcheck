@@ -44,6 +44,7 @@ const treeProps = {
 } as const
 const treeRef = ref<InstanceType<typeof ElTree>>()
 const expandedTreeKeys = ref<string[]>([])
+const expansionInitialized = ref(false)
 
 const totalNodeCount = computed(() =>
   props.groups.reduce((sum, group) => sum + group.nodes.length, 0)
@@ -87,23 +88,47 @@ const groupTreeKeys = computed(() =>
   treeData.value.filter((item) => item.type === 'group').map((item) => item.id)
 )
 
-const restoreExpandedKeys = async () => {
+const activeGroupKey = computed(() => {
+  if (!props.activeNodeId) return ''
+  const groupIndex = props.groups.findIndex((group) =>
+    group.nodes.some((node) => Number(node.nodeId) === Number(props.activeNodeId))
+  )
+  if (groupIndex < 0) return ''
+  const group = props.groups[groupIndex]
+  return `group-${group.groupName || groupIndex}`
+})
+
+const syncExpandedKeys = async (expandActiveGroup = false) => {
   await nextTick()
-  const tree = treeRef.value
-  if (!tree) return
-  const currentKeys = new Set(expandedTreeKeys.value)
-  for (const key of groupTreeKeys.value) {
-    const node = tree.getNode(key)
-    if (node) node.expanded = currentKeys.has(key)
+  const validKeys = new Set(groupTreeKeys.value)
+  const nextKeys = expandedTreeKeys.value.filter((key) => validKeys.has(key))
+  if (expandActiveGroup && activeGroupKey.value && !nextKeys.includes(activeGroupKey.value)) {
+    nextKeys.push(activeGroupKey.value)
+  }
+  expandedTreeKeys.value = nextKeys
+  for (const key of nextKeys) {
+    const node = treeRef.value?.getNode(key)
+    if (node) node.expanded = true
   }
 }
 
 watch(
   () => props.groups,
   () => {
-    void restoreExpandedKeys()
-  },
-  { deep: true }
+    if (!expansionInitialized.value) {
+      expansionInitialized.value = true
+      void syncExpandedKeys(true)
+      return
+    }
+    void syncExpandedKeys(false)
+  }
+)
+
+watch(
+  () => props.activeNodeId,
+  () => {
+    void syncExpandedKeys(true)
+  }
 )
 
 const handleNodeClick = (data: ProjectTreeViewNode) => {

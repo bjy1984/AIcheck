@@ -13,7 +13,9 @@ import {
   ElMessageBox,
   ElOption,
   ElPagination,
-  ElSelect
+  ElSelect,
+  ElTable,
+  ElTableColumn
 } from 'element-plus'
 import {
   adoptAiSuggestionApi,
@@ -21,6 +23,7 @@ import {
   bindDocumentsToNodeApi,
   completeTodoApi,
   completeDocumentUploadSessionApi,
+  confirmNodeEvidenceLinkApi,
   createNdtFilmApi,
   createDocumentUploadSessionApi,
   deleteProjectDocumentApi,
@@ -57,6 +60,7 @@ import {
   markAllMessagesReadApi,
   markMessageReadApi,
   rejectAiSuggestionApi,
+  rejectNodeEvidenceLinkApi,
   requestAiRecheckApi,
   returnCorrectionApi,
   saveReviewOpinionApi,
@@ -123,6 +127,8 @@ type NodeRequirementDisplayRow = {
   applicability: string
   matchedFileNames: string[]
   status: string
+  supportStatus?: string
+  matchedLinkCount: number
 }
 type AiExecutionDisplayStep = {
   title: string
@@ -138,6 +144,17 @@ type ReviewConclusionPoint = {
   conclusion: string
   description: string
   evidenceLinks: EvidenceLink[]
+}
+type EvidenceConfirmationRow = {
+  id: string
+  requirementId: string
+  requirementName: string
+  materialType: string
+  status: string
+  fileName: string
+  evidenceText: string
+  confidenceText: string
+  evidence?: EvidenceLink
 }
 import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import ArchiveDetailDrawer from './components/ArchiveDetailDrawer.vue'
@@ -193,6 +210,9 @@ type DocumentUploadTarget = UploadSessionPayload['uploadUrls'][number]
 type LoadProjectBundleOptions = {
   silent?: boolean
   preserveSelection?: boolean
+}
+type LoadNodePackageOptions = {
+  silent?: boolean
 }
 
 const route = useRoute()
@@ -329,7 +349,11 @@ const extractedFields = computed(() => nodePackage.value?.extractedFields || [])
 const rectifications = computed(() => nodePackage.value?.rectifications || [])
 const reviewOpinions = computed(() => nodePackage.value?.reviewOpinions || [])
 const latestAiRun = computed(() => nodePackage.value?.aiRuns[0])
-const evidenceLinks = computed(() => latestAiRun.value?.evidenceLinks || [])
+const nodeEvidenceLinks = computed(() => nodePackage.value?.nodeEvidenceLinks || [])
+const evidenceLinks = computed(() => {
+  const runLinks = latestAiRun.value?.evidenceLinks || []
+  return runLinks.length ? runLinks : nodeEvidenceLinks.value
+})
 const businessBasis = computed(() => nodePackage.value?.businessBasis)
 const isReadOnly = computed(
   () => role.value === 'owner' || currentProject.value?.status === '已归档'
@@ -815,9 +839,24 @@ const previewDrawerCanEmbedOriginal = computed(() => {
   if (!url || url.startsWith('mock://')) return false
   return previewDrawerTarget.value.previewType !== 'unsupported'
 })
-const previewDrawerFrameUrl = computed(
-  () => previewDrawerObjectUrl.value || previewDrawerTarget.value.url || ''
+const previewDrawerRequiresBlob = computed(
+  () => previewDrawerCanEmbedOriginal.value && String(previewDrawerTarget.value.url || '').startsWith('/api/')
 )
+const previewDrawerOriginalUnavailableText = computed(() => {
+  const url = String(previewDrawerTarget.value.url || '')
+  if (!url) return '当前文件详情没有返回原文地址。'
+  if (url.startsWith('mock://'))
+    return '当前接口返回的是 mock 占位地址，还没有拿到可预览的真实原文。'
+  if (previewDrawerTarget.value.previewType === 'unsupported')
+    return '当前文件类型暂不支持在线预览。'
+  return '当前文件没有可预览的真实原文。'
+})
+const previewDrawerFrameUrl = computed(() => {
+  const url = String(previewDrawerTarget.value.url || '')
+  if (previewDrawerRequiresBlob.value) return previewDrawerObjectUrl.value
+  return previewDrawerObjectUrl.value || url
+})
+const previewDrawerIsImage = computed(() => previewDrawerTarget.value.previewType === 'image')
 const aiConfidence = computed(() => {
   const confidence = latestAiRun.value?.suggestion.confidence
   if (confidence === undefined) return '-'
@@ -868,6 +907,7 @@ const nodeRequirementRows = computed<NodeRequirementDisplayRow[]>(() => {
     ? summaryRequirements
     : (nodePackage.value?.requirements || []).map((requirement) => ({
         ...requirement,
+        matchedLinkCount: 0,
         matchedFileNames: [],
         fulfilled: false
       }))
@@ -882,8 +922,63 @@ const nodeRequirementRows = computed<NodeRequirementDisplayRow[]>(() => {
     responsibleParty: requirementResponsibleParty(requirement),
     applicability: requirement.applicability || requirement.note || '按当前节点规则判断',
     matchedFileNames: requirement.matchedFileNames || [],
-    status: requirement.fulfilled ? '已匹配' : '待补充'
+    status:
+      requirement.evidenceReviewStatus ||
+      (requirement.fulfilled
+        ? '已确认'
+        : requirement.matchedLinkCount || requirement.matchedFileNames?.length
+          ? '待确认'
+          : '未找到'),
+    supportStatus: requirement.supportStatus,
+    matchedLinkCount: requirement.matchedLinkCount || 0
   }))
+})
+const evidenceConfirmationRows = computed<EvidenceConfirmationRow[]>(() => {
+  const requirements = selectedNode.value?.requirementsSummary?.requirements || []
+  const linksByPoint = new Map<string, EvidenceLink[]>()
+  for (const link of nodeEvidenceLinks.value) {
+    const key = String(link.reviewPointId || '')
+    if (!key) continue
+    if (!linksByPoint.has(key)) linksByPoint.set(key, [])
+    linksByPoint.get(key)?.push(link)
+  }
+  return requirements.flatMap<EvidenceConfirmationRow>((requirement, index) => {
+    const materialType = requirement.materialTypeCode
+      ? overviewFileMaterialTypeLabels[requirement.materialTypeCode] || requirement.materialTypeCode
+      : '未配置'
+    const links = linksByPoint.get(String(requirement.id || '')) || []
+    if (!links.length) {
+      return [
+        {
+          id: `${requirement.id || index}-not-found`,
+          requirementId: requirement.id || `${requirement.nodeId}-${index}`,
+          requirementName: requirement.name,
+          materialType,
+          status: '未找到',
+          fileName: '-',
+          evidenceText: '-',
+          confidenceText: '-',
+          evidence: undefined
+        }
+      ]
+    }
+    return links.map((link) => {
+      const evidenceItems = Array.from(new Set(link.matchedEvidenceItems || [])).join('、')
+      const confidence =
+        typeof link.confidence === 'number' ? `${Math.round(link.confidence * 100)}%` : '-'
+      return {
+        id: link.id,
+        requirementId: requirement.id || `${requirement.nodeId}-${index}`,
+        requirementName: requirement.name,
+        materialType,
+        status: link.manualStatusLabel || requirement.evidenceReviewStatus || '待确认',
+        fileName: evidenceLabel(link) || '-',
+        evidenceText: evidenceItems || compactText(link.quotedText, '-'),
+        confidenceText: confidence,
+        evidence: link
+      }
+    })
+  })
 })
 const nodeReferencedStandards = computed(() => {
   const standards = businessBasis.value?.referencedStandards || []
@@ -1229,23 +1324,30 @@ const showExportTaskError = (fallback: string, error?: unknown) => {
   ElMessage.error(message)
 }
 
-const loadNodePackage = async (nodeId = activeNodeId.value) => {
+const loadNodePackage = async (
+  nodeId = activeNodeId.value,
+  options: LoadNodePackageOptions = {}
+) => {
   if (!activeProjectId.value) return
-  nodeLoading.value = true
-  nodeIssue.value = undefined
+  if (!options.silent) {
+    nodeLoading.value = true
+    nodeIssue.value = undefined
+  }
   try {
     const res = await getNodePackageApi(activeProjectId.value, nodeId)
     if (!res) {
-      nodePackage.value = undefined
-      standardReferences.value = []
-      dateComparisons.value = []
-      nodeIssue.value = {
-        type: 'forbidden',
-        title: '节点资料包加载失败',
-        message: getAicheckErrorMessage(
-          undefined,
-          '接口返回失败，可能是权限不足、节点状态冲突或服务暂不可用。'
-        )
+      if (!options.silent) {
+        nodePackage.value = undefined
+        standardReferences.value = []
+        dateComparisons.value = []
+        nodeIssue.value = {
+          type: 'forbidden',
+          title: '节点资料包加载失败',
+          message: getAicheckErrorMessage(
+            undefined,
+            '接口返回失败，可能是权限不足、节点状态冲突或服务暂不可用。'
+          )
+        }
       }
       return
     }
@@ -1253,16 +1355,18 @@ const loadNodePackage = async (nodeId = activeNodeId.value) => {
     activeNodeId.value = res.data.node.nodeId
     await loadInspectionDetails(res.data.node.nodeId)
   } catch (error) {
-    nodePackage.value = undefined
-    standardReferences.value = []
-    dateComparisons.value = []
-    nodeIssue.value = {
-      type: 'error',
-      title: '节点资料包加载失败',
-      message: getErrorMessage(error)
+    if (!options.silent) {
+      nodePackage.value = undefined
+      standardReferences.value = []
+      dateComparisons.value = []
+      nodeIssue.value = {
+        type: 'error',
+        title: '节点资料包加载失败',
+        message: getErrorMessage(error)
+      }
     }
   } finally {
-    nodeLoading.value = false
+    if (!options.silent) nodeLoading.value = false
   }
 }
 
@@ -1679,7 +1783,7 @@ const loadPreviewDrawerOriginal = async () => {
   revokePreviewDrawerObjectUrl()
   previewDrawerOriginalError.value = ''
   const url = String(previewDrawerTarget.value.url || '')
-  if (!previewDrawerCanEmbedOriginal.value || !url.startsWith('/api/')) return
+  if (!previewDrawerRequiresBlob.value) return
   previewDrawerLoadingOriginal.value = true
   try {
     const res = await getDocumentOriginalBlobApi(url)
@@ -1692,6 +1796,10 @@ const loadPreviewDrawerOriginal = async () => {
   } finally {
     previewDrawerLoadingOriginal.value = false
   }
+}
+
+const handlePreviewDrawerImageError = () => {
+  previewDrawerOriginalError.value = '图片预览加载失败，请尝试下载后查看。'
 }
 
 const handleDownloadFile = (url: string) => {
@@ -2346,6 +2454,11 @@ const handleSubmitRectification = async (payload: {
 
 const handleAiRecheck = async () => {
   if (!ensureWritableNode()) return
+  const pendingEvidenceCount = Number(nodePackage.value?.evidenceReadiness?.pendingCount || 0)
+  if (pendingEvidenceCount > 0) {
+    ElMessage.warning('请先完成候选证据的确认或不采用，再进入 AI 复核')
+    return
+  }
   actionLoading.value = true
   try {
     const res = await requestAiRecheckApi(activeProjectId.value, activeNodeId.value, {
@@ -2457,6 +2570,50 @@ const handleRejectAiSuggestion = async (suggestionId: string) => {
 const handleLocateEvidence = (evidence: EvidenceLink) => {
   activeEvidence.value = evidence
   evidenceDialogVisible.value = true
+}
+
+const handleConfirmEvidence = async (evidence: EvidenceLink) => {
+  if (!ensureWritableNode()) return
+  actionLoading.value = true
+  try {
+    const res = await confirmNodeEvidenceLinkApi(
+      activeProjectId.value,
+      activeNodeId.value,
+      evidence.id,
+      { comment: '监检人员确认采用该证据。' },
+      { etag: currentProject.value?.etag }
+    )
+    if (!res) {
+      showActionError('证据确认失败，请刷新后重试。')
+      return
+    }
+    ElMessage.success('证据已确认')
+    await loadNodePackage(activeNodeId.value, { silent: true })
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+const handleRejectEvidence = async (evidence: EvidenceLink) => {
+  if (!ensureWritableNode()) return
+  actionLoading.value = true
+  try {
+    const res = await rejectNodeEvidenceLinkApi(
+      activeProjectId.value,
+      activeNodeId.value,
+      evidence.id,
+      { comment: '监检人员不采用该候选证据。' },
+      { etag: currentProject.value?.etag }
+    )
+    if (!res) {
+      showActionError('证据不采用失败，请刷新后重试。')
+      return
+    }
+    ElMessage.success('已标记为不采用')
+    await loadNodePackage(activeNodeId.value, { silent: true })
+  } finally {
+    actionLoading.value = false
+  }
 }
 
 const handleReturnCorrection = async () => {
@@ -2759,7 +2916,7 @@ const refreshPostUploadPipelineStatus = async () => {
   }
   pipelinePolling.value = true
   try {
-    await loadProjectBundle({ silent: true, preserveSelection: true })
+    await loadNodePackage(activeNodeId.value, { silent: true })
   } finally {
     pipelinePolling.value = false
   }
@@ -3422,6 +3579,59 @@ onBeforeUnmount(() => {
                 </div>
               </article>
 
+              <article class="basis-table-block evidence-confirmation-block">
+                <div class="block-title-row">
+                  <h3>证据确认</h3>
+                  <span class="pill blue">{{ evidenceConfirmationRows.length }} 条</span>
+                </div>
+                <ElTable
+                  class="evidence-confirmation-table"
+                  :data="evidenceConfirmationRows"
+                  border
+                >
+                  <ElTableColumn prop="materialType" label="资料类别" min-width="150" />
+                  <ElTableColumn label="状态" width="118">
+                    <template #default="{ row }">
+                      <span :class="['pill', getPillClass(row.status)]">{{ row.status }}</span>
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn prop="fileName" label="候选文件" min-width="190" />
+                  <ElTableColumn
+                    prop="evidenceText"
+                    label="命中证据"
+                    min-width="220"
+                    show-overflow-tooltip
+                  />
+                  <ElTableColumn prop="confidenceText" label="置信度" width="90" />
+                  <ElTableColumn label="操作" width="230" fixed="right">
+                    <template #default="{ row }">
+                      <div v-if="row.evidence" class="evidence-confirmation-actions">
+                        <ElButton text type="primary" @click="handleLocateEvidence(row.evidence)">
+                          查看原文
+                        </ElButton>
+                        <ElButton
+                          text
+                          type="success"
+                          :disabled="row.evidence.manualStatus === 'confirmed' || actionLoading"
+                          @click="handleConfirmEvidence(row.evidence)"
+                        >
+                          确认
+                        </ElButton>
+                        <ElButton
+                          text
+                          type="warning"
+                          :disabled="row.evidence.manualStatus === 'rejected' || actionLoading"
+                          @click="handleRejectEvidence(row.evidence)"
+                        >
+                          不采用
+                        </ElButton>
+                      </div>
+                      <span v-else class="empty-inline">-</span>
+                    </template>
+                  </ElTableColumn>
+                </ElTable>
+              </article>
+
               <article class="standard-reference-block">
                 <div class="block-title-row">
                   <h3>引用标准文件</h3>
@@ -3773,12 +3983,37 @@ onBeforeUnmount(() => {
                   :closable="false"
                   show-icon
                 />
+                <div v-else-if="!previewDrawerFrameUrl" class="doc-original-placeholder">
+                  原文预览加载中
+                </div>
+                <img
+                  v-else-if="previewDrawerIsImage"
+                  class="doc-original-image"
+                  :src="previewDrawerFrameUrl"
+                  :alt="previewDrawerTarget.title"
+                  @error="handlePreviewDrawerImageError"
+                />
                 <iframe
                   v-else
                   class="doc-original-frame"
                   :src="previewDrawerFrameUrl"
                   :title="previewDrawerTarget.title"
+                ></iframe>
+              </div>
+              <div
+                v-else-if="previewDrawerTarget.source === 'file'"
+                class="doc-original-unavailable"
+              >
+                <ElAlert
+                  title="当前文件没有可预览的真实原文"
+                  :description="previewDrawerOriginalUnavailableText"
+                  type="warning"
+                  :closable="false"
+                  show-icon
                 />
+                <code v-if="previewDrawerTarget.url" class="doc-source-url">
+                  {{ previewDrawerTarget.url }}
+                </code>
               </div>
               <div v-else class="doc-paper">
                 <div class="paper-title">
@@ -3844,6 +4079,7 @@ onBeforeUnmount(() => {
 
       <EvidenceLocatorDialog
         v-model="evidenceDialogVisible"
+        :project-id="activeProjectId"
         :evidence="activeEvidence"
         :extracted-fields="extractedFields"
       />
@@ -5570,6 +5806,26 @@ h3 {
   color: var(--muted);
 }
 
+.evidence-confirmation-block {
+  overflow: hidden;
+}
+
+.evidence-confirmation-table {
+  margin-top: 12px;
+}
+
+.evidence-confirmation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.evidence-confirmation-actions :deep(.el-button) {
+  margin-left: 0;
+  font-weight: 800;
+}
+
 .standard-reference-list {
   display: flex;
   flex-wrap: wrap;
@@ -5800,6 +6056,49 @@ h3 {
 
 .doc-original-host {
   min-height: 520px;
+}
+
+.doc-original-placeholder {
+  display: flex;
+  min-height: 520px;
+  align-items: center;
+  justify-content: center;
+  color: #667085;
+  background: #fff;
+  border: 1px solid #d5deea;
+  border-radius: 4px;
+}
+
+.doc-original-image {
+  display: block;
+  width: 100%;
+  max-height: 680px;
+  object-fit: contain;
+  background: #fff;
+  border: 1px solid #d5deea;
+  border-radius: 4px;
+}
+
+.doc-original-unavailable {
+  display: flex;
+  min-height: 300px;
+  flex-direction: column;
+  gap: 12px;
+  justify-content: center;
+  padding: 18px;
+  background: #fff;
+  border: 1px solid #d5deea;
+  border-radius: 4px;
+}
+
+.doc-source-url {
+  display: block;
+  max-width: 100%;
+  padding: 10px;
+  color: #475467;
+  background: #f3f4f6;
+  border-radius: 6px;
+  overflow-wrap: anywhere;
 }
 
 .doc-original-frame {
