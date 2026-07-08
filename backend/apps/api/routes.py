@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import math
 import mimetypes
 import os
 import re
@@ -51,7 +52,13 @@ from libs.integrations.embedding_client import EmbeddingClient
 from libs.integrations.errors import IntegrationServiceError
 from libs.integrations.ocr_client import OcrClient
 from libs.integrations.storage import ObjectStorageUnavailable, object_storage, parse_storage_url
-from libs.knowledge_indexing import OFFLINE_EMBEDDING_MODEL, STANDARD_INDEX_VERSION, active_embedding_target, offline_hash_embedding
+from libs.knowledge_indexing import (
+    OFFLINE_EMBEDDING_MODEL,
+    STANDARD_INDEX_VERSION,
+    active_embedding_target,
+    noise_like_text,
+    offline_hash_embedding,
+)
 from libs.knowledge_readiness import build_knowledge_rule_scorecard
 from libs.knowledge_retrieval import answer_draft_from_clauses, retrieve_knowledge_clauses
 from libs.review_orchestrator import (
@@ -8591,7 +8598,26 @@ def fde_chunk_quality_flags(chunk: dict[str, Any], *, vector_ready: bool, retrie
         flags.append("not_retrieved")
     if duplicate:
         flags.append("duplicate_text")
+    if fde_roi_is_noise_text(text):
+        flags.append("noise_like_watermark")
     return flags
+
+
+def fde_noise_chunk_blocker(flag_counts: dict[str, int], effective_count: int) -> str | None:
+    noise_count = fde_as_int(flag_counts.get("noise_like_watermark"))
+    if noise_count <= 0 or effective_count <= 0:
+        return None
+    noise_ratio = fde_ratio(noise_count, effective_count, default=0.0)
+    if noise_count >= 3 or noise_ratio >= 0.05:
+        return f"疑似水印/下载站文本 {noise_count} 条，占比 {noise_ratio:.1%}，需要重新 OCR/切片治理"
+    return None
+
+
+def fde_noise_chunk_score_penalty(flag_counts: dict[str, int], effective_count: int) -> float:
+    noise_count = fde_as_int(flag_counts.get("noise_like_watermark"))
+    if noise_count <= 0 or effective_count <= 0:
+        return 0.0
+    return min(18.0, round(100 * fde_ratio(noise_count, effective_count, default=0.0) * 0.6, 2))
 
 
 def fde_latest_ocr_parse_result(document_version_id: str) -> dict[str, Any] | None:
@@ -8650,6 +8676,11 @@ def fde_source_preview_view(
                     "pageNo": page_item.get("pageNo") or page_item.get("page") or index,
                     "width": page_item.get("width") or page_item.get("imageWidth"),
                     "height": page_item.get("height") or page_item.get("imageHeight"),
+                    "previewWidth": page_item.get("previewWidth") or page_item.get("imageWidth") or page_item.get("width"),
+                    "previewHeight": page_item.get("previewHeight") or page_item.get("imageHeight") or page_item.get("height"),
+                    "sourceImageWidth": page_item.get("sourceImageWidth") or page_item.get("imageWidth") or page_item.get("width"),
+                    "sourceImageHeight": page_item.get("sourceImageHeight") or page_item.get("imageHeight") or page_item.get("height"),
+                    "coordinateSystem": page_item.get("coordinateSystem") or "ocr_image_px",
                     "previewUrl": page_item.get("previewUrl") or page_item.get("imageUrl") or source.get("previewUrl"),
                     "imageObjectKey": page_item.get("imageObjectKey") or page_item.get("objectKey"),
                     "quality": page_item.get("quality") or {},
@@ -8661,6 +8692,11 @@ def fde_source_preview_view(
                 "pageNo": 1,
                 "width": None,
                 "height": None,
+                "previewWidth": None,
+                "previewHeight": None,
+                "sourceImageWidth": None,
+                "sourceImageHeight": None,
+                "coordinateSystem": "unknown",
                 "previewUrl": source.get("previewUrl"),
                 "imageObjectKey": source.get("storageKey"),
                 "quality": {},
@@ -8781,35 +8817,244 @@ def fde_ocr_artifacts_view(
     }
 
 
-def fde_text_stage_rows(fields: list[dict[str, Any]], chunk_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def fde_roi_bbox_extents(raw: Any) -> list[float] | None:
+    if not isinstance(raw, list) or len(raw) < 4:
+        return None
+    if isinstance(raw[0], list):
+        points: list[tuple[float, float]] = []
+        for point in raw:
+            if not isinstance(point, list) or len(point) < 2:
+                continue
+            try:
+                x = float(point[0])
+                y = float(point[1])
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(x) and math.isfinite(y):
+                points.append((x, y))
+        if not points:
+            return None
+        xs = [point[0] for point in points]
+        ys = [point[1] for point in points]
+        return [min(xs), min(ys), max(xs), max(ys)]
+    try:
+        values = [float(value) for value in raw[:4]]
+    except (TypeError, ValueError):
+        return None
+    if not all(math.isfinite(value) for value in values):
+        return None
+    x1, y1, x2, y2 = values
+    return [min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)]
+
+
+def fde_roi_polygon(raw: Any, extents: list[float] | None = None) -> list[list[float]]:
+    if isinstance(raw, list) and raw and isinstance(raw[0], list):
+        polygon: list[list[float]] = []
+        for point in raw:
+            if not isinstance(point, list) or len(point) < 2:
+                continue
+            try:
+                x = float(point[0])
+                y = float(point[1])
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(x) and math.isfinite(y):
+                polygon.append([round(x, 4), round(y, 4)])
+        if len(polygon) >= 3:
+            return polygon
+    if not extents:
+        return []
+    x1, y1, x2, y2 = extents
+    return [[round(x1, 4), round(y1, 4)], [round(x2, 4), round(y1, 4)], [round(x2, 4), round(y2, 4)], [round(x1, 4), round(y2, 4)]]
+
+
+def fde_page_source_dimensions_for_roi(
+    *,
+    bbox: list[float] | None,
+    source_method: str,
+    page_info: dict[str, Any] | None,
+) -> tuple[str, float | None, float | None, list[str]]:
+    warnings: list[str] = []
+    page_width = float(page_info.get("width") or 0) if page_info else 0.0
+    page_height = float(page_info.get("height") or 0) if page_info else 0.0
+    preview_width = float(page_info.get("previewWidth") or 0) if page_info else 0.0
+    preview_height = float(page_info.get("previewHeight") or 0) if page_info else 0.0
+    ocr_width = float(page_info.get("ocrImageWidth") or 0) if page_info else 0.0
+    ocr_height = float(page_info.get("ocrImageHeight") or 0) if page_info else 0.0
+    declared_source_width = float(page_info.get("sourceImageWidth") or 0) if page_info else 0.0
+    declared_source_height = float(page_info.get("sourceImageHeight") or 0) if page_info else 0.0
+    declared_coordinate_system = str((page_info or {}).get("coordinateSystem") or "")
+    source_method_lower = source_method.lower()
+    coordinate_system = "pdf_page_points" if page_width and page_height else "unknown"
+    source_width = page_width or None
+    source_height = page_height or None
+    if "ocr" in source_method_lower:
+        coordinate_system = str((page_info or {}).get("ocrCoordinateSystem") or "ocr_image_px")
+        if ocr_width and ocr_height:
+            source_width = ocr_width
+            source_height = ocr_height
+        elif page_width and page_height and page_width < 1000 and page_height < 1600 and preview_width and preview_height:
+            source_width = preview_width
+            source_height = preview_height
+            coordinate_system = "ocr_preview_px"
+        elif page_width and page_height:
+            source_width = page_width
+            source_height = page_height
+        elif preview_width and preview_height:
+            source_width = preview_width
+            source_height = preview_height
+            coordinate_system = "ocr_preview_px"
+    elif declared_coordinate_system in {"preview_image_px", "visual_page_preview_px"} and declared_source_width and declared_source_height:
+        source_width = declared_source_width
+        source_height = declared_source_height
+        coordinate_system = declared_coordinate_system
+    if bbox and source_width and source_height:
+        _, _, x2, y2 = bbox
+        if preview_width and preview_height and (x2 > source_width * 1.05 or y2 > source_height * 1.05):
+            source_width = preview_width
+            source_height = preview_height
+            coordinate_system = "ocr_preview_px" if "ocr" in source_method_lower else "preview_image_px"
+        elif x2 > source_width * 1.05 or y2 > source_height * 1.05:
+            warnings.append("bbox_outside_source_bounds")
+    if not source_width or not source_height:
+        warnings.append("source_image_dimensions_missing")
+    if coordinate_system == "unknown":
+        warnings.append("coordinate_system_inferred")
+    return coordinate_system, source_width, source_height, warnings
+
+
+def fde_roi_is_noise_text(text: Any) -> bool:
+    return noise_like_text(text)
+
+
+def fde_build_roi_payload(record: dict[str, Any], page_info: dict[str, Any] | None = None) -> dict[str, Any]:
+    raw_roi = record.get("roi") if isinstance(record.get("roi"), dict) else {}
+    merged_page_info = dict(page_info or {})
+    for key in ("coordinateSystem", "sourceImageWidth", "sourceImageHeight", "previewWidth", "previewHeight", "width", "height"):
+        if raw_roi.get(key) not in (None, "", []):
+            merged_page_info[key] = raw_roi.get(key)
+    raw_boxes = raw_roi.get("boxes") if isinstance(raw_roi.get("boxes"), list) else []
+    if not raw_boxes:
+        raw_boxes = record.get("boxes") if isinstance(record.get("boxes"), list) else []
+    if not raw_boxes and record.get("bbox") is not None:
+        raw_boxes = [{"bbox": record.get("bbox"), "text": record.get("text") or record.get("textPreview")}]
+    normalized_boxes: list[dict[str, Any]] = []
+    union: list[float] | None = None
+    source_method = str(record.get("sourceMethod") or raw_roi.get("sourceMethod") or "")
+    for index, box in enumerate(raw_boxes, start=1):
+        box_payload = box if isinstance(box, dict) else {"bbox": box}
+        raw_bbox = box_payload.get("polygon") or box_payload.get("bbox")
+        extents = fde_roi_bbox_extents(raw_bbox)
+        if not extents:
+            continue
+        polygon = fde_roi_polygon(raw_bbox, extents)
+        union = extents if union is None else [min(union[0], extents[0]), min(union[1], extents[1]), max(union[2], extents[2]), max(union[3], extents[3])]
+        normalized_boxes.append(
+            {
+                "id": str(box_payload.get("id") or box_payload.get("sourceFragmentId") or f"{record.get('id') or record.get('chunkId') or 'roi'}-box-{index}"),
+                "pageNo": fde_as_int(box_payload.get("pageNo") or record.get("pageNo")),
+                "bbox": [round(value, 4) for value in extents],
+                "polygon": polygon,
+                "text": fde_chunk_text_preview(box_payload.get("text") or record.get("text") or record.get("textPreview"), 180),
+                "confidence": box_payload.get("confidence") or record.get("confidence"),
+                "sourceFragmentId": box_payload.get("sourceFragmentId") or box_payload.get("fragmentId"),
+                "sourceMethod": str(box_payload.get("sourceMethod") or source_method),
+            }
+        )
+    coordinate_system, source_width, source_height, warnings = fde_page_source_dimensions_for_roi(
+        bbox=union,
+        source_method=source_method,
+        page_info=merged_page_info,
+    )
+    if not normalized_boxes:
+        warnings.append("missing_bbox")
+    elif union:
+        x1, y1, x2, y2 = union
+        if x2 <= x1 or y2 <= y1:
+            warnings.append("degenerate_bbox")
+        if source_width and source_height and (x1 < 0 or y1 < 0 or x2 > source_width * 1.02 or y2 > source_height * 1.02):
+            warnings.append("bbox_outside_source_bounds")
+    if fde_roi_is_noise_text(record.get("text") or record.get("textPreview")):
+        warnings.append("noise_like_watermark")
+    return {
+        "schemaVersion": "FdeRoi@1.0.0",
+        "pageNo": fde_as_int(record.get("pageNo")),
+        "coordinateSystem": coordinate_system,
+        "sourceMethod": source_method,
+        "sourceImageWidth": source_width,
+        "sourceImageHeight": source_height,
+        "previewWidth": merged_page_info.get("previewWidth") if merged_page_info else None,
+        "previewHeight": merged_page_info.get("previewHeight") if merged_page_info else None,
+        "pageWidth": merged_page_info.get("width") if merged_page_info else None,
+        "pageHeight": merged_page_info.get("height") if merged_page_info else None,
+        "boxes": normalized_boxes,
+        "unionBBox": [round(value, 4) for value in union] if union else None,
+        "qualityWarnings": sorted(set(warnings)),
+    }
+
+
+def fde_source_pages_by_no(source_preview: dict[str, Any] | None) -> dict[int, dict[str, Any]]:
+    if not isinstance(source_preview, dict):
+        return {}
+    pages = source_preview.get("pages")
+    if not isinstance(pages, list):
+        return {}
+    return {fde_as_int(page.get("pageNo")): page for page in pages if isinstance(page, dict) and fde_as_int(page.get("pageNo")) > 0}
+
+
+def fde_attach_roi_to_chunk_row(row: dict[str, Any], page_info: dict[str, Any] | None = None) -> dict[str, Any]:
+    roi = fde_build_roi_payload(row, page_info)
+    is_noise = fde_roi_is_noise_text(row.get("text") or row.get("textPreview"))
+    if is_noise:
+        roi = {
+            **roi,
+            "boxes": [],
+            "unionBBox": None,
+            "suppressed": True,
+            "suppressedReason": "noise_like_watermark",
+            "qualityWarnings": sorted(set([*(roi.get("qualityWarnings") or []), "noise_like_watermark"])),
+        }
+    return {
+        **row,
+        "roi": roi,
+        "bbox": None if is_noise else row.get("bbox") if row.get("bbox") is not None else roi.get("unionBBox"),
+        "originalBbox": row.get("bbox") if is_noise else row.get("originalBbox"),
+        "evidenceUsable": not is_noise,
+        "evidenceStatusReason": "noise_like_watermark" if is_noise else row.get("evidenceStatusReason"),
+        "roiQualityWarnings": roi.get("qualityWarnings") or [],
+    }
+
+
+def fde_text_stage_rows(fields: list[dict[str, Any]], chunk_rows: list[dict[str, Any]], source_pages_by_no: dict[int, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for index, field in enumerate(fields[:20], start=1):
-        rows.append(
-            {
-                "id": field.get("id") or f"field-text-{index}",
-                "sourceType": "ocr_field",
-                "sourceLabel": field.get("fieldName") or f"字段 {index}",
-                "pageNo": field.get("pageNo"),
-                "text": f"{field.get('fieldName')}: {field.get('fieldValue')}",
-                "textHash": stable_hash_payload({"field": field.get("fieldName"), "value": field.get("fieldValue")}),
-                "bbox": field.get("bbox"),
-                "confidence": field.get("confidence"),
-            }
-        )
+        row = {
+            "id": field.get("id") or f"field-text-{index}",
+            "sourceType": "ocr_field",
+            "sourceLabel": field.get("fieldName") or f"字段 {index}",
+            "pageNo": field.get("pageNo"),
+            "text": f"{field.get('fieldName')}: {field.get('fieldValue')}",
+            "textHash": stable_hash_payload({"field": field.get("fieldName"), "value": field.get("fieldValue")}),
+            "bbox": field.get("bbox"),
+            "confidence": field.get("confidence"),
+            "sourceMethod": field.get("sourceMethod") or field.get("source"),
+        }
+        rows.append(fde_attach_roi_to_chunk_row(row, (source_pages_by_no or {}).get(fde_as_int(row.get("pageNo")))))
     for chunk in chunk_rows[:20]:
-        rows.append(
-            {
-                "id": chunk.get("id"),
-                "sourceType": "knowledge_chunk",
-                "sourceLabel": f"Chunk {chunk.get('chunkNo')}",
-                "pageNo": chunk.get("pageNo"),
-                "text": chunk.get("textPreview"),
-                "textHash": chunk.get("textHash"),
-                "bbox": chunk.get("bbox"),
-                "confidence": None,
-                "tokenCount": chunk.get("tokenCount"),
-            }
-        )
+        row = {
+            "id": chunk.get("id"),
+            "sourceType": "knowledge_chunk",
+            "sourceLabel": f"Chunk {chunk.get('chunkNo')}",
+            "pageNo": chunk.get("pageNo"),
+            "text": chunk.get("textPreview"),
+            "textHash": chunk.get("textHash"),
+            "bbox": chunk.get("bbox"),
+            "roi": chunk.get("roi"),
+            "confidence": None,
+            "sourceMethod": chunk.get("sourceMethod"),
+            "tokenCount": chunk.get("tokenCount"),
+        }
+        rows.append(fde_attach_roi_to_chunk_row(row, (source_pages_by_no or {}).get(fde_as_int(row.get("pageNo")))))
     return rows
 
 
@@ -8822,11 +9067,23 @@ def fde_vector_format_rows(
     embedding_model: str,
     index_version: str,
     dimensions: int,
+    source_pages_by_no: dict[int, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for chunk in chunk_rows[:30]:
         chunk_id = str(chunk.get("chunkId") or chunk.get("id") or "")
         vector_id = f"VEC-{chunk_id or document.get('currentVersionId')}-{chunk.get('chunkNo')}"
+        roi = fde_build_roi_payload(chunk, (source_pages_by_no or {}).get(fde_as_int(chunk.get("pageNo"))))
+        is_noise = fde_roi_is_noise_text(chunk.get("text") or chunk.get("textPreview"))
+        if is_noise:
+            roi = {
+                **roi,
+                "boxes": [],
+                "unionBBox": None,
+                "suppressed": True,
+                "suppressedReason": "noise_like_watermark",
+                "qualityWarnings": sorted(set([*(roi.get("qualityWarnings") or []), "noise_like_watermark"])),
+            }
         metadata = {
             "projectId": project_id,
             "documentId": document.get("id"),
@@ -8835,7 +9092,12 @@ def fde_vector_format_rows(
             "chunkId": chunk_id,
             "chunkNo": chunk.get("chunkNo"),
             "pageNo": chunk.get("pageNo"),
-            "bbox": chunk.get("bbox"),
+            "bbox": None if is_noise else chunk.get("bbox"),
+            "originalBbox": chunk.get("bbox") if is_noise else chunk.get("originalBbox"),
+            "sourceMethod": chunk.get("sourceMethod"),
+            "roi": roi,
+            "evidenceUsable": not is_noise,
+            "evidenceStatusReason": "noise_like_watermark" if is_noise else chunk.get("evidenceStatusReason"),
             "source": "aicheck_document_pipeline",
         }
         embedding_input = {
@@ -8990,7 +9252,7 @@ def fde_vector_chunk_before_value(chunk: dict[str, Any] | None, correction_type:
     if correction_type == "pageNo":
         return {"pageNo": chunk.get("pageNo")}
     if correction_type == "bbox":
-        return {"pageNo": chunk.get("pageNo"), "bbox": chunk.get("bbox")}
+        return {"pageNo": chunk.get("pageNo"), "bbox": chunk.get("bbox"), "roi": chunk.get("roi")}
     if correction_type == "sectionPath":
         return {"sectionPath": chunk.get("sectionPath")}
     if correction_type == "sourceMethod":
@@ -9022,6 +9284,10 @@ def fde_normalize_vector_correction_after(body: dict[str, Any], correction_type:
             after = {**after, "bbox": body.get("correctedBbox")}
         elif body.get("bbox") is not None:
             after = {**after, "bbox": body.get("bbox")}
+        if body.get("correctedRoi") is not None:
+            after = {**after, "roi": body.get("correctedRoi")}
+        elif body.get("roi") is not None:
+            after = {**after, "roi": body.get("roi")}
     elif correction_type == "sectionPath":
         value = body.get("sectionPath", after.get("sectionPath"))
         if value is not None:
@@ -9051,9 +9317,42 @@ def fde_update_clause_from_chunk(chunk: dict[str, Any]) -> None:
             clause["endPage"] = chunk.get("pageNo")
         if chunk.get("bbox") is not None:
             clause["bbox"] = chunk.get("bbox")
+        if chunk.get("roi") is not None:
+            clause["roi"] = chunk.get("roi")
         if chunk.get("sectionPath") is not None:
             clause["sectionPath"] = chunk.get("sectionPath")
         clause["updatedAt"] = server_time()
+
+
+def fde_update_vector_metadata_for_chunk(
+    *,
+    knowledge_file_id: str,
+    chunk_id: str,
+    chunk: dict[str, Any],
+) -> int:
+    updated_count = 0
+    for vector in repo.state.get("knowledge_vectors", []):
+        if str(vector.get("fileId") or "") != knowledge_file_id:
+            continue
+        if chunk_id and str(vector.get("chunkId") or "") != chunk_id:
+            continue
+        metadata = vector.get("metadata") if isinstance(vector.get("metadata"), dict) else {}
+        metadata = {
+            **metadata,
+            "pageNo": chunk.get("pageNo"),
+            "bbox": chunk.get("bbox"),
+            "roi": chunk.get("roi") or fde_build_roi_payload(chunk),
+            "sectionPath": chunk.get("sectionPath"),
+            "sourceMethod": chunk.get("sourceMethod"),
+            "updatedByCorrection": chunk.get("lastVectorCorrectionId"),
+        }
+        vector["metadata"] = metadata
+        vector["pageNo"] = chunk.get("pageNo")
+        vector["bbox"] = chunk.get("bbox")
+        vector["roi"] = metadata["roi"]
+        vector["updatedAt"] = server_time()
+        updated_count += 1
+    return updated_count
 
 
 def fde_apply_vector_correction_record(correction: dict[str, Any], *, role: str, reason: str | None = None) -> dict[str, Any]:
@@ -9090,6 +9389,9 @@ def fde_apply_vector_correction_record(correction: dict[str, Any], *, role: str,
         if correction_type == "bbox" and "bbox" in after:
             chunk["bbox"] = after.get("bbox")
             changed_fields.append("bbox")
+        if correction_type == "bbox" and "roi" in after:
+            chunk["roi"] = after.get("roi")
+            changed_fields.append("roi")
         if correction_type == "sectionPath" and "sectionPath" in after:
             chunk["sectionPath"] = after.get("sectionPath")
             changed_fields.append("sectionPath")
@@ -9101,48 +9403,72 @@ def fde_apply_vector_correction_record(correction: dict[str, Any], *, role: str,
             chunk["ignoreReason"] = str(after.get("ignoreReason") or correction.get("reason") or "FDE 标记忽略")
             chunk["qualityFlags"] = list(dict.fromkeys([*(chunk.get("qualityFlags") or []), "fde_ignored"]))
             changed_fields.extend(["ignoredByFde", "qualityFlags"])
+        if correction_type in {"pageNo", "bbox", "sectionPath", "sourceMethod"} and "roi" not in changed_fields:
+            chunk["roi"] = fde_build_roi_payload(chunk)
+            changed_fields.append("roi")
         chunk["updatedAt"] = now
         chunk["lastVectorCorrectionId"] = correction["id"]
         fde_update_clause_from_chunk(chunk)
 
-    repo.state["knowledge_vectors"] = [
-        item
-        for item in repo.state.get("knowledge_vectors", [])
-        if not (
-            str(item.get("fileId") or "") == knowledge_file_id
-            and (not chunk_id or str(item.get("chunkId") or "") == chunk_id)
+    metadata_only_correction = bool(chunk) and correction_type in {"pageNo", "bbox", "sectionPath", "sourceMethod"}
+    metadata_vector_update_count = 0
+    vector_task: dict[str, Any] | None = None
+    dispatch: dict[str, Any] | None = None
+    if metadata_only_correction:
+        metadata_vector_update_count = fde_update_vector_metadata_for_chunk(
+            knowledge_file_id=knowledge_file_id,
+            chunk_id=chunk_id,
+            chunk=chunk or {},
         )
-    ]
-    file["vectorCount"] = len([item for item in repo.state.get("knowledge_vectors", []) if item.get("fileId") == knowledge_file_id])
-    file["vectorStatus"] = "待向量化"
-    file["vectorStatusReason"] = "fde_vector_correction_pending_reindex"
+        file["vectorCount"] = len([item for item in repo.state.get("knowledge_vectors", []) if item.get("fileId") == knowledge_file_id])
+        if str(file.get("vectorStatus") or "") == "待向量化" and file.get("vectorStatusReason") == "fde_vector_correction_pending_reindex":
+            if fde_as_int(file.get("vectorCount")) >= fde_as_int(file.get("chunkCount")):
+                file["vectorStatus"] = "已向量化"
+        file["vectorStatusReason"] = "fde_vector_metadata_correction_applied"
+    else:
+        repo.state["knowledge_vectors"] = [
+            item
+            for item in repo.state.get("knowledge_vectors", [])
+            if not (
+                str(item.get("fileId") or "") == knowledge_file_id
+                and (not chunk_id or str(item.get("chunkId") or "") == chunk_id)
+            )
+        ]
+        file["vectorCount"] = len([item for item in repo.state.get("knowledge_vectors", []) if item.get("fileId") == knowledge_file_id])
+        file["vectorStatus"] = "待向量化"
+        file["vectorStatusReason"] = "fde_vector_correction_pending_reindex"
     file["lastVectorCorrectionId"] = correction["id"]
     file["updatedAt"] = now
     bump_record_revision(file)
     version = repo.find_one("versions", document_version_id)
     if version:
-        version["vectorStatus"] = "待向量化"
+        if not metadata_only_correction:
+            version["vectorStatus"] = "待向量化"
+        else:
+            version["vectorStatus"] = file.get("vectorStatus") or version.get("vectorStatus")
+            version["vectorStatusReason"] = "fde_vector_metadata_correction_applied"
         version["updatedAt"] = now
     source = repo.find_one("knowledge_sources", file.get("sourceId"))
     if source:
         repo.sync_standard_page_index_for_source(str(source.get("id")))
         sync_knowledge_source_counts(source)
 
-    vector_task = repo.upsert_knowledge_task(
-        task_type="vector",
-        target_id=knowledge_file_id,
-        target_name=str(file.get("fileName") or knowledge_file_id),
-        document_id=str(file.get("documentId") or ""),
-        version_id=document_version_id,
-    )
-    vector_task.pop("finishedAt", None)
-    vector_task.pop("errorMessage", None)
-    vector_task["status"] = "排队中"
-    vector_task["progress"] = 0
-    vector_task["correctionId"] = correction["id"]
-    repo.append_task_log(vector_task, "info", f"FDE 向量校对已应用，等待重新向量化：{correction['id']}")
-    dispatch = task_dispatcher.dispatch_embed(knowledge_file_id)
-    vector_task["lastDispatch"] = dispatch
+    if not metadata_only_correction:
+        vector_task = repo.upsert_knowledge_task(
+            task_type="vector",
+            target_id=knowledge_file_id,
+            target_name=str(file.get("fileName") or knowledge_file_id),
+            document_id=str(file.get("documentId") or ""),
+            version_id=document_version_id,
+        )
+        vector_task.pop("finishedAt", None)
+        vector_task.pop("errorMessage", None)
+        vector_task["status"] = "排队中"
+        vector_task["progress"] = 0
+        vector_task["correctionId"] = correction["id"]
+        repo.append_task_log(vector_task, "info", f"FDE 向量校对已应用，等待重新向量化：{correction['id']}")
+        dispatch = task_dispatcher.dispatch_embed(knowledge_file_id)
+        vector_task["lastDispatch"] = dispatch
 
     correction["status"] = "applied"
     correction["statusLabel"] = VECTOR_CORRECTION_STATUS_LABELS["applied"]
@@ -9151,13 +9477,17 @@ def fde_apply_vector_correction_record(correction: dict[str, Any], *, role: str,
     correction["updatedAt"] = now
     correction["applyReason"] = reason or correction.get("reviewReason") or correction.get("reason")
     correction["changedFields"] = list(dict.fromkeys(changed_fields))
-    correction["taskId"] = vector_task["id"]
+    correction["taskId"] = vector_task["id"] if vector_task else None
     correction["dispatch"] = dispatch
+    correction["metadataOnly"] = metadata_only_correction
+    correction["metadataVectorUpdateCount"] = metadata_vector_update_count
     return {
         "correction": fde_vector_correction_view(correction),
         "file": versioned_record("knowledge-file", file),
-        "task": versioned_record("knowledge-task", vector_task),
+        "task": versioned_record("knowledge-task", vector_task) if vector_task else None,
         "dispatch": dispatch,
+        "metadataOnly": metadata_only_correction,
+        "metadataVectorUpdateCount": metadata_vector_update_count,
     }
 
 
@@ -9272,6 +9602,7 @@ def fde_vector_file_detail(project_id: str, document_version_id: str, *, chunk_p
                 "materialized": True,
                 "pageNo": chunk.get("pageNo"),
                 "bbox": chunk.get("bbox"),
+                "roi": chunk.get("roi"),
                 "sectionPath": chunk.get("sectionPath"),
                 "sourceMethod": chunk.get("sourceMethod"),
                 "text": chunk.get("text") or "",
@@ -9383,6 +9714,9 @@ def fde_vector_file_detail(project_id: str, document_version_id: str, *, chunk_p
         blockers.append("部分切片缺少 bbox 证据")
     if trace_rows_source and retrieved_count <= 0:
         blockers.append("当前 RetrievalTrace 未命中该文件切片")
+    noise_blocker = fde_noise_chunk_blocker(flag_counts, effective_count)
+    if noise_blocker:
+        blockers.append(noise_blocker)
 
     token_counts = [fde_as_int(item.get("tokenCount")) for item in chunk_rows if item.get("materialized")]
     page_distribution: dict[str, int] = {}
@@ -9397,13 +9731,19 @@ def fde_vector_file_detail(project_id: str, document_version_id: str, *, chunk_p
         "500+": len([value for value in token_counts if value > 500]),
     }
 
+    source_preview = fde_source_preview_view({**document, "currentVersionId": document_version_id}, version, parse_result)
+    source_pages_by_no = fde_source_pages_by_no(source_preview)
+    chunk_rows = [
+        fde_attach_roi_to_chunk_row(row, source_pages_by_no.get(fde_as_int(row.get("pageNo"))))
+        for row in chunk_rows
+    ]
     chunk_page_size = max(1, min(fde_as_int(chunk_page_size, 50), 200))
     chunk_page = max(1, fde_as_int(chunk_page, 1))
     paged_chunk_rows = page(chunk_rows, chunk_page, chunk_page_size)
     embedding_model = str(document.get("embeddingModel") or OFFLINE_EMBEDDING_MODEL)
     index_version = str(document.get("indexVersion") or "knowledge-index@local")
     vector_dimensions = fde_as_int(document.get("vectorDimensions"), 1024)
-    text_rows = fde_text_stage_rows(extracted_fields, chunk_rows)
+    text_rows = fde_text_stage_rows(extracted_fields, chunk_rows, source_pages_by_no)
     vector_format_rows = fde_vector_format_rows(
         chunk_rows,
         project_id=project_id,
@@ -9412,6 +9752,7 @@ def fde_vector_file_detail(project_id: str, document_version_id: str, *, chunk_p
         embedding_model=embedding_model,
         index_version=index_version,
         dimensions=vector_dimensions,
+        source_pages_by_no=source_pages_by_no,
     )
     score = round(
         100
@@ -9425,7 +9766,7 @@ def fde_vector_file_detail(project_id: str, document_version_id: str, *, chunk_p
         ),
         2,
     )
-    source_preview = fde_source_preview_view({**document, "currentVersionId": document_version_id}, version, parse_result)
+    score = max(0.0, round(score - fde_noise_chunk_score_penalty(flag_counts, effective_count), 2))
     ocr_artifacts = fde_ocr_artifacts_view(document_version_id, parse_result, extracted_fields)
     index_records = [row.get("indexRecord") for row in vector_format_rows if isinstance(row.get("indexRecord"), dict)]
     llm_usage = {
@@ -9547,6 +9888,8 @@ def fde_vector_file_detail(project_id: str, document_version_id: str, *, chunk_p
             "retrievedChunkCount": retrieved_count,
             "retrievalCoverage": round(fde_ratio(retrieved_count, effective_count, default=0.0), 4),
             "duplicateChunkCount": flag_counts.get("duplicate_text", 0),
+            "noiseLikeWatermarkCount": flag_counts.get("noise_like_watermark", 0),
+            "noiseLikeWatermarkRate": round(fde_ratio(flag_counts.get("noise_like_watermark", 0), effective_count, default=0.0), 4),
         },
         "chunkRows": paged_chunk_rows["items"],
         "chunkPage": paged_chunk_rows,
@@ -9598,6 +9941,207 @@ def fde_standard_file_page_index_nodes(file: dict[str, Any], page_nodes: list[di
     ]
 
 
+def fde_standard_file_source_path(file: dict[str, Any]) -> Path | None:
+    candidates: list[str] = []
+    version = repo.find_one("versions", file.get("documentVersionId"))
+    if version:
+        candidates.extend(
+            [
+                str(version.get("storageKey") or ""),
+                str(version.get("sourceRelativePath") or ""),
+            ]
+        )
+    candidates.extend(
+        [
+            str(file.get("storageKey") or ""),
+            str(file.get("sourceRelativePath") or ""),
+            str(file.get("originalFileName") or ""),
+            str(file.get("fileName") or ""),
+        ]
+    )
+    allowed_roots = [RULES_STANDARDS_ROOT.resolve()]
+    for raw in candidates:
+        if not raw:
+            continue
+        if raw.startswith("local://"):
+            candidate = local_storage_path(raw)
+        else:
+            path = Path(raw)
+            if not path.is_absolute():
+                path = WORKSPACE_ROOT / path
+            candidate = path.resolve()
+        if not candidate or not candidate.is_file():
+            continue
+        allowed = candidate == RULES_BUSINESS_RULES_PATH.resolve()
+        for root in allowed_roots:
+            try:
+                candidate.relative_to(root)
+                allowed = True
+                break
+            except ValueError:
+                continue
+        if not allowed:
+            continue
+        return candidate
+    return None
+
+
+def fde_document_page_dimensions(local_path: Path, page_no: int = 1) -> tuple[float | None, float | None, int | None]:
+    suffix = local_path.suffix.lower()
+    if suffix == ".pdf":
+        try:
+            import fitz  # type: ignore
+
+            with fitz.open(str(local_path)) as doc:
+                if len(doc) < 1:
+                    return None, None, 0
+                page = doc[max(0, min(page_no - 1, len(doc) - 1))]
+                rect = page.rect
+                return round(float(rect.width), 2), round(float(rect.height), 2), len(doc)
+        except Exception:
+            return None, None, None
+    if suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff"}:
+        try:
+            from PIL import Image
+
+            with Image.open(local_path) as image:
+                width, height = image.size
+                return float(width), float(height), 1
+        except Exception:
+            return None, None, None
+    return None, None, None
+
+
+def fde_document_page_preview_dimensions(
+    local_path: Path,
+    *,
+    page_width: float | None = None,
+    page_height: float | None = None,
+) -> tuple[int | None, int | None]:
+    suffix = local_path.suffix.lower()
+    if suffix == ".pdf" and page_width and page_height:
+        return max(1, math.ceil(float(page_width) * 2)), max(1, math.ceil(float(page_height) * 2))
+    if suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff"}:
+        try:
+            from PIL import Image
+
+            with Image.open(local_path) as image:
+                image.thumbnail((1600, 1600))
+                width, height = image.size
+                return int(width), int(height)
+        except Exception:
+            return None, None
+    return None, None
+
+
+def fde_render_standard_page_preview(local_path: Path, page_no: int) -> tuple[bytes, str] | None:
+    suffix = local_path.suffix.lower()
+    if suffix == ".pdf":
+        return (
+            fde_render_pdf_page_preview_with_fitz(local_path, page_no)
+            or fde_render_pdf_page_preview_with_pdfium(local_path, page_no)
+            or fde_render_pdf_page_preview_with_qlmanage(local_path, page_no)
+            or fde_render_pdf_page_preview_with_magick(local_path, page_no)
+        )
+    if suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff"}:
+        return fde_render_image_page_preview(local_path)
+    return None
+
+
+def fde_standard_source_preview(file: dict[str, Any], chunks: list[dict[str, Any]], page_nodes: list[dict[str, Any]]) -> dict[str, Any]:
+    file_name = str(file.get("fileName") or file.get("originalFileName") or "")
+    file_type = Path(file_name).suffix.lstrip(".")
+    knowledge_file_id = str(file.get("id") or "")
+    document_version_id = str(file.get("documentVersionId") or "")
+    local_path = fde_standard_file_source_path(file)
+    page_numbers = {
+        fde_as_int(chunk.get("pageNo"))
+        for chunk in chunks
+        if fde_as_int(chunk.get("pageNo")) > 0
+    }
+    for node in page_nodes:
+        start_page = fde_as_int(node.get("startPage") or node.get("pageNo"))
+        end_page = fde_as_int(node.get("endPage") or start_page)
+        if start_page > 0:
+            page_numbers.update(range(start_page, max(start_page, end_page) + 1))
+    if not page_numbers:
+        page_numbers.add(1)
+    page_count = max(page_numbers)
+    pages: list[dict[str, Any]] = []
+    parse_result = fde_latest_ocr_parse_result(document_version_id)
+    ocr_pages_by_no = {
+        fde_as_int(page.get("pageNo") or page.get("page")): page
+        for page in (parse_result or {}).get("pages", [])
+        if isinstance(page, dict) and fde_as_int(page.get("pageNo") or page.get("page")) > 0
+    }
+    renderable_suffixes = {
+        ".pdf",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+        ".gif",
+        ".bmp",
+        ".tif",
+        ".tiff",
+    }
+    preview_available = bool(local_path and local_path.suffix.lower() in renderable_suffixes)
+    for page_no in sorted(page_numbers):
+        width, height, detected_count = fde_document_page_dimensions(local_path, page_no) if local_path else (None, None, None)
+        preview_width, preview_height = fde_document_page_preview_dimensions(
+            local_path,
+            page_width=width,
+            page_height=height,
+        ) if local_path else (None, None)
+        ocr_page = ocr_pages_by_no.get(page_no) or {}
+        ocr_width = ocr_page.get("sourceImageWidth") or ocr_page.get("imageWidth") or ocr_page.get("width")
+        ocr_height = ocr_page.get("sourceImageHeight") or ocr_page.get("imageHeight") or ocr_page.get("height")
+        if detected_count:
+            page_count = max(page_count, detected_count)
+        pages.append(
+            {
+                "pageNo": page_no,
+                "width": width,
+                "height": height,
+                "previewWidth": preview_width,
+                "previewHeight": preview_height,
+                "ocrImageWidth": ocr_width,
+                "ocrImageHeight": ocr_height,
+                "ocrCoordinateSystem": ocr_page.get("coordinateSystem") or "rendered_pixels" if ocr_page else None,
+                "sourceImageWidth": preview_width if width and width < 1000 else width,
+                "sourceImageHeight": preview_height if height and height < 1600 else height,
+                "coordinateSystem": "ocr_preview_px" if width and height and width < 1000 and height < 1600 else "pdf_page_points",
+                "previewUrl": f"/api/fde/standards/files/{quote(knowledge_file_id, safe='')}/page-preview?pageNo={page_no}",
+                "imageObjectKey": str(file.get("sourceRelativePath") or local_path or ""),
+                "quality": {
+                    "source": "rules/standards",
+                    "hasPageImage": preview_available,
+                    "previewMatchesRoiAspect": bool(width and height and preview_width and preview_height),
+                },
+            }
+        )
+    return {
+        "schemaVersion": "FdeSourcePreview@1.0.0",
+        "stage": "knowledge_file",
+        "label": "规范原始文件",
+        "status": "ready" if local_path else "missing_source",
+        "fileName": file_name,
+        "fileType": file_type,
+        "documentId": file.get("documentId"),
+        "documentVersionId": document_version_id,
+        "storageKey": file.get("sourceRelativePath"),
+        "storageBucket": "rules",
+        "previewUrl": pages[0]["previewUrl"] if pages else "",
+        "previewType": "image/png" if preview_available else file_type,
+        "pageCount": page_count,
+        "pages": pages,
+        "previewAvailable": preview_available,
+        "previewUnavailableReason": ""
+        if preview_available
+        else "未找到可渲染的 rules/standards 原始文件或本地 PDF 页图渲染失败。",
+    }
+
+
 def fde_standard_vector_row(
     file: dict[str, Any],
     *,
@@ -9623,6 +10167,10 @@ def fde_standard_vector_row(
         blockers.append(str(file.get("vectorStatusReason") or file.get("vectorStatus") or "未完成向量化"))
     if chunk_count and page_index_count <= 0:
         blockers.append("缺少 PageIndex 节点")
+    row_flag_counts = {"noise_like_watermark": len([chunk for chunk in chunks if fde_roi_is_noise_text(chunk.get("text"))])}
+    noise_blocker = fde_noise_chunk_blocker(row_flag_counts, max(chunk_count, len(chunks)))
+    if noise_blocker:
+        blockers.append(noise_blocker)
     vector_ratio = fde_ratio(vector_count, chunk_count, default=0.0)
     score = round(
         100
@@ -9652,6 +10200,8 @@ def fde_standard_vector_row(
         "chunkCount": chunk_count,
         "vectorCount": vector_count,
         "vectorGap": vector_gap,
+        "noiseLikeWatermarkCount": row_flag_counts["noise_like_watermark"],
+        "noiseLikeWatermarkRate": round(fde_ratio(row_flag_counts["noise_like_watermark"], max(chunk_count, len(chunks)), default=0.0), 4),
         "pageIndexNodeCount": page_index_count,
         "pageIndexNodeIds": [
             str(node.get("id") or node.get("pageIndexNodeId") or "")
@@ -9768,6 +10318,8 @@ def fde_standards_vectorization_payload(
     active_index_version = max(index_versions.items(), key=lambda pair: pair[1])[0] if index_versions else "knowledge-index@local"
     active_embedding_model = max(embedding_models.items(), key=lambda pair: pair[1])[0] if embedding_models else OFFLINE_EMBEDDING_MODEL
     issue_rows = [item for item in rows if item.get("issue") and item.get("issue") != "无"]
+    noise_chunk_count = sum(fde_as_int(item.get("noiseLikeWatermarkCount")) for item in rows)
+    noise_chunk_rate = fde_ratio(noise_chunk_count, chunk_count, default=0.0)
     score = round(
         100
         * (
@@ -9778,6 +10330,7 @@ def fde_standards_vectorization_payload(
         ),
         2,
     )
+    score = max(0.0, round(score - min(18.0, noise_chunk_rate * 120.0), 2))
     return {
         "schemaVersion": "FdeStandardsVectorization@1.0.0",
         "source": versioned_record("knowledge-source", source),
@@ -9793,6 +10346,8 @@ def fde_standards_vectorization_payload(
             "vectorGap": max(0, chunk_count - vector_count),
             "pageIndexNodeCount": len(page_nodes),
             "issueFileCount": len(issue_rows),
+            "noiseLikeWatermarkCount": noise_chunk_count,
+            "noiseLikeWatermarkRate": round(noise_chunk_rate, 4),
             "qualityScore": score,
             "activeEmbeddingModel": active_embedding_model,
             "activeIndexVersion": active_index_version,
@@ -9898,6 +10453,7 @@ def fde_standard_vector_file_detail(
                 "materialized": True,
                 "pageNo": chunk.get("pageNo"),
                 "bbox": chunk.get("bbox"),
+                "roi": chunk.get("roi"),
                 "sectionPath": chunk.get("sectionPath"),
                 "sourceMethod": chunk.get("sourceMethod"),
                 "text": chunk.get("text") or "",
@@ -9987,6 +10543,12 @@ def fde_standard_vector_file_detail(
             if str(item.get("kbDocId") or "") == STANDARD_RULES_SOURCE_ID
         ],
     )
+    source_preview = fde_standard_source_preview(file, chunks, page_nodes)
+    source_pages_by_no = fde_source_pages_by_no(source_preview)
+    chunk_rows = [
+        fde_attach_roi_to_chunk_row(row, source_pages_by_no.get(fde_as_int(row.get("pageNo"))))
+        for row in chunk_rows
+    ]
     blockers: list[str] = []
     if declared_chunk_count <= 0:
         blockers.append("未生成知识切片")
@@ -10004,6 +10566,12 @@ def fde_standard_vector_file_detail(
     for item in chunk_rows:
         for flag in item.get("qualityFlags") or []:
             flag_counts[str(flag)] = flag_counts.get(str(flag), 0) + 1
+    usable_chunk_count = len([item for item in chunk_rows if item.get("evidenceUsable") is not False and item.get("materialized")])
+    suppressed_chunk_count = max(0, effective_count - usable_chunk_count)
+    usable_vector_count = min(vector_ready_count, usable_chunk_count)
+    noise_blocker = fde_noise_chunk_blocker(flag_counts, effective_count)
+    if noise_blocker:
+        blockers.append(noise_blocker)
     token_counts = [fde_as_int(item.get("tokenCount")) for item in chunk_rows if item.get("materialized")]
     page_distribution: dict[str, int] = {}
     for item in chunk_rows:
@@ -10040,6 +10608,7 @@ def fde_standard_vector_file_detail(
         embedding_model=embedding_model,
         index_version=index_version,
         dimensions=vector_dimensions,
+        source_pages_by_no=source_pages_by_no,
     )
     index_records = [row.get("indexRecord") for row in vector_format_rows if isinstance(row.get("indexRecord"), dict)]
     score = round(
@@ -10054,35 +10623,7 @@ def fde_standard_vector_file_detail(
         ),
         2,
     )
-    source_preview = {
-        "schemaVersion": "FdeSourcePreview@1.0.0",
-        "stage": "knowledge_file",
-        "label": "规范原始文件",
-        "status": "ready" if version else "knowledge_state",
-        "fileName": file.get("fileName"),
-        "fileType": document_view["fileType"],
-        "documentId": file.get("documentId"),
-        "documentVersionId": document_version_id,
-        "storageKey": file.get("sourceRelativePath"),
-        "storageBucket": "rules",
-        "previewUrl": "",
-        "previewType": document_view["fileType"],
-        "pageCount": max([fde_as_int(item.get("pageNo")) for item in chunks] or [1]),
-        "pages": [
-            {
-                "pageNo": item.get("startPage") or item.get("pageNo") or index + 1,
-                "width": None,
-                "height": None,
-                "previewUrl": "",
-                "imageObjectKey": file.get("sourceRelativePath"),
-                "quality": {},
-            }
-            for index, item in enumerate(page_nodes[:20])
-        ]
-        or [{"pageNo": 1, "width": None, "height": None, "previewUrl": "", "imageObjectKey": file.get("sourceRelativePath"), "quality": {}}],
-        "previewAvailable": False,
-        "previewUnavailableReason": "规范库详情展示切片、PageIndex 和向量校验，不绑定项目资料预览。",
-    }
+    score = max(0.0, round(score - fde_noise_chunk_score_penalty(flag_counts, effective_count), 2))
     return {
         "schemaVersion": "FdeStandardVectorFileDetail@1.0.0",
         "compatibleSchemaVersion": "FdeVectorFileDetail@1.0.0",
@@ -10103,7 +10644,7 @@ def fde_standard_vector_file_detail(
         "sourceRelativePath": file.get("sourceRelativePath"),
         "contextType": file.get("contextType"),
         "sourcePreview": source_preview,
-        "textRecords": fde_text_stage_rows([], chunk_rows),
+        "textRecords": fde_text_stage_rows([], chunk_rows, source_pages_by_no),
         "vectorPayloads": vector_format_rows,
         "indexRecords": index_records,
         "llmUsage": {
@@ -10132,7 +10673,7 @@ def fde_standard_vector_file_detail(
                 "stage": "text",
                 "label": "规范原文切片",
                 "status": "ready" if chunk_rows else "missing",
-                "rows": fde_text_stage_rows([], chunk_rows),
+                "rows": fde_text_stage_rows([], chunk_rows, source_pages_by_no),
                 "textRecordCount": len(chunk_rows),
                 "sourceBreakdown": {"knowledgeChunks": len(chunk_rows)},
             },
@@ -10174,6 +10715,9 @@ def fde_standard_vector_file_detail(
             "materializedChunkCount": len(chunks),
             "missingMaterializedChunkCount": missing_materialized,
             "vectorReadyCount": vector_ready_count,
+            "usableChunkCount": usable_chunk_count,
+            "suppressedChunkCount": suppressed_chunk_count,
+            "usableVectorCount": usable_vector_count,
             "vectorGap": max(0, declared_chunk_count - vector_ready_count),
             "totalTokenCount": sum(token_counts),
             "averageTokenCount": round((sum(token_counts) / len(token_counts)) if token_counts else 0.0, 2),
@@ -10183,6 +10727,8 @@ def fde_standard_vector_file_detail(
             "retrievedChunkCount": retrieved_count,
             "retrievalCoverage": round(fde_ratio(retrieved_count, effective_count, default=0.0), 4),
             "duplicateChunkCount": flag_counts.get("duplicate_text", 0),
+            "noiseLikeWatermarkCount": flag_counts.get("noise_like_watermark", 0),
+            "noiseLikeWatermarkRate": round(fde_ratio(flag_counts.get("noise_like_watermark", 0), effective_count, default=0.0), 4),
         },
         "chunkRows": paged_chunk_rows["items"],
         "chunkPage": paged_chunk_rows,
@@ -11848,6 +12394,37 @@ def fde_standard_file_vector_detail(
         )
     except KeyError:
         return fail(errors.NOT_FOUND, request)
+
+
+@router.get("/fde/standards/files/{file_id}/page-preview")
+def fde_standard_file_page_preview(
+    request: Request,
+    file_id: str,
+    pageNo: int = Query(default=1, ge=1, le=500),
+):
+    _, role_error = fde_error_unless_allowed(request, "fde:vector-quality:view")
+    if role_error:
+        return role_error
+    resolved_file_id = resolve_knowledge_file_id(file_id)
+    file = repo.find_one("knowledge_files", resolved_file_id)
+    if not file or str(file.get("sourceId") or "") != STANDARD_RULES_SOURCE_ID:
+        return fail(errors.NOT_FOUND, request)
+    local_path = fde_standard_file_source_path(file)
+    if not local_path:
+        return fail(errors.NOT_FOUND, request, message="未找到 rules/standards 原始文件。")
+    rendered_preview = fde_render_standard_page_preview(local_path, pageNo)
+    if not rendered_preview:
+        return fail(errors.VALIDATION_ERROR, request, message="规范文件页图预览生成失败。")
+    content, content_type = rendered_preview
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={
+            "Cache-Control": "private, max-age=300",
+            "X-Content-Type-Options": "nosniff",
+            "X-AICheck-Preview-Source": "rules-standards",
+        },
+    )
 
 
 @router.post("/fde/vector-corrections")

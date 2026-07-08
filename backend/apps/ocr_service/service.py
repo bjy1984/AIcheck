@@ -90,12 +90,14 @@ MODEL_ENV_KEYS = {
 PIPE_CODE_RE = re.compile(r"\b(?:PL|VT)\d{3,5}\b", re.IGNORECASE)
 DRAWING_NO_RE = re.compile(r"\b[A-Z]{1,4}\d{6,}[A-Z0-9.-]*\b")
 DESIGN_PHASE_RE = re.compile(r"(施工图|初步设计|详细设计|竣工图)")
+DRAWING_LIST_SEQUENCE_RE = re.compile(r"\b[A-Z]{1,4}\d{6,}[A-Z0-9-]*-\d{2}\b", re.IGNORECASE)
 DN_RE = re.compile(r"\bDN\s*\d+\b", re.IGNORECASE)
 PIPE_SIZE_RE = re.compile(r"[Φ①]?\s*\d{2,4}\s*[x×]\s*\d+(?:\.\d+)?", re.IGNORECASE)
 PID_RE = re.compile(r"\b[A-Z]-\d+\b", re.IGNORECASE)
 NUMBER_RE = re.compile(r"^-?\d+(?:\.\d+)?$")
 DATE_CN_RE = re.compile(r"\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日")
 STANDARD_NO_RE = re.compile(r"\b(?:GB|HG|NB|JB|SH|SY|TSG)\s*/?\s*T?\s*[\d.-]+(?:-\d{4})?\b", re.IGNORECASE)
+CHINESE_TEXT_RE = re.compile(r"[\u4e00-\u9fff]")
 
 REMEDIATION_TRIGGER_REASONS = {
     "REQUIRED_FIELD_MISSING",
@@ -112,6 +114,40 @@ REMEDIATION_TRIGGER_REASONS = {
     "SEAL_NOT_FOUND",
     "SEAL_EVIDENCE_MISSING",
     "EXPECTED_SEAL_TYPE_MISSING",
+}
+
+ENGINEERING_DRAWING_PROFILE_IDS = {
+    "piping_characteristic_list_v1",
+    "engineering_drawing_list_v1",
+    "drawing_material_list_v1",
+    "process_flow_diagram_v1",
+    "strength_calculation_v1",
+    "design_specification_v1",
+    "equipment_list_v1",
+    "paint_insulation_list_v1",
+    "comprehensive_material_list_v1",
+}
+ENGINEERING_DRAWING_DOCUMENT_TYPES = {
+    "engineering_table_photo",
+    "engineering_drawing_list",
+    "drawing_material_list",
+    "process_flow_diagram",
+    "strength_calculation",
+    "design_specification",
+    "equipment_list",
+    "paint_insulation_list",
+    "comprehensive_material_list",
+}
+FAST_FIRST_PROFILE_IDS = set(ENGINEERING_DRAWING_PROFILE_IDS)
+FAST_FIRST_DOCUMENT_TYPES = set(ENGINEERING_DRAWING_DOCUMENT_TYPES)
+FAST_FIRST_DEFERRED_ENGINES = {
+    "pp_structure_v3",
+    "opencv_table_grid_subprocess",
+    "paddlex_seal_recognition",
+    "agentdesign_seal_ocr_subprocess",
+    "visual_seal_candidate_subprocess",
+    "paddleocr_vl_1_6",
+    "docling_local",
 }
 
 TABLE_REMEDIATION_REASONS = {
@@ -325,7 +361,9 @@ class OcrService:
             return parse_text_document(source_path, storage_key, file_name)
         if suffix in OFFICE_TEXT_DOCUMENT_SUFFIXES:
             return parse_docx_document(source_path, storage_key, file_name)
-        profile = apply_parse_options_to_profile(profile_for(profile_id, document_type), options)
+        base_profile = profile_for(profile_id, document_type)
+        options = apply_fast_first_default_options(options, base_profile)
+        profile = apply_parse_options_to_profile(base_profile, options)
         if suffix == ".pdf" and parse_bool(
             os.getenv("AICHECK_OCR_PDF_TEXT_LAYER_FAST_PATH", "true")
         ):
@@ -500,6 +538,11 @@ class OcrService:
             "diagnostics": [],
             "engineRuns": [],
         }
+        request_started_ms = monotonic_ms()
+        fast_first_mode = parse_bool(options.get("fastFirstMode"), False) is True
+        if fast_first_mode:
+            merged.setdefault("metadata", {})["fastFirstMode"] = True
+            merged.setdefault("metadata", {})["fastFirstPolicy"] = "text-first-defer-heavy-engines"
         document_pages = render_document_pages(source_path, profile=profile)
         merged["pages"] = public_document_pages(document_pages)
         if not document_pages and source_path.suffix.lower() == ".pdf":
@@ -562,8 +605,28 @@ class OcrService:
             )
         for engine in self.engines:
             engine_status = engine.status()
+            if request_budget_exceeded(options, request_started_ms):
+                merged["engineRuns"].append(
+                    {
+                        **engine_status,
+                        "status": "skipped",
+                        "durationMs": 0,
+                        "reason": "request_budget_exceeded",
+                    }
+                )
+                continue
             if not engine.available():
                 merged["engineRuns"].append({**engine_status, "status": "unavailable", "durationMs": 0})
+                continue
+            if should_defer_heavy_engine(engine.name, merged, profile=profile, options=options):
+                merged["engineRuns"].append(
+                    {
+                        **engine_status,
+                        "status": "skipped",
+                        "durationMs": 0,
+                        "reason": "fast_first_text_primary_evidence_available",
+                    }
+                )
                 continue
             if (
                 parse_bool(options.get("quickMode"), False) is True
@@ -590,6 +653,19 @@ class OcrService:
                 merged["engineRuns"].append({**engine_status, "status": "skipped", "durationMs": 0})
                 continue
             for variant in routed_variants:
+                if request_budget_exceeded(options, request_started_ms):
+                    merged["engineRuns"].append(
+                        {
+                            **engine_status,
+                            "status": "skipped",
+                            "durationMs": 0,
+                            "reason": "request_budget_exceeded",
+                            "variantId": variant.get("variantId"),
+                            "preprocessChain": variant.get("preprocessChain") or [],
+                            "purpose": variant.get("purpose"),
+                        }
+                    )
+                    continue
                 started = monotonic_ms()
                 try:
                     engine_cache_key = build_engine_result_cache_key(
@@ -645,6 +721,24 @@ class OcrService:
                     )
         if has_parse_content(merged):
             merged["status"] = "success"
+            if fast_first_mode:
+                heavy_skipped = [
+                    item
+                    for item in merged.get("engineRuns") or []
+                    if item.get("status") == "skipped"
+                    and str(item.get("reason") or "").startswith("fast_first_")
+                ]
+                if heavy_skipped:
+                    merged.setdefault("metadata", {})["partialResult"] = True
+                    merged.setdefault("metadata", {})["deferredHeavyEngineCount"] = len(heavy_skipped)
+                    merged.setdefault("diagnostics", []).append(
+                        diagnostic(
+                            "FAST_FIRST_PARTIAL_RESULT",
+                            "工程图照片已优先返回 OCR 文本主证据，整页重型表格/印章引擎已延后到 ROI 或人工复核阶段。",
+                            level="info",
+                            deferredEngines=sorted({str(item.get("engine") or "") for item in heavy_skipped}),
+                        )
+                    )
         else:
             merged["diagnostics"].append(
                 diagnostic("NO_LOCAL_OCR_RESULT", "No local OCR engine produced parseable content.", level="error")
@@ -655,6 +749,19 @@ class OcrService:
             document_version_id=document_version_id,
             business_pack_id=business_pack_id,
             model_manifest=model_manifest,
+        )
+        enriched = self.run_fast_first_seal_crop_pass(
+            enriched,
+            source_path=source_path,
+            storage_key=storage_key,
+            file_name=file_name,
+            profile=profile,
+            variants=variants,
+            model_manifest=model_manifest,
+            document_version_id=document_version_id,
+            business_pack_id=business_pack_id,
+            options=options,
+            document_pages=document_pages,
         )
         before_remediation = deepcopy(enriched)
         enriched = self.run_remediation_pass(
@@ -676,6 +783,118 @@ class OcrService:
         if not has_external_candidates:
             save_result_cache(result_cache_key, enriched)
         return enriched
+
+    def run_fast_first_seal_crop_pass(
+        self,
+        result: dict[str, Any],
+        *,
+        source_path: Path,
+        storage_key: str,
+        file_name: str | None,
+        profile: dict[str, Any],
+        variants: list[dict[str, Any]],
+        model_manifest: dict[str, Any],
+        document_version_id: str | None,
+        business_pack_id: str | None,
+        options: dict[str, Any],
+        document_pages: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        if parse_bool(options.get("enableSealCropEvidence"), True) is not True:
+            return result
+        if parse_bool(options.get("fastFirstMode"), False) is not True and not result.get("seals"):
+            return result
+        if any(
+            isinstance(seal, dict) and seal.get("sealEvidenceLevel") == "visual_plus_seal_crop_ocr"
+            for seal in result.get("seals") or []
+        ):
+            return result
+        seal_targets = [
+            seal
+            for seal in result.get("seals") or []
+            if isinstance(seal, dict)
+            and seal.get("bbox")
+            and seal.get("coordinateSystem") == "rendered_pixels"
+        ]
+        if not seal_targets:
+            return result
+        seal_policy = (profile.get("preprocessPolicy") or {}).get("seal") or {}
+        try:
+            padding_ratio = float(seal_policy.get("cropPaddingRatio") or 0.16)
+        except (TypeError, ValueError):
+            padding_ratio = 0.16
+        crop_variants = build_crop_variants(
+            seal_targets,
+            variants,
+            target_type="seal",
+            purpose="seal",
+            padding_ratio=padding_ratio,
+            max_items=6,
+            reasons={"SEAL_CROP_EVIDENCE"},
+        )
+        crop_variants = [variant for variant in crop_variants if variant.get("source") == "remediation_crop"]
+        if not crop_variants:
+            return result
+        engine = self.first_available_crop_text_engine()
+        if engine is None:
+            enriched = deepcopy(result)
+            enriched.setdefault("diagnostics", []).append(
+                diagnostic(
+                    "SEAL_CROP_OCR_ENGINE_UNAVAILABLE",
+                    "已生成印章 ROI 裁剪候选，但没有可用文本 OCR 引擎执行 crop OCR。",
+                    level="warning",
+                )
+            )
+            return enriched
+        cropped = deepcopy(result)
+        cropped.setdefault("sealCropEvidenceRuns", [])
+        for variant in crop_variants:
+            started = monotonic_ms()
+            try:
+                raw = engine.parse(source_path, file_name=file_name, profile=profile, variant=variant)
+                normalized = normalize_ocr_result(raw, storage_key, file_name)
+                attach_variant_metadata(normalized, engine.name, variant, document_pages=document_pages)
+                merge_parse_result(cropped, normalized)
+                cropped["sealCropEvidenceRuns"].append(
+                    {
+                        **engine.status(),
+                        "status": "success" if normalized.get("status") == "success" else "failed",
+                        "durationMs": max(monotonic_ms() - started, 0),
+                        "variantId": variant.get("variantId"),
+                        "cropSourceTargetId": variant.get("cropSourceTargetId"),
+                        "cropBbox": variant.get("cropSourceBbox"),
+                    }
+                )
+            except Exception as exc:
+                cropped["sealCropEvidenceRuns"].append(
+                    {
+                        **engine.status(),
+                        "status": "failed",
+                        "durationMs": max(monotonic_ms() - started, 0),
+                        "errorCode": exc.__class__.__name__,
+                        "variantId": variant.get("variantId"),
+                        "cropSourceTargetId": variant.get("cropSourceTargetId"),
+                        "cropBbox": variant.get("cropSourceBbox"),
+                    }
+                )
+        if any(run.get("status") == "success" for run in cropped.get("sealCropEvidenceRuns") or []):
+            cropped.setdefault("metadata", {})["sealCropEvidencePass"] = True
+            cropped.setdefault("metadata", {})["sealCropEvidenceVariantCount"] = len(crop_variants)
+            return enrich_parse_result(
+                cropped,
+                profile=profile,
+                document_version_id=document_version_id,
+                business_pack_id=business_pack_id,
+                model_manifest=model_manifest,
+            )
+        return cropped
+
+    def first_available_crop_text_engine(self):
+        preferred = ["paddle_ocr_subprocess", "paddle_ocr_v6", "tesseract_cli"]
+        for name in preferred:
+            engine = next((item for item in self.engines if item.name == name and item.available()), None)
+            if engine is not None:
+                return engine
+        return None
 
     def run_remediation_pass(
         self,
@@ -1976,6 +2195,7 @@ def build_crop_variants(
                     "sourceVisualConfidence": item.get("visualConfidence"),
                     "sourceQualityFlags": list(item.get("qualityFlags") or []),
                     "sourceSealEvidenceLevel": item.get("sealEvidenceLevel"),
+                    "sourceSealType": item.get("sealType"),
                 },
                 "coordinateTransformStatus": "crop_local",
             }
@@ -1991,6 +2211,8 @@ def crop_target_source_kind(item: dict[str, Any], target_type: str) -> str | Non
     flags = {str(flag) for flag in item.get("qualityFlags") or []}
     if {"generic_seal_region_crop", "missing_required_seal_region_crop"}.intersection(flags):
         return "generic_signature_region"
+    if "seal_bbox_from_ocr_fragments" in flags or item.get("sealEvidenceLevel") == "fragment_roi_text":
+        return "fragment_seal_bbox"
     if (
         float(item.get("visualConfidence") or 0.0) > 0.0
         or "visual_candidate_only" in flags
@@ -2385,17 +2607,29 @@ def seals_from_seal_crop_fragments(
     ]
     if not fragments:
         return []
-    text = compact_seal_crop_text(" ".join(str(fragment.get("text") or "") for fragment in fragments))
+    raw_text = " ".join(str(fragment.get("text") or "") for fragment in fragments)
+    has_visual_source = seal_crop_has_visual_source(target)
+    seal_type = infer_seal_type_from_text(raw_text) or str(target.get("sourceSealType") or "unknown")
+    if seal_type == "unknown" and target.get("sourceSealType"):
+        seal_type = str(target.get("sourceSealType"))
+    evidence_fragments = seal_crop_evidence_fragments(fragments, seal_type)
+    evidence_text = " ".join(str(fragment.get("text") or "") for fragment in evidence_fragments)
+    text = compact_seal_crop_text(evidence_text)
+    if not text:
+        text = compact_seal_crop_text(raw_text)
+        evidence_fragments = fragments
+        evidence_text = raw_text
     if not text:
         return []
-    confidence = average_confidence(fragments) or 0.0
-    boxes = [rect_from_bbox(fragment.get("bbox") or fragment.get("polygon")) for fragment in fragments]
+    confidence = average_confidence(evidence_fragments) or average_confidence(fragments) or 0.0
+    boxes = [rect_from_bbox(fragment.get("bbox") or fragment.get("polygon")) for fragment in evidence_fragments]
     bbox = union_rectangles([box for box in boxes if box]) or rect_from_bbox(variant.get("cropSourceBbox"))
     if not bbox:
         return []
-    has_visual_source = seal_crop_has_visual_source(target)
-    formal = has_visual_source and confidence >= 0.65
+    formal = has_visual_source and confidence >= 0.65 and seal_type != "unknown"
     flags = {"seal_crop_ocr"}
+    if evidence_fragments != fragments:
+        flags.add("seal_crop_adjacent_text_removed")
     if confidence < 0.65:
         flags.add("seal_crop_ocr_low_confidence")
     if not has_visual_source:
@@ -2404,7 +2638,7 @@ def seals_from_seal_crop_fragments(
         {
             "sealId": f"{variant.get('variantId')}_ocr_seal",
             "pageNo": int(variant.get("pageNo") or page_no_from(fragments[0])),
-            "sealType": infer_seal_type_from_text(text),
+            "sealType": seal_type,
             "sealName": text,
             "bbox": bbox,
             "coordinateSystem": "rendered_pixels",
@@ -2418,26 +2652,87 @@ def seals_from_seal_crop_fragments(
             "sealEvidenceLevel": "visual_plus_seal_crop_ocr" if has_visual_source else "generic_region_seal_crop_ocr",
             "candidateOnly": not formal,
             "canSatisfyRequiredSeal": formal,
+            "cropOcrText": " ".join(str(evidence_text or "").split())[:500],
+            "cropOcrRawText": " ".join(str(raw_text or "").split())[:800],
+            "cropBbox": variant.get("cropSourceBbox"),
+            "cropConfidence": round(confidence, 4),
+            "sealCropEvidence": {
+                "variantId": variant.get("variantId"),
+                "cropSourceTargetId": variant.get("cropSourceTargetId"),
+                "cropBbox": variant.get("cropSourceBbox"),
+                "cropOffsetX": variant.get("cropOffsetX"),
+                "cropOffsetY": variant.get("cropOffsetY"),
+                "cropWidth": variant.get("cropWidth"),
+                "cropHeight": variant.get("cropHeight"),
+                "sourceEngine": engine_name,
+                "confidence": round(confidence, 4),
+                "text": " ".join(str(evidence_text or "").split())[:500],
+                "rawText": " ".join(str(raw_text or "").split())[:800],
+            },
+            "fields": seal_crop_fields_from_text(
+                evidence_text,
+                evidence_fragments,
+                bbox,
+                confidence,
+                seal_type=seal_type,
+                engine_name=engine_name,
+                variant=variant,
+            ),
             "qualityFlags": sorted(flags),
             "remediationTarget": deepcopy(target),
         }
     ]
 
 
+def seal_crop_evidence_fragments(fragments: list[dict[str, Any]], seal_type: str) -> list[dict[str, Any]]:
+    clean = [fragment for fragment in fragments if not seal_crop_fragment_is_adjacent_noise(fragment)]
+    if not clean:
+        return fragments
+    return clean
+
+
+def seal_crop_fragment_is_adjacent_noise(fragment: dict[str, Any]) -> bool:
+    text = " ".join(str(fragment.get("text") or "").split())
+    if not text:
+        return True
+    compact = re.sub(r"\s+", "", text)
+    if re.search(r"QX\d{6,}[A-Z0-9-]+", compact, flags=re.I):
+        return True
+    if compact.isdigit() and len(compact) <= 2:
+        return True
+    drawing_terms = [
+        "工艺图纸目录",
+        "工艺设计说明书",
+        "带控制点流程图",
+        "设备表一览表",
+        "平面布置图",
+        "配管平面图",
+        "管道安装材料表",
+        "管道特性表",
+        "油漆保温一览表",
+        "综合材料表",
+    ]
+    if any(term in compact for term in drawing_terms) and "压力管道" not in compact:
+        return True
+    return False
+
+
 def seal_crop_has_visual_source(target: dict[str, Any]) -> bool:
     flags = {str(flag) for flag in target.get("sourceQualityFlags") or []}
     return (
         target.get("sourceKind") == "visual_seal_candidate"
+        or target.get("sourceKind") == "fragment_seal_bbox"
+        or "seal_bbox_from_ocr_fragments" in flags
         or "visual_candidate_only" in flags
         or float(target.get("sourceVisualConfidence") or 0.0) > 0.0
-        or target.get("sourceSealEvidenceLevel") in {"visual_candidate", "visual_plus_seal_crop", "visual_plus_seal_crop_ocr"}
+        or target.get("sourceSealEvidenceLevel") in {"visual_candidate", "visual_plus_seal_crop", "visual_plus_seal_crop_ocr", "fragment_roi_text"}
     )
 
 
 def compact_seal_crop_text(text: str) -> str:
     value = " ".join(str(text or "").split())
     value = re.sub(r"^[：:;；,，\s]+|[：:;；,，\s]+$", "", value)
-    return value[:120]
+    return value[:160]
 
 
 def infer_seal_type_from_text(text: str) -> str:
@@ -2448,9 +2743,127 @@ def infer_seal_type_from_text(text: str) -> str:
         return "quality_seal"
     if "设计" in value and ("许可" in value or "压力管道" in value):
         return "design_license_seal"
-    if "审图" in value or "施工图审查" in value:
+    if "审图" in value or "施工图审查" in value or "出图" in value or "资质证书编号" in value:
         return "drawing_approval_seal"
     return "unknown"
+
+
+def seal_crop_fields_from_text(
+    text: str,
+    fragments: list[dict[str, Any]],
+    bbox: list[float],
+    confidence: float,
+    *,
+    seal_type: str,
+    engine_name: str,
+    variant: dict[str, Any],
+) -> list[dict[str, Any]]:
+    spatial = {
+        "pageNo": int(variant.get("pageNo") or page_no_from(fragments[0] if fragments else {})),
+        "bbox": bbox,
+        "coordinateSystem": "rendered_pixels",
+        "sourceCoordinateSystem": "crop_pixels",
+        "coordinateTransformStatus": "mapped_from_crop",
+        "sourceEngine": engine_name,
+        "variantId": variant.get("variantId"),
+        "selectedVariantId": variant.get("variantId"),
+    }
+    fields = [
+        {
+            **spatial,
+            "fieldName": "seal_text",
+            "fieldCode": "seal_text",
+            "fieldValue": compact_seal_crop_text(text),
+            "confidence": round(confidence, 4),
+            "extractionMethod": "seal_crop_ocr_field",
+            "sourcePriority": "crop_ocr",
+        }
+    ]
+    license_match = re.search(r"TS\s*[A-Z0-9-]+", text, flags=re.I)
+    if license_match:
+        fields.append(
+            {
+                **spatial,
+                "fieldName": "license_no",
+                "fieldCode": "license_no",
+                "fieldValue": license_match.group(0).replace(" ", ""),
+                "confidence": round(confidence, 4),
+                "extractionMethod": "seal_crop_ocr_field",
+                "sourcePriority": "crop_ocr",
+            }
+        )
+    blue_certificate_match = re.search(r"\bA\s*\d{6,12}\b", text, flags=re.I)
+    if seal_type == "drawing_approval_seal" and blue_certificate_match:
+        fields.append(
+            {
+                **spatial,
+                "fieldName": "资质证书编号",
+                "fieldCode": "blue_seal_license_no",
+                "fieldValue": blue_certificate_match.group(0).replace(" ", ""),
+                "confidence": round(confidence, 4),
+                "extractionMethod": "seal_crop_ocr_field",
+                "sourcePriority": "crop_ocr",
+            }
+        )
+    blue_expiry = extract_blue_seal_expiry(text)
+    if seal_type == "drawing_approval_seal" and blue_expiry:
+        fields.append(
+            {
+                **spatial,
+                "fieldName": "蓝章有效期至",
+                "fieldCode": "blue_seal_expiry",
+                "fieldValue": blue_expiry,
+                "confidence": round(confidence, 4),
+                "extractionMethod": "seal_crop_ocr_field",
+                "sourcePriority": "crop_ocr",
+            }
+        )
+    red_date = extract_red_seal_date(text)
+    if seal_type == "design_license_seal" and red_date:
+        fields.append(
+            {
+                **spatial,
+                "fieldName": "红章日期",
+                "fieldCode": "red_seal_date",
+                "fieldValue": red_date,
+                "confidence": round(confidence, 4),
+                "extractionMethod": "seal_crop_ocr_field",
+                "sourcePriority": "crop_ocr",
+            }
+        )
+    scope = next((str(fragment.get("text") or "") for fragment in fragments if "管道" in str(fragment.get("text") or "")), "")
+    if scope:
+        fields.append(
+            {
+                **spatial,
+                "fieldName": "license_scope",
+                "fieldCode": "license_scope",
+                "fieldValue": scope,
+                "confidence": round(confidence, 4),
+                "extractionMethod": "seal_crop_ocr_field",
+                "sourcePriority": "crop_ocr",
+            }
+        )
+    return fields
+
+
+def extract_blue_seal_expiry(text: str) -> str | None:
+    patterns = [
+        re.compile(r"有效期(?:限)?至\s*[:：]?\s*(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日)"),
+        re.compile(r"有效期(?:限)?\s*[:：]?\s*(?:至|到)\s*(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日)"),
+    ]
+    for pattern in patterns:
+        match = pattern.search(text)
+        if match:
+            return re.sub(r"\s+", "", match.group(1))
+    return None
+
+
+def extract_red_seal_date(text: str) -> str | None:
+    if "有效期" in text:
+        return None
+    match = re.search(r"(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日)", text)
+    return re.sub(r"\s+", "", match.group(1)) if match else None
 
 
 def union_rectangles(boxes: list[list[float]]) -> list[float] | None:
@@ -2700,6 +3113,7 @@ def enrich_parse_result(
     model_manifest: dict[str, Any],
 ) -> dict[str, Any]:
     enriched = deepcopy(result)
+    profile = route_profile_after_ocr(enriched, profile)
     enriched.setdefault("parseResultId", f"PARSE-{uuid4().hex[:12].upper()}")
     enriched["parserVersion"] = "document-intelligence-local-v1"
     enriched["profilePostprocessVersion"] = profile.get("postprocessVersion") or "v1"
@@ -2714,8 +3128,146 @@ def enrich_parse_result(
     return fuse_parse_result(enriched, profile=profile)
 
 
+def route_profile_after_ocr(result: dict[str, Any], requested_profile: dict[str, Any]) -> dict[str, Any]:
+    route = detect_engineering_drawing_profile(result, requested_profile)
+    if route is None:
+        result.setdefault("metadata", {}).setdefault(
+            "requestedProfileId",
+            requested_profile.get("profileId"),
+        )
+        return requested_profile
+    detected_profile = route["profile"]
+    metadata = result.setdefault("metadata", {})
+    metadata["requestedProfileId"] = requested_profile.get("profileId")
+    metadata["detectedProfileId"] = detected_profile.get("profileId")
+    metadata["profileRouteReason"] = route["reason"]
+    metadata["profileRoutingVersion"] = "ocr-profile-router-v2"
+    result.setdefault("diagnostics", []).append(
+        diagnostic(
+            "PROFILE_ROUTED_BY_OCR_TEXT",
+            "已根据 OCR 文本将工程照片从请求 Profile 自动切换到更匹配的工程图 Profile。",
+            level="info",
+            requestedProfileId=requested_profile.get("profileId"),
+            detectedProfileId=detected_profile.get("profileId"),
+            routeReason=route["reason"],
+        )
+    )
+    return detected_profile
+
+
+def detect_engineering_drawing_profile(
+    result: dict[str, Any],
+    requested_profile: dict[str, Any],
+) -> dict[str, Any] | None:
+    requested_profile_id = str(requested_profile.get("profileId") or result.get("profileId") or "")
+    requested_document_type = str(requested_profile.get("documentType") or result.get("documentType") or "")
+    if (
+        requested_profile_id not in ENGINEERING_DRAWING_PROFILE_IDS
+        and requested_document_type not in ENGINEERING_DRAWING_DOCUMENT_TYPES
+    ):
+        return None
+    fragments = [item for item in result.get("fragments") or [] if isinstance(item, dict)]
+    joined = "\n".join(str(item.get("text") or item.get("fullText") or "") for item in fragments)
+    normalized = re.sub(r"\s+", "", joined).upper()
+    if not normalized:
+        return None
+    strong_drawing_list = "工艺图纸目录" in joined or "DRAWINGLIST" in normalized
+    if strong_drawing_list:
+        if requested_profile_id == "engineering_drawing_list_v1":
+            return None
+        return {"profile": profile_for("engineering_drawing_list_v1"), "reason": "drawing_list_title"}
+    if requested_profile_id == "piping_characteristic_list_v1" and (
+        "管道特性表" in joined or "PIPINGCHARACTERISTIC" in normalized
+    ):
+        return None
+    route_specs = [
+        (
+            "engineering_drawing_list_v1",
+            "drawing_list_title",
+            ["工艺图纸目录"],
+            ["DRAWINGLIST"],
+        ),
+        (
+            "piping_characteristic_list_v1",
+            "piping_characteristic_title",
+            ["管道特性表"],
+            ["PIPINGCHARACTERISTIC"],
+        ),
+        (
+            "drawing_material_list_v1",
+            "drawing_material_list_title",
+            ["管道安装材料表", "安装材料表"],
+            ["MATERIALLIST"],
+        ),
+        (
+            "process_flow_diagram_v1",
+            "process_flow_diagram_title",
+            ["管道及仪表流程图", "带控制点流程图", "流程图"],
+            ["PIPINGANDINSTRUMENTDIAGRAM", "P&ID", "PID"],
+        ),
+        (
+            "strength_calculation_v1",
+            "strength_calculation_title",
+            ["压力管道强度计算书", "强度计算", "壁厚计算"],
+            ["STRENGTHCALCULATION"],
+        ),
+        (
+            "design_specification_v1",
+            "design_specification_title",
+            ["工艺设计说明书", "工艺设计说明", "设计说明"],
+            ["DESIGNSPECIFICATION"],
+        ),
+        (
+            "equipment_list_v1",
+            "equipment_list_title",
+            ["设备表一览表", "设备一览表", "设备表"],
+            ["EQUIPMENTLIST"],
+        ),
+        (
+            "paint_insulation_list_v1",
+            "paint_insulation_list_title",
+            ["油漆保温一览表", "油漆保温"],
+            ["PAINTINSULATION"],
+        ),
+        (
+            "comprehensive_material_list_v1",
+            "comprehensive_material_list_title",
+            ["综合材料表"],
+            ["COMPREHENSIVEMATERIALLIST"],
+        ),
+    ]
+    for profile_id, reason, cn_keywords, normalized_keywords in route_specs:
+        if profile_id == requested_profile_id:
+            continue
+        if any(keyword in joined for keyword in cn_keywords) or any(keyword in normalized for keyword in normalized_keywords):
+            return {"profile": profile_for(profile_id), "reason": reason}
+    drawing_numbers = {match.group(0).upper() for match in DRAWING_LIST_SEQUENCE_RE.finditer(joined)}
+    title_block_signal = any(token in joined for token in ["项目名称", "图纸编号", "设计阶段"]) or any(
+        token in normalized for token in ["PROJECT", "DWG", "DRAWINGNO"]
+    )
+    table_header_signal = any(token in joined for token in ["序号", "图纸名称", "图纸编号"])
+    if requested_profile_id != "engineering_drawing_list_v1" and len(drawing_numbers) >= 3 and table_header_signal:
+        return {
+            "profile": profile_for("engineering_drawing_list_v1"),
+            "reason": "drawing_list_numbered_rows",
+        }
+    if not title_block_signal:
+        return None
+    return None
+
+
+def detect_engineering_drawing_list_profile(
+    result: dict[str, Any],
+    requested_profile: dict[str, Any],
+) -> dict[str, Any] | None:
+    route = detect_engineering_drawing_profile(result, requested_profile)
+    if route is not None and route["profile"].get("profileId") == "engineering_drawing_list_v1":
+        return route
+    return None
+
+
 def apply_profile_postprocessing(result: dict[str, Any], profile: dict[str, Any]) -> None:
-    if is_piping_characteristic_profile(result, profile):
+    if is_engineering_drawing_profile(result, profile):
         title_block_tables = infer_engineering_drawing_title_block_tables(result.get("fragments") or [])
         if title_block_tables:
             existing_tables = result.setdefault("tables", [])
@@ -2733,6 +3285,13 @@ def apply_profile_postprocessing(result: dict[str, Any], profile: dict[str, Any]
                         tableIds=[table["tableId"] for table in appended_title_blocks],
                     )
                 )
+    if is_engineering_drawing_list_profile(result, profile):
+        tag_engineering_drawing_list_tables(result)
+        extract_engineering_drawing_list_fields(result, profile)
+        add_profile_quality_diagnostics(result, profile)
+        return
+
+    if is_piping_characteristic_profile(result, profile):
         inferred_tables = infer_piping_tables(result.get("fragments") or [])
         aligned_tables = []
         for page_no, page_inferred_tables in group_tables_by_page(inferred_tables).items():
@@ -2762,13 +3321,27 @@ def apply_profile_postprocessing(result: dict[str, Any], profile: dict[str, Any]
             )
         normalize_piping_tables(result)
         extract_piping_fields(result, profile)
+        extract_piping_requirement_fields(result)
+        add_profile_quality_diagnostics(result, profile)
+        return
+
+    if is_engineering_drawing_profile(result, profile):
+        tag_engineering_drawing_common_tables(result)
+        extract_engineering_drawing_common_fields(result, profile)
         add_profile_quality_diagnostics(result, profile)
         return
 
     align_grid_tables_with_fragments(result)
     if is_quality_certificate_profile(result, profile):
         tag_quality_certificate_tables(result)
+        append_quality_certificate_summary_tables(result)
         extract_quality_certificate_fields(result)
+        add_profile_quality_diagnostics(result, profile)
+        return
+    if is_ndt_rt_report_profile(result, profile):
+        tag_ndt_rt_report_tables(result)
+        append_ndt_rt_report_summary_table(result)
+        extract_ndt_rt_report_fields(result)
         add_profile_quality_diagnostics(result, profile)
         return
     if is_welding_record_profile(result, profile):
@@ -3279,6 +3852,13 @@ def infer_engineering_drawing_title_block_tables(fragments: list[Any]) -> list[d
                 "pageNo": page_no_from(fragment),
                 "confidence": float(first_present(fragment, "confidence", "score", default=0.0) or 0.0),
                 "sourceEngine": fragment.get("sourceEngine"),
+                "coordinateSystem": fragment.get("coordinateSystem"),
+                "sourceCoordinateSystem": fragment.get("sourceCoordinateSystem"),
+                "coordinateTransform": fragment.get("coordinateTransform"),
+                "coordinateTransformStatus": fragment.get("coordinateTransformStatus"),
+                "qualityFlags": list(fragment.get("qualityFlags") or []),
+                "variantId": fragment.get("variantId"),
+                "selectedVariantId": fragment.get("selectedVariantId"),
             }
         )
     tables: list[dict[str, Any]] = []
@@ -3319,6 +3899,7 @@ def infer_engineering_drawing_title_block_for_page(items: list[dict[str, Any]], 
     y0 = min(item["bbox"][1] for item in band_items)
     x1 = max(item["bbox"][2] for item in band_items)
     y1 = max(item["bbox"][3] for item in band_items)
+    evidence_source = next((item for item in band_items if item.get("coordinateSystem")), band_items[0])
     rows = group_text_items_into_rows(band_items)
     cells = []
     normalized_rows = []
@@ -3334,9 +3915,17 @@ def infer_engineering_drawing_title_block_for_page(items: list[dict[str, Any]], 
                     "rowspan": 1,
                     "colspan": 1,
                     "text": cell["text"],
+                    "pageNo": page_no,
                     "bbox": cell["bbox"],
                     "confidence": cell["confidence"],
                     "isHeader": row_index <= 1 or title_block_keyword_hit(cell["text"]),
+                    "coordinateSystem": cell.get("coordinateSystem"),
+                    "sourceCoordinateSystem": cell.get("sourceCoordinateSystem"),
+                    "coordinateTransform": cell.get("coordinateTransform"),
+                    "coordinateTransformStatus": cell.get("coordinateTransformStatus"),
+                    "qualityFlags": list(cell.get("qualityFlags") or []),
+                    "variantId": cell.get("variantId"),
+                    "selectedVariantId": cell.get("selectedVariantId"),
                 }
             )
         if row_texts:
@@ -3345,6 +3934,12 @@ def infer_engineering_drawing_title_block_for_page(items: list[dict[str, Any]], 
         "tableId": f"page_{page_no}_engineering_drawing_title_block_1",
         "pageNo": page_no,
         "bbox": [x0, y0, x1, y1],
+        "coordinateSystem": evidence_source.get("coordinateSystem"),
+        "sourceCoordinateSystem": evidence_source.get("sourceCoordinateSystem"),
+        "coordinateTransform": evidence_source.get("coordinateTransform"),
+        "coordinateTransformStatus": evidence_source.get("coordinateTransformStatus"),
+        "variantId": evidence_source.get("variantId"),
+        "selectedVariantId": evidence_source.get("selectedVariantId"),
         "rows": len(rows),
         "columns": max((len(row) for row in rows), default=0),
         "structureConfidence": round(min(0.92, 0.76 + min(len(top_hits), 12) * 0.012), 4),
@@ -3943,8 +4538,487 @@ def extract_piping_fields(result: dict[str, Any], profile: dict[str, Any] | None
         )
 
 
+def extract_piping_requirement_fields(result: dict[str, Any]) -> None:
+    fragments = [item for item in result.get("fragments") or [] if isinstance(item, dict)]
+    text_items = [(str(item.get("text") or "").strip(), item) for item in fragments if str(item.get("text") or "").strip()]
+    joined = "\n".join(text for text, _ in text_items)
+    row_values = collect_piping_requirement_values(result)
+
+    requirement_specs = [
+        (
+            "pressure_pipe_level",
+            "压力管道级别",
+            ["pressureLevel"],
+            re.compile(r"\bGC\s*[123]\b", re.I),
+            lambda value: re.sub(r"\s+", "", value).upper(),
+        ),
+        (
+            "weld_detection_method",
+            "焊缝检测方法",
+            ["weldDetectionMethod"],
+            re.compile(r"\b(?:RT|UT|MT|PT)\b", re.I),
+            lambda value: value.upper(),
+        ),
+        (
+            "weld_detection_ratio",
+            "焊缝检测比例",
+            ["weldDetectionScale"],
+            re.compile(r"\b\d{1,3}\s*%\b"),
+            lambda value: re.sub(r"\s+", "", value),
+        ),
+        (
+            "weld_acceptance_level",
+            "焊缝合格级别",
+            ["eligibleLevel"],
+            re.compile(r"\b(?:I|II|III|IV|Ⅰ|Ⅱ|Ⅲ|Ⅳ)\b", re.I),
+            normalize_roman_level,
+        ),
+        (
+            "weld_tech_level",
+            "焊缝检测技术等级",
+            ["ranking"],
+            re.compile(r"\b(?:A|B|C|AB)\b", re.I),
+            lambda value: value.upper(),
+        ),
+        (
+            "strength_test_medium",
+            "强度试验介质",
+            ["strengthTestMedium"],
+            re.compile(r"(?:强度试验|强度).*?(水|空气)", re.S),
+            lambda value: value,
+        ),
+        (
+            "strength_test_pressure",
+            "强度试验压力",
+            ["strengthTestPressure"],
+            re.compile(r"(?:强度试验|强度).*?(\d+(?:\.\d+)?)\s*MPA?", re.I | re.S),
+            lambda value: value,
+        ),
+        (
+            "tightness_test_medium",
+            "严密性试验介质",
+            ["tightnessTestMedium"],
+            re.compile(r"(?:严密性试验|严密).*?(水|空气)", re.S),
+            lambda value: value,
+        ),
+        (
+            "tightness_test_pressure",
+            "严密性试验压力",
+            ["tightnessTestPressure"],
+            re.compile(r"(?:严密性试验|严密).*?(\d+(?:\.\d+)?)\s*MPA?", re.I | re.S),
+            lambda value: value,
+        ),
+    ]
+
+    for field_code, field_name, row_keys, pattern, normalizer in requirement_specs:
+        value = first_row_requirement_value(row_values, row_keys)
+        candidate = None
+        if value:
+            normalized_value = normalizer(str(value))
+            candidate = match_to_fragment(text_items, str(value)) or match_to_fragment(text_items, normalized_value)
+            if candidate:
+                candidate["text"] = normalized_value
+        if candidate is None:
+            match = pattern.search(joined)
+            if match:
+                raw_value = match.group(1) if match.lastindex else match.group(0)
+                normalized_value = normalizer(raw_value)
+                candidate = match_to_fragment(text_items, raw_value) or match_to_fragment(text_items, normalized_value)
+                if candidate:
+                    candidate["text"] = normalized_value
+        add_field_if_missing(result, field_code, field_name, candidate)
+
+
+def collect_piping_requirement_values(result: dict[str, Any]) -> list[dict[str, Any]]:
+    values: list[dict[str, Any]] = []
+    for table in result.get("tables") or []:
+        if not isinstance(table, dict):
+            continue
+        for row in table.get("businessRows") or table.get("normalizedRows") or []:
+            if isinstance(row, dict):
+                values.append(row)
+    return values
+
+
+def first_row_requirement_value(rows: list[dict[str, Any]], keys: list[str]) -> str | None:
+    for row in rows:
+        for key in keys:
+            value = str(row.get(key) or "").strip()
+            if value:
+                return value
+    return None
+
+
+def normalize_roman_level(value: str) -> str:
+    normalized = str(value or "").upper()
+    return normalized.replace("Ⅰ", "I").replace("Ⅱ", "II").replace("Ⅲ", "III").replace("Ⅳ", "IV")
+
+
+def is_engineering_drawing_profile(result: dict[str, Any], profile: dict[str, Any]) -> bool:
+    profile_id = str(profile.get("profileId") or result.get("profileId") or "")
+    document_type = str(profile.get("documentType") or result.get("documentType") or "")
+    return profile_id in ENGINEERING_DRAWING_PROFILE_IDS or document_type in ENGINEERING_DRAWING_DOCUMENT_TYPES
+
+
+def is_engineering_drawing_list_profile(result: dict[str, Any], profile: dict[str, Any]) -> bool:
+    profile_id = str(profile.get("profileId") or result.get("profileId") or "")
+    document_type = str(profile.get("documentType") or result.get("documentType") or "")
+    return profile_id in {"engineering_drawing_list_v1", "engineering_drawing_list"} or document_type == "engineering_drawing_list"
+
+
+def extract_engineering_drawing_common_fields(result: dict[str, Any], profile: dict[str, Any] | None = None) -> None:
+    fragments = [item for item in result.get("fragments") or [] if isinstance(item, dict)]
+    text_items = [(str(item.get("text") or "").strip(), item) for item in fragments if str(item.get("text") or "").strip()]
+    joined = "\n".join(text for text, _ in text_items)
+    add_field_if_missing(result, "document_title", "文件标题", find_engineering_document_title_fragment(text_items, profile))
+    organization_aliases = [str(item) for item in ((profile or {}).get("organizationAliases") or []) if str(item).strip()]
+    if organization_aliases:
+        add_field_if_missing(result, "company_name", "公司名称", find_text_fragment(text_items, organization_aliases))
+    else:
+        add_field_if_missing(result, "company_name", "公司名称", find_organization_fragment(text_items))
+    add_field_if_missing(result, "project_name", "项目名称", find_project_fragment(text_items))
+    drawing_match = DRAWING_NO_RE.search(joined)
+    if drawing_match:
+        add_field_if_missing(result, "drawing_no", "图纸编号", match_to_fragment(text_items, drawing_match.group(0)))
+    phase_match = DESIGN_PHASE_RE.search(joined)
+    if phase_match:
+        add_field_if_missing(result, "design_phase", "设计阶段", match_to_fragment(text_items, phase_match.group(0)))
+
+
+def find_engineering_document_title_fragment(
+    text_items: list[tuple[str, dict[str, Any]]],
+    profile: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    profile_id = str((profile or {}).get("profileId") or "")
+    keywords_by_profile = {
+        "drawing_material_list_v1": ["管道安装材料表", "安装材料表", "MATERIAL LIST"],
+        "process_flow_diagram_v1": ["管道及仪表流程图", "带控制点流程图", "流程图", "P&ID", "PID"],
+        "strength_calculation_v1": ["压力管道强度计算书", "强度计算", "壁厚计算"],
+        "design_specification_v1": ["工艺设计说明书", "工艺设计说明", "设计说明", "DESIGN SPECIFICATION"],
+        "equipment_list_v1": ["设备表一览表", "设备一览表", "设备表", "EQUIPMENT LIST"],
+        "paint_insulation_list_v1": ["油漆保温一览表", "油漆保温"],
+        "comprehensive_material_list_v1": ["综合材料表", "COMPREHENSIVE MATERIAL LIST"],
+    }
+    direct = find_text_fragment(text_items, keywords_by_profile.get(profile_id, []))
+    if direct:
+        return direct
+    generic_keywords = [
+        "管道安装材料表",
+        "管道及仪表流程图",
+        "带控制点流程图",
+        "压力管道强度计算书",
+        "工艺设计说明书",
+        "设备表一览表",
+        "油漆保温一览表",
+        "综合材料表",
+    ]
+    return find_text_fragment(text_items, generic_keywords)
+
+
+def tag_engineering_drawing_common_tables(result: dict[str, Any]) -> None:
+    for table in result.get("tables") or []:
+        if not isinstance(table, dict):
+            continue
+        text = table_text(table)
+        compact = re.sub(r"\s+", "", text).upper()
+        if not (
+            ("项目名称" in text and ("图纸编号" in text or "设计阶段" in text))
+            or ("PROJECT" in compact and ("DWG" in compact or "DRAWING" in compact))
+        ):
+            continue
+        schemas = set(str(item) for item in table.get("businessSchemas") or [] if item)
+        schemas.add("engineering_drawing_title_block_v1")
+        table["businessSchemas"] = sorted(schemas)
+        table.setdefault("businessSchema", "engineering_drawing_title_block_v1")
+        flags = {str(flag) for flag in table.get("qualityFlags") or []}
+        flags.add("engineering_drawing_title_block_schema_match")
+        table["qualityFlags"] = sorted(flags)
+
+
+def extract_engineering_drawing_list_fields(result: dict[str, Any], profile: dict[str, Any] | None = None) -> None:
+    fragments = [item for item in result.get("fragments") or [] if isinstance(item, dict)]
+    text_items = [(str(item.get("text") or "").strip(), item) for item in fragments if str(item.get("text") or "").strip()]
+    joined = "\n".join(text for text, _ in text_items)
+    add_field_if_missing(
+        result,
+        "document_title",
+        "文件标题",
+        find_text_fragment(text_items, ["工艺图纸目录", "DRAWING LIST"]),
+    )
+    organization_aliases = [str(item) for item in ((profile or {}).get("organizationAliases") or []) if str(item).strip()]
+    if organization_aliases:
+        add_field_if_missing(result, "company_name", "公司名称", find_text_fragment(text_items, organization_aliases))
+    else:
+        add_field_if_missing(result, "company_name", "公司名称", find_organization_fragment(text_items))
+    add_field_if_missing(result, "project_name", "项目名称", find_project_fragment(text_items))
+    drawing_match = DRAWING_NO_RE.search(joined)
+    if drawing_match:
+        add_field_if_missing(result, "drawing_no", "图纸编号", match_to_fragment(text_items, drawing_match.group(0)))
+    phase_match = DESIGN_PHASE_RE.search(joined)
+    if phase_match:
+        add_field_if_missing(result, "design_phase", "设计阶段", match_to_fragment(text_items, phase_match.group(0)))
+    add_field_if_missing(result, "total_sheets", "总张数", find_total_sheets_fragment(text_items))
+    append_engineering_drawing_list_rows(result, text_items)
+
+
+def find_total_sheets_fragment(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    patterns = [
+        re.compile(r"共\s*(\d{1,4})\s*张"),
+        re.compile(r"总\s*张\s*数\s*[:：]?\s*(\d{1,4})"),
+        re.compile(r"TOTAL\s*SHEETS?\s*[:：]?\s*(\d{1,4})", flags=re.I),
+        re.compile(r"SHEET\s+\d{1,4}\s+OF\s+(\d{1,4})", flags=re.I),
+    ]
+    for text, fragment in text_items:
+        for pattern in patterns:
+            match = pattern.search(text)
+            if match:
+                return {"text": match.group(1), "fragment": fragment}
+    return None
+
+
+def tag_engineering_drawing_list_tables(result: dict[str, Any]) -> None:
+    for table in result.get("tables") or []:
+        if not isinstance(table, dict):
+            continue
+        text = table_text(table)
+        compact = re.sub(r"\s+", "", text).upper()
+        if not (
+            "工艺图纸目录" in text
+            or "DRAWINGLIST" in compact
+            or ("图纸编号" in text and "项目名称" in text)
+            or ("DWG" in compact and "PROJECT" in compact)
+        ):
+            continue
+        schemas = set(str(item) for item in table.get("businessSchemas") or [] if item)
+        schemas.add("engineering_drawing_title_block_v1")
+        table["businessSchemas"] = sorted(schemas)
+        table.setdefault("businessSchema", "engineering_drawing_title_block_v1")
+        flags = {str(flag) for flag in table.get("qualityFlags") or []}
+        flags.add("engineering_drawing_list_schema_match")
+        table["qualityFlags"] = sorted(flags)
+
+
+def append_engineering_drawing_list_rows(result: dict[str, Any], text_items: list[tuple[str, dict[str, Any]]]) -> None:
+    rows = infer_engineering_drawing_list_rows(text_items)
+    if not rows:
+        return
+    result.setdefault("metadata", {})["drawingListRows"] = rows
+    append_structured_field_if_missing(
+        result,
+        "drawing_list_rows",
+        "图纸目录行",
+        rows,
+        row_evidence_summary(rows),
+    )
+    table = drawing_list_rows_table(rows)
+    if table and not any(
+        isinstance(item, dict) and item.get("tableId") == table["tableId"]
+        for item in result.get("tables") or []
+    ):
+        result.setdefault("tables", []).append(table)
+
+
+def infer_engineering_drawing_list_rows(text_items: list[tuple[str, dict[str, Any]]]) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for text, fragment in text_items:
+        bbox = rect_from_bbox(fragment.get("bbox") or fragment.get("polygon"))
+        if not text or bbox is None:
+            continue
+        candidates.append(
+            {
+                "text": text,
+                "fragment": fragment,
+                "bbox": bbox,
+                "centerY": (bbox[1] + bbox[3]) / 2,
+                "centerX": (bbox[0] + bbox[2]) / 2,
+            }
+        )
+    drawing_items = []
+    for item in candidates:
+        match = DRAWING_LIST_SEQUENCE_RE.search(item["text"])
+        if match:
+            drawing_items.append({**item, "drawingNo": match.group(0)})
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in sorted(drawing_items, key=lambda value: (value["bbox"][1], value["bbox"][0])):
+        drawing_no = item["drawingNo"]
+        if drawing_no in seen:
+            continue
+        seen.add(drawing_no)
+        row_items = same_text_row_items(candidates, item)
+        name_item = drawing_name_item_for_row(row_items, item)
+        seq_item = drawing_sequence_item_for_row(row_items, item)
+        evidence_items = [candidate for candidate in [seq_item, name_item, item] if candidate]
+        bbox = fragment_union_bbox([candidate["fragment"] for candidate in evidence_items])
+        rows.append(
+            {
+                "rowIndex": len(rows) + 1,
+                "pageNo": page_no_from(item["fragment"]),
+                "sequenceNo": seq_item["text"] if seq_item else None,
+                "drawingName": name_item["text"] if name_item else None,
+                "drawingNo": drawing_no,
+                "bbox": bbox,
+                "coordinateSystem": item["fragment"].get("coordinateSystem"),
+                "coordinateTransformStatus": item["fragment"].get("coordinateTransformStatus"),
+                "confidence": round(
+                    sum(safe_float(candidate["fragment"].get("confidence")) for candidate in evidence_items)
+                    / max(len(evidence_items), 1),
+                    4,
+                ),
+                "evidence": [
+                    {
+                        "text": candidate["text"],
+                        "bbox": rect_from_bbox(candidate["fragment"].get("bbox") or candidate["fragment"].get("polygon")),
+                        "sourceEngine": candidate["fragment"].get("sourceEngine"),
+                        "confidence": candidate["fragment"].get("confidence"),
+                    }
+                    for candidate in evidence_items
+                ],
+            }
+        )
+    return rows
+
+
+def same_text_row_items(items: list[dict[str, Any]], anchor: dict[str, Any]) -> list[dict[str, Any]]:
+    anchor_height = max(anchor["bbox"][3] - anchor["bbox"][1], 1.0)
+    tolerance = max(anchor_height * 0.85, 12.0)
+    return [
+        item
+        for item in items
+        if page_no_from(item["fragment"]) == page_no_from(anchor["fragment"])
+        and abs(float(item["centerY"]) - float(anchor["centerY"])) <= tolerance
+    ]
+
+
+def drawing_name_item_for_row(row_items: list[dict[str, Any]], drawing_item: dict[str, Any]) -> dict[str, Any] | None:
+    left_items = [
+        item
+        for item in row_items
+        if item["bbox"][2] <= drawing_item["bbox"][0] + 8
+        and item["text"] != drawing_item["text"]
+        and not re.fullmatch(r"\d{1,4}", item["text"].strip())
+        and not DRAWING_LIST_SEQUENCE_RE.search(item["text"])
+        and not any(token in item["text"].upper() for token in ["DRAWING", "DWG", "PROJECT", "REV"])
+    ]
+    if not left_items:
+        return None
+    return max(left_items, key=lambda item: (len(item["text"]), item["bbox"][0]))
+
+
+def drawing_sequence_item_for_row(row_items: list[dict[str, Any]], drawing_item: dict[str, Any]) -> dict[str, Any] | None:
+    seq_items = [
+        item
+        for item in row_items
+        if item["bbox"][2] <= drawing_item["bbox"][0] + 8
+        and re.fullmatch(r"\d{1,4}", item["text"].strip())
+    ]
+    if not seq_items:
+        return None
+    return max(seq_items, key=lambda item: item["bbox"][0])
+
+
+def row_evidence_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    bboxes = [row.get("bbox") for row in rows if isinstance(row.get("bbox"), list)]
+    bbox = union_rectangles([box for box in bboxes if box]) if bboxes else None
+    confidence = sum(float(row.get("confidence") or 0.0) for row in rows) / max(len(rows), 1)
+    first = rows[0] if rows else {}
+    return {
+        "bbox": bbox,
+        "pageNo": first.get("pageNo") or 1,
+        "coordinateSystem": first.get("coordinateSystem"),
+        "coordinateTransformStatus": first.get("coordinateTransformStatus"),
+        "confidence": round(confidence, 4),
+        "sourceEngine": "fragment_drawing_list_row_detector",
+    }
+
+
+def append_structured_field_if_missing(
+    result: dict[str, Any],
+    field_code: str,
+    field_name: str,
+    value: Any,
+    evidence: dict[str, Any],
+) -> None:
+    fields = result.setdefault("fields", [])
+    if any(isinstance(item, dict) and item.get("fieldCode") == field_code for item in fields):
+        return
+    fields.append(
+        {
+            "fieldCode": field_code,
+            "fieldName": field_name,
+            "fieldValue": value,
+            "pageNo": evidence.get("pageNo"),
+            "bbox": evidence.get("bbox"),
+            "coordinateSystem": evidence.get("coordinateSystem"),
+            "coordinateTransformStatus": evidence.get("coordinateTransformStatus"),
+            "confidence": evidence.get("confidence"),
+            "extractionMethod": "profile_structured_rows",
+            "sourceEngine": evidence.get("sourceEngine"),
+        }
+    )
+
+
+def drawing_list_rows_table(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not rows:
+        return None
+    bbox = union_rectangles([row["bbox"] for row in rows if isinstance(row.get("bbox"), list)])
+    if not bbox:
+        return None
+    page_no = int(rows[0].get("pageNo") or 1)
+    cells = []
+    normalized_rows = []
+    for index, row in enumerate(rows, start=1):
+        normalized_rows.append(
+            {
+                "序号": str(row.get("sequenceNo") or index),
+                "名称": str(row.get("drawingName") or ""),
+                "图号": str(row.get("drawingNo") or ""),
+            }
+        )
+        for col, key in enumerate(["sequenceNo", "drawingName", "drawingNo"]):
+            value = str(row.get(key) or "")
+            if not value:
+                continue
+            cells.append(
+                {
+                    "cellId": f"cell_{index}_{col + 1}",
+                    "row": index - 1,
+                    "col": col,
+                    "rowspan": 1,
+                    "colspan": 1,
+                    "text": value,
+                    "bbox": row.get("bbox"),
+                    "pageNo": page_no,
+                    "coordinateSystem": row.get("coordinateSystem"),
+                    "coordinateTransformStatus": row.get("coordinateTransformStatus"),
+                    "confidence": row.get("confidence"),
+                    "isHeader": False,
+                }
+            )
+    return {
+        "tableId": f"page_{page_no}_engineering_drawing_list_rows_1",
+        "pageNo": page_no,
+        "bbox": bbox,
+        "coordinateSystem": rows[0].get("coordinateSystem"),
+        "coordinateTransformStatus": rows[0].get("coordinateTransformStatus"),
+        "rows": len(rows),
+        "columns": 3,
+        "structureConfidence": round(min(0.96, 0.76 + min(len(rows), 20) * 0.01), 4),
+        "cells": cells,
+        "normalizedRows": normalized_rows,
+        "businessSchema": "engineering_drawing_list_rows_v1",
+        "tableType": "engineering_drawing_list_rows",
+        "sourceEngine": "fragment_drawing_list_row_detector",
+        "qualityFlags": ["drawing_list_rows", "ocr_text_aligned"],
+    }
+
+
 def is_quality_certificate_profile(result: dict[str, Any], profile: dict[str, Any]) -> bool:
     return str(profile.get("profileId") or result.get("profileId") or "") == "quality_certificate_v1"
+
+
+def is_ndt_rt_report_profile(result: dict[str, Any], profile: dict[str, Any]) -> bool:
+    return str(profile.get("profileId") or result.get("profileId") or "") == "ndt_rt_report_v1"
 
 
 def is_welding_record_profile(result: dict[str, Any], profile: dict[str, Any]) -> bool:
@@ -3995,6 +5069,18 @@ def extract_quality_certificate_fields(result: dict[str, Any]) -> None:
         "质量证明书编号",
         next_value_after_label(text_items, ["证书编号", "证明书编号", "编号"], max_steps=4),
     )
+    add_field_if_missing(
+        result,
+        "chemical_composition_summary",
+        "化学成分摘要",
+        find_text_fragment(text_items, ["化学成分", "C", "Si", "Mn", "P", "S"]),
+    )
+    add_field_if_missing(
+        result,
+        "mechanical_property_summary",
+        "力学性能摘要",
+        find_text_fragment(text_items, ["力学性能", "屈服", "抗拉", "延伸率", "硬度"]),
+    )
 
 
 def tag_quality_certificate_tables(result: dict[str, Any]) -> None:
@@ -4015,6 +5101,89 @@ def tag_quality_certificate_tables(result: dict[str, Any]) -> None:
             table["qualityFlags"] = sorted(flags)
 
 
+def append_quality_certificate_summary_tables(result: dict[str, Any]) -> None:
+    fragments = [item for item in result.get("fragments") or [] if isinstance(item, dict)]
+    if not fragments:
+        return
+    joined = "\n".join(str(item.get("text") or "") for item in fragments)
+    existing_schemas = {
+        str(schema)
+        for table in result.get("tables") or []
+        if isinstance(table, dict)
+        for schema in [table.get("businessSchema"), *(table.get("businessSchemas") or [])]
+        if schema
+    }
+    if "material_chemical_composition_table" not in existing_schemas and quality_table_has_chemical_composition(joined):
+        table = fragments_summary_table(
+            fragments,
+            table_id="quality_certificate_chemical_composition_from_fragments",
+            schema="material_chemical_composition_table",
+            keywords=["化学成分", "C", "Si", "Mn", "P", "S", "碳", "硅", "锰", "磷", "硫"],
+            quality_flag="quality_certificate_chemical_summary_from_fragments",
+        )
+        if table:
+            result.setdefault("tables", []).append(table)
+    if "mechanical_property_table" not in existing_schemas and quality_table_has_mechanical_property(joined):
+        table = fragments_summary_table(
+            fragments,
+            table_id="quality_certificate_mechanical_property_from_fragments",
+            schema="mechanical_property_table",
+            keywords=["力学性能", "屈服", "抗拉", "延伸", "硬度", "冲击"],
+            quality_flag="quality_certificate_mechanical_summary_from_fragments",
+        )
+        if table:
+            result.setdefault("tables", []).append(table)
+
+
+def fragments_summary_table(
+    fragments: list[dict[str, Any]],
+    *,
+    table_id: str,
+    schema: str,
+    keywords: list[str],
+    quality_flag: str,
+) -> dict[str, Any] | None:
+    selected = []
+    for fragment in fragments:
+        text = str(fragment.get("text") or "")
+        if any(keyword.lower() in text.lower() for keyword in keywords):
+            selected.append(fragment)
+    if not selected:
+        return None
+    selected = sorted(selected, key=lambda item: (page_no_from(item), rect_from_bbox(item.get("bbox")) or [0, 0, 0, 0]))
+    cells = []
+    for index, fragment in enumerate(selected[:80]):
+        cells.append(
+            {
+                "cellId": f"cell_{index + 1}_1",
+                "row": index,
+                "col": 0,
+                "text": str(fragment.get("text") or ""),
+                "bbox": rect_from_bbox(fragment.get("bbox")),
+                "pageNo": page_no_from(fragment),
+                "coordinateSystem": fragment.get("coordinateSystem"),
+                "coordinateTransformStatus": fragment.get("coordinateTransformStatus"),
+                "confidence": first_present(fragment, "confidence", default=0.0),
+                "isHeader": index == 0,
+            }
+        )
+    bbox = fragment_union_bbox(selected)
+    page_no = page_no_from(selected[0])
+    return {
+        "tableId": f"page_{page_no}_{table_id}",
+        "pageNo": page_no,
+        "bbox": bbox,
+        "rows": len(cells),
+        "columns": 1,
+        "structureConfidence": 0.72,
+        "cells": cells,
+        "businessSchema": schema,
+        "businessSchemas": [schema],
+        "sourceEngine": "heuristic_table_from_ocr_fragments",
+        "qualityFlags": [quality_flag, "ocr_text_aligned"],
+    }
+
+
 def quality_table_has_chemical_composition(text: str) -> bool:
     compact = text.lower().replace(" ", "")
     return "化学成分" in compact or sum(token in compact for token in ["碳c", "锰mn", "硅si", "硫s", "磷p"]) >= 3
@@ -4023,6 +5192,154 @@ def quality_table_has_chemical_composition(text: str) -> bool:
 def quality_table_has_mechanical_property(text: str) -> bool:
     compact = text.lower().replace(" ", "")
     return any(token in compact for token in ["屈服点", "抗拉强度", "延伸率", "力学性能", "硬度"])
+
+
+def tag_ndt_rt_report_tables(result: dict[str, Any]) -> None:
+    tables = [table for table in result.get("tables") or [] if isinstance(table, dict)]
+    for table in tables:
+        text = table_text(table)
+        compact = text.replace(" ", "").upper()
+        if not any(token in compact for token in ["射线", "RT", "焊口", "检测比例", "评定级别", "报告编号"]):
+            continue
+        schemas = set(str(item) for item in table.get("businessSchemas") or [] if item)
+        schemas.add("weld_detection_result_table")
+        table["businessSchemas"] = sorted(schemas)
+        if not table.get("businessSchema"):
+            table["businessSchema"] = "weld_detection_result_table"
+        flags = {str(flag) for flag in table.get("qualityFlags") or []}
+        flags.add("ndt_rt_report_schema_match")
+        table["qualityFlags"] = sorted(flags)
+
+
+def append_ndt_rt_report_summary_table(result: dict[str, Any]) -> None:
+    existing_schemas = {
+        str(schema)
+        for table in result.get("tables") or []
+        if isinstance(table, dict)
+        for schema in [table.get("businessSchema"), *(table.get("businessSchemas") or [])]
+        if schema
+    }
+    if "weld_detection_result_table" in existing_schemas:
+        return
+    fragments = [item for item in result.get("fragments") or [] if isinstance(item, dict)]
+    joined = "\n".join(str(item.get("text") or "") for item in fragments)
+    if not any(token in joined for token in ["射线检测", "RT", "焊口", "底片", "评定级别", "合格级别"]):
+        return
+    table = fragments_summary_table(
+        fragments,
+        table_id="ndt_rt_result_from_fragments",
+        schema="weld_detection_result_table",
+        keywords=["射线", "RT", "焊口", "检测比例", "评定级别", "合格级别", "底片", "报告编号", "结论"],
+        quality_flag="ndt_rt_result_summary_from_fragments",
+    )
+    if table:
+        result.setdefault("tables", []).append(table)
+
+
+def extract_ndt_rt_report_fields(result: dict[str, Any]) -> None:
+    fragments = [item for item in result.get("fragments") or [] if isinstance(item, dict)]
+    text_items = [(str(item.get("text") or "").strip(), item) for item in fragments if str(item.get("text") or "").strip()]
+    joined = "\n".join(text for text, _ in text_items)
+    if not any(token in joined for token in ["射线检测", "RT", "焊口", "底片", "评定级别", "检测报告"]):
+        return
+    add_field_if_missing(result, "report_no", "报告编号", ndt_report_no_candidate(text_items))
+    add_field_if_missing(result, "project_name", "工程名称", ndt_project_candidate(text_items))
+    add_field_if_missing(result, "detection_method", "检测方法", ndt_detection_method_candidate(text_items))
+    add_field_if_missing(result, "weld_no", "焊口编号", ndt_weld_no_candidate(text_items))
+    add_field_if_missing(result, "detection_date", "检测日期", ndt_detection_date_candidate(text_items))
+    add_field_if_missing(result, "evaluation_level", "评定级别", ndt_evaluation_level_candidate(text_items))
+    add_field_if_missing(result, "conclusion", "检测结论", ndt_conclusion_candidate(text_items))
+    add_field_if_missing(result, "inspection_unit", "检测单位", ndt_inspection_unit_candidate(text_items))
+
+
+def ndt_report_no_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    candidate = next_value_after_label(text_items, ["报告编号", "报告号", "编号"], max_steps=5)
+    if candidate:
+        return candidate
+    pattern = re.compile(r"\b(?:RT|UT)?[A-Z0-9-]*\d{4}[A-Z0-9-]*(?:RTBG|BG)?[-A-Z0-9]*\b", re.I)
+    return regex_field_candidate(text_items, pattern)
+
+
+def ndt_project_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    return next_value_after_label(text_items, ["工程名称", "工程名", "项目名称"], max_steps=8) or find_project_fragment(text_items)
+
+
+def ndt_detection_method_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    for text, fragment in text_items:
+        upper = text.upper()
+        if "射线" in text or "RT" in upper:
+            return {"text": "RT", "fragment": fragment}
+    return None
+
+
+def ndt_weld_no_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    return next_value_after_label(text_items, ["焊口编号", "焊口号", "检件编号", "检件名"], max_steps=8)
+
+
+def ndt_detection_date_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    direct = regex_field_candidate(text_items, DATE_CN_RE)
+    if direct:
+        return direct
+    chinese_month = re.compile(r"二\s*[零〇○]\s*(?:二\s*)?(?:一\s*)?年?\s*([一二三四五六七八九十]{1,3})\s*月")
+    report_year = ndt_report_year(text_items)
+    for text, fragment in text_items:
+        match = chinese_month.search(text)
+        if match:
+            month = chinese_month_to_number(match.group(1))
+            if month and report_year:
+                return {"text": f"{report_year}年{month}月", "fragment": fragment}
+    return next_value_after_label(text_items, ["检测日期", "报告日期", "日期"], max_steps=4)
+
+
+def ndt_report_year(text_items: list[tuple[str, dict[str, Any]]]) -> str | None:
+    for text, _ in text_items:
+        match = re.search(r"\b(20\d{2})\b", text)
+        if match:
+            return match.group(1)
+    return None
+
+
+def chinese_month_to_number(value: str) -> int | None:
+    digits = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+    text = str(value or "").strip()
+    if text == "十":
+        return 10
+    if text.startswith("十") and len(text) == 2:
+        return 10 + digits.get(text[1], 0)
+    if text.endswith("十") and len(text) == 2:
+        return digits.get(text[0], 0) * 10
+    if len(text) == 1:
+        return digits.get(text)
+    if len(text) == 2 and text[0] in digits and text[1] in digits:
+        return digits[text[0]] * 10 + digits[text[1]]
+    return None
+
+
+def ndt_evaluation_level_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    candidate = next_value_after_label(text_items, ["评定级别", "合格级别", "质量等级"], max_steps=6)
+    if candidate:
+        candidate["text"] = normalize_roman_level(str(candidate.get("text") or "")).replace("级", "")
+        return candidate
+    pattern = re.compile(r"\b(?:I|II|III|IV|Ⅰ|Ⅱ|Ⅲ|Ⅳ)\s*级?\b", re.I)
+    match = regex_field_candidate(text_items, pattern)
+    if match:
+        match["text"] = normalize_roman_level(str(match["text"])).replace("级", "")
+    return match
+
+
+def ndt_conclusion_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    for text, fragment in text_items:
+        if "合格" in text:
+            return {"text": "合格", "fragment": fragment}
+    return next_value_after_label(text_items, ["结论", "检测结论", "评定结果"], max_steps=6)
+
+
+def ndt_inspection_unit_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    for text, fragment in text_items:
+        cleaned = text.strip(" ：:")
+        if "检测" in cleaned and "有限公司" in cleaned:
+            return {"text": cleaned, "fragment": fragment}
+    return next_value_after_label(text_items, ["检测单位", "检验单位"], max_steps=6)
 
 
 def extract_welding_record_fields(result: dict[str, Any]) -> None:
@@ -4305,15 +5622,46 @@ def find_organization_fragment(text_items: list[tuple[str, dict[str, Any]]]) -> 
 
 
 def find_project_fragment(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
-    for text, fragment in text_items:
+    for index, (text, fragment) in enumerate(text_items):
         if "项目名称" in text or "PROJECT" in text.upper():
             cleaned = text.replace("项目名称", "").replace("PROJECT", "").strip(" ：:")
             if cleaned:
                 return {"text": cleaned, "fragment": fragment}
+            combined = project_fragments_after_label(text_items[index + 1 : index + 8])
+            if combined:
+                return combined
     for text, fragment in text_items:
         if "有限公司" in text and ("项目" in text or "新增" in text):
             return {"text": text, "fragment": fragment}
     return None
+
+
+def project_fragments_after_label(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
+    pieces: list[str] = []
+    fragments: list[dict[str, Any]] = []
+    stop_keywords = {"职责", "姓名", "日期", "装置名称", "编制", "设计", "审核", "校核", "DUTY", "NAME", "DATE"}
+    keep_keywords = {"有限公司", "项目", "新增", "改造", "系统", "装车站", "卸车", "工程"}
+    for text, fragment in text_items:
+        cleaned = text.replace("PROJECT", "").strip(" ：:")
+        if not cleaned or not CHINESE_TEXT_RE.search(cleaned):
+            continue
+        if any(keyword in cleaned.upper() for keyword in stop_keywords) and not any(keyword in cleaned for keyword in keep_keywords):
+            continue
+        if not any(keyword in cleaned for keyword in keep_keywords):
+            continue
+        pieces.append(cleaned)
+        fragments.append(fragment)
+        if "项目" in cleaned and len(pieces) >= 2:
+            break
+    if not pieces or not fragments:
+        return None
+    combined_fragment = deepcopy(fragments[0])
+    combined_fragment["bbox"] = fragment_union_bbox(fragments)
+    confidences = [safe_float(fragment.get("confidence")) for fragment in fragments]
+    confidences = [value for value in confidences if value is not None]
+    if confidences:
+        combined_fragment["confidence"] = round(sum(confidences) / len(confidences), 6)
+    return {"text": "".join(pieces), "fragment": combined_fragment}
 
 
 def match_to_fragment(text_items: list[tuple[str, dict[str, Any]]], value: str) -> dict[str, Any] | None:
@@ -4382,6 +5730,91 @@ def monotonic_ms() -> int:
     import time
 
     return int(time.monotonic() * 1000)
+
+
+def apply_fast_first_default_options(options: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
+    if not fast_first_profile_enabled(profile, options):
+        return options
+    adjusted = deepcopy(options)
+    adjusted["fastFirstMode"] = True
+    adjusted.setdefault("quickMode", True)
+    adjusted.setdefault("disableRemediation", True)
+    adjusted.setdefault("enableFallback", False)
+    adjusted.setdefault("maxPages", 1)
+    adjusted.setdefault("maxLongSide", int(os.getenv("AICHECK_FAST_FIRST_MAX_LONG_SIDE", "1800")))
+    adjusted.setdefault("engineBudgetSeconds", float(os.getenv("AICHECK_FAST_FIRST_ENGINE_BUDGET_SECONDS", "240")))
+    if "variants" not in adjusted:
+        adjusted["variants"] = ["original", "gray_clahe", "seal_color_mask"]
+    return adjusted
+
+
+def fast_first_profile_enabled(profile: dict[str, Any], options: dict[str, Any]) -> bool:
+    if parse_bool(options.get("fastFirstMode"), False) is True:
+        return True
+    if parse_bool(options.get("disableFastFirst"), False) is True or parse_bool(options.get("fullOcr"), False) is True:
+        return False
+    if not env_bool("AICHECK_FAST_FIRST_ENGINEERING_PHOTO", True):
+        return False
+    profile_id = str(profile.get("profileId") or "")
+    document_type = str(profile.get("documentType") or "")
+    return profile_id in FAST_FIRST_PROFILE_IDS or document_type in FAST_FIRST_DOCUMENT_TYPES
+
+
+def request_budget_exceeded(options: dict[str, Any], started_ms: int) -> bool:
+    raw_budget = options.get("engineBudgetSeconds")
+    if raw_budget is None:
+        return False
+    try:
+        budget_ms = max(float(raw_budget), 0.0) * 1000
+    except (TypeError, ValueError):
+        return False
+    if budget_ms <= 0:
+        return False
+    return monotonic_ms() - started_ms >= budget_ms
+
+
+def should_defer_heavy_engine(
+    engine_name: str,
+    result: dict[str, Any],
+    *,
+    profile: dict[str, Any],
+    options: dict[str, Any],
+) -> bool:
+    if parse_bool(options.get("fastFirstMode"), False) is not True:
+        return False
+    if engine_name not in FAST_FIRST_DEFERRED_ENGINES:
+        return False
+    if parse_bool(options.get("forceHeavyEngines"), False) is True:
+        return False
+    return ocr_text_content_sufficient(result, profile=profile)
+
+
+def ocr_text_content_sufficient(result: dict[str, Any], *, profile: dict[str, Any]) -> bool:
+    fragments = [
+        item
+        for item in result.get("fragments") or []
+        if isinstance(item, dict)
+        and str(item.get("text") or "").strip()
+        and str(item.get("sourceEngine") or "") in {"paddle_ocr_subprocess", "paddle_ocr_v6", "tesseract_cli", "pymupdf_text_layer"}
+    ]
+    if not fragments:
+        return False
+    total_chars = sum(len(str(item.get("text") or "").strip()) for item in fragments)
+    try:
+        min_fragments = int(os.getenv("AICHECK_FAST_FIRST_MIN_FRAGMENTS", "8"))
+    except (TypeError, ValueError):
+        min_fragments = 8
+    try:
+        min_chars = int(os.getenv("AICHECK_FAST_FIRST_MIN_CHARS", "80"))
+    except (TypeError, ValueError):
+        min_chars = 80
+    if len(fragments) >= max(min_fragments, 1) or total_chars >= max(min_chars, 1):
+        return True
+    required_fields = {str(item) for item in profile.get("requiredFields") or []}
+    if required_fields.intersection({"drawing_no", "project_name", "design_phase"}):
+        joined = "\n".join(str(item.get("text") or "") for item in fragments)
+        return bool(DRAWING_NO_RE.search(joined) and DESIGN_PHASE_RE.search(joined))
+    return False
 
 
 def apply_parse_options_to_profile(profile: dict[str, Any], options: dict[str, Any]) -> dict[str, Any]:

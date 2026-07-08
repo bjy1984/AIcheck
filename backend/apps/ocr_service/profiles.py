@@ -7,6 +7,16 @@ from apps.ocr_service.utils import parse_bool
 
 
 DEFAULT_PROFILE_ID = "generic_document_v1"
+PROFILE_ALIASES = {
+    "engineering_drawing_list": "engineering_drawing_list_v1",
+    "drawing_material_list": "drawing_material_list_v1",
+    "process_flow_diagram": "process_flow_diagram_v1",
+    "strength_calculation": "strength_calculation_v1",
+    "design_specification": "design_specification_v1",
+    "equipment_list": "equipment_list_v1",
+    "paint_insulation_list": "paint_insulation_list_v1",
+    "comprehensive_material_list": "comprehensive_material_list_v1",
+}
 DEFAULT_VLM_FALLBACK_REASONS = [
     "REQUIRED_FIELD_MISSING",
     "FIELD_LOW_CONFIDENCE",
@@ -23,6 +33,78 @@ DEFAULT_VLM_FALLBACK_REASONS = [
     "SEAL_EVIDENCE_MISSING",
     "EXPECTED_SEAL_TYPE_MISSING",
 ]
+
+
+ENGINEERING_DRAWING_COMMON_REQUIRED_FIELDS = [
+    "company_name",
+    "project_name",
+    "document_title",
+    "drawing_no",
+    "design_phase",
+    "blue_seal_expiry",
+    "seal",
+]
+
+ENGINEERING_DRAWING_COMMON_PREPROCESS_POLICY = {
+    "renderDpi": 300,
+    "maxLongSide": 2600,
+    "textDetLimitSideLen": 4096,
+    "ocr": {
+        "useDocOrientationClassify": True,
+        "useDocUnwarping": True,
+        "useTextlineOrientation": True,
+        "textDetLimitSideLen": 4096,
+    },
+    "variants": ["original", "gray_clahe", "table_line_enhanced", "seal_color_mask"],
+    "table": {
+        "preferEngine": "pp_structure_v3",
+        "fallback": "heuristic_table_from_fragments",
+        "useLineEnhancedImage": True,
+    },
+    "seal": {
+        "enableColorCandidate": True,
+        "enablePaddlexSeal": True,
+        "enableSealTextRecognition": True,
+        "cropPaddingRatio": 0.16,
+        "maxPages": 4,
+    },
+}
+
+ENGINEERING_DRAWING_COMMON_SEAL_RULES = {
+    "required": True,
+    "expectedSealTypes": ["design_license_seal", "drawing_approval_seal"],
+    "preferredVisualColors": ["red", "blue"],
+    "preferredVisualRegion": "bottom_right",
+}
+
+
+def engineering_drawing_profile(
+    profile_id: str,
+    document_type: str,
+    critical_fields: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "profileId": profile_id,
+        "documentType": document_type,
+        "postprocessVersion": "engineering-drawing-generic-route-v1",
+        "requiredFields": list(ENGINEERING_DRAWING_COMMON_REQUIRED_FIELDS),
+        "requiredTables": [],
+        "sealRules": deepcopy(ENGINEERING_DRAWING_COMMON_SEAL_RULES),
+        "qualityRules": {
+            "minFieldConfidence": 0.72,
+            "minTableStructureConfidence": 0.55,
+            "criticalConflictFields": critical_fields
+            or [
+                "company_name",
+                "project_name",
+                "drawing_no",
+                "design_phase",
+                "blue_seal_expiry",
+            ],
+        },
+        "organizationAliases": [],
+        "preprocessPolicy": deepcopy(ENGINEERING_DRAWING_COMMON_PREPROCESS_POLICY),
+    }
 
 
 OCR_PROFILES: dict[str, dict[str, Any]] = {
@@ -327,7 +409,7 @@ OCR_PROFILES: dict[str, dict[str, Any]] = {
     "piping_characteristic_list_v1": {
         "profileId": "piping_characteristic_list_v1",
         "documentType": "engineering_table_photo",
-        "postprocessVersion": "piping-table-opencv-grid-fragment-seal-v8",
+        "postprocessVersion": "piping-table-opencv-grid-fragment-seal-v9",
         "requiredFields": [
             "company_name",
             "project_name",
@@ -376,10 +458,99 @@ OCR_PROFILES: dict[str, dict[str, Any]] = {
             "seal": {"enableColorCandidate": True, "enablePaddlexSeal": True, "maxPages": 4},
         },
     },
+    "engineering_drawing_list_v1": {
+        "profileId": "engineering_drawing_list_v1",
+        "documentType": "engineering_drawing_list",
+        "postprocessVersion": "engineering-drawing-list-profile-router-seal-crop-rows-v2",
+        "requiredFields": [
+            "company_name",
+            "project_name",
+            "document_title",
+            "drawing_no",
+            "design_phase",
+            "blue_seal_expiry",
+            "seal",
+        ],
+        "requiredTables": ["engineering_drawing_title_block_v1"],
+        "sealRules": {
+            "required": True,
+            "expectedSealTypes": ["design_license_seal", "drawing_approval_seal"],
+            "preferredVisualColors": ["red", "blue"],
+            "preferredVisualRegion": "bottom_right",
+        },
+        "qualityRules": {
+            "minFieldConfidence": 0.72,
+            "minTableStructureConfidence": 0.6,
+            "criticalConflictFields": [
+                "company_name",
+                "project_name",
+                "drawing_no",
+                "design_phase",
+                "total_sheets",
+                "blue_seal_expiry",
+            ],
+        },
+        "organizationAliases": [],
+        "preprocessPolicy": {
+            "renderDpi": 300,
+            "maxLongSide": 2600,
+            "textDetLimitSideLen": 4096,
+            "ocr": {
+                "useDocOrientationClassify": True,
+                "useDocUnwarping": True,
+                "useTextlineOrientation": True,
+                "textDetLimitSideLen": 4096,
+            },
+            "variants": ["original", "gray_clahe", "table_line_enhanced", "seal_color_mask"],
+            "table": {
+                "preferEngine": "pp_structure_v3",
+                "fallback": "heuristic_table_from_fragments",
+                "useLineEnhancedImage": True,
+            },
+            "seal": {
+                "enableColorCandidate": True,
+                "enablePaddlexSeal": True,
+                "enableSealTextRecognition": True,
+                "cropPaddingRatio": 0.16,
+                "maxPages": 4,
+            },
+        },
+    },
+    "drawing_material_list_v1": engineering_drawing_profile(
+        "drawing_material_list_v1",
+        "drawing_material_list",
+    ),
+    "process_flow_diagram_v1": engineering_drawing_profile(
+        "process_flow_diagram_v1",
+        "process_flow_diagram",
+    ),
+    "strength_calculation_v1": engineering_drawing_profile(
+        "strength_calculation_v1",
+        "strength_calculation",
+        ["project_name", "drawing_no", "design_phase", "document_title", "blue_seal_expiry"],
+    ),
+    "design_specification_v1": engineering_drawing_profile(
+        "design_specification_v1",
+        "design_specification",
+    ),
+    "equipment_list_v1": engineering_drawing_profile(
+        "equipment_list_v1",
+        "equipment_list",
+    ),
+    "paint_insulation_list_v1": engineering_drawing_profile(
+        "paint_insulation_list_v1",
+        "paint_insulation_list",
+    ),
+    "comprehensive_material_list_v1": engineering_drawing_profile(
+        "comprehensive_material_list_v1",
+        "comprehensive_material_list",
+    ),
 }
 
 
 def profile_for(profile_id: str | None = None, document_type: str | None = None) -> dict[str, Any]:
+    if profile_id and profile_id in PROFILE_ALIASES:
+        profile_id = PROFILE_ALIASES[profile_id]
     if profile_id and profile_id in OCR_PROFILES:
         return merged_profile(profile_id)
     if document_type:

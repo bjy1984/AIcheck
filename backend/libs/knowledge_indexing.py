@@ -19,6 +19,14 @@ QWEN3_INDEX_VERSION = "knowledge-index-qwen3-0.6b@1024"
 PAGE_INDEX_VERSION = "pageindex-standard-rules-v1"
 EMBED_BATCH_SIZE = 32
 MAX_CHUNK_CHARS = 1800
+NOISE_TEXT_MARKERS = ("bzfxw", "标准分享网", "免费下载", "kqqw", "库七七", "提供下载")
+PUBLISHER_METADATA_RE = re.compile(
+    r"(出版社|出版发行|书号|定价[:：]?\s*\d|侵权必究|版权专有|新华书店|印刷有限|"
+    r"如有印装质量问题|封面无防伪标均为盗版|举报电话)"
+)
+WEB_URL_RE = re.compile(r"(https?://|www\.)", re.IGNORECASE)
+CHINESE_CHAR_RE = re.compile(r"[\u4e00-\u9fff]")
+SYMBOL_ASCII_ONLY_RE = re.compile(r"[\W\dA-Za-z\s\./:;_\-—+|`$]+")
 
 TEXT_FILE_SUFFIXES = {".md", ".markdown", ".txt", ".yaml", ".yml", ".json", ".csv"}
 DOCX_SUFFIXES = {".docx"}
@@ -42,6 +50,71 @@ def compact_text(value: Any, limit: int = 240) -> str:
     if len(text) <= limit:
         return text
     return text[: max(0, limit - 1)].rstrip() + "…"
+
+
+def noise_like_text(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    if not text:
+        return False
+    if any(marker in text for marker in NOISE_TEXT_MARKERS):
+        return True
+    compact = re.sub(r"\s+", "", text)
+    return bool(compact.startswith("www.") and len(compact) <= 32)
+
+
+def knowledge_interference_reasons(
+    value: Any,
+    *,
+    context_type: str | None = None,
+) -> list[str]:
+    text = str(value or "").strip()
+    if not text:
+        return ["empty_text"]
+    reasons: list[str] = []
+    if noise_like_text(text):
+        reasons.append("noise_like_watermark")
+    if PUBLISHER_METADATA_RE.search(text):
+        reasons.append("publisher_metadata")
+    if WEB_URL_RE.search(text):
+        reasons.append("web_url_metadata")
+    chinese_count = len(CHINESE_CHAR_RE.findall(text))
+    if len(text) < 8 or (len(text) < 24 and chinese_count < 8):
+        reasons.append("low_value_short")
+    if len(text) < 140 and SYMBOL_ASCII_ONLY_RE.fullmatch(text):
+        reasons.append("symbol_ascii_only")
+    if context_type == "business_rule_context" and (
+        len(text) < 40 or (len(text) < 180 and SYMBOL_ASCII_ONLY_RE.fullmatch(text))
+    ):
+        reasons.append("business_rule_low_value")
+    return reasons
+
+
+def quarantine_interference_reasons(value: Any, *, context_type: str | None = None) -> list[str]:
+    reasons = knowledge_interference_reasons(value, context_type=context_type)
+    return [
+        reason
+        for reason in reasons
+        if reason in {"empty_text", "noise_like_watermark", "low_value_short", "symbol_ascii_only", "business_rule_low_value"}
+    ]
+
+
+def metadata_interference_reasons(value: Any, *, context_type: str | None = None) -> list[str]:
+    reasons = knowledge_interference_reasons(value, context_type=context_type)
+    if quarantine_interference_reasons(value, context_type=context_type):
+        return []
+    return [reason for reason in reasons if reason in {"publisher_metadata", "web_url_metadata"}]
+
+
+def chunk_quality_fields(text: Any, *, context_type: str | None = None) -> dict[str, Any]:
+    metadata_reasons = metadata_interference_reasons(text, context_type=context_type)
+    if not metadata_reasons:
+        return {}
+    return {
+        "qualityFlags": metadata_reasons,
+        "evidenceUsable": False,
+        "evidenceStatusReason": "metadata_not_standard_clause",
+        "retrievalWeightTier": "metadata",
+    }
 
 
 def chinese_ngrams(text: str) -> list[str]:
@@ -218,26 +291,33 @@ def read_pdf_text_layer(path: Path) -> list[dict[str, Any]]:
     units: list[dict[str, Any]] = []
     with fitz.open(str(path)) as document:
         for index, page in enumerate(document, start=1):
-            text = str(page.get_text("text") or "").strip()
-            if not text:
-                continue
-            lines = [line.strip() for line in text.splitlines() if line.strip()]
-            heading = next((detected for line in lines[:10] if (detected := detect_heading(line))), None)
-            section_path = [path.name]
-            if heading:
-                section_path.append(heading)
-            units.append(
-                {
-                    "pageNo": index,
-                    "text": "\n".join(lines),
-                    "bbox": [float(page.rect.x0), float(page.rect.y0), float(page.rect.x1), float(page.rect.y1)],
-                    "sectionPath": section_path,
-                    "source": "pymupdf_text_layer",
-                    "sourceMethod": "pymupdf_text_layer",
-                    "ocrEngine": "pymupdf_text_layer",
-                    "ocrConfidence": 1.0,
-                }
-            )
+            blocks = page.get_text("blocks") or []
+            block_units: list[dict[str, Any]] = []
+            for block_index, block in enumerate(blocks, start=1):
+                if len(block) < 5:
+                    continue
+                text = str(block[4] or "").strip()
+                if not text or quarantine_interference_reasons(text):
+                    continue
+                lines = [line.strip() for line in text.splitlines() if line.strip()]
+                heading = next((detected for line in lines[:10] if (detected := detect_heading(line))), None)
+                section_path = [path.name]
+                if heading:
+                    section_path.append(heading)
+                block_units.append(
+                    {
+                        "pageNo": index,
+                        "text": "\n".join(lines),
+                        "bbox": [float(block[0]), float(block[1]), float(block[2]), float(block[3])],
+                        "sectionPath": section_path,
+                        "source": "pymupdf_text_layer",
+                        "sourceMethod": "pymupdf_text_layer_block",
+                        "ocrEngine": "pymupdf_text_layer",
+                        "ocrConfidence": 1.0,
+                        "sourceFragmentId": f"pdf-page-{index}-block-{block_index}",
+                    }
+                )
+            units.extend(block_units)
     return units
 
 
@@ -269,7 +349,7 @@ def units_from_fragments(file: dict[str, Any], fragments: list[dict[str, Any]]) 
     grouped: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for fragment in fragments:
         text = str(fragment.get("text") or fragment.get("fieldValue") or "").strip()
-        if not text:
+        if not text or quarantine_interference_reasons(text):
             continue
         page_no = int(fragment.get("pageNo") or 1)
         grouped[page_no].append(fragment)
@@ -278,30 +358,50 @@ def units_from_fragments(file: dict[str, Any], fragments: list[dict[str, Any]]) 
     for page_no in sorted(grouped):
         page_fragments = grouped[page_no]
         page_fragments.sort(key=lambda item: (int(item.get("wordIndex") or item.get("lineIndex") or item.get("sequence") or 0), str(item.get("text") or "")))
-        texts = [str(item.get("text") or item.get("fieldValue") or "").strip() for item in page_fragments]
-        text = " ".join(item for item in texts if item).strip()
-        if not text:
-            continue
-        confidence_values = [
-            float(item.get("ocrConfidence") or item.get("confidence") or 0)
-            for item in page_fragments
-            if str(item.get("ocrConfidence") or item.get("confidence") or "").strip()
-        ]
-        confidence = round(sum(confidence_values) / len(confidence_values), 4) if confidence_values else None
-        heading = next((detected for item in texts[:12] if (detected := detect_heading(item))), None)
-        section_path = [file_name, heading] if heading else [file_name, f"第 {page_no} 页"]
-        units.append(
-            {
-                "pageNo": page_no,
-                "text": text,
-                "bbox": page_fragments[0].get("bbox"),
-                "sectionPath": section_path,
-                "source": "ocr_fragments",
-                "sourceMethod": page_fragments[0].get("sourceMethod") or "remote_ocr_fragments",
-                "ocrEngine": page_fragments[0].get("ocrEngine") or page_fragments[0].get("sourceEngine") or "ocr_service",
-                "ocrConfidence": confidence,
-            }
-        )
+        for fragment_index, fragment in enumerate(page_fragments, start=1):
+            text = str(fragment.get("text") or fragment.get("fieldValue") or "").strip()
+            if not text:
+                continue
+            confidence_raw = fragment.get("ocrConfidence") or fragment.get("confidence")
+            try:
+                confidence = float(confidence_raw) if str(confidence_raw or "").strip() else None
+            except (TypeError, ValueError):
+                confidence = None
+            heading = detect_heading(text)
+            section_path = [file_name, heading] if heading else [file_name, f"第 {page_no} 页"]
+            source_method = fragment.get("sourceMethod") or "remote_ocr_fragments"
+            fragment_id = fragment.get("id") or fragment.get("fragmentId") or f"p{page_no}-f{fragment_index}"
+            units.append(
+                {
+                    "pageNo": page_no,
+                    "text": text,
+                    "bbox": fragment.get("bbox"),
+                    "roi": {
+                        "schemaVersion": "FdeRoi@1.0.0",
+                        "pageNo": page_no,
+                        "sourceMethod": source_method,
+                        "boxes": [
+                            {
+                                "id": str(fragment_id),
+                                "pageNo": page_no,
+                                "bbox": fragment.get("bbox"),
+                                "polygon": fragment.get("polygon") or fragment.get("bbox"),
+                                "text": text,
+                                "confidence": confidence,
+                                "sourceFragmentId": fragment_id,
+                                "sourceMethod": source_method,
+                            }
+                        ],
+                        "qualityWarnings": [],
+                    },
+                    "sectionPath": section_path,
+                    "source": "ocr_fragments",
+                    "sourceMethod": source_method,
+                    "ocrEngine": fragment.get("ocrEngine") or fragment.get("sourceEngine") or "ocr_service",
+                    "ocrConfidence": confidence,
+                    "sourceFragmentId": fragment_id,
+                }
+            )
     return units
 
 
@@ -332,31 +432,38 @@ def chunk_text(text: str, max_chars: int = MAX_CHUNK_CHARS) -> list[str]:
 def build_chunks_for_file(file: dict[str, Any], units: list[dict[str, Any]], *, index_version: str = STANDARD_INDEX_VERSION) -> list[dict[str, Any]]:
     chunks: list[dict[str, Any]] = []
     sequence = 1
+    context_type = str(file.get("contextType") or "standard_reference")
     for unit in units:
         section_path = [str(item) for item in unit.get("sectionPath") or [] if str(item or "").strip()]
         for piece in chunk_text(str(unit.get("text") or "")):
+            if quarantine_interference_reasons(piece, context_type=context_type):
+                continue
             page_no = int(unit.get("pageNo") or 1)
+            text = piece[:MAX_CHUNK_CHARS]
             chunks.append(
                 {
-                    "id": f"CHK-{file['id']}-{sequence}",
-                    "fileId": file["id"],
-                    "documentId": file.get("documentId"),
-                    "documentVersionId": file.get("documentVersionId"),
-                    "sourceId": file.get("sourceId"),
-                    "sourceRelativePath": file.get("sourceRelativePath"),
-                    "chunkNo": sequence,
-                    "text": piece[:MAX_CHUNK_CHARS],
-                    "pageNo": page_no,
-                    "bbox": unit.get("bbox"),
-                    "sectionPath": section_path or [str(file.get("fileName") or file["id"]), f"第 {page_no} 页"],
-                    "tokenCount": max(1, len(piece) // 2),
-                    "indexVersion": index_version,
-                    "pageIndexNodeIds": [],
-                    "sourceMethod": unit.get("sourceMethod") or unit.get("source") or "unknown",
-                    "ocrEngine": unit.get("ocrEngine") or unit.get("source") or "unknown",
-                    "ocrConfidence": unit.get("ocrConfidence"),
-                    "contextType": file.get("contextType") or "standard_reference",
-                    "createdAt": None,
+                    **{
+                        "id": f"CHK-{file['id']}-{sequence}",
+                        "fileId": file["id"],
+                        "documentId": file.get("documentId"),
+                        "documentVersionId": file.get("documentVersionId"),
+                        "sourceId": file.get("sourceId"),
+                        "sourceRelativePath": file.get("sourceRelativePath"),
+                        "chunkNo": sequence,
+                        "text": text,
+                        "pageNo": page_no,
+                        "bbox": unit.get("bbox"),
+                        "sectionPath": section_path or [str(file.get("fileName") or file["id"]), f"第 {page_no} 页"],
+                        "tokenCount": max(1, len(piece) // 2),
+                        "indexVersion": index_version,
+                        "pageIndexNodeIds": [],
+                        "sourceMethod": unit.get("sourceMethod") or unit.get("source") or "unknown",
+                        "ocrEngine": unit.get("ocrEngine") or unit.get("source") or "unknown",
+                        "ocrConfidence": unit.get("ocrConfidence"),
+                        "contextType": context_type,
+                        "createdAt": None,
+                    },
+                    **chunk_quality_fields(text, context_type=context_type),
                 }
             )
             sequence += 1
@@ -387,6 +494,10 @@ def page_index_node_for_chunk(file: dict[str, Any], chunk: dict[str, Any]) -> di
         "sectionPath": chunk.get("sectionPath") or [],
         "children": [],
         "linkedClauseIds": [chunk.get("id")],
+        "qualityFlags": chunk.get("qualityFlags") or [],
+        "evidenceUsable": chunk.get("evidenceUsable", True),
+        "evidenceStatusReason": chunk.get("evidenceStatusReason"),
+        "retrievalWeightTier": chunk.get("retrievalWeightTier") or "default",
         "businessPackId": file.get("businessPackId"),
         "nodeTypes": [node_type],
         "materialTypes": [context_type or "standard_reference"],
@@ -490,6 +601,11 @@ def clause_from_chunk(file: dict[str, Any], chunk: dict[str, Any], source_versio
         "text": chunk.get("text") or "",
         "pageNo": chunk.get("pageNo"),
         "bbox": chunk.get("bbox"),
+        "roi": chunk.get("roi"),
+        "qualityFlags": chunk.get("qualityFlags") or [],
+        "evidenceUsable": chunk.get("evidenceUsable", True),
+        "evidenceStatusReason": chunk.get("evidenceStatusReason"),
+        "retrievalWeightTier": chunk.get("retrievalWeightTier") or "default",
         "sectionPath": chunk.get("sectionPath") or [],
         "scope": {
             "sourceId": file.get("sourceId"),
@@ -555,8 +671,14 @@ def build_vector_rows(
                 "embeddingModel": embedding_model,
                 "indexVersion": index_version,
                 "pageNo": chunk.get("pageNo"),
+                "bbox": chunk.get("bbox"),
+                "roi": chunk.get("roi"),
                 "sectionPath": chunk.get("sectionPath") or [],
                 "pageIndexNodeIds": chunk.get("pageIndexNodeIds") or [],
+                "qualityFlags": chunk.get("qualityFlags") or [],
+                "evidenceUsable": chunk.get("evidenceUsable", True),
+                "evidenceStatusReason": chunk.get("evidenceStatusReason"),
+                "retrievalWeightTier": chunk.get("retrievalWeightTier") or "default",
                 "textHash": hashlib.sha256(str(chunk.get("text") or "").encode("utf-8")).hexdigest(),
                 "payload": {
                     "text": chunk.get("text"),
@@ -567,7 +689,13 @@ def build_vector_rows(
                     "ocrEngine": chunk.get("ocrEngine"),
                     "ocrConfidence": chunk.get("ocrConfidence"),
                     "needsHumanVerification": chunk.get("needsHumanVerification"),
+                    "qualityFlags": chunk.get("qualityFlags") or [],
+                    "evidenceUsable": chunk.get("evidenceUsable", True),
+                    "evidenceStatusReason": chunk.get("evidenceStatusReason"),
+                    "retrievalWeightTier": chunk.get("retrievalWeightTier") or "default",
                     "pageNo": chunk.get("pageNo"),
+                    "bbox": chunk.get("bbox"),
+                    "roi": chunk.get("roi"),
                     "sectionPath": chunk.get("sectionPath") or [],
                     "pageIndexNodeIds": chunk.get("pageIndexNodeIds") or [],
                 },

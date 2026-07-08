@@ -3805,9 +3805,24 @@ export const getFdeStandardVectorFileDetailApi = (
   params?: { page?: number; pageSize?: number }
 ): Promise<IResponse<FdeVectorFileDetailPayload>> => {
   return request.get({
-    url: `/api/fde/standards/files/${fileId}/vector-detail`,
+    url: `/api/fde/standards/files/${encodeURIComponent(fileId)}/vector-detail`,
     params
   })
+}
+
+export const getFdeStandardVectorFilePagePreviewApi = (
+  fileId: string,
+  params?: { pageNo?: number }
+): Promise<{ data: Blob }> => {
+  return request.get({
+    url: `/api/fde/standards/files/${encodeURIComponent(fileId)}/page-preview`,
+    params,
+    responseType: 'blob',
+    headers: {
+      'X-Silent-Http-Error': 'true',
+      'X-Silent-Business-Error': 'true'
+    }
+  }) as unknown as Promise<{ data: Blob }>
 }
 
 export const createFdeVectorCorrectionApi = (

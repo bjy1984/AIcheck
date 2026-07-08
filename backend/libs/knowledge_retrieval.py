@@ -9,6 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 from libs.contracts.responses import server_time
+from libs.knowledge_indexing import metadata_interference_reasons, noise_like_text, quarantine_interference_reasons
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -447,6 +448,17 @@ def normalize_clause(candidate: dict[str, Any], *, default_version: str = "inspe
         scope["contextType"] = context_type
     if source_method and not scope.get("sourceMethod"):
         scope["sourceMethod"] = source_method
+    quality_flags = list(candidate.get("qualityFlags") or metadata.get("qualityFlags") or [])
+    if noise_like_text(text) and "noise_like_watermark" not in quality_flags:
+        quality_flags.append("noise_like_watermark")
+    for reason in metadata_interference_reasons(text, context_type=str(context_type or "")):
+        if reason not in quality_flags:
+            quality_flags.append(reason)
+    evidence_usable = candidate.get("evidenceUsable")
+    if evidence_usable is None:
+        evidence_usable = metadata.get("evidenceUsable")
+    if evidence_usable is None:
+        evidence_usable = "publisher_metadata" not in quality_flags and "web_url_metadata" not in quality_flags
     return {
         "id": str(candidate.get("id") or clause_id),
         "clauseId": clause_id,
@@ -469,6 +481,10 @@ def normalize_clause(candidate: dict[str, Any], *, default_version: str = "inspe
         "contextType": context_type,
         "sourceMethod": source_method,
         "ocrConfidence": ocr_confidence,
+        "qualityFlags": quality_flags,
+        "evidenceUsable": bool(evidence_usable),
+        "evidenceStatusReason": candidate.get("evidenceStatusReason") or metadata.get("evidenceStatusReason"),
+        "retrievalWeightTier": candidate.get("retrievalWeightTier") or metadata.get("retrievalWeightTier") or "default",
     }
 
 
@@ -490,10 +506,13 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
     for clause in state.get("knowledge_clauses", []) or []:
         if isinstance(clause, dict):
             file = files_by_id.get(clause.get("fileId")) or {}
+            context_type = clause.get("contextType") or file.get("contextType")
+            if quarantine_interference_reasons(clause.get("text") or clause.get("quotedText") or "", context_type=str(context_type or "")):
+                continue
             enriched_clause = {
                 **clause,
                 "sourceRelativePath": clause.get("sourceRelativePath") or file.get("sourceRelativePath"),
-                "contextType": clause.get("contextType") or file.get("contextType"),
+                "contextType": context_type,
                 "sourceMethod": clause.get("sourceMethod") or file.get("sourceMethod"),
             }
             candidates.append(normalize_clause(enriched_clause, default_version=default_version))
@@ -522,12 +541,14 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
     for chunk in state.get("knowledge_chunks", []) or []:
         if not isinstance(chunk, dict):
             continue
+        context_type = chunk.get("contextType") or (files_by_id.get(chunk.get("fileId")) or {}).get("contextType")
+        if quarantine_interference_reasons(chunk.get("text"), context_type=str(context_type or "")):
+            continue
         file = files_by_id.get(chunk.get("fileId")) or {}
         source = sources_by_id.get(file.get("sourceId")) or {}
         if file.get("indexEnabled") is False or source.get("sourceType") == "rule":
             continue
         source_id = file.get("sourceId") or "KS-PROJECT-FILE"
-        context_type = chunk.get("contextType") or file.get("contextType")
         source_method = chunk.get("sourceMethod") or file.get("sourceMethod")
         candidates.append(
             normalize_clause(
@@ -547,6 +568,10 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
                     "contextType": context_type,
                     "sourceMethod": source_method,
                     "ocrConfidence": chunk.get("ocrConfidence"),
+                    "qualityFlags": chunk.get("qualityFlags") or [],
+                    "evidenceUsable": chunk.get("evidenceUsable", True),
+                    "evidenceStatusReason": chunk.get("evidenceStatusReason"),
+                    "retrievalWeightTier": chunk.get("retrievalWeightTier") or "default",
                     "scope": {
                         "projectId": file.get("projectId"),
                         "nodeId": file.get("nodeId"),
@@ -589,6 +614,10 @@ def normalize_page_index_node(candidate: dict[str, Any], *, default_version: str
         "materialTypes": candidate.get("materialTypes") or (candidate.get("metadata") or {}).get("materialTypes") or [],
         "tags": candidate.get("tags") or [],
         "status": candidate.get("status") or "effective",
+        "qualityFlags": candidate.get("qualityFlags") or [],
+        "evidenceUsable": candidate.get("evidenceUsable", True),
+        "evidenceStatusReason": candidate.get("evidenceStatusReason"),
+        "retrievalWeightTier": candidate.get("retrievalWeightTier") or "default",
     }
 
 
@@ -641,6 +670,11 @@ def retrieval_quality_bias(clause: dict[str, Any], query: str) -> float:
     title = str(clause.get("title") or "")
     combined = f"{source_path} {title} {tags}"
     score = 0.0
+    quality_flags = {str(item) for item in clause.get("qualityFlags") or []}
+    if clause.get("evidenceUsable") is False or "publisher_metadata" in quality_flags or "web_url_metadata" in quality_flags:
+        score -= 28.0
+    if str(clause.get("retrievalWeightTier") or "") == "metadata":
+        score -= 12.0
     if context_type == "business_rule_context" or source_path.endswith("rules/业务规则.md") or "业务规则.md" in source_path:
         score -= 40.0
     elif context_type == "visual_extracted_reference" or "visual" in source_method or "视觉" in tags:
@@ -732,6 +766,9 @@ def page_index_node_score(
     node_types = {str(item) for item in node.get("nodeTypes") or []}
     if node_id is not None and str(node_id) in node_types:
         score += 1.0
+    quality_flags = {str(item) for item in node.get("qualityFlags") or []}
+    if node.get("evidenceUsable") is False or "publisher_metadata" in quality_flags or "web_url_metadata" in quality_flags:
+        score -= 4.0
     return score
 
 
@@ -787,6 +824,10 @@ def page_index_tree_search(
                 "sectionPath": node.get("sectionPath"),
                 "linkedClauseIds": node.get("linkedClauseIds"),
                 "score": node.get("score"),
+                "qualityFlags": node.get("qualityFlags") or [],
+                "evidenceUsable": node.get("evidenceUsable", True),
+                "evidenceStatusReason": node.get("evidenceStatusReason"),
+                "retrievalWeightTier": node.get("retrievalWeightTier") or "default",
             }
             for node in selected_nodes
         ],
@@ -921,6 +962,10 @@ def retrieve_knowledge_clauses(
                 "score": item.get("score"),
                 "retrievalMode": item.get("retrievalMode"),
                 "aliasMatches": item.get("aliasMatches") or [],
+                "qualityFlags": item.get("qualityFlags") or [],
+                "evidenceUsable": item.get("evidenceUsable", True),
+                "evidenceStatusReason": item.get("evidenceStatusReason"),
+                "retrievalWeightTier": item.get("retrievalWeightTier") or "default",
                 "pageIndexNodeIds": page_index_node_ids_by_clause.get(str(item.get("clauseId")), [])
                 or item.get("pageIndexNodeIds")
                 or [],

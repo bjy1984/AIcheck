@@ -13,7 +13,7 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from libs.db.repository import load_state, repo
 from libs.db.seed import DEFAULT_BUSINESS_PACK_ID, STANDARD_RULES_SOURCE_ID
-from libs.knowledge_indexing import QWEN3_EMBEDDING_MODEL, QWEN3_INDEX_VERSION
+from libs.knowledge_indexing import QWEN3_EMBEDDING_MODEL, QWEN3_INDEX_VERSION, noise_like_text
 from libs.knowledge_retrieval import retrieve_knowledge_clauses
 
 
@@ -290,7 +290,9 @@ def build_audit() -> dict[str, Any]:
         if item.get("contextType") != "visual_extracted_reference"
         and item.get("sourceMethod") != "codex_visual_manual_extraction"
         and not item.get("needsHumanVerification")
+        and not noise_like_text(item.get("text"))
     ]
+    noise_chunks = [item for item in chunks if noise_like_text(item.get("text"))]
     bbox_chunks = [item for item in original_chunks if item.get("bbox")]
     ocr_confidence_chunks = [item for item in original_chunks if item.get("ocrConfidence") is not None]
     business_chunks = [item for item in chunks if item.get("contextType") == "business_rule_context"]
@@ -307,6 +309,7 @@ def build_audit() -> dict[str, Any]:
     file_coverage_rate = ratio(len(vectorized_files), file_count)
     parity_rate = ratio(len(parity_files), file_count)
     original_text_rate = ratio(len(original_chunks), len(chunks))
+    noise_chunk_rate = ratio(len(noise_chunks), len(chunks))
     bbox_rate = ratio(len(bbox_chunks), len(original_chunks))
     ocr_confidence_rate = ratio(len(ocr_confidence_chunks), len(original_chunks))
 
@@ -324,6 +327,7 @@ def build_audit() -> dict[str, Any]:
     score += retrieval_component * 20
     score -= max(0.0, retrieval["wrongReferenceRate"] - 0.01) * 100
     score -= retrieval["businessRuleTop1RiskRate"] * 50
+    score -= min(15.0, noise_chunk_rate * 100.0)
     score = round(max(0.0, min(100.0, score)), 1)
 
     gates = {
@@ -332,6 +336,7 @@ def build_audit() -> dict[str, Any]:
         "activeQwenIndex": active_index_rate >= 1.0,
         "originalTextRate": original_text_rate >= 0.92,
         "bboxRate": bbox_rate >= 0.90,
+        "noiseChunkRate": noise_chunk_rate <= 0.01,
         "retrievalTop3": retrieval["top3Rate"] >= 0.98,
         "retrievalTop5": retrieval["top5Rate"] >= 0.99,
         "wrongReferenceRate": retrieval["wrongReferenceRate"] <= 0.01,
@@ -355,6 +360,8 @@ def build_audit() -> dict[str, Any]:
             "vectorParityRate": parity_rate,
             "activeQwenIndexRate": active_index_rate,
             "originalTextChunkRate": original_text_rate,
+            "noiseLikeWatermarkChunks": len(noise_chunks),
+            "noiseLikeWatermarkRate": noise_chunk_rate,
             "bboxRate": bbox_rate,
             "ocrConfidenceRate": ocr_confidence_rate,
             "businessRuleContextChunks": len(business_chunks),

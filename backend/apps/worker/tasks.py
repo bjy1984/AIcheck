@@ -21,6 +21,7 @@ from libs.knowledge_indexing import (
     STANDARD_INDEX_VERSION,
     active_embedding_target,
     local_path_from_storage_key,
+    noise_like_text,
     offline_hash_embeddings,
     units_from_local_file,
 )
@@ -176,26 +177,48 @@ def knowledge_slice_fragments_from_ocr(file: dict[str, Any]) -> list[dict[str, A
     pages: dict[int, list[dict[str, Any]]] = {}
     for fragment in raw_fragments:
         text = str(fragment.get("text") or "").strip()
-        if not text:
+        if not text or noise_like_text(text):
             continue
         page_no = int(fragment.get("pageNo") or 1)
         pages.setdefault(page_no, []).append(fragment)
     fragments: list[dict[str, Any]] = []
     for page_no in sorted(pages):
         page_fragments = pages[page_no]
-        texts = [str(item.get("text") or "").strip() for item in page_fragments if str(item.get("text") or "").strip()]
-        confidence_values = [
-            float(item.get("ocrConfidence") or item.get("confidence") or 0)
-            for item in page_fragments
-            if str(item.get("ocrConfidence") or item.get("confidence") or "").strip()
-        ]
-        metadata = {
-            "bbox": page_fragments[0].get("bbox"),
-            "sourceMethod": page_fragments[0].get("sourceMethod") or source_method,
-            "ocrEngine": page_fragments[0].get("ocrEngine") or page_fragments[0].get("sourceEngine") or engine_name or "ocr_service",
-            "ocrConfidence": round(sum(confidence_values) / len(confidence_values), 4) if confidence_values else None,
-        }
-        fragments.extend(split_text_fragments(" ".join(texts), page_no=page_no, metadata=metadata))
+        for fragment_index, fragment in enumerate(page_fragments, start=1):
+            text = str(fragment.get("text") or "").strip()
+            if not text or noise_like_text(text):
+                continue
+            confidence = fragment.get("ocrConfidence") or fragment.get("confidence")
+            try:
+                confidence_value = float(confidence) if str(confidence or "").strip() else None
+            except (TypeError, ValueError):
+                confidence_value = None
+            metadata = {
+                "bbox": fragment.get("bbox"),
+                "roi": {
+                    "schemaVersion": "FdeRoi@1.0.0",
+                    "pageNo": page_no,
+                    "sourceMethod": fragment.get("sourceMethod") or source_method,
+                    "boxes": [
+                        {
+                            "id": str(fragment.get("id") or fragment.get("fragmentId") or f"p{page_no}-f{fragment_index}"),
+                            "pageNo": page_no,
+                            "bbox": fragment.get("bbox"),
+                            "polygon": fragment.get("polygon") or fragment.get("bbox"),
+                            "text": text,
+                            "confidence": confidence,
+                            "sourceFragmentId": fragment.get("id") or fragment.get("fragmentId"),
+                            "sourceMethod": fragment.get("sourceMethod") or source_method,
+                        }
+                    ],
+                    "qualityWarnings": [],
+                },
+                "sourceMethod": fragment.get("sourceMethod") or source_method,
+                "ocrEngine": fragment.get("ocrEngine") or fragment.get("sourceEngine") or engine_name or "ocr_service",
+                "ocrConfidence": confidence_value,
+                "sourceFragmentId": fragment.get("id") or fragment.get("fragmentId") or f"p{page_no}-f{fragment_index}",
+            }
+            fragments.extend(split_text_fragments(text, page_no=page_no, metadata=metadata))
     return fragments
 
 

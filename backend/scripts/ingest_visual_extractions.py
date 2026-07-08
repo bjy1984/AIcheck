@@ -158,6 +158,42 @@ def page_text(page: dict[str, Any]) -> str:
     return "\n".join(parts).strip()
 
 
+def visual_roi_from_page(page: dict[str, Any], *, page_no: int, text: str, source_method: str) -> dict[str, Any] | None:
+    bbox = page.get("bbox")
+    if not bbox:
+        return None
+    raw_roi = page.get("roi")
+    if isinstance(raw_roi, dict):
+        return raw_roi
+    source_width = page.get("sourceImageWidth") or page.get("imageWidth") or page.get("width")
+    source_height = page.get("sourceImageHeight") or page.get("imageHeight") or page.get("height")
+    coordinate_system = str(page.get("coordinateSystem") or "preview_image_px")
+    return {
+        "schemaVersion": "FdeRoi@1.0.0",
+        "pageNo": page_no,
+        "coordinateSystem": coordinate_system,
+        "sourceMethod": source_method,
+        "sourceImageWidth": source_width,
+        "sourceImageHeight": source_height,
+        "previewWidth": source_width,
+        "previewHeight": source_height,
+        "boxes": [
+            {
+                "id": str(page.get("roiBoxId") or f"visual-page-{page_no}"),
+                "pageNo": page_no,
+                "bbox": bbox,
+                "polygon": page.get("polygon") or bbox,
+                "text": text[:240],
+                "confidence": page.get("confidence"),
+                "sourceMethod": source_method,
+                "sourceFragmentId": str(page.get("sourceFragmentId") or f"visual-page-{page_no}"),
+            }
+        ],
+        "unionBBox": bbox,
+        "qualityWarnings": ["page_level_visual_roi"],
+    }
+
+
 def visual_chunks_from_sidecar(file: dict[str, Any], sidecar: dict[str, Any]) -> tuple[list[dict[str, Any]], int]:
     chunks: list[dict[str, Any]] = []
     skipped_pages = 0
@@ -178,6 +214,7 @@ def visual_chunks_from_sidecar(file: dict[str, Any], sidecar: dict[str, Any]) ->
         image_path = relative_or_raw_path(page.get("imagePath"))
         confidence = str(page.get("confidence") or sidecar.get("confidence") or "medium")
         needs_human_verification = bool(page.get("needsHumanVerification", sidecar.get("needsHumanVerification", True)))
+        roi = visual_roi_from_page(page, page_no=page_no, text=text, source_method=VISUAL_SOURCE_METHOD)
         for piece_index, piece in enumerate(chunk_text(text), start=1):
             chunk_id = f"VCHK-{file['id']}-{page_no:04d}-{piece_index:02d}"
             chunks.append(
@@ -192,6 +229,7 @@ def visual_chunks_from_sidecar(file: dict[str, Any], sidecar: dict[str, Any]) ->
                     "text": piece,
                     "pageNo": page_no,
                     "bbox": page.get("bbox"),
+                    "roi": roi,
                     "sectionPath": section_path,
                     "tokenCount": max(1, len(piece) // 2),
                     "indexVersion": STANDARD_INDEX_VERSION,

@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import select
+import signal
 import shutil
 import subprocess
 import textwrap
@@ -49,6 +50,62 @@ def subprocess_resource_limit_preamble(env_name: str, default_mb: int) -> str:
             pass
         """
     )
+
+
+def run_ocr_subprocess(
+    args: list[str],
+    *,
+    env: dict[str, str],
+    timeout: float,
+) -> subprocess.CompletedProcess[str]:
+    """Run OCR subprocesses in their own process group so timeouts clean child workers."""
+    process = subprocess.Popen(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        env=env,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        terminate_process_group(process)
+        try:
+            stdout, stderr = process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            stdout, stderr = "", ""
+        exc.stdout = stdout
+        exc.stderr = stderr
+        raise exc
+    return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
+
+
+def terminate_process_group(process: subprocess.Popen[str]) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    except Exception:
+        process.terminate()
+    try:
+        process.wait(timeout=3)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    except Exception:
+        process.kill()
+    try:
+        process.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        pass
 
 
 class LocalOcrEngine:
@@ -404,7 +461,7 @@ class PpStructureEngine(LocalOcrEngine):
             """
         )
         try:
-            completed = subprocess.run(
+            completed = run_ocr_subprocess(
                 [
                     python_bin,
                     "-c",
@@ -414,9 +471,6 @@ class PpStructureEngine(LocalOcrEngine):
                     json.dumps(paddle_runtime_options(profile)),
                     json.dumps(names),
                 ],
-                check=False,
-                capture_output=True,
-                encoding="utf-8",
                 env=ocr_subprocess_env(),
                 timeout=float(os.getenv("AICHECK_PP_STRUCTURE_TIMEOUT", "180")),
             )
@@ -642,11 +696,8 @@ class OpenCvTableGridSubprocessEngine(LocalOcrEngine):
             """
         )
         try:
-            completed = subprocess.run(
+            completed = run_ocr_subprocess(
                 [python_bin, "-c", script, str(source_path), os.getenv("AICHECK_OPENCV_TABLE_GRID_MAX_CELLS", "1800")],
-                check=False,
-                capture_output=True,
-                encoding="utf-8",
                 env=ocr_subprocess_env(),
                 timeout=float(os.getenv("AICHECK_OPENCV_TABLE_GRID_TIMEOUT", "35")),
             )
@@ -808,14 +859,25 @@ class PaddleOcrSubprocessEngine(LocalOcrEngine):
         )
         env = ocr_subprocess_env()
         timeout = float(os.getenv("AICHECK_OCR_SUBPROCESS_TIMEOUT", "180"))
-        completed = subprocess.run(
-            [python_bin, "-c", script, str(source_path), str(det_dir), str(rec_dir), json.dumps(runtime)],
-            check=False,
-            capture_output=True,
-            encoding="utf-8",
-            env=env,
-            timeout=timeout,
-        )
+        try:
+            completed = run_ocr_subprocess(
+                [python_bin, "-c", script, str(source_path), str(det_dir), str(rec_dir), json.dumps(runtime)],
+                env=env,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            return {
+                "ok": False,
+                "diagnostics": [
+                    {
+                        "code": "SUBPROCESS_OCR_TIMEOUT",
+                        "level": "warning",
+                        "message": "PaddleOCR subprocess timed out.",
+                    }
+                ],
+                "engine": self.name,
+                "engineVersion": self.version,
+            }
         if completed.returncode != 0:
             return {
                 "ok": False,
@@ -892,6 +954,7 @@ class PaddleOcrSubprocessEngine(LocalOcrEngine):
             encoding="utf-8",
             env=ocr_subprocess_env(),
             bufsize=1,
+            start_new_session=True,
         )
         return self._worker
 
@@ -925,7 +988,7 @@ class PaddleOcrSubprocessEngine(LocalOcrEngine):
         if worker is None:
             return
         if worker.poll() is None:
-            worker.terminate()
+            terminate_process_group(worker)
             try:
                 worker.wait(timeout=3)
             except subprocess.TimeoutExpired:
@@ -1040,7 +1103,7 @@ class TesseractCliEngine(LocalOcrEngine):
             }
         source_path = variant_source_path(source_path, variant)
         try:
-            completed = subprocess.run(
+            completed = run_ocr_subprocess(
                 [
                     binary,
                     str(source_path),
@@ -1050,9 +1113,7 @@ class TesseractCliEngine(LocalOcrEngine):
                     "--psm",
                     os.getenv("AICHECK_TESSERACT_PSM", "6"),
                 ],
-                check=False,
-                capture_output=True,
-                encoding="utf-8",
+                env=os.environ.copy(),
                 timeout=float(os.getenv("AICHECK_TESSERACT_TIMEOUT", "45")),
             )
         except subprocess.TimeoutExpired:
@@ -1230,11 +1291,8 @@ class PaddlexSealEngine(LocalOcrEngine):
             """
         )
         try:
-            completed = subprocess.run(
+            completed = run_ocr_subprocess(
                 [python_bin, "-c", script, str(source_path)],
-                check=False,
-                capture_output=True,
-                encoding="utf-8",
                 env=ocr_subprocess_env(),
                 timeout=float(os.getenv("AICHECK_PADDLEX_SEAL_TIMEOUT", "160")),
             )
@@ -1357,11 +1415,8 @@ class AgentdesignSealOcrSubprocessEngine(LocalOcrEngine):
         env = ocr_subprocess_env()
         env["PYTHONPATH"] = f"{backend_path}{os.pathsep}{env.get('PYTHONPATH', '')}"
         try:
-            completed = subprocess.run(
+            completed = run_ocr_subprocess(
                 [python_bin, "-c", script, str(source_path), str(backend_path), json.dumps(config)],
-                check=False,
-                capture_output=True,
-                encoding="utf-8",
                 env=env,
                 timeout=float(os.getenv("AICHECK_AGENTDESIGN_SEAL_TIMEOUT", "140")),
             )
@@ -1818,11 +1873,8 @@ class VisualSealCandidateSubprocessEngine(LocalOcrEngine):
         backend_root = str(Path(__file__).resolve().parents[2])
         env["PYTHONPATH"] = f"{backend_root}{os.pathsep}{env.get('PYTHONPATH', '')}"
         try:
-            completed = subprocess.run(
+            completed = run_ocr_subprocess(
                 [python_bin, "-c", script, str(source_path)],
-                check=False,
-                capture_output=True,
-                encoding="utf-8",
                 env=env,
                 timeout=float(os.getenv("AICHECK_OCR_VISUAL_SEAL_TIMEOUT", "60")),
             )
@@ -2016,11 +2068,8 @@ class PaddleOcrVlEngine(LocalOcrEngine):
             "doc_unwarping": str(dirs["doc_unwarping"]) if dirs["doc_unwarping"].exists() else "",
         }
         try:
-            completed = subprocess.run(
+            completed = run_ocr_subprocess(
                 [python_bin, "-c", script, str(source_path), json.dumps(payload_dirs)],
-                check=False,
-                capture_output=True,
-                encoding="utf-8",
                 env=ocr_subprocess_env(),
                 timeout=float(os.getenv("AICHECK_PADDLEOCR_VL_TIMEOUT", "420")),
             )
@@ -2155,11 +2204,8 @@ class DoclingLocalEngine(LocalOcrEngine):
             """
         )
         try:
-            completed = subprocess.run(
+            completed = run_ocr_subprocess(
                 [python_bin, "-c", script, str(source_path)],
-                check=False,
-                capture_output=True,
-                encoding="utf-8",
                 env=ocr_subprocess_env(),
                 timeout=float(os.getenv("AICHECK_DOCLING_TIMEOUT", "180")),
             )

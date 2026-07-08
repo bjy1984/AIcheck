@@ -133,8 +133,32 @@ def fuse_parse_result(result: dict[str, Any], *, profile: dict[str, Any]) -> dic
         seal_candidates,
         profile=profile,
     )
+    promoted_seal_fields = top_level_fields_from_seals(fused["seals"])
+    if promoted_seal_fields:
+        fused["fields"] = fuse_fields([*(fused.get("fields") or []), *promoted_seal_fields])
     fused["quality"] = build_quality_gate(fused, profile)
+    fused["diagnostics"] = filter_resolved_quality_diagnostics(fused.get("diagnostics") or [], fused["quality"])
     return fused
+
+
+def filter_resolved_quality_diagnostics(diagnostics: list[Any], quality: dict[str, Any]) -> list[Any]:
+    unresolved = {str(item) for item in (quality.get("reasons") or [])}
+    stale_codes = {
+        "REQUIRED_FIELD_MISSING",
+        "REQUIRED_TABLE_MISSING",
+        "SEAL_NOT_FOUND",
+        "SEAL_TEXT_LOW_CONFIDENCE",
+        "SEAL_EVIDENCE_MISSING",
+        "TABLE_EVIDENCE_MISSING",
+        "TABLE_CELL_EVIDENCE_LOW",
+    }
+    filtered = []
+    for item in diagnostics:
+        code = str(item.get("code") or "") if isinstance(item, dict) else str(item)
+        if code in stale_codes and code not in unresolved:
+            continue
+        filtered.append(item)
+    return filtered
 
 
 def dedupe_fragments(fragments: list[Any]) -> list[dict[str, Any]]:
@@ -316,14 +340,28 @@ def enrich_visual_seals_from_fragments(
         text = " ".join(normalize_text(item.get("text")) for item in hits if normalize_text(item.get("text")))
         confidence = min(0.9, max(0.66, average([float(item.get("confidence") or 0.0) for item in hits]) * 0.88))
         output = deepcopy(seal)
+        if not output.get("coordinateSystem") and hits:
+            output.update(
+                copy_spatial_metadata(
+                    hits[0],
+                    bbox=seal_bbox,
+                    polygon=output.get("polygon") or bbox_to_polygon(seal_bbox),
+                )
+            )
         output["sealName"] = compact_seal_text(text)
         output["sealType"] = infer_fragment_seal_type(text, seal)
         output["ocrConfidence"] = round(confidence, 4)
         output["sourceEngine"] = "fragment_seal_text_fusion"
         flags = {str(flag) for flag in output.get("qualityFlags") or []}
         flags.add("fragment_seal_text")
+        flags.add("seal_bbox_from_ocr_fragments")
+        can_satisfy = fragment_seal_text_can_satisfy_required(output["sealType"], text)
+        flags.add("requires_seal_crop_ocr")
+        if not can_satisfy:
+            flags.add("text_only_seal_candidate")
         output["qualityFlags"] = sorted(flags)
-        output["sealEvidenceLevel"] = "visual_plus_page_text"
+        output["sealEvidenceLevel"] = "fragment_roi_text" if can_satisfy else "visual_plus_page_text"
+        output["sourceKind"] = "fragment_seal_bbox" if can_satisfy else output.get("sourceKind")
         output["candidateOnly"] = True
         output["canSatisfyRequiredSeal"] = False
         output["fields"] = fragment_seal_fields(text, hits, seal_bbox, confidence, spatial_source=seal)
@@ -479,8 +517,15 @@ def fragment_seal_candidates_from_text(
             if not bbox:
                 continue
             text = " ".join(normalize_text(item.get("text")) for item in sorted(hits, key=fragment_sort_key))
+            can_satisfy = fragment_seal_text_can_satisfy_required(seal_type, text)
+            quality_flags = ["fragment_seal_text", "seal_bbox_from_ocr_fragments"]
+            quality_flags.append("requires_seal_crop_ocr")
+            if not can_satisfy:
+                quality_flags.append("text_only_seal_candidate")
+            spatial = copy_spatial_metadata(hits[0], bbox=bbox, polygon=bbox_to_polygon(bbox)) if hits else {}
             candidates.append(
                 {
+                    **spatial,
                     "sealId": f"fragment_{seal_type}_{page_no}_{len(candidates) + 1}",
                     "pageNo": page_no,
                     "sealType": seal_type,
@@ -490,8 +535,10 @@ def fragment_seal_candidates_from_text(
                     "ocrConfidence": round(min(0.88, max(0.68, average([float(item.get("confidence") or 0.0) for item in hits]) * 0.9)), 4),
                     "candidateOnly": True,
                     "canSatisfyRequiredSeal": False,
+                    "sealEvidenceLevel": "fragment_roi_text" if can_satisfy else "visual_plus_page_text",
+                    "sourceKind": "fragment_seal_bbox" if can_satisfy else None,
                     "fields": fragment_seal_fields(text, hits, bbox, 0.78, spatial_source=hits[0] if hits else None),
-                    "qualityFlags": ["fragment_seal_text", "text_only_seal_candidate"],
+                    "qualityFlags": quality_flags,
                     "sourceEngine": "fragment_seal_text_detector",
                     "fragmentEvidence": [
                         {
@@ -505,6 +552,59 @@ def fragment_seal_candidates_from_text(
             )
             existing_types.add(seal_type)
     return candidates
+
+
+def top_level_fields_from_seals(seals: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    fields: list[dict[str, Any]] = []
+    for seal in seals:
+        if not isinstance(seal, dict):
+            continue
+        if parse_bool(seal.get("candidateOnly"), False) is True:
+            continue
+        for field in seal.get("fields") or []:
+            if not isinstance(field, dict):
+                continue
+            field_code = normalize_field_key(field.get("fieldCode") or field.get("fieldName"))
+            if not field_code or field_code == "seal_text":
+                continue
+            promoted = deepcopy(field)
+            promoted["fieldCode"] = field_code
+            promoted.setdefault("sourceEngine", seal.get("sourceEngine"))
+            promoted.setdefault("confidence", seal.get("ocrConfidence"))
+            promoted.setdefault("extractionMethod", "seal_roi_ocr_field")
+            promoted["sourceSealId"] = seal.get("sealId")
+            promoted["sourceSealType"] = seal.get("sealType")
+            if not has_evidence_box(promoted):
+                promoted.update(
+                    copy_spatial_metadata(
+                        seal,
+                        bbox=promoted.get("bbox") or seal.get("bbox"),
+                        polygon=promoted.get("polygon") or seal.get("polygon"),
+                    )
+                )
+            if str(seal.get("sealEvidenceLevel") or "") == "visual_plus_seal_crop_ocr":
+                promoted["extractionMethod"] = "seal_crop_ocr_field"
+                promoted["sourcePriority"] = "crop_ocr"
+            elif str(seal.get("sealEvidenceLevel") or "") == "fragment_roi_text":
+                promoted.setdefault("sourcePriority", "fragment_roi_text")
+            fields.append(promoted)
+    return fields
+
+
+def fragment_seal_text_can_satisfy_required(seal_type: Any, text: str) -> bool:
+    normalized_type = normalize_seal_type_key(seal_type)
+    compact = normalize_text(text).replace(" ", "")
+    if normalized_type == "design_license_seal":
+        return bool(
+            re.search(r"TS\s*[A-Z0-9-]+", text, flags=re.I)
+            and ("压力管道" in compact or "设计许可" in compact or "特种设备" in compact)
+        )
+    if normalized_type == "drawing_approval_seal":
+        has_certificate = bool(re.search(r"\bA\s*\d{6,12}\b", text, flags=re.I))
+        has_expiry = bool(extract_blue_seal_expiry(text))
+        has_approval_signal = any(token in compact for token in ["出图", "审图", "施工图审查", "资质证书编号", "单位名称"])
+        return has_approval_signal and (has_certificate or has_expiry)
+    return False
 
 
 def keyword_fragment_hits(
@@ -551,6 +651,7 @@ def fragment_seal_fields(
     spatial_source: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     spatial = copy_spatial_metadata(spatial_source or (hits[0] if hits else {}), bbox=seal_bbox)
+    seal_type = infer_fragment_seal_type(text, {})
     fields = [
         {
             **spatial,
@@ -573,6 +674,42 @@ def fragment_seal_fields(
                 "source": "ocr_fragments_in_visual_seal_bbox",
             }
         )
+    blue_certificate_match = re.search(r"\bA\s*\d{6,12}\b", text, flags=re.I)
+    if seal_type == "drawing_approval_seal" and blue_certificate_match:
+        fields.append(
+            {
+                **spatial,
+                "fieldName": "资质证书编号",
+                "fieldCode": "blue_seal_license_no",
+                "fieldValue": blue_certificate_match.group(0).replace(" ", ""),
+                "confidence": round(confidence, 4),
+                "source": "ocr_fragments_in_visual_seal_bbox",
+            }
+        )
+    blue_expiry = extract_blue_seal_expiry(text)
+    if seal_type == "drawing_approval_seal" and blue_expiry:
+        fields.append(
+            {
+                **spatial,
+                "fieldName": "蓝章有效期至",
+                "fieldCode": "blue_seal_expiry",
+                "fieldValue": blue_expiry,
+                "confidence": round(confidence, 4),
+                "source": "ocr_fragments_in_visual_seal_bbox",
+            }
+        )
+    red_date = extract_red_seal_date(text)
+    if seal_type == "design_license_seal" and red_date:
+        fields.append(
+            {
+                **spatial,
+                "fieldName": "红章日期",
+                "fieldCode": "red_seal_date",
+                "fieldValue": red_date,
+                "confidence": round(confidence, 4),
+                "source": "ocr_fragments_in_visual_seal_bbox",
+            }
+        )
     scope = next((normalize_text(item.get("text")) for item in hits if "管道" in normalize_text(item.get("text"))), "")
     if scope:
         fields.append(
@@ -586,6 +723,25 @@ def fragment_seal_fields(
             }
         )
     return fields
+
+
+def extract_blue_seal_expiry(text: str) -> str | None:
+    patterns = [
+        re.compile(r"有效期(?:限)?至\s*[:：]?\s*(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日)"),
+        re.compile(r"有效期(?:限)?\s*[:：]?\s*(?:至|到)\s*(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日)"),
+    ]
+    for pattern in patterns:
+        match = pattern.search(text)
+        if match:
+            return re.sub(r"\s+", "", match.group(1))
+    return None
+
+
+def extract_red_seal_date(text: str) -> str | None:
+    if "有效期" in text:
+        return None
+    match = re.search(r"(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日)", text)
+    return re.sub(r"\s+", "", match.group(1)) if match else None
 
 
 def reconcile_seal_organization_fields(
@@ -893,7 +1049,7 @@ def infer_seal_type_key(seal: dict[str, Any]) -> str:
         return "design_license_seal"
     if "检验检测" in text or "检测专用章" in text or "检验专用章" in text:
         return "inspection_testing_seal"
-    if "出厂检验" in text or "质量证明" in text or "质量专用章" in text:
+    if "出厂检验" in text or "质量证明" in text or "质量专用章" in text or "质检专用章" in text or "质检章" in text:
         return "quality_seal"
     if "审图" in text or "施工图审查" in text:
         return "drawing_approval_seal"
@@ -911,6 +1067,8 @@ def normalize_seal_type_key(value: Any) -> str:
         "testing_seal": "inspection_testing_seal",
         "inspection_seal": "inspection_testing_seal",
         "quality_certificate_seal": "quality_seal",
+        "quality_inspection_seal": "quality_seal",
+        "quality_control_seal": "quality_seal",
     }
     return aliases.get(normalized, normalized)
 
@@ -1123,7 +1281,11 @@ def field_score(field: dict[str, Any], *, field_code: str | None = None) -> floa
     if field_code:
         valid, _ = validate_business_field_value(field_code, value)
         validation_bonus = 0.08 if valid else -0.22
-    return confidence + bbox_bonus + value_bonus + validation_bonus
+    source_priority = str(field.get("sourcePriority") or "")
+    method = str(field.get("extractionMethod") or "")
+    crop_bonus = 0.1 if source_priority == "crop_ocr" or method == "seal_crop_ocr_field" else 0.0
+    fragment_penalty = -0.02 if source_priority == "fragment_roi_text" else 0.0
+    return confidence + bbox_bonus + value_bonus + validation_bonus + crop_bonus + fragment_penalty
 
 
 def field_value_conflict(candidates: list[dict[str, Any]], *, field_code: str | None = None) -> list[dict[str, Any]]:
@@ -1521,6 +1683,13 @@ def seal_score(seal: dict[str, Any], profile: dict[str, Any] | None = None) -> f
         formal_bonus -= 0.05
     if "agentdesign_seal_ocr" in flags:
         formal_bonus += 0.2
+    evidence_level = str(seal.get("sealEvidenceLevel") or "")
+    if evidence_level == "visual_plus_seal_crop_ocr":
+        formal_bonus += 0.28
+    elif evidence_level == "fragment_roi_text":
+        formal_bonus += 0.04
+    if "seal_crop_ocr" in flags:
+        formal_bonus += 0.12
     return confidence + name_bonus + formal_bonus + visual_profile_bonus(seal, profile or {})
 
 

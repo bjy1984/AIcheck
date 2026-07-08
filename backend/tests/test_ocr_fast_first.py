@@ -1,0 +1,509 @@
+from apps.ocr_service.fusion import fragment_seal_candidates_from_text, fuse_parse_result
+from apps.ocr_service.profiles import profile_for
+from apps.ocr_service.service import (
+    attach_variant_metadata,
+    apply_fast_first_default_options,
+    apply_profile_postprocessing,
+    detect_engineering_drawing_profile,
+    detect_engineering_drawing_list_profile,
+    extract_engineering_drawing_common_fields,
+    extract_engineering_drawing_list_fields,
+    extract_ndt_rt_report_fields,
+    extract_piping_requirement_fields,
+    find_project_fragment,
+    should_defer_heavy_engine,
+)
+
+
+def test_engineering_photo_profile_enables_fast_first_defaults() -> None:
+    profile = profile_for("piping_characteristic_list_v1")
+
+    options = apply_fast_first_default_options({}, profile)
+
+    assert options["fastFirstMode"] is True
+    assert options["quickMode"] is True
+    assert options["disableRemediation"] is True
+    assert options["enableFallback"] is False
+    assert options["maxPages"] == 1
+    assert options["variants"] == ["original", "gray_clahe", "seal_color_mask"]
+
+
+def test_fast_first_defer_heavy_engines_after_text_evidence() -> None:
+    profile = profile_for("piping_characteristic_list_v1")
+    options = apply_fast_first_default_options({}, profile)
+    result = {
+        "fragments": [
+            {
+                "text": "珠海恒基达鑫国际化工仓储股份有限公司 施工图 QX201903S-13-Y-00",
+                "sourceEngine": "paddle_ocr_subprocess",
+            }
+        ]
+    }
+
+    assert should_defer_heavy_engine("pp_structure_v3", result, profile=profile, options=options) is True
+    assert should_defer_heavy_engine("paddlex_seal_recognition", result, profile=profile, options=options) is True
+    assert should_defer_heavy_engine("paddleocr_vl_1_6", result, profile=profile, options=options) is True
+    assert should_defer_heavy_engine("opencv_table_grid_subprocess", result, profile=profile, options=options) is True
+    assert should_defer_heavy_engine("visual_seal_candidate_subprocess", result, profile=profile, options=options) is True
+
+
+def test_project_name_can_join_lines_after_project_label() -> None:
+    text_items = [
+        ("项目名称", {"pageNo": 1, "bbox": [10, 10, 50, 20], "confidence": 0.99}),
+        ("珠海恒基达鑫国际化工仓储股份有限公司", {"pageNo": 1, "bbox": [60, 10, 200, 20], "confidence": 0.98}),
+        ("PROJECT", {"pageNo": 1, "bbox": [10, 25, 50, 35], "confidence": 0.98}),
+        ("二期装车站新增两套卸车系统项目", {"pageNo": 1, "bbox": [60, 25, 200, 35], "confidence": 0.97}),
+    ]
+
+    candidate = find_project_fragment(text_items)
+
+    assert candidate is not None
+    assert candidate["text"] == "珠海恒基达鑫国际化工仓储股份有限公司二期装车站新增两套卸车系统项目"
+    assert candidate["fragment"]["bbox"] == [60.0, 10.0, 200.0, 35.0]
+
+
+def test_engineering_drawing_list_profile_does_not_require_piping_table() -> None:
+    profile = profile_for("engineering_drawing_list")
+
+    assert profile["profileId"] == "engineering_drawing_list_v1"
+    assert "pipe_no" not in profile["requiredFields"]
+    assert "piping_characteristic_table" not in profile["requiredTables"]
+    assert "engineering_drawing_title_block_v1" in profile["requiredTables"]
+
+
+def test_drawing_list_text_routes_piping_request_to_drawing_list_profile() -> None:
+    requested = profile_for("piping_characteristic_list_v1")
+    result = {
+        "fragments": [
+            {"text": "工艺图纸目录", "bbox": [100, 100, 220, 130], "confidence": 0.97},
+            {"text": "DRAWING LIST", "bbox": [100, 132, 230, 160], "confidence": 0.97},
+            {"text": "QX201903S-13-Y-00", "bbox": [300, 100, 460, 130], "confidence": 0.96},
+            {"text": "QX201903S-13-Y-01", "bbox": [300, 132, 460, 160], "confidence": 0.96},
+        ]
+    }
+
+    routed = detect_engineering_drawing_list_profile(result, requested)
+
+    assert routed is not None
+    assert routed["profile"]["profileId"] == "engineering_drawing_list_v1"
+    assert "drawing_list_title" in routed["reason"]
+
+
+def test_engineering_drawing_router_detects_specialized_profiles() -> None:
+    requested = profile_for("piping_characteristic_list_v1")
+    material = detect_engineering_drawing_profile(
+        {"fragments": [{"text": "管道安装材料表 QX201903S-13-Y-08"}]},
+        requested,
+    )
+    strength = detect_engineering_drawing_profile(
+        {"fragments": [{"text": "压力管道强度计算书 QX201903S-13-Y-13"}]},
+        requested,
+    )
+    design_spec = detect_engineering_drawing_profile(
+        {"fragments": [{"text": "工艺设计说明书 施工图"}]},
+        requested,
+    )
+
+    assert material is not None
+    assert material["profile"]["profileId"] == "drawing_material_list_v1"
+    assert strength is not None
+    assert strength["profile"]["profileId"] == "strength_calculation_v1"
+    assert design_spec is not None
+    assert design_spec["profile"]["profileId"] == "design_specification_v1"
+
+
+def test_engineering_drawing_router_does_not_treat_plain_drawing_numbers_as_list() -> None:
+    requested = profile_for("piping_characteristic_list_v1")
+    result = {
+        "fragments": [
+            {"text": "QX201903S-13-Y-01"},
+            {"text": "QX201903S-13-Y-02"},
+            {"text": "项目名称 珠海恒基达鑫项目"},
+        ]
+    }
+
+    routed = detect_engineering_drawing_profile(result, requested)
+
+    assert routed is None
+
+
+def test_engineering_drawing_router_keeps_requested_piping_profile_on_strong_title() -> None:
+    requested = profile_for("piping_characteristic_list_v1")
+    result = {
+        "fragments": [
+            {"text": "管道特性表"},
+            {"text": "PIPING CHARACTERISTIC LIST"},
+            {"text": "P&ID"},
+        ]
+    }
+
+    routed = detect_engineering_drawing_profile(result, requested)
+
+    assert routed is None
+
+
+def test_engineering_drawing_router_prioritizes_drawing_list_title_over_piping_row() -> None:
+    requested = profile_for("piping_characteristic_list_v1")
+    result = {
+        "fragments": [
+            {"text": "工艺图纸目录"},
+            {"text": "管道特性表"},
+            {"text": "QX201903S-13-Y-07"},
+        ]
+    }
+
+    routed = detect_engineering_drawing_profile(result, requested)
+
+    assert routed is not None
+    assert routed["profile"]["profileId"] == "engineering_drawing_list_v1"
+
+
+def test_engineering_drawing_common_fields_extract_title_block_values() -> None:
+    result = {
+        "fragments": [
+            {"text": "广东政和工程有限公司", "bbox": [10, 10, 200, 30], "confidence": 0.98, "pageNo": 1},
+            {"text": "项目名称", "bbox": [10, 40, 80, 60], "confidence": 0.98, "pageNo": 1},
+            {"text": "珠海恒基达鑫二期装车站新增两套卸车系统项目", "bbox": [90, 40, 360, 60], "confidence": 0.96, "pageNo": 1},
+            {"text": "管道安装材料表", "bbox": [10, 70, 160, 90], "confidence": 0.98, "pageNo": 1},
+            {"text": "QX201903S-13-Y-08", "bbox": [10, 100, 180, 120], "confidence": 0.97, "pageNo": 1},
+            {"text": "施工图", "bbox": [10, 130, 80, 150], "confidence": 0.97, "pageNo": 1},
+        ],
+        "fields": [],
+    }
+
+    extract_engineering_drawing_common_fields(result, profile_for("drawing_material_list_v1"))
+    fields = {item["fieldCode"]: item["fieldValue"] for item in result["fields"]}
+
+    assert fields["company_name"] == "广东政和工程有限公司"
+    assert fields["project_name"] == "珠海恒基达鑫二期装车站新增两套卸车系统项目"
+    assert fields["document_title"] == "管道安装材料表"
+    assert fields["drawing_no"] == "QX201903S-13-Y-08"
+    assert fields["design_phase"] == "施工图"
+
+
+def test_piping_requirement_fields_are_structured_from_business_rows() -> None:
+    result = {
+        "fragments": [
+            {"text": "GC2", "bbox": [10, 10, 40, 30], "confidence": 0.96, "pageNo": 1},
+            {"text": "RT", "bbox": [50, 10, 80, 30], "confidence": 0.96, "pageNo": 1},
+            {"text": "10%", "bbox": [90, 10, 130, 30], "confidence": 0.96, "pageNo": 1},
+            {"text": "III", "bbox": [140, 10, 175, 30], "confidence": 0.96, "pageNo": 1},
+            {"text": "AB", "bbox": [185, 10, 220, 30], "confidence": 0.96, "pageNo": 1},
+        ],
+        "fields": [],
+        "tables": [
+            {
+                "businessRows": [
+                    {
+                        "pressureLevel": "GC2",
+                        "weldDetectionMethod": "RT",
+                        "weldDetectionScale": "10%",
+                        "eligibleLevel": "III",
+                        "ranking": "AB",
+                    }
+                ]
+            }
+        ],
+    }
+
+    extract_piping_requirement_fields(result)
+    fields = {item["fieldCode"]: item["fieldValue"] for item in result["fields"]}
+
+    assert fields["pressure_pipe_level"] == "GC2"
+    assert fields["weld_detection_method"] == "RT"
+    assert fields["weld_detection_ratio"] == "10%"
+    assert fields["weld_acceptance_level"] == "III"
+    assert fields["weld_tech_level"] == "AB"
+
+
+def test_fragment_seal_fields_extract_blue_expiry_without_reusing_red_date() -> None:
+    fragments = [
+        {"pageNo": 1, "text": "出图专用章", "bbox": [580, 1000, 690, 1030], "confidence": 0.92},
+        {"pageNo": 1, "text": "单位名称 广东政和工程有限公司", "bbox": [590, 1035, 850, 1065], "confidence": 0.91},
+        {"pageNo": 1, "text": "资质证书编号 A244010070", "bbox": [590, 1070, 850, 1100], "confidence": 0.9},
+        {"pageNo": 1, "text": "有效期至：2024年6月21日", "bbox": [590, 1105, 850, 1135], "confidence": 0.9},
+        {"pageNo": 1, "text": "设计许可 压力管道", "bbox": [80, 750, 250, 790], "confidence": 0.91},
+        {"pageNo": 1, "text": "TS1810648-2021", "bbox": [90, 795, 250, 825], "confidence": 0.91},
+        {"pageNo": 1, "text": "2017年8月31日", "bbox": [90, 830, 250, 860], "confidence": 0.9},
+    ]
+
+    seals = fragment_seal_candidates_from_text(fragments, existing_seals=[])
+    blue = next(item for item in seals if item["sealType"] == "drawing_approval_seal")
+    red = next(item for item in seals if item["sealType"] == "design_license_seal")
+    blue_fields = {item["fieldCode"]: item["fieldValue"] for item in blue["fields"]}
+    red_fields = {item["fieldCode"]: item["fieldValue"] for item in red["fields"]}
+
+    assert blue["canSatisfyRequiredSeal"] is False
+    assert blue["candidateOnly"] is True
+    assert blue["sealEvidenceLevel"] == "fragment_roi_text"
+    assert blue_fields["blue_seal_license_no"] == "A244010070"
+    assert blue_fields["blue_seal_expiry"] == "2024年6月21日"
+    assert red["canSatisfyRequiredSeal"] is False
+    assert red["candidateOnly"] is True
+    assert red["sealEvidenceLevel"] == "fragment_roi_text"
+    assert red_fields["red_seal_date"] == "2017年8月31日"
+    assert "blue_seal_expiry" not in red_fields
+
+
+def test_fragment_seal_fields_do_not_promote_without_crop_ocr() -> None:
+    fragments = [
+        {
+            "pageNo": 1,
+            "text": "出图专用章",
+            "bbox": [580, 1000, 690, 1030],
+            "confidence": 0.92,
+            "coordinateSystem": "rendered_pixels",
+            "coordinateTransformStatus": "original",
+        },
+        {
+            "pageNo": 1,
+            "text": "单位名称 广东政和工程有限公司",
+            "bbox": [590, 1035, 850, 1065],
+            "confidence": 0.91,
+            "coordinateSystem": "rendered_pixels",
+            "coordinateTransformStatus": "original",
+        },
+        {
+            "pageNo": 1,
+            "text": "资质证书编号 A244010070",
+            "bbox": [590, 1070, 850, 1100],
+            "confidence": 0.9,
+            "coordinateSystem": "rendered_pixels",
+            "coordinateTransformStatus": "original",
+        },
+        {
+            "pageNo": 1,
+            "text": "有效期至：2024年6月21日",
+            "bbox": [590, 1105, 850, 1135],
+            "confidence": 0.9,
+            "coordinateSystem": "rendered_pixels",
+            "coordinateTransformStatus": "original",
+        },
+    ]
+
+    fused = fuse_parse_result(
+        {"status": "success", "fragments": fragments, "fields": [], "tables": [], "seals": []},
+        profile=profile_for("engineering_drawing_list_v1"),
+    )
+    fields = {item["fieldCode"]: item for item in fused["fields"]}
+
+    assert "blue_seal_expiry" not in fields
+    assert fused["seals"][0]["candidateOnly"] is True
+    assert "SEAL_TEXT_LOW_CONFIDENCE" in fused["quality"]["reasons"]
+
+
+def test_seal_crop_ocr_outputs_crop_evidence_and_promoted_fields() -> None:
+    result = {
+        "fragments": [
+            {"text": "广东省建设工程勘察设计出图专用章", "bbox": [0, 0, 180, 22], "confidence": 0.94},
+            {"text": "资质证书编号 A244010070", "bbox": [0, 26, 180, 48], "confidence": 0.93},
+            {"text": "有效期至：2024年6月21日", "bbox": [0, 52, 180, 74], "confidence": 0.92},
+        ],
+        "fields": [],
+        "tables": [],
+        "seals": [],
+        "layoutBlocks": [],
+    }
+    variant = {
+        "variantId": "page_1_seal_crop_drawing_approval_abcd1234",
+        "pageNo": 1,
+        "purpose": "seal",
+        "source": "remediation_crop",
+        "engineScope": "crop",
+        "coordinateSystem": "crop_pixels",
+        "sourceCoordinateSystem": "rendered_pixels",
+        "coordinateTransformStatus": "crop_local",
+        "cropOffsetX": 588,
+        "cropOffsetY": 1005,
+        "cropSourceBbox": [588, 1005, 890, 1152],
+        "cropWidth": 302,
+        "cropHeight": 147,
+        "remediationTarget": {
+            "type": "seal",
+            "id": "fragment_drawing_approval_seal_1_2",
+            "sourceKind": "fragment_seal_bbox",
+            "sourceSealType": "drawing_approval_seal",
+            "sourceQualityFlags": ["seal_bbox_from_ocr_fragments"],
+            "sourceSealEvidenceLevel": "fragment_roi_text",
+        },
+    }
+
+    attach_variant_metadata(result, "paddle_ocr_subprocess", variant, document_pages=[{"pageNo": 1}])
+    fused = fuse_parse_result(result, profile=profile_for("engineering_drawing_list_v1"))
+    seal = fused["seals"][0]
+    fields = {item["fieldCode"]: item for item in fused["fields"]}
+
+    assert seal["sealEvidenceLevel"] == "visual_plus_seal_crop_ocr"
+    assert seal["sealName"] == "广东省建设工程勘察设计出图专用章 资质证书编号 A244010070 有效期至：2024年6月21日"
+    assert seal["canSatisfyRequiredSeal"] is True
+    assert seal["cropBbox"] == [588, 1005, 890, 1152]
+    assert seal["sealCropEvidence"]["sourceEngine"] == "paddle_ocr_subprocess"
+    assert fields["blue_seal_expiry"]["fieldValue"] == "2024年6月21日"
+    assert fields["blue_seal_expiry"]["sourcePriority"] == "crop_ocr"
+
+
+def test_seal_crop_ocr_removes_adjacent_drawing_list_noise() -> None:
+    result = {
+        "fragments": [
+            {"text": "8", "bbox": [0, 0, 10, 16], "confidence": 0.99},
+            {"text": "管道特性表", "bbox": [20, 0, 90, 18], "confidence": 0.98},
+            {"text": "QX201903S-13-Y-07", "bbox": [160, 0, 260, 18], "confidence": 0.99},
+            {"text": "1", "bbox": [270, 0, 280, 18], "confidence": 0.99},
+            {"text": "压力管道", "bbox": [10, 80, 80, 104], "confidence": 0.93},
+            {"text": "TS1810648-2021", "bbox": [90, 80, 210, 104], "confidence": 0.92},
+        ],
+        "fields": [],
+        "tables": [],
+        "seals": [],
+        "layoutBlocks": [],
+    }
+    variant = {
+        "variantId": "page_1_seal_crop_design_license_abcd1234",
+        "pageNo": 1,
+        "purpose": "seal",
+        "source": "remediation_crop",
+        "engineScope": "crop",
+        "coordinateSystem": "crop_pixels",
+        "sourceCoordinateSystem": "rendered_pixels",
+        "coordinateTransformStatus": "crop_local",
+        "cropOffsetX": 89,
+        "cropOffsetY": 754,
+        "cropSourceBbox": [89, 754, 513, 1086],
+        "cropWidth": 424,
+        "cropHeight": 332,
+        "remediationTarget": {
+            "type": "seal",
+            "id": "fragment_design_license_seal_1_1",
+            "sourceKind": "fragment_seal_bbox",
+            "sourceSealType": "design_license_seal",
+            "sourceQualityFlags": ["seal_bbox_from_ocr_fragments"],
+            "sourceSealEvidenceLevel": "fragment_roi_text",
+        },
+    }
+
+    attach_variant_metadata(result, "paddle_ocr_subprocess", variant, document_pages=[{"pageNo": 1}])
+    fused = fuse_parse_result(result, profile=profile_for("engineering_drawing_list_v1"))
+    seal = fused["seals"][0]
+    fields = {item["fieldCode"]: item for item in fused["fields"]}
+
+    assert seal["sealName"] == "压力管道 TS1810648-2021"
+    assert seal["cropOcrText"] == "压力管道 TS1810648-2021"
+    assert "管道特性表" in seal["cropOcrRawText"]
+    assert "seal_crop_adjacent_text_removed" in seal["qualityFlags"]
+    assert fields["license_scope"]["fieldValue"] == "压力管道"
+    assert fields["license_no"]["fieldValue"] == "TS1810648-2021"
+
+
+def test_engineering_drawing_list_rows_are_structured_from_fragments() -> None:
+    result = {"fragments": [], "fields": [], "tables": []}
+    fragments = [
+        {"text": "1", "bbox": [80, 480, 100, 500], "confidence": 0.95, "pageNo": 1, "coordinateSystem": "rendered_pixels", "coordinateTransformStatus": "original"},
+        {"text": "工艺图纸目录", "bbox": [120, 480, 220, 500], "confidence": 0.99, "pageNo": 1, "coordinateSystem": "rendered_pixels", "coordinateTransformStatus": "original"},
+        {"text": "QX201903S-13-Y-00", "bbox": [380, 480, 520, 500], "confidence": 0.99, "pageNo": 1, "coordinateSystem": "rendered_pixels", "coordinateTransformStatus": "original"},
+        {"text": "2", "bbox": [80, 520, 100, 540], "confidence": 0.95, "pageNo": 1, "coordinateSystem": "rendered_pixels", "coordinateTransformStatus": "original"},
+        {"text": "设备表一览表", "bbox": [120, 520, 220, 540], "confidence": 0.99, "pageNo": 1, "coordinateSystem": "rendered_pixels", "coordinateTransformStatus": "original"},
+        {"text": "QX201903S-13-Y-01", "bbox": [380, 520, 520, 540], "confidence": 0.99, "pageNo": 1, "coordinateSystem": "rendered_pixels", "coordinateTransformStatus": "original"},
+    ]
+    result["fragments"] = fragments
+
+    extract_engineering_drawing_list_fields(result, profile_for("engineering_drawing_list_v1"))
+    fields = {item["fieldCode"]: item for item in result["fields"]}
+    rows = fields["drawing_list_rows"]["fieldValue"]
+    row_table = next(item for item in result["tables"] if item["businessSchema"] == "engineering_drawing_list_rows_v1")
+
+    assert rows[0]["drawingName"] == "工艺图纸目录"
+    assert rows[0]["drawingNo"] == "QX201903S-13-Y-00"
+    assert rows[1]["sequenceNo"] == "2"
+    assert row_table["rows"] == 2
+    assert row_table["bbox"] == [80.0, 480.0, 520.0, 540.0]
+
+
+def test_quality_certificate_summary_tables_are_created_from_fragments() -> None:
+    result = {
+        "fragments": [
+            {"text": "产品质量证明书", "bbox": [10, 10, 130, 30], "confidence": 0.96, "pageNo": 1},
+            {"text": "材质 20#", "bbox": [10, 40, 130, 60], "confidence": 0.96, "pageNo": 1},
+            {"text": "执行标准 GB/T 8163-2018", "bbox": [10, 70, 220, 90], "confidence": 0.96, "pageNo": 1},
+            {"text": "化学成分 C Si Mn P S", "bbox": [10, 100, 230, 120], "confidence": 0.95, "pageNo": 1},
+            {"text": "力学性能 抗拉强度 屈服 延伸率", "bbox": [10, 130, 270, 150], "confidence": 0.95, "pageNo": 1},
+        ],
+        "fields": [],
+        "tables": [],
+        "seals": [],
+    }
+
+    apply_profile_postprocessing(result, profile_for("quality_certificate_v1"))
+    schemas = {
+        schema
+        for table in result["tables"]
+        for schema in [table.get("businessSchema"), *(table.get("businessSchemas") or [])]
+        if schema
+    }
+    fields = {item["fieldCode"]: item["fieldValue"] for item in result["fields"]}
+
+    assert "material_chemical_composition_table" in schemas
+    assert "mechanical_property_table" in schemas
+    assert fields["chemical_composition_summary"] == "化学成分"
+    assert fields["mechanical_property_summary"] == "力学性能"
+
+
+def test_quality_certificate_infers_quality_seal_from_zhijian_text() -> None:
+    result = fuse_parse_result(
+        {
+            "status": "success",
+            "fields": [
+                {"fieldCode": "certificate_no", "fieldValue": "QC-001", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "manufacturer", "fieldValue": "制造有限公司", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "material_grade", "fieldValue": "20#", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "specification", "fieldValue": "DN100", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "batch_no", "fieldValue": "B001", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "standard_no", "fieldValue": "GB/T8163-2018", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "inspection_conclusion", "fieldValue": "检验合格", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "issue_date", "fieldValue": "2021年3月18日", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldCode": "seal", "fieldValue": "质检专用章", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+            ],
+            "tables": [
+                {
+                    "tableId": "T1",
+                    "businessSchemas": ["material_chemical_composition_table", "mechanical_property_table"],
+                    "structureConfidence": 0.9,
+                    "bbox": [0, 0, 10, 10],
+                    "cells": [{"text": "化学成分"}, {"text": "抗拉强度"}],
+                }
+            ],
+            "seals": [
+                {"sealId": "S1", "sealName": "制造有限公司公章", "sealType": "company_official_seal", "ocrConfidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"sealId": "S2", "sealName": "质检专用章", "sealType": "unknown", "ocrConfidence": 0.9, "bbox": [20, 0, 40, 20]},
+            ],
+            "diagnostics": [],
+        },
+        profile=profile_for("quality_certificate_v1"),
+    )
+
+    assert "quality_seal" in result["quality"]["matchedSealTypes"]
+    assert "quality_seal" not in result["quality"]["missingExpectedSealTypes"]
+
+
+def test_ndt_rt_report_extracts_inferred_chinese_month_date() -> None:
+    result = {
+        "fragments": [
+            {"text": "射线检测报告", "bbox": [10, 10, 130, 30], "confidence": 0.96, "pageNo": 1},
+            {"text": "报告编号 RTBG-2021-001", "bbox": [10, 40, 220, 60], "confidence": 0.96, "pageNo": 1},
+            {"text": "工程名称 珠海恒基达鑫项目", "bbox": [10, 70, 240, 90], "confidence": 0.96, "pageNo": 1},
+            {"text": "焊口编号 W-001", "bbox": [10, 100, 140, 120], "confidence": 0.96, "pageNo": 1},
+            {"text": "评定级别 II", "bbox": [10, 130, 140, 150], "confidence": 0.96, "pageNo": 1},
+            {"text": "报告日期 二零年四月", "bbox": [10, 160, 170, 180], "confidence": 0.9, "pageNo": 1},
+            {"text": "检测结论 合格", "bbox": [10, 190, 140, 210], "confidence": 0.96, "pageNo": 1},
+            {"text": "广东检测有限公司", "bbox": [10, 220, 170, 240], "confidence": 0.96, "pageNo": 1},
+        ],
+        "fields": [],
+    }
+
+    extract_ndt_rt_report_fields(result)
+    fields = {item["fieldCode"]: item["fieldValue"] for item in result["fields"]}
+
+    assert fields["report_no"] == "RTBG-2021-001"
+    assert fields["detection_method"] == "RT"
+    assert fields["detection_date"] == "2021年4月"
+    assert fields["evaluation_level"] == "II"
+    assert fields["conclusion"] == "合格"

@@ -66,6 +66,7 @@ import {
   getFdeProjectAuditWorkspaceApi,
   getFdeProjectVectorFileDetailApi,
   getFdeStandardVectorFileDetailApi,
+  getFdeStandardVectorFilePagePreviewApi,
   getFdeStandardsVectorizationApi,
   importFdeOcrAnnotationPackApi,
   getFdeReleaseImpactApi,
@@ -177,6 +178,13 @@ const vectorFileDetailError = ref('')
 const selectedVectorFileSourceRow = ref<Record<string, unknown> | null>(null)
 const selectedVectorEvidence = ref<Record<string, unknown> | null>(null)
 const selectedVectorEvidenceType = ref('source')
+const selectedVectorFileDetailTab = ref('pipeline')
+const vectorSourcePreviewObjectUrl = ref('')
+const vectorSourcePreviewObjectKey = ref('')
+const vectorSourcePreviewLoading = ref(false)
+const vectorSourcePreviewError = ref('')
+const vectorSourcePreviewNaturalSize = ref({ key: '', width: 0, height: 0 })
+const vectorSourcePreviewCardRef = ref<HTMLElement | null>(null)
 const vectorChunkPreviewDialogVisible = ref(false)
 const selectedVectorChunkPreview = ref<Record<string, unknown> | null>(null)
 const standardsVectorization = ref<FdeStandardsVectorizationPayload | null>(null)
@@ -1676,6 +1684,22 @@ const friendlyReferenceLabel = (value: unknown, fallback = '-') => {
 const friendlyIssueLabel = (value: unknown, fallback = '-') => {
   const raw = String(value || '').trim()
   if (!raw) return fallback
+  const issueLabels: Record<string, string> = {
+    noise_like_watermark: '疑似水印/下载站文本',
+    missing_roi: '缺 ROI',
+    missing_bbox: '缺 bbox',
+    bbox_outside_source_bounds: 'ROI 越界',
+    roi_out_of_bounds: 'ROI 越界',
+    source_dimensions_missing: '源图尺寸缺失',
+    coordinate_system_inferred: '坐标系推断',
+    too_short: '文本过短',
+    too_long: '文本过长',
+    missing_page: '缺页码',
+    missing_vector: '缺向量',
+    duplicate_text: '重复文本',
+    not_retrieved: '未被检索命中'
+  }
+  if (issueLabels[raw]) return issueLabels[raw]
   const techLabel = friendlyTechLabel(raw, '')
   if (techLabel && techLabel !== raw) return techLabel
   return friendlyRuleCode(raw)
@@ -6750,11 +6774,12 @@ const standardsVectorHealth = computed(() => {
     }
   }
   if (vectorGap || issueCount) {
+    const noiseCount = Number(standardsVectorizationMetrics.value.noiseLikeWatermarkCount || 0)
     return {
       label: '需处理',
       tone: 'warning' as const,
       headline: '规范库存在治理缺口',
-      summary: `向量缺口 ${vectorGap} 条，问题文件 ${issueCount} 个。`
+      summary: `向量缺口 ${vectorGap} 条，问题文件 ${issueCount} 个，水印切片 ${noiseCount} 条。`
     }
   }
   if (pendingCorrections) {
@@ -6791,6 +6816,8 @@ const standardsVectorizationFiles = computed(() =>
       chunkCount,
       vectorCount,
       vectorGap,
+      noiseLikeWatermarkCount: Number(row.noiseLikeWatermarkCount || 0),
+      noiseLikeWatermarkRate: Number(row.noiseLikeWatermarkRate || 0),
       pageIndexNodeCount: Number(row.pageIndexNodeCount || 0),
       embeddingModel: String(row.embeddingModel || 'embedding-default'),
       indexVersion: String(row.indexVersion || 'knowledge-index@local'),
@@ -6900,6 +6927,14 @@ const standardsVectorizationCards = computed(() => [
     tone: 'green' as const
   },
   {
+    label: '水印切片',
+    value: String(standardsVectorizationMetrics.value.noiseLikeWatermarkCount || 0),
+    hint: `占比 ${scorePercent(Number(standardsVectorizationMetrics.value.noiseLikeWatermarkRate || 0))}`,
+    tone: Number(standardsVectorizationMetrics.value.noiseLikeWatermarkCount || 0)
+      ? ('orange' as const)
+      : ('green' as const)
+  },
+  {
     label: 'PageIndex',
     value: String(standardsVectorizationMetrics.value.pageIndexNodeCount || 0),
     hint: String(standardsVectorizationMetrics.value.activeEmbeddingModel || '-'),
@@ -6987,6 +7022,8 @@ const selectedVectorFileChunkRows = computed(() =>
     materialized: Boolean(row.materialized),
     pageNo: row.pageNo ?? '-',
     bbox: row.bbox,
+    originalBbox: row.originalBbox,
+    roi: row.roi,
     sectionPath: Array.isArray(row.sectionPath)
       ? row.sectionPath.join(' / ')
       : String(row.sectionPath || '-'),
@@ -7004,7 +7041,10 @@ const selectedVectorFileChunkRows = computed(() =>
     correctionIds: Array.isArray(row.correctionIds) ? row.correctionIds : [],
     latestCorrectionStatus: String(row.latestCorrectionStatus || ''),
     latestCorrectionStatusLabel: String(row.latestCorrectionStatusLabel || ''),
-    hasBbox: Boolean(row.bbox),
+    evidenceUsable: row.evidenceUsable !== false,
+    evidenceStatusReason: friendlyIssueLabel(row.evidenceStatusReason, ''),
+    hasBbox: row.evidenceUsable !== false && Boolean(row.bbox),
+    roiQualityWarnings: Array.isArray(row.roiQualityWarnings) ? row.roiQualityWarnings : [],
     metadataCompleteness: scorePercent(Number(row.metadataCompleteness || 0)),
     qualityFlags: Array.isArray(row.qualityFlags)
       ? row.qualityFlags.map((item) => friendlyIssueLabel(item, '')).filter(Boolean)
@@ -7012,6 +7052,12 @@ const selectedVectorFileChunkRows = computed(() =>
     evidenceLabel: `Chunk ${Number(row.chunkNo || index + 1)}`,
     raw: row
   }))
+)
+const selectedVectorFileEvidenceChunkRows = computed(() =>
+  selectedVectorFileChunkRows.value.filter((row) => row.evidenceUsable)
+)
+const selectedVectorFileSuppressedChunkRows = computed(() =>
+  selectedVectorFileChunkRows.value.filter((row) => !row.evidenceUsable)
 )
 const selectedVectorFilePageIndexRows = computed(() =>
   toRecordArray(selectedVectorFileDetailRecord.value.pageIndexNodes).map((row, index) => ({
@@ -7071,6 +7117,11 @@ const selectedVectorFileChunkCards = computed(() => [
     hint: '证据定位可点击的基础'
   },
   {
+    label: '水印切片',
+    value: `${Number(selectedVectorFileChunkSummary.value.noiseLikeWatermarkCount || 0)} 条`,
+    hint: `占比 ${scorePercent(Number(selectedVectorFileChunkSummary.value.noiseLikeWatermarkRate || 0))}`
+  },
+  {
     label: '检索覆盖',
     value: scorePercent(Number(selectedVectorFileChunkSummary.value.retrievalCoverage || 0)),
     hint: `${Number(selectedVectorFileChunkSummary.value.retrievedChunkCount || 0)} 条被溯源命中`
@@ -7102,6 +7153,8 @@ const selectedVectorFileSourcePages = computed(() =>
     pageNo: Number(page.pageNo || index + 1),
     width: Number(page.width || 1000),
     height: Number(page.height || 1400),
+    sourceImageWidth: Number(page.sourceImageWidth || page.previewWidth || page.width || 1000),
+    sourceImageHeight: Number(page.sourceImageHeight || page.previewHeight || page.height || 1400),
     previewUrl: String(page.previewUrl || selectedVectorFilePipelineSource.value.previewUrl || ''),
     imageObjectKey: String(page.imageObjectKey || '')
   }))
@@ -7118,6 +7171,12 @@ const selectedVectorPreviewUrl = computed(() =>
       ''
   )
 )
+const selectedVectorPreviewDisplayUrl = computed(() => {
+  if (selectedVectorCorrectionScope.value === 'standards') {
+    return vectorSourcePreviewObjectUrl.value
+  }
+  return selectedVectorPreviewUrl.value
+})
 const selectedVectorPreviewType = computed(() =>
   String(
     selectedVectorFilePipelineSource.value.previewType ||
@@ -7126,13 +7185,13 @@ const selectedVectorPreviewType = computed(() =>
   )
 )
 const selectedVectorPreviewCanRender = computed(() => {
-  const url = selectedVectorPreviewUrl.value
+  const url = selectedVectorPreviewDisplayUrl.value
   if (!url || url.startsWith('mock://')) return false
   return /image|png|jpe?g|webp|gif|pdf/i.test(`${selectedVectorPreviewType.value} ${url}`)
 })
 const selectedVectorPreviewIsImage = computed(() =>
   /image|png|jpe?g|webp|gif/i.test(
-    `${selectedVectorPreviewType.value} ${selectedVectorPreviewUrl.value}`
+    `${selectedVectorPreviewType.value} ${selectedVectorPreviewDisplayUrl.value}`
   )
 )
 const selectedVectorFilePipelineOcr = computed(() => toRecord(selectedVectorFilePipeline.value.ocr))
@@ -7149,6 +7208,8 @@ const selectedVectorFilePipelineFieldRows = computed(() =>
     source: friendlyTechnicalText(row.source || '-'),
     hasBbox: Boolean(row.bbox),
     bbox: row.bbox,
+    originalBbox: row.originalBbox,
+    roi: row.roi,
     evidenceLabel: friendlyFieldLabel(String(row.fieldName || row.fieldCode || `字段 ${index + 1}`))
   }))
 )
@@ -7160,10 +7221,30 @@ const selectedVectorFilePipelineTextRows = computed(() =>
     pageNo: row.pageNo ?? '-',
     tokenCount: row.tokenCount ?? '-',
     text: String(row.text || '-'),
-    hasBbox: Boolean(row.bbox),
+    sourceMethod: String(row.sourceMethod || ''),
+    evidenceUsable: row.evidenceUsable !== false,
+    evidenceStatusReason: friendlyIssueLabel(row.evidenceStatusReason, ''),
+    hasBbox: row.evidenceUsable !== false && Boolean(row.bbox),
     bbox: row.bbox,
+    roi: row.roi,
+    roiQualityWarnings: (
+      [
+        ...(Array.isArray(toRecord(row.roi).qualityWarnings)
+          ? (toRecord(row.roi).qualityWarnings as unknown[])
+          : []),
+        ...(Array.isArray(row.roiQualityWarnings) ? (row.roiQualityWarnings as unknown[]) : [])
+      ] as unknown[]
+    )
+      .map((item: unknown) => friendlyIssueLabel(item, ''))
+      .filter(Boolean),
     evidenceLabel: String(row.sourceLabel || `文本 ${index + 1}`)
   }))
+)
+const selectedVectorFilePipelineEvidenceTextRows = computed(() =>
+  selectedVectorFilePipelineTextRows.value.filter((row) => row.evidenceUsable)
+)
+const selectedVectorFilePipelineSuppressedTextRows = computed(() =>
+  selectedVectorFilePipelineTextRows.value.filter((row) => !row.evidenceUsable)
 )
 const selectedVectorFilePipelineVectorRows = computed(() =>
   toRecordArray(toRecord(selectedVectorFilePipeline.value.vectorFormat).rows).map((row, index) => {
@@ -7185,34 +7266,120 @@ const selectedVectorFilePipelineVectorRows = computed(() =>
       indexVersion: String(vectorRecord.indexVersion || '-'),
       vectorId: String(indexRecord.vectorId || vectorRecord.id || '-'),
       pageNo: metadata.pageNo ?? '-',
+      sourceMethod: String(metadata.sourceMethod || row.sourceMethod || ''),
+      evidenceUsable: metadata.evidenceUsable !== false,
+      evidenceStatusReason: friendlyIssueLabel(metadata.evidenceStatusReason, ''),
       bbox: metadata.bbox,
-      hasBbox: Boolean(metadata.bbox),
+      roi: metadata.roi,
+      hasBbox: metadata.evidenceUsable !== false && Boolean(metadata.bbox),
       metadata: JSON.stringify(vectorRecord.metadata || {}, null, 2),
       evidenceLabel: `Chunk ${Number(row.chunkNo || index + 1)}`
     }
   })
 )
+const selectedVectorFilePipelineEvidenceVectorRows = computed(() =>
+  selectedVectorFilePipelineVectorRows.value.filter((row) => row.evidenceUsable)
+)
 const selectedVectorEvidenceRecord = computed(() => toRecord(selectedVectorEvidence.value))
-const selectedVectorEvidenceBbox = computed(() => {
-  const bbox = selectedVectorEvidenceRecord.value.bbox
-  if (!Array.isArray(bbox) || bbox.length < 4) return null
-  const values = bbox.slice(0, 4).map((value) => Number(value))
+const normalizeVectorEvidenceBbox = (raw: unknown): number[] | null => {
+  if (!Array.isArray(raw) || raw.length < 4) return null
+  if (Array.isArray(raw[0])) {
+    const points = raw
+      .filter((point) => Array.isArray(point) && point.length >= 2)
+      .map((point) => [Number(point[0]), Number(point[1])])
+      .filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y))
+    if (!points.length) return null
+    const xs = points.map(([x]) => x)
+    const ys = points.map(([, y]) => y)
+    return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]
+  }
+  const values = raw.slice(0, 4).map((value) => Number(value))
   return values.every((value) => Number.isFinite(value)) ? values : null
+}
+const selectedVectorEvidenceRoi = computed(() => toRecord(selectedVectorEvidenceRecord.value.roi))
+const selectedVectorEvidenceBbox = computed(() => {
+  return normalizeVectorEvidenceBbox(
+    selectedVectorEvidenceRecord.value.bbox || selectedVectorEvidenceRoi.value.unionBBox
+  )
 })
-const selectedVectorEvidenceStyle = computed(() => {
+const selectedVectorEvidenceRoiWarnings = computed(() =>
+  (Array.isArray(selectedVectorEvidenceRoi.value.qualityWarnings)
+    ? selectedVectorEvidenceRoi.value.qualityWarnings
+    : []
+  ).map((item) => friendlyIssueLabel(item, String(item || '')))
+)
+const selectedVectorEvidenceBoxes = computed(() => {
+  if (selectedVectorEvidenceRecord.value.evidenceUsable === false) return []
+  const roiBoxes = toRecordArray(selectedVectorEvidenceRoi.value.boxes)
+    .map((box, index) => {
+      const bbox = normalizeVectorEvidenceBbox(box.bbox || box.polygon)
+      if (!bbox) return null
+      return {
+        id: String(box.id || `roi-box-${index + 1}`),
+        bbox,
+        label: String(box.text || selectedVectorEvidenceType.value || `ROI ${index + 1}`)
+      }
+    })
+    .filter((box): box is { id: string; bbox: number[]; label: string } => Boolean(box))
+  if (roiBoxes.length) return roiBoxes
   const bbox = selectedVectorEvidenceBbox.value
+  return bbox ? [{ id: 'roi-box-fallback', bbox, label: selectedVectorEvidenceType.value }] : []
+})
+const selectedVectorEvidenceCoordinateSize = computed(() => {
   const page = selectedVectorActivePage.value
-  if (!bbox || !page) return {}
+  const roi = selectedVectorEvidenceRoi.value
+  const naturalSize = vectorSourcePreviewNaturalSize.value
+  const naturalSizeReady =
+    selectedVectorCorrectionScope.value === 'standards' &&
+    naturalSize.key === vectorSourcePreviewObjectKey.value &&
+    naturalSize.width > 0 &&
+    naturalSize.height > 0
+  let width = Number(roi.sourceImageWidth || page?.sourceImageWidth || page?.width || 0)
+  let height = Number(roi.sourceImageHeight || page?.sourceImageHeight || page?.height || 0)
+  const bbox = selectedVectorEvidenceBbox.value
+  if (!width || !height) {
+    width = naturalSizeReady ? naturalSize.width : 1000
+    height = naturalSizeReady ? naturalSize.height : 1400
+  }
+  if (naturalSizeReady) {
+    const sourceMethod = String(selectedVectorEvidenceRecord.value.sourceMethod || '').toLowerCase()
+    if (sourceMethod.includes('ocr') && (width < 1000 || height < 1000)) {
+      width = naturalSize.width
+      height = naturalSize.height
+    }
+  }
+  if (bbox && naturalSizeReady) {
+    const [, , x2, y2] = bbox
+    if (x2 > width * 1.05 || y2 > height * 1.05) {
+      width = naturalSize.width
+      height = naturalSize.height
+    }
+  }
+  return { width, height }
+})
+const selectedVectorSourcePageStyle = computed(() => {
+  const { width, height } = selectedVectorEvidenceCoordinateSize.value
+  const safeWidth = Math.max(1, width)
+  const safeHeight = Math.max(1, height)
+  const displayWidth = Math.max(180, Math.min(900, (520 * safeWidth) / safeHeight))
+  return {
+    '--vector-source-page-width': `${displayWidth}px`,
+    '--vector-source-page-aspect': `${safeWidth} / ${safeHeight}`
+  }
+})
+const vectorEvidenceBoxStyle = (bbox: number[]) => {
+  if (!bbox) return {}
   const [x1, y1, x2, y2] = bbox
+  const { width: pageWidth, height: pageHeight } = selectedVectorEvidenceCoordinateSize.value
   const width = x2 > x1 ? x2 - x1 : x2
   const height = y2 > y1 ? y2 - y1 : y2
   return {
-    left: `${Math.max(0, (x1 / page.width) * 100)}%`,
-    top: `${Math.max(0, (y1 / page.height) * 100)}%`,
-    width: `${Math.min(100, Math.max(2, (width / page.width) * 100))}%`,
-    height: `${Math.min(100, Math.max(2, (height / page.height) * 100))}%`
+    left: `${Math.min(100, Math.max(0, (x1 / pageWidth) * 100))}%`,
+    top: `${Math.min(100, Math.max(0, (y1 / pageHeight) * 100))}%`,
+    width: `${Math.min(100, Math.max(2, (width / pageWidth) * 100))}%`,
+    height: `${Math.min(100, Math.max(2, (height / pageHeight) * 100))}%`
   }
-})
+}
 const selectedVectorEvidenceJson = computed(() =>
   JSON.stringify(selectedVectorEvidenceRecord.value, null, 2)
 )
@@ -9328,8 +9495,10 @@ const openVectorFileQualityDrawer = async (row: Record<string, unknown>) => {
   selectedVectorFileSourceRow.value = row
   selectedVectorEvidence.value = null
   selectedVectorEvidenceType.value = 'source'
+  selectedVectorFileDetailTab.value = 'pipeline'
   selectedVectorChunkPreview.value = null
   vectorChunkPreviewDialogVisible.value = false
+  clearVectorSourcePreview()
   vectorFileDetailError.value = ''
   const qualityRow =
     projectAuditVectorQualityDocumentRows.value.find(
@@ -9393,8 +9562,10 @@ const openStandardsVectorFileDrawer = async (row: Record<string, unknown>) => {
   selectedVectorFileSourceRow.value = row
   selectedVectorEvidence.value = null
   selectedVectorEvidenceType.value = 'source'
+  selectedVectorFileDetailTab.value = 'pipeline'
   selectedVectorChunkPreview.value = null
   vectorChunkPreviewDialogVisible.value = false
+  clearVectorSourcePreview()
   vectorFileDetailError.value = ''
   selectedVectorFileQuality.value = {
     ...row,
@@ -9443,9 +9614,20 @@ const retryVectorFileDetail = async () => {
   }
 }
 
+const scrollVectorSourcePreviewIntoView = () => {
+  void nextTick(() => {
+    vectorSourcePreviewCardRef.value?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'nearest',
+      inline: 'nearest'
+    })
+  })
+}
+
 const selectVectorEvidence = (row: Record<string, unknown>, type: string) => {
   selectedVectorEvidence.value = row
   selectedVectorEvidenceType.value = type
+  scrollVectorSourcePreviewIntoView()
 }
 
 const openVectorChunkPreview = (row: Record<string, unknown>) => {
@@ -9907,6 +10089,80 @@ const ocrCapabilityBlobErrorMessage = async (blob: Blob) => {
     return String(payload?.message || payload?.data?.message || payload?.data?.reason || '')
   } catch {
     return ''
+  }
+}
+
+const clearVectorSourcePreview = () => {
+  if (vectorSourcePreviewObjectUrl.value) {
+    URL.revokeObjectURL(vectorSourcePreviewObjectUrl.value)
+    vectorSourcePreviewObjectUrl.value = ''
+  }
+  vectorSourcePreviewObjectKey.value = ''
+  vectorSourcePreviewLoading.value = false
+  vectorSourcePreviewError.value = ''
+  vectorSourcePreviewNaturalSize.value = { key: '', width: 0, height: 0 }
+}
+
+const handleVectorSourcePreviewLoad = (event: Event) => {
+  const image = event.currentTarget as HTMLImageElement | null
+  vectorSourcePreviewNaturalSize.value = {
+    key: vectorSourcePreviewObjectKey.value,
+    width: Number(image?.naturalWidth || 0),
+    height: Number(image?.naturalHeight || 0)
+  }
+}
+
+const loadVectorSourcePagePreview = async () => {
+  const page = selectedVectorActivePage.value
+  const fileId = String(selectedVectorFileQualityRecord.value.knowledgeFileId || '')
+  const previewUrl = selectedVectorPreviewUrl.value
+  if (
+    !vectorFileQualityDrawerVisible.value ||
+    selectedVectorCorrectionScope.value !== 'standards' ||
+    !fileId ||
+    !page?.pageNo ||
+    !previewUrl
+  ) {
+    if (selectedVectorCorrectionScope.value === 'standards') {
+      clearVectorSourcePreview()
+    }
+    return
+  }
+  const previewKey = `${fileId}:${page.pageNo}:${previewUrl}`
+  if (vectorSourcePreviewObjectKey.value === previewKey && vectorSourcePreviewObjectUrl.value) {
+    return
+  }
+  clearVectorSourcePreview()
+  vectorSourcePreviewObjectKey.value = previewKey
+  vectorSourcePreviewLoading.value = true
+  try {
+    const response = await getFdeStandardVectorFilePagePreviewApi(fileId, { pageNo: page.pageNo })
+    const blob = response?.data instanceof Blob ? response.data : new Blob([response?.data || ''])
+    if (!String(blob.type || '').startsWith('image/')) {
+      const message = await ocrCapabilityBlobErrorMessage(blob)
+      throw new Error(message || '规范原文页图预览返回的不是图片。')
+    }
+    const objectUrl = URL.createObjectURL(blob)
+    if (vectorSourcePreviewObjectKey.value !== previewKey) {
+      URL.revokeObjectURL(objectUrl)
+      return
+    }
+    vectorSourcePreviewObjectUrl.value = objectUrl
+    vectorSourcePreviewError.value = ''
+  } catch (err) {
+    if (vectorSourcePreviewObjectKey.value === previewKey) {
+      if (vectorSourcePreviewObjectUrl.value) {
+        URL.revokeObjectURL(vectorSourcePreviewObjectUrl.value)
+        vectorSourcePreviewObjectUrl.value = ''
+      }
+      vectorSourcePreviewError.value =
+        err instanceof Error ? err.message : '规范原文页图预览加载失败。'
+    }
+    console.warn('FDE standards source page preview failed.', err)
+  } finally {
+    if (vectorSourcePreviewObjectKey.value === previewKey) {
+      vectorSourcePreviewLoading.value = false
+    }
   }
 }
 
@@ -11792,6 +12048,26 @@ watch(
   }
 )
 
+watch(
+  () => [
+    vectorFileQualityDrawerVisible.value,
+    selectedVectorCorrectionScope.value,
+    selectedVectorFileQualityRecord.value.knowledgeFileId,
+    selectedVectorActivePage.value?.pageNo,
+    selectedVectorPreviewUrl.value
+  ],
+  () => {
+    void loadVectorSourcePagePreview()
+  },
+  { flush: 'post' }
+)
+
+watch(vectorFileQualityDrawerVisible, (visible) => {
+  if (!visible) {
+    clearVectorSourcePreview()
+  }
+})
+
 watch(reviewAuditDrawerVisible, (visible) => {
   if (!visible) {
     void clearAuditDetailRoute('reviewRunId')
@@ -11832,6 +12108,7 @@ onBeforeUnmount(() => {
     ocrCapabilityLocalPreviewUrl.value = ''
   }
   clearOcrCapabilityPdfPagePreview()
+  clearVectorSourcePreview()
 })
 </script>
 
@@ -15996,6 +16273,23 @@ onBeforeUnmount(() => {
                 </template>
               </ElTableColumn>
               <ElTableColumn prop="pageIndexNodeCount" label="PageIndex" width="104" />
+              <ElTableColumn label="ROI/水印" width="118">
+                <template #default="{ row }">
+                  <div class="standards-vector-noise">
+                    <ElTag
+                      :type="row.noiseLikeWatermarkCount ? 'danger' : 'success'"
+                      effect="plain"
+                    >
+                      {{
+                        row.noiseLikeWatermarkCount ? `${row.noiseLikeWatermarkCount} 条` : '正常'
+                      }}
+                    </ElTag>
+                    <span v-if="row.noiseLikeWatermarkCount">
+                      {{ scorePercent(row.noiseLikeWatermarkRate) }}
+                    </span>
+                  </div>
+                </template>
+              </ElTableColumn>
               <ElTableColumn label="状态" width="118">
                 <template #default="{ row }">
                   <ElTag :type="row.vectorGap ? 'warning' : 'success'" effect="plain">
@@ -19510,7 +19804,11 @@ onBeforeUnmount(() => {
             </ElDescriptionsItem>
           </ElDescriptions>
 
-          <ElTabs v-loading="vectorFileDetailLoading" class="audit-drawer-tabs">
+          <ElTabs
+            v-model="selectedVectorFileDetailTab"
+            v-loading="vectorFileDetailLoading"
+            class="audit-drawer-tabs"
+          >
             <ElTabPane label="加工链路" name="pipeline">
               <div class="vector-pipeline-strip mb-12px">
                 <div
@@ -19534,25 +19832,40 @@ onBeforeUnmount(() => {
                       </ElTag>
                     </div>
                   </template>
-                  <div class="vector-source-canvas">
-                    <img
-                      v-if="selectedVectorPreviewCanRender && selectedVectorPreviewIsImage"
-                      class="vector-source-media"
-                      :src="selectedVectorPreviewUrl"
-                      :alt="
-                        String(
-                          selectedVectorFilePipelineSource.fileName ||
-                            selectedVectorFileQualityRecord.fileName ||
-                            '文件预览'
-                        )
-                      "
-                    />
-                    <iframe
-                      v-else-if="selectedVectorPreviewCanRender"
-                      class="vector-source-media"
-                      :src="selectedVectorPreviewUrl"
-                      title="文件预览"
-                    ></iframe>
+                  <div ref="vectorSourcePreviewCardRef" class="vector-source-canvas">
+                    <div
+                      v-if="selectedVectorPreviewCanRender"
+                      class="vector-source-page"
+                      :style="selectedVectorSourcePageStyle"
+                    >
+                      <img
+                        v-if="selectedVectorPreviewIsImage"
+                        class="vector-source-media"
+                        :src="selectedVectorPreviewDisplayUrl"
+                        :alt="
+                          String(
+                            selectedVectorFilePipelineSource.fileName ||
+                              selectedVectorFileQualityRecord.fileName ||
+                              '文件预览'
+                          )
+                        "
+                        @load="handleVectorSourcePreviewLoad"
+                      />
+                      <iframe
+                        v-else
+                        class="vector-source-media"
+                        :src="selectedVectorPreviewDisplayUrl"
+                        title="文件预览"
+                      ></iframe>
+                      <div
+                        v-for="box in selectedVectorEvidenceBoxes"
+                        :key="box.id"
+                        class="vector-evidence-box"
+                        :style="vectorEvidenceBoxStyle(box.bbox)"
+                      >
+                        <span>{{ selectedVectorEvidenceType }}</span>
+                      </div>
+                    </div>
                     <div v-else class="vector-source-placeholder">
                       <strong>{{
                         selectedVectorFilePipelineSource.fileName ||
@@ -19560,8 +19873,11 @@ onBeforeUnmount(() => {
                         '-'
                       }}</strong>
                       <span>{{
-                        selectedVectorFilePipelineSource.previewUnavailableReason ||
-                        '未生成可渲染预览，仍可查看 OCR、文本和向量证据。'
+                        vectorSourcePreviewLoading
+                          ? '正在加载规范原文页图。'
+                          : vectorSourcePreviewError ||
+                            selectedVectorFilePipelineSource.previewUnavailableReason ||
+                            '未生成可渲染预览，仍可查看 OCR、文本和向量证据。'
                       }}</span>
                       <small>{{
                         selectedVectorFilePipelineSource.storageKey ||
@@ -19569,20 +19885,17 @@ onBeforeUnmount(() => {
                         '-'
                       }}</small>
                     </div>
-                    <div
-                      v-if="selectedVectorEvidenceBbox"
-                      class="vector-evidence-box"
-                      :style="selectedVectorEvidenceStyle"
-                    >
-                      <span>{{ selectedVectorEvidenceType }}</span>
-                    </div>
                   </div>
                   <ElDescriptions :column="1" border class="mt-12px">
                     <ElDescriptionsItem label="Storage Key">
                       {{ selectedVectorFilePipelineSource.storageKey || '-' }}
                     </ElDescriptionsItem>
                     <ElDescriptionsItem label="Preview">
-                      {{ selectedVectorFilePipelineSource.previewUrl || '-' }}
+                      {{
+                        selectedVectorPreviewUrl ||
+                        selectedVectorFilePipelineSource.previewUrl ||
+                        '-'
+                      }}
                     </ElDescriptionsItem>
                     <ElDescriptionsItem label="当前证据">
                       {{
@@ -19635,6 +19948,16 @@ onBeforeUnmount(() => {
                           </ElTag>
                         </template>
                       </ElTableColumn>
+                      <ElTableColumn label="质量" width="130">
+                        <template #default="{ row }">
+                          <ElTag
+                            :type="row.roiQualityWarnings.length ? 'warning' : 'success'"
+                            effect="plain"
+                          >
+                            {{ row.roiQualityWarnings[0] || '正常' }}
+                          </ElTag>
+                        </template>
+                      </ElTableColumn>
                     </ElTable>
                   </ElCard>
 
@@ -19642,11 +19965,27 @@ onBeforeUnmount(() => {
                     <template #header>
                       <div class="vector-card-header">
                         <strong>文本与切片</strong>
-                        <span>{{ selectedVectorFilePipelineTextRows.length }} 条文本记录</span>
+                        <span>
+                          {{ selectedVectorFilePipelineEvidenceTextRows.length }} 条有效文本 · 隔离
+                          {{ selectedVectorFilePipelineSuppressedTextRows.length }} 条
+                        </span>
                       </div>
                     </template>
+                    <ElAlert
+                      v-if="selectedVectorFilePipelineSuppressedTextRows.length"
+                      class="mb-12px"
+                      type="warning"
+                      show-icon
+                      :closable="false"
+                      :title="`已隔离 ${selectedVectorFilePipelineSuppressedTextRows.length} 条疑似水印/下载站文本，不作为原文证据。`"
+                    />
+                    <ElEmpty
+                      v-if="!selectedVectorFilePipelineEvidenceTextRows.length"
+                      description="没有可展示的有效原文切片；当前文件需要重新 OCR/切片重建。"
+                    />
                     <ElTable
-                      :data="selectedVectorFilePipelineTextRows"
+                      v-else
+                      :data="selectedVectorFilePipelineEvidenceTextRows"
                       border
                       highlight-current-row
                       @row-click="(row) => selectVectorEvidence(row, 'Text')"
@@ -19672,17 +20011,57 @@ onBeforeUnmount(() => {
                         </template>
                       </ElTableColumn>
                     </ElTable>
+                    <div
+                      v-if="selectedVectorFilePipelineSuppressedTextRows.length"
+                      class="vector-quarantine-section"
+                    >
+                      <div class="vector-quarantine-head">
+                        <strong>隔离文本</strong>
+                        <span>这些记录来自现有索引，但不作为原文证据和 ROI 定位。</span>
+                      </div>
+                      <ElTable
+                        :data="selectedVectorFilePipelineSuppressedTextRows"
+                        border
+                        size="small"
+                      >
+                        <ElTableColumn prop="sourceLabel" label="来源" width="120" />
+                        <ElTableColumn prop="pageNo" label="页" width="64" />
+                        <ElTableColumn
+                          prop="text"
+                          label="隔离文本"
+                          min-width="240"
+                          show-overflow-tooltip
+                        />
+                        <ElTableColumn label="原因" width="160">
+                          <template #default="{ row }">
+                            <ElTag type="warning" effect="plain">
+                              {{ row.evidenceStatusReason || row.roiQualityWarnings[0] || '不可用' }}
+                            </ElTag>
+                          </template>
+                        </ElTableColumn>
+                        <ElTableColumn label="原 bbox" min-width="190" show-overflow-tooltip>
+                          <template #default="{ row }">
+                            {{ row.originalBbox ? JSON.stringify(row.originalBbox) : '-' }}
+                          </template>
+                        </ElTableColumn>
+                      </ElTable>
+                    </div>
                   </ElCard>
 
                   <ElCard shadow="never" class="vector-pipeline-card">
                     <template #header>
                       <div class="vector-card-header">
                         <strong>向量格式化数据 / 索引</strong>
-                        <span>不展示真实高维向量，仅展示 payload hash 与索引记录</span>
+                        <span>仅展示有效原文输入；水印向量已从证据视图隔离</span>
                       </div>
                     </template>
+                    <ElEmpty
+                      v-if="!selectedVectorFilePipelineEvidenceVectorRows.length"
+                      description="没有有效原文向量输入，当前索引需要重建。"
+                    />
                     <ElTable
-                      :data="selectedVectorFilePipelineVectorRows"
+                      v-else
+                      :data="selectedVectorFilePipelineEvidenceVectorRows"
                       border
                       highlight-current-row
                       @row-click="(row) => selectVectorEvidence(row, 'Vector')"
@@ -19737,11 +20116,24 @@ onBeforeUnmount(() => {
                       <ElDescriptionsItem label="页码">{{
                         selectedVectorEvidenceRecord.pageNo || '-'
                       }}</ElDescriptionsItem>
+                      <ElDescriptionsItem label="证据状态">
+                        {{
+                          selectedVectorEvidenceRecord.evidenceUsable === false
+                            ? selectedVectorEvidenceRecord.evidenceStatusReason || '不可作为证据'
+                            : '可用'
+                        }}
+                      </ElDescriptionsItem>
                       <ElDescriptionsItem label="bbox">{{
                         selectedVectorEvidenceRecord.bbox
                           ? JSON.stringify(selectedVectorEvidenceRecord.bbox)
                           : '缺'
                       }}</ElDescriptionsItem>
+                      <ElDescriptionsItem label="ROI 警告">
+                        <span v-if="selectedVectorEvidenceRoiWarnings.length">
+                          {{ selectedVectorEvidenceRoiWarnings.join('；') }}
+                        </span>
+                        <span v-else>无</span>
+                      </ElDescriptionsItem>
                       <ElDescriptionsItem label="摘要">
                         {{
                           selectedVectorEvidenceRecord.fieldValue ||
@@ -19817,8 +20209,21 @@ onBeforeUnmount(() => {
                 :closable="false"
                 :title="selectedVectorFileBlockers.slice(0, 3).join('；')"
               />
+              <ElAlert
+                v-if="selectedVectorFileSuppressedChunkRows.length"
+                class="mb-12px"
+                type="warning"
+                show-icon
+                :closable="false"
+                :title="`已隔离 ${selectedVectorFileSuppressedChunkRows.length} 条疑似水印/下载站切片，不作为可审计原文或 ROI 证据。`"
+              />
+              <ElEmpty
+                v-if="!selectedVectorFileEvidenceChunkRows.length"
+                description="没有有效原文切片；当前文件需要重新 OCR/切片重建。"
+              />
               <ElTable
-                :data="selectedVectorFileChunkRows"
+                v-else
+                :data="selectedVectorFileEvidenceChunkRows"
                 border
                 highlight-current-row
                 @row-click="(row) => selectVectorEvidence(row, 'Chunk')"
@@ -19918,13 +20323,39 @@ onBeforeUnmount(() => {
                 small
                 background
                 layout="total"
-                :total="
-                  Number(
-                    toRecord(selectedVectorFileDetailRecord.chunkPage).total ||
-                      selectedVectorFileChunkRows.length
-                  )
-                "
+                :total="selectedVectorFileEvidenceChunkRows.length"
               />
+              <div
+                v-if="selectedVectorFileSuppressedChunkRows.length"
+                class="vector-quarantine-section"
+              >
+                <div class="vector-quarantine-head">
+                  <strong>隔离切片</strong>
+                  <span>保留用于排查，不进入默认审计证据和 ROI 预览。</span>
+                </div>
+                <ElTable :data="selectedVectorFileSuppressedChunkRows" border size="small">
+                  <ElTableColumn prop="chunkNo" label="#" width="64" />
+                  <ElTableColumn prop="pageNo" label="页" width="64" />
+                  <ElTableColumn
+                    prop="textPreview"
+                    label="隔离文本"
+                    min-width="260"
+                    show-overflow-tooltip
+                  />
+                  <ElTableColumn label="原因" width="160">
+                    <template #default="{ row }">
+                      <ElTag type="warning" effect="plain">
+                        {{ row.evidenceStatusReason || row.qualityFlags[0] || '不可用' }}
+                      </ElTag>
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn label="原 bbox" min-width="190" show-overflow-tooltip>
+                    <template #default="{ row }">
+                      {{ row.originalBbox ? JSON.stringify(row.originalBbox) : '-' }}
+                    </template>
+                  </ElTableColumn>
+                </ElTable>
+              </div>
             </ElTabPane>
             <ElTabPane label="校对闭环" name="corrections">
               <div class="artifact-summary-grid mb-12px">
@@ -26441,6 +26872,19 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+.standards-vector-noise {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  min-width: 0;
+}
+
+.standards-vector-noise span {
+  font-size: 11px;
+  line-height: 16px;
+  color: #64748b;
+}
+
 .standards-vector-count strong {
   font-size: 13px;
   font-weight: 950;
@@ -26880,12 +27324,24 @@ onBeforeUnmount(() => {
   border-radius: 8px;
 }
 
-.vector-source-media {
-  width: 100%;
-  height: 520px;
+.vector-source-page {
+  position: relative;
+  width: min(100%, var(--vector-source-page-width, 368px));
+  max-width: 100%;
+  overflow: hidden;
+  aspect-ratio: var(--vector-source-page-aspect, 1 / 1.414);
   background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  box-shadow: 0 12px 24px rgb(15 23 42 / 8%);
+}
+
+.vector-source-media {
+  display: block;
+  width: 100%;
+  height: 100%;
   border: 0;
-  object-fit: contain;
+  object-fit: fill;
 }
 
 .panel-title-alias {
@@ -29429,8 +29885,7 @@ onBeforeUnmount(() => {
     position: static;
   }
 
-  .vector-source-canvas,
-  .vector-source-media {
+  .vector-source-canvas {
     height: 360px;
     min-height: 360px;
   }
