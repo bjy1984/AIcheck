@@ -145,6 +145,17 @@ export type NodeRequirementMatch = NodeDocumentRequirement & {
   confirmedEvidenceLinkIds?: string[]
 }
 
+export type BusinessBlockingReason = {
+  code?: string
+  message?: string
+  severity?: 'blocker' | 'warning' | string
+  requirementId?: string
+  requirementName?: string
+  reportId?: string
+  fieldName?: string
+  [key: string]: unknown
+}
+
 export type NodeRequirementsSummary = {
   requiredCount: number
   satisfiedCount: number
@@ -235,6 +246,51 @@ export type EvidenceLink = {
   evidenceCoverage?: number
 }
 
+export type EvidenceSelectionValidation = {
+  schemaVersion?: string
+  passed?: boolean
+  acceptedEvidenceLinkIds?: string[]
+  invalidEvidenceLinkIds?: string[]
+  requiresEvidenceSelection?: boolean
+  availableEvidenceLinkIds?: string[]
+  confirmedNodeEvidenceCount?: number
+  message?: string
+  [key: string]: unknown
+}
+
+export type ReportEvidenceScope = {
+  schemaVersion?: string
+  source?: string
+  nodeId?: number
+  nodeIds?: number[]
+  evidenceLinkIds?: string[]
+  evidenceLinks?: EvidenceLink[]
+  allowedEvidenceIds?: string[]
+  confirmedCount?: number
+  [key: string]: unknown
+}
+
+export type ReportEvidenceValidation = {
+  schemaVersion?: string
+  passed?: boolean
+  evidenceCount?: number
+  sourceValidation?: EvidenceSelectionValidation
+  invalidEvidenceLinkIds?: string[]
+  requiresEvidenceSelection?: boolean
+  message?: string
+  [key: string]: unknown
+}
+
+export type DispatchStatus = {
+  ready?: boolean
+  taskId?: string
+  workflowId?: string
+  reviewRunId?: string
+  result?: unknown
+  statusReason?: string
+  [key: string]: unknown
+}
+
 export type ExtractedField = {
   id: string
   documentVersionId: string
@@ -312,6 +368,10 @@ export type ReviewOpinion = {
   result: '满足要求' | '需补正' | '不适用'
   opinion: string
   evidenceLinkIds: string[]
+  readinessSnapshot?: NodeEvidenceReadiness
+  evidenceValidation?: EvidenceSelectionValidation
+  businessRuleVersion?: string
+  requiresEvidenceSelection?: boolean
   reviewerName: string
   createdAt: string
 }
@@ -344,7 +404,32 @@ export type ReportVersion = {
   reviewerName?: string
   previewUrl?: string
   exportUrl?: string
+  sourceReviewOpinionId?: string
+  evidenceScope?: ReportEvidenceScope
+  evidenceValidation?: ReportEvidenceValidation
   actions: ActionCode[]
+}
+
+export type NdtReportReadiness = {
+  reportId?: string
+  documentId?: string
+  documentVersionId?: string
+  ocrStatus?: DocumentAsset['currentOcrStatus'] | string | null
+  fieldCount?: number
+  bboxFieldCount?: number
+  method?: NdtFilm['method'] | string | null
+  passed?: boolean
+  blockingReasons?: BusinessBlockingReason[]
+  warnings?: BusinessBlockingReason[]
+  [key: string]: unknown
+}
+
+export type NdtSubmissionReadiness = {
+  schemaVersion?: string
+  passed?: boolean
+  reports?: NdtReportReadiness[]
+  blockingReasons?: BusinessBlockingReason[]
+  [key: string]: unknown
 }
 
 export type ArchiveItem = {
@@ -560,6 +645,9 @@ export type NodeEvidenceReadiness = {
   rejectedCount?: number
   progressPercent: number
   readyForAi: boolean
+  readyForAiFormal?: boolean
+  readyForGapPrecheck?: boolean
+  blockingReasons?: BusinessBlockingReason[]
   evidenceReviewComplete?: boolean
   requirements: NodeRequirementMatch[]
   missingRequirements: NodeRequirementMatch[]

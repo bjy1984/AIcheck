@@ -2816,6 +2816,18 @@ onMounted(() => {
         </ElSpace>
       </div>
 
+      <div v-if="latestPublishResult" class="config-panel publish-result-panel">
+        <div>
+          <strong>最近发布：{{ latestPublishResult.version }}</strong>
+          <span>
+            在检项目 {{ latestPublishResult.impactSummary.linkedProjects }} 个 · 推送
+            {{ latestPublishResult.impactSummary.pushedMessages }} 条消息 · 复核待办
+            {{ latestPublishResult.impactSummary.reviewTodos }} 条
+          </span>
+        </div>
+        <ElButton type="primary" plain @click="publishTraceVisible = true">查看联动</ElButton>
+      </div>
+
       <AuditSummaryGrid :cards="adminAuditCards" aria-label="管理后台治理摘要" />
 
       <div
@@ -3522,7 +3534,12 @@ onMounted(() => {
                   <ElTag type="info" effect="plain">
                     {{ overview.materialReviewPoints.length }} 项
                   </ElTag>
-                  <ElButton type="primary" size="small" plain @click="openMaterialReviewPointConfig()">
+                  <ElButton
+                    type="primary"
+                    size="small"
+                    plain
+                    @click="openMaterialReviewPointConfig()"
+                  >
                     新增
                   </ElButton>
                 </ElSpace>
@@ -3575,21 +3592,22 @@ onMounted(() => {
                 show-overflow-tooltip
               />
               <ElTableColumn prop="responsibleParty" label="责任方" width="110" sortable="custom">
-                <template #default="{ row }">{{ responsiblePartyLabel(row.responsibleParty) }}</template>
+                <template #default="{ row }">{{
+                  responsiblePartyLabel(row.responsibleParty)
+                }}</template>
               </ElTableColumn>
               <ElTableColumn prop="requiredType" label="口径" width="98" sortable="custom">
                 <template #default="{ row }">
-                  <ElTag :type="row.requiredType === '可选' ? 'info' : 'warning'" size="small" effect="plain">
+                  <ElTag
+                    :type="row.requiredType === '可选' ? 'info' : 'warning'"
+                    size="small"
+                    effect="plain"
+                  >
                     {{ row.requiredType }}
                   </ElTag>
                 </template>
               </ElTableColumn>
-              <ElTableColumn
-                prop="minConfidence"
-                label="阈值"
-                width="86"
-                sortable="custom"
-              />
+              <ElTableColumn prop="minConfidence" label="阈值" width="86" sortable="custom" />
               <ElTableColumn prop="enabled" label="状态" width="84" sortable="custom">
                 <template #default="{ row }">
                   <ElTag :type="row.enabled ? 'success' : 'info'" size="small" effect="plain">
@@ -4923,11 +4941,7 @@ onMounted(() => {
               <ElInput v-model="configForm.reviewPointFileContent" type="textarea" :rows="2" />
             </ElFormItem>
             <ElFormItem label="OCR证据项">
-              <ElInput
-                v-model="configForm.reviewPointEvidenceItemText"
-                type="textarea"
-                :rows="3"
-              />
+              <ElInput v-model="configForm.reviewPointEvidenceItemText" type="textarea" :rows="3" />
             </ElFormItem>
             <ElRow :gutter="12">
               <ElCol :xs="24" :sm="12">
@@ -4964,7 +4978,11 @@ onMounted(() => {
               </ElCol>
               <ElCol :xs="24" :sm="12">
                 <ElFormItem label="启用状态">
-                  <ElSwitch v-model="configForm.fineEnabled" active-text="启用" inactive-text="停用" />
+                  <ElSwitch
+                    v-model="configForm.fineEnabled"
+                    active-text="启用"
+                    inactive-text="停用"
+                  />
                 </ElFormItem>
               </ElCol>
             </ElRow>
@@ -5813,6 +5831,30 @@ onMounted(() => {
   color: #667085;
 }
 
+.publish-result-panel {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+}
+
+.publish-result-panel strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+  color: #1d4ed8;
+}
+
+.publish-result-panel span {
+  font-size: 12px;
+  color: #475569;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -6047,9 +6089,9 @@ onMounted(() => {
 }
 
 .stacked-cell small {
-  color: var(--el-text-color-secondary);
   font-size: 12px;
   line-height: 1.2;
+  color: var(--el-text-color-secondary);
 }
 
 .member-form :deep(.el-select),

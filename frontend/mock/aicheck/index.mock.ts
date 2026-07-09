@@ -507,6 +507,8 @@ type ReportDetailMock = {
     evidenceLinkIds: string[]
   }>
   evidenceLinks: EvidenceLink[]
+  evidenceScope?: ReportVersion['evidenceScope']
+  evidenceValidation?: ReportVersion['evidenceValidation']
   reviewTrail: Array<{
     title: string
     actorName: string
@@ -558,7 +560,9 @@ const buildInitialStandardKnowledgeTasks = (files: KnowledgeFileMock[]): Knowled
     actions: ['knowledge:task-retry']
   }))
 
-const initialStandardKnowledgeTasks = buildInitialStandardKnowledgeTasks(initialStandardKnowledgeFiles)
+const initialStandardKnowledgeTasks = buildInitialStandardKnowledgeTasks(
+  initialStandardKnowledgeFiles
+)
 
 const initialKnowledgeSources: KnowledgeSourceMock[] = [
   {
@@ -670,7 +674,7 @@ const initialKnowledgeTasks: KnowledgeTaskMock[] = [
     progress: 0,
     createdAt: '2026-06-26 10:12:00',
     actions: ['knowledge:task-retry']
-  },
+  }
 ]
 
 const initialKnowledgeRuleVersions =
@@ -1260,7 +1264,8 @@ const mockBusinessPacks: BusinessPackMock[] = [
     name: '工业管道',
     version: '2026.06.99',
     domainType: 'engineering_inspection',
-    description: 'GC 类工业压力管道业务类型，承载工业管道监督检验角色、节点、资料目录、规则、报告和 AI SOP。',
+    description:
+      'GC 类工业压力管道业务类型，承载工业管道监督检验角色、节点、资料目录、规则、报告和 AI SOP。',
     pipelineTypeCode: 'GC类',
     pipelineTypeName: '工业管道',
     commonGrades: 'GC1、GC2、GCD',
@@ -1620,7 +1625,10 @@ const mockMaterialTypeInfo: Record<
   manufacturing_supervision_certificate: { name: '制造监督检验证书', requiredType: '条件必传' },
   type_test_report: { name: '型式试验证书或型式试验报告', requiredType: '条件必传' },
   factory_inspection_report: { name: '出厂检验报告', requiredType: '条件必传' },
-  overseas_material_certificate: { name: '境外制造或境外牌号材料证明文件', requiredType: '条件必传' },
+  overseas_material_certificate: {
+    name: '境外制造或境外牌号材料证明文件',
+    requiredType: '条件必传'
+  },
   acceptance_witness_record: { name: '到货验收见证资料', requiredType: '条件必传' },
   material_retest_report: { name: '材料复验报告', requiredType: '条件必传' },
   material_mark_transfer_record: { name: '材料标志移植记录', requiredType: '条件必传' },
@@ -1631,7 +1639,10 @@ const mockMaterialTypeInfo: Record<
   welder_roster: { name: '焊工名册', requiredType: '必传' },
   wps_pqr: { name: '焊接工艺评定报告和焊接作业指导书', requiredType: '条件必传' },
   welding_material_certificate: { name: '焊接材料质量证明文件', requiredType: '条件必传' },
-  welding_material_management_record: { name: '焊材验收保管发放回收记录', requiredType: '条件必传' },
+  welding_material_management_record: {
+    name: '焊材验收保管发放回收记录',
+    requiredType: '条件必传'
+  },
   welding_record: { name: '焊接记录和焊缝标识资料', requiredType: '条件必传' },
   weld_repair_record: { name: '焊缝返修记录', requiredType: '条件必传' },
   heat_treatment_procedure: { name: '焊后热处理工艺文件', requiredType: '条件必传' },
@@ -1641,7 +1652,10 @@ const mockMaterialTypeInfo: Record<
   ndt_procedure: { name: '无损检测工艺文件', requiredType: '条件必传' },
   ndt_report: { name: '无损检测报告', requiredType: '必传' },
   radiographic_film: { name: '射线检测底片', requiredType: '条件必传' },
-  anticorrosion_insulation_material_certificate: { name: '防腐及保温材料质量证明文件', requiredType: '条件必传' },
+  anticorrosion_insulation_material_certificate: {
+    name: '防腐及保温材料质量证明文件',
+    requiredType: '条件必传'
+  },
   anticorrosion_insulation_record: { name: '防腐补口补伤和保温施工记录', requiredType: '条件必传' },
   cathodic_protection_record: { name: '阴极保护和杂散电流排流装置资料', requiredType: '条件必传' },
   grounding_test_record: { name: '静电接地施工和测试记录', requiredType: '条件必传' },
@@ -1837,7 +1851,9 @@ const buildNodeRequirementsSummary = (projectId: string, node: ProjectTreeNode) 
     (binding) => binding.projectId === projectId && binding.nodeId === node.nodeId
   )
   const matchedRequirements = nodeRequirements.map((requirement) => {
-    const matches = nodeBindings.filter((binding) => requirementMatchesBinding(requirement, binding))
+    const matches = nodeBindings.filter((binding) =>
+      requirementMatchesBinding(requirement, binding)
+    )
     return {
       ...clone(requirement),
       matchedBindingCount: matches.length,
@@ -2004,6 +2020,109 @@ const getEvidenceForNode = (nodeId: number): EvidenceLink[] => {
   if (scoped?.length) return scoped
   const byNode = evidenceLinks.filter((link) => link.id.includes(`-${nodeId}-`))
   return byNode.length ? byNode : evidenceLinks
+}
+
+const getConfirmedEvidenceForNode = (projectId: string, nodeId: number): EvidenceLink[] => {
+  const nodeRequirements = getNodeRequirements(nodeId)
+  const sourceLinks = getEvidenceForNode(nodeId)
+  const rows = nodeRequirements.length ? nodeRequirements : [undefined]
+  return rows.map((requirement, index) => {
+    const link = sourceLinks[index % Math.max(sourceLinks.length, 1)] || evidenceLinks[0]
+    return {
+      ...link,
+      id: index < sourceLinks.length ? link.id : `${link.id}-${requirement?.id || index}`,
+      projectId,
+      nodeId,
+      reviewPointId: link.reviewPointId || requirement?.id,
+      manualStatus: link.manualStatus || 'confirmed',
+      manualStatusLabel: link.manualStatusLabel || '已确认',
+      matchedEvidenceItems: link.matchedEvidenceItems || [
+        link.quotedText || link.fieldName || link.id
+      ]
+    }
+  })
+}
+
+const buildEvidenceValidation = (
+  projectId: string,
+  nodeId: number,
+  evidenceLinkIds: string[],
+  requireNonEmpty = false
+) => {
+  const allowed = new Set(getConfirmedEvidenceForNode(projectId, nodeId).map((item) => item.id))
+  const requested = Array.from(new Set((evidenceLinkIds || []).filter(Boolean)))
+  const acceptedEvidenceLinkIds = requested.filter((id) => allowed.has(id))
+  const invalidEvidenceLinkIds = requested.filter((id) => !allowed.has(id))
+  const requiresEvidenceSelection = requireNonEmpty && !acceptedEvidenceLinkIds.length
+  return {
+    schemaVersion: 'node-evidence-selection-validation-v1',
+    passed: !invalidEvidenceLinkIds.length && !requiresEvidenceSelection,
+    acceptedEvidenceLinkIds,
+    invalidEvidenceLinkIds,
+    requiresEvidenceSelection,
+    availableEvidenceLinkIds: Array.from(allowed),
+    confirmedNodeEvidenceCount: allowed.size,
+    message: requiresEvidenceSelection
+      ? '请选择当前节点已确认的证据。'
+      : invalidEvidenceLinkIds.length
+        ? '存在不属于当前节点 confirmed 证据范围的引用。'
+        : '证据引用校验通过。'
+  }
+}
+
+const buildNodeEvidenceReadiness = (projectId: string, nodeId: number) => {
+  const nodeRequirements = getNodeRequirements(nodeId)
+  const confirmedLinks = getConfirmedEvidenceForNode(projectId, nodeId)
+  const requirementsWithMatches = nodeRequirements.map((requirement) => {
+    const matched = confirmedLinks.filter((link) => link.reviewPointId === requirement.id)
+    return {
+      ...requirement,
+      matchedBindingCount: matched.length,
+      matchedFileNames: matched.map((link) => link.fileName || link.fieldName || link.id),
+      confirmedLinkCount: matched.length,
+      pendingLinkCount: 0,
+      rejectedLinkCount: 0,
+      fulfilled: matched.length > 0,
+      confirmedEvidenceLinkIds: matched.map((link) => link.id),
+      evidenceLinkIds: matched.map((link) => link.id)
+    }
+  })
+  const missingRequirements = requirementsWithMatches.filter(
+    (requirement) => !requirement.fulfilled
+  )
+  const readyForAiFormal = !missingRequirements.length
+  return {
+    schemaVersion: 'node-evidence-readiness-v1',
+    hasReviewPoints: Boolean(nodeRequirements.length),
+    requiredCount: nodeRequirements.length,
+    satisfiedCount: nodeRequirements.length - missingRequirements.length,
+    missingCount: missingRequirements.length,
+    pendingCount: 0,
+    rejectedCount: 0,
+    progressPercent: nodeRequirements.length
+      ? Math.round(
+          ((nodeRequirements.length - missingRequirements.length) / nodeRequirements.length) * 100
+        )
+      : 0,
+    readyForAi: readyForAiFormal,
+    readyForAiFormal,
+    readyForGapPrecheck: true,
+    evidenceReviewComplete: true,
+    blockingReasons: missingRequirements.map((requirement) => ({
+      code: 'MISSING_REQUIRED_EVIDENCE',
+      message: `缺少 ${requirement.name} confirmed 证据。`,
+      requirementId: requirement.id,
+      requirementName: requirement.name,
+      severity: 'blocker'
+    })),
+    requirements: requirementsWithMatches,
+    missingRequirements,
+    nodeEvidenceLinks: confirmedLinks,
+    inputDocumentVersionIds: Array.from(
+      new Set(confirmedLinks.map((link) => link.documentVersionId).filter(Boolean) as string[])
+    ),
+    supportingDocumentCount: confirmedLinks.length
+  }
 }
 
 const getNodeExtractedFields = (projectId: string, nodeId: number) => {
@@ -2173,9 +2292,12 @@ const uniqueEvidenceLinks = (links: EvidenceLink[]) =>
 
 const buildReportDetail = (projectId: string, report: ReportVersion): ReportDetailMock => {
   const nodes = report.nodeIds.map((nodeId) => getNode(projectId, nodeId))
-  const reportEvidence = uniqueEvidenceLinks(
-    report.nodeIds.flatMap((nodeId) => getEvidenceForNode(nodeId))
-  )
+  const scopedEvidence = report.evidenceScope?.evidenceLinks
+  const reportEvidence = scopedEvidence?.length
+    ? scopedEvidence
+    : uniqueEvidenceLinks(
+        report.nodeIds.flatMap((nodeId) => getConfirmedEvidenceForNode(projectId, nodeId))
+      )
   const reviewTrail = [
     {
       title: '报告草稿生成',
@@ -2248,6 +2370,8 @@ const buildReportDetail = (projectId: string, report: ReportVersion): ReportDeta
       }
     ],
     evidenceLinks: reportEvidence,
+    evidenceScope: report.evidenceScope,
+    evidenceValidation: report.evidenceValidation,
     reviewTrail,
     versionHistory
   }
@@ -6550,6 +6674,8 @@ export default [
         node,
         businessBasis: getNodeBusinessBasis(node.nodeId),
         requirements: getNodeRequirements(node.nodeId),
+        evidenceReadiness: buildNodeEvidenceReadiness(id, node.nodeId),
+        nodeEvidenceLinks: getConfirmedEvidenceForNode(id, node.nodeId),
         bindings: nodeBindings,
         projectFiles,
         availableVersions: state.versions.filter((version) =>
@@ -6898,7 +7024,9 @@ export default [
       const selectedDocumentIds = Array.isArray(body?.documentIds) ? body.documentIds : []
       const createdBindingIds: string[] = []
       selectedDocumentIds.forEach((documentId) => {
-        const document = state.documents.find((item) => item.projectId === id && item.id === documentId)
+        const document = state.documents.find(
+          (item) => item.projectId === id && item.id === documentId
+        )
         if (!document) return
         nodeIds.forEach((currentNodeId) => {
           const existing = state.bindings.find(
@@ -7152,6 +7280,13 @@ export default [
       const mutationError = getNodeMutationError(id, nodeId, { body, query, action: 'AI 复核' })
       if (mutationError) return mutationError
       const node = getNode(id, nodeId)
+      const evidenceReadiness = buildNodeEvidenceReadiness(id, nodeId)
+      if (!evidenceReadiness.readyForAiFormal) {
+        return fail(40902, '资料证据未满足正式 AI 复核条件。', {
+          reason: 'EVIDENCE_READINESS_BLOCKED',
+          evidenceReadiness
+        })
+      }
       const run: AiReviewRun = {
         id: `AIRUN-${nodeId}-${Date.now()}`,
         projectId: id,
@@ -7168,7 +7303,7 @@ export default [
           confidence: 0.86,
           manualConfirmItems: ['证据链页码', '外部来源一致性']
         },
-        evidenceLinks: getEvidenceForNode(nodeId),
+        evidenceLinks: getConfirmedEvidenceForNode(id, nodeId),
         finishedAt: serverTime
       }
       state.aiRuns.unshift(run)
@@ -7184,6 +7319,11 @@ export default [
       return ok({
         runId: run.id,
         status: '完成',
+        dispatch: {
+          ready: true,
+          statusReason: 'mock_dispatch_inline',
+          reviewRunId: run.id
+        },
         changed: [{ field: 'status', before, after: '待人工确认' }],
         latestRun: run
       })
@@ -7207,13 +7347,37 @@ export default [
         return fail(40030, '人工审查意见不能为空。', { reason: 'REVIEW_OPINION_REQUIRED' })
       }
       const result = body?.result || '满足要求'
+      const evidenceValidation = buildEvidenceValidation(
+        id,
+        nodeId,
+        Array.isArray(body?.evidenceLinkIds) ? body.evidenceLinkIds : [],
+        result === '满足要求'
+      )
+      const evidenceReadiness = buildNodeEvidenceReadiness(id, nodeId)
+      if (!evidenceValidation.passed) {
+        return fail(40030, evidenceValidation.message, {
+          reason: 'EVIDENCE_SELECTION_INVALID',
+          evidenceValidation,
+          evidenceReadiness
+        })
+      }
+      if (result === '满足要求' && !evidenceReadiness.readyForAiFormal) {
+        return fail(40902, '仍有 pending 或 missing 资料证据，不能保存“满足要求”审查意见。', {
+          reason: 'EVIDENCE_READINESS_BLOCKED',
+          evidenceValidation,
+          evidenceReadiness
+        })
+      }
       const opinion: ReviewOpinion = {
         id: `OPN-${Date.now()}`,
         projectId: id,
         nodeId,
         result,
         opinion: body?.opinion || '审查意见已保存。',
-        evidenceLinkIds: body?.evidenceLinkIds || ['EV-24-001'],
+        evidenceLinkIds: evidenceValidation.acceptedEvidenceLinkIds,
+        readinessSnapshot: evidenceReadiness,
+        evidenceValidation,
+        businessRuleVersion: 'rule-v2026.06',
         reviewerName: '张工',
         createdAt: serverTime
       }
@@ -7254,13 +7418,19 @@ export default [
       if (!run) {
         return fail(40430, 'AI 建议不存在或已过期。', { reason: 'AI_SUGGESTION_NOT_FOUND' })
       }
+      const requestedEvidenceIds = Array.isArray(body?.evidenceLinkIds)
+        ? body.evidenceLinkIds
+        : run.evidenceLinks.map((item) => item.id)
+      const evidenceValidation = buildEvidenceValidation(id, nodeId, requestedEvidenceIds, false)
       const draftOpinion: ReviewOpinion = {
         id: `DRAFT-OPN-${Date.now()}`,
         projectId: id,
         nodeId,
         result: body?.result || '满足要求',
         opinion: body?.opinion || run.suggestion.opinionDraft,
-        evidenceLinkIds: run.evidenceLinks.map((item) => item.id),
+        evidenceLinkIds: evidenceValidation.acceptedEvidenceLinkIds,
+        requiresEvidenceSelection: !evidenceValidation.acceptedEvidenceLinkIds.length,
+        evidenceValidation,
         reviewerName: '张工',
         createdAt: serverTime
       }
@@ -7410,6 +7580,31 @@ export default [
               .slice(0, 12)
           : [nodeId]
       if (!nodeIds.includes(nodeId)) nodeIds.unshift(nodeId)
+      const latestOpinion = state.reviewOpinions.find(
+        (item) => item.projectId === id && item.nodeId === nodeId
+      )
+      if (!latestOpinion) {
+        return fail(40902, '生成报告前必须先保存人工审查意见。', {
+          reason: 'REVIEW_OPINION_REQUIRED',
+          nodeId
+        })
+      }
+      const evidenceValidation = buildEvidenceValidation(
+        id,
+        nodeId,
+        latestOpinion.evidenceLinkIds || [],
+        true
+      )
+      if (!evidenceValidation.passed) {
+        return fail(40902, '人工审查意见的证据引用未通过 confirmed-only 校验，不能生成报告。', {
+          reason: 'REPORT_EVIDENCE_INVALID',
+          evidenceValidation,
+          reviewOpinionId: latestOpinion.id
+        })
+      }
+      const scopedEvidence = getConfirmedEvidenceForNode(id, nodeId).filter((item) =>
+        evidenceValidation.acceptedEvidenceLinkIds.includes(item.id)
+      )
       const report: ReportVersion = {
         id: `RPT-${Date.now()}`,
         projectId: id,
@@ -7423,6 +7618,20 @@ export default [
         reviewerName: '张工',
         previewUrl: `mock://preview/reports/${Date.now()}`,
         exportUrl: `mock://download/reports/${Date.now()}.pdf`,
+        sourceReviewOpinionId: latestOpinion.id,
+        evidenceScope: {
+          schemaVersion: 'report-evidence-scope-v1',
+          source: 'review_opinion_confirmed_node_evidence',
+          nodeIds: [nodeId],
+          evidenceLinkIds: evidenceValidation.acceptedEvidenceLinkIds,
+          evidenceLinks: scopedEvidence
+        },
+        evidenceValidation: {
+          schemaVersion: 'report-evidence-validation-v1',
+          passed: Boolean(scopedEvidence.length),
+          evidenceCount: scopedEvidence.length,
+          sourceValidation: evidenceValidation
+        },
         actions: ['report:view', 'report:export', 'report:archive']
       }
       state.reports.unshift(report)
@@ -7620,18 +7829,24 @@ export default [
       const forcedError = getForcedMutationError({ query, action: '生成证据定位包' })
       if (forcedError) return forcedError
       const nodeId = Number(query?.nodeId)
+      const reportId = String(query?.reportId || '')
+      if ((!Number.isFinite(nodeId) || nodeId <= 0) && !reportId) {
+        return fail(40030, '生成证据定位包必须指定 nodeId 或 reportId。', {
+          reason: 'EVIDENCE_PACKAGE_SCOPE_REQUIRED'
+        })
+      }
+      const report = reportId ? state.reports.find((item) => item.id === reportId) : undefined
       const evidenceItems = state.archiveItems.filter((item) => {
         if (item.projectId !== id || item.type !== 'evidence') return false
         if (Number.isFinite(nodeId) && nodeId > 0 && item.nodeId !== nodeId) return false
         return true
       })
-      const fallbackCount = evidenceLinks.filter((link) => {
-        if (!Number.isFinite(nodeId) || nodeId <= 0) return true
-        return String(link.id).includes(`-${nodeId}-`)
-      }).length
+      const fallbackCount = report
+        ? report.evidenceScope?.evidenceLinkIds?.length || 0
+        : evidenceLinks.filter((link) => String(link.id).includes(`-${nodeId}-`)).length
       const itemCount = evidenceItems.length || fallbackCount
       const exportId = `EXP-EVIDENCE-${Date.now()}`
-      const fileName = `${getProject(id).code}-${nodeId ? `节点${nodeId}-` : ''}证据定位包.zip`
+      const fileName = `${getProject(id).code}-${reportId ? `报告${reportId}-` : `节点${nodeId}-`}证据定位包.zip`
       const fileSize = Math.max(itemCount, 1) * 512 * 1024
       const downloadUrl = `mock://download/evidence/${id}-${nodeId || 'all'}-${exportId}.zip`
       makeExportTask(id, {
@@ -8094,6 +8309,55 @@ export default [
           reason: 'NDT_REPORT_REQUIRED'
         })
       }
+      const readinessReports = selectedReports.map((report) => {
+        const document = state.documents.find((item) => item.id === report.fileId)
+        const blockers: Array<{ code: string; message: string; reportId: string }> = []
+        if (document && !['已识别', '人工修正'].includes(String(document.currentOcrStatus))) {
+          blockers.push({
+            code: 'NDT_REPORT_OCR_NOT_READY',
+            message: `${document.fileName} OCR 未完成。`,
+            reportId: report.id
+          })
+        }
+        if (report.method === 'RT' && !report.detectionRatio) {
+          blockers.push({
+            code: 'RT_DETECTION_RATIO_MISSING',
+            message: 'RT 报告缺少检测比例。',
+            reportId: report.id
+          })
+        }
+        if (report.method === 'RT' && !report.relatedFilmIds.length && !filmIds.length) {
+          blockers.push({
+            code: 'RT_FILM_LINK_MISSING',
+            message: 'RT 报告缺少底片/影像关联。',
+            reportId: report.id
+          })
+        }
+        return {
+          reportId: report.id,
+          documentId: document?.id,
+          documentVersionId: document?.currentVersionId,
+          ocrStatus: document?.currentOcrStatus,
+          fieldCount: report.conclusion ? 5 : 3,
+          bboxFieldCount: document?.currentOcrStatus === '已识别' ? 5 : 0,
+          method: report.method,
+          passed: !blockers.length,
+          blockingReasons: blockers,
+          warnings: []
+        }
+      })
+      const ndtReadiness = {
+        schemaVersion: 'ndt-submission-readiness-v1',
+        passed: readinessReports.every((item) => item.passed),
+        reports: readinessReports,
+        blockingReasons: readinessReports.flatMap((item) => item.blockingReasons)
+      }
+      if (!ndtReadiness.passed) {
+        return fail(40902, '无损检测资料未满足提交待审查条件。', {
+          reason: 'NDT_READINESS_BLOCKED',
+          ndtReadiness
+        })
+      }
       selectedReports.forEach((report) => {
         report.status = '待审查'
         report.actions = ['project:view']
@@ -8159,9 +8423,14 @@ export default [
       })
       return ok({
         submissionId: createdTodo.targetId,
+        snapshotId: `SNAP-${createdTodo.targetId}`,
         nextStatus: '待审查',
         changed: [{ field: 'status', before, after: '待审查' }],
-        createdTodos: [createdTodo]
+        createdTodos: [createdTodo],
+        submittedReportIds: selectedReports.map((report) => report.id),
+        submittedFilmIds: selectedFilms.map((film) => film.id),
+        ndtReadiness,
+        nodeEvidenceLinks: getConfirmedEvidenceForNode(id, nodeId)
       })
     }
   },
@@ -8576,7 +8845,8 @@ export default [
       const items = state.knowledgeFiles
         .filter((file) => {
           const source = getKnowledgeSource(file.sourceId)
-          const fileSourceType = source?.sourceType || (file.projectId ? 'project-file' : 'standard')
+          const fileSourceType =
+            source?.sourceType || (file.projectId ? 'project-file' : 'standard')
           if (sourceType) {
             if (fileSourceType !== sourceType) return false
           } else if (fileSourceType !== 'project-file') {

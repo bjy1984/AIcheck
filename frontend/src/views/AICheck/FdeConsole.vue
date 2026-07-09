@@ -20035,7 +20035,9 @@ onBeforeUnmount(() => {
                         <ElTableColumn label="原因" width="160">
                           <template #default="{ row }">
                             <ElTag type="warning" effect="plain">
-                              {{ row.evidenceStatusReason || row.roiQualityWarnings[0] || '不可用' }}
+                              {{
+                                row.evidenceStatusReason || row.roiQualityWarnings[0] || '不可用'
+                              }}
                             </ElTag>
                           </template>
                         </ElTableColumn>

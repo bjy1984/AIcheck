@@ -1,4 +1,4 @@
-type AicheckBusinessErrorPayload = {
+export type AicheckBusinessErrorPayload = {
   code?: number | string
   message?: string
   data?: {
@@ -97,6 +97,13 @@ export const recordAicheckBusinessError = (
 
 export const clearAicheckBusinessError = () => {
   latestBusinessError = undefined
+}
+
+export const getLatestAicheckBusinessError = (maxAgeMs = 5000) => {
+  if (!latestBusinessError || Date.now() - latestBusinessError.recordedAt > maxAgeMs) {
+    return undefined
+  }
+  return latestBusinessError
 }
 
 export const getAicheckErrorMessage = (error: unknown, fallback: string) => {

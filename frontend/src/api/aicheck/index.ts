@@ -2,9 +2,11 @@ import request from '@/axios'
 import type {
   ActionCode,
   AiReviewRun,
+  DispatchStatus,
   DocumentAsset,
   DocumentVersion,
   EvidenceLink,
+  EvidenceSelectionValidation,
   ExportTask,
   ExtractedField,
   MessageItem,
@@ -14,11 +16,14 @@ import type {
   NodePackagePayload,
   NdtFeedback,
   NdtFilm,
+  NdtSubmissionReadiness,
   NdtReport,
   Project,
   ProjectTreeNode,
   ArchiveItem,
   NdtRecord,
+  ReportEvidenceScope,
+  ReportEvidenceValidation,
   ReportVersion,
   ReviewOpinion,
   RoleCode,
@@ -392,6 +397,8 @@ export type NdtSubmissionPayload = {
   createdTodos: TodoItem[]
   submittedReportIds: string[]
   submittedFilmIds: string[]
+  ndtReadiness?: NdtSubmissionReadiness
+  nodeEvidenceLinks?: EvidenceLink[]
 }
 
 export type NdtRectificationPayload = {
@@ -419,6 +426,7 @@ export type AiRecheckPayload = {
   runId: string
   status: string
   latestRun: AiReviewRun
+  dispatch?: DispatchStatus
 }
 
 export type ReviewOpinionPayload = {
@@ -427,7 +435,10 @@ export type ReviewOpinionPayload = {
 }
 
 export type AiSuggestionAdoptPayload = {
-  draftOpinion: ReviewOpinion
+  draftOpinion: ReviewOpinion & {
+    requiresEvidenceSelection?: boolean
+    evidenceValidation?: EvidenceSelectionValidation
+  }
   auditLogId: string
 }
 
@@ -482,6 +493,8 @@ export type ReportDetailPayload = {
   report: ReportVersion
   sections: ReportSection[]
   evidenceLinks: EvidenceLink[]
+  evidenceScope?: ReportEvidenceScope
+  evidenceValidation?: ReportEvidenceValidation
   reviewTrail: Array<{
     title: string
     actorName: string
@@ -2715,7 +2728,12 @@ export const adoptAiSuggestionApi = (
   projectId: string,
   nodeId: number,
   suggestionId: string,
-  payload: { result: ReviewOpinion['result']; opinion: string; reason: string },
+  payload: {
+    result: ReviewOpinion['result']
+    opinion: string
+    reason: string
+    evidenceLinkIds?: string[]
+  },
   options?: MutationHeaderOptions
 ): Promise<IResponse<AiSuggestionAdoptPayload>> => {
   return request.post({
@@ -2854,7 +2872,7 @@ export const getArchivePackageApi = (
 
 export const getEvidencePackageApi = (
   projectId: string,
-  params?: { nodeId?: number }
+  params?: { nodeId?: number; reportId?: string }
 ): Promise<IResponse<ArchivePackagePayload>> => {
   return request.get({ url: `/api/projects/${projectId}/archive/evidence-package`, params })
 }

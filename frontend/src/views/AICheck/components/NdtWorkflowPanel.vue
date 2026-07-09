@@ -18,6 +18,7 @@ import type {
   DocumentAsset,
   NdtFeedback,
   NdtFilm,
+  NdtSubmissionReadiness,
   NdtRecord,
   NdtReport,
   ProjectTreeNode
@@ -56,6 +57,7 @@ const props = defineProps<{
   recordImportError?: string
   reportUploadError?: string
   submitError?: string
+  ndtReadiness?: NdtSubmissionReadiness
   rectifyError?: string
 }>()
 
@@ -97,6 +99,37 @@ const pendingReports = computed(() =>
 const pendingFilms = computed(() =>
   props.films.filter((film) => ['草稿', '待提交', '需补正'].includes(film.status))
 )
+const blockerText = (item: { code?: string; message?: string; reportId?: string }) =>
+  [item.reportId, item.message || item.code].filter(Boolean).join('：')
+const readinessBlockers = computed(() =>
+  (props.ndtReadiness?.blockingReasons || []).map(blockerText).filter(Boolean)
+)
+const localSubmitBlockers = computed(() => {
+  const blockers: string[] = []
+  if (!pendingReports.value.length) {
+    blockers.push('请先上传或选择至少一份待提交检测报告。')
+  }
+  const pendingReportFileIds = new Set(pendingReports.value.map((report) => report.fileId))
+  const reportFiles = props.projectFiles.filter((file) => pendingReportFileIds.has(file.id))
+  for (const file of reportFiles) {
+    if (!['已识别', '人工修正'].includes(String(file.currentOcrStatus))) {
+      blockers.push(`${file.fileName} OCR 未完成，当前状态：${file.currentOcrStatus || '未知'}`)
+    }
+  }
+  for (const report of pendingReports.value) {
+    if (report.method === 'RT' && !report.detectionRatio) {
+      blockers.push(`${report.reportNo} 缺少 RT 检测比例。`)
+    }
+    if (report.method === 'RT' && !report.relatedFilmIds.length && !pendingFilms.value.length) {
+      blockers.push(`${report.reportNo} 缺少底片/影像关联。`)
+    }
+  }
+  return Array.from(new Set(blockers))
+})
+const submitBlockers = computed(() =>
+  readinessBlockers.value.length ? readinessBlockers.value : localSubmitBlockers.value
+)
+const canSubmitNdt = computed(() => pendingReports.value.length > 0 && !submitBlockers.value.length)
 const openFeedback = computed(() => props.feedback.filter((item) => item.status === '待反馈'))
 const defaultFeedback = computed(() => openFeedback.value[0])
 const selectedRectificationId = computed(
@@ -431,6 +464,32 @@ const handleRectifyNdt = () => {
             </template>
           </ElTableColumn>
         </ElTable>
+        <ElTable
+          v-if="ndtReadiness?.reports?.length"
+          :data="ndtReadiness.reports"
+          border
+          class="ndt-readiness-table"
+        >
+          <ElTableColumn prop="reportId" label="报告" min-width="150" show-overflow-tooltip />
+          <ElTableColumn prop="ocrStatus" label="OCR" width="100" />
+          <ElTableColumn label="字段/bbox" width="110">
+            <template #default="{ row }">
+              {{ row.fieldCount || 0 }} / {{ row.bboxFieldCount || 0 }}
+            </template>
+          </ElTableColumn>
+          <ElTableColumn label="状态" width="100">
+            <template #default="{ row }">
+              <ElTag :type="row.passed ? 'success' : 'danger'" size="small" effect="plain">
+                {{ row.passed ? '可提交' : '阻断' }}
+              </ElTag>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn label="原因" min-width="260" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ (row.blockingReasons || []).map(blockerText).join('；') || '无' }}
+            </template>
+          </ElTableColumn>
+        </ElTable>
       </section>
 
       <section class="ndt-library">
@@ -445,14 +504,27 @@ const handleRectifyNdt = () => {
             >
             <ElButton
               type="primary"
-              :disabled="!pendingReports.length && !pendingFilms.length"
+              :disabled="!canSubmitNdt"
               :loading="loading"
+              :title="submitBlockers.join('；')"
               @click="handleSubmitNdt"
             >
               提交检测资料
             </ElButton>
           </div>
         </div>
+        <ElAlert
+          v-if="submitBlockers.length"
+          class="ndt-submit-error"
+          type="warning"
+          title="检测资料暂不满足提交条件"
+          :closable="false"
+          show-icon
+        >
+          <ul class="ndt-blocker-list">
+            <li v-for="reason in submitBlockers" :key="reason">{{ reason }}</li>
+          </ul>
+        </ElAlert>
         <ElAlert
           v-if="submitError"
           class="ndt-submit-error"
@@ -707,6 +779,16 @@ const handleRectifyNdt = () => {
 .ndt-submit-error,
 .ndt-rectify-error {
   margin-top: 10px;
+}
+
+.ndt-readiness-table {
+  margin-top: 8px;
+}
+
+.ndt-blocker-list {
+  padding-left: 18px;
+  margin: 4px 0 0;
+  line-height: 1.6;
 }
 
 .ndt-error-content {

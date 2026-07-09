@@ -77,7 +77,8 @@ const filePreviewIsPdf = computed(() => filePreview.value?.previewType === 'pdf'
 const filePreviewUnavailableText = computed(() => {
   if (!evidenceDocumentId.value) return '当前证据没有关联项目文件，无法加载原文。'
   if (!filePreview.value?.url) return '当前文件详情没有返回原文地址。'
-  if (String(filePreview.value.url).startsWith('mock://')) return '当前文件只有占位地址，尚未生成真实原文预览。'
+  if (String(filePreview.value.url).startsWith('mock://'))
+    return '当前文件只有占位地址，尚未生成真实原文预览。'
   if (filePreview.value.previewType === 'unsupported') return '当前文件类型暂不支持在线预览。'
   return '当前文件没有可预览的真实原文。'
 })
@@ -108,7 +109,8 @@ const loadFilePreview = async () => {
     if (requestSeq !== previewRequestSeq) return
     previewDetail.value = detail.data
     const url = String(detail.data.preview?.url || '')
-    if (!url || url.startsWith('mock://') || detail.data.preview?.previewType === 'unsupported') return
+    if (!url || url.startsWith('mock://') || detail.data.preview?.previewType === 'unsupported')
+      return
     if (url.startsWith('/api/')) {
       const res = await getDocumentOriginalBlobApi(url)
       if (requestSeq !== previewRequestSeq) return

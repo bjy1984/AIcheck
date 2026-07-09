@@ -3,6 +3,8 @@ import { computed, ref, watch } from 'vue'
 import {
   ElAlert,
   ElButton,
+  ElCheckbox,
+  ElCheckboxGroup,
   ElDescriptions,
   ElDescriptionsItem,
   ElDrawer,
@@ -22,7 +24,7 @@ import type { EvidenceLink } from '@/types/aicheck'
 import { getStatusTagType } from './status'
 
 type EditableReportSection = ReportSection & {
-  evidenceText: string
+  evidenceLinkIds: string[]
 }
 
 const props = defineProps<{
@@ -64,8 +66,7 @@ const getEvidenceItems = (ids: string[]) =>
 
 const toEditableSection = (section: ReportSection): EditableReportSection => ({
   ...section,
-  evidenceLinkIds: [...section.evidenceLinkIds],
-  evidenceText: section.evidenceLinkIds.join(', ')
+  evidenceLinkIds: [...section.evidenceLinkIds]
 })
 
 const resetEditor = () => {
@@ -97,8 +98,7 @@ const addSection = () => {
     key: `section-${editableSections.value.length + 1}`,
     title: '',
     content: '',
-    evidenceLinkIds: [],
-    evidenceText: ''
+    evidenceLinkIds: []
   })
 }
 
@@ -107,23 +107,36 @@ const removeSection = (index: number) => {
   editableSections.value.splice(index, 1)
 }
 
-const splitEvidenceIds = (value: string) =>
-  value
-    .split(/[,，\s]+/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-
 const saveEdit = () => {
   emit('save', {
     sections: editableSections.value.map((section, index) => ({
       key: section.key || `section-${index + 1}`,
       title: section.title,
       content: section.content,
-      evidenceLinkIds: splitEvidenceIds(section.evidenceText)
+      evidenceLinkIds: section.evidenceLinkIds
     })),
     remark: saveRemark.value || '编辑报告章节'
   })
 }
+const validationIssue = computed(() => {
+  const validation = props.detail?.evidenceValidation
+  if (!validation || validation.passed) return ''
+  return (
+    validation.message ||
+    validation.sourceValidation?.message ||
+    '报告证据校验未通过，请修正章节引用后再导出或归档。'
+  )
+})
+const invalidEvidenceIds = computed(() => {
+  const validation = props.detail?.evidenceValidation
+  return (
+    validation?.invalidEvidenceLinkIds || validation?.sourceValidation?.invalidEvidenceLinkIds || []
+  )
+})
+const evidenceOptionLabel = (evidence: EvidenceLink) =>
+  [evidence.fieldName, evidence.fileName, evidence.pageNo ? `第 ${evidence.pageNo} 页` : '']
+    .filter(Boolean)
+    .join(' · ') || evidence.id
 </script>
 
 <template>
@@ -173,7 +186,25 @@ const saveEdit = () => {
         <ElDescriptionsItem label="复核人">{{ report.reviewerName || '-' }}</ElDescriptionsItem>
         <ElDescriptionsItem label="生成时间">{{ report.generatedAt }}</ElDescriptionsItem>
         <ElDescriptionsItem label="证据数量">{{ detail.evidenceLinks.length }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="证据范围">
+          {{ detail.evidenceScope?.source || '未返回证据范围' }}
+        </ElDescriptionsItem>
+        <ElDescriptionsItem label="证据校验">
+          {{ detail.evidenceValidation?.passed ? '通过' : '未通过/待校验' }}
+        </ElDescriptionsItem>
       </ElDescriptions>
+      <ElAlert
+        v-if="validationIssue"
+        class="report-validation-alert"
+        type="warning"
+        :closable="false"
+        show-icon
+        :title="validationIssue"
+      >
+        <div v-if="invalidEvidenceIds.length" class="invalid-evidence-list">
+          无效证据：{{ invalidEvidenceIds.join('、') }}
+        </div>
+      </ElAlert>
 
       <ElTabs class="detail-tabs">
         <ElTabPane label="报告章节" name="sections">
@@ -182,7 +213,7 @@ const saveEdit = () => {
               type="info"
               :closable="false"
               show-icon
-              title="编辑章节正文和证据引用，证据 ID 用逗号分隔。"
+              title="编辑章节正文和证据引用，证据只能从当前报告 confirmed scope 中选择。"
             />
             <div v-if="evidenceIdOptions.length" class="evidence-id-strip">
               <span>可用证据</span>
@@ -216,11 +247,21 @@ const saveEdit = () => {
                     placeholder="填写报告正文"
                   />
                 </ElFormItem>
-                <ElFormItem label="证据 ID">
-                  <ElInput
-                    v-model="section.evidenceText"
-                    placeholder="例如：EV-24-001, EV-24-002"
-                  />
+                <ElFormItem label="证据引用">
+                  <ElCheckboxGroup
+                    v-model="section.evidenceLinkIds"
+                    class="section-evidence-picker"
+                  >
+                    <ElCheckbox
+                      v-for="evidence in detail.evidenceLinks"
+                      :key="`${section.key}-${evidence.id}`"
+                      :label="evidence.id"
+                      border
+                    >
+                      <span>{{ evidenceOptionLabel(evidence) }}</span>
+                      <small>{{ evidence.quotedText || evidence.id }}</small>
+                    </ElCheckbox>
+                  </ElCheckboxGroup>
                 </ElFormItem>
               </section>
               <div class="section-editor-actions">
@@ -337,6 +378,15 @@ const saveEdit = () => {
   margin-bottom: 12px;
 }
 
+.report-validation-alert {
+  margin-bottom: 12px;
+}
+
+.invalid-evidence-list {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
 .detail-tabs {
   margin-top: 4px;
 }
@@ -406,6 +456,35 @@ const saveEdit = () => {
 .section-editor-actions {
   display: flex;
   justify-content: flex-start;
+}
+
+.section-evidence-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.section-evidence-picker :deep(.el-checkbox) {
+  align-items: flex-start;
+  width: 100%;
+  height: auto;
+  min-height: 44px;
+  padding: 8px 10px;
+  margin-right: 0;
+  white-space: normal;
+}
+
+.section-evidence-picker span,
+.section-evidence-picker small {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.section-evidence-picker small {
+  font-size: 12px;
+  color: #667085;
 }
 
 .section-block {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive } from 'vue'
 import {
+  ElAlert,
   ElButton,
   ElCard,
   ElCheckbox,
@@ -31,6 +32,7 @@ const props = defineProps<{
   reports: ReportVersion[]
   archiveItems: ArchiveItem[]
   recentExportTasks: ExportTask[]
+  generateDisabledReason?: string
   loading: boolean
 }>()
 
@@ -48,7 +50,7 @@ const emit = defineEmits<{
   openArchiveItemDetail: [itemId: string]
   downloadArchiveItem: [item: ArchiveItem]
   downloadArchivePackage: []
-  downloadEvidencePackage: []
+  downloadEvidencePackage: [payload?: { reportId?: string }]
   openExportTask: [exportId: string]
 }>()
 
@@ -58,9 +60,13 @@ const form = reactive({
 })
 
 const actionSet = computed(() => new Set(props.actions))
-const canGenerate = computed(
-  () => props.role === 'inspection' && actionSet.value.has('report:generate') && props.packageData
+const showGenerateForm = computed(
+  () =>
+    props.role === 'inspection' &&
+    actionSet.value.has('report:generate') &&
+    Boolean(props.packageData)
 )
+const canGenerate = computed(() => showGenerateForm.value && !props.generateDisabledReason)
 const readonlyLabel = computed(() => (props.role === 'owner' ? '建设方只读' : '报告复核'))
 const latestReport = computed(() => props.reports[0])
 const canReadonlyDownload = computed(() => actionSet.value.has('archive:download'))
@@ -75,7 +81,16 @@ const canOpenDetail = (report: ReportVersion) =>
 const canArchive = (report: ReportVersion) =>
   props.role === 'inspection' &&
   actionSet.value.has('report:archive') &&
-  !['已归档'].includes(report.status)
+  !archiveBlockedReason(report)
+const archiveBlockedReason = (report: ReportVersion) => {
+  if (report.status === '已归档') return '报告已归档。'
+  if (!['待签发', '已签发', '复核完成'].includes(report.status)) {
+    return '报告归档前必须完成复核或签发。'
+  }
+  if (!report.evidenceValidation) return '等待报告证据校验状态。'
+  if (!report.evidenceValidation.passed) return '报告证据校验未通过，不能归档。'
+  return ''
+}
 const exportTypeLabel = (type: ExportTask['exportType']) => {
   const labelMap: Record<ExportTask['exportType'], string> = {
     report: '报告导出',
@@ -106,7 +121,7 @@ const handleGenerate = () => {
       </div>
     </template>
 
-    <ElForm v-if="canGenerate" label-position="top" class="report-form">
+    <ElForm v-if="showGenerateForm" label-position="top" class="report-form">
       <ElFormItem label="生成范围">
         <ElSelect v-model="form.reportScope">
           <ElOption label="当前节点" value="currentNode" />
@@ -116,10 +131,26 @@ const handleGenerate = () => {
       <ElFormItem label="证据链">
         <ElCheckbox v-model="form.includeEvidence">包含证据链引用</ElCheckbox>
       </ElFormItem>
-      <ElButton type="primary" :loading="loading" @click="handleGenerate"> 生成报告草稿 </ElButton>
+      <ElButton
+        type="primary"
+        :disabled="!canGenerate"
+        :loading="loading"
+        :title="generateDisabledReason"
+        @click="handleGenerate"
+      >
+        生成报告草稿
+      </ElButton>
     </ElForm>
+    <ElAlert
+      v-if="showGenerateForm && generateDisabledReason"
+      class="report-gate-alert"
+      type="warning"
+      :title="generateDisabledReason"
+      :closable="false"
+      show-icon
+    />
 
-    <div v-if="!canGenerate && latestReport" class="latest-report">
+    <div v-if="!showGenerateForm && latestReport" class="latest-report">
       <span>最新报告</span>
       <strong>{{ latestReport.reportNo }} · {{ latestReport.versionNo }}</strong>
       <ElTag :type="getStatusTagType(latestReport.status)" size="small" effect="plain">
@@ -128,7 +159,7 @@ const handleGenerate = () => {
     </div>
 
     <ElEmpty
-      v-if="!canGenerate && !latestReport"
+      v-if="!showGenerateForm && !latestReport"
       description="暂无报告版本"
       class="compact-empty"
     />
@@ -178,7 +209,7 @@ const handleGenerate = () => {
           >
             <template #reference>
               <ElButton link type="warning" :disabled="!canArchive(row)" :loading="loading">
-                归档
+                <span :title="archiveBlockedReason(row)">归档</span>
               </ElButton>
             </template>
           </ElPopconfirm>
@@ -188,7 +219,12 @@ const handleGenerate = () => {
 
     <div v-if="canReadonlyDownload" class="package-actions">
       <ElButton :loading="loading" @click="emit('downloadArchivePackage')">归档包</ElButton>
-      <ElButton :loading="loading" @click="emit('downloadEvidencePackage')">证据包</ElButton>
+      <ElButton
+        :loading="loading"
+        @click="emit('downloadEvidencePackage', { reportId: latestReport?.id })"
+      >
+        证据包
+      </ElButton>
     </div>
 
     <div v-if="recentExportTasks.length" class="recent-export-card">
@@ -347,6 +383,10 @@ const handleGenerate = () => {
   margin: 14px 0 8px;
   font-size: 14px;
   font-weight: 700;
+}
+
+.report-gate-alert {
+  margin-bottom: 12px;
 }
 
 .compact-empty {

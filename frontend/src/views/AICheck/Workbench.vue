@@ -97,6 +97,7 @@ import type {
   ExportTask,
   NdtFeedback,
   NdtFilm,
+  NdtSubmissionReadiness,
   NdtRecord,
   NdtReport,
   NodeFileBinding,
@@ -112,7 +113,7 @@ import type {
   WorkbenchContextPayload,
   WorkbenchSummaryPayload
 } from '@/types/aicheck'
-import { getAicheckErrorMessage } from '@/utils/aicheckError'
+import { getAicheckErrorMessage, getLatestAicheckBusinessError } from '@/utils/aicheckError'
 
 type InspectionNodeSortKey = 'review' | 'nodeId' | 'material'
 type SortDirection = 'asc' | 'desc'
@@ -205,6 +206,11 @@ type WorkbenchStateIssue = {
   title: string
   message?: string
 }
+type OperationBlocker = {
+  title: string
+  message?: string
+  reasons: string[]
+}
 
 type DocumentUploadTarget = UploadSessionPayload['uploadUrls'][number]
 type LoadProjectBundleOptions = {
@@ -241,6 +247,8 @@ const ndtRecordImportError = ref('')
 const ndtReportUploadError = ref('')
 const ndtSubmitError = ref('')
 const ndtRectifyError = ref('')
+const ndtReadiness = ref<NdtSubmissionReadiness>()
+const actionBlocker = ref<OperationBlocker>()
 const activeSideTab = ref('ai')
 const previewDrawerVisible = ref(false)
 const previewDrawerTarget = ref<PreviewDrawerTarget>({
@@ -308,6 +316,8 @@ const activeExportTaskId = ref('')
 const reviewResult = ref<ReviewOpinion['result']>('满足要求')
 const reviewOpinion = ref('资料、证据链与规则要求一致，同意通过。')
 const correctionReason = ref('证据链或资料内容与规则要求不一致，需补充说明。')
+const selectedReviewEvidenceIds = ref<string[]>([])
+const draftRequiresEvidenceSelection = ref(false)
 const latestSubmissionIds = ref<Record<number, string>>({})
 const pipelinePollTimer = ref<number>()
 const pipelinePolling = ref(false)
@@ -353,6 +363,82 @@ const nodeEvidenceLinks = computed(() => nodePackage.value?.nodeEvidenceLinks ||
 const evidenceLinks = computed(() => {
   const runLinks = latestAiRun.value?.evidenceLinks || []
   return runLinks.length ? runLinks : nodeEvidenceLinks.value
+})
+const evidenceReadiness = computed(() => nodePackage.value?.evidenceReadiness)
+const confirmedEvidenceLinks = computed(() =>
+  nodeEvidenceLinks.value.filter((item) => item.manualStatus === 'confirmed')
+)
+const confirmedEvidenceIds = computed(
+  () => new Set(confirmedEvidenceLinks.value.map((item) => item.id))
+)
+const formatBlockingReason = (reason: {
+  message?: string
+  code?: string
+  requirementName?: string
+}) => [reason.requirementName, reason.message || reason.code].filter(Boolean).join('：')
+const readinessBlockingReasons = computed(() => {
+  const reasons = (evidenceReadiness.value?.blockingReasons || [])
+    .map(formatBlockingReason)
+    .filter(Boolean)
+  if (reasons.length) return reasons
+  const fallback: string[] = []
+  const pendingCount = Number(evidenceReadiness.value?.pendingCount || 0)
+  const missingCount = Number(evidenceReadiness.value?.missingCount || 0)
+  if (pendingCount > 0) fallback.push(`仍有 ${pendingCount} 条候选证据待确认或不采用。`)
+  if (missingCount > 0) fallback.push(`仍有 ${missingCount} 项必传审查点缺少 confirmed 证据。`)
+  if (!evidenceReadiness.value) fallback.push('等待节点资料证据 readiness 加载。')
+  return fallback
+})
+const readyForAiFormal = computed(() => {
+  const readiness = evidenceReadiness.value
+  if (!readiness) return false
+  if (typeof readiness.readyForAiFormal === 'boolean') return readiness.readyForAiFormal
+  return Boolean(readiness.readyForAi && !readiness.pendingCount && !readiness.missingCount)
+})
+const readyForGapPrecheck = computed(() => {
+  const readiness = evidenceReadiness.value
+  if (!readiness) return false
+  if (typeof readiness.readyForGapPrecheck === 'boolean') return readiness.readyForGapPrecheck
+  return Boolean(readiness.evidenceReviewComplete || readiness.pendingCount === 0)
+})
+const aiRecheckDisabledReason = computed(() => {
+  if (role.value !== 'inspection') return ''
+  if (isReadOnly.value) return '当前项目只读，不能发起 AI 复核。'
+  if (!availableActions.value.includes('ai:recheck')) return '当前节点未开放 AI 复核动作。'
+  if (readyForAiFormal.value) return ''
+  if (readyForGapPrecheck.value && readinessBlockingReasons.value.length) {
+    return `仅可作为缺项预审：${readinessBlockingReasons.value.join('；')}`
+  }
+  return readinessBlockingReasons.value.join('；') || '资料证据未满足正式 AI 复核条件。'
+})
+const reviewSaveDisabledReason = computed(() => {
+  if (role.value !== 'inspection') return ''
+  const selectedInvalid = selectedReviewEvidenceIds.value.filter(
+    (id) => !confirmedEvidenceIds.value.has(id)
+  )
+  if (selectedInvalid.length)
+    return `证据引用不属于当前节点 confirmed 范围：${selectedInvalid.join('、')}`
+  if (reviewResult.value === '满足要求') {
+    if (!readyForAiFormal.value) {
+      return readinessBlockingReasons.value.join('；') || '资料证据未满足保存“满足要求”的条件。'
+    }
+    if (!selectedReviewEvidenceIds.value.length)
+      return '请选择至少一条 confirmed 证据后再保存“满足要求”。'
+  }
+  return ''
+})
+const latestReviewOpinion = computed(() => reviewOpinions.value[0])
+const reportGenerateDisabledReason = computed(() => {
+  if (role.value !== 'inspection') return ''
+  const opinion = latestReviewOpinion.value
+  if (!opinion) return '生成报告前必须先保存人工审查意见。'
+  if (!opinion.evidenceLinkIds?.length) return '人工审查意见缺少 confirmed 证据引用。'
+  if (opinion.evidenceValidation && !opinion.evidenceValidation.passed) {
+    return (
+      opinion.evidenceValidation.message || '人工审查意见的证据引用未通过 confirmed-only 校验。'
+    )
+  }
+  return ''
 })
 const businessBasis = computed(() => nodePackage.value?.businessBasis)
 const isReadOnly = computed(
@@ -840,7 +926,9 @@ const previewDrawerCanEmbedOriginal = computed(() => {
   return previewDrawerTarget.value.previewType !== 'unsupported'
 })
 const previewDrawerRequiresBlob = computed(
-  () => previewDrawerCanEmbedOriginal.value && String(previewDrawerTarget.value.url || '').startsWith('/api/')
+  () =>
+    previewDrawerCanEmbedOriginal.value &&
+    String(previewDrawerTarget.value.url || '').startsWith('/api/')
 )
 const previewDrawerOriginalUnavailableText = computed(() => {
   const url = String(previewDrawerTarget.value.url || '')
@@ -1209,8 +1297,56 @@ const getErrorMessage = (error: unknown) => {
   return getAicheckErrorMessage(error, '接口返回异常，请稍后重试。')
 }
 
+const stringifyBusinessReason = (value: unknown) => {
+  if (!value) return ''
+  if (typeof value === 'string') return value
+  if (typeof value !== 'object') return String(value)
+  const record = value as {
+    message?: unknown
+    code?: unknown
+    reportId?: unknown
+    requirementName?: unknown
+  }
+  return [record.reportId, record.requirementName, record.message || record.code]
+    .filter(Boolean)
+    .join('：')
+}
+
+const extractBusinessBlockerReasons = (data?: Record<string, unknown>) => {
+  if (!data) return []
+  const containers = [
+    data.evidenceReadiness,
+    data.evidenceValidation,
+    data.ndtReadiness,
+    data.dispatch
+  ] as Array<Record<string, unknown> | undefined>
+  const reasons: string[] = []
+  for (const container of containers) {
+    if (!container) continue
+    const blockingReasons = container.blockingReasons
+    if (Array.isArray(blockingReasons)) {
+      reasons.push(...blockingReasons.map(stringifyBusinessReason).filter(Boolean))
+    }
+    const message = stringifyBusinessReason(container.message || container.statusReason)
+    if (message) reasons.push(message)
+  }
+  return Array.from(new Set(reasons))
+}
+
+const rememberActionBlocker = (title: string, message?: string, reasons: string[] = []) => {
+  actionBlocker.value = {
+    title,
+    message,
+    reasons: Array.from(new Set(reasons.filter(Boolean)))
+  }
+}
+
 const showActionError = (fallback: string, error?: unknown) => {
-  ElMessage.error(getAicheckErrorMessage(error, fallback))
+  const message = getAicheckErrorMessage(error, fallback)
+  const latest = getLatestAicheckBusinessError()
+  const data = latest?.data as Record<string, unknown> | undefined
+  rememberActionBlocker('操作被业务规则阻断', message, extractBusinessBlockerReasons(data))
+  ElMessage.error(message)
 }
 
 const showUploadDrawerError = (fallback: string, error?: unknown) => {
@@ -1296,7 +1432,12 @@ const showNdtRecordImportError = (fallback: string, error?: unknown) => {
 
 const showNdtSubmitError = (fallback: string, error?: unknown) => {
   const message = getAicheckErrorMessage(error, fallback)
+  const data = getLatestAicheckBusinessError()?.data as
+    | { ndtReadiness?: NdtSubmissionReadiness }
+    | undefined
+  if (data?.ndtReadiness) ndtReadiness.value = data.ndtReadiness
   ndtSubmitError.value = message
+  rememberActionBlocker('无损检测资料提交被阻断', message, extractBusinessBlockerReasons(data))
   ElMessage.error(message)
 }
 
@@ -2311,7 +2452,9 @@ const handleSubmitNdt = async (payload: { reportIds: string[]; filmIds: string[]
       showNdtSubmitError('无损检测资料提交失败，请检查报告、底片和当前节点状态。')
       return
     }
+    ndtReadiness.value = res.data.ndtReadiness
     ndtSubmitError.value = ''
+    actionBlocker.value = undefined
     ElMessage.success('无损检测资料已提交监检')
     await Promise.all([loadProjectBundle(), loadNdtData()])
   } catch (error) {
@@ -2454,9 +2597,13 @@ const handleSubmitRectification = async (payload: {
 
 const handleAiRecheck = async () => {
   if (!ensureWritableNode()) return
-  const pendingEvidenceCount = Number(nodePackage.value?.evidenceReadiness?.pendingCount || 0)
-  if (pendingEvidenceCount > 0) {
-    ElMessage.warning('请先完成候选证据的确认或不采用，再进入 AI 复核')
+  if (aiRecheckDisabledReason.value) {
+    rememberActionBlocker(
+      '正式 AI 复核条件不足',
+      aiRecheckDisabledReason.value,
+      readinessBlockingReasons.value
+    )
+    ElMessage.warning(aiRecheckDisabledReason.value)
     return
   }
   actionLoading.value = true
@@ -2468,7 +2615,9 @@ const handleAiRecheck = async () => {
       showActionError('AI 复核触发失败，请检查是否已有任务运行或当前节点是否允许复核。')
       return
     }
-    ElMessage.success('AI 复核已完成')
+    actionBlocker.value = undefined
+    const statusReason = String(res.data.dispatch?.statusReason || '')
+    ElMessage.success(statusReason ? `AI 复核任务已创建：${statusReason}` : 'AI 复核任务已创建')
     await loadNodePackage(activeNodeId.value)
   } finally {
     actionLoading.value = false
@@ -2477,6 +2626,15 @@ const handleAiRecheck = async () => {
 
 const handleSaveReviewOpinion = async () => {
   if (!ensureWritableNode()) return
+  if (reviewSaveDisabledReason.value) {
+    rememberActionBlocker(
+      '人工审查意见暂不能保存',
+      reviewSaveDisabledReason.value,
+      readinessBlockingReasons.value
+    )
+    ElMessage.warning(reviewSaveDisabledReason.value)
+    return
+  }
   if (!reviewOpinion.value.trim()) {
     ElMessage.warning('请填写人工审查意见')
     return
@@ -2489,7 +2647,7 @@ const handleSaveReviewOpinion = async () => {
       {
         result: reviewResult.value,
         opinion: reviewOpinion.value.trim(),
-        evidenceLinkIds: evidenceLinks.value.map((item) => item.id)
+        evidenceLinkIds: selectedReviewEvidenceIds.value
       },
       {
         etag: currentProject.value?.etag
@@ -2499,6 +2657,8 @@ const handleSaveReviewOpinion = async () => {
       showActionError('审查意见保存失败，请检查审查意见和当前节点状态。')
       return
     }
+    actionBlocker.value = undefined
+    draftRequiresEvidenceSelection.value = false
     ElMessage.success('审查意见已保存')
     await loadProjectBundle()
   } finally {
@@ -2520,6 +2680,7 @@ const handleAdoptAiSuggestion = async (suggestionId: string) => {
       {
         result: normalizedResult,
         opinion: latestAiRun.value.suggestion.opinionDraft,
+        evidenceLinkIds: selectedReviewEvidenceIds.value,
         reason: '采纳 AI 建议作为人工审查草稿。'
       },
       {
@@ -2532,8 +2693,20 @@ const handleAdoptAiSuggestion = async (suggestionId: string) => {
     }
     reviewResult.value = res.data.draftOpinion.result
     reviewOpinion.value = res.data.draftOpinion.opinion
+    selectedReviewEvidenceIds.value = res.data.draftOpinion.evidenceLinkIds || []
+    draftRequiresEvidenceSelection.value = Boolean(res.data.draftOpinion.requiresEvidenceSelection)
     activeSideTab.value = 'opinion'
-    ElMessage.success('AI 建议已采纳为审查草稿')
+    if (res.data.draftOpinion.requiresEvidenceSelection) {
+      rememberActionBlocker(
+        'AI 建议已转为草稿，但仍需选择证据',
+        '请选择当前节点 confirmed 证据后再保存正式审查意见。'
+      )
+      activeSideTab.value = 'evidence'
+      ElMessage.warning('AI 建议已采纳为草稿，但仍需人工选择 confirmed 证据')
+    } else {
+      actionBlocker.value = undefined
+      ElMessage.success('AI 建议已采纳为审查草稿')
+    }
     await loadNodePackage(activeNodeId.value)
   } finally {
     actionLoading.value = false
@@ -2651,6 +2824,11 @@ const handleGenerateReport = async (payload: {
   reportScope: ReportVersion['scope']
 }) => {
   if (!ensureWritableNode()) return
+  if (reportGenerateDisabledReason.value) {
+    rememberActionBlocker('报告草稿暂不能生成', reportGenerateDisabledReason.value)
+    ElMessage.warning(reportGenerateDisabledReason.value)
+    return
+  }
   actionLoading.value = true
   try {
     const res = await generateReportReviewApi(
@@ -2667,6 +2845,7 @@ const handleGenerateReport = async (payload: {
       showActionError('报告草稿生成失败，请检查节点审查状态和报告范围。')
       return
     }
+    actionBlocker.value = undefined
     ElMessage.success('报告草稿已生成，进入复核')
     await loadProjectBundle()
   } finally {
@@ -2863,11 +3042,16 @@ const handleDownloadArchivePackage = async () => {
   }
 }
 
-const handleDownloadEvidencePackage = async () => {
+const handleDownloadEvidencePackage = async (payload?: { reportId?: string }) => {
   if (!activeProjectId.value) return
+  const params = payload?.reportId ? { reportId: payload.reportId } : { nodeId: activeNodeId.value }
+  if (!params.reportId && !params.nodeId) {
+    ElMessage.warning('请先选择节点或报告后再生成证据定位包')
+    return
+  }
   actionLoading.value = true
   try {
-    const res = await getEvidencePackageApi(activeProjectId.value, { nodeId: activeNodeId.value })
+    const res = await getEvidencePackageApi(activeProjectId.value, params)
     if (!res) {
       showActionError('证据定位包生成失败，请检查节点证据和下载权限。')
       return
@@ -2901,6 +3085,7 @@ const handleArchiveReport = async (reportId: string) => {
       showActionError('报告归档失败，请检查报告状态和项目权限。')
       return
     }
+    actionBlocker.value = undefined
     ElMessage.success('报告已归档，项目进入只读状态')
     await loadProjectBundle()
   } finally {
@@ -2947,6 +3132,30 @@ watch(
   () => {
     overviewFilePage.value = 1
   }
+)
+
+watch(
+  () => activeNodeId.value,
+  () => {
+    actionBlocker.value = undefined
+    ndtReadiness.value = undefined
+    selectedReviewEvidenceIds.value = []
+    draftRequiresEvidenceSelection.value = false
+  }
+)
+
+watch(
+  () => confirmedEvidenceLinks.value.map((item) => item.id).join('|'),
+  () => {
+    const allowed = confirmedEvidenceIds.value
+    selectedReviewEvidenceIds.value = selectedReviewEvidenceIds.value.filter((id) =>
+      allowed.has(id)
+    )
+    if (!selectedReviewEvidenceIds.value.length && confirmedEvidenceLinks.value.length) {
+      selectedReviewEvidenceIds.value = confirmedEvidenceLinks.value.map((item) => item.id)
+    }
+  },
+  { immediate: true }
 )
 
 watch(
@@ -3770,6 +3979,8 @@ onBeforeUnmount(() => {
                     :actions="availableActions"
                     :loading="actionLoading"
                     :read-only="isReadOnly"
+                    :ai-recheck-disabled="Boolean(aiRecheckDisabledReason)"
+                    :ai-recheck-disabled-reason="aiRecheckDisabledReason"
                     @upload="handleOpenUploadDrawer"
                     @bind="handleOpenBindDialog"
                     @save-draft="handleSaveDraft"
@@ -3781,14 +3992,33 @@ onBeforeUnmount(() => {
                   />
                 </div>
               </section>
+              <ElAlert
+                v-if="actionBlocker"
+                class="operation-blocker-alert"
+                type="warning"
+                :title="actionBlocker.title"
+                :description="actionBlocker.message"
+                :closable="true"
+                show-icon
+                @close="actionBlocker = undefined"
+              >
+                <ul v-if="actionBlocker.reasons.length" class="operation-blocker-list">
+                  <li v-for="reason in actionBlocker.reasons" :key="reason">{{ reason }}</li>
+                </ul>
+              </ElAlert>
               <ReviewDecisionPanel
                 v-model:review-result="reviewResult"
                 v-model:review-opinion="reviewOpinion"
                 v-model:correction-reason="correctionReason"
+                v-model:selected-evidence-ids="selectedReviewEvidenceIds"
                 :role="role"
                 :actions="availableActions"
-                :latest-ai-run="undefined"
+                :latest-ai-run="latestAiRun"
                 :evidence-count="evidenceLinks.length"
+                :confirmed-evidence-links="confirmedEvidenceLinks"
+                :save-disabled-reason="reviewSaveDisabledReason"
+                :blocking-reasons="readinessBlockingReasons"
+                :requires-evidence-selection="draftRequiresEvidenceSelection"
                 :loading="actionLoading"
                 @save-review="handleSaveReviewOpinion"
                 @return-correction="handleReturnCorrection"
@@ -3828,6 +4058,7 @@ onBeforeUnmount(() => {
             :record-import-error="ndtRecordImportError"
             :report-upload-error="ndtReportUploadError"
             :submit-error="ndtSubmitError"
+            :ndt-readiness="ndtReadiness"
             :rectify-error="ndtRectifyError"
             @create-film="handleCreateNdtFilm"
             @import-records="handleImportNdtRecords"
@@ -3839,13 +4070,14 @@ onBeforeUnmount(() => {
           />
 
           <ReportArchivePanel
-            v-if="role !== 'inspection' && role !== 'ndt' && role !== 'contractor'"
+            v-if="role !== 'ndt' && role !== 'contractor'"
             :role="role"
             :actions="availableActions"
             :package-data="nodePackage"
             :reports="reports"
             :archive-items="archiveItems"
             :recent-export-tasks="recentReadOnlyExportTasks"
+            :generate-disabled-reason="reportGenerateDisabledReason"
             :loading="actionLoading"
             @generate-report="handleGenerateReport"
             @export-report="handleExportReport"
@@ -3891,6 +4123,8 @@ onBeforeUnmount(() => {
                   :actions="availableActions"
                   :loading="actionLoading"
                   :read-only="isReadOnly"
+                  :ai-recheck-disabled="Boolean(aiRecheckDisabledReason)"
+                  :ai-recheck-disabled-reason="aiRecheckDisabledReason"
                   @upload="handleOpenUploadDrawer"
                   @bind="handleOpenBindDialog"
                   @save-draft="handleSaveDraft"
@@ -3913,10 +4147,15 @@ onBeforeUnmount(() => {
               v-model:review-result="reviewResult"
               v-model:review-opinion="reviewOpinion"
               v-model:correction-reason="correctionReason"
+              v-model:selected-evidence-ids="selectedReviewEvidenceIds"
               :role="role"
               :actions="availableActions"
               :latest-ai-run="latestAiRun"
               :evidence-count="evidenceLinks.length"
+              :confirmed-evidence-links="confirmedEvidenceLinks"
+              :save-disabled-reason="reviewSaveDisabledReason"
+              :blocking-reasons="readinessBlockingReasons"
+              :requires-evidence-selection="draftRequiresEvidenceSelection"
               :loading="actionLoading"
               @save-review="handleSaveReviewOpinion"
               @return-correction="handleReturnCorrection"
@@ -5259,8 +5498,7 @@ h3 {
 
 .inspection-node-table-wrap {
   margin-top: 10px;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: auto hidden;
   border: 1px solid #e1eaf7;
   border-radius: 8px;
 }
@@ -5977,6 +6215,16 @@ h3 {
   grid-template-columns: minmax(280px, 0.8fr) minmax(420px, 1.2fr);
   gap: 12px;
   align-items: start;
+}
+
+.operation-blocker-alert {
+  grid-column: 1 / -1;
+}
+
+.operation-blocker-list {
+  padding-left: 18px;
+  margin: 4px 0 0;
+  line-height: 1.6;
 }
 
 .preview-name {
