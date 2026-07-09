@@ -2375,6 +2375,15 @@ export const listWorkbenchProjectsApi = (role: RoleCode): Promise<IResponse<Proj
   return request.get({ url: '/api/workbench/projects', params: { role } })
 }
 
+export const listAdminProjectsApi = (params?: {
+  page?: number
+  pageSize?: number
+  keyword?: string
+  status?: Project['status'] | ''
+}): Promise<IResponse<PagePayload<Project>>> => {
+  return request.get({ url: '/api/projects', params })
+}
+
 export const getAdminProjectDetailApi = (
   projectId: string
 ): Promise<IResponse<AdminProjectDetailPayload>> => {

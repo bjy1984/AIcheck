@@ -55,9 +55,9 @@ import {
   getAdminProjectDetailApi,
   getKnowledgeRuleVersionDiffApi,
   getAuditLogsApi,
+  listAdminProjectsApi,
   listPromptTemplatesApi,
   listBusinessPacksApi,
-  listWorkbenchProjectsApi,
   previewAdminConfigDiffApi,
   publishAdminConfigApi,
   publishPromptTemplateApi,
@@ -308,6 +308,7 @@ const createTableState = (pageSize = 10): TableState => ({
 })
 
 const loading = ref(false)
+const projectsLoading = ref(false)
 const auditLoading = ref(false)
 const configExporting = ref(false)
 const configPublishing = ref(false)
@@ -540,6 +541,21 @@ const auditFilters = reactive({
   result: '',
   objectType: ''
 })
+
+const projectFilters = reactive({
+  keyword: '',
+  status: '' as Project['status'] | ''
+})
+
+const projectStatusOptions: Project['status'][] = [
+  '草稿/立项中',
+  '资料提交中',
+  'AI 预审中',
+  '监检审查中',
+  '退回补正中',
+  '报告生成/复核中',
+  '已归档'
+]
 
 const promptTemplateFilters = reactive({
   keyword: '',
@@ -889,13 +905,16 @@ const resetTablePage = (key: TableKey) => {
   tableStates[key].page = 1
 }
 
+const projectTotal = computed(() => tableStates.projects.total || projects.value.length)
+const projectTableRows = computed(() => sortedRows(projects.value, tableStates.projects))
+
 const projectStats = computed(() => {
   if (overview.value.metrics.length) return overview.value.metrics
   const active = projects.value.filter((project) => project.status !== '已归档').length
   const correction = projects.value.filter((project) => project.status.includes('补正')).length
   const todos = projects.value.reduce((sum, project) => sum + project.todoCount, 0)
   return [
-    { key: 'project', label: '项目总数', value: projects.value.length, tone: 'blue' as const },
+    { key: 'project', label: '项目总数', value: projectTotal.value, tone: 'blue' as const },
     { key: 'active', label: '在检项目', value: active, tone: 'green' as const },
     { key: 'correction', label: '补正项目', value: correction, tone: 'red' as const },
     { key: 'todo', label: '全局待办', value: todos, tone: 'orange' as const }
@@ -954,7 +973,7 @@ const adminAuditCards = computed<AuditSummaryCard[]>(() => [
   {
     label: '当前治理对象',
     value: '项目、组织、权限与业务类型',
-    hint: `${projects.value.length} 个项目 · ${overview.value.users.length} 个用户`,
+    hint: `${projectTotal.value} 个项目 · ${overview.value.users.length} 个用户`,
     tone: 'blue'
   },
   {
@@ -1462,6 +1481,36 @@ const handleOpenProjectDetail = async (row: Project) => {
   await loadProjectDetail(row.id)
 }
 
+const loadProjects = async () => {
+  projectsLoading.value = true
+  projectOperationError.value = ''
+  try {
+    const res = await listAdminProjectsApi({
+      page: tableStates.projects.page,
+      pageSize: tableStates.projects.pageSize,
+      keyword: projectFilters.keyword.trim() || undefined,
+      status: projectFilters.status || undefined
+    })
+    if (!res) {
+      projectOperationError.value = getRequestErrorMessage(
+        undefined,
+        '项目列表加载失败，已保留当前筛选条件。'
+      )
+      return false
+    }
+    projects.value = applyPagination(tableStates.projects, res.data)
+    return true
+  } catch (error) {
+    projectOperationError.value = getRequestErrorMessage(
+      error,
+      '项目列表加载失败，已保留当前筛选条件。'
+    )
+    return false
+  } finally {
+    projectsLoading.value = false
+  }
+}
+
 const loadIntegrationContract = async () => {
   integrationLoading.value = true
   integrationError.value = ''
@@ -1492,11 +1541,7 @@ const loadData = async () => {
   loading.value = true
   overviewError.value = ''
   try {
-    const [projectRes, configRes] = await Promise.all([
-      listWorkbenchProjectsApi('admin'),
-      getAdminConfigOverviewApi()
-    ])
-    if (projectRes) projects.value = projectRes.data
+    const [projectsOk, configRes] = await Promise.all([loadProjects(), getAdminConfigOverviewApi()])
     if (configRes) {
       const nextOverview = { ...configRes.data }
       nextOverview.materialReviewPoints = nextOverview.materialReviewPoints || []
@@ -1506,7 +1551,7 @@ const loadData = async () => {
       }
       overview.value = nextOverview
     }
-    if (!projectRes || !configRes) {
+    if (!projectsOk || !configRes) {
       overviewError.value = getRequestErrorMessage(
         undefined,
         '管理后台基础数据加载失败，已保留上一次可用数据。'
@@ -1527,6 +1572,29 @@ const loadData = async () => {
 const handleIntegrationFilterChange = () => {
   resetTablePage('integration')
   loadIntegrationContract()
+}
+
+const handleProjectFilter = () => {
+  tableStates.projects.page = 1
+  loadProjects()
+}
+
+const handleProjectReset = () => {
+  projectFilters.keyword = ''
+  projectFilters.status = ''
+  tableStates.projects.page = 1
+  loadProjects()
+}
+
+const handleProjectPageChange = (page: number) => {
+  tableStates.projects.page = page
+  loadProjects()
+}
+
+const handleProjectPageSizeChange = (pageSize: number) => {
+  tableStates.projects.page = 1
+  tableStates.projects.pageSize = pageSize
+  loadProjects()
 }
 
 const handleValidateBusinessPacks = async () => {
@@ -1675,8 +1743,9 @@ const handleCreateProject = async () => {
     projectWizardVisible.value = false
     projectDrawerVisible.value = true
     selectedExportTask.value = null
+    projectDetailProjectId.value = res.data.project.id
     projectDetail.value = res.data.detail
-    await Promise.all([loadData(), loadAuditLogs()])
+    await Promise.all([loadProjects(), loadAuditLogs()])
   } catch (error) {
     projectWizardError.value = getRequestErrorMessage(
       error,
@@ -1734,7 +1803,13 @@ const handleSaveProjectEdit = async () => {
     }
     ElMessage.success('项目已保存')
     projectEditVisible.value = false
-    await Promise.all([loadData(), loadAuditLogs()])
+    await Promise.all([
+      loadProjects(),
+      loadAuditLogs(),
+      projectDetailProjectId.value === projectEditForm.id
+        ? loadProjectDetail(projectEditForm.id)
+        : undefined
+    ])
   } catch (error) {
     projectOperationError.value = getRequestErrorMessage(
       error,
@@ -1767,7 +1842,12 @@ const handleDeleteProject = async (row: Project) => {
       return
     }
     ElMessage.success(res.data.archived ? '项目已归档' : '项目已删除')
-    await Promise.all([loadData(), loadAuditLogs()])
+    if (projectDetailProjectId.value === row.id) {
+      projectDrawerVisible.value = false
+      projectDetailProjectId.value = ''
+      projectDetail.value = null
+    }
+    await Promise.all([loadProjects(), loadAuditLogs()])
   } catch (error) {
     projectOperationError.value = getRequestErrorMessage(
       error,
@@ -2784,7 +2864,7 @@ onMounted(() => {
       right-collapsed-default
       boundary-collapsed-default
       :top-stats="[
-        { label: '项目', value: projects.length, tone: 'blue' },
+        { label: '项目', value: projectTotal, tone: 'blue' },
         { label: '配置待办', value: pendingRuleCount || 3, tone: 'orange' },
         { label: '审计', value: auditPagination.total || 9, tone: 'red' }
       ]"
@@ -2911,11 +2991,54 @@ onMounted(() => {
                 <template #header>
                   <div class="panel-header">
                     <span>项目清单</span>
-                    <ElTag type="info" effect="plain">{{ projects.length }} 个</ElTag>
+                    <ElSpace wrap>
+                      <ElTag type="info" effect="plain">{{ projectTotal }} 个</ElTag>
+                      <ElButton size="small" type="primary" plain @click="openProjectWizard">
+                        新建项目
+                      </ElButton>
+                    </ElSpace>
                   </div>
                 </template>
+                <div class="project-filter-bar">
+                  <ElInput
+                    v-model="projectFilters.keyword"
+                    clearable
+                    placeholder="搜索项目名称、编号或区域"
+                    @keyup.enter="handleProjectFilter"
+                    @clear="handleProjectFilter"
+                  />
+                  <ElSelect
+                    v-model="projectFilters.status"
+                    clearable
+                    placeholder="全部状态"
+                    @change="handleProjectFilter"
+                    @clear="handleProjectFilter"
+                  >
+                    <ElOption
+                      v-for="status in projectStatusOptions"
+                      :key="status"
+                      :label="status"
+                      :value="status"
+                    />
+                  </ElSelect>
+                  <ElSpace wrap>
+                    <ElButton
+                      type="primary"
+                      plain
+                      :loading="projectsLoading"
+                      @click="handleProjectFilter"
+                    >
+                      查询
+                    </ElButton>
+                    <ElButton :disabled="projectsLoading" @click="handleProjectReset"
+                      >重置</ElButton
+                    >
+                    <ElButton :loading="projectsLoading" @click="loadProjects">刷新</ElButton>
+                  </ElSpace>
+                </div>
                 <ElTable
-                  :data="tableRows(projects, tableStates.projects)"
+                  v-loading="projectsLoading"
+                  :data="projectTableRows"
                   border
                   height="360"
                   empty-text="暂无项目配置"
@@ -2982,8 +3105,9 @@ onMounted(() => {
                   background
                   :page-sizes="tablePageSizes"
                   layout="total, sizes, prev, pager, next, jumper"
-                  :total="projects.length"
-                  @size-change="resetTablePage('projects')"
+                  :total="tableStates.projects.total"
+                  @size-change="handleProjectPageSizeChange"
+                  @current-change="handleProjectPageChange"
                 />
               </ElCard>
             </ElCol>
@@ -6104,6 +6228,8 @@ onMounted(() => {
 .config-edit-form :deep(.el-input-number),
 .prompt-template-form :deep(.el-select),
 .prompt-template-form :deep(.el-input),
+.project-filter-bar :deep(.el-input),
+.project-filter-bar :deep(.el-select),
 .integration-filter-bar :deep(.el-select) {
   width: 100%;
 }
@@ -6353,6 +6479,14 @@ onMounted(() => {
   margin-bottom: 12px;
 }
 
+.project-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(140px, 180px) auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
 .prompt-template-filter-bar {
   display: grid;
   grid-template-columns: minmax(260px, 1fr) minmax(140px, 180px) auto auto;
@@ -6381,6 +6515,10 @@ onMounted(() => {
   }
 
   .prompt-template-filter-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .project-filter-bar {
     grid-template-columns: 1fr;
   }
 

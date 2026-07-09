@@ -3716,9 +3716,17 @@ def list_workbench_projects(
 
 
 @router.get("/projects")
-def list_projects(request: Request, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), keyword: str | None = None):
+def list_projects(
+    request: Request,
+    page_no: int = Query(default=1, alias="page"),
+    page_size: int = Query(default=20, alias="pageSize"),
+    keyword: str | None = None,
+    status: str | None = None,
+):
     items = [versioned_project(item) for item in repo.state["projects"] if project_visible_for_request(request, item["id"])]
     items = filter_keyword(items, keyword, ["name", "code", "region"])
+    if status:
+        items = [item for item in items if item.get("status") == status]
     return ok(page(items, page_no, page_size), request)
 
 
