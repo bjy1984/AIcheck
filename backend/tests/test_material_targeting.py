@@ -199,8 +199,9 @@ def test_node2_license_evidence_requires_manual_confirmation() -> None:
         if row["materialTypeCode"] == "construction_license"
     )
     assert confirmed["evidenceLink"]["manualStatus"] == "confirmed"
-    assert confirmed_row["evidenceReviewStatus"] == "已确认"
-    assert confirmed_row["fulfilled"] is True
+    assert confirmed_row["evidenceReviewStatus"] == "已确认但不可定位"
+    assert confirmed_row["fulfilled"] is False
+    assert confirmed["evidenceReadiness"]["unlocatableConfirmedCount"] >= 1
 
     rejected = assert_ok(
         client.post(
@@ -287,7 +288,9 @@ def test_ai_recheck_allows_pending_evidence_decisions(monkeypatch) -> None:
     assert readiness["nodeEvidenceLinks"]
     assert readiness["readyForAi"] is False
     assert readiness["readyForAiFormal"] is False
-    assert readiness["readyForGapPrecheck"] is False
+    assert readiness["readyForGapPrecheck"] is True
+    assert readiness["availableReviewModes"] == ["gap_precheck"]
+    assert readiness["recommendedAction"] == "run_gap_precheck"
     assert {item["code"] for item in readiness["blockingReasons"]} >= {"PENDING_EVIDENCE_DECISION", "MISSING_REQUIRED_EVIDENCE"}
 
     monkeypatch.setattr(
@@ -304,6 +307,9 @@ def test_ai_recheck_allows_pending_evidence_decisions(monkeypatch) -> None:
     result = assert_ok(client.post(f"/api/projects/{PROJECT_ID}/inspection/nodes/1/ai-recheck"))
 
     latest_run = result["latestRun"]
+    assert result["reviewMode"] == "gap_precheck"
+    assert result["advisoryOnly"] is True
+    assert latest_run["reviewMode"] == "gap_precheck"
     assert latest_run["evidenceReadiness"]["readyForAiFormal"] is False
     assert latest_run["evidenceReadiness"]["pendingCount"] >= 1
     assert version["id"] in latest_run["inputDocumentVersionIds"]

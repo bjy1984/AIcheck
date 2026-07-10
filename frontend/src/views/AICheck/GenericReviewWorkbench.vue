@@ -17,6 +17,7 @@ import {
 import { getProjectReviewWorkbenchApi, listWorkbenchProjectsApi } from '@/api/aicheck'
 import type { GenericReviewWorkbenchPayload } from '@/api/aicheck'
 import type { Project } from '@/types/aicheck'
+import { formatConfidence } from '@/utils/confidence'
 import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import { friendlyReviewStatus } from './components/auditLabels'
 import StaticPageShell from './components/StaticPageShell.vue'
@@ -430,7 +431,7 @@ onMounted(loadData)
                 <template #default="{ row }">{{ row.ruleRefs.length }}</template>
               </ElTableColumn>
               <ElTableColumn label="置信度" width="88">
-                <template #default="{ row }">{{ Math.round(row.confidence * 100) }}%</template>
+                <template #default="{ row }">{{ formatConfidence(row.confidence) }}</template>
               </ElTableColumn>
             </ElTable>
           </ElCard>
@@ -458,7 +459,7 @@ onMounted(loadData)
 .page-title h1 {
   margin: 0;
   font-size: 24px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--el-text-color-primary);
 }
 
@@ -506,7 +507,7 @@ onMounted(loadData)
 
 .quality-body strong {
   font-size: 28px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1;
   color: #1f66d8;
   font-variant-numeric: tabular-nums;
@@ -514,7 +515,7 @@ onMounted(loadData)
 
 .quality-body span {
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.6;
   color: #52647d;
 }

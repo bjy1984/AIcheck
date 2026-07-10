@@ -1,0 +1,3 @@
+services:
+  postgres:
+    image: ${AICHECK_POSTGRES_IMAGE:-pgvector/pgvector:pg16}

@@ -1524,7 +1524,7 @@ h4 {
 p {
   margin: 0;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.7;
   color: #344054;
 }
@@ -1532,7 +1532,7 @@ p {
 .sub {
   margin-top: 6px;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--muted);
 }
 
@@ -1562,14 +1562,14 @@ p {
 
 .metric-label {
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
   color: var(--muted);
 }
 
 .metric-value {
   margin-top: 8px;
   font-size: 24px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1;
   color: var(--blue);
 }
@@ -1668,7 +1668,7 @@ p {
   min-height: 32px;
   padding: 0 14px;
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 600;
   color: #fff;
   cursor: pointer;
   background: var(--blue);
@@ -1705,7 +1705,7 @@ p {
 }
 
 .table th {
-  font-weight: 900;
+  font-weight: 600;
   color: #485a73;
   background: var(--head);
 }
@@ -1730,7 +1730,7 @@ p {
   margin-top: 4px;
   overflow: hidden;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.5;
   color: var(--muted);
   text-overflow: ellipsis;
@@ -1742,7 +1742,7 @@ p {
   min-height: 24px;
   padding: 3px 8px;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1;
   color: var(--blue-2);
   white-space: nowrap;
@@ -1806,7 +1806,7 @@ p {
   display: grid;
   width: 28px;
   height: 28px;
-  font-weight: 900;
+  font-weight: 600;
   color: #fff;
   background: var(--blue);
   border-radius: 50%;
@@ -1814,7 +1814,7 @@ p {
 }
 
 .step-title {
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .step-desc {
@@ -1865,7 +1865,7 @@ p {
   min-height: 128px;
   padding: 22px;
   font-size: 18px;
-  font-weight: 900;
+  font-weight: 600;
   color: #37506f;
   text-align: center;
   cursor: pointer;
@@ -1879,7 +1879,7 @@ p {
   display: block;
   margin-top: 8px;
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 600;
   color: var(--muted);
 }
 
@@ -1943,7 +1943,7 @@ p {
   min-height: 34px;
   padding: 0 10px;
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 600;
   color: #26364e;
   background: #fff;
   border: 1px solid var(--line);
@@ -1963,7 +1963,7 @@ p {
   min-height: 32px;
   padding: 0 10px;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   color: #485a73;
   cursor: pointer;
   background: #fff;
@@ -1981,14 +1981,14 @@ p {
   justify-content: space-between;
   margin-top: 12px;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   color: var(--muted);
 }
 
 .textarea-like {
   min-height: 128px;
   padding: 11px 12px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1.7;
   color: #26364e;
   background: #fff;
@@ -2000,7 +2000,7 @@ p {
   display: inline-flex;
   min-height: 24px;
   padding: 0 6px;
-  font-weight: 900;
+  font-weight: 600;
   color: var(--blue-2);
   border-radius: 5px;
   transition:
@@ -2054,7 +2054,7 @@ p {
 .time-row {
   display: grid;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.6;
   color: #344054;
   grid-template-columns: 14px minmax(0, 1fr);

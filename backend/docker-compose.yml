@@ -41,11 +41,22 @@ services:
       AICHECK_QWEN_ALLOW_SERVER_FALLBACK: ${AICHECK_QWEN_ALLOW_SERVER_FALLBACK:-false}
       QWEN_API_BASE: ${QWEN_API_BASE:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       QWEN_API_KEY: ${QWEN_API_KEY:-}
+      AICHECK_EMBEDDING_PROVIDER: ${AICHECK_EMBEDDING_PROVIDER:-local}
+      AICHECK_EMBEDDING_API_BASE: ${AICHECK_EMBEDDING_API_BASE:-http://embedding-service:7997}
+      AICHECK_EMBEDDING_API_KEY: ${AICHECK_EMBEDDING_API_KEY:-}
+      AICHECK_EMBEDDING_MODEL_ID: ${AICHECK_EMBEDDING_MODEL_ID:-Qwen/Qwen3-Embedding-0.6B}
+      AICHECK_EMBEDDING_SERVED_MODEL_NAME: ${AICHECK_EMBEDDING_SERVED_MODEL_NAME:-embedding-default}
+      AICHECK_EMBEDDING_BATCH_SIZE: ${AICHECK_EMBEDDING_BATCH_SIZE:-32}
+      AICHECK_EMBEDDING_FORCE_OFFLINE_HASH: ${AICHECK_EMBEDDING_FORCE_OFFLINE_HASH:-false}
+      AICHECK_EMBEDDING_ALLOW_HASH_FALLBACK: ${AICHECK_EMBEDDING_ALLOW_HASH_FALLBACK:-false}
+      AICHECK_OCR_BASE_URL: ${AICHECK_OCR_BASE_URL:-http://ocr-service:8010}
       AICHECK_REQUIRE_AUTH: ${AICHECK_REQUIRE_AUTH:-true}
       AICHECK_ENABLE_DEMO_USERS: ${AICHECK_ENABLE_DEMO_USERS:-false}
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
+      workflow-migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -55,6 +66,10 @@ services:
       litellm-service:
         condition: service_healthy
       temporal-service:
+        condition: service_healthy
+      ocr-service:
+        condition: service_healthy
+      embedding-service:
         condition: service_healthy
     healthcheck:
       test:
@@ -90,6 +105,14 @@ services:
       AICHECK_QWEN_ALLOW_SERVER_FALLBACK: ${AICHECK_QWEN_ALLOW_SERVER_FALLBACK:-false}
       QWEN_API_BASE: ${QWEN_API_BASE:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       QWEN_API_KEY: ${QWEN_API_KEY:-}
+      AICHECK_EMBEDDING_PROVIDER: ${AICHECK_EMBEDDING_PROVIDER:-local}
+      AICHECK_EMBEDDING_API_BASE: ${AICHECK_EMBEDDING_API_BASE:-}
+      AICHECK_EMBEDDING_API_KEY: ${AICHECK_EMBEDDING_API_KEY:-}
+      AICHECK_EMBEDDING_MODEL_ID: ${AICHECK_EMBEDDING_MODEL_ID:-Qwen/Qwen3-Embedding-0.6B}
+      AICHECK_EMBEDDING_SERVED_MODEL_NAME: ${AICHECK_EMBEDDING_SERVED_MODEL_NAME:-embedding-default}
+      AICHECK_EMBEDDING_BATCH_SIZE: ${AICHECK_EMBEDDING_BATCH_SIZE:-32}
+      AICHECK_EMBEDDING_FORCE_OFFLINE_HASH: ${AICHECK_EMBEDDING_FORCE_OFFLINE_HASH:-false}
+      AICHECK_EMBEDDING_ALLOW_HASH_FALLBACK: ${AICHECK_EMBEDDING_ALLOW_HASH_FALLBACK:-false}
     depends_on:
       postgres:
         condition: service_healthy
@@ -143,6 +166,8 @@ services:
       QWEN_API_BASE: ${QWEN_API_BASE:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       QWEN_API_KEY: ${QWEN_API_KEY:-}
     depends_on:
+      workflow-migrate:
+        condition: service_completed_successfully
       temporal-service:
         condition: service_healthy
       postgres:
@@ -158,6 +183,18 @@ services:
       interval: 30s
       timeout: 5s
       retries: 6
+
+  workflow-migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m scripts.setup_langgraph_checkpoint
+    environment:
+      LANGGRAPH_CHECKPOINT_DSN: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${WORKFLOW_POSTGRES_DB:-workflow}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   ocr-service:
     build:
@@ -259,7 +296,7 @@ services:
       retries: 20
 
   postgres:
-    image: postgres:16-alpine
+    image: ${AICHECK_POSTGRES_IMAGE:-pgvector/pgvector:pg16}
     environment:
       POSTGRES_DB: ${AICHECK_POSTGRES_DB:-aicheck}
       POSTGRES_USER: ${AICHECK_POSTGRES_USER:-aicheck}
@@ -320,9 +357,9 @@ services:
       HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
       TRANSFORMERS_CACHE: /app/.cache
       INFINITY_API_KEY: ${INFINITY_API_KEY:?INFINITY_API_KEY is required}
-      AICHECK_EMBEDDING_MODEL_ID: ${AICHECK_EMBEDDING_MODEL_ID:-Qwen/Qwen3-Embedding-0.6B}
-      AICHECK_EMBEDDING_SERVED_MODEL_NAME: ${AICHECK_EMBEDDING_SERVED_MODEL_NAME:-embedding-default}
-      AICHECK_EMBEDDING_ENGINE: ${AICHECK_EMBEDDING_ENGINE:-torch}
+      AICHECK_EMBEDDING_MODEL_ID: ${AICHECK_LOCAL_EMBEDDING_MODEL_ID:-Qwen/Qwen3-Embedding-0.6B}
+      AICHECK_EMBEDDING_SERVED_MODEL_NAME: ${AICHECK_LOCAL_EMBEDDING_SERVED_MODEL_NAME:-embedding-default}
+      AICHECK_EMBEDDING_ENGINE: ${AICHECK_LOCAL_EMBEDDING_ENGINE:-torch}
       AICHECK_EMBEDDING_DEVICE: ${AICHECK_EMBEDDING_DEVICE:-cpu}
       AICHECK_EMBEDDING_NORMALIZE: ${AICHECK_EMBEDDING_NORMALIZE:-true}
       AICHECK_EMBEDDING_PRELOAD: ${AICHECK_EMBEDDING_PRELOAD:-false}

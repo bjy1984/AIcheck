@@ -2794,6 +2794,7 @@ def release_gate_contract_section(args: argparse.Namespace) -> dict[str, Any]:
         "litellmProviderProbes": bool(getattr(args, "litellm_provider_probes", False)),
         "qwenOfficialProbe": bool(getattr(args, "qwen_official_probe", False)),
         "securityScanEvidence": bool(getattr(args, "security_scan_dir", None)),
+        "httpsEndpoint": str(getattr(args, "api_base", "")).strip().lower().startswith("https://"),
     }
     failures = sorted(label for label, enabled in required_flags.items() if not enabled)
     check = {

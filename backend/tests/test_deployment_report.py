@@ -71,7 +71,7 @@ def report_args(**overrides):
     values = {
         "strict_production": True,
         "include_live": False,
-        "api_base": "http://api",
+        "api_base": "https://api",
         "ocr_base": "http://ocr",
         "litellm_base": "http://litellm",
         "litellm_api_key": "sk-test",

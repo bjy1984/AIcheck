@@ -135,6 +135,7 @@ import type {
 import StaticPageShell from './components/StaticPageShell.vue'
 import OcrAnnotationCanvas from './components/OcrAnnotationCanvas.vue'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
+import { getAicheckRoleLabel } from '@/utils/roleAccess'
 import {
   friendlyFieldLabel,
   friendlyRuleCode,
@@ -1599,6 +1600,8 @@ const techLabelMap: Record<string, string> = {
 const friendlyTechLabel = (value: unknown, fallback = '-') => {
   const raw = String(value || '').trim()
   if (!raw) return fallback
+  const roleLabel = getAicheckRoleLabel(raw, '')
+  if (roleLabel && roleLabel !== raw) return roleLabel
   const direct = techLabelMap[raw] || statusLabelMap[raw]
   if (direct) return direct
   if (/^[a-z0-9_]+_agent$/i.test(raw)) return `AI 员工：${raw.replace(/_agent$/i, '')}`
@@ -8571,7 +8574,7 @@ const langGraphEchartOption = computed<EChartsOption>(() => {
     style: {
       text: `${String(group.index).padStart(2, '0')} ${group.label}`,
       fill: langGraphToneColor(group.tone as FdeTone),
-      font: '900 11px sans-serif',
+      font: '600 12px sans-serif',
       backgroundColor: '#ffffff',
       borderColor: '#dbe8f7',
       borderWidth: 1,
@@ -21918,17 +21921,18 @@ onBeforeUnmount(() => {
 }
 
 .page-title {
-  font-size: 27px;
-  font-weight: 900;
-  line-height: 1.2;
-  color: #172033;
+  font-size: var(--aicheck-font-size-page, 24px);
+  font-weight: var(--aicheck-font-weight-bold, 700);
+  line-height: var(--aicheck-line-height-page, 32px);
+  color: var(--aicheck-text-strong, #172033);
 }
 
 .page-subtitle {
   margin-top: 4px;
   font-size: 13px;
-  line-height: 1.5;
-  color: #667085;
+  font-weight: var(--aicheck-font-weight-regular, 400);
+  line-height: var(--aicheck-line-height-body, 22px);
+  color: var(--aicheck-text-muted, #52647d);
 }
 
 .page-title-tags {
@@ -21974,7 +21978,7 @@ onBeforeUnmount(() => {
 
 .next-action span {
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   color: #2563eb;
 }
 
@@ -21987,7 +21991,7 @@ onBeforeUnmount(() => {
 .workbench-section-title {
   margin-bottom: 10px;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1.4;
   color: #172033;
 }
@@ -22046,7 +22050,7 @@ onBeforeUnmount(() => {
 
 .project-audit-title span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #2563eb;
 }
@@ -22059,7 +22063,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 22px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 30px;
   color: #172033;
   text-overflow: ellipsis;
@@ -22129,13 +22133,13 @@ onBeforeUnmount(() => {
 
 .project-audit-module-title span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   color: #2563eb;
 }
 
 .project-audit-module-title strong {
   font-size: 15px;
-  font-weight: 900;
+  font-weight: 600;
   color: #172033;
 }
 
@@ -22168,9 +22172,9 @@ onBeforeUnmount(() => {
 .project-audit-focus-fact em {
   min-width: 0;
   overflow: hidden;
-  font-size: 11px;
+  font-size: 12px;
   font-style: normal;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 16px;
   color: #64748b;
   text-overflow: ellipsis;
@@ -22181,7 +22185,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #172033;
   text-overflow: ellipsis;
@@ -22238,7 +22242,7 @@ onBeforeUnmount(() => {
 
 .workbench-summary-card span {
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 18px;
   color: #64748b;
 }
@@ -22336,7 +22340,7 @@ onBeforeUnmount(() => {
 
 .agent-status-panel span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #2563eb;
 }
@@ -22344,7 +22348,7 @@ onBeforeUnmount(() => {
 .agent-status-panel strong {
   min-width: 0;
   font-size: 18px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 26px;
   color: #172033;
 }
@@ -22369,7 +22373,7 @@ onBeforeUnmount(() => {
 }
 
 .project-subpage-kpis .workbench-summary-card span {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 16px;
 }
 
@@ -22451,7 +22455,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 20px;
   color: #52617a;
   text-align: right;
@@ -22500,15 +22504,15 @@ onBeforeUnmount(() => {
   align-items: baseline;
   min-width: 0;
   font-size: 16px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 22px;
   color: #172033;
   font-variant-numeric: tabular-nums;
 }
 
 .project-overview-node-status-row strong small {
-  font-size: 11px;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 600;
   color: #7b8798;
 }
 
@@ -22551,7 +22555,7 @@ onBeforeUnmount(() => {
 
 .project-overview-diagnostics summary::after {
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   color: #2563eb;
   content: '展开';
 }
@@ -22566,7 +22570,7 @@ onBeforeUnmount(() => {
 
 .project-overview-diagnostics summary span {
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 600;
   color: #172033;
 }
 
@@ -22574,7 +22578,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   color: #667085;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -22635,7 +22639,7 @@ onBeforeUnmount(() => {
   min-height: 26px;
   padding: 5px 7px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   color: #1d4ed8;
   text-align: center;
   background: #eef5ff;
@@ -22649,7 +22653,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #172033;
   text-overflow: ellipsis;
@@ -22776,7 +22780,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #172033;
   text-overflow: ellipsis;
@@ -22862,8 +22866,8 @@ onBeforeUnmount(() => {
 .audit-node-item span {
   min-width: 0;
   overflow: hidden;
-  font-size: 11px;
-  font-weight: 900;
+  font-size: 12px;
+  font-weight: 600;
   line-height: 16px;
   color: #2563eb;
   text-overflow: ellipsis;
@@ -22887,9 +22891,9 @@ onBeforeUnmount(() => {
   justify-self: start;
   min-height: 22px;
   padding: 2px 7px;
-  font-size: 11px;
+  font-size: 12px;
   font-style: normal;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #b45309;
   background: #fff7ed;
@@ -22910,7 +22914,7 @@ onBeforeUnmount(() => {
 
 .audit-empty-state strong {
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 600;
   color: #172033;
 }
 
@@ -22946,8 +22950,8 @@ onBeforeUnmount(() => {
   justify-content: center;
   width: 30px;
   height: 30px;
-  font-size: 11px;
-  font-weight: 900;
+  font-size: 12px;
+  font-weight: 600;
   color: #1f66d8;
   background: #eff6ff;
   border: 1px solid #c9dcfb;
@@ -22970,7 +22974,7 @@ onBeforeUnmount(() => {
 
 .audit-flow-card strong {
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 20px;
   color: #172033;
   white-space: nowrap;
@@ -22990,9 +22994,9 @@ onBeforeUnmount(() => {
   justify-self: start;
   min-height: 22px;
   padding: 2px 7px;
-  font-size: 11px;
+  font-size: 12px;
   font-style: normal;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #475569;
   background: rgb(255 255 255 / 82%);
@@ -23061,7 +23065,7 @@ onBeforeUnmount(() => {
 
 .technology-stack-card span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #64748b;
   white-space: nowrap;
@@ -23069,7 +23073,7 @@ onBeforeUnmount(() => {
 
 .technology-stack-card strong {
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 20px;
   color: #172033;
   white-space: nowrap;
@@ -23078,7 +23082,7 @@ onBeforeUnmount(() => {
 .technology-stack-card em {
   font-size: 12px;
   font-style: normal;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 18px;
   color: #2563eb;
   white-space: nowrap;
@@ -23147,14 +23151,14 @@ onBeforeUnmount(() => {
 
 .vector-lineage-intro span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #2563eb;
 }
 
 .vector-lineage-intro strong {
   font-size: 16px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 22px;
   color: #172033;
 }
@@ -23187,7 +23191,7 @@ onBeforeUnmount(() => {
 
 .vector-quality-card span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #64748b;
   white-space: nowrap;
@@ -23195,7 +23199,7 @@ onBeforeUnmount(() => {
 
 .vector-quality-card strong {
   font-size: 24px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 30px;
   color: #172033;
   font-variant-numeric: tabular-nums;
@@ -23265,14 +23269,14 @@ onBeforeUnmount(() => {
 
 .ocr-online-entry__copy span {
   font-size: 12px;
-  font-weight: 850;
+  font-weight: 600;
   color: #2563eb;
 }
 
 .ocr-online-entry__copy strong {
   min-width: 0;
   font-size: 16px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 22px;
   color: #172033;
 }
@@ -23321,7 +23325,7 @@ onBeforeUnmount(() => {
 .ocr-primary-task-panel span,
 .ocr-current-task-card span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #64748b;
 }
@@ -23330,7 +23334,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 20px;
-  font-weight: 950;
+  font-weight: 700;
   line-height: 26px;
   color: #172033;
   text-overflow: ellipsis;
@@ -23395,7 +23399,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 18px;
-  font-weight: 950;
+  font-weight: 700;
   line-height: 26px;
   color: #172033;
   text-overflow: ellipsis;
@@ -23477,7 +23481,7 @@ onBeforeUnmount(() => {
   width: 34px;
   height: 34px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 34px;
   color: #2563eb;
   text-align: center;
@@ -23494,7 +23498,7 @@ onBeforeUnmount(() => {
 
 .ocr-step-card strong {
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 20px;
   color: #172033;
   white-space: normal;
@@ -23560,7 +23564,7 @@ onBeforeUnmount(() => {
 
 .ocr-status-tabs__header span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #2563eb;
 }
@@ -23568,7 +23572,7 @@ onBeforeUnmount(() => {
 .ocr-status-tabs__header strong {
   min-width: 0;
   font-size: 18px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 26px;
   color: #172033;
 }
@@ -23610,7 +23614,7 @@ onBeforeUnmount(() => {
 .ocr-technical-foldout summary::after {
   flex: 0 0 auto;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   color: #64748b;
   content: '展开';
 }
@@ -23629,13 +23633,13 @@ onBeforeUnmount(() => {
 
 .ocr-technical-foldout span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   color: #64748b;
 }
 
 .ocr-technical-foldout strong {
   font-size: 13px;
-  font-weight: 950;
+  font-weight: 700;
   color: #172033;
 }
 
@@ -23658,7 +23662,7 @@ onBeforeUnmount(() => {
 
 .ocr-annotation-inline-callout span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #2563eb;
 }
@@ -23667,7 +23671,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 16px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 23px;
   color: #172033;
   text-overflow: ellipsis;
@@ -23729,7 +23733,7 @@ onBeforeUnmount(() => {
 .ocr-annotation-upload-card span,
 .ocr-annotation-action-card span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #2563eb;
 }
@@ -23741,7 +23745,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 16px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 23px;
   color: #172033;
   text-overflow: ellipsis;
@@ -23790,7 +23794,7 @@ onBeforeUnmount(() => {
   width: 34px;
   height: 34px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   color: #1d4ed8;
   background: #eef5ff;
   border: 1px solid #cfe0ff;
@@ -23819,7 +23823,7 @@ onBeforeUnmount(() => {
 
 .ocr-annotation-pipeline__steps strong {
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 20px;
   color: #172033;
   white-space: nowrap;
@@ -23888,14 +23892,14 @@ onBeforeUnmount(() => {
 
 .ocr-annotation-prelabel-stat strong {
   font-size: 14px;
-  font-weight: 950;
+  font-weight: 700;
   color: #172033;
   font-variant-numeric: tabular-nums;
 }
 
 .ocr-annotation-prelabel-stat small {
-  font-size: 11px;
-  font-weight: 900;
+  font-size: 12px;
+  font-weight: 600;
   color: #64748b;
 }
 
@@ -24029,14 +24033,14 @@ onBeforeUnmount(() => {
 .ocr-secondary-tool span {
   min-width: 0;
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 20px;
   color: #172033;
 }
 
 .ocr-secondary-tool strong {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 20px;
   color: #2563eb;
 }
@@ -24070,7 +24074,7 @@ onBeforeUnmount(() => {
 .chart-zoom-value {
   min-width: 42px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 22px;
   color: #2563eb;
   text-align: center;
@@ -24107,7 +24111,7 @@ onBeforeUnmount(() => {
 
 .ocr-blocker-list strong {
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 20px;
   color: #172033;
   white-space: nowrap;
@@ -24267,7 +24271,7 @@ onBeforeUnmount(() => {
 
 .ocr-capability-hero span {
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   color: #2563eb;
 }
 
@@ -24371,7 +24375,7 @@ onBeforeUnmount(() => {
 .ocr-capability-form label {
   display: grid;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   color: #475569;
   gap: 6px;
 }
@@ -24453,14 +24457,14 @@ onBeforeUnmount(() => {
 }
 
 .ocr-roi-legend__item strong {
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .ocr-roi-legend__item small {
   min-width: 18px;
   padding: 2px 5px;
-  font-size: 11px;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 600;
   color: #1d4ed8;
   text-align: center;
   background: rgb(37 99 235 / 10%);
@@ -24578,8 +24582,8 @@ onBeforeUnmount(() => {
   min-height: 24px;
   padding: 4px 8px;
   overflow: hidden;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
   line-height: 1.35;
   color: #0f172a;
   text-overflow: ellipsis;
@@ -24768,7 +24772,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 14px;
-  font-weight: 950;
+  font-weight: 700;
   line-height: 20px;
   color: #172033;
   text-overflow: ellipsis;
@@ -24800,8 +24804,8 @@ onBeforeUnmount(() => {
 }
 
 .ocr-table-meta dt {
-  font-size: 11px;
-  font-weight: 900;
+  font-size: 12px;
+  font-weight: 600;
   line-height: 16px;
   color: #64748b;
 }
@@ -24809,7 +24813,7 @@ onBeforeUnmount(() => {
 .ocr-table-meta dd {
   margin-top: 3px;
   font-size: 12px;
-  font-weight: 850;
+  font-weight: 600;
   line-height: 17px;
   color: #172033;
 }
@@ -24834,7 +24838,7 @@ onBeforeUnmount(() => {
 
 .ocr-structured-table th {
   font-size: 12px;
-  font-weight: 950;
+  font-weight: 700;
   line-height: 17px;
   color: #172033;
   text-align: left;
@@ -24883,7 +24887,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #2563eb;
   text-overflow: ellipsis;
@@ -24894,7 +24898,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 14px;
-  font-weight: 950;
+  font-weight: 700;
   line-height: 20px;
   color: #172033;
   text-overflow: ellipsis;
@@ -24926,8 +24930,8 @@ onBeforeUnmount(() => {
 }
 
 .ocr-seal-meta dt {
-  font-size: 11px;
-  font-weight: 900;
+  font-size: 12px;
+  font-weight: 600;
   line-height: 16px;
   color: #64748b;
 }
@@ -24935,7 +24939,7 @@ onBeforeUnmount(() => {
 .ocr-seal-meta dd {
   margin-top: 3px;
   font-size: 12px;
-  font-weight: 850;
+  font-weight: 600;
   line-height: 17px;
   color: #172033;
 }
@@ -25000,7 +25004,7 @@ onBeforeUnmount(() => {
 .pageindex-friendly-card__head small {
   overflow: hidden;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #2563eb;
   text-overflow: ellipsis;
@@ -25013,7 +25017,7 @@ onBeforeUnmount(() => {
 .pageindex-friendly-card__head strong {
   overflow: hidden;
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 20px;
   color: #172033;
   text-overflow: ellipsis;
@@ -25062,8 +25066,8 @@ onBeforeUnmount(() => {
   min-height: 22px;
   padding: 2px 7px;
   overflow: hidden;
-  font-size: 11px;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 600;
   line-height: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -25097,8 +25101,8 @@ onBeforeUnmount(() => {
   justify-content: center;
   width: 30px;
   height: 30px;
-  font-size: 11px;
-  font-weight: 900;
+  font-size: 12px;
+  font-weight: 600;
   color: #1f66d8;
   background: #eff6ff;
   border: 1px solid #c9dcfb;
@@ -25139,15 +25143,15 @@ onBeforeUnmount(() => {
 }
 
 .pageindex-friendly-facts em {
-  font-size: 11px;
+  font-size: 12px;
   font-style: normal;
-  font-weight: 900;
+  font-weight: 600;
   color: #64748b;
 }
 
 .pageindex-friendly-facts strong {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   color: #172033;
 }
 
@@ -25192,7 +25196,7 @@ onBeforeUnmount(() => {
 
 .graph-node-card span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #2563eb;
   white-space: nowrap;
@@ -25201,7 +25205,7 @@ onBeforeUnmount(() => {
 .graph-node-card strong {
   margin-top: 10px;
   font-size: 18px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 24px;
   color: #172033;
   white-space: nowrap;
@@ -25259,7 +25263,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 13px;
-  font-weight: 950;
+  font-weight: 700;
   line-height: 19px;
   color: #172033;
   text-overflow: ellipsis;
@@ -25304,7 +25308,7 @@ onBeforeUnmount(() => {
 .finding-friendly-main span {
   overflow: hidden;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #2563eb;
   text-overflow: ellipsis;
@@ -25315,7 +25319,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 14px;
-  font-weight: 950;
+  font-weight: 700;
   line-height: 20px;
   color: #172033;
   text-overflow: ellipsis;
@@ -25344,7 +25348,7 @@ onBeforeUnmount(() => {
 
 .finding-friendly-side strong {
   font-size: 22px;
-  font-weight: 950;
+  font-weight: 700;
   line-height: 26px;
   color: #172033;
   font-variant-numeric: tabular-nums;
@@ -25376,7 +25380,7 @@ onBeforeUnmount(() => {
 
 .langgraph-cog-head span {
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #172033;
 }
@@ -25385,7 +25389,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 18px;
   color: #64748b;
   text-overflow: ellipsis;
@@ -25415,8 +25419,8 @@ onBeforeUnmount(() => {
   justify-content: center;
   width: 26px;
   height: 24px;
-  font-size: 11px;
-  font-weight: 900;
+  font-size: 12px;
+  font-weight: 600;
   color: #1f66d8;
   background: #eff6ff;
   border: 1px solid #c9dcfb;
@@ -25440,7 +25444,7 @@ onBeforeUnmount(() => {
 
 .langgraph-cog-list strong {
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #172033;
   white-space: nowrap;
@@ -25458,9 +25462,9 @@ onBeforeUnmount(() => {
 .langgraph-cog-list em {
   min-height: 22px;
   padding: 2px 7px;
-  font-size: 11px;
+  font-size: 12px;
   font-style: normal;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 18px;
   color: #1f66d8;
   white-space: nowrap;
@@ -25521,8 +25525,8 @@ onBeforeUnmount(() => {
   justify-content: center;
   width: 28px;
   height: 28px;
-  font-size: 11px;
-  font-weight: 900;
+  font-size: 12px;
+  font-weight: 600;
   line-height: 1;
   color: #1f66d8;
   background: #fff;
@@ -25541,7 +25545,7 @@ onBeforeUnmount(() => {
 
 .langgraph-lane-main strong {
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #172033;
 }
@@ -25564,9 +25568,9 @@ onBeforeUnmount(() => {
 .langgraph-lane-meta em {
   min-height: 20px;
   padding: 1px 6px;
-  font-size: 11px;
+  font-size: 12px;
   font-style: normal;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 18px;
   color: #475569;
   background: rgb(255 255 255 / 78%);
@@ -25611,8 +25615,8 @@ onBeforeUnmount(() => {
   justify-content: center;
   width: 28px;
   height: 28px;
-  font-size: 11px;
-  font-weight: 900;
+  font-size: 12px;
+  font-weight: 600;
   color: #1f66d8;
   background: #eff6ff;
   border: 1px solid #c9dcfb;
@@ -25638,7 +25642,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 20px;
   color: #172033;
   text-overflow: ellipsis;
@@ -25664,8 +25668,8 @@ onBeforeUnmount(() => {
 }
 
 .audit-step-evidence span {
-  font-size: 11px;
-  font-weight: 900;
+  font-size: 12px;
+  font-weight: 600;
   line-height: 16px;
   color: #64748b;
 }
@@ -25674,7 +25678,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 18px;
   color: #26364e;
   text-overflow: ellipsis;
@@ -25696,8 +25700,8 @@ onBeforeUnmount(() => {
 .audit-step-meta span {
   min-height: 22px;
   padding: 3px 7px;
-  font-size: 11px;
-  font-weight: 900;
+  font-size: 12px;
+  font-weight: 600;
   line-height: 16px;
   color: #3568b7;
   background: #eff6ff;
@@ -25764,8 +25768,8 @@ onBeforeUnmount(() => {
 .pageindex-trace-head span,
 .pageindex-query-block span,
 .pageindex-trace-facts em {
-  font-size: 11px;
-  font-weight: 900;
+  font-size: 12px;
+  font-weight: 600;
   line-height: 16px;
   color: #64748b;
 }
@@ -25774,7 +25778,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #172033;
   text-overflow: ellipsis;
@@ -25794,7 +25798,7 @@ onBeforeUnmount(() => {
   margin: 0;
   overflow: hidden;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 18px;
   color: #26364e;
   text-overflow: ellipsis;
@@ -25818,7 +25822,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   font-size: 12px;
   font-style: normal;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -25869,7 +25873,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 17px;
   color: #172033;
   text-overflow: ellipsis;
@@ -25887,7 +25891,7 @@ onBeforeUnmount(() => {
 
 .pageindex-trace-action span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 16px;
 }
 
@@ -25895,7 +25899,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -25960,7 +25964,7 @@ onBeforeUnmount(() => {
   display: block;
   margin-bottom: 6px;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   color: #2563eb;
 }
 
@@ -26003,7 +26007,7 @@ onBeforeUnmount(() => {
 .subpage-switch span {
   display: block;
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 20px;
   color: #172033;
 }
@@ -26135,7 +26139,7 @@ onBeforeUnmount(() => {
 
 .workflow-card span {
   font-size: 15px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .workflow-card strong {
@@ -26157,7 +26161,7 @@ onBeforeUnmount(() => {
   margin-top: 14px;
   font-size: 13px;
   font-style: normal;
-  font-weight: 800;
+  font-weight: 600;
   color: #2563eb;
 }
 
@@ -26242,7 +26246,7 @@ onBeforeUnmount(() => {
 
 .fde-dashboard-detail__header span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #2563eb;
 }
@@ -26250,7 +26254,7 @@ onBeforeUnmount(() => {
 .fde-dashboard-detail__header strong {
   min-width: 0;
   font-size: 18px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 26px;
   color: #172033;
 }
@@ -26278,7 +26282,7 @@ onBeforeUnmount(() => {
 .panel :deep(.el-card__header) {
   min-height: 52px;
   padding: 14px 18px;
-  font-weight: 700;
+  font-weight: 600;
   background: #fbfcfe;
   border-bottom: 1px solid #e8edf5;
 }
@@ -26293,7 +26297,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   min-width: 0;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .panel-header span {
@@ -26418,7 +26422,7 @@ onBeforeUnmount(() => {
 }
 
 .ocr-action-row strong {
-  font-weight: 800;
+  font-weight: 600;
   color: #172033;
 }
 
@@ -26456,7 +26460,7 @@ onBeforeUnmount(() => {
 .fde-tabs :deep(.el-tabs__item) {
   height: 46px;
   padding: 0 18px;
-  font-weight: 700;
+  font-weight: 600;
   color: #475467;
 }
 
@@ -26482,7 +26486,7 @@ onBeforeUnmount(() => {
 
 .fde-console :deep(.el-table th.el-table__cell) {
   padding: 12px 0;
-  font-weight: 700;
+  font-weight: 600;
   color: #4b5563;
   background: #f7f9fc;
 }
@@ -26499,7 +26503,7 @@ onBeforeUnmount(() => {
 
 .fde-console :deep(.el-descriptions__label.el-descriptions__cell) {
   width: 140px;
-  font-weight: 700;
+  font-weight: 600;
   color: #475467;
   background: #f7f9fc;
 }
@@ -26582,7 +26586,7 @@ onBeforeUnmount(() => {
 .standards-vector-eyebrow span {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   letter-spacing: 0;
   color: #1d4ed8;
@@ -26596,7 +26600,7 @@ onBeforeUnmount(() => {
 
 .standards-vector-hero h2 {
   font-size: 22px;
-  font-weight: 950;
+  font-weight: 700;
   line-height: 30px;
   color: #172033;
 }
@@ -26657,8 +26661,8 @@ onBeforeUnmount(() => {
 
 .standards-vector-source-facts dt,
 .standards-vector-config-list dt {
-  font-size: 11px;
-  font-weight: 900;
+  font-size: 12px;
+  font-weight: 600;
   line-height: 16px;
   color: #64748b;
 }
@@ -26667,7 +26671,7 @@ onBeforeUnmount(() => {
 .standards-vector-config-list dd {
   margin-top: 3px;
   font-size: 12px;
-  font-weight: 850;
+  font-weight: 600;
   line-height: 18px;
   color: #172033;
 }
@@ -26693,7 +26697,7 @@ onBeforeUnmount(() => {
 
 .standards-vector-score span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #64748b;
 }
@@ -26701,7 +26705,7 @@ onBeforeUnmount(() => {
 .standards-vector-score strong {
   margin-top: 4px;
   font-size: 42px;
-  font-weight: 950;
+  font-weight: 700;
   line-height: 48px;
   color: #0f172a;
 }
@@ -26749,13 +26753,13 @@ onBeforeUnmount(() => {
 
 .standards-vector-stage span {
   font-size: 12px;
-  font-weight: 850;
+  font-weight: 600;
   color: #64748b;
 }
 
 .standards-vector-stage strong {
   font-size: 15px;
-  font-weight: 950;
+  font-weight: 700;
   color: #172033;
 }
 
@@ -26812,7 +26816,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 15px;
-  font-weight: 950;
+  font-weight: 700;
   line-height: 22px;
   color: #172033;
   text-overflow: ellipsis;
@@ -26859,14 +26863,14 @@ onBeforeUnmount(() => {
 
 .standards-file-cell strong {
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 20px;
   color: #172033;
 }
 
 .standards-file-cell span {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 17px;
   color: #64748b;
 }
@@ -26885,14 +26889,14 @@ onBeforeUnmount(() => {
 }
 
 .standards-vector-noise span {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 16px;
   color: #64748b;
 }
 
 .standards-vector-count strong {
   font-size: 13px;
-  font-weight: 950;
+  font-weight: 700;
   line-height: 18px;
   color: #172033;
 }
@@ -26953,7 +26957,7 @@ onBeforeUnmount(() => {
 
 .standards-vector-focus-item strong {
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 19px;
   color: #172033;
 }
@@ -26993,7 +26997,7 @@ onBeforeUnmount(() => {
 
 .audit-drawer-hero span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #2563eb;
 }
@@ -27001,7 +27005,7 @@ onBeforeUnmount(() => {
 .audit-drawer-hero strong {
   margin-top: 5px;
   font-size: 20px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 28px;
   color: #172033;
   white-space: nowrap;
@@ -27048,7 +27052,7 @@ onBeforeUnmount(() => {
 .llm-audit-card > span {
   display: block;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 18px;
   color: #2563eb;
 }
@@ -27057,7 +27061,7 @@ onBeforeUnmount(() => {
   display: block;
   margin-top: 2px;
   font-size: 16px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 22px;
   color: #172033;
 }
@@ -27085,7 +27089,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #172033;
   text-overflow: ellipsis;
@@ -27118,7 +27122,7 @@ onBeforeUnmount(() => {
 
 .llm-audit-note strong {
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #172033;
 }
@@ -27173,7 +27177,7 @@ onBeforeUnmount(() => {
 
 .vector-chunk-preview-trigger small {
   font-size: 12px;
-  font-weight: 850;
+  font-weight: 600;
   line-height: 18px;
   color: #2563eb;
 }
@@ -27220,14 +27224,14 @@ onBeforeUnmount(() => {
 
 .vector-chunk-preview-head span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #2563eb;
 }
 
 .vector-chunk-preview-head strong {
   font-size: 15px;
-  font-weight: 950;
+  font-weight: 700;
   line-height: 22px;
   color: #172033;
 }
@@ -27269,7 +27273,7 @@ onBeforeUnmount(() => {
 
 .vector-chunk-preview-json summary {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #475569;
   cursor: pointer;
@@ -27405,7 +27409,7 @@ onBeforeUnmount(() => {
   left: -2px;
   padding: 2px 7px;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   color: #fff;
   white-space: nowrap;
   background: #2563eb;
@@ -27464,7 +27468,7 @@ onBeforeUnmount(() => {
 
 .vector-pipeline-stage span {
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   color: #64748b;
 }
 
@@ -27534,7 +27538,7 @@ onBeforeUnmount(() => {
 .ocr-labeling-hero-copy span,
 .ocr-labeling-primary-action span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #2563eb;
 }
@@ -27542,7 +27546,7 @@ onBeforeUnmount(() => {
 .ocr-labeling-hero-copy strong,
 .ocr-labeling-primary-action strong {
   font-size: 18px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 25px;
   color: #172033;
 }
@@ -27593,7 +27597,7 @@ onBeforeUnmount(() => {
   min-height: 24px;
   padding: 3px 8px;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 18px;
   color: #52617a;
   background: #f8fafc;
@@ -27637,7 +27641,7 @@ onBeforeUnmount(() => {
   width: 34px;
   height: 34px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   color: #1d4ed8;
   background: #eef5ff;
   border: 1px solid #cfe0ff;
@@ -27667,7 +27671,7 @@ onBeforeUnmount(() => {
 
 .ocr-labeling-step strong {
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 20px;
   color: #172033;
   white-space: nowrap;
@@ -27687,9 +27691,9 @@ onBeforeUnmount(() => {
   justify-self: start;
   min-height: 22px;
   padding: 2px 8px;
-  font-size: 11px;
+  font-size: 12px;
   font-style: normal;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #475569;
   background: #f8fafc;
@@ -27727,7 +27731,7 @@ onBeforeUnmount(() => {
   display: block;
   margin-bottom: 8px;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   color: #172033;
 }
 
@@ -27740,7 +27744,7 @@ onBeforeUnmount(() => {
 
 .ocr-labeling-help-card li {
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 19px;
   color: #52617a;
 }
@@ -27764,7 +27768,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   color: #52617a;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -27804,7 +27808,7 @@ onBeforeUnmount(() => {
 
 .ocr-labeling-next-list strong {
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #172033;
   white-space: nowrap;
@@ -27843,7 +27847,7 @@ onBeforeUnmount(() => {
 
 .ocr-labeling-diagnostics summary::after {
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   color: #2563eb;
   content: '展开';
 }
@@ -27858,7 +27862,7 @@ onBeforeUnmount(() => {
 
 .ocr-labeling-diagnostics summary span {
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 600;
   color: #172033;
 }
 
@@ -27866,7 +27870,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   color: #667085;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -27904,14 +27908,14 @@ onBeforeUnmount(() => {
 .ocr-labeling-focus-copy span,
 .ocr-labeling-focus-progress span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #2563eb;
 }
 
 .ocr-labeling-focus-copy strong {
   font-size: 18px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 25px;
   color: #172033;
 }
@@ -27919,7 +27923,7 @@ onBeforeUnmount(() => {
 .ocr-labeling-focus-copy small,
 .ocr-labeling-focus-progress small {
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 20px;
   color: #64748b;
 }
@@ -27937,7 +27941,7 @@ onBeforeUnmount(() => {
   min-height: 30px;
   padding: 4px 10px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   color: #475569;
   background: #fff;
   border: 1px solid #dbe8f7;
@@ -27960,7 +27964,7 @@ onBeforeUnmount(() => {
 
 .ocr-labeling-focus-progress strong {
   font-size: 25px;
-  font-weight: 950;
+  font-weight: 700;
   line-height: 30px;
   color: #172033;
   font-variant-numeric: tabular-nums;
@@ -28026,7 +28030,7 @@ onBeforeUnmount(() => {
 .ocr-labeling-task-meta span {
   overflow: hidden;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #64748b;
   text-overflow: ellipsis;
@@ -28036,7 +28040,7 @@ onBeforeUnmount(() => {
 .ocr-labeling-task-main strong {
   overflow: hidden;
   font-size: 15px;
-  font-weight: 950;
+  font-weight: 700;
   line-height: 22px;
   color: #172033;
   text-overflow: ellipsis;
@@ -28060,7 +28064,7 @@ onBeforeUnmount(() => {
 
 .ocr-labeling-task-meta strong {
   font-size: 18px;
-  font-weight: 950;
+  font-weight: 700;
   line-height: 24px;
   color: #172033;
   font-variant-numeric: tabular-nums;
@@ -28112,13 +28116,13 @@ onBeforeUnmount(() => {
 .ocr-labeling-plain-guide span,
 .ocr-labeling-mini-stats span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   color: #2563eb;
 }
 
 .ocr-labeling-action-card strong {
   font-size: 16px;
-  font-weight: 950;
+  font-weight: 700;
   line-height: 23px;
   color: #172033;
 }
@@ -28168,7 +28172,7 @@ onBeforeUnmount(() => {
 
 .ocr-labeling-mini-stats strong {
   font-size: 20px;
-  font-weight: 950;
+  font-weight: 700;
   color: #172033;
   font-variant-numeric: tabular-nums;
 }
@@ -28236,7 +28240,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 14px;
-  font-weight: 850;
+  font-weight: 600;
   color: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -28291,7 +28295,7 @@ onBeforeUnmount(() => {
 
 .annotation-dialog-header__copy span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #2563eb;
 }
@@ -28306,14 +28310,14 @@ onBeforeUnmount(() => {
 
 .annotation-dialog-header__copy strong {
   font-size: 18px;
-  font-weight: 950;
+  font-weight: 700;
   line-height: 24px;
   color: #172033;
 }
 
 .annotation-dialog-header__copy small {
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 18px;
   color: #64748b;
 }
@@ -28362,7 +28366,7 @@ onBeforeUnmount(() => {
 .annotation-hero__next span,
 .annotation-panel-head span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #2563eb;
 }
@@ -28373,7 +28377,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 16px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 22px;
   color: #172033;
   text-overflow: ellipsis;
@@ -28433,7 +28437,7 @@ onBeforeUnmount(() => {
   width: 34px;
   height: 34px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   color: #1d4ed8;
   background: #eef5ff;
   border: 1px solid #cfe0ff;
@@ -28462,7 +28466,7 @@ onBeforeUnmount(() => {
 
 .annotation-guide strong {
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 20px;
   color: #172033;
   white-space: nowrap;
@@ -28502,7 +28506,7 @@ onBeforeUnmount(() => {
   min-height: 34px;
   padding: 6px 11px;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   color: #475569;
   cursor: pointer;
   background: #f8fafc;
@@ -28531,7 +28535,7 @@ onBeforeUnmount(() => {
 
 .annotation-tool-meta span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #64748b;
 }
@@ -28540,7 +28544,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 14px;
-  font-weight: 950;
+  font-weight: 700;
   line-height: 20px;
   color: #172033;
   text-overflow: ellipsis;
@@ -28668,7 +28672,7 @@ onBeforeUnmount(() => {
   min-height: 28px;
   padding: 4px 8px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #1f2d3d;
   background: var(--fde-surface-soft);
@@ -28679,8 +28683,8 @@ onBeforeUnmount(() => {
 }
 
 .annotation-count-pill small {
-  font-size: 11px;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 600;
   color: #64748b;
 }
 
@@ -28772,7 +28776,7 @@ onBeforeUnmount(() => {
   max-width: min(620px, 90%);
   overflow: hidden;
   font-size: 16px;
-  font-weight: 900;
+  font-weight: 600;
   color: #1f2d3d;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -28781,7 +28785,7 @@ onBeforeUnmount(() => {
 .annotation-placeholder span {
   max-width: min(620px, 90%);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.6;
 }
 
@@ -28819,14 +28823,14 @@ onBeforeUnmount(() => {
 
 .annotation-meta-grid dt {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   color: #64748b;
 }
 
 .annotation-meta-grid dd {
   margin: 4px 0 0;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
   color: #172033;
 }
 
@@ -28870,13 +28874,13 @@ onBeforeUnmount(() => {
 
 .annotation-type-segment strong {
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 600;
   color: #172033;
   white-space: nowrap;
 }
 
 .annotation-type-segment small {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 16px;
   color: #64748b;
 }
@@ -28939,8 +28943,8 @@ onBeforeUnmount(() => {
 }
 
 .annotation-selected-summary b {
-  font-size: 11px;
-  font-weight: 900;
+  font-size: 12px;
+  font-weight: 600;
   line-height: 16px;
   color: #64748b;
 }
@@ -28948,7 +28952,7 @@ onBeforeUnmount(() => {
 .annotation-selected-summary span {
   overflow: hidden;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #172033;
   text-overflow: ellipsis;
@@ -28978,7 +28982,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 18px;
   color: #64748b;
   text-overflow: ellipsis;
@@ -29004,7 +29008,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 18px;
   color: #64748b;
   text-overflow: ellipsis;
@@ -29063,7 +29067,7 @@ onBeforeUnmount(() => {
 .annotation-table-editor thead th {
   min-height: 40px;
   font-size: 12px;
-  font-weight: 950;
+  font-weight: 700;
   color: #172033;
 }
 
@@ -29086,7 +29090,7 @@ onBeforeUnmount(() => {
   width: 72px;
   min-width: 72px;
   font-size: 12px;
-  font-weight: 950;
+  font-weight: 700;
   color: #64748b;
 }
 
@@ -29148,7 +29152,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -29217,7 +29221,7 @@ onBeforeUnmount(() => {
   gap: 6px;
   align-items: center;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 19px;
   color: #172033;
 }
@@ -29225,7 +29229,7 @@ onBeforeUnmount(() => {
 .annotation-object-row__summary span b {
   min-width: 0;
   overflow: hidden;
-  font-weight: 950;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -29235,9 +29239,9 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
   min-height: 20px;
   padding: 2px 7px;
-  font-size: 11px;
+  font-size: 12px;
   font-style: normal;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 16px;
   color: #b42318;
   background: #fff1f0;
@@ -29301,7 +29305,7 @@ onBeforeUnmount(() => {
 .annotation-foldout-card__summary::after {
   flex: 0 0 auto;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   color: #64748b;
   content: '展开';
 }
@@ -29324,14 +29328,14 @@ onBeforeUnmount(() => {
 .annotation-foldout summary span,
 .annotation-foldout-card__summary span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   color: #64748b;
 }
 
 .annotation-foldout summary strong,
 .annotation-foldout-card__summary strong {
   font-size: 13px;
-  font-weight: 950;
+  font-weight: 700;
   color: #172033;
 }
 
@@ -29393,7 +29397,7 @@ onBeforeUnmount(() => {
 
 .annotation-item span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   color: #2563eb;
 }
 

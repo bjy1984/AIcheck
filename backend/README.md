@@ -138,7 +138,31 @@ cd backend
 docker compose up --build
 ```
 
+To run `qwen3.7-plus` chat/review through the official API while keeping embedding and OCR on the private Docker network, set `QWEN_API_KEY` in `backend/.env` and add the deployment override. The API and workers use `embedding-service:7997`; OCR uses `ocr-service:8010`.
+
+```bash
+docker compose \
+  --env-file .env \
+  -f docker-compose.yml \
+  -f docker-compose.qwen-official.yml \
+  up -d --build
+```
+
+Production ingress must terminate trusted TLS and dynamically resolve Docker upstreams. Render `deploy/nginx/aicheck.conf.template` with `AICHECK_PUBLIC_HOST`, `AICHECK_TLS_CERTIFICATE`, and `AICHECK_TLS_CERTIFICATE_KEY`; the strict release gate rejects a non-HTTPS `--api-base`. API and Review Worker startup also wait for the idempotent `workflow-migrate` service, which creates and verifies the LangGraph checkpoint schema before accepting work.
+
+The 151 engineering material review points are packaged in `config/material_review_points.json`. Regenerate and verify the asset after editing the source mapping document:
+
+```bash
+PYTHONPATH=. .venv/bin/python scripts/generate_material_review_asset.py
+PYTHONPATH=. .venv/bin/python scripts/generate_material_review_asset.py --check
+```
+
 PostgreSQL persistence is enabled when `AICHECK_DATABASE_URL` is set. On startup the API creates the first-stage JSONB state tables (`aicheck_state`, `aicheck_singletons`, `idempotency_records`) and seeds the current demo state when the business database is empty. Mutating API calls flush state back to PostgreSQL so restarts preserve business data. The index test suite verifies the JSONB state table, singleton table, idempotency primary key, and GIN payload index contract.
+
+Production uses the `pgvector/pgvector:pg16` image. Deployments based on `docker-compose.deploy.yml`
+must include `docker-compose.production-data.yml` to mount `rules/` read-only at `/rules`, and
+`docker-compose.pgvector.yml` to enable the dense vector index. Keeping the overrides separate lets
+evidence previews remain available while a registry outage temporarily blocks the pgvector image.
 
 Key environment variables:
 
@@ -154,9 +178,10 @@ Key environment variables:
 - `AICHECK_OCR_RESULT_CACHE_DIR`, `AICHECK_OCR_DISABLE_RESULT_CACHE=false`: cache successful local parse results by source hash, Profile, model manifest, preprocess policy, and engine options. Cache hits return a fresh `parseResultId` with `resultCacheHit=true` and skip OCR engine execution.
 - `AICHECK_OCR_ENGINE_RESULT_CACHE_DIR`, `AICHECK_OCR_DISABLE_ENGINE_RESULT_CACHE=false`: cache individual local engine outputs by source hash, engine version, candidate-image hash, Profile preprocess policy, and model manifest. This cache intentionally ignores Profile `postprocessVersion`, so table/field/quality rule tuning can reuse expensive PaddleOCR or seal OCR outputs while still recomputing fusion and quality gates.
 - `LITELLM_BASE_URL`, `LITELLM_API_KEY`, `DEEPSEEK_API_KEY`: LiteLLM gateway and chat provider credentials. `review-chat` uses DeepSeek `deepseek-reasoner`; `embedding-default` is local-only through `embedding-service`. `OPENAI_API_KEY` is optional and only needed if you add OpenAI-backed aliases yourself.
-- `AICHECK_QWEN_CALL_MODE=server|official_api`, `QWEN_API_BASE`, `QWEN_API_KEY`, `AICHECK_QWEN_ALLOW_SERVER_FALLBACK=false`: QwenRuntime chat/vision switch. `server` keeps the existing LiteLLM/self-hosted aliases; `official_api` calls the Qwen OpenAI-compatible chat endpoint using `backend/config/qwen_runtime.yaml`. This does not switch the knowledge embedding index; `text-embedding-v4` is registered only as an optional future embedding target.
+- `AICHECK_QWEN_CALL_MODE=server|official_api`, `QWEN_API_BASE`, `QWEN_API_KEY`, `AICHECK_QWEN_ALLOW_SERVER_FALLBACK=false`: QwenRuntime chat/vision switch. `server` keeps the existing LiteLLM/self-hosted aliases; `official_api` calls the Qwen OpenAI-compatible chat endpoint using `backend/config/qwen_runtime.yaml`.
 - `AICHECK_AUDIT_INPUT_MODE=ocr_llm|pure_llm`: audit input strategy. `ocr_llm` is the default evidence-first mode and requires OCR/page/bbox evidence; `pure_llm` skips OCR evidence loading and produces advisory human-review-only findings.
-- `INFINITY_API_KEY`, `AICHECK_EMBEDDING_MODEL_ID=Qwen/Qwen3-Embedding-0.6B`, `AICHECK_EMBEDDING_SERVED_MODEL_NAME=embedding-default`, `AICHECK_EMBEDDING_ENGINE=torch`, `AICHECK_EMBEDDING_CACHE_HOST_PATH`, `HF_ENDPOINT`: local embedding-service configuration. First vectorization downloads the selected model into the cache path; after that, restarts reuse the local cache. `HF_ENDPOINT=https://hf-mirror.com` is useful on China-hosted servers where direct Hugging Face access is unreliable. Qwen3-0.6B and BGE-M3 are both 1024-dimensional in the supported hot-swap path, but switching model families still requires a separate index version and re-embedding.
+- `AICHECK_EMBEDDING_PROVIDER=local`, `AICHECK_EMBEDDING_API_BASE=http://embedding-service:7997`, `AICHECK_EMBEDDING_API_KEY`, `AICHECK_EMBEDDING_MODEL_ID=Qwen/Qwen3-Embedding-0.6B`, `AICHECK_EMBEDDING_SERVED_MODEL_NAME=embedding-default`, `AICHECK_EMBEDDING_BATCH_SIZE=32`: route API and worker embedding calls to the server-local Infinity service. The deployment override reads the same credential from `INFINITY_API_KEY` and keeps hash fallback disabled.
+- `AICHECK_EMBEDDING_PROVIDER=official_api`, `AICHECK_EMBEDDING_MODEL_ID=text-embedding-v4`, and the matching official API base/key remain supported as an optional mode. It uses the independent `knowledge-index-text-embedding-v4@1024` index and must never be mixed with the local Qwen3-Embedding index.
 - `AICHECK_EMBEDDING_PRELOAD=false` keeps the embedding API healthy before the first model load. For real Qwen3 vectorization, allocate at least 4-6 GB Docker memory; a 2 GB Docker VM can start the service but may fail when loading the model.
 - When production flags are enabled, the worker/API clients require an explicit `LITELLM_API_KEY` and reject the built-in development key. Keep `AICHECK_LITELLM_NO_PROXY` including `127.0.0.1`, `localhost`, `postgres`, and `embedding-service`; LiteLLM's Prisma query-engine and local provider calls can fail if routed through a proxy.
 - `AICHECK_JWT_SECRET`, `AICHECK_REQUIRE_AUTH=true`, `AICHECK_ENABLE_DEMO_USERS=false`: production authentication and demo-account controls.

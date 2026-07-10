@@ -20,6 +20,7 @@ import type {
   ReviewOpinion,
   RoleCode
 } from '@/types/aicheck'
+import { formatConfidence } from '@/utils/confidence'
 import { getStatusTagType } from './status'
 
 const props = defineProps<{
@@ -106,7 +107,7 @@ const evidenceText = (evidence: EvidenceLink) =>
       type="info"
       show-icon
       class="ai-alert"
-      :title="`AI 建议：${latestAiRun.suggestion.result} / 置信度 ${latestAiRun.suggestion.confidence}%`"
+      :title="`AI 建议：${latestAiRun.suggestion.result} / 置信度 ${formatConfidence(latestAiRun.suggestion.confidence)}`"
       :description="latestAiRun.suggestion.opinionDraft"
     />
 
@@ -243,7 +244,7 @@ const evidenceText = (evidence: EvidenceLink) =>
 
 .panel-header {
   min-height: 32px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .ai-alert {

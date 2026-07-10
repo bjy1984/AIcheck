@@ -10,6 +10,7 @@ import type {
   ReviewOpinion,
   TodoItem
 } from '@/types/aicheck'
+import { formatConfidence } from '@/utils/confidence'
 import { getStatusTagType } from './status'
 
 const props = defineProps<{
@@ -65,7 +66,7 @@ const handleLocateById = (evidenceLinkId?: string) => {
             <ElTag :type="getStatusTagType(latestAiRun.suggestion.result)" effect="light">
               {{ latestAiRun.suggestion.result }}
             </ElTag>
-            <strong>{{ latestAiRun.suggestion.confidence }}%</strong>
+            <strong>{{ formatConfidence(latestAiRun.suggestion.confidence) }}</strong>
           </div>
           <p>{{ latestAiRun.suggestion.opinionDraft }}</p>
           <div class="field-list">
@@ -73,7 +74,7 @@ const handleLocateById = (evidenceLinkId?: string) => {
               <span>{{ field.fieldName }}</span>
               <strong>{{ field.fieldValue }}</strong>
               <ElTag :type="field.reviewStatus === '低置信度' ? 'warning' : 'success'" size="small">
-                {{ field.confidence }}%
+                {{ formatConfidence(field.confidence) }}
               </ElTag>
             </div>
           </div>

@@ -17,8 +17,9 @@ from apps.api.routes import binding_node_ids, document_node_ids, idempotency_fin
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 from libs.db.postgres import close_postgres, init_postgres_if_configured, run_transaction_probe
-from libs.db.repository import flush_state, load_state, repo
+from libs.db.repository import flush_idempotency_records, flush_state, flush_state_records, load_state, repo
 from libs.integrations.storage import ObjectStorageUnavailable, object_storage
+from libs.runtime_readiness import production_runtime_status
 from libs.security.actions import canonical_path, required_action_for_request
 from libs.security.auth import (
     compatibility_mocks_enabled,
@@ -119,7 +120,23 @@ async def attach_operation_id(request: Request, call_next):
     response = await call_next(request)
     response = await finalize_mutation_response(request, response)
     if should_flush_state(request):
-        flush_state()
+        scoped_records = getattr(request.state, "scoped_flush_records", None)
+        if callable(scoped_records):
+            records = scoped_records()
+            operation_id = getattr(request.state, "operation_id", None)
+            audit_records = [
+                item
+                for item in repo.state.get("audit_logs", [])
+                if operation_id and item.get("operationId") == operation_id
+            ]
+            if audit_records:
+                records.setdefault("audit_logs", []).extend(audit_records)
+            flush_state_records(records)
+            scope = getattr(request.state, "idempotency_scope", None)
+            if scope:
+                flush_idempotency_records([scope])
+        else:
+            flush_state()
     return response
 
 
@@ -365,7 +382,7 @@ async def api_healthz(request: Request):
 
 async def health_response(request: Request):
     payload = await health_payload()
-    if strict_production() and not payload["securityReady"]:
+    if strict_production() and (not payload["securityReady"] or not payload["runtimeReady"]):
         return fail(
             errors.SECURITY_BACKEND_UNAVAILABLE,
             request,
@@ -399,6 +416,7 @@ async def health_payload() -> dict[str, object]:
         "authRequired": os.getenv("AICHECK_REQUIRE_AUTH", "false").lower() == "true",
         "demoUsersEnabled": demo_users_enabled(),
         "objectStorageEnabled": object_storage.enabled,
+        **production_runtime_status(),
         **security_runtime_status(rate_limiter_ready=rate_limiter_ready),
     }
 

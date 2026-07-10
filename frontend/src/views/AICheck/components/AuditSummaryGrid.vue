@@ -52,7 +52,7 @@ defineProps<{
 .audit-summary-card small {
   display: block;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   color: #667085;
 }
 
@@ -61,7 +61,7 @@ defineProps<{
   margin: 9px 0 8px;
   overflow: hidden;
   font-size: 18px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1.25;
   color: #172033;
   text-overflow: ellipsis;

@@ -278,7 +278,12 @@ class DeploymentVerifier:
         )
 
     def request_json(self, client: httpx.Client, method: str, path: str, **kwargs: Any) -> tuple[int, Any]:
-        response = client.request(method, path, **kwargs)
+        try:
+            response = client.request(method, path, **kwargs)
+        except httpx.TimeoutException as exc:
+            return 598, {"code": "REQUEST_TIMEOUT", "errorType": exc.__class__.__name__}
+        except httpx.RequestError as exc:
+            return 599, {"code": "REQUEST_FAILED", "errorType": exc.__class__.__name__}
         try:
             payload = response.json()
         except Exception:
@@ -815,16 +820,27 @@ class DeploymentVerifier:
             data = self.envelope_data(f"api.write-probes.document-{label}", status_code, payload)
             if data is None:
                 return False
-            if not self.check_signed_get_url(f"api.write-probes.document-{label}-get", data):
+            if not self.check_signed_get_url(f"api.write-probes.document-{label}-get", data, headers=headers):
                 return False
         return True
 
-    def check_signed_get_url(self, name: str, payload: dict[str, Any]) -> bool:
+    def check_signed_get_url(self, name: str, payload: dict[str, Any], *, headers: dict[str, str]) -> bool:
         url = str(payload.get("url") or "")
         parsed = urlparse(url)
         if payload.get("method") != "GET":
             self.add(name, "fail", f"Expected method GET, got {payload.get('method')!r}.")
             return False
+        if parsed.scheme not in {"http", "https"} and url.startswith("/api/"):
+            try:
+                response = self.api.request("GET", url, headers=headers)
+            except Exception as exc:
+                self.add(name, "fail", str(exc))
+                return False
+            if response.status_code >= 400:
+                self.add(name, "fail", f"HTTP {response.status_code}")
+                return False
+            self.add(name, "pass", f"HTTP {response.status_code} via authenticated API proxy.")
+            return True
         if parsed.scheme not in {"http", "https"}:
             if self.config.strict_production:
                 self.add(name, "fail", f"Production signed GET URL must be HTTP(S), got {url!r}.")
@@ -1290,7 +1306,9 @@ class DeploymentVerifier:
                         {"role": "system", "content": "You are a deployment verifier. Reply briefly."},
                         {"role": "user", "content": "Reply with: AIcheck verifier ok"},
                     ],
-                    "max_tokens": 16,
+                    # Reasoning models can consume a small output budget entirely
+                    # on hidden reasoning and return no visible assistant content.
+                    "max_tokens": 128,
                     "temperature": 0,
                 },
             )
@@ -1369,7 +1387,7 @@ class DeploymentVerifier:
                         {"role": "system", "content": "You are a deployment verifier. Reply briefly."},
                         {"role": "user", "content": "Reply with: AIcheck Qwen verifier ok"},
                     ],
-                    "max_tokens": 16,
+                    "max_tokens": 128,
                     "temperature": 0,
                 },
                 timeout=15,

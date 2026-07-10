@@ -1,0 +1,43 @@
+services:
+  api-service:
+    environment:
+      AICHECK_AUDIT_INPUT_MODE: ${AICHECK_AUDIT_INPUT_MODE:-ocr_llm}
+      AICHECK_QWEN_CALL_MODE: ${AICHECK_QWEN_CALL_MODE:-official_api}
+      AICHECK_QWEN_ALLOW_SERVER_FALLBACK: ${AICHECK_QWEN_ALLOW_SERVER_FALLBACK:-false}
+      QWEN_API_BASE: ${QWEN_API_BASE:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      QWEN_API_KEY: ${QWEN_API_KEY:?QWEN_API_KEY is required}
+      AICHECK_EMBEDDING_PROVIDER: local
+      AICHECK_EMBEDDING_API_BASE: http://embedding-service:7997
+      AICHECK_EMBEDDING_API_KEY: ${INFINITY_API_KEY:?INFINITY_API_KEY is required}
+      AICHECK_EMBEDDING_MODEL_ID: Qwen/Qwen3-Embedding-0.6B
+      AICHECK_EMBEDDING_SERVED_MODEL_NAME: embedding-default
+      AICHECK_EMBEDDING_BATCH_SIZE: "32"
+      AICHECK_EMBEDDING_FORCE_OFFLINE_HASH: "false"
+      AICHECK_EMBEDDING_ALLOW_HASH_FALLBACK: "false"
+      AICHECK_OCR_BASE_URL: ${AICHECK_OCR_BASE_URL:-http://ocr-service:8010}
+
+  worker-service:
+    environment:
+      AICHECK_AUDIT_INPUT_MODE: ${AICHECK_AUDIT_INPUT_MODE:-ocr_llm}
+      AICHECK_QWEN_CALL_MODE: ${AICHECK_QWEN_CALL_MODE:-official_api}
+      AICHECK_QWEN_ALLOW_SERVER_FALLBACK: ${AICHECK_QWEN_ALLOW_SERVER_FALLBACK:-false}
+      QWEN_API_BASE: ${QWEN_API_BASE:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      QWEN_API_KEY: ${QWEN_API_KEY:?QWEN_API_KEY is required}
+      AICHECK_EMBEDDING_PROVIDER: local
+      AICHECK_EMBEDDING_API_BASE: http://embedding-service:7997
+      AICHECK_EMBEDDING_API_KEY: ${INFINITY_API_KEY:?INFINITY_API_KEY is required}
+      AICHECK_EMBEDDING_MODEL_ID: Qwen/Qwen3-Embedding-0.6B
+      AICHECK_EMBEDDING_SERVED_MODEL_NAME: embedding-default
+      AICHECK_EMBEDDING_BATCH_SIZE: "32"
+      AICHECK_EMBEDDING_FORCE_OFFLINE_HASH: "false"
+      AICHECK_EMBEDDING_ALLOW_HASH_FALLBACK: "false"
+      AICHECK_OCR_BASE_URL: ${AICHECK_OCR_BASE_URL:-http://ocr-service:8010}
+      AICHECK_WORKER_OCR_ALLOW_IN_PROCESS: "false"
+
+  review-worker-service:
+    environment:
+      AICHECK_AUDIT_INPUT_MODE: ${AICHECK_AUDIT_INPUT_MODE:-ocr_llm}
+      AICHECK_QWEN_CALL_MODE: ${AICHECK_QWEN_CALL_MODE:-official_api}
+      AICHECK_QWEN_ALLOW_SERVER_FALLBACK: ${AICHECK_QWEN_ALLOW_SERVER_FALLBACK:-false}
+      QWEN_API_BASE: ${QWEN_API_BASE:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      QWEN_API_KEY: ${QWEN_API_KEY:?QWEN_API_KEY is required}

@@ -1,0 +1,104 @@
+{
+  "schemaVersion": "aicheck-frontend-backend-audit@1",
+  "auditId": "AUDIT-FE-BE-20260710",
+  "generatedAt": "2026-07-09T23:11:46Z",
+  "scope": "frontend-backend-production-readiness",
+  "commit": "c2d571f89c20644a6dc532e06f3c483aadd55a5b",
+  "branch": "main",
+  "remoteSync": {
+    "remote": "origin/main",
+    "ahead": 0,
+    "behind": 0,
+    "lfsFsck": "pass"
+  },
+  "decision": "NO-GO",
+  "score": {
+    "total": 65,
+    "maximum": 100,
+    "sections": [
+      {"name": "业务状态机", "score": 22, "maximum": 25},
+      {"name": "证据与 AI 正确性", "score": 18, "maximum": 20},
+      {"name": "权限与数据隔离", "score": 3, "maximum": 15},
+      {"name": "任务与存储可靠性", "score": 8, "maximum": 15},
+      {"name": "前端操作质量", "score": 10, "maximum": 15},
+      {"name": "部署与可观测性", "score": 4, "maximum": 10}
+    ]
+  },
+  "releaseGates": {
+    "p0Count": 2,
+    "p1Count": 6,
+    "p2Count": 5,
+    "p3Count": 1,
+    "criticalBusinessPathPassRate": null,
+    "unauthorizedAccessProbeCount": 1,
+    "unauthorizedWriteCount": null,
+    "crossProjectLeakCount": 0,
+    "formalConclusionWithoutConfirmedEvidenceCount": 0,
+    "duplicateBusinessRecordCount": 0,
+    "frontendUnrecoverableStateCount": 0,
+    "localOcrHeavyProcessCount": 0,
+    "gateResult": "fail"
+  },
+  "testResults": {
+    "backendPytest": {"status": "pass", "passed": 605, "warnings": 6, "durationSeconds": 15.69},
+    "frontendTypecheck": {"status": "pass"},
+    "frontendLint": {"status": "pass"},
+    "frontendStylelint": {"status": "pass"},
+    "frontendProductionBuild": {"status": "pass", "warnings": ["caniuse-lite data is stale", "mockjs eval warning", "large generated assets"]},
+    "playwright": {"status": "fail", "passed": 43, "failed": 1, "failure": "admin project wizard has two visible controls named 新建项目"},
+    "frontendBackendContract": {"status": "pass", "frontendEndpoints": 230, "backendRouteKeys": 656, "missingRoutes": 0},
+    "businessPacks": {"status": "pass", "score": 100, "industrialNodes": 69, "industrialRules": 68},
+    "knowledgeQuality": {"status": "pass", "score": 100, "files": 60, "chunks": 2134, "vectors": 2134, "wrongReferenceRate": 0},
+    "roiQuality": {"status": "pass", "score": 100, "applicableChunks": 2016, "coveredChunks": 2016, "watermarkOrNoise": 0},
+    "sqliteQuickCheck": {"status": "pass", "result": "ok"},
+    "staticDeploymentReport": {"status": "pass", "passed": 35, "failed": 0, "skipped": 1},
+    "localReadonlyDeploymentReport": {"status": "fail", "passed": 48, "failed": 2, "skipped": 14},
+    "productionDependencyAudit": {"status": "fail", "frontendAdvisories": {"critical": 1, "high": 27, "moderate": 29, "low": 3}, "backendVulnerablePackages": 4, "backendVulnerabilities": 17}
+  },
+  "runtimeBaseline": {
+    "apiUrl": "http://127.0.0.1:8000",
+    "databaseBackend": "sqlite",
+    "authRequired": false,
+    "demoUsersEnabled": true,
+    "postgresEnabled": false,
+    "objectStorageEnabled": false,
+    "dockerCliAvailable": false,
+    "productionRepresentative": false
+  },
+  "probeCoverage": {
+    "completed": [
+      "Git and LFS integrity",
+      "backend unit and API tests",
+      "frontend typecheck/lint/stylelint/build",
+      "frontend/backend route contract",
+      "browser role and readiness sampling",
+      "authentication bypass probes",
+      "knowledge and ROI quality audits",
+      "static and local read-only deployment checks",
+      "frontend and backend dependency scans"
+    ],
+    "notCompleted": [
+      "staging upload-to-archive write probe",
+      "remote OCR object probe",
+      "Qwen server and official API live probes",
+      "Redis, worker, Temporal, MinIO and model-service fault injection",
+      "archive immutability verification on production-like storage"
+    ],
+    "reason": "No verified staging endpoint and no rotated, scoped staging credentials were available. Previously exposed credentials were not reused."
+  },
+  "topBlockers": [
+    "Forged dev-token can self-assert admin role when authentication is required.",
+    "Production dependency graph contains critical/high vulnerabilities, including security-sensitive LiteLLM issues.",
+    "User creation defaults passwords to usernames and stores a plain fallback.",
+    "Public mock user endpoint exposes passwordHash and production login advertises test credentials.",
+    "No production-representative end-to-end write and failure-recovery evidence exists for this commit."
+  ],
+  "artifacts": {
+    "markdownReport": "frontend-backend-audit-report.md",
+    "flowMatrix": "business-flow-matrix.json",
+    "findings": "findings.json",
+    "releaseDecision": "release-go-no-go.md",
+    "staticDeploymentReport": "deployment-static/report.json",
+    "localReadonlyDeploymentReport": "live-local-readonly/report.json"
+  }
+}

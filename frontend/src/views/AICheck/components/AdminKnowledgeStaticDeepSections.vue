@@ -12,6 +12,7 @@ import type {
   LlmCompareRunSummary
 } from '@/api/aicheck'
 import type { AiReviewRun, Project, RoleCode } from '@/types/aicheck'
+import { getAicheckRoleLabel } from '@/utils/roleAccess'
 
 type StaticMode = 'admin' | 'knowledge'
 type MetricTone = 'blue' | 'green' | 'orange' | 'red' | 'gray'
@@ -190,17 +191,7 @@ const adminToolRows = computed(() => {
   ]
 })
 
-const roleLabel = (role: RoleCode) => {
-  const labels: Record<RoleCode, string> = {
-    inspection: '监检人员',
-    contractor: '施工方经办',
-    ndt: '无损检测经办',
-    owner: '建设方用户',
-    admin: '系统管理员',
-    fde: 'FDE'
-  }
-  return labels[role]
-}
+const roleLabel = (role: RoleCode) => getAicheckRoleLabel(role)
 
 const adminPermissionRows = computed(() => {
   const rows = adminOverview.value.permissionMatrix
@@ -922,14 +913,14 @@ h4 {
 p {
   margin: 0 0 10px;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.6;
   color: #344054;
 }
 
 .sub {
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--muted);
 }
 
@@ -959,14 +950,14 @@ p {
 
 .metric-label {
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
   color: var(--muted);
 }
 
 .metric-value {
   margin-top: 8px;
   font-size: 24px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1;
   color: var(--blue);
 }
@@ -994,7 +985,7 @@ p {
 .subsection-title {
   margin: 14px 0 10px;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
   color: #344054;
 }
 
@@ -1017,7 +1008,7 @@ p {
 }
 
 .table th {
-  font-weight: 900;
+  font-weight: 600;
   color: #485a73;
   background: var(--head);
 }
@@ -1043,7 +1034,7 @@ p {
   min-height: 24px;
   padding: 3px 8px;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1;
   color: var(--blue-2);
   white-space: nowrap;
@@ -1082,7 +1073,7 @@ p {
   display: inline-flex;
   min-height: 24px;
   padding: 0 6px;
-  font-weight: 900;
+  font-weight: 600;
   color: var(--blue-2);
   border-radius: 5px;
   transition:
@@ -1126,7 +1117,7 @@ p {
   display: grid;
   width: 28px;
   height: 28px;
-  font-weight: 900;
+  font-weight: 600;
   color: #fff;
   background: var(--blue);
   border-radius: 50%;
@@ -1134,7 +1125,7 @@ p {
 }
 
 .step-title {
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .step-desc {

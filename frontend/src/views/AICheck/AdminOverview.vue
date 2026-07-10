@@ -94,6 +94,7 @@ import type {
 } from '@/api/aicheck'
 import type { ActionCode, ExportTask, Project, RoleCode } from '@/types/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
+import { getAicheckRoleLabel } from '@/utils/roleAccess'
 import AdminKnowledgeStaticDeepSections from './components/AdminKnowledgeStaticDeepSections.vue'
 import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import StaticPageShell from './components/StaticPageShell.vue'
@@ -795,29 +796,9 @@ const getRequestErrorMessage = (error: unknown, fallback: string) => {
 const buildOperationFailureMessage = (action: string) =>
   `${action}失败，当前页面数据已保留，请稍后重试或刷新后再操作。`
 
-const roleLabel = (role: RoleCode) => {
-  const labels: Record<RoleCode, string> = {
-    inspection: '监检',
-    contractor: '施工',
-    ndt: '无损检测',
-    owner: '建设方',
-    admin: '管理',
-    fde: 'FDE'
-  }
-  return labels[role]
-}
+const roleLabel = (role: RoleCode) => getAicheckRoleLabel(role)
 
-const responsiblePartyLabel = (role?: string) => {
-  const labels: Record<string, string> = {
-    inspection: '监检',
-    contractor: '施工',
-    ndt: '无损检测',
-    owner: '建设方',
-    admin: '管理',
-    fde: 'FDE'
-  }
-  return labels[role || ''] || role || '-'
-}
+const responsiblePartyLabel = (role?: string) => getAicheckRoleLabel(role)
 
 const tableSortCollator = new Intl.Collator('zh-Hans-CN', {
   numeric: true,
@@ -5970,7 +5951,7 @@ onMounted(() => {
 
 .page-title {
   font-size: 27px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1.2;
   color: #172033;
 }
@@ -6029,7 +6010,7 @@ onMounted(() => {
   min-height: 46px;
   padding: 0 14px;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   color: #172033;
   list-style: none;
   cursor: pointer;
@@ -6042,7 +6023,7 @@ onMounted(() => {
 .secondary-summary-collapse summary::after {
   flex: 0 0 auto;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   color: #2563eb;
   content: '展开';
 }
@@ -6055,7 +6036,7 @@ onMounted(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   color: #64748b;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -6134,7 +6115,7 @@ onMounted(() => {
   gap: 12px;
   align-items: center;
   justify-content: space-between;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .admin-tabs {
@@ -6417,7 +6398,7 @@ onMounted(() => {
   padding: 0 8px;
   margin-right: 8px;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   color: #1d4ed8;
   background: #eff6ff;
   border-radius: 6px;
@@ -6484,7 +6465,7 @@ onMounted(() => {
 }
 
 .business-pack-option span {
-  font-weight: 800;
+  font-weight: 600;
   line-height: 18px;
 }
 

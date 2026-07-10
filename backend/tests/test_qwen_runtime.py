@@ -5,7 +5,7 @@ from pathlib import Path
 
 import httpx
 
-from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_config, qwen_runtime_public_config
+from libs.qwen_runtime import CONFIG_PATH, QwenRuntimeClient, qwen_runtime_config, qwen_runtime_public_config
 
 
 CONFIG_TEXT = """
@@ -62,6 +62,21 @@ def test_qwen_runtime_config_defaults_to_server_and_redacts_key(tmp_path, monkey
     assert config["apiKeyConfigured"] is False
     assert public["mode"] == "server"
     assert "sk-secret-qwen" not in json.dumps(public)
+
+
+def test_repository_runtime_maps_audit_and_vision_to_qwen37_plus() -> None:
+    config = qwen_runtime_config(
+        CONFIG_PATH,
+        env={
+            "AICHECK_QWEN_CALL_MODE": "official_api",
+            "QWEN_API_BASE": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "QWEN_API_KEY": "sk-test",
+        },
+    )
+
+    assert config["models"]["review"] == "qwen3.7-plus"
+    assert config["models"]["default"] == "qwen3.7-plus"
+    assert config["models"]["visionReview"] == "qwen3.7-plus"
 
 
 def test_qwen_runtime_server_mode_uses_existing_aliases(tmp_path) -> None:

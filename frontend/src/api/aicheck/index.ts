@@ -426,6 +426,9 @@ export type AiRecheckPayload = {
   runId: string
   status: string
   latestRun: AiReviewRun
+  reviewMode?: 'formal' | 'gap_precheck'
+  advisoryOnly?: boolean
+  stateTransition?: AiReviewRun['stateTransition']
   dispatch?: DispatchStatus
 }
 
@@ -470,6 +473,13 @@ export type StandardReference = {
   summary: string
   effectiveVersion: string
   evidenceLinkId?: string
+  reference?: string
+  file?: string
+  fileName?: string
+  knowledgeFileId?: string
+  sourceRelativePath?: string
+  previewAvailable?: boolean
+  previewUrl?: string
 }
 
 export type DateComparisonItem = {
@@ -762,6 +772,10 @@ export type KnowledgeRuleVersion = {
     reference?: string
     file?: string
     fileName?: string
+    knowledgeFileId?: string
+    sourceRelativePath?: string
+    previewAvailable?: boolean
+    previewUrl?: string
     [key: string]: unknown
   }>
   materialTypeCodes?: string[]
@@ -1422,6 +1436,7 @@ export type FdeTechnologyStackPayload = {
   active?: Record<string, Record<string, unknown>>
   sections?: Array<Record<string, unknown>>
   embeddingModelRegistry?: Array<Record<string, unknown>>
+  runtimeReadiness?: Record<string, unknown>
 }
 
 export type FdeEvidenceBox = number[] | null | undefined
@@ -2684,10 +2699,12 @@ export const submitRectificationApi = (
 export const requestAiRecheckApi = (
   projectId: string,
   nodeId: number,
+  payload: { reviewMode: 'formal' | 'gap_precheck'; auditInputMode?: 'ocr_llm' | 'pure_llm' },
   options?: MutationHeaderOptions
 ): Promise<IResponse<AiRecheckPayload>> => {
   return request.post({
     url: `/api/projects/${projectId}/inspection/nodes/${nodeId}/ai-recheck`,
+    data: payload,
     headers: mutationHeaders(options)
   })
 }

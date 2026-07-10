@@ -496,7 +496,7 @@ const evidenceOptionLabel = (evidence: EvidenceLink) =>
 
 .section-title {
   margin-bottom: 6px;
-  font-weight: 700;
+  font-weight: 600;
   color: #1f2937;
 }
 

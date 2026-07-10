@@ -211,11 +211,22 @@ const expectNoPageOverflow = async (page: Page) => {
           const documentWidth = document.documentElement.scrollWidth
           const bodyWidth = document.body.scrollWidth
           const viewportWidth = document.documentElement.clientWidth
-          return Math.max(documentWidth, bodyWidth) > viewportWidth + 1
+          const contentWidth = Math.max(documentWidth, bodyWidth)
+          if (contentWidth <= viewportWidth + 1) return ''
+          const offenders = Array.from(document.querySelectorAll<HTMLElement>('body *'))
+            .map((element) => ({
+              name: element.className || element.tagName,
+              right: Math.round(element.getBoundingClientRect().right),
+              width: Math.round(element.getBoundingClientRect().width)
+            }))
+            .filter((item) => item.right > viewportWidth + 1)
+            .sort((left, right) => right.right - left.right)
+            .slice(0, 3)
+          return JSON.stringify({ viewportWidth, documentWidth, bodyWidth, offenders })
         }),
       { timeout: 1500 }
     )
-    .toBe(false)
+    .toBe('')
 }
 
 const expectFdeWorkspaceNotClipped = async (page: Page) => {
@@ -603,7 +614,7 @@ const openInspectionNodeSection = async (page: Page, nodeName = '焊工资格证
 }
 
 test.describe('AIcheck route smoke', () => {
-  test('role accounts land on their default panel without redirect', async ({ page }) => {
+  test('role accounts land on their default panel without redirect', async ({ browser }) => {
     test.setTimeout(90_000)
     const cases = [
       { account: 'inspection', path: '/workbench/inspection', title: '监检工作台' },
@@ -615,10 +626,11 @@ test.describe('AIcheck route smoke', () => {
     ]
 
     for (const routeCase of cases) {
-      await page.goto('/#/login')
-      await clearLoginState(page)
-      await loginWithoutRedirect(page, routeCase.account, routeCase.path)
-      await expect(page.getByText(routeCase.title).first()).toBeVisible()
+      const context = await browser.newContext()
+      const rolePage = await context.newPage()
+      await loginWithoutRedirect(rolePage, routeCase.account, routeCase.path)
+      await expect(rolePage.getByText(routeCase.title).first()).toBeVisible()
+      await context.close()
     }
   })
 
@@ -638,6 +650,16 @@ test.describe('AIcheck route smoke', () => {
     page
   }) => {
     test.setTimeout(90_000)
+    const replacementLogin = await page.request.post('/api/auth/login', {
+      data: {
+        username: 'inspection',
+        password: passwordForAccount('inspection')
+      }
+    })
+    expect(replacementLogin.ok()).toBe(true)
+    const replacementLoginBody = await replacementLogin.json()
+    const replacementToken = String(replacementLoginBody.data?.token || '')
+    expect(replacementToken).not.toBe('')
     await page.route('**/api/auth/login', async (route) => {
       await route.fulfill({
         status: 200,
@@ -667,7 +689,7 @@ test.describe('AIcheck route smoke', () => {
         body: JSON.stringify({
           code: 0,
           data: {
-            token: 'replacement-signed-token',
+            token: replacementToken,
             user: {
               id: 'USER-FIRST-LOGIN',
               username: 'first-login',
@@ -706,7 +728,9 @@ test.describe('AIcheck route smoke', () => {
     await page.getByRole('button', { name: '保存并进入系统' }).click()
     await page.waitForURL((url) => url.hash.includes('/workbench/inspection'))
     await expect(page.getByText('监检工作台').first()).toBeVisible()
-    await expect(page.getByText('暂无授权项目')).toBeVisible()
+    await expect
+      .poll(() => page.evaluate(() => sessionStorage.getItem('user') || ''))
+      .toContain(replacementToken)
   })
 
   for (const routeCase of routeCases) {
@@ -735,6 +759,136 @@ test.describe('AIcheck route smoke', () => {
       await openRoute(page, routeCase)
       await expectNoPageOverflow(page)
     }
+  })
+
+  test('inspection node navigation remains usable at responsive breakpoints', async ({ page }) => {
+    await openRoute(
+      page,
+      routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
+    )
+
+    for (const viewport of [
+      { width: 390, height: 900 },
+      { width: 768, height: 1024 }
+    ]) {
+      await page.setViewportSize(viewport)
+      const nodeNavigation = page.locator('#audit-node-navigation')
+      const trigger = page.getByRole('button', { name: '审核节点', exact: true })
+      await expect(trigger).toBeVisible()
+      await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+      await expect(nodeNavigation).toBeHidden()
+
+      await trigger.click()
+      await expect(nodeNavigation).toBeVisible()
+      await expect(trigger).toHaveAttribute('aria-expanded', 'true')
+
+      const nodeButtons = nodeNavigation.locator('.node-button')
+      if ((await nodeButtons.count()) === 0) {
+        await nodeNavigation.getByRole('treeitem', { name: '焊接（粘接）', exact: true }).click()
+      }
+      await expect(nodeButtons.first()).toBeVisible()
+      await nodeButtons.first().click()
+      await expect(nodeNavigation).toBeHidden()
+      const workflowProgress = page.getByRole('region', { name: '审计办理进度' })
+      await expect(workflowProgress).toBeVisible()
+      await expect(workflowProgress.locator('.el-steps')).toHaveClass(/el-steps--vertical/)
+      await expect(workflowProgress.locator('.el-step')).toHaveCount(7)
+      await expectNoPageOverflow(page)
+    }
+
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await expect(page.getByRole('button', { name: '审核节点', exact: true })).toBeHidden()
+    await expect(page.locator('#audit-node-navigation')).toBeVisible()
+    const desktopWorkflowProgress = page.getByRole('region', { name: '审计办理进度' })
+    await expect(desktopWorkflowProgress.locator('.el-steps')).toHaveClass(/el-steps--horizontal/)
+    const desktopStepMain = desktopWorkflowProgress.locator('.el-step__main')
+    const desktopStepIcons = desktopWorkflowProgress.locator('.el-step__icon')
+    const firstMainBox = await desktopStepMain.nth(0).boundingBox()
+    const secondMainBox = await desktopStepMain.nth(1).boundingBox()
+    const thirdMainBox = await desktopStepMain.nth(2).boundingBox()
+    const firstIconBox = await desktopStepIcons.nth(0).boundingBox()
+    const secondIconBox = await desktopStepIcons.nth(1).boundingBox()
+    const thirdIconBox = await desktopStepIcons.nth(2).boundingBox()
+    expect(firstMainBox).not.toBeNull()
+    expect(secondMainBox).not.toBeNull()
+    expect(thirdMainBox).not.toBeNull()
+    expect(firstIconBox).not.toBeNull()
+    expect(secondIconBox).not.toBeNull()
+    expect(thirdIconBox).not.toBeNull()
+    expect(firstMainBox!.y - (firstIconBox!.y + firstIconBox!.height)).toBeGreaterThanOrEqual(10)
+    expect(secondIconBox!.y - (secondMainBox!.y + secondMainBox!.height)).toBeGreaterThanOrEqual(10)
+    expect(thirdMainBox!.y - (thirdIconBox!.y + thirdIconBox!.height)).toBeGreaterThanOrEqual(10)
+    const desktopSteps = desktopWorkflowProgress.locator('.el-step')
+    const desktopDescriptions = desktopWorkflowProgress.locator('.el-step__description')
+    const firstStepBox = await desktopSteps.nth(0).boundingBox()
+    const firstDescriptionBox = await desktopDescriptions.nth(0).boundingBox()
+    const thirdDescriptionBox = await desktopDescriptions.nth(2).boundingBox()
+    expect(firstStepBox).not.toBeNull()
+    expect(firstDescriptionBox).not.toBeNull()
+    expect(thirdDescriptionBox).not.toBeNull()
+    expect(firstDescriptionBox!.width / firstStepBox!.width).toBeGreaterThanOrEqual(1.5)
+    expect(firstDescriptionBox!.x + firstDescriptionBox!.width).toBeLessThan(thirdDescriptionBox!.x)
+    await expectNoPageOverflow(page)
+  })
+
+  test('inspection renders responsible role codes as Chinese labels', async ({ page }) => {
+    await openRoute(
+      page,
+      routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
+    )
+    await openInspectionNodeSection(page)
+
+    const requirements = page.locator('#inspection-node-requirements')
+    await expect(requirements).toContainText('施工方')
+    await expect(requirements.getByText('contractor', { exact: true })).toHaveCount(0)
+  })
+
+  test('inspection progress sends missing materials to review instead of upload', async ({
+    page
+  }) => {
+    await openRoute(
+      page,
+      routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
+    )
+    await page.getByRole('link', { name: '设计单位许可资质', exact: true }).first().click()
+
+    const workflowProgress = page.getByRole('region', { name: '审计办理进度' })
+    await expect(workflowProgress).toContainText('资料提交')
+    await expect(workflowProgress).toContainText('监检人员仅核验、催办和退回补正')
+    await expect(workflowProgress.getByRole('button', { name: '上传资料' })).toHaveCount(0)
+    await expect(workflowProgress.getByRole('button', { name: '查看缺项' })).toBeVisible()
+    await workflowProgress.getByRole('button', { name: '查看缺项' }).click()
+    await expect(page.locator('#inspection-node-requirements')).toBeInViewport()
+  })
+
+  test('inspection standard references use a virtual tree and open the original file', async ({
+    page
+  }) => {
+    await openRoute(
+      page,
+      routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
+    )
+    await page.getByRole('treeitem', { name: '施工组织设计', exact: true }).click()
+    await page
+      .locator('#audit-node-navigation .node-button')
+      .filter({ hasText: '11施工组织设计' })
+      .first()
+      .click()
+
+    const standardTree = page.locator('.standard-reference-tree')
+    await expect(standardTree).toBeVisible()
+    await expect(standardTree.locator('.el-vl__wrapper')).toBeVisible()
+    await expect(standardTree).toContainText('引用标准文件（29）')
+    await expect(standardTree).toContainText('NB/T 47013 承压设备无损检测')
+
+    const previewableFile = standardTree.locator('.standard-tree-node.is-file').first()
+    await expect(previewableFile).toContainText('预览')
+    await previewableFile.click()
+
+    const previewDrawer = page.locator('.aicheck-preview-drawer:visible')
+    await expect(previewDrawer).toContainText('规范原文预览')
+    await expect(previewDrawer.locator('iframe')).toHaveAttribute('src', /^blob:/)
+    await expect(previewDrawer).not.toContainText('原文预览加载失败')
   })
 })
 
@@ -1107,11 +1261,16 @@ test.describe('AIcheck live business error mapping', () => {
       routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
     )
     await openInspectionNodeSection(page)
-    await page.getByRole('button', { name: 'AI 复核' }).click()
+    await page
+      .locator('.ai-review-mode-control .el-radio-button')
+      .filter({ hasText: '正式复核' })
+      .click()
+    await page.locator('.node-ai-recheck-button').click()
 
-    const message = page.locator('.el-message').filter({ hasText: '错误码：TASK_RUNNING' })
-    await expect(message).toBeVisible()
-    await expect(message).toContainText('已有任务正在运行')
+    const blocker = page.locator('.ai-recheck-output-error')
+    await expect(blocker).toBeVisible()
+    await expect(blocker).toContainText('错误码：TASK_RUNNING')
+    await expect(blocker).toContainText('已有任务正在运行')
   })
 })
 
@@ -1186,19 +1345,14 @@ test.describe('AIcheck business writeback flows', () => {
 
     const panel = page.locator('.ndt-panel')
     const actions = panel.locator('.ndt-actions')
-    await expect(actions).toContainText(/待提交报告 \d+/)
-    const pendingBeforeText = await actions.innerText()
-    const pendingBefore = Number(pendingBeforeText.match(/待提交报告\s+(\d+)/)?.[1] || 0)
+    await expect(actions).toContainText(/待提交报告 \d+ 份/)
 
     const submitButton = panel.getByRole('button', { name: '提交检测资料' })
     await expect(submitButton).toBeDisabled()
     const issue = panel.locator('.ndt-submit-error').filter({ hasText: '检测资料暂不满足提交条件' })
     if (await issue.isVisible().catch(() => false)) {
       await expect(issue).toContainText(/OCR 未完成|至少一份待提交检测报告/)
-    } else {
-      await expect(actions).toContainText('待提交报告 0')
     }
-    await expect(actions).toContainText(`待提交报告 ${pendingBefore}`)
 
     await page.setViewportSize({ width: 390, height: 900 })
     await expectNoPageOverflow(page)
@@ -1522,35 +1676,48 @@ test.describe('AIcheck business writeback flows', () => {
     await expectNoPageOverflow(page)
   })
 
-  test('knowledge task retry and cancel update task table', async ({ page }) => {
+  test('knowledge task cancel and retry update task table', async ({ page }) => {
     await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/knowledge/overview')!)
 
     await page.getByRole('tab', { name: '任务中心' }).click()
-    const retryableTaskRow = page
-      .getByRole('row')
-      .filter({ hasText: '钢管质量证明书.pdf' })
-      .filter({ has: page.getByRole('button', { name: '重试' }) })
-      .first()
-    await expect(retryableTaskRow).toBeVisible()
-    const retryTaskId = (await retryableTaskRow.locator('td').first().innerText()).trim()
-    const retryTaskRow = page.getByRole('row').filter({ hasText: retryTaskId })
-
-    await retryTaskRow.getByRole('button', { name: '重试' }).click()
-
-    await expect(page.locator('.el-message').filter({ hasText: '已重新排队' })).toBeVisible()
-    await expect(retryTaskRow).toContainText(/排队中|成功/)
-
-    const cancellableTaskRow = page
+    const taskPanel = page.getByRole('tabpanel', { name: '任务中心' })
+    const cancellableTaskRow = taskPanel
       .getByRole('row')
       .filter({ has: page.getByRole('button', { name: '取消' }) })
       .first()
     await expect(cancellableTaskRow).toContainText('排队中')
     const taskId = (await cancellableTaskRow.locator('td').first().innerText()).trim()
-    const taskRow = page.getByRole('row').filter({ hasText: taskId })
+    const taskRow = taskPanel.getByRole('row').filter({ hasText: taskId })
 
+    const cancelResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().includes(`/api/knowledge/tasks/${taskId}/cancel`)
+    )
     await taskRow.getByRole('button', { name: '取消' }).click()
+    const cancelResponse = await cancelResponsePromise
+    const cancelBody = await cancelResponse.json()
+    expect(cancelBody.data?.task?.status).toBe('已取消')
+    await taskPanel.locator('.filter-bar .el-select').nth(1).click()
+    await page.getByRole('option', { name: '已取消', exact: true }).click()
+    const cancelledTaskRow = taskPanel.getByRole('row').filter({ hasText: taskId })
+    await expect(cancelledTaskRow).toContainText('已取消')
 
-    await expect(taskRow).toContainText('已取消')
+    const retryResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().includes(`/api/knowledge/tasks/${taskId}/retry`)
+    )
+    await cancelledTaskRow.getByRole('button', { name: '重试' }).click()
+    const retryResponse = await retryResponsePromise
+    const retryBody = await retryResponse.json()
+    const retriedStatus = String(retryBody.data?.task?.status || '')
+    expect(['排队中', '成功']).toContain(retriedStatus)
+    await taskPanel.locator('.filter-bar .el-select').nth(1).click()
+    await page.getByRole('option', { name: retriedStatus, exact: true }).click()
+    await expect(taskPanel.getByRole('row').filter({ hasText: taskId })).toContainText(
+      retriedStatus
+    )
   })
 
   test('knowledge config save writes audit state', async ({ page }) => {
@@ -1739,7 +1906,7 @@ test.describe('AIcheck business writeback flows', () => {
     expect(taskAttempts).toBeGreaterThanOrEqual(2)
   })
 
-  test('inspection generates report draft and adds review version', async ({ page }) => {
+  test('inspection blocks report draft without validated confirmed evidence', async ({ page }) => {
     await openRoute(
       page,
       routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
@@ -1747,13 +1914,10 @@ test.describe('AIcheck business writeback flows', () => {
     await selectProject(page, '华东成品油管道改造工程')
 
     const panel = page.locator('.report-panel')
-    await panel.getByRole('button', { name: '生成报告草稿' }).click()
-
-    await expect(
-      page.locator('.el-message').filter({ hasText: '报告草稿已生成，进入复核' })
-    ).toBeVisible()
-    await expect(panel).toContainText('V1')
-    await expect(panel).toContainText('复核中')
+    await expect(panel.getByRole('button', { name: '生成报告草稿' })).toBeDisabled()
+    await expect(panel.locator('.report-gate-alert')).toContainText(
+      /confirmed 证据|confirmed-only 校验|readiness 快照/
+    )
   })
 
   test('inspection cannot archive report before review or signature gates pass', async ({

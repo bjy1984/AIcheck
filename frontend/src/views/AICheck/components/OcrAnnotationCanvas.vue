@@ -768,7 +768,7 @@ watch(
   padding: 5px 9px;
   margin: 10px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   color: #1f2d3d;
   background: rgb(255 255 255 / 92%);
   border: 1px solid #dbe8f7;
@@ -799,14 +799,14 @@ watch(
 
 .ocr-annotation-canvas__overlay strong {
   font-size: 16px;
-  font-weight: 900;
+  font-weight: 600;
   color: #172033;
 }
 
 .ocr-annotation-canvas__overlay span {
   max-width: min(520px, 90%);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.6;
 }
 
@@ -824,7 +824,7 @@ watch(
   padding: 0 14px;
   margin-top: 4px;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   color: #fff;
   cursor: pointer;
   background: #2563eb;

@@ -156,7 +156,7 @@ const withdrawalText = (row: SubmissionSummary) => {
 
 .history-title {
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 600;
   color: #1f2937;
 }
 
@@ -176,7 +176,7 @@ const withdrawalText = (row: SubmissionSummary) => {
   align-items: center;
   margin-bottom: 8px;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   color: #1f2937;
 }
 

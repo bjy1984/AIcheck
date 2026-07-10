@@ -123,7 +123,7 @@ const archiveProgress = computed(() => {
   align-items: center;
   justify-content: space-between;
   min-height: 32px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .owner-grid {

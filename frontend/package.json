@@ -14,6 +14,8 @@
     "test:e2e:pro": "AICHECK_E2E_PREVIEW=true playwright test",
     "test:e2e:live": "AICHECK_VITE_MODE=live playwright test",
     "test:e2e:headed": "playwright test --headed",
+    "audit:ui": "node scripts/audit-visual-system.mjs",
+    "audit:ui:strict": "node scripts/audit-visual-system.mjs --strict",
     "build:pro": "pnpm vite build --mode pro",
     "build:gitee": "pnpm vite build --mode gitee",
     "build:dev": "pnpm vite build --mode dev",
@@ -36,6 +38,7 @@
     "icon": "esno ./scripts/icon.ts"
   },
   "dependencies": {
+    "@element-plus/icons-vue": "2.3.2",
     "@iconify/iconify": "^3.1.1",
     "@iconify/vue": "^4.3.0",
     "@vueuse/core": "^12.3.0",

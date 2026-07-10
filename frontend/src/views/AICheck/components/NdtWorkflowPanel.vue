@@ -687,7 +687,7 @@ const handleRectifyNdt = () => {
   align-items: center;
   justify-content: space-between;
   min-height: 32px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .panel-subtitle {
@@ -725,7 +725,7 @@ const handleRectifyNdt = () => {
 .section-title {
   margin: 14px 0 8px;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .ndt-checklist,
@@ -828,7 +828,7 @@ const handleRectifyNdt = () => {
 
 .muted-action {
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   color: #667085;
 }
 

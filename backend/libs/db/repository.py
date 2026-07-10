@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import sqlite3
+import threading
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -161,6 +162,7 @@ class InMemoryRepository:
         self.sqlite_path: str | None = None
         self.sqlite_enabled = False
         self._flush_lock = asyncio.Lock()
+        self._sync_postgres_lock = threading.RLock()
 
     def reset(self) -> None:
         self.state = fresh_state()
@@ -1295,28 +1297,30 @@ class InMemoryRepository:
         return task
 
     def configure_sync_postgres(self, dsn: str | None = None) -> None:
-        target_dsn = dsn or os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL")
-        if not target_dsn:
-            return
-        if self.sync_postgres is not None and self.postgres_dsn == target_dsn:
-            return
-        try:
-            import psycopg
-        except Exception as exc:
-            raise RuntimeError(f"psycopg is required to use PostgreSQL persistence: {exc}") from exc
-        self.close_sync_postgres()
-        self.sync_postgres = psycopg.connect(target_dsn, autocommit=False)
-        self.postgres_dsn = target_dsn
-        self.postgres_enabled = True
+        with self._sync_postgres_lock:
+            target_dsn = dsn or os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL")
+            if not target_dsn:
+                return
+            if self.sync_postgres is not None and self.postgres_dsn == target_dsn:
+                return
+            try:
+                import psycopg
+            except Exception as exc:
+                raise RuntimeError(f"psycopg is required to use PostgreSQL persistence: {exc}") from exc
+            self.close_sync_postgres()
+            self.sync_postgres = psycopg.connect(target_dsn, autocommit=False)
+            self.postgres_dsn = target_dsn
+            self.postgres_enabled = True
 
     def close_sync_postgres(self) -> None:
-        connection = self.sync_postgres
-        self.sync_postgres = None
-        if connection is not None:
-            try:
-                connection.close()
-            except Exception:
-                pass
+        with self._sync_postgres_lock:
+            connection = self.sync_postgres
+            self.sync_postgres = None
+            if connection is not None:
+                try:
+                    connection.close()
+                except Exception:
+                    pass
 
     def default_sqlite_path(self) -> Path:
         backend_root = Path(__file__).resolve().parents[2]
@@ -1565,220 +1569,277 @@ class InMemoryRepository:
         return psycopg.connect(target_dsn, autocommit=False)
 
     def ensure_postgres_schema(self) -> None:
-        self.configure_sync_postgres()
-        if self.sync_postgres is None:
-            return
-        with self.sync_postgres.transaction():
-            self.sync_postgres.execute(
-                """
-                CREATE TABLE IF NOT EXISTS aicheck_state (
-                    collection text NOT NULL,
-                    object_id text NOT NULL,
-                    payload jsonb NOT NULL,
-                    updated_at timestamptz NOT NULL DEFAULT now(),
-                    PRIMARY KEY (collection, object_id)
+        with self._sync_postgres_lock:
+            self.configure_sync_postgres()
+            if self.sync_postgres is None:
+                return
+            with self.sync_postgres.transaction():
+                self.sync_postgres.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS aicheck_state (
+                        collection text NOT NULL,
+                        object_id text NOT NULL,
+                        payload jsonb NOT NULL,
+                        updated_at timestamptz NOT NULL DEFAULT now(),
+                        PRIMARY KEY (collection, object_id)
+                    )
+                    """
                 )
-                """
-            )
-            self.sync_postgres.execute(
-                """
-                CREATE TABLE IF NOT EXISTS aicheck_singletons (
-                    name text PRIMARY KEY,
-                    payload jsonb NOT NULL,
-                    updated_at timestamptz NOT NULL DEFAULT now()
+                self.sync_postgres.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS aicheck_singletons (
+                        name text PRIMARY KEY,
+                        payload jsonb NOT NULL,
+                        updated_at timestamptz NOT NULL DEFAULT now()
+                    )
+                    """
                 )
-                """
-            )
-            self.sync_postgres.execute(
-                """
-                CREATE TABLE IF NOT EXISTS idempotency_records (
-                    scope text PRIMARY KEY,
-                    payload jsonb NOT NULL,
-                    updated_at timestamptz NOT NULL DEFAULT now()
+                self.sync_postgres.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS idempotency_records (
+                        scope text PRIMARY KEY,
+                        payload jsonb NOT NULL,
+                        updated_at timestamptz NOT NULL DEFAULT now()
+                    )
+                    """
                 )
-                """
-            )
-            self.sync_postgres.execute(
-                "CREATE INDEX IF NOT EXISTS idx_aicheck_state_collection ON aicheck_state (collection)"
-            )
-            self.sync_postgres.execute(
-                "CREATE INDEX IF NOT EXISTS idx_aicheck_state_payload_gin ON aicheck_state USING gin (payload)"
-            )
-            self.sync_postgres.execute(
-                "CREATE INDEX IF NOT EXISTS idx_idempotency_updated_at ON idempotency_records (updated_at DESC)"
-            )
+                self.sync_postgres.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_aicheck_state_collection ON aicheck_state (collection)"
+                )
+                self.sync_postgres.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_aicheck_state_payload_gin ON aicheck_state USING gin (payload)"
+                )
+                self.sync_postgres.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_idempotency_updated_at ON idempotency_records (updated_at DESC)"
+                )
 
     def load_from_sync_postgres(self) -> None:
-        self.configure_sync_postgres()
-        if self.sync_postgres is None:
-            return
-        self.ensure_postgres_schema()
-        loaded = self._fresh_state_for_persistence_load()
-        rows = self.sync_postgres.execute(
-            "SELECT collection, payload FROM aicheck_state ORDER BY collection, object_id"
-        ).fetchall()
-        has_project_seed = any(row[0] == STATE_COLLECTIONS["projects"] for row in rows)
-        grouped: dict[str, list[dict[str, Any]]] = {}
-        for collection_name, payload in rows:
-            grouped.setdefault(collection_name, []).append(json.loads(json.dumps(payload)))
-        for state_key, collection_name in STATE_COLLECTIONS.items():
-            documents = grouped.get(collection_name, [])
-            if has_project_seed or documents:
-                loaded[state_key] = documents
-        for name, payload in self.sync_postgres.execute("SELECT name, payload FROM aicheck_singletons").fetchall():
-            loaded[name] = json.loads(json.dumps(payload))
-        loaded["idempotency"] = {
-            scope: json.loads(json.dumps(payload))
-            for scope, payload in self.sync_postgres.execute("SELECT scope, payload FROM idempotency_records").fetchall()
-        }
-        backfilled = self.apply_seed_compatibility_defaults(loaded)
-        self.state = loaded
-        # psycopg starts a transaction for the SELECTs above when autocommit is off.
-        # End that read transaction before any writer tries to flush the JSONB state.
-        self.sync_postgres.commit()
-        if not has_project_seed:
-            self.flush_to_sync_postgres()
-        elif backfilled:
-            self.flush_to_sync_postgres()
+        with self._sync_postgres_lock:
+            self.configure_sync_postgres()
+            if self.sync_postgres is None:
+                return
+            self.ensure_postgres_schema()
+            loaded = self._fresh_state_for_persistence_load()
+            rows = self.sync_postgres.execute(
+                "SELECT collection, payload FROM aicheck_state ORDER BY collection, object_id"
+            ).fetchall()
+            has_project_seed = any(row[0] == STATE_COLLECTIONS["projects"] for row in rows)
+            grouped: dict[str, list[dict[str, Any]]] = {}
+            for collection_name, payload in rows:
+                grouped.setdefault(collection_name, []).append(json.loads(json.dumps(payload)))
+            for state_key, collection_name in STATE_COLLECTIONS.items():
+                documents = grouped.get(collection_name, [])
+                if has_project_seed or documents:
+                    loaded[state_key] = documents
+            for name, payload in self.sync_postgres.execute("SELECT name, payload FROM aicheck_singletons").fetchall():
+                loaded[name] = json.loads(json.dumps(payload))
+            loaded["idempotency"] = {
+                scope: json.loads(json.dumps(payload))
+                for scope, payload in self.sync_postgres.execute("SELECT scope, payload FROM idempotency_records").fetchall()
+            }
+            backfilled = self.apply_seed_compatibility_defaults(loaded)
+            self.state = loaded
+            # psycopg starts a transaction for the SELECTs above when autocommit is off.
+            # End that read transaction before any writer tries to flush the JSONB state.
+            self.sync_postgres.commit()
+            if not has_project_seed:
+                self.flush_to_sync_postgres()
+            elif backfilled:
+                self.flush_to_sync_postgres()
 
     def flush_to_sync_postgres(self) -> None:
-        self.configure_sync_postgres()
-        if self.sync_postgres is None:
-            return
-        self.ensure_postgres_schema()
-        with self.sync_postgres.transaction():
-            self.sync_postgres.execute("SELECT pg_advisory_xact_lock(hashtext('aicheck_state_flush'))")
-            self.sync_postgres.execute("DELETE FROM aicheck_state")
-            self.sync_postgres.execute("DELETE FROM aicheck_singletons")
-            self.sync_postgres.execute("DELETE FROM idempotency_records")
-            for state_key, collection_name in STATE_COLLECTIONS.items():
-                docs = [self.clone(item) for item in self.state.get(state_key, [])]
-                for index, doc in enumerate(docs):
-                    object_id = self.persistence_object_id(collection_name, doc, index)
+        with self._sync_postgres_lock:
+            self.configure_sync_postgres()
+            if self.sync_postgres is None:
+                return
+            self.ensure_postgres_schema()
+            with self.sync_postgres.transaction():
+                self.sync_postgres.execute("SELECT pg_advisory_xact_lock(hashtext('aicheck_state_flush'))")
+                self.sync_postgres.execute("DELETE FROM aicheck_state")
+                self.sync_postgres.execute("DELETE FROM aicheck_singletons")
+                self.sync_postgres.execute("DELETE FROM idempotency_records")
+                for state_key, collection_name in STATE_COLLECTIONS.items():
+                    docs = [self.clone(item) for item in self.state.get(state_key, [])]
+                    for index, doc in enumerate(docs):
+                        object_id = self.persistence_object_id(collection_name, doc, index)
+                        self.sync_postgres.execute(
+                            """
+                            INSERT INTO aicheck_state (collection, object_id, payload, updated_at)
+                            VALUES (%s, %s, %s::jsonb, now())
+                            ON CONFLICT (collection, object_id)
+                            DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()
+                            """,
+                            (collection_name, object_id, json.dumps(doc, ensure_ascii=False)),
+                        )
+                for state_key in SINGLETON_COLLECTIONS:
                     self.sync_postgres.execute(
                         """
-                        INSERT INTO aicheck_state (collection, object_id, payload, updated_at)
-                        VALUES (%s, %s, %s::jsonb, now())
-                        ON CONFLICT (collection, object_id)
+                        INSERT INTO aicheck_singletons (name, payload, updated_at)
+                        VALUES (%s, %s::jsonb, now())
+                        ON CONFLICT (name)
                         DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()
                         """,
-                        (collection_name, object_id, json.dumps(doc, ensure_ascii=False)),
+                        (state_key, json.dumps(self.clone(self.state.get(state_key)), ensure_ascii=False)),
                     )
-            for state_key in SINGLETON_COLLECTIONS:
-                self.sync_postgres.execute(
-                    """
-                    INSERT INTO aicheck_singletons (name, payload, updated_at)
-                    VALUES (%s, %s::jsonb, now())
-                    ON CONFLICT (name)
-                    DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()
-                    """,
-                    (state_key, json.dumps(self.clone(self.state.get(state_key)), ensure_ascii=False)),
-                )
-            for scope, payload in self.state.get("idempotency", {}).items():
-                self.sync_postgres.execute(
-                    """
-                    INSERT INTO idempotency_records (scope, payload, updated_at)
-                    VALUES (%s, %s::jsonb, now())
-                    ON CONFLICT (scope)
-                    DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()
-                    """,
-                    (scope, json.dumps(self.clone(payload), ensure_ascii=False)),
-                )
-        self.sync_postgres.commit()
-        if self.state.get("knowledge_vectors"):
-            self.flush_knowledge_vectors_to_pgvector()
+                for scope, payload in self.state.get("idempotency", {}).items():
+                    self.sync_postgres.execute(
+                        """
+                        INSERT INTO idempotency_records (scope, payload, updated_at)
+                        VALUES (%s, %s::jsonb, now())
+                        ON CONFLICT (scope)
+                        DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()
+                        """,
+                        (scope, json.dumps(self.clone(payload), ensure_ascii=False)),
+                    )
+            self.sync_postgres.commit()
+            if self.state.get("knowledge_vectors"):
+                self.flush_knowledge_vectors_to_pgvector()
+
+    def upsert_state_records_to_sync_postgres(
+        self,
+        records_by_state_key: dict[str, list[dict[str, Any]]],
+    ) -> None:
+        """Persist selected records without replacing another process's state snapshot."""
+        with self._sync_postgres_lock:
+            self.configure_sync_postgres()
+            if self.sync_postgres is None:
+                return
+            self.ensure_postgres_schema()
+            with self.sync_postgres.transaction():
+                for state_key, docs in records_by_state_key.items():
+                    collection_name = STATE_COLLECTIONS.get(state_key)
+                    if not collection_name:
+                        raise KeyError(f"Unknown state collection: {state_key}")
+                    for index, doc in enumerate(docs):
+                        if not isinstance(doc, dict):
+                            continue
+                        object_id = self.persistence_object_id(collection_name, doc, index)
+                        self.sync_postgres.execute(
+                            """
+                            INSERT INTO aicheck_state (collection, object_id, payload, updated_at)
+                            VALUES (%s, %s, %s::jsonb, now())
+                            ON CONFLICT (collection, object_id)
+                            DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()
+                            """,
+                            (collection_name, object_id, json.dumps(self.clone(doc), ensure_ascii=False)),
+                        )
+            self.sync_postgres.commit()
+
+    def upsert_idempotency_records_to_sync_postgres(self, scopes: list[str]) -> None:
+        with self._sync_postgres_lock:
+            self.configure_sync_postgres()
+            if self.sync_postgres is None:
+                return
+            self.ensure_postgres_schema()
+            with self.sync_postgres.transaction():
+                for scope in scopes:
+                    payload = self.state.get("idempotency", {}).get(scope)
+                    if not isinstance(payload, dict):
+                        continue
+                    self.sync_postgres.execute(
+                        """
+                        INSERT INTO idempotency_records (scope, payload, updated_at)
+                        VALUES (%s, %s::jsonb, now())
+                        ON CONFLICT (scope)
+                        DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()
+                        """,
+                        (scope, json.dumps(self.clone(payload), ensure_ascii=False)),
+                    )
+            self.sync_postgres.commit()
 
     def ensure_pgvector_schema(self) -> bool:
-        if self.sync_postgres is None:
-            return False
-        try:
-            self.sync_postgres.execute("CREATE EXTENSION IF NOT EXISTS vector")
-            self.sync_postgres.execute(
-                """
-                CREATE TABLE IF NOT EXISTS knowledge_vector_index (
-                    id text PRIMARY KEY,
-                    file_id text,
-                    chunk_id text,
-                    document_id text,
-                    document_version_id text,
-                    source_id text,
-                    embedding vector(1024) NOT NULL,
-                    dimensions integer NOT NULL,
-                    embedding_model text NOT NULL,
-                    index_version text NOT NULL,
-                    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
-                    updated_at timestamptz NOT NULL DEFAULT now()
-                )
-                """
-            )
-            self.sync_postgres.execute("CREATE INDEX IF NOT EXISTS idx_kvi_source ON knowledge_vector_index (source_id)")
-            self.sync_postgres.execute("CREATE INDEX IF NOT EXISTS idx_kvi_index_version ON knowledge_vector_index (index_version)")
-            self.sync_postgres.execute(
-                "CREATE INDEX IF NOT EXISTS idx_kvi_embedding_cosine ON knowledge_vector_index USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)"
-            )
-            self.sync_postgres.commit()
-            return True
-        except Exception:
+        with self._sync_postgres_lock:
+            if self.sync_postgres is None:
+                return False
             try:
-                self.sync_postgres.rollback()
-            except Exception:
-                pass
-            return False
-
-    def flush_knowledge_vectors_to_pgvector(self) -> None:
-        if self.sync_postgres is None or not self.ensure_pgvector_schema():
-            return
-        try:
-            self.sync_postgres.execute("DELETE FROM knowledge_vector_index")
-            for row in self.state.get("knowledge_vectors", []) or []:
-                if int(row.get("dimensions") or 0) != OFFLINE_VECTOR_DIMENSIONS:
-                    continue
-                payload = vector_payload_for_pg(row)
-                embedding = payload.get("embedding")
-                if not isinstance(embedding, list) or not embedding:
-                    continue
-                embedding_literal = "[" + ",".join(str(float(item)) for item in embedding) + "]"
+                self.sync_postgres.execute("CREATE EXTENSION IF NOT EXISTS vector")
                 self.sync_postgres.execute(
                     """
-                    INSERT INTO knowledge_vector_index (
-                        id, file_id, chunk_id, document_id, document_version_id, source_id,
-                        embedding, dimensions, embedding_model, index_version, metadata, updated_at
+                    CREATE TABLE IF NOT EXISTS knowledge_vector_index (
+                        id text PRIMARY KEY,
+                        file_id text,
+                        chunk_id text,
+                        document_id text,
+                        document_version_id text,
+                        source_id text,
+                        embedding vector(1024) NOT NULL,
+                        dimensions integer NOT NULL,
+                        embedding_model text NOT NULL,
+                        index_version text NOT NULL,
+                        metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+                        updated_at timestamptz NOT NULL DEFAULT now()
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s::vector, %s, %s, %s, %s::jsonb, now())
-                    ON CONFLICT (id)
-                    DO UPDATE SET
-                        file_id = EXCLUDED.file_id,
-                        chunk_id = EXCLUDED.chunk_id,
-                        document_id = EXCLUDED.document_id,
-                        document_version_id = EXCLUDED.document_version_id,
-                        source_id = EXCLUDED.source_id,
-                        embedding = EXCLUDED.embedding,
-                        dimensions = EXCLUDED.dimensions,
-                        embedding_model = EXCLUDED.embedding_model,
-                        index_version = EXCLUDED.index_version,
-                        metadata = EXCLUDED.metadata,
-                        updated_at = now()
-                    """,
-                    (
-                        payload["id"],
-                        payload["file_id"],
-                        payload["chunk_id"],
-                        payload["document_id"],
-                        payload["document_version_id"],
-                        payload["source_id"],
-                        embedding_literal,
-                        payload["dimensions"],
-                        payload["embedding_model"],
-                        payload["index_version"],
-                        payload["metadata"],
-                    ),
+                    """
                 )
-            self.sync_postgres.commit()
-        except Exception:
-            try:
-                self.sync_postgres.rollback()
+                self.sync_postgres.execute("CREATE INDEX IF NOT EXISTS idx_kvi_source ON knowledge_vector_index (source_id)")
+                self.sync_postgres.execute("CREATE INDEX IF NOT EXISTS idx_kvi_index_version ON knowledge_vector_index (index_version)")
+                self.sync_postgres.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_kvi_embedding_cosine ON knowledge_vector_index USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)"
+                )
+                self.sync_postgres.commit()
+                return True
             except Exception:
-                pass
+                try:
+                    self.sync_postgres.rollback()
+                except Exception:
+                    pass
+                return False
+
+    def flush_knowledge_vectors_to_pgvector(self) -> None:
+        with self._sync_postgres_lock:
+            if self.sync_postgres is None or not self.ensure_pgvector_schema():
+                return
+            try:
+                self.sync_postgres.execute("DELETE FROM knowledge_vector_index")
+                for row in self.state.get("knowledge_vectors", []) or []:
+                    if int(row.get("dimensions") or 0) != OFFLINE_VECTOR_DIMENSIONS:
+                        continue
+                    payload = vector_payload_for_pg(row)
+                    embedding = payload.get("embedding")
+                    if not isinstance(embedding, list) or not embedding:
+                        continue
+                    embedding_literal = "[" + ",".join(str(float(item)) for item in embedding) + "]"
+                    self.sync_postgres.execute(
+                        """
+                        INSERT INTO knowledge_vector_index (
+                            id, file_id, chunk_id, document_id, document_version_id, source_id,
+                            embedding, dimensions, embedding_model, index_version, metadata, updated_at
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s::vector, %s, %s, %s, %s::jsonb, now())
+                        ON CONFLICT (id)
+                        DO UPDATE SET
+                            file_id = EXCLUDED.file_id,
+                            chunk_id = EXCLUDED.chunk_id,
+                            document_id = EXCLUDED.document_id,
+                            document_version_id = EXCLUDED.document_version_id,
+                            source_id = EXCLUDED.source_id,
+                            embedding = EXCLUDED.embedding,
+                            dimensions = EXCLUDED.dimensions,
+                            embedding_model = EXCLUDED.embedding_model,
+                            index_version = EXCLUDED.index_version,
+                            metadata = EXCLUDED.metadata,
+                            updated_at = now()
+                        """,
+                        (
+                            payload["id"],
+                            payload["file_id"],
+                            payload["chunk_id"],
+                            payload["document_id"],
+                            payload["document_version_id"],
+                            payload["source_id"],
+                            embedding_literal,
+                            payload["dimensions"],
+                            payload["embedding_model"],
+                            payload["index_version"],
+                            payload["metadata"],
+                        ),
+                    )
+                self.sync_postgres.commit()
+            except Exception:
+                try:
+                    self.sync_postgres.rollback()
+                except Exception:
+                    pass
 
     def search_knowledge_vectors(
         self,
@@ -1788,62 +1849,63 @@ class InMemoryRepository:
         source_id: str | None = None,
         index_version: str | None = None,
     ) -> list[dict[str, Any]]:
-        self.configure_sync_postgres()
-        if self.sync_postgres is None or len(embedding) != OFFLINE_VECTOR_DIMENSIONS or not self.ensure_pgvector_schema():
-            return []
-        embedding_literal = "[" + ",".join(str(float(item)) for item in embedding) + "]"
-        filters = []
-        params: list[Any] = []
-        if source_id:
-            filters.append("source_id = %s")
-            params.append(source_id)
-        if index_version:
-            filters.append("index_version = %s")
-            params.append(index_version)
-        where = "WHERE " + " AND ".join(filters) if filters else ""
-        rows = self.sync_postgres.execute(
-            f"""
-            SELECT id, file_id, chunk_id, document_id, document_version_id, source_id,
-                   dimensions, embedding_model, index_version, metadata,
-                   embedding <=> %s::vector AS distance
-            FROM knowledge_vector_index
-            {where}
-            ORDER BY embedding <=> %s::vector
-            LIMIT %s
-            """,
-            (embedding_literal, *params, embedding_literal, int(top_k or 5)),
-        ).fetchall()
-        hits: list[dict[str, Any]] = []
-        for row in rows:
-            (
-                vector_id,
-                file_id,
-                chunk_id,
-                document_id,
-                document_version_id,
-                row_source_id,
-                dimensions,
-                embedding_model,
-                row_index_version,
-                metadata,
-                distance,
-            ) = row
-            hits.append(
-                {
-                    "id": vector_id,
-                    "fileId": file_id,
-                    "chunkId": chunk_id,
-                    "documentId": document_id,
-                    "documentVersionId": document_version_id,
-                    "sourceId": row_source_id,
-                    "dimensions": dimensions,
-                    "embeddingModel": embedding_model,
-                    "indexVersion": row_index_version,
-                    "metadata": json.loads(json.dumps(metadata, ensure_ascii=False, default=str)),
-                    "distance": float(distance) if distance is not None else None,
-                }
-            )
-        return hits
+        with self._sync_postgres_lock:
+            self.configure_sync_postgres()
+            if self.sync_postgres is None or len(embedding) != OFFLINE_VECTOR_DIMENSIONS or not self.ensure_pgvector_schema():
+                return []
+            embedding_literal = "[" + ",".join(str(float(item)) for item in embedding) + "]"
+            filters = []
+            params: list[Any] = []
+            if source_id:
+                filters.append("source_id = %s")
+                params.append(source_id)
+            if index_version:
+                filters.append("index_version = %s")
+                params.append(index_version)
+            where = "WHERE " + " AND ".join(filters) if filters else ""
+            rows = self.sync_postgres.execute(
+                f"""
+                SELECT id, file_id, chunk_id, document_id, document_version_id, source_id,
+                       dimensions, embedding_model, index_version, metadata,
+                       embedding <=> %s::vector AS distance
+                FROM knowledge_vector_index
+                {where}
+                ORDER BY embedding <=> %s::vector
+                LIMIT %s
+                """,
+                (embedding_literal, *params, embedding_literal, int(top_k or 5)),
+            ).fetchall()
+            hits: list[dict[str, Any]] = []
+            for row in rows:
+                (
+                    vector_id,
+                    file_id,
+                    chunk_id,
+                    document_id,
+                    document_version_id,
+                    row_source_id,
+                    dimensions,
+                    embedding_model,
+                    row_index_version,
+                    metadata,
+                    distance,
+                ) = row
+                hits.append(
+                    {
+                        "id": vector_id,
+                        "fileId": file_id,
+                        "chunkId": chunk_id,
+                        "documentId": document_id,
+                        "documentVersionId": document_version_id,
+                        "sourceId": row_source_id,
+                        "dimensions": dimensions,
+                        "embeddingModel": embedding_model,
+                        "indexVersion": row_index_version,
+                        "metadata": json.loads(json.dumps(metadata, ensure_ascii=False, default=str)),
+                        "distance": float(distance) if distance is not None else None,
+                    }
+                )
+            return hits
 
     def search_local_knowledge_vectors(
         self,
@@ -2128,3 +2190,29 @@ def flush_state() -> None:
     if not (repo.sqlite_enabled or repo.sqlite_path or os.getenv("AICHECK_SQLITE_PATH")):
         return
     repo.flush_to_sqlite()
+
+
+def flush_state_records(records_by_state_key: dict[str, list[dict[str, Any]]]) -> None:
+    records = {
+        state_key: [item for item in docs if isinstance(item, dict)]
+        for state_key, docs in records_by_state_key.items()
+        if docs
+    }
+    if not records:
+        return
+    if postgres_persistence_configured():
+        repo.upsert_state_records_to_sync_postgres(records)
+        return
+    if repo.sqlite_enabled or repo.sqlite_path or os.getenv("AICHECK_SQLITE_PATH"):
+        repo.flush_to_sqlite()
+
+
+def flush_idempotency_records(scopes: list[str]) -> None:
+    selected = [scope for scope in scopes if scope]
+    if not selected:
+        return
+    if postgres_persistence_configured():
+        repo.upsert_idempotency_records_to_sync_postgres(selected)
+        return
+    if repo.sqlite_enabled or repo.sqlite_path or os.getenv("AICHECK_SQLITE_PATH"):
+        repo.flush_to_sqlite()

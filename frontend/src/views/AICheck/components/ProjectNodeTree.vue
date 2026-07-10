@@ -227,7 +227,7 @@ const handleNodeCollapse = (data: ProjectTreeViewNode) => {
   align-items: center;
   justify-content: space-between;
   min-height: 32px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .tree-scroll {
@@ -243,7 +243,7 @@ const handleNodeCollapse = (data: ProjectTreeViewNode) => {
   width: 100%;
   padding: 8px 0;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   color: #475467;
   cursor: pointer;
   background: #fff;
@@ -348,7 +348,7 @@ const handleNodeCollapse = (data: ProjectTreeViewNode) => {
   width: 28px;
   height: 28px;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   color: #1d4ed8;
   background: #dbeafe;
   border-radius: 6px;
@@ -362,7 +362,7 @@ const handleNodeCollapse = (data: ProjectTreeViewNode) => {
   display: block;
   overflow: hidden;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -372,7 +372,7 @@ const handleNodeCollapse = (data: ProjectTreeViewNode) => {
   display: block;
   margin-top: 3px;
   overflow: hidden;
-  font-size: 11px;
+  font-size: 12px;
   color: #667085;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -24,6 +24,25 @@ MANUAL_STATUS_LABELS = {
 }
 
 
+def evidence_link_is_locatable(link: dict[str, Any]) -> bool:
+    bbox = link.get("bbox")
+    try:
+        bbox_valid = (
+            isinstance(bbox, (list, tuple))
+            and len(bbox) >= 4
+            and float(bbox[2]) > float(bbox[0])
+            and float(bbox[3]) > float(bbox[1])
+        )
+    except (TypeError, ValueError):
+        bbox_valid = False
+    return bool(
+        link.get("documentVersionId")
+        and link.get("pageNo") is not None
+        and bbox_valid
+        and str(link.get("quotedText") or link.get("fieldName") or "").strip()
+    )
+
+
 def stable_short_id(*parts: Any, length: int = 16) -> str:
     raw = "|".join(str(part or "") for part in parts)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:length].upper()
@@ -373,6 +392,11 @@ def score_review_point(
         score += 5
         reasons.append("文件名命中资料大类")
 
+    bound_node_ids = {int(item) for item in context.get("boundNodeIds") or [] if str(item).isdigit()}
+    if int(point.get("nodeId") or 0) in bound_node_ids:
+        score += 25
+        reasons.append("人工挂载节点一致")
+
     score = min(score, 100)
     confidence = round(score / 100, 4)
     material_hit = any(reason.startswith("标准资料类型") or "资料类型" in reason for reason in reasons)
@@ -520,6 +544,41 @@ def run_material_targeting(
     fields = repo.fields_for_versions({str(version_id)})
     points = review_points_for_project(repo, project)
     context = document_targeting_context(document, parse_result, fields)
+    context["boundNodeIds"] = sorted(
+        {
+            int(item.get("nodeId") or 0)
+            for item in repo.state.get("bindings", [])
+            if item.get("projectId") == project_id
+            and item.get("documentVersionId") == version_id
+            and int(item.get("nodeId") or 0) > 0
+        }
+    )
+    has_ocr_artifacts = bool(
+        parse_result
+        and str(parse_result.get("status") or "").lower() in {"success", "succeeded", "completed"}
+        and any(
+            isinstance(parse_result.get(key), list) and bool(parse_result.get(key))
+            for key in ("fields", "fragments", "tables", "seals")
+        )
+    )
+    if not has_ocr_artifacts:
+        waiting_run = {
+            "id": f"MTR-{uuid4().hex[:10].upper()}",
+            "projectId": project_id,
+            "documentId": document_id,
+            "documentVersionId": version_id,
+            "status": "awaiting_ocr_evidence",
+            "triggeredBy": triggered_by,
+            "candidateCount": 0,
+            "createdLinkCount": 0,
+            "createdBindingCount": 0,
+            "createdLinks": [],
+            "createdBindings": [],
+            "reason": "A successful OCR parse result with evidence artifacts is required before targeting.",
+            "createdAt": server_time(),
+        }
+        repo.state.setdefault("material_targeting_runs", []).insert(0, waiting_run)
+        return waiting_run
     previous_manual_state = {
         str(item.get("id")): {
             key: item.get(key)
@@ -691,6 +750,7 @@ def build_node_evidence_readiness(repo: Any, project_id: str, node_id: int) -> d
     satisfied_count = 0
     pending_count = 0
     rejected_count = 0
+    unlocatable_confirmed_count = 0
     for point in points:
         point_id = str(point.get("id") or "")
         point_links = sorted(
@@ -698,11 +758,16 @@ def build_node_evidence_readiness(repo: Any, project_id: str, node_id: int) -> d
             key=lambda item: float(item.get("confidence") or 0),
             reverse=True,
         )
-        confirmed_links = [
+        all_confirmed_links = [
             link
             for link in point_links
             if str(link.get("manualStatus") or MANUAL_PENDING) == MANUAL_CONFIRMED
         ]
+        confirmed_links = [link for link in all_confirmed_links if evidence_link_is_locatable(link)]
+        unlocatable_confirmed_links = [
+            link for link in all_confirmed_links if not evidence_link_is_locatable(link)
+        ]
+        unlocatable_confirmed_count += len(unlocatable_confirmed_links)
         rejected_links = [
             link
             for link in point_links
@@ -717,6 +782,8 @@ def build_node_evidence_readiness(repo: Any, project_id: str, node_id: int) -> d
         fulfilled = bool(confirmed_links)
         if fulfilled:
             evidence_review_status = MANUAL_STATUS_LABELS[MANUAL_CONFIRMED]
+        elif unlocatable_confirmed_links:
+            evidence_review_status = "已确认但不可定位"
         elif pending_links:
             evidence_review_status = MANUAL_STATUS_LABELS[MANUAL_PENDING]
             pending_count += 1
@@ -733,6 +800,7 @@ def build_node_evidence_readiness(repo: Any, project_id: str, node_id: int) -> d
             "supportStatus": SUPPORTED_STATUS if fulfilled else PARTIAL_STATUS if partial_links or pending_links else UNMATCHED_STATUS,
             "evidenceReviewStatus": evidence_review_status,
             "confirmedLinkCount": len(confirmed_links),
+            "unlocatableConfirmedLinkCount": len(unlocatable_confirmed_links),
             "pendingLinkCount": len(pending_links),
             "rejectedLinkCount": len(rejected_links),
             "fulfilled": fulfilled,
@@ -758,6 +826,8 @@ def build_node_evidence_readiness(repo: Any, project_id: str, node_id: int) -> d
                 "code": "NO_REVIEW_POINTS",
                 "message": "当前节点未配置必传审查点，AI 复核将仅生成通用核验或人工确认建议。",
                 "severity": "blocker",
+                "actionKey": "contact_fde",
+                "targetId": str(node_id),
             }
         )
     if pending_count:
@@ -767,6 +837,8 @@ def build_node_evidence_readiness(repo: Any, project_id: str, node_id: int) -> d
                 "message": "仍有候选证据未确认或不采用，AI 复核将把其作为待确认证据参考。",
                 "count": pending_count,
                 "severity": "blocker",
+                "actionKey": "review_evidence",
+                "targetId": str(node_id),
             }
         )
     if missing_count:
@@ -776,10 +848,33 @@ def build_node_evidence_readiness(repo: Any, project_id: str, node_id: int) -> d
                 "message": "仍有必传审查点缺少已确认资料证据，不能形成满足要求类结论。",
                 "count": missing_count,
                 "severity": "blocker",
+                "actionKey": "upload_missing_material",
+                "targetId": str(node_id),
             }
         )
-    ready_for_gap_precheck = bool(points) and pending_count == 0
-    ready_for_ai_formal = ready_for_gap_precheck and missing_count == 0
+    if unlocatable_confirmed_count:
+        blocking_reasons.append(
+            {
+                "code": "CONFIRMED_EVIDENCE_NOT_LOCATABLE",
+                "message": "存在已确认但缺少页码、bbox 或引用原文的证据，不能用于正式结论。",
+                "count": unlocatable_confirmed_count,
+                "severity": "blocker",
+                "actionKey": "review_ocr",
+                "targetId": str(node_id),
+            }
+        )
+    ready_for_gap_precheck = bool(points)
+    ready_for_ai_formal = ready_for_gap_precheck and pending_count == 0 and missing_count == 0
+    available_review_modes = ["gap_precheck"] if ready_for_gap_precheck else []
+    if ready_for_ai_formal:
+        available_review_modes.insert(0, "formal")
+    recommended_action = (
+        "run_formal_review"
+        if ready_for_ai_formal
+        else "run_gap_precheck"
+        if ready_for_gap_precheck
+        else "configure_review_points"
+    )
     return {
         "schemaVersion": "node-evidence-readiness-v1",
         "hasReviewPoints": bool(points),
@@ -788,11 +883,14 @@ def build_node_evidence_readiness(repo: Any, project_id: str, node_id: int) -> d
         "missingCount": missing_count,
         "pendingCount": pending_count,
         "rejectedCount": rejected_count,
+        "unlocatableConfirmedCount": unlocatable_confirmed_count,
         "progressPercent": progress_percent,
         "evidenceReviewComplete": bool(points) and pending_count == 0,
         "readyForAi": ready_for_ai_formal,
         "readyForAiFormal": ready_for_ai_formal,
         "readyForGapPrecheck": ready_for_gap_precheck,
+        "availableReviewModes": available_review_modes,
+        "recommendedAction": recommended_action,
         "blockingReasons": blocking_reasons,
         "requirements": rows,
         "missingRequirements": missing,

@@ -1,0 +1,130 @@
+from __future__ import annotations
+
+from typing import Any
+
+
+OCR_READY_STATUSES = {"ready"}
+OCR_RETRYABLE_STATUSES = {"failed", "incomplete", "inconsistent"}
+
+
+def _has_bbox(item: dict[str, Any]) -> bool:
+    bbox = item.get("bbox") or item.get("box") or item.get("boundingBox")
+    if not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
+        return False
+    try:
+        left, top, right, bottom = (float(value) for value in bbox[:4])
+    except (TypeError, ValueError):
+        return False
+    return right > left and bottom > top
+
+
+def _has_content(item: dict[str, Any]) -> bool:
+    for key in ("fieldValue", "value", "text", "content", "html"):
+        if str(item.get(key) or "").strip():
+            return True
+    rows = item.get("rows") or item.get("cells")
+    return isinstance(rows, list) and bool(rows)
+
+
+def _latest_parse_result(repo: Any, document_version_id: str | None) -> dict[str, Any] | None:
+    if not document_version_id:
+        return None
+    matches = [
+        item
+        for item in repo.state.get("ocr_parse_results", [])
+        if str(item.get("documentVersionId") or "") == str(document_version_id)
+    ]
+    if not matches:
+        return None
+    return max(
+        matches,
+        key=lambda item: str(item.get("finishedAt") or item.get("createdAt") or ""),
+    )
+
+
+def build_document_ocr_readiness(repo: Any, document: dict[str, Any]) -> dict[str, Any]:
+    document_version_id = str(document.get("currentVersionId") or "") or None
+    parse_result = _latest_parse_result(repo, document_version_id)
+    source_status = str(document.get("currentOcrStatus") or "")
+    field_rows = [item for item in (parse_result or {}).get("fields", []) if isinstance(item, dict) and _has_content(item)]
+    fragment_rows = [item for item in (parse_result or {}).get("fragments", []) if isinstance(item, dict) and _has_content(item)]
+    table_rows = [item for item in (parse_result or {}).get("tables", []) if isinstance(item, dict) and _has_content(item)]
+    seal_rows = [item for item in (parse_result or {}).get("seals", []) if isinstance(item, dict) and _has_content(item)]
+    evidence_rows = [*field_rows, *fragment_rows, *table_rows, *seal_rows]
+    positioned_count = len([item for item in evidence_rows if _has_bbox(item)])
+    bbox_coverage = round(positioned_count / len(evidence_rows), 4) if evidence_rows else 0.0
+    issues: list[dict[str, Any]] = []
+
+    if source_status in {"排队中"}:
+        status = "queued"
+    elif source_status in {"识别中"}:
+        status = "processing"
+    elif source_status in {"识别失败"}:
+        status = "failed"
+    elif not parse_result:
+        status = "inconsistent" if source_status in {"已识别", "人工修正"} else "not_started"
+        if status == "inconsistent":
+            issues.append(
+                {
+                    "code": "OCR_STATUS_WITHOUT_PARSE_RESULT",
+                    "message": "文件标记为已识别，但没有可追溯的 OCR parse result。",
+                    "actionKey": "retry_ocr",
+                    "targetId": document.get("id"),
+                }
+            )
+    elif str(parse_result.get("status") or "").lower() not in {"success", "succeeded", "completed"}:
+        status = "failed"
+        issues.append(
+            {
+                "code": "OCR_PARSE_RESULT_FAILED",
+                "message": "最近一次 OCR parse result 未成功完成。",
+                "actionKey": "retry_ocr",
+                "targetId": document.get("id"),
+            }
+        )
+    elif not evidence_rows:
+        status = "incomplete"
+        issues.append(
+            {
+                "code": "OCR_RESULT_HAS_NO_EVIDENCE",
+                "message": "OCR 已完成，但没有有效文字、字段、表格或印章产物。",
+                "actionKey": "retry_ocr",
+                "targetId": document.get("id"),
+            }
+        )
+    elif positioned_count == 0:
+        status = "incomplete"
+        issues.append(
+            {
+                "code": "OCR_EVIDENCE_HAS_NO_BBOX",
+                "message": "OCR 有文本产物，但没有可定位的 bbox，不能作为正式审计证据。",
+                "actionKey": "review_ocr",
+                "targetId": document.get("id"),
+            }
+        )
+    else:
+        status = "ready"
+
+    return {
+        "schemaVersion": "aicheck-ocr-readiness@1",
+        "status": status,
+        "artifactIntegrity": status == "ready",
+        "sourceStatus": source_status or None,
+        "documentVersionId": document_version_id,
+        "parseResultId": (parse_result or {}).get("parseResultId") or (parse_result or {}).get("id"),
+        "fieldCount": len(field_rows),
+        "fragmentCount": len(fragment_rows),
+        "tableCount": len(table_rows),
+        "sealCount": len(seal_rows),
+        "positionedEvidenceCount": positioned_count,
+        "bboxCoverage": bbox_coverage,
+        "blockingReasons": issues,
+        "retryable": status in OCR_RETRYABLE_STATUSES,
+        "finishedAt": (parse_result or {}).get("finishedAt"),
+    }
+
+
+def attach_document_ocr_readiness(repo: Any, document: dict[str, Any]) -> dict[str, Any]:
+    cloned = repo.clone(document)
+    cloned["ocrReadiness"] = build_document_ocr_readiness(repo, cloned)
+    return cloned

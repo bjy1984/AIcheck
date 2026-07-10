@@ -5490,6 +5490,22 @@ def test_frontend_route_groups_return_success() -> None:
         assert_ok(response)
 
 
+def test_node_standard_references_resolve_to_previewable_knowledge_files() -> None:
+    project_id = "P-2026-HDCP-001"
+    package = assert_ok(client.get(f"/api/projects/{project_id}/nodes/24/package"))
+    references = package["businessBasis"]["referencedStandards"]
+
+    assert references
+    assert all(item["sourceRelativePath"].startswith("rules/standards/") for item in references)
+    assert all(item["knowledgeFileId"].startswith("KF-") for item in references)
+    assert all(item["previewAvailable"] is True for item in references)
+    assert all(
+        item["previewUrl"]
+        == f"/api/knowledge/files/{item['knowledgeFileId']}/original?disposition=inline"
+        for item in references
+    )
+
+
 def test_submission_idempotency_replays_same_response() -> None:
     project_id = "P-2026-HDCP-001"
     payload = {
@@ -5836,13 +5852,29 @@ def test_review_opinion_requires_current_node_confirmed_evidence() -> None:
     assert saved["opinion"]["readinessSnapshot"]["readyForAiFormal"] is True
 
 
-def test_ai_recheck_dispatch_disabled_returns_local_review_output() -> None:
+def test_ai_recheck_dispatch_disabled_fails_closed_for_formal_and_allows_gap_summary() -> None:
     seed_reviewed_node_24()
     before_run_count = len(repo.state["ai_runs"])
+    before_status = repo.node("P-2026-HDCP-001", 24)["status"]
 
-    result = assert_ok(client.post("/projects/P-2026-HDCP-001/inspection/nodes/24/ai-recheck"))
+    formal = client.post(
+        "/projects/P-2026-HDCP-001/inspection/nodes/24/ai-recheck",
+        json={"reviewMode": "formal"},
+    )
+    assert formal.status_code == 409
+    assert repo.node("P-2026-HDCP-001", 24)["status"] == before_status
+    assert len(repo.state["ai_runs"]) == before_run_count
+
+    result = assert_ok(
+        client.post(
+            "/projects/P-2026-HDCP-001/inspection/nodes/24/ai-recheck",
+            json={"reviewMode": "gap_precheck"},
+        )
+    )
     latest_run = result["latestRun"]
 
+    assert result["advisoryOnly"] is True
+    assert result["reviewMode"] == "gap_precheck"
     assert result["dispatch"]["ready"] is False
     assert result["dispatch"]["mode"] == "local_disabled_fallback"
     assert result["status"] == "完成"
@@ -5852,7 +5884,7 @@ def test_ai_recheck_dispatch_disabled_returns_local_review_output() -> None:
     assert latest_run["llmMetadata"]["deepThinkAvailable"] is False
     assert "deepThink" not in latest_run["llmMetadata"]
     assert latest_run["llmResultText"] == latest_run["suggestion"]["opinionDraft"]
-    assert repo.node("P-2026-HDCP-001", 24)["status"] == "待人工确认"
+    assert repo.node("P-2026-HDCP-001", 24)["status"] == before_status
     assert len(repo.state["ai_runs"]) == before_run_count + 1
 
 

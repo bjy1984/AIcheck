@@ -17,7 +17,7 @@ providers:
     apiKeyEnv: QWEN_API_KEY
     defaultBaseUrl: https://dashscope.aliyuncs.com/compatible-mode/v1
     models:
-      review: qwen3.7-max
+      review: qwen3.7-plus
       default: qwen3.7-plus
       compareFast: qwen3.6-flash
       visionReview: qwen3.7-plus

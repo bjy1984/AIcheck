@@ -70,6 +70,7 @@ from libs.material_targeting import (
     run_material_targeting,
     set_node_evidence_link_manual_status,
 )
+from libs.ocr_readiness import attach_document_ocr_readiness, build_document_ocr_readiness
 from libs.qwen_runtime import qwen_runtime_public_config
 from libs.review_orchestrator import (
     REVIEW_GRAPH_STEPS,
@@ -79,11 +80,13 @@ from libs.review_orchestrator import (
     graph_view_for_review_run,
     human_decision_for_review_run,
     review_run_audit_trace,
+    review_run_state_records,
     review_run_timeline,
     review_run_view,
     signal_review_run_cancel,
     signal_review_run_human_decision,
 )
+from libs.runtime_readiness import production_runtime_status
 from libs.security.auth import (
     ROLE_DEFAULT_PATHS,
     USERS,
@@ -3251,6 +3254,75 @@ def business_rule_for_node(project: dict[str, Any] | None, node_id: int) -> dict
     return None
 
 
+def knowledge_file_for_standard_reference(reference: dict[str, Any]) -> dict[str, Any] | None:
+    referenced_file_id = str(reference.get("knowledgeFileId") or reference.get("fileId") or "").strip()
+    if referenced_file_id:
+        matched_by_id = repo.find_one("knowledge_files", resolve_knowledge_file_id(referenced_file_id))
+        if matched_by_id and not knowledge_file_is_business_rule(matched_by_id):
+            return matched_by_id
+    raw_path = str(reference.get("file") or reference.get("sourceRelativePath") or "").strip()
+    raw_name = str(reference.get("fileName") or "").strip()
+    normalized_path = raw_path.replace("\\", "/").lstrip("./")
+    file_name = Path(normalized_path).name if normalized_path else raw_name
+    standard_files = [
+        item
+        for item in repo.state.get("knowledge_files", [])
+        if not knowledge_file_is_business_rule(item)
+    ]
+    if normalized_path:
+        exact = next(
+            (
+                item
+                for item in standard_files
+                if str(item.get("sourceRelativePath") or "").replace("\\", "/").lstrip("./")
+                == normalized_path
+            ),
+            None,
+        )
+        if exact:
+            return exact
+    if not file_name:
+        return None
+    matches = [
+        item
+        for item in standard_files
+        if file_name
+        in {
+            str(item.get("fileName") or "").strip(),
+            str(item.get("originalFileName") or "").strip(),
+            Path(str(item.get("sourceRelativePath") or "")).name,
+        }
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def enrich_standard_reference(reference: dict[str, Any]) -> dict[str, Any]:
+    enriched = repo.clone(reference)
+    knowledge_file = knowledge_file_for_standard_reference(enriched)
+    source_path = str(
+        enriched.get("sourceRelativePath")
+        or enriched.get("file")
+        or (knowledge_file or {}).get("sourceRelativePath")
+        or ""
+    ).strip()
+    if source_path:
+        enriched["sourceRelativePath"] = source_path
+    if not knowledge_file:
+        enriched["previewAvailable"] = False
+        return enriched
+    file_id = str(knowledge_file.get("id") or "")
+    enriched.update(
+        {
+            "knowledgeFileId": file_id,
+            "fileName": enriched.get("fileName") or knowledge_file.get("fileName"),
+            "sourceRelativePath": knowledge_file.get("sourceRelativePath") or source_path,
+            "previewAvailable": bool(file_id and knowledge_file.get("documentId")),
+            "previewUrl": f"/api/knowledge/files/{quote(file_id, safe='')}/original?disposition=inline",
+        }
+    )
+    return enriched
+
+
 def node_business_basis(project: dict[str, Any] | None, node_id: int) -> dict[str, Any] | None:
     rule = business_rule_for_node(project, node_id)
     if not rule:
@@ -3273,7 +3345,11 @@ def node_business_basis(project: dict[str, Any] | None, node_id: int) -> dict[st
         "witnessText": rule.get("witnessText") or "",
         "materialTypeCodes": repo.clone(rule.get("materialTypeCodes") or []),
         "toolIds": repo.clone(rule.get("toolIds") or []),
-        "referencedStandards": repo.clone(rule.get("referencedStandards") or []),
+        "referencedStandards": [
+            enrich_standard_reference(item)
+            for item in rule.get("referencedStandards") or []
+            if isinstance(item, dict)
+        ],
         "aiExecution": {
             "schemaVersion": ai_execution.get("schemaVersion"),
             "sourceFields": repo.clone(ai_execution.get("sourceFields") or {}),
@@ -4396,7 +4472,7 @@ def node_package(request: Request, project_id: str, node_id: int):
         if record_visible_for_scope(binding, scope, project_id=effective_project_id)
     ]
     project_files = [
-        item
+        attach_document_ocr_readiness(repo, item)
         for item in repo.project_documents(effective_project_id)
         if document_visible_in_scope(item, scope)
     ]
@@ -4443,7 +4519,7 @@ def list_documents(request: Request, project_id: str, page_no: int = Query(defau
     scope = authorized_node_scope(request, project_id)
     effective_project_id = project_id
     items = [
-        item
+        attach_document_ocr_readiness(repo, item)
         for item in repo.project_documents(effective_project_id)
         if document_visible_in_scope(item, scope)
     ]
@@ -4709,7 +4785,7 @@ def document_detail(request: Request, project_id: str, document_id: str):
     original = project_document_original_payload(request, project_id, document)
     return ok(
         {
-            "document": repo.clone(document),
+            "document": attach_document_ocr_readiness(repo, document),
             "currentVersion": repo.current_version(document_id),
             "versions": versions,
             "bindings": [item for item in repo.bindings_for_project(document["projectId"]) if item["documentId"] == document_id],
@@ -5875,6 +5951,57 @@ def ai_recheck(
         except RuntimeError as exc:
             return fail(errors.VALIDATION_ERROR, request, message=str(exc))
         evidence_readiness = build_node_evidence_readiness(repo, project_id, node_id)
+        requested_review_mode = str(body.get("reviewMode") or "").strip().lower()
+        if requested_review_mode and requested_review_mode not in {"formal", "gap_precheck"}:
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="reviewMode 仅支持 formal 或 gap_precheck。",
+            )
+        if audit_runtime["mode"] == "pure_llm" and requested_review_mode == "formal":
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="pure_llm 只能用于缺项预审，不能发起正式 AI 复核。",
+                data={"evidenceReadiness": evidence_readiness, "advisoryOnly": True},
+                http_status=409,
+            )
+        review_mode = requested_review_mode
+        if not review_mode:
+            if audit_runtime["mode"] == "pure_llm":
+                review_mode = "gap_precheck"
+            elif evidence_readiness.get("readyForAiFormal"):
+                review_mode = "formal"
+            elif evidence_readiness.get("readyForGapPrecheck"):
+                review_mode = "gap_precheck"
+        if review_mode == "formal" and not evidence_readiness.get("readyForAiFormal"):
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="资料证据未满足正式 AI 复核条件，请先处理阻断项或使用缺项预审。",
+                data={"evidenceReadiness": evidence_readiness, "requestedReviewMode": review_mode},
+                http_status=409,
+            )
+        if review_mode == "gap_precheck" and not (
+            evidence_readiness.get("readyForGapPrecheck") or audit_runtime["mode"] == "pure_llm"
+        ):
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="当前节点没有可执行缺项预审的审查点，请联系 FDE 完成规则配置。",
+                data={"evidenceReadiness": evidence_readiness, "requestedReviewMode": review_mode},
+                http_status=409,
+            )
+        if not review_mode:
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="当前节点没有可用的 AI 复核模式。",
+                data={"evidenceReadiness": evidence_readiness},
+                http_status=409,
+            )
+        advisory_only = review_mode == "gap_precheck" or audit_runtime["mode"] == "pure_llm"
+        previous_node_status = str((node or {}).get("status") or "")
         node_evidence_links = [
             link
             for link in node_evidence_links_for_node(repo, project_id, node_id)
@@ -5901,12 +6028,22 @@ def ai_recheck(
             "model": "review-chat",
             "auditInputMode": audit_runtime["mode"],
             "auditRuntime": audit_runtime,
+            "reviewMode": review_mode,
+            "advisoryOnly": advisory_only,
+            "confidenceScale": "ratio",
             "promptVersion": f"node-{node_id}-v1",
             "ruleVersion": rule.get("version") or "ruleset-v1",
             "inputDocumentVersionIds": input_document_version_ids,
             "evidenceReadiness": evidence_readiness,
             "status": "推理中",
             "startedAt": server_time(),
+            "operationId": getattr(request.state, "operation_id", None),
+            "previousNodeStatus": previous_node_status,
+            "stateTransition": {
+                "from": previous_node_status,
+                "to": previous_node_status,
+                "reason": "gap_precheck_does_not_change_node_status" if advisory_only else "queued",
+            },
             "steps": [],
             "suggestion": {
                 "id": f"AIS-{uuid4().hex[:8].upper()}",
@@ -5921,6 +6058,18 @@ def ai_recheck(
         }
         dispatch_readiness = task_dispatcher.ai_recheck_dispatch_readiness()
         if not dispatch_readiness.get("ready"):
+            if review_mode == "formal":
+                return fail(
+                    errors.CONFLICT,
+                    request,
+                    message="正式 AI 复核调度不可用，节点状态未变更。",
+                    data={
+                        "dispatch": dispatch_readiness,
+                        "evidenceReadiness": evidence_readiness,
+                        "requestedReviewMode": review_mode,
+                    },
+                    http_status=409,
+                )
             complete_local_disabled_ai_run(
                 run,
                 node=node,
@@ -5929,13 +6078,23 @@ def ai_recheck(
                 rule=rule,
             )
             repo.state["ai_runs"].insert(0, run)
-            repo.set_node_status(project_id, node_id, "待人工确认")
             dispatch = {
                 **dispatch_readiness,
                 "mode": "local_disabled_fallback",
                 "result": "completed_without_external_dispatch",
             }
-            return ok({"runId": run_id, "status": run["status"], "latestRun": run, "dispatch": dispatch}, request)
+            return ok(
+                {
+                    "runId": run_id,
+                    "status": run["status"],
+                    "latestRun": run,
+                    "reviewMode": review_mode,
+                    "advisoryOnly": advisory_only,
+                    "stateTransition": run["stateTransition"],
+                    "dispatch": dispatch,
+                },
+                request,
+            )
         repo.state["ai_runs"].insert(0, run)
         dispatch = task_dispatcher.dispatch_ai_recheck(project_id, node_id, run_id)
         if not dispatch.get("taskId") and not dispatch.get("result") and not dispatch.get("reviewRunId") and not dispatch.get("workflowId"):
@@ -5949,12 +6108,38 @@ def ai_recheck(
                 message="AI 复核任务调度未创建可执行任务，节点状态未变更。",
                 data={"dispatch": dispatch, "latestRun": run},
             )
-        repo.set_node_status(project_id, node_id, "业务核验中")
+        dispatch.setdefault(
+            "statusReason",
+            "缺项预审已进入队列" if advisory_only else "正式 AI 复核已进入队列",
+        )
+        if dispatch.get("taskId"):
+            run["taskId"] = dispatch.get("taskId")
+        if not advisory_only:
+            repo.set_node_status(project_id, node_id, "业务核验中")
+            run["stateTransition"] = {
+                "from": previous_node_status,
+                "to": "业务核验中",
+                "reason": "formal_review_dispatched",
+            }
         if dispatch.get("reviewRunId"):
             run["reviewRunId"] = dispatch.get("reviewRunId")
         if dispatch.get("workflowId"):
             run["workflowId"] = dispatch.get("workflowId")
-        return ok({"runId": run_id, "status": run["status"], "latestRun": run, "dispatch": dispatch}, request)
+        review_run_id = str(run.get("reviewRunId") or "")
+        if review_run_id:
+            request.state.scoped_flush_records = lambda: review_run_state_records(review_run_id)
+        return ok(
+            {
+                "runId": run_id,
+                "status": run["status"],
+                "latestRun": run,
+                "reviewMode": review_mode,
+                "advisoryOnly": advisory_only,
+                "stateTransition": run["stateTransition"],
+                "dispatch": dispatch,
+            },
+            request,
+        )
 
     return idempotent(
         request,
@@ -5964,6 +6149,7 @@ def ai_recheck(
             "projectId": project_id,
             "nodeId": node_id,
             "auditInputMode": body.get("auditInputMode") or body.get("auditRuntimeMode"),
+            "reviewMode": body.get("reviewMode"),
         },
     )
 
@@ -6053,6 +6239,7 @@ def submit_review_run_human_decision(
         )
         result["reviewRun"]["temporalSignal"] = temporal_signal
         audit_id = repo.add_audit("提交 ReviewRun 人工确认", "ReviewRun", review_run_id)
+        request.state.scoped_flush_records = lambda: review_run_state_records(review_run_id)
         return ok(
             {
                 "reviewRun": review_run_view(result["reviewRun"]),
@@ -6081,9 +6268,26 @@ def cancel_review_run(
         run["status"] = "cancelled"
         run["cancelReason"] = body.get("reason") or "用户取消 ReviewRun"
         run["updatedAt"] = server_time()
+        if not run.get("advisoryOnly"):
+            previous_status = str(run.get("previousNodeStatus") or "待人工确认")
+            repo.set_node_status(
+                str(run.get("projectId")),
+                int(run.get("nodeId") or 0),
+                previous_status,
+            )
+            run["stateTransition"] = {
+                "from": "业务核验中",
+                "to": previous_status,
+                "reason": "formal_review_cancelled_restored_previous_status",
+            }
+        ai_run = repo.find_one("ai_runs", str(run.get("aiRunId") or ""))
+        if ai_run:
+            ai_run["status"] = "已取消"
+            ai_run["stateTransition"] = repo.clone(run.get("stateTransition") or {})
         temporal_signal = signal_review_run_cancel(run, run["cancelReason"])
         run["temporalSignal"] = temporal_signal
         audit_id = repo.add_audit("取消 ReviewRun", "ReviewRun", review_run_id)
+        request.state.scoped_flush_records = lambda: review_run_state_records(review_run_id)
         return ok({"reviewRun": review_run_view(run), "temporalSignal": temporal_signal, "auditLogId": audit_id}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"reviewRunId": review_run_id, "body": body})
@@ -6106,6 +6310,8 @@ def rerun_review_run(
             return fail(errors.FORBIDDEN, request)
         child = clone_review_run_for_replay(parent, run_mode="diagnostic_replay", reason=body.get("reason") or "业务端请求重跑")
         audit_id = repo.add_audit("业务端请求 ReviewRun 重跑", "ReviewRun", child["reviewRunId"])
+        child_review_run_id = str(child["reviewRunId"])
+        request.state.scoped_flush_records = lambda: review_run_state_records(child_review_run_id)
         return ok({"reviewRun": review_run_view(child), "auditLogId": audit_id}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"reviewRunId": review_run_id, "body": body})
@@ -6302,7 +6508,8 @@ def standards(request: Request, project_id: str, node_id: int):
     for clause in retrieval["trace"]["selectedClauses"]:
         section_path = clause.get("sectionPath") or []
         standards_payload.append(
-            {
+            enrich_standard_reference(
+                {
                 "clauseId": clause.get("clauseId"),
                 "standardName": section_path[0] if section_path else clause.get("kbDocId") or STANDARD_LIBRARY_SOURCE_NAME,
                 "clauseNo": clause.get("clauseNo"),
@@ -6310,7 +6517,11 @@ def standards(request: Request, project_id: str, node_id: int):
                 "summary": compact_plain_text(clause.get("text"), 180),
                 "effectiveVersion": clause.get("kbVersion") or STANDARD_RULES_VERSION,
                 "evidenceLinkId": clause.get("sourceEvidenceLinkId") or clause.get("id"),
-            }
+                    "knowledgeFileId": clause.get("fileId") or clause.get("knowledgeFileId"),
+                    "sourceRelativePath": clause.get("sourceRelativePath"),
+                    "fileName": clause.get("fileName"),
+                }
+            )
         )
     return ok(standards_payload, request)
 
@@ -11702,6 +11913,7 @@ def fde_project_technology_stack(vector_quality: dict[str, Any] | None = None) -
     review_llm_execution = fde_runtime_env_value("AICHECK_REVIEW_LLM_EXECUTION", "litellm")
     task_dispatch = fde_runtime_env_value("AICHECK_TASK_DISPATCH", "celery")
     vector_quality_score = (vector_quality or {}).get("score")
+    runtime_readiness = production_runtime_status()
     return {
         "schemaVersion": "FdeTechnologyStack@1.0.0",
         "updatedAt": server_time(),
@@ -11715,6 +11927,7 @@ def fde_project_technology_stack(vector_quality: dict[str, Any] | None = None) -
         "embeddingModelRegistry": embedding_registry_payload(),
         "qwenRuntime": qwen_runtime,
         "auditRuntime": audit_runtime,
+        "runtimeReadiness": runtime_readiness,
         "active": {
             "embedding": {
                 "component": "资料向量化模型",
@@ -11831,8 +12044,17 @@ def fde_project_technology_stack(vector_quality: dict[str, Any] | None = None) -
                 "primary": f"{review_orchestration} + LangGraph",
                 "secondary": f"dispatch={task_dispatch}",
                 "detail": "ReviewRun、图节点、人工确认和 FDE replay 可追踪",
-                "status": "active",
-                "tone": "green",
+                "status": "active" if runtime_readiness["workflowSchemaReady"] else "blocked",
+                "tone": "green" if runtime_readiness["workflowSchemaReady"] else "red",
+            },
+            {
+                "key": "material-mapping",
+                "title": "资料映射",
+                "primary": runtime_readiness.get("materialMappingVersion") or "未加载",
+                "secondary": f"{runtime_readiness.get('materialMappingCount') or 0} 个审查点",
+                "detail": "运行资产 hash 与业务包版本可追溯",
+                "status": "active" if runtime_readiness["materialMappingReady"] else "blocked",
+                "tone": "green" if runtime_readiness["materialMappingReady"] else "red",
             },
             {
                 "key": "storage",
@@ -11848,7 +12070,7 @@ def fde_project_technology_stack(vector_quality: dict[str, Any] | None = None) -
 
 
 def fde_project_document_audit_view(document: dict[str, Any]) -> dict[str, Any]:
-    item = repo.clone(document)
+    item = attach_document_ocr_readiness(repo, document)
     version_id = str(item.get("currentVersionId") or "")
     project = repo.find_one("projects", item.get("projectId")) or {}
     knowledge_file = next(
@@ -13857,6 +14079,8 @@ def fde_replay_review_run(
             return fail(errors.VALIDATION_ERROR, request, message="FDE ReviewRun 重跑类型不支持。", data={"allowedTypes": sorted(FDE_REPLAY_TYPES)})
         child = clone_review_run_for_replay(parent, run_mode=run_type, reason=body.get("reason"))
         audit_id = repo.add_audit("FDE 创建 ReviewRun 重跑", "ReviewRun", child["reviewRunId"])
+        child_review_run_id = str(child["reviewRunId"])
+        request.state.scoped_flush_records = lambda: review_run_state_records(child_review_run_id)
         return ok({"reviewRun": review_run_view(child), "auditLogId": audit_id}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"reviewRunId": review_run_id, "body": body})

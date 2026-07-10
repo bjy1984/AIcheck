@@ -162,7 +162,7 @@ const alertType = computed(() => {
   align-items: center;
   justify-content: space-between;
   min-height: 32px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .panel-subtitle {
@@ -200,7 +200,7 @@ const alertType = computed(() => {
 .section-title {
   margin: 16px 0 8px;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 @media (width <= 1280px) {

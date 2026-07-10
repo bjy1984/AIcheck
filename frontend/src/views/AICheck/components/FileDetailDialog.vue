@@ -14,6 +14,7 @@ import {
 import { getDocumentOriginalBlobApi } from '@/api/aicheck'
 import type { DocumentDetailPayload } from '@/api/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
+import { formatConfidence } from '@/utils/confidence'
 import { getStatusTagType } from './status'
 
 const props = defineProps<{
@@ -35,6 +36,19 @@ const visible = computed({
 
 const document = computed(() => props.detail?.document)
 const currentVersion = computed(() => props.detail?.currentVersion)
+const ocrReadiness = computed(() => props.detail?.document?.ocrReadiness)
+const ocrReadinessLabel = computed(() => {
+  const labels: Record<string, string> = {
+    not_started: '待处理',
+    queued: '排队中',
+    processing: '处理中',
+    ready: '证据就绪',
+    incomplete: '抽取不完整',
+    inconsistent: '状态异常',
+    failed: '处理失败'
+  }
+  return labels[String(ocrReadiness.value?.status || '')] || '等待产物校验'
+})
 const bindings = computed(() => props.detail?.bindings || [])
 const extractedFields = computed(() => props.detail?.extractedFields || [])
 const evidenceLinks = computed(() => props.detail?.evidenceLinks || [])
@@ -134,8 +148,7 @@ onBeforeUnmount(() => {
 })
 
 const confidenceText = (confidence?: number) => {
-  if (typeof confidence !== 'number') return '-'
-  return `${Math.round(confidence * 100)}%`
+  return formatConfidence(confidence)
 }
 </script>
 
@@ -229,6 +242,16 @@ const confidenceText = (confidence?: number) => {
           </div>
 
           <div class="detail-side">
+            <ElAlert
+              v-if="ocrReadiness && ocrReadiness.status !== 'ready'"
+              :title="`OCR ${ocrReadinessLabel}`"
+              :description="
+                ocrReadiness.blockingReasons?.[0]?.message || '当前文件暂不能作为可定位的正式证据。'
+              "
+              type="warning"
+              :closable="false"
+              show-icon
+            />
             <ElDescriptions :column="1" border>
               <ElDescriptionsItem label="文件状态">
                 <ElTag :type="getStatusTagType(document.fileStatus)" size="small" effect="plain">
@@ -236,9 +259,20 @@ const confidenceText = (confidence?: number) => {
                 </ElTag>
               </ElDescriptionsItem>
               <ElDescriptionsItem label="OCR 状态">
-                <ElTag :type="getStatusTagType(document.currentOcrStatus)" size="small">
-                  {{ document.currentOcrStatus }}
+                <ElTag
+                  :type="ocrReadiness?.status === 'ready' ? 'success' : 'warning'"
+                  size="small"
+                >
+                  {{ ocrReadinessLabel }}
                 </ElTag>
+              </ElDescriptionsItem>
+              <ElDescriptionsItem label="OCR 产物">
+                {{ ocrReadiness?.fieldCount || 0 }} 字段 ·
+                {{ ocrReadiness?.fragmentCount || 0 }} 片段 · bbox
+                {{ Math.round((ocrReadiness?.bboxCoverage || 0) * 100) }}%
+              </ElDescriptionsItem>
+              <ElDescriptionsItem label="Parse Result">
+                {{ ocrReadiness?.parseResultId || '-' }}
               </ElDescriptionsItem>
               <ElDescriptionsItem label="当前版本">
                 {{ currentVersion?.versionNo || '-' }}
@@ -314,7 +348,7 @@ const confidenceText = (confidence?: number) => {
   max-width: 620px;
   overflow-wrap: anywhere;
   font-size: 18px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 26px;
   color: #1f2937;
 }
@@ -351,7 +385,7 @@ const confidenceText = (confidence?: number) => {
   display: flex;
   height: 42px;
   padding: 0 12px;
-  font-weight: 700;
+  font-weight: 600;
   background: #f8fafc;
   border-bottom: 1px solid #e5e7eb;
   gap: 10px;
@@ -431,7 +465,7 @@ const confidenceText = (confidence?: number) => {
 .section-title {
   margin: 16px 0 8px;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 @media (width <= 768px) {

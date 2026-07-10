@@ -1,0 +1,147 @@
+{
+  "schemaVersion": "aicheck-audit-findings@1",
+  "auditId": "AUDIT-FE-BE-20260710",
+  "summary": {"P0": 2, "P1": 6, "P2": 5, "P3": 1},
+  "findings": [
+    {
+      "id": "AUTH-001",
+      "severity": "P0",
+      "title": "伪造 dev-token 可提升为管理员",
+      "area": "backend-auth",
+      "reproduction": ["启用 AICHECK_REQUIRE_AUTH=true 并关闭 demo users", "准备一个低权限持久用户 auditlow", "以 Authorization: dev-token-auditlow-admin 请求 /admin/users", "请求被接受且 role claim 被视为 admin"],
+      "evidence": ["backend/libs/security/auth.py:172", "backend/apps/api/main.py:52"],
+      "impact": "知道任一有效用户名即可自声明任意角色，绕过 JWT 签名和权限模型。",
+      "recommendation": "生产模式完全拒绝 dev-token；仅在显式测试配置且非生产环境允许。中间件必须以持久用户角色为准，并增加角色变更后的 token 失效策略。"
+    },
+    {
+      "id": "DEP-001",
+      "severity": "P0",
+      "title": "生产依赖图存在 critical/high 漏洞",
+      "area": "supply-chain",
+      "reproduction": ["对 frontend production dependencies 执行 pnpm audit --prod --json", "对 backend 虚拟环境执行 pip-audit"],
+      "evidence": ["frontend/package.json:45", "frontend/package.json:53", "frontend/package.json:64", "backend/.venv package inventory"],
+      "impact": "前端发现 1 critical、27 high；后端发现 17 个漏洞，涉及 aiohttp、LiteLLM、python-dotenv、ecdsa，其中 LiteLLM 包含鉴权绕过和权限提升风险。",
+      "recommendation": "升级并锁定修复版本，重新生成 lockfile/SBOM，复跑依赖审计并将 critical/high=0 设为发布门槛。"
+    },
+    {
+      "id": "AUTH-002",
+      "severity": "P1",
+      "title": "新用户默认密码等于用户名且可明文回退",
+      "area": "identity",
+      "reproduction": ["管理员创建用户时不输入初始密码", "前端提交 username 作为 password", "后端缺少密码时存储 plain:<username>"],
+      "evidence": ["frontend/src/views/AICheck/AdminOverview.vue:2018", "frontend/src/views/AICheck/AdminOverview.vue:4816", "backend/apps/api/routes.py:2866"],
+      "impact": "可预测凭据和明文兼容路径降低账户安全，容易形成批量接管。",
+      "recommendation": "初始密码改为强随机一次性凭据或邀请流程，禁止 plain 存储，首次登录强制改密。"
+    },
+    {
+      "id": "AUTH-003",
+      "severity": "P1",
+      "title": "生产可访问 mock 用户接口并泄露 passwordHash",
+      "area": "identity",
+      "reproduction": ["启用认证并关闭 demo users", "不带 token 请求 /mock/user/list", "响应公开且包含 passwordHash"],
+      "evidence": ["backend/apps/api/routes.py:3582", "frontend/src/views/Login/components/LoginForm.vue:178"],
+      "impact": "公开账户元数据与密码散列，同时生产登录页暴露测试账户和密码模式。",
+      "recommendation": "生产构建和运行时移除 mock router；统一通过 public_user 脱敏；生产登录页不渲染测试账号提示。"
+    },
+    {
+      "id": "SEC-004",
+      "severity": "P1",
+      "title": "CORS 允许任意来源携带凭据且登录无速率限制证据",
+      "area": "api-security",
+      "reproduction": ["检查 FastAPI CORSMiddleware 配置", "搜索登录和鉴权路径的限流中间件"],
+      "evidence": ["backend/apps/api/main.py:40"],
+      "impact": "扩大跨站请求和凭据滥用面，暴力尝试没有可验证的服务端抑制。",
+      "recommendation": "使用环境化可信 origin allowlist；生产禁止 wildcard+credentials；对登录、刷新和敏感写操作增加分层限流与审计告警。"
+    },
+    {
+      "id": "AUDIT-001",
+      "severity": "P1",
+      "title": "现有部署报告未覆盖鉴权旁路和依赖安全",
+      "area": "release-gates",
+      "reproduction": ["运行 strict static deployment report", "报告 35/35 通过", "单独鉴权探针仍可复现 AUTH-001 和 AUTH-003"],
+      "evidence": ["audit-reports/frontend-backend-20260710/deployment-static/report.json"],
+      "impact": "发布门禁可能在存在 P0 安全问题时给出通过结论。",
+      "recommendation": "把伪造 token、生产 mock 路由、弱密码、CORS、依赖 critical/high、secret scan 纳入 strict-production 硬门槛。"
+    },
+    {
+      "id": "PIPE-001",
+      "severity": "P1",
+      "title": "缺少当前提交的生产型端到端写探针和故障恢复证据",
+      "area": "pipeline",
+      "reproduction": ["检查可用环境", "本地 API 使用 SQLite、无认证、无 Postgres/MinIO/Temporal", "未提供已轮换的预发布凭据和端点"],
+      "evidence": ["audit-reports/frontend-backend-20260710/live-local-readonly/report.json"],
+      "impact": "无法证明上传到归档、远程 OCR、任务重试、对象存储不可变和服务故障时的生产行为。",
+      "recommendation": "在隔离预发布执行全链路写探针与 Redis/worker/OCR/LLM/Temporal/MinIO 故障注入，保存 operationId 到 archive manifest 的完整 trace。"
+    },
+    {
+      "id": "DEP-002",
+      "severity": "P1",
+      "title": "LiteLLM 使用 main-latest 镜像，部署不可复现",
+      "area": "supply-chain",
+      "reproduction": ["检查 docker-compose LiteLLM image"],
+      "evidence": ["backend/docker-compose.yml:332"],
+      "impact": "同一提交可部署不同依赖内容，无法可靠回滚或证明漏洞修复状态。",
+      "recommendation": "锁定经过审计的不可变 digest，生成镜像 SBOM 和签名，并在 CI 验证 digest。"
+    },
+    {
+      "id": "FE-READINESS-001",
+      "severity": "P2",
+      "title": "顶栏操作未绑定与面板一致的 readiness",
+      "area": "frontend-flow",
+      "reproduction": ["以 inspection 打开零证据节点，面板 AI 复核禁用但顶栏重新核验可点击", "以 ndt 打开零报告场景，面板提交禁用但顶栏提交检测资料可点击"],
+      "evidence": ["frontend/src/views/AICheck/Workbench.vue:3400", "frontend/src/views/AICheck/Workbench.vue:3421", "frontend/src/views/AICheck/components/NdtWorkflowPanel.vue:505"],
+      "impact": "用户会进入可预见的 409/失败 toast，增加误操作和重复请求。后端仍能 fail closed。",
+      "recommendation": "统一从单一 readiness selector 派生所有重复入口的 disabled、tooltip 和下一步提示。"
+    },
+    {
+      "id": "FE-E2E-001",
+      "severity": "P2",
+      "title": "管理员项目页存在两个同名新建项目控件",
+      "area": "frontend-e2e",
+      "reproduction": ["运行完整 Playwright smoke", "admin 项目向导用 role+name 定位 新建项目", "严格模式发现两个匹配并失败"],
+      "evidence": ["frontend/e2e/aicheck-smoke.spec.ts:1216", "frontend/test-results/aicheck-smoke-AIcheck-busi-0692f-rd-and-opens-project-detail-chromium/test-failed-1.png"],
+      "impact": "完整 E2E 非全绿，同名动作增加自动化和辅助技术歧义。",
+      "recommendation": "明确唯一主操作或使用作用域清晰的 accessible name，并补重复控件断言。"
+    },
+    {
+      "id": "FE-A11Y-001",
+      "severity": "P2",
+      "title": "操作台存在对比度、触控尺寸和控件命名问题",
+      "area": "frontend-accessibility",
+      "reproduction": ["浏览器采样 inspection/NDT 操作台", "检查可见交互元素尺寸、accessible name 和 WCAG 对比度"],
+      "evidence": ["49 个可见交互元素中多项高度低于 44px", "5 个可见交互元素缺少可访问名称", "189 个文本样本中 41 个对比度未达 AA"],
+      "impact": "现场弱光、小屏和键盘/辅助技术使用时可读性与操作准确性下降。",
+      "recommendation": "建立 44px 触控基线，补 label/aria-label，调整 muted/orange/placeholder 颜色，并把 axe/对比度检查纳入 E2E。"
+    },
+    {
+      "id": "FE-RUNTIME-001",
+      "severity": "P2",
+      "title": "运行时存在路由、弃用和客户端 token 持久化风险",
+      "area": "frontend-runtime",
+      "reproduction": ["打开操作台并检查 console", "观察 /workbench/inspection 无路由匹配和 Element Plus pagination small 弃用警告", "检查 Pinia store 配置"],
+      "evidence": ["frontend/src/store/modules/user.ts:95"],
+      "impact": "警告掩盖真实异常；localStorage 中的长期 token 会放大 XSS 后果。",
+      "recommendation": "修正重定向路由和弃用 API；采用 httpOnly secure cookie 或最小化客户端持久化，并配置 CSP。"
+    },
+    {
+      "id": "ARCH-001",
+      "severity": "P2",
+      "title": "单体页面和全状态持久化增加并发与维护风险",
+      "area": "architecture",
+      "reproduction": ["统计 routes.py、Workbench、AdminOverview、FdeConsole 体量", "检查 PostgreSQL repository 的全状态 JSONB flush 模式"],
+      "evidence": ["backend/apps/api/routes.py", "backend/libs/db/postgres.py", "frontend/src/views/AICheck/Workbench.vue"],
+      "impact": "多 worker 下可能发生陈旧状态覆盖，大文件降低审查和回归定位效率。",
+      "recommendation": "按领域拆分路由/状态，关键实体采用行级事务、版本列和约束，压测多 worker 并发写。"
+    },
+    {
+      "id": "BUILD-001",
+      "severity": "P3",
+      "title": "前端构建存在数据陈旧、eval 与大包警告",
+      "area": "frontend-build",
+      "reproduction": ["执行 production build", "检查构建警告和输出资产"],
+      "evidence": ["caniuse-lite 19 个月未更新", "mockjs eval warning", "ts.worker 约 6MB、CodeEditor 约 3.36MB、CSS 约 2.05MB"],
+      "impact": "首屏和缓存效率可能受影响，生产包包含 mock 依赖信号。",
+      "recommendation": "更新 Browserslist 数据，确保 production tree-shake mockjs，按路由/编辑器拆包并设置 bundle budget。"
+    }
+  ]
+}

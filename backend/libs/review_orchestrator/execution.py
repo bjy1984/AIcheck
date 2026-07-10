@@ -10,7 +10,7 @@ from uuid import uuid4
 from libs.business_pack import DEFAULT_BUSINESS_PACK_ID, build_ai_review_prompt, load_business_pack, matching_rule_for_node
 from libs.contracts.responses import server_time
 from libs.audit_runtime import audit_runtime_config, audit_runtime_for_run, audit_runtime_public_config
-from libs.db.repository import repo
+from libs.db.repository import flush_state_records, repo
 from libs.integrations.errors import IntegrationServiceError
 from libs.integrations.litellm_client import LiteLLMClient, production_mode_enabled
 from libs.knowledge_retrieval import retrieve_knowledge_clauses
@@ -130,6 +130,45 @@ def review_task_queues() -> dict[str, str]:
     }
 
 
+def review_run_state_records(review_run_id: str) -> dict[str, list[dict[str, Any]]]:
+    review_run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one(
+        "review_runs", review_run_id
+    )
+    if not review_run:
+        return {}
+    ai_run_id = str(review_run.get("aiRunId") or "")
+    project_id = str(review_run.get("projectId") or "")
+    node_id = int(review_run.get("nodeId") or 0)
+    records: dict[str, list[dict[str, Any]]] = {"review_runs": [review_run]}
+    for collection in REVIEW_STATE_COLLECTIONS:
+        if collection == "review_runs":
+            continue
+        records[collection] = [
+            item
+            for item in repo.state.get(collection, [])
+            if str(item.get("reviewRunId") or "") == review_run_id
+        ]
+    records["ai_runs"] = [
+        item for item in repo.state.get("ai_runs", []) if ai_run_id and str(item.get("id") or "") == ai_run_id
+    ]
+    records["ai_trace_steps"] = [
+        item
+        for item in repo.state.get("ai_trace_steps", [])
+        if ai_run_id and str(item.get("aiRunId") or "") == ai_run_id
+    ]
+    records["review_findings"] = [
+        item
+        for item in repo.state.get("review_findings", [])
+        if str(item.get("reviewRunId") or "") == review_run_id
+    ]
+    records["tree_nodes"] = [
+        item
+        for item in repo.state.get("tree_nodes", [])
+        if str(item.get("projectId") or "") == project_id and int(item.get("nodeId") or 0) == node_id
+    ]
+    return records
+
+
 def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "temporal") -> dict[str, Any]:
     ensure_review_state()
     existing_id = ai_run.get("reviewRunId")
@@ -159,6 +198,12 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
         "modelGateway": "qwen_runtime",
         "auditInputMode": audit_runtime["mode"],
         "auditRuntime": audit_runtime,
+        "reviewMode": ai_run.get("reviewMode") or "formal",
+        "advisoryOnly": bool(ai_run.get("advisoryOnly")),
+        "confidenceScale": "ratio",
+        "operationId": ai_run.get("operationId"),
+        "previousNodeStatus": ai_run.get("previousNodeStatus"),
+        "stateTransition": repo.clone(ai_run.get("stateTransition") or {}),
         "ruleSetVersion": ai_run.get("ruleVersion") or "ruleset-v1",
         "kbVersion": ai_run.get("knowledgeBaseVersion") or "inspection_kb@1.0.0",
         "ocrResultVersions": ai_run.get("ocrResultVersions") or [],
@@ -210,6 +255,9 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
         status="queued",
         details={"aiRunId": ai_run["id"], "workflowId": workflow_id},
     )
+    # Temporal may schedule the worker before the API response middleware runs.
+    # Persist the run and its graph first so the worker can load it cross-process.
+    flush_state_records(review_run_state_records(review_run_id))
     return record
 
 
@@ -411,6 +459,22 @@ def execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
                 }
                 for node in graph_nodes_for_review_run(review_run_id)
             ]
+        if not review_run.get("advisoryOnly"):
+            previous_status = str(review_run.get("previousNodeStatus") or "")
+            repo.set_node_status(
+                str(review_run.get("projectId")),
+                int(review_run.get("nodeId") or 0),
+                "待人工确认",
+            )
+            transition = {
+                "from": "业务核验中",
+                "to": "待人工确认",
+                "reason": "formal_review_waiting_human_review",
+                "previousStableStatus": previous_status or None,
+            }
+            review_run["stateTransition"] = transition
+            if ai_run:
+                ai_run["stateTransition"] = repo.clone(transition)
         return {"reviewRunId": review_run_id, "status": review_run["status"]}
     except Exception as exc:
         review_run["status"] = "failed"
@@ -422,6 +486,21 @@ def execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
             ai_run["status"] = "失败"
             ai_run["errorCode"] = "AI_RUN_FAILED"
             ai_run["errorMessage"] = "Temporal/LangGraph 审查编排执行失败。"
+        if not review_run.get("advisoryOnly"):
+            previous_status = str(review_run.get("previousNodeStatus") or "待人工确认")
+            repo.set_node_status(
+                str(review_run.get("projectId")),
+                int(review_run.get("nodeId") or 0),
+                previous_status,
+            )
+            transition = {
+                "from": "业务核验中",
+                "to": previous_status,
+                "reason": "formal_review_failed_restored_previous_status",
+            }
+            review_run["stateTransition"] = transition
+            if ai_run:
+                ai_run["stateTransition"] = repo.clone(transition)
         return {"reviewRunId": review_run_id, "status": "failed", "errorMessage": str(exc)}
 
 
@@ -905,6 +984,8 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
             model=str(review_run.get("modelAlias") or "review-chat"),
             temperature=0.1,
             response_format={"type": "json_object"},
+            max_tokens=max(256, int(os.getenv("AICHECK_QWEN_REVIEW_MAX_TOKENS", "1600"))),
+            timeout=max(30.0, float(os.getenv("AICHECK_QWEN_REVIEW_TIMEOUT_SECONDS", "180"))),
         )
     except IntegrationServiceError:
         raise
@@ -1004,6 +1085,8 @@ def bounded_confidence(value: Any, *, default: float) -> float:
         numeric = float(value)
     except (TypeError, ValueError):
         return default
+    if 1 < numeric <= 100:
+        numeric /= 100
     return max(0.0, min(1.0, numeric))
 
 
@@ -2012,6 +2095,8 @@ def clone_review_run_for_replay(
             "reviewRunId": child_id,
             "parentReviewRunId": parent.get("reviewRunId") or parent.get("id"),
             "runMode": run_mode,
+            "reviewMode": "gap_precheck" if run_mode != "production" else parent.get("reviewMode", "formal"),
+            "advisoryOnly": True if run_mode != "production" else bool(parent.get("advisoryOnly")),
             "status": "queued",
             "currentStep": "created",
             "workflowId": f"review-run-{child_id}",

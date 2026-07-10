@@ -15,8 +15,29 @@ body,
 
 .admin-page,
 .knowledge-page,
-.aicheck-static-viewport {
-  --aicheck-bg: #eef3f8;
+.aicheck-static-viewport,
+.fde-console,
+.generic-workbench {
+  --aicheck-font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei',
+    'Noto Sans CJK SC', Arial, sans-serif;
+  --aicheck-font-size-page: 24px;
+  --aicheck-font-size-section: 18px;
+  --aicheck-font-size-card: 16px;
+  --aicheck-font-size-body: 14px;
+  --aicheck-font-size-label: 13px;
+  --aicheck-font-size-meta: 12px;
+  --aicheck-font-weight-regular: 400;
+  --aicheck-font-weight-medium: 500;
+  --aicheck-font-weight-semibold: 600;
+  --aicheck-font-weight-bold: 700;
+  --aicheck-line-height-page: 32px;
+  --aicheck-line-height-section: 26px;
+  --aicheck-line-height-card: 24px;
+  --aicheck-line-height-body: 22px;
+  --aicheck-line-height-meta: 18px;
+  --aicheck-control-height: 36px;
+  --aicheck-control-height-primary: 40px;
+  --aicheck-bg: #f4f7fb;
   --aicheck-bg-soft: #f4f7fb;
   --aicheck-surface: #ffffff;
   --aicheck-surface-soft: #f8fbff;
@@ -30,6 +51,22 @@ body,
   --aicheck-shadow-md: 0 14px 32px rgb(15 23 42 / 9%);
   --aicheck-active-bg: #edf5ff;
   --aicheck-hover-bg: #f6faff;
+  --aicheck-text-strong: #172033;
+  --aicheck-text: #26364e;
+  --aicheck-text-muted: #52647d;
+  --aicheck-text-subtle: #667085;
+  --aicheck-primary: #1f66d8;
+  --aicheck-primary-strong: #174fa8;
+  --aicheck-success: #087443;
+  --aicheck-success-bg: #ecfdf3;
+  --aicheck-warning: #8a4b00;
+  --aicheck-warning-bg: #fff7e6;
+  --aicheck-danger: #b42318;
+  --aicheck-danger-bg: #fef3f2;
+  --aicheck-disabled-text: #667085;
+  --aicheck-disabled-bg: #f2f4f7;
+  --aicheck-disabled-border: #d0d5dd;
+  --aicheck-focus-ring: 0 0 0 3px rgb(31 102 216 / 22%);
   --el-color-primary: #1f66d8;
   --el-color-primary-light-3: #4d89ef;
   --el-color-primary-light-5: #8fb0df;
@@ -37,6 +74,14 @@ body,
   --el-color-primary-light-8: #d8e7ff;
   --el-color-primary-light-9: #eef5ff;
   --el-color-primary-dark-2: #174fa8;
+  --el-color-success: #087443;
+  --el-color-success-light-9: #ecfdf3;
+  --el-color-warning: #8a4b00;
+  --el-color-warning-light-9: #fff7e6;
+  --el-color-danger: #b42318;
+  --el-color-danger-light-9: #fef3f2;
+  --el-color-info: #475467;
+  --el-color-info-light-9: #f2f4f7;
   --el-bg-color: var(--aicheck-surface);
   --el-bg-color-page: var(--aicheck-bg);
   --el-border-color: var(--aicheck-border);
@@ -48,29 +93,151 @@ body,
   --el-font-size-base: 14px;
   --el-text-color-primary: #26364e;
   --el-text-color-regular: #52647d;
-  --el-text-color-secondary: #6e7d92;
+  --el-text-color-secondary: #667085;
+  --el-text-color-placeholder: #667085;
+  --el-text-color-disabled: var(--aicheck-disabled-text);
+  --el-disabled-text-color: var(--aicheck-disabled-text);
+  --el-disabled-bg-color: var(--aicheck-disabled-bg);
+  --el-disabled-border-color: var(--aicheck-disabled-border);
   --el-fill-color: var(--aicheck-surface-muted);
   --el-fill-color-light: var(--aicheck-surface-muted);
   --el-fill-color-lighter: var(--aicheck-surface-soft);
   --el-fill-color-blank: var(--aicheck-surface);
+
+  font-family: var(--aicheck-font-family);
+  font-size: var(--aicheck-font-size-body);
+  font-weight: var(--aicheck-font-weight-regular);
+  line-height: var(--aicheck-line-height-body);
+  color: var(--aicheck-text);
 }
 
-.admin-page .el-button,
-.knowledge-page .el-button,
-.aicheck-static-viewport .el-button {
-  font-weight: 700;
+:where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
+  :where(.el-button, .el-tabs__item, .el-table th.el-table__cell) {
+  font-weight: var(--aicheck-font-weight-semibold);
+  letter-spacing: 0;
+}
+
+:where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
+  :where(button, .el-button, [role='button']) {
+  min-width: 32px !important;
+  min-height: var(--aicheck-control-height) !important;
+}
+
+:where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench) a {
+  display: inline-flex;
+  min-width: 32px;
+  min-height: 32px;
+  align-items: center;
+}
+
+:where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
+  :where(.section-tools, .metric-label, .peer-nav-title, .peer-nav-title small) {
+  color: var(--aicheck-text-muted) !important;
+}
+
+:where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
+  :where(.pill.green, .pill-green) {
+  color: var(--aicheck-success) !important;
+  background: var(--aicheck-success-bg) !important;
+  border-color: #75c69d !important;
+}
+
+:where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
+  :where(.pill.orange, .pill-orange) {
+  color: var(--aicheck-warning) !important;
+  background: var(--aicheck-warning-bg) !important;
+  border-color: #d97706 !important;
+}
+
+:where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
+  :where(.pill.red, .pill-red) {
+  color: var(--aicheck-danger) !important;
+  background: var(--aicheck-danger-bg) !important;
+  border-color: #d92d20 !important;
+}
+
+:where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
+  h1 {
+  font-size: var(--aicheck-font-size-page);
+  font-weight: var(--aicheck-font-weight-bold) !important;
+  line-height: var(--aicheck-line-height-page);
+  letter-spacing: 0;
+}
+
+:where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
+  h2 {
+  font-size: var(--aicheck-font-size-section);
+  font-weight: var(--aicheck-font-weight-semibold);
+  line-height: var(--aicheck-line-height-section);
+  letter-spacing: 0;
+}
+
+:where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
+  h3 {
+  font-size: var(--aicheck-font-size-card);
+  font-weight: var(--aicheck-font-weight-semibold);
+  line-height: var(--aicheck-line-height-card);
+  letter-spacing: 0;
+}
+
+:where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
+  strong {
+  font-weight: var(--aicheck-font-weight-semibold);
+}
+
+:where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
+  small {
+  font-size: var(--aicheck-font-size-meta) !important;
+  color: var(--aicheck-text-muted);
+}
+
+:where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
+  :where(
+    .metric-value,
+    .kpi-value,
+    .score-value,
+    [class*='metric-value'],
+    [class*='kpi-value'],
+    [class*='score-value']
+  ) {
+  font-weight: var(--aicheck-font-weight-bold) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+:where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
+  :where(.sub, .page-subtitle, .helper-text) {
+  font-weight: var(--aicheck-font-weight-regular);
+}
+
+:where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
+  :where(.el-button.is-link, .el-button.is-text) {
+  min-width: 44px;
+  min-height: 32px;
+  padding: 6px 8px;
+}
+
+:where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
+  :where(.el-button.is-disabled, .el-button.is-disabled:hover, .el-button.is-disabled:focus) {
+  color: var(--aicheck-disabled-text) !important;
+  opacity: 1;
+  background: var(--aicheck-disabled-bg) !important;
+  border-color: var(--aicheck-disabled-border) !important;
 }
 
 .admin-page .el-button:focus-visible,
 .knowledge-page .el-button:focus-visible,
-.aicheck-static-viewport .el-button:focus-visible {
+.aicheck-static-viewport .el-button:focus-visible,
+.fde-console .el-button:focus-visible,
+.generic-workbench .el-button:focus-visible {
   outline: 0;
-  box-shadow: 0 0 0 3px rgba(31, 102, 216, 0.14);
+  box-shadow: var(--aicheck-focus-ring);
 }
 
 .admin-page .el-table,
 .knowledge-page .el-table,
-.aicheck-static-viewport .el-table {
+.aicheck-static-viewport .el-table,
+.fde-console .el-table,
+.generic-workbench .el-table {
   --el-table-border-color: var(--aicheck-border-soft);
   --el-table-header-bg-color: var(--aicheck-surface-muted);
   --el-table-header-text-color: #52647d;
@@ -83,7 +250,9 @@ body,
 
 .admin-page .el-card,
 .knowledge-page .el-card,
-.aicheck-static-viewport .el-card {
+.aicheck-static-viewport .el-card,
+.fde-console .el-card,
+.generic-workbench .el-card {
   --el-card-border-radius: 8px;
   --el-card-border-color: var(--aicheck-border);
   --el-card-bg-color: var(--aicheck-surface);
@@ -91,25 +260,57 @@ body,
   box-shadow: var(--aicheck-shadow-sm);
 }
 
-.admin-page .el-tabs__item,
-.knowledge-page .el-tabs__item {
-  font-weight: 700;
-}
-
 .admin-page .el-tabs__nav-wrap::after,
 .knowledge-page .el-tabs__nav-wrap::after,
-.aicheck-static-viewport .el-tabs__nav-wrap::after {
+.aicheck-static-viewport .el-tabs__nav-wrap::after,
+.fde-console .el-tabs__nav-wrap::after,
+.generic-workbench .el-tabs__nav-wrap::after {
   background-color: var(--aicheck-border-soft);
 }
 
 .admin-page .el-dialog,
 .knowledge-page .el-dialog,
 .aicheck-static-viewport .el-dialog,
+.fde-console .el-dialog,
+.generic-workbench .el-dialog,
 .admin-page .el-drawer,
 .knowledge-page .el-drawer,
-.aicheck-static-viewport .el-drawer {
+.aicheck-static-viewport .el-drawer,
+.fde-console .el-drawer,
+.generic-workbench .el-drawer {
   border: 1px solid var(--aicheck-border);
   box-shadow: var(--aicheck-shadow-md);
+}
+
+:where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
+  .el-alert--warning.is-light {
+  color: var(--aicheck-warning);
+  background: var(--aicheck-warning-bg);
+  border: 1px solid #d97706;
+}
+
+:where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
+  .el-alert--danger.is-light {
+  color: var(--aicheck-danger);
+  background: var(--aicheck-danger-bg);
+  border: 1px solid #d92d20;
+}
+
+:where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
+  :where(.el-alert__title, .el-alert__description) {
+  color: inherit;
+}
+
+:where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
+  :where(.el-tag--warning, .el-step__head.is-wait) {
+  color: var(--aicheck-warning);
+  border-color: #d97706;
+}
+
+:where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
+  :where(.el-tag--danger, .el-step__head.is-error) {
+  color: var(--aicheck-danger);
+  border-color: #d92d20;
 }
 
 @media (max-width: 768px) {
@@ -124,5 +325,27 @@ body,
     left: 0 !important;
     width: 100% !important;
     transition: none !important;
+  }
+
+  :where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
+    :where(.el-input__inner, .el-select__input, textarea) {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 900px) {
+  :where(.admin-page, .knowledge-page, .aicheck-static-viewport, .fde-console, .generic-workbench)
+    :where(
+      button,
+      a,
+      [role='button'],
+      [role='treeitem'],
+      .el-button,
+      .el-input__wrapper,
+      .el-select__wrapper,
+      .el-pagination button
+    ) {
+    min-width: 44px !important;
+    min-height: 44px !important;
   }
 }

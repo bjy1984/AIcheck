@@ -1,0 +1,8 @@
+services:
+  api-service:
+    volumes:
+      - ${AICHECK_RULES_HOST_PATH:-../rules}:/rules:ro
+
+  worker-service:
+    volumes:
+      - ${AICHECK_RULES_HOST_PATH:-../rules}:/rules:ro

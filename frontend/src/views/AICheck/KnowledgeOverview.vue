@@ -5122,7 +5122,7 @@ onMounted(() => {
 
 .page-title {
   font-size: 27px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1.2;
   color: #172033;
 }
@@ -5157,7 +5157,7 @@ onMounted(() => {
   min-height: 46px;
   padding: 0 14px;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   color: #172033;
   list-style: none;
   cursor: pointer;
@@ -5170,7 +5170,7 @@ onMounted(() => {
 .secondary-summary-collapse summary::after {
   flex: 0 0 auto;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   color: #2563eb;
   content: '展开';
 }
@@ -5183,7 +5183,7 @@ onMounted(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   color: #64748b;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5285,7 +5285,7 @@ onMounted(() => {
   gap: 12px;
   align-items: center;
   justify-content: space-between;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .panel-header.compact {
@@ -5296,7 +5296,7 @@ onMounted(() => {
 .subsection-title {
   margin-bottom: 10px;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   color: #344054;
 }
 
@@ -5588,7 +5588,7 @@ onMounted(() => {
   display: grid;
   min-height: 54px;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   color: #667085;
   background: #f8fafc;
   border: 1px dashed #cbd5e1;
@@ -5619,7 +5619,7 @@ onMounted(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
   color: #344054;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5640,7 +5640,7 @@ onMounted(() => {
 .source-upload-field > span,
 .source-upload-meta {
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   color: #667085;
 }
 

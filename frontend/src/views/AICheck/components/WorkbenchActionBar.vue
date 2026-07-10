@@ -10,6 +10,7 @@ const props = defineProps<{
   readOnly: boolean
   aiRecheckDisabled?: boolean
   aiRecheckDisabledReason?: string
+  aiRecheckLabel?: string
 }>()
 
 const emit = defineEmits<{
@@ -79,10 +80,10 @@ const hasAction = (action: ActionCode) => actionSet.value.has(action)
       v-if="canReview && hasAction('ai:recheck')"
       :disabled="aiRecheckDisabled"
       :loading="loading"
-      :title="aiRecheckDisabled ? aiRecheckDisabledReason : '发起正式 AI 复核'"
+      :title="aiRecheckDisabled ? aiRecheckDisabledReason : aiRecheckLabel || '发起 AI 复核'"
       @click="emit('aiRecheck')"
     >
-      AI 复核
+      {{ aiRecheckLabel || 'AI 复核' }}
     </ElButton>
   </div>
 </template>

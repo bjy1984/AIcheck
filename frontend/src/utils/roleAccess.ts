@@ -2,6 +2,16 @@ import type { RoleCode } from '@/types/aicheck'
 
 export type AicheckRole = RoleCode | 'test'
 
+export const AICHECK_ROLE_LABELS: Record<AicheckRole, string> = {
+  inspection: '监检人员',
+  contractor: '施工方',
+  ndt: '无损检测机构',
+  owner: '建设单位',
+  admin: '系统管理员',
+  fde: 'FDE 工程师',
+  test: '测试人员'
+}
+
 export const ROLE_DEFAULT_PATHS: Record<AicheckRole, string> = {
   inspection: '/workbench/inspection',
   contractor: '/workbench/contractor',
@@ -24,6 +34,12 @@ const roleValues: AicheckRole[] = [
 
 export const normalizeAicheckRole = (role?: string): AicheckRole => {
   return roleValues.includes(role as AicheckRole) ? (role as AicheckRole) : 'inspection'
+}
+
+export const getAicheckRoleLabel = (role?: string, fallback = '-') => {
+  const value = String(role || '').trim()
+  if (!value) return fallback
+  return AICHECK_ROLE_LABELS[value.toLowerCase() as AicheckRole] || value
 }
 
 export const getRoleDefaultPath = (role?: string): string => {

@@ -172,7 +172,11 @@ class QwenRuntimeClient:
                     json={"model": model, "messages": messages, **kwargs},
                 )
         except httpx.HTTPError as exc:
-            raise IntegrationServiceError("Qwen official API", "chat.completions", reason=exc.__class__.__name__) from exc
+            raise IntegrationServiceError(
+                "Qwen official API",
+                "chat.completions",
+                reason=exc.__class__.__name__.upper(),
+            ) from exc
         if response.status_code >= 400:
             reason = None
             try:

@@ -580,17 +580,17 @@ onBeforeUnmount(() => {
   --shadow-xs: var(--aicheck-shadow-xs, 0 1px 2px rgb(20 34 56 / 5%));
   --shadow-sm: var(--aicheck-shadow-sm, 0 6px 16px rgb(15 23 42 / 6%));
   --shadow-md: var(--aicheck-shadow-md, 0 14px 32px rgb(15 23 42 / 9%));
-  --ink: #172033;
-  --muted: #6a7890;
-  --blue: #1f66d8;
-  --blue-2: #0c56c2;
-  --blue-soft: #eaf3ff;
-  --green: #14a36b;
-  --green-soft: #eaf8f1;
-  --orange: #ff8a00;
-  --orange-soft: #fff4e3;
-  --red: #ff4d3d;
-  --red-soft: #fff0ee;
+  --ink: var(--aicheck-text-strong, #172033);
+  --muted: var(--aicheck-text-muted, #52647d);
+  --blue: var(--aicheck-primary, #1f66d8);
+  --blue-2: var(--aicheck-primary-strong, #174fa8);
+  --blue-soft: var(--aicheck-active-bg, #edf5ff);
+  --green: var(--aicheck-success, #087443);
+  --green-soft: var(--aicheck-success-bg, #ecfdf3);
+  --orange: var(--aicheck-warning, #8a4b00);
+  --orange-soft: var(--aicheck-warning-bg, #fff7e6);
+  --red: var(--aicheck-danger, #b42318);
+  --red-soft: var(--aicheck-danger-bg, #fef3f2);
 
   width: 100%;
   height: 100dvh;
@@ -616,7 +616,7 @@ onBeforeUnmount(() => {
   z-index: 7000;
   padding: 9px 12px;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   color: #0c56c2;
   text-decoration: none;
   pointer-events: none;
@@ -683,7 +683,7 @@ onBeforeUnmount(() => {
   display: grid;
   width: 30px;
   height: 30px;
-  font-weight: 800;
+  font-weight: 600;
   color: #fff;
   background: linear-gradient(180deg, #4b86ff, #1761d2);
   border-radius: 8px;
@@ -694,7 +694,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   font-size: 25px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1.1;
   color: var(--ink);
   text-overflow: ellipsis;
@@ -709,7 +709,7 @@ onBeforeUnmount(() => {
   min-height: 24px;
   padding: 3px 8px;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1;
   white-space: nowrap;
   border: 1px solid transparent;
@@ -765,7 +765,7 @@ onBeforeUnmount(() => {
   padding: 0 16px;
   margin: 0;
   font-weight: 600;
-  color: #8b98aa;
+  color: var(--muted);
   text-align: left;
   cursor: pointer;
   background: var(--panel-soft);
@@ -822,7 +822,7 @@ onBeforeUnmount(() => {
   min-height: 34px;
   padding: 0 4px;
   font: inherit;
-  font-weight: 700;
+  font-weight: 600;
   color: inherit;
   white-space: nowrap;
   background: transparent;
@@ -856,7 +856,7 @@ onBeforeUnmount(() => {
   --el-button-hover-text-color: var(--blue-2);
 
   min-height: 40px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .notice-dot {
@@ -866,9 +866,9 @@ onBeforeUnmount(() => {
   padding: 0 6px;
   margin-left: 2px;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   color: #fff;
-  background: #ef3f3b;
+  background: var(--red);
   border-radius: 999px;
   align-items: center;
   justify-content: center;
@@ -901,7 +901,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   min-height: 40px;
   padding: 0 8px 0 4px;
-  font-weight: 700;
+  font-weight: 600;
   color: inherit;
   cursor: pointer;
   background: transparent;
@@ -1040,7 +1040,7 @@ onBeforeUnmount(() => {
   height: 44px;
   padding: 0 18px;
   font-size: 18px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .section-tools {
@@ -1065,13 +1065,13 @@ onBeforeUnmount(() => {
   min-height: 22px;
   padding: 0 4px;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   color: #6a7890;
 }
 
 .peer-nav-title small {
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   color: #8a98ad;
 }
 
@@ -1084,7 +1084,7 @@ onBeforeUnmount(() => {
   min-height: 30px;
   padding: 5px 6px;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   color: #304158;
   text-align: left;
   cursor: pointer;
@@ -1153,7 +1153,7 @@ onBeforeUnmount(() => {
   min-height: 17px;
   padding: 2px 4px;
   overflow: hidden;
-  font-size: 9.5px;
+  font-size: 12px;
   text-overflow: ellipsis;
 }
 
@@ -1216,7 +1216,7 @@ onBeforeUnmount(() => {
   min-height: 34px;
   padding: 6px 8px;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   color: #40536d;
   cursor: pointer;
   background: linear-gradient(180deg, #fff, #f6f9fd);
@@ -1258,7 +1258,8 @@ onBeforeUnmount(() => {
 }
 
 .tree-filter-toggle small {
-  color: #6e7d92;
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .tree-filter {
@@ -1274,8 +1275,8 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 30px;
   padding: 6px 7px;
-  font-size: 11.5px;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 600;
   color: #52627a;
   cursor: pointer;
   background: #fff;
@@ -1324,7 +1325,7 @@ onBeforeUnmount(() => {
   padding: 18px;
   margin: 8px 18px 16px;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.6;
   color: #64748b;
   text-align: center;
@@ -1446,7 +1447,7 @@ onBeforeUnmount(() => {
 
 .tree-root,
 .tree-group {
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .tree-root {
@@ -1539,8 +1540,8 @@ onBeforeUnmount(() => {
   min-height: 22px;
   padding: 2px 6px;
   overflow: hidden;
-  font-size: 11px;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 600;
   color: #415876;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1563,8 +1564,8 @@ onBeforeUnmount(() => {
   min-height: 21px;
   padding: 2px 6px;
   overflow: hidden;
-  font-size: 10.5px;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 600;
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1670,7 +1671,7 @@ onBeforeUnmount(() => {
 .tree-node .pill {
   min-height: 18px;
   padding: 2px 5px;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .tree-node:hover,
@@ -1685,7 +1686,7 @@ onBeforeUnmount(() => {
 
 .tree-node.active,
 .tree-node.is-active {
-  font-weight: 800;
+  font-weight: 600;
   color: var(--blue-2);
   background: linear-gradient(180deg, #eff6ff, #e8f1ff);
   border-color: #bad2f7;
@@ -1715,8 +1716,8 @@ onBeforeUnmount(() => {
 .tree-label-wrap small {
   min-width: 0;
   overflow: hidden;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
   line-height: 1.25;
   color: #718096;
   text-overflow: ellipsis;
@@ -1745,7 +1746,7 @@ onBeforeUnmount(() => {
   width: 100%;
   min-height: 44px;
   padding: 0 18px;
-  font-weight: 800;
+  font-weight: 600;
   color: #172033;
   cursor: pointer;
   background: var(--panel);
@@ -1772,8 +1773,8 @@ onBeforeUnmount(() => {
 
 .node-file-head-actions small {
   font-size: 12px;
-  font-weight: 800;
-  color: #6e7d92;
+  font-weight: 600;
+  color: var(--muted);
 }
 
 .center {
@@ -1825,7 +1826,7 @@ onBeforeUnmount(() => {
 .right-panel-close {
   flex: 0 0 auto;
   min-height: 36px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .right-title {
@@ -1836,7 +1837,7 @@ onBeforeUnmount(() => {
 
 .preview-name {
   margin-bottom: 12px;
-  font-weight: 800;
+  font-weight: 600;
   color: #26364e;
 }
 
@@ -1889,7 +1890,7 @@ onBeforeUnmount(() => {
 }
 
 .table th {
-  font-weight: 900;
+  font-weight: 600;
   color: #485a73;
   background: var(--head);
 }
@@ -1957,7 +1958,7 @@ onBeforeUnmount(() => {
 
 .time-row strong {
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 600;
   color: var(--ink);
 }
 
@@ -1987,7 +1988,7 @@ onBeforeUnmount(() => {
 
 .readonly-mask {
   padding: 12px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1.6;
   color: #6b2b24;
   background: var(--red-soft);

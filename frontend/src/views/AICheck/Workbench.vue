@@ -13,10 +13,14 @@ import {
   ElMessageBox,
   ElOption,
   ElPagination,
+  ElRadioButton,
+  ElRadioGroup,
   ElSelect,
   ElTable,
-  ElTableColumn
+  ElTableColumn,
+  ElTreeV2
 } from 'element-plus'
+import { Document, FolderOpened, View } from '@element-plus/icons-vue'
 import {
   adoptAiSuggestionApi,
   archiveReportApi,
@@ -116,6 +120,7 @@ import type {
 } from '@/types/aicheck'
 import { getAicheckErrorMessage, getLatestAicheckBusinessError } from '@/utils/aicheckError'
 import { buildNdtSubmitBlockers, pendingNdtFilms, pendingNdtReports } from '@/utils/ndtReadiness'
+import { getAicheckRoleLabel } from '@/utils/roleAccess'
 
 type InspectionNodeSortKey = 'review' | 'nodeId' | 'material'
 type SortDirection = 'asc' | 'desc'
@@ -184,10 +189,12 @@ import WorkbenchRoleStaticSections from './components/WorkbenchRoleStaticSection
 import WorkbenchRightStaticDetails from './components/WorkbenchRightStaticDetails.vue'
 import WorkbenchSidePanel from './components/WorkbenchSidePanel.vue'
 import WorkbenchStateBanner from './components/WorkbenchStateBanner.vue'
+import AuditWorkflowProgress from './components/AuditWorkflowProgress.vue'
 import { useUserStore } from '@/store/modules/user'
+import { formatConfidence } from '@/utils/confidence'
 
 type PreviewDrawerTarget = {
-  source: 'node' | 'file' | 'report' | 'archive'
+  source: 'node' | 'file' | 'standard' | 'report' | 'archive'
   title: string
   url?: string
   meta?: string
@@ -212,6 +219,37 @@ type OperationBlocker = {
   title: string
   message?: string
   reasons: string[]
+}
+type AiReviewMode = 'formal' | 'gap_precheck'
+type AuditWorkflowStage = {
+  key: string
+  label: string
+  status: 'completed' | 'active' | 'blocked' | 'pending' | 'failed'
+  metric: string
+  detail: string
+  actionKey?: string
+  actionLabel?: string
+}
+type StandardReferenceItem = {
+  reference: string
+  file?: string
+  fileName?: string
+  knowledgeFileId?: string
+  sourceRelativePath?: string
+  previewAvailable?: boolean
+  previewUrl?: string
+}
+type StandardReferenceTreeNode = {
+  id: string
+  label: string
+  kind: 'root' | 'group' | 'file'
+  reference?: string
+  fileName?: string
+  sourceRelativePath?: string
+  knowledgeFileId?: string
+  previewAvailable?: boolean
+  previewUrl?: string
+  children?: StandardReferenceTreeNode[]
 }
 
 type DocumentUploadTarget = UploadSessionPayload['uploadUrls'][number]
@@ -376,17 +414,20 @@ const todos = computed(() => summary.value?.todos || [])
 const messages = computed(() => summary.value?.messages || [])
 const selectedNode = computed<ProjectTreeNode | undefined>(() => nodePackage.value?.node)
 const bindings = computed(() => nodePackage.value?.bindings || [])
+const nodeScopedFiles = computed(() => {
+  const documentIds = new Set(bindings.value.map((binding) => binding.documentId))
+  return (nodePackage.value?.projectFiles || []).filter((file) => documentIds.has(file.id))
+})
 const extractedFields = computed(() => nodePackage.value?.extractedFields || [])
 const rectifications = computed(() => nodePackage.value?.rectifications || [])
 const reviewOpinions = computed(() => nodePackage.value?.reviewOpinions || [])
 const latestAiRun = computed(() => nodePackage.value?.aiRuns[0])
 const aiRecheckOutputVisible = ref(false)
+const mobileTreeOpen = ref(false)
 const aiRecheckRunOverride = ref<AiReviewRun>()
 const aiRecheckOutputError = ref('')
-const getAiMetadataText = (
-  metadata: Record<string, unknown> | undefined,
-  keys: string[]
-) => {
+const selectedAiReviewMode = ref<AiReviewMode>('formal')
+const getAiMetadataText = (metadata: Record<string, unknown> | undefined, keys: string[]) => {
   for (const key of keys) {
     const value = metadata?.[key]
     if (typeof value === 'string' && value.trim()) return value.trim()
@@ -446,9 +487,7 @@ const aiRecheckResultText = computed(() => {
     run?.llmResultText?.trim() ||
     getAiMetadataText(metadata, ['resultText', 'answer', 'content']) ||
     run?.suggestion?.opinionDraft ||
-    (actionLoading.value && aiRecheckOutputVisible.value
-      ? '正在等待模型输出。'
-      : '暂无模型输出。')
+    (actionLoading.value && aiRecheckOutputVisible.value ? '正在等待模型输出。' : '暂无模型输出。')
   )
 })
 const aiRecheckOutputMeta = computed(() => {
@@ -499,17 +538,39 @@ const readyForGapPrecheck = computed(() => {
   const readiness = evidenceReadiness.value
   if (!readiness) return false
   if (typeof readiness.readyForGapPrecheck === 'boolean') return readiness.readyForGapPrecheck
-  return Boolean(readiness.evidenceReviewComplete || readiness.pendingCount === 0)
+  return Boolean(readiness.hasReviewPoints)
 })
+const availableAiReviewModes = computed<AiReviewMode[]>(() => {
+  const declared = evidenceReadiness.value?.availableReviewModes
+  if (declared?.length) return declared
+  const modes: AiReviewMode[] = []
+  if (readyForAiFormal.value) modes.push('formal')
+  if (readyForGapPrecheck.value) modes.push('gap_precheck')
+  return modes
+})
+const selectedAiReviewModeLabel = computed(() =>
+  selectedAiReviewMode.value === 'formal' ? '正式复核' : '缺项预审'
+)
 const aiRecheckDisabledReason = computed(() => {
   if (role.value !== 'inspection') return ''
   if (isReadOnly.value) return '当前项目只读，不能发起 AI 复核。'
   if (!availableActions.value.includes('ai:recheck')) return '当前节点未开放 AI 复核动作。'
-  if (readyForAiFormal.value) return ''
-  if (readyForGapPrecheck.value && readinessBlockingReasons.value.length) {
-    return `仅可作为缺项预审：${readinessBlockingReasons.value.join('；')}`
+  if (selectedAiReviewMode.value === 'formal') {
+    if (readyForAiFormal.value) return ''
+    return readinessBlockingReasons.value.join('；') || '资料证据未满足正式 AI 复核条件。'
   }
-  return readinessBlockingReasons.value.join('；') || '资料证据未满足正式 AI 复核条件。'
+  if (readyForGapPrecheck.value) return ''
+  return readinessBlockingReasons.value.join('；') || '当前节点没有可执行缺项预审的审查点。'
+})
+const aiRecheckButtonLabel = computed(() =>
+  selectedAiReviewMode.value === 'formal' ? '发起正式复核' : '运行缺项预审'
+)
+const aiReviewModeHint = computed(() => {
+  if (selectedAiReviewMode.value === 'gap_precheck') {
+    return '缺项预审只生成补充资料建议，不改变节点正式审查状态。'
+  }
+  if (readyForAiFormal.value) return '正式复核完成后进入待人工确认，AI 不会自动通过节点。'
+  return '正式复核需要必传资料齐全且所有候选证据已确认。'
 })
 const reviewSaveDisabledReason = computed(() => {
   if (role.value !== 'inspection') return ''
@@ -533,10 +594,13 @@ const reportGenerateDisabledReason = computed(() => {
   const opinion = latestReviewOpinion.value
   if (!opinion) return '生成报告前必须先保存人工审查意见。'
   if (!opinion.evidenceLinkIds?.length) return '人工审查意见缺少 confirmed 证据引用。'
-  if (opinion.evidenceValidation && !opinion.evidenceValidation.passed) {
+  if (opinion.evidenceValidation?.passed !== true) {
     return (
-      opinion.evidenceValidation.message || '人工审查意见的证据引用未通过 confirmed-only 校验。'
+      opinion.evidenceValidation?.message || '人工审查意见的证据引用未通过 confirmed-only 校验。'
     )
+  }
+  if (opinion.result === '满足要求' && opinion.readinessSnapshot?.readyForAiFormal !== true) {
+    return '人工审查意见缺少正式 readiness 快照，需重新校验证据后生成报告。'
   }
   return ''
 })
@@ -877,6 +941,183 @@ const workbenchAuditCards = computed<AuditSummaryCard[]>(() => {
     }
   ]
 })
+const auditWorkflowStages = computed<AuditWorkflowStage[]>(() => {
+  const files = nodeScopedFiles.value
+  const ocrReadyCount = files.filter((file) => file.ocrReadiness?.status === 'ready').length
+  const ocrIssueCount = files.filter((file) =>
+    ['failed', 'incomplete', 'inconsistent'].includes(file.ocrReadiness?.status || '')
+  ).length
+  const aiRun = latestAiRun.value
+  const aiRunning = aiRun?.status === '推理中'
+  const historicalFormalRun = Boolean(
+    aiRun && aiRun.reviewMode !== 'gap_precheck' && !readyForAiFormal.value
+  )
+  const latestReviewOpinion = reviewOpinions.value[0]
+  const invalidLegacyApproval = Boolean(
+    latestReviewOpinion?.result === '满足要求' &&
+      (!latestReviewOpinion.evidenceLinkIds?.length ||
+        latestReviewOpinion.evidenceValidation?.passed !== true ||
+        latestReviewOpinion.readinessSnapshot?.readyForAiFormal !== true)
+  )
+  const hasReviewOpinion = Boolean(latestReviewOpinion && !invalidLegacyApproval)
+  const reportsRequireRevalidation = reports.value.length > 0 && !hasReviewOpinion
+  const archiveRequiresRevalidation = archiveItems.value.length > 0 && reportsRequireRevalidation
+  return [
+    {
+      key: 'materials',
+      label: '资料提交',
+      status: files.length ? 'completed' : 'active',
+      metric: `${files.length} 份`,
+      detail: files.length
+        ? '责任方提交的资料已挂载至当前节点，等待监检核验。'
+        : '责任方尚未提交当前节点资料；监检人员仅核验、催办和退回补正。',
+      actionKey: files.length ? undefined : 'review_missing_materials',
+      actionLabel: files.length ? undefined : '查看缺项'
+    },
+    {
+      key: 'ocr',
+      label: 'OCR 抽取',
+      status: ocrIssueCount
+        ? 'blocked'
+        : files.length && ocrReadyCount === files.length
+          ? 'completed'
+          : 'active',
+      metric: `${ocrReadyCount}/${files.length || 0} 就绪`,
+      detail: ocrIssueCount
+        ? `${ocrIssueCount} 份产物异常或缺少 bbox。`
+        : '以 parse result 和 bbox 判断就绪。',
+      actionKey: ocrIssueCount ? 'inspect_ocr_results' : undefined,
+      actionLabel: ocrIssueCount ? '查看异常' : undefined
+    },
+    {
+      key: 'evidence',
+      label: '证据确认',
+      status: readyForAiFormal.value
+        ? 'completed'
+        : evidenceReadiness.value
+          ? 'blocked'
+          : 'pending',
+      metric: `${evidenceReadiness.value?.satisfiedCount || 0}/${evidenceReadiness.value?.requiredCount || 0}`,
+      detail: readinessBlockingReasons.value[0] || '必传审查点已由 confirmed 证据覆盖。',
+      actionKey: evidenceReadiness.value?.pendingCount ? 'review_evidence' : undefined,
+      actionLabel: evidenceReadiness.value?.pendingCount ? '确认证据' : undefined
+    },
+    {
+      key: 'ai',
+      label: 'AI 复核',
+      status: aiRunning
+        ? 'active'
+        : aiRun?.status === '失败'
+          ? 'failed'
+          : historicalFormalRun
+            ? 'blocked'
+            : aiRun
+              ? 'completed'
+              : 'pending',
+      metric: aiRun
+        ? historicalFormalRun
+          ? '历史正式复核'
+          : aiRun.reviewMode === 'gap_precheck'
+            ? '缺项预审'
+            : '正式复核'
+        : '未运行',
+      detail: historicalFormalRun
+        ? '历史运行不满足当前证据闸门，仅供追溯；请重新执行缺项预审。'
+        : aiRun
+          ? `${aiRun.advisoryOnly ? '建议模式' : '正式模式'} · ${aiRun.status}`
+          : aiReviewModeHint.value,
+      actionKey:
+        !aiRunning && availableAiReviewModes.value.length
+          ? readyForAiFormal.value
+            ? 'run_formal_review'
+            : 'run_gap_precheck'
+          : undefined,
+      actionLabel: readyForAiFormal.value ? '正式复核' : '缺项预审'
+    },
+    {
+      key: 'human',
+      label: '人工结论',
+      status: invalidLegacyApproval
+        ? 'blocked'
+        : hasReviewOpinion
+          ? 'completed'
+          : aiRun
+            ? 'active'
+            : 'pending',
+      metric: invalidLegacyApproval ? '历史意见待重验' : hasReviewOpinion ? '已保存' : '待处理',
+      detail: invalidLegacyApproval
+        ? '历史满足要求意见缺少现行 confirmed evidence 校验，不作为有效正式结论。'
+        : hasReviewOpinion
+          ? '人工意见和证据引用已保存。'
+          : 'AI 建议必须由监检人员确认。',
+      actionKey: aiRun && !hasReviewOpinion ? 'save_review_opinion' : undefined,
+      actionLabel: aiRun && !hasReviewOpinion ? '填写结论' : undefined
+    },
+    {
+      key: 'report',
+      label: '报告复核',
+      status: reportsRequireRevalidation
+        ? 'blocked'
+        : reports.value.length
+          ? 'completed'
+          : hasReviewOpinion
+            ? 'active'
+            : 'pending',
+      metric: `${reports.value.length} 份${reportsRequireRevalidation ? '待校验' : ''}`,
+      detail: reportsRequireRevalidation
+        ? '历史报告缺少当前有效人工结论支撑，不可直接进入归档。'
+        : reports.value.length
+          ? '报告已生成并进入复核。'
+          : '人工结论完成后生成报告。',
+      actionKey: hasReviewOpinion && !reports.value.length ? 'review_report' : undefined,
+      actionLabel: hasReviewOpinion && !reports.value.length ? '前往报告' : undefined
+    },
+    {
+      key: 'archive',
+      label: '签发归档',
+      status: archiveRequiresRevalidation
+        ? 'blocked'
+        : archiveItems.value.length
+          ? 'completed'
+          : reports.value.length
+            ? 'active'
+            : 'pending',
+      metric: `${archiveItems.value.length} 项${archiveRequiresRevalidation ? '待校验' : ''}`,
+      detail: archiveRequiresRevalidation
+        ? '历史归档记录保留追溯，但当前节点需先完成证据和报告校验。'
+        : archiveItems.value.length
+          ? '归档资料可追溯。'
+          : '签发且证据校验通过后归档。',
+      actionKey: reports.value.length && !archiveItems.value.length ? 'review_archive' : undefined,
+      actionLabel: reports.value.length && !archiveItems.value.length ? '查看归档条件' : undefined
+    }
+  ]
+})
+const recommendedAuditWorkflowAction = computed(() => {
+  const files = nodeScopedFiles.value
+  if (!files.length) return 'review_missing_materials'
+  if (
+    files.some((file) =>
+      ['failed', 'incomplete', 'inconsistent'].includes(file.ocrReadiness?.status || '')
+    )
+  ) {
+    return 'inspect_ocr_results'
+  }
+  if (
+    !readyForAiFormal.value &&
+    readyForGapPrecheck.value &&
+    latestAiRun.value?.reviewMode !== 'gap_precheck'
+  ) {
+    return 'run_gap_precheck'
+  }
+  if (evidenceReadiness.value?.pendingCount) return 'review_evidence'
+  if (readyForAiFormal.value && latestAiRun.value?.reviewMode !== 'formal')
+    return 'run_formal_review'
+  if (latestAiRun.value && !reviewOpinions.value.length) return 'save_review_opinion'
+  if (reviewOpinions.value.length && !reports.value.length) return 'review_report'
+  if (reports.value.length && !archiveItems.value.length) return 'review_archive'
+  return undefined
+})
 const overviewFileVersionMap = computed(
   () => new Map((nodePackage.value?.availableVersions || []).map((item) => [item.id, item]))
 )
@@ -942,6 +1183,17 @@ const getOverviewFileMaterialCategory = (file: {
   if (materialTypeCode) return overviewFileMaterialTypeLabels[materialTypeCode] || materialTypeCode
   return '未分类'
 }
+const ocrReadinessLabels: Record<string, string> = {
+  not_started: 'OCR 待处理',
+  queued: 'OCR 排队中',
+  processing: 'OCR 处理中',
+  ready: 'OCR 证据就绪',
+  incomplete: 'OCR 抽取不完整',
+  inconsistent: 'OCR 状态异常',
+  failed: 'OCR 失败'
+}
+const ocrReadinessLabel = (status?: string) =>
+  ocrReadinessLabels[String(status || '')] || '等待 OCR 产物校验'
 const inspectionOverviewFileRows = computed(() =>
   (nodePackage.value?.projectFiles || []).map((file) => {
     const currentVersion = overviewFileVersionMap.value.get(file.currentVersionId)
@@ -991,6 +1243,9 @@ const pagedInspectionOverviewFiles = computed(() => {
 })
 const postUploadProcessingFiles = computed(() =>
   (nodePackage.value?.projectFiles || []).filter((file) => {
+    const readinessStatus = file.ocrReadiness?.status
+    if (readinessStatus && ['queued', 'processing'].includes(readinessStatus)) return true
+    if (readinessStatus && readinessStatus !== 'ready') return false
     if (['排队中', '识别中'].includes(file.currentOcrStatus)) return true
     if (file.currentOcrStatus !== '已识别') return false
     if (['未切片', '待切片'].includes(file.sliceStatus || '')) return true
@@ -1010,6 +1265,7 @@ const previewDrawerTitle = computed(() => {
   return role.value === 'owner' ? `只读预览 · ${title}` : `文件预览 · ${title}`
 })
 const previewDrawerToolbarLabel = computed(() => {
+  if (previewDrawerTarget.value.source === 'standard') return '规范原文预览'
   if (previewDrawerTarget.value.source === 'report') return '报告预览'
   if (previewDrawerTarget.value.source === 'archive') return '归档资料预览'
   if (previewDrawerTarget.value.source === 'file') return '文件签名预览'
@@ -1047,8 +1303,7 @@ const previewDrawerFrameUrl = computed(() => {
 const previewDrawerIsImage = computed(() => previewDrawerTarget.value.previewType === 'image')
 const aiConfidence = computed(() => {
   const confidence = latestAiRun.value?.suggestion.confidence
-  if (confidence === undefined) return '-'
-  return `${confidence <= 1 ? Math.round(confidence * 100) : Math.round(confidence)}%`
+  return formatConfidence(confidence)
 })
 const compactText = (value?: string, fallback = '暂无配置') => {
   const text = String(value || '').trim()
@@ -1060,7 +1315,7 @@ const requirementResponsibleParty = (requirement: {
   name?: string
 }) => {
   const explicit = String(requirement.responsibleParty || '').trim()
-  if (explicit) return explicit
+  if (explicit) return getAicheckRoleLabel(explicit)
   const content = `${requirement.materialTypeCode || ''} ${requirement.name || ''}`
   if (/标准|规范|条款|standard/i.test(content)) return '标准规范库引用'
   if (/(无损|检测|底片|射线|(^|_)ndt($|_)|(^|_)rt($|_)|(^|_)ut($|_))/i.test(content)) {
@@ -1152,8 +1407,7 @@ const evidenceConfirmationRows = computed<EvidenceConfirmationRow[]>(() => {
     }
     return links.map((link) => {
       const evidenceItems = Array.from(new Set(link.matchedEvidenceItems || [])).join('、')
-      const confidence =
-        typeof link.confidence === 'number' ? `${Math.round(link.confidence * 100)}%` : '-'
+      const confidence = formatConfidence(link.confidence)
       return {
         id: link.id,
         requirementId: requirement.id || `${requirement.nodeId}-${index}`,
@@ -1168,23 +1422,126 @@ const evidenceConfirmationRows = computed<EvidenceConfirmationRow[]>(() => {
     })
   })
 })
-const nodeReferencedStandards = computed(() => {
+const nodeReferencedStandards = computed<StandardReferenceItem[]>(() => {
   const standards = businessBasis.value?.referencedStandards || []
   if (standards.length) {
     const seen = new Set<string>()
-    return standards.filter((standard) => {
-      const key = standard.fileName || standard.file || standard.reference
-      if (seen.has(key)) return false
+    return standards.reduce<StandardReferenceItem[]>((items, standard) => {
+      const key =
+        standard.sourceRelativePath || standard.file || standard.fileName || standard.reference
+      if (!key || seen.has(key)) return items
       seen.add(key)
-      return true
-    })
+      items.push({
+        reference: standard.reference || standard.fileName || '标准规范',
+        file: standard.file,
+        fileName: standard.fileName,
+        knowledgeFileId: standard.knowledgeFileId,
+        sourceRelativePath: standard.sourceRelativePath,
+        previewAvailable: standard.previewAvailable,
+        previewUrl: standard.previewUrl
+      })
+      return items
+    }, [])
   }
   return standardReferences.value.map((standard) => ({
-    reference: `${standard.standardName} ${standard.clauseNo}`,
-    fileName: standard.title,
-    file: undefined
+    reference: standard.reference || `${standard.standardName} ${standard.clauseNo}`.trim(),
+    fileName: standard.fileName || standard.title,
+    file: standard.file,
+    knowledgeFileId: standard.knowledgeFileId,
+    sourceRelativePath: standard.sourceRelativePath,
+    previewAvailable: standard.previewAvailable,
+    previewUrl: standard.previewUrl
   }))
 })
+const standardTreeProps = {
+  value: 'id',
+  label: 'label',
+  children: 'children'
+}
+const standardReferenceGroupLabel = (segment: string) => {
+  if (segment === 'NB_T_47013_split') return 'NB/T 47013 承压设备无损检测'
+  return segment.replaceAll('_', ' ')
+}
+const standardReferenceTree = computed<StandardReferenceTreeNode[]>(() => {
+  if (!nodeReferencedStandards.value.length) return []
+  const root: StandardReferenceTreeNode = {
+    id: 'standard-reference-root',
+    label: `引用标准文件（${nodeReferencedStandards.value.length}）`,
+    kind: 'root',
+    children: []
+  }
+  const groups = new Map<string, StandardReferenceTreeNode>()
+  nodeReferencedStandards.value.forEach((standard, index) => {
+    const sourcePath = String(standard.sourceRelativePath || standard.file || '').replaceAll(
+      '\\',
+      '/'
+    )
+    const relativePath = sourcePath.replace(/^.*?rules\/standards\//, '')
+    const segments = relativePath.split('/').filter(Boolean)
+    const fileName = standard.fileName || segments.at(-1) || standard.reference
+    let parent = root
+    let groupPath = ''
+    for (const segment of segments.slice(0, -1)) {
+      groupPath = groupPath ? `${groupPath}/${segment}` : segment
+      let group = groups.get(groupPath)
+      if (!group) {
+        group = {
+          id: `standard-group-${groupPath}`,
+          label: standardReferenceGroupLabel(segment),
+          kind: 'group',
+          children: []
+        }
+        groups.set(groupPath, group)
+        parent.children?.push(group)
+      }
+      parent = group
+    }
+    parent.children?.push({
+      id: `standard-file-${standard.knowledgeFileId || sourcePath || index}`,
+      label: standard.reference || fileName,
+      kind: 'file',
+      reference: standard.reference,
+      fileName,
+      sourceRelativePath: sourcePath,
+      knowledgeFileId: standard.knowledgeFileId,
+      previewAvailable: standard.previewAvailable,
+      previewUrl: standard.previewUrl
+    })
+  })
+  const sortNodes = (nodes: StandardReferenceTreeNode[]) => {
+    nodes.sort((left, right) => {
+      if (left.kind !== right.kind) return left.kind === 'file' ? 1 : -1
+      return left.label.localeCompare(right.label, 'zh-CN', { numeric: true })
+    })
+    nodes.forEach((node) => node.children && sortNodes(node.children))
+  }
+  sortNodes(root.children || [])
+  return [root]
+})
+const standardTreeDefaultExpandedKeys = computed(() => [
+  'standard-reference-root',
+  ...Array.from(
+    new Set(
+      nodeReferencedStandards.value
+        .map((standard) =>
+          String(standard.sourceRelativePath || standard.file || '').replaceAll('\\', '/')
+        )
+        .filter((path) => path.includes('rules/standards/'))
+        .map((path) =>
+          path
+            .replace(/^.*?rules\/standards\//, '')
+            .split('/')
+            .slice(0, -1)
+        )
+        .flatMap((segments) =>
+          segments.map((_, index) => `standard-group-${segments.slice(0, index + 1).join('/')}`)
+        )
+    )
+  )
+])
+const standardReferenceTreeHeight = computed(() =>
+  Math.min(420, Math.max(156, (nodeReferencedStandards.value.length + 2) * 52))
+)
 const aiExecutionSteps = computed<AiExecutionDisplayStep[]>(() => {
   const basis = businessBasis.value
   const verificationSteps = basis?.aiExecution?.verificationSteps || []
@@ -1345,7 +1702,7 @@ const reviewChainSteps = computed(() => {
         : '当前节点暂未返回结构化字段，需等待 OCR 或人工补录后继续核验。',
       tags: extractedFields.value
         .slice(0, 2)
-        .map((field) => `${field.fieldName} ${field.confidence}%`),
+        .map((field) => `${field.fieldName} ${formatConfidence(field.confidence)}`),
       result: extractedFields.value.some((field) => field.reviewStatus === '低置信度')
         ? '需人工确认'
         : '通过'
@@ -1913,6 +2270,7 @@ const handleProjectChange = async () => {
 }
 
 const handleNodeSelect = async (node: ProjectTreeNode) => {
+  mobileTreeOpen.value = false
   activeWorkbenchSection.value = 'node'
   activeNodeId.value = node.nodeId
   await loadNodePackage(node.nodeId)
@@ -1925,6 +2283,7 @@ const handleNodeSelect = async (node: ProjectTreeNode) => {
 }
 
 const handleProjectOverviewSelect = () => {
+  mobileTreeOpen.value = false
   activeWorkbenchSection.value = 'overview'
 }
 
@@ -1975,6 +2334,32 @@ const openPreviewDrawer = (target?: Partial<PreviewDrawerTarget>) => {
     previewType: target?.previewType
   }
   previewDrawerVisible.value = true
+}
+
+const previewTypeForStandard = (fileName?: string): DocumentPreviewPayload['previewType'] => {
+  const extension = String(fileName || '')
+    .split('.')
+    .pop()
+    ?.toLowerCase()
+  if (extension === 'pdf') return 'pdf'
+  if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(extension || '')) return 'image'
+  if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(extension || '')) return 'office'
+  return 'unsupported'
+}
+
+const handleStandardTreeNodeClick = (data: StandardReferenceTreeNode) => {
+  if (data.kind !== 'file') return
+  if (!data.previewAvailable || !data.previewUrl) {
+    ElMessage.warning('该引用尚未关联规范库原文件，请联系知识库管理员补齐文件映射。')
+    return
+  }
+  openPreviewDrawer({
+    source: 'standard',
+    title: data.fileName || data.reference || data.label,
+    url: data.previewUrl,
+    previewType: previewTypeForStandard(data.fileName),
+    meta: `${data.reference || data.label} · ${data.sourceRelativePath || data.knowledgeFileId || '规范库'}`
+  })
 }
 
 const handleOpenCurrentPreview = () => {
@@ -2705,7 +3090,7 @@ const handleAiRecheck = async () => {
   if (!ensureWritableNode()) return
   if (aiRecheckDisabledReason.value) {
     rememberActionBlocker(
-      '正式 AI 复核条件不足',
+      `${selectedAiReviewModeLabel.value}条件不足`,
       aiRecheckDisabledReason.value,
       readinessBlockingReasons.value
     )
@@ -2717,11 +3102,16 @@ const handleAiRecheck = async () => {
   aiRecheckRunOverride.value = undefined
   actionLoading.value = true
   try {
-    const res = await requestAiRecheckApi(activeProjectId.value, activeNodeId.value, {
-      etag: currentProject.value?.etag,
-      silentBusinessError: true,
-      silentHttpError: true
-    })
+    const res = await requestAiRecheckApi(
+      activeProjectId.value,
+      activeNodeId.value,
+      { reviewMode: selectedAiReviewMode.value, auditInputMode: 'ocr_llm' },
+      {
+        etag: currentProject.value?.etag,
+        silentBusinessError: true,
+        silentHttpError: true
+      }
+    )
     if (!res) {
       aiRecheckOutputError.value = getAicheckErrorMessage(
         undefined,
@@ -2732,7 +3122,11 @@ const handleAiRecheck = async () => {
     actionBlocker.value = undefined
     aiRecheckRunOverride.value = res.data.latestRun
     const statusReason = String(res.data.dispatch?.statusReason || '')
-    ElMessage.success(statusReason ? `AI 复核任务已创建：${statusReason}` : 'AI 复核任务已创建')
+    ElMessage.success(
+      statusReason
+        ? `${selectedAiReviewModeLabel.value}任务已创建：${statusReason}`
+        : `${selectedAiReviewModeLabel.value}任务已创建`
+    )
     await loadNodePackage(activeNodeId.value)
   } catch (error) {
     aiRecheckOutputError.value = getAicheckErrorMessage(
@@ -2742,6 +3136,33 @@ const handleAiRecheck = async () => {
   } finally {
     actionLoading.value = false
   }
+}
+
+const handleAuditWorkflowAction = async (actionKey: string) => {
+  if (actionKey === 'run_formal_review' || actionKey === 'run_gap_precheck') {
+    selectedAiReviewMode.value = actionKey === 'run_formal_review' ? 'formal' : 'gap_precheck'
+    await handleAiRecheck()
+    return
+  }
+  if (actionKey === 'inspect_ocr_results') {
+    const issueFile = nodeScopedFiles.value.find((file) =>
+      ['failed', 'incomplete', 'inconsistent'].includes(file.ocrReadiness?.status || '')
+    )
+    if (issueFile) {
+      await handleOpenFileDetail(issueFile.id)
+      return
+    }
+  }
+  const targetMap: Record<string, string> = {
+    review_missing_materials: 'inspection-node-requirements',
+    inspect_ocr_results: 'inspection-node-requirements',
+    review_evidence: 'inspection-node-evidence',
+    save_review_opinion: 'inspection-node-manual-review',
+    review_report: 'inspection-node-report-archive',
+    review_archive: 'inspection-node-report-archive'
+  }
+  const targetId = targetMap[actionKey]
+  if (targetId) await handleInspectionOverviewJump(targetId)
 }
 
 const handleSaveReviewOpinion = async () => {
@@ -3257,6 +3678,17 @@ watch(
 )
 
 watch(
+  () => availableAiReviewModes.value.join('|'),
+  () => {
+    if (availableAiReviewModes.value.includes(selectedAiReviewMode.value)) return
+    selectedAiReviewMode.value = availableAiReviewModes.value.includes('formal')
+      ? 'formal'
+      : 'gap_precheck'
+  },
+  { immediate: true }
+)
+
+watch(
   () => overviewFileKeyword.value,
   () => {
     overviewFilePage.value = 1
@@ -3453,11 +3885,32 @@ onBeforeUnmount(() => {
         v-else-if="canShowWorkspace"
         :class="['workspace', { 'no-left-nav': role === 'contractor' || role === 'ndt' }]"
       >
-        <aside v-if="role !== 'contractor' && role !== 'ndt'" class="left">
+        <button
+          v-if="mobileTreeOpen && role !== 'contractor' && role !== 'ndt'"
+          type="button"
+          class="mobile-tree-backdrop"
+          aria-label="关闭审核节点导航"
+          @click="mobileTreeOpen = false"
+        ></button>
+        <aside
+          v-if="role !== 'contractor' && role !== 'ndt'"
+          id="audit-node-navigation"
+          :class="['left', { 'is-mobile-open': mobileTreeOpen }]"
+        >
           <section class="tree-wrap">
             <div class="section-title">
               <span>项目审核节点</span>
-              <span class="section-tools">{{ role === 'owner' ? '只读 ⓘ' : '↻ ⚙' }}</span>
+              <span class="section-tools">
+                {{ role === 'owner' ? '只读 ⓘ' : '↻ ⚙' }}
+                <button
+                  type="button"
+                  class="mobile-tree-close"
+                  aria-label="关闭审核节点导航"
+                  @click="mobileTreeOpen = false"
+                >
+                  ×
+                </button>
+              </span>
             </div>
             <ProjectNodeTree
               :groups="visibleTreeGroups"
@@ -3548,6 +4001,15 @@ onBeforeUnmount(() => {
             </div>
             <div class="actions">
               <ElButton
+                v-if="role !== 'contractor' && role !== 'ndt'"
+                class="btn mobile-tree-trigger"
+                aria-controls="audit-node-navigation"
+                :aria-expanded="mobileTreeOpen"
+                @click="mobileTreeOpen = true"
+              >
+                审核节点
+              </ElButton>
+              <ElButton
                 v-if="
                   role === 'inspection' &&
                   activeWorkbenchSection === 'node' &&
@@ -3555,10 +4017,10 @@ onBeforeUnmount(() => {
                 "
                 class="btn"
                 :disabled="actionLoading || isReadOnly || Boolean(aiRecheckDisabledReason)"
-                :title="aiRecheckDisabledReason || '发起正式 AI 复核'"
+                :title="aiRecheckDisabledReason || aiReviewModeHint"
                 @click="handleAiRecheck"
               >
-                重新核验
+                {{ aiRecheckButtonLabel }}
               </ElButton>
               <ElButton
                 v-if="role === 'contractor' && hasAction('file:upload')"
@@ -3602,6 +4064,14 @@ onBeforeUnmount(() => {
               </ElButton>
             </div>
           </div>
+
+          <AuditWorkflowProgress
+            v-if="role === 'inspection' && activeWorkbenchSection === 'node'"
+            :stages="auditWorkflowStages"
+            :recommended-action="recommendedAuditWorkflowAction"
+            :loading="actionLoading"
+            @action="handleAuditWorkflowAction"
+          />
 
           <AuditSummaryGrid
             v-if="
@@ -3782,7 +4252,7 @@ onBeforeUnmount(() => {
                         <th>来源</th>
                         <th>上传人</th>
                         <th>资料类别</th>
-                        <th>状态</th>
+                        <th>资料/OCR 状态</th>
                         <th>上传时间</th>
                         <th>操作</th>
                       </tr>
@@ -3805,6 +4275,17 @@ onBeforeUnmount(() => {
                           <span :class="['pill', getPillClass(file.fileStatus)]">
                             {{ file.fileStatus }}
                           </span>
+                          <small
+                            :class="[
+                              'overview-ocr-status',
+                              `is-${file.ocrReadiness?.status || 'unknown'}`
+                            ]"
+                          >
+                            {{ ocrReadinessLabel(file.ocrReadiness?.status) }}
+                            <template v-if="file.ocrReadiness?.status === 'ready'">
+                              · bbox {{ Math.round((file.ocrReadiness?.bboxCoverage || 0) * 100) }}%
+                            </template>
+                          </small>
                         </td>
                         <td>{{ file.uploadTimeText }}</td>
                         <td>
@@ -3881,14 +4362,32 @@ onBeforeUnmount(() => {
             class="node-ai-recheck-top"
           >
             <div class="node-ai-recheck-actions">
+              <div class="ai-review-mode-control">
+                <ElRadioGroup v-model="selectedAiReviewMode" aria-label="AI 复核模式">
+                  <ElRadioButton
+                    value="formal"
+                    :disabled="!availableAiReviewModes.includes('formal')"
+                  >
+                    正式复核
+                  </ElRadioButton>
+                  <ElRadioButton
+                    value="gap_precheck"
+                    :disabled="!availableAiReviewModes.includes('gap_precheck')"
+                  >
+                    缺项预审
+                  </ElRadioButton>
+                </ElRadioGroup>
+                <small>{{ aiReviewModeHint }}</small>
+              </div>
               <ElButton
                 class="node-ai-recheck-button"
                 type="primary"
                 :loading="actionLoading"
-                :disabled="isReadOnly"
+                :disabled="isReadOnly || Boolean(aiRecheckDisabledReason)"
+                :title="aiRecheckDisabledReason || aiReviewModeHint"
                 @click="handleAiRecheck"
               >
-                AI 复核
+                {{ aiRecheckButtonLabel }}
               </ElButton>
             </div>
             <div v-if="aiRecheckOutputVisible" class="ai-recheck-output" aria-live="polite">
@@ -3900,20 +4399,24 @@ onBeforeUnmount(() => {
                 {{ aiRecheckOutputError }}
               </div>
               <div v-if="aiRecheckIsLocalFallback" class="ai-recheck-output-warning">
-                当前调度器未启用，未调用外部模型；以下为基于真实证据状态生成的本地降级摘要，不是模型 DeepThink。
+                当前调度器未启用，未调用外部模型；以下为基于真实证据状态生成的本地降级摘要，不是模型
+                DeepThink。
               </div>
               <div class="ai-recheck-output-section">
-                <label>推理过程</label>
-                <pre>{{ aiRecheckReasoningText }}</pre>
-              </div>
-              <div class="ai-recheck-output-section">
-                <label>{{ aiRecheckDeepThinkLabel }}</label>
-                <pre>{{ aiRecheckDeepThinkText }}</pre>
-              </div>
-              <div class="ai-recheck-output-section">
-                <label>模型输出</label>
+                <label>AI 建议（待人工确认）</label>
                 <pre>{{ aiRecheckResultText }}</pre>
               </div>
+              <details class="ai-recheck-technical-details">
+                <summary>查看模型执行详情</summary>
+                <div class="ai-recheck-output-section">
+                  <label>推理过程</label>
+                  <pre>{{ aiRecheckReasoningText }}</pre>
+                </div>
+                <div class="ai-recheck-output-section">
+                  <label>{{ aiRecheckDeepThinkLabel }}</label>
+                  <pre>{{ aiRecheckDeepThinkText }}</pre>
+                </div>
+              </details>
             </div>
           </section>
 
@@ -4048,20 +4551,48 @@ onBeforeUnmount(() => {
                   <h3>引用标准文件</h3>
                   <span class="pill blue">{{ nodeReferencedStandards.length }} 项</span>
                 </div>
-                <div class="standard-reference-list">
-                  <span
-                    v-for="standard in nodeReferencedStandards"
-                    :key="`${standard.reference}-${standard.fileName || standard.file || ''}`"
-                    class="standard-reference-chip"
-                    :title="standard.file || standard.fileName"
+                <div v-if="standardReferenceTree.length" class="standard-reference-tree-shell">
+                  <ElTreeV2
+                    class="standard-reference-tree"
+                    :data="standardReferenceTree"
+                    :props="standardTreeProps"
+                    :height="standardReferenceTreeHeight"
+                    :item-size="52"
+                    :default-expanded-keys="standardTreeDefaultExpandedKeys"
+                    node-key="id"
+                    highlight-current
+                    scrollbar-always-on
+                    aria-label="引用标准文件树"
+                    @node-click="handleStandardTreeNodeClick"
                   >
-                    <strong>{{ standard.reference }}</strong>
-                    <small>{{ standard.fileName || standard.file || '标准规范库' }}</small>
-                  </span>
-                  <span v-if="!nodeReferencedStandards.length" class="empty-inline">
-                    暂无引用标准文件
-                  </span>
+                    <template #default="{ data }">
+                      <div
+                        class="standard-tree-node"
+                        :class="`is-${data.kind}`"
+                        :title="data.sourceRelativePath || data.fileName || data.label"
+                      >
+                        <component
+                          :is="data.kind === 'file' ? Document : FolderOpened"
+                          class="standard-tree-icon"
+                          aria-hidden="true"
+                        />
+                        <div class="standard-tree-copy">
+                          <strong>{{ data.label }}</strong>
+                          <small v-if="data.kind === 'file'">{{ data.fileName }}</small>
+                        </div>
+                        <span
+                          v-if="data.kind === 'file'"
+                          class="standard-tree-preview-state"
+                          :class="{ 'is-unavailable': !data.previewAvailable }"
+                        >
+                          <View aria-hidden="true" />
+                          {{ data.previewAvailable ? '预览' : '未关联' }}
+                        </span>
+                      </div>
+                    </template>
+                  </ElTreeV2>
                 </div>
+                <span v-else class="empty-inline">暂无引用标准文件</span>
               </article>
             </div>
           </section>
@@ -4186,6 +4717,7 @@ onBeforeUnmount(() => {
                     :read-only="isReadOnly"
                     :ai-recheck-disabled="Boolean(aiRecheckDisabledReason)"
                     :ai-recheck-disabled-reason="aiRecheckDisabledReason"
+                    :ai-recheck-label="aiRecheckButtonLabel"
                     @upload="handleOpenUploadDrawer"
                     @bind="handleOpenBindDialog"
                     @save-draft="handleSaveDraft"
@@ -4276,6 +4808,7 @@ onBeforeUnmount(() => {
 
           <ReportArchivePanel
             v-if="role !== 'ndt' && role !== 'contractor'"
+            id="inspection-node-report-archive"
             :role="role"
             :actions="availableActions"
             :package-data="nodePackage"
@@ -4330,6 +4863,7 @@ onBeforeUnmount(() => {
                   :read-only="isReadOnly"
                   :ai-recheck-disabled="Boolean(aiRecheckDisabledReason)"
                   :ai-recheck-disabled-reason="aiRecheckDisabledReason"
+                  :ai-recheck-label="aiRecheckButtonLabel"
                   @upload="handleOpenUploadDrawer"
                   @bind="handleOpenBindDialog"
                   @save-draft="handleSaveDraft"
@@ -4403,7 +4937,7 @@ onBeforeUnmount(() => {
             <ElButton class="btn" @click="activeSideTab = 'evidence'">定位证据</ElButton>
             <ElButton
               class="btn"
-              :disabled="!firstBinding"
+              :disabled="previewDrawerTarget.source === 'standard' || !firstBinding"
               @click="firstBinding && handleOpenFileDetail(firstBinding.documentId)"
             >
               详情
@@ -4445,7 +4979,7 @@ onBeforeUnmount(() => {
                 ></iframe>
               </div>
               <div
-                v-else-if="previewDrawerTarget.source === 'file'"
+                v-else-if="['file', 'standard'].includes(previewDrawerTarget.source)"
                 class="doc-original-unavailable"
               >
                 <ElAlert
@@ -4479,7 +5013,7 @@ onBeforeUnmount(() => {
                       <td>{{ field.fieldName }}</td>
                       <td>{{ field.fieldValue }}</td>
                       <td>置信度</td>
-                      <td>{{ field.confidence }}%</td>
+                      <td>{{ formatConfidence(field.confidence) }}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -4622,7 +5156,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .aicheck-static-viewport {
-  --bg: var(--aicheck-bg, #eef3f8);
+  --bg: var(--aicheck-bg, #f4f7fb);
   --panel: var(--aicheck-surface, #fff);
   --panel-soft: var(--aicheck-surface-soft, #f8fbff);
   --panel-muted: var(--aicheck-surface-muted, #f2f6fb);
@@ -4630,17 +5164,17 @@ onBeforeUnmount(() => {
   --line-soft: var(--aicheck-border-soft, #e5ecf6);
   --line-strong: var(--aicheck-border-strong, #c2d1e3);
   --head: var(--aicheck-surface-muted, #f2f6fb);
-  --ink: #172033;
-  --muted: #52617a;
-  --blue: #1f66d8;
-  --blue-2: #0c56c2;
+  --ink: var(--aicheck-text-strong, #172033);
+  --muted: var(--aicheck-text-muted, #52647d);
+  --blue: var(--aicheck-primary, #1f66d8);
+  --blue-2: var(--aicheck-primary-strong, #174fa8);
   --blue-soft: #eaf3ff;
-  --green: #14a36b;
-  --green-soft: #eaf8f1;
-  --orange: #9a4b00;
-  --orange-soft: #fff4e3;
-  --red: #ff4d3d;
-  --red-soft: #fff0ee;
+  --green: var(--aicheck-success, #087443);
+  --green-soft: var(--aicheck-success-bg, #ecfdf3);
+  --orange: var(--aicheck-warning, #8a4b00);
+  --orange-soft: var(--aicheck-warning-bg, #fff7e6);
+  --red: var(--aicheck-danger, #b42318);
+  --red-soft: var(--aicheck-danger-bg, #fef3f2);
   --shadow: var(--aicheck-shadow-xs, 0 1px 2px rgb(20 34 56 / 5%));
   --shadow-sm: var(--aicheck-shadow-sm, 0 6px 16px rgb(15 23 42 / 6%));
   --shadow-md: var(--aicheck-shadow-md, 0 14px 32px rgb(15 23 42 / 9%));
@@ -4649,8 +5183,7 @@ onBeforeUnmount(() => {
   height: 100vh;
   max-width: 100vw;
   overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei',
-    'Noto Sans CJK SC', Arial, sans-serif;
+  font-family: var(--aicheck-font-family);
   color: var(--ink);
   background: var(--bg);
 }
@@ -4707,7 +5240,7 @@ onBeforeUnmount(() => {
   display: grid;
   width: 30px;
   height: 30px;
-  font-weight: 800;
+  font-weight: 600;
   color: #fff;
   background: linear-gradient(180deg, #4b86ff, #1761d2);
   border-radius: 8px;
@@ -4795,7 +5328,7 @@ onBeforeUnmount(() => {
   justify-self: start;
   height: 36px;
   padding: 0 14px;
-  font-weight: 800;
+  font-weight: 600;
   white-space: nowrap;
   border: 1px solid #bcd6ff;
   border-radius: 5px;
@@ -4845,7 +5378,7 @@ onBeforeUnmount(() => {
   padding: 0 16px;
   margin: 0;
   font-weight: 600;
-  color: #8b98aa;
+  color: var(--muted);
   text-align: left;
   cursor: pointer;
   background: #fff;
@@ -4930,7 +5463,7 @@ onBeforeUnmount(() => {
   padding: 0 6px;
   margin-left: 2px;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   color: #fff;
   background: #ef3f3b;
   border-radius: 999px;
@@ -4953,7 +5486,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   min-height: 40px;
   padding: 0 8px 0 4px;
-  font-weight: 700;
+  font-weight: 600;
   color: inherit;
   cursor: pointer;
   background: transparent;
@@ -5025,7 +5558,7 @@ onBeforeUnmount(() => {
   height: 44px;
   padding: 0 18px;
   font-size: 18px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .section-tools {
@@ -5105,7 +5638,7 @@ onBeforeUnmount(() => {
   width: 100%;
   padding: 8px 0;
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 600;
   color: #26364e;
   background: #fff;
 }
@@ -5164,7 +5697,7 @@ onBeforeUnmount(() => {
   width: auto;
   height: auto;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
   color: inherit;
   background: transparent;
 }
@@ -5172,7 +5705,7 @@ onBeforeUnmount(() => {
 .tree-wrap :deep(.node-name) {
   display: block;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.35;
   color: inherit;
   white-space: normal;
@@ -5215,34 +5748,35 @@ onBeforeUnmount(() => {
 .crumbs {
   margin-bottom: 5px;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--muted);
 }
 
 .page-title,
 h1 {
   margin: 0;
-  font-size: 27px;
-  font-weight: 900;
-  line-height: 1.2;
+  font-size: var(--aicheck-font-size-page);
+  font-weight: 600;
+  line-height: var(--aicheck-line-height-page);
 }
 
 h2 {
   margin: 0;
-  font-size: 21px;
-  line-height: 1.2;
+  font-size: var(--aicheck-font-size-section);
+  line-height: var(--aicheck-line-height-section);
 }
 
 h3 {
   margin: 0;
-  font-size: 18px;
-  line-height: 1.2;
+  font-size: var(--aicheck-font-size-card);
+  line-height: var(--aicheck-line-height-card);
 }
 
 .sub {
   margin-top: 6px;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 400;
+  line-height: 22px;
   color: var(--muted);
 }
 
@@ -5254,10 +5788,10 @@ h3 {
 }
 
 .inspection-overview-jump-button {
-  min-height: 34px;
+  min-height: 36px;
   padding: 0 14px;
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 600;
   color: #1f66d8;
   cursor: pointer;
   background: #f8fbff;
@@ -5316,7 +5850,7 @@ h3 {
   min-height: 44px;
   padding: 0 17px;
   margin: 0;
-  font-weight: 800;
+  font-weight: 600;
   color: #26364e;
   text-decoration: none;
   cursor: pointer;
@@ -5445,14 +5979,14 @@ h3 {
 
 .metric-label {
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
   color: var(--muted);
 }
 
 .metric-value {
   margin-top: 8px;
   font-size: 24px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1;
   color: var(--blue);
 }
@@ -5502,7 +6036,7 @@ h3 {
 .inspection-project-overview-head div > span {
   display: block;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   color: #2563eb;
 }
 
@@ -5511,7 +6045,7 @@ h3 {
   margin-top: 3px;
   overflow: hidden;
   font-size: 18px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 24px;
   color: #172033;
   text-overflow: ellipsis;
@@ -5553,14 +6087,14 @@ h3 {
 
 .inspection-overview-card span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   color: #667085;
 }
 
 .inspection-overview-card strong {
   margin-top: 8px;
   font-size: 20px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 26px;
   color: #172033;
 }
@@ -5639,7 +6173,7 @@ h3 {
   min-width: 0;
   overflow: hidden;
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 22px;
   color: #52617a;
   text-align: right;
@@ -5687,7 +6221,7 @@ h3 {
   gap: 6px;
   align-items: baseline;
   font-size: 16px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 22px;
   color: #172033;
   text-align: left;
@@ -5695,10 +6229,10 @@ h3 {
 }
 
 .inspection-node-status-row strong small {
-  font-size: 11px;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 600;
   line-height: 16px;
-  color: #7b8798;
+  color: var(--muted);
 }
 
 .inspection-node-status-row--green .inspection-node-status-track i {
@@ -5759,7 +6293,7 @@ h3 {
   min-height: 28px;
   padding: 0;
   font: inherit;
-  font-weight: 900;
+  font-weight: 600;
   color: inherit;
   cursor: pointer;
   background: transparent;
@@ -5778,7 +6312,7 @@ h3 {
   padding: 0;
   overflow: hidden;
   font: inherit;
-  font-weight: 900;
+  font-weight: 600;
   color: #1f66d8;
   text-align: left;
   text-decoration: underline;
@@ -5806,13 +6340,13 @@ h3 {
 
 .inspection-node-material strong {
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 600;
   color: #172033;
 }
 
 .inspection-node-material span {
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   color: #1f66d8;
 }
 
@@ -5838,7 +6372,7 @@ h3 {
   margin-top: 5px;
   overflow: hidden;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 16px;
   color: #667085;
   text-overflow: ellipsis;
@@ -5900,7 +6434,7 @@ h3 {
   min-height: 28px;
   padding: 6px 7px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   color: #1d4ed8;
   text-align: center;
   background: #eef5ff;
@@ -5913,7 +6447,7 @@ h3 {
   min-width: 0;
   overflow: hidden;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 18px;
   color: #172033;
   text-overflow: ellipsis;
@@ -5935,7 +6469,7 @@ h3 {
   grid-row: span 2;
   font-size: 13px;
   font-style: normal;
-  font-weight: 900;
+  font-weight: 600;
   color: #2563eb;
   font-variant-numeric: tabular-nums;
 }
@@ -6001,14 +6535,14 @@ h3 {
 
 .overview-file-table td:nth-child(3) small {
   margin-top: 2px;
-  color: #7b8798;
+  color: var(--muted);
 }
 
 .overview-file-name {
   display: inline-block;
   max-width: 280px;
   overflow: hidden;
-  font-weight: 900;
+  font-weight: 600;
   color: #172033;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -6017,7 +6551,25 @@ h3 {
 
 .overview-file-action {
   padding: 0;
-  font-weight: 900;
+  font-weight: 600;
+}
+
+.overview-ocr-status {
+  display: block;
+  margin-top: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #52677f;
+}
+
+.overview-ocr-status.is-ready {
+  color: #157347;
+}
+
+.overview-ocr-status.is-incomplete,
+.overview-ocr-status.is-inconsistent,
+.overview-ocr-status.is-failed {
+  color: #a53b00;
 }
 
 .overview-file-pagination {
@@ -6040,7 +6592,7 @@ h3 {
 
 .inspection-chart-head strong {
   font-size: 15px;
-  font-weight: 900;
+  font-weight: 600;
   color: #172033;
 }
 
@@ -6056,7 +6608,7 @@ h3 {
   min-height: 24px;
   padding: 3px 8px;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1;
   color: var(--blue-2);
   white-space: nowrap;
@@ -6111,7 +6663,7 @@ h3 {
 }
 
 .table th {
-  font-weight: 900;
+  font-weight: 600;
   color: #485a73;
   background: var(--head);
 }
@@ -6158,7 +6710,7 @@ h3 {
   display: block;
   margin-bottom: 6px;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
   color: var(--muted);
 }
 
@@ -6203,7 +6755,7 @@ h3 {
 .conclusion-point p {
   margin: 8px 0 0;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.7;
   color: #344054;
   white-space: pre-wrap;
@@ -6252,7 +6804,7 @@ h3 {
 
 .basis-table td {
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--ink);
 }
 
@@ -6279,9 +6831,35 @@ h3 {
   align-items: center;
 }
 
+.mobile-tree-trigger,
+.mobile-tree-close,
+.mobile-tree-backdrop {
+  display: none;
+}
+
+.ai-review-mode-control {
+  display: grid;
+  gap: 6px;
+  min-width: min(100%, 360px);
+}
+
+.ai-review-mode-control small {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #52677f;
+}
+
+.ai-review-mode-control :deep(.el-radio-button__inner) {
+  min-height: 44px;
+  padding: 12px 18px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
 .node-ai-recheck-button {
   min-width: 180px;
-  font-weight: 900;
+  min-height: 44px;
+  font-weight: 600;
   border-radius: 5px;
 }
 
@@ -6302,31 +6880,132 @@ h3 {
 
 .evidence-confirmation-actions :deep(.el-button) {
   margin-left: 0;
-  font-weight: 800;
+  font-weight: 600;
 }
 
-.standard-reference-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.standard-reference-tree-shell {
   margin-top: 12px;
-}
-
-.standard-reference-chip {
-  max-width: min(420px, 100%);
-  padding: 9px 10px;
-  background: #f8fbff;
+  overflow: hidden;
+  background: #fff;
   border: 1px solid var(--line-soft);
   border-radius: 6px;
 }
 
-.standard-reference-chip strong {
-  display: block;
+.standard-reference-tree {
+  --el-tree-node-hover-bg-color: #f2f7ff;
+  --el-fill-color-light: #f2f7ff;
+
+  padding: 6px 0;
+}
+
+.standard-reference-tree :deep(.el-tree-node__content) {
+  height: 52px;
+  padding-right: 10px;
+  border-bottom: 1px solid #edf2f8;
+}
+
+.standard-reference-tree :deep(.el-tree-node__content:focus-visible) {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+
+.standard-reference-tree :deep(.el-tree-node:last-child > .el-tree-node__content) {
+  border-bottom: 0;
+}
+
+.standard-tree-node {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  gap: 10px;
+  align-items: center;
+}
+
+.standard-tree-node.is-file {
+  cursor: pointer;
+}
+
+.standard-tree-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  color: #54749a;
+}
+
+.standard-tree-node.is-file .standard-tree-icon {
   color: var(--blue);
 }
 
+.standard-tree-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.standard-tree-copy strong,
+.standard-tree-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.standard-tree-copy strong {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--ink);
+}
+
+.standard-tree-copy small {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+  color: var(--muted);
+}
+
+.standard-tree-node.is-root .standard-tree-copy strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.standard-tree-node.is-group .standard-tree-copy strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.standard-tree-preview-state {
+  display: inline-flex;
+  min-width: 58px;
+  flex: 0 0 auto;
+  gap: 4px;
+  align-items: center;
+  justify-content: flex-end;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  transition: color 0.18s ease;
+}
+
+.standard-reference-tree :deep(.el-tree-node__content:hover) .standard-tree-preview-state,
+.standard-reference-tree
+  :deep(.el-tree-node.is-current > .el-tree-node__content)
+  .standard-tree-preview-state {
+  color: var(--blue);
+}
+
+.standard-tree-preview-state svg {
+  width: 15px;
+  height: 15px;
+}
+
+.standard-tree-preview-state.is-unavailable {
+  color: var(--muted);
+}
+
 .empty-inline {
-  font-weight: 800;
+  font-weight: 600;
   color: var(--muted);
 }
 
@@ -6347,7 +7026,7 @@ h3 {
   display: grid;
   width: 28px;
   height: 28px;
-  font-weight: 900;
+  font-weight: 600;
   color: #fff;
   background: var(--blue);
   border-radius: 50%;
@@ -6355,7 +7034,7 @@ h3 {
 }
 
 .step-title {
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .execution-step-detail {
@@ -6375,14 +7054,14 @@ h3 {
 .execution-step-detail dt {
   margin-bottom: 4px;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
   color: var(--muted);
 }
 
 .execution-step-detail dd {
   margin: 0;
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1.55;
   color: var(--ink);
 }
@@ -6405,7 +7084,7 @@ h3 {
   padding: 0;
   font: inherit;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
   color: var(--blue);
   text-decoration: underline;
   cursor: pointer;
@@ -6430,7 +7109,7 @@ h3 {
   display: grid;
   width: 28px;
   height: 28px;
-  font-weight: 900;
+  font-weight: 600;
   color: var(--blue);
   background: #eef5ff;
   border: 1px solid #bcd4ff;
@@ -6469,7 +7148,7 @@ h3 {
 }
 
 .preview-name {
-  font-weight: 800;
+  font-weight: 600;
   color: #26364e;
 }
 
@@ -6477,7 +7156,7 @@ h3 {
   margin-top: 6px;
   overflow: hidden;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   color: #68788f;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -6500,7 +7179,7 @@ h3 {
 :global(.aicheck-preview-drawer .el-drawer__header) {
   padding: 16px 20px;
   margin-bottom: 0;
-  font-weight: 900;
+  font-weight: 600;
   color: #26364e;
   border-bottom: 1px solid var(--line, #cbd8ea);
 }
@@ -6530,7 +7209,7 @@ h3 {
   display: flex;
   height: 38px;
   padding: 0 12px;
-  font-weight: 800;
+  font-weight: 600;
   color: #40516b;
   background: #fff;
   border-bottom: 1px solid var(--line);
@@ -6609,7 +7288,7 @@ h3 {
 .paper-title {
   margin-bottom: 18px;
   font-size: 20px;
-  font-weight: 900;
+  font-weight: 600;
   text-align: center;
 }
 
@@ -6621,7 +7300,7 @@ h3 {
 }
 
 .mini-doc-table td:nth-child(odd) {
-  font-weight: 900;
+  font-weight: 600;
   color: #485a73;
   background: var(--head);
 }
@@ -6653,7 +7332,7 @@ h3 {
 
 .readonly-mask {
   padding: 12px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1.6;
   color: #6b2b24;
   background: var(--red-soft);
@@ -6697,7 +7376,7 @@ h3 {
 .right-card :deep(.action-bar .el-button) {
   width: 100%;
   margin-left: 0;
-  font-weight: 800;
+  font-weight: 600;
   border-radius: 5px;
 }
 
@@ -6722,24 +7401,24 @@ h3 {
 
 .ai-recheck-output-head strong {
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .ai-recheck-output-head small {
   min-width: 0;
   overflow: hidden;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   color: #667085;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .ai-recheck-output-error {
-  margin: 10px 12px 0;
   padding: 9px 10px;
+  margin: 10px 12px 0;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1.5;
   color: #c83d3d;
   background: #fff1f1;
@@ -6748,10 +7427,10 @@ h3 {
 }
 
 .ai-recheck-output-warning {
-  margin: 10px 12px 0;
   padding: 9px 10px;
+  margin: 10px 12px 0;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1.5;
   color: #8a4b00;
   background: #fff8e8;
@@ -6767,11 +7446,24 @@ h3 {
   border-top: 1px solid #dde6f2;
 }
 
+.ai-recheck-technical-details {
+  border-top: 1px solid #dde6f2;
+}
+
+.ai-recheck-technical-details summary {
+  min-height: 44px;
+  padding: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #35516f;
+  cursor: pointer;
+}
+
 .ai-recheck-output-section label {
   display: block;
   margin-bottom: 6px;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   color: #485a73;
 }
 
@@ -6780,10 +7472,17 @@ h3 {
   padding: 10px;
   margin: 0;
   overflow: auto;
-  font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
-    'Courier New', monospace;
-  white-space: pre-wrap;
+  font:
+    12px/1.6 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    'Liberation Mono',
+    'Courier New',
+    monospace;
   word-break: break-word;
+  white-space: pre-wrap;
   background: #fff;
   border: 1px solid #dde6f2;
   border-radius: 5px;
@@ -6853,6 +7552,7 @@ h3 {
   }
 
   .workspace {
+    display: block;
     height: auto;
     overflow: visible;
   }
@@ -6878,14 +7578,63 @@ h3 {
   }
 
   .left {
-    grid-template-rows: auto;
-    height: auto;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
+    position: fixed;
+    z-index: 2201;
+    width: min(88vw, 380px);
+    height: 100vh;
+    border-right: 1px solid var(--line);
+    border-bottom: 0;
+    visibility: hidden;
+    transform: translateX(-105%);
+    box-shadow: 16px 0 40px rgb(25 42 70 / 18%);
+    transition: transform 0.2s ease;
+    inset: 0 auto 0 0;
+  }
+
+  .left.is-mobile-open {
+    visibility: visible;
+    transform: translateX(0);
+  }
+
+  .mobile-tree-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2200;
+    display: block;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    cursor: default;
+    background: rgb(18 31 52 / 38%);
+    border: 0;
+  }
+
+  .mobile-tree-trigger {
+    display: inline-flex;
+  }
+
+  .mobile-tree-close {
+    display: inline-flex;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    font-size: 28px;
+    line-height: 1;
+    color: #52627a;
+    cursor: pointer;
+    background: transparent;
+    border: 0;
+    align-items: center;
+    justify-content: center;
   }
 
   .tree-wrap :deep(.tree-panel) {
-    max-height: 520px;
+    height: calc(100vh - 52px);
+    max-height: none;
+  }
+
+  .section-title {
+    height: 52px;
   }
 
   .center {
@@ -6932,6 +7681,10 @@ h3 {
   .table th,
   .table td,
   .mini-doc-table td {
+    transition: none;
+  }
+
+  .left {
     transition: none;
   }
 }

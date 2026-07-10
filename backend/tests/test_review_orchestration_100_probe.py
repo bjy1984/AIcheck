@@ -3,6 +3,9 @@ from __future__ import annotations
 import httpx
 import pytest
 
+from libs.db.repository import repo
+from libs.review_orchestrator.execution import create_review_run_from_ai_run, execute_review_run_inline
+
 from scripts.review_orchestration_100_probe import ProbeConfig, ProbeFailure, ReviewOrchestration100Probe
 
 
@@ -124,3 +127,74 @@ def test_review_orchestration_100_probe_requires_temporal_signal() -> None:
     with httpx.Client(base_url="http://api", transport=transport(skipped_signal=True)) as client:
         with pytest.raises(ProbeFailure, match="not sent to Temporal"):
             ReviewOrchestration100Probe(client, config()).run()
+
+
+def test_formal_review_completion_converges_node_to_waiting_human(monkeypatch) -> None:
+    node = repo.node("P-2026-HDCP-001", 24)
+    node["status"] = "业务核验中"
+    ai_run = {
+        "id": "AIRUN-STATE-SYNC",
+        "projectId": "P-2026-HDCP-001",
+        "nodeId": 24,
+        "subject": "状态收敛测试",
+        "model": "review-chat",
+        "reviewMode": "formal",
+        "advisoryOnly": False,
+        "previousNodeStatus": "待审查",
+        "auditInputMode": "ocr_llm",
+        "suggestion": {"id": "AIS-STATE-SYNC", "confidence": 0, "manualConfirmItems": []},
+        "evidenceLinks": [],
+        "inputDocumentVersionIds": [],
+    }
+    repo.state["ai_runs"].insert(0, ai_run)
+    run = create_review_run_from_ai_run(ai_run, mode="inline")
+
+    def fake_graph(review_run, context, **kwargs):
+        review_run["findingDrafts"] = [
+            {"description": "证据不足，需人工确认", "confidence": 0.2}
+        ]
+        return {"runner": "langgraph", "checkpointer": "postgres", "nodeCount": 6}
+
+    monkeypatch.setattr("libs.review_orchestrator.graph.execute_review_graph", fake_graph)
+
+    result = execute_review_run_inline(run["reviewRunId"])
+
+    assert result["status"] == "waiting_human_review"
+    assert repo.node("P-2026-HDCP-001", 24)["status"] == "待人工确认"
+    assert run["stateTransition"]["reason"] == "formal_review_waiting_human_review"
+    assert ai_run["stateTransition"]["to"] == "待人工确认"
+
+
+def test_gap_precheck_completion_does_not_change_node_status(monkeypatch) -> None:
+    node = repo.node("P-2026-HDCP-001", 24)
+    node["status"] = "待审查"
+    ai_run = {
+        "id": "AIRUN-GAP-STATE",
+        "projectId": "P-2026-HDCP-001",
+        "nodeId": 24,
+        "subject": "缺项预审状态测试",
+        "model": "review-chat",
+        "reviewMode": "gap_precheck",
+        "advisoryOnly": True,
+        "previousNodeStatus": "待审查",
+        "auditInputMode": "ocr_llm",
+        "suggestion": {"id": "AIS-GAP-STATE", "confidence": 0, "manualConfirmItems": []},
+        "evidenceLinks": [],
+        "inputDocumentVersionIds": [],
+    }
+    repo.state["ai_runs"].insert(0, ai_run)
+    run = create_review_run_from_ai_run(ai_run, mode="inline")
+
+    def fake_graph(review_run, context, **kwargs):
+        review_run["findingDrafts"] = [
+            {"description": "缺少必传资料", "confidence": 0.4}
+        ]
+        return {"runner": "langgraph", "checkpointer": "postgres", "nodeCount": 6}
+
+    monkeypatch.setattr("libs.review_orchestrator.graph.execute_review_graph", fake_graph)
+
+    result = execute_review_run_inline(run["reviewRunId"])
+
+    assert result["status"] == "waiting_human_review"
+    assert repo.node("P-2026-HDCP-001", 24)["status"] == "待审查"
+    assert run["advisoryOnly"] is True

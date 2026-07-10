@@ -4,9 +4,14 @@ import asyncio
 import os
 from typing import Any
 
-from libs.db.repository import repo
+from libs.db.repository import flush_state_records, repo
 
-from .execution import append_review_event, create_review_run_from_ai_run, execute_review_run_inline
+from .execution import (
+    append_review_event,
+    create_review_run_from_ai_run,
+    execute_review_run_inline,
+    review_run_state_records,
+)
 
 
 def review_orchestration_mode() -> str:
@@ -39,6 +44,7 @@ def start_temporal_workflow(review_run: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:
         review_run["dispatchErrorCode"] = "TEMPORAL_START_FAILED"
         review_run["dispatchErrorMessage"] = str(exc)
+        flush_state_records(review_run_state_records(str(review_run["reviewRunId"])))
         return {
             "mode": "temporal",
             "status": "failed_to_start",
@@ -63,6 +69,8 @@ async def _start_temporal_workflow(review_run: dict[str, Any]) -> dict[str, Any]
         task_queue=review_run["taskQueues"]["workflow"],
     )
     review_run["temporalRunId"] = handle.result_run_id
+    review_run["updatedAt"] = review_run.get("updatedAt") or review_run.get("createdAt")
+    flush_state_records(review_run_state_records(str(review_run["reviewRunId"])))
     return {
         "mode": "temporal",
         "status": "started",

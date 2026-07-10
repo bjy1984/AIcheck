@@ -22,6 +22,7 @@ from libs.business_pack import (
     role_default_node_map,
 )
 from libs.material_targeting import load_review_points_from_mapping_doc
+from libs.material_review_assets import load_material_review_asset
 
 PROJECT_ID = "P-2026-HDCP-001"
 DEFAULT_BUSINESS_PACK = default_business_pack()
@@ -43,10 +44,13 @@ RULES_STANDARDS_ROOT = WORKSPACE_ROOT / "rules" / "standards"
 MATERIAL_MAPPING_DOC = WORKSPACE_ROOT / "docs" / "工程监检资料映射表.md"
 STANDARD_RULE_FILES = list_standard_files(RULES_STANDARDS_ROOT, workspace_root=WORKSPACE_ROOT)
 STANDARD_KNOWLEDGE_SEED = build_standard_knowledge_seed(STANDARD_RULE_FILES, DEFAULT_BUSINESS_PACK["ruleSets"])
-DEFAULT_MATERIAL_REVIEW_POINTS = load_review_points_from_mapping_doc(
-    MATERIAL_MAPPING_DOC,
-    business_pack_id=DEFAULT_BUSINESS_PACK_ID,
-)
+MATERIAL_REVIEW_ASSET = load_material_review_asset()
+DEFAULT_MATERIAL_REVIEW_POINTS = deepcopy(MATERIAL_REVIEW_ASSET.get("items") or [])
+if not DEFAULT_MATERIAL_REVIEW_POINTS:
+    DEFAULT_MATERIAL_REVIEW_POINTS = load_review_points_from_mapping_doc(
+        MATERIAL_MAPPING_DOC,
+        business_pack_id=DEFAULT_BUSINESS_PACK_ID,
+    )
 
 FDE_ROLES = ("fde",)
 FDE_ROLE_LABELS = {"fde": "FDE"}
@@ -2139,6 +2143,10 @@ ADMIN_CONFIG = {
     "toolSources": [{"id": "TS-OCR-001", "name": "PaddleOCR 文档识别", "toolType": "ocr", "endpoint": "ocr-service:8010", "authMode": "token", "status": "启用", "updatedAt": "2026-06-26 08:30:00"}],
     "fieldMappings": [{"id": "FM-001", "nodeId": 24, "fieldName": "证书编号", "sourceField": "ocr.certificate_no", "targetField": "welder.certificateNo", "required": True, "confidenceThreshold": 0.85, "updatedAt": "2026-06-26 08:30:00"}],
     "materialReviewPoints": deepcopy(DEFAULT_MATERIAL_REVIEW_POINTS),
+    "materialReviewPointsAsset": {
+        key: MATERIAL_REVIEW_ASSET.get(key)
+        for key in ("schemaVersion", "version", "source", "sourceSha256", "itemCount")
+    },
 }
 ADMIN_CONFIG["businessPacks"] = list_business_packs()
 ADMIN_CONFIG["nodeTemplates"] = [

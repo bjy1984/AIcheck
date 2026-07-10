@@ -153,6 +153,8 @@ export type BusinessBlockingReason = {
   requirementName?: string
   reportId?: string
   fieldName?: string
+  actionKey?: string
+  targetId?: string
   [key: string]: unknown
 }
 
@@ -183,6 +185,30 @@ export type DocumentAsset = {
   chunkCount?: number
   vectorCount?: number
   embeddingModel?: string
+  ocrReadiness?: {
+    schemaVersion: string
+    status:
+      | 'not_started'
+      | 'queued'
+      | 'processing'
+      | 'ready'
+      | 'incomplete'
+      | 'inconsistent'
+      | 'failed'
+    artifactIntegrity: boolean
+    sourceStatus?: string | null
+    documentVersionId?: string | null
+    parseResultId?: string | null
+    fieldCount: number
+    fragmentCount: number
+    tableCount: number
+    sealCount: number
+    positionedEvidenceCount: number
+    bboxCoverage: number
+    blockingReasons: BusinessBlockingReason[]
+    retryable: boolean
+    finishedAt?: string | null
+  }
   bindings?: NodeFileBinding[]
   primaryBinding?: NodeFileBinding | null
   updatedAt: string
@@ -315,7 +341,19 @@ export type AiReviewRun = {
   llmMetadata?: Record<string, unknown>
   reasoningProcess?: string
   llmResultText?: string
-  status: '推理中' | '完成' | '失败' | '已人工确认'
+  status: '推理中' | '完成' | '失败' | '已人工确认' | '已驳回' | '已取消'
+  reviewMode?: 'formal' | 'gap_precheck'
+  advisoryOnly?: boolean
+  confidenceScale?: 'ratio'
+  operationId?: string
+  taskId?: string
+  reviewRunId?: string
+  previousNodeStatus?: string
+  stateTransition?: {
+    from?: string
+    to?: string
+    reason?: string
+  }
   suggestion: {
     id: string
     result: '满足要求' | '需补正' | '不适用' | '需人工确认'
@@ -348,6 +386,10 @@ export type NodeBusinessBasis = {
     reference: string
     file?: string
     fileName?: string
+    knowledgeFileId?: string
+    sourceRelativePath?: string
+    previewAvailable?: boolean
+    previewUrl?: string
   }>
   aiExecution?: {
     schemaVersion?: string
@@ -647,6 +689,8 @@ export type NodeEvidenceReadiness = {
   readyForAi: boolean
   readyForAiFormal?: boolean
   readyForGapPrecheck?: boolean
+  availableReviewModes?: Array<'formal' | 'gap_precheck'>
+  recommendedAction?: 'run_formal_review' | 'run_gap_precheck' | 'configure_review_points' | string
   blockingReasons?: BusinessBlockingReason[]
   evidenceReviewComplete?: boolean
   requirements: NodeRequirementMatch[]

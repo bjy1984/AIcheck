@@ -1,0 +1,94 @@
+{
+  "schemaVersion": "aicheck-business-flow-matrix@1",
+  "auditId": "AUDIT-FE-BE-20260710",
+  "flows": [
+    {
+      "step": 1,
+      "role": "contractor",
+      "state": "资料准备",
+      "frontendControl": "批量上传文件 / 提交资料",
+      "backendGate": "项目范围、角色动作、上传签名、幂等键、任务调度可用",
+      "expectedFailureState": "保留待上传或待提交项，不推进业务状态",
+      "auditStatus": "partial",
+      "evidence": "合同和静态测试通过；未执行生产型 MinIO 写探针"
+    },
+    {
+      "step": 2,
+      "role": "system",
+      "state": "OCR 与证据提取",
+      "frontendControl": "任务进度、失败原因、重新处理",
+      "backendGate": "远程 OCR 可用、字段/bbox 完整、worker fail closed",
+      "expectedFailureState": "任务失败可重试，不生成正式证据",
+      "auditStatus": "partial",
+      "evidence": "单元测试通过；遵守本机禁跑 OCR；未执行远程 OCR 活体探针"
+    },
+    {
+      "step": 3,
+      "role": "inspection",
+      "state": "证据确认",
+      "frontendControl": "确认/驳回证据、缺项提示",
+      "backendGate": "证据必须属于当前项目和节点，正式结论仅允许 confirmed evidence",
+      "expectedFailureState": "pending/rejected/global evidence 被拒绝",
+      "auditStatus": "pass",
+      "evidence": "后端 605 项测试及证据范围测试通过"
+    },
+    {
+      "step": 4,
+      "role": "inspection",
+      "state": "AI 复核",
+      "frontendControl": "readyForAiFormal、readyForGapPrecheck、blockingReasons",
+      "backendGate": "pending=0、missing=0、调度可用；pure_llm advisory-only",
+      "expectedFailureState": "只生成缺项预审或明确失败，不进入业务核验中",
+      "auditStatus": "fail",
+      "evidence": "后端硬闸门通过；Workbench 顶栏重新核验未绑定 readiness"
+    },
+    {
+      "step": 5,
+      "role": "inspection",
+      "state": "人工审查意见",
+      "frontendControl": "结论、confirmed evidence 选择器、evidenceValidation",
+      "backendGate": "满足要求必须无缺项并有当前节点 confirmed evidence",
+      "expectedFailureState": "阻断保存并返回结构化证据错误",
+      "auditStatus": "pass",
+      "evidence": "后端状态机与前端组件测试基线通过"
+    },
+    {
+      "step": 6,
+      "role": "ndt",
+      "state": "专项资料提交",
+      "frontendControl": "ndtReadiness、OCR/bbox/报告-底片关联阻断",
+      "backendGate": "RT 比例、级别、bbox、底片关联和 OCR 完成",
+      "expectedFailureState": "保留待提交项，不进入待审查",
+      "auditStatus": "fail",
+      "evidence": "面板按钮正确禁用；Workbench 顶栏提交按钮未绑定 ndtReadiness"
+    },
+    {
+      "step": 7,
+      "role": "inspection",
+      "state": "报告生成与复核",
+      "frontendControl": "人工意见、evidenceScope、evidenceValidation",
+      "backendGate": "报告仅使用 report/node scope 内 confirmed evidence",
+      "expectedFailureState": "无人工意见或无有效证据时拒绝生成/更新",
+      "auditStatus": "pass",
+      "evidence": "报告范围和 confirmed-only 回归测试通过"
+    },
+    {
+      "step": 8,
+      "role": "owner/admin",
+      "state": "签发、证据包与归档",
+      "frontendControl": "已复核/已签发、明确 nodeId 或 reportId、归档只读",
+      "backendGate": "证据校验通过、显式范围、归档后不可变",
+      "expectedFailureState": "未签发或范围不明确时拒绝",
+      "auditStatus": "partial",
+      "evidence": "API 回归测试通过；未在生产型对象存储执行 hash 与不可变性探针"
+    }
+  ],
+  "roles": {
+    "inspection": {"routeGuard": "pass", "businessActionGuard": "backend-pass/frontend-partial"},
+    "contractor": {"routeGuard": "pass", "businessActionGuard": "partial"},
+    "ndt": {"routeGuard": "pass", "businessActionGuard": "backend-pass/frontend-fail"},
+    "owner": {"routeGuard": "pass", "businessActionGuard": "partial"},
+    "admin": {"routeGuard": "pass", "businessActionGuard": "security-fail"},
+    "fde": {"routeGuard": "pass", "businessActionGuard": "partial"}
+  }
+}

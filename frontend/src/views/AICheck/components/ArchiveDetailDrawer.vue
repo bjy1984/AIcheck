@@ -152,7 +152,7 @@ const visible = computed({
 .section-title {
   margin: 14px 0 8px;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .drawer-error-content {

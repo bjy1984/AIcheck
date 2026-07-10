@@ -5,6 +5,7 @@ import { getDocumentDetailApi, getDocumentOriginalBlobApi } from '@/api/aicheck'
 import type { DocumentDetailPayload } from '@/api/aicheck'
 import type { EvidenceLink, ExtractedField } from '@/types/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
+import { formatConfidence } from '@/utils/confidence'
 
 const props = defineProps<{
   modelValue: boolean
@@ -159,7 +160,7 @@ onBeforeUnmount(() => {
           <ElTag type="info" effect="plain">{{ evidenceTypeLabel }}</ElTag>
         </ElDescriptionsItem>
         <ElDescriptionsItem label="置信度">
-          {{ evidence.confidence ? `${Math.round(evidence.confidence * 100)}%` : '-' }}
+          {{ formatConfidence(evidence.confidence) }}
         </ElDescriptionsItem>
         <ElDescriptionsItem label="文件">
           {{ evidence.fileName || '-' }}
@@ -273,7 +274,7 @@ onBeforeUnmount(() => {
 .preview-title {
   margin-bottom: 10px;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .file-preview {

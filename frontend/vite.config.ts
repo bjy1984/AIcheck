@@ -123,6 +123,7 @@ export default ({ command, mode }: ConfigEnv): UserConfig => {
     build: {
       target: 'es2015',
       outDir: env.VITE_OUT_DIR || 'dist',
+      assetsDir: env.VITE_ASSETS_DIR || 'assets',
       sourcemap: env.VITE_SOURCEMAP === 'true',
       // brotliSize: false,
       rollupOptions: {

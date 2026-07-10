@@ -624,7 +624,7 @@ const getPillClass = (value?: string | number) => {
 
 .table th {
   width: 128px;
-  font-weight: 900;
+  font-weight: 600;
   color: #485a73;
   background: var(--head);
 }
@@ -645,7 +645,7 @@ const getPillClass = (value?: string | number) => {
   min-height: 24px;
   padding: 3px 8px;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1;
   color: var(--blue-2);
   white-space: nowrap;
@@ -684,7 +684,7 @@ const getPillClass = (value?: string | number) => {
   display: inline-flex;
   min-height: 24px;
   padding: 0 6px;
-  font-weight: 900;
+  font-weight: 600;
   color: var(--blue-2);
   border-radius: 5px;
   transition:
@@ -715,7 +715,7 @@ const getPillClass = (value?: string | number) => {
 .time-row {
   display: grid;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.6;
   color: #344054;
   grid-template-columns: 14px minmax(0, 1fr);

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -21,6 +22,7 @@ REQUIRED_SERVICES = {
     "api-service",
     "worker-service",
     "review-worker-service",
+    "workflow-migrate",
     "ocr-service",
     "embedding-service",
     "redis",
@@ -117,6 +119,7 @@ class DeploymentConfigValidator:
             self.check_healthchecks()
             self.check_environment()
             self.check_ocr_runtime_artifacts()
+            self.check_runtime_assets()
             self.check_volumes()
         if self.litellm:
             self.check_litellm_config()
@@ -275,9 +278,10 @@ class DeploymentConfigValidator:
 
     def check_service_dependencies(self) -> None:
         expected = {
-            "api-service": {"postgres", "redis", "minio", "litellm-service", "temporal-service"},
+            "api-service": {"workflow-migrate", "postgres", "redis", "minio", "litellm-service", "temporal-service", "ocr-service", "embedding-service"},
             "worker-service": {"postgres", "redis", "api-service", "minio", "ocr-service", "litellm-service"},
-            "review-worker-service": {"postgres", "temporal-service", "litellm-service"},
+            "review-worker-service": {"workflow-migrate", "postgres", "temporal-service", "litellm-service"},
+            "workflow-migrate": {"postgres"},
             "ocr-service": {"minio"},
             "litellm-service": {"postgres", "embedding-service"},
             "temporal-service": {"postgres"},
@@ -290,7 +294,7 @@ class DeploymentConfigValidator:
             if missing:
                 failures.append(f"{name}: missing {', '.join(missing)}")
         healthy_dependencies = {
-            "api-service": {"postgres", "redis", "minio", "litellm-service", "temporal-service"},
+            "api-service": {"postgres", "redis", "minio", "litellm-service", "temporal-service", "ocr-service", "embedding-service"},
             "worker-service": {"postgres", "redis", "api-service", "minio", "ocr-service", "litellm-service"},
             "review-worker-service": {"postgres", "temporal-service", "litellm-service"},
             "ocr-service": {"minio"},
@@ -302,6 +306,11 @@ class DeploymentConfigValidator:
             for dependency in dependencies:
                 if depends_on_condition(self.service(service_name).get("depends_on"), dependency) != "service_healthy":
                     failures.append(f"{service_name}: {dependency} must use condition=service_healthy")
+        for service_name in ("api-service", "review-worker-service"):
+            if depends_on_condition(self.service(service_name).get("depends_on"), "workflow-migrate") != "service_completed_successfully":
+                failures.append(
+                    f"{service_name}: workflow-migrate must use condition=service_completed_successfully"
+                )
         self.add(
             "compose.depends-on",
             "fail" if failures else "pass",
@@ -316,6 +325,7 @@ class DeploymentConfigValidator:
         ocr_command = command_text(self.service("ocr-service").get("command"))
         litellm_command = command_text(self.service("litellm-service").get("command"))
         embedding_command = command_text(self.service("embedding-service").get("command"))
+        workflow_migrate_command = command_text(self.service("workflow-migrate").get("command"))
         embedding_env = self.service("embedding-service").get("environment") or {}
         if "uvicorn apps.api.main:app" not in api_command or "--port 8000" not in api_command:
             failures.append("api-service command must run FastAPI on port 8000")
@@ -323,6 +333,8 @@ class DeploymentConfigValidator:
             failures.append("worker-service command must run Celery app")
         if "python -m apps.review_worker.main" not in review_worker_command:
             failures.append("review-worker-service command must run the Temporal ReviewRun worker")
+        if "python -m scripts.setup_langgraph_checkpoint" not in workflow_migrate_command:
+            failures.append("workflow-migrate must run the LangGraph checkpoint schema setup")
         queue_list = set(re.split(r"[, ]+", worker_command))
         missing_queues = sorted(REQUIRED_WORKER_QUEUES - queue_list)
         if missing_queues:
@@ -421,6 +433,9 @@ class DeploymentConfigValidator:
                 "AICHECK_QWEN_ALLOW_SERVER_FALLBACK",
                 "QWEN_API_BASE",
                 "QWEN_API_KEY",
+                "AICHECK_OCR_BASE_URL",
+                "AICHECK_EMBEDDING_PROVIDER",
+                "AICHECK_EMBEDDING_API_BASE",
             },
             "worker-service": {
                 "AICHECK_STRICT_PRODUCTION",
@@ -460,6 +475,9 @@ class DeploymentConfigValidator:
                 "AICHECK_QWEN_ALLOW_SERVER_FALLBACK",
                 "QWEN_API_BASE",
                 "QWEN_API_KEY",
+            },
+            "workflow-migrate": {
+                "LANGGRAPH_CHECKPOINT_DSN",
             },
             "ocr-service": {
                 "AICHECK_AGENTDESIGN_BACKEND",
@@ -591,6 +609,51 @@ class DeploymentConfigValidator:
             "compose.environment",
             "warn" if warnings else "pass",
             "; ".join(warnings) if warnings else "Required service environment and production-safe defaults are present.",
+        )
+
+    def check_runtime_assets(self) -> None:
+        backend_root_candidates = [
+            self.litellm_config.parent.parent,
+            self.dockerfile.parent,
+            Path(__file__).resolve().parents[1],
+            self.compose_file.parent,
+        ]
+        backend_root = next(
+            (
+                candidate
+                for candidate in backend_root_candidates
+                if (candidate / "config" / "material_review_points.json").is_file()
+            ),
+            self.compose_file.parent,
+        )
+        asset_path = backend_root / "config" / "material_review_points.json"
+        failures = []
+        payload: dict[str, Any] = {}
+        if not asset_path.exists():
+            failures.append(f"material review asset missing: {asset_path}")
+        else:
+            try:
+                payload = json.loads(asset_path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                failures.append(f"material review asset invalid: {exc}")
+        items = payload.get("items") if isinstance(payload.get("items"), list) else []
+        if len(items) != 151:
+            failures.append(f"material review asset must contain 151 items, got {len(items)}")
+        if not payload.get("sourceSha256"):
+            failures.append("material review asset must record sourceSha256")
+        if payload.get("itemCount") != len(items):
+            failures.append("material review asset itemCount does not match items")
+        source_name = str(payload.get("source") or "").strip()
+        source_path = backend_root.parent / source_name if source_name else None
+        if source_path and source_path.is_file():
+            actual_hash = hashlib.sha256(source_path.read_bytes()).hexdigest()
+            if actual_hash != payload.get("sourceSha256"):
+                failures.append("material review asset sourceSha256 does not match the mapping document")
+        self.add(
+            "runtime.material-review-asset",
+            "fail" if failures else "pass",
+            "; ".join(failures) if failures else "Versioned material review asset contains 151 items.",
+            {"itemCount": len(items), "version": payload.get("version")},
         )
 
     def check_ocr_runtime_artifacts(self) -> None:

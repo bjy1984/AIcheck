@@ -281,7 +281,7 @@ const handleGenerate = () => {
   align-items: center;
   justify-content: space-between;
   min-height: 32px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .report-form {
@@ -322,7 +322,7 @@ const handleGenerate = () => {
 
 .recent-export-head {
   margin-bottom: 8px;
-  font-weight: 800;
+  font-weight: 600;
   color: #26364e;
 }
 
@@ -382,7 +382,7 @@ const handleGenerate = () => {
 .section-title {
   margin: 14px 0 8px;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .report-gate-alert {

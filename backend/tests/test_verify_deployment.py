@@ -93,7 +93,7 @@ def api_transport(request: httpx.Request) -> httpx.Response:
     if path.endswith("/documents/DOC-VERIFY/preview-url"):
         return envelope(
             {
-                "url": "http://storage/download/DOC-VERIFY/preview",
+                "url": "/api/projects/P-2026-HDCP-001/documents/DOC-VERIFY/original?disposition=inline",
                 "method": "GET",
                 "expiresAt": "2026-06-27 00:30:00",
                 "fileName": probe_state["fileName"],
@@ -105,13 +105,16 @@ def api_transport(request: httpx.Request) -> httpx.Response:
     if path.endswith("/documents/DOC-VERIFY/download-url"):
         return envelope(
             {
-                "url": "http://storage/download/DOC-VERIFY/download",
+                "url": "/api/projects/P-2026-HDCP-001/documents/DOC-VERIFY/original?disposition=attachment",
                 "method": "GET",
                 "expiresAt": "2026-06-27 00:30:00",
                 "fileName": probe_state["fileName"],
                 "contentType": "application/pdf",
             }
         )
+    if path.endswith("/documents/DOC-VERIFY/original"):
+        assert request.headers.get("authorization") == "Bearer token-contractor"
+        return httpx.Response(200, content=b"%PDF-1.4\nverify\n")
     if path.endswith("/documents/DOC-VERIFY"):
         return envelope(
             {
@@ -383,6 +386,7 @@ def litellm_transport(request: httpx.Request) -> httpx.Response:
     if request.url.path == "/v1/chat/completions":
         body = json.loads(request.read().decode("utf-8") or "{}")
         assert body["model"] == "default-chat"
+        assert body["max_tokens"] == 128
         assert request.headers.get("authorization") == "Bearer sk-test"
         return httpx.Response(
             200,
@@ -734,6 +738,40 @@ def test_deployment_verifier_redacts_sensitive_result_fields(capsys) -> None:
     assert "sk-provider-secret" not in output
 
 
+def test_deployment_verifier_converts_request_timeout_to_structured_failure() -> None:
+    config = VerifyConfig(
+        api_base="http://api",
+        ocr_base=None,
+        litellm_base=None,
+        litellm_api_key=None,
+        project_id="P-2026-HDCP-001",
+        roles=[],
+        strict_production=True,
+        skip_ocr=True,
+        skip_litellm=True,
+        write_probes=False,
+        ocr_object_probe=False,
+        review_run_probe=False,
+        review_run_wait_seconds=0.0,
+        litellm_management_probes=False,
+        litellm_provider_probes=False,
+        qwen_official_probe=False,
+    )
+
+    def timeout_transport(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    verifier = DeploymentVerifier(
+        config,
+        api_client=httpx.Client(base_url=config.api_base, transport=httpx.MockTransport(timeout_transport)),
+    )
+
+    status_code, payload = verifier.request_json(verifier.api, "GET", "/api/healthz")
+
+    assert status_code == 598
+    assert payload == {"code": "REQUEST_TIMEOUT", "errorType": "ReadTimeout"}
+
+
 def test_deployment_verifier_passes_happy_path() -> None:
     probe_state["signedPut"] = ""
     probe_state["signedGets"] = []
@@ -790,7 +828,7 @@ def test_deployment_verifier_passes_happy_path() -> None:
     assert review_probe.data["scorecardOk"] is True
     assert review_probe.data["replayReviewRunId"] == "RRUN-REPLAY-VERIFY"
     assert probe_state["signedPut"] == "ok"
-    assert set(probe_state["signedGets"]) == {"/download/DOC-VERIFY/preview", "/download/DOC-VERIFY/download"}
+    assert probe_state["signedGets"] == []
     assert any(item.name == "ocr.health" and item.status == "pass" for item in results)
     assert any(item.name == "ocr.runtime-doctor" and item.status == "pass" for item in results)
     assert any(item.name == "ocr.parse-contract" and item.status == "pass" for item in results)
