@@ -316,6 +316,17 @@ def test_local_role_bootstrap_creates_login_accounts_without_postgres(monkeypatc
         "ndt": "Local!2026-TestZ",
         "owner": "Local!2026-ViewZ",
     }
+    existing_member = {
+        "id": "PM-GDLNG-CONTRACTOR",
+        "projectId": "P-2026-GDLNG-002",
+        "userId": "USER-CONTRACTOR-001",
+        "role": "contractor",
+        "nodeScope": [1, 2, 16, 40],
+        "actions": ["document:upload"],
+        "expiresAt": None,
+        "enabled": True,
+    }
+    repo.state["project_members"].append(existing_member)
     monkeypatch.setenv("AICHECK_BOOTSTRAP_LOCAL_ROLES", "true")
     for role, password in passwords.items():
         monkeypatch.setenv(f"AICHECK_BOOTSTRAP_PASSWORD_{role.upper()}", password)
@@ -324,6 +335,10 @@ def test_local_role_bootstrap_creates_login_accounts_without_postgres(monkeypatc
 
     assert {user["username"] for user in repo.state["users"]} >= set(passwords)
     assert {member["role"] for member in repo.state["project_members"]} >= set(passwords)
+    assert any(
+        member["id"] == existing_member["id"] and member["nodeScope"] == existing_member["nodeScope"]
+        for member in repo.state["project_members"]
+    )
     for role, password in passwords.items():
         result = assert_ok(client.post("/api/auth/login", json={"username": role, "password": password}))
         assert result["user"]["role"] == role
@@ -5821,19 +5836,24 @@ def test_review_opinion_requires_current_node_confirmed_evidence() -> None:
     assert saved["opinion"]["readinessSnapshot"]["readyForAiFormal"] is True
 
 
-def test_ai_recheck_dispatch_disabled_fails_closed_without_status_change() -> None:
+def test_ai_recheck_dispatch_disabled_returns_local_review_output() -> None:
     seed_reviewed_node_24()
-    before_status = repo.node("P-2026-HDCP-001", 24)["status"]
     before_run_count = len(repo.state["ai_runs"])
 
-    failed = assert_error(
-        client.post("/projects/P-2026-HDCP-001/inspection/nodes/24/ai-recheck"),
-        "CONFLICT",
-    )
+    result = assert_ok(client.post("/projects/P-2026-HDCP-001/inspection/nodes/24/ai-recheck"))
+    latest_run = result["latestRun"]
 
-    assert failed["data"]["dispatch"]["ready"] is False
-    assert repo.node("P-2026-HDCP-001", 24)["status"] == before_status
-    assert len(repo.state["ai_runs"]) == before_run_count
+    assert result["dispatch"]["ready"] is False
+    assert result["dispatch"]["mode"] == "local_disabled_fallback"
+    assert result["status"] == "完成"
+    assert latest_run["status"] == "完成"
+    assert "本地降级复核摘要" in latest_run["reasoningProcess"]
+    assert latest_run["llmMetadata"]["llmCalled"] is False
+    assert latest_run["llmMetadata"]["deepThinkAvailable"] is False
+    assert "deepThink" not in latest_run["llmMetadata"]
+    assert latest_run["llmResultText"] == latest_run["suggestion"]["opinionDraft"]
+    assert repo.node("P-2026-HDCP-001", 24)["status"] == "待人工确认"
+    assert len(repo.state["ai_runs"]) == before_run_count + 1
 
 
 def test_owner_write_forbidden_and_archived_readonly() -> None:

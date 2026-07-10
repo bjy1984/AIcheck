@@ -3096,6 +3096,8 @@ export const getNdtInspectionFeedbackDetailApi = (
 type MutationHeaderOptions = {
   etag?: string
   idempotencyKey?: string
+  silentBusinessError?: boolean
+  silentHttpError?: boolean
 }
 
 type RequestHeaderOptions = {
@@ -3140,6 +3142,8 @@ const mutationHeaders = (
     options?.idempotencyKey || fallbackIdempotencyKey,
     fallbackIdempotencyKey
   )
+  if (options?.silentBusinessError) headers['X-Silent-Business-Error'] = 'true'
+  if (options?.silentHttpError) headers['X-Silent-Http-Error'] = 'true'
   return Object.keys(headers).length ? headers : undefined
 }
 

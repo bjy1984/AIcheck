@@ -414,6 +414,30 @@ def clear_prior_scan_flow(project_id: str, scan_file_names: set[str]) -> dict[st
         for item in repo.state.get("evidence_links", [])
         if item.get("documentVersionId") not in scan_version_ids and item.get("scenarioTag") != SCENARIO_TAG
     ]
+    repo.state["node_evidence_links"] = [
+        item
+        for item in repo.state.get("node_evidence_links", [])
+        if not (
+            item.get("projectId") == project_id
+            and (
+                item.get("documentId") in scan_doc_ids
+                or item.get("documentVersionId") in scan_version_ids
+                or item.get("scenarioTag") == SCENARIO_TAG
+            )
+        )
+    ]
+    repo.state["material_targeting_runs"] = [
+        item
+        for item in repo.state.get("material_targeting_runs", [])
+        if not (
+            item.get("projectId") == project_id
+            and (
+                item.get("documentId") in scan_doc_ids
+                or item.get("documentVersionId") in scan_version_ids
+                or item.get("scenarioTag") == SCENARIO_TAG
+            )
+        )
+    ]
     repo.state["knowledge_chunks"] = [
         item for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") not in scan_file_ids
     ]
@@ -726,6 +750,14 @@ def apply_ocr_and_index(document: dict[str, Any], version: dict[str, Any], raw: 
         version["id"],
         triggered_by="scan_import",
     )
+    for run in repo.state.get("material_targeting_runs", []):
+        if run.get("id") == targeting_result.get("id"):
+            run["scenarioTag"] = SCENARIO_TAG
+            break
+    for link in targeting_result.get("createdLinks") or []:
+        link["scenarioTag"] = SCENARIO_TAG
+    for binding in targeting_result.get("createdBindings") or []:
+        binding["scenarioTag"] = SCENARIO_TAG
     knowledge_file = repo.knowledge_file_for_version(version["id"])
     slice_result = {"status": "skipped", "chunkCount": 0}
     vector_result = {"status": "skipped", "vectorCount": 0}

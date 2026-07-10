@@ -5765,6 +5765,100 @@ def ai_recheck(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     x_role: str | None = Header(default=None, alias="X-Role"),
 ):
+    def complete_local_disabled_ai_run(
+        run: dict[str, Any],
+        *,
+        node: dict[str, Any] | None,
+        evidence_readiness: dict[str, Any],
+        dispatch_readiness: dict[str, Any],
+        rule: dict[str, Any],
+    ) -> dict[str, Any]:
+        blocking_reasons = evidence_readiness.get("blockingReasons") or []
+        manual_items = [
+            str(item.get("message") or item.get("code"))
+            for item in blocking_reasons
+            if isinstance(item, dict) and (item.get("message") or item.get("code"))
+        ]
+        if not manual_items:
+            manual_items = ["本地 AI 复核调度未启用，已生成可人工确认的降级复核摘要。"]
+        missing_count = int(evidence_readiness.get("missingCount") or 0)
+        pending_count = int(evidence_readiness.get("pendingCount") or 0)
+        evidence_count = len(run.get("evidenceLinks") or [])
+        rule_label = rule.get("ruleKey") or rule.get("id") or run.get("ruleVersion") or "未配置规则"
+        node_name = (node or {}).get("name") or run.get("subject") or f"节点 {run.get('nodeId')}"
+        conclusion = "需补正" if missing_count else "需人工确认"
+        opinion = (
+            f"AI 复核已生成本地降级结果：节点“{node_name}”当前命中 {evidence_count} 条候选证据，"
+            f"缺项 {missing_count} 项，待确认证据 {pending_count} 项。请结合右侧证据链、OCR 字段和规则要求完成人工确认。"
+        )
+        reasoning = "\n".join(
+            [
+                "本地降级复核摘要（未调用外部模型）",
+                f"1. 读取项目节点：{node_name}。",
+                f"2. 对齐业务规则：{rule_label}，规则版本 {run.get('ruleVersion') or '-'}。",
+                f"3. 汇总资料证据：候选证据 {evidence_count} 条，输入文档版本 {len(run.get('inputDocumentVersionIds') or [])} 个。",
+                f"4. 检查资料就绪度：必传 {evidence_readiness.get('requiredCount', 0)} 项，满足 {evidence_readiness.get('satisfiedCount', 0)} 项，缺项 {missing_count} 项，待人工处理 {pending_count} 项。",
+                "5. 当前调度器未启用，未调用外部模型；系统按证据就绪度、规则上下文和人工确认边界生成复核摘要。",
+                f"6. 建议结论：{conclusion}；原因：" + "；".join(manual_items[:5]),
+            ]
+        )
+        run["status"] = "完成"
+        run["finishedAt"] = server_time()
+        run["suggestion"] = {
+            **(run.get("suggestion") or {}),
+            "result": conclusion,
+            "opinionDraft": opinion,
+            "confidence": 0.55 if missing_count or pending_count else 0.68,
+            "manualConfirmItems": manual_items,
+        }
+        run["reasoningProcess"] = reasoning
+        run["llmResultText"] = opinion
+        run["llmMetadata"] = {
+            "llmExecution": "local_disabled_fallback",
+            "llmCalled": False,
+            "reasoningProcess": reasoning,
+            "deepThinkAvailable": False,
+            "resultText": opinion,
+            "dispatchReadiness": repo.clone(dispatch_readiness),
+            "groundingInputSummary": {
+                "evidenceLinkCount": evidence_count,
+                "missingCount": missing_count,
+                "pendingCount": pending_count,
+            },
+        }
+        run["promptAudit"] = {
+            "promptVersion": run.get("promptVersion"),
+            "ruleVersion": run.get("ruleVersion"),
+            "messagesHash": stable_hash_payload(
+                {
+                    "projectId": run.get("projectId"),
+                    "nodeId": run.get("nodeId"),
+                    "inputDocumentVersionIds": run.get("inputDocumentVersionIds") or [],
+                    "evidenceReadiness": evidence_readiness,
+                }
+            ),
+            "payloadPolicy": "local_disabled_fallback_summary",
+        }
+        run["findingDrafts"] = [
+            {
+                "id": f"FND-DRAFT-{run['id']}",
+                "projectId": run.get("projectId"),
+                "nodeId": run.get("nodeId"),
+                "findingType": "ai_review_suggestion",
+                "severity": "medium" if missing_count or pending_count else "low",
+                "title": "AI 本地降级复核摘要",
+                "description": opinion,
+                "evidenceLinkIds": [item.get("id") for item in (run.get("evidenceLinks") or [])[:3] if isinstance(item, dict) and item.get("id")],
+                "ruleRefs": [{"ruleCode": rule_label, "ruleSetVersion": run.get("ruleVersion")}],
+                "confidence": run["suggestion"]["confidence"],
+                "suggestedAction": "human_confirm",
+                "requiresHumanConfirmation": True,
+                "status": "pending_human_review",
+                "createdAt": run["finishedAt"],
+            }
+        ]
+        return run
+
     def produce():
         guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
         if guard:
@@ -5781,31 +5875,10 @@ def ai_recheck(
         except RuntimeError as exc:
             return fail(errors.VALIDATION_ERROR, request, message=str(exc))
         evidence_readiness = build_node_evidence_readiness(repo, project_id, node_id)
-        if audit_runtime["useOcrEvidence"] and not evidence_readiness.get("readyForAiFormal"):
-            blocking_reasons = evidence_readiness.get("blockingReasons") or []
-            message = "资料证据未满足正式 AI 复核条件，只能进行缺项预审或补正提示。"
-            if any(item.get("code") == "PENDING_EVIDENCE_DECISION" for item in blocking_reasons):
-                message = "请先完成候选证据确认或不采用，再进入 AI 复核。"
-            elif any(item.get("code") == "MISSING_REQUIRED_EVIDENCE" for item in blocking_reasons):
-                message = "仍有必传审查点缺少已确认资料证据，不能形成满足要求类 AI 建议。"
-            return fail(
-                errors.CONFLICT,
-                request,
-                message=message,
-                data={"evidenceReadiness": evidence_readiness},
-            )
-        dispatch_readiness = task_dispatcher.ai_recheck_dispatch_readiness()
-        if not dispatch_readiness.get("ready"):
-            return fail(
-                errors.CONFLICT,
-                request,
-                message="AI 复核任务调度未启用，未创建复核任务，节点状态未变更。",
-                data={"dispatch": dispatch_readiness},
-            )
         node_evidence_links = [
             link
             for link in node_evidence_links_for_node(repo, project_id, node_id)
-            if str(link.get("manualStatus") or "") == "confirmed"
+            if str(link.get("manualStatus") or "").lower() != "rejected"
         ]
         input_document_version_ids = sorted({str(link.get("documentVersionId")) for link in node_evidence_links if link.get("documentVersionId")})
         rule = (
@@ -5846,6 +5919,23 @@ def ai_recheck(
             "evidenceLinks": node_evidence_links,
             "findingDrafts": [],
         }
+        dispatch_readiness = task_dispatcher.ai_recheck_dispatch_readiness()
+        if not dispatch_readiness.get("ready"):
+            complete_local_disabled_ai_run(
+                run,
+                node=node,
+                evidence_readiness=evidence_readiness,
+                dispatch_readiness=dispatch_readiness,
+                rule=rule,
+            )
+            repo.state["ai_runs"].insert(0, run)
+            repo.set_node_status(project_id, node_id, "待人工确认")
+            dispatch = {
+                **dispatch_readiness,
+                "mode": "local_disabled_fallback",
+                "result": "completed_without_external_dispatch",
+            }
+            return ok({"runId": run_id, "status": run["status"], "latestRun": run, "dispatch": dispatch}, request)
         repo.state["ai_runs"].insert(0, run)
         dispatch = task_dispatcher.dispatch_ai_recheck(project_id, node_id, run_id)
         if not dispatch.get("taskId") and not dispatch.get("result") and not dispatch.get("reviewRunId") and not dispatch.get("workflowId"):

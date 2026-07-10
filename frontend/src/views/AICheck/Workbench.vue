@@ -93,6 +93,7 @@ import type {
 import type {
   ActionCode,
   ArchiveItem,
+  AiReviewRun,
   EvidenceLink,
   ExportTask,
   NdtFeedback,
@@ -346,6 +347,14 @@ const inspectionOverviewJumpItems = [
   { id: 'inspection-overview-nodes', label: '节点处理清单' },
   { id: 'inspection-overview-files', label: '上传文件列表' }
 ]
+const inspectionNodeJumpItems = [
+  { id: 'inspection-node-basis', label: '开展依据' },
+  { id: 'inspection-node-requirements', label: '审查资料' },
+  { id: 'inspection-node-evidence', label: '证据确认' },
+  { id: 'inspection-node-execution', label: 'AI执行步骤' },
+  { id: 'inspection-node-conclusion', label: '审查结论' },
+  { id: 'inspection-node-manual-review', label: '人工审查' }
+]
 
 const role = computed<RoleCode>(() => {
   const path = route.path
@@ -371,6 +380,85 @@ const extractedFields = computed(() => nodePackage.value?.extractedFields || [])
 const rectifications = computed(() => nodePackage.value?.rectifications || [])
 const reviewOpinions = computed(() => nodePackage.value?.reviewOpinions || [])
 const latestAiRun = computed(() => nodePackage.value?.aiRuns[0])
+const aiRecheckOutputVisible = ref(false)
+const aiRecheckRunOverride = ref<AiReviewRun>()
+const aiRecheckOutputError = ref('')
+const getAiMetadataText = (
+  metadata: Record<string, unknown> | undefined,
+  keys: string[]
+) => {
+  for (const key of keys) {
+    const value = metadata?.[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+    if (value && typeof value === 'object') return JSON.stringify(value, null, 2)
+  }
+  return ''
+}
+const aiRecheckDisplayRun = computed(() => aiRecheckRunOverride.value || latestAiRun.value)
+const aiRecheckIsLocalFallback = computed(() => {
+  const metadata = aiRecheckDisplayRun.value?.llmMetadata
+  return metadata?.llmCalled === false || metadata?.llmExecution === 'local_disabled_fallback'
+})
+const aiRecheckReasoningText = computed(() => {
+  const run = aiRecheckDisplayRun.value
+  const metadata = run?.llmMetadata
+  return (
+    run?.reasoningProcess?.trim() ||
+    getAiMetadataText(metadata, [
+      'reasoningProcess',
+      'reasoningSummary',
+      'reasoning_content',
+      'reasoningContent'
+    ]) ||
+    (actionLoading.value && aiRecheckOutputVisible.value
+      ? '正在触发 AI 复核，等待后端返回推理过程。'
+      : '暂无 AI 推理过程。')
+  )
+})
+const aiRecheckDeepThinkText = computed(() => {
+  if (aiRecheckIsLocalFallback.value) {
+    return '当前调度器未启用，未调用外部模型，因此没有真实 DeepThink 内容。上方“推理过程”为系统基于真实节点、证据数量、缺项数量和规则上下文生成的本地降级摘要。'
+  }
+  const run = aiRecheckDisplayRun.value
+  const metadata = run?.llmMetadata
+  return (
+    getAiMetadataText(metadata, [
+      'deepThink',
+      'deepthink',
+      'deepThinkContent',
+      'deepthinkContent',
+      'reasoning_content',
+      'reasoningContent'
+    ]) ||
+    run?.reasoningProcess?.trim() ||
+    (actionLoading.value && aiRecheckOutputVisible.value
+      ? '正在触发 AI 复核，等待后端返回 DeepThink 内容。'
+      : '暂无 DeepThink 内容。')
+  )
+})
+const aiRecheckDeepThinkLabel = computed(() =>
+  aiRecheckIsLocalFallback.value ? 'DeepThink 内容（未调用模型）' : 'DeepThink 内容'
+)
+const aiRecheckResultText = computed(() => {
+  const run = aiRecheckDisplayRun.value
+  const metadata = run?.llmMetadata
+  return (
+    run?.llmResultText?.trim() ||
+    getAiMetadataText(metadata, ['resultText', 'answer', 'content']) ||
+    run?.suggestion?.opinionDraft ||
+    (actionLoading.value && aiRecheckOutputVisible.value
+      ? '正在等待模型输出。'
+      : '暂无模型输出。')
+  )
+})
+const aiRecheckOutputMeta = computed(() => {
+  const run = aiRecheckDisplayRun.value
+  if (!run) return actionLoading.value && aiRecheckOutputVisible.value ? '触发中' : '等待触发'
+  const executionLabel = aiRecheckIsLocalFallback.value
+    ? '本地降级摘要（未调用模型）'
+    : run.model || 'review-chat'
+  return [run.status, executionLabel, run.finishedAt || run.id].filter(Boolean).join(' · ')
+})
 const nodeEvidenceLinks = computed(() => nodePackage.value?.nodeEvidenceLinks || [])
 const evidenceLinks = computed(() => {
   const runLinks = latestAiRun.value?.evidenceLinks || []
@@ -2624,19 +2712,33 @@ const handleAiRecheck = async () => {
     ElMessage.warning(aiRecheckDisabledReason.value)
     return
   }
+  aiRecheckOutputVisible.value = true
+  aiRecheckOutputError.value = ''
+  aiRecheckRunOverride.value = undefined
   actionLoading.value = true
   try {
     const res = await requestAiRecheckApi(activeProjectId.value, activeNodeId.value, {
-      etag: currentProject.value?.etag
+      etag: currentProject.value?.etag,
+      silentBusinessError: true,
+      silentHttpError: true
     })
     if (!res) {
-      showActionError('AI 复核触发失败，请检查是否已有任务运行或当前节点是否允许复核。')
+      aiRecheckOutputError.value = getAicheckErrorMessage(
+        undefined,
+        'AI 复核触发失败，请检查是否已有任务运行或当前节点是否允许复核。'
+      )
       return
     }
     actionBlocker.value = undefined
+    aiRecheckRunOverride.value = res.data.latestRun
     const statusReason = String(res.data.dispatch?.statusReason || '')
     ElMessage.success(statusReason ? `AI 复核任务已创建：${statusReason}` : 'AI 复核任务已创建')
     await loadNodePackage(activeNodeId.value)
+  } catch (error) {
+    aiRecheckOutputError.value = getAicheckErrorMessage(
+      error,
+      'AI 复核触发失败，请检查是否已有任务运行或当前节点是否允许复核。'
+    )
   } finally {
     actionLoading.value = false
   }
@@ -3146,6 +3248,15 @@ watch(
 )
 
 watch(
+  () => activeNodeId.value,
+  () => {
+    aiRecheckOutputVisible.value = false
+    aiRecheckRunOverride.value = undefined
+    aiRecheckOutputError.value = ''
+  }
+)
+
+watch(
   () => overviewFileKeyword.value,
   () => {
     overviewFilePage.value = 1
@@ -3392,7 +3503,12 @@ onBeforeUnmount(() => {
                   {{ selectedNode?.inspectionType || '-' }}类节点
                 </span>
               </div>
-              <h1 class="page-title">{{ currentRoleConfig.title }} · {{ pageHeadline }}</h1>
+              <h1
+                v-if="!(role === 'inspection' && activeWorkbenchSection === 'node')"
+                class="page-title"
+              >
+                {{ currentRoleConfig.title }} · {{ pageHeadline }}
+              </h1>
               <nav
                 v-if="role === 'inspection' && activeWorkbenchSection === 'overview'"
                 class="inspection-overview-jump-menu"
@@ -3400,6 +3516,21 @@ onBeforeUnmount(() => {
               >
                 <button
                   v-for="item in inspectionOverviewJumpItems"
+                  :key="item.id"
+                  type="button"
+                  class="inspection-overview-jump-button"
+                  @click="handleInspectionOverviewJump(item.id)"
+                >
+                  {{ item.label }}
+                </button>
+              </nav>
+              <nav
+                v-else-if="role === 'inspection' && activeWorkbenchSection === 'node'"
+                class="inspection-overview-jump-menu"
+                aria-label="节点审查区块快捷跳转"
+              >
+                <button
+                  v-for="item in inspectionNodeJumpItems"
                   :key="item.id"
                   type="button"
                   class="inspection-overview-jump-button"
@@ -3743,7 +3874,54 @@ onBeforeUnmount(() => {
             @file-delete="handleDeleteProjectFile"
           />
 
-          <section v-if="role === 'inspection' && activeWorkbenchSection === 'node'" class="card">
+          <section
+            v-if="
+              role === 'inspection' && activeWorkbenchSection === 'node' && hasAction('ai:recheck')
+            "
+            class="node-ai-recheck-top"
+          >
+            <div class="node-ai-recheck-actions">
+              <ElButton
+                class="node-ai-recheck-button"
+                type="primary"
+                :loading="actionLoading"
+                :disabled="isReadOnly"
+                @click="handleAiRecheck"
+              >
+                AI 复核
+              </ElButton>
+            </div>
+            <div v-if="aiRecheckOutputVisible" class="ai-recheck-output" aria-live="polite">
+              <div class="ai-recheck-output-head">
+                <strong>AI 复核输出</strong>
+                <small>{{ aiRecheckOutputMeta }}</small>
+              </div>
+              <div v-if="aiRecheckOutputError" class="ai-recheck-output-error">
+                {{ aiRecheckOutputError }}
+              </div>
+              <div v-if="aiRecheckIsLocalFallback" class="ai-recheck-output-warning">
+                当前调度器未启用，未调用外部模型；以下为基于真实证据状态生成的本地降级摘要，不是模型 DeepThink。
+              </div>
+              <div class="ai-recheck-output-section">
+                <label>推理过程</label>
+                <pre>{{ aiRecheckReasoningText }}</pre>
+              </div>
+              <div class="ai-recheck-output-section">
+                <label>{{ aiRecheckDeepThinkLabel }}</label>
+                <pre>{{ aiRecheckDeepThinkText }}</pre>
+              </div>
+              <div class="ai-recheck-output-section">
+                <label>模型输出</label>
+                <pre>{{ aiRecheckResultText }}</pre>
+              </div>
+            </div>
+          </section>
+
+          <section
+            v-if="role === 'inspection' && activeWorkbenchSection === 'node'"
+            id="inspection-node-basis"
+            class="card"
+          >
             <div class="card-head">
               <h2>一、监检项目开展依据</h2>
               <div class="sub">{{ businessBasis?.ruleName || selectedNode?.name }}</div>
@@ -3767,7 +3945,7 @@ onBeforeUnmount(() => {
                 </article>
               </div>
 
-              <article class="basis-table-block">
+              <article id="inspection-node-requirements" class="basis-table-block">
                 <div class="block-title-row">
                   <h3>审查所需资料</h3>
                   <span class="pill blue">{{ nodeRequirementRows.length }} 项</span>
@@ -3809,7 +3987,10 @@ onBeforeUnmount(() => {
                 </div>
               </article>
 
-              <article class="basis-table-block evidence-confirmation-block">
+              <article
+                id="inspection-node-evidence"
+                class="basis-table-block evidence-confirmation-block"
+              >
                 <div class="block-title-row">
                   <h3>证据确认</h3>
                   <span class="pill blue">{{ evidenceConfirmationRows.length }} 条</span>
@@ -3887,6 +4068,7 @@ onBeforeUnmount(() => {
 
           <section
             v-if="role === 'inspection' && activeWorkbenchSection === 'node'"
+            id="inspection-node-execution"
             class="card node-package-card"
           >
             <div class="card-head">
@@ -3938,6 +4120,7 @@ onBeforeUnmount(() => {
 
           <section
             v-if="role === 'inspection' && activeWorkbenchSection === 'node'"
+            id="inspection-node-conclusion"
             class="card conclusion-card"
           >
             <div class="card-head">
@@ -3985,6 +4168,7 @@ onBeforeUnmount(() => {
 
           <section
             v-if="role === 'inspection' && activeWorkbenchSection === 'node'"
+            id="inspection-node-manual-review"
             class="manual-review-section"
           >
             <div class="card-head manual-review-head">
@@ -5095,6 +5279,15 @@ h3 {
   box-shadow: 0 0 0 3px rgb(31 102 216 / 12%);
 }
 
+#inspection-node-basis,
+#inspection-node-requirements,
+#inspection-node-evidence,
+#inspection-node-execution,
+#inspection-node-conclusion,
+#inspection-node-manual-review {
+  scroll-margin-top: 88px;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -6071,6 +6264,27 @@ h3 {
   color: var(--muted);
 }
 
+.node-ai-recheck-top {
+  padding: 14px;
+  margin-bottom: 12px;
+  background: #fff;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+}
+
+.node-ai-recheck-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.node-ai-recheck-button {
+  min-width: 180px;
+  font-weight: 900;
+  border-radius: 5px;
+}
+
 .evidence-confirmation-block {
   overflow: hidden;
 }
@@ -6484,6 +6698,94 @@ h3 {
   width: 100%;
   margin-left: 0;
   font-weight: 800;
+  border-radius: 5px;
+}
+
+.ai-recheck-output {
+  margin-top: 12px;
+  overflow: hidden;
+  color: #26364e;
+  background: #f8fbff;
+  border: 1px solid #c8d8ee;
+  border-radius: 6px;
+}
+
+.ai-recheck-output-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: #eef5ff;
+  border-bottom: 1px solid #c8d8ee;
+}
+
+.ai-recheck-output-head strong {
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.ai-recheck-output-head small {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 800;
+  color: #667085;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-recheck-output-error {
+  margin: 10px 12px 0;
+  padding: 9px 10px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.5;
+  color: #c83d3d;
+  background: #fff1f1;
+  border: 1px solid #ffc5c5;
+  border-radius: 5px;
+}
+
+.ai-recheck-output-warning {
+  margin: 10px 12px 0;
+  padding: 9px 10px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.5;
+  color: #8a4b00;
+  background: #fff8e8;
+  border: 1px solid #ffd99a;
+  border-radius: 5px;
+}
+
+.ai-recheck-output-section {
+  padding: 10px 12px 12px;
+}
+
+.ai-recheck-output-section + .ai-recheck-output-section {
+  border-top: 1px solid #dde6f2;
+}
+
+.ai-recheck-output-section label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 900;
+  color: #485a73;
+}
+
+.ai-recheck-output-section pre {
+  max-height: 180px;
+  padding: 10px;
+  margin: 0;
+  overflow: auto;
+  font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+    'Courier New', monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #fff;
+  border: 1px solid #dde6f2;
   border-radius: 5px;
 }
 

@@ -756,7 +756,7 @@ def build_node_evidence_readiness(repo: Any, project_id: str, node_id: int) -> d
         blocking_reasons.append(
             {
                 "code": "NO_REVIEW_POINTS",
-                "message": "当前节点未配置必传审查点，不能进入正式 AI 复核。",
+                "message": "当前节点未配置必传审查点，AI 复核将仅生成通用核验或人工确认建议。",
                 "severity": "blocker",
             }
         )
@@ -764,7 +764,7 @@ def build_node_evidence_readiness(repo: Any, project_id: str, node_id: int) -> d
         blocking_reasons.append(
             {
                 "code": "PENDING_EVIDENCE_DECISION",
-                "message": "仍有候选证据未确认或不采用，不能进入正式 AI 复核。",
+                "message": "仍有候选证据未确认或不采用，AI 复核将把其作为待确认证据参考。",
                 "count": pending_count,
                 "severity": "blocker",
             }

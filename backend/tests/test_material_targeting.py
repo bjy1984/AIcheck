@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from apps.api.main import app
 from libs.db.repository import repo
 from libs.db.seed import PROJECT_ID
+from libs.integrations import task_dispatcher
 
 
 client = TestClient(app)
@@ -252,7 +253,7 @@ def test_node2_schedule_can_target_construction_plan_text() -> None:
     assert schedule_links[0]["manualStatus"] == "pending"
 
 
-def test_ai_recheck_requires_pending_evidence_decisions_first() -> None:
+def test_ai_recheck_allows_pending_evidence_decisions(monkeypatch) -> None:
     document, version = repo.create_document(
         PROJECT_ID,
         "设计单位许可证.pdf",
@@ -289,12 +290,24 @@ def test_ai_recheck_requires_pending_evidence_decisions_first() -> None:
     assert readiness["readyForGapPrecheck"] is False
     assert {item["code"] for item in readiness["blockingReasons"]} >= {"PENDING_EVIDENCE_DECISION", "MISSING_REQUIRED_EVIDENCE"}
 
-    response = client.post(f"/api/projects/{PROJECT_ID}/inspection/nodes/1/ai-recheck")
-    payload = response.json()
+    monkeypatch.setattr(
+        task_dispatcher,
+        "ai_recheck_dispatch_readiness",
+        lambda: {"ready": True, "mode": "test", "statusReason": "test_dispatch"},
+    )
+    monkeypatch.setattr(
+        task_dispatcher,
+        "dispatch_ai_recheck",
+        lambda project_id, node_id, run_id: {"mode": "test", "taskId": f"TEST-{run_id}"},
+    )
 
-    assert payload["code"] != 0
-    assert payload["data"]["reason"] == "CONFLICT"
-    assert "证据确认" in payload["message"]
+    result = assert_ok(client.post(f"/api/projects/{PROJECT_ID}/inspection/nodes/1/ai-recheck"))
+
+    latest_run = result["latestRun"]
+    assert latest_run["evidenceReadiness"]["readyForAiFormal"] is False
+    assert latest_run["evidenceReadiness"]["pendingCount"] >= 1
+    assert version["id"] in latest_run["inputDocumentVersionIds"]
+    assert result["dispatch"]["taskId"].startswith("TEST-")
 
 
 def test_scan_import_expands_contractor_member_scope() -> None:
