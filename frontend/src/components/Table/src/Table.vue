@@ -237,7 +237,7 @@ export default defineComponent({
     })
 
     const setProps = (props: TableProps = {}) => {
-      mergeProps.value = Object.assign(unref(mergeProps), props)
+      ;(mergeProps as any).value = { ...(mergeProps as any).value, ...props }
       outsideProps.value = { ...props } as any
     }
 

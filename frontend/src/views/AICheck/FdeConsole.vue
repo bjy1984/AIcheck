@@ -19694,6 +19694,7 @@ onBeforeUnmount(() => {
         v-model="vectorFileQualityDrawerVisible"
         size="92vw"
         class="fde-audit-drawer"
+        append-to-body
         destroy-on-close
         :title="`${selectedVectorScopeLabel}向量质量详情`"
       >
@@ -20762,6 +20763,7 @@ onBeforeUnmount(() => {
         v-model="reviewAuditDrawerVisible"
         size="760px"
         class="fde-audit-drawer"
+        append-to-body
         destroy-on-close
         title="Agent 审查编排详情"
       >
@@ -21117,6 +21119,7 @@ onBeforeUnmount(() => {
         v-model="ocrAuditDrawerVisible"
         size="760px"
         class="fde-audit-drawer"
+        append-to-body
         destroy-on-close
         title="OCR 任务审计详情"
       >

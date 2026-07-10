@@ -25,6 +25,16 @@ services:
       AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:?AICHECK_MINIO_SECRET_KEY is required}
       AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
       AICHECK_JWT_SECRET: ${AICHECK_JWT_SECRET:?AICHECK_JWT_SECRET is required}
+      AICHECK_JWT_ISSUER: ${AICHECK_JWT_ISSUER:-aicheck-api}
+      AICHECK_JWT_AUDIENCE: ${AICHECK_JWT_AUDIENCE:-aicheck-frontend}
+      AICHECK_JWT_TTL_MINUTES: ${AICHECK_JWT_TTL_MINUTES:-720}
+      AICHECK_STRICT_PRODUCTION: ${AICHECK_STRICT_PRODUCTION:-true}
+      AICHECK_ALLOW_DEV_TOKENS: ${AICHECK_ALLOW_DEV_TOKENS:-false}
+      AICHECK_ENABLE_COMPATIBILITY_MOCKS: ${AICHECK_ENABLE_COMPATIBILITY_MOCKS:-false}
+      AICHECK_CORS_ALLOWED_ORIGINS: ${AICHECK_CORS_ALLOWED_ORIGINS:?AICHECK_CORS_ALLOWED_ORIGINS is required}
+      AICHECK_ALLOWED_HOSTS: ${AICHECK_ALLOWED_HOSTS:?AICHECK_ALLOWED_HOSTS is required}
+      AICHECK_TRUST_PROXY: ${AICHECK_TRUST_PROXY:-false}
+      AICHECK_TRUSTED_PROXIES: ${AICHECK_TRUSTED_PROXIES:-}
       LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://litellm-service:4000}
       LITELLM_API_KEY: ${LITELLM_API_KEY:?LITELLM_API_KEY is required}
       AICHECK_QWEN_CALL_MODE: ${AICHECK_QWEN_CALL_MODE:-server}
@@ -62,6 +72,7 @@ services:
       dockerfile: Dockerfile
     command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=${AICHECK_WORKER_CONCURRENCY:-1} --prefetch-multiplier=1 -Q ocr.parse_document,ocr.recognize_seals,knowledge.slice,knowledge.embed,inspection.ai_recheck,llm.compare,export.package
     environment:
+      AICHECK_STRICT_PRODUCTION: ${AICHECK_STRICT_PRODUCTION:-true}
       AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${AICHECK_POSTGRES_DB:-aicheck}
       AICHECK_SQLITE_FALLBACK: ${AICHECK_SQLITE_FALLBACK:-false}
       AICHECK_REDIS_URL: ${AICHECK_REDIS_INTERNAL_URL:-redis://redis:6379/0}
@@ -108,6 +119,7 @@ services:
       dockerfile: Dockerfile
     command: python -m apps.review_worker.main
     environment:
+      AICHECK_STRICT_PRODUCTION: ${AICHECK_STRICT_PRODUCTION:-true}
       AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${AICHECK_POSTGRES_DB:-aicheck}
       AICHECK_SQLITE_FALLBACK: ${AICHECK_SQLITE_FALLBACK:-false}
       AICHECK_REVIEW_ORCHESTRATION: temporal
@@ -330,7 +342,7 @@ services:
       start_period: 1800s
 
   litellm-service:
-    image: ghcr.io/berriai/litellm:main-latest
+    image: ${AICHECK_LITELLM_IMAGE:-ghcr.io/berriai/litellm:v1.84.3@sha256:67c31510b20e60e8eb1670b9c47714c1c519cb04f5e5c077cf1f12073bf8fb30}
     command: ["--config", "/app/config/litellm.yaml", "--port", "4000", "--host", "0.0.0.0"]
     environment:
       DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${LITELLM_POSTGRES_DB:-litellm}

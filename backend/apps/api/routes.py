@@ -84,7 +84,24 @@ from libs.review_orchestrator import (
     signal_review_run_cancel,
     signal_review_run_human_decision,
 )
-from libs.security.auth import ROLE_DEFAULT_PATHS, USERS, authenticate, decode_token, hash_password, issue_token, user_by_username
+from libs.security.auth import (
+    ROLE_DEFAULT_PATHS,
+    USERS,
+    authenticate,
+    decode_token,
+    hash_password,
+    issue_token,
+    password_strength_errors,
+    persistent_user_by_username,
+    public_user,
+    user_by_username,
+    verify_password,
+)
+from libs.security.session import (
+    SecurityBackendUnavailable,
+    request_client_ip,
+    security_sessions,
+)
 from scripts.ocr_100_label_studio_export import label_config_xml, label_studio_task, label_studio_task_without_image
 from scripts.ocr_100_label_studio_import import import_label_studio_annotations
 from scripts.ocr_100_action_board import (
@@ -2761,6 +2778,7 @@ def admin_user_projection(user: dict[str, Any]) -> dict[str, Any]:
         "roleLabel": user.get("roleLabel") or ROLE_LABELS.get(role, role),
         "mobile": user.get("mobile") or "",
         "status": user.get("status") or "启用",
+        "mustChangePassword": bool(user.get("mustChangePassword")),
         "lastLoginAt": user.get("lastLoginAt") or "",
         "updatedAt": user.get("updatedAt") or server_time(),
         "revision": record_revision(user),
@@ -2867,8 +2885,6 @@ def build_admin_user_record(
     password_hash = (existing or {}).get("passwordHash")
     if password:
         password_hash = hash_password(str(password))
-    elif not password_hash:
-        password_hash = f"plain:{username}"
     user = {
         **(existing or {}),
         "id": body.get("id") or (existing or {}).get("id") or f"USER-{uuid4().hex[:8].upper()}",
@@ -2876,6 +2892,8 @@ def build_admin_user_record(
         "name": name,
         "displayName": name,
         "passwordHash": password_hash,
+        "authVersion": int((existing or {}).get("authVersion") or 0),
+        "mustChangePassword": bool(password) or bool((existing or {}).get("mustChangePassword")),
         "role": role,
         "roleId": role_id_for_admin_user(role),
         "roleLabel": ROLE_LABELS.get(role, role),
@@ -3581,35 +3599,113 @@ def mock_role_list2(request: Request):
 
 @mock_router.get("/mock/user/list")
 def mock_user_list(request: Request):
-    users = [{key: value for key, value in user.items() if key != "password"} for user in USERS.values()]
+    users = [public_user(user) for user in USERS.values()]
     return ok({"list": users, "total": len(users)}, request)
 
 
 @router.post("/auth/login")
-def auth_login(request: Request, body: dict[str, Any] = Body(default_factory=dict)):
-    user = authenticate(str(body.get("username", "")), str(body.get("password", "")))
+async def auth_login(request: Request, body: dict[str, Any] = Body(default_factory=dict)):
+    username = str(body.get("username", "")).strip()
+    client_ip = request_client_ip(request)
+    try:
+        limit = await security_sessions.login_limit(client_ip, username)
+    except SecurityBackendUnavailable:
+        return fail(errors.SECURITY_BACKEND_UNAVAILABLE, request, http_status=503)
+    if limit.blocked:
+        response = fail(
+            errors.RATE_LIMITED,
+            request,
+            data={"retryAfter": limit.retry_after},
+            http_status=429,
+        )
+        response.headers["Retry-After"] = str(limit.retry_after)
+        return response
+    user = authenticate(username, str(body.get("password", "")))
     if not user:
+        try:
+            limit = await security_sessions.record_login_failure(client_ip, username)
+        except SecurityBackendUnavailable:
+            return fail(errors.SECURITY_BACKEND_UNAVAILABLE, request, http_status=503)
+        if limit.blocked:
+            response = fail(
+                errors.RATE_LIMITED,
+                request,
+                data={"retryAfter": limit.retry_after},
+                http_status=429,
+            )
+            response.headers["Retry-After"] = str(limit.retry_after)
+            return response
         return fail(errors.AUTH_REQUIRED, request, message="账号或密码错误")
+    try:
+        await security_sessions.clear_login_failures(client_ip, username)
+    except SecurityBackendUnavailable:
+        return fail(errors.SECURITY_BACKEND_UNAVAILABLE, request, http_status=503)
     return ok({"token": issue_token(user), "user": user}, request)
 
 
 @router.post("/auth/logout")
-def auth_logout(request: Request):
+async def auth_logout(request: Request):
+    claims = getattr(request.state, "auth", None) or {}
+    try:
+        await security_sessions.revoke(str(claims.get("jti") or ""), int(claims.get("exp") or 0))
+    except SecurityBackendUnavailable:
+        return fail(errors.SECURITY_BACKEND_UNAVAILABLE, request, http_status=503)
     return ok(None, request)
+
+
+@router.post("/auth/change-password")
+def auth_change_password(request: Request, body: dict[str, Any] = Body(default_factory=dict)):
+    auth_user = getattr(request.state, "auth_user", None) or {}
+    username = str(auth_user.get("username") or "")
+    user = persistent_user_by_username(username)
+    if not user:
+        return fail(errors.FORBIDDEN, request, message="当前账号不支持密码修改。", http_status=403)
+    current_password = str(body.get("currentPassword") or "")
+    new_password = str(body.get("newPassword") or "")
+    if not verify_password(current_password, user.get("passwordHash"), user.get("password")):
+        return fail(errors.AUTH_REQUIRED, request, message="当前密码不正确。")
+    strength_errors = password_strength_errors(username, new_password)
+    if strength_errors:
+        return fail(
+            errors.VALIDATION_ERROR,
+            request,
+            message="新密码不符合安全要求。",
+            data={"field": "newPassword", "problems": strength_errors},
+        )
+    if verify_password(new_password, user.get("passwordHash"), user.get("password")):
+        return fail(errors.VALIDATION_ERROR, request, message="新密码不能与当前密码相同。")
+    user["passwordHash"] = hash_password(new_password)
+    user.pop("password", None)
+    user["mustChangePassword"] = False
+    user["authVersion"] = int(user.get("authVersion") or 0) + 1
+    bump_record_revision(user)
+    audit_id = repo.add_audit("用户修改密码", "User", str(user.get("id") or username))
+    flush_state()
+    safe_user = public_user(user)
+    return ok(
+        {
+            "token": issue_token(safe_user),
+            "user": safe_user,
+            "defaultPath": safe_user.get("defaultPath"),
+            "auditLogId": audit_id,
+        },
+        request,
+    )
 
 
 @router.get("/auth/me")
 def auth_me(request: Request):
-    claims = decode_token(request.headers.get("Authorization", ""))
-    user = user_by_username(claims.get("sub") if claims else None) or user_by_username("admin")
-    role = (user or {}).get("role", "admin")
-    user_id = (user or {}).get("id")
+    user = getattr(request.state, "auth_user", None)
+    if not user:
+        return fail(errors.AUTH_REQUIRED, request)
+    role = user.get("role", "inspection")
+    user_id = user.get("id")
     project_authorizations = repo.clone(repo.state["project_members"])
     if role != "admin" and user_id:
         project_authorizations = [item for item in project_authorizations if item.get("userId") == user_id]
     return ok(
         {
-            **(user or {}),
+            **user,
             "defaultRole": role,
             "projectAuthorizations": project_authorizations,
         },
@@ -21751,6 +21847,15 @@ def create_admin_user(
             return fail(errors.VALIDATION_ERROR, request, message="用户名和角色不能为空。")
         if role not in ROLE_ACTIONS:
             return fail(errors.VALIDATION_ERROR, request, message="角色不存在。")
+        password = str(body.get("password") or body.get("initialPassword") or "")
+        password_errors = password_strength_errors(username, password)
+        if password_errors:
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="初始密码不符合安全要求。",
+                data={"field": "password", "problems": password_errors},
+            )
         conflict = unique_admin_value_conflict(None, username=username, mobile=body.get("mobile"))
         if conflict:
             return fail(errors.CONFLICT, request, message=conflict)
@@ -21758,6 +21863,8 @@ def create_admin_user(
         if org_error:
             return org_error
         user = build_admin_user_record(body, org=org)
+        user["authVersion"] = 1
+        user["mustChangePassword"] = True
         repo.state["users"].insert(0, user)
         upsert_admin_config_user(user)
         bump_singleton_revision(repo.state["admin_config"])
@@ -21804,11 +21911,31 @@ def update_admin_user(
         org, org_error = validate_user_org_binding(request, role, body.get("orgId") or existing.get("orgId"), body.get("orgName") or existing.get("orgName"))
         if org_error:
             return org_error
+        requested_password = str(body.get("password") or body.get("initialPassword") or "")
+        if requested_password:
+            password_errors = password_strength_errors(username, requested_password)
+            if password_errors:
+                return fail(
+                    errors.VALIDATION_ERROR,
+                    request,
+                    message="重置密码不符合安全要求。",
+                    data={"field": "password", "problems": password_errors},
+                )
+        elif not existing.get("passwordHash"):
+            return fail(errors.VALIDATION_ERROR, request, message="该账号缺少有效密码，请先设置强密码。")
         changed = []
         before = repo.clone(existing)
         updated = build_admin_user_record({**existing, **body, "id": user_id, "role": role, "username": username}, existing=existing, org=org)
         updated["revision"] = record_revision(existing)
         existing.update(updated)
+        security_changed = bool(requested_password) or any(
+            before.get(field) != existing.get(field) for field in ("role", "status", "username")
+        )
+        if security_changed:
+            existing["authVersion"] = int(before.get("authVersion") or 0) + 1
+        if requested_password:
+            existing["mustChangePassword"] = True
+            existing.pop("password", None)
         bump_record_revision(existing)
         for field in ["username", "name", "mobile", "role", "orgId", "orgName", "status"]:
             if before.get(field) != existing.get(field):

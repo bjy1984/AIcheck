@@ -47,6 +47,16 @@ export const constantRouterMap: AppRouteRecordRaw[] = [
     }
   },
   {
+    path: '/change-password',
+    component: () => import('@/views/Login/ChangePassword.vue'),
+    name: 'ChangePassword',
+    meta: {
+      hidden: true,
+      title: '修改初始密码',
+      noTagsView: true
+    }
+  },
+  {
     path: '/404',
     component: () => import('@/views/Error/404.vue'),
     name: 'NoFind',

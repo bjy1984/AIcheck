@@ -4,6 +4,9 @@ import { defaultRequestInterceptors, defaultResponseInterceptors } from './confi
 import { AxiosInstance, InternalAxiosRequestConfig, RequestConfig, AxiosResponse } from './types'
 import { ElMessage } from 'element-plus'
 import { REQUEST_TIMEOUT } from '@/constants'
+import { getAicheckErrorMessage, recordAicheckBusinessError } from '@/utils/aicheckError'
+import { useUserStoreWithOut } from '@/store/modules/user'
+import router from '@/router'
 
 export const PATH_URL = import.meta.env.VITE_API_BASE_PATH
 
@@ -33,12 +36,31 @@ axiosInstance.interceptors.response.use(
     return res
   },
   (error: AxiosError) => {
-    console.log('err： ' + error) // for debug
+    const responseData = error.response?.data as
+      | { code?: number; message?: string; data?: { reason?: string } }
+      | undefined
     const silentHttpError =
       error.config?.headers?.['X-Silent-Http-Error'] === 'true' ||
       error.config?.headers?.['x-silent-http-error'] === 'true'
+    if (responseData) {
+      recordAicheckBusinessError(responseData, {
+        method: error.config?.method,
+        url: error.config?.url
+      })
+      if (responseData.data?.reason === 'PASSWORD_CHANGE_REQUIRED') {
+        const userStore = useUserStoreWithOut()
+        if (userStore.getUserInfo) {
+          userStore.setUserInfo({ ...userStore.getUserInfo, mustChangePassword: true })
+        }
+        if (router.currentRoute.value.path !== '/change-password') {
+          router.replace('/change-password').catch(() => undefined)
+        }
+      }
+    }
     if (!silentHttpError) {
-      ElMessage.error(error.message)
+      ElMessage.error(
+        getAicheckErrorMessage(error, responseData?.message || error.message || '请求失败')
+      )
     }
     return Promise.reject(error)
   }

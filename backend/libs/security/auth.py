@@ -1,26 +1,40 @@
 from __future__ import annotations
 
-import os
 import hashlib
 import hmac
+import os
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from uuid import uuid4
 
 try:
-    from jose import jwt
-except Exception:  # pragma: no cover - optional until dependencies are installed
+    import jwt
+except Exception:  # pragma: no cover - validated at startup in strict mode
     jwt = None  # type: ignore[assignment]
 
-try:
-    from passlib.context import CryptContext
-except Exception:  # pragma: no cover - optional until dependencies are installed
-    CryptContext = None  # type: ignore[assignment]
 
-
-JWT_SECRET = "aicheck-dev-secret-change-me"
+JWT_SECRET = "aicheck-dev-secret-change-me-unsafe"
 JWT_ALGORITHM = "HS256"
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto") if CryptContext else None
+JWT_ISSUER = "aicheck-api"
+JWT_AUDIENCE = "aicheck-frontend"
+COMMON_PASSWORDS = {
+    "123456",
+    "12345678",
+    "123456789",
+    "admin",
+    "admin123",
+    "aicheck",
+    "changeme",
+    "letmein",
+    "password",
+    "password123",
+    "qwerty",
+    "qwerty123",
+    "welcome",
+    "welcome123",
+}
 
 ROLE_DEFAULT_PATHS = {
     "inspection": "/workbench/inspection",
@@ -31,6 +45,29 @@ ROLE_DEFAULT_PATHS = {
     "fde": "/fde/projects",
     "test": "/workbench/inspection",
 }
+
+
+def strict_production() -> bool:
+    return os.getenv("AICHECK_STRICT_PRODUCTION", "false").lower() == "true"
+
+
+def demo_users_enabled() -> bool:
+    return os.getenv("AICHECK_ENABLE_DEMO_USERS", "true").lower() == "true"
+
+
+def dev_tokens_allowed() -> bool:
+    return (
+        not strict_production()
+        and demo_users_enabled()
+        and os.getenv("AICHECK_ALLOW_DEV_TOKENS", "false").lower() == "true"
+    )
+
+
+def compatibility_mocks_enabled() -> bool:
+    if strict_production():
+        return False
+    return os.getenv("AICHECK_ENABLE_COMPATIBILITY_MOCKS", "true").lower() == "true"
+
 
 def user_record(
     user_id: str,
@@ -54,6 +91,8 @@ def user_record(
         "displayName": display_name,
         "orgUnitName": org_unit_name,
         "defaultPath": ROLE_DEFAULT_PATHS.get(role, ROLE_DEFAULT_PATHS["inspection"]),
+        "authVersion": 0,
+        "mustChangePassword": False,
     }
 
 
@@ -68,14 +107,10 @@ USERS = {
 }
 
 
-def demo_users_enabled() -> bool:
-    return os.getenv("AICHECK_ENABLE_DEMO_USERS", "true").lower() == "true"
-
-
 def verify_password(password: str, stored_hash: str | None, legacy_password: str | None = None) -> bool:
     if stored_hash:
         if stored_hash.startswith("plain:"):
-            return password == stored_hash.removeprefix("plain:")
+            return not strict_production() and password == stored_hash.removeprefix("plain:")
         if stored_hash.startswith("pbkdf2_sha256$"):
             try:
                 _, iterations, salt, expected = stored_hash.split("$", 3)
@@ -88,13 +123,8 @@ def verify_password(password: str, stored_hash: str | None, legacy_password: str
             except Exception:
                 return False
             return hmac.compare_digest(digest, expected)
-        if pwd_context is not None:
-            try:
-                return pwd_context.verify(password, stored_hash)
-            except Exception:
-                return False
-    if legacy_password and os.getenv("AICHECK_ALLOW_LEGACY_PLAIN_PASSWORDS", "false").lower() == "true":
-        return password == legacy_password
+    if legacy_password and not strict_production() and os.getenv("AICHECK_ALLOW_LEGACY_PLAIN_PASSWORDS", "false").lower() == "true":
+        return hmac.compare_digest(password, legacy_password)
     return False
 
 
@@ -110,8 +140,46 @@ def hash_password(password: str) -> str:
     return f"pbkdf2_sha256${iterations}${salt}${digest}"
 
 
+def password_strength_errors(username: str, password: str) -> list[str]:
+    errors: list[str] = []
+    normalized_username = username.strip().lower()
+    if len(password) < 12:
+        errors.append("密码长度至少为 12 位")
+    if normalized_username and normalized_username in password.lower():
+        errors.append("密码不得包含用户名")
+    classes = (
+        bool(re.search(r"[a-z]", password)),
+        bool(re.search(r"[A-Z]", password)),
+        bool(re.search(r"\d", password)),
+        bool(re.search(r"[^A-Za-z0-9]", password)),
+    )
+    if sum(classes) < 3:
+        errors.append("密码至少包含大写字母、小写字母、数字、特殊字符中的三类")
+    normalized_password = re.sub(r"[^a-z0-9]", "", password.lower())
+    normalized_username_password = re.sub(r"[^a-z0-9]", "", normalized_username)
+    if normalized_password in COMMON_PASSWORDS or normalized_password == normalized_username_password:
+        errors.append("密码过于常见")
+    return errors
+
+
 def jwt_secret() -> str:
     return os.getenv("AICHECK_JWT_SECRET", JWT_SECRET)
+
+
+def jwt_issuer() -> str:
+    return os.getenv("AICHECK_JWT_ISSUER", JWT_ISSUER)
+
+
+def jwt_audience() -> str:
+    return os.getenv("AICHECK_JWT_AUDIENCE", JWT_AUDIENCE)
+
+
+def jwt_ttl_minutes() -> int:
+    try:
+        value = int(os.getenv("AICHECK_JWT_TTL_MINUTES", "720"))
+    except ValueError:
+        value = 720
+    return max(5, min(value, 720))
 
 
 def persistent_users() -> list[dict[str, Any]]:
@@ -122,50 +190,73 @@ def persistent_users() -> list[dict[str, Any]]:
     return repo.state.get("users", [])
 
 
-def persistent_user_by_username(username: str | None) -> dict[str, Any] | None:
+def persistent_user_by_username(username: str | None, *, enabled_only: bool = True) -> dict[str, Any] | None:
     if not username:
         return None
-    return next((user for user in persistent_users() if user.get("username") == username and user.get("status", "启用") == "启用"), None)
+    return next(
+        (
+            user
+            for user in persistent_users()
+            if user.get("username") == username
+            and (not enabled_only or user.get("status", "启用") == "启用")
+        ),
+        None,
+    )
+
+
+def user_record_by_username(username: str | None) -> dict[str, Any] | None:
+    persistent = persistent_user_by_username(username)
+    if persistent:
+        return persistent
+    if not demo_users_enabled() or not username:
+        return None
+    return USERS.get(username)
 
 
 def public_user(user: dict[str, Any]) -> dict[str, Any]:
-    safe_user = {key: value for key, value in user.items() if key not in {"password", "passwordHash"}}
+    safe_user = {
+        key: value
+        for key, value in user.items()
+        if key not in {"password", "passwordHash", "authVersion"}
+    }
+    safe_user["mustChangePassword"] = bool(safe_user.get("mustChangePassword"))
     safe_user["defaultPath"] = ROLE_DEFAULT_PATHS.get(safe_user.get("role"), ROLE_DEFAULT_PATHS["inspection"])
     return safe_user
 
 
 def user_by_username(username: str | None) -> dict[str, Any] | None:
-    if not username:
-        return None
-    persistent_user = persistent_user_by_username(username)
-    if persistent_user:
-        return public_user(persistent_user)
-    if not demo_users_enabled():
-        return None
-    user = USERS.get(username)
+    user = user_record_by_username(username)
     return public_user(user) if user else None
 
 
 def authenticate(username: str, password: str) -> dict[str, Any] | None:
-    persistent_user = persistent_user_by_username(username)
-    if persistent_user and verify_password(password, persistent_user.get("passwordHash"), persistent_user.get("password")):
-        return public_user(persistent_user)
-    if not demo_users_enabled():
-        return None
-    user = USERS.get(username)
+    user = user_record_by_username(username)
     if not user or not verify_password(password, user.get("passwordHash"), user.get("password")):
         return None
     return public_user(user)
 
 
+def user_auth_version(username: str | None) -> int:
+    user = user_record_by_username(username)
+    return int((user or {}).get("authVersion") or 0)
+
+
 def issue_token(user: dict[str, Any]) -> str:
+    if jwt is None:
+        if dev_tokens_allowed():
+            return f"dev-token-{user['username']}-{user.get('role', 'inspection')}"
+        raise RuntimeError("PyJWT is required to issue authentication tokens")
+    now = datetime.now(timezone.utc)
     payload = {
         "sub": user["username"],
-        "role": user.get("role", "admin"),
-        "exp": datetime.now(timezone.utc) + timedelta(hours=12),
+        "role": user.get("role", "inspection"),
+        "ver": user_auth_version(user.get("username")),
+        "iss": jwt_issuer(),
+        "aud": jwt_audience(),
+        "iat": now,
+        "exp": now + timedelta(minutes=jwt_ttl_minutes()),
+        "jti": uuid4().hex,
     }
-    if jwt is None:
-        return f"dev-token-{payload['sub']}-{payload['role']}"
     return jwt.encode(payload, jwt_secret(), algorithm=JWT_ALGORITHM)
 
 
@@ -175,11 +266,25 @@ def decode_token(token: str) -> dict[str, Any] | None:
     if token.startswith("Bearer "):
         token = token[7:]
     if token.startswith("dev-token-"):
+        if not dev_tokens_allowed():
+            return None
         parts = token.split("-")
-        return {"sub": parts[2] if len(parts) > 2 else "admin", "role": parts[-1]}
+        return {
+            "sub": parts[2] if len(parts) > 2 else "admin",
+            "role": parts[-1],
+            "ver": 0,
+            "dev": True,
+        }
     if jwt is None:
         return None
     try:
-        return jwt.decode(token, jwt_secret(), algorithms=[JWT_ALGORITHM])
+        return jwt.decode(
+            token,
+            jwt_secret(),
+            algorithms=[JWT_ALGORITHM],
+            issuer=jwt_issuer(),
+            audience=jwt_audience(),
+            options={"require": ["sub", "role", "ver", "iss", "aud", "iat", "exp", "jti"]},
+        )
     except Exception:
         return None

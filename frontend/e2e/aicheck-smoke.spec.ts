@@ -123,12 +123,22 @@ const passwordForAccount = (account: string) => {
 }
 
 const clearLoginState = async (page: Page) => {
-  await page.evaluate(() => {
-    localStorage.clear()
-    sessionStorage.clear()
-  })
-  await page.reload({ waitUntil: 'domcontentloaded' })
-  await page.waitForLoadState('networkidle').catch(() => {})
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await page.waitForLoadState('domcontentloaded')
+      await page.evaluate(() => {
+        localStorage.clear()
+        sessionStorage.clear()
+      })
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await page.waitForLoadState('networkidle').catch(() => {})
+      return
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (!message.includes('Execution context was destroyed') || attempt === 2) throw error
+      await page.waitForLoadState('domcontentloaded').catch(() => {})
+    }
+  }
 }
 
 const gotoLoginPage = async (page: Page, redirect?: string) => {
@@ -594,6 +604,7 @@ const openInspectionNodeSection = async (page: Page, nodeName = '焊工资格证
 
 test.describe('AIcheck route smoke', () => {
   test('role accounts land on their default panel without redirect', async ({ page }) => {
+    test.setTimeout(90_000)
     const cases = [
       { account: 'inspection', path: '/workbench/inspection', title: '监检工作台' },
       { account: 'contractor', path: '/workbench/contractor', title: '施工方工作台' },
@@ -621,6 +632,81 @@ test.describe('AIcheck route smoke', () => {
     await page.getByRole('button', { name: /^登录$/ }).click()
     await page.waitForURL((url) => url.hash.includes('/workbench/contractor'))
     await expect(page.locator('.aicheck-page .page-title')).toContainText('施工方工作台')
+  })
+
+  test('first login requires password change and keeps bearer token out of localStorage', async ({
+    page
+  }) => {
+    test.setTimeout(90_000)
+    await page.route('**/api/auth/login', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: {
+            token: 'initial-signed-token',
+            user: {
+              id: 'USER-FIRST-LOGIN',
+              username: 'first-login',
+              role: 'inspection',
+              roleId: 'inspection',
+              mustChangePassword: true,
+              defaultPath: '/workbench/inspection'
+            }
+          },
+          operationId: 'E2E-FIRST-LOGIN',
+          serverTime: '2026-07-10 08:00:00'
+        })
+      })
+    })
+    await page.route('**/api/auth/change-password', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: {
+            token: 'replacement-signed-token',
+            user: {
+              id: 'USER-FIRST-LOGIN',
+              username: 'first-login',
+              role: 'inspection',
+              roleId: 'inspection',
+              mustChangePassword: false,
+              defaultPath: '/workbench/inspection'
+            },
+            defaultPath: '/workbench/inspection'
+          },
+          operationId: 'E2E-PASSWORD-CHANGED',
+          serverTime: '2026-07-10 08:01:00'
+        })
+      })
+    })
+
+    await page.goto('/#/login')
+    await clearLoginState(page)
+    const loginInputs = page.locator('.auth-form .el-input__inner')
+    await expect(loginInputs.first()).toBeVisible()
+    await loginInputs.nth(0).fill('first-login')
+    await loginInputs.nth(1).fill('Initial!Password2026')
+    await page.getByRole('button', { name: /^登录$/ }).click()
+    await page.waitForURL((url) => url.hash.includes('/change-password'))
+
+    const storage = await page.evaluate(() => ({
+      local: localStorage.getItem('user'),
+      session: sessionStorage.getItem('user')
+    }))
+    expect(storage.local || '').not.toContain('initial-signed-token')
+    expect(storage.session || '').toContain('initial-signed-token')
+
+    await page.getByLabel('当前密码').fill('Initial!Password2026')
+    await page.getByLabel('新密码', { exact: true }).fill('Replacement!Safe2026')
+    await page.getByLabel('确认新密码').fill('Replacement!Safe2026')
+    await page.getByRole('button', { name: '保存并进入系统' }).click()
+    await page.waitForURL((url) => url.hash.includes('/workbench/inspection'))
+    await expect(page.getByText('监检工作台').first()).toBeVisible()
+    await expect(page.getByText('暂无授权项目')).toBeVisible()
   })
 
   for (const routeCase of routeCases) {
@@ -1198,7 +1284,11 @@ test.describe('AIcheck business writeback flows', () => {
   test('admin authorizes a project member and refreshes member table', async ({ page }) => {
     await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/admin/overview')!)
 
-    const projectRow = page.getByRole('row').filter({ hasText: '华东成品油管道改造工程' })
+    const projectTable = page.locator('.panel').filter({ hasText: '项目清单' })
+    const projectRow = projectTable
+      .getByRole('row')
+      .filter({ has: page.getByRole('button', { name: '详情' }) })
+      .first()
     await projectRow.getByRole('button', { name: '详情' }).click()
     const projectDrawer = page.locator('.el-drawer').filter({ hasText: '项目详情与成员授权' })
     await expect(projectDrawer).toBeVisible()
@@ -1254,7 +1344,11 @@ test.describe('AIcheck business writeback flows', () => {
   test('admin batch authorizes project members with shared node scope', async ({ page }) => {
     await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/admin/overview')!)
 
-    const projectRow = page.getByRole('row').filter({ hasText: '华东成品油管道改造工程' })
+    const projectTable = page.locator('.panel').filter({ hasText: '项目清单' })
+    const projectRow = projectTable
+      .getByRole('row')
+      .filter({ has: page.getByRole('button', { name: '详情' }) })
+      .first()
     await projectRow.getByRole('button', { name: '详情' }).click()
     const projectDrawer = page.locator('.el-drawer').filter({ hasText: '项目详情与成员授权' })
     await expect(projectDrawer).toBeVisible()

@@ -14,10 +14,16 @@ export interface UserType {
   displayName?: string
   orgUnitName?: string
   defaultPath?: string
+  mustChangePassword?: boolean
 }
 
 export interface LoginResult {
   token?: string
   user: UserType
   defaultPath: string
+}
+
+export interface ChangePasswordPayload {
+  currentPassword: string
+  newPassword: string
 }

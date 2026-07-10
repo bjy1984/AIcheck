@@ -2004,6 +2004,26 @@ const handleSaveUser = async () => {
     ElMessage.warning('该角色必须绑定组织')
     return
   }
+  if (userDialogMode.value === 'create' && !userForm.password) {
+    ElMessage.warning('请设置初始强密码')
+    return
+  }
+  if (userForm.password) {
+    const classes = [
+      /[a-z]/.test(userForm.password),
+      /[A-Z]/.test(userForm.password),
+      /\d/.test(userForm.password),
+      /[^A-Za-z0-9]/.test(userForm.password)
+    ]
+    if (
+      userForm.password.length < 12 ||
+      classes.filter(Boolean).length < 3 ||
+      userForm.password.toLowerCase().includes(userForm.username.toLowerCase())
+    ) {
+      ElMessage.warning('密码至少 12 位、包含三类字符且不得包含用户名')
+      return
+    }
+  }
   userSaving.value = true
   userOperationError.value = ''
   try {
@@ -2016,9 +2036,7 @@ const handleSaveUser = async () => {
       orgName: org?.name,
       status: userForm.status,
       password:
-        userDialogMode.value === 'create'
-          ? userForm.password || userForm.username
-          : userForm.password || undefined
+        userDialogMode.value === 'create' ? userForm.password : userForm.password || undefined
     }
     const res =
       userDialogMode.value === 'create'
@@ -2993,9 +3011,6 @@ onMounted(() => {
                     <span>项目清单</span>
                     <ElSpace wrap>
                       <ElTag type="info" effect="plain">{{ projectTotal }} 个</ElTag>
-                      <ElButton size="small" type="primary" plain @click="openProjectWizard">
-                        新建项目
-                      </ElButton>
                     </ElSpace>
                   </div>
                 </template>
@@ -4817,7 +4832,12 @@ onMounted(() => {
             <ElInput
               v-model="userForm.password"
               show-password
-              :placeholder="userDialogMode === 'create' ? '留空默认等于用户名' : '留空则不修改密码'"
+              autocomplete="new-password"
+              :placeholder="
+                userDialogMode === 'create'
+                  ? '至少 12 位并包含三类字符'
+                  : '留空则不修改；填写后用户须首次改密'
+              "
             />
           </ElFormItem>
         </ElForm>
@@ -5940,6 +5960,12 @@ onMounted(() => {
   align-items: start;
   justify-content: space-between;
   margin-bottom: 12px;
+}
+
+.page-toolbar :deep(.el-button),
+.admin-page :deep(.el-input__wrapper),
+.admin-page :deep(.el-select__wrapper) {
+  min-height: 44px;
 }
 
 .page-title {

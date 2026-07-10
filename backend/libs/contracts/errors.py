@@ -13,6 +13,8 @@ class BusinessErrorCode:
 VALIDATION_ERROR = BusinessErrorCode(40001, "VALIDATION_ERROR", "请求字段校验失败。")
 AUTH_REQUIRED = BusinessErrorCode(401, "AUTH_REQUIRED", "请先登录。")
 FORBIDDEN = BusinessErrorCode(403, "FORBIDDEN", "当前角色无权执行该操作。")
+PASSWORD_CHANGE_REQUIRED = BusinessErrorCode(40301, "PASSWORD_CHANGE_REQUIRED", "首次登录必须先修改密码。")
+RATE_LIMITED = BusinessErrorCode(42901, "RATE_LIMITED", "登录尝试过于频繁，请稍后重试。")
 NOT_FOUND = BusinessErrorCode(40404, "NOT_FOUND", "对象不存在或无权访问。")
 CONFLICT = BusinessErrorCode(40900, "CONFLICT", "当前状态不允许执行该操作。")
 TASK_RUNNING = BusinessErrorCode(40902, "TASK_RUNNING", "任务正在运行，请稍后查看进度。")
@@ -33,6 +35,7 @@ WITHDRAW_LOCKED = BusinessErrorCode(40921, "WITHDRAW_LOCKED", "已通过或锁�
 EXPORT_TASK_NOT_READY = BusinessErrorCode(40930, "EXPORT_TASK_NOT_READY", "导出任务尚未生成完成。")
 EXPORT_TASK_EXPIRED = BusinessErrorCode(41031, "EXPORT_TASK_EXPIRED", "导出任务已过期。")
 OBJECT_STORAGE_REQUIRED = BusinessErrorCode(50330, "OBJECT_STORAGE_REQUIRED", "生产环境对象存储未就绪。")
+SECURITY_BACKEND_UNAVAILABLE = BusinessErrorCode(50331, "SECURITY_BACKEND_UNAVAILABLE", "安全状态服务暂不可用。")
 EXTERNAL_TOOL_FAILED = BusinessErrorCode(50220, "EXTERNAL_TOOL_FAILED", "外部工具调用失败。")
 AI_RUN_FAILED = BusinessErrorCode(50210, "AI_RUN_FAILED", "AI 审查任务失败。")
 
@@ -43,6 +46,8 @@ ERROR_BY_REASON = {
         VALIDATION_ERROR,
         AUTH_REQUIRED,
         FORBIDDEN,
+        PASSWORD_CHANGE_REQUIRED,
+        RATE_LIMITED,
         NOT_FOUND,
         CONFLICT,
         TASK_RUNNING,
@@ -63,6 +68,7 @@ ERROR_BY_REASON = {
         EXPORT_TASK_NOT_READY,
         EXPORT_TASK_EXPIRED,
         OBJECT_STORAGE_REQUIRED,
+        SECURITY_BACKEND_UNAVAILABLE,
         EXTERNAL_TOOL_FAILED,
         AI_RUN_FAILED,
     ]

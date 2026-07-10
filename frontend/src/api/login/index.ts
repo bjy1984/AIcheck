@@ -1,5 +1,5 @@
 import request from '@/axios'
-import type { LoginResult, UserLoginType, UserType } from './types'
+import type { ChangePasswordPayload, LoginResult, UserLoginType, UserType } from './types'
 import { getRoleDefaultPath } from '@/utils/roleAccess'
 
 interface RoleParams {
@@ -36,6 +36,20 @@ export const loginOutApi = (): Promise<IResponse> => {
   return import.meta.env.VITE_USE_MOCK === 'true'
     ? request.get({ url: '/mock/user/loginOut', headers })
     : request.post({ url: '/api/auth/logout', headers })
+}
+
+export const changePasswordApi = async (
+  data: ChangePasswordPayload
+): Promise<IResponse<LoginResult>> => {
+  const res = await request.post<{ token: string; user: UserType; defaultPath: string }>({
+    url: '/api/auth/change-password',
+    data,
+    headers: {
+      'X-Silent-Business-Error': 'true',
+      'X-Silent-Http-Error': 'true'
+    }
+  })
+  return { ...res, data: normalizeLoginResult(res.data) }
 }
 
 export const getUserListApi = ({ params }: AxiosConfig) => {

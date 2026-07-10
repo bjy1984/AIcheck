@@ -24,6 +24,7 @@ import type {
   ProjectTreeNode
 } from '@/types/aicheck'
 import { getStatusTagType } from './status'
+import { buildNdtSubmitBlockers, pendingNdtFilms, pendingNdtReports } from '@/utils/ndtReadiness'
 
 type NdtMaterialStatus = '已覆盖' | '待上传' | '需补正'
 type NdtMaterialAction =
@@ -93,41 +94,17 @@ const rectificationForm = reactive({
   description: '已补充底片包索引和检测记录页码，请复审。'
 })
 
-const pendingReports = computed(() =>
-  props.reports.filter((report) => ['草稿', '待提交', '需补正'].includes(report.status))
-)
-const pendingFilms = computed(() =>
-  props.films.filter((film) => ['草稿', '待提交', '需补正'].includes(film.status))
-)
+const pendingReports = computed(() => pendingNdtReports(props.reports))
+const pendingFilms = computed(() => pendingNdtFilms(props.films))
 const blockerText = (item: { code?: string; message?: string; reportId?: string }) =>
   [item.reportId, item.message || item.code].filter(Boolean).join('：')
-const readinessBlockers = computed(() =>
-  (props.ndtReadiness?.blockingReasons || []).map(blockerText).filter(Boolean)
-)
-const localSubmitBlockers = computed(() => {
-  const blockers: string[] = []
-  if (!pendingReports.value.length) {
-    blockers.push('请先上传或选择至少一份待提交检测报告。')
-  }
-  const pendingReportFileIds = new Set(pendingReports.value.map((report) => report.fileId))
-  const reportFiles = props.projectFiles.filter((file) => pendingReportFileIds.has(file.id))
-  for (const file of reportFiles) {
-    if (!['已识别', '人工修正'].includes(String(file.currentOcrStatus))) {
-      blockers.push(`${file.fileName} OCR 未完成，当前状态：${file.currentOcrStatus || '未知'}`)
-    }
-  }
-  for (const report of pendingReports.value) {
-    if (report.method === 'RT' && !report.detectionRatio) {
-      blockers.push(`${report.reportNo} 缺少 RT 检测比例。`)
-    }
-    if (report.method === 'RT' && !report.relatedFilmIds.length && !pendingFilms.value.length) {
-      blockers.push(`${report.reportNo} 缺少底片/影像关联。`)
-    }
-  }
-  return Array.from(new Set(blockers))
-})
 const submitBlockers = computed(() =>
-  readinessBlockers.value.length ? readinessBlockers.value : localSubmitBlockers.value
+  buildNdtSubmitBlockers({
+    reports: props.reports,
+    films: props.films,
+    projectFiles: props.projectFiles,
+    readiness: props.ndtReadiness
+  })
 )
 const canSubmitNdt = computed(() => pendingReports.value.length > 0 && !submitBlockers.value.length)
 const openFeedback = computed(() => props.feedback.filter((item) => item.status === '待反馈'))
@@ -636,7 +613,7 @@ const handleRectifyNdt = () => {
 
       <ElForm label-position="top" class="rectify-form">
         <ElFormItem label="补正反馈">
-          <ElSelect v-model="rectificationForm.rectificationId">
+          <ElSelect v-model="rectificationForm.rectificationId" aria-label="选择补正反馈">
             <ElOption
               v-for="item in openFeedback"
               :key="item.id"
@@ -652,6 +629,7 @@ const handleRectifyNdt = () => {
             :rows="2"
             maxlength="240"
             show-word-limit
+            aria-label="补正反馈说明"
           />
         </ElFormItem>
         <ElAlert
@@ -693,6 +671,12 @@ const handleRectifyNdt = () => {
   gap: 12px;
 }
 
+.ndt-workspace :deep(.el-button),
+.ndt-workspace :deep(.el-input__wrapper),
+.ndt-workspace :deep(.el-select__wrapper) {
+  min-height: 44px;
+}
+
 .ndt-panel {
   margin-bottom: 16px;
 }
@@ -710,7 +694,7 @@ const handleRectifyNdt = () => {
   margin-top: 4px;
   font-size: 13px;
   font-weight: 400;
-  color: #667085;
+  color: #52617a;
 }
 
 .ndt-metrics {
@@ -731,7 +715,7 @@ const handleRectifyNdt = () => {
   display: block;
   margin-bottom: 4px;
   font-size: 12px;
-  color: #667085;
+  color: #52617a;
 }
 
 .ndt-metrics strong {
@@ -768,7 +752,7 @@ const handleRectifyNdt = () => {
   margin: 4px 0 0;
   font-size: 13px;
   line-height: 1.5;
-  color: #667085;
+  color: #52617a;
 }
 
 .ndt-submit-error,
@@ -839,7 +823,7 @@ const handleRectifyNdt = () => {
 }
 
 .ndt-actions span {
-  color: #667085;
+  color: #52617a;
 }
 
 .muted-action {

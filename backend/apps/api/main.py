@@ -10,6 +10,7 @@ from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from apps.api.routes import binding_node_ids, document_node_ids, idempotency_fingerprint, member_node_scope_error, mock_router, report_node_ids, router
@@ -19,13 +20,30 @@ from libs.db.postgres import close_postgres, init_postgres_if_configured, run_tr
 from libs.db.repository import flush_state, load_state, repo
 from libs.integrations.storage import ObjectStorageUnavailable, object_storage
 from libs.security.actions import canonical_path, required_action_for_request
-from libs.security.auth import decode_token, demo_users_enabled, user_by_username
+from libs.security.auth import (
+    compatibility_mocks_enabled,
+    decode_token,
+    demo_users_enabled,
+    public_user,
+    strict_production,
+    user_record_by_username,
+)
+from libs.security.runtime import (
+    allowed_hosts,
+    cors_allowed_origins,
+    security_runtime_status,
+    validate_security_runtime,
+)
+from libs.security.session import SecurityBackendUnavailable, security_sessions
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_postgres_if_configured(app)
     load_state()
+    validate_security_runtime()
+    if strict_production() and not await security_sessions.ready():
+        raise RuntimeError("Redis security backend is unavailable")
     yield
     await close_postgres(app)
 
@@ -35,29 +53,57 @@ app = FastAPI(
     version="0.1.0",
     description="FastAPI backend for AIcheck with PostgreSQL-ready repository, OCR/worker integration, and LiteLLM gateway support.",
     lifespan=lifespan,
+    docs_url=None if strict_production() else "/docs",
+    redoc_url=None,
+    openapi_url=None if strict_production() else "/openapi.json",
 )
 
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts())
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=cors_allowed_origins(),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "Idempotency-Key",
+        "If-Match",
+        "X-Action-Code",
+        "X-Operation-Id",
+        "X-Role",
+        "X-User-Id",
+    ],
 )
 
 
 @app.middleware("http")
 async def attach_operation_id(request: Request, call_next):
     request.state.operation_id = request.headers.get("X-Operation-Id") or f"OP-{uuid4().hex[:12].upper()}"
-    if auth_required(request):
+    normalized_path = canonical_path(request.url.path)
+    if normalized_path.startswith("/mock/") and not compatibility_mocks_enabled():
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+    if auth_required(request) or request.headers.get("Authorization"):
         claims = decode_token(request.headers.get("Authorization", ""))
         if claims is None:
             return fail(errors.AUTH_REQUIRED, request)
-        user = user_by_username(claims.get("sub"))
-        if user is None:
+        user_record = user_record_by_username(claims.get("sub"))
+        if user_record is None:
             return fail(errors.AUTH_REQUIRED, request)
-        request.state.auth = claims
+        if claims.get("role") != user_record.get("role") or int(claims.get("ver") or 0) != int(user_record.get("authVersion") or 0):
+            return fail(errors.AUTH_REQUIRED, request, message="登录身份已变化，请重新登录。")
+        try:
+            if await security_sessions.is_revoked(claims.get("jti")):
+                return fail(errors.AUTH_REQUIRED, request, message="登录已注销，请重新登录。")
+        except SecurityBackendUnavailable:
+            return fail(errors.SECURITY_BACKEND_UNAVAILABLE, request, http_status=503)
+        user = public_user(user_record)
+        canonical_claims = {**claims, "role": user.get("role"), "ver": int(user_record.get("authVersion") or 0)}
+        request.state.auth = canonical_claims
         request.state.auth_user = user
+        password_change_paths = {"/auth/me", "/auth/logout", "/auth/change-password"}
+        if user.get("mustChangePassword") and normalized_path not in password_change_paths:
+            return fail(errors.PASSWORD_CHANGE_REQUIRED, request, http_status=403)
     admin_read_error = inferred_admin_read_error(request)
     if admin_read_error is not None:
         return admin_read_error
@@ -85,13 +131,9 @@ def auth_required(request: Request) -> bool:
         "/api/healthz",
         "/auth/login",
         "/api/auth/login",
-        "/auth/logout",
-        "/api/auth/logout",
-        "/mock/",
-        "/api/mock/",
-        "/docs",
-        "/openapi.json",
     )
+    if compatibility_mocks_enabled():
+        public_prefixes += ("/mock/", "/api/mock/")
     return not request.url.path.startswith(public_prefixes)
 
 
@@ -249,9 +291,9 @@ def inferred_action_error(request: Request) -> JSONResponse | None:
     claims = getattr(request.state, "auth", None)
     token_role = claims.get("role") if claims else None
     header_role = request.headers.get("X-Role")
-    if token_role and header_role and header_role != token_role and token_role != "admin":
+    if token_role and header_role and header_role != token_role:
         return fail(errors.FORBIDDEN, request, message="请求角色与登录身份不一致。")
-    role = header_role or token_role
+    role = token_role or (header_role if not auth_required(request) else None)
     if not role:
         return None
     allowed_actions = set(repo.role_actions(role))
@@ -313,12 +355,24 @@ async def generic_error_handler(request: Request, exc: Exception):
 
 @app.get("/healthz", tags=["system"])
 async def healthz(request: Request):
-    return ok(health_payload(), request)
+    return await health_response(request)
 
 
 @app.get("/api/healthz", tags=["system"])
 async def api_healthz(request: Request):
-    return ok(health_payload(), request)
+    return await health_response(request)
+
+
+async def health_response(request: Request):
+    payload = await health_payload()
+    if strict_production() and not payload["securityReady"]:
+        return fail(
+            errors.SECURITY_BACKEND_UNAVAILABLE,
+            request,
+            data={**payload, "reason": errors.SECURITY_BACKEND_UNAVAILABLE.reason},
+            http_status=503,
+        )
+    return ok(payload, request)
 
 
 @app.get("/system/postgres-transaction-probe", tags=["system"])
@@ -330,8 +384,9 @@ async def postgres_transaction_probe(request: Request):
     return ok(await run_transaction_probe(getattr(request.app.state, "postgres", None)), request)
 
 
-def health_payload() -> dict[str, object]:
+async def health_payload() -> dict[str, object]:
     database_backend = "postgres" if repo.postgres_enabled else "sqlite" if repo.sqlite_enabled else "memory"
+    rate_limiter_ready = await security_sessions.ready()
     return {
         "status": "ok",
         "service": "api-service",
@@ -344,10 +399,12 @@ def health_payload() -> dict[str, object]:
         "authRequired": os.getenv("AICHECK_REQUIRE_AUTH", "false").lower() == "true",
         "demoUsersEnabled": demo_users_enabled(),
         "objectStorageEnabled": object_storage.enabled,
+        **security_runtime_status(rate_limiter_ready=rate_limiter_ready),
     }
 
 
-app.include_router(mock_router)
-app.include_router(mock_router, prefix="/api")
+if compatibility_mocks_enabled():
+    app.include_router(mock_router)
+    app.include_router(mock_router, prefix="/api")
 app.include_router(router)
 app.include_router(router, prefix="/api")

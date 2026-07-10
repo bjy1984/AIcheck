@@ -2,7 +2,6 @@
 import { Waterfall } from '@/components/Waterfall'
 import { ContentWrap } from '@/components/ContentWrap'
 import { useI18n } from '@/hooks/web/useI18n'
-import Mock from 'mockjs'
 import { ref, unref } from 'vue'
 import { toAnyString } from '@/utils'
 
@@ -11,18 +10,15 @@ const data = ref<any>([])
 const getList = () => {
   const list: any = []
   for (let i = 0; i < 20; i++) {
-    // 随机 100, 500 之间的整数
-    const height = Mock.Random.integer(100, 500)
-    const width = Mock.Random.integer(100, 500)
-    list.push(
-      Mock.mock({
-        width,
-        height,
-        id: toAnyString(),
-        // http更换为https
-        image_uri: Mock.Random.image(`${width}x${height}`).replace('http://', 'https://')
-      })
-    )
+    const height = Math.floor(Math.random() * 401) + 100
+    const width = Math.floor(Math.random() * 401) + 100
+    const id = toAnyString()
+    list.push({
+      width,
+      height,
+      id,
+      image_uri: `https://picsum.photos/seed/${encodeURIComponent(id)}/${width}/${height}`
+    })
   }
   data.value = [...unref(data), ...list]
   if (unref(data).length >= 60) {

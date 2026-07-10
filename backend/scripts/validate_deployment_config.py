@@ -405,6 +405,14 @@ class DeploymentConfigValidator:
                 "LANGGRAPH_CHECKPOINT_DSN",
                 "AICHECK_MINIO_ENDPOINT",
                 "AICHECK_JWT_SECRET",
+                "AICHECK_JWT_ISSUER",
+                "AICHECK_JWT_AUDIENCE",
+                "AICHECK_JWT_TTL_MINUTES",
+                "AICHECK_STRICT_PRODUCTION",
+                "AICHECK_ALLOW_DEV_TOKENS",
+                "AICHECK_ENABLE_COMPATIBILITY_MOCKS",
+                "AICHECK_CORS_ALLOWED_ORIGINS",
+                "AICHECK_ALLOWED_HOSTS",
                 "AICHECK_REQUIRE_AUTH",
                 "AICHECK_ENABLE_DEMO_USERS",
                 "LITELLM_BASE_URL",
@@ -415,6 +423,7 @@ class DeploymentConfigValidator:
                 "QWEN_API_KEY",
             },
             "worker-service": {
+                "AICHECK_STRICT_PRODUCTION",
                 "AICHECK_DATABASE_URL",
                 "AICHECK_REDIS_URL",
                 "AICHECK_TASK_DISPATCH",
@@ -429,6 +438,7 @@ class DeploymentConfigValidator:
                 "QWEN_API_KEY",
             },
             "review-worker-service": {
+                "AICHECK_STRICT_PRODUCTION",
                 "AICHECK_DATABASE_URL",
                 "AICHECK_REVIEW_ORCHESTRATION",
                 "AICHECK_AUDIT_INPUT_MODE",
@@ -510,6 +520,20 @@ class DeploymentConfigValidator:
             failures.append("api-service default AICHECK_REQUIRE_AUTH must be true")
         if default_value(api_env.get("AICHECK_ENABLE_DEMO_USERS")) != "false":
             failures.append("api-service default AICHECK_ENABLE_DEMO_USERS must be false")
+        if default_value(api_env.get("AICHECK_STRICT_PRODUCTION")) != "true":
+            failures.append("api-service default AICHECK_STRICT_PRODUCTION must be true")
+        if default_value(api_env.get("AICHECK_ALLOW_DEV_TOKENS")) != "false":
+            failures.append("api-service default AICHECK_ALLOW_DEV_TOKENS must be false")
+        if default_value(api_env.get("AICHECK_ENABLE_COMPATIBILITY_MOCKS")) != "false":
+            failures.append("api-service default AICHECK_ENABLE_COMPATIBILITY_MOCKS must be false")
+        if default_value(worker_env.get("AICHECK_STRICT_PRODUCTION")) != "true":
+            failures.append("worker-service default AICHECK_STRICT_PRODUCTION must be true")
+        if default_value(review_worker_env.get("AICHECK_STRICT_PRODUCTION")) != "true":
+            failures.append("review-worker-service default AICHECK_STRICT_PRODUCTION must be true")
+        if "*" in default_value(api_env.get("AICHECK_CORS_ALLOWED_ORIGINS")):
+            failures.append("api-service AICHECK_CORS_ALLOWED_ORIGINS must not contain wildcard")
+        if "*" in default_value(api_env.get("AICHECK_ALLOWED_HOSTS")):
+            failures.append("api-service AICHECK_ALLOWED_HOSTS must not contain wildcard")
         if "postgres:5432" not in default_value(api_env.get("AICHECK_DATABASE_URL")):
             failures.append("api-service AICHECK_DATABASE_URL must target postgres:5432")
         if default_value(worker_env.get("AICHECK_TASK_DISPATCH")) != "celery":
@@ -539,6 +563,9 @@ class DeploymentConfigValidator:
         if default_value(ocr_env.get("AICHECK_OCR_DISABLE_NETWORK")) != "true":
             failures.append("ocr-service default AICHECK_OCR_DISABLE_NETWORK must be true")
         litellm_env = environment_map(self.service("litellm-service").get("environment"))
+        litellm_image = str(self.service("litellm-service").get("image") or "")
+        if not re.search(r"ghcr\.io/berriai/litellm:[^}\s]+@sha256:[a-f0-9]{64}", litellm_image):
+            failures.append("litellm-service image must be pinned to a release tag and sha256 digest")
         proxy_failures = litellm_proxy_bypass_failures(litellm_env)
         failures.extend(proxy_failures)
         weak_markers = {

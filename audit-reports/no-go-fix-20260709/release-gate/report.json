@@ -1,0 +1,4917 @@
+{
+  "schemaVersion": "aicheck-deployment-report-v1",
+  "generatedAt": "2026-07-10 09:32:12",
+  "strictProduction": true,
+  "includeLive": false,
+  "ok": false,
+  "summary": {
+    "pass": 36,
+    "warn": 0,
+    "fail": 2,
+    "skip": 1,
+    "total": 39
+  },
+  "sections": [
+    {
+      "name": "deployment-config",
+      "ok": true,
+      "checks": [
+        {
+          "name": "compose.load",
+          "status": "pass",
+          "detail": "/Volumes/Volume/project/AIcheck/backend/docker-compose.yml",
+          "data": null
+        },
+        {
+          "name": "litellm.load",
+          "status": "pass",
+          "detail": "/Volumes/Volume/project/AIcheck/backend/config/litellm.yaml",
+          "data": null
+        },
+        {
+          "name": "dockerfile.load",
+          "status": "pass",
+          "detail": "/Volumes/Volume/project/AIcheck/backend/Dockerfile",
+          "data": null
+        },
+        {
+          "name": "dockerfile.ocr-load",
+          "status": "pass",
+          "detail": "/Volumes/Volume/project/AIcheck/backend/Dockerfile.ocr",
+          "data": null
+        },
+        {
+          "name": "requirements.ocr-load",
+          "status": "pass",
+          "detail": "/Volumes/Volume/project/AIcheck/backend/requirements-ocr.txt",
+          "data": null
+        },
+        {
+          "name": "dockerfile.build-contract",
+          "status": "pass",
+          "detail": "Backend image installs dependencies, runs non-root, and exposes API/OCR ports.",
+          "data": null
+        },
+        {
+          "name": "requirements.ocr-baseline",
+          "status": "pass",
+          "detail": "OCR dependency baseline includes PaddleOCR, PaddleX, PyMuPDF, OpenCV, Docling, and Transformers.",
+          "data": {
+            "packages": [
+              "Pillow",
+              "PyMuPDF",
+              "docling",
+              "opencv-python-headless",
+              "paddleocr",
+              "paddlepaddle",
+              "paddlex[ocr]",
+              "transformers"
+            ]
+          }
+        },
+        {
+          "name": "dockerfile.ocr-build-contract",
+          "status": "pass",
+          "detail": "OCR image installs PaddleOCR baseline dependencies and runs non-root.",
+          "data": null
+        },
+        {
+          "name": "compose.services",
+          "status": "pass",
+          "detail": "Required services are declared.",
+          "data": {
+            "services": [
+              "api-service",
+              "embedding-service",
+              "litellm-service",
+              "minio",
+              "ocr-service",
+              "postgres",
+              "redis",
+              "review-worker-service",
+              "temporal-service",
+              "temporal-ui",
+              "worker-service"
+            ],
+            "extra": []
+          }
+        },
+        {
+          "name": "compose.depends-on",
+          "status": "pass",
+          "detail": "Service dependencies cover database, queue, object storage, OCR, and LiteLLM.",
+          "data": null
+        },
+        {
+          "name": "compose.commands-ports",
+          "status": "pass",
+          "detail": "Commands, queues, PostgreSQL service, and public ports are valid.",
+          "data": null
+        },
+        {
+          "name": "compose.healthchecks",
+          "status": "pass",
+          "detail": "Core services declare production healthchecks.",
+          "data": null
+        },
+        {
+          "name": "compose.environment",
+          "status": "pass",
+          "detail": "Required service environment and production-safe defaults are present.",
+          "data": null
+        },
+        {
+          "name": "compose.ocr-artifacts",
+          "status": "pass",
+          "detail": "OCR service requires local model artifacts and mounts OCR artifacts read-only.",
+          "data": {
+            "backendPath": "/opt/agentdesign/mvp-system/backend",
+            "volumes": [
+              "${AICHECK_AGENTDESIGN_HOST_PATH:-./apps/ocr_service}:/opt/agentdesign:ro",
+              "${AICHECK_OCR_MODELS_HOST_PATH:?AICHECK_OCR_MODELS_HOST_PATH is required}:/models:ro"
+            ]
+          }
+        },
+        {
+          "name": "compose.volumes",
+          "status": "pass",
+          "detail": "Persistent data volumes are declared.",
+          "data": null
+        },
+        {
+          "name": "litellm.config",
+          "status": "pass",
+          "detail": "LiteLLM aliases, provider params, master key, and database settings are valid.",
+          "data": {
+            "aliases": [
+              "compare-fast",
+              "deepseek-reasoner",
+              "default-chat",
+              "embedding-default",
+              "qwen3.7-plus",
+              "review-chat"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "auth-contract",
+      "ok": true,
+      "checks": [
+        {
+          "name": "auth.role-contract",
+          "status": "pass",
+          "detail": "roles=6, missingRoles=0, badPaths=0, missingActions=0, ownerWriteLeaks=0, specFailures=0, planFailures=0",
+          "data": {
+            "roles": [
+              "admin",
+              "inspection",
+              "contractor",
+              "ndt",
+              "owner",
+              "fde"
+            ],
+            "missingRoles": [],
+            "badPaths": [],
+            "missingActions": [],
+            "ownerWriteLeaks": [],
+            "missingSpecs": [],
+            "planFailures": []
+          }
+        },
+        {
+          "name": "auth.security-contract",
+          "status": "pass",
+          "detail": "checks=14, failures=0",
+          "data": {
+            "checks": {
+              "dev token gated": true,
+              "jwt version claim": true,
+              "jwt issuer": true,
+              "jwt audience": true,
+              "canonical server role": true,
+              "password change gate": true,
+              "mock route conditional": true,
+              "mock users redacted": true,
+              "cors allowlist": true,
+              "cors credentials disabled": true,
+              "strict production compose": true,
+              "production dev tokens disabled": true,
+              "production mocks disabled": true,
+              "litellm digest pinned": true
+            },
+            "failures": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "data-contract",
+      "ok": true,
+      "checks": [
+        {
+          "name": "postgres.index-contract",
+          "status": "pass",
+          "detail": "tables=4, persistedCollections=89, tableMissing=0, planMissing=0, criticalMissing=0",
+          "data": {
+            "indexedTables": [
+              "aicheck_singletons",
+              "aicheck_state",
+              "idempotency_records",
+              "knowledge_vector_index"
+            ],
+            "persistedCollections": [
+              "access_grants",
+              "admin_configs",
+              "agent_versions",
+              "ai_feedback",
+              "ai_run_replays",
+              "ai_runs",
+              "ai_trace_steps",
+              "archive_items",
+              "audit_logs",
+              "business_pack_installations",
+              "business_pack_overrides",
+              "business_packs",
+              "capability_bundles",
+              "cost_budget_change_requests",
+              "cost_budgets",
+              "data_exports",
+              "delivery_acceptance_reports",
+              "document_versions",
+              "documents",
+              "evaluation_case_results",
+              "evaluation_cases",
+              "evaluation_metrics",
+              "evaluation_reports",
+              "evaluation_runs",
+              "evaluation_sets",
+              "evidence_links",
+              "export_tasks",
+              "extracted_fields",
+              "fde_capability_test_runs",
+              "fde_capability_test_upload_sessions",
+              "feedback_triage",
+              "idempotency_keys",
+              "incident_rca",
+              "incidents",
+              "knowledge_chunk_quarantines",
+              "knowledge_chunks",
+              "knowledge_clauses",
+              "knowledge_configs",
+              "knowledge_files",
+              "knowledge_page_index_nodes",
+              "knowledge_sources",
+              "knowledge_tasks",
+              "knowledge_vector_corrections",
+              "knowledge_vectors",
+              "llm_compare_runs",
+              "masking_policies",
+              "material_targeting_runs",
+              "messages",
+              "model_route_versions",
+              "ndt_feedback",
+              "ndt_films",
+              "ndt_records",
+              "ndt_reports",
+              "node_bindings",
+              "node_evidence_links",
+              "node_requirements",
+              "ocr_annotation_imports",
+              "ocr_annotation_tasks",
+              "ocr_corrections",
+              "ocr_eval_runs",
+              "ocr_jobs",
+              "ocr_parse_results",
+              "ocr_profile_versions",
+              "project_members",
+              "project_nodes",
+              "projects",
+              "prompt_templates",
+              "prompt_versions",
+              "rectifications",
+              "release_approvals",
+              "release_gates",
+              "release_plans",
+              "reports",
+              "retrieval_traces",
+              "review_events",
+              "review_findings",
+              "review_graph_nodes",
+              "review_opinions",
+              "review_runs",
+              "review_step_runs",
+              "review_tool_calls",
+              "roles",
+              "rule_check_results",
+              "rule_versions",
+              "submission_drafts",
+              "submissions",
+              "todos",
+              "upload_sessions",
+              "users"
+            ],
+            "missingTables": [],
+            "missingPlanCollections": [],
+            "missingCriticalIndexes": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "storage-contract",
+      "ok": true,
+      "checks": [
+        {
+          "name": "storage.bucket-contract",
+          "status": "pass",
+          "detail": "buckets=4, missingBuckets=0, unexpectedBuckets=0, methodFailures=0, repositoryFailures=0, parseFailures=0",
+          "data": {
+            "requiredBuckets": [
+              "documents",
+              "previews",
+              "exports",
+              "ocr-artifacts"
+            ],
+            "configuredBuckets": [
+              "documents",
+              "previews",
+              "exports",
+              "ocr-artifacts"
+            ],
+            "missingBuckets": [],
+            "unexpectedBuckets": [],
+            "duplicateBuckets": [],
+            "methodFailures": [],
+            "repositoryFailures": [],
+            "parseFailures": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "ocr-service-contract",
+      "ok": true,
+      "checks": [
+        {
+          "name": "ocr.service-contract",
+          "status": "pass",
+          "detail": "OCR service health, parse endpoint, source resolution, and result envelope are valid.",
+          "data": {
+            "healthFailures": [],
+            "parseFailures": [],
+            "doctorFailures": [],
+            "serviceFailures": [],
+            "preprocessFailures": [],
+            "qualityGateFailures": [],
+            "resultFailures": [],
+            "requiredHealthFields": [
+              "pipelineAvailable",
+              "pipelineBackend",
+              "placeholderAllowed",
+              "service"
+            ],
+            "requiredResultFields": [
+              "diagnostics",
+              "fields",
+              "fileName",
+              "fragments",
+              "seals",
+              "status",
+              "storageKey"
+            ]
+          }
+        },
+        {
+          "name": "ocr.profile-contract",
+          "status": "pass",
+          "detail": "profiles=20, businessProfiles=19, failures=0",
+          "data": {
+            "profileIds": [
+              "comprehensive_material_list_v1",
+              "construction_plan_v1",
+              "construction_record_v1",
+              "design_specification_v1",
+              "drawing_material_list_v1",
+              "engineering_drawing_list_v1",
+              "equipment_list_v1",
+              "generic_document_v1",
+              "ndt_rt_report_v1",
+              "ndt_ut_report_v1",
+              "paint_insulation_list_v1",
+              "piping_characteristic_list_v1",
+              "process_flow_diagram_v1",
+              "qualification_certificate_v1",
+              "quality_certificate_v1",
+              "site_layout_drawing_v1",
+              "strength_calculation_v1",
+              "welder_certificate_v1",
+              "welding_procedure_qualification_v1",
+              "welding_record_v1"
+            ],
+            "businessProfileIds": [
+              "comprehensive_material_list_v1",
+              "construction_plan_v1",
+              "construction_record_v1",
+              "design_specification_v1",
+              "drawing_material_list_v1",
+              "engineering_drawing_list_v1",
+              "equipment_list_v1",
+              "ndt_rt_report_v1",
+              "ndt_ut_report_v1",
+              "paint_insulation_list_v1",
+              "piping_characteristic_list_v1",
+              "process_flow_diagram_v1",
+              "qualification_certificate_v1",
+              "quality_certificate_v1",
+              "site_layout_drawing_v1",
+              "strength_calculation_v1",
+              "welder_certificate_v1",
+              "welding_procedure_qualification_v1",
+              "welding_record_v1"
+            ],
+            "failures": [],
+            "requiredQualityRuleKeys": [
+              "criticalConflictFields",
+              "minFieldConfidence",
+              "minTableStructureConfidence"
+            ]
+          }
+        },
+        {
+          "name": "ocr.evaluation-contract",
+          "status": "pass",
+          "detail": "OCR release evaluation set and runner are usable.",
+          "data": {
+            "requiredMetrics": [
+              "fieldBboxHitRate",
+              "fieldEvidenceRecall",
+              "fieldRecall",
+              "fieldValueAccuracy",
+              "qualityEvidenceCompletenessMatch",
+              "qualityReasonRecall",
+              "qualityStatusMatch",
+              "sealBboxHitRate",
+              "sealEvidenceRecall",
+              "sealRecall",
+              "tableBboxHitRate",
+              "tableEvidenceRecall",
+              "tableRecall"
+            ],
+            "metricFailures": [],
+            "cliFailures": [],
+            "scorecardFailures": [],
+            "corpusFailures": [],
+            "prefetchFailures": [],
+            "fixtureFailures": [],
+            "strict100Thresholds": {
+              "minCases": 100,
+              "requiredScenarioCount": 11,
+              "metricCount": 13
+            },
+            "compactSummary": {
+              "ok": true,
+              "failedCases": 0,
+              "scenarioCount": 1
+            },
+            "inlineReportSummary": {
+              "cases": 1,
+              "passed": 1,
+              "failed": 0,
+              "averageScore": 1.0,
+              "scenarios": {
+                "default": {
+                  "cases": 1,
+                  "passed": 1,
+                  "failed": 0,
+                  "averageScore": 1.0
+                }
+              }
+            },
+            "fixtureSummary": {
+              "cases": 7,
+              "passed": 7,
+              "failed": 0,
+              "averageScore": 1.0,
+              "scenarios": {
+                "evidence_profile": {
+                  "cases": 1,
+                  "passed": 1,
+                  "failed": 0,
+                  "averageScore": 1.0
+                },
+                "field_confidence_profile": {
+                  "cases": 1,
+                  "passed": 1,
+                  "failed": 0,
+                  "averageScore": 1.0
+                },
+                "field_conflict_profile": {
+                  "cases": 1,
+                  "passed": 1,
+                  "failed": 0,
+                  "averageScore": 1.0
+                },
+                "fragment_seal_profile": {
+                  "cases": 1,
+                  "passed": 1,
+                  "failed": 0,
+                  "averageScore": 1.0
+                },
+                "piping_table_profile": {
+                  "cases": 1,
+                  "passed": 1,
+                  "failed": 0,
+                  "averageScore": 1.0
+                },
+                "quality_gate_profile": {
+                  "cases": 1,
+                  "passed": 1,
+                  "failed": 0,
+                  "averageScore": 1.0
+                },
+                "seal_text_profile": {
+                  "cases": 1,
+                  "passed": 1,
+                  "failed": 0,
+                  "averageScore": 1.0
+                }
+              }
+            },
+            "fixtureScenarios": [
+              "evidence_profile",
+              "field_confidence_profile",
+              "field_conflict_profile",
+              "fragment_seal_profile",
+              "piping_table_profile",
+              "quality_gate_profile",
+              "seal_text_profile"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "litellm-client-contract",
+      "ok": true,
+      "checks": [
+        {
+          "name": "litellm.client-contract",
+          "status": "pass",
+          "detail": "LiteLLM client and worker usage match OpenAI-compatible gateway contract.",
+          "data": {
+            "clientFailures": [],
+            "workerFailures": [],
+            "runtimeFailures": [],
+            "requiredMethods": [
+              "__init__",
+              "_response_json",
+              "chat",
+              "chat_sync",
+              "embed",
+              "embed_sync",
+              "first_message_text"
+            ],
+            "requiredWorkerTasks": [
+              "ai_recheck",
+              "embed_knowledge",
+              "llm_compare"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "knowledge-rule-contract",
+      "ok": true,
+      "checks": [
+        {
+          "name": "knowledge-rule.contract",
+          "status": "pass",
+          "detail": "Knowledge source, rule version, retrieval trace, rule-check, and reference validation contracts are present.",
+          "data": {
+            "routeFailures": [],
+            "collectionFailures": [],
+            "fieldFailures": [],
+            "validationFailures": [],
+            "routeCount": 22,
+            "requiredRoutes": [
+              {
+                "method": "GET",
+                "suffix": "/knowledge/overview"
+              },
+              {
+                "method": "GET",
+                "suffix": "/knowledge/sources"
+              },
+              {
+                "method": "POST",
+                "suffix": "/knowledge/sources"
+              },
+              {
+                "method": "GET",
+                "suffix": "/knowledge/sources/{source_id}"
+              },
+              {
+                "method": "PUT",
+                "suffix": "/knowledge/sources/{source_id}"
+              },
+              {
+                "method": "GET",
+                "suffix": "/knowledge/project-files"
+              },
+              {
+                "method": "GET",
+                "suffix": "/knowledge/files/{file_id}"
+              },
+              {
+                "method": "GET",
+                "suffix": "/knowledge/files/{file_id}/chunks"
+              },
+              {
+                "method": "GET",
+                "suffix": "/knowledge/files/{file_id}/vectors"
+              },
+              {
+                "method": "GET",
+                "suffix": "/knowledge/files/{file_id}/reasoning-references"
+              },
+              {
+                "method": "GET",
+                "suffix": "/knowledge/clauses"
+              },
+              {
+                "method": "GET",
+                "suffix": "/knowledge/page-index-nodes"
+              },
+              {
+                "method": "POST",
+                "suffix": "/knowledge/files/{file_id}/reindex"
+              },
+              {
+                "method": "GET",
+                "suffix": "/knowledge/tasks"
+              },
+              {
+                "method": "POST",
+                "suffix": "/knowledge/tasks/{task_id}/retry"
+              },
+              {
+                "method": "POST",
+                "suffix": "/knowledge/retrieval-test"
+              },
+              {
+                "method": "GET",
+                "suffix": "/knowledge/config"
+              },
+              {
+                "method": "PUT",
+                "suffix": "/knowledge/config"
+              },
+              {
+                "method": "GET",
+                "suffix": "/rules/versions"
+              },
+              {
+                "method": "GET",
+                "suffix": "/rules/versions/{version_id}/diff"
+              },
+              {
+                "method": "POST",
+                "suffix": "/rules/versions/{version_id}/publish"
+              },
+              {
+                "method": "POST",
+                "suffix": "/rules/versions/{version_id}/rollback"
+              }
+            ],
+            "requiredCollections": [
+              "knowledge_chunks",
+              "knowledge_clauses",
+              "knowledge_configs",
+              "knowledge_files",
+              "knowledge_page_index_nodes",
+              "knowledge_sources",
+              "knowledge_tasks",
+              "retrieval_traces",
+              "rule_check_results",
+              "rule_versions"
+            ],
+            "requiredRuleCheckFields": [
+              "createdAt",
+              "evidenceRefs",
+              "id",
+              "linkedClauseIds",
+              "message",
+              "result",
+              "reviewRunId",
+              "ruleCode",
+              "ruleSetVersion",
+              "severity",
+              "suggestedAction"
+            ],
+            "requiredRetrievalTraceFields": [
+              "createdAt",
+              "filters",
+              "id",
+              "kbVersion",
+              "pageIndexTree",
+              "query",
+              "queryRouter",
+              "queryType",
+              "retrievalTraceId",
+              "retrievers",
+              "reviewRunId",
+              "routerSignals",
+              "routerVersion",
+              "selectedClauses",
+              "selectedRoute"
+            ],
+            "readinessScorecard": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "review-orchestration-contract",
+      "ok": true,
+      "checks": [
+        {
+          "name": "review-orchestration.contract",
+          "status": "pass",
+          "detail": "Temporal/LangGraph ReviewRun orchestration, routes, state, tools, and replay contracts are present.",
+          "data": {
+            "routeFailures": [],
+            "graphFailures": [],
+            "stateFailures": [],
+            "toolFailures": [],
+            "sourceFailures": [],
+            "routeCount": 13,
+            "stepKeys": [
+              "load_context",
+              "load_ocr_result",
+              "run_rule_engine",
+              "retrieve_knowledge",
+              "build_prompt",
+              "llm_generate_findings",
+              "schema_validation",
+              "evidence_validation",
+              "reference_validation",
+              "critic_review",
+              "quality_gate",
+              "persist_drafts"
+            ],
+            "taskQueues": [
+              "review.graph",
+              "review.llm",
+              "review.retrieval",
+              "review.validation"
+            ],
+            "collections": [
+              "ai_feedback",
+              "retrieval_traces",
+              "review_events",
+              "review_graph_nodes",
+              "review_runs",
+              "review_step_runs",
+              "review_tool_calls",
+              "rule_check_results"
+            ],
+            "allowedTools": [
+              "call_qwen_runtime_chat",
+              "create_ai_diagnostic",
+              "create_review_finding_draft",
+              "extract_structured_fields",
+              "extract_welder_certificate",
+              "get_document_ocr_result",
+              "get_node_requirements",
+              "get_project_context",
+              "recognize_document_seals",
+              "retrieve_clauses",
+              "run_rule_engine",
+              "search_knowledge_base",
+              "search_project_documents",
+              "verify_license_or_certificate",
+              "verify_welder_certificate_authenticity"
+            ],
+            "forbiddenTools": [
+              "approve_review",
+              "archive_project",
+              "change_project_status",
+              "close_correction",
+              "delete_document",
+              "grant_permission",
+              "issue_formal_correction",
+              "modify_audit_log"
+            ],
+            "requiredRoutes": [
+              {
+                "method": "POST",
+                "suffix": "/projects/{project_id}/inspection/nodes/{node_id}/ai-recheck"
+              },
+              {
+                "method": "GET",
+                "suffix": "/review-runs/{review_run_id}"
+              },
+              {
+                "method": "GET",
+                "suffix": "/review-runs/{review_run_id}/timeline"
+              },
+              {
+                "method": "GET",
+                "suffix": "/review-runs/{review_run_id}/graph"
+              },
+              {
+                "method": "POST",
+                "suffix": "/review-runs/{review_run_id}/human-decision"
+              },
+              {
+                "method": "POST",
+                "suffix": "/review-runs/{review_run_id}/cancel"
+              },
+              {
+                "method": "POST",
+                "suffix": "/review-runs/{review_run_id}/rerun"
+              },
+              {
+                "method": "GET",
+                "suffix": "/fde/review-runs"
+              },
+              {
+                "method": "GET",
+                "suffix": "/fde/review-runs/{review_run_id}"
+              },
+              {
+                "method": "GET",
+                "suffix": "/fde/review-runs/{review_run_id}/graph"
+              },
+              {
+                "method": "GET",
+                "suffix": "/fde/review-runs/{review_run_id}/temporal-history"
+              },
+              {
+                "method": "POST",
+                "suffix": "/fde/review-runs/{review_run_id}/replay"
+              },
+              {
+                "method": "POST",
+                "suffix": "/fde/review-runs/{review_run_id}/shadow-run"
+              }
+            ],
+            "frontendArtifactVisualization": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "fde-governance-contract",
+      "ok": true,
+      "checks": [
+        {
+          "name": "fde.governance-contract",
+          "status": "pass",
+          "detail": "FDE high-risk release gates require evaluation, risk set, rollback plan, non-FDE approval, shadow, and canary controls.",
+          "data": {
+            "routeFailures": [],
+            "collectionFailures": [],
+            "sourceFailures": [],
+            "routeCount": 7,
+            "requiredRoutes": [
+              {
+                "method": "GET",
+                "suffix": "/fde/releases"
+              },
+              {
+                "method": "POST",
+                "suffix": "/fde/releases"
+              },
+              {
+                "method": "POST",
+                "suffix": "/fde/releases/{release_id}/submit"
+              },
+              {
+                "method": "POST",
+                "suffix": "/fde/releases/{release_id}/approve"
+              },
+              {
+                "method": "POST",
+                "suffix": "/fde/releases/{release_id}/start-shadow"
+              },
+              {
+                "method": "POST",
+                "suffix": "/fde/releases/{release_id}/request-canary"
+              },
+              {
+                "method": "POST",
+                "suffix": "/fde/releases/{release_id}/rollback"
+              }
+            ],
+            "requiredCollections": [
+              "capability_bundles",
+              "evaluation_reports",
+              "evaluation_sets",
+              "release_approvals",
+              "release_gates",
+              "release_plans"
+            ],
+            "businessPackPortabilityScorecard": true,
+            "frontendBusinessPackScorecard": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "feedback-hr-contract",
+      "ok": true,
+      "checks": [
+        {
+          "name": "feedback.hr-contract",
+          "status": "pass",
+          "detail": "Human review decisions create immutable AI feedback and FDE triage can promote feedback into evaluation cases.",
+          "data": {
+            "routeFailures": [],
+            "collectionFailures": [],
+            "sourceFailures": [],
+            "routeCount": 3,
+            "requiredRoutes": [
+              {
+                "method": "GET",
+                "suffix": "/fde/feedback"
+              },
+              {
+                "method": "POST",
+                "suffix": "/fde/feedback/{feedback_id}/triage"
+              },
+              {
+                "method": "GET",
+                "suffix": "/fde/evaluation-sets"
+              }
+            ],
+            "requiredCollections": [
+              "ai_feedback",
+              "evaluation_case_results",
+              "evaluation_cases",
+              "evaluation_sets",
+              "feedback_triage",
+              "retrieval_traces"
+            ],
+            "frontendFeedbackGovernance": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "export-artifact-contract",
+      "ok": true,
+      "checks": [
+        {
+          "name": "export.artifact-contract",
+          "status": "pass",
+          "detail": "Export ZIP/PDF artifacts include manifest, audit snapshots, and PDF summary.",
+          "data": {
+            "failures": [],
+            "requiredZipContents": [
+              "README.txt",
+              "archive_items.json",
+              "documents.json",
+              "evidence_links.json",
+              "manifest.json",
+              "project.json",
+              "reports.json",
+              "task.json"
+            ],
+            "zip": {
+              "names": [
+                "README.txt",
+                "archive_items.json",
+                "documents.json",
+                "evidence_links.json",
+                "manifest.json",
+                "project.json",
+                "reports.json",
+                "task.json"
+              ],
+              "manifestSchema": "aicheck-export-v1",
+              "manifestTaskId": "EXP-CONTRACT-001",
+              "manifestProjectId": "P-2026-HDCP-001",
+              "manifestContents": [
+                "manifest.json",
+                "task.json",
+                "project.json",
+                "reports.json",
+                "documents.json",
+                "archive_items.json",
+                "evidence_links.json",
+                "README.txt"
+              ]
+            },
+            "pdf": {
+              "size": 845,
+              "header": "%PDF-1.4"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "worker-contract",
+      "ok": true,
+      "checks": [
+        {
+          "name": "worker.task-contract",
+          "status": "pass",
+          "detail": "tasks=7, missingTasks=0, routeMismatches=0, retryMissing=0, dispatcherMissing=0, dispatcherMismatches=0",
+          "data": {
+            "requiredQueues": {
+              "parse_document": "ocr.parse_document",
+              "recognize_seals": "ocr.recognize_seals",
+              "slice_knowledge": "knowledge.slice",
+              "embed_knowledge": "knowledge.embed",
+              "ai_recheck": "inspection.ai_recheck",
+              "llm_compare": "llm.compare",
+              "export_package": "export.package"
+            },
+            "missingTasks": [],
+            "routeMismatches": [],
+            "retryMissing": [],
+            "dispatcherMissing": [],
+            "dispatcherMismatches": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "api-contract",
+      "ok": true,
+      "checks": [
+        {
+          "name": "api.response-envelope",
+          "status": "pass",
+          "detail": "ok()/fail() response envelope matches frontend contract.",
+          "data": {
+            "failures": [],
+            "successFields": [
+              "code",
+              "data",
+              "operationId",
+              "serverTime"
+            ],
+            "errorFields": [
+              "code",
+              "data",
+              "message",
+              "operationId",
+              "serverTime"
+            ]
+          }
+        },
+        {
+          "name": "api.mutation-idempotency",
+          "status": "pass",
+          "detail": "mutatingRoutes=336, missing=0, direct=302, delegated=16, exempt=18",
+          "data": {
+            "missing": [],
+            "direct": [
+              {
+                "method": "PUT",
+                "path": "/projects/{project_id}",
+                "endpoint": "update_project",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/projects/{project_id}",
+                "endpoint": "update_project",
+                "category": "direct"
+              },
+              {
+                "method": "DELETE",
+                "path": "/projects/{project_id}",
+                "endpoint": "delete_project",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/business-pack/apply",
+                "endpoint": "apply_business_pack",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/participants",
+                "endpoint": "save_participant",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/projects/{project_id}/participants/{participant_id}",
+                "endpoint": "update_participant",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/members",
+                "endpoint": "authorize_member",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/projects/{project_id}/members/{member_id}",
+                "endpoint": "update_member",
+                "category": "direct"
+              },
+              {
+                "method": "DELETE",
+                "path": "/projects/{project_id}/members/{member_id}",
+                "endpoint": "delete_member",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/initialize-workflow",
+                "endpoint": "initialize_workflow",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/documents/upload-session",
+                "endpoint": "create_upload_session",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/projects/{project_id}/documents/upload-session/{session_id}/files/{document_version_id}",
+                "endpoint": "upload_session_file",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/documents/upload-session/{session_id}/complete",
+                "endpoint": "complete_upload_session",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/documents/{document_id}/targeting/recompute",
+                "endpoint": "recompute_document_targeting",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/material-targeting/recompute",
+                "endpoint": "recompute_project_targeting",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/nodes/{node_id}/evidence-links/{evidence_link_id}/confirm",
+                "endpoint": "confirm_node_evidence_link",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/nodes/{node_id}/evidence-links/{evidence_link_id}/reject",
+                "endpoint": "reject_node_evidence_link",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/documents/{document_id}/versions",
+                "endpoint": "append_document_version",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/documents/bindings",
+                "endpoint": "bind_documents",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/projects/{project_id}/documents/bindings/{binding_id}",
+                "endpoint": "update_binding",
+                "category": "direct"
+              },
+              {
+                "method": "DELETE",
+                "path": "/projects/{project_id}/documents/bindings/{binding_id}",
+                "endpoint": "delete_binding",
+                "category": "direct"
+              },
+              {
+                "method": "DELETE",
+                "path": "/projects/{project_id}/documents/{document_id}",
+                "endpoint": "delete_project_document",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/documents/{document_id}/withdraw",
+                "endpoint": "withdraw_document",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/documents/{document_id}/void",
+                "endpoint": "void_document",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/documents/batch-classify",
+                "endpoint": "batch_classify_documents",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/submissions/drafts",
+                "endpoint": "save_submission_draft",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/submissions",
+                "endpoint": "submit_node_package",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/submissions/{submission_id}/withdraw-items",
+                "endpoint": "withdraw_submission_items",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/rectifications",
+                "endpoint": "submit_rectification",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/inspection/nodes/{node_id}/ai-recheck",
+                "endpoint": "ai_recheck",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/review-runs/{review_run_id}/human-decision",
+                "endpoint": "submit_review_run_human_decision",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/review-runs/{review_run_id}/cancel",
+                "endpoint": "cancel_review_run",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/review-runs/{review_run_id}/rerun",
+                "endpoint": "rerun_review_run",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/inspection/nodes/{node_id}/review-opinions",
+                "endpoint": "save_review_opinion",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/inspection/nodes/{node_id}/ai-suggestions/{suggestion_id}/adopt",
+                "endpoint": "adopt_ai_suggestion",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/inspection/nodes/{node_id}/ai-suggestions/{suggestion_id}/reject",
+                "endpoint": "reject_ai_suggestion",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/inspection/nodes/{node_id}/actions/return-correction",
+                "endpoint": "return_correction",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/inspection/nodes/{node_id}/report-review",
+                "endpoint": "generate_report_review",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/projects/{project_id}/reports/{report_id}",
+                "endpoint": "update_report",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/reports/{report_id}/export",
+                "endpoint": "export_report",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/reports/{report_id}/archive",
+                "endpoint": "archive_report",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/exports",
+                "endpoint": "create_export",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/ndt/films",
+                "endpoint": "create_ndt_film",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/projects/{project_id}/ndt/films/{film_id}",
+                "endpoint": "update_ndt_film",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/ndt/films/import",
+                "endpoint": "import_ndt_films",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/ndt/records/import",
+                "endpoint": "import_ndt_records",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/ndt/reports/upload-session",
+                "endpoint": "ndt_report_upload_session",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/ndt/reports/upload-session/{session_id}/complete",
+                "endpoint": "complete_ndt_report_upload_session",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/ndt/submissions",
+                "endpoint": "submit_ndt",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/ndt/rectifications",
+                "endpoint": "ndt_rectification",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/todos/{todo_id}/complete",
+                "endpoint": "complete_todo",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/todos/{todo_id}/defer",
+                "endpoint": "defer_todo",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/messages/{message_id}/read",
+                "endpoint": "mark_message_read",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/messages/read-all",
+                "endpoint": "mark_all_messages_read",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/workflow/commands",
+                "endpoint": "execute_workflow_command",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/review/findings",
+                "endpoint": "create_review_finding",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/review/findings/{finding_id}/accept",
+                "endpoint": "accept_review_finding",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/review/findings/{finding_id}/reject",
+                "endpoint": "reject_review_finding",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/ai/runs/{run_id}/feedback",
+                "endpoint": "create_ai_run_feedback",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/vector-corrections",
+                "endpoint": "fde_create_vector_correction",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/vector-corrections/{correction_id}/approve",
+                "endpoint": "fde_approve_vector_correction",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/vector-corrections/{correction_id}/reject",
+                "endpoint": "fde_reject_vector_correction",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/vector-corrections/{correction_id}/apply",
+                "endpoint": "fde_apply_vector_correction",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/security/masking-policies",
+                "endpoint": "fde_create_masking_policy",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/review-runs/{review_run_id}/replay",
+                "endpoint": "fde_replay_review_run",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/review-runs/{review_run_id}/feedback",
+                "endpoint": "fde_review_run_feedback",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/access-grants/request",
+                "endpoint": "fde_request_access_grant",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/access-grants/{grant_id}/approve",
+                "endpoint": "fde_approve_access_grant",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/data-exports",
+                "endpoint": "fde_create_data_export",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/data-exports/{export_id}/approve",
+                "endpoint": "fde_approve_data_export",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/data-exports/{export_id}/expire",
+                "endpoint": "fde_expire_data_export",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/ai-runs/{run_id}/replay",
+                "endpoint": "fde_replay_ai_run",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/feedback/{feedback_id}/triage",
+                "endpoint": "fde_triage_feedback",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/evaluation-runs",
+                "endpoint": "fde_create_evaluation_run",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/capability-bundles",
+                "endpoint": "fde_create_capability_bundle",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/releases",
+                "endpoint": "fde_create_release_plan",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/releases/{release_id}/submit",
+                "endpoint": "fde_submit_release_plan",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/releases/{release_id}/approve",
+                "endpoint": "fde_approve_release_plan",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/releases/{release_id}/start-shadow",
+                "endpoint": "fde_start_shadow_release",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/releases/{release_id}/mark-shadow-passed",
+                "endpoint": "fde_mark_shadow_passed",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/releases/{release_id}/request-canary",
+                "endpoint": "fde_request_canary_release",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/releases/{release_id}/approve-production",
+                "endpoint": "fde_approve_production_release",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/releases/{release_id}/rollback",
+                "endpoint": "fde_rollback_release",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/business-packs/{pack_id}/install",
+                "endpoint": "fde_install_business_pack",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/business-packs/{pack_id}/upgrade",
+                "endpoint": "fde_upgrade_business_pack",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/business-packs/{pack_id}/rollback",
+                "endpoint": "fde_rollback_business_pack",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/capability-tests/ocr/upload-session",
+                "endpoint": "fde_create_ocr_capability_upload_session",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/fde/capability-tests/ocr/upload-session/{session_id}/file",
+                "endpoint": "fde_upload_ocr_capability_test_file",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/capability-tests/ocr/upload-session/{session_id}/file",
+                "endpoint": "fde_upload_ocr_capability_test_file",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/capability-tests/ocr/runs",
+                "endpoint": "fde_create_ocr_capability_test_run",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/capability-tests/ocr/runs/{run_id}/rerun",
+                "endpoint": "fde_rerun_ocr_capability_test_run",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/capability-tests/ocr/runs/{run_id}/to-annotation",
+                "endpoint": "fde_ocr_capability_test_to_annotation",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/capability-tests/ocr/runs/{run_id}/to-evaluation-case",
+                "endpoint": "fde_ocr_capability_test_to_evaluation_case",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/ocr-100/action-board/refresh",
+                "endpoint": "fde_refresh_ocr_100_action_board",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/ocr-corrections",
+                "endpoint": "fde_create_ocr_correction",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/ocr-evaluation-runs",
+                "endpoint": "fde_create_ocr_evaluation_run",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/ocr-annotation/readiness",
+                "endpoint": "fde_ocr_annotation_readiness_endpoint",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/ocr-annotation/import-pack",
+                "endpoint": "fde_import_ocr_annotation_pack",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/fde/ocr-annotation/tasks/{task_id}/label",
+                "endpoint": "fde_save_ocr_annotation_label",
+                "category": "direct"
+              },
+              {
+                "method": "DELETE",
+                "path": "/fde/ocr-annotation/tasks/{task_id}",
+                "endpoint": "fde_delete_ocr_annotation_task",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/ocr-annotation/tasks/{task_id}/verify",
+                "endpoint": "fde_verify_ocr_annotation_task",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/ocr-annotation/tasks/{task_id}/review",
+                "endpoint": "fde_review_ocr_annotation_task",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/ocr-annotation/export-label-studio",
+                "endpoint": "fde_export_ocr_annotation_label_studio",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/ocr-annotation/import-label-studio",
+                "endpoint": "fde_import_ocr_annotation_label_studio",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/incidents/{incident_id}/rca",
+                "endpoint": "fde_update_incident_rca",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/incidents/{incident_id}/close",
+                "endpoint": "fde_close_incident",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/cost-budgets/{budget_id}/propose-change",
+                "endpoint": "fde_propose_cost_budget_change",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/knowledge/sources",
+                "endpoint": "create_knowledge_source",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/knowledge/sources/{source_id}",
+                "endpoint": "update_knowledge_source",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/knowledge/sources/{source_id}",
+                "endpoint": "update_knowledge_source",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/knowledge/standards/import-from-rules",
+                "endpoint": "import_standards_from_rules_folder",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/business-rules/import",
+                "endpoint": "import_business_rules",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/knowledge/files/import",
+                "endpoint": "import_knowledge_files",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/knowledge/files/{file_id}",
+                "endpoint": "update_knowledge_file",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/knowledge/files/{file_id}",
+                "endpoint": "update_knowledge_file",
+                "category": "direct"
+              },
+              {
+                "method": "DELETE",
+                "path": "/knowledge/files/{file_id}",
+                "endpoint": "delete_knowledge_file",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/knowledge/files/{file_id}/replace",
+                "endpoint": "replace_knowledge_file_version",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/knowledge/files/{file_id}/reindex",
+                "endpoint": "reindex_file",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/knowledge/tasks/{task_id}/retry",
+                "endpoint": "retry_knowledge_task",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/knowledge/tasks/{task_id}/cancel",
+                "endpoint": "cancel_knowledge_task",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/knowledge/reindex",
+                "endpoint": "batch_reindex",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/rules/versions",
+                "endpoint": "create_rule_version",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/rules/versions/{version_id}",
+                "endpoint": "update_rule_version",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/rules/versions/{version_id}",
+                "endpoint": "update_rule_version",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/rules/versions/{version_id}/fork",
+                "endpoint": "fork_rule_version",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/rules/versions/{version_id}/publish",
+                "endpoint": "publish_rule_version",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/rules/versions/{version_id}/rollback",
+                "endpoint": "rollback_rule_version",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/knowledge/config",
+                "endpoint": "update_knowledge_config",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/knowledge/config",
+                "endpoint": "update_knowledge_config",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/admin/prompt-templates",
+                "endpoint": "create_prompt_template",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/admin/prompt-templates/{template_id}",
+                "endpoint": "update_prompt_template",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/admin/prompt-templates/{template_id}",
+                "endpoint": "update_prompt_template",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/admin/prompt-templates/{template_id}/publish",
+                "endpoint": "publish_prompt_template",
+                "category": "direct"
+              },
+              {
+                "method": "DELETE",
+                "path": "/admin/prompt-templates/{template_id}",
+                "endpoint": "delete_prompt_template",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/llm/compare",
+                "endpoint": "llm_compare",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/admin/projects",
+                "endpoint": "create_admin_project",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/admin/config-items/{target}",
+                "endpoint": "create_admin_config_item",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/admin/config-items/{target}/{item_id}",
+                "endpoint": "save_admin_config_item",
+                "category": "direct"
+              },
+              {
+                "method": "DELETE",
+                "path": "/admin/config-items/{target}/{item_id}",
+                "endpoint": "delete_admin_config_item",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/admin/config-export",
+                "endpoint": "admin_config_export",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/admin/org-units",
+                "endpoint": "create_admin_org_unit",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/admin/org-units/{org_id}",
+                "endpoint": "update_admin_org_unit",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/admin/org-units/{org_id}",
+                "endpoint": "update_admin_org_unit",
+                "category": "direct"
+              },
+              {
+                "method": "DELETE",
+                "path": "/admin/org-units/{org_id}",
+                "endpoint": "delete_admin_org_unit",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/admin/users",
+                "endpoint": "create_admin_user",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/admin/users/{user_id}",
+                "endpoint": "update_admin_user",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/admin/users/{user_id}",
+                "endpoint": "update_admin_user",
+                "category": "direct"
+              },
+              {
+                "method": "DELETE",
+                "path": "/admin/users/{user_id}",
+                "endpoint": "delete_admin_user",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/admin/{kind}",
+                "endpoint": "admin_generic_create",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/admin/{kind}/{item_id}",
+                "endpoint": "admin_generic_update",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/admin/config-overview/publish",
+                "endpoint": "publish_admin_config",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/projects/{project_id}",
+                "endpoint": "update_project",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/projects/{project_id}",
+                "endpoint": "update_project",
+                "category": "direct"
+              },
+              {
+                "method": "DELETE",
+                "path": "/api/projects/{project_id}",
+                "endpoint": "delete_project",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/business-pack/apply",
+                "endpoint": "apply_business_pack",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/participants",
+                "endpoint": "save_participant",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/projects/{project_id}/participants/{participant_id}",
+                "endpoint": "update_participant",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/members",
+                "endpoint": "authorize_member",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/projects/{project_id}/members/{member_id}",
+                "endpoint": "update_member",
+                "category": "direct"
+              },
+              {
+                "method": "DELETE",
+                "path": "/api/projects/{project_id}/members/{member_id}",
+                "endpoint": "delete_member",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/initialize-workflow",
+                "endpoint": "initialize_workflow",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/documents/upload-session",
+                "endpoint": "create_upload_session",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/projects/{project_id}/documents/upload-session/{session_id}/files/{document_version_id}",
+                "endpoint": "upload_session_file",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/documents/upload-session/{session_id}/complete",
+                "endpoint": "complete_upload_session",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/documents/{document_id}/targeting/recompute",
+                "endpoint": "recompute_document_targeting",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/material-targeting/recompute",
+                "endpoint": "recompute_project_targeting",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/nodes/{node_id}/evidence-links/{evidence_link_id}/confirm",
+                "endpoint": "confirm_node_evidence_link",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/nodes/{node_id}/evidence-links/{evidence_link_id}/reject",
+                "endpoint": "reject_node_evidence_link",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/documents/{document_id}/versions",
+                "endpoint": "append_document_version",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/documents/bindings",
+                "endpoint": "bind_documents",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/projects/{project_id}/documents/bindings/{binding_id}",
+                "endpoint": "update_binding",
+                "category": "direct"
+              },
+              {
+                "method": "DELETE",
+                "path": "/api/projects/{project_id}/documents/bindings/{binding_id}",
+                "endpoint": "delete_binding",
+                "category": "direct"
+              },
+              {
+                "method": "DELETE",
+                "path": "/api/projects/{project_id}/documents/{document_id}",
+                "endpoint": "delete_project_document",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/documents/{document_id}/withdraw",
+                "endpoint": "withdraw_document",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/documents/{document_id}/void",
+                "endpoint": "void_document",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/documents/batch-classify",
+                "endpoint": "batch_classify_documents",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/submissions/drafts",
+                "endpoint": "save_submission_draft",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/submissions",
+                "endpoint": "submit_node_package",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/submissions/{submission_id}/withdraw-items",
+                "endpoint": "withdraw_submission_items",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/rectifications",
+                "endpoint": "submit_rectification",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/inspection/nodes/{node_id}/ai-recheck",
+                "endpoint": "ai_recheck",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/review-runs/{review_run_id}/human-decision",
+                "endpoint": "submit_review_run_human_decision",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/review-runs/{review_run_id}/cancel",
+                "endpoint": "cancel_review_run",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/review-runs/{review_run_id}/rerun",
+                "endpoint": "rerun_review_run",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/inspection/nodes/{node_id}/review-opinions",
+                "endpoint": "save_review_opinion",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/inspection/nodes/{node_id}/ai-suggestions/{suggestion_id}/adopt",
+                "endpoint": "adopt_ai_suggestion",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/inspection/nodes/{node_id}/ai-suggestions/{suggestion_id}/reject",
+                "endpoint": "reject_ai_suggestion",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/inspection/nodes/{node_id}/actions/return-correction",
+                "endpoint": "return_correction",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/inspection/nodes/{node_id}/report-review",
+                "endpoint": "generate_report_review",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/projects/{project_id}/reports/{report_id}",
+                "endpoint": "update_report",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/reports/{report_id}/export",
+                "endpoint": "export_report",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/reports/{report_id}/archive",
+                "endpoint": "archive_report",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/exports",
+                "endpoint": "create_export",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/ndt/films",
+                "endpoint": "create_ndt_film",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/projects/{project_id}/ndt/films/{film_id}",
+                "endpoint": "update_ndt_film",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/ndt/films/import",
+                "endpoint": "import_ndt_films",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/ndt/records/import",
+                "endpoint": "import_ndt_records",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/ndt/reports/upload-session",
+                "endpoint": "ndt_report_upload_session",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/ndt/reports/upload-session/{session_id}/complete",
+                "endpoint": "complete_ndt_report_upload_session",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/ndt/submissions",
+                "endpoint": "submit_ndt",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/ndt/rectifications",
+                "endpoint": "ndt_rectification",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/todos/{todo_id}/complete",
+                "endpoint": "complete_todo",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/todos/{todo_id}/defer",
+                "endpoint": "defer_todo",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/messages/{message_id}/read",
+                "endpoint": "mark_message_read",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/messages/read-all",
+                "endpoint": "mark_all_messages_read",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/workflow/commands",
+                "endpoint": "execute_workflow_command",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/review/findings",
+                "endpoint": "create_review_finding",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/review/findings/{finding_id}/accept",
+                "endpoint": "accept_review_finding",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/review/findings/{finding_id}/reject",
+                "endpoint": "reject_review_finding",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/ai/runs/{run_id}/feedback",
+                "endpoint": "create_ai_run_feedback",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/vector-corrections",
+                "endpoint": "fde_create_vector_correction",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/vector-corrections/{correction_id}/approve",
+                "endpoint": "fde_approve_vector_correction",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/vector-corrections/{correction_id}/reject",
+                "endpoint": "fde_reject_vector_correction",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/vector-corrections/{correction_id}/apply",
+                "endpoint": "fde_apply_vector_correction",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/security/masking-policies",
+                "endpoint": "fde_create_masking_policy",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/review-runs/{review_run_id}/replay",
+                "endpoint": "fde_replay_review_run",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/review-runs/{review_run_id}/feedback",
+                "endpoint": "fde_review_run_feedback",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/access-grants/request",
+                "endpoint": "fde_request_access_grant",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/access-grants/{grant_id}/approve",
+                "endpoint": "fde_approve_access_grant",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/data-exports",
+                "endpoint": "fde_create_data_export",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/data-exports/{export_id}/approve",
+                "endpoint": "fde_approve_data_export",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/data-exports/{export_id}/expire",
+                "endpoint": "fde_expire_data_export",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/ai-runs/{run_id}/replay",
+                "endpoint": "fde_replay_ai_run",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/feedback/{feedback_id}/triage",
+                "endpoint": "fde_triage_feedback",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/evaluation-runs",
+                "endpoint": "fde_create_evaluation_run",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/capability-bundles",
+                "endpoint": "fde_create_capability_bundle",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/releases",
+                "endpoint": "fde_create_release_plan",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/releases/{release_id}/submit",
+                "endpoint": "fde_submit_release_plan",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/releases/{release_id}/approve",
+                "endpoint": "fde_approve_release_plan",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/releases/{release_id}/start-shadow",
+                "endpoint": "fde_start_shadow_release",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/releases/{release_id}/mark-shadow-passed",
+                "endpoint": "fde_mark_shadow_passed",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/releases/{release_id}/request-canary",
+                "endpoint": "fde_request_canary_release",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/releases/{release_id}/approve-production",
+                "endpoint": "fde_approve_production_release",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/releases/{release_id}/rollback",
+                "endpoint": "fde_rollback_release",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/business-packs/{pack_id}/install",
+                "endpoint": "fde_install_business_pack",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/business-packs/{pack_id}/upgrade",
+                "endpoint": "fde_upgrade_business_pack",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/business-packs/{pack_id}/rollback",
+                "endpoint": "fde_rollback_business_pack",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/capability-tests/ocr/upload-session",
+                "endpoint": "fde_create_ocr_capability_upload_session",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/fde/capability-tests/ocr/upload-session/{session_id}/file",
+                "endpoint": "fde_upload_ocr_capability_test_file",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/capability-tests/ocr/upload-session/{session_id}/file",
+                "endpoint": "fde_upload_ocr_capability_test_file",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/capability-tests/ocr/runs",
+                "endpoint": "fde_create_ocr_capability_test_run",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/capability-tests/ocr/runs/{run_id}/rerun",
+                "endpoint": "fde_rerun_ocr_capability_test_run",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/capability-tests/ocr/runs/{run_id}/to-annotation",
+                "endpoint": "fde_ocr_capability_test_to_annotation",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/capability-tests/ocr/runs/{run_id}/to-evaluation-case",
+                "endpoint": "fde_ocr_capability_test_to_evaluation_case",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/ocr-100/action-board/refresh",
+                "endpoint": "fde_refresh_ocr_100_action_board",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/ocr-corrections",
+                "endpoint": "fde_create_ocr_correction",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/ocr-evaluation-runs",
+                "endpoint": "fde_create_ocr_evaluation_run",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/ocr-annotation/readiness",
+                "endpoint": "fde_ocr_annotation_readiness_endpoint",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/ocr-annotation/import-pack",
+                "endpoint": "fde_import_ocr_annotation_pack",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/fde/ocr-annotation/tasks/{task_id}/label",
+                "endpoint": "fde_save_ocr_annotation_label",
+                "category": "direct"
+              },
+              {
+                "method": "DELETE",
+                "path": "/api/fde/ocr-annotation/tasks/{task_id}",
+                "endpoint": "fde_delete_ocr_annotation_task",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/ocr-annotation/tasks/{task_id}/verify",
+                "endpoint": "fde_verify_ocr_annotation_task",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/ocr-annotation/tasks/{task_id}/review",
+                "endpoint": "fde_review_ocr_annotation_task",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/ocr-annotation/export-label-studio",
+                "endpoint": "fde_export_ocr_annotation_label_studio",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/ocr-annotation/import-label-studio",
+                "endpoint": "fde_import_ocr_annotation_label_studio",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/incidents/{incident_id}/rca",
+                "endpoint": "fde_update_incident_rca",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/incidents/{incident_id}/close",
+                "endpoint": "fde_close_incident",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/cost-budgets/{budget_id}/propose-change",
+                "endpoint": "fde_propose_cost_budget_change",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/knowledge/sources",
+                "endpoint": "create_knowledge_source",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/knowledge/sources/{source_id}",
+                "endpoint": "update_knowledge_source",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/knowledge/sources/{source_id}",
+                "endpoint": "update_knowledge_source",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/knowledge/standards/import-from-rules",
+                "endpoint": "import_standards_from_rules_folder",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/business-rules/import",
+                "endpoint": "import_business_rules",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/knowledge/files/import",
+                "endpoint": "import_knowledge_files",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/knowledge/files/{file_id}",
+                "endpoint": "update_knowledge_file",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/knowledge/files/{file_id}",
+                "endpoint": "update_knowledge_file",
+                "category": "direct"
+              },
+              {
+                "method": "DELETE",
+                "path": "/api/knowledge/files/{file_id}",
+                "endpoint": "delete_knowledge_file",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/knowledge/files/{file_id}/replace",
+                "endpoint": "replace_knowledge_file_version",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/knowledge/files/{file_id}/reindex",
+                "endpoint": "reindex_file",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/knowledge/tasks/{task_id}/retry",
+                "endpoint": "retry_knowledge_task",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/knowledge/tasks/{task_id}/cancel",
+                "endpoint": "cancel_knowledge_task",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/knowledge/reindex",
+                "endpoint": "batch_reindex",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/rules/versions",
+                "endpoint": "create_rule_version",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/rules/versions/{version_id}",
+                "endpoint": "update_rule_version",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/rules/versions/{version_id}",
+                "endpoint": "update_rule_version",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/rules/versions/{version_id}/fork",
+                "endpoint": "fork_rule_version",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/rules/versions/{version_id}/publish",
+                "endpoint": "publish_rule_version",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/rules/versions/{version_id}/rollback",
+                "endpoint": "rollback_rule_version",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/knowledge/config",
+                "endpoint": "update_knowledge_config",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/knowledge/config",
+                "endpoint": "update_knowledge_config",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/admin/prompt-templates",
+                "endpoint": "create_prompt_template",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/admin/prompt-templates/{template_id}",
+                "endpoint": "update_prompt_template",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/admin/prompt-templates/{template_id}",
+                "endpoint": "update_prompt_template",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/admin/prompt-templates/{template_id}/publish",
+                "endpoint": "publish_prompt_template",
+                "category": "direct"
+              },
+              {
+                "method": "DELETE",
+                "path": "/api/admin/prompt-templates/{template_id}",
+                "endpoint": "delete_prompt_template",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/llm/compare",
+                "endpoint": "llm_compare",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/admin/projects",
+                "endpoint": "create_admin_project",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/admin/config-items/{target}",
+                "endpoint": "create_admin_config_item",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/admin/config-items/{target}/{item_id}",
+                "endpoint": "save_admin_config_item",
+                "category": "direct"
+              },
+              {
+                "method": "DELETE",
+                "path": "/api/admin/config-items/{target}/{item_id}",
+                "endpoint": "delete_admin_config_item",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/admin/config-export",
+                "endpoint": "admin_config_export",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/admin/org-units",
+                "endpoint": "create_admin_org_unit",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/admin/org-units/{org_id}",
+                "endpoint": "update_admin_org_unit",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/admin/org-units/{org_id}",
+                "endpoint": "update_admin_org_unit",
+                "category": "direct"
+              },
+              {
+                "method": "DELETE",
+                "path": "/api/admin/org-units/{org_id}",
+                "endpoint": "delete_admin_org_unit",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/admin/users",
+                "endpoint": "create_admin_user",
+                "category": "direct"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/admin/users/{user_id}",
+                "endpoint": "update_admin_user",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/admin/users/{user_id}",
+                "endpoint": "update_admin_user",
+                "category": "direct"
+              },
+              {
+                "method": "DELETE",
+                "path": "/api/admin/users/{user_id}",
+                "endpoint": "delete_admin_user",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/admin/{kind}",
+                "endpoint": "admin_generic_create",
+                "category": "direct"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/admin/{kind}/{item_id}",
+                "endpoint": "admin_generic_update",
+                "category": "direct"
+              },
+              {
+                "method": "POST",
+                "path": "/api/admin/config-overview/publish",
+                "endpoint": "publish_admin_config",
+                "category": "direct"
+              }
+            ],
+            "delegated": [
+              {
+                "method": "POST",
+                "path": "/projects",
+                "endpoint": "create_project",
+                "category": "delegated"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/inspection/nodes/{node_id}/attachments",
+                "endpoint": "inspection_attachments",
+                "category": "delegated"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/inspection/nodes/{node_id}/file-bindings",
+                "endpoint": "inspection_file_bindings",
+                "category": "delegated"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/review-runs/{review_run_id}/shadow-run",
+                "endpoint": "fde_shadow_review_run",
+                "category": "delegated"
+              },
+              {
+                "method": "POST",
+                "path": "/knowledge/sources/{source_id}/enable",
+                "endpoint": "enable_knowledge_source",
+                "category": "delegated"
+              },
+              {
+                "method": "POST",
+                "path": "/knowledge/sources/{source_id}/disable",
+                "endpoint": "disable_knowledge_source",
+                "category": "delegated"
+              },
+              {
+                "method": "POST",
+                "path": "/admin/workflow-state-machines",
+                "endpoint": "create_workflow_state_machine",
+                "category": "delegated"
+              },
+              {
+                "method": "PATCH",
+                "path": "/admin/workflow-state-machines/{state_machine_id}",
+                "endpoint": "update_workflow_state_machine",
+                "category": "delegated"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects",
+                "endpoint": "create_project",
+                "category": "delegated"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/inspection/nodes/{node_id}/attachments",
+                "endpoint": "inspection_attachments",
+                "category": "delegated"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/inspection/nodes/{node_id}/file-bindings",
+                "endpoint": "inspection_file_bindings",
+                "category": "delegated"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/review-runs/{review_run_id}/shadow-run",
+                "endpoint": "fde_shadow_review_run",
+                "category": "delegated"
+              },
+              {
+                "method": "POST",
+                "path": "/api/knowledge/sources/{source_id}/enable",
+                "endpoint": "enable_knowledge_source",
+                "category": "delegated"
+              },
+              {
+                "method": "POST",
+                "path": "/api/knowledge/sources/{source_id}/disable",
+                "endpoint": "disable_knowledge_source",
+                "category": "delegated"
+              },
+              {
+                "method": "POST",
+                "path": "/api/admin/workflow-state-machines",
+                "endpoint": "create_workflow_state_machine",
+                "category": "delegated"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/admin/workflow-state-machines/{state_machine_id}",
+                "endpoint": "update_workflow_state_machine",
+                "category": "delegated"
+              }
+            ],
+            "exempt": [
+              {
+                "method": "POST",
+                "path": "/mock/user/login",
+                "endpoint": "mock_login",
+                "category": "public"
+              },
+              {
+                "method": "POST",
+                "path": "/api/mock/user/login",
+                "endpoint": "mock_login",
+                "category": "public"
+              },
+              {
+                "method": "POST",
+                "path": "/auth/login",
+                "endpoint": "auth_login",
+                "category": "public"
+              },
+              {
+                "method": "POST",
+                "path": "/auth/logout",
+                "endpoint": "auth_logout",
+                "category": "public"
+              },
+              {
+                "method": "POST",
+                "path": "/auth/change-password",
+                "endpoint": "auth_change_password",
+                "category": "public"
+              },
+              {
+                "method": "POST",
+                "path": "/business-packs/validate-all",
+                "endpoint": "validate_all_business_packs_endpoint",
+                "category": "read-only-post"
+              },
+              {
+                "method": "POST",
+                "path": "/business-packs/{pack_id}/validate",
+                "endpoint": "validate_business_pack_endpoint",
+                "category": "read-only-post"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/business-packs/validate-all",
+                "endpoint": "fde_validate_business_packs",
+                "category": "read-only-post"
+              },
+              {
+                "method": "POST",
+                "path": "/knowledge/retrieval-test",
+                "endpoint": "retrieval_test",
+                "category": "read-only-post"
+              },
+              {
+                "method": "POST",
+                "path": "/admin/config-diff/preview",
+                "endpoint": "admin_config_diff_preview",
+                "category": "read-only-post"
+              },
+              {
+                "method": "POST",
+                "path": "/api/auth/login",
+                "endpoint": "auth_login",
+                "category": "public"
+              },
+              {
+                "method": "POST",
+                "path": "/api/auth/logout",
+                "endpoint": "auth_logout",
+                "category": "public"
+              },
+              {
+                "method": "POST",
+                "path": "/api/auth/change-password",
+                "endpoint": "auth_change_password",
+                "category": "public"
+              },
+              {
+                "method": "POST",
+                "path": "/api/business-packs/validate-all",
+                "endpoint": "validate_all_business_packs_endpoint",
+                "category": "read-only-post"
+              },
+              {
+                "method": "POST",
+                "path": "/api/business-packs/{pack_id}/validate",
+                "endpoint": "validate_business_pack_endpoint",
+                "category": "read-only-post"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/business-packs/validate-all",
+                "endpoint": "fde_validate_business_packs",
+                "category": "read-only-post"
+              },
+              {
+                "method": "POST",
+                "path": "/api/knowledge/retrieval-test",
+                "endpoint": "retrieval_test",
+                "category": "read-only-post"
+              },
+              {
+                "method": "POST",
+                "path": "/api/admin/config-diff/preview",
+                "endpoint": "admin_config_diff_preview",
+                "category": "read-only-post"
+              }
+            ]
+          }
+        },
+        {
+          "name": "api.action-coverage",
+          "status": "pass",
+          "detail": "mutatingRoutes=336, covered=328, missing=0, exempt=8",
+          "data": {
+            "missing": [],
+            "covered": [
+              {
+                "method": "POST",
+                "path": "/business-packs/validate-all",
+                "action": "knowledge:view"
+              },
+              {
+                "method": "POST",
+                "path": "/business-packs/{pack_id}/validate",
+                "action": "knowledge:view"
+              },
+              {
+                "method": "POST",
+                "path": "/projects",
+                "action": "admin:config"
+              },
+              {
+                "method": "PUT",
+                "path": "/projects/{project_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "PATCH",
+                "path": "/projects/{project_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "DELETE",
+                "path": "/projects/{project_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/business-pack/apply",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/participants",
+                "action": "admin:config"
+              },
+              {
+                "method": "PATCH",
+                "path": "/projects/{project_id}/participants/{participant_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/members",
+                "action": "project:authorize-member"
+              },
+              {
+                "method": "PUT",
+                "path": "/projects/{project_id}/members/{member_id}",
+                "action": "project:authorize-member"
+              },
+              {
+                "method": "DELETE",
+                "path": "/projects/{project_id}/members/{member_id}",
+                "action": "project:authorize-member"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/initialize-workflow",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/documents/upload-session",
+                "action": "file:upload"
+              },
+              {
+                "method": "PUT",
+                "path": "/projects/{project_id}/documents/upload-session/{session_id}/files/{document_version_id}",
+                "action": "file:upload"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/documents/upload-session/{session_id}/complete",
+                "action": "file:upload"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/documents/{document_id}/targeting/recompute",
+                "action": "file:bind"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/material-targeting/recompute",
+                "action": "file:bind"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/nodes/{node_id}/evidence-links/{evidence_link_id}/confirm",
+                "action": "review:save"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/nodes/{node_id}/evidence-links/{evidence_link_id}/reject",
+                "action": "review:save"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/documents/{document_id}/versions",
+                "action": "file:upload"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/documents/bindings",
+                "action": "file:bind"
+              },
+              {
+                "method": "PATCH",
+                "path": "/projects/{project_id}/documents/bindings/{binding_id}",
+                "action": "file:bind"
+              },
+              {
+                "method": "DELETE",
+                "path": "/projects/{project_id}/documents/bindings/{binding_id}",
+                "action": "file:bind"
+              },
+              {
+                "method": "DELETE",
+                "path": "/projects/{project_id}/documents/{document_id}",
+                "action": "file:withdraw"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/documents/{document_id}/withdraw",
+                "action": "file:withdraw"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/documents/{document_id}/void",
+                "action": "file:withdraw"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/documents/batch-classify",
+                "action": "file:bind"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/submissions/drafts",
+                "action": "submission:draft"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/submissions",
+                "action": "submission:submit"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/submissions/{submission_id}/withdraw-items",
+                "action": "submission:withdraw"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/rectifications",
+                "action": "rectification:submit"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/inspection/nodes/{node_id}/attachments",
+                "action": "file:upload"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/inspection/nodes/{node_id}/file-bindings",
+                "action": "file:bind"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/inspection/nodes/{node_id}/ai-recheck",
+                "action": "ai:recheck"
+              },
+              {
+                "method": "POST",
+                "path": "/review-runs/{review_run_id}/human-decision",
+                "action": "review:save"
+              },
+              {
+                "method": "POST",
+                "path": "/review-runs/{review_run_id}/cancel",
+                "action": "ai:recheck"
+              },
+              {
+                "method": "POST",
+                "path": "/review-runs/{review_run_id}/rerun",
+                "action": "ai:recheck"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/inspection/nodes/{node_id}/review-opinions",
+                "action": "review:save"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/inspection/nodes/{node_id}/ai-suggestions/{suggestion_id}/adopt",
+                "action": "ai:adopt"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/inspection/nodes/{node_id}/ai-suggestions/{suggestion_id}/reject",
+                "action": "ai:reject"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/inspection/nodes/{node_id}/actions/return-correction",
+                "action": "review:return-correction"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/inspection/nodes/{node_id}/report-review",
+                "action": "report:generate"
+              },
+              {
+                "method": "PATCH",
+                "path": "/projects/{project_id}/reports/{report_id}",
+                "action": "report:review"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/reports/{report_id}/export",
+                "action": "report:export"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/reports/{report_id}/archive",
+                "action": "report:archive"
+              },
+              {
+                "method": "POST",
+                "path": "/exports",
+                "action": "admin:export"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/ndt/films",
+                "action": "ndt:film-create"
+              },
+              {
+                "method": "PATCH",
+                "path": "/projects/{project_id}/ndt/films/{film_id}",
+                "action": "ndt:film-create"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/ndt/films/import",
+                "action": "ndt:film-create"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/ndt/records/import",
+                "action": "ndt:record-import"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/ndt/reports/upload-session",
+                "action": "ndt:report-upload"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/ndt/reports/upload-session/{session_id}/complete",
+                "action": "ndt:report-upload"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/ndt/submissions",
+                "action": "ndt:submit"
+              },
+              {
+                "method": "POST",
+                "path": "/projects/{project_id}/ndt/rectifications",
+                "action": "rectification:submit"
+              },
+              {
+                "method": "POST",
+                "path": "/todos/{todo_id}/complete",
+                "action": "todo:update"
+              },
+              {
+                "method": "POST",
+                "path": "/todos/{todo_id}/defer",
+                "action": "todo:update"
+              },
+              {
+                "method": "POST",
+                "path": "/messages/{message_id}/read",
+                "action": "message:update"
+              },
+              {
+                "method": "POST",
+                "path": "/messages/read-all",
+                "action": "message:update"
+              },
+              {
+                "method": "POST",
+                "path": "/workflow/commands",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/review/findings",
+                "action": "review:save"
+              },
+              {
+                "method": "POST",
+                "path": "/review/findings/{finding_id}/accept",
+                "action": "review:save"
+              },
+              {
+                "method": "POST",
+                "path": "/review/findings/{finding_id}/reject",
+                "action": "review:save"
+              },
+              {
+                "method": "POST",
+                "path": "/ai/runs/{run_id}/feedback",
+                "action": "ai:adopt"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/vector-corrections",
+                "action": "fde:vector-quality:review"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/vector-corrections/{correction_id}/approve",
+                "action": "fde:vector-quality:review"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/vector-corrections/{correction_id}/reject",
+                "action": "fde:vector-quality:review"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/vector-corrections/{correction_id}/apply",
+                "action": "fde:vector-quality:apply"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/security/masking-policies",
+                "action": "fde:security:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/review-runs/{review_run_id}/replay",
+                "action": "fde:ai-run:replay"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/review-runs/{review_run_id}/shadow-run",
+                "action": "fde:ai-run:replay"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/review-runs/{review_run_id}/feedback",
+                "action": "fde:feedback:triage"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/access-grants/request",
+                "action": "fde:security:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/access-grants/{grant_id}/approve",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/data-exports",
+                "action": "fde:security:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/data-exports/{export_id}/approve",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/data-exports/{export_id}/expire",
+                "action": "fde:security:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/ai-runs/{run_id}/replay",
+                "action": "fde:ai-run:replay"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/feedback/{feedback_id}/triage",
+                "action": "fde:feedback:triage"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/evaluation-runs",
+                "action": "fde:evaluation:run"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/capability-bundles",
+                "action": "fde:capability-bundle:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/releases",
+                "action": "fde:release:submit"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/releases/{release_id}/submit",
+                "action": "fde:release:submit"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/releases/{release_id}/approve",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/releases/{release_id}/start-shadow",
+                "action": "fde:release:shadow"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/releases/{release_id}/mark-shadow-passed",
+                "action": "fde:release:shadow"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/releases/{release_id}/request-canary",
+                "action": "fde:release:canary"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/releases/{release_id}/approve-production",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/releases/{release_id}/rollback",
+                "action": "fde:release:rollback"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/business-packs/validate-all",
+                "action": "fde:business-pack:validate"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/business-packs/{pack_id}/install",
+                "action": "fde:business-pack:install"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/business-packs/{pack_id}/upgrade",
+                "action": "fde:business-pack:install"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/business-packs/{pack_id}/rollback",
+                "action": "fde:business-pack:install"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/capability-tests/ocr/upload-session",
+                "action": "fde:ocr-quality:view"
+              },
+              {
+                "method": "PUT",
+                "path": "/fde/capability-tests/ocr/upload-session/{session_id}/file",
+                "action": "fde:ocr-quality:view"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/capability-tests/ocr/upload-session/{session_id}/file",
+                "action": "fde:ocr-quality:view"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/capability-tests/ocr/runs",
+                "action": "fde:ocr-quality:view"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/capability-tests/ocr/runs/{run_id}/rerun",
+                "action": "fde:ocr-quality:view"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/capability-tests/ocr/runs/{run_id}/to-annotation",
+                "action": "fde:ocr-annotation:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/capability-tests/ocr/runs/{run_id}/to-evaluation-case",
+                "action": "fde:evaluation:run"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/ocr-100/action-board/refresh",
+                "action": "fde:ocr-annotation:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/ocr-corrections",
+                "action": "fde:ocr-quality:view"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/ocr-evaluation-runs",
+                "action": "fde:evaluation:run"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/ocr-annotation/readiness",
+                "action": "fde:ocr-annotation:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/ocr-annotation/import-pack",
+                "action": "fde:ocr-annotation:manage"
+              },
+              {
+                "method": "PUT",
+                "path": "/fde/ocr-annotation/tasks/{task_id}/label",
+                "action": "fde:ocr-annotation:manage"
+              },
+              {
+                "method": "DELETE",
+                "path": "/fde/ocr-annotation/tasks/{task_id}",
+                "action": "fde:ocr-annotation:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/ocr-annotation/tasks/{task_id}/verify",
+                "action": "fde:ocr-annotation:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/ocr-annotation/tasks/{task_id}/review",
+                "action": "fde:ocr-annotation:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/ocr-annotation/export-label-studio",
+                "action": "fde:ocr-annotation:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/ocr-annotation/import-label-studio",
+                "action": "fde:ocr-annotation:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/incidents/{incident_id}/rca",
+                "action": "fde:incident:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/incidents/{incident_id}/close",
+                "action": "fde:incident:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/fde/cost-budgets/{budget_id}/propose-change",
+                "action": "fde:cost:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/knowledge/sources",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "PATCH",
+                "path": "/knowledge/sources/{source_id}",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "PUT",
+                "path": "/knowledge/sources/{source_id}",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/knowledge/sources/{source_id}/enable",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/knowledge/sources/{source_id}/disable",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/knowledge/standards/import-from-rules",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/business-rules/import",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/knowledge/files/import",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "PATCH",
+                "path": "/knowledge/files/{file_id}",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "PUT",
+                "path": "/knowledge/files/{file_id}",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "DELETE",
+                "path": "/knowledge/files/{file_id}",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/knowledge/files/{file_id}/replace",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/knowledge/files/{file_id}/reindex",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/knowledge/tasks/{task_id}/retry",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/knowledge/tasks/{task_id}/cancel",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/knowledge/reindex",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/knowledge/retrieval-test",
+                "action": "knowledge:view"
+              },
+              {
+                "method": "POST",
+                "path": "/rules/versions",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "PATCH",
+                "path": "/rules/versions/{version_id}",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "PUT",
+                "path": "/rules/versions/{version_id}",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/rules/versions/{version_id}/fork",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/rules/versions/{version_id}/publish",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/rules/versions/{version_id}/rollback",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "PATCH",
+                "path": "/knowledge/config",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "PUT",
+                "path": "/knowledge/config",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/admin/prompt-templates",
+                "action": "admin:config"
+              },
+              {
+                "method": "PATCH",
+                "path": "/admin/prompt-templates/{template_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "PUT",
+                "path": "/admin/prompt-templates/{template_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/admin/prompt-templates/{template_id}/publish",
+                "action": "admin:config"
+              },
+              {
+                "method": "DELETE",
+                "path": "/admin/prompt-templates/{template_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/llm/compare",
+                "action": "llm:compare"
+              },
+              {
+                "method": "POST",
+                "path": "/admin/projects",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/admin/config-diff/preview",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/admin/config-items/{target}",
+                "action": "admin:config"
+              },
+              {
+                "method": "PUT",
+                "path": "/admin/config-items/{target}/{item_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "DELETE",
+                "path": "/admin/config-items/{target}/{item_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/admin/config-export",
+                "action": "admin:export"
+              },
+              {
+                "method": "POST",
+                "path": "/admin/org-units",
+                "action": "admin:config"
+              },
+              {
+                "method": "PUT",
+                "path": "/admin/org-units/{org_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "PATCH",
+                "path": "/admin/org-units/{org_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "DELETE",
+                "path": "/admin/org-units/{org_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/admin/users",
+                "action": "admin:config"
+              },
+              {
+                "method": "PUT",
+                "path": "/admin/users/{user_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "PATCH",
+                "path": "/admin/users/{user_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "DELETE",
+                "path": "/admin/users/{user_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/admin/{kind}",
+                "action": "admin:config"
+              },
+              {
+                "method": "PATCH",
+                "path": "/admin/{kind}/{item_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/admin/workflow-state-machines",
+                "action": "admin:config"
+              },
+              {
+                "method": "PATCH",
+                "path": "/admin/workflow-state-machines/{state_machine_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/admin/config-overview/publish",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/api/business-packs/validate-all",
+                "action": "knowledge:view"
+              },
+              {
+                "method": "POST",
+                "path": "/api/business-packs/{pack_id}/validate",
+                "action": "knowledge:view"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects",
+                "action": "admin:config"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/projects/{project_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/projects/{project_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "DELETE",
+                "path": "/api/projects/{project_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/business-pack/apply",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/participants",
+                "action": "admin:config"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/projects/{project_id}/participants/{participant_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/members",
+                "action": "project:authorize-member"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/projects/{project_id}/members/{member_id}",
+                "action": "project:authorize-member"
+              },
+              {
+                "method": "DELETE",
+                "path": "/api/projects/{project_id}/members/{member_id}",
+                "action": "project:authorize-member"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/initialize-workflow",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/documents/upload-session",
+                "action": "file:upload"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/projects/{project_id}/documents/upload-session/{session_id}/files/{document_version_id}",
+                "action": "file:upload"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/documents/upload-session/{session_id}/complete",
+                "action": "file:upload"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/documents/{document_id}/targeting/recompute",
+                "action": "file:bind"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/material-targeting/recompute",
+                "action": "file:bind"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/nodes/{node_id}/evidence-links/{evidence_link_id}/confirm",
+                "action": "review:save"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/nodes/{node_id}/evidence-links/{evidence_link_id}/reject",
+                "action": "review:save"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/documents/{document_id}/versions",
+                "action": "file:upload"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/documents/bindings",
+                "action": "file:bind"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/projects/{project_id}/documents/bindings/{binding_id}",
+                "action": "file:bind"
+              },
+              {
+                "method": "DELETE",
+                "path": "/api/projects/{project_id}/documents/bindings/{binding_id}",
+                "action": "file:bind"
+              },
+              {
+                "method": "DELETE",
+                "path": "/api/projects/{project_id}/documents/{document_id}",
+                "action": "file:withdraw"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/documents/{document_id}/withdraw",
+                "action": "file:withdraw"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/documents/{document_id}/void",
+                "action": "file:withdraw"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/documents/batch-classify",
+                "action": "file:bind"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/submissions/drafts",
+                "action": "submission:draft"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/submissions",
+                "action": "submission:submit"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/submissions/{submission_id}/withdraw-items",
+                "action": "submission:withdraw"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/rectifications",
+                "action": "rectification:submit"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/inspection/nodes/{node_id}/attachments",
+                "action": "file:upload"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/inspection/nodes/{node_id}/file-bindings",
+                "action": "file:bind"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/inspection/nodes/{node_id}/ai-recheck",
+                "action": "ai:recheck"
+              },
+              {
+                "method": "POST",
+                "path": "/api/review-runs/{review_run_id}/human-decision",
+                "action": "review:save"
+              },
+              {
+                "method": "POST",
+                "path": "/api/review-runs/{review_run_id}/cancel",
+                "action": "ai:recheck"
+              },
+              {
+                "method": "POST",
+                "path": "/api/review-runs/{review_run_id}/rerun",
+                "action": "ai:recheck"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/inspection/nodes/{node_id}/review-opinions",
+                "action": "review:save"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/inspection/nodes/{node_id}/ai-suggestions/{suggestion_id}/adopt",
+                "action": "ai:adopt"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/inspection/nodes/{node_id}/ai-suggestions/{suggestion_id}/reject",
+                "action": "ai:reject"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/inspection/nodes/{node_id}/actions/return-correction",
+                "action": "review:return-correction"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/inspection/nodes/{node_id}/report-review",
+                "action": "report:generate"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/projects/{project_id}/reports/{report_id}",
+                "action": "report:review"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/reports/{report_id}/export",
+                "action": "report:export"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/reports/{report_id}/archive",
+                "action": "report:archive"
+              },
+              {
+                "method": "POST",
+                "path": "/api/exports",
+                "action": "admin:export"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/ndt/films",
+                "action": "ndt:film-create"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/projects/{project_id}/ndt/films/{film_id}",
+                "action": "ndt:film-create"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/ndt/films/import",
+                "action": "ndt:film-create"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/ndt/records/import",
+                "action": "ndt:record-import"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/ndt/reports/upload-session",
+                "action": "ndt:report-upload"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/ndt/reports/upload-session/{session_id}/complete",
+                "action": "ndt:report-upload"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/ndt/submissions",
+                "action": "ndt:submit"
+              },
+              {
+                "method": "POST",
+                "path": "/api/projects/{project_id}/ndt/rectifications",
+                "action": "rectification:submit"
+              },
+              {
+                "method": "POST",
+                "path": "/api/todos/{todo_id}/complete",
+                "action": "todo:update"
+              },
+              {
+                "method": "POST",
+                "path": "/api/todos/{todo_id}/defer",
+                "action": "todo:update"
+              },
+              {
+                "method": "POST",
+                "path": "/api/messages/{message_id}/read",
+                "action": "message:update"
+              },
+              {
+                "method": "POST",
+                "path": "/api/messages/read-all",
+                "action": "message:update"
+              },
+              {
+                "method": "POST",
+                "path": "/api/workflow/commands",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/api/review/findings",
+                "action": "review:save"
+              },
+              {
+                "method": "POST",
+                "path": "/api/review/findings/{finding_id}/accept",
+                "action": "review:save"
+              },
+              {
+                "method": "POST",
+                "path": "/api/review/findings/{finding_id}/reject",
+                "action": "review:save"
+              },
+              {
+                "method": "POST",
+                "path": "/api/ai/runs/{run_id}/feedback",
+                "action": "ai:adopt"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/vector-corrections",
+                "action": "fde:vector-quality:review"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/vector-corrections/{correction_id}/approve",
+                "action": "fde:vector-quality:review"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/vector-corrections/{correction_id}/reject",
+                "action": "fde:vector-quality:review"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/vector-corrections/{correction_id}/apply",
+                "action": "fde:vector-quality:apply"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/security/masking-policies",
+                "action": "fde:security:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/review-runs/{review_run_id}/replay",
+                "action": "fde:ai-run:replay"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/review-runs/{review_run_id}/shadow-run",
+                "action": "fde:ai-run:replay"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/review-runs/{review_run_id}/feedback",
+                "action": "fde:feedback:triage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/access-grants/request",
+                "action": "fde:security:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/access-grants/{grant_id}/approve",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/data-exports",
+                "action": "fde:security:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/data-exports/{export_id}/approve",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/data-exports/{export_id}/expire",
+                "action": "fde:security:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/ai-runs/{run_id}/replay",
+                "action": "fde:ai-run:replay"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/feedback/{feedback_id}/triage",
+                "action": "fde:feedback:triage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/evaluation-runs",
+                "action": "fde:evaluation:run"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/capability-bundles",
+                "action": "fde:capability-bundle:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/releases",
+                "action": "fde:release:submit"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/releases/{release_id}/submit",
+                "action": "fde:release:submit"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/releases/{release_id}/approve",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/releases/{release_id}/start-shadow",
+                "action": "fde:release:shadow"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/releases/{release_id}/mark-shadow-passed",
+                "action": "fde:release:shadow"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/releases/{release_id}/request-canary",
+                "action": "fde:release:canary"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/releases/{release_id}/approve-production",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/releases/{release_id}/rollback",
+                "action": "fde:release:rollback"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/business-packs/validate-all",
+                "action": "fde:business-pack:validate"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/business-packs/{pack_id}/install",
+                "action": "fde:business-pack:install"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/business-packs/{pack_id}/upgrade",
+                "action": "fde:business-pack:install"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/business-packs/{pack_id}/rollback",
+                "action": "fde:business-pack:install"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/capability-tests/ocr/upload-session",
+                "action": "fde:ocr-quality:view"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/fde/capability-tests/ocr/upload-session/{session_id}/file",
+                "action": "fde:ocr-quality:view"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/capability-tests/ocr/upload-session/{session_id}/file",
+                "action": "fde:ocr-quality:view"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/capability-tests/ocr/runs",
+                "action": "fde:ocr-quality:view"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/capability-tests/ocr/runs/{run_id}/rerun",
+                "action": "fde:ocr-quality:view"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/capability-tests/ocr/runs/{run_id}/to-annotation",
+                "action": "fde:ocr-annotation:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/capability-tests/ocr/runs/{run_id}/to-evaluation-case",
+                "action": "fde:evaluation:run"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/ocr-100/action-board/refresh",
+                "action": "fde:ocr-annotation:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/ocr-corrections",
+                "action": "fde:ocr-quality:view"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/ocr-evaluation-runs",
+                "action": "fde:evaluation:run"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/ocr-annotation/readiness",
+                "action": "fde:ocr-annotation:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/ocr-annotation/import-pack",
+                "action": "fde:ocr-annotation:manage"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/fde/ocr-annotation/tasks/{task_id}/label",
+                "action": "fde:ocr-annotation:manage"
+              },
+              {
+                "method": "DELETE",
+                "path": "/api/fde/ocr-annotation/tasks/{task_id}",
+                "action": "fde:ocr-annotation:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/ocr-annotation/tasks/{task_id}/verify",
+                "action": "fde:ocr-annotation:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/ocr-annotation/tasks/{task_id}/review",
+                "action": "fde:ocr-annotation:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/ocr-annotation/export-label-studio",
+                "action": "fde:ocr-annotation:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/ocr-annotation/import-label-studio",
+                "action": "fde:ocr-annotation:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/incidents/{incident_id}/rca",
+                "action": "fde:incident:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/incidents/{incident_id}/close",
+                "action": "fde:incident:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/fde/cost-budgets/{budget_id}/propose-change",
+                "action": "fde:cost:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/knowledge/sources",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/knowledge/sources/{source_id}",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/knowledge/sources/{source_id}",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/knowledge/sources/{source_id}/enable",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/knowledge/sources/{source_id}/disable",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/knowledge/standards/import-from-rules",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/business-rules/import",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/knowledge/files/import",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/knowledge/files/{file_id}",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/knowledge/files/{file_id}",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "DELETE",
+                "path": "/api/knowledge/files/{file_id}",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/knowledge/files/{file_id}/replace",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/knowledge/files/{file_id}/reindex",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/knowledge/tasks/{task_id}/retry",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/knowledge/tasks/{task_id}/cancel",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/knowledge/reindex",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/knowledge/retrieval-test",
+                "action": "knowledge:view"
+              },
+              {
+                "method": "POST",
+                "path": "/api/rules/versions",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/rules/versions/{version_id}",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/rules/versions/{version_id}",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/rules/versions/{version_id}/fork",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/rules/versions/{version_id}/publish",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/rules/versions/{version_id}/rollback",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/knowledge/config",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/knowledge/config",
+                "action": "knowledge:manage"
+              },
+              {
+                "method": "POST",
+                "path": "/api/admin/prompt-templates",
+                "action": "admin:config"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/admin/prompt-templates/{template_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/admin/prompt-templates/{template_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/api/admin/prompt-templates/{template_id}/publish",
+                "action": "admin:config"
+              },
+              {
+                "method": "DELETE",
+                "path": "/api/admin/prompt-templates/{template_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/api/llm/compare",
+                "action": "llm:compare"
+              },
+              {
+                "method": "POST",
+                "path": "/api/admin/projects",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/api/admin/config-diff/preview",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/api/admin/config-items/{target}",
+                "action": "admin:config"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/admin/config-items/{target}/{item_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "DELETE",
+                "path": "/api/admin/config-items/{target}/{item_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/api/admin/config-export",
+                "action": "admin:export"
+              },
+              {
+                "method": "POST",
+                "path": "/api/admin/org-units",
+                "action": "admin:config"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/admin/org-units/{org_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/admin/org-units/{org_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "DELETE",
+                "path": "/api/admin/org-units/{org_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/api/admin/users",
+                "action": "admin:config"
+              },
+              {
+                "method": "PUT",
+                "path": "/api/admin/users/{user_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/admin/users/{user_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "DELETE",
+                "path": "/api/admin/users/{user_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/api/admin/{kind}",
+                "action": "admin:config"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/admin/{kind}/{item_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/api/admin/workflow-state-machines",
+                "action": "admin:config"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/admin/workflow-state-machines/{state_machine_id}",
+                "action": "admin:config"
+              },
+              {
+                "method": "POST",
+                "path": "/api/admin/config-overview/publish",
+                "action": "admin:config"
+              }
+            ],
+            "exempt": [
+              {
+                "method": "POST",
+                "path": "/mock/user/login",
+                "category": "public"
+              },
+              {
+                "method": "POST",
+                "path": "/api/mock/user/login",
+                "category": "public"
+              },
+              {
+                "method": "POST",
+                "path": "/auth/login",
+                "category": "public"
+              },
+              {
+                "method": "POST",
+                "path": "/auth/logout",
+                "category": "public"
+              },
+              {
+                "method": "POST",
+                "path": "/auth/change-password",
+                "category": "public"
+              },
+              {
+                "method": "POST",
+                "path": "/api/auth/login",
+                "category": "public"
+              },
+              {
+                "method": "POST",
+                "path": "/api/auth/logout",
+                "category": "public"
+              },
+              {
+                "method": "POST",
+                "path": "/api/auth/change-password",
+                "category": "public"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "frontend-contract",
+      "ok": true,
+      "checks": [
+        {
+          "name": "frontend.contract",
+          "status": "pass",
+          "detail": "frontend=231, backend=657, missing=0",
+          "data": {
+            "frontendCount": 231,
+            "backendCount": 657,
+            "missing": []
+          }
+        },
+        {
+          "name": "frontend.mutation-headers",
+          "status": "pass",
+          "detail": "mutations=122, missing=0, exempt=5",
+          "data": {
+            "missing": [],
+            "exempt": [
+              {
+                "method": "POST",
+                "line": 3494,
+                "url": "/api/knowledge/retrieval-test",
+                "hasMutationHeaders": false
+              },
+              {
+                "method": "POST",
+                "line": 3865,
+                "url": "/api/business-packs/${packId}/validate",
+                "hasMutationHeaders": false
+              },
+              {
+                "method": "POST",
+                "line": 3871,
+                "url": "/api/business-packs/validate-all",
+                "hasMutationHeaders": false
+              },
+              {
+                "method": "POST",
+                "line": 4436,
+                "url": "/api/fde/business-packs/validate-all",
+                "hasMutationHeaders": false
+              },
+              {
+                "method": "POST",
+                "line": 4952,
+                "url": "/api/admin/config-diff/preview",
+                "hasMutationHeaders": false
+              }
+            ]
+          }
+        },
+        {
+          "name": "frontend.mutation-helper",
+          "status": "pass",
+          "detail": "mutationHeaders carries Idempotency-Key and If-Match.",
+          "data": {
+            "missing": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "release-gate",
+      "ok": false,
+      "checks": [
+        {
+          "name": "release.required-probes",
+          "status": "fail",
+          "detail": "required=11, missing=8",
+          "data": {
+            "flags": {
+              "strictProduction": true,
+              "includeLive": false,
+              "writeProbes": false,
+              "ocrEnabled": true,
+              "ocrObjectProbe": false,
+              "reviewRunProbe": false,
+              "litellmEnabled": true,
+              "litellmManagementProbes": false,
+              "litellmProviderProbes": false,
+              "qwenOfficialProbe": false,
+              "securityScanEvidence": false
+            },
+            "missing": [
+              "includeLive",
+              "litellmManagementProbes",
+              "litellmProviderProbes",
+              "ocrObjectProbe",
+              "qwenOfficialProbe",
+              "reviewRunProbe",
+              "securityScanEvidence",
+              "writeProbes"
+            ]
+          }
+        },
+        {
+          "name": "release.security-scans",
+          "status": "fail",
+          "detail": "Pass --security-scan-dir with current SBOM and vulnerability scan evidence.",
+          "data": {
+            "failures": [
+              "security scan evidence is required"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "live-deployment",
+      "ok": true,
+      "skipped": true,
+      "checks": [
+        {
+          "name": "live.probes",
+          "status": "skip",
+          "detail": "Pass --include-live to run target API/OCR/LiteLLM probes.",
+          "data": null
+        }
+      ]
+    }
+  ]
+}

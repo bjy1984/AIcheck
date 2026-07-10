@@ -92,7 +92,16 @@ export const useUserStore = defineStore('user', {
       this.loginInfo = loginInfo
     }
   },
-  persist: true
+  persist: [
+    {
+      pick: ['tokenKey', 'token', 'userInfo'],
+      storage: sessionStorage
+    },
+    {
+      pick: ['rememberMe', 'loginInfo'],
+      storage: localStorage
+    }
+  ]
 })
 
 export const useUserStoreWithOut = () => {

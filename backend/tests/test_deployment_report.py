@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 from argparse import Namespace
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -11,6 +12,7 @@ from fastapi.responses import JSONResponse
 
 from scripts.deployment_report import (
     DeploymentReportBuilder,
+    auth_security_contract_check,
     backend_action_coverage_check,
     backend_mutation_idempotency_check,
     called_function_names,
@@ -26,12 +28,43 @@ from scripts.deployment_report import (
     ocr_service_contract_check,
     postgres_index_contract_check,
     review_orchestration_contract_check,
+    release_gate_contract_section,
     response_envelope_contract_check,
     role_contract_check,
     storage_contract_check,
     worker_task_contract_check,
     write_outputs,
 )
+from scripts.security_release_gate import REQUIRED_IMAGE_SERVICES
+
+
+def write_clean_security_evidence(directory: Path) -> None:
+    (directory / "scan-manifest.json").write_text(
+        json.dumps(
+            {
+                "schemaVersion": "aicheck-security-scan-manifest-v1",
+                "generatedAt": datetime.now(UTC).isoformat(),
+                "sourceCommit": "abcdef1234567890",
+                "services": {
+                    service: {"imageId": f"sha256:{index:064x}", "repoDigests": []}
+                    for index, service in enumerate(REQUIRED_IMAGE_SERVICES, start=1)
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    for service in REQUIRED_IMAGE_SERVICES:
+        (directory / f"{service}.sbom.cdx.json").write_text(
+            json.dumps({"bomFormat": "CycloneDX", "specVersion": "1.6", "components": []}), encoding="utf-8"
+        )
+        (directory / f"{service}.trivy.json").write_text(
+            json.dumps({"SchemaVersion": 2, "Results": []}), encoding="utf-8"
+        )
+    (directory / "pip-audit.json").write_text(json.dumps({"dependencies": []}), encoding="utf-8")
+    (directory / "pnpm-audit.json").write_text(
+        json.dumps({"metadata": {"vulnerabilities": {"critical": 0, "high": 0, "moderate": 0, "low": 0}}}),
+        encoding="utf-8",
+    )
 
 
 def report_args(**overrides):
@@ -53,6 +86,8 @@ def report_args(**overrides):
         "litellm_management_probes": False,
         "litellm_provider_probes": False,
         "qwen_official_probe": False,
+        "release_gate": False,
+        "security_scan_dir": None,
         "timeout": 1.0,
         "output_dir": None,
         "json": False,
@@ -107,6 +142,11 @@ def test_deployment_report_static_sections_pass_and_live_is_skipped() -> None:
     assert role_check["data"]["missingRoles"] == []
     assert role_check["data"]["ownerWriteLeaks"] == []
     assert role_check["data"]["planFailures"] == []
+    security_check = next(
+        check for check in sections["auth-contract"]["checks"] if check["name"] == "auth.security-contract"
+    )
+    assert security_check["status"] == "pass"
+    assert security_check["data"]["failures"] == []
     postgres_check = next(check for check in sections["data-contract"]["checks"] if check["name"] == "postgres.index-contract")
     assert postgres_check["status"] == "pass"
     assert postgres_check["data"]["missingTables"] == []
@@ -219,6 +259,30 @@ def test_deployment_report_static_sections_pass_and_live_is_skipped() -> None:
     assert helper_check["data"]["missing"] == []
     assert report["summary"]["fail"] == 0
     assert report["summary"]["skip"] == 1
+
+
+def test_release_gate_requires_all_live_write_model_and_security_probes(tmp_path: Path) -> None:
+    incomplete = release_gate_contract_section(report_args(release_gate=True))
+    assert incomplete["ok"] is False
+    assert "includeLive" in incomplete["checks"][0]["data"]["missing"]
+
+    write_clean_security_evidence(tmp_path)
+    complete = release_gate_contract_section(
+        report_args(
+            release_gate=True,
+            include_live=True,
+            write_probes=True,
+            ocr_object_probe=True,
+            review_run_probe=True,
+            litellm_management_probes=True,
+            litellm_provider_probes=True,
+            qwen_official_probe=True,
+            security_scan_dir=str(tmp_path),
+        )
+    )
+    assert complete["ok"] is True
+    assert complete["checks"][1]["name"] == "release.security-scans"
+    assert complete["checks"][1]["status"] == "pass"
 
 
 def test_deployment_report_markdown_contains_summary() -> None:

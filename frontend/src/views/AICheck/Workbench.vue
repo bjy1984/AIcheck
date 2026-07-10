@@ -114,6 +114,7 @@ import type {
   WorkbenchSummaryPayload
 } from '@/types/aicheck'
 import { getAicheckErrorMessage, getLatestAicheckBusinessError } from '@/utils/aicheckError'
+import { buildNdtSubmitBlockers, pendingNdtFilms, pendingNdtReports } from '@/utils/ndtReadiness'
 
 type InspectionNodeSortKey = 'review' | 'nodeId' | 'material'
 type SortDirection = 'asc' | 'desc'
@@ -248,6 +249,17 @@ const ndtReportUploadError = ref('')
 const ndtSubmitError = ref('')
 const ndtRectifyError = ref('')
 const ndtReadiness = ref<NdtSubmissionReadiness>()
+const ndtSubmitBlockers = computed(() =>
+  buildNdtSubmitBlockers({
+    reports: ndtReports.value,
+    films: ndtFilms.value,
+    projectFiles: nodePackage.value?.projectFiles || [],
+    readiness: ndtReadiness.value
+  })
+)
+const canSubmitNdt = computed(
+  () => pendingNdtReports(ndtReports.value).length > 0 && !ndtSubmitBlockers.value.length
+)
 const actionBlocker = ref<OperationBlocker>()
 const activeSideTab = ref('ai')
 const previewDrawerVisible = ref(false)
@@ -2430,6 +2442,12 @@ const handleOpenRectificationDialog = (rectificationId?: string) => {
 
 const handleSubmitNdt = async (payload: { reportIds: string[]; filmIds: string[] }) => {
   if (!ensureWritableNode()) return
+  if (ndtSubmitBlockers.value.length) {
+    const message = ndtSubmitBlockers.value.join('；')
+    rememberActionBlocker('无损检测资料提交被阻断', message, ndtSubmitBlockers.value)
+    ElMessage.warning(message)
+    return
+  }
   if (!payload.reportIds.length) {
     ElMessage.warning('请选择或上传至少一份检测报告')
     return
@@ -3268,6 +3286,7 @@ onBeforeUnmount(() => {
             v-model="activeProjectId"
             class="project-select project-title-select"
             filterable
+            aria-label="当前项目"
             :disabled="!projectOptions.length"
             @change="handleProjectChange"
           >
@@ -3404,7 +3423,8 @@ onBeforeUnmount(() => {
                   hasAction('ai:recheck')
                 "
                 class="btn"
-                :disabled="actionLoading || isReadOnly"
+                :disabled="actionLoading || isReadOnly || Boolean(aiRecheckDisabledReason)"
+                :title="aiRecheckDisabledReason || '发起正式 AI 复核'"
                 @click="handleAiRecheck"
               >
                 重新核验
@@ -3422,11 +3442,12 @@ onBeforeUnmount(() => {
                 v-if="role === 'ndt' && hasAction('ndt:submit')"
                 class="btn primary"
                 type="primary"
-                :disabled="actionLoading || isReadOnly"
+                :disabled="actionLoading || isReadOnly || !canSubmitNdt"
+                :title="ndtSubmitBlockers.join('；') || '提交满足条件的无损检测资料'"
                 @click="
                   handleSubmitNdt({
-                    reportIds: ndtReports.map((item) => item.id),
-                    filmIds: ndtFilms.map((item) => item.id)
+                    reportIds: pendingNdtReports(ndtReports).map((item) => item.id),
+                    filmIds: pendingNdtFilms(ndtFilms).map((item) => item.id)
                   })
                 "
               >
@@ -4426,13 +4447,13 @@ onBeforeUnmount(() => {
   --line-strong: var(--aicheck-border-strong, #c2d1e3);
   --head: var(--aicheck-surface-muted, #f2f6fb);
   --ink: #172033;
-  --muted: #6a7890;
+  --muted: #52617a;
   --blue: #1f66d8;
   --blue-2: #0c56c2;
   --blue-soft: #eaf3ff;
   --green: #14a36b;
   --green-soft: #eaf8f1;
-  --orange: #ff8a00;
+  --orange: #9a4b00;
   --orange-soft: #fff4e3;
   --red: #ff4d3d;
   --red-soft: #fff0ee;
@@ -4856,7 +4877,7 @@ onBeforeUnmount(() => {
 
 .tree-wrap :deep(.node-tree .el-tree-node__content) {
   height: auto;
-  min-height: 34px;
+  min-height: 44px;
   padding-left: 0 !important;
   line-height: 1.2;
   color: #26364e;
@@ -5081,6 +5102,12 @@ h3 {
   justify-content: flex-end;
 }
 
+.global-search,
+.top-actions .top-action.el-button,
+.user {
+  min-height: 44px;
+}
+
 .btn {
   --el-button-text-color: #26364e;
   --el-button-bg-color: #fff;
@@ -5093,7 +5120,7 @@ h3 {
   --el-button-active-text-color: var(--blue-2);
 
   display: inline-flex;
-  min-height: 38px;
+  min-height: 44px;
   padding: 0 17px;
   margin: 0;
   font-weight: 800;

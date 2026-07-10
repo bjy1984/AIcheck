@@ -22,16 +22,26 @@ router.beforeEach(async (to, from, next) => {
   if (userStore.getUserInfo) {
     const currentRole = userStore.getUserInfo.role
     const defaultPath = getRoleDefaultPath(currentRole)
+    if (userStore.getUserInfo.mustChangePassword) {
+      if (to.path !== '/change-password') {
+        next({ path: '/change-password', replace: true })
+      } else {
+        next()
+      }
+      return
+    }
+    if (to.path === '/change-password') {
+      next({ path: defaultPath, replace: true })
+      return
+    }
     if (to.path === '/login') {
       next({ path: defaultPath })
     } else {
-      if (to.path === '/') {
-        next({ path: defaultPath })
-        return
-      }
       if (!isPathAllowedForRole(to.path, currentRole)) {
-        next({ path: defaultPath, replace: true })
-        return
+        if (to.path !== '/') {
+          next({ path: defaultPath, replace: true })
+          return
+        }
       }
       if (permissionStore.getIsAddRouters) {
         next()
@@ -57,7 +67,7 @@ router.beforeEach(async (to, from, next) => {
       const redirect = decodeURIComponent(redirectPath as string)
       const nextData = to.path === redirect ? { ...to, replace: true } : { path: redirect }
       permissionStore.setIsAddRouters(true)
-      next(nextData)
+      next(to.path === '/' ? { path: defaultPath, replace: true } : nextData)
     }
   } else {
     if (NO_REDIRECT_WHITE_LIST.indexOf(to.path) !== -1) {

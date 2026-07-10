@@ -5429,7 +5429,7 @@ def test_persistent_user_login_when_demo_users_disabled(monkeypatch) -> None:
     assert_error(client.post("/api/auth/login", json={"username": "inspection", "password": "inspection"}), "AUTH_REQUIRED")
 
 
-def test_auth_login_logout_are_public_and_do_not_flush_state(monkeypatch) -> None:
+def test_auth_login_is_public_logout_requires_auth_and_neither_flushes_state(monkeypatch) -> None:
     from apps.api import main as api_main
 
     flush_calls: list[str] = []
@@ -5439,8 +5439,8 @@ def test_auth_login_logout_are_public_and_do_not_flush_state(monkeypatch) -> Non
     login = assert_ok(client.post("/api/auth/login", json={"username": "ndt", "password": "ndt"}))
 
     assert_ok(client.post("/api/auth/logout", headers={"Authorization": f"Bearer {login['token']}"}))
-    assert_ok(client.post("/api/auth/logout"))
-    assert_ok(client.post("/auth/logout"))
+    assert_error(client.post("/api/auth/logout"), "AUTH_REQUIRED")
+    assert_error(client.post("/auth/logout"), "AUTH_REQUIRED")
     assert flush_calls == []
 
 

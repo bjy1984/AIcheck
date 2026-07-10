@@ -38,6 +38,7 @@ from libs.integrations.storage import DEFAULT_BUCKETS, ObjectStorage, parse_stor
 from libs.security.auth import ROLE_DEFAULT_PATHS, verify_password
 from scripts.audit_frontend_contract import audit
 from scripts.create_roles import ROLE_SPECS, build_plan, validate_strong_passwords
+from scripts.security_release_gate import validate_scan_directory
 from scripts.validate_deployment_config import DeploymentConfigValidator
 from scripts.verify_deployment import DEFAULT_ROLES, DeploymentVerifier, VerifyConfig
 
@@ -59,6 +60,8 @@ PUBLIC_MUTATION_ROUTES = {
     ("POST", "/api/auth/login"),
     ("POST", "/auth/logout"),
     ("POST", "/api/auth/logout"),
+    ("POST", "/auth/change-password"),
+    ("POST", "/api/auth/change-password"),
 }
 READ_ONLY_POST_ROUTES = {
     ("POST", "/business-packs/{pack_id}/validate"),
@@ -417,6 +420,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--litellm-management-probes", action="store_true")
     parser.add_argument("--litellm-provider-probes", action="store_true")
     parser.add_argument("--qwen-official-probe", action="store_true")
+    parser.add_argument("--release-gate", action="store_true", help="Require every production live/write/model probe without skips.")
+    parser.add_argument("--security-scan-dir", help="Directory containing SBOM, Trivy, pip-audit, and pnpm-audit evidence.")
     parser.add_argument("--timeout", type=float, default=8.0)
     parser.add_argument("--output-dir", help="Optional directory for report.json and report.md.")
     parser.add_argument("--json", action="store_true", help="Print JSON instead of Markdown.")
@@ -444,6 +449,8 @@ class DeploymentReportBuilder:
             self.api_contract_section(),
             self.frontend_contract_section(),
         ]
+        if bool(getattr(self.args, "release_gate", False)):
+            sections.append(release_gate_contract_section(self.args))
         if self.args.include_live:
             sections.append(self.live_section())
         else:
@@ -576,10 +583,11 @@ class DeploymentReportBuilder:
 
     def auth_contract_section(self) -> dict[str, Any]:
         check = role_contract_check()
+        security_check = auth_security_contract_check()
         return {
             "name": "auth-contract",
-            "ok": check["status"] == "pass",
-            "checks": [check],
+            "ok": check["status"] == "pass" and security_check["status"] == "pass",
+            "checks": [check, security_check],
         }
 
     def worker_contract_section(self) -> dict[str, Any]:
@@ -655,7 +663,11 @@ class DeploymentReportBuilder:
                     litellm_client.close()
         return {
             "name": "live-deployment",
-            "ok": all(item.ok or item.status == "skip" for item in results),
+            "ok": (
+                all(item.status == "pass" for item in results)
+                if bool(getattr(self.args, "release_gate", False))
+                else all(item.ok or item.status == "skip" for item in results)
+            ),
             "checks": [asdict(item) for item in results],
         }
 
@@ -2736,6 +2748,80 @@ def role_contract_check(
             "missingSpecs": sorted(set(missing_specs)),
             "planFailures": plan_failures,
         },
+    }
+
+
+def auth_security_contract_check() -> dict[str, Any]:
+    auth_source = (BACKEND_ROOT / "libs/security/auth.py").read_text(encoding="utf-8")
+    main_source = (BACKEND_ROOT / "apps/api/main.py").read_text(encoding="utf-8")
+    compose_source = (BACKEND_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    route_source = (BACKEND_ROOT / "apps/api/routes.py").read_text(encoding="utf-8")
+    required = {
+        "dev token gated": "if not dev_tokens_allowed()" in auth_source,
+        "jwt version claim": '"ver": user_auth_version' in auth_source,
+        "jwt issuer": '"iss": jwt_issuer()' in auth_source,
+        "jwt audience": '"aud": jwt_audience()' in auth_source,
+        "canonical server role": 'claims.get("role") != user_record.get("role")' in main_source,
+        "password change gate": "PASSWORD_CHANGE_REQUIRED" in main_source,
+        "mock route conditional": "if compatibility_mocks_enabled():" in main_source,
+        "mock users redacted": "users = [public_user(user)" in route_source,
+        "cors allowlist": "allow_origins=cors_allowed_origins()" in main_source,
+        "cors credentials disabled": "allow_credentials=False" in main_source,
+        "strict production compose": "AICHECK_STRICT_PRODUCTION: ${AICHECK_STRICT_PRODUCTION:-true}" in compose_source,
+        "production dev tokens disabled": "AICHECK_ALLOW_DEV_TOKENS: ${AICHECK_ALLOW_DEV_TOKENS:-false}" in compose_source,
+        "production mocks disabled": "AICHECK_ENABLE_COMPATIBILITY_MOCKS: ${AICHECK_ENABLE_COMPATIBILITY_MOCKS:-false}" in compose_source,
+        "litellm digest pinned": bool(re.search(r"ghcr\.io/berriai/litellm:[^}\s]+@sha256:[a-f0-9]{64}", compose_source)),
+    }
+    failures = sorted(label for label, passed in required.items() if not passed)
+    return {
+        "name": "auth.security-contract",
+        "status": "pass" if not failures else "fail",
+        "detail": f"checks={len(required)}, failures={len(failures)}",
+        "data": {"checks": required, "failures": failures},
+    }
+
+
+def release_gate_contract_section(args: argparse.Namespace) -> dict[str, Any]:
+    required_flags = {
+        "strictProduction": bool(getattr(args, "strict_production", False)),
+        "includeLive": bool(getattr(args, "include_live", False)),
+        "writeProbes": bool(getattr(args, "write_probes", False)),
+        "ocrEnabled": not bool(getattr(args, "skip_ocr", False)),
+        "ocrObjectProbe": bool(getattr(args, "ocr_object_probe", False)),
+        "reviewRunProbe": bool(getattr(args, "review_run_probe", False)),
+        "litellmEnabled": not bool(getattr(args, "skip_litellm", False)),
+        "litellmManagementProbes": bool(getattr(args, "litellm_management_probes", False)),
+        "litellmProviderProbes": bool(getattr(args, "litellm_provider_probes", False)),
+        "qwenOfficialProbe": bool(getattr(args, "qwen_official_probe", False)),
+        "securityScanEvidence": bool(getattr(args, "security_scan_dir", None)),
+    }
+    failures = sorted(label for label, enabled in required_flags.items() if not enabled)
+    check = {
+        "name": "release.required-probes",
+        "status": "pass" if not failures else "fail",
+        "detail": f"required={len(required_flags)}, missing={len(failures)}",
+        "data": {"flags": required_flags, "missing": failures},
+    }
+    scan_dir = getattr(args, "security_scan_dir", None)
+    if scan_dir:
+        security_report = validate_scan_directory(Path(scan_dir))
+        security_check = {
+            "name": "release.security-scans",
+            "status": security_report["status"],
+            "detail": f"services={len(security_report['services'])}, failures={len(security_report['failures'])}",
+            "data": security_report,
+        }
+    else:
+        security_check = {
+            "name": "release.security-scans",
+            "status": "fail",
+            "detail": "Pass --security-scan-dir with current SBOM and vulnerability scan evidence.",
+            "data": {"failures": ["security scan evidence is required"]},
+        }
+    return {
+        "name": "release-gate",
+        "ok": not failures and security_check["status"] == "pass",
+        "checks": [check, security_check],
     }
 
 
