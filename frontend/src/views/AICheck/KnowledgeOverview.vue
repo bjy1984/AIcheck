@@ -19,6 +19,7 @@ import {
   ElInput,
   ElInputNumber,
   ElMessage,
+  ElMessageBox,
   ElOption,
   ElPagination,
   ElPopconfirm,
@@ -64,7 +65,9 @@ import {
   listLlmCompareRunsApi,
   listWorkbenchProjectsApi,
   listReasoningLogsApi,
+  previewKnowledgeReindexApi,
   publishKnowledgeRuleVersionApi,
+  previewKnowledgeRuleVersionOperationApi,
   reindexKnowledgeFileApi,
   replaceKnowledgeFileVersionApi,
   retryKnowledgeTaskApi,
@@ -94,14 +97,15 @@ import type {
   KnowledgeSource,
   KnowledgeSourceSavePayload,
   KnowledgeTask,
+  KnowledgeReindexPayload,
   LlmComparePayload,
   LlmCompareRunSummary,
   ReasoningLogDetailPayload
 } from '@/api/aicheck'
 import { getKnowledgeOverviewApi } from '@/api/aicheck'
 import type { AiReviewRun, Project } from '@/types/aicheck'
+import { useUserStore } from '@/store/modules/user'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
-import AdminKnowledgeStaticDeepSections from './components/AdminKnowledgeStaticDeepSections.vue'
 import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import StaticPageShell from './components/StaticPageShell.vue'
 import WorkbenchStateBanner from './components/WorkbenchStateBanner.vue'
@@ -112,14 +116,14 @@ const emptyOverview = (): KnowledgeOverviewPayload => ({
 })
 
 const emptyKnowledgeConfig = (): KnowledgeConfig => ({
-  embeddingModel: 'text-embedding-3-large',
-  chunkSize: 900,
-  chunkOverlap: 120,
-  topKDefault: 5,
-  rerankEnabled: true,
-  evidenceStrictMode: true,
-  autoReindex: true,
-  retentionDays: 180,
+  embeddingModel: '',
+  chunkSize: 0,
+  chunkOverlap: 0,
+  topKDefault: 0,
+  rerankEnabled: false,
+  evidenceStrictMode: false,
+  autoReindex: false,
+  retentionDays: 0,
   updatedBy: '',
   updatedAt: ''
 })
@@ -191,6 +195,15 @@ const ruleNodeTreeProps = {
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
+const routeQueryText = (key: string) => {
+  const value = route.query[key]
+  return Array.isArray(value) ? String(value[0] || '') : String(value || '')
+}
+const routeQueryNumber = (key: string, fallback: number) => {
+  const value = Number(routeQueryText(key))
+  return Number.isFinite(value) && value > 0 ? value : fallback
+}
 
 const knowledgeShellMenuSectionsBase = [
   {
@@ -279,7 +292,7 @@ const knowledgePeerNavItems = computed(
         index: 'admin-peer-11',
         label: '审核节点维护',
         hint: '项目审核节点',
-        badge: '69项',
+        badge: '按业务包',
         tone: 'blue',
         route: '/admin/permission'
       },
@@ -349,47 +362,6 @@ const knowledgeShellBoundaryRows = [
   { label: '可管理', value: '知识源、OCR、向量、规则版本、推理日志' },
   { label: '权限', value: '继承项目、单位、角色授权' },
   { label: '审计', value: '所有重跑、发布、回滚均留痕' }
-] as const
-
-const knowledgeShellRightCards = [
-  {
-    title: '处理进度',
-    rows: [
-      { label: 'OCR', progress: 91, progressTone: 'green' },
-      { label: '切片', progress: 88, progressTone: 'green' },
-      { label: '向量', progress: 84, progressTone: 'orange' },
-      { label: '推理日志', valueBadge: '248 次', valueTone: 'blue' }
-    ]
-  },
-  {
-    title: '最近失败任务',
-    rows: [
-      { label: 'OCR', value: '材料复验报告.pdf 页面旋转异常' },
-      { label: '向量', value: 'RT 检测报告切片为空' },
-      { label: '索引', value: 'TSG Z6002 索引版本过期' }
-    ]
-  },
-  {
-    title: '当前规则快照',
-    rows: [
-      { label: '规则', value: 'Welder-Qualification-B v2.1' },
-      { label: 'Prompt', value: 'prompt-v1.5' },
-      { label: '字段映射', value: 'map-v1.3' },
-      { label: '工具源', value: 'tool-v2.0' }
-    ]
-  },
-  {
-    title: '多模型评估摘要',
-    rows: [
-      { label: '一致结论', value: '2 / 3 模型判断满足要求' },
-      { label: '分歧点', value: '外部查询截图时效性' },
-      { label: '建议', value: '加入截图日期核验规则' }
-    ]
-  },
-  {
-    title: '后台限制',
-    note: '本页面仅管理知识源、规则版本、任务状态和推理日志，不提供采纳 AI 建议、退回补正、保存审查意见或报告复核按钮。'
-  }
 ] as const
 
 type PaginationState = {
@@ -702,32 +674,36 @@ const knowledgeImportDialogTitle = ref('从文件导入业务规则草稿')
 const businessRuleImportVersion = ref('')
 
 const sourceFilters = reactive({
-  keyword: '',
-  sourceType: 'standard',
-  status: ''
+  keyword: activeTab.value === 'source-manage' ? routeQueryText('q') : '',
+  sourceType:
+    activeTab.value === 'source-manage' ? routeQueryText('sourceType') || 'standard' : 'standard',
+  status: activeTab.value === 'source-manage' ? routeQueryText('status') : ''
 })
 
 const sourcePagination = reactive(createPagination(6))
 
 const standardFileFilters = reactive({
-  keyword: '',
-  status: ''
+  keyword: activeTab.value === 'source-manage' ? routeQueryText('fileQ') : '',
+  status: activeTab.value === 'source-manage' ? routeQueryText('fileStatus') : ''
 })
 
 const standardFilePagination = reactive(createPagination(10))
 
 const fileFilters = reactive({
-  keyword: '',
-  projectId: '',
-  nodeId: undefined as number | undefined,
-  status: ''
+  keyword: activeTab.value === 'files' ? routeQueryText('q') : '',
+  projectId: activeTab.value === 'files' ? routeQueryText('projectId') : '',
+  nodeId:
+    activeTab.value === 'files' && routeQueryText('nodeId')
+      ? Number(routeQueryText('nodeId'))
+      : (undefined as number | undefined),
+  status: activeTab.value === 'files' ? routeQueryText('status') : ''
 })
 
 const filePagination = reactive(createPagination(10))
 
 const taskFilters = reactive({
-  taskType: '',
-  status: ''
+  taskType: activeTab.value === 'tasks' ? routeQueryText('taskType') : '',
+  status: activeTab.value === 'tasks' ? routeQueryText('status') : ''
 })
 
 const taskPagination = reactive(createPagination(10))
@@ -739,15 +715,18 @@ const knowledgeTopTaskCounts = reactive({
 })
 
 const reasoningFilters = reactive({
-  nodeId: undefined as number | undefined,
-  status: ''
+  nodeId:
+    activeTab.value === 'reasoning' && routeQueryText('nodeId')
+      ? Number(routeQueryText('nodeId'))
+      : (undefined as number | undefined),
+  status: activeTab.value === 'reasoning' ? routeQueryText('status') : ''
 })
 
 const reasoningPagination = reactive(createPagination(10))
 
 const ruleFilters = reactive({
-  keyword: '',
-  status: ''
+  keyword: activeTab.value === 'rules' ? routeQueryText('q') : '',
+  status: activeTab.value === 'rules' ? routeQueryText('status') : ''
 })
 
 const rulePagination = reactive(createPagination(10))
@@ -760,16 +739,131 @@ const auditFilters = reactive({
 
 const auditPagination = reactive(createPagination(10))
 
+const restoredPage = routeQueryNumber('page', 1)
+const restoredPageSize = routeQueryNumber('pageSize', 10)
+if (activeTab.value === 'source-manage') {
+  sourcePagination.page = restoredPage
+  sourcePagination.pageSize = restoredPageSize
+  standardFilePagination.page = routeQueryNumber('filePage', 1)
+  standardFilePagination.pageSize = routeQueryNumber('filePageSize', 10)
+} else if (activeTab.value === 'files') {
+  filePagination.page = restoredPage
+  filePagination.pageSize = restoredPageSize
+} else if (activeTab.value === 'tasks') {
+  taskPagination.page = restoredPage
+  taskPagination.pageSize = restoredPageSize
+} else if (activeTab.value === 'rules') {
+  rulePagination.page = restoredPage
+  rulePagination.pageSize = restoredPageSize
+} else if (activeTab.value === 'reasoning') {
+  reasoningPagination.page = restoredPage
+  reasoningPagination.pageSize = restoredPageSize
+}
+
+const syncKnowledgeRouteQuery = () => {
+  const query = { ...route.query }
+  for (const key of [
+    'q',
+    'status',
+    'sourceType',
+    'fileQ',
+    'fileStatus',
+    'filePage',
+    'filePageSize',
+    'projectId',
+    'nodeId',
+    'taskType',
+    'page',
+    'pageSize'
+  ]) {
+    delete query[key]
+  }
+  let page = 1
+  let pageSize = 10
+  if (activeTab.value === 'source-manage') {
+    if (sourceFilters.keyword.trim()) query.q = sourceFilters.keyword.trim()
+    if (sourceFilters.sourceType !== 'standard') query.sourceType = sourceFilters.sourceType
+    if (sourceFilters.status) query.status = sourceFilters.status
+    if (standardFileFilters.keyword.trim()) query.fileQ = standardFileFilters.keyword.trim()
+    if (standardFileFilters.status) query.fileStatus = standardFileFilters.status
+    if (standardFilePagination.page > 1) query.filePage = String(standardFilePagination.page)
+    if (standardFilePagination.pageSize !== 10)
+      query.filePageSize = String(standardFilePagination.pageSize)
+    page = sourcePagination.page
+    pageSize = sourcePagination.pageSize
+  } else if (activeTab.value === 'files') {
+    if (fileFilters.keyword.trim()) query.q = fileFilters.keyword.trim()
+    if (fileFilters.projectId) query.projectId = fileFilters.projectId
+    if (fileFilters.nodeId) query.nodeId = String(fileFilters.nodeId)
+    if (fileFilters.status) query.status = fileFilters.status
+    page = filePagination.page
+    pageSize = filePagination.pageSize
+  } else if (activeTab.value === 'tasks') {
+    if (taskFilters.taskType) query.taskType = taskFilters.taskType
+    if (taskFilters.status) query.status = taskFilters.status
+    page = taskPagination.page
+    pageSize = taskPagination.pageSize
+  } else if (activeTab.value === 'rules') {
+    if (ruleFilters.keyword.trim()) query.q = ruleFilters.keyword.trim()
+    if (ruleFilters.status) query.status = ruleFilters.status
+    page = rulePagination.page
+    pageSize = rulePagination.pageSize
+  } else if (activeTab.value === 'reasoning') {
+    if (reasoningFilters.nodeId) query.nodeId = String(reasoningFilters.nodeId)
+    if (reasoningFilters.status) query.status = reasoningFilters.status
+    page = reasoningPagination.page
+    pageSize = reasoningPagination.pageSize
+  }
+  if (page > 1) query.page = String(page)
+  if (pageSize !== 10) query.pageSize = String(pageSize)
+  void router.replace({ path: route.path, query })
+}
+
+watch(
+  () => [
+    activeTab.value,
+    sourceFilters.keyword,
+    sourceFilters.sourceType,
+    sourceFilters.status,
+    sourcePagination.page,
+    sourcePagination.pageSize,
+    standardFileFilters.keyword,
+    standardFileFilters.status,
+    standardFilePagination.page,
+    standardFilePagination.pageSize,
+    fileFilters.keyword,
+    fileFilters.projectId,
+    fileFilters.nodeId,
+    fileFilters.status,
+    filePagination.page,
+    filePagination.pageSize,
+    taskFilters.taskType,
+    taskFilters.status,
+    taskPagination.page,
+    taskPagination.pageSize,
+    ruleFilters.keyword,
+    ruleFilters.status,
+    rulePagination.page,
+    rulePagination.pageSize,
+    reasoningFilters.nodeId,
+    reasoningFilters.status,
+    reasoningPagination.page,
+    reasoningPagination.pageSize
+  ],
+  syncKnowledgeRouteQuery,
+  { flush: 'post' }
+)
+
 const retrievalForm = reactive({
-  question: '焊工资格证与持证项目是否覆盖本项目焊接方法？',
+  question: '',
   scope: ['standard', 'project-file'],
   topK: 5
 })
 
 const compareForm = reactive({
-  question: '材料质量证明书中的炉批号和标准条款是否一致？',
-  modelCodes: ['LLM-A', 'LLM-B'],
-  nodeId: 24
+  question: '',
+  modelCodes: ['review-chat', 'compare-fast'],
+  nodeId: undefined as number | undefined
 })
 
 const libraries = computed(() => overview.value.libraries)
@@ -813,6 +907,80 @@ const knowledgeTopStats = computed<KnowledgeTopStat[]>(() => [
     title: '查看失败任务'
   }
 ])
+const knowledgeUserLabel = computed(
+  () =>
+    userStore.getUserInfo?.displayName ||
+    userStore.getUserInfo?.username ||
+    userStore.getUserInfo?.roleLabel ||
+    '系统管理员'
+)
+const knowledgeFailedTaskCount = computed(
+  () =>
+    getOverviewMetricNumber('failed') ?? tasks.value.filter((task) => task.status === '失败').length
+)
+const knowledgeRunningTaskCount = computed(
+  () =>
+    getOverviewMetricNumber('task') ??
+    tasks.value.filter((task) => ['排队中', '运行中'].includes(task.status)).length
+)
+const knowledgeRuntimeStatus = computed(() => {
+  if (pageIssue.value?.type === 'error') return '数据加载异常'
+  if (knowledgeFailedTaskCount.value) return `${knowledgeFailedTaskCount.value} 个失败任务`
+  if (knowledgeRunningTaskCount.value) return `${knowledgeRunningTaskCount.value} 个任务运行中`
+  return overview.value.libraries.length ? '索引状态正常' : '尚未建立索引'
+})
+const knowledgeRuntimeStatusTone = computed(() => {
+  if (pageIssue.value?.type === 'error' || knowledgeFailedTaskCount.value) return 'red' as const
+  if (knowledgeRunningTaskCount.value) return 'orange' as const
+  return overview.value.libraries.length ? ('green' as const) : ('blue' as const)
+})
+const knowledgeShellRightSubtitle = computed(() => {
+  const versions = Array.from(
+    new Set(overview.value.libraries.map((library) => library.indexVersion).filter(Boolean))
+  )
+  return versions.length ? `索引版本：${versions.join('、')}` : '尚无活动索引版本'
+})
+const knowledgeShellRightCards = computed(() => {
+  const latestUpdatedAt = overview.value.libraries
+    .map((library) => library.updatedAt)
+    .filter(Boolean)
+    .sort()
+    .at(-1)
+  return [
+    {
+      title: '索引状态',
+      rows: [
+        { label: '知识库', value: String(overview.value.libraries.length) },
+        { label: '知识源', value: String(sourcePagination.total) },
+        { label: '运行任务', value: String(knowledgeRunningTaskCount.value) },
+        { label: '失败任务', value: String(knowledgeFailedTaskCount.value) },
+        { label: '数据时间', value: latestUpdatedAt || '--' }
+      ]
+    },
+    {
+      title: '当前配置',
+      rows: [
+        {
+          label: 'Embedding',
+          value: knowledgeConfig.updatedAt ? knowledgeConfig.embeddingModel : '--'
+        },
+        {
+          label: '切片长度',
+          value: knowledgeConfig.updatedAt ? String(knowledgeConfig.chunkSize) : '--'
+        },
+        {
+          label: '默认 TopK',
+          value: knowledgeConfig.updatedAt ? String(knowledgeConfig.topKDefault) : '--'
+        },
+        { label: '配置时间', value: knowledgeConfig.updatedAt || '--' }
+      ]
+    },
+    {
+      title: '职责边界',
+      note: '本页面只管理知识源、索引、规则和推理记录；正式审查结论仍由业务工作台人工确认。'
+    }
+  ]
+})
 const projectFileProjectOptions = computed(() => {
   const optionMap = new Map<string, { id: string; name: string; code?: string }>()
   projects.value.forEach((project) => {
@@ -909,7 +1077,13 @@ const ruleDiffSummaryItems = computed<
   ]
 })
 
-const modelOptions = ['LLM-A', 'LLM-B', 'LLM-C']
+const modelOptions = [
+  { value: 'review-chat', label: '审计复核模型' },
+  { value: 'default-chat', label: '通用审计模型' },
+  { value: 'compare-fast', label: '快速对比模型' }
+]
+const modelLabel = (modelCode: string) =>
+  modelOptions.find((item) => item.value === modelCode)?.label || modelCode
 const sourceStatusOptions: KnowledgeSource['status'][] = ['启用', '停用', '过期', '待复核']
 const vectorStatusOptions: KnowledgeSource['vectorStatus'][] = [
   '未向量化',
@@ -1424,21 +1598,12 @@ const loadData = async () => {
   loading.value = true
   pageIssue.value = undefined
   try {
-    await Promise.all([
-      loadOverview(),
-      loadProjectOptions(),
-      loadSources(),
-      loadStandardFiles(),
-      loadFiles(),
-      loadTasks(),
-      loadKnowledgeTopTaskCounts(),
-      loadRuleVersions(),
-      loadKnowledgeConfig(),
-      loadKnowledgeAuditLogs(),
-      loadReasoningLogs(),
-      loadCompareRuns(),
-      loadPageIndexNodes()
-    ])
+    const initialRequests: Array<Promise<unknown>> = [loadOverview(), loadKnowledgeTopTaskCounts()]
+    if (activeTab.value !== 'overview') {
+      initialRequests.push(Promise.resolve(loadKnowledgeTabData(activeTab.value)))
+    }
+    if (activeTab.value === 'files') initialRequests.push(loadProjectOptions())
+    await Promise.all(initialRequests)
     if (
       !overview.value.metrics.length &&
       !overview.value.libraries.length &&
@@ -2162,13 +2327,62 @@ const retryRuleDiff = () => {
   }
 }
 
+const confirmRuleVersionOperation = async (
+  row: KnowledgeRuleVersion,
+  actionLabel: '发布' | '回滚',
+  target?: KnowledgeRuleVersion
+): Promise<{ reason: string; previewId: string } | null> => {
+  let reason = ''
+  try {
+    const promptResult = await ElMessageBox.prompt(
+      `${actionLabel}规则“${row.name}”会影响后续审计引用，请填写操作原因。`,
+      `${actionLabel}规则版本`,
+      {
+        confirmButtonText: '查看差异',
+        cancelButtonText: '取消',
+        inputPlaceholder: '填写变更依据或工单号',
+        inputValidator: (value) => Boolean(value.trim()) || '必须填写操作原因'
+      }
+    )
+    reason = promptResult.value.trim()
+  } catch {
+    return null
+  }
+  const compareTarget = target || getRuleDiffTarget(row)
+  const action = actionLabel === '发布' ? 'publish' : 'rollback'
+  const previewResponse = await previewKnowledgeRuleVersionOperationApi(row.id, action, {
+    reason,
+    targetVersionId: compareTarget?.id,
+    targetVersion: compareTarget?.version
+  })
+  const summary = previewResponse?.data?.impact?.summary
+  if (!summary || !previewResponse?.data?.previewId)
+    throw new Error('规则影响预览接口未返回有效数据。')
+  try {
+    await ElMessageBox.confirm(
+      `目标版本：${compareTarget?.version || '当前已发布版本'}。新增 ${summary.added} 项、修改 ${summary.changed} 项、删除 ${summary.removed} 项、警告 ${summary.warning} 项。`,
+      `确认${actionLabel}影响`,
+      {
+        type: summary.warning || summary.removed ? 'warning' : 'info',
+        confirmButtonText: `确认${actionLabel}`,
+        cancelButtonText: '返回检查'
+      }
+    )
+  } catch {
+    return null
+  }
+  return { reason, previewId: previewResponse.data.previewId }
+}
+
 const handlePublishRule = async (row: KnowledgeRuleVersion) => {
   actionLoading.value = `rule-publish-${row.id}`
   clearOperationIssue('rule')
   try {
+    const confirmation = await confirmRuleVersionOperation(row, '发布')
+    if (!confirmation) return
     const res = await publishKnowledgeRuleVersionApi(
       row.id,
-      { reason: '知识库规则管理发布' },
+      { reason: confirmation.reason, previewId: confirmation.previewId },
       { etag: row.etag }
     )
     if (!res) {
@@ -2190,14 +2404,21 @@ const handleRollbackRule = async (row: KnowledgeRuleVersion) => {
     ElMessage.warning('没有可回滚的目标版本')
     return
   }
+  const targetRule = ruleVersions.value.find(
+    (item) => item.ruleKey === row.ruleKey && item.version === targetVersion
+  )
   actionLoading.value = `rule-rollback-${row.id}`
   clearOperationIssue('rule')
   try {
+    const confirmation = await confirmRuleVersionOperation(row, '回滚', targetRule)
+    if (!confirmation) return
     const res = await rollbackKnowledgeRuleVersionApi(
       row.id,
       {
         targetVersion,
-        reason: '知识库规则管理回滚'
+        targetVersionId: targetRule?.id,
+        reason: confirmation.reason,
+        previewId: confirmation.previewId
       },
       { etag: row.etag }
     )
@@ -2241,11 +2462,57 @@ const handleSaveKnowledgeConfig = async () => {
   }
 }
 
+const prepareKnowledgeReindex = async (
+  payload: Omit<KnowledgeReindexPayload, 'previewId' | 'reason'>,
+  operationLabel: string
+): Promise<KnowledgeReindexPayload | null> => {
+  let reason = ''
+  try {
+    const promptResult = await ElMessageBox.prompt(
+      `${operationLabel}会创建异步任务并更新检索索引，请填写操作原因。`,
+      '重建索引',
+      {
+        confirmButtonText: '生成影响预览',
+        cancelButtonText: '取消',
+        inputPlaceholder: '例如：修复 OCR 后重建当前范围索引',
+        inputValidator: (value) => Boolean(value.trim()) || '必须填写操作原因'
+      }
+    )
+    reason = promptResult.value.trim()
+  } catch {
+    return null
+  }
+
+  const previewResponse = await previewKnowledgeReindexApi({ ...payload, reason })
+  const preview = previewResponse?.data
+  if (!preview) throw new Error('影响预览未返回有效数据。')
+  const impact = preview.impact
+  const samples = impact.sampleFiles.length ? `\n样例：${impact.sampleFiles.join('、')}` : ''
+  const warnings = impact.warnings.length ? `\n提示：${impact.warnings.join('；')}` : ''
+  try {
+    await ElMessageBox.confirm(
+      `匹配 ${impact.matchedFiles} 个文件，预计创建 ${impact.estimatedTasks} 个子任务。${samples}${warnings}\n预览有效期至 ${preview.expiresAt}。`,
+      '确认重建影响',
+      {
+        type: impact.matchedFiles ? 'warning' : 'info',
+        confirmButtonText: impact.matchedFiles ? '确认创建任务' : '返回调整范围',
+        cancelButtonText: '取消'
+      }
+    )
+  } catch {
+    return null
+  }
+  if (!impact.matchedFiles) return null
+  return { ...payload, reason, previewId: preview.previewId }
+}
+
 const handleReindexAll = async () => {
   actionLoading.value = 'reindex-all'
   clearOperationIssue('reindex')
   try {
-    const res = await batchReindexKnowledgeApi({ scope: 'all' })
+    const payload = await prepareKnowledgeReindex({ scope: 'all' }, '全量知识索引重建')
+    if (!payload) return
+    const res = await batchReindexKnowledgeApi(payload)
     if (!res) {
       setOperationIssue('reindex', buildOperationFailureMessage('批量重建索引'))
       return
@@ -2264,13 +2531,18 @@ const handleReindexSource = async (row: KnowledgeOverviewPayload['libraries'][nu
   clearOperationIssue('reindex')
   try {
     const includeOcr = row.sourceType === 'standard'
-    const res = await batchReindexKnowledgeApi({
-      scope: 'source',
-      sourceId: row.key,
-      sourceType: row.sourceType,
-      includeOcr,
-      onlyIncomplete: includeOcr
-    })
+    const payload = await prepareKnowledgeReindex(
+      {
+        scope: 'source',
+        sourceId: row.key,
+        sourceType: row.sourceType,
+        includeOcr,
+        onlyIncomplete: includeOcr
+      },
+      `知识源“${row.name}”索引重建`
+    )
+    if (!payload) return
+    const res = await batchReindexKnowledgeApi(payload)
     if (!res) {
       setOperationIssue('reindex', buildOperationFailureMessage('知识源重建索引'))
       return
@@ -2697,10 +2969,12 @@ onMounted(() => {
     <StaticPageShell
       brand-mark="知"
       title="AI 知识库管理"
-      status="索引运行中"
-      status-tone="orange"
+      :status="knowledgeRuntimeStatus"
+      :status-tone="knowledgeRuntimeStatusTone"
       search-placeholder="搜索条款、资料、PageIndex、检索 Trace"
-      user-label="系统管理员 周工"
+      search-scope="knowledge"
+      task-area="knowledge"
+      :user-label="knowledgeUserLabel"
       workspace-mode="wide"
       right-panel-mode="drawer"
       right-toggle-label="运行摘要"
@@ -2717,7 +2991,7 @@ onMounted(() => {
       boundary-tone="green"
       :boundary-rows="knowledgeShellBoundaryRows"
       right-title="运行状态"
-      right-subtitle="索引版本：proj-v2026.06.26"
+      :right-subtitle="knowledgeShellRightSubtitle"
       :right-cards="knowledgeShellRightCards"
       @menu-select="handleKnowledgeMenuSelect"
       @top-stat-click="handleKnowledgeTopStatClick"
@@ -2885,20 +3159,6 @@ onMounted(() => {
           </ElCol>
         </ElRow>
       </ElCard>
-
-      <AdminKnowledgeStaticDeepSections
-        v-if="canShowKnowledgeContent"
-        mode="knowledge"
-        :knowledge-overview="overview"
-        :knowledge-sources="sources"
-        :knowledge-files="files"
-        :knowledge-tasks="tasks"
-        :knowledge-rules="ruleVersions"
-        :knowledge-reasoning-logs="reasoningLogs"
-        :knowledge-compare-runs="compareRuns"
-        :knowledge-config="knowledgeConfig"
-        :knowledge-audit-logs="auditLogs"
-      />
 
       <ElTabs v-if="canShowKnowledgeContent" v-model="activeTab" class="knowledge-tabs">
         <ElTabPane label="总览" name="overview">
@@ -3574,7 +3834,6 @@ onMounted(() => {
               <ElInputNumber
                 v-model="fileFilters.nodeId"
                 :min="1"
-                :max="69"
                 controls-position="right"
                 placeholder="节点号"
                 @change="handleFilterChange(filePagination, loadFiles)"
@@ -4025,7 +4284,6 @@ onMounted(() => {
               <ElInputNumber
                 v-model="reasoningFilters.nodeId"
                 :min="1"
-                :max="69"
                 controls-position="right"
                 placeholder="节点号"
                 @change="handleFilterChange(reasoningPagination, loadReasoningLogs)"
@@ -4124,12 +4382,16 @@ onMounted(() => {
                     />
                   </ElFormItem>
                   <ElFormItem label="节点">
-                    <ElInputNumber v-model="compareForm.nodeId" :min="1" :max="69" />
+                    <ElInputNumber v-model="compareForm.nodeId" :min="1" />
                   </ElFormItem>
                   <ElFormItem label="模型">
                     <ElCheckboxGroup v-model="compareForm.modelCodes">
-                      <ElCheckbox v-for="model in modelOptions" :key="model" :label="model">
-                        {{ model }}
+                      <ElCheckbox
+                        v-for="model in modelOptions"
+                        :key="model.value"
+                        :label="model.value"
+                      >
+                        {{ model.label }}
                       </ElCheckbox>
                     </ElCheckboxGroup>
                   </ElFormItem>
@@ -4171,7 +4433,9 @@ onMounted(() => {
                     @click="handleOpenCompareRun(run)"
                   >
                     <strong>{{ run.question }}</strong>
-                    <span>{{ run.modelCodes.join(' / ') }} · {{ run.createdAt }}</span>
+                    <span
+                      >{{ run.modelCodes.map(modelLabel).join(' / ') }} · {{ run.createdAt }}</span
+                    >
                   </div>
                 </div>
               </ElCard>
@@ -4193,7 +4457,7 @@ onMounted(() => {
                         "
                         effect="light"
                       >
-                        {{ compareResult.status || '完成' }}
+                        {{ compareResult.status || '--' }}
                       </ElTag>
                     </ElSpace>
                   </div>
@@ -4206,7 +4470,7 @@ onMounted(() => {
                     class="model-result-item"
                   >
                     <div class="model-result-head">
-                      <strong>{{ item.modelCode }}</strong>
+                      <strong>{{ modelLabel(item.modelCode) }}</strong>
                       <ElTag
                         :type="
                           typeof item.confidence === 'number' && item.confidence >= 0.85
@@ -5273,6 +5537,10 @@ onMounted(() => {
 
 .knowledge-tabs {
   padding: 0 2px;
+}
+
+:deep(.knowledge-tabs > .el-tabs__header) {
+  display: none;
 }
 
 .panel {

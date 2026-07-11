@@ -45,8 +45,13 @@ def write_clean_security_evidence(directory: Path) -> None:
                 "schemaVersion": "aicheck-security-scan-manifest-v1",
                 "generatedAt": datetime.now(UTC).isoformat(),
                 "sourceCommit": "abcdef1234567890",
+                "composeSha256": "a" * 64,
+                "frontendLockSha256": "b" * 64,
                 "services": {
-                    service: {"imageId": f"sha256:{index:064x}", "repoDigests": []}
+                    service: {
+                        "imageId": f"sha256:{index:064x}",
+                        "repoDigests": [f"registry.example/{service}@sha256:{index:064x}"],
+                    }
                     for index, service in enumerate(REQUIRED_IMAGE_SERVICES, start=1)
                 },
             }
@@ -75,6 +80,7 @@ def report_args(**overrides):
         "ocr_base": "http://ocr",
         "litellm_base": "http://litellm",
         "litellm_api_key": "sk-test",
+        "litellm_api_key_file": None,
         "project_id": "P-2026-HDCP-001",
         "roles": "admin,inspection,contractor",
         "skip_ocr": False,
@@ -88,6 +94,7 @@ def report_args(**overrides):
         "qwen_official_probe": False,
         "release_gate": False,
         "security_scan_dir": None,
+        "ocr_98_gate_report": None,
         "timeout": 1.0,
         "output_dir": None,
         "json": False,
@@ -267,6 +274,8 @@ def test_release_gate_requires_all_live_write_model_and_security_probes(tmp_path
     assert "includeLive" in incomplete["checks"][0]["data"]["missing"]
 
     write_clean_security_evidence(tmp_path)
+    ocr_98_report = tmp_path / "ocr-98-release-gate.json"
+    ocr_98_report.write_text(json.dumps({"schemaVersion": "aicheck-ocr-98-release-gate-v1", "ok": True}), encoding="utf-8")
     complete = release_gate_contract_section(
         report_args(
             release_gate=True,
@@ -278,11 +287,14 @@ def test_release_gate_requires_all_live_write_model_and_security_probes(tmp_path
             litellm_provider_probes=True,
             qwen_official_probe=True,
             security_scan_dir=str(tmp_path),
+            ocr_98_gate_report=str(ocr_98_report),
         )
     )
     assert complete["ok"] is True
     assert complete["checks"][1]["name"] == "release.security-scans"
     assert complete["checks"][1]["status"] == "pass"
+    assert complete["checks"][2]["name"] == "release.ocr-98-gate"
+    assert complete["checks"][2]["status"] == "pass"
 
 
 def test_deployment_report_markdown_contains_summary() -> None:

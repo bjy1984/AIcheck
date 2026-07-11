@@ -21,12 +21,20 @@ import { formatConfidence } from '@/utils/confidence'
 import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import { friendlyReviewStatus } from './components/auditLabels'
 import StaticPageShell from './components/StaticPageShell.vue'
+import { useUserStore } from '@/store/modules/user'
+import { getAicheckRoleLabel } from '@/utils/roleAccess'
 
 const loading = ref(false)
 const error = ref('')
 const projects = ref<Project[]>([])
 const selectedProjectId = ref('')
 const workbench = ref<GenericReviewWorkbenchPayload | null>(null)
+const userStore = useUserStore()
+const genericUserLabel = computed(() => {
+  const user = userStore.getUserInfo
+  const name = user?.displayName || user?.username || '当前用户'
+  return `${name} · ${getAicheckRoleLabel(user?.role)}`
+})
 
 const genericProjects = computed(() =>
   projects.value.filter((project) => project.businessPackId !== 'engineering_inspection_v1')
@@ -243,7 +251,9 @@ onMounted(loadData)
       :status="loading ? '加载中' : '可复用内核'"
       :status-tone="loading ? 'orange' : 'green'"
       search-placeholder="搜索业务类型、节点、资料、发现"
-      user-label="审查平台管理员"
+      search-scope="admin"
+      task-area="admin"
+      :user-label="genericUserLabel"
       workspace-mode="wide"
       right-panel-mode="drawer"
       right-toggle-label="复用摘要"

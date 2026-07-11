@@ -73,7 +73,7 @@ const canReadonlyDownload = computed(() => actionSet.value.has('archive:download
 const canExport = (report: ReportVersion) =>
   props.role === 'inspection' &&
   actionSet.value.has('report:export') &&
-  !['已归档'].includes(report.status)
+  ['复核完成', '已签发'].includes(report.status)
 const canPreviewReport = (report: ReportVersion) =>
   actionSet.value.has('report:view') || Boolean(report.previewUrl)
 const canOpenDetail = (report: ReportVersion) =>
@@ -84,11 +84,16 @@ const canArchive = (report: ReportVersion) =>
   !archiveBlockedReason(report)
 const archiveBlockedReason = (report: ReportVersion) => {
   if (report.status === '已归档') return '报告已归档。'
-  if (!['待签发', '已签发', '复核完成'].includes(report.status)) {
+  if (!['已签发', '复核完成'].includes(report.status)) {
     return '报告归档前必须完成复核或签发。'
   }
   if (!report.evidenceValidation) return '等待报告证据校验状态。'
   if (!report.evidenceValidation.passed) return '报告证据校验未通过，不能归档。'
+  if (
+    !props.recentExportTasks.some((task) => task.reportId === report.id && task.status === '可下载')
+  ) {
+    return '请先导出当前报告版本，再执行归档。'
+  }
   return ''
 }
 const exportTypeLabel = (type: ExportTask['exportType']) => {

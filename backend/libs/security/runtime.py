@@ -79,6 +79,8 @@ def security_runtime_problems() -> list[str]:
         problems.append("AICHECK_REQUIRE_AUTH must be true")
     if demo_users_enabled():
         problems.append("AICHECK_ENABLE_DEMO_USERS must be false")
+    if os.getenv("AICHECK_ENABLE_DEMO_DATA", "false").lower() == "true":
+        problems.append("AICHECK_ENABLE_DEMO_DATA must be false")
     if dev_tokens_allowed() or os.getenv("AICHECK_ALLOW_DEV_TOKENS", "false").lower() == "true":
         problems.append("AICHECK_ALLOW_DEV_TOKENS must be false")
     if compatibility_mocks_enabled() or os.getenv("AICHECK_ENABLE_COMPATIBILITY_MOCKS", "false").lower() == "true":

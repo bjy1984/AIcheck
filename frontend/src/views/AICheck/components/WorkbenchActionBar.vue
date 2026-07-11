@@ -8,9 +8,6 @@ const props = defineProps<{
   actions: ActionCode[]
   loading: boolean
   readOnly: boolean
-  aiRecheckDisabled?: boolean
-  aiRecheckDisabledReason?: string
-  aiRecheckLabel?: string
 }>()
 
 const emit = defineEmits<{
@@ -21,12 +18,10 @@ const emit = defineEmits<{
   withdraw: []
   history: []
   rectify: []
-  aiRecheck: []
 }>()
 
 const actionSet = computed(() => new Set(props.actions))
 const canSubmit = computed(() => ['contractor', 'ndt'].includes(props.role))
-const canReview = computed(() => props.role === 'inspection')
 const hasAction = (action: ActionCode) => actionSet.value.has(action)
 </script>
 
@@ -75,15 +70,6 @@ const hasAction = (action: ActionCode) => actionSet.value.has(action)
       @click="emit('rectify')"
     >
       提交补正
-    </ElButton>
-    <ElButton
-      v-if="canReview && hasAction('ai:recheck')"
-      :disabled="aiRecheckDisabled"
-      :loading="loading"
-      :title="aiRecheckDisabled ? aiRecheckDisabledReason : aiRecheckLabel || '发起 AI 复核'"
-      @click="emit('aiRecheck')"
-    >
-      {{ aiRecheckLabel || 'AI 复核' }}
     </ElButton>
   </div>
 </template>

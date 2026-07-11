@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import os
+
 import pytest
+
+os.environ.setdefault("AICHECK_ENABLE_DEMO_DATA", "true")
+os.environ.setdefault("AICHECK_ENABLE_COMPATIBILITY_MOCKS", "true")
 
 from libs.security.session import security_sessions
 

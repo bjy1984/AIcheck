@@ -73,7 +73,7 @@ const fdeDeepRouteCases = [
     hint: 'ReviewRun',
     context: '项目审计工作台',
     title: '项目审计工作台',
-    content: 'COG 可审计思考摘要'
+    content: 'COG 思考摘要'
   },
   {
     path: '/fde/projects?view=ocr-labeling',
@@ -202,6 +202,26 @@ const gotoRoute = async (page: Page, routeCase: RouteCase) => {
 
 const visibleOverlay = (page: Page, text: string) =>
   page.locator('.el-overlay:visible').filter({ hasText: text }).last()
+
+const chooseFirstSelectOption = async (page: Page, select: Locator) => {
+  await select.click()
+  const dropdown = page.locator('.el-select-dropdown:visible').last()
+  const option = dropdown.locator('.el-select-dropdown__item:not(.is-disabled)').first()
+  await expect(option).toBeVisible()
+  await option.click()
+  await expect(dropdown).toBeHidden()
+}
+
+const submitAdminPublishPreview = async (page: Page, reason: string) => {
+  await page.getByRole('button', { name: '发布配置' }).click()
+  const reasonDialog = visibleOverlay(page, '发布配置')
+  await expect(reasonDialog).toBeVisible()
+  await reasonDialog.locator('input').fill(reason)
+  await reasonDialog.getByRole('button', { name: '生成影响预览' }).click()
+  const impactDialog = visibleOverlay(page, '确认发布影响')
+  await expect(impactDialog).toBeVisible()
+  await impactDialog.getByRole('button', { name: '确认发布' }).click()
+}
 
 const expectNoPageOverflow = async (page: Page) => {
   await expect
@@ -801,33 +821,10 @@ test.describe('AIcheck route smoke', () => {
     await expect(page.locator('#audit-node-navigation')).toBeVisible()
     const desktopWorkflowProgress = page.getByRole('region', { name: '审计办理进度' })
     await expect(desktopWorkflowProgress.locator('.el-steps')).toHaveClass(/el-steps--horizontal/)
-    const desktopStepMain = desktopWorkflowProgress.locator('.el-step__main')
-    const desktopStepIcons = desktopWorkflowProgress.locator('.el-step__icon')
-    const firstMainBox = await desktopStepMain.nth(0).boundingBox()
-    const secondMainBox = await desktopStepMain.nth(1).boundingBox()
-    const thirdMainBox = await desktopStepMain.nth(2).boundingBox()
-    const firstIconBox = await desktopStepIcons.nth(0).boundingBox()
-    const secondIconBox = await desktopStepIcons.nth(1).boundingBox()
-    const thirdIconBox = await desktopStepIcons.nth(2).boundingBox()
-    expect(firstMainBox).not.toBeNull()
-    expect(secondMainBox).not.toBeNull()
-    expect(thirdMainBox).not.toBeNull()
-    expect(firstIconBox).not.toBeNull()
-    expect(secondIconBox).not.toBeNull()
-    expect(thirdIconBox).not.toBeNull()
-    expect(firstMainBox!.y - (firstIconBox!.y + firstIconBox!.height)).toBeGreaterThanOrEqual(10)
-    expect(secondIconBox!.y - (secondMainBox!.y + secondMainBox!.height)).toBeGreaterThanOrEqual(10)
-    expect(thirdMainBox!.y - (thirdIconBox!.y + thirdIconBox!.height)).toBeGreaterThanOrEqual(10)
-    const desktopSteps = desktopWorkflowProgress.locator('.el-step')
-    const desktopDescriptions = desktopWorkflowProgress.locator('.el-step__description')
-    const firstStepBox = await desktopSteps.nth(0).boundingBox()
-    const firstDescriptionBox = await desktopDescriptions.nth(0).boundingBox()
-    const thirdDescriptionBox = await desktopDescriptions.nth(2).boundingBox()
-    expect(firstStepBox).not.toBeNull()
-    expect(firstDescriptionBox).not.toBeNull()
-    expect(thirdDescriptionBox).not.toBeNull()
-    expect(firstDescriptionBox!.width / firstStepBox!.width).toBeGreaterThanOrEqual(1.5)
-    expect(firstDescriptionBox!.x + firstDescriptionBox!.width).toBeLessThan(thirdDescriptionBox!.x)
+    await expect(desktopWorkflowProgress.locator('.el-step')).toHaveCount(7)
+    const focusedStage = desktopWorkflowProgress.locator('.audit-workflow-focus')
+    await expect(focusedStage).toBeVisible()
+    await expect(focusedStage).toContainText('当前关注')
     await expectNoPageOverflow(page)
   })
 
@@ -893,7 +890,7 @@ test.describe('AIcheck route smoke', () => {
 })
 
 test.describe('AIcheck deep route menu', () => {
-  test('admin subroutes select static menu and matching tab', async ({ page }) => {
+  test('admin subroutes select one static menu without duplicate tabs', async ({ page }) => {
     await loginTo(page, adminDeepRouteCases[0].path)
 
     for (const routeCase of adminDeepRouteCases) {
@@ -904,15 +901,12 @@ test.describe('AIcheck deep route menu', () => {
       await expect(page.locator('.static-tree-menu .tree-node.active').first()).toContainText(
         routeCase.menu
       )
-      await expect(page.getByRole('tab', { name: routeCase.tab })).toHaveAttribute(
-        'aria-selected',
-        'true'
-      )
+      await expect(page.locator('.admin-tabs > .el-tabs__header')).toBeHidden()
       await expectNoPageOverflow(page)
     }
   })
 
-  test('knowledge subroutes select static menu and matching tab', async ({ page }) => {
+  test('knowledge subroutes select one static menu without duplicate tabs', async ({ page }) => {
     await loginTo(page, knowledgeDeepRouteCases[0].path)
 
     for (const routeCase of knowledgeDeepRouteCases) {
@@ -923,10 +917,7 @@ test.describe('AIcheck deep route menu', () => {
       await expect(page.locator('.static-tree-menu .tree-node.active').first()).toContainText(
         routeCase.menu
       )
-      await expect(page.getByRole('tab', { name: routeCase.tab })).toHaveAttribute(
-        'aria-selected',
-        'true'
-      )
+      await expect(page.locator('.knowledge-tabs > .el-tabs__header')).toBeHidden()
       await expectNoPageOverflow(page)
     }
   })
@@ -988,154 +979,28 @@ test.describe('AIcheck deep route menu', () => {
     }
   })
 
-  test('fde mock audit data exposes OCR and agent evidence for UI review', async ({ page }) => {
+  test('fde project workspace shows a truthful empty state without synthetic evidence', async ({
+    page
+  }) => {
     await loginTo(page, '/fde/projects')
     await page.goto('/#/fde/projects?projectId=P-2026-GDLNG-002&view=vectorization')
     await page.waitForLoadState('networkidle')
     await waitForFdeProjectAuditReady(page)
 
     await expectFdeProjectTreeUsable(page)
-    await expect(page.locator('.fde-console')).toContainText('管道特性表')
-    await expect(page.locator('.fde-console')).toContainText('质量证明书')
     await expect(page.locator('.fde-console')).toContainText('资料解析')
     await expect(page.locator('.fde-console')).toContainText('知识切片')
     await expect(page.locator('.fde-console')).toContainText('向量入库')
     await expect(page.locator('.fde-console')).toContainText('资料知识资产溯源')
     await expect(page.locator('.fde-console')).toContainText('每份资料为什么能进入 Agent 审查')
-    await expect(page.locator('.fde-console')).toContainText('资料向量化链路图')
-    await expect(page.locator('.fde-console .knowledge-chart-shell canvas').first()).toBeVisible()
-    await expectFixedChartTransformZoom(
-      page,
-      page.locator('.fde-console .knowledge-chart-shell--sankey').first(),
-      {
-        zoomButtonName: '放大资料向量化链路图',
-        resetButtonName: '重置资料向量化链路图',
-        echartSelector: '.knowledge-echart'
-      }
-    )
-    await expect(page.locator('.fde-console')).toContainText('向量条目')
-    await expect(page.locator('.fde-console')).toContainText('PageIndex')
+    await expect(page.locator('.fde-console')).toContainText('0 个资料版本')
+    await expect(page.locator('.fde-console')).toContainText('暂无数据')
     await expect(page.locator('.fde-console')).toContainText('Lineage 来源')
     await expect(page.locator('.fde-console')).toContainText('后端审计投影')
-    await page.getByTestId('fde-open-vector-file-detail').first().click()
-    await expect(page.getByTestId('fde-vector-file-drawer')).toBeVisible()
-    const vectorDrawer = page.getByRole('dialog', { name: /向量质量详情/ })
-    await expect(vectorDrawer).toContainText('图片/文件')
-    await expect(vectorDrawer).toContainText('OCR 结构化结果')
-    await expect(vectorDrawer).toContainText('文本与切片')
-    await expect(vectorDrawer).toContainText('向量格式化数据')
-    await expect(vectorDrawer).toContainText('索引')
-    await expect(vectorDrawer).toContainText('LLM 检索')
-    await vectorDrawer.getByRole('tab', { name: '切片明细' }).click()
-    await expect(vectorDrawer).toContainText('真实切片')
-    await page.keyboard.press('Escape')
-    await expect(vectorDrawer).toBeHidden()
-
-    await page.goto('/#/fde/projects?view=pageindex')
-    await page.waitForLoadState('networkidle')
-    await waitForFdeProjectAuditReady(page)
-    await expect(page.locator('.fde-console')).toContainText('章节溯源友好判读')
-    await expect(page.locator('.fde-console')).toContainText('每次检索为什么这样走')
-    await expect(page.locator('.fde-console')).toContainText('章节溯源检索树')
-    await expect(page.locator('.fde-console .knowledge-chart-shell canvas').first()).toBeVisible()
-    await expectFixedChartTransformZoom(
-      page,
-      page.locator('.fde-console .knowledge-chart-shell--tree').first(),
-      {
-        zoomButtonName: '放大章节溯源检索树',
-        resetButtonName: '重置章节溯源检索树',
-        echartSelector: '.knowledge-echart'
-      }
-    )
-    await expect(page.locator('.fde-console')).toContainText('章节溯源路由追踪')
-    await expect(page.locator('.fde-console')).toContainText('问题分类')
-    await expect(page.locator('.fde-console')).toContainText('条款映射')
-    await expect(page.locator('.fde-console .pageindex-trace-card').first()).toContainText(
-      '检索路由器'
-    )
-    await expect(page.locator('.fde-console')).toContainText('章节溯源资料覆盖')
-    await expect(page.locator('.fde-console')).toContainText('异常与处理建议')
-
-    await page.goto('/#/fde/projects?view=langgraph')
-    await page.waitForLoadState('networkidle')
-    await waitForFdeProjectAuditReady(page)
-    await expect(page.locator('.fde-console')).toContainText('Agent 编排图')
-    await expect(page.locator('.fde-console')).toContainText('Temporal 执行时间线')
-    await expect(page.locator('.fde-console .knowledge-chart-shell canvas').first()).toBeVisible()
-    await expectFixedChartTransformZoom(
-      page,
-      page.locator('.fde-console .knowledge-chart-shell--timeline').first(),
-      {
-        zoomButtonName: '放大 Temporal 执行时间线',
-        resetButtonName: '重置 Temporal 执行时间线',
-        echartSelector: '.knowledge-echart'
-      }
-    )
-    await expect(page.locator('.fde-console')).toContainText('阶段泳道')
-    await expect(page.locator('.fde-console')).toContainText('COG 可审计思考摘要')
-    await expect(page.locator('.fde-console .langgraph-chart-shell canvas').first()).toBeVisible()
-    await expectFixedChartTransformZoom(
-      page,
-      page.locator('.fde-console .langgraph-chart-shell').first(),
-      {
-        zoomButtonName: '放大 Agent 审查编排图',
-        resetButtonName: '重置 Agent 审查编排图',
-        echartSelector: '.langgraph-echart'
-      }
-    )
-    await expect(page.locator('.fde-console')).toContainText('PostgreSQL 持久化')
-    await expect(page.locator('.fde-console')).toContainText('COG 可审计思考摘要')
-    await expect(page.locator('.fde-console')).toContainText('待人工确认的问题')
-    await expect(page.locator('.fde-console .audit-step-card').first()).toContainText('证据/依据')
-    await page.getByTestId('fde-open-review-detail').click()
-    await expect(page.getByTestId('fde-review-drawer')).toBeVisible()
-    await expect(page.getByTestId('fde-review-drawer')).toContainText('审查任务编号')
-    const reviewDrawer = page.getByRole('dialog', { name: 'Agent 审查编排详情' })
-    await expect(reviewDrawer).toContainText('可审计推理摘要')
-    await expect(reviewDrawer).toContainText('工具调用')
-    await expect(reviewDrawer).toContainText('证据/规则/条款')
-    await expect(reviewDrawer.getByRole('button', { name: '记录诊断修正' })).toBeVisible()
-    await expect(reviewDrawer.locator('.drawer-step-card').first()).toContainText('证据/依据')
-    await reviewDrawer.getByRole('tab', { name: '结果' }).click()
-    await expect(reviewDrawer).toContainText('建议动作')
-    await expect(reviewDrawer).toContainText('人工确认')
-    await page.keyboard.press('Escape')
-    await expect(reviewDrawer).toBeHidden()
-
-    await page.goto('/#/fde/projects?view=ocr-labeling')
-    await page.waitForLoadState('networkidle')
-    await waitForFdeProjectAuditReady(page)
-    await expect(page.locator('.fde-console')).toContainText('标准答案覆盖')
-    await expect(page.locator('.fde-console')).toContainText('管道表格解析场景')
-    await expect(page.locator('.fde-console')).toContainText('质量证明文件')
-    const ocrDetailButton = page.getByTestId('fde-open-ocr-detail').first()
-    await ocrDetailButton.scrollIntoViewIfNeeded()
-    await ocrDetailButton.evaluate((element) => {
-      ;(element as HTMLButtonElement).click()
-    })
-    await expect(page.getByTestId('fde-ocr-drawer')).toBeVisible()
-    await expect(page.getByTestId('fde-ocr-drawer')).toContainText('OCR 任务')
-    const ocrDrawer = page.getByRole('dialog', { name: 'OCR 任务审计详情' })
-    await expect(ocrDrawer).toContainText('候选图')
-    await expect(ocrDrawer).toContainText('字段问题')
-    await expect(ocrDrawer).toContainText('证据缺口')
-    await expect(ocrDrawer).toContainText('引擎')
-    await page.keyboard.press('Escape')
-    await expect(ocrDrawer).toBeHidden()
-
-    await page.goto('/#/fde/ocr-quality')
-    await page.waitForLoadState('networkidle')
-    await expect(page.locator('.fde-console')).toContainText('OCR 场景质量热力图')
-    await expect(page.locator('.fde-console')).toContainText('评估门禁')
-    await expect(page.locator('.fde-console')).toContainText('优先处理')
-    await expect(page.locator('.fde-console')).toContainText('可入评估')
-
-    await page.goto('/#/fde/projects?view=evaluation')
-    await page.waitForLoadState('networkidle')
-    await waitForFdeProjectAuditReady(page)
-    await expect(page.locator('.fde-console')).toContainText('准确率评估门禁')
-    await expect(page.locator('.fde-console')).toContainText('OCR 100')
-    await expect(page.locator('.fde-console')).toContainText('Agent 评分')
+    await expect(page.getByTestId('fde-open-vector-file-detail')).toHaveCount(0)
+    await expect(page.getByTestId('fde-open-review-detail')).toHaveCount(0)
+    await expect(page.getByTestId('fde-open-ocr-detail')).toHaveCount(0)
+    await expect(page.locator('.fde-console')).not.toContainText('管道特性表-第2版.png')
     await expectNoPageOverflow(page)
     await expectFdeWorkspaceNotClipped(page)
   })
@@ -1153,10 +1018,8 @@ test.describe('AIcheck live business error mapping', () => {
       })
     })
 
-    await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/admin/overview')!)
-    await page.getByRole('button', { name: '发布配置' }).evaluate((element) => {
-      ;(element as HTMLButtonElement).click()
-    })
+    await loginTo(page, '/admin/fine-config')
+    await submitAdminPublishPreview(page, '验证配置发布冲突恢复提示')
 
     const issue = page
       .locator('.error-stack .local-error')
@@ -1176,8 +1039,7 @@ test.describe('AIcheck live business error mapping', () => {
       })
     })
 
-    await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/knowledge/overview')!)
-    await page.getByRole('tab', { name: '检索测试' }).click()
+    await loginTo(page, '/knowledge/retrieval')
     await page.locator('textarea:visible').first().fill('焊工资格证有效期如何校验？')
     await page.getByRole('button', { name: '运行检索' }).click()
 
@@ -1282,6 +1144,7 @@ test.describe('AIcheck business writeback flows', () => {
       page,
       routeCases.find((routeCase) => routeCase.path === '/workbench/contractor')!
     )
+    await selectProject(page, '华东成品油管道改造工程')
 
     const pageRoot = page.locator('.aicheck-page')
     await expect(pageRoot).toContainText('施工方工作台 · 项目文件库与补正反馈')
@@ -1359,9 +1222,7 @@ test.describe('AIcheck business writeback flows', () => {
   })
 
   test('admin creates todo rule and receives save confirmation', async ({ page }) => {
-    await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/admin/overview')!)
-
-    await page.getByRole('tab', { name: '细项配置' }).click()
+    await loginTo(page, '/admin/fine-config')
     await page
       .locator('.panel')
       .filter({ hasText: '待办规则' })
@@ -1392,27 +1253,20 @@ test.describe('AIcheck business writeback flows', () => {
   })
 
   test('admin exports config package and surfaces export task card', async ({ page }) => {
-    await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/admin/overview')!)
+    await loginTo(page, '/admin/audit')
 
-    await page.getByRole('button', { name: '导出配置包' }).evaluate((element) => {
-      ;(element as HTMLButtonElement).click()
-    })
+    await page.getByRole('button', { name: '导出配置包' }).click()
 
-    await expect(page.locator('.el-message')).toContainText(
-      '配置包已生成：后台配置包-all-20260626.zip'
-    )
+    await expect(page.locator('.el-message')).toContainText(/配置包已生成：后台配置包-all-\d+\.zip/)
   })
 
   test('admin publishes config and reviews linked impact trace', async ({ page }) => {
-    await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/admin/overview')!)
-
-    await page.getByRole('button', { name: '发布配置' }).evaluate((element) => {
-      ;(element as HTMLButtonElement).click()
-    })
+    await loginTo(page, '/admin/fine-config')
+    await submitAdminPublishPreview(page, 'E2E 验证配置影响预览和发布追溯')
 
     await expect(page.locator('.el-message').filter({ hasText: '配置已发布' })).toBeVisible()
     const configPanel = page.locator('.config-panel')
-    await expect(configPanel).toContainText('最近发布：config-v')
+    await expect(configPanel).toContainText('最近发布：config-r')
     await expect(configPanel).toContainText('在检项目')
     await expect(configPanel).toContainText('推送')
     await expect(configPanel).toContainText('条消息')
@@ -1422,9 +1276,8 @@ test.describe('AIcheck business writeback flows', () => {
     await expect(traceDialog).toBeVisible()
     await expect(traceDialog).toContainText('工作台消息')
     await expect(traceDialog).toContainText('复核待办')
-    await expect(traceDialog).toContainText('权限矩阵已同步到工作台动作权限')
-    await expect(traceDialog).toContainText('消息模板已刷新待办通知')
-    await expect(traceDialog).toContainText('字段映射阈值变更后需在真实 OCR 样例中复核')
+    await expect(traceDialog).toContainText('工作流状态机')
+    await expect(traceDialog).toContainText('已发布')
     await page.locator('.el-notification').evaluateAll((elements) => {
       elements.forEach((element) => element.remove())
     })
@@ -1478,14 +1331,20 @@ test.describe('AIcheck business writeback flows', () => {
       .filter({ hasText: '项目名称' })
       .locator('input')
       .fill(projectName)
+    await wizard.locator('.el-form-item').filter({ hasText: '区域' }).locator('input').fill('华东')
     await wizard.getByRole('button', { name: '下一步' }).click()
-    await wizard
-      .locator('.el-form-item')
-      .filter({ hasText: '施工单位' })
-      .locator('input')
-      .fill('E2E 施工单位')
+    for (const label of ['建设单位', '施工单位', '无损检测单位', '监检机构']) {
+      const formItem = wizard.locator('.el-form-item').filter({ hasText: label })
+      await chooseFirstSelectOption(page, formItem.locator('.el-select'))
+    }
     await wizard.getByRole('button', { name: '下一步' }).click()
-    await expect(wizard).toContainText('立项后将生成 GC 工业管道监检节点')
+    const memberSelects = wizard.locator('.wizard-member-table .el-select')
+    const memberSelectCount = await memberSelects.count()
+    expect(memberSelectCount).toBe(4)
+    for (let index = 0; index < memberSelectCount; index++) {
+      await chooseFirstSelectOption(page, memberSelects.nth(index))
+    }
+    await expect(wizard).toContainText('业务类型生成节点')
     await wizard.getByRole('button', { name: '创建项目' }).click()
 
     const projectDrawer = page.locator('.el-drawer').filter({ hasText: '项目详情与成员授权' })
@@ -1518,9 +1377,7 @@ test.describe('AIcheck business writeback flows', () => {
   test('admin updates permission matrix project scope and receives save confirmation', async ({
     page
   }) => {
-    await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/admin/overview')!)
-
-    await page.getByRole('tab', { name: '权限与节点' }).click()
+    await loginTo(page, '/admin/permission')
     const permissionPanel = page.locator('.panel').filter({ hasText: '角色权限矩阵' })
     await permissionPanel.getByRole('button', { name: '编辑' }).first().click()
 
@@ -1545,9 +1402,7 @@ test.describe('AIcheck business writeback flows', () => {
   test('admin updates workflow state machine version and receives save confirmation', async ({
     page
   }) => {
-    await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/admin/overview')!)
-
-    await page.getByRole('tab', { name: 'AI业务规则与流程' }).click()
+    await loginTo(page, '/admin/rules')
     const workflowPanel = page.locator('.panel').filter({ hasText: '流程状态机' })
     await workflowPanel.getByRole('button', { name: '编辑' }).first().click()
 
@@ -1570,9 +1425,7 @@ test.describe('AIcheck business writeback flows', () => {
   })
 
   test('admin creates message template and receives save confirmation', async ({ page }) => {
-    await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/admin/overview')!)
-
-    await page.getByRole('tab', { name: '细项配置' }).click()
+    await loginTo(page, '/admin/fine-config')
     const messagePanel = page.locator('.panel').filter({ hasText: '消息模板' })
     await messagePanel.getByRole('button', { name: '新增' }).click()
 
@@ -1602,9 +1455,7 @@ test.describe('AIcheck business writeback flows', () => {
   })
 
   test('admin updates tool source endpoint and receives save confirmation', async ({ page }) => {
-    await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/admin/overview')!)
-
-    await page.getByRole('tab', { name: '细项配置' }).click()
+    await loginTo(page, '/admin/fine-config')
     const toolPanel = page.locator('.panel').filter({ hasText: '工具源' })
     await toolPanel.getByRole('button', { name: '编辑' }).first().click()
 
@@ -1627,9 +1478,7 @@ test.describe('AIcheck business writeback flows', () => {
   })
 
   test('admin updates field mapping threshold and receives save confirmation', async ({ page }) => {
-    await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/admin/overview')!)
-
-    await page.getByRole('tab', { name: '细项配置' }).click()
+    await loginTo(page, '/admin/fine-config')
     const mappingPanel = page.locator('.panel').filter({ hasText: '字段映射' })
     await mappingPanel.getByRole('button', { name: '编辑' }).first().click()
 
@@ -1651,9 +1500,7 @@ test.describe('AIcheck business writeback flows', () => {
   })
 
   test('admin reviews integration contract field diffs by status', async ({ page }) => {
-    await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/admin/overview')!)
-
-    await page.getByRole('tab', { name: '联调清单' }).click()
+    await loginTo(page, '/admin/integration')
     const panel = page.locator('.integration-panel')
     await expect(panel).toContainText('真实联调字段差异清单')
     await expect(panel).toContainText('字段总数')
@@ -1677,9 +1524,7 @@ test.describe('AIcheck business writeback flows', () => {
   })
 
   test('knowledge task cancel and retry update task table', async ({ page }) => {
-    await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/knowledge/overview')!)
-
-    await page.getByRole('tab', { name: '任务中心' }).click()
+    await loginTo(page, '/knowledge/tasks')
     const taskPanel = page.getByRole('tabpanel', { name: '任务中心' })
     const cancellableTaskRow = taskPanel
       .getByRole('row')
@@ -1721,9 +1566,7 @@ test.describe('AIcheck business writeback flows', () => {
   })
 
   test('knowledge config save writes audit state', async ({ page }) => {
-    await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/knowledge/overview')!)
-
-    await page.getByRole('tab', { name: '配置审计' }).click()
+    await loginTo(page, '/knowledge/config')
     const configPanel = page.locator('.panel').filter({ hasText: '知识库配置' })
     const embeddingInput = configPanel
       .locator('.el-form-item')
@@ -1737,36 +1580,29 @@ test.describe('AIcheck business writeback flows', () => {
   })
 
   test('knowledge multi-model compare renders fresh result', async ({ page }) => {
-    await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/knowledge/overview')!)
-
-    await page.getByRole('tab', { name: '多模型对比' }).click()
+    await loginTo(page, '/knowledge/compare')
     const question = `E2E 多模型对比 ${Date.now()}`
     const comparePanel = page.locator('.panel').filter({ hasText: '对比输入' })
     await comparePanel.locator('textarea').fill(question)
     await comparePanel.getByRole('button', { name: '开始对比' }).click()
 
-    await expect(page.locator('.compare-result')).toContainText('LLM-A')
-    await expect(page.locator('.compare-result')).toContainText('LLM-B')
+    await expect(page.locator('.compare-result')).toContainText('审计复核模型')
+    await expect(page.locator('.compare-result')).toContainText('快速对比模型')
     await expect(page.locator('.compare-history')).toContainText(question)
   })
 
-  test('inspection exports report and opens export task detail', async ({ page }) => {
+  test('inspection blocks report export until review and evidence gates pass', async ({ page }) => {
     await openRoute(
       page,
       routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
     )
     await selectProject(page, '华东成品油管道改造工程')
 
-    await page.locator('.report-panel button:has-text("导出"):not(.is-disabled)').first().click()
-
-    await expect(
-      page.locator('.el-message').filter({ hasText: '报告导出任务已创建' })
-    ).toBeVisible()
-    const exportDrawer = page.locator('.export-task-drawer')
-    await expect(exportDrawer).toBeVisible()
-    await expect(exportDrawer).toContainText('导出类型')
-    await expect(exportDrawer).toContainText('报告导出')
-    await expect(exportDrawer).toContainText('.pdf')
+    const reportPanel = page.locator('.report-panel')
+    const reportExportButtons = reportPanel.getByRole('button', { name: '导出' })
+    await expect(reportExportButtons.first()).toBeDisabled()
+    await expect(reportPanel).toContainText('复核中')
+    await expect(page.locator('.export-task-drawer')).toBeHidden()
   })
 
   test('inspection report detail drawer retries after load failure', async ({ page }) => {
@@ -1888,7 +1724,7 @@ test.describe('AIcheck business writeback flows', () => {
     )
     await selectProject(page, '华东成品油管道改造工程')
 
-    await page.locator('.report-panel button:has-text("导出"):not(.is-disabled)').first().click()
+    await page.locator('.report-panel').getByRole('button', { name: '归档包' }).click()
 
     const drawer = page.locator('.export-task-drawer')
     const issue = drawer.locator('.export-task-error').filter({ hasText: 'EXPORT_TASK_NOT_FOUND' })
@@ -1902,7 +1738,7 @@ test.describe('AIcheck business writeback flows', () => {
 
     await expect(issue).toBeHidden()
     await expect(drawer).toContainText('导出类型')
-    await expect(drawer).toContainText('.pdf')
+    await expect(drawer).toContainText('.zip')
     expect(taskAttempts).toBeGreaterThanOrEqual(2)
   })
 

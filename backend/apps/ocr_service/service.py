@@ -6,8 +6,11 @@ import os
 import re
 import sys
 import tempfile
+import threading
+import time
 import zipfile
 from copy import deepcopy
+from functools import wraps
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
@@ -299,11 +302,75 @@ def apply_business_pdf_deep_scan_default_options(
     return adjusted
 
 
+def serialized_parse(method):
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self._parse_lock:
+            return method(self, *args, **kwargs)
+
+    return wrapped
+
+
+def memory_headroom_payload() -> dict[str, Any]:
+    try:
+        current = int(Path("/sys/fs/cgroup/memory.current").read_text(encoding="utf-8").strip())
+        maximum_raw = Path("/sys/fs/cgroup/memory.max").read_text(encoding="utf-8").strip()
+        if maximum_raw != "max":
+            maximum = int(maximum_raw)
+            available = max(maximum - current, 0)
+            return {
+                "source": "cgroup_v2",
+                "currentBytes": current,
+                "limitBytes": maximum,
+                "availableBytes": available,
+                "availableMb": round(available / 1024 / 1024, 1),
+            }
+    except (OSError, ValueError):
+        pass
+    try:
+        current = int(Path("/sys/fs/cgroup/memory/memory.usage_in_bytes").read_text(encoding="utf-8").strip())
+        maximum = int(Path("/sys/fs/cgroup/memory/memory.limit_in_bytes").read_text(encoding="utf-8").strip())
+        available = max(maximum - current, 0)
+        return {
+            "source": "cgroup_v1",
+            "currentBytes": current,
+            "limitBytes": maximum,
+            "availableBytes": available,
+            "availableMb": round(available / 1024 / 1024, 1),
+        }
+    except (OSError, ValueError):
+        pass
+    try:
+        values = {}
+        for line in Path("/proc/meminfo").read_text(encoding="utf-8").splitlines():
+            key, _, raw = line.partition(":")
+            values[key] = int(raw.strip().split()[0]) * 1024
+        available = int(values.get("MemAvailable") or 0)
+        return {
+            "source": "proc_meminfo",
+            "currentBytes": None,
+            "limitBytes": int(values.get("MemTotal") or 0),
+            "availableBytes": available,
+            "availableMb": round(available / 1024 / 1024, 1),
+        }
+    except (OSError, ValueError):
+        return {"source": "unavailable", "availableBytes": 0, "availableMb": 0.0}
+
+
 class OcrService:
     def __init__(self) -> None:
         self.pipeline = self._load_pipeline()
         self.engines = local_engines()
         self.jobs = DocumentParseJobStore()
+        self._parse_lock = threading.Lock()
+        self._readiness_probe_lock = threading.Lock()
+        self._last_inference: dict[str, Any] = {
+            "inferenceStatus": "not_run",
+            "lastSuccessfulInferenceAt": None,
+            "lastInferenceAttemptAt": None,
+            "lastInferenceDurationMs": None,
+            "lastInferenceErrorCode": None,
+        }
 
     def _load_pipeline(self) -> Any | None:
         if os.getenv("AICHECK_ENABLE_AGENTDESIGN_PIPELINE", "false").lower() not in {"1", "true", "yes", "on"}:
@@ -337,6 +404,9 @@ class OcrService:
         return self.pipeline is not None or any(engine.available() for engine in self.engines)
 
     def health_payload(self) -> dict[str, Any]:
+        engines = self.engine_status()
+        capacity = memory_headroom_payload()
+        minimum_headroom_mb = int(os.getenv("AICHECK_OCR_MIN_MEMORY_HEADROOM_MB", "2048"))
         return {
             "status": "ok",
             "service": "ocr-service",
@@ -346,8 +416,17 @@ class OcrService:
             "placeholderAllowed": self.placeholder_allowed,
             "offlineOnly": self.offline_only,
             "networkDisabled": self.disable_network,
-            "engines": self.engine_status(),
+            "engines": engines,
             "modelManifest": self.model_manifest(),
+            "executable": any(bool(engine.get("executable")) for engine in engines),
+            "warmedUp": any(bool(engine.get("warmedUp")) for engine in engines),
+            "capacityReady": float(capacity.get("availableMb") or 0) >= minimum_headroom_mb,
+            "memoryHeadroom": capacity,
+            "inferenceStatus": self._last_inference.get("inferenceStatus"),
+            "lastSuccessfulInferenceAt": self._last_inference.get("lastSuccessfulInferenceAt"),
+            "lastInferenceAttemptAt": self._last_inference.get("lastInferenceAttemptAt"),
+            "lastInferenceDurationMs": self._last_inference.get("lastInferenceDurationMs"),
+            "lastInferenceErrorCode": self._last_inference.get("lastInferenceErrorCode"),
         }
 
     def readiness_payload(self) -> dict[str, Any]:
@@ -356,6 +435,13 @@ class OcrService:
             failures.append("AICHECK_OCR_ALLOW_PLACEHOLDER must be false.")
         if not self.pipeline_available:
             failures.append("No local OCR engine or agentdesign OCR pipeline is available.")
+        health = self.health_payload()
+        if not health["executable"]:
+            failures.append("No OCR engine is executable in the current runtime.")
+        if not health["capacityReady"]:
+            failures.append("OCR memory headroom is below the configured minimum.")
+        if env_bool("AICHECK_OCR_DEEP_READY_PROBE", False) and self._last_inference.get("inferenceStatus") != "success":
+            failures.append("OCR deep readiness probe has not succeeded.")
         if self.offline_only:
             for key, default in REQUIRED_MODEL_ENV_KEYS.items():
                 path = Path(os.getenv(key, default))
@@ -365,7 +451,7 @@ class OcrService:
         if cloud_keys:
             failures.append("Cloud OCR/provider environment variables are not allowed for local-only OCR.")
         return {
-            **self.health_payload(),
+            **health,
             "ready": not failures,
             "readinessFailures": failures,
         }
@@ -407,7 +493,79 @@ class OcrService:
         return pages[0] if pages else None
 
     def engine_status(self) -> list[dict[str, Any]]:
-        return [engine.status() for engine in self.engines]
+        statuses = []
+        for engine in self.engines:
+            status = engine.status()
+            execution_mode = str(status.get("executionMode") or "")
+            status["executable"] = bool(status.get("available")) and execution_mode not in {"disabled", "unavailable"}
+            status.setdefault("warmedUp", False)
+            statuses.append(status)
+        return statuses
+
+    def run_readiness_probe(self) -> dict[str, Any]:
+        with self._readiness_probe_lock:
+            started = time.monotonic()
+            target: Path | None = None
+            self._last_inference.update(
+                {
+                    "inferenceStatus": "running",
+                    "lastInferenceAttemptAt": server_time(),
+                    "lastInferenceDurationMs": None,
+                    "lastInferenceErrorCode": None,
+                }
+            )
+            try:
+                from PIL import Image, ImageDraw, ImageFont
+
+                with tempfile.NamedTemporaryFile(prefix="aicheck-ocr-ready-", suffix=".png", delete=False) as handle:
+                    target = Path(handle.name)
+                image = Image.new("RGB", (640, 160), "white")
+                font = ImageFont.load_default(size=48)
+                ImageDraw.Draw(image).text((32, 48), "AICHECK OCR 2026", fill="black", font=font)
+                image.save(target)
+                engine = next(
+                    (item for item in self.engines if item.name == "paddle_ocr_subprocess" and item.available()),
+                    None,
+                )
+                if engine is None:
+                    raise RuntimeError("PADDLE_OCR_ENGINE_UNAVAILABLE")
+                raw = engine.parse(target, file_name=target.name, profile=profile_for("generic_document_v1"))
+                normalized = normalize_ocr_result(raw, str(target), target.name)
+                if not has_parse_content(normalized):
+                    raise RuntimeError("PADDLE_OCR_PROBE_EMPTY")
+                self._last_inference.update(
+                    {
+                        "inferenceStatus": "success",
+                        "lastSuccessfulInferenceAt": server_time(),
+                        "lastInferenceDurationMs": round((time.monotonic() - started) * 1000),
+                        "lastInferenceErrorCode": None,
+                    }
+                )
+            except Exception as exc:
+                self._last_inference.update(
+                    {
+                        "inferenceStatus": "failed",
+                        "lastInferenceDurationMs": round((time.monotonic() - started) * 1000),
+                        "lastInferenceErrorCode": exc.__class__.__name__,
+                    }
+                )
+            finally:
+                if target is not None:
+                    target.unlink(missing_ok=True)
+            return dict(self._last_inference)
+
+    def record_parse_result(self, result: dict[str, Any]) -> dict[str, Any]:
+        outcome = str(result.get("outcomeStatus") or result.get("status") or "failed")
+        succeeded = outcome in {"success", "completed"}
+        self._last_inference.update(
+            {
+                "inferenceStatus": "success" if succeeded else "failed",
+                "lastInferenceAttemptAt": server_time(),
+                "lastSuccessfulInferenceAt": server_time() if succeeded else self._last_inference.get("lastSuccessfulInferenceAt"),
+                "lastInferenceErrorCode": None if succeeded else "OCR_RESULT_NOT_USABLE",
+            }
+        )
+        return result
 
     def model_manifest(self) -> dict[str, Any]:
         manifest_path = os.getenv("AICHECK_OCR_MODEL_MANIFEST")
@@ -458,6 +616,7 @@ class OcrService:
             "required": required,
         }
 
+    @serialized_parse
     def parse_document(
         self,
         storage_key: str,
@@ -475,16 +634,16 @@ class OcrService:
         source_path = resolve_source_path(storage_key, file_name)
         os.getenv("AICHECK_OCR_ALLOW_PLACEHOLDER", "false")
         if source_path is None:
-            return failed_result(
+            return self.record_parse_result(failed_result(
                 storage_key,
                 file_name,
                 "OCR source file is unavailable. Check MinIO object key, credentials, or mounted file path.",
-            )
+            ))
         suffix = source_path.suffix.lower()
         if suffix in TEXT_DOCUMENT_SUFFIXES:
-            return parse_text_document(source_path, storage_key, file_name)
+            return self.record_parse_result(parse_text_document(source_path, storage_key, file_name))
         if suffix in OFFICE_TEXT_DOCUMENT_SUFFIXES:
-            return parse_docx_document(source_path, storage_key, file_name)
+            return self.record_parse_result(parse_docx_document(source_path, storage_key, file_name))
         base_profile = profile_for(profile_id, document_type)
         options = apply_business_pdf_deep_scan_default_options(options, base_profile, suffix=suffix)
         options = apply_fast_first_default_options(options, base_profile)
@@ -499,9 +658,9 @@ class OcrService:
                 business_pack_id=business_pack_id,
             )
             if fast_result is not None:
-                return fast_result
+                return self.record_parse_result(fast_result)
             if parse_bool(options.get("textLayerOnly"), False):
-                return failed_result(
+                return self.record_parse_result(failed_result(
                     storage_key,
                     file_name,
                     diagnostic(
@@ -509,7 +668,7 @@ class OcrService:
                         "PDF 未检测到可抽取文本层，标准规范库已跳过高内存视觉 OCR。",
                         level="error",
                     ),
-                )
+                ))
         candidate_results: list[dict[str, Any]] = []
         if suffix == ".pdf" and pdf_deep_scan_requested(options):
             candidate_results.append(
@@ -562,9 +721,9 @@ class OcrService:
             candidate_results=candidate_results,
         )
         if normalized.get("status") == "success":
-            return normalized
+            return self.record_parse_result(normalized)
         if self.placeholder_allowed:
-            return normalize_ocr_result(
+            return self.record_parse_result(normalize_ocr_result(
                 {
                     "ok": False,
                     "diagnostics": [
@@ -576,12 +735,12 @@ class OcrService:
                 },
                 storage_key,
                 file_name,
-            )
+            ))
         diagnostics = normalized.get("diagnostics") or []
         if pipeline_error:
             diagnostics = [*diagnostics, pipeline_error]
         normalized["diagnostics"] = normalize_diagnostics(diagnostics)
-        return normalized
+        return self.record_parse_result(normalized)
 
     def parse_pdf_text_layer_fast_path(
         self,

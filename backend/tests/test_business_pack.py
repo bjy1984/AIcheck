@@ -104,6 +104,16 @@ def test_business_pack_api_and_compliance_project_generation() -> None:
                 "businessPackId": "compliance_audit_v1",
                 "code": "P-CA-TEST-001",
                 "name": "合规审计复用验证项目",
+                "type": "长输压力管道",
+                "region": "华东",
+                "ownerOrgName": "华东管网建设公司",
+                "contractorOrgName": "中石化安装有限公司",
+                "inspectionOrgName": "省特检院一部",
+                "memberUserIds": {
+                    "owner": "USER-OWNER-001",
+                    "contractor": "USER-CONTRACTOR-001",
+                    "inspection": "USER-INSPECTION-001",
+                },
             },
             headers={"Idempotency-Key": "bp-compliance-project"},
         )
@@ -141,6 +151,16 @@ def test_business_pack_api_and_compliance_project_generation() -> None:
                 "businessPackId": "device_inspection_v1",
                 "code": "P-DI-TEST-001",
                 "name": "设备年检迁移验证项目",
+                "type": "公用压力管道",
+                "region": "华东",
+                "ownerOrgName": "华东管网建设公司",
+                "contractorOrgName": "中石化安装有限公司",
+                "inspectionOrgName": "省特检院一部",
+                "memberUserIds": {
+                    "owner": "USER-OWNER-001",
+                    "contractor": "USER-CONTRACTOR-001",
+                    "inspection": "USER-INSPECTION-001",
+                },
             },
             headers={"Idempotency-Key": "bp-device-project"},
         )
@@ -208,6 +228,25 @@ def test_ai_review_finding_requires_evidence_and_rule_refs() -> None:
     )
     assert missing_refs["data"]["reason"] == "VALIDATION_ERROR"
 
+    evidence_link_id = "NEL-BP-CONFIRMED-24"
+    repo.state["node_evidence_links"].append(
+        {
+            "id": evidence_link_id,
+            "projectId": "P-2026-HDCP-001",
+            "nodeId": 24,
+            "documentId": "DOC-20260625-001",
+            "documentVersionId": "DV-20260625-001-V2",
+            "fileName": "焊工资格证-王建国.pdf",
+            "pageNo": 1,
+            "bbox": [10, 20, 180, 42],
+            "quotedText": "证书编号 TS6J-2024-03158",
+            "supportStatus": "supported",
+            "manualStatus": "confirmed",
+            "confidence": 0.96,
+            "createdAt": "2026-07-08 00:00:00",
+        }
+    )
+
     created = assert_ok(
         client.post(
             "/api/review/findings",
@@ -218,7 +257,7 @@ def test_ai_review_finding_requires_evidence_and_rule_refs() -> None:
                 "findingType": "field_missing",
                 "title": "证书编号缺失",
                 "description": "AI 未识别到证书编号字段。",
-                "evidenceLinkIds": ["EV-24-001"],
+                "evidenceLinkIds": [evidence_link_id],
                 "ruleRefs": [{"ruleSetId": "RULE-WELDER-202606", "ruleCode": "welder-qualification"}],
                 "confidence": 0.82,
             },

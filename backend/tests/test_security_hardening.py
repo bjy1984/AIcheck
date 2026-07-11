@@ -185,6 +185,7 @@ def test_auth_migration_dry_run_and_apply_never_exposes_passwords() -> None:
 def test_disabled_missing_password_user_does_not_block_strict_startup(monkeypatch) -> None:
     repo.state["users"] = [{"id": "USER-RESET", "username": "reset-user", "status": "停用"}]
     monkeypatch.setenv("AICHECK_STRICT_PRODUCTION", "true")
+    monkeypatch.setenv("AICHECK_ENABLE_DEMO_DATA", "false")
     monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
     monkeypatch.setenv("AICHECK_ENABLE_DEMO_USERS", "false")
     monkeypatch.setenv("AICHECK_ALLOW_DEV_TOKENS", "false")

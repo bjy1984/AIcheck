@@ -14,6 +14,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from apps.api.routes import binding_node_ids, document_node_ids, idempotency_fingerprint, member_node_scope_error, mock_router, report_node_ids, router
+from libs.audit_context import reset_request_audit_context, set_request_audit_context
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 from libs.db.postgres import close_postgres, init_postgres_if_configured, run_transaction_probe
@@ -117,27 +118,39 @@ async def attach_operation_id(request: Request, call_next):
     cached_idempotency = await idempotency_replay_response(request)
     if cached_idempotency is not None:
         return cached_idempotency
-    response = await call_next(request)
-    response = await finalize_mutation_response(request, response)
-    if should_flush_state(request):
-        scoped_records = getattr(request.state, "scoped_flush_records", None)
-        if callable(scoped_records):
-            records = scoped_records()
-            operation_id = getattr(request.state, "operation_id", None)
-            audit_records = [
-                item
-                for item in repo.state.get("audit_logs", [])
-                if operation_id and item.get("operationId") == operation_id
-            ]
-            if audit_records:
-                records.setdefault("audit_logs", []).extend(audit_records)
-            flush_state_records(records)
-            scope = getattr(request.state, "idempotency_scope", None)
-            if scope:
-                flush_idempotency_records([scope])
-        else:
-            flush_state()
-    return response
+    actor = getattr(request.state, "auth_user", None) or {}
+    audit_context_token = set_request_audit_context(
+        {
+            "actorId": actor.get("id") or request.headers.get("X-User-Id") or "system",
+            "actorName": actor.get("displayName") or actor.get("name") or actor.get("username") or request.headers.get("X-User-Id") or "系统",
+            "actorOrgName": actor.get("orgUnitName") or actor.get("orgName"),
+            "operationId": request.state.operation_id,
+        }
+    )
+    try:
+        response = await call_next(request)
+        response = await finalize_mutation_response(request, response)
+        if should_flush_state(request):
+            scoped_records = getattr(request.state, "scoped_flush_records", None)
+            if callable(scoped_records):
+                records = scoped_records()
+                operation_id = getattr(request.state, "operation_id", None)
+                audit_records = [
+                    item
+                    for item in repo.state.get("audit_logs", [])
+                    if operation_id and item.get("operationId") == operation_id
+                ]
+                if audit_records:
+                    records.setdefault("audit_logs", []).extend(audit_records)
+                flush_state_records(records)
+                scope = getattr(request.state, "idempotency_scope", None)
+                if scope:
+                    flush_idempotency_records([scope])
+            else:
+                flush_state()
+        return response
+    finally:
+        reset_request_audit_context(audit_context_token)
 
 
 def auth_required(request: Request) -> bool:
@@ -148,6 +161,8 @@ def auth_required(request: Request) -> bool:
         "/api/healthz",
         "/auth/login",
         "/api/auth/login",
+        "/runtime/ui-context",
+        "/api/runtime/ui-context",
     )
     if compatibility_mocks_enabled():
         public_prefixes += ("/mock/", "/api/mock/")

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 import tempfile
 from base64 import urlsafe_b64decode
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, Request
@@ -13,7 +16,14 @@ from apps.ocr_service.welder_certificate_tool import extract_welder_certificate_
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 
-app = FastAPI(title="AIcheck Document Intelligence Service", version="1.0.0")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    if os.getenv("AICHECK_OCR_DEEP_READY_PROBE", "false").lower() in {"1", "true", "yes", "on"}:
+        await asyncio.to_thread(ocr_service.run_readiness_probe)
+    yield
+
+
+app = FastAPI(title="AIcheck Document Intelligence Service", version="1.0.0", lifespan=lifespan)
 
 
 @app.get("/healthz")

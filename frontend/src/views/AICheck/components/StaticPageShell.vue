@@ -12,6 +12,9 @@ import {
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/store/modules/user'
 import { Icon } from '@/components/Icon'
+import type { OperationArea } from '@/types/aicheck'
+import GlobalCommandPalette from './GlobalCommandPalette.vue'
+import OperationTaskDrawer from './OperationTaskDrawer.vue'
 
 type StaticShellTone = 'blue' | 'green' | 'orange' | 'red'
 
@@ -109,6 +112,9 @@ const props = defineProps<{
   rightPanelMode?: 'inline' | 'drawer'
   rightCollapsedDefault?: boolean
   rightToggleLabel?: string
+  searchScope?: OperationArea
+  taskArea?: OperationArea
+  projectId?: string
 }>()
 const emit = defineEmits<{
   (event: 'menu-select', item: StaticShellMenuItem): void
@@ -125,6 +131,9 @@ const rightPanelTriggerRef = ref<{ $el?: HTMLElement } | HTMLElement | null>(nul
 const rightPanelCloseRef = ref<{ $el?: HTMLElement } | HTMLElement | null>(null)
 const treeFiltersOpen = ref(!props.menuFiltersCollapsedDefault)
 const boundaryOpen = ref(!props.boundaryCollapsedDefault)
+const navigationOpen = ref(true)
+const commandPaletteRef = ref<InstanceType<typeof GlobalCommandPalette> | null>(null)
+const taskDrawerRef = ref<InstanceType<typeof OperationTaskDrawer> | null>(null)
 const rightPanelIsDrawer = computed(() => props.rightPanelMode === 'drawer')
 const getSectionIdentity = (section: StaticShellMenuSection) => section.id || section.title
 const getSectionIndex = (section: StaticShellMenuSection) =>
@@ -234,6 +243,11 @@ const handleUserCommand = (command: string | number | object) => {
 }
 
 const handleShellKeydown = (event: KeyboardEvent) => {
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+    event.preventDefault()
+    commandPaletteRef.value?.open()
+    return
+  }
   if (event.key === 'Escape' && rightPanelIsDrawer.value && rightPanelOpen.value) {
     closeRightPanel()
   }
@@ -255,7 +269,8 @@ onBeforeUnmount(() => {
       `shell-${workspaceMode || 'default'}`,
       {
         'right-drawer-mode': rightPanelIsDrawer,
-        'right-panel-open': rightPanelIsDrawer && rightPanelOpen
+        'right-panel-open': rightPanelIsDrawer && rightPanelOpen,
+        'navigation-collapsed': !navigationOpen
       }
     ]"
   >
@@ -263,15 +278,30 @@ onBeforeUnmount(() => {
       <a class="skip-main" href="#aicheck-static-main">跳到主内容</a>
       <header class="topbar">
         <div class="brand">
-          <div class="hamburger">≡</div>
+          <button
+            class="hamburger"
+            type="button"
+            :aria-label="navigationOpen ? '收起导航' : '展开导航'"
+            :aria-expanded="navigationOpen"
+            aria-controls="aicheck-static-navigation"
+            @click="navigationOpen = !navigationOpen"
+          >
+            <Icon :icon="navigationOpen ? 'vi-ep:fold' : 'vi-ep:expand'" :size="20" />
+          </button>
           <div class="brand-mark">{{ brandMark }}</div>
           <div class="project-title">{{ title }}</div>
           <div v-if="status" :class="['top-status', `pill-${statusTone || 'blue'}`]">
             {{ status }}
           </div>
         </div>
-        <ElButton class="global-search" aria-label="打开全局搜索" :title="searchPlaceholder">
-          {{ searchPlaceholder }}
+        <ElButton
+          class="global-search"
+          aria-label="打开全局搜索"
+          :title="`${searchPlaceholder}（⌘K）`"
+          @click="commandPaletteRef?.open()"
+        >
+          <span>{{ searchPlaceholder }}</span
+          ><kbd>⌘K</kbd>
         </ElButton>
         <div class="top-actions">
           <component
@@ -299,6 +329,9 @@ onBeforeUnmount(() => {
           >
             {{ rightToggleLabel || rightTitle }}
           </ElButton>
+          <ElButton class="task-center-trigger" plain @click="taskDrawerRef?.open()">
+            任务中心
+          </ElButton>
           <ElDropdown trigger="click" class="user-menu" @command="handleUserCommand">
             <button class="user" type="button" aria-label="打开用户菜单">
               <span class="avatar"></span>
@@ -316,7 +349,7 @@ onBeforeUnmount(() => {
       </header>
 
       <div class="workspace">
-        <aside class="left">
+        <aside id="aicheck-static-navigation" class="left">
           <section class="tree-wrap">
             <div class="section-title">
               <span>{{ menuTitle }}</span>
@@ -563,6 +596,17 @@ onBeforeUnmount(() => {
           </section>
         </aside>
       </div>
+      <GlobalCommandPalette
+        ref="commandPaletteRef"
+        :scope="searchScope || 'workbench'"
+        :project-id="projectId"
+        :placeholder="searchPlaceholder"
+      />
+      <OperationTaskDrawer
+        ref="taskDrawerRef"
+        :area="taskArea || searchScope || 'workbench'"
+        :project-id="projectId"
+      />
     </div>
   </div>
 </template>
@@ -674,9 +718,26 @@ onBeforeUnmount(() => {
 }
 
 .hamburger {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  padding: 0;
   font-size: 22px;
   line-height: 1;
   color: #304158;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  place-items: center;
+}
+
+.hamburger:hover,
+.hamburger:focus-visible {
+  color: var(--blue-2);
+  background: #eef5ff;
+  outline: 0;
+  box-shadow: 0 0 0 3px rgb(31 102 216 / 12%);
 }
 
 .brand-mark {
@@ -782,12 +843,30 @@ onBeforeUnmount(() => {
 }
 
 .global-search :deep(span) {
+  display: flex;
   justify-content: flex-start;
   width: 100%;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.global-search kbd {
+  display: inline-flex;
+  min-width: 34px;
+  min-height: 24px;
+  padding: 2px 6px;
+  margin-left: auto;
+  font:
+    500 12px/1 system-ui,
+    sans-serif;
+  color: #52647d;
+  background: #fff;
+  border: 1px solid #d4deeb;
+  border-radius: 4px;
+  align-items: center;
+  justify-content: center;
 }
 
 .global-search:hover,
@@ -855,6 +934,11 @@ onBeforeUnmount(() => {
   --el-button-hover-border-color: #9db8df;
   --el-button-hover-text-color: var(--blue-2);
 
+  min-height: 40px;
+  font-weight: 600;
+}
+
+.task-center-trigger {
   min-height: 40px;
   font-weight: 600;
 }
@@ -943,6 +1027,16 @@ onBeforeUnmount(() => {
 .right-drawer-mode .workspace,
 .right-drawer-mode.shell-wide .workspace {
   grid-template-columns: minmax(248px, 300px) minmax(0, 1fr);
+}
+
+.navigation-collapsed .workspace,
+.navigation-collapsed.right-drawer-mode .workspace,
+.navigation-collapsed.right-drawer-mode.shell-wide .workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.navigation-collapsed .left {
+  display: none;
 }
 
 .shell-wide .topbar {

@@ -47,11 +47,14 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = BACKEND_ROOT.parent
 MUTATION_HEADER_EXEMPT_URLS = {
     "/api/admin/config-diff/preview",
+    "/api/admin/config-overview/publish-preview",
     "/api/business-packs/${packId}/validate",
     "/api/business-packs/{pack_id}/validate",
     "/api/business-packs/validate-all",
     "/api/fde/business-packs/validate-all",
+    "/api/knowledge/reindex-preview",
     "/api/knowledge/retrieval-test",
+    "/api/rules/versions/${versionId}/${action}-preview",
 }
 PUBLIC_MUTATION_ROUTES = {
     ("POST", "/mock/user/login"),
@@ -74,6 +77,12 @@ READ_ONLY_POST_ROUTES = {
     ("POST", "/api/knowledge/retrieval-test"),
     ("POST", "/admin/config-diff/preview"),
     ("POST", "/api/admin/config-diff/preview"),
+    ("POST", "/admin/config-overview/publish-preview"),
+    ("POST", "/api/admin/config-overview/publish-preview"),
+    ("POST", "/knowledge/reindex-preview"),
+    ("POST", "/api/knowledge/reindex-preview"),
+    ("POST", "/rules/versions/{version_id}/{action}-preview"),
+    ("POST", "/api/rules/versions/{version_id}/{action}-preview"),
 }
 IDEMPOTENT_DELEGATE_CALLS = {
     "admin_generic_create",
@@ -147,7 +156,7 @@ REQUIRED_STORAGE_BUCKETS = ("documents", "previews", "exports", "ocr-artifacts")
 REQUIRED_STORAGE_METHODS = {
     "ensure_buckets": {
         "params": [],
-        "source": ["DEFAULT_BUCKETS", "bucket_exists", "make_bucket"],
+        "source": ["bucket_names", "bucket_exists", "make_bucket"],
     },
     "presigned_put_url": {
         "params": ["bucket", "object_name", "content_type"],
@@ -173,7 +182,17 @@ REQUIRED_REPOSITORY_STORAGE_CALLS = {
     "create_upload_session": ["presigned_put_url", "documents"],
     "attach_export_artifact": ["put_bytes", "exports"],
 }
-REQUIRED_OCR_HEALTH_FIELDS = {"service", "pipelineAvailable", "pipelineBackend", "placeholderAllowed"}
+REQUIRED_OCR_HEALTH_FIELDS = {
+    "service",
+    "pipelineAvailable",
+    "pipelineBackend",
+    "placeholderAllowed",
+    "executable",
+    "warmedUp",
+    "capacityReady",
+    "lastSuccessfulInferenceAt",
+    "memoryHeadroom",
+}
 REQUIRED_OCR_RESULT_FIELDS = {"storageKey", "fileName", "status", "fragments", "fields", "seals", "diagnostics"}
 REQUIRED_OCR_EVALUATION_METRICS = {
     "fieldBboxHitRate",
@@ -408,7 +427,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--api-base", default=os.getenv("AICHECK_API_BASE_URL", "http://127.0.0.1:8000"))
     parser.add_argument("--ocr-base", default=os.getenv("AICHECK_VERIFY_OCR_BASE_URL", "http://127.0.0.1:8010"))
     parser.add_argument("--litellm-base", default=os.getenv("LITELLM_BASE_URL", "http://127.0.0.1:4001"))
-    parser.add_argument("--litellm-api-key", default=os.getenv("LITELLM_API_KEY", ""))
+    parser.add_argument("--litellm-api-key-file", default=os.getenv("LITELLM_API_KEY_FILE"))
     parser.add_argument("--project-id", default=PROJECT_ID)
     parser.add_argument("--roles", default=",".join(DEFAULT_ROLES))
     parser.add_argument("--skip-ocr", action="store_true")
@@ -422,6 +441,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--qwen-official-probe", action="store_true")
     parser.add_argument("--release-gate", action="store_true", help="Require every production live/write/model probe without skips.")
     parser.add_argument("--security-scan-dir", help="Directory containing SBOM, Trivy, pip-audit, and pnpm-audit evidence.")
+    parser.add_argument("--ocr-98-gate-report", help="Current passing OCR/audit 98+ release-gate JSON report.")
     parser.add_argument("--timeout", type=float, default=8.0)
     parser.add_argument("--output-dir", help="Optional directory for report.json and report.md.")
     parser.add_argument("--json", action="store_true", help="Print JSON instead of Markdown.")
@@ -624,11 +644,18 @@ class DeploymentReportBuilder:
 
     def live_section(self) -> dict[str, Any]:
         roles = [item.strip() for item in str(self.args.roles).split(",") if item.strip()]
+        litellm_api_key = os.getenv("LITELLM_API_KEY", "")
+        key_file = getattr(self.args, "litellm_api_key_file", None)
+        if key_file:
+            key_path = Path(key_file).expanduser()
+            if key_path.stat().st_mode & 0o077:
+                raise RuntimeError("--litellm-api-key-file must not be group/world accessible")
+            litellm_api_key = key_path.read_text(encoding="utf-8").strip()
         config = VerifyConfig(
             api_base=str(self.args.api_base).rstrip("/"),
             ocr_base=None if self.args.skip_ocr else str(self.args.ocr_base).rstrip("/"),
             litellm_base=None if self.args.skip_litellm else str(self.args.litellm_base).rstrip("/"),
-            litellm_api_key=str(self.args.litellm_api_key or ""),
+            litellm_api_key=litellm_api_key,
             project_id=str(self.args.project_id),
             roles=roles,
             strict_production=bool(self.args.strict_production),
@@ -965,7 +992,11 @@ def ocr_service_contract_check(
     health_failures: list[str] = []
     health_func = getattr(ocr_main_module, "healthz", None)
     health_source = source_for_callable(health_func) if callable(health_func) else ""
-    missing_health_fields = sorted(field for field in REQUIRED_OCR_HEALTH_FIELDS if field not in health_source)
+    service_type_for_health = getattr(service_module, "OcrService", None)
+    service_health_source = source_for_callable(getattr(service_type_for_health, "health_payload", None))
+    missing_health_fields = sorted(
+        field for field in REQUIRED_OCR_HEALTH_FIELDS if field not in health_source + service_health_source
+    )
     if not callable(health_func):
         health_failures.append("healthz endpoint is missing")
     if missing_health_fields:
@@ -2794,6 +2825,7 @@ def release_gate_contract_section(args: argparse.Namespace) -> dict[str, Any]:
         "litellmProviderProbes": bool(getattr(args, "litellm_provider_probes", False)),
         "qwenOfficialProbe": bool(getattr(args, "qwen_official_probe", False)),
         "securityScanEvidence": bool(getattr(args, "security_scan_dir", None)),
+        "ocr98GateEvidence": bool(getattr(args, "ocr_98_gate_report", None)),
         "httpsEndpoint": str(getattr(args, "api_base", "")).strip().lower().startswith("https://"),
     }
     failures = sorted(label for label, enabled in required_flags.items() if not enabled)
@@ -2819,10 +2851,35 @@ def release_gate_contract_section(args: argparse.Namespace) -> dict[str, Any]:
             "detail": "Pass --security-scan-dir with current SBOM and vulnerability scan evidence.",
             "data": {"failures": ["security scan evidence is required"]},
         }
+    ocr_98_path = getattr(args, "ocr_98_gate_report", None)
+    if ocr_98_path:
+        try:
+            ocr_98_report = json.loads(Path(ocr_98_path).read_text(encoding="utf-8"))
+            ocr_98_passed = isinstance(ocr_98_report, dict) and ocr_98_report.get("ok") is True
+            ocr_98_check = {
+                "name": "release.ocr-98-gate",
+                "status": "pass" if ocr_98_passed else "fail",
+                "detail": "OCR/audit 98+ evidence passed." if ocr_98_passed else "OCR/audit 98+ evidence is not passing.",
+                "data": ocr_98_report,
+            }
+        except (OSError, json.JSONDecodeError) as exc:
+            ocr_98_check = {
+                "name": "release.ocr-98-gate",
+                "status": "fail",
+                "detail": f"Invalid OCR/audit 98+ evidence: {exc}",
+                "data": None,
+            }
+    else:
+        ocr_98_check = {
+            "name": "release.ocr-98-gate",
+            "status": "fail",
+            "detail": "Pass --ocr-98-gate-report with current passing evidence.",
+            "data": None,
+        }
     return {
         "name": "release-gate",
-        "ok": not failures and security_check["status"] == "pass",
-        "checks": [check, security_check],
+        "ok": not failures and security_check["status"] == "pass" and ocr_98_check["status"] == "pass",
+        "checks": [check, security_check, ocr_98_check],
     }
 
 
@@ -2846,6 +2903,9 @@ def backend_action_coverage_check(route_source: Any | None = None) -> dict[str, 
             key = (method, path)
             if key in PUBLIC_MUTATION_ROUTES:
                 exempt.append({"method": method, "path": path, "category": "public"})
+                continue
+            if key in READ_ONLY_POST_ROUTES:
+                exempt.append({"method": method, "path": path, "category": "read-only-post"})
                 continue
             action = required_action_for_request(method, path)
             item = {"method": method, "path": path, "action": action}

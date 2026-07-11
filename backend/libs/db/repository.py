@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from libs.audit_context import current_request_audit_context
 from libs.contracts.responses import server_time
 from libs.integrations.storage import ObjectStorageUnavailable, object_storage, parse_storage_url
 from libs.knowledge_indexing import (
@@ -117,6 +118,7 @@ STATE_COLLECTIONS = {
     "rectifications": "rectifications",
     "upload_sessions": "upload_sessions",
     "audit_logs": "audit_logs",
+    "operation_previews": "operation_previews",
 }
 
 SINGLETON_COLLECTIONS = {
@@ -127,9 +129,37 @@ SINGLETON_COLLECTIONS = {
 IDEMPOTENCY_COLLECTION = "idempotency_keys"
 
 
+def demo_data_enabled() -> bool:
+    return os.getenv("AICHECK_ENABLE_DEMO_DATA", "false").strip().lower() == "true"
+
+
+def compatibility_mock_data_enabled() -> bool:
+    return os.getenv("AICHECK_ENABLE_COMPATIBILITY_MOCKS", "false").strip().lower() == "true"
+
+
+def blank_state() -> dict[str, Any]:
+    state = fresh_state()
+    for key in STATE_COLLECTIONS:
+        state[key] = []
+    state["admin_config"] = {
+        key: ([] if isinstance(value, list) else {})
+        for key, value in state.get("admin_config", {}).items()
+    }
+    knowledge_config = state.get("knowledge_config", {})
+    knowledge_config["updatedBy"] = "system"
+    knowledge_config["updatedAt"] = None
+    state["knowledge_config"] = knowledge_config
+    state["idempotency"] = {}
+    return state
+
+
+def runtime_initial_state() -> dict[str, Any]:
+    return fresh_state() if demo_data_enabled() else blank_state()
+
+
 class InMemoryRepository:
     def __init__(self) -> None:
-        self.state = fresh_state()
+        self.state = runtime_initial_state()
         self.state.setdefault("knowledge_chunks", [])
         self.state.setdefault("knowledge_vectors", [])
         self.state.setdefault("knowledge_clauses", [])
@@ -148,6 +178,7 @@ class InMemoryRepository:
         self.state.setdefault("fde_capability_test_upload_sessions", [])
         self.state.setdefault("fde_capability_test_runs", [])
         self.state.setdefault("review_runs", [])
+        self.state.setdefault("operation_previews", [])
         self.state.setdefault("review_step_runs", [])
         self.state.setdefault("review_graph_nodes", [])
         self.state.setdefault("review_tool_calls", [])
@@ -166,7 +197,7 @@ class InMemoryRepository:
         self._sync_postgres_lock = threading.RLock()
 
     def reset(self) -> None:
-        self.state = fresh_state()
+        self.state = runtime_initial_state()
         self.state.setdefault("knowledge_chunks", [])
         self.state.setdefault("knowledge_vectors", [])
         self.state.setdefault("knowledge_clauses", [])
@@ -344,13 +375,15 @@ class InMemoryRepository:
 
     def add_audit(self, action: str, object_type: str, object_id: str, result: str = "成功") -> str:
         audit_id = f"AUD-{uuid4().hex[:10].upper()}"
+        actor = current_request_audit_context()
         self.state["audit_logs"].insert(
             0,
             {
                 "id": audit_id,
-                "actorId": "USER-SYSTEM",
-                "actorName": "系统联调用户",
-                "actorOrgName": "AIcheck",
+                "actorId": actor.get("actorId") or "system",
+                "actorName": actor.get("actorName") or "系统",
+                "actorOrgName": actor.get("actorOrgName"),
+                "operationId": actor.get("operationId"),
                 "action": action,
                 "objectType": object_type,
                 "objectId": object_id,
@@ -405,6 +438,8 @@ class InMemoryRepository:
         project["revision"] = int(project.get("revision", 1)) + 1
 
     def signed_get(self, file_name: str, url: str, content_type: str | None = None, file_size: int | None = None) -> dict[str, Any]:
+        if str(url or "").startswith("mock://") and not compatibility_mock_data_enabled():
+            raise ObjectStorageUnavailable("模拟文件地址已禁用，且没有可用的真实文件产物。")
         signed_url = object_storage.presigned_get_url(url, file_name=file_name)
         if not signed_url and object_storage.required and (parse_storage_url(url) or str(url).startswith("mock://")):
             raise ObjectStorageUnavailable("Object storage is required in production but signed GET could not be created.")
@@ -444,13 +479,19 @@ class InMemoryRepository:
         storage_key = (version or {}).get("storageKey")
         if isinstance(storage_key, str) and parse_storage_url(storage_key):
             return storage_key
-        if isinstance(storage_key, str) and storage_key.startswith(("local://", "mock://", "http://", "https://")):
+        if isinstance(storage_key, str) and storage_key.startswith("mock://"):
+            if not compatibility_mock_data_enabled():
+                raise ObjectStorageUnavailable("资料只有模拟存储地址，不能用于正式预览或下载。")
+            return storage_key
+        if isinstance(storage_key, str) and storage_key.startswith(("local://", "http://", "https://")):
             return storage_key
         if bucket and storage_key:
             return f"minio://{bucket}/{storage_key}"
         if object_storage.required:
             raise ObjectStorageUnavailable("Object storage is required in production but the document has no storage object.")
-        return f"mock://{fallback_prefix}/documents/{document['id']}?versionId={document.get('currentVersionId')}"
+        if compatibility_mock_data_enabled():
+            return f"mock://{fallback_prefix}/documents/{document['id']}?versionId={document.get('currentVersionId')}"
+        raise ObjectStorageUnavailable("资料尚未绑定可用的真实存储对象。")
 
     def document_content_type(self, document: dict[str, Any]) -> str | None:
         raw_type = str(document.get("fileType") or "").lower()
@@ -506,6 +547,8 @@ class InMemoryRepository:
         )
         if not str(primary.get("url") or "").startswith("minio://"):
             return primary
+        if not compatibility_mock_data_enabled():
+            raise ObjectStorageUnavailable("对象存储未返回可访问的签名地址。")
         return self.signed_get(
             document["fileName"],
             f"mock://{fallback_prefix}/documents/{document['id']}?versionId={document.get('currentVersionId')}",
@@ -519,8 +562,8 @@ class InMemoryRepository:
         file_name: str,
         file_type: str,
         *,
-        source_org_name: str = "中石化安装有限公司",
-        uploader_name: str = "李工",
+        source_org_name: str | None = None,
+        uploader_name: str | None = None,
         material_category: str | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         doc, version, knowledge_file, knowledge_task = self._build_document_records(
@@ -543,6 +586,8 @@ class InMemoryRepository:
         source_org_name: str | None = None,
         uploader_name: str | None = None,
         material_category: str | None = None,
+        file_size: int = 0,
+        content_hash: str | None = None,
         seed: str | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
         seed = seed or uuid4().hex[:8].upper()
@@ -551,7 +596,7 @@ class InMemoryRepository:
         now = server_time()
         project = self.require_project(project_id)
         resolved_source_org_name = source_org_name or (project or {}).get("contractorOrgName") or "项目参建单位"
-        resolved_uploader_name = uploader_name or "李工"
+        resolved_uploader_name = uploader_name or "系统"
         resolved_material_category = str(material_category or "").strip()
         doc = {
             "id": document_id,
@@ -573,8 +618,8 @@ class InMemoryRepository:
             "id": version_id,
             "documentId": document_id,
             "versionNo": "V1",
-            "hash": f"mock-sha256-{document_id}",
-            "fileSize": 245760,
+            "hash": content_hash,
+            "fileSize": max(0, int(file_size or 0)),
             "storageKey": f"documents/{project_id}/{version_id}",
             "storageBucket": "documents",
             "ocrStatus": "排队中",
@@ -653,6 +698,8 @@ class InMemoryRepository:
                 source_org_name=source_org_name,
                 uploader_name=uploader_name,
                 material_category=file.get("materialCategory"),
+                file_size=int(file.get("fileSize") or 0),
+                content_hash=str(file.get("contentHash") or "").strip() or None,
             )
             content_type = file.get("fileType") or "application/octet-stream"
             fallback_url = f"mock://upload/{session_id}/{doc['id']}"
@@ -1311,6 +1358,23 @@ class InMemoryRepository:
             task["contentType"] = content_type
         elif object_storage.required:
             raise ObjectStorageUnavailable("Object storage is required in production but export artifact could not be stored.")
+        else:
+            export_root = Path(
+                os.getenv(
+                    "AICHECK_LOCAL_EXPORT_ROOT",
+                    str(Path(__file__).resolve().parents[2] / "data" / "runtime-exports"),
+                )
+            ).expanduser().resolve()
+            target = (export_root / object_key).resolve()
+            if export_root not in target.parents:
+                raise ObjectStorageUnavailable("导出产物路径越界。")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(artifact_body)
+            task["downloadUrl"] = f"/api/exports/{task['id']}/artifact"
+            task["localArtifactPath"] = str(target)
+            task["fileSize"] = len(artifact_body)
+            task["contentType"] = content_type
+        task["contentHash"] = f"sha256-{hashlib.sha256(artifact_body).hexdigest()}"
         return task
 
     def configure_sync_postgres(self, dsn: str | None = None) -> None:
@@ -1407,7 +1471,7 @@ class InMemoryRepository:
             )
 
     def _fresh_state_for_persistence_load(self) -> dict[str, Any]:
-        loaded = fresh_state()
+        loaded = runtime_initial_state()
         loaded.setdefault("knowledge_chunks", [])
         loaded.setdefault("knowledge_vectors", [])
         loaded.setdefault("knowledge_clauses", [])
@@ -1535,11 +1599,15 @@ class InMemoryRepository:
                 scope: json.loads(payload)
                 for scope, payload in connection.execute("SELECT scope, payload FROM idempotency_records").fetchall()
             }
-        backfilled = self.apply_seed_compatibility_defaults(loaded) if selected_state_keys is None else False
+        backfilled = (
+            self.apply_seed_compatibility_defaults(loaded)
+            if selected_state_keys is None and demo_data_enabled()
+            else False
+        )
         self.state = loaded
         if selected_state_keys is not None:
             return
-        if not has_project_seed:
+        if not has_project_seed and demo_data_enabled():
             self.flush_to_sqlite()
         elif backfilled:
             self.flush_to_sqlite()
@@ -1679,14 +1747,18 @@ class InMemoryRepository:
                 scope: json.loads(json.dumps(payload))
                 for scope, payload in self.sync_postgres.execute("SELECT scope, payload FROM idempotency_records").fetchall()
             }
-            backfilled = self.apply_seed_compatibility_defaults(loaded) if selected_state_keys is None else False
+            backfilled = (
+                self.apply_seed_compatibility_defaults(loaded)
+                if selected_state_keys is None and demo_data_enabled()
+                else False
+            )
             self.state = loaded
             # psycopg starts a transaction for the SELECTs above when autocommit is off.
             # End that read transaction before any writer tries to flush the JSONB state.
             self.sync_postgres.commit()
             if selected_state_keys is not None:
                 return
-            if not has_project_seed:
+            if not has_project_seed and demo_data_enabled():
                 self.flush_to_sync_postgres()
             elif backfilled:
                 self.flush_to_sync_postgres()

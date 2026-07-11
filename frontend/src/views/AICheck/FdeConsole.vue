@@ -11,6 +11,9 @@ import {
   ElDescriptionsItem,
   ElDialog,
   ElDrawer,
+  ElDropdown,
+  ElDropdownItem,
+  ElDropdownMenu,
   ElEmpty,
   ElForm,
   ElFormItem,
@@ -68,7 +71,6 @@ import {
   getFdeStandardVectorFileDetailApi,
   getFdeStandardVectorFilePagePreviewApi,
   getFdeStandardsVectorizationApi,
-  importFdeOcrAnnotationPackApi,
   getFdeReleaseImpactApi,
   getFdeReviewRunAuditPackageApi,
   getFdeReviewRunApi,
@@ -104,6 +106,7 @@ import {
   verifyFdeOcrAnnotationTaskApi
 } from '@/api/aicheck'
 import { Echart } from '@/components/Echart'
+import { useUserStore } from '@/store/modules/user'
 import type {
   BusinessPackValidateAllPayload,
   FdeAccessPayload,
@@ -145,6 +148,14 @@ import {
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
+const fdeUserLabel = computed(
+  () =>
+    userStore.getUserInfo?.displayName ||
+    userStore.getUserInfo?.username ||
+    userStore.getUserInfo?.roleLabel ||
+    'FDE 工程师'
+)
 const loading = ref(false)
 const actionLoading = ref(false)
 const error = ref('')
@@ -214,6 +225,17 @@ const bundles = ref<FdeCapabilityBundlePayload | null>(null)
 const selectedBundleId = ref('')
 const releases = ref<FdeReleasePayload | null>(null)
 const selectedReleaseId = ref('')
+const releaseActionDialogVisible = ref(false)
+const releaseActionMode = ref<'submit' | 'shadow' | 'shadow-pass'>('submit')
+const releaseActionForm = ref({
+  evaluationReportId: '',
+  rollbackPlanId: '',
+  sampleRatePercent: 10,
+  sampleCount: 0,
+  failedRuns: 0,
+  evidenceHitRatePercent: 95,
+  reason: ''
+})
 const ocrQuality = ref<FdeOcrQualityPayload | null>(null)
 const ocrRuns = ref<Array<Record<string, unknown>>>([])
 const selectedOcrRun = ref<FdeOcrRunDetailPayload | null>(null)
@@ -324,12 +346,10 @@ type OcrStatusTab = 'issue' | 'annotation' | 'runtime' | 'release'
 type OcrStatusDialogType = OcrStatusTab | 'quality'
 type OcrSecondaryTool = 'annotation' | 'runtime' | 'release' | 'quality'
 type OcrPrimaryTaskAction = 'annotation' | 'capability-test' | 'runtime' | 'release'
-const fdeDemoMode = ref(false)
 const projectAuditSubpage = ref<ProjectAuditSubpage>('overview')
 const projectAuditSearch = ref('')
 const projectAuditFilter = ref<ProjectAuditTreeFilter>('all')
 const fdeProjects = ref<FdeProjectAuditSummary[]>([])
-const fdeDemoProjectWorkspaces = ref<FdeProjectAuditWorkspace[]>([])
 const selectedFdeProjectId = ref('')
 const selectedFdeNodeId = ref<number | undefined>()
 const projectAuditWorkspace = ref<FdeProjectAuditWorkspace | null>(null)
@@ -340,6 +360,15 @@ const ocrStatusDialogType = ref<OcrStatusDialogType>('issue')
 const selectedOcrStatusTab = ref<OcrStatusTab>('issue')
 const incidentPayload = ref<FdeIncidentPayload | null>(null)
 const selectedIncidentId = ref('')
+const incidentActionDialogVisible = ref(false)
+const incidentActionMode = ref<'rca' | 'close'>('rca')
+const incidentActionForm = ref({
+  rootCause: '',
+  temporaryAction: '',
+  longTermAction: '',
+  owner: '',
+  resolution: ''
+})
 const accessGrants = ref<Array<Record<string, unknown>>>([])
 const costGovernance = ref<FdeAccessPayload | null>(null)
 const acceptanceReports = ref<Array<Record<string, unknown>>>([])
@@ -1831,7 +1860,6 @@ const firstReviewRunId = computed(() =>
 const firstReportId = computed(() => String(evaluation.value?.reports?.[0]?.id || ''))
 const firstReleaseId = computed(() => String(releases.value?.plans?.[0]?.id || ''))
 const firstPackId = computed(() => String(packValidation.value?.results?.[0]?.summary?.id || ''))
-const firstOcrJobId = computed(() => String(ocrRuns.value[0]?.id || ocrRuns.value[0]?.jobId || ''))
 const activeRunId = computed(() => String(selectedRun.value?.run?.id || firstRunId.value || ''))
 const activeReviewRunId = computed(() =>
   String(
@@ -1845,6 +1873,9 @@ const activeFeedbackId = computed(() =>
   String(selectedFeedback.value?.id || feedback.value[0]?.id || '')
 )
 const activeReleaseId = computed(() => selectedReleaseId.value || firstReleaseId.value)
+const activeReleasePlan = computed(() =>
+  toRecord(releases.value?.plans?.find((item) => String(item.id || '') === activeReleaseId.value))
+)
 const activeBundleId = computed(() => selectedBundleId.value || firstBundleId.value)
 const activeBusinessPackId = computed(() => selectedBusinessPackId.value || firstPackId.value)
 const firstDataExportId = computed(() => String(costGovernance.value?.exports?.[0]?.id || ''))
@@ -2808,14 +2839,14 @@ const ocrQualityHeatmapOption = computed<EChartsOption>(() => {
       data: ocrQualityHeatmapDimensions,
       axisTick: { show: false },
       axisLine: { lineStyle: { color: '#dbe8f7' } },
-      axisLabel: { color: '#475569', fontWeight: 800 }
+      axisLabel: { color: '#475569', fontWeight: 600 }
     },
     yAxis: {
       type: 'category',
       data: yLabels,
       axisTick: { show: false },
       axisLine: { show: false },
-      axisLabel: { color: '#475569', fontWeight: 800, width: 76, overflow: 'truncate' }
+      axisLabel: { color: '#475569', fontWeight: 600, width: 76, overflow: 'truncate' }
     },
     visualMap: {
       min: 0,
@@ -2827,7 +2858,7 @@ const ocrQualityHeatmapOption = computed<EChartsOption>(() => {
       {
         type: 'heatmap',
         data,
-        label: { show: true, color: '#172033', fontSize: 11, fontWeight: 900 },
+        label: { show: true, color: '#172033', fontSize: 11, fontWeight: 700 },
         itemStyle: { borderColor: '#ffffff', borderWidth: 3, borderRadius: 6 },
         emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgb(15 23 42 / 18%)' } }
       }
@@ -2898,6 +2929,9 @@ const incidents = computed(() => incidentPayload.value?.incidents || [])
 const rcaItems = computed(() => incidentPayload.value?.rca || [])
 const activeIncidentId = computed(
   () => selectedIncidentId.value || String(incidents.value[0]?.id || '')
+)
+const activeIncidentRca = computed(() =>
+  toRecord(rcaItems.value.find((item) => String(item.incidentId || '') === activeIncidentId.value))
 )
 const bundleDiffRows = computed(
   () =>
@@ -4714,1276 +4748,6 @@ const ocrAnnotationFlowSteps = computed(() => {
 const ocrCapabilityStatusType = (status: unknown): FdeElTagType =>
   statusType(String(status)) as FdeElTagType
 
-const createDemoReviewRunDetail = (): FdeReviewRunDetailPayload => {
-  const run: FdeReviewRun = {
-    id: 'RR-DEMO-001',
-    reviewRunId: 'RR-DEMO-001',
-    aiRunId: 'AIR-DEMO-001',
-    projectId: 'DEMO-PROJECT-PIPELINE',
-    nodeId: 'material_review',
-    businessPackId: 'engineering_inspection_v1',
-    agentId: 'compliance_review_agent',
-    agentVersion: '1.4.0-demo',
-    promptVersion: 'review_prompt@2.1.0',
-    modelAlias: 'deepseek-reasoner',
-    modelGateway: 'litellm',
-    workflowEngine: 'temporal',
-    graphEngine: 'langgraph',
-    graphRunner: 'postgres-checkpointer',
-    workflowId: 'wf-review-demo-001',
-    temporalRunId: 'temporal-demo-run-001',
-    status: 'waiting_human_review',
-    currentStep: 'waiting_human_review',
-    runMode: 'demo',
-    inputHash: 'sha256:demo-input-4b8c',
-    outputHash: 'sha256:demo-output-19f2',
-    graphSummary: {
-      total: 7,
-      statusCounts: { completed: 6, waiting_human_review: 1 }
-    },
-    graphExecution: {
-      checkpointer: 'postgres',
-      threadId: 'demo-thread-001'
-    },
-    createdAt: '2026-06-29 10:18:20',
-    updatedAt: '2026-06-29 10:20:42'
-  }
-  const timeline = [
-    {
-      createdAt: '2026-06-29 10:18:20',
-      eventType: 'WorkflowStarted',
-      title: '流程工作流接收审查任务',
-      status: 'completed'
-    },
-    {
-      createdAt: '2026-06-29 10:18:28',
-      eventType: 'ActivityCompleted',
-      title: '加载 OCR 字段、表格和印章证据',
-      status: 'completed'
-    },
-    {
-      createdAt: '2026-06-29 10:19:08',
-      eventType: 'ActivityCompleted',
-      title: '规则库与知识库检索完成',
-      status: 'completed'
-    },
-    {
-      createdAt: '2026-06-29 10:20:42',
-      eventType: 'SignalWaiting',
-      title: '等待监检员确认 AI 发现项',
-      status: 'waiting_human_review'
-    }
-  ]
-  return {
-    run,
-    graph: {
-      reviewRunId: run.reviewRunId,
-      nodes: [
-        {
-          sequence: 1,
-          label: '加载项目上下文',
-          nodeKey: 'load_context',
-          taskQueue: 'review-orchestrator',
-          status: 'completed',
-          attempt: 1,
-          toolCalls: [{ toolName: 'get_project_context' }],
-          artifactCounts: { toolCalls: 1 }
-        },
-        {
-          sequence: 2,
-          label: '读取 OCR 证据',
-          nodeKey: 'load_ocr_result',
-          taskQueue: 'review-orchestrator',
-          status: 'completed',
-          attempt: 1,
-          toolCalls: [{ toolName: 'get_ocr_result' }],
-          artifactCounts: { toolCalls: 1 }
-        },
-        {
-          sequence: 3,
-          label: '执行规则检查',
-          nodeKey: 'run_rule_engine',
-          taskQueue: 'knowledge-rule',
-          status: 'completed',
-          attempt: 1,
-          toolCalls: [{ toolName: 'run_rule_engine' }],
-          artifactCounts: { ruleResults: 3, toolCalls: 1 }
-        },
-        {
-          sequence: 4,
-          label: '检索审查依据',
-          nodeKey: 'retrieve_knowledge',
-          taskQueue: 'knowledge-rule',
-          status: 'completed',
-          attempt: 1,
-          toolCalls: [{ toolName: 'search_knowledge_base' }],
-          artifactCounts: { retrievalTraces: 2, toolCalls: 1 }
-        },
-        {
-          sequence: 5,
-          label: '生成审查草稿',
-          nodeKey: 'llm_review',
-          taskQueue: 'litellm',
-          status: 'completed',
-          attempt: 1,
-          toolCalls: [{ toolName: 'chat.completions' }],
-          artifactCounts: { findingDrafts: 2, toolCalls: 1 }
-        },
-        {
-          sequence: 6,
-          label: '证据与依据校验',
-          nodeKey: 'validate_output',
-          taskQueue: 'review-orchestrator',
-          status: 'completed',
-          attempt: 1,
-          artifactCounts: { validationFailures: 1 }
-        }
-      ],
-      edges: [
-        { source: 'load_context', target: 'load_ocr_result' },
-        { source: 'load_ocr_result', target: 'run_rule_engine' },
-        { source: 'run_rule_engine', target: 'retrieve_knowledge' },
-        { source: 'retrieve_knowledge', target: 'llm_review' },
-        { source: 'llm_review', target: 'validate_output' }
-      ],
-      timeline,
-      artifactSummary: {
-        toolCalls: 5,
-        ruleCheckResults: 3,
-        retrievalTraces: 2,
-        pageIndexTraces: 1,
-        findingDrafts: 2,
-        validationFailures: 1
-      },
-      artifacts: {
-        ruleCheckResults: [
-          {
-            ruleCode: 'QC_CERT_FIELD_003',
-            result: 'failed',
-            severity: 'medium',
-            linkedClauseIds: ['clause-qc-5.3.2']
-          },
-          {
-            ruleCode: 'SEAL_REQUIRED_001',
-            result: 'passed',
-            severity: 'high',
-            linkedClauseIds: ['clause-seal-2.1']
-          }
-        ],
-        retrievalTraces: [
-          {
-            retrievalTraceId: 'RT-DEMO-001',
-            selectedRoute: 'hybrid_rag',
-            selectedClauseCount: 3,
-            pageIndexNodeCount: 0,
-            selectedClauseIds: ['clause-qc-5.3.2', 'clause-qc-5.3.4']
-          },
-          {
-            retrievalTraceId: 'RT-DEMO-002',
-            selectedRoute: 'pageindex',
-            selectedClauseCount: 2,
-            pageIndexNodeCount: 4,
-            selectedClauseIds: ['clause-appendix-a.1'],
-            pageIndexTree: {
-              candidateNodeCount: 4,
-              linkedClauseIds: ['clause-appendix-a.1', 'clause-seal-2.1'],
-              selectedNodes: [
-                {
-                  pageIndexNodeId: 'PIN-DEMO-001',
-                  nodeId: 'appendix-a',
-                  title: '附录 A 管道特性表审查要求',
-                  summary: '说明管道特性表字段、焊接检测和签章要求。',
-                  startPage: 31,
-                  endPage: 34,
-                  sectionPath: ['工程监检资料审查手册', '附录 A'],
-                  linkedClauseIds: ['clause-appendix-a.1'],
-                  score: 0.91
-                },
-                {
-                  pageIndexNodeId: 'PIN-DEMO-002',
-                  nodeId: 'seal-requirement',
-                  title: '资料签章与有效期要求',
-                  summary: '说明检测专用章、公章和有效期审查要求。',
-                  startPage: 18,
-                  endPage: 20,
-                  sectionPath: ['工程监检资料审查手册', '第 2 章', '签章'],
-                  linkedClauseIds: ['clause-seal-2.1'],
-                  score: 0.86
-                }
-              ]
-            }
-          }
-        ],
-        findingDrafts: [
-          {
-            id: 'FD-DEMO-001',
-            findingType: 'field_missing',
-            severity: 'medium',
-            confidence: 0.87,
-            requiresHumanConfirmation: true
-          },
-          {
-            id: 'FD-DEMO-002',
-            findingType: 'seal_consistency_warning',
-            severity: 'low',
-            confidence: 0.76,
-            requiresHumanConfirmation: true
-          }
-        ]
-      }
-    },
-    timeline,
-    temporal: {
-      workflowId: run.workflowId,
-      runId: run.temporalRunId,
-      eventCount: 12,
-      historyPolicy: 'ids_hashes_versions_only'
-    },
-    reasoningTrace: [
-      {
-        sequence: 1,
-        stepName: '资料上下文整理',
-        reasoningSummary: '识别到质量证明文件和管道特性表，资料类型与节点要求匹配。',
-        toolCalls: [{ toolName: 'get_project_context' }, { toolName: 'get_ocr_result' }],
-        evidenceRefs: [{ documentVersionId: 'docv-demo-001', pageNo: 1 }],
-        ruleRefs: [],
-        kbRefs: [],
-        quality: { passed: true }
-      },
-      {
-        sequence: 2,
-        stepName: '确定性规则核对',
-        reasoningSummary: '材料牌号字段未在 OCR 字段集中命中，触发中风险缺项规则。',
-        toolCalls: [{ toolName: 'run_rule_engine' }],
-        evidenceRefs: [
-          { documentVersionId: 'docv-demo-001', pageNo: 1, bbox: [380, 260, 520, 310] }
-        ],
-        ruleRefs: [{ ruleCode: 'QC_CERT_FIELD_003' }],
-        kbRefs: [{ clauseId: 'clause-qc-5.3.2' }],
-        quality: { passed: true }
-      },
-      {
-        sequence: 3,
-        stepName: '草稿生成与校验',
-        reasoningSummary:
-          '生成 2 条 Finding 草稿，其中 1 条因证据 bbox 与表格单元格不一致进入人工复核。',
-        toolCalls: [{ toolName: 'chat.completions' }],
-        evidenceRefs: [{ documentVersionId: 'docv-demo-001', pageNo: 1 }],
-        ruleRefs: [{ ruleCode: 'EVIDENCE_BBOX_REQUIRED' }],
-        kbRefs: [{ clauseId: 'clause-appendix-a.1' }],
-        quality: { passed: false }
-      }
-    ],
-    lineage: {
-      capabilityBundleHash: 'sha256:bundle-demo-20260629',
-      businessPackId: 'engineering_inspection_v1',
-      businessPackVersion: '1.2.0',
-      agentId: 'compliance_review_agent',
-      agentVersion: '1.4.0-demo',
-      promptVersion: 'review_prompt@2.1.0',
-      modelGateway: 'litellm',
-      modelAlias: 'deepseek-reasoner',
-      ruleSetVersion: 'engineering_rules@1.0.0',
-      kbVersion: 'inspection_kb@1.0.0',
-      inputDocumentVersionIds: ['docv-demo-001', 'docv-demo-002'],
-      ocrResultVersions: ['ocr-demo-001'],
-      inputHash: run.inputHash,
-      outputHash: run.outputHash
-    },
-    qualityEvaluation: {
-      score: 86,
-      status: 'needs_human_review',
-      humanReviewRequired: true,
-      dimensions: [
-        {
-          dimension: '证据命中',
-          status: 'pass',
-          failureCount: 0,
-          warningCount: 1,
-          finding: '1 个 bbox 需人工确认'
-        },
-        {
-          dimension: '依据引用',
-          status: 'pass',
-          failureCount: 0,
-          warningCount: 0,
-          finding: '条款版本有效'
-        },
-        {
-          dimension: 'Schema 门禁',
-          status: 'pass',
-          failureCount: 0,
-          warningCount: 0,
-          finding: '结构化输出合规'
-        }
-      ],
-      gates: [
-        { gate: 'evidence_refs_present', status: 'pass' },
-        { gate: 'human_confirmation_required', status: 'pass' },
-        { gate: 'bbox_consistency', status: 'warning' }
-      ]
-    },
-    humanCorrections: [
-      {
-        feedbackType: 'wrong_evidence',
-        rootCause: 'ocr_table_cell_bbox_shift',
-        beforeSummary: 'AI 引用整页表格区域作为材料牌号证据。',
-        afterSummary: '人工修正到第 1 页材料牌号所在单元格。',
-        status: 'triaged',
-        shouldEnterEvaluationSet: true
-      },
-      {
-        feedbackType: 'edited',
-        rootCause: 'prompt_wording',
-        beforeSummary: '补正建议措辞过泛。',
-        afterSummary: '改为要求施工方补充对应炉批号质量证明页。',
-        status: 'approved_for_eval',
-        shouldEnterEvaluationSet: true
-      }
-    ],
-    redactionPolicy: 'masked'
-  }
-}
-
-const createDemoOcrQuality = (): FdeOcrQualityPayload => ({
-  fileLevel: { total: 18, success: 17, failed: 1, parseSuccessRate: 0.944 },
-  jobLevel: { total: 18, success: 16, failed: 1, running: 1 },
-  fieldLevel: {
-    total: 168,
-    lowConfidence: 9,
-    manualCorrectionRate: 0.14,
-    parseResultCount: 18,
-    parseFieldCount: 168,
-    lowConfidenceParseFieldCount: 9,
-    conflictFieldCount: 3,
-    evidenceMissingFieldCount: 5,
-    missingRequiredFieldCount: 4,
-    averageFieldConfidence: 0.89,
-    missingRequiredFieldBreakdown: [
-      { fieldCode: 'material_grade', count: 2 },
-      { fieldCode: 'report_no', count: 1 }
-    ],
-    fieldCodeBreakdown: [
-      { fieldCode: 'weld_no', count: 28 },
-      { fieldCode: 'material_grade', count: 16 }
-    ],
-    qualityFlagCounts: [
-      { flag: 'LOW_CONFIDENCE', count: 9 },
-      { flag: 'BBOX_SHIFT', count: 5 }
-    ],
-    sampleFields: []
-  },
-  evidenceLevel: {
-    parseResultCount: 18,
-    scoredResultCount: 17,
-    averageEvidenceCompleteness: 0.91,
-    missingEvidence: 5,
-    fieldEvidenceMissing: 3,
-    tableEvidenceMissing: 1,
-    sealEvidenceMissing: 1,
-    unknownEvidenceMissing: 0,
-    missingEvidenceItems: [
-      {
-        targetType: 'field',
-        targetId: 'material_grade',
-        parseResultId: 'parse-demo-001',
-        profileId: 'quality_certificate_v1'
-      },
-      {
-        targetType: 'seal',
-        targetId: 'seal-demo-002',
-        parseResultId: 'parse-demo-002',
-        profileId: 'piping_characteristic_list_v1'
-      }
-    ]
-  },
-  tableLevel: {
-    parseResultCount: 18,
-    tableCount: 21,
-    formalTableCount: 17,
-    heuristicTableCount: 4,
-    reviewRequiredCount: 3,
-    missingRequiredTableCount: 2,
-    businessRowCount: 126,
-    normalizedRowCount: 118,
-    cellCount: 1456,
-    averageTableConfidence: 0.86,
-    formalTableRate: 0.81,
-    heuristicTableRate: 0.19,
-    reviewRequiredRate: 0.14,
-    missingRequiredTableBreakdown: [{ tableCode: 'weld_detection_result_table', count: 2 }],
-    sourceBreakdown: [{ source: 'pp_structure_v3', count: 17 }],
-    qualityFlagCounts: [{ flag: 'TABLE_STRUCTURE_LOW_CONFIDENCE', count: 3 }],
-    sampleTables: []
-  },
-  sealLevel: {
-    parseResultCount: 18,
-    sealCount: 9,
-    readableSealCount: 7,
-    fragmentSealCount: 2,
-    visualCandidateCount: 11,
-    reviewRequiredCount: 2,
-    missingExpectedSealTypeCount: 1,
-    missingTextCount: 2,
-    averageSealConfidence: 0.78,
-    readableSealRate: 0.78,
-    fragmentSealRate: 0.22,
-    visualCandidateReviewRate: 0.18,
-    sealTypeBreakdown: [{ sealType: 'company_official_seal', count: 5 }],
-    readableSealTypeBreakdown: [{ sealType: 'company_official_seal', count: 4 }],
-    matchedExpectedSealTypeBreakdown: [{ sealType: 'inspection_testing_seal', count: 3 }],
-    missingExpectedSealTypeBreakdown: [{ sealType: 'inspection_testing_seal', count: 1 }],
-    sourceBreakdown: [{ source: 'paddlex_seal', count: 7 }],
-    qualityFlagCounts: [{ flag: 'SEAL_TEXT_LOW_CONFIDENCE', count: 2 }],
-    sampleSeals: []
-  },
-  lowConfidenceFields: [],
-  cacheMetrics: {
-    engineRunCount: 28,
-    engineCacheHits: 11,
-    engineCacheHitRate: 0.39,
-    variantCacheHits: 15,
-    variantCacheHitRate: 0.54,
-    resultCacheHits: 6,
-    totalDurationMs: 93200,
-    averageDurationMs: 3328,
-    slowEngines: []
-  },
-  qualityReasonCounts: [
-    { reason: 'TABLE_STRUCTURE_LOW_CONFIDENCE', count: 3 },
-    { reason: 'SEAL_TEXT_LOW_CONFIDENCE', count: 2 }
-  ],
-  runtimeDoctor: {
-    status: 'degraded',
-    ok: false,
-    summary: { pass: 6, warn: 2, fail: 1, total: 9 },
-    topIssues: [
-      {
-        name: 'paddlex-seal-model',
-        message: 'Seal 模型可用但 sealName 低置信，需要补充标注样本。'
-      }
-    ],
-    subprocessPython: '.venv/bin/python',
-    schemaVersion: 'ocr-runtime-doctor@1.0'
-  },
-  ocr100Scorecard: {
-    schemaVersion: 'ocr100@1.0',
-    targetScore: 100,
-    score: 88,
-    ok: false,
-    sections: [
-      { name: '运行时', score: 18, maxScore: 20, status: 'pass' },
-      { name: '表格', score: 22, maxScore: 25, status: 'pass' },
-      { name: '印章', score: 17, maxScore: 25, status: 'fail' },
-      { name: '标注闭环', score: 13, maxScore: 15, status: 'pass' },
-      { name: '评估门禁', score: 18, maxScore: 15, status: 'pass' }
-    ],
-    blockers: ['印章文字准确率未达到 92% 目标。', '印章文字解析样本“可入评估”数量不足 5 个。']
-  },
-  evalRuns: [
-    {
-      id: 'OCR-EVAL-DEMO-001',
-      profileId: 'all',
-      status: 'completed',
-      metrics: { caseCount: 12 },
-      evaluationSummary: {
-        ok: false,
-        summary: { total: 12, passed: 9, failed: 3, averageScore: 0.89 },
-        thresholdFailures: [
-          { metric: 'sealNameAccuracy', actual: 0.84, expected: 0.92 },
-          { metric: 'tableCellAccuracy', actual: 0.88, expected: 0.9 }
-        ],
-        scenarioMetrics: {
-          seal_text_profile: {
-            ok: false,
-            cases: 4,
-            passed: 2,
-            failed: 2,
-            averageScore: 0.82,
-            thresholdFailures: [{ metric: 'sealNameAccuracy', actual: 0.84, expected: 0.92 }]
-          },
-          piping_table_profile: {
-            ok: true,
-            cases: 8,
-            passed: 7,
-            failed: 1,
-            averageScore: 0.92,
-            thresholdFailures: []
-          }
-        },
-        failedCases: [
-          {
-            caseId: 'OCR-DEMO-SEAL-001',
-            scenario: 'seal_text_profile',
-            score: 0.78,
-            findings: ['SEAL_TEXT_LOW_CONFIDENCE']
-          }
-        ]
-      }
-    }
-  ],
-  failurePools: {
-    fieldFailures: [
-      {
-        code: 'FIELD_LOW_CONFIDENCE',
-        fieldName: '材料牌号',
-        fieldValue: 'GC2',
-        confidence: 0.68
-      }
-    ],
-    tableFailures: [],
-    sealFailures: [],
-    engineFailures: []
-  }
-})
-
-const createDemoOcrAnnotationPayload = (): FdeOcrAnnotationPayload => ({
-  summary: {
-    tasks: 4,
-    humanLabeled: 2,
-    readyForEval: 1,
-    missingHumanLabels: 2,
-    completionRate: 0.5,
-    statusCounts: { needs_labeling: 2, labeled: 1, ready_for_eval: 1 },
-    blockerCounts: {
-      MISSING_FIELD_LABELS: 2,
-      MISSING_SEAL_BBOX: 1
-    }
-  },
-  nextActions: ['补齐印章文字解析样本的印章框', '二审已标注样本后进入评估集'],
-  page: {
-    page: 1,
-    pageSize: 20,
-    total: 4,
-    items: [
-      {
-        taskId: 'ANNO-DEMO-001',
-        caseId: 'OCR-DEMO-SEAL-001',
-        scenario: 'seal_text_profile',
-        profileId: 'piping_characteristic_list_v1',
-        documentType: 'piping_characteristic_list',
-        sourcePath: 'demo/piping-characteristic-list.png',
-        pageNo: 1,
-        collectionStatus: 'needs_labeling',
-        readinessBlockers: ['MISSING_SEAL_BBOX'],
-        candidateCounts: { fields: 8, tables: 1, seals: 2 },
-        labelCounts: { fields: 5, tables: 1, seals: 0 },
-        readyForEval: false
-      },
-      {
-        taskId: 'ANNO-DEMO-002',
-        caseId: 'OCR-DEMO-TABLE-001',
-        scenario: 'piping_table_profile',
-        profileId: 'piping_characteristic_list_v1',
-        documentType: 'piping_characteristic_list',
-        sourcePath: 'demo/piping-table.png',
-        pageNo: 1,
-        collectionStatus: 'labeled',
-        candidateCounts: { fields: 12, tables: 2, seals: 1 },
-        labelCounts: { fields: 12, tables: 2, seals: 1 },
-        readyForEval: false
-      },
-      {
-        taskId: 'ANNO-DEMO-003',
-        caseId: 'OCR-DEMO-QC-001',
-        scenario: 'quality_certificate_profile',
-        profileId: 'quality_certificate_v1',
-        documentType: 'quality_certificate',
-        sourcePath: 'demo/quality-certificate.pdf',
-        pageNo: 1,
-        collectionStatus: 'ready_for_eval',
-        candidateCounts: { fields: 10, tables: 2, seals: 1 },
-        labelCounts: { fields: 10, tables: 2, seals: 1 },
-        readyForEval: true
-      },
-      {
-        taskId: 'ANNO-DEMO-004',
-        caseId: 'OCR-DEMO-NDT-001',
-        scenario: 'ndt_rt_table_profile',
-        profileId: 'ndt_rt_report_v1',
-        documentType: 'ndt_report',
-        sourcePath: 'demo/ndt-rt-report.pdf',
-        pageNo: 2,
-        collectionStatus: 'needs_labeling',
-        readinessBlockers: ['MISSING_TABLE_CELL_LABELS'],
-        candidateCounts: { fields: 14, tables: 2, seals: 1 },
-        labelCounts: { fields: 8, tables: 0, seals: 1 },
-        readyForEval: false
-      }
-    ]
-  }
-})
-
-const createDemoProjectAuditWorkspace = (): FdeProjectAuditWorkspace => {
-  const demoReview = createDemoReviewRunDetail()
-  const project = {
-    id: 'DEMO-PROJECT-PIPELINE',
-    code: 'GX-PIPE-2026-001',
-    name: '珠海储能站新增两套卸车系统监检项目',
-    type: '压力管道安装监检',
-    region: '广东省珠海市',
-    ownerOrgName: '珠海恒基达鑫国际化工仓储股份有限公司',
-    contractorOrgName: '广东星燃石化设计院有限公司',
-    ndtOrgName: '广东省建设工程勘察设计审查中心',
-    inspectionOrgName: '广东省特检院',
-    businessPackId: 'engineering_inspection_v1',
-    businessPackVersion: '1.2.0',
-    status: '监检审查中',
-    todoCount: 3,
-    messageCount: 2,
-    currentNodeId: 201,
-    riskLevel: '中',
-    updatedAt: '2026-06-29 10:30:00',
-    actions: ['project:view']
-  } as FdeProjectAuditWorkspace['project']
-  const nodes = [
-    {
-      id: 'node-demo-201',
-      projectId: project.id,
-      nodeId: 201,
-      code: 'MATERIAL-REVIEW',
-      name: '材料资料审查',
-      groupName: '资料审查',
-      inspectionType: 'A',
-      status: '待人工确认',
-      fileCount: 4,
-      requiredProgress: { done: 3, total: 4 },
-      actions: ['project:view']
-    },
-    {
-      id: 'node-demo-202',
-      projectId: project.id,
-      nodeId: 202,
-      code: 'NDT-REVIEW',
-      name: '无损检测报告审查',
-      groupName: '资料审查',
-      inspectionType: 'B',
-      status: 'AI 预审中',
-      fileCount: 3,
-      requiredProgress: { done: 2, total: 3 },
-      actions: ['project:view']
-    },
-    {
-      id: 'node-demo-301',
-      projectId: project.id,
-      nodeId: 301,
-      code: 'REPORT',
-      name: '报告生成与复核',
-      groupName: '报告归档',
-      inspectionType: 'C/B',
-      status: '待提交',
-      fileCount: 0,
-      requiredProgress: { done: 0, total: 2 },
-      actions: ['project:view']
-    }
-  ] as FdeProjectAuditWorkspace['groups'][number]['nodes']
-  const documents = [
-    {
-      id: 'doc-demo-001',
-      projectId: project.id,
-      fileName: '管道特性表-第2版.png',
-      fileType: 'image/png',
-      sourceOrgName: '广东星燃石化设计院有限公司',
-      uploaderName: '施工方 李工',
-      currentVersionId: 'docv-demo-001',
-      fileStatus: '已上传',
-      currentOcrStatus: '人工修正',
-      sliceStatus: '已切片',
-      vectorStatus: '已向量化',
-      chunkCount: 42,
-      vectorCount: 42,
-      embeddingModel: 'embedding-default',
-      indexVersion: 'knowledge-index@2026.06.29',
-      pageIndexStatus: '已构建',
-      updatedAt: '2026-06-29 10:12:00',
-      actions: ['file:view']
-    },
-    {
-      id: 'doc-demo-002',
-      projectId: project.id,
-      fileName: '质量证明书-QX201903S.pdf',
-      fileType: 'application/pdf',
-      sourceOrgName: '广东星燃石化设计院有限公司',
-      uploaderName: '施工方 李工',
-      currentVersionId: 'docv-demo-002',
-      fileStatus: '已上传',
-      currentOcrStatus: '已识别',
-      sliceStatus: '切片中',
-      vectorStatus: '向量化中',
-      chunkCount: 18,
-      vectorCount: 12,
-      embeddingModel: 'embedding-default',
-      indexVersion: 'knowledge-index@2026.06.29',
-      pageIndexStatus: '等待补齐切片',
-      updatedAt: '2026-06-29 09:58:00',
-      actions: ['file:view']
-    },
-    {
-      id: 'doc-demo-003',
-      projectId: project.id,
-      fileName: 'RT检测报告-焊口清单.pdf',
-      fileType: 'application/pdf',
-      sourceOrgName: '广东省建设工程勘察设计审查中心',
-      uploaderName: 'NDT 王工',
-      currentVersionId: 'docv-demo-003',
-      fileStatus: '已上传',
-      currentOcrStatus: '已识别',
-      sliceStatus: '已切片',
-      vectorStatus: '向量化中',
-      chunkCount: 28,
-      vectorCount: 19,
-      embeddingModel: 'embedding-default',
-      indexVersion: 'knowledge-index@2026.06.29',
-      pageIndexStatus: '待补齐向量',
-      updatedAt: '2026-06-29 09:42:00',
-      actions: ['file:view']
-    },
-    {
-      id: 'doc-demo-004',
-      projectId: project.id,
-      fileName: '焊工资格证与外部查询截图.pdf',
-      fileType: 'application/pdf',
-      sourceOrgName: '广东星燃石化设计院有限公司',
-      uploaderName: '施工方 李工',
-      currentVersionId: 'docv-demo-004',
-      fileStatus: '已上传',
-      currentOcrStatus: '已识别',
-      sliceStatus: '切片中',
-      vectorStatus: '待向量化',
-      chunkCount: 16,
-      vectorCount: 0,
-      embeddingModel: 'embedding-default',
-      indexVersion: 'knowledge-index@2026.06.29',
-      pageIndexStatus: '等待切片',
-      updatedAt: '2026-06-29 09:30:00',
-      actions: ['file:view']
-    }
-  ] as FdeProjectAuditWorkspace['documents']
-  const bindings = [
-    {
-      id: 'bind-demo-001',
-      projectId: project.id,
-      nodeId: 201,
-      requirementName: '管道特性表',
-      documentId: 'doc-demo-001',
-      documentVersionId: 'docv-demo-001',
-      fileName: '管道特性表-第2版.png',
-      versionNo: 'v2',
-      usage: '监检资料',
-      sourceOrgName: '广东星燃石化设计院有限公司',
-      bindingStatus: '已提交',
-      boundAt: '2026-06-29 10:12:00',
-      actions: ['file:view']
-    },
-    {
-      id: 'bind-demo-002',
-      projectId: project.id,
-      nodeId: 201,
-      requirementName: '质量证明文件',
-      documentId: 'doc-demo-002',
-      documentVersionId: 'docv-demo-002',
-      fileName: '质量证明书-QX201903S.pdf',
-      versionNo: 'v1',
-      usage: '证明材料',
-      sourceOrgName: '广东星燃石化设计院有限公司',
-      bindingStatus: '需补正',
-      boundAt: '2026-06-29 09:58:00',
-      actions: ['file:view']
-    },
-    {
-      id: 'bind-demo-003',
-      projectId: project.id,
-      nodeId: 201,
-      requirementName: '无损检测报告',
-      documentId: 'doc-demo-003',
-      documentVersionId: 'docv-demo-003',
-      fileName: 'RT检测报告-焊口清单.pdf',
-      versionNo: 'v1',
-      usage: '检测报告',
-      sourceOrgName: '广东省建设工程勘察设计审查中心',
-      bindingStatus: '需人工复核',
-      boundAt: '2026-06-29 09:42:00',
-      actions: ['file:view']
-    },
-    {
-      id: 'bind-demo-004',
-      projectId: project.id,
-      nodeId: 201,
-      requirementName: '焊工资格证及外部查询截图',
-      documentId: 'doc-demo-004',
-      documentVersionId: 'docv-demo-004',
-      fileName: '焊工资格证与外部查询截图.pdf',
-      versionNo: 'v1',
-      usage: '资质证明',
-      sourceOrgName: '广东星燃石化设计院有限公司',
-      bindingStatus: '已提交',
-      boundAt: '2026-06-29 09:30:00',
-      actions: ['file:view']
-    }
-  ] as FdeProjectAuditWorkspace['bindings']
-  const reviewRuns = [
-    demoReview.run,
-    {
-      ...demoReview.run,
-      id: 'RR-DEMO-SHADOW-001',
-      reviewRunId: 'RR-DEMO-SHADOW-001',
-      runMode: 'shadow',
-      status: 'draft_persisted',
-      currentStep: 'quality_gate',
-      workflowId: 'wf-review-demo-shadow-001',
-      temporalRunId: 'temporal-demo-shadow-001'
-    }
-  ]
-  const ocrJobs = [
-    {
-      id: 'OCR-JOB-DEMO-001',
-      jobId: 'OCR-JOB-DEMO-001',
-      documentVersionId: 'docv-demo-001',
-      profileId: 'piping_characteristic_list_v1',
-      status: 'needs_human_review',
-      parseResultId: 'parse-demo-001',
-      engineRuns: 4,
-      updatedAt: '2026-06-29 10:17:00'
-    },
-    {
-      id: 'OCR-JOB-DEMO-002',
-      jobId: 'OCR-JOB-DEMO-002',
-      documentVersionId: 'docv-demo-002',
-      profileId: 'quality_certificate_v1',
-      status: 'success',
-      parseResultId: 'parse-demo-002',
-      engineRuns: 3,
-      updatedAt: '2026-06-29 10:02:00'
-    },
-    {
-      id: 'OCR-JOB-DEMO-003',
-      jobId: 'OCR-JOB-DEMO-003',
-      documentVersionId: 'docv-demo-003',
-      profileId: 'ndt_rt_report_v1',
-      status: 'success',
-      parseResultId: 'parse-demo-003',
-      engineRuns: 3,
-      updatedAt: '2026-06-29 09:50:00'
-    },
-    {
-      id: 'OCR-JOB-DEMO-004',
-      jobId: 'OCR-JOB-DEMO-004',
-      documentVersionId: 'docv-demo-004',
-      profileId: 'qualification_certificate_v1',
-      status: 'needs_human_review',
-      parseResultId: 'parse-demo-004',
-      engineRuns: 3,
-      updatedAt: '2026-06-29 09:38:00'
-    }
-  ]
-  const ocrAnnotationPayload = createDemoOcrAnnotationPayload()
-  const qualityBlockers = [
-    {
-      type: 'agent',
-      level: 'warning',
-      title: 'AI 审查任务等待人工确认',
-      targetId: 'RR-DEMO-001',
-      targetName: '资料复核员',
-      action: '检查证据、依据和人工修正后确认。'
-    },
-    {
-      type: 'ocr-annotation',
-      level: 'warning',
-      title: '印章 bbox 未标定',
-      targetId: 'ANNO-DEMO-001',
-      targetName: '印章文字解析样本',
-      action: '进入 OCR 标注样本补齐印章框。'
-    }
-  ]
-  return {
-    project,
-    selectedNodeId: 201,
-    selectedNode: nodes[0],
-    groups: [
-      { groupName: '资料审查', nodes: nodes.slice(0, 2) },
-      { groupName: '报告归档', nodes: nodes.slice(2) }
-    ],
-    nodeSummaries: [
-      {
-        node: nodes[0],
-        nodeId: 201,
-        nodeName: nodes[0].name,
-        groupName: nodes[0].groupName,
-        status: nodes[0].status,
-        documentCount: 4,
-        bindingCount: 4,
-        submissionCount: 1,
-        ocrJobCount: 4,
-        reviewRunCount: 2,
-        aiRunCount: 2,
-        lowConfidenceFieldCount: 5,
-        blockerCount: 2,
-        latestReviewRun: demoReview.run
-      },
-      {
-        node: nodes[1],
-        nodeId: 202,
-        nodeName: nodes[1].name,
-        groupName: nodes[1].groupName,
-        status: nodes[1].status,
-        documentCount: 1,
-        bindingCount: 1,
-        submissionCount: 1,
-        ocrJobCount: 1,
-        reviewRunCount: 0,
-        aiRunCount: 0,
-        lowConfidenceFieldCount: 1,
-        blockerCount: 1
-      },
-      {
-        node: nodes[2],
-        nodeId: 301,
-        nodeName: nodes[2].name,
-        groupName: nodes[2].groupName,
-        status: nodes[2].status,
-        documentCount: 0,
-        bindingCount: 0,
-        submissionCount: 0,
-        ocrJobCount: 0,
-        reviewRunCount: 0,
-        aiRunCount: 0,
-        lowConfidenceFieldCount: 0,
-        blockerCount: 0
-      }
-    ],
-    metrics: {
-      nodes: 3,
-      documents: 4,
-      submissions: 1,
-      ocrJobs: 4,
-      reviewRuns: 2,
-      annotationTasks: 4,
-      blockers: 2,
-      lowConfidenceFields: 5,
-      knowledgeChunks: 128,
-      knowledgeVectors: 104,
-      vectorizedDocuments: 2,
-      pageIndexNodes: 8
-    },
-    documents,
-    bindings,
-    submissions: [
-      {
-        id: 'SUB-DEMO-001',
-        batchName: '材料资料首批提交',
-        status: 'waiting_human_review',
-        nodeIds: [201],
-        nodeNames: ['材料资料审查'],
-        bindingCount: 2,
-        submittedAt: '2026-06-29 10:15:00',
-        submitterName: '施工方 李工'
-      }
-    ],
-    reviewRuns,
-    aiRuns: [],
-    ocrJobs,
-    ocrAnnotationTasks: ocrAnnotationPayload.page.items,
-    qualityBlockers,
-    updatedAt: '2026-06-29 10:30:00'
-  }
-}
-
-const createDemoProjectAuditWorkspaceVariant = (
-  base: FdeProjectAuditWorkspace,
-  options: {
-    suffix: string
-    id: string
-    code: string
-    name: string
-    type: string
-    status: FdeProjectAuditWorkspace['project']['status']
-    region: string
-    currentNodeId: number
-    blockerCount: number
-    blockerTitle?: string
-    reviewRunStatus?: string
-    ocrStatus?: string
-  }
-): FdeProjectAuditWorkspace => {
-  const workspace = JSON.parse(JSON.stringify(base)) as FdeProjectAuditWorkspace
-  workspace.project = {
-    ...workspace.project,
-    id: options.id,
-    code: options.code,
-    name: options.name,
-    type: options.type,
-    region: options.region,
-    status: options.status,
-    currentNodeId: options.currentNodeId,
-    updatedAt: `2026-06-29 10:${30 + options.suffix.length}:00`
-  }
-  workspace.groups = workspace.groups.map((group) => ({
-    ...group,
-    nodes: group.nodes.map((node) => ({
-      ...node,
-      id: `${node.id}-${options.suffix}`,
-      projectId: options.id,
-      nodeId: Number(node.nodeId) + options.currentNodeId - 201,
-      status:
-        options.blockerCount > 0 && node.nodeId === 201
-          ? options.status === 'AI 预审中'
-            ? 'AI 预审中'
-            : '待人工确认'
-          : node.status
-    }))
-  }))
-  const allNodes = workspace.groups.flatMap((group) => group.nodes)
-  workspace.selectedNodeId = options.currentNodeId
-  workspace.selectedNode =
-    allNodes.find((node) => Number(node.nodeId) === Number(options.currentNodeId)) ||
-    allNodes[0] ||
-    null
-  workspace.nodeSummaries = workspace.nodeSummaries.map((summary, index) => {
-    const node = allNodes[index] || workspace.selectedNode
-    return {
-      ...summary,
-      node,
-      nodeId: node?.nodeId || summary.nodeId,
-      nodeName: node?.name || summary.nodeName,
-      groupName: node?.groupName || summary.groupName,
-      status: node?.status || summary.status,
-      blockerCount: index === 0 ? options.blockerCount : Number(summary.blockerCount || 0)
-    }
-  })
-  workspace.documents = workspace.documents.map((document, index) => ({
-    ...document,
-    id: `${document.id}-${options.suffix}`,
-    projectId: options.id,
-    currentVersionId: `${document.currentVersionId}-${options.suffix}`,
-    currentOcrStatus:
-      index === 0
-        ? (options.ocrStatus as never) || document.currentOcrStatus
-        : document.currentOcrStatus
-  }))
-  workspace.bindings = workspace.bindings.map((binding, index) => ({
-    ...binding,
-    id: `${binding.id}-${options.suffix}`,
-    projectId: options.id,
-    nodeId: options.currentNodeId,
-    documentId: workspace.documents[index % workspace.documents.length]?.id || binding.documentId,
-    documentVersionId:
-      workspace.documents[index % workspace.documents.length]?.currentVersionId ||
-      binding.documentVersionId
-  }))
-  workspace.submissions = workspace.submissions.map((submission, index) => ({
-    ...submission,
-    id: `${submission.id}-${options.suffix}-${index + 1}`,
-    status: options.reviewRunStatus || submission.status,
-    nodeIds: [options.currentNodeId],
-    nodeNames: [workspace.selectedNode?.name || '审计节点']
-  }))
-  workspace.reviewRuns = workspace.reviewRuns.map((run, index) => ({
-    ...run,
-    id: `RR-DEMO-${options.suffix}-${index + 1}`,
-    reviewRunId: `RR-DEMO-${options.suffix}-${index + 1}`,
-    projectId: options.id,
-    nodeId: String(options.currentNodeId),
-    workflowId: `wf-review-${options.suffix}-${index + 1}`,
-    status: options.reviewRunStatus || run.status,
-    currentStep: options.reviewRunStatus || run.currentStep
-  }))
-  workspace.ocrJobs = workspace.ocrJobs.map((job, index) => ({
-    ...job,
-    id: `OCR-JOB-DEMO-${options.suffix}-${index + 1}`,
-    jobId: `OCR-JOB-DEMO-${options.suffix}-${index + 1}`,
-    documentVersionId: workspace.documents[index % workspace.documents.length]?.currentVersionId,
-    status: index === 0 ? options.ocrStatus || job.status : job.status
-  }))
-  workspace.ocrAnnotationTasks = workspace.ocrAnnotationTasks.map((task, index) => ({
-    ...task,
-    taskId: `ANNO-DEMO-${options.suffix}-${index + 1}`,
-    caseId: `OCR-DEMO-${options.suffix}-${index + 1}`,
-    projectId: options.id,
-    nodeId: options.currentNodeId
-  }))
-  workspace.qualityBlockers =
-    options.blockerCount > 0
-      ? [
-          {
-            type: options.reviewRunStatus === 'failed' ? 'agent' : 'ocr-annotation',
-            level: options.reviewRunStatus === 'failed' ? 'danger' : 'warning',
-            title: options.blockerTitle || '存在待处理质量阻断',
-            targetId: workspace.reviewRuns[0]?.reviewRunId || workspace.ocrJobs[0]?.jobId,
-            targetName: workspace.selectedNode?.name,
-            action: '进入对应审计子页检查证据、结果和人工修正。'
-          }
-        ]
-      : []
-  workspace.metrics = {
-    ...workspace.metrics,
-    blockers: workspace.qualityBlockers.length,
-    reviewRuns: workspace.reviewRuns.length,
-    ocrJobs: workspace.ocrJobs.length,
-    annotationTasks: workspace.ocrAnnotationTasks.length,
-    documents: workspace.documents.length
-  }
-  workspace.updatedAt = workspace.project.updatedAt
-  return workspace
-}
-
-const getSelectedDemoWorkspace = (projectId: string, nodeId?: number) => {
-  const workspace =
-    fdeDemoProjectWorkspaces.value.find((item) => item.project.id === projectId) ||
-    fdeDemoProjectWorkspaces.value[0]
-  if (!workspace) return null
-  const allNodes = workspace.groups.flatMap((group) => group.nodes)
-  const selectedNode =
-    allNodes.find((node) => Number(node.nodeId) === Number(nodeId || workspace.selectedNodeId)) ||
-    allNodes[0] ||
-    null
-  return {
-    ...workspace,
-    selectedNodeId: selectedNode?.nodeId,
-    selectedNode
-  }
-}
-
-const createDemoOcrRunDetail = (jobId = 'OCR-JOB-DEMO-001'): FdeOcrRunDetailPayload => ({
-  job: {
-    id: jobId,
-    jobId,
-    parseResultId: `parse-${jobId.toLowerCase()}`,
-    resultSummary: { fieldCount: 18, tableCount: 2, sealCount: 1 },
-    engineRuns: [
-      {
-        engine: 'pp_structure_v3',
-        status: 'success',
-        durationMs: 2840,
-        engineCacheHit: false,
-        variantCacheHit: true
-      },
-      {
-        engine: 'paddlex_seal',
-        status: 'success',
-        durationMs: 1980,
-        engineCacheHit: true,
-        variantCacheHit: true
-      }
-    ]
-  },
-  parseResult: {
-    preprocessStatus: {
-      requestedVariants: ['original', 'deskew', 'table_line_enhanced', 'seal_color_crop'],
-      generatedVariants: ['original', 'deskew', 'table_line_enhanced', 'seal_color_crop'],
-      missingVariants: []
-    },
-    engineRuns: [
-      {
-        engine: 'pp_structure_v3',
-        status: 'success',
-        durationMs: 2840,
-        engineCacheHit: false,
-        variantCacheHit: true
-      },
-      {
-        engine: 'paddlex_seal',
-        status: 'success',
-        durationMs: 1980,
-        engineCacheHit: true,
-        variantCacheHit: true
-      }
-    ]
-  },
-  corrections: [
-    {
-      fieldCode: 'material_grade',
-      before: 'GC?',
-      after: 'GC2',
-      rootCause: 'low_contrast_scan'
-    }
-  ]
-})
-
-const applyFdeDemoData = () => {
-  const demoReview = createDemoReviewRunDetail()
-  const demoWorkspace = createDemoProjectAuditWorkspace()
-  const agentWorkspace = createDemoProjectAuditWorkspaceVariant(demoWorkspace, {
-    suffix: 'AGENT',
-    id: 'DEMO-PROJECT-AGENT',
-    code: 'QC-AUDIT-2026-017',
-    name: '佛山压力管道资料复核项目',
-    type: '资料审查 AI 复核',
-    status: 'AI 预审中',
-    region: '广东省佛山市',
-    currentNodeId: 211,
-    blockerCount: 1,
-    blockerTitle: 'Agent 证据 bbox 与表格单元格不一致',
-    reviewRunStatus: 'waiting_human_review',
-    ocrStatus: '已识别'
-  })
-  const readyWorkspace = createDemoProjectAuditWorkspaceVariant(demoWorkspace, {
-    suffix: 'READY',
-    id: 'DEMO-PROJECT-READY',
-    code: 'ARCHIVE-2026-008',
-    name: '惠州装置资料归档验收项目',
-    type: '资料归档验收',
-    status: '报告生成/复核中',
-    region: '广东省惠州市',
-    currentNodeId: 221,
-    blockerCount: 0,
-    reviewRunStatus: 'completed',
-    ocrStatus: '已识别'
-  })
-  fdeDemoProjectWorkspaces.value = [demoWorkspace, agentWorkspace, readyWorkspace]
-  reviewRuns.value = [
-    ...fdeDemoProjectWorkspaces.value.flatMap((workspace) => workspace.reviewRuns),
-    {
-      ...demoReview.run,
-      id: 'RR-DEMO-002',
-      reviewRunId: 'RR-DEMO-002',
-      workflowId: 'wf-review-demo-002',
-      status: 'completed',
-      currentStep: 'draft_persisted',
-      updatedAt: '2026-06-29 10:26:05'
-    }
-  ]
-  selectedReviewRun.value = demoReview
-  projectAuditWorkspace.value = demoWorkspace
-  fdeProjects.value = fdeDemoProjectWorkspaces.value.map((workspace) => ({
-    project: workspace.project,
-    metrics: workspace.metrics,
-    currentNodeId: workspace.selectedNodeId,
-    currentNodeName: workspace.selectedNode?.name,
-    topBlockers: workspace.qualityBlockers.slice(0, 3),
-    updatedAt: workspace.updatedAt
-  }))
-  selectedFdeProjectId.value = demoWorkspace.project.id
-  selectedFdeNodeId.value = demoWorkspace.selectedNodeId
-  ocrQuality.value = createDemoOcrQuality()
-  ocrAnnotation.value = createDemoOcrAnnotationPayload()
-  ocrRuns.value = [
-    {
-      id: 'OCR-JOB-DEMO-001',
-      jobId: 'OCR-JOB-DEMO-001',
-      status: 'success',
-      profileId: 'piping_characteristic_list_v1',
-      parseResultId: 'parse-demo-001',
-      engineRuns: 4
-    },
-    {
-      id: 'OCR-JOB-DEMO-002',
-      jobId: 'OCR-JOB-DEMO-002',
-      status: 'needs_human_review',
-      profileId: 'seal_text_profile_v1',
-      parseResultId: 'parse-demo-002',
-      engineRuns: 3
-    }
-  ]
-  selectedOcrRun.value = createDemoOcrRunDetail()
-}
-
-const ensureFdeDemoData = () => {
-  if (!fdeDemoMode.value || !fdeDemoProjectWorkspaces.value.length) {
-    fdeDemoMode.value = true
-    applyFdeDemoData()
-  }
-}
-
 const fdeTopStats = computed(() => [
   { label: '项目', value: fdeProjects.value.length || 0, tone: 'blue' as const },
   { label: '审查任务', value: reviewRuns.value.length || 0, tone: 'green' as const },
@@ -7500,7 +6264,7 @@ const projectAuditVectorQualityRadarOption = computed<EChartsOption>(() => {
       axisName: {
         color: '#334155',
         fontSize: 12,
-        fontWeight: 800
+        fontWeight: 600
       },
       splitArea: {
         areaStyle: {
@@ -7562,7 +6326,7 @@ const projectAuditVectorQualityBarOption = computed<EChartsOption>(() => {
       axisLabel: {
         color: '#64748b',
         fontSize: 11,
-        fontWeight: 800,
+        fontWeight: 600,
         rotate: rows.length > 5 ? 22 : 0,
         interval: 0
       }
@@ -7574,7 +6338,7 @@ const projectAuditVectorQualityBarOption = computed<EChartsOption>(() => {
       axisLine: { show: false },
       axisTick: { show: false },
       splitLine: { lineStyle: { color: '#e6edf7' } },
-      axisLabel: { color: '#64748b', fontWeight: 800 }
+      axisLabel: { color: '#64748b', fontWeight: 600 }
     },
     series: [
       {
@@ -7595,7 +6359,7 @@ const projectAuditVectorQualityBarOption = computed<EChartsOption>(() => {
           position: 'top',
           color: '#334155',
           fontSize: 11,
-          fontWeight: 900,
+          fontWeight: 700,
           formatter: '{c}'
         }
       }
@@ -7755,7 +6519,7 @@ const projectAuditVectorSankeyOption = computed<EChartsOption>(() => {
         label: {
           color: '#172033',
           fontSize: 12,
-          fontWeight: 800,
+          fontWeight: 600,
           width: 112,
           overflow: 'truncate'
         },
@@ -7966,7 +6730,7 @@ const projectAuditPageIndexTreeOption = computed<EChartsOption>(() => {
           position: 'inside',
           color: '#ffffff',
           fontSize: 11,
-          fontWeight: 800,
+          fontWeight: 600,
           lineHeight: 14,
           width: 108,
           overflow: 'truncate'
@@ -7976,7 +6740,7 @@ const projectAuditPageIndexTreeOption = computed<EChartsOption>(() => {
             position: 'right',
             color: '#26364e',
             fontSize: 11,
-            fontWeight: 800,
+            fontWeight: 600,
             lineHeight: 14,
             width: 150,
             overflow: 'truncate'
@@ -8458,7 +7222,7 @@ const reviewTimelineEchartOption = computed<EChartsOption>(() => {
     xAxis: {
       type: 'value',
       name: '耗时 ms',
-      nameTextStyle: { color: '#64748b', fontWeight: 800 },
+      nameTextStyle: { color: '#64748b', fontWeight: 600 },
       axisLine: { show: false },
       axisTick: { show: false },
       splitLine: { lineStyle: { color: '#e6edf7' } },
@@ -8470,7 +7234,7 @@ const reviewTimelineEchartOption = computed<EChartsOption>(() => {
       inverse: true,
       axisTick: { show: false },
       axisLine: { show: false },
-      axisLabel: { color: '#475569', fontWeight: 800, width: 96, overflow: 'truncate' }
+      axisLabel: { color: '#475569', fontWeight: 600, width: 96, overflow: 'truncate' }
     },
     series: [
       {
@@ -8485,7 +7249,7 @@ const reviewTimelineEchartOption = computed<EChartsOption>(() => {
             position: 'right',
             color: '#334155',
             fontSize: 11,
-            fontWeight: 800,
+            fontWeight: 600,
             formatter: row.durationMs ? `${row.durationMs}ms` : row.statusLabel
           }
         })),
@@ -8540,7 +7304,7 @@ const langGraphEchartOption = computed<EChartsOption>(() => {
         formatter: node.label,
         color: node.id.includes('-empty') ? '#64748b' : '#ffffff',
         fontSize: 11,
-        fontWeight: 800,
+        fontWeight: 600,
         lineHeight: 15,
         width: node.id.includes('-empty') ? 110 : 132,
         overflow: 'truncate' as const
@@ -9366,7 +8130,7 @@ const projectAuditCapabilityOption = computed<EChartsOption>(() => ({
           borderRadius: [0, 7, 7, 0]
         }
       })),
-      label: { show: true, position: 'right', formatter: '{c}', color: '#172033', fontWeight: 900 }
+      label: { show: true, position: 'right', formatter: '{c}', color: '#172033', fontWeight: 700 }
     }
   ]
 }))
@@ -9444,33 +8208,7 @@ const loadProjectAuditWorkspace = async (
     selectedFdeNodeId.value = undefined
     return
   }
-  if (fdeDemoMode.value && fdeDemoProjectWorkspaces.value.length) {
-    const demoWorkspace = getSelectedDemoWorkspace(projectId, nodeId)
-    if (!demoWorkspace) return
-    projectAuditWorkspace.value = demoWorkspace
-    selectedFdeProjectId.value = demoWorkspace.project.id
-    selectedFdeNodeId.value = demoWorkspace.selectedNodeId
-
-    const reviewRun = demoWorkspace.reviewRuns[0]
-    const reviewRunId = String(reviewRun?.reviewRunId || reviewRun?.id || '')
-    if (reviewRunId) {
-      await loadReviewRunDetail(reviewRunId)
-    }
-
-    const ocrJob = demoWorkspace.ocrJobs[0]
-    const ocrJobId = String(ocrJob?.jobId || ocrJob?.id || '')
-    if (ocrJobId) {
-      await loadOcrRunDetail(ocrJobId)
-    }
-    return
-  }
   const res = await getFdeProjectAuditWorkspaceApi(projectId, nodeId ? { nodeId } : undefined)
-  const workspaceIsEmpty =
-    !res.data.documents.length && !res.data.reviewRuns.length && !res.data.ocrJobs.length
-  if (workspaceIsEmpty) {
-    ensureFdeDemoData()
-    return
-  }
   projectAuditWorkspace.value = res.data
   selectedFdeProjectId.value = res.data.project.id
   selectedFdeNodeId.value = res.data.selectedNodeId
@@ -9680,6 +8418,11 @@ const submitVectorCorrection = async () => {
     ElMessage.error('缺少可校对的知识文件或 chunk 编号')
     return
   }
+  const correctionReason = vectorCorrectionForm.value.reason.trim()
+  if (!correctionReason) {
+    ElMessage.warning('请填写校对原因，便于审核和追溯')
+    return
+  }
   let after: Record<string, unknown> = {}
   if (correctionType === 'text') {
     after = { text: vectorCorrectionForm.value.text }
@@ -9704,7 +8447,7 @@ const submitVectorCorrection = async () => {
   } else if (correctionType === 'ignoreChunk') {
     after = {
       ignoredByFde: true,
-      ignoreReason: vectorCorrectionForm.value.reason || 'FDE 标记忽略'
+      ignoreReason: correctionReason
     }
   }
   vectorCorrectionLoading.value = true
@@ -9720,7 +8463,7 @@ const submitVectorCorrection = async () => {
         chunkId,
         correctionType,
         after,
-        reason: vectorCorrectionForm.value.reason || 'FDE 向量资料校对'
+        reason: correctionReason
       },
       { idempotencyKey: `fde-vector-correction-${chunkId}-${Date.now()}` }
     )
@@ -9742,22 +8485,36 @@ const handleVectorCorrectionAction = async (
   const correctionId = String(row.id || '')
   if (!correctionId) return
   const actionLabel = action === 'approve' ? '通过' : action === 'reject' ? '驳回' : '应用'
-  await ElMessageBox.confirm(`确认${actionLabel}该向量资料校对？`, '校对闭环', {
-    confirmButtonText: actionLabel,
-    cancelButtonText: '取消',
-    type: action === 'reject' ? 'warning' : 'info'
-  })
+  let actionReason = ''
+  try {
+    const prompt = await ElMessageBox.prompt(
+      `请填写${actionLabel}该向量资料校对的具体原因。`,
+      '校对闭环',
+      {
+        confirmButtonText: actionLabel,
+        cancelButtonText: '取消',
+        inputType: 'textarea',
+        inputPlaceholder: '说明原文、页码、ROI 或索引处理依据',
+        inputValidator: (value) =>
+          value.trim().length >= 4 ? true : '请至少填写 4 个字符的具体原因',
+        type: action === 'reject' ? 'warning' : 'info'
+      }
+    )
+    actionReason = prompt.value.trim()
+  } catch {
+    return
+  }
   vectorCorrectionLoading.value = true
   try {
     const options = {
       idempotencyKey: `fde-vector-correction-${action}-${correctionId}-${Date.now()}`
     }
     if (action === 'approve') {
-      await approveFdeVectorCorrectionApi(correctionId, { reason: 'FDE 校对通过' }, options)
+      await approveFdeVectorCorrectionApi(correctionId, { reason: actionReason }, options)
     } else if (action === 'reject') {
-      await rejectFdeVectorCorrectionApi(correctionId, { reason: 'FDE 校对驳回' }, options)
+      await rejectFdeVectorCorrectionApi(correctionId, { reason: actionReason }, options)
     } else {
-      await applyFdeVectorCorrectionApi(correctionId, { reason: 'FDE 应用校对并重建向量' }, options)
+      await applyFdeVectorCorrectionApi(correctionId, { reason: actionReason }, options)
     }
     ElMessage.success(`校对已${actionLabel}`)
     await retryVectorFileDetail()
@@ -9834,7 +8591,9 @@ const normalizeFdeBrowserRoute = async () => {
 
 const hydrateProjectAuditRoute = async () => {
   if (!fdeProjects.value.length) {
-    ensureFdeDemoData()
+    projectAuditWorkspace.value = null
+    selectedFdeProjectId.value = ''
+    selectedFdeNodeId.value = undefined
     return
   }
   const routeState = getProjectAuditRouteState()
@@ -9863,111 +8622,14 @@ const hydrateProjectAuditRoute = async () => {
   }
 }
 
-const loadFdeSupportingData = async () => {
-  const [
-    aiRunRes,
-    reviewRunRes,
-    feedbackRes,
-    evaluationRes,
-    bundleRes,
-    releaseRes,
-    ocrRes,
-    ocrRunRes,
-    ocrAnnotationRes,
-    ocrCapabilityTestRes,
-    incidentRes,
-    acceptanceRes,
-    validationRes,
-    accessRes,
-    costRes,
-    auditRes,
-    maskingRes
-  ] = await Promise.allSettled([
-    listFdeAiRunsApi({ pageSize: 20 }),
-    listFdeReviewRunsApi({ pageSize: 20 }),
-    listFdeFeedbackApi(),
-    getFdeEvaluationSetsApi(),
-    getFdeCapabilityBundlesApi(),
-    listFdeReleasesApi(),
-    getFdeOcrQualityApi(),
-    listFdeOcrRunsApi({ pageSize: 20 }),
-    listFdeOcrAnnotationTasksApi({ pageSize: 20 }),
-    listFdeOcrCapabilityTestRunsApi({ pageSize: 20 }),
-    listFdeIncidentsApi(),
-    listFdeAcceptanceReportsApi(),
-    validateFdeBusinessPacksApi(),
-    listFdeAccessGrantsApi(),
-    getFdeCostBudgetsApi(),
-    getFdeAuditEventsApi({ limit: 50 }),
-    getFdeMaskingPoliciesApi()
-  ])
-  if (aiRunRes.status === 'fulfilled') aiRuns.value = aiRunRes.value.data.items
-  if (reviewRunRes.status === 'fulfilled') reviewRuns.value = reviewRunRes.value.data.items
-  if (feedbackRes.status === 'fulfilled') feedback.value = feedbackRes.value.data
-  if (evaluationRes.status === 'fulfilled') evaluation.value = evaluationRes.value.data
-  if (bundleRes.status === 'fulfilled') bundles.value = bundleRes.value.data
-  if (releaseRes.status === 'fulfilled') releases.value = releaseRes.value.data
-  if (ocrRes.status === 'fulfilled') ocrQuality.value = ocrRes.value.data
-  if (ocrRunRes.status === 'fulfilled') ocrRuns.value = ocrRunRes.value.data.items
-  if (ocrAnnotationRes.status === 'fulfilled') ocrAnnotation.value = ocrAnnotationRes.value.data
-  if (ocrCapabilityTestRes.status === 'fulfilled') {
-    ocrCapabilityTestRuns.value = ocrCapabilityTestRes.value.data.items
-  }
-  if (incidentRes.status === 'fulfilled') incidentPayload.value = incidentRes.value.data
-  if (acceptanceRes.status === 'fulfilled') acceptanceReports.value = acceptanceRes.value.data
-  if (validationRes.status === 'fulfilled') packValidation.value = validationRes.value.data
-  if (accessRes.status === 'fulfilled') accessGrants.value = accessRes.value.data
-  if (costRes.status === 'fulfilled') costGovernance.value = costRes.value.data
-  if (auditRes.status === 'fulfilled') auditEvents.value = auditRes.value.data.events
-  if (maskingRes.status === 'fulfilled') maskingPolicies.value = maskingRes.value.data
-
-  selectedFeedback.value = selectedFeedback.value || feedback.value[0] || null
-  selectedBundleId.value = selectedBundleId.value || firstBundleId.value
-  selectedReleaseId.value = selectedReleaseId.value || firstReleaseId.value
-  selectedBusinessPackId.value = selectedBusinessPackId.value || firstPackId.value
-  selectedIncidentId.value = selectedIncidentId.value || String(incidents.value[0]?.id || '')
-
-  await Promise.allSettled([
-    aiRuns.value[0]?.id ? loadRunDetail(aiRuns.value[0].id) : Promise.resolve(),
-    firstReviewRunId.value ? loadReviewRunDetail(firstReviewRunId.value) : Promise.resolve(),
-    firstEvaluationRunId.value
-      ? loadEvaluationReportDetail(firstEvaluationRunId.value)
-      : Promise.resolve((selectedEvaluationReport.value = null)),
-    firstOcrJobId.value ? loadOcrRunDetail(firstOcrJobId.value) : Promise.resolve(),
-    !selectedOcrCapabilityTestRunId.value && preferredOcrCapabilityTestRun()?.runId
-      ? loadOcrCapabilityTestDetail(String(preferredOcrCapabilityTestRun()?.runId))
-      : Promise.resolve(),
-    activeBundleId.value ? loadCapabilityBundleDiff(activeBundleId.value) : Promise.resolve(),
-    activeReleaseId.value ? loadReleaseImpact(activeReleaseId.value) : Promise.resolve(),
-    activeBusinessPackId.value
-      ? loadBusinessPackDiff(activeBusinessPackId.value)
-      : Promise.resolve()
-  ])
-  await restoreAuditDetailFromRoute()
-}
-
-const loadOcrQualitySnapshot = async () => {
-  const res = await getFdeOcrQualityApi()
-  ocrQuality.value = res.data
-}
-
 const loadOcrWorkbenchPageData = async () => {
   ocrCapabilityRecordsLoading.value = true
   try {
-    const [
-      dashboardRes,
-      projectRes,
-      reviewRunRes,
-      ocrRunRes,
-      ocrAnnotationRes,
-      ocrCapabilityTestRes
-    ] = await Promise.allSettled([
+    const [dashboardRes, projectRes, ocrQualityRes, ocrRunRes] = await Promise.allSettled([
       getFdeDashboardApi(),
       listFdeProjectsApi(),
-      listFdeReviewRunsApi({ pageSize: 20 }),
-      listFdeOcrRunsApi({ pageSize: 20 }),
-      listFdeOcrAnnotationTasksApi({ pageSize: 20 }),
-      listFdeOcrCapabilityTestRunsApi({ pageSize: 20 })
+      getFdeOcrQualityApi(),
+      listFdeOcrRunsApi({ pageSize: 20 })
     ])
 
     if (dashboardRes.status === 'fulfilled') {
@@ -9977,23 +8639,11 @@ const loadOcrWorkbenchPageData = async () => {
       throw projectRes.reason
     }
     fdeProjects.value = projectRes.value.data
-    if (reviewRunRes.status === 'fulfilled') reviewRuns.value = reviewRunRes.value.data.items
+    if (ocrQualityRes.status === 'fulfilled') ocrQuality.value = ocrQualityRes.value.data
     if (ocrRunRes.status === 'fulfilled') ocrRuns.value = ocrRunRes.value.data.items
-    if (ocrAnnotationRes.status === 'fulfilled') ocrAnnotation.value = ocrAnnotationRes.value.data
-    if (ocrCapabilityTestRes.status === 'fulfilled') {
-      ocrCapabilityTestRuns.value = ocrCapabilityTestRes.value.data.items
-    }
   } finally {
     ocrCapabilityRecordsLoading.value = false
   }
-
-  const preferredRun = preferredOcrCapabilityTestRun()
-  if (!selectedOcrCapabilityTestRunId.value && preferredRun?.runId) {
-    void loadOcrCapabilityTestDetail(preferredRun.runId, false).catch(() => undefined)
-  }
-
-  void loadOcrQualitySnapshot().catch(() => undefined)
-  void hydrateProjectAuditRoute().catch(() => undefined)
 }
 
 const loadProjectAuditPageData = async () => {
@@ -10009,15 +8659,137 @@ const loadProjectAuditPageData = async () => {
   }
   fdeProjects.value = projectRes.value.data
   await hydrateProjectAuditRoute()
-  void loadFdeSupportingData()
 }
 
-const loadFullFdeData = async () => {
+const loadFdeRoutePageData = async () => {
+  const routeKey = currentFdeRouteKey.value
+  if (routeKey === 'dashboard') {
+    const [dashboardRes, projectRes] = await Promise.all([
+      getFdeDashboardApi(),
+      listFdeProjectsApi()
+    ])
+    dashboard.value = dashboardRes.data
+    fdeProjects.value = projectRes.data
+    return
+  }
+  if (routeKey === 'ai-runs') {
+    const [dashboardRes, runRes] = await Promise.all([
+      getFdeDashboardApi(),
+      listFdeAiRunsApi({ pageSize: 20 })
+    ])
+    dashboard.value = dashboardRes.data
+    aiRuns.value = runRes.data.items
+    if (aiRuns.value[0]?.id) await loadRunDetail(aiRuns.value[0].id)
+    return
+  }
+  if (routeKey === 'review-runs') {
+    const [dashboardRes, runRes] = await Promise.all([
+      getFdeDashboardApi(),
+      listFdeReviewRunsApi({ pageSize: 20 })
+    ])
+    dashboard.value = dashboardRes.data
+    reviewRuns.value = runRes.data.items
+    if (firstReviewRunId.value) await loadReviewRunDetail(firstReviewRunId.value)
+    return
+  }
+  if (routeKey === 'feedback') {
+    const [dashboardRes, feedbackRes] = await Promise.all([
+      getFdeDashboardApi(),
+      listFdeFeedbackApi()
+    ])
+    dashboard.value = dashboardRes.data
+    feedback.value = feedbackRes.data
+    selectedFeedback.value = feedback.value[0] || null
+    return
+  }
+  if (routeKey === 'evaluation') {
+    const [dashboardRes, evaluationRes] = await Promise.all([
+      getFdeDashboardApi(),
+      getFdeEvaluationSetsApi()
+    ])
+    dashboard.value = dashboardRes.data
+    evaluation.value = evaluationRes.data
+    if (firstEvaluationRunId.value) await loadEvaluationReportDetail(firstEvaluationRunId.value)
+    else selectedEvaluationReport.value = null
+    return
+  }
+  if (routeKey === 'capability-bundles') {
+    const [dashboardRes, bundleRes] = await Promise.all([
+      getFdeDashboardApi(),
+      getFdeCapabilityBundlesApi()
+    ])
+    dashboard.value = dashboardRes.data
+    bundles.value = bundleRes.data
+    selectedBundleId.value = firstBundleId.value
+    if (activeBundleId.value) await loadCapabilityBundleDiff(activeBundleId.value)
+    return
+  }
+  if (routeKey === 'releases') {
+    const [dashboardRes, releaseRes] = await Promise.all([
+      getFdeDashboardApi(),
+      listFdeReleasesApi()
+    ])
+    dashboard.value = dashboardRes.data
+    releases.value = releaseRes.data
+    selectedReleaseId.value = firstReleaseId.value
+    if (activeReleaseId.value) await loadReleaseImpact(activeReleaseId.value)
+    return
+  }
+  if (routeKey === 'business-packs') {
+    const [dashboardRes, validationRes] = await Promise.all([
+      getFdeDashboardApi(),
+      validateFdeBusinessPacksApi()
+    ])
+    dashboard.value = dashboardRes.data
+    packValidation.value = validationRes.data
+    selectedBusinessPackId.value = firstPackId.value
+    if (activeBusinessPackId.value) await loadBusinessPackDiff(activeBusinessPackId.value)
+    return
+  }
+  if (routeKey === 'security') {
+    const [dashboardRes, accessRes, auditRes, maskingRes] = await Promise.all([
+      getFdeDashboardApi(),
+      listFdeAccessGrantsApi(),
+      getFdeAuditEventsApi({ limit: 50 }),
+      getFdeMaskingPoliciesApi()
+    ])
+    dashboard.value = dashboardRes.data
+    accessGrants.value = accessRes.data
+    auditEvents.value = auditRes.data.events
+    maskingPolicies.value = maskingRes.data
+    return
+  }
+  if (routeKey === 'incidents') {
+    const [dashboardRes, incidentRes] = await Promise.all([
+      getFdeDashboardApi(),
+      listFdeIncidentsApi()
+    ])
+    dashboard.value = dashboardRes.data
+    incidentPayload.value = incidentRes.data
+    selectedIncidentId.value = String(incidents.value[0]?.id || '')
+    return
+  }
+  if (routeKey === 'costs') {
+    const [dashboardRes, costRes] = await Promise.all([
+      getFdeDashboardApi(),
+      getFdeCostBudgetsApi()
+    ])
+    dashboard.value = dashboardRes.data
+    costGovernance.value = costRes.data
+    return
+  }
+  if (routeKey === 'acceptance') {
+    const [dashboardRes, acceptanceRes] = await Promise.all([
+      getFdeDashboardApi(),
+      listFdeAcceptanceReportsApi()
+    ])
+    dashboard.value = dashboardRes.data
+    acceptanceReports.value = acceptanceRes.data
+    return
+  }
   const [dashboardRes, projectRes] = await Promise.all([getFdeDashboardApi(), listFdeProjectsApi()])
   dashboard.value = dashboardRes.data
   fdeProjects.value = projectRes.data
-  await loadFdeSupportingData()
-  await hydrateProjectAuditRoute()
 }
 
 const loadData = async () => {
@@ -10037,10 +8809,7 @@ const loadData = async () => {
       if (projectRes.status === 'fulfilled') fdeProjects.value = projectRes.value.data
       await loadStandardsVectorization()
     } else {
-      await loadFullFdeData()
-    }
-    if (fdeDemoMode.value) {
-      applyFdeDemoData()
+      await loadFdeRoutePageData()
     }
   } catch {
     error.value = 'FDE 后台数据加载失败。'
@@ -10056,21 +8825,11 @@ const loadRunDetail = async (runId: string) => {
 
 const loadReviewRunDetail = async (reviewRunId: string) => {
   selectedReviewAuditPackage.value = null
-  if (fdeDemoMode.value && reviewRunId.startsWith('RR-DEMO')) {
-    selectedReviewRun.value = createDemoReviewRunDetail()
-    selectedReviewRun.value.run.reviewRunId = reviewRunId
-    selectedReviewRun.value.run.id = reviewRunId
-    return
-  }
   const res = await getFdeReviewRunApi(reviewRunId)
   selectedReviewRun.value = res.data
 }
 
 const loadOcrRunDetail = async (jobId: string) => {
-  if (fdeDemoMode.value && jobId.startsWith('OCR-JOB-DEMO')) {
-    selectedOcrRun.value = createDemoOcrRunDetail(jobId)
-    return
-  }
   const res = await getFdeOcrRunApi(jobId)
   selectedOcrRun.value = res.data
 }
@@ -10660,7 +9419,7 @@ const loadReleaseImpact = async (releaseId: string) => {
 }
 
 const loadBusinessPackDiff = async (packId: string) => {
-  const res = await getFdeBusinessPackDiffApi(packId, { tenantId: 'demo' })
+  const res = await getFdeBusinessPackDiffApi(packId)
   businessPackDiff.value = res.data
 }
 
@@ -10786,83 +9545,163 @@ const requestRawAccess = async () => {
   }
 }
 
-const submitReleaseGate = async () => {
-  if (!activeReleaseId.value) return
+const openReleaseAction = async (mode: 'submit' | 'shadow' | 'shadow-pass') => {
+  if (!activeReleaseId.value) {
+    ElMessage.warning('请先选择发布计划')
+    return
+  }
+  releaseActionMode.value = mode
+  releaseActionForm.value = {
+    evaluationReportId: String(activeReleasePlan.value.evaluationReportId || firstReportId.value),
+    rollbackPlanId: String(activeReleasePlan.value.rollbackPlanId || ''),
+    sampleRatePercent: Math.max(1, Number(activeReleasePlan.value.shadowSampleRate || 0.1) * 100),
+    sampleCount: Number(toRecord(activeReleasePlan.value.shadowMetrics).sampleCount || 0),
+    failedRuns: Number(toRecord(activeReleasePlan.value.shadowMetrics).failedRuns || 0),
+    evidenceHitRatePercent:
+      Number(toRecord(activeReleasePlan.value.shadowMetrics).evidenceHitRate || 0.95) * 100,
+    reason: ''
+  }
+  await loadReleaseImpact(activeReleaseId.value)
+  releaseActionDialogVisible.value = true
+}
+
+const releaseActionTitle = computed(() => {
+  if (releaseActionMode.value === 'submit') return '提交发布门禁'
+  if (releaseActionMode.value === 'shadow') return '启动 Shadow 验证'
+  return '确认 Shadow 通过'
+})
+
+const executeReleaseAction = async () => {
+  const form = releaseActionForm.value
+  if (!form.reason.trim()) {
+    ElMessage.warning('请填写本次操作原因')
+    return
+  }
+  if (releaseActionMode.value === 'submit' && (!form.evaluationReportId || !form.rollbackPlanId)) {
+    ElMessage.warning('请选择评估报告并填写回滚方案编号')
+    return
+  }
+  if (
+    releaseActionMode.value === 'shadow' &&
+    (form.sampleRatePercent <= 0 || form.sampleRatePercent > 100)
+  ) {
+    ElMessage.warning('Shadow 样本比例必须大于 0% 且不超过 100%')
+    return
+  }
+  if (
+    releaseActionMode.value === 'shadow-pass' &&
+    (form.sampleCount <= 0 ||
+      form.failedRuns < 0 ||
+      form.evidenceHitRatePercent < 0 ||
+      form.evidenceHitRatePercent > 100)
+  ) {
+    ElMessage.warning('请填写有效的 Shadow 样本数、失败数和证据命中率')
+    return
+  }
   actionLoading.value = true
   try {
-    await submitFdeReleaseApi(activeReleaseId.value, {
-      evaluationReportId: firstReportId.value || undefined,
-      rollbackPlanId: 'ROLLBACK-BUNDLE-202606'
-    })
+    if (releaseActionMode.value === 'submit') {
+      await submitFdeReleaseApi(activeReleaseId.value, {
+        evaluationReportId: form.evaluationReportId,
+        rollbackPlanId: form.rollbackPlanId.trim(),
+        reason: form.reason.trim()
+      })
+    } else if (releaseActionMode.value === 'shadow') {
+      await startFdeShadowApi(activeReleaseId.value, {
+        sampleRate: form.sampleRatePercent / 100,
+        reason: form.reason.trim()
+      })
+    } else {
+      await markFdeShadowPassedApi(activeReleaseId.value, {
+        metrics: {
+          sampleCount: form.sampleCount,
+          failedRuns: form.failedRuns,
+          evidenceHitRate: form.evidenceHitRatePercent / 100
+        },
+        reason: form.reason.trim()
+      })
+    }
+    releaseActionDialogVisible.value = false
+    ElMessage.success(`${releaseActionTitle.value}已提交`)
     await loadData()
   } finally {
     actionLoading.value = false
   }
 }
 
-const startShadowRun = async () => {
-  if (!activeReleaseId.value) return
-  actionLoading.value = true
-  try {
-    await startFdeShadowApi(activeReleaseId.value, { sampleRate: 0 })
-    await loadData()
-  } finally {
-    actionLoading.value = false
-  }
-}
-
-const markShadowPassed = async () => {
-  if (!activeReleaseId.value) return
-  actionLoading.value = true
-  try {
-    await markFdeShadowPassedApi(activeReleaseId.value, {
-      metrics: {
-        failedRuns: 0,
-        evidenceHitRate:
-          dashboard.value?.metrics?.find((item) => item.label === '证据命中率')?.value || 0
-      }
-    })
-    await loadData()
-  } finally {
-    actionLoading.value = false
-  }
-}
+const submitReleaseGate = () => openReleaseAction('submit')
 
 const installBusinessPack = async () => {
   if (!activeBusinessPackId.value) return
   actionLoading.value = true
   try {
-    await installFdeBusinessPackApi(activeBusinessPackId.value, { tenantId: 'demo', dryRun: true })
+    await installFdeBusinessPackApi(activeBusinessPackId.value, { dryRun: true })
     await loadData()
   } finally {
     actionLoading.value = false
   }
 }
 
-const updateFirstRca = async () => {
+const updateFirstRca = () => {
   const incidentId = activeIncidentId.value
-  if (!incidentId) return
-  actionLoading.value = true
-  try {
-    await updateFdeIncidentRcaApi(incidentId, {
-      status: 'open',
-      rootCause: 'low_quality_scan',
-      temporaryAction: '已要求低置信度字段人工复核。',
-      longTermAction: '优化 OCR Profile 预处理参数。'
-    })
-    await loadData()
-  } finally {
-    actionLoading.value = false
+  if (!incidentId) {
+    ElMessage.warning('请先选择事故记录')
+    return
   }
+  incidentActionMode.value = 'rca'
+  incidentActionForm.value = {
+    rootCause: String(activeIncidentRca.value.rootCause || ''),
+    temporaryAction: String(activeIncidentRca.value.temporaryAction || ''),
+    longTermAction: String(activeIncidentRca.value.longTermAction || ''),
+    owner: String(activeIncidentRca.value.owner || ''),
+    resolution: ''
+  }
+  incidentActionDialogVisible.value = true
 }
 
-const closeSelectedIncident = async () => {
-  if (!activeIncidentId.value) return
+const closeSelectedIncident = () => {
+  if (!activeIncidentId.value) {
+    ElMessage.warning('请先选择事故记录')
+    return
+  }
+  incidentActionMode.value = 'close'
+  incidentActionForm.value.resolution = ''
+  incidentActionDialogVisible.value = true
+}
+
+const executeIncidentAction = async () => {
+  const form = incidentActionForm.value
+  if (incidentActionMode.value === 'rca') {
+    if (
+      !form.rootCause.trim() ||
+      !form.temporaryAction.trim() ||
+      !form.longTermAction.trim() ||
+      !form.owner.trim()
+    ) {
+      ElMessage.warning('请完整填写根因、临时措施、长期措施和责任人')
+      return
+    }
+  } else if (!form.resolution.trim()) {
+    ElMessage.warning('请填写可验证的事故处理结论')
+    return
+  }
   actionLoading.value = true
   try {
-    await closeFdeIncidentApi(activeIncidentId.value, {
-      resolution: 'FDE 已完成 RCA、影响范围确认和整改追踪。'
-    })
+    if (incidentActionMode.value === 'rca') {
+      await updateFdeIncidentRcaApi(activeIncidentId.value, {
+        status: 'open',
+        rootCause: form.rootCause.trim(),
+        temporaryAction: form.temporaryAction.trim(),
+        longTermAction: form.longTermAction.trim(),
+        owner: form.owner.trim()
+      })
+    } else {
+      await closeFdeIncidentApi(activeIncidentId.value, {
+        resolution: form.resolution.trim()
+      })
+    }
+    incidentActionDialogVisible.value = false
+    ElMessage.success(incidentActionMode.value === 'rca' ? 'RCA 已保存' : '事故已关闭')
     await loadData()
   } finally {
     actionLoading.value = false
@@ -11838,45 +10677,6 @@ const verifyAnnotationFromEditor = async () => {
   }
 }
 
-const importDemoOcrAnnotationPack = async () => {
-  actionLoading.value = true
-  try {
-    const res = await importFdeOcrAnnotationPackApi(
-      {
-        tasks: [
-          {
-            taskId: `ANNO-FDE-DEMO-${Date.now()}`,
-            caseId: 'real-seal_text_profile-fde-demo',
-            scenario: 'seal_text_profile',
-            profileId: 'seal_text_profile_v1',
-            documentType: 'seal_photo',
-            collectionStatus: 'needs_labeling',
-            suggestedExpected: {
-              qualityStatus: 'needs_human_review',
-              seals: [
-                {
-                  sealType: 'company_official_seal',
-                  nameContains: '待校对印章',
-                  bbox: [100, 100, 240, 220],
-                  pageNo: 1
-                }
-              ]
-            }
-          }
-        ]
-      },
-      { idempotencyKey: `fde-annotation-import-pack-${Date.now()}` }
-    )
-    ocrAnnotation.value = {
-      summary: res.data.readiness.summary,
-      nextActions: res.data.readiness.nextActions,
-      page: res.data.page
-    }
-  } finally {
-    actionLoading.value = false
-  }
-}
-
 const exportOcrAnnotationToLabelStudio = async () => {
   actionLoading.value = true
   try {
@@ -11929,7 +10729,7 @@ const openFirstOcrAnnotationTask = async () => {
     await openAnnotationEditor(task)
     return
   }
-  await importDemoOcrAnnotationPack()
+  ElMessage.info('当前没有可标注样本，请先完成 OCR 测试并生成标注任务。')
 }
 
 const openOcrCapabilityTestPanel = async () => {
@@ -12096,6 +10896,10 @@ watch(activeFdeTab, (tab) => {
   }
 })
 
+watch(currentFdeRouteKey, (nextRoute, previousRoute) => {
+  if (previousRoute && nextRoute !== previousRoute) void loadData()
+})
+
 onMounted(async () => {
   await normalizeFdeBrowserRoute()
   await loadData()
@@ -12119,8 +10923,10 @@ onBeforeUnmount(() => {
   <StaticPageShell
     brand-mark="F"
     title="FDE 后台"
-    search-placeholder="⌕ 搜索审查任务 / OCR / 样本"
-    user-label="FDE 工程师"
+    search-placeholder="搜索审查任务 / OCR / 样本"
+    search-scope="fde"
+    task-area="fde"
+    :user-label="fdeUserLabel"
     :top-stats="fdeTopStats"
     menu-title="FDE 菜单"
     menu-root="AI 交付与治理"
@@ -12170,7 +10976,6 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <ElSpace wrap>
-          <ElTag v-if="fdeDemoMode" type="warning" effect="plain">前端演示数据</ElTag>
           <ElButton
             v-for="action in currentFdePageActions"
             :key="action.key"
@@ -17826,32 +16631,26 @@ onBeforeUnmount(() => {
                     <span>发布计划</span>
                     <ElSpace>
                       <ElButton
+                        type="primary"
                         size="small"
-                        plain
-                        :loading="actionLoading"
-                        @click="importDemoOcrAnnotationPack"
-                      >
-                        导入示例
-                      </ElButton>
-                      <ElButton
-                        size="small"
-                        plain
                         :loading="actionLoading"
                         @click="submitReleaseGate"
                       >
                         提交门禁
                       </ElButton>
-                      <ElButton size="small" plain :loading="actionLoading" @click="startShadowRun">
-                        Shadow
-                      </ElButton>
-                      <ElButton
-                        size="small"
-                        plain
-                        :loading="actionLoading"
-                        @click="markShadowPassed"
+                      <ElDropdown
+                        trigger="click"
+                        :disabled="actionLoading"
+                        @command="(command) => openReleaseAction(command)"
                       >
-                        Shadow 通过
-                      </ElButton>
+                        <ElButton size="small" plain>更多操作</ElButton>
+                        <template #dropdown>
+                          <ElDropdownMenu>
+                            <ElDropdownItem command="shadow">启动 Shadow</ElDropdownItem>
+                            <ElDropdownItem command="shadow-pass">确认 Shadow 通过</ElDropdownItem>
+                          </ElDropdownMenu>
+                        </template>
+                      </ElDropdown>
                     </ElSpace>
                   </div>
                 </template>
@@ -19354,7 +18153,7 @@ onBeforeUnmount(() => {
                       <ElButton
                         v-if="isFdeRoute('incidents')"
                         size="small"
-                        plain
+                        type="primary"
                         :loading="actionLoading"
                         @click="updateFirstRca"
                       >
@@ -19363,6 +18162,7 @@ onBeforeUnmount(() => {
                       <ElButton
                         v-if="isFdeRoute('incidents')"
                         size="small"
+                        type="danger"
                         plain
                         :loading="actionLoading"
                         @click="closeSelectedIncident"
@@ -21890,6 +20690,165 @@ onBeforeUnmount(() => {
             </aside>
           </div>
         </div>
+      </ElDialog>
+
+      <ElDialog
+        v-model="releaseActionDialogVisible"
+        :title="releaseActionTitle"
+        width="min(620px, 92vw)"
+        append-to-body
+        destroy-on-close
+      >
+        <ElAlert
+          type="warning"
+          show-icon
+          :closable="false"
+          :title="`影响 ${Number(releaseImpactSummary.affectedProjectCount || 0)} 个项目、${Number(releaseImpactSummary.affectedReviewRunCount || 0)} 个审查任务。`"
+          class="mb-12px"
+        />
+        <ElAlert
+          v-if="releaseGateBlockers.length"
+          type="error"
+          show-icon
+          :closable="false"
+          :title="releaseGateBlockers.join('；')"
+          class="mb-12px"
+        />
+        <ElForm label-position="top">
+          <template v-if="releaseActionMode === 'submit'">
+            <ElFormItem label="评估报告">
+              <ElSelect
+                v-model="releaseActionForm.evaluationReportId"
+                filterable
+                placeholder="请选择已生成的评估报告"
+              >
+                <ElOption
+                  v-for="report in evaluation?.reports || []"
+                  :key="String(report.id)"
+                  :label="`${String(report.id)} / ${friendlyStatus(report.status)}`"
+                  :value="String(report.id)"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="回滚方案编号">
+              <ElInput
+                v-model="releaseActionForm.rollbackPlanId"
+                maxlength="120"
+                placeholder="填写已审核的回滚方案编号"
+              />
+            </ElFormItem>
+          </template>
+          <ElFormItem v-else-if="releaseActionMode === 'shadow'" label="Shadow 样本比例（%）">
+            <ElInputNumber
+              v-model="releaseActionForm.sampleRatePercent"
+              :min="1"
+              :max="100"
+              :precision="1"
+            />
+          </ElFormItem>
+          <template v-else>
+            <ElRow :gutter="12">
+              <ElCol :span="8">
+                <ElFormItem label="实际样本数">
+                  <ElInputNumber v-model="releaseActionForm.sampleCount" :min="1" />
+                </ElFormItem>
+              </ElCol>
+              <ElCol :span="8">
+                <ElFormItem label="失败任务数">
+                  <ElInputNumber v-model="releaseActionForm.failedRuns" :min="0" />
+                </ElFormItem>
+              </ElCol>
+              <ElCol :span="8">
+                <ElFormItem label="证据命中率（%）">
+                  <ElInputNumber
+                    v-model="releaseActionForm.evidenceHitRatePercent"
+                    :min="0"
+                    :max="100"
+                    :precision="1"
+                  />
+                </ElFormItem>
+              </ElCol>
+            </ElRow>
+          </template>
+          <ElFormItem label="操作原因">
+            <ElInput
+              v-model="releaseActionForm.reason"
+              type="textarea"
+              :rows="3"
+              maxlength="500"
+              show-word-limit
+              placeholder="说明变更目标、验证范围或通过依据"
+            />
+          </ElFormItem>
+        </ElForm>
+        <template #footer>
+          <ElButton @click="releaseActionDialogVisible = false">取消</ElButton>
+          <ElButton type="primary" :loading="actionLoading" @click="executeReleaseAction">
+            确认提交
+          </ElButton>
+        </template>
+      </ElDialog>
+
+      <ElDialog
+        v-model="incidentActionDialogVisible"
+        :title="incidentActionMode === 'rca' ? '更新事故 RCA' : '关闭事故'"
+        width="min(620px, 92vw)"
+        append-to-body
+        destroy-on-close
+      >
+        <ElAlert
+          type="info"
+          show-icon
+          :closable="false"
+          :title="`当前事故：${activeIncidentId || '--'}。关闭前必须先形成完整 RCA。`"
+          class="mb-12px"
+        />
+        <ElForm label-position="top">
+          <template v-if="incidentActionMode === 'rca'">
+            <ElFormItem label="根因">
+              <ElInput v-model="incidentActionForm.rootCause" maxlength="500" />
+            </ElFormItem>
+            <ElFormItem label="临时措施">
+              <ElInput
+                v-model="incidentActionForm.temporaryAction"
+                type="textarea"
+                :rows="2"
+                maxlength="1000"
+              />
+            </ElFormItem>
+            <ElFormItem label="长期措施">
+              <ElInput
+                v-model="incidentActionForm.longTermAction"
+                type="textarea"
+                :rows="2"
+                maxlength="1000"
+              />
+            </ElFormItem>
+            <ElFormItem label="责任人">
+              <ElInput v-model="incidentActionForm.owner" maxlength="120" />
+            </ElFormItem>
+          </template>
+          <ElFormItem v-else label="处理结论">
+            <ElInput
+              v-model="incidentActionForm.resolution"
+              type="textarea"
+              :rows="4"
+              maxlength="1000"
+              show-word-limit
+              placeholder="说明验证结果、影响消除情况和可追溯依据"
+            />
+          </ElFormItem>
+        </ElForm>
+        <template #footer>
+          <ElButton @click="incidentActionDialogVisible = false">取消</ElButton>
+          <ElButton
+            :type="incidentActionMode === 'close' ? 'danger' : 'primary'"
+            :loading="actionLoading"
+            @click="executeIncidentAction"
+          >
+            {{ incidentActionMode === 'rca' ? '保存 RCA' : '确认关闭' }}
+          </ElButton>
+        </template>
       </ElDialog>
     </div>
   </StaticPageShell>

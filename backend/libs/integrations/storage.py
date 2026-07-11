@@ -10,7 +10,14 @@ from urllib.parse import unquote, urlparse
 from libs.contracts.responses import SERVER_TZ
 
 
-DEFAULT_BUCKETS = ("documents", "previews", "exports", "ocr-artifacts")
+LOGICAL_BUCKETS = ("documents", "previews", "exports", "ocr-artifacts")
+DEFAULT_BUCKETS = LOGICAL_BUCKETS
+BUCKET_ENV_KEYS = {
+    "documents": "AICHECK_MINIO_DOCUMENTS_BUCKET",
+    "previews": "AICHECK_MINIO_PREVIEWS_BUCKET",
+    "exports": "AICHECK_MINIO_EXPORTS_BUCKET",
+    "ocr-artifacts": "AICHECK_MINIO_OCR_ARTIFACTS_BUCKET",
+}
 
 
 class ObjectStorageUnavailable(RuntimeError):
@@ -25,6 +32,13 @@ class ObjectStorage:
         self.secure = os.getenv("AICHECK_MINIO_SECURE", "false").lower() == "true"
         self.region = os.getenv("AICHECK_MINIO_REGION", "us-east-1").strip() or "us-east-1"
         self.public_endpoint = os.getenv("AICHECK_MINIO_PUBLIC_ENDPOINT", self.endpoint).strip()
+        self.bucket_prefix = os.getenv("AICHECK_MINIO_BUCKET_PREFIX", "").strip().strip("-")
+        self.object_namespace = os.getenv("AICHECK_MINIO_OBJECT_NAMESPACE", "").strip().strip("/")
+        self.bucket_names = {
+            logical: os.getenv(env_key, "").strip()
+            or (f"{self.bucket_prefix}-{logical}" if self.bucket_prefix else logical)
+            for logical, env_key in BUCKET_ENV_KEYS.items()
+        }
         self._client: Any | None = None
         self._buckets_ensured = False
 
@@ -89,17 +103,37 @@ class ObjectStorage:
         client = self.client()
         if client is None:
             return
-        for bucket in DEFAULT_BUCKETS:
+        for bucket in self.bucket_names.values():
             if not client.bucket_exists(bucket):
                 client.make_bucket(bucket)
         self._buckets_ensured = True
+
+    def bucket_name(self, bucket: str) -> str:
+        return self.bucket_names.get(bucket, bucket)
+
+    def object_name(self, object_name: str) -> str:
+        normalized = str(object_name or "").lstrip("/")
+        if not self.object_namespace or normalized == self.object_namespace or normalized.startswith(f"{self.object_namespace}/"):
+            return normalized
+        return f"{self.object_namespace}/{normalized}"
+
+    def namespace_status(self) -> dict[str, Any]:
+        return {
+            "bucketNames": dict(self.bucket_names),
+            "objectNamespace": self.object_namespace or None,
+            "physicallyIsolated": bool(self.bucket_prefix or any(os.getenv(key) for key in BUCKET_ENV_KEYS.values())),
+        }
 
     def presigned_put_url(self, bucket: str, object_name: str, *, content_type: str | None = None) -> str | None:
         client = self.presign_client()
         if client is None:
             return None
         self.ensure_buckets()
-        return client.presigned_put_object(bucket, object_name, expires=timedelta(minutes=30))
+        return client.presigned_put_object(
+            self.bucket_name(bucket),
+            self.object_name(object_name),
+            expires=timedelta(minutes=30),
+        )
 
     def presigned_get_url(self, url: str, *, file_name: str | None = None) -> str | None:
         parsed = parse_storage_url(url)
@@ -111,8 +145,8 @@ class ObjectStorage:
         self.ensure_buckets()
         bucket, object_name = parsed
         return client.presigned_get_object(
-            bucket,
-            object_name,
+            self.bucket_name(bucket),
+            self.object_name(object_name),
             expires=timedelta(minutes=30),
             response_headers={"response-content-disposition": f'attachment; filename="{file_name}"'} if file_name else None,
         )
@@ -124,8 +158,10 @@ class ObjectStorage:
         self.ensure_buckets()
         import io
 
-        client.put_object(bucket, object_name, io.BytesIO(data), length=len(data), content_type=content_type)
-        return f"minio://{bucket}/{object_name}"
+        physical_bucket = self.bucket_name(bucket)
+        physical_object_name = self.object_name(object_name)
+        client.put_object(physical_bucket, physical_object_name, io.BytesIO(data), length=len(data), content_type=content_type)
+        return f"minio://{physical_bucket}/{physical_object_name}"
 
     def remove_object(self, bucket: str, object_name: str) -> bool:
         client = self.client()
@@ -139,14 +175,14 @@ class ObjectStorage:
             S3Error = None  # type: ignore[assignment]
         existed = True
         try:
-            client.stat_object(bucket, object_name)
+            client.stat_object(self.bucket_name(bucket), self.object_name(object_name))
         except Exception as exc:
             if S3Error is not None and isinstance(exc, S3Error) and exc.code == "NoSuchKey":
                 existed = False
             elif self.required:
                 raise ObjectStorageUnavailable(f"对象存储对象检查失败：{exc}")
         try:
-            client.remove_object(bucket, object_name)
+            client.remove_object(self.bucket_name(bucket), self.object_name(object_name))
             return existed
         except Exception as exc:
             if S3Error is not None and isinstance(exc, S3Error) and exc.code == "NoSuchKey":
@@ -160,7 +196,7 @@ class ObjectStorage:
         if client is None:
             return None
         target = Path(tempfile.mkdtemp(prefix="aicheck-ocr-")) / f"source{suffix}"
-        client.fget_object(bucket, object_name, str(target))
+        client.fget_object(self.bucket_name(bucket), self.object_name(object_name), str(target))
         return target
 
 

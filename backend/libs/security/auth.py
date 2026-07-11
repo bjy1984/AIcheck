@@ -68,7 +68,7 @@ def dev_tokens_allowed() -> bool:
 def compatibility_mocks_enabled() -> bool:
     if strict_production():
         return False
-    return os.getenv("AICHECK_ENABLE_COMPATIBILITY_MOCKS", "true").lower() == "true"
+    return os.getenv("AICHECK_ENABLE_COMPATIBILITY_MOCKS", "false").lower() == "true"
 
 
 def user_record(

@@ -427,6 +427,7 @@ class DeploymentConfigValidator:
                 "AICHECK_ALLOWED_HOSTS",
                 "AICHECK_REQUIRE_AUTH",
                 "AICHECK_ENABLE_DEMO_USERS",
+                "AICHECK_ENABLE_DEMO_DATA",
                 "LITELLM_BASE_URL",
                 "LITELLM_API_KEY",
                 "AICHECK_QWEN_CALL_MODE",
@@ -439,6 +440,7 @@ class DeploymentConfigValidator:
             },
             "worker-service": {
                 "AICHECK_STRICT_PRODUCTION",
+                "AICHECK_ENABLE_DEMO_DATA",
                 "AICHECK_DATABASE_URL",
                 "AICHECK_REDIS_URL",
                 "AICHECK_TASK_DISPATCH",
@@ -538,6 +540,8 @@ class DeploymentConfigValidator:
             failures.append("api-service default AICHECK_REQUIRE_AUTH must be true")
         if default_value(api_env.get("AICHECK_ENABLE_DEMO_USERS")) != "false":
             failures.append("api-service default AICHECK_ENABLE_DEMO_USERS must be false")
+        if default_value(api_env.get("AICHECK_ENABLE_DEMO_DATA")) != "false":
+            failures.append("api-service default AICHECK_ENABLE_DEMO_DATA must be false")
         if default_value(api_env.get("AICHECK_STRICT_PRODUCTION")) != "true":
             failures.append("api-service default AICHECK_STRICT_PRODUCTION must be true")
         if default_value(api_env.get("AICHECK_ALLOW_DEV_TOKENS")) != "false":
@@ -546,6 +550,8 @@ class DeploymentConfigValidator:
             failures.append("api-service default AICHECK_ENABLE_COMPATIBILITY_MOCKS must be false")
         if default_value(worker_env.get("AICHECK_STRICT_PRODUCTION")) != "true":
             failures.append("worker-service default AICHECK_STRICT_PRODUCTION must be true")
+        if default_value(worker_env.get("AICHECK_ENABLE_DEMO_DATA")) != "false":
+            failures.append("worker-service default AICHECK_ENABLE_DEMO_DATA must be false")
         if default_value(review_worker_env.get("AICHECK_STRICT_PRODUCTION")) != "true":
             failures.append("review-worker-service default AICHECK_STRICT_PRODUCTION must be true")
         if "*" in default_value(api_env.get("AICHECK_CORS_ALLOWED_ORIGINS")):

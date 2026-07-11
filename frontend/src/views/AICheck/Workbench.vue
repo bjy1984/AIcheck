@@ -366,7 +366,7 @@ const activeArchiveItemId = ref('')
 const activeExportTaskId = ref('')
 const reviewResult = ref<ReviewOpinion['result']>('满足要求')
 const reviewOpinion = ref('资料、证据链与规则要求一致，同意通过。')
-const correctionReason = ref('证据链或资料内容与规则要求不一致，需补充说明。')
+const correctionReason = ref('')
 const selectedReviewEvidenceIds = ref<string[]>([])
 const draftRequiresEvidenceSelection = ref(false)
 const latestSubmissionIds = ref<Record<number, string>>({})
@@ -784,15 +784,11 @@ const inspectionNodeStatusBarRows = computed(() => {
 })
 const canShowWorkspace = computed(() => !pageIssue.value && !!activeProjectId.value)
 const roleUserLabel = computed(() => {
-  const labels: Record<RoleCode, string> = {
-    inspection: '监检员 张工',
-    contractor: '施工方 李工',
-    ndt: '无损检测 王工',
-    owner: '建设方 陈经理',
-    admin: '系统管理员',
-    fde: 'FDE 工程师'
-  }
-  return labels[role.value]
+  const identity =
+    userStore.getUserInfo?.displayName ||
+    userStore.getUserInfo?.username ||
+    getAicheckRoleLabel(role.value)
+  return `${getAicheckRoleLabel(role.value)} · ${identity}`
 })
 const handleUserCommand = (command: string | number | object) => {
   if (command === 'logout') {
@@ -1032,7 +1028,7 @@ const auditWorkflowStages = computed<AuditWorkflowStage[]>(() => {
             ? 'run_formal_review'
             : 'run_gap_precheck'
           : undefined,
-      actionLabel: readyForAiFormal.value ? '正式复核' : '缺项预审'
+      actionLabel: '前往复核'
     },
     {
       key: 'human',
@@ -2860,7 +2856,7 @@ const handleSubmitBatch = async (payload: {
     payload.nodeIds.forEach((nodeId) => {
       latestSubmissionIds.value[nodeId] = res.data.submissionId
     })
-    ElMessage.success('节点资料已提交，进入 AI 预审')
+    ElMessage.success('节点资料已提交，等待监检核验')
     submissionDialogVisible.value = false
     restoredSubmissionDraft.value = undefined
     submissionDialogError.value = ''
@@ -3141,7 +3137,7 @@ const handleAiRecheck = async () => {
 const handleAuditWorkflowAction = async (actionKey: string) => {
   if (actionKey === 'run_formal_review' || actionKey === 'run_gap_precheck') {
     selectedAiReviewMode.value = actionKey === 'run_formal_review' ? 'formal' : 'gap_precheck'
-    await handleAiRecheck()
+    await handleInspectionOverviewJump('inspection-node-ai-review')
     return
   }
   if (actionKey === 'inspect_ocr_results') {
@@ -3256,6 +3252,24 @@ const handleAdoptAiSuggestion = async (suggestionId: string) => {
 
 const handleRejectAiSuggestion = async (suggestionId: string) => {
   if (!ensureWritableNode()) return
+  let rejectionReason = ''
+  try {
+    const prompt = await ElMessageBox.prompt(
+      '请说明 AI 建议与人工判断不一致的具体原因。该说明会进入审计日志。',
+      '驳回 AI 建议',
+      {
+        confirmButtonText: '确认驳回',
+        cancelButtonText: '取消',
+        inputType: 'textarea',
+        inputPlaceholder: '填写证据、规则或结论方面的差异',
+        inputValidator: (value) =>
+          value.trim().length >= 4 ? true : '请至少填写 4 个字符的具体原因'
+      }
+    )
+    rejectionReason = prompt.value.trim()
+  } catch {
+    return
+  }
   actionLoading.value = true
   try {
     const res = await rejectAiSuggestionApi(
@@ -3263,7 +3277,7 @@ const handleRejectAiSuggestion = async (suggestionId: string) => {
       activeNodeId.value,
       suggestionId,
       {
-        reason: 'AI 建议与人工复核判断不一致。',
+        reason: rejectionReason,
         manualOpinion: reviewOpinion.value
       },
       {
@@ -3529,6 +3543,48 @@ const handleSaveReportDetail = async (payload: { sections: ReportSection[]; rema
     await loadReportArchive()
   } catch (error) {
     showReportDetailError('报告保存失败，请检查章节内容和证据引用。', error)
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+const handleTransitionReport = async (status: '复核完成' | '已签发') => {
+  if (!activeProjectId.value || !reportDetail.value?.report) return
+  const report = reportDetail.value.report
+  let reason = ''
+  try {
+    const prompt = await ElMessageBox.prompt(
+      `确认将报告“${report.reportNo}”变更为“${status}”吗？请填写处理说明。`,
+      status === '已签发' ? '签发报告' : '完成报告复核',
+      {
+        type: status === '已签发' ? 'warning' : 'info',
+        confirmButtonText: '确认',
+        cancelButtonText: '取消',
+        inputPlaceholder: '填写复核结论、签发依据或工单号',
+        inputValidator: (value) => Boolean(value.trim()) || '必须填写处理说明'
+      }
+    )
+    reason = prompt.value.trim()
+  } catch {
+    return
+  }
+  actionLoading.value = true
+  try {
+    const response = await updateReportApi(
+      activeProjectId.value,
+      report.id,
+      { status, remark: reason },
+      { etag: report.etag }
+    )
+    if (!response) {
+      showReportDetailError('报告状态更新失败，请刷新后重试。')
+      return
+    }
+    ElMessage.success(status === '已签发' ? '报告已签发' : '报告复核已完成')
+    await handleOpenReportDetail(report.id)
+    await loadReportArchive()
+  } catch (error) {
+    showReportDetailError('报告状态更新失败，请检查证据校验和当前状态。', error)
   } finally {
     actionLoading.value = false
   }
@@ -3823,7 +3879,14 @@ onBeforeUnmount(() => {
     <div class="aicheck-page app-shell">
       <header class="topbar">
         <div class="brand">
-          <div class="hamburger">≡</div>
+          <button
+            class="hamburger"
+            type="button"
+            aria-label="打开节点导航"
+            @click="mobileTreeOpen = true"
+          >
+            ≡
+          </button>
           <div class="brand-mark">盾</div>
           <ElSelect
             v-model="activeProjectId"
@@ -4008,19 +4071,6 @@ onBeforeUnmount(() => {
                 @click="mobileTreeOpen = true"
               >
                 审核节点
-              </ElButton>
-              <ElButton
-                v-if="
-                  role === 'inspection' &&
-                  activeWorkbenchSection === 'node' &&
-                  hasAction('ai:recheck')
-                "
-                class="btn"
-                :disabled="actionLoading || isReadOnly || Boolean(aiRecheckDisabledReason)"
-                :title="aiRecheckDisabledReason || aiReviewModeHint"
-                @click="handleAiRecheck"
-              >
-                {{ aiRecheckButtonLabel }}
               </ElButton>
               <ElButton
                 v-if="role === 'contractor' && hasAction('file:upload')"
@@ -4359,6 +4409,7 @@ onBeforeUnmount(() => {
             v-if="
               role === 'inspection' && activeWorkbenchSection === 'node' && hasAction('ai:recheck')
             "
+            id="inspection-node-ai-review"
             class="node-ai-recheck-top"
           >
             <div class="node-ai-recheck-actions">
@@ -4715,9 +4766,6 @@ onBeforeUnmount(() => {
                     :actions="availableActions"
                     :loading="actionLoading"
                     :read-only="isReadOnly"
-                    :ai-recheck-disabled="Boolean(aiRecheckDisabledReason)"
-                    :ai-recheck-disabled-reason="aiRecheckDisabledReason"
-                    :ai-recheck-label="aiRecheckButtonLabel"
                     @upload="handleOpenUploadDrawer"
                     @bind="handleOpenBindDialog"
                     @save-draft="handleSaveDraft"
@@ -4725,7 +4773,6 @@ onBeforeUnmount(() => {
                     @withdraw="handleOpenSubmissionDialog"
                     @history="handleOpenSubmissionHistory"
                     @rectify="handleOpenRectificationDialog"
-                    @ai-recheck="handleAiRecheck"
                   />
                 </div>
               </section>
@@ -4861,9 +4908,6 @@ onBeforeUnmount(() => {
                   :actions="availableActions"
                   :loading="actionLoading"
                   :read-only="isReadOnly"
-                  :ai-recheck-disabled="Boolean(aiRecheckDisabledReason)"
-                  :ai-recheck-disabled-reason="aiRecheckDisabledReason"
-                  :ai-recheck-label="aiRecheckButtonLabel"
                   @upload="handleOpenUploadDrawer"
                   @bind="handleOpenBindDialog"
                   @save-draft="handleSaveDraft"
@@ -4871,7 +4915,6 @@ onBeforeUnmount(() => {
                   @withdraw="handleOpenSubmissionDialog"
                   @history="handleOpenSubmissionHistory"
                   @rectify="handleOpenRectificationDialog"
-                  @ai-recheck="handleAiRecheck"
                 />
               </div>
             </section>
@@ -5096,6 +5139,7 @@ onBeforeUnmount(() => {
         @locate-evidence="handleLocateEvidence"
         @retry="handleRetryReportDetail"
         @save="handleSaveReportDetail"
+        @transition="handleTransitionReport"
       />
 
       <NdtDetailDrawer

@@ -763,6 +763,7 @@ class PaddleOcrSubprocessEngine(LocalOcrEngine):
             "detModelDir": str(det_dir),
             "recModelDir": str(rec_dir),
             "persistentEnabled": env_bool("AICHECK_OCR_ENABLE_PERSISTENT_SUBPROCESS", False),
+            "warmedUp": self._worker is not None and self._worker.poll() is None,
         }
 
     def parse(
@@ -1000,7 +1001,7 @@ class PaddleOcrSubprocessEngine(LocalOcrEngine):
 
 
 def paddle_ocr_worker_script() -> str:
-    return textwrap.dedent(
+    return subprocess_resource_limit_preamble("AICHECK_PADDLEOCR_MEMORY_LIMIT_MB", 4096) + textwrap.dedent(
         """
         import json
         import sys
@@ -1921,26 +1922,46 @@ class PaddleOcrVlEngine(LocalOcrEngine):
             return False
         dirs = paddleocr_vl_model_dirs()
         required = ["layout", "vl_rec"]
-        return self.package_available() and all(dirs[key].exists() for key in required)
+        return (
+            self.package_available()
+            and self.transformers_available()
+            and self.capacity_ready()
+            and all(dirs[key].exists() for key in required)
+        )
+
+    def capacity_ready(self) -> bool:
+        memory_limit_mb = int(os.getenv("AICHECK_PADDLEOCR_VL_MEMORY_LIMIT_MB", "8192") or 0)
+        minimum_memory_mb = int(os.getenv("AICHECK_PADDLEOCR_VL_MIN_MEMORY_MB", "10240") or 0)
+        return memory_limit_mb >= minimum_memory_mb
 
     def package_available(self) -> bool:
         return importlib.util.find_spec(self.required_package) is not None or subprocess_package_available("paddleocr")
 
+    def transformers_available(self) -> bool:
+        return importlib.util.find_spec("transformers") is not None or subprocess_package_available("transformers")
+
     def status(self) -> dict[str, Any]:
         dirs = paddleocr_vl_model_dirs()
         enabled = self.enabled()
+        force_subprocess = env_bool("AICHECK_PADDLEOCR_VL_FORCE_SUBPROCESS", True)
+        inprocess_ready = importlib.util.find_spec(self.required_package) is not None and importlib.util.find_spec("transformers") is not None
+        subprocess_ready = subprocess_package_available("paddleocr") and subprocess_package_available("transformers")
+        capacity_ready = self.capacity_ready()
         return {
             "engine": self.name,
             "version": self.version,
             "available": self.available(),
             "enabled": str(enabled).lower(),
-            "executionMode": "disabled" if not enabled else "inprocess" if importlib.util.find_spec(self.required_package) is not None and importlib.util.find_spec("transformers") is not None else "subprocess" if subprocess_package_available("paddleocr") and subprocess_package_available("transformers") else "unavailable",
+            "executionMode": "disabled" if not enabled else "unavailable" if not capacity_ready else "subprocess" if subprocess_ready and (force_subprocess or not inprocess_ready) else "inprocess" if inprocess_ready else "unavailable",
             "python": os.getenv("AICHECK_OCR_SUBPROCESS_PYTHON"),
             "modelDir": os.getenv("PADDLEOCR_VL_MODEL_DIR"),
             "modelDirs": {key: str(path) for key, path in dirs.items()},
             "missingModelDirs": [key for key in ["layout", "vl_rec"] if not dirs[key].exists()],
             "package": self.required_package,
-            "transformersAvailable": importlib.util.find_spec("transformers") is not None or subprocess_package_available("transformers"),
+            "transformersAvailable": self.transformers_available(),
+            "capacityReady": capacity_ready,
+            "memoryLimitMb": int(os.getenv("AICHECK_PADDLEOCR_VL_MEMORY_LIMIT_MB", "8192") or 0),
+            "minimumMemoryMb": int(os.getenv("AICHECK_PADDLEOCR_VL_MIN_MEMORY_MB", "10240") or 0),
         }
 
     def parse(
@@ -1967,7 +1988,7 @@ class PaddleOcrVlEngine(LocalOcrEngine):
                 "engine": self.name,
                 "engineVersion": self.version,
             }
-        if importlib.util.find_spec(self.required_package) is None:
+        if env_bool("AICHECK_PADDLEOCR_VL_FORCE_SUBPROCESS", True) or importlib.util.find_spec(self.required_package) is None:
             return self.parse_with_subprocess(source_path, dirs=dirs)
         from paddleocr import PaddleOCRVL  # type: ignore
 
@@ -2011,7 +2032,7 @@ class PaddleOcrVlEngine(LocalOcrEngine):
                 "engine": self.name,
                 "engineVersion": self.version,
             }
-        script = textwrap.dedent(
+        script = subprocess_resource_limit_preamble("AICHECK_PADDLEOCR_VL_MEMORY_LIMIT_MB", 8192) + textwrap.dedent(
             """
             import json
             import sys
@@ -2075,7 +2096,7 @@ class PaddleOcrVlEngine(LocalOcrEngine):
             completed = run_ocr_subprocess(
                 [python_bin, "-c", script, str(source_path), json.dumps(payload_dirs)],
                 env=ocr_subprocess_env(),
-                timeout=float(os.getenv("AICHECK_PADDLEOCR_VL_TIMEOUT", "420")),
+                timeout=float(os.getenv("AICHECK_PADDLEOCR_VL_TIMEOUT", "120")),
             )
         except subprocess.TimeoutExpired:
             return {

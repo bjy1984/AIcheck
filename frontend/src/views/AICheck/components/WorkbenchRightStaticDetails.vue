@@ -65,20 +65,20 @@ const linkedNodeText = computed(() => {
 })
 
 const ownerMetricValue = (label: string, fallback: string | number) => {
-  return props.metrics.find((metric) => metric.label.includes(label))?.value || fallback
+  return props.metrics.find((metric) => metric.label.includes(label))?.value ?? fallback
 }
 
-const ownerLinkCount = computed(() => ownerMetricValue('链路', 26))
-const ownerPassCount = computed(() => ownerMetricValue('通过', 18))
-const ownerCorrectionCount = computed(() => ownerMetricValue('补正', 4))
-const ownerPendingCount = computed(() => ownerMetricValue('待', 7))
+const ownerLinkCount = computed(() => ownerMetricValue('链路', '--'))
+const ownerPassCount = computed(() => ownerMetricValue('通过', '--'))
+const ownerCorrectionCount = computed(() => ownerMetricValue('补正', '--'))
+const ownerPendingCount = computed(() => ownerMetricValue('待', '--'))
 
 const inspectionStatusRows = computed(() => [
   { label: '文件总数', value: bindings.value.length || props.node?.fileCount || 0 },
   {
     label: '核验完成',
     value: `${props.reviewSteps.filter((step) => getPillClass(step.result) === 'green').length} / ${
-      props.reviewSteps.length || 1
+      props.reviewSteps.length
     }`
   },
   {
@@ -87,7 +87,7 @@ const inspectionStatusRows = computed(() => [
   },
   {
     label: '待确认',
-    value: latestAiRun.value?.suggestion.manualConfirmItems[0] || '资格网站截图来源'
+    value: latestAiRun.value?.suggestion.manualConfirmItems[0] || '--'
   },
   { label: '建议结论', value: latestAiRun.value?.suggestion.result || '待核验' }
 ])
@@ -102,7 +102,7 @@ const contractorFeedback = computed(() => {
       riskyStep && getPillClass(riskyStep.result) !== 'green'
         ? '按监检意见补充资料，并按需关联审核环节或反馈问题。'
         : '无需修改文件；如监检要求，可补充最新查询截图。',
-    deadline: '2026-06-28 18:00',
+    deadline: '--',
     result: riskyStep?.result || '待反馈'
   }
 })
@@ -114,11 +114,8 @@ const ndtSupplement = computed(() => {
     step:
       props.reviewSteps.find((step) => getPillClass(step.result) !== 'green')?.title ||
       '返修复拍闭环核验',
-    evidence:
-      feedback?.description ||
-      latestAiRun.value?.suggestion.opinionDraft ||
-      'RT 检测报告 R2 第 1 页结论',
-    advice: '上传复拍底片并挂载到 40、41 节点。'
+    evidence: feedback?.description || latestAiRun.value?.suggestion.opinionDraft || '--',
+    advice: feedback ? '按监检反馈补充资料并重新提交。' : '--'
   }
 })
 
@@ -170,21 +167,23 @@ const getPillClass = (value?: string | number) => {
             <tbody>
               <tr>
                 <th>证据字段</th>
-                <td>{{
-                  firstEvidence?.fieldName || firstExtractedField?.fieldName || '证书编号'
-                }}</td>
+                <td>{{ firstEvidence?.fieldName || firstExtractedField?.fieldName || '--' }}</td>
               </tr>
               <tr>
                 <th>文件页码</th>
-                <td>{{ firstEvidence?.pageNo ? `第 ${firstEvidence.pageNo} 页` : '第 1 页' }}</td>
+                <td>{{ firstEvidence?.pageNo ? `第 ${firstEvidence.pageNo} 页` : '--' }}</td>
               </tr>
               <tr
-                ><th>核验步骤</th><td>{{ reviewSteps[0]?.title || '证书真实性核验' }}</td></tr
+                ><th>核验步骤</th><td>{{ reviewSteps[0]?.title || '--' }}</td></tr
               >
-              <tr><th>外部工具</th><td>资格审查网站查询截图</td></tr>
+              <tr
+                ><th>证据类型</th><td>{{ firstEvidence?.objectType || '--' }}</td></tr
+              >
               <tr>
                 <th>证据状态</th>
-                <td><span class="pill orange">需人工确认来源有效性</span></td>
+                <td
+                  ><span class="pill orange">{{ firstEvidence ? '待人工确认' : '--' }}</span></td
+                >
               </tr>
             </tbody>
           </table>
@@ -197,7 +196,7 @@ const getPillClass = (value?: string | number) => {
           <table class="table compact">
             <tbody>
               <tr
-                ><th>文件名</th><td>{{ firstBinding?.fileName || '当前节点资料预览' }}</td></tr
+                ><th>文件名</th><td>{{ firstBinding?.fileName || '--' }}</td></tr
               >
               <tr
                 ><th>所属节点</th><td>{{ node?.groupName || '-' }} / {{ currentNodeLabel }}</td></tr
@@ -213,13 +212,18 @@ const getPillClass = (value?: string | number) => {
                 ><td>{{ firstBinding?.sourceOrgName || project?.contractorOrgName || '-' }}</td></tr
               >
               <tr
-                ><th>上传人</th><td>{{ firstProjectFile?.uploaderName || '施工方 李工' }}</td></tr
+                ><th>上传人</th><td>{{ firstProjectFile?.uploaderName || '--' }}</td></tr
               >
               <tr
-                ><th>文件版本</th><td>{{ firstBinding?.versionNo || 'V1' }}</td></tr
+                ><th>文件版本</th><td>{{ firstBinding?.versionNo || '--' }}</td></tr
               >
               <tr
-                ><th>业务链路</th><td><span class="pill green">已生成</span></td></tr
+                ><th>业务链路</th
+                ><td
+                  ><span :class="['pill', firstBinding ? 'green' : 'orange']">{{
+                    firstBinding ? '已生成' : '--'
+                  }}</span></td
+                ></tr
               >
               <tr
                 ><th>关联证据数</th
@@ -407,9 +411,7 @@ const getPillClass = (value?: string | number) => {
             <tbody>
               <tr
                 ><th>资料名称</th
-                ><td>{{
-                  firstNdtReport?.reportNo || firstBinding?.fileName || 'RT 检测报告 R2.pdf'
-                }}</td></tr
+                ><td>{{ firstNdtReport?.reportNo || firstBinding?.fileName || '--' }}</td></tr
               >
               <tr
                 ><th>所属节点</th

@@ -59,6 +59,7 @@ import {
   listPromptTemplatesApi,
   listBusinessPacksApi,
   previewAdminConfigDiffApi,
+  previewAdminConfigPublishApi,
   publishAdminConfigApi,
   publishPromptTemplateApi,
   saveAdminConfigItemApi,
@@ -93,9 +94,9 @@ import type {
   PromptTemplateSavePayload
 } from '@/api/aicheck'
 import type { ActionCode, ExportTask, Project, RoleCode } from '@/types/aicheck'
+import { useUserStore } from '@/store/modules/user'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import { getAicheckRoleLabel } from '@/utils/roleAccess'
-import AdminKnowledgeStaticDeepSections from './components/AdminKnowledgeStaticDeepSections.vue'
 import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import StaticPageShell from './components/StaticPageShell.vue'
 
@@ -129,6 +130,15 @@ const emptyIntegrationContract = (): IntegrationContractPayload => ({
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
+const routeQueryText = (key: string) => {
+  const value = route.query[key]
+  return Array.isArray(value) ? String(value[0] || '') : String(value || '')
+}
+const routeQueryNumber = (key: string, fallback: number) => {
+  const value = Number(routeQueryText(key))
+  return Number.isFinite(value) && value > 0 ? value : fallback
+}
 
 const adminShellMenuSectionsBase = [
   {
@@ -139,8 +149,6 @@ const adminShellMenuSectionsBase = [
       {
         index: '02',
         label: '组织用户',
-        badge: '68人',
-        tone: 'green',
         route: '/admin/org'
       },
       {
@@ -221,53 +229,6 @@ const adminShellBoundaryRows = [
   { label: '合同2', value: '业务类型、规则流程、Prompt 模板、细项配置' },
   { label: '合同3', value: '知识库、联调清单、审计日志' },
   { label: '边界', value: '后台配置，不办理审查意见或报告确认' }
-] as const
-
-const adminShellRightCards = [
-  {
-    title: '基础信息',
-    rows: [
-      { label: '模板名称', value: 'Welder-Qualification-B' },
-      { label: '适用节点', value: '24. 焊工资格证及持证合格项目' },
-      { label: '审查对象', value: '人员证书' },
-      { label: '当前版本', value: 'v2.1', valueBadge: '启用', valueTone: 'green' },
-      { label: '输出格式', value: '审查对象、过程文件、核验步骤、证据、建议结论' }
-    ]
-  },
-  {
-    title: '字段映射',
-    rows: [
-      { label: '证书编号', value: '焊工资格证第 1 页 OCR 字段' },
-      { label: '有效期', value: '资格证有效期字段' },
-      { label: '作业范围', value: '资格证持证项目页' },
-      { label: '项目要求', value: '焊接工艺卡字段' },
-      { label: '外部结果', value: '资格网站查询截图字段' }
-    ]
-  },
-  {
-    title: '版本记录',
-    timeline: [
-      {
-        title: 'v2.1 当前使用',
-        description: '新增外部查询截图字段。',
-        tone: 'blue'
-      },
-      {
-        title: 'v2.0',
-        description: '拆分真实性和有效期核验。',
-        tone: 'blue'
-      },
-      {
-        title: 'v1.8',
-        description: '增加跨文件一致性核验。',
-        tone: 'orange'
-      }
-    ]
-  },
-  {
-    title: '后台限制',
-    note: '后台只维护规则模板、工具源、字段映射和权限；不显示 AI 建议采纳、审查意见、退回补正、报告生成/复核或报告确认按钮。'
-  }
 ] as const
 
 type PermissionConfigRow = AdminConfigOverviewPayload['permissionMatrix'][number]
@@ -377,6 +338,12 @@ const tableStates = reactive({
   projectNodeSummary: createTableState(8),
   projectExports: createTableState(8)
 })
+if (activeTab.value === 'projects') {
+  tableStates.projects.page = routeQueryNumber('page', 1)
+  tableStates.projects.pageSize = routeQueryNumber('pageSize', tableStates.projects.pageSize)
+  tableStates.projects.prop = routeQueryText('sort')
+  tableStates.projects.order = (routeQueryText('order') || null) as TableSortOrder
+}
 type TableKey = keyof typeof tableStates
 const auditSort = reactive<TableSortState>({ prop: '', order: null })
 const overviewError = ref('')
@@ -475,6 +442,20 @@ const adminPageTitleMap: Record<AdminTabKey, { title: string; subtitle: string }
 
 const adminPageTitle = computed(() => adminPageTitleMap[activeTab.value].title)
 const adminPageSubtitle = computed(() => adminPageTitleMap[activeTab.value].subtitle)
+const adminPublishScope = computed<'all' | 'permission' | 'workflow' | 'node-template' | 'rule'>(
+  () => {
+    if (activeTab.value === 'permission') return 'permission'
+    if (activeTab.value === 'rule') return 'rule'
+    if (activeTab.value === 'material-review-point') return 'node-template'
+    if (activeTab.value === 'fine-config') return 'workflow'
+    return 'all'
+  }
+)
+const adminPublishAvailable = computed(() =>
+  ['permission', 'rule', 'material-review-point', 'prompt-template', 'fine-config'].includes(
+    activeTab.value
+  )
+)
 
 const adminShellMenuSections = computed(() => {
   let activeMatched = false
@@ -538,15 +519,66 @@ const promptTemplateDialogMode = ref<'create' | 'edit'>('create')
 const promptTemplateOperationError = ref('')
 
 const auditFilters = reactive({
-  keyword: '',
-  result: '',
-  objectType: ''
+  keyword: activeTab.value === 'audit' ? routeQueryText('q') : '',
+  result: activeTab.value === 'audit' ? routeQueryText('result') : '',
+  objectType: activeTab.value === 'audit' ? routeQueryText('objectType') : ''
 })
 
 const projectFilters = reactive({
-  keyword: '',
-  status: '' as Project['status'] | ''
+  keyword: activeTab.value === 'projects' ? routeQueryText('q') : '',
+  status: (activeTab.value === 'projects' ? routeQueryText('status') : '') as Project['status'] | ''
 })
+if (activeTab.value === 'audit') {
+  auditPagination.page = routeQueryNumber('page', 1)
+  auditPagination.pageSize = routeQueryNumber('pageSize', auditPagination.pageSize)
+  auditSort.prop = routeQueryText('sort')
+  auditSort.order = (routeQueryText('order') || null) as TableSortOrder
+}
+
+const syncAdminRouteQuery = () => {
+  const query = { ...route.query }
+  for (const key of ['q', 'status', 'result', 'objectType', 'page', 'pageSize', 'sort', 'order']) {
+    delete query[key]
+  }
+  if (activeTab.value === 'projects') {
+    if (projectFilters.keyword.trim()) query.q = projectFilters.keyword.trim()
+    if (projectFilters.status) query.status = projectFilters.status
+    if (tableStates.projects.page > 1) query.page = String(tableStates.projects.page)
+    if (tableStates.projects.pageSize !== 8) query.pageSize = String(tableStates.projects.pageSize)
+    if (tableStates.projects.prop) query.sort = tableStates.projects.prop
+    if (tableStates.projects.order) query.order = tableStates.projects.order
+  } else if (activeTab.value === 'audit') {
+    if (auditFilters.keyword.trim()) query.q = auditFilters.keyword.trim()
+    if (auditFilters.result) query.result = auditFilters.result
+    if (auditFilters.objectType) query.objectType = auditFilters.objectType
+    if (auditPagination.page > 1) query.page = String(auditPagination.page)
+    if (auditPagination.pageSize !== 10) query.pageSize = String(auditPagination.pageSize)
+    if (auditSort.prop) query.sort = auditSort.prop
+    if (auditSort.order) query.order = auditSort.order
+  }
+  void router.replace({ path: route.path, query })
+}
+
+watch(
+  () => [
+    activeTab.value,
+    projectFilters.keyword,
+    projectFilters.status,
+    tableStates.projects.page,
+    tableStates.projects.pageSize,
+    tableStates.projects.prop,
+    tableStates.projects.order,
+    auditFilters.keyword,
+    auditFilters.result,
+    auditFilters.objectType,
+    auditPagination.page,
+    auditPagination.pageSize,
+    auditSort.prop,
+    auditSort.order
+  ],
+  syncAdminRouteQuery,
+  { flush: 'post' }
+)
 
 const projectStatusOptions: Project['status'][] = [
   '草稿/立项中',
@@ -563,24 +595,21 @@ const promptTemplateFilters = reactive({
   status: ''
 })
 
-const projectWizardRoles: ProjectWizardMemberRole[] = ['inspection', 'contractor', 'ndt', 'owner']
-
 const projectWizardForm = reactive({
   businessPackId: DEFAULT_PIPELINE_BUSINESS_PACK_ID,
   code: '',
   name: '',
-  type: '工业压力管道',
-  region: '华东',
-  ownerOrgName: '华东管网建设公司',
-  contractorOrgName: '中石化安装有限公司',
-  ndtOrgName: '华测检测有限公司',
-  inspectionOrgName: '省特检院一部',
-  currentNodeId: 1,
+  type: '',
+  region: '',
+  ownerOrgName: '',
+  contractorOrgName: '',
+  ndtOrgName: '',
+  inspectionOrgName: '',
   memberUserIds: {
-    inspection: 'USR-INS-001',
-    contractor: 'USR-CON-001',
-    ndt: 'USR-NDT-001',
-    owner: 'USR-OWN-001'
+    inspection: '',
+    contractor: '',
+    ndt: '',
+    owner: ''
   } as Record<ProjectWizardMemberRole, string>
 })
 
@@ -886,19 +915,21 @@ const resetTablePage = (key: TableKey) => {
   tableStates[key].page = 1
 }
 
-const projectTotal = computed(() => tableStates.projects.total || projects.value.length)
+const overviewProjectTotal = computed(() =>
+  Number(overview.value.metrics.find((item) => item.key === 'project')?.value || 0)
+)
+const projectTotal = computed(() =>
+  activeTab.value === 'projects' ? tableStates.projects.total : overviewProjectTotal.value
+)
 const projectTableRows = computed(() => sortedRows(projects.value, tableStates.projects))
 
 const projectStats = computed(() => {
   if (overview.value.metrics.length) return overview.value.metrics
-  const active = projects.value.filter((project) => project.status !== '已归档').length
-  const correction = projects.value.filter((project) => project.status.includes('补正')).length
-  const todos = projects.value.reduce((sum, project) => sum + project.todoCount, 0)
   return [
     { key: 'project', label: '项目总数', value: projectTotal.value, tone: 'blue' as const },
-    { key: 'active', label: '在检项目', value: active, tone: 'green' as const },
-    { key: 'correction', label: '补正项目', value: correction, tone: 'red' as const },
-    { key: 'todo', label: '全局待办', value: todos, tone: 'orange' as const }
+    { key: 'active', label: '在检项目', value: '--', tone: 'green' as const },
+    { key: 'correction', label: '补正项目', value: '--', tone: 'red' as const },
+    { key: 'todo', label: '全局待办', value: '--', tone: 'orange' as const }
   ]
 })
 
@@ -918,10 +949,28 @@ const selectedWizardBusinessPack = computed(
     businessPackRows.value.find((pack) => pack.id === DEFAULT_PIPELINE_BUSINESS_PACK_ID) ||
     null
 )
-const isEngineeringWizardPack = computed(
-  () => selectedWizardBusinessPack.value?.domainType === 'engineering_inspection'
-)
-const selectedWizardNodeMax = computed(() => selectedWizardBusinessPack.value?.nodeCount || 69)
+const packPlatformRoleMap: Record<string, ProjectWizardMemberRole> = {
+  reviewer: 'inspection',
+  submitter: 'contractor',
+  specialist_submitter: 'ndt',
+  observer: 'owner'
+}
+const projectWizardRoles = computed<ProjectWizardMemberRole[]>(() => {
+  const pack = selectedWizardBusinessPack.value
+  const roles = (pack?.roles || [])
+    .map((role) => {
+      if (['inspection', 'contractor', 'ndt', 'owner'].includes(role.code)) {
+        return role.code as ProjectWizardMemberRole
+      }
+      return packPlatformRoleMap[role.platformRole]
+    })
+    .filter((role): role is ProjectWizardMemberRole => Boolean(role))
+  if (roles.length) return [...new Set(roles)]
+  return pack?.domainType === 'engineering_inspection'
+    ? ['inspection', 'contractor', 'ndt', 'owner']
+    : ['inspection', 'contractor', 'owner']
+})
+const wizardUsesRole = (role: ProjectWizardMemberRole) => projectWizardRoles.value.includes(role)
 const businessPackTypeLabel = (pack: BusinessPackRow) =>
   [pack.pipelineTypeCode, pack.pipelineTypeName || pack.name].filter(Boolean).join(' ')
 const businessPackRangeText = (pack: BusinessPackRow) =>
@@ -929,7 +978,7 @@ const businessPackRangeText = (pack: BusinessPackRow) =>
 const businessPackOptionLabel = (pack: BusinessPackRow) =>
   [businessPackTypeLabel(pack), pack.commonGrades].filter(Boolean).join(' / ')
 const projectTypeForPack = (pack?: BusinessPackRow | null) =>
-  pack?.projectType || pack?.pipelineTypeName || pack?.name || '工业压力管道'
+  pack?.projectType || pack?.pipelineTypeName || pack?.name || ''
 const businessPackStatusLabel = (status?: string) => {
   const labels: Record<string, string> = {
     published: '已发布',
@@ -949,6 +998,54 @@ const selectedWizardBusinessPackDescription = computed(() => {
 const pendingRuleCount = computed(
   () => overview.value.ruleVersions.filter((item) => item.status === '待发布').length
 )
+
+const adminUserLabel = computed(
+  () =>
+    userStore.getUserInfo?.displayName ||
+    userStore.getUserInfo?.username ||
+    userStore.getUserInfo?.roleLabel ||
+    '系统管理员'
+)
+const adminRuntimeStatus = computed(() =>
+  overviewError.value ? '数据加载异常' : pendingRuleCount.value ? '存在待发布配置' : '配置已同步'
+)
+const adminRuntimeStatusTone = computed(() =>
+  overviewError.value
+    ? ('red' as const)
+    : pendingRuleCount.value
+      ? ('orange' as const)
+      : ('green' as const)
+)
+const adminShellRightSubtitle = computed(() =>
+  overview.value.lastPublishedVersion
+    ? `最近发布：${overview.value.lastPublishedVersion}`
+    : '尚无已发布配置快照'
+)
+const adminShellRightCards = computed(() => [
+  {
+    title: '配置状态',
+    rows: [
+      { label: '规则模板', value: String(overview.value.ruleVersions.length) },
+      { label: '待发布', value: String(pendingRuleCount.value) },
+      { label: '权限角色', value: String(overview.value.permissionMatrix.length) },
+      { label: '字段映射', value: String(overview.value.fieldMappings.length) },
+      { label: '更新时间', value: overview.value.updatedAt || '--' }
+    ]
+  },
+  {
+    title: '当前范围',
+    rows: [
+      { label: '页面', value: adminPageTitle.value },
+      { label: '项目总数', value: String(projectTotal.value) },
+      { label: '组织单位', value: String(overview.value.orgUnits.length) },
+      { label: '用户账号', value: String(overview.value.users.length) }
+    ]
+  },
+  {
+    title: '职责边界',
+    note: '后台仅维护项目、账号、权限和配置；正式审查结论仍由监检人员在业务工作台完成。'
+  }
+])
 
 const adminAuditCards = computed<AuditSummaryCard[]>(() => [
   {
@@ -1066,10 +1163,39 @@ const adminRuleDiffSummaryItems = computed(() => {
   ]
 })
 
-const wizardUsersByRole = (role: RoleCode) =>
-  overview.value.users.filter(
-    (user) => (user.role === role && user.status === '启用') || !overview.value.users.length
+const wizardOrgNameByRole = (role: ProjectWizardMemberRole) => {
+  const fieldByRole: Record<ProjectWizardMemberRole, keyof typeof projectWizardForm> = {
+    inspection: 'inspectionOrgName',
+    contractor: 'contractorOrgName',
+    ndt: 'ndtOrgName',
+    owner: 'ownerOrgName'
+  }
+  return String(projectWizardForm[fieldByRole[role]] || '')
+}
+const wizardOrgOptions = (role: ProjectWizardMemberRole) => {
+  const allowedTypes: Record<ProjectWizardMemberRole, string[]> = {
+    inspection: ['inspection', 'supervision'],
+    contractor: ['contractor'],
+    ndt: ['ndt'],
+    owner: ['owner']
+  }
+  return overview.value.orgUnits.filter(
+    (org) => org.status === '启用' && allowedTypes[role].includes(org.type)
   )
+}
+const wizardUsersByRole = (role: ProjectWizardMemberRole) => {
+  const orgName = wizardOrgNameByRole(role)
+  return overview.value.users.filter(
+    (user) => user.role === role && user.status === '启用' && user.orgName === orgName
+  )
+}
+const handleWizardOrgChange = (role: ProjectWizardMemberRole) => {
+  const userId = projectWizardForm.memberUserIds[role]
+  const user = overview.value.users.find((item) => item.id === userId)
+  if (user && user.orgName !== wizardOrgNameByRole(role)) {
+    projectWizardForm.memberUserIds[role] = ''
+  }
+}
 
 const formatConfigValue = (value?: unknown) => {
   if (Array.isArray(value)) return value.join(', ')
@@ -1522,7 +1648,17 @@ const loadData = async () => {
   loading.value = true
   overviewError.value = ''
   try {
-    const [projectsOk, configRes] = await Promise.all([loadProjects(), getAdminConfigOverviewApi()])
+    const tabRequest =
+      activeTab.value === 'projects'
+        ? loadProjects()
+        : activeTab.value === 'audit'
+          ? loadAuditLogs()
+          : activeTab.value === 'integration'
+            ? loadIntegrationContract()
+            : activeTab.value === 'prompt-template'
+              ? loadPromptTemplates()
+              : Promise.resolve(true)
+    const [tabResult, configRes] = await Promise.all([tabRequest, getAdminConfigOverviewApi()])
     if (configRes) {
       const nextOverview = { ...configRes.data }
       nextOverview.materialReviewPoints = nextOverview.materialReviewPoints || []
@@ -1532,14 +1668,13 @@ const loadData = async () => {
       }
       overview.value = nextOverview
     }
-    if (!projectsOk || !configRes) {
+    if (tabResult === false || !configRes) {
       overviewError.value = getRequestErrorMessage(
         undefined,
         '管理后台基础数据加载失败，已保留上一次可用数据。'
       )
       return
     }
-    await Promise.all([loadAuditLogs(), loadIntegrationContract(), loadPromptTemplates()])
   } catch (error) {
     overviewError.value = getRequestErrorMessage(
       error,
@@ -1602,41 +1737,30 @@ const handleValidateBusinessPacks = async () => {
   }
 }
 
-const getDefaultWizardUserId = (role: ProjectWizardMemberRole) =>
-  overview.value.users.find((user) => user.role === role)?.id ||
-  projectWizardForm.memberUserIds[role]
-
 const resetProjectWizardForm = () => {
   projectWizardForm.businessPackId =
     businessPackRows.value.find((pack) => pack.id === DEFAULT_PIPELINE_BUSINESS_PACK_ID)?.id ||
     businessPackRows.value[0]?.id ||
     DEFAULT_PIPELINE_BUSINESS_PACK_ID
-  projectWizardForm.code = `P-2026-MOCK-${String(projects.value.length + 1).padStart(3, '0')}`
+  projectWizardForm.code = ''
   projectWizardForm.name = ''
-  projectWizardForm.region = '华东'
+  projectWizardForm.region = ''
   applyBusinessPackDefaultsToWizard()
-  projectWizardRoles.forEach((role) => {
-    projectWizardForm.memberUserIds[role] = getDefaultWizardUserId(role)
+  ;(['inspection', 'contractor', 'ndt', 'owner'] as ProjectWizardMemberRole[]).forEach((role) => {
+    projectWizardForm.memberUserIds[role] = ''
   })
 }
 
 const applyBusinessPackDefaultsToWizard = () => {
   const pack = selectedWizardBusinessPack.value
-  if (!pack || pack.domainType === 'engineering_inspection') {
-    projectWizardForm.type = projectTypeForPack(pack)
-    projectWizardForm.ownerOrgName = '华东管网建设公司'
-    projectWizardForm.contractorOrgName = '中石化安装有限公司'
-    projectWizardForm.ndtOrgName = '华测检测有限公司'
-    projectWizardForm.inspectionOrgName = '省特检院一部'
-    projectWizardForm.currentNodeId = 1
-    return
-  }
   projectWizardForm.type = projectTypeForPack(pack)
-  projectWizardForm.ownerOrgName = '观察单位'
-  projectWizardForm.contractorOrgName = '提交单位'
-  projectWizardForm.ndtOrgName = '专项资料单位'
-  projectWizardForm.inspectionOrgName = '审核机构'
-  projectWizardForm.currentNodeId = 1
+  projectWizardForm.ownerOrgName = ''
+  projectWizardForm.contractorOrgName = ''
+  projectWizardForm.ndtOrgName = ''
+  projectWizardForm.inspectionOrgName = ''
+  ;(['inspection', 'contractor', 'ndt', 'owner'] as ProjectWizardMemberRole[]).forEach((role) => {
+    projectWizardForm.memberUserIds[role] = ''
+  })
 }
 
 const handleWizardBusinessPackChange = () => {
@@ -1656,6 +1780,9 @@ const validateProjectWizardStep = () => {
       ElMessage.warning('请选择压力管道类别')
       return false
     }
+    if (!projectWizardForm.type.trim()) {
+      projectWizardForm.type = projectTypeForPack(selectedWizardBusinessPack.value)
+    }
     if (!projectWizardForm.name.trim()) {
       ElMessage.warning('请填写项目名称')
       return false
@@ -1666,23 +1793,15 @@ const validateProjectWizardStep = () => {
     }
   }
   if (projectWizardStep.value === 1) {
-    const orgNames = [
-      projectWizardForm.ownerOrgName,
-      projectWizardForm.contractorOrgName,
-      projectWizardForm.ndtOrgName,
-      projectWizardForm.inspectionOrgName
-    ]
+    const orgNames = projectWizardRoles.value.map(wizardOrgNameByRole)
     if (orgNames.some((name) => !name.trim())) {
       ElMessage.warning('请补齐参建单位')
       return false
     }
   }
   if (projectWizardStep.value === 2) {
-    if (
-      isEngineeringWizardPack.value &&
-      projectWizardRoles.some((role) => !projectWizardForm.memberUserIds[role])
-    ) {
-      ElMessage.warning('请为四类角色选择初始成员')
+    if (projectWizardRoles.value.some((role) => !projectWizardForm.memberUserIds[role])) {
+      ElMessage.warning('请为业务类型要求的角色选择初始成员')
       return false
     }
   }
@@ -1706,8 +1825,9 @@ const handleCreateProject = async () => {
     contractorOrgName: projectWizardForm.contractorOrgName,
     ndtOrgName: projectWizardForm.ndtOrgName,
     inspectionOrgName: projectWizardForm.inspectionOrgName,
-    currentNodeId: projectWizardForm.currentNodeId,
-    memberUserIds: { ...projectWizardForm.memberUserIds }
+    memberUserIds: Object.fromEntries(
+      projectWizardRoles.value.map((role) => [role, projectWizardForm.memberUserIds[role]])
+    )
   }
   projectCreating.value = true
   projectWizardError.value = ''
@@ -2109,14 +2229,55 @@ const handleExportConfig = async () => {
 }
 
 const handlePublishConfig = async () => {
+  let reason = ''
+  try {
+    const promptResult = await ElMessageBox.prompt(
+      `将发布“${adminPageTitle.value}”相关配置。请填写发布原因，系统会先计算影响范围。`,
+      '发布配置',
+      {
+        confirmButtonText: '生成影响预览',
+        cancelButtonText: '取消',
+        inputPlaceholder: '例如：完成权限矩阵复核，申请发布',
+        inputValidator: (value) => Boolean(value.trim()) || '必须填写发布原因'
+      }
+    )
+    reason = promptResult.value.trim()
+  } catch {
+    return
+  }
+
   configPublishing.value = true
   adminActionError.value = ''
   adminActionRetry.value = null
   try {
+    const previewResponse = await previewAdminConfigPublishApi({
+      scope: adminPublishScope.value,
+      reason
+    })
+    const preview = previewResponse?.data
+    if (!preview) {
+      throw new Error('影响预览未返回有效数据。')
+    }
+    const impact = preview.impact
+    const warningText = impact.warnings.length ? `\n警告：${impact.warnings.join('；')}` : ''
+    try {
+      await ElMessageBox.confirm(
+        `将发布 ${impact.totalAffected} 项配置，关联 ${impact.linkedProjects} 个未归档项目。${warningText}\n预览有效期至 ${preview.expiresAt}。`,
+        '确认发布影响',
+        {
+          type: impact.warnings.length ? 'warning' : 'info',
+          confirmButtonText: '确认发布',
+          cancelButtonText: '返回检查'
+        }
+      )
+    } catch {
+      return
+    }
     const res = await publishAdminConfigApi(
       {
-        scope: 'all',
-        reason: '发布管理后台配置快照。'
+        scope: adminPublishScope.value,
+        reason,
+        previewId: preview.previewId
       },
       { etag: overview.value.etag }
     )
@@ -2853,10 +3014,12 @@ onMounted(() => {
     <StaticPageShell
       brand-mark="管"
       title="项目与权限配置"
-      status="基础配置"
-      status-tone="blue"
+      :status="adminRuntimeStatus"
+      :status-tone="adminRuntimeStatusTone"
       search-placeholder="搜索项目、用户、权限、规则"
-      user-label="系统管理员 周工"
+      search-scope="admin"
+      task-area="admin"
+      :user-label="adminUserLabel"
       workspace-mode="wide"
       right-panel-mode="drawer"
       right-toggle-label="配置摘要"
@@ -2864,8 +3027,8 @@ onMounted(() => {
       boundary-collapsed-default
       :top-stats="[
         { label: '项目', value: projectTotal, tone: 'blue' },
-        { label: '配置待办', value: pendingRuleCount || 3, tone: 'orange' },
-        { label: '审计', value: auditPagination.total || 9, tone: 'red' }
+        { label: '配置待办', value: pendingRuleCount, tone: 'orange' },
+        { label: '审计', value: auditPagination.total, tone: 'red' }
       ]"
       menu-title="后台菜单"
       menu-root="后台管理功能"
@@ -2874,8 +3037,8 @@ onMounted(() => {
       boundary-badge="无业务办理"
       boundary-tone="green"
       :boundary-rows="adminShellBoundaryRows"
-      right-title="模板详情"
-      right-subtitle="Welder-Qualification-B v2.1"
+      right-title="运行摘要"
+      :right-subtitle="adminShellRightSubtitle"
       :right-cards="adminShellRightCards"
       @menu-select="handleAdminMenuSelect"
     >
@@ -2885,11 +3048,22 @@ onMounted(() => {
           <div class="page-subtitle">{{ adminPageSubtitle }}</div>
         </div>
         <ElSpace wrap>
-          <ElButton v-if="activeTab === 'projects'" type="primary" plain @click="openProjectWizard">
+          <ElButton v-if="activeTab === 'projects'" type="primary" @click="openProjectWizard">
             新建项目
           </ElButton>
-          <ElButton :loading="configExporting" @click="handleExportConfig">导出配置包</ElButton>
-          <ElButton type="primary" :loading="configPublishing" @click="handlePublishConfig">
+          <ElButton
+            v-if="activeTab === 'audit'"
+            :loading="configExporting"
+            @click="handleExportConfig"
+          >
+            导出配置包
+          </ElButton>
+          <ElButton
+            v-if="adminPublishAvailable"
+            type="primary"
+            :loading="configPublishing"
+            @click="handlePublishConfig"
+          >
             发布配置
           </ElButton>
         </ElSpace>
@@ -2974,13 +3148,6 @@ onMounted(() => {
           </div>
         </div>
       </details>
-
-      <AdminKnowledgeStaticDeepSections
-        mode="admin"
-        :projects="projects"
-        :admin-overview="overview"
-        :admin-stats="projectStats"
-      />
 
       <ElTabs v-model="activeTab" class="admin-tabs">
         <ElTabPane label="项目管理" name="projects">
@@ -4510,37 +4677,84 @@ onMounted(() => {
                 </ElFormItem>
               </ElCol>
             </ElRow>
-            <ElFormItem label="起始节点">
-              <ElInputNumber
-                v-model="projectWizardForm.currentNodeId"
-                :min="1"
-                :max="selectedWizardNodeMax"
-              />
-            </ElFormItem>
+            <ElAlert
+              type="info"
+              show-icon
+              :closable="false"
+              title="起始节点和节点范围由所选业务类型版本自动确定，立项后不可手工改写。"
+            />
           </div>
 
           <div v-show="projectWizardStep === 1">
             <ElRow :gutter="12">
               <ElCol :xs="24" :sm="12">
                 <ElFormItem label="建设单位">
-                  <ElInput v-model="projectWizardForm.ownerOrgName" />
+                  <ElSelect
+                    v-model="projectWizardForm.ownerOrgName"
+                    filterable
+                    placeholder="请选择已启用建设单位"
+                    @change="handleWizardOrgChange('owner')"
+                  >
+                    <ElOption
+                      v-for="org in wizardOrgOptions('owner')"
+                      :key="org.id"
+                      :label="org.name"
+                      :value="org.name"
+                    />
+                  </ElSelect>
                 </ElFormItem>
               </ElCol>
               <ElCol :xs="24" :sm="12">
                 <ElFormItem label="施工单位">
-                  <ElInput v-model="projectWizardForm.contractorOrgName" />
+                  <ElSelect
+                    v-model="projectWizardForm.contractorOrgName"
+                    filterable
+                    placeholder="请选择已启用施工单位"
+                    @change="handleWizardOrgChange('contractor')"
+                  >
+                    <ElOption
+                      v-for="org in wizardOrgOptions('contractor')"
+                      :key="org.id"
+                      :label="org.name"
+                      :value="org.name"
+                    />
+                  </ElSelect>
                 </ElFormItem>
               </ElCol>
             </ElRow>
             <ElRow :gutter="12">
-              <ElCol :xs="24" :sm="12">
+              <ElCol v-if="wizardUsesRole('ndt')" :xs="24" :sm="12">
                 <ElFormItem label="无损检测单位">
-                  <ElInput v-model="projectWizardForm.ndtOrgName" />
+                  <ElSelect
+                    v-model="projectWizardForm.ndtOrgName"
+                    filterable
+                    placeholder="请选择已启用无损检测单位"
+                    @change="handleWizardOrgChange('ndt')"
+                  >
+                    <ElOption
+                      v-for="org in wizardOrgOptions('ndt')"
+                      :key="org.id"
+                      :label="org.name"
+                      :value="org.name"
+                    />
+                  </ElSelect>
                 </ElFormItem>
               </ElCol>
               <ElCol :xs="24" :sm="12">
                 <ElFormItem label="监检机构">
-                  <ElInput v-model="projectWizardForm.inspectionOrgName" />
+                  <ElSelect
+                    v-model="projectWizardForm.inspectionOrgName"
+                    filterable
+                    placeholder="请选择已启用监检机构"
+                    @change="handleWizardOrgChange('inspection')"
+                  >
+                    <ElOption
+                      v-for="org in wizardOrgOptions('inspection')"
+                      :key="org.id"
+                      :label="org.name"
+                      :value="org.name"
+                    />
+                  </ElSelect>
                 </ElFormItem>
               </ElCol>
             </ElRow>
@@ -4551,14 +4765,9 @@ onMounted(() => {
               type="info"
               show-icon
               :closable="false"
-              :title="
-                isEngineeringWizardPack
-                  ? '立项后将生成 GC 工业管道监检节点，并按四类角色写入初始项目成员授权。'
-                  : '立项后将按 GA/GB 类业务类型角色自动创建成员授权，并进入通用资料审查工作台。'
-              "
+              :title="`立项后将按 ${selectedWizardBusinessPack?.pipelineTypeCode || '当前'} 业务类型生成节点，并只写入本次明确选择的成员授权。`"
             />
             <ElTable
-              v-if="isEngineeringWizardPack"
               :data="tableRows(projectWizardRoles, tableStates.projectWizardRoles)"
               border
               class="wizard-member-table"
@@ -4569,7 +4778,12 @@ onMounted(() => {
               </ElTableColumn>
               <ElTableColumn label="初始成员" min-width="260">
                 <template #default="{ row }">
-                  <ElSelect v-model="projectWizardForm.memberUserIds[row]" filterable>
+                  <ElSelect
+                    v-model="projectWizardForm.memberUserIds[row]"
+                    filterable
+                    placeholder="请选择所属单位的启用用户"
+                    no-data-text="该单位暂无可用用户"
+                  >
                     <ElOption
                       v-for="user in wizardUsersByRole(row)"
                       :key="user.id"
@@ -4585,13 +4799,12 @@ onMounted(() => {
                 min-width="180"
                 sortable="custom"
               >
-                <template #default="{ row }">
-                  {{ row === 'ndt' ? '35, 36, 40, 41, 42' : '1, 16, 24, 40, 68' }}
+                <template #default>
+                  按业务类型授权 {{ selectedWizardBusinessPack?.nodeCount || 0 }} 个节点
                 </template>
               </ElTableColumn>
             </ElTable>
             <ElPagination
-              v-if="isEngineeringWizardPack"
               v-model:current-page="tableStates.projectWizardRoles.page"
               v-model:page-size="tableStates.projectWizardRoles.pageSize"
               class="table-pagination"
@@ -4600,10 +4813,6 @@ onMounted(() => {
               layout="total, sizes, prev, pager, next, jumper"
               :total="projectWizardRoles.length"
               @size-change="resetTablePage('projectWizardRoles')"
-            />
-            <ElEmpty
-              v-else
-              description="GA/GB 类使用业务类型角色定义自动授权，后续可在项目成员中细化。"
             />
           </div>
         </ElForm>
@@ -4885,7 +5094,7 @@ onMounted(() => {
             <ElRow :gutter="12">
               <ElCol :xs="24" :sm="12">
                 <ElFormItem label="节点数">
-                  <ElInputNumber v-model="configForm.nodeCount" :min="0" :max="69" />
+                  <ElInputNumber v-model="configForm.nodeCount" :min="0" />
                 </ElFormItem>
               </ElCol>
               <ElCol :xs="24" :sm="12">
@@ -5022,7 +5231,7 @@ onMounted(() => {
               </ElCol>
               <ElCol :xs="24" :sm="12">
                 <ElFormItem label="节点编号">
-                  <ElInputNumber v-model="configForm.reviewPointNodeId" :min="1" :max="69" />
+                  <ElInputNumber v-model="configForm.reviewPointNodeId" :min="1" />
                 </ElFormItem>
               </ElCol>
             </ElRow>
@@ -5120,7 +5329,7 @@ onMounted(() => {
             <ElRow :gutter="12">
               <ElCol :xs="24" :sm="12">
                 <ElFormItem label="节点编号">
-                  <ElInputNumber v-model="configForm.fieldNodeId" :min="1" :max="69" />
+                  <ElInputNumber v-model="configForm.fieldNodeId" :min="1" />
                 </ElFormItem>
               </ElCol>
               <ElCol :xs="24" :sm="12">
@@ -6120,6 +6329,10 @@ onMounted(() => {
 
 .admin-tabs {
   margin-top: 2px;
+}
+
+:deep(.admin-tabs > .el-tabs__header) {
+  display: none;
 }
 
 .error-stack {

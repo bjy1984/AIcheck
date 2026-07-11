@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 import subprocess
@@ -19,6 +20,14 @@ REQUIRED_IMAGE_SERVICES = (
     "litellm-service",
 )
 MAX_SCAN_AGE = timedelta(hours=72)
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def parse_args() -> argparse.Namespace:
@@ -88,9 +97,16 @@ def validate_scan_directory(output_dir: Path) -> dict[str, Any]:
             image_id = str(service_manifest.get("imageId") or "") if isinstance(service_manifest, dict) else ""
             if not image_id.startswith("sha256:"):
                 failures.append(f"scan-manifest: {service} has no immutable image ID")
+            repo_digests = (service_manifest.get("repoDigests") or []) if isinstance(service_manifest, dict) else []
+            if service == "litellm-service" and not any("@sha256:" in str(item) for item in repo_digests):
+                failures.append("scan-manifest: litellm-service has no immutable repository digest")
         source_commit = str(manifest.get("sourceCommit") or "")
         if len(source_commit) < 7:
             failures.append("scan-manifest: sourceCommit is missing")
+        for field in ("composeSha256", "frontendLockSha256"):
+            value = str(manifest.get(field) or "")
+            if len(value) != 64:
+                failures.append(f"scan-manifest: {field} is missing")
     except (ValueError, TypeError) as exc:
         manifest = {}
         failures.append(f"scan-manifest: {exc}")
@@ -222,6 +238,8 @@ def generate_evidence(
                 "schemaVersion": "aicheck-security-scan-manifest-v1",
                 "generatedAt": datetime.now(UTC).isoformat(),
                 "sourceCommit": commit_result.stdout.strip(),
+                "composeSha256": file_sha256(compose_file),
+                "frontendLockSha256": file_sha256(frontend_dir / "pnpm-lock.yaml"),
                 "services": manifest_services,
             },
             indent=2,

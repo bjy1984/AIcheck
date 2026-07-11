@@ -15,8 +15,13 @@ def write_clean_evidence(directory: Path) -> None:
                 "schemaVersion": "aicheck-security-scan-manifest-v1",
                 "generatedAt": datetime.now(UTC).isoformat(),
                 "sourceCommit": "abcdef1234567890",
+                "composeSha256": "a" * 64,
+                "frontendLockSha256": "b" * 64,
                 "services": {
-                    service: {"imageId": f"sha256:{index:064x}", "repoDigests": []}
+                    service: {
+                        "imageId": f"sha256:{index:064x}",
+                        "repoDigests": [f"registry.example/{service}@sha256:{index:064x}"],
+                    }
                     for index, service in enumerate(REQUIRED_IMAGE_SERVICES, start=1)
                 },
             }
