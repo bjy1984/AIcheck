@@ -391,12 +391,42 @@ def parse_qwen_json(response: dict[str, Any]) -> dict[str, Any]:
     return parsed
 
 
+def normalize_qwen_structured_output(output: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
+    normalized = deepcopy(output)
+    fields = normalized.get("fields") if isinstance(normalized.get("fields"), dict) else {}
+    tables = normalized.get("tables") if isinstance(normalized.get("tables"), dict) else {}
+    structured = profile.get("structuredExtraction") if isinstance(profile.get("structuredExtraction"), dict) else {}
+    field_definitions = structured.get("fieldDefinitions")
+    known_field_codes = {
+        str(value)
+        for value in [*(profile.get("requiredFields") or []), *((field_definitions or {}).keys())]
+        if str(value) and str(value) != "seal"
+    }
+    for field_code in known_field_codes:
+        candidate = normalized.get(field_code)
+        if isinstance(candidate, dict) and (
+            "value" in candidate or "sourceCandidateIds" in candidate
+        ):
+            fields.setdefault(field_code, normalized.pop(field_code))
+    for table_code in [str(value) for value in profile.get("requiredTables") or [] if str(value)]:
+        candidate = normalized.get(table_code)
+        if isinstance(candidate, list):
+            tables.setdefault(table_code, normalized.pop(table_code))
+    if "seals" not in normalized and isinstance(normalized.get("seal"), list):
+        normalized["seals"] = normalized.pop("seal")
+    normalized["fields"] = fields
+    normalized["tables"] = tables
+    normalized.setdefault("seals", [])
+    normalized.setdefault("missingRequiredFields", [])
+    return normalized
+
+
 def merge_batch_outputs(outputs: list[dict[str, Any]]) -> dict[str, Any]:
     merged: dict[str, Any] = {"fields": {}, "tables": {}, "seals": [], "missingRequiredFields": []}
     conflicts: list[dict[str, Any]] = []
     for output in outputs:
         for key, item in (output.get("fields") or {}).items():
-            if not isinstance(item, dict) or item.get("value") in {None, ""}:
+            if not isinstance(item, dict) or item.get("value") is None or item.get("value") == "":
                 continue
             existing = merged["fields"].get(key)
             if existing and str(existing.get("value")) != str(item.get("value")):
@@ -442,7 +472,9 @@ def validated_ocr_fields(
         value = item.get("value")
         candidate_ids = [str(value) for value in item.get("sourceCandidateIds") or []]
         candidates = [all_candidates[candidate_id] for candidate_id in candidate_ids if candidate_id in all_candidates]
-        if value in {None, ""} or not candidates or not all(candidate.get("formalEvidenceEligible") for candidate in candidates):
+        if value is None or value == "" or not candidates or not all(
+            candidate.get("formalEvidenceEligible") for candidate in candidates
+        ):
             continue
         confidences = [float(candidate.get("confidence") or 0.8) for candidate in candidates]
         output.append(

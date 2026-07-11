@@ -68,6 +68,7 @@ from libs.ocr_accuracy_pipeline import (
     default_profile,
     merge_batch_outputs,
     merge_grounded_fields,
+    normalize_qwen_structured_output,
     page_batches,
     page_numbers,
     infer_preliminary_profile_id,
@@ -1025,7 +1026,7 @@ def ocr_pipeline_qwen_extract(self, run_id: str) -> dict[str, Any]:
             response_usage = response.get("usage") if isinstance(response.get("usage"), dict) else {}
             for key in usage:
                 usage[key] += int(response_usage.get(key) or 0)
-            parsed_output = parse_qwen_json(response)
+            parsed_output = normalize_qwen_structured_output(parse_qwen_json(response), profile)
             attribution = validate_batch_output(parsed_output, compact_prior)
             batch_outputs.append(attribution["structuredOutput"])
             batch_validations.append(
@@ -1047,7 +1048,7 @@ def ocr_pipeline_qwen_extract(self, run_id: str) -> dict[str, Any]:
         extracted_fields = {
             str(key)
             for key, item in (structured_output.get("fields") or {}).items()
-            if isinstance(item, dict) and item.get("value") not in {None, ""}
+            if isinstance(item, dict) and item.get("value") is not None and item.get("value") != ""
         }
         unresolved_fields = sorted(required_fields - extracted_fields)
         conflicts = structured_output.get("conflicts") if isinstance(structured_output.get("conflicts"), list) else []
@@ -1109,7 +1110,10 @@ def ocr_pipeline_qwen_extract(self, run_id: str) -> dict[str, Any]:
                 raise RuntimeError("qwen_rescue_output_truncated")
             for key in usage:
                 usage[key] += int(rescue_usage.get(key) or 0)
-            rescue_attribution = validate_batch_output(parse_qwen_json(rescue_response), rescue_compact)
+            rescue_attribution = validate_batch_output(
+                normalize_qwen_structured_output(parse_qwen_json(rescue_response), profile),
+                rescue_compact,
+            )
             batch_outputs.insert(0, rescue_attribution["structuredOutput"])
             batch_validations.append(
                 {

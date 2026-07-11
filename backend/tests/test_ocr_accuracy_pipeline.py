@@ -13,6 +13,7 @@ from libs.ocr_accuracy_pipeline import (
     initial_stage_records,
     infer_preliminary_profile_id,
     merge_batch_outputs,
+    normalize_qwen_structured_output,
     page_batches,
     pipeline_enabled,
     pipeline_mode,
@@ -186,6 +187,20 @@ def test_merge_batch_outputs_keeps_validated_first_value() -> None:
 
     assert merged["fields"]["report_no"]["value"] == "RT-001"
     assert merged["conflicts"][0]["fieldCode"] == "report_no"
+
+
+def test_qwen_top_level_profile_fields_are_normalized_before_validation() -> None:
+    profile = profile_for("ndt_rt_report_v1", "ndt_report")
+    raw = {
+        "report_no": {"value": "RT-2026-001", "sourceCandidateIds": ["EP2-FIELD-1"]},
+        "ndt_rt_report_table": [{"cells": {}, "sourceCandidateIds": []}],
+        "seal": [{"value": "检测专用章", "sourceCandidateIds": ["EP2-SEAL-1"]}],
+    }
+
+    normalized = normalize_qwen_structured_output(raw, profile)
+
+    assert normalized["fields"]["report_no"]["value"] == "RT-2026-001"
+    assert normalized["seals"][0]["value"] == "检测专用章"
 
 
 def test_required_field_blockers_accept_structured_list_values() -> None:
