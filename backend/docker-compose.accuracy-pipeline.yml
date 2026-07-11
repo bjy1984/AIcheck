@@ -1,0 +1,106 @@
+x-pipeline-worker: &pipeline-worker
+  build:
+    context: .
+    dockerfile: Dockerfile.server
+  environment: &pipeline-worker-environment
+    AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${AICHECK_POSTGRES_DB:-aicheck}
+    AICHECK_REDIS_URL: ${AICHECK_REDIS_URL:-redis://redis:6379/0}
+    AICHECK_TASK_DISPATCH: celery
+    AICHECK_STRICT_PRODUCTION: ${AICHECK_STRICT_PRODUCTION:-true}
+    AICHECK_REVIEW_ORCHESTRATION: ${AICHECK_REVIEW_ORCHESTRATION:-temporal}
+    AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_ENDPOINT:-minio:9000}
+    AICHECK_MINIO_ACCESS_KEY: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
+    AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:?AICHECK_MINIO_SECRET_KEY is required}
+    AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
+    AICHECK_OCR_BASE_URL: ${AICHECK_OCR_BASE_URL:-http://ocr-service:8010}
+    AICHECK_OCR_USE_JOB_API: "false"
+    AICHECK_OCR_PIPELINE_MODE: ${AICHECK_OCR_PIPELINE_MODE:-shadow}
+    AICHECK_OCR_PIPELINE_VERSION: ${AICHECK_OCR_PIPELINE_VERSION:-ocr-accuracy-first@1}
+    AICHECK_OCR_PIPELINE_PROFILE_ALLOWLIST: ${AICHECK_OCR_PIPELINE_PROFILE_ALLOWLIST:-ndt_rt_report_v1,quality_certificate_v1,engineering_drawing_list_v1,piping_characteristic_list_v1,comprehensive_material_list_v1}
+    AICHECK_OCR_QWEN_IMAGE_POLICY: page_and_roi
+    AICHECK_OCR_QWEN_MAX_PAGES: ${AICHECK_OCR_QWEN_MAX_PAGES:-60}
+    AICHECK_OCR_QWEN_MAX_TOKENS: ${AICHECK_OCR_QWEN_MAX_TOKENS:-3200}
+    AICHECK_OCR_QWEN_TIMEOUT_SECONDS: ${AICHECK_OCR_QWEN_TIMEOUT_SECONDS:-180}
+    AICHECK_DOCUMENT_AI_MODE: off
+    AICHECK_AUDIT_MODEL_COMPARISON_MODE: off
+    AICHECK_QWEN_CALL_MODE: official_api
+    AICHECK_QWEN_ALLOW_SERVER_FALLBACK: "false"
+    QWEN_API_BASE: ${QWEN_API_BASE:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+    QWEN_API_KEY: ${QWEN_API_KEY:?QWEN_API_KEY is required}
+    AICHECK_EMBEDDING_PROVIDER: local
+    AICHECK_EMBEDDING_API_BASE: http://embedding-service:7997
+    AICHECK_EMBEDDING_API_KEY: ${INFINITY_API_KEY:?INFINITY_API_KEY is required}
+    AICHECK_EMBEDDING_MODEL_ID: Qwen/Qwen3-Embedding-0.6B
+    AICHECK_EMBEDDING_SERVED_MODEL_NAME: embedding-default
+    AICHECK_EMBEDDING_BATCH_SIZE: "32"
+    AICHECK_EMBEDDING_CHECKPOINT_BATCH_SIZE: "8"
+    AICHECK_EMBEDDING_FORCE_OFFLINE_HASH: "false"
+    AICHECK_EMBEDDING_ALLOW_HASH_FALLBACK: "false"
+    LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://litellm-service:4000}
+    LITELLM_API_KEY: ${LITELLM_API_KEY:?LITELLM_API_KEY is required}
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    api-service:
+      condition: service_healthy
+    minio:
+      condition: service_healthy
+    ocr-service:
+      condition: service_healthy
+    embedding-service:
+      condition: service_healthy
+    litellm-service:
+      condition: service_healthy
+  healthcheck:
+    test:
+      [
+        "CMD-SHELL",
+        "celery -A apps.worker.celery_app.celery_app inspect ping -d celery@$$HOSTNAME --timeout=5 | grep -q pong",
+      ]
+    interval: 30s
+    timeout: 10s
+    retries: 6
+
+services:
+  worker-service:
+    <<: *pipeline-worker
+    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=2 --prefetch-multiplier=1 -Q business.light
+
+  cpu-heavy-worker-service:
+    <<: *pipeline-worker
+    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=1 --prefetch-multiplier=1 -Q cpu.heavy
+
+  llm-remote-worker-service:
+    <<: *pipeline-worker
+    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=1 --prefetch-multiplier=1 -Q llm.remote
+
+  ocr-service:
+    environment:
+      AICHECK_OCR_ENABLE_PERSISTENT_SUBPROCESS: "true"
+      AICHECK_OCR_PERSISTENT_WORKER_TIMEOUT: "180"
+      AICHECK_OCR_DEEP_READY_PROBE: "true"
+      AICHECK_OCR_MIN_MEMORY_HEADROOM_MB: "2048"
+      AICHECK_PADDLEOCR_MEMORY_LIMIT_MB: "4096"
+      AICHECK_PP_STRUCTURE_MEMORY_LIMIT_MB: "6144"
+      AICHECK_PADDLEX_SEAL_MEMORY_LIMIT_MB: "3072"
+      AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE: "true"
+      AICHECK_ENABLE_PADDLEOCR_VL: "false"
+      AICHECK_OCR_PREPROCESS_CACHE_DIR: /var/cache/aicheck-ocr/preprocess
+      AICHECK_OCR_RESULT_CACHE_DIR: /var/cache/aicheck-ocr/results
+      AICHECK_OCR_ENGINE_RESULT_CACHE_DIR: /var/cache/aicheck-ocr/engines
+      AICHECK_OCR_CACHE_MAX_AGE_HOURS: "72"
+      AICHECK_OCR_CACHE_MAX_BYTES: "5368709120"
+      OMP_NUM_THREADS: "4"
+      MKL_NUM_THREADS: "4"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "4"
+    volumes:
+      - ocr-cache:/var/cache/aicheck-ocr
+    mem_limit: 10g
+    mem_reservation: 4g
+    restart: unless-stopped
+
+volumes:
+  ocr-cache:
