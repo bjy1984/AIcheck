@@ -62,10 +62,12 @@ from libs.ocr_accuracy_pipeline import (
     merge_grounded_fields,
     page_batches,
     page_numbers,
+    infer_preliminary_profile_id,
     pipeline_enabled,
     pipeline_mode,
     pipeline_run_key,
     pipeline_version,
+    profile_from_ocr_result,
     qwen_messages,
     render_candidate_rois,
     render_pages,
@@ -686,8 +688,9 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
     document = repo.find_one("documents", document_id)
     profile_id = (version or {}).get("ocrProfileId") or (document or {}).get("ocrProfileId")
     document_type = (version or {}).get("documentType") or (document or {}).get("documentType")
+    preliminary_profile_id = infer_preliminary_profile_id(file_name, profile_id, document_type)
     knowledge_file = repo.knowledge_file_for_version(version_id)
-    has_business_ocr_profile = bool(profile_id and profile_id != "generic_document_v1") or bool(document_type)
+    has_business_ocr_profile = preliminary_profile_id != "generic_document_v1" or bool(document_type)
     ocr_options: dict[str, Any] = {}
     if not has_business_ocr_profile:
         ocr_options.update(
@@ -707,7 +710,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
                 "enableFallback": True,
             }
         )
-    resolved_profile = default_profile(profile_id, document_type)
+    resolved_profile = default_profile(preliminary_profile_id, document_type)
     resolved_profile_id = str(resolved_profile.get("profileId") or profile_id or "generic_document_v1")
     run_key = pipeline_run_key(document_id, version_id, storage_key, resolved_profile_id)
     pipeline_run = repo.create_or_resume_ocr_pipeline_run(
@@ -742,7 +745,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
         version_id=version_id,
         storage_key=storage_key,
         file_name=file_name,
-        profile_id=profile_id,
+        profile_id=resolved_profile_id,
         document_type=document_type,
     )
     repo.mark_ocr_job_running(ocr_job_record, pipeline_run_id=str(pipeline_run.get("id") or ""))
@@ -754,7 +757,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
             file_name=file_name,
             document_id=document_id,
             version_id=version_id,
-            profile_id=profile_id,
+            profile_id=resolved_profile_id,
             document_type=document_type,
             options=ocr_options,
         )
@@ -811,6 +814,17 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
             "ocrJobRecordId": ocr_job_record.get("id"),
         }
     parse_result_record = repo.finish_ocr_job_record(ocr_job_record, result)
+    routed_profile = profile_from_ocr_result(parse_result_record or result, resolved_profile)
+    routed_profile_id = str(routed_profile.get("profileId") or resolved_profile_id)
+    route_metadata = (parse_result_record or result).get("metadata")
+    route_metadata = route_metadata if isinstance(route_metadata, dict) else {}
+    pipeline_run["requestedProfileId"] = resolved_profile_id
+    pipeline_run["profileId"] = routed_profile_id
+    pipeline_run["documentType"] = routed_profile.get("documentType") or document_type
+    pipeline_run["detectedProfileId"] = route_metadata.get("detectedProfileId") or routed_profile_id
+    pipeline_run["profileRouteReason"] = route_metadata.get("profileRouteReason") or (
+        "filename_signal" if preliminary_profile_id != str(profile_id or "generic_document_v1") else "requested_profile"
+    )
     pipeline_run["baselineParseResultId"] = (parse_result_record or {}).get("parseResultId")
     pipeline_run["parseResultId"] = (parse_result_record or {}).get("parseResultId")
     local_artifact_url, local_artifact_hash = store_ocr_pipeline_artifact(
@@ -821,12 +835,12 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
     mark_local_pipeline_stages(
         pipeline_run,
         parse_result_record or result,
-        resolved_profile,
+        routed_profile,
         artifact_url=local_artifact_url,
         artifact_hash=local_artifact_hash,
     )
     accuracy_pipeline_enabled = pipeline_enabled(
-        resolved_profile_id,
+        routed_profile_id,
         source_type=(knowledge_file or {}).get("sourceType"),
     )
     applied: dict[str, Any] = {"status": "queued"}

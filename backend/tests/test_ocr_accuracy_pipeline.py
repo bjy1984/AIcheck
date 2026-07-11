@@ -11,11 +11,13 @@ from libs.ocr_accuracy_pipeline import (
     PIPELINE_STAGES,
     build_batch_prior,
     initial_stage_records,
+    infer_preliminary_profile_id,
     merge_batch_outputs,
     page_batches,
     pipeline_enabled,
     pipeline_mode,
     pipeline_run_key,
+    profile_from_ocr_result,
     qwen_messages,
     validated_ocr_fields,
     validate_batch_output,
@@ -62,6 +64,29 @@ def test_pipeline_defaults_to_shadow_and_profile_allowlist(monkeypatch) -> None:
     assert pipeline_enabled("ndt_rt_report_v1") is True
     assert pipeline_enabled("generic_document_v1") is False
     assert pipeline_enabled("ndt_rt_report_v1", source_type="standard") is False
+
+
+def test_filename_preliminary_profile_routing_is_conservative() -> None:
+    assert infer_preliminary_profile_id("钢管质量证明书.pdf", None, None) == "quality_certificate_v1"
+    assert infer_preliminary_profile_id("RT检测报告R2.pdf", None, None) == "ndt_rt_report_v1"
+    assert infer_preliminary_profile_id("IMG_6514.png", None, None) == "generic_document_v1"
+    assert (
+        infer_preliminary_profile_id("RT检测报告.pdf", "engineering_drawing_list_v1", None)
+        == "engineering_drawing_list_v1"
+    )
+
+
+def test_ocr_detected_profile_overrides_generic_fallback() -> None:
+    fallback = profile_for("generic_document_v1")
+    result = {
+        "profileId": "piping_characteristic_list_v1",
+        "documentType": "piping_characteristic_list",
+        "metadata": {"detectedProfileId": "piping_characteristic_list_v1"},
+    }
+
+    routed = profile_from_ocr_result(result, fallback)
+
+    assert routed["profileId"] == "piping_characteristic_list_v1"
 
 
 def test_pipeline_stage_records_are_queued_and_ordered() -> None:

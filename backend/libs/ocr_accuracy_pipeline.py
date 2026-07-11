@@ -39,6 +39,14 @@ DEFAULT_PROFILE_ALLOWLIST = {
     "piping_characteristic_list_v1",
     "comprehensive_material_list_v1",
 }
+GENERIC_PROFILE_IDS = {"", "generic_document_v1"}
+FILENAME_PROFILE_SIGNALS = (
+    ("ndt_rt_report_v1", ("射线检测", "射线探伤", "RT检测", "RT报告", "RADIOGRAPHIC")),
+    ("quality_certificate_v1", ("质量证明", "材质证明", "产品合格证", "质量证书")),
+    ("engineering_drawing_list_v1", ("工艺图纸目录", "图纸目录", "DRAWINGLIST")),
+    ("piping_characteristic_list_v1", ("管道特性表", "PIPINGCHARACTERISTIC")),
+    ("comprehensive_material_list_v1", ("综合材料表", "COMPREHENSIVEMATERIALLIST")),
+)
 
 
 def pipeline_mode() -> str:
@@ -61,6 +69,38 @@ def pipeline_enabled(profile_id: str | None, *, source_type: str | None = None) 
     if pipeline_mode() == "off" or source_type == "standard":
         return False
     return bool(profile_id and str(profile_id) in pipeline_profile_allowlist())
+
+
+def infer_preliminary_profile_id(
+    file_name: str | None,
+    profile_id: str | None,
+    document_type: str | None,
+) -> str:
+    requested = profile_for(profile_id, document_type)
+    requested_profile_id = str(requested.get("profileId") or "generic_document_v1")
+    if requested_profile_id not in GENERIC_PROFILE_IDS:
+        return requested_profile_id
+    normalized_name = re.sub(r"[\s_.\-/]+", "", Path(str(file_name or "")).stem).upper()
+    for detected_profile_id, signals in FILENAME_PROFILE_SIGNALS:
+        if any(signal.upper() in normalized_name for signal in signals):
+            return detected_profile_id
+    return requested_profile_id
+
+
+def profile_from_ocr_result(result: dict[str, Any], fallback_profile: dict[str, Any]) -> dict[str, Any]:
+    metadata = result.get("metadata") if isinstance(result.get("metadata"), dict) else {}
+    detected_profile_id = str(
+        result.get("profileId")
+        or metadata.get("detectedProfileId")
+        or fallback_profile.get("profileId")
+        or "generic_document_v1"
+    )
+    detected_document_type = str(
+        result.get("documentType")
+        or fallback_profile.get("documentType")
+        or "generic_document"
+    )
+    return profile_for(detected_profile_id, detected_document_type)
 
 
 def pipeline_run_key(
