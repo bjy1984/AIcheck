@@ -491,7 +491,10 @@ def required_field_blockers(parse_result: dict[str, Any], profile: dict[str, Any
     available = {
         str(item.get("fieldCode") or item.get("fieldName") or "")
         for item in parse_result.get("fields") or []
-        if isinstance(item, dict) and item.get("fieldValue") not in {None, ""} and item.get("bbox")
+        if isinstance(item, dict)
+        and item.get("fieldValue") is not None
+        and item.get("fieldValue") != ""
+        and item.get("bbox")
     }
     return [
         {"code": "REQUIRED_FIELD_MISSING", "fieldCode": field_code}

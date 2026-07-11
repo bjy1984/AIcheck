@@ -19,6 +19,7 @@ from libs.ocr_accuracy_pipeline import (
     pipeline_run_key,
     profile_from_ocr_result,
     qwen_messages,
+    required_field_blockers,
     validated_ocr_fields,
     validate_batch_output,
 )
@@ -185,6 +186,21 @@ def test_merge_batch_outputs_keeps_validated_first_value() -> None:
 
     assert merged["fields"]["report_no"]["value"] == "RT-001"
     assert merged["conflicts"][0]["fieldCode"] == "report_no"
+
+
+def test_required_field_blockers_accept_structured_list_values() -> None:
+    profile = {"requiredFields": ["drawing_numbers"]}
+    parse_result = {
+        "fields": [
+            {
+                "fieldCode": "drawing_numbers",
+                "fieldValue": ["QX-01", "QX-02"],
+                "bbox": [10, 10, 100, 40],
+            }
+        ]
+    }
+
+    assert required_field_blockers(parse_result, profile) == []
 
 
 def test_repository_pipeline_run_is_queued_until_worker_stage_starts() -> None:

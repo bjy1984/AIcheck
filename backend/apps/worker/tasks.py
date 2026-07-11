@@ -986,6 +986,7 @@ def ocr_pipeline_qwen_extract(self, run_id: str) -> dict[str, Any]:
         batch_validations: list[dict[str, Any]] = []
         all_candidates: dict[str, dict[str, Any]] = {}
         usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        finish_reasons: list[str] = []
         qwen_model = None
         qwen_provider = None
         for batch_index, selected_pages in enumerate(page_batches(parse_result), start=1):
@@ -1011,11 +1012,16 @@ def ocr_pipeline_qwen_extract(self, run_id: str) -> dict[str, Any]:
                 response_format={"type": "json_object"},
                 enable_thinking=False,
                 temperature=0.0,
-                max_tokens=int(os.getenv("AICHECK_OCR_QWEN_MAX_TOKENS", "3200")),
+                max_tokens=int(os.getenv("AICHECK_OCR_QWEN_MAX_TOKENS", "8192")),
                 timeout=float(os.getenv("AICHECK_OCR_QWEN_TIMEOUT_SECONDS", "180")),
             )
             qwen_model = response.get("model") or qwen_model
             qwen_provider = response.get("provider") or qwen_provider
+            choices = response.get("choices") if isinstance(response.get("choices"), list) else []
+            finish_reason = str((choices[0] or {}).get("finish_reason") or "unknown") if choices else "unknown"
+            finish_reasons.append(finish_reason)
+            if finish_reason == "length":
+                raise RuntimeError("qwen_output_truncated")
             response_usage = response.get("usage") if isinstance(response.get("usage"), dict) else {}
             for key in usage:
                 usage[key] += int(response_usage.get(key) or 0)
@@ -1090,10 +1096,17 @@ def ocr_pipeline_qwen_extract(self, run_id: str) -> dict[str, Any]:
                 response_format={"type": "json_object"},
                 enable_thinking=False,
                 temperature=0.0,
-                max_tokens=int(os.getenv("AICHECK_OCR_QWEN_MAX_TOKENS", "3200")),
+                max_tokens=int(os.getenv("AICHECK_OCR_QWEN_MAX_TOKENS", "8192")),
                 timeout=float(os.getenv("AICHECK_OCR_QWEN_TIMEOUT_SECONDS", "180")),
             )
             rescue_usage = rescue_response.get("usage") if isinstance(rescue_response.get("usage"), dict) else {}
+            rescue_choices = rescue_response.get("choices") if isinstance(rescue_response.get("choices"), list) else []
+            rescue_finish_reason = (
+                str((rescue_choices[0] or {}).get("finish_reason") or "unknown") if rescue_choices else "unknown"
+            )
+            finish_reasons.append(rescue_finish_reason)
+            if rescue_finish_reason == "length":
+                raise RuntimeError("qwen_rescue_output_truncated")
             for key in usage:
                 usage[key] += int(rescue_usage.get(key) or 0)
             rescue_attribution = validate_batch_output(parse_qwen_json(rescue_response), rescue_compact)
@@ -1130,6 +1143,7 @@ def ocr_pipeline_qwen_extract(self, run_id: str) -> dict[str, Any]:
             "structuredOutput": structured_output,
             "groundedFields": grounded_fields,
             "groundingValidation": validation_summary,
+            "finishReasons": finish_reasons,
         }
         artifact_url, artifact_hash = store_ocr_pipeline_artifact(run, "qwen_extract", artifact_payload)
         run.update(
@@ -1141,6 +1155,7 @@ def ocr_pipeline_qwen_extract(self, run_id: str) -> dict[str, Any]:
                 "qwenStructuredOutput": structured_output,
                 "groundedFields": grounded_fields,
                 "groundingValidation": validation_summary,
+                "qwenFinishReasons": finish_reasons,
                 "updatedAt": server_time(),
             }
         )
@@ -1211,8 +1226,7 @@ def ocr_pipeline_qwen_extract(self, run_id: str) -> dict[str, Any]:
             shutil.rmtree(source_temp, ignore_errors=True)
 
 
-@celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 2})
-def ocr_pipeline_finalize(self, run_id: str) -> dict[str, Any]:
+def _ocr_pipeline_finalize_impl(run_id: str) -> dict[str, Any]:
     refresh_worker_state(
         {
             "projects",
@@ -1330,6 +1344,45 @@ def ocr_pipeline_finalize(self, run_id: str) -> dict[str, Any]:
         "blockingReasons": blockers,
         "applied": applied,
     }
+
+
+@celery_app.task(bind=True, max_retries=2)
+def ocr_pipeline_finalize(self, run_id: str) -> dict[str, Any]:
+    try:
+        return _ocr_pipeline_finalize_impl(run_id)
+    except Exception as exc:
+        refresh_worker_state({"ocr_pipeline_runs", "ocr_stage_runs"})
+        run = repo.find_one("ocr_pipeline_runs", run_id)
+        if run is None:
+            raise
+        failed_stage = str(run.get("currentStage") or "finalize")
+        retry_index = int(getattr(self.request, "retries", 0) or 0)
+        if retry_index < 2:
+            countdown = (5, 15)[retry_index]
+            repo.mark_ocr_pipeline_stage(run, failed_stage, "retrying", failure_reason=exc.__class__.__name__)
+            run["recommendedAction"] = f"结果收敛将在 {countdown} 秒后重试。"
+            persist_ocr_pipeline_progress(run)
+            raise self.retry(exc=exc, countdown=countdown)
+        repo.mark_ocr_pipeline_stage(
+            run,
+            failed_stage,
+            "failed",
+            blocking_reasons=[{"code": "PIPELINE_FINALIZE_FAILED"}],
+            failure_reason=exc.__class__.__name__,
+        )
+        repo.finish_ocr_pipeline_run(
+            run,
+            status="failed" if run.get("mode") == "active" else "partial",
+            blocking_reasons=[{"code": "PIPELINE_FINALIZE_FAILED"}],
+            recommended_action="在任务中心重试结果收敛，Shadow 基线结果保持不变。",
+            formal_evidence_ready=False,
+        )
+        persist_ocr_pipeline_progress(run)
+        return {
+            "pipelineRunId": run_id,
+            "status": run.get("status"),
+            "failureReason": exc.__class__.__name__,
+        }
 
 
 def document_ai_source_path(run: dict[str, Any]) -> tuple[Path | None, Path | None]:

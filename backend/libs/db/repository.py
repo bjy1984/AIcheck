@@ -931,6 +931,9 @@ class InMemoryRepository:
                         "progress": 0,
                         "finishedAt": None,
                         "failureReason": None,
+                        "blockingReasons": [],
+                        "recommendedAction": None,
+                        "formalEvidenceReady": False,
                         "updatedAt": now,
                     }
                 )
