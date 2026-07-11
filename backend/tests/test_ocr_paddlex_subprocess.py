@@ -161,6 +161,20 @@ def test_vl_engine_accepts_paddlex_vl_1_6_alias(monkeypatch, tmp_path) -> None:
     assert status["modelDirs"]["vl_rec"].endswith("PaddleOCR-VL-1.6")
 
 
+def test_vl_engine_explicit_disable_overrides_model_artifact_discovery(monkeypatch, tmp_path) -> None:
+    vl_dir = tmp_path / "paddleocr-vl"
+    (vl_dir / "PP-DocLayoutV3").mkdir(parents=True)
+    (vl_dir / "PaddleOCR-VL-1.6").mkdir()
+    monkeypatch.setenv("AICHECK_ENABLE_PADDLEOCR_VL", "false")
+    monkeypatch.setenv("PADDLEOCR_VL_MODEL_DIR", str(vl_dir))
+
+    status = engines.PaddleOcrVlEngine().status()
+
+    assert status["enabled"] == "false"
+    assert status["available"] is False
+    assert status["executionMode"] == "disabled"
+
+
 def test_vl_and_docling_engines_require_explicit_model_artifact_paths(monkeypatch, tmp_path) -> None:
     python_bin = tmp_path / "python"
     python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
