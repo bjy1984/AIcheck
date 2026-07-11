@@ -1,0 +1,44 @@
+=== api_health ===
+{"code":0,"data":{"status":"ok","service":"api-service","databaseBackend":"postgres","databaseConnected":true,"postgresEnabled":true,"postgresTransactions":true,"sqliteEnabled":false,"sqlitePath":null,"authRequired":true,"demoUsersEnabled":false,"objectStorageEnabled":true,"runtimeReady":true,"workflowSchemaReady":true,"workflowSchema":{"ready":true,"required":true,"tableCount":4,"missingTables":[]},"materialMappingReady":true,"materialMappingVersion":"engineering-inspection-material-map@375599f05903","materialMappingCount":151,"materialMappingHash":"375599f05903aed87493d822796ae94facc26791360574aae54adf3525aad8bb","serviceReadiness":{"ocr":{"configured":true,"executionBoundary":"remote_service_only"},"qwen":{"configured":true,"mode":"official_api","fallbackEnabled":false},"embedding":{"configured":true,"provider":"local"},"temporal":{"configured":true,"mode":"temporal"}},"strictProduction":true,"securityReady":true,"rateLimiterReady":true,"compatibilityMocksEnabled":false,"corsMode":"allowlist"},"operationId":"OP-EB9F599211E2","serverTime":"2026-07-11 10:40:37"}
+=== frontend_assets ===
+    <script type="module" crossorigin src="/assets-r20260710/index-B-d5PnY4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets-r20260710/index-D8jKqscx.css">
+=== containers ===
+aicheck-api-service-1|aicheck-api-service|Up 10 hours (healthy)
+aicheck-audit-api|aicheck-api-service|Up 8 hours
+aicheck-audit-redis|redis:7-alpine|Up 8 hours
+aicheck-audit-review-worker|aicheck-review-worker-service|Up 8 hours
+aicheck-audit-worker|aicheck-worker-service|Up 8 hours
+aicheck-embedding-service-1|aicheck-infinity-qwen:local|Up 8 days (healthy)
+aicheck-frontend|nginx:latest|Up 9 hours
+aicheck-litellm-service-1|ghcr.io/berriai/litellm:main-latest|Up 8 days (healthy)
+aicheck-minio-1|minio/minio:RELEASE.2026-06-13T11-33-47Z|Up 9 days (healthy)
+aicheck-ocr-service-1|aicheck-ocr-service|Up 17 hours (healthy)
+aicheck-postgres-1|postgres:16|Up 9 days (healthy)
+aicheck-redis-1|redis:7-alpine|Up 9 days (healthy)
+aicheck-review-worker-service-1|aicheck-review-worker-service|Up 15 hours (healthy)
+aicheck-temporal-service-1|temporalio/auto-setup:1.26.2|Up 9 days (healthy)
+aicheck-temporal-ui-1|temporalio/ui:2.31.2|Up 9 days
+aicheck-worker-service-1|aicheck-worker-service|Up 17 hours (healthy)
+=== image_ids ===
+/aicheck-api-service-1|sha256:bb108c415828dc50b492b5ea868f8deb362dbacf83ee06d47c62f9fe92852204
+/aicheck-worker-service-1|sha256:ca87ff52fd51553b7e3b529639eff264007aa71a32f6effcd97385535c0da599
+/aicheck-review-worker-service-1|sha256:2d1aa1acb760cef75fafa672553e432b562cc41e559a2ad3a75ce2a9147d3075
+/aicheck-ocr-service-1|sha256:e205cc1eb41b4e4915cd276903e1e01f62f96c07bd1b881115eea95f31ec95b1
+/aicheck-embedding-service-1|sha256:0b325b96780d843515c3c268da3ce05aafc8d34cb77c5823baae5997f30d69c0
+/aicheck-postgres-1|sha256:3ce79a779d23ce1c87202af4710c77b1ca882d4964ac680e4184956f2f945ca1
+/aicheck-redis-1|sha256:487efc0616382465781b8fdc3d6d1db449e6fd80ae23bf48432a2da6b6929908
+/aicheck-minio-1|sha256:69b2ec208575b69597784255eec6fa6a2985ee9e1a47f4411a51f7f5fdd193a9
+/aicheck-temporal-service-1|sha256:ad3270ff283364fa6a913dd76b7a28614955eda3f5db53cfb31ff1c1f3a9c1f4
+=== source_hashes ===
+2eb74b0b3e15fbdf64ebf84e381e3ad38778d4b12f33673d04135ba6355c960e  backend/docker-compose.yml
+cc70165121a9fc687a56f7651fa03a8576fe6fb7876b7dd2fd63ea1e4b397525  backend/config/qwen_runtime.yaml
+d65d1af13a30a64f2e60dbe0b8a68b33730842777ad34bdff2853a59da6712a4  backend/config/material_review_points.json
+a4e5af9e49ba55a50e8ea845de9036c9c41eb6d01a325ca29183744a71dd69a3  frontend/dist-pro/index.html
+=== database_schema_hash ===
+d4c62088adcc691c01a951a5dc059542c23ac1489d20e89e88d2076df7c1a0a4  -
+=== database_sizes ===
+aicheck|391552023
+litellm|12393495
+workflow|35167255
+=== state_collections ===

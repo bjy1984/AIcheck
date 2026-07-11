@@ -1,0 +1,13 @@
+[
+  {
+    "id": "CORE-PERF-001",
+    "severity": "P1",
+    "batch": 2,
+    "title": "单体 JSONB 状态同步持久化导致写请求和启动超时",
+    "actual": "隔离预发布完整写探针多次超过 60-120 秒并出现 ClientDisconnect；API 重启后加载大状态约 70 秒。单项对象读接口仅 0.005-0.011 秒。",
+    "expected": "关键写接口在可接受 SLA 内返回排队/完成状态，API 启动和重启可快速恢复。",
+    "impact": "上传、OCR 调度和正式审计链路可能形成不可恢复等待、重复点击和持续 502。",
+    "evidence": "run-staging-verify.sh",
+    "recommendation": "将热路径从全量 collection JSONB 刷新改为行级/增量事务写入；增加启动性能预算和慢写指标。"
+  }
+]

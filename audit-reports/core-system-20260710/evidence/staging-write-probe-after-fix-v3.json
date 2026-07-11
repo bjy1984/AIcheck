@@ -1,0 +1,237 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "name": "api.health",
+      "status": "pass",
+      "detail": "API health envelope and runtime flags are present.",
+      "data": {
+        "status": "ok",
+        "service": "api-service",
+        "databaseBackend": "postgres",
+        "databaseConnected": true,
+        "postgresEnabled": true,
+        "postgresTransactions": true,
+        "sqliteEnabled": false,
+        "sqlitePath": null,
+        "authRequired": true,
+        "demoUsersEnabled": false,
+        "objectStorageEnabled": true,
+        "runtimeReady": true,
+        "workflowSchemaReady": true,
+        "workflowSchema": {
+          "ready": true,
+          "required": true,
+          "tableCount": 4,
+          "missingTables": []
+        },
+        "materialMappingReady": true,
+        "materialMappingVersion": "engineering-inspection-material-map@375599f05903",
+        "materialMappingCount": 151,
+        "materialMappingHash": "375599f05903aed87493d822796ae94facc26791360574aae54adf3525aad8bb",
+        "serviceReadiness": {
+          "ocr": {
+            "configured": true,
+            "executionBoundary": "remote_service_only"
+          },
+          "qwen": {
+            "configured": true,
+            "mode": "official_api",
+            "fallbackEnabled": false
+          },
+          "embedding": {
+            "configured": true,
+            "provider": "local"
+          },
+          "temporal": {
+            "configured": true,
+            "mode": "temporal"
+          }
+        },
+        "strictProduction": true,
+        "securityReady": true,
+        "rateLimiterReady": true,
+        "compatibilityMocksEnabled": false,
+        "corsMode": "allowlist"
+      }
+    },
+    {
+      "name": "api.strict-production",
+      "status": "pass",
+      "detail": "Production flags match expected values.",
+      "data": null
+    },
+    {
+      "name": "auth.gate",
+      "status": "pass",
+      "detail": "Protected endpoint rejects anonymous access.",
+      "data": null
+    },
+    {
+      "name": "auth.login.admin",
+      "status": "pass",
+      "detail": "defaultPath=/admin/overview",
+      "data": null
+    },
+    {
+      "name": "auth.me.admin",
+      "status": "pass",
+      "detail": "",
+      "data": null
+    },
+    {
+      "name": "auth.login.inspection",
+      "status": "pass",
+      "detail": "defaultPath=/workbench/inspection",
+      "data": null
+    },
+    {
+      "name": "auth.me.inspection",
+      "status": "pass",
+      "detail": "",
+      "data": null
+    },
+    {
+      "name": "auth.login.contractor",
+      "status": "pass",
+      "detail": "defaultPath=/workbench/contractor",
+      "data": null
+    },
+    {
+      "name": "auth.me.contractor",
+      "status": "pass",
+      "detail": "",
+      "data": null
+    },
+    {
+      "name": "postgres.transaction-probe",
+      "status": "pass",
+      "detail": "PostgreSQL transaction probe passed.",
+      "data": {
+        "postgresEnabled": true,
+        "transactionsConfigured": true,
+        "transactionProbe": "pass"
+      }
+    },
+    {
+      "name": "auth.admin-reads",
+      "status": "pass",
+      "detail": "Business roles cannot read admin/global knowledge configuration endpoints.",
+      "data": null
+    },
+    {
+      "name": "api.projects",
+      "status": "pass",
+      "detail": "",
+      "data": null
+    },
+    {
+      "name": "api.knowledge-tasks",
+      "status": "pass",
+      "detail": "",
+      "data": null
+    },
+    {
+      "name": "api.write-probes.signed-put",
+      "status": "pass",
+      "detail": "HTTP 200",
+      "data": null
+    },
+    {
+      "name": "api.write-probes.document-preview-get",
+      "status": "pass",
+      "detail": "HTTP 200 via authenticated API proxy.",
+      "data": null
+    },
+    {
+      "name": "api.write-probes.document-download-get",
+      "status": "pass",
+      "detail": "HTTP 200 via authenticated API proxy.",
+      "data": null
+    },
+    {
+      "name": "ocr.uploaded-object-parse",
+      "status": "skip",
+      "detail": "Pass --ocr-object-probe with --write-probes to parse the uploaded object.",
+      "data": null
+    },
+    {
+      "name": "api.write-probes",
+      "status": "pass",
+      "detail": "Signed PUT, upload complete, document signed GETs, OCR task creation, optional OCR object parse, and export task probes passed.",
+      "data": null
+    },
+    {
+      "name": "api.review-run-probe",
+      "status": "skip",
+      "detail": "Pass --review-run-probe with --roles including inspection,fde to verify Temporal/LangGraph ReviewRun orchestration.",
+      "data": null
+    },
+    {
+      "name": "auth.identity-spoof",
+      "status": "pass",
+      "detail": "Role spoofing is rejected.",
+      "data": null
+    },
+    {
+      "name": "auth.action-bypass",
+      "status": "pass",
+      "detail": "Unauthorized role actions are rejected without relying on X-Action-Code.",
+      "data": null
+    },
+    {
+      "name": "auth.read-scope",
+      "status": "pass",
+      "detail": "Out-of-scope direct reads and role-query spoofing are rejected.",
+      "data": null
+    },
+    {
+      "name": "auth.aggregate-scope",
+      "status": "pass",
+      "detail": "Out-of-scope demo resources are absent from aggregate lists.",
+      "data": null
+    },
+    {
+      "name": "ocr.health",
+      "status": "skip",
+      "detail": "OCR check disabled.",
+      "data": null
+    },
+    {
+      "name": "ocr.readyz",
+      "status": "skip",
+      "detail": "OCR check disabled.",
+      "data": null
+    },
+    {
+      "name": "ocr.runtime-doctor",
+      "status": "skip",
+      "detail": "OCR check disabled.",
+      "data": null
+    },
+    {
+      "name": "ocr.parse-contract",
+      "status": "skip",
+      "detail": "OCR check disabled.",
+      "data": null
+    },
+    {
+      "name": "ocr.bad-request",
+      "status": "skip",
+      "detail": "OCR check disabled.",
+      "data": null
+    },
+    {
+      "name": "litellm.health",
+      "status": "skip",
+      "detail": "LiteLLM check disabled.",
+      "data": null
+    },
+    {
+      "name": "qwen.official-probe",
+      "status": "skip",
+      "detail": "Pass --qwen-official-probe to verify the official Qwen API.",
+      "data": null
+    }
+  ]
+}

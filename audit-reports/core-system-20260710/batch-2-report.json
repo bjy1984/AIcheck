@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "aicheck-core-audit-batch@1",
+  "generatedAt": "2026-07-11T03:25:31.808146+00:00",
+  "baselineCommit": "bdd834860a28f99b16ce61f1c56b21fb18e01a63",
+  "batch": 2,
+  "title": "项目、资料与业务状态机",
+  "status": "FAIL",
+  "score": 10,
+  "evidence": [
+    "36 项 readiness/状态机测试通过",
+    "完整写探针因同步状态持久化超过 60-120 秒"
+  ],
+  "findingIds": [
+    "CORE-PERF-001"
+  ],
+  "productionPolicy": "read_only",
+  "heavyComputePolicy": "server_only"
+}

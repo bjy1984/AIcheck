@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "aicheck-core-audit-batch@1",
+  "generatedAt": "2026-07-11T03:25:31.808146+00:00",
+  "baselineCommit": "bdd834860a28f99b16ce61f1c56b21fb18e01a63",
+  "batch": 6,
+  "title": "人工结论、报告与归档",
+  "status": "PASS_WITH_RISK",
+  "score": 7,
+  "evidence": [
+    "confirmed-only/report scope/archive 定向测试通过",
+    "受第 2 批性能阻断，完整 live 归档探针未完成"
+  ],
+  "findingIds": [],
+  "productionPolicy": "read_only",
+  "heavyComputePolicy": "server_only"
+}

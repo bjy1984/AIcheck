@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "aicheck-role-permission-matrix@1",
+  "roles": {
+    "admin": [
+      "system_admin",
+      "project_admin",
+      "user_admin"
+    ],
+    "inspection": [
+      "evidence_review",
+      "ai_review",
+      "human_opinion",
+      "report",
+      "archive"
+    ],
+    "contractor": [
+      "document_upload",
+      "submit",
+      "rectify",
+      "resubmit"
+    ],
+    "ndt": [
+      "ndt_document",
+      "film_record",
+      "ndt_submit",
+      "rectify"
+    ],
+    "owner": [
+      "project_read",
+      "progress_read",
+      "report_read"
+    ],
+    "fde": [
+      "business_pack_governance",
+      "vector_quality_review",
+      "no_formal_approval"
+    ]
+  },
+  "result": "targeted role and identity bypass tests passed; production digest drift prevents final release attestation"
+}

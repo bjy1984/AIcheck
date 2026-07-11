@@ -23,12 +23,13 @@ def document(status: str = "已识别") -> dict:
     }
 
 
-def parse_result(*, fragments: list[dict], status: str = "success") -> dict:
+def parse_result(*, fragments: list[dict], status: str = "success", quality: dict | None = None) -> dict:
     return {
         "id": "PARSE-OCR-READY",
         "parseResultId": "PARSE-OCR-READY",
         "documentVersionId": "DV-OCR-READY-V1",
         "status": status,
+        "quality": quality or {"status": "auto_usable", "reasons": []},
         "fields": [],
         "fragments": fragments,
         "tables": [],
@@ -66,6 +67,24 @@ def test_parse_text_with_bbox_is_ready() -> None:
     assert readiness["status"] == "ready"
     assert readiness["artifactIntegrity"] is True
     assert readiness["bboxCoverage"] == 1
+
+
+def test_parse_with_required_quality_gap_is_incomplete_even_with_bbox() -> None:
+    repo = FakeRepo(
+        [
+            parse_result(
+                fragments=[{"text": "DRAWING LIST", "bbox": [10, 20, 110, 48]}],
+                quality={"status": "needs_human_review", "reasons": ["REQUIRED_FIELD_MISSING"]},
+            )
+        ]
+    )
+
+    readiness = build_document_ocr_readiness(repo, document())
+
+    assert readiness["status"] == "incomplete"
+    assert readiness["outcomeStatus"] == "partial"
+    assert readiness["artifactIntegrity"] is False
+    assert readiness["blockingReasons"][0]["code"] == "OCR_QUALITY_GATE_BLOCKED"
 
 
 def test_material_review_asset_is_packaged_and_versioned() -> None:

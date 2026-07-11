@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "aicheck-core-audit-batch@1",
+  "generatedAt": "2026-07-11T03:25:31.808146+00:00",
+  "baselineCommit": "bdd834860a28f99b16ce61f1c56b21fb18e01a63",
+  "batch": 1,
+  "title": "身份、权限与数据隔离",
+  "status": "PASS",
+  "score": 15,
+  "evidence": [
+    "六角色登录与 /auth/me 通过",
+    "dev token/mock/身份头覆盖在 strict 模式受控",
+    "16 项定向安全测试通过"
+  ],
+  "findingIds": [],
+  "productionPolicy": "read_only",
+  "heavyComputePolicy": "server_only"
+}

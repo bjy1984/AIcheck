@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "aicheck-audit-baseline@1",
+  "generatedAt": "2026-07-11T03:25:31.808146+00:00",
+  "commit": "bdd834860a28f99b16ce61f1c56b21fb18e01a63",
+  "tag": "audit-baseline-20260710",
+  "branch": "main",
+  "artifacts": [
+    {
+      "path": "evidence/ui-visual-audit.json",
+      "sha256": "a0578e9c35ab687057bff84dbf80c749a1c4c2ce4c00b144d145f89605b7c233"
+    },
+    {
+      "path": "evidence/pnpm-audit.json",
+      "sha256": "1c0f4e14c024ea7187a483e97f3d735f542c47b045a83f000659a6045cdd7b84"
+    },
+    {
+      "path": "evidence/pip-audit.json",
+      "sha256": "b51b237e408be6fb5588865741a37eefd38f7130caeb9e1dd00cdddac4d35236"
+    },
+    {
+      "path": "evidence/production-readonly-baseline.txt",
+      "sha256": "edbb3b91b5a0ff318f8bab212eeb65d769e12b58344fd5b4323da97485055048"
+    },
+    {
+      "path": "evidence/ocr-img6514.json",
+      "sha256": "a1e3ba30e5ef748e9d9416c38bf99fb323fd77eb5eb6e31a0e218eded0392e53"
+    }
+  ],
+  "regression": {
+    "backendPytest": {
+      "passed": 641,
+      "warnings": 6
+    },
+    "playwright": {
+      "passed": 49
+    },
+    "businessPackScore": 100,
+    "knowledgeScore": 100,
+    "knowledgeFiles": 60,
+    "knowledgeChunks": 2134,
+    "knowledgeVectors": 2134,
+    "roiScore": 100,
+    "frontendRoutes": 231,
+    "backendRoutes": 657,
+    "missingContracts": 0
+  }
+}

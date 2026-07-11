@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "aicheck-core-audit-batch@1",
+  "generatedAt": "2026-07-11T03:25:31.808146+00:00",
+  "baselineCommit": "bdd834860a28f99b16ce61f1c56b21fb18e01a63",
+  "batch": 8,
+  "title": "前端操作与发布门禁",
+  "status": "FAIL",
+  "score": 8,
+  "evidence": [
+    "641 后端测试、49 Playwright、TypeScript/lint/build 通过",
+    "28 个 route×viewport UI 审计零违规",
+    "pip/pnpm 已知漏洞为 0",
+    "生产部署漂移且容器扫描证据缺失"
+  ],
+  "findingIds": [
+    "DEPLOY-DRIFT-001",
+    "CRED-ROTATE-001",
+    "RELEASE-EVIDENCE-001",
+    "PNPM-OVERRIDE-001"
+  ],
+  "productionPolicy": "read_only",
+  "heavyComputePolicy": "server_only"
+}

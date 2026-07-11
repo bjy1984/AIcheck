@@ -1,0 +1,519 @@
+{
+  "schemaVersion": "aicheck-ui-visual-audit@1",
+  "generatedAt": "2026-07-10T17:13:11.620Z",
+  "baseUrl": "http://127.0.0.1:4000",
+  "strict": true,
+  "checks": 28,
+  "failedLoads": 0,
+  "underTwelve": 0,
+  "excessiveWeight": 0,
+  "lowContrast": 0,
+  "undersizedTargets": 0,
+  "horizontalOverflow": 0,
+  "results": [
+    {
+      "route": "/workbench/inspection",
+      "label": "监检工作台",
+      "account": "inspection",
+      "viewport": 390,
+      "visibleTextCount": 220,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/workbench/contractor",
+      "label": "施工方工作台",
+      "account": "contractor",
+      "viewport": 390,
+      "visibleTextCount": 225,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/workbench/ndt",
+      "label": "无损检测工作台",
+      "account": "ndt",
+      "viewport": 390,
+      "visibleTextCount": 197,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/workbench/owner",
+      "label": "建设方工作台",
+      "account": "owner",
+      "viewport": 390,
+      "visibleTextCount": 323,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/admin/overview",
+      "label": "管理后台",
+      "account": "admin",
+      "viewport": 390,
+      "visibleTextCount": 264,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/knowledge/overview",
+      "label": "知识库管理",
+      "account": "admin",
+      "viewport": 390,
+      "visibleTextCount": 368,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/fde/standards-vectorization",
+      "label": "FDE 规范库治理",
+      "account": "fde",
+      "viewport": 390,
+      "visibleTextCount": 739,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/workbench/inspection",
+      "label": "监检工作台",
+      "account": "inspection",
+      "viewport": 768,
+      "visibleTextCount": 220,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/workbench/contractor",
+      "label": "施工方工作台",
+      "account": "contractor",
+      "viewport": 768,
+      "visibleTextCount": 225,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/workbench/ndt",
+      "label": "无损检测工作台",
+      "account": "ndt",
+      "viewport": 768,
+      "visibleTextCount": 197,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/workbench/owner",
+      "label": "建设方工作台",
+      "account": "owner",
+      "viewport": 768,
+      "visibleTextCount": 323,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/admin/overview",
+      "label": "管理后台",
+      "account": "admin",
+      "viewport": 768,
+      "visibleTextCount": 264,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/knowledge/overview",
+      "label": "知识库管理",
+      "account": "admin",
+      "viewport": 768,
+      "visibleTextCount": 368,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/fde/standards-vectorization",
+      "label": "FDE 规范库治理",
+      "account": "fde",
+      "viewport": 768,
+      "visibleTextCount": 739,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/workbench/inspection",
+      "label": "监检工作台",
+      "account": "inspection",
+      "viewport": 1024,
+      "visibleTextCount": 241,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/workbench/contractor",
+      "label": "施工方工作台",
+      "account": "contractor",
+      "viewport": 1024,
+      "visibleTextCount": 225,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/workbench/ndt",
+      "label": "无损检测工作台",
+      "account": "ndt",
+      "viewport": 1024,
+      "visibleTextCount": 197,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/workbench/owner",
+      "label": "建设方工作台",
+      "account": "owner",
+      "viewport": 1024,
+      "visibleTextCount": 332,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/admin/overview",
+      "label": "管理后台",
+      "account": "admin",
+      "viewport": 1024,
+      "visibleTextCount": 264,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/knowledge/overview",
+      "label": "知识库管理",
+      "account": "admin",
+      "viewport": 1024,
+      "visibleTextCount": 368,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/fde/standards-vectorization",
+      "label": "FDE 规范库治理",
+      "account": "fde",
+      "viewport": 1024,
+      "visibleTextCount": 739,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/workbench/inspection",
+      "label": "监检工作台",
+      "account": "inspection",
+      "viewport": 1440,
+      "visibleTextCount": 241,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/workbench/contractor",
+      "label": "施工方工作台",
+      "account": "contractor",
+      "viewport": 1440,
+      "visibleTextCount": 225,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/workbench/ndt",
+      "label": "无损检测工作台",
+      "account": "ndt",
+      "viewport": 1440,
+      "visibleTextCount": 197,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/workbench/owner",
+      "label": "建设方工作台",
+      "account": "owner",
+      "viewport": 1440,
+      "visibleTextCount": 332,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/admin/overview",
+      "label": "管理后台",
+      "account": "admin",
+      "viewport": 1440,
+      "visibleTextCount": 264,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/knowledge/overview",
+      "label": "知识库管理",
+      "account": "admin",
+      "viewport": 1440,
+      "visibleTextCount": 368,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    },
+    {
+      "route": "/fde/standards-vectorization",
+      "label": "FDE 规范库治理",
+      "account": "fde",
+      "viewport": 1440,
+      "visibleTextCount": 739,
+      "underTwelveCount": 0,
+      "excessiveWeightCount": 0,
+      "lowContrastCount": 0,
+      "undersizedTargetCount": 0,
+      "horizontalOverflow": false,
+      "examples": {
+        "underTwelve": [],
+        "excessiveWeight": [],
+        "lowContrast": [],
+        "undersizedTargets": []
+      }
+    }
+  ]
+}

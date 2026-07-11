@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "aicheck-core-audit-batch@1",
+  "generatedAt": "2026-07-11T03:25:31.808146+00:00",
+  "baselineCommit": "bdd834860a28f99b16ce61f1c56b21fb18e01a63",
+  "batch": 3,
+  "title": "OCR、证据与数据真实性",
+  "status": "FAIL",
+  "score": 5,
+  "evidence": [
+    "真实 Scan 样本主 OCR 内存失败",
+    "bbox 覆盖 0%，必填字段/表格/印章缺失",
+    "外层仍返回 success"
+  ],
+  "findingIds": [
+    "OCR-REAL-001",
+    "HEALTH-SEMANTICS-001"
+  ],
+  "productionPolicy": "read_only",
+  "heavyComputePolicy": "server_only"
+}

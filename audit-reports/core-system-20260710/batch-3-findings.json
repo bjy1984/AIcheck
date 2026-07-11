@@ -1,0 +1,24 @@
+[
+  {
+    "id": "OCR-REAL-001",
+    "severity": "P1",
+    "batch": 3,
+    "title": "OCR 主引擎失败后仍返回成功状态",
+    "actual": "Paddle OCR 因 ResourceExhausted/MemoryError 失败，降级结果仅 1 个无 bbox 片段和 2 个低置信字段，但 API 外层仍为 code=0、status=success。",
+    "expected": "关键引擎失败、必填字段/表格缺失或关键 bbox 为 0 时必须返回 partial/needs_human_review，并阻断正式证据就绪。",
+    "impact": "上层可能把无原文定位、缺字段的 OCR 结果当作已完成，造成假就绪和错误审计证据。",
+    "evidence": "evidence/ocr-img6514.json",
+    "recommendation": "统一 OCR outcome；将 quality.status 和必填证据闸门提升为 API/任务状态，禁止 status=success 覆盖 needs_human_review。"
+  },
+  {
+    "id": "HEALTH-SEMANTICS-001",
+    "severity": "P2",
+    "batch": 3,
+    "title": "服务健康状态未反映真实可执行能力",
+    "actual": "OCR health 报告 pipeline 可用，但真实样本主引擎内存失败；PaddleOCR-VL 标记 available 时执行依赖仍不可用。Embedding /health 只返回时间戳。",
+    "expected": "readiness 应执行轻量真实推理并分别报告 loaded、executable、capacity。",
+    "impact": "调度层会把不可执行服务当作 ready。",
+    "evidence": "evidence/ocr-img6514.json",
+    "recommendation": "增加深度 readiness、最近成功时间、内存余量和模型 warmup 状态。"
+  }
+]

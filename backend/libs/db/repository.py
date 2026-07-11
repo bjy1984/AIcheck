@@ -25,6 +25,7 @@ from libs.knowledge_indexing import (
     cosine_similarity,
     vector_payload_for_pg,
 )
+from libs.ocr_readiness import parse_result_outcome_status, parse_result_quality_blockers
 
 from .seed import ROLE_ACTIONS, ROLE_NODE_MAP, ensure_inspection_project_members, fresh_state
 
@@ -987,9 +988,11 @@ class InMemoryRepository:
             ),
             None,
         )
-        success = result.get("status") == "success"
+        outcome_status = parse_result_outcome_status(result)
+        success = outcome_status == "completed"
+        partial = outcome_status == "partial"
         now = server_time()
-        status = "已识别" if success else "识别失败"
+        status = "已识别" if success else "抽取不完整" if partial else "识别失败"
         if document:
             document["currentOcrStatus"] = status
             document["updatedAt"] = now
@@ -1003,20 +1006,34 @@ class InMemoryRepository:
             knowledge_file["vectorStatus"] = "待向量化" if success else "未向量化"
             knowledge_file["updatedAt"] = now
         if task:
-            task["status"] = "成功" if success else "失败"
-            task["progress"] = 100 if success else task.get("progress", 0)
+            task["status"] = "成功" if success else "需复核" if partial else "失败"
+            task["progress"] = 100 if success or partial else task.get("progress", 0)
             task["finishedAt"] = now
             task["updatedAt"] = now
             self._bump_revision(task)
             if not success:
-                task["errorMessage"] = "; ".join(str(item) for item in result.get("diagnostics") or ["OCR failed"])
-                self.append_task_log(task, "error", task["errorMessage"])
+                quality_blockers = parse_result_quality_blockers(result)
+                diagnostic_messages = [
+                    str(item.get("code") or item.get("message") or item)
+                    if isinstance(item, dict)
+                    else str(item)
+                    for item in result.get("diagnostics") or []
+                ]
+                task["errorMessage"] = "; ".join(quality_blockers or diagnostic_messages or ["OCR failed"])
+                self.append_task_log(task, "warning" if partial else "error", task["errorMessage"])
             else:
                 task.pop("errorMessage", None)
                 self.append_task_log(task, "info", "OCR 任务完成。")
 
         if not success:
-            return {"documentId": document_id, "versionId": version_id, "status": "failed", "fieldCount": 0}
+            return {
+                "documentId": document_id,
+                "versionId": version_id,
+                "status": "partial" if partial else "failed",
+                "outcomeStatus": outcome_status,
+                "qualityReasons": parse_result_quality_blockers(result),
+                "fieldCount": 0,
+            }
 
         self.state["extracted_fields"] = [
             item for item in self.state["extracted_fields"] if item.get("documentVersionId") != version_id
@@ -1482,16 +1499,28 @@ class InMemoryRepository:
             return f"{doc['projectId']}:{doc['id']}"
         return object_id
 
-    def load_from_sqlite(self) -> None:
+    def load_from_sqlite(self, selected_state_keys: set[str] | None = None) -> None:
         self.configure_sqlite(self.sqlite_path)
         if not self.sqlite_enabled:
             return
         self.ensure_sqlite_schema()
         loaded = self._fresh_state_for_persistence_load()
         with self.sqlite_connection() as connection:
-            rows = connection.execute(
-                "SELECT collection, payload FROM aicheck_state ORDER BY collection, object_id"
-            ).fetchall()
+            selected_collections = [
+                STATE_COLLECTIONS[state_key]
+                for state_key in sorted(selected_state_keys or set())
+                if state_key in STATE_COLLECTIONS
+            ]
+            if selected_state_keys is not None:
+                placeholders = ",".join("?" for _ in selected_collections) or "NULL"
+                rows = connection.execute(
+                    f"SELECT collection, payload FROM aicheck_state WHERE collection IN ({placeholders}) ORDER BY collection, object_id",
+                    selected_collections,
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    "SELECT collection, payload FROM aicheck_state ORDER BY collection, object_id"
+                ).fetchall()
             has_project_seed = any(row[0] == STATE_COLLECTIONS["projects"] for row in rows)
             grouped: dict[str, list[dict[str, Any]]] = {}
             for collection_name, payload in rows:
@@ -1506,8 +1535,10 @@ class InMemoryRepository:
                 scope: json.loads(payload)
                 for scope, payload in connection.execute("SELECT scope, payload FROM idempotency_records").fetchall()
             }
-        backfilled = self.apply_seed_compatibility_defaults(loaded)
+        backfilled = self.apply_seed_compatibility_defaults(loaded) if selected_state_keys is None else False
         self.state = loaded
+        if selected_state_keys is not None:
+            return
         if not has_project_seed:
             self.flush_to_sqlite()
         elif backfilled:
@@ -1613,16 +1644,27 @@ class InMemoryRepository:
                     "CREATE INDEX IF NOT EXISTS idx_idempotency_updated_at ON idempotency_records (updated_at DESC)"
                 )
 
-    def load_from_sync_postgres(self) -> None:
+    def load_from_sync_postgres(self, selected_state_keys: set[str] | None = None) -> None:
         with self._sync_postgres_lock:
             self.configure_sync_postgres()
             if self.sync_postgres is None:
                 return
             self.ensure_postgres_schema()
             loaded = self._fresh_state_for_persistence_load()
-            rows = self.sync_postgres.execute(
-                "SELECT collection, payload FROM aicheck_state ORDER BY collection, object_id"
-            ).fetchall()
+            selected_collections = [
+                STATE_COLLECTIONS[state_key]
+                for state_key in sorted(selected_state_keys or set())
+                if state_key in STATE_COLLECTIONS
+            ]
+            if selected_state_keys is not None:
+                rows = self.sync_postgres.execute(
+                    "SELECT collection, payload FROM aicheck_state WHERE collection = ANY(%s) ORDER BY collection, object_id",
+                    (selected_collections,),
+                ).fetchall()
+            else:
+                rows = self.sync_postgres.execute(
+                    "SELECT collection, payload FROM aicheck_state ORDER BY collection, object_id"
+                ).fetchall()
             has_project_seed = any(row[0] == STATE_COLLECTIONS["projects"] for row in rows)
             grouped: dict[str, list[dict[str, Any]]] = {}
             for collection_name, payload in rows:
@@ -1637,15 +1679,87 @@ class InMemoryRepository:
                 scope: json.loads(json.dumps(payload))
                 for scope, payload in self.sync_postgres.execute("SELECT scope, payload FROM idempotency_records").fetchall()
             }
-            backfilled = self.apply_seed_compatibility_defaults(loaded)
+            backfilled = self.apply_seed_compatibility_defaults(loaded) if selected_state_keys is None else False
             self.state = loaded
             # psycopg starts a transaction for the SELECTs above when autocommit is off.
             # End that read transaction before any writer tries to flush the JSONB state.
             self.sync_postgres.commit()
+            if selected_state_keys is not None:
+                return
             if not has_project_seed:
                 self.flush_to_sync_postgres()
             elif backfilled:
                 self.flush_to_sync_postgres()
+
+    def load_ocr_task_state_from_sync_postgres(self, document_id: str, version_id: str) -> None:
+        """Load only state needed by one OCR task, excluding unrelated historical parse payloads."""
+        with self._sync_postgres_lock:
+            self.configure_sync_postgres()
+            if self.sync_postgres is None:
+                return
+            self.ensure_postgres_schema()
+            loaded = self._fresh_state_for_persistence_load()
+            global_collections = [
+                STATE_COLLECTIONS[state_key]
+                for state_key in (
+                    "projects",
+                    "project_members",
+                    "tree_nodes",
+                    "requirements",
+                    "knowledge_sources",
+                    "users",
+                )
+            ]
+            scoped_collections = [
+                STATE_COLLECTIONS[state_key]
+                for state_key in (
+                    "documents",
+                    "versions",
+                    "bindings",
+                    "evidence_links",
+                    "node_evidence_links",
+                    "material_targeting_runs",
+                    "extracted_fields",
+                    "knowledge_files",
+                    "knowledge_tasks",
+                    "ocr_jobs",
+                    "ocr_parse_results",
+                )
+            ]
+            rows = self.sync_postgres.execute(
+                """
+                SELECT collection, payload
+                FROM aicheck_state
+                WHERE collection = ANY(%s)
+                   OR (
+                        collection = ANY(%s)
+                        AND (
+                            object_id = ANY(%s)
+                            OR payload ->> 'documentId' = %s
+                            OR payload ->> 'documentVersionId' = %s
+                        )
+                   )
+                ORDER BY collection, object_id
+                """,
+                (
+                    global_collections,
+                    scoped_collections,
+                    [document_id, version_id],
+                    document_id,
+                    version_id,
+                ),
+            ).fetchall()
+            grouped: dict[str, list[dict[str, Any]]] = {}
+            for collection_name, payload in rows:
+                grouped.setdefault(collection_name, []).append(json.loads(json.dumps(payload)))
+            for state_key, collection_name in STATE_COLLECTIONS.items():
+                if collection_name in global_collections or collection_name in scoped_collections:
+                    loaded[state_key] = grouped.get(collection_name, [])
+            for name, payload in self.sync_postgres.execute("SELECT name, payload FROM aicheck_singletons").fetchall():
+                loaded[name] = json.loads(json.dumps(payload))
+            loaded["idempotency"] = {}
+            self.state = loaded
+            self.sync_postgres.commit()
 
     def flush_to_sync_postgres(self) -> None:
         with self._sync_postgres_lock:
@@ -1700,12 +1814,30 @@ class InMemoryRepository:
         records_by_state_key: dict[str, list[dict[str, Any]]],
     ) -> None:
         """Persist selected records without replacing another process's state snapshot."""
+        self.sync_state_records_to_sync_postgres(records_by_state_key, {})
+
+    def sync_state_records_to_sync_postgres(
+        self,
+        records_by_state_key: dict[str, list[dict[str, Any]]],
+        deleted_object_ids_by_state_key: dict[str, list[str]],
+    ) -> None:
+        """Delete stale scoped rows and upsert their replacements in one transaction."""
         with self._sync_postgres_lock:
             self.configure_sync_postgres()
             if self.sync_postgres is None:
                 return
             self.ensure_postgres_schema()
             with self.sync_postgres.transaction():
+                for state_key, object_ids in deleted_object_ids_by_state_key.items():
+                    collection_name = STATE_COLLECTIONS.get(state_key)
+                    if not collection_name:
+                        raise KeyError(f"Unknown state collection: {state_key}")
+                    selected_ids = sorted({str(item) for item in object_ids if item})
+                    if selected_ids:
+                        self.sync_postgres.execute(
+                            "DELETE FROM aicheck_state WHERE collection = %s AND object_id = ANY(%s)",
+                            (collection_name, selected_ids),
+                        )
                 for state_key, docs in records_by_state_key.items():
                     collection_name = STATE_COLLECTIONS.get(state_key)
                     if not collection_name:
@@ -1724,6 +1856,44 @@ class InMemoryRepository:
                             (collection_name, object_id, json.dumps(self.clone(doc), ensure_ascii=False)),
                         )
             self.sync_postgres.commit()
+
+    def sync_state_records_to_sqlite(
+        self,
+        records_by_state_key: dict[str, list[dict[str, Any]]],
+        deleted_object_ids_by_state_key: dict[str, list[str]],
+    ) -> None:
+        self.configure_sqlite(self.sqlite_path)
+        if not self.sqlite_enabled:
+            return
+        self.ensure_sqlite_schema()
+        with self.sqlite_connection() as connection:
+            connection.execute("BEGIN")
+            for state_key, object_ids in deleted_object_ids_by_state_key.items():
+                collection_name = STATE_COLLECTIONS.get(state_key)
+                if not collection_name:
+                    raise KeyError(f"Unknown state collection: {state_key}")
+                connection.executemany(
+                    "DELETE FROM aicheck_state WHERE collection = ? AND object_id = ?",
+                    [(collection_name, str(object_id)) for object_id in object_ids if object_id],
+                )
+            for state_key, docs in records_by_state_key.items():
+                collection_name = STATE_COLLECTIONS.get(state_key)
+                if not collection_name:
+                    raise KeyError(f"Unknown state collection: {state_key}")
+                for index, doc in enumerate(docs):
+                    if not isinstance(doc, dict):
+                        continue
+                    object_id = self.persistence_object_id(collection_name, doc, index)
+                    connection.execute(
+                        """
+                        INSERT INTO aicheck_state (collection, object_id, payload, updated_at)
+                        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                        ON CONFLICT(collection, object_id)
+                        DO UPDATE SET payload = excluded.payload, updated_at = CURRENT_TIMESTAMP
+                        """,
+                        (collection_name, object_id, json.dumps(self.clone(doc), ensure_ascii=False)),
+                    )
+            connection.commit()
 
     def upsert_idempotency_records_to_sync_postgres(self, scopes: list[str]) -> None:
         with self._sync_postgres_lock:
@@ -2176,11 +2346,39 @@ def postgres_persistence_configured() -> bool:
     return bool(repo.sync_postgres is not None or repo.postgres_dsn or os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL"))
 
 
-def load_state() -> None:
+def load_state(selected_state_keys: set[str] | None = None) -> None:
     if postgres_persistence_configured():
-        repo.load_from_sync_postgres()
+        repo.load_from_sync_postgres(selected_state_keys)
         return
-    repo.load_from_sqlite()
+    repo.load_from_sqlite(selected_state_keys)
+
+
+def load_ocr_task_state(document_id: str, version_id: str) -> None:
+    if postgres_persistence_configured():
+        repo.load_ocr_task_state_from_sync_postgres(document_id, version_id)
+        return
+    load_state(OCR_WORKER_STATE_KEYS_FOR_SQLITE)
+
+
+OCR_WORKER_STATE_KEYS_FOR_SQLITE = {
+    "projects",
+    "project_members",
+    "tree_nodes",
+    "requirements",
+    "knowledge_sources",
+    "documents",
+    "versions",
+    "bindings",
+    "evidence_links",
+    "node_evidence_links",
+    "material_targeting_runs",
+    "extracted_fields",
+    "knowledge_files",
+    "knowledge_tasks",
+    "ocr_jobs",
+    "ocr_parse_results",
+    "users",
+}
 
 
 def flush_state() -> None:
@@ -2205,6 +2403,25 @@ def flush_state_records(records_by_state_key: dict[str, list[dict[str, Any]]]) -
         return
     if repo.sqlite_enabled or repo.sqlite_path or os.getenv("AICHECK_SQLITE_PATH"):
         repo.flush_to_sqlite()
+
+
+def sync_state_records(
+    records_by_state_key: dict[str, list[dict[str, Any]]],
+    deleted_object_ids_by_state_key: dict[str, list[str]],
+) -> None:
+    records = {
+        state_key: [item for item in docs if isinstance(item, dict)]
+        for state_key, docs in records_by_state_key.items()
+    }
+    deletions = {
+        state_key: [str(item) for item in object_ids if item]
+        for state_key, object_ids in deleted_object_ids_by_state_key.items()
+    }
+    if postgres_persistence_configured():
+        repo.sync_state_records_to_sync_postgres(records, deletions)
+        return
+    if repo.sqlite_enabled or repo.sqlite_path or os.getenv("AICHECK_SQLITE_PATH"):
+        repo.sync_state_records_to_sqlite(records, deletions)
 
 
 def flush_idempotency_records(scopes: list[str]) -> None:

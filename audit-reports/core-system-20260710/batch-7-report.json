@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "aicheck-core-audit-batch@1",
+  "generatedAt": "2026-07-11T03:25:31.808146+00:00",
+  "baselineCommit": "bdd834860a28f99b16ce61f1c56b21fb18e01a63",
+  "batch": 7,
+  "title": "任务、存储与故障恢复",
+  "status": "FAIL",
+  "score": 5,
+  "evidence": [
+    "预发布 Redis 停止时登录 503，恢复后 200",
+    "API 重启恢复约 70 秒",
+    "共享 MinIO/OCR/embedding 不满足破坏性注入隔离"
+  ],
+  "findingIds": [
+    "STAGING-ISO-001"
+  ],
+  "productionPolicy": "read_only",
+  "heavyComputePolicy": "server_only"
+}

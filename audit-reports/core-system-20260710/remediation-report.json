@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "aicheck-core-audit-remediation@1",
+  "baselineCommit": "bdd834860a28f99b16ce61f1c56b21fb18e01a63",
+  "environment": "isolated_staging",
+  "baselineScore": 72,
+  "postFixScore": 82,
+  "decision": "NO-GO",
+  "remainingSeverityCounts": {
+    "P0": 0,
+    "P1": 3,
+    "P2": 4,
+    "P3": 0
+  },
+  "closedFindings": [
+    "CORE-PERF-001"
+  ],
+  "remainingP1": [
+    "OCR-REAL-001",
+    "DEPLOY-DRIFT-001",
+    "CRED-ROTATE-001"
+  ],
+  "verification": {
+    "stagingWriteProbe": {
+      "ok": true,
+      "evidence": "evidence/staging-write-probe-after-fix-v3.json"
+    },
+    "ocrWorkerScopedLoadSeconds": 0.333,
+    "backendTestsPassed": 648,
+    "frontendTypecheck": "pass",
+    "frontendLint": "pass",
+    "frontendBuild": "pass",
+    "businessPack": "pass",
+    "knowledgeQualityScore": 100.0,
+    "pipAuditVulnerabilities": 0,
+    "pnpmHigh": 0,
+    "pnpmCritical": 0,
+    "gitLfsFsck": "pass",
+    "localOcrProcesses": 0
+  }
+}

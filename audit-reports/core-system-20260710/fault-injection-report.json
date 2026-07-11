@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "aicheck-fault-injection@1",
+  "environment": "isolated_staging",
+  "tests": [
+    {
+      "component": "redis",
+      "before": 200,
+      "during": 503,
+      "after": 200,
+      "result": "pass_fail_closed"
+    },
+    {
+      "component": "api",
+      "recoverySeconds": 70,
+      "result": "fail_sla"
+    },
+    {
+      "component": "write_pipeline",
+      "timeoutSeconds": [
+        60,
+        120
+      ],
+      "result": "fail_timeout"
+    },
+    {
+      "component": "postgres/minio/ocr/embedding",
+      "result": "not_run",
+      "reason": "not physically isolated from production"
+    }
+  ]
+}

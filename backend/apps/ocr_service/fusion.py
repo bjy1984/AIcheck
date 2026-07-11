@@ -138,6 +138,15 @@ def fuse_parse_result(result: dict[str, Any], *, profile: dict[str, Any]) -> dic
     if promoted_seal_fields:
         fused["fields"] = fuse_fields([*(fused.get("fields") or []), *promoted_seal_fields])
     fused["quality"] = build_quality_gate(fused, profile)
+    quality_status = str(fused["quality"].get("status") or "needs_human_review")
+    fused["outcomeStatus"] = (
+        "failed"
+        if quality_status == "failed"
+        else "completed"
+        if quality_status == "auto_usable"
+        else "partial"
+    )
+    fused["formalEvidenceReady"] = quality_status == "auto_usable"
     fused["diagnostics"] = filter_resolved_quality_diagnostics(fused.get("diagnostics") or [], fused["quality"])
     return fused
 

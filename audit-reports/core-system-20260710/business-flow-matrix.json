@@ -1,0 +1,44 @@
+{
+  "schemaVersion": "aicheck-business-flow-matrix@1",
+  "stages": [
+    {
+      "stage": "资料提交",
+      "owner": "contractor",
+      "formalGate": "document submitted"
+    },
+    {
+      "stage": "OCR 抽取",
+      "owner": "system",
+      "formalGate": "parse result + usable evidence + bbox"
+    },
+    {
+      "stage": "证据确认",
+      "owner": "inspection",
+      "formalGate": "confirmed evidence only"
+    },
+    {
+      "stage": "AI 复核",
+      "owner": "inspection",
+      "formalGate": "readyForAiFormal=true",
+      "advisoryModes": [
+        "gap_precheck",
+        "pure_llm"
+      ]
+    },
+    {
+      "stage": "人工结论",
+      "owner": "inspection",
+      "formalGate": "review opinion + confirmed evidence"
+    },
+    {
+      "stage": "报告复核",
+      "owner": "inspection",
+      "formalGate": "report scoped evidence valid"
+    },
+    {
+      "stage": "签发归档",
+      "owner": "inspection",
+      "formalGate": "reviewed/signed + immutable manifest"
+    }
+  ]
+}

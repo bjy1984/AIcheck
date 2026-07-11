@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "aicheck-evidence-trace-index@1",
+  "traces": [
+    {
+      "type": "ocr",
+      "source": "evidence/ocr-img6514.json",
+      "result": "needs_human_review despite outer success"
+    },
+    {
+      "type": "review_run",
+      "reviewRunId": "RRUN-65D0666130",
+      "result": "temporal/langgraph/replay passed"
+    },
+    {
+      "type": "embedding",
+      "model": "embedding-default",
+      "dimension": 1024,
+      "result": "passed"
+    },
+    {
+      "type": "qwen",
+      "model": "qwen3.7-plus",
+      "provider": "official_api",
+      "fallback": false,
+      "result": "passed"
+    },
+    {
+      "type": "knowledge",
+      "files": 60,
+      "chunks": 2134,
+      "vectors": 2134,
+      "score": 100
+    }
+  ]
+}

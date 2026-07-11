@@ -4545,6 +4545,42 @@ def list_bindings(request: Request, project_id: str, nodeId: int | None = None):
     return ok(items, request)
 
 
+def upload_session_state_records(session_id: str) -> dict[str, list[dict[str, Any]]]:
+    session = repo.find_one("upload_sessions", session_id)
+    if not session:
+        return {}
+    document_ids = {str(item.get("documentId")) for item in session.get("files") or [] if item.get("documentId")}
+    version_ids = {
+        str(item.get("documentVersionId"))
+        for item in session.get("files") or []
+        if item.get("documentVersionId")
+    }
+    knowledge_file_ids = {
+        str(item.get("id"))
+        for item in repo.state.get("knowledge_files", [])
+        if str(item.get("documentId") or "") in document_ids
+        or str(item.get("documentVersionId") or "") in version_ids
+    }
+    return {
+        "upload_sessions": [session],
+        "documents": [item for item in repo.state.get("documents", []) if str(item.get("id") or "") in document_ids],
+        "versions": [item for item in repo.state.get("versions", []) if str(item.get("id") or "") in version_ids],
+        "knowledge_files": [
+            item for item in repo.state.get("knowledge_files", []) if str(item.get("id") or "") in knowledge_file_ids
+        ],
+        "knowledge_tasks": [
+            item
+            for item in repo.state.get("knowledge_tasks", [])
+            if str(item.get("documentId") or "") in document_ids
+            or str(item.get("documentVersionId") or "") in version_ids
+            or str(item.get("targetId") or "") in knowledge_file_ids
+        ],
+        "ndt_reports": [
+            item for item in repo.state.get("ndt_reports", []) if str(item.get("fileId") or "") in document_ids
+        ],
+    }
+
+
 @router.post("/projects/{project_id}/documents/upload-session")
 def create_upload_session(
     request: Request,
@@ -4583,6 +4619,7 @@ def create_upload_session(
             source_org_name=source_org_name,
             uploader_name=uploader_name,
         )
+        request.state.scoped_flush_records = lambda: upload_session_state_records(session_id)
         repo.add_audit("创建上传会话", "UploadSession", session_id)
         return ok({"uploadSessionId": session_id, "expiresAt": upload_urls[0]["expiresAt"], "uploadUrls": upload_urls}, request)
 
@@ -4663,6 +4700,7 @@ async def upload_session_file(
             }
         )
         session["updatedAt"] = server_time()
+        request.state.scoped_flush_records = lambda: upload_session_state_records(session_id)
         return ok(
             {
                 "documentId": file_entry.get("documentId"),
@@ -4766,6 +4804,7 @@ def complete_upload_session(
         files = repo.complete_upload_session(session_id)
         dispatches = dispatch_completed_upload_files(files)
         ndt_reports = create_ndt_reports_for_completed_session(project_id, session, files)
+        request.state.scoped_flush_records = lambda: upload_session_state_records(session_id)
         result = repo.mutation_result("完成上传会话", "UploadSession", session_id, next_status="排队中")
         return ok(
             {**result, "queuedTasks": dispatches, "fileCount": len(files), "ndtReports": ndt_reports},

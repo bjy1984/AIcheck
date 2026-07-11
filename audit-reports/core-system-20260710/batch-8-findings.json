@@ -1,0 +1,46 @@
+[
+  {
+    "id": "DEPLOY-DRIFT-001",
+    "severity": "P1",
+    "batch": 8,
+    "title": "生产部署与冻结基线存在漂移",
+    "actual": "生产 compose hash 与基线不一致；LiteLLM 实际使用 main-latest，数据库镜像也与冻结 compose 目标不同。",
+    "expected": "生产静态资源、compose 和镜像 digest 与审计基线完全一致且不可变。",
+    "impact": "测试结果无法证明线上运行的就是已审计版本，回滚和漏洞追踪不可复现。",
+    "evidence": "evidence/production-readonly-baseline.txt",
+    "recommendation": "按 baseline commit 重建并以 digest 部署，release gate 强制比较远端 compose、静态包和镜像 digest。"
+  },
+  {
+    "id": "CRED-ROTATE-001",
+    "severity": "P1",
+    "batch": 8,
+    "title": "模型网关凭据曾进入进程命令行可见范围",
+    "actual": "活体探测期间发现敏感凭据通过命令参数传入，可被同机进程列表读取。报告未保存具体值。",
+    "expected": "密钥只能通过受控 secret/env/file descriptor 注入，不得出现在 argv、日志或响应。",
+    "impact": "凭据可能被同机用户或诊断工具读取。",
+    "evidence": "审计会话过程证据（已脱敏）",
+    "recommendation": "立即轮换相关凭据，探针改为从权限 0600 的环境文件或 secret store 读取。"
+  },
+  {
+    "id": "RELEASE-EVIDENCE-001",
+    "severity": "P2",
+    "batch": 8,
+    "title": "容器 SBOM/Trivy 和全部故障注入证据不完整",
+    "actual": "pip-audit 与 pnpm audit 为 0 漏洞，但当前环境无 Trivy；共享基础服务不能在生产只读边界下执行破坏性注入。",
+    "expected": "每个发布镜像均有 SBOM 和容器扫描，所有 strict release probes 无 skip。",
+    "impact": "供应链和基础设施恢复能力未达到硬门槛。",
+    "evidence": "evidence/pip-audit.json, evidence/pnpm-audit.json",
+    "recommendation": "在 CI/隔离预发布增加 CycloneDX、Trivy 和独立基础服务故障注入。"
+  },
+  {
+    "id": "PNPM-OVERRIDE-001",
+    "severity": "P2",
+    "batch": 8,
+    "title": "pnpm 安全 override 配置被当前版本忽略",
+    "actual": "pnpm audit 明确警告 package.json 的 pnpm.overrides 不再读取。",
+    "expected": "依赖安全 override 放在当前 pnpm 支持的配置位置并由 CI 断言生效。",
+    "impact": "后续重新安装可能失去传递依赖安全约束。",
+    "evidence": "evidence/pnpm-audit.json",
+    "recommendation": "迁移 overrides 并对解析后的 lockfile 版本做测试。"
+  }
+]

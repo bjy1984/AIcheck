@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "aicheck-core-audit-batch@1",
+  "generatedAt": "2026-07-11T03:25:31.808146+00:00",
+  "baselineCommit": "bdd834860a28f99b16ce61f1c56b21fb18e01a63",
+  "batch": 4,
+  "title": "AI、RAG 与 ReviewRun",
+  "status": "PASS_WITH_RISK",
+  "score": 14,
+  "evidence": [
+    "Qwen qwen3.7-plus 官方 API 探针通过",
+    "本地 embedding 1024 维通过",
+    "ReviewRun/Temporal/LangGraph/replay 通过",
+    "知识质量 100"
+  ],
+  "findingIds": [],
+  "productionPolicy": "read_only",
+  "heavyComputePolicy": "server_only"
+}

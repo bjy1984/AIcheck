@@ -1,0 +1,13 @@
+[
+  {
+    "id": "STAGING-ISO-001",
+    "severity": "P2",
+    "batch": 7,
+    "title": "对象存储 bucket 名硬编码限制预发布物理隔离",
+    "actual": "预发布可隔离数据库、Redis 和 Temporal namespace，但共享 OCR 只能解析固定生产 MinIO/bucket，当前仅使用唯一对象前缀。",
+    "expected": "写探针使用独立 MinIO bucket/tenant，任何故障注入不接触生产对象。",
+    "impact": "无法安全执行 MinIO 故障注入，隔离强度不足。",
+    "evidence": "预发布 compose 与对象探针记录",
+    "recommendation": "将 bucket/tenant/endpoint 全部配置化，并允许 OCR 请求携带受控 storage namespace。"
+  }
+]

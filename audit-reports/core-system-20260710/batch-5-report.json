@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "aicheck-core-audit-batch@1",
+  "generatedAt": "2026-07-11T03:25:31.808146+00:00",
+  "baselineCommit": "bdd834860a28f99b16ce61f1c56b21fb18e01a63",
+  "batch": 5,
+  "title": "NDT 专项闭环",
+  "status": "PASS_WITH_RISK",
+  "score": 8,
+  "evidence": [
+    "NDT/readiness 定向测试通过",
+    "受第 2 批写链路性能阻断，未形成稳定完整 live 提交证据"
+  ],
+  "findingIds": [],
+  "productionPolicy": "read_only",
+  "heavyComputePolicy": "server_only"
+}

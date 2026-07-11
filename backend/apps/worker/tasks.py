@@ -11,7 +11,7 @@ from apps.worker.celery_app import celery_app
 from libs.business_pack import build_ai_review_prompt, load_business_pack, matching_rule_for_node
 from libs.contracts.responses import server_time
 from libs.audit_runtime import audit_runtime_for_run, audit_runtime_public_config
-from libs.db.repository import flush_state, load_state, repo
+from libs.db.repository import STATE_COLLECTIONS, flush_state, load_ocr_task_state, load_state, repo, sync_state_records
 from libs.integrations import task_dispatcher
 from libs.integrations.embedding_client import EmbeddingClient
 from libs.integrations.litellm_client import LiteLLMClient
@@ -32,6 +32,78 @@ from libs.review_grounding import apply_grounding_guardrails, build_grounded_rev
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
+
+
+def ocr_result_state_records(document_id: str, version_id: str) -> dict[str, list[dict[str, Any]]]:
+    knowledge_file_ids = {
+        str(item.get("id"))
+        for item in repo.state.get("knowledge_files", [])
+        if str(item.get("documentId") or "") == document_id
+        or str(item.get("documentVersionId") or "") == version_id
+    }
+    return {
+        "documents": [item for item in repo.state.get("documents", []) if str(item.get("id") or "") == document_id],
+        "versions": [item for item in repo.state.get("versions", []) if str(item.get("id") or "") == version_id],
+        "knowledge_files": [
+            item for item in repo.state.get("knowledge_files", []) if str(item.get("id") or "") in knowledge_file_ids
+        ],
+        "knowledge_tasks": [
+            item
+            for item in repo.state.get("knowledge_tasks", [])
+            if str(item.get("documentId") or "") == document_id
+            or str(item.get("documentVersionId") or "") == version_id
+            or str(item.get("targetId") or "") in knowledge_file_ids
+        ],
+        "ocr_jobs": [
+            item
+            for item in repo.state.get("ocr_jobs", [])
+            if str(item.get("documentId") or "") == document_id
+            and str(item.get("documentVersionId") or "") == version_id
+        ],
+        "ocr_parse_results": [
+            item for item in repo.state.get("ocr_parse_results", []) if str(item.get("documentVersionId") or "") == version_id
+        ],
+        "extracted_fields": [
+            item for item in repo.state.get("extracted_fields", []) if str(item.get("documentVersionId") or "") == version_id
+        ],
+        "evidence_links": [
+            item
+            for item in repo.state.get("evidence_links", [])
+            if str(item.get("documentId") or "") == document_id
+            or str(item.get("documentVersionId") or "") == version_id
+        ],
+        "node_evidence_links": [
+            item
+            for item in repo.state.get("node_evidence_links", [])
+            if str(item.get("documentId") or "") == document_id
+            or str(item.get("documentVersionId") or "") == version_id
+        ],
+        "bindings": [
+            item
+            for item in repo.state.get("bindings", [])
+            if str(item.get("documentId") or "") == document_id
+            or str(item.get("documentVersionId") or "") == version_id
+        ],
+        "material_targeting_runs": [
+            item
+            for item in repo.state.get("material_targeting_runs", [])
+            if str(item.get("documentId") or "") == document_id
+            and str(item.get("documentVersionId") or "") == version_id
+        ],
+    }
+
+
+def state_record_ids(records: dict[str, list[dict[str, Any]]]) -> dict[str, set[str]]:
+    output: dict[str, set[str]] = {}
+    for state_key, items in records.items():
+        collection_name = STATE_COLLECTIONS.get(state_key)
+        if not collection_name:
+            continue
+        output[state_key] = {
+            repo.persistence_object_id(collection_name, item, index)
+            for index, item in enumerate(items)
+        }
+    return output
 
 
 def stable_hash_payload(value: Any) -> str:
@@ -123,9 +195,14 @@ def env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def refresh_worker_state() -> None:
+def refresh_worker_state(selected_state_keys: set[str] | None = None) -> None:
     if worker_state_persistence_enabled():
-        load_state()
+        load_state(selected_state_keys)
+
+
+def refresh_ocr_worker_state(document_id: str, version_id: str) -> None:
+    if worker_state_persistence_enabled():
+        load_ocr_task_state(document_id, version_id)
 
 
 def split_text_fragments(
@@ -333,11 +410,11 @@ def parse_with_ocr_service(
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 def parse_document(self, document_id: str, version_id: str, storage_key: str, file_name: str | None = None) -> dict[str, Any]:
-    refresh_worker_state()
+    refresh_ocr_worker_state(document_id, version_id)
     task = repo.ocr_task_for(document_id, version_id, file_name)
     version = repo.find_one("versions", version_id)
     if task is None and version is None:
-        load_state()
+        refresh_ocr_worker_state(document_id, version_id)
         task = repo.ocr_task_for(document_id, version_id, file_name)
         version = repo.find_one("versions", version_id)
     if task and task.get("status") == "已取消":
@@ -379,6 +456,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
         profile_id=profile_id,
         document_type=document_type,
     )
+    previous_record_ids = state_record_ids(ocr_result_state_records(document_id, version_id))
     try:
         result = parse_with_ocr_service(
             storage_key,
@@ -412,7 +490,14 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
                 version_id,
                 triggered_by="ocr_worker",
             )
-    flush_state()
+    current_records = ocr_result_state_records(document_id, version_id)
+    current_record_ids = state_record_ids(current_records)
+    deleted_record_ids = {
+        state_key: sorted(object_ids - current_record_ids.get(state_key, set()))
+        for state_key, object_ids in previous_record_ids.items()
+        if object_ids - current_record_ids.get(state_key, set())
+    }
+    sync_state_records(current_records, deleted_record_ids)
     next_dispatch = None
     if applied.get("status") == "success":
         if knowledge_file:

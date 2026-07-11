@@ -1,0 +1,90 @@
+[
+  {
+    "id": "OCR-REAL-001",
+    "severity": "P1",
+    "batch": 3,
+    "title": "OCR 主引擎失败后仍返回成功状态",
+    "actual": "Paddle OCR 因 ResourceExhausted/MemoryError 失败，降级结果仅 1 个无 bbox 片段和 2 个低置信字段，但 API 外层仍为 code=0、status=success。",
+    "expected": "关键引擎失败、必填字段/表格缺失或关键 bbox 为 0 时必须返回 partial/needs_human_review，并阻断正式证据就绪。",
+    "impact": "上层可能把无原文定位、缺字段的 OCR 结果当作已完成，造成假就绪和错误审计证据。",
+    "evidence": "evidence/ocr-img6514.json",
+    "recommendation": "统一 OCR outcome；将 quality.status 和必填证据闸门提升为 API/任务状态，禁止 status=success 覆盖 needs_human_review。"
+  },
+  {
+    "id": "CORE-PERF-001",
+    "severity": "P1",
+    "batch": 2,
+    "title": "单体 JSONB 状态同步持久化导致写请求和启动超时",
+    "actual": "隔离预发布完整写探针多次超过 60-120 秒并出现 ClientDisconnect；API 重启后加载大状态约 70 秒。单项对象读接口仅 0.005-0.011 秒。",
+    "expected": "关键写接口在可接受 SLA 内返回排队/完成状态，API 启动和重启可快速恢复。",
+    "impact": "上传、OCR 调度和正式审计链路可能形成不可恢复等待、重复点击和持续 502。",
+    "evidence": "run-staging-verify.sh",
+    "recommendation": "将热路径从全量 collection JSONB 刷新改为行级/增量事务写入；增加启动性能预算和慢写指标。"
+  },
+  {
+    "id": "DEPLOY-DRIFT-001",
+    "severity": "P1",
+    "batch": 8,
+    "title": "生产部署与冻结基线存在漂移",
+    "actual": "生产 compose hash 与基线不一致；LiteLLM 实际使用 main-latest，数据库镜像也与冻结 compose 目标不同。",
+    "expected": "生产静态资源、compose 和镜像 digest 与审计基线完全一致且不可变。",
+    "impact": "测试结果无法证明线上运行的就是已审计版本，回滚和漏洞追踪不可复现。",
+    "evidence": "evidence/production-readonly-baseline.txt",
+    "recommendation": "按 baseline commit 重建并以 digest 部署，release gate 强制比较远端 compose、静态包和镜像 digest。"
+  },
+  {
+    "id": "CRED-ROTATE-001",
+    "severity": "P1",
+    "batch": 8,
+    "title": "模型网关凭据曾进入进程命令行可见范围",
+    "actual": "活体探测期间发现敏感凭据通过命令参数传入，可被同机进程列表读取。报告未保存具体值。",
+    "expected": "密钥只能通过受控 secret/env/file descriptor 注入，不得出现在 argv、日志或响应。",
+    "impact": "凭据可能被同机用户或诊断工具读取。",
+    "evidence": "审计会话过程证据（已脱敏）",
+    "recommendation": "立即轮换相关凭据，探针改为从权限 0600 的环境文件或 secret store 读取。"
+  },
+  {
+    "id": "STAGING-ISO-001",
+    "severity": "P2",
+    "batch": 7,
+    "title": "对象存储 bucket 名硬编码限制预发布物理隔离",
+    "actual": "预发布可隔离数据库、Redis 和 Temporal namespace，但共享 OCR 只能解析固定生产 MinIO/bucket，当前仅使用唯一对象前缀。",
+    "expected": "写探针使用独立 MinIO bucket/tenant，任何故障注入不接触生产对象。",
+    "impact": "无法安全执行 MinIO 故障注入，隔离强度不足。",
+    "evidence": "预发布 compose 与对象探针记录",
+    "recommendation": "将 bucket/tenant/endpoint 全部配置化，并允许 OCR 请求携带受控 storage namespace。"
+  },
+  {
+    "id": "HEALTH-SEMANTICS-001",
+    "severity": "P2",
+    "batch": 3,
+    "title": "服务健康状态未反映真实可执行能力",
+    "actual": "OCR health 报告 pipeline 可用，但真实样本主引擎内存失败；PaddleOCR-VL 标记 available 时执行依赖仍不可用。Embedding /health 只返回时间戳。",
+    "expected": "readiness 应执行轻量真实推理并分别报告 loaded、executable、capacity。",
+    "impact": "调度层会把不可执行服务当作 ready。",
+    "evidence": "evidence/ocr-img6514.json",
+    "recommendation": "增加深度 readiness、最近成功时间、内存余量和模型 warmup 状态。"
+  },
+  {
+    "id": "RELEASE-EVIDENCE-001",
+    "severity": "P2",
+    "batch": 8,
+    "title": "容器 SBOM/Trivy 和全部故障注入证据不完整",
+    "actual": "pip-audit 与 pnpm audit 为 0 漏洞，但当前环境无 Trivy；共享基础服务不能在生产只读边界下执行破坏性注入。",
+    "expected": "每个发布镜像均有 SBOM 和容器扫描，所有 strict release probes 无 skip。",
+    "impact": "供应链和基础设施恢复能力未达到硬门槛。",
+    "evidence": "evidence/pip-audit.json, evidence/pnpm-audit.json",
+    "recommendation": "在 CI/隔离预发布增加 CycloneDX、Trivy 和独立基础服务故障注入。"
+  },
+  {
+    "id": "PNPM-OVERRIDE-001",
+    "severity": "P2",
+    "batch": 8,
+    "title": "pnpm 安全 override 配置被当前版本忽略",
+    "actual": "pnpm audit 明确警告 package.json 的 pnpm.overrides 不再读取。",
+    "expected": "依赖安全 override 放在当前 pnpm 支持的配置位置并由 CI 断言生效。",
+    "impact": "后续重新安装可能失去传递依赖安全约束。",
+    "evidence": "evidence/pnpm-audit.json",
+    "recommendation": "迁移 overrides 并对解析后的 lockfile 版本做测试。"
+  }
+]

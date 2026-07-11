@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "aicheck-core-audit-batch@1",
+  "generatedAt": "2026-07-11T03:25:31.808146+00:00",
+  "baselineCommit": "bdd834860a28f99b16ce61f1c56b21fb18e01a63",
+  "batch": 0,
+  "title": "基线冻结与预发布克隆",
+  "status": "PASS",
+  "score": null,
+  "evidence": [
+    "基线 commit/tag 已推送",
+    "Git LFS fsck 通过",
+    "生产只读、预发布隔离写入"
+  ],
+  "findingIds": [],
+  "productionPolicy": "read_only",
+  "heavyComputePolicy": "server_only"
+}

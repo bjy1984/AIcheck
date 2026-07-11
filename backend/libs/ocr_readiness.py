@@ -5,6 +5,33 @@ from typing import Any
 
 OCR_READY_STATUSES = {"ready"}
 OCR_RETRYABLE_STATUSES = {"failed", "incomplete", "inconsistent"}
+OCR_FORMAL_BLOCKING_REASONS = {
+    "FIELD_EVIDENCE_MISSING",
+    "TABLE_EVIDENCE_MISSING",
+    "SEAL_EVIDENCE_MISSING",
+    "REQUIRED_FIELD_MISSING",
+    "REQUIRED_TABLE_MISSING",
+    "SEAL_NOT_FOUND",
+}
+
+
+def parse_result_quality_blockers(parse_result: dict[str, Any] | None) -> list[str]:
+    quality = (parse_result or {}).get("quality")
+    if not isinstance(quality, dict):
+        return []
+    reasons = {str(item) for item in quality.get("reasons") or []}
+    return sorted(reasons & OCR_FORMAL_BLOCKING_REASONS)
+
+
+def parse_result_outcome_status(parse_result: dict[str, Any] | None) -> str:
+    execution_status = str((parse_result or {}).get("status") or "").lower()
+    quality = (parse_result or {}).get("quality")
+    quality_status = str(quality.get("status") or "") if isinstance(quality, dict) else ""
+    if execution_status not in {"success", "succeeded", "completed"} or quality_status == "failed":
+        return "failed"
+    if parse_result_quality_blockers(parse_result):
+        return "partial"
+    return "completed"
 
 
 def _has_bbox(item: dict[str, Any]) -> bool:
@@ -61,6 +88,8 @@ def build_document_ocr_readiness(repo: Any, document: dict[str, Any]) -> dict[st
         status = "processing"
     elif source_status in {"识别失败"}:
         status = "failed"
+    elif source_status in {"抽取不完整"}:
+        status = "incomplete"
     elif not parse_result:
         status = "inconsistent" if source_status in {"已识别", "人工修正"} else "not_started"
         if status == "inconsistent":
@@ -72,13 +101,24 @@ def build_document_ocr_readiness(repo: Any, document: dict[str, Any]) -> dict[st
                     "targetId": document.get("id"),
                 }
             )
-    elif str(parse_result.get("status") or "").lower() not in {"success", "succeeded", "completed"}:
+    elif parse_result_outcome_status(parse_result) == "failed":
         status = "failed"
         issues.append(
             {
                 "code": "OCR_PARSE_RESULT_FAILED",
                 "message": "最近一次 OCR parse result 未成功完成。",
                 "actionKey": "retry_ocr",
+                "targetId": document.get("id"),
+            }
+        )
+    elif parse_result_quality_blockers(parse_result):
+        status = "incomplete"
+        issues.append(
+            {
+                "code": "OCR_QUALITY_GATE_BLOCKED",
+                "message": "OCR 已执行，但必填字段、表格、印章或可定位证据仍不完整。",
+                "qualityReasons": parse_result_quality_blockers(parse_result),
+                "actionKey": "review_ocr",
                 "targetId": document.get("id"),
             }
         )
@@ -112,6 +152,8 @@ def build_document_ocr_readiness(repo: Any, document: dict[str, Any]) -> dict[st
         "sourceStatus": source_status or None,
         "documentVersionId": document_version_id,
         "parseResultId": (parse_result or {}).get("parseResultId") or (parse_result or {}).get("id"),
+        "outcomeStatus": parse_result_outcome_status(parse_result) if parse_result else None,
+        "qualityStatus": ((parse_result or {}).get("quality") or {}).get("status"),
         "fieldCount": len(field_rows),
         "fragmentCount": len(fragment_rows),
         "tableCount": len(table_rows),

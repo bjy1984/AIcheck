@@ -148,6 +148,36 @@ def test_ocr_targeting_creates_node_evidence_links_and_auto_binding() -> None:
     )
 
 
+def test_apply_ocr_result_does_not_promote_quality_blocked_result() -> None:
+    document, version = repo.create_document(
+        PROJECT_ID,
+        "图纸目录.png",
+        "image/png",
+    )
+    result = {
+        "status": "success",
+        "outcomeStatus": "partial",
+        "quality": {
+            "status": "needs_human_review",
+            "reasons": ["REQUIRED_FIELD_MISSING", "FIELD_EVIDENCE_MISSING"],
+        },
+        "fragments": [{"pageNo": 1, "text": "DRAWING LIST", "confidence": 0.55}],
+        "fields": [],
+        "tables": [],
+        "seals": [],
+    }
+
+    applied = repo.apply_ocr_result(document["id"], version["id"], result)
+
+    assert applied["status"] == "partial"
+    assert applied["qualityReasons"] == ["FIELD_EVIDENCE_MISSING", "REQUIRED_FIELD_MISSING"]
+    assert document["currentOcrStatus"] == "抽取不完整"
+    assert version["ocrStatus"] == "抽取不完整"
+    assert version["sliceStatus"] == "未切片"
+    assert version["vectorStatus"] == "未向量化"
+    assert not [item for item in repo.state["extracted_fields"] if item.get("documentVersionId") == version["id"]]
+
+
 def test_node2_license_evidence_requires_manual_confirmation() -> None:
     document, version = repo.create_document(
         PROJECT_ID,
