@@ -12,15 +12,27 @@ from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.responses import FileResponse
 
 from apps.ocr_service.service import AGENTDESIGN_BACKEND, ocr_service
+from apps.ocr_service.result_cache import prune_ocr_cache
 from apps.ocr_service.welder_certificate_tool import extract_welder_certificate_from_payload
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    await asyncio.to_thread(prune_ocr_cache)
     if os.getenv("AICHECK_OCR_DEEP_READY_PROBE", "false").lower() in {"1", "true", "yes", "on"}:
         await asyncio.to_thread(ocr_service.run_readiness_probe)
-    yield
+    maintenance_task = asyncio.create_task(cache_maintenance_loop())
+    try:
+        yield
+    finally:
+        maintenance_task.cancel()
+
+
+async def cache_maintenance_loop() -> None:
+    while True:
+        await asyncio.sleep(6 * 3600)
+        await asyncio.to_thread(prune_ocr_cache)
 
 
 app = FastAPI(title="AIcheck Document Intelligence Service", version="1.0.0", lifespan=lifespan)

@@ -68,6 +68,10 @@ STATE_COLLECTIONS = {
     "ocr_profile_versions": "ocr_profile_versions",
     "ocr_jobs": "ocr_jobs",
     "ocr_parse_results": "ocr_parse_results",
+    "ocr_pipeline_runs": "ocr_pipeline_runs",
+    "ocr_stage_runs": "ocr_stage_runs",
+    "document_ai_shadow_runs": "document_ai_shadow_runs",
+    "document_audit_pipeline_comparison_runs": "document_audit_pipeline_comparison_runs",
     "ocr_corrections": "ocr_corrections",
     "ocr_eval_runs": "ocr_eval_runs",
     "ocr_annotation_tasks": "ocr_annotation_tasks",
@@ -103,6 +107,7 @@ STATE_COLLECTIONS = {
     "knowledge_tasks": "knowledge_tasks",
     "knowledge_chunks": "knowledge_chunks",
     "knowledge_vectors": "knowledge_vectors",
+    "knowledge_embedding_batches": "knowledge_embedding_batches",
     "knowledge_clauses": "knowledge_clauses",
     "knowledge_page_index_nodes": "knowledge_page_index_nodes",
     "knowledge_vector_corrections": "knowledge_vector_corrections",
@@ -162,6 +167,7 @@ class InMemoryRepository:
         self.state = runtime_initial_state()
         self.state.setdefault("knowledge_chunks", [])
         self.state.setdefault("knowledge_vectors", [])
+        self.state.setdefault("knowledge_embedding_batches", [])
         self.state.setdefault("knowledge_clauses", [])
         self.state.setdefault("knowledge_page_index_nodes", [])
         self.state.setdefault("knowledge_vector_corrections", [])
@@ -171,6 +177,10 @@ class InMemoryRepository:
         self.state.setdefault("upload_sessions", [])
         self.state.setdefault("ocr_jobs", [])
         self.state.setdefault("ocr_parse_results", [])
+        self.state.setdefault("ocr_pipeline_runs", [])
+        self.state.setdefault("ocr_stage_runs", [])
+        self.state.setdefault("document_ai_shadow_runs", [])
+        self.state.setdefault("document_audit_pipeline_comparison_runs", [])
         self.state.setdefault("ocr_corrections", [])
         self.state.setdefault("ocr_eval_runs", [])
         self.state.setdefault("ocr_annotation_tasks", [])
@@ -200,6 +210,7 @@ class InMemoryRepository:
         self.state = runtime_initial_state()
         self.state.setdefault("knowledge_chunks", [])
         self.state.setdefault("knowledge_vectors", [])
+        self.state.setdefault("knowledge_embedding_batches", [])
         self.state.setdefault("knowledge_clauses", [])
         self.state.setdefault("knowledge_page_index_nodes", [])
         self.state.setdefault("knowledge_vector_corrections", [])
@@ -209,6 +220,10 @@ class InMemoryRepository:
         self.state.setdefault("upload_sessions", [])
         self.state.setdefault("ocr_jobs", [])
         self.state.setdefault("ocr_parse_results", [])
+        self.state.setdefault("ocr_pipeline_runs", [])
+        self.state.setdefault("ocr_stage_runs", [])
+        self.state.setdefault("document_ai_shadow_runs", [])
+        self.state.setdefault("document_audit_pipeline_comparison_runs", [])
         self.state.setdefault("ocr_corrections", [])
         self.state.setdefault("ocr_eval_runs", [])
         self.state.setdefault("ocr_annotation_tasks", [])
@@ -863,6 +878,203 @@ class InMemoryRepository:
         self._bump_revision(task)
         self.append_task_log(task, "error", message)
 
+    def create_or_resume_ocr_pipeline_run(
+        self,
+        *,
+        run_key: str,
+        document_id: str,
+        version_id: str,
+        storage_key: str,
+        storage_bucket: str | None,
+        file_name: str | None,
+        profile_id: str | None,
+        document_type: str | None,
+        mode: str,
+        pipeline_version: str,
+        project_id: str | None = None,
+        operation_id: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        from libs.ocr_accuracy_pipeline import initial_stage_records
+
+        existing = next(
+            (
+                item
+                for item in self.state.setdefault("ocr_pipeline_runs", [])
+                if item.get("runKey") == run_key and item.get("status") not in {"canceled"}
+            ),
+            None,
+        )
+        now = server_time()
+        if existing:
+            if existing.get("status") in {"failed", "partial"}:
+                existing.update(
+                    {
+                        "status": "queued",
+                        "currentStage": "prepare",
+                        "progress": 0,
+                        "finishedAt": None,
+                        "failureReason": None,
+                        "updatedAt": now,
+                    }
+                )
+                for stage in self.state.setdefault("ocr_stage_runs", []):
+                    if stage.get("pipelineRunId") == existing.get("id") and stage.get("status") in {
+                        "failed",
+                        "retrying",
+                        "blocked",
+                    }:
+                        stage.update(
+                            {
+                                "status": "queued",
+                                "startedAt": None,
+                                "finishedAt": None,
+                                "failureReason": None,
+                                "blockingReasons": [],
+                                "updatedAt": now,
+                            }
+                        )
+            existing["taskId"] = task_id or existing.get("taskId")
+            existing["operationId"] = operation_id or existing.get("operationId")
+            existing["updatedAt"] = now
+            return existing
+        run_id = f"OCRPIPE-{uuid4().hex[:12].upper()}"
+        run = {
+            "id": run_id,
+            "pipelineRunId": run_id,
+            "runKey": run_key,
+            "pipelineVersion": pipeline_version,
+            "mode": mode,
+            "status": "queued",
+            "currentStage": "prepare",
+            "progress": 0,
+            "documentId": document_id,
+            "documentVersionId": version_id,
+            "projectId": project_id,
+            "storageKey": storage_key,
+            "storageBucket": storage_bucket,
+            "fileName": file_name,
+            "profileId": profile_id,
+            "documentType": document_type,
+            "operationId": operation_id,
+            "taskId": task_id,
+            "ocrJobRecordId": None,
+            "parseResultId": None,
+            "baselineParseResultId": None,
+            "qwenModel": None,
+            "qwenProvider": None,
+            "qwenUsage": {},
+            "qwenBatchCount": 0,
+            "groundingValidation": {},
+            "artifactUrls": {},
+            "blockingReasons": [],
+            "recommendedAction": None,
+            "formalEvidenceReady": False,
+            "advisoryOnly": mode != "active",
+            "attempt": 0,
+            "createdAt": now,
+            "updatedAt": now,
+            "startedAt": None,
+            "finishedAt": None,
+            "failureReason": None,
+        }
+        self.state["ocr_pipeline_runs"].insert(0, run)
+        self.state.setdefault("ocr_stage_runs", []).extend(initial_stage_records(run_id, now=now))
+        return run
+
+    def ocr_pipeline_stages(self, run_id: str) -> list[dict[str, Any]]:
+        from libs.ocr_accuracy_pipeline import PIPELINE_STAGE_PROGRESS
+
+        return sorted(
+            [item for item in self.state.setdefault("ocr_stage_runs", []) if item.get("pipelineRunId") == run_id],
+            key=lambda item: PIPELINE_STAGE_PROGRESS.get(str(item.get("stage") or ""), 999),
+        )
+
+    def mark_ocr_pipeline_stage(
+        self,
+        run: dict[str, Any] | None,
+        stage_name: str,
+        status: str,
+        *,
+        engine_status: dict[str, Any] | None = None,
+        blocking_reasons: list[dict[str, Any]] | None = None,
+        artifact_url: str | None = None,
+        artifact_hash: str | None = None,
+        failure_reason: str | None = None,
+    ) -> dict[str, Any] | None:
+        if not run:
+            return None
+        from libs.ocr_accuracy_pipeline import PIPELINE_STAGE_PROGRESS
+
+        now = server_time()
+        stage = next(
+            (
+                item
+                for item in self.state.setdefault("ocr_stage_runs", [])
+                if item.get("pipelineRunId") == run.get("id") and item.get("stage") == stage_name
+            ),
+            None,
+        )
+        if stage is None:
+            return None
+        stage["status"] = status
+        stage["updatedAt"] = now
+        if status in {"running", "retrying"}:
+            stage["startedAt"] = stage.get("startedAt") or now
+            if status == "running":
+                stage["attempt"] = int(stage.get("attempt") or 0) + 1
+        if status in {"success", "failed", "skipped", "blocked", "partial"}:
+            stage["finishedAt"] = now
+        if engine_status is not None:
+            stage["engineStatus"] = self.clone(engine_status)
+        if blocking_reasons is not None:
+            stage["blockingReasons"] = self.clone(blocking_reasons)
+        if artifact_url is not None:
+            stage["artifactUrl"] = artifact_url
+        if artifact_hash is not None:
+            stage["artifactHash"] = artifact_hash
+        if failure_reason is not None:
+            stage["failureReason"] = failure_reason
+        run["currentStage"] = stage_name
+        run["updatedAt"] = now
+        if status == "running":
+            run["status"] = "running"
+            run["startedAt"] = run.get("startedAt") or now
+            run["attempt"] = max(int(run.get("attempt") or 0), int(stage.get("attempt") or 0))
+        if status == "retrying":
+            run["status"] = "queued"
+        if status in {"success", "skipped"}:
+            run["progress"] = max(int(run.get("progress") or 0), int(PIPELINE_STAGE_PROGRESS.get(stage_name, 0)))
+        if status in {"failed", "blocked"}:
+            run["status"] = "failed" if status == "failed" else "partial"
+            run["failureReason"] = failure_reason
+        return stage
+
+    def finish_ocr_pipeline_run(
+        self,
+        run: dict[str, Any] | None,
+        *,
+        status: str,
+        blocking_reasons: list[dict[str, Any]] | None = None,
+        recommended_action: str | None = None,
+        formal_evidence_ready: bool = False,
+    ) -> dict[str, Any] | None:
+        if not run:
+            return None
+        now = server_time()
+        run.update(
+            {
+                "status": status,
+                "progress": 100 if status == "completed" else int(run.get("progress") or 0),
+                "blockingReasons": self.clone(blocking_reasons or []),
+                "recommendedAction": recommended_action,
+                "formalEvidenceReady": bool(formal_evidence_ready),
+                "finishedAt": now,
+                "updatedAt": now,
+            }
+        )
+        return run
+
     def create_ocr_job_record(
         self,
         *,
@@ -883,9 +1095,9 @@ class InMemoryRepository:
             "fileName": file_name,
             "profileId": profile_id,
             "documentType": document_type,
-            "status": "running",
+            "status": "queued",
             "createdAt": now,
-            "startedAt": now,
+            "startedAt": None,
             "updatedAt": now,
             "finishedAt": None,
             "parseResultId": None,
@@ -897,6 +1109,16 @@ class InMemoryRepository:
         }
         self.state.setdefault("ocr_jobs", []).insert(0, job)
         return job
+
+    def mark_ocr_job_running(self, job: dict[str, Any] | None, *, pipeline_run_id: str | None = None) -> None:
+        if not job:
+            return
+        now = server_time()
+        job["status"] = "running"
+        job["startedAt"] = job.get("startedAt") or now
+        job["updatedAt"] = now
+        if pipeline_run_id:
+            job["pipelineRunId"] = pipeline_run_id
 
     def finish_ocr_job_record(self, job: dict[str, Any] | None, result: dict[str, Any]) -> dict[str, Any] | None:
         if not job:
@@ -1474,6 +1696,7 @@ class InMemoryRepository:
         loaded = runtime_initial_state()
         loaded.setdefault("knowledge_chunks", [])
         loaded.setdefault("knowledge_vectors", [])
+        loaded.setdefault("knowledge_embedding_batches", [])
         loaded.setdefault("knowledge_clauses", [])
         loaded.setdefault("knowledge_page_index_nodes", [])
         loaded.setdefault("knowledge_vector_corrections", [])
@@ -1483,6 +1706,10 @@ class InMemoryRepository:
         loaded.setdefault("upload_sessions", [])
         loaded.setdefault("ocr_jobs", [])
         loaded.setdefault("ocr_parse_results", [])
+        loaded.setdefault("ocr_pipeline_runs", [])
+        loaded.setdefault("ocr_stage_runs", [])
+        loaded.setdefault("document_ai_shadow_runs", [])
+        loaded.setdefault("document_audit_pipeline_comparison_runs", [])
         loaded.setdefault("ocr_corrections", [])
         loaded.setdefault("ocr_eval_runs", [])
         loaded.setdefault("ocr_annotation_tasks", [])
@@ -1796,6 +2023,10 @@ class InMemoryRepository:
                     "knowledge_tasks",
                     "ocr_jobs",
                     "ocr_parse_results",
+                    "ocr_pipeline_runs",
+                    "ocr_stage_runs",
+                    "document_ai_shadow_runs",
+                    "document_audit_pipeline_comparison_runs",
                 )
             ]
             rows = self.sync_postgres.execute(
@@ -2449,6 +2680,10 @@ OCR_WORKER_STATE_KEYS_FOR_SQLITE = {
     "knowledge_tasks",
     "ocr_jobs",
     "ocr_parse_results",
+    "ocr_pipeline_runs",
+    "ocr_stage_runs",
+    "document_ai_shadow_runs",
+    "document_audit_pipeline_comparison_runs",
     "users",
 }
 

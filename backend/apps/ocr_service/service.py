@@ -113,6 +113,7 @@ REMEDIATION_TRIGGER_REASONS = {
     "REQUIRED_TABLE_MISSING",
     "TABLE_STRUCTURE_LOW_CONFIDENCE",
     "TABLE_CELL_EVIDENCE_LOW",
+    "TABLE_CONTENT_SPARSE",
     "TABLE_EVIDENCE_MISSING",
     "TABLE_ENGINE_CONFLICT",
     "SEAL_TEXT_LOW_CONFIDENCE",
@@ -205,6 +206,7 @@ TABLE_REMEDIATION_REASONS = {
     "REQUIRED_TABLE_MISSING",
     "TABLE_STRUCTURE_LOW_CONFIDENCE",
     "TABLE_CELL_EVIDENCE_LOW",
+    "TABLE_CONTENT_SPARSE",
     "TABLE_EVIDENCE_MISSING",
     "TABLE_ENGINE_CONFLICT",
 }
@@ -2001,6 +2003,7 @@ def remediation_variants_for_reasons(
         crop_variants.extend(
             build_crop_variants(
                 [
+                    *sparse_table_remediation_targets(result),
                     *(result.get("tables") or []),
                     *missing_table_remediation_targets(result, variants, profile or {}, reasons=reasons),
                 ],
@@ -2008,7 +2011,7 @@ def remediation_variants_for_reasons(
                 target_type="table",
                 purpose="table",
                 padding_ratio=0.08,
-                max_items=3,
+                max_items=8,
                 reasons=reasons,
             )
         )
@@ -2146,6 +2149,67 @@ def missing_table_remediation_targets(
             }
         )
     return targets
+
+
+def sparse_table_remediation_targets(result: dict[str, Any]) -> list[dict[str, Any]]:
+    quality = result.get("quality") if isinstance(result.get("quality"), dict) else {}
+    sparse_ids = {
+        str(item.get("tableId") or "")
+        for item in quality.get("sparseContentTables") or []
+        if isinstance(item, dict) and item.get("tableId")
+    }
+    if not sparse_ids:
+        return []
+    targets: list[dict[str, Any]] = []
+    for table in result.get("tables") or []:
+        if not isinstance(table, dict):
+            continue
+        table_id = str(table.get("tableId") or table.get("id") or "")
+        if table_id not in sparse_ids:
+            continue
+        bbox = rect_from_bbox(table.get("bbox") or table.get("polygon"))
+        if not bbox:
+            continue
+        for index, tile_bbox in enumerate(split_bbox_along_long_axis(bbox, max_tiles=4, overlap_ratio=0.1), start=1):
+            targets.append(
+                {
+                    **table,
+                    "tableId": f"{table_id}_sparse_tile_{index}",
+                    "bbox": tile_bbox,
+                    "coordinateSystem": table.get("coordinateSystem") or "rendered_pixels",
+                    "qualityFlags": sorted({*map(str, table.get("qualityFlags") or []), "table_content_sparse_tile"}),
+                    "ocrRuntimeOverrides": {
+                        "use_doc_orientation_classify": True,
+                        "use_doc_unwarping": False,
+                        "use_textline_orientation": True,
+                    },
+                }
+            )
+    return targets
+
+
+def split_bbox_along_long_axis(
+    bbox: list[float],
+    *,
+    max_tiles: int,
+    overlap_ratio: float,
+) -> list[list[float]]:
+    x0, y0, x1, y1 = [float(value) for value in bbox[:4]]
+    width, height = x1 - x0, y1 - y0
+    tile_count = max(1, min(int(max_tiles), 4))
+    horizontal = width >= height
+    length = width if horizontal else height
+    if length <= 0 or tile_count == 1:
+        return [[x0, y0, x1, y1]]
+    tile_length = length / (tile_count - (tile_count - 1) * overlap_ratio)
+    stride = tile_length * (1 - overlap_ratio)
+    output = []
+    for index in range(tile_count):
+        start = (x0 if horizontal else y0) + index * stride
+        end = min(x1 if horizontal else y1, start + tile_length)
+        start = max(x0 if horizontal else y0, end - tile_length)
+        output.append([start, y0, end, y1] if horizontal else [x0, start, x1, end])
+    return output
 
 
 def missing_seal_remediation_targets(

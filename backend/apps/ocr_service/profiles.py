@@ -29,6 +29,7 @@ DEFAULT_VLM_FALLBACK_REASONS = [
     "REQUIRED_TABLE_MISSING",
     "TABLE_STRUCTURE_LOW_CONFIDENCE",
     "TABLE_CELL_EVIDENCE_LOW",
+    "TABLE_CONTENT_SPARSE",
     "TABLE_EVIDENCE_MISSING",
     "TABLE_ENGINE_CONFLICT",
     "SEAL_NOT_FOUND",
@@ -81,12 +82,40 @@ ENGINEERING_DRAWING_COMMON_SEAL_RULES = {
 }
 
 
+def structured_extraction_config(
+    profile_id: str,
+    fields: list[str],
+    *,
+    tables: list[str] | None = None,
+    field_definitions: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "schemaVersion": "DocumentAiStructuredExtraction@1",
+        "mode": "shadow",
+        "templateVersion": f"{profile_id}-nuextract3@1",
+        "maxCandidates": 64,
+        "maxPriorTokens": 12000,
+        "maxPages": 6,
+        "fields": list(fields),
+        "tables": list(tables or []),
+        "fieldDefinitions": dict(field_definitions or {}),
+        "outputContract": {
+            "fieldShape": {"value": "", "sourceCandidateIds": []},
+            "tableRowShape": {"cells": {}, "sourceCandidateIds": []},
+            "allowDirectVisionOnly": True,
+            "directVisionOnlyAdvisory": True,
+        },
+    }
+
+
 def engineering_drawing_profile(
     profile_id: str,
     document_type: str,
     critical_fields: list[str] | None = None,
+    structured_fields: list[str] | None = None,
+    structured_tables: list[str] | None = None,
 ) -> dict[str, Any]:
-    return {
+    profile = {
         "profileId": profile_id,
         "documentType": document_type,
         "postprocessVersion": "engineering-drawing-generic-route-v1",
@@ -108,6 +137,13 @@ def engineering_drawing_profile(
         "organizationAliases": [],
         "preprocessPolicy": deepcopy(ENGINEERING_DRAWING_COMMON_PREPROCESS_POLICY),
     }
+    if structured_fields is not None:
+        profile["structuredExtraction"] = structured_extraction_config(
+            profile_id,
+            structured_fields,
+            tables=structured_tables,
+        )
+    return profile
 
 
 OCR_PROFILES: dict[str, dict[str, Any]] = {
@@ -175,6 +211,21 @@ OCR_PROFILES: dict[str, dict[str, Any]] = {
         ],
         "requiredTables": ["material_chemical_composition_table", "mechanical_property_table"],
         "sealRules": {"required": True, "expectedSealTypes": ["company_official_seal", "quality_seal"]},
+        "structuredExtraction": structured_extraction_config(
+            "quality_certificate_v1",
+            [
+                "certificate_no",
+                "manufacturer",
+                "material_grade",
+                "specification",
+                "batch_no",
+                "heat_no",
+                "standard_no",
+                "inspection_conclusion",
+                "issue_date",
+            ],
+            tables=["material_chemical_composition_table", "mechanical_property_table"],
+        ),
         "qualityRules": {
             "criticalConflictFields": [
                 "certificate_no",
@@ -219,6 +270,31 @@ OCR_PROFILES: dict[str, dict[str, Any]] = {
             "required": True,
             "expectedSealTypes": ["inspection_testing_seal", "company_official_seal"],
         },
+        "structuredExtraction": structured_extraction_config(
+            "ndt_rt_report_v1",
+            [
+                "report_no",
+                "project_name",
+                "detection_method",
+                "weld_no",
+                "detection_date",
+                "detection_ratio",
+                "technical_grade",
+                "evaluation_level",
+                "film_model",
+                "intensifying_screen_thickness",
+                "conclusion",
+                "inspection_unit",
+            ],
+            tables=["weld_detection_result_table"],
+            field_definitions={
+                "detection_ratio": "检测比例，例如 10%",
+                "technical_grade": "射线检测技术等级，例如 AB",
+                "evaluation_level": "合格或评定级别，例如 III",
+                "film_model": "胶片型号，不是底片质量等级",
+                "intensifying_screen_thickness": "增感屏厚度，例如 0.03mm",
+            },
+        ),
         "qualityRules": {
             "criticalConflictFields": [
                 "report_no",
@@ -498,6 +574,36 @@ OCR_PROFILES: dict[str, dict[str, Any]] = {
             "preferredVisualColors": ["red"],
             "preferredVisualRegion": "bottom_right",
         },
+        "structuredExtraction": structured_extraction_config(
+            "piping_characteristic_list_v1",
+            [
+                "company_name",
+                "project_name",
+                "document_title",
+                "drawing_no",
+                "design_phase",
+                "pipe_no",
+                "pipeline_class",
+                "medium",
+                "design_pressure",
+                "design_temperature",
+                "strength_test",
+                "leak_test",
+                "detection_method",
+                "detection_ratio",
+                "evaluation_level",
+                "technical_grade",
+            ],
+            tables=["piping_characteristic_table"],
+            field_definitions={
+                "strength_test": "强度试验的压力值或试验方式；RT/UT/MT/PT 不是强度试验",
+                "leak_test": "严密性、气密性或泄漏性试验的压力值或方式；检测比例不是试验值",
+                "detection_method": "无损检测方法，例如 RT、UT、MT、PT 或 TOFD",
+                "detection_ratio": "无损检测抽检比例，例如 10%",
+                "evaluation_level": "无损检测合格或评定级别，例如 III",
+                "technical_grade": "无损检测技术等级，例如 AB",
+            },
+        ),
         "qualityRules": {
             "minFieldConfidence": 0.75,
             "minTableStructureConfidence": 0.6,
@@ -550,6 +656,19 @@ OCR_PROFILES: dict[str, dict[str, Any]] = {
             "preferredVisualColors": ["red", "blue"],
             "preferredVisualRegion": "bottom_right",
         },
+        "structuredExtraction": structured_extraction_config(
+            "engineering_drawing_list_v1",
+            [
+                "company_name",
+                "project_name",
+                "document_title",
+                "drawing_no",
+                "design_phase",
+                "total_sheets",
+                "blue_seal_expiry",
+            ],
+            tables=["engineering_drawing_title_block_v1", "engineering_drawing_list_rows"],
+        ),
         "qualityRules": {
             "minFieldConfidence": 0.72,
             "minTableStructureConfidence": 0.6,
@@ -616,6 +735,19 @@ OCR_PROFILES: dict[str, dict[str, Any]] = {
     "comprehensive_material_list_v1": engineering_drawing_profile(
         "comprehensive_material_list_v1",
         "comprehensive_material_list",
+        structured_fields=[
+            "company_name",
+            "project_name",
+            "document_title",
+            "drawing_no",
+            "design_phase",
+            "material_name",
+            "material_grade",
+            "specification",
+            "quantity",
+            "standard_no",
+        ],
+        structured_tables=["comprehensive_material_list"],
     ),
     "site_layout_drawing_v1": engineering_drawing_profile(
         "site_layout_drawing_v1",
@@ -778,6 +910,43 @@ def validate_profiles(profiles: dict[str, dict[str, Any]] | None = None) -> list
                         "seal-required profiles must include SEAL_TEXT_LOW_CONFIDENCE fallback",
                     )
                 )
+        structured = profile.get("structuredExtraction")
+        if structured is not None:
+            if not isinstance(structured, dict):
+                failures.append(
+                    profile_failure(profile_id, "structuredExtraction", "structuredExtraction must be an object")
+                )
+            else:
+                if structured.get("mode") != "shadow":
+                    failures.append(
+                        profile_failure(profile_id, "structuredExtraction.mode", "structured extraction must be shadow-only")
+                    )
+                fields = structured.get("fields")
+                if not isinstance(fields, list) or not fields:
+                    failures.append(
+                        profile_failure(profile_id, "structuredExtraction.fields", "structured extraction fields are required")
+                    )
+                elif "film_quality" in fields:
+                    failures.append(
+                        profile_failure(
+                            profile_id,
+                            "structuredExtraction.fields",
+                            "film_quality is ambiguous; use technical_grade, film_model, or intensifying_screen_thickness",
+                        )
+                    )
+                for key, ceiling in [("maxCandidates", 64), ("maxPriorTokens", 12000), ("maxPages", 6)]:
+                    try:
+                        configured_limit = int(structured.get(key) or 0)
+                    except (TypeError, ValueError):
+                        configured_limit = 0
+                    if configured_limit <= 0 or configured_limit > ceiling:
+                        failures.append(
+                            profile_failure(
+                                profile_id,
+                                f"structuredExtraction.{key}",
+                                f"{key} must be between 1 and {ceiling}",
+                            )
+                        )
     return failures
 
 

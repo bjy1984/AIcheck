@@ -21,6 +21,8 @@ from libs.embedding_models import EMBEDDING_DEFAULT_ALIAS, allowed_embedding_mod
 REQUIRED_SERVICES = {
     "api-service",
     "worker-service",
+    "cpu-heavy-worker-service",
+    "llm-remote-worker-service",
     "review-worker-service",
     "workflow-migrate",
     "ocr-service",
@@ -33,15 +35,11 @@ REQUIRED_SERVICES = {
     "temporal-ui",
 }
 REQUIRED_WORKER_QUEUES = {
-    "ocr.parse_document",
-    "ocr.recognize_seals",
-    "knowledge.slice",
-    "knowledge.embed",
-    "inspection.ai_recheck",
-    "llm.compare",
-    "export.package",
+    "business.light",
+    "cpu.heavy",
+    "llm.remote",
 }
-REQUIRED_VOLUMES = {"minio-data", "postgres-data"}
+REQUIRED_VOLUMES = {"minio-data", "ocr-cache", "postgres-data"}
 REQUIRED_HEALTHCHECKS = {
     "api-service": "8000/healthz",
     "worker-service": "celery",
@@ -321,6 +319,8 @@ class DeploymentConfigValidator:
         failures = []
         api_command = command_text(self.service("api-service").get("command"))
         worker_command = command_text(self.service("worker-service").get("command"))
+        cpu_heavy_worker_command = command_text(self.service("cpu-heavy-worker-service").get("command"))
+        llm_remote_worker_command = command_text(self.service("llm-remote-worker-service").get("command"))
         review_worker_command = command_text(self.service("review-worker-service").get("command"))
         ocr_command = command_text(self.service("ocr-service").get("command"))
         litellm_command = command_text(self.service("litellm-service").get("command"))
@@ -331,11 +331,15 @@ class DeploymentConfigValidator:
             failures.append("api-service command must run FastAPI on port 8000")
         if "celery" not in worker_command or "apps.worker.celery_app.celery_app" not in worker_command:
             failures.append("worker-service command must run Celery app")
+        if "--concurrency=1" not in cpu_heavy_worker_command or "cpu.heavy" not in cpu_heavy_worker_command:
+            failures.append("cpu-heavy-worker-service must run cpu.heavy with concurrency=1")
+        if "--concurrency=1" not in llm_remote_worker_command or "llm.remote" not in llm_remote_worker_command:
+            failures.append("llm-remote-worker-service must run llm.remote with concurrency=1")
         if "python -m apps.review_worker.main" not in review_worker_command:
             failures.append("review-worker-service command must run the Temporal ReviewRun worker")
         if "python -m scripts.setup_langgraph_checkpoint" not in workflow_migrate_command:
             failures.append("workflow-migrate must run the LangGraph checkpoint schema setup")
-        queue_list = set(re.split(r"[, ]+", worker_command))
+        queue_list = set(re.split(r"[, ]+", " ".join([worker_command, cpu_heavy_worker_command, llm_remote_worker_command])))
         missing_queues = sorted(REQUIRED_WORKER_QUEUES - queue_list)
         if missing_queues:
             failures.append(f"worker-service missing queues: {', '.join(missing_queues)}")

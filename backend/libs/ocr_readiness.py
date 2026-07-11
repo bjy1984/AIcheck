@@ -81,6 +81,21 @@ def build_document_ocr_readiness(repo: Any, document: dict[str, Any]) -> dict[st
     positioned_count = len([item for item in evidence_rows if _has_bbox(item)])
     bbox_coverage = round(positioned_count / len(evidence_rows), 4) if evidence_rows else 0.0
     issues: list[dict[str, Any]] = []
+    pipeline_runs = [
+        item
+        for item in repo.state.get("ocr_pipeline_runs", [])
+        if str(item.get("documentVersionId") or "") == str(document_version_id or "")
+    ]
+    pipeline_run = max(
+        pipeline_runs,
+        key=lambda item: str(item.get("updatedAt") or item.get("createdAt") or ""),
+    ) if pipeline_runs else None
+    pipeline_stages = [
+        item
+        for item in repo.state.get("ocr_stage_runs", [])
+        if pipeline_run and item.get("pipelineRunId") == pipeline_run.get("id")
+    ]
+    stages_by_name = {str(item.get("stage") or ""): item for item in pipeline_stages}
 
     if source_status in {"排队中"}:
         status = "queued"
@@ -145,6 +160,10 @@ def build_document_ocr_readiness(repo: Any, document: dict[str, Any]) -> dict[st
     else:
         status = "ready"
 
+    structure_status = str((stages_by_name.get("structure_scan") or {}).get("status") or "")
+    seal_status = str((stages_by_name.get("seal_signature_scan") or {}).get("status") or "")
+    qwen_status = str((stages_by_name.get("qwen_extract") or {}).get("status") or "")
+    qwen_validation = (pipeline_run or {}).get("groundingValidation") or {}
     return {
         "schemaVersion": "aicheck-ocr-readiness@1",
         "status": status,
@@ -163,6 +182,18 @@ def build_document_ocr_readiness(repo: Any, document: dict[str, Any]) -> dict[st
         "blockingReasons": issues,
         "retryable": status in OCR_RETRYABLE_STATUSES,
         "finishedAt": (parse_result or {}).get("finishedAt"),
+        "pipelineRunId": (pipeline_run or {}).get("id"),
+        "pipelineMode": (pipeline_run or {}).get("mode"),
+        "pipelineStatus": (pipeline_run or {}).get("status"),
+        "pipelineStage": (pipeline_run or {}).get("currentStage"),
+        "scannerReady": bool(parse_result and evidence_rows),
+        "structureReady": structure_status in {"success", "skipped"},
+        "sealEvidenceReady": seal_status in {"success", "skipped"},
+        "qwenGrounded": bool(
+            qwen_status == "success"
+            and int(qwen_validation.get("invalidCandidateIdCount") or 0) == 0
+        ),
+        "formalEvidenceReady": bool((pipeline_run or {}).get("formalEvidenceReady")),
     }
 
 

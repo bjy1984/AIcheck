@@ -45,6 +45,7 @@ from libs.contracts.responses import fail, ok, page, server_time
 from libs.audit_runtime import audit_runtime_public_config
 from libs.db.repository import flush_state, load_state, repo
 from libs.db.seed import PROJECT_ID, ROLE_ACTIONS, ROLE_NODE_MAP, STANDARD_RULES_SOURCE_ID, STANDARD_RULES_VERSION
+from libs.deepseek_runtime import deepseek_runtime_public_config
 from libs.embedding_models import embedding_registry_payload, embedding_runtime_config
 from libs.integrations import task_dispatcher
 from libs.integrations.embedding_client import EmbeddingClient
@@ -8429,6 +8430,29 @@ def operations_overview(request: Request, area: str = Query(default="workbench")
     )
 
 
+def operation_elapsed_seconds(item: dict[str, Any]) -> int | None:
+    raw_start = item.get("startedAt") or item.get("createdAt")
+    if not raw_start:
+        return None
+    raw_end = item.get("finishedAt") or datetime.now(UTC).isoformat()
+
+    def parse(value: Any) -> datetime | None:
+        normalized = str(value or "").strip().replace("Z", "+00:00")
+        if not normalized:
+            return None
+        try:
+            result = datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
+        return result.replace(tzinfo=UTC) if result.tzinfo is None else result.astimezone(UTC)
+
+    started = parse(raw_start)
+    finished = parse(raw_end)
+    if not started or not finished:
+        return None
+    return max(0, int((finished - started).total_seconds()))
+
+
 @router.get("/operations/tasks")
 def operations_tasks(
     request: Request,
@@ -8448,6 +8472,13 @@ def operations_tasks(
         return fail(errors.FORBIDDEN, request, message="当前角色无权查看该任务范围。")
 
     rows: list[dict[str, Any]] = []
+    queued_pipeline_ids = [
+        str(item.get("id"))
+        for item in sorted(
+            [item for item in repo.state.get("ocr_pipeline_runs", []) if item.get("status") == "queued"],
+            key=lambda item: str(item.get("createdAt") or ""),
+        )
+    ]
 
     def task_project_id(item: dict[str, Any]) -> str | None:
         if item.get("projectId"):
@@ -8490,6 +8521,20 @@ def operations_tasks(
                 "updatedAt": item.get("updatedAt") or item.get("finishedAt") or item.get("createdAt"),
                 "actions": actions or [],
                 "route": item.get("route"),
+                "parentTaskId": item.get("parentTaskId"),
+                "pipelineRunId": item.get("pipelineRunId") or (item.get("id") if task_type == "ocr_pipeline" else None),
+                "stage": item.get("currentStage") or item.get("stage"),
+                "stageLabel": item.get("stageLabel"),
+                "queuePosition": (
+                    queued_pipeline_ids.index(str(item.get("id"))) + 1
+                    if str(item.get("id")) in queued_pipeline_ids
+                    else None
+                ),
+                "attempt": int(item.get("attempt") or 0),
+                "elapsedSeconds": operation_elapsed_seconds(item),
+                "engineStatus": item.get("engineStatus") or {},
+                "blockingReasons": item.get("blockingReasons") or [],
+                "recommendedAction": item.get("recommendedAction"),
             }
         )
 
@@ -8510,6 +8555,20 @@ def operations_tasks(
         append_task(item, "fde", "ocr", actions=["rerun"] if str(item.get("status")).lower() in {"failed", "失败"} else [])
         if task_project_id(item):
             append_task(item, "workbench", "ocr", actions=[])
+    stage_labels = {
+        str(item.get("pipelineRunId")): str(item.get("stageLabel") or item.get("stage") or "")
+        for item in repo.state.get("ocr_stage_runs", [])
+        if item.get("status") in {"running", "retrying"}
+    }
+    for item in repo.state.get("ocr_pipeline_runs", []):
+        run = {
+            **item,
+            "stageLabel": stage_labels.get(str(item.get("id"))) or item.get("currentStage"),
+            "route": f"/fde/ocr-quality?pipelineRunId={item.get('id')}",
+        }
+        append_task(run, "fde", "ocr_pipeline", actions=["rerun"] if item.get("status") == "failed" else [])
+        if task_project_id(run):
+            append_task({**run, "route": None}, "workbench", "ocr_pipeline", actions=[])
     for item in repo.state.get("export_tasks", []):
         export_area = "admin" if item.get("exportType") == "config-package" else "workbench"
         append_task(
@@ -12831,6 +12890,7 @@ def fde_runtime_env_value(name: str, fallback: str) -> str:
 def fde_project_technology_stack(vector_quality: dict[str, Any] | None = None) -> dict[str, Any]:
     embedding = embedding_runtime_config()
     qwen_runtime = qwen_runtime_public_config()
+    audit_pipeline_comparison = deepseek_runtime_public_config()
     audit_runtime = audit_runtime_public_config()
     review_orchestration = fde_runtime_env_value("AICHECK_REVIEW_ORCHESTRATION", "temporal")
     review_llm_execution = fde_runtime_env_value("AICHECK_REVIEW_LLM_EXECUTION", "litellm")
@@ -12849,6 +12909,7 @@ def fde_project_technology_stack(vector_quality: dict[str, Any] | None = None) -
         },
         "embeddingModelRegistry": embedding_registry_payload(),
         "qwenRuntime": qwen_runtime,
+        "auditPipelineComparison": audit_pipeline_comparison,
         "auditRuntime": audit_runtime,
         "runtimeReadiness": runtime_readiness,
         "active": {
@@ -12891,6 +12952,22 @@ def fde_project_technology_stack(vector_quality: dict[str, Any] | None = None) -
                 "visionReviewAlias": qwen_runtime["activeModels"].get("visionReview", "qwen-vision-review"),
                 "fallbackToServer": qwen_runtime["allowFallbackToServer"],
                 "execution": review_llm_execution,
+            },
+            "auditPipelineComparison": {
+                "component": "文档审计 Pipeline Shadow 对照",
+                "mode": audit_pipeline_comparison["mode"],
+                "baseline": {
+                    "pipelineId": audit_pipeline_comparison["primaryPipelineId"],
+                    "provider": audit_pipeline_comparison["primaryProvider"],
+                    "model": audit_pipeline_comparison["primaryModel"],
+                },
+                "challenger": {
+                    "pipelineId": audit_pipeline_comparison["challengerPipelineId"],
+                    "provider": audit_pipeline_comparison["challengerProvider"],
+                    "model": audit_pipeline_comparison["model"],
+                },
+                "advisoryOnly": True,
+                "fallbackEnabled": False,
             },
             "ocr": {
                 "component": "OCR / 文档智能",
@@ -17680,6 +17757,201 @@ def fde_ocr_quality(
     return ok(fde_ocr_quality_snapshot(projectId, nodeId, profileId), request)
 
 
+def document_ai_shadow_run_summary(run: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: run.get(key)
+        for key in [
+            "id",
+            "runId",
+            "status",
+            "advisoryOnly",
+            "businessImpact",
+            "documentId",
+            "documentVersionId",
+            "parseResultId",
+            "profileId",
+            "templateVersion",
+            "fileName",
+            "operationId",
+            "taskId",
+            "remoteRunId",
+            "modelRevision",
+            "paddleModelRevision",
+            "priorCandidateCount",
+            "priorOmittedCandidateCount",
+            "priorEstimatedTokenCount",
+            "selectedPageNos",
+            "queueTimeMs",
+            "inferenceTimeMs",
+            "totalTimeMs",
+            "jsonRetryCount",
+            "tableExtractionDeferred",
+            "failureReason",
+            "createdAt",
+            "queuedAt",
+            "startedAt",
+            "finishedAt",
+            "updatedAt",
+        ]
+        if run.get(key) is not None
+    }
+
+
+@router.get("/fde/document-ai/shadow-runs")
+def fde_document_ai_shadow_runs(
+    request: Request,
+    status: str | None = None,
+    profileId: str | None = None,
+    documentId: str | None = None,
+    pageNo: int = 1,
+    pageSize: int = 20,
+):
+    _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+    if role_error:
+        return role_error
+    runs = [item for item in repo.state.get("document_ai_shadow_runs", []) if isinstance(item, dict)]
+    if status:
+        runs = [item for item in runs if str(item.get("status") or "") == status]
+    if profileId:
+        runs = [item for item in runs if str(item.get("profileId") or "") == profileId]
+    if documentId:
+        runs = [item for item in runs if str(item.get("documentId") or "") == documentId]
+    runs.sort(key=lambda item: str(item.get("createdAt") or item.get("updatedAt") or ""), reverse=True)
+    return ok(page([document_ai_shadow_run_summary(item) for item in runs], pageNo, pageSize), request)
+
+
+@router.get("/fde/document-ai/shadow-runs/{run_id}")
+def fde_document_ai_shadow_run_detail(request: Request, run_id: str):
+    _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+    if role_error:
+        return role_error
+    run = repo.find_one("document_ai_shadow_runs", run_id)
+    if not run:
+        return fail(errors.NOT_FOUND, request, http_status=404)
+    detail = repo.clone(run)
+    detail["advisoryOnly"] = True
+    detail["formalEvidenceReady"] = False
+    detail["businessImpact"] = "none"
+    return ok(detail, request)
+
+
+def document_audit_pipeline_comparison_summary(run: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: run.get(key)
+        for key in [
+            "id",
+            "runId",
+            "status",
+            "documentAiShadowRunId",
+            "documentId",
+            "documentVersionId",
+            "profileId",
+            "fileName",
+            "selectedPageNos",
+            "baselinePipelineId",
+            "baselineProvider",
+            "baselineModel",
+            "baselineModelResolved",
+            "challengerPipelineId",
+            "challengerProvider",
+            "challengerModel",
+            "challengerModelResolved",
+            "baselineTimeMs",
+            "challengerUpstreamDocumentAiTimeMs",
+            "challengerDeepSeekTimeMs",
+            "challengerEndToEndTimeMs",
+            "comparisonMetrics",
+            "failureReason",
+            "createdAt",
+            "queuedAt",
+            "startedAt",
+            "finishedAt",
+            "updatedAt",
+        ]
+        if run.get(key) is not None
+    }
+
+
+@router.get("/fde/document-audit/pipeline-comparisons")
+def fde_document_audit_pipeline_comparisons(
+    request: Request,
+    status: str | None = None,
+    profileId: str | None = None,
+    documentId: str | None = None,
+    pageNo: int = 1,
+    pageSize: int = 20,
+):
+    _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+    if role_error:
+        return role_error
+    runs = [
+        item
+        for item in repo.state.get("document_audit_pipeline_comparison_runs", [])
+        if isinstance(item, dict)
+    ]
+    if status:
+        runs = [item for item in runs if str(item.get("status") or "") == status]
+    if profileId:
+        runs = [item for item in runs if str(item.get("profileId") or "") == profileId]
+    if documentId:
+        runs = [item for item in runs if str(item.get("documentId") or "") == documentId]
+    runs.sort(key=lambda item: str(item.get("createdAt") or item.get("updatedAt") or ""), reverse=True)
+    return ok(page([document_audit_pipeline_comparison_summary(item) for item in runs], pageNo, pageSize), request)
+
+
+@router.get("/fde/document-audit/pipeline-comparisons/{run_id}")
+def fde_document_audit_pipeline_comparison_detail(request: Request, run_id: str):
+    _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+    if role_error:
+        return role_error
+    run = repo.find_one("document_audit_pipeline_comparison_runs", run_id)
+    if not run:
+        return fail(errors.NOT_FOUND, request, http_status=404)
+    detail = repo.clone(run)
+    detail["advisoryOnly"] = True
+    detail["formalEvidenceReady"] = False
+    detail["businessImpact"] = "none"
+    detail["accuracyClaimed"] = False
+    return ok(detail, request)
+
+
+@router.post("/fde/document-ai/shadow-runs/{run_id}/pipeline-comparison")
+def fde_start_document_audit_pipeline_comparison(
+    request: Request,
+    run_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        _, role_error = fde_error_unless_allowed(request, "fde:ai-run:replay")
+        if role_error:
+            return role_error
+        source_run = repo.find_one("document_ai_shadow_runs", run_id)
+        if not source_run:
+            return fail(errors.NOT_FOUND, request, http_status=404)
+        if str(source_run.get("status") or "") != "success":
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="只有成功的 Document AI Shadow Run 可以发起端到端 Pipeline 对照。",
+                http_status=409,
+            )
+        from libs.document_audit_pipeline_comparison import schedule_pipeline_comparison
+
+        dispatch = schedule_pipeline_comparison(source_run, force=True)
+        if not dispatch or dispatch.get("status") == "not_dispatched":
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="端到端 Pipeline 对照未启用或服务配置不完整。",
+                data=dispatch or {},
+                http_status=409,
+            )
+        repo.add_audit("FDE 发起文档审计 Pipeline 对照", "DocumentAiShadowRun", run_id)
+        return ok(dispatch, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"documentAiShadowRunId": run_id})
+
+
 @router.post("/fde/capability-tests/ocr/upload-session")
 def fde_create_ocr_capability_upload_session(
     request: Request,
@@ -18304,6 +18576,44 @@ def fde_ocr_runs(
     if documentVersionId:
         items = [item for item in items if item.get("documentVersionId") == documentVersionId]
     return ok(page(items, pageNo, pageSize), request)
+
+
+@router.get("/fde/ocr-pipeline-runs/{run_id}")
+def fde_ocr_pipeline_run_detail(request: Request, run_id: str):
+    _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+    if role_error:
+        return role_error
+    run = repo.find_one("ocr_pipeline_runs", run_id) or repo.find_one(
+        "ocr_pipeline_runs", run_id, id_field="pipelineRunId"
+    )
+    if not run:
+        return fail(errors.NOT_FOUND, request)
+    if not record_visible_for_request(request, run):
+        return fail(errors.FORBIDDEN, request)
+    stages = repo.ocr_pipeline_stages(str(run.get("id") or run_id))
+    parse_result = None
+    if run.get("parseResultId"):
+        parse_result = repo.find_one(
+            "ocr_parse_results",
+            str(run.get("parseResultId")),
+            id_field="parseResultId",
+        )
+    baseline = None
+    if run.get("baselineParseResultId"):
+        baseline = repo.find_one(
+            "ocr_parse_results",
+            str(run.get("baselineParseResultId")),
+            id_field="parseResultId",
+        )
+    return ok(
+        {
+            "run": repo.clone(run),
+            "stages": repo.clone(stages),
+            "parseResult": repo.clone(parse_result),
+            "baselineParseResult": repo.clone(baseline),
+        },
+        request,
+    )
 
 
 @router.get("/fde/ocr-runs/{job_id}")
@@ -20245,9 +20555,9 @@ async def replace_knowledge_file_version(
             "revision": 1,
             "actions": ["knowledge:task-retry"],
         }
+        repo.state["knowledge_tasks"].insert(0, task)
         dispatch = task_dispatcher.dispatch_parse_document(document["id"], version_id, storage_key, file_name)
         task["lastDispatch"] = dispatch
-        repo.state["knowledge_tasks"].insert(0, task)
         if source:
             sync_knowledge_source_counts(source)
         audit_id = repo.add_audit("替换知识库文件版本", "KnowledgeFile", resolved_file_id)

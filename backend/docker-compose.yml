@@ -47,15 +47,21 @@ services:
       AICHECK_QWEN_ALLOW_SERVER_FALLBACK: ${AICHECK_QWEN_ALLOW_SERVER_FALLBACK:-false}
       QWEN_API_BASE: ${QWEN_API_BASE:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       QWEN_API_KEY: ${QWEN_API_KEY:-}
+      AICHECK_AUDIT_MODEL_COMPARISON_MODE: ${AICHECK_AUDIT_MODEL_COMPARISON_MODE:-off}
+      AICHECK_AUDIT_MODEL_COMPARISON_SAMPLE_RATE: ${AICHECK_AUDIT_MODEL_COMPARISON_SAMPLE_RATE:-1.0}
+      AICHECK_QWEN_VL_AUDIT_MODEL: ${AICHECK_QWEN_VL_AUDIT_MODEL:-qwen3.7-plus}
+      AICHECK_DEEPSEEK_AUDIT_MODEL: ${AICHECK_DEEPSEEK_AUDIT_MODEL:-deepseek-v4-pro}
       AICHECK_EMBEDDING_PROVIDER: ${AICHECK_EMBEDDING_PROVIDER:-local}
       AICHECK_EMBEDDING_API_BASE: ${AICHECK_EMBEDDING_API_BASE:-http://embedding-service:7997}
       AICHECK_EMBEDDING_API_KEY: ${AICHECK_EMBEDDING_API_KEY:-}
       AICHECK_EMBEDDING_MODEL_ID: ${AICHECK_EMBEDDING_MODEL_ID:-Qwen/Qwen3-Embedding-0.6B}
       AICHECK_EMBEDDING_SERVED_MODEL_NAME: ${AICHECK_EMBEDDING_SERVED_MODEL_NAME:-embedding-default}
       AICHECK_EMBEDDING_BATCH_SIZE: ${AICHECK_EMBEDDING_BATCH_SIZE:-32}
+      AICHECK_EMBEDDING_CHECKPOINT_BATCH_SIZE: ${AICHECK_EMBEDDING_CHECKPOINT_BATCH_SIZE:-8}
       AICHECK_EMBEDDING_FORCE_OFFLINE_HASH: ${AICHECK_EMBEDDING_FORCE_OFFLINE_HASH:-false}
       AICHECK_EMBEDDING_ALLOW_HASH_FALLBACK: ${AICHECK_EMBEDDING_ALLOW_HASH_FALLBACK:-false}
       AICHECK_OCR_BASE_URL: ${AICHECK_OCR_BASE_URL:-http://ocr-service:8010}
+      AICHECK_OCR_USE_JOB_API: "false"
       AICHECK_REQUIRE_AUTH: ${AICHECK_REQUIRE_AUTH:-true}
       AICHECK_ENABLE_DEMO_USERS: ${AICHECK_ENABLE_DEMO_USERS:-false}
       AICHECK_ENABLE_DEMO_DATA: ${AICHECK_ENABLE_DEMO_DATA:-false}
@@ -88,11 +94,11 @@ services:
       timeout: 5s
       retries: 12
 
-  worker-service:
+  worker-service: &worker-service
     build:
       context: .
       dockerfile: Dockerfile
-    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=${AICHECK_WORKER_CONCURRENCY:-1} --prefetch-multiplier=1 -Q ocr.parse_document,ocr.recognize_seals,knowledge.slice,knowledge.embed,inspection.ai_recheck,llm.compare,export.package
+    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=${AICHECK_BUSINESS_WORKER_CONCURRENCY:-2} --prefetch-multiplier=1 -Q business.light
     environment:
       AICHECK_STRICT_PRODUCTION: ${AICHECK_STRICT_PRODUCTION:-true}
       AICHECK_ENABLE_DEMO_DATA: ${AICHECK_ENABLE_DEMO_DATA:-false}
@@ -113,6 +119,25 @@ services:
       AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:?AICHECK_MINIO_SECRET_KEY is required}
       AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
       AICHECK_OCR_BASE_URL: ${AICHECK_OCR_BASE_URL:-http://ocr-service:8010}
+      AICHECK_OCR_PIPELINE_MODE: ${AICHECK_OCR_PIPELINE_MODE:-shadow}
+      AICHECK_OCR_PIPELINE_VERSION: ${AICHECK_OCR_PIPELINE_VERSION:-ocr-accuracy-first@1}
+      AICHECK_OCR_PIPELINE_PROFILE_ALLOWLIST: ${AICHECK_OCR_PIPELINE_PROFILE_ALLOWLIST:-ndt_rt_report_v1,quality_certificate_v1,engineering_drawing_list_v1,piping_characteristic_list_v1,comprehensive_material_list_v1}
+      AICHECK_OCR_QWEN_IMAGE_POLICY: ${AICHECK_OCR_QWEN_IMAGE_POLICY:-page_and_roi}
+      AICHECK_OCR_QWEN_MAX_PAGES: ${AICHECK_OCR_QWEN_MAX_PAGES:-60}
+      AICHECK_OCR_QWEN_MAX_TOKENS: ${AICHECK_OCR_QWEN_MAX_TOKENS:-3200}
+      AICHECK_OCR_QWEN_TIMEOUT_SECONDS: ${AICHECK_OCR_QWEN_TIMEOUT_SECONDS:-180}
+      AICHECK_DOCUMENT_AI_MODE: off
+      AICHECK_DOCUMENT_AI_BASE_URL: ${AICHECK_DOCUMENT_AI_BASE_URL:-}
+      AICHECK_DOCUMENT_AI_API_KEY: ${AICHECK_DOCUMENT_AI_API_KEY:-}
+      AICHECK_DOCUMENT_AI_PROFILE_ALLOWLIST: ${AICHECK_DOCUMENT_AI_PROFILE_ALLOWLIST:-ndt_rt_report_v1,quality_certificate_v1,engineering_drawing_list_v1,piping_characteristic_list_v1,comprehensive_material_list_v1}
+      AICHECK_DOCUMENT_AI_TIMEOUT_SECONDS: ${AICHECK_DOCUMENT_AI_TIMEOUT_SECONDS:-180}
+      AICHECK_AUDIT_MODEL_COMPARISON_MODE: off
+      AICHECK_AUDIT_MODEL_COMPARISON_SAMPLE_RATE: ${AICHECK_AUDIT_MODEL_COMPARISON_SAMPLE_RATE:-1.0}
+      AICHECK_QWEN_VL_AUDIT_MODEL: ${AICHECK_QWEN_VL_AUDIT_MODEL:-qwen3.7-plus}
+      AICHECK_DEEPSEEK_AUDIT_MODEL: ${AICHECK_DEEPSEEK_AUDIT_MODEL:-deepseek-v4-pro}
+      AICHECK_DEEPSEEK_AUDIT_MAX_TOKENS: ${AICHECK_DEEPSEEK_AUDIT_MAX_TOKENS:-2400}
+      AICHECK_DEEPSEEK_AUDIT_TIMEOUT_SECONDS: ${AICHECK_DEEPSEEK_AUDIT_TIMEOUT_SECONDS:-180}
+      DEEPSEEK_API_BASE: ${DEEPSEEK_API_BASE:-https://api.deepseek.com}
       LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://litellm-service:4000}
       LITELLM_API_KEY: ${LITELLM_API_KEY:?LITELLM_API_KEY is required}
       AICHECK_QWEN_CALL_MODE: ${AICHECK_QWEN_CALL_MODE:-server}
@@ -149,6 +174,24 @@ services:
       interval: 30s
       timeout: 10s
       retries: 6
+
+  document-ai-shadow-worker-service:
+    <<: *worker-service
+    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=1 --prefetch-multiplier=1 -Q document-ai.shadow
+    profiles: ["experimental-document-ai"]
+
+  audit-pipeline-comparison-worker-service:
+    <<: *worker-service
+    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=1 --prefetch-multiplier=1 -Q audit-pipeline.compare
+    profiles: ["experimental-document-ai"]
+
+  cpu-heavy-worker-service:
+    <<: *worker-service
+    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=1 --prefetch-multiplier=1 -Q cpu.heavy
+
+  llm-remote-worker-service:
+    <<: *worker-service
+    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=1 --prefetch-multiplier=1 -Q llm.remote
 
   review-worker-service:
     build:
@@ -248,6 +291,10 @@ services:
       AICHECK_PADDLEOCR_MEMORY_LIMIT_MB: ${AICHECK_PADDLEOCR_MEMORY_LIMIT_MB:-4096}
       AICHECK_PP_STRUCTURE_MEMORY_LIMIT_MB: ${AICHECK_PP_STRUCTURE_MEMORY_LIMIT_MB:-6144}
       AICHECK_PADDLEX_SEAL_MEMORY_LIMIT_MB: ${AICHECK_PADDLEX_SEAL_MEMORY_LIMIT_MB:-3072}
+      OMP_NUM_THREADS: "4"
+      MKL_NUM_THREADS: "4"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "4"
       AICHECK_PPSTRUCTURE_LAYOUT_MODEL_DIR: ${AICHECK_PPSTRUCTURE_LAYOUT_MODEL_DIR:-/models/paddlex/PP-DocLayout-L}
       AICHECK_PPSTRUCTURE_WIRED_TABLE_STRUCTURE_MODEL_DIR: ${AICHECK_PPSTRUCTURE_WIRED_TABLE_STRUCTURE_MODEL_DIR:-/models/paddlex/SLANeXt_wired}
       AICHECK_PPSTRUCTURE_WIRED_TABLE_CELLS_MODEL_DIR: ${AICHECK_PPSTRUCTURE_WIRED_TABLE_CELLS_MODEL_DIR:-/models/paddlex/RT-DETR-L_wired_table_cell_det}
@@ -255,18 +302,18 @@ services:
       AICHECK_PPSTRUCTURE_WIRELESS_TABLE_CELLS_MODEL_DIR: ${AICHECK_PPSTRUCTURE_WIRELESS_TABLE_CELLS_MODEL_DIR:-/models/paddlex/RT-DETR-L_wireless_table_cell_det}
       AICHECK_ENABLE_OPENCV_TABLE_GRID: ${AICHECK_ENABLE_OPENCV_TABLE_GRID:-true}
       AICHECK_OPENCV_TABLE_GRID_MAX_CELLS: ${AICHECK_OPENCV_TABLE_GRID_MAX_CELLS:-1800}
-      AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE: ${AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE:-false}
+      AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE: ${AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE:-true}
       AICHECK_SEAL_DET_MODEL_DIR: ${AICHECK_SEAL_DET_MODEL_DIR:-/models/paddlex/PP-OCRv4_server_seal_det}
       AICHECK_SEAL_REC_MODEL_DIR: ${AICHECK_SEAL_REC_MODEL_DIR:-/models/paddleocr/PP-OCRv4_server_rec}
       AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR: ${AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR:-false}
       AICHECK_AGENTDESIGN_SEAL_TIMEOUT: ${AICHECK_AGENTDESIGN_SEAL_TIMEOUT:-140}
       AICHECK_AGENTDESIGN_SEAL_MAX_CANDIDATES: ${AICHECK_AGENTDESIGN_SEAL_MAX_CANDIDATES:-6}
       AICHECK_AGENTDESIGN_SEAL_MAX_OCR_CANDIDATES: ${AICHECK_AGENTDESIGN_SEAL_MAX_OCR_CANDIDATES:-3}
-      AICHECK_OCR_PREPROCESS_CACHE_DIR: ${AICHECK_OCR_PREPROCESS_CACHE_DIR:-/tmp/aicheck-ocr-preprocess-cache}
+      AICHECK_OCR_PREPROCESS_CACHE_DIR: ${AICHECK_OCR_PREPROCESS_CACHE_DIR:-/var/cache/aicheck-ocr/preprocess}
       AICHECK_OCR_DISABLE_VARIANT_CACHE: ${AICHECK_OCR_DISABLE_VARIANT_CACHE:-false}
-      AICHECK_OCR_RESULT_CACHE_DIR: ${AICHECK_OCR_RESULT_CACHE_DIR:-/tmp/aicheck-ocr-result-cache}
+      AICHECK_OCR_RESULT_CACHE_DIR: ${AICHECK_OCR_RESULT_CACHE_DIR:-/var/cache/aicheck-ocr/results}
       AICHECK_OCR_DISABLE_RESULT_CACHE: ${AICHECK_OCR_DISABLE_RESULT_CACHE:-false}
-      AICHECK_OCR_ENGINE_RESULT_CACHE_DIR: ${AICHECK_OCR_ENGINE_RESULT_CACHE_DIR:-/tmp/aicheck-ocr-engine-result-cache}
+      AICHECK_OCR_ENGINE_RESULT_CACHE_DIR: ${AICHECK_OCR_ENGINE_RESULT_CACHE_DIR:-/var/cache/aicheck-ocr/engines}
       AICHECK_OCR_DISABLE_ENGINE_RESULT_CACHE: ${AICHECK_OCR_DISABLE_ENGINE_RESULT_CACHE:-false}
       PADDLEOCR_VL_MODEL_DIR: ${PADDLEOCR_VL_MODEL_DIR:-/models/paddleocr-vl}
       AICHECK_ENABLE_PADDLEOCR_VL: ${AICHECK_ENABLE_PADDLEOCR_VL:-false}
@@ -286,6 +333,8 @@ services:
     volumes:
       - ${AICHECK_AGENTDESIGN_HOST_PATH:-./apps/ocr_service}:/opt/agentdesign:ro
       - ${AICHECK_OCR_MODELS_HOST_PATH:?AICHECK_OCR_MODELS_HOST_PATH is required}:/models:ro
+      - ocr-cache:/var/cache/aicheck-ocr
+    restart: unless-stopped
     depends_on:
       minio:
         condition: service_healthy
@@ -444,4 +493,5 @@ services:
 
 volumes:
   minio-data:
+  ocr-cache:
   postgres-data:

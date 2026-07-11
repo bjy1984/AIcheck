@@ -43,7 +43,16 @@ const taskTypeLabels: Record<string, string> = {
   ocr_or_index: 'OCR / 索引',
   review_run: 'AI 复核',
   ocr: 'OCR 抽取',
+  ocr_pipeline: '准确率优先 OCR',
   export: '导出任务'
+}
+
+const formatElapsed = (seconds?: number | null) => {
+  if (seconds == null) return '--'
+  if (seconds < 60) return `${seconds} 秒`
+  const minutes = Math.floor(seconds / 60)
+  const remainder = seconds % 60
+  return `${minutes} 分 ${remainder} 秒`
 }
 
 const filteredTasks = computed(() => {
@@ -210,8 +219,34 @@ onBeforeUnmount(() => {
           <div
             ><dt>更新时间</dt><dd>{{ task.updatedAt || task.createdAt || '--' }}</dd></div
           >
+          <div v-if="task.stageLabel || task.stage"
+            ><dt>当前阶段</dt><dd>{{ task.stageLabel || task.stage }}</dd></div
+          >
+          <div v-if="task.queuePosition"
+            ><dt>排队位置</dt><dd>第 {{ task.queuePosition }} 位</dd></div
+          >
+          <div
+            ><dt>已用时间</dt><dd>{{ formatElapsed(task.elapsedSeconds) }}</dd></div
+          >
+          <div v-if="task.attempt"
+            ><dt>执行次数</dt><dd>{{ task.attempt }}</dd></div
+          >
         </dl>
         <p v-if="task.errorSummary" class="task-failure">{{ task.errorSummary }}</p>
+        <div v-if="task.blockingReasons?.length" class="task-blockers" role="status">
+          <strong>阻断原因</strong>
+          <ul>
+            <li
+              v-for="(reason, index) in task.blockingReasons"
+              :key="`${task.id}-blocker-${index}`"
+            >
+              {{ reason.message || reason.code || '需要人工复核' }}
+            </li>
+          </ul>
+        </div>
+        <p v-if="task.recommendedAction" class="task-recommendation">
+          建议：{{ task.recommendedAction }}
+        </p>
         <div class="task-actions">
           <ElButton v-if="taskRoute(task)" text type="primary" @click="openTask(task)"
             >查看详情</ElButton
@@ -353,6 +388,30 @@ onBeforeUnmount(() => {
   color: #b42318;
   background: #fef3f2;
   border-left: 3px solid #d92d20;
+}
+
+.task-blockers,
+.task-recommendation {
+  padding: 8px 10px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.task-blockers {
+  color: #8a4b00;
+  background: #fff7e6;
+  border-left: 3px solid #d97706;
+}
+
+.task-blockers ul {
+  padding-left: 18px;
+  margin: 4px 0 0;
+}
+
+.task-recommendation {
+  color: #26364e;
+  background: #f4f7fb;
 }
 
 .task-actions {

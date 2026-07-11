@@ -720,6 +720,16 @@ export type OperationTask = {
   updatedAt?: string | null
   actions: Array<'retry' | 'cancel' | 'replay' | 'rerun' | string>
   route?: string | null
+  parentTaskId?: string | null
+  pipelineRunId?: string | null
+  stage?: string | null
+  stageLabel?: string | null
+  queuePosition?: number | null
+  attempt?: number
+  elapsedSeconds?: number | null
+  engineStatus?: Record<string, unknown>
+  blockingReasons?: Array<{ code?: string; message?: string; [key: string]: unknown }>
+  recommendedAction?: string | null
 }
 
 export type ImpactPreview<TImpact extends Record<string, unknown> = Record<string, unknown>> = {

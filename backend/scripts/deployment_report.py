@@ -95,31 +95,39 @@ IDEMPOTENT_DELEGATE_CALLS = {
 }
 REQUIRED_WORKER_TASKS = {
     "parse_document": {
-        "queue": "ocr.parse_document",
+        "queue": "cpu.heavy",
         "dispatcher": "dispatch_parse_document",
     },
     "recognize_seals": {
-        "queue": "ocr.recognize_seals",
+        "queue": "cpu.heavy",
         "dispatcher": None,
     },
     "slice_knowledge": {
-        "queue": "knowledge.slice",
+        "queue": "cpu.heavy",
         "dispatcher": "dispatch_slice",
     },
     "embed_knowledge": {
-        "queue": "knowledge.embed",
+        "queue": "cpu.heavy",
         "dispatcher": "dispatch_embed",
     },
+    "ocr_pipeline_qwen_extract": {
+        "queue": "llm.remote",
+        "dispatcher": "dispatch_ocr_pipeline_qwen",
+    },
+    "ocr_pipeline_finalize": {
+        "queue": "business.light",
+        "dispatcher": "dispatch_ocr_pipeline_finalize",
+    },
     "ai_recheck": {
-        "queue": "inspection.ai_recheck",
+        "queue": "llm.remote",
         "dispatcher": "dispatch_ai_recheck",
     },
     "llm_compare": {
-        "queue": "llm.compare",
+        "queue": "llm.remote",
         "dispatcher": "dispatch_llm_compare",
     },
     "export_package": {
-        "queue": "export.package",
+        "queue": "business.light",
         "dispatcher": "dispatch_export",
     },
 }
@@ -2616,11 +2624,13 @@ def worker_task_contract_check(
             full_name = str(getattr(task, "name", full_name))
             route = task_routes.get(full_name)
             retry_kwargs = getattr(task, "retry_kwargs", {}) or {}
-            if Exception not in tuple(getattr(task, "autoretry_for", ()) or ()):
+            task_source = source_for_callable(getattr(task, "run", task))
+            manual_retry = ".retry(" in task_source and int(getattr(task, "max_retries", 0) or 0) >= 1
+            if Exception not in tuple(getattr(task, "autoretry_for", ()) or ()) and not manual_retry:
                 retry_missing.append({"task": task_name, "reason": "missing Exception autoretry"})
-            if not getattr(task, "retry_backoff", False):
+            if not getattr(task, "retry_backoff", False) and not manual_retry:
                 retry_missing.append({"task": task_name, "reason": "missing retry_backoff"})
-            if int(retry_kwargs.get("max_retries") or 0) < 1:
+            if int(retry_kwargs.get("max_retries") or getattr(task, "max_retries", 0) or 0) < 1:
                 retry_missing.append({"task": task_name, "reason": "missing max_retries"})
         expected_queue = str(required["queue"])
         actual_queue = route.get("queue") if isinstance(route, dict) else None
@@ -2640,7 +2650,12 @@ def worker_task_contract_check(
             dispatcher_missing.append(str(dispatcher_name))
             continue
         source = source_for_callable(dispatcher)
-        if task_name not in source or ".delay(" not in source or ".run(" not in source:
+        requires_inline = task_name not in {"ocr_pipeline_qwen_extract", "ocr_pipeline_finalize"}
+        if (
+            task_name not in source
+            or not any(marker in source for marker in (".delay(", ".apply_async("))
+            or (requires_inline and ".run(" not in source)
+        ):
             dispatcher_mismatches.append(
                 {
                     "dispatcher": str(dispatcher_name),

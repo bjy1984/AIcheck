@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import tempfile
+import time
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,56 @@ def engine_result_cache_dir() -> Path:
         os.getenv("AICHECK_OCR_ENGINE_RESULT_CACHE_DIR")
         or (Path(tempfile.gettempdir()) / "aicheck-ocr-engine-result-cache")
     )
+
+
+def prune_ocr_cache(*, max_age_hours: int | None = None, max_bytes: int | None = None) -> dict[str, int]:
+    max_age_hours = max(1, int(max_age_hours or os.getenv("AICHECK_OCR_CACHE_MAX_AGE_HOURS", "72")))
+    max_bytes = max(1, int(max_bytes or os.getenv("AICHECK_OCR_CACHE_MAX_BYTES", str(5 * 1024**3))))
+    roots = {
+        result_cache_dir(),
+        engine_result_cache_dir(),
+        Path(os.getenv("AICHECK_OCR_PREPROCESS_CACHE_DIR") or (Path(tempfile.gettempdir()) / "aicheck-ocr-preprocess-cache")),
+    }
+    now = time.time()
+    files: list[tuple[float, int, Path]] = []
+    removed_files = 0
+    removed_bytes = 0
+    for root in roots:
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            if not path.is_file():
+                continue
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            if now - stat.st_mtime > max_age_hours * 3600:
+                try:
+                    path.unlink()
+                    removed_files += 1
+                    removed_bytes += stat.st_size
+                except OSError:
+                    pass
+                continue
+            files.append((stat.st_mtime, stat.st_size, path))
+    total_bytes = sum(size for _, size, _ in files)
+    if total_bytes > max_bytes:
+        for _, size, path in sorted(files):
+            if total_bytes <= max_bytes:
+                break
+            try:
+                path.unlink()
+                total_bytes -= size
+                removed_files += 1
+                removed_bytes += size
+            except OSError:
+                continue
+    return {
+        "removedFiles": removed_files,
+        "removedBytes": removed_bytes,
+        "remainingBytes": max(total_bytes, 0),
+    }
 
 
 def build_result_cache_key(

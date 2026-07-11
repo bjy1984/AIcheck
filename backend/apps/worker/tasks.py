@@ -3,19 +3,47 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
+import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
+from apps.ocr_service.profiles import profile_for
 from apps.ocr_service.service import ocr_service
 from apps.worker.celery_app import celery_app
 from libs.business_pack import build_ai_review_prompt, load_business_pack, matching_rule_for_node
 from libs.contracts.responses import server_time
 from libs.audit_runtime import audit_runtime_for_run, audit_runtime_public_config
 from libs.db.repository import STATE_COLLECTIONS, flush_state, load_ocr_task_state, load_state, repo, sync_state_records
+from libs.document_ai_shadow import (
+    EVIDENCE_PRIOR_VERSION,
+    build_evidence_prior,
+    compare_shadow_to_baseline,
+    document_ai_shadow_enabled,
+    stable_payload_hash,
+    validate_shadow_attribution,
+)
+from libs.document_audit_pipeline_comparison import (
+    QwenVisionAuditClient,
+    build_deepseek_messages,
+    build_qwen_vision_messages,
+    build_shared_industry_context,
+    collect_source_candidate_ids,
+    compare_pipeline_results,
+    normalize_pipeline_result,
+    parse_json_model_output,
+    persist_pipeline_comparison_run,
+    schedule_pipeline_comparison,
+)
+from libs.deepseek_runtime import DeepSeekAuditClient, deepseek_runtime_public_config
 from libs.integrations import task_dispatcher
+from libs.integrations.document_ai_client import DocumentAiClient
 from libs.integrations.embedding_client import EmbeddingClient
+from libs.integrations.errors import IntegrationServiceError, safe_reason
 from libs.integrations.litellm_client import LiteLLMClient
 from libs.integrations.ocr_client import OcrClient
+from libs.integrations.storage import object_storage, parse_storage_url
 from libs.knowledge_indexing import (
     EMBED_BATCH_SIZE,
     OFFLINE_EMBEDDING_MODEL,
@@ -27,6 +55,26 @@ from libs.knowledge_indexing import (
     units_from_local_file,
 )
 from libs.material_targeting import run_material_targeting
+from libs.ocr_accuracy_pipeline import (
+    build_batch_prior,
+    default_profile,
+    merge_batch_outputs,
+    merge_grounded_fields,
+    page_batches,
+    page_numbers,
+    pipeline_enabled,
+    pipeline_mode,
+    pipeline_run_key,
+    pipeline_version,
+    qwen_messages,
+    render_candidate_rois,
+    render_pages,
+    required_field_blockers,
+    temporary_pipeline_directory,
+    validated_ocr_fields,
+    validate_batch_output,
+    parse_qwen_json,
+)
 from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_config, qwen_runtime_public_config
 from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block, unsupported_claims
 
@@ -62,6 +110,18 @@ def ocr_result_state_records(document_id: str, version_id: str) -> dict[str, lis
         ],
         "ocr_parse_results": [
             item for item in repo.state.get("ocr_parse_results", []) if str(item.get("documentVersionId") or "") == version_id
+        ],
+        "ocr_pipeline_runs": [
+            item for item in repo.state.get("ocr_pipeline_runs", []) if str(item.get("documentVersionId") or "") == version_id
+        ],
+        "ocr_stage_runs": [
+            item
+            for item in repo.state.get("ocr_stage_runs", [])
+            if any(
+                run.get("id") == item.get("pipelineRunId")
+                for run in repo.state.get("ocr_pipeline_runs", [])
+                if str(run.get("documentVersionId") or "") == version_id
+            )
         ],
         "extracted_fields": [
             item for item in repo.state.get("extracted_fields", []) if str(item.get("documentVersionId") or "") == version_id
@@ -109,6 +169,95 @@ def state_record_ids(records: dict[str, list[dict[str, Any]]]) -> dict[str, set[
 def stable_hash_payload(value: Any) -> str:
     raw = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))
     return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def persist_document_ai_shadow_run(run: dict[str, Any]) -> None:
+    sync_state_records({"document_ai_shadow_runs": [run]}, {})
+
+
+def document_ai_shadow_run_id(parse_result_id: str, profile_id: str) -> str:
+    seed = hashlib.sha256(f"{parse_result_id}|{profile_id}|{EVIDENCE_PRIOR_VERSION}".encode("utf-8")).hexdigest()
+    return f"DOCSH-{seed[:18].upper()}"
+
+
+def schedule_document_ai_shadow(
+    *,
+    document_id: str,
+    version_id: str,
+    storage_key: str,
+    file_name: str | None,
+    profile_id: str | None,
+    parse_result: dict[str, Any],
+    operation_id: str | None,
+) -> dict[str, Any] | None:
+    if not document_ai_shadow_enabled(profile_id):
+        return None
+    parse_result_id = str(parse_result.get("parseResultId") or parse_result.get("id") or "")
+    if not parse_result_id:
+        return {"status": "not_dispatched", "statusReason": "missing_parse_result_id"}
+    run_id = document_ai_shadow_run_id(parse_result_id, str(profile_id))
+    existing = repo.find_one("document_ai_shadow_runs", run_id)
+    if existing and str(existing.get("status") or "") in {"queued", "running", "success"}:
+        return {
+            "runId": run_id,
+            "status": existing.get("status"),
+            "taskId": existing.get("taskId"),
+            "alreadyScheduled": True,
+        }
+    version = repo.find_one("versions", version_id) or {}
+    structured = profile_for(str(profile_id)).get("structuredExtraction") or {}
+    now = server_time()
+    run = existing or {
+        "id": run_id,
+        "runId": run_id,
+        "schemaVersion": "DocumentAiShadowRun@1",
+        "advisoryOnly": True,
+        "businessImpact": "none",
+        "documentId": document_id,
+        "documentVersionId": version_id,
+        "parseResultId": parse_result_id,
+        "profileId": profile_id,
+        "templateVersion": structured.get("templateVersion"),
+        "evidencePriorVersion": EVIDENCE_PRIOR_VERSION,
+        "storageKey": storage_key,
+        "storageBucket": version.get("storageBucket"),
+        "fileName": file_name,
+        "baselineHash": stable_payload_hash(parse_result),
+        "operationId": operation_id,
+        "createdAt": now,
+    }
+    run.update(
+        {
+            "status": "queued",
+            "failureReason": None,
+            "updatedAt": now,
+            "queuedAt": now,
+        }
+    )
+    if run not in repo.state.setdefault("document_ai_shadow_runs", []):
+        repo.state["document_ai_shadow_runs"].insert(0, run)
+    persist_document_ai_shadow_run(run)
+    try:
+        dispatch = task_dispatcher.dispatch_document_ai_shadow(run_id)
+    except Exception as exc:  # pragma: no cover - Celery broker boundary
+        dispatch = {
+            "mode": task_dispatcher.dispatch_mode(),
+            "taskId": None,
+            "statusReason": f"dispatch_{exc.__class__.__name__.lower()}",
+        }
+    run["dispatch"] = dispatch
+    run["taskId"] = dispatch.get("taskId")
+    if not dispatch.get("taskId"):
+        run["status"] = "dispatch_failed"
+        run["failureReason"] = str(dispatch.get("statusReason") or "shadow_dispatch_failed")
+    run["updatedAt"] = server_time()
+    persist_document_ai_shadow_run(run)
+    return {
+        "runId": run_id,
+        "status": run.get("status"),
+        "taskId": run.get("taskId"),
+        "statusReason": (run.get("dispatch") or {}).get("statusReason"),
+    }
 
 
 def qwen_runtime_client() -> QwenRuntimeClient:
@@ -408,7 +557,117 @@ def parse_with_ocr_service(
     )
 
 
-@celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def store_ocr_pipeline_artifact(run: dict[str, Any], stage: str, payload: Any) -> tuple[str | None, str]:
+    body = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+    artifact_hash = "sha256:" + hashlib.sha256(body).hexdigest()
+    object_name = f"pipelines/{run['id']}/{stage}/{artifact_hash.split(':', 1)[1]}.json"
+    url = object_storage.put_bytes("ocr-artifacts", object_name, body, content_type="application/json")
+    run.setdefault("artifactUrls", {})[stage] = url
+    return url, artifact_hash
+
+
+def pipeline_engine_status(result: dict[str, Any]) -> dict[str, Any]:
+    runs = [item for item in result.get("engineRuns") or [] if isinstance(item, dict)]
+    return {
+        str(item.get("engine") or item.get("engineId") or f"engine-{index}"): {
+            "status": item.get("status"),
+            "durationMs": item.get("durationMs"),
+            "errorCode": item.get("errorCode"),
+        }
+        for index, item in enumerate(runs, start=1)
+    }
+
+
+def pipeline_apply_result(
+    document_id: str,
+    version_id: str,
+    result: dict[str, Any],
+    previous_record_ids: dict[str, set[str]],
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    applied = repo.apply_ocr_result(document_id, version_id, result)
+    targeting = None
+    if applied.get("status") == "success":
+        document = repo.find_one("documents", document_id)
+        if document and document.get("projectId"):
+            targeting = run_material_targeting(
+                repo,
+                str(document["projectId"]),
+                document_id,
+                version_id,
+                triggered_by="ocr_accuracy_pipeline",
+            )
+    current_records = ocr_result_state_records(document_id, version_id)
+    current_record_ids = state_record_ids(current_records)
+    deleted_record_ids = {
+        state_key: sorted(object_ids - current_record_ids.get(state_key, set()))
+        for state_key, object_ids in previous_record_ids.items()
+        if object_ids - current_record_ids.get(state_key, set())
+    }
+    sync_state_records(current_records, deleted_record_ids)
+    return applied, targeting
+
+
+def mark_local_pipeline_stages(
+    run: dict[str, Any],
+    result: dict[str, Any],
+    profile: dict[str, Any],
+    *,
+    artifact_url: str | None,
+    artifact_hash: str,
+) -> None:
+    engine_status = pipeline_engine_status(result)
+    has_text = bool(result.get("fragments") or result.get("fields"))
+    repo.mark_ocr_pipeline_stage(
+        run,
+        "text_scan",
+        "success" if has_text else "partial",
+        engine_status=engine_status,
+        blocking_reasons=[] if has_text else [{"code": "OCR_TEXT_EMPTY"}],
+        artifact_url=artifact_url,
+        artifact_hash=artifact_hash,
+    )
+    required_tables = profile.get("requiredTables") or []
+    if not required_tables:
+        repo.mark_ocr_pipeline_stage(run, "structure_scan", "skipped", engine_status=engine_status)
+    else:
+        has_tables = bool(result.get("tables"))
+        repo.mark_ocr_pipeline_stage(
+            run,
+            "structure_scan",
+            "success" if has_tables else "partial",
+            engine_status=engine_status,
+            blocking_reasons=[] if has_tables else [{"code": "REQUIRED_TABLE_MISSING"}],
+        )
+    seal_required = bool((profile.get("sealRules") or {}).get("required"))
+    if not seal_required:
+        repo.mark_ocr_pipeline_stage(run, "seal_signature_scan", "skipped", engine_status=engine_status)
+    else:
+        readable_seal = any(
+            isinstance(item, dict)
+            and item.get("bbox")
+            and (
+                item.get("sealText")
+                or item.get("text")
+                or any(field.get("fieldValue") for field in item.get("fields") or [] if isinstance(field, dict))
+            )
+            for item in result.get("seals") or []
+        )
+        repo.mark_ocr_pipeline_stage(
+            run,
+            "seal_signature_scan",
+            "success" if readable_seal else "partial",
+            engine_status=engine_status,
+            blocking_reasons=[] if readable_seal else [{"code": "SEAL_EVIDENCE_MISSING"}],
+        )
+    repo.mark_ocr_pipeline_stage(
+        run,
+        "evidence_fusion",
+        "success" if has_text else "partial",
+        engine_status=engine_status,
+    )
+
+
+@celery_app.task(bind=True, max_retries=3)
 def parse_document(self, document_id: str, version_id: str, storage_key: str, file_name: str | None = None) -> dict[str, Any]:
     refresh_ocr_worker_state(document_id, version_id)
     task = repo.ocr_task_for(document_id, version_id, file_name)
@@ -448,6 +707,36 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
                 "enableFallback": True,
             }
         )
+    resolved_profile = default_profile(profile_id, document_type)
+    resolved_profile_id = str(resolved_profile.get("profileId") or profile_id or "generic_document_v1")
+    run_key = pipeline_run_key(document_id, version_id, storage_key, resolved_profile_id)
+    pipeline_run = repo.create_or_resume_ocr_pipeline_run(
+        run_key=run_key,
+        document_id=document_id,
+        version_id=version_id,
+        storage_key=storage_key,
+        storage_bucket=str((version or {}).get("storageBucket") or "documents"),
+        file_name=file_name,
+        profile_id=resolved_profile_id,
+        document_type=document_type,
+        mode=pipeline_mode(),
+        pipeline_version=pipeline_version(),
+        project_id=str((document or {}).get("projectId") or "") or None,
+        operation_id=(task or {}).get("operationId"),
+        task_id=str(getattr(self.request, "id", "") or "") or None,
+    )
+    if pipeline_run.get("status") == "completed":
+        flush_state()
+        return {
+            "documentId": document_id,
+            "versionId": version_id,
+            "status": "success",
+            "alreadyCompleted": True,
+            "pipelineRunId": pipeline_run.get("id"),
+        }
+    repo.mark_ocr_pipeline_stage(pipeline_run, "prepare", "running")
+    repo.mark_ocr_pipeline_stage(pipeline_run, "prepare", "success")
+    repo.mark_ocr_pipeline_stage(pipeline_run, "text_scan", "running")
     ocr_job_record = repo.create_ocr_job_record(
         document_id=document_id,
         version_id=version_id,
@@ -456,6 +745,8 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
         profile_id=profile_id,
         document_type=document_type,
     )
+    repo.mark_ocr_job_running(ocr_job_record, pipeline_run_id=str(pipeline_run.get("id") or ""))
+    pipeline_run["ocrJobRecordId"] = ocr_job_record.get("id")
     previous_record_ids = state_record_ids(ocr_result_state_records(document_id, version_id))
     try:
         result = parse_with_ocr_service(
@@ -467,41 +758,131 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
             document_type=document_type,
             options=ocr_options,
         )
-    except Exception:
-        result = {
+        if str(result.get("status") or "").lower() != "success":
+            raise RuntimeError("ocr_service_returned_failed_result")
+    except Exception as exc:
+        failure_result = {
             "storageKey": storage_key,
             "fileName": file_name,
             "status": "failed",
             "fragments": [],
             "fields": [],
             "seals": [],
-            "diagnostics": [service_failure_message("OCR 服务")],
+            "diagnostics": [service_failure_message("OCR 服务"), {"code": exc.__class__.__name__.upper()}],
+        }
+        repo.finish_ocr_job_record(ocr_job_record, failure_result)
+        retry_index = int(getattr(self.request, "retries", 0) or 0)
+        should_retry = not bool(getattr(self.request, "called_directly", False)) and task_dispatcher.dispatch_mode() == "celery"
+        if retry_index < 3 and should_retry:
+            countdown = (10, 30, 90)[retry_index]
+            repo.mark_ocr_pipeline_stage(
+                pipeline_run,
+                "text_scan",
+                "retrying",
+                failure_reason=exc.__class__.__name__,
+            )
+            pipeline_run["recommendedAction"] = f"系统将在 {countdown} 秒后重试本地扫描。"
+            if task:
+                task["status"] = "排队中"
+                task["progress"] = 5
+                task["updatedAt"] = server_time()
+                repo.append_task_log(task, "warning", pipeline_run["recommendedAction"])
+            flush_state()
+            raise self.retry(exc=exc, countdown=countdown)
+        repo.mark_ocr_pipeline_stage(
+            pipeline_run,
+            "text_scan",
+            "failed",
+            blocking_reasons=[{"code": "OCR_SERVICE_FAILED"}],
+            failure_reason=exc.__class__.__name__,
+        )
+        repo.finish_ocr_pipeline_run(
+            pipeline_run,
+            status="failed",
+            blocking_reasons=[{"code": "OCR_SERVICE_FAILED"}],
+            recommended_action="检查 OCR 服务后从任务中心重试。",
+        )
+        failed_applied = repo.apply_ocr_result(document_id, version_id, failure_result)
+        flush_state()
+        return {
+            **failure_result,
+            "applied": failed_applied,
+            "pipelineRunId": pipeline_run.get("id"),
+            "ocrJobRecordId": ocr_job_record.get("id"),
         }
     parse_result_record = repo.finish_ocr_job_record(ocr_job_record, result)
-    applied = repo.apply_ocr_result(document_id, version_id, result)
+    pipeline_run["baselineParseResultId"] = (parse_result_record or {}).get("parseResultId")
+    pipeline_run["parseResultId"] = (parse_result_record or {}).get("parseResultId")
+    local_artifact_url, local_artifact_hash = store_ocr_pipeline_artifact(
+        pipeline_run,
+        "local_scan",
+        parse_result_record or result,
+    )
+    mark_local_pipeline_stages(
+        pipeline_run,
+        parse_result_record or result,
+        resolved_profile,
+        artifact_url=local_artifact_url,
+        artifact_hash=local_artifact_hash,
+    )
+    accuracy_pipeline_enabled = pipeline_enabled(
+        resolved_profile_id,
+        source_type=(knowledge_file or {}).get("sourceType"),
+    )
+    applied: dict[str, Any] = {"status": "queued"}
     targeting = None
-    if applied.get("status") == "success":
-        document = repo.find_one("documents", document_id)
-        if document and document.get("projectId"):
-            targeting = run_material_targeting(
-                repo,
-                str(document["projectId"]),
-                document_id,
-                version_id,
-                triggered_by="ocr_worker",
-            )
-    current_records = ocr_result_state_records(document_id, version_id)
-    current_record_ids = state_record_ids(current_records)
-    deleted_record_ids = {
-        state_key: sorted(object_ids - current_record_ids.get(state_key, set()))
-        for state_key, object_ids in previous_record_ids.items()
-        if object_ids - current_record_ids.get(state_key, set())
-    }
-    sync_state_records(current_records, deleted_record_ids)
+    if pipeline_mode() != "active" or not accuracy_pipeline_enabled:
+        applied, targeting = pipeline_apply_result(document_id, version_id, result, previous_record_ids)
     next_dispatch = None
-    if applied.get("status") == "success":
+    document_ai_shadow_dispatch = None
+    qwen_pipeline_dispatch = None
+    if accuracy_pipeline_enabled:
+        repo.mark_ocr_pipeline_stage(pipeline_run, "qwen_extract", "queued")
+        qwen_pipeline_dispatch = task_dispatcher.dispatch_ocr_pipeline_qwen(str(pipeline_run["id"]))
+        pipeline_run["qwenDispatch"] = qwen_pipeline_dispatch
+        if not qwen_pipeline_dispatch.get("taskId"):
+            repo.mark_ocr_pipeline_stage(
+                pipeline_run,
+                "qwen_extract",
+                "failed",
+                failure_reason=str(qwen_pipeline_dispatch.get("statusReason") or "qwen_dispatch_failed"),
+            )
+            repo.finish_ocr_pipeline_run(
+                pipeline_run,
+                status="failed" if pipeline_mode() == "active" else "partial",
+                blocking_reasons=[{"code": "QWEN_DISPATCH_FAILED"}],
+                recommended_action="检查 llm.remote worker 后重试。",
+            )
+    else:
+        repo.mark_ocr_pipeline_stage(pipeline_run, "qwen_extract", "skipped")
+        repo.mark_ocr_pipeline_stage(pipeline_run, "grounding_validate", "skipped")
+        repo.mark_ocr_pipeline_stage(pipeline_run, "finalize", "running")
+        repo.mark_ocr_pipeline_stage(pipeline_run, "finalize", "success")
+        repo.finish_ocr_pipeline_run(
+            pipeline_run,
+            status="completed" if applied.get("status") == "success" else "partial",
+            blocking_reasons=[],
+            formal_evidence_ready=False,
+        )
+    if applied.get("status") == "success" and not accuracy_pipeline_enabled:
+        try:
+            document_ai_shadow_dispatch = schedule_document_ai_shadow(
+                document_id=document_id,
+                version_id=version_id,
+                storage_key=storage_key,
+                file_name=file_name,
+                profile_id=resolved_profile_id,
+                parse_result=parse_result_record or result,
+                operation_id=str(getattr(self.request, "id", "") or "") or None,
+            )
+        except Exception as exc:  # Shadow must never change baseline OCR completion.
+            document_ai_shadow_dispatch = {
+                "status": "not_dispatched",
+                "statusReason": f"shadow_setup_{exc.__class__.__name__.lower()}",
+            }
         if knowledge_file:
             next_dispatch = task_dispatcher.dispatch_slice(knowledge_file["id"])
+    flush_state()
     return {
         **result,
         "applied": applied,
@@ -509,6 +890,785 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
         "targeting": targeting,
         "ocrJobRecordId": ocr_job_record.get("id"),
         "ocrParseResultId": (parse_result_record or {}).get("parseResultId"),
+        "documentAiShadowDispatch": document_ai_shadow_dispatch,
+        "pipelineRunId": pipeline_run.get("id"),
+        "qwenPipelineDispatch": qwen_pipeline_dispatch,
+    }
+
+
+@celery_app.task(bind=True, max_retries=3)
+def ocr_pipeline_qwen_extract(self, run_id: str) -> dict[str, Any]:
+    refresh_worker_state(
+        {
+            "documents",
+            "versions",
+            "knowledge_files",
+            "knowledge_tasks",
+            "ocr_jobs",
+            "ocr_parse_results",
+            "ocr_pipeline_runs",
+            "ocr_stage_runs",
+        }
+    )
+    run = repo.find_one("ocr_pipeline_runs", run_id)
+    if not run:
+        return {"pipelineRunId": run_id, "status": "missing"}
+    if run.get("status") in {"completed", "partial"} and run.get("qwenStructuredOutput"):
+        return {"pipelineRunId": run_id, "status": run.get("status"), "alreadyCompleted": True}
+    parse_result = repo.find_one("ocr_parse_results", str(run.get("baselineParseResultId") or ""), id_field="parseResultId")
+    if not parse_result:
+        repo.mark_ocr_pipeline_stage(
+            run,
+            "qwen_extract",
+            "failed",
+            failure_reason="baseline_parse_result_missing",
+        )
+        repo.finish_ocr_pipeline_run(
+            run,
+            status="failed",
+            blocking_reasons=[{"code": "BASELINE_PARSE_RESULT_MISSING"}],
+            recommended_action="重新执行本地 OCR 扫描。",
+        )
+        flush_state()
+        return {"pipelineRunId": run_id, "status": "failed", "failureReason": "baseline_parse_result_missing"}
+    profile = default_profile(run.get("profileId"), run.get("documentType"))
+    repo.mark_ocr_pipeline_stage(run, "qwen_extract", "running")
+    run["taskId"] = str(getattr(self.request, "id", "") or run.get("taskId") or "") or None
+    source_temp: Path | None = None
+    work_directory = temporary_pipeline_directory(run_id)
+    try:
+        source_path, source_temp = document_ai_source_path(run)
+        if not source_path or not source_path.is_file():
+            raise RuntimeError("ocr_pipeline_source_missing")
+        batch_outputs: list[dict[str, Any]] = []
+        batch_validations: list[dict[str, Any]] = []
+        all_candidates: dict[str, dict[str, Any]] = {}
+        usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        qwen_model = None
+        qwen_provider = None
+        for batch_index, selected_pages in enumerate(page_batches(parse_result), start=1):
+            batch_directory = work_directory / f"batch-{batch_index:03d}"
+            rendered = render_pages(source_path, selected_pages, batch_directory / "pages")
+            if not rendered:
+                continue
+            prior = build_batch_prior(parse_result, profile, selected_pages)
+            compact_prior = prior["compact"]
+            for candidate in compact_prior.get("candidates") or []:
+                if isinstance(candidate, dict) and candidate.get("candidateId"):
+                    all_candidates[str(candidate["candidateId"])] = candidate
+            rois = render_candidate_rois(
+                rendered,
+                parse_result,
+                compact_prior,
+                batch_directory / "rois",
+            )
+            response = QwenRuntimeClient().chat_sync(
+                qwen_messages(rendered, rois, profile, compact_prior),
+                model="qwen-vision-review",
+                stream=False,
+                response_format={"type": "json_object"},
+                enable_thinking=False,
+                temperature=0.0,
+                max_tokens=int(os.getenv("AICHECK_OCR_QWEN_MAX_TOKENS", "3200")),
+                timeout=float(os.getenv("AICHECK_OCR_QWEN_TIMEOUT_SECONDS", "180")),
+            )
+            qwen_model = response.get("model") or qwen_model
+            qwen_provider = response.get("provider") or qwen_provider
+            response_usage = response.get("usage") if isinstance(response.get("usage"), dict) else {}
+            for key in usage:
+                usage[key] += int(response_usage.get(key) or 0)
+            parsed_output = parse_qwen_json(response)
+            attribution = validate_batch_output(parsed_output, compact_prior)
+            batch_outputs.append(attribution["structuredOutput"])
+            batch_validations.append(
+                {
+                    "batch": batch_index,
+                    "selectedPageNos": selected_pages,
+                    "priorHash": prior["compactPriorHash"],
+                    "validation": attribution["validation"],
+                }
+            )
+        if not batch_outputs:
+            raise RuntimeError("qwen_pipeline_no_batches")
+        structured_output = merge_batch_outputs(batch_outputs)
+        required_fields = {
+            str(value)
+            for value in profile.get("requiredFields") or []
+            if str(value) and str(value) != "seal"
+        }
+        extracted_fields = {
+            str(key)
+            for key, item in (structured_output.get("fields") or {}).items()
+            if isinstance(item, dict) and item.get("value") not in {None, ""}
+        }
+        unresolved_fields = sorted(required_fields - extracted_fields)
+        conflicts = structured_output.get("conflicts") if isinstance(structured_output.get("conflicts"), list) else []
+        if unresolved_fields or conflicts:
+            issue_fields = set(unresolved_fields) | {
+                str(item.get("fieldCode")) for item in conflicts if isinstance(item, dict) and item.get("fieldCode")
+            }
+            rescue_pages = sorted(
+                {
+                    int(candidate.get("pageNo") or 1)
+                    for candidate in all_candidates.values()
+                    if str(candidate.get("semanticKey") or "") in issue_fields
+                }
+            )[:4]
+            if not rescue_pages:
+                rescue_pages = page_numbers(parse_result)[:4]
+            rescue_directory = work_directory / "rescue"
+            rescue_rendered = render_pages(source_path, rescue_pages, rescue_directory / "pages")
+            rescue_prior = build_batch_prior(parse_result, profile, rescue_pages)
+            rescue_compact = rescue_prior["compact"]
+            for candidate in rescue_compact.get("candidates") or []:
+                if isinstance(candidate, dict) and candidate.get("candidateId"):
+                    all_candidates[str(candidate["candidateId"])] = candidate
+            rescue_rois = render_candidate_rois(
+                rescue_rendered,
+                parse_result,
+                rescue_compact,
+                rescue_directory / "rois",
+                limit=16,
+            )
+            rescue_messages = qwen_messages(rescue_rendered, rescue_rois, profile, rescue_compact)
+            rescue_messages[-1]["content"].append(
+                {
+                    "type": "text",
+                    "text": (
+                        "这是仅针对缺失字段或冲突值的第二轮裁决。优先处理字段："
+                        + ", ".join(sorted(issue_fields))
+                        + "。只能从候选 ID 中选择；仍无法确认时保持 null。"
+                    ),
+                }
+            )
+            rescue_response = QwenRuntimeClient().chat_sync(
+                rescue_messages,
+                model="qwen-vision-review",
+                stream=False,
+                response_format={"type": "json_object"},
+                enable_thinking=False,
+                temperature=0.0,
+                max_tokens=int(os.getenv("AICHECK_OCR_QWEN_MAX_TOKENS", "3200")),
+                timeout=float(os.getenv("AICHECK_OCR_QWEN_TIMEOUT_SECONDS", "180")),
+            )
+            rescue_usage = rescue_response.get("usage") if isinstance(rescue_response.get("usage"), dict) else {}
+            for key in usage:
+                usage[key] += int(rescue_usage.get(key) or 0)
+            rescue_attribution = validate_batch_output(parse_qwen_json(rescue_response), rescue_compact)
+            batch_outputs.insert(0, rescue_attribution["structuredOutput"])
+            batch_validations.append(
+                {
+                    "batch": "rescue",
+                    "selectedPageNos": rescue_pages,
+                    "priorHash": rescue_prior["compactPriorHash"],
+                    "validation": rescue_attribution["validation"],
+                    "issueFields": sorted(issue_fields),
+                }
+            )
+            structured_output = merge_batch_outputs(batch_outputs)
+        grounded_fields = validated_ocr_fields(structured_output, profile, all_candidates)
+        validation_summary = {
+            "batchCount": len(batch_validations),
+            "batches": batch_validations,
+            "validatedFieldCount": len(grounded_fields),
+            "invalidCandidateIdCount": sum(
+                int(((item.get("validation") or {}).get("invalidCandidateIdCount") or 0))
+                for item in batch_validations
+            ),
+            "unsupportedAttributionCount": sum(
+                int((((item.get("validation") or {}).get("statusCounts") or {}).get("unsupported") or 0))
+                for item in batch_validations
+            ),
+        }
+        artifact_payload = {
+            "schemaVersion": "OcrQwenGroundedOutput@1",
+            "pipelineRunId": run_id,
+            "model": qwen_model,
+            "provider": qwen_provider,
+            "structuredOutput": structured_output,
+            "groundedFields": grounded_fields,
+            "groundingValidation": validation_summary,
+        }
+        artifact_url, artifact_hash = store_ocr_pipeline_artifact(run, "qwen_extract", artifact_payload)
+        run.update(
+            {
+                "qwenModel": qwen_model,
+                "qwenProvider": qwen_provider,
+                "qwenUsage": usage,
+                "qwenBatchCount": len(batch_validations),
+                "qwenStructuredOutput": structured_output,
+                "groundedFields": grounded_fields,
+                "groundingValidation": validation_summary,
+                "updatedAt": server_time(),
+            }
+        )
+        repo.mark_ocr_pipeline_stage(
+            run,
+            "qwen_extract",
+            "success",
+            engine_status={"qwen3.7-plus": {"status": "success", "batchCount": len(batch_validations)}},
+            artifact_url=artifact_url,
+            artifact_hash=artifact_hash,
+        )
+        dispatch = task_dispatcher.dispatch_ocr_pipeline_finalize(run_id)
+        run["finalizeDispatch"] = dispatch
+        if not dispatch.get("taskId"):
+            raise RuntimeError("ocr_pipeline_finalize_dispatch_failed")
+        flush_state()
+        return {
+            "pipelineRunId": run_id,
+            "status": "success",
+            "batchCount": len(batch_validations),
+            "validatedFieldCount": len(grounded_fields),
+            "finalizeDispatch": dispatch,
+        }
+    except Exception as exc:
+        retry_index = int(getattr(self.request, "retries", 0) or 0)
+        if retry_index < 3:
+            countdown = (10, 30, 90)[retry_index]
+            repo.mark_ocr_pipeline_stage(run, "qwen_extract", "retrying", failure_reason=exc.__class__.__name__)
+            run["recommendedAction"] = f"Qwen 复核将在 {countdown} 秒后重试。"
+            flush_state()
+            raise self.retry(exc=exc, countdown=countdown)
+        repo.mark_ocr_pipeline_stage(
+            run,
+            "qwen_extract",
+            "failed",
+            blocking_reasons=[{"code": "QWEN_EXTRACTION_FAILED"}],
+            failure_reason=exc.__class__.__name__,
+        )
+        repo.finish_ocr_pipeline_run(
+            run,
+            status="failed" if run.get("mode") == "active" else "partial",
+            blocking_reasons=[{"code": "QWEN_EXTRACTION_FAILED"}],
+            recommended_action="检查 Qwen 官方 API 配置或额度后重试。",
+        )
+        if run.get("mode") == "active":
+            failed = deepcopy(parse_result)
+            failed["status"] = "success"
+            failed["outcomeStatus"] = "partial"
+            failed.setdefault("quality", {})["status"] = "needs_human_review"
+            failed["quality"].setdefault("blockingReasons", []).append({"code": "QWEN_EXTRACTION_FAILED"})
+            failed["quality"].setdefault("reasons", []).append("FIELD_EVIDENCE_MISSING")
+            pipeline_apply_result(
+                str(run.get("documentId") or ""),
+                str(run.get("documentVersionId") or ""),
+                failed,
+                state_record_ids(
+                    ocr_result_state_records(
+                        str(run.get("documentId") or ""),
+                        str(run.get("documentVersionId") or ""),
+                    )
+                ),
+            )
+        flush_state()
+        return {"pipelineRunId": run_id, "status": run.get("status"), "failureReason": exc.__class__.__name__}
+    finally:
+        shutil.rmtree(work_directory, ignore_errors=True)
+        if source_temp:
+            shutil.rmtree(source_temp, ignore_errors=True)
+
+
+@celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 2})
+def ocr_pipeline_finalize(self, run_id: str) -> dict[str, Any]:
+    refresh_worker_state(
+        {
+            "projects",
+            "documents",
+            "versions",
+            "bindings",
+            "knowledge_files",
+            "knowledge_tasks",
+            "ocr_jobs",
+            "ocr_parse_results",
+            "ocr_pipeline_runs",
+            "ocr_stage_runs",
+            "extracted_fields",
+            "evidence_links",
+            "node_evidence_links",
+            "material_targeting_runs",
+        }
+    )
+    run = repo.find_one("ocr_pipeline_runs", run_id)
+    if not run:
+        return {"pipelineRunId": run_id, "status": "missing"}
+    if run.get("status") in {"completed", "partial"} and run.get("finishedAt"):
+        return {"pipelineRunId": run_id, "status": run.get("status"), "alreadyCompleted": True}
+    baseline = repo.find_one("ocr_parse_results", str(run.get("baselineParseResultId") or ""), id_field="parseResultId")
+    if not baseline:
+        return {"pipelineRunId": run_id, "status": "failed", "failureReason": "baseline_parse_result_missing"}
+    repo.mark_ocr_pipeline_stage(run, "grounding_validate", "running")
+    profile = default_profile(run.get("profileId"), run.get("documentType"))
+    merged = merge_grounded_fields(baseline, run.get("groundedFields") or [])
+    blockers = required_field_blockers(merged, profile)
+    validation = run.get("groundingValidation") if isinstance(run.get("groundingValidation"), dict) else {}
+    if int(validation.get("invalidCandidateIdCount") or 0) > 0:
+        blockers.append({"code": "INVALID_CANDIDATE_ID"})
+    if blockers:
+        repo.mark_ocr_pipeline_stage(
+            run,
+            "grounding_validate",
+            "partial",
+            blocking_reasons=blockers,
+        )
+    else:
+        repo.mark_ocr_pipeline_stage(run, "grounding_validate", "success")
+    repo.mark_ocr_pipeline_stage(run, "finalize", "running")
+    applied: dict[str, Any] | None = None
+    targeting: dict[str, Any] | None = None
+    if run.get("mode") == "active":
+        authoritative = deepcopy(merged)
+        authoritative["parseResultId"] = f"{baseline.get('parseResultId')}-QWEN"
+        authoritative["parserVersion"] = f"{baseline.get('parserVersion') or 'ocr'}+{pipeline_version()}"
+        authoritative["outcomeStatus"] = "completed" if not blockers else "partial"
+        authoritative["status"] = "success"
+        authoritative.setdefault("quality", {})["status"] = "usable" if not blockers else "needs_human_review"
+        authoritative["quality"]["blockingReasons"] = blockers
+        authoritative["quality"]["reasons"] = sorted(
+            {
+                str(item.get("code") or "FIELD_EVIDENCE_MISSING")
+                for item in blockers
+                if isinstance(item, dict)
+            }
+            | ({"FIELD_EVIDENCE_MISSING"} if blockers else set())
+        )
+        job = repo.find_one("ocr_jobs", str(run.get("ocrJobRecordId") or ""))
+        authoritative_record = repo.finish_ocr_job_record(job, authoritative) if job else authoritative
+        run["parseResultId"] = (authoritative_record or {}).get("parseResultId")
+        previous_ids = state_record_ids(
+            ocr_result_state_records(str(run.get("documentId") or ""), str(run.get("documentVersionId") or ""))
+        )
+        applied, targeting = pipeline_apply_result(
+            str(run.get("documentId") or ""),
+            str(run.get("documentVersionId") or ""),
+            authoritative,
+            previous_ids,
+        )
+        knowledge_file = repo.knowledge_file_for_version(str(run.get("documentVersionId") or ""))
+        if applied.get("status") == "success" and knowledge_file:
+            run["nextDispatch"] = task_dispatcher.dispatch_slice(str(knowledge_file["id"]))
+    repo.mark_ocr_pipeline_stage(run, "finalize", "success")
+    final_status = "completed" if not blockers else "partial"
+    formal_ready = bool(run.get("mode") == "active" and not blockers)
+    repo.finish_ocr_pipeline_run(
+        run,
+        status=final_status,
+        blocking_reasons=blockers,
+        recommended_action="确认 OCR 候选证据。" if not blockers else "在 FDE 中复核缺失或冲突字段。",
+        formal_evidence_ready=formal_ready,
+    )
+    artifact_url, artifact_hash = store_ocr_pipeline_artifact(
+        run,
+        "finalize",
+        {
+            "schemaVersion": "OcrAccuracyPipelineResult@1",
+            "pipelineRunId": run_id,
+            "mode": run.get("mode"),
+            "status": final_status,
+            "blockingReasons": blockers,
+            "formalEvidenceReady": formal_ready,
+            "applied": applied,
+            "targeting": targeting,
+        },
+    )
+    repo.mark_ocr_pipeline_stage(
+        run,
+        "finalize",
+        "success",
+        artifact_url=artifact_url,
+        artifact_hash=artifact_hash,
+    )
+    flush_state()
+    return {
+        "pipelineRunId": run_id,
+        "status": final_status,
+        "mode": run.get("mode"),
+        "formalEvidenceReady": formal_ready,
+        "blockingReasons": blockers,
+        "applied": applied,
+    }
+
+
+def document_ai_source_path(run: dict[str, Any]) -> tuple[Path | None, Path | None]:
+    storage_key = str(run.get("storageKey") or "")
+    local_path = local_path_from_storage_key(storage_key, WORKSPACE_ROOT)
+    if local_path:
+        return local_path, None
+    parsed = parse_storage_url(storage_key)
+    if parsed:
+        bucket, object_name = parsed
+    else:
+        bucket = str(run.get("storageBucket") or "")
+        object_name = storage_key
+    if not bucket or not object_name:
+        return None, None
+    suffix = Path(str(run.get("fileName") or object_name)).suffix
+    downloaded = object_storage.download_to_temp(bucket, object_name, suffix=suffix)
+    return downloaded, downloaded.parent if downloaded else None
+
+
+def document_ai_structured_output(response: dict[str, Any]) -> Any:
+    output = response.get("structuredOutput")
+    if output is None:
+        output = response.get("output")
+    if output is None and isinstance(response.get("result"), dict):
+        output = response["result"].get("structuredOutput") or response["result"].get("output")
+    if isinstance(output, str):
+        text = output.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text
+            text = text.rsplit("```", 1)[0].strip()
+            if text.startswith("json"):
+                text = text[4:].lstrip()
+        try:
+            output = json.loads(text)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("document_ai_invalid_structured_json") from exc
+    if not isinstance(output, (dict, list)):
+        raise RuntimeError("document_ai_missing_structured_output")
+    return output
+
+
+@celery_app.task(bind=True)
+def document_ai_shadow_extract(self, run_id: str) -> dict[str, Any]:
+    refresh_worker_state({"documents", "versions", "ocr_parse_results", "document_ai_shadow_runs"})
+    run = repo.find_one("document_ai_shadow_runs", run_id)
+    if run is None:
+        return {"runId": run_id, "status": "missing"}
+    if run.get("status") == "success":
+        return {"runId": run_id, "status": "success", "alreadyCompleted": True}
+    run.update(
+        {
+            "status": "running",
+            "taskId": str(getattr(self.request, "id", "") or run.get("taskId") or "") or None,
+            "startedAt": server_time(),
+            "updatedAt": server_time(),
+            "advisoryOnly": True,
+            "businessImpact": "none",
+        }
+    )
+    persist_document_ai_shadow_run(run)
+    temporary_directory: Path | None = None
+    try:
+        parse_result = repo.find_one("ocr_parse_results", str(run.get("parseResultId") or ""), id_field="parseResultId")
+        if not parse_result:
+            raise RuntimeError("baseline_parse_result_missing")
+        if stable_payload_hash(parse_result) != str(run.get("baselineHash") or ""):
+            raise RuntimeError("baseline_hash_mismatch")
+        profile = profile_for(str(run.get("profileId") or ""))
+        structured = profile.get("structuredExtraction")
+        if not isinstance(structured, dict) or structured.get("mode") != "shadow":
+            raise RuntimeError("structured_extraction_profile_missing")
+        prior_bundle = build_evidence_prior(parse_result, profile)
+        compact_prior = prior_bundle["compact"]
+        run.update(
+            {
+                "fullPriorHash": prior_bundle["fullPriorHash"],
+                "priorHash": prior_bundle["compactPriorHash"],
+                "priorCandidateCount": compact_prior.get("candidateCount"),
+                "priorOmittedCandidateCount": compact_prior.get("omittedCandidateCount"),
+                "priorEstimatedTokenCount": compact_prior.get("estimatedTokenCount"),
+                "selectedPageNos": compact_prior.get("selectedPageNos"),
+                "priorDiagnostics": compact_prior.get("diagnostics") or [],
+                "evidencePrior": compact_prior,
+                "updatedAt": server_time(),
+            }
+        )
+        persist_document_ai_shadow_run(run)
+        source_path, temporary_directory = document_ai_source_path(run)
+        if not source_path or not source_path.is_file():
+            raise RuntimeError("document_ai_source_missing")
+        client = DocumentAiClient()
+        response = client.extract_upload_sync(
+            source_path,
+            {
+                "schemaVersion": "DocumentAiHybridExtractRequest@1",
+                "runId": run_id,
+                "advisoryOnly": True,
+                "profileId": profile.get("profileId"),
+                "templateVersion": structured.get("templateVersion"),
+                "fileName": run.get("fileName"),
+                "structuredExtraction": structured,
+                "selectedPageNos": compact_prior.get("selectedPageNos"),
+                "evidencePrior": compact_prior,
+                "baselineHash": run.get("baselineHash"),
+                "constraints": {
+                    "maxPages": 6,
+                    "maxCandidates": 64,
+                    "maxPriorTokens": 12000,
+                    "maxOutputTokens": 2048,
+                    "deadlineSeconds": 180,
+                },
+            },
+        )
+        structured_output = document_ai_structured_output(response)
+        attribution = validate_shadow_attribution(structured_output, compact_prior)
+        validated_output = attribution["structuredOutput"]
+        run.update(
+            {
+                "status": "success",
+                "remoteRunId": response.get("runId") or response.get("remoteRunId"),
+                "modelRevision": response.get("modelRevision") or response.get("nuExtractRevision"),
+                "paddleModelRevision": response.get("paddleModelRevision") or response.get("paddleRevision"),
+                "structuredOutput": validated_output,
+                "attributionValidation": attribution["validation"],
+                "outputDiff": compare_shadow_to_baseline(parse_result, validated_output),
+                "diagnostics": response.get("diagnostics") or [],
+                "queueTimeMs": response.get("queueTimeMs"),
+                "inferenceTimeMs": response.get("inferenceTimeMs"),
+                "totalTimeMs": response.get("totalTimeMs"),
+                "jsonRetryCount": response.get("jsonRetryCount"),
+                "tableExtractionDeferred": bool(response.get("tableExtractionDeferred")),
+                "formalEvidenceReady": False,
+                "advisoryOnly": True,
+                "businessImpact": "none",
+                "finishedAt": server_time(),
+                "updatedAt": server_time(),
+                "failureReason": None,
+            }
+        )
+        persist_document_ai_shadow_run(run)
+        try:
+            run["pipelineComparisonDispatch"] = schedule_pipeline_comparison(run)
+        except Exception as exc:  # Pipeline A/B must never affect Document AI Shadow success.
+            run["pipelineComparisonDispatch"] = {
+                "status": "not_dispatched",
+                "statusReason": f"pipeline_comparison_setup_{exc.__class__.__name__.lower()}",
+            }
+    except Exception as exc:  # Shadow failures are observable but never propagated into baseline OCR.
+        reason = (
+            exc.reason
+            if isinstance(exc, IntegrationServiceError) and exc.reason
+            else safe_reason(str(exc).strip().upper())
+            or exc.__class__.__name__.upper()
+        )
+        status_code = exc.status_code if isinstance(exc, IntegrationServiceError) else None
+        run.update(
+            {
+                "status": "failed",
+                "failureReason": reason,
+                "failureStatusCode": status_code,
+                "formalEvidenceReady": False,
+                "advisoryOnly": True,
+                "businessImpact": "none",
+                "finishedAt": server_time(),
+                "updatedAt": server_time(),
+            }
+        )
+    finally:
+        persist_document_ai_shadow_run(run)
+        if temporary_directory:
+            shutil.rmtree(temporary_directory, ignore_errors=True)
+    return {
+        "runId": run_id,
+        "status": run.get("status"),
+        "advisoryOnly": True,
+        "businessImpact": "none",
+        "failureReason": run.get("failureReason"),
+        "pipelineComparisonDispatch": run.get("pipelineComparisonDispatch"),
+    }
+
+
+def render_pipeline_comparison_pages(
+    source_path: Path,
+    selected_page_nos: list[int],
+    output_directory: Path,
+) -> list[Path]:
+    selected = sorted({int(value) for value in selected_page_nos if int(value) > 0})[:6]
+    if not selected:
+        selected = [1]
+    output_directory.mkdir(parents=True, exist_ok=True)
+    with source_path.open("rb") as handle:
+        signature = handle.read(4)
+    if signature == b"%PDF":
+        import fitz
+
+        document = fitz.open(source_path)
+        rendered = []
+        try:
+            for page_no in selected:
+                if page_no > document.page_count:
+                    raise RuntimeError("pipeline_comparison_page_out_of_range")
+                page = document.load_page(page_no - 1)
+                long_side = max(float(page.rect.width), float(page.rect.height), 1.0)
+                scale = max(1.0, min(3.0, 1800.0 / long_side))
+                pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
+                target = output_directory / f"page-{page_no:04d}.png"
+                pixmap.save(target)
+                rendered.append(target)
+        finally:
+            document.close()
+        return rendered
+    if selected != [1]:
+        raise RuntimeError("pipeline_comparison_image_has_only_page_one")
+    from PIL import Image
+
+    target = output_directory / "page-0001.png"
+    with Image.open(source_path) as image:
+        converted = image.convert("RGB")
+        converted.thumbnail((1800, 1800))
+        converted.save(target, "PNG", optimize=True)
+    return [target]
+
+
+def pipeline_candidate_ids(document_ai_run: dict[str, Any]) -> set[str]:
+    structured = document_ai_run.get("structuredOutput") if isinstance(document_ai_run.get("structuredOutput"), dict) else {}
+    return collect_source_candidate_ids(structured)
+
+
+@celery_app.task(bind=True)
+def document_audit_pipeline_comparison(self, run_id: str) -> dict[str, Any]:
+    refresh_worker_state(
+        {
+            "documents",
+            "versions",
+            "bindings",
+            "rule_versions",
+            "retrieval_traces",
+            "document_ai_shadow_runs",
+            "document_audit_pipeline_comparison_runs",
+        }
+    )
+    run = repo.find_one("document_audit_pipeline_comparison_runs", run_id)
+    if run is None:
+        return {"runId": run_id, "status": "missing"}
+    if run.get("status") == "success":
+        return {"runId": run_id, "status": "success", "alreadyCompleted": True}
+    run.update(
+        {
+            "status": "running",
+            "taskId": str(getattr(self.request, "id", "") or run.get("taskId") or "") or None,
+            "startedAt": server_time(),
+            "updatedAt": server_time(),
+            "advisoryOnly": True,
+            "formalEvidenceReady": False,
+            "businessImpact": "none",
+            "runtime": deepseek_runtime_public_config(),
+        }
+    )
+    persist_pipeline_comparison_run(run)
+    source_temp: Path | None = None
+    page_temp = Path(tempfile.mkdtemp(prefix=f"aicheck-pipeline-{run_id}-"))
+    try:
+        document_ai_run = repo.find_one(
+            "document_ai_shadow_runs",
+            str(run.get("documentAiShadowRunId") or ""),
+        )
+        if not document_ai_run or document_ai_run.get("status") != "success":
+            raise RuntimeError("document_ai_shadow_run_missing")
+        source_path, source_temp = document_ai_source_path(document_ai_run)
+        if not source_path or not source_path.is_file():
+            raise RuntimeError("pipeline_comparison_source_missing")
+        page_paths = render_pipeline_comparison_pages(
+            source_path,
+            [int(value) for value in document_ai_run.get("selectedPageNos") or [1]],
+            page_temp,
+        )
+        industry_context = build_shared_industry_context(document_ai_run)
+        context_hash = stable_hash_payload(industry_context)
+
+        qwen_started = time.monotonic()
+        qwen_response = QwenVisionAuditClient().chat_sync(
+            build_qwen_vision_messages(page_paths, industry_context)
+        )
+        qwen_time_ms = round((time.monotonic() - qwen_started) * 1000)
+
+        deepseek_started = time.monotonic()
+        deepseek_client = DeepSeekAuditClient()
+        deepseek_messages = build_deepseek_messages(document_ai_run, industry_context)
+        deepseek_response = deepseek_client.chat_sync(deepseek_messages)
+        deepseek_retry_count = 0
+        deepseek_effective_thinking = "enabled"
+        try:
+            deepseek_payload = parse_json_model_output(deepseek_response)
+        except (TypeError, ValueError):
+            deepseek_retry_count = 1
+            deepseek_effective_thinking = "disabled"
+            deepseek_response = deepseek_client.chat_sync(deepseek_messages, thinking_type="disabled")
+            deepseek_payload = parse_json_model_output(deepseek_response)
+        deepseek_time_ms = round((time.monotonic() - deepseek_started) * 1000)
+
+        qwen_payload = parse_json_model_output(qwen_response)
+        baseline_result = normalize_pipeline_result(
+            qwen_payload,
+            pipeline_id=str(run.get("baselinePipelineId") or "qwen_vl_audit_v1"),
+            industry_context=industry_context,
+            allowed_candidate_ids=set(),
+            direct_vision_only=True,
+        )
+        challenger_result = normalize_pipeline_result(
+            deepseek_payload,
+            pipeline_id=str(run.get("challengerPipelineId") or "paddle_nuextract_deepseek_v1"),
+            industry_context=industry_context,
+            allowed_candidate_ids=pipeline_candidate_ids(document_ai_run),
+            fixed_document_fields=(document_ai_run.get("structuredOutput") or {}).get("fields") or {},
+            fixed_tables=(document_ai_run.get("structuredOutput") or {}).get("tables") or {},
+        )
+        metrics = compare_pipeline_results(baseline_result, challenger_result)
+        challenger_message = ((deepseek_response.get("choices") or [{}])[0].get("message") or {})
+        upstream_time_ms = int(document_ai_run.get("totalTimeMs") or 0)
+        run.update(
+            {
+                "status": "success",
+                "sharedIndustryContext": industry_context,
+                "sharedIndustryContextHash": context_hash,
+                "baselineResult": baseline_result,
+                "challengerResult": challenger_result,
+                "comparisonMetrics": metrics,
+                "baselineModelResolved": qwen_response.get("model") or run.get("baselineModel"),
+                "challengerModelResolved": deepseek_response.get("model") or run.get("challengerModel"),
+                "baselineResponseHash": stable_hash_payload(qwen_response),
+                "challengerResponseHash": stable_hash_payload(deepseek_response),
+                "baselineUsage": qwen_response.get("usage") or {},
+                "challengerUsage": deepseek_response.get("usage") or {},
+                "baselineFinishReason": ((qwen_response.get("choices") or [{}])[0] or {}).get("finish_reason"),
+                "challengerFinishReason": ((deepseek_response.get("choices") or [{}])[0] or {}).get("finish_reason"),
+                "challengerReasoningHash": stable_hash_payload(challenger_message.get("reasoning_content") or ""),
+                "challengerReasoningLength": len(str(challenger_message.get("reasoning_content") or "")),
+                "baselineTimeMs": qwen_time_ms,
+                "challengerUpstreamDocumentAiTimeMs": upstream_time_ms,
+                "challengerDeepSeekTimeMs": deepseek_time_ms,
+                "challengerDeepSeekRetryCount": deepseek_retry_count,
+                "challengerDeepSeekEffectiveThinking": deepseek_effective_thinking,
+                "challengerEndToEndTimeMs": upstream_time_ms + deepseek_time_ms,
+                "formalEvidenceReady": False,
+                "advisoryOnly": True,
+                "businessImpact": "none",
+                "finishedAt": server_time(),
+                "updatedAt": server_time(),
+                "failureReason": None,
+                "rawReasoningStored": False,
+            }
+        )
+    except Exception as exc:  # Comparison failure must never affect either production or Shadow source results.
+        reason = (
+            exc.reason
+            if isinstance(exc, IntegrationServiceError) and exc.reason
+            else safe_reason(str(exc).strip().upper())
+            or exc.__class__.__name__.upper()
+        )
+        run.update(
+            {
+                "status": "failed",
+                "failureReason": reason,
+                "formalEvidenceReady": False,
+                "advisoryOnly": True,
+                "businessImpact": "none",
+                "finishedAt": server_time(),
+                "updatedAt": server_time(),
+            }
+        )
+    finally:
+        persist_pipeline_comparison_run(run)
+        shutil.rmtree(page_temp, ignore_errors=True)
+        if source_temp:
+            shutil.rmtree(source_temp, ignore_errors=True)
+    return {
+        "runId": run_id,
+        "status": run.get("status"),
+        "advisoryOnly": True,
+        "businessImpact": "none",
+        "failureReason": run.get("failureReason"),
     }
 
 
@@ -572,8 +1732,8 @@ def slice_knowledge(self, file_id: str) -> dict[str, Any]:
     return result
 
 
-@celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
-def embed_knowledge(self, file_id: str) -> dict[str, Any]:
+@celery_app.task(bind=True, max_retries=3)
+def embed_knowledge(self, file_id: str, offset: int = 0) -> dict[str, Any]:
     # Deployment contract marker: embedding_batches_for_chunks keeps offline_hash_embeddings / offline_hash fallback.
     refresh_worker_state()
     chunks = sorted(
@@ -601,7 +1761,11 @@ def embed_knowledge(self, file_id: str) -> dict[str, Any]:
         task.pop("errorMessage", None)
         flush_state()
         return {"fileId": file_id, "status": "success", "vectorCount": int((file or {}).get("vectorCount") or vector_count), "alreadyCompleted": True}
-    repo.mark_task_running(task, "向量化 worker 开始处理。")
+    if int(offset or 0) == 0:
+        repo.mark_task_running(task, "向量化 worker 开始处理。")
+        repo.state["knowledge_embedding_batches"] = [
+            item for item in repo.state.get("knowledge_embedding_batches", []) if item.get("fileId") != file_id
+        ]
     if not file:
         repo.mark_task_failed(task, "向量化任务失败：找不到关联知识文件。")
         flush_state()
@@ -610,8 +1774,74 @@ def embed_knowledge(self, file_id: str) -> dict[str, Any]:
         vectors: list[dict[str, Any]] = []
         fallback_reason = None
         if chunks:
-            vectors, embedding_model, index_version, expected_dimensions, fallback_reason = embedding_batches_for_chunks(chunks)
+            checkpoint_size = (
+                max(1, min(int(os.getenv("AICHECK_EMBEDDING_CHECKPOINT_BATCH_SIZE", "8")), EMBED_BATCH_SIZE))
+                if task_dispatcher.dispatch_mode() == "celery"
+                else len(chunks)
+            )
+            start = max(0, int(offset or 0))
+            end = min(start + checkpoint_size, len(chunks))
+            batch_vectors, embedding_model, index_version, expected_dimensions, fallback_reason = embedding_batches_for_chunks(
+                chunks[start:end]
+            )
+            vectors = [{**item, "index": start + int(item.get("index") or 0)} for item in batch_vectors]
+            batch_record = {
+                "id": f"EMBBATCH-{file_id}-{start}",
+                "fileId": file_id,
+                "offset": start,
+                "endOffset": end,
+                "vectors": vectors,
+                "embeddingModel": embedding_model,
+                "indexVersion": index_version,
+                "dimensions": expected_dimensions,
+                "fallbackReason": fallback_reason,
+                "updatedAt": server_time(),
+            }
+            repo.state["knowledge_embedding_batches"] = [
+                item
+                for item in repo.state.get("knowledge_embedding_batches", [])
+                if not (item.get("fileId") == file_id and int(item.get("offset") or 0) == start)
+            ]
+            repo.state.setdefault("knowledge_embedding_batches", []).append(batch_record)
+            if task:
+                task["progress"] = max(10, int(end / max(len(chunks), 1) * 95))
+                task["embeddingCheckpoint"] = {"nextOffset": end, "totalChunks": len(chunks)}
+                task["updatedAt"] = server_time()
+            if end < len(chunks) and task_dispatcher.dispatch_mode() == "celery":
+                continuation = embed_knowledge.apply_async(
+                    args=[file_id, end],
+                    queue="cpu.heavy",
+                    priority=1,
+                )
+                if task:
+                    task["lastDispatch"] = {
+                        "mode": "celery",
+                        "taskId": continuation.id,
+                        "queue": "cpu.heavy",
+                        "priority": 1,
+                    }
+                flush_state()
+                return {
+                    "fileId": file_id,
+                    "status": "checkpointed",
+                    "nextOffset": end,
+                    "totalChunks": len(chunks),
+                    "taskId": continuation.id,
+                }
+            all_batches = sorted(
+                [item for item in repo.state.get("knowledge_embedding_batches", []) if item.get("fileId") == file_id],
+                key=lambda item: int(item.get("offset") or 0),
+            )
+            vectors = [vector for batch in all_batches for vector in batch.get("vectors") or []]
             vector_count = len(vectors)
+            if all_batches:
+                embedding_model = str(all_batches[-1].get("embeddingModel") or embedding_model)
+                index_version = str(all_batches[-1].get("indexVersion") or index_version)
+                expected_dimensions = int(all_batches[-1].get("dimensions") or expected_dimensions)
+                fallback_reason = next(
+                    (str(item.get("fallbackReason")) for item in all_batches if item.get("fallbackReason")),
+                    None,
+                )
         result = repo.apply_embed_result(
             file_id,
             vector_count,
@@ -621,7 +1851,19 @@ def embed_knowledge(self, file_id: str) -> dict[str, Any]:
             expected_dimensions=expected_dimensions,
             vector_status_reason=fallback_reason,
         )
-    except Exception:
+        repo.state["knowledge_embedding_batches"] = [
+            item for item in repo.state.get("knowledge_embedding_batches", []) if item.get("fileId") != file_id
+        ]
+    except Exception as exc:
+        retry_index = int(getattr(self.request, "retries", 0) or 0)
+        if retry_index < 3:
+            countdown = (10, 30, 90)[retry_index]
+            if task:
+                task["status"] = "排队中"
+                task["updatedAt"] = server_time()
+                repo.append_task_log(task, "warning", f"向量批次失败，将在 {countdown} 秒后重试。")
+            flush_state()
+            raise self.retry(exc=exc, countdown=countdown)
         message = "EXTERNAL_TOOL_FAILED: embedding 向量化失败，请检查远程 Qwen3 服务、隧道和向量索引状态。"
         result = {"fileId": file_id, "status": "failed", "errorMessage": message}
         if task:
