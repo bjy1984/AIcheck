@@ -353,6 +353,7 @@ def qwen_messages(
             "text": (
                 "请从原始页面和 EvidencePrior 中抽取结构化 JSON。每个非空值必须引用实际存在的 "
                 "sourceCandidateIds；禁止自行生成 bbox、页码或候选 ID。看不清时返回 null，不得推断。"
+                "表格中没有候选证据的空单元格必须省略，不要输出空值占位对象。"
                 "日期必须区分印章日期、签发日期和有效期；表格检测比例、技术等级、评定级别不得混用。"
                 "只输出 JSON，不输出解释。输入如下：\n"
                 + json.dumps(request_payload, ensure_ascii=False, separators=(",", ":"))

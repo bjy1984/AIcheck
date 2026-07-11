@@ -771,6 +771,13 @@ def validate_shadow_attribution(structured_output: Any, evidence_prior: dict[str
         invalid_candidate_ids.update(unknown_ids)
         known = [candidates[candidate_id] for candidate_id in raw_ids if candidate_id in candidates]
         value = _attribution_value(item)
+        if not value:
+            if raw_ids:
+                item["rawSourceCandidateIds"] = raw_ids
+            item["sourceCandidateIds"] = []
+            item["attributionStatus"] = "empty"
+            item["advisoryOnly"] = True
+            continue
         field_key = path.rsplit(".", 1)[-1].split("[", 1)[0]
         individually_supported = [
             candidate

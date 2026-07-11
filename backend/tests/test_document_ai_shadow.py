@@ -374,6 +374,25 @@ def test_whole_table_and_direct_vision_outputs_stay_advisory() -> None:
     assert validated["formalEvidenceReady"] is False
 
 
+def test_empty_table_containers_do_not_count_as_unsupported_claims() -> None:
+    prior = build_evidence_prior(sample_parse_result(), profile_for("ndt_rt_report_v1"))["compact"]
+    output = {
+        "tables": {
+            "rows": [
+                {
+                    "cells": {"missing_value": {"value": None, "sourceCandidateIds": []}},
+                    "sourceCandidateIds": [],
+                }
+            ]
+        }
+    }
+
+    validated = validate_shadow_attribution(output, prior)
+
+    assert validated["validation"]["statusCounts"]["unsupported"] == 0
+    assert validated["structuredOutput"]["tables"]["rows"][0]["attributionStatus"] == "empty"
+
+
 def test_document_ai_client_uses_bearer_auth_and_hybrid_endpoint(tmp_path: Path) -> None:
     source = tmp_path / "sample.png"
     source.write_bytes(b"not-an-image-for-client-contract")
