@@ -15,7 +15,15 @@ from apps.worker.celery_app import celery_app
 from libs.business_pack import build_ai_review_prompt, load_business_pack, matching_rule_for_node
 from libs.contracts.responses import server_time
 from libs.audit_runtime import audit_runtime_for_run, audit_runtime_public_config
-from libs.db.repository import STATE_COLLECTIONS, flush_state, load_ocr_task_state, load_state, repo, sync_state_records
+from libs.db.repository import (
+    STATE_COLLECTIONS,
+    flush_state,
+    flush_state_records,
+    load_ocr_task_state,
+    load_state,
+    repo,
+    sync_state_records,
+)
 from libs.document_ai_shadow import (
     EVIDENCE_PRIOR_VERSION,
     build_evidence_prior,
@@ -580,6 +588,23 @@ def pipeline_engine_status(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def persist_ocr_pipeline_progress(
+    run: dict[str, Any],
+    *,
+    task: dict[str, Any] | None = None,
+    ocr_job: dict[str, Any] | None = None,
+) -> None:
+    records: dict[str, list[dict[str, Any]]] = {
+        "ocr_pipeline_runs": [run],
+        "ocr_stage_runs": repo.ocr_pipeline_stages(str(run.get("id") or "")),
+    }
+    if task:
+        records["knowledge_tasks"] = [task]
+    if ocr_job:
+        records["ocr_jobs"] = [ocr_job]
+    flush_state_records(records)
+
+
 def pipeline_apply_result(
     document_id: str,
     version_id: str,
@@ -750,6 +775,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
     )
     repo.mark_ocr_job_running(ocr_job_record, pipeline_run_id=str(pipeline_run.get("id") or ""))
     pipeline_run["ocrJobRecordId"] = ocr_job_record.get("id")
+    persist_ocr_pipeline_progress(pipeline_run, task=task, ocr_job=ocr_job_record)
     previous_record_ids = state_record_ids(ocr_result_state_records(document_id, version_id))
     try:
         result = parse_with_ocr_service(
@@ -790,6 +816,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
                 task["progress"] = 5
                 task["updatedAt"] = server_time()
                 repo.append_task_log(task, "warning", pipeline_run["recommendedAction"])
+            persist_ocr_pipeline_progress(pipeline_run, task=task, ocr_job=ocr_job_record)
             flush_state()
             raise self.retry(exc=exc, countdown=countdown)
         repo.mark_ocr_pipeline_stage(
@@ -948,6 +975,7 @@ def ocr_pipeline_qwen_extract(self, run_id: str) -> dict[str, Any]:
     profile = default_profile(run.get("profileId"), run.get("documentType"))
     repo.mark_ocr_pipeline_stage(run, "qwen_extract", "running")
     run["taskId"] = str(getattr(self.request, "id", "") or run.get("taskId") or "") or None
+    persist_ocr_pipeline_progress(run)
     source_temp: Path | None = None
     work_directory = temporary_pipeline_directory(run_id)
     try:
@@ -1212,6 +1240,7 @@ def ocr_pipeline_finalize(self, run_id: str) -> dict[str, Any]:
     if not baseline:
         return {"pipelineRunId": run_id, "status": "failed", "failureReason": "baseline_parse_result_missing"}
     repo.mark_ocr_pipeline_stage(run, "grounding_validate", "running")
+    persist_ocr_pipeline_progress(run)
     profile = default_profile(run.get("profileId"), run.get("documentType"))
     merged = merge_grounded_fields(baseline, run.get("groundedFields") or [])
     blockers = required_field_blockers(merged, profile)

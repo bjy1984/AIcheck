@@ -13,7 +13,9 @@ x-pipeline-worker: &pipeline-worker
     AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:?AICHECK_MINIO_SECRET_KEY is required}
     AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
     AICHECK_OCR_BASE_URL: ${AICHECK_OCR_BASE_URL:-http://ocr-service:8010}
-    AICHECK_OCR_USE_JOB_API: "false"
+    AICHECK_OCR_USE_JOB_API: "true"
+    AICHECK_OCR_JOB_TIMEOUT_SECONDS: "300"
+    AICHECK_OCR_PARSE_TIMEOUT_SECONDS: "300"
     AICHECK_OCR_PIPELINE_MODE: ${AICHECK_OCR_PIPELINE_MODE:-shadow}
     AICHECK_OCR_PIPELINE_VERSION: ${AICHECK_OCR_PIPELINE_VERSION:-ocr-accuracy-first@1}
     AICHECK_OCR_PIPELINE_PROFILE_ALLOWLIST: ${AICHECK_OCR_PIPELINE_PROFILE_ALLOWLIST:-ndt_rt_report_v1,quality_certificate_v1,engineering_drawing_list_v1,piping_characteristic_list_v1,comprehensive_material_list_v1}

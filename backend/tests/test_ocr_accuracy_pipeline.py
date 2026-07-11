@@ -203,9 +203,46 @@ def test_repository_pipeline_run_is_queued_until_worker_stage_starts() -> None:
     )
 
     assert run["status"] == "queued"
+    assert repository.ocr_pipeline_stages(run["id"])[0]["documentId"] == "DOC-1"
+    assert repository.ocr_pipeline_stages(run["id"])[0]["documentVersionId"] == "VER-1"
     repository.mark_ocr_pipeline_stage(run, "prepare", "running")
     assert run["status"] == "running"
     assert repository.ocr_pipeline_stages(run["id"])[0]["attempt"] == 1
+
+
+def test_repository_repairs_missing_stage_records_when_failed_run_is_resumed() -> None:
+    repository = InMemoryRepository()
+    run_key = pipeline_run_key("DOC-1", "VER-1", "documents/VER-1", "ndt_rt_report_v1")
+    run = repository.create_or_resume_ocr_pipeline_run(
+        run_key=run_key,
+        document_id="DOC-1",
+        version_id="VER-1",
+        storage_key="documents/VER-1",
+        storage_bucket="documents",
+        file_name="report.pdf",
+        profile_id="ndt_rt_report_v1",
+        document_type="ndt_report",
+        mode="shadow",
+        pipeline_version="test@1",
+    )
+    run["status"] = "failed"
+    repository.state["ocr_stage_runs"] = []
+
+    resumed = repository.create_or_resume_ocr_pipeline_run(
+        run_key=run_key,
+        document_id="DOC-1",
+        version_id="VER-1",
+        storage_key="documents/VER-1",
+        storage_bucket="documents",
+        file_name="report.pdf",
+        profile_id="ndt_rt_report_v1",
+        document_type="ndt_report",
+        mode="shadow",
+        pipeline_version="test@1",
+    )
+
+    assert resumed["status"] == "queued"
+    assert len(repository.ocr_pipeline_stages(resumed["id"])) == len(PIPELINE_STAGES)
 
 
 def test_celery_routes_cpu_and_remote_work_are_isolated() -> None:

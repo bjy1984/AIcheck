@@ -907,6 +907,22 @@ class InMemoryRepository:
         )
         now = server_time()
         if existing:
+            existing_stages = [
+                stage
+                for stage in self.state.setdefault("ocr_stage_runs", [])
+                if stage.get("pipelineRunId") == existing.get("id")
+            ]
+            if not existing_stages:
+                existing_stages = initial_stage_records(
+                    str(existing.get("id") or ""),
+                    now=now,
+                    document_id=document_id,
+                    version_id=version_id,
+                )
+                self.state["ocr_stage_runs"].extend(existing_stages)
+            for stage in existing_stages:
+                stage.setdefault("documentId", document_id)
+                stage.setdefault("documentVersionId", version_id)
             if existing.get("status") in {"failed", "partial"}:
                 existing.update(
                     {
@@ -979,7 +995,14 @@ class InMemoryRepository:
             "failureReason": None,
         }
         self.state["ocr_pipeline_runs"].insert(0, run)
-        self.state.setdefault("ocr_stage_runs", []).extend(initial_stage_records(run_id, now=now))
+        self.state.setdefault("ocr_stage_runs", []).extend(
+            initial_stage_records(
+                run_id,
+                now=now,
+                document_id=document_id,
+                version_id=version_id,
+            )
+        )
         return run
 
     def ocr_pipeline_stages(self, run_id: str) -> list[dict[str, Any]]:

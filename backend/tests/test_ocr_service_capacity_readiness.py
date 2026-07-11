@@ -81,6 +81,28 @@ def test_readiness_fails_when_memory_headroom_is_below_minimum(monkeypatch) -> N
     assert "OCR memory headroom is below the configured minimum." in readiness["readinessFailures"]
 
 
+def test_readiness_fails_when_cache_directory_is_not_writable(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("AICHECK_OCR_OFFLINE_ONLY", "false")
+    monkeypatch.setenv("AICHECK_OCR_PREPROCESS_CACHE_DIR", str(tmp_path / "preprocess"))
+    monkeypatch.setenv("AICHECK_OCR_RESULT_CACHE_DIR", str(tmp_path / "results"))
+    monkeypatch.setenv("AICHECK_OCR_ENGINE_RESULT_CACHE_DIR", str(tmp_path / "engines"))
+    service = build_service(monkeypatch)
+    real_named_temporary_file = service_module.tempfile.NamedTemporaryFile
+
+    def fail_for_cache(*args, **kwargs):
+        if kwargs.get("dir"):
+            raise PermissionError("cache is read-only")
+        return real_named_temporary_file(*args, **kwargs)
+
+    monkeypatch.setattr(service_module.tempfile, "NamedTemporaryFile", fail_for_cache)
+
+    readiness = service.readiness_payload()
+
+    assert readiness["cacheWritable"] is False
+    assert readiness["ready"] is False
+    assert "OCR cache directories are not writable." in readiness["readinessFailures"]
+
+
 def test_paddleocr_vl_is_not_available_without_transformers(monkeypatch, tmp_path) -> None:
     layout = tmp_path / "layout"
     recognition = tmp_path / "recognition"

@@ -37,6 +37,8 @@ from apps.ocr_service.result_cache import (
     build_result_cache_key,
     load_engine_result_cache,
     load_result_cache,
+    engine_result_cache_dir,
+    result_cache_dir,
     rehydrate_cached_result,
     save_engine_result_cache,
     save_result_cache,
@@ -88,6 +90,35 @@ MODEL_ENV_KEYS = {
     **REQUIRED_MODEL_ENV_KEYS,
     **OPTIONAL_MODEL_ENV_KEYS,
 }
+
+
+def ocr_cache_readiness_payload() -> dict[str, Any]:
+    paths = {
+        "preprocess": Path(
+            os.getenv("AICHECK_OCR_PREPROCESS_CACHE_DIR")
+            or (Path(tempfile.gettempdir()) / "aicheck-ocr-preprocess-cache")
+        ),
+        "results": result_cache_dir(),
+        "engines": engine_result_cache_dir(),
+    }
+    statuses: dict[str, dict[str, Any]] = {}
+    for name, path in paths.items():
+        writable = False
+        error_code = None
+        probe_path: Path | None = None
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(prefix=".aicheck-ready-", dir=path, delete=False) as probe:
+                probe.write(b"ok")
+                probe_path = Path(probe.name)
+            writable = True
+        except OSError as exc:
+            error_code = exc.__class__.__name__
+        finally:
+            if probe_path is not None:
+                probe_path.unlink(missing_ok=True)
+        statuses[name] = {"path": str(path), "writable": writable, "errorCode": error_code}
+    return {"writable": all(item["writable"] for item in statuses.values()), "paths": statuses}
 
 
 PIPE_CODE_RE = re.compile(r"\b(?:PL|VT)\d{3,5}\b", re.IGNORECASE)
@@ -408,6 +439,7 @@ class OcrService:
     def health_payload(self) -> dict[str, Any]:
         engines = self.engine_status()
         capacity = memory_headroom_payload()
+        cache = ocr_cache_readiness_payload()
         minimum_headroom_mb = int(os.getenv("AICHECK_OCR_MIN_MEMORY_HEADROOM_MB", "2048"))
         return {
             "status": "ok",
@@ -424,6 +456,8 @@ class OcrService:
             "warmedUp": any(bool(engine.get("warmedUp")) for engine in engines),
             "capacityReady": float(capacity.get("availableMb") or 0) >= minimum_headroom_mb,
             "memoryHeadroom": capacity,
+            "cacheWritable": cache["writable"],
+            "cachePaths": cache["paths"],
             "inferenceStatus": self._last_inference.get("inferenceStatus"),
             "lastSuccessfulInferenceAt": self._last_inference.get("lastSuccessfulInferenceAt"),
             "lastInferenceAttemptAt": self._last_inference.get("lastInferenceAttemptAt"),
@@ -442,6 +476,8 @@ class OcrService:
             failures.append("No OCR engine is executable in the current runtime.")
         if not health["capacityReady"]:
             failures.append("OCR memory headroom is below the configured minimum.")
+        if not health["cacheWritable"]:
+            failures.append("OCR cache directories are not writable.")
         if env_bool("AICHECK_OCR_DEEP_READY_PROBE", False) and self._last_inference.get("inferenceStatus") != "success":
             failures.append("OCR deep readiness probe has not succeeded.")
         if self.offline_only:

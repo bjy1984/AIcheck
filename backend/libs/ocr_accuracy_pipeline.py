@@ -120,11 +120,19 @@ def pipeline_run_key(
     )
 
 
-def initial_stage_records(run_id: str, *, now: str) -> list[dict[str, Any]]:
+def initial_stage_records(
+    run_id: str,
+    *,
+    now: str,
+    document_id: str | None = None,
+    version_id: str | None = None,
+) -> list[dict[str, Any]]:
     return [
         {
             "id": f"{run_id}-{stage}",
             "pipelineRunId": run_id,
+            "documentId": document_id,
+            "documentVersionId": version_id,
             "stage": stage,
             "stageLabel": label,
             "status": "queued",

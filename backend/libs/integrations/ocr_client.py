@@ -93,7 +93,9 @@ class OcrClient:
     ) -> dict[str, Any]:
         if not self.enabled:
             raise RuntimeError("AICHECK_OCR_BASE_URL is not configured")
-        client_kwargs: dict[str, Any] = {"timeout": 120}
+        client_kwargs: dict[str, Any] = {
+            "timeout": float(os.getenv("AICHECK_OCR_PARSE_TIMEOUT_SECONDS", "300"))
+        }
         if self.transport is not None:
             client_kwargs["transport"] = self.transport
         payload = {
