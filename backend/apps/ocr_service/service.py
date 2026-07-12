@@ -7083,6 +7083,20 @@ def apply_parse_options_to_profile(profile: dict[str, Any], options: dict[str, A
                 seal_policy[key] = parse_bool(options.get(key), parse_bool(seal_policy.get(key), False))
     if parse_bool(options.get("enableFallback"), True) is False:
         policy.setdefault("fallback", {})["enableVlmWhen"] = []
+    try:
+        max_long_side_cap = max(800, int(os.getenv("AICHECK_OCR_MAX_LONG_SIDE", "1920")))
+    except (TypeError, ValueError):
+        max_long_side_cap = 1920
+    policy["maxLongSide"] = min(int(policy.get("maxLongSide") or max_long_side_cap), max_long_side_cap)
+    policy["textDetLimitSideLen"] = min(
+        int(policy.get("textDetLimitSideLen") or max_long_side_cap),
+        max_long_side_cap,
+    )
+    ocr_policy = policy.setdefault("ocr", {})
+    ocr_policy["textDetLimitSideLen"] = min(
+        int(ocr_policy.get("textDetLimitSideLen") or policy["textDetLimitSideLen"]),
+        max_long_side_cap,
+    )
     return adjusted
 
 
