@@ -510,6 +510,26 @@ def embedding_batches_for_chunks(chunks: list[dict[str, Any]]) -> tuple[list[dic
     return vectors, OFFLINE_EMBEDDING_MODEL, STANDARD_INDEX_VERSION, int(active_embedding_target()["dimensions"]), None
 
 
+ACCURACY_BASELINE_TEXT_ENGINES = [
+    "pymupdf_text_layer",
+    "paddle_ocr_subprocess",
+    "tesseract_cli",
+]
+
+
+def accuracy_pipeline_baseline_options(options: dict[str, Any] | None = None) -> dict[str, Any]:
+    baseline = deepcopy(options or {})
+    baseline.update(
+        {
+            "engineAllowlist": list(ACCURACY_BASELINE_TEXT_ENGINES),
+            "enableTables": False,
+            "enableSeals": False,
+            "forceHeavyEngines": False,
+        }
+    )
+    return baseline
+
+
 def parse_with_ocr_service(
     storage_key: str,
     file_name: str | None = None,
@@ -754,6 +774,12 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
         )
     resolved_profile = default_profile(preliminary_profile_id, document_type)
     resolved_profile_id = str(resolved_profile.get("profileId") or profile_id or "generic_document_v1")
+    accuracy_pipeline_requested = pipeline_enabled(
+        resolved_profile_id,
+        source_type=(knowledge_file or {}).get("sourceType"),
+    )
+    if accuracy_pipeline_requested:
+        ocr_options = accuracy_pipeline_baseline_options(ocr_options)
     run_key = pipeline_run_key(document_id, version_id, storage_key, resolved_profile_id)
     pipeline_run = repo.create_or_resume_ocr_pipeline_run(
         run_key=run_key,

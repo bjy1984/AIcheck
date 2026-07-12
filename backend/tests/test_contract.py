@@ -9184,8 +9184,9 @@ def test_worker_ocr_job_api_preserves_business_profile_and_options(monkeypatch) 
     assert captured["documentVersionId"] == version["id"]
     assert captured["profileId"] == "quality_certificate_v1"
     assert captured["documentType"] == "quality_certificate"
-    assert captured["options"]["enableTables"] is True
-    assert captured["options"]["enableSeals"] is True
+    assert captured["options"]["engineAllowlist"] == tasks.ACCURACY_BASELINE_TEXT_ENGINES
+    assert captured["options"]["enableTables"] is False
+    assert captured["options"]["enableSeals"] is False
     assert captured["options"]["enableFallback"] is True
 
 
@@ -9223,7 +9224,9 @@ def test_worker_local_ocr_fallback_preserves_business_profile(monkeypatch) -> No
     assert captured["profile_id"] == "quality_certificate_v1"
     assert captured["document_type"] == "quality_certificate"
     assert captured["document_version_id"] == version["id"]
-    assert captured["options"] == {}
+    assert captured["options"]["engineAllowlist"] == tasks.ACCURACY_BASELINE_TEXT_ENGINES
+    assert captured["options"]["enableTables"] is False
+    assert captured["options"]["enableSeals"] is False
 
 
 def test_failed_knowledge_task_retry_dispatches_worker_and_is_idempotent(monkeypatch) -> None:
