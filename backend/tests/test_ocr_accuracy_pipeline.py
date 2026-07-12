@@ -460,10 +460,11 @@ def test_table_cell_candidate_from_another_row_is_rejected() -> None:
     ]
 
     assert item["sourceCandidateIds"] == []
-    assert item["attributionStatus"] == "unsupported"
+    assert item["attributionStatus"] == "dropped_unsupported"
+    assert item["value"] is None
 
 
-def test_table_cell_scalar_without_candidate_is_counted_as_unsupported() -> None:
+def test_table_cell_scalar_without_candidate_is_dropped_with_diagnostics() -> None:
     profile = profile_for("engineering_drawing_list_v1")
     compact = build_batch_priors(drawing_list_parse_result(), profile, [1])[0]["compact"]
     output = {
@@ -484,5 +485,9 @@ def test_table_cell_scalar_without_candidate_is_counted_as_unsupported() -> None
     ]
 
     assert item["sourceCandidateIds"] == []
-    assert item["attributionStatus"] == "unsupported"
-    assert validation["validation"]["statusCounts"]["unsupported"] == 1
+    assert item["value"] is None
+    assert item["attributionStatus"] == "dropped_unsupported"
+    assert validation["validation"]["statusCounts"]["unsupported"] == 0
+    assert validation["validation"]["statusCounts"]["dropped_unsupported"] == 1
+    assert validation["validation"]["droppedUnsupportedAttributionCount"] == 1
+    assert validation["validation"]["items"][0]["observedValue"] == "工艺图纸目录"

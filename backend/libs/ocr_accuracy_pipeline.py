@@ -679,8 +679,62 @@ def merge_batch_outputs(outputs: list[dict[str, Any]]) -> dict[str, Any]:
     return merged
 
 
+def _attributed_output_items(value: Any, path: str = "$") -> Iterable[tuple[str, dict[str, Any]]]:
+    if isinstance(value, dict):
+        if "sourceCandidateIds" in value:
+            yield path, value
+        for key, child in value.items():
+            if key in {
+                "sourceCandidateIds",
+                "rawSourceCandidateIds",
+                "attributionStatus",
+                "attributionRepair",
+            }:
+                continue
+            yield from _attributed_output_items(child, f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            yield from _attributed_output_items(child, f"{path}[{index}]")
+
+
+def _drop_unsupported_attributions(result: dict[str, Any]) -> dict[str, Any]:
+    structured = result.get("structuredOutput")
+    items_by_path = dict(_attributed_output_items(structured))
+    validation = result.get("validation") if isinstance(result.get("validation"), dict) else {}
+    dropped = 0
+    for item in validation.get("items") or []:
+        if not isinstance(item, dict) or item.get("status") != "unsupported":
+            continue
+        target = items_by_path.get(str(item.get("path") or ""))
+        if not isinstance(target, dict):
+            continue
+        observed = next(
+            (
+                target.get(key)
+                for key in ("value", "fieldValue", "text", "sealText", "result")
+                if key in target and target.get(key) not in {None, ""}
+            ),
+            None,
+        )
+        for key in ("value", "fieldValue", "text", "sealText", "result"):
+            if key in target:
+                target[key] = None
+        target["sourceCandidateIds"] = []
+        target["attributionStatus"] = "dropped_unsupported"
+        target["advisoryOnly"] = True
+        item["status"] = "dropped_unsupported"
+        item["observedValue"] = observed
+        dropped += 1
+    status_counts = validation.get("statusCounts") if isinstance(validation.get("statusCounts"), dict) else {}
+    status_counts["unsupported"] = max(0, int(status_counts.get("unsupported") or 0) - dropped)
+    status_counts["dropped_unsupported"] = int(status_counts.get("dropped_unsupported") or 0) + dropped
+    validation["statusCounts"] = status_counts
+    validation["droppedUnsupportedAttributionCount"] = dropped
+    return result
+
+
 def validate_batch_output(output: dict[str, Any], compact_prior: dict[str, Any]) -> dict[str, Any]:
-    return validate_shadow_attribution(output, compact_prior)
+    return _drop_unsupported_attributions(validate_shadow_attribution(output, compact_prior))
 
 
 def validated_ocr_fields(

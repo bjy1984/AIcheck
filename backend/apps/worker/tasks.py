@@ -1745,6 +1745,10 @@ def ocr_pipeline_qwen_extract(self, run_id: str) -> dict[str, Any]:
                 int((((item.get("validation") or {}).get("statusCounts") or {}).get("unsupported") or 0))
                 for item in batch_validations
             ),
+            "droppedUnsupportedAttributionCount": sum(
+                int(((item.get("validation") or {}).get("droppedUnsupportedAttributionCount") or 0))
+                for item in batch_validations
+            ),
             "candidateRepairCount": sum(
                 int(((item.get("validation") or {}).get("candidateRepairCount") or 0))
                 for item in batch_validations

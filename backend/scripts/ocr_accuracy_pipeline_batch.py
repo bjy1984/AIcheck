@@ -352,6 +352,9 @@ def summarize_case(case: dict[str, Any], campaign: str, capabilities: dict[str, 
         "applicableEngineFailures": applicable_failures,
         "invalidCandidateIdCount": int(((run.get("groundingValidation") or {}).get("invalidCandidateIdCount") or 0)),
         "unsupportedAttributionCount": int(((run.get("groundingValidation") or {}).get("unsupportedAttributionCount") or 0)),
+        "droppedUnsupportedAttributionCount": int(
+            ((run.get("groundingValidation") or {}).get("droppedUnsupportedAttributionCount") or 0)
+        ),
         "candidateRepairCount": int(((run.get("groundingValidation") or {}).get("candidateRepairCount") or 0)),
         "formalEvidenceReady": bool(run.get("formalEvidenceReady")),
         "resultCounts": {
@@ -389,6 +392,9 @@ def build_report(manifest: dict[str, Any], cases: list[dict[str, Any]], campaign
             "duplicateStageRunCount": sum(item["duplicateStageRunCount"] for item in items),
             "invalidCandidateIdCount": sum(item["invalidCandidateIdCount"] for item in items),
             "unsupportedAttributionCount": sum(item["unsupportedAttributionCount"] for item in items),
+            "droppedUnsupportedAttributionCount": sum(
+                item["droppedUnsupportedAttributionCount"] for item in items
+            ),
             "candidateRepairCount": sum(item["candidateRepairCount"] for item in items),
             "formalEvidenceReadyCount": len([item for item in items if item["formalEvidenceReady"]]),
             "estimatedCostCny": round(sum(item["estimatedCostCny"] for item in items), 6),
