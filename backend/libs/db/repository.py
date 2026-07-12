@@ -2302,7 +2302,7 @@ class InMemoryRepository:
                 self.sync_postgres.execute("CREATE INDEX IF NOT EXISTS idx_kvi_source ON knowledge_vector_index (source_id)")
                 self.sync_postgres.execute("CREATE INDEX IF NOT EXISTS idx_kvi_index_version ON knowledge_vector_index (index_version)")
                 self.sync_postgres.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_kvi_embedding_cosine ON knowledge_vector_index USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)"
+                    "CREATE INDEX IF NOT EXISTS idx_kvi_embedding_cosine ON knowledge_vector_index USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64)"
                 )
                 self.sync_postgres.commit()
                 return True
