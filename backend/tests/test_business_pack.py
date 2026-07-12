@@ -204,6 +204,15 @@ def test_node_standards_exposes_fixed_clause_page_locators() -> None:
     )
     assert any(item.get("title") == "DATABASE_ONLY_PREVIEW_MARKER" for item in database_backed)
 
+    repo.state["project_node_clause_packages"] = [
+        item
+        for item in repo.state["project_node_clause_packages"]
+        if not (item["projectId"] == "P-2026-HDCP-001" and item["nodeId"] == 1)
+    ]
+    fail_closed = client.get("/api/projects/P-2026-HDCP-001/inspection/nodes/1/standards")
+    assert fail_closed.status_code == 409
+    assert "不能回退到动态条款" in fail_closed.json()["message"]
+
 
 def test_business_pack_api_and_compliance_project_generation() -> None:
     packs = assert_ok(client.get("/api/business-packs"))

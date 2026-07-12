@@ -4,6 +4,7 @@ import hashlib
 import json
 from copy import deepcopy
 from typing import Any
+from urllib.parse import quote
 
 
 CLAUSE_STATE_COLLECTIONS = (
@@ -180,6 +181,18 @@ def compile_standard_clause_release(pack: dict[str, Any]) -> dict[str, list[dict
                     "sourceFile": catalog_item.get("sourceFile"),
                 }
             )
+            knowledge_file_id = str(compiled.get("knowledgeFileId") or "")
+            for locator in compiled.get("locators") or []:
+                page_no = locator.get("sourcePage") or locator.get("startPage")
+                locator["previewUrl"] = (
+                    f"/api/knowledge/files/{quote(knowledge_file_id, safe='')}/original"
+                    f"?disposition=inline#page={int(page_no)}"
+                )
+            if compiled.get("sourcePage"):
+                compiled["previewUrl"] = (
+                    f"/api/knowledge/files/{quote(knowledge_file_id, safe='')}/original"
+                    f"?disposition=inline#page={int(compiled['sourcePage'])}"
+                )
             compiled_clauses.append(compiled)
 
         compiled_payload = {
@@ -251,6 +264,12 @@ def bind_project_node_clause_packages(
         if item.get("releaseId") == release_id and item.get("lifecycleStatus") == "published"
     ]
     if not packages:
+        project_id = str(project["id"])
+        state["project_node_clause_packages"] = [
+            item
+            for item in state["project_node_clause_packages"]
+            if item.get("projectId") != project_id
+        ]
         return 0
     project_id = str(project["id"])
     existing_by_node = {

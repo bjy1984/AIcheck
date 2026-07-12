@@ -4213,7 +4213,7 @@ def delete_project(
                 },
                 request,
             )
-        for collection in ["projects", "tree_nodes", "requirements", "project_members"]:
+        for collection in ["projects", "tree_nodes", "requirements", "project_members", "project_node_clause_packages"]:
             repo.state[collection] = [item for item in repo.state.get(collection, []) if item.get("projectId", item.get("id")) != project_id and item.get("id") != project_id]
         audit_id = repo.add_audit("删除项目", "Project", project_id)
         return ok({"deleted": True, "archived": False, "projectId": project_id, "auditLogId": audit_id}, request)
@@ -6364,6 +6364,14 @@ def ai_recheck(
             project_id,
             node_id,
         )
+        if pack.get("standardClausePackages") and not clause_package_snapshot:
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="当前项目节点尚未绑定已发布的数据库条款包，请先同步业务包条款数据。",
+                data={"projectId": project_id, "nodeId": node_id, "businessPackVersion": pack.get("version")},
+                http_status=409,
+            )
         run = {
             "id": run_id,
             "projectId": project_id,
@@ -6899,6 +6907,15 @@ def standards(request: Request, project_id: str, node_id: int):
         query_type="node_standard_basis",
     )
     standards_payload = fixed_standard_references_for_node(project, node_id)
+    project_pack = (project or {}).get("businessPackSnapshot") or business_pack_for_project(project)
+    if project_pack.get("standardClausePackages") and not standards_payload:
+        return fail(
+            errors.CONFLICT,
+            request,
+            message="当前项目节点尚未绑定数据库条款包，不能回退到动态条款作为固定依据。",
+            data={"projectId": project_id, "nodeId": node_id},
+            http_status=409,
+        )
     fixed_keys = {
         (str(item.get("knowledgeFileId") or ""), str(item.get("clauseNo") or ""))
         for item in standards_payload

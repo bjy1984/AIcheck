@@ -12,6 +12,8 @@ from libs.business_pack.clause_store import (
     review_run_clause_snapshot,
 )
 from libs.db.repository import InMemoryRepository
+from libs.db.repository import repo
+import libs.review_orchestrator.execution as execution
 
 
 def test_clause_release_is_idempotent_and_review_snapshot_is_immutable() -> None:
@@ -44,6 +46,8 @@ def test_clause_release_is_idempotent_and_review_snapshot_is_immutable() -> None
     assert len(snapshot["clauses"]) == 4
     assert snapshot["clauses"][0]["referenceRole"] == "primary"
     assert snapshot["clauses"][0]["sourcePage"] == 27
+    assert snapshot["clauses"][0]["previewUrl"].endswith("#page=27")
+    assert snapshot["clauses"][0]["locators"][0]["previewUrl"].endswith("#page=27")
 
     frozen = freeze_review_run_clause_snapshot(
         state,
@@ -91,3 +95,35 @@ def test_clause_collections_persist_to_sqlite(tmp_path) -> None:
     assert "idx_project_node_clause_packages_lookup" in indexes
     assert "idx_review_run_clause_snapshots_lookup" in indexes
 
+
+def test_review_run_creation_freezes_the_ai_run_clause_package(monkeypatch) -> None:
+    repo.reset()
+    monkeypatch.setattr(execution, "flush_state_records", lambda records: None)
+    snapshot = clause_package_snapshot_for_project_node(repo.state, "P-2026-HDCP-001", 1)
+    assert snapshot
+    ai_run = {
+        "id": "AIRUN-CLAUSE-FREEZE-001",
+        "projectId": "P-2026-HDCP-001",
+        "nodeId": 1,
+        "businessPackId": "engineering_inspection_v1",
+        "businessPackVersion": snapshot["businessPackVersion"],
+        "businessPackSnapshotHash": "pack-hash",
+        "clausePackageId": snapshot["packageStorageId"],
+        "clausePackageSnapshotHash": snapshot["snapshotHash"],
+        "clausePackageSnapshot": snapshot,
+        "inputDocumentVersionIds": [],
+    }
+    repo.state["ai_runs"].append(ai_run)
+
+    review_run = execution.create_review_run_from_ai_run(ai_run, mode="inline")
+    frozen = next(
+        item
+        for item in repo.state["review_run_clause_snapshots"]
+        if item["reviewRunId"] == review_run["reviewRunId"]
+    )
+
+    assert review_run["clausePackageSnapshotHash"] == snapshot["snapshotHash"]
+    assert frozen["snapshotPayload"]["sourceRuleId"] == "R01"
+    assert frozen["snapshotPayload"]["clauses"][0]["sourcePage"] == 27
+    assert "review_run_clause_snapshots" in execution.review_run_state_records(review_run["reviewRunId"])
+    assert execution.review_run_view(review_run)["clausePackageSnapshot"]["snapshotHash"] == snapshot["snapshotHash"]

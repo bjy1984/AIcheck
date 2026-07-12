@@ -1821,7 +1821,6 @@ class InMemoryRepository:
             changed = True
         from libs.business_pack import list_business_packs, load_business_pack
         from libs.business_pack.clause_store import (
-            CLAUSE_STATE_COLLECTIONS,
             bind_project_node_clause_packages,
             ensure_clause_state,
             publish_standard_clause_release,

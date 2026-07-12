@@ -1950,6 +1950,8 @@ def review_run_audit_trace(review_run_id: str) -> dict[str, Any]:
         "businessPackId": review_run.get("businessPackId"),
         "businessPackVersion": review_run.get("businessPackVersion"),
         "businessPackSnapshotHash": review_run.get("businessPackSnapshotHash"),
+        "clausePackageId": review_run.get("clausePackageId"),
+        "clausePackageSnapshotHash": review_run.get("clausePackageSnapshotHash"),
         "agentId": review_run.get("agentId"),
         "agentVersion": review_run.get("agentVersion"),
         "promptVersion": review_run.get("promptVersion"),
@@ -2011,6 +2013,10 @@ def review_run_view(review_run: dict[str, Any], *, include_sensitive: bool = Fal
         view.pop("rawPrompt", None)
         view.pop("rawOcrText", None)
     view["graphSummary"] = summarize_graph(review_run["reviewRunId"])
+    view["clausePackageSnapshot"] = review_run_clause_snapshot(
+        repo.state,
+        str(review_run.get("reviewRunId") or review_run.get("id") or ""),
+    )
     return view
 
 

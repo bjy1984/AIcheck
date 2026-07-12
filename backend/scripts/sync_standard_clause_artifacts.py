@@ -26,7 +26,11 @@ from libs.db.repository import repo
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--pack-id", default="engineering_inspection_v1")
-    parser.add_argument("--sqlite", type=Path, default=Path("data/aicheck.sqlite3"))
+    parser.add_argument(
+        "--sqlite",
+        type=Path,
+        default=Path(os.getenv("AICHECK_SQLITE_PATH") or "data/aicheck.local.sqlite3"),
+    )
     parser.add_argument("--database-url", default=os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL") or "")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--json", action="store_true")

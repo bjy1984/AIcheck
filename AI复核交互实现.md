@@ -1441,3 +1441,9 @@ LLM 组织证据与解释结果 → AI结论 → 人工结论
 条款包明确设置 `llmMaySelectClause=false` 和 `llmMayChangeDeterministicResult=false`。因此后续实现 Tool Registry 与 Agent Loop 时，不应重新让 LLM 决定采用哪条标准，也不应让 LLM 覆盖数值、日期、范围、比例或完整性 Tool 的返回结果。
 
 完整矩阵见 `docs/业务节点具体标准条款审核矩阵.md`，机器配置见 `backend/business_packs/engineering_inspection_v1/standard_clause_packages.yaml`，二次检查结果见 `docs/标准条款二次检查报告.md`。
+
+## 19. 标准条款数据库固化状态（2026-07-11）
+
+固定条款已接入现有 SQLite/PostgreSQL `aicheck_state` 持久化模型，形成标准版本、条款引用、locator、节点条款包、项目节点绑定和 ReviewRun 快照七类逻辑集合。项目创建/应用业务包时固化节点绑定；节点预览读取数据库条款包的 `compiledPayload`；创建 ReviewRun 时把实际条款包冻结到 `review_run_clause_snapshots`。
+
+正式工程业务包存在固定条款配置但数据库绑定缺失时，节点预览和 AI 复核失败关闭，不允许用动态检索结果冒充固定依据。具体实现、同步命令和审计方法见 `docs/标准条款数据库固化实现.md`。
