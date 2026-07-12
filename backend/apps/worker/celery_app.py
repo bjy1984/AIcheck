@@ -17,13 +17,14 @@ celery_app = Celery(
 
 celery_app.conf.update(
     task_routes={
-        "apps.worker.tasks.parse_document": {"queue": "cpu.heavy", "priority": broker_priority(7)},
+        "apps.worker.tasks.parse_document": {"queue": "ocr.local-light", "priority": broker_priority(7)},
         "apps.worker.tasks.ocr_pipeline_structure_scan": {"queue": "cpu.heavy", "priority": broker_priority(9)},
         "apps.worker.tasks.ocr_pipeline_seal_scan": {"queue": "cpu.heavy", "priority": broker_priority(9)},
         "apps.worker.tasks.ocr_pipeline_evidence_fusion": {"queue": "business.light", "priority": broker_priority(9)},
         "apps.worker.tasks.recognize_seals": {"queue": "cpu.heavy", "priority": broker_priority(9)},
         "apps.worker.tasks.slice_knowledge": {"queue": "cpu.heavy", "priority": broker_priority(2)},
         "apps.worker.tasks.embed_knowledge": {"queue": "cpu.heavy", "priority": broker_priority(1)},
+        "apps.worker.tasks.ocr_pipeline_official_extract": {"queue": "ocr.remote", "priority": broker_priority(9)},
         "apps.worker.tasks.ocr_pipeline_qwen_extract": {"queue": "llm.remote", "priority": broker_priority(9)},
         "apps.worker.tasks.ocr_pipeline_finalize": {"queue": "business.light", "priority": broker_priority(9)},
         "apps.worker.tasks.document_ai_shadow_extract": {"queue": "document-ai.shadow"},

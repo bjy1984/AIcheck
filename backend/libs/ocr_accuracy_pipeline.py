@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from apps.ocr_service.profiles import profile_for
+from libs.ocr_runtime import qwen_render_max_long_side
 from libs.document_ai_shadow import (
     build_evidence_prior,
     estimate_json_tokens,
@@ -411,6 +412,7 @@ def compact_prior_window(
 
 def render_pages(source_path: Path, selected_pages: list[int], output_directory: Path) -> dict[int, Path]:
     output_directory.mkdir(parents=True, exist_ok=True)
+    max_long_side = qwen_render_max_long_side()
     with source_path.open("rb") as handle:
         signature = handle.read(4)
     if signature == b"%PDF":
@@ -424,7 +426,7 @@ def render_pages(source_path: Path, selected_pages: list[int], output_directory:
                     continue
                 page = document.load_page(page_no - 1)
                 long_side = max(float(page.rect.width), float(page.rect.height), 1.0)
-                scale = max(1.0, min(4.0, 2200.0 / long_side))
+                scale = max(1.0, min(4.0, float(max_long_side) / long_side))
                 pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
                 target = output_directory / f"page-{page_no:04d}.png"
                 pixmap.save(target)
@@ -439,7 +441,7 @@ def render_pages(source_path: Path, selected_pages: list[int], output_directory:
     target = output_directory / "page-0001.png"
     with Image.open(source_path) as image:
         converted = image.convert("RGB")
-        converted.thumbnail((2200, 2200))
+        converted.thumbnail((max_long_side, max_long_side))
         converted.save(target, "PNG", optimize=True)
     return {1: target}
 

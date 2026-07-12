@@ -250,16 +250,21 @@ def structure_variants(
         page_variants = variants_for_page(variants, page_no)
         quality = quality_by_page.get(page_no) or {}
         preferred_names = (
-            ["original", "deskew", "gray_clahe"]
+            ["deskew", "gray_clahe", "original"]
             if quality.get("isLowQuality") or abs(float(quality.get("skewAngle") or 0.0)) > 0.8
             else ["original", "gray_clahe"]
         )
-        page_routed = []
-        for name in preferred_names:
-            match = next((variant for variant in page_variants if str(variant.get("variantId") or "").endswith(f"_{name}")), None)
-            if match and match not in page_routed:
-                page_routed.append(match)
-        routed.extend(page_routed[:2])
+        preferred = next(
+            (
+                variant
+                for name in preferred_names
+                for variant in page_variants
+                if str(variant.get("variantId") or "").endswith(f"_{name}")
+            ),
+            None,
+        )
+        if preferred:
+            routed.append(preferred)
     return routed
 
 
@@ -322,10 +327,9 @@ def seal_text_variants(
     for page_no in selected_pages:
         original = original_for_page(variants, page_no)
         seal_variant = variant_for_page_purpose(variants, page_no, "seal")
-        if original:
-            routed.append(original)
-        if include_mask and seal_variant and seal_variant not in routed:
-            routed.append(seal_variant)
+        preferred = seal_variant if include_mask and seal_variant else original
+        if preferred:
+            routed.append(preferred)
     return routed
 
 

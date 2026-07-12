@@ -1407,8 +1407,9 @@ class OcrService:
 
     def run_job(self, job_id: str) -> dict[str, Any] | None:
         job = self.jobs.mark_running(job_id)
-        if not job:
-            return None
+        if not job or job.get("status") == "canceled":
+            return job
+        self.jobs.heartbeat(job_id, stage="parse", progress=5)
         result = self.parse_document(
             str(job.get("storageKey") or ""),
             file_name=job.get("fileName"),

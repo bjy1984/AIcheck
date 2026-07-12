@@ -93,6 +93,13 @@ from libs.ocr_accuracy_pipeline import (
     validate_batch_output,
     parse_qwen_json,
 )
+from libs.aliyun_ocr import AliyunOcrError, AliyunOcrRetryableError
+from libs.ocr_runtime import (
+    official_ocr_enabled,
+    official_ocr_primary_enabled,
+    ocr_runtime_config,
+)
+from libs.official_ocr_pipeline import official_ocr_extract, profile_result_complete
 from libs.pipeline_lock import pipeline_task_lock
 from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_config, qwen_runtime_public_config
 from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block, unsupported_claims
@@ -806,7 +813,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
         }
     repo.mark_ocr_pipeline_stage(pipeline_run, "prepare", "running")
     repo.mark_ocr_pipeline_stage(pipeline_run, "prepare", "success")
-    repo.mark_ocr_pipeline_stage(pipeline_run, "text_scan", "running")
+    repo.mark_ocr_pipeline_stage(pipeline_run, "text_scan", "queued")
     ocr_job_record = repo.create_ocr_job_record(
         document_id=document_id,
         version_id=version_id,
@@ -815,8 +822,78 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
         profile_id=resolved_profile_id,
         document_type=document_type,
     )
-    repo.mark_ocr_job_running(ocr_job_record, pipeline_run_id=str(pipeline_run.get("id") or ""))
     pipeline_run["ocrJobRecordId"] = ocr_job_record.get("id")
+    runtime = ocr_runtime_config()
+    current_pipeline_mode = str(pipeline_run.get("mode") or pipeline_mode())
+    official_shadow = official_ocr_enabled(runtime) and current_pipeline_mode == "shadow"
+    if accuracy_pipeline_requested and official_ocr_primary_enabled(current_pipeline_mode, runtime):
+        pipeline_run["officialOcrJobRecordId"] = ocr_job_record.get("id")
+        pipeline_run.update(
+            {
+                "providerMode": runtime["mode"],
+                "provider": runtime["official"]["provider"],
+                "model": runtime["official"]["primaryModel"],
+                "cloudGrounded": False,
+                "costCny": 0.0,
+            }
+        )
+        required_tables = bool(resolved_profile.get("requiredTables"))
+        seal_required = bool((resolved_profile.get("sealRules") or {}).get("required"))
+        repo.mark_ocr_pipeline_stage(
+            pipeline_run,
+            "structure_scan",
+            "queued" if required_tables else "skipped",
+            engine_status={} if required_tables else {"skipReasons": ["profile_has_no_required_tables"]},
+        )
+        repo.mark_ocr_pipeline_stage(
+            pipeline_run,
+            "seal_signature_scan",
+            "queued" if seal_required else "skipped",
+            engine_status={} if seal_required else {"skipReasons": ["profile_does_not_require_seal"]},
+        )
+        repo.mark_ocr_pipeline_stage(pipeline_run, "evidence_fusion", "queued")
+        dispatch = _dispatch_pipeline_stage_once(
+            pipeline_run,
+            "officialOcrDispatch",
+            task_dispatcher.dispatch_ocr_pipeline_official,
+        )
+        if not dispatch.get("taskId"):
+            reason = str(dispatch.get("statusReason") or "official_ocr_dispatch_failed")
+            repo.mark_ocr_pipeline_stage(pipeline_run, "text_scan", "failed", failure_reason=reason)
+            repo.finish_ocr_pipeline_run(
+                pipeline_run,
+                status="failed",
+                blocking_reasons=[{"code": "OFFICIAL_OCR_DISPATCH_FAILED"}],
+                recommended_action="Check the ocr.remote worker and retry.",
+                formal_evidence_ready=False,
+            )
+            repo.mark_task_failed(task, "Official OCR could not be queued.")
+            persist_ocr_pipeline_progress(pipeline_run, task=task, ocr_job=ocr_job_record)
+            return {
+                "documentId": document_id,
+                "versionId": version_id,
+                "status": "failed",
+                "pipelineRunId": pipeline_run.get("id"),
+                "ocrJobRecordId": ocr_job_record.get("id"),
+                "dispatch": dispatch,
+            }
+        if task:
+            task["progress"] = max(int(task.get("progress") or 0), 15)
+            task["updatedAt"] = server_time()
+            repo.append_task_log(task, "info", "Official OCR queued.")
+        persist_ocr_pipeline_progress(pipeline_run, task=task, ocr_job=ocr_job_record)
+        return {
+            "documentId": document_id,
+            "versionId": version_id,
+            "status": "queued",
+            "pipelineRunId": pipeline_run.get("id"),
+            "ocrJobRecordId": ocr_job_record.get("id"),
+            "dispatch": dispatch,
+            "providerMode": runtime["mode"],
+        }
+
+    repo.mark_ocr_pipeline_stage(pipeline_run, "text_scan", "running")
+    repo.mark_ocr_job_running(ocr_job_record, pipeline_run_id=str(pipeline_run.get("id") or ""))
     persist_ocr_pipeline_progress(pipeline_run, task=task, ocr_job=ocr_job_record)
     previous_record_ids = state_record_ids(ocr_result_state_records(document_id, version_id))
     try:
@@ -926,7 +1003,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
     )
     applied: dict[str, Any] = {"status": "queued"}
     targeting = None
-    if pipeline_mode() != "active" or not accuracy_pipeline_enabled:
+    if current_pipeline_mode != "active" or not accuracy_pipeline_enabled:
         applied, targeting = pipeline_apply_result(document_id, version_id, result, previous_record_ids)
     next_dispatch = None
     document_ai_shadow_dispatch = None
@@ -937,7 +1014,32 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
         flush_state_records(ocr_result_state_records(document_id, version_id))
         required_tables = bool(routed_profile.get("requiredTables"))
         seal_required = bool((routed_profile.get("sealRules") or {}).get("required"))
-        if required_tables:
+        if official_shadow:
+            official_job = repo.create_ocr_job_record(
+                document_id=document_id,
+                version_id=version_id,
+                storage_key=storage_key,
+                file_name=file_name,
+                profile_id=routed_profile_id,
+                document_type=routed_profile.get("documentType") or document_type,
+                record_id=f"{ocr_job_record['id']}-OFFICIAL",
+            )
+            pipeline_run["officialOcrJobRecordId"] = official_job.get("id")
+            pipeline_run.update(
+                {
+                    "providerMode": runtime["mode"],
+                    "provider": runtime["official"]["provider"],
+                    "model": runtime["official"]["primaryModel"],
+                    "cloudGrounded": False,
+                    "costCny": 0.0,
+                }
+            )
+            pipeline_stage_dispatch = _dispatch_pipeline_stage_once(
+                pipeline_run,
+                "officialOcrDispatch",
+                task_dispatcher.dispatch_ocr_pipeline_official,
+            )
+        elif required_tables:
             pipeline_stage_dispatch = _dispatch_pipeline_stage_once(
                 pipeline_run,
                 "structureDispatch",
@@ -958,13 +1060,24 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
         if not pipeline_stage_dispatch.get("taskId"):
             repo.mark_ocr_pipeline_stage(
                 pipeline_run,
-                "structure_scan" if required_tables else "seal_signature_scan" if seal_required else "evidence_fusion",
+                (
+                    "text_scan"
+                    if official_shadow
+                    else "structure_scan"
+                    if required_tables
+                    else "seal_signature_scan"
+                    if seal_required
+                    else "evidence_fusion"
+                ),
                 "failed",
-                failure_reason=str(pipeline_stage_dispatch.get("statusReason") or "pipeline_stage_dispatch_failed"),
+                failure_reason=str(
+                    pipeline_stage_dispatch.get("statusReason")
+                    or "pipeline_stage_dispatch_failed"
+                ),
             )
             repo.finish_ocr_pipeline_run(
                 pipeline_run,
-                status="failed" if pipeline_mode() == "active" else "partial",
+                status="failed" if current_pipeline_mode == "active" else "partial",
                 blocking_reasons=[{"code": "PIPELINE_STAGE_DISPATCH_FAILED"}],
                 recommended_action="检查 cpu.heavy/business.light worker 后重试。",
             )
@@ -1437,6 +1550,366 @@ def ocr_pipeline_evidence_fusion(self, run_id: str) -> dict[str, Any]:
         return {"pipelineRunId": run_id, "status": run.get("status"), "failureReason": exc.__class__.__name__}
 
 
+def _load_official_page_checkpoints(run: dict[str, Any]) -> dict[int, list[dict[str, Any]]]:
+    output: dict[int, list[dict[str, Any]]] = {}
+    for raw_page_no, checkpoint in (run.get("officialPageCheckpoints") or {}).items():
+        if not isinstance(checkpoint, dict):
+            continue
+        parsed = parse_storage_url(str(checkpoint.get("artifactUrl") or ""))
+        if not parsed:
+            continue
+        downloaded = None
+        try:
+            downloaded = object_storage.download_to_temp(parsed[0], parsed[1], suffix=".json")
+            if not downloaded:
+                continue
+            payload = json.loads(downloaded.read_text(encoding="utf-8"))
+            calls = payload.get("calls") if isinstance(payload, dict) else None
+            if isinstance(calls, list):
+                output[int(raw_page_no)] = [item for item in calls if isinstance(item, dict)]
+        except (OSError, ValueError, TypeError):
+            continue
+        finally:
+            if downloaded:
+                shutil.rmtree(downloaded.parent, ignore_errors=True)
+    return output
+
+
+def _persist_official_ocr_attempts(run: dict[str, Any], result: dict[str, Any]) -> None:
+    for raw in result.get("modelCallAttempts") or []:
+        if not isinstance(raw, dict):
+            continue
+        now = server_time()
+        attempt = {
+            "id": f"MCALL-{uuid4().hex[:12].upper()}",
+            "pipelineRunId": run.get("id"),
+            "documentId": run.get("documentId"),
+            "documentVersionId": run.get("documentVersionId"),
+            "stage": "official_ocr",
+            "callKind": raw.get("task"),
+            "provider": raw.get("provider"),
+            "model": raw.get("model"),
+            "providerRequestId": raw.get("requestId"),
+            "status": raw.get("status") or "success",
+            "attempt": 1,
+            "pageNo": raw.get("pageNo"),
+            "elapsedMs": int(raw.get("durationMs") or 0),
+            "usage": deepcopy(raw.get("usage") or {}),
+            "estimatedCostCny": float(raw.get("costCny") or 0.0),
+            "input": deepcopy(raw.get("input") or {}),
+            "failureReason": raw.get("failureReason"),
+            "createdAt": now,
+            "startedAt": now,
+            "finishedAt": now,
+            "updatedAt": now,
+            "priceVersion": "dashscope-qwen-ocr-2026-07",
+        }
+        repo.state.setdefault("model_call_attempts", []).insert(0, attempt)
+        run.setdefault("modelCallAttemptIds", []).append(attempt["id"])
+        _persist_model_call_attempt(attempt)
+
+
+def _dispatch_after_official_ocr(
+    run: dict[str, Any],
+    result: dict[str, Any],
+    profile: dict[str, Any],
+) -> dict[str, Any]:
+    run["groundedFields"] = deepcopy(result.get("fields") or [])
+    run["groundingValidation"] = deepcopy(result.get("groundingValidation") or {})
+    complete = profile_result_complete(result, profile)
+    if complete:
+        repo.mark_ocr_pipeline_stage(
+            run,
+            "qwen_extract",
+            "skipped",
+            engine_status={"skipReasons": ["official_ocr_complete_and_grounded"]},
+        )
+        repo.mark_ocr_pipeline_stage(run, "grounding_validate", "queued")
+        dispatch = _dispatch_pipeline_stage_once(
+            run,
+            "finalizeDispatch",
+            task_dispatcher.dispatch_ocr_pipeline_finalize,
+        )
+    else:
+        run["qwenRescueOnly"] = True
+        repo.mark_ocr_pipeline_stage(run, "qwen_extract", "queued")
+        dispatch = _dispatch_pipeline_stage_once(
+            run,
+            "qwenDispatch",
+            task_dispatcher.dispatch_ocr_pipeline_qwen,
+        )
+    if not dispatch.get("taskId"):
+        raise RuntimeError(str(dispatch.get("statusReason") or "official_ocr_next_dispatch_failed"))
+    return dispatch
+
+
+@celery_app.task(bind=True, max_retries=3)
+@pipeline_task_lock("ocr-official", lambda _self, run_id: str(run_id))
+def ocr_pipeline_official_extract(self, run_id: str) -> dict[str, Any]:
+    refresh_worker_state(
+        {
+            "projects",
+            "documents",
+            "versions",
+            "knowledge_files",
+            "knowledge_tasks",
+            "ocr_jobs",
+            "ocr_parse_results",
+            "ocr_pipeline_runs",
+            "ocr_stage_runs",
+            "model_call_attempts",
+            "extracted_fields",
+            "evidence_links",
+            "node_evidence_links",
+        }
+    )
+    run = repo.find_one("ocr_pipeline_runs", run_id)
+    if not run:
+        return {"pipelineRunId": run_id, "status": "missing"}
+    profile = default_profile(run.get("profileId"), run.get("documentType"))
+    existing = repo.find_one(
+        "ocr_parse_results",
+        str(run.get("officialParseResultId") or ""),
+        id_field="parseResultId",
+    )
+    text_stage = _stage_record(run, "text_scan")
+    if existing and (text_stage or {}).get("status") in {"success", "partial"}:
+        dispatch = _dispatch_after_official_ocr(run, existing, profile)
+        persist_ocr_pipeline_progress(run)
+        return {
+            "pipelineRunId": run_id,
+            "status": (text_stage or {}).get("status"),
+            "resumedFromSavedResult": True,
+            "nextDispatch": dispatch,
+        }
+
+    runtime = ocr_runtime_config(validate=True)
+    repo.mark_ocr_pipeline_stage(run, "text_scan", "running")
+    run.update(
+        {
+            "taskId": str(getattr(self.request, "id", "") or run.get("taskId") or "") or None,
+            "providerMode": runtime["mode"],
+            "provider": runtime["official"]["provider"],
+            "model": runtime["official"]["primaryModel"],
+            "updatedAt": server_time(),
+        }
+    )
+    job = repo.find_one(
+        "ocr_jobs",
+        str(run.get("officialOcrJobRecordId") or run.get("ocrJobRecordId") or ""),
+    )
+    repo.mark_ocr_job_running(job, pipeline_run_id=run_id)
+    task = (
+        repo.ocr_task_for(
+            str(run.get("documentId") or ""),
+            str(run.get("documentVersionId") or ""),
+            run.get("fileName"),
+        )
+        if run.get("mode") == "active"
+        else None
+    )
+    if task:
+        task["progress"] = max(int(task.get("progress") or 0), 25)
+        task["updatedAt"] = server_time()
+        repo.append_task_log(task, "info", "Official OCR started.")
+    persist_ocr_pipeline_progress(run, task=task, ocr_job=job)
+    source_temp: Path | None = None
+    work_directory = temporary_pipeline_directory(f"{run_id}-official")
+    try:
+        source_path, source_temp = document_ai_source_path(run)
+        if not source_path or not source_path.is_file():
+            raise RuntimeError("official_ocr_source_missing")
+        cached_pages = _load_official_page_checkpoints(run)
+
+        def page_completed(
+            page_no: int,
+            completed: int,
+            total: int,
+            calls: list[dict[str, Any]],
+        ) -> None:
+            artifact_url, artifact_hash = store_ocr_pipeline_artifact(
+                run,
+                f"official_page_{page_no}",
+                {
+                    "schemaVersion": "OfficialOcrPageCheckpoint@1",
+                    "pipelineRunId": run_id,
+                    "pageNo": page_no,
+                    "calls": calls,
+                },
+            )
+            run.setdefault("officialPageCheckpoints", {})[str(page_no)] = {
+                "artifactUrl": artifact_url,
+                "artifactHash": artifact_hash,
+            }
+            run["pageProgress"] = {
+                "completed": completed,
+                "total": total,
+                "currentPage": page_no,
+                "status": "running",
+            }
+            if task:
+                task["progress"] = max(
+                    int(task.get("progress") or 0),
+                    min(60, 25 + int(35 * completed / max(total, 1))),
+                )
+                task["updatedAt"] = server_time()
+            persist_ocr_pipeline_progress(run, task=task, ocr_job=job)
+
+        result = official_ocr_extract(
+            source_path,
+            profile=profile,
+            runtime=runtime,
+            work_directory=work_directory,
+            page_call_cache=cached_pages,
+            page_completed=page_completed,
+        )
+        run["pageProgress"] = {
+            "completed": len(result.get("pages") or []),
+            "total": len(result.get("pages") or []),
+            "currentPage": None,
+            "status": "completed",
+        }
+        if str(result.get("status") or "").lower() != "success":
+            raise RuntimeError("official_ocr_returned_failed_result")
+        result["storageKey"] = run.get("storageKey")
+        result["fileName"] = run.get("fileName")
+        _persist_official_ocr_attempts(run, result)
+        record = repo.finish_ocr_job_record(job, result) or result
+        parse_result_id = record.get("parseResultId") or record.get("id")
+        run["officialParseResultId"] = parse_result_id
+        if not run.get("baselineParseResultId"):
+            run["baselineParseResultId"] = parse_result_id
+        run["fusedParseResultId"] = parse_result_id
+        run["parseResultId"] = parse_result_id
+        metadata = result.get("metadata") if isinstance(result.get("metadata"), dict) else {}
+        run.update(
+            {
+                "providerMode": metadata.get("providerMode") or runtime["mode"],
+                "provider": metadata.get("provider") or runtime["official"]["provider"],
+                "model": metadata.get("model") or runtime["official"]["primaryModel"],
+                "cloudGrounded": bool(metadata.get("cloudGrounded")),
+                "providerRequestIds": deepcopy(metadata.get("providerRequestIds") or []),
+                "costCny": float(metadata.get("costCny") or result.get("costCny") or 0.0),
+                "modelCallCount": int(metadata.get("modelCallCount") or 0),
+            }
+        )
+        artifact_url, artifact_hash = store_ocr_pipeline_artifact(run, "official_ocr", record)
+        text_status = "success" if result.get("fragments") or result.get("fields") else "partial"
+        repo.mark_ocr_pipeline_stage(
+            run,
+            "text_scan",
+            text_status,
+            engine_status=pipeline_engine_status(result),
+            blocking_reasons=[] if text_status == "success" else [{"code": "OCR_TEXT_EMPTY"}],
+            artifact_url=artifact_url,
+            artifact_hash=artifact_hash,
+        )
+        required_tables = bool(profile.get("requiredTables"))
+        table_executed = any(
+            "table_parsing" in (item.get("tasks") or [])
+            for item in result.get("engineRuns") or []
+            if isinstance(item, dict)
+        )
+        if required_tables:
+            repo.mark_ocr_pipeline_stage(
+                run,
+                "structure_scan",
+                "success" if table_executed and result.get("tables") else "partial",
+                engine_status=pipeline_engine_status(result),
+                blocking_reasons=(
+                    []
+                    if table_executed and result.get("tables")
+                    else [{"code": "TABLE_EVIDENCE_MISSING"}]
+                ),
+            )
+        seal_required = bool((profile.get("sealRules") or {}).get("required"))
+        if seal_required:
+            repo.mark_ocr_pipeline_stage(
+                run,
+                "seal_signature_scan",
+                "success" if result.get("seals") else "partial",
+                engine_status=pipeline_engine_status(result),
+                blocking_reasons=[] if result.get("seals") else [{"code": "SEAL_EVIDENCE_MISSING"}],
+            )
+        repo.mark_ocr_pipeline_stage(
+            run,
+            "evidence_fusion",
+            "success",
+            engine_status=pipeline_engine_status(result),
+            artifact_url=artifact_url,
+            artifact_hash=artifact_hash,
+        )
+        dispatch = _dispatch_after_official_ocr(run, result, profile)
+        if task:
+            task["progress"] = max(int(task.get("progress") or 0), 65)
+            task["updatedAt"] = server_time()
+            repo.append_task_log(task, "info", "Official OCR completed; grounding validation queued.")
+        persist_ocr_pipeline_progress(run, task=task, ocr_job=job)
+        return {
+            "pipelineRunId": run_id,
+            "status": text_status,
+            "provider": run.get("provider"),
+            "model": run.get("model"),
+            "costCny": run.get("costCny"),
+            "nextDispatch": dispatch,
+        }
+    except Exception as exc:
+        retry_index = int(getattr(self.request, "retries", 0) or 0)
+        retryable = isinstance(exc, AliyunOcrRetryableError) or not isinstance(exc, AliyunOcrError)
+        if retryable and retry_index < 3:
+            default_countdown = (10, 30, 90)[retry_index]
+            countdown = max(1, int(getattr(exc, "retry_after", 0) or default_countdown))
+            repo.mark_ocr_pipeline_stage(run, "text_scan", "retrying", failure_reason=exc.__class__.__name__)
+            run["recommendedAction"] = f"Official OCR will retry in {countdown} seconds."
+            _persist_retry_state(run)
+            raise self.retry(exc=exc, countdown=countdown)
+        blockers = [{"code": "OFFICIAL_OCR_FAILED"}]
+        repo.mark_ocr_pipeline_stage(
+            run,
+            "text_scan",
+            "failed",
+            blocking_reasons=blockers,
+            failure_reason=exc.__class__.__name__,
+        )
+        repo.finish_ocr_pipeline_run(
+            run,
+            status="failed",
+            blocking_reasons=blockers,
+            recommended_action="Check official OCR quota, network, or circuit status and retry.",
+            formal_evidence_ready=False,
+        )
+        if job and not run.get("baselineParseResultId"):
+            failure_result = {
+                "storageKey": run.get("storageKey"),
+                "fileName": run.get("fileName"),
+                "status": "failed",
+                "fragments": [],
+                "fields": [],
+                "tables": [],
+                "seals": [],
+                "quality": {
+                    "status": "failed",
+                    "reasons": ["OFFICIAL_OCR_FAILED"],
+                    "blockingReasons": blockers,
+                },
+                "diagnostics": [{"code": exc.__class__.__name__.upper()}],
+            }
+            repo.finish_ocr_job_record(job, failure_result)
+        if task:
+            repo.mark_task_failed(task, "Official OCR failed.")
+        persist_ocr_pipeline_progress(run, task=task, ocr_job=job)
+        return {
+            "pipelineRunId": run_id,
+            "status": "failed",
+            "failureReason": exc.__class__.__name__,
+            "blockingReasons": blockers,
+        }
+    finally:
+        shutil.rmtree(work_directory, ignore_errors=True)
+        if source_temp:
+            shutil.rmtree(source_temp, ignore_errors=True)
+
+
 def _qwen_cost_estimate_cny(usage: dict[str, Any]) -> float:
     input_rate = float(os.getenv("AICHECK_QWEN_INPUT_CNY_PER_MILLION", "2"))
     output_rate = float(os.getenv("AICHECK_QWEN_OUTPUT_CNY_PER_MILLION", "8"))
@@ -1618,7 +2091,18 @@ def ocr_pipeline_qwen_extract(self, run_id: str) -> dict[str, Any]:
         finish_reasons: list[str] = []
         qwen_model = None
         qwen_provider = None
-        for batch_index, selected_pages in enumerate(page_batches(parse_result), start=1):
+        selected_batches = page_batches(parse_result)
+        if run.get("qwenRescueOnly"):
+            evidence_pages = sorted(
+                {
+                    int(item.get("pageNo") or 1)
+                    for collection in ("fields", "tables", "seals")
+                    for item in parse_result.get(collection) or []
+                    if isinstance(item, dict)
+                }
+            )
+            selected_batches = [(evidence_pages or page_numbers(parse_result))[:4]]
+        for batch_index, selected_pages in enumerate(selected_batches, start=1):
             batch_directory = work_directory / f"batch-{batch_index:03d}"
             rendered = render_pages(source_path, selected_pages, batch_directory / "pages")
             if not rendered:
@@ -1634,6 +2118,7 @@ def ocr_pipeline_qwen_extract(self, run_id: str) -> dict[str, Any]:
                     parse_result,
                     compact_prior,
                     batch_directory / f"rois-{window_index:02d}",
+                    limit=6 if run.get("qwenRescueOnly") else 12,
                 )
                 response, parsed_output = qwen_structured_pipeline_call(
                     run,
@@ -1684,7 +2169,7 @@ def ocr_pipeline_qwen_extract(self, run_id: str) -> dict[str, Any]:
         }
         unresolved_fields = sorted(required_fields - extracted_fields)
         conflicts = structured_output.get("conflicts") if isinstance(structured_output.get("conflicts"), list) else []
-        if unresolved_fields or conflicts:
+        if (unresolved_fields or conflicts) and not run.get("qwenRescueOnly"):
             issue_fields = set(unresolved_fields) | {
                 str(item.get("fieldCode")) for item in conflicts if isinstance(item, dict) and item.get("fieldCode")
             }

@@ -95,7 +95,7 @@ IDEMPOTENT_DELEGATE_CALLS = {
 }
 REQUIRED_WORKER_TASKS = {
     "parse_document": {
-        "queue": "cpu.heavy",
+        "queue": "ocr.local-light",
         "dispatcher": "dispatch_parse_document",
     },
     "recognize_seals": {
@@ -109,6 +109,10 @@ REQUIRED_WORKER_TASKS = {
     "embed_knowledge": {
         "queue": "cpu.heavy",
         "dispatcher": "dispatch_embed",
+    },
+    "ocr_pipeline_official_extract": {
+        "queue": "ocr.remote",
+        "dispatcher": "dispatch_ocr_pipeline_official",
     },
     "ocr_pipeline_qwen_extract": {
         "queue": "llm.remote",
@@ -2669,6 +2673,7 @@ def worker_task_contract_check(
             "ocr_pipeline_structure_scan",
             "ocr_pipeline_seal_scan",
             "ocr_pipeline_evidence_fusion",
+            "ocr_pipeline_official_extract",
             "ocr_pipeline_qwen_extract",
             "ocr_pipeline_finalize",
         }

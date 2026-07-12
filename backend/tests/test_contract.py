@@ -1745,7 +1745,7 @@ def test_ocr_routing_runs_structure_original_and_best_enhanced_variant() -> None
         options={},
     )
 
-    assert [item["variantId"] for item in routed] == ["page_1_original", "page_1_deskew"]
+    assert [item["variantId"] for item in routed] == ["page_1_deskew"]
 
 
 def test_ocr_routing_keeps_opencv_grid_on_table_variant_only() -> None:
@@ -1789,7 +1789,6 @@ def test_ocr_routing_runs_formal_seal_ocr_on_original_and_mask_candidate() -> No
     )
 
     assert [item["variantId"] for item in routed] == [
-        "page_1_original",
         "page_1_seal_color_mask",
         "page_2_original",
     ]

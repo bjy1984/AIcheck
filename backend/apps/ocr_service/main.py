@@ -200,6 +200,14 @@ async def get_document_parse_job(request: Request, job_id: str):
     return ok(job, request)
 
 
+@app.post("/internal/document-parse/jobs/{job_id}/cancel")
+async def cancel_document_parse_job(request: Request, job_id: str):
+    job = ocr_service.jobs.cancel(job_id)
+    if not job:
+        return fail(errors.NOT_FOUND, request, message="OCR Job 不存在。")
+    return ok(job, request)
+
+
 @app.post("/internal/document-parse/jobs/{job_id}/retry")
 async def retry_document_parse_job(request: Request, job_id: str, background_tasks: BackgroundTasks):
     job = ocr_service.retry_job(job_id)

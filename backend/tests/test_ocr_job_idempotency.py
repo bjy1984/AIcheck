@@ -87,6 +87,24 @@ def test_job_store_marks_non_terminal_jobs_failed_after_service_restart(monkeypa
     assert replacement.get("reused") is not True
 
 
+def test_job_store_cancel_is_terminal_and_discards_late_result(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("AICHECK_OCR_JOB_STORE_PATH", str(tmp_path / "jobs.json"))
+    store = DocumentParseJobStore()
+    job = store.create({"requestKey": "ocrjob:cancel", "storageKey": "minio://documents/source.pdf"})
+    store.mark_running(job["jobId"])
+    heartbeat = store.heartbeat(job["jobId"], stage="render", progress=25)
+    canceled = store.cancel(job["jobId"])
+    late = store.mark_finished(job["jobId"], {"status": "success", "fragments": [{"text": "late"}]})
+
+    assert heartbeat["stage"] == "render"
+    assert heartbeat["progress"] == 25
+    assert canceled["status"] == "canceled"
+    assert late["status"] == "canceled"
+    assert store._results == {}
+    replacement = store.create({"requestKey": "ocrjob:cancel", "storageKey": "minio://documents/source.pdf"})
+    assert replacement["jobId"] != job["jobId"]
+
+
 def test_ocr_client_adds_stable_request_key() -> None:
     captured = []
 

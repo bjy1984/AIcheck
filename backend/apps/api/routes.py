@@ -8631,6 +8631,15 @@ def operations_tasks(
                 "engineStatus": item.get("engineStatus") or {},
                 "blockingReasons": item.get("blockingReasons") or [],
                 "recommendedAction": item.get("recommendedAction"),
+                "providerMode": item.get("providerMode"),
+                "provider": item.get("provider"),
+                "model": item.get("model"),
+                "providerRequestId": item.get("providerRequestId"),
+                "providerRequestIds": item.get("providerRequestIds") or [],
+                "providerCallCount": int(item.get("modelCallCount") or item.get("providerCallCount") or 0),
+                "costCny": float(item.get("costCny") or 0.0),
+                "pageProgress": item.get("pageProgress") or {},
+                "fallbackReason": item.get("fallbackReason"),
             }
         )
 
