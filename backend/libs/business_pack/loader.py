@@ -175,6 +175,15 @@ def business_pack_summary(pack: dict[str, Any]) -> dict[str, Any]:
         "atomicCheckCount": len(pack.get("atomicChecks") or []),
         "agentSopCount": len(pack.get("agentSops") or []),
         "fixtureProjectCount": len((pack.get("fixtures") or {}).get("projects") or []),
+        "roles": [
+            {
+                "code": role.get("code"),
+                "label": role.get("label"),
+                "platformRole": role.get("platformRole"),
+            }
+            for role in pack.get("roles") or []
+            if role.get("code") != "admin"
+        ],
     }
 
 

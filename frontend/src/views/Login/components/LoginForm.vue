@@ -2,7 +2,7 @@
 import { reactive, ref, watch, onMounted, unref } from 'vue'
 import { Form, FormSchema } from '@/components/Form'
 import { useI18n } from '@/hooks/web/useI18n'
-import { ElCheckbox, ElLink, ElAlert } from 'element-plus'
+import { ElCheckbox, ElLink, ElAlert, ElMessageBox } from 'element-plus'
 import { useForm } from '@/hooks/web/useForm'
 import { loginApi, getTestRoleApi, getAdminRoleApi } from '@/api/login'
 import { useAppStore } from '@/store/modules/app'
@@ -15,10 +15,10 @@ import { Icon } from '@/components/Icon'
 import { useUserStore } from '@/store/modules/user'
 import { BaseButton } from '@/components/Button'
 import { resolveRoleEntryPath } from '@/utils/roleAccess'
+import { getRuntimeUiContextApi } from '@/api/aicheck'
+import type { RuntimeUiContext } from '@/types/aicheck'
 
 const { required } = useValidator()
-
-const emit = defineEmits(['to-register'])
 
 const appStore = useAppStore()
 
@@ -125,8 +125,8 @@ const schema = reactive<FormSchema[]>([
             <>
               <div class="flex justify-between items-center w-[100%]">
                 <ElCheckbox v-model={remember.value} label={t('login.remember')} size="small" />
-                <ElLink type="primary" underline={false}>
-                  {t('login.forgetPassword')}
+                <ElLink type="primary" underline={false} onClick={contactAdministrator}>
+                  联系管理员重置
                 </ElLink>
               </div>
             </>
@@ -155,11 +155,6 @@ const schema = reactive<FormSchema[]>([
                   {t('login.login')}
                 </BaseButton>
               </div>
-              <div class="w-[100%] mt-15px">
-                <BaseButton class="w-[100%] auth-secondary-button" onClick={toRegister}>
-                  {t('login.register')}
-                </BaseButton>
-              </div>
             </>
           )
         }
@@ -171,6 +166,28 @@ const schema = reactive<FormSchema[]>([
 const remember = ref(userStore.getRememberMe)
 
 const errorMessage = ref('')
+const runtimeUiContext = ref<RuntimeUiContext | null>(null)
+
+const loadRuntimeUiContext = async () => {
+  try {
+    const response = await getRuntimeUiContextApi()
+    runtimeUiContext.value = response?.data || null
+  } catch {
+    runtimeUiContext.value = null
+  }
+}
+
+const contactAdministrator = () => {
+  const support = runtimeUiContext.value?.support
+  const details = [support?.email, support?.phone, support?.url].filter(Boolean)
+  const message = details.length
+    ? `${support?.label || '联系系统管理员重置密码'}\n${details.join('\n')}`
+    : '请联系本单位系统管理员重置密码。为保护账号安全，系统不提供公开自助注册或密码找回。'
+  ElMessageBox.alert(message, '账号支持', {
+    confirmButtonText: '知道了',
+    distinguishCancelAndClose: true
+  })
+}
 
 const initLoginInfo = () => {
   const savedUsername = userStore.getLoginInfo
@@ -180,6 +197,7 @@ const initLoginInfo = () => {
 }
 onMounted(() => {
   initLoginInfo()
+  loadRuntimeUiContext()
 })
 
 const { formRegister, formMethods } = useForm()
@@ -292,11 +310,6 @@ const getRole = async () => {
       )
     })
   }
-}
-
-// 去注册页面
-const toRegister = () => {
-  emit('to-register')
 }
 </script>
 

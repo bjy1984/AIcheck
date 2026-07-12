@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 import threading
 import zipfile
+from datetime import UTC, datetime, timedelta
 from email import policy
 from email.parser import BytesParser
 from pathlib import Path
@@ -24,10 +25,7 @@ import yaml
 from fastapi import APIRouter, BackgroundTasks, Body, Header, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
-from apps.api.adapters.engineering_inspection import (
-    ENGINEERING_DOMAIN_TYPE,
-    ENGINEERING_PROJECT_DEFAULTS,
-)
+from apps.api.adapters.engineering_inspection import ENGINEERING_DOMAIN_TYPE
 from apps.ocr_service.evaluation import compact_evaluation_report, evaluate_cases
 from apps.ocr_service.readiness import build_ocr_100_scorecard
 from apps.ocr_service.utils import parse_bool
@@ -51,6 +49,7 @@ from libs.contracts.responses import fail, ok, page, server_time
 from libs.audit_runtime import audit_runtime_public_config
 from libs.db.repository import flush_state, load_state, repo
 from libs.db.seed import PROJECT_ID, ROLE_ACTIONS, ROLE_NODE_MAP, STANDARD_RULES_SOURCE_ID, STANDARD_RULES_VERSION
+from libs.deepseek_runtime import deepseek_runtime_public_config
 from libs.embedding_models import embedding_registry_payload, embedding_runtime_config
 from libs.integrations import task_dispatcher
 from libs.integrations.embedding_client import EmbeddingClient
@@ -96,11 +95,13 @@ from libs.security.auth import (
     USERS,
     authenticate,
     decode_token,
+    demo_users_enabled,
     hash_password,
     issue_token,
     password_strength_errors,
     persistent_user_by_username,
     public_user,
+    strict_production,
     user_by_username,
     verify_password,
 )
@@ -125,6 +126,8 @@ WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
 RULES_STANDARDS_ROOT = WORKSPACE_ROOT / "rules" / "standards"
 RULES_BUSINESS_RULES_PATH = WORKSPACE_ROOT / "rules" / "业务规则.md"
 STANDARD_LIBRARY_SOURCE_NAME = "标准规范库（业务规则引用标准）"
+
+OPERATION_PREVIEW_TTL_MINUTES = 10
 
 REPORT_GENERATION_BLOCKED_STATUSES = {"待提交", "需补正", "退回补正中", "部分提交", "AI 预审中"}
 MAX_UPLOAD_BYTES = 500 * 1024 * 1024
@@ -237,6 +240,13 @@ PLATFORM_ROLE_FALLBACKS = {
     "ndt": {"specialist_submitter", "submitter"},
     "owner": {"observer"},
     "admin": {"admin"},
+}
+
+PACK_PLATFORM_USER_ROLES = {
+    "reviewer": "inspection",
+    "submitter": "contractor",
+    "specialist_submitter": "ndt",
+    "observer": "owner",
 }
 
 FDE_REPLAY_TYPES = {
@@ -1642,6 +1652,122 @@ def request_user_id(request: Request) -> str | None:
     return request.headers.get("X-User-Id")
 
 
+def request_actor_name(request: Request) -> str:
+    user = getattr(request.state, "auth_user", None) or {}
+    return str(
+        user.get("displayName")
+        or user.get("name")
+        or user.get("username")
+        or user.get("id")
+        or request_user_id(request)
+        or "系统"
+    )
+
+
+def project_role_assignee_name(project_id: str, role: str) -> str:
+    member = next(
+        (
+            item
+            for item in repo.state.get("project_members", [])
+            if item.get("projectId") == project_id
+            and item.get("role") == role
+            and item.get("status", "启用") == "启用"
+        ),
+        None,
+    )
+    if not member:
+        return "待分配"
+    user = admin_user_by_id(member.get("userId")) or {}
+    return str(
+        member.get("name")
+        or user.get("displayName")
+        or user.get("name")
+        or user.get("username")
+        or member.get("userId")
+        or "待分配"
+    )
+
+
+def operation_actor_key(request: Request) -> str:
+    auth_user = getattr(request.state, "auth_user", None) or {}
+    return str(auth_user.get("id") or auth_user.get("username") or request_user_id(request) or "anonymous")
+
+
+def operation_fingerprint(value: Any) -> str:
+    serialized = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def create_operation_preview(
+    request: Request,
+    *,
+    kind: str,
+    payload: dict[str, Any],
+    base_fingerprint: str,
+    impact: dict[str, Any],
+) -> dict[str, Any]:
+    now = datetime.now(UTC)
+    preview = {
+        "previewId": f"PREVIEW-{uuid4().hex[:12].upper()}",
+        "kind": kind,
+        "actorKey": operation_actor_key(request),
+        "payloadFingerprint": operation_fingerprint(payload),
+        "baseFingerprint": base_fingerprint,
+        "impact": repo.clone(impact),
+        "generatedAt": now.isoformat(),
+        "expiresAt": (now + timedelta(minutes=OPERATION_PREVIEW_TTL_MINUTES)).isoformat(),
+    }
+    previews = repo.state.setdefault("operation_previews", [])
+    previews.insert(0, preview)
+    del previews[200:]
+    return repo.clone(preview)
+
+
+def validate_operation_preview(
+    request: Request,
+    *,
+    preview_id: str | None,
+    kind: str,
+    payload: dict[str, Any],
+    base_fingerprint: str,
+) -> tuple[dict[str, Any] | None, JSONResponse | None]:
+    refresh_state_from_postgres_for_live_read()
+    if not preview_id:
+        if strict_production():
+            return None, fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="正式环境执行该操作前必须先生成影响预览。",
+            )
+        return None, None
+    preview = next(
+        (item for item in repo.state.get("operation_previews", []) if item.get("previewId") == preview_id),
+        None,
+    )
+    if not preview:
+        return None, fail(errors.VALIDATION_ERROR, request, message="影响预览不存在，请重新预览。")
+    try:
+        expired = datetime.fromisoformat(str(preview.get("expiresAt"))) <= datetime.now(UTC)
+    except (TypeError, ValueError):
+        expired = True
+    if expired:
+        return None, fail(errors.CONFLICT, request, message="影响预览已过期，请重新预览。")
+    if preview.get("consumedAt"):
+        return None, fail(errors.CONFLICT, request, message="影响预览已使用，请重新预览。")
+    if preview.get("actorKey") != operation_actor_key(request) or preview.get("kind") != kind:
+        return None, fail(errors.FORBIDDEN, request, message="影响预览不属于当前用户或操作。")
+    if preview.get("payloadFingerprint") != operation_fingerprint(payload):
+        return None, fail(errors.CONFLICT, request, message="操作范围已变化，请重新预览。")
+    if preview.get("baseFingerprint") != base_fingerprint:
+        return None, fail(errors.ETAG_CONFLICT, request, message="数据版本已变化，请重新预览。")
+    return preview, None
+
+
+def consume_operation_preview(preview: dict[str, Any] | None) -> None:
+    if preview is not None:
+        preview["consumedAt"] = datetime.now(UTC).isoformat()
+
+
 def member_node_scope_error(
     request: Request,
     project_id: str,
@@ -2170,7 +2296,7 @@ def report_review_trail(report: dict[str, Any]) -> list[dict[str, Any]]:
     trail = repo.clone(report.get("reviewTrail") or [])
     generated = {
         "title": "生成报告草稿",
-        "actorName": report.get("generatedByName", "张工"),
+        "actorName": report.get("generatedByName") or "系统",
         "result": report["status"],
         "createdAt": report["generatedAt"],
     }
@@ -2982,9 +3108,12 @@ def signed_url_for_task(task: dict[str, Any]) -> dict[str, Any] | JSONResponse:
         return {"error": errors.EXPORT_TASK_EXPIRED}
     if task["status"] != "可下载":
         return {"error": errors.EXPORT_TASK_NOT_READY}
+    if not task.get("downloadUrl"):
+        return {"error": errors.EXPORT_TASK_NOT_READY}
     return repo.signed_get(
         task["fileName"],
-        task.get("downloadUrl") or f"mock://download/exports/{task['id']}",
+        task["downloadUrl"],
+        content_type=task.get("contentType"),
         file_size=task.get("fileSize"),
     )
 
@@ -2993,7 +3122,7 @@ def admin_user_snapshot(user_id: str | None, role: str | None = None) -> dict[st
     user = admin_user_by_id(user_id)
     if user is None:
         user = next((item for item in admin_config_users() if item.get("id") == user_id), None)
-    if user is None:
+    if user is None and os.getenv("AICHECK_ENABLE_DEMO_DATA", "false").lower() == "true":
         demo_user = demo_user_by_id(user_id)
         if demo_user:
             user = {
@@ -3003,15 +3132,13 @@ def admin_user_snapshot(user_id: str | None, role: str | None = None) -> dict[st
             }
     if user is None and role:
         user = next((item for item in list_admin_users() if item.get("role") == role), None)
-    if user is None and role == "admin":
-        user = {"id": user_id or "USER-ADMIN-001", "name": "系统管理员", "orgName": "省特检院平台组", "role": "admin"}
     if user:
         projected = admin_user_projection(user)
         return {
             **projected,
             "permissions": user.get("permissions") or repo.role_actions(projected["role"]),
         }
-    return {"id": user_id or "USER-UNKNOWN", "name": "新授权成员", "orgName": "联调组织", "role": role or "inspection"}
+    return {"id": user_id or "USER-UNKNOWN", "name": "待配置用户", "orgName": "", "role": role or "inspection"}
 
 
 def scoped_binding_ids(project_id: str, node_ids: list[int], binding_ids: list[str] | None) -> list[str]:
@@ -3080,7 +3207,7 @@ def ensure_submission_document_bindings(
                 "usage": usage,
                 "sourceOrgName": document["sourceOrgName"],
                 "bindingStatus": "草稿挂载",
-                "boundByName": document.get("uploaderName") or "李工",
+                "boundByName": document.get("uploaderName") or "系统",
                 "boundAt": server_time(),
                 "actions": ["submission:submit", "submission:withdraw"],
             }
@@ -3148,9 +3275,9 @@ def project_member_snapshot(
         "id": f"PM-{uuid4().hex[:8].upper()}",
         "projectId": project_id,
         "userId": user_id or user["id"],
-        "name": user.get("name") or "授权成员",
+        "name": user.get("name") or "",
         "orgId": user.get("orgId"),
-        "orgName": org_name or user.get("orgName") or "联调组织",
+        "orgName": org_name or user.get("orgName") or "",
         "role": role,
         "nodeScope": node_scope or grant["nodeScope"],
         "actions": actions or grant["actions"],
@@ -3413,22 +3540,31 @@ def node_business_basis(project: dict[str, Any] | None, node_id: int) -> dict[st
     }
 
 
-def project_defaults_for_pack(pack: dict[str, Any]) -> dict[str, str]:
-    if pack.get("domainType") == ENGINEERING_DOMAIN_TYPE:
-        defaults = dict(ENGINEERING_PROJECT_DEFAULTS)
-        defaults["type"] = pack.get("projectType") or defaults["type"]
-        return defaults
-    reviewer = next((role for role in pack.get("roles") or [] if role.get("platformRole") == "reviewer"), {})
-    submitter = next((role for role in pack.get("roles") or [] if role.get("platformRole") == "submitter"), {})
-    observer = next((role for role in pack.get("roles") or [] if role.get("platformRole") == "observer"), {})
-    return {
-        "name": f"新建{pack['name']}项目",
-        "type": pack.get("projectType") or pack["name"],
-        "ownerOrgName": f"{observer.get('label') or '观察者'}单位",
-        "contractorOrgName": f"{submitter.get('label') or '提交者'}单位",
-        "ndtOrgName": "专项资料单位",
-        "inspectionOrgName": f"{reviewer.get('label') or '审核者'}机构",
-    }
+def project_pack_member_roles(pack: dict[str, Any]) -> list[dict[str, Any]]:
+    assignments: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for role in pack.get("roles") or []:
+        code = str(role.get("code") or "").strip()
+        if not code or code == "admin":
+            continue
+        user_role = code if code in BUSINESS_ROLE_ORG_TYPES else PACK_PLATFORM_USER_ROLES.get(str(role.get("platformRole") or ""))
+        if not user_role or user_role in seen:
+            continue
+        seen.add(user_role)
+        assignments.append({**role, "userRole": user_role})
+    return assignments
+
+
+def exact_admin_user(user_id: str | None) -> dict[str, Any] | None:
+    if not user_id:
+        return None
+    user = admin_user_by_id(user_id) or next(
+        (item for item in admin_config_users() if item.get("id") == user_id),
+        None,
+    )
+    if user is None and os.getenv("AICHECK_ENABLE_DEMO_DATA", "false").lower() == "true":
+        user = demo_user_by_id(user_id)
+    return admin_user_projection(user) if user else None
 
 
 def review_point_requirement(point: dict[str, Any]) -> dict[str, Any]:
@@ -3733,6 +3869,29 @@ def mock_role_list2(request: Request):
 def mock_user_list(request: Request):
     users = [public_user(user) for user in USERS.values()]
     return ok({"list": users, "total": len(users)}, request)
+
+
+@router.get("/runtime/ui-context")
+def runtime_ui_context(request: Request):
+    is_strict = strict_production()
+    environment = os.getenv("AICHECK_ENVIRONMENT") or ("production" if is_strict else "development")
+    demo_allowed = (
+        not is_strict and os.getenv("AICHECK_UI_DEMO_MODE", "false").strip().lower() == "true"
+    )
+    return ok(
+        {
+            "environment": environment,
+            "strictProduction": is_strict,
+            "demoDataAllowed": demo_allowed,
+            "buildVersion": os.getenv("AICHECK_BUILD_VERSION", "unversioned"),
+            "serverTime": server_time(),
+            "support": {
+                "label": os.getenv("AICHECK_SUPPORT_LABEL", "请联系系统管理员重置密码"),
+                "url": os.getenv("AICHECK_SUPPORT_URL") or None,
+            },
+        },
+        request,
+    )
 
 
 @router.post("/auth/login")
@@ -4665,11 +4824,14 @@ def create_upload_session(
         }
         role_for_upload = str(x_role or request.headers.get("X-Role") or "").lower()
         project = repo.find_one("projects", project_id) or {}
-        source_org_name = None
-        uploader_name = None
-        if role_for_upload == "ndt":
-            source_org_name = project.get("ndtOrgName") or "无损检测机构"
-            uploader_name = "王工"
+        source_org_field = {
+            "contractor": "contractorOrgName",
+            "ndt": "ndtOrgName",
+            "inspection": "inspectionOrgName",
+            "owner": "ownerOrgName",
+        }.get(role_for_upload)
+        source_org_name = project.get(source_org_field) if source_org_field else None
+        uploader_name = request_actor_name(request)
         session_id, upload_urls = repo.create_upload_session(
             project_id,
             files,
@@ -5296,13 +5458,14 @@ def append_document_version(
             "id": version_id,
             "documentId": document_id,
             "versionNo": f"V{len(repo.versions_for_document(document_id)) + 1}",
-            "hash": f"mock-sha256-{version_id}",
-            "fileSize": int(body.get("fileSize") or 245760),
-            "storageKey": f"documents/{project_id}/{version_id}",
+            "hash": body.get("hash"),
+            "fileSize": int(body.get("fileSize") or 0),
+            "storageKey": body.get("storageKey"),
+            "storageBucket": body.get("storageBucket"),
             "ocrStatus": "排队中",
             "sliceStatus": "未切片",
             "vectorStatus": "未向量化",
-            "uploaderName": "李工",
+            "uploaderName": request_actor_name(request),
             "uploadTime": server_time(),
             "isCurrent": True,
         }
@@ -5351,11 +5514,11 @@ def bind_documents(
                     "documentId": document["id"],
                     "documentVersionId": version_id,
                     "fileName": document["fileName"],
-                    "versionNo": "V1",
+                    "versionNo": (repo.current_version(document["id"]) or {}).get("versionNo") or "--",
                     "usage": binding_input.get("usage") or body.get("usage") or "原始提交",
                     "sourceOrgName": document["sourceOrgName"],
                     "bindingStatus": "草稿挂载",
-                    "boundByName": "李工",
+                    "boundByName": request_actor_name(request),
                     "boundAt": server_time(),
                     "actions": ["submission:submit", "submission:withdraw"],
                 }
@@ -5653,21 +5816,21 @@ def submit_node_package(
             if binding["id"] in binding_ids:
                 binding["bindingStatus"] = "已提交"
         for node_id in node_ids:
-            changed.append(repo.set_node_status(project_id, node_id, "AI 预审中"))
+            changed.append(repo.set_node_status(project_id, node_id, "待审查"))
         todo_id = f"TODO-{uuid4().hex[:8].upper()}"
         repo.state["todos"].insert(
             0,
             {
                 "id": todo_id,
-                "title": "节点资料已提交，待 AI 预审",
+                "title": "节点资料已提交，待监检核验",
                 "projectId": project_id,
                 "nodeId": node_ids[0] if node_ids else None,
                 "targetType": "submission",
                 "targetId": submission_id,
                 "status": "待处理",
                 "priority": "中",
-                "assigneeName": "张工",
-                "actions": ["ai:recheck"],
+                "assigneeName": project_role_assignee_name(project_id, "inspection"),
+                "actions": ["review:save"],
             },
         )
         submission = {
@@ -5678,14 +5841,15 @@ def submit_node_package(
             "bindingIds": binding_ids,
             "batchName": body.get("batchName"),
             "submitterComment": body.get("submitterComment"),
-            "nextStatus": "AI 预审中",
+            "nextStatus": "待审查",
             "submittedAt": server_time(),
             "createdTodoIds": [todo_id],
             "changed": changed,
             "createdBindingIds": created_binding_ids,
         }
         repo.state["submissions"].insert(0, submission)
-        return ok({"submissionId": submission_id, "snapshotId": snapshot_id, "nextStatus": "AI 预审中", "createdTodos": [repo.state["todos"][0]], "bindingIds": binding_ids, "createdBindingIds": created_binding_ids}, request)
+        todo = repo.find_one("todos", todo_id)
+        return ok({"submissionId": submission_id, "snapshotId": snapshot_id, "nextStatus": "待审查", "createdTodos": [repo.clone(todo)] if todo else [], "bindingIds": binding_ids, "createdBindingIds": created_binding_ids}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
@@ -5763,13 +5927,16 @@ def withdraw_submission_items(
         )
         if locked_ids:
             return fail(errors.WITHDRAW_LOCKED, request, data={"lockedBindingIds": locked_ids})
+        withdrawal_reason = compact_plain_text(body.get("reason"), 1000)
+        if not withdrawal_reason:
+            return fail(errors.VALIDATION_ERROR, request, message="撤回已提交资料必须填写原因。")
         for binding in binding_by_id.values():
             binding["bindingStatus"] = "草稿挂载"
         withdrawn_ids = sorted(set(submission.get("withdrawnBindingIds") or []) | requested_ids)
         submission["withdrawnBindingIds"] = withdrawn_ids
         submission["withdrawal"] = {
             "bindingCount": len(withdrawn_ids),
-            "reason": body.get("reason") or "撤回未提交项",
+            "reason": withdrawal_reason,
             "withdrawnAt": server_time(),
         }
         submission["nextStatus"] = "部分提交"
@@ -5841,7 +6008,7 @@ def submit_rectification(
         rectification["comment"] = body.get("comment") or body.get("description")
         rectification["bindingIds"] = binding_ids
         rectification["feedbackAt"] = server_time()
-        rectification["feedbackByName"] = "李工"
+        rectification["feedbackByName"] = request_actor_name(request)
         changed = [repo.set_node_status(project_id, node_id, "复审中")]
         return ok(
             {
@@ -5870,15 +6037,39 @@ def submit_rectification(
 
 @router.get("/projects/{project_id}/rectifications")
 def list_rectifications(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    return ok(page([repo.clone(item) for item in repo.state["rectifications"] if item["projectId"] == project_id], page_no, page_size), request)
+    scope = authorized_node_scope(request, project_id)
+    return ok(
+        page(
+            [
+                repo.clone(item)
+                for item in repo.state["rectifications"]
+                if item.get("projectId") == project_id
+                and record_visible_for_scope(item, scope, project_id=project_id)
+            ],
+            page_no,
+            page_size,
+        ),
+        request,
+    )
 
 
 @router.get("/projects/{project_id}/rectifications/{rectification_id}")
 def rectification_detail(request: Request, project_id: str, rectification_id: str):
     item = repo.find_one("rectifications", rectification_id)
-    if not item:
+    if not item or item.get("projectId") != project_id:
         return fail(errors.NOT_FOUND, request)
-    return ok({"rectification": repo.clone(item), "bindings": repo.bindings_for_node(project_id, item["nodeId"]), "evidenceLinks": repo.clone(repo.state["evidence_links"])}, request)
+    scope = authorized_node_scope(request, project_id)
+    if not record_visible_for_scope(item, scope, project_id=project_id):
+        return fail(errors.FORBIDDEN, request)
+    node_id = int(item["nodeId"])
+    return ok(
+        {
+            "rectification": repo.clone(item),
+            "bindings": repo.bindings_for_node(project_id, node_id),
+            "evidenceLinks": confirmed_node_evidence_scope(project_id, node_id)["evidenceLinks"],
+        },
+        request,
+    )
 
 
 @router.get("/projects/{project_id}/workflow")
@@ -5886,24 +6077,73 @@ def project_workflow(request: Request, project_id: str):
     project = repo.require_project(project_id)
     if not project:
         return fail(errors.NOT_FOUND, request)
-    return ok({"projectId": project_id, "status": project["status"], "stateMachineVersion": "WF-PIPE-2026"}, request)
+    workflow_versions = [
+        str(item.get("version") or item.get("id"))
+        for item in repo.state.get("admin_config", {}).get("workflowStateMachines", [])
+        if item.get("version") or item.get("id")
+    ]
+    return ok(
+        {
+            "projectId": project_id,
+            "status": project["status"],
+            "stateMachineVersion": workflow_versions[0] if workflow_versions else None,
+        },
+        request,
+    )
 
 
 @router.get("/projects/{project_id}/workflow/instances/{workflow_id}")
 def workflow_instance(request: Request, project_id: str, workflow_id: str):
-    return ok({"id": workflow_id, "projectId": project_id, "status": "运行中", "currentNodeId": ROLE_NODE_MAP["inspection"]}, request)
+    project = repo.require_project(project_id)
+    if not project:
+        return fail(errors.NOT_FOUND, request)
+    return ok(
+        {
+            "id": workflow_id,
+            "projectId": project_id,
+            "status": project.get("status"),
+            "currentNodeId": project.get("currentNodeId"),
+        },
+        request,
+    )
 
 
 @router.get("/projects/{project_id}/workflow/timeline")
 def workflow_timeline(request: Request, project_id: str):
-    return ok(
-        [
-            {"title": "资料提交", "actorName": "李工", "status": "已提交", "createdAt": "2026-06-25 10:45:00"},
-            {"title": "AI 预审", "actorName": "系统", "status": "完成", "createdAt": "2026-06-25 15:10:00"},
-            {"title": "监检审查", "actorName": "张工", "status": "待人工确认", "createdAt": "2026-06-26 09:12:00"},
-        ],
-        request,
+    if not repo.require_project(project_id):
+        return fail(errors.NOT_FOUND, request)
+    events = [
+        {
+            "title": "资料提交",
+            "actorName": item.get("submitterName") or item.get("submittedBy") or "系统",
+            "status": item.get("nextStatus") or "已提交",
+            "createdAt": item.get("submittedAt"),
+        }
+        for item in repo.state.get("submissions", [])
+        if item.get("projectId") == project_id
+    ]
+    events.extend(
+        {
+            "title": "AI 复核",
+            "actorName": "系统",
+            "status": item.get("status"),
+            "createdAt": item.get("finishedAt") or item.get("createdAt"),
+        }
+        for item in repo.state.get("ai_runs", [])
+        if item.get("projectId") == project_id
     )
+    events.extend(
+        {
+            "title": "人工审查",
+            "actorName": item.get("reviewerName") or "系统",
+            "status": item.get("result"),
+            "createdAt": item.get("createdAt"),
+        }
+        for item in repo.state.get("review_opinions", [])
+        if item.get("projectId") == project_id
+    )
+    events.sort(key=lambda item: str(item.get("createdAt") or ""))
+    return ok(events, request)
 
 
 @router.post("/projects/{project_id}/inspection/nodes/{node_id}/attachments")
@@ -5915,7 +6155,12 @@ def inspection_attachments(
     x_role: str | None = Header(default=None, alias="X-Role"),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
-    return create_upload_session(request, project_id, {"files": body.get("files") or [{"fileName": "监检资料.pdf", "fileSize": 245760, "fileType": "application/pdf"}]}, idempotency_key, x_role)
+    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
+    if guard:
+        return guard
+    if not body.get("files"):
+        return fail(errors.VALIDATION_ERROR, request, message="请选择需要上传的监检资料。")
+    return create_upload_session(request, project_id, {"files": body["files"]}, idempotency_key, x_role)
 
 
 @router.post("/projects/{project_id}/inspection/nodes/{node_id}/file-bindings")
@@ -6279,8 +6524,6 @@ def get_review_run(request: Request, review_run_id: str):
     refresh_state_from_postgres_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not run:
-        run = fde_find_or_materialize_synthetic_review_run(review_run_id)
-    if not run:
         return fail(errors.NOT_FOUND, request)
     project_id = run.get("projectId")
     if project_id and not project_visible_for_request(request, str(project_id)):
@@ -6293,8 +6536,6 @@ def get_review_run_timeline(request: Request, review_run_id: str):
     refresh_state_from_postgres_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not run:
-        run = fde_find_or_materialize_synthetic_review_run(review_run_id)
-    if not run:
         return fail(errors.NOT_FOUND, request)
     project_id = run.get("projectId")
     if project_id and not project_visible_for_request(request, str(project_id)):
@@ -6306,8 +6547,6 @@ def get_review_run_timeline(request: Request, review_run_id: str):
 def get_review_run_graph(request: Request, review_run_id: str):
     refresh_state_from_postgres_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
-    if not run:
-        run = fde_find_or_materialize_synthetic_review_run(review_run_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
     project_id = run.get("projectId")
@@ -6331,7 +6570,10 @@ def submit_review_run_human_decision(
         project_id = run.get("projectId")
         if project_id and not project_visible_for_request(request, str(project_id)):
             return fail(errors.FORBIDDEN, request)
-        decision = str(body.get("decision") or "accept")
+        decision = compact_plain_text(body.get("decision"), 40)
+        decision_comment = compact_plain_text(body.get("comment") or body.get("reason"), 2000)
+        if not decision or not decision_comment:
+            return fail(errors.VALIDATION_ERROR, request, message="ReviewRun 人工确认必须明确选择结果并填写意见。")
         result = human_decision_for_review_run(review_run_id, decision, body)
         if result.get("status") in {"missing", "invalid_decision"}:
             return fail(errors.VALIDATION_ERROR, request, data=result)
@@ -6340,7 +6582,7 @@ def submit_review_run_human_decision(
             {
                 "decision": decision,
                 "status": result["status"],
-                "comment": body.get("comment") or body.get("reason"),
+                "comment": decision_comment,
                 "decidedAt": result["reviewRun"].get("humanDecision", {}).get("decidedAt"),
             },
         )
@@ -6372,8 +6614,11 @@ def cancel_review_run(
         run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
         if not run:
             return fail(errors.NOT_FOUND, request)
+        cancel_reason = compact_plain_text(body.get("reason"), 1000)
+        if not cancel_reason:
+            return fail(errors.VALIDATION_ERROR, request, message="取消 ReviewRun 必须填写原因。")
         run["status"] = "cancelled"
-        run["cancelReason"] = body.get("reason") or "用户取消 ReviewRun"
+        run["cancelReason"] = cancel_reason
         run["updatedAt"] = server_time()
         if not run.get("advisoryOnly"):
             previous_status = str(run.get("previousNodeStatus") or "待人工确认")
@@ -6415,7 +6660,10 @@ def rerun_review_run(
         project_id = parent.get("projectId")
         if project_id and not project_visible_for_request(request, str(project_id)):
             return fail(errors.FORBIDDEN, request)
-        child = clone_review_run_for_replay(parent, run_mode="diagnostic_replay", reason=body.get("reason") or "业务端请求重跑")
+        rerun_reason = compact_plain_text(body.get("reason"), 1000)
+        if not rerun_reason:
+            return fail(errors.VALIDATION_ERROR, request, message="重跑 ReviewRun 必须填写原因。")
+        child = clone_review_run_for_replay(parent, run_mode="diagnostic_replay", reason=rerun_reason)
         audit_id = repo.add_audit("业务端请求 ReviewRun 重跑", "ReviewRun", child["reviewRunId"])
         child_review_run_id = str(child["reviewRunId"])
         request.state.scoped_flush_records = lambda: review_run_state_records(child_review_run_id)
@@ -6430,7 +6678,10 @@ def save_review_opinion(request: Request, project_id: str, node_id: int, body: d
         guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
         if guard:
             return guard
-        result = body.get("result") or "满足要求"
+        result = str(body.get("result") or "").strip()
+        opinion_text = str(body.get("opinion") or "").strip()
+        if result not in {"满足要求", "需补正", "不适用"} or not opinion_text:
+            return fail(errors.VALIDATION_ERROR, request, message="审查结果和人工意见不能为空。")
         readiness = build_node_evidence_readiness(repo, project_id, node_id)
         evidence_validation = validate_node_evidence_selection(
             project_id,
@@ -6457,7 +6708,7 @@ def save_review_opinion(request: Request, project_id: str, node_id: int, body: d
             "projectId": project_id,
             "nodeId": node_id,
             "result": result,
-            "opinion": body.get("opinion") or "资料、证据链与规则要求一致，同意通过。",
+            "opinion": opinion_text,
             "basis": body.get("basis"),
             "riskLevel": body.get("riskLevel", "低"),
             "closeStatus": "未关闭",
@@ -6465,7 +6716,7 @@ def save_review_opinion(request: Request, project_id: str, node_id: int, body: d
             "readinessSnapshot": readiness,
             "evidenceValidation": evidence_validation,
             "businessRuleVersion": business_rule_version_for_node(project_id, node_id),
-            "reviewerName": "张工",
+            "reviewerName": request_actor_name(request),
             "createdAt": server_time(),
         }
         repo.state["review_opinions"].insert(0, opinion)
@@ -6506,15 +6757,26 @@ def adopt_ai_suggestion(request: Request, project_id: str, node_id: int, suggest
                     requested_ids.append(evidence_id)
         selected_ids = [item for item in requested_ids if item in allowed_ids]
         requires_evidence_selection = not selected_ids
+        suggestion = latest_run.get("suggestion") if isinstance(latest_run.get("suggestion"), dict) else {}
+        result = compact_plain_text(body.get("result") or suggestion.get("result"), 40)
+        opinion = compact_plain_text(
+            body.get("opinion")
+            or suggestion.get("opinionDraft")
+            or suggestion.get("opinion")
+            or suggestion.get("summary"),
+            2000,
+        )
         draft = {
             "id": f"OPN-DRAFT-{uuid4().hex[:8].upper()}",
             "projectId": project_id,
             "nodeId": node_id,
-            "result": body.get("result") or "满足要求",
-            "opinion": body.get("opinion") or "采纳 AI 建议。",
+            "result": result,
+            "opinion": opinion,
             "evidenceLinkIds": selected_ids,
             "requiresEvidenceSelection": requires_evidence_selection,
-            "reviewerName": "张工",
+            "requiresResultSelection": not bool(result),
+            "requiresOpinionInput": not bool(opinion),
+            "reviewerName": request_actor_name(request),
             "createdAt": server_time(),
         }
         audit_id = repo.add_audit("采纳 AI 建议", "AiSuggestion", suggestion_id)
@@ -6534,7 +6796,20 @@ def reject_ai_suggestion(request: Request, project_id: str, node_id: int, sugges
         guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
         if guard:
             return guard
-        return ok(repo.mutation_result("驳回 AI 建议", "AiSuggestion", suggestion_id, changed=[{"field": "reason", "after": body.get("reason")}]), request)
+        reason = compact_plain_text(body.get("reason"), 1000)
+        if not reason:
+            return fail(errors.VALIDATION_ERROR, request, message="驳回 AI 建议必须填写具体原因。")
+        latest_run = next(
+            (
+                item
+                for item in repo.state.get("ai_runs", [])
+                if item.get("projectId") == project_id and int(item.get("nodeId") or 0) == int(node_id)
+            ),
+            None,
+        )
+        if not latest_run or str((latest_run.get("suggestion") or {}).get("id") or "") != str(suggestion_id):
+            return fail(errors.NOT_FOUND, request, message="未找到当前节点最新 AI 建议。")
+        return ok(repo.mutation_result("驳回 AI 建议", "AiSuggestion", suggestion_id, changed=[{"field": "reason", "after": reason}]), request)
 
     return idempotent(
         request,
@@ -6550,12 +6825,15 @@ def return_correction(request: Request, project_id: str, node_id: int, body: dic
         guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
         if guard:
             return guard
+        correction_reason = compact_plain_text(body.get("reason") or body.get("requirement"), 2000)
+        if not correction_reason:
+            return fail(errors.VALIDATION_ERROR, request, message="退回补正必须填写具体原因和处理要求。")
         rectification = {
             "id": f"REC-{uuid4().hex[:8].upper()}",
             "projectId": project_id,
             "nodeId": node_id,
             "status": "待反馈",
-            "comment": body.get("reason") or body.get("requirement") or "请补充说明。",
+            "comment": correction_reason,
             "createdAt": server_time(),
         }
         repo.state["rectifications"].insert(0, rectification)
@@ -6569,7 +6847,7 @@ def return_correction(request: Request, project_id: str, node_id: int, body: dic
             "targetId": rectification["id"],
             "status": "待处理",
             "priority": "高",
-            "assigneeName": "李工",
+            "assigneeName": project_role_assignee_name(project_id, "contractor"),
             "actions": ["rectification:submit"],
         }
         repo.state["todos"].insert(0, todo)
@@ -6583,7 +6861,16 @@ def evidence_chain(request: Request, project_id: str, node_id: int):
     node = repo.node(project_id, node_id)
     if not node:
         return fail(errors.NOT_FOUND, request)
-    links = repo.clone(repo.state["evidence_links"])
+    node_links = node_evidence_links_for_node(repo, project_id, node_id)
+    links = []
+    seen_ids: set[str] = set()
+    for node_link in node_links:
+        candidates = [_node_evidence_as_report_evidence(node_link), *_matching_evidence_links_for_node_evidence(node_link)]
+        for candidate in candidates:
+            candidate_id = str(candidate.get("id") or "")
+            if candidate_id and candidate_id not in seen_ids:
+                links.append(repo.clone(candidate))
+                seen_ids.add(candidate_id)
     grouped = []
     for object_type in sorted({item["objectType"] for item in links}):
         grouped.append({"objectType": object_type, "links": [item for item in links if item["objectType"] == object_type]})
@@ -6640,21 +6927,36 @@ def standards(request: Request, project_id: str, node_id: int):
 
 @router.get("/projects/{project_id}/inspection/nodes/{node_id}/date-compare")
 def date_compare(request: Request, project_id: str, node_id: int):
-    evidence_ids = confirmed_node_evidence_scope(project_id, node_id)["allowedEvidenceIds"]
-    return ok(
-        [
+    version_ids = node_document_version_ids(project_id, node_id)
+    scope = confirmed_node_evidence_scope(project_id, node_id)
+    rows = []
+    for field in repo.state.get("extracted_fields", []):
+        field_name = str(field.get("fieldName") or "")
+        if str(field.get("documentVersionId") or "") not in version_ids:
+            continue
+        if not any(token in field_name for token in ("日期", "有效期", "签发", "施工周期")):
+            continue
+        evidence_ids = [
+            str(item.get("id"))
+            for item in scope["evidenceLinks"]
+            if item.get("id")
+            and (
+                item.get("documentVersionId") == field.get("documentVersionId")
+                or item.get("fieldName") == field_name
+            )
+        ]
+        rows.append(
             {
-                "fieldName": "证书有效期",
-                "leftLabel": "证书有效期",
-                "leftValue": "2024-03-15 至 2028-03-14",
-                "rightLabel": "施工周期",
-                "rightValue": "2026-06-01 至 2026-12-31",
-                "result": "覆盖",
-                "evidenceLinkIds": evidence_ids[:3],
+                "fieldName": field_name,
+                "leftLabel": field_name,
+                "leftValue": field.get("fieldValue") or field.get("value") or "--",
+                "rightLabel": "对照值",
+                "rightValue": "--",
+                "result": "待人工确认",
+                "evidenceLinkIds": evidence_ids,
             }
-        ],
-        request,
-    )
+        )
+    return ok(rows, request)
 
 
 @router.get("/projects/{project_id}/inspection/nodes/{node_id}/rules/current-version")
@@ -6666,8 +6968,10 @@ def current_rule_version(request: Request, project_id: str, node_id: int):
         pack = business_pack_for_project(project)
         rule = next(
             (item for item in pack.get("ruleSets") or [] if node_id in set(item.get("nodeIds") or [])),
-            repo.state["rule_versions"][0],
+            None,
         )
+    if not rule:
+        return fail(errors.NOT_FOUND, request, message="当前节点尚未配置业务规则版本。")
     return ok({"rule": repo.clone(rule)}, request)
 
 
@@ -6720,21 +7024,31 @@ def generate_report_review(request: Request, project_id: str, node_id: int, body
             for item in scope["evidenceLinks"]
             if str(item.get("id") or "") in set(evidence_ids)
         ]
+        project = repo.require_project(project_id) or {}
+        generated_at = datetime.now(UTC)
+        project_report_count = sum(
+            1
+            for item in repo.state.get("reports", [])
+            if item.get("projectId") == project_id
+            and str(item.get("reportNo") or "").startswith(f"{project_id}-{generated_at.year}-")
+        )
+        actor_name = request_actor_name(request)
+        reviewer_name = project_role_assignee_name(project_id, "inspection")
         report = {
             "id": f"RPT-{uuid4().hex[:8].upper()}",
             "projectId": project_id,
-            "reportNo": f"GDJ-JJ-2026-{len(repo.state['reports']) + 1:03d}",
+            "reportNo": f"{project_id}-{generated_at.year}-{project_report_count + 1:03d}",
             "versionNo": "V1",
-            "title": f"{repo.require_project(project_id)['name']}监督检验报告",
+            "title": f"{project.get('name') or project_id}监督检验报告",
             "status": "复核中",
             "scope": body.get("reportScope") or "currentNode",
             "nodeIds": [node_id],
-            "templateVersion": "TPL-PIPE-2026.06",
+            "templateVersion": project.get("businessPackVersion") or project.get("businessPackId") or "未配置",
             "generatedAt": server_time(),
-            "generatedByName": "张工",
-            "reviewerName": "张工",
+            "generatedByName": actor_name,
+            "reviewerName": reviewer_name,
             "dataSnapshotId": f"SNAP-RPT-{uuid4().hex[:8].upper()}",
-            "previewUrl": "mock://preview/reports/new",
+            "previewUrl": None,
             "sourceReviewOpinionId": latest_opinion.get("id"),
             "evidenceScope": {
                 "schemaVersion": "report-evidence-scope-v1",
@@ -6749,14 +7063,14 @@ def generate_report_review(request: Request, project_id: str, node_id: int, body
                 "sourceValidation": evidence_validation,
                 "evidenceCount": len(scoped_evidence),
             },
-            "actions": ["report:view", "report:export", "report:archive"],
+            "actions": ["report:view", "report:review", "report:export", "report:archive"],
         }
         report["sections"] = default_report_sections(report)
         report["reviewTrail"] = []
         report["versionHistory"] = []
         repo.state["reports"].insert(0, report)
         repo.touch_project(project_id, "报告生成/复核中", node_id)
-        todo = {"id": f"TODO-{uuid4().hex[:8].upper()}", "title": "报告复核", "projectId": project_id, "targetType": "report", "targetId": report["id"], "status": "待处理", "priority": "中", "assigneeName": "张工", "actions": ["report:review"]}
+        todo = {"id": f"TODO-{uuid4().hex[:8].upper()}", "title": "报告复核", "projectId": project_id, "targetType": "report", "targetId": report["id"], "status": "待处理", "priority": "中", "assigneeName": reviewer_name, "actions": ["report:review"]}
         repo.state["todos"].insert(0, todo)
         return ok({"report": report, "nextStatus": "报告生成/复核中", "createdTodos": [todo]}, request)
 
@@ -6827,6 +7141,10 @@ def update_report(
             return fail(errors.NOT_FOUND, request)
         if not report_if_match_valid(report, if_match):
             return fail(errors.ETAG_CONFLICT, request)
+        current_status = str(report.get("status") or "复核中")
+        content_locked = current_status in {"复核完成", "待签发", "已签发", "已归档"}
+        if content_locked and any(field in body for field in ("title", "sections")):
+            return fail(errors.CONFLICT, request, message="报告完成复核后内容已锁定，不能直接编辑。")
         normalized_sections = None
         if "sections" in body:
             valid_evidence_ids = report_allowed_evidence_ids(report)
@@ -6837,11 +7155,40 @@ def update_report(
             if section_error:
                 return fail(errors.VALIDATION_ERROR, request, message=section_error)
 
+        target_status = compact_plain_text(body.get("status"), 40)
+        if target_status and target_status != current_status:
+            allowed_transitions = {
+                "复核中": {"复核完成"},
+                "复核完成": {"已签发"},
+                "待签发": {"已签发"},
+            }
+            if target_status not in allowed_transitions.get(current_status, set()):
+                return fail(
+                    errors.CONFLICT,
+                    request,
+                    message=f"报告不能从“{current_status}”直接变更为“{target_status}”。",
+                )
+            transition_reason = compact_plain_text(body.get("remark") or body.get("transitionReason"), 500)
+            if not transition_reason:
+                return fail(errors.VALIDATION_ERROR, request, message="完成复核或签发必须填写处理说明。")
+            evidence_validation = report_evidence_validation(report)
+            if not evidence_validation.get("passed"):
+                return fail(
+                    errors.CONFLICT,
+                    request,
+                    message="报告证据校验未通过，不能推进报告状态。",
+                    data={"evidenceValidation": evidence_validation},
+                )
+            if target_status == "复核完成" and not report_sections(report):
+                return fail(errors.CONFLICT, request, message="报告没有可复核章节，不能完成复核。")
+
         changed = []
-        for field in ["title", "status"]:
-            if field in body:
-                changed.append({"field": field, "before": report.get(field), "after": body[field]})
-                report[field] = body[field]
+        if "title" in body:
+            changed.append({"field": "title", "before": report.get("title"), "after": body["title"]})
+            report["title"] = body["title"]
+        if target_status and target_status != current_status:
+            changed.append({"field": "status", "before": current_status, "after": target_status})
+            report["status"] = target_status
         if normalized_sections is not None and normalized_sections != report_sections(report):
             changed.append(
                 {
@@ -6854,7 +7201,7 @@ def update_report(
         if changed:
             now = server_time()
             previous_revision = int(report.get("revision") or 1)
-            remark = compact_plain_text(body.get("remark"), 500) or "保存报告内容"
+            remark = compact_plain_text(body.get("remark") or body.get("transitionReason"), 500) or "保存报告内容"
             report.setdefault("versionHistory", []).insert(
                 0,
                 {
@@ -6868,8 +7215,8 @@ def update_report(
             report.setdefault("reviewTrail", []).insert(
                 0,
                 {
-                    "title": "保存报告",
-                    "actorName": compact_plain_text(body.get("editorName"), 80) or "张工",
+                    "title": "报告状态变更" if target_status and target_status != current_status else "保存报告",
+                    "actorName": request_actor_name(request),
                     "result": report["status"],
                     "createdAt": now,
                     "comment": remark,
@@ -6877,6 +7224,12 @@ def update_report(
             )
             report["revision"] = int(report.get("revision") or 1) + 1
             report["updatedAt"] = now
+            if target_status == "复核完成":
+                report["reviewedAt"] = now
+                report["reviewedByName"] = request_actor_name(request)
+            elif target_status == "已签发":
+                report["signedAt"] = now
+                report["signedByName"] = request_actor_name(request)
         return ok({"report": versioned_report(report), **repo.mutation_result("保存报告", "Report", report_id, changed=changed)}, request)
 
     return idempotent(
@@ -6904,30 +7257,49 @@ def export_report(request: Request, project_id: str, report_id: str, body: dict[
         report = repo.find_one("reports", report_id)
         if not report or report.get("projectId") != project_id:
             return fail(errors.NOT_FOUND, request)
+        output_format = str(body.get("format") or "pdf").strip().lower()
+        if output_format != "pdf":
+            return fail(errors.VALIDATION_ERROR, request, message="监督检验报告当前仅支持导出 PDF。")
+        evidence_validation = report_evidence_validation(report)
+        if not evidence_validation.get("passed"):
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="报告证据校验未通过，不能导出正式报告。",
+                data={"reportId": report_id, "evidenceValidation": evidence_validation},
+            )
+        if report.get("status") not in {"复核完成", "已签发"}:
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="报告完成复核后才能导出正式文件。",
+                data={"reportId": report_id, "status": report.get("status")},
+            )
         export_id = f"EXP-RPT-{uuid4().hex[:8].upper()}"
+        operation_id = f"OP-{uuid4().hex[:12].upper()}"
+        now = server_time()
         task = {
             "id": export_id,
+            "operationId": operation_id,
             "projectId": project_id,
             "reportId": report_id,
+            "reportRevision": int(report.get("revision") or 1),
             "nodeIds": report.get("nodeIds") or [],
             "exportType": "report",
             "status": "可下载",
             "progress": 100,
-            "fileName": f"{report['title']}.{body.get('format') or 'pdf'}",
-            "fileSize": 2097152,
-            "downloadUrl": f"mock://download/reports/{report_id}.{body.get('format') or 'pdf'}",
-            "createdAt": server_time(),
-            "finishedAt": server_time(),
-            "expiresAt": "2026-06-27 18:00:00",
+            "fileName": f"{safe_upload_file_name(report['title'])}.pdf",
+            "fileSize": 0,
+            "createdAt": now,
+            "finishedAt": now,
+            "expiresAt": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
         }
-        repo.attach_export_artifact(task, content_type="application/pdf" if (body.get("format") or "pdf") == "pdf" else None)
+        repo.attach_export_artifact(task, content_type="application/pdf")
         repo.state["export_tasks"].insert(0, task)
-        next_status = "已签发" if report.get("status") == "待签发" else "复核中"
-        if report.get("status") != next_status:
-            report["status"] = next_status
-            report["revision"] = int(report.get("revision") or 1) + 1
-            report["updatedAt"] = server_time()
-        return ok({"exportId": export_id, "report": versioned_report(report)}, request)
+        report["latestExportId"] = export_id
+        report["exportUrl"] = task.get("downloadUrl")
+        report["updatedAt"] = now
+        return ok({"exportId": export_id, "operationId": operation_id, "report": versioned_report(report)}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
@@ -6951,7 +7323,7 @@ def archive_report(
             return fail(errors.NOT_FOUND, request)
         if not report_if_match_valid(report, if_match):
             return fail(errors.ETAG_CONFLICT, request)
-        if report.get("status") not in {"待签发", "已签发", "复核完成"}:
+        if report.get("status") not in {"已签发", "复核完成"}:
             return fail(
                 errors.CONFLICT,
                 request,
@@ -6966,20 +7338,47 @@ def archive_report(
                 message="报告证据校验未通过，不能归档。",
                 data={"reportId": report_id, "evidenceValidation": evidence_validation},
             )
+        report_exports = sorted(
+            (
+                item
+                for item in repo.state.get("export_tasks", [])
+                if item.get("projectId") == project_id
+                and item.get("reportId") == report_id
+                and int(item.get("reportRevision") or 0) == int(report.get("revision") or 1)
+                and item.get("status") == "可下载"
+                and item.get("downloadUrl")
+            ),
+            key=lambda item: str(item.get("finishedAt") or item.get("createdAt") or ""),
+            reverse=True,
+        )
+        export_task = report_exports[0] if report_exports else None
+        if not export_task:
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="报告尚未生成可校验的正式导出产物，不能归档。",
+                data={"reportId": report_id, "recommendedAction": "export_report"},
+            )
         report["status"] = "已归档"
         report["revision"] = int(report.get("revision") or 1) + 1
         report["updatedAt"] = server_time()
         repo.touch_project(project_id, "已归档")
+        project = repo.require_project(project_id) or {}
         item = {
             "id": f"ARCH-{uuid4().hex[:8].upper()}",
             "projectId": project_id,
             "name": f"{report['title']}.pdf",
             "type": "report",
             "nodeId": report.get("nodeIds", [None])[0],
-            "sourceOrgName": "省特检院一部",
+            "reportId": report_id,
+            "exportId": export_task.get("id"),
+            "sourceOrgName": project.get("inspectionOrgName") or "未配置监检机构",
             "status": "已归档",
             "updatedAt": server_time(),
-            "downloadUrl": report.get("exportUrl") or f"mock://download/reports/{report_id}.pdf",
+            "downloadUrl": export_task.get("downloadUrl"),
+            "fileSize": export_task.get("fileSize"),
+            "contentType": export_task.get("contentType") or "application/pdf",
+            "contentHash": export_task.get("contentHash"),
         }
         repo.state["archive_items"].insert(0, item)
         return ok({"report": versioned_report(report), "nextStatus": "已归档"}, request)
@@ -7141,8 +7540,7 @@ def archive_package(request: Request, project_id: str):
         "status": "排队中",
         "progress": 0,
         "fileName": f"{project_id}-归档资料包.zip",
-        "fileSize": 4194304,
-        "downloadUrl": f"mock://download/archive/{project_id}.zip",
+        "fileSize": 0,
         "createdAt": server_time(),
     }
     if not existing_task:
@@ -7154,8 +7552,7 @@ def archive_package(request: Request, project_id: str):
     task["manifest"] = manifest
     task["manifestHash"] = manifest["manifestHash"]
     repo.attach_export_artifact(task, content_type="application/zip", body=body)
-    download_url = task.get("downloadUrl") or f"mock://download/archive/{project_id}.zip"
-    return ok({**repo.signed_get(task["fileName"], download_url, "application/zip", task.get("fileSize")), "exportId": export_id, "projectId": project_id, "packageType": "archive", "itemCount": len(rows), "generatedAt": task["finishedAt"], "manifest": manifest, "manifestHash": manifest["manifestHash"]}, request)
+    return ok({**repo.signed_get(task["fileName"], task["downloadUrl"], "application/zip", task.get("fileSize")), "exportId": export_id, "projectId": project_id, "packageType": "archive", "itemCount": len(rows), "generatedAt": task["finishedAt"], "manifest": manifest, "manifestHash": manifest["manifestHash"]}, request)
 
 
 @router.get("/projects/{project_id}/archive/evidence-package")
@@ -7212,7 +7609,7 @@ def evidence_package(request: Request, project_id: str, nodeId: int | None = Non
             ),
         },
     )
-    task = repo.find_one("export_tasks", export_id) or {"id": export_id, "projectId": project_id, "exportType": "evidence-package", "status": "排队中", "progress": 0, "fileName": file_name, "fileSize": 786432, "downloadUrl": f"mock://download/archive/{project_id}-evidence.zip", "createdAt": server_time()}
+    task = repo.find_one("export_tasks", export_id) or {"id": export_id, "projectId": project_id, "exportType": "evidence-package", "status": "排队中", "progress": 0, "fileName": file_name, "fileSize": 0, "createdAt": server_time()}
     if not repo.find_one("export_tasks", export_id):
         repo.state["export_tasks"].insert(0, task)
     task["status"] = "可下载"
@@ -7235,16 +7632,20 @@ def archive_item_detail(request: Request, project_id: str, archive_item_id: str)
     scope = authorized_node_scope(request, project_id)
     if not archive_visible_in_scope(item, scope):
         return fail(errors.FORBIDDEN, request, message="用户不在该资源授权范围内。")
-    report = repo.state["reports"][0] if item["type"] == "report" else None
+    download_url = str(item.get("downloadUrl") or "").strip()
+    if not download_url:
+        return fail(errors.EXPORT_TASK_NOT_READY, request, message="归档项缺少可验证的文件产物。")
+    report = repo.find_one("reports", str(item.get("reportId") or "")) if item.get("type") == "report" else None
+    evidence_links = report_evidence_links(report) if report else []
     return ok(
         {
             "item": repo.clone(item),
-            "preview": {**repo.signed_get(item["name"], item.get("downloadUrl") or f"mock://preview/archive/{item['id']}", "application/pdf"), "previewType": "pdf", "readonly": True, "pageCount": 4},
-            "download": repo.signed_get(item["name"], item.get("downloadUrl") or f"mock://download/archive/{item['id']}"),
+            "preview": {**repo.signed_get(item["name"], download_url, item.get("contentType") or "application/pdf", item.get("fileSize")), "previewType": "pdf", "readonly": True, "pageCount": None},
+            "download": repo.signed_get(item["name"], download_url, item.get("contentType"), item.get("fileSize")),
             "report": repo.clone(report) if report else None,
             "document": None,
-            "evidenceLinks": repo.clone(repo.state["evidence_links"]),
-            "relatedExportTasks": [repo.clone(task) for task in repo.state["export_tasks"] if task.get("projectId") == project_id],
+            "evidenceLinks": evidence_links,
+            "relatedExportTasks": [repo.clone(task) for task in repo.state["export_tasks"] if task.get("projectId") == project_id and task.get("reportId") == item.get("reportId")],
         },
         request,
     )
@@ -7286,9 +7687,69 @@ def export_download_url(request: Request, export_id: str):
     return ok(signed, request)
 
 
+@router.get("/exports/{export_id}/artifact")
+def export_artifact(request: Request, export_id: str):
+    task = repo.find_one("export_tasks", export_id)
+    if not task:
+        return fail(errors.NOT_FOUND, request)
+    scope_error = scope_error_for_record(request, task)
+    if scope_error:
+        return scope_error
+    raw_path = str(task.get("localArtifactPath") or "").strip()
+    if not raw_path:
+        return fail(errors.NOT_FOUND, request, message="该导出任务未使用本地文件产物。")
+    export_root = Path(
+        os.getenv("AICHECK_LOCAL_EXPORT_ROOT", str(WORKSPACE_ROOT / "backend" / "data" / "runtime-exports"))
+    ).expanduser().resolve()
+    artifact_path = Path(raw_path).expanduser().resolve()
+    if export_root not in artifact_path.parents or not artifact_path.is_file():
+        return fail(errors.NOT_FOUND, request, message="导出产物不存在或路径无效。")
+    return FileResponse(
+        artifact_path,
+        media_type=task.get("contentType") or "application/octet-stream",
+        filename=task.get("fileName") or artifact_path.name,
+    )
+
+
 @router.get("/downloads/{file_id}/signed-url")
 def file_signed_url(request: Request, file_id: str):
-    return ok(repo.signed_get(f"{file_id}.bin", f"mock://download/{file_id}"), request)
+    task = repo.find_one("export_tasks", file_id)
+    if task:
+        scope_error = scope_error_for_record(request, task)
+        if scope_error:
+            return scope_error
+        signed = signed_url_for_task(task)
+        if isinstance(signed, dict) and "error" in signed:
+            return fail(signed["error"], request)
+        return ok(signed, request)
+    document = repo.find_one("documents", file_id)
+    if not document:
+        version = repo.find_one("versions", file_id)
+        document = repo.find_one("documents", str((version or {}).get("documentId") or "")) if version else None
+    if document:
+        scope_error = scope_error_for_record(request, document, document.get("projectId"))
+        if scope_error:
+            return scope_error
+        return ok(repo.document_download(document), request)
+    archive_item = repo.find_one("archive_items", file_id)
+    if archive_item:
+        scope_error = scope_error_for_record(request, archive_item, archive_item.get("projectId"))
+        if scope_error:
+            return scope_error
+        if not archive_item.get("downloadUrl"):
+            return fail(errors.EXPORT_TASK_NOT_READY, request)
+        return ok(
+            repo.signed_get(
+                archive_item.get("name") or f"{file_id}.bin",
+                archive_item["downloadUrl"],
+                archive_item.get("contentType"),
+                archive_item.get("fileSize"),
+            ),
+            request,
+        )
+    if object_storage.required:
+        return fail(errors.OBJECT_STORAGE_REQUIRED, request)
+    return fail(errors.NOT_FOUND, request)
 
 
 @router.post("/exports")
@@ -7317,7 +7778,7 @@ def create_export(request: Request, body: dict[str, Any] = Body(default_factory=
             "fileName": body.get("fileName") or f"{export_id}.zip",
             "fileSize": 0,
             "createdAt": server_time(),
-            "expiresAt": "2026-06-27 18:00:00",
+            "expiresAt": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
         }
         repo.state["export_tasks"].insert(0, task)
         dispatch = task_dispatcher.dispatch_export(export_id)
@@ -7536,10 +7997,11 @@ def import_ndt_records(request: Request, project_id: str, body: dict[str, Any] =
         rows = body.get("rows") or []
         if not rows:
             return fail(errors.NDT_RECORD_REQUIRED, request, message="导入检测记录行不能为空。")
+        required_fields = ["recordNo", "weldNo", "method"]
         failed = [
-            {"row": index + 1, "fields": missing_required_fields(row, ["recordNo", "weldNo", "method"])}
+            {"row": index + 1, "fields": missing_required_fields(row, required_fields)}
             for index, row in enumerate(rows)
-            if missing_required_fields(row, ["recordNo", "weldNo", "method"])
+            if missing_required_fields(row, required_fields)
         ]
         if failed:
             return fail(errors.NDT_RECORD_REQUIRED, request, data={"failed": failed})
@@ -7552,10 +8014,12 @@ def import_ndt_records(request: Request, project_id: str, body: dict[str, Any] =
                 "recordNo": row.get("recordNo"),
                 "weldNo": row.get("weldNo"),
                 "method": row.get("method"),
-                "testDate": row.get("testDate") or "2026-06-26",
-                "evaluatorName": row.get("evaluatorName") or "王工",
+                "testDate": row.get("testDate"),
+                "evaluatorName": row.get("evaluatorName"),
                 "result": row.get("result") or "待复核",
                 "sampleStatus": row.get("sampleStatus") or "未抽查",
+                "qualityStatus": "完整" if row.get("testDate") and row.get("evaluatorName") else "需补充",
+                "missingFields": missing_required_fields(row, ["testDate", "evaluatorName"]),
                 "importedAt": server_time(),
                 "actions": ["ndt:record-import"],
             }
@@ -7603,7 +8067,7 @@ def ndt_report_upload_session(request: Request, project_id: str, body: dict[str,
             return validation_error
         project = repo.find_one("projects", project_id) or {}
         source_org_name = project.get("ndtOrgName") or "无损检测机构"
-        uploader_name = body.get("uploaderName") or "王工"
+        uploader_name = request_actor_name(request)
         upload_headers = {
             key: value
             for key in ("Authorization", "X-Role", "X-User-Id")
@@ -7750,7 +8214,7 @@ def submit_ndt(
             "targetId": submission_id,
             "status": "待处理",
             "priority": "中",
-            "assigneeName": "张工",
+            "assigneeName": project_role_assignee_name(project_id, "inspection"),
             "actions": ["review:save"],
         }
         repo.state["todos"].insert(0, todo)
@@ -7822,6 +8286,7 @@ def ndt_rectification(request: Request, project_id: str, body: dict[str, Any] = 
             feedback["status"] = "已反馈"
             feedback["feedbackDescription"] = body.get("description")
             feedback["feedbackAt"] = server_time()
+            feedback["actorName"] = request_actor_name(request)
         else:
             feedback = {
                 "id": rectification_id,
@@ -7832,6 +8297,7 @@ def ndt_rectification(request: Request, project_id: str, body: dict[str, Any] = 
                 "status": "已反馈",
                 "relatedReportIds": body.get("reportIds") or [],
                 "relatedFilmIds": body.get("filmIds") or [],
+                "actorName": request_actor_name(request),
                 "createdAt": server_time(),
             }
             repo.state["ndt_feedback"].insert(0, feedback)
@@ -7864,43 +8330,428 @@ def ndt_feedback_detail(request: Request, project_id: str, feedback_id: str):
     if scope_error:
         return scope_error
     scope = authorized_node_scope(request, project_id)
+    related_report_ids = set(feedback.get("relatedReportIds") or [])
+    related_film_ids = set(feedback.get("relatedFilmIds") or [])
+    node_id = int(feedback.get("nodeId") or 0)
+    evidence_links = (
+        confirmed_node_evidence_scope(project_id, node_id)["evidenceLinks"]
+        if node_id
+        else []
+    )
     return ok(
         {
             "feedback": repo.clone(feedback),
             "reports": [repo.clone(item) for item in repo.state["ndt_reports"] if item["id"] in set(feedback.get("relatedReportIds", [])) and record_visible_for_scope(item, scope, project_id=project_id)],
             "films": [repo.clone(item) for item in repo.state["ndt_films"] if item["id"] in set(feedback.get("relatedFilmIds", [])) and record_visible_for_scope(item, scope, project_id=project_id)],
-            "records": [repo.clone(item) for item in repo.state["ndt_records"] if record_visible_for_scope(item, scope, project_id=project_id)],
-            "evidenceLinks": repo.clone(repo.state["evidence_links"]),
-            "timeline": [{"title": "监检反馈", "actorName": "张工", "status": feedback["status"], "createdAt": feedback["createdAt"], "comment": feedback["description"]}],
+            "records": [repo.clone(item) for item in repo.state["ndt_records"] if record_visible_for_scope(item, scope, project_id=project_id) and (item.get("reportId") in related_report_ids or item.get("filmId") in related_film_ids)],
+            "evidenceLinks": evidence_links,
+            "timeline": [{"title": "监检反馈", "actorName": feedback.get("actorName") or "系统", "status": feedback["status"], "createdAt": feedback["createdAt"], "comment": feedback["description"]}],
         },
         request,
     )
 
 
+def operation_data_as_of(items: Iterable[dict[str, Any]]) -> str | None:
+    values = sorted(
+        str(item.get("updatedAt") or item.get("finishedAt") or item.get("createdAt") or "")
+        for item in items
+        if item
+    )
+    return values[-1] if values and values[-1] else None
+
+
+@router.get("/operations/overview")
+def operations_overview(request: Request, area: str = Query(default="workbench"), projectId: str | None = None):
+    role, identity_error = effective_role_for_request(request)
+    if identity_error:
+        return identity_error
+    role = role or "inspection"
+    allowed = {
+        "admin": {"admin"},
+        "knowledge": {"admin"},
+        "fde": {"fde"},
+        "workbench": {"inspection", "contractor", "ndt", "owner"},
+    }
+    if area not in allowed or role not in allowed[area]:
+        return fail(errors.FORBIDDEN, request, message="当前角色无权查看该运营摘要。")
+
+    metrics: list[dict[str, Any]] = []
+    attention: list[dict[str, Any]] = []
+    source_items: list[dict[str, Any]] = []
+    if area == "admin":
+        config = repo.state["admin_config"]
+        users = list_admin_users()
+        orgs = list_admin_org_units()
+        pending_rules = [item for item in config.get("ruleVersions", []) if item.get("status") == "待发布"]
+        audit_logs = repo.state.get("audit_logs", [])
+        source_items = [*users, *orgs, *audit_logs]
+        metrics = [
+            {"key": "projects", "label": "项目", "value": len(repo.state["projects"]), "route": "/admin/projects"},
+            {"key": "users", "label": "用户", "value": len(users), "route": "/admin/org"},
+            {"key": "pending", "label": "待发布配置", "value": len(pending_rules), "route": "/admin/rules"},
+            {"key": "audits", "label": "审计记录", "value": len(audit_logs), "route": "/admin/audit"},
+        ]
+        attention = [
+            {
+                "id": str(item.get("id")),
+                "type": "config",
+                "severity": "warning",
+                "title": str(item.get("name") or item.get("ruleKey") or item.get("id")),
+                "summary": "规则版本待发布",
+                "route": "/admin/rules",
+                "updatedAt": item.get("updatedAt"),
+            }
+            for item in pending_rules[:10]
+        ]
+    elif area == "knowledge":
+        files = [item for item in repo.state["knowledge_files"] if not knowledge_file_is_business_rule(item)]
+        tasks = [item for item in repo.state["knowledge_tasks"] if not knowledge_task_is_business_rule(item)]
+        failed = [item for item in tasks if item.get("status") == "失败"]
+        running = [item for item in tasks if item.get("status") in {"排队中", "运行中"}]
+        source_items = [*files, *tasks]
+        metrics = [
+            {"key": "sources", "label": "知识源", "value": len([item for item in repo.state["knowledge_sources"] if item.get("sourceType") != "rule"]), "route": "/knowledge/sources"},
+            {"key": "files", "label": "文件", "value": len(files), "route": "/knowledge/files"},
+            {"key": "running", "label": "运行任务", "value": len(running), "route": "/knowledge/tasks?status=running"},
+            {"key": "failed", "label": "失败任务", "value": len(failed), "route": "/knowledge/tasks?status=failed"},
+        ]
+        attention = [
+            {
+                "id": str(item.get("id")),
+                "type": "knowledge_task",
+                "severity": "danger",
+                "title": str(item.get("targetName") or item.get("id")),
+                "summary": str(item.get("errorMessage") or "知识任务执行失败"),
+                "route": f"/knowledge/tasks?taskId={item.get('id')}",
+                "updatedAt": item.get("updatedAt"),
+            }
+            for item in failed[:10]
+        ]
+    elif area == "fde":
+        review_runs = repo.state.get("review_runs", [])
+        ocr_jobs = repo.state.get("ocr_jobs", [])
+        incidents = [item for item in repo.state.get("incidents", []) if item.get("status") != "已关闭"]
+        failed_runs = [item for item in review_runs if str(item.get("status") or "").lower() in {"failed", "失败"}]
+        source_items = [*review_runs, *ocr_jobs, *incidents]
+        metrics = [
+            {"key": "projects", "label": "项目", "value": len(repo.state["projects"]), "route": "/fde/projects"},
+            {"key": "reviews", "label": "ReviewRun", "value": len(review_runs), "route": "/fde/review-runs"},
+            {"key": "ocr", "label": "OCR Run", "value": len(ocr_jobs), "route": "/fde/ocr-quality"},
+            {"key": "incidents", "label": "未关闭事故", "value": len(incidents), "route": "/fde/incidents"},
+        ]
+        attention = [
+            {
+                "id": str(item.get("reviewRunId") or item.get("id")),
+                "type": "review_run",
+                "severity": "danger",
+                "title": str(item.get("reviewRunId") or item.get("id")),
+                "summary": str(item.get("errorMessage") or item.get("currentStep") or "ReviewRun 失败"),
+                "route": f"/fde/review-runs?reviewRunId={item.get('reviewRunId') or item.get('id')}",
+                "updatedAt": item.get("updatedAt"),
+            }
+            for item in failed_runs[:10]
+        ]
+    else:
+        projects = [
+            item
+            for item in repo.state["projects"]
+            if (not projectId or item.get("id") == projectId)
+            and (authorized_node_scope(request, item["id"]) is None or bool(authorized_node_scope(request, item["id"])))
+        ]
+        todos = [
+            item
+            for item in repo.state.get("todos", [])
+            if record_visible_for_request(request, item)
+            and (not projectId or item.get("projectId") == projectId)
+        ]
+        documents = [
+            item
+            for item in repo.state["documents"]
+            if record_visible_for_request(request, item)
+            and (not projectId or item.get("projectId") == projectId)
+        ]
+        source_items = [*projects, *todos, *documents]
+        metrics = [
+            {"key": "projects", "label": "可见项目", "value": len(projects), "route": f"/workbench/{role}"},
+            {"key": "todos", "label": "待办", "value": len([item for item in todos if item.get("status") != "已完成"]), "route": f"/workbench/{role}?view=todos"},
+            {"key": "documents", "label": "资料", "value": len(documents), "route": f"/workbench/{role}?view=documents"},
+        ]
+        attention = [
+            {
+                "id": str(item.get("id")),
+                "type": "todo",
+                "severity": "warning" if item.get("priority") != "高" else "danger",
+                "title": str(item.get("title") or item.get("id")),
+                "summary": str(item.get("status") or "待处理"),
+                "route": f"/workbench/{role}?todoId={item.get('id')}",
+                "updatedAt": item.get("updatedAt") or item.get("createdAt"),
+            }
+            for item in todos
+            if item.get("status") != "已完成"
+        ][:10]
+    return ok(
+        {
+            "area": area,
+            "scope": {"role": role, "projectId": projectId},
+            "totals": {item["key"]: item["value"] for item in metrics},
+            "metrics": metrics,
+            "attentionItems": attention,
+            "dataAsOf": operation_data_as_of(source_items),
+            "generatedAt": server_time(),
+        },
+        request,
+    )
+
+
+def operation_elapsed_seconds(item: dict[str, Any]) -> int | None:
+    raw_start = item.get("startedAt") or item.get("createdAt")
+    if not raw_start:
+        return None
+    raw_end = item.get("finishedAt") or datetime.now(UTC).isoformat()
+
+    def parse(value: Any) -> datetime | None:
+        normalized = str(value or "").strip().replace("Z", "+00:00")
+        if not normalized:
+            return None
+        try:
+            result = datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
+        return result.replace(tzinfo=UTC) if result.tzinfo is None else result.astimezone(UTC)
+
+    started = parse(raw_start)
+    finished = parse(raw_end)
+    if not started or not finished:
+        return None
+    return max(0, int((finished - started).total_seconds()))
+
+
+@router.get("/operations/tasks")
+def operations_tasks(
+    request: Request,
+    area: str | None = None,
+    projectId: str | None = None,
+    status: str | None = None,
+    page_no: int = Query(default=1, alias="page"),
+    page_size: int = Query(default=20, alias="pageSize"),
+):
+    role, identity_error = effective_role_for_request(request)
+    if identity_error:
+        return identity_error
+    role = role or "inspection"
+    allowed_areas = {"admin": {"admin", "knowledge"}, "fde": {"fde"}}.get(role, {"workbench"})
+    requested_areas = {area} if area else allowed_areas
+    if not requested_areas.issubset(allowed_areas):
+        return fail(errors.FORBIDDEN, request, message="当前角色无权查看该任务范围。")
+
+    rows: list[dict[str, Any]] = []
+    queued_pipeline_ids = [
+        str(item.get("id"))
+        for item in sorted(
+            [item for item in repo.state.get("ocr_pipeline_runs", []) if item.get("status") == "queued"],
+            key=lambda item: str(item.get("createdAt") or ""),
+        )
+    ]
+
+    def task_project_id(item: dict[str, Any]) -> str | None:
+        if item.get("projectId"):
+            return str(item["projectId"])
+        knowledge_file = next(
+            (
+                file
+                for file in repo.state.get("knowledge_files", [])
+                if file.get("id") == item.get("targetId")
+                or file.get("documentId") == item.get("documentId")
+                or file.get("documentVersionId") == item.get("documentVersionId")
+            ),
+            None,
+        )
+        return str(knowledge_file.get("projectId")) if knowledge_file and knowledge_file.get("projectId") else None
+
+    def append_task(item: dict[str, Any], task_area: str, task_type: str, *, actions: list[str] | None = None):
+        if task_area not in requested_areas:
+            return
+        resolved_project_id = task_project_id(item)
+        scoped_item = {**item, "projectId": resolved_project_id or item.get("projectId")}
+        if projectId and resolved_project_id != projectId:
+            return
+        if resolved_project_id and not record_visible_for_request(request, scoped_item):
+            return
+        task_status = str(item.get("status") or "未知")
+        rows.append(
+            {
+                "id": str(item.get("id") or item.get("jobId") or item.get("reviewRunId")),
+                "area": task_area,
+                "taskType": task_type,
+                "status": task_status,
+                "progress": int(item.get("progress") or item.get("progressPercent") or 0),
+                "operationId": item.get("operationId"),
+                "projectId": resolved_project_id,
+                "targetId": item.get("targetId") or resolved_project_id or item.get("documentVersionId"),
+                "targetLabel": item.get("targetName") or item.get("fileName") or item.get("reviewRunId") or item.get("jobId") or item.get("id"),
+                "errorSummary": item.get("errorMessage") or item.get("failureReason"),
+                "createdAt": item.get("createdAt") or item.get("startedAt"),
+                "updatedAt": item.get("updatedAt") or item.get("finishedAt") or item.get("createdAt"),
+                "actions": actions or [],
+                "route": item.get("route"),
+                "parentTaskId": item.get("parentTaskId"),
+                "pipelineRunId": item.get("pipelineRunId") or (item.get("id") if task_type == "ocr_pipeline" else None),
+                "stage": item.get("currentStage") or item.get("stage"),
+                "stageLabel": item.get("stageLabel"),
+                "queuePosition": (
+                    queued_pipeline_ids.index(str(item.get("id"))) + 1
+                    if str(item.get("id")) in queued_pipeline_ids
+                    else None
+                ),
+                "attempt": int(item.get("attempt") or 0),
+                "elapsedSeconds": operation_elapsed_seconds(item),
+                "engineStatus": item.get("engineStatus") or {},
+                "blockingReasons": item.get("blockingReasons") or [],
+                "recommendedAction": item.get("recommendedAction"),
+            }
+        )
+
+    for item in repo.state.get("knowledge_tasks", []):
+        task_actions = []
+        if item.get("status") == "失败":
+            task_actions.append("retry")
+        if item.get("status") in {"排队中", "运行中"}:
+            task_actions.append("cancel")
+        append_task(item, "knowledge", "knowledge", actions=task_actions)
+        if task_project_id(item):
+            append_task(item, "workbench", "ocr_or_index", actions=[])
+    for item in repo.state.get("review_runs", []):
+        append_task(item, "fde", "review_run", actions=["replay"] if str(item.get("status")).lower() in {"failed", "失败"} else [])
+        if task_project_id(item):
+            append_task(item, "workbench", "review_run", actions=[])
+    for item in repo.state.get("ocr_jobs", []):
+        append_task(item, "fde", "ocr", actions=["rerun"] if str(item.get("status")).lower() in {"failed", "失败"} else [])
+        if task_project_id(item):
+            append_task(item, "workbench", "ocr", actions=[])
+    active_stages = {
+        str(item.get("pipelineRunId")): item
+        for item in repo.state.get("ocr_stage_runs", [])
+        if item.get("status") in {"running", "retrying"}
+    }
+    for item in repo.state.get("ocr_pipeline_runs", []):
+        run = {
+            **item,
+            "stageLabel": str((active_stages.get(str(item.get("id"))) or {}).get("stageLabel") or item.get("currentStage") or ""),
+            "engineStatus": (active_stages.get(str(item.get("id"))) or {}).get("engineStatus") or item.get("engineStatus") or {},
+            "route": f"/fde/ocr-quality?pipelineRunId={item.get('id')}",
+        }
+        append_task(run, "fde", "ocr_pipeline", actions=["rerun"] if item.get("status") == "failed" else [])
+        if task_project_id(run):
+            append_task({**run, "route": None}, "workbench", "ocr_pipeline", actions=[])
+    for item in repo.state.get("export_tasks", []):
+        export_area = "admin" if item.get("exportType") == "config-package" else "workbench"
+        append_task(
+            {
+                **item,
+                "route": "/admin/audit" if export_area == "admin" else item.get("route"),
+            },
+            export_area,
+            "export",
+        )
+    if status:
+        rows = [item for item in rows if item["status"] == status]
+    rows.sort(key=lambda item: str(item.get("updatedAt") or ""), reverse=True)
+    return ok(page(rows, page_no, page_size), request)
+
+
 @router.get("/search")
-def search(request: Request, keyword: str = Query(default=""), projectId: str | None = None, type: str | None = None, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
+def search(
+    request: Request,
+    keyword: str = Query(default=""),
+    projectId: str | None = None,
+    type: str | None = None,
+    scope: str | None = None,
+    page_no: int = Query(default=1, alias="page"),
+    page_size: int = Query(default=20, alias="pageSize"),
+):
+    role, identity_error = effective_role_for_request(request)
+    if identity_error:
+        return identity_error
+    role = role or "inspection"
+    search_scope = scope or ("admin" if role == "admin" else "fde" if role == "fde" else "workbench")
+    allowed_scopes = {"admin": {"admin", "knowledge", "workbench"}, "fde": {"fde"}}.get(role, {"workbench"})
+    if search_scope not in allowed_scopes:
+        return fail(errors.FORBIDDEN, request, message="当前角色无权搜索该数据范围。")
     results: list[dict[str, Any]] = []
-    lowered = keyword.lower()
-    for project in repo.state["projects"]:
-        scope = authorized_node_scope(request, project["id"])
-        if (not projectId or project["id"] == projectId) and (scope is None or bool(scope)):
-            results.append({"type": "project", "id": project["id"], "title": project["name"], "description": project["status"], "route": f"/workbench/inspection?projectId={project['id']}", "highlights": [project["code"], project["region"]]})
-    for node in repo.state["tree_nodes"]:
-        scope = authorized_node_scope(request, node["projectId"])
-        if (not projectId or node["projectId"] == projectId) and record_visible_for_scope(node, scope, project_id=node["projectId"]):
-            results.append({"type": "node", "id": str(node["nodeId"]), "title": f"节点 {node['nodeId']} {node['name']}", "description": node["status"], "route": f"/workbench/inspection?nodeId={node['nodeId']}", "highlights": [node["groupName"], node["inspectionType"]]})
-    for doc in repo.state["documents"]:
-        scope = authorized_node_scope(request, doc["projectId"])
-        if (not projectId or doc["projectId"] == projectId) and document_visible_in_scope(doc, scope):
-            results.append({"type": "document", "id": doc["id"], "title": doc["fileName"], "description": doc["sourceOrgName"], "route": f"/workbench/contractor?documentId={doc['id']}", "highlights": [doc["currentOcrStatus"]]})
-    for report in repo.state["reports"]:
-        scope = authorized_node_scope(request, report["projectId"])
-        if (not projectId or report["projectId"] == projectId) and report_visible_in_scope(report, scope):
-            results.append({"type": "report", "id": report["id"], "title": report["title"], "description": report["status"], "route": f"/workbench/owner?reportId={report['id']}", "highlights": [report["reportNo"]]})
+
+    def append_result(result_type: str, item_id: Any, title: Any, description: Any, route: str, highlights: Iterable[Any], *, status_value: Any = None, updated_at: Any = None, breadcrumb: Any = None):
+        results.append(
+            {
+                "type": result_type,
+                "id": str(item_id),
+                "title": str(title or item_id),
+                "description": str(description or ""),
+                "route": route,
+                "highlights": [str(value) for value in highlights if value not in {None, ""}],
+                "status": status_value,
+                "updatedAt": updated_at,
+                "breadcrumb": breadcrumb,
+            }
+        )
+
+    if search_scope in {"workbench", "admin"}:
+        for project in repo.state["projects"]:
+            node_scope = authorized_node_scope(request, project["id"])
+            if (not projectId or project["id"] == projectId) and (node_scope is None or bool(node_scope)):
+                target_route = f"/admin/projects?projectId={project['id']}" if role == "admin" else f"/workbench/{role}?projectId={project['id']}"
+                append_result("project", project["id"], project["name"], project["status"], target_route, [project.get("code"), project.get("region")], status_value=project.get("status"), updated_at=project.get("updatedAt"), breadcrumb="项目")
+        if search_scope == "workbench":
+            for node in repo.state["tree_nodes"]:
+                node_scope = authorized_node_scope(request, node["projectId"])
+                if (not projectId or node["projectId"] == projectId) and record_visible_for_scope(node, node_scope, project_id=node["projectId"]):
+                    append_result("node", node["nodeId"], f"节点 {node['nodeId']} {node['name']}", node["status"], f"/workbench/{role}?projectId={node['projectId']}&nodeId={node['nodeId']}", [node.get("groupName"), node.get("inspectionType")], status_value=node.get("status"), updated_at=node.get("updatedAt"), breadcrumb="项目 / 审核节点")
+            for doc in repo.state["documents"]:
+                node_scope = authorized_node_scope(request, doc["projectId"])
+                if (not projectId or doc["projectId"] == projectId) and document_visible_in_scope(doc, node_scope):
+                    append_result("document", doc["id"], doc["fileName"], doc.get("sourceOrgName"), f"/workbench/{role}?projectId={doc['projectId']}&documentId={doc['id']}", [doc.get("currentOcrStatus")], status_value=doc.get("currentOcrStatus"), updated_at=doc.get("updatedAt"), breadcrumb="项目 / 资料")
+            for report in repo.state["reports"]:
+                node_scope = authorized_node_scope(request, report["projectId"])
+                if (not projectId or report["projectId"] == projectId) and report_visible_in_scope(report, node_scope):
+                    append_result("report", report["id"], report["title"], report["status"], f"/workbench/{role}?projectId={report['projectId']}&reportId={report['id']}", [report.get("reportNo")], status_value=report.get("status"), updated_at=report.get("updatedAt"), breadcrumb="项目 / 报告")
+
+    if search_scope == "admin":
+        for user in list_admin_users():
+            append_result("user", user.get("id"), user.get("name") or user.get("username"), user.get("orgName"), f"/admin/org?userId={user.get('id')}", [user.get("username"), user.get("role"), user.get("mobile")], status_value=user.get("status"), updated_at=user.get("updatedAt"), breadcrumb="后台 / 组织用户")
+        for org in list_admin_org_units():
+            append_result("org", org.get("id"), org.get("name"), org.get("type"), f"/admin/org?orgId={org.get('id')}", [org.get("contactName"), org.get("contactPhone")], status_value=org.get("status"), updated_at=org.get("updatedAt"), breadcrumb="后台 / 组织用户")
+        for log in repo.state.get("audit_logs", []):
+            append_result("audit_event", log.get("id"), log.get("action"), log.get("objectType"), f"/admin/audit?auditId={log.get('id')}", [log.get("actorName"), log.get("objectId")], status_value=log.get("result"), updated_at=log.get("createdAt"), breadcrumb="后台 / 审计日志")
+
+    if search_scope == "knowledge":
+        for source in repo.state.get("knowledge_sources", []):
+            if source.get("sourceType") == "rule":
+                continue
+            append_result("standard", source.get("id"), source.get("name"), source.get("version"), f"/knowledge/sources?sourceId={source.get('id')}", [source.get("sourceType"), source.get("vectorStatus")], status_value=source.get("status"), updated_at=source.get("updatedAt"), breadcrumb="知识库 / 知识源")
+        for file in repo.state.get("knowledge_files", []):
+            if knowledge_file_is_business_rule(file):
+                continue
+            append_result("knowledge_file", file.get("id"), file.get("fileName"), file.get("sourceName"), f"/knowledge/files?fileId={file.get('id')}", [file.get("sourceRelativePath"), file.get("vectorStatus")], status_value=file.get("vectorStatus"), updated_at=file.get("updatedAt"), breadcrumb="知识库 / 文件")
+        for task in repo.state.get("knowledge_tasks", []):
+            append_result("knowledge_task", task.get("id"), task.get("targetName"), task.get("taskType"), f"/knowledge/tasks?taskId={task.get('id')}", [task.get("errorMessage")], status_value=task.get("status"), updated_at=task.get("updatedAt"), breadcrumb="知识库 / 任务")
+        for rule in repo.state.get("rule_versions", []):
+            append_result("rule", rule.get("id"), rule.get("name"), rule.get("version"), f"/knowledge/rules?ruleId={rule.get('id')}", [rule.get("ruleKey"), rule.get("inspectionItem")], status_value=rule.get("status"), updated_at=rule.get("updatedAt"), breadcrumb="知识库 / 规则")
+
+    if search_scope == "fde":
+        for run in repo.state.get("review_runs", []):
+            run_id = run.get("reviewRunId") or run.get("id")
+            append_result("review_run", run_id, run_id, run.get("currentStep"), f"/fde/review-runs?reviewRunId={run_id}", [run.get("projectId"), run.get("agentId")], status_value=run.get("status"), updated_at=run.get("updatedAt"), breadcrumb="FDE / ReviewRun")
+        for job in repo.state.get("ocr_jobs", []):
+            job_id = job.get("jobId") or job.get("id")
+            append_result("ocr_run", job_id, job.get("fileName") or job_id, job.get("profileId"), f"/fde/ocr-quality?jobId={job_id}", [job.get("documentVersionId"), job.get("engine")], status_value=job.get("status"), updated_at=job.get("updatedAt"), breadcrumb="FDE / OCR")
+        for incident in repo.state.get("incidents", []):
+            append_result("incident", incident.get("id"), incident.get("title"), incident.get("severity"), f"/fde/incidents?incidentId={incident.get('id')}", [incident.get("status")], status_value=incident.get("status"), updated_at=incident.get("updatedAt"), breadcrumb="FDE / 事故")
+
     if type:
         results = [item for item in results if item["type"] == type]
     if keyword:
+        lowered = keyword.lower()
         results = [item for item in results if lowered in f"{item['title']} {item['description']} {' '.join(item['highlights'])}".lower()]
+    results.sort(key=lambda item: str(item.get("updatedAt") or ""), reverse=True)
     return ok(page(results, page_no, page_size), request)
 
 
@@ -7922,7 +8773,13 @@ def todo_detail(request: Request, todo_id: str):
     scope_error = scope_error_for_record(request, todo)
     if scope_error:
         return scope_error
-    return ok({**versioned_record("todo", todo), "relatedObject": None, "evidenceLinks": repo.clone(repo.state["evidence_links"])}, request)
+    evidence_links: list[dict[str, Any]] = []
+    if todo.get("targetType") == "report" and todo.get("targetId"):
+        report = repo.find_one("reports", str(todo["targetId"]))
+        evidence_links = report_evidence_links(report) if report else []
+    elif todo.get("projectId") and todo.get("nodeId") is not None:
+        evidence_links = confirmed_node_evidence_scope(str(todo["projectId"]), int(todo["nodeId"]))["evidenceLinks"]
+    return ok({**versioned_record("todo", todo), "relatedObject": None, "evidenceLinks": evidence_links}, request)
 
 
 @router.post("/todos/{todo_id}/complete")
@@ -8155,13 +9012,31 @@ def create_review_finding(
             return fail(errors.NOT_FOUND, request)
         pack = business_pack_for_project(project)
         agent = (pack.get("agentSops") or [{}])[0]
-        evidence_link_ids = body.get("evidenceLinkIds") or []
-        rule_refs = body.get("ruleRefs") or []
-        if body.get("source") == "ai" and (not evidence_link_ids or not rule_refs):
+        source = str(body.get("source") or "human").strip().lower()
+        title = compact_plain_text(body.get("title"), 200)
+        description = compact_plain_text(body.get("description") or body.get("opinion"), 2000)
+        if not title or not description:
+            return fail(errors.VALIDATION_ERROR, request, message="审查发现标题和说明不能为空。")
+        evidence_validation = validate_node_evidence_selection(
+            project_id,
+            node_id,
+            body.get("evidenceLinkIds") or [],
+            require_non_empty=source == "ai",
+        )
+        if not evidence_validation["passed"]:
             return fail(
                 errors.VALIDATION_ERROR,
                 request,
-                message="AI 审查发现必须包含 evidenceLinkIds 和 ruleRefs。",
+                message=evidence_validation["message"],
+                data={"evidenceValidation": evidence_validation},
+            )
+        evidence_link_ids = evidence_validation["acceptedEvidenceLinkIds"]
+        rule_refs = body.get("ruleRefs") or []
+        if source == "ai" and (not rule_refs or body.get("confidence") is None):
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="AI 审查发现必须包含 confirmed evidence、ruleRefs 和 confidence。",
             )
         finding = {
             "id": body.get("id") or f"FND-{uuid4().hex[:8].upper()}",
@@ -8174,15 +9049,15 @@ def create_review_finding(
             "agentVersion": body.get("agentVersion") or agent.get("version"),
             "findingType": body.get("findingType") or "manual_review",
             "severity": body.get("severity") or "medium",
-            "title": body.get("title") or "审查发现",
-            "description": body.get("description") or body.get("opinion") or "请人工确认该发现。",
+            "title": title,
+            "description": description,
             "evidenceLinkIds": evidence_link_ids,
             "ruleRefs": rule_refs,
             "kbRefs": body.get("kbRefs") or [],
-            "confidence": float(body.get("confidence") or 1),
+            "confidence": float(body["confidence"]) if body.get("confidence") is not None else None,
             "suggestedAction": body.get("suggestedAction") or "human_confirm",
             "status": "draft",
-            "source": body.get("source") or "human",
+            "source": source,
             "humanStatus": body.get("humanStatus") or "pending_human_review",
             "createdAt": server_time(),
             "revision": 1,
@@ -8209,6 +9084,33 @@ def accept_review_finding(
         guard = mutation_guard(request, finding["projectId"], x_role=x_role, node_ids=[int(finding["nodeId"])])
         if guard:
             return guard
+        result = str(body.get("result") or "").strip()
+        opinion_text = compact_plain_text(body.get("opinion") or finding.get("description"), 2000)
+        if result not in {"满足要求", "需补正", "不适用"} or not opinion_text:
+            return fail(errors.VALIDATION_ERROR, request, message="采纳审查发现时必须明确选择审查结果并填写人工意见。")
+        node_id = int(finding["nodeId"])
+        project_id = str(finding["projectId"])
+        readiness = build_node_evidence_readiness(repo, project_id, node_id)
+        evidence_validation = validate_node_evidence_selection(
+            project_id,
+            node_id,
+            body.get("evidenceLinkIds") or finding.get("evidenceLinkIds") or [],
+            require_non_empty=result == "满足要求",
+        )
+        if not evidence_validation["passed"]:
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message=evidence_validation["message"],
+                data={"evidenceValidation": evidence_validation, "evidenceReadiness": readiness},
+            )
+        if result == "满足要求" and not readiness.get("readyForAiFormal"):
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="当前节点仍有待确认或缺失资料，不能通过采纳建议形成“满足要求”结论。",
+                data={"evidenceValidation": evidence_validation, "evidenceReadiness": readiness},
+            )
         finding["status"] = "accepted"
         finding["acceptedAt"] = server_time()
         finding["revision"] = int(finding.get("revision") or 1) + 1
@@ -8216,13 +9118,16 @@ def accept_review_finding(
             "id": f"OPN-{uuid4().hex[:8].upper()}",
             "projectId": finding["projectId"],
             "nodeId": finding["nodeId"],
-            "result": body.get("result") or ("需补正" if finding.get("suggestedAction") == "request_correction" else "满足要求"),
-            "opinion": body.get("opinion") or finding["description"],
+            "result": result,
+            "opinion": opinion_text,
             "findingType": finding["findingType"],
             "ruleRefs": finding.get("ruleRefs") or [],
             "kbRefs": finding.get("kbRefs") or [],
-            "evidenceLinkIds": finding.get("evidenceLinkIds") or [],
-            "reviewerName": "张工",
+            "evidenceLinkIds": evidence_validation["acceptedEvidenceLinkIds"],
+            "readinessSnapshot": readiness,
+            "evidenceValidation": evidence_validation,
+            "businessRuleVersion": business_rule_version_for_node(project_id, node_id),
+            "reviewerName": request_actor_name(request),
             "createdAt": server_time(),
         }
         repo.state["review_opinions"].insert(0, opinion)
@@ -8247,8 +9152,11 @@ def reject_review_finding(
         guard = mutation_guard(request, finding["projectId"], x_role=x_role, node_ids=[int(finding["nodeId"])])
         if guard:
             return guard
+        reject_reason = compact_plain_text(body.get("reason"), 1000)
+        if not reject_reason:
+            return fail(errors.VALIDATION_ERROR, request, message="驳回审查发现必须填写具体原因。")
         finding["status"] = "rejected"
-        finding["rejectReason"] = body.get("reason") or "人工驳回。"
+        finding["rejectReason"] = reject_reason
         finding["rejectedAt"] = server_time()
         finding["revision"] = int(finding.get("revision") or 1) + 1
         audit_id = repo.add_audit("驳回审查发现", "ReviewFinding", finding_id)
@@ -8355,13 +9263,12 @@ def has_raw_access(request: Request, target_type: str, target_id: str) -> bool:
     user_id = fde_subject_user_id(request)
     if not user_id:
         return False
-    now = server_time()
     return any(
         grant.get("subjectUserId") == user_id
         and grant.get("targetType") == target_type
         and grant.get("targetId") == target_id
         and grant.get("status") == "approved"
-        and str(grant.get("expiresAt") or "") >= now
+        and fde_expiry_is_active(grant.get("expiresAt"))
         for grant in repo.state.get("access_grants", [])
     )
 
@@ -8371,9 +9278,45 @@ def fde_subject_user_id(request: Request) -> str | None:
     if explicit_user_id:
         return explicit_user_id
     role, _ = effective_role_for_request(request)
-    if role and role in USERS:
+    if demo_users_enabled() and role and role in USERS:
         return USERS[role].get("id")
     return None
+
+
+def fde_bounded_expiry(
+    raw_value: Any,
+    *,
+    default_minutes: int,
+    max_hours: int = 24,
+) -> str:
+    now = datetime.now(UTC)
+    if raw_value:
+        normalized = str(raw_value).strip().replace("Z", "+00:00")
+        expires_at = datetime.fromisoformat(normalized)
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        else:
+            expires_at = expires_at.astimezone(UTC)
+    else:
+        expires_at = now + timedelta(minutes=default_minutes)
+    if expires_at <= now:
+        raise ValueError("授权有效期必须晚于当前时间。")
+    if expires_at > now + timedelta(hours=max_hours):
+        raise ValueError(f"授权有效期不能超过 {max_hours} 小时。")
+    return expires_at.isoformat()
+
+
+def fde_expiry_is_active(raw_value: Any) -> bool:
+    if not raw_value:
+        return False
+    try:
+        normalized = str(raw_value).strip().replace("Z", "+00:00")
+        expires_at = datetime.fromisoformat(normalized)
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        return expires_at.astimezone(UTC) > datetime.now(UTC)
+    except (TypeError, ValueError):
+        return False
 
 
 def mask_text(value: Any, *, visible: int = 24) -> Any:
@@ -8628,8 +9571,6 @@ def fde_review_run_view(run: dict[str, Any], *, raw_access: bool = False) -> dic
 
 def fde_review_run_audit_package(review_run_id: str, *, raw_access: bool = False) -> dict[str, Any] | None:
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
-    if not run:
-        run = fde_find_or_materialize_synthetic_review_run(review_run_id)
     if not run:
         return None
     graph = graph_view_for_review_run(review_run_id)
@@ -9023,22 +9964,21 @@ def fde_project_quality_blockers(project_id: str, node_id: int | None = None) ->
             )
     for task in fde_ocr_annotation_tasks_source():
         task_project_id = task.get("projectId")
-        if task_project_id and task_project_id != project_id:
+        if task_project_id != project_id:
             continue
         if node_id is not None and task.get("nodeId") and int(task.get("nodeId")) != int(node_id):
             continue
-        if task_project_id or not blockers:
-            if task.get("collectionStatus") != "ready_for_eval" or task.get("readinessBlockers") or task.get("certificationBlockers"):
-                blockers.append(
-                    {
-                        "type": "ocr-annotation",
-                        "level": "warning",
-                        "title": "OCR 样本未达到评估门禁",
-                        "targetId": task.get("taskId") or task.get("caseId"),
-                        "targetName": task.get("scenario"),
-                        "action": "补齐字段、表格、印章标注和二审",
-                    }
-                )
+        if task.get("collectionStatus") != "ready_for_eval" or task.get("readinessBlockers") or task.get("certificationBlockers"):
+            blockers.append(
+                {
+                    "type": "ocr-annotation",
+                    "level": "warning",
+                    "title": "OCR 样本未达到评估门禁",
+                    "targetId": task.get("taskId") or task.get("caseId"),
+                    "targetName": task.get("scenario"),
+                    "action": "补齐字段、表格、印章标注和二审",
+                }
+            )
     return blockers[:20]
 
 
@@ -9889,29 +10829,33 @@ def fde_latest_ocr_parse_result(document_version_id: str) -> dict[str, Any] | No
 
 
 def fde_pipeline_source_view(document: dict[str, Any], version: dict[str, Any] | None) -> dict[str, Any]:
+    preview_error = None
     try:
         preview = repo.document_preview(document)
     except Exception:
         preview = {
-            "url": f"mock://preview/documents/{document.get('id')}?versionId={document.get('currentVersionId')}",
+            "url": None,
             "previewType": repo.document_preview_type(document),
             "readonly": True,
+            "pageCount": None,
         }
+        preview_error = "原始文件存储未就绪，当前无法预览。"
     return {
         "stage": "image",
         "label": "图片/原始文件",
-        "status": "ready" if version else "missing",
+        "status": "ready" if version and preview.get("url") else ("unavailable" if version else "missing"),
         "fileName": document.get("fileName"),
         "fileType": document.get("fileType"),
         "documentId": document.get("id"),
         "documentVersionId": document.get("currentVersionId") or (version or {}).get("id"),
         "storageKey": (version or {}).get("storageKey"),
-        "storageBucket": (version or {}).get("storageBucket") or "documents",
+        "storageBucket": (version or {}).get("storageBucket"),
         "fileSize": (version or {}).get("fileSize"),
         "contentHash": (version or {}).get("hash"),
         "previewUrl": preview.get("url"),
         "previewType": preview.get("previewType"),
         "pageCount": preview.get("pageCount"),
+        "blockingReason": preview_error,
         "readonly": True,
     }
 
@@ -9943,7 +10887,7 @@ def fde_source_preview_view(
                     "quality": page_item.get("quality") or {},
                 }
             )
-    if not preview_pages:
+    if not preview_pages and source.get("previewUrl"):
         preview_pages.append(
             {
                 "pageNo": 1,
@@ -9962,12 +10906,12 @@ def fde_source_preview_view(
     return {
         **source,
         "schemaVersion": "FdeSourcePreview@1.0.0",
-        "pageCount": source.get("pageCount") or len(preview_pages),
+        "pageCount": source.get("pageCount") if source.get("pageCount") is not None else len(preview_pages),
         "pages": preview_pages,
         "previewAvailable": bool(source.get("previewUrl")) and not str(source.get("previewUrl")).startswith("mock://"),
         "previewUnavailableReason": ""
         if bool(source.get("previewUrl")) and not str(source.get("previewUrl")).startswith("mock://")
-        else "当前文件只有审计投影或 mock preview，尚未生成可渲染图片/PDF 预览。",
+        else source.get("blockingReason") or "当前文件尚未生成可渲染的真实图片或 PDF 预览。",
     }
 
 
@@ -10554,7 +11498,7 @@ def fde_normalize_vector_correction_after(body: dict[str, Any], correction_type:
         if value is not None:
             after = {**after, "sourceMethod": str(value)}
     elif correction_type == "ignoreChunk":
-        after = {**after, "ignoredByFde": True, "ignoreReason": body.get("reason") or after.get("ignoreReason") or "FDE 标记忽略"}
+        after = {**after, "ignoredByFde": True, "ignoreReason": body.get("reason") or after.get("ignoreReason")}
     return repo.clone(after)
 
 
@@ -11069,7 +12013,7 @@ def fde_vector_file_detail(project_id: str, document_version_id: str, *, chunk_p
                 {
                     "key": "image",
                     "label": "图片/文件",
-                    "status": "ready" if version else "mock_or_missing",
+                    "status": source_preview.get("status") or ("ready" if version else "missing"),
                     "metric": document.get("fileType") or (version or {}).get("contentType") or "-",
                 },
                 {
@@ -12020,6 +12964,7 @@ def fde_runtime_env_value(name: str, fallback: str) -> str:
 def fde_project_technology_stack(vector_quality: dict[str, Any] | None = None) -> dict[str, Any]:
     embedding = embedding_runtime_config()
     qwen_runtime = qwen_runtime_public_config()
+    audit_pipeline_comparison = deepseek_runtime_public_config()
     audit_runtime = audit_runtime_public_config()
     review_orchestration = fde_runtime_env_value("AICHECK_REVIEW_ORCHESTRATION", "temporal")
     review_llm_execution = fde_runtime_env_value("AICHECK_REVIEW_LLM_EXECUTION", "litellm")
@@ -12038,6 +12983,7 @@ def fde_project_technology_stack(vector_quality: dict[str, Any] | None = None) -
         },
         "embeddingModelRegistry": embedding_registry_payload(),
         "qwenRuntime": qwen_runtime,
+        "auditPipelineComparison": audit_pipeline_comparison,
         "auditRuntime": audit_runtime,
         "runtimeReadiness": runtime_readiness,
         "active": {
@@ -12080,6 +13026,22 @@ def fde_project_technology_stack(vector_quality: dict[str, Any] | None = None) -
                 "visionReviewAlias": qwen_runtime["activeModels"].get("visionReview", "qwen-vision-review"),
                 "fallbackToServer": qwen_runtime["allowFallbackToServer"],
                 "execution": review_llm_execution,
+            },
+            "auditPipelineComparison": {
+                "component": "文档审计 Pipeline Shadow 对照",
+                "mode": audit_pipeline_comparison["mode"],
+                "baseline": {
+                    "pipelineId": audit_pipeline_comparison["primaryPipelineId"],
+                    "provider": audit_pipeline_comparison["primaryProvider"],
+                    "model": audit_pipeline_comparison["primaryModel"],
+                },
+                "challenger": {
+                    "pipelineId": audit_pipeline_comparison["challengerPipelineId"],
+                    "provider": audit_pipeline_comparison["challengerProvider"],
+                    "model": audit_pipeline_comparison["model"],
+                },
+                "advisoryOnly": True,
+                "fallbackEnabled": False,
             },
             "ocr": {
                 "component": "OCR / 文档智能",
@@ -12262,441 +13224,6 @@ def fde_project_document_audit_view(document: dict[str, Any]) -> dict[str, Any]:
     return item
 
 
-FDE_AUDIT_DOCUMENT_TEMPLATES: tuple[dict[str, Any], ...] = (
-    {
-        "fileName": "管道特性表-第2版.png",
-        "fileType": "png",
-        "requirementName": "管道特性表",
-        "usage": "设计资料",
-        "source": "contractor",
-        "currentOcrStatus": "人工修正",
-        "sliceStatus": "已切片",
-        "vectorStatus": "已向量化",
-        "chunkCount": 42,
-        "vectorCount": 42,
-        "pageIndexStatus": "已构建",
-        "profileId": "piping_characteristic_list_v1",
-        "ocrStatus": "needs_human_review",
-    },
-    {
-        "fileName": "质量证明书-QX201903S.pdf",
-        "fileType": "pdf",
-        "requirementName": "产品质量证明文件",
-        "usage": "证明材料",
-        "source": "contractor",
-        "currentOcrStatus": "已识别",
-        "sliceStatus": "已切片",
-        "vectorStatus": "已向量化",
-        "chunkCount": 34,
-        "vectorCount": 31,
-        "pageIndexStatus": "已构建",
-        "profileId": "quality_certificate_v1",
-        "ocrStatus": "success",
-    },
-    {
-        "fileName": "RT检测报告-焊口清单.pdf",
-        "fileType": "pdf",
-        "requirementName": "无损检测报告",
-        "usage": "检测报告",
-        "source": "ndt",
-        "currentOcrStatus": "已识别",
-        "sliceStatus": "已切片",
-        "vectorStatus": "向量化中",
-        "chunkCount": 28,
-        "vectorCount": 19,
-        "pageIndexStatus": "待补齐向量",
-        "profileId": "ndt_rt_report_v1",
-        "ocrStatus": "success",
-    },
-    {
-        "fileName": "焊工资格证与外部查询截图.pdf",
-        "fileType": "pdf",
-        "requirementName": "焊工资格证及外部查询截图",
-        "usage": "资质证明",
-        "source": "contractor",
-        "currentOcrStatus": "已识别",
-        "sliceStatus": "切片中",
-        "vectorStatus": "待向量化",
-        "chunkCount": 16,
-        "vectorCount": 0,
-        "pageIndexStatus": "等待切片",
-        "profileId": "qualification_certificate_v1",
-        "ocrStatus": "needs_human_review",
-    },
-)
-
-
-def fde_compact_project_key(project_id: Any) -> str:
-    compact = re.sub(r"[^A-Za-z0-9]", "", str(project_id or "LOCAL"))
-    return compact[-12:] or "LOCAL"
-
-
-def fde_project_synthetic_document_views(project: dict[str, Any], node_id: int | None) -> list[dict[str, Any]]:
-    project_id = str(project.get("id") or "PROJECT")
-    project_key = fde_compact_project_key(project_id)
-    knowledge_config = repo.state.get("knowledge_config") or {}
-    embedding = embedding_runtime_config()
-    page_index_node_count = len(repo.state.get("knowledge_page_index_nodes", [])) or 4
-    documents: list[dict[str, Any]] = []
-    for index, template in enumerate(FDE_AUDIT_DOCUMENT_TEMPLATES, start=1):
-        version_id = f"FDE-DV-{project_key}-{index}-V{2 if index == 1 else 1}"
-        source_org = project.get("ndtOrgName") if template["source"] == "ndt" else project.get("contractorOrgName")
-        page_index_ready = template["pageIndexStatus"] != "等待切片"
-        document = {
-            "id": f"FDE-DOC-{project_key}-{index}",
-            "projectId": project_id,
-            "nodeId": node_id,
-            "fileName": template["fileName"],
-            "fileType": template["fileType"],
-            "sourceOrgName": source_org or project.get("contractorOrgName") or "项目参建单位",
-            "uploaderName": "NDT 王工" if template["source"] == "ndt" else "施工方 李工",
-            "currentVersionId": version_id,
-            "knowledgeFileId": f"KF-FDE-{project_key}-{index}",
-            "fileStatus": "已上传",
-            "currentOcrStatus": template["currentOcrStatus"],
-            "sliceStatus": template["sliceStatus"],
-            "vectorStatus": template["vectorStatus"],
-            "chunkCount": int(template["chunkCount"]),
-            "vectorCount": int(template["vectorCount"]),
-            "embeddingModel": knowledge_config.get("embeddingModel") or embedding["alias"],
-            "embeddingModelId": knowledge_config.get("embeddingModelId") or embedding["modelId"],
-            "embeddingProvider": knowledge_config.get("embeddingProvider") or embedding["provider"],
-            "embeddingServedModelName": knowledge_config.get("embeddingServedModelName") or embedding["servedModelName"],
-            "indexVersion": "proj-v2026.06.26",
-            "vectorDimensions": int(knowledge_config.get("dimensions") or embedding["dimensions"]),
-            "pageIndexStatus": template["pageIndexStatus"],
-            "pageIndexNodeCount": page_index_node_count if page_index_ready else 0,
-            "requirementName": template["requirementName"],
-            "latestKnowledgeTask": {
-                "id": f"FDE-KTASK-{project_key}-{index}",
-                "taskType": "vector" if template["vectorStatus"] != "待向量化" else "slice",
-                "status": "成功" if template["vectorStatus"] == "已向量化" else "运行中",
-                "progress": 100 if template["vectorStatus"] == "已向量化" else 62,
-            },
-            "syntheticFdeAudit": True,
-            "updatedAt": f"2026-06-26 {8 + index:02d}:18:00",
-            "actions": ["file:view", "file:preview", "file:download"],
-        }
-        document["knowledgeLineage"] = fde_document_knowledge_lineage(document)
-        documents.append(document)
-    return documents
-
-
-def fde_project_synthetic_bindings(project_id: str, node_id: int | None, documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    if node_id is None:
-        return []
-    project_key = fde_compact_project_key(project_id)
-    bindings: list[dict[str, Any]] = []
-    for index, document in enumerate(documents, start=1):
-        template = FDE_AUDIT_DOCUMENT_TEMPLATES[(index - 1) % len(FDE_AUDIT_DOCUMENT_TEMPLATES)]
-        bindings.append(
-            {
-                "id": f"FDE-BIND-{project_key}-{node_id}-{index}",
-                "projectId": project_id,
-                "nodeId": node_id,
-                "requirementId": f"FDE-REQ-{index}",
-                "requirementName": template["requirementName"],
-                "documentId": document.get("id"),
-                "documentVersionId": document.get("currentVersionId"),
-                "fileName": document.get("fileName"),
-                "versionNo": "V2" if str(document.get("currentVersionId") or "").endswith("V2") else "V1",
-                "usage": template["usage"],
-                "sourceOrgName": document.get("sourceOrgName"),
-                "bindingStatus": "需人工复核" if index in {1, 3} else "已提交",
-                "boundAt": document.get("updatedAt") or server_time(),
-                "actions": ["file:view", "review:save"],
-                "syntheticFdeAudit": True,
-            }
-        )
-    return bindings
-
-
-def fde_project_synthetic_ocr_jobs(project_id: str, node_id: int | None, documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    project_key = fde_compact_project_key(project_id)
-    jobs: list[dict[str, Any]] = []
-    for index, document in enumerate(documents, start=1):
-        template = FDE_AUDIT_DOCUMENT_TEMPLATES[(index - 1) % len(FDE_AUDIT_DOCUMENT_TEMPLATES)]
-        jobs.append(
-            {
-                "id": f"OCR-JOB-FDE-{project_key}-{index}",
-                "jobId": f"OCR-JOB-FDE-{project_key}-{index}",
-                "projectId": project_id,
-                "nodeId": node_id,
-                "documentId": document.get("id"),
-                "documentVersionId": document.get("currentVersionId"),
-                "profileId": template["profileId"],
-                "status": template["ocrStatus"],
-                "parseResultId": f"PARSE-FDE-{project_key}-{index}",
-                "resultSummary": {
-                    "fieldCount": 18 if index == 1 else 9 + index,
-                    "tableCount": 2 if index in {1, 3} else 1,
-                    "sealCount": 1 if index in {1, 2, 4} else 0,
-                    "lowConfidenceFieldCount": 3 if index in {1, 4} else 1,
-                },
-                "engineRuns": [
-                    {"engine": "pp_ocr_v6", "status": "success", "durationMs": 1260, "selectedVariantId": "v1_deskew"},
-                    {"engine": "pp_structure_v3", "status": "success", "durationMs": 2180, "selectedVariantId": "table_v1_line_enhanced"},
-                    {"engine": "paddlex_seal", "status": "success" if index != 3 else "skipped", "durationMs": 740, "selectedVariantId": "seal_v0_color_original"},
-                ],
-                "updatedAt": document.get("updatedAt") or server_time(),
-                "syntheticFdeAudit": True,
-            }
-        )
-    return jobs
-
-
-def fde_project_synthetic_parse_result(
-    project_id: str,
-    node_id: int | None,
-    document: dict[str, Any],
-    job: dict[str, Any],
-    index: int,
-) -> dict[str, Any]:
-    profile_id = str(job.get("profileId") or "piping_characteristic_list_v1")
-    parse_result_id = str(job.get("parseResultId") or f"PARSE-FDE-{fde_compact_project_key(project_id)}-{index}")
-    low_confidence = index in {1, 4}
-    fields = [
-        {
-            "fieldId": f"FIELD-{parse_result_id}-PROJECT",
-            "fieldCode": "project_name",
-            "fieldName": "项目名称",
-            "fieldValue": "广东 LNG 支线改造工程",
-            "confidence": 0.94,
-            "pageNo": 1,
-            "bbox": [120, 150, 880, 210],
-            "sourceEngine": "pp_ocr_v6",
-        },
-        {
-            "fieldId": f"FIELD-{parse_result_id}-PIPE",
-            "fieldCode": "pipe_no" if profile_id == "piping_characteristic_list_v1" else "report_no",
-            "fieldName": "管道号" if profile_id == "piping_characteristic_list_v1" else "报告编号",
-            "fieldValue": "PL8301" if profile_id == "piping_characteristic_list_v1" else "QX201903S-13-Y-02",
-            "confidence": 0.72 if low_confidence else 0.9,
-            "pageNo": 1,
-            "bbox": [180, 284, 360, 334],
-            "sourceEngine": "pp_structure_v3",
-            "qualityFlags": ["low_confidence"] if low_confidence else [],
-        },
-        {
-            "fieldId": f"FIELD-{parse_result_id}-SEAL",
-            "fieldCode": "seal_name",
-            "fieldName": "印章名称",
-            "fieldValue": "压力管道设计许可印章",
-            "confidence": 0.68 if profile_id == "qualification_certificate_v1" else 0.86,
-            "pageNo": 1,
-            "bbox": [1410, 690, 1840, 920],
-            "sourceEngine": "paddlex_seal",
-            "qualityFlags": ["seal_text_low_confidence"] if profile_id == "qualification_certificate_v1" else [],
-        },
-    ]
-    diagnostics = [
-        {
-            "code": "FIELD_LOW_CONFIDENCE" if low_confidence else "PROFILE_GATE_PASSED",
-            "level": "warning" if low_confidence else "info",
-            "message": "存在低置信字段，建议进入人工标注复核。" if low_confidence else "OCR Profile 质量门禁通过。",
-            "pageNo": 1,
-            "targetType": "field" if low_confidence else "profile",
-            "targetId": fields[1]["fieldId"] if low_confidence else profile_id,
-        }
-    ]
-    if profile_id in {"qualification_certificate_v1", "seal_text_profile_v1"}:
-        diagnostics.append(
-            {
-                "code": "SEAL_TEXT_LOW_CONFIDENCE",
-                "level": "warning",
-                "message": "印章文字可读但置信度偏低，需要 FDE 复核章名和单位一致性。",
-                "pageNo": 1,
-                "targetType": "seal",
-                "targetId": f"SEAL-{parse_result_id}-1",
-            }
-        )
-    return {
-        "id": parse_result_id,
-        "parseResultId": parse_result_id,
-        "projectId": project_id,
-        "nodeId": node_id,
-        "documentId": document.get("id"),
-        "documentVersionId": document.get("currentVersionId"),
-        "status": job.get("status") or "success",
-        "profileId": profile_id,
-        "engine": "document-intelligence-local",
-        "engineVersion": "fde-audit-projection@1.0.0",
-        "preprocessStatus": {
-            "requestedVariants": ["original", "deskew", "gray_clahe", "table_line_enhanced", "seal_color_crop"],
-            "generatedVariants": ["original", "deskew", "table_line_enhanced", "seal_color_crop"],
-            "missingVariants": ["gray_clahe"] if low_confidence else [],
-            "selectedVariantId": "table_line_enhanced" if profile_id == "piping_characteristic_list_v1" else "deskew",
-        },
-        "engineRuns": repo.clone(job.get("engineRuns") or []),
-        "pages": [{"pageNo": 1, "width": 2048, "height": 1536, "dpi": 300}],
-        "fields": fields,
-        "tables": [
-            {
-                "tableId": f"TABLE-{parse_result_id}-1",
-                "pageNo": 1,
-                "bbox": [92, 260, 1860, 610],
-                "rows": 10,
-                "columns": 8,
-                "structureConfidence": 0.84 if low_confidence else 0.92,
-                "normalizedRows": [
-                    {"管道号": "PL8301", "公称直径": "DN100", "介质": "天然气", "检测比例": "10%"},
-                    {"管道号": "PL8302", "公称直径": "DN100", "介质": "天然气", "检测比例": "10%"},
-                ],
-            }
-        ],
-        "seals": [
-            {
-                "sealId": f"SEAL-{parse_result_id}-1",
-                "pageNo": 1,
-                "sealType": "design_license_seal",
-                "sealName": "压力管道设计许可印章",
-                "bbox": [1390, 675, 1870, 940],
-                "visualConfidence": 0.91,
-                "ocrConfidence": 0.68 if profile_id == "qualification_certificate_v1" else 0.84,
-                "qualityFlags": ["seal_text_low_confidence"] if profile_id == "qualification_certificate_v1" else [],
-            }
-        ],
-        "quality": {
-            "status": "needs_human_review" if low_confidence else "auto_usable",
-            "overallConfidence": 0.82 if low_confidence else 0.92,
-            "textConfidence": 0.88,
-            "tableConfidence": 0.84 if low_confidence else 0.92,
-            "sealConfidence": 0.68 if profile_id == "qualification_certificate_v1" else 0.84,
-            "fieldCompleteness": 0.86 if low_confidence else 0.96,
-            "evidenceCompleteness": 0.92,
-            "reasons": [item["code"] for item in diagnostics if item.get("level") == "warning"],
-        },
-        "diagnostics": diagnostics,
-        "createdAt": job.get("updatedAt") or server_time(),
-        "updatedAt": job.get("updatedAt") or server_time(),
-        "syntheticFdeAudit": True,
-    }
-
-
-def fde_materialize_synthetic_ocr_jobs(
-    project_id: str,
-    node_id: int | None,
-    documents: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    repo.state.setdefault("ocr_jobs", [])
-    repo.state.setdefault("ocr_parse_results", [])
-    materialized: list[dict[str, Any]] = []
-    for index, job in enumerate(fde_project_synthetic_ocr_jobs(project_id, node_id, documents), start=1):
-        job_id = str(job.get("jobId") or job.get("id"))
-        existing_job = repo.find_one("ocr_jobs", job_id) or repo.find_one("ocr_jobs", job_id, id_field="jobId")
-        if not existing_job:
-            repo.state["ocr_jobs"].insert(0, job)
-            existing_job = job
-        document = next(
-            (
-                item
-                for item in documents
-                if str(item.get("currentVersionId") or "") == str(existing_job.get("documentVersionId") or "")
-            ),
-            documents[(index - 1) % len(documents)] if documents else {},
-        )
-        parse_result_id = str(existing_job.get("parseResultId") or "")
-        existing_parse_result = (
-            repo.find_one("ocr_parse_results", parse_result_id, id_field="parseResultId")
-            or repo.find_one("ocr_parse_results", parse_result_id)
-        )
-        if parse_result_id and not existing_parse_result:
-            repo.state["ocr_parse_results"].insert(
-                0,
-                fde_project_synthetic_parse_result(project_id, node_id, document, existing_job, index),
-            )
-        materialized.append(repo.clone(existing_job))
-    return materialized
-
-
-def fde_find_or_materialize_synthetic_ocr_job(job_id: str) -> dict[str, Any] | None:
-    for project in repo.state.get("projects", []):
-        project_id = str(project.get("id") or "")
-        nodes = [item for item in repo.state.get("tree_nodes", []) if item.get("projectId") == project_id]
-        node_ids = [int(project.get("currentNodeId") or 0)] + [
-            int(item.get("nodeId") or 0)
-            for item in nodes[:3]
-            if item.get("nodeId") is not None
-        ]
-        seen: set[int | None] = set()
-        for raw_node_id in node_ids:
-            node_id = raw_node_id or None
-            if node_id in seen:
-                continue
-            seen.add(node_id)
-            documents = fde_project_synthetic_document_views(project, node_id)
-            for job in fde_materialize_synthetic_ocr_jobs(project_id, node_id, documents):
-                if str(job.get("jobId") or job.get("id")) == job_id:
-                    return job
-    return None
-
-
-def fde_project_synthetic_annotation_tasks(project_id: str, node_id: int | None, documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    project_key = fde_compact_project_key(project_id)
-    scenarios = [
-        ("字段框选与证书编号修正", "qualification_certificate_v1", "labeled", [], []),
-        ("表格单元格结构标定", "piping_characteristic_list_v1", "needs_labeling", ["缺少人工表格单元格标注"], []),
-        ("红章区域与章名标定", "seal_text_profile_v1", "ready_for_eval", [], ["印章名称需二审"]),
-        ("NDT 报告跨页表格标定", "ndt_rt_report_v1", "ready_for_eval", [], []),
-    ]
-    tasks: list[dict[str, Any]] = []
-    for index, (scenario, profile_id, status, readiness, certification) in enumerate(scenarios, start=1):
-        document = documents[(index - 1) % len(documents)] if documents else {}
-        raw_task = {
-            "taskId": f"OCR-LABEL-FDE-{project_key}-{index}",
-            "caseId": f"OCR-CASE-FDE-{project_key}-{index}",
-            "projectId": project_id,
-            "nodeId": node_id,
-            "documentVersionId": document.get("currentVersionId"),
-            "scenario": scenario,
-            "profileId": profile_id,
-            "documentType": profile_id,
-            "pageNo": index,
-            "collectionStatus": status,
-            "readinessBlockers": readiness,
-            "certificationBlockers": certification,
-            "candidateCounts": {"fields": 8 + index, "tables": 2 if index in {2, 4} else 1, "seals": 1 if index >= 3 else 0},
-            "labelCounts": {"fields": 0 if index == 2 else 6 + index, "tables": 0 if index == 2 else 1, "seals": 1 if index >= 3 else 0},
-            "readyForEval": status == "ready_for_eval",
-            "labeler": "" if status == "needs_labeling" else "FDE 张工",
-            "reviewer": "OCR 负责人" if certification else "",
-            "syntheticFdeAudit": True,
-        }
-        tasks.append(fde_ocr_annotation_task_view(raw_task))
-    return tasks
-
-
-def fde_project_synthetic_review_run(project: dict[str, Any], node_id: int | None, documents: list[dict[str, Any]]) -> dict[str, Any]:
-    run_id = f"RR-AUDIT-{project.get('id')}-{node_id or 'project'}"
-    pending_ocr = len([item for item in documents if item.get("currentOcrStatus") not in {"已识别", "识别完成"}])
-    return {
-        "id": run_id,
-        "reviewRunId": run_id,
-        "projectId": project.get("id"),
-        "nodeId": node_id,
-        "agentId": "compliance_review_agent",
-        "agentName": "资料合规复核员",
-        "status": "waiting_human_review",
-        "runType": "audit_workspace_projection",
-        "createdAt": server_time(),
-        "graphSummary": {
-            "total": max(len(documents), 1),
-            "completed": 0,
-            "blocked": pending_ocr,
-        },
-        "graphAuditSummary": {
-            "nodeCount": max(len(documents), 1),
-            "edgeCount": max(len(documents) - 1, 1),
-            "timelineCount": 1,
-            "artifactSummary": {"documents": len(documents), "ocrPending": pending_ocr},
-            "checkpointer": "audit-workspace-projection",
-            "workflowEngine": "temporal",
-            "graphEngine": "langgraph",
-            "temporalEventCount": 1,
-        },
-    }
-
-
 def fde_project_review_run_audit_view(review_run: dict[str, Any]) -> dict[str, Any]:
     view = fde_review_run_view(review_run)
     review_run_id = str(view.get("reviewRunId") or view.get("id") or "")
@@ -12717,681 +13244,6 @@ def fde_project_review_run_audit_view(review_run: dict[str, Any]) -> dict[str, A
     return view
 
 
-def fde_page_index_nodes_for_clauses(clause_ids: list[str]) -> list[dict[str, Any]]:
-    clause_id_set = {str(item) for item in clause_ids if item}
-    if not clause_id_set:
-        return []
-    nodes = []
-    for node in repo.state.get("knowledge_page_index_nodes", []):
-        linked = {str(item) for item in node.get("linkedClauseIds") or []}
-        if linked & clause_id_set:
-            nodes.append(repo.clone(node))
-    return nodes[:5]
-
-
-def fde_clause_for_evidence(link: dict[str, Any]) -> dict[str, Any]:
-    clause_id = str(link.get("objectId") or link.get("clauseId") or link.get("id") or "")
-    clause = next(
-        (
-            item
-            for item in repo.state.get("knowledge_clauses", [])
-            if str(item.get("clauseId") or item.get("id")) == clause_id
-        ),
-        None,
-    )
-    if clause:
-        return repo.clone(clause)
-    return {
-        "clauseId": clause_id or "AI-RUN-KB-CONTEXT",
-        "kbDocId": link.get("kbDocId") or "AI-RUN-EVIDENCE",
-        "kbVersion": link.get("kbVersion") or STANDARD_RULES_VERSION,
-        "clauseNo": link.get("clauseNo") or clause_id,
-        "title": link.get("title") or "AI Run 关联知识依据",
-        "text": link.get("quotedText") or "AI 审查运行关联的知识条款证据。",
-        "pageNo": link.get("pageNo"),
-        "bbox": link.get("bbox"),
-        "status": "effective",
-    }
-
-
-def fde_document_evidence_ref(link: dict[str, Any]) -> dict[str, Any]:
-    document_version_id = str(link.get("documentVersionId") or link.get("objectId") or "")
-    field = next(
-        (
-            item
-            for item in repo.state.get("extracted_fields", [])
-            if str(item.get("documentVersionId") or "") == document_version_id
-        ),
-        {},
-    )
-    return {
-        "evidenceLinkId": link.get("id"),
-        "documentVersionId": document_version_id,
-        "documentId": link.get("documentId"),
-        "pageNo": link.get("pageNo") if link.get("pageNo") is not None else field.get("pageNo", 1),
-        "bbox": link.get("bbox") or field.get("bbox") or [0, 0, 100, 40],
-        "text": link.get("quotedText") or field.get("fieldValue") or link.get("fileName") or "资料证据片段",
-        "source": "ai_run_evidence_link",
-    }
-
-
-def fde_append_review_event_once(review_run_id: str, event_type: str, title: str, status: str, details: dict[str, Any] | None = None) -> None:
-    if any(
-        item.get("reviewRunId") == review_run_id and item.get("eventType") == event_type
-        for item in repo.state.get("review_events", [])
-    ):
-        return
-    repo.state.setdefault("review_events", []).append(
-        {
-            "id": f"REVT-FDE-{uuid4().hex[:8].upper()}",
-            "reviewRunId": review_run_id,
-            "eventType": event_type,
-            "title": title,
-            "status": status,
-            "details": details or {},
-            "createdAt": server_time(),
-        }
-    )
-
-
-def fde_append_tool_call_once(review_run: dict[str, Any], node_key: str, tool_name: str, output_summary: dict[str, Any]) -> None:
-    review_run_id = str(review_run.get("reviewRunId") or "")
-    if any(
-        item.get("reviewRunId") == review_run_id
-        and item.get("nodeKey") == node_key
-        and item.get("toolName") == tool_name
-        for item in repo.state.get("review_tool_calls", [])
-    ):
-        return
-    repo.state.setdefault("review_tool_calls", []).append(
-        {
-            "id": f"RTC-FDE-{uuid4().hex[:8].upper()}",
-            "reviewRunId": review_run_id,
-            "nodeKey": node_key,
-            "toolName": tool_name,
-            "allowed": True,
-            "outputHash": stable_hash_payload(output_summary),
-            "outputSummary": output_summary,
-            "createdAt": server_time(),
-        }
-    )
-
-
-def fde_materialize_synthetic_review_run(
-    project: dict[str, Any],
-    node_id: int | None,
-    documents: list[dict[str, Any]],
-) -> dict[str, Any]:
-    synthetic = fde_project_synthetic_review_run(project, node_id, documents)
-    review_run_id = str(synthetic["reviewRunId"])
-    existing = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
-    if existing:
-        return existing
-
-    for collection in [
-        "review_runs",
-        "review_step_runs",
-        "review_graph_nodes",
-        "review_tool_calls",
-        "review_events",
-        "retrieval_traces",
-        "rule_check_results",
-        "ai_feedback",
-    ]:
-        repo.state.setdefault(collection, [])
-
-    project_id = str(project.get("id") or "")
-    pack = business_pack_for_project(project) if project else load_business_pack(DEFAULT_BUSINESS_PACK_ID)
-    document_versions = [str(item.get("currentVersionId")) for item in documents if item.get("currentVersionId")]
-    page_index_nodes = repo.clone(repo.state.get("knowledge_page_index_nodes", [])[:4])
-    selected_clauses = repo.clone(repo.state.get("knowledge_clauses", [])[:3])
-    if not selected_clauses:
-        selected_clauses = [
-            {
-                "clauseId": "FDE-CLAUSE-001",
-                "kbDocId": "KB-FDE-LOCAL",
-                "kbVersion": "inspection_kb@1.0.0",
-                "clauseNo": "5.3.2",
-                "title": "资料完整性与签章审查要求",
-                "text": "审查资料应核对必填字段、表格记录、签章和项目上下文一致性。",
-                "pageNo": 42,
-                "bbox": [120, 180, 1120, 680],
-            }
-        ]
-    clause_ids = [str(item.get("clauseId") or item.get("id")) for item in selected_clauses if item.get("clauseId") or item.get("id")]
-    document_evidence = [
-        {
-            "documentVersionId": str(item.get("currentVersionId")),
-            "documentId": item.get("id"),
-            "pageNo": 1,
-            "bbox": [180, 220 + index * 90, 980, 280 + index * 90],
-            "text": item.get("fileName"),
-            "source": "fde_audit_workspace_projection",
-        }
-        for index, item in enumerate(documents[:4])
-        if item.get("currentVersionId")
-    ]
-    finding_drafts = [
-        {
-            "id": f"FND-DRAFT-{review_run_id}-FIELD",
-            "reviewRunId": review_run_id,
-            "projectId": project_id,
-            "nodeId": node_id,
-            "businessPackId": pack["id"],
-            "agentId": "compliance_review_agent",
-            "agentVersion": "compliance_review_agent@1.0.0",
-            "findingType": "field_low_confidence",
-            "severity": "medium",
-            "title": "管道特性表存在低置信字段，需人工核对",
-            "description": "OCR 识别到管道代号、焊缝检测比例和签章区域存在低置信字段，建议进入 OCR 标注与证据复核。",
-            "evidenceRefs": document_evidence[:2],
-            "ruleRefs": [{"ruleCode": "PIPE_LIST_FIELD_CONFIDENCE", "ruleSetVersion": "engineering_rules@1.0.0"}],
-            "kbRefs": [
-                {
-                    "kbVersion": "inspection_kb@1.0.0",
-                    "retrievalTraceId": f"RTR-{review_run_id}-PAGEINDEX",
-                    "clauseIds": clause_ids,
-                    "clauses": [
-                        {"clauseId": item.get("clauseId"), "kbDocId": item.get("kbDocId"), "clauseNo": item.get("clauseNo")}
-                        for item in selected_clauses
-                    ],
-                }
-            ],
-            "confidence": 0.86,
-            "suggestedAction": "human_confirm",
-            "requiresHumanConfirmation": True,
-            "status": "pending_human_review",
-            "createdAt": server_time(),
-            "source": "fde_audit_workspace_projection",
-        },
-        {
-            "id": f"FND-DRAFT-{review_run_id}-SEAL",
-            "reviewRunId": review_run_id,
-            "projectId": project_id,
-            "nodeId": node_id,
-            "businessPackId": pack["id"],
-            "agentId": "compliance_review_agent",
-            "agentVersion": "compliance_review_agent@1.0.0",
-            "findingType": "seal_text_needs_review",
-            "severity": "medium",
-            "title": "红章文字识别需要二次标定",
-            "description": "印章检测已定位，但章名与单位一致性校验需要人工确认，可沉淀为 seal_text_profile_v1 样本。",
-            "evidenceRefs": document_evidence[1:3] or document_evidence[:1],
-            "ruleRefs": [{"ruleCode": "SEAL_REQUIRED_AND_READABLE", "ruleSetVersion": "engineering_rules@1.0.0"}],
-            "kbRefs": [
-                {
-                    "kbVersion": "inspection_kb@1.0.0",
-                    "retrievalTraceId": f"RTR-{review_run_id}-HYBRID",
-                    "clauseIds": clause_ids,
-                    "clauses": [
-                        {"clauseId": item.get("clauseId"), "kbDocId": item.get("kbDocId"), "clauseNo": item.get("clauseNo")}
-                        for item in selected_clauses[:2]
-                    ],
-                }
-            ],
-            "confidence": 0.81,
-            "suggestedAction": "human_confirm",
-            "requiresHumanConfirmation": True,
-            "status": "pending_human_review",
-            "createdAt": server_time(),
-            "source": "fde_audit_workspace_projection",
-        },
-    ]
-    now = server_time()
-    review_run = {
-        **synthetic,
-        "businessPackId": pack["id"],
-        "businessPackVersion": pack.get("version"),
-        "businessPackSnapshotHash": pack.get("snapshotHash"),
-        "agentVersion": "compliance_review_agent@1.0.0",
-        "promptVersion": "review_prompt@1.0.0",
-        "modelAlias": "review-chat",
-        "modelGateway": "qwen_runtime",
-        "ruleSetVersion": "engineering_rules@1.0.0",
-        "kbVersion": "inspection_kb@1.0.0",
-        "schemaVersion": "ReviewFindingDraftList@1.0.0",
-        "workflowType": "ReviewRunWorkflow",
-        "workflowId": f"review-run-{review_run_id}",
-        "temporalRunId": f"temporal-local-{fde_compact_project_key(project_id)}",
-        "temporalNamespace": "default",
-        "graphRunner": "langgraph",
-        "graphEngine": "langgraph",
-        "workflowEngine": "temporal",
-        "graphExecution": {
-            "runner": "langgraph",
-            "checkpointer": "postgres",
-            "persistence": "langgraph_postgres_checkpointer",
-            "source": "fde_audit_workspace_projection",
-        },
-        "sensitivePayloadPolicy": {
-            "temporalPayload": "ids_hashes_versions_only",
-            "rawTextStorage": "postgres_minio_with_fde_grants",
-            "payloadCodecRequiredInProduction": True,
-        },
-        "allowedTools": [
-            "get_project_context",
-            "get_node_requirements",
-            "get_document_ocr_result",
-            "run_rule_engine",
-            "retrieve_clauses",
-            "search_knowledge_base",
-            "call_qwen_runtime_chat",
-            "create_review_finding_draft",
-        ],
-        "forbiddenTools": [
-            "approve_review",
-            "issue_formal_correction",
-            "close_correction",
-            "change_project_status",
-            "archive_project",
-            "delete_document",
-            "modify_audit_log",
-            "grant_permission",
-        ],
-        "inputDocumentVersionIds": document_versions,
-        "ocrResultVersions": [f"PARSE-FDE-{fde_compact_project_key(project_id)}-{index}" for index, _ in enumerate(documents, start=1)],
-        "inputHash": stable_hash_payload({"projectId": project_id, "nodeId": node_id, "documentVersionIds": document_versions}),
-        "outputHash": stable_hash_payload(finding_drafts),
-        "findingDrafts": finding_drafts,
-        "qualityGate": {
-            "passed": True,
-            "checked": len(finding_drafts),
-            "failures": [],
-            "warnings": [{"code": "FDE_AUDIT_SAMPLE", "message": "这是 FDE 审计工作台投影样例，用于 UI/UX 与流程审计。"}],
-            "metrics": {
-                "status": "ready_for_human_review",
-                "requiresHumanReview": True,
-                "selectedClauseCount": len(selected_clauses),
-                "pageIndexNodeCount": len(page_index_nodes),
-                "findingDraftCount": len(finding_drafts),
-            },
-        },
-        "startedAt": now,
-        "finishedAt": now,
-        "createdAt": now,
-        "updatedAt": now,
-        "revision": 1,
-    }
-    repo.state["review_runs"].insert(0, review_run)
-
-    node_details = {
-        "load_context": {"projectId": project_id, "nodeId": node_id, "projectName": project.get("name")},
-        "load_ocr_result": {"documentCount": len(documents), "ocrResultVersions": review_run["ocrResultVersions"]},
-        "run_rule_engine": {"ruleResults": 2, "failed": 1, "warning": 1},
-        "retrieve_knowledge": {
-            "retrievalTraceIds": [f"RTR-{review_run_id}-PAGEINDEX", f"RTR-{review_run_id}-HYBRID"],
-            "selectedClauses": len(selected_clauses),
-            "pageIndexNodes": len(page_index_nodes),
-        },
-        "build_prompt": {"promptVersion": review_run["promptVersion"], "promptPayload": "ids_hashes_versions_only"},
-        "llm_generate_findings": {"modelGateway": "qwen_runtime", "modelAlias": review_run["modelAlias"], "findingDrafts": len(finding_drafts)},
-        "schema_validation": {"passed": True, "checked": len(finding_drafts), "failures": [], "warnings": [], "metrics": {"findingCount": len(finding_drafts)}},
-        "evidence_validation": {"passed": True, "checked": len(document_evidence), "failures": [], "warnings": [], "metrics": {"evidenceRefCount": len(document_evidence)}},
-        "reference_validation": {"passed": True, "checked": len(clause_ids) + 2, "failures": [], "warnings": [], "metrics": {"ruleResultCount": 2, "retrievalTraceCount": 2}},
-        "critic_review": {"passed": True, "checked": len(finding_drafts), "failures": [], "warnings": [], "metrics": {"criticMode": "audit_workspace_projection"}},
-        "quality_gate": review_run["qualityGate"],
-        "persist_drafts": {"findingDrafts": len(finding_drafts), "outputHash": review_run["outputHash"]},
-    }
-    for sequence, step in enumerate(REVIEW_GRAPH_STEPS, start=1):
-        repo.state["review_graph_nodes"].append(
-            {
-                "id": f"RGNODE-FDE-{fde_compact_project_key(project_id)}-{sequence}",
-                "reviewRunId": review_run_id,
-                "nodeKey": step["key"],
-                "label": step["label"],
-                "sequence": sequence,
-                "taskQueue": step["taskQueue"],
-                "status": "succeeded",
-                "attempt": 1,
-                "details": node_details.get(step["key"], {}),
-                "outputHash": stable_hash_payload(node_details.get(step["key"], {})),
-                "createdAt": now,
-                "startedAt": now,
-                "finishedAt": now,
-            }
-        )
-    rule_results = [
-        {
-            "id": f"RCHK-{review_run_id}-FIELD",
-            "reviewRunId": review_run_id,
-            "ruleCode": "PIPE_LIST_FIELD_CONFIDENCE",
-            "ruleSetVersion": review_run["ruleSetVersion"],
-            "result": "warning",
-            "severity": "medium",
-            "message": "管道特性表存在低置信字段，需人工复核。",
-            "linkedClauseIds": clause_ids,
-            "evidenceRefs": document_evidence[:2],
-            "suggestedAction": "human_confirm",
-            "createdAt": now,
-        },
-        {
-            "id": f"RCHK-{review_run_id}-SEAL",
-            "reviewRunId": review_run_id,
-            "ruleCode": "SEAL_REQUIRED_AND_READABLE",
-            "ruleSetVersion": review_run["ruleSetVersion"],
-            "result": "warning",
-            "severity": "medium",
-            "message": "印章已定位但章名识别置信度需复核。",
-            "linkedClauseIds": clause_ids,
-            "evidenceRefs": document_evidence[1:3] or document_evidence[:1],
-            "suggestedAction": "human_confirm",
-            "createdAt": now,
-        },
-    ]
-    repo.state["rule_check_results"].extend(rule_results)
-    repo.state["retrieval_traces"].extend(
-        [
-            {
-                "id": f"RTR-{review_run_id}-PAGEINDEX",
-                "retrievalTraceId": f"RTR-{review_run_id}-PAGEINDEX",
-                "reviewRunId": review_run_id,
-                "query": "管道特性表字段、印章和检测比例审查依据",
-                "queryType": "review_basis_search",
-                "selectedRoute": "pageindex_tree_search",
-                "routerVersion": "fde-project-audit-v1",
-                "filters": {"projectId": project_id, "nodeId": node_id, "businessPackId": pack["id"], "kbVersion": review_run["kbVersion"]},
-                "retrievers": [
-                    {"type": "pageindex_tree", "enabled": True, "selectedNodeCount": len(page_index_nodes)},
-                    {"type": "clause_index", "topK": 5, "candidateCount": len(selected_clauses)},
-                ],
-                "pageIndexTree": {
-                    "candidateNodeCount": len(repo.state.get("knowledge_page_index_nodes", [])),
-                    "selectedNodes": page_index_nodes,
-                    "linkedClauseIds": clause_ids,
-                    "treeSearchPath": [item.get("pageIndexNodeId") or item.get("id") for item in page_index_nodes],
-                },
-                "selectedClauses": selected_clauses,
-                "kbVersion": review_run["kbVersion"],
-                "createdAt": now,
-            },
-            {
-                "id": f"RTR-{review_run_id}-HYBRID",
-                "retrievalTraceId": f"RTR-{review_run_id}-HYBRID",
-                "reviewRunId": review_run_id,
-                "query": "印章文字识别与单位一致性复核",
-                "queryType": "review_basis_search",
-                "selectedRoute": "hybrid_bm25_dense_local",
-                "routerVersion": "fde-project-audit-v1",
-                "filters": {"projectId": project_id, "nodeId": node_id, "businessPackId": pack["id"], "kbVersion": review_run["kbVersion"]},
-                "retrievers": [
-                    {"type": "bm25", "topK": 10, "candidateCount": len(selected_clauses)},
-                    {"type": "dense_vector", "topK": 10, "candidateCount": len(selected_clauses)},
-                ],
-                "pageIndexTree": {"candidateNodeCount": len(repo.state.get("knowledge_page_index_nodes", [])), "selectedNodes": [], "linkedClauseIds": clause_ids},
-                "selectedClauses": selected_clauses,
-                "kbVersion": review_run["kbVersion"],
-                "createdAt": now,
-            },
-        ]
-    )
-    fde_append_tool_call_once(review_run, "load_context", "get_project_context", {"projectId": project_id, "nodeId": node_id})
-    fde_append_tool_call_once(review_run, "load_ocr_result", "get_document_ocr_result", {"documentCount": len(documents), "ocrResultVersions": len(review_run["ocrResultVersions"])})
-    fde_append_tool_call_once(review_run, "run_rule_engine", "run_rule_engine", {"ruleResults": len(rule_results), "warning": 2})
-    fde_append_tool_call_once(review_run, "retrieve_knowledge", "search_knowledge_base", {"retrievalTraces": 2, "pageIndexNodes": len(page_index_nodes)})
-    fde_append_tool_call_once(review_run, "llm_generate_findings", "call_qwen_runtime_chat", {"modelAlias": review_run["modelAlias"], "findingDrafts": len(finding_drafts)})
-    fde_append_review_event_once(review_run_id, "review_run.created", "ReviewRun 已创建", "created", {"source": "fde_audit_workspace_projection"})
-    fde_append_review_event_once(review_run_id, "review_run.graph_completed", "LangGraph 审查图已完成", "succeeded", {"nodeCount": len(REVIEW_GRAPH_STEPS)})
-    fde_append_review_event_once(review_run_id, "review_run.waiting_human", "等待人工确认", "waiting_human_review", {"findingDrafts": len(finding_drafts)})
-    return review_run
-
-
-def fde_find_or_materialize_synthetic_review_run(review_run_id: str) -> dict[str, Any] | None:
-    if not review_run_id.startswith("RR-AUDIT-"):
-        return None
-    for project in repo.state.get("projects", []):
-        project_id = str(project.get("id") or "")
-        prefix = f"RR-AUDIT-{project_id}-"
-        if not review_run_id.startswith(prefix):
-            continue
-        node_part = review_run_id.removeprefix(prefix)
-        if node_part == "project":
-            node_id: int | None = None
-        elif node_part.isdigit():
-            node_id = int(node_part)
-        else:
-            continue
-        documents = fde_project_synthetic_document_views(project, node_id)
-        return fde_materialize_synthetic_review_run(project, node_id, documents)
-    return None
-
-
-def fde_hydrate_review_run_from_ai_run(review_run: dict[str, Any], ai_run: dict[str, Any]) -> dict[str, Any]:
-    review_run_id = str(review_run.get("reviewRunId") or review_run.get("id"))
-    evidence_links = ai_run.get("evidenceLinks") or [
-        item
-        for item in repo.state.get("evidence_links", [])
-        if item.get("id") in set(ai_run.get("evidenceLinkIds") or [])
-        or item.get("documentVersionId") in set(ai_run.get("inputDocumentVersionIds") or [])
-    ]
-    document_evidence = [
-        fde_document_evidence_ref(item)
-        for item in evidence_links
-        if isinstance(item, dict) and item.get("objectType") in {"documentVersion", "extractedField", None}
-    ]
-    knowledge_clauses = [
-        fde_clause_for_evidence(item)
-        for item in evidence_links
-        if isinstance(item, dict) and item.get("objectType") == "knowledgeClause"
-    ]
-    if not knowledge_clauses:
-        knowledge_clauses = repo.clone(repo.state.get("knowledge_clauses", [])[:1])
-    clause_ids = [str(item.get("clauseId")) for item in knowledge_clauses if item.get("clauseId")]
-    page_index_nodes = fde_page_index_nodes_for_clauses(clause_ids)
-    retrieval_trace_id = f"RTR-{review_run_id}-FDE"
-    rule_code = str(ai_run.get("ruleCode") or "AI_RUN_REVIEW_CONTEXT")
-    rule_result = {
-        "id": f"RCHK-{review_run_id}-FDE",
-        "reviewRunId": review_run_id,
-        "ruleCode": rule_code,
-        "ruleSetVersion": ai_run.get("ruleVersion") or review_run.get("ruleSetVersion"),
-        "result": "warning" if (ai_run.get("suggestion") or {}).get("manualConfirmItems") else "passed",
-        "severity": "medium",
-        "message": "从历史 AI Run 补齐的确定性规则上下文，供 FDE 审计回放。",
-        "linkedClauseIds": clause_ids,
-        "evidenceRefs": document_evidence,
-        "suggestedAction": "human_confirm",
-        "createdAt": server_time(),
-    }
-    if not any(item.get("reviewRunId") == review_run_id for item in repo.state.get("rule_check_results", [])):
-        repo.state.setdefault("rule_check_results", []).append(rule_result)
-    selected_clauses = [
-        {
-            "clauseId": item.get("clauseId"),
-            "kbDocId": item.get("kbDocId"),
-            "kbVersion": item.get("kbVersion") or review_run.get("kbVersion"),
-            "clauseNo": item.get("clauseNo"),
-            "title": item.get("title"),
-            "text": item.get("text") or item.get("quotedText"),
-            "pageNo": item.get("pageNo"),
-            "bbox": item.get("bbox"),
-            "score": item.get("score", 1.0),
-            "retrievalMode": "pageindex_linked_clause" if page_index_nodes else "hybrid_bm25_dense_local",
-            "pageIndexNodeIds": [node.get("pageIndexNodeId") or node.get("id") for node in page_index_nodes],
-        }
-        for item in knowledge_clauses[:5]
-    ]
-    retrieval_trace = {
-        "id": retrieval_trace_id,
-        "retrievalTraceId": retrieval_trace_id,
-        "reviewRunId": review_run_id,
-        "query": ai_run.get("subject") or "项目资料审查依据",
-        "queryType": "project_audit_review_basis",
-        "selectedRoute": "pageindex_tree_search" if page_index_nodes else "hybrid_review_basis_search",
-        "routerVersion": "fde-project-audit-v1",
-        "filters": {
-            "projectId": ai_run.get("projectId"),
-            "nodeId": ai_run.get("nodeId"),
-            "businessPackId": review_run.get("businessPackId"),
-            "kbVersion": review_run.get("kbVersion"),
-        },
-        "retrievers": [
-            {"type": "clause_index", "topK": 5, "candidateCount": len(selected_clauses)},
-            {"type": "hybrid_bm25_dense", "topK": 5, "implementation": "local_project_audit_bridge"},
-            {
-                "type": "pageindex_tree",
-                "enabled": bool(page_index_nodes),
-                "implementation": "local_page_index_nodes",
-                "candidateNodeCount": len(repo.state.get("knowledge_page_index_nodes", [])),
-                "selectedNodeCount": len(page_index_nodes),
-            },
-        ],
-        "pageIndexTree": {
-            "candidateNodeCount": len(repo.state.get("knowledge_page_index_nodes", [])),
-            "selectedNodes": page_index_nodes,
-            "linkedClauseIds": clause_ids,
-            "treeSearchPath": [node.get("pageIndexNodeId") or node.get("id") for node in page_index_nodes],
-        },
-        "selectedClauses": selected_clauses,
-        "kbVersion": review_run.get("kbVersion") or (selected_clauses[0].get("kbVersion") if selected_clauses else "inspection_kb@1.0.0"),
-        "createdAt": server_time(),
-    }
-    if not any(item.get("reviewRunId") == review_run_id for item in repo.state.get("retrieval_traces", [])):
-        repo.state.setdefault("retrieval_traces", []).append(retrieval_trace)
-    suggestion = ai_run.get("suggestion") if isinstance(ai_run.get("suggestion"), dict) else {}
-    finding_drafts = review_run.get("findingDrafts") or [
-        {
-            "id": suggestion.get("id") or f"FND-DRAFT-{review_run_id}-FDE",
-            "reviewRunId": review_run_id,
-            "projectId": ai_run.get("projectId"),
-            "nodeId": ai_run.get("nodeId"),
-            "businessPackId": review_run.get("businessPackId"),
-            "agentId": review_run.get("agentId"),
-            "agentVersion": review_run.get("agentVersion"),
-            "findingType": "needs_human_confirmation" if suggestion.get("manualConfirmItems") else "ai_review_suggestion",
-            "severity": "medium" if suggestion.get("risks") or suggestion.get("manualConfirmItems") else "low",
-            "title": suggestion.get("result") or ai_run.get("subject") or "AI 审查草稿",
-            "description": suggestion.get("opinionDraft") or "基于 OCR 证据、知识依据和规则上下文生成的审查草稿，需人工确认。",
-            "evidenceRefs": document_evidence[:5],
-            "evidenceLinkIds": [item.get("evidenceLinkId") for item in document_evidence if item.get("evidenceLinkId")],
-            "ruleRefs": [{"ruleCode": rule_code, "ruleSetVersion": rule_result.get("ruleSetVersion")}],
-            "kbRefs": [
-                {
-                    "kbVersion": retrieval_trace.get("kbVersion"),
-                    "retrievalTraceId": retrieval_trace_id,
-                    "clauseIds": clause_ids,
-                    "clauses": [
-                        {"clauseId": item.get("clauseId"), "kbDocId": item.get("kbDocId"), "clauseNo": item.get("clauseNo")}
-                        for item in selected_clauses[:3]
-                    ],
-                }
-            ],
-            "confidence": float(suggestion.get("confidence") or 0.82),
-            "suggestedAction": "human_confirm",
-            "requiresHumanConfirmation": True,
-            "status": "pending_human_review",
-            "createdAt": server_time(),
-            "source": "fde_ai_run_bridge",
-        }
-    ]
-    review_run.update(
-        {
-            "status": review_run.get("status") if review_run.get("status") not in {"queued", "created"} else "waiting_human_review",
-            "currentStep": "waiting_human_review",
-            "startedAt": review_run.get("startedAt") or ai_run.get("startedAt") or server_time(),
-            "finishedAt": review_run.get("finishedAt") or ai_run.get("finishedAt") or server_time(),
-            "findingDrafts": finding_drafts,
-            "outputHash": review_run.get("outputHash") or stable_hash_payload(finding_drafts),
-            "graphRunner": review_run.get("graphRunner") or "langgraph",
-            "graphEngine": review_run.get("graphEngine") or "langgraph",
-            "workflowEngine": review_run.get("workflowEngine") or "temporal",
-            "graphExecution": review_run.get("graphExecution")
-            or {
-                "runner": "langgraph",
-                "checkpointer": "postgres",
-                "persistence": "langgraph_postgres_checkpointer",
-                "source": "fde_ai_run_bridge",
-            },
-            "qualityGate": review_run.get("qualityGate")
-            or {
-                "passed": True,
-                "checked": len(finding_drafts),
-                "failures": [],
-                "warnings": [{"code": "HISTORICAL_AI_RUN_BRIDGED", "message": "历史 AI Run 已桥接为 FDE 可审计 ReviewRun。"}],
-                "metrics": {
-                    "status": "ready_for_human_review",
-                    "requiresHumanReview": True,
-                    "selectedClauseCount": len(selected_clauses),
-                    "pageIndexNodeCount": len(page_index_nodes),
-                },
-            },
-        }
-    )
-    validation_details = {
-        "schema_validation": {"passed": True, "checked": len(finding_drafts), "failures": [], "warnings": [], "metrics": {"findingCount": len(finding_drafts)}},
-        "evidence_validation": {"passed": True, "checked": len(document_evidence), "failures": [], "warnings": [], "metrics": {"evidenceRefCount": len(document_evidence)}},
-        "reference_validation": {"passed": True, "checked": len(clause_ids) + 1, "failures": [], "warnings": [], "metrics": {"ruleResultCount": 1, "retrievalTraceCount": 1}},
-        "critic_review": {"passed": True, "checked": len(finding_drafts), "failures": [], "warnings": [], "metrics": {"criticMode": "fde_bridge_guardrail"}},
-        "quality_gate": review_run["qualityGate"],
-    }
-    node_details = {
-        "load_context": {"projectId": ai_run.get("projectId"), "nodeId": ai_run.get("nodeId"), "source": "ai_run"},
-        "load_ocr_result": {"fieldCount": len(review_run.get("ocrResultVersions") or []), "evidenceLinkCount": len(document_evidence)},
-        "run_rule_engine": {"ruleResults": 1, "ruleCode": rule_code, "result": rule_result["result"], "linkedClauseIds": clause_ids},
-        "retrieve_knowledge": {"retrievalTraceId": retrieval_trace_id, "selectedClauses": len(selected_clauses), "selectedRoute": retrieval_trace["selectedRoute"]},
-        "build_prompt": {"promptVersion": review_run.get("promptVersion"), "promptPayload": "ids_hashes_versions_only"},
-        "llm_generate_findings": {"modelGateway": "qwen_runtime", "modelAlias": review_run.get("modelAlias"), "findingDrafts": len(finding_drafts), "llmExecution": "historical_ai_run"},
-        "persist_drafts": {"findingDrafts": len(finding_drafts), "outputHash": review_run.get("outputHash")},
-        **validation_details,
-    }
-    for node in repo.state.get("review_graph_nodes", []):
-        if node.get("reviewRunId") != review_run_id:
-            continue
-        node_key = str(node.get("nodeKey") or "")
-        node["status"] = "succeeded"
-        node["attempt"] = max(int(node.get("attempt") or 0), 1)
-        node["startedAt"] = node.get("startedAt") or review_run.get("startedAt")
-        node["finishedAt"] = node.get("finishedAt") or review_run.get("finishedAt")
-        if node_key in node_details:
-            node["details"] = {**(node.get("details") if isinstance(node.get("details"), dict) else {}), **node_details[node_key]}
-            node["outputHash"] = stable_hash_payload(node["details"])
-    fde_append_tool_call_once(review_run, "load_context", "get_project_context", {"projectId": ai_run.get("projectId"), "nodeId": ai_run.get("nodeId")})
-    fde_append_tool_call_once(review_run, "load_ocr_result", "get_document_ocr_result", {"evidenceLinks": len(document_evidence)})
-    fde_append_tool_call_once(review_run, "run_rule_engine", "run_rule_engine", {"ruleCode": rule_code, "result": rule_result["result"]})
-    fde_append_tool_call_once(review_run, "retrieve_knowledge", "search_knowledge_base", {"retrievalTraceId": retrieval_trace_id, "selectedRoute": retrieval_trace["selectedRoute"]})
-    fde_append_tool_call_once(review_run, "llm_generate_findings", "call_qwen_runtime_chat", {"modelAlias": review_run.get("modelAlias"), "source": "historical_ai_run"})
-    fde_append_review_event_once(review_run_id, "review_run.waiting_human", "等待人工确认", "waiting_human_review", {"source": "fde_ai_run_bridge"})
-    return review_run
-
-
-def fde_ensure_review_runs_for_project(project_id: str, node_id: int | None, version_ids: set[str]) -> None:
-    for collection in [
-        "review_runs",
-        "review_step_runs",
-        "review_graph_nodes",
-        "review_tool_calls",
-        "review_events",
-        "retrieval_traces",
-        "rule_check_results",
-        "ai_feedback",
-    ]:
-        repo.state.setdefault(collection, [])
-    for ai_run in repo.state.get("ai_runs", []):
-        if not fde_record_matches_project(ai_run, project_id, node_id=node_id, version_ids=version_ids):
-            continue
-        existing_id = ai_run.get("reviewRunId")
-        existing = (
-            repo.find_one("review_runs", str(existing_id), id_field="reviewRunId")
-            if existing_id
-            else None
-        )
-        if not existing:
-            existing = next(
-                (
-                    item
-                    for item in repo.state.get("review_runs", [])
-                    if item.get("aiRunId") == ai_run.get("id")
-                ),
-                None,
-            )
-        if existing:
-            ai_run["reviewRunId"] = existing.get("reviewRunId") or existing.get("id")
-            if not existing.get("findingDrafts"):
-                fde_hydrate_review_run_from_ai_run(existing, ai_run)
-            continue
-        review_run = create_review_run_from_ai_run(ai_run, mode="temporal")
-        fde_hydrate_review_run_from_ai_run(review_run, ai_run)
-
-
 def fde_project_audit_workspace(project_id: str, node_id: int | None = None) -> dict[str, Any]:
     project = repo.require_project(project_id)
     if not project:
@@ -13401,25 +13253,15 @@ def fde_project_audit_workspace(project_id: str, node_id: int | None = None) -> 
     selected_node = repo.node(project_id, node_id or fallback_node_id)
     selected_node_id = int(selected_node.get("nodeId")) if selected_node else None
     version_ids = fde_project_version_ids(project_id, selected_node_id)
-    fde_ensure_review_runs_for_project(project_id, selected_node_id, version_ids)
     node_summaries = [fde_project_node_audit_summary(project_id, item) for item in nodes]
     documents = [fde_project_document_audit_view(item) for item in repo.project_documents(project_id)]
-    synthetic_documents = False
-    if not documents:
-        documents = fde_project_synthetic_document_views(project, selected_node_id)
-        synthetic_documents = True
     bindings = repo.bindings_for_node(project_id, selected_node_id) if selected_node_id is not None else repo.bindings_for_project(project_id)
-    if not bindings and documents:
-        bindings = fde_project_synthetic_bindings(project_id, selected_node_id, documents)
     submissions = [submission_summary(item) for item in repo.state.get("submissions", []) if item.get("projectId") == project_id]
     review_runs = [
         fde_project_review_run_audit_view(item)
         for item in repo.state.get("review_runs", [])
         if fde_record_matches_project(item, project_id, node_id=selected_node_id, version_ids=version_ids)
     ]
-    if not review_runs and documents:
-        synthetic_review_run = fde_materialize_synthetic_review_run(project, selected_node_id, documents)
-        review_runs = [fde_project_review_run_audit_view(synthetic_review_run)]
     ai_runs = [
         fde_ai_run_view(item)
         for item in repo.state.get("ai_runs", [])
@@ -13430,45 +13272,13 @@ def fde_project_audit_workspace(project_id: str, node_id: int | None = None) -> 
         for item in repo.state.get("ocr_jobs", [])
         if fde_record_matches_project(item, project_id, node_id=selected_node_id, version_ids=version_ids)
     ]
-    synthetic_ocr_jobs = False
-    if not ocr_jobs and documents:
-        ocr_jobs = fde_materialize_synthetic_ocr_jobs(project_id, selected_node_id, documents)
-        synthetic_ocr_jobs = True
     annotation_tasks = [
         {**fde_ocr_annotation_task_view(item), "scopeLabel": "项目样本"}
         for item in fde_ocr_annotation_tasks_source()
         if item.get("projectId") == project_id
         and (selected_node_id is None or not item.get("nodeId") or int(item.get("nodeId")) == selected_node_id)
     ]
-    if not annotation_tasks:
-        annotation_tasks = [
-            {**fde_ocr_annotation_task_view(item), "scopeLabel": "待绑定项目样本"}
-            for item in fde_ocr_annotation_tasks_source()
-            if not item.get("projectId")
-        ][:5]
-    if len(annotation_tasks) < 4 and documents:
-        existing_task_ids = {str(item.get("taskId") or item.get("caseId")) for item in annotation_tasks}
-        for task in fde_project_synthetic_annotation_tasks(project_id, selected_node_id, documents):
-            task_id = str(task.get("taskId") or task.get("caseId"))
-            if task_id not in existing_task_ids:
-                annotation_tasks.append({**task, "scopeLabel": "项目审计样本"})
-                existing_task_ids.add(task_id)
-            if len(annotation_tasks) >= 4:
-                break
     blockers = fde_project_quality_blockers(project_id, selected_node_id)
-    if synthetic_documents or synthetic_ocr_jobs:
-        for summary in node_summaries:
-            if selected_node_id is None or int(summary.get("nodeId") or 0) != int(selected_node_id):
-                continue
-            if synthetic_documents:
-                summary["documentCount"] = len({item.get("id") for item in documents})
-                summary["bindingCount"] = len(bindings)
-            summary["ocrJobCount"] = max(int(summary.get("ocrJobCount") or 0), len(ocr_jobs))
-            summary["reviewRunCount"] = max(int(summary.get("reviewRunCount") or 0), len(review_runs))
-            summary["blockerCount"] = max(int(summary.get("blockerCount") or 0), len(blockers))
-            summary["latestReviewRun"] = summary.get("latestReviewRun") or (review_runs[0] if review_runs else None)
-            summary["annotationTaskCount"] = len(annotation_tasks)
-            break
     metrics = {
         "nodes": len(nodes),
         "documents": len(documents),
@@ -13519,42 +13329,23 @@ def fde_project_audit_summary(project: dict[str, Any]) -> dict[str, Any]:
     selected_node_id = int(selected_node.get("nodeId")) if selected_node else None
     version_ids = fde_project_version_ids(project_id, selected_node_id)
     documents = [fde_project_document_audit_view(item) for item in repo.project_documents(project_id)]
-    if not documents:
-        documents = fde_project_synthetic_document_views(project, selected_node_id)
     submissions = [item for item in repo.state.get("submissions", []) if item.get("projectId") == project_id]
     review_runs = [
         fde_project_review_run_audit_view(item)
         for item in repo.state.get("review_runs", [])
         if fde_record_matches_project(item, project_id, node_id=selected_node_id, version_ids=version_ids)
     ]
-    if not review_runs and documents:
-        review_runs = [
-            fde_project_review_run_audit_view(
-                fde_project_synthetic_review_run(project, selected_node_id, documents)
-            )
-        ]
     ocr_jobs = [
         item
         for item in repo.state.get("ocr_jobs", [])
         if fde_record_matches_project(item, project_id, node_id=selected_node_id, version_ids=version_ids)
     ]
-    if not ocr_jobs and documents:
-        ocr_jobs = fde_project_synthetic_ocr_jobs(project_id, selected_node_id, documents)
     annotation_tasks = [
         item
         for item in fde_ocr_annotation_tasks_source()
         if item.get("projectId") == project_id
         and (selected_node_id is None or not item.get("nodeId") or int(item.get("nodeId")) == selected_node_id)
     ]
-    if len(annotation_tasks) < 4 and documents:
-        existing_task_ids = {str(item.get("taskId") or item.get("caseId")) for item in annotation_tasks}
-        for task in fde_project_synthetic_annotation_tasks(project_id, selected_node_id, documents):
-            task_id = str(task.get("taskId") or task.get("caseId"))
-            if task_id not in existing_task_ids:
-                annotation_tasks.append(task)
-                existing_task_ids.add(task_id)
-            if len(annotation_tasks) >= 4:
-                break
     blockers = fde_project_quality_blockers(project_id, selected_node_id)
     low_confidence_fields = [
         item
@@ -13748,6 +13539,9 @@ def fde_create_vector_correction(
         after = fde_normalize_vector_correction_after(body, correction_type)
         if correction_type != "ignoreChunk" and not after:
             return fail(errors.VALIDATION_ERROR, request, message="校对后的目标值不能为空。")
+        correction_reason = compact_plain_text(body.get("reason"), 500)
+        if not correction_reason:
+            return fail(errors.VALIDATION_ERROR, request, message="提交向量资料校对必须填写原因。")
         now = server_time()
         correction = {
             "id": str(body.get("id") or f"KVCR-{uuid4().hex[:8].upper()}"),
@@ -13763,7 +13557,7 @@ def fde_create_vector_correction(
             "correctionType": correction_type,
             "before": body.get("before") if body.get("before") is not None else fde_vector_chunk_before_value(chunk, correction_type),
             "after": after,
-            "reason": compact_plain_text(body.get("reason") or "FDE 向量资料校对", 500),
+            "reason": correction_reason,
             "status": "pending_review",
             "statusLabel": VECTOR_CORRECTION_STATUS_LABELS["pending_review"],
             "createdByRole": role or "fde",
@@ -13794,12 +13588,15 @@ def fde_approve_vector_correction(
             return fail(errors.NOT_FOUND, request)
         if correction.get("status") in {"applied", "rejected"}:
             return fail(errors.VALIDATION_ERROR, request, message="当前校对状态不能通过。")
+        review_reason = compact_plain_text(body.get("reason"), 500)
+        if not review_reason:
+            return fail(errors.VALIDATION_ERROR, request, message="通过向量资料校对必须填写审核意见。")
         now = server_time()
         correction["status"] = "approved"
         correction["statusLabel"] = VECTOR_CORRECTION_STATUS_LABELS["approved"]
         correction["reviewedByRole"] = role or "fde"
         correction["reviewedAt"] = now
-        correction["reviewReason"] = compact_plain_text(body.get("reason") or "FDE 校对通过", 500)
+        correction["reviewReason"] = review_reason
         correction["updatedAt"] = now
         bump_record_revision(correction)
         audit_id = repo.add_audit("FDE 通过向量资料校对", "KnowledgeVectorCorrection", correction_id)
@@ -13824,12 +13621,15 @@ def fde_reject_vector_correction(
             return fail(errors.NOT_FOUND, request)
         if correction.get("status") == "applied":
             return fail(errors.VALIDATION_ERROR, request, message="已应用的校对不能驳回。")
+        review_reason = compact_plain_text(body.get("reason"), 500)
+        if not review_reason:
+            return fail(errors.VALIDATION_ERROR, request, message="驳回向量资料校对必须填写审核意见。")
         now = server_time()
         correction["status"] = "rejected"
         correction["statusLabel"] = VECTOR_CORRECTION_STATUS_LABELS["rejected"]
         correction["reviewedByRole"] = role or "fde"
         correction["reviewedAt"] = now
-        correction["reviewReason"] = compact_plain_text(body.get("reason") or "FDE 校对驳回", 500)
+        correction["reviewReason"] = review_reason
         correction["updatedAt"] = now
         bump_record_revision(correction)
         audit_id = repo.add_audit("FDE 驳回向量资料校对", "KnowledgeVectorCorrection", correction_id)
@@ -13852,11 +13652,14 @@ def fde_apply_vector_correction(
         correction = repo.find_one("knowledge_vector_corrections", correction_id)
         if not correction:
             return fail(errors.NOT_FOUND, request)
+        apply_reason = compact_plain_text(body.get("reason"), 500)
+        if not apply_reason:
+            return fail(errors.VALIDATION_ERROR, request, message="应用向量资料校对必须填写操作原因。")
         try:
             result = fde_apply_vector_correction_record(
                 correction,
                 role=role or "fde",
-                reason=compact_plain_text(body.get("reason") or "", 500) or None,
+                reason=apply_reason,
             )
         except KeyError:
             return fail(errors.NOT_FOUND, request, message="校对目标知识文件或切片不存在。")
@@ -14096,8 +13899,6 @@ def fde_review_run_detail(request: Request, review_run_id: str):
     refresh_state_from_postgres_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not run:
-        run = fde_find_or_materialize_synthetic_review_run(review_run_id)
-    if not run:
         return fail(errors.NOT_FOUND, request)
     graph = graph_view_for_review_run(review_run_id)
     temporal = temporal_history_summary(run)
@@ -14151,8 +13952,6 @@ def fde_review_run_graph(request: Request, review_run_id: str):
     refresh_state_from_postgres_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not run:
-        run = fde_find_or_materialize_synthetic_review_run(review_run_id)
-    if not run:
         return fail(errors.NOT_FOUND, request)
     return ok({"reviewRunId": review_run_id, **graph_view_for_review_run(review_run_id)}, request)
 
@@ -14164,8 +13963,6 @@ def fde_review_run_temporal_history(request: Request, review_run_id: str):
         return role_error
     refresh_state_from_postgres_for_live_read()
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
-    if not run:
-        run = fde_find_or_materialize_synthetic_review_run(review_run_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
     return ok(temporal_history_summary(run), request)
@@ -14222,8 +14019,6 @@ def fde_review_run_feedback(
             return role_error
         refresh_state_from_postgres_for_live_read()
         run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
-        if not run:
-            run = fde_find_or_materialize_synthetic_review_run(review_run_id)
         if not run:
             return fail(errors.NOT_FOUND, request)
         feedback_type = body.get("feedbackType") or "wrong_evidence"
@@ -14340,16 +14135,26 @@ def fde_request_access_grant(
         target_id = body.get("targetId")
         if target_type != "ai_run" or not target_id or not repo.find_one("ai_runs", target_id):
             return fail(errors.VALIDATION_ERROR, request, message="targetType/targetId 无效。")
+        subject_user_id = fde_subject_user_id(request)
+        reason = compact_plain_text(body.get("reason"), 1000)
+        if not subject_user_id:
+            return fail(errors.FORBIDDEN, request, message="无法确认授权申请人身份。")
+        if not reason:
+            return fail(errors.VALIDATION_ERROR, request, message="申请原文访问必须填写诊断原因。")
+        try:
+            expires_at = fde_bounded_expiry(body.get("expiresAt"), default_minutes=30)
+        except (TypeError, ValueError) as exc:
+            return fail(errors.VALIDATION_ERROR, request, message=str(exc))
         grant = {
             "id": body.get("id") or f"AGRANT-{uuid4().hex[:8].upper()}",
-            "subjectUserId": fde_subject_user_id(request) or "USER-FDE-001",
+            "subjectUserId": subject_user_id,
             "targetType": target_type,
             "targetId": target_id,
             "status": "pending",
-            "reason": body.get("reason") or "FDE 诊断需要查看原文。",
+            "reason": reason,
             "requestedByRole": effective_role_for_request(request)[0],
             "requestedAt": server_time(),
-            "expiresAt": body.get("expiresAt") or "9999-12-31 23:59:59",
+            "expiresAt": expires_at,
         }
         repo.state["access_grants"].insert(0, grant)
         audit_id = repo.add_audit("FDE 申请原文访问授权", "AccessGrant", grant["id"])
@@ -14374,10 +14179,17 @@ def fde_approve_access_grant(
         grant = repo.find_one("access_grants", grant_id)
         if not grant:
             return fail(errors.NOT_FOUND, request)
-        grant["status"] = body.get("status") or "approved"
+        status = compact_plain_text(body.get("status") or "approved", 40)
+        if status not in {"approved", "rejected"}:
+            return fail(errors.VALIDATION_ERROR, request, message="授权审批状态无效。")
+        try:
+            expires_at = fde_bounded_expiry(body.get("expiresAt"), default_minutes=30)
+        except (TypeError, ValueError) as exc:
+            return fail(errors.VALIDATION_ERROR, request, message=str(exc))
+        grant["status"] = status
         grant["approvedByRole"] = role
         grant["approvedAt"] = server_time()
-        grant["expiresAt"] = body.get("expiresAt") or grant.get("expiresAt") or "9999-12-31 23:59:59"
+        grant["expiresAt"] = expires_at
         audit_id = repo.add_audit("管理员批准 FDE 原文访问", "AccessGrant", grant_id)
         return ok({"grant": repo.clone(grant), "auditLogId": audit_id}, request)
 
@@ -14394,16 +14206,27 @@ def fde_create_data_export(
         _, role_error = fde_error_unless_allowed(request, "fde:security:manage")
         if role_error:
             return role_error
+        requester_user_id = fde_subject_user_id(request)
+        target_type = compact_plain_text(body.get("targetType") or "ai_run", 80)
+        target_id = compact_plain_text(body.get("targetId"), 120)
+        if not requester_user_id:
+            return fail(errors.FORBIDDEN, request, message="无法确认导出申请人身份。")
+        if target_type != "ai_run" or not target_id or not repo.find_one("ai_runs", target_id):
+            return fail(errors.VALIDATION_ERROR, request, message="数据导出目标不存在或类型不受支持。")
+        try:
+            expires_at = fde_bounded_expiry(body.get("expiresAt"), default_minutes=60)
+        except (TypeError, ValueError) as exc:
+            return fail(errors.VALIDATION_ERROR, request, message=str(exc))
         export = {
             "id": body.get("id") or f"DEXP-{uuid4().hex[:8].upper()}",
-            "requesterUserId": fde_subject_user_id(request) or "USER-FDE-001",
-            "targetType": body.get("targetType") or "ai_run",
-            "targetId": body.get("targetId"),
+            "requesterUserId": requester_user_id,
+            "targetType": target_type,
+            "targetId": target_id,
             "status": "pending_approval",
             "masked": bool(body.get("masked", True)),
             "watermark": f"FDE-{uuid4().hex[:6].upper()}",
             "createdAt": server_time(),
-            "expiresAt": body.get("expiresAt") or "9999-12-31 23:59:59",
+            "expiresAt": expires_at,
         }
         repo.state["data_exports"].insert(0, export)
         audit_id = repo.add_audit("FDE 创建数据导出申请", "DataExport", export["id"])
@@ -15154,9 +14977,12 @@ def fde_create_capability_bundle(
         _, role_error = fde_error_unless_allowed(request, "fde:capability-bundle:manage")
         if role_error:
             return role_error
+        bundle_name = compact_plain_text(body.get("name"), 160)
+        if not bundle_name:
+            return fail(errors.VALIDATION_ERROR, request, message="能力版本组合名称不能为空。")
         bundle = {
             "id": body.get("id") or f"BUNDLE-{uuid4().hex[:8].upper()}",
-            "name": body.get("name") or "FDE 草稿能力组合",
+            "name": bundle_name,
             "businessPackId": body.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID,
             "agentVersionId": body.get("agentVersionId"),
             "promptVersionId": body.get("promptVersionId"),
@@ -15302,7 +15128,7 @@ def fde_create_release_plan(
             "capabilityBundleId": bundle_id,
             "riskLevel": risk_level,
             "status": "submitted",
-            "targetScope": body.get("targetScope") or {"tenantIds": ["demo"], "businessPackIds": [bundle.get("businessPackId")], "projectIds": []},
+            "targetScope": body.get("targetScope") or {"tenantIds": [], "businessPackIds": [bundle.get("businessPackId")], "projectIds": []},
             "changeSummary": body.get("changeSummary") or "FDE 发起能力组合发布申请。",
             "evaluationReportId": body.get("evaluationReportId"),
             "rollbackPlanId": body.get("rollbackPlanId"),
@@ -15337,6 +15163,9 @@ def fde_submit_release_plan(
         plan = repo.find_one("release_plans", release_id)
         if not plan:
             return fail(errors.NOT_FOUND, request)
+        submission_reason = compact_plain_text(body.get("reason"), 1000)
+        if not submission_reason:
+            return fail(errors.VALIDATION_ERROR, request, message="提交发布门禁必须填写变更原因。")
         if body.get("evaluationReportId"):
             plan["evaluationReportId"] = body["evaluationReportId"]
         if body.get("rollbackPlanId"):
@@ -15347,6 +15176,7 @@ def fde_submit_release_plan(
         plan["blockingReasons"] = blocking
         plan["status"] = "submitted" if not blocking else "blocked_by_gate"
         plan["submittedAt"] = server_time()
+        plan["submissionReason"] = submission_reason
         audit_id = repo.add_audit("FDE 提交发布门禁", "ReleasePlan", release_id)
         return ok({"plan": repo.clone(plan), "gates": gates, "auditLogId": audit_id}, request)
 
@@ -15369,12 +15199,16 @@ def fde_approve_release_plan(
         plan = repo.find_one("release_plans", release_id)
         if not plan:
             return fail(errors.NOT_FOUND, request)
+        approval_status = compact_plain_text(body.get("status"), 40)
+        approval_comment = compact_plain_text(body.get("comment"), 1000)
+        if approval_status not in {"approved", "rejected"} or not approval_comment:
+            return fail(errors.VALIDATION_ERROR, request, message="发布审批必须明确选择结果并填写审批意见。")
         approval = {
             "id": body.get("id") or f"RAPP-{uuid4().hex[:8].upper()}",
             "releasePlanId": release_id,
             "role": body.get("approvalRole") or "admin",
-            "status": body.get("status") or "approved",
-            "comment": body.get("comment") or "管理员批准高风险 AI 发布进入灰度。",
+            "status": approval_status,
+            "comment": approval_comment,
             "approvedByRole": role,
             "approvedAt": server_time(),
         }
@@ -15405,6 +15239,15 @@ def fde_start_shadow_release(
         plan = repo.find_one("release_plans", release_id)
         if not plan:
             return fail(errors.NOT_FOUND, request)
+        try:
+            sample_rate = float(body.get("sampleRate"))
+        except (TypeError, ValueError):
+            return fail(errors.VALIDATION_ERROR, request, message="Shadow 样本比例必须是 0 到 1 之间的数值。")
+        if sample_rate <= 0 or sample_rate > 1:
+            return fail(errors.VALIDATION_ERROR, request, message="Shadow 样本比例必须大于 0 且不超过 1。")
+        shadow_reason = compact_plain_text(body.get("reason"), 1000)
+        if not shadow_reason:
+            return fail(errors.VALIDATION_ERROR, request, message="启动 Shadow 必须填写验证目标。")
         gates = fde_release_gate_results(plan)
         fde_persist_release_gates(plan, gates)
         blocking = [item["message"] for item in gates if not item["passed"]]
@@ -15414,7 +15257,8 @@ def fde_start_shadow_release(
             return ok({"plan": repo.clone(plan), "gates": gates, "auditLogId": None}, request)
         plan["status"] = "shadow_running"
         plan["shadowStartedAt"] = server_time()
-        plan["shadowSampleRate"] = body.get("sampleRate", 0.0)
+        plan["shadowSampleRate"] = sample_rate
+        plan["shadowReason"] = shadow_reason
         audit_id = repo.add_audit("FDE 启动 Shadow Run", "ReleasePlan", release_id)
         return ok({"plan": repo.clone(plan), "gates": gates, "auditLogId": audit_id}, request)
 
@@ -15437,9 +15281,32 @@ def fde_mark_shadow_passed(
             return fail(errors.NOT_FOUND, request)
         if plan.get("status") not in {"shadow_running", "shadow_passed"}:
             return fail(errors.VALIDATION_ERROR, request, message="只有 shadow_running 状态可以标记 Shadow 通过。")
+        metrics = body.get("metrics") if isinstance(body.get("metrics"), dict) else {}
+        reason = compact_plain_text(body.get("reason"), 1000)
+        try:
+            sample_count = int(metrics.get("sampleCount"))
+            failed_runs = int(metrics.get("failedRuns"))
+            evidence_hit_rate = float(metrics.get("evidenceHitRate"))
+        except (TypeError, ValueError):
+            return fail(errors.VALIDATION_ERROR, request, message="Shadow 通过必须提供有效的样本数、失败数和证据命中率。")
+        if sample_count <= 0 or failed_runs < 0 or not 0 <= evidence_hit_rate <= 1 or not reason:
+            return fail(errors.VALIDATION_ERROR, request, message="Shadow 通过指标或复核说明不完整。")
+        if failed_runs > 0 or evidence_hit_rate < 0.95:
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="Shadow 指标未达到通过门槛。",
+                data={"required": {"failedRuns": 0, "evidenceHitRate": 0.95}},
+            )
         plan["status"] = "shadow_passed"
         plan["shadowPassedAt"] = server_time()
-        plan["shadowMetrics"] = body.get("metrics") or {"sampleRate": plan.get("shadowSampleRate", 0), "failedRuns": 0}
+        plan["shadowMetrics"] = {
+            "sampleRate": plan.get("shadowSampleRate"),
+            "sampleCount": sample_count,
+            "failedRuns": failed_runs,
+            "evidenceHitRate": evidence_hit_rate,
+        }
+        plan["shadowReviewReason"] = reason
         audit_id = repo.add_audit("FDE 标记 Shadow Run 通过", "ReleasePlan", release_id)
         return ok({"plan": repo.clone(plan), "auditLogId": audit_id}, request)
 
@@ -15507,10 +15374,13 @@ def fde_approve_production_release(
             return ok({"plan": repo.clone(plan), "gates": gates, "auditLogId": None}, request)
         if plan.get("status") not in {"canary_requested", "canary_running", "canary_passed", "shadow_passed", "submitted"}:
             return fail(errors.VALIDATION_ERROR, request, message="当前发布状态不允许批准生产。")
+        approval_comment = compact_plain_text(body.get("comment"), 1000)
+        if not approval_comment:
+            return fail(errors.VALIDATION_ERROR, request, message="批准生产发布必须填写审批意见。")
         plan["status"] = body.get("targetStatus") or "production_approved"
         plan["productionApprovedAt"] = server_time()
         plan["productionApprovedByRole"] = role
-        plan["productionApprovalComment"] = body.get("comment") or "管理员批准进入生产。"
+        plan["productionApprovalComment"] = approval_comment
         audit_id = repo.add_audit("管理员批准 FDE 生产发布", "ReleasePlan", release_id)
         return ok({"plan": repo.clone(plan), "gates": gates, "auditLogId": audit_id}, request)
 
@@ -15531,8 +15401,11 @@ def fde_rollback_release(
         plan = repo.find_one("release_plans", release_id)
         if not plan:
             return fail(errors.NOT_FOUND, request)
+        rollback_reason = compact_plain_text(body.get("reason"), 1000)
+        if not rollback_reason:
+            return fail(errors.VALIDATION_ERROR, request, message="请求发布回滚必须填写原因。")
         plan["status"] = "rollback_requested"
-        plan["rollbackReason"] = body.get("reason") or "FDE 请求回滚能力组合。"
+        plan["rollbackReason"] = rollback_reason
         plan["rollbackRequestedAt"] = server_time()
         audit_id = repo.add_audit("FDE 请求发布回滚", "ReleasePlan", release_id)
         return ok({"plan": repo.clone(plan), "auditLogId": audit_id}, request)
@@ -15610,7 +15483,9 @@ def fde_install_business_pack(
         validation_result = fde_business_pack_validation_result(pack_id)
         if not validation_result:
             return fail(errors.NOT_FOUND, request)
-        tenant_id = body.get("tenantId") or "demo"
+        tenant_id = compact_plain_text(body.get("tenantId") or os.getenv("AICHECK_TENANT_ID"), 120)
+        if not tenant_id:
+            return fail(errors.VALIDATION_ERROR, request, message="tenantId 不能为空。")
         dry_run = bool(body.get("dryRun", True))
         summary = validation_result["summary"]
         validation = validation_result["validation"]
@@ -15648,7 +15523,9 @@ def fde_upgrade_business_pack(
         validation_result = fde_business_pack_validation_result(pack_id)
         if not validation_result:
             return fail(errors.NOT_FOUND, request)
-        tenant_id = body.get("tenantId") or "demo"
+        tenant_id = compact_plain_text(body.get("tenantId") or os.getenv("AICHECK_TENANT_ID"), 120)
+        if not tenant_id:
+            return fail(errors.VALIDATION_ERROR, request, message="tenantId 不能为空。")
         current = next(
             (
                 item
@@ -15688,7 +15565,9 @@ def fde_rollback_business_pack(
         _, role_error = fde_error_unless_allowed(request, "fde:business-pack:install")
         if role_error:
             return role_error
-        tenant_id = body.get("tenantId") or "demo"
+        tenant_id = compact_plain_text(body.get("tenantId") or os.getenv("AICHECK_TENANT_ID"), 120)
+        if not tenant_id:
+            return fail(errors.VALIDATION_ERROR, request, message="tenantId 不能为空。")
         installation = {
             "id": body.get("id") or f"BPROLL-{uuid4().hex[:8].upper()}",
             "businessPackId": pack_id,
@@ -17952,6 +17831,201 @@ def fde_ocr_quality(
     return ok(fde_ocr_quality_snapshot(projectId, nodeId, profileId), request)
 
 
+def document_ai_shadow_run_summary(run: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: run.get(key)
+        for key in [
+            "id",
+            "runId",
+            "status",
+            "advisoryOnly",
+            "businessImpact",
+            "documentId",
+            "documentVersionId",
+            "parseResultId",
+            "profileId",
+            "templateVersion",
+            "fileName",
+            "operationId",
+            "taskId",
+            "remoteRunId",
+            "modelRevision",
+            "paddleModelRevision",
+            "priorCandidateCount",
+            "priorOmittedCandidateCount",
+            "priorEstimatedTokenCount",
+            "selectedPageNos",
+            "queueTimeMs",
+            "inferenceTimeMs",
+            "totalTimeMs",
+            "jsonRetryCount",
+            "tableExtractionDeferred",
+            "failureReason",
+            "createdAt",
+            "queuedAt",
+            "startedAt",
+            "finishedAt",
+            "updatedAt",
+        ]
+        if run.get(key) is not None
+    }
+
+
+@router.get("/fde/document-ai/shadow-runs")
+def fde_document_ai_shadow_runs(
+    request: Request,
+    status: str | None = None,
+    profileId: str | None = None,
+    documentId: str | None = None,
+    pageNo: int = 1,
+    pageSize: int = 20,
+):
+    _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+    if role_error:
+        return role_error
+    runs = [item for item in repo.state.get("document_ai_shadow_runs", []) if isinstance(item, dict)]
+    if status:
+        runs = [item for item in runs if str(item.get("status") or "") == status]
+    if profileId:
+        runs = [item for item in runs if str(item.get("profileId") or "") == profileId]
+    if documentId:
+        runs = [item for item in runs if str(item.get("documentId") or "") == documentId]
+    runs.sort(key=lambda item: str(item.get("createdAt") or item.get("updatedAt") or ""), reverse=True)
+    return ok(page([document_ai_shadow_run_summary(item) for item in runs], pageNo, pageSize), request)
+
+
+@router.get("/fde/document-ai/shadow-runs/{run_id}")
+def fde_document_ai_shadow_run_detail(request: Request, run_id: str):
+    _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+    if role_error:
+        return role_error
+    run = repo.find_one("document_ai_shadow_runs", run_id)
+    if not run:
+        return fail(errors.NOT_FOUND, request, http_status=404)
+    detail = repo.clone(run)
+    detail["advisoryOnly"] = True
+    detail["formalEvidenceReady"] = False
+    detail["businessImpact"] = "none"
+    return ok(detail, request)
+
+
+def document_audit_pipeline_comparison_summary(run: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: run.get(key)
+        for key in [
+            "id",
+            "runId",
+            "status",
+            "documentAiShadowRunId",
+            "documentId",
+            "documentVersionId",
+            "profileId",
+            "fileName",
+            "selectedPageNos",
+            "baselinePipelineId",
+            "baselineProvider",
+            "baselineModel",
+            "baselineModelResolved",
+            "challengerPipelineId",
+            "challengerProvider",
+            "challengerModel",
+            "challengerModelResolved",
+            "baselineTimeMs",
+            "challengerUpstreamDocumentAiTimeMs",
+            "challengerDeepSeekTimeMs",
+            "challengerEndToEndTimeMs",
+            "comparisonMetrics",
+            "failureReason",
+            "createdAt",
+            "queuedAt",
+            "startedAt",
+            "finishedAt",
+            "updatedAt",
+        ]
+        if run.get(key) is not None
+    }
+
+
+@router.get("/fde/document-audit/pipeline-comparisons")
+def fde_document_audit_pipeline_comparisons(
+    request: Request,
+    status: str | None = None,
+    profileId: str | None = None,
+    documentId: str | None = None,
+    pageNo: int = 1,
+    pageSize: int = 20,
+):
+    _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+    if role_error:
+        return role_error
+    runs = [
+        item
+        for item in repo.state.get("document_audit_pipeline_comparison_runs", [])
+        if isinstance(item, dict)
+    ]
+    if status:
+        runs = [item for item in runs if str(item.get("status") or "") == status]
+    if profileId:
+        runs = [item for item in runs if str(item.get("profileId") or "") == profileId]
+    if documentId:
+        runs = [item for item in runs if str(item.get("documentId") or "") == documentId]
+    runs.sort(key=lambda item: str(item.get("createdAt") or item.get("updatedAt") or ""), reverse=True)
+    return ok(page([document_audit_pipeline_comparison_summary(item) for item in runs], pageNo, pageSize), request)
+
+
+@router.get("/fde/document-audit/pipeline-comparisons/{run_id}")
+def fde_document_audit_pipeline_comparison_detail(request: Request, run_id: str):
+    _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+    if role_error:
+        return role_error
+    run = repo.find_one("document_audit_pipeline_comparison_runs", run_id)
+    if not run:
+        return fail(errors.NOT_FOUND, request, http_status=404)
+    detail = repo.clone(run)
+    detail["advisoryOnly"] = True
+    detail["formalEvidenceReady"] = False
+    detail["businessImpact"] = "none"
+    detail["accuracyClaimed"] = False
+    return ok(detail, request)
+
+
+@router.post("/fde/document-ai/shadow-runs/{run_id}/pipeline-comparison")
+def fde_start_document_audit_pipeline_comparison(
+    request: Request,
+    run_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        _, role_error = fde_error_unless_allowed(request, "fde:ai-run:replay")
+        if role_error:
+            return role_error
+        source_run = repo.find_one("document_ai_shadow_runs", run_id)
+        if not source_run:
+            return fail(errors.NOT_FOUND, request, http_status=404)
+        if str(source_run.get("status") or "") != "success":
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="只有成功的 Document AI Shadow Run 可以发起端到端 Pipeline 对照。",
+                http_status=409,
+            )
+        from libs.document_audit_pipeline_comparison import schedule_pipeline_comparison
+
+        dispatch = schedule_pipeline_comparison(source_run, force=True)
+        if not dispatch or dispatch.get("status") == "not_dispatched":
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="端到端 Pipeline 对照未启用或服务配置不完整。",
+                data=dispatch or {},
+                http_status=409,
+            )
+        repo.add_audit("FDE 发起文档审计 Pipeline 对照", "DocumentAiShadowRun", run_id)
+        return ok(dispatch, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"documentAiShadowRunId": run_id})
+
+
 @router.post("/fde/capability-tests/ocr/upload-session")
 def fde_create_ocr_capability_upload_session(
     request: Request,
@@ -18578,14 +18652,108 @@ def fde_ocr_runs(
     return ok(page(items, pageNo, pageSize), request)
 
 
+@router.get("/fde/ocr-pipeline-runs/{run_id}")
+def fde_ocr_pipeline_run_detail(request: Request, run_id: str):
+    _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
+    if role_error:
+        return role_error
+    run = repo.find_one("ocr_pipeline_runs", run_id) or repo.find_one(
+        "ocr_pipeline_runs", run_id, id_field="pipelineRunId"
+    )
+    if not run:
+        return fail(errors.NOT_FOUND, request)
+    if not record_visible_for_request(request, run):
+        return fail(errors.FORBIDDEN, request)
+    stages = repo.ocr_pipeline_stages(str(run.get("id") or run_id))
+    parse_result = None
+    if run.get("parseResultId"):
+        parse_result = repo.find_one(
+            "ocr_parse_results",
+            str(run.get("parseResultId")),
+            id_field="parseResultId",
+        )
+    baseline = None
+    if run.get("baselineParseResultId"):
+        baseline = repo.find_one(
+            "ocr_parse_results",
+            str(run.get("baselineParseResultId")),
+            id_field="parseResultId",
+        )
+    stage_parse_results = {}
+    for stage, key in {
+        "structure_scan": "structureParseResultId",
+        "seal_signature_scan": "sealParseResultId",
+        "evidence_fusion": "fusedParseResultId",
+    }.items():
+        parse_result_id = run.get(key)
+        if parse_result_id:
+            stage_parse_results[stage] = repo.find_one(
+                "ocr_parse_results",
+                str(parse_result_id),
+                id_field="parseResultId",
+            )
+    model_call_attempts = [
+        item
+        for item in repo.state.get("model_call_attempts", [])
+        if str(item.get("pipelineRunId") or "") == str(run.get("id") or run_id)
+    ]
+    engine_attempted = sorted(
+        {
+            str(engine)
+            for stage in stages
+            for engine in ((stage.get("engineStatus") or {}).get("engineAttempted") or [])
+        }
+    )
+    engine_executed = sorted(
+        {
+            str(engine)
+            for stage in stages
+            for engine in ((stage.get("engineStatus") or {}).get("engineExecuted") or [])
+        }
+    )
+    skip_reasons = sorted(
+        {
+            str(reason)
+            for stage in stages
+            for reason in ((stage.get("engineStatus") or {}).get("skipReasons") or [])
+        }
+    )
+    cache_source_run_ids = sorted(
+        {
+            str(source_run_id)
+            for stage in stages
+            for source_run_id in ((stage.get("engineStatus") or {}).get("cacheSourceRunIds") or [])
+        }
+    )
+    grounding_validation = run.get("groundingValidation") or {}
+    run_view = {
+        **repo.clone(run),
+        "engineAttempted": engine_attempted,
+        "engineExecuted": engine_executed,
+        "skipReason": skip_reasons,
+        "cacheSourceRunId": cache_source_run_ids,
+        "candidateRepairCount": int(grounding_validation.get("candidateRepairCount") or 0),
+        "unsupportedAttributionCount": int(grounding_validation.get("unsupportedAttributionCount") or 0),
+    }
+    return ok(
+        {
+            "run": run_view,
+            "stages": repo.clone(stages),
+            "parseResult": repo.clone(parse_result),
+            "baselineParseResult": repo.clone(baseline),
+            "stageParseResults": repo.clone(stage_parse_results),
+            "modelCallAttempts": repo.clone(model_call_attempts),
+        },
+        request,
+    )
+
+
 @router.get("/fde/ocr-runs/{job_id}")
 def fde_ocr_run_detail(request: Request, job_id: str):
     _, role_error = fde_error_unless_allowed(request, "fde:ocr-quality:view")
     if role_error:
         return role_error
     job = repo.find_one("ocr_jobs", job_id) or repo.find_one("ocr_jobs", job_id, id_field="jobId")
-    if not job:
-        job = fde_find_or_materialize_synthetic_ocr_job(job_id)
     if not job:
         return fail(errors.NOT_FOUND, request)
     result = None
@@ -19509,15 +19677,36 @@ def fde_update_incident_rca(
         if not incident:
             return fail(errors.NOT_FOUND, request)
         rca = repo.find_one("incident_rca", incident_id, id_field="incidentId")
+        root_cause = compact_plain_text(body.get("rootCause"), 500)
+        temporary_action = compact_plain_text(body.get("temporaryAction"), 1000)
+        long_term_action = compact_plain_text(body.get("longTermAction"), 1000)
+        owner = compact_plain_text(body.get("owner"), 120)
+        missing_fields = [
+            field
+            for field, value in {
+                "rootCause": root_cause,
+                "temporaryAction": temporary_action,
+                "longTermAction": long_term_action,
+                "owner": owner,
+            }.items()
+            if not value
+        ]
+        if missing_fields:
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="事故 RCA 必须填写根因、临时措施、长期措施和责任人。",
+                data={"missingFields": missing_fields},
+            )
         payload = {
             "id": (rca or {}).get("id") or f"RCA-{uuid4().hex[:8].upper()}",
             "incidentId": incident_id,
             "status": body.get("status") or "open",
-            "rootCause": body.get("rootCause") or incident.get("rootCause") or "unknown",
+            "rootCause": root_cause,
             "impactScope": body.get("impactScope") or {"aiRunIds": incident.get("relatedAiRunIds") or []},
-            "temporaryAction": body.get("temporaryAction") or "已记录临时处置。",
-            "longTermAction": body.get("longTermAction") or "待 FDE 补充长期修复。",
-            "owner": body.get("owner") or "FDE 工程师",
+            "temporaryAction": temporary_action,
+            "longTermAction": long_term_action,
+            "owner": owner,
             "updatedAt": server_time(),
         }
         if rca:
@@ -19544,9 +19733,15 @@ def fde_close_incident(
         incident = repo.find_one("incidents", incident_id)
         if not incident:
             return fail(errors.NOT_FOUND, request)
+        resolution = compact_plain_text(body.get("resolution"), 2000)
+        rca = repo.find_one("incident_rca", incident_id, id_field="incidentId")
+        if not resolution:
+            return fail(errors.VALIDATION_ERROR, request, message="关闭事故必须填写可验证的处理结论。")
+        if not rca or any(not compact_plain_text(rca.get(field), 2000) for field in ["rootCause", "temporaryAction", "longTermAction", "owner"]):
+            return fail(errors.CONFLICT, request, message="事故 RCA 尚未完整，不能关闭。")
         incident["status"] = "closed"
         incident["closedAt"] = server_time()
-        incident["resolution"] = body.get("resolution") or "FDE 已完成 RCA 和整改追踪。"
+        incident["resolution"] = resolution
         incident["closedByRole"] = effective_role_for_request(request)[0]
         audit_id = repo.add_audit("FDE 关闭事故", "Incident", incident_id)
         return ok({"incident": repo.clone(incident), "auditLogId": audit_id}, request)
@@ -19589,6 +19784,9 @@ def fde_propose_cost_budget_change(
         budget = next((item for item in repo.state.get("cost_budgets", []) if item.get("id") == budget_id), None)
         if not budget:
             return fail(errors.NOT_FOUND, request)
+        change_reason = compact_plain_text(body.get("reason"), 1000)
+        if body.get("proposedLimit") is None or not change_reason:
+            return fail(errors.VALIDATION_ERROR, request, message="预算变更必须填写建议额度和调整原因。")
         change = {
             "id": body.get("id") or f"CBCHG-{uuid4().hex[:8].upper()}",
             "budgetId": budget_id,
@@ -19596,7 +19794,7 @@ def fde_propose_cost_budget_change(
             "currentBudget": repo.clone(budget),
             "proposedLimit": body.get("proposedLimit"),
             "proposedPolicy": body.get("proposedPolicy") or {},
-            "reason": body.get("reason") or "FDE 提交成本预算调整建议。",
+            "reason": change_reason,
             "requestedByRole": effective_role_for_request(request)[0],
             "createdAt": server_time(),
         }
@@ -19623,6 +19821,35 @@ def knowledge_overview(request: Request):
     indexable_sources = [source for source in sources if source.get("sourceType") != "rule"]
     indexable_files = [file for file in files if not knowledge_file_is_business_rule(file)]
     indexable_tasks = [task for task in tasks if not knowledge_task_is_business_rule(task)]
+    files_by_source: dict[str, list[dict[str, Any]]] = {}
+    for file in indexable_files:
+        files_by_source.setdefault(str(file.get("sourceId") or ""), []).append(file)
+    chunks_by_file: dict[str, int] = {}
+    for chunk in repo.state.get("knowledge_chunks", []):
+        file_id = str(chunk.get("fileId") or "")
+        chunks_by_file[file_id] = chunks_by_file.get(file_id, 0) + 1
+    vectors_by_file: dict[str, int] = {}
+    for vector in repo.state.get("knowledge_vectors", []):
+        file_id = str(vector.get("fileId") or "")
+        vectors_by_file[file_id] = vectors_by_file.get(file_id, 0) + 1
+    libraries = []
+    for source in indexable_sources:
+        source_files = files_by_source.get(str(source.get("id") or ""), [])
+        chunk_count = sum(chunks_by_file.get(str(file.get("id") or ""), 0) for file in source_files)
+        vector_count = sum(vectors_by_file.get(str(file.get("id") or ""), 0) for file in source_files)
+        libraries.append(
+            {
+                "key": source["id"],
+                "name": source.get("name") or "--",
+                "sourceType": source.get("sourceType"),
+                "fileCount": len(source_files),
+                "chunkCount": chunk_count,
+                "vectorCount": vector_count,
+                "indexVersion": source.get("version"),
+                "status": source.get("status") or "未知",
+                "updatedAt": source.get("updatedAt"),
+            }
+        )
     return ok(
         {
             "metrics": [
@@ -19631,20 +19858,7 @@ def knowledge_overview(request: Request):
                 {"key": "task", "label": "运行任务", "value": len([item for item in indexable_tasks if item["status"] in {"排队中", "运行中"}]), "tone": "orange"},
                 {"key": "failed", "label": "失败任务", "value": len([item for item in indexable_tasks if item["status"] == "失败"]), "tone": "red"},
             ],
-            "libraries": [
-                {
-                    "key": source["id"],
-                    "name": source["name"],
-                    "sourceType": source.get("sourceType"),
-                    "fileCount": source["fileCount"],
-                    "chunkCount": source["chunkCount"],
-                    "vectorCount": source["chunkCount"],
-                    "indexVersion": source.get("version") or "v1",
-                    "status": source["status"],
-                    "updatedAt": source["updatedAt"],
-                }
-                for source in indexable_sources
-            ],
+            "libraries": libraries,
             "scorecard": build_knowledge_rule_scorecard(repo.state),
         },
         request,
@@ -19665,12 +19879,18 @@ def list_knowledge_sources(request: Request, keyword: str | None = None, sourceT
 @router.post("/knowledge/sources")
 def create_knowledge_source(request: Request, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     def produce():
-        if body.get("sourceType") == "rule":
+        name = compact_plain_text(body.get("name"), 120)
+        source_type = compact_plain_text(body.get("sourceType"), 40)
+        if not name or not source_type:
+            return fail(errors.VALIDATION_ERROR, request, message="知识源名称和类型不能为空。")
+        if source_type not in {"standard", "project-file", "manual"}:
+            return fail(errors.VALIDATION_ERROR, request, message="知识源类型不受支持。")
+        if source_type == "rule":
             return fail(errors.VALIDATION_ERROR, request, message="业务判断规则请通过监检业务判断规则管理导入，不进入知识库索引。")
         source = {
             "id": f"KS-{uuid4().hex[:8].upper()}",
-            "name": body.get("name") or "新知识源",
-            "sourceType": body.get("sourceType") or "manual",
+            "name": name,
+            "sourceType": source_type,
             "version": body.get("version"),
             "status": body.get("status") or "启用",
             "fileCount": int(body.get("fileCount") or 0),
@@ -20467,9 +20687,9 @@ async def replace_knowledge_file_version(
             "revision": 1,
             "actions": ["knowledge:task-retry"],
         }
+        repo.state["knowledge_tasks"].insert(0, task)
         dispatch = task_dispatcher.dispatch_parse_document(document["id"], version_id, storage_key, file_name)
         task["lastDispatch"] = dispatch
-        repo.state["knowledge_tasks"].insert(0, task)
         if source:
             sync_knowledge_source_counts(source)
         audit_id = repo.add_audit("替换知识库文件版本", "KnowledgeFile", resolved_file_id)
@@ -20974,44 +21194,112 @@ def cancel_knowledge_task(
     return idempotent(request, idempotency_key, produce, fingerprint_source={"taskId": task_id, "body": body})
 
 
+def normalized_knowledge_reindex_payload(body: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "scope": str(body.get("scope") or "all"),
+        "includeOcr": bool(body.get("includeOcr") or body.get("ocr")),
+        "sourceId": str(body.get("sourceId") or "").strip() or None,
+        "sourceType": str(body.get("sourceType") or "").strip() or None,
+        "projectId": str(body.get("projectId") or "").strip() or None,
+        "onlyIncomplete": bool(body.get("onlyIncomplete")),
+        "limit": max(0, int(body.get("limit") or 0)),
+        "reason": str(body.get("reason") or "").strip(),
+    }
+
+
+def knowledge_reindex_targets(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    scope = payload["scope"]
+    source_id = payload.get("sourceId")
+    source_type = payload.get("sourceType")
+    project_id = payload.get("projectId")
+    targets = [item for item in repo.state["knowledge_files"] if not knowledge_file_is_business_rule(item)]
+    if scope == "source" and source_id:
+        targets = [item for item in targets if item.get("sourceId") == source_id]
+    elif scope == "source":
+        source_ids = {
+            item["id"]
+            for item in repo.state["knowledge_sources"]
+            if item.get("sourceType") != "rule" and (not source_type or item.get("sourceType") == source_type)
+        }
+        targets = [item for item in targets if item.get("sourceId") in source_ids]
+    if source_type:
+        targets = [item for item in targets if knowledge_file_source_type(item) == source_type]
+    if scope == "project" and project_id:
+        targets = [item for item in targets if item.get("projectId") == project_id]
+    if payload.get("onlyIncomplete"):
+        targets = [
+            item
+            for item in targets
+            if item.get("ocrStatus") != "已识别"
+            or item.get("sliceStatus") != "已切片"
+            or item.get("vectorStatus") != "已向量化"
+        ]
+    limit = int(payload.get("limit") or 0)
+    return targets[:limit] if limit > 0 else targets
+
+
+def knowledge_reindex_base_fingerprint(targets: list[dict[str, Any]]) -> str:
+    return operation_fingerprint(
+        [
+            {
+                "id": item.get("id"),
+                "updatedAt": item.get("updatedAt"),
+                "ocrStatus": item.get("ocrStatus"),
+                "sliceStatus": item.get("sliceStatus"),
+                "vectorStatus": item.get("vectorStatus"),
+            }
+            for item in targets
+        ]
+    )
+
+
+@router.post("/knowledge/reindex-preview")
+def preview_batch_reindex(request: Request, body: dict[str, Any] = Body(default_factory=dict)):
+    payload = normalized_knowledge_reindex_payload(body)
+    if not payload["reason"]:
+        return fail(errors.VALIDATION_ERROR, request, message="知识索引重建必须填写操作原因。")
+    targets = knowledge_reindex_targets(payload)
+    impact = {
+        "scope": payload["scope"],
+        "matchedFiles": len(targets),
+        "estimatedTasks": len(targets) * (3 if payload["includeOcr"] else 2),
+        "includeOcr": payload["includeOcr"],
+        "onlyIncomplete": payload["onlyIncomplete"],
+        "sampleFiles": [str(item.get("fileName") or item.get("id")) for item in targets[:5]],
+        "warnings": ["将重建 OCR、切片和向量" if payload["includeOcr"] else "将重建切片和向量"] if targets else ["当前范围没有匹配文件"],
+    }
+    preview = create_operation_preview(
+        request,
+        kind="knowledge_reindex",
+        payload=payload,
+        base_fingerprint=knowledge_reindex_base_fingerprint(targets),
+        impact=impact,
+    )
+    return ok({**preview, "impact": impact}, request)
+
+
 @router.post("/knowledge/reindex")
 def batch_reindex(request: Request, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    def produce():
-        scope = str(body.get("scope") or "all")
-        include_ocr = bool(body.get("includeOcr") or body.get("ocr"))
-        source_id = str(body.get("sourceId") or "").strip()
-        source_type = str(body.get("sourceType") or "").strip()
-        project_id = str(body.get("projectId") or "").strip()
+    payload = normalized_knowledge_reindex_payload(body)
+    if (body.get("previewId") or strict_production()) and not payload["reason"]:
+        return fail(errors.VALIDATION_ERROR, request, message="知识索引重建必须填写操作原因。")
+    preview, preview_error = validate_operation_preview(
+        request,
+        preview_id=str(body.get("previewId") or "") or None,
+        kind="knowledge_reindex",
+        payload=payload,
+        base_fingerprint=knowledge_reindex_base_fingerprint(knowledge_reindex_targets(payload)),
+    )
+    if preview_error:
+        return preview_error
 
-        targets = [item for item in repo.state["knowledge_files"] if not knowledge_file_is_business_rule(item)]
-        if scope == "source" and source_id:
-            targets = [item for item in targets if item.get("sourceId") == source_id]
-        elif scope == "source":
-            source_ids = {
-                item["id"]
-                for item in repo.state["knowledge_sources"]
-                if item.get("sourceType") != "rule" and (not source_type or item.get("sourceType") == source_type)
-            }
-            targets = [item for item in targets if item.get("sourceId") in source_ids]
-        if source_type:
-            targets = [
-                item
-                for item in targets
-                if knowledge_file_source_type(item) == source_type
-            ]
-        if scope == "project" and project_id:
-            targets = [item for item in targets if item.get("projectId") == project_id]
-        if body.get("onlyIncomplete"):
-            targets = [
-                item
-                for item in targets
-                if item.get("ocrStatus") != "已识别"
-                or item.get("sliceStatus") != "已切片"
-                or item.get("vectorStatus") != "已向量化"
-            ]
-        limit = int(body.get("limit") or 0)
-        if limit > 0:
-            targets = targets[:limit]
+    def produce():
+        scope = payload["scope"]
+        include_ocr = payload["includeOcr"]
+        source_id = str(payload.get("sourceId") or "")
+        source_type = str(payload.get("sourceType") or "")
+        project_id = str(payload.get("projectId") or "")
+        targets = knowledge_reindex_targets(payload)
 
         ids: list[str] = []
         dispatches: list[dict[str, Any]] = []
@@ -21025,13 +21313,13 @@ def batch_reindex(request: Request, body: dict[str, Any] = Body(default_factory=
                     child_dispatches = [
                         dispatch_knowledge_file_ocr_pipeline(
                             target,
-                            reason=f"管理员批量重建知识库，重新投递 OCR：{task['id']}",
+                            reason=f"管理员批量重建知识库，重新投递 OCR：{task['id']}；原因：{payload['reason'] or '兼容调用未填写'}",
                         )
                     ]
                 else:
                     child_dispatches = dispatch_knowledge_file_index_pipeline(
                         target,
-                        reason=f"管理员批量重建知识库，重新投递切片和向量化：{task['id']}",
+                        reason=f"管理员批量重建知识库，重新投递切片和向量化：{task['id']}；原因：{payload['reason'] or '兼容调用未填写'}",
                     )
                 task["status"] = "成功"
                 task["progress"] = 100
@@ -21046,6 +21334,7 @@ def batch_reindex(request: Request, body: dict[str, Any] = Body(default_factory=
         source = repo.find_one("knowledge_sources", source_id) if source_id else None
         if source:
             sync_knowledge_source_counts(source)
+        consume_operation_preview(preview)
         return ok(
             {
                 "taskIds": ids,
@@ -21070,7 +21359,9 @@ def batch_reindex(request: Request, body: dict[str, Any] = Body(default_factory=
 
 @router.post("/knowledge/retrieval-test")
 def retrieval_test(request: Request, body: dict[str, Any] = Body(default_factory=dict)):
-    question = body.get("question") or "焊工资格证有效期如何校验？"
+    question = compact_plain_text(body.get("question"), 1000)
+    if not question:
+        return fail(errors.VALIDATION_ERROR, request, message="检索问题不能为空。")
     dense_hits: list[dict[str, Any]] = []
     embedding_model = OFFLINE_EMBEDDING_MODEL
     index_version = body.get("indexVersion") or STANDARD_INDEX_VERSION
@@ -21302,12 +21593,29 @@ def fork_rule_version(
     return idempotent(request, idempotency_key, produce, fingerprint_source={"versionId": version_id, "body": body})
 
 
-@router.get("/rules/versions/{version_id}/diff")
-def rule_version_diff(request: Request, version_id: str, targetVersionId: str | None = None, targetVersion: str | None = None):
-    if not repo.state["rule_versions"]:
-        return fail(errors.NOT_FOUND, request)
-    base = repo.find_one("rule_versions", version_id) or repo.state["rule_versions"][0]
-    target = repo.find_one("rule_versions", targetVersionId or "") or next((item for item in repo.state["rule_versions"] if item.get("version") == targetVersion), None) or repo.state["rule_versions"][-1]
+def matching_rule_target(
+    base: dict[str, Any],
+    *,
+    target_version_id: str | None = None,
+    target_version: str | None = None,
+) -> dict[str, Any] | None:
+    target = repo.find_one("rule_versions", target_version_id or "") if target_version_id else None
+    if target is None and target_version:
+        target = next(
+            (
+                item
+                for item in repo.state.get("rule_versions", [])
+                if item.get("version") == target_version
+                and (not base.get("ruleKey") or item.get("ruleKey") == base.get("ruleKey"))
+            ),
+            None,
+        )
+    if target and base.get("ruleKey") and target.get("ruleKey") != base.get("ruleKey"):
+        return None
+    return target
+
+
+def rule_version_changes(base: dict[str, Any], target: dict[str, Any] | None) -> list[dict[str, Any]]:
     compared_fields = [
         ("inspectionCategory", "监检项目（大类）"),
         ("inspectionItem", "监检项目（内容）"),
@@ -21319,7 +21627,7 @@ def rule_version_diff(request: Request, version_id: str, targetVersionId: str | 
     ]
     changes = []
     for field, label in compared_fields:
-        before = target.get(field)
+        before = (target or {}).get(field)
         after = base.get(field)
         if before != after:
             changes.append(
@@ -21332,21 +21640,126 @@ def rule_version_diff(request: Request, version_id: str, targetVersionId: str | 
                     "changeType": "added" if not before and after else "removed" if before and not after else "changed",
                 }
             )
-    return ok(
-        {
-            "base": versioned_record("rule-version", base),
-            "target": versioned_record("rule-version", target),
-            "comparedAt": server_time(),
-            "summary": {
-                "added": len([item for item in changes if item["changeType"] == "added"]),
-                "changed": len([item for item in changes if item["changeType"] == "changed"]),
-                "removed": len([item for item in changes if item["changeType"] == "removed"]),
-                "warning": len([item for item in changes if item["severity"] == "warning"]),
-            },
-            "changes": changes,
+    return changes
+
+
+def rule_diff_payload(base: dict[str, Any], target: dict[str, Any] | None) -> dict[str, Any]:
+    changes = rule_version_changes(base, target)
+    return {
+        "base": versioned_record("rule-version", base),
+        "target": versioned_record("rule-version", target) if target else None,
+        "comparedAt": server_time(),
+        "summary": {
+            "added": len([item for item in changes if item["changeType"] == "added"]),
+            "changed": len([item for item in changes if item["changeType"] == "changed"]),
+            "removed": len([item for item in changes if item["changeType"] == "removed"]),
+            "warning": len([item for item in changes if item["severity"] == "warning"]),
         },
-        request,
+        "changes": changes,
+    }
+
+
+def rule_operation_payload(action: str, body: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "action": action,
+        "reason": compact_plain_text(body.get("reason"), 500),
+        "effectiveAt": compact_plain_text(body.get("effectiveAt"), 80),
+        "targetVersionId": compact_plain_text(body.get("targetVersionId"), 120),
+        "targetVersion": compact_plain_text(body.get("targetVersion"), 120),
+    }
+
+
+def rule_operation_base_fingerprint(base: dict[str, Any], target: dict[str, Any] | None) -> str:
+    affected = [
+        item
+        for item in repo.state.get("rule_versions", [])
+        if item.get("id") in {base.get("id"), (target or {}).get("id")}
+        or (
+            normalize_rule_status(item.get("status")) == "已发布"
+            and (
+                bool(base.get("ruleKey") and item.get("ruleKey") == base.get("ruleKey"))
+                or bool(set(parse_rule_node_ids(base.get("nodeIds"))) & set(parse_rule_node_ids(item.get("nodeIds"))))
+            )
+        )
+    ]
+    return operation_fingerprint(
+        [
+            {
+                "id": item.get("id"),
+                "revision": item.get("revision"),
+                "updatedAt": item.get("updatedAt"),
+                "status": item.get("status"),
+                "nodeIds": item.get("nodeIds"),
+            }
+            for item in sorted(affected, key=lambda row: str(row.get("id") or ""))
+        ]
     )
+
+
+@router.get("/rules/versions/{version_id}/diff")
+def rule_version_diff(request: Request, version_id: str, targetVersionId: str | None = None, targetVersion: str | None = None):
+    base = repo.find_one("rule_versions", version_id)
+    if not base:
+        return fail(errors.NOT_FOUND, request)
+    target = matching_rule_target(base, target_version_id=targetVersionId, target_version=targetVersion)
+    if (targetVersionId or targetVersion) and not target:
+        return fail(errors.NOT_FOUND, request, message="目标规则版本不存在或不属于同一规则。")
+    if target is None:
+        target = next(
+            (
+                item
+                for item in repo.state.get("rule_versions", [])
+                if item.get("id") != base.get("id")
+                and normalize_rule_status(item.get("status")) == "已发布"
+                and item.get("ruleKey") == base.get("ruleKey")
+            ),
+            None,
+        )
+    return ok(rule_diff_payload(base, target), request)
+
+
+@router.post("/rules/versions/{version_id}/{action}-preview")
+def preview_rule_version_operation(
+    request: Request,
+    version_id: str,
+    action: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+):
+    if action not in {"publish", "rollback"}:
+        return fail(errors.NOT_FOUND, request)
+    base = repo.find_one("rule_versions", version_id)
+    if not base:
+        return fail(errors.NOT_FOUND, request)
+    payload = rule_operation_payload(action, body)
+    if not payload["reason"]:
+        return fail(errors.VALIDATION_ERROR, request, message="规则发布或回滚必须填写操作原因。")
+    target = matching_rule_target(
+        base,
+        target_version_id=payload["targetVersionId"],
+        target_version=payload["targetVersion"],
+    )
+    if action == "rollback" and (not target or target.get("id") == base.get("id")):
+        return fail(errors.VALIDATION_ERROR, request, message="回滚必须选择同一规则的其他有效版本。")
+    diff = rule_diff_payload(base, target)
+    impact = {
+        "action": action,
+        "ruleVersionId": version_id,
+        "targetVersionId": (target or {}).get("id"),
+        "targetVersion": (target or {}).get("version"),
+        "nodeIds": parse_rule_node_ids(base.get("nodeIds")),
+        "linkedProjects": len([item for item in repo.state.get("projects", []) if item.get("status") != "已归档"]),
+        "summary": diff["summary"],
+        "changes": diff["changes"],
+        "warnings": ["发布后会替换同规则键或重叠节点上的现行规则。"] if action == "publish" else ["回滚会立即改变后续审计采用的规则版本。"],
+    }
+    preview = create_operation_preview(
+        request,
+        kind=f"rule_{action}",
+        payload=payload,
+        base_fingerprint=rule_operation_base_fingerprint(base, target),
+        impact=impact,
+    )
+    return ok({**preview, "impact": impact}, request)
 
 
 @router.post("/rules/versions/{version_id}/publish")
@@ -21357,6 +21770,22 @@ def publish_rule_version(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     if_match: str | None = Header(default=None, alias="If-Match"),
 ):
+    rule_for_preview = repo.find_one("rule_versions", version_id)
+    if not rule_for_preview:
+        return fail(errors.NOT_FOUND, request)
+    payload = rule_operation_payload("publish", body)
+    if not payload["reason"]:
+        return fail(errors.VALIDATION_ERROR, request, message="发布规则必须填写操作原因。")
+    preview, preview_error = validate_operation_preview(
+        request,
+        preview_id=str(body.get("previewId") or "") or None,
+        kind="rule_publish",
+        payload=payload,
+        base_fingerprint=rule_operation_base_fingerprint(rule_for_preview, None),
+    )
+    if preview_error:
+        return preview_error
+
     def produce():
         rule = repo.find_one("rule_versions", version_id)
         if not rule:
@@ -21380,8 +21809,10 @@ def publish_rule_version(
                 bump_record_revision(item)
         rule["status"] = "已发布"
         rule["publishedAt"] = server_time()
-        rule["publishedReason"] = body.get("reason") or ""
+        rule["publishedReason"] = payload["reason"]
+        rule["effectiveAt"] = payload["effectiveAt"] or rule.get("effectiveAt")
         bump_record_revision(rule)
+        consume_operation_preview(preview)
         result = repo.mutation_result("发布规则版本", "RuleVersion", version_id, next_status="已发布")
         return ok({**result, "rule": versioned_record("rule-version", rule)}, request)
 
@@ -21396,23 +21827,53 @@ def rollback_rule_version(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     if_match: str | None = Header(default=None, alias="If-Match"),
 ):
+    rule_for_preview = repo.find_one("rule_versions", version_id)
+    if not rule_for_preview:
+        return fail(errors.NOT_FOUND, request)
+    payload = rule_operation_payload("rollback", body)
+    if not payload["reason"]:
+        return fail(errors.VALIDATION_ERROR, request, message="回滚规则必须填写操作原因。")
+    target_for_preview = matching_rule_target(
+        rule_for_preview,
+        target_version_id=payload["targetVersionId"],
+        target_version=payload["targetVersion"],
+    )
+    if not target_for_preview or target_for_preview.get("id") == rule_for_preview.get("id"):
+        return fail(errors.VALIDATION_ERROR, request, message="回滚必须选择同一规则的其他有效版本。")
+    preview, preview_error = validate_operation_preview(
+        request,
+        preview_id=str(body.get("previewId") or "") or None,
+        kind="rule_rollback",
+        payload=payload,
+        base_fingerprint=rule_operation_base_fingerprint(rule_for_preview, target_for_preview),
+    )
+    if preview_error:
+        return preview_error
+
     def produce():
         rule = repo.find_one("rule_versions", version_id)
         if not rule:
             return fail(errors.NOT_FOUND, request)
         if not record_if_match_valid("rule-version", rule, if_match):
             return fail(errors.ETAG_CONFLICT, request)
-        target = (
-            repo.find_one("rule_versions", body.get("targetVersionId") or "")
-            or next((item for item in repo.state["rule_versions"] if item.get("version") == body.get("targetVersion")), None)
-            or repo.state["rule_versions"][0]
+        target = matching_rule_target(
+            rule,
+            target_version_id=payload["targetVersionId"],
+            target_version=payload["targetVersion"],
         )
+        if not target or target.get("id") == rule.get("id"):
+            return fail(errors.CONFLICT, request, message="目标规则版本已变化，请重新预览。")
         rule["status"] = "已回滚"
+        rule["rolledBackAt"] = server_time()
+        rule["rollbackReason"] = payload["reason"]
+        rule["rollbackTargetVersionId"] = target.get("id")
         bump_record_revision(rule)
         if target.get("id") != rule.get("id"):
             target["status"] = "已发布"
             target["publishedAt"] = server_time()
+            target["publishedReason"] = f"由 {version_id} 回滚恢复：{payload['reason']}"
             bump_record_revision(target)
+        consume_operation_preview(preview)
         result = repo.mutation_result("回滚规则版本", "RuleVersion", version_id, next_status="已回滚")
         return ok({**result, "rule": versioned_record("rule-version", rule), "target": versioned_record("rule-version", target)}, request)
 
@@ -21630,6 +22091,31 @@ def reasoning_logs(request: Request, projectId: str | None = None, nodeId: int |
     return ok(page(items, page_no, page_size), request)
 
 
+def ai_run_evidence_snapshot(run: dict[str, Any]) -> list[dict[str, Any]]:
+    embedded = [item for item in (run.get("evidenceLinks") or []) if isinstance(item, dict)]
+    if embedded:
+        return repo.clone(embedded)
+    evidence_ids = {
+        str(item)
+        for item in (run.get("evidenceLinkIds") or [])
+        if item
+    }
+    if not evidence_ids:
+        return []
+    project_id = str(run.get("projectId") or "")
+    node_id = int(run.get("nodeId") or 0)
+    candidates = [*repo.state.get("node_evidence_links", []), *repo.state.get("evidence_links", [])]
+    return repo.clone(
+        [
+            item
+            for item in candidates
+            if str(item.get("id") or "") in evidence_ids
+            and item.get("projectId") == project_id
+            and int(item.get("nodeId") or node_id) == node_id
+        ]
+    )
+
+
 @router.get("/reasoning/logs/{log_id}")
 def reasoning_log_detail(request: Request, log_id: str):
     run = repo.find_one("ai_runs", log_id)
@@ -21656,7 +22142,7 @@ def reasoning_log_detail(request: Request, log_id: str):
     return ok(
         {
             "log": fde_ai_run_view(run, raw_access=raw),
-            "evidenceLinks": repo.clone(run.get("evidenceLinks") or repo.state["evidence_links"]),
+            "evidenceLinks": ai_run_evidence_snapshot(run),
             "traceSteps": trace_steps,
             "graphNodes": graph_nodes,
             "promptAudit": repo.clone(llm_audit["inputs"]),
@@ -21676,12 +22162,27 @@ def reasoning_log_evidence(request: Request, log_id: str):
     scope_error = scope_error_for_record(request, run)
     if scope_error:
         return scope_error
-    return ok(repo.clone(run.get("evidenceLinks") or repo.state["evidence_links"]), request)
+    return ok(ai_run_evidence_snapshot(run), request)
 
 
 @router.post("/llm/compare")
 def llm_compare(request: Request, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     def produce():
+        question = compact_plain_text(body.get("question"), 1000)
+        model_codes = compact_id_list(body.get("modelCodes"), limit=4)
+        allowed_models = {"review-chat", "default-chat", "compare-fast", "qwen-vision-review"}
+        if not question:
+            return fail(errors.VALIDATION_ERROR, request, message="模型对比问题不能为空。")
+        if len(model_codes) < 2:
+            return fail(errors.VALIDATION_ERROR, request, message="模型对比至少需要选择两个模型。")
+        unsupported_models = [item for item in model_codes if item not in allowed_models]
+        if unsupported_models:
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="模型别名不受支持。",
+                data={"unsupportedModels": unsupported_models},
+            )
         project_id = body.get("projectId")
         node_ids = node_ids_from_body(body)
         if project_id:
@@ -21694,8 +22195,8 @@ def llm_compare(request: Request, body: dict[str, Any] = Body(default_factory=di
         run_id = f"CMP-{uuid4().hex[:8].upper()}"
         run = {
             "runId": run_id,
-            "question": body.get("question") or "请对比审查意见。",
-            "modelCodes": body.get("modelCodes") or ["default-chat", "compare-fast"],
+            "question": question,
+            "modelCodes": model_codes,
             "createdAt": server_time(),
             "projectId": body.get("projectId"),
             "nodeId": body.get("nodeId"),
@@ -21725,7 +22226,7 @@ def list_compare_runs(request: Request, projectId: str | None = None, nodeId: in
             "createdAt": item["createdAt"],
             "projectId": item.get("projectId"),
             "nodeId": item.get("nodeId"),
-            "status": item.get("status", "完成"),
+            "status": item.get("status") or "未知",
         }
         for item in items
     ]
@@ -21753,7 +22254,7 @@ def admin_config_overview(request: Request):
         {
             "revision": singleton_revision(repo.state["admin_config"]),
             "etag": singleton_etag("admin-config", repo.state["admin_config"]),
-            "updatedAt": repo.state["admin_config"].get("updatedAt") or server_time(),
+            "updatedAt": repo.state["admin_config"].get("updatedAt"),
         }
     )
     return ok(overview, request)
@@ -21767,18 +22268,83 @@ def create_admin_project(request: Request, body: dict[str, Any] = Body(default_f
             pack = load_business_pack(pack_id)
         except ValueError as exc:
             return fail(errors.VALIDATION_ERROR, request, message=str(exc))
-        project_id = body.get("code") or f"P-2026-{uuid4().hex[:6].upper()}"
-        defaults = project_defaults_for_pack(pack)
+        name = str(body.get("name") or "").strip()
+        region = str(body.get("region") or "").strip()
+        project_type = str(pack.get("projectType") or pack.get("name") or "").strip()
+        assignments = project_pack_member_roles(pack)
+        if not assignments:
+            return fail(errors.VALIDATION_ERROR, request, message="业务类型未配置可授权角色，不能创建项目。")
+        role_org_fields = {
+            "owner": "ownerOrgName",
+            "contractor": "contractorOrgName",
+            "ndt": "ndtOrgName",
+            "inspection": "inspectionOrgName",
+        }
+        required_fields = ["name", "region"] + [
+            role_org_fields[item["userRole"]]
+            for item in assignments
+            if item["userRole"] in role_org_fields
+        ]
+        normalized = {
+            "name": name,
+            "region": region,
+            **{
+                field: str(body.get(field) or "").strip()
+                for field in role_org_fields.values()
+            },
+        }
+        missing_fields = list(dict.fromkeys(field for field in required_fields if not normalized.get(field)))
+        if missing_fields:
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="项目基本信息、参建单位和初始成员必须使用真实配置，不能留空。",
+                data={"missingFields": missing_fields},
+            )
+        requested_type = str(body.get("type") or "").strip()
+        if requested_type and requested_type != project_type:
+            return fail(errors.VALIDATION_ERROR, request, message="项目类型必须与所选业务类型一致。")
+        project_id = str(body.get("code") or f"P-{datetime.now(UTC).year}-{uuid4().hex[:6].upper()}").strip()
+        if repo.require_project(project_id):
+            return fail(errors.CONFLICT, request, message="项目编号已存在。")
+        member_user_ids = body.get("memberUserIds") if isinstance(body.get("memberUserIds"), dict) else {}
+        prepared_members: list[tuple[dict[str, Any], dict[str, Any]]] = []
+        member_errors: list[dict[str, Any]] = []
+        for assignment in assignments:
+            user_role = assignment["userRole"]
+            user_id = str(member_user_ids.get(user_role) or member_user_ids.get(assignment.get("code")) or "").strip()
+            user = exact_admin_user(user_id)
+            expected_org = normalized.get(role_org_fields.get(user_role, ""), "")
+            if not user:
+                member_errors.append({"role": user_role, "userId": user_id or None, "reason": "请选择有效的初始成员。"})
+                continue
+            if user.get("status") != "启用":
+                member_errors.append({"role": user_role, "userId": user_id, "reason": "停用用户不能加入项目。"})
+                continue
+            if user.get("role") != user_role:
+                member_errors.append({"role": user_role, "userId": user_id, "reason": "用户角色与业务类型角色不一致。"})
+                continue
+            if expected_org and str(user.get("orgName") or "").strip() != expected_org:
+                member_errors.append({"role": user_role, "userId": user_id, "reason": "用户所属组织与项目参建单位不一致。"})
+                continue
+            prepared_members.append((assignment, user))
+        if member_errors:
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="初始成员配置无效，请按参建单位选择启用用户。",
+                data={"memberErrors": member_errors},
+            )
         project = {
             "id": project_id,
             "code": project_id,
-            "name": body.get("name") or defaults["name"],
-            "type": body.get("type") or defaults["type"],
-            "region": body.get("region") or "华东",
-            "ownerOrgName": body.get("ownerOrgName") or defaults["ownerOrgName"],
-            "contractorOrgName": body.get("contractorOrgName") or defaults["contractorOrgName"],
-            "ndtOrgName": body.get("ndtOrgName") or defaults["ndtOrgName"],
-            "inspectionOrgName": body.get("inspectionOrgName") or defaults["inspectionOrgName"],
+            "name": name,
+            "type": project_type,
+            "region": region,
+            "ownerOrgName": normalized["ownerOrgName"],
+            "contractorOrgName": normalized["contractorOrgName"],
+            "ndtOrgName": normalized["ndtOrgName"],
+            "inspectionOrgName": normalized["inspectionOrgName"],
             "businessPackId": pack["id"],
             "businessPackVersion": pack["version"],
             "domainType": pack["domainType"],
@@ -21794,7 +22360,6 @@ def create_admin_project(request: Request, body: dict[str, Any] = Body(default_f
         }
         repo.state["projects"].insert(0, project)
         created_node_count, created_requirement_count = attach_business_pack_project_scaffold(project, pack)
-        member_user_ids = body.get("memberUserIds") or {}
         role_node_scope = {
             role["code"]: [int(item["nodeId"]) for item in pack["nodeTemplates"]]
             for role in pack["roles"]
@@ -21809,16 +22374,16 @@ def create_admin_project(request: Request, body: dict[str, Any] = Body(default_f
             "submitter": project["contractorOrgName"],
             "auditor": project["inspectionOrgName"],
         }
-        for role_def in [item for item in pack["roles"] if item["code"] != "admin"]:
-            role = role_def["code"]
+        for role_def, user in prepared_members:
+            role = role_def["userRole"]
             repo.state["project_members"].insert(
                 0,
                 project_member_snapshot(
                     project_id,
                     role,
-                    member_user_ids.get(role),
+                    user["id"],
                     org_name=role_org_names.get(role, project["inspectionOrgName"]),
-                    node_scope=role_node_scope[role],
+                    node_scope=role_node_scope[role_def["code"]],
                     actions=role_def["actions"],
                 ),
             )
@@ -22074,7 +22639,19 @@ def admin_config_export(request: Request, body: dict[str, Any] = Body(default_fa
     def produce():
         export_id = f"EXP-CFG-{uuid4().hex[:8].upper()}"
         scope = body.get("scope") or "all"
-        task = {"id": export_id, "exportType": "config-package", "status": "可下载", "progress": 100, "fileName": f"后台配置包-{scope}-20260626.zip", "fileSize": 204800, "downloadUrl": f"mock://download/admin/{export_id}.zip", "createdAt": server_time(), "finishedAt": server_time(), "expiresAt": "2026-06-27 18:00:00"}
+        created_at = server_time()
+        expires_at = (datetime.now(UTC) + timedelta(hours=24)).isoformat()
+        task = {
+            "id": export_id,
+            "exportType": "config-package",
+            "status": "可下载",
+            "progress": 100,
+            "fileName": f"后台配置包-{scope}-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}.zip",
+            "createdAt": created_at,
+            "finishedAt": created_at,
+            "expiresAt": expires_at,
+            "operationId": getattr(request.state, "operation_id", None),
+        }
         repo.attach_export_artifact(task, content_type="application/zip")
         repo.state["export_tasks"].insert(0, task)
         return ok({"exportId": export_id, "task": task}, request)
@@ -22506,6 +23083,68 @@ def update_workflow_state_machine(request: Request, state_machine_id: str, body:
     return admin_generic_update(request, "workflowStateMachines", state_machine_id, body, idempotency_key, if_match)
 
 
+ADMIN_CONFIG_PUBLISH_SCOPES = {"all", "permission", "workflow", "node-template", "rule"}
+
+
+def normalized_admin_publish_payload(body: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "scope": str(body.get("scope") or "all"),
+        "reason": str(body.get("reason") or "").strip(),
+    }
+
+
+def admin_publish_impact(payload: dict[str, Any]) -> dict[str, Any]:
+    config = repo.state["admin_config"]
+    scope = payload["scope"]
+    domain_sources = {
+        "permission": ("权限矩阵", config.get("permissionMatrix") or []),
+        "workflow": ("工作流状态机", config.get("workflowStateMachines") or []),
+        "node-template": ("节点模板", config.get("nodeTemplates") or []),
+        "rule": ("规则版本", repo.state.get("rule_versions") or []),
+    }
+    selected_domains = list(domain_sources) if scope == "all" else [scope]
+    impacts = [
+        {
+            "domain": domain,
+            "label": domain_sources[domain][0],
+            "affectedCount": len(domain_sources[domain][1]),
+            "status": "待发布",
+        }
+        for domain in selected_domains
+    ]
+    active_projects = len([item for item in repo.state.get("projects", []) if item.get("status") != "已归档"])
+    warnings = []
+    if not any(int(item["affectedCount"]) > 0 for item in impacts):
+        warnings.append("当前发布范围没有配置项，请确认范围是否正确。")
+    if active_projects:
+        warnings.append(f"发布后将影响 {active_projects} 个未归档项目的后续操作。")
+    return {
+        "scope": scope,
+        "totalAffected": sum(int(item["affectedCount"]) for item in impacts),
+        "linkedProjects": active_projects,
+        "impacts": impacts,
+        "warnings": warnings,
+    }
+
+
+@router.post("/admin/config-overview/publish-preview")
+def preview_admin_config_publish(request: Request, body: dict[str, Any] = Body(default_factory=dict)):
+    payload = normalized_admin_publish_payload(body)
+    if payload["scope"] not in ADMIN_CONFIG_PUBLISH_SCOPES:
+        return fail(errors.VALIDATION_ERROR, request, message="配置发布范围不支持。")
+    if not payload["reason"]:
+        return fail(errors.VALIDATION_ERROR, request, message="配置发布必须填写操作原因。")
+    impact = admin_publish_impact(payload)
+    preview = create_operation_preview(
+        request,
+        kind="admin_config_publish",
+        payload=payload,
+        base_fingerprint=singleton_etag("admin-config", repo.state["admin_config"]),
+        impact=impact,
+    )
+    return ok({**preview, "impact": impact}, request)
+
+
 @router.post("/admin/config-overview/publish")
 def publish_admin_config(
     request: Request,
@@ -22513,49 +23152,72 @@ def publish_admin_config(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     if_match: str | None = Header(default=None, alias="If-Match"),
 ):
+    payload = normalized_admin_publish_payload(body)
+    if payload["scope"] not in ADMIN_CONFIG_PUBLISH_SCOPES:
+        return fail(errors.VALIDATION_ERROR, request, message="配置发布范围不支持。")
+    if not payload["reason"]:
+        return fail(errors.VALIDATION_ERROR, request, message="配置发布必须填写操作原因。")
+    preview, preview_error = validate_operation_preview(
+        request,
+        preview_id=str(body.get("previewId") or "") or None,
+        kind="admin_config_publish",
+        payload=payload,
+        base_fingerprint=singleton_etag("admin-config", repo.state["admin_config"]),
+    )
+    if preview_error:
+        return preview_error
+
     def produce():
         if not singleton_if_match_valid("admin-config", repo.state["admin_config"], if_match):
             return fail(errors.ETAG_CONFLICT, request)
         publish_id = f"PUB-{uuid4().hex[:8].upper()}"
         audit_id = repo.add_audit("发布后台配置", "AdminConfig", publish_id)
-        version = "config-v2026.06.27"
-        scope = body.get("scope") or "all"
+        published_revision = singleton_revision(repo.state["admin_config"])
+        version = f"config-r{published_revision}"
+        scope = payload["scope"]
+        impact = admin_publish_impact(payload)
+        published_at = server_time()
         repo.state["admin_config"]["lastPublishedVersion"] = version
-        repo.state["admin_config"]["lastPublishedAt"] = server_time()
+        repo.state["admin_config"]["lastPublishedAt"] = published_at
         repo.state["admin_config"]["lastPublishedScope"] = scope
+        repo.state.setdefault("admin_config_publishes", []).insert(
+            0,
+            {
+                "publishId": publish_id,
+                "version": version,
+                "scope": scope,
+                "reason": payload["reason"],
+                "publishedRevision": published_revision,
+                "publishedBy": operation_actor_key(request),
+                "publishedAt": published_at,
+                "impact": repo.clone(impact),
+                "auditLogId": audit_id,
+            },
+        )
         bump_singleton_revision(repo.state["admin_config"])
-        message = {
-            "id": f"MSG-{uuid4().hex[:8].upper()}",
-            "title": f"后台配置已发布：{version}",
-            "content": f"发布范围 {scope}，权限、待办和消息模板已完成联动刷新。",
-            "projectId": PROJECT_ID,
-            "targetType": "admin_config",
-            "targetId": publish_id,
-            "read": False,
-            "createdAt": server_time(),
-        }
-        todo = {
-            "id": f"TODO-{uuid4().hex[:8].upper()}",
-            "title": "字段映射配置发布影响",
-            "projectId": PROJECT_ID,
-            "nodeId": 24,
-            "targetType": "admin_config",
-            "targetId": publish_id,
-            "status": "待处理",
-            "priority": "中",
-            "assigneeName": "张工",
-            "actions": ["admin:config", "knowledge:manage"],
-        }
-        repo.state["messages"].insert(0, message)
-        repo.state["todos"].insert(0, todo)
-        impacts = [
-            {"domain": "permission", "label": "权限矩阵", "affectedCount": 5, "status": "已同步", "trace": "权限矩阵已同步到工作台动作权限"},
-            {"domain": "message-template", "label": "消息模板", "affectedCount": 2, "status": "已同步", "trace": "消息模板已刷新待办通知"},
-            {"domain": "field-mapping", "label": "字段映射", "affectedCount": 1, "status": "需复核", "trace": "字段映射阈值变更后需在真实 OCR 样例中复核"},
-        ]
-        return ok({"publishId": publish_id, "status": "已发布", "version": version, "auditLogId": audit_id, "publishedAt": repo.state["admin_config"]["lastPublishedAt"], "revision": singleton_revision(repo.state["admin_config"]), "etag": singleton_etag("admin-config", repo.state["admin_config"]), "impactSummary": {"totalAffected": 8, "warningCount": 1, "linkedProjects": len([item for item in repo.state["projects"] if item["status"] != "已归档"]), "pushedMessages": 1, "reviewTodos": 1}, "impacts": impacts}, request)
+        consume_operation_preview(preview)
+        return ok(
+            {
+                "publishId": publish_id,
+                "status": "已发布",
+                "version": version,
+                "auditLogId": audit_id,
+                "publishedAt": published_at,
+                "revision": singleton_revision(repo.state["admin_config"]),
+                "etag": singleton_etag("admin-config", repo.state["admin_config"]),
+                "impactSummary": {
+                    "totalAffected": impact["totalAffected"],
+                    "warningCount": len(impact["warnings"]),
+                    "linkedProjects": impact["linkedProjects"],
+                    "pushedMessages": 0,
+                    "reviewTodos": 0,
+                },
+                "impacts": [{**item, "status": "已发布"} for item in impact["impacts"]],
+            },
+            request,
+        )
 
-    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
+    return idempotent(request, idempotency_key, produce, fingerprint_source={**payload, "previewId": body.get("previewId")})
 
 
 @router.get("/admin/audit-logs")

@@ -1,0 +1,36 @@
+schemaVersion: aicheck-audit-model-comparison@1
+modeEnv: AICHECK_AUDIT_MODEL_COMPARISON_MODE
+defaultMode: off
+
+primary:
+  pipelineId: qwen_vl_audit_v1
+  provider: qwen_official
+  baseUrlEnv: QWEN_API_BASE
+  apiKeyEnv: QWEN_API_KEY
+  modelEnv: AICHECK_QWEN_VL_AUDIT_MODEL
+  defaultBaseUrl: https://dashscope.aliyuncs.com/compatible-mode/v1
+  defaultModel: qwen3.7-plus
+  maxTokens: 2400
+  timeoutSeconds: 180
+
+challenger:
+  pipelineId: paddle_nuextract_deepseek_v1
+  provider: deepseek_official
+  baseUrlEnv: DEEPSEEK_API_BASE
+  apiKeyEnv: DEEPSEEK_API_KEY
+  modelEnv: AICHECK_DEEPSEEK_AUDIT_MODEL
+  defaultBaseUrl: https://api.deepseek.com
+  defaultModel: deepseek-v4-pro
+  thinking:
+    type: enabled
+    reasoningEffort: high
+  maxTokens: 2400
+  timeoutSeconds: 180
+
+sampling:
+  rateEnv: AICHECK_AUDIT_MODEL_COMPARISON_SAMPLE_RATE
+  defaultRate: 1.0
+
+fallback:
+  allowChallengerToReplacePrimary: false
+  allowProviderFallback: false

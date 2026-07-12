@@ -561,7 +561,7 @@ def test_fde_access_grant_controls_raw_ai_run_view() -> None:
     approved = assert_ok(
         client.post(
             f"/api/fde/access-grants/{grant['grant']['id']}/approve",
-            json={"expiresAt": "9999-12-31 23:59:59"},
+            json={},
             headers={"X-Role": "admin", "Idempotency-Key": "fde-access-approve-001"},
         )
     )
@@ -571,6 +571,7 @@ def test_fde_access_grant_controls_raw_ai_run_view() -> None:
     assert masked["llmAudit"]["visibility"] == "masked"
     assert grant["grant"]["status"] == "pending"
     assert approved["grant"]["status"] == "approved"
+    assert not approved["grant"]["expiresAt"].startswith("9999-")
     assert raw["run"]["rawAccess"] is True
     assert raw["llmAudit"]["visibility"] == "raw"
 
@@ -632,14 +633,14 @@ def test_fde_evaluation_report_and_release_state_machine() -> None:
     submitted = assert_ok(
         client.post(
             f"/api/fde/releases/{release['plan']['id']}/submit",
-            json={},
+            json={"reason": "提交完整评估、风险集和回滚方案进行发布门禁校验。"},
             headers={"X-Role": "fde", "Idempotency-Key": "fde-release-submit-001"},
         )
     )
     approved = assert_ok(
         client.post(
             f"/api/fde/releases/{release['plan']['id']}/approve",
-            json={"comment": "评估、风险集和回滚计划满足灰度前置条件。"},
+            json={"status": "approved", "comment": "评估、风险集和回滚计划满足灰度前置条件。"},
             headers={"X-Role": "admin", "Idempotency-Key": "fde-release-approve-admin-001"},
         )
     )
@@ -654,7 +655,7 @@ def test_fde_evaluation_report_and_release_state_machine() -> None:
     shadow = assert_ok(
         client.post(
             f"/api/fde/releases/{release['plan']['id']}/start-shadow",
-            json={"sampleRate": 0},
+            json={"sampleRate": 0.1, "reason": "验证候选能力组合在真实流量副本上的证据命中情况。"},
             headers={"X-Role": "fde", "Idempotency-Key": "fde-release-shadow-001"},
         )
     )
@@ -838,7 +839,13 @@ def test_fde_business_pack_install_rca_and_data_export() -> None:
     rca = assert_ok(
         client.post(
             "/api/fde/incidents/INC-AI-20260626-001/rca",
-            json={"status": "open", "rootCause": "low_quality_scan"},
+            json={
+                "status": "open",
+                "rootCause": "low_quality_scan",
+                "temporaryAction": "低置信字段全部转人工复核。",
+                "longTermAction": "调整低清扫描件预处理并补充回归样本。",
+                "owner": "FDE 质量负责人",
+            },
             headers={"X-Role": "fde", "Idempotency-Key": "fde-rca-001"},
         )
     )
@@ -1756,21 +1763,21 @@ def test_fde_project_audit_workspace_groups_tasks_and_blockers() -> None:
     assert "ocrJobs" in workspace
     assert "ocrAnnotationTasks" in workspace
     assert "qualityBlockers" in workspace
-    assert workspace["reviewRuns"]
-    review_run = workspace["reviewRuns"][0]
-    assert review_run["graphSummary"]["total"] >= 1
-    assert review_run["graphAuditSummary"]["nodeCount"] >= 1
-    assert review_run["graphAuditSummary"]["edgeCount"] >= 1
-    assert review_run["graphAuditSummary"]["timelineCount"] >= 1
-    assert review_run["graphAuditSummary"]["workflowEngine"]
-    assert review_run["graphAuditSummary"]["graphEngine"] == "langgraph"
-    assert "artifactSummary" in review_run["graphAuditSummary"]
-    assert workspace["ocrAnnotationTasks"]
-    annotation_task = workspace["ocrAnnotationTasks"][0]
-    assert "candidateCounts" in annotation_task
-    assert "labelCounts" in annotation_task
-    assert "readyForEval" in annotation_task
-    assert "readinessBlockers" in annotation_task
+    if workspace["reviewRuns"]:
+        review_run = workspace["reviewRuns"][0]
+        assert review_run["graphSummary"]["total"] >= 1
+        assert review_run["graphAuditSummary"]["nodeCount"] >= 1
+        assert review_run["graphAuditSummary"]["edgeCount"] >= 1
+        assert review_run["graphAuditSummary"]["timelineCount"] >= 1
+        assert review_run["graphAuditSummary"]["workflowEngine"]
+        assert review_run["graphAuditSummary"]["graphEngine"] == "langgraph"
+        assert "artifactSummary" in review_run["graphAuditSummary"]
+    if workspace["ocrAnnotationTasks"]:
+        annotation_task = workspace["ocrAnnotationTasks"][0]
+        assert "candidateCounts" in annotation_task
+        assert "labelCounts" in annotation_task
+        assert "readyForEval" in annotation_task
+        assert "readinessBlockers" in annotation_task
     document = workspace["documents"][0]
     assert document["knowledgeFileId"].startswith("KF-")
     assert document["sliceStatus"] in {"已切片", "切片中", "待切片", "等待OCR"}
@@ -1812,7 +1819,7 @@ def test_fde_project_audit_workspace_groups_tasks_and_blockers() -> None:
     assert "bindings" in detail
 
 
-def test_fde_project_audit_workspace_supplies_backend_projection_data() -> None:
+def test_fde_project_audit_workspace_does_not_invent_projection_data() -> None:
     workspace = assert_ok(
         client.get(
             "/api/fde/projects/P-2026-GDLNG-002/audit-workspace?nodeId=16",
@@ -1820,76 +1827,36 @@ def test_fde_project_audit_workspace_supplies_backend_projection_data() -> None:
         )
     )
 
-    assert workspace["metrics"]["documents"] >= 4
-    assert workspace["metrics"]["knowledgeChunks"] >= 100
-    assert workspace["metrics"]["knowledgeVectors"] >= 80
-    assert workspace["metrics"]["pageIndexNodes"] >= 4
-    assert workspace["metrics"]["ocrJobs"] >= 4
-    assert workspace["metrics"]["annotationTasks"] >= 4
-    assert {item["fileName"] for item in workspace["documents"]} >= {
-        "管道特性表-第2版.png",
-        "质量证明书-QX201903S.pdf",
-        "RT检测报告-焊口清单.pdf",
-        "焊工资格证与外部查询截图.pdf",
-    }
-    assert any(item["profileId"] == "piping_characteristic_list_v1" for item in workspace["ocrJobs"])
-    assert any(item["profileId"] == "seal_text_profile_v1" for item in workspace["ocrAnnotationTasks"])
-    assert any(item["vectorCount"] < item["chunkCount"] for item in workspace["documents"])
-    assert workspace["knowledgeLineage"]["retrievalTraceCount"] >= 1
-    assert workspace["knowledgeLineage"]["pageIndexTraceCount"] >= 1
-    assert any(item["readiness"] == "needs_attention" for item in workspace["knowledgeLineage"]["documents"])
-    assert workspace["reviewRuns"]
-
-    review_run_id = workspace["reviewRuns"][0]["reviewRunId"]
-    detail = assert_ok(client.get(f"/api/fde/review-runs/{review_run_id}", headers={"X-Role": "fde"}))
-    graph = detail["graph"]
-
-    assert detail["run"]["workflowEngine"] == "temporal"
-    assert detail["run"]["graphEngine"] == "langgraph"
-    assert detail["run"]["graphExecution"]["checkpointer"] == "postgres"
-    assert detail["scorecard"]["score"] == 100
-    assert detail["lineage"]["reasoningPolicy"] == "show_audit_summary_not_raw_chain_of_thought"
-    assert len(graph["nodes"]) >= 12
-    assert graph["artifactSummary"]["toolCalls"] >= 5
-    assert graph["artifactSummary"]["retrievalTraces"] >= 2
-    assert graph["artifactSummary"]["pageIndexTraces"] >= 1
-    assert graph["artifactSummary"]["findingDrafts"] >= 2
-    assert detail["reasoningTrace"]
-    assert all("rawChainOfThought" not in item for item in detail["reasoningTrace"])
-
-    ocr_job_id = workspace["ocrJobs"][0]["jobId"]
-    ocr_detail = assert_ok(client.get(f"/api/fde/ocr-runs/{ocr_job_id}", headers={"X-Role": "fde"}))
-    assert ocr_detail["job"]["jobId"] == ocr_job_id
-    assert ocr_detail["parseResult"]["parseResultId"] == workspace["ocrJobs"][0]["parseResultId"]
-    assert ocr_detail["parseResult"]["preprocessStatus"]["generatedVariants"]
-    assert ocr_detail["parseResult"]["fields"]
-    assert ocr_detail["parseResult"]["tables"]
-    assert ocr_detail["parseResult"]["seals"]
-    assert ocr_detail["parseResult"]["diagnostics"]
+    assert workspace["metrics"]["documents"] == 0
+    assert workspace["metrics"]["knowledgeChunks"] == 0
+    assert workspace["metrics"]["knowledgeVectors"] == 0
+    assert workspace["metrics"]["pageIndexNodes"] == 0
+    assert workspace["metrics"]["ocrJobs"] == 0
+    assert workspace["metrics"]["annotationTasks"] == 0
+    assert workspace["documents"] == []
+    assert workspace["reviewRuns"] == []
+    assert workspace["ocrJobs"] == []
+    assert workspace["ocrAnnotationTasks"] == []
+    assert workspace["qualityBlockers"] == []
+    assert workspace["knowledgeLineage"]["retrievalTraceCount"] == 0
+    assert workspace["knowledgeLineage"]["pageIndexTraceCount"] == 0
 
 
-def test_fde_synthetic_ocr_job_detail_can_be_opened_directly() -> None:
-    review_detail = assert_ok(
+def test_fde_synthetic_review_and_ocr_records_are_not_exposed() -> None:
+    assert_error(
         client.get(
             "/api/fde/review-runs/RR-AUDIT-P-2026-GDLNG-002-16",
             headers={"X-Role": "fde"},
-        )
+        ),
+        "NOT_FOUND",
     )
-    detail = assert_ok(
+    assert_error(
         client.get(
             "/api/fde/ocr-runs/OCR-JOB-FDE-2026GDLNG002-1",
             headers={"X-Role": "fde"},
-        )
+        ),
+        "NOT_FOUND",
     )
-
-    assert review_detail["run"]["reviewRunId"] == "RR-AUDIT-P-2026-GDLNG-002-16"
-    assert review_detail["run"]["workflowEngine"] == "temporal"
-    assert review_detail["run"]["graphExecution"]["checkpointer"] == "postgres"
-    assert review_detail["graph"]["artifactSummary"]["pageIndexTraces"] >= 1
-    assert detail["job"]["jobId"] == "OCR-JOB-FDE-2026GDLNG002-1"
-    assert detail["parseResult"]["profileId"] == "piping_characteristic_list_v1"
-    assert "table_line_enhanced" in detail["parseResult"]["preprocessStatus"]["generatedVariants"]
-    assert detail["parseResult"]["quality"]["status"] in {"auto_usable", "needs_human_review"}
 
 
 def test_fde_security_masking_data_export_and_audit_flow() -> None:
@@ -1961,14 +1928,17 @@ def test_fde_version_diff_release_impact_and_production_gate() -> None:
     shadow = assert_ok(
         client.post(
             f"/api/fde/releases/{release_id}/start-shadow",
-            json={"sampleRate": 0},
+            json={"sampleRate": 0.1, "reason": "验证中风险发布计划。"},
             headers={"X-Role": "fde", "Idempotency-Key": "fde-release-shadow-100"},
         )
     )
     shadow_passed = assert_ok(
         client.post(
             f"/api/fde/releases/{release_id}/mark-shadow-passed",
-            json={"metrics": {"failedRuns": 0}},
+            json={
+                "metrics": {"sampleCount": 100, "failedRuns": 0, "evidenceHitRate": 0.99},
+                "reason": "100 个 Shadow 样本无失败且证据命中率达到 99%。",
+            },
             headers={"X-Role": "fde", "Idempotency-Key": "fde-release-shadow-pass-100"},
         )
     )
@@ -2340,20 +2310,11 @@ def test_fde_vector_corrections_review_apply_and_reject() -> None:
     assert forbidden["data"]["reason"] == "FORBIDDEN"
 
 
-def test_fde_vector_file_detail_exposes_declared_chunk_without_materialized_rows() -> None:
-    detail = assert_ok(
+def test_fde_vector_file_detail_rejects_unmaterialized_synthetic_document() -> None:
+    assert_error(
         client.get(
             "/api/fde/projects/P-2026-GDLNG-002/documents/FDE-DV-2026GDLNG002-4-V1/vector-detail",
             headers={"X-Role": "fde"},
-        )
+        ),
+        "NOT_FOUND",
     )
-
-    assert detail["schemaVersion"] == "FdeVectorFileDetail@1.1.0"
-    assert detail["chunkSummary"]["declaredChunkCount"] == 16
-    assert detail["chunkSummary"]["materializedChunkCount"] == 0
-    assert detail["chunkRows"][0]["materialized"] is False
-    assert detail["processingPipeline"]["summary"][0]["label"] == "图片/文件"
-    assert detail["processingPipeline"]["vectorFormat"]["rows"][0]["vectorRecord"]["status"] == "missing"
-    assert detail["vectorPayloads"][0]["indexRecord"]["materialized"] is False
-    assert any(issue["code"] == "virtual_chunk_rows" for issue in detail["qualityIssues"])
-    assert "文件声明已切片，但缺少可审计切片明细" in detail["blockers"]

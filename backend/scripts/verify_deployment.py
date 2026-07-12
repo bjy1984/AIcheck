@@ -142,7 +142,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--api-base", default=os.getenv("AICHECK_API_BASE_URL", "http://127.0.0.1:8000"))
     parser.add_argument("--ocr-base", default=os.getenv("AICHECK_VERIFY_OCR_BASE_URL", "http://127.0.0.1:8010"))
     parser.add_argument("--litellm-base", default=os.getenv("LITELLM_BASE_URL", "http://127.0.0.1:4001"))
-    parser.add_argument("--litellm-api-key", default=os.getenv("LITELLM_API_KEY"))
+    parser.add_argument("--litellm-api-key-file", default=os.getenv("LITELLM_API_KEY_FILE"))
     parser.add_argument("--project-id", default=os.getenv("AICHECK_DEFAULT_PROJECT_ID", PROJECT_ID))
     parser.add_argument("--roles", default=",".join(DEFAULT_ROLES), help="Comma-separated login roles to verify.")
     parser.add_argument("--strict-production", action="store_true", help="Fail if production security/storage flags are not enabled.")
@@ -205,11 +205,18 @@ def config_from_args(args: argparse.Namespace) -> VerifyConfig:
         missing = sorted({"inspection", "fde"} - set(roles))
         if missing:
             raise SystemExit("--review-run-probe requires --roles including inspection,fde.")
+    litellm_api_key = os.getenv("LITELLM_API_KEY")
+    key_file = getattr(args, "litellm_api_key_file", None)
+    if key_file:
+        key_path = Path(key_file).expanduser()
+        if key_path.stat().st_mode & 0o077:
+            raise SystemExit("--litellm-api-key-file must not be group/world accessible.")
+        litellm_api_key = key_path.read_text(encoding="utf-8").strip()
     return VerifyConfig(
         api_base=args.api_base.rstrip("/"),
         ocr_base=None if args.skip_ocr else (args.ocr_base or "").rstrip("/"),
         litellm_base=None if args.skip_litellm else (args.litellm_base or "").rstrip("/"),
-        litellm_api_key=args.litellm_api_key,
+        litellm_api_key=litellm_api_key,
         project_id=args.project_id,
         roles=roles,
         strict_production=args.strict_production,

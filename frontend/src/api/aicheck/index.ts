@@ -27,6 +27,11 @@ import type {
   ReportVersion,
   ReviewOpinion,
   RoleCode,
+  RuntimeUiContext,
+  OperationsOverview,
+  OperationArea,
+  OperationTask,
+  ImpactPreview,
   SearchResult,
   TodoItem,
   WorkbenchContextPayload,
@@ -46,6 +51,53 @@ export type PagePayload<T> = {
   page: number
   pageSize: number
   total: number
+}
+
+export type KnowledgeReindexPayload = {
+  scope: 'all' | 'project' | 'source'
+  projectId?: string
+  sourceId?: string
+  sourceType?: KnowledgeSource['sourceType']
+  includeOcr?: boolean
+  onlyIncomplete?: boolean
+  limit?: number
+  reason?: string
+  previewId?: string
+}
+
+export type KnowledgeReindexImpact = Record<string, unknown> & {
+  scope: KnowledgeReindexPayload['scope']
+  matchedFiles: number
+  estimatedTasks: number
+  includeOcr: boolean
+  onlyIncomplete: boolean
+  sampleFiles: string[]
+  warnings: string[]
+}
+
+export type AdminConfigPublishImpact = Record<string, unknown> & {
+  scope: 'all' | 'permission' | 'workflow' | 'node-template' | 'rule'
+  totalAffected: number
+  linkedProjects: number
+  impacts: AdminPublishImpact[]
+  warnings: string[]
+}
+
+export type KnowledgeRuleOperationImpact = Record<string, unknown> & {
+  action: 'publish' | 'rollback'
+  ruleVersionId: string
+  targetVersionId?: string | null
+  targetVersion?: string | null
+  nodeIds: number[]
+  linkedProjects: number
+  summary: {
+    added: number
+    changed: number
+    removed: number
+    warning: number
+  }
+  changes: Array<Record<string, unknown>>
+  warnings: string[]
 }
 
 export type UploadSessionPayload = {
@@ -440,6 +492,8 @@ export type ReviewOpinionPayload = {
 export type AiSuggestionAdoptPayload = {
   draftOpinion: ReviewOpinion & {
     requiresEvidenceSelection?: boolean
+    requiresResultSelection?: boolean
+    requiresOpinionInput?: boolean
     evidenceValidation?: EvidenceSelectionValidation
   }
   auditLogId: string
@@ -930,7 +984,7 @@ export type LlmComparePayload = {
   question: string
   createdAt: string
   modelCodes: string[]
-  status?: '排队中' | '运行中' | '完成' | '失败'
+  status?: '排队中' | '运行中' | '完成' | '失败' | '未知'
   results: Array<{
     modelCode: string
     answer: string
@@ -947,7 +1001,7 @@ export type LlmCompareRunSummary = {
   createdAt: string
   projectId?: string
   nodeId?: number
-  status?: '排队中' | '运行中' | '完成' | '失败'
+  status?: '排队中' | '运行中' | '完成' | '失败' | '未知'
 }
 
 export type AuditLogPayload = {
@@ -1114,6 +1168,11 @@ export type BusinessPackSummary = {
   ruleSetCount: number
   agentSopCount: number
   fixtureProjectCount?: number
+  roles?: Array<{
+    code: string
+    label: string
+    platformRole: 'reviewer' | 'submitter' | 'specialist_submitter' | 'observer' | string
+  }>
 }
 
 export type BusinessPackValidation = {
@@ -3481,15 +3540,7 @@ export const reindexKnowledgeFileApi = (
 }
 
 export const batchReindexKnowledgeApi = (
-  payload: {
-    scope: 'all' | 'project' | 'source'
-    projectId?: string
-    sourceId?: string
-    sourceType?: KnowledgeSource['sourceType']
-    includeOcr?: boolean
-    onlyIncomplete?: boolean
-    limit?: number
-  },
+  payload: KnowledgeReindexPayload,
   options?: MutationHeaderOptions
 ): Promise<
   IResponse<{
@@ -3503,6 +3554,12 @@ export const batchReindexKnowledgeApi = (
     data: payload,
     headers: mutationHeaders(options)
   })
+}
+
+export const previewKnowledgeReindexApi = (
+  payload: Omit<KnowledgeReindexPayload, 'previewId'>
+): Promise<IResponse<ImpactPreview<KnowledgeReindexImpact>>> => {
+  return request.post({ url: '/api/knowledge/reindex-preview', data: payload })
 }
 
 export const runKnowledgeRetrievalTestApi = (payload: {
@@ -3580,7 +3637,7 @@ export const getKnowledgeRuleVersionDiffApi = (
 
 export const publishKnowledgeRuleVersionApi = (
   versionId: string,
-  payload: { reason: string; effectiveAt?: string },
+  payload: { reason: string; effectiveAt?: string; previewId?: string },
   options?: MutationHeaderOptions
 ): Promise<IResponse<MockMutationResult & { rule: KnowledgeRuleVersion }>> => {
   return request.post({
@@ -3592,7 +3649,7 @@ export const publishKnowledgeRuleVersionApi = (
 
 export const rollbackKnowledgeRuleVersionApi = (
   versionId: string,
-  payload: { reason: string; targetVersion: string },
+  payload: { reason: string; targetVersion: string; targetVersionId?: string; previewId?: string },
   options?: MutationHeaderOptions
 ): Promise<
   IResponse<MockMutationResult & { rule: KnowledgeRuleVersion; target: KnowledgeRuleVersion }>
@@ -3601,6 +3658,22 @@ export const rollbackKnowledgeRuleVersionApi = (
     url: `/api/rules/versions/${versionId}/rollback`,
     data: payload,
     headers: mutationHeaders(options)
+  })
+}
+
+export const previewKnowledgeRuleVersionOperationApi = (
+  versionId: string,
+  action: 'publish' | 'rollback',
+  payload: {
+    reason: string
+    effectiveAt?: string
+    targetVersion?: string
+    targetVersionId?: string
+  }
+): Promise<IResponse<ImpactPreview<KnowledgeRuleOperationImpact>>> => {
+  return request.post({
+    url: `/api/rules/versions/${versionId}/${action}-preview`,
+    data: payload
   })
 }
 
@@ -5009,6 +5082,7 @@ export const publishAdminConfigApi = (
   payload: {
     scope: 'all' | 'permission' | 'workflow' | 'node-template' | 'rule'
     reason: string
+    previewId?: string
   },
   options?: MutationHeaderOptions
 ): Promise<IResponse<AdminPublishConfigPayload>> => {
@@ -5019,10 +5093,39 @@ export const publishAdminConfigApi = (
   })
 }
 
+export const previewAdminConfigPublishApi = (payload: {
+  scope: 'all' | 'permission' | 'workflow' | 'node-template' | 'rule'
+  reason: string
+}): Promise<IResponse<ImpactPreview<AdminConfigPublishImpact>>> => {
+  return request.post({ url: '/api/admin/config-overview/publish-preview', data: payload })
+}
+
+export const getRuntimeUiContextApi = (): Promise<IResponse<RuntimeUiContext>> => {
+  return request.get({ url: '/api/runtime/ui-context' })
+}
+
+export const getOperationsOverviewApi = (params: {
+  area: OperationArea
+  projectId?: string
+}): Promise<IResponse<OperationsOverview>> => {
+  return request.get({ url: '/api/operations/overview', params })
+}
+
+export const listOperationTasksApi = (params?: {
+  area?: OperationArea
+  projectId?: string
+  status?: string
+  page?: number
+  pageSize?: number
+}): Promise<IResponse<PagePayload<OperationTask>>> => {
+  return request.get({ url: '/api/operations/tasks', params })
+}
+
 export const searchApi = (params: {
   keyword: string
   projectId?: string
   type?: SearchResult['type']
+  scope?: OperationArea
   page?: number
   pageSize?: number
 }): Promise<IResponse<PagePayload<SearchResult>>> => {

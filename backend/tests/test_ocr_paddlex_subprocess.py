@@ -117,6 +117,7 @@ def test_vl_and_docling_engines_can_report_subprocess_availability(monkeypatch, 
     (docling_dir / "artifact.lock").write_text("local-docling-artifact", encoding="utf-8")
 
     monkeypatch.setenv("AICHECK_OCR_SUBPROCESS_PYTHON", str(python_bin))
+    monkeypatch.setenv("AICHECK_PADDLEOCR_VL_MEMORY_LIMIT_MB", "12288")
     monkeypatch.setenv("PADDLEOCR_VL_MODEL_DIR", str(vl_dir))
     monkeypatch.setenv("AICHECK_PADDLEOCR_VL_LAYOUT_MODEL_DIR", str(vl_layout_dir))
     monkeypatch.setenv("AICHECK_PADDLEOCR_VL_REC_MODEL_DIR", str(vl_rec_dir))
@@ -145,6 +146,7 @@ def test_vl_engine_accepts_paddlex_vl_1_6_alias(monkeypatch, tmp_path) -> None:
     (vl_dir / "PaddleOCR-VL-1.6").mkdir()
 
     monkeypatch.setenv("AICHECK_OCR_SUBPROCESS_PYTHON", str(python_bin))
+    monkeypatch.setenv("AICHECK_PADDLEOCR_VL_MEMORY_LIMIT_MB", "12288")
     monkeypatch.setenv("PADDLEOCR_VL_MODEL_DIR", str(vl_dir))
     monkeypatch.setattr(
         engines,
@@ -157,6 +159,20 @@ def test_vl_engine_accepts_paddlex_vl_1_6_alias(monkeypatch, tmp_path) -> None:
     assert status["available"] is True
     assert status["missingModelDirs"] == []
     assert status["modelDirs"]["vl_rec"].endswith("PaddleOCR-VL-1.6")
+
+
+def test_vl_engine_explicit_disable_overrides_model_artifact_discovery(monkeypatch, tmp_path) -> None:
+    vl_dir = tmp_path / "paddleocr-vl"
+    (vl_dir / "PP-DocLayoutV3").mkdir(parents=True)
+    (vl_dir / "PaddleOCR-VL-1.6").mkdir()
+    monkeypatch.setenv("AICHECK_ENABLE_PADDLEOCR_VL", "false")
+    monkeypatch.setenv("PADDLEOCR_VL_MODEL_DIR", str(vl_dir))
+
+    status = engines.PaddleOcrVlEngine().status()
+
+    assert status["enabled"] == "false"
+    assert status["available"] is False
+    assert status["executionMode"] == "disabled"
 
 
 def test_vl_and_docling_engines_require_explicit_model_artifact_paths(monkeypatch, tmp_path) -> None:

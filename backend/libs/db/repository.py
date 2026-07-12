@@ -7,10 +7,12 @@ import os
 import sqlite3
 import threading
 from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from libs.audit_context import current_request_audit_context
 from libs.contracts.responses import server_time
 from libs.integrations.storage import ObjectStorageUnavailable, object_storage, parse_storage_url
 from libs.knowledge_indexing import (
@@ -67,6 +69,11 @@ STATE_COLLECTIONS = {
     "ocr_profile_versions": "ocr_profile_versions",
     "ocr_jobs": "ocr_jobs",
     "ocr_parse_results": "ocr_parse_results",
+    "ocr_pipeline_runs": "ocr_pipeline_runs",
+    "ocr_stage_runs": "ocr_stage_runs",
+    "document_ai_shadow_runs": "document_ai_shadow_runs",
+    "document_audit_pipeline_comparison_runs": "document_audit_pipeline_comparison_runs",
+    "model_call_attempts": "model_call_attempts",
     "ocr_corrections": "ocr_corrections",
     "ocr_eval_runs": "ocr_eval_runs",
     "ocr_annotation_tasks": "ocr_annotation_tasks",
@@ -102,6 +109,7 @@ STATE_COLLECTIONS = {
     "knowledge_tasks": "knowledge_tasks",
     "knowledge_chunks": "knowledge_chunks",
     "knowledge_vectors": "knowledge_vectors",
+    "knowledge_embedding_batches": "knowledge_embedding_batches",
     "knowledge_clauses": "knowledge_clauses",
     "knowledge_page_index_nodes": "knowledge_page_index_nodes",
     "knowledge_vector_corrections": "knowledge_vector_corrections",
@@ -124,6 +132,7 @@ STATE_COLLECTIONS = {
     "rectifications": "rectifications",
     "upload_sessions": "upload_sessions",
     "audit_logs": "audit_logs",
+    "operation_previews": "operation_previews",
 }
 
 SINGLETON_COLLECTIONS = {
@@ -134,11 +143,40 @@ SINGLETON_COLLECTIONS = {
 IDEMPOTENCY_COLLECTION = "idempotency_keys"
 
 
+def demo_data_enabled() -> bool:
+    return os.getenv("AICHECK_ENABLE_DEMO_DATA", "false").strip().lower() == "true"
+
+
+def compatibility_mock_data_enabled() -> bool:
+    return os.getenv("AICHECK_ENABLE_COMPATIBILITY_MOCKS", "false").strip().lower() == "true"
+
+
+def blank_state() -> dict[str, Any]:
+    state = fresh_state()
+    for key in STATE_COLLECTIONS:
+        state[key] = []
+    state["admin_config"] = {
+        key: ([] if isinstance(value, list) else {})
+        for key, value in state.get("admin_config", {}).items()
+    }
+    knowledge_config = state.get("knowledge_config", {})
+    knowledge_config["updatedBy"] = "system"
+    knowledge_config["updatedAt"] = None
+    state["knowledge_config"] = knowledge_config
+    state["idempotency"] = {}
+    return state
+
+
+def runtime_initial_state() -> dict[str, Any]:
+    return fresh_state() if demo_data_enabled() else blank_state()
+
+
 class InMemoryRepository:
     def __init__(self) -> None:
-        self.state = fresh_state()
+        self.state = runtime_initial_state()
         self.state.setdefault("knowledge_chunks", [])
         self.state.setdefault("knowledge_vectors", [])
+        self.state.setdefault("knowledge_embedding_batches", [])
         self.state.setdefault("knowledge_clauses", [])
         self.state.setdefault("knowledge_page_index_nodes", [])
         self.state.setdefault("knowledge_vector_corrections", [])
@@ -148,6 +186,11 @@ class InMemoryRepository:
         self.state.setdefault("upload_sessions", [])
         self.state.setdefault("ocr_jobs", [])
         self.state.setdefault("ocr_parse_results", [])
+        self.state.setdefault("ocr_pipeline_runs", [])
+        self.state.setdefault("ocr_stage_runs", [])
+        self.state.setdefault("document_ai_shadow_runs", [])
+        self.state.setdefault("document_audit_pipeline_comparison_runs", [])
+        self.state.setdefault("model_call_attempts", [])
         self.state.setdefault("ocr_corrections", [])
         self.state.setdefault("ocr_eval_runs", [])
         self.state.setdefault("ocr_annotation_tasks", [])
@@ -155,6 +198,7 @@ class InMemoryRepository:
         self.state.setdefault("fde_capability_test_upload_sessions", [])
         self.state.setdefault("fde_capability_test_runs", [])
         self.state.setdefault("review_runs", [])
+        self.state.setdefault("operation_previews", [])
         self.state.setdefault("review_step_runs", [])
         self.state.setdefault("review_graph_nodes", [])
         self.state.setdefault("review_tool_calls", [])
@@ -173,9 +217,10 @@ class InMemoryRepository:
         self._sync_postgres_lock = threading.RLock()
 
     def reset(self) -> None:
-        self.state = fresh_state()
+        self.state = runtime_initial_state()
         self.state.setdefault("knowledge_chunks", [])
         self.state.setdefault("knowledge_vectors", [])
+        self.state.setdefault("knowledge_embedding_batches", [])
         self.state.setdefault("knowledge_clauses", [])
         self.state.setdefault("knowledge_page_index_nodes", [])
         self.state.setdefault("knowledge_vector_corrections", [])
@@ -185,6 +230,11 @@ class InMemoryRepository:
         self.state.setdefault("upload_sessions", [])
         self.state.setdefault("ocr_jobs", [])
         self.state.setdefault("ocr_parse_results", [])
+        self.state.setdefault("ocr_pipeline_runs", [])
+        self.state.setdefault("ocr_stage_runs", [])
+        self.state.setdefault("document_ai_shadow_runs", [])
+        self.state.setdefault("document_audit_pipeline_comparison_runs", [])
+        self.state.setdefault("model_call_attempts", [])
         self.state.setdefault("ocr_corrections", [])
         self.state.setdefault("ocr_eval_runs", [])
         self.state.setdefault("ocr_annotation_tasks", [])
@@ -351,13 +401,15 @@ class InMemoryRepository:
 
     def add_audit(self, action: str, object_type: str, object_id: str, result: str = "成功") -> str:
         audit_id = f"AUD-{uuid4().hex[:10].upper()}"
+        actor = current_request_audit_context()
         self.state["audit_logs"].insert(
             0,
             {
                 "id": audit_id,
-                "actorId": "USER-SYSTEM",
-                "actorName": "系统联调用户",
-                "actorOrgName": "AIcheck",
+                "actorId": actor.get("actorId") or "system",
+                "actorName": actor.get("actorName") or "系统",
+                "actorOrgName": actor.get("actorOrgName"),
+                "operationId": actor.get("operationId"),
                 "action": action,
                 "objectType": object_type,
                 "objectId": object_id,
@@ -412,6 +464,8 @@ class InMemoryRepository:
         project["revision"] = int(project.get("revision", 1)) + 1
 
     def signed_get(self, file_name: str, url: str, content_type: str | None = None, file_size: int | None = None) -> dict[str, Any]:
+        if str(url or "").startswith("mock://") and not compatibility_mock_data_enabled():
+            raise ObjectStorageUnavailable("模拟文件地址已禁用，且没有可用的真实文件产物。")
         signed_url = object_storage.presigned_get_url(url, file_name=file_name)
         if not signed_url and object_storage.required and (parse_storage_url(url) or str(url).startswith("mock://")):
             raise ObjectStorageUnavailable("Object storage is required in production but signed GET could not be created.")
@@ -451,13 +505,19 @@ class InMemoryRepository:
         storage_key = (version or {}).get("storageKey")
         if isinstance(storage_key, str) and parse_storage_url(storage_key):
             return storage_key
-        if isinstance(storage_key, str) and storage_key.startswith(("local://", "mock://", "http://", "https://")):
+        if isinstance(storage_key, str) and storage_key.startswith("mock://"):
+            if not compatibility_mock_data_enabled():
+                raise ObjectStorageUnavailable("资料只有模拟存储地址，不能用于正式预览或下载。")
+            return storage_key
+        if isinstance(storage_key, str) and storage_key.startswith(("local://", "http://", "https://")):
             return storage_key
         if bucket and storage_key:
             return f"minio://{bucket}/{storage_key}"
         if object_storage.required:
             raise ObjectStorageUnavailable("Object storage is required in production but the document has no storage object.")
-        return f"mock://{fallback_prefix}/documents/{document['id']}?versionId={document.get('currentVersionId')}"
+        if compatibility_mock_data_enabled():
+            return f"mock://{fallback_prefix}/documents/{document['id']}?versionId={document.get('currentVersionId')}"
+        raise ObjectStorageUnavailable("资料尚未绑定可用的真实存储对象。")
 
     def document_content_type(self, document: dict[str, Any]) -> str | None:
         raw_type = str(document.get("fileType") or "").lower()
@@ -513,6 +573,8 @@ class InMemoryRepository:
         )
         if not str(primary.get("url") or "").startswith("minio://"):
             return primary
+        if not compatibility_mock_data_enabled():
+            raise ObjectStorageUnavailable("对象存储未返回可访问的签名地址。")
         return self.signed_get(
             document["fileName"],
             f"mock://{fallback_prefix}/documents/{document['id']}?versionId={document.get('currentVersionId')}",
@@ -526,8 +588,8 @@ class InMemoryRepository:
         file_name: str,
         file_type: str,
         *,
-        source_org_name: str = "中石化安装有限公司",
-        uploader_name: str = "李工",
+        source_org_name: str | None = None,
+        uploader_name: str | None = None,
         material_category: str | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         doc, version, knowledge_file, knowledge_task = self._build_document_records(
@@ -550,6 +612,8 @@ class InMemoryRepository:
         source_org_name: str | None = None,
         uploader_name: str | None = None,
         material_category: str | None = None,
+        file_size: int = 0,
+        content_hash: str | None = None,
         seed: str | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
         seed = seed or uuid4().hex[:8].upper()
@@ -558,7 +622,7 @@ class InMemoryRepository:
         now = server_time()
         project = self.require_project(project_id)
         resolved_source_org_name = source_org_name or (project or {}).get("contractorOrgName") or "项目参建单位"
-        resolved_uploader_name = uploader_name or "李工"
+        resolved_uploader_name = uploader_name or "系统"
         resolved_material_category = str(material_category or "").strip()
         doc = {
             "id": document_id,
@@ -580,8 +644,8 @@ class InMemoryRepository:
             "id": version_id,
             "documentId": document_id,
             "versionNo": "V1",
-            "hash": f"mock-sha256-{document_id}",
-            "fileSize": 245760,
+            "hash": content_hash,
+            "fileSize": max(0, int(file_size or 0)),
             "storageKey": f"documents/{project_id}/{version_id}",
             "storageBucket": "documents",
             "ocrStatus": "排队中",
@@ -660,6 +724,8 @@ class InMemoryRepository:
                 source_org_name=source_org_name,
                 uploader_name=uploader_name,
                 material_category=file.get("materialCategory"),
+                file_size=int(file.get("fileSize") or 0),
+                content_hash=str(file.get("contentHash") or "").strip() or None,
             )
             content_type = file.get("fileType") or "application/octet-stream"
             fallback_url = f"mock://upload/{session_id}/{doc['id']}"
@@ -823,6 +889,236 @@ class InMemoryRepository:
         self._bump_revision(task)
         self.append_task_log(task, "error", message)
 
+    def create_or_resume_ocr_pipeline_run(
+        self,
+        *,
+        run_key: str,
+        document_id: str,
+        version_id: str,
+        storage_key: str,
+        storage_bucket: str | None,
+        file_name: str | None,
+        profile_id: str | None,
+        document_type: str | None,
+        mode: str,
+        pipeline_version: str,
+        project_id: str | None = None,
+        operation_id: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        from libs.ocr_accuracy_pipeline import initial_stage_records
+
+        existing = next(
+            (
+                item
+                for item in self.state.setdefault("ocr_pipeline_runs", [])
+                if item.get("runKey") == run_key and item.get("status") not in {"canceled"}
+            ),
+            None,
+        )
+        now = server_time()
+        if existing:
+            existing_stages = [
+                stage
+                for stage in self.state.setdefault("ocr_stage_runs", [])
+                if stage.get("pipelineRunId") == existing.get("id")
+            ]
+            if not existing_stages:
+                existing_stages = initial_stage_records(
+                    str(existing.get("id") or ""),
+                    now=now,
+                    document_id=document_id,
+                    version_id=version_id,
+                )
+                self.state["ocr_stage_runs"].extend(existing_stages)
+            for stage in existing_stages:
+                stage.setdefault("documentId", document_id)
+                stage.setdefault("documentVersionId", version_id)
+            if existing.get("status") in {"failed", "partial"}:
+                existing.update(
+                    {
+                        "status": "queued",
+                        "currentStage": "prepare",
+                        "progress": 0,
+                        "finishedAt": None,
+                        "failureReason": None,
+                        "blockingReasons": [],
+                        "recommendedAction": None,
+                        "formalEvidenceReady": False,
+                        "updatedAt": now,
+                    }
+                )
+                for stage in self.state.setdefault("ocr_stage_runs", []):
+                    if stage.get("pipelineRunId") == existing.get("id") and stage.get("status") in {
+                        "failed",
+                        "retrying",
+                        "blocked",
+                    }:
+                        stage.update(
+                            {
+                                "status": "queued",
+                                "startedAt": None,
+                                "finishedAt": None,
+                                "failureReason": None,
+                                "blockingReasons": [],
+                                "updatedAt": now,
+                            }
+                        )
+            existing["taskId"] = task_id or existing.get("taskId")
+            existing["operationId"] = operation_id or existing.get("operationId")
+            existing["updatedAt"] = now
+            return existing
+        run_id = f"OCRPIPE-{uuid4().hex[:12].upper()}"
+        run = {
+            "id": run_id,
+            "pipelineRunId": run_id,
+            "runKey": run_key,
+            "pipelineVersion": pipeline_version,
+            "mode": mode,
+            "status": "queued",
+            "currentStage": "prepare",
+            "progress": 0,
+            "documentId": document_id,
+            "documentVersionId": version_id,
+            "projectId": project_id,
+            "storageKey": storage_key,
+            "storageBucket": storage_bucket,
+            "fileName": file_name,
+            "profileId": profile_id,
+            "documentType": document_type,
+            "operationId": operation_id,
+            "taskId": task_id,
+            "ocrJobRecordId": None,
+            "parseResultId": None,
+            "baselineParseResultId": None,
+            "qwenModel": None,
+            "qwenProvider": None,
+            "qwenUsage": {},
+            "qwenBatchCount": 0,
+            "groundingValidation": {},
+            "artifactUrls": {},
+            "blockingReasons": [],
+            "recommendedAction": None,
+            "formalEvidenceReady": False,
+            "advisoryOnly": mode != "active",
+            "attempt": 0,
+            "createdAt": now,
+            "updatedAt": now,
+            "startedAt": None,
+            "finishedAt": None,
+            "failureReason": None,
+        }
+        self.state["ocr_pipeline_runs"].insert(0, run)
+        self.state.setdefault("ocr_stage_runs", []).extend(
+            initial_stage_records(
+                run_id,
+                now=now,
+                document_id=document_id,
+                version_id=version_id,
+            )
+        )
+        return run
+
+    def ocr_pipeline_stages(self, run_id: str) -> list[dict[str, Any]]:
+        from libs.ocr_accuracy_pipeline import PIPELINE_STAGE_PROGRESS
+
+        return sorted(
+            [item for item in self.state.setdefault("ocr_stage_runs", []) if item.get("pipelineRunId") == run_id],
+            key=lambda item: PIPELINE_STAGE_PROGRESS.get(str(item.get("stage") or ""), 999),
+        )
+
+    def mark_ocr_pipeline_stage(
+        self,
+        run: dict[str, Any] | None,
+        stage_name: str,
+        status: str,
+        *,
+        engine_status: dict[str, Any] | None = None,
+        blocking_reasons: list[dict[str, Any]] | None = None,
+        artifact_url: str | None = None,
+        artifact_hash: str | None = None,
+        failure_reason: str | None = None,
+    ) -> dict[str, Any] | None:
+        if not run:
+            return None
+        from libs.ocr_accuracy_pipeline import PIPELINE_STAGE_PROGRESS
+
+        now = server_time()
+        stage = next(
+            (
+                item
+                for item in self.state.setdefault("ocr_stage_runs", [])
+                if item.get("pipelineRunId") == run.get("id") and item.get("stage") == stage_name
+            ),
+            None,
+        )
+        if stage is None:
+            return None
+        stage["status"] = status
+        stage["updatedAt"] = now
+        if status in {"running", "retrying"}:
+            stage["startedAt"] = stage.get("startedAt") or now
+            if status == "running":
+                stage["attempt"] = int(stage.get("attempt") or 0) + 1
+        if status in {"success", "failed", "skipped", "blocked", "partial"}:
+            stage["finishedAt"] = now
+            if stage.get("startedAt"):
+                try:
+                    started_at = datetime.strptime(str(stage["startedAt"]), "%Y-%m-%d %H:%M:%S")
+                    finished_at = datetime.strptime(now, "%Y-%m-%d %H:%M:%S")
+                    stage["elapsedSeconds"] = max(0, round((finished_at - started_at).total_seconds(), 3))
+                except ValueError:
+                    stage["elapsedSeconds"] = None
+        if engine_status is not None:
+            stage["engineStatus"] = self.clone(engine_status)
+        if blocking_reasons is not None:
+            stage["blockingReasons"] = self.clone(blocking_reasons)
+        if artifact_url is not None:
+            stage["artifactUrl"] = artifact_url
+        if artifact_hash is not None:
+            stage["artifactHash"] = artifact_hash
+        if failure_reason is not None:
+            stage["failureReason"] = failure_reason
+        run["currentStage"] = stage_name
+        run["updatedAt"] = now
+        if status == "running":
+            run["status"] = "running"
+            run["startedAt"] = run.get("startedAt") or now
+            run["attempt"] = max(int(run.get("attempt") or 0), int(stage.get("attempt") or 0))
+        if status == "retrying":
+            run["status"] = "queued"
+        if status in {"success", "skipped", "partial"}:
+            run["progress"] = max(int(run.get("progress") or 0), int(PIPELINE_STAGE_PROGRESS.get(stage_name, 0)))
+        if status in {"failed", "blocked"}:
+            run["status"] = "failed" if status == "failed" else "partial"
+            run["failureReason"] = failure_reason
+        return stage
+
+    def finish_ocr_pipeline_run(
+        self,
+        run: dict[str, Any] | None,
+        *,
+        status: str,
+        blocking_reasons: list[dict[str, Any]] | None = None,
+        recommended_action: str | None = None,
+        formal_evidence_ready: bool = False,
+    ) -> dict[str, Any] | None:
+        if not run:
+            return None
+        now = server_time()
+        run.update(
+            {
+                "status": status,
+                "progress": 100 if status == "completed" else int(run.get("progress") or 0),
+                "blockingReasons": self.clone(blocking_reasons or []),
+                "recommendedAction": recommended_action,
+                "formalEvidenceReady": bool(formal_evidence_ready),
+                "finishedAt": now,
+                "updatedAt": now,
+            }
+        )
+        return run
+
     def create_ocr_job_record(
         self,
         *,
@@ -832,10 +1128,15 @@ class InMemoryRepository:
         file_name: str | None = None,
         profile_id: str | None = None,
         document_type: str | None = None,
+        record_id: str | None = None,
     ) -> dict[str, Any]:
+        if record_id:
+            existing = self.find_one("ocr_jobs", record_id)
+            if existing:
+                return existing
         now = server_time()
         job = {
-            "id": f"OCRJOB-BIZ-{uuid4().hex[:10].upper()}",
+            "id": record_id or f"OCRJOB-BIZ-{uuid4().hex[:10].upper()}",
             "jobId": None,
             "documentId": document_id,
             "documentVersionId": version_id,
@@ -843,9 +1144,9 @@ class InMemoryRepository:
             "fileName": file_name,
             "profileId": profile_id,
             "documentType": document_type,
-            "status": "running",
+            "status": "queued",
             "createdAt": now,
-            "startedAt": now,
+            "startedAt": None,
             "updatedAt": now,
             "finishedAt": None,
             "parseResultId": None,
@@ -857,6 +1158,16 @@ class InMemoryRepository:
         }
         self.state.setdefault("ocr_jobs", []).insert(0, job)
         return job
+
+    def mark_ocr_job_running(self, job: dict[str, Any] | None, *, pipeline_run_id: str | None = None) -> None:
+        if not job:
+            return
+        now = server_time()
+        job["status"] = "running"
+        job["startedAt"] = job.get("startedAt") or now
+        job["updatedAt"] = now
+        if pipeline_run_id:
+            job["pipelineRunId"] = pipeline_run_id
 
     def finish_ocr_job_record(self, job: dict[str, Any] | None, result: dict[str, Any]) -> dict[str, Any] | None:
         if not job:
@@ -893,7 +1204,19 @@ class InMemoryRepository:
             "finishedAt": now,
             "immutable": True,
         }
-        self.state.setdefault("ocr_parse_results", []).insert(0, result_record)
+        parse_results = self.state.setdefault("ocr_parse_results", [])
+        existing_index = next(
+            (
+                index
+                for index, item in enumerate(parse_results)
+                if str(item.get("parseResultId") or item.get("id") or "") == str(parse_result_id)
+            ),
+            None,
+        )
+        if existing_index is None:
+            parse_results.insert(0, result_record)
+        else:
+            parse_results[existing_index] = result_record
         job["jobId"] = result_record["externalJobId"]
         job["status"] = "success" if result_record["status"] == "success" else "failed"
         job["parseResultId"] = parse_result_id
@@ -1318,6 +1641,23 @@ class InMemoryRepository:
             task["contentType"] = content_type
         elif object_storage.required:
             raise ObjectStorageUnavailable("Object storage is required in production but export artifact could not be stored.")
+        else:
+            export_root = Path(
+                os.getenv(
+                    "AICHECK_LOCAL_EXPORT_ROOT",
+                    str(Path(__file__).resolve().parents[2] / "data" / "runtime-exports"),
+                )
+            ).expanduser().resolve()
+            target = (export_root / object_key).resolve()
+            if export_root not in target.parents:
+                raise ObjectStorageUnavailable("导出产物路径越界。")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(artifact_body)
+            task["downloadUrl"] = f"/api/exports/{task['id']}/artifact"
+            task["localArtifactPath"] = str(target)
+            task["fileSize"] = len(artifact_body)
+            task["contentType"] = content_type
+        task["contentHash"] = f"sha256-{hashlib.sha256(artifact_body).hexdigest()}"
         return task
 
     def configure_sync_postgres(self, dsn: str | None = None) -> None:
@@ -1431,9 +1771,10 @@ class InMemoryRepository:
             )
 
     def _fresh_state_for_persistence_load(self) -> dict[str, Any]:
-        loaded = fresh_state()
+        loaded = runtime_initial_state()
         loaded.setdefault("knowledge_chunks", [])
         loaded.setdefault("knowledge_vectors", [])
+        loaded.setdefault("knowledge_embedding_batches", [])
         loaded.setdefault("knowledge_clauses", [])
         loaded.setdefault("knowledge_page_index_nodes", [])
         loaded.setdefault("knowledge_vector_corrections", [])
@@ -1443,6 +1784,11 @@ class InMemoryRepository:
         loaded.setdefault("upload_sessions", [])
         loaded.setdefault("ocr_jobs", [])
         loaded.setdefault("ocr_parse_results", [])
+        loaded.setdefault("ocr_pipeline_runs", [])
+        loaded.setdefault("ocr_stage_runs", [])
+        loaded.setdefault("document_ai_shadow_runs", [])
+        loaded.setdefault("document_audit_pipeline_comparison_runs", [])
+        loaded.setdefault("model_call_attempts", [])
         loaded.setdefault("ocr_corrections", [])
         loaded.setdefault("ocr_eval_runs", [])
         loaded.setdefault("ocr_annotation_tasks", [])
@@ -1588,11 +1934,15 @@ class InMemoryRepository:
                 scope: json.loads(payload)
                 for scope, payload in connection.execute("SELECT scope, payload FROM idempotency_records").fetchall()
             }
-        backfilled = self.apply_seed_compatibility_defaults(loaded) if selected_state_keys is None else False
+        backfilled = (
+            self.apply_seed_compatibility_defaults(loaded)
+            if selected_state_keys is None and demo_data_enabled()
+            else False
+        )
         self.state = loaded
         if selected_state_keys is not None:
             return
-        if not has_project_seed:
+        if not has_project_seed and demo_data_enabled():
             self.flush_to_sqlite()
         elif backfilled:
             self.flush_to_sqlite()
@@ -1746,14 +2096,18 @@ class InMemoryRepository:
                 scope: json.loads(json.dumps(payload))
                 for scope, payload in self.sync_postgres.execute("SELECT scope, payload FROM idempotency_records").fetchall()
             }
-            backfilled = self.apply_seed_compatibility_defaults(loaded) if selected_state_keys is None else False
+            backfilled = (
+                self.apply_seed_compatibility_defaults(loaded)
+                if selected_state_keys is None and demo_data_enabled()
+                else False
+            )
             self.state = loaded
             # psycopg starts a transaction for the SELECTs above when autocommit is off.
             # End that read transaction before any writer tries to flush the JSONB state.
             self.sync_postgres.commit()
             if selected_state_keys is not None:
                 return
-            if not has_project_seed:
+            if not has_project_seed and demo_data_enabled():
                 self.flush_to_sync_postgres()
             elif backfilled:
                 self.flush_to_sync_postgres()
@@ -1791,6 +2145,10 @@ class InMemoryRepository:
                     "knowledge_tasks",
                     "ocr_jobs",
                     "ocr_parse_results",
+                    "ocr_pipeline_runs",
+                    "ocr_stage_runs",
+                    "document_ai_shadow_runs",
+                    "document_audit_pipeline_comparison_runs",
                 )
             ]
             rows = self.sync_postgres.execute(
@@ -2444,6 +2802,10 @@ OCR_WORKER_STATE_KEYS_FOR_SQLITE = {
     "knowledge_tasks",
     "ocr_jobs",
     "ocr_parse_results",
+    "ocr_pipeline_runs",
+    "ocr_stage_runs",
+    "document_ai_shadow_runs",
+    "document_audit_pipeline_comparison_runs",
     "users",
 }
 

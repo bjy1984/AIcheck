@@ -161,6 +161,7 @@ def filter_resolved_quality_diagnostics(diagnostics: list[Any], quality: dict[st
         "SEAL_EVIDENCE_MISSING",
         "TABLE_EVIDENCE_MISSING",
         "TABLE_CELL_EVIDENCE_LOW",
+        "TABLE_CONTENT_SPARSE",
     }
     filtered = []
     for item in diagnostics:
@@ -922,6 +923,7 @@ def build_quality_gate(result: dict[str, Any], profile: dict[str, Any]) -> dict[
     field_completeness = 1.0 - (len(missing_fields) / max(len(required_fields), 1)) if required_fields else 1.0
     table_completeness = 1.0 - (len(missing_tables) / max(len(required_tables), 1)) if required_tables else 1.0
     low_cell_evidence_tables = mark_low_table_cell_evidence(tables, required_tables, profile)
+    sparse_content_tables = mark_sparse_large_tables(tables, result)
     low_cell_table_codes = {
         str(item.get("tableCode"))
         for item in low_cell_evidence_tables
@@ -972,6 +974,8 @@ def build_quality_gate(result: dict[str, Any], profile: dict[str, Any]) -> dict[
         reasons.append("TABLE_STRUCTURE_LOW_CONFIDENCE")
     if low_cell_evidence_tables:
         reasons.append("TABLE_CELL_EVIDENCE_LOW")
+    if sparse_content_tables:
+        reasons.append("TABLE_CONTENT_SPARSE")
     if required_seal and not seals:
         reasons.append("SEAL_NOT_FOUND")
     if required_seal and seals and not formal_seals:
@@ -1007,6 +1011,7 @@ def build_quality_gate(result: dict[str, Any], profile: dict[str, Any]) -> dict[
         "invalidFields": invalid_fields,
         "missingEvidence": missing_evidence,
         "lowTableCellEvidenceTables": low_cell_evidence_tables,
+        "sparseContentTables": sparse_content_tables,
     }
 
 
@@ -1140,6 +1145,51 @@ def mark_low_table_cell_evidence(
             }
         )
     return low
+
+
+def mark_sparse_large_tables(tables: list[dict[str, Any]], result: dict[str, Any]) -> list[dict[str, Any]]:
+    page_dimensions: dict[int, tuple[float, float]] = {}
+    for page in result.get("pages") or []:
+        if not isinstance(page, dict):
+            continue
+        page_no = int(page.get("pageNo") or 1)
+        page_dimensions[page_no] = (
+            safe_float(page.get("width") or page.get("pageWidth")),
+            safe_float(page.get("height") or page.get("pageHeight")),
+        )
+    sparse: list[dict[str, Any]] = []
+    for index, table in enumerate(tables, start=1):
+        bbox = flat_bbox(table.get("bbox") or table.get("polygon"))
+        if not bbox:
+            continue
+        page_no = int(table.get("pageNo") or 1)
+        page_width, page_height = page_dimensions.get(
+            page_no,
+            (safe_float(table.get("pageWidth")), safe_float(table.get("pageHeight"))),
+        )
+        if page_width <= 0 or page_height <= 0:
+            continue
+        cells = [item for item in table.get("cells") or [] if isinstance(item, dict)]
+        if not cells:
+            for row in table.get("rows") or []:
+                if isinstance(row, dict):
+                    cells.extend(item for item in row.get("cells") or [] if isinstance(item, dict))
+        area_ratio = ((bbox[2] - bbox[0]) * (bbox[3] - bbox[1])) / (page_width * page_height)
+        if area_ratio < 0.2 or len(cells) >= 4:
+            continue
+        flags = {str(flag) for flag in table.get("qualityFlags") or []}
+        flags.add("table_content_sparse")
+        table["qualityFlags"] = sorted(flags)
+        sparse.append(
+            {
+                "tableId": table.get("tableId") or table.get("id") or f"table-{index}",
+                "pageNo": page_no,
+                "bbox": bbox,
+                "pageAreaRatio": round(area_ratio, 4),
+                "cellCount": len(cells),
+            }
+        )
+    return sparse
 
 
 def table_matches_required(table: dict[str, Any], required_table: str) -> bool:

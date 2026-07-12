@@ -15,8 +15,9 @@
     "test:e2e:live": "AICHECK_VITE_MODE=live playwright test",
     "test:e2e:headed": "playwright test --headed",
     "audit:ui": "node scripts/audit-visual-system.mjs",
-    "audit:ui:strict": "node scripts/audit-visual-system.mjs --strict",
-    "build:pro": "pnpm vite build --mode pro",
+    "audit:ui:strict": "pnpm audit:operability:static && node scripts/audit-visual-system.mjs --strict",
+    "audit:operability:static": "node scripts/audit-operability.mjs",
+    "build:pro": "pnpm audit:operability:static && pnpm vite build --mode pro",
     "build:gitee": "pnpm vite build --mode gitee",
     "build:dev": "pnpm vite build --mode dev",
     "build:test": "pnpm vite build --mode test",
@@ -137,25 +138,10 @@
     "vue-eslint-parser": "9.4.3",
     "vue-tsc": "^2.2.0"
   },
-  "packageManager": "pnpm@9.15.3",
-  "pnpm": {
-    "overrides": {
-      "@babel/core": "7.29.7",
-      "@babel/helpers": "7.29.7",
-      "@babel/runtime": "7.29.7",
-      "axios": "1.18.1",
-      "defu": "6.1.7",
-      "follow-redirects": "1.16.0",
-      "form-data": "4.0.6",
-      "lodash": "4.18.1",
-      "picomatch": "2.3.2",
-      "prismjs": "1.30.0",
-      "tar": "7.5.19"
-    }
-  },
+  "packageManager": "pnpm@11.7.0",
   "engines": {
     "node": ">=18.0.0",
-    "pnpm": ">=8.1.0"
+    "pnpm": ">=11.7.0"
   },
   "license": "MIT",
   "repository": {

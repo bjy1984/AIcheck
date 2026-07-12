@@ -72,6 +72,24 @@ def allow_test_ai_dispatch(monkeypatch) -> None:
     )
 
 
+def admin_project_create_payload(code: str, name: str) -> dict[str, object]:
+    return {
+        "businessPackId": "engineering_inspection_v1",
+        "code": code,
+        "name": name,
+        "type": "工业压力管道",
+        "region": "华东",
+        "ownerOrgName": "华东管网建设公司",
+        "contractorOrgName": "中石化安装有限公司",
+        "ndtOrgName": "华测检测有限公司",
+        "inspectionOrgName": "省特检院一部",
+        "memberUserIds": {
+            "owner": "USER-OWNER-001",
+            "contractor": "USER-CONTRACTOR-001",
+            "ndt": "USER-NDT-001",
+            "inspection": "USER-INSPECTION-001",
+        },
+    }
 def seed_confirmed_node_24_evidence(project_id: str = "P-2026-HDCP-001") -> list[str]:
     from libs.material_targeting import review_points_for_project
 
@@ -146,12 +164,17 @@ def seed_reviewed_node_24(project_id: str = "P-2026-HDCP-001") -> list[str]:
     return evidence_ids
 
 
-def seed_report_scope(report_id: str = "RPT-20260625-001", project_id: str = "P-2026-HDCP-001") -> list[str]:
+def seed_report_scope(
+    report_id: str = "RPT-20260625-001",
+    project_id: str = "P-2026-HDCP-001",
+    *,
+    status: str = "复核中",
+) -> list[str]:
     evidence_ids = seed_reviewed_node_24(project_id)
     report = repo.find_one("reports", report_id)
     assert report is not None
     rows = [item for item in repo.state["node_evidence_links"] if item.get("id") in set(evidence_ids)]
-    report["status"] = "待签发"
+    report["status"] = status
     report["evidenceScope"] = {
         "schemaVersion": "report-evidence-scope-v1",
         "source": "test_confirmed_node_evidence",
@@ -5544,13 +5567,13 @@ def test_project_file_direct_submit_creates_node_binding() -> None:
     created_binding = repo.find_one("bindings", created_binding_ids[0])
     stored_submission = next(item for item in repo.state["submissions"] if item["submissionId"] == result["submissionId"])
 
-    assert result["nextStatus"] == "AI 预审中"
+    assert result["nextStatus"] == "待审查"
     assert len(created_binding_ids) == 1
     assert created_binding["documentId"] == "DOC-20260625-005"
     assert created_binding["nodeId"] == 25
     assert created_binding["bindingStatus"] == "已提交"
     assert stored_submission["bindingIds"] == created_binding_ids
-    assert repo.node(project_id, 25)["status"] == "AI 预审中"
+    assert repo.node(project_id, 25)["status"] == "待审查"
 
 
 def test_global_idempotency_covers_mutations_without_explicit_route_parameter() -> None:
@@ -5720,7 +5743,7 @@ def test_generate_report_review_requires_existing_ready_node() -> None:
 def test_report_detail_scope_and_archive_if_match() -> None:
     project_id = "P-2026-HDCP-001"
     report_id = "RPT-20260625-001"
-    seed_report_scope(report_id, project_id)
+    seed_report_scope(report_id, project_id, status="已签发")
 
     assert_error(client.get(f"/projects/NOT-A-PROJECT/reports/{report_id}"), "NOT_FOUND")
     detail = assert_ok(client.get(f"/projects/{project_id}/reports/{report_id}"))
@@ -5735,6 +5758,25 @@ def test_report_detail_scope_and_archive_if_match() -> None:
         ),
         "ETAG_CONFLICT",
     )
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/reports/{report_id}/archive",
+            json={"archiveNote": "missing export"},
+            headers={"If-Match": etag},
+        ),
+        "CONFLICT",
+    )
+    exported = assert_ok(
+        client.post(
+            f"/projects/{project_id}/reports/{report_id}/export",
+            json={"format": "pdf"},
+            headers={"Idempotency-Key": "report-export-before-archive"},
+        )
+    )
+    export_task = repo.find_one("export_tasks", exported["exportId"])
+    assert export_task is not None
+    assert export_task["fileSize"] > 0
+    assert not str(export_task["downloadUrl"]).startswith("mock://")
     archived = assert_ok(
         client.post(
             f"/projects/{project_id}/reports/{report_id}/archive",
@@ -7056,10 +7098,21 @@ def test_inferred_action_codes_block_role_bypass_when_auth_required(monkeypatch)
             headers=ndt_headers,
         )
     )
+    admin_preview = assert_ok(
+        client.post(
+            "/api/admin/config-overview/publish-preview",
+            json={"scope": "all", "reason": "验证管理员发布权限与影响预览"},
+            headers=admin_headers,
+        )
+    )
     admin_publish = assert_ok(
         client.post(
             "/api/admin/config-overview/publish",
-            json={"scope": "all"},
+            json={
+                "scope": "all",
+                "reason": "验证管理员发布权限与影响预览",
+                "previewId": admin_preview["previewId"],
+            },
             headers=admin_headers,
         )
     )
@@ -7114,7 +7167,7 @@ def test_body_node_scope_is_enforced_for_project_mutations(monkeypatch) -> None:
         )
     )
 
-    assert contractor_submit["nextStatus"] == "AI 预审中"
+    assert contractor_submit["nextStatus"] == "待审查"
     assert ndt_import["records"][0]["nodeId"] == 40
 
 
@@ -7415,6 +7468,33 @@ def test_upload_creates_knowledge_task_and_retrieval_works() -> None:
     clauses = assert_ok(client.get("/knowledge/clauses", params={"keyword": "焊工资格证", "nodeId": 24}))
     assert clauses["items"]
     assert clauses["items"][0]["clauseId"]
+
+
+def test_knowledge_and_compare_inputs_do_not_fall_back_to_demo_values() -> None:
+    assert_error(client.post("/knowledge/retrieval-test", json={}), "VALIDATION_ERROR")
+    assert_error(
+        client.post("/llm/compare", json={"question": "材料证明是否一致？", "modelCodes": ["default-chat"]}),
+        "VALIDATION_ERROR",
+    )
+    assert_error(
+        client.post("/llm/compare", json={"question": "材料证明是否一致？", "modelCodes": ["LLM-A", "LLM-B"]}),
+        "VALIDATION_ERROR",
+    )
+    assert_error(client.post("/knowledge/sources", json={}), "VALIDATION_ERROR")
+
+    overview = assert_ok(client.get("/knowledge/overview"))
+    standard_library = next(item for item in overview["libraries"] if item["key"] == "KS-STANDARD-RULES")
+    source_file_ids = {
+        item["id"]
+        for item in repo.state["knowledge_files"]
+        if item.get("sourceId") == "KS-STANDARD-RULES"
+    }
+    assert standard_library["chunkCount"] == len(
+        [item for item in repo.state["knowledge_chunks"] if item.get("fileId") in source_file_ids]
+    )
+    assert standard_library["vectorCount"] == len(
+        [item for item in repo.state["knowledge_vectors"] if item.get("fileId") in source_file_ids]
+    )
 
 
 def test_standard_aliases_normalize_ocr_glyphs_and_business_phrases() -> None:
@@ -8110,7 +8190,7 @@ def test_cross_node_submission_scope_expands_empty_binding_ids() -> None:
             json={"nodeIds": [16, 25], "bindingIds": [], "batchName": "scope submit"},
         )
     )
-    assert submission["nextStatus"] == "AI 预审中"
+    assert submission["nextStatus"] == "待审查"
 
 
 def test_ndt_submit_updates_reports_films_and_traceable_snapshot() -> None:
@@ -8202,16 +8282,38 @@ def test_admin_config_diff_export_publish_and_project_members() -> None:
     assert any(row["after"] == "E2E 待办规则" for row in create_diff["diff"]["changed"])
 
     export = assert_ok(client.post("/admin/config-export", json={"scope": "all"}))
-    assert export["task"]["fileName"] == "后台配置包-all-20260626.zip"
+    assert export["task"]["fileName"].startswith("后台配置包-all-")
+    assert export["task"]["fileName"].endswith(".zip")
 
-    publish = assert_ok(client.post("/admin/config-overview/publish", json={"scope": "all"}))
-    assert publish["version"].startswith("config-v")
-    assert any("权限矩阵已同步到工作台动作权限" in impact["trace"] for impact in publish["impacts"])
+    messages_before = len(repo.state["messages"])
+    todos_before = len(repo.state["todos"])
+    preview = assert_ok(
+        client.post(
+            "/admin/config-overview/publish-preview",
+            json={"scope": "all", "reason": "验证配置发布影响范围"},
+        )
+    )
+    publish = assert_ok(
+        client.post(
+            "/admin/config-overview/publish",
+            json={
+                "scope": "all",
+                "reason": "验证配置发布影响范围",
+                "previewId": preview["previewId"],
+            },
+        )
+    )
+    assert publish["version"].startswith("config-r")
+    assert all(impact["status"] == "已发布" for impact in publish["impacts"])
+    assert publish["impactSummary"]["pushedMessages"] == 0
+    assert publish["impactSummary"]["reviewTodos"] == 0
 
     messages = assert_ok(client.get(f"/messages?projectId={project_id}"))
     todos = assert_ok(client.get(f"/todos?projectId={project_id}"))
-    assert any("后台配置已发布：config-v" in item["title"] for item in messages["items"])
-    assert any(item["title"] == "字段映射配置发布影响" for item in todos["items"])
+    assert len(repo.state["messages"]) == messages_before
+    assert len(repo.state["todos"]) == todos_before
+    assert all(publish["publishId"] not in str(item) for item in messages["items"])
+    assert all(publish["publishId"] not in str(item) for item in todos["items"])
 
     project_before_member = assert_ok(client.get(f"/projects/{project_id}"))
     project_member_etag = project_before_member["project"]["etag"]
@@ -8294,35 +8396,18 @@ def test_admin_config_diff_export_publish_and_project_members() -> None:
 
 def test_project_creation_routes_are_idempotent_and_return_initial_members() -> None:
     initial_project_count = len(repo.state["projects"])
+    admin_payload = admin_project_create_payload("P-E2E-001", "E2E 立项项目")
     created = assert_ok(
         client.post(
             "/admin/projects",
-            json={
-                "code": "P-E2E-001",
-                "name": "E2E 立项项目",
-                "memberUserIds": {
-                    "owner": "USER-OWNER-001",
-                    "contractor": "USER-CONTRACTOR-001",
-                    "ndt": "USER-NDT-001",
-                    "inspection": "USER-INSPECTION-001",
-                },
-            },
+            json=admin_payload,
             headers={"Idempotency-Key": "admin-project-create-once"},
         )
     )
     replayed = assert_ok(
         client.post(
             "/admin/projects",
-            json={
-                "code": "P-E2E-001",
-                "name": "E2E 立项项目",
-                "memberUserIds": {
-                    "owner": "USER-OWNER-001",
-                    "contractor": "USER-CONTRACTOR-001",
-                    "ndt": "USER-NDT-001",
-                    "inspection": "USER-INSPECTION-001",
-                },
-            },
+            json=admin_payload,
             headers={"Idempotency-Key": "admin-project-create-once"},
         )
     )
@@ -8332,35 +8417,18 @@ def test_project_creation_routes_are_idempotent_and_return_initial_members() -> 
     assert len([item for item in repo.state["projects"] if item["id"] == "P-E2E-001"]) == 1
     assert len([item for item in repo.state["project_members"] if item["projectId"] == "P-E2E-001"]) == 4
 
+    compatibility_payload = admin_project_create_payload("P-E2E-COMPAT-001", "E2E 兼容立项项目")
     compatibility_created = assert_ok(
         client.post(
             "/projects",
-            json={
-                "code": "P-E2E-COMPAT-001",
-                "name": "E2E 兼容立项项目",
-                "memberUserIds": {
-                    "owner": "USER-OWNER-001",
-                    "contractor": "USER-CONTRACTOR-001",
-                    "ndt": "USER-NDT-001",
-                    "inspection": "USER-INSPECTION-001",
-                },
-            },
+            json=compatibility_payload,
             headers={"Idempotency-Key": "compat-project-create-once"},
         )
     )
     compatibility_replayed = assert_ok(
         client.post(
             "/projects",
-            json={
-                "code": "P-E2E-COMPAT-001",
-                "name": "E2E 兼容立项项目",
-                "memberUserIds": {
-                    "owner": "USER-OWNER-001",
-                    "contractor": "USER-CONTRACTOR-001",
-                    "ndt": "USER-NDT-001",
-                    "inspection": "USER-INSPECTION-001",
-                },
-            },
+            json=compatibility_payload,
             headers={"Idempotency-Key": "compat-project-create-once"},
         )
     )
@@ -8372,16 +8440,7 @@ def test_project_creation_routes_are_idempotent_and_return_initial_members() -> 
     assert_error(
         client.post(
             "/projects",
-            json={
-                "code": "P-E2E-COMPAT-001",
-                "name": "E2E 兼容立项项目-不同请求体",
-                "memberUserIds": {
-                    "owner": "USER-OWNER-001",
-                    "contractor": "USER-CONTRACTOR-001",
-                    "ndt": "USER-NDT-001",
-                    "inspection": "USER-INSPECTION-001",
-                },
-            },
+            json={**compatibility_payload, "name": "E2E 兼容立项项目-不同请求体"},
             headers={"Idempotency-Key": "compat-project-create-once"},
         ),
         "IDEMPOTENCY_KEY_CONFLICT",
@@ -8394,6 +8453,28 @@ def test_project_creation_routes_are_idempotent_and_return_initial_members() -> 
     assert all_contracts["summary"]["blockers"] == 0
     assert all_contracts["summary"]["pending"] == 0
     assert all_contracts["summary"]["aligned"] == all_contracts["summary"]["total"]
+
+
+def test_project_creation_rejects_missing_or_invalid_real_configuration_without_partial_writes() -> None:
+    initial_projects = len(repo.state["projects"])
+    initial_members = len(repo.state["project_members"])
+    missing = assert_error(
+        client.post("/admin/projects", json={"code": "P-INVALID-EMPTY", "name": "缺配置项目"}),
+        "VALIDATION_ERROR",
+    )
+    assert "region" in missing["data"]["missingFields"]
+    assert len(repo.state["projects"]) == initial_projects
+    assert len(repo.state["project_members"]) == initial_members
+
+    invalid_payload = admin_project_create_payload("P-INVALID-MEMBER", "成员无效项目")
+    invalid_payload["memberUserIds"] = {
+        **invalid_payload["memberUserIds"],
+        "inspection": "USER-NOT-FOUND",
+    }
+    invalid = assert_error(client.post("/admin/projects", json=invalid_payload), "VALIDATION_ERROR")
+    assert invalid["data"]["memberErrors"][0]["role"] == "inspection"
+    assert len(repo.state["projects"]) == initial_projects
+    assert len(repo.state["project_members"]) == initial_members
 
 
 def test_admin_user_org_crud_and_project_member_batch_authorization_defaults() -> None:
@@ -8478,7 +8559,7 @@ def test_project_delete_removes_empty_project_and_archives_project_with_business
     created = assert_ok(
         client.post(
             "/admin/projects",
-            json={"code": "P-DELETE-001", "name": "待删除空项目"},
+            json=admin_project_create_payload("P-DELETE-001", "待删除空项目"),
         )
     )["project"]
     deleted = assert_ok(client.delete(f"/projects/{created['id']}", headers={"If-Match": created["etag"]}))
@@ -8738,6 +8819,122 @@ def test_production_signed_url_rejects_mock_storage(monkeypatch) -> None:
 
     response = client.get("/downloads/prod-storage-required/signed-url")
     assert_error(response, "OBJECT_STORAGE_REQUIRED")
+
+
+def test_operability_runtime_context_and_empty_overview_are_truthful(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_ENABLE_DEMO_DATA", "false")
+    monkeypatch.setenv("AICHECK_UI_DEMO_MODE", "false")
+    repo.reset()
+
+    runtime = assert_ok(client.get("/runtime/ui-context"))
+    assert runtime["demoDataAllowed"] is False
+    assert runtime["serverTime"]
+
+    overview = assert_ok(client.get("/operations/overview?area=admin", headers={"X-Role": "admin"}))
+    assert overview["totals"]["projects"] == 0
+    assert overview["totals"]["users"] == 0
+    assert overview["attentionItems"] == []
+    assert overview["dataAsOf"] is None
+
+
+def test_operations_and_search_enforce_role_and_project_scope() -> None:
+    project_id = "P-2026-HDCP-001"
+    assert_error(
+        client.get("/operations/overview?area=fde", headers={"X-Role": "contractor"}),
+        "FORBIDDEN",
+    )
+    assert_error(
+        client.get("/search?scope=admin&keyword=项目", headers={"X-Role": "contractor"}),
+        "FORBIDDEN",
+    )
+
+    task_page = assert_ok(
+        client.get(
+            f"/operations/tasks?area=workbench&projectId={project_id}&pageSize=100",
+            headers={"X-Role": "inspection"},
+        )
+    )
+    assert all(item.get("projectId") == project_id for item in task_page["items"])
+
+    results = assert_ok(
+        client.get(
+            f"/search?scope=workbench&projectId={project_id}&keyword=报告&pageSize=100",
+            headers={"X-Role": "inspection"},
+        )
+    )
+    assert all(project_id in str(item.get("route") or "") for item in results["items"])
+
+
+def test_rule_publish_preview_is_user_bound_single_use_and_required_in_strict(monkeypatch) -> None:
+    rule = repo.find_one("rule_versions", "RULE-NDT-202606")
+    assert rule is not None
+    rule_view = next(item for item in assert_ok(client.get("/rules/versions?pageSize=100"))["items"] if item["id"] == rule["id"])
+    headers = {"X-Role": "admin", "X-User-Id": "USER-ADMIN"}
+    monkeypatch.setenv("AICHECK_STRICT_PRODUCTION", "true")
+
+    assert_error(
+        client.post(
+            f"/rules/versions/{rule['id']}/publish",
+            json={"reason": "正式发布"},
+            headers={**headers, "If-Match": rule_view["etag"]},
+        ),
+        "VALIDATION_ERROR",
+    )
+
+    preview = assert_ok(
+        client.post(
+            f"/rules/versions/{rule['id']}/publish-preview",
+            json={"reason": "正式发布"},
+            headers=headers,
+        )
+    )
+    assert preview["impact"]["ruleVersionId"] == rule["id"]
+    assert preview["impact"]["linkedProjects"] >= 0
+
+    assert_error(
+        client.post(
+            f"/rules/versions/{rule['id']}/publish",
+            json={"reason": "正式发布", "previewId": preview["previewId"]},
+            headers={"X-Role": "admin", "X-User-Id": "USER-OTHER", "If-Match": rule_view["etag"]},
+        ),
+        "FORBIDDEN",
+    )
+
+    published = assert_ok(
+        client.post(
+            f"/rules/versions/{rule['id']}/publish",
+            json={"reason": "正式发布", "previewId": preview["previewId"]},
+            headers={**headers, "If-Match": rule_view["etag"], "Idempotency-Key": "strict-rule-preview-once"},
+        )
+    )
+    assert published["rule"]["status"] == "已发布"
+    assert next(item for item in repo.state["operation_previews"] if item["previewId"] == preview["previewId"])["consumedAt"]
+
+    assert_error(
+        client.post(
+            f"/rules/versions/{rule['id']}/publish",
+            json={"reason": "正式发布", "previewId": preview["previewId"]},
+            headers={**headers, "If-Match": published["rule"]["etag"], "Idempotency-Key": "strict-rule-preview-second"},
+        ),
+        "CONFLICT",
+    )
+
+
+def test_rule_diff_and_rollback_reject_unrelated_or_missing_targets() -> None:
+    rule = repo.find_one("rule_versions", "RULE-NDT-202606")
+    assert rule is not None
+    assert_error(
+        client.get(f"/rules/versions/{rule['id']}/diff?targetVersionId=NOT-A-RULE"),
+        "NOT_FOUND",
+    )
+    assert_error(
+        client.post(
+            f"/rules/versions/{rule['id']}/rollback-preview",
+            json={"reason": "回滚验证", "targetVersionId": rule["id"]},
+            headers={"X-Role": "admin", "X-User-Id": "USER-ADMIN"},
+        ),
+        "VALIDATION_ERROR",
+    )
 
 
 def test_upload_session_storage_failure_does_not_create_dirty_records(monkeypatch) -> None:
@@ -9427,7 +9624,7 @@ def test_llm_compare_uses_grounded_compare_only_payload(monkeypatch) -> None:
             "/llm/compare",
             json={
                 "question": "焊工资格证是否可以作为通过依据？",
-                "modelCodes": ["default-chat"],
+                "modelCodes": ["default-chat", "compare-fast"],
                 "evidenceLinkIds": ["EV-24-001"],
             },
         )
@@ -9452,10 +9649,11 @@ def test_completed_ocr_worker_is_idempotent(monkeypatch) -> None:
     from apps.worker import tasks
 
     monkeypatch.setenv("AICHECK_WORKER_OCR_ALLOW_IN_PROCESS", "true")
-    calls = {"ocr": 0}
+    calls = {"ocr": 0, "options": None}
 
     def fake_parse(storage_key: str, *, file_name: str | None = None, **kwargs):
         calls["ocr"] += 1
+        calls["options"] = kwargs.get("options")
         return {
             "storageKey": storage_key,
             "fileName": file_name,
@@ -9468,6 +9666,7 @@ def test_completed_ocr_worker_is_idempotent(monkeypatch) -> None:
 
     monkeypatch.setattr(tasks.ocr_service, "parse_document", fake_parse)
     doc, version = repo.create_document("P-2026-HDCP-001", "OCR-idempotent.pdf", "application/pdf")
+    version["ocrOptions"] = {"disableResultCache": True}
 
     first = tasks.parse_document.run(doc["id"], version["id"], version["storageKey"], doc["fileName"])
     task = repo.ocr_task_for(doc["id"], version["id"], doc["fileName"])
@@ -9480,6 +9679,7 @@ def test_completed_ocr_worker_is_idempotent(monkeypatch) -> None:
     assert first["applied"]["status"] == "success"
     assert second["alreadyCompleted"] is True
     assert calls["ocr"] == 1
+    assert calls["options"]["disableResultCache"] is True
     assert task.get("logs") == logs_after_first
     assert len([item for item in repo.state["extracted_fields"] if item.get("documentVersionId") == version["id"]]) == field_count_after_first
 
@@ -9646,6 +9846,7 @@ def test_export_artifact_uses_object_storage_when_available(monkeypatch) -> None
     assert_error(client.get("/exports/EXP-NOT-READY-001/download-url"), "EXPORT_TASK_NOT_READY")
     assert_error(client.get("/exports/EXP-EXPIRED-001/download-url"), "EXPORT_TASK_EXPIRED")
 
+    seed_report_scope(status="复核完成")
     export = assert_ok(client.post("/exports", json={"projectId": "P-2026-HDCP-001", "fileName": "contract.zip"}))
     signed = assert_ok(client.get(f"/exports/{export['exportId']}/download-url"))
 

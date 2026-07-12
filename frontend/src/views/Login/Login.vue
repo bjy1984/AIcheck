@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { LoginForm, RegisterForm } from './components'
+import { LoginForm } from './components'
 import { ThemeSwitch } from '@/components/ThemeSwitch'
 import { LocaleDropdown } from '@/components/LocaleDropdown'
 import { underlineToHump } from '@/utils'
 import { useAppStore } from '@/store/modules/app'
 import { useDesign } from '@/hooks/web/useDesign'
-import { ref } from 'vue'
 import { ElScrollbar } from 'element-plus'
 
 const { getPrefixCls } = useDesign()
@@ -13,16 +12,6 @@ const { getPrefixCls } = useDesign()
 const prefixCls = getPrefixCls('login')
 
 const appStore = useAppStore()
-
-const isLogin = ref(true)
-
-const toRegister = () => {
-  isLogin.value = false
-}
-
-const toLogin = () => {
-  isLogin.value = true
-}
 </script>
 
 <template>
@@ -48,7 +37,7 @@ const toLogin = () => {
 
             <div class="capability-strip" aria-label="系统能力">
               <span>角色隔离</span>
-              <span>本地 OCR</span>
+              <span>服务器 OCR</span>
               <span>证据留痕</span>
               <span>FDE 治理</span>
             </div>
@@ -70,8 +59,7 @@ const toLogin = () => {
 
           <Transition appear enter-active-class="animate__animated animate__fadeInUp">
             <div class="auth-panel-wrap">
-              <LoginForm v-if="isLogin" class="auth-panel" @to-register="toRegister" />
-              <RegisterForm v-else class="auth-panel" @to-login="toLogin" />
+              <LoginForm class="auth-panel" />
             </div>
           </Transition>
         </section>
@@ -174,7 +162,7 @@ const toLogin = () => {
 
 .brand-name {
   font-size: 20px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.2;
   color: #f7fbff;
 }
@@ -198,7 +186,7 @@ const toLogin = () => {
 .eyebrow {
   margin: 0 0 14px;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0;
   color: #7db7ff;
 }
@@ -207,7 +195,7 @@ const toLogin = () => {
   max-width: 480px;
   margin: 0;
   font-size: 36px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.24;
   color: #f8fbff;
 }
@@ -231,7 +219,7 @@ const toLogin = () => {
 .capability-strip span {
   padding: 8px 12px;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
   color: #dcecff;
   background: rgb(255 255 255 / 8%);
   border: 1px solid rgb(132 178 240 / 34%);
@@ -255,7 +243,7 @@ const toLogin = () => {
 
 .mobile-brand {
   font-size: 17px;
-  font-weight: 800;
+  font-weight: 700;
   visibility: hidden;
 }
 
@@ -290,7 +278,7 @@ const toLogin = () => {
 :deep(.auth-form-title) {
   margin: 0;
   font-size: 24px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.25;
   color: var(--login-ink);
   text-align: left;
@@ -310,7 +298,7 @@ const toLogin = () => {
 :deep(.auth-form .el-form-item__label) {
   padding-bottom: 7px;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.2;
   color: var(--login-ink);
 }
@@ -342,7 +330,7 @@ const toLogin = () => {
 :deep(.auth-secondary-button),
 :deep(.auth-code-button) {
   min-height: 44px;
-  font-weight: 800;
+  font-weight: 700;
   border-radius: 6px;
 }
 
@@ -360,7 +348,7 @@ const toLogin = () => {
 }
 
 :deep(.auth-helper-line b) {
-  font-weight: 800;
+  font-weight: 700;
   color: var(--login-ink);
 }
 

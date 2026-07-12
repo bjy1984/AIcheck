@@ -132,7 +132,7 @@ class QwenRuntimeClient:
         self.transport = transport
         self.server_client = server_client
 
-    def chat_sync(self, messages: list[dict[str, str]], model: str = "default-chat", **kwargs: Any) -> dict[str, Any]:
+    def chat_sync(self, messages: list[dict[str, Any]], model: str = "default-chat", **kwargs: Any) -> dict[str, Any]:
         if self.config["mode"] == "server":
             return self._server_chat_sync(messages, model=model, **kwargs)
         if self.config["mode"] == "official_api":
@@ -148,11 +148,11 @@ class QwenRuntimeClient:
     def first_message_text(response: dict[str, Any]) -> str:
         return LiteLLMClient.first_message_text(response)
 
-    def _server_chat_sync(self, messages: list[dict[str, str]], model: str, **kwargs: Any) -> dict[str, Any]:
+    def _server_chat_sync(self, messages: list[dict[str, Any]], model: str, **kwargs: Any) -> dict[str, Any]:
         client = self.server_client or LiteLLMClient()
         return client.chat_sync(messages, model=model, **kwargs)
 
-    def _official_chat_sync(self, messages: list[dict[str, str]], role_or_model: str, **kwargs: Any) -> dict[str, Any]:
+    def _official_chat_sync(self, messages: list[dict[str, Any]], role_or_model: str, **kwargs: Any) -> dict[str, Any]:
         base_url = str(self.config.get("baseUrl") or "").rstrip("/")
         api_key_env = str(self.config.get("apiKeyEnv") or "QWEN_API_KEY")
         api_key = os.getenv(api_key_env)

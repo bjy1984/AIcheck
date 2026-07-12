@@ -35,7 +35,8 @@ RUN if [ -n "$AICHECK_APT_DEBIAN_MIRROR" ]; then \
     && groupadd --system aicheck \
     && useradd --system --gid aicheck --home-dir /app aicheck
 COPY . .
-RUN chown -R aicheck:aicheck /app
+RUN mkdir -p /var/cache/aicheck-ocr/preprocess /var/cache/aicheck-ocr/results /var/cache/aicheck-ocr/engines \
+    && chown -R aicheck:aicheck /app /var/cache/aicheck-ocr
 
 USER aicheck
 

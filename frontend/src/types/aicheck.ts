@@ -444,7 +444,7 @@ export type ReportVersion = {
   reportNo: string
   versionNo: string
   title: string
-  status: '草稿' | '复核中' | '待签发' | '已签发' | '已归档'
+  status: '草稿' | '复核中' | '复核完成' | '待签发' | '已签发' | '已归档'
   scope: 'currentNode' | 'project'
   nodeIds: number[]
   generatedAt: string
@@ -497,6 +497,8 @@ export type ArchiveItem = {
 export type ExportTask = {
   id: string
   projectId?: string
+  reportId?: string
+  reportRevision?: number
   nodeId?: number
   exportType: 'report' | 'archive-package' | 'evidence-package' | 'document' | 'config-package'
   status: '排队中' | '生成中' | '可下载' | '失败' | '已过期'
@@ -636,12 +638,106 @@ export type MessageItem = {
 }
 
 export type SearchResult = {
-  type: 'project' | 'node' | 'document' | 'report' | 'standard' | 'rule'
+  type:
+    | 'project'
+    | 'node'
+    | 'document'
+    | 'report'
+    | 'standard'
+    | 'rule'
+    | 'user'
+    | 'organization'
+    | 'audit_event'
+    | 'knowledge_file'
+    | 'knowledge_task'
+    | 'review_run'
+    | 'ocr_run'
+    | 'incident'
   id: string
   title: string
   description: string
   route: string
   highlights: string[]
+  status?: string
+  updatedAt?: string
+  breadcrumb?: string
+}
+
+export type OperationArea = 'admin' | 'knowledge' | 'fde' | 'workbench'
+
+export type RuntimeUiContext = {
+  environment: string
+  strictProduction: boolean
+  demoDataAllowed: boolean
+  buildVersion: string
+  serverTime: string
+  support: {
+    label: string
+    email?: string | null
+    phone?: string | null
+    url?: string | null
+  }
+}
+
+export type OperationsOverview = {
+  area: OperationArea
+  scope: {
+    role: RoleCode
+    projectId?: string | null
+  }
+  totals: Record<string, number>
+  metrics: Array<{
+    key: string
+    label: string
+    value: number
+    route?: string
+  }>
+  attentionItems: Array<{
+    id: string
+    type: string
+    severity: 'info' | 'warning' | 'danger' | string
+    title: string
+    summary: string
+    route?: string
+    updatedAt?: string
+  }>
+  dataAsOf: string
+  generatedAt: string
+}
+
+export type OperationTask = {
+  id: string
+  area: OperationArea
+  projectId?: string | null
+  taskType: string
+  status: string
+  progress: number
+  operationId?: string | null
+  targetId?: string | null
+  targetLabel: string
+  errorSummary?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+  actions: Array<'retry' | 'cancel' | 'replay' | 'rerun' | string>
+  route?: string | null
+  parentTaskId?: string | null
+  pipelineRunId?: string | null
+  stage?: string | null
+  stageLabel?: string | null
+  queuePosition?: number | null
+  attempt?: number
+  elapsedSeconds?: number | null
+  engineStatus?: Record<string, unknown>
+  blockingReasons?: Array<{ code?: string; message?: string; [key: string]: unknown }>
+  recommendedAction?: string | null
+}
+
+export type ImpactPreview<TImpact extends Record<string, unknown> = Record<string, unknown>> = {
+  previewId: string
+  kind: string
+  generatedAt: string
+  expiresAt: string
+  impact: TImpact
 }
 
 export type WorkbenchContextPayload = {

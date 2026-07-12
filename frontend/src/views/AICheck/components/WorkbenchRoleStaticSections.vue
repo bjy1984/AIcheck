@@ -220,42 +220,16 @@ const processRows = computed(() =>
 
 const ownerNodeRows = computed(() => {
   const node = props.node
+  if (!node) return []
   return [
     {
-      group: node?.groupName || '材料',
+      group: node.groupName || '--',
       node: currentNodeLabel.value,
-      fileStatus: node?.status || '待审查',
-      reviewStatus: node?.status === '需补正' ? '退回补正' : node?.status || '待审查',
-      files: node?.fileCount || bindings.value.length || 0,
-      warnings: node?.status === '需补正' ? 1 : 0,
-      updatedAt: props.project?.updatedAt || '-'
-    },
-    {
-      group: '焊接（粘接）',
-      node: '25. 焊接（粘接）工艺文件',
-      fileStatus: '已提交',
-      reviewStatus: '待审查',
-      files: 6,
-      warnings: 0,
-      updatedAt: '2026-06-24'
-    },
-    {
-      group: '无损检测',
-      node: '40. 无损检测记录、报告',
-      fileStatus: '已提交',
-      reviewStatus: '待审查',
-      files: props.ndtReports.length || 8,
-      warnings: 0,
-      updatedAt: '2026-06-25'
-    },
-    {
-      group: '无损检测',
-      node: '42. 射线检测现场抽查',
-      fileStatus: '需补正',
-      reviewStatus: '补正中',
-      files: 3,
-      warnings: 1,
-      updatedAt: '2026-06-25'
+      fileStatus: node.status,
+      reviewStatus: node.status === '需补正' ? '退回补正' : node.status,
+      files: node.fileCount ?? bindings.value.length,
+      warnings: node.status === '需补正' ? 1 : 0,
+      updatedAt: props.project?.updatedAt || '--'
     }
   ]
 })
@@ -309,8 +283,13 @@ const inferNecessity = (category: string): ContractorFileRow['necessity'] => {
   return '必传'
 }
 
+const rectificationIdForBinding = (bindingId?: string) => {
+  if (!bindingId) return '--'
+  return rectifications.value.find((item) => item.bindingIds?.includes(bindingId))?.id || '--'
+}
+
 const contractorFileRows = computed<ContractorFileRow[]>(() => {
-  const rows = projectFiles.value.map((file, index) => {
+  const rows = projectFiles.value.map((file) => {
     const binding = bindingForProjectFile(file)
     const status = mapContractorFileStatus(file.fileStatus, binding?.bindingStatus)
     const materialCategory =
@@ -323,15 +302,14 @@ const contractorFileRows = computed<ContractorFileRow[]>(() => {
       documentId: file.id,
       fileName: file.fileName,
       materialCategory,
-      requirementName: binding?.requirementName || '待识别资料项',
+      requirementName: binding?.requirementName || '--',
       necessity: inferNecessity(materialCategory),
-      usage: binding?.usage || '原始提交',
-      version: binding?.versionNo || 'V1',
+      usage: binding?.usage || '--',
+      version: binding?.versionNo || '--',
       status,
       sourceOrgName: file.sourceOrgName,
       relationNode: getRelationNodeText(binding),
-      feedback:
-        binding?.bindingStatus === '需补正' ? `FB-${String(index + 1).padStart(3, '0')}` : '-',
+      feedback: binding?.bindingStatus === '需补正' ? rectificationIdForBinding(binding.id) : '--',
       ocr: file.currentOcrStatus,
       processingStatus: pipelineStatusForFile(file),
       uploader: file.uploaderName,
@@ -339,14 +317,14 @@ const contractorFileRows = computed<ContractorFileRow[]>(() => {
     }
   })
   if (rows.length) return rows
-  return bindings.value.map((binding, index) => ({
+  return bindings.value.map((binding) => ({
     id: binding.id,
     documentId: binding.documentId,
     fileName: binding.fileName,
     materialCategory: inferMaterialCategory(
       normalizeSearchText(binding.fileName, binding.usage, binding.requirementName)
     ),
-    requirementName: binding.requirementName || '待识别资料项',
+    requirementName: binding.requirementName || '--',
     necessity: inferNecessity(
       inferMaterialCategory(
         normalizeSearchText(binding.fileName, binding.usage, binding.requirementName)
@@ -357,41 +335,51 @@ const contractorFileRows = computed<ContractorFileRow[]>(() => {
     status: mapContractorFileStatus('已上传', binding.bindingStatus),
     sourceOrgName: binding.sourceOrgName,
     relationNode: getRelationNodeText(binding),
-    feedback: binding.bindingStatus === '需补正' ? `FB-${String(index + 1).padStart(3, '0')}` : '-',
-    ocr: '已识别',
-    processingStatus: '等待入库',
-    uploader: binding.sourceOrgName,
+    feedback: binding.bindingStatus === '需补正' ? rectificationIdForBinding(binding.id) : '--',
+    ocr: '--',
+    processingStatus: '--',
+    uploader: '--',
     updatedAt: binding.boundAt
   }))
 })
 
-const contractorMaterialChecklist = computed(() =>
-  contractorMaterialRequirements.map((requirement) => {
-    const files = contractorFileRows.value.filter(
-      (file) => file.materialCategory === requirement.category
-    )
-    const correctionCount = files.filter((file) => file.status === '需补正').length
-    const status: ContractorMaterialStatus = correctionCount
-      ? '需补正'
-      : files.length
-        ? '已覆盖'
-        : requirement.category === '热处理资料'
-          ? '部分上传'
+const contractorMaterialChecklist = computed(() => {
+  const groupedRequirements = requirements.value.reduce((groups, requirement) => {
+    const category = inferMaterialCategory(requirement.name)
+    const values = groups.get(category) || []
+    values.push(requirement)
+    groups.set(category, values)
+    return groups
+  }, new Map<string, typeof requirements.value>())
+  return contractorMaterialRequirements
+    .filter((requirement) => groupedRequirements.has(requirement.category))
+    .map((requirement) => {
+      const categoryRequirements = groupedRequirements.get(requirement.category) || []
+      const files = contractorFileRows.value.filter(
+        (file) => file.materialCategory === requirement.category
+      )
+      const correctionCount = files.filter((file) => file.status === '需补正').length
+      const status: ContractorMaterialStatus = correctionCount
+        ? '需补正'
+        : files.length
+          ? '已覆盖'
           : '待上传'
-    return {
-      ...requirement,
-      uploadedCount: files.length,
-      correctionCount,
-      status,
-      missing:
-        files.length && !correctionCount
-          ? '已上传资料待监检核验'
-          : correctionCount
-            ? `${correctionCount} 份资料需按反馈补正`
-            : requirement.missingHint
-    }
-  })
-)
+      return {
+        ...requirement,
+        requiredItems: categoryRequirements.map((item) => item.name).join('、') || '--',
+        nodeRefs: categoryRequirements.map((item) => String(item.nodeId)).join('、') || '--',
+        uploadedCount: files.length,
+        correctionCount,
+        status,
+        missing:
+          files.length && !correctionCount
+            ? '已上传资料待监检核验'
+            : correctionCount
+              ? `${correctionCount} 份资料需按反馈补正`
+              : `当前节点仍缺少：${categoryRequirements.map((item) => item.name).join('、')}`
+      }
+    })
+})
 
 const materialGapSummary = computed(() => {
   const pending = contractorMaterialChecklist.value.filter(
@@ -430,24 +418,7 @@ const contractorFeedbackRows = computed(() => {
       }
     })
   }
-  return props.reviewSteps.map((step, index) => {
-    const needsCorrection = step.result.includes('补正')
-    const needsAttention = needsCorrection || step.result.includes('人工')
-    return {
-      id: `FB-${String(index + 1).padStart(3, '0')}`,
-      rectificationId: undefined,
-      node: currentNodeLabel.value,
-      issue: step.title,
-      requirement: needsCorrection ? step.desc : '当前环节暂无补正材料要求。',
-      result: step.result,
-      status: needsCorrection ? '待处理' : needsAttention ? '处理中' : '已关闭',
-      linkedFiles: needsCorrection
-        ? contractorFileRows.value.filter((file) => file.status === '需补正').length
-        : contractorFileRows.value.filter((file) => file.status === '已通过').length,
-      feedbackAt: props.project?.updatedAt || '-',
-      dueAt: needsCorrection ? '按监检要求' : '-'
-    }
-  })
+  return []
 })
 
 const contractorStatusCounts = computed<Record<ContractorFileStatus, number>>(() => {
@@ -1006,14 +977,14 @@ const getPillClass = (value?: string) => {
             <div class="metric"
               ><div class="metric-label">挂载节点</div
               ><div class="metric-value">{{
-                new Set(ndtRecords.map((item) => item.nodeId)).size || 1
+                new Set(ndtRecords.map((item) => item.nodeId)).size
               }}</div></div
             >
             <div class="metric"
               ><div class="metric-label">业务核验</div
               ><div class="metric-value orange"
                 >{{ reviewSteps.filter((item) => getPillClass(item.result) === 'green').length }}/{{
-                  reviewSteps.length || 1
+                  reviewSteps.length
                 }}</div
               ></div
             >
@@ -1132,8 +1103,7 @@ const getPillClass = (value?: string) => {
             <table class="table compact">
               <tbody>
                 <tr
-                  ><th>补正节点</th
-                  ><td>{{ correctionFeedback?.nodeId || 42 }}. 射线检测现场抽查</td></tr
+                  ><th>补正节点</th><td>{{ correctionFeedback?.nodeId ?? '--' }}</td></tr
                 >
                 <tr
                   ><th>监检意见</th
@@ -1456,7 +1426,7 @@ const getPillClass = (value?: string) => {
             <div class="metric"
               ><div class="metric-label">核验步骤</div
               ><div class="metric-value green"
-                >{{ reviewSteps.length }} / {{ reviewSteps.length || 1 }}</div
+                >{{ reviewSteps.length }} / {{ reviewSteps.length }}</div
               ></div
             >
             <div class="metric"

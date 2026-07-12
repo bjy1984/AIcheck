@@ -31,6 +31,12 @@ const activeStep = computed(() => {
   const openIndex = props.stages.findIndex((stage) => stage.status !== 'completed')
   return openIndex >= 0 ? openIndex : props.stages.length
 })
+const focusedStage = computed(
+  () =>
+    props.stages.find((stage) => stage.actionKey && stage.actionKey === props.recommendedAction) ||
+    props.stages[activeStep.value] ||
+    props.stages.at(-1)
+)
 
 const elementStepStatus = (status: AuditWorkflowStage['status']) => {
   if (status === 'completed') return 'success'
@@ -61,11 +67,7 @@ const elementStepStatus = (status: AuditWorkflowStage['status']) => {
         <ElStep
           v-for="(stage, index) in stages"
           :key="stage.key"
-          :class="[
-            'audit-workflow-stage',
-            `is-${stage.status}`,
-            index % 2 === 0 ? 'is-content-below' : 'is-content-above'
-          ]"
+          :class="['audit-workflow-stage', `is-${stage.status}`]"
           :status="elementStepStatus(stage.status)"
         >
           <template #icon>
@@ -77,22 +79,28 @@ const elementStepStatus = (status: AuditWorkflowStage['status']) => {
               <span>{{ stage.metric }}</span>
             </div>
           </template>
-          <template #description>
-            <div class="audit-stage-content">
-              <p>{{ stage.detail }}</p>
-              <ElButton
-                v-if="stage.actionKey && stage.actionLabel && stage.actionKey === recommendedAction"
-                class="audit-stage-action"
-                type="primary"
-                :loading="loading"
-                @click="emit('action', stage.actionKey)"
-              >
-                {{ stage.actionLabel }}
-              </ElButton>
-            </div>
-          </template>
         </ElStep>
       </ElSteps>
+    </div>
+    <div v-if="focusedStage" :class="['audit-workflow-focus', `is-${focusedStage.status}`]">
+      <div>
+        <span>当前关注</span>
+        <strong>{{ focusedStage.label }} · {{ focusedStage.metric }}</strong>
+        <p>{{ focusedStage.detail }}</p>
+      </div>
+      <ElButton
+        v-if="
+          focusedStage.actionKey &&
+          focusedStage.actionLabel &&
+          focusedStage.actionKey === recommendedAction
+        "
+        class="audit-stage-action"
+        type="primary"
+        :loading="loading"
+        @click="emit('action', focusedStage.actionKey)"
+      >
+        {{ focusedStage.actionLabel }}
+      </ElButton>
     </div>
   </section>
 </template>
@@ -153,7 +161,7 @@ const elementStepStatus = (status: AuditWorkflowStage['status']) => {
 
 .audit-workflow-stage {
   min-width: 0;
-  min-height: 118px;
+  min-height: 76px;
 }
 
 .audit-stage-index {
@@ -192,34 +200,9 @@ const elementStepStatus = (status: AuditWorkflowStage['status']) => {
   text-align: center;
 }
 
-.audit-stage-content {
-  min-height: 92px;
-  padding: 6px 6px 0;
-  text-align: left;
-}
-
-.audit-stage-content p {
-  min-height: 42px;
-}
-
-.audit-workflow-stage.is-active :deep(.el-step__description) {
-  color: #294f73;
-  background: #f1f7fd;
-}
-
 .audit-workflow-stage.is-blocked :deep(.el-step__head.is-wait) {
   color: var(--aicheck-warning, #8a4b00);
   border-color: #d97706;
-}
-
-.audit-workflow-stage.is-blocked :deep(.el-step__description) {
-  color: var(--aicheck-warning, #8a4b00);
-  background: var(--aicheck-warning-bg, #fff7e6);
-}
-
-.audit-workflow-stage.is-failed :deep(.el-step__description) {
-  color: var(--aicheck-danger, #b42318);
-  background: var(--aicheck-danger-bg, #fef3f2);
 }
 
 .audit-workflow-stage.is-pending :deep(.el-step__head.is-wait) {
@@ -227,60 +210,64 @@ const elementStepStatus = (status: AuditWorkflowStage['status']) => {
   border-color: #98a2b3;
 }
 
-.audit-workflow-stage.is-pending :deep(.el-step__description) {
-  color: var(--aicheck-text-muted, #52647d);
-  background: #f8fafc;
-}
-
 .audit-stage-action {
   min-width: 96px;
   min-height: 44px;
+}
+
+.audit-workflow-focus {
+  display: flex;
+  min-height: 72px;
+  padding: 12px 14px;
   margin-top: 8px;
+  background: #f8fafc;
+  border: 1px solid var(--aicheck-border, #d4deeb);
+  border-radius: 6px;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.audit-workflow-focus > div {
+  min-width: 0;
+}
+
+.audit-workflow-focus span,
+.audit-workflow-focus strong {
+  display: block;
+}
+
+.audit-workflow-focus span {
+  font-size: 12px;
+  color: var(--aicheck-text-muted, #52647d);
+}
+
+.audit-workflow-focus strong {
+  margin-top: 2px;
+  font-size: 14px;
+  color: var(--aicheck-text-strong, #172033);
+}
+
+.audit-workflow-focus p {
+  margin: 3px 0 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--aicheck-text-muted, #52647d);
+}
+
+.audit-workflow-focus.is-blocked {
+  background: var(--aicheck-warning-bg, #fff7e6);
+  border-color: #f2c98a;
+}
+
+.audit-workflow-focus.is-failed {
+  background: var(--aicheck-danger-bg, #fef3f2);
+  border-color: #f6b9b3;
 }
 
 @media (width > 900px) {
   .audit-workflow-stage {
-    position: relative;
-    min-height: 420px;
-  }
-
-  .audit-workflow-stage :deep(.el-step__head) {
-    position: absolute;
-    top: calc(50% - 14px);
-    left: 0;
-    z-index: 1;
-    width: 100%;
-  }
-
-  .audit-workflow-stage :deep(.el-step__main) {
-    position: absolute;
-    left: 0;
-    display: flex;
-    width: 100%;
-    flex-direction: column;
-  }
-
-  .audit-workflow-stage :deep(.el-step__description) {
-    width: clamp(190px, 155%, 360px);
-    max-width: none;
-    margin-left: calc((100% - clamp(190px, 155%, 360px)) / 2);
-  }
-
-  .audit-workflow-stage:first-child :deep(.el-step__description) {
-    margin-left: 0;
-  }
-
-  .audit-workflow-stage:last-child :deep(.el-step__description) {
-    margin-left: calc(100% - clamp(190px, 155%, 360px));
-  }
-
-  .audit-workflow-stage.is-content-below :deep(.el-step__main) {
-    top: calc(50% + 26px);
-  }
-
-  .audit-workflow-stage.is-content-above :deep(.el-step__main) {
-    bottom: calc(50% + 26px);
-    flex-direction: column-reverse;
+    min-height: 76px;
   }
 }
 
@@ -298,7 +285,7 @@ const elementStepStatus = (status: AuditWorkflowStage['status']) => {
   }
 
   .audit-workflow-stage {
-    min-height: 118px;
+    min-height: 92px;
   }
 
   .audit-stage-title {
@@ -312,19 +299,9 @@ const elementStepStatus = (status: AuditWorkflowStage['status']) => {
     text-align: right;
   }
 
-  .audit-stage-content {
-    min-height: 0;
-    padding: 4px 0 18px;
-  }
-
-  .audit-workflow-stage :deep(.el-step__description) {
-    width: auto;
-    max-width: 100%;
-    margin-left: 0;
-  }
-
-  .audit-stage-content p {
-    min-height: 0;
+  .audit-workflow-focus {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 </style>

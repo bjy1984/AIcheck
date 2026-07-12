@@ -40,6 +40,7 @@ const emit = defineEmits<{
   locateEvidence: [evidence: EvidenceLink]
   retry: []
   save: [payload: { sections: ReportSection[]; remark?: string }]
+  transition: [status: '复核完成' | '已签发']
 }>()
 
 const visible = computed({
@@ -133,6 +134,19 @@ const invalidEvidenceIds = computed(() => {
     validation?.invalidEvidenceLinkIds || validation?.sourceValidation?.invalidEvidenceLinkIds || []
   )
 })
+const canCompleteReview = computed(
+  () =>
+    canEdit.value &&
+    report.value?.status === '复核中' &&
+    props.detail?.evidenceValidation?.passed === true &&
+    !validationIssue.value
+)
+const canSign = computed(
+  () =>
+    Boolean(report.value?.actions?.includes('report:review')) &&
+    ['复核完成', '待签发'].includes(report.value?.status || '') &&
+    props.detail?.evidenceValidation?.passed === true
+)
 const evidenceOptionLabel = (evidence: EvidenceLink) =>
   [evidence.fieldName, evidence.fileName, evidence.pageNo ? `第 ${evidence.pageNo} 页` : '']
     .filter(Boolean)
@@ -169,6 +183,20 @@ const evidenceOptionLabel = (evidence: EvidenceLink) =>
           </ElTag>
           <ElButton v-if="canEdit && !isEditing" type="primary" plain @click="startEdit">
             编辑报告
+          </ElButton>
+          <ElButton
+            v-if="canCompleteReview && !isEditing"
+            type="primary"
+            @click="emit('transition', '复核完成')"
+          >
+            完成复核
+          </ElButton>
+          <ElButton
+            v-if="canSign && !isEditing"
+            type="success"
+            @click="emit('transition', '已签发')"
+          >
+            签发报告
           </ElButton>
           <template v-else-if="isEditing">
             <ElButton :disabled="saving" @click="cancelEdit">取消</ElButton>
