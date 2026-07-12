@@ -273,17 +273,22 @@ def stage_engine_gate(
         return {"applicable": False, "passed": stage.get("status") == "skipped"}
     engine_status = stage.get("engineStatus") if isinstance(stage.get("engineStatus"), dict) else {}
     executed = {str(item) for item in engine_status.get("engineExecuted") or []}
+    succeeded = {str(item) for item in engine_status.get("engineSucceeded") or []}
     runs = [item for item in engine_status.get("runs") or [] if isinstance(item, dict)]
     matching_runs = [item for item in runs if str(item.get("engine") or "") == expected_engine]
+    engine_succeeded = expected_engine in succeeded or any(
+        str(item.get("status") or "").lower() == "success" for item in matching_runs
+    )
     positive_duration = any(
         int(item.get("durationMs") or 0) > 0 and not bool(item.get("engineCacheHit"))
         for item in matching_runs
     )
     return {
         "applicable": True,
-        "passed": expected_engine in executed and (not cold_probe or positive_duration),
+        "passed": expected_engine in executed and engine_succeeded and (not cold_probe or positive_duration),
         "expectedEngine": expected_engine,
         "engineExecuted": expected_engine in executed,
+        "engineSucceeded": engine_succeeded,
         "positiveDuration": positive_duration,
         "cacheSourceRunIds": engine_status.get("cacheSourceRunIds") or [],
         "stageStatus": stage.get("status"),

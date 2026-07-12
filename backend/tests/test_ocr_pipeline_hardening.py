@@ -58,7 +58,8 @@ def test_cold_probe_requires_real_positive_duration() -> None:
         "status": "success",
         "engineStatus": {
             "engineExecuted": ["pp_structure_v3"],
-            "runs": [{"engine": "pp_structure_v3", "durationMs": 5, "engineCacheHit": True}],
+            "engineSucceeded": ["pp_structure_v3"],
+            "runs": [{"engine": "pp_structure_v3", "status": "success", "durationMs": 5, "engineCacheHit": True}],
         },
     }
     warm_gate = stage_engine_gate(
@@ -76,6 +77,28 @@ def test_cold_probe_requires_real_positive_duration() -> None:
 
     assert warm_gate["passed"] is True
     assert cold_gate["passed"] is False
+
+
+def test_stage_engine_gate_rejects_executed_engine_that_failed() -> None:
+    failed_stage = {
+        "status": "success",
+        "engineStatus": {
+            "engineExecuted": ["pp_structure_v3"],
+            "engineSucceeded": ["opencv_table_grid_subprocess"],
+            "runs": [
+                {"engine": "pp_structure_v3", "status": "failed", "durationMs": 1200},
+                {"engine": "opencv_table_grid_subprocess", "status": "success", "durationMs": 20},
+            ],
+        },
+    }
+
+    gate = stage_engine_gate(
+        failed_stage, expected=True, expected_engine="pp_structure_v3", cold_probe=True
+    )
+
+    assert gate["engineExecuted"] is True
+    assert gate["engineSucceeded"] is False
+    assert gate["passed"] is False
 
 
 def test_disk_capacity_thresholds_gate_dispatch(monkeypatch) -> None:
