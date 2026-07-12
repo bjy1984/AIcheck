@@ -13,12 +13,13 @@ from typing import Any, Iterable
 from apps.ocr_service.profiles import profile_for
 from libs.document_ai_shadow import (
     build_evidence_prior,
+    estimate_json_tokens,
     stable_payload_hash,
     validate_shadow_attribution,
 )
 
 
-PIPELINE_VERSION = "ocr-accuracy-first@1"
+PIPELINE_VERSION = "ocr-accuracy-first@2"
 PIPELINE_STAGES = (
     ("prepare", "资料准备", 5),
     ("text_scan", "文本扫描", 30),
@@ -32,10 +33,26 @@ PIPELINE_STAGES = (
 PIPELINE_STAGE_LABELS = {key: label for key, label, _ in PIPELINE_STAGES}
 PIPELINE_STAGE_PROGRESS = {key: progress for key, _, progress in PIPELINE_STAGES}
 PIPELINE_TERMINAL_STATUSES = {"completed", "partial", "failed", "canceled"}
+STRUCTURE_ENGINES = {"pp_structure_v3", "opencv_table_grid_subprocess"}
+SEAL_ENGINES = {
+    "paddlex_seal_recognition",
+    "visual_seal_candidate_subprocess",
+}
 DEFAULT_PROFILE_ALLOWLIST = {
+    "qualification_certificate_v1",
+    "construction_record_v1",
+    "construction_plan_v1",
+    "welding_procedure_qualification_v1",
     "ndt_rt_report_v1",
     "quality_certificate_v1",
     "engineering_drawing_list_v1",
+    "drawing_material_list_v1",
+    "process_flow_diagram_v1",
+    "strength_calculation_v1",
+    "design_specification_v1",
+    "equipment_list_v1",
+    "site_layout_drawing_v1",
+    "paint_insulation_list_v1",
     "piping_characteristic_list_v1",
     "comprehensive_material_list_v1",
 }
@@ -151,6 +168,96 @@ def initial_stage_records(
     ]
 
 
+def stage_engine_summary(result: dict[str, Any], expected_engines: set[str]) -> dict[str, Any]:
+    runs = [
+        item
+        for item in result.get("engineRuns") or []
+        if isinstance(item, dict) and str(item.get("engine") or item.get("engineId") or "") in expected_engines
+    ]
+    attempted = [item for item in runs if item.get("engineAttempted") or item.get("status") in {"success", "failed"}]
+    executed = [
+        item
+        for item in attempted
+        if item.get("engineExecuted")
+        or int(item.get("durationMs") or 0) > 0
+        or item.get("engineCacheHit")
+    ]
+    successful = [item for item in executed if item.get("status") == "success"]
+    skipped = [item for item in runs if item.get("status") == "skipped"]
+    return {
+        "engineAttempted": sorted({str(item.get("engine") or "") for item in attempted}),
+        "engineExecuted": sorted({str(item.get("engine") or "") for item in executed}),
+        "engineSucceeded": sorted({str(item.get("engine") or "") for item in successful}),
+        "skipReasons": sorted(
+            {
+                str(item.get("skipReason") or item.get("reason") or "no_routed_variant")
+                for item in skipped
+            }
+        ),
+        "cacheSourceRunIds": sorted(
+            {str(item.get("cacheSourceRunId")) for item in runs if item.get("cacheSourceRunId")}
+        ),
+        "runs": runs,
+    }
+
+
+def fuse_stage_parse_results(
+    baseline: dict[str, Any],
+    *stage_results: dict[str, Any] | None,
+) -> dict[str, Any]:
+    fused = deepcopy(baseline)
+    inputs = [baseline, *[item for item in stage_results if isinstance(item, dict)]]
+    for collection in ("pages", "fragments", "layoutBlocks", "tables", "seals", "signatures", "engineRuns", "diagnostics"):
+        merged: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for result in inputs:
+            for item in result.get(collection) or []:
+                if not isinstance(item, dict):
+                    continue
+                digest = stable_payload_hash(item)
+                if digest in seen:
+                    continue
+                seen.add(digest)
+                merged.append(deepcopy(item))
+        fused[collection] = merged
+    fused["fields"] = merge_stage_fields(inputs)
+    fused["status"] = "success" if fused.get("fragments") or fused.get("fields") or fused.get("tables") else "failed"
+    fused.setdefault("metadata", {})["pipelineStageParseResultIds"] = [
+        str(item.get("parseResultId") or item.get("id"))
+        for item in inputs
+        if item.get("parseResultId") or item.get("id")
+    ]
+    fused.setdefault("diagnostics", []).append(
+        {
+            "code": "OCR_PIPELINE_STAGE_RESULTS_FUSED",
+            "level": "info",
+            "sourceCount": len(inputs),
+        }
+    )
+    return fused
+
+
+def merge_stage_fields(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    selected: dict[str, dict[str, Any]] = {}
+    for result in results:
+        for index, field in enumerate(result.get("fields") or [], start=1):
+            if not isinstance(field, dict):
+                continue
+            key = str(field.get("fieldCode") or field.get("fieldName") or field.get("fieldId") or index)
+            current = selected.get(key)
+            score = (
+                1 if field.get("bbox") else 0,
+                float(field.get("confidence") or field.get("ocrConfidence") or 0),
+            )
+            current_score = (
+                1 if (current or {}).get("bbox") else 0,
+                float((current or {}).get("confidence") or (current or {}).get("ocrConfidence") or 0),
+            )
+            if current is None or score >= current_score:
+                selected[key] = deepcopy(field)
+    return list(selected.values())
+
+
 def page_numbers(parse_result: dict[str, Any]) -> list[int]:
     values: set[int] = set()
     for collection in ("pages", "fragments", "fields", "tables", "seals", "layoutBlocks"):
@@ -199,6 +306,107 @@ def build_batch_prior(parse_result: dict[str, Any], profile: dict[str, Any], sel
     prior["compact"]["selectedPageNos"] = list(selected_pages)
     prior["full"]["selectedPageNos"] = list(selected_pages)
     return prior
+
+
+def build_batch_priors(
+    parse_result: dict[str, Any],
+    profile: dict[str, Any],
+    selected_pages: list[int],
+) -> list[dict[str, Any]]:
+    prior = build_batch_prior(parse_result, profile, selected_pages)
+    full_candidates = [
+        item for item in prior["full"].get("candidates") or [] if isinstance(item, dict)
+    ]
+    table_candidates = [item for item in full_candidates if item.get("candidateType") == "table_cell"]
+    if not table_candidates:
+        return [prior]
+
+    common_candidates = [
+        *[item for item in full_candidates if item.get("candidateType") == "field"][:12],
+        *[item for item in full_candidates if item.get("candidateType") == "seal_crop"][:6],
+        *[item for item in full_candidates if item.get("candidateType") == "text_line"][:6],
+    ]
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for candidate in table_candidates:
+        key = (str(candidate.get("tableSchema") or ""), str(candidate.get("tableId") or ""))
+        grouped.setdefault(key, []).append(candidate)
+
+    structured = profile.get("structuredExtraction") if isinstance(profile.get("structuredExtraction"), dict) else {}
+    definitions = structured.get("tableDefinitions") if isinstance(structured.get("tableDefinitions"), dict) else {}
+    windows: list[dict[str, Any]] = []
+    for (table_schema, table_id), candidates in sorted(grouped.items()):
+        definition = definitions.get(table_schema) if isinstance(definitions.get(table_schema), dict) else {}
+        window_size = max(1, min(int(definition.get("rowWindowSize") or 10), 12))
+        headers = [item for item in candidates if item.get("isHeader")]
+        rows: dict[str, list[dict[str, Any]]] = {}
+        for candidate in candidates:
+            if candidate.get("isHeader"):
+                continue
+            rows.setdefault(str(candidate.get("rowKey") or candidate.get("row") or "0"), []).append(candidate)
+        ordered_rows = sorted(rows, key=lambda value: (int(value) if value.lstrip("-").isdigit() else 10**9, value))
+        if not ordered_rows:
+            ordered_rows = ["0"]
+            rows["0"] = [item for item in candidates if item not in headers]
+        for offset in range(0, len(ordered_rows), window_size):
+            row_keys = ordered_rows[offset : offset + window_size]
+            selected = [*common_candidates, *headers]
+            for row_key in row_keys:
+                selected.extend(sorted(rows[row_key], key=lambda item: str(item.get("columnKey") or item.get("col") or "")))
+            compact = compact_prior_window(
+                prior["compact"],
+                selected,
+                table_schema=table_schema,
+                table_id=table_id,
+                row_keys=row_keys,
+            )
+            windows.append(
+                {
+                    "full": prior["full"],
+                    "compact": compact,
+                    "fullPriorHash": prior["fullPriorHash"],
+                    "compactPriorHash": stable_payload_hash(compact),
+                }
+            )
+    return windows or [prior]
+
+
+def compact_prior_window(
+    base_prior: dict[str, Any],
+    candidates: list[dict[str, Any]],
+    *,
+    table_schema: str,
+    table_id: str,
+    row_keys: list[str],
+) -> dict[str, Any]:
+    base = {
+        key: deepcopy(value)
+        for key, value in base_prior.items()
+        if key not in {"candidates", "candidateCount", "omittedCandidateCount", "estimatedTokenCount"}
+    }
+    selected: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        candidate_id = str(candidate.get("candidateId") or "")
+        if not candidate_id or candidate_id in seen or len(selected) >= 64:
+            continue
+        proposed = {
+            **base,
+            "tableWindow": {"tableSchema": table_schema, "tableId": table_id, "rowKeys": row_keys},
+            "candidates": [*selected, candidate],
+        }
+        if estimate_json_tokens(proposed) > 12_000:
+            continue
+        seen.add(candidate_id)
+        selected.append(candidate)
+    compact = {
+        **base,
+        "tableWindow": {"tableSchema": table_schema, "tableId": table_id, "rowKeys": row_keys},
+        "candidateCount": len(selected),
+        "omittedCandidateCount": max(0, int(base_prior.get("candidateCount") or 0) - len(selected)),
+        "candidates": selected,
+    }
+    compact["estimatedTokenCount"] = estimate_json_tokens(compact)
+    return compact
 
 
 def render_pages(source_path: Path, selected_pages: list[int], output_directory: Path) -> dict[int, Path]:
@@ -339,10 +547,20 @@ def qwen_messages(
         "requiredFields": profile.get("requiredFields") or [],
         "requiredTables": profile.get("requiredTables") or [],
         "fieldDefinitions": structured.get("fieldDefinitions") or {},
+        "tableDefinitions": structured.get("tableDefinitions") or {},
         "evidencePrior": compact_prior,
         "outputContract": {
             "fields": {"field_code": {"value": None, "sourceCandidateIds": []}},
-            "tables": {"table_code": [{"cells": {}, "sourceCandidateIds": []}]},
+            "tables": {
+                str(table_code): [
+                    {
+                        "tableId": None,
+                        "rowKey": None,
+                        "cells": {"column_key": {"value": None, "sourceCandidateIds": []}},
+                    }
+                ]
+                for table_code in structured.get("tables") or profile.get("requiredTables") or []
+            },
             "seals": [{"value": None, "sealType": None, "sourceCandidateIds": []}],
             "missingRequiredFields": [],
         },
@@ -354,6 +572,7 @@ def qwen_messages(
                 "请从原始页面和 EvidencePrior 中抽取结构化 JSON。每个非空值必须引用实际存在的 "
                 "sourceCandidateIds；禁止自行生成 bbox、页码或候选 ID。看不清时返回 null，不得推断。"
                 "表格中没有候选证据的空单元格必须省略，不要输出空值占位对象。"
+                "每个表格行必须原样复制 EvidencePrior tableWindow/candidate 中的 tableId 和 rowKey。"
                 "日期必须区分印章日期、签发日期和有效期；表格检测比例、技术等级、评定级别不得混用。"
                 "只输出 JSON，不输出解释。输入如下：\n"
                 + json.dumps(request_payload, ensure_ascii=False, separators=(",", ":"))
@@ -409,7 +628,12 @@ def normalize_qwen_structured_output(output: dict[str, Any], profile: dict[str, 
             "value" in candidate or "sourceCandidateIds" in candidate
         ):
             fields.setdefault(field_code, normalized.pop(field_code))
-    for table_code in [str(value) for value in profile.get("requiredTables") or [] if str(value)]:
+    table_codes = {
+        str(value)
+        for value in [*(profile.get("requiredTables") or []), *(structured.get("tables") or [])]
+        if str(value)
+    }
+    for table_code in sorted(table_codes):
         candidate = normalized.get(table_code)
         if isinstance(candidate, list):
             tables.setdefault(table_code, normalized.pop(table_code))

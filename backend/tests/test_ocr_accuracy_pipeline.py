@@ -10,6 +10,7 @@ from libs.db.repository import InMemoryRepository
 from libs.ocr_accuracy_pipeline import (
     PIPELINE_STAGES,
     build_batch_prior,
+    build_batch_priors,
     initial_stage_records,
     infer_preliminary_profile_id,
     merge_batch_outputs,
@@ -21,6 +22,7 @@ from libs.ocr_accuracy_pipeline import (
     profile_from_ocr_result,
     qwen_messages,
     required_field_blockers,
+    stage_engine_summary,
     validated_ocr_fields,
     validate_batch_output,
 )
@@ -280,6 +282,207 @@ def test_celery_routes_cpu_and_remote_work_are_isolated() -> None:
     routes = celery_app.conf.task_routes
 
     assert routes["apps.worker.tasks.parse_document"]["queue"] == "cpu.heavy"
+    assert routes["apps.worker.tasks.ocr_pipeline_structure_scan"]["queue"] == "cpu.heavy"
+    assert routes["apps.worker.tasks.ocr_pipeline_seal_scan"]["queue"] == "cpu.heavy"
+    assert routes["apps.worker.tasks.ocr_pipeline_evidence_fusion"]["queue"] == "business.light"
     assert routes["apps.worker.tasks.embed_knowledge"]["queue"] == "cpu.heavy"
     assert routes["apps.worker.tasks.ocr_pipeline_qwen_extract"]["queue"] == "llm.remote"
     assert routes["apps.worker.tasks.ocr_pipeline_finalize"]["queue"] == "business.light"
+
+
+def drawing_list_parse_result(*, shared_row_bbox: bool = False) -> dict:
+    cells = []
+    rows = [
+        ("1", "工艺图纸目录", "QX201903S-13-Y-00"),
+        ("2", "工艺设计说明书", "QX201903S-13-Y-01"),
+    ]
+    for row_index, values in enumerate(rows):
+        for col_index, value in enumerate(values):
+            bbox = [100, 200 + row_index * 40, 700, 230 + row_index * 40]
+            if not shared_row_bbox:
+                bbox = [100 + col_index * 200, 200 + row_index * 40, 280 + col_index * 200, 230 + row_index * 40]
+            cells.append(
+                {
+                    "cellId": f"CELL-{row_index}-{col_index}",
+                    "row": row_index,
+                    "col": col_index,
+                    "text": value,
+                    "pageNo": 1,
+                    "bbox": bbox,
+                    "confidence": 0.99,
+                    "sourceEngine": "pp_structure_v3",
+                }
+            )
+    return {
+        "parseResultId": "PARSE-DRAWING-LIST",
+        "status": "success",
+        "pages": [{"pageNo": 1, "width": 1000, "height": 1400}],
+        "fields": [],
+        "fragments": [],
+        "seals": [],
+        "layoutBlocks": [],
+        "tables": [
+            {
+                "tableId": "DRAWING-LIST",
+                "businessSchema": "engineering_drawing_list_rows_v1",
+                "pageNo": 1,
+                "bbox": [80, 180, 740, 320],
+                "sourceEngine": "pp_structure_v3",
+                "structureConfidence": 0.98,
+                "cells": cells,
+            },
+            {
+                "tableId": "TITLE-BLOCK",
+                "businessSchema": "engineering_drawing_title_block_v1",
+                "pageNo": 1,
+                "bbox": [20, 20, 900, 170],
+                "sourceEngine": "heuristic_table_from_fragments",
+                "cells": [{"row": 0, "col": 0, "text": "标题栏", "bbox": [20, 20, 900, 170]}],
+            },
+        ],
+    }
+
+
+def test_stage_engine_summary_does_not_treat_skipped_engine_as_executed() -> None:
+    summary = stage_engine_summary(
+        {
+            "engineRuns": [
+                {"engine": "pp_structure_v3", "status": "skipped", "reason": "fast_first"},
+                {"engine": "opencv_table_grid_subprocess", "status": "success", "durationMs": 12},
+            ]
+        },
+        {"pp_structure_v3", "opencv_table_grid_subprocess"},
+    )
+
+    assert summary["engineAttempted"] == ["opencv_table_grid_subprocess"]
+    assert summary["engineExecuted"] == ["opencv_table_grid_subprocess"]
+    assert summary["skipReasons"] == ["fast_first"]
+
+
+def test_drawing_list_prior_excludes_title_block_and_marks_row_bbox_only() -> None:
+    profile = profile_for("engineering_drawing_list_v1")
+    priors = build_batch_priors(drawing_list_parse_result(shared_row_bbox=True), profile, [1])
+    candidates = priors[0]["compact"]["candidates"]
+    table_cells = [item for item in candidates if item.get("candidateType") == "table_cell"]
+
+    assert table_cells
+    assert {item.get("tableSchema") for item in table_cells} == {"engineering_drawing_list_rows_v1"}
+    assert {item.get("cellBboxQuality") for item in table_cells} == {"row_bbox_only"}
+    assert not any(item.get("formalEvidenceEligible") for item in table_cells)
+
+
+def test_prior_keeps_only_highest_quality_overlapping_table_representation() -> None:
+    profile = profile_for("engineering_drawing_list_v1")
+    parse_result = drawing_list_parse_result()
+    canonical = parse_result["tables"][0]
+    parse_result["tables"].append(
+        {
+            **canonical,
+            "tableId": "DRAWING-LIST-HEURISTIC",
+            "sourceEngine": "heuristic_table_from_fragments",
+            "structureConfidence": 0.7,
+            "cells": [dict(item) for item in canonical["cells"]],
+        }
+    )
+
+    candidates = build_batch_priors(parse_result, profile, [1])[0]["compact"]["candidates"]
+    table_ids = {
+        item.get("tableId")
+        for item in candidates
+        if item.get("candidateType") == "table_cell"
+    }
+
+    assert table_ids == {"DRAWING-LIST"}
+
+
+def test_table_cell_wrong_candidate_is_repaired_by_row_and_column() -> None:
+    profile = profile_for("engineering_drawing_list_v1")
+    compact = build_batch_priors(drawing_list_parse_result(), profile, [1])[0]["compact"]
+    row_zero = [item for item in compact["candidates"] if item.get("candidateType") == "table_cell" and item.get("row") == 0]
+    wrong = next(item for item in row_zero if item.get("columnKey") == "drawing_no")
+    correct = next(item for item in row_zero if item.get("columnKey") == "drawing_name")
+    output = {
+        "tables": {
+            "engineering_drawing_list_rows_v1": [
+                {
+                    "tableId": "DRAWING-LIST",
+                    "rowKey": "0",
+                    "cells": {
+                        "drawing_name": {
+                            "value": "工艺图纸目录",
+                            "sourceCandidateIds": [wrong["candidateId"]],
+                        }
+                    }
+                }
+            ]
+        }
+    }
+
+    validation = validate_batch_output(output, compact)
+    item = validation["structuredOutput"]["tables"]["engineering_drawing_list_rows_v1"][0]["cells"]["drawing_name"]
+
+    assert item["sourceCandidateIds"] == [correct["candidateId"]]
+    assert item["attributionStatus"] == "validated"
+    assert item["attributionRepair"] == "deterministic_row_column_repair"
+    assert validation["validation"]["candidateRepairCount"] == 1
+
+
+def test_table_cell_candidate_from_another_row_is_rejected() -> None:
+    profile = profile_for("engineering_drawing_list_v1")
+    compact = build_batch_priors(drawing_list_parse_result(), profile, [1])[0]["compact"]
+    wrong_row = next(
+        item
+        for item in compact["candidates"]
+        if item.get("candidateType") == "table_cell"
+        and item.get("row") == 1
+        and item.get("columnKey") == "drawing_no"
+    )
+    output = {
+        "tables": {
+            "engineering_drawing_list_rows_v1": [
+                {
+                    "tableId": "DRAWING-LIST",
+                    "rowKey": "0",
+                    "cells": {
+                        "drawing_no": {
+                            "value": wrong_row["text"],
+                            "sourceCandidateIds": [wrong_row["candidateId"]],
+                        }
+                    },
+                }
+            ]
+        }
+    }
+
+    validation = validate_batch_output(output, compact)
+    item = validation["structuredOutput"]["tables"]["engineering_drawing_list_rows_v1"][0]["cells"][
+        "drawing_no"
+    ]
+
+    assert item["sourceCandidateIds"] == []
+    assert item["attributionStatus"] == "unsupported"
+
+
+def test_table_cell_scalar_without_candidate_is_counted_as_unsupported() -> None:
+    profile = profile_for("engineering_drawing_list_v1")
+    compact = build_batch_priors(drawing_list_parse_result(), profile, [1])[0]["compact"]
+    output = {
+        "tables": {
+            "engineering_drawing_list_rows_v1": [
+                {
+                    "tableId": "DRAWING-LIST",
+                    "rowKey": "0",
+                    "cells": {"drawing_name": "工艺图纸目录"},
+                }
+            ]
+        }
+    }
+
+    validation = validate_batch_output(output, compact)
+    item = validation["structuredOutput"]["tables"]["engineering_drawing_list_rows_v1"][0]["cells"][
+        "drawing_name"
+    ]
+
+    assert item["sourceCandidateIds"] == []
+    assert item["attributionStatus"] == "unsupported"
+    assert validation["validation"]["statusCounts"]["unsupported"] == 1

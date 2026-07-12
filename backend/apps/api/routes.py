@@ -8555,15 +8555,16 @@ def operations_tasks(
         append_task(item, "fde", "ocr", actions=["rerun"] if str(item.get("status")).lower() in {"failed", "失败"} else [])
         if task_project_id(item):
             append_task(item, "workbench", "ocr", actions=[])
-    stage_labels = {
-        str(item.get("pipelineRunId")): str(item.get("stageLabel") or item.get("stage") or "")
+    active_stages = {
+        str(item.get("pipelineRunId")): item
         for item in repo.state.get("ocr_stage_runs", [])
         if item.get("status") in {"running", "retrying"}
     }
     for item in repo.state.get("ocr_pipeline_runs", []):
         run = {
             **item,
-            "stageLabel": stage_labels.get(str(item.get("id"))) or item.get("currentStage"),
+            "stageLabel": str((active_stages.get(str(item.get("id"))) or {}).get("stageLabel") or item.get("currentStage") or ""),
+            "engineStatus": (active_stages.get(str(item.get("id"))) or {}).get("engineStatus") or item.get("engineStatus") or {},
             "route": f"/fde/ocr-quality?pipelineRunId={item.get('id')}",
         }
         append_task(run, "fde", "ocr_pipeline", actions=["rerun"] if item.get("status") == "failed" else [])
@@ -18605,12 +18606,70 @@ def fde_ocr_pipeline_run_detail(request: Request, run_id: str):
             str(run.get("baselineParseResultId")),
             id_field="parseResultId",
         )
+    stage_parse_results = {}
+    for stage, key in {
+        "structure_scan": "structureParseResultId",
+        "seal_signature_scan": "sealParseResultId",
+        "evidence_fusion": "fusedParseResultId",
+    }.items():
+        parse_result_id = run.get(key)
+        if parse_result_id:
+            stage_parse_results[stage] = repo.find_one(
+                "ocr_parse_results",
+                str(parse_result_id),
+                id_field="parseResultId",
+            )
+    model_call_attempts = [
+        item
+        for item in repo.state.get("model_call_attempts", [])
+        if str(item.get("pipelineRunId") or "") == str(run.get("id") or run_id)
+    ]
+    engine_attempted = sorted(
+        {
+            str(engine)
+            for stage in stages
+            for engine in ((stage.get("engineStatus") or {}).get("engineAttempted") or [])
+        }
+    )
+    engine_executed = sorted(
+        {
+            str(engine)
+            for stage in stages
+            for engine in ((stage.get("engineStatus") or {}).get("engineExecuted") or [])
+        }
+    )
+    skip_reasons = sorted(
+        {
+            str(reason)
+            for stage in stages
+            for reason in ((stage.get("engineStatus") or {}).get("skipReasons") or [])
+        }
+    )
+    cache_source_run_ids = sorted(
+        {
+            str(source_run_id)
+            for stage in stages
+            for source_run_id in ((stage.get("engineStatus") or {}).get("cacheSourceRunIds") or [])
+        }
+    )
+    grounding_validation = run.get("groundingValidation") or {}
+    run_view = {
+        **repo.clone(run),
+        "engineAttempted": engine_attempted,
+        "engineExecuted": engine_executed,
+        "skipReason": skip_reasons,
+        "cacheSourceRunId": cache_source_run_ids,
+        "candidateRepairCount": int(grounding_validation.get("candidateRepairCount") or 0),
+        "unsupportedAttributionCount": int(grounding_validation.get("unsupportedAttributionCount") or 0),
+    }
     return ok(
         {
-            "run": repo.clone(run),
+            "run": run_view,
             "stages": repo.clone(stages),
             "parseResult": repo.clone(parse_result),
             "baselineParseResult": repo.clone(baseline),
+            "stageParseResults": repo.clone(stage_parse_results),
+            "modelCallAttempts": repo.clone(model_call_attempts),
         },
         request,
     )

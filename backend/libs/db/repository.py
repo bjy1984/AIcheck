@@ -7,6 +7,7 @@ import os
 import sqlite3
 import threading
 from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -72,6 +73,7 @@ STATE_COLLECTIONS = {
     "ocr_stage_runs": "ocr_stage_runs",
     "document_ai_shadow_runs": "document_ai_shadow_runs",
     "document_audit_pipeline_comparison_runs": "document_audit_pipeline_comparison_runs",
+    "model_call_attempts": "model_call_attempts",
     "ocr_corrections": "ocr_corrections",
     "ocr_eval_runs": "ocr_eval_runs",
     "ocr_annotation_tasks": "ocr_annotation_tasks",
@@ -181,6 +183,7 @@ class InMemoryRepository:
         self.state.setdefault("ocr_stage_runs", [])
         self.state.setdefault("document_ai_shadow_runs", [])
         self.state.setdefault("document_audit_pipeline_comparison_runs", [])
+        self.state.setdefault("model_call_attempts", [])
         self.state.setdefault("ocr_corrections", [])
         self.state.setdefault("ocr_eval_runs", [])
         self.state.setdefault("ocr_annotation_tasks", [])
@@ -224,6 +227,7 @@ class InMemoryRepository:
         self.state.setdefault("ocr_stage_runs", [])
         self.state.setdefault("document_ai_shadow_runs", [])
         self.state.setdefault("document_audit_pipeline_comparison_runs", [])
+        self.state.setdefault("model_call_attempts", [])
         self.state.setdefault("ocr_corrections", [])
         self.state.setdefault("ocr_eval_runs", [])
         self.state.setdefault("ocr_annotation_tasks", [])
@@ -1051,6 +1055,13 @@ class InMemoryRepository:
                 stage["attempt"] = int(stage.get("attempt") or 0) + 1
         if status in {"success", "failed", "skipped", "blocked", "partial"}:
             stage["finishedAt"] = now
+            if stage.get("startedAt"):
+                try:
+                    started_at = datetime.strptime(str(stage["startedAt"]), "%Y-%m-%d %H:%M:%S")
+                    finished_at = datetime.strptime(now, "%Y-%m-%d %H:%M:%S")
+                    stage["elapsedSeconds"] = max(0, round((finished_at - started_at).total_seconds(), 3))
+                except ValueError:
+                    stage["elapsedSeconds"] = None
         if engine_status is not None:
             stage["engineStatus"] = self.clone(engine_status)
         if blocking_reasons is not None:
@@ -1069,7 +1080,7 @@ class InMemoryRepository:
             run["attempt"] = max(int(run.get("attempt") or 0), int(stage.get("attempt") or 0))
         if status == "retrying":
             run["status"] = "queued"
-        if status in {"success", "skipped"}:
+        if status in {"success", "skipped", "partial"}:
             run["progress"] = max(int(run.get("progress") or 0), int(PIPELINE_STAGE_PROGRESS.get(stage_name, 0)))
         if status in {"failed", "blocked"}:
             run["status"] = "failed" if status == "failed" else "partial"
@@ -1110,10 +1121,15 @@ class InMemoryRepository:
         file_name: str | None = None,
         profile_id: str | None = None,
         document_type: str | None = None,
+        record_id: str | None = None,
     ) -> dict[str, Any]:
+        if record_id:
+            existing = self.find_one("ocr_jobs", record_id)
+            if existing:
+                return existing
         now = server_time()
         job = {
-            "id": f"OCRJOB-BIZ-{uuid4().hex[:10].upper()}",
+            "id": record_id or f"OCRJOB-BIZ-{uuid4().hex[:10].upper()}",
             "jobId": None,
             "documentId": document_id,
             "documentVersionId": version_id,
@@ -1181,7 +1197,19 @@ class InMemoryRepository:
             "finishedAt": now,
             "immutable": True,
         }
-        self.state.setdefault("ocr_parse_results", []).insert(0, result_record)
+        parse_results = self.state.setdefault("ocr_parse_results", [])
+        existing_index = next(
+            (
+                index
+                for index, item in enumerate(parse_results)
+                if str(item.get("parseResultId") or item.get("id") or "") == str(parse_result_id)
+            ),
+            None,
+        )
+        if existing_index is None:
+            parse_results.insert(0, result_record)
+        else:
+            parse_results[existing_index] = result_record
         job["jobId"] = result_record["externalJobId"]
         job["status"] = "success" if result_record["status"] == "success" else "failed"
         job["parseResultId"] = parse_result_id
@@ -1736,6 +1764,7 @@ class InMemoryRepository:
         loaded.setdefault("ocr_stage_runs", [])
         loaded.setdefault("document_ai_shadow_runs", [])
         loaded.setdefault("document_audit_pipeline_comparison_runs", [])
+        loaded.setdefault("model_call_attempts", [])
         loaded.setdefault("ocr_corrections", [])
         loaded.setdefault("ocr_eval_runs", [])
         loaded.setdefault("ocr_annotation_tasks", [])

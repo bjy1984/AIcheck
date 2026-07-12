@@ -1,0 +1,152 @@
+x-validation-worker: &validation-worker
+  build:
+    context: .
+    dockerfile: Dockerfile.server
+  environment: &validation-worker-environment
+    AICHECK_STRICT_PRODUCTION: "true"
+    AICHECK_DATABASE_URL: postgresql://aicheck_validation:${AICHECK_VALIDATION_POSTGRES_PASSWORD:?AICHECK_VALIDATION_POSTGRES_PASSWORD is required}@postgres-ocr-validation:5432/aicheck_ocr_validation
+    AICHECK_REDIS_URL: redis://redis-ocr-validation:6379/0
+    AICHECK_TASK_DISPATCH: celery
+    AICHECK_MINIO_ENDPOINT: minio-ocr-validation:9000
+    AICHECK_MINIO_ACCESS_KEY: ${AICHECK_VALIDATION_MINIO_ACCESS_KEY:-aicheck-validation}
+    AICHECK_MINIO_SECRET_KEY: ${AICHECK_VALIDATION_MINIO_SECRET_KEY:?AICHECK_VALIDATION_MINIO_SECRET_KEY is required}
+    AICHECK_MINIO_BUCKET_PREFIX: aicheck-ocr-validation
+    AICHECK_MINIO_OBJECT_NAMESPACE: ${AICHECK_VALIDATION_CAMPAIGN:-current}
+    AICHECK_OCR_BASE_URL: http://ocr-fault-proxy:18010
+    AICHECK_OCR_USE_JOB_API: "false"
+    AICHECK_OCR_UPLOAD_OBJECTS: "true"
+    AICHECK_OCR_PIPELINE_MODE: shadow
+    AICHECK_OCR_PIPELINE_VERSION: ${AICHECK_OCR_PIPELINE_VERSION:-ocr-accuracy-first@2}
+    AICHECK_OCR_PIPELINE_PROFILE_ALLOWLIST: ${AICHECK_OCR_PIPELINE_PROFILE_ALLOWLIST:-qualification_certificate_v1,construction_record_v1,construction_plan_v1,welding_procedure_qualification_v1,ndt_rt_report_v1,quality_certificate_v1,engineering_drawing_list_v1,drawing_material_list_v1,process_flow_diagram_v1,strength_calculation_v1,design_specification_v1,equipment_list_v1,site_layout_drawing_v1,paint_insulation_list_v1,piping_characteristic_list_v1,comprehensive_material_list_v1}
+    AICHECK_QWEN_CALL_MODE: official_api
+    AICHECK_QWEN_ALLOW_SERVER_FALLBACK: "false"
+    QWEN_API_BASE: http://qwen-fault-proxy:18020
+    QWEN_API_KEY: ${QWEN_API_KEY:?QWEN_API_KEY is required}
+    AICHECK_QWEN_INPUT_CNY_PER_MILLION: ${AICHECK_QWEN_INPUT_CNY_PER_MILLION:-2}
+    AICHECK_QWEN_OUTPUT_CNY_PER_MILLION: ${AICHECK_QWEN_OUTPUT_CNY_PER_MILLION:-8}
+    AICHECK_DOCUMENT_AI_MODE: off
+    AICHECK_AUDIT_MODEL_COMPARISON_MODE: off
+    AICHECK_CPU_HEAVY_DISK_GATE: "true"
+    AICHECK_CAPACITY_GATE_PATH: /
+  depends_on:
+    postgres-ocr-validation:
+      condition: service_healthy
+    redis-ocr-validation:
+      condition: service_healthy
+    minio-ocr-validation:
+      condition: service_healthy
+    ocr-fault-proxy:
+      condition: service_healthy
+    qwen-fault-proxy:
+      condition: service_healthy
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: 20m
+      max-file: "3"
+
+services:
+  postgres-ocr-validation:
+    image: ${AICHECK_POSTGRES_IMAGE:-pgvector/pgvector:pg16}
+    environment:
+      POSTGRES_DB: aicheck_ocr_validation
+      POSTGRES_USER: aicheck_validation
+      POSTGRES_PASSWORD: ${AICHECK_VALIDATION_POSTGRES_PASSWORD:?AICHECK_VALIDATION_POSTGRES_PASSWORD is required}
+    volumes:
+      - ocr-validation-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aicheck_validation -d aicheck_ocr_validation"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis-ocr-validation:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - ocr-validation-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio-ocr-validation:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: ${AICHECK_VALIDATION_MINIO_ACCESS_KEY:-aicheck-validation}
+      MINIO_ROOT_PASSWORD: ${AICHECK_VALIDATION_MINIO_SECRET_KEY:?AICHECK_VALIDATION_MINIO_SECRET_KEY is required}
+    volumes:
+      - ocr-validation-minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  ocr-fault-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    command: uvicorn scripts.ocr_fault_proxy:app --host 0.0.0.0 --port 18010
+    environment:
+      AICHECK_FAULT_PROXY_UPSTREAM: ${AICHECK_VALIDATION_OCR_UPSTREAM:-http://ocr-service:8010}
+      AICHECK_FAULT_PROXY_TOKEN: ${AICHECK_VALIDATION_FAULT_TOKEN:?AICHECK_VALIDATION_FAULT_TOKEN is required}
+      AICHECK_FAULT_PROXY_TIMEOUT_SECONDS: "360"
+    networks:
+      - default
+      - aicheck-runtime
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:18010/healthz', timeout=3).read()\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  qwen-fault-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    command: uvicorn scripts.ocr_fault_proxy:app --host 0.0.0.0 --port 18020
+    environment:
+      AICHECK_FAULT_PROXY_UPSTREAM: ${QWEN_API_BASE:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      AICHECK_FAULT_PROXY_TOKEN: ${AICHECK_VALIDATION_FAULT_TOKEN:?AICHECK_VALIDATION_FAULT_TOKEN is required}
+      AICHECK_FAULT_PROXY_TIMEOUT_SECONDS: "240"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:18020/healthz', timeout=3).read()\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  cpu-heavy-ocr-validation:
+    <<: *validation-worker
+    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=1 --prefetch-multiplier=1 -Q cpu.heavy
+
+  llm-remote-ocr-validation:
+    <<: *validation-worker
+    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=1 --prefetch-multiplier=1 -Q llm.remote
+
+  business-light-ocr-validation:
+    <<: *validation-worker
+    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=2 --prefetch-multiplier=1 -Q business.light
+
+  runner:
+    <<: *validation-worker
+    command: sleep infinity
+    restart: "no"
+    profiles: ["runner"]
+    volumes:
+      - ../Scan:/validation/Scan:ro
+      - ./ocr_eval:/validation/ocr_eval:ro
+      - ./reports:/validation/reports
+
+networks:
+  aicheck-runtime:
+    external: true
+    name: ${AICHECK_RUNTIME_NETWORK:-aicheck_default}
+
+volumes:
+  ocr-validation-postgres:
+  ocr-validation-redis:
+  ocr-validation-minio:

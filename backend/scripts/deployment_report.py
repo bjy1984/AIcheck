@@ -114,6 +114,18 @@ REQUIRED_WORKER_TASKS = {
         "queue": "llm.remote",
         "dispatcher": "dispatch_ocr_pipeline_qwen",
     },
+    "ocr_pipeline_structure_scan": {
+        "queue": "cpu.heavy",
+        "dispatcher": "dispatch_ocr_pipeline_structure",
+    },
+    "ocr_pipeline_seal_scan": {
+        "queue": "cpu.heavy",
+        "dispatcher": "dispatch_ocr_pipeline_seal",
+    },
+    "ocr_pipeline_evidence_fusion": {
+        "queue": "business.light",
+        "dispatcher": "dispatch_ocr_pipeline_fusion",
+    },
     "ocr_pipeline_finalize": {
         "queue": "business.light",
         "dispatcher": "dispatch_ocr_pipeline_finalize",
@@ -620,10 +632,11 @@ class DeploymentReportBuilder:
 
     def worker_contract_section(self) -> dict[str, Any]:
         check = worker_task_contract_check()
+        hardening_check = ocr_pipeline_hardening_contract_check()
         return {
             "name": "worker-contract",
-            "ok": check["status"] == "pass",
-            "checks": [check],
+            "ok": check["status"] == "pass" and hardening_check["status"] == "pass",
+            "checks": [check, hardening_check],
         }
 
     def frontend_contract_section(self) -> dict[str, Any]:
@@ -2650,7 +2663,15 @@ def worker_task_contract_check(
             dispatcher_missing.append(str(dispatcher_name))
             continue
         source = source_for_callable(dispatcher)
-        requires_inline = task_name not in {"ocr_pipeline_qwen_extract", "ocr_pipeline_finalize"}
+        if "_dispatch_ocr_pipeline_stage" in source:
+            source += source_for_callable(getattr(dispatcher_module, "_dispatch_ocr_pipeline_stage", None))
+        requires_inline = task_name not in {
+            "ocr_pipeline_structure_scan",
+            "ocr_pipeline_seal_scan",
+            "ocr_pipeline_evidence_fusion",
+            "ocr_pipeline_qwen_extract",
+            "ocr_pipeline_finalize",
+        }
         if (
             task_name not in source
             or not any(marker in source for marker in (".delay(", ".apply_async("))
@@ -2690,6 +2711,41 @@ def worker_task_contract_check(
             "dispatcherMissing": dispatcher_missing,
             "dispatcherMismatches": dispatcher_mismatches,
         },
+    }
+
+
+def ocr_pipeline_hardening_contract_check() -> dict[str, Any]:
+    tasks_source = (BACKEND_ROOT / "apps/worker/tasks.py").read_text(encoding="utf-8")
+    service_source = (BACKEND_ROOT / "apps/ocr_service/service.py").read_text(encoding="utf-8")
+    prior_source = (BACKEND_ROOT / "libs/document_ai_shadow.py").read_text(encoding="utf-8")
+    dispatcher_source = (BACKEND_ROOT / "libs/integrations/task_dispatcher.py").read_text(encoding="utf-8")
+    compose_source = (BACKEND_ROOT / "docker-compose.accuracy-pipeline.yml").read_text(encoding="utf-8")
+    validation_compose = (BACKEND_ROOT / "docker-compose.ocr-validation.yml").read_text(encoding="utf-8")
+    required = {
+        "real structure task": "def ocr_pipeline_structure_scan" in tasks_source,
+        "real seal task": "def ocr_pipeline_seal_scan" in tasks_source,
+        "stage engine allowlist": '"engineAllowlist"' in tasks_source and "engine_allowlist" in service_source,
+        "fast-first explicitly disabled": '"disableFastFirst": True' in tasks_source,
+        "heavy engine execution required": "_engine_not_executed" in tasks_source,
+        "tesseract fallback-only": "tesseract_fallback_satisfied" in service_source,
+        "evidence prior v3": 'EVIDENCE_PRIOR_VERSION = "EvidencePrior@3"' in prior_source,
+        "strict table attribution": "_candidate_matches_table_context" in prior_source,
+        "pipeline advisory locks": "@pipeline_task_lock" in tasks_source,
+        "deterministic task ids": "deterministic_task_id" in dispatcher_source,
+        "model attempt ledger": "model_call_attempts" in tasks_source,
+        "host OCR cache bind": "/data/aicheck/ocr-cache" in compose_source,
+        "disk capacity gate": "AICHECK_DISK_PAUSE_PERCENT" in compose_source,
+        "isolated validation postgres": "postgres-ocr-validation" in validation_compose,
+        "isolated validation redis": "redis-ocr-validation" in validation_compose,
+        "isolated validation minio": "minio-ocr-validation" in validation_compose,
+        "fault proxies": "ocr-fault-proxy" in validation_compose and "qwen-fault-proxy" in validation_compose,
+    }
+    failures = sorted(label for label, passed in required.items() if not passed)
+    return {
+        "name": "ocr.pipeline-hardening-contract",
+        "status": "pass" if not failures else "fail",
+        "detail": f"checks={len(required)}, failures={len(failures)}",
+        "data": {"checks": required, "failures": failures},
     }
 
 

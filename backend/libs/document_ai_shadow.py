@@ -10,7 +10,7 @@ from copy import deepcopy
 from typing import Any, Iterable
 
 
-EVIDENCE_PRIOR_VERSION = "EvidencePrior@2"
+EVIDENCE_PRIOR_VERSION = "EvidencePrior@3"
 DEFAULT_DOCUMENT_AI_PROFILE_ALLOWLIST = (
     "ndt_rt_report_v1",
     "quality_certificate_v1",
@@ -73,6 +73,12 @@ _HIGH_VALUE_CELL_RE = re.compile(
     r"(?:\bGC[12D]\b|\b(?:RT|UT|MT|PT|TOFD)\b|\b(?:AB|III|II|IV)\b|\d+(?:\.\d+)?\s*(?:%|MPA|KPA|MM|℃|°C))",
     re.IGNORECASE,
 )
+_TABLE_SOURCE_PRIORITY = {
+    "pp_structure_v3": 500,
+    "opencv_table_grid_subprocess": 400,
+    "fragment_drawing_list_row_detector": 350,
+    "heuristic_table_from_fragments": 200,
+}
 
 
 def document_ai_mode() -> str:
@@ -157,7 +163,7 @@ def _source_engine(item: dict[str, Any]) -> str:
 
 def _candidate_id(kind: str, payload: dict[str, Any]) -> str:
     digest = stable_payload_hash({"kind": kind, **payload}).split(":", 1)[1][:14].upper()
-    return f"EP2-{kind.upper()}-{digest}"
+    return f"EP3-{kind.upper()}-{digest}"
 
 
 def _candidate(
@@ -248,6 +254,125 @@ def _table_text(table: dict[str, Any], cells: list[dict[str, Any]]) -> str:
         for cell in cells
         if _text(cell.get("text") or cell.get("value") or cell.get("fieldValue"))
     )[:4000]
+
+
+def _table_schema(table: dict[str, Any]) -> str:
+    for key in ["businessSchema", "matchedRequiredTable", "tableType", "schemaId"]:
+        value = str(table.get(key) or "").strip()
+        if value:
+            return value
+    schemas = table.get("businessSchemas") if isinstance(table.get("businessSchemas"), list) else []
+    return str(schemas[0] or "").strip() if schemas else ""
+
+
+def _table_schema_names(table: dict[str, Any]) -> set[str]:
+    values = {
+        str(table.get(key) or "").strip()
+        for key in ["businessSchema", "matchedRequiredTable", "tableType", "schemaId"]
+    }
+    values.update(str(value).strip() for value in table.get("businessSchemas") or [])
+    return {value for value in values if value}
+
+
+def _target_table_names(profile: dict[str, Any]) -> set[str]:
+    structured = profile.get("structuredExtraction") if isinstance(profile.get("structuredExtraction"), dict) else {}
+    definitions = structured.get("tableDefinitions") if isinstance(structured.get("tableDefinitions"), dict) else {}
+    names = {str(value) for value in structured.get("tables") or [] if str(value)}
+    for name, definition in definitions.items():
+        names.add(str(name))
+        if isinstance(definition, dict):
+            names.update(str(value) for value in definition.get("aliases") or [] if str(value))
+    return names
+
+
+def _bbox_iou(left: Any, right: Any) -> float:
+    first = normalize_bbox(left)
+    second = normalize_bbox(right)
+    if not first or not second:
+        return 0.0
+    x1, y1 = max(first[0], second[0]), max(first[1], second[1])
+    x2, y2 = min(first[2], second[2]), min(first[3], second[3])
+    intersection = max(0.0, x2 - x1) * max(0.0, y2 - y1)
+    if intersection <= 0:
+        return 0.0
+    first_area = (first[2] - first[0]) * (first[3] - first[1])
+    second_area = (second[2] - second[0]) * (second[3] - second[1])
+    return intersection / max(first_area + second_area - intersection, 1.0)
+
+
+def _table_value_tokens(table: dict[str, Any]) -> set[str]:
+    cells = _table_cells(table)
+    return {
+        _normalize_for_match(cell.get("text") or cell.get("value") or cell.get("fieldValue"))
+        for cell in cells
+        if _normalize_for_match(cell.get("text") or cell.get("value") or cell.get("fieldValue"))
+    }
+
+
+def _duplicate_table_representation(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    if _int(left.get("pageNo")) != _int(right.get("pageNo")):
+        return False
+    if not _table_schema_names(left).intersection(_table_schema_names(right)):
+        return False
+    if _bbox_iou(left.get("bbox"), right.get("bbox")) >= 0.5:
+        return True
+    left_tokens = _table_value_tokens(left)
+    right_tokens = _table_value_tokens(right)
+    if not left_tokens or not right_tokens:
+        return False
+    overlap = len(left_tokens & right_tokens) / max(min(len(left_tokens), len(right_tokens)), 1)
+    return overlap >= 0.7
+
+
+def _tables_for_prior(parse_result: dict[str, Any], profile: dict[str, Any]) -> list[dict[str, Any]]:
+    tables = [table for table in parse_result.get("tables") or [] if isinstance(table, dict)]
+    target_names = _target_table_names(profile)
+    if target_names:
+        matched = [table for table in tables if _table_schema_names(table).intersection(target_names)]
+        if matched:
+            tables = matched
+    ranked = sorted(
+        tables,
+        key=lambda table: (
+            -_TABLE_SOURCE_PRIORITY.get(_source_engine(table), 0),
+            -float(table.get("structureConfidence") or 0),
+            _int(table.get("pageNo")),
+            str(table.get("tableId") or ""),
+        ),
+    )
+    selected: list[dict[str, Any]] = []
+    for table in ranked:
+        if any(_duplicate_table_representation(table, existing) for existing in selected):
+            continue
+        selected.append(table)
+    return selected
+
+
+def _table_definition(profile: dict[str, Any], schema: str) -> dict[str, Any]:
+    structured = profile.get("structuredExtraction") if isinstance(profile.get("structuredExtraction"), dict) else {}
+    definitions = structured.get("tableDefinitions") if isinstance(structured.get("tableDefinitions"), dict) else {}
+    direct = definitions.get(schema)
+    if isinstance(direct, dict):
+        return direct
+    for definition in definitions.values():
+        if isinstance(definition, dict) and schema in {str(value) for value in definition.get("aliases") or []}:
+            return definition
+    return {}
+
+
+def _cell_bbox_quality(cells: list[dict[str, Any]], index: int) -> str:
+    cell = cells[index]
+    bbox = normalize_bbox(cell.get("bbox"))
+    if not bbox:
+        return "missing"
+    row = cell.get("row") if cell.get("row") is not None else cell.get("rowIndex")
+    same_row = [
+        other
+        for other in cells
+        if (other.get("row") if other.get("row") is not None else other.get("rowIndex")) == row
+    ]
+    duplicates = [other for other in same_row if normalize_bbox(other.get("bbox")) == bbox]
+    return "row_bbox_only" if len(duplicates) > 1 else "cell_bbox"
 
 
 def _inferred_semantic_key(text: Any) -> str | None:
@@ -402,13 +527,14 @@ def _raw_candidates(parse_result: dict[str, Any], profile: dict[str, Any]) -> li
             output.append(candidate)
 
     seen_table_signatures: set[str] = set()
-    for table_index, table in enumerate(parse_result.get("tables") or [], start=1):
-        if not isinstance(table, dict):
-            continue
+    for table_index, table in enumerate(_tables_for_prior(parse_result, profile), start=1):
         table_id = str(table.get("tableId") or table.get("id") or f"table-{table_index}")
         page_no = _int(table.get("pageNo"))
         cells = _table_cells(table)
         semantic_keys = _cell_semantic_keys(cells, structured_fields)
+        table_schema = _table_schema(table)
+        table_definition = _table_definition(profile, table_schema)
+        column_keys = table_definition.get("columns") if isinstance(table_definition.get("columns"), dict) else {}
         table_text = _table_text(table, cells)
         signature = stable_payload_hash({"pageNo": page_no, "text": table_text, "bbox": normalize_bbox(table.get("bbox"))})
         if signature in seen_table_signatures:
@@ -418,16 +544,26 @@ def _raw_candidates(parse_result: dict[str, Any], profile: dict[str, Any]) -> li
             text = cell.get("text") or cell.get("value") or cell.get("fieldValue")
             row = cell.get("row") if cell.get("row") is not None else cell.get("rowIndex")
             col = cell.get("col") if cell.get("col") is not None else cell.get("columnIndex")
+            column_key = semantic_keys.get(cell_index - 1) or str(column_keys.get(str(col)) or "").strip() or None
+            bbox_quality = _cell_bbox_quality(cells, cell_index - 1)
             candidate = _candidate(
                 "table_cell",
                 cell,
                 text=text,
                 page_no=cell.get("pageNo") or page_no,
-                semantic_key=semantic_keys.get(cell_index - 1),
+                semantic_key=column_key,
                 table_id=table_id,
                 row=row,
                 col=col,
                 source_id=cell.get("cellId") or cell.get("id") or cell_index,
+                formal_eligible=bbox_quality == "cell_bbox",
+                extra={
+                    "tableSchema": table_schema,
+                    "rowKey": str(row) if row is not None else None,
+                    "columnKey": column_key or str(col),
+                    "cellBboxQuality": bbox_quality,
+                    "isHeader": bool(cell.get("isHeader")),
+                },
             )
             if candidate:
                 output.append(candidate)
@@ -440,7 +576,7 @@ def _raw_candidates(parse_result: dict[str, Any], profile: dict[str, Any]) -> li
             table_id=table_id,
             source_id=table_id,
             formal_eligible=False,
-            extra={"cellCount": len(cells), "tableSignature": signature},
+            extra={"cellCount": len(cells), "tableSignature": signature, "tableSchema": table_schema},
         )
         if block:
             output.append(block)
@@ -754,8 +890,119 @@ def _walk_attributed_items(value: Any, path: str = "$") -> Iterable[tuple[str, d
             yield from _walk_attributed_items(child, f"{path}[{index}]")
 
 
+def _normalize_attribution_shapes(value: Any) -> Any:
+    normalized = deepcopy(value)
+    if not isinstance(normalized, dict):
+        return normalized
+    fields = normalized.get("fields")
+    if isinstance(fields, dict):
+        for key, item in list(fields.items()):
+            if isinstance(item, dict):
+                item.setdefault("sourceCandidateIds", [])
+            elif item is not None and item != "":
+                fields[key] = {"value": item, "sourceCandidateIds": []}
+    tables = normalized.get("tables")
+    if isinstance(tables, dict):
+        for rows in tables.values():
+            if not isinstance(rows, list):
+                continue
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                cells = row.get("cells")
+                if not isinstance(cells, dict):
+                    continue
+                for key, item in list(cells.items()):
+                    if isinstance(item, dict):
+                        item.setdefault("sourceCandidateIds", [])
+                    elif item is not None and item != "":
+                        cells[key] = {"value": item, "sourceCandidateIds": []}
+    seals = normalized.get("seals")
+    if isinstance(seals, list):
+        for index, item in enumerate(list(seals)):
+            if isinstance(item, dict):
+                item.setdefault("sourceCandidateIds", [])
+            elif item is not None and item != "":
+                seals[index] = {"value": item, "sourceCandidateIds": []}
+    return normalized
+
+
+_TABLE_CELL_PATH_RE = re.compile(
+    r"^\$\.tables\.([^.[\]]+)\[(\d+)\]\.cells\.([^.[\]]+)$"
+)
+
+
+def _table_cell_context(
+    path: str,
+    structured_output: Any,
+    known_candidates: list[dict[str, Any]],
+) -> tuple[str, str, str, str | None] | None:
+    match = _TABLE_CELL_PATH_RE.match(path)
+    if not match:
+        return None
+    table_schema, row_index, column_key = match.group(1), int(match.group(2)), match.group(3)
+    row: dict[str, Any] = {}
+    if isinstance(structured_output, dict):
+        tables = structured_output.get("tables") if isinstance(structured_output.get("tables"), dict) else {}
+        rows = tables.get(table_schema) if isinstance(tables.get(table_schema), list) else []
+        if row_index < len(rows) and isinstance(rows[row_index], dict):
+            row = rows[row_index]
+    row_key = str(row.get("rowKey") if row.get("rowKey") is not None else row.get("row", row_index))
+    table_id = str(row.get("tableId") or "").strip() or None
+    if table_id is None:
+        cited_table_ids = {
+            str(candidate.get("tableId") or "")
+            for candidate in known_candidates
+            if candidate.get("candidateType") == "table_cell"
+            and str(candidate.get("tableSchema") or "") == table_schema
+            and candidate.get("tableId")
+        }
+        if len(cited_table_ids) == 1:
+            table_id = next(iter(cited_table_ids))
+    return table_schema, row_key, column_key, table_id
+
+
+def _candidate_matches_table_context(
+    candidate: dict[str, Any],
+    context: tuple[str, str, str, str | None],
+) -> bool:
+    table_schema, row_key, column_key, table_id = context
+    candidate_row = str(candidate.get("rowKey") if candidate.get("rowKey") is not None else candidate.get("row", ""))
+    candidate_column = str(candidate.get("columnKey") or candidate.get("semanticKey") or "")
+    return bool(
+        candidate.get("candidateType") == "table_cell"
+        and str(candidate.get("tableSchema") or "") == table_schema
+        and candidate_row == row_key
+        and candidate_column == column_key
+        and table_id
+        and str(candidate.get("tableId") or "") == table_id
+    )
+
+
+def _deterministic_table_cell_repair(
+    path: str,
+    value: str,
+    candidates: dict[str, dict[str, Any]],
+    structured_output: Any,
+    known_candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    context = _table_cell_context(path, structured_output, known_candidates)
+    if context is None:
+        return []
+    normalized_value = _normalize_for_match(value)
+    if not normalized_value:
+        return []
+    matches = [
+        candidate
+        for candidate in candidates.values()
+        if _candidate_matches_table_context(candidate, context)
+        and _normalize_for_match(candidate.get("text")) == normalized_value
+    ]
+    return matches if len(matches) == 1 else []
+
+
 def validate_shadow_attribution(structured_output: Any, evidence_prior: dict[str, Any]) -> dict[str, Any]:
-    repaired = deepcopy(structured_output)
+    repaired = _normalize_attribution_shapes(structured_output)
     candidates = {
         str(item.get("candidateId")): item
         for item in evidence_prior.get("candidates") or []
@@ -779,9 +1026,15 @@ def validate_shadow_attribution(structured_output: Any, evidence_prior: dict[str
             item["advisoryOnly"] = True
             continue
         field_key = path.rsplit(".", 1)[-1].split("[", 1)[0]
+        table_context = _table_cell_context(path, repaired, known)
+        contextual_known = (
+            [candidate for candidate in known if _candidate_matches_table_context(candidate, table_context)]
+            if table_context
+            else known
+        )
         individually_supported = [
             candidate
-            for candidate in known
+            for candidate in contextual_known
             if _supports_value(
                 value,
                 str(candidate.get("text") or ""),
@@ -790,6 +1043,7 @@ def validate_shadow_attribution(structured_output: Any, evidence_prior: dict[str
             and _semantic_supports_field(field_key, value, candidate, str(candidate.get("text") or ""))
         ]
         selected: list[dict[str, Any]] = []
+        repair_applied = False
         if individually_supported:
             selected = [
                 sorted(
@@ -802,7 +1056,19 @@ def validate_shadow_attribution(structured_output: Any, evidence_prior: dict[str
                     ),
                 )[0]
             ]
-        elif known:
+        elif raw_ids:
+            repaired_candidates = _deterministic_table_cell_repair(
+                path,
+                value,
+                candidates,
+                repaired,
+                known,
+            )
+            if repaired_candidates:
+                selected = repaired_candidates
+                repair_applied = True
+                item["attributionRepair"] = "deterministic_row_column_repair"
+        if not selected and known and table_context is None:
             row_groups: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
             for candidate in known:
                 if candidate.get("candidateType") != "table_cell" or candidate.get("row") is None:
@@ -845,6 +1111,8 @@ def validate_shadow_attribution(structured_output: Any, evidence_prior: dict[str
                 "unknownSourceCandidateIds": unknown_ids,
                 "status": item["attributionStatus"],
                 "formalCandidateEligible": bool(selected) and len(formal_candidates) == len(selected),
+                "repairApplied": repair_applied,
+                "repairMethod": item.get("attributionRepair"),
             }
         )
     status_counts = {
@@ -861,6 +1129,7 @@ def validate_shadow_attribution(structured_output: Any, evidence_prior: dict[str
             "statusCounts": status_counts,
             "invalidCandidateIds": sorted(invalid_candidate_ids),
             "invalidCandidateIdCount": len(invalid_candidate_ids),
+            "candidateRepairCount": len([item for item in validations if item.get("repairApplied")]),
         },
     }
 

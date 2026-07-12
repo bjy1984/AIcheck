@@ -52,6 +52,7 @@ from apps.ocr_service.welder_certificate_tool import (
     welder_certificate_ocr_fields,
     welder_certificate_ocr_tables,
 )
+from libs.capacity_guard import disk_capacity_status
 from libs.contracts.responses import server_time
 from libs.integrations.storage import object_storage, parse_storage_url
 
@@ -439,8 +440,12 @@ class OcrService:
     def health_payload(self) -> dict[str, Any]:
         engines = self.engine_status()
         capacity = memory_headroom_payload()
+        disk_capacity = disk_capacity_status()
         cache = ocr_cache_readiness_payload()
         minimum_headroom_mb = int(os.getenv("AICHECK_OCR_MIN_MEMORY_HEADROOM_MB", "2048"))
+        memory_ready = float(capacity.get("availableMb") or 0) >= minimum_headroom_mb
+        disk_gate_enabled = env_bool("AICHECK_OCR_DISK_READINESS_GATE", False)
+        storage_ready = not disk_gate_enabled or bool(disk_capacity["readinessReady"])
         return {
             "status": "ok",
             "service": "ocr-service",
@@ -454,8 +459,12 @@ class OcrService:
             "modelManifest": self.model_manifest(),
             "executable": any(bool(engine.get("executable")) for engine in engines),
             "warmedUp": any(bool(engine.get("warmedUp")) for engine in engines),
-            "capacityReady": float(capacity.get("availableMb") or 0) >= minimum_headroom_mb,
+            "capacityReady": memory_ready and storage_ready,
+            "memoryCapacityReady": memory_ready,
+            "storageCapacityReady": storage_ready,
+            "diskCapacityGateEnabled": disk_gate_enabled,
             "memoryHeadroom": capacity,
+            "diskCapacity": disk_capacity,
             "cacheWritable": cache["writable"],
             "cachePaths": cache["paths"],
             "inferenceStatus": self._last_inference.get("inferenceStatus"),
@@ -474,8 +483,10 @@ class OcrService:
         health = self.health_payload()
         if not health["executable"]:
             failures.append("No OCR engine is executable in the current runtime.")
-        if not health["capacityReady"]:
+        if not health["memoryCapacityReady"]:
             failures.append("OCR memory headroom is below the configured minimum.")
+        if not health["storageCapacityReady"]:
+            failures.append("OCR host disk capacity has reached the readiness failure threshold.")
         if not health["cacheWritable"]:
             failures.append("OCR cache directories are not writable.")
         if env_bool("AICHECK_OCR_DEEP_READY_PROBE", False) and self._last_inference.get("inferenceStatus") != "success":
@@ -880,6 +891,9 @@ class OcrService:
             "diagnostics": [],
             "engineRuns": [],
         }
+        baseline_parse_result_id = str(options.get("baselineParseResultId") or "").strip()
+        if baseline_parse_result_id:
+            merged.setdefault("metadata", {})["baselineParseResultId"] = baseline_parse_result_id
         request_started_ms = monotonic_ms()
         fast_first_mode = parse_bool(options.get("fastFirstMode"), False) is True
         if fast_first_mode:
@@ -947,6 +961,17 @@ class OcrService:
             )
         for engine in self.engines:
             engine_status = engine.status()
+            allowed_engines = engine_allowlist(options)
+            if allowed_engines is not None and engine.name not in allowed_engines:
+                merged["engineRuns"].append(
+                    {
+                        **engine_status,
+                        "status": "skipped",
+                        "durationMs": 0,
+                        "reason": "engine_not_allowlisted",
+                    }
+                )
+                continue
             if request_budget_exceeded(options, request_started_ms):
                 merged["engineRuns"].append(
                     {
@@ -959,6 +984,20 @@ class OcrService:
                 continue
             if not engine.available():
                 merged["engineRuns"].append({**engine_status, "status": "unavailable", "durationMs": 0})
+                continue
+            if engine.name == "tesseract_cli" and tesseract_fallback_satisfied(
+                merged,
+                profile=profile,
+                options=options,
+            ):
+                merged["engineRuns"].append(
+                    {
+                        **engine_status,
+                        "status": "skipped",
+                        "durationMs": 0,
+                        "reason": "paddle_text_primary_evidence_sufficient",
+                    }
+                )
                 continue
             if should_defer_heavy_engine(engine.name, merged, profile=profile, options=options):
                 merged["engineRuns"].append(
@@ -1037,6 +1076,8 @@ class OcrService:
                             "purpose": variant.get("purpose"),
                             "variantCacheHit": bool(variant.get("cacheHit")),
                             "engineCacheHit": engine_cache_hit,
+                            "engineCacheKey": engine_cache_key,
+                            "cacheSourceRunId": f"engine-cache:{engine_cache_key}" if engine_cache_hit and engine_cache_key else None,
                             "workerMode": raw.get("workerMode") if isinstance(raw, dict) else None,
                             "qualityScore": variant_quality_score(variant, page_quality),
                         }
@@ -1061,6 +1102,7 @@ class OcrService:
                             "variantCacheHit": bool(variant.get("cacheHit")),
                         }
                     )
+        attach_engine_execution_metadata(merged)
         if has_parse_content(merged):
             merged["status"] = "success"
             if fast_first_mode:
@@ -6865,6 +6907,52 @@ def request_budget_exceeded(options: dict[str, Any], started_ms: int) -> bool:
     if budget_ms <= 0:
         return False
     return monotonic_ms() - started_ms >= budget_ms
+
+
+def engine_allowlist(options: dict[str, Any]) -> set[str] | None:
+    raw = options.get("engineAllowlist")
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        values = [item.strip() for item in raw.split(",")]
+    elif isinstance(raw, (list, tuple, set)):
+        values = [str(item).strip() for item in raw]
+    else:
+        values = []
+    return {value for value in values if value}
+
+
+def tesseract_fallback_satisfied(
+    result: dict[str, Any],
+    *,
+    profile: dict[str, Any],
+    options: dict[str, Any],
+) -> bool:
+    policy = str(options.get("tesseractPolicy") or os.getenv("AICHECK_TESSERACT_POLICY") or "fallback_only").strip().lower()
+    if policy not in {"fallback", "fallback_only"}:
+        return False
+    allowed = engine_allowlist(options)
+    if allowed is not None and "tesseract_cli" in allowed and "paddle_ocr_subprocess" not in allowed:
+        return False
+    return ocr_text_content_sufficient(result, profile=profile)
+
+
+def attach_engine_execution_metadata(result: dict[str, Any]) -> None:
+    for run in result.get("engineRuns") or []:
+        if not isinstance(run, dict):
+            continue
+        status = str(run.get("status") or "")
+        attempted = status in {"success", "failed"}
+        run["engineAttempted"] = attempted
+        run["engineExecuted"] = bool(
+            attempted
+            and (
+                int(run.get("durationMs") or 0) > 0
+                or parse_bool(run.get("engineCacheHit"), False) is True
+            )
+        )
+        if status == "skipped":
+            run["skipReason"] = str(run.get("reason") or "no_routed_variant")
 
 
 def should_defer_heavy_engine(

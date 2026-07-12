@@ -16,6 +16,9 @@ celery_app = Celery(
 celery_app.conf.update(
     task_routes={
         "apps.worker.tasks.parse_document": {"queue": "cpu.heavy", "priority": 7},
+        "apps.worker.tasks.ocr_pipeline_structure_scan": {"queue": "cpu.heavy", "priority": 9},
+        "apps.worker.tasks.ocr_pipeline_seal_scan": {"queue": "cpu.heavy", "priority": 9},
+        "apps.worker.tasks.ocr_pipeline_evidence_fusion": {"queue": "business.light", "priority": 9},
         "apps.worker.tasks.recognize_seals": {"queue": "cpu.heavy", "priority": 9},
         "apps.worker.tasks.slice_knowledge": {"queue": "cpu.heavy", "priority": 2},
         "apps.worker.tasks.embed_knowledge": {"queue": "cpu.heavy", "priority": 1},

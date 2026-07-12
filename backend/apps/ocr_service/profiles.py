@@ -88,20 +88,26 @@ def structured_extraction_config(
     *,
     tables: list[str] | None = None,
     field_definitions: dict[str, str] | None = None,
+    table_definitions: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
-        "schemaVersion": "DocumentAiStructuredExtraction@1",
+        "schemaVersion": "DocumentAiStructuredExtraction@2",
         "mode": "shadow",
-        "templateVersion": f"{profile_id}-nuextract3@1",
+        "templateVersion": f"{profile_id}-qwen-grounded@2",
         "maxCandidates": 64,
         "maxPriorTokens": 12000,
         "maxPages": 6,
         "fields": list(fields),
         "tables": list(tables or []),
         "fieldDefinitions": dict(field_definitions or {}),
+        "tableDefinitions": deepcopy(table_definitions or {}),
         "outputContract": {
             "fieldShape": {"value": "", "sourceCandidateIds": []},
-            "tableRowShape": {"cells": {}, "sourceCandidateIds": []},
+            "tableRowShape": {
+                "tableId": "",
+                "rowKey": "",
+                "cells": {"column_key": {"value": "", "sourceCandidateIds": []}},
+            },
             "allowDirectVisionOnly": True,
             "directVisionOnlyAdvisory": True,
         },
@@ -649,7 +655,7 @@ OCR_PROFILES: dict[str, dict[str, Any]] = {
             "blue_seal_expiry",
             "seal",
         ],
-        "requiredTables": ["engineering_drawing_title_block_v1"],
+        "requiredTables": ["engineering_drawing_list_rows_v1"],
         "sealRules": {
             "required": True,
             "expectedSealTypes": ["design_license_seal", "drawing_approval_seal"],
@@ -667,7 +673,18 @@ OCR_PROFILES: dict[str, dict[str, Any]] = {
                 "total_sheets",
                 "blue_seal_expiry",
             ],
-            tables=["engineering_drawing_title_block_v1", "engineering_drawing_list_rows"],
+            tables=["engineering_drawing_list_rows_v1"],
+            table_definitions={
+                "engineering_drawing_list_rows_v1": {
+                    "aliases": ["engineering_drawing_list_rows"],
+                    "columns": {
+                        "0": "sequence_no",
+                        "1": "drawing_name",
+                        "2": "drawing_no",
+                    },
+                    "rowWindowSize": 10,
+                }
+            },
         ),
         "qualityRules": {
             "minFieldConfidence": 0.72,

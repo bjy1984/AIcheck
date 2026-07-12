@@ -280,7 +280,7 @@ def test_engineering_drawing_list_profile_does_not_require_piping_table() -> Non
     assert profile["profileId"] == "engineering_drawing_list_v1"
     assert "pipe_no" not in profile["requiredFields"]
     assert "piping_characteristic_table" not in profile["requiredTables"]
-    assert "engineering_drawing_title_block_v1" in profile["requiredTables"]
+    assert profile["requiredTables"] == ["engineering_drawing_list_rows_v1"]
 
 
 def test_drawing_list_text_routes_piping_request_to_drawing_list_profile() -> None:

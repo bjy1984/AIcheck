@@ -17,12 +17,14 @@ x-pipeline-worker: &pipeline-worker
     AICHECK_OCR_JOB_TIMEOUT_SECONDS: "300"
     AICHECK_OCR_PARSE_TIMEOUT_SECONDS: "300"
     AICHECK_OCR_PIPELINE_MODE: ${AICHECK_OCR_PIPELINE_MODE:-shadow}
-    AICHECK_OCR_PIPELINE_VERSION: ${AICHECK_OCR_PIPELINE_VERSION:-ocr-accuracy-first@1}
-    AICHECK_OCR_PIPELINE_PROFILE_ALLOWLIST: ${AICHECK_OCR_PIPELINE_PROFILE_ALLOWLIST:-ndt_rt_report_v1,quality_certificate_v1,engineering_drawing_list_v1,piping_characteristic_list_v1,comprehensive_material_list_v1}
+    AICHECK_OCR_PIPELINE_VERSION: ${AICHECK_OCR_PIPELINE_VERSION:-ocr-accuracy-first@2}
+    AICHECK_OCR_PIPELINE_PROFILE_ALLOWLIST: ${AICHECK_OCR_PIPELINE_PROFILE_ALLOWLIST:-qualification_certificate_v1,construction_record_v1,construction_plan_v1,welding_procedure_qualification_v1,ndt_rt_report_v1,quality_certificate_v1,engineering_drawing_list_v1,drawing_material_list_v1,process_flow_diagram_v1,strength_calculation_v1,design_specification_v1,equipment_list_v1,site_layout_drawing_v1,paint_insulation_list_v1,piping_characteristic_list_v1,comprehensive_material_list_v1}
     AICHECK_OCR_QWEN_IMAGE_POLICY: page_and_roi
     AICHECK_OCR_QWEN_MAX_PAGES: ${AICHECK_OCR_QWEN_MAX_PAGES:-60}
     AICHECK_OCR_QWEN_MAX_TOKENS: ${AICHECK_OCR_QWEN_MAX_TOKENS:-8192}
     AICHECK_OCR_QWEN_TIMEOUT_SECONDS: ${AICHECK_OCR_QWEN_TIMEOUT_SECONDS:-180}
+    AICHECK_QWEN_INPUT_CNY_PER_MILLION: ${AICHECK_QWEN_INPUT_CNY_PER_MILLION:-2}
+    AICHECK_QWEN_OUTPUT_CNY_PER_MILLION: ${AICHECK_QWEN_OUTPUT_CNY_PER_MILLION:-8}
     AICHECK_DOCUMENT_AI_MODE: off
     AICHECK_AUDIT_MODEL_COMPARISON_MODE: off
     AICHECK_QWEN_CALL_MODE: official_api
@@ -38,6 +40,11 @@ x-pipeline-worker: &pipeline-worker
     AICHECK_EMBEDDING_CHECKPOINT_BATCH_SIZE: "8"
     AICHECK_EMBEDDING_FORCE_OFFLINE_HASH: "false"
     AICHECK_EMBEDDING_ALLOW_HASH_FALLBACK: "false"
+    AICHECK_CPU_HEAVY_DISK_GATE: "true"
+    AICHECK_CAPACITY_GATE_PATH: /
+    AICHECK_DISK_WARNING_PERCENT: "80"
+    AICHECK_DISK_PAUSE_PERCENT: "88"
+    AICHECK_DISK_FAIL_PERCENT: "92"
     LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://litellm-service:4000}
     LITELLM_API_KEY: ${LITELLM_API_KEY:?LITELLM_API_KEY is required}
   depends_on:
@@ -64,6 +71,11 @@ x-pipeline-worker: &pipeline-worker
     interval: 30s
     timeout: 10s
     retries: 6
+  logging:
+    driver: json-file
+    options:
+      max-size: 20m
+      max-file: "5"
 
 services:
   worker-service:
@@ -84,6 +96,11 @@ services:
       AICHECK_OCR_PERSISTENT_WORKER_TIMEOUT: "180"
       AICHECK_OCR_DEEP_READY_PROBE: "true"
       AICHECK_OCR_MIN_MEMORY_HEADROOM_MB: "2048"
+      AICHECK_OCR_DISK_READINESS_GATE: "true"
+      AICHECK_CAPACITY_GATE_PATH: /
+      AICHECK_DISK_WARNING_PERCENT: "80"
+      AICHECK_DISK_PAUSE_PERCENT: "88"
+      AICHECK_DISK_FAIL_PERCENT: "92"
       AICHECK_PADDLEOCR_MEMORY_LIMIT_MB: "4096"
       AICHECK_PP_STRUCTURE_MEMORY_LIMIT_MB: "6144"
       AICHECK_PADDLEX_SEAL_MEMORY_LIMIT_MB: "3072"
@@ -94,15 +111,18 @@ services:
       AICHECK_OCR_ENGINE_RESULT_CACHE_DIR: /var/cache/aicheck-ocr/engines
       AICHECK_OCR_CACHE_MAX_AGE_HOURS: "72"
       AICHECK_OCR_CACHE_MAX_BYTES: "5368709120"
+      AICHECK_TESSERACT_POLICY: fallback_only
       OMP_NUM_THREADS: "4"
       MKL_NUM_THREADS: "4"
       OPENBLAS_NUM_THREADS: "1"
       NUMEXPR_NUM_THREADS: "4"
     volumes:
-      - ocr-cache:/var/cache/aicheck-ocr
+      - ${AICHECK_OCR_CACHE_HOST_PATH:-/data/aicheck/ocr-cache}:/var/cache/aicheck-ocr
     mem_limit: 10g
     mem_reservation: 4g
     restart: unless-stopped
-
-volumes:
-  ocr-cache:
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"

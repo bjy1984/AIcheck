@@ -129,13 +129,22 @@ class OcrClient:
             raise IntegrationServiceError("OCR service", "parse", reason=safe_reason(reason) or f"CODE_{payload.get('code')}")
         return payload.get("data") or {}
 
-    def parse_upload_sync(self, path: str | os.PathLike[str], payload: dict[str, Any], *, timeout: float = 300) -> dict[str, Any]:
+    def parse_upload_sync(
+        self,
+        path: str | os.PathLike[str],
+        payload: dict[str, Any],
+        *,
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
         if not self.enabled:
             raise RuntimeError("AICHECK_OCR_BASE_URL is not configured")
         source_path = Path(path)
         if not source_path.is_file():
             raise IntegrationServiceError("OCR service", "parse-upload", reason="LOCAL_FILE_MISSING")
-        client_kwargs: dict[str, Any] = {"timeout": timeout}
+        resolved_timeout = timeout
+        if resolved_timeout is None:
+            resolved_timeout = float(os.getenv("AICHECK_OCR_PARSE_TIMEOUT_SECONDS", "300"))
+        client_kwargs: dict[str, Any] = {"timeout": resolved_timeout}
         if self.transport is not None:
             client_kwargs["transport"] = self.transport
         metadata = json.dumps(payload, ensure_ascii=False).encode("utf-8")
