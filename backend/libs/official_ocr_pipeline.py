@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import time
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Callable
 
@@ -347,13 +346,15 @@ def official_ocr_extract(
     started = time.monotonic()
 
     total_pages = len(rendered)
-    for completed_count, (page_no, image_path) in enumerate(sorted(rendered.items()), start=1):
+
+    def process_page(page_no: int, image_path: Path) -> tuple[int, list[dict[str, Any]], bool]:
         page_calls = [
             item
             for item in (page_call_cache or {}).get(int(page_no), [])
             if isinstance(item, dict)
         ]
-        if not page_calls:
+        fresh = not page_calls
+        if fresh:
             call_specs: list[tuple[str, dict[str, Any]]] = [
                 ("advanced_recognition", {}),
             ]
@@ -396,8 +397,23 @@ def official_ocr_extract(
                     roi_call["roiBbox"] = roi["bbox"]
                     roi_call["roiColor"] = roi["color"]
                     page_calls.append(roi_call)
-            if page_completed:
+        return page_no, page_calls, fresh
+
+    rendered_items = sorted(rendered.items())
+    page_results: dict[int, list[dict[str, Any]]] = {}
+    with ThreadPoolExecutor(max_workers=min(2, max(total_pages, 1))) as executor:
+        page_futures = [
+            executor.submit(process_page, page_no, image_path)
+            for page_no, image_path in rendered_items
+        ]
+        for completed_count, future in enumerate(as_completed(page_futures), start=1):
+            page_no, page_calls, fresh = future.result()
+            page_results[page_no] = page_calls
+            if fresh and page_completed:
                 page_completed(page_no, completed_count, total_pages, page_calls)
+
+    for page_no in sorted(page_results):
+        page_calls = page_results[page_no]
         calls.extend(page_calls)
         advanced_calls.extend(item for item in page_calls if item.get("task") == "advanced_recognition")
         kie_calls.extend(item for item in page_calls if item.get("task") == "key_information_extraction")
