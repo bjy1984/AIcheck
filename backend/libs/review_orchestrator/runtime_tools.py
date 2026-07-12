@@ -5,6 +5,12 @@ from typing import Any
 from uuid import uuid4
 
 from apps.ocr_service.welder_certificate_tool import extract_welder_certificate_from_ocr_result
+from libs.review_orchestrator.deterministic_tools import (
+    DETERMINISTIC_TOOL_DESCRIPTORS,
+    DETERMINISTIC_TOOL_NAMES,
+    dispatch_deterministic_tool,
+)
+from libs.review_tools import BUSINESS_TOOL_DESCRIPTORS, BUSINESS_TOOL_NAMES, dispatch_business_tool
 
 
 RUNTIME_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
@@ -21,12 +27,32 @@ RUNTIME_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
         "inputSchema": {"documentVersionIds": ["string"], "expectedIssuer": "string?"},
     },
     {
+        "name": "recognize_signatures_and_seals",
+        "capability": "读取文档中的签字、签章、印章文字、位置和置信度。",
+        "inputSchema": {"documentVersionIds": ["string"], "expectedIssuer": "string?"},
+    },
+    {
         "name": "extract_structured_fields",
         "capability": (
             "按资料类型抽取证件编号、档案编号、发证机关、有效期、"
             "作业项目等结构化字段。"
         ),
         "inputSchema": {"documentVersionIds": ["string"], "materialTypeCode": "string?"},
+    },
+    {
+        "name": "extract_document_fields",
+        "capability": "读取指定文档版本的已解析结构化字段，并保留页码、坐标和置信度。",
+        "inputSchema": {"documentVersionIds": ["string"], "fieldCodes": ["string?"]},
+    },
+    {
+        "name": "extract_table_records",
+        "capability": "读取指定文档版本的表格及标准化行记录。",
+        "inputSchema": {"documentVersionIds": ["string"], "businessSchemas": ["string?"]},
+    },
+    {
+        "name": "locate_evidence_fragment",
+        "capability": "按查询词定位字段或原文片段，生成带文件版本、页码、坐标和置信度的证据引用。",
+        "inputSchema": {"documentVersionIds": ["string"], "queryTerms": ["string"], "minConfidence": "number?"},
     },
     {
         "name": "extract_welder_certificate",
@@ -52,7 +78,7 @@ RUNTIME_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
         ),
         "inputSchema": {"documentVersionIds": ["string"]},
     },
-]
+] + DETERMINISTIC_TOOL_DESCRIPTORS + BUSINESS_TOOL_DESCRIPTORS
 
 
 def runtime_tool_catalog() -> list[dict[str, Any]]:
@@ -68,10 +94,26 @@ def dispatch_runtime_tool(
 ) -> dict[str, Any]:
     args = arguments or {}
     context = context or {}
+    if tool_name in DETERMINISTIC_TOOL_NAMES:
+        result = dispatch_deterministic_tool(tool_name, args)
+        result["toolCallId"] = runtime_tool_call_id()
+        return result
+    if tool_name in BUSINESS_TOOL_NAMES:
+        result = dispatch_business_tool(tool_name, args)
+        result["toolCallId"] = runtime_tool_call_id()
+        return result
     if tool_name == "get_document_ocr_result":
         return get_document_ocr_result(state, args, context=context)
     if tool_name == "recognize_document_seals":
         return recognize_document_seals(state, args, context=context)
+    if tool_name == "recognize_signatures_and_seals":
+        return recognize_signatures_and_seals(state, args, context=context)
+    if tool_name == "extract_document_fields":
+        return extract_document_fields(state, args, context=context)
+    if tool_name == "extract_table_records":
+        return extract_table_records(state, args, context=context)
+    if tool_name == "locate_evidence_fragment":
+        return locate_evidence_fragment(state, args, context=context)
     if tool_name in {"extract_structured_fields", "extract_welder_certificate"}:
         result = extract_structured_fields(state, args, context=context)
         result["toolName"] = tool_name
@@ -154,6 +196,142 @@ def recognize_document_seals(
         "expectedIssuer": expected_issuer or None,
         "matchedIssuerSealCount": sum(1 for item in seals if item.get("matchesExpectedIssuer")),
         "seals": seals[:20],
+    }
+
+
+def recognize_signatures_and_seals(
+    state: dict[str, Any],
+    arguments: dict[str, Any],
+    *,
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    parse_results = selected_parse_results(state, arguments, context=context)
+    seal_result = recognize_document_seals(state, arguments, context=context)
+    signatures = []
+    for parse_result in parse_results:
+        for signature in dict_items(parse_result.get("signatures")):
+            signatures.append(
+                {
+                    "documentVersionId": parse_result.get("documentVersionId"),
+                    "signatureId": signature.get("signatureId") or signature.get("id"),
+                    "role": signature.get("role") or signature.get("signatureRole"),
+                    "signerName": signature.get("signerName") or signature.get("name"),
+                    "pageNo": signature.get("pageNo") or 1,
+                    "bbox": signature.get("bbox") or signature.get("polygon"),
+                    "confidence": signature.get("confidence") or signature.get("visualConfidence"),
+                }
+            )
+    return {
+        "toolCallId": runtime_tool_call_id(),
+        "toolName": "recognize_signatures_and_seals",
+        "status": "succeeded",
+        "signatureCount": len(signatures),
+        "sealCount": seal_result["sealCount"],
+        "matchedIssuerSealCount": seal_result["matchedIssuerSealCount"],
+        "signatures": signatures[:40],
+        "seals": seal_result["seals"],
+    }
+
+
+def extract_document_fields(
+    state: dict[str, Any],
+    arguments: dict[str, Any],
+    *,
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    parse_results = selected_parse_results(state, arguments, context=context)
+    requested = {str(item) for item in arguments.get("fieldCodes") or [] if item}
+    fields = []
+    for parse_result in parse_results:
+        for field in dict_items(parse_result.get("fields")):
+            field_code = str(field.get("fieldCode") or field.get("code") or field.get("name") or "")
+            if requested and field_code not in requested:
+                continue
+            fields.append({"documentVersionId": parse_result.get("documentVersionId"), **field})
+    return {
+        "toolCallId": runtime_tool_call_id(),
+        "toolName": "extract_document_fields",
+        "status": "succeeded",
+        "fieldCount": len(fields),
+        "fields": fields[:200],
+    }
+
+
+def extract_table_records(
+    state: dict[str, Any],
+    arguments: dict[str, Any],
+    *,
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    parse_results = selected_parse_results(state, arguments, context=context)
+    requested = {str(item) for item in arguments.get("businessSchemas") or [] if item}
+    tables = []
+    for parse_result in parse_results:
+        for table in dict_items(parse_result.get("tables")):
+            schemas = {str(item) for item in table.get("businessSchemas") or [] if item}
+            if table.get("businessSchema"):
+                schemas.add(str(table["businessSchema"]))
+            if requested and not requested.intersection(schemas):
+                continue
+            tables.append({"documentVersionId": parse_result.get("documentVersionId"), **table})
+    return {
+        "toolCallId": runtime_tool_call_id(),
+        "toolName": "extract_table_records",
+        "status": "succeeded",
+        "tableCount": len(tables),
+        "tables": tables[:80],
+    }
+
+
+def locate_evidence_fragment(
+    state: dict[str, Any],
+    arguments: dict[str, Any],
+    *,
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    parse_results = selected_parse_results(state, arguments, context=context)
+    query_terms = [str(item).strip().lower() for item in arguments.get("queryTerms") or [] if str(item).strip()]
+    try:
+        minimum = float(arguments.get("minConfidence", 0.0))
+    except (TypeError, ValueError):
+        minimum = 0.0
+    refs = []
+    for parse_result in parse_results:
+        document_version_id = parse_result.get("documentVersionId")
+        candidates = [*dict_items(parse_result.get("fields")), *dict_items(parse_result.get("fragments"))]
+        for candidate in candidates:
+            quoted_text = str(
+                candidate.get("quotedText")
+                or candidate.get("text")
+                or candidate.get("fieldValue")
+                or candidate.get("value")
+                or ""
+            ).strip()
+            confidence = candidate.get("confidence") or candidate.get("ocrConfidence") or 0.0
+            try:
+                numeric_confidence = float(confidence)
+            except (TypeError, ValueError):
+                numeric_confidence = 0.0
+            if numeric_confidence < minimum:
+                continue
+            if query_terms and not any(term in quoted_text.lower() for term in query_terms):
+                continue
+            refs.append(
+                {
+                    "evidenceRefId": f"EVR-{uuid4().hex[:10].upper()}",
+                    "documentVersionId": document_version_id,
+                    "pageNo": candidate.get("pageNo") or 1,
+                    "bbox": candidate.get("bbox") or candidate.get("polygon"),
+                    "quotedText": quoted_text,
+                    "confidence": numeric_confidence,
+                }
+            )
+    return {
+        "toolCallId": runtime_tool_call_id(),
+        "toolName": "locate_evidence_fragment",
+        "status": "succeeded",
+        "evidenceRefCount": len(refs),
+        "evidenceRefs": refs[:200],
     }
 
 

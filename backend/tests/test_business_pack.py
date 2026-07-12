@@ -144,6 +144,22 @@ def test_engineering_pack_has_complete_standard_clause_packages_and_atomic_check
         for locator in clause["locators"]
     )
 
+    tool_bindings = pack["atomicCheckToolBindings"]
+    assert len(tool_bindings) == len(checks) == 171
+    assert {item["atomicCheckId"] for item in tool_bindings} == {item["id"] for item in checks}
+    assert all(item["requiredFacts"] and item["tools"] and item["outputSchema"] for item in tool_bindings)
+    pilot_bindings = [item for item in tool_bindings if item["implementationStatus"] == "pilot_implemented"]
+    assert {item["sourceRuleId"] for item in pilot_bindings} == {"R01", "R12", "R48", "R49", "R50"}
+    assert all("validate_evidence_grounding" in item["tools"] for item in pilot_bindings)
+
+    invalid_tool_binding_pack = deepcopy(pack)
+    invalid_tool_binding_pack["atomicCheckToolBindings"] = invalid_tool_binding_pack[
+        "atomicCheckToolBindings"
+    ][1:]
+    validation = validate_business_pack(invalid_tool_binding_pack)
+    assert validation["ok"] is False
+    assert any("missing tool bindings" in item for item in validation["errors"])
+
     conditional = {item["sourceRuleId"] for item in packages if item["applicability"]["type"] == "conditional"}
     assert {"R10", "R33", "R34", "R44", "R45", "R46", "R51", "R52", "R53", "R60", "R64", "R65"} <= conditional
 

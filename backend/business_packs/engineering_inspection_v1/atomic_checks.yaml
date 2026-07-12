@@ -910,7 +910,7 @@ atomicChecks:
   nodeId: 51
   name: 绝缘支撑·原子项1
   checkType: evidence_and_deterministic_rule
-  instruction: 抽查绝缘支撑检查记录（当设计文件要求管道与支撑绝缘时，应进行
+  instruction: 抽查绝缘支撑检查记录；当设计文件要求管道与支撑绝缘时，核查绝缘支撑的位置、绝缘材料、安装方式、绝缘测试记录和检查结论是否符合设计要求
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R39-02
@@ -1108,7 +1108,7 @@ atomicChecks:
   nodeId: 61
   name: 耐压试验压力、保压时间及结果·原子项1
   checkType: evidence_and_deterministic_rule
-  instruction: 现场检查耐压试验压力、保压时间及结果（如液压试验时，试验压力为设计压力的1.5倍（不考虑温度系数），保压时间不应少于10min
+  instruction: 液压试验按设计压力、试验温度与设计温度下的许用应力比计算最低试验压力，并核查组成件及设备共同试验允许的压力上限、保压不少于10min以及无泄漏、无异常和无永久变形等结果
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R49-02
@@ -1117,7 +1117,7 @@ atomicChecks:
   nodeId: 61
   name: 耐压试验压力、保压时间及结果·原子项2
   checkType: evidence_and_deterministic_rule
-  instruction: 气压试验时，试验压力不低于设计压力的1.1倍等）
+  instruction: 气压试验压力不得低于设计压力的1.1倍，且不得超过设计压力1.33倍、试验温度下90%屈服强度对应压力及组成件允许压力中的最小值；核查50%初始升压、其后每级不大于10%、每级稳压不少于3min及最终保压结果
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R49-03

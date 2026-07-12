@@ -21,6 +21,7 @@ from libs.knowledge_retrieval import retrieve_knowledge_clauses
 from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_config, qwen_runtime_public_config
 from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
+from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
 
 REVIEW_GRAPH_STEPS: list[dict[str, Any]] = [
     {"key": "load_context", "label": "加载项目上下文", "taskQueue": "review.graph"},
@@ -76,18 +77,31 @@ ALLOWED_AGENT_TOOLS = {
     "get_node_requirements",
     "get_document_ocr_result",
     "recognize_document_seals",
+    "recognize_signatures_and_seals",
     "search_project_documents",
     "extract_structured_fields",
+    "extract_document_fields",
+    "extract_table_records",
+    "locate_evidence_fragment",
     "extract_welder_certificate",
     "verify_license_or_certificate",
     "verify_welder_certificate_authenticity",
+    "check_all_equal",
+    "check_date_covers",
+    "check_design_license_scope",
+    "decode_welder_qualification",
+    "check_welder_work_coverage",
+    "check_pressure_gauge_requirements",
+    "check_pressure_test_parameters",
+    "check_pressure_test_report_consistency",
+    "validate_evidence_grounding",
     "run_rule_engine",
     "retrieve_clauses",
     "search_knowledge_base",
     "call_qwen_runtime_chat",
     "create_review_finding_draft",
     "create_ai_diagnostic",
-}
+} | {item["name"] for item in runtime_tool_catalog()}
 
 
 def ensure_review_state() -> None:
@@ -648,28 +662,54 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
                 query_type="rule_basis_search",
             )
             linked_clause_ids = [item.get("clauseId") for item in rule_basis.get("clauses") or [] if item.get("clauseId")]
+        source_rule_id = str(rule.get("id") or rule.get("ruleKey") or "")
+        tool_plan = compile_node_tool_plan(
+            pack,
+            source_rule_id,
+            available_tools={item["name"] for item in runtime_tool_catalog()},
+        )
+        fact_snapshot = context.get("businessFacts") if isinstance(context.get("businessFacts"), dict) else {}
+        tool_execution = execute_node_tool_plan(
+            tool_plan,
+            tool_runner=lambda name, arguments: execute_agent_tool(
+                review_run,
+                node_key,
+                name,
+                arguments,
+                context,
+            ),
+            facts=fact_snapshot,
+            tool_arguments=context.get("atomicToolArguments")
+            if isinstance(context.get("atomicToolArguments"), dict)
+            else {},
+            document_version_ids=list(review_run.get("inputDocumentVersionIds") or []),
+            evidence_facts=context.get("evidenceFacts") if isinstance(context.get("evidenceFacts"), list) else [],
+            evidence_refs=context.get("evidenceLinks") if isinstance(context.get("evidenceLinks"), list) else [],
+        )
+        deterministic_result = tool_execution.get("result") if tool_plan else "evidence_insufficient"
         result = {
             "id": f"RCHK-{uuid4().hex[:8].upper()}",
             "reviewRunId": review_run["reviewRunId"],
             "ruleCode": rule.get("ruleKey") or rule.get("id") or "generic-review",
             "ruleSetVersion": rule.get("version") or review_run.get("ruleSetVersion"),
-            "result": "passed" if context.get("fields") else "advisory" if audit_runtime["mode"] == "pure_llm" else "warning",
+            "result": deterministic_result,
             "severity": rule.get("severity") or "medium",
             "message": (
-                "规则检查完成，待人工确认。"
-                if context.get("fields")
-                else "纯 LLM 模式未加载 OCR 证据，规则结果仅作为人工复核提示。"
-                if audit_runtime["mode"] == "pure_llm"
-                else "未发现可用 OCR 字段，需人工复核。"
+                "固定 atomicCheck Tool 执行完成，待人工确认。"
+                if deterministic_result in {"passed", "failed", "not_applicable"}
+                else "固定 atomicCheck Tool 缺少完整事实、证据或规则参数，禁止自动判定符合。"
             ),
             "linkedClauseIds": linked_clause_ids,
             "evidenceRefs": [{"source": "ocr_fields", "count": len(context.get("fields") or [])}],
             "suggestedAction": "human_confirm",
+            "atomicCheckResults": tool_execution.get("atomicResults") or [],
+            "toolExecutionSummary": tool_execution.get("summary") or {},
             "createdAt": server_time(),
         }
         repo.state["rule_check_results"].append(result)
         context["currentRule"] = rule
         context["ruleResults"] = [result]
+        context["atomicToolExecution"] = tool_execution
         verification_tool = execute_agent_tool(
             review_run,
             node_key,

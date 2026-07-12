@@ -23,6 +23,7 @@ PACK_FILES = (
     "standard_clause_catalog.yaml",
     "standard_clause_bindings.yaml",
     "atomic_checks.yaml",
+    "atomic_check_tool_bindings.yaml",
     "standard_clause_packages.yaml",
     "reports.yaml",
     "agents.yaml",
@@ -76,6 +77,15 @@ ATOMIC_CHECK_KEYS = {
     "instruction",
     "evidenceRequired",
     "failurePolicy",
+}
+ATOMIC_CHECK_TOOL_BINDING_KEYS = {
+    "atomicCheckId",
+    "sourceRuleId",
+    "requiredFacts",
+    "tools",
+    "parameters",
+    "outputSchema",
+    "implementationStatus",
 }
 STANDARD_CLAUSE_PACKAGE_KEYS = {
     "packageId",
@@ -173,6 +183,7 @@ def business_pack_summary(pack: dict[str, Any]) -> dict[str, Any]:
         "standardClauseBindingCount": len(pack.get("standardClauseBindings") or []),
         "standardClausePackageCount": len(pack.get("standardClausePackages") or []),
         "atomicCheckCount": len(pack.get("atomicChecks") or []),
+        "atomicCheckToolBindingCount": len(pack.get("atomicCheckToolBindings") or []),
         "agentSopCount": len(pack.get("agentSops") or []),
         "fixtureProjectCount": len((pack.get("fixtures") or {}).get("projects") or []),
         "roles": [
@@ -299,6 +310,7 @@ def validate_business_pack(pack: dict[str, Any]) -> dict[str, Any]:
         errors=errors,
         warnings=warnings,
     )
+    _validate_atomic_check_tool_bindings(pack, errors=errors)
 
     for report in pack.get("reportTemplates") or []:
         if not report.get("sections"):
@@ -663,6 +675,68 @@ def _validate_standard_clause_packages(
         errors.append(f"Standard clause packages are missing source rules: {missing_packages}")
     if extra_packages:
         errors.append(f"Standard clause packages contain unknown source rules: {extra_packages}")
+
+
+def _validate_atomic_check_tool_bindings(
+    pack: dict[str, Any],
+    *,
+    errors: list[str],
+) -> None:
+    checks = pack.get("atomicChecks")
+    bindings = pack.get("atomicCheckToolBindings")
+    if checks is None and bindings is None:
+        return
+    if not isinstance(checks, list) or not checks:
+        errors.append("atomicChecks must be present when atomicCheckToolBindings are enabled.")
+        return
+    if not isinstance(bindings, list) or not bindings:
+        errors.append("atomicCheckToolBindings must cover all atomicChecks.")
+        return
+
+    check_by_id = {
+        str(item.get("id")): item
+        for item in checks
+        if isinstance(item, dict) and item.get("id")
+    }
+    binding_ids: set[str] = set()
+    allowed_statuses = {"planned", "pilot_implemented", "implemented", "deprecated"}
+    for index, binding in enumerate(bindings):
+        if not isinstance(binding, dict):
+            errors.append(f"atomicCheckToolBindings[{index}] must be a mapping.")
+            continue
+        missing = sorted(ATOMIC_CHECK_TOOL_BINDING_KEYS - set(binding))
+        if missing:
+            errors.append(f"atomicCheckToolBindings[{index}] missing keys: {', '.join(missing)}")
+            continue
+        check_id = str(binding.get("atomicCheckId") or "")
+        if check_id in binding_ids:
+            errors.append(f"Atomic check tool binding is duplicated: {check_id}")
+        binding_ids.add(check_id)
+        check = check_by_id.get(check_id)
+        if check is None:
+            errors.append(f"Atomic check tool binding references unknown check: {check_id}")
+            continue
+        if binding.get("sourceRuleId") != check.get("sourceRuleId"):
+            errors.append(f"Atomic check tool binding {check_id} sourceRuleId does not match its check.")
+        if not isinstance(binding.get("requiredFacts"), list) or not binding.get("requiredFacts"):
+            errors.append(f"Atomic check tool binding {check_id} must declare requiredFacts.")
+        if not isinstance(binding.get("tools"), list) or not binding.get("tools"):
+            errors.append(f"Atomic check tool binding {check_id} must declare tools.")
+        if not all(isinstance(item, str) and item for item in binding.get("tools") or []):
+            errors.append(f"Atomic check tool binding {check_id} contains an invalid tool name.")
+        if not isinstance(binding.get("parameters"), dict):
+            errors.append(f"Atomic check tool binding {check_id} parameters must be a mapping.")
+        if not str(binding.get("outputSchema") or "").strip():
+            errors.append(f"Atomic check tool binding {check_id} must declare outputSchema.")
+        if binding.get("implementationStatus") not in allowed_statuses:
+            errors.append(f"Atomic check tool binding {check_id} has invalid implementationStatus.")
+
+    missing_bindings = sorted(set(check_by_id) - binding_ids)
+    extra_bindings = sorted(binding_ids - set(check_by_id))
+    if missing_bindings:
+        errors.append(f"Atomic checks are missing tool bindings: {missing_bindings}")
+    if extra_bindings:
+        errors.append(f"Tool bindings contain unknown atomic checks: {extra_bindings}")
 
 
 def _validate_fixtures(
