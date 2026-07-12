@@ -37,5 +37,10 @@ celery_app.conf.update(
     task_reject_on_worker_lost=True,
     task_default_retry_delay=10,
     worker_prefetch_multiplier=1,
-    broker_transport_options={"priority_steps": list(range(10)), "sep": ":"},
+    # Kombu's Redis transport checks priority_steps from left to right. Keep
+    # the public task contract intuitive: larger numbers run first.
+    broker_transport_options={
+        "priority_steps": list(range(10, -1, -1)),
+        "sep": ":",
+    },
 )
