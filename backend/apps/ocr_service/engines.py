@@ -373,6 +373,7 @@ class PpStructureEngine(LocalOcrEngine):
             use_formula_recognition=False,
             use_chart_recognition=False,
             use_region_detection=False,
+            **paddle_predictor_options(),
         )
         raw = engine.predict(str(source_path))
         tables, layout_blocks = normalize_structure_result(raw, self.name)
@@ -406,6 +407,7 @@ class PpStructureEngine(LocalOcrEngine):
             dirs = json.loads(sys.argv[2])
             runtime = json.loads(sys.argv[3])
             names = json.loads(sys.argv[4])
+            predictor = json.loads(sys.argv[5])
 
             def basic(value):
                 if isinstance(value, (str, int, float, bool)) or value is None:
@@ -457,6 +459,7 @@ class PpStructureEngine(LocalOcrEngine):
                 use_formula_recognition=False,
                 use_chart_recognition=False,
                 use_region_detection=False,
+                **predictor,
             )
             raw = [basic(item) for item in engine.predict(image_path)]
             print("AICHECK_PP_STRUCTURE_RESULT " + json.dumps(raw, ensure_ascii=False), flush=True)
@@ -472,6 +475,7 @@ class PpStructureEngine(LocalOcrEngine):
                     json.dumps({key: str(path) for key, path in dirs.items()}),
                     json.dumps(paddle_runtime_options(profile)),
                     json.dumps(names),
+                    json.dumps(paddle_predictor_options()),
                 ],
                 env=ocr_subprocess_env(),
                 timeout=float(os.getenv("AICHECK_PP_STRUCTURE_TIMEOUT", "180")),
@@ -1155,9 +1159,15 @@ class TesseractCliEngine(LocalOcrEngine):
 
 def ocr_subprocess_env() -> dict[str, str]:
     env = os.environ.copy()
+    predictor = paddle_predictor_options()
     env.update(
         {
             "PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK": "True",
+            "PADDLE_PDX_CPU_NUM_THREADS": str(predictor["cpu_threads"]),
+            "OMP_NUM_THREADS": os.getenv("AICHECK_PADDLE_SUBPROCESS_OMP_THREADS", "1"),
+            "MKL_NUM_THREADS": os.getenv("AICHECK_PADDLE_SUBPROCESS_OMP_THREADS", "1"),
+            "OPENBLAS_NUM_THREADS": os.getenv("AICHECK_PADDLE_SUBPROCESS_OMP_THREADS", "1"),
+            "FLAGS_use_mkldnn": "0",
             "HF_HUB_OFFLINE": "1",
             "TRANSFORMERS_OFFLINE": "1",
         }
@@ -1230,7 +1240,11 @@ class PaddlexSealEngine(LocalOcrEngine):
             return self.parse_with_subprocess(source_path, profile=profile)
         from paddlex import create_pipeline  # type: ignore
 
-        pipeline = create_pipeline(pipeline="seal_recognition")
+        dirs = seal_model_dirs()
+        pipeline = create_pipeline(
+            config=seal_pipeline_config(dirs),
+            **paddle_predictor_options(),
+        )
         raw = pipeline.predict(str(source_path))
         seals = normalize_seal_result(raw)
         diagnostics = []
@@ -1262,6 +1276,8 @@ class PaddlexSealEngine(LocalOcrEngine):
             from paddlex import create_pipeline
 
             image_path = sys.argv[1]
+            config = json.loads(sys.argv[2])
+            predictor = json.loads(sys.argv[3])
 
             def basic(value):
                 if isinstance(value, (str, int, float, bool)) or value is None:
@@ -1290,14 +1306,24 @@ class PaddlexSealEngine(LocalOcrEngine):
                         return str(value)
                 return str(value)
 
-            pipeline = create_pipeline(pipeline="seal_recognition")
+            pipeline = create_pipeline(
+                config=config,
+                **predictor,
+            )
             raw = [basic(item) for item in pipeline.predict(image_path)]
             print("AICHECK_PADDLEX_SEAL_RESULT " + json.dumps(raw, ensure_ascii=False), flush=True)
             """
         )
         try:
             completed = run_ocr_subprocess(
-                [python_bin, "-c", script, str(source_path)],
+                [
+                    python_bin,
+                    "-c",
+                    script,
+                    str(source_path),
+                    json.dumps(seal_pipeline_config(seal_model_dirs())),
+                    json.dumps(paddle_predictor_options()),
+                ],
                 env=ocr_subprocess_env(),
                 timeout=float(os.getenv("AICHECK_PADDLEX_SEAL_TIMEOUT", "160")),
             )
@@ -2523,6 +2549,18 @@ def paddle_runtime_options(profile: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
+def paddle_predictor_options() -> dict[str, Any]:
+    try:
+        cpu_threads = int(os.getenv("AICHECK_PADDLE_CPU_THREADS", "1"))
+    except (TypeError, ValueError):
+        cpu_threads = 1
+    return {
+        "device": os.getenv("AICHECK_PADDLE_DEVICE", "cpu").strip() or "cpu",
+        "enable_mkldnn": False,
+        "cpu_threads": max(1, min(cpu_threads, 4)),
+    }
+
+
 def seal_pipeline_enabled() -> bool:
     value = os.getenv("AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE")
     if value is None or value.strip().lower() == "auto":
@@ -2610,8 +2648,75 @@ def pp_structure_model_names(dirs: dict[str, Path]) -> dict[str, str]:
 
 def seal_model_dirs() -> dict[str, Path]:
     return {
+        "layout": model_dir("AICHECK_SEAL_LAYOUT_MODEL_DIR", "PP-DocLayoutV3"),
+        "doc_orientation": model_dir("AICHECK_SEAL_DOC_ORI_MODEL_DIR", "PP-LCNet_x1_0_doc_ori"),
+        "doc_unwarping": model_dir("AICHECK_SEAL_DOC_UNWARP_MODEL_DIR", "UVDoc"),
         "seal_det": model_dir("AICHECK_SEAL_DET_MODEL_DIR", "PP-OCRv4_server_seal_det"),
         "seal_rec": model_dir("AICHECK_SEAL_REC_MODEL_DIR", "PP-OCRv4_server_rec"),
+    }
+
+
+def seal_pipeline_config(dirs: dict[str, Path]) -> dict[str, Any]:
+    return {
+        "pipeline_name": "seal_recognition",
+        "use_doc_preprocessor": True,
+        "use_layout_detection": True,
+        "SubModules": {
+            "LayoutDetection": {
+                "module_name": "layout_detection",
+                "model_name": dirs["layout"].name,
+                "model_dir": str(dirs["layout"]),
+                "threshold": 0.5,
+                "layout_nms": True,
+                "layout_unclip_ratio": 1.0,
+                "layout_merge_bboxes_mode": "small",
+            }
+        },
+        "SubPipelines": {
+            "DocPreprocessor": {
+                "pipeline_name": "doc_preprocessor",
+                "use_doc_orientation_classify": True,
+                "use_doc_unwarping": True,
+                "SubModules": {
+                    "DocOrientationClassify": {
+                        "module_name": "doc_text_orientation",
+                        "model_name": dirs["doc_orientation"].name,
+                        "model_dir": str(dirs["doc_orientation"]),
+                    },
+                    "DocUnwarping": {
+                        "module_name": "image_unwarping",
+                        "model_name": dirs["doc_unwarping"].name,
+                        "model_dir": str(dirs["doc_unwarping"]),
+                    },
+                },
+            },
+            "SealOCR": {
+                "pipeline_name": "OCR",
+                "text_type": "seal",
+                "use_doc_preprocessor": False,
+                "use_textline_orientation": False,
+                "SubModules": {
+                    "TextDetection": {
+                        "module_name": "seal_text_detection",
+                        "model_name": dirs["seal_det"].name,
+                        "model_dir": str(dirs["seal_det"]),
+                        "limit_side_len": 736,
+                        "limit_type": "min",
+                        "max_side_len": 4000,
+                        "thresh": 0.2,
+                        "box_thresh": 0.6,
+                        "unclip_ratio": 0.5,
+                    },
+                    "TextRecognition": {
+                        "module_name": "text_recognition",
+                        "model_name": dirs["seal_rec"].name,
+                        "model_dir": str(dirs["seal_rec"]),
+                        "batch_size": 1,
+                        "score_thresh": 0,
+                    },
+                },
+            },
+        },
     }
 
 

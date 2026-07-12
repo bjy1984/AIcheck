@@ -7,18 +7,30 @@ from scripts import ocr_prefetch_models
 from scripts.ocr_prefetch_models import prefetch_report
 
 
+SEAL_MODEL_ENVS = {
+    "layout": ("AICHECK_SEAL_LAYOUT_MODEL_DIR", "PP-DocLayout-L"),
+    "doc_orientation": ("AICHECK_SEAL_DOC_ORI_MODEL_DIR", "PP-LCNet_x1_0_doc_ori"),
+    "doc_unwarping": ("AICHECK_SEAL_DOC_UNWARP_MODEL_DIR", "UVDoc"),
+    "seal_det": ("AICHECK_SEAL_DET_MODEL_DIR", "PP-OCRv4_server_seal_det"),
+    "seal_rec": ("AICHECK_SEAL_REC_MODEL_DIR", "PP-OCRv4_server_rec"),
+}
+
+
+def configure_seal_models(monkeypatch, tmp_path):
+    paths = {key: tmp_path / model_name for key, (_, model_name) in SEAL_MODEL_ENVS.items()}
+    for key, path in paths.items():
+        path.mkdir()
+        monkeypatch.setenv(SEAL_MODEL_ENVS[key][0], str(path))
+    return paths
+
+
 def test_paddlex_seal_engine_available_with_subprocess_runtime(monkeypatch, tmp_path) -> None:
-    seal_det = tmp_path / "PP-OCRv4_server_seal_det"
-    seal_rec = tmp_path / "PP-OCRv4_server_rec"
-    seal_det.mkdir()
-    seal_rec.mkdir()
+    configure_seal_models(monkeypatch, tmp_path)
     python_bin = tmp_path / "python"
     python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
 
     monkeypatch.setenv("AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE", "true")
     monkeypatch.setenv("AICHECK_OCR_SUBPROCESS_PYTHON", str(python_bin))
-    monkeypatch.setenv("AICHECK_SEAL_DET_MODEL_DIR", str(seal_det))
-    monkeypatch.setenv("AICHECK_SEAL_REC_MODEL_DIR", str(seal_rec))
     monkeypatch.setattr(engines, "subprocess_package_available", lambda package: package == "paddlex")
 
     engine = engines.PaddlexSealEngine()
@@ -31,17 +43,12 @@ def test_paddlex_seal_engine_available_with_subprocess_runtime(monkeypatch, tmp_
 
 
 def test_paddlex_seal_engine_auto_enables_when_local_models_exist(monkeypatch, tmp_path) -> None:
-    seal_det = tmp_path / "PP-OCRv4_server_seal_det"
-    seal_rec = tmp_path / "PP-OCRv4_server_rec"
-    seal_det.mkdir()
-    seal_rec.mkdir()
+    configure_seal_models(monkeypatch, tmp_path)
     python_bin = tmp_path / "python"
     python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
 
     monkeypatch.delenv("AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE", raising=False)
     monkeypatch.setenv("AICHECK_OCR_SUBPROCESS_PYTHON", str(python_bin))
-    monkeypatch.setenv("AICHECK_SEAL_DET_MODEL_DIR", str(seal_det))
-    monkeypatch.setenv("AICHECK_SEAL_REC_MODEL_DIR", str(seal_rec))
     monkeypatch.setattr(engines, "subprocess_package_available", lambda package: package == "paddlex")
 
     engine = engines.PaddlexSealEngine()
@@ -52,22 +59,45 @@ def test_paddlex_seal_engine_auto_enables_when_local_models_exist(monkeypatch, t
 
 
 def test_paddlex_seal_engine_can_be_explicitly_disabled(monkeypatch, tmp_path) -> None:
-    seal_det = tmp_path / "PP-OCRv4_server_seal_det"
-    seal_rec = tmp_path / "PP-OCRv4_server_rec"
-    seal_det.mkdir()
-    seal_rec.mkdir()
+    configure_seal_models(monkeypatch, tmp_path)
     python_bin = tmp_path / "python"
     python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
 
     monkeypatch.setenv("AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE", "false")
     monkeypatch.setenv("AICHECK_OCR_SUBPROCESS_PYTHON", str(python_bin))
-    monkeypatch.setenv("AICHECK_SEAL_DET_MODEL_DIR", str(seal_det))
-    monkeypatch.setenv("AICHECK_SEAL_REC_MODEL_DIR", str(seal_rec))
     monkeypatch.setattr(engines, "subprocess_package_available", lambda package: package == "paddlex")
 
     engine = engines.PaddlexSealEngine()
 
     assert engine.available() is False
+
+
+def test_paddle_predictor_options_disable_mkldnn_and_bound_threads(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_PADDLE_CPU_THREADS", "8")
+    monkeypatch.setenv("AICHECK_PADDLE_DEVICE", "cpu")
+
+    options = engines.paddle_predictor_options()
+    subprocess_env = engines.ocr_subprocess_env()
+
+    assert options == {"device": "cpu", "enable_mkldnn": False, "cpu_threads": 4}
+    assert subprocess_env["PADDLE_PDX_CPU_NUM_THREADS"] == "4"
+    assert subprocess_env["OMP_NUM_THREADS"] == "1"
+    assert subprocess_env["FLAGS_use_mkldnn"] == "0"
+
+
+def test_seal_pipeline_config_binds_every_model_to_local_storage(monkeypatch, tmp_path) -> None:
+    paths = configure_seal_models(monkeypatch, tmp_path)
+
+    config = engines.seal_pipeline_config(engines.seal_model_dirs())
+
+    assert config["SubModules"]["LayoutDetection"]["layout_merge_bboxes_mode"] == "small"
+    assert config["SubModules"]["LayoutDetection"]["model_dir"] == str(paths["layout"])
+    preprocessor = config["SubPipelines"]["DocPreprocessor"]["SubModules"]
+    assert preprocessor["DocOrientationClassify"]["model_dir"] == str(paths["doc_orientation"])
+    assert preprocessor["DocUnwarping"]["model_dir"] == str(paths["doc_unwarping"])
+    seal_ocr = config["SubPipelines"]["SealOCR"]["SubModules"]
+    assert seal_ocr["TextDetection"]["model_dir"] == str(paths["seal_det"])
+    assert seal_ocr["TextRecognition"]["model_dir"] == str(paths["seal_rec"])
 
 
 def test_pp_structure_engine_available_with_subprocess_runtime(monkeypatch, tmp_path) -> None:
