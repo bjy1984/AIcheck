@@ -14,8 +14,8 @@ x-pipeline-worker: &pipeline-worker
     AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
     AICHECK_OCR_BASE_URL: ${AICHECK_OCR_BASE_URL:-http://ocr-service:8010}
     AICHECK_OCR_USE_JOB_API: "true"
-    AICHECK_OCR_JOB_TIMEOUT_SECONDS: "900"
-    AICHECK_OCR_PARSE_TIMEOUT_SECONDS: "900"
+    AICHECK_OCR_JOB_TIMEOUT_SECONDS: "3600"
+    AICHECK_OCR_PARSE_TIMEOUT_SECONDS: "3600"
     AICHECK_OCR_PIPELINE_MODE: ${AICHECK_OCR_PIPELINE_MODE:-shadow}
     AICHECK_OCR_PIPELINE_VERSION: ${AICHECK_OCR_PIPELINE_VERSION:-ocr-accuracy-first@2}
     AICHECK_OCR_PIPELINE_PROFILE_ALLOWLIST: ${AICHECK_OCR_PIPELINE_PROFILE_ALLOWLIST:-qualification_certificate_v1,construction_record_v1,construction_plan_v1,welding_procedure_qualification_v1,ndt_rt_report_v1,quality_certificate_v1,engineering_drawing_list_v1,drawing_material_list_v1,process_flow_diagram_v1,strength_calculation_v1,design_specification_v1,equipment_list_v1,site_layout_drawing_v1,paint_insulation_list_v1,piping_characteristic_list_v1,comprehensive_material_list_v1}

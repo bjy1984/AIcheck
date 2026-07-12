@@ -58,6 +58,29 @@ def test_job_store_allows_new_job_after_actual_failure(monkeypatch, tmp_path) ->
     assert replacement.get("reused") is not True
 
 
+def test_job_store_marks_non_terminal_jobs_failed_after_service_restart(monkeypatch, tmp_path) -> None:
+    path = tmp_path / "jobs.json"
+    monkeypatch.setenv("AICHECK_OCR_JOB_STORE_PATH", str(path))
+    store = DocumentParseJobStore()
+    payload = {"requestKey": "ocrjob:restart", "storageKey": "minio://documents/source.pdf"}
+    queued = store.create(payload)
+    store.mark_running(queued["jobId"])
+
+    restarted = DocumentParseJobStore()
+    interrupted = restarted.get_job(queued["jobId"])
+    replacement = restarted.create(payload)
+
+    assert interrupted is not None
+    assert interrupted["status"] == "failed"
+    assert interrupted["finishedAt"]
+    assert any(
+        item.get("code") == "OCR_SERVICE_RESTARTED"
+        for item in interrupted.get("diagnostics") or []
+    )
+    assert replacement["jobId"] != queued["jobId"]
+    assert replacement.get("reused") is not True
+
+
 def test_ocr_client_adds_stable_request_key() -> None:
     captured = []
 
