@@ -2535,7 +2535,7 @@ def embed_knowledge(self, file_id: str, offset: int = 0) -> dict[str, Any]:
                 continuation = embed_knowledge.apply_async(
                     args=[file_id, end],
                     queue="cpu.heavy",
-                    priority=1,
+                    priority=task_dispatcher.broker_priority(1),
                 )
                 if task:
                     task["lastDispatch"] = {
