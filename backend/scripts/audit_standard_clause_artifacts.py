@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 from pathlib import Path
+import shutil
 import subprocess
 
 import yaml
@@ -21,16 +22,25 @@ def load(name: str) -> dict:
 
 
 def pdf_page_count(path: Path) -> int:
-    result = subprocess.run(
-        ["pdfinfo", str(path)],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    for line in result.stdout.splitlines():
-        if line.startswith("Pages:"):
-            return int(line.split(":", 1)[1].strip())
-    raise ValueError(f"pdfinfo did not return a page count for {path}")
+    pdfinfo = shutil.which("pdfinfo")
+    if pdfinfo:
+        result = subprocess.run(
+            [pdfinfo, str(path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        for line in result.stdout.splitlines():
+            if line.startswith("Pages:"):
+                return int(line.split(":", 1)[1].strip())
+        raise ValueError(f"pdfinfo did not return a page count for {path}")
+
+    try:
+        import fitz
+    except ImportError as exc:
+        raise RuntimeError("PDF page audit requires pdfinfo or PyMuPDF") from exc
+    with fitz.open(path) as document:
+        return document.page_count
 
 
 def expected_d7006() -> dict[str, str]:
