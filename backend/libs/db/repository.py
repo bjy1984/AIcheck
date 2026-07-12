@@ -112,6 +112,13 @@ STATE_COLLECTIONS = {
     "users": "users",
     "roles": "roles",
     "business_packs": "business_packs",
+    "standard_document_versions": "standard_document_versions",
+    "standard_clause_references": "standard_clause_references",
+    "standard_clause_locators": "standard_clause_locators",
+    "standard_clause_packages_db": "standard_clause_packages",
+    "standard_clause_package_items": "standard_clause_package_items",
+    "project_node_clause_packages": "project_node_clause_packages",
+    "review_run_clause_snapshots": "review_run_clause_snapshots",
     "submission_drafts": "submission_drafts",
     "submissions": "submissions",
     "rectifications": "rectifications",
@@ -1403,6 +1410,23 @@ class InMemoryRepository:
                 "CREATE INDEX IF NOT EXISTS idx_aicheck_state_collection ON aicheck_state (collection)"
             )
             connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_project_node_clause_packages_lookup
+                ON aicheck_state (
+                    json_extract(payload, '$.projectId'),
+                    CAST(json_extract(payload, '$.nodeId') AS INTEGER)
+                )
+                WHERE collection = 'project_node_clause_packages'
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_review_run_clause_snapshots_lookup
+                ON aicheck_state (json_extract(payload, '$.reviewRunId'))
+                WHERE collection = 'review_run_clause_snapshots'
+                """
+            )
+            connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_idempotency_updated_at ON idempotency_records (updated_at DESC)"
             )
 
@@ -1448,6 +1472,35 @@ class InMemoryRepository:
             loaded.setdefault("admin_config", {})["materialReviewPoints"] = self.clone(
                 seeded.get("admin_config", {}).get("materialReviewPoints", [])
             )
+            changed = True
+        from libs.business_pack import list_business_packs, load_business_pack
+        from libs.business_pack.clause_store import (
+            CLAUSE_STATE_COLLECTIONS,
+            bind_project_node_clause_packages,
+            ensure_clause_state,
+            publish_standard_clause_release,
+        )
+
+        ensure_clause_state(loaded)
+        clause_state_was_missing = not loaded.get("standard_clause_packages_db")
+        project_bindings_were_missing = not loaded.get("project_node_clause_packages")
+        if clause_state_was_missing or project_bindings_were_missing:
+            for summary in list_business_packs():
+                pack = load_business_pack(summary["id"])
+                if not pack.get("standardClausePackages"):
+                    continue
+                publish_standard_clause_release(loaded, pack)
+                for project in loaded.get("projects", []):
+                    if project.get("businessPackId") != pack["id"]:
+                        continue
+                    if project.get("businessPackVersion") not in {None, "", pack["version"]}:
+                        continue
+                    bind_project_node_clause_packages(
+                        loaded,
+                        project,
+                        pack,
+                        bound_at=project.get("updatedAt"),
+                    )
             changed = True
 
         seeded_ai_runs = {
@@ -1639,6 +1692,20 @@ class InMemoryRepository:
                 )
                 self.sync_postgres.execute(
                     "CREATE INDEX IF NOT EXISTS idx_aicheck_state_payload_gin ON aicheck_state USING gin (payload)"
+                )
+                self.sync_postgres.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_project_node_clause_packages_lookup
+                    ON aicheck_state ((payload ->> 'projectId'), ((payload ->> 'nodeId')::integer))
+                    WHERE collection = 'project_node_clause_packages'
+                    """
+                )
+                self.sync_postgres.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_review_run_clause_snapshots_lookup
+                    ON aicheck_state ((payload ->> 'reviewRunId'))
+                    WHERE collection = 'review_run_clause_snapshots'
+                    """
                 )
                 self.sync_postgres.execute(
                     "CREATE INDEX IF NOT EXISTS idx_idempotency_updated_at ON idempotency_records (updated_at DESC)"

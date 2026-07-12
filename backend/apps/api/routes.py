@@ -42,6 +42,10 @@ from libs.business_pack import (
     validate_all_business_packs,
     validate_business_pack,
 )
+from libs.business_pack.clause_store import (
+    bind_project_node_clause_packages,
+    clause_package_snapshot_for_project_node,
+)
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok, page, server_time
 from libs.audit_runtime import audit_runtime_public_config
@@ -3311,16 +3315,62 @@ def enrich_standard_reference(reference: dict[str, Any]) -> dict[str, Any]:
         enriched["previewAvailable"] = False
         return enriched
     file_id = str(knowledge_file.get("id") or "")
+    page_no = enriched.get("sourcePage") or enriched.get("startPage") or enriched.get("pageNo")
+    preview_url = f"/api/knowledge/files/{quote(file_id, safe='')}/original?disposition=inline"
+    if page_no:
+        preview_url = f"{preview_url}#page={int(page_no)}"
     enriched.update(
         {
             "knowledgeFileId": file_id,
+            "documentVersionId": enriched.get("documentVersionId") or knowledge_file.get("documentVersionId"),
             "fileName": enriched.get("fileName") or knowledge_file.get("fileName"),
             "sourceRelativePath": knowledge_file.get("sourceRelativePath") or source_path,
             "previewAvailable": bool(file_id and knowledge_file.get("documentId")),
-            "previewUrl": f"/api/knowledge/files/{quote(file_id, safe='')}/original?disposition=inline",
+            "previewUrl": preview_url,
         }
     )
     return enriched
+
+
+def fixed_standard_references_for_node(project: dict[str, Any] | None, node_id: int) -> list[dict[str, Any]]:
+    project_id = str((project or {}).get("id") or "")
+    snapshot = clause_package_snapshot_for_project_node(repo.state, project_id, node_id)
+    if not snapshot:
+        return []
+    references: list[dict[str, Any]] = []
+    for reference in snapshot.get("clauses") or []:
+        role = str(reference.get("referenceRole") or "professional")
+        purpose = str(reference.get("purpose") or ("直接监检依据" if role == "primary" else "专业执行条款"))
+        source_file = str(reference.get("sourceFile") or "")
+        references.append(
+            enrich_standard_reference(
+                {
+                    "clauseId": reference.get("sourceLocatorId"),
+                    "standardRef": reference.get("standardRef"),
+                    "standardName": reference.get("standardName"),
+                    "clauseNo": reference.get("clauseNo"),
+                    "title": "直接监检依据" if role == "primary" else purpose,
+                    "summary": purpose,
+                    "effectiveVersion": reference.get("documentVersionId"),
+                    "referenceRole": role,
+                    "fixedBinding": True,
+                    "verificationStatus": reference.get("verificationStatus"),
+                    "packageId": snapshot.get("packageId"),
+                    "packageSnapshotHash": snapshot.get("snapshotHash"),
+                    "knowledgeFileId": reference.get("knowledgeFileId"),
+                    "documentVersionId": reference.get("documentVersionId"),
+                    "sourceRelativePath": source_file,
+                    "fileName": Path(source_file).name,
+                    "sourcePage": reference.get("sourcePage"),
+                    "startPage": reference.get("startPage"),
+                    "endPage": reference.get("endPage"),
+                    "sourceLocatorId": reference.get("sourceLocatorId"),
+                    "locatorPrecision": reference.get("locatorPrecision"),
+                    "locators": repo.clone(reference.get("locators") or []),
+                }
+            )
+        )
+    return references
 
 
 def node_business_basis(project: dict[str, Any] | None, node_id: int) -> dict[str, Any] | None:
@@ -3556,6 +3606,12 @@ def attach_business_pack_project_scaffold(project: dict[str, Any], pack: dict[st
         if (item.get("projectId"), item["id"]) not in existing_requirement_keys
     ]
     repo.state["requirements"].extend(requirements)
+    bind_project_node_clause_packages(
+        repo.state,
+        project,
+        pack,
+        bound_at=project.get("updatedAt") or server_time(),
+    )
     return len(nodes), len(requirements)
 
 
@@ -3833,6 +3889,10 @@ def get_business_pack(request: Request, pack_id: str):
             "materialTypes": repo.clone(pack["materialTypes"]),
             "workflowStateMachines": repo.clone(pack["workflowStateMachines"]),
             "ruleSets": repo.clone(pack["ruleSets"]),
+            "standardCatalog": repo.clone(pack.get("standardCatalog") or []),
+            "standardClauseBindings": repo.clone(pack.get("standardClauseBindings") or []),
+            "standardClausePackages": repo.clone(pack.get("standardClausePackages") or []),
+            "atomicChecks": repo.clone(pack.get("atomicChecks") or []),
             "reportTemplates": repo.clone(pack["reportTemplates"]),
             "agentSops": repo.clone(pack.get("agentSops") or []),
         },
@@ -6054,6 +6114,11 @@ def ai_recheck(
                 (pack.get("ruleSets") or [{}])[0],
             )
         )
+        clause_package_snapshot = clause_package_snapshot_for_project_node(
+            repo.state,
+            project_id,
+            node_id,
+        )
         run = {
             "id": run_id,
             "projectId": project_id,
@@ -6061,6 +6126,9 @@ def ai_recheck(
             "businessPackId": pack["id"],
             "businessPackVersion": pack["version"],
             "businessPackSnapshotHash": pack["snapshotHash"],
+            "clausePackageId": (clause_package_snapshot or {}).get("packageStorageId"),
+            "clausePackageSnapshotHash": (clause_package_snapshot or {}).get("snapshotHash"),
+            "clausePackageSnapshot": clause_package_snapshot,
             "agentId": agent.get("id") or "review_agent",
             "agentVersion": agent.get("version") or "1.0.0",
             "subject": node["name"] if node else "节点 AI 复核",
@@ -6543,12 +6611,15 @@ def standards(request: Request, project_id: str, node_id: int):
         top_k=5,
         query_type="node_standard_basis",
     )
-    standards_payload = []
+    standards_payload = fixed_standard_references_for_node(project, node_id)
+    fixed_keys = {
+        (str(item.get("knowledgeFileId") or ""), str(item.get("clauseNo") or ""))
+        for item in standards_payload
+    }
     for clause in retrieval["trace"]["selectedClauses"]:
         section_path = clause.get("sectionPath") or []
-        standards_payload.append(
-            enrich_standard_reference(
-                {
+        retrieved = enrich_standard_reference(
+            {
                 "clauseId": clause.get("clauseId"),
                 "standardName": section_path[0] if section_path else clause.get("kbDocId") or STANDARD_LIBRARY_SOURCE_NAME,
                 "clauseNo": clause.get("clauseNo"),
@@ -6560,8 +6631,10 @@ def standards(request: Request, project_id: str, node_id: int):
                     "sourceRelativePath": clause.get("sourceRelativePath"),
                     "fileName": clause.get("fileName"),
                 }
-            )
         )
+        key = (str(retrieved.get("knowledgeFileId") or ""), str(retrieved.get("clauseNo") or ""))
+        if key not in fixed_keys:
+            standards_payload.append(retrieved)
     return ok(standards_payload, request)
 
 

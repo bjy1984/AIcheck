@@ -21,6 +21,11 @@ from libs.business_pack import (
     role_actions_map,
     role_default_node_map,
 )
+from libs.business_pack.clause_store import (
+    CLAUSE_STATE_COLLECTIONS,
+    bind_project_node_clause_packages,
+    publish_standard_clause_release,
+)
 from libs.material_targeting import load_review_points_from_mapping_doc
 from libs.material_review_assets import load_material_review_asset
 
@@ -2336,5 +2341,18 @@ def fresh_state() -> dict[str, Any]:
         "upload_sessions": [],
         "idempotency": {},
     }
+    for collection in CLAUSE_STATE_COLLECTIONS:
+        state.setdefault(collection, [])
+    for summary in list_business_packs():
+        pack = load_business_pack(summary["id"])
+        if not pack.get("standardClausePackages"):
+            continue
+        publish_standard_clause_release(state, pack)
+        for project in state["projects"]:
+            if project.get("businessPackId") != pack["id"]:
+                continue
+            if project.get("businessPackVersion") not in {None, "", pack["version"]}:
+                continue
+            bind_project_node_clause_packages(state, project, pack, bound_at=project.get("updatedAt"))
     state["admin_config"]["ruleVersions"] = deepcopy(RULE_VERSIONS)
     return state
