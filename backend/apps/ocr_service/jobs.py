@@ -34,27 +34,6 @@ class DocumentParseJobStore:
             self._jobs = {str(key): value for key, value in jobs.items() if isinstance(value, dict)}
         if isinstance(results, dict):
             self._results = {str(key): value for key, value in results.items() if isinstance(value, dict)}
-        interrupted = False
-        now = server_time()
-        for job in self._jobs.values():
-            if str(job.get("status") or "") not in {"queued", "running"}:
-                continue
-            interrupted = True
-            job["status"] = "failed"
-            job["updatedAt"] = now
-            job["finishedAt"] = now
-            diagnostics = [item for item in job.get("diagnostics") or [] if isinstance(item, dict)]
-            diagnostics.append(
-                {
-                    "code": "OCR_SERVICE_RESTARTED",
-                    "level": "error",
-                    "message": "OCR service restarted before this job reached a terminal state.",
-                }
-            )
-            job["diagnostics"] = diagnostics
-        if interrupted:
-            self._save_locked()
-
     def _save_locked(self) -> None:
         try:
             self._store_path.parent.mkdir(parents=True, exist_ok=True)
@@ -69,6 +48,30 @@ class DocumentParseJobStore:
             )
         except OSError:
             return
+
+    def recover_interrupted_jobs(self) -> int:
+        now = server_time()
+        interrupted = 0
+        with self._lock:
+            for job in self._jobs.values():
+                if str(job.get("status") or "") not in {"queued", "running"}:
+                    continue
+                interrupted += 1
+                job["status"] = "failed"
+                job["updatedAt"] = now
+                job["finishedAt"] = now
+                diagnostics = [item for item in job.get("diagnostics") or [] if isinstance(item, dict)]
+                diagnostics.append(
+                    {
+                        "code": "OCR_SERVICE_RESTARTED",
+                        "level": "error",
+                        "message": "OCR service restarted before this job reached a terminal state.",
+                    }
+                )
+                job["diagnostics"] = diagnostics
+            if interrupted:
+                self._save_locked()
+        return interrupted
 
     def create(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = server_time()

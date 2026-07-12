@@ -4,6 +4,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 
 import httpx
+from fastapi.testclient import TestClient
 
 from apps.ocr_service.jobs import DocumentParseJobStore
 from libs.integrations.ocr_client import OcrClient, ocr_job_request_key
@@ -67,9 +68,14 @@ def test_job_store_marks_non_terminal_jobs_failed_after_service_restart(monkeypa
     store.mark_running(queued["jobId"])
 
     restarted = DocumentParseJobStore()
+    still_running = restarted.get_job(queued["jobId"])
+    recovered = restarted.recover_interrupted_jobs()
     interrupted = restarted.get_job(queued["jobId"])
     replacement = restarted.create(payload)
 
+    assert still_running is not None
+    assert still_running["status"] == "running"
+    assert recovered == 1
     assert interrupted is not None
     assert interrupted["status"] == "failed"
     assert interrupted["finishedAt"]
@@ -103,3 +109,21 @@ def test_ocr_client_adds_stable_request_key() -> None:
     assert captured[0]["requestKey"] == expected
     assert captured[1]["requestKey"] == expected
     assert expected.startswith("ocrjob:")
+
+
+def test_ocr_service_lifespan_recovers_jobs_only_at_service_start(monkeypatch) -> None:
+    from apps.ocr_service import main as ocr_main
+
+    calls = []
+    monkeypatch.setattr(
+        ocr_main.ocr_service.jobs,
+        "recover_interrupted_jobs",
+        lambda: calls.append("recover") or 0,
+    )
+    monkeypatch.setattr(ocr_main, "prune_ocr_cache", lambda: calls.append("prune"))
+    monkeypatch.setenv("AICHECK_OCR_DEEP_READY_PROBE", "false")
+
+    with TestClient(ocr_main.app) as client:
+        assert client.get("/healthz").status_code == 200
+
+    assert calls[:2] == ["recover", "prune"]

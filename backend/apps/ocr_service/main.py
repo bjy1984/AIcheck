@@ -19,6 +19,7 @@ from libs.contracts.responses import fail, ok
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    await asyncio.to_thread(ocr_service.jobs.recover_interrupted_jobs)
     await asyncio.to_thread(prune_ocr_cache)
     if os.getenv("AICHECK_OCR_DEEP_READY_PROBE", "false").lower() in {"1", "true", "yes", "on"}:
         await asyncio.to_thread(ocr_service.run_readiness_probe)
