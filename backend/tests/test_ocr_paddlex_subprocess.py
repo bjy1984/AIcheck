@@ -100,6 +100,18 @@ def test_seal_pipeline_config_binds_every_model_to_local_storage(monkeypatch, tm
     assert seal_ocr["TextRecognition"]["model_dir"] == str(paths["seal_rec"])
 
 
+def test_normalize_paddlex_seal_result_preserves_text_and_page_bbox() -> None:
+    raw = {"res": {"layout_det_res": {"boxes": [{"label": "table", "coordinate": [73, 253, 933, 1489], "score": 0.89}, {"label": "seal", "coordinate": [176, 871, 533, 1087], "score": 0.93}]}, "seal_res_list": [{"rec_texts": ["permit seal", "TS1810648-2021", "2017-08-31"], "rec_scores": [0.99, 0.98, 0.97], "dt_polys": [[[1, 1], [20, 1], [20, 8], [1, 8]]]}]}}
+
+    seals = engines.normalize_seal_result(raw)
+
+    assert len(seals) == 1
+    assert seals[0]["bbox"] == [176.0, 871.0, 533.0, 1087.0]
+    assert seals[0]["sealName"] == "permit seal TS1810648-2021 2017-08-31"
+    assert seals[0]["visualConfidence"] == 0.93
+    assert seals[0]["ocrConfidence"] == 0.98
+
+
 def test_pp_structure_engine_available_with_subprocess_runtime(monkeypatch, tmp_path) -> None:
     model_names = [
         "PP-DocLayout-L",

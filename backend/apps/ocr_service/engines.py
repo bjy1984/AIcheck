@@ -3140,7 +3140,7 @@ def normalize_seal_result(raw: Any) -> list[dict[str, Any]]:
                     "ocrConfidence",
                     "rec_score",
                     "score",
-                    default=float(inferred_confidence or 0.0),
+                    default=float(inferred_ocr_score(item) or inferred_confidence or 0.0),
                 ),
                 "fields": item.get("fields") or [],
                 "qualityFlags": item.get("qualityFlags") or [],
@@ -3170,11 +3170,33 @@ def extract_seal_items(item: Any) -> list[Any]:
         item = item["res"]
     seal_res_list = item.get("seal_res_list")
     if isinstance(seal_res_list, list):
+        layout = dict_like_payload(item.get("layout_det_res"))
+        layout_boxes = layout.get("boxes") if isinstance(layout, dict) else []
+        seal_boxes = [
+            box
+            for raw_box in (layout_boxes if isinstance(layout_boxes, list) else [])
+            if isinstance((box := dict_like_payload(raw_box)), dict)
+            and str(box.get("label") or box.get("type") or "").lower() == "seal"
+        ]
         extracted: list[Any] = []
-        for child in seal_res_list:
+        for index, child in enumerate(seal_res_list):
+            child = dict_like_payload(child)
+            if isinstance(child, dict) and index < len(seal_boxes):
+                child = dict(child)
+                layout_box = seal_boxes[index]
+                if not any(child.get(key) is not None for key in ["bbox", "box", "coordinate"]):
+                    child["coordinate"] = layout_box.get("coordinate") or layout_box.get("bbox") or layout_box.get("box")
+                if not any(child.get(key) is not None for key in ["det_score", "score", "visualConfidence"]):
+                    child["det_score"] = layout_box.get("score") or layout_box.get("confidence")
             extracted.extend(extract_seal_items(child))
         return extracted
-    if any(key in item for key in ["sealName", "text", "rec_text", "bbox", "box", "coordinate", "polygon", "dt_poly", "points"]):
+    if any(
+        key in item
+        for key in [
+            "sealName", "text", "rec_text", "rec_texts", "bbox", "box", "coordinate",
+            "polygon", "dt_poly", "dt_polys", "rec_polys", "points",
+        ]
+    ):
         return [item]
     for key in ["seal_rec_res", "ocr_res", "rec_res", "det_res"]:
         if isinstance(item.get(key), dict):
@@ -3218,6 +3240,21 @@ def inferred_seal_text(item: dict[str, Any]) -> str:
 
 def inferred_score(item: dict[str, Any]) -> float | None:
     values = recursive_values_for_keys(item, {"score", "scores", "rec_score", "rec_scores", "det_score", "det_scores"})
+    numeric: list[float] = []
+    for value in values:
+        if isinstance(value, (int, float)):
+            numeric.append(float(value))
+        elif isinstance(value, list):
+            for part in value:
+                if isinstance(part, (int, float)):
+                    numeric.append(float(part))
+    if not numeric:
+        return None
+    return max(0.0, min(1.0, sum(numeric) / len(numeric)))
+
+
+def inferred_ocr_score(item: dict[str, Any]) -> float | None:
+    values = recursive_values_for_keys(item, {"rec_score", "rec_scores"})
     numeric: list[float] = []
     for value in values:
         if isinstance(value, (int, float)):
