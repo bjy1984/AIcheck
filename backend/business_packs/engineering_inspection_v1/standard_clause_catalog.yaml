@@ -1,0 +1,209 @@
+standardCatalogSet:
+  id: engineering-inspection-standard-catalog-v1
+  schemaVersion: standard-catalog-v1
+  version: 2026.07.11
+  lifecycleStatus: published
+standardCatalog:
+- id: STD-TSG-D7006-2020
+  code: TSG D7006—2020
+  name: 压力管道监督检验规则
+  sourceFile: rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf
+  verificationMethod: knowledge_base_raw_pdf_chunk_and_visual_check
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+- id: STD-TSG-31-2025
+  code: TSG 31—2025
+  name: 工业管道安全技术规程
+  sourceFile: rules/standards/TSG31-2025.pdf
+  verificationMethod: source_pdf_visual_check
+  knowledgeFileId: KF-KB-E6E1201DF9
+  documentVersionId: KDV-E6E1201DF9-V1
+- id: STD-TSG-07-2019
+  code: TSG 07—2019
+  name: 特种设备生产和充装单位许可规则
+  sourceFile: rules/standards/特种设备生产和充装单位许可规则TSG 07-2019.pdf
+  verificationMethod: source_pdf_text_and_visual_check
+  knowledgeFileId: KF-KB-0DD3FC7201
+  documentVersionId: KDV-0DD3FC7201-V1
+- id: STD-SAMR-2021-41
+  code: 市场监管总局公告2021年第41号
+  name: 特种设备行政许可有关事项的公告
+  sourceFile: rules/standards/市场监管总局关于特种设备行政许可有关事项的公告（2021年41号）.pdf
+  verificationMethod: source_pdf_visual_check
+  knowledgeFileId: KF-KB-72C3E5B097
+  documentVersionId: KDV-72C3E5B097-V1
+- id: STD-TSG-Z7002-2022
+  code: TSG Z7002—2022
+  name: 特种设备检测机构核准规则
+  sourceFile: rules/standards/TSG Z7002—2022.pdf
+  verificationMethod: source_pdf_visual_check
+  knowledgeFileId: KF-KB-CF3526F5AC
+  documentVersionId: KDV-CF3526F5AC-V1
+- id: STD-TSG-Z6002-2010
+  code: TSG Z6002—2010
+  name: 特种设备焊接操作人员考核细则
+  sourceFile: rules/standards/TSGZ6002-2010《焊接人员考核细则》.pdf
+  verificationMethod: source_pdf_visual_check
+  knowledgeFileId: KF-KB-DE16B8E7E8
+  documentVersionId: KDV-DE16B8E7E8-V1
+- id: STD-GBT-20801.1-2025
+  code: GB/T 20801.1—2025
+  name: 压力管道规范 工业管道
+  sourceFile: rules/standards/GBT+20801.1-2025.pdf
+  verificationMethod: source_pdf_text_and_visual_check
+  knowledgeFileId: KF-KB-7ED59299DE
+  documentVersionId: KDV-7ED59299DE-V1
+- id: STD-NBT-47014-2023
+  code: NB/T 47014—2023
+  name: 承压设备焊接工艺评定
+  sourceFile: rules/standards/NBT47014-2023《承压设备焊接工艺评定》.pdf
+  verificationMethod: source_pdf_text_and_visual_check
+  knowledgeFileId: KF-KB-76FBE61C16
+  documentVersionId: KDV-76FBE61C16-V1
+- id: STD-JBT-3223-2017
+  code: JB/T 3223—2017
+  name: 焊接材料质量管理规程
+  sourceFile: rules/standards/JB∕T 3223-2017 焊接材料质量管理规程.pdf
+  verificationMethod: source_pdf_text_and_visual_check
+  knowledgeFileId: KF-KB-BECBD1A8FE
+  documentVersionId: KDV-BECBD1A8FE-V1
+- id: STD-NBT-47013.1-2015
+  code: NB/T 47013.1—2015
+  name: 承压设备无损检测 第1部分：通用要求
+  sourceFile: rules/standards/NB_T_47013_split/NB_T 47013.1-2015 承压设备无损检测 第1部分 通用要求.pdf
+  verificationMethod: source_pdf_visual_check
+  knowledgeFileId: KF-KB-B0D5FBA01C
+  documentVersionId: KDV-B0D5FBA01C-V1
+- id: STD-NBT-47013.2-2015
+  code: NB/T 47013.2—2015
+  name: 承压设备无损检测 第2部分：射线检测
+  sourceFile: rules/standards/NB_T_47013_split/NB_T 47013.2-2015 承压设备无损检测 第2部分 射线检测.pdf
+  verificationMethod: source_pdf_visual_check
+  knowledgeFileId: KF-KB-A0592BD6C0
+  documentVersionId: KDV-A0592BD6C0-V1
+- id: STD-NBT-47013.3-2023
+  code: NB/T 47013.3—2023
+  name: 承压设备无损检测 第3部分：超声检测
+  sourceFile: rules/standards/NB_T_47013_split/NBT 47013.3-2023 承压设备无损检测 第3部分 超声检测.pdf
+  verificationMethod: source_pdf_text_and_visual_check
+  knowledgeFileId: KF-KB-FD7D9CCF13
+  documentVersionId: KDV-FD7D9CCF13-V1
+- id: STD-NBT-47013.11-2023
+  code: NB/T 47013.11—2023
+  name: 承压设备无损检测 第11部分：射线数字成像检测
+  sourceFile: rules/standards/NB_T_47013_split/NBT47013.11-2023 承压设备无损检测 第11部分：射线数字成像检测_可搜索.pdf
+  verificationMethod: source_pdf_text_and_visual_check
+  knowledgeFileId: KF-KB-755A3414FF
+  documentVersionId: KDV-755A3414FF-V1
+- id: STD-GBT-19285-2026
+  code: GB/T 19285—2026
+  name: 埋地钢质管道腐蚀防护工程检验
+  sourceFile: rules/standards/GBT+19285-2026埋地钢质管道腐蚀防护工程检验.pdf
+  verificationMethod: source_pdf_text_and_visual_check
+  knowledgeFileId: KF-KB-D27E9BF359
+  documentVersionId: KDV-D27E9BF359-V1
+- id: STD-GBT-33378-2025
+  code: GB/T 33378—2025
+  name: 阴极保护技术条件
+  sourceFile: rules/standards/GBT+33378-2025阴极保护技术条件.pdf
+  verificationMethod: source_pdf_text_and_visual_check
+  knowledgeFileId: KF-KB-091050A264
+  documentVersionId: KDV-091050A264-V1
+- id: STD-SYT-4113.11-2023
+  code: SY/T 4113.11—2023
+  name: 管道防腐层性能试验方法 第11部分：漏点检测
+  sourceFile: rules/standards/SYT 4113.11—2023 管道防腐层性能试验方法 第11部分：漏点检测.pdf
+  verificationMethod: source_pdf_visual_check
+  knowledgeFileId: KF-KB-57EB2C0B90
+  documentVersionId: KDV-57EB2C0B90-V1
+- id: STD-GBT-21448-2017
+  code: GB/T 21448—2017
+  name: 埋地钢质管道阴极保护技术规范
+  sourceFile: rules/standards/GB∕T 21448-2017 埋地钢质管道阴极保护技术规范.pdf
+  verificationMethod: source_pdf_text_and_visual_check
+  knowledgeFileId: KF-KB-9911A3A070
+  documentVersionId: KDV-9911A3A070-V1
+- id: STD-GB-50235-2010
+  code: GB 50235—2010
+  name: 工业金属管道工程施工规范
+  sourceFile: rules/standards/GB 50235-2010 工业金属管道工程施工规范.pdf
+  verificationMethod: source_pdf_visual_check
+  knowledgeFileId: KF-KB-0E11194CB6
+  documentVersionId: KDV-0E11194CB6-V1
+- id: STD-TSG-92-2026
+  code: TSG 92—2026
+  name: 承压类特种设备安全附件安全技术规程
+  sourceFile: rules/standards/TSG  92—2026《承压类特种设备安全附件安全技术规程》.pdf
+  verificationMethod: source_pdf_visual_check
+  knowledgeFileId: KF-KB-7979D2C4C2
+  documentVersionId: KDV-7979D2C4C2-V1
+- id: STD-GBT-13927-2022
+  code: GB/T 13927—2022
+  name: 工业阀门 压力试验
+  sourceFile: rules/standards/GB_T 13927-2022+工业阀门·压力试验.pdf
+  verificationMethod: source_pdf_text_and_visual_check
+  knowledgeFileId: KF-KB-FC8054EEB2
+  documentVersionId: KDV-FC8054EEB2-V1
+- id: STD-GBT-26480-2011
+  code: GB/T 26480—2011
+  name: 阀门的检验和试验
+  sourceFile: rules/standards/GBT 26480-2011 阀门的检验和试验.pdf
+  verificationMethod: source_pdf_text_and_visual_check
+  knowledgeFileId: KF-KB-B9AEEAD2BE
+  documentVersionId: KDV-B9AEEAD2BE-V1
+- id: STD-GBT-8163-2018
+  code: GB/T 8163—2018
+  name: 输送流体用无缝钢管
+  sourceFile: rules/standards/GBT 8163-2018 输送流体用无缝钢管.pdf
+  verificationMethod: source_pdf_text_and_visual_check
+  knowledgeFileId: KF-KB-FC7BD2864D
+  documentVersionId: KDV-FC7BD2864D-V1
+- id: STD-GBT-3087-2022
+  code: GB/T 3087—2022
+  name: 低中压锅炉用无缝钢管
+  sourceFile: rules/standards/GBT+3087-2022.pdf
+  verificationMethod: source_pdf_text_and_visual_check
+  knowledgeFileId: KF-KB-A6A3DB4C53
+  documentVersionId: KDV-A6A3DB4C53-V1
+- id: STD-GBT-5310-2023
+  code: GB/T 5310—2023
+  name: 高压锅炉用无缝钢管
+  sourceFile: rules/standards/GBT+5310-2023.pdf
+  verificationMethod: source_pdf_text_and_visual_check
+  knowledgeFileId: KF-KB-4D1CE27E27
+  documentVersionId: KDV-4D1CE27E27-V1
+- id: STD-GBT-9948-2025
+  code: GB/T 9948—2025
+  name: 石油裂化用无缝钢管
+  sourceFile: rules/standards/GBT+9948-2025石化和化工装置用无缝钢管.pdf
+  verificationMethod: source_pdf_text_and_visual_check
+  knowledgeFileId: KF-KB-DAB23C4B28
+  documentVersionId: KDV-DAB23C4B28-V1
+- id: STD-GBT-14976-2025
+  code: GB/T 14976—2025
+  name: 流体输送用不锈钢无缝钢管
+  sourceFile: rules/standards/GBT+14976-2025输送流体用不锈钢无缝钢管.pdf
+  verificationMethod: source_pdf_text_and_visual_check
+  knowledgeFileId: KF-KB-D30C53CE05
+  documentVersionId: KDV-D30C53CE05-V1
+- id: STD-GBT-12771-2019
+  code: GB/T 12771—2019
+  name: 流体输送用不锈钢焊接钢管
+  sourceFile: rules/standards/GB∕T 12771-2019 流体输送用不锈钢焊接钢管.pdf
+  verificationMethod: source_pdf_text_and_visual_check
+  knowledgeFileId: KF-KB-EF422C04B1
+  documentVersionId: KDV-EF422C04B1-V1
+- id: STD-GBT-12459-2025
+  code: GB/T 12459—2025
+  name: 钢制对焊管件 类型与参数
+  sourceFile: rules/standards/GBT 12459-2025 钢制对焊管件 类型与参数.pdf
+  verificationMethod: source_pdf_text_and_visual_check
+  knowledgeFileId: KF-KB-D027E2E0C4
+  documentVersionId: KDV-D027E2E0C4-V1
+- id: STD-GBT-13401-2025
+  code: GB/T 13401—2025
+  name: 钢制对焊管件 技术规范
+  sourceFile: rules/standards/GBT 13401-2025钢制对焊管件 技术规范.pdf
+  verificationMethod: source_pdf_text_and_visual_check
+  knowledgeFileId: KF-KB-3F0F9D88CD
+  documentVersionId: KDV-3F0F9D88CD-V1

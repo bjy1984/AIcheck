@@ -2606,7 +2606,9 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
         return {"projectId": project_id, "nodeId": node_id, "runId": run_id, "status": run.get("status"), "alreadyCompleted": True}
     node = repo.node(project_id, node_id)
     project = repo.require_project(project_id)
-    pack = load_business_pack(run.get("businessPackId") or (project or {}).get("businessPackId") or "engineering_inspection_v1")
+    pack = (project or {}).get("businessPackSnapshot") or load_business_pack(
+        run.get("businessPackId") or (project or {}).get("businessPackId") or "engineering_inspection_v1"
+    )
     audit_runtime = audit_runtime_for_run(run)
     version_ids = set(run.get("inputDocumentVersionIds") or [])
     if audit_runtime["useOcrEvidence"]:
@@ -2648,6 +2650,7 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
             "auditRuntime": audit_runtime_public_config(mode=audit_runtime["mode"]),
             "projectId": project_id,
             "nodeId": node_id,
+            "fixedClausePackage": run.get("clausePackageSnapshot") or {},
             "fieldCount": len(fields),
             "groundingStatus": grounding_input.get("groundingStatus"),
             "groundedOcrEvidence": grounding_block["groundedOcrEvidence"],

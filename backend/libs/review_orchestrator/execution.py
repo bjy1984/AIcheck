@@ -8,6 +8,10 @@ from typing import Any
 from uuid import uuid4
 
 from libs.business_pack import DEFAULT_BUSINESS_PACK_ID, build_ai_review_prompt, load_business_pack, matching_rule_for_node
+from libs.business_pack.clause_store import (
+    freeze_review_run_clause_snapshot,
+    review_run_clause_snapshot,
+)
 from libs.contracts.responses import server_time
 from libs.audit_runtime import audit_runtime_config, audit_runtime_for_run, audit_runtime_public_config
 from libs.db.repository import flush_state_records, repo
@@ -53,6 +57,7 @@ REVIEW_STATE_COLLECTIONS = (
     "retrieval_traces",
     "rule_check_results",
     "ai_feedback",
+    "review_run_clause_snapshots",
 )
 
 FORBIDDEN_AGENT_TOOLS = {
@@ -182,6 +187,7 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
     workflow_id = f"review-run-{review_run_id}"
     now = server_time()
     audit_runtime = audit_runtime_public_config(mode=str(ai_run.get("auditInputMode") or "") or None)
+    clause_package_snapshot = repo.clone(ai_run.get("clausePackageSnapshot"))
     record = {
         "id": review_run_id,
         "reviewRunId": review_run_id,
@@ -191,6 +197,8 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
         "businessPackId": ai_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID,
         "businessPackVersion": ai_run.get("businessPackVersion"),
         "businessPackSnapshotHash": ai_run.get("businessPackSnapshotHash"),
+        "clausePackageId": ai_run.get("clausePackageId") or (clause_package_snapshot or {}).get("packageStorageId"),
+        "clausePackageSnapshotHash": ai_run.get("clausePackageSnapshotHash") or (clause_package_snapshot or {}).get("snapshotHash"),
         "agentId": ai_run.get("agentId") or "compliance_review_agent",
         "agentVersion": ai_run.get("agentVersion") or "1.0.0",
         "promptVersion": ai_run.get("promptVersion") or "review_prompt@1.0.0",
@@ -229,6 +237,8 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
             {
                 "documentVersionIds": ai_run.get("inputDocumentVersionIds") or [],
                 "businessPackId": ai_run.get("businessPackId"),
+                "clausePackageSnapshotHash": ai_run.get("clausePackageSnapshotHash")
+                or (clause_package_snapshot or {}).get("snapshotHash"),
                 "promptVersion": ai_run.get("promptVersion"),
                 "ruleSetVersion": ai_run.get("ruleVersion"),
             }
@@ -242,6 +252,17 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
         "revision": 1,
     }
     repo.state["review_runs"].insert(0, record)
+    frozen_clause_snapshot = freeze_review_run_clause_snapshot(
+        repo.state,
+        review_run_id=review_run_id,
+        project_id=str(record.get("projectId") or ""),
+        node_id=int(record.get("nodeId") or 0),
+        snapshot=clause_package_snapshot,
+        created_at=now,
+    )
+    if frozen_clause_snapshot:
+        record["clausePackageId"] = frozen_clause_snapshot.get("packageId")
+        record["clausePackageSnapshotHash"] = frozen_clause_snapshot.get("packageSnapshotHash")
     ai_run["reviewRunId"] = review_run_id
     ai_run["workflowId"] = workflow_id
     ai_run["workflowEngine"] = record["workflowEngine"]
@@ -512,7 +533,15 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         node = repo.node(str(review_run.get("projectId")), int(review_run.get("nodeId") or 0))
         context["project"] = project or {}
         context["node"] = node or {}
-        return {"projectId": review_run.get("projectId"), "nodeId": review_run.get("nodeId"), "nodeName": (node or {}).get("name")}
+        clause_snapshot = review_run_clause_snapshot(repo.state, str(review_run.get("reviewRunId") or ""))
+        context["clausePackageSnapshot"] = clause_snapshot or {}
+        return {
+            "projectId": review_run.get("projectId"),
+            "nodeId": review_run.get("nodeId"),
+            "nodeName": (node or {}).get("name"),
+            "clausePackageId": (clause_snapshot or {}).get("packageStorageId"),
+            "fixedClauseCount": len((clause_snapshot or {}).get("clauses") or []),
+        }
     if node_key == "load_ocr_result":
         version_ids = set(review_run.get("inputDocumentVersionIds") or [])
         if not audit_runtime["useOcrEvidence"]:
@@ -588,7 +617,10 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             "groundingStatus": grounding_input.get("groundingStatus"),
         }
     if node_key == "run_rule_engine":
-        pack = load_business_pack(str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID))
+        project = context.get("project") or repo.require_project(str(review_run.get("projectId") or "")) or {}
+        pack = project.get("businessPackSnapshot") or load_business_pack(
+            str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID)
+        )
         rule = (
             current_published_rule_for_node(
                 int(review_run.get("nodeId") or 0),
@@ -597,17 +629,25 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             or matching_rule_for_node(pack, int(review_run.get("nodeId") or 0))
             or next(iter(pack.get("ruleSets") or []), {})
         )
-        rule_basis = retrieve_knowledge_clauses(
-            repo.state,
-            query=str(rule.get("criteria") or rule.get("checkMethod") or rule.get("name") or "审查依据"),
-            review_run_id=review_run["reviewRunId"],
-            business_pack_id=str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID),
-            node_id=int(review_run.get("nodeId") or 0),
-            kb_version=str(review_run.get("kbVersion") or "inspection_kb@1.0.0"),
-            top_k=3,
-            query_type="rule_basis_search",
-        )
-        linked_clause_ids = [item.get("clauseId") for item in rule_basis.get("clauses") or [] if item.get("clauseId")]
+        fixed_clauses = (context.get("clausePackageSnapshot") or {}).get("clauses") or []
+        if fixed_clauses:
+            linked_clause_ids = [
+                item.get("clauseReferenceId") or item.get("sourceLocatorId")
+                for item in fixed_clauses
+                if item.get("clauseReferenceId") or item.get("sourceLocatorId")
+            ]
+        else:
+            rule_basis = retrieve_knowledge_clauses(
+                repo.state,
+                query=str(rule.get("criteria") or rule.get("checkMethod") or rule.get("name") or "审查依据"),
+                review_run_id=review_run["reviewRunId"],
+                business_pack_id=str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID),
+                node_id=int(review_run.get("nodeId") or 0),
+                kb_version=str(review_run.get("kbVersion") or "inspection_kb@1.0.0"),
+                top_k=3,
+                query_type="rule_basis_search",
+            )
+            linked_clause_ids = [item.get("clauseId") for item in rule_basis.get("clauses") or [] if item.get("clauseId")]
         result = {
             "id": f"RCHK-{uuid4().hex[:8].upper()}",
             "reviewRunId": review_run["reviewRunId"],
@@ -827,7 +867,10 @@ def select_prompt_template(review_run: dict[str, Any]) -> dict[str, Any] | None:
 def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     audit_runtime = context.get("auditRuntime") or audit_runtime_for_run(review_run)
     context["auditRuntime"] = audit_runtime
-    pack = load_business_pack(str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID))
+    project = context.get("project") or repo.require_project(str(review_run.get("projectId") or "")) or {}
+    pack = project.get("businessPackSnapshot") or load_business_pack(
+        str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID)
+    )
     node = context.get("node") or {}
     fields = context.get("fields") or []
     grounding_input = context.get("groundingInput") or build_grounded_review_input(
@@ -871,6 +914,7 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
         "groundingStatus": grounding_input.get("groundingStatus"),
         "groundedOcrEvidence": grounding_block["groundedOcrEvidence"],
         "ruleResults": context.get("ruleResults") or [],
+        "fixedClausePackage": context.get("clausePackageSnapshot") or {},
         "retrievalTraceIds": [item.get("retrievalTraceId") for item in context.get("retrievalTraces") or []],
         "evidenceLinkIds": [item.get("id") for item in context.get("evidenceLinks") or []],
         "plannerPrompt": (prompt.get("template") or {}).get("plannerPrompt") or "",
@@ -1906,6 +1950,8 @@ def review_run_audit_trace(review_run_id: str) -> dict[str, Any]:
         "businessPackId": review_run.get("businessPackId"),
         "businessPackVersion": review_run.get("businessPackVersion"),
         "businessPackSnapshotHash": review_run.get("businessPackSnapshotHash"),
+        "clausePackageId": review_run.get("clausePackageId"),
+        "clausePackageSnapshotHash": review_run.get("clausePackageSnapshotHash"),
         "agentId": review_run.get("agentId"),
         "agentVersion": review_run.get("agentVersion"),
         "promptVersion": review_run.get("promptVersion"),
@@ -1967,6 +2013,10 @@ def review_run_view(review_run: dict[str, Any], *, include_sensitive: bool = Fal
         view.pop("rawPrompt", None)
         view.pop("rawOcrText", None)
     view["graphSummary"] = summarize_graph(review_run["reviewRunId"])
+    view["clausePackageSnapshot"] = review_run_clause_snapshot(
+        repo.state,
+        str(review_run.get("reviewRunId") or review_run.get("id") or ""),
+    )
     return view
 
 

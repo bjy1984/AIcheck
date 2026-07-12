@@ -2,7 +2,34 @@ services:
   api-service:
     volumes:
       - ${AICHECK_RULES_HOST_PATH:-../rules}:/rules:ro
+      - ${AICHECK_OUTPUT_HOST_PATH:-../output}:/output:ro
 
   worker-service:
     volumes:
       - ${AICHECK_RULES_HOST_PATH:-../rules}:/rules:ro
+      - ${AICHECK_OUTPUT_HOST_PATH:-../output}:/output:ro
+
+  review-worker-service:
+    volumes:
+      - ${AICHECK_OUTPUT_HOST_PATH:-../output}:/output:ro
+
+  scan-scenario-importer:
+    image: aicheck-api-service
+    profiles: ["tools"]
+    working_dir: /workspace/backend
+    environment:
+      AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${AICHECK_POSTGRES_DB:-aicheck}
+      AICHECK_SQLITE_DISABLE: "true"
+      AICHECK_SQLITE_FALLBACK: "false"
+    volumes:
+      - ${AICHECK_BACKEND_HOST_PATH:-.}:/workspace/backend:ro
+      - ${AICHECK_SCAN_HOST_PATH:-../Scan}:/workspace/Scan:ro
+      - ${AICHECK_OUTPUT_HOST_PATH:-../output}:/workspace/output
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      - python
+      - scripts/import_scan_test_scenario.py
+      - --project-id
+      - P-2026-GDLNG-002

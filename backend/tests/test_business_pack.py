@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from copy import deepcopy
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -84,6 +85,133 @@ def test_engineering_pack_nodes_all_have_document_requirements() -> None:
     assert {"quality_system_document", "ndt_report"} <= requirement_codes_by_node[37]
     assert {"ndt_report", "radiographic_film"} <= requirement_codes_by_node[65]
     assert 69 not in requirement_codes_by_node
+
+
+def test_engineering_pack_has_fixed_standard_clause_bindings() -> None:
+    pack = load_business_pack("engineering_inspection_v1")
+    bindings = pack["standardClauseBindings"]
+    primary = [item for item in bindings if item["bindingRole"] == "primary"]
+    supplemental = [item for item in bindings if item["bindingRole"] == "supplemental"]
+
+    assert len(bindings) == 68
+    assert len(primary) == 68
+    assert len(supplemental) == 0
+    assert {item["ruleId"] for item in primary} == {item["id"] for item in pack["ruleSets"]}
+    assert all(item["verificationStatus"] == "source_verified" for item in bindings)
+    assert all(item["lifecycleStatus"] == "published" for item in bindings)
+    assert all(item["sourceLocatorId"] in {locator["locatorId"] for locator in item["locators"]} for item in bindings)
+    assert all(item["knowledgeFileId"] and item["documentVersionId"] for item in bindings)
+
+    r10 = next(item for item in bindings if item["sourceRuleId"] == "R10")
+    assert r10["standardRef"] == "STD-TSG-31-2025"
+    assert r10["clauseNo"] == "1.9(3)"
+
+    invalid_pack = deepcopy(pack)
+    candidate = invalid_pack["standardClauseBindings"][0]
+    candidate["verificationStatus"] = "candidate"
+    validation = validate_business_pack(invalid_pack)
+    assert validation["ok"] is False
+    assert any("must be source_verified before publication" in item for item in validation["errors"])
+
+
+def test_engineering_pack_has_complete_standard_clause_packages_and_atomic_checks() -> None:
+    pack = load_business_pack("engineering_inspection_v1")
+    packages = pack["standardClausePackages"]
+    checks = pack["atomicChecks"]
+    catalog = {item["id"] for item in pack["standardCatalog"]}
+
+    assert len(packages) == 68
+    assert len(checks) >= 136
+    assert {item["sourceRuleId"] for item in packages} == {f"R{index:02d}" for index in range(1, 69)}
+    assert all(len(item["atomicCheckIds"]) >= 2 for item in packages)
+    assert all(item["decisionModel"]["ruleExecution"] == "deterministic_tools_only" for item in packages)
+    assert all(
+        clause["standardRef"] in catalog
+        for package in packages
+        for clause in package["professionalClauses"]
+    )
+    professional_clauses = [clause for package in packages for clause in package["professionalClauses"]]
+    assert len(professional_clauses) == 100
+    assert all(clause["knowledgeFileId"] and clause["documentVersionId"] for clause in professional_clauses)
+    assert all(clause["locators"] for clause in professional_clauses)
+    assert all(
+        clause["sourceLocatorId"] in {locator["locatorId"] for locator in clause["locators"]}
+        for clause in professional_clauses
+    )
+    assert all(
+        locator["startPage"] <= locator["endPage"]
+        for clause in professional_clauses
+        for locator in clause["locators"]
+    )
+
+    conditional = {item["sourceRuleId"] for item in packages if item["applicability"]["type"] == "conditional"}
+    assert {"R10", "R33", "R34", "R44", "R45", "R46", "R51", "R52", "R53", "R60", "R64", "R65"} <= conditional
+
+    r10 = next(item for item in packages if item["sourceRuleId"] == "R10")
+    assert "其他标准" in r10["applicability"]["expression"]
+    assert any(item["clauseNo"] == "3.1.3.1" for item in r10["professionalClauses"])
+
+    invalid_pack = deepcopy(pack)
+    invalid_pack["standardClausePackages"][0]["atomicCheckIds"] = []
+    validation = validate_business_pack(invalid_pack)
+    assert validation["ok"] is False
+    assert any("at least two atomic checks" in item for item in validation["errors"])
+
+    invalid_locator_pack = deepcopy(pack)
+    del invalid_locator_pack["standardClausePackages"][0]["professionalClauses"][0]["locators"]
+    validation = validate_business_pack(invalid_locator_pack)
+    assert validation["ok"] is False
+    assert any("missing locator keys" in item for item in validation["errors"])
+
+
+def test_node_standards_exposes_fixed_clause_page_locators() -> None:
+    assert len(repo.state["standard_document_versions"]) == 29
+    assert len(repo.state["standard_clause_packages_db"]) == 68
+    assert len(repo.state["standard_clause_package_items"]) == 168
+    assert len(repo.state["standard_clause_locators"]) == 216
+    assert len(
+        [item for item in repo.state["project_node_clause_packages"] if item["projectId"] == "P-2026-HDCP-001"]
+    ) == 68
+
+    standards = assert_ok(
+        client.get("/api/projects/P-2026-HDCP-001/inspection/nodes/1/standards")
+    )
+    fixed = [item for item in standards if item.get("fixedBinding")]
+
+    assert fixed
+    assert fixed[0]["referenceRole"] == "primary"
+    assert fixed[0]["sourcePage"] == 27
+    assert fixed[0]["previewUrl"].endswith("#page=27")
+    assert any(item["referenceRole"] == "professional" for item in fixed)
+    assert all(item["knowledgeFileId"] and item["documentVersionId"] for item in fixed)
+    assert all(item["sourceLocatorId"] in {locator["locatorId"] for locator in item["locators"]} for item in fixed)
+
+    package_detail = assert_ok(client.get("/api/business-packs/engineering_inspection_v1"))
+    assert len(package_detail["standardClausePackages"]) == 68
+    assert len(package_detail["standardCatalog"]) == 29
+
+    node_binding = next(
+        item
+        for item in repo.state["project_node_clause_packages"]
+        if item["projectId"] == "P-2026-HDCP-001" and item["nodeId"] == 1
+    )
+    stored_package = next(
+        item for item in repo.state["standard_clause_packages_db"] if item["id"] == node_binding["packageId"]
+    )
+    stored_package["compiledPayload"]["clauses"][1]["purpose"] = "DATABASE_ONLY_PREVIEW_MARKER"
+    database_backed = assert_ok(
+        client.get("/api/projects/P-2026-HDCP-001/inspection/nodes/1/standards")
+    )
+    assert any(item.get("title") == "DATABASE_ONLY_PREVIEW_MARKER" for item in database_backed)
+
+    repo.state["project_node_clause_packages"] = [
+        item
+        for item in repo.state["project_node_clause_packages"]
+        if not (item["projectId"] == "P-2026-HDCP-001" and item["nodeId"] == 1)
+    ]
+    fail_closed = client.get("/api/projects/P-2026-HDCP-001/inspection/nodes/1/standards")
+    assert fail_closed.status_code == 409
+    assert "不能回退到动态条款" in fail_closed.json()["message"]
 
 
 def test_business_pack_api_and_compliance_project_generation() -> None:

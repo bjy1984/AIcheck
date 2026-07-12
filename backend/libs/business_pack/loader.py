@@ -20,6 +20,10 @@ PACK_FILES = (
     "materials.yaml",
     "workflow.yaml",
     "rules.yaml",
+    "standard_clause_catalog.yaml",
+    "standard_clause_bindings.yaml",
+    "atomic_checks.yaml",
+    "standard_clause_packages.yaml",
     "reports.yaml",
     "agents.yaml",
     "fixtures.yaml",
@@ -43,6 +47,50 @@ NODE_KEYS = {"nodeId", "code", "name", "groupName", "inspectionType", "defaultSt
 MATERIAL_KEYS = {"code", "name", "requiredType"}
 WORKFLOW_KEYS = {"id", "name", "states", "transitions"}
 RULE_KEYS = {"id", "name", "ruleKey", "version", "status", "nodeIds"}
+STANDARD_CLAUSE_BINDING_KEYS = {
+    "bindingId",
+    "ruleId",
+    "sourceRuleId",
+    "nodeId",
+    "standardRef",
+    "clauseNo",
+    "bindingRole",
+    "lifecycleStatus",
+    "verificationStatus",
+    "knowledgeFileId",
+    "documentVersionId",
+    "sourcePage",
+    "startPage",
+    "endPage",
+    "sourceLocatorId",
+    "locatorPrecision",
+    "locators",
+}
+ATOMIC_CHECK_KEYS = {
+    "id",
+    "sourceRuleId",
+    "ruleId",
+    "nodeId",
+    "name",
+    "checkType",
+    "instruction",
+    "evidenceRequired",
+    "failurePolicy",
+}
+STANDARD_CLAUSE_PACKAGE_KEYS = {
+    "packageId",
+    "batchId",
+    "sourceRuleId",
+    "ruleId",
+    "nodeId",
+    "nodeName",
+    "lifecycleStatus",
+    "primaryBindingId",
+    "applicability",
+    "professionalClauses",
+    "atomicCheckIds",
+    "decisionModel",
+}
 REPORT_KEYS = {"id", "name", "version", "sections"}
 FIXTURE_COLLECTION_KEYS = (
     "projects",
@@ -122,6 +170,9 @@ def business_pack_summary(pack: dict[str, Any]) -> dict[str, Any]:
         "nodeCount": len(pack.get("nodeTemplates") or []),
         "materialTypeCount": len(pack.get("materialTypes") or []),
         "ruleSetCount": len(pack.get("ruleSets") or []),
+        "standardClauseBindingCount": len(pack.get("standardClauseBindings") or []),
+        "standardClausePackageCount": len(pack.get("standardClausePackages") or []),
+        "atomicCheckCount": len(pack.get("atomicChecks") or []),
         "agentSopCount": len(pack.get("agentSops") or []),
         "fixtureProjectCount": len((pack.get("fixtures") or {}).get("projects") or []),
         "roles": [
@@ -236,6 +287,19 @@ def validate_business_pack(pack: dict[str, Any]) -> dict[str, Any]:
         if not rule.get("outputSchemaVersion"):
             warnings.append(f"Rule {rule.get('id')} has no outputSchemaVersion.")
 
+    _validate_standard_clause_bindings(
+        pack,
+        node_ids=node_ids,
+        errors=errors,
+        warnings=warnings,
+    )
+    _validate_standard_clause_packages(
+        pack,
+        node_ids=node_ids,
+        errors=errors,
+        warnings=warnings,
+    )
+
     for report in pack.get("reportTemplates") or []:
         if not report.get("sections"):
             warnings.append(f"Report template {report.get('id')} has no sections.")
@@ -296,6 +360,309 @@ def _validate_items(pack: dict[str, Any], key: str, required_keys: set[str], err
         missing = sorted(required_keys - set(item))
         if missing:
             errors.append(f"{key}[{index}] missing keys: {', '.join(missing)}")
+
+
+def _validate_source_locators(record: dict[str, Any], *, label: str, errors: list[str]) -> None:
+    required = {
+        "knowledgeFileId", "documentVersionId", "sourcePage", "startPage", "endPage",
+        "sourceLocatorId", "locatorPrecision", "locators",
+    }
+    missing = sorted(required - set(record))
+    if missing:
+        errors.append(f"{label} missing locator keys: {', '.join(missing)}")
+        return
+    if not str(record.get("knowledgeFileId") or "").strip() or not str(record.get("documentVersionId") or "").strip():
+        errors.append(f"{label} must resolve to a knowledge file and document version.")
+    try:
+        source_page = int(record.get("sourcePage"))
+        start_page = int(record.get("startPage"))
+        end_page = int(record.get("endPage"))
+    except (TypeError, ValueError):
+        errors.append(f"{label} contains non-integer page locator values.")
+        return
+    if start_page < 1 or source_page < start_page or end_page < source_page:
+        errors.append(f"{label} contains an invalid top-level page range.")
+
+    locators = record.get("locators")
+    if not isinstance(locators, list) or not locators:
+        errors.append(f"{label} must contain at least one source locator.")
+        return
+    locator_ids: set[str] = set()
+    for index, locator in enumerate(locators):
+        locator_label = f"{label}.locators[{index}]"
+        if not isinstance(locator, dict):
+            errors.append(f"{locator_label} must be a mapping.")
+            continue
+        locator_required = {
+            "locatorId", "clauseNo", "sourcePage", "startPage", "endPage",
+            "precision", "verificationStatus",
+        }
+        locator_missing = sorted(locator_required - set(locator))
+        if locator_missing:
+            errors.append(f"{locator_label} missing keys: {', '.join(locator_missing)}")
+            continue
+        locator_id = str(locator.get("locatorId") or "")
+        if not locator_id or locator_id in locator_ids:
+            errors.append(f"{label} contains an empty or duplicated locator id: {locator_id}")
+        locator_ids.add(locator_id)
+        try:
+            locator_source = int(locator.get("sourcePage"))
+            locator_start = int(locator.get("startPage"))
+            locator_end = int(locator.get("endPage"))
+        except (TypeError, ValueError):
+            errors.append(f"{locator_label} contains non-integer page values.")
+            continue
+        if locator_start < start_page or locator_source != locator_start or locator_end < locator_start or locator_end > end_page:
+            errors.append(f"{locator_label} is outside the top-level page range.")
+        if locator.get("precision") not in {"page", "page_range"}:
+            errors.append(f"{locator_label} has invalid precision.")
+        if locator.get("verificationStatus") not in {"source_verified", "text_verified", "visual_verified"}:
+            errors.append(f"{locator_label} has invalid verificationStatus.")
+    if record.get("sourceLocatorId") not in locator_ids:
+        errors.append(f"{label} sourceLocatorId does not reference one of its locators.")
+
+
+def _validate_standard_clause_bindings(
+    pack: dict[str, Any],
+    *,
+    node_ids: set[int],
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    bindings = pack.get("standardClauseBindings")
+    if bindings is None:
+        return
+    if not isinstance(bindings, list):
+        errors.append("standardClauseBindings must be a list.")
+        return
+
+    standard_refs = {
+        item.get("id")
+        for item in pack.get("standardCatalog") or []
+        if isinstance(item, dict) and item.get("id")
+    }
+    rule_ids = {
+        item.get("id")
+        for item in pack.get("ruleSets") or []
+        if isinstance(item, dict) and item.get("id")
+    }
+    binding_ids: set[str] = set()
+    published_primary_rules: set[str] = set()
+    allowed_lifecycle_statuses = {"draft", "published", "retired"}
+    allowed_verification_statuses = {"source_verified", "candidate", "rejected"}
+    allowed_binding_roles = {"primary", "supplemental"}
+
+    for index, binding in enumerate(bindings):
+        if not isinstance(binding, dict):
+            errors.append(f"standardClauseBindings[{index}] must be a mapping.")
+            continue
+        missing = sorted(STANDARD_CLAUSE_BINDING_KEYS - set(binding))
+        if missing:
+            errors.append(
+                f"standardClauseBindings[{index}] missing keys: {', '.join(missing)}"
+            )
+            continue
+
+        binding_id = str(binding.get("bindingId") or "")
+        if binding_id in binding_ids:
+            errors.append(f"Standard clause binding id is duplicated: {binding_id}")
+        binding_ids.add(binding_id)
+
+        rule_id = binding.get("ruleId")
+        if rule_id not in rule_ids:
+            errors.append(f"Binding {binding_id} references unknown rule: {rule_id}")
+        try:
+            node_id = int(binding.get("nodeId"))
+        except (TypeError, ValueError):
+            errors.append(f"Binding {binding_id} has invalid nodeId: {binding.get('nodeId')}")
+        else:
+            if node_id not in node_ids:
+                errors.append(f"Binding {binding_id} references unknown node: {node_id}")
+
+        standard_ref = binding.get("standardRef")
+        if standard_ref not in standard_refs:
+            errors.append(f"Binding {binding_id} references unknown standard: {standard_ref}")
+        if binding.get("lifecycleStatus") not in allowed_lifecycle_statuses:
+            errors.append(f"Binding {binding_id} has invalid lifecycleStatus.")
+        if binding.get("verificationStatus") not in allowed_verification_statuses:
+            errors.append(f"Binding {binding_id} has invalid verificationStatus.")
+        if binding.get("bindingRole") not in allowed_binding_roles:
+            errors.append(f"Binding {binding_id} has invalid bindingRole.")
+        _validate_source_locators(binding, label=f"Binding {binding_id}", errors=errors)
+
+        if (
+            binding.get("lifecycleStatus") == "published"
+            and binding.get("verificationStatus") != "source_verified"
+        ):
+            errors.append(f"Binding {binding_id} must be source_verified before publication.")
+        if binding.get("lifecycleStatus") == "published" and binding.get("bindingRole") == "primary":
+            if rule_id in published_primary_rules:
+                errors.append(f"Rule {rule_id} has more than one published primary clause binding.")
+            published_primary_rules.add(str(rule_id))
+
+    if bindings and not published_primary_rules:
+        warnings.append("No primary standard clause binding is published; runtime must not consume draft bindings.")
+
+
+def _validate_standard_clause_packages(
+    pack: dict[str, Any],
+    *,
+    node_ids: set[int],
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    packages = pack.get("standardClausePackages")
+    checks = pack.get("atomicChecks")
+    if packages is None and checks is None:
+        return
+    if not isinstance(packages, list) or not packages:
+        errors.append("standardClausePackages must be a non-empty list when clause packages are enabled.")
+        return
+    if not isinstance(checks, list) or not checks:
+        errors.append("atomicChecks must be a non-empty list when clause packages are enabled.")
+        return
+
+    catalog_by_ref = {
+        item.get("id"): item
+        for item in pack.get("standardCatalog") or []
+        if isinstance(item, dict) and item.get("id")
+    }
+    catalog_refs = set(catalog_by_ref)
+    rule_by_id = {
+        item.get("id"): item
+        for item in pack.get("ruleSets") or []
+        if isinstance(item, dict) and item.get("id")
+    }
+    expected_source_rules = {
+        str(item.get("sourceRuleId"))
+        for item in rule_by_id.values()
+        if item.get("sourceRuleId")
+    }
+    binding_by_id = {
+        item.get("bindingId"): item
+        for item in pack.get("standardClauseBindings") or []
+        if isinstance(item, dict) and item.get("bindingId")
+    }
+
+    check_by_id: dict[str, dict[str, Any]] = {}
+    for index, check in enumerate(checks):
+        if not isinstance(check, dict):
+            errors.append(f"atomicChecks[{index}] must be a mapping.")
+            continue
+        missing = sorted(ATOMIC_CHECK_KEYS - set(check))
+        if missing:
+            errors.append(f"atomicChecks[{index}] missing keys: {', '.join(missing)}")
+            continue
+        check_id = str(check.get("id") or "")
+        if check_id in check_by_id:
+            errors.append(f"Atomic check id is duplicated: {check_id}")
+        check_by_id[check_id] = check
+        if check.get("ruleId") not in rule_by_id:
+            errors.append(f"Atomic check {check_id} references unknown rule: {check.get('ruleId')}")
+        try:
+            check_node_id = int(check.get("nodeId"))
+        except (TypeError, ValueError):
+            errors.append(f"Atomic check {check_id} has invalid nodeId: {check.get('nodeId')}")
+        else:
+            if check_node_id not in node_ids:
+                errors.append(f"Atomic check {check_id} references unknown node: {check_node_id}")
+        if not str(check.get("instruction") or "").strip():
+            errors.append(f"Atomic check {check_id} must contain an instruction.")
+
+    package_ids: set[str] = set()
+    package_source_rules: set[str] = set()
+    for index, package in enumerate(packages):
+        if not isinstance(package, dict):
+            errors.append(f"standardClausePackages[{index}] must be a mapping.")
+            continue
+        missing = sorted(STANDARD_CLAUSE_PACKAGE_KEYS - set(package))
+        if missing:
+            errors.append(f"standardClausePackages[{index}] missing keys: {', '.join(missing)}")
+            continue
+        package_id = str(package.get("packageId") or "")
+        if package_id in package_ids:
+            errors.append(f"Standard clause package id is duplicated: {package_id}")
+        package_ids.add(package_id)
+        source_rule_id = str(package.get("sourceRuleId") or "")
+        if source_rule_id in package_source_rules:
+            errors.append(f"Source rule has more than one standard clause package: {source_rule_id}")
+        package_source_rules.add(source_rule_id)
+
+        rule = rule_by_id.get(package.get("ruleId"))
+        if rule is None:
+            errors.append(f"Package {package_id} references unknown rule: {package.get('ruleId')}")
+            continue
+        if rule.get("sourceRuleId") != source_rule_id:
+            errors.append(f"Package {package_id} sourceRuleId does not match its rule.")
+        try:
+            package_node_id = int(package.get("nodeId"))
+        except (TypeError, ValueError):
+            errors.append(f"Package {package_id} has invalid nodeId: {package.get('nodeId')}")
+            continue
+        if package_node_id not in node_ids or package_node_id not in {int(item) for item in rule.get("nodeIds") or []}:
+            errors.append(f"Package {package_id} nodeId does not match its rule: {package_node_id}")
+
+        primary = binding_by_id.get(package.get("primaryBindingId"))
+        if primary is None:
+            errors.append(f"Package {package_id} references unknown primary binding: {package.get('primaryBindingId')}")
+        else:
+            if primary.get("ruleId") != package.get("ruleId") or primary.get("bindingRole") != "primary":
+                errors.append(f"Package {package_id} primary binding does not match its rule.")
+            if package.get("lifecycleStatus") == "published" and (
+                primary.get("lifecycleStatus") != "published"
+                or primary.get("verificationStatus") != "source_verified"
+            ):
+                errors.append(f"Published package {package_id} requires a published, source-verified primary binding.")
+
+        check_ids = package.get("atomicCheckIds") or []
+        if not isinstance(check_ids, list) or len(check_ids) < 2:
+            errors.append(f"Package {package_id} must reference at least two atomic checks.")
+        for check_id in check_ids:
+            check = check_by_id.get(check_id)
+            if check is None:
+                errors.append(f"Package {package_id} references unknown atomic check: {check_id}")
+            elif check.get("ruleId") != package.get("ruleId") or int(check.get("nodeId")) != package_node_id:
+                errors.append(f"Package {package_id} atomic check {check_id} does not match its rule and node.")
+
+        clauses = package.get("professionalClauses") or []
+        if not isinstance(clauses, list) or not clauses:
+            errors.append(f"Package {package_id} must contain professional clauses.")
+        for clause in clauses:
+            if not isinstance(clause, dict):
+                errors.append(f"Package {package_id} contains an invalid professional clause.")
+                continue
+            if clause.get("standardRef") not in catalog_refs:
+                errors.append(f"Package {package_id} references unknown standard: {clause.get('standardRef')}")
+            if not clause.get("clauseNo") or not clause.get("purpose"):
+                errors.append(f"Package {package_id} contains a professional clause without clauseNo or purpose.")
+            if clause.get("verificationStatus") not in {"source_verified", "visual_verified", "candidate"}:
+                errors.append(f"Package {package_id} contains an invalid professional clause verificationStatus.")
+            if clause.get("verificationStatus") == "candidate":
+                warnings.append(f"Package {package_id} contains candidate supplemental clause {clause.get('clauseNo')}.")
+            _validate_source_locators(
+                clause,
+                label=f"Package {package_id} professional clause {clause.get('clauseNo')}",
+                errors=errors,
+            )
+            catalog_item = catalog_by_ref.get(clause.get("standardRef")) or {}
+            if clause.get("knowledgeFileId") != catalog_item.get("knowledgeFileId"):
+                errors.append(f"Package {package_id} professional clause knowledgeFileId does not match its standard catalog record.")
+            if clause.get("documentVersionId") != catalog_item.get("documentVersionId"):
+                errors.append(f"Package {package_id} professional clause documentVersionId does not match its standard catalog record.")
+
+        decision_model = package.get("decisionModel") or {}
+        if decision_model.get("ruleExecution") != "deterministic_tools_only":
+            errors.append(f"Package {package_id} must use deterministic_tools_only rule execution.")
+        required_results = {"符合", "不符合", "证据不足", "不适用", "待人工确认"}
+        if not required_results <= set(decision_model.get("resultValues") or []):
+            errors.append(f"Package {package_id} does not declare the complete conclusion set.")
+
+    missing_packages = sorted(expected_source_rules - package_source_rules)
+    extra_packages = sorted(package_source_rules - expected_source_rules)
+    if missing_packages:
+        errors.append(f"Standard clause packages are missing source rules: {missing_packages}")
+    if extra_packages:
+        errors.append(f"Standard clause packages contain unknown source rules: {extra_packages}")
 
 
 def _validate_fixtures(
