@@ -721,10 +721,8 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
         task = repo.ocr_task_for(document_id, version_id, file_name)
         version = repo.find_one("versions", version_id)
     if task and task.get("status") == "已取消":
-        flush_state()
         return {"documentId": document_id, "versionId": version_id, "status": "canceled"}
     if task and task.get("status") == "成功" and (version or {}).get("ocrStatus") == "已识别":
-        flush_state()
         return {"documentId": document_id, "versionId": version_id, "status": "success", "alreadyCompleted": True}
     repo.mark_task_running(task, "OCR worker 开始处理。")
     document = repo.find_one("documents", document_id)
@@ -773,7 +771,6 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
         task_id=str(getattr(self.request, "id", "") or "") or None,
     )
     if pipeline_run.get("status") == "completed":
-        flush_state()
         return {
             "documentId": document_id,
             "versionId": version_id,
@@ -853,8 +850,13 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
             blocking_reasons=[{"code": "OCR_SERVICE_FAILED"}],
             recommended_action="检查 OCR 服务后从任务中心重试。",
         )
-        failed_applied = repo.apply_ocr_result(document_id, version_id, failure_result)
-        flush_state()
+        failed_applied, _ = pipeline_apply_result(
+            document_id,
+            version_id,
+            failure_result,
+            previous_record_ids,
+        )
+        persist_ocr_pipeline_progress(pipeline_run, task=task, ocr_job=ocr_job_record)
         return {
             **failure_result,
             "applied": failed_applied,
@@ -906,7 +908,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
     pipeline_stage_dispatch = None
     if accuracy_pipeline_enabled:
         # Persist the baseline parse result before a worker on another queue can consume it.
-        flush_state()
+        flush_state_records(ocr_result_state_records(document_id, version_id))
         required_tables = bool(routed_profile.get("requiredTables"))
         seal_required = bool((routed_profile.get("sealRules") or {}).get("required"))
         if required_tables:
@@ -970,7 +972,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
             }
         if knowledge_file:
             next_dispatch = task_dispatcher.dispatch_slice(knowledge_file["id"])
-    flush_state()
+    persist_ocr_pipeline_progress(pipeline_run, task=task, ocr_job=ocr_job_record)
     return {
         **result,
         "applied": applied,
@@ -1379,7 +1381,7 @@ def ocr_pipeline_evidence_fusion(self, run_id: str) -> dict[str, Any]:
             artifact_hash=artifact_hash,
         )
         repo.mark_ocr_pipeline_stage(run, "qwen_extract", "queued")
-        flush_state()
+        persist_ocr_pipeline_progress(run)
         dispatch = _dispatch_pipeline_stage_once(run, "qwenDispatch", task_dispatcher.dispatch_ocr_pipeline_qwen)
         if not dispatch.get("taskId"):
             raise RuntimeError("qwen_dispatch_failed")
@@ -1571,7 +1573,7 @@ def ocr_pipeline_qwen_extract(self, run_id: str) -> dict[str, Any]:
             blocking_reasons=[{"code": "BASELINE_PARSE_RESULT_MISSING"}],
             recommended_action="重新执行本地 OCR 扫描。",
         )
-        flush_state()
+        persist_ocr_pipeline_progress(run)
         return {"pipelineRunId": run_id, "status": "failed", "failureReason": "baseline_parse_result_missing"}
     profile = default_profile(run.get("profileId"), run.get("documentType"))
     repo.mark_ocr_pipeline_stage(run, "qwen_extract", "running")
@@ -1785,7 +1787,7 @@ def ocr_pipeline_qwen_extract(self, run_id: str) -> dict[str, Any]:
         run["finalizeDispatch"] = dispatch
         if not dispatch.get("taskId"):
             raise RuntimeError("ocr_pipeline_finalize_dispatch_failed")
-        flush_state()
+        persist_ocr_pipeline_progress(run)
         return {
             "pipelineRunId": run_id,
             "status": "success",
@@ -1832,7 +1834,7 @@ def ocr_pipeline_qwen_extract(self, run_id: str) -> dict[str, Any]:
                     )
                 ),
             )
-        flush_state()
+        persist_ocr_pipeline_progress(run)
         return {"pipelineRunId": run_id, "status": run.get("status"), "failureReason": exc.__class__.__name__}
     finally:
         shutil.rmtree(work_directory, ignore_errors=True)
@@ -1956,7 +1958,7 @@ def _ocr_pipeline_finalize_impl(run_id: str) -> dict[str, Any]:
         artifact_url=artifact_url,
         artifact_hash=artifact_hash,
     )
-    flush_state()
+    persist_ocr_pipeline_progress(run)
     return {
         "pipelineRunId": run_id,
         "status": final_status,

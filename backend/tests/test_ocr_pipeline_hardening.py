@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import threading
 from contextlib import contextmanager
@@ -296,3 +297,20 @@ def test_release_manifest_can_require_bundle_and_immutable_images(monkeypatch, t
 
     assert passed["passed"] is True
     assert passed["imageDigestsComplete"] is True
+
+
+def test_accuracy_pipeline_workers_never_full_flush_partial_state() -> None:
+    from apps.worker import tasks
+
+    partial_state_workers = [
+        tasks.parse_document.run,
+        tasks.ocr_pipeline_evidence_fusion.run,
+        tasks.ocr_pipeline_qwen_extract.run,
+        tasks._ocr_pipeline_finalize_impl,
+    ]
+
+    for worker in partial_state_workers:
+        source = inspect.getsource(worker)
+        assert "flush_state()" not in source, (
+            f"{worker.__name__} must use record-level persistence after a scoped state load"
+        )
