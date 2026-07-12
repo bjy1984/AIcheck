@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import time
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable
 
@@ -352,8 +354,33 @@ def official_ocr_extract(
             if isinstance(item, dict)
         ]
         if not page_calls:
-            advanced = ocr_client.call(image_path, task="advanced_recognition", page_no=page_no)
-            page_calls.append(advanced)
+            call_specs: list[tuple[str, dict[str, Any]]] = [
+                ("advanced_recognition", {}),
+            ]
+            if schema:
+                call_specs.append(
+                    ("key_information_extraction", {"result_schema": schema})
+                )
+            if required_tables:
+                call_specs.append(("table_parsing", {}))
+            with ThreadPoolExecutor(max_workers=len(call_specs)) as executor:
+                futures = [
+                    executor.submit(
+                        ocr_client.call,
+                        image_path,
+                        task=task,
+                        page_no=page_no,
+                        **kwargs,
+                    )
+                    for task, kwargs in call_specs
+                ]
+                page_calls.extend(future.result() for future in futures)
+
+            advanced = next(
+                item
+                for item in page_calls
+                if item.get("task") == "advanced_recognition"
+            )
             if seal_required and not seal_candidates_from_fragments(advanced_fragments(advanced)):
                 seal_rois = detect_color_seal_rois(
                     image_path,
@@ -369,19 +396,6 @@ def official_ocr_extract(
                     roi_call["roiBbox"] = roi["bbox"]
                     roi_call["roiColor"] = roi["color"]
                     page_calls.append(roi_call)
-            if schema:
-                page_calls.append(
-                    ocr_client.call(
-                        image_path,
-                        task="key_information_extraction",
-                        page_no=page_no,
-                        result_schema=schema,
-                    )
-                )
-            if required_tables:
-                page_calls.append(
-                    ocr_client.call(image_path, task="table_parsing", page_no=page_no)
-                )
             if page_completed:
                 page_completed(page_no, completed_count, total_pages, page_calls)
         calls.extend(page_calls)

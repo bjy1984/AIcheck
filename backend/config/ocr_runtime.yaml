@@ -21,11 +21,11 @@ providers:
     defaultBaseUrl: https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation
     primaryModel: qwen3.5-ocr
     comparisonModel: qwen-vl-ocr-2025-11-20
-    timeoutSeconds: 60
+    timeoutSeconds: 120
     circuitFailureThreshold: 3
     circuitOpenSeconds: 60
     maxAttempts: 3
-    maxOutputTokens: 16384
+    maxOutputTokens: 4096
 
 routing:
   electronicPdf: local_text_layer

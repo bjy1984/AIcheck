@@ -49,7 +49,7 @@ def test_ocr_runtime_is_redacted_and_clamps_render_size() -> None:
     assert runtime["render"]["maxPagesPerBatch"] == 30
     assert runtime["render"]["maxDocumentPages"] == 200
     assert runtime["render"]["maxCostCnyPerDocument"] == 5.0
-    assert runtime["official"]["maxOutputTokens"] == 16384
+    assert runtime["official"]["maxOutputTokens"] == 4096
     assert public["apiKeyConfigured"] is True
     assert "apiKey" not in public
     assert public["allowLocalHeavyFallback"] is False
@@ -190,7 +190,7 @@ def test_native_client_uses_dashscope_payload_and_surfaces_retry_after(tmp_path:
         circuit_breaker=OfficialOcrCircuitBreaker(3, 60),
     )
     result = client.call(image_path, task="advanced_recognition", page_no=1)
-    assert requests[0]["parameters"]["max_tokens"] == 16384
+    assert requests[0]["parameters"]["max_tokens"] == 4096
     assert requests[0]["parameters"]["ocr_options"]["task"] == "advanced_recognition"
     assert len(advanced_fragments(result)) == 1
 
