@@ -52,6 +52,7 @@ class DocumentParseJobStore:
 
     def create(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = server_time()
+        request_key = str(payload.get("requestKey") or "").strip()
         job = {
             "jobId": f"OCRJOB-{uuid4().hex[:12].upper()}",
             "status": "queued",
@@ -74,11 +75,26 @@ class DocumentParseJobStore:
             "parseResultId": None,
             "parentJobId": payload.get("parentJobId"),
             "retryOfJobId": payload.get("retryOfJobId"),
+            "requestKey": request_key or None,
         }
         with self._lock:
+            if request_key:
+                existing = next(
+                    (
+                        item
+                        for item in reversed(list(self._jobs.values()))
+                        if str(item.get("requestKey") or "") == request_key
+                        and str(item.get("status") or "") in {"queued", "running", "success"}
+                    ),
+                    None,
+                )
+                if existing is not None:
+                    reused = deepcopy(existing)
+                    reused["reused"] = True
+                    return reused
             self._jobs[job["jobId"]] = job
             self._save_locked()
-        return deepcopy(job)
+            return deepcopy(job)
 
     def get_job(self, job_id: str) -> dict[str, Any] | None:
         with self._lock:

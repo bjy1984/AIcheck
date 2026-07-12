@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
@@ -49,6 +50,18 @@ def ocr_diagnostic(code: str, message: str, *, level: str = "error", **extra: An
         "message": message,
         **extra,
     }
+
+
+def ocr_job_request_key(payload: dict[str, Any]) -> str:
+    identity = {
+        "documentVersionId": payload.get("documentVersionId"),
+        "storageKey": payload.get("storageKey"),
+        "profileId": payload.get("profileId"),
+        "documentType": payload.get("documentType"),
+        "options": payload.get("options") or {},
+    }
+    encoded = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    return f"ocrjob:{hashlib.sha256(encoded.encode('utf-8')).hexdigest()}"
 
 
 def normalize_ocr_diagnostics(raw: Any, *, default_code: str, default_message: str) -> list[dict[str, Any]]:
@@ -177,7 +190,9 @@ class OcrClient:
         return envelope.get("data") or {}
 
     def create_parse_job(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self._request_enveloped("POST", "/internal/document-parse/jobs", json=payload, timeout=30)
+        request_payload = dict(payload)
+        request_payload.setdefault("requestKey", ocr_job_request_key(request_payload))
+        return self._request_enveloped("POST", "/internal/document-parse/jobs", json=request_payload, timeout=30)
 
     def get_parse_job(self, job_id: str) -> dict[str, Any]:
         return self._request_enveloped("GET", f"/internal/document-parse/jobs/{job_id}", timeout=30)

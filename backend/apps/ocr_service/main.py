@@ -186,7 +186,8 @@ async def create_document_parse_job(request: Request, payload: dict, background_
     if not storage_key:
         return fail(errors.VALIDATION_ERROR, request, message="storageKey 不能为空。")
     job = ocr_service.create_job(payload)
-    background_tasks.add_task(ocr_service.run_job, job["jobId"])
+    if not job.get("reused"):
+        background_tasks.add_task(ocr_service.run_job, job["jobId"])
     return ok(job, request)
 
 
