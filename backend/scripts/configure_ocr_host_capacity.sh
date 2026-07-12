@@ -3,6 +3,8 @@ set -euo pipefail
 
 SERVICE_USER="${AICHECK_SERVICE_USER:-dev-bjy}"
 SERVICE_GROUP="${AICHECK_SERVICE_GROUP:-${SERVICE_USER}}"
+CACHE_UID="${AICHECK_OCR_CACHE_UID:-999}"
+CACHE_GID="${AICHECK_OCR_CACHE_GID:-999}"
 CACHE_PATH="${AICHECK_OCR_CACHE_HOST_PATH:-/data/aicheck/ocr-cache}"
 SWAP_PATH="${AICHECK_SWAP_PATH:-/data/aicheck.swap}"
 SWAP_SIZE="${AICHECK_SWAP_SIZE:-8G}"
@@ -18,7 +20,7 @@ if ! id "${SERVICE_USER}" >/dev/null 2>&1; then
   exit 2
 fi
 
-${SUDO_BIN} install -d -m 0770 -o "${SERVICE_USER}" -g "${SERVICE_GROUP}" "${CACHE_PATH}"
+${SUDO_BIN} install -d -m 0770 -o "${CACHE_UID}" -g "${CACHE_GID}" "${CACHE_PATH}"
 
 if [[ ! -f "${SWAP_PATH}" ]]; then
   if command -v fallocate >/dev/null 2>&1; then

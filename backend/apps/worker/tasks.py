@@ -6,6 +6,7 @@ import os
 import shutil
 import tempfile
 import time
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 from uuid import uuid4

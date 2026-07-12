@@ -9649,10 +9649,11 @@ def test_completed_ocr_worker_is_idempotent(monkeypatch) -> None:
     from apps.worker import tasks
 
     monkeypatch.setenv("AICHECK_WORKER_OCR_ALLOW_IN_PROCESS", "true")
-    calls = {"ocr": 0}
+    calls = {"ocr": 0, "options": None}
 
     def fake_parse(storage_key: str, *, file_name: str | None = None, **kwargs):
         calls["ocr"] += 1
+        calls["options"] = kwargs.get("options")
         return {
             "storageKey": storage_key,
             "fileName": file_name,
@@ -9665,6 +9666,7 @@ def test_completed_ocr_worker_is_idempotent(monkeypatch) -> None:
 
     monkeypatch.setattr(tasks.ocr_service, "parse_document", fake_parse)
     doc, version = repo.create_document("P-2026-HDCP-001", "OCR-idempotent.pdf", "application/pdf")
+    version["ocrOptions"] = {"disableResultCache": True}
 
     first = tasks.parse_document.run(doc["id"], version["id"], version["storageKey"], doc["fileName"])
     task = repo.ocr_task_for(doc["id"], version["id"], doc["fileName"])
@@ -9677,6 +9679,7 @@ def test_completed_ocr_worker_is_idempotent(monkeypatch) -> None:
     assert first["applied"]["status"] == "success"
     assert second["alreadyCompleted"] is True
     assert calls["ocr"] == 1
+    assert calls["options"]["disableResultCache"] is True
     assert task.get("logs") == logs_after_first
     assert len([item for item in repo.state["extracted_fields"] if item.get("documentVersionId") == version["id"]]) == field_count_after_first
 
