@@ -184,10 +184,27 @@ GOLDEN_CASES: list[dict[str, str]] = [
 ]
 
 
+NON_SPATIAL_SOURCE_METHODS = {
+    "deterministic_text_parse",
+    "deterministic_docx_parse",
+    "deterministic_yaml_parse",
+    "deterministic_json_parse",
+    "deterministic_csv_parse",
+}
+
+
 def ratio(numerator: int | float, denominator: int | float) -> float:
     if not denominator:
         return 0.0
     return round(float(numerator) / float(denominator), 4)
+
+
+def bbox_applicable(chunk: dict[str, Any]) -> bool:
+    """Return whether the source has page geometry that must be grounded."""
+    if chunk.get("contextType") == "business_rule_context":
+        return False
+    source_method = str(chunk.get("sourceMethod") or "").strip().lower()
+    return source_method not in NON_SPATIAL_SOURCE_METHODS
 
 
 def source_files() -> list[dict[str, Any]]:
@@ -293,7 +310,9 @@ def build_audit() -> dict[str, Any]:
         and not noise_like_text(item.get("text"))
     ]
     noise_chunks = [item for item in chunks if noise_like_text(item.get("text"))]
-    bbox_chunks = [item for item in original_chunks if item.get("bbox")]
+    bbox_eligible_chunks = [item for item in original_chunks if bbox_applicable(item)]
+    bbox_not_applicable_chunks = [item for item in original_chunks if not bbox_applicable(item)]
+    bbox_chunks = [item for item in bbox_eligible_chunks if item.get("bbox")]
     ocr_confidence_chunks = [item for item in original_chunks if item.get("ocrConfidence") is not None]
     business_chunks = [item for item in chunks if item.get("contextType") == "business_rule_context"]
     visual_chunks = [
@@ -310,7 +329,7 @@ def build_audit() -> dict[str, Any]:
     parity_rate = ratio(len(parity_files), file_count)
     original_text_rate = ratio(len(original_chunks), len(chunks))
     noise_chunk_rate = ratio(len(noise_chunks), len(chunks))
-    bbox_rate = ratio(len(bbox_chunks), len(original_chunks))
+    bbox_rate = ratio(len(bbox_chunks), len(bbox_eligible_chunks)) if bbox_eligible_chunks else 1.0
     ocr_confidence_rate = ratio(len(ocr_confidence_chunks), len(original_chunks))
 
     score = 0.0
@@ -363,6 +382,9 @@ def build_audit() -> dict[str, Any]:
             "noiseLikeWatermarkChunks": len(noise_chunks),
             "noiseLikeWatermarkRate": noise_chunk_rate,
             "bboxRate": bbox_rate,
+            "bboxEligibleChunks": len(bbox_eligible_chunks),
+            "bboxCoveredChunks": len(bbox_chunks),
+            "bboxNotApplicableChunks": len(bbox_not_applicable_chunks),
             "ocrConfidenceRate": ocr_confidence_rate,
             "businessRuleContextChunks": len(business_chunks),
             "visualSummaryChunks": len(visual_chunks),
