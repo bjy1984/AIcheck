@@ -918,6 +918,64 @@ def test_piping_profile_keeps_drawing_title_block_table_candidate() -> None:
     assert any(item["code"] == "ENGINEERING_DRAWING_TITLE_BLOCK_INFERRED" for item in result["diagnostics"])
 
 
+def test_piping_profile_auxiliary_title_block_does_not_hide_main_table() -> None:
+    from apps.ocr_service.profiles import profile_for
+    from apps.ocr_service.service import enrich_parse_result
+
+    fragments = [
+        {"pageNo": 1, "text": "管道特性表", "bbox": [400, 20, 520, 42], "confidence": 0.96},
+        {"pageNo": 1, "text": "职责", "bbox": [30, 50, 70, 68], "confidence": 0.92},
+        {"pageNo": 1, "text": "姓名", "bbox": [90, 50, 130, 68], "confidence": 0.92},
+        {"pageNo": 1, "text": "日期", "bbox": [150, 50, 190, 68], "confidence": 0.92},
+        {"pageNo": 1, "text": "管道号", "bbox": [40, 180, 100, 200], "confidence": 0.94},
+        {"pageNo": 1, "text": "公称直径", "bbox": [180, 180, 260, 200], "confidence": 0.94},
+        {"pageNo": 1, "text": "介质", "bbox": [360, 180, 410, 200], "confidence": 0.94},
+        {"pageNo": 1, "text": "设计压力", "bbox": [540, 180, 620, 200], "confidence": 0.94},
+        {"pageNo": 1, "text": "PL8301", "bbox": [40, 220, 105, 240], "confidence": 0.95},
+        {"pageNo": 1, "text": "DN80", "bbox": [180, 220, 235, 240], "confidence": 0.95},
+        {"pageNo": 1, "text": "液相", "bbox": [360, 220, 405, 240], "confidence": 0.95},
+        {"pageNo": 1, "text": "1.6MPa", "bbox": [540, 220, 610, 240], "confidence": 0.95},
+        {"pageNo": 1, "text": "PL8302", "bbox": [40, 260, 105, 280], "confidence": 0.95},
+        {"pageNo": 1, "text": "DN50", "bbox": [180, 260, 235, 280], "confidence": 0.95},
+        {"pageNo": 1, "text": "气相", "bbox": [360, 260, 405, 280], "confidence": 0.95},
+        {"pageNo": 1, "text": "1.0MPa", "bbox": [540, 260, 610, 280], "confidence": 0.95},
+    ]
+    result = enrich_parse_result(
+        {
+            "status": "success",
+            "fragments": fragments,
+            "fields": [],
+            "tables": [
+                {
+                    "tableId": "page_1_engineering_drawing_title_block_1",
+                    "tableType": "engineering_drawing_title_block",
+                    "businessSchema": "engineering_drawing_title_block_v1",
+                    "pageNo": 1,
+                    "bbox": [20, 40, 220, 100],
+                    "rows": 2,
+                    "columns": 3,
+                    "cells": [],
+                    "sourceEngine": "fragment_title_block_detector",
+                    "auxiliaryTable": True,
+                }
+            ],
+            "seals": [],
+            "diagnostics": [],
+        },
+        profile=profile_for("piping_characteristic_list_v1"),
+        document_version_id="docv-piping-title-block",
+        business_pack_id="engineering_inspection_v1",
+        model_manifest={},
+    )
+
+    tables = {table["tableId"]: table for table in result["tables"]}
+    assert "page_1_engineering_drawing_title_block_1" in tables
+    assert "page_1_piping_characteristic_table_1" in tables
+    main_table = tables["page_1_piping_characteristic_table_1"]
+    assert main_table["businessSchema"] == "piping_characteristic_table_v1"
+    assert len(main_table["normalizedRows"]) >= 2
+
+
 def test_pp_structure_model_names_follow_local_model_dirs(monkeypatch) -> None:
     from pathlib import Path
 

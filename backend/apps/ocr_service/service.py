@@ -4051,8 +4051,12 @@ def apply_profile_postprocessing(result: dict[str, Any], profile: dict[str, Any]
                         tableId=aligned_table["tableId"],
                     )
                 )
-        elif inferred_tables and not result.get("tables"):
-            result["tables"] = inferred_tables
+        elif inferred_tables and not any(
+            piping_table_matches_required(table)
+            for table in result.get("tables") or []
+            if isinstance(table, dict)
+        ):
+            result.setdefault("tables", []).extend(inferred_tables)
             result.setdefault("diagnostics", []).append(
                 diagnostic(
                     "HEURISTIC_TABLE_INFERRED",
@@ -4890,6 +4894,15 @@ def infer_piping_tables_for_page(items: list[dict[str, Any]], page_no: int) -> l
             "qualityFlags": ["heuristic_table_fallback"],
         }
     ]
+
+
+def piping_table_matches_required(table: dict[str, Any]) -> bool:
+    candidates = {
+        str(table.get("businessSchema") or ""),
+        str(table.get("tableType") or ""),
+        str(table.get("tableId") or ""),
+    }
+    return any("piping_characteristic_table" in value for value in candidates)
 
 
 def normalize_piping_tables(result: dict[str, Any]) -> None:
