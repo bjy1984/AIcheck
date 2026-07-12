@@ -1,0 +1,3 @@
+# Temporal requires the configured dynamic-config file to exist.
+# Production overrides can add supported dynamic settings here.
+{}
