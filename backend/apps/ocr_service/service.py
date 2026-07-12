@@ -603,7 +603,14 @@ class OcrService:
                     target.unlink(missing_ok=True)
             return dict(self._last_inference)
 
-    def record_parse_result(self, result: dict[str, Any]) -> dict[str, Any]:
+    def record_parse_result(
+        self,
+        result: dict[str, Any],
+        *,
+        update_readiness: bool = True,
+    ) -> dict[str, Any]:
+        if not update_readiness:
+            return result
         outcome = str(result.get("outcomeStatus") or result.get("status") or "failed")
         succeeded = outcome in {"success", "completed"}
         self._last_inference.update(
@@ -680,19 +687,32 @@ class OcrService:
         # Keep these explicit calls in this method: resolve_source_path, AICHECK_OCR_ALLOW_PLACEHOLDER,
         # failed_result, and normalize_ocr_result are part of the legacy deployment contract.
         options = options or {}
+        update_readiness = not (
+            str(options.get("baselineParseResultId") or "").strip()
+            or engine_allowlist(options) is not None
+        )
         source_path = resolve_source_path(storage_key, file_name)
         os.getenv("AICHECK_OCR_ALLOW_PLACEHOLDER", "false")
         if source_path is None:
-            return self.record_parse_result(failed_result(
-                storage_key,
-                file_name,
-                "OCR source file is unavailable. Check MinIO object key, credentials, or mounted file path.",
-            ))
+            return self.record_parse_result(
+                failed_result(
+                    storage_key,
+                    file_name,
+                    "OCR source file is unavailable. Check MinIO object key, credentials, or mounted file path.",
+                ),
+                update_readiness=update_readiness,
+            )
         suffix = source_path.suffix.lower()
         if suffix in TEXT_DOCUMENT_SUFFIXES:
-            return self.record_parse_result(parse_text_document(source_path, storage_key, file_name))
+            return self.record_parse_result(
+                parse_text_document(source_path, storage_key, file_name),
+                update_readiness=update_readiness,
+            )
         if suffix in OFFICE_TEXT_DOCUMENT_SUFFIXES:
-            return self.record_parse_result(parse_docx_document(source_path, storage_key, file_name))
+            return self.record_parse_result(
+                parse_docx_document(source_path, storage_key, file_name),
+                update_readiness=update_readiness,
+            )
         base_profile = profile_for(profile_id, document_type)
         options = apply_business_pdf_deep_scan_default_options(options, base_profile, suffix=suffix)
         options = apply_fast_first_default_options(options, base_profile)
@@ -707,17 +727,20 @@ class OcrService:
                 business_pack_id=business_pack_id,
             )
             if fast_result is not None:
-                return self.record_parse_result(fast_result)
+                return self.record_parse_result(fast_result, update_readiness=update_readiness)
             if parse_bool(options.get("textLayerOnly"), False):
-                return self.record_parse_result(failed_result(
-                    storage_key,
-                    file_name,
-                    diagnostic(
-                        "PDF_TEXT_LAYER_UNAVAILABLE",
-                        "PDF 未检测到可抽取文本层，标准规范库已跳过高内存视觉 OCR。",
-                        level="error",
+                return self.record_parse_result(
+                    failed_result(
+                        storage_key,
+                        file_name,
+                        diagnostic(
+                            "PDF_TEXT_LAYER_UNAVAILABLE",
+                            "PDF 未检测到可抽取文本层，标准规范库已跳过高内存视觉 OCR。",
+                            level="error",
+                        ),
                     ),
-                ))
+                    update_readiness=update_readiness,
+                )
         candidate_results: list[dict[str, Any]] = []
         if suffix == ".pdf" and pdf_deep_scan_requested(options):
             candidate_results.append(
@@ -770,26 +793,29 @@ class OcrService:
             candidate_results=candidate_results,
         )
         if normalized.get("status") == "success":
-            return self.record_parse_result(normalized)
+            return self.record_parse_result(normalized, update_readiness=update_readiness)
         if self.placeholder_allowed:
-            return self.record_parse_result(normalize_ocr_result(
-                {
-                    "ok": False,
-                    "diagnostics": [
-                        {
-                            "code": "PLACEHOLDER_DISABLED_BY_POLICY",
-                            "message": "Placeholder OCR is not used by the local-only Document Intelligence service.",
-                        }
-                    ],
-                },
-                storage_key,
-                file_name,
-            ))
+            return self.record_parse_result(
+                normalize_ocr_result(
+                    {
+                        "ok": False,
+                        "diagnostics": [
+                            {
+                                "code": "PLACEHOLDER_DISABLED_BY_POLICY",
+                                "message": "Placeholder OCR is not used by the local-only Document Intelligence service.",
+                            }
+                        ],
+                    },
+                    storage_key,
+                    file_name,
+                ),
+                update_readiness=update_readiness,
+            )
         diagnostics = normalized.get("diagnostics") or []
         if pipeline_error:
             diagnostics = [*diagnostics, pipeline_error]
         normalized["diagnostics"] = normalize_diagnostics(diagnostics)
-        return self.record_parse_result(normalized)
+        return self.record_parse_result(normalized, update_readiness=update_readiness)
 
     def parse_pdf_text_layer_fast_path(
         self,

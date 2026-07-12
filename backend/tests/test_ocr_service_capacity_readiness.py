@@ -70,6 +70,44 @@ def test_deep_readiness_fails_until_real_probe_succeeds(monkeypatch) -> None:
     assert after["lastSuccessfulInferenceAt"]
 
 
+def test_specialized_stage_result_does_not_poison_primary_readiness(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_OCR_DEEP_READY_PROBE", "true")
+    monkeypatch.setenv("AICHECK_OCR_OFFLINE_ONLY", "false")
+    service = build_service(monkeypatch)
+    service.run_readiness_probe()
+    before = service.health_payload()
+
+    monkeypatch.setattr(service_module, "resolve_source_path", lambda *_args, **_kwargs: None)
+    result = service.parse_document(
+        "missing-seal-stage.png",
+        options={
+            "baselineParseResultId": "OCR-BASELINE-1",
+            "engineAllowlist": ["paddlex_seal_recognition"],
+        },
+    )
+    after = service.readiness_payload()
+
+    assert result["status"] == "failed"
+    assert after["ready"] is True
+    assert after["inferenceStatus"] == "success"
+    assert after["lastSuccessfulInferenceAt"] == before["lastSuccessfulInferenceAt"]
+    assert after["lastInferenceAttemptAt"] == before["lastInferenceAttemptAt"]
+
+
+def test_primary_failed_result_still_blocks_deep_readiness(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_OCR_DEEP_READY_PROBE", "true")
+    monkeypatch.setenv("AICHECK_OCR_OFFLINE_ONLY", "false")
+    service = build_service(monkeypatch)
+    service.run_readiness_probe()
+
+    service.record_parse_result({"status": "failed"})
+    readiness = service.readiness_payload()
+
+    assert readiness["ready"] is False
+    assert readiness["inferenceStatus"] == "failed"
+    assert readiness["lastInferenceErrorCode"] == "OCR_RESULT_NOT_USABLE"
+
+
 def test_readiness_fails_when_memory_headroom_is_below_minimum(monkeypatch) -> None:
     monkeypatch.setenv("AICHECK_OCR_OFFLINE_ONLY", "false")
     service = build_service(monkeypatch, available_mb=1024)
