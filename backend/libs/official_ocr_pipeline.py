@@ -8,6 +8,7 @@ from typing import Any, Callable
 from PIL import Image
 
 from libs.aliyun_ocr import (
+    AliyunOcrError,
     AliyunQwenOcrClient,
     advanced_fragments,
     grounded_kie_fields,
@@ -19,7 +20,7 @@ from libs.ocr_runtime import ocr_runtime_config
 
 
 def selected_source_pages(source_path: Path, profile: dict[str, Any], runtime: dict[str, Any]) -> list[int]:
-    maximum = max(1, min(int(runtime["render"]["maxPages"]), 50))
+    maximum = max(1, min(int(runtime["render"]["maxDocumentPages"]), 200))
     if source_path.suffix.lower() != ".pdf":
         return [1]
     try:
@@ -29,18 +30,12 @@ def selected_source_pages(source_path: Path, profile: dict[str, Any], runtime: d
             total = int(document.page_count)
     except Exception:
         return [1]
-    structured = profile.get("structuredExtraction") if isinstance(profile.get("structuredExtraction"), dict) else {}
-    configured = structured.get("maxPages") or maximum
-    try:
-        profile_limit = int(configured)
-    except (TypeError, ValueError):
-        profile_limit = maximum
-    limit = max(1, min(profile_limit, maximum, total))
-    if total <= limit:
-        return list(range(1, total + 1))
-    if limit == 1:
-        return [1]
-    return [*range(1, limit), total]
+    if total > maximum:
+        raise AliyunOcrError(
+            f"Document page count {total} exceeds official OCR limit {maximum}",
+            reason="DOCUMENT_PAGE_LIMIT_EXCEEDED",
+        )
+    return list(range(1, total + 1))
 
 
 def field_schema(profile: dict[str, Any]) -> tuple[dict[str, str], dict[str, str]]:
@@ -65,6 +60,122 @@ def field_schema(profile: dict[str, Any]) -> tuple[dict[str, str], dict[str, str
         labels[code] = label
         schema[code] = description
     return schema, labels
+
+
+def detect_color_seal_rois(
+    image_path: Path,
+    output_directory: Path,
+    *,
+    max_candidates: int = 2,
+) -> list[dict[str, Any]]:
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return []
+    image = cv2.imread(str(image_path))
+    if image is None:
+        return []
+    height, width = image.shape[:2]
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    masks = {
+        "red": (
+            cv2.inRange(hsv, np.array([0, 25, 35]), np.array([15, 255, 255]))
+            | cv2.inRange(hsv, np.array([160, 25, 35]), np.array([180, 255, 255]))
+        ),
+        "blue": cv2.inRange(hsv, np.array([85, 35, 25]), np.array([140, 255, 230])),
+    }
+    candidates: list[dict[str, Any]] = []
+    for color, mask in masks.items():
+        kernel = np.ones((15, 15), np.uint8)
+        merged = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+        contours, _ = cv2.findContours(merged, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for contour in contours:
+            area = float(cv2.contourArea(contour))
+            if area < max(800.0, width * height * 0.00008):
+                continue
+            x, y, box_width, box_height = cv2.boundingRect(contour)
+            if box_width < 40 or box_height < 25:
+                continue
+            if (box_width * box_height) / float(width * height) > 0.12:
+                continue
+            aspect = box_width / float(box_height)
+            if aspect < 0.3 or aspect > 6.0:
+                continue
+            candidates.append(
+                {
+                    "color": color,
+                    "area": area,
+                    "bbox": [int(x), int(y), int(x + box_width), int(y + box_height)],
+                }
+            )
+    selected: list[dict[str, Any]] = []
+    for candidate in sorted(candidates, key=lambda item: float(item["area"]), reverse=True):
+        x0, y0, x1, y1 = candidate["bbox"]
+        center = ((x0 + x1) / 2.0, (y0 + y1) / 2.0)
+        if any(
+            previous["bbox"][0] <= center[0] <= previous["bbox"][2]
+            and previous["bbox"][1] <= center[1] <= previous["bbox"][3]
+            for previous in selected
+        ):
+            continue
+        padding = max(8, int(max(x1 - x0, y1 - y0) * 0.12))
+        crop_bbox = [
+            max(0, x0 - padding),
+            max(0, y0 - padding),
+            min(width, x1 + padding),
+            min(height, y1 + padding),
+        ]
+        crop = image[crop_bbox[1] : crop_bbox[3], crop_bbox[0] : crop_bbox[2]]
+        if crop.size == 0:
+            continue
+        output_directory.mkdir(parents=True, exist_ok=True)
+        crop_path = output_directory / f"seal_{candidate['color']}_{len(selected) + 1}.jpg"
+        if not cv2.imwrite(str(crop_path), crop):
+            continue
+        selected.append(
+            {
+                **candidate,
+                "bbox": crop_bbox,
+                "path": crop_path,
+            }
+        )
+        if len(selected) >= max_candidates:
+            break
+    return selected
+
+
+def _offset_advanced_fragments(call: dict[str, Any]) -> list[dict[str, Any]]:
+    fragments = advanced_fragments(call)
+    offset = call.get("roiOffset")
+    if not isinstance(offset, list) or len(offset) < 2:
+        return fragments
+    offset_x, offset_y = float(offset[0]), float(offset[1])
+    for fragment in fragments:
+        bbox = fragment.get("bbox")
+        polygon = fragment.get("polygon")
+        if isinstance(bbox, list) and len(bbox) >= 4:
+            fragment["bbox"] = [
+                float(bbox[0]) + offset_x,
+                float(bbox[1]) + offset_y,
+                float(bbox[2]) + offset_x,
+                float(bbox[3]) + offset_y,
+            ]
+        if isinstance(polygon, list) and len(polygon) >= 8:
+            fragment["polygon"] = [
+                float(value) + (offset_x if index % 2 == 0 else offset_y)
+                for index, value in enumerate(polygon)
+            ]
+        digest = hashlib.sha256(
+            f"{fragment.get('pageNo')}|{fragment.get('text')}|{fragment.get('polygon')}".encode("utf-8")
+        ).hexdigest()[:16].upper()
+        candidate_id = f"OCR-CAND-{digest}"
+        fragment["candidateId"] = candidate_id
+        fragment["sourceCandidateIds"] = [candidate_id]
+        fragment["sourceEngine"] = "aliyun_qwen_ocr_seal_roi"
+        fragment["roiBbox"] = call.get("roiBbox")
+        fragment["roiColor"] = call.get("roiColor")
+    return fragments
 
 
 def _page_records(rendered: dict[int, Path]) -> list[dict[str, Any]]:
@@ -229,6 +340,7 @@ def official_ocr_extract(
     table_calls: list[dict[str, Any]] = []
     schema, field_labels = field_schema(profile)
     required_tables = [str(item) for item in profile.get("requiredTables") or [] if str(item)]
+    seal_required = bool((profile.get("sealRules") or {}).get("required"))
     table_code = required_tables[0] if len(required_tables) == 1 else "official_table_page"
     started = time.monotonic()
 
@@ -242,6 +354,21 @@ def official_ocr_extract(
         if not page_calls:
             advanced = ocr_client.call(image_path, task="advanced_recognition", page_no=page_no)
             page_calls.append(advanced)
+            if seal_required and not seal_candidates_from_fragments(advanced_fragments(advanced)):
+                seal_rois = detect_color_seal_rois(
+                    image_path,
+                    work_directory / "seal-rois" / f"page-{page_no}",
+                )
+                for roi in seal_rois:
+                    roi_call = ocr_client.call(
+                        roi["path"],
+                        task="advanced_recognition",
+                        page_no=page_no,
+                    )
+                    roi_call["roiOffset"] = [roi["bbox"][0], roi["bbox"][1]]
+                    roi_call["roiBbox"] = roi["bbox"]
+                    roi_call["roiColor"] = roi["color"]
+                    page_calls.append(roi_call)
             if schema:
                 page_calls.append(
                     ocr_client.call(
@@ -261,8 +388,14 @@ def official_ocr_extract(
         advanced_calls.extend(item for item in page_calls if item.get("task") == "advanced_recognition")
         kie_calls.extend(item for item in page_calls if item.get("task") == "key_information_extraction")
         table_calls.extend(item for item in page_calls if item.get("task") == "table_parsing")
+        accumulated_cost = sum(float(item.get("costCny") or 0.0) for item in calls)
+        if accumulated_cost > float(current["render"]["maxCostCnyPerDocument"]):
+            raise AliyunOcrError(
+                "Official OCR document cost limit exceeded",
+                reason="DOCUMENT_COST_LIMIT_EXCEEDED",
+            )
 
-    fragments = [fragment for call in advanced_calls for fragment in advanced_fragments(call)]
+    fragments = [fragment for call in advanced_calls for fragment in _offset_advanced_fragments(call)]
     fields = grounded_kie_fields(kie_calls, fragments, field_labels=field_labels)
     tables = [
         table
@@ -291,7 +424,6 @@ def official_ocr_extract(
     }
     if set(required_tables) - formal_table_codes:
         quality_reasons.append("TABLE_EVIDENCE_MISSING")
-    seal_required = bool((profile.get("sealRules") or {}).get("required"))
     if seal_required and not any(item.get("formalEvidenceEligible") for item in seals):
         quality_reasons.append("SEAL_EVIDENCE_MISSING")
     invalid_grounded_fields = [field for field in fields if not field.get("formalEvidenceEligible")]
@@ -338,6 +470,10 @@ def official_ocr_extract(
             "providerRequestIds": [call.get("requestId") for call in calls if call.get("requestId")],
             "costCny": total_cost,
             "modelCallCount": len(calls),
+            "sealRoiCallCount": sum(1 for call in calls if call.get("roiBbox")),
+            "maxPagesPerBatch": current["render"]["maxPagesPerBatch"],
+            "maxDocumentPages": current["render"]["maxDocumentPages"],
+            "maxCostCnyPerDocument": current["render"]["maxCostCnyPerDocument"],
             "inputImageHashes": [str((call.get("input") or {}).get("sha256") or "") for call in calls],
         },
         "modelCallAttempts": model_calls,

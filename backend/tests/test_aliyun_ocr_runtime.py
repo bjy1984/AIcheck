@@ -25,7 +25,7 @@ from libs.ocr_runtime import (
     ocr_runtime_public_config,
     official_ocr_primary_enabled,
 )
-from libs.official_ocr_pipeline import official_ocr_extract
+from libs.official_ocr_pipeline import detect_color_seal_rois, official_ocr_extract, selected_source_pages
 
 
 def official_env(**overrides: str) -> dict[str, str]:
@@ -46,6 +46,9 @@ def test_ocr_runtime_is_redacted_and_clamps_render_size() -> None:
     public = ocr_runtime_public_config(env=official_env())
     assert runtime["mode"] == "hybrid_auto"
     assert runtime["render"]["maxLongSide"] == 1920
+    assert runtime["render"]["maxPagesPerBatch"] == 30
+    assert runtime["render"]["maxDocumentPages"] == 200
+    assert runtime["render"]["maxCostCnyPerDocument"] == 5.0
     assert runtime["official"]["maxOutputTokens"] == 16384
     assert public["apiKeyConfigured"] is True
     assert "apiKey" not in public
@@ -323,6 +326,52 @@ def test_official_pipeline_runs_one_table_call_per_page(tmp_path: Path) -> None:
     )
     assert cached_client.tasks == []
     assert cached["metadata"]["modelCallCount"] == 3
+
+
+def test_color_seal_roi_detection_is_lightweight_and_bounded(tmp_path: Path) -> None:
+    cv2 = pytest.importorskip("cv2")
+    np = pytest.importorskip("numpy")
+    source = tmp_path / "seal.png"
+    image = np.full((800, 1200, 3), 255, dtype=np.uint8)
+    cv2.circle(image, (900, 580), 90, (0, 0, 210), 16)
+    assert cv2.imwrite(str(source), image)
+
+    candidates = detect_color_seal_rois(source, tmp_path / "rois")
+    assert 1 <= len(candidates) <= 2
+    assert candidates[0]["color"] == "red"
+    assert candidates[0]["path"].is_file()
+
+
+def test_official_pdf_pages_are_not_silently_truncated(tmp_path: Path) -> None:
+    fitz = pytest.importorskip("fitz")
+    source = tmp_path / "long.pdf"
+    document = fitz.open()
+    for _ in range(35):
+        document.new_page()
+    document.save(source)
+    document.close()
+
+    runtime = ocr_runtime_config(env=official_env(), validate=True)
+    assert selected_source_pages(source, {}, runtime) == list(range(1, 36))
+
+
+def test_official_pdf_over_hard_limit_fails_closed(tmp_path: Path) -> None:
+    fitz = pytest.importorskip("fitz")
+    source = tmp_path / "too-long.pdf"
+    document = fitz.open()
+    for _ in range(4):
+        document.new_page()
+    document.save(source)
+    document.close()
+    runtime = ocr_runtime_config(
+        env=official_env(
+            AICHECK_ALIYUN_OCR_MAX_PAGES_PER_BATCH="3",
+            AICHECK_ALIYUN_OCR_MAX_DOCUMENT_PAGES="3",
+        ),
+        validate=True,
+    )
+    with pytest.raises(Exception, match="exceeds official OCR limit"):
+        selected_source_pages(source, {}, runtime)
 
 
 def test_render_and_local_heavy_variants_are_bounded(tmp_path: Path, monkeypatch) -> None:

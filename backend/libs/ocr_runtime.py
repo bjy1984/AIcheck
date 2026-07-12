@@ -65,6 +65,49 @@ def ocr_runtime_config(
         )
     except (TypeError, ValueError):
         qwen_max_long_side = max_long_side
+    try:
+        max_pages_per_batch = max(
+            1,
+            min(
+                int(
+                    source.get("AICHECK_ALIYUN_OCR_MAX_PAGES_PER_BATCH")
+                    or render.get("maxPagesPerBatch")
+                    or render.get("maxPages")
+                    or 30
+                ),
+                30,
+            ),
+        )
+    except (TypeError, ValueError):
+        max_pages_per_batch = 30
+    try:
+        max_document_pages = max(
+            max_pages_per_batch,
+            min(
+                int(
+                    source.get("AICHECK_ALIYUN_OCR_MAX_DOCUMENT_PAGES")
+                    or render.get("maxDocumentPages")
+                    or 200
+                ),
+                200,
+            ),
+        )
+    except (TypeError, ValueError):
+        max_document_pages = 200
+    try:
+        max_cost_cny = max(
+            0.01,
+            min(
+                float(
+                    source.get("AICHECK_ALIYUN_OCR_MAX_COST_CNY_PER_DOCUMENT")
+                    or render.get("maxCostCnyPerDocument")
+                    or 5.0
+                ),
+                100.0,
+            ),
+        )
+    except (TypeError, ValueError):
+        max_cost_cny = 5.0
 
     allow_local_heavy = _env_bool(
         source,
@@ -118,11 +161,10 @@ def ocr_runtime_config(
             "maxLongSide": max_long_side,
             "qwenMaxLongSide": qwen_max_long_side,
             "jpegQuality": int(render.get("jpegQuality") or 90),
-            "maxPages": int(
-                source.get("AICHECK_ALIYUN_OCR_MAX_PAGES")
-                or render.get("maxPages")
-                or 30
-            ),
+            "maxPages": max_pages_per_batch,
+            "maxPagesPerBatch": max_pages_per_batch,
+            "maxDocumentPages": max_document_pages,
+            "maxCostCnyPerDocument": max_cost_cny,
         },
         "routing": deepcopy(routing),
         "allowLocalHeavyFallback": allow_local_heavy,
@@ -161,6 +203,9 @@ def ocr_runtime_public_config(env: Mapping[str, str] | None = None) -> dict[str,
         "comparisonModel": official["comparisonModel"],
         "maxLongSide": runtime["render"]["maxLongSide"],
         "qwenMaxLongSide": runtime["render"]["qwenMaxLongSide"],
+        "maxPagesPerBatch": runtime["render"]["maxPagesPerBatch"],
+        "maxDocumentPages": runtime["render"]["maxDocumentPages"],
+        "maxCostCnyPerDocument": runtime["render"]["maxCostCnyPerDocument"],
         "allowLocalHeavyFallback": runtime["allowLocalHeavyFallback"],
         "allowSilentProviderFallback": runtime["allowSilentProviderFallback"],
     }

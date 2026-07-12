@@ -1,0 +1,36 @@
+services:
+  api-service:
+    environment:
+      AICHECK_OCR_PROVIDER_MODE: official
+      AICHECK_OCR_PIPELINE_MODE: active
+      AICHECK_OCR_MAX_LONG_SIDE: "1920"
+      AICHECK_ALIYUN_OCR_MAX_PAGES_PER_BATCH: "30"
+      AICHECK_ALIYUN_OCR_MAX_DOCUMENT_PAGES: "200"
+      AICHECK_ALIYUN_OCR_MAX_COST_CNY_PER_DOCUMENT: "5"
+      AICHECK_OCR_ALLOW_LOCAL_HEAVY_FALLBACK: "false"
+      AICHECK_OCR_ALLOW_SILENT_PROVIDER_FALLBACK: "false"
+
+  worker-service:
+    environment: &official-ocr-environment
+      AICHECK_OCR_PROVIDER_MODE: official
+      AICHECK_OCR_PIPELINE_MODE: active
+
+  cpu-heavy-worker-service:
+    environment:
+      <<: *official-ocr-environment
+
+  ocr-local-worker-service:
+    environment:
+      <<: *official-ocr-environment
+
+  ocr-remote-worker-service:
+    environment:
+      <<: *official-ocr-environment
+
+  llm-remote-worker-service:
+    environment:
+      <<: *official-ocr-environment
+
+  ocr-service:
+    profiles:
+      - local-ocr

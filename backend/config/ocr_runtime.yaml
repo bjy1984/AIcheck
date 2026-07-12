@@ -7,6 +7,9 @@ render:
   qwenMaxLongSide: 1920
   jpegQuality: 90
   maxPages: 30
+  maxPagesPerBatch: 30
+  maxDocumentPages: 200
+  maxCostCnyPerDocument: 5.0
 
 providers:
   local:

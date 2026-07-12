@@ -64,8 +64,6 @@ x-pipeline-worker: &pipeline-worker
       condition: service_healthy
     minio:
       condition: service_healthy
-    ocr-service:
-      condition: service_healthy
     embedding-service:
       condition: service_healthy
     litellm-service:
