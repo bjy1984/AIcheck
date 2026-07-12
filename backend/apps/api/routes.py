@@ -113,6 +113,7 @@ from libs.security.session import (
 from scripts.ocr_100_label_studio_export import label_config_xml, label_studio_task, label_studio_task_without_image
 from scripts.ocr_100_label_studio_import import import_label_studio_annotations
 from scripts.ocr_100_action_board import (
+    ACTION_BOARD_LANES,
     action_board_csv,
     action_board_markdown,
     build_action_board,
@@ -15690,6 +15691,12 @@ def fde_ocr_quality_snapshot(project_id: str | None = None, node_id: int | None 
     failed_results = len([item for item in results if item.get("status") != "success"])
     cache_metrics = fde_ocr_cache_metrics(results, jobs)
     runtime_doctor_report = fde_ocr_runtime_doctor_report()
+    failure_pools = {
+        "fieldFailures": repo.clone(field_failures[:20]),
+        "tableFailures": repo.clone(table_failures[:20]),
+        "sealFailures": repo.clone(seal_failures[:20]),
+        "engineFailures": repo.clone(engine_failures[:20]),
+    }
     return {
         "fileLevel": {
             "total": len(documents),
@@ -15716,13 +15723,8 @@ def fde_ocr_quality_snapshot(project_id: str | None = None, node_id: int | None 
         "qualityReasonCounts": quality_reason_counts,
         "runtimeDoctor": fde_ocr_runtime_doctor_snapshot(runtime_doctor_report),
         "ocr100Scorecard": fde_ocr_100_scorecard_snapshot(results, eval_runs, runtime_doctor_report),
-        "ocr100ActionBoard": fde_ocr_100_action_board_snapshot(),
-        "failurePools": {
-            "fieldFailures": repo.clone(field_failures[:20]),
-            "tableFailures": repo.clone(table_failures[:20]),
-            "sealFailures": repo.clone(seal_failures[:20]),
-            "engineFailures": repo.clone(engine_failures[:20]),
-        },
+        "ocr100ActionBoard": fde_ocr_100_action_board_snapshot(failure_pools),
+        "failurePools": failure_pools,
     }
 
 
@@ -16383,12 +16385,94 @@ def fde_ocr_100_scorecard_snapshot(
     )
 
 
-def fde_ocr_100_action_board_snapshot() -> dict[str, Any]:
+def fde_ocr_100_action_board_snapshot(failure_pools: dict[str, Any] | None = None) -> dict[str, Any]:
     reports_dir = WORKSPACE_ROOT / "backend" / "ocr_eval" / "reports"
     try:
-        return fde_build_ocr_100_action_board(reports_dir)
+        board = fde_build_ocr_100_action_board(reports_dir)
+        return fde_attach_runtime_ocr_actions(board, failure_pools or {})
     except Exception as exc:  # pragma: no cover - defensive API fallback
         return fde_ocr_100_action_board_error_snapshot(reports_dir, exc)
+
+
+def fde_attach_runtime_ocr_actions(board: dict[str, Any], failure_pools: dict[str, Any]) -> dict[str, Any]:
+    grouped: dict[str, dict[str, Any]] = {}
+    pool_targets = {
+        "fieldFailures": "field",
+        "tableFailures": "table",
+        "sealFailures": "seal",
+        "engineFailures": "engine",
+    }
+    for pool_name, target_type in pool_targets.items():
+        for failure in failure_pools.get(pool_name) or []:
+            if not isinstance(failure, dict):
+                continue
+            source_id = str(
+                failure.get("parseResultId")
+                or failure.get("documentVersionId")
+                or failure.get("fieldId")
+                or ""
+            ).strip()
+            if not source_id:
+                source_id = hashlib.sha256(
+                    json.dumps(failure, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+                ).hexdigest()[:16]
+            group = grouped.setdefault(
+                source_id,
+                {"failureCodes": set(), "targetTypes": set(), "failures": []},
+            )
+            group["failureCodes"].add(str(failure.get("code") or "OCR_REVIEW_REQUIRED"))
+            group["targetTypes"].add(target_type)
+            group["failures"].append(repo.clone(failure))
+
+    existing_ids = {str(item.get("id")) for item in board.get("actions") or [] if isinstance(item, dict)}
+    runtime_actions: list[dict[str, Any]] = []
+    for source_id, group in sorted(grouped.items()):
+        action_id = f"label-runtime-{hashlib.sha256(source_id.encode('utf-8')).hexdigest()[:16]}"
+        if action_id in existing_ids:
+            continue
+        failure_codes = sorted(group["failureCodes"])
+        target_types = sorted(group["targetTypes"])
+        runtime_actions.append(
+            {
+                "id": action_id,
+                "lane": "label_existing",
+                "priority": 80 + min(len(group["failures"]), 10),
+                "scenario": "runtime_failure",
+                "parseResultId": source_id if any(item.get("parseResultId") for item in group["failures"]) else None,
+                "documentVersionId": next(
+                    (item.get("documentVersionId") for item in group["failures"] if item.get("documentVersionId")),
+                    None,
+                ),
+                "title": f"复核 OCR 结果 {source_id}",
+                "failureCount": len(group["failures"]),
+                "failureCodes": failure_codes,
+                "targetTypes": target_types,
+                "failures": group["failures"],
+                "blockers": failure_codes,
+                "humanActions": [
+                    "核对原页与 OCR 文本",
+                    "修正字段、表格或印章证据的页码和 bbox",
+                    "由不同复核人员确认后纳入金标",
+                ],
+                "doneWhen": "所有失败项均有人工核对结果，关键值可从原页反查，且页码与 bbox 已确认。",
+                "source": "runtime_failure_pool",
+            }
+        )
+
+    if not runtime_actions:
+        return board
+    board["actions"] = sorted(
+        [*(board.get("actions") or []), *runtime_actions],
+        key=lambda item: (-float(item.get("priority", 0)), str(item.get("lane")), str(item.get("id"))),
+    )
+    summary = board.setdefault("summary", {})
+    lane_counts = summary.setdefault("laneCounts", {lane: 0 for lane in ACTION_BOARD_LANES})
+    for lane in ACTION_BOARD_LANES:
+        lane_counts.setdefault(lane, 0)
+    lane_counts["label_existing"] += len(runtime_actions)
+    summary["actions"] = len(board["actions"])
+    summary["runtimeFailureActions"] = len(runtime_actions)
+    return board
 
 
 def fde_build_ocr_100_action_board(reports_dir: Path) -> dict[str, Any]:
@@ -16435,7 +16519,7 @@ def fde_ocr_100_action_board_error_snapshot(reports_dir: Path, exc: Exception) -
             "requiredReadyForEval": 100,
             "collectionMissingCases": None,
             "actions": 0,
-            "laneCounts": {},
+            "laneCounts": {lane: 0 for lane in ACTION_BOARD_LANES},
             "error": exc.__class__.__name__,
         },
         "actions": [],
@@ -16480,7 +16564,7 @@ def fde_ocr_100_action_handoff_snapshot(
             "ok": False,
             "status": "missing",
             "manifestPath": fde_relative_path(manifest_path),
-            "laneCounts": {},
+            "laneCounts": {lane: 0 for lane in ACTION_BOARD_LANES},
             "files": [],
         }
     files = manifest.get("files") if isinstance(manifest.get("files"), dict) else {}

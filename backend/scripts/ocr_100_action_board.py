@@ -19,6 +19,7 @@ from scripts.ocr_eval_set import write_text_file
 
 
 DEFAULT_REPORT_DIR = Path("ocr_eval/reports")
+ACTION_BOARD_LANES = ("collect_samples", "label_existing", "triage_candidates", "release_eval", "scorecard")
 
 
 def main() -> int:
@@ -213,7 +214,7 @@ def board_summary(
     status_summary = status.get("summary") if isinstance(status.get("summary"), dict) else {}
     sprint_summary = sprint.get("summary") if isinstance(sprint.get("summary"), dict) else {}
     candidate_summary = candidates.get("summary") if isinstance(candidates.get("summary"), dict) else {}
-    lane_counts: dict[str, int] = {}
+    lane_counts: dict[str, int] = {lane: 0 for lane in ACTION_BOARD_LANES}
     for action in actions:
         lane = str(action.get("lane") or "unspecified")
         lane_counts[lane] = lane_counts.get(lane, 0) + 1
@@ -409,7 +410,7 @@ def write_action_handoff(report: dict[str, Any], output_dir: Path) -> dict[str, 
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "outputDir": str(output_dir),
         "summary": report.get("summary") if isinstance(report.get("summary"), dict) else {},
-        "laneCounts": {lane: len(items) for lane, items in sorted(grouped.items())},
+        "laneCounts": {lane: len(grouped.get(lane, [])) for lane in ACTION_BOARD_LANES},
         "files": {key: str(path) for key, path in files.items()},
     }
     write_text_file(output_dir / "handoff_manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))

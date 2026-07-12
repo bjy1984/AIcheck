@@ -3,13 +3,26 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.ocr_100_action_board import action_board_csv, action_board_markdown, build_action_board, write_action_handoff
+from scripts.ocr_100_action_board import (
+    ACTION_BOARD_LANES,
+    action_board_csv,
+    action_board_markdown,
+    board_summary,
+    build_action_board,
+    write_action_handoff,
+)
 
 
 def write_json(path: Path, payload: dict) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     return path
+
+
+def test_empty_action_board_exposes_stable_zero_lane_counts() -> None:
+    summary = board_summary({}, {}, {"summary": {}}, {}, [])
+
+    assert summary["laneCounts"] == {lane: 0 for lane in sorted(ACTION_BOARD_LANES)}
 
 
 def test_action_board_combines_collection_label_and_candidate_actions(tmp_path: Path) -> None:
