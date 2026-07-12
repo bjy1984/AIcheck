@@ -4,6 +4,8 @@ import os
 from typing import Any
 
 from libs.material_review_assets import material_review_asset_status
+from libs.aliyun_ocr import official_ocr_circuit_breaker
+from libs.ocr_runtime import ocr_runtime_config, ocr_runtime_public_config
 from scripts.setup_langgraph_checkpoint import REQUIRED_TABLES, verify_checkpoint_schema
 
 
@@ -42,10 +44,25 @@ def workflow_schema_status() -> dict[str, Any]:
 
 def audit_service_configuration_status() -> dict[str, Any]:
     qwen_mode = os.getenv("AICHECK_QWEN_CALL_MODE", "server").strip().lower()
+    ocr_runtime = ocr_runtime_config()
+    ocr_public = ocr_runtime_public_config()
+    official_mode = ocr_runtime["mode"] in {"official", "hybrid_auto"}
+    ocr_configured = (
+        bool(ocr_public.get("configured"))
+        if official_mode
+        else bool(os.getenv("AICHECK_OCR_BASE_URL", "").strip())
+    )
     return {
         "ocr": {
-            "configured": bool(os.getenv("AICHECK_OCR_BASE_URL", "").strip()),
-            "executionBoundary": "remote_service_only",
+            "configured": ocr_configured,
+            "executionBoundary": "official_api_with_local_light" if official_mode else "remote_service_only",
+            "providerMode": ocr_public.get("mode"),
+            "provider": ocr_public.get("provider"),
+            "model": ocr_public.get("primaryModel"),
+            "maxLongSide": ocr_public.get("maxLongSide"),
+            "localHeavyFallbackEnabled": ocr_public.get("allowLocalHeavyFallback"),
+            "silentFallbackEnabled": ocr_public.get("allowSilentProviderFallback"),
+            "circuitBreaker": official_ocr_circuit_breaker(ocr_runtime).public_status(),
         },
         "qwen": {
             "configured": bool(os.getenv("QWEN_API_KEY", "").strip()) if qwen_mode == "official_api" else True,

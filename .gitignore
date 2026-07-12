@@ -23,6 +23,14 @@ backend/data/runtime-exports/
 backend/ocr_eval/reports/
 backend/ocr_eval/public_datasets/
 backend/ocr_eval/public_reports/
+.deploy-backups/
+.deploy-import/
+backend/reports/
+backend/docker-compose.server.yml
+backend/docker-compose.production-data.yml.bak-*
+frontend/nginx.aicheck.conf
+audit-reports/ocr-regression-*/
+audit-reports/ocr-hardening-*/
 
 output/**/*.inspect.ndjson
 output/knowledge_uploads/

@@ -327,6 +327,7 @@ def test_accuracy_pipeline_workers_never_full_flush_partial_state() -> None:
 
     partial_state_workers = [
         tasks.parse_document.run,
+        tasks.ocr_pipeline_official_extract.run,
         tasks.ocr_pipeline_evidence_fusion.run,
         tasks.ocr_pipeline_qwen_extract.run,
         tasks._ocr_pipeline_finalize_impl,

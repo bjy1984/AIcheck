@@ -281,11 +281,12 @@ def test_repository_repairs_missing_stage_records_when_failed_run_is_resumed() -
 def test_celery_routes_cpu_and_remote_work_are_isolated() -> None:
     routes = celery_app.conf.task_routes
 
-    assert routes["apps.worker.tasks.parse_document"]["queue"] == "cpu.heavy"
+    assert routes["apps.worker.tasks.parse_document"]["queue"] == "ocr.local-light"
     assert routes["apps.worker.tasks.ocr_pipeline_structure_scan"]["queue"] == "cpu.heavy"
     assert routes["apps.worker.tasks.ocr_pipeline_seal_scan"]["queue"] == "cpu.heavy"
     assert routes["apps.worker.tasks.ocr_pipeline_evidence_fusion"]["queue"] == "business.light"
     assert routes["apps.worker.tasks.embed_knowledge"]["queue"] == "cpu.heavy"
+    assert routes["apps.worker.tasks.ocr_pipeline_official_extract"]["queue"] == "ocr.remote"
     assert routes["apps.worker.tasks.ocr_pipeline_qwen_extract"]["queue"] == "llm.remote"
     assert routes["apps.worker.tasks.ocr_pipeline_finalize"]["queue"] == "business.light"
 

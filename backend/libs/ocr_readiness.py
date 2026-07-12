@@ -164,6 +164,8 @@ def build_document_ocr_readiness(repo: Any, document: dict[str, Any]) -> dict[st
     seal_status = str((stages_by_name.get("seal_signature_scan") or {}).get("status") or "")
     qwen_status = str((stages_by_name.get("qwen_extract") or {}).get("status") or "")
     qwen_validation = (pipeline_run or {}).get("groundingValidation") or {}
+    parse_metadata = (parse_result or {}).get("metadata")
+    parse_metadata = parse_metadata if isinstance(parse_metadata, dict) else {}
     return {
         "schemaVersion": "aicheck-ocr-readiness@1",
         "status": status,
@@ -194,6 +196,15 @@ def build_document_ocr_readiness(repo: Any, document: dict[str, Any]) -> dict[st
             and int(qwen_validation.get("invalidCandidateIdCount") or 0) == 0
         ),
         "formalEvidenceReady": bool((pipeline_run or {}).get("formalEvidenceReady")),
+        "providerMode": (pipeline_run or {}).get("providerMode") or parse_metadata.get("providerMode"),
+        "provider": (pipeline_run or {}).get("provider") or parse_metadata.get("provider"),
+        "model": (pipeline_run or {}).get("model") or parse_metadata.get("model"),
+        "cloudGrounded": bool((pipeline_run or {}).get("cloudGrounded") or parse_metadata.get("cloudGrounded")),
+        "providerRequestId": (
+            ((pipeline_run or {}).get("providerRequestIds") or parse_metadata.get("providerRequestIds") or [None])[0]
+        ),
+        "costCny": float((pipeline_run or {}).get("costCny") or parse_metadata.get("costCny") or 0.0),
+        "fallbackReason": (pipeline_run or {}).get("fallbackReason") or parse_metadata.get("fallbackReason"),
     }
 
 

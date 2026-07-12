@@ -566,6 +566,28 @@ class DeploymentConfigValidator:
             failures.append("api-service AICHECK_DATABASE_URL must target postgres:5432")
         if default_value(worker_env.get("AICHECK_TASK_DISPATCH")) != "celery":
             failures.append("worker-service default AICHECK_TASK_DISPATCH must be celery")
+        ocr_provider_mode = default_value(api_env.get("AICHECK_OCR_PROVIDER_MODE"))
+        if ocr_provider_mode in {"official", "hybrid_auto"}:
+            for service_name in ("api-service", "worker-service"):
+                service_env = environment_map(self.service(service_name).get("environment"))
+                for key in (
+                    "AICHECK_ALIYUN_OCR_BASE_URL",
+                    "AICHECK_ALIYUN_OCR_API_KEY",
+                    "AICHECK_ALIYUN_OCR_MODEL",
+                    "AICHECK_OCR_MAX_LONG_SIDE",
+                    "AICHECK_OCR_ALLOW_LOCAL_HEAVY_FALLBACK",
+                    "AICHECK_OCR_ALLOW_SILENT_PROVIDER_FALLBACK",
+                ):
+                    if key not in service_env:
+                        failures.append(f"{service_name}: missing {key} for {ocr_provider_mode}")
+                if default_value(service_env.get("AICHECK_OCR_ALLOW_LOCAL_HEAVY_FALLBACK")) != "false":
+                    failures.append(f"{service_name}: local OCR heavy fallback must be false")
+                if default_value(service_env.get("AICHECK_OCR_ALLOW_SILENT_PROVIDER_FALLBACK")) != "false":
+                    failures.append(f"{service_name}: silent OCR provider fallback must be false")
+                if default_value(service_env.get("AICHECK_OCR_MAX_LONG_SIDE")) != "1920":
+                    failures.append(f"{service_name}: OCR max long side must be 1920")
+            if default_value(worker_env.get("AICHECK_OCR_USE_JOB_API")) != "false":
+                failures.append("worker-service AICHECK_OCR_USE_JOB_API must be false in official OCR modes")
         if default_value(api_env.get("AICHECK_REVIEW_ORCHESTRATION")) != "temporal":
             failures.append("api-service default AICHECK_REVIEW_ORCHESTRATION must be temporal")
         if default_value(review_worker_env.get("AICHECK_REVIEW_ORCHESTRATION")) != "temporal":

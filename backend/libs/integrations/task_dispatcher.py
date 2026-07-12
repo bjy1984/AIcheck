@@ -5,6 +5,8 @@ import os
 from typing import Any
 
 from libs.capacity_guard import cpu_heavy_dispatch_status
+from libs.ocr_runtime import official_ocr_enabled, ocr_runtime_config
+from libs.task_priority import broker_priority
 
 
 def dispatch_mode() -> str:
@@ -38,17 +40,25 @@ def dispatch_parse_document(document_id: str, version_id: str, storage_key: str,
 
         return {"mode": mode, "result": parse_document.run(document_id, version_id, storage_key, file_name)}
     if mode == "celery":
-        if blocker := cpu_heavy_dispatch_blocker(mode):
+        runtime = ocr_runtime_config()
+        queue = "ocr.local-light" if official_ocr_enabled(runtime) else "cpu.heavy"
+        if queue == "cpu.heavy" and (blocker := cpu_heavy_dispatch_blocker(mode)):
             return blocker
         from apps.worker.tasks import parse_document
 
         result = parse_document.apply_async(
             args=[document_id, version_id, storage_key, file_name],
-            queue="cpu.heavy",
-            priority=7,
+            queue=queue,
+            priority=broker_priority(7),
             task_id=deterministic_task_id("ocr-document", version_id),
         )
-        return {"mode": mode, "taskId": result.id, "queue": "cpu.heavy", "priority": 7}
+        return {
+            "mode": mode,
+            "taskId": result.id,
+            "queue": queue,
+            "priority": 7,
+            "statusReason": "ocr_prepare_queued",
+        }
     return {"mode": mode, "taskId": None}
 
 
@@ -63,7 +73,7 @@ def dispatch_slice(file_id: str) -> dict[str, Any]:
             return blocker
         from apps.worker.tasks import slice_knowledge
 
-        result = slice_knowledge.apply_async(args=[file_id], queue="cpu.heavy", priority=2)
+        result = slice_knowledge.apply_async(args=[file_id], queue="cpu.heavy", priority=broker_priority(2))
         return {"mode": mode, "taskId": result.id, "queue": "cpu.heavy", "priority": 2}
     return {"mode": mode, "taskId": None}
 
@@ -79,7 +89,7 @@ def dispatch_embed(file_id: str) -> dict[str, Any]:
             return blocker
         from apps.worker.tasks import embed_knowledge
 
-        result = embed_knowledge.apply_async(args=[file_id], queue="cpu.heavy", priority=1)
+        result = embed_knowledge.apply_async(args=[file_id], queue="cpu.heavy", priority=broker_priority(1))
         return {"mode": mode, "taskId": result.id, "queue": "cpu.heavy", "priority": 1}
     return {"mode": mode, "taskId": None}
 
@@ -99,6 +109,15 @@ def dispatch_document_ai_shadow(run_id: str) -> dict[str, Any]:
     }
 
 
+def dispatch_ocr_pipeline_official(run_id: str) -> dict[str, Any]:
+    return _dispatch_ocr_pipeline_stage(
+        run_id,
+        task_name="ocr_pipeline_official_extract",
+        queue="ocr.remote",
+        status_reason="official_ocr_queued",
+    )
+
+
 def dispatch_ocr_pipeline_qwen(run_id: str) -> dict[str, Any]:
     mode = dispatch_mode()
     if mode == "celery":
@@ -107,7 +126,7 @@ def dispatch_ocr_pipeline_qwen(run_id: str) -> dict[str, Any]:
         result = ocr_pipeline_qwen_extract.apply_async(
             args=[run_id],
             queue="llm.remote",
-            priority=9,
+            priority=broker_priority(9),
             task_id=deterministic_task_id("ocr-qwen", run_id),
         )
         return {
@@ -165,7 +184,7 @@ def _dispatch_ocr_pipeline_stage(
     result = task.apply_async(
         args=[run_id],
         queue=queue,
-        priority=9,
+        priority=broker_priority(9),
         task_id=deterministic_task_id(task_name.replace("_", "-"), run_id),
     )
     return {
@@ -185,7 +204,7 @@ def dispatch_ocr_pipeline_finalize(run_id: str) -> dict[str, Any]:
         result = ocr_pipeline_finalize.apply_async(
             args=[run_id],
             queue="business.light",
-            priority=9,
+            priority=broker_priority(9),
             task_id=deterministic_task_id("ocr-finalize", run_id),
         )
         return {

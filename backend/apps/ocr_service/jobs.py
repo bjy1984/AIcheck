@@ -34,7 +34,6 @@ class DocumentParseJobStore:
             self._jobs = {str(key): value for key, value in jobs.items() if isinstance(value, dict)}
         if isinstance(results, dict):
             self._results = {str(key): value for key, value in results.items() if isinstance(value, dict)}
-
     def _save_locked(self) -> None:
         try:
             self._store_path.parent.mkdir(parents=True, exist_ok=True)
@@ -49,6 +48,30 @@ class DocumentParseJobStore:
             )
         except OSError:
             return
+
+    def recover_interrupted_jobs(self) -> int:
+        now = server_time()
+        interrupted = 0
+        with self._lock:
+            for job in self._jobs.values():
+                if str(job.get("status") or "") not in {"queued", "running"}:
+                    continue
+                interrupted += 1
+                job["status"] = "failed"
+                job["updatedAt"] = now
+                job["finishedAt"] = now
+                diagnostics = [item for item in job.get("diagnostics") or [] if isinstance(item, dict)]
+                diagnostics.append(
+                    {
+                        "code": "OCR_SERVICE_RESTARTED",
+                        "level": "error",
+                        "message": "OCR service restarted before this job reached a terminal state.",
+                    }
+                )
+                job["diagnostics"] = diagnostics
+            if interrupted:
+                self._save_locked()
+        return interrupted
 
     def create(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = server_time()
@@ -76,6 +99,11 @@ class DocumentParseJobStore:
             "parentJobId": payload.get("parentJobId"),
             "retryOfJobId": payload.get("retryOfJobId"),
             "requestKey": request_key or None,
+            "progress": 0,
+            "stage": "queued",
+            "heartbeatAt": None,
+            "leaseExpiresAt": None,
+            "canceledAt": None,
         }
         with self._lock:
             if request_key:
@@ -112,8 +140,50 @@ class DocumentParseJobStore:
             job = self._jobs.get(job_id)
             if not job:
                 return None
+            if job.get("status") == "canceled":
+                return deepcopy(job)
             job["status"] = "running"
+            job["stage"] = job.get("stage") if job.get("stage") not in {None, "queued"} else "parse"
+            job["progress"] = max(int(job.get("progress") or 0), 1)
             job["startedAt"] = job.get("startedAt") or now
+            job["heartbeatAt"] = now
+            job["updatedAt"] = now
+            self._save_locked()
+            return deepcopy(job)
+
+    def heartbeat(
+        self,
+        job_id: str,
+        *,
+        stage: str | None = None,
+        progress: int | None = None,
+    ) -> dict[str, Any] | None:
+        now = server_time()
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if not job or job.get("status") not in {"queued", "running"}:
+                return deepcopy(job) if job else None
+            job["heartbeatAt"] = now
+            job["updatedAt"] = now
+            if stage:
+                job["stage"] = stage
+            if progress is not None:
+                job["progress"] = max(0, min(int(progress), 99))
+            self._save_locked()
+            return deepcopy(job)
+
+    def cancel(self, job_id: str) -> dict[str, Any] | None:
+        now = server_time()
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if not job:
+                return None
+            if job.get("status") in {"success", "failed", "canceled"}:
+                return deepcopy(job)
+            job["status"] = "canceled"
+            job["stage"] = "canceled"
+            job["canceledAt"] = now
+            job["finishedAt"] = now
             job["updatedAt"] = now
             self._save_locked()
             return deepcopy(job)
@@ -127,8 +197,12 @@ class DocumentParseJobStore:
             job = self._jobs.get(job_id)
             if not job:
                 return None
+            if job.get("status") == "canceled":
+                return deepcopy(job)
             self._results[result_id] = deepcopy(result)
             job["status"] = "success" if result.get("status") == "success" else "failed"
+            job["stage"] = "finished"
+            job["progress"] = 100
             job["parseResultId"] = result_id
             job["finishedAt"] = now
             job["updatedAt"] = now

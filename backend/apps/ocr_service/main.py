@@ -19,6 +19,7 @@ from libs.contracts.responses import fail, ok
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    await asyncio.to_thread(ocr_service.jobs.recover_interrupted_jobs)
     await asyncio.to_thread(prune_ocr_cache)
     if os.getenv("AICHECK_OCR_DEEP_READY_PROBE", "false").lower() in {"1", "true", "yes", "on"}:
         await asyncio.to_thread(ocr_service.run_readiness_probe)
@@ -194,6 +195,14 @@ async def create_document_parse_job(request: Request, payload: dict, background_
 @app.get("/internal/document-parse/jobs/{job_id}")
 async def get_document_parse_job(request: Request, job_id: str):
     job = ocr_service.jobs.get_job(job_id)
+    if not job:
+        return fail(errors.NOT_FOUND, request, message="OCR Job 不存在。")
+    return ok(job, request)
+
+
+@app.post("/internal/document-parse/jobs/{job_id}/cancel")
+async def cancel_document_parse_job(request: Request, job_id: str):
+    job = ocr_service.jobs.cancel(job_id)
     if not job:
         return fail(errors.NOT_FOUND, request, message="OCR Job 不存在。")
     return ok(job, request)

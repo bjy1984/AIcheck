@@ -1,0 +1,373 @@
+services:
+  api-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000
+    environment:
+      AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${AICHECK_POSTGRES_DB:-aicheck}
+      AICHECK_REDIS_URL: ${AICHECK_REDIS_URL:-redis://redis:6379/0}
+      AICHECK_TASK_DISPATCH: ${AICHECK_TASK_DISPATCH:-celery}
+      AICHECK_REVIEW_ORCHESTRATION: ${AICHECK_REVIEW_ORCHESTRATION:-temporal}
+      TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-temporal-service:7233}
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
+      AICHECK_REVIEW_WORKFLOW_TASK_QUEUE: ${AICHECK_REVIEW_WORKFLOW_TASK_QUEUE:-review.workflow}
+      AICHECK_REVIEW_LLM_EXECUTION: ${AICHECK_REVIEW_LLM_EXECUTION:-litellm}
+      AICHECK_LANGGRAPH_DISABLE: ${AICHECK_LANGGRAPH_DISABLE:-false}
+      AICHECK_LANGGRAPH_CHECKPOINT_DISABLE: ${AICHECK_LANGGRAPH_CHECKPOINT_DISABLE:-false}
+      AICHECK_LANGGRAPH_CHECKPOINT_SETUP: ${AICHECK_LANGGRAPH_CHECKPOINT_SETUP:-false}
+      LANGGRAPH_CHECKPOINT_DSN: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${WORKFLOW_POSTGRES_DB:-workflow}
+      AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_ENDPOINT:-minio:9000}
+      AICHECK_MINIO_PUBLIC_ENDPOINT: ${AICHECK_MINIO_PUBLIC_ENDPOINT:-127.0.0.1:9000}
+      AICHECK_MINIO_ACCESS_KEY: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
+      AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:?AICHECK_MINIO_SECRET_KEY is required}
+      AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
+      AICHECK_OCR_BASE_URL: ${AICHECK_OCR_BASE_URL:-http://ocr-service:8010}
+      AICHECK_JWT_SECRET: ${AICHECK_JWT_SECRET:?AICHECK_JWT_SECRET is required}
+      LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://litellm-service:4000}
+      LITELLM_API_KEY: ${LITELLM_API_KEY:?LITELLM_API_KEY is required}
+      AICHECK_REQUIRE_AUTH: ${AICHECK_REQUIRE_AUTH:-true}
+      AICHECK_ENABLE_DEMO_USERS: ${AICHECK_ENABLE_DEMO_USERS:-false}
+      AICHECK_SQLITE_FALLBACK: ${AICHECK_SQLITE_FALLBACK:-false}
+      AICHECK_SQLITE_DISABLE: ${AICHECK_SQLITE_DISABLE:-true}
+      AICHECK_TRUSTED_PROXIES: ${AICHECK_TRUSTED_PROXIES:-}
+      AICHECK_TRUST_PROXY: ${AICHECK_TRUST_PROXY:-false}
+      AICHECK_ALLOWED_HOSTS: ${AICHECK_ALLOWED_HOSTS:?AICHECK_ALLOWED_HOSTS is required}
+      AICHECK_CORS_ALLOWED_ORIGINS: ${AICHECK_CORS_ALLOWED_ORIGINS:?AICHECK_CORS_ALLOWED_ORIGINS is required}
+      AICHECK_ENABLE_COMPATIBILITY_MOCKS: ${AICHECK_ENABLE_COMPATIBILITY_MOCKS:-false}
+      AICHECK_ALLOW_DEV_TOKENS: ${AICHECK_ALLOW_DEV_TOKENS:-false}
+      AICHECK_STRICT_PRODUCTION: ${AICHECK_STRICT_PRODUCTION:-true}
+      AICHECK_JWT_TTL_MINUTES: ${AICHECK_JWT_TTL_MINUTES:-480}
+      AICHECK_JWT_AUDIENCE: ${AICHECK_JWT_AUDIENCE:-aicheck-frontend}
+      AICHECK_JWT_ISSUER: ${AICHECK_JWT_ISSUER:-aicheck-api}
+    ports:
+      - "127.0.0.1:18000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      litellm-service:
+        condition: service_healthy
+      temporal-service:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).read()\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  worker-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO -Q ocr.parse_document,ocr.recognize_seals,knowledge.slice,knowledge.embed,inspection.ai_recheck,llm.compare,export.package
+    environment:
+      AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${AICHECK_POSTGRES_DB:-aicheck}
+      AICHECK_REDIS_URL: ${AICHECK_REDIS_URL:-redis://redis:6379/0}
+      AICHECK_TASK_DISPATCH: ${AICHECK_TASK_DISPATCH:-celery}
+      AICHECK_STRICT_PRODUCTION: ${AICHECK_STRICT_PRODUCTION:-true}
+      AICHECK_REVIEW_ORCHESTRATION: ${AICHECK_REVIEW_ORCHESTRATION:-temporal}
+      AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_ENDPOINT:-minio:9000}
+      AICHECK_MINIO_ACCESS_KEY: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
+      AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:?AICHECK_MINIO_SECRET_KEY is required}
+      AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
+      AICHECK_OCR_BASE_URL: ${AICHECK_OCR_BASE_URL:-http://ocr-service:8010}
+      LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://litellm-service:4000}
+      LITELLM_API_KEY: ${LITELLM_API_KEY:?LITELLM_API_KEY is required}
+    volumes:
+      - ./docker/temporal/dynamicconfig:/etc/temporal/config/dynamicconfig:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api-service:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      litellm-service:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "celery -A apps.worker.celery_app.celery_app inspect ping -d celery@$$HOSTNAME --timeout=5 | grep -q pong",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+
+  review-worker-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    command: python -m apps.review_worker.main
+    environment:
+      AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${AICHECK_POSTGRES_DB:-aicheck}
+      AICHECK_REVIEW_ORCHESTRATION: temporal
+      AICHECK_STRICT_PRODUCTION: ${AICHECK_STRICT_PRODUCTION:-true}
+      TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-temporal-service:7233}
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
+      AICHECK_REVIEW_WORKFLOW_TASK_QUEUE: ${AICHECK_REVIEW_WORKFLOW_TASK_QUEUE:-review.workflow}
+      AICHECK_REVIEW_GRAPH_TASK_QUEUE: ${AICHECK_REVIEW_GRAPH_TASK_QUEUE:-review.graph}
+      AICHECK_REVIEW_LLM_TASK_QUEUE: ${AICHECK_REVIEW_LLM_TASK_QUEUE:-review.llm}
+      AICHECK_REVIEW_RETRIEVAL_TASK_QUEUE: ${AICHECK_REVIEW_RETRIEVAL_TASK_QUEUE:-review.retrieval}
+      AICHECK_REVIEW_VALIDATION_TASK_QUEUE: ${AICHECK_REVIEW_VALIDATION_TASK_QUEUE:-review.validation}
+      AICHECK_REVIEW_LLM_EXECUTION: ${AICHECK_REVIEW_LLM_EXECUTION:-litellm}
+      AICHECK_LANGGRAPH_DISABLE: ${AICHECK_LANGGRAPH_DISABLE:-false}
+      AICHECK_LANGGRAPH_CHECKPOINT_DISABLE: ${AICHECK_LANGGRAPH_CHECKPOINT_DISABLE:-false}
+      AICHECK_LANGGRAPH_CHECKPOINT_SETUP: ${AICHECK_LANGGRAPH_CHECKPOINT_SETUP:-false}
+      LANGGRAPH_CHECKPOINT_DSN: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${WORKFLOW_POSTGRES_DB:-workflow}
+      LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://litellm-service:4000}
+      LITELLM_API_KEY: ${LITELLM_API_KEY:?LITELLM_API_KEY is required}
+    depends_on:
+      temporal-service:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      litellm-service:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import asyncio, os; from temporalio.client import Client; asyncio.run(Client.connect(os.environ['TEMPORAL_ADDRESS'], namespace=os.environ.get('TEMPORAL_NAMESPACE', 'default')))\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 6
+
+  ocr-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.ocr
+      args:
+        AICHECK_APT_DEBIAN_MIRROR: ${AICHECK_APT_DEBIAN_MIRROR:-}
+        AICHECK_APT_SECURITY_MIRROR: ${AICHECK_APT_SECURITY_MIRROR:-}
+        AICHECK_PIP_INDEX_URL: ${AICHECK_PIP_INDEX_URL:-}
+        AICHECK_OCR_REQUIREMENTS: ${AICHECK_OCR_REQUIREMENTS:-requirements-ocr-core.txt}
+    command: uvicorn apps.ocr_service.main:app --host 0.0.0.0 --port 8010
+    environment:
+      AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_ENDPOINT:-minio:9000}
+      AICHECK_MINIO_ACCESS_KEY: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
+      AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:?AICHECK_MINIO_SECRET_KEY is required}
+      AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
+      AICHECK_AGENTDESIGN_BACKEND: ${AICHECK_AGENTDESIGN_BACKEND:-/opt/agentdesign/mvp-system/backend}
+      AICHECK_OCR_ALLOW_PLACEHOLDER: ${AICHECK_OCR_ALLOW_PLACEHOLDER:-false}
+      AICHECK_OCR_OFFLINE_ONLY: ${AICHECK_OCR_OFFLINE_ONLY:-true}
+      AICHECK_OCR_DISABLE_NETWORK: ${AICHECK_OCR_DISABLE_NETWORK:-true}
+      PADDLEOCR_MODEL_DIR: ${PADDLEOCR_MODEL_DIR:-/models/paddleocr}
+      PADDLEX_MODEL_DIR: ${PADDLEX_MODEL_DIR:-/models/paddlex}
+      AICHECK_PADDLEX_MODEL_CACHE: ${AICHECK_PADDLEX_MODEL_CACHE:-/models/paddlex}
+      AICHECK_PADDLEOCR_DET_MODEL_DIR: ${AICHECK_PADDLEOCR_DET_MODEL_DIR:-/models/paddleocr/PP-OCRv6_medium_det}
+      AICHECK_PADDLEOCR_REC_MODEL_DIR: ${AICHECK_PADDLEOCR_REC_MODEL_DIR:-/models/paddleocr/PP-OCRv6_medium_rec}
+      AICHECK_OCR_SUBPROCESS_PYTHON: ${AICHECK_OCR_SUBPROCESS_PYTHON:-/usr/local/bin/python}
+      AICHECK_OCR_ENABLE_PERSISTENT_SUBPROCESS: ${AICHECK_OCR_ENABLE_PERSISTENT_SUBPROCESS:-false}
+      AICHECK_OCR_PERSISTENT_WORKER_TIMEOUT: ${AICHECK_OCR_PERSISTENT_WORKER_TIMEOUT:-180}
+      AICHECK_PPSTRUCTURE_LAYOUT_MODEL_DIR: ${AICHECK_PPSTRUCTURE_LAYOUT_MODEL_DIR:-/models/paddlex/PP-DocLayout-L}
+      AICHECK_PPSTRUCTURE_WIRED_TABLE_STRUCTURE_MODEL_DIR: ${AICHECK_PPSTRUCTURE_WIRED_TABLE_STRUCTURE_MODEL_DIR:-/models/paddlex/SLANeXt_wired}
+      AICHECK_PPSTRUCTURE_WIRED_TABLE_CELLS_MODEL_DIR: ${AICHECK_PPSTRUCTURE_WIRED_TABLE_CELLS_MODEL_DIR:-/models/paddlex/RT-DETR-L_wired_table_cell_det}
+      AICHECK_PPSTRUCTURE_WIRELESS_TABLE_STRUCTURE_MODEL_DIR: ${AICHECK_PPSTRUCTURE_WIRELESS_TABLE_STRUCTURE_MODEL_DIR:-/models/paddlex/SLANeXt_wireless}
+      AICHECK_PPSTRUCTURE_WIRELESS_TABLE_CELLS_MODEL_DIR: ${AICHECK_PPSTRUCTURE_WIRELESS_TABLE_CELLS_MODEL_DIR:-/models/paddlex/RT-DETR-L_wireless_table_cell_det}
+      AICHECK_ENABLE_OPENCV_TABLE_GRID: ${AICHECK_ENABLE_OPENCV_TABLE_GRID:-true}
+      AICHECK_OPENCV_TABLE_GRID_MAX_CELLS: ${AICHECK_OPENCV_TABLE_GRID_MAX_CELLS:-1800}
+      AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE: ${AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE:-true}
+      AICHECK_SEAL_DET_MODEL_DIR: ${AICHECK_SEAL_DET_MODEL_DIR:-/models/paddlex/PP-OCRv4_server_seal_det}
+      AICHECK_SEAL_REC_MODEL_DIR: ${AICHECK_SEAL_REC_MODEL_DIR:-/models/paddleocr/PP-OCRv4_server_rec}
+      AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR: ${AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR:-false}
+      AICHECK_AGENTDESIGN_SEAL_TIMEOUT: ${AICHECK_AGENTDESIGN_SEAL_TIMEOUT:-140}
+      AICHECK_AGENTDESIGN_SEAL_MAX_CANDIDATES: ${AICHECK_AGENTDESIGN_SEAL_MAX_CANDIDATES:-6}
+      AICHECK_AGENTDESIGN_SEAL_MAX_OCR_CANDIDATES: ${AICHECK_AGENTDESIGN_SEAL_MAX_OCR_CANDIDATES:-3}
+      AICHECK_OCR_PREPROCESS_CACHE_DIR: ${AICHECK_OCR_PREPROCESS_CACHE_DIR:-/tmp/aicheck-ocr-preprocess-cache}
+      AICHECK_OCR_DISABLE_VARIANT_CACHE: ${AICHECK_OCR_DISABLE_VARIANT_CACHE:-false}
+      AICHECK_OCR_RESULT_CACHE_DIR: ${AICHECK_OCR_RESULT_CACHE_DIR:-/tmp/aicheck-ocr-result-cache}
+      AICHECK_OCR_DISABLE_RESULT_CACHE: ${AICHECK_OCR_DISABLE_RESULT_CACHE:-false}
+      AICHECK_OCR_ENGINE_RESULT_CACHE_DIR: ${AICHECK_OCR_ENGINE_RESULT_CACHE_DIR:-/tmp/aicheck-ocr-engine-result-cache}
+      AICHECK_OCR_DISABLE_ENGINE_RESULT_CACHE: ${AICHECK_OCR_DISABLE_ENGINE_RESULT_CACHE:-false}
+      PADDLEOCR_VL_MODEL_DIR: ${PADDLEOCR_VL_MODEL_DIR:-/models/paddleocr-vl}
+      AICHECK_PADDLEOCR_VL_LAYOUT_MODEL_DIR: ${AICHECK_PADDLEOCR_VL_LAYOUT_MODEL_DIR:-/models/paddlex/PP-DocLayoutV3}
+      AICHECK_PADDLEOCR_VL_REC_MODEL_DIR: ${AICHECK_PADDLEOCR_VL_REC_MODEL_DIR:-/models/paddleocr-vl/PaddleOCR-VL-1.6}
+      AICHECK_PADDLEOCR_VL_DOC_ORI_MODEL_DIR: ${AICHECK_PADDLEOCR_VL_DOC_ORI_MODEL_DIR:-/models/paddlex/PP-LCNet_x1_0_doc_ori}
+      AICHECK_PADDLEOCR_VL_DOC_UNWARP_MODEL_DIR: ${AICHECK_PADDLEOCR_VL_DOC_UNWARP_MODEL_DIR:-/models/paddlex/UVDoc}
+      DOCLING_ARTIFACTS_PATH: ${DOCLING_ARTIFACTS_PATH:-/models/docling}
+      FLAGS_enable_pir_api: "0"
+      FLAGS_use_mkldnn: "0"
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True"
+      PADDLE_PDX_MODEL_SOURCE: local
+    ports:
+      - "127.0.0.1:18010:8010"
+    volumes:
+      - ${AICHECK_AGENTDESIGN_HOST_PATH:?AICHECK_AGENTDESIGN_HOST_PATH is required}:/opt/agentdesign:ro
+      - ${AICHECK_OCR_MODELS_HOST_PATH:?AICHECK_OCR_MODELS_HOST_PATH is required}:/models:ro
+    depends_on:
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/readyz', timeout=3).read()\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:16379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:RELEASE.2026-06-13T11-33-47Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
+      MINIO_ROOT_PASSWORD: ${AICHECK_MINIO_SECRET_KEY:?AICHECK_MINIO_SECRET_KEY is required}
+    ports:
+      - "19000:9000"
+      - "127.0.0.1:19001:9001"
+    volumes:
+      - /home/dev-bjy/aicheck-data/minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${AICHECK_POSTGRES_DB:-aicheck}
+      POSTGRES_USER: ${AICHECK_POSTGRES_USER:-aicheck}
+      POSTGRES_PASSWORD: ${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}
+      LITELLM_POSTGRES_DB: ${LITELLM_POSTGRES_DB:-litellm}
+      WORKFLOW_POSTGRES_DB: ${WORKFLOW_POSTGRES_DB:-workflow}
+    ports:
+      - "127.0.0.1:15432:5432"
+    volumes:
+      - /home/dev-bjy/aicheck-data/postgres:/var/lib/postgresql/data
+      - ./docker/postgres/init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  temporal-service:
+    image: temporalio/auto-setup:1.26.2
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: ${AICHECK_POSTGRES_USER:-aicheck}
+      POSTGRES_PWD: ${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}
+      POSTGRES_SEEDS: postgres
+      DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/config/dynamicconfig/development-sql.yaml
+    ports:
+      - "127.0.0.1:17233:7233"
+    volumes:
+      - ./docker/temporal/dynamicconfig:/etc/temporal/config/dynamicconfig:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "ip=$$(hostname -i); ip=$${ip%% *}; tctl --address $${ip}:7233 cluster health | grep -q SERVING"]
+      interval: 10s
+      timeout: 5s
+      retries: 24
+
+  temporal-ui:
+    image: temporalio/ui:2.31.2
+    environment:
+      TEMPORAL_ADDRESS: temporal-service:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:4000,http://127.0.0.1:4000
+    ports:
+      - "127.0.0.1:18088:8080"
+    depends_on:
+      temporal-service:
+        condition: service_healthy
+
+  embedding-service:
+    image: aicheck-infinity-qwen:local
+    command:
+      [
+        "v2",
+        "--model-id",
+        "${AICHECK_EMBEDDING_MODEL_ID:-Qwen/Qwen3-Embedding-0.6B}",
+        "--served-model-name",
+        "${AICHECK_EMBEDDING_SERVED_MODEL_NAME:-embedding-default}",
+        "--engine",
+        "${AICHECK_EMBEDDING_ENGINE:-torch}",
+        "--port",
+        "7997",
+      ]
+    environment:
+      DO_NOT_TRACK: "1"
+      HF_HOME: /app/.cache
+      HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
+      TRANSFORMERS_CACHE: /app/.cache
+      INFINITY_API_KEY: ${INFINITY_API_KEY:?INFINITY_API_KEY is required}
+      AICHECK_EMBEDDING_MODEL_ID: ${AICHECK_EMBEDDING_MODEL_ID:-Qwen/Qwen3-Embedding-0.6B}
+      AICHECK_EMBEDDING_SERVED_MODEL_NAME: ${AICHECK_EMBEDDING_SERVED_MODEL_NAME:-embedding-default}
+      AICHECK_EMBEDDING_ENGINE: ${AICHECK_EMBEDDING_ENGINE:-torch}
+    ports:
+      - "127.0.0.1:17997:7997"
+    volumes:
+      - ${AICHECK_EMBEDDING_CACHE_HOST_PATH:-/home/dev-bjy/aicheck-data/embedding-cache}:/app/.cache
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7997/health', timeout=5).read()"
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 1800s
+
+  litellm-service:
+    image: ghcr.io/berriai/litellm:main-latest
+    command: ["--config", "/app/config/litellm.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    environment:
+      DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${LITELLM_POSTGRES_DB:-litellm}
+      LITELLM_MASTER_KEY: ${LITELLM_API_KEY:?LITELLM_API_KEY is required}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?DEEPSEEK_API_KEY is required}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      INFINITY_API_KEY: ${INFINITY_API_KEY:?INFINITY_API_KEY is required}
+      AICHECK_LITELLM_STRICT_PROVIDER_HEALTH: ${AICHECK_LITELLM_STRICT_PROVIDER_HEALTH:-true}
+      NO_PROXY: ${AICHECK_LITELLM_NO_PROXY:-127.0.0.1,localhost,::1,postgres,embedding-service}
+      no_proxy: ${AICHECK_LITELLM_NO_PROXY:-127.0.0.1,localhost,::1,postgres,embedding-service}
+    ports:
+      - "127.0.0.1:14001:4000"
+    volumes:
+      - ./config:/app/config:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      embedding-service:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import json, os, sys, urllib.request; req=urllib.request.Request('http://127.0.0.1:4000/health/readiness', headers={'Authorization': 'Bearer ' + os.environ['LITELLM_MASTER_KEY']}); data=json.loads(urllib.request.urlopen(req, timeout=3).read() or b'{}'); unhealthy_count=int(data.get('unhealthy_count') or 0); strict=os.getenv('AICHECK_LITELLM_STRICT_PROVIDER_HEALTH','true').lower()=='true'; sys.exit(1 if strict and unhealthy_count else 0)\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  minio-data:
+  postgres-data:

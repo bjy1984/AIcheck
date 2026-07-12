@@ -1745,7 +1745,7 @@ def test_ocr_routing_runs_structure_original_and_best_enhanced_variant() -> None
         options={},
     )
 
-    assert [item["variantId"] for item in routed] == ["page_1_original", "page_1_deskew"]
+    assert [item["variantId"] for item in routed] == ["page_1_deskew"]
 
 
 def test_ocr_routing_keeps_opencv_grid_on_table_variant_only() -> None:
@@ -1789,7 +1789,6 @@ def test_ocr_routing_runs_formal_seal_ocr_on_original_and_mask_candidate() -> No
     )
 
     assert [item["variantId"] for item in routed] == [
-        "page_1_original",
         "page_1_seal_color_mask",
         "page_2_original",
     ]
@@ -9184,8 +9183,9 @@ def test_worker_ocr_job_api_preserves_business_profile_and_options(monkeypatch) 
     assert captured["documentVersionId"] == version["id"]
     assert captured["profileId"] == "quality_certificate_v1"
     assert captured["documentType"] == "quality_certificate"
-    assert captured["options"]["enableTables"] is True
-    assert captured["options"]["enableSeals"] is True
+    assert captured["options"]["engineAllowlist"] == tasks.ACCURACY_BASELINE_TEXT_ENGINES
+    assert captured["options"]["enableTables"] is False
+    assert captured["options"]["enableSeals"] is False
     assert captured["options"]["enableFallback"] is True
 
 
@@ -9223,7 +9223,9 @@ def test_worker_local_ocr_fallback_preserves_business_profile(monkeypatch) -> No
     assert captured["profile_id"] == "quality_certificate_v1"
     assert captured["document_type"] == "quality_certificate"
     assert captured["document_version_id"] == version["id"]
-    assert captured["options"] == {}
+    assert captured["options"]["engineAllowlist"] == tasks.ACCURACY_BASELINE_TEXT_ENGINES
+    assert captured["options"]["enableTables"] is False
+    assert captured["options"]["enableSeals"] is False
 
 
 def test_failed_knowledge_task_retry_dispatches_worker_and_is_idempotent(monkeypatch) -> None:
