@@ -51,6 +51,13 @@ from libs.db.repository import flush_state, load_state, repo
 from libs.db.seed import PROJECT_ID, ROLE_ACTIONS, ROLE_NODE_MAP, STANDARD_RULES_SOURCE_ID, STANDARD_RULES_VERSION
 from libs.deepseek_runtime import deepseek_runtime_public_config
 from libs.embedding_models import embedding_registry_payload, embedding_runtime_config
+from libs.fde_certification import (
+    CERTIFICATION_REPORT_SCHEMA_VERSION,
+    LEGACY_NON_CERTIFYING_PROFILE,
+    PRODUCTION_CERTIFICATION_PROFILE,
+    build_production_certification_case_results,
+    summarize_production_certification,
+)
 from libs.integrations import task_dispatcher
 from libs.integrations.embedding_client import EmbeddingClient
 from libs.integrations.errors import IntegrationServiceError
@@ -14906,6 +14913,243 @@ def fde_metric_passed(metric: str, value: float | int) -> bool:
     return float(value) >= threshold if operator == ">=" else float(value) <= threshold
 
 
+def fde_persist_evaluation_result(
+    *,
+    request: Request,
+    run: dict[str, Any],
+    report: dict[str, Any],
+    case_results: list[dict[str, Any]],
+    metrics: dict[str, Any],
+    metric_specs: dict[str, tuple[float, str]] | None = None,
+) -> dict[str, Any]:
+    repo.state.setdefault("evaluation_case_results", [])
+    repo.state["evaluation_runs"].insert(0, run)
+    repo.state["evaluation_reports"].insert(0, report)
+    repo.state["evaluation_case_results"][:0] = repo.clone(case_results)
+    for metric, value in metrics.items():
+        if value is None or isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        threshold, operator = (metric_specs or {}).get(metric, fde_metric_threshold(metric))
+        passed = float(value) >= threshold if operator == ">=" else float(value) <= threshold
+        repo.state["evaluation_metrics"].insert(
+            0,
+            {
+                "id": f"EMET-{uuid4().hex[:8].upper()}",
+                "evaluationRunId": run["id"],
+                "metric": metric,
+                "value": value,
+                "threshold": threshold,
+                "operator": operator,
+                "passed": passed,
+                "profile": run.get("profile"),
+                "certifying": bool(run.get("certifying")),
+            },
+        )
+    audit_id = repo.add_audit("FDE 发起离线评测", "EvaluationRun", run["id"])
+    return {"run": run, "report": report, "caseResults": case_results, "auditLogId": audit_id}
+
+
+def fde_create_legacy_non_certifying_evaluation(
+    request: Request,
+    body: dict[str, Any],
+    *,
+    set_id: str,
+    bundle_id: str,
+    cases: list[dict[str, Any]],
+) -> dict[str, Any]:
+    run_id = body.get("id") or f"ERUN-{uuid4().hex[:8].upper()}"
+    case_results = fde_build_evaluation_case_results(
+        evaluation_run_id=run_id,
+        cases=repo.clone(cases),
+        overrides=fde_evaluation_case_overrides(body),
+    )
+    case_summary = fde_evaluation_case_summary(case_results)
+    metrics = {
+        "humanAcceptanceRate": acceptance_rate() or 0.86,
+        "evidenceHitRate": evidence_hit_rate() or 0.92,
+        "hallucinationRate": hallucination_rate(),
+        "highRiskMissRate": 0.0,
+        "schemaPassRate": 1.0,
+        "casePassRate": case_summary["casePassRate"],
+        "findingRecall": case_summary["findingRecall"],
+        "evidenceCoverage": case_summary["evidenceCoverage"],
+        "retrievalRecall": case_summary["retrievalRecall"],
+        "retrievalPassRate": case_summary["retrievalPassRate"],
+        "wrongReferenceRate": case_summary["wrongReferenceRate"],
+        "pageIndexTriggerRate": case_summary["pageIndexTriggerRate"],
+        "failedCaseCount": case_summary["failed"],
+        "caseCount": len(cases),
+    }
+    run = {
+        "id": run_id,
+        "evaluationSetId": set_id,
+        "capabilityBundleId": bundle_id,
+        "profile": LEGACY_NON_CERTIFYING_PROFILE,
+        "certifying": False,
+        "status": "completed",
+        "startedAt": server_time(),
+        "finishedAt": server_time(),
+        "metrics": metrics,
+        "caseSummary": case_summary,
+        "requestedByRole": effective_role_for_request(request)[0],
+    }
+    for result in case_results:
+        result["profile"] = LEGACY_NON_CERTIFYING_PROFILE
+        result["certifying"] = False
+    gate_results = [
+        {"gate": "golden_set", "passed": metrics["evidenceHitRate"] >= 0.9},
+        {"gate": "schema_validation", "passed": metrics["schemaPassRate"] >= 1.0},
+        {"gate": "hallucination", "passed": metrics["hallucinationRate"] <= 0.01},
+        {"gate": "high_risk_miss", "passed": metrics["highRiskMissRate"] <= 0.005},
+        {"gate": "case_pass_rate", "passed": metrics["casePassRate"] >= 0.9},
+        {"gate": "finding_recall", "passed": metrics["findingRecall"] >= 0.9},
+        {"gate": "evidence_coverage", "passed": metrics["evidenceCoverage"] >= 0.9},
+        {"gate": "retrieval_recall", "passed": metrics["retrievalRecall"] >= 0.9},
+        {"gate": "wrong_reference", "passed": metrics["wrongReferenceRate"] <= 0.03},
+    ]
+    report_status = "passed" if all(item["passed"] for item in gate_results) else "failed"
+    report = {
+        "id": body.get("reportId") or f"EREPORT-{uuid4().hex[:8].upper()}",
+        "evaluationRunId": run["id"],
+        "capabilityBundleId": bundle_id,
+        "businessPackId": (repo.find_one("capability_bundles", bundle_id) or {}).get("businessPackId") or DEFAULT_BUSINESS_PACK_ID,
+        "profile": LEGACY_NON_CERTIFYING_PROFILE,
+        "certifying": False,
+        "status": report_status,
+        "summary": "Legacy 离线评测通过，但该 profile 不构成生产认证。"
+        if report_status == "passed"
+        else "Legacy 离线评测未通过，且该 profile 不构成生产认证。",
+        "metrics": metrics,
+        "caseSummary": case_summary,
+        "caseResults": repo.clone(case_results),
+        "gateResults": gate_results,
+        "createdAt": server_time(),
+    }
+    return fde_persist_evaluation_result(
+        request=request,
+        run=run,
+        report=report,
+        case_results=case_results,
+        metrics=metrics,
+    )
+
+
+def fde_create_production_certification_evaluation(
+    request: Request,
+    body: dict[str, Any],
+    *,
+    set_id: str,
+    bundle_id: str,
+    cases: list[dict[str, Any]],
+) -> dict[str, Any]:
+    run_id = body.get("id") or f"ERUN-{uuid4().hex[:8].upper()}"
+    case_results = build_production_certification_case_results(
+        evaluation_run_id=run_id,
+        cases=repo.clone(cases),
+        body=body,
+        overrides=fde_evaluation_case_overrides(body),
+        find_review_run=lambda review_run_id: (
+            repo.find_one("review_runs", review_run_id, id_field="reviewRunId")
+            or repo.find_one("review_runs", review_run_id)
+        )
+        if review_run_id
+        else None,
+        retrieval_traces_for_run=lambda review_run_id: [
+            repo.clone(item)
+            for item in repo.state.get("retrieval_traces", [])
+            if str(item.get("reviewRunId") or "") == str(review_run_id or "")
+        ],
+        clone=repo.clone,
+        now=server_time,
+        make_id=lambda: f"ECRES-{uuid4().hex[:8].upper()}",
+    )
+    case_summary = summarize_production_certification(case_results)
+    metrics = {
+        **case_summary,
+        "failedCaseCount": case_summary["failed"],
+        "caseCount": case_summary["cases"],
+    }
+    execution_complete = bool(case_results) and all(item.get("executionStatus") == "completed" for item in case_results)
+    hard_gates_passed = bool(case_results) and all(
+        gate.get("passed") is True for result in case_results for gate in result.get("hardGates") or []
+    )
+    gate_results = [
+        {"gate": "case_count", "passed": len(case_results) >= 1, "threshold": 1, "operator": ">="},
+        {"gate": "persisted_execution_complete", "passed": execution_complete},
+        {"gate": "case_hard_gates", "passed": hard_gates_passed},
+        {"gate": "case_pass_rate", "passed": case_summary["casePassRate"] == 1.0, "threshold": 1.0, "operator": ">="},
+        {"gate": "false_positive_count", "passed": case_summary["falsePositives"] == 0, "threshold": 0, "operator": "<="},
+        {"gate": "false_negative_count", "passed": case_summary["falseNegatives"] == 0, "threshold": 0, "operator": "<="},
+        {"gate": "duplicate_count", "passed": case_summary["duplicateCount"] == 0, "threshold": 0, "operator": "<="},
+        {"gate": "severity_mismatch_count", "passed": case_summary["severityMismatchCount"] == 0, "threshold": 0, "operator": "<="},
+        {"gate": "high_risk_miss_count", "passed": case_summary["highRiskMissCount"] == 0, "threshold": 0, "operator": "<="},
+    ]
+    report_status = "passed" if all(item["passed"] for item in gate_results) else "failed"
+    run_status = "completed" if execution_complete else "incomplete"
+    run = {
+        "id": run_id,
+        "schemaVersion": PRODUCTION_CERTIFICATION_PROFILE,
+        "evaluationSetId": set_id,
+        "capabilityBundleId": bundle_id,
+        "profile": PRODUCTION_CERTIFICATION_PROFILE,
+        "certifying": True,
+        "status": run_status,
+        "startedAt": server_time(),
+        "finishedAt": server_time(),
+        "metrics": metrics,
+        "caseSummary": case_summary,
+        "sourceReviewRunIds": sorted(
+            {str(item.get("reviewRunId")) for item in case_results if item.get("reviewRunId")}
+        ),
+        "requestedByRole": effective_role_for_request(request)[0],
+    }
+    report = {
+        "id": body.get("reportId") or f"EREPORT-{uuid4().hex[:8].upper()}",
+        "schemaVersion": CERTIFICATION_REPORT_SCHEMA_VERSION,
+        "evaluationRunId": run["id"],
+        "capabilityBundleId": bundle_id,
+        "businessPackId": (repo.find_one("capability_bundles", bundle_id) or {}).get("businessPackId") or DEFAULT_BUSINESS_PACK_ID,
+        "profile": PRODUCTION_CERTIFICATION_PROFILE,
+        "certifying": True,
+        "status": report_status,
+        "summary": "Production certification passed using persisted pre-human ReviewRun outputs and retrieval traces."
+        if report_status == "passed"
+        else "Production certification failed; persisted execution evidence or one or more hard gates did not pass.",
+        "metrics": metrics,
+        "caseSummary": case_summary,
+        "caseResults": repo.clone(case_results),
+        "gateResults": gate_results,
+        "createdAt": server_time(),
+    }
+    report["reportHash"] = stable_hash_payload(report)
+    metric_specs = {
+        "casePassRate": (1.0, ">="),
+        "executionRate": (1.0, ">="),
+        "precision": (1.0, ">="),
+        "recall": (1.0, ">="),
+        "f1": (1.0, ">="),
+        "falsePositiveRate": (0.0, "<="),
+        "duplicateRate": (0.0, "<="),
+        "severityAgreement": (1.0, ">="),
+        "highRiskRecall": (1.0, ">="),
+        "falsePositives": (0.0, "<="),
+        "falseNegatives": (0.0, "<="),
+        "duplicateCount": (0.0, "<="),
+        "severityMismatchCount": (0.0, "<="),
+        "highRiskMissCount": (0.0, "<="),
+        "failedCaseCount": (0.0, "<="),
+        "caseCount": (1.0, ">="),
+    }
+    return fde_persist_evaluation_result(
+        request=request,
+        run=run,
+        report=report,
+        case_results=case_results,
+        metrics=metrics,
+        metric_specs=metric_specs,
+    )
+
+
 @router.post("/fde/evaluation-runs")
 def fde_create_evaluation_run(
     request: Request,
@@ -14920,90 +15164,27 @@ def fde_create_evaluation_run(
         bundle_id = body.get("capabilityBundleId") or "BUNDLE-REVIEW-202606"
         if not set_id or not repo.find_one("evaluation_sets", set_id):
             return fail(errors.VALIDATION_ERROR, request, message="evaluationSetId 无效。")
+        profile = str(body.get("profile") or PRODUCTION_CERTIFICATION_PROFILE)
+        if profile not in {PRODUCTION_CERTIFICATION_PROFILE, LEGACY_NON_CERTIFYING_PROFILE}:
+            return fail(errors.VALIDATION_ERROR, request, message="profile 无效。")
         cases = [item for item in repo.state.get("evaluation_cases", []) if item.get("evaluationSetId") == set_id]
-        run_id = body.get("id") or f"ERUN-{uuid4().hex[:8].upper()}"
-        case_results = fde_build_evaluation_case_results(
-            evaluation_run_id=run_id,
-            cases=repo.clone(cases),
-            overrides=fde_evaluation_case_overrides(body),
-        )
-        case_summary = fde_evaluation_case_summary(case_results)
-        case_count = len(cases)
-        metrics = {
-            "humanAcceptanceRate": acceptance_rate() or 0.86,
-            "evidenceHitRate": evidence_hit_rate() or 0.92,
-            "hallucinationRate": hallucination_rate(),
-            "highRiskMissRate": 0.0,
-            "schemaPassRate": 1.0,
-            "casePassRate": case_summary["casePassRate"],
-            "findingRecall": case_summary["findingRecall"],
-            "evidenceCoverage": case_summary["evidenceCoverage"],
-            "retrievalRecall": case_summary["retrievalRecall"],
-            "retrievalPassRate": case_summary["retrievalPassRate"],
-            "wrongReferenceRate": case_summary["wrongReferenceRate"],
-            "pageIndexTriggerRate": case_summary["pageIndexTriggerRate"],
-            "failedCaseCount": case_summary["failed"],
-            "caseCount": case_count,
-        }
-        run = {
-            "id": run_id,
-            "evaluationSetId": set_id,
-            "capabilityBundleId": bundle_id,
-            "status": "completed",
-            "startedAt": server_time(),
-            "finishedAt": server_time(),
-            "metrics": metrics,
-            "caseSummary": case_summary,
-            "requestedByRole": effective_role_for_request(request)[0],
-        }
-        gate_results = [
-            {"gate": "golden_set", "passed": metrics["evidenceHitRate"] >= 0.9},
-            {"gate": "schema_validation", "passed": metrics["schemaPassRate"] >= 1.0},
-            {"gate": "hallucination", "passed": metrics["hallucinationRate"] <= 0.01},
-            {"gate": "high_risk_miss", "passed": metrics["highRiskMissRate"] <= 0.005},
-            {"gate": "case_pass_rate", "passed": metrics["casePassRate"] >= 0.9},
-            {"gate": "finding_recall", "passed": metrics["findingRecall"] >= 0.9},
-            {"gate": "evidence_coverage", "passed": metrics["evidenceCoverage"] >= 0.9},
-            {"gate": "retrieval_recall", "passed": metrics["retrievalRecall"] >= 0.9},
-            {"gate": "wrong_reference", "passed": metrics["wrongReferenceRate"] <= 0.03},
-        ]
-        report_status = "passed" if all(item["passed"] for item in gate_results) else "failed"
-        report = {
-            "id": body.get("reportId") or f"EREPORT-{uuid4().hex[:8].upper()}",
-            "evaluationRunId": run["id"],
-            "capabilityBundleId": bundle_id,
-            "businessPackId": (repo.find_one("capability_bundles", bundle_id) or {}).get("businessPackId") or DEFAULT_BUSINESS_PACK_ID,
-            "status": report_status,
-            "summary": "离线评测通过，关键指标满足 FDE 发布门禁。"
-            if report_status == "passed"
-            else "离线评测未通过，存在样本或指标未满足发布门禁。",
-            "metrics": metrics,
-            "caseSummary": case_summary,
-            "caseResults": repo.clone(case_results),
-            "gateResults": gate_results,
-            "createdAt": server_time(),
-        }
-        repo.state.setdefault("evaluation_case_results", [])
-        repo.state["evaluation_runs"].insert(0, run)
-        repo.state["evaluation_reports"].insert(0, report)
-        repo.state["evaluation_case_results"][:0] = repo.clone(case_results)
-        for metric, value in metrics.items():
-            if isinstance(value, (int, float)):
-                threshold, operator = fde_metric_threshold(metric)
-                repo.state["evaluation_metrics"].insert(
-                    0,
-                    {
-                        "id": f"EMET-{uuid4().hex[:8].upper()}",
-                        "evaluationRunId": run["id"],
-                        "metric": metric,
-                        "value": value,
-                        "threshold": threshold,
-                        "operator": operator,
-                        "passed": fde_metric_passed(metric, value),
-                    },
-                )
-        audit_id = repo.add_audit("FDE 发起离线评测", "EvaluationRun", run["id"])
-        return ok({"run": run, "report": report, "caseResults": case_results, "auditLogId": audit_id}, request)
+        if profile == LEGACY_NON_CERTIFYING_PROFILE:
+            result = fde_create_legacy_non_certifying_evaluation(
+                request,
+                body,
+                set_id=set_id,
+                bundle_id=bundle_id,
+                cases=cases,
+            )
+        else:
+            result = fde_create_production_certification_evaluation(
+                request,
+                body,
+                set_id=set_id,
+                bundle_id=bundle_id,
+                cases=cases,
+            )
+        return ok(result, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 

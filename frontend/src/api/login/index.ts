@@ -6,13 +6,25 @@ interface RoleParams {
   roleName: string
 }
 
-const normalizeLoginResult = (raw: UserType | { token?: string; user: UserType }): LoginResult => {
-  const token = 'user' in raw ? raw.token : undefined
-  const user = 'user' in raw ? raw.user : raw
+const normalizeLoginResult = (raw: unknown): LoginResult => {
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('登录接口未返回有效数据，请稍后重试。')
+  }
+  const candidate = raw as Record<string, unknown>
+  const token = typeof candidate.token === 'string' ? candidate.token : undefined
+  const user = (candidate.user ?? candidate) as Partial<UserType>
+  if (
+    typeof user.username !== 'string' ||
+    typeof user.role !== 'string' ||
+    typeof user.roleId !== 'string'
+  ) {
+    throw new Error('登录接口返回的用户信息无效，请稍后重试。')
+  }
+  const normalizedUser = user as UserType
   return {
     token,
-    user,
-    defaultPath: user.defaultPath || getRoleDefaultPath(user.role)
+    user: normalizedUser,
+    defaultPath: normalizedUser.defaultPath || getRoleDefaultPath(normalizedUser.role)
   }
 }
 

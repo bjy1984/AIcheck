@@ -17,6 +17,7 @@ import { BaseButton } from '@/components/Button'
 import { resolveRoleEntryPath } from '@/utils/roleAccess'
 import { getRuntimeUiContextApi } from '@/api/aicheck'
 import type { RuntimeUiContext } from '@/types/aicheck'
+import { getAicheckErrorMessage } from '@/utils/aicheckError'
 
 const { required } = useValidator()
 
@@ -273,8 +274,8 @@ const signIn = async () => {
             })
           }
         }
-      } catch (error: any) {
-        errorMessage.value = error?.message || '登录失败，请检查用户名和密码'
+      } catch (error: unknown) {
+        errorMessage.value = getAicheckErrorMessage(error, '登录失败，请检查用户名和密码')
       } finally {
         loading.value = false
       }

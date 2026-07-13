@@ -50,13 +50,19 @@ const defaultResponseInterceptors = (response: AxiosResponse) => {
     const silentBusinessError =
       response.config?.headers?.['X-Silent-Business-Error'] === 'true' ||
       response.config?.headers?.['x-silent-business-error'] === 'true'
+    const message = getAicheckErrorMessage({ response }, response?.data?.message || '接口返回异常')
     if (!silentBusinessError) {
-      ElMessage.error(getAicheckErrorMessage(undefined, response?.data?.message || '接口返回异常'))
+      ElMessage.error(message)
     }
     if (response?.data?.code === 401) {
       const userStore = useUserStoreWithOut()
       userStore.logout()
     }
+    throw Object.assign(new Error(message), {
+      name: 'AicheckBusinessError',
+      response,
+      config: response.config
+    })
   }
 }
 

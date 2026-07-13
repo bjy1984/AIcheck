@@ -13,6 +13,7 @@ import {
 } from 'element-plus'
 import { changePasswordApi } from '@/api/login'
 import { useUserStore } from '@/store/modules/user'
+import { getAicheckErrorMessage } from '@/utils/aicheckError'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -85,9 +86,8 @@ const submit = async () => {
     userStore.setUserInfo(response.data.user)
     ElMessage.success('密码已更新，请使用新密码继续工作。')
     await router.replace(response.data.defaultPath)
-  } catch (error: any) {
-    errorMessage.value =
-      error?.response?.data?.message || error?.message || '密码修改失败，请稍后重试。'
+  } catch (error: unknown) {
+    errorMessage.value = getAicheckErrorMessage(error, '密码修改失败，请稍后重试。')
   } finally {
     loading.value = false
   }

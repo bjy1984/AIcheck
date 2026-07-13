@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 from typing import Any
 
@@ -62,6 +63,14 @@ CRITICAL_QUALITY_FLAG_HINTS = (
 
 def build_grounded_review_input(state: dict[str, Any], document_version_ids: set[str] | list[str] | tuple[str, ...]) -> dict[str, Any]:
     version_ids = {str(item) for item in document_version_ids if item}
+    source_groups = [state.get("extracted_fields", []), state.get("ocr_parse_results", []), state.get("evidence_links", [])]
+    available_version_ids = {
+        str(item.get("documentVersionId"))
+        for group in source_groups
+        for item in group
+        if isinstance(item, dict) and item.get("documentVersionId")
+    }
+    missing_version_ids = sorted(version_ids - available_version_ids)
     fields = [
         _field_evidence(item)
         for item in state.get("extracted_fields", [])
@@ -112,6 +121,7 @@ def build_grounded_review_input(state: dict[str, Any], document_version_ids: set
         table_content_missing=table_content_missing,
         seal_text_risk=seal_text_risk,
         critical_quality=critical_quality,
+        missing_version_ids=missing_version_ids,
     )
     grounding_status = "grounded" if not blocking_issues else "insufficient_evidence"
     return {
@@ -137,6 +147,7 @@ def build_grounded_review_input(state: dict[str, Any], document_version_ids: set
             "tableContentMissingCount": len(table_content_missing),
             "sealTextRiskCount": len(seal_text_risk),
             "criticalQualityFlagCount": len(critical_quality),
+            "missingDocumentVersionCount": len(missing_version_ids),
             "blockingIssueCount": len(blocking_issues),
             "groundingStatus": grounding_status,
         },
@@ -151,21 +162,37 @@ def build_grounded_review_input(state: dict[str, Any], document_version_ids: set
 
 def apply_grounding_guardrails(drafts: list[dict[str, Any]], grounding_input: dict[str, Any]) -> list[dict[str, Any]]:
     evidence_links = [item for item in grounding_input.get("evidenceLinks") or [] if isinstance(item, dict)]
+    evidence_link_map = {str(item.get("id")): item for item in evidence_links if item.get("id")}
     default_refs = [_evidence_ref(item) for item in evidence_links[:3]]
-    allowed_link_ids = {str(item.get("id")) for item in evidence_links if item.get("id")}
     allowed_version_ids = {str(item) for item in grounding_input.get("documentVersionIds") or [] if item}
     evidence_texts = [str(item) for item in grounding_input.get("evidenceTextCorpus") or [] if str(item).strip()]
     input_status = str(grounding_input.get("groundingStatus") or "insufficient_evidence")
     grounding_policy = str(grounding_input.get("groundingPolicy") or "evidence_only")
+    review_mode = _review_mode(grounding_input)
+    formal_review = review_mode in {"formal", "formal_review", "certification", "certification_review", "certify"}
+    advisory_review = bool(grounding_input.get("advisoryOnly")) or review_mode in {"advisory", "gap_precheck", "precheck"}
+    legacy_auto_promotion = grounding_input.get("allowLegacyEvidenceRefPromotion") is True
     guarded: list[dict[str, Any]] = []
     for draft in drafts or []:
         item = dict(draft)
-        refs = item.get("evidenceRefs") if isinstance(item.get("evidenceRefs"), list) else []
-        refs = _valid_evidence_refs(refs, allowed_link_ids, allowed_version_ids)
-        if not refs and default_refs:
-            refs = default_refs
+        supplied_refs = item.get("evidenceRefs") if isinstance(item.get("evidenceRefs"), list) else []
+        refs, evidence_failures = _validate_evidence_refs(supplied_refs, evidence_link_map, allowed_version_ids)
+        if not refs and default_refs and legacy_auto_promotion and not formal_review and not advisory_review and grounding_policy != "llm_only_human_review":
+            refs, default_failures = _validate_evidence_refs(default_refs, evidence_link_map, allowed_version_ids)
+            evidence_failures.extend(default_failures)
+        if not refs:
+            evidence_failures.append(
+                {
+                    "code": "EVIDENCE_REFS_MISSING",
+                    "message": "No valid evidence reference was supplied for this finding.",
+                }
+            )
         item["evidenceRefs"] = refs
-        item["evidenceLinkIds"] = [ref.get("evidenceLinkId") for ref in refs if isinstance(ref, dict) and ref.get("evidenceLinkId")]
+        if advisory_review and not refs and default_refs and grounding_policy != "llm_only_human_review":
+            suggested_refs, _ = _validate_evidence_refs(default_refs, evidence_link_map, allowed_version_ids)
+            if suggested_refs:
+                item["suggestedEvidenceRefs"] = suggested_refs
+        item["evidenceLinkIds"] = [ref.get("evidenceLinkId") for ref in refs if ref.get("evidenceLinkId")]
         item["requiresHumanConfirmation"] = True
         if item.get("suggestedAction") not in {"human_confirm", "request_correction"}:
             item["suggestedAction"] = "human_confirm"
@@ -176,7 +203,9 @@ def apply_grounding_guardrails(drafts: list[dict[str, Any]], grounding_input: di
             item["confidence"] = min(_safe_float(item.get("confidence"), default=0.55), 0.55)
             item["evidenceRefs"] = []
             item["evidenceLinkIds"] = []
+            item.pop("suggestedEvidenceRefs", None)
             item["sourceMethod"] = "pure_llm_review"
+            item["evidenceValidationFailures"] = _unique_diagnostics(evidence_failures)
             item.setdefault("llmGroundingWarnings", []).append(
                 {
                     "code": "PURE_LLM_REVIEW_NO_OCR_EVIDENCE",
@@ -189,7 +218,18 @@ def apply_grounding_guardrails(drafts: list[dict[str, Any]], grounding_input: di
             " ".join(str(item.get(key) or "") for key in ["title", "description"]),
             evidence_texts,
         )
-        if unsupported or input_status != "grounded":
+        if unsupported:
+            evidence_failures.extend(
+                {
+                    "code": "UNSUPPORTED_CLAIM",
+                    "claim": claim.get("claim"),
+                    "reason": claim.get("reason"),
+                    "message": "The finding contains a claim that is not supported by the supplied evidence corpus.",
+                }
+                for claim in unsupported
+            )
+        item["evidenceValidationFailures"] = _unique_diagnostics(evidence_failures)
+        if unsupported or input_status != "grounded" or (formal_review and not refs):
             item["unsupportedClaims"] = unsupported
             item["groundingStatus"] = "insufficient_evidence"
             item["suggestedAction"] = "human_confirm"
@@ -410,23 +450,121 @@ def _evidence_ref(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _valid_evidence_refs(
+def _validate_evidence_refs(
     refs: list[Any],
-    allowed_link_ids: set[str],
+    evidence_link_map: dict[str, dict[str, Any]],
     allowed_version_ids: set[str],
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     valid: list[dict[str, Any]] = []
-    for ref in refs:
+    failures: list[dict[str, Any]] = []
+    for index, ref in enumerate(refs):
         if not isinstance(ref, dict):
+            failures.append(
+                {
+                    "code": "EVIDENCE_REF_INVALID",
+                    "refIndex": index,
+                    "message": "Evidence reference must be an object.",
+                }
+            )
             continue
         link_id = str(ref.get("evidenceLinkId") or "")
-        version_id = str(ref.get("documentVersionId") or "")
-        if link_id and link_id in allowed_link_ids:
-            valid.append(ref)
+        link = evidence_link_map.get(link_id) if link_id else None
+        if link_id and link is None:
+            failures.append(
+                {
+                    "code": "EVIDENCE_REF_LINK_NOT_FOUND",
+                    "refIndex": index,
+                    "evidenceLinkId": link_id,
+                    "message": "Evidence link is not present in the supplied grounding input.",
+                }
+            )
             continue
-        if version_id and version_id in allowed_version_ids and ref.get("pageNo") and _has_bbox(ref.get("bbox")):
-            valid.append(ref)
-    return valid
+        version_id = str(ref.get("documentVersionId") or (link or {}).get("documentVersionId") or "")
+        link_version_id = str((link or {}).get("documentVersionId") or "")
+        if not version_id or version_id not in allowed_version_ids or (link_version_id and version_id != link_version_id):
+            failures.append(
+                {
+                    "code": "EVIDENCE_REF_CROSS_DOCUMENT",
+                    "refIndex": index,
+                    "evidenceLinkId": link_id or None,
+                    "documentVersionId": version_id or None,
+                    "message": "Evidence reference does not belong to an exact input document version.",
+                }
+            )
+            continue
+        page_no = ref.get("pageNo") if ref.get("pageNo") is not None else (link or {}).get("pageNo")
+        bbox = ref.get("bbox") if ref.get("bbox") is not None else (link or {}).get("bbox")
+        position_failures = _position_failures(page_no, bbox, index)
+        if position_failures:
+            failures.extend(position_failures)
+            continue
+        normalized = dict(ref)
+        normalized["documentVersionId"] = version_id
+        normalized["pageNo"] = int(page_no)
+        normalized["bbox"] = list(bbox[:4])
+        if link_id:
+            normalized["evidenceLinkId"] = link_id
+        valid.append(normalized)
+    return valid, failures
+
+
+def _position_failures(page_no: Any, bbox: Any, ref_index: int) -> list[dict[str, Any]]:
+    failures: list[dict[str, Any]] = []
+    numeric_page = _safe_float(page_no, default=None)
+    if numeric_page is None or not numeric_page.is_integer() or numeric_page < 1:
+        failures.append(
+            {
+                "code": "EVIDENCE_REF_PAGE_INVALID",
+                "refIndex": ref_index,
+                "pageNo": page_no,
+                "message": "Evidence page number must be a positive integer.",
+            }
+        )
+    if not _has_bbox(bbox):
+        failures.append(
+            {
+                "code": "EVIDENCE_REF_BBOX_INVALID",
+                "refIndex": ref_index,
+                "bbox": bbox,
+                "message": "Evidence bbox must contain four finite numeric coordinates with positive area.",
+            }
+        )
+    if failures:
+        failures.append(
+            {
+                "code": "EVIDENCE_REF_POSITION_INVALID",
+                "refIndex": ref_index,
+                "message": "Evidence reference has no valid page/bbox position.",
+            }
+        )
+    return failures
+
+
+def _review_mode(grounding_input: dict[str, Any]) -> str:
+    return str(
+        grounding_input.get("reviewMode")
+        or grounding_input.get("reviewType")
+        or grounding_input.get("runMode")
+        or ""
+    ).strip().lower()
+
+
+def _unique_diagnostics(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    unique: list[dict[str, Any]] = []
+    seen: set[tuple[Any, ...]] = set()
+    for item in items:
+        key = (
+            item.get("code"),
+            item.get("refIndex"),
+            item.get("evidenceLinkId"),
+            item.get("documentVersionId"),
+            item.get("claim"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+    return unique
 
 
 def _table_rows(table: dict[str, Any]) -> list[Any]:
@@ -576,8 +714,18 @@ def _blocking_grounding_issues(
     table_content_missing: list[dict[str, Any]],
     seal_text_risk: list[dict[str, Any]],
     critical_quality: list[dict[str, Any]],
+    missing_version_ids: list[str],
 ) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
+    if missing_version_ids:
+        issues.append(
+            {
+                "code": "OCR_GROUNDING_DOCUMENT_VERSION_MISSING",
+                "count": len(missing_version_ids),
+                "documentVersionIds": missing_version_ids,
+                "message": "One or more requested input document versions have no matching grounding input.",
+            }
+        )
     if not evidence_texts:
         issues.append({"code": "OCR_GROUNDING_TEXT_MISSING", "message": "No OCR text is available for grounded review."})
     if not evidence_links:
@@ -666,10 +814,13 @@ def _has_position(item: dict[str, Any]) -> bool:
 
 
 def _has_bbox(value: Any) -> bool:
-    if not isinstance(value, (list, tuple)) or len(value) < 4:
+    if not isinstance(value, (list, tuple)) or len(value) != 4:
         return False
-    numeric = [_safe_float(item, default=None) for item in value[:4]]
-    return all(item is not None for item in numeric)
+    numeric = [_safe_float(item, default=None) for item in value]
+    if not all(item is not None and math.isfinite(item) for item in numeric):
+        return False
+    left, top, right, bottom = numeric
+    return right > left and bottom > top
 
 
 def _cell_text(cell: dict[str, Any]) -> str:

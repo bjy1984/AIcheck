@@ -654,6 +654,46 @@ test.describe('AIcheck route smoke', () => {
     }
   })
 
+  test('login business errors stay visible instead of resolving undefined data', async ({ page }) => {
+    await page.route('**/api/auth/login', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(businessError(401, '账号或密码错误', 'AUTH_REQUIRED'))
+      })
+    })
+
+    const loginInputs = await gotoLoginPage(page)
+    await loginInputs.nth(0).fill('invalid-user')
+    await loginInputs.nth(1).fill('invalid-password')
+    await page.getByRole('button', { name: /^登录$/ }).click()
+
+    await expect(page.getByText(/账号或密码错误/).first()).toBeVisible()
+    await expect(page.getByText(/AUTH_REQUIRED/).first()).toBeVisible()
+    await expect(page.getByText(/Cannot read properties of undefined/)).toHaveCount(0)
+    await expect(page).toHaveURL(/#\/login/)
+  })
+
+  test('login HTTP errors preserve the business envelope', async ({ page }) => {
+    await page.route('**/api/auth/login', async (route) => {
+      await route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify(businessError(401, '账号或密码错误', 'AUTH_REQUIRED'))
+      })
+    })
+
+    const loginInputs = await gotoLoginPage(page)
+    await loginInputs.nth(0).fill('invalid-user')
+    await loginInputs.nth(1).fill('invalid-password')
+    await page.getByRole('button', { name: /^登录$/ }).click()
+
+    await expect(page.getByText(/账号或密码错误/).first()).toBeVisible()
+    await expect(page.getByText(/AUTH_REQUIRED/).first()).toBeVisible()
+    await expect(page.getByText(/Cannot read properties of undefined/)).toHaveCount(0)
+    await expect(page).toHaveURL(/#\/login/)
+  })
+
   test('business role falls back when redirect targets admin panel', async ({ page }) => {
     await page.goto(`/#/login?redirect=${encodeURIComponent('/admin/overview')}`)
     const loginInputs = page.locator('.auth-form .el-input__inner')

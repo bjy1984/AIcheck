@@ -580,7 +580,7 @@ def test_fde_evaluation_report_and_release_state_machine() -> None:
     evaluation = assert_ok(
         client.post(
             "/api/fde/evaluation-runs",
-            json={"evaluationSetId": "ESET-GOLDEN-ENGINEERING-001", "capabilityBundleId": "BUNDLE-REVIEW-202606"},
+            json={"evaluationSetId": "ESET-GOLDEN-ENGINEERING-001", "capabilityBundleId": "BUNDLE-REVIEW-202606", "profile": "legacy_non_certifying"},
             headers={"X-Role": "fde", "Idempotency-Key": "fde-eval-001"},
         )
     )
@@ -689,6 +689,7 @@ def test_fde_evaluation_run_fails_when_case_findings_are_missing() -> None:
             json={
                 "evaluationSetId": "ESET-GOLDEN-ENGINEERING-001",
                 "capabilityBundleId": "BUNDLE-REVIEW-202606",
+                "profile": "legacy_non_certifying",
                 "caseResults": {
                     "ECASE-24-001": {
                         "actualFindings": [],
@@ -728,6 +729,7 @@ def test_fde_evaluation_run_fails_when_expected_clause_is_missing() -> None:
             json={
                 "evaluationSetId": "ESET-GOLDEN-ENGINEERING-001",
                 "capabilityBundleId": "BUNDLE-REVIEW-202606",
+                "profile": "legacy_non_certifying",
                 "caseResults": {
                     "ECASE-24-001": {
                         "actualClauseIds": ["TSG-D7005-7.4"],
@@ -764,6 +766,7 @@ def test_fde_release_gate_rejects_failed_report_and_accepts_run_id_reference() -
             json={
                 "evaluationSetId": "ESET-GOLDEN-ENGINEERING-001",
                 "capabilityBundleId": "BUNDLE-REVIEW-202606",
+                "profile": "legacy_non_certifying",
                 "caseResults": {"ECASE-24-001": {"actualFindings": [], "actualEvidence": []}},
             },
             headers={"X-Role": "fde", "Idempotency-Key": "fde-eval-failed-release-001"},
@@ -787,6 +790,7 @@ def test_fde_release_gate_rejects_failed_report_and_accepts_run_id_reference() -
             json={
                 "evaluationSetId": "ESET-GOLDEN-ENGINEERING-001",
                 "capabilityBundleId": "BUNDLE-REVIEW-202606",
+                "profile": "legacy_non_certifying",
             },
             headers={"X-Role": "fde", "Idempotency-Key": "fde-eval-runref-001"},
         )

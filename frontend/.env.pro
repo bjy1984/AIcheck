@@ -18,7 +18,7 @@ VITE_SOURCEMAP=false
 
 # 输出路径
 VITE_OUT_DIR=dist-pro
-VITE_ASSETS_DIR=assets-r20260710
+VITE_ASSETS_DIR=assets-r20260713-loginfix
 
 # 标题
 VITE_APP_TITLE=AIcheck
