@@ -108,10 +108,26 @@ def operation_parameters(operation: dict[str, Any]) -> set[str]:
     }
 
 
-def response_has_example(response: dict[str, Any]) -> bool:
+def response_json_media(response: dict[str, Any]) -> dict[str, Any]:
     content = response.get("content") or {}
     media = content.get("application/json") or {}
+    return media if isinstance(media, dict) else {}
+
+
+def response_has_example(response: dict[str, Any]) -> bool:
+    media = response_json_media(response)
     return "examples" in media or "example" in media
+
+
+def response_has_schema(response: dict[str, Any]) -> bool:
+    media = response_json_media(response)
+    return isinstance(media.get("schema"), dict)
+
+
+def request_body_has_schema(request_body: dict[str, Any]) -> bool:
+    content = request_body.get("content") or {}
+    media = content.get("application/json") or {}
+    return isinstance(media, dict) and isinstance(media.get("schema"), dict)
 
 
 def resolved_response(response: Any) -> dict[str, Any]:
@@ -143,6 +159,8 @@ def validate_operation(path: str, method: str, operation: dict[str, Any]) -> dic
         request_body = operation.get("requestBody")
         if not isinstance(request_body, dict) or request_body.get("required") is not True:
             raise OpenApiContractError(f"{label} mutation must declare required requestBody")
+        if not request_body_has_schema(request_body):
+            raise OpenApiContractError(f"{label} requestBody must declare an application/json schema")
 
     responses = operation.get("responses")
     if not isinstance(responses, dict):
@@ -150,10 +168,16 @@ def validate_operation(path: str, method: str, operation: dict[str, Any]) -> dic
     missing_responses = REQUIRED_RESPONSE_CODES - set(map(str, responses.keys()))
     if missing_responses:
         raise OpenApiContractError(f"{label} missing responses: {sorted(missing_responses)}")
-    if not response_has_example(resolved_response(responses["200"])):
+    success_response = resolved_response(responses["200"])
+    if not response_has_schema(success_response):
+        raise OpenApiContractError(f"{label} response 200 must include an application/json schema")
+    if not response_has_example(success_response):
         raise OpenApiContractError(f"{label} response 200 must include a success example")
     for code in ["400", "401", "403", "404", "409"]:
-        if not response_has_example(resolved_response(responses[code])):
+        error_response = resolved_response(responses[code])
+        if not response_has_schema(error_response):
+            raise OpenApiContractError(f"{label} response {code} must include an application/json schema")
+        if not response_has_example(error_response):
             raise OpenApiContractError(f"{label} response {code} must include an error example")
 
     return {

@@ -21,6 +21,12 @@ def main() -> int:
     parser.add_argument("--eval-set", required=True, help="Evaluation set JSON with cases[].")
     parser.add_argument("--eval-report", help="Optional precomputed full evaluation report JSON.")
     parser.add_argument("--runtime-doctor-json", help="Optional runtime doctor JSON. Defaults to live ocr_service doctor.")
+    parser.add_argument(
+        "--runtime-profile",
+        choices=["local", "official"],
+        default="local",
+        help="Runtime capability profile used by the scorecard.",
+    )
     parser.add_argument("--sample-summary", action="append", default=[], help="Sample probe summary JSON. Repeatable.")
     parser.add_argument("--sample-summary-dir", action="append", default=[], help="Directory containing sample probe summary JSON files. Repeatable.")
     parser.add_argument("--auto-discover-runtime", action="store_true", help="Apply runtime-doctor recommended local OCR Python and model paths before live doctor.")
@@ -36,6 +42,8 @@ def main() -> int:
         eval_set_path=eval_set_path,
         run_ocr=bool(args.run_ocr),
     )
+    if args.runtime_profile == "official" and not args.runtime_doctor_json:
+        raise SystemExit("--runtime-profile official requires --runtime-doctor-json from API health/deployment output.")
     runtime_doctor = load_json(Path(args.runtime_doctor_json)) if args.runtime_doctor_json else ocr_service.runtime_doctor_payload()
     if applied_runtime:
         runtime_doctor["appliedAutoDiscoveredRuntime"] = applied_runtime
@@ -44,6 +52,7 @@ def main() -> int:
         evaluation_report=evaluation_report,
         runtime_doctor=runtime_doctor,
         sample_summaries=sample_summaries,
+        runtime_profile=args.runtime_profile,
     )
     if args.output:
         write_text_file(Path(args.output), json.dumps(scorecard, ensure_ascii=False, indent=2))

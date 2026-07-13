@@ -419,6 +419,17 @@ async def postgres_transaction_probe(request: Request):
 async def health_payload() -> dict[str, object]:
     database_backend = "postgres" if repo.postgres_enabled else "sqlite" if repo.sqlite_enabled else "memory"
     rate_limiter_ready = await security_sessions.ready()
+    model_attempts = [
+        item
+        for item in repo.state.get("model_call_attempts", [])
+        if item.get("provider") in {"aliyun_model_studio", "Model Studio / DashScope"}
+    ]
+    successful_attempts = [item for item in model_attempts if item.get("status") == "success"]
+    latest_success = max(
+        successful_attempts,
+        key=lambda item: str(item.get("finishedAt") or item.get("updatedAt") or ""),
+        default=None,
+    )
     return {
         "status": "ok",
         "service": "api-service",
@@ -431,6 +442,13 @@ async def health_payload() -> dict[str, object]:
         "authRequired": os.getenv("AICHECK_REQUIRE_AUTH", "false").lower() == "true",
         "demoUsersEnabled": demo_users_enabled(),
         "objectStorageEnabled": object_storage.enabled,
+        "officialOcrTelemetry": {
+            "lastSuccessfulInferenceAt": (latest_success or {}).get("finishedAt")
+            or (latest_success or {}).get("updatedAt"),
+            "model": (latest_success or {}).get("model"),
+            "attemptCount": len(model_attempts),
+            "successCount": len(successful_attempts),
+        },
         **production_runtime_status(),
         **security_runtime_status(rate_limiter_ready=rate_limiter_ready),
     }

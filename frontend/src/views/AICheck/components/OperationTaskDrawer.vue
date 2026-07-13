@@ -55,15 +55,25 @@ const formatElapsed = (seconds?: number | null) => {
   return `${minutes} 分 ${remainder} 秒`
 }
 
+const formatCost = (value?: number | null) => `¥${Number(value || 0).toFixed(4)}`
+
+const taskStatusCode = (task: OperationTask) => task.statusCode || 'unknown'
+
 const filteredTasks = computed(() => {
   if (statusFilter.value === 'running') {
-    return tasks.value.filter((task) => ['排队中', '运行中', '执行中'].includes(task.status))
+    return tasks.value.filter((task) =>
+      ['queued', 'running', 'retrying', 'waiting_human', 'cancel_requested'].includes(
+        taskStatusCode(task)
+      )
+    )
   }
   if (statusFilter.value === 'failed') {
-    return tasks.value.filter((task) => ['失败', 'failed'].includes(task.status))
+    return tasks.value.filter((task) => ['failed', 'blocked'].includes(taskStatusCode(task)))
   }
   if (statusFilter.value === 'completed') {
-    return tasks.value.filter((task) => ['成功', '完成', '已完成', '可下载'].includes(task.status))
+    return tasks.value.filter((task) =>
+      ['succeeded', 'cancelled', 'partial'].includes(taskStatusCode(task))
+    )
   }
   return tasks.value
 })
@@ -76,10 +86,12 @@ const latestDataTime = computed(() => {
   return values.length ? values[values.length - 1] : '--'
 })
 
-const statusType = (status: string) => {
-  if (['失败', 'failed'].includes(status)) return 'danger'
-  if (['成功', '完成', '已完成', '可下载'].includes(status)) return 'success'
-  if (['排队中', '运行中', '执行中'].includes(status)) return 'warning'
+const statusType = (task: OperationTask) => {
+  if (['failed', 'blocked'].includes(taskStatusCode(task))) return 'danger'
+  if (['succeeded', 'cancelled'].includes(taskStatusCode(task))) return 'success'
+  if (['queued', 'running', 'retrying', 'cancel_requested'].includes(taskStatusCode(task))) {
+    return 'warning'
+  }
   return 'info'
 }
 
@@ -202,12 +214,15 @@ onBeforeUnmount(() => {
               {{ areaLabels[task.area] }}</span
             >
           </div>
-          <ElTag :type="statusType(task.status)" effect="light">{{ task.status }}</ElTag>
+          <ElTag :type="statusType(task)" effect="light">{{ task.status }}</ElTag>
         </div>
         <ElProgress
-          v-if="['排队中', '运行中', '执行中'].includes(task.status) || task.progress > 0"
+          v-if="
+            ['queued', 'running', 'retrying', 'cancel_requested'].includes(taskStatusCode(task)) ||
+            task.progress > 0
+          "
           :percentage="Math.max(0, Math.min(100, task.progress || 0))"
-          :status="statusType(task.status) === 'danger' ? 'exception' : undefined"
+          :status="statusType(task) === 'danger' ? 'exception' : undefined"
         />
         <dl class="task-meta">
           <div
@@ -231,7 +246,26 @@ onBeforeUnmount(() => {
           <div v-if="task.attempt"
             ><dt>执行次数</dt><dd>{{ task.attempt }}</dd></div
           >
+          <div v-if="task.pageProgress?.total"
+            ><dt>页面进度</dt
+            ><dd>{{ task.pageProgress.completed || 0 }} / {{ task.pageProgress.total }}</dd></div
+          >
+          <div v-if="task.provider || task.model"
+            ><dt>识别服务</dt><dd>{{ task.provider || '--' }} · {{ task.model || '--' }}</dd></div
+          >
+          <div v-if="task.callCount"
+            ><dt>调用次数</dt><dd>{{ task.callCount }}</dd></div
+          >
+          <div v-if="task.costCny != null"
+            ><dt>累计费用</dt><dd>{{ formatCost(task.costCny) }}</dd></div
+          >
+          <div v-if="task.lastHeartbeatAt"
+            ><dt>最近心跳</dt><dd>{{ task.lastHeartbeatAt }}</dd></div
+          >
         </dl>
+        <p v-if="task.providerWaitReason" class="task-provider-wait" role="status">
+          正在等待识别服务：{{ task.providerWaitReason }}
+        </p>
         <p v-if="task.errorSummary" class="task-failure">{{ task.errorSummary }}</p>
         <div v-if="task.blockingReasons?.length" class="task-blockers" role="status">
           <strong>阻断原因</strong>
@@ -306,6 +340,14 @@ onBeforeUnmount(() => {
 .task-row-head span {
   font-size: 12px;
   color: #52647d;
+}
+
+.task-provider-wait {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-left: 3px solid #8a4b00;
+  color: #8a4b00;
+  background: #fff7e6;
 }
 
 .task-filters {

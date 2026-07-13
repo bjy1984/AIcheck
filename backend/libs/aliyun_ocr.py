@@ -4,19 +4,27 @@ import base64
 import hashlib
 import io
 import json
+import os
 import re
 import threading
 import time
 import unicodedata
 from copy import deepcopy
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
+from uuid import uuid4
 
 import httpx
 from PIL import Image
 
 from libs.ocr_runtime import ocr_runtime_config
+from libs.official_ocr_control import (
+    OfficialOcrControlUnavailable,
+    RedisOfficialOcrCircuitBreaker,
+    official_ocr_call_slot,
+)
 
 
 RETRYABLE_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
@@ -72,25 +80,25 @@ class OfficialOcrCircuitBreaker:
     def before_call(self) -> None:
         with self._lock:
             if self._opened_at is None:
-                return
+                return None
             elapsed = time.monotonic() - self._opened_at
             if elapsed >= self.open_seconds:
                 self._opened_at = None
                 self._failures = 0
-                return
+                return None
             raise AliyunOcrCircuitOpen(
                 "Aliyun OCR circuit is open",
                 reason="CIRCUIT_OPEN",
                 retry_after=max(self.open_seconds - elapsed, 1.0),
             )
 
-    def success(self) -> None:
+    def success(self, _lease: Any | None = None) -> None:
         with self._lock:
             self._failures = 0
             self._opened_at = None
             self._last_error = None
 
-    def failure(self, reason: str) -> None:
+    def failure(self, reason: str, _lease: Any | None = None) -> None:
         with self._lock:
             self._failures += 1
             self._last_error = reason
@@ -119,11 +127,19 @@ _CIRCUIT: OfficialOcrCircuitBreaker | None = None
 _CIRCUIT_KEY: tuple[int, int] | None = None
 
 
-def official_ocr_circuit_breaker(runtime: dict[str, Any] | None = None) -> OfficialOcrCircuitBreaker:
+def official_ocr_circuit_breaker(runtime: dict[str, Any] | None = None) -> Any:
     global _CIRCUIT, _CIRCUIT_KEY
     current = runtime or ocr_runtime_config()
     official = current["official"]
     key = (int(official["circuitFailureThreshold"]), int(official["circuitOpenSeconds"]))
+    distributed = str(os.getenv("AICHECK_OCR_DISTRIBUTED_CONTROL") or "true").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if distributed and os.getenv("AICHECK_REDIS_URL"):
+        return RedisOfficialOcrCircuitBreaker(*key)
     with _CIRCUIT_LOCK:
         if _CIRCUIT is None or _CIRCUIT_KEY != key:
             _CIRCUIT = OfficialOcrCircuitBreaker(*key)
@@ -247,6 +263,17 @@ def response_usage(payload: dict[str, Any]) -> dict[str, int]:
     }
 
 
+def response_finish_reason(payload: dict[str, Any]) -> str | None:
+    output = payload.get("output") if isinstance(payload.get("output"), dict) else {}
+    choices = output.get("choices") if isinstance(output.get("choices"), list) else []
+    if not choices and isinstance(payload.get("choices"), list):
+        choices = payload["choices"]
+    if not choices or not isinstance(choices[0], dict):
+        return None
+    value = choices[0].get("finish_reason") or choices[0].get("finishReason") or choices[0].get("stop_reason")
+    return str(value) if value is not None else None
+
+
 def ocr_cost_cny(model: str, usage: dict[str, int]) -> float:
     if str(model).startswith("qwen-vl-ocr"):
         input_rate, output_rate = 0.3, 0.5
@@ -319,11 +346,18 @@ class AliyunQwenOcrClient:
         *,
         runtime: dict[str, Any] | None = None,
         transport: httpx.BaseTransport | None = None,
-        circuit_breaker: OfficialOcrCircuitBreaker | None = None,
+        circuit_breaker: Any | None = None,
+        attempt_recorder: Callable[[dict[str, Any]], str | None] | None = None,
     ) -> None:
         self.runtime = runtime or ocr_runtime_config(validate=True)
         self.transport = transport
         self.circuit_breaker = circuit_breaker or official_ocr_circuit_breaker(self.runtime)
+        self.attempt_recorder = attempt_recorder
+
+    def _record_attempt(self, attempt: dict[str, Any]) -> str | None:
+        if self.attempt_recorder is None:
+            return None
+        return self.attempt_recorder(deepcopy(attempt))
 
     def call(
         self,
@@ -335,39 +369,107 @@ class AliyunQwenOcrClient:
         model: str | None = None,
     ) -> dict[str, Any]:
         official = self.runtime["official"]
-        self.circuit_breaker.before_call()
-        encoded = _adaptive_image_payload(image_path, self.runtime)
         selected_model = str(model or official["primaryModel"])
+        max_tokens = int(
+            (official.get("taskMaxOutputTokens") or {}).get(task)
+            or official["maxOutputTokens"]
+        )
+        call_id = f"OCRCALL-{uuid4().hex[:12].upper()}"
+        attempt: dict[str, Any] = {
+            "callId": call_id,
+            "provider": "aliyun_model_studio",
+            "model": selected_model,
+            "task": task,
+            "pageNo": int(page_no),
+            "status": "running",
+            "maxOutputTokens": max_tokens,
+        }
+        started = time.monotonic()
+        circuit_lease = None
+        try:
+            circuit_lease = self.circuit_breaker.before_call()
+        except OfficialOcrControlUnavailable as exc:
+            attempt.update(
+                {
+                    "status": "blocked",
+                    "failureReason": "CIRCUIT_OPEN",
+                    "durationMs": round((time.monotonic() - started) * 1000),
+                }
+            )
+            self._record_attempt(attempt)
+            raise AliyunOcrCircuitOpen(
+                "Aliyun OCR circuit is open",
+                reason="CIRCUIT_OPEN",
+                retry_after=exc.retry_after,
+            ) from exc
         ocr_options: dict[str, Any] = {"task": task}
         if result_schema:
             ocr_options["task_config"] = {"result_schema": result_schema}
-        request_payload = _request_payload(
-            str(official["baseUrl"]),
-            model=selected_model,
-            encoded=encoded,
-            ocr_options=ocr_options,
-            max_tokens=int(official["maxOutputTokens"]),
-        )
-        timeout = httpx.Timeout(float(official["timeoutSeconds"]), connect=10.0)
-        client_kwargs: dict[str, Any] = {"timeout": timeout}
-        if self.transport is not None:
-            client_kwargs["transport"] = self.transport
-        started = time.monotonic()
         try:
-            with httpx.Client(**client_kwargs) as client:
-                response = client.post(
-                    _endpoint(str(official["baseUrl"])),
-                    headers={"Authorization": f"Bearer {official['apiKey']}"},
-                    json=request_payload,
+            with official_ocr_call_slot(self.runtime):
+                encoded = _adaptive_image_payload(image_path, self.runtime)
+                attempt["input"] = {
+                    "width": encoded.width,
+                    "height": encoded.height,
+                    "mimeType": encoded.mime_type,
+                    "byteCount": encoded.byte_count,
+                    "sha256": encoded.sha256,
+                    "maxPixels": encoded.max_pixels,
+                }
+                request_payload = _request_payload(
+                    str(official["baseUrl"]),
+                    model=selected_model,
+                    encoded=encoded,
+                    ocr_options=ocr_options,
+                    max_tokens=max_tokens,
                 )
+                timeout = httpx.Timeout(float(official["timeoutSeconds"]), connect=10.0)
+                client_kwargs: dict[str, Any] = {"timeout": timeout}
+                if self.transport is not None:
+                    client_kwargs["transport"] = self.transport
+                with httpx.Client(**client_kwargs) as client:
+                    response = client.post(
+                        _endpoint(str(official["baseUrl"])),
+                        headers={"Authorization": f"Bearer {official['apiKey']}"},
+                        json=request_payload,
+                    )
+        except OfficialOcrControlUnavailable as exc:
+            reason = "PROVIDER_CAPACITY_UNAVAILABLE"
+            attempt.update(
+                {
+                    "status": "blocked",
+                    "failureReason": reason,
+                    "durationMs": round((time.monotonic() - started) * 1000),
+                }
+            )
+            self._record_attempt(attempt)
+            raise AliyunOcrRetryableError(reason, reason=reason, retry_after=exc.retry_after) from exc
         except httpx.HTTPError as exc:
             reason = exc.__class__.__name__.upper()
-            self.circuit_breaker.failure(reason)
+            self.circuit_breaker.failure(reason, circuit_lease)
+            attempt.update(
+                {
+                    "status": "failed",
+                    "failureReason": reason,
+                    "durationMs": round((time.monotonic() - started) * 1000),
+                }
+            )
+            self._record_attempt(attempt)
             raise AliyunOcrRetryableError("Aliyun OCR request failed", reason=reason) from exc
         elapsed_ms = round((time.monotonic() - started) * 1000)
         if response.status_code >= 400:
             reason = _response_error_reason(response)
-            self.circuit_breaker.failure(reason)
+            self.circuit_breaker.failure(reason, circuit_lease)
+            attempt.update(
+                {
+                    "status": "failed",
+                    "failureReason": reason,
+                    "httpStatus": response.status_code,
+                    "providerRequestId": response.headers.get("x-request-id"),
+                    "durationMs": elapsed_ms,
+                }
+            )
+            self._record_attempt(attempt)
             error_class = AliyunOcrRetryableError if response.status_code in RETRYABLE_STATUS_CODES else AliyunOcrError
             raise error_class(
                 "Aliyun OCR returned an error",
@@ -378,13 +480,21 @@ class AliyunQwenOcrClient:
         try:
             payload = response.json()
         except ValueError as exc:
-            self.circuit_breaker.failure("INVALID_JSON")
+            self.circuit_breaker.failure("INVALID_JSON", circuit_lease)
+            attempt.update({"status": "failed", "failureReason": "INVALID_JSON", "durationMs": elapsed_ms})
+            self._record_attempt(attempt)
             raise AliyunOcrRetryableError("Aliyun OCR returned invalid JSON", reason="INVALID_JSON") from exc
         if not isinstance(payload, dict):
-            self.circuit_breaker.failure("INVALID_RESPONSE")
+            self.circuit_breaker.failure("INVALID_RESPONSE", circuit_lease)
+            attempt.update({"status": "failed", "failureReason": "INVALID_RESPONSE", "durationMs": elapsed_ms})
+            self._record_attempt(attempt)
             raise AliyunOcrRetryableError("Aliyun OCR returned an invalid response", reason="INVALID_RESPONSE")
-        self.circuit_breaker.success()
+        self.circuit_breaker.success(circuit_lease)
         usage = response_usage(payload)
+        finish_reason = response_finish_reason(payload)
+        output_truncated = str(finish_reason or "").lower() in {"length", "max_tokens", "token_limit"} or (
+            max_tokens > 0 and int(usage.get("outputTokens") or 0) >= int(max_tokens * 0.98)
+        )
         request_id = str(
             payload.get("request_id")
             or payload.get("requestId")
@@ -392,7 +502,20 @@ class AliyunQwenOcrClient:
             or response.headers.get("x-request-id")
             or ""
         )
+        attempt.update(
+            {
+                "status": "success",
+                "providerRequestId": request_id or None,
+                "durationMs": elapsed_ms,
+                "usage": usage,
+                "costCny": ocr_cost_cny(selected_model, usage),
+                "finishReason": finish_reason,
+                "outputTruncated": output_truncated,
+            }
+        )
+        ledger_id = self._record_attempt(attempt)
         return {
+            "callId": call_id,
             "provider": "aliyun_model_studio",
             "model": selected_model,
             "task": task,
@@ -403,14 +526,11 @@ class AliyunQwenOcrClient:
             "usage": usage,
             "costCny": ocr_cost_cny(selected_model, usage),
             "durationMs": elapsed_ms,
-            "input": {
-                "width": encoded.width,
-                "height": encoded.height,
-                "mimeType": encoded.mime_type,
-                "byteCount": encoded.byte_count,
-                "sha256": encoded.sha256,
-                "maxPixels": encoded.max_pixels,
-            },
+            "input": attempt["input"],
+            "finishReason": finish_reason,
+            "outputTruncated": output_truncated,
+            "maxOutputTokens": max_tokens,
+            "modelCallLedgerId": ledger_id,
         }
 
 
@@ -625,23 +745,134 @@ def grounded_kie_fields(
     return list(output.values())
 
 
-def table_from_call(call: dict[str, Any], table_code: str) -> dict[str, Any] | None:
+class _TableHtmlParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.rows: list[list[str]] = []
+        self._row: list[str] | None = None
+        self._cell: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() == "tr":
+            self._row = []
+        elif tag.lower() in {"td", "th"} and self._row is not None:
+            self._cell = []
+
+    def handle_data(self, data: str) -> None:
+        if self._cell is not None:
+            self._cell.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() in {"td", "th"} and self._row is not None and self._cell is not None:
+            self._row.append("".join(self._cell).strip())
+            self._cell = None
+        elif tag.lower() == "tr" and self._row is not None:
+            if any(self._row):
+                self.rows.append(self._row)
+            self._row = None
+
+
+def _table_matrix(raw: Any, text: str) -> list[list[Any]]:
+    if isinstance(raw, dict):
+        rows = raw.get("rows") or raw.get("table") or raw.get("data")
+        if isinstance(rows, list):
+            matrix = []
+            for row in rows:
+                if isinstance(row, list):
+                    matrix.append(row)
+                elif isinstance(row, dict):
+                    matrix.append(list(row.values()))
+            if matrix:
+                return matrix
+        cells = raw.get("cells")
+        if isinstance(cells, list):
+            indexed: dict[int, dict[int, Any]] = {}
+            for cell in cells:
+                if not isinstance(cell, dict):
+                    continue
+                row_index = int(cell.get("rowIndex") or cell.get("row") or 0)
+                column_index = int(cell.get("columnIndex") or cell.get("column") or cell.get("col") or 0)
+                indexed.setdefault(row_index, {})[column_index] = cell.get("text") or cell.get("value") or ""
+            if indexed:
+                return [
+                    [columns[index] for index in sorted(columns)]
+                    for _, columns in sorted(indexed.items())
+                ]
+    if isinstance(raw, list):
+        matrix = [row for row in raw if isinstance(row, list)]
+        if matrix:
+            return matrix
+    if "<table" in text.lower():
+        parser = _TableHtmlParser()
+        parser.feed(text)
+        return parser.rows
+    return []
+
+
+def table_from_call(
+    call: dict[str, Any],
+    table_code: str,
+    fragments: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
     raw = call.get("ocrResult")
     text = str(call.get("text") or "").strip()
     if _empty_value(raw) and not text:
         return None
+    page_no = int(call.get("pageNo") or 1)
+    page_fragments = [
+        item for item in (fragments or []) if int(item.get("pageNo") or 1) == page_no
+    ]
+    cells: list[dict[str, Any]] = []
+    used_candidate_ids: set[str] = set()
+    for row_index, row in enumerate(_table_matrix(raw, text)):
+        for column_index, value in enumerate(row):
+            normalized_value = str(value or "").strip()
+            if not normalized_value:
+                continue
+            matched = [
+                item
+                for item in match_value_to_fragments(normalized_value, page_fragments)
+                if str(item.get("candidateId") or "") not in used_candidate_ids
+            ]
+            if len(matched) > 1:
+                exact = [
+                    item
+                    for item in matched
+                    if normalize_match_text(item.get("text")) == normalize_match_text(normalized_value)
+                ]
+                matched = exact[:1] if len(exact) == 1 else []
+            candidate_ids = [str(item.get("candidateId")) for item in matched if item.get("candidateId")]
+            used_candidate_ids.update(candidate_ids)
+            bbox = _union_bbox(matched)
+            cells.append(
+                {
+                    "rowIndex": row_index,
+                    "columnIndex": column_index,
+                    "text": normalized_value,
+                    "value": normalized_value,
+                    "pageNo": page_no,
+                    "bbox": bbox,
+                    "sourceCandidateIds": candidate_ids,
+                    "formalEvidenceEligible": bool(candidate_ids and bbox),
+                    "advisoryOnly": not bool(candidate_ids and bbox),
+                }
+            )
+    grounded_cells = [item for item in cells if item.get("formalEvidenceEligible")]
+    grounded_ratio = len(grounded_cells) / len(cells) if cells else 0.0
+    formal = bool(cells and grounded_ratio >= 0.95)
     return {
         "tableId": f"ALIYUN-TABLE-{call.get('pageNo')}-{hashlib.sha256(str(table_code).encode()).hexdigest()[:8]}",
         "tableCode": table_code,
-        "pageNo": int(call.get("pageNo") or 1),
+        "pageNo": page_no,
         "content": deepcopy(raw) if not _empty_value(raw) else text,
         "html": text if "<table" in text.lower() else None,
-        "cells": [],
-        "bbox": None,
+        "cells": cells,
+        "bbox": _union_bbox(grounded_cells),
         "sourceEngine": "aliyun_qwen_ocr_table",
-        "formalEvidenceEligible": False,
-        "advisoryOnly": True,
-        "qualityFlags": ["table_structure_requires_cell_grounding"],
+        "formalEvidenceEligible": formal,
+        "advisoryOnly": not formal,
+        "groundedCellRatio": round(grounded_ratio, 4),
+        "qualityFlags": [] if formal else ["table_structure_requires_cell_grounding"],
     }
 
 

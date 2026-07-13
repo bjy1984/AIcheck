@@ -1,0 +1,2125 @@
+diff --git a/backend/apps/api/main.py b/backend/apps/api/main.py
+index bb6af12..a0eec93 100644
+--- a/backend/apps/api/main.py
++++ b/backend/apps/api/main.py
+@@ -419,6 +419,17 @@ async def postgres_transaction_probe(request: Request):
+ async def health_payload() -> dict[str, object]:
+     database_backend = "postgres" if repo.postgres_enabled else "sqlite" if repo.sqlite_enabled else "memory"
+     rate_limiter_ready = await security_sessions.ready()
++    model_attempts = [
++        item
++        for item in repo.state.get("model_call_attempts", [])
++        if item.get("provider") in {"aliyun_model_studio", "Model Studio / DashScope"}
++    ]
++    successful_attempts = [item for item in model_attempts if item.get("status") == "success"]
++    latest_success = max(
++        successful_attempts,
++        key=lambda item: str(item.get("finishedAt") or item.get("updatedAt") or ""),
++        default=None,
++    )
+     return {
+         "status": "ok",
+         "service": "api-service",
+@@ -431,6 +442,13 @@ async def health_payload() -> dict[str, object]:
+         "authRequired": os.getenv("AICHECK_REQUIRE_AUTH", "false").lower() == "true",
+         "demoUsersEnabled": demo_users_enabled(),
+         "objectStorageEnabled": object_storage.enabled,
++        "officialOcrTelemetry": {
++            "lastSuccessfulInferenceAt": (latest_success or {}).get("finishedAt")
++            or (latest_success or {}).get("updatedAt"),
++            "model": (latest_success or {}).get("model"),
++            "attemptCount": len(model_attempts),
++            "successCount": len(successful_attempts),
++        },
+         **production_runtime_status(),
+         **security_runtime_status(rate_limiter_ready=rate_limiter_ready),
+     }
+diff --git a/backend/apps/api/routes.py b/backend/apps/api/routes.py
+index 6e40ca6..6ed8879 100644
+--- a/backend/apps/api/routes.py
++++ b/backend/apps/api/routes.py
+@@ -8637,9 +8637,14 @@ def operations_tasks(
+                 "providerRequestId": item.get("providerRequestId"),
+                 "providerRequestIds": item.get("providerRequestIds") or [],
+                 "providerCallCount": int(item.get("modelCallCount") or item.get("providerCallCount") or 0),
++                "callCount": int(item.get("modelCallCount") or item.get("providerCallCount") or 0),
+                 "costCny": float(item.get("costCny") or 0.0),
++                "budgetUsed": float(item.get("costCny") or 0.0),
+                 "pageProgress": item.get("pageProgress") or {},
+                 "fallbackReason": item.get("fallbackReason"),
++                "providerWaitReason": item.get("providerWaitReason"),
++                "lastHeartbeatAt": item.get("lastHeartbeatAt"),
++                "retryFromPage": item.get("retryFromPage"),
+             }
+         )
+ 
+@@ -18849,6 +18854,28 @@ def fde_ocr_pipeline_run_detail(request: Request, run_id: str):
+         "cacheSourceRunId": cache_source_run_ids,
+         "candidateRepairCount": int(grounding_validation.get("candidateRepairCount") or 0),
+         "unsupportedAttributionCount": int(grounding_validation.get("unsupportedAttributionCount") or 0),
++        "candidateAttribution": {
++            "validatedFieldCount": int(grounding_validation.get("validatedFieldCount") or 0),
++            "invalidCandidateIdCount": int(grounding_validation.get("invalidCandidateIdCount") or 0),
++            "unsupportedAttributionCount": int(grounding_validation.get("unsupportedAttributionCount") or 0),
++            "candidateRepairCount": int(grounding_validation.get("candidateRepairCount") or 0),
++        },
++        "polygonMapping": {
++            "fragmentCount": len((parse_result or {}).get("fragments") or []),
++            "positionedFragmentCount": len(
++                [
++                    item
++                    for item in (parse_result or {}).get("fragments") or []
++                    if isinstance(item, dict) and (item.get("polygon") or item.get("bbox"))
++                ]
++            ),
++        },
++        "truncationRecovery": {
++            "outputTruncated": bool(grounding_validation.get("outputTruncated")),
++            "recoveryCallCount": int(
++                (((parse_result or {}).get("metadata") or {}).get("truncationRecoveryCallCount") or 0)
++            ),
++        },
+     }
+     return ok(
+         {
+diff --git a/backend/apps/ocr_service/readiness.py b/backend/apps/ocr_service/readiness.py
+index 4a393d3..cc80587 100644
+--- a/backend/apps/ocr_service/readiness.py
++++ b/backend/apps/ocr_service/readiness.py
+@@ -19,9 +19,10 @@ def build_ocr_100_scorecard(
+     evaluation_report: dict[str, Any],
+     runtime_doctor: dict[str, Any] | None = None,
+     sample_summaries: list[dict[str, Any]] | None = None,
++    runtime_profile: str = "local",
+ ) -> dict[str, Any]:
+     sections = [
+-        runtime_section(runtime_doctor),
++        runtime_section(runtime_doctor, runtime_profile=runtime_profile),
+         evaluation_section(evaluation_report),
+         sample_section(sample_summaries or []),
+         observability_section(evaluation_report),
+@@ -35,6 +36,7 @@ def build_ocr_100_scorecard(
+     return {
+         "schemaVersion": "aicheck-ocr-100-scorecard-v1",
+         "targetScore": 100,
++        "runtimeProfile": runtime_profile,
+         "score": score,
+         "ok": score >= 100 and not blockers,
+         "sections": sections,
+@@ -42,9 +44,26 @@ def build_ocr_100_scorecard(
+     }
+ 
+ 
+-def runtime_section(runtime_doctor: dict[str, Any] | None) -> dict[str, Any]:
++def runtime_section(runtime_doctor: dict[str, Any] | None, *, runtime_profile: str = "local") -> dict[str, Any]:
+     if not isinstance(runtime_doctor, dict):
+         return section("runtime", 0, 25, ["runtime doctor report is missing"])
++    if runtime_profile == "official":
++        services = runtime_doctor.get("serviceReadiness") if isinstance(runtime_doctor.get("serviceReadiness"), dict) else {}
++        ocr = services.get("ocr") if isinstance(services.get("ocr"), dict) else runtime_doctor.get("ocr")
++        ocr = ocr if isinstance(ocr, dict) else runtime_doctor
++        telemetry = runtime_doctor.get("officialOcrTelemetry")
++        telemetry = telemetry if isinstance(telemetry, dict) else {}
++        capacity = ocr.get("capacityControl") if isinstance(ocr.get("capacityControl"), dict) else {}
++        circuit = ocr.get("circuitBreaker") if isinstance(ocr.get("circuitBreaker"), dict) else {}
++        capabilities = {
++            "provider configured": ocr.get("configured") is True and ocr.get("providerMode") == "official",
++            "live inference observed": bool(telemetry.get("lastSuccessfulInferenceAt") or ocr.get("lastSuccessfulInferenceAt")),
++            "distributed control ready": capacity.get("distributed") is True and capacity.get("ready") is True,
++            "local heavy fallback disabled": ocr.get("localHeavyFallbackEnabled") is False,
++            "silent fallback disabled": ocr.get("silentFallbackEnabled") is False,
++        }
++        blockers = [label for label, passed in capabilities.items() if not passed]
++        return section("runtime", 5 * len([item for item in capabilities.values() if item]), 25, blockers)
+     checks = runtime_doctor.get("checks") if isinstance(runtime_doctor.get("checks"), list) else []
+     checks_by_name = {
+         str(check.get("name")): check
+diff --git a/backend/apps/worker/tasks.py b/backend/apps/worker/tasks.py
+index 796ef4b..90c17d1 100644
+--- a/backend/apps/worker/tasks.py
++++ b/backend/apps/worker/tasks.py
+@@ -5,6 +5,7 @@ import json
+ import os
+ import shutil
+ import tempfile
++import threading
+ import time
+ from copy import deepcopy
+ from pathlib import Path
+@@ -1575,11 +1576,24 @@ def _load_official_page_checkpoints(run: dict[str, Any]) -> dict[int, list[dict[
+     return output
+ 
+ 
+-def _persist_official_ocr_attempts(run: dict[str, Any], result: dict[str, Any]) -> None:
+-    for raw in result.get("modelCallAttempts") or []:
+-        if not isinstance(raw, dict):
+-            continue
++_MODEL_CALL_LEDGER_LOCK = threading.Lock()
++
++
++def _persist_official_ocr_attempt(run: dict[str, Any], raw: dict[str, Any]) -> str:
++    with _MODEL_CALL_LEDGER_LOCK:
++        existing_ledger_id = str(raw.get("modelCallLedgerId") or "")
++        if existing_ledger_id:
++            return existing_ledger_id
+         now = server_time()
++        attempt_number = 1 + len(
++            [
++                item
++                for item in repo.state.get("model_call_attempts", [])
++                if item.get("pipelineRunId") == run.get("id")
++                and item.get("callKind") == raw.get("task")
++                and item.get("pageNo") == raw.get("pageNo")
++            ]
++        )
+         attempt = {
+             "id": f"MCALL-{uuid4().hex[:12].upper()}",
+             "pipelineRunId": run.get("id"),
+@@ -1589,15 +1603,19 @@ def _persist_official_ocr_attempts(run: dict[str, Any], result: dict[str, Any])
+             "callKind": raw.get("task"),
+             "provider": raw.get("provider"),
+             "model": raw.get("model"),
+-            "providerRequestId": raw.get("requestId"),
++            "providerRequestId": raw.get("requestId") or raw.get("providerRequestId"),
+             "status": raw.get("status") or "success",
+-            "attempt": 1,
++            "attempt": attempt_number,
+             "pageNo": raw.get("pageNo"),
+             "elapsedMs": int(raw.get("durationMs") or 0),
+             "usage": deepcopy(raw.get("usage") or {}),
+             "estimatedCostCny": float(raw.get("costCny") or 0.0),
+             "input": deepcopy(raw.get("input") or {}),
+             "failureReason": raw.get("failureReason"),
++            "finishReason": raw.get("finishReason"),
++            "outputTruncated": bool(raw.get("outputTruncated")),
++            "maxOutputTokens": raw.get("maxOutputTokens"),
++            "callId": raw.get("callId"),
+             "createdAt": now,
+             "startedAt": now,
+             "finishedAt": now,
+@@ -1607,6 +1625,14 @@ def _persist_official_ocr_attempts(run: dict[str, Any], result: dict[str, Any])
+         repo.state.setdefault("model_call_attempts", []).insert(0, attempt)
+         run.setdefault("modelCallAttemptIds", []).append(attempt["id"])
+         _persist_model_call_attempt(attempt)
++        return attempt["id"]
++
++
++def _persist_official_ocr_attempts(run: dict[str, Any], result: dict[str, Any]) -> None:
++    for raw in result.get("modelCallAttempts") or []:
++        if not isinstance(raw, dict) or raw.get("modelCallLedgerId"):
++            continue
++        _persist_official_ocr_attempt(run, raw)
+ 
+ 
+ def _dispatch_after_official_ocr(
+@@ -1692,6 +1718,9 @@ def ocr_pipeline_official_extract(self, run_id: str) -> dict[str, Any]:
+             "provider": runtime["official"]["provider"],
+             "model": runtime["official"]["primaryModel"],
+             "updatedAt": server_time(),
++            "lastHeartbeatAt": server_time(),
++            "providerWaitReason": None,
++            "deadLetteredAt": None,
+         }
+     )
+     job = repo.find_one(
+@@ -1747,6 +1776,7 @@ def ocr_pipeline_official_extract(self, run_id: str) -> dict[str, Any]:
+                 "currentPage": page_no,
+                 "status": "running",
+             }
++            run["lastHeartbeatAt"] = server_time()
+             if task:
+                 task["progress"] = max(
+                     int(task.get("progress") or 0),
+@@ -1762,6 +1792,8 @@ def ocr_pipeline_official_extract(self, run_id: str) -> dict[str, Any]:
+             work_directory=work_directory,
+             page_call_cache=cached_pages,
+             page_completed=page_completed,
++            attempt_recorder=lambda raw: _persist_official_ocr_attempt(run, raw),
++            budget_key=run_id,
+         )
+         run["pageProgress"] = {
+             "completed": len(result.get("pages") or []),
+@@ -1791,6 +1823,8 @@ def ocr_pipeline_official_extract(self, run_id: str) -> dict[str, Any]:
+                 "providerRequestIds": deepcopy(metadata.get("providerRequestIds") or []),
+                 "costCny": float(metadata.get("costCny") or result.get("costCny") or 0.0),
+                 "modelCallCount": int(metadata.get("modelCallCount") or 0),
++                "formalReadinessProfileAllowed": bool(metadata.get("formalReadinessProfileAllowed")),
++                "lastHeartbeatAt": server_time(),
+             }
+         )
+         artifact_url, artifact_hash = store_ocr_pipeline_artifact(run, "official_ocr", record)
+@@ -1860,10 +1894,14 @@ def ocr_pipeline_official_extract(self, run_id: str) -> dict[str, Any]:
+             default_countdown = (10, 30, 90)[retry_index]
+             countdown = max(1, int(getattr(exc, "retry_after", 0) or default_countdown))
+             repo.mark_ocr_pipeline_stage(run, "text_scan", "retrying", failure_reason=exc.__class__.__name__)
++            run["providerWaitReason"] = str(getattr(exc, "reason", None) or exc.__class__.__name__)
++            run["retryFromPage"] = (run.get("pageProgress") or {}).get("currentPage")
+             run["recommendedAction"] = f"Official OCR will retry in {countdown} seconds."
+             _persist_retry_state(run)
+             raise self.retry(exc=exc, countdown=countdown)
+         blockers = [{"code": "OFFICIAL_OCR_FAILED"}]
++        run["deadLetteredAt"] = server_time()
++        run["deadLetterReason"] = str(getattr(exc, "reason", None) or exc.__class__.__name__)
+         repo.mark_ocr_pipeline_stage(
+             run,
+             "text_scan",
+@@ -2399,6 +2437,20 @@ def _ocr_pipeline_finalize_impl(run_id: str) -> dict[str, Any]:
+     validation = run.get("groundingValidation") if isinstance(run.get("groundingValidation"), dict) else {}
+     if int(validation.get("invalidCandidateIdCount") or 0) > 0:
+         blockers.append({"code": "INVALID_CANDIDATE_ID"})
++    if int(validation.get("unsupportedAttributionCount") or 0) > 0:
++        blockers.append({"code": "UNSUPPORTED_ATTRIBUTION"})
++    if bool(validation.get("outputTruncated")):
++        blockers.append({"code": "OCR_OUTPUT_TRUNCATED"})
++    runtime = ocr_runtime_config()
++    formal_profile_allowed = str(profile.get("profileId") or "") in set(
++        runtime.get("formalReadinessProfileAllowlist") or []
++    )
++    formal_readiness_blockers = (
++        [{"code": "PROFILE_NOT_CERTIFIED_FOR_FORMAL_READINESS"}]
++        if run.get("mode") == "active" and not formal_profile_allowed
++        else []
++    )
++    run["formalReadinessBlockingReasons"] = formal_readiness_blockers
+     if blockers:
+         repo.mark_ocr_pipeline_stage(
+             run,
+@@ -2444,7 +2496,8 @@ def _ocr_pipeline_finalize_impl(run_id: str) -> dict[str, Any]:
+             run["nextDispatch"] = task_dispatcher.dispatch_slice(str(knowledge_file["id"]))
+     repo.mark_ocr_pipeline_stage(run, "finalize", "success")
+     final_status = "completed" if not blockers else "partial"
+-    formal_ready = bool(run.get("mode") == "active" and not blockers)
++    formal_ready = bool(run.get("mode") == "active" and formal_profile_allowed and not blockers)
++    run["formalReadinessProfileAllowed"] = formal_profile_allowed
+     repo.finish_ocr_pipeline_run(
+         run,
+         status=final_status,
+@@ -2461,6 +2514,7 @@ def _ocr_pipeline_finalize_impl(run_id: str) -> dict[str, Any]:
+             "mode": run.get("mode"),
+             "status": final_status,
+             "blockingReasons": blockers,
++            "formalReadinessBlockingReasons": formal_readiness_blockers,
+             "formalEvidenceReady": formal_ready,
+             "applied": applied,
+             "targeting": targeting,
+@@ -2480,6 +2534,7 @@ def _ocr_pipeline_finalize_impl(run_id: str) -> dict[str, Any]:
+         "mode": run.get("mode"),
+         "formalEvidenceReady": formal_ready,
+         "blockingReasons": blockers,
++        "formalReadinessBlockingReasons": formal_readiness_blockers,
+         "applied": applied,
+     }
+ 
+diff --git a/backend/config/ocr_runtime.yaml b/backend/config/ocr_runtime.yaml
+index b863a1a..efafe55 100644
+--- a/backend/config/ocr_runtime.yaml
++++ b/backend/config/ocr_runtime.yaml
+@@ -6,10 +6,12 @@ render:
+   maxLongSide: 1920
+   qwenMaxLongSide: 1920
+   jpegQuality: 90
+-  maxPages: 30
+-  maxPagesPerBatch: 30
++  maxPages: 10
++  maxPagesPerBatch: 10
+   maxDocumentPages: 200
+   maxCostCnyPerDocument: 5.0
++  structuredPageLimit: 6
++  sealRoiLimitPerDocument: 6
+ 
+ providers:
+   local:
+@@ -26,6 +28,9 @@ providers:
+     circuitOpenSeconds: 60
+     maxAttempts: 3
+     maxOutputTokens: 4096
++    advancedMaxOutputTokens: 4096
++    kieMaxOutputTokens: 2048
++    tableMaxOutputTokens: 8192
+ 
+ routing:
+   electronicPdf: local_text_layer
+diff --git a/backend/docker-compose.accuracy-pipeline.yml b/backend/docker-compose.accuracy-pipeline.yml
+index 3bb85ba..e19db8a 100644
+--- a/backend/docker-compose.accuracy-pipeline.yml
++++ b/backend/docker-compose.accuracy-pipeline.yml
+@@ -22,6 +22,14 @@ x-pipeline-worker: &pipeline-worker
+     AICHECK_ALIYUN_OCR_MODEL: ${AICHECK_ALIYUN_OCR_MODEL:-qwen3.5-ocr}
+     AICHECK_ALIYUN_OCR_TIMEOUT_SECONDS: ${AICHECK_ALIYUN_OCR_TIMEOUT_SECONDS:-60}
+     AICHECK_OCR_MAX_LONG_SIDE: "1920"
++    AICHECK_ALIYUN_OCR_MAX_PAGES_PER_BATCH: "10"
++    AICHECK_OCR_DISTRIBUTED_CONTROL: "true"
++    AICHECK_OCR_GLOBAL_CALL_CONCURRENCY: "4"
++    AICHECK_OCR_GLOBAL_DOCUMENT_CONCURRENCY: "2"
++    AICHECK_OCR_CAPACITY_WAIT_SECONDS: "5"
++    AICHECK_OCR_STRUCTURED_PAGE_LIMIT: "6"
++    AICHECK_OCR_SEAL_ROI_LIMIT_PER_DOCUMENT: "6"
++    AICHECK_OCR_FORMAL_READINESS_PROFILE_ALLOWLIST: ${AICHECK_OCR_FORMAL_READINESS_PROFILE_ALLOWLIST:-}
+     AICHECK_OCR_ALLOW_LOCAL_HEAVY_FALLBACK: "false"
+     AICHECK_OCR_ALLOW_SILENT_PROVIDER_FALLBACK: "false"
+     AICHECK_OCR_PIPELINE_MODE: ${AICHECK_OCR_PIPELINE_MODE:-shadow}
+@@ -91,6 +99,13 @@ services:
+       AICHECK_ALIYUN_OCR_API_KEY: ${AICHECK_ALIYUN_OCR_API_KEY:?AICHECK_ALIYUN_OCR_API_KEY is required}
+       AICHECK_ALIYUN_OCR_MODEL: ${AICHECK_ALIYUN_OCR_MODEL:-qwen3.5-ocr}
+       AICHECK_OCR_MAX_LONG_SIDE: "1920"
++      AICHECK_ALIYUN_OCR_MAX_PAGES_PER_BATCH: "10"
++      AICHECK_OCR_DISTRIBUTED_CONTROL: "true"
++      AICHECK_OCR_GLOBAL_CALL_CONCURRENCY: "4"
++      AICHECK_OCR_GLOBAL_DOCUMENT_CONCURRENCY: "2"
++      AICHECK_OCR_STRUCTURED_PAGE_LIMIT: "6"
++      AICHECK_OCR_SEAL_ROI_LIMIT_PER_DOCUMENT: "6"
++      AICHECK_OCR_FORMAL_READINESS_PROFILE_ALLOWLIST: ${AICHECK_OCR_FORMAL_READINESS_PROFILE_ALLOWLIST:-}
+       AICHECK_OCR_ALLOW_LOCAL_HEAVY_FALLBACK: "false"
+       AICHECK_OCR_ALLOW_SILENT_PROVIDER_FALLBACK: "false"
+ 
+diff --git a/backend/docker-compose.official-ocr.yml b/backend/docker-compose.official-ocr.yml
+index 7a3b3d6..fa51c4e 100644
+--- a/backend/docker-compose.official-ocr.yml
++++ b/backend/docker-compose.official-ocr.yml
+@@ -4,11 +4,17 @@ services:
+       AICHECK_OCR_PROVIDER_MODE: official
+       AICHECK_OCR_PIPELINE_MODE: active
+       AICHECK_OCR_MAX_LONG_SIDE: "1920"
+-      AICHECK_ALIYUN_OCR_MAX_PAGES_PER_BATCH: "30"
++      AICHECK_ALIYUN_OCR_MAX_PAGES_PER_BATCH: "10"
+       AICHECK_ALIYUN_OCR_MAX_DOCUMENT_PAGES: "200"
+       AICHECK_ALIYUN_OCR_MAX_COST_CNY_PER_DOCUMENT: "5"
+       AICHECK_OCR_ALLOW_LOCAL_HEAVY_FALLBACK: "false"
+       AICHECK_OCR_ALLOW_SILENT_PROVIDER_FALLBACK: "false"
++      AICHECK_OCR_DISTRIBUTED_CONTROL: "true"
++      AICHECK_OCR_GLOBAL_CALL_CONCURRENCY: "4"
++      AICHECK_OCR_GLOBAL_DOCUMENT_CONCURRENCY: "2"
++      AICHECK_OCR_STRUCTURED_PAGE_LIMIT: "6"
++      AICHECK_OCR_SEAL_ROI_LIMIT_PER_DOCUMENT: "6"
++      AICHECK_OCR_FORMAL_READINESS_PROFILE_ALLOWLIST: ${AICHECK_OCR_FORMAL_READINESS_PROFILE_ALLOWLIST:-}
+ 
+   worker-service:
+     environment: &official-ocr-environment
+diff --git a/backend/libs/aliyun_ocr.py b/backend/libs/aliyun_ocr.py
+index 773de2d..75d972d 100644
+--- a/backend/libs/aliyun_ocr.py
++++ b/backend/libs/aliyun_ocr.py
+@@ -4,19 +4,27 @@ import base64
+ import hashlib
+ import io
+ import json
++import os
+ import re
+ import threading
+ import time
+ import unicodedata
+ from copy import deepcopy
+ from dataclasses import dataclass
++from html.parser import HTMLParser
+ from pathlib import Path
+-from typing import Any
++from typing import Any, Callable
++from uuid import uuid4
+ 
+ import httpx
+ from PIL import Image
+ 
+ from libs.ocr_runtime import ocr_runtime_config
++from libs.official_ocr_control import (
++    OfficialOcrControlUnavailable,
++    RedisOfficialOcrCircuitBreaker,
++    official_ocr_call_slot,
++)
+ 
+ 
+ RETRYABLE_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
+@@ -119,11 +127,19 @@ _CIRCUIT: OfficialOcrCircuitBreaker | None = None
+ _CIRCUIT_KEY: tuple[int, int] | None = None
+ 
+ 
+-def official_ocr_circuit_breaker(runtime: dict[str, Any] | None = None) -> OfficialOcrCircuitBreaker:
++def official_ocr_circuit_breaker(runtime: dict[str, Any] | None = None) -> Any:
+     global _CIRCUIT, _CIRCUIT_KEY
+     current = runtime or ocr_runtime_config()
+     official = current["official"]
+     key = (int(official["circuitFailureThreshold"]), int(official["circuitOpenSeconds"]))
++    distributed = str(os.getenv("AICHECK_OCR_DISTRIBUTED_CONTROL") or "true").strip().lower() in {
++        "1",
++        "true",
++        "yes",
++        "on",
++    }
++    if distributed and os.getenv("AICHECK_REDIS_URL"):
++        return RedisOfficialOcrCircuitBreaker(*key)
+     with _CIRCUIT_LOCK:
+         if _CIRCUIT is None or _CIRCUIT_KEY != key:
+             _CIRCUIT = OfficialOcrCircuitBreaker(*key)
+@@ -247,6 +263,17 @@ def response_usage(payload: dict[str, Any]) -> dict[str, int]:
+     }
+ 
+ 
++def response_finish_reason(payload: dict[str, Any]) -> str | None:
++    output = payload.get("output") if isinstance(payload.get("output"), dict) else {}
++    choices = output.get("choices") if isinstance(output.get("choices"), list) else []
++    if not choices and isinstance(payload.get("choices"), list):
++        choices = payload["choices"]
++    if not choices or not isinstance(choices[0], dict):
++        return None
++    value = choices[0].get("finish_reason") or choices[0].get("finishReason") or choices[0].get("stop_reason")
++    return str(value) if value is not None else None
++
++
+ def ocr_cost_cny(model: str, usage: dict[str, int]) -> float:
+     if str(model).startswith("qwen-vl-ocr"):
+         input_rate, output_rate = 0.3, 0.5
+@@ -319,11 +346,18 @@ class AliyunQwenOcrClient:
+         *,
+         runtime: dict[str, Any] | None = None,
+         transport: httpx.BaseTransport | None = None,
+-        circuit_breaker: OfficialOcrCircuitBreaker | None = None,
++        circuit_breaker: Any | None = None,
++        attempt_recorder: Callable[[dict[str, Any]], str | None] | None = None,
+     ) -> None:
+         self.runtime = runtime or ocr_runtime_config(validate=True)
+         self.transport = transport
+         self.circuit_breaker = circuit_breaker or official_ocr_circuit_breaker(self.runtime)
++        self.attempt_recorder = attempt_recorder
++
++    def _record_attempt(self, attempt: dict[str, Any]) -> str | None:
++        if self.attempt_recorder is None:
++            return None
++        return self.attempt_recorder(deepcopy(attempt))
+ 
+     def call(
+         self,
+@@ -335,39 +369,106 @@ class AliyunQwenOcrClient:
+         model: str | None = None,
+     ) -> dict[str, Any]:
+         official = self.runtime["official"]
+-        self.circuit_breaker.before_call()
+-        encoded = _adaptive_image_payload(image_path, self.runtime)
+         selected_model = str(model or official["primaryModel"])
++        max_tokens = int(
++            (official.get("taskMaxOutputTokens") or {}).get(task)
++            or official["maxOutputTokens"]
++        )
++        call_id = f"OCRCALL-{uuid4().hex[:12].upper()}"
++        attempt: dict[str, Any] = {
++            "callId": call_id,
++            "provider": "aliyun_model_studio",
++            "model": selected_model,
++            "task": task,
++            "pageNo": int(page_no),
++            "status": "running",
++            "maxOutputTokens": max_tokens,
++        }
++        started = time.monotonic()
++        try:
++            self.circuit_breaker.before_call()
++        except OfficialOcrControlUnavailable as exc:
++            attempt.update(
++                {
++                    "status": "blocked",
++                    "failureReason": "CIRCUIT_OPEN",
++                    "durationMs": round((time.monotonic() - started) * 1000),
++                }
++            )
++            self._record_attempt(attempt)
++            raise AliyunOcrCircuitOpen(
++                "Aliyun OCR circuit is open",
++                reason="CIRCUIT_OPEN",
++                retry_after=exc.retry_after,
++            ) from exc
+         ocr_options: dict[str, Any] = {"task": task}
+         if result_schema:
+             ocr_options["task_config"] = {"result_schema": result_schema}
+-        request_payload = _request_payload(
+-            str(official["baseUrl"]),
+-            model=selected_model,
+-            encoded=encoded,
+-            ocr_options=ocr_options,
+-            max_tokens=int(official["maxOutputTokens"]),
+-        )
+-        timeout = httpx.Timeout(float(official["timeoutSeconds"]), connect=10.0)
+-        client_kwargs: dict[str, Any] = {"timeout": timeout}
+-        if self.transport is not None:
+-            client_kwargs["transport"] = self.transport
+-        started = time.monotonic()
+         try:
+-            with httpx.Client(**client_kwargs) as client:
+-                response = client.post(
+-                    _endpoint(str(official["baseUrl"])),
+-                    headers={"Authorization": f"Bearer {official['apiKey']}"},
+-                    json=request_payload,
++            with official_ocr_call_slot(self.runtime):
++                encoded = _adaptive_image_payload(image_path, self.runtime)
++                attempt["input"] = {
++                    "width": encoded.width,
++                    "height": encoded.height,
++                    "mimeType": encoded.mime_type,
++                    "byteCount": encoded.byte_count,
++                    "sha256": encoded.sha256,
++                    "maxPixels": encoded.max_pixels,
++                }
++                request_payload = _request_payload(
++                    str(official["baseUrl"]),
++                    model=selected_model,
++                    encoded=encoded,
++                    ocr_options=ocr_options,
++                    max_tokens=max_tokens,
+                 )
++                timeout = httpx.Timeout(float(official["timeoutSeconds"]), connect=10.0)
++                client_kwargs: dict[str, Any] = {"timeout": timeout}
++                if self.transport is not None:
++                    client_kwargs["transport"] = self.transport
++                with httpx.Client(**client_kwargs) as client:
++                    response = client.post(
++                        _endpoint(str(official["baseUrl"])),
++                        headers={"Authorization": f"Bearer {official['apiKey']}"},
++                        json=request_payload,
++                    )
++        except OfficialOcrControlUnavailable as exc:
++            reason = "PROVIDER_CAPACITY_UNAVAILABLE"
++            attempt.update(
++                {
++                    "status": "blocked",
++                    "failureReason": reason,
++                    "durationMs": round((time.monotonic() - started) * 1000),
++                }
++            )
++            self._record_attempt(attempt)
++            raise AliyunOcrRetryableError(reason, reason=reason, retry_after=exc.retry_after) from exc
+         except httpx.HTTPError as exc:
+             reason = exc.__class__.__name__.upper()
+             self.circuit_breaker.failure(reason)
++            attempt.update(
++                {
++                    "status": "failed",
++                    "failureReason": reason,
++                    "durationMs": round((time.monotonic() - started) * 1000),
++                }
++            )
++            self._record_attempt(attempt)
+             raise AliyunOcrRetryableError("Aliyun OCR request failed", reason=reason) from exc
+         elapsed_ms = round((time.monotonic() - started) * 1000)
+         if response.status_code >= 400:
+             reason = _response_error_reason(response)
+             self.circuit_breaker.failure(reason)
++            attempt.update(
++                {
++                    "status": "failed",
++                    "failureReason": reason,
++                    "httpStatus": response.status_code,
++                    "providerRequestId": response.headers.get("x-request-id"),
++                    "durationMs": elapsed_ms,
++                }
++            )
++            self._record_attempt(attempt)
+             error_class = AliyunOcrRetryableError if response.status_code in RETRYABLE_STATUS_CODES else AliyunOcrError
+             raise error_class(
+                 "Aliyun OCR returned an error",
+@@ -379,12 +480,20 @@ class AliyunQwenOcrClient:
+             payload = response.json()
+         except ValueError as exc:
+             self.circuit_breaker.failure("INVALID_JSON")
++            attempt.update({"status": "failed", "failureReason": "INVALID_JSON", "durationMs": elapsed_ms})
++            self._record_attempt(attempt)
+             raise AliyunOcrRetryableError("Aliyun OCR returned invalid JSON", reason="INVALID_JSON") from exc
+         if not isinstance(payload, dict):
+             self.circuit_breaker.failure("INVALID_RESPONSE")
++            attempt.update({"status": "failed", "failureReason": "INVALID_RESPONSE", "durationMs": elapsed_ms})
++            self._record_attempt(attempt)
+             raise AliyunOcrRetryableError("Aliyun OCR returned an invalid response", reason="INVALID_RESPONSE")
+         self.circuit_breaker.success()
+         usage = response_usage(payload)
++        finish_reason = response_finish_reason(payload)
++        output_truncated = str(finish_reason or "").lower() in {"length", "max_tokens", "token_limit"} or (
++            max_tokens > 0 and int(usage.get("outputTokens") or 0) >= int(max_tokens * 0.98)
++        )
+         request_id = str(
+             payload.get("request_id")
+             or payload.get("requestId")
+@@ -392,7 +501,20 @@ class AliyunQwenOcrClient:
+             or response.headers.get("x-request-id")
+             or ""
+         )
++        attempt.update(
++            {
++                "status": "success",
++                "providerRequestId": request_id or None,
++                "durationMs": elapsed_ms,
++                "usage": usage,
++                "costCny": ocr_cost_cny(selected_model, usage),
++                "finishReason": finish_reason,
++                "outputTruncated": output_truncated,
++            }
++        )
++        ledger_id = self._record_attempt(attempt)
+         return {
++            "callId": call_id,
+             "provider": "aliyun_model_studio",
+             "model": selected_model,
+             "task": task,
+@@ -403,14 +525,11 @@ class AliyunQwenOcrClient:
+             "usage": usage,
+             "costCny": ocr_cost_cny(selected_model, usage),
+             "durationMs": elapsed_ms,
+-            "input": {
+-                "width": encoded.width,
+-                "height": encoded.height,
+-                "mimeType": encoded.mime_type,
+-                "byteCount": encoded.byte_count,
+-                "sha256": encoded.sha256,
+-                "maxPixels": encoded.max_pixels,
+-            },
++            "input": attempt["input"],
++            "finishReason": finish_reason,
++            "outputTruncated": output_truncated,
++            "maxOutputTokens": max_tokens,
++            "modelCallLedgerId": ledger_id,
+         }
+ 
+ 
+@@ -625,23 +744,134 @@ def grounded_kie_fields(
+     return list(output.values())
+ 
+ 
+-def table_from_call(call: dict[str, Any], table_code: str) -> dict[str, Any] | None:
++class _TableHtmlParser(HTMLParser):
++    def __init__(self) -> None:
++        super().__init__()
++        self.rows: list[list[str]] = []
++        self._row: list[str] | None = None
++        self._cell: list[str] | None = None
++
++    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
++        if tag.lower() == "tr":
++            self._row = []
++        elif tag.lower() in {"td", "th"} and self._row is not None:
++            self._cell = []
++
++    def handle_data(self, data: str) -> None:
++        if self._cell is not None:
++            self._cell.append(data)
++
++    def handle_endtag(self, tag: str) -> None:
++        if tag.lower() in {"td", "th"} and self._row is not None and self._cell is not None:
++            self._row.append("".join(self._cell).strip())
++            self._cell = None
++        elif tag.lower() == "tr" and self._row is not None:
++            if any(self._row):
++                self.rows.append(self._row)
++            self._row = None
++
++
++def _table_matrix(raw: Any, text: str) -> list[list[Any]]:
++    if isinstance(raw, dict):
++        rows = raw.get("rows") or raw.get("table") or raw.get("data")
++        if isinstance(rows, list):
++            matrix = []
++            for row in rows:
++                if isinstance(row, list):
++                    matrix.append(row)
++                elif isinstance(row, dict):
++                    matrix.append(list(row.values()))
++            if matrix:
++                return matrix
++        cells = raw.get("cells")
++        if isinstance(cells, list):
++            indexed: dict[int, dict[int, Any]] = {}
++            for cell in cells:
++                if not isinstance(cell, dict):
++                    continue
++                row_index = int(cell.get("rowIndex") or cell.get("row") or 0)
++                column_index = int(cell.get("columnIndex") or cell.get("column") or cell.get("col") or 0)
++                indexed.setdefault(row_index, {})[column_index] = cell.get("text") or cell.get("value") or ""
++            if indexed:
++                return [
++                    [columns[index] for index in sorted(columns)]
++                    for _, columns in sorted(indexed.items())
++                ]
++    if isinstance(raw, list):
++        matrix = [row for row in raw if isinstance(row, list)]
++        if matrix:
++            return matrix
++    if "<table" in text.lower():
++        parser = _TableHtmlParser()
++        parser.feed(text)
++        return parser.rows
++    return []
++
++
++def table_from_call(
++    call: dict[str, Any],
++    table_code: str,
++    fragments: list[dict[str, Any]] | None = None,
++) -> dict[str, Any] | None:
+     raw = call.get("ocrResult")
+     text = str(call.get("text") or "").strip()
+     if _empty_value(raw) and not text:
+         return None
++    page_no = int(call.get("pageNo") or 1)
++    page_fragments = [
++        item for item in (fragments or []) if int(item.get("pageNo") or 1) == page_no
++    ]
++    cells: list[dict[str, Any]] = []
++    used_candidate_ids: set[str] = set()
++    for row_index, row in enumerate(_table_matrix(raw, text)):
++        for column_index, value in enumerate(row):
++            normalized_value = str(value or "").strip()
++            if not normalized_value:
++                continue
++            matched = [
++                item
++                for item in match_value_to_fragments(normalized_value, page_fragments)
++                if str(item.get("candidateId") or "") not in used_candidate_ids
++            ]
++            if len(matched) > 1:
++                exact = [
++                    item
++                    for item in matched
++                    if normalize_match_text(item.get("text")) == normalize_match_text(normalized_value)
++                ]
++                matched = exact[:1] if len(exact) == 1 else []
++            candidate_ids = [str(item.get("candidateId")) for item in matched if item.get("candidateId")]
++            used_candidate_ids.update(candidate_ids)
++            bbox = _union_bbox(matched)
++            cells.append(
++                {
++                    "rowIndex": row_index,
++                    "columnIndex": column_index,
++                    "text": normalized_value,
++                    "value": normalized_value,
++                    "pageNo": page_no,
++                    "bbox": bbox,
++                    "sourceCandidateIds": candidate_ids,
++                    "formalEvidenceEligible": bool(candidate_ids and bbox),
++                    "advisoryOnly": not bool(candidate_ids and bbox),
++                }
++            )
++    grounded_cells = [item for item in cells if item.get("formalEvidenceEligible")]
++    grounded_ratio = len(grounded_cells) / len(cells) if cells else 0.0
++    formal = bool(cells and grounded_ratio >= 0.95)
+     return {
+         "tableId": f"ALIYUN-TABLE-{call.get('pageNo')}-{hashlib.sha256(str(table_code).encode()).hexdigest()[:8]}",
+         "tableCode": table_code,
+-        "pageNo": int(call.get("pageNo") or 1),
++        "pageNo": page_no,
+         "content": deepcopy(raw) if not _empty_value(raw) else text,
+         "html": text if "<table" in text.lower() else None,
+-        "cells": [],
+-        "bbox": None,
++        "cells": cells,
++        "bbox": _union_bbox(grounded_cells),
+         "sourceEngine": "aliyun_qwen_ocr_table",
+-        "formalEvidenceEligible": False,
+-        "advisoryOnly": True,
+-        "qualityFlags": ["table_structure_requires_cell_grounding"],
++        "formalEvidenceEligible": formal,
++        "advisoryOnly": not formal,
++        "groundedCellRatio": round(grounded_ratio, 4),
++        "qualityFlags": [] if formal else ["table_structure_requires_cell_grounding"],
+     }
+ 
+ 
+diff --git a/backend/libs/ocr_readiness.py b/backend/libs/ocr_readiness.py
+index cf0f6ee..76e5a9b 100644
+--- a/backend/libs/ocr_readiness.py
++++ b/backend/libs/ocr_readiness.py
+@@ -12,6 +12,11 @@ OCR_FORMAL_BLOCKING_REASONS = {
+     "REQUIRED_FIELD_MISSING",
+     "REQUIRED_TABLE_MISSING",
+     "SEAL_NOT_FOUND",
++    "OCR_OUTPUT_TRUNCATED",
++    "DOCUMENT_COST_LIMIT_EXCEEDED",
++    "PAGE_COST_REVIEW_REQUIRED",
++    "UNSUPPORTED_ATTRIBUTION",
++    "PROFILE_NOT_CERTIFIED_FOR_FORMAL_READINESS",
+ }
+ 
+ 
+@@ -196,15 +201,36 @@ def build_document_ocr_readiness(repo: Any, document: dict[str, Any]) -> dict[st
+             and int(qwen_validation.get("invalidCandidateIdCount") or 0) == 0
+         ),
+         "formalEvidenceReady": bool((pipeline_run or {}).get("formalEvidenceReady")),
++        "formalReadinessBlockingReasons": (pipeline_run or {}).get("formalReadinessBlockingReasons") or [],
++        "formalReadinessProfileAllowed": bool(
++            (pipeline_run or {}).get("formalReadinessProfileAllowed")
++            or parse_metadata.get("formalReadinessProfileAllowed")
++        ),
+         "providerMode": (pipeline_run or {}).get("providerMode") or parse_metadata.get("providerMode"),
+         "provider": (pipeline_run or {}).get("provider") or parse_metadata.get("provider"),
+         "model": (pipeline_run or {}).get("model") or parse_metadata.get("model"),
+         "cloudGrounded": bool((pipeline_run or {}).get("cloudGrounded") or parse_metadata.get("cloudGrounded")),
++        "providerReady": not any(
++            str(item.get("code") or "") in {"OFFICIAL_OCR_FAILED", "CIRCUIT_OPEN"}
++            for item in ((pipeline_run or {}).get("blockingReasons") or [])
++            if isinstance(item, dict)
++        ),
++        "globalCapacityReady": not any(
++            str(item.get("code") or "") in {"PROVIDER_CAPACITY_UNAVAILABLE", "REDIS_CONTROL_UNAVAILABLE"}
++            for item in ((pipeline_run or {}).get("blockingReasons") or [])
++            if isinstance(item, dict)
++        ),
++        "outputTruncated": bool(
++            ((pipeline_run or {}).get("groundingValidation") or {}).get("outputTruncated")
++            or parse_metadata.get("outputTruncated")
++        ),
+         "providerRequestId": (
+             ((pipeline_run or {}).get("providerRequestIds") or parse_metadata.get("providerRequestIds") or [None])[0]
+         ),
+         "costCny": float((pipeline_run or {}).get("costCny") or parse_metadata.get("costCny") or 0.0),
+         "fallbackReason": (pipeline_run or {}).get("fallbackReason") or parse_metadata.get("fallbackReason"),
++        "providerWaitReason": (pipeline_run or {}).get("providerWaitReason"),
++        "lastHeartbeatAt": (pipeline_run or {}).get("lastHeartbeatAt"),
+     }
+ 
+ 
+diff --git a/backend/libs/ocr_runtime.py b/backend/libs/ocr_runtime.py
+index 39cfb7f..59014a5 100644
+--- a/backend/libs/ocr_runtime.py
++++ b/backend/libs/ocr_runtime.py
+@@ -109,6 +109,18 @@ def ocr_runtime_config(
+     except (TypeError, ValueError):
+         max_cost_cny = 5.0
+ 
++    def bounded_int(name: str, configured: Any, default: int, minimum: int, maximum: int) -> int:
++        try:
++            return max(minimum, min(int(source.get(name) or configured or default), maximum))
++        except (TypeError, ValueError):
++            return default
++
++    formal_allowlist = {
++        item.strip()
++        for item in str(source.get("AICHECK_OCR_FORMAL_READINESS_PROFILE_ALLOWLIST") or "").split(",")
++        if item.strip()
++    }
++
+     allow_local_heavy = _env_bool(
+         source,
+         "AICHECK_OCR_ALLOW_LOCAL_HEAVY_FALLBACK",
+@@ -156,6 +168,29 @@ def ocr_runtime_config(
+                     16384,
+                 ),
+             ),
++            "taskMaxOutputTokens": {
++                "advanced_recognition": bounded_int(
++                    "AICHECK_ALIYUN_OCR_ADVANCED_MAX_OUTPUT_TOKENS",
++                    aliyun.get("advancedMaxOutputTokens"),
++                    4096,
++                    512,
++                    8192,
++                ),
++                "key_information_extraction": bounded_int(
++                    "AICHECK_ALIYUN_OCR_KIE_MAX_OUTPUT_TOKENS",
++                    aliyun.get("kieMaxOutputTokens"),
++                    2048,
++                    256,
++                    4096,
++                ),
++                "table_parsing": bounded_int(
++                    "AICHECK_ALIYUN_OCR_TABLE_MAX_OUTPUT_TOKENS",
++                    aliyun.get("tableMaxOutputTokens"),
++                    8192,
++                    1024,
++                    16384,
++                ),
++            },
+         },
+         "render": {
+             "maxLongSide": max_long_side,
+@@ -165,8 +200,40 @@ def ocr_runtime_config(
+             "maxPagesPerBatch": max_pages_per_batch,
+             "maxDocumentPages": max_document_pages,
+             "maxCostCnyPerDocument": max_cost_cny,
++            "structuredPageLimit": bounded_int(
++                "AICHECK_OCR_STRUCTURED_PAGE_LIMIT",
++                render.get("structuredPageLimit"),
++                6,
++                1,
++                30,
++            ),
++            "sealRoiLimitPerDocument": bounded_int(
++                "AICHECK_OCR_SEAL_ROI_LIMIT_PER_DOCUMENT",
++                render.get("sealRoiLimitPerDocument"),
++                6,
++                1,
++                30,
++            ),
++        },
++        "control": {
++            "globalCallConcurrency": bounded_int(
++                "AICHECK_OCR_GLOBAL_CALL_CONCURRENCY", None, 4, 1, 32
++            ),
++            "globalDocumentConcurrency": bounded_int(
++                "AICHECK_OCR_GLOBAL_DOCUMENT_CONCURRENCY", None, 2, 1, 16
++            ),
++            "capacityWaitSeconds": bounded_int(
++                "AICHECK_OCR_CAPACITY_WAIT_SECONDS", None, 5, 0, 120
++            ),
++            "callLeaseSeconds": bounded_int(
++                "AICHECK_OCR_CALL_LEASE_SECONDS", None, 180, 30, 600
++            ),
++            "documentLeaseSeconds": bounded_int(
++                "AICHECK_OCR_DOCUMENT_LEASE_SECONDS", None, 300, 60, 1800
++            ),
+         },
+         "routing": deepcopy(routing),
++        "formalReadinessProfileAllowlist": sorted(formal_allowlist),
+         "allowLocalHeavyFallback": allow_local_heavy,
+         "allowSilentProviderFallback": _env_bool(
+             source,
+@@ -206,6 +273,11 @@ def ocr_runtime_public_config(env: Mapping[str, str] | None = None) -> dict[str,
+         "maxPagesPerBatch": runtime["render"]["maxPagesPerBatch"],
+         "maxDocumentPages": runtime["render"]["maxDocumentPages"],
+         "maxCostCnyPerDocument": runtime["render"]["maxCostCnyPerDocument"],
++        "structuredPageLimit": runtime["render"]["structuredPageLimit"],
++        "sealRoiLimitPerDocument": runtime["render"]["sealRoiLimitPerDocument"],
++        "taskMaxOutputTokens": official["taskMaxOutputTokens"],
++        "control": runtime["control"],
++        "formalReadinessProfileAllowlist": runtime["formalReadinessProfileAllowlist"],
+         "allowLocalHeavyFallback": runtime["allowLocalHeavyFallback"],
+         "allowSilentProviderFallback": runtime["allowSilentProviderFallback"],
+     }
+diff --git a/backend/libs/official_ocr_pipeline.py b/backend/libs/official_ocr_pipeline.py
+index 894f50f..83e50e6 100644
+--- a/backend/libs/official_ocr_pipeline.py
++++ b/backend/libs/official_ocr_pipeline.py
+@@ -1,6 +1,7 @@
+ from __future__ import annotations
+ 
+ import hashlib
++import threading
+ import time
+ from concurrent.futures import ThreadPoolExecutor, as_completed
+ from pathlib import Path
+@@ -18,6 +19,12 @@ from libs.aliyun_ocr import (
+ )
+ from libs.ocr_accuracy_pipeline import render_pages
+ from libs.ocr_runtime import ocr_runtime_config
++from libs.official_ocr_control import (
++    OfficialOcrBudgetExceeded,
++    adjust_official_ocr_cost,
++    official_ocr_document_slot,
++    reserve_official_ocr_cost,
++)
+ 
+ 
+ def selected_source_pages(source_path: Path, profile: dict[str, Any], runtime: dict[str, Any]) -> list[int]:
+@@ -209,9 +216,97 @@ def _attempt_record(call: dict[str, Any], *, status: str = "success", error: str
+         "costCny": float(call.get("costCny") or 0.0),
+         "input": call.get("input") or {},
+         "failureReason": error,
++        "callId": call.get("callId"),
++        "finishReason": call.get("finishReason"),
++        "outputTruncated": bool(call.get("outputTruncated")),
++        "maxOutputTokens": call.get("maxOutputTokens"),
++        "modelCallLedgerId": call.get("modelCallLedgerId"),
+     }
+ 
+ 
++def _split_recovery_tiles(
++    image_path: Path,
++    output_directory: Path,
++    *,
++    overlap_ratio: float = 0.08,
++) -> list[dict[str, Any]]:
++    output_directory.mkdir(parents=True, exist_ok=True)
++    with Image.open(image_path) as source:
++        image = source.convert("RGB")
++        width, height = image.size
++        vertical = height >= width
++        length = height if vertical else width
++        overlap = max(8, int(length * overlap_ratio))
++        midpoint = length // 2
++        ranges = [(0, min(length, midpoint + overlap)), (max(0, midpoint - overlap), length)]
++        output: list[dict[str, Any]] = []
++        for index, (start, end) in enumerate(ranges, start=1):
++            bbox = [0, start, width, end] if vertical else [start, 0, end, height]
++            crop = image.crop(tuple(bbox))
++            path = output_directory / f"tile-{index}.jpg"
++            crop.save(path, format="JPEG", quality=90, optimize=True, subsampling=0)
++            output.append({"path": path, "bbox": bbox, "offset": [bbox[0], bbox[1]]})
++        return output
++
++
++def _table_grid_score(image_path: Path) -> float:
++    try:
++        import cv2
++        import numpy as np
++    except ImportError:
++        return 0.0
++    image = cv2.imread(str(image_path), cv2.IMREAD_GRAYSCALE)
++    if image is None or image.size == 0:
++        return 0.0
++    binary = cv2.adaptiveThreshold(
++        image,
++        255,
++        cv2.ADAPTIVE_THRESH_MEAN_C,
++        cv2.THRESH_BINARY_INV,
++        31,
++        12,
++    )
++    horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (max(20, image.shape[1] // 30), 1))
++    vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(20, image.shape[0] // 30)))
++    horizontal = cv2.morphologyEx(binary, cv2.MORPH_OPEN, horizontal_kernel)
++    vertical = cv2.morphologyEx(binary, cv2.MORPH_OPEN, vertical_kernel)
++    line_pixels = int(np.count_nonzero(horizontal | vertical))
++    return round(line_pixels / float(image.size), 6)
++
++
++def _page_text(fragments: list[dict[str, Any]], page_no: int) -> str:
++    return " ".join(
++        str(item.get("text") or "")
++        for item in fragments
++        if int(item.get("pageNo") or 1) == int(page_no)
++    )
++
++
++def _structured_candidate_pages(
++    rendered: dict[int, Path],
++    fragments: list[dict[str, Any]],
++    *,
++    labels: list[str],
++    limit: int,
++    table_mode: bool,
++) -> list[int]:
++    normalized_labels = ["".join(str(label).lower().split()) for label in labels if str(label).strip()]
++    table_keywords = ["表", "序号", "项目", "规格", "检测", "管线", "材料", "报告编号", "证书号"]
++    scored: list[tuple[float, int]] = []
++    for page_no, image_path in rendered.items():
++        text = _page_text(fragments, page_no)
++        compact = "".join(text.lower().split())
++        label_hits = sum(1 for label in normalized_labels if label and label in compact)
++        keyword_hits = sum(1 for keyword in table_keywords if keyword in text) if table_mode else 0
++        grid_score = _table_grid_score(image_path) if table_mode else 0.0
++        content_score = min(len(compact) / 10000.0, 0.5)
++        scored.append((label_hits * 10.0 + keyword_hits * 2.0 + grid_score * 100.0 + content_score, page_no))
++    positive = [item for item in scored if item[0] >= (1.0 if table_mode else 1.0)]
++    selected = positive or scored
++    selected.sort(key=lambda item: (-item[0], item[1]))
++    return [page_no for _, page_no in selected[: max(1, min(limit, len(selected)))]]
++
++
+ def _local_text_layer_result(
+     source_path: Path,
+     selected_pages: list[int],
+@@ -315,7 +410,7 @@ def _local_text_layer_result(
+     }
+ 
+ 
+-def official_ocr_extract(
++def _official_ocr_extract_legacy(
+     source_path: Path,
+     *,
+     profile: dict[str, Any],
+@@ -518,6 +613,353 @@ def official_ocr_extract(
+     }
+ 
+ 
++def official_ocr_extract(
++    source_path: Path,
++    *,
++    profile: dict[str, Any],
++    runtime: dict[str, Any] | None = None,
++    client: AliyunQwenOcrClient | None = None,
++    work_directory: Path,
++    page_call_cache: dict[int, list[dict[str, Any]]] | None = None,
++    page_completed: Callable[[int, int, int, list[dict[str, Any]]], None] | None = None,
++    attempt_recorder: Callable[[dict[str, Any]], str | None] | None = None,
++    budget_key: str | None = None,
++) -> dict[str, Any]:
++    current = runtime or ocr_runtime_config(validate=True)
++    selected_pages = selected_source_pages(source_path, profile, current)
++    if current["mode"] == "hybrid_auto":
++        text_result = _local_text_layer_result(source_path, selected_pages, profile)
++        if text_result is not None:
++            return text_result
++
++    ocr_client = client or AliyunQwenOcrClient(runtime=current, attempt_recorder=attempt_recorder)
++    rendered = render_pages(source_path, selected_pages, work_directory / "pages")
++    pages = _page_records(rendered)
++    schema, field_labels = field_schema(profile)
++    required_tables = [str(item) for item in profile.get("requiredTables") or [] if str(item)]
++    seal_required = bool((profile.get("sealRules") or {}).get("required"))
++    table_code = required_tables[0] if len(required_tables) == 1 else "official_table_page"
++    total_pages = len(rendered)
++    started = time.monotonic()
++    page_results: dict[int, list[dict[str, Any]]] = {
++        int(page_no): [item for item in calls if isinstance(item, dict)]
++        for page_no, calls in (page_call_cache or {}).items()
++    }
++    for page_no in rendered:
++        page_results.setdefault(int(page_no), [])
++
++    budget_id = budget_key or hashlib.sha256(str(source_path.resolve()).encode("utf-8")).hexdigest()[:24]
++    budget_limit = float(current["render"]["maxCostCnyPerDocument"])
++    budget_stopped = threading.Event()
++    estimated_costs = {
++        "advanced_recognition": 0.01,
++        "key_information_extraction": 0.015,
++        "table_parsing": 0.03,
++    }
++
++    def notify(page_no: int, completed: int) -> None:
++        if page_completed:
++            page_completed(page_no, completed, total_pages, page_results[page_no])
++
++    def provider_call(
++        image_path: Path,
++        *,
++        task: str,
++        page_no: int,
++        result_schema: dict[str, Any] | None = None,
++    ) -> dict[str, Any] | None:
++        if budget_stopped.is_set():
++            return None
++        estimate = estimated_costs.get(task, 0.02)
++        try:
++            reserve_official_ocr_cost(budget_id, estimate, budget_limit)
++        except OfficialOcrBudgetExceeded:
++            budget_stopped.set()
++            return None
++        try:
++            call = ocr_client.call(
++                image_path,
++                task=task,
++                page_no=page_no,
++                result_schema=result_schema,
++            )
++        except Exception:
++            adjust_official_ocr_cost(budget_id, -estimate)
++            raise
++        adjust_official_ocr_cost(budget_id, float(call.get("costCny") or 0.0) - estimate)
++        return call
++
++    def scan_advanced_page(page_no: int, image_path: Path) -> tuple[int, bool]:
++        page_calls = page_results[page_no]
++        base_calls = [
++            item
++            for item in page_calls
++            if item.get("task") == "advanced_recognition"
++            and not item.get("roiColor")
++            and not item.get("tileRecovery")
++        ]
++        tile_calls = [item for item in page_calls if item.get("tileRecovery")]
++        if base_calls and (not base_calls[-1].get("outputTruncated") or tile_calls):
++            return page_no, False
++        base_call = base_calls[-1] if base_calls else provider_call(
++            image_path,
++            task="advanced_recognition",
++            page_no=page_no,
++        )
++        fresh = bool(base_call is not None and not base_calls)
++        if fresh and base_call is not None:
++            page_calls.append(base_call)
++        if base_call is not None and base_call.get("outputTruncated") and not tile_calls:
++            base_call["supersededByTiles"] = True
++            for tile in _split_recovery_tiles(
++                image_path,
++                work_directory / "truncation-recovery" / f"page-{page_no}",
++            ):
++                tile_call = provider_call(tile["path"], task="advanced_recognition", page_no=page_no)
++                if tile_call is None:
++                    break
++                tile_call.update(
++                    {
++                        "roiOffset": tile["offset"],
++                        "roiBbox": tile["bbox"],
++                        "tileRecovery": True,
++                    }
++                )
++                page_calls.append(tile_call)
++        return page_no, fresh
++
++    with official_ocr_document_slot(current):
++        rendered_items = sorted(rendered.items())
++        window_size = int(current["render"]["maxPagesPerBatch"])
++        completed_count = 0
++        for offset in range(0, len(rendered_items), window_size):
++            window = rendered_items[offset : offset + window_size]
++            with ThreadPoolExecutor(max_workers=min(2, max(len(window), 1))) as executor:
++                futures = [executor.submit(scan_advanced_page, page_no, path) for page_no, path in window]
++                for future in as_completed(futures):
++                    page_no, fresh = future.result()
++                    completed_count += 1
++                    if fresh or page_completed:
++                        notify(page_no, completed_count)
++            if budget_stopped.is_set():
++                break
++
++        advanced_calls = [
++            item
++            for page_calls in page_results.values()
++            for item in page_calls
++            if item.get("task") == "advanced_recognition"
++            and not item.get("roiColor")
++            and not item.get("supersededByTiles")
++        ]
++        fragments = [fragment for call in advanced_calls for fragment in _offset_advanced_fragments(call)]
++        structured_limit = int(current["render"]["structuredPageLimit"])
++
++        def run_structured(page_no: int, task: str) -> tuple[int, bool]:
++            page_calls = page_results[page_no]
++            if any(item.get("task") == task for item in page_calls):
++                return page_no, False
++            call = provider_call(
++                rendered[page_no],
++                task=task,
++                page_no=page_no,
++                result_schema=schema if task == "key_information_extraction" else None,
++            )
++            if call is None:
++                return page_no, False
++            page_calls.append(call)
++            return page_no, True
++
++        if schema and not budget_stopped.is_set():
++            kie_pages = _structured_candidate_pages(
++                rendered,
++                fragments,
++                labels=[*field_labels.values(), *schema.keys()],
++                limit=structured_limit,
++                table_mode=False,
++            )
++            with ThreadPoolExecutor(max_workers=min(2, len(kie_pages) or 1)) as executor:
++                futures = [
++                    executor.submit(run_structured, page_no, "key_information_extraction")
++                    for page_no in kie_pages
++                ]
++                for future in as_completed(futures):
++                    page_no, fresh = future.result()
++                    if fresh:
++                        notify(page_no, total_pages)
++
++        if required_tables and not budget_stopped.is_set():
++            table_pages = _structured_candidate_pages(
++                rendered,
++                fragments,
++                labels=required_tables,
++                limit=structured_limit,
++                table_mode=True,
++            )
++            with ThreadPoolExecutor(max_workers=min(2, len(table_pages) or 1)) as executor:
++                futures = [executor.submit(run_structured, page_no, "table_parsing") for page_no in table_pages]
++                for future in as_completed(futures):
++                    page_no, fresh = future.result()
++                    if fresh:
++                        notify(page_no, total_pages)
++
++        current_advanced = [
++            item
++            for page_calls in page_results.values()
++            for item in page_calls
++            if item.get("task") == "advanced_recognition" and not item.get("supersededByTiles")
++        ]
++        current_fragments = [
++            fragment for call in current_advanced for fragment in _offset_advanced_fragments(call)
++        ]
++        seal_limit = int(current["render"]["sealRoiLimitPerDocument"])
++        existing_seal_roi_count = sum(1 for call in current_advanced if call.get("roiColor"))
++        if seal_required and not seal_candidates_from_fragments(current_fragments) and not budget_stopped.is_set():
++            for page_no, image_path in rendered_items:
++                remaining = seal_limit - existing_seal_roi_count
++                if remaining <= 0:
++                    break
++                seal_rois = detect_color_seal_rois(
++                    image_path,
++                    work_directory / "seal-rois" / f"page-{page_no}",
++                    max_candidates=min(2, remaining),
++                )
++                for roi in seal_rois:
++                    roi_call = provider_call(roi["path"], task="advanced_recognition", page_no=page_no)
++                    if roi_call is None:
++                        break
++                    roi_call.update(
++                        {
++                            "roiOffset": [roi["bbox"][0], roi["bbox"][1]],
++                            "roiBbox": roi["bbox"],
++                            "roiColor": roi["color"],
++                        }
++                    )
++                    page_results[page_no].append(roi_call)
++                    existing_seal_roi_count += 1
++                if seal_rois:
++                    notify(page_no, total_pages)
++
++    calls = [item for page_no in sorted(page_results) for item in page_results[page_no]]
++    advanced_calls = [
++        item
++        for item in calls
++        if item.get("task") == "advanced_recognition" and not item.get("supersededByTiles")
++    ]
++    kie_calls = [item for item in calls if item.get("task") == "key_information_extraction"]
++    table_calls = [item for item in calls if item.get("task") == "table_parsing"]
++    fragments = [fragment for call in advanced_calls for fragment in _offset_advanced_fragments(call)]
++    fields = grounded_kie_fields(kie_calls, fragments, field_labels=field_labels)
++    tables = [
++        table
++        for call in table_calls
++        if (table := table_from_call(call, table_code, fragments)) is not None
++    ]
++    seals = seal_candidates_from_fragments(fragments)
++    model_calls = [_attempt_record(call) for call in calls]
++    total_cost = round(sum(float(call.get("costCny") or 0.0) for call in calls), 6)
++
++    required_field_codes = {str(item) for item in schema}
++    formal_field_codes = {
++        str(item.get("fieldCode") or "")
++        for item in fields
++        if item.get("formalEvidenceEligible") and item.get("fieldValue") not in (None, "")
++    }
++    formal_table_codes = {
++        str(item.get("tableCode") or "") for item in tables if item.get("formalEvidenceEligible")
++    }
++    quality_reasons: list[str] = []
++    if not fragments or not required_field_codes.issubset(formal_field_codes):
++        quality_reasons.append("FIELD_EVIDENCE_MISSING")
++    if set(required_tables) - formal_table_codes:
++        quality_reasons.append("TABLE_EVIDENCE_MISSING")
++    if seal_required and not any(item.get("formalEvidenceEligible") for item in seals):
++        quality_reasons.append("SEAL_EVIDENCE_MISSING")
++    output_truncated = any(
++        bool(call.get("outputTruncated")) and not call.get("supersededByTiles") for call in calls
++    )
++    if output_truncated:
++        quality_reasons.append("OCR_OUTPUT_TRUNCATED")
++    if budget_stopped.is_set():
++        quality_reasons.append("DOCUMENT_COST_LIMIT_EXCEEDED")
++    page_costs = {
++        page_no: round(sum(float(item.get("costCny") or 0.0) for item in page_calls), 6)
++        for page_no, page_calls in page_results.items()
++    }
++    expensive_pages = sorted(page_no for page_no, cost in page_costs.items() if cost > 0.02)
++    if expensive_pages:
++        quality_reasons.append("PAGE_COST_REVIEW_REQUIRED")
++    invalid_grounded_fields = [field for field in fields if not field.get("formalEvidenceEligible")]
++    reasons = sorted(set(quality_reasons))
++
++    return {
++        "status": "success" if fragments or fields or tables else "failed",
++        "outcomeStatus": "completed" if not reasons else "partial",
++        "parserVersion": "aliyun-qwen-ocr@2",
++        "profileId": profile.get("profileId"),
++        "documentType": profile.get("documentType"),
++        "pages": pages,
++        "fragments": fragments,
++        "fields": fields,
++        "tables": tables,
++        "seals": seals,
++        "signatures": [],
++        "layoutBlocks": [],
++        "engineRuns": [
++            {
++                "engine": "aliyun_qwen_ocr",
++                "provider": "aliyun_model_studio",
++                "model": current["official"]["primaryModel"],
++                "status": "success" if calls else "failed",
++                "durationMs": round((time.monotonic() - started) * 1000),
++                "callCount": len(calls),
++                "pageCount": len(rendered),
++                "tasks": sorted({str(call.get("task") or "") for call in calls}),
++                "engineAttempted": True,
++                "engineExecuted": bool(calls),
++            }
++        ],
++        "quality": {
++            "status": "usable" if not reasons else "needs_human_review",
++            "reasons": reasons,
++            "blockingReasons": [{"code": reason} for reason in reasons],
++        },
++        "metadata": {
++            "providerMode": current["mode"],
++            "provider": "aliyun_model_studio",
++            "model": current["official"]["primaryModel"],
++            "selectedPageNos": selected_pages,
++            "cloudGrounded": bool(fragments) and not invalid_grounded_fields,
++            "providerRequestIds": [call.get("requestId") for call in calls if call.get("requestId")],
++            "costCny": total_cost,
++            "modelCallCount": len(calls),
++            "sealRoiCallCount": sum(1 for call in calls if call.get("roiColor")),
++            "maxPagesPerBatch": current["render"]["maxPagesPerBatch"],
++            "maxDocumentPages": current["render"]["maxDocumentPages"],
++            "maxCostCnyPerDocument": budget_limit,
++            "structuredPageLimit": current["render"]["structuredPageLimit"],
++            "formalReadinessProfileAllowed": str(profile.get("profileId") or "")
++            in set(current.get("formalReadinessProfileAllowlist") or []),
++            "outputTruncated": output_truncated,
++            "budgetStopped": budget_stopped.is_set(),
++            "pageCostsCny": page_costs,
++            "expensivePageNos": expensive_pages,
++            "truncationRecoveryCallCount": sum(1 for call in calls if call.get("tileRecovery")),
++            "inputImageHashes": [str((call.get("input") or {}).get("sha256") or "") for call in calls],
++        },
++        "modelCallAttempts": model_calls,
++        "costCny": total_cost,
++        "groundingValidation": {
++            "invalidCandidateIdCount": 0,
++            "unsupportedAttributionCount": len(invalid_grounded_fields),
++            "droppedUnsupportedAttributionCount": 0,
++            "candidateRepairCount": 0,
++            "validatedFieldCount": len(fields) - len(invalid_grounded_fields),
++            "outputTruncated": output_truncated,
++        },
++    }
++
++
+ def profile_result_complete(result: dict[str, Any], profile: dict[str, Any]) -> bool:
+     field_codes = {
+         str(item.get("fieldCode") or item.get("fieldName") or "")
+diff --git a/backend/libs/runtime_readiness.py b/backend/libs/runtime_readiness.py
+index d912cc5..641e5eb 100644
+--- a/backend/libs/runtime_readiness.py
++++ b/backend/libs/runtime_readiness.py
+@@ -6,6 +6,7 @@ from typing import Any
+ from libs.material_review_assets import material_review_asset_status
+ from libs.aliyun_ocr import official_ocr_circuit_breaker
+ from libs.ocr_runtime import ocr_runtime_config, ocr_runtime_public_config
++from libs.official_ocr_control import official_ocr_control_status
+ from scripts.setup_langgraph_checkpoint import REQUIRED_TABLES, verify_checkpoint_schema
+ 
+ 
+@@ -52,9 +53,15 @@ def audit_service_configuration_status() -> dict[str, Any]:
+         if official_mode
+         else bool(os.getenv("AICHECK_OCR_BASE_URL", "").strip())
+     )
++    control_status = official_ocr_control_status(ocr_runtime) if official_mode else {
++        "ready": True,
++        "distributed": False,
++    }
++    circuit_status = official_ocr_circuit_breaker(ocr_runtime).public_status()
+     return {
+         "ocr": {
+             "configured": ocr_configured,
++            "ready": bool(ocr_configured and control_status.get("ready") and not circuit_status.get("open")),
+             "executionBoundary": "official_api_with_local_light" if official_mode else "remote_service_only",
+             "providerMode": ocr_public.get("mode"),
+             "provider": ocr_public.get("provider"),
+@@ -62,7 +69,9 @@ def audit_service_configuration_status() -> dict[str, Any]:
+             "maxLongSide": ocr_public.get("maxLongSide"),
+             "localHeavyFallbackEnabled": ocr_public.get("allowLocalHeavyFallback"),
+             "silentFallbackEnabled": ocr_public.get("allowSilentProviderFallback"),
+-            "circuitBreaker": official_ocr_circuit_breaker(ocr_runtime).public_status(),
++            "circuitBreaker": circuit_status,
++            "capacityControl": control_status,
++            "formalReadinessProfileAllowlist": ocr_public.get("formalReadinessProfileAllowlist") or [],
+         },
+         "qwen": {
+             "configured": bool(os.getenv("QWEN_API_KEY", "").strip()) if qwen_mode == "official_api" else True,
+diff --git a/backend/scripts/ocr_100_reviewed_label_gate.py b/backend/scripts/ocr_100_reviewed_label_gate.py
+index 7c45567..978ea22 100644
+--- a/backend/scripts/ocr_100_reviewed_label_gate.py
++++ b/backend/scripts/ocr_100_reviewed_label_gate.py
+@@ -28,6 +28,8 @@ def main() -> int:
+     parser.add_argument("--sample-summary", action="append", default=[], help="Sample probe summary JSON. Repeatable for scorecard.")
+     parser.add_argument("--sample-summary-dir", action="append", default=[], help="Directory with sample probe summary JSON files.")
+     parser.add_argument("--eval-report", help="Optional precomputed evaluation report JSON for scorecard.")
++    parser.add_argument("--runtime-doctor-json", help="Runtime doctor/API health JSON used by the scorecard.")
++    parser.add_argument("--runtime-profile", choices=["local", "official"], default="local")
+     parser.add_argument("--run-ocr-scorecard", action="store_true", help="Run OCR while building scorecard from the exported eval set.")
+     parser.add_argument("--auto-discover-runtime", action="store_true", help="Apply runtime discovery before scorecard OCR.")
+     parser.add_argument("--allow-incomplete", action="store_true", help="Write draft outputs even if annotation readiness/export is incomplete.")
+@@ -44,6 +46,8 @@ def main() -> int:
+         run_ocr_scorecard=bool(args.run_ocr_scorecard),
+         auto_discover_runtime=bool(args.auto_discover_runtime),
+         allow_incomplete=bool(args.allow_incomplete),
++        runtime_doctor_path=Path(args.runtime_doctor_json) if args.runtime_doctor_json else None,
++        runtime_profile=args.runtime_profile,
+     )
+     print(json.dumps(report["summary"], ensure_ascii=False, indent=2))
+     return 0 if (report.get("ok") or not args.strict) else 1
+@@ -60,6 +64,8 @@ def run_reviewed_label_gate(
+     run_ocr_scorecard: bool = False,
+     auto_discover_runtime: bool = False,
+     allow_incomplete: bool = False,
++    runtime_doctor_path: Path | None = None,
++    runtime_profile: str = "local",
+ ) -> dict[str, Any]:
+     output_dir = output_dir.expanduser().resolve()
+     output_dir.mkdir(parents=True, exist_ok=True)
+@@ -137,6 +143,8 @@ def run_reviewed_label_gate(
+             sample_summary_dirs=sample_summary_dirs or [],
+             run_ocr=run_ocr_scorecard,
+             auto_discover_runtime=auto_discover_runtime,
++            runtime_doctor_path=runtime_doctor_path,
++            runtime_profile=runtime_profile,
+         )
+         write_text_file(scorecard_path, json.dumps(scorecard, ensure_ascii=False, indent=2))
+         if not scorecard.get("ok"):
+@@ -183,6 +191,8 @@ def build_scorecard(
+     sample_summary_dirs: list[Path],
+     run_ocr: bool,
+     auto_discover_runtime: bool,
++    runtime_doctor_path: Path | None = None,
++    runtime_profile: str = "local",
+ ) -> dict[str, Any]:
+     if auto_discover_runtime:
+         apply_auto_discovered_runtime()
+@@ -191,12 +201,19 @@ def build_scorecard(
+         evaluation_report = json.loads(eval_report_path.read_text(encoding="utf-8"))
+     else:
+         evaluation_report = evaluate_eval_set(eval_payload, eval_set_path=eval_set_path, run_ocr=run_ocr)
+-    runtime_doctor = ocr_service.runtime_doctor_payload()
++    if runtime_profile == "official" and runtime_doctor_path is None:
++        raise ValueError("official runtime profile requires runtime_doctor_path")
++    runtime_doctor = (
++        json.loads(runtime_doctor_path.read_text(encoding="utf-8"))
++        if runtime_doctor_path is not None
++        else ocr_service.runtime_doctor_payload()
++    )
+     sample_summaries = load_sample_summaries([str(path) for path in sample_summary_paths], [str(path) for path in sample_summary_dirs])
+     return build_ocr_100_scorecard(
+         evaluation_report=evaluation_report,
+         runtime_doctor=runtime_doctor,
+         sample_summaries=sample_summaries,
++        runtime_profile=runtime_profile,
+     )
+ 
+ 
+diff --git a/backend/scripts/ocr_100_scorecard.py b/backend/scripts/ocr_100_scorecard.py
+index 9f566a2..35cd8d2 100644
+--- a/backend/scripts/ocr_100_scorecard.py
++++ b/backend/scripts/ocr_100_scorecard.py
+@@ -21,6 +21,12 @@ def main() -> int:
+     parser.add_argument("--eval-set", required=True, help="Evaluation set JSON with cases[].")
+     parser.add_argument("--eval-report", help="Optional precomputed full evaluation report JSON.")
+     parser.add_argument("--runtime-doctor-json", help="Optional runtime doctor JSON. Defaults to live ocr_service doctor.")
++    parser.add_argument(
++        "--runtime-profile",
++        choices=["local", "official"],
++        default="local",
++        help="Runtime capability profile used by the scorecard.",
++    )
+     parser.add_argument("--sample-summary", action="append", default=[], help="Sample probe summary JSON. Repeatable.")
+     parser.add_argument("--sample-summary-dir", action="append", default=[], help="Directory containing sample probe summary JSON files. Repeatable.")
+     parser.add_argument("--auto-discover-runtime", action="store_true", help="Apply runtime-doctor recommended local OCR Python and model paths before live doctor.")
+@@ -36,6 +42,8 @@ def main() -> int:
+         eval_set_path=eval_set_path,
+         run_ocr=bool(args.run_ocr),
+     )
++    if args.runtime_profile == "official" and not args.runtime_doctor_json:
++        raise SystemExit("--runtime-profile official requires --runtime-doctor-json from API health/deployment output.")
+     runtime_doctor = load_json(Path(args.runtime_doctor_json)) if args.runtime_doctor_json else ocr_service.runtime_doctor_payload()
+     if applied_runtime:
+         runtime_doctor["appliedAutoDiscoveredRuntime"] = applied_runtime
+@@ -44,6 +52,7 @@ def main() -> int:
+         evaluation_report=evaluation_report,
+         runtime_doctor=runtime_doctor,
+         sample_summaries=sample_summaries,
++        runtime_profile=args.runtime_profile,
+     )
+     if args.output:
+         write_text_file(Path(args.output), json.dumps(scorecard, ensure_ascii=False, indent=2))
+diff --git a/backend/scripts/ocr_98_release_gate.py b/backend/scripts/ocr_98_release_gate.py
+index 5192928..15bd6bc 100644
+--- a/backend/scripts/ocr_98_release_gate.py
++++ b/backend/scripts/ocr_98_release_gate.py
+@@ -50,13 +50,13 @@ def build_ocr_98_release_gate(
+     annotation_summary = annotation_readiness.get("summary") or {}
+     human_labeled = int(annotation_summary.get("humanLabeled") or 0)
+     ready_for_eval = int(annotation_summary.get("readyForEval") or 0)
+-    check("annotations.human-labeled", human_labeled >= 50, human_labeled, ">= 50")
+-    check("annotations.ready-for-eval", ready_for_eval >= 50, ready_for_eval, ">= 50")
++    check("annotations.human-labeled", human_labeled >= 100, human_labeled, ">= 100")
++    check("annotations.ready-for-eval", ready_for_eval >= 100, ready_for_eval, ">= 100")
+ 
+     evaluation_summary = evaluation_report.get("summary") or {}
+     metrics = evaluation_report.get("metrics") or {}
+     cases = int(evaluation_summary.get("cases") or 0)
+-    check("evaluation.real-cases", cases >= 50, cases, ">= 50")
++    check("evaluation.real-cases", cases >= 100, cases, ">= 100")
+     derived_cases = [
+         item
+         for item in evaluation_report.get("cases") or []
+diff --git a/backend/scripts/verify_deployment.py b/backend/scripts/verify_deployment.py
+index 4668df3..4d7b302 100644
+--- a/backend/scripts/verify_deployment.py
++++ b/backend/scripts/verify_deployment.py
+@@ -7,7 +7,7 @@ import re
+ import sys
+ import time
+ import uuid
+-from dataclasses import asdict, dataclass
++from dataclasses import asdict, dataclass, field
+ from pathlib import Path
+ from typing import Any
+ from urllib.parse import urlparse
+@@ -135,6 +135,8 @@ class VerifyConfig:
+     litellm_management_probes: bool
+     litellm_provider_probes: bool
+     qwen_official_probe: bool
++    role_credentials: dict[str, dict[str, str]] = field(default_factory=dict)
++    ocr_wait_seconds: float = 240.0
+ 
+ 
+ def parse_args() -> argparse.Namespace:
+@@ -145,6 +147,11 @@ def parse_args() -> argparse.Namespace:
+     parser.add_argument("--litellm-api-key-file", default=os.getenv("LITELLM_API_KEY_FILE"))
+     parser.add_argument("--project-id", default=os.getenv("AICHECK_DEFAULT_PROJECT_ID", PROJECT_ID))
+     parser.add_argument("--roles", default=",".join(DEFAULT_ROLES), help="Comma-separated login roles to verify.")
++    parser.add_argument(
++        "--role-credentials-file",
++        default=os.getenv("AICHECK_VERIFY_ROLE_CREDENTIALS_FILE"),
++        help="Permission-0600 JSON file containing roles.{role}.username/password.",
++    )
+     parser.add_argument("--strict-production", action="store_true", help="Fail if production security/storage flags are not enabled.")
+     parser.add_argument("--skip-ocr", action="store_true")
+     parser.add_argument("--skip-litellm", action="store_true")
+@@ -189,6 +196,12 @@ def parse_args() -> argparse.Namespace:
+     )
+     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
+     parser.add_argument("--timeout", type=float, default=8.0)
++    parser.add_argument(
++        "--ocr-wait-seconds",
++        type=float,
++        default=float(os.getenv("AICHECK_VERIFY_OCR_WAIT_SECONDS", "240")),
++        help="Maximum seconds to wait for the queued official OCR object probe.",
++    )
+     return parser.parse_args()
+ 
+ 
+@@ -212,6 +225,24 @@ def config_from_args(args: argparse.Namespace) -> VerifyConfig:
+         if key_path.stat().st_mode & 0o077:
+             raise SystemExit("--litellm-api-key-file must not be group/world accessible.")
+         litellm_api_key = key_path.read_text(encoding="utf-8").strip()
++    role_credentials: dict[str, dict[str, str]] = {}
++    credentials_file = getattr(args, "role_credentials_file", None)
++    if credentials_file:
++        credentials_path = Path(credentials_file).expanduser()
++        if credentials_path.stat().st_mode & 0o077:
++            raise SystemExit("--role-credentials-file must not be group/world accessible.")
++        payload = json.loads(credentials_path.read_text(encoding="utf-8"))
++        raw_roles = payload.get("roles") if isinstance(payload, dict) else None
++        if not isinstance(raw_roles, dict):
++            raise SystemExit("--role-credentials-file must contain a roles object.")
++        role_credentials = {
++            str(role): {
++                "username": str(value.get("username") or role),
++                "password": str(value.get("password") or ""),
++            }
++            for role, value in raw_roles.items()
++            if isinstance(value, dict)
++        }
+     return VerifyConfig(
+         api_base=args.api_base.rstrip("/"),
+         ocr_base=None if args.skip_ocr else (args.ocr_base or "").rstrip("/"),
+@@ -229,6 +260,8 @@ def config_from_args(args: argparse.Namespace) -> VerifyConfig:
+         litellm_management_probes=args.litellm_management_probes,
+         litellm_provider_probes=args.litellm_provider_probes,
+         qwen_official_probe=args.qwen_official_probe,
++        role_credentials=role_credentials,
++        ocr_wait_seconds=max(1.0, float(args.ocr_wait_seconds or 240)),
+     )
+ 
+ 
+@@ -250,6 +283,12 @@ class DeploymentVerifier:
+         self.results: list[CheckResult] = []
+         self.api_health: dict[str, Any] = {}
+         self.tokens: dict[str, str] = {}
++        self.official_ocr_probe_passed = False
++
++    def official_ocr_mode(self) -> bool:
++        services = self.api_health.get("serviceReadiness") if isinstance(self.api_health, dict) else {}
++        ocr = services.get("ocr") if isinstance(services, dict) else {}
++        return str((ocr or {}).get("providerMode") or "").lower() == "official"
+ 
+     def run(self) -> list[CheckResult]:
+         self.check_api_health()
+@@ -356,11 +395,14 @@ class DeploymentVerifier:
+ 
+     def check_role_logins(self) -> None:
+         for role in self.config.roles:
++            credential = self.config.role_credentials.get(role) or {}
++            username = str(credential.get("username") or role)
++            password = str(credential.get("password") or role_login_password(role))
+             status_code, payload = self.request_json(
+                 self.api,
+                 "POST",
+                 "/api/auth/login",
+-                json={"username": role, "password": role_login_password(role)},
++                json={"username": username, "password": password},
+             )
+             data = self.envelope_data(f"auth.login.{role}", status_code, payload)
+             if data is None:
+@@ -774,6 +816,56 @@ class DeploymentVerifier:
+         if not self.config.ocr_object_probe:
+             self.add("ocr.uploaded-object-parse", "skip", "Pass --ocr-object-probe with --write-probes to parse the uploaded object.")
+             return True
++        if self.official_ocr_mode():
++            deadline = time.monotonic() + self.config.ocr_wait_seconds
++            latest_readiness: dict[str, Any] = {}
++            while time.monotonic() < deadline:
++                status_code, payload = self.request_json(
++                    self.api,
++                    "GET",
++                    f"/api/projects/{self.config.project_id}/documents/{document_id}",
++                    headers=headers,
++                )
++                detail = self.envelope_data("api.write-probes.document-ocr-status", status_code, payload)
++                if detail is None:
++                    return False
++                document = detail.get("document") if isinstance(detail.get("document"), dict) else detail
++                latest_readiness = (
++                    document.get("ocrReadiness")
++                    if isinstance(document, dict) and isinstance(document.get("ocrReadiness"), dict)
++                    else {}
++                )
++                status_value = str(latest_readiness.get("status") or "")
++                if status_value in {"ready", "incomplete", "failed", "inconsistent"}:
++                    break
++                time.sleep(min(2.0, max(0.1, deadline - time.monotonic())))
++            failures = []
++            if latest_readiness.get("status") not in {"ready", "incomplete"}:
++                failures.append(f"terminal OCR readiness expected, got {latest_readiness.get('status')!r}")
++            if not latest_readiness.get("parseResultId"):
++                failures.append("parseResultId is missing")
++            if int(latest_readiness.get("fragmentCount") or 0) < 1:
++                failures.append("official OCR returned no text fragments")
++            if latest_readiness.get("providerMode") != "official":
++                failures.append(f"providerMode expected official, got {latest_readiness.get('providerMode')!r}")
++            if latest_readiness.get("formalEvidenceReady") is True:
++                failures.append("uncertified deployment probe must not become formal evidence ready")
++            if failures:
++                self.add("ocr.uploaded-object-parse", "fail", "; ".join(failures), latest_readiness)
++                return False
++            self.official_ocr_probe_passed = True
++            self.add(
++                "ocr.uploaded-object-parse",
++                "pass",
++                "API -> Celery -> official OCR produced grounded, non-formal parse evidence.",
++                {
++                    "parseResultId": latest_readiness.get("parseResultId"),
++                    "pipelineRunId": latest_readiness.get("pipelineRunId"),
++                    "fragmentCount": latest_readiness.get("fragmentCount"),
++                    "costCny": latest_readiness.get("costCny"),
++                },
++            )
++            return True
+         if self.config.skip_ocr or self.ocr is None:
+             self.add("ocr.uploaded-object-parse", "fail", "OCR client is disabled.")
+             return False
+@@ -985,6 +1077,25 @@ class DeploymentVerifier:
+         self.add("auth.aggregate-scope", "pass", "Out-of-scope demo resources are absent from aggregate lists.")
+ 
+     def check_ocr_health(self) -> None:
++        if self.official_ocr_mode():
++            services = self.api_health.get("serviceReadiness") or {}
++            ocr = services.get("ocr") if isinstance(services, dict) else {}
++            failures = []
++            if ocr.get("configured") is not True:
++                failures.append("official OCR must be configured")
++            if ocr.get("providerMode") != "official":
++                failures.append("providerMode must be official")
++            if ocr.get("localHeavyFallbackEnabled") is not False:
++                failures.append("local heavy fallback must be disabled")
++            if ocr.get("silentFallbackEnabled") is not False:
++                failures.append("silent provider fallback must be disabled")
++            self.add(
++                "ocr.health",
++                "fail" if failures else "pass",
++                "; ".join(failures) if failures else "Official OCR runtime configuration is healthy.",
++                ocr,
++            )
++            return
+         if self.config.skip_ocr or self.ocr is None:
+             self.add("ocr.health", "skip", "OCR check disabled.")
+             return
+@@ -1018,6 +1129,25 @@ class DeploymentVerifier:
+         )
+ 
+     def check_ocr_readyz(self) -> None:
++        if self.official_ocr_mode():
++            services = self.api_health.get("serviceReadiness") or {}
++            ocr = services.get("ocr") if isinstance(services, dict) else {}
++            circuit = ocr.get("circuitBreaker") if isinstance(ocr, dict) else {}
++            capacity = ocr.get("capacityControl") if isinstance(ocr, dict) else {}
++            failures = []
++            if not isinstance(capacity, dict) or capacity.get("ready") is not True:
++                failures.append("distributed OCR capacity control is not ready")
++            if isinstance(circuit, dict) and circuit.get("open") is True:
++                failures.append("official OCR circuit is open")
++            if self.config.ocr_object_probe and not self.official_ocr_probe_passed:
++                failures.append("queued official OCR object probe did not pass")
++            self.add(
++                "ocr.readyz",
++                "fail" if failures else "pass",
++                "; ".join(failures) if failures else "Official OCR capacity, circuit, and live probe are ready.",
++                {"capacityControl": capacity, "circuitBreaker": circuit},
++            )
++            return
+         if self.config.skip_ocr or self.ocr is None:
+             self.add("ocr.readyz", "skip", "OCR check disabled.")
+             return
+@@ -1051,6 +1181,22 @@ class DeploymentVerifier:
+         )
+ 
+     def check_ocr_runtime_doctor(self) -> None:
++        if self.official_ocr_mode():
++            services = self.api_health.get("serviceReadiness") or {}
++            ocr = services.get("ocr") if isinstance(services, dict) else {}
++            capacity = ocr.get("capacityControl") if isinstance(ocr, dict) else {}
++            failures = []
++            if not isinstance(capacity, dict) or capacity.get("distributed") is not True:
++                failures.append("official OCR must use distributed control")
++            if ocr.get("formalReadinessProfileAllowlist") not in ([], None):
++                failures.append("formal readiness allowlist must stay empty before certification")
++            self.add(
++                "ocr.runtime-doctor",
++                "fail" if failures else "pass",
++                "; ".join(failures) if failures else "Official OCR control policies pass.",
++                ocr,
++            )
++            return
+         if self.config.skip_ocr or self.ocr is None:
+             self.add("ocr.runtime-doctor", "skip", "OCR check disabled.")
+             return
+@@ -1080,6 +1226,12 @@ class DeploymentVerifier:
+         )
+ 
+     def check_ocr_parse_contract(self) -> None:
++        if self.official_ocr_mode():
++            if self.config.ocr_object_probe and self.official_ocr_probe_passed:
++                self.add("ocr.parse-contract", "pass", "Queued official OCR object probe validated the parse contract.")
++            else:
++                self.add("ocr.parse-contract", "fail", "Official OCR parse contract requires --write-probes --ocr-object-probe.")
++            return
+         if self.config.skip_ocr or self.ocr is None:
+             self.add("ocr.parse-contract", "skip", "OCR check disabled.")
+             return
+@@ -1106,6 +1258,20 @@ class DeploymentVerifier:
+         self.add("ocr.parse-contract", "pass", f"OCR parse contract returned status={data.get('status')}.", data)
+ 
+     def check_ocr_bad_request_contract(self) -> None:
++        if self.official_ocr_mode():
++            status_code, payload = self.request_json(
++                self.api,
++                "POST",
++                f"/api/projects/{self.config.project_id}/documents/upload-session",
++                headers=self.auth_headers("contractor"),
++                json={},
++            )
++            reason = payload.get("data", {}).get("reason") if isinstance(payload, dict) else None
++            if status_code in {400, 422} or reason == "VALIDATION_ERROR":
++                self.add("ocr.bad-request", "pass", "Malformed official OCR upload requests are rejected.")
++            else:
++                self.add("ocr.bad-request", "fail", f"Expected validation failure, got HTTP {status_code}.")
++            return
+         if self.config.skip_ocr or self.ocr is None:
+             self.add("ocr.bad-request", "skip", "OCR check disabled.")
+             return
+@@ -1130,7 +1296,9 @@ class DeploymentVerifier:
+             return
+         headers = self.litellm_headers()
+         try:
+-            response = self.litellm.get("/health", headers=headers)
++            response = self.litellm.get("/health/liveliness", headers=headers)
++            if response.status_code == 404:
++                response = self.litellm.get("/health", headers=headers)
+         except Exception as exc:
+             self.add("litellm.health", "fail", str(exc))
+             return
+diff --git a/backend/tests/test_aliyun_ocr_runtime.py b/backend/tests/test_aliyun_ocr_runtime.py
+index c047753..2926c16 100644
+--- a/backend/tests/test_aliyun_ocr_runtime.py
++++ b/backend/tests/test_aliyun_ocr_runtime.py
+@@ -46,7 +46,7 @@ def test_ocr_runtime_is_redacted_and_clamps_render_size() -> None:
+     public = ocr_runtime_public_config(env=official_env())
+     assert runtime["mode"] == "hybrid_auto"
+     assert runtime["render"]["maxLongSide"] == 1920
+-    assert runtime["render"]["maxPagesPerBatch"] == 30
++    assert runtime["render"]["maxPagesPerBatch"] == 10
+     assert runtime["render"]["maxDocumentPages"] == 200
+     assert runtime["render"]["maxCostCnyPerDocument"] == 5.0
+     assert runtime["official"]["maxOutputTokens"] == 4096
+@@ -312,8 +312,9 @@ def test_official_pipeline_runs_one_table_call_per_page(tmp_path: Path) -> None:
+     ]
+     assert result["metadata"]["modelCallCount"] == 3
+     assert result["fields"][0]["formalEvidenceEligible"] is True
+-    assert result["tables"][0]["advisoryOnly"] is True
+-    assert "TABLE_EVIDENCE_MISSING" in result["quality"]["reasons"]
++    assert result["tables"][0]["formalEvidenceEligible"] is True
++    assert result["tables"][0]["cells"][0]["sourceCandidateIds"]
++    assert "TABLE_EVIDENCE_MISSING" not in result["quality"]["reasons"]
+ 
+     cached_client = FakeClient()
+     cached = official_ocr_extract(
+diff --git a/backend/tests/test_contract.py b/backend/tests/test_contract.py
+index fbbc56a..5dec433 100644
+--- a/backend/tests/test_contract.py
++++ b/backend/tests/test_contract.py
+@@ -5047,6 +5047,58 @@ def test_ocr_100_scorecard_exposes_runtime_and_corpus_gaps() -> None:
+     assert any("sample probe summaries are missing" in blocker for blocker in scorecard["blockers"])
+ 
+ 
++def test_ocr_100_scorecard_accepts_official_provider_capabilities() -> None:
++    from apps.ocr_service.evaluation import OCR_100_REQUIRED_SCENARIOS, ocr_100_thresholds
++    from apps.ocr_service.readiness import build_ocr_100_scorecard
++
++    thresholds = ocr_100_thresholds()
++    report = {
++        "ok": True,
++        "summary": {"cases": 100, "passed": 100, "failed": 0, "averageScore": 0.99},
++        "metrics": {metric: 1.0 for metric in thresholds["metrics"]},
++        "findingCounts": {},
++        "thresholdFailures": [],
++        "scenarios": {
++            scenario: {"ok": True, "cases": 8, "passed": 8, "failed": 0, "averageScore": 0.99}
++            for scenario in OCR_100_REQUIRED_SCENARIOS
++        },
++        "cases": [],
++    }
++    runtime = {
++        "serviceReadiness": {
++            "ocr": {
++                "configured": True,
++                "providerMode": "official",
++                "localHeavyFallbackEnabled": False,
++                "silentFallbackEnabled": False,
++                "capacityControl": {"distributed": True, "ready": True},
++            }
++        },
++        "officialOcrTelemetry": {"lastSuccessfulInferenceAt": "2026-07-12T00:00:00Z"},
++    }
++    sample = {
++        "gatePassed": True,
++        "qualityStatus": "auto_usable",
++        "missingExpectedSealTypeCount": 0,
++        "fields": 6,
++        "formalTables": 1,
++        "businessRows": 10,
++        "readableSeals": 1,
++        "fragmentSeals": 1,
++        "evidenceCompleteness": 1.0,
++    }
++
++    scorecard = build_ocr_100_scorecard(
++        evaluation_report=report,
++        runtime_doctor=runtime,
++        sample_summaries=[sample],
++        runtime_profile="official",
++    )
++
++    assert scorecard["ok"] is True
++    assert scorecard["runtimeProfile"] == "official"
++
++
+ def test_ocr_100_scorecard_rejects_fixture_derived_cases() -> None:
+     from apps.ocr_service.evaluation import OCR_100_REQUIRED_SCENARIOS, ocr_100_thresholds
+     from apps.ocr_service.readiness import OCR_100_REQUIRED_ENGINES, build_ocr_100_scorecard
+diff --git a/backend/tests/test_ocr_98_release_gate.py b/backend/tests/test_ocr_98_release_gate.py
+index 90cb159..cde5ff8 100644
+--- a/backend/tests/test_ocr_98_release_gate.py
++++ b/backend/tests/test_ocr_98_release_gate.py
+@@ -5,11 +5,11 @@ from scripts.ocr_98_release_gate import REQUIRED_FAULT_COMPONENTS, build_ocr_98_
+ 
+ def clean_evidence() -> dict:
+     return {
+-        "annotation_readiness": {"summary": {"humanLabeled": 50, "readyForEval": 50}},
++        "annotation_readiness": {"summary": {"humanLabeled": 100, "readyForEval": 100}},
+         "evaluation_report": {
+-            "summary": {"cases": 50},
++            "summary": {"cases": 100},
+             "metrics": {"fieldValueAccuracy": 0.99, "fieldBboxHitRate": 0.985},
+-            "cases": [{"caseId": f"case-{index}"} for index in range(50)],
++            "cases": [{"caseId": f"case-{index}"} for index in range(100)],
+         },
+         "pipeline_evidence": {
+             "tableRowStructureAccuracy": 0.98,
+diff --git a/frontend/src/types/aicheck.ts b/frontend/src/types/aicheck.ts
+index 2f187b2..7ae6360 100644
+--- a/frontend/src/types/aicheck.ts
++++ b/frontend/src/types/aicheck.ts
+@@ -216,6 +216,19 @@ export type DocumentAsset = {
+     blockingReasons: BusinessBlockingReason[]
+     retryable: boolean
+     finishedAt?: string | null
++    providerReady?: boolean
++    globalCapacityReady?: boolean
++    cloudGrounded?: boolean
++    outputTruncated?: boolean
++    formalReadinessProfileAllowed?: boolean
++    formalEvidenceReady?: boolean
++    formalReadinessBlockingReasons?: BusinessBlockingReason[]
++    providerMode?: string | null
++    provider?: string | null
++    model?: string | null
++    costCny?: number
++    providerWaitReason?: string | null
++    lastHeartbeatAt?: string | null
+   }
+   bindings?: NodeFileBinding[]
+   primaryBinding?: NodeFileBinding | null
+@@ -730,6 +743,22 @@ export type OperationTask = {
+   engineStatus?: Record<string, unknown>
+   blockingReasons?: Array<{ code?: string; message?: string; [key: string]: unknown }>
+   recommendedAction?: string | null
++  providerMode?: string | null
++  provider?: string | null
++  model?: string | null
++  providerWaitReason?: string | null
++  providerCallCount?: number
++  callCount?: number
++  costCny?: number
++  budgetUsed?: number
++  pageProgress?: {
++    completed?: number
++    total?: number
++    currentPage?: number | null
++    status?: string
++  }
++  lastHeartbeatAt?: string | null
++  retryFromPage?: number | null
+ }
+ 
+ export type ImpactPreview<TImpact extends Record<string, unknown> = Record<string, unknown>> = {
+diff --git a/frontend/src/views/AICheck/components/OperationTaskDrawer.vue b/frontend/src/views/AICheck/components/OperationTaskDrawer.vue
+index fb2503f..fbcdf77 100644
+--- a/frontend/src/views/AICheck/components/OperationTaskDrawer.vue
++++ b/frontend/src/views/AICheck/components/OperationTaskDrawer.vue
+@@ -55,6 +55,8 @@ const formatElapsed = (seconds?: number | null) => {
+   return `${minutes} 分 ${remainder} 秒`
+ }
+ 
++const formatCost = (value?: number | null) => `¥${Number(value || 0).toFixed(4)}`
++
+ const filteredTasks = computed(() => {
+   if (statusFilter.value === 'running') {
+     return tasks.value.filter((task) => ['排队中', '运行中', '执行中'].includes(task.status))
+@@ -231,7 +233,27 @@ onBeforeUnmount(() => {
+           <div v-if="task.attempt"
+             ><dt>执行次数</dt><dd>{{ task.attempt }}</dd></div
+           >
++          <div v-if="task.pageProgress?.total"
++            ><dt>页面进度</dt><dd
++              >{{ task.pageProgress.completed || 0 }} / {{ task.pageProgress.total }}</dd
++            ></div
++          >
++          <div v-if="task.provider || task.model"
++            ><dt>识别服务</dt><dd>{{ task.provider || '--' }} · {{ task.model || '--' }}</dd></div
++          >
++          <div v-if="task.callCount"
++            ><dt>调用次数</dt><dd>{{ task.callCount }}</dd></div
++          >
++          <div v-if="task.costCny != null"
++            ><dt>累计费用</dt><dd>{{ formatCost(task.costCny) }}</dd></div
++          >
++          <div v-if="task.lastHeartbeatAt"
++            ><dt>最近心跳</dt><dd>{{ task.lastHeartbeatAt }}</dd></div
++          >
+         </dl>
++        <p v-if="task.providerWaitReason" class="task-provider-wait" role="status">
++          正在等待识别服务：{{ task.providerWaitReason }}
++        </p>
+         <p v-if="task.errorSummary" class="task-failure">{{ task.errorSummary }}</p>
+         <div v-if="task.blockingReasons?.length" class="task-blockers" role="status">
+           <strong>阻断原因</strong>
+@@ -308,6 +330,14 @@ onBeforeUnmount(() => {
+   color: #52647d;
+ }
+ 
++.task-provider-wait {
++  margin: 10px 0 0;
++  padding: 8px 10px;
++  border-left: 3px solid #8a4b00;
++  color: #8a4b00;
++  background: #fff7e6;
++}
++
+ .task-filters {
+   margin: 14px 0;
+ }

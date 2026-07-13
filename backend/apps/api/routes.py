@@ -80,6 +80,7 @@ from libs.review_orchestrator import (
     build_review_orchestration_scorecard,
     clone_review_run_for_replay,
     create_review_run_from_ai_run,
+    dispatch_existing_review_run,
     graph_view_for_review_run,
     human_decision_for_review_run,
     review_run_audit_trace,
@@ -6589,7 +6590,7 @@ def submit_review_run_human_decision(
         if not decision or not decision_comment:
             return fail(errors.VALIDATION_ERROR, request, message="ReviewRun 人工确认必须明确选择结果并填写意见。")
         result = human_decision_for_review_run(review_run_id, decision, body)
-        if result.get("status") in {"missing", "invalid_decision"}:
+        if result.get("status") in {"missing", "invalid_decision", "invalid_corrected_output"}:
             return fail(errors.VALIDATION_ERROR, request, data=result)
         temporal_signal = signal_review_run_human_decision(
             result["reviewRun"],
@@ -6678,10 +6679,11 @@ def rerun_review_run(
         if not rerun_reason:
             return fail(errors.VALIDATION_ERROR, request, message="重跑 ReviewRun 必须填写原因。")
         child = clone_review_run_for_replay(parent, run_mode="diagnostic_replay", reason=rerun_reason)
+        dispatch = dispatch_existing_review_run(child)
         audit_id = repo.add_audit("业务端请求 ReviewRun 重跑", "ReviewRun", child["reviewRunId"])
         child_review_run_id = str(child["reviewRunId"])
         request.state.scoped_flush_records = lambda: review_run_state_records(child_review_run_id)
-        return ok({"reviewRun": review_run_view(child), "auditLogId": audit_id}, request)
+        return ok({"reviewRun": review_run_view(child), "dispatch": dispatch, "auditLogId": audit_id}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"reviewRunId": review_run_id, "body": body})
 
@@ -8591,6 +8593,37 @@ def operations_tasks(
         )
         return str(knowledge_file.get("projectId")) if knowledge_file and knowledge_file.get("projectId") else None
 
+    def canonical_task_status(value: Any) -> str:
+        normalized = str(value or "").strip().lower()
+        mapping = {
+            "排队中": "queued",
+            "queued": "queued",
+            "推理中": "running",
+            "运行中": "running",
+            "执行中": "running",
+            "running": "running",
+            "retrying": "retrying",
+            "waiting_human_review": "waiting_human",
+            "待人工确认": "waiting_human",
+            "cancel_requested": "cancel_requested",
+            "cancelling": "cancel_requested",
+            "已取消": "cancelled",
+            "cancelled": "cancelled",
+            "成功": "succeeded",
+            "完成": "succeeded",
+            "已完成": "succeeded",
+            "completed": "succeeded",
+            "accepted_by_human": "succeeded",
+            "edited_by_human": "succeeded",
+            "失败": "failed",
+            "failed": "failed",
+            "failed_to_start": "failed",
+            "partial": "partial",
+            "需复核": "partial",
+            "blocked": "blocked",
+        }
+        return mapping.get(normalized, "unknown")
+
     def append_task(item: dict[str, Any], task_area: str, task_type: str, *, actions: list[str] | None = None):
         if task_area not in requested_areas:
             return
@@ -8607,6 +8640,8 @@ def operations_tasks(
                 "area": task_area,
                 "taskType": task_type,
                 "status": task_status,
+                "statusCode": canonical_task_status(task_status),
+                "displayStatus": task_status,
                 "progress": int(item.get("progress") or item.get("progressPercent") or 0),
                 "operationId": item.get("operationId"),
                 "projectId": resolved_project_id,
@@ -8637,9 +8672,14 @@ def operations_tasks(
                 "providerRequestId": item.get("providerRequestId"),
                 "providerRequestIds": item.get("providerRequestIds") or [],
                 "providerCallCount": int(item.get("modelCallCount") or item.get("providerCallCount") or 0),
+                "callCount": int(item.get("modelCallCount") or item.get("providerCallCount") or 0),
                 "costCny": float(item.get("costCny") or 0.0),
+                "budgetUsed": float(item.get("costCny") or 0.0),
                 "pageProgress": item.get("pageProgress") or {},
                 "fallbackReason": item.get("fallbackReason"),
+                "providerWaitReason": item.get("providerWaitReason"),
+                "lastHeartbeatAt": item.get("lastHeartbeatAt"),
+                "retryFromPage": item.get("retryFromPage"),
             }
         )
 
@@ -14019,10 +14059,11 @@ def fde_replay_review_run(
         if run_type not in FDE_REPLAY_TYPES:
             return fail(errors.VALIDATION_ERROR, request, message="FDE ReviewRun 重跑类型不支持。", data={"allowedTypes": sorted(FDE_REPLAY_TYPES)})
         child = clone_review_run_for_replay(parent, run_mode=run_type, reason=body.get("reason"))
+        dispatch = dispatch_existing_review_run(child)
         audit_id = repo.add_audit("FDE 创建 ReviewRun 重跑", "ReviewRun", child["reviewRunId"])
         child_review_run_id = str(child["reviewRunId"])
         request.state.scoped_flush_records = lambda: review_run_state_records(child_review_run_id)
-        return ok({"reviewRun": review_run_view(child), "auditLogId": audit_id}, request)
+        return ok({"reviewRun": review_run_view(child), "dispatch": dispatch, "auditLogId": audit_id}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"reviewRunId": review_run_id, "body": body})
 
@@ -18849,6 +18890,28 @@ def fde_ocr_pipeline_run_detail(request: Request, run_id: str):
         "cacheSourceRunId": cache_source_run_ids,
         "candidateRepairCount": int(grounding_validation.get("candidateRepairCount") or 0),
         "unsupportedAttributionCount": int(grounding_validation.get("unsupportedAttributionCount") or 0),
+        "candidateAttribution": {
+            "validatedFieldCount": int(grounding_validation.get("validatedFieldCount") or 0),
+            "invalidCandidateIdCount": int(grounding_validation.get("invalidCandidateIdCount") or 0),
+            "unsupportedAttributionCount": int(grounding_validation.get("unsupportedAttributionCount") or 0),
+            "candidateRepairCount": int(grounding_validation.get("candidateRepairCount") or 0),
+        },
+        "polygonMapping": {
+            "fragmentCount": len((parse_result or {}).get("fragments") or []),
+            "positionedFragmentCount": len(
+                [
+                    item
+                    for item in (parse_result or {}).get("fragments") or []
+                    if isinstance(item, dict) and (item.get("polygon") or item.get("bbox"))
+                ]
+            ),
+        },
+        "truncationRecovery": {
+            "outputTruncated": bool(grounding_validation.get("outputTruncated")),
+            "recoveryCallCount": int(
+                (((parse_result or {}).get("metadata") or {}).get("truncationRecoveryCallCount") or 0)
+            ),
+        },
     }
     return ok(
         {
@@ -19870,13 +19933,41 @@ def fde_cost_budgets(request: Request):
     if role_error:
         return role_error
     ai_runs = repo.state.get("ai_runs", [])
+    model_attempts = repo.state.get("model_call_attempts", [])
+    normalized_attempts = [
+        item
+        for item in model_attempts
+        if isinstance(item.get("usageNormalized"), dict) or isinstance(item.get("costNormalized"), dict)
+    ]
+    total_tokens = sum(
+        int((item.get("usageNormalized") or {}).get("totalTokens") or 0)
+        for item in normalized_attempts
+    )
+    total_cost = round(
+        sum(float((item.get("costNormalized") or {}).get("total") or item.get("estimatedCostCny") or 0.0) for item in normalized_attempts),
+        6,
+    )
+    unknown_attempts = len(model_attempts) - len(normalized_attempts)
     return ok(
         {
             "budgets": repo.clone(repo.state.get("cost_budgets", [])),
             "usage": {
-                "tokenEstimate": sum(int(item.get("tokenUsage") or 0) for item in ai_runs),
-                "estimatedPrice": round(sum(float(item.get("estimatedPrice") or 0) for item in ai_runs), 4),
+                "tokenEstimate": total_tokens or sum(int(item.get("tokenUsage") or 0) for item in ai_runs),
+                "estimatedPrice": total_cost or round(sum(float(item.get("estimatedPrice") or 0) for item in ai_runs), 4),
                 "runCount": len(ai_runs),
+                "modelAttemptCount": len(model_attempts),
+                "normalizedAttemptCount": len(normalized_attempts),
+                "unknownCostAttemptCount": unknown_attempts,
+                "complete": unknown_attempts == 0,
+                "byStage": {
+                    str(stage): {
+                        "attempts": len(items),
+                        "tokens": sum(int((item.get("usageNormalized") or {}).get("totalTokens") or 0) for item in items),
+                        "costCny": round(sum(float((item.get("costNormalized") or {}).get("total") or 0.0) for item in items), 6),
+                    }
+                    for stage in sorted({str(item.get("stage") or "unknown") for item in model_attempts})
+                    if (items := [item for item in model_attempts if str(item.get("stage") or "unknown") == stage])
+                },
             },
             "exports": repo.clone(repo.state.get("data_exports", [])),
             "changeRequests": repo.clone(fde_state_list("cost_budget_change_requests")),
@@ -21301,10 +21392,34 @@ def cancel_knowledge_task(
             return scope_error
         if not record_if_match_valid("knowledge-task", task, if_match):
             return fail(errors.ETAG_CONFLICT, request)
-        task["status"] = "已取消"
+        cancel_reason = compact_plain_text(body.get("reason"), 1000) or "用户请求取消任务。"
+        dispatch = task.get("lastDispatch") if isinstance(task.get("lastDispatch"), dict) else {}
+        celery_task_ids = [
+            str(item.get("taskId"))
+            for item in (dispatch.get("dispatches") or [dispatch])
+            if isinstance(item, dict) and item.get("taskId")
+        ]
+        task["status"] = "cancel_requested"
+        task["cancelRequestedAt"] = server_time()
+        task["cancelReason"] = cancel_reason
+        revoke_results = []
+        for celery_task_id in celery_task_ids:
+            try:
+                from apps.worker.celery_app import celery_app
+
+                celery_app.control.revoke(celery_task_id, terminate=False)
+                revoke_results.append({"taskId": celery_task_id, "status": "requested"})
+            except Exception as exc:
+                revoke_results.append({"taskId": celery_task_id, "status": "failed", "reason": exc.__class__.__name__})
+        task["cancelDispatches"] = revoke_results
+        if not celery_task_ids or all(item["status"] == "requested" for item in revoke_results):
+            task["status"] = "已取消"
+            task["cancelledAt"] = server_time()
+        else:
+            task["status"] = "cancel_failed"
         bump_record_revision(task)
-        repo.append_task_log(task, "info", "任务已取消。")
-        return ok({"task": versioned_record("knowledge-task", task)}, request)
+        repo.append_task_log(task, "info", f"任务取消状态：{task['status']}。")
+        return ok({"task": versioned_record("knowledge-task", task), "revokeResults": revoke_results}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"taskId": task_id, "body": body})
 

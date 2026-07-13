@@ -6,10 +6,12 @@ render:
   maxLongSide: 1920
   qwenMaxLongSide: 1920
   jpegQuality: 90
-  maxPages: 30
-  maxPagesPerBatch: 30
+  maxPages: 10
+  maxPagesPerBatch: 10
   maxDocumentPages: 200
   maxCostCnyPerDocument: 5.0
+  structuredPageLimit: 6
+  sealRoiLimitPerDocument: 6
 
 providers:
   local:
@@ -26,6 +28,9 @@ providers:
     circuitOpenSeconds: 60
     maxAttempts: 3
     maxOutputTokens: 4096
+    advancedMaxOutputTokens: 4096
+    kieMaxOutputTokens: 2048
+    tableMaxOutputTokens: 8192
 
 routing:
   electronicPdf: local_text_layer

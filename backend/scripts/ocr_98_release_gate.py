@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from apps.ocr_service.evaluation import aggregate_case_metrics
+
 
 REQUIRED_FAULT_COMPONENTS = {
     "redis",
@@ -50,20 +52,61 @@ def build_ocr_98_release_gate(
     annotation_summary = annotation_readiness.get("summary") or {}
     human_labeled = int(annotation_summary.get("humanLabeled") or 0)
     ready_for_eval = int(annotation_summary.get("readyForEval") or 0)
-    check("annotations.human-labeled", human_labeled >= 50, human_labeled, ">= 50")
-    check("annotations.ready-for-eval", ready_for_eval >= 50, ready_for_eval, ">= 50")
+    check("annotations.human-labeled", human_labeled >= 100, human_labeled, ">= 100")
+    check("annotations.ready-for-eval", ready_for_eval >= 100, ready_for_eval, ">= 100")
 
     evaluation_summary = evaluation_report.get("summary") or {}
     metrics = evaluation_report.get("metrics") or {}
-    cases = int(evaluation_summary.get("cases") or 0)
-    check("evaluation.real-cases", cases >= 50, cases, ">= 50")
+    case_items = [item for item in evaluation_report.get("cases") or [] if isinstance(item, dict)]
+    reported_cases = int(evaluation_summary.get("cases") or 0)
+    actual_cases = len(case_items)
+    check("evaluation.report-ok", evaluation_report.get("ok") is True, evaluation_report.get("ok"), "true")
+    check(
+        "evaluation.threshold-failures",
+        not (evaluation_report.get("thresholdFailures") or []),
+        len(evaluation_report.get("thresholdFailures") or []),
+        "0",
+    )
+    check("evaluation.real-cases", actual_cases >= 100, actual_cases, ">= 100")
+    check("evaluation.case-count-consistent", reported_cases == actual_cases, reported_cases, f"{actual_cases}")
+    case_ids = [str(item.get("caseId") or "").strip() for item in case_items]
+    unique_case_ids = {item for item in case_ids if item}
+    check(
+        "evaluation.unique-case-ids",
+        len(unique_case_ids) == actual_cases,
+        len(unique_case_ids),
+        f"{actual_cases} unique non-empty IDs",
+    )
+    failed_cases = [item for item in case_items if item.get("passed") is not True]
+    check("evaluation.all-cases-pass", not failed_cases, len(failed_cases), "0")
     derived_cases = [
         item
-        for item in evaluation_report.get("cases") or []
-        if isinstance(item, dict)
-        and (item.get("bootstrapGenerated") or item.get("fixtureDerived") or item.get("collectionStatus") == "needs_real_sample_replacement")
+        for item in case_items
+        if item.get("bootstrapGenerated")
+        or item.get("fixtureDerived")
+        or item.get("collectionStatus") == "needs_real_sample_replacement"
     ]
     check("evaluation.no-derived-cases", not derived_cases, len(derived_cases), "0")
+    missing_provenance = [
+        item
+        for item in case_items
+        if not str(item.get("sourceSha256") or item.get("sourceHash") or "").strip()
+        or not str(item.get("labeler") or "").strip()
+        or not str(item.get("reviewer") or "").strip()
+        or not str(item.get("reviewedAt") or item.get("labeledAt") or "").strip()
+    ]
+    check("evaluation.provenance-complete", not missing_provenance, len(missing_provenance), "0")
+    recalculated_metrics = aggregate_case_metrics(case_items)
+    for metric_name in ("fieldValueAccuracy", "fieldBboxHitRate"):
+        reported = metrics.get(metric_name)
+        recalculated = recalculated_metrics.get(metric_name)
+        consistent = reported is not None and recalculated is not None and abs(float(reported) - float(recalculated)) <= 0.0001
+        check(
+            f"evaluation.{metric_name}-consistent",
+            consistent,
+            reported,
+            f"recalculated {recalculated}",
+        )
     check("evaluation.field-value-accuracy", float(metrics.get("fieldValueAccuracy") or 0) >= 0.98, metrics.get("fieldValueAccuracy"), ">= 0.98")
     check("evaluation.field-bbox-coverage", float(metrics.get("fieldBboxHitRate") or 0) >= 0.98, metrics.get("fieldBboxHitRate"), ">= 0.98")
     table_accuracy = float(pipeline_evidence.get("tableRowStructureAccuracy") or 0)

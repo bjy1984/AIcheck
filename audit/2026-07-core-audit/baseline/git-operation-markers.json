@@ -1,0 +1,6 @@
+{
+  "REBASE_HEAD": true,
+  "MERGE_HEAD": false,
+  "CHERRY_PICK_HEAD": false,
+  "REVERT_HEAD": false
+}

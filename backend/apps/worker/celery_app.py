@@ -7,6 +7,14 @@ from celery import Celery
 from libs.task_priority import MAX_TASK_PRIORITY, broker_priority
 
 REDIS_URL = os.getenv("AICHECK_REDIS_URL", "redis://localhost:6379/0")
+TASK_SOFT_TIME_LIMIT_SECONDS = int(os.getenv("AICHECK_CELERY_TASK_SOFT_TIME_LIMIT_SECONDS", "3900"))
+TASK_TIME_LIMIT_SECONDS = int(os.getenv("AICHECK_CELERY_TASK_TIME_LIMIT_SECONDS", "4200"))
+VISIBILITY_TIMEOUT_SECONDS = int(
+    os.getenv(
+        "AICHECK_CELERY_VISIBILITY_TIMEOUT_SECONDS",
+        str(max(TASK_TIME_LIMIT_SECONDS + 900, 5100)),
+    )
+)
 
 celery_app = Celery(
     "aicheck_worker",
@@ -39,9 +47,16 @@ celery_app.conf.update(
     task_acks_late=True,
     task_reject_on_worker_lost=True,
     task_default_retry_delay=10,
+    task_soft_time_limit=TASK_SOFT_TIME_LIMIT_SECONDS,
+    task_time_limit=TASK_TIME_LIMIT_SECONDS,
+    result_expires=int(os.getenv("AICHECK_CELERY_RESULT_EXPIRES_SECONDS", "86400")),
     worker_prefetch_multiplier=1,
+    worker_max_tasks_per_child=int(os.getenv("AICHECK_CELERY_MAX_TASKS_PER_CHILD", "50")),
+    worker_max_memory_per_child=int(os.getenv("AICHECK_CELERY_MAX_MEMORY_KB_PER_CHILD", "2097152")),
     broker_transport_options={
         "priority_steps": list(range(MAX_TASK_PRIORITY + 1)),
         "sep": ":",
+        "visibility_timeout": VISIBILITY_TIMEOUT_SECONDS,
     },
+    result_backend_transport_options={"visibility_timeout": VISIBILITY_TIMEOUT_SECONDS},
 )

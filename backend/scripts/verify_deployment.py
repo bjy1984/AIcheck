@@ -7,7 +7,7 @@ import re
 import sys
 import time
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -135,6 +135,8 @@ class VerifyConfig:
     litellm_management_probes: bool
     litellm_provider_probes: bool
     qwen_official_probe: bool
+    role_credentials: dict[str, dict[str, str]] = field(default_factory=dict)
+    ocr_wait_seconds: float = 240.0
 
 
 def parse_args() -> argparse.Namespace:
@@ -145,6 +147,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--litellm-api-key-file", default=os.getenv("LITELLM_API_KEY_FILE"))
     parser.add_argument("--project-id", default=os.getenv("AICHECK_DEFAULT_PROJECT_ID", PROJECT_ID))
     parser.add_argument("--roles", default=",".join(DEFAULT_ROLES), help="Comma-separated login roles to verify.")
+    parser.add_argument(
+        "--role-credentials-file",
+        default=os.getenv("AICHECK_VERIFY_ROLE_CREDENTIALS_FILE"),
+        help="Permission-0600 JSON file containing roles.{role}.username/password.",
+    )
     parser.add_argument("--strict-production", action="store_true", help="Fail if production security/storage flags are not enabled.")
     parser.add_argument("--skip-ocr", action="store_true")
     parser.add_argument("--skip-litellm", action="store_true")
@@ -189,6 +196,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     parser.add_argument("--timeout", type=float, default=8.0)
+    parser.add_argument(
+        "--ocr-wait-seconds",
+        type=float,
+        default=float(os.getenv("AICHECK_VERIFY_OCR_WAIT_SECONDS", "240")),
+        help="Maximum seconds to wait for the queued official OCR object probe.",
+    )
     return parser.parse_args()
 
 
@@ -212,6 +225,24 @@ def config_from_args(args: argparse.Namespace) -> VerifyConfig:
         if key_path.stat().st_mode & 0o077:
             raise SystemExit("--litellm-api-key-file must not be group/world accessible.")
         litellm_api_key = key_path.read_text(encoding="utf-8").strip()
+    role_credentials: dict[str, dict[str, str]] = {}
+    credentials_file = getattr(args, "role_credentials_file", None)
+    if credentials_file:
+        credentials_path = Path(credentials_file).expanduser()
+        if credentials_path.stat().st_mode & 0o077:
+            raise SystemExit("--role-credentials-file must not be group/world accessible.")
+        payload = json.loads(credentials_path.read_text(encoding="utf-8"))
+        raw_roles = payload.get("roles") if isinstance(payload, dict) else None
+        if not isinstance(raw_roles, dict):
+            raise SystemExit("--role-credentials-file must contain a roles object.")
+        role_credentials = {
+            str(role): {
+                "username": str(value.get("username") or role),
+                "password": str(value.get("password") or ""),
+            }
+            for role, value in raw_roles.items()
+            if isinstance(value, dict)
+        }
     return VerifyConfig(
         api_base=args.api_base.rstrip("/"),
         ocr_base=None if args.skip_ocr else (args.ocr_base or "").rstrip("/"),
@@ -229,6 +260,8 @@ def config_from_args(args: argparse.Namespace) -> VerifyConfig:
         litellm_management_probes=args.litellm_management_probes,
         litellm_provider_probes=args.litellm_provider_probes,
         qwen_official_probe=args.qwen_official_probe,
+        role_credentials=role_credentials,
+        ocr_wait_seconds=max(1.0, float(args.ocr_wait_seconds or 240)),
     )
 
 
@@ -250,6 +283,12 @@ class DeploymentVerifier:
         self.results: list[CheckResult] = []
         self.api_health: dict[str, Any] = {}
         self.tokens: dict[str, str] = {}
+        self.official_ocr_probe_passed = False
+
+    def official_ocr_mode(self) -> bool:
+        services = self.api_health.get("serviceReadiness") if isinstance(self.api_health, dict) else {}
+        ocr = services.get("ocr") if isinstance(services, dict) else {}
+        return str((ocr or {}).get("providerMode") or "").lower() == "official"
 
     def run(self) -> list[CheckResult]:
         self.check_api_health()
@@ -356,11 +395,14 @@ class DeploymentVerifier:
 
     def check_role_logins(self) -> None:
         for role in self.config.roles:
+            credential = self.config.role_credentials.get(role) or {}
+            username = str(credential.get("username") or role)
+            password = str(credential.get("password") or role_login_password(role))
             status_code, payload = self.request_json(
                 self.api,
                 "POST",
                 "/api/auth/login",
-                json={"username": role, "password": role_login_password(role)},
+                json={"username": username, "password": password},
             )
             data = self.envelope_data(f"auth.login.{role}", status_code, payload)
             if data is None:
@@ -774,6 +816,56 @@ class DeploymentVerifier:
         if not self.config.ocr_object_probe:
             self.add("ocr.uploaded-object-parse", "skip", "Pass --ocr-object-probe with --write-probes to parse the uploaded object.")
             return True
+        if self.official_ocr_mode():
+            deadline = time.monotonic() + self.config.ocr_wait_seconds
+            latest_readiness: dict[str, Any] = {}
+            while time.monotonic() < deadline:
+                status_code, payload = self.request_json(
+                    self.api,
+                    "GET",
+                    f"/api/projects/{self.config.project_id}/documents/{document_id}",
+                    headers=headers,
+                )
+                detail = self.envelope_data("api.write-probes.document-ocr-status", status_code, payload)
+                if detail is None:
+                    return False
+                document = detail.get("document") if isinstance(detail.get("document"), dict) else detail
+                latest_readiness = (
+                    document.get("ocrReadiness")
+                    if isinstance(document, dict) and isinstance(document.get("ocrReadiness"), dict)
+                    else {}
+                )
+                status_value = str(latest_readiness.get("status") or "")
+                if status_value in {"ready", "incomplete", "failed", "inconsistent"}:
+                    break
+                time.sleep(min(2.0, max(0.1, deadline - time.monotonic())))
+            failures = []
+            if latest_readiness.get("status") not in {"ready", "incomplete"}:
+                failures.append(f"terminal OCR readiness expected, got {latest_readiness.get('status')!r}")
+            if not latest_readiness.get("parseResultId"):
+                failures.append("parseResultId is missing")
+            if int(latest_readiness.get("fragmentCount") or 0) < 1:
+                failures.append("official OCR returned no text fragments")
+            if latest_readiness.get("providerMode") != "official":
+                failures.append(f"providerMode expected official, got {latest_readiness.get('providerMode')!r}")
+            if latest_readiness.get("formalEvidenceReady") is True:
+                failures.append("uncertified deployment probe must not become formal evidence ready")
+            if failures:
+                self.add("ocr.uploaded-object-parse", "fail", "; ".join(failures), latest_readiness)
+                return False
+            self.official_ocr_probe_passed = True
+            self.add(
+                "ocr.uploaded-object-parse",
+                "pass",
+                "API -> Celery -> official OCR produced grounded, non-formal parse evidence.",
+                {
+                    "parseResultId": latest_readiness.get("parseResultId"),
+                    "pipelineRunId": latest_readiness.get("pipelineRunId"),
+                    "fragmentCount": latest_readiness.get("fragmentCount"),
+                    "costCny": latest_readiness.get("costCny"),
+                },
+            )
+            return True
         if self.config.skip_ocr or self.ocr is None:
             self.add("ocr.uploaded-object-parse", "fail", "OCR client is disabled.")
             return False
@@ -985,6 +1077,25 @@ class DeploymentVerifier:
         self.add("auth.aggregate-scope", "pass", "Out-of-scope demo resources are absent from aggregate lists.")
 
     def check_ocr_health(self) -> None:
+        if self.official_ocr_mode():
+            services = self.api_health.get("serviceReadiness") or {}
+            ocr = services.get("ocr") if isinstance(services, dict) else {}
+            failures = []
+            if ocr.get("configured") is not True:
+                failures.append("official OCR must be configured")
+            if ocr.get("providerMode") != "official":
+                failures.append("providerMode must be official")
+            if ocr.get("localHeavyFallbackEnabled") is not False:
+                failures.append("local heavy fallback must be disabled")
+            if ocr.get("silentFallbackEnabled") is not False:
+                failures.append("silent provider fallback must be disabled")
+            self.add(
+                "ocr.health",
+                "fail" if failures else "pass",
+                "; ".join(failures) if failures else "Official OCR runtime configuration is healthy.",
+                ocr,
+            )
+            return
         if self.config.skip_ocr or self.ocr is None:
             self.add("ocr.health", "skip", "OCR check disabled.")
             return
@@ -1018,6 +1129,25 @@ class DeploymentVerifier:
         )
 
     def check_ocr_readyz(self) -> None:
+        if self.official_ocr_mode():
+            services = self.api_health.get("serviceReadiness") or {}
+            ocr = services.get("ocr") if isinstance(services, dict) else {}
+            circuit = ocr.get("circuitBreaker") if isinstance(ocr, dict) else {}
+            capacity = ocr.get("capacityControl") if isinstance(ocr, dict) else {}
+            failures = []
+            if not isinstance(capacity, dict) or capacity.get("ready") is not True:
+                failures.append("distributed OCR capacity control is not ready")
+            if isinstance(circuit, dict) and circuit.get("open") is True:
+                failures.append("official OCR circuit is open")
+            if self.config.ocr_object_probe and not self.official_ocr_probe_passed:
+                failures.append("queued official OCR object probe did not pass")
+            self.add(
+                "ocr.readyz",
+                "fail" if failures else "pass",
+                "; ".join(failures) if failures else "Official OCR capacity, circuit, and live probe are ready.",
+                {"capacityControl": capacity, "circuitBreaker": circuit},
+            )
+            return
         if self.config.skip_ocr or self.ocr is None:
             self.add("ocr.readyz", "skip", "OCR check disabled.")
             return
@@ -1051,6 +1181,22 @@ class DeploymentVerifier:
         )
 
     def check_ocr_runtime_doctor(self) -> None:
+        if self.official_ocr_mode():
+            services = self.api_health.get("serviceReadiness") or {}
+            ocr = services.get("ocr") if isinstance(services, dict) else {}
+            capacity = ocr.get("capacityControl") if isinstance(ocr, dict) else {}
+            failures = []
+            if not isinstance(capacity, dict) or capacity.get("distributed") is not True:
+                failures.append("official OCR must use distributed control")
+            if ocr.get("formalReadinessProfileAllowlist") not in ([], None):
+                failures.append("formal readiness allowlist must stay empty before certification")
+            self.add(
+                "ocr.runtime-doctor",
+                "fail" if failures else "pass",
+                "; ".join(failures) if failures else "Official OCR control policies pass.",
+                ocr,
+            )
+            return
         if self.config.skip_ocr or self.ocr is None:
             self.add("ocr.runtime-doctor", "skip", "OCR check disabled.")
             return
@@ -1080,6 +1226,12 @@ class DeploymentVerifier:
         )
 
     def check_ocr_parse_contract(self) -> None:
+        if self.official_ocr_mode():
+            if self.config.ocr_object_probe and self.official_ocr_probe_passed:
+                self.add("ocr.parse-contract", "pass", "Queued official OCR object probe validated the parse contract.")
+            else:
+                self.add("ocr.parse-contract", "fail", "Official OCR parse contract requires --write-probes --ocr-object-probe.")
+            return
         if self.config.skip_ocr or self.ocr is None:
             self.add("ocr.parse-contract", "skip", "OCR check disabled.")
             return
@@ -1106,6 +1258,20 @@ class DeploymentVerifier:
         self.add("ocr.parse-contract", "pass", f"OCR parse contract returned status={data.get('status')}.", data)
 
     def check_ocr_bad_request_contract(self) -> None:
+        if self.official_ocr_mode():
+            status_code, payload = self.request_json(
+                self.api,
+                "POST",
+                f"/api/projects/{self.config.project_id}/documents/upload-session",
+                headers=self.auth_headers("contractor"),
+                json={},
+            )
+            reason = payload.get("data", {}).get("reason") if isinstance(payload, dict) else None
+            if status_code in {400, 422} or reason == "VALIDATION_ERROR":
+                self.add("ocr.bad-request", "pass", "Malformed official OCR upload requests are rejected.")
+            else:
+                self.add("ocr.bad-request", "fail", f"Expected validation failure, got HTTP {status_code}.")
+            return
         if self.config.skip_ocr or self.ocr is None:
             self.add("ocr.bad-request", "skip", "OCR check disabled.")
             return
@@ -1130,7 +1296,9 @@ class DeploymentVerifier:
             return
         headers = self.litellm_headers()
         try:
-            response = self.litellm.get("/health", headers=headers)
+            response = self.litellm.get("/health/liveliness", headers=headers)
+            if response.status_code == 404:
+                response = self.litellm.get("/health", headers=headers)
         except Exception as exc:
             self.add("litellm.health", "fail", str(exc))
             return

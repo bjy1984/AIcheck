@@ -1,0 +1,22 @@
+ M backend/apps/api/main.py
+ M backend/apps/api/routes.py
+ M backend/apps/ocr_service/readiness.py
+ M backend/apps/worker/tasks.py
+ M backend/config/ocr_runtime.yaml
+ M backend/docker-compose.accuracy-pipeline.yml
+ M backend/docker-compose.official-ocr.yml
+ M backend/libs/aliyun_ocr.py
+ M backend/libs/ocr_readiness.py
+ M backend/libs/ocr_runtime.py
+ M backend/libs/official_ocr_pipeline.py
+ M backend/libs/runtime_readiness.py
+ M backend/scripts/ocr_100_reviewed_label_gate.py
+ M backend/scripts/ocr_100_scorecard.py
+ M backend/scripts/ocr_98_release_gate.py
+ M backend/scripts/verify_deployment.py
+ M backend/tests/test_aliyun_ocr_runtime.py
+ M backend/tests/test_contract.py
+ M backend/tests/test_ocr_98_release_gate.py
+ M frontend/src/types/aicheck.ts
+ M frontend/src/views/AICheck/components/OperationTaskDrawer.vue
+?? backend/libs/official_ocr_control.py

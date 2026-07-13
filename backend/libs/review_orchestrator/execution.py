@@ -18,6 +18,7 @@ from libs.db.repository import flush_state_records, repo
 from libs.integrations.errors import IntegrationServiceError
 from libs.integrations.litellm_client import LiteLLMClient, production_mode_enabled
 from libs.knowledge_retrieval import retrieve_knowledge_clauses
+from libs.model_usage import estimate_messages_tokens, model_cost_cny, normalize_model_usage
 from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_config, qwen_runtime_public_config
 from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
@@ -59,6 +60,7 @@ REVIEW_STATE_COLLECTIONS = (
     "rule_check_results",
     "ai_feedback",
     "review_run_clause_snapshots",
+    "model_call_attempts",
 )
 
 FORBIDDEN_AGENT_TOOLS = {
@@ -1045,6 +1047,37 @@ def build_review_messages(review_run: dict[str, Any], context: dict[str, Any]) -
     return build_review_prompt_parts(review_run, context)["messages"]
 
 
+def review_model_budget_policy(review_run: dict[str, Any]) -> dict[str, Any]:
+    alias = str(review_run.get("modelAlias") or "review-chat")
+    route = next(
+        (
+            item
+            for item in repo.state.get("model_route_versions", [])
+            if item.get("modelAlias") == alias and item.get("status") == "production"
+        ),
+        {},
+    )
+    configured = route.get("budgetPolicy") if isinstance(route.get("budgetPolicy"), dict) else {}
+    return {
+        "maxInputTokens": max(1024, int(os.getenv("AICHECK_REVIEW_MAX_INPUT_TOKENS", "24000"))),
+        "maxOutputTokens": max(256, int(os.getenv("AICHECK_QWEN_REVIEW_MAX_TOKENS", "1600"))),
+        "maxCostCny": max(
+            0.01,
+            float(
+                os.getenv("AICHECK_REVIEW_MAX_COST_CNY")
+                or configured.get("maxCostPerRun")
+                or 2.0
+            ),
+        ),
+        "maxAttempts": max(1, int(os.getenv("AICHECK_REVIEW_MAX_ATTEMPTS", "2"))),
+    }
+
+
+def persist_review_model_attempt(attempt: dict[str, Any]) -> None:
+    repo.state.setdefault("model_call_attempts", []).insert(0, attempt)
+    flush_state_records({"model_call_attempts": [attempt]})
+
+
 def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     mode = review_llm_execution_mode()
     if mode in {"deterministic", "disabled", "mock"}:
@@ -1062,18 +1095,87 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
         return drafts, metadata
     messages = build_review_messages(review_run, context)
     qwen_runtime = qwen_runtime_public_config()
+    budget_policy = review_model_budget_policy(review_run)
+    estimated_input_tokens = estimate_messages_tokens(messages)
+    estimated_cost = model_cost_cny(
+        {
+            "input_tokens": estimated_input_tokens,
+            "output_tokens": budget_policy["maxOutputTokens"],
+        }
+    )["total"]
+    if estimated_input_tokens > budget_policy["maxInputTokens"]:
+        raise IntegrationServiceError("QwenRuntime", "review.chat", reason="REVIEW_INPUT_TOKEN_BUDGET_EXCEEDED")
+    if estimated_cost > budget_policy["maxCostCny"]:
+        raise IntegrationServiceError("QwenRuntime", "review.chat", reason="REVIEW_COST_BUDGET_EXCEEDED")
+    logical_call_id = f"review:{review_run['reviewRunId']}:generate_findings"
+    previous_attempts = [
+        item
+        for item in repo.state.get("model_call_attempts", [])
+        if item.get("logicalCallId") == logical_call_id
+    ]
+    attempt_number = len(previous_attempts) + 1
+    if attempt_number > budget_policy["maxAttempts"]:
+        raise IntegrationServiceError("QwenRuntime", "review.chat", reason="REVIEW_MAX_ATTEMPTS_EXCEEDED")
+    attempt = {
+        "id": f"MCALL-{uuid4().hex[:12].upper()}",
+        "reviewRunId": review_run.get("reviewRunId"),
+        "aiRunId": review_run.get("aiRunId"),
+        "projectId": review_run.get("projectId"),
+        "nodeId": review_run.get("nodeId"),
+        "stage": "review_generate_findings",
+        "callKind": "review_findings",
+        "logicalCallId": logical_call_id,
+        "attempt": attempt_number,
+        "maxAttempts": budget_policy["maxAttempts"],
+        "provider": qwen_runtime.get("provider"),
+        "modelAlias": review_run.get("modelAlias"),
+        "status": "running",
+        "promptHash": stable_hash_payload(messages),
+        "usage": {},
+        "usageNormalized": {},
+        "costNormalized": {},
+        "estimatedCostCny": estimated_cost,
+        "budget": {
+            "scope": "review_run",
+            "budgetKey": review_run.get("reviewRunId"),
+            "limitCostCny": budget_policy["maxCostCny"],
+            "reservedCostCny": estimated_cost,
+        },
+        "createdAt": server_time(),
+        "startedAt": server_time(),
+        "updatedAt": server_time(),
+    }
+    persist_review_model_attempt(attempt)
     try:
         response = qwen_runtime_client().chat_sync(
             messages,
             model=str(review_run.get("modelAlias") or "review-chat"),
             temperature=0.1,
             response_format={"type": "json_object"},
-            max_tokens=max(256, int(os.getenv("AICHECK_QWEN_REVIEW_MAX_TOKENS", "1600"))),
+            max_tokens=budget_policy["maxOutputTokens"],
             timeout=max(30.0, float(os.getenv("AICHECK_QWEN_REVIEW_TIMEOUT_SECONDS", "180"))),
         )
-    except IntegrationServiceError:
+    except IntegrationServiceError as exc:
+        attempt.update(
+            {
+                "status": "failed",
+                "failureReason": exc.reason or exc.__class__.__name__,
+                "finishedAt": server_time(),
+                "updatedAt": server_time(),
+            }
+        )
+        flush_state_records({"model_call_attempts": [attempt]})
         raise
     except Exception as exc:
+        attempt.update(
+            {
+                "status": "failed",
+                "failureReason": exc.__class__.__name__,
+                "finishedAt": server_time(),
+                "updatedAt": server_time(),
+            }
+        )
+        flush_state_records({"model_call_attempts": [attempt]})
         raise IntegrationServiceError("QwenRuntime", "review.chat", reason=exc.__class__.__name__) from exc
     content = QwenRuntimeClient.first_message_text(response)
     message = ((response.get("choices") or [{}])[0].get("message") or {}) if isinstance(response.get("choices"), list) else {}
@@ -1090,7 +1192,35 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
         or "模型返回结构化审查草稿；未返回单独的公开推理摘要。"
     )
     response_hash = stable_hash_payload(response)
+    raw_usage = response.get("usage") if isinstance(response.get("usage"), dict) else {}
+    normalized_usage = normalize_model_usage(raw_usage)
+    normalized_cost = model_cost_cny(raw_usage)
+    attempt.update(
+        {
+            "status": "response_received",
+            "provider": response.get("provider") or attempt.get("provider"),
+            "model": response.get("model") or review_run.get("modelAlias"),
+            "providerRequestId": response.get("id") or response.get("request_id"),
+            "responseHash": response_hash,
+            "usage": repo.clone(raw_usage),
+            "usageNormalized": normalized_usage,
+            "costNormalized": normalized_cost,
+            "estimatedCostCny": normalized_cost["total"],
+            "budget": {
+                **attempt["budget"],
+                "actualCostCny": normalized_cost["total"],
+                "remainingCostCny": max(0.0, budget_policy["maxCostCny"] - normalized_cost["total"]),
+            },
+            "updatedAt": server_time(),
+        }
+    )
+    flush_state_records({"model_call_attempts": [attempt]})
     prompt_shape = context.get("promptShape") or build_review_prompt_shape(review_run, context)
+    finish_reason = (
+        ((response.get("choices") or [{}])[0] or {}).get("finish_reason")
+        if isinstance(response.get("choices"), list)
+        else None
+    )
     llm_metadata = {
         "llmExecution": "qwen_runtime",
         "llmCalled": True,
@@ -1102,16 +1232,29 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
         "promptTemplateId": prompt_shape.get("promptTemplateId"),
         "promptHash": prompt_shape.get("messagesHash") or stable_hash_payload(messages),
         "responseHash": response_hash,
-        "usage": response.get("usage") or {},
+        "usage": raw_usage,
+        "usageNormalized": normalized_usage,
+        "costNormalized": normalized_cost,
+        "budget": repo.clone(attempt["budget"]),
         "reasoningProcess": reasoning_process[:3000],
         "resultText": content[:4000],
         "auditInputMode": (context.get("auditRuntime") or audit_runtime_for_run(review_run))["mode"],
-        "finishReason": ((response.get("choices") or [{}])[0] or {}).get("finish_reason")
-        if isinstance(response.get("choices"), list)
-        else None,
+        "finishReason": finish_reason,
     }
     review_run["llmConversationId"] = conversation_id
     review_run["llmMetadata"] = repo.clone(llm_metadata)
+    if str(finish_reason or "").strip().lower() in {"length", "max_tokens", "token_limit"}:
+        attempt.update(
+            {
+                "status": "invalid_output",
+                "failureReason": "LLM_OUTPUT_TRUNCATED",
+                "finishReason": finish_reason,
+                "finishedAt": server_time(),
+                "updatedAt": server_time(),
+            }
+        )
+        flush_state_records({"model_call_attempts": [attempt]})
+        raise IntegrationServiceError("QwenRuntime", "review.chat", reason="LLM_OUTPUT_TRUNCATED")
     append_tool_call(
         review_run,
         "llm_generate_findings",
@@ -1123,10 +1266,36 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
             "conversationId": conversation_id,
             "promptHash": llm_metadata["promptHash"],
             "responseHash": response_hash,
-            "usage": response.get("usage") or {},
+            "usage": raw_usage,
+            "usageNormalized": normalized_usage,
+            "costNormalized": normalized_cost,
+            "modelCallAttemptId": attempt["id"],
         },
     )
-    drafts = normalize_llm_findings(review_run, context, content)
+    try:
+        drafts = normalize_llm_findings(review_run, context, content)
+    except IntegrationServiceError as exc:
+        attempt.update(
+            {
+                "status": "invalid_output",
+                "failureReason": exc.reason or "LLM_OUTPUT_INVALID",
+                "finishReason": finish_reason,
+                "finishedAt": server_time(),
+                "updatedAt": server_time(),
+            }
+        )
+        flush_state_records({"model_call_attempts": [attempt]})
+        raise
+    attempt.update(
+        {
+            "status": "success",
+            "finishReason": finish_reason,
+            "finishedAt": server_time(),
+            "updatedAt": server_time(),
+        }
+    )
+    flush_state_records({"model_call_attempts": [attempt]})
+    review_run.setdefault("modelCallAttemptIds", []).append(attempt["id"])
     return drafts, llm_metadata
 
 
@@ -1134,26 +1303,35 @@ def normalize_llm_findings(review_run: dict[str, Any], context: dict[str, Any], 
     base = build_finding_draft(review_run, context)
     grounding_input = context.get("groundingInput") or {}
     if not content.strip():
-        return apply_grounding_guardrails([base], grounding_input)
+        raise IntegrationServiceError("QwenRuntime", "review.chat", reason="LLM_OUTPUT_EMPTY")
     try:
         parsed = json.loads(content)
-    except ValueError:
-        base["description"] = content[:800]
-        base["llmResponseFormat"] = "free_text_wrapped"
-        return apply_grounding_guardrails([base], grounding_input)
-    raw_findings = parsed.get("findings") if isinstance(parsed, dict) else None
-    if not isinstance(raw_findings, list) or not raw_findings:
-        return apply_grounding_guardrails([base], grounding_input)
+    except ValueError as exc:
+        raise IntegrationServiceError(
+            "QwenRuntime",
+            "review.chat",
+            reason="LLM_OUTPUT_INVALID_JSON",
+        ) from exc
+    if not isinstance(parsed, dict):
+        raise IntegrationServiceError("QwenRuntime", "review.chat", reason="LLM_OUTPUT_INVALID_ENVELOPE")
+    raw_findings = parsed.get("findings")
+    if not isinstance(raw_findings, list):
+        raise IntegrationServiceError("QwenRuntime", "review.chat", reason="LLM_OUTPUT_INVALID_ENVELOPE")
+    if not raw_findings:
+        raise IntegrationServiceError("QwenRuntime", "review.chat", reason="LLM_OUTPUT_EMPTY_FINDINGS")
+    if any(not isinstance(item, dict) for item in raw_findings[:10]):
+        raise IntegrationServiceError("QwenRuntime", "review.chat", reason="LLM_OUTPUT_INVALID_FINDING")
     drafts = []
     for item in raw_findings[:10]:
-        if not isinstance(item, dict):
-            continue
         draft = {**repo.clone(base)}
         draft["id"] = f"FND-DRAFT-{uuid4().hex[:8].upper()}"
         draft["findingType"] = str(item.get("findingType") or item.get("finding_type") or base["findingType"])
         draft["severity"] = str(item.get("severity") or base["severity"])
         draft["title"] = str(item.get("title") or base["title"])[:120]
         draft["description"] = str(item.get("description") or base["description"])[:1200]
+        draft["evidenceRefs"] = repo.clone(item.get("evidenceRefs")) if isinstance(item.get("evidenceRefs"), list) else []
+        draft["ruleRefs"] = repo.clone(item.get("ruleRefs")) if isinstance(item.get("ruleRefs"), list) else []
+        draft["kbRefs"] = repo.clone(item.get("kbRefs")) if isinstance(item.get("kbRefs"), list) else []
         draft["confidence"] = bounded_confidence(item.get("confidence"), default=base["confidence"])
         draft["suggestedAction"] = str(item.get("suggestedAction") or item.get("suggested_action") or "human_confirm")
         draft["groundingStatus"] = str(item.get("groundingStatus") or item.get("grounding_status") or base.get("groundingStatus") or "")
@@ -1161,7 +1339,7 @@ def normalize_llm_findings(review_run: dict[str, Any], context: dict[str, Any], 
         draft["requiresHumanConfirmation"] = True
         draft["llmGenerated"] = True
         drafts.append(draft)
-    return apply_grounding_guardrails(drafts or [base], grounding_input)
+    return apply_grounding_guardrails(drafts, grounding_input)
 
 
 def bounded_confidence(value: Any, *, default: float) -> float:
@@ -2069,6 +2247,72 @@ def summarize_graph(review_run_id: str) -> dict[str, Any]:
     return {"total": len(nodes), "statusCounts": counts}
 
 
+def confirmed_findings_for_human_decision(
+    review_run: dict[str, Any],
+    decision: str,
+    payload: dict[str, Any],
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    original_drafts = [repo.clone(item) for item in review_run.get("findingDrafts") or [] if isinstance(item, dict)]
+    if decision == "reject":
+        return [], None
+    if decision == "accept":
+        return original_drafts, None
+    corrected_output = payload.get("correctedOutput")
+    if not isinstance(corrected_output, list) or not corrected_output:
+        return [], {"code": "CORRECTED_OUTPUT_REQUIRED"}
+    if len(corrected_output) > len(original_drafts):
+        return [], {"code": "CORRECTED_OUTPUT_TOO_MANY_FINDINGS"}
+    originals_by_id = {str(item.get("id") or ""): item for item in original_drafts if item.get("id")}
+    confirmed: list[dict[str, Any]] = []
+    editable_fields = {
+        "findingType",
+        "severity",
+        "title",
+        "description",
+        "evidenceRefs",
+        "ruleRefs",
+        "kbRefs",
+        "confidence",
+        "suggestedAction",
+        "groundingStatus",
+        "unsupportedClaims",
+    }
+    for index, correction in enumerate(corrected_output):
+        if not isinstance(correction, dict):
+            return [], {"code": "CORRECTED_OUTPUT_ITEM_NOT_OBJECT", "index": index}
+        source_draft_id = str(correction.get("sourceDraftId") or correction.get("id") or "")
+        original = originals_by_id.get(source_draft_id) if source_draft_id else None
+        if original is None and index < len(original_drafts):
+            original = original_drafts[index]
+        if original is None:
+            return [], {"code": "CORRECTED_OUTPUT_SOURCE_NOT_FOUND", "index": index}
+        corrected = repo.clone(original)
+        for field in editable_fields:
+            if field in correction:
+                corrected[field] = repo.clone(correction[field])
+        corrected["id"] = original.get("id") or f"FND-DRAFT-{uuid4().hex[:8].upper()}"
+        corrected["reviewRunId"] = review_run.get("reviewRunId")
+        corrected["findingType"] = str(corrected.get("findingType") or "ai_review_suggestion")
+        corrected["severity"] = str(corrected.get("severity") or "medium")
+        corrected["title"] = str(corrected.get("title") or "人工修正后的审查发现")
+        corrected["description"] = str(corrected.get("description") or "")
+        corrected["evidenceRefs"] = corrected.get("evidenceRefs") if isinstance(corrected.get("evidenceRefs"), list) else []
+        corrected["ruleRefs"] = corrected.get("ruleRefs") if isinstance(corrected.get("ruleRefs"), list) else []
+        corrected["kbRefs"] = corrected.get("kbRefs") if isinstance(corrected.get("kbRefs"), list) else []
+        corrected["confidence"] = bounded_confidence(corrected.get("confidence"), default=0.5)
+        corrected["suggestedAction"] = str(corrected.get("suggestedAction") or "human_confirm")
+        corrected["groundingStatus"] = str(corrected.get("groundingStatus") or "insufficient_evidence")
+        corrected["unsupportedClaims"] = (
+            corrected.get("unsupportedClaims") if isinstance(corrected.get("unsupportedClaims"), list) else []
+        )
+        corrected["requiresHumanConfirmation"] = True
+        confirmed.append(corrected)
+    validation = validate_review_schema(confirmed)
+    if not validation.get("passed"):
+        return [], {"code": "CORRECTED_OUTPUT_SCHEMA_INVALID", "validation": validation}
+    return confirmed, None
+
+
 def human_decision_for_review_run(review_run_id: str, decision: str, payload: dict[str, Any]) -> dict[str, Any]:
     ensure_review_state()
     review_run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
@@ -2077,6 +2321,13 @@ def human_decision_for_review_run(review_run_id: str, decision: str, payload: di
     allowed = {"accept", "edit", "reject"}
     if decision not in allowed:
         return {"status": "invalid_decision", "allowed": sorted(allowed)}
+    confirmed_findings, correction_error = confirmed_findings_for_human_decision(review_run, decision, payload)
+    if correction_error:
+        return {
+            "status": "invalid_corrected_output",
+            "reviewRunId": review_run_id,
+            "error": correction_error,
+        }
     status_map = {"accept": "accepted_by_human", "edit": "edited_by_human", "reject": "rejected_by_human"}
     review_run["status"] = status_map[decision]
     review_run["humanDecision"] = {
@@ -2094,7 +2345,12 @@ def human_decision_for_review_run(review_run_id: str, decision: str, payload: di
     )
     feedback = record_human_feedback_for_review_run(review_run, decision, payload)
     if decision in {"accept", "edit"}:
-        persist_confirmed_findings(review_run, payload)
+        persist_confirmed_findings(
+            review_run,
+            payload,
+            confirmed_findings=confirmed_findings,
+            human_edited=decision == "edit",
+        )
     ai_run = repo.find_one("ai_runs", str(review_run.get("aiRunId")))
     if ai_run:
         ai_run["status"] = "已人工确认" if decision in {"accept", "edit"} else "已驳回"
@@ -2153,16 +2409,29 @@ def record_human_feedback_for_review_run(
     return repo.clone(record)
 
 
-def persist_confirmed_findings(review_run: dict[str, Any], payload: dict[str, Any]) -> None:
-    for draft in review_run.get("findingDrafts") or []:
+def persist_confirmed_findings(
+    review_run: dict[str, Any],
+    payload: dict[str, Any],
+    *,
+    confirmed_findings: list[dict[str, Any]],
+    human_edited: bool,
+) -> None:
+    original_output_hash = stable_hash_payload(review_run.get("findingDrafts") or [])
+    corrected_output_hash = stable_hash_payload(confirmed_findings) if human_edited else None
+    for draft in confirmed_findings:
+        source_draft_id = draft.get("id")
         finding_id = f"FND-{uuid4().hex[:8].upper()}"
         finding = {
             **repo.clone(draft),
             "id": finding_id,
-            "source": "ai",
+            "sourceDraftId": source_draft_id,
+            "source": "human_edited_ai" if human_edited else "ai",
+            "humanEdited": human_edited,
+            "originalAiOutputHash": original_output_hash,
+            "correctedOutputHash": corrected_output_hash,
             "status": "accepted",
             "humanStatus": review_run["status"],
-            "humanComment": payload.get("comment"),
+            "humanComment": payload.get("comment") or payload.get("reason"),
             "createdAt": server_time(),
             "revision": 1,
         }

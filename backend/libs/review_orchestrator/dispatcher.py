@@ -18,32 +18,56 @@ def review_orchestration_mode() -> str:
     return os.getenv("AICHECK_REVIEW_ORCHESTRATION", "legacy").strip().lower() or "legacy"
 
 
+def dispatch_existing_review_run(review_run: dict[str, Any]) -> dict[str, Any]:
+    mode = review_orchestration_mode()
+    review_run["workflowEngine"] = "temporal" if mode == "temporal" else "inline_temporal_compatible"
+    review_run["updatedAt"] = review_run.get("updatedAt") or review_run.get("createdAt")
+    if mode == "inline":
+        result = execute_review_run_inline(review_run["reviewRunId"])
+        return {"mode": mode, "status": "completed", "reviewRunId": review_run["reviewRunId"], "result": result}
+    if mode == "temporal":
+        return start_temporal_workflow(review_run)
+    review_run["status"] = "failed_to_start"
+    review_run["dispatchErrorCode"] = "REVIEW_ORCHESTRATION_DISABLED"
+    append_review_event(
+        str(review_run["reviewRunId"]),
+        event_type="review_run.dispatch_failed",
+        title="ReviewRun 未启动",
+        status="failed_to_start",
+        details={"mode": mode, "errorCode": "REVIEW_ORCHESTRATION_DISABLED"},
+    )
+    flush_state_records(review_run_state_records(str(review_run["reviewRunId"])))
+    return {
+        "mode": mode,
+        "status": "failed_to_start",
+        "reviewRunId": review_run["reviewRunId"],
+        "errorCode": "REVIEW_ORCHESTRATION_DISABLED",
+    }
+
+
 def dispatch_review_run(ai_run_id: str) -> dict[str, Any]:
     mode = review_orchestration_mode()
     ai_run = repo.find_one("ai_runs", ai_run_id)
     if not ai_run:
         return {"mode": mode, "status": "missing", "aiRunId": ai_run_id}
     review_run = create_review_run_from_ai_run(ai_run, mode=mode)
-    if mode == "inline":
-        result = execute_review_run_inline(review_run["reviewRunId"])
-        return {"mode": mode, "reviewRunId": review_run["reviewRunId"], "result": result}
-    if mode == "temporal":
-        return start_temporal_workflow(review_run)
-    return {"mode": mode, "reviewRunId": review_run["reviewRunId"], "taskId": None}
+    return dispatch_existing_review_run(review_run)
 
 
 def start_temporal_workflow(review_run: dict[str, Any]) -> dict[str, Any]:
     try:
         return asyncio.run(_start_temporal_workflow(review_run))
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(_start_temporal_workflow(review_run))
-        finally:
-            loop.close()
     except Exception as exc:
+        review_run["status"] = "failed_to_start"
         review_run["dispatchErrorCode"] = "TEMPORAL_START_FAILED"
         review_run["dispatchErrorMessage"] = str(exc)
+        append_review_event(
+            str(review_run["reviewRunId"]),
+            event_type="review_run.dispatch_failed",
+            title="Temporal workflow 启动失败",
+            status="failed_to_start",
+            details={"errorCode": "TEMPORAL_START_FAILED", "message": str(exc)},
+        )
         flush_state_records(review_run_state_records(str(review_run["reviewRunId"])))
         return {
             "mode": "temporal",
@@ -96,12 +120,6 @@ def signal_review_run_cancel(review_run: dict[str, Any], reason: str | None = No
 def _run_temporal_signal(review_run: dict[str, Any], signal_name: str, payload: Any) -> dict[str, Any]:
     try:
         result = asyncio.run(_signal_temporal_workflow(review_run, signal_name, payload))
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        try:
-            result = loop.run_until_complete(_signal_temporal_workflow(review_run, signal_name, payload))
-        finally:
-            loop.close()
     except Exception as exc:
         review_run["temporalSignalErrorCode"] = "TEMPORAL_SIGNAL_FAILED"
         review_run["temporalSignalErrorMessage"] = str(exc)

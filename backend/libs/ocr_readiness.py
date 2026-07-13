@@ -12,6 +12,11 @@ OCR_FORMAL_BLOCKING_REASONS = {
     "REQUIRED_FIELD_MISSING",
     "REQUIRED_TABLE_MISSING",
     "SEAL_NOT_FOUND",
+    "OCR_OUTPUT_TRUNCATED",
+    "DOCUMENT_COST_LIMIT_EXCEEDED",
+    "PAGE_COST_REVIEW_REQUIRED",
+    "UNSUPPORTED_ATTRIBUTION",
+    "PROFILE_NOT_CERTIFIED_FOR_FORMAL_READINESS",
 }
 
 
@@ -196,15 +201,36 @@ def build_document_ocr_readiness(repo: Any, document: dict[str, Any]) -> dict[st
             and int(qwen_validation.get("invalidCandidateIdCount") or 0) == 0
         ),
         "formalEvidenceReady": bool((pipeline_run or {}).get("formalEvidenceReady")),
+        "formalReadinessBlockingReasons": (pipeline_run or {}).get("formalReadinessBlockingReasons") or [],
+        "formalReadinessProfileAllowed": bool(
+            (pipeline_run or {}).get("formalReadinessProfileAllowed")
+            or parse_metadata.get("formalReadinessProfileAllowed")
+        ),
         "providerMode": (pipeline_run or {}).get("providerMode") or parse_metadata.get("providerMode"),
         "provider": (pipeline_run or {}).get("provider") or parse_metadata.get("provider"),
         "model": (pipeline_run or {}).get("model") or parse_metadata.get("model"),
         "cloudGrounded": bool((pipeline_run or {}).get("cloudGrounded") or parse_metadata.get("cloudGrounded")),
+        "providerReady": not any(
+            str(item.get("code") or "") in {"OFFICIAL_OCR_FAILED", "CIRCUIT_OPEN"}
+            for item in ((pipeline_run or {}).get("blockingReasons") or [])
+            if isinstance(item, dict)
+        ),
+        "globalCapacityReady": not any(
+            str(item.get("code") or "") in {"PROVIDER_CAPACITY_UNAVAILABLE", "REDIS_CONTROL_UNAVAILABLE"}
+            for item in ((pipeline_run or {}).get("blockingReasons") or [])
+            if isinstance(item, dict)
+        ),
+        "outputTruncated": bool(
+            ((pipeline_run or {}).get("groundingValidation") or {}).get("outputTruncated")
+            or parse_metadata.get("outputTruncated")
+        ),
         "providerRequestId": (
             ((pipeline_run or {}).get("providerRequestIds") or parse_metadata.get("providerRequestIds") or [None])[0]
         ),
         "costCny": float((pipeline_run or {}).get("costCny") or parse_metadata.get("costCny") or 0.0),
         "fallbackReason": (pipeline_run or {}).get("fallbackReason") or parse_metadata.get("fallbackReason"),
+        "providerWaitReason": (pipeline_run or {}).get("providerWaitReason"),
+        "lastHeartbeatAt": (pipeline_run or {}).get("lastHeartbeatAt"),
     }
 
 
