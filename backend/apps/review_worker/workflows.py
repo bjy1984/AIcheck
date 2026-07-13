@@ -4,6 +4,7 @@ from datetime import timedelta
 from typing import Any
 
 from temporalio import workflow
+from temporalio.common import RetryPolicy
 
 with workflow.unsafe.imports_passed_through():
     from apps.review_worker.activities import run_review_graph_activity
@@ -23,7 +24,17 @@ class ReviewRunWorkflow:
             run_review_graph_activity,
             review_run_id,
             start_to_close_timeout=timedelta(minutes=20),
-            retry_policy=None,
+            retry_policy=RetryPolicy(
+                initial_interval=timedelta(seconds=10),
+                backoff_coefficient=2.0,
+                maximum_interval=timedelta(minutes=2),
+                maximum_attempts=3,
+                non_retryable_error_types=[
+                    "ReviewValidationError",
+                    "ReviewBudgetExceeded",
+                    "ReviewGroundingError",
+                ],
+            ),
             task_queue=workflow.info().task_queue,
         )
         self._state = {"reviewRunId": review_run_id, "status": "waiting_human_review", "currentStep": "waiting_human_review"}

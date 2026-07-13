@@ -1,0 +1,277 @@
+{
+  "schemaVersion": "aicheck-ocr-100-certification-status-v1",
+  "ok": false,
+  "summary": {
+    "schemaVersion": "aicheck-ocr-100-certification-status-v1",
+    "generatedAt": "2026-06-30T16:06:10.259557+00:00",
+    "status": "needs_sample_files",
+    "ok": false,
+    "score": 79.0,
+    "scorecardOk": false,
+    "tasks": 30,
+    "humanLabeled": 0,
+    "readyForEval": 0,
+    "requiredReadyForEval": 100,
+    "collectionMissingCases": 75,
+    "filledSampleSlots": 0,
+    "placeholderSampleSlots": 75,
+    "missingReportCount": 0,
+    "blockerCount": 7
+  },
+  "reports": {
+    "scorecard": {
+      "name": "scorecard",
+      "path": "ocr_eval/reports/ocr_100_scorecard.json",
+      "missing": false,
+      "schemaVersion": "aicheck-ocr-100-scorecard-v1",
+      "ok": false
+    },
+    "closurePlan": {
+      "name": "closurePlan",
+      "path": "ocr_eval/reports/ocr_100_closure_plan_after_batch6_dedupe.json",
+      "missing": false,
+      "schemaVersion": "aicheck-ocr-100-closure-plan-v1",
+      "ok": null
+    },
+    "intakeVerify": {
+      "name": "intakeVerify",
+      "path": "ocr_eval/reports/ocr_100_sample_intake_after_batch6_dedupe/verify_autofilled.json",
+      "missing": false,
+      "schemaVersion": "aicheck-ocr-100-collection-intake-verify-v1",
+      "ok": true
+    },
+    "intakePipeline": {
+      "name": "intakePipeline",
+      "path": "ocr_eval/reports/ocr_100_sample_intake_after_batch6_dedupe/pipeline.json",
+      "missing": false,
+      "schemaVersion": "aicheck-ocr-100-collection-intake-pipeline-v1",
+      "ok": true
+    },
+    "reviewedLabelGate": {
+      "name": "reviewedLabelGate",
+      "path": "ocr_eval/reports/reviewed_label_gate_current/reviewed_label_gate.json",
+      "missing": false,
+      "schemaVersion": "aicheck-ocr-100-reviewed-label-gate-v1",
+      "ok": false
+    }
+  },
+  "gates": [
+    {
+      "gate": "scorecard.runtime",
+      "status": "pass",
+      "complete": true
+    },
+    {
+      "gate": "scorecard.sample-probes",
+      "status": "pass",
+      "complete": true
+    },
+    {
+      "gate": "scorecard.observability",
+      "status": "pass",
+      "complete": true
+    },
+    {
+      "gate": "scorecard.evaluation",
+      "status": "fail",
+      "complete": false
+    },
+    {
+      "gate": "sample_collection",
+      "status": "fail",
+      "complete": false,
+      "evidence": {
+        "collectionMissingCases": 75,
+        "placeholderSlots": 75
+      }
+    },
+    {
+      "gate": "intake_pipeline",
+      "status": "fail",
+      "complete": false,
+      "evidence": {
+        "readyToExecute": false
+      }
+    },
+    {
+      "gate": "human_reviewed_release_set",
+      "status": "fail",
+      "complete": false,
+      "evidence": {
+        "readyForEval": 0,
+        "requiredReadyForEval": 100
+      }
+    },
+    {
+      "gate": "reviewed_label_gate",
+      "status": "fail",
+      "complete": false,
+      "evidence": {
+        "readinessOk": false,
+        "evalSetWritten": false
+      }
+    },
+    {
+      "gate": "scorecard",
+      "status": "fail",
+      "complete": false
+    }
+  ],
+  "blockers": [
+    {
+      "code": "SAMPLE_COLLECTION_INCOMPLETE",
+      "message": "75 real sample collection slot(s) are still missing."
+    },
+    {
+      "code": "SAMPLE_MANIFEST_PLACEHOLDERS",
+      "message": "75 sample manifest slot(s) still use placeholder file names."
+    },
+    {
+      "code": "HUMAN_GOLD_SET_INCOMPLETE",
+      "message": "0/100 cases are ready for evaluation."
+    },
+    {
+      "code": "ANNOTATION_READINESS_NOT_READY",
+      "message": "Reviewed annotation tasks are not ready for OCR 100 evaluation."
+    },
+    {
+      "code": "SCORECARD_BLOCKER",
+      "message": "evaluation report is not ok under configured thresholds"
+    },
+    {
+      "code": "SCORECARD_BLOCKER",
+      "message": "evaluation set has fewer than 100 cases"
+    },
+    {
+      "code": "SCORECARD_BLOCKER",
+      "message": "evaluation set is missing scenarios: quality_certificate_profile, ndt_rt_profile, ndt_ut_profile, construction_record_profile, welding_record_profile, qualification_certificate_profile"
+    }
+  ],
+  "nextActions": [
+    "Put real customer/field OCR samples into /Volumes/Volume/project/AIcheck/backend/ocr_eval/reports/ocr_100_sample_intake_after_batch6_dedupe/samples/<scenario>/.",
+    "Run the intake autofill and verify commands, then run pipelineExecute when strict verification passes."
+  ],
+  "scenarioGaps": [
+    {
+      "scenario": "construction_record_profile",
+      "targetCases": 10,
+      "queuedCases": 2,
+      "readyForEval": 0,
+      "collectionMissingCases": 8,
+      "slots": 8,
+      "filled": 0,
+      "placeholders": 8,
+      "collectionHint": "Collect construction/handover records with project metadata, tabular construction records, signatures, and stamps."
+    },
+    {
+      "scenario": "evidence_profile",
+      "targetCases": 8,
+      "queuedCases": 2,
+      "readyForEval": 0,
+      "collectionMissingCases": 6,
+      "slots": 6,
+      "filled": 0,
+      "placeholders": 6,
+      "collectionHint": "Collect documents where fields/tables/seals need explicit page bbox/polygon evidence for traceability."
+    },
+    {
+      "scenario": "fragment_seal_profile",
+      "targetCases": 8,
+      "queuedCases": 1,
+      "readyForEval": 0,
+      "collectionMissingCases": 7,
+      "slots": 7,
+      "filled": 0,
+      "placeholders": 7,
+      "collectionHint": "Collect stamped drawings or low-contrast documents where seal text may require OCR fragment fusion rather than a clean seal crop."
+    },
+    {
+      "scenario": "ndt_rt_profile",
+      "targetCases": 10,
+      "queuedCases": 1,
+      "readyForEval": 0,
+      "collectionMissingCases": 9,
+      "slots": 9,
+      "filled": 0,
+      "placeholders": 9,
+      "collectionHint": "Collect real radiographic testing reports, including report cover/main table, weld numbers, RT method, conclusion, and testing seal."
+    },
+    {
+      "scenario": "ndt_ut_profile",
+      "targetCases": 8,
+      "queuedCases": 0,
+      "readyForEval": 0,
+      "collectionMissingCases": 8,
+      "slots": 8,
+      "filled": 0,
+      "placeholders": 8,
+      "collectionHint": "Collect real ultrasonic testing reports, including report number, weld/part number, UT method, probe/level fields, result table, and testing seal."
+    },
+    {
+      "scenario": "piping_table_profile",
+      "targetCases": 12,
+      "queuedCases": 4,
+      "readyForEval": 0,
+      "collectionMissingCases": 8,
+      "slots": 8,
+      "filled": 0,
+      "placeholders": 8,
+      "collectionHint": "Collect dense piping characteristic list photos/PDFs with table grid, drawing number, and weld-detection columns."
+    },
+    {
+      "scenario": "qualification_certificate_profile",
+      "targetCases": 8,
+      "queuedCases": 2,
+      "readyForEval": 0,
+      "collectionMissingCases": 6,
+      "slots": 6,
+      "filled": 0,
+      "placeholders": 6,
+      "collectionHint": "Collect qualification/license certificates with organization name, certificate number, validity period, issuing authority, and official seal."
+    },
+    {
+      "scenario": "quality_certificate_profile",
+      "targetCases": 10,
+      "queuedCases": 15,
+      "readyForEval": 0,
+      "collectionMissingCases": 0,
+      "slots": null,
+      "filled": null,
+      "placeholders": null,
+      "collectionHint": "Collect material/product quality certificates with certificate number, heat/batch number, material grade, tables, and stamps."
+    },
+    {
+      "scenario": "quality_gate_profile",
+      "targetCases": 8,
+      "queuedCases": 1,
+      "readyForEval": 0,
+      "collectionMissingCases": 7,
+      "slots": 7,
+      "filled": 0,
+      "placeholders": 7,
+      "collectionHint": "Collect low-quality, folded, skewed, blurry, low-contrast, or partially occluded documents that should trigger needs_human_review diagnostics."
+    },
+    {
+      "scenario": "seal_text_profile",
+      "targetCases": 8,
+      "queuedCases": 1,
+      "readyForEval": 0,
+      "collectionMissingCases": 7,
+      "slots": 7,
+      "filled": 0,
+      "placeholders": 7,
+      "collectionHint": "Collect close-up or full-page stamped documents where the seal text must be read and localized."
+    },
+    {
+      "scenario": "welding_record_profile",
+      "targetCases": 10,
+      "queuedCases": 1,
+      "readyForEval": 0,
+      "collectionMissingCases": 9,
+      "slots": 9,
+      "filled": 0,
+      "placeholders": 9,
+      "collectionHint": "Collect welding procedure qualification or welding record documents with WPS/PQR identifiers, weld fields, result tables, and signatures."
+    }
+  ]
+}

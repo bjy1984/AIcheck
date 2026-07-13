@@ -46,7 +46,7 @@ def test_ocr_runtime_is_redacted_and_clamps_render_size() -> None:
     public = ocr_runtime_public_config(env=official_env())
     assert runtime["mode"] == "hybrid_auto"
     assert runtime["render"]["maxLongSide"] == 1920
-    assert runtime["render"]["maxPagesPerBatch"] == 30
+    assert runtime["render"]["maxPagesPerBatch"] == 10
     assert runtime["render"]["maxDocumentPages"] == 200
     assert runtime["render"]["maxCostCnyPerDocument"] == 5.0
     assert runtime["official"]["maxOutputTokens"] == 4096
@@ -312,8 +312,9 @@ def test_official_pipeline_runs_one_table_call_per_page(tmp_path: Path) -> None:
     ]
     assert result["metadata"]["modelCallCount"] == 3
     assert result["fields"][0]["formalEvidenceEligible"] is True
-    assert result["tables"][0]["advisoryOnly"] is True
-    assert "TABLE_EVIDENCE_MISSING" in result["quality"]["reasons"]
+    assert result["tables"][0]["formalEvidenceEligible"] is True
+    assert result["tables"][0]["cells"][0]["sourceCandidateIds"]
+    assert "TABLE_EVIDENCE_MISSING" not in result["quality"]["reasons"]
 
     cached_client = FakeClient()
     cached = official_ocr_extract(

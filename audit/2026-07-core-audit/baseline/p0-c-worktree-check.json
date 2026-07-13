@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "aicheck-audit-batch-check-v1",
+  "batch": "P0-C-release-worker-bounds",
+  "capturedAt": "2026-07-12T20:49:34.519597+00:00",
+  "plannedFiles": [
+    "backend/scripts/ocr_98_release_gate.py",
+    "backend/scripts/ocr_100_reviewed_label_gate.py",
+    "backend/apps/worker/celery_app.py",
+    "backend/tests/test_ocr_98_release_gate.py",
+    "backend/tests/test_ocr_100_reviewed_label_gate.py",
+    "backend/tests/test_celery_priority_contract.py"
+  ],
+  "unexpectedChangesToW0Files": [],
+  "gitDiffStat": " backend/apps/worker/celery_app.py                 | 15 ++++++\n backend/scripts/ocr_100_reviewed_label_gate.py    | 35 ++++++++++++--\n backend/scripts/ocr_98_release_gate.py            | 57 ++++++++++++++++++++---\n backend/tests/test_celery_priority_contract.py    |  9 ++++\n backend/tests/test_ocr_100_reviewed_label_gate.py | 43 +++++++++++++++--\n backend/tests/test_ocr_98_release_gate.py         | 50 ++++++++++++++++++--\n 6 files changed, 193 insertions(+), 16 deletions(-)\n"
+}

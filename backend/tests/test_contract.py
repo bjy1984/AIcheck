@@ -5047,6 +5047,58 @@ def test_ocr_100_scorecard_exposes_runtime_and_corpus_gaps() -> None:
     assert any("sample probe summaries are missing" in blocker for blocker in scorecard["blockers"])
 
 
+def test_ocr_100_scorecard_accepts_official_provider_capabilities() -> None:
+    from apps.ocr_service.evaluation import OCR_100_REQUIRED_SCENARIOS, ocr_100_thresholds
+    from apps.ocr_service.readiness import build_ocr_100_scorecard
+
+    thresholds = ocr_100_thresholds()
+    report = {
+        "ok": True,
+        "summary": {"cases": 100, "passed": 100, "failed": 0, "averageScore": 0.99},
+        "metrics": {metric: 1.0 for metric in thresholds["metrics"]},
+        "findingCounts": {},
+        "thresholdFailures": [],
+        "scenarios": {
+            scenario: {"ok": True, "cases": 8, "passed": 8, "failed": 0, "averageScore": 0.99}
+            for scenario in OCR_100_REQUIRED_SCENARIOS
+        },
+        "cases": [],
+    }
+    runtime = {
+        "serviceReadiness": {
+            "ocr": {
+                "configured": True,
+                "providerMode": "official",
+                "localHeavyFallbackEnabled": False,
+                "silentFallbackEnabled": False,
+                "capacityControl": {"distributed": True, "ready": True},
+            }
+        },
+        "officialOcrTelemetry": {"lastSuccessfulInferenceAt": "2026-07-12T00:00:00Z"},
+    }
+    sample = {
+        "gatePassed": True,
+        "qualityStatus": "auto_usable",
+        "missingExpectedSealTypeCount": 0,
+        "fields": 6,
+        "formalTables": 1,
+        "businessRows": 10,
+        "readableSeals": 1,
+        "fragmentSeals": 1,
+        "evidenceCompleteness": 1.0,
+    }
+
+    scorecard = build_ocr_100_scorecard(
+        evaluation_report=report,
+        runtime_doctor=runtime,
+        sample_summaries=[sample],
+        runtime_profile="official",
+    )
+
+    assert scorecard["ok"] is True
+    assert scorecard["runtimeProfile"] == "official"
+
+
 def test_ocr_100_scorecard_rejects_fixture_derived_cases() -> None:
     from apps.ocr_service.evaluation import OCR_100_REQUIRED_SCENARIOS, ocr_100_thresholds
     from apps.ocr_service.readiness import OCR_100_REQUIRED_ENGINES, build_ocr_100_scorecard

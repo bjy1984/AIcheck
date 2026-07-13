@@ -27,6 +27,15 @@ def test_ocr_follow_up_stages_precede_new_documents_and_embedding() -> None:
     assert parse_priority == broker_priority(7)
 
 
+def test_celery_long_tasks_have_bounded_runtime_and_safe_visibility_timeout() -> None:
+    assert celery_app.conf.task_soft_time_limit > 0
+    assert celery_app.conf.task_time_limit > celery_app.conf.task_soft_time_limit
+    assert celery_app.conf.broker_transport_options["visibility_timeout"] > celery_app.conf.task_time_limit
+    assert celery_app.conf.worker_max_tasks_per_child > 0
+    assert celery_app.conf.worker_max_memory_per_child > 0
+    assert celery_app.conf.result_expires > 0
+
+
 def test_ai_recheck_priority_is_represented_by_redis_steps() -> None:
     priority = _route("apps.worker.tasks.ai_recheck")["priority"]
     assert priority == broker_priority(10) == 0

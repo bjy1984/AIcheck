@@ -19,9 +19,10 @@ def build_ocr_100_scorecard(
     evaluation_report: dict[str, Any],
     runtime_doctor: dict[str, Any] | None = None,
     sample_summaries: list[dict[str, Any]] | None = None,
+    runtime_profile: str = "local",
 ) -> dict[str, Any]:
     sections = [
-        runtime_section(runtime_doctor),
+        runtime_section(runtime_doctor, runtime_profile=runtime_profile),
         evaluation_section(evaluation_report),
         sample_section(sample_summaries or []),
         observability_section(evaluation_report),
@@ -35,6 +36,7 @@ def build_ocr_100_scorecard(
     return {
         "schemaVersion": "aicheck-ocr-100-scorecard-v1",
         "targetScore": 100,
+        "runtimeProfile": runtime_profile,
         "score": score,
         "ok": score >= 100 and not blockers,
         "sections": sections,
@@ -42,9 +44,26 @@ def build_ocr_100_scorecard(
     }
 
 
-def runtime_section(runtime_doctor: dict[str, Any] | None) -> dict[str, Any]:
+def runtime_section(runtime_doctor: dict[str, Any] | None, *, runtime_profile: str = "local") -> dict[str, Any]:
     if not isinstance(runtime_doctor, dict):
         return section("runtime", 0, 25, ["runtime doctor report is missing"])
+    if runtime_profile == "official":
+        services = runtime_doctor.get("serviceReadiness") if isinstance(runtime_doctor.get("serviceReadiness"), dict) else {}
+        ocr = services.get("ocr") if isinstance(services.get("ocr"), dict) else runtime_doctor.get("ocr")
+        ocr = ocr if isinstance(ocr, dict) else runtime_doctor
+        telemetry = runtime_doctor.get("officialOcrTelemetry")
+        telemetry = telemetry if isinstance(telemetry, dict) else {}
+        capacity = ocr.get("capacityControl") if isinstance(ocr.get("capacityControl"), dict) else {}
+        circuit = ocr.get("circuitBreaker") if isinstance(ocr.get("circuitBreaker"), dict) else {}
+        capabilities = {
+            "provider configured": ocr.get("configured") is True and ocr.get("providerMode") == "official",
+            "live inference observed": bool(telemetry.get("lastSuccessfulInferenceAt") or ocr.get("lastSuccessfulInferenceAt")),
+            "distributed control ready": capacity.get("distributed") is True and capacity.get("ready") is True,
+            "local heavy fallback disabled": ocr.get("localHeavyFallbackEnabled") is False,
+            "silent fallback disabled": ocr.get("silentFallbackEnabled") is False,
+        }
+        blockers = [label for label, passed in capabilities.items() if not passed]
+        return section("runtime", 5 * len([item for item in capabilities.values() if item]), 25, blockers)
     checks = runtime_doctor.get("checks") if isinstance(runtime_doctor.get("checks"), list) else []
     checks_by_name = {
         str(check.get("name")): check

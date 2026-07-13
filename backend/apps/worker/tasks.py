@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import tempfile
+import threading
 import time
 from copy import deepcopy
 from pathlib import Path
@@ -65,6 +66,7 @@ from libs.knowledge_indexing import (
     units_from_local_file,
 )
 from libs.material_targeting import run_material_targeting
+from libs.model_usage import model_cost_cny, normalize_model_usage
 from libs.ocr_accuracy_pipeline import (
     SEAL_ENGINES,
     STRUCTURE_ENGINES,
@@ -1575,11 +1577,24 @@ def _load_official_page_checkpoints(run: dict[str, Any]) -> dict[int, list[dict[
     return output
 
 
-def _persist_official_ocr_attempts(run: dict[str, Any], result: dict[str, Any]) -> None:
-    for raw in result.get("modelCallAttempts") or []:
-        if not isinstance(raw, dict):
-            continue
+_MODEL_CALL_LEDGER_LOCK = threading.Lock()
+
+
+def _persist_official_ocr_attempt(run: dict[str, Any], raw: dict[str, Any]) -> str:
+    with _MODEL_CALL_LEDGER_LOCK:
+        existing_ledger_id = str(raw.get("modelCallLedgerId") or "")
+        if existing_ledger_id:
+            return existing_ledger_id
         now = server_time()
+        attempt_number = 1 + len(
+            [
+                item
+                for item in repo.state.get("model_call_attempts", [])
+                if item.get("pipelineRunId") == run.get("id")
+                and item.get("callKind") == raw.get("task")
+                and item.get("pageNo") == raw.get("pageNo")
+            ]
+        )
         attempt = {
             "id": f"MCALL-{uuid4().hex[:12].upper()}",
             "pipelineRunId": run.get("id"),
@@ -1589,15 +1604,30 @@ def _persist_official_ocr_attempts(run: dict[str, Any], result: dict[str, Any]) 
             "callKind": raw.get("task"),
             "provider": raw.get("provider"),
             "model": raw.get("model"),
-            "providerRequestId": raw.get("requestId"),
+            "providerRequestId": raw.get("requestId") or raw.get("providerRequestId"),
             "status": raw.get("status") or "success",
-            "attempt": 1,
+            "attempt": attempt_number,
             "pageNo": raw.get("pageNo"),
             "elapsedMs": int(raw.get("durationMs") or 0),
             "usage": deepcopy(raw.get("usage") or {}),
+            "usageNormalized": normalize_model_usage(raw.get("usage") or {}),
+            "costNormalized": {
+                "currency": "CNY",
+                "input": 0.0,
+                "output": 0.0,
+                "cacheWrite": 0.0,
+                "cacheRead": 0.0,
+                "ocrApi": float(raw.get("costCny") or 0.0),
+                "total": float(raw.get("costCny") or 0.0),
+                "priceVersion": "dashscope-qwen-ocr-2026-07",
+            },
             "estimatedCostCny": float(raw.get("costCny") or 0.0),
             "input": deepcopy(raw.get("input") or {}),
             "failureReason": raw.get("failureReason"),
+            "finishReason": raw.get("finishReason"),
+            "outputTruncated": bool(raw.get("outputTruncated")),
+            "maxOutputTokens": raw.get("maxOutputTokens"),
+            "callId": raw.get("callId"),
             "createdAt": now,
             "startedAt": now,
             "finishedAt": now,
@@ -1606,7 +1636,15 @@ def _persist_official_ocr_attempts(run: dict[str, Any], result: dict[str, Any]) 
         }
         repo.state.setdefault("model_call_attempts", []).insert(0, attempt)
         run.setdefault("modelCallAttemptIds", []).append(attempt["id"])
-        _persist_model_call_attempt(attempt)
+    _persist_model_call_attempt(attempt)
+    return attempt["id"]
+
+
+def _persist_official_ocr_attempts(run: dict[str, Any], result: dict[str, Any]) -> None:
+    for raw in result.get("modelCallAttempts") or []:
+        if not isinstance(raw, dict) or raw.get("modelCallLedgerId"):
+            continue
+        _persist_official_ocr_attempt(run, raw)
 
 
 def _dispatch_after_official_ocr(
@@ -1692,6 +1730,9 @@ def ocr_pipeline_official_extract(self, run_id: str) -> dict[str, Any]:
             "provider": runtime["official"]["provider"],
             "model": runtime["official"]["primaryModel"],
             "updatedAt": server_time(),
+            "lastHeartbeatAt": server_time(),
+            "providerWaitReason": None,
+            "deadLetteredAt": None,
         }
     )
     job = repo.find_one(
@@ -1747,6 +1788,7 @@ def ocr_pipeline_official_extract(self, run_id: str) -> dict[str, Any]:
                 "currentPage": page_no,
                 "status": "running",
             }
+            run["lastHeartbeatAt"] = server_time()
             if task:
                 task["progress"] = max(
                     int(task.get("progress") or 0),
@@ -1762,6 +1804,8 @@ def ocr_pipeline_official_extract(self, run_id: str) -> dict[str, Any]:
             work_directory=work_directory,
             page_call_cache=cached_pages,
             page_completed=page_completed,
+            attempt_recorder=lambda raw: _persist_official_ocr_attempt(run, raw),
+            budget_key=run_id,
         )
         run["pageProgress"] = {
             "completed": len(result.get("pages") or []),
@@ -1791,6 +1835,8 @@ def ocr_pipeline_official_extract(self, run_id: str) -> dict[str, Any]:
                 "providerRequestIds": deepcopy(metadata.get("providerRequestIds") or []),
                 "costCny": float(metadata.get("costCny") or result.get("costCny") or 0.0),
                 "modelCallCount": int(metadata.get("modelCallCount") or 0),
+                "formalReadinessProfileAllowed": bool(metadata.get("formalReadinessProfileAllowed")),
+                "lastHeartbeatAt": server_time(),
             }
         )
         artifact_url, artifact_hash = store_ocr_pipeline_artifact(run, "official_ocr", record)
@@ -1855,15 +1901,21 @@ def ocr_pipeline_official_extract(self, run_id: str) -> dict[str, Any]:
         }
     except Exception as exc:
         retry_index = int(getattr(self.request, "retries", 0) or 0)
+        max_attempts = max(1, int(runtime["official"].get("maxAttempts") or 3))
         retryable = isinstance(exc, AliyunOcrRetryableError) or not isinstance(exc, AliyunOcrError)
-        if retryable and retry_index < 3:
-            default_countdown = (10, 30, 90)[retry_index]
+        if retryable and retry_index + 1 < max_attempts:
+            retry_delays = (10, 30, 90)
+            default_countdown = retry_delays[min(retry_index, len(retry_delays) - 1)]
             countdown = max(1, int(getattr(exc, "retry_after", 0) or default_countdown))
             repo.mark_ocr_pipeline_stage(run, "text_scan", "retrying", failure_reason=exc.__class__.__name__)
+            run["providerWaitReason"] = str(getattr(exc, "reason", None) or exc.__class__.__name__)
+            run["retryFromPage"] = (run.get("pageProgress") or {}).get("currentPage")
             run["recommendedAction"] = f"Official OCR will retry in {countdown} seconds."
             _persist_retry_state(run)
             raise self.retry(exc=exc, countdown=countdown)
         blockers = [{"code": "OFFICIAL_OCR_FAILED"}]
+        run["deadLetteredAt"] = server_time()
+        run["deadLetterReason"] = str(getattr(exc, "reason", None) or exc.__class__.__name__)
         repo.mark_ocr_pipeline_stage(
             run,
             "text_scan",
@@ -1911,11 +1963,7 @@ def ocr_pipeline_official_extract(self, run_id: str) -> dict[str, Any]:
 
 
 def _qwen_cost_estimate_cny(usage: dict[str, Any]) -> float:
-    input_rate = float(os.getenv("AICHECK_QWEN_INPUT_CNY_PER_MILLION", "2"))
-    output_rate = float(os.getenv("AICHECK_QWEN_OUTPUT_CNY_PER_MILLION", "8"))
-    prompt_tokens = int(usage.get("prompt_tokens") or 0)
-    completion_tokens = int(usage.get("completion_tokens") or 0)
-    return round((prompt_tokens * input_rate + completion_tokens * output_rate) / 1_000_000, 6)
+    return float(model_cost_cny(usage)["total"])
 
 
 def _persist_model_call_attempt(attempt: dict[str, Any]) -> None:
@@ -1972,6 +2020,8 @@ def qwen_structured_pipeline_call(
             timeout=float(os.getenv("AICHECK_OCR_QWEN_TIMEOUT_SECONDS", "180")),
         )
         usage = response.get("usage") if isinstance(response.get("usage"), dict) else {}
+        normalized_usage = normalize_model_usage(usage)
+        normalized_cost = model_cost_cny(usage)
         attempt.update(
             {
                 "status": "response_received",
@@ -1979,7 +2029,9 @@ def qwen_structured_pipeline_call(
                 "model": response.get("model"),
                 "providerRequestId": response.get("id"),
                 "usage": deepcopy(usage),
-                "estimatedCostCny": _qwen_cost_estimate_cny(usage),
+                "usageNormalized": normalized_usage,
+                "costNormalized": normalized_cost,
+                "estimatedCostCny": normalized_cost["total"],
                 "elapsedMs": round((time.monotonic() - started) * 1000),
                 "updatedAt": server_time(),
             }
@@ -2399,6 +2451,20 @@ def _ocr_pipeline_finalize_impl(run_id: str) -> dict[str, Any]:
     validation = run.get("groundingValidation") if isinstance(run.get("groundingValidation"), dict) else {}
     if int(validation.get("invalidCandidateIdCount") or 0) > 0:
         blockers.append({"code": "INVALID_CANDIDATE_ID"})
+    if int(validation.get("unsupportedAttributionCount") or 0) > 0:
+        blockers.append({"code": "UNSUPPORTED_ATTRIBUTION"})
+    if bool(validation.get("outputTruncated")):
+        blockers.append({"code": "OCR_OUTPUT_TRUNCATED"})
+    runtime = ocr_runtime_config()
+    formal_profile_allowed = str(profile.get("profileId") or "") in set(
+        runtime.get("formalReadinessProfileAllowlist") or []
+    )
+    formal_readiness_blockers = (
+        [{"code": "PROFILE_NOT_CERTIFIED_FOR_FORMAL_READINESS"}]
+        if run.get("mode") == "active" and not formal_profile_allowed
+        else []
+    )
+    run["formalReadinessBlockingReasons"] = formal_readiness_blockers
     if blockers:
         repo.mark_ocr_pipeline_stage(
             run,
@@ -2444,7 +2510,8 @@ def _ocr_pipeline_finalize_impl(run_id: str) -> dict[str, Any]:
             run["nextDispatch"] = task_dispatcher.dispatch_slice(str(knowledge_file["id"]))
     repo.mark_ocr_pipeline_stage(run, "finalize", "success")
     final_status = "completed" if not blockers else "partial"
-    formal_ready = bool(run.get("mode") == "active" and not blockers)
+    formal_ready = bool(run.get("mode") == "active" and formal_profile_allowed and not blockers)
+    run["formalReadinessProfileAllowed"] = formal_profile_allowed
     repo.finish_ocr_pipeline_run(
         run,
         status=final_status,
@@ -2461,6 +2528,7 @@ def _ocr_pipeline_finalize_impl(run_id: str) -> dict[str, Any]:
             "mode": run.get("mode"),
             "status": final_status,
             "blockingReasons": blockers,
+            "formalReadinessBlockingReasons": formal_readiness_blockers,
             "formalEvidenceReady": formal_ready,
             "applied": applied,
             "targeting": targeting,
@@ -2480,6 +2548,7 @@ def _ocr_pipeline_finalize_impl(run_id: str) -> dict[str, Any]:
         "mode": run.get("mode"),
         "formalEvidenceReady": formal_ready,
         "blockingReasons": blockers,
+        "formalReadinessBlockingReasons": formal_readiness_blockers,
         "applied": applied,
     }
 

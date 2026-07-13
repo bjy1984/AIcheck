@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "aicheck-audit-batch-check-v1",
+  "batch": "P0-B-ocr-control",
+  "capturedAt": "2026-07-12T20:42:56.544738+00:00",
+  "plannedFiles": [
+    "backend/libs/official_ocr_control.py",
+    "backend/libs/official_ocr_pipeline.py",
+    "backend/libs/aliyun_ocr.py",
+    "backend/libs/runtime_readiness.py",
+    "backend/apps/worker/tasks.py",
+    "backend/tests/test_official_ocr_control_p0.py"
+  ],
+  "unexpectedChangesToW0Files": [],
+  "gitDiffStat": " backend/apps/worker/tasks.py          |  75 +++++-\n backend/libs/aliyun_ocr.py            | 323 +++++++++++++++++++----\n backend/libs/official_ocr_pipeline.py | 483 +++++++++++++++++++++++++++++++++-\n backend/libs/runtime_readiness.py     |  16 +-\n 4 files changed, 839 insertions(+), 58 deletions(-)\n"
+}

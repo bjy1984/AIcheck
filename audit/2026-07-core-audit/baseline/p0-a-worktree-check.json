@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "aicheck-audit-batch-check-v1",
+  "batch": "P0-A-review-correctness",
+  "capturedAt": "2026-07-12T20:34:31.862457+00:00",
+  "plannedFiles": [
+    "backend/libs/review_orchestrator/execution.py",
+    "backend/apps/api/routes.py",
+    "backend/tests/test_review_p0_correctness.py"
+  ],
+  "unexpectedChangesToW0Files": [],
+  "gitDiffStat": " backend/apps/api/routes.py                    |  29 +++++-\n backend/libs/review_orchestrator/execution.py | 130 ++++++++++++++++++++++----\n 2 files changed, 139 insertions(+), 20 deletions(-)\n"
+}

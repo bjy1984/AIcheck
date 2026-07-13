@@ -109,6 +109,18 @@ def ocr_runtime_config(
     except (TypeError, ValueError):
         max_cost_cny = 5.0
 
+    def bounded_int(name: str, configured: Any, default: int, minimum: int, maximum: int) -> int:
+        try:
+            return max(minimum, min(int(source.get(name) or configured or default), maximum))
+        except (TypeError, ValueError):
+            return default
+
+    formal_allowlist = {
+        item.strip()
+        for item in str(source.get("AICHECK_OCR_FORMAL_READINESS_PROFILE_ALLOWLIST") or "").split(",")
+        if item.strip()
+    }
+
     allow_local_heavy = _env_bool(
         source,
         "AICHECK_OCR_ALLOW_LOCAL_HEAVY_FALLBACK",
@@ -156,6 +168,29 @@ def ocr_runtime_config(
                     16384,
                 ),
             ),
+            "taskMaxOutputTokens": {
+                "advanced_recognition": bounded_int(
+                    "AICHECK_ALIYUN_OCR_ADVANCED_MAX_OUTPUT_TOKENS",
+                    aliyun.get("advancedMaxOutputTokens"),
+                    4096,
+                    512,
+                    8192,
+                ),
+                "key_information_extraction": bounded_int(
+                    "AICHECK_ALIYUN_OCR_KIE_MAX_OUTPUT_TOKENS",
+                    aliyun.get("kieMaxOutputTokens"),
+                    2048,
+                    256,
+                    4096,
+                ),
+                "table_parsing": bounded_int(
+                    "AICHECK_ALIYUN_OCR_TABLE_MAX_OUTPUT_TOKENS",
+                    aliyun.get("tableMaxOutputTokens"),
+                    8192,
+                    1024,
+                    16384,
+                ),
+            },
         },
         "render": {
             "maxLongSide": max_long_side,
@@ -165,8 +200,40 @@ def ocr_runtime_config(
             "maxPagesPerBatch": max_pages_per_batch,
             "maxDocumentPages": max_document_pages,
             "maxCostCnyPerDocument": max_cost_cny,
+            "structuredPageLimit": bounded_int(
+                "AICHECK_OCR_STRUCTURED_PAGE_LIMIT",
+                render.get("structuredPageLimit"),
+                6,
+                1,
+                30,
+            ),
+            "sealRoiLimitPerDocument": bounded_int(
+                "AICHECK_OCR_SEAL_ROI_LIMIT_PER_DOCUMENT",
+                render.get("sealRoiLimitPerDocument"),
+                6,
+                1,
+                30,
+            ),
+        },
+        "control": {
+            "globalCallConcurrency": bounded_int(
+                "AICHECK_OCR_GLOBAL_CALL_CONCURRENCY", None, 4, 1, 32
+            ),
+            "globalDocumentConcurrency": bounded_int(
+                "AICHECK_OCR_GLOBAL_DOCUMENT_CONCURRENCY", None, 2, 1, 16
+            ),
+            "capacityWaitSeconds": bounded_int(
+                "AICHECK_OCR_CAPACITY_WAIT_SECONDS", None, 5, 0, 120
+            ),
+            "callLeaseSeconds": bounded_int(
+                "AICHECK_OCR_CALL_LEASE_SECONDS", None, 180, 30, 600
+            ),
+            "documentLeaseSeconds": bounded_int(
+                "AICHECK_OCR_DOCUMENT_LEASE_SECONDS", None, 300, 60, 1800
+            ),
         },
         "routing": deepcopy(routing),
+        "formalReadinessProfileAllowlist": sorted(formal_allowlist),
         "allowLocalHeavyFallback": allow_local_heavy,
         "allowSilentProviderFallback": _env_bool(
             source,
@@ -206,6 +273,11 @@ def ocr_runtime_public_config(env: Mapping[str, str] | None = None) -> dict[str,
         "maxPagesPerBatch": runtime["render"]["maxPagesPerBatch"],
         "maxDocumentPages": runtime["render"]["maxDocumentPages"],
         "maxCostCnyPerDocument": runtime["render"]["maxCostCnyPerDocument"],
+        "structuredPageLimit": runtime["render"]["structuredPageLimit"],
+        "sealRoiLimitPerDocument": runtime["render"]["sealRoiLimitPerDocument"],
+        "taskMaxOutputTokens": official["taskMaxOutputTokens"],
+        "control": runtime["control"],
+        "formalReadinessProfileAllowlist": runtime["formalReadinessProfileAllowlist"],
         "allowLocalHeavyFallback": runtime["allowLocalHeavyFallback"],
         "allowSilentProviderFallback": runtime["allowSilentProviderFallback"],
     }

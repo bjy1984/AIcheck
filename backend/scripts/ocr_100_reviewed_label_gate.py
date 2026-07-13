@@ -28,10 +28,13 @@ def main() -> int:
     parser.add_argument("--sample-summary", action="append", default=[], help="Sample probe summary JSON. Repeatable for scorecard.")
     parser.add_argument("--sample-summary-dir", action="append", default=[], help="Directory with sample probe summary JSON files.")
     parser.add_argument("--eval-report", help="Optional precomputed evaluation report JSON for scorecard.")
+    parser.add_argument("--runtime-doctor-json", help="Runtime doctor/API health JSON used by the scorecard.")
+    parser.add_argument("--runtime-profile", choices=["local", "official"], default="local")
     parser.add_argument("--run-ocr-scorecard", action="store_true", help="Run OCR while building scorecard from the exported eval set.")
     parser.add_argument("--auto-discover-runtime", action="store_true", help="Apply runtime discovery before scorecard OCR.")
     parser.add_argument("--allow-incomplete", action="store_true", help="Write draft outputs even if annotation readiness/export is incomplete.")
-    parser.add_argument("--strict", action="store_true", help="Return non-zero unless the reviewed labels pass all gates.")
+    parser.add_argument("--draft", action="store_true", help="Generate non-certification draft outputs and return success even when blocked.")
+    parser.add_argument("--strict", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
 
     report = run_reviewed_label_gate(
@@ -44,9 +47,12 @@ def main() -> int:
         run_ocr_scorecard=bool(args.run_ocr_scorecard),
         auto_discover_runtime=bool(args.auto_discover_runtime),
         allow_incomplete=bool(args.allow_incomplete),
+        runtime_doctor_path=Path(args.runtime_doctor_json) if args.runtime_doctor_json else None,
+        runtime_profile=args.runtime_profile,
+        certification_mode=not bool(args.draft),
     )
     print(json.dumps(report["summary"], ensure_ascii=False, indent=2))
-    return 0 if (report.get("ok") or not args.strict) else 1
+    return 0 if (report.get("ok") or args.draft) else 1
 
 
 def run_reviewed_label_gate(
@@ -60,6 +66,9 @@ def run_reviewed_label_gate(
     run_ocr_scorecard: bool = False,
     auto_discover_runtime: bool = False,
     allow_incomplete: bool = False,
+    runtime_doctor_path: Path | None = None,
+    runtime_profile: str = "local",
+    certification_mode: bool = True,
 ) -> dict[str, Any]:
     output_dir = output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -137,10 +146,19 @@ def run_reviewed_label_gate(
             sample_summary_dirs=sample_summary_dirs or [],
             run_ocr=run_ocr_scorecard,
             auto_discover_runtime=auto_discover_runtime,
+            runtime_doctor_path=runtime_doctor_path,
+            runtime_profile=runtime_profile,
         )
         write_text_file(scorecard_path, json.dumps(scorecard, ensure_ascii=False, indent=2))
         if not scorecard.get("ok"):
             failures.append({"code": "OCR_100_SCORECARD_NOT_READY", "message": "OCR 100 scorecard did not pass."})
+    if certification_mode and scorecard is None:
+        failures.append(
+            {
+                "code": "OCR_100_SCORECARD_REQUIRED",
+                "message": "Certification mode requires an OCR 100 scorecard.",
+            }
+        )
 
     summary = {
         "schemaVersion": "aicheck-ocr-100-reviewed-label-gate-v1",
@@ -158,6 +176,8 @@ def run_reviewed_label_gate(
         "evalSetWritten": eval_set_path.exists(),
         "scorecardScore": scorecard.get("score") if scorecard else None,
         "scorecardOk": scorecard.get("ok") if scorecard else None,
+        "certificationMode": certification_mode,
+        "certificationEligible": certification_mode and not failures,
         "failureCount": len(failures),
     }
     report = {
@@ -183,6 +203,8 @@ def build_scorecard(
     sample_summary_dirs: list[Path],
     run_ocr: bool,
     auto_discover_runtime: bool,
+    runtime_doctor_path: Path | None = None,
+    runtime_profile: str = "local",
 ) -> dict[str, Any]:
     if auto_discover_runtime:
         apply_auto_discovered_runtime()
@@ -191,12 +213,19 @@ def build_scorecard(
         evaluation_report = json.loads(eval_report_path.read_text(encoding="utf-8"))
     else:
         evaluation_report = evaluate_eval_set(eval_payload, eval_set_path=eval_set_path, run_ocr=run_ocr)
-    runtime_doctor = ocr_service.runtime_doctor_payload()
+    if runtime_profile == "official" and runtime_doctor_path is None:
+        raise ValueError("official runtime profile requires runtime_doctor_path")
+    runtime_doctor = (
+        json.loads(runtime_doctor_path.read_text(encoding="utf-8"))
+        if runtime_doctor_path is not None
+        else ocr_service.runtime_doctor_payload()
+    )
     sample_summaries = load_sample_summaries([str(path) for path in sample_summary_paths], [str(path) for path in sample_summary_dirs])
     return build_ocr_100_scorecard(
         evaluation_report=evaluation_report,
         runtime_doctor=runtime_doctor,
         sample_summaries=sample_summaries,
+        runtime_profile=runtime_profile,
     )
 
 

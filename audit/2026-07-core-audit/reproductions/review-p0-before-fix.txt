@@ -1,0 +1,209 @@
+FFFFFFFFF                                                                [100%]
+=================================== FAILURES ===================================
+____ test_human_edit_persists_corrected_findings_instead_of_original_draft _____
+
+    def test_human_edit_persists_corrected_findings_instead_of_original_draft() -> None:
+        run = review_run()
+    
+        result = human_decision_for_review_run(
+            run["reviewRunId"],
+            "edit",
+            {
+                "comment": "人工修正 finding 表述。",
+                "correctedOutput": [{"description": "人工修正后的审查发现。"}],
+            },
+        )
+    
+        assert result["status"] == "edited_by_human"
+        persisted = next(item for item in repo.state["review_findings"] if item["reviewRunId"] == run["reviewRunId"])
+>       assert persisted["description"] == "人工修正后的审查发现。"
+E       AssertionError: assert '原始 AI 审查发现。' == '人工修正后的审查发现。'
+E         
+E         - 人工修正后的审查发现。
+E         + 原始 AI 审查发现。
+
+tests/test_review_p0_correctness.py:121: AssertionError
+___________ test_invalid_human_edit_fails_before_mutating_review_run ___________
+
+    def test_invalid_human_edit_fails_before_mutating_review_run() -> None:
+        run = review_run()
+    
+        result = human_decision_for_review_run(
+            run["reviewRunId"],
+            "edit",
+            {"comment": "缺少合法修正结果。", "correctedOutput": []},
+        )
+    
+>       assert result["status"] == "invalid_corrected_output"
+E       AssertionError: assert 'edited_by_human' == 'invalid_corrected_output'
+E         
+E         - invalid_corrected_output
+E         + edited_by_human
+
+tests/test_review_p0_correctness.py:136: AssertionError
+_ test_llm_finding_output_fails_closed_for_invalid_payloads[-LLM_OUTPUT_EMPTY] _
+
+content = '', reason = 'LLM_OUTPUT_EMPTY'
+
+    @pytest.mark.parametrize(
+        ("content", "reason"),
+        [
+            ("", "LLM_OUTPUT_EMPTY"),
+            ("not-json", "LLM_OUTPUT_INVALID_JSON"),
+            (json.dumps([]), "LLM_OUTPUT_INVALID_ENVELOPE"),
+            (json.dumps({"findings": []}), "LLM_OUTPUT_EMPTY_FINDINGS"),
+            (json.dumps({"findings": ["bad-item"]}), "LLM_OUTPUT_INVALID_FINDING"),
+        ],
+    )
+    def test_llm_finding_output_fails_closed_for_invalid_payloads(content: str, reason: str) -> None:
+>       with pytest.raises(IntegrationServiceError) as error:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE IntegrationServiceError
+
+tests/test_review_p0_correctness.py:153: Failed
+_ test_llm_finding_output_fails_closed_for_invalid_payloads[not-json-LLM_OUTPUT_INVALID_JSON] _
+
+content = 'not-json', reason = 'LLM_OUTPUT_INVALID_JSON'
+
+    @pytest.mark.parametrize(
+        ("content", "reason"),
+        [
+            ("", "LLM_OUTPUT_EMPTY"),
+            ("not-json", "LLM_OUTPUT_INVALID_JSON"),
+            (json.dumps([]), "LLM_OUTPUT_INVALID_ENVELOPE"),
+            (json.dumps({"findings": []}), "LLM_OUTPUT_EMPTY_FINDINGS"),
+            (json.dumps({"findings": ["bad-item"]}), "LLM_OUTPUT_INVALID_FINDING"),
+        ],
+    )
+    def test_llm_finding_output_fails_closed_for_invalid_payloads(content: str, reason: str) -> None:
+>       with pytest.raises(IntegrationServiceError) as error:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE IntegrationServiceError
+
+tests/test_review_p0_correctness.py:153: Failed
+_ test_llm_finding_output_fails_closed_for_invalid_payloads[[]-LLM_OUTPUT_INVALID_ENVELOPE] _
+
+content = '[]', reason = 'LLM_OUTPUT_INVALID_ENVELOPE'
+
+    @pytest.mark.parametrize(
+        ("content", "reason"),
+        [
+            ("", "LLM_OUTPUT_EMPTY"),
+            ("not-json", "LLM_OUTPUT_INVALID_JSON"),
+            (json.dumps([]), "LLM_OUTPUT_INVALID_ENVELOPE"),
+            (json.dumps({"findings": []}), "LLM_OUTPUT_EMPTY_FINDINGS"),
+            (json.dumps({"findings": ["bad-item"]}), "LLM_OUTPUT_INVALID_FINDING"),
+        ],
+    )
+    def test_llm_finding_output_fails_closed_for_invalid_payloads(content: str, reason: str) -> None:
+>       with pytest.raises(IntegrationServiceError) as error:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE IntegrationServiceError
+
+tests/test_review_p0_correctness.py:153: Failed
+_ test_llm_finding_output_fails_closed_for_invalid_payloads[{"findings": []}-LLM_OUTPUT_EMPTY_FINDINGS] _
+
+content = '{"findings": []}', reason = 'LLM_OUTPUT_EMPTY_FINDINGS'
+
+    @pytest.mark.parametrize(
+        ("content", "reason"),
+        [
+            ("", "LLM_OUTPUT_EMPTY"),
+            ("not-json", "LLM_OUTPUT_INVALID_JSON"),
+            (json.dumps([]), "LLM_OUTPUT_INVALID_ENVELOPE"),
+            (json.dumps({"findings": []}), "LLM_OUTPUT_EMPTY_FINDINGS"),
+            (json.dumps({"findings": ["bad-item"]}), "LLM_OUTPUT_INVALID_FINDING"),
+        ],
+    )
+    def test_llm_finding_output_fails_closed_for_invalid_payloads(content: str, reason: str) -> None:
+>       with pytest.raises(IntegrationServiceError) as error:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE IntegrationServiceError
+
+tests/test_review_p0_correctness.py:153: Failed
+_ test_llm_finding_output_fails_closed_for_invalid_payloads[{"findings": ["bad-item"]}-LLM_OUTPUT_INVALID_FINDING] _
+
+content = '{"findings": ["bad-item"]}', reason = 'LLM_OUTPUT_INVALID_FINDING'
+
+    @pytest.mark.parametrize(
+        ("content", "reason"),
+        [
+            ("", "LLM_OUTPUT_EMPTY"),
+            ("not-json", "LLM_OUTPUT_INVALID_JSON"),
+            (json.dumps([]), "LLM_OUTPUT_INVALID_ENVELOPE"),
+            (json.dumps({"findings": []}), "LLM_OUTPUT_EMPTY_FINDINGS"),
+            (json.dumps({"findings": ["bad-item"]}), "LLM_OUTPUT_INVALID_FINDING"),
+        ],
+    )
+    def test_llm_finding_output_fails_closed_for_invalid_payloads(content: str, reason: str) -> None:
+>       with pytest.raises(IntegrationServiceError) as error:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE IntegrationServiceError
+
+tests/test_review_p0_correctness.py:153: Failed
+________ test_generate_finding_drafts_rejects_truncated_provider_output ________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cfc4c80>
+
+    def test_generate_finding_drafts_rejects_truncated_provider_output(monkeypatch) -> None:
+        class FakeClient:
+            def chat_sync(self, messages, **kwargs):
+                return {
+                    "id": "chat-truncated",
+                    "model": "review-chat",
+                    "choices": [
+                        {
+                            "finish_reason": "length",
+                            "message": {"content": json.dumps({"findings": [llm_finding(evidence_link_id="EV-001", document_version_id="DV-001", page_no=1)]})},
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 100, "completion_tokens": 1600, "total_tokens": 1700},
+                }
+    
+        monkeypatch.setattr("libs.review_orchestrator.execution.review_llm_execution_mode", lambda: "litellm")
+        monkeypatch.setattr("libs.review_orchestrator.execution.build_review_messages", lambda review_run, context: [])
+        monkeypatch.setattr("libs.review_orchestrator.execution.build_review_prompt_shape", lambda review_run, context: {})
+        monkeypatch.setattr("libs.review_orchestrator.execution.qwen_runtime_public_config", lambda: {})
+        monkeypatch.setattr("libs.review_orchestrator.execution.qwen_runtime_client", lambda: FakeClient())
+    
+>       with pytest.raises(IntegrationServiceError) as error:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE IntegrationServiceError
+
+tests/test_review_p0_correctness.py:180: Failed
+_________ test_llm_finding_output_preserves_claim_specific_references __________
+
+    def test_llm_finding_output_preserves_claim_specific_references() -> None:
+        content = json.dumps(
+            {
+                "findings": [
+                    llm_finding(evidence_link_id="EV-001", document_version_id="DV-001", page_no=1),
+                    llm_finding(evidence_link_id="EV-002", document_version_id="DV-002", page_no=2),
+                ]
+            },
+            ensure_ascii=False,
+        )
+    
+        drafts = normalize_llm_findings({"reviewRunId": "RRUN-P0-001"}, llm_context(), content)
+    
+        assert drafts[0]["evidenceRefs"][0]["evidenceLinkId"] == "EV-001"
+>       assert drafts[1]["evidenceRefs"][0]["evidenceLinkId"] == "EV-002"
+E       AssertionError: assert 'EV-001' == 'EV-002'
+E         
+E         - EV-002
+E         ?      ^
+E         + EV-001
+E         ?      ^
+
+tests/test_review_p0_correctness.py:200: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_review_p0_correctness.py::test_human_edit_persists_corrected_findings_instead_of_original_draft
+FAILED tests/test_review_p0_correctness.py::test_invalid_human_edit_fails_before_mutating_review_run
+FAILED tests/test_review_p0_correctness.py::test_llm_finding_output_fails_closed_for_invalid_payloads[-LLM_OUTPUT_EMPTY]
+FAILED tests/test_review_p0_correctness.py::test_llm_finding_output_fails_closed_for_invalid_payloads[not-json-LLM_OUTPUT_INVALID_JSON]
+FAILED tests/test_review_p0_correctness.py::test_llm_finding_output_fails_closed_for_invalid_payloads[[]-LLM_OUTPUT_INVALID_ENVELOPE]
+FAILED tests/test_review_p0_correctness.py::test_llm_finding_output_fails_closed_for_invalid_payloads[{"findings": []}-LLM_OUTPUT_EMPTY_FINDINGS]
+FAILED tests/test_review_p0_correctness.py::test_llm_finding_output_fails_closed_for_invalid_payloads[{"findings": ["bad-item"]}-LLM_OUTPUT_INVALID_FINDING]
+FAILED tests/test_review_p0_correctness.py::test_generate_finding_drafts_rejects_truncated_provider_output
+FAILED tests/test_review_p0_correctness.py::test_llm_finding_output_preserves_claim_specific_references
+9 failed in 1.82s

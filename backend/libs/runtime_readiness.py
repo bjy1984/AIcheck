@@ -6,6 +6,7 @@ from typing import Any
 from libs.material_review_assets import material_review_asset_status
 from libs.aliyun_ocr import official_ocr_circuit_breaker
 from libs.ocr_runtime import ocr_runtime_config, ocr_runtime_public_config
+from libs.official_ocr_control import official_ocr_control_status
 from scripts.setup_langgraph_checkpoint import REQUIRED_TABLES, verify_checkpoint_schema
 
 
@@ -52,9 +53,15 @@ def audit_service_configuration_status() -> dict[str, Any]:
         if official_mode
         else bool(os.getenv("AICHECK_OCR_BASE_URL", "").strip())
     )
+    control_status = official_ocr_control_status(ocr_runtime) if official_mode else {
+        "ready": True,
+        "distributed": False,
+    }
+    circuit_status = official_ocr_circuit_breaker(ocr_runtime).public_status()
     return {
         "ocr": {
             "configured": ocr_configured,
+            "ready": bool(ocr_configured and control_status.get("ready") and not circuit_status.get("open")),
             "executionBoundary": "official_api_with_local_light" if official_mode else "remote_service_only",
             "providerMode": ocr_public.get("mode"),
             "provider": ocr_public.get("provider"),
@@ -62,7 +69,9 @@ def audit_service_configuration_status() -> dict[str, Any]:
             "maxLongSide": ocr_public.get("maxLongSide"),
             "localHeavyFallbackEnabled": ocr_public.get("allowLocalHeavyFallback"),
             "silentFallbackEnabled": ocr_public.get("allowSilentProviderFallback"),
-            "circuitBreaker": official_ocr_circuit_breaker(ocr_runtime).public_status(),
+            "circuitBreaker": circuit_status,
+            "capacityControl": control_status,
+            "formalReadinessProfileAllowlist": ocr_public.get("formalReadinessProfileAllowlist") or [],
         },
         "qwen": {
             "configured": bool(os.getenv("QWEN_API_KEY", "").strip()) if qwen_mode == "official_api" else True,
@@ -85,7 +94,10 @@ def production_runtime_status() -> dict[str, Any]:
     material = material_review_asset_status()
     services = audit_service_configuration_status()
     required_service_keys = ["ocr", "qwen", "embedding", "temporal"]
-    services_ready = all(bool(services[key].get("configured")) for key in required_service_keys)
+    services_ready = all(
+        bool(services[key].get("ready", services[key].get("configured")))
+        for key in required_service_keys
+    )
     runtime_ready = bool(workflow.get("ready")) and bool(material.get("ready"))
     if os.getenv("AICHECK_STRICT_PRODUCTION", "false").strip().lower() == "true":
         runtime_ready = runtime_ready and services_ready

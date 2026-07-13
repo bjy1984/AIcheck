@@ -372,7 +372,10 @@ const draftRequiresEvidenceSelection = ref(false)
 const latestSubmissionIds = ref<Record<number, string>>({})
 const pipelinePollTimer = ref<number>()
 const pipelinePolling = ref(false)
+const reviewPollTimer = ref<number>()
+const reviewPolling = ref(false)
 const POST_UPLOAD_PIPELINE_POLL_INTERVAL_MS = 10000
+const REVIEW_POLL_INTERVAL_MS = 5000
 const overviewFileKeyword = ref('')
 const overviewFilePage = ref(1)
 const overviewFilePageSize = ref(8)
@@ -3117,6 +3120,7 @@ const handleAiRecheck = async () => {
     }
     actionBlocker.value = undefined
     aiRecheckRunOverride.value = res.data.latestRun
+    startAiReviewPolling()
     const statusReason = String(res.data.dispatch?.statusReason || '')
     ElMessage.success(
       statusReason
@@ -3690,6 +3694,57 @@ const handleArchiveReport = async (reportId: string) => {
   }
 }
 
+const aiReviewTerminalStatuses = new Set([
+  '完成',
+  '失败',
+  '已人工确认',
+  '已驳回',
+  '已取消',
+  'cancelled',
+  'waiting_human_review',
+  'accepted_by_human',
+  'edited_by_human',
+  'rejected_by_human',
+  'failed',
+  'failed_to_start'
+])
+
+const refreshAiReviewStatus = async () => {
+  if (!activeProjectId.value || reviewPolling.value) return
+  const run = aiRecheckDisplayRun.value
+  if (!run || aiReviewTerminalStatuses.has(String(run.status || ''))) {
+    stopAiReviewPolling()
+    return
+  }
+  reviewPolling.value = true
+  try {
+    await loadNodePackage(activeNodeId.value, { silent: true })
+    aiRecheckRunOverride.value = undefined
+    const refreshed = latestAiRun.value
+    if (!refreshed || aiReviewTerminalStatuses.has(String(refreshed.status || ''))) {
+      stopAiReviewPolling()
+    }
+  } catch (error) {
+    aiRecheckOutputError.value = getAicheckErrorMessage(error, 'AI 复核状态刷新失败，将继续重试。')
+  } finally {
+    reviewPolling.value = false
+  }
+}
+
+const startAiReviewPolling = () => {
+  if (reviewPollTimer.value) return
+  reviewPollTimer.value = window.setInterval(() => {
+    if (document.visibilityState === 'hidden') return
+    void refreshAiReviewStatus()
+  }, REVIEW_POLL_INTERVAL_MS)
+}
+
+const stopAiReviewPolling = () => {
+  if (!reviewPollTimer.value) return
+  window.clearInterval(reviewPollTimer.value)
+  reviewPollTimer.value = undefined
+}
+
 const refreshPostUploadPipelineStatus = async () => {
   if (!activeProjectId.value || pipelinePolling.value) return
   if (!hasPostUploadProcessing.value) {
@@ -3727,10 +3782,23 @@ watch(
 watch(
   () => activeNodeId.value,
   () => {
+    stopAiReviewPolling()
     aiRecheckOutputVisible.value = false
     aiRecheckRunOverride.value = undefined
     aiRecheckOutputError.value = ''
   }
+)
+
+watch(
+  () => String(aiRecheckDisplayRun.value?.status || ''),
+  (status) => {
+    if (status && !aiReviewTerminalStatuses.has(status)) {
+      startAiReviewPolling()
+    } else {
+      stopAiReviewPolling()
+    }
+  },
+  { immediate: true }
 )
 
 watch(
@@ -3863,6 +3931,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   stopPostUploadPolling()
+  stopAiReviewPolling()
   revokePreviewDrawerObjectUrl()
 })
 </script>

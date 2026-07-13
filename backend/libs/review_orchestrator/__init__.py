@@ -1,4 +1,5 @@
 from .dispatcher import (
+    dispatch_existing_review_run,
     dispatch_review_run,
     review_orchestration_mode,
     signal_review_run_cancel,
@@ -29,6 +30,7 @@ __all__ = [
     "build_review_orchestration_scorecard",
     "create_review_run_from_ai_run",
     "clone_review_run_for_replay",
+    "dispatch_existing_review_run",
     "dispatch_review_run",
     "execute_review_run_inline",
     "execute_agent_tool",

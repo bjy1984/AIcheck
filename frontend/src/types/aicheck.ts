@@ -216,6 +216,19 @@ export type DocumentAsset = {
     blockingReasons: BusinessBlockingReason[]
     retryable: boolean
     finishedAt?: string | null
+    providerReady?: boolean
+    globalCapacityReady?: boolean
+    cloudGrounded?: boolean
+    outputTruncated?: boolean
+    formalReadinessProfileAllowed?: boolean
+    formalEvidenceReady?: boolean
+    formalReadinessBlockingReasons?: BusinessBlockingReason[]
+    providerMode?: string | null
+    provider?: string | null
+    model?: string | null
+    costCny?: number
+    providerWaitReason?: string | null
+    lastHeartbeatAt?: string | null
   }
   bindings?: NodeFileBinding[]
   primaryBinding?: NodeFileBinding | null
@@ -711,6 +724,19 @@ export type OperationTask = {
   projectId?: string | null
   taskType: string
   status: string
+  statusCode?:
+    | 'queued'
+    | 'running'
+    | 'retrying'
+    | 'waiting_human'
+    | 'cancel_requested'
+    | 'cancelled'
+    | 'succeeded'
+    | 'failed'
+    | 'partial'
+    | 'blocked'
+    | 'unknown'
+  displayStatus?: string
   progress: number
   operationId?: string | null
   targetId?: string | null
@@ -730,6 +756,22 @@ export type OperationTask = {
   engineStatus?: Record<string, unknown>
   blockingReasons?: Array<{ code?: string; message?: string; [key: string]: unknown }>
   recommendedAction?: string | null
+  providerMode?: string | null
+  provider?: string | null
+  model?: string | null
+  providerWaitReason?: string | null
+  providerCallCount?: number
+  callCount?: number
+  costCny?: number
+  budgetUsed?: number
+  pageProgress?: {
+    completed?: number
+    total?: number
+    currentPage?: number | null
+    status?: string
+  }
+  lastHeartbeatAt?: string | null
+  retryFromPage?: number | null
 }
 
 export type ImpactPreview<TImpact extends Record<string, unknown> = Record<string, unknown>> = {

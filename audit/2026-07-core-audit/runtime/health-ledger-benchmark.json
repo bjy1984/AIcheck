@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "aicheck-health-ledger-benchmark-v1",
+  "results": [
+    {
+      "ledgerSize": 1000,
+      "p50Ms": 3.001,
+      "maxMs": 3.666,
+      "samplesMs": [
+        3.422,
+        3.001,
+        3.666,
+        2.874,
+        2.808
+      ]
+    },
+    {
+      "ledgerSize": 10000,
+      "p50Ms": 3.488,
+      "maxMs": 3.747,
+      "samplesMs": [
+        3.488,
+        3.425,
+        3.747,
+        3.539,
+        3.479
+      ]
+    },
+    {
+      "ledgerSize": 100000,
+      "p50Ms": 10.339,
+      "maxMs": 11.75,
+      "samplesMs": [
+        11.75,
+        10.271,
+        10.296,
+        10.766,
+        10.339
+      ]
+    }
+  ]
+}

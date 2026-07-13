@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "aicheck-ocr-100-scorecard-v1",
+  "targetScore": 100,
+  "score": 79.0,
+  "ok": false,
+  "sections": [
+    {
+      "name": "runtime",
+      "score": 25.0,
+      "maxScore": 25,
+      "status": "pass",
+      "blockers": []
+    },
+    {
+      "name": "evaluation",
+      "score": 24.0,
+      "maxScore": 45,
+      "status": "fail",
+      "blockers": [
+        "evaluation report is not ok under configured thresholds",
+        "evaluation set has fewer than 100 cases",
+        "evaluation set is missing scenarios: quality_certificate_profile, ndt_rt_profile, ndt_ut_profile, construction_record_profile, welding_record_profile, qualification_certificate_profile"
+      ]
+    },
+    {
+      "name": "sample-probes",
+      "score": 20.0,
+      "maxScore": 20,
+      "status": "pass",
+      "blockers": []
+    },
+    {
+      "name": "observability",
+      "score": 10.0,
+      "maxScore": 10,
+      "status": "pass",
+      "blockers": []
+    }
+  ],
+  "blockers": [
+    "evaluation report is not ok under configured thresholds",
+    "evaluation set has fewer than 100 cases",
+    "evaluation set is missing scenarios: quality_certificate_profile, ndt_rt_profile, ndt_ut_profile, construction_record_profile, welding_record_profile, qualification_certificate_profile"
+  ]
+}
