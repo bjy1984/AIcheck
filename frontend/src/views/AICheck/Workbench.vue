@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   ElAlert,
   ElButton,
@@ -38,6 +38,8 @@ import {
   getEvidencePackageApi,
   getExportTaskApi,
   getInspectionDateCompareApi,
+  getInspectionAuditOverviewApi,
+  getInspectionAuditWorkspaceApi,
   getNdtInspectionFeedbackDetailApi,
   getNdtReportDetailApi,
   getReportDetailApi,
@@ -100,6 +102,10 @@ import type {
   AiReviewRun,
   EvidenceLink,
   ExportTask,
+  InspectionAuditItem,
+  InspectionAuditItemKey,
+  InspectionAuditOverviewPayload,
+  InspectionAuditWorkspacePayload,
   NdtFeedback,
   NdtFilm,
   NdtSubmissionReadiness,
@@ -189,7 +195,7 @@ import WorkbenchRoleStaticSections from './components/WorkbenchRoleStaticSection
 import WorkbenchRightStaticDetails from './components/WorkbenchRightStaticDetails.vue'
 import WorkbenchSidePanel from './components/WorkbenchSidePanel.vue'
 import WorkbenchStateBanner from './components/WorkbenchStateBanner.vue'
-import AuditWorkflowProgress from './components/AuditWorkflowProgress.vue'
+import AuditItemDirectory from './components/AuditItemDirectory.vue'
 import { useUserStore } from '@/store/modules/user'
 import { formatConfidence } from '@/utils/confidence'
 
@@ -221,15 +227,6 @@ type OperationBlocker = {
   reasons: string[]
 }
 type AiReviewMode = 'formal' | 'gap_precheck'
-type AuditWorkflowStage = {
-  key: string
-  label: string
-  status: 'completed' | 'active' | 'blocked' | 'pending' | 'failed'
-  metric: string
-  detail: string
-  actionKey?: string
-  actionLabel?: string
-}
 type StandardReferenceItem = {
   reference: string
   file?: string
@@ -262,6 +259,7 @@ type LoadNodePackageOptions = {
 }
 
 const route = useRoute()
+const router = useRouter()
 const userStore = useUserStore()
 const loading = ref(false)
 const nodeLoading = ref(false)
@@ -272,6 +270,13 @@ const projectOptions = ref<Project[]>([])
 const activeProjectId = ref('')
 const activeNodeId = ref(24)
 const activeWorkbenchSection = ref<'overview' | 'node'>('overview')
+const activeInspectionAuditItem = ref<InspectionAuditItemKey>('submission')
+const inspectionAuditOverview = ref<InspectionAuditOverviewPayload>()
+const inspectionAuditWorkspace = ref<InspectionAuditWorkspacePayload>()
+const inspectionAuditLoading = ref(false)
+const inspectionAuditIssue = ref<WorkbenchStateIssue>()
+const inspectionAuditItemByNode = ref<Record<number, InspectionAuditItemKey>>({})
+const inspectionRouteSyncing = ref(false)
 const context = ref<WorkbenchContextPayload>()
 const summary = ref<WorkbenchSummaryPayload>()
 const treeGroups = ref<ProjectTreePayload['groups']>([])
@@ -383,19 +388,48 @@ const inspectionNodePage = ref(1)
 const inspectionNodePageSize = ref(6)
 const inspectionNodeSortKey = ref<InspectionNodeSortKey>('review')
 const inspectionNodeSortDirection = ref<SortDirection>('asc')
-const inspectionOverviewJumpItems = [
-  { id: 'inspection-overview-status', label: '节点状态分布' },
-  { id: 'inspection-overview-nodes', label: '节点处理清单' },
-  { id: 'inspection-overview-files', label: '上传文件列表' }
+const inspectionAuditItemKeys: InspectionAuditItemKey[] = [
+  'submission',
+  'ocr',
+  'evidence',
+  'ai_review',
+  'human_review',
+  'report',
+  'archive'
 ]
-const inspectionNodeJumpItems = [
-  { id: 'inspection-node-basis', label: '开展依据' },
-  { id: 'inspection-node-requirements', label: '审查资料' },
-  { id: 'inspection-node-evidence', label: '证据确认' },
-  { id: 'inspection-node-execution', label: 'AI执行步骤' },
-  { id: 'inspection-node-conclusion', label: '审查结论' },
-  { id: 'inspection-node-manual-review', label: '人工审查' }
-]
+const inspectionAuditItemLabels: Record<InspectionAuditItemKey, string> = {
+  submission: '资料提交',
+  ocr: 'OCR 抽取',
+  evidence: '证据确认',
+  ai_review: 'AI 复核',
+  human_review: '人工结论',
+  report: '报告复核',
+  archive: '签发归档'
+}
+const inspectionAuditItemShortLabels: Record<InspectionAuditItemKey, string> = {
+  submission: '资料',
+  ocr: 'OCR',
+  evidence: '证据',
+  ai_review: 'AI',
+  human_review: '人工',
+  report: '报告',
+  archive: '归档'
+}
+const isInspectionAuditItemKey = (value: unknown): value is InspectionAuditItemKey =>
+  inspectionAuditItemKeys.includes(String(value || '') as InspectionAuditItemKey)
+const emptyInspectionAuditItems = (): InspectionAuditItem[] =>
+  inspectionAuditItemKeys.map((key) => ({
+    key,
+    label: inspectionAuditItemLabels[key],
+    status: 'not_started',
+    statusLabel: '状态待加载',
+    metric: '-',
+    summary: '审计项状态正在加载；目录仍可独立切换。',
+    issueCount: 0,
+    issues: [],
+    sourceRefs: [],
+    availableActions: []
+  }))
 
 const role = computed<RoleCode>(() => {
   const path = route.path
@@ -421,7 +455,46 @@ const nodeScopedFiles = computed(() => {
   const documentIds = new Set(bindings.value.map((binding) => binding.documentId))
   return (nodePackage.value?.projectFiles || []).filter((file) => documentIds.has(file.id))
 })
+const inspectionAuditItems = computed<InspectionAuditItem[]>(() =>
+  inspectionAuditWorkspace.value?.items?.length
+    ? inspectionAuditWorkspace.value.items
+    : emptyInspectionAuditItems()
+)
+const activeInspectionAuditItemData = computed(() =>
+  inspectionAuditItems.value.find((item) => item.key === activeInspectionAuditItem.value)
+)
+const inspectionAuditOverviewNodeMap = computed(
+  () =>
+    new Map((inspectionAuditOverview.value?.items || []).map((item) => [item.node.nodeId, item]))
+)
+const inspectionAuditStatusSummaryRows = computed(() => {
+  const summary = inspectionAuditOverview.value?.summary
+  return [
+    { key: 'not_started', label: '未开始', value: summary?.not_started || 0 },
+    { key: 'in_progress', label: '处理中', value: summary?.in_progress || 0 },
+    { key: 'needs_attention', label: '需关注', value: summary?.needs_attention || 0 },
+    { key: 'failed', label: '执行失败', value: summary?.failed || 0 },
+    { key: 'completed', label: '已完成', value: summary?.completed || 0 }
+  ] as const
+})
+const inspectionNodeReports = computed(() =>
+  role.value === 'inspection'
+    ? reports.value.filter((report) => report.nodeIds.includes(activeNodeId.value))
+    : reports.value
+)
+const inspectionNodeArchiveItems = computed(() =>
+  role.value === 'inspection'
+    ? archiveItems.value.filter((item) => Number(item.nodeId || 0) === activeNodeId.value)
+    : archiveItems.value
+)
 const extractedFields = computed(() => nodePackage.value?.extractedFields || [])
+const extractedFieldCountByVersion = computed(() => {
+  const counts = new Map<string, number>()
+  for (const field of extractedFields.value) {
+    counts.set(field.documentVersionId, (counts.get(field.documentVersionId) || 0) + 1)
+  }
+  return counts
+})
 const rectifications = computed(() => nodePackage.value?.rectifications || [])
 const reviewOpinions = computed(() => nodePackage.value?.reviewOpinions || [])
 const latestAiRun = computed(() => nodePackage.value?.aiRuns[0])
@@ -667,14 +740,6 @@ const visibleTreeGroups = computed<ProjectTreePayload['groups']>(() =>
     ? contractorFeedbackTreeGroups.value
     : treeGroups.value
 )
-const inspectionProjectNodeStatusRows = computed(() => {
-  const counts: Record<string, number> = {}
-  for (const node of projectTreeNodes.value) {
-    counts[node.status] = (counts[node.status] || 0) + 1
-  }
-  const rows = Object.entries(counts).map(([status, count]) => ({ status, count }))
-  return rows.length ? rows : [{ status: '暂无节点', count: 0 }]
-})
 const getInspectionReviewProgress = (
   status?: string
 ): { label: InspectionReviewProgressLabel; rank: number } => {
@@ -760,30 +825,6 @@ const inspectionProjectNodeRows = computed(() => {
 const pagedInspectionProjectNodeRows = computed(() => {
   const start = (inspectionNodePage.value - 1) * inspectionNodePageSize.value
   return inspectionProjectNodeRows.value.slice(start, start + inspectionNodePageSize.value)
-})
-const inspectionNodeStatusBarRows = computed(() => {
-  const totalCount = inspectionProjectNodeStatusRows.value.reduce(
-    (sum, row) => sum + Number(row.count || 0),
-    0
-  )
-  const maxCount = Math.max(...inspectionProjectNodeStatusRows.value.map((row) => row.count), 0)
-  return inspectionProjectNodeStatusRows.value.map((row) => {
-    const tone =
-      row.status === '已通过'
-        ? 'green'
-        : row.status.includes('补正') || row.status.includes('人工')
-          ? 'red'
-          : row.status.includes('预审') || row.status.includes('待审')
-            ? 'orange'
-            : 'blue'
-    return {
-      ...row,
-      tone,
-      percent: totalCount ? Math.round((row.count / totalCount) * 100) : 0,
-      barPercent: maxCount ? Math.max(3, Math.round((row.count / maxCount) * 100)) : 0,
-      ratioText: totalCount ? `${Math.round((row.count / totalCount) * 100)}%` : '0%'
-    }
-  })
 })
 const canShowWorkspace = computed(() => !pageIssue.value && !!activeProjectId.value)
 const roleUserLabel = computed(() => {
@@ -939,183 +980,6 @@ const workbenchAuditCards = computed<AuditSummaryCard[]>(() => {
       tone: 'red'
     }
   ]
-})
-const auditWorkflowStages = computed<AuditWorkflowStage[]>(() => {
-  const files = nodeScopedFiles.value
-  const ocrReadyCount = files.filter((file) => file.ocrReadiness?.status === 'ready').length
-  const ocrIssueCount = files.filter((file) =>
-    ['failed', 'incomplete', 'inconsistent'].includes(file.ocrReadiness?.status || '')
-  ).length
-  const aiRun = latestAiRun.value
-  const aiRunning = aiRun?.status === '推理中'
-  const historicalFormalRun = Boolean(
-    aiRun && aiRun.reviewMode !== 'gap_precheck' && !readyForAiFormal.value
-  )
-  const latestReviewOpinion = reviewOpinions.value[0]
-  const invalidLegacyApproval = Boolean(
-    latestReviewOpinion?.result === '满足要求' &&
-      (!latestReviewOpinion.evidenceLinkIds?.length ||
-        latestReviewOpinion.evidenceValidation?.passed !== true ||
-        latestReviewOpinion.readinessSnapshot?.readyForAiFormal !== true)
-  )
-  const hasReviewOpinion = Boolean(latestReviewOpinion && !invalidLegacyApproval)
-  const reportsRequireRevalidation = reports.value.length > 0 && !hasReviewOpinion
-  const archiveRequiresRevalidation = archiveItems.value.length > 0 && reportsRequireRevalidation
-  return [
-    {
-      key: 'materials',
-      label: '资料提交',
-      status: files.length ? 'completed' : 'active',
-      metric: `${files.length} 份`,
-      detail: files.length
-        ? '责任方提交的资料已挂载至当前节点，等待监检核验。'
-        : '责任方尚未提交当前节点资料；监检人员仅核验、催办和退回补正。',
-      actionKey: files.length ? undefined : 'review_missing_materials',
-      actionLabel: files.length ? undefined : '查看缺项'
-    },
-    {
-      key: 'ocr',
-      label: 'OCR 抽取',
-      status: ocrIssueCount
-        ? 'blocked'
-        : files.length && ocrReadyCount === files.length
-          ? 'completed'
-          : 'active',
-      metric: `${ocrReadyCount}/${files.length || 0} 就绪`,
-      detail: ocrIssueCount
-        ? `${ocrIssueCount} 份产物异常或缺少 bbox。`
-        : '以 parse result 和 bbox 判断就绪。',
-      actionKey: ocrIssueCount ? 'inspect_ocr_results' : undefined,
-      actionLabel: ocrIssueCount ? '查看异常' : undefined
-    },
-    {
-      key: 'evidence',
-      label: '证据确认',
-      status: readyForAiFormal.value
-        ? 'completed'
-        : evidenceReadiness.value
-          ? 'blocked'
-          : 'pending',
-      metric: `${evidenceReadiness.value?.satisfiedCount || 0}/${evidenceReadiness.value?.requiredCount || 0}`,
-      detail: readinessBlockingReasons.value[0] || '必传审查点已由 confirmed 证据覆盖。',
-      actionKey: evidenceReadiness.value?.pendingCount ? 'review_evidence' : undefined,
-      actionLabel: evidenceReadiness.value?.pendingCount ? '确认证据' : undefined
-    },
-    {
-      key: 'ai',
-      label: 'AI 复核',
-      status: aiRunning
-        ? 'active'
-        : aiRun?.status === '失败'
-          ? 'failed'
-          : historicalFormalRun
-            ? 'blocked'
-            : aiRun
-              ? 'completed'
-              : 'pending',
-      metric: aiRun
-        ? historicalFormalRun
-          ? '历史正式复核'
-          : aiRun.reviewMode === 'gap_precheck'
-            ? '缺项预审'
-            : '正式复核'
-        : '未运行',
-      detail: historicalFormalRun
-        ? '历史运行不满足当前证据闸门，仅供追溯；请重新执行缺项预审。'
-        : aiRun
-          ? `${aiRun.advisoryOnly ? '建议模式' : '正式模式'} · ${aiRun.status}`
-          : aiReviewModeHint.value,
-      actionKey:
-        !aiRunning && availableAiReviewModes.value.length
-          ? readyForAiFormal.value
-            ? 'run_formal_review'
-            : 'run_gap_precheck'
-          : undefined,
-      actionLabel: '前往复核'
-    },
-    {
-      key: 'human',
-      label: '人工结论',
-      status: invalidLegacyApproval
-        ? 'blocked'
-        : hasReviewOpinion
-          ? 'completed'
-          : aiRun
-            ? 'active'
-            : 'pending',
-      metric: invalidLegacyApproval ? '历史意见待重验' : hasReviewOpinion ? '已保存' : '待处理',
-      detail: invalidLegacyApproval
-        ? '历史满足要求意见缺少现行 confirmed evidence 校验，不作为有效正式结论。'
-        : hasReviewOpinion
-          ? '人工意见和证据引用已保存。'
-          : 'AI 建议必须由监检人员确认。',
-      actionKey: aiRun && !hasReviewOpinion ? 'save_review_opinion' : undefined,
-      actionLabel: aiRun && !hasReviewOpinion ? '填写结论' : undefined
-    },
-    {
-      key: 'report',
-      label: '报告复核',
-      status: reportsRequireRevalidation
-        ? 'blocked'
-        : reports.value.length
-          ? 'completed'
-          : hasReviewOpinion
-            ? 'active'
-            : 'pending',
-      metric: `${reports.value.length} 份${reportsRequireRevalidation ? '待校验' : ''}`,
-      detail: reportsRequireRevalidation
-        ? '历史报告缺少当前有效人工结论支撑，不可直接进入归档。'
-        : reports.value.length
-          ? '报告已生成并进入复核。'
-          : '人工结论完成后生成报告。',
-      actionKey: hasReviewOpinion && !reports.value.length ? 'review_report' : undefined,
-      actionLabel: hasReviewOpinion && !reports.value.length ? '前往报告' : undefined
-    },
-    {
-      key: 'archive',
-      label: '签发归档',
-      status: archiveRequiresRevalidation
-        ? 'blocked'
-        : archiveItems.value.length
-          ? 'completed'
-          : reports.value.length
-            ? 'active'
-            : 'pending',
-      metric: `${archiveItems.value.length} 项${archiveRequiresRevalidation ? '待校验' : ''}`,
-      detail: archiveRequiresRevalidation
-        ? '历史归档记录保留追溯，但当前节点需先完成证据和报告校验。'
-        : archiveItems.value.length
-          ? '归档资料可追溯。'
-          : '签发且证据校验通过后归档。',
-      actionKey: reports.value.length && !archiveItems.value.length ? 'review_archive' : undefined,
-      actionLabel: reports.value.length && !archiveItems.value.length ? '查看归档条件' : undefined
-    }
-  ]
-})
-const recommendedAuditWorkflowAction = computed(() => {
-  const files = nodeScopedFiles.value
-  if (!files.length) return 'review_missing_materials'
-  if (
-    files.some((file) =>
-      ['failed', 'incomplete', 'inconsistent'].includes(file.ocrReadiness?.status || '')
-    )
-  ) {
-    return 'inspect_ocr_results'
-  }
-  if (
-    !readyForAiFormal.value &&
-    readyForGapPrecheck.value &&
-    latestAiRun.value?.reviewMode !== 'gap_precheck'
-  ) {
-    return 'run_gap_precheck'
-  }
-  if (evidenceReadiness.value?.pendingCount) return 'review_evidence'
-  if (readyForAiFormal.value && latestAiRun.value?.reviewMode !== 'formal')
-    return 'run_formal_review'
-  if (latestAiRun.value && !reviewOpinions.value.length) return 'save_review_opinion'
-  if (reviewOpinions.value.length && !reports.value.length) return 'review_report'
-  if (reports.value.length && !archiveItems.value.length) return 'review_archive'
-  return undefined
 })
 const overviewFileVersionMap = computed(
   () => new Map((nodePackage.value?.availableVersions || []).map((item) => [item.id, item]))
@@ -1921,6 +1785,102 @@ const showExportTaskError = (fallback: string, error?: unknown) => {
   ElMessage.error(message)
 }
 
+const loadInspectionAuditOverview = async () => {
+  if (!activeProjectId.value || role.value !== 'inspection') {
+    inspectionAuditOverview.value = undefined
+    return
+  }
+  inspectionAuditLoading.value = true
+  try {
+    const res = await getInspectionAuditOverviewApi(activeProjectId.value, { pageSize: 200 })
+    if (!res) {
+      inspectionAuditOverview.value = undefined
+      inspectionAuditIssue.value = {
+        type: 'error',
+        title: '审计状态矩阵加载失败',
+        message: '节点资料仍可查看，但独立审计项状态暂不可用。'
+      }
+      return
+    }
+    inspectionAuditOverview.value = res.data
+    inspectionAuditIssue.value = undefined
+  } catch (error) {
+    inspectionAuditOverview.value = undefined
+    inspectionAuditIssue.value = {
+      type: 'error',
+      title: '审计状态矩阵加载失败',
+      message: getErrorMessage(error)
+    }
+  } finally {
+    inspectionAuditLoading.value = false
+  }
+}
+
+const loadInspectionAuditWorkspace = async (nodeId = activeNodeId.value) => {
+  if (!activeProjectId.value || role.value !== 'inspection') {
+    inspectionAuditWorkspace.value = undefined
+    return
+  }
+  inspectionAuditLoading.value = true
+  try {
+    const res = await getInspectionAuditWorkspaceApi(activeProjectId.value, nodeId)
+    if (!res) {
+      inspectionAuditWorkspace.value = undefined
+      inspectionAuditIssue.value = {
+        type: 'error',
+        title: '审计项目录状态加载失败',
+        message: '各审计项仍可切换，状态将在重新加载后恢复。'
+      }
+      return
+    }
+    inspectionAuditWorkspace.value = res.data
+    if (inspectionAuditOverview.value) {
+      const nextRows = inspectionAuditOverview.value.items.map((row) =>
+        row.node.nodeId === res.data.node.nodeId
+          ? {
+              node: res.data.node,
+              items: res.data.items,
+              latestActivityAt:
+                res.data.items
+                  .map((item) => item.updatedAt || '')
+                  .sort()
+                  .at(-1) || undefined
+            }
+          : row
+      )
+      const nextStatusCounts = {
+        not_started: 0,
+        in_progress: 0,
+        needs_attention: 0,
+        failed: 0,
+        completed: 0
+      }
+      for (const row of nextRows) {
+        for (const item of row.items) nextStatusCounts[item.status] += 1
+      }
+      inspectionAuditOverview.value = {
+        ...inspectionAuditOverview.value,
+        items: nextRows,
+        summary: {
+          nodeCount: inspectionAuditOverview.value.total,
+          ...nextStatusCounts
+        },
+        dataAsOf: res.data.dataAsOf
+      }
+    }
+    inspectionAuditIssue.value = undefined
+  } catch (error) {
+    inspectionAuditWorkspace.value = undefined
+    inspectionAuditIssue.value = {
+      type: 'error',
+      title: '审计项目录状态加载失败',
+      message: getErrorMessage(error)
+    }
+  } finally {
+    inspectionAuditLoading.value = false
+  }
+}
+
 const loadNodePackage = async (
   nodeId = activeNodeId.value,
   options: LoadNodePackageOptions = {}
@@ -1950,7 +1910,10 @@ const loadNodePackage = async (
     }
     nodePackage.value = res.data
     activeNodeId.value = res.data.node.nodeId
-    await loadInspectionDetails(res.data.node.nodeId)
+    await Promise.all([
+      loadInspectionDetails(res.data.node.nodeId),
+      loadInspectionAuditWorkspace(res.data.node.nodeId)
+    ])
   } catch (error) {
     if (!options.silent) {
       nodePackage.value = undefined
@@ -2175,10 +2138,10 @@ const loadProjectBundle = async (options: LoadProjectBundleOptions = {}) => {
     if (role.value === 'ndt') {
       reports.value = []
       archiveItems.value = []
+      inspectionAuditOverview.value = undefined
       await loadNdtData()
     } else {
-      await loadReportArchive()
-      await loadNdtData()
+      await Promise.all([loadReportArchive(), loadNdtData(), loadInspectionAuditOverview()])
     }
     await loadNodePackage(
       options.preserveSelection ? activeNodeId.value : contextRes.data.currentNodeId
@@ -2225,8 +2188,28 @@ const loadProjects = async () => {
       }
       return
     }
-    activeProjectId.value = res.data[0]?.id || ''
-    await loadProjectBundle()
+    const requestedProjectId = String(route.query.projectId || '')
+    activeProjectId.value =
+      res.data.find((project) => project.id === requestedProjectId)?.id || res.data[0]?.id || ''
+    const requestedNodeId = Number(route.query.nodeId || 0)
+    const preserveRouteSelection =
+      role.value === 'inspection' && Number.isFinite(requestedNodeId) && requestedNodeId > 0
+    if (preserveRouteSelection) {
+      activeNodeId.value = requestedNodeId
+      activeWorkbenchSection.value = 'node'
+      activeInspectionAuditItem.value = isInspectionAuditItemKey(route.query.auditItem)
+        ? route.query.auditItem
+        : 'submission'
+    }
+    await loadProjectBundle({ preserveSelection: preserveRouteSelection })
+    if (role.value === 'inspection' && !route.query.projectId) {
+      await updateInspectionRoute(
+        preserveRouteSelection
+          ? { nodeId: activeNodeId.value, auditItem: activeInspectionAuditItem.value }
+          : { overview: true },
+        'replace'
+      )
+    }
   } catch (error) {
     pageIssue.value = {
       type: 'error',
@@ -2251,13 +2234,28 @@ const scrollToRoleFeedbackList = async (elementId: string) => {
   document.getElementById(elementId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-const handleInspectionOverviewJump = async (elementId: string) => {
-  await nextTick()
-  document.getElementById(elementId)?.scrollIntoView({
-    behavior: 'smooth',
-    block: 'start',
-    inline: 'nearest'
-  })
+const updateInspectionRoute = async (
+  target: { nodeId?: number; auditItem?: InspectionAuditItemKey; overview?: boolean },
+  mode: 'push' | 'replace' = 'push'
+) => {
+  if (role.value !== 'inspection') return
+  const query: Record<string, string> = { projectId: activeProjectId.value }
+  if (!target.overview && target.nodeId) {
+    query.nodeId = String(target.nodeId)
+    query.auditItem = target.auditItem || activeInspectionAuditItem.value
+  }
+  const navigation = { path: route.path, query }
+  if (mode === 'replace') await router.replace(navigation)
+  else await router.push(navigation)
+}
+
+const handleInspectionAuditSelect = async (item: InspectionAuditItem) => {
+  activeInspectionAuditItem.value = item.key
+  inspectionAuditItemByNode.value = {
+    ...inspectionAuditItemByNode.value,
+    [activeNodeId.value]: item.key
+  }
+  await updateInspectionRoute({ nodeId: activeNodeId.value, auditItem: item.key })
 }
 
 const handleProjectChange = async () => {
@@ -2265,6 +2263,10 @@ const handleProjectChange = async () => {
   submissionSnapshots.value = []
   restoredSubmissionDraft.value = undefined
   activeWorkbenchSection.value = 'overview'
+  inspectionAuditWorkspace.value = undefined
+  if (role.value === 'inspection') {
+    await updateInspectionRoute({ overview: true }, 'replace')
+  }
   await loadProjectBundle()
 }
 
@@ -2272,6 +2274,17 @@ const handleNodeSelect = async (node: ProjectTreeNode) => {
   mobileTreeOpen.value = false
   activeWorkbenchSection.value = 'node'
   activeNodeId.value = node.nodeId
+  if (role.value === 'inspection') {
+    const routeItem = isInspectionAuditItemKey(route.query.auditItem)
+      ? route.query.auditItem
+      : undefined
+    activeInspectionAuditItem.value =
+      inspectionAuditItemByNode.value[node.nodeId] || routeItem || 'submission'
+    await updateInspectionRoute({
+      nodeId: node.nodeId,
+      auditItem: activeInspectionAuditItem.value
+    })
+  }
   await loadNodePackage(node.nodeId)
   if (role.value === 'contractor') {
     await scrollToRoleFeedbackList('contractor-feedback-list')
@@ -2284,6 +2297,25 @@ const handleNodeSelect = async (node: ProjectTreeNode) => {
 const handleProjectOverviewSelect = () => {
   mobileTreeOpen.value = false
   activeWorkbenchSection.value = 'overview'
+  if (role.value === 'inspection') {
+    void updateInspectionRoute({ overview: true })
+  }
+}
+
+const handleInspectionMatrixSelect = async (
+  node: ProjectTreeNode,
+  auditItem: InspectionAuditItemKey
+) => {
+  activeInspectionAuditItem.value = auditItem
+  inspectionAuditItemByNode.value = {
+    ...inspectionAuditItemByNode.value,
+    [node.nodeId]: auditItem
+  }
+  mobileTreeOpen.value = false
+  activeWorkbenchSection.value = 'node'
+  activeNodeId.value = node.nodeId
+  await updateInspectionRoute({ nodeId: node.nodeId, auditItem })
+  await loadNodePackage(node.nodeId)
 }
 
 const ensureWritableNode = () => {
@@ -3138,33 +3170,6 @@ const handleAiRecheck = async () => {
   }
 }
 
-const handleAuditWorkflowAction = async (actionKey: string) => {
-  if (actionKey === 'run_formal_review' || actionKey === 'run_gap_precheck') {
-    selectedAiReviewMode.value = actionKey === 'run_formal_review' ? 'formal' : 'gap_precheck'
-    await handleInspectionOverviewJump('inspection-node-ai-review')
-    return
-  }
-  if (actionKey === 'inspect_ocr_results') {
-    const issueFile = nodeScopedFiles.value.find((file) =>
-      ['failed', 'incomplete', 'inconsistent'].includes(file.ocrReadiness?.status || '')
-    )
-    if (issueFile) {
-      await handleOpenFileDetail(issueFile.id)
-      return
-    }
-  }
-  const targetMap: Record<string, string> = {
-    review_missing_materials: 'inspection-node-requirements',
-    inspect_ocr_results: 'inspection-node-requirements',
-    review_evidence: 'inspection-node-evidence',
-    save_review_opinion: 'inspection-node-manual-review',
-    review_report: 'inspection-node-report-archive',
-    review_archive: 'inspection-node-report-archive'
-  }
-  const targetId = targetMap[actionKey]
-  if (targetId) await handleInspectionOverviewJump(targetId)
-}
-
 const handleSaveReviewOpinion = async () => {
   if (!ensureWritableNode()) return
   if (reviewSaveDisabledReason.value) {
@@ -3780,6 +3785,52 @@ watch(
 )
 
 watch(
+  () => [route.query.projectId, route.query.nodeId, route.query.auditItem] as const,
+  async ([projectIdQuery, nodeIdQuery, auditItemQuery]) => {
+    if (
+      role.value !== 'inspection' ||
+      inspectionRouteSyncing.value ||
+      !projectOptions.value.length
+    ) {
+      return
+    }
+    const targetProjectId = String(projectIdQuery || activeProjectId.value)
+    if (!projectOptions.value.some((project) => project.id === targetProjectId)) return
+    const parsedNodeId = Number(nodeIdQuery || 0)
+    const targetNodeId = Number.isFinite(parsedNodeId) && parsedNodeId > 0 ? parsedNodeId : 0
+    const targetItem = isInspectionAuditItemKey(auditItemQuery) ? auditItemQuery : 'submission'
+
+    inspectionRouteSyncing.value = true
+    try {
+      if (targetProjectId !== activeProjectId.value) {
+        activeProjectId.value = targetProjectId
+        activeNodeId.value = targetNodeId || activeNodeId.value
+        activeWorkbenchSection.value = targetNodeId ? 'node' : 'overview'
+        activeInspectionAuditItem.value = targetItem
+        await loadProjectBundle({ preserveSelection: Boolean(targetNodeId) })
+        return
+      }
+      if (!targetNodeId) {
+        activeWorkbenchSection.value = 'overview'
+        return
+      }
+      activeWorkbenchSection.value = 'node'
+      activeInspectionAuditItem.value = targetItem
+      inspectionAuditItemByNode.value = {
+        ...inspectionAuditItemByNode.value,
+        [targetNodeId]: targetItem
+      }
+      if (targetNodeId !== activeNodeId.value) {
+        activeNodeId.value = targetNodeId
+        await loadNodePackage(targetNodeId)
+      }
+    } finally {
+      inspectionRouteSyncing.value = false
+    }
+  }
+)
+
+watch(
   () => activeNodeId.value,
   () => {
     stopAiReviewPolling()
@@ -4088,47 +4139,19 @@ onBeforeUnmount(() => {
                   {{ selectedNode?.inspectionType || '-' }}类节点
                 </span>
               </div>
-              <h1
-                v-if="!(role === 'inspection' && activeWorkbenchSection === 'node')"
-                class="page-title"
-              >
-                {{ currentRoleConfig.title }} · {{ pageHeadline }}
+              <h1 class="page-title">
+                {{
+                  role === 'inspection' && activeWorkbenchSection === 'node'
+                    ? currentNodeLabel
+                    : `${currentRoleConfig.title} · ${pageHeadline}`
+                }}
               </h1>
-              <nav
-                v-if="role === 'inspection' && activeWorkbenchSection === 'overview'"
-                class="inspection-overview-jump-menu"
-                aria-label="项目总览快捷跳转"
-              >
-                <button
-                  v-for="item in inspectionOverviewJumpItems"
-                  :key="item.id"
-                  type="button"
-                  class="inspection-overview-jump-button"
-                  @click="handleInspectionOverviewJump(item.id)"
-                >
-                  {{ item.label }}
-                </button>
-              </nav>
-              <nav
-                v-else-if="role === 'inspection' && activeWorkbenchSection === 'node'"
-                class="inspection-overview-jump-menu"
-                aria-label="节点审查区块快捷跳转"
-              >
-                <button
-                  v-for="item in inspectionNodeJumpItems"
-                  :key="item.id"
-                  type="button"
-                  class="inspection-overview-jump-button"
-                  @click="handleInspectionOverviewJump(item.id)"
-                >
-                  {{ item.label }}
-                </button>
-              </nav>
-              <div
-                v-else-if="!(role === 'inspection' && activeWorkbenchSection === 'node')"
-                class="sub"
-              >
-                {{ pageIntro }}
+              <div class="sub">
+                {{
+                  role === 'inspection' && activeWorkbenchSection === 'node'
+                    ? `${businessBasis?.ruleName || '监检审计节点'} · 当前查看 ${activeInspectionAuditItemData?.label || '资料提交'}`
+                    : pageIntro
+                }}
               </div>
             </div>
             <div class="actions">
@@ -4184,12 +4207,24 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <AuditWorkflowProgress
+          <AuditItemDirectory
             v-if="role === 'inspection' && activeWorkbenchSection === 'node'"
-            :stages="auditWorkflowStages"
-            :recommended-action="recommendedAuditWorkflowAction"
-            :loading="actionLoading"
-            @action="handleAuditWorkflowAction"
+            v-model="activeInspectionAuditItem"
+            :items="inspectionAuditItems"
+            :loading="inspectionAuditLoading"
+            @select="handleInspectionAuditSelect"
+          />
+
+          <WorkbenchStateBanner
+            v-if="
+              role === 'inspection' && activeWorkbenchSection === 'node' && inspectionAuditIssue
+            "
+            class="inspection-audit-state-banner"
+            :type="inspectionAuditIssue.type"
+            :title="inspectionAuditIssue.title"
+            :message="inspectionAuditIssue.message"
+            action-label="重新加载目录状态"
+            @action="loadInspectionAuditWorkspace(activeNodeId)"
           />
 
           <AuditSummaryGrid
@@ -4215,29 +4250,24 @@ onBeforeUnmount(() => {
               >
                 <div class="inspection-chart-head">
                   <div>
-                    <strong>节点状态分布</strong>
-                    <small>按项目树聚合节点状态，定位补正、预审和通过节点。</small>
+                    <strong>审计项状态总览</strong>
+                    <small>七个审计项独立统计；需关注或失败不会阻塞其他审计项。</small>
                   </div>
-                  <span class="pill blue">{{ projectTreeNodes.length }} 个节点</span>
+                  <span class="pill blue">
+                    {{ inspectionAuditOverview?.summary.nodeCount || projectTreeNodes.length }}
+                    个节点
+                  </span>
                 </div>
-                <div class="inspection-node-status-bars" aria-label="项目节点状态分布图">
+                <div class="inspection-audit-status-summary" aria-label="独立审计项状态统计">
                   <article
-                    v-for="row in inspectionNodeStatusBarRows"
-                    :key="row.status"
-                    :class="[
-                      'inspection-node-status-row',
-                      `inspection-node-status-row--${row.tone}`
-                    ]"
-                    :aria-label="`${row.status}：${row.count} 个节点，占比 ${row.percent}%`"
+                    v-for="row in inspectionAuditStatusSummaryRows"
+                    :key="row.key"
+                    :class="['inspection-audit-status-card', `is-${row.key}`]"
+                    :aria-label="`${row.label}：${row.value} 个审计项`"
                   >
-                    <span>{{ row.status }}</span>
-                    <div class="inspection-node-status-track">
-                      <i :style="{ width: `${row.barPercent}%` }"></i>
-                    </div>
-                    <strong>
-                      {{ row.count }}
-                      <small>{{ row.ratioText }}</small>
-                    </strong>
+                    <span>{{ row.label }}</span>
+                    <strong>{{ row.value }}</strong>
+                    <small>审计项</small>
                   </article>
                 </div>
               </article>
@@ -4274,15 +4304,7 @@ onBeforeUnmount(() => {
                             资料齐全度 {{ getInspectionNodeSortIndicator('material') }}
                           </button>
                         </th>
-                        <th>
-                          <button
-                            type="button"
-                            class="inspection-node-sort-button"
-                            @click="handleInspectionNodeSort('review')"
-                          >
-                            审查进度 {{ getInspectionNodeSortIndicator('review') }}
-                          </button>
-                        </th>
+                        <th>七项独立审计状态</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -4318,10 +4340,27 @@ onBeforeUnmount(() => {
                             {{ row.missingText }}
                           </small>
                         </td>
-                        <td>
-                          <span :class="['pill', getPillClass(row.reviewProgress)]">
-                            {{ row.reviewProgress }}
-                          </span>
+                        <td class="inspection-audit-matrix-cell">
+                          <div
+                            v-if="inspectionAuditOverviewNodeMap.get(row.node.nodeId)"
+                            class="inspection-audit-matrix"
+                            :aria-label="`${row.node.name}审计项状态`"
+                          >
+                            <button
+                              v-for="item in inspectionAuditOverviewNodeMap.get(row.node.nodeId)
+                                ?.items || []"
+                              :key="item.key"
+                              type="button"
+                              :class="['inspection-audit-matrix-item', `is-${item.status}`]"
+                              :title="`${item.label}：${item.statusLabel}；${item.metric}；${item.summary}`"
+                              @click="handleInspectionMatrixSelect(row.node, item.key)"
+                            >
+                              <span>{{ inspectionAuditItemShortLabels[item.key] }}</span>
+                              <i aria-hidden="true"></i>
+                              <small>{{ item.statusLabel }}</small>
+                            </button>
+                          </div>
+                          <span v-else class="inspection-audit-matrix-loading">状态加载中</span>
                         </td>
                       </tr>
                       <tr v-if="!inspectionProjectNodeRows.length">
@@ -4476,9 +4515,14 @@ onBeforeUnmount(() => {
 
           <section
             v-if="
-              role === 'inspection' && activeWorkbenchSection === 'node' && hasAction('ai:recheck')
+              role === 'inspection' &&
+              activeWorkbenchSection === 'node' &&
+              activeInspectionAuditItem === 'ai_review' &&
+              hasAction('ai:recheck')
             "
-            id="inspection-node-ai-review"
+            id="inspection-audit-panel-ai_review"
+            role="tabpanel"
+            aria-label="AI 复核"
             class="node-ai-recheck-top"
           >
             <div class="node-ai-recheck-actions">
@@ -4541,12 +4585,79 @@ onBeforeUnmount(() => {
           </section>
 
           <section
-            v-if="role === 'inspection' && activeWorkbenchSection === 'node'"
-            id="inspection-node-basis"
+            v-if="
+              role === 'inspection' &&
+              activeWorkbenchSection === 'node' &&
+              activeInspectionAuditItem === 'ocr'
+            "
+            id="inspection-audit-panel-ocr"
+            role="tabpanel"
+            aria-label="OCR 抽取"
+            class="card inspection-ocr-panel"
+          >
+            <div class="card-head">
+              <h2>OCR 抽取与定位质量</h2>
+              <div class="sub">仅展示当前节点挂载文档的当前版本</div>
+            </div>
+            <div class="card-body">
+              <ElTable :data="nodeScopedFiles" border class="inspection-ocr-table">
+                <ElTableColumn prop="fileName" label="文件" min-width="230" show-overflow-tooltip />
+                <ElTableColumn label="执行状态" width="126">
+                  <template #default="{ row }">
+                    <span
+                      :class="['pill', getPillClass(ocrReadinessLabel(row.ocrReadiness?.status))]"
+                    >
+                      {{ ocrReadinessLabel(row.ocrReadiness?.status) }}
+                    </span>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn label="字段" width="88">
+                  <template #default="{ row }">
+                    {{ extractedFieldCountByVersion.get(row.currentVersionId) || 0 }}
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn label="定位覆盖" width="116">
+                  <template #default="{ row }">
+                    {{ Math.round((row.ocrReadiness?.bboxCoverage || 0) * 100) }}%
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn label="当前说明" min-width="250">
+                  <template #default="{ row }">
+                    {{
+                      row.ocrReadiness?.blockingReasons?.[0]?.message ||
+                      (row.ocrReadiness?.status === 'ready'
+                        ? '抽取产物及证据定位已就绪。'
+                        : '等待 OCR 任务产物。')
+                    }}
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn label="操作" width="96" fixed="right">
+                  <template #default="{ row }">
+                    <ElButton text type="primary" @click="handleOpenFileDetail(row.id)">
+                      查看
+                    </ElButton>
+                  </template>
+                </ElTableColumn>
+              </ElTable>
+              <div v-if="!nodeScopedFiles.length" class="inspection-audit-empty">
+                当前节点暂无挂载文档；这不会阻止查看或办理其他审计项。
+              </div>
+            </div>
+          </section>
+
+          <section
+            v-if="
+              role === 'inspection' &&
+              activeWorkbenchSection === 'node' &&
+              ['submission', 'evidence'].includes(activeInspectionAuditItem)
+            "
+            :id="`inspection-audit-panel-${activeInspectionAuditItem}`"
+            role="tabpanel"
+            :aria-label="activeInspectionAuditItemData?.label"
             class="card"
           >
             <div class="card-head">
-              <h2>一、监检项目开展依据</h2>
+              <h2>监检依据 · {{ activeInspectionAuditItemData?.label }}</h2>
               <div class="sub">{{ businessBasis?.ruleName || selectedNode?.name }}</div>
             </div>
             <div class="card-body">
@@ -4568,7 +4679,11 @@ onBeforeUnmount(() => {
                 </article>
               </div>
 
-              <article id="inspection-node-requirements" class="basis-table-block">
+              <article
+                v-if="activeInspectionAuditItem === 'submission'"
+                id="inspection-node-requirements"
+                class="basis-table-block"
+              >
                 <div class="block-title-row">
                   <h3>审查所需资料</h3>
                   <span class="pill blue">{{ nodeRequirementRows.length }} 项</span>
@@ -4608,9 +4723,49 @@ onBeforeUnmount(() => {
                     </tbody>
                   </table>
                 </div>
+
+                <div class="block-title-row inspection-bound-files-title">
+                  <h3>当前节点已挂载资料</h3>
+                  <span class="pill blue">{{ nodeScopedFiles.length }} 份</span>
+                </div>
+                <ElTable :data="nodeScopedFiles" border class="inspection-bound-files-table">
+                  <ElTableColumn
+                    prop="fileName"
+                    label="文件"
+                    min-width="220"
+                    show-overflow-tooltip
+                  />
+                  <ElTableColumn
+                    prop="sourceOrgName"
+                    label="来源"
+                    min-width="150"
+                    show-overflow-tooltip
+                  />
+                  <ElTableColumn prop="currentOcrStatus" label="OCR" width="110" />
+                  <ElTableColumn label="状态" width="110">
+                    <template #default="{ row }">
+                      <span
+                        :class="[
+                          'pill',
+                          getPillClass(row.primaryBinding?.bindingStatus || row.fileStatus)
+                        ]"
+                      >
+                        {{ row.primaryBinding?.bindingStatus || row.fileStatus }}
+                      </span>
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn label="操作" width="96" fixed="right">
+                    <template #default="{ row }">
+                      <ElButton text type="primary" @click="handleOpenFileDetail(row.id)">
+                        查看
+                      </ElButton>
+                    </template>
+                  </ElTableColumn>
+                </ElTable>
               </article>
 
               <article
+                v-if="activeInspectionAuditItem === 'evidence'"
                 id="inspection-node-evidence"
                 class="basis-table-block evidence-confirmation-block"
               >
@@ -4666,7 +4821,10 @@ onBeforeUnmount(() => {
                 </ElTable>
               </article>
 
-              <article class="standard-reference-block">
+              <article
+                v-if="activeInspectionAuditItem === 'evidence'"
+                class="standard-reference-block"
+              >
                 <div class="block-title-row">
                   <h3>引用标准文件</h3>
                   <span class="pill blue">{{ nodeReferencedStandards.length }} 项</span>
@@ -4718,7 +4876,11 @@ onBeforeUnmount(() => {
           </section>
 
           <section
-            v-if="role === 'inspection' && activeWorkbenchSection === 'node'"
+            v-if="
+              role === 'inspection' &&
+              activeWorkbenchSection === 'node' &&
+              activeInspectionAuditItem === 'ai_review'
+            "
             id="inspection-node-execution"
             class="card node-package-card"
           >
@@ -4770,8 +4932,14 @@ onBeforeUnmount(() => {
           </section>
 
           <section
-            v-if="role === 'inspection' && activeWorkbenchSection === 'node'"
-            id="inspection-node-conclusion"
+            v-if="
+              role === 'inspection' &&
+              activeWorkbenchSection === 'node' &&
+              activeInspectionAuditItem === 'human_review'
+            "
+            id="inspection-audit-panel-human_review"
+            role="tabpanel"
+            aria-label="人工结论"
             class="card conclusion-card"
           >
             <div class="card-head">
@@ -4818,7 +4986,11 @@ onBeforeUnmount(() => {
           </section>
 
           <section
-            v-if="role === 'inspection' && activeWorkbenchSection === 'node'"
+            v-if="
+              role === 'inspection' &&
+              activeWorkbenchSection === 'node' &&
+              activeInspectionAuditItem === 'human_review'
+            "
             id="inspection-node-manual-review"
             class="manual-review-section"
           >
@@ -4923,16 +5095,35 @@ onBeforeUnmount(() => {
           />
 
           <ReportArchivePanel
-            v-if="role !== 'ndt' && role !== 'contractor'"
-            id="inspection-node-report-archive"
+            v-if="
+              role !== 'ndt' &&
+              role !== 'contractor' &&
+              (role !== 'inspection' ||
+                (activeWorkbenchSection === 'node' &&
+                  ['report', 'archive'].includes(activeInspectionAuditItem)))
+            "
+            :id="
+              role === 'inspection'
+                ? `inspection-audit-panel-${activeInspectionAuditItem}`
+                : 'inspection-node-report-archive'
+            "
+            :aria-label="role === 'inspection' ? activeInspectionAuditItemData?.label : undefined"
             :role="role"
+            :aria-role="role === 'inspection' ? 'tabpanel' : undefined"
             :actions="availableActions"
             :package-data="nodePackage"
-            :reports="reports"
-            :archive-items="archiveItems"
+            :reports="inspectionNodeReports"
+            :archive-items="inspectionNodeArchiveItems"
             :recent-export-tasks="recentReadOnlyExportTasks"
             :generate-disabled-reason="reportGenerateDisabledReason"
             :loading="actionLoading"
+            :mode="
+              role === 'inspection'
+                ? activeInspectionAuditItem === 'report'
+                  ? 'report'
+                  : 'archive'
+                : 'combined'
+            "
             @generate-report="handleGenerateReport"
             @export-report="handleExportReport"
             @archive-report="handleArchiveReport"
@@ -6363,6 +6554,57 @@ h3 {
   box-shadow: 0 7px 18px rgb(220 38 38 / 18%);
 }
 
+.inspection-audit-status-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.inspection-audit-status-card {
+  --inspection-status-color: #667085;
+
+  display: grid;
+  min-height: 84px;
+  padding: 11px 12px;
+  background: #fff;
+  border: 1px solid color-mix(in srgb, var(--inspection-status-color) 48%, #fff);
+  border-left: 4px solid var(--inspection-status-color);
+  border-radius: 7px;
+  align-content: center;
+  gap: 3px;
+}
+
+.inspection-audit-status-card.is-in_progress {
+  --inspection-status-color: #2563eb;
+}
+
+.inspection-audit-status-card.is-needs_attention {
+  --inspection-status-color: #b45309;
+}
+
+.inspection-audit-status-card.is-failed {
+  --inspection-status-color: #dc2626;
+}
+
+.inspection-audit-status-card.is-completed {
+  --inspection-status-color: #16803c;
+}
+
+.inspection-audit-status-card span,
+.inspection-audit-status-card small {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--inspection-status-color);
+}
+
+.inspection-audit-status-card strong {
+  font-size: 24px;
+  line-height: 28px;
+  color: #172033;
+  font-variant-numeric: tabular-nums;
+}
+
 .inspection-node-table-wrap {
   margin-top: 10px;
   overflow: auto hidden;
@@ -6371,7 +6613,7 @@ h3 {
 }
 
 .inspection-node-table {
-  min-width: 860px;
+  min-width: 1180px;
   border: 0;
 }
 
@@ -6387,11 +6629,91 @@ h3 {
 }
 
 .inspection-node-table th:nth-child(3),
-.inspection-node-table td:nth-child(3),
-.inspection-node-table th:nth-child(5),
-.inspection-node-table td:nth-child(5) {
+.inspection-node-table td:nth-child(3) {
   width: 108px;
   text-align: center;
+}
+
+.inspection-node-table th:nth-child(5),
+.inspection-node-table td:nth-child(5) {
+  min-width: 520px;
+}
+
+.inspection-audit-matrix {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(64px, 1fr));
+  gap: 6px;
+}
+
+.inspection-audit-matrix-item {
+  --inspection-status-color: #667085;
+
+  display: grid;
+  min-width: 64px;
+  min-height: 52px;
+  padding: 5px 4px;
+  color: #344054;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid var(--inspection-status-color);
+  border-radius: 6px;
+  place-items: center;
+  grid-template-columns: auto 6px;
+  column-gap: 4px;
+  transition:
+    background-color 180ms ease-out,
+    box-shadow 180ms ease-out;
+}
+
+.inspection-audit-matrix-item.is-in_progress {
+  --inspection-status-color: #2563eb;
+}
+
+.inspection-audit-matrix-item.is-needs_attention {
+  --inspection-status-color: #b45309;
+}
+
+.inspection-audit-matrix-item.is-failed {
+  --inspection-status-color: #dc2626;
+}
+
+.inspection-audit-matrix-item.is-completed {
+  --inspection-status-color: #16803c;
+}
+
+.inspection-audit-matrix-item:hover,
+.inspection-audit-matrix-item:focus-visible {
+  background: color-mix(in srgb, var(--inspection-status-color) 8%, #fff);
+  outline: 0;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--inspection-status-color) 30%, transparent);
+}
+
+.inspection-audit-matrix-item span {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.inspection-audit-matrix-item i {
+  width: 6px;
+  height: 6px;
+  background: var(--inspection-status-color);
+  border-radius: 50%;
+}
+
+.inspection-audit-matrix-item small {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  color: var(--inspection-status-color);
+  white-space: nowrap;
+}
+
+.inspection-audit-matrix-loading {
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .inspection-node-table tbody tr.active {
@@ -6927,6 +7249,35 @@ h3 {
   margin-top: 4px;
   line-height: 1.45;
   color: var(--muted);
+}
+
+.inspection-bound-files-title {
+  margin-top: 18px;
+}
+
+.inspection-bound-files-table,
+.inspection-ocr-table {
+  margin-top: 10px;
+}
+
+.inspection-audit-state-banner {
+  margin: 10px 0 12px;
+}
+
+.inspection-ocr-panel {
+  min-height: 300px;
+}
+
+.inspection-audit-empty {
+  padding: 28px 16px;
+  margin-top: 12px;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--muted);
+  text-align: center;
+  background: var(--panel-soft);
+  border: 1px dashed var(--line);
+  border-radius: 6px;
 }
 
 .node-ai-recheck-top {
@@ -7662,6 +8013,14 @@ h3 {
 
   .inspection-overview-card-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .inspection-audit-status-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inspection-audit-status-card:last-child {
+    grid-column: 1 / -1;
   }
 
   .workspace {

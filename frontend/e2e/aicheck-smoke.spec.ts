@@ -626,11 +626,24 @@ const selectProject = async (page: Page, projectName: string) => {
   await expect(select).toContainText(projectName)
 }
 
-const openInspectionNodeSection = async (page: Page, nodeName = '焊工资格证及持证合格项目') => {
+const openInspectionAuditItem = async (page: Page, itemLabel: string) => {
+  const directory = page.getByRole('region', { name: '审计项目录' })
+  await expect(directory).toBeVisible()
+  const item = directory.getByRole('tab', { name: new RegExp(itemLabel) })
+  await expect(item).toBeVisible()
+  await item.click()
+  await expect(item).toHaveAttribute('aria-selected', 'true')
+}
+
+const openInspectionNodeAuditItem = async (
+  page: Page,
+  itemLabel: string,
+  nodeName = '焊工资格证及持证合格项目'
+) => {
   const nodeLink = page.getByRole('link', { name: new RegExp(nodeName) }).first()
   await expect(nodeLink).toBeVisible()
   await nodeLink.click()
-  await expect(page.getByText('四、人工审查操作区')).toBeVisible()
+  await openInspectionAuditItem(page, itemLabel)
 }
 
 test.describe('AIcheck route smoke', () => {
@@ -654,7 +667,9 @@ test.describe('AIcheck route smoke', () => {
     }
   })
 
-  test('login business errors stay visible instead of resolving undefined data', async ({ page }) => {
+  test('login business errors stay visible instead of resolving undefined data', async ({
+    page
+  }) => {
     await page.route('**/api/auth/login', async (route) => {
       await route.fulfill({
         status: 200,
@@ -849,23 +864,64 @@ test.describe('AIcheck route smoke', () => {
       await expect(nodeButtons.first()).toBeVisible()
       await nodeButtons.first().click()
       await expect(nodeNavigation).toBeHidden()
-      const workflowProgress = page.getByRole('region', { name: '审计办理进度' })
-      await expect(workflowProgress).toBeVisible()
-      await expect(workflowProgress.locator('.el-steps')).toHaveClass(/el-steps--vertical/)
-      await expect(workflowProgress.locator('.el-step')).toHaveCount(7)
+      const auditDirectory = page.getByRole('region', { name: '审计项目录' })
+      await expect(auditDirectory).toBeVisible()
+      await expect(auditDirectory.locator('.el-steps')).toHaveClass(/el-steps--horizontal/)
+      await expect(auditDirectory.getByRole('tab')).toHaveCount(7)
+      await expect(auditDirectory.locator('.audit-item-directory__summary')).toBeVisible()
       await expectNoPageOverflow(page)
     }
 
     await page.setViewportSize({ width: 1440, height: 1000 })
     await expect(page.getByRole('button', { name: '审核节点', exact: true })).toBeHidden()
     await expect(page.locator('#audit-node-navigation')).toBeVisible()
-    const desktopWorkflowProgress = page.getByRole('region', { name: '审计办理进度' })
-    await expect(desktopWorkflowProgress.locator('.el-steps')).toHaveClass(/el-steps--horizontal/)
-    await expect(desktopWorkflowProgress.locator('.el-step')).toHaveCount(7)
-    const focusedStage = desktopWorkflowProgress.locator('.audit-workflow-focus')
-    await expect(focusedStage).toBeVisible()
-    await expect(focusedStage).toContainText('当前关注')
+    const desktopAuditDirectory = page.getByRole('region', { name: '审计项目录' })
+    await expect(desktopAuditDirectory.locator('.el-steps')).toHaveClass(/el-steps--horizontal/)
+    await expect(desktopAuditDirectory.getByRole('tab')).toHaveCount(7)
+    const selectedItem = desktopAuditDirectory.locator('.audit-item-directory__item.is-selected')
+    await expect(selectedItem).toHaveCount(1)
+    await expect(selectedItem).toHaveAttribute('aria-selected', 'true')
+    await expect(desktopAuditDirectory.locator('.audit-item-directory__legend')).toContainText(
+      '当前查看'
+    )
     await expectNoPageOverflow(page)
+  })
+
+  test('inspection audit directory supports keyboard selection and restorable deep links', async ({
+    page
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await openRoute(
+      page,
+      routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
+    )
+    await openInspectionNodeAuditItem(page, '证据确认')
+
+    const directory = page.getByRole('region', { name: '审计项目录' })
+    const evidenceItem = directory.getByRole('tab', { name: /证据确认/ })
+    await expect(evidenceItem).toHaveAttribute('aria-selected', 'true')
+    await expect(page).toHaveURL(/auditItem=evidence/)
+
+    await evidenceItem.press('ArrowRight')
+    const aiReviewItem = directory.getByRole('tab', { name: /AI 复核/ })
+    await expect(aiReviewItem).toHaveAttribute('aria-selected', 'true')
+    await expect(page).toHaveURL(/auditItem=ai_review/)
+    await expect(page.locator('#inspection-audit-panel-ai_review')).toBeVisible()
+    await expect
+      .poll(() =>
+        aiReviewItem.locator('.audit-stage-index').evaluate((element) => {
+          return getComputedStyle(element, '::after').animationName
+        })
+      )
+      .toMatch(/^audit-item-ripple/)
+
+    await page.reload()
+    const restoredDirectory = page.getByRole('region', { name: '审计项目录' })
+    await expect(restoredDirectory.getByRole('tab', { name: /AI 复核/ })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+    await expect(page.locator('#inspection-audit-panel-ai_review')).toBeVisible()
   })
 
   test('inspection renders responsible role codes as Chinese labels', async ({ page }) => {
@@ -873,7 +929,7 @@ test.describe('AIcheck route smoke', () => {
       page,
       routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
     )
-    await openInspectionNodeSection(page)
+    await openInspectionNodeAuditItem(page, '资料提交')
 
     const requirements = page.locator('#inspection-node-requirements')
     await expect(requirements).toContainText('施工方')
@@ -889,13 +945,14 @@ test.describe('AIcheck route smoke', () => {
     )
     await page.getByRole('link', { name: '设计单位许可资质', exact: true }).first().click()
 
-    const workflowProgress = page.getByRole('region', { name: '审计办理进度' })
-    await expect(workflowProgress).toContainText('资料提交')
-    await expect(workflowProgress).toContainText('监检人员仅核验、催办和退回补正')
-    await expect(workflowProgress.getByRole('button', { name: '上传资料' })).toHaveCount(0)
-    await expect(workflowProgress.getByRole('button', { name: '查看缺项' })).toBeVisible()
-    await workflowProgress.getByRole('button', { name: '查看缺项' }).click()
-    await expect(page.locator('#inspection-node-requirements')).toBeInViewport()
+    const auditDirectory = page.getByRole('region', { name: '审计项目录' })
+    const submissionItem = auditDirectory.getByRole('tab', { name: /资料提交/ })
+    await expect(submissionItem).toHaveClass(/is-needs_attention/)
+    await expect(auditDirectory.getByRole('button', { name: '上传资料' })).toHaveCount(0)
+    await openInspectionAuditItem(page, 'OCR 抽取')
+    await expect(page.locator('#inspection-audit-panel-ocr')).toBeVisible()
+    await openInspectionAuditItem(page, '资料提交')
+    await expect(page.locator('#inspection-node-requirements')).toBeVisible()
   })
 
   test('inspection standard references use a virtual tree and open the original file', async ({
@@ -911,6 +968,7 @@ test.describe('AIcheck route smoke', () => {
       .filter({ hasText: '11施工组织设计' })
       .first()
       .click()
+    await openInspectionAuditItem(page, '证据确认')
 
     const standardTree = page.locator('.standard-reference-tree')
     await expect(standardTree).toBeVisible()
@@ -1162,7 +1220,7 @@ test.describe('AIcheck live business error mapping', () => {
       page,
       routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
     )
-    await openInspectionNodeSection(page)
+    await openInspectionNodeAuditItem(page, 'AI 复核')
     await page
       .locator('.ai-review-mode-control .el-radio-button')
       .filter({ hasText: '正式复核' })
@@ -1637,6 +1695,7 @@ test.describe('AIcheck business writeback flows', () => {
       routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
     )
     await selectProject(page, '华东成品油管道改造工程')
+    await openInspectionNodeAuditItem(page, '报告复核')
 
     const reportPanel = page.locator('.report-panel')
     const reportExportButtons = reportPanel.getByRole('button', { name: '导出' })
@@ -1671,6 +1730,7 @@ test.describe('AIcheck business writeback flows', () => {
       routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
     )
     await selectProject(page, '华东成品油管道改造工程')
+    await openInspectionNodeAuditItem(page, '报告复核')
 
     const panel = page.locator('.report-panel')
     await panel.locator('.el-table').first().getByRole('button', { name: '详情' }).first().click()
@@ -1719,9 +1779,14 @@ test.describe('AIcheck business writeback flows', () => {
       routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
     )
     await selectProject(page, '华东成品油管道改造工程')
+    await openInspectionNodeAuditItem(page, '签发归档')
 
     const panel = page.locator('.report-panel')
-    await panel.locator('.el-table').nth(1).getByRole('button', { name: '详情' }).first().click()
+    await panel
+      .locator('.archive-items-table')
+      .getByRole('button', { name: '详情' })
+      .first()
+      .click()
 
     const drawer = page.locator('.archive-detail-drawer')
     const issue = drawer.locator('.archive-detail-error').filter({ hasText: 'ARCHIVE_NOT_FOUND' })
@@ -1763,6 +1828,7 @@ test.describe('AIcheck business writeback flows', () => {
       routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
     )
     await selectProject(page, '华东成品油管道改造工程')
+    await openInspectionNodeAuditItem(page, '签发归档')
 
     await page.locator('.report-panel').getByRole('button', { name: '归档包' }).click()
 
@@ -1788,6 +1854,7 @@ test.describe('AIcheck business writeback flows', () => {
       routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
     )
     await selectProject(page, '华东成品油管道改造工程')
+    await openInspectionNodeAuditItem(page, '报告复核')
 
     const panel = page.locator('.report-panel')
     await expect(panel.getByRole('button', { name: '生成报告草稿' })).toBeDisabled()
@@ -1804,6 +1871,7 @@ test.describe('AIcheck business writeback flows', () => {
       routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
     )
     await selectProject(page, '华东成品油管道改造工程')
+    await openInspectionNodeAuditItem(page, '签发归档')
 
     const archiveButton = page.locator('.report-panel button:has-text("归档")').first()
     await expect(archiveButton).toBeDisabled()

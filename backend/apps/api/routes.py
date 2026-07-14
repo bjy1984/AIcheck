@@ -4970,6 +4970,630 @@ def project_tree(request: Request, project_id: str):
     return ok({"project": repo.clone(project), "groups": groups}, request)
 
 
+INSPECTION_AUDIT_ITEM_CONFIG: tuple[tuple[str, str], ...] = (
+    ("submission", "资料提交"),
+    ("ocr", "OCR 抽取"),
+    ("evidence", "证据确认"),
+    ("ai_review", "AI 复核"),
+    ("human_review", "人工结论"),
+    ("report", "报告复核"),
+    ("archive", "签发归档"),
+)
+
+INSPECTION_AUDIT_STATUS_LABELS = {
+    "not_started": "未开始",
+    "in_progress": "处理中",
+    "needs_attention": "需关注",
+    "failed": "执行失败",
+    "completed": "已完成",
+}
+
+INSPECTION_AUDIT_ACTIONS = {
+    "submission": {"project:view", "file:view", "file:preview", "file:download", "submission:submit", "submission:withdraw"},
+    "ocr": {"project:view", "file:view", "file:preview", "file:download"},
+    "evidence": {"project:view", "file:view", "file:preview", "review:save", "ai:recheck"},
+    "ai_review": {"ai:recheck", "ai:adopt", "ai:reject", "file:view", "file:preview"},
+    "human_review": {"review:save", "review:return-correction", "ai:adopt", "ai:reject", "file:view", "file:preview"},
+    "report": {"report:generate", "report:review", "report:export", "report:view"},
+    "archive": {"report:archive", "archive:view", "archive:download", "report:view"},
+}
+
+
+def _inspection_record_time(record: dict[str, Any] | None) -> str | None:
+    if not record:
+        return None
+    for key in ("updatedAt", "finishedAt", "completedAt", "feedbackAt", "createdAt", "submittedAt", "generatedAt", "boundAt"):
+        value = record.get(key)
+        if value:
+            return str(value)
+    return None
+
+
+def _inspection_latest_record(records: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not records:
+        return None
+    return max(records, key=lambda item: _inspection_record_time(item) or "")
+
+
+def _inspection_source_refs(record_type: str, records: list[dict[str, Any]], *, limit: int = 5) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
+    for record in records[:limit]:
+        record_id = (
+            record.get("id")
+            or record.get("submissionId")
+            or record.get("reviewRunId")
+            or record.get("draftId")
+        )
+        if not record_id:
+            continue
+        refs.append(
+            {
+                "type": record_type,
+                "id": str(record_id),
+                "status": record.get("status") or record.get("nextStatus") or record.get("fileStatus") or record.get("bindingStatus"),
+            }
+        )
+    return refs
+
+
+def _inspection_audit_issue(code: str, message: str) -> dict[str, str]:
+    return {"code": code, "message": message}
+
+
+def _inspection_audit_item(
+    key: str,
+    *,
+    status: str,
+    metric: str,
+    summary: str,
+    issues: list[dict[str, str]] | None = None,
+    updated_at: str | None = None,
+    source_refs: list[dict[str, Any]] | None = None,
+    node_actions: list[str] | None = None,
+    relation_status: str | None = None,
+) -> dict[str, Any]:
+    issue_rows = issues or []
+    label = dict(INSPECTION_AUDIT_ITEM_CONFIG)[key]
+    payload = {
+        "key": key,
+        "label": label,
+        "status": status,
+        "statusLabel": INSPECTION_AUDIT_STATUS_LABELS[status],
+        "metric": metric,
+        "summary": summary,
+        "issueCount": len(issue_rows),
+        "issues": issue_rows,
+        "updatedAt": updated_at,
+        "sourceRefs": source_refs or [],
+        "availableActions": [
+            action
+            for action in (node_actions or [])
+            if action in INSPECTION_AUDIT_ACTIONS[key]
+        ],
+    }
+    if relation_status:
+        payload["relationStatus"] = relation_status
+    return payload
+
+
+def _inspection_audit_role_error(request: Request) -> JSONResponse | None:
+    effective_role, identity_error = effective_role_for_request(request)
+    if identity_error:
+        return identity_error
+    if effective_role not in {None, "inspection", "admin"}:
+        return fail(errors.FORBIDDEN, request, message="当前角色无权访问监检审计工作区。")
+    return None
+
+
+def build_inspection_audit_workspace(
+    project_id: str,
+    node_id: int,
+    *,
+    scope: set[int] | None,
+    include_content: bool,
+) -> dict[str, Any] | None:
+    project = repo.require_project(project_id)
+    node = repo.node(project_id, node_id)
+    if not project or not node:
+        return None
+    if scope is not None and node_id not in scope:
+        return None
+
+    project_bindings = [
+        binding
+        for binding in repo.bindings_for_project(project_id)
+        if record_visible_for_scope(binding, scope, project_id=project_id)
+    ]
+    bindings = [
+        repo.clone(binding)
+        for binding in project_bindings
+        if int(binding.get("nodeId") or 0) == int(node_id)
+    ]
+    binding_document_ids = {str(binding.get("documentId")) for binding in bindings if binding.get("documentId")}
+    documents = [
+        attach_document_ocr_readiness(repo, document)
+        for document in repo.project_documents(project_id)
+        if str(document.get("id")) in binding_document_ids and document_visible_in_scope(document, scope)
+    ]
+    document_by_id = {str(document.get("id")): document for document in documents}
+    for document in documents:
+        document_bindings = [binding for binding in bindings if str(binding.get("documentId")) == str(document.get("id"))]
+        document["bindings"] = document_bindings
+        document["primaryBinding"] = document_bindings[0] if document_bindings else None
+
+    requirements = project_requirements_for_node(project_id, node_id)
+    required_requirements = [item for item in requirements if item.get("requiredType") != "可选"]
+
+    def matches_submission_requirement(requirement: dict[str, Any], binding: dict[str, Any]) -> bool:
+        if requirement_matches_binding(requirement, binding):
+            return True
+        document = document_by_id.get(str(binding.get("documentId") or "")) or {}
+        requirement_material = str(requirement.get("materialTypeCode") or "").strip()
+        document_material = str(document.get("materialTypeCode") or "").strip()
+        if requirement_material and requirement_material == document_material:
+            return True
+        binding_name = str(binding.get("requirementName") or "").strip()
+        requirement_text = " ".join(
+            str(requirement.get(key) or "")
+            for key in ("name", "materialTypeName", "fileContent", "reviewContent")
+        )
+        return bool(binding_name and binding_name in requirement_text)
+
+    satisfied_requirements = [
+        requirement
+        for requirement in required_requirements
+        if any(matches_submission_requirement(requirement, binding) for binding in bindings)
+    ]
+    missing_requirements = [item for item in required_requirements if item not in satisfied_requirements]
+    evidence_readiness = build_node_evidence_readiness(repo, project_id, node_id)
+    node_evidence_links = [
+        repo.clone(item)
+        for item in evidence_readiness.get("nodeEvidenceLinks", [])
+        if record_visible_for_scope(item, scope, project_id=project_id)
+    ]
+    version_ids = {str(binding.get("documentVersionId")) for binding in bindings if binding.get("documentVersionId")}
+    extracted_fields = repo.fields_for_versions(version_ids)
+
+    submissions = [
+        repo.clone(item)
+        for item in repo.state.get("submissions", [])
+        if item.get("projectId") == project_id
+        and node_id in {int(value) for value in item.get("nodeIds") or []}
+        and record_visible_for_scope(item, scope, project_id=project_id)
+    ]
+    submission_drafts = [
+        repo.clone(item)
+        for item in repo.state.get("submission_drafts", [])
+        if item.get("projectId") == project_id
+        and node_id in {int(value) for value in item.get("nodeIds") or []}
+        and record_visible_for_scope(item, scope, project_id=project_id)
+    ]
+    ai_runs = [
+        safe_ai_run_view(item)
+        for item in repo.state.get("ai_runs", [])
+        if item.get("projectId") == project_id
+        and int(item.get("nodeId") or 0) == node_id
+        and tenant_id_for_record(item) == tenant_id_for_record(project)
+    ]
+    review_runs = [
+        review_run_view(item)
+        for item in repo.state.get("review_runs", [])
+        if item.get("projectId") == project_id
+        and int(item.get("nodeId") or 0) == node_id
+        and tenant_id_for_record(item) == tenant_id_for_record(project)
+    ]
+    review_opinions = [
+        repo.clone(item)
+        for item in repo.state.get("review_opinions", [])
+        if item.get("projectId") == project_id and int(item.get("nodeId") or 0) == node_id
+    ]
+    rectifications = [
+        repo.clone(item)
+        for item in repo.state.get("rectifications", [])
+        if item.get("projectId") == project_id and int(item.get("nodeId") or 0) == node_id
+    ]
+    reports = [
+        versioned_report(item)
+        for item in repo.state.get("reports", [])
+        if item.get("projectId") == project_id
+        and node_id in {int(value) for value in item.get("nodeIds") or []}
+        and report_visible_in_scope(item, scope)
+    ]
+    archive_items = [
+        repo.clone(item)
+        for item in repo.state.get("archive_items", [])
+        if item.get("projectId") == project_id
+        and int(item.get("nodeId") or 0) == node_id
+        and archive_visible_in_scope(item, scope)
+    ]
+    report_ids = {str(item.get("id")) for item in reports if item.get("id")}
+    export_tasks = [
+        repo.clone(item)
+        for item in repo.state.get("export_tasks", [])
+        if item.get("projectId") == project_id
+        and (
+            int(item.get("nodeId") or 0) == node_id
+            or str(item.get("reportId") or "") in report_ids
+        )
+        and record_visible_for_scope(item, scope, project_id=project_id)
+    ]
+    latest_submission = _inspection_latest_record(submissions)
+    latest_ai_run = _inspection_latest_record(ai_runs)
+    linked_review_run_id = str((latest_ai_run or {}).get("reviewRunId") or "")
+    latest_review_run = next(
+        (
+            item
+            for item in review_runs
+            if str(item.get("reviewRunId") or item.get("id") or "") == linked_review_run_id
+        ),
+        None,
+    ) or _inspection_latest_record(review_runs)
+    latest_opinion = _inspection_latest_record(review_opinions)
+    latest_report = _inspection_latest_record(reports)
+    latest_archive = _inspection_latest_record(archive_items)
+    latest_export = _inspection_latest_record(export_tasks)
+    node_actions = list(node.get("actions") or [])
+
+    submission_issues: list[dict[str, str]] = []
+    if missing_requirements:
+        submission_issues.append(
+            _inspection_audit_issue(
+                "MATERIALS_MISSING",
+                f"仍有 {len(missing_requirements)} 项必传资料未匹配。",
+            )
+        )
+    if any(str(binding.get("bindingStatus")) == "需补正" for binding in bindings):
+        submission_issues.append(_inspection_audit_issue("MATERIALS_RECTIFICATION", "存在需要补正的已挂载资料。"))
+    all_materials_submitted = bool(bindings) and all(
+        str(binding.get("bindingStatus")) in {"已提交", "已通过"} for binding in bindings
+    )
+    if submission_issues:
+        submission_status = "needs_attention"
+    elif latest_submission and all_materials_submitted:
+        submission_status = "completed"
+    elif bindings or submission_drafts:
+        submission_status = "in_progress"
+    else:
+        submission_status = "not_started"
+    submission_metric = (
+        f"{len(satisfied_requirements)}/{len(required_requirements)} 项"
+        if required_requirements
+        else f"{len(bindings)} 份"
+    )
+
+    ocr_statuses = [str((document.get("ocrReadiness") or {}).get("status") or "not_started") for document in documents]
+    ocr_ready_count = sum(1 for status in ocr_statuses if status == "ready")
+    ocr_issues: list[dict[str, str]] = []
+    if any(status == "failed" for status in ocr_statuses):
+        ocr_status = "failed"
+        ocr_issues.append(_inspection_audit_issue("OCR_FAILED", "存在当前版本 OCR 执行失败。"))
+    elif any(status in {"incomplete", "inconsistent"} for status in ocr_statuses):
+        ocr_status = "needs_attention"
+        ocr_issues.append(_inspection_audit_issue("OCR_INCOMPLETE", "存在抽取不完整、产物不一致或定位框缺失。"))
+    elif any(status in {"queued", "processing"} for status in ocr_statuses):
+        ocr_status = "in_progress"
+    elif documents and ocr_ready_count == len(documents):
+        ocr_status = "completed"
+    else:
+        ocr_status = "not_started"
+
+    evidence_issues = [
+        _inspection_audit_issue(str(reason.get("code") or "EVIDENCE_ATTENTION"), str(reason.get("message") or "证据需要人工处理。"))
+        for reason in evidence_readiness.get("blockingReasons") or []
+    ]
+    if not evidence_readiness.get("hasReviewPoints"):
+        evidence_issues.append(_inspection_audit_issue("REVIEW_POINTS_MISSING", "当前节点未配置可核验的资料审查点。"))
+    if evidence_readiness.get("readyForAiFormal"):
+        evidence_status = "completed"
+    elif evidence_issues or int(evidence_readiness.get("missingCount") or 0) > 0:
+        evidence_status = "needs_attention"
+    elif int(evidence_readiness.get("pendingCount") or 0) > 0:
+        evidence_status = "in_progress"
+    else:
+        evidence_status = "not_started"
+
+    ai_run_status = str((latest_ai_run or {}).get("status") or "").lower()
+    review_run_status = str((latest_review_run or {}).get("status") or "").lower()
+    ai_issues: list[dict[str, str]] = []
+    if review_run_status in {"failed", "failed_to_start"} or ai_run_status in {"失败", "failed", "failed_to_start"}:
+        ai_status = "failed"
+        ai_issues.append(
+            _inspection_audit_issue(
+                "AI_REVIEW_FAILED_TO_START" if review_run_status == "failed_to_start" else "AI_REVIEW_FAILED",
+                str((latest_ai_run or {}).get("errorMessage") or (latest_review_run or {}).get("failureReason") or "AI 复核执行失败。"),
+            )
+        )
+    elif review_run_status in {"queued", "running", "retrying"} or ai_run_status in {"推理中", "queued", "running"}:
+        ai_status = "in_progress"
+    elif latest_ai_run and ((latest_ai_run or {}).get("reviewMode") == "gap_precheck" or (latest_ai_run or {}).get("advisoryOnly")):
+        ai_status = "needs_attention"
+        ai_issues.append(_inspection_audit_issue("FORMAL_REVIEW_NOT_RUN", "当前仅完成缺项预审，不能视为正式 AI 复核完成。"))
+    elif latest_ai_run:
+        ai_status = "completed"
+    else:
+        ai_status = "not_started"
+
+    active_rectifications = [item for item in rectifications if str(item.get("status")) != "已关闭"]
+    human_issues: list[dict[str, str]] = []
+    invalid_legacy_opinion = bool(
+        latest_opinion
+        and latest_opinion.get("result") == "满足要求"
+        and (
+            not latest_opinion.get("evidenceLinkIds")
+            or (latest_opinion.get("evidenceValidation") or {}).get("passed") is not True
+            or (latest_opinion.get("readinessSnapshot") or {}).get("readyForAiFormal") is not True
+        )
+    )
+    if invalid_legacy_opinion:
+        human_issues.append(_inspection_audit_issue("LEGACY_OPINION_UNVERIFIED", "历史人工意见缺少当前 confirmed evidence 校验。"))
+    if active_rectifications:
+        human_issues.append(_inspection_audit_issue("RECTIFICATION_OPEN", f"仍有 {len(active_rectifications)} 个补正事项未关闭。"))
+    if human_issues or (latest_opinion and latest_opinion.get("result") == "需补正"):
+        human_status = "needs_attention"
+    elif latest_opinion:
+        human_status = "completed"
+    elif latest_ai_run or review_run_status == "waiting_human_review":
+        human_status = "in_progress"
+    else:
+        human_status = "not_started"
+
+    report_issues: list[dict[str, str]] = []
+    report_relation_status = "linked"
+    if latest_report and not latest_report.get("sourceReviewOpinionId"):
+        report_relation_status = "unlinked_legacy"
+        report_issues.append(_inspection_audit_issue("REPORT_SOURCE_UNLINKED", "历史报告未关联来源人工意见，仅供追溯。"))
+    if latest_report and (latest_report.get("evidenceValidation") or {}).get("passed") is False:
+        report_issues.append(_inspection_audit_issue("REPORT_EVIDENCE_INVALID", "报告证据校验未通过。"))
+    latest_report_status = str((latest_report or {}).get("status") or "")
+    if report_issues:
+        report_status = "needs_attention"
+    elif latest_report_status in {"草稿", "复核中", "待签发"}:
+        report_status = "in_progress"
+    elif latest_report:
+        report_status = "completed"
+    else:
+        report_status = "not_started"
+
+    archive_issues: list[dict[str, str]] = []
+    archive_relation_status = "linked"
+    if latest_archive and not latest_archive.get("reportId"):
+        archive_relation_status = "unlinked_legacy"
+        archive_issues.append(_inspection_audit_issue("ARCHIVE_SOURCE_UNLINKED", "历史归档记录未关联来源报告，仅供追溯。"))
+    if any(
+        str(item.get("verificationStatus") or item.get("integrityStatus") or "") == "legacy_unverified"
+        for item in archive_items
+    ):
+        archive_issues.append(_inspection_audit_issue("LEGACY_UNVERIFIED", "历史归档记录标记为 legacy_unverified。"))
+    export_status = str((latest_export or {}).get("status") or "")
+    if export_status == "失败":
+        archive_status = "failed"
+        archive_issues.append(_inspection_audit_issue("ARCHIVE_EXPORT_FAILED", str((latest_export or {}).get("errorMessage") or "归档导出失败。")))
+    elif archive_issues:
+        archive_status = "needs_attention"
+    elif archive_items:
+        archive_status = "completed"
+    elif export_status in {"排队中", "生成中"}:
+        archive_status = "in_progress"
+    else:
+        archive_status = "not_started"
+
+    items = [
+        _inspection_audit_item(
+            "submission",
+            status=submission_status,
+            metric=submission_metric,
+            summary=(submission_issues[0]["message"] if submission_issues else ("资料已提交并覆盖当前必传要求。" if submission_status == "completed" else "可独立查看当前节点资料和提交记录。")),
+            issues=submission_issues,
+            updated_at=_inspection_record_time(latest_submission) or max((_inspection_record_time(item) or "" for item in bindings), default="") or None,
+            source_refs=[*_inspection_source_refs("submission", submissions), *_inspection_source_refs("binding", bindings)],
+            node_actions=node_actions,
+        ),
+        _inspection_audit_item(
+            "ocr",
+            status=ocr_status,
+            metric=f"{ocr_ready_count}/{len(documents)} 就绪",
+            summary=(ocr_issues[0]["message"] if ocr_issues else ("当前节点文档 OCR 产物均已就绪。" if ocr_status == "completed" else "OCR 状态独立于其他审计项。")),
+            issues=ocr_issues,
+            updated_at=max((_inspection_record_time(item) or "" for item in documents), default="") or None,
+            source_refs=_inspection_source_refs("document", documents),
+            node_actions=node_actions,
+        ),
+        _inspection_audit_item(
+            "evidence",
+            status=evidence_status,
+            metric=f"{int(evidence_readiness.get('satisfiedCount') or 0)}/{int(evidence_readiness.get('requiredCount') or 0)} 已确认",
+            summary=(evidence_issues[0]["message"] if evidence_issues else ("必传审查点已由 confirmed 证据覆盖。" if evidence_status == "completed" else "可独立处理候选证据。")),
+            issues=evidence_issues,
+            updated_at=max((_inspection_record_time(item) or "" for item in node_evidence_links), default="") or None,
+            source_refs=_inspection_source_refs("evidence", node_evidence_links),
+            node_actions=node_actions,
+        ),
+        _inspection_audit_item(
+            "ai_review",
+            status=ai_status,
+            metric=(str((latest_ai_run or {}).get("status") or (latest_review_run or {}).get("status") or "未运行")),
+            summary=(ai_issues[0]["message"] if ai_issues else ("最新正式 AI 复核已完成。" if ai_status == "completed" else "AI 复核可独立发起和追踪。")),
+            issues=ai_issues,
+            updated_at=_inspection_record_time(latest_ai_run) or _inspection_record_time(latest_review_run),
+            source_refs=[*_inspection_source_refs("ai_run", ai_runs), *_inspection_source_refs("review_run", review_runs)],
+            node_actions=node_actions,
+        ),
+        _inspection_audit_item(
+            "human_review",
+            status=human_status,
+            metric=(str((latest_opinion or {}).get("result") or "待处理")),
+            summary=(human_issues[0]["message"] if human_issues else ("人工意见及证据引用已保存。" if human_status == "completed" else "AI 建议不会替代人工结论。")),
+            issues=human_issues,
+            updated_at=_inspection_record_time(latest_opinion) or _inspection_record_time(_inspection_latest_record(rectifications)),
+            source_refs=[*_inspection_source_refs("review_opinion", review_opinions), *_inspection_source_refs("rectification", rectifications)],
+            node_actions=node_actions,
+            relation_status="unlinked_legacy" if invalid_legacy_opinion else "linked",
+        ),
+        _inspection_audit_item(
+            "report",
+            status=report_status,
+            metric=f"{len(reports)} 份{(' · ' + latest_report_status) if latest_report_status else ''}",
+            summary=(report_issues[0]["message"] if report_issues else ("报告已完成复核或签发。" if report_status == "completed" else "可独立查看报告版本和复核状态。")),
+            issues=report_issues,
+            updated_at=_inspection_record_time(latest_report),
+            source_refs=_inspection_source_refs("report", reports),
+            node_actions=node_actions,
+            relation_status=report_relation_status,
+        ),
+        _inspection_audit_item(
+            "archive",
+            status=archive_status,
+            metric=f"{len(archive_items)} 项",
+            summary=(archive_issues[0]["message"] if archive_issues else ("归档资料已形成并可追溯。" if archive_status == "completed" else "可独立查看签发、导出和归档记录。")),
+            issues=archive_issues,
+            updated_at=_inspection_record_time(latest_archive) or _inspection_record_time(latest_export),
+            source_refs=[*_inspection_source_refs("archive", archive_items), *_inspection_source_refs("export_task", export_tasks)],
+            node_actions=node_actions,
+            relation_status=archive_relation_status,
+        ),
+    ]
+
+    enriched_node = enrich_node_with_requirements_summary(project_id, node, project_bindings=project_bindings)
+    payload: dict[str, Any] = {
+        "schemaVersion": "InspectionAuditWorkspace@1.0.0",
+        "project": repo.project_for_role(project, "inspection"),
+        "node": enriched_node,
+        "items": items,
+        "latestActivityAt": max((str(item.get("updatedAt") or "") for item in items), default="") or None,
+        "dataAsOf": server_time(),
+    }
+    if include_content:
+        basis = node_business_basis(project, node_id)
+        payload["content"] = {
+            "submission": {
+                "requirements": repo.clone(requirements),
+                "bindings": bindings,
+                "documents": documents,
+                "drafts": [draft_summary(item) for item in submission_drafts],
+                "submissions": [submission_summary(item) for item in submissions],
+            },
+            "ocr": {
+                "documents": documents,
+                "extractedFields": repo.clone(extracted_fields),
+            },
+            "evidence": {
+                "readiness": repo.clone(evidence_readiness),
+                "links": node_evidence_links,
+                "referencedStandards": repo.clone((basis or {}).get("referencedStandards") or []),
+            },
+            "aiReview": {
+                "aiRuns": ai_runs,
+                "reviewRuns": review_runs,
+            },
+            "humanReview": {
+                "opinions": review_opinions,
+                "rectifications": rectifications,
+            },
+            "report": {"reports": reports},
+            "archive": {"items": archive_items, "exportTasks": export_tasks},
+        }
+        payload["businessBasis"] = basis
+    return payload
+
+
+@router.get("/projects/{project_id}/inspection/audit-overview")
+def inspection_audit_overview(
+    request: Request,
+    project_id: str,
+    keyword: str | None = None,
+    status: str | None = None,
+    page_no: int = Query(default=1, alias="page", ge=1),
+    page_size: int = Query(default=50, alias="pageSize", ge=1, le=200),
+):
+    role_error = _inspection_audit_role_error(request)
+    if role_error:
+        return role_error
+    project = repo.require_project(project_id)
+    if not project:
+        return fail(errors.NOT_FOUND, request)
+    scope = authorized_node_scope(request, project_id)
+    if scope == set():
+        return fail(errors.FORBIDDEN, request)
+    nodes = [
+        node
+        for node in repo.state.get("tree_nodes", [])
+        if node.get("projectId") == project_id and (scope is None or int(node.get("nodeId") or 0) in scope)
+    ]
+    rows = []
+    normalized_keyword = str(keyword or "").strip().lower()
+    normalized_status = str(status or "").strip()
+    for node in nodes:
+        projection = build_inspection_audit_workspace(
+            project_id,
+            int(node["nodeId"]),
+            scope=scope,
+            include_content=False,
+        )
+        if not projection:
+            continue
+        row = {
+            "node": projection["node"],
+            "items": projection["items"],
+            "latestActivityAt": projection.get("latestActivityAt"),
+        }
+        if normalized_keyword:
+            search_text = " ".join(
+                [
+                    str((row["node"] or {}).get("nodeId") or ""),
+                    str((row["node"] or {}).get("name") or ""),
+                    str((row["node"] or {}).get("groupName") or ""),
+                    *[str(item.get("label") or "") for item in row["items"]],
+                    *[str(item.get("summary") or "") for item in row["items"]],
+                ]
+            ).lower()
+            if normalized_keyword not in search_text:
+                continue
+        if normalized_status and not any(item.get("status") == normalized_status for item in row["items"]):
+            continue
+        rows.append(row)
+    rows.sort(key=lambda item: int((item.get("node") or {}).get("nodeId") or 0))
+    status_counts = {key: 0 for key in INSPECTION_AUDIT_STATUS_LABELS}
+    for row in rows:
+        for item in row["items"]:
+            status_counts[str(item["status"])] += 1
+    total = len(rows)
+    start = (page_no - 1) * page_size
+    return ok(
+        {
+            "schemaVersion": "InspectionAuditOverview@1.0.0",
+            "project": repo.project_for_role(project, "inspection"),
+            "summary": {"nodeCount": total, **status_counts},
+            "items": rows[start : start + page_size],
+            "page": page_no,
+            "pageSize": page_size,
+            "total": total,
+            "dataAsOf": server_time(),
+        },
+        request,
+    )
+
+
+@router.get("/projects/{project_id}/inspection/nodes/{node_id}/audit-workspace")
+def inspection_node_audit_workspace(request: Request, project_id: str, node_id: int):
+    role_error = _inspection_audit_role_error(request)
+    if role_error:
+        return role_error
+    if not repo.require_project(project_id):
+        return fail(errors.NOT_FOUND, request)
+    scope = authorized_node_scope(request, project_id)
+    if scope is not None and node_id not in scope:
+        return fail(errors.FORBIDDEN, request)
+    payload = build_inspection_audit_workspace(
+        project_id,
+        node_id,
+        scope=scope,
+        include_content=True,
+    )
+    if not payload:
+        return fail(errors.NOT_FOUND, request)
+    return ok(payload, request)
+
+
 @router.get("/projects/{project_id}/nodes/{node_id}")
 def node_detail(request: Request, project_id: str, node_id: int):
     node = repo.node(project_id, node_id)

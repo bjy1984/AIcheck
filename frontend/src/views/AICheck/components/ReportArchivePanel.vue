@@ -25,16 +25,21 @@ import type {
 } from '@/types/aicheck'
 import { getStatusTagType } from './status'
 
-const props = defineProps<{
-  role: RoleCode
-  actions: ActionCode[]
-  packageData?: NodePackagePayload
-  reports: ReportVersion[]
-  archiveItems: ArchiveItem[]
-  recentExportTasks: ExportTask[]
-  generateDisabledReason?: string
-  loading: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    role: RoleCode
+    actions: ActionCode[]
+    packageData?: NodePackagePayload
+    reports: ReportVersion[]
+    archiveItems: ArchiveItem[]
+    recentExportTasks: ExportTask[]
+    generateDisabledReason?: string
+    loading: boolean
+    mode?: 'report' | 'archive' | 'combined'
+    ariaRole?: string
+  }>(),
+  { mode: 'combined' }
+)
 
 const emit = defineEmits<{
   generateReport: [
@@ -60,6 +65,8 @@ const form = reactive({
 })
 
 const actionSet = computed(() => new Set(props.actions))
+const showReportSection = computed(() => props.mode !== 'archive')
+const showArchiveSection = computed(() => props.mode !== 'report')
 const showGenerateForm = computed(
   () =>
     props.role === 'inspection' &&
@@ -67,7 +74,16 @@ const showGenerateForm = computed(
     Boolean(props.packageData)
 )
 const canGenerate = computed(() => showGenerateForm.value && !props.generateDisabledReason)
-const readonlyLabel = computed(() => (props.role === 'owner' ? '建设方只读' : '报告复核'))
+const readonlyLabel = computed(() => {
+  if (props.role === 'owner') return '建设方只读'
+  if (props.mode === 'archive') return '归档办理'
+  return '报告复核'
+})
+const panelTitle = computed(() => {
+  if (props.mode === 'report') return '报告复核'
+  if (props.mode === 'archive') return '签发归档'
+  return '报告与归档'
+})
 const latestReport = computed(() => props.reports[0])
 const canReadonlyDownload = computed(() => actionSet.value.has('archive:download'))
 const canExport = (report: ReportVersion) =>
@@ -116,113 +132,154 @@ const handleGenerate = () => {
 </script>
 
 <template>
-  <ElCard shadow="never" class="panel report-panel">
+  <ElCard shadow="never" class="panel report-panel" :role="ariaRole">
     <template #header>
       <div class="panel-header">
-        <span>报告与归档</span>
+        <span>{{ panelTitle }}</span>
         <ElTag :type="role === 'owner' ? 'success' : 'info'" effect="plain">
           {{ readonlyLabel }}
         </ElTag>
       </div>
     </template>
 
-    <ElForm v-if="showGenerateForm" label-position="top" class="report-form">
-      <ElFormItem label="生成范围">
-        <ElSelect v-model="form.reportScope">
-          <ElOption label="当前节点" value="currentNode" />
-          <ElOption label="项目范围" value="project" />
-        </ElSelect>
-      </ElFormItem>
-      <ElFormItem label="证据链">
-        <ElCheckbox v-model="form.includeEvidence">包含证据链引用</ElCheckbox>
-      </ElFormItem>
-      <ElButton
-        type="primary"
-        :disabled="!canGenerate"
-        :loading="loading"
+    <template v-if="showReportSection">
+      <ElForm v-if="showGenerateForm" label-position="top" class="report-form">
+        <ElFormItem label="生成范围">
+          <ElSelect v-model="form.reportScope">
+            <ElOption label="当前节点" value="currentNode" />
+            <ElOption label="项目范围" value="project" />
+          </ElSelect>
+        </ElFormItem>
+        <ElFormItem label="证据链">
+          <ElCheckbox v-model="form.includeEvidence">包含证据链引用</ElCheckbox>
+        </ElFormItem>
+        <ElButton
+          type="primary"
+          :disabled="!canGenerate"
+          :loading="loading"
+          :title="generateDisabledReason"
+          @click="handleGenerate"
+        >
+          生成报告草稿
+        </ElButton>
+      </ElForm>
+      <ElAlert
+        v-if="showGenerateForm && generateDisabledReason"
+        class="report-gate-alert"
+        type="warning"
         :title="generateDisabledReason"
-        @click="handleGenerate"
-      >
-        生成报告草稿
-      </ElButton>
-    </ElForm>
-    <ElAlert
-      v-if="showGenerateForm && generateDisabledReason"
-      class="report-gate-alert"
-      type="warning"
-      :title="generateDisabledReason"
-      :closable="false"
-      show-icon
-    />
+        :closable="false"
+        show-icon
+      />
 
-    <div v-if="!showGenerateForm && latestReport" class="latest-report">
-      <span>最新报告</span>
-      <strong>{{ latestReport.reportNo }} · {{ latestReport.versionNo }}</strong>
-      <ElTag :type="getStatusTagType(latestReport.status)" size="small" effect="plain">
-        {{ latestReport.status }}
-      </ElTag>
-    </div>
+      <div v-if="!showGenerateForm && latestReport" class="latest-report">
+        <span>最新报告</span>
+        <strong>{{ latestReport.reportNo }} · {{ latestReport.versionNo }}</strong>
+        <ElTag :type="getStatusTagType(latestReport.status)" size="small" effect="plain">
+          {{ latestReport.status }}
+        </ElTag>
+      </div>
 
-    <ElEmpty
-      v-if="!showGenerateForm && !latestReport"
-      description="暂无报告版本"
-      class="compact-empty"
-    />
+      <ElEmpty
+        v-if="!showGenerateForm && !latestReport"
+        description="暂无报告版本"
+        class="compact-empty"
+      />
 
-    <div class="section-title">报告版本</div>
-    <ElTable :data="reports" border height="160">
-      <ElTableColumn prop="reportNo" label="报告编号" min-width="150" show-overflow-tooltip />
-      <ElTableColumn prop="versionNo" label="版本" width="74" />
-      <ElTableColumn label="状态" width="92">
-        <template #default="{ row }">
-          <ElTag :type="getStatusTagType(row.status)" size="small" effect="plain">
-            {{ row.status }}
-          </ElTag>
-        </template>
-      </ElTableColumn>
-      <ElTableColumn label="操作" width="250">
-        <template #default="{ row }">
-          <ElButton
-            link
-            type="primary"
-            :disabled="!canOpenDetail(row)"
-            @click="emit('openReportDetail', row.id)"
-          >
-            详情
-          </ElButton>
-          <ElButton
-            link
-            type="primary"
-            :disabled="!canPreviewReport(row)"
-            @click="emit('previewReport', row.id)"
-          >
-            预览
-          </ElButton>
-          <ElButton
-            link
-            type="primary"
-            :disabled="!canExport(row)"
-            :loading="loading"
-            @click="emit('exportReport', row.id)"
-          >
-            导出
-          </ElButton>
-          <ElPopconfirm
-            title="确认归档该报告？归档后项目进入只读状态。"
-            width="220"
-            @confirm="emit('archiveReport', row.id)"
-          >
-            <template #reference>
-              <ElButton link type="warning" :disabled="!canArchive(row)" :loading="loading">
-                <span :title="archiveBlockedReason(row)">归档</span>
-              </ElButton>
-            </template>
-          </ElPopconfirm>
-        </template>
-      </ElTableColumn>
-    </ElTable>
+      <div class="section-title">报告版本</div>
+      <ElTable :data="reports" border height="160" class="report-version-table">
+        <ElTableColumn prop="reportNo" label="报告编号" min-width="150" show-overflow-tooltip />
+        <ElTableColumn prop="versionNo" label="版本" width="74" />
+        <ElTableColumn label="状态" width="92">
+          <template #default="{ row }">
+            <ElTag :type="getStatusTagType(row.status)" size="small" effect="plain">
+              {{ row.status }}
+            </ElTag>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="操作" width="250">
+          <template #default="{ row }">
+            <ElButton
+              link
+              type="primary"
+              :disabled="!canOpenDetail(row)"
+              @click="emit('openReportDetail', row.id)"
+            >
+              详情
+            </ElButton>
+            <ElButton
+              link
+              type="primary"
+              :disabled="!canPreviewReport(row)"
+              @click="emit('previewReport', row.id)"
+            >
+              预览
+            </ElButton>
+            <ElButton
+              link
+              type="primary"
+              :disabled="!canExport(row)"
+              :loading="loading"
+              @click="emit('exportReport', row.id)"
+            >
+              导出
+            </ElButton>
+            <ElPopconfirm
+              v-if="mode === 'combined'"
+              title="确认归档该报告？归档后项目进入只读状态。"
+              width="220"
+              @confirm="emit('archiveReport', row.id)"
+            >
+              <template #reference>
+                <ElButton link type="warning" :disabled="!canArchive(row)" :loading="loading">
+                  <span :title="archiveBlockedReason(row)">归档</span>
+                </ElButton>
+              </template>
+            </ElPopconfirm>
+          </template>
+        </ElTableColumn>
+      </ElTable>
+    </template>
 
-    <div v-if="canReadonlyDownload" class="package-actions">
+    <template v-if="mode === 'archive'">
+      <div class="section-title">待签发/归档报告</div>
+      <ElTable :data="reports" border height="150" class="archive-candidates-table">
+        <ElTableColumn prop="reportNo" label="报告编号" min-width="150" show-overflow-tooltip />
+        <ElTableColumn prop="versionNo" label="版本" width="74" />
+        <ElTableColumn label="状态" width="92">
+          <template #default="{ row }">
+            <ElTag :type="getStatusTagType(row.status)" size="small" effect="plain">
+              {{ row.status }}
+            </ElTag>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="操作" width="140" fixed="right">
+          <template #default="{ row }">
+            <ElButton
+              link
+              type="primary"
+              :disabled="!canOpenDetail(row)"
+              @click="emit('openReportDetail', row.id)"
+            >
+              详情
+            </ElButton>
+            <ElPopconfirm
+              title="确认归档该报告？归档后项目进入只读状态。"
+              width="220"
+              @confirm="emit('archiveReport', row.id)"
+            >
+              <template #reference>
+                <ElButton link type="warning" :disabled="!canArchive(row)" :loading="loading">
+                  <span :title="archiveBlockedReason(row)">归档</span>
+                </ElButton>
+              </template>
+            </ElPopconfirm>
+          </template>
+        </ElTableColumn>
+      </ElTable>
+    </template>
+
+    <div v-if="showArchiveSection && canReadonlyDownload" class="package-actions">
       <ElButton :loading="loading" @click="emit('downloadArchivePackage')">归档包</ElButton>
       <ElButton
         :loading="loading"
@@ -232,7 +289,7 @@ const handleGenerate = () => {
       </ElButton>
     </div>
 
-    <div v-if="recentExportTasks.length" class="recent-export-card">
+    <div v-if="showArchiveSection && recentExportTasks.length" class="recent-export-card">
       <div class="recent-export-head">
         <span>最近只读导出</span>
         <ElTag size="small" effect="plain">{{ recentExportTasks.length }} 项</ElTag>
@@ -246,28 +303,30 @@ const handleGenerate = () => {
       </div>
     </div>
 
-    <div class="section-title">归档资料</div>
-    <ElTable :data="archiveItems" border height="170">
-      <ElTableColumn prop="name" label="名称" min-width="180" show-overflow-tooltip />
-      <ElTableColumn prop="type" label="类型" width="78" />
-      <ElTableColumn prop="nodeId" label="节点" width="74" />
-      <ElTableColumn prop="updatedAt" label="更新时间" width="150" />
-      <ElTableColumn label="操作" width="120" fixed="right">
-        <template #default="{ row }">
-          <ElButton link type="primary" @click="emit('openArchiveItemDetail', row.id)">
-            详情
-          </ElButton>
-          <ElButton
-            link
-            type="primary"
-            :disabled="!row.downloadUrl || !canReadonlyDownload"
-            @click="emit('downloadArchiveItem', row)"
-          >
-            下载
-          </ElButton>
-        </template>
-      </ElTableColumn>
-    </ElTable>
+    <template v-if="showArchiveSection">
+      <div class="section-title">归档资料</div>
+      <ElTable :data="archiveItems" border height="170" class="archive-items-table">
+        <ElTableColumn prop="name" label="名称" min-width="180" show-overflow-tooltip />
+        <ElTableColumn prop="type" label="类型" width="78" />
+        <ElTableColumn prop="nodeId" label="节点" width="74" />
+        <ElTableColumn prop="updatedAt" label="更新时间" width="150" />
+        <ElTableColumn label="操作" width="120" fixed="right">
+          <template #default="{ row }">
+            <ElButton link type="primary" @click="emit('openArchiveItemDetail', row.id)">
+              详情
+            </ElButton>
+            <ElButton
+              link
+              type="primary"
+              :disabled="!row.downloadUrl || !canReadonlyDownload"
+              @click="emit('downloadArchiveItem', row)"
+            >
+              下载
+            </ElButton>
+          </template>
+        </ElTableColumn>
+      </ElTable>
+    </template>
   </ElCard>
 </template>
 
