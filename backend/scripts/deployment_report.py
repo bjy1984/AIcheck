@@ -2081,7 +2081,12 @@ def review_orchestration_contract_check(
     require_source_terms(
         "dispatch_review_run",
         source_for_callable(getattr(dispatcher_module, "dispatch_review_run", None)),
-        ["review_orchestration_mode", "create_review_run_from_ai_run", "execute_review_run_inline", "start_temporal_workflow"],
+        ["review_orchestration_mode", "create_review_run_from_ai_run", "dispatch_existing_review_run"],
+    )
+    require_source_terms(
+        "dispatch_existing_review_run",
+        source_for_callable(getattr(dispatcher_module, "dispatch_existing_review_run", None)),
+        ["review_orchestration_mode", "execute_review_run_inline", "start_temporal_workflow", "REVIEW_ORCHESTRATION_DISABLED"],
     )
     require_source_terms(
         "start_temporal_workflow",
@@ -2428,7 +2433,18 @@ def feedback_hr_contract_check(
         "fde_create_evaluation_run",
         source_for_callable(getattr(api_routes_module, "fde_create_evaluation_run", None)),
         [
-            "evaluation_case_results",
+            "LEGACY_NON_CERTIFYING_PROFILE",
+            "PRODUCTION_CERTIFICATION_PROFILE",
+            "fde_create_legacy_non_certifying_evaluation",
+            "fde_create_production_certification_evaluation",
+        ],
+    )
+    require_source_terms(
+        "fde_create_legacy_non_certifying_evaluation",
+        source_for_callable(getattr(api_routes_module, "fde_create_legacy_non_certifying_evaluation", None)),
+        [
+            "fde_build_evaluation_case_results",
+            "fde_evaluation_case_summary",
             "caseResults",
             "caseSummary",
             "casePassRate",
@@ -2436,7 +2452,13 @@ def feedback_hr_contract_check(
             "evidenceCoverage",
             "retrievalRecall",
             "wrongReferenceRate",
+            "fde_persist_evaluation_result",
         ],
+    )
+    require_source_terms(
+        "fde_persist_evaluation_result",
+        source_for_callable(getattr(api_routes_module, "fde_persist_evaluation_result", None)),
+        ["evaluation_case_results", "caseResults", "evaluation_metrics"],
     )
     require_source_terms(
         "fde_build_evaluation_case_results",

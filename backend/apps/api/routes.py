@@ -21599,7 +21599,10 @@ def cancel_knowledge_task(
         else:
             task["status"] = "cancel_failed"
         bump_record_revision(task)
-        repo.append_task_log(task, "info", f"任务取消状态：{task['status']}。")
+        if task["status"] == "已取消":
+            repo.append_task_log(task, "info", f"任务已取消。原因：{cancel_reason}")
+        else:
+            repo.append_task_log(task, "warning", f"任务取消状态：{task['status']}。原因：{cancel_reason}")
         return ok({"task": versioned_record("knowledge-task", task), "revokeResults": revoke_results}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"taskId": task_id, "body": body})
