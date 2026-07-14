@@ -4,6 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000
+    restart: unless-stopped
     environment:
       AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${AICHECK_POSTGRES_DB:-aicheck}
       AICHECK_TENANT_ID: ${AICHECK_TENANT_ID:?AICHECK_TENANT_ID is required}
@@ -36,6 +37,7 @@ services:
       AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
       AICHECK_REQUIRE_AUDIT_ANCHOR: ${AICHECK_REQUIRE_AUDIT_ANCHOR:-true}
       AICHECK_AUDIT_ANCHOR_OBJECT_LOCK: ${AICHECK_AUDIT_ANCHOR_OBJECT_LOCK:?AICHECK_AUDIT_ANCHOR_OBJECT_LOCK must confirm bucket retention}
+      AICHECK_AUDIT_ANCHOR_RETENTION_DAYS: ${AICHECK_AUDIT_ANCHOR_RETENTION_DAYS:-3650}
       AICHECK_JWT_SECRET: ${AICHECK_JWT_SECRET:?AICHECK_JWT_SECRET is required}
       AICHECK_JWT_ISSUER: ${AICHECK_JWT_ISSUER:-aicheck-api}
       AICHECK_JWT_AUDIENCE: ${AICHECK_JWT_AUDIENCE:-aicheck-frontend}
@@ -79,8 +81,6 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
-      workflow-migrate:
-        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -110,6 +110,7 @@ services:
       context: .
       dockerfile: Dockerfile
     command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=${AICHECK_BUSINESS_WORKER_CONCURRENCY:-2} --prefetch-multiplier=1 -Q business.light
+    restart: unless-stopped
     environment:
       AICHECK_STRICT_PRODUCTION: ${AICHECK_STRICT_PRODUCTION:-true}
       AICHECK_ENABLE_DEMO_DATA: ${AICHECK_ENABLE_DEMO_DATA:-false}
@@ -243,6 +244,8 @@ services:
       AICHECK_MINIO_SECRET_KEY: ${AICHECK_MINIO_SECRET_KEY:?AICHECK_MINIO_SECRET_KEY is required}
       AICHECK_MINIO_SECURE: ${AICHECK_MINIO_SECURE:-false}
       AICHECK_REQUIRE_AUDIT_ANCHOR: ${AICHECK_REQUIRE_AUDIT_ANCHOR:-true}
+      AICHECK_AUDIT_ANCHOR_OBJECT_LOCK: ${AICHECK_AUDIT_ANCHOR_OBJECT_LOCK:?AICHECK_AUDIT_ANCHOR_OBJECT_LOCK must confirm bucket retention}
+      AICHECK_AUDIT_ANCHOR_RETENTION_DAYS: ${AICHECK_AUDIT_ANCHOR_RETENTION_DAYS:-3650}
       AICHECK_LANGGRAPH_DISABLE: ${AICHECK_LANGGRAPH_DISABLE:-false}
       AICHECK_LANGGRAPH_CHECKPOINT_DISABLE: ${AICHECK_LANGGRAPH_CHECKPOINT_DISABLE:-false}
       AICHECK_LANGGRAPH_CHECKPOINT_SETUP: ${AICHECK_LANGGRAPH_CHECKPOINT_SETUP:-false}
@@ -254,8 +257,6 @@ services:
       QWEN_API_BASE: ${QWEN_API_BASE:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       QWEN_API_KEY: ${QWEN_API_KEY:-}
     depends_on:
-      workflow-migrate:
-        condition: service_completed_successfully
       temporal-service:
         condition: service_healthy
       postgres:
@@ -287,6 +288,7 @@ services:
       postgres:
         condition: service_healthy
     restart: "no"
+    profiles: ["migration"]
 
   ocr-service:
     build:
@@ -391,6 +393,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "127.0.0.1:6379:6379"
     healthcheck:
@@ -401,6 +404,7 @@ services:
 
   minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
@@ -418,6 +422,7 @@ services:
 
   postgres:
     image: ${AICHECK_POSTGRES_IMAGE:-pgvector/pgvector:pg16}
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${AICHECK_POSTGRES_DB:-aicheck}
       POSTGRES_USER: ${AICHECK_POSTGRES_USER:-aicheck}
@@ -437,6 +442,7 @@ services:
 
   temporal-service:
     image: temporalio/auto-setup:1.26.2
+    restart: unless-stopped
     environment:
       DB: postgres12
       DB_PORT: 5432
@@ -456,6 +462,7 @@ services:
 
   temporal-ui:
     image: temporalio/ui:2.31.2
+    restart: unless-stopped
     environment:
       TEMPORAL_ADDRESS: temporal-service:7233
       TEMPORAL_CORS_ORIGINS: http://localhost:4000,http://127.0.0.1:4000
@@ -472,6 +479,7 @@ services:
       args:
         AICHECK_PIP_INDEX_URL: ${AICHECK_PIP_INDEX_URL:-}
     command: uvicorn apps.embedding_service.main:app --host 0.0.0.0 --port 7997
+    restart: unless-stopped
     environment:
       DO_NOT_TRACK: "1"
       HF_HOME: /app/.cache
@@ -501,6 +509,7 @@ services:
 
   litellm-service:
     image: ${AICHECK_LITELLM_IMAGE:-ghcr.io/berriai/litellm:v1.84.3@sha256:67c31510b20e60e8eb1670b9c47714c1c519cb04f5e5c077cf1f12073bf8fb30}
+    restart: unless-stopped
     command: ["--config", "/app/config/litellm.yaml", "--port", "4000", "--host", "0.0.0.0"]
     environment:
       DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${LITELLM_POSTGRES_DB:-litellm}

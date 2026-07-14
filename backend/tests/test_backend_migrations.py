@@ -47,6 +47,13 @@ def test_backend_migration_enforces_tenant_keys_and_append_only_audit(isolated_p
         "checksum_mismatch": 0,
         "database_only": 0,
     }
+    assert apply_migrations(isolated_postgres_url, plan_only=True) == [
+        "0001_backend_audit_hardening"
+    ]
+    with psycopg.connect(isolated_postgres_url, autocommit=True) as connection:
+        assert connection.execute(
+            "SELECT to_regclass('schema_migrations') IS NULL"
+        ).fetchone()[0]
     assert apply_migrations(isolated_postgres_url) == ["0001_backend_audit_hardening"]
     assert apply_migrations(isolated_postgres_url) == []
     current = migrate_backend.migration_status(isolated_postgres_url)

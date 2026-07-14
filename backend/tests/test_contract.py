@@ -335,6 +335,42 @@ def test_healthz_reports_runtime_flags(monkeypatch) -> None:
     assert "objectStorageEnabled" in health
 
 
+def test_readyz_is_public_minimal_and_fail_closed(monkeypatch) -> None:
+    from apps.api import main as api_main
+
+    async def ready_health():
+        return {
+            "databaseConnected": True,
+            "securityReady": True,
+            "runtimeReady": True,
+            "workflowReady": True,
+        }
+
+    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
+    monkeypatch.setattr(api_main, "health_payload", ready_health)
+    monkeypatch.setattr(api_main, "database_schema_readiness", lambda: {"schema": True, "auditAnchor": True})
+
+    ready = client.get("/readyz")
+    assert ready.status_code == 200
+    assert ready.json() == {
+        "status": "ready",
+        "ready": True,
+        "checks": {
+            "database": True,
+            "security": True,
+            "runtime": True,
+            "workflow": True,
+            "schema": True,
+            "auditAnchor": True,
+        },
+    }
+
+    monkeypatch.setattr(api_main, "database_schema_readiness", lambda: {"schema": False, "auditAnchor": True})
+    blocked = client.get("/api/readyz")
+    assert blocked.status_code == 503
+    assert blocked.json()["ready"] is False
+
+
 def test_local_role_bootstrap_creates_login_accounts_without_postgres(monkeypatch) -> None:
     passwords = {
         "admin": "Local!2026-SystemZ",

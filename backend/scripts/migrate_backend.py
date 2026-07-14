@@ -47,8 +47,32 @@ def validate_migration_manifest() -> dict[str, str]:
     return declared
 
 
-def apply_migrations(database_url: str, *, dry_run: bool = False) -> list[str]:
+def apply_migrations(
+    database_url: str,
+    *,
+    plan_only: bool = False,
+    dry_run: bool | None = None,
+) -> list[str]:
+    if dry_run is not None:
+        plan_only = dry_run
     declared = validate_migration_manifest()
+    if plan_only:
+        status = migration_status(database_url)
+        if not status["compatible"]:
+            incompatible = [
+                str(item["version"])
+                for item in status["migrations"]
+                if item["status"] in {"checksum_mismatch", "database_only"}
+            ]
+            raise RuntimeError(
+                "Database migration state is incompatible with this build: "
+                + ", ".join(incompatible)
+            )
+        return [
+            str(item["version"])
+            for item in status["migrations"]
+            if item["status"] == "pending"
+        ]
     try:
         import psycopg
     except Exception as exc:
@@ -88,17 +112,12 @@ def apply_migrations(database_url: str, *, dry_run: bool = False) -> list[str]:
                         raise RuntimeError(f"Applied migration checksum changed: {version}")
                     continue
                 applied.append(version)
-                if dry_run:
-                    continue
                 connection.execute(sql)
                 connection.execute(
                     "INSERT INTO schema_migrations (version, checksum) VALUES (%s, %s)",
                     (version, checksum),
                 )
-            if dry_run:
-                connection.rollback()
-            else:
-                connection.commit()
+            connection.commit()
         except Exception:
             connection.rollback()
             raise
@@ -174,7 +193,13 @@ def migration_status(database_url: str) -> dict[str, object]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Apply versioned AIcheck backend migrations.")
     parser.add_argument("--database-url", default=os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL"))
-    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--plan-only",
+        "--dry-run",
+        dest="plan_only",
+        action="store_true",
+        help="List pending migrations without executing SQL; this is not an execution rehearsal.",
+    )
     parser.add_argument("--verify-only", action="store_true")
     parser.add_argument("--status", action="store_true", help="Inspect database migration checksums without writing.")
     args = parser.parse_args()
@@ -188,8 +213,21 @@ def main() -> int:
         status = migration_status(args.database_url)
         print(json.dumps(status, indent=2))
         return 0 if status["compatible"] else 1
-    applied = apply_migrations(args.database_url, dry_run=args.dry_run)
-    print(json.dumps({"dryRun": args.dry_run, "pendingOrApplied": applied}))
+    applied = apply_migrations(args.database_url, plan_only=args.plan_only)
+    print(
+        json.dumps(
+            {
+                "planOnly": args.plan_only,
+                "migrationSqlExecuted": not args.plan_only,
+                "pendingOrApplied": applied,
+                "warning": (
+                    "plan-only does not execute migration SQL; use a restored disposable database for rehearsal"
+                    if args.plan_only
+                    else None
+                ),
+            }
+        )
+    )
     return 0
 
 

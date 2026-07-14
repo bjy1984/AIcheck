@@ -184,6 +184,50 @@ def test_strict_production_rejects_unpinned_litellm_image(tmp_path) -> None:
     )
 
 
+def test_strict_production_requires_explicit_migration_profile(tmp_path) -> None:
+    compose_file = tmp_path / "docker-compose.yml"
+    compose = yaml.safe_load((BACKEND_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    compose["services"]["workflow-migrate"].pop("profiles")
+    compose_file.write_text(yaml.safe_dump(compose, sort_keys=False), encoding="utf-8")
+    validator = DeploymentConfigValidator(
+        compose_file,
+        BACKEND_ROOT / "config/litellm.yaml",
+        strict_production=True,
+    )
+
+    results = validator.run()
+
+    assert any(
+        item.name == "compose.depends-on"
+        and item.status == "fail"
+        and "profiles: [migration]" in item.detail
+        for item in results
+    )
+
+
+def test_strict_production_rejects_implicit_runtime_migration(tmp_path) -> None:
+    compose_file = tmp_path / "docker-compose.yml"
+    compose = yaml.safe_load((BACKEND_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    compose["services"]["api-service"]["depends_on"]["workflow-migrate"] = {
+        "condition": "service_completed_successfully"
+    }
+    compose_file.write_text(yaml.safe_dump(compose, sort_keys=False), encoding="utf-8")
+    validator = DeploymentConfigValidator(
+        compose_file,
+        BACKEND_ROOT / "config/litellm.yaml",
+        strict_production=True,
+    )
+
+    results = validator.run()
+
+    assert any(
+        item.name == "compose.depends-on"
+        and item.status == "fail"
+        and "must not run workflow-migrate implicitly" in item.detail
+        for item in results
+    )
+
+
 def test_default_value_extracts_compose_fallback() -> None:
     assert default_value("${AICHECK_REQUIRE_AUTH:-true}") == "true"
     assert default_value("${OPENAI_API_KEY:-}") == ""

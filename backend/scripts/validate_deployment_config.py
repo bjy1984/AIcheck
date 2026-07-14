@@ -276,9 +276,9 @@ class DeploymentConfigValidator:
 
     def check_service_dependencies(self) -> None:
         expected = {
-            "api-service": {"workflow-migrate", "postgres", "redis", "minio", "litellm-service", "temporal-service", "ocr-service", "embedding-service"},
+            "api-service": {"postgres", "redis", "minio", "litellm-service", "temporal-service", "ocr-service", "embedding-service"},
             "worker-service": {"postgres", "redis", "api-service", "minio", "ocr-service", "litellm-service"},
-            "review-worker-service": {"workflow-migrate", "postgres", "temporal-service", "litellm-service"},
+            "review-worker-service": {"postgres", "temporal-service", "litellm-service"},
             "workflow-migrate": {"postgres"},
             "ocr-service": {"minio"},
             "litellm-service": {"postgres", "embedding-service"},
@@ -304,15 +304,18 @@ class DeploymentConfigValidator:
             for dependency in dependencies:
                 if depends_on_condition(self.service(service_name).get("depends_on"), dependency) != "service_healthy":
                     failures.append(f"{service_name}: {dependency} must use condition=service_healthy")
+        migration_profiles = self.service("workflow-migrate").get("profiles")
+        if migration_profiles != ["migration"]:
+            failures.append("workflow-migrate must be isolated behind profiles: [migration]")
         for service_name in ("api-service", "review-worker-service"):
-            if depends_on_condition(self.service(service_name).get("depends_on"), "workflow-migrate") != "service_completed_successfully":
-                failures.append(
-                    f"{service_name}: workflow-migrate must use condition=service_completed_successfully"
-                )
+            if "workflow-migrate" in depends_on_services(self.service(service_name).get("depends_on")):
+                failures.append(f"{service_name}: must not run workflow-migrate implicitly")
         self.add(
             "compose.depends-on",
             "fail" if failures else "pass",
-            "; ".join(failures) if failures else "Service dependencies cover database, queue, object storage, OCR, and LiteLLM.",
+            "; ".join(failures)
+            if failures
+            else "Runtime dependencies are healthy and database migration requires the explicit migration profile.",
         )
 
     def check_commands_and_ports(self) -> None:
@@ -339,6 +342,8 @@ class DeploymentConfigValidator:
             failures.append("review-worker-service command must run the Temporal ReviewRun worker")
         if "python -m scripts.setup_langgraph_checkpoint" not in workflow_migrate_command:
             failures.append("workflow-migrate must run the LangGraph checkpoint schema setup")
+        if "python -m scripts.migrate_backend" not in workflow_migrate_command:
+            failures.append("workflow-migrate must run the AIcheck database migration runner")
         queue_list = set(re.split(r"[, ]+", " ".join([worker_command, cpu_heavy_worker_command, llm_remote_worker_command])))
         missing_queues = sorted(REQUIRED_WORKER_QUEUES - queue_list)
         if missing_queues:

@@ -320,6 +320,8 @@ def auth_required(request: Request) -> bool:
     public_prefixes = (
         "/healthz",
         "/api/healthz",
+        "/readyz",
+        "/api/readyz",
         "/auth/login",
         "/api/auth/login",
         "/runtime/ui-context",
@@ -719,6 +721,74 @@ async def healthz(request: Request):
 @app.get("/api/healthz", tags=["system"])
 async def api_healthz(request: Request):
     return await health_response(request)
+
+
+@app.get("/readyz", tags=["system"])
+async def readyz():
+    return await readiness_response()
+
+
+@app.get("/api/readyz", tags=["system"])
+async def api_readyz():
+    return await readiness_response()
+
+
+async def readiness_response():
+    health = await health_payload()
+    checks = {
+        "database": bool(health.get("databaseConnected")),
+        "security": bool(health.get("securityReady")),
+        "runtime": bool(health.get("runtimeReady")),
+        "workflow": bool(health.get("workflowReady")),
+        **database_schema_readiness(),
+    }
+    ready = all(checks.values())
+    return JSONResponse(
+        {"status": "ready" if ready else "not_ready", "ready": ready, "checks": checks},
+        status_code=200 if ready else 503,
+    )
+
+
+def database_schema_readiness() -> dict[str, bool]:
+    if not repo.postgres_enabled:
+        return {"schema": False, "auditAnchor": False}
+    try:
+        from scripts.migrate_backend import validate_migration_manifest
+
+        declared = validate_migration_manifest()
+        with repo.postgres_connection() as connection:
+            table_exists = connection.execute(
+                "SELECT to_regclass('schema_migrations') IS NOT NULL"
+            ).fetchone()[0]
+            applied = (
+                {
+                    str(version): str(checksum)
+                    for version, checksum in connection.execute(
+                        "SELECT version, checksum FROM schema_migrations"
+                    ).fetchall()
+                }
+                if table_exists
+                else {}
+            )
+            head = connection.execute(
+                "SELECT max(sequence) FROM audit_events WHERE tenant_id=%s",
+                (configured_tenant_id(),),
+            ).fetchone()[0]
+            anchor = connection.execute(
+                "SELECT max(head_sequence) FROM audit_chain_anchors WHERE tenant_id=%s",
+                (configured_tenant_id(),),
+            ).fetchone()[0]
+            connection.rollback()
+        schema_ready = applied == declared
+        anchor_required = os.getenv("AICHECK_REQUIRE_AUDIT_ANCHOR", "false").lower() == "true"
+        anchor_ready = (
+            not anchor_required
+            or head is None
+            or (anchor is not None and int(anchor) >= int(head))
+        )
+        return {"schema": schema_ready, "auditAnchor": anchor_ready}
+    except Exception:
+        return {"schema": False, "auditAnchor": False}
 
 
 async def health_response(request: Request):

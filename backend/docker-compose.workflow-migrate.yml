@@ -14,6 +14,7 @@ services:
       postgres:
         condition: service_healthy
     restart: "no"
+    profiles: ["migration"]
 
   api-service:
     depends_on:
