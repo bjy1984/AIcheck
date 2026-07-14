@@ -32,6 +32,8 @@ import type {
   OperationArea,
   OperationTask,
   ImpactPreview,
+  InspectionAuditOverviewPayload,
+  InspectionAuditWorkspacePayload,
   SearchResult,
   TodoItem,
   WorkbenchContextPayload,
@@ -2585,6 +2587,30 @@ export const getNodePackageApi = (
   nodeId: number
 ): Promise<IResponse<NodePackagePayload>> => {
   return request.get({ url: `/api/projects/${projectId}/nodes/${nodeId}/package` })
+}
+
+export const getInspectionAuditOverviewApi = (
+  projectId: string,
+  params: {
+    keyword?: string
+    status?: string
+    page?: number
+    pageSize?: number
+  } = {}
+): Promise<IResponse<InspectionAuditOverviewPayload>> => {
+  return request.get({
+    url: `/api/projects/${projectId}/inspection/audit-overview`,
+    params
+  })
+}
+
+export const getInspectionAuditWorkspaceApi = (
+  projectId: string,
+  nodeId: number
+): Promise<IResponse<InspectionAuditWorkspacePayload>> => {
+  return request.get({
+    url: `/api/projects/${projectId}/inspection/nodes/${nodeId}/audit-workspace`
+  })
 }
 
 export const getDocumentDetailApi = (

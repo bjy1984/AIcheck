@@ -823,6 +823,84 @@ export type NodePackagePayload = {
   actions: ActionCode[]
 }
 
+export type InspectionAuditItemKey =
+  | 'submission'
+  | 'ocr'
+  | 'evidence'
+  | 'ai_review'
+  | 'human_review'
+  | 'report'
+  | 'archive'
+
+export type InspectionAuditItemStatus =
+  | 'not_started'
+  | 'in_progress'
+  | 'needs_attention'
+  | 'failed'
+  | 'completed'
+
+export type InspectionAuditSourceRef = {
+  type: string
+  id: string
+  status?: string | null
+}
+
+export type InspectionAuditIssue = {
+  code: string
+  message: string
+}
+
+export type InspectionAuditItem = {
+  key: InspectionAuditItemKey
+  label: string
+  status: InspectionAuditItemStatus
+  statusLabel: string
+  metric: string
+  summary: string
+  issueCount: number
+  issues: InspectionAuditIssue[]
+  updatedAt?: string | null
+  relationStatus?: 'linked' | 'unlinked_legacy'
+  sourceRefs: InspectionAuditSourceRef[]
+  availableActions: ActionCode[]
+}
+
+export type InspectionAuditOverviewNode = {
+  node: ProjectTreeNode
+  items: InspectionAuditItem[]
+  latestActivityAt?: string | null
+}
+
+export type InspectionAuditOverviewPayload = {
+  schemaVersion: 'InspectionAuditOverview@1.0.0' | string
+  project: Project
+  summary: Record<InspectionAuditItemStatus, number> & {
+    nodeCount: number
+  }
+  items: InspectionAuditOverviewNode[]
+  page: number
+  pageSize: number
+  total: number
+  dataAsOf: string
+}
+
+export type InspectionAuditWorkspacePayload = {
+  schemaVersion: 'InspectionAuditWorkspace@1.0.0' | string
+  project: Project
+  node: ProjectTreeNode
+  items: InspectionAuditItem[]
+  content: {
+    submission: Record<string, unknown>
+    ocr: Record<string, unknown>
+    evidence: Record<string, unknown>
+    aiReview: Record<string, unknown>
+    humanReview: Record<string, unknown>
+    report: Record<string, unknown>
+    archive: Record<string, unknown>
+  }
+  dataAsOf: string
+}
+
 export type NodeEvidenceReadiness = {
   schemaVersion: string
   hasReviewPoints: boolean
