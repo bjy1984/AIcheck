@@ -140,7 +140,7 @@ def check_date_covers(arguments: dict[str, Any]) -> dict[str, Any]:
         return result("check_date_covers", "evidence_insufficient", facts=parsed, checks=[])
     starts_before = parsed["validFrom"] is None or parsed["validFrom"] <= parsed["periodStart"]
     ends_after = parsed["validUntil"] >= parsed["periodEnd"]
-    return result(
+    output = result(
         "check_date_covers",
         "passed" if starts_before and ends_after else "failed",
         facts={key: value.isoformat() if value else None for key, value in parsed.items()},
@@ -149,6 +149,14 @@ def check_date_covers(arguments: dict[str, Any]) -> dict[str, Any]:
             check("valid_until_covers_period_end", ends_after, parsed["validUntil"], parsed["periodEnd"]),
         ],
     )
+    if output["result"] == "failed" and arguments.get("failureAction"):
+        output["recommendedActions"] = [
+            {
+                "action": str(arguments["failureAction"]),
+                "externalDocumentCreated": False,
+            }
+        ]
+    return output
 
 
 def check_design_license_scope(arguments: dict[str, Any]) -> dict[str, Any]:

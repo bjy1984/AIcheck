@@ -14,7 +14,7 @@ def call(name: str, arguments: dict) -> dict:
 def test_all_planned_business_tools_are_registered_allowed_and_fail_closed() -> None:
     catalog = {item["name"] for item in runtime_tool_catalog()}
 
-    assert len(BUSINESS_TOOL_NAMES) == 41
+    assert len(BUSINESS_TOOL_NAMES) == 48
     assert BUSINESS_TOOL_NAMES <= catalog
     assert BUSINESS_TOOL_NAMES <= ALLOWED_AGENT_TOOLS
     for name in BUSINESS_TOOL_NAMES:
@@ -153,6 +153,78 @@ def test_installation_license_uses_later_planned_or_actual_end_date() -> None:
     assert any(item["code"] == "valid_until_covers_later_construction_end" for item in output["checks"])
 
 
+def test_r02_installation_license_scope_uses_confirmed_grade_coverage() -> None:
+    gc2_with_boiler_a = call(
+        "check_installation_license_scope",
+        {"licenseScopes": ["A级锅炉安装资质"], "requiredPipelineGrades": ["GC2"]},
+    )
+    gcd_with_boiler_a = call(
+        "check_installation_license_scope",
+        {"licenseScopes": ["A级锅炉安装资质"], "requiredPipelineGrades": ["GCD"]},
+    )
+    gc2_with_gcd = call(
+        "check_installation_license_scope",
+        {"licenseScopes": ["GCD"], "requiredPipelineGrades": ["GC2"]},
+    )
+
+    assert gc2_with_boiler_a["result"] == "failed"
+    assert gcd_with_boiler_a["result"] == "passed"
+    assert gc2_with_gcd["result"] == "passed"
+
+
+def test_r03_ndt_codes_are_decoded_from_tsg_z7002_table_a1() -> None:
+    decoded = call("decode_ndt_approval_item_codes", {"approvalItemCodes": ["CG", "PA"]})
+    unknown = call("decode_ndt_approval_item_codes", {"approvalItemCodes": ["CG", "X-UNKNOWN"]})
+
+    assert decoded["result"] == "passed"
+    assert decoded["facts"]["decodedMethods"] == ["MT", "PA", "PT", "RT", "UT"]
+    assert unknown["result"] == "evidence_insufficient"
+    assert unknown["facts"]["unknownCodes"] == ["X-UNKNOWN"]
+
+
+def test_r03_ndt_agencies_are_evaluated_separately() -> None:
+    output = call(
+        "evaluate_ndt_agencies",
+        {
+            "evaluationMode": "method_coverage",
+            "agencies": [
+                {"agencyId": "A1", "approvalItemCodes": ["CG"], "requiredMethods": ["RT", "UT"]},
+                {"agencyId": "A2", "approvalItemCodes": ["PA"], "requiredMethods": ["RT"]},
+            ],
+        },
+    )
+
+    assert output["result"] == "failed"
+    assert [(item["agencyId"], item["result"]) for item in output["agencyResults"]] == [
+        ("A1", "passed"),
+        ("A2", "failed"),
+    ]
+
+
+def test_r03_expiry_only_returns_contact_notice_recommendation() -> None:
+    output = call(
+        "evaluate_ndt_agencies",
+        {
+            "evaluationMode": "date_coverage",
+            "failureAction": "CONTACT_NOTICE_REQUIRED",
+            "agencies": [
+                {
+                    "agencyId": "A1",
+                    "validFrom": "2026-01-01",
+                    "validUntil": "2026-08-31",
+                    "periodStart": "2026-02-01",
+                    "plannedPeriodEnd": "2026-10-31",
+                }
+            ],
+        },
+    )
+
+    assert output["result"] == "failed"
+    assert output["recommendedActions"] == [
+        {"agencyId": "A1", "action": "CONTACT_NOTICE_REQUIRED", "externalDocumentCreated": False}
+    ]
+
+
 def test_ndt_organization_and_personnel_are_evaluated_per_explicit_context() -> None:
     organization = call(
         "evaluate_ndt_organization_scope",
@@ -197,6 +269,328 @@ def test_design_approval_requires_document_body_and_all_roles() -> None:
     )
 
     assert output["result"] == "failed"
+
+
+def test_r04_three_level_approval_is_checked_per_document() -> None:
+    output = call(
+        "evaluate_design_document_approval",
+        {
+            "approvalMode": "three_level",
+            "targetDocumentTypes": ["pipeline_data_sheet", "pipeline_layout_drawing"],
+            "requiredRoles": ["设计", "校核", "审核"],
+            "documents": [
+                {
+                    "documentId": "DATA-1",
+                    "documentType": "pipeline_data_sheet",
+                    "bodyUploaded": True,
+                    "signatureRoles": ["设计", "校核"],
+                },
+                {
+                    "documentId": "LAYOUT-1",
+                    "documentType": "pipeline_layout_drawing",
+                    "bodyUploaded": True,
+                    "signatureRoles": ["审核"],
+                },
+            ],
+        },
+    )
+
+    assert output["result"] == "failed"
+    assert output["documentResults"][0]["missingRoles"] == ["审核"]
+    assert output["documentResults"][1]["missingRoles"] == ["设计", "校核"]
+
+
+@pytest.mark.parametrize(
+    ("pipeline", "expected_result", "trigger_code"),
+    [
+        ({"pipelineId": "P1", "pipelineGrade": "GC1", "designPressureMPa": 1, "designTemperatureC": 20}, "failed", "GC1_PIPELINE"),
+        ({"pipelineId": "P1", "pipelineGrade": "GC1"}, "failed", "GC1_PIPELINE"),
+        ({"pipelineId": "P1", "pipelineGrade": "GCD", "designPressureMPa": 16.7, "designTemperatureC": 20}, "failed", "GCD_PRESSURE_GTE_16_7"),
+        ({"pipelineId": "P1", "pipelineGrade": "GCD", "designPressureMPa": 16.7}, "failed", "GCD_PRESSURE_GTE_16_7"),
+        ({"pipelineId": "P1", "pipelineGrade": "GCD", "designPressureMPa": 4.0, "designTemperatureC": 570}, "failed", "GCD_PRESSURE_GTE_4_AND_TEMPERATURE_GTE_570"),
+        ({"pipelineId": "P1", "pipelineGrade": "GCD", "designPressureMPa": 3.9, "designTemperatureC": 600}, "not_applicable", None),
+        ({"pipelineId": "P1", "pipelineGrade": "GCD", "designPressureMPa": 3.9}, "not_applicable", None),
+        ({"pipelineId": "P1", "pipelineGrade": "GC2", "designPressureMPa": 20, "designTemperatureC": 600}, "not_applicable", None),
+        ({"pipelineId": "P1", "pipelineGrade": "GC2"}, "not_applicable", None),
+    ],
+)
+def test_r04_four_level_trigger_boundaries(pipeline: dict, expected_result: str, trigger_code: str | None) -> None:
+    output = call(
+        "evaluate_design_document_approval",
+        {
+            "approvalMode": "four_level_conditional",
+            "targetDocumentTypes": ["pipeline_layout_drawing"],
+            "requiredRoles": ["设计", "校核", "审核", "审定"],
+            "ruleVersion": "r04-design-approval-tsg31-2025-v1",
+            "documents": [
+                {
+                    "documentId": "LAYOUT-1",
+                    "documentType": "pipeline_layout_drawing",
+                    "bodyUploaded": True,
+                    "signatureRoles": ["设计", "校核", "审核"],
+                    "coveredPipelineIds": ["P1"],
+                }
+            ],
+            "pipelines": [pipeline],
+        },
+    )
+
+    assert output["result"] == expected_result
+    if trigger_code:
+        assert output["documentResults"][0]["triggerCodes"] == [trigger_code]
+        assert output["documentResults"][0]["missingRoles"] == ["审定"]
+    else:
+        assert output["documentResults"] == []
+
+
+def test_r04_four_level_requires_document_to_pipeline_link_for_mixed_project() -> None:
+    output = call(
+        "evaluate_design_document_approval",
+        {
+            "approvalMode": "four_level_conditional",
+            "targetDocumentTypes": ["pipeline_layout_drawing"],
+            "requiredRoles": ["设计", "校核", "审核", "审定"],
+            "documents": [
+                {
+                    "documentId": "LAYOUT-1",
+                    "documentType": "pipeline_layout_drawing",
+                    "bodyUploaded": True,
+                    "signatureRoles": ["设计", "校核", "审核", "审定"],
+                }
+            ],
+            "pipelines": [
+                {"pipelineId": "P1", "pipelineGrade": "GC1", "designPressureMPa": 1, "designTemperatureC": 20},
+                {"pipelineId": "P2", "pipelineGrade": "GC2", "designPressureMPa": 1, "designTemperatureC": 20},
+            ],
+        },
+    )
+
+    assert output["result"] == "evidence_insufficient"
+    assert output["warnings"] == ["document_pipeline_link_missing"]
+
+
+def test_r06_calculation_consistency_is_checked_per_document() -> None:
+    output = call(
+        "evaluate_calculation_document_consistency",
+        {
+            "targetDocumentTypes": ["strength_calculation", "pipeline_stress_calculation"],
+            "documents": [
+                {
+                    "documentId": "S-1",
+                    "documentType": "strength_calculation",
+                    "bodyUploaded": True,
+                    "coveredPipelineIds": ["P1"],
+                    "parameterComparisons": [
+                        {"code": "pressure", "documentValue": 10.0, "designValue": 10.0, "tolerance": 0.001}
+                    ],
+                },
+                {
+                    "documentId": "STRESS-1",
+                    "documentType": "pipeline_stress_calculation",
+                    "bodyUploaded": True,
+                    "coveredPipelineIds": ["P1"],
+                    "parameterComparisons": [
+                        {"code": "material", "documentValue": "20#", "designValue": "Q345", "normalizer": "text"}
+                    ],
+                },
+            ],
+        },
+    )
+
+    assert output["result"] == "failed"
+    assert [(item["documentId"], item["result"]) for item in output["documentResults"]] == [
+        ("S-1", "passed"),
+        ("STRESS-1", "failed"),
+    ]
+
+
+def test_r07_approval_inherits_changed_document_type_and_pipeline_trigger() -> None:
+    output = call(
+        "evaluate_design_change_approval",
+        {
+            "hasDesignChanges": True,
+            "pipelines": [{"pipelineId": "P1", "pipelineGrade": "GC1"}],
+            "documents": [
+                {
+                    "documentId": "CHANGE-STRENGTH",
+                    "documentType": "design_change_notice",
+                    "changedDocumentType": "strength_calculation",
+                    "bodyUploaded": True,
+                    "writtenApproval": True,
+                    "originalDesignOrganizationName": "甲设计院有限公司",
+                    "approvingOrganizationName": "甲设计院有限公司",
+                    "signatureRoles": ["设计", "校核", "审核"],
+                    "coveredPipelineIds": ["P1"],
+                },
+                {
+                    "documentId": "CHANGE-STRESS",
+                    "documentType": "design_change_notice",
+                    "changedDocumentType": "pipeline_stress_calculation",
+                    "bodyUploaded": True,
+                    "writtenApproval": True,
+                    "originalDesignOrganizationName": "甲设计院有限公司",
+                    "approvingOrganizationName": "甲设计院有限公司",
+                    "signatureRoles": ["设计", "校核", "审核"],
+                    "coveredPipelineIds": ["P1"],
+                },
+            ],
+        },
+    )
+
+    assert output["result"] == "failed"
+    assert output["documentResults"][0]["requiredApprovalLevel"] == 3
+    assert output["documentResults"][0]["result"] == "passed"
+    assert output["documentResults"][1]["requiredApprovalLevel"] == 4
+    assert output["documentResults"][1]["result"] == "failed"
+
+
+def test_r07_license_seal_is_required_only_for_catalog_and_layout_and_copy_is_invalid() -> None:
+    notice = call(
+        "verify_design_license_seals",
+        {
+            "hasDesignChanges": True,
+            "documents": [{"documentId": "N-1", "documentType": "design_change_notice"}],
+            "requiredDocumentTypes": ["drawing_catalog", "pipeline_layout_drawing"],
+            "expectedSealName": "压力管道设计许可印章",
+        },
+    )
+    copied_layout = call(
+        "verify_design_license_seals",
+        {
+            "hasDesignChanges": True,
+            "documents": [
+                {
+                    "documentId": "L-1",
+                    "documentType": "pipeline_layout_drawing",
+                    "originalDesignOrganizationName": "甲设计院有限公司",
+                    "designLicenseSeal": {
+                        "present": True,
+                        "sealName": "压力管道设计许可印章",
+                        "organizationName": "甲设计院有限公司",
+                        "impressionType": "copy",
+                    },
+                }
+            ],
+            "requiredDocumentTypes": ["drawing_catalog", "pipeline_layout_drawing"],
+            "expectedSealName": "压力管道设计许可印章",
+        },
+    )
+
+    assert notice["result"] == "not_applicable"
+    assert copied_layout["result"] == "failed"
+    assert any(item["code"] == "document_1_seal_original" and not item["passed"] for item in copied_layout["checks"])
+
+
+def r09_requirements() -> dict:
+    return {
+        "ndt": {
+            "specified": True,
+            "requirements": {"method": "RT", "coverage": "100%", "acceptanceCriteria": "II级"},
+            "standardRefs": ["STD-NDT"],
+        },
+        "corrosion": {
+            "specified": True,
+            "requirements": {"protectionMethod": "coating", "acceptanceCriteria": "无漏点"},
+            "standardRefs": ["STD-CORROSION"],
+        },
+        "pressureTest": {
+            "specified": True,
+            "requirements": {"method": "hydrostatic", "testPressure": 15, "acceptanceCriteria": "无泄漏"},
+            "standardRefs": ["STD-PRESSURE"],
+        },
+        "leakTest": {
+            "specified": True,
+            "requirements": {"method": "air", "testPressure": 10, "acceptanceCriteria": "无泄漏"},
+            "standardRefs": ["STD-LEAK"],
+        },
+    }
+
+
+def r09_standard_rules() -> dict:
+    return {
+        "ndt": {"checks": [{"code": "method_allowed", "actualPath": "requirements.method", "operator": "accepted", "expected": ["RT", "UT"], "standardRef": "STD-NDT"}]},
+        "corrosion": {"checks": [{"code": "method_present", "actualPath": "requirements.protectionMethod", "operator": "present", "standardRef": "STD-CORROSION"}]},
+        "pressureTest": {"checks": [{"code": "pressure_min", "actualPath": "requirements.testPressure", "operator": "gte", "expected": 10, "standardRef": "STD-PRESSURE"}]},
+        "leakTest": {"checks": [{"code": "pressure_min", "actualPath": "requirements.testPressure", "operator": "gte", "expected": 5, "standardRef": "STD-LEAK"}]},
+    }
+
+
+def r09_required_paths() -> dict:
+    return {
+        "ndt": ["requirements.method", "requirements.coverage", "requirements.acceptanceCriteria"],
+        "corrosion": ["requirements.protectionMethod", "requirements.acceptanceCriteria"],
+        "pressureTest": ["requirements.method", "requirements.testPressure", "requirements.acceptanceCriteria"],
+        "leakTest": ["requirements.method", "requirements.testPressure", "requirements.acceptanceCriteria"],
+    }
+
+
+def test_r09_checks_only_specific_design_requirements_and_frozen_standard_rules() -> None:
+    output = call(
+        "evaluate_design_special_requirements",
+        {
+            "requirements": r09_requirements(),
+            "standardRules": r09_standard_rules(),
+            "requiredPathsByDomain": r09_required_paths(),
+            "domains": ["ndt", "corrosion", "pressureTest", "leakTest"],
+        },
+    )
+
+    assert output["result"] == "passed"
+    assert [item["domain"] for item in output["domainResults"]] == ["ndt", "corrosion", "pressureTest", "leakTest"]
+    assert all(item["completenessResult"] == "passed" for item in output["domainResults"])
+    assert all(item["standardComplianceResult"] == "passed" for item in output["domainResults"])
+
+
+def test_r09_missing_specific_item_and_standard_violation_fail_separately() -> None:
+    requirements = r09_requirements()
+    del requirements["corrosion"]["requirements"]["acceptanceCriteria"]
+    requirements["pressureTest"]["requirements"]["testPressure"] = 5
+    output = call(
+        "evaluate_design_special_requirements",
+        {
+            "requirements": requirements,
+            "standardRules": r09_standard_rules(),
+            "requiredPathsByDomain": r09_required_paths(),
+            "domains": ["ndt", "corrosion", "pressureTest", "leakTest"],
+        },
+    )
+
+    by_domain = {item["domain"]: item for item in output["domainResults"]}
+    assert output["result"] == "failed"
+    assert by_domain["corrosion"]["completenessResult"] == "failed"
+    assert by_domain["corrosion"]["missingPaths"] == ["requirements.acceptanceCriteria"]
+    assert by_domain["pressureTest"]["standardComplianceResult"] == "failed"
+    assert by_domain["pressureTest"]["violations"] == ["pressure_min"]
+
+
+def test_r09_fails_closed_when_requirement_is_not_specified_or_frozen_rule_is_missing() -> None:
+    requirements = r09_requirements()
+    requirements["ndt"]["specified"] = False
+    failed = call(
+        "evaluate_design_special_requirements",
+        {
+            "requirements": requirements,
+            "standardRules": r09_standard_rules(),
+            "requiredPathsByDomain": r09_required_paths(),
+            "domains": ["ndt", "corrosion", "pressureTest", "leakTest"],
+        },
+    )
+    assert failed["result"] == "failed"
+    assert failed["domainResults"][0]["completenessResult"] == "failed"
+
+    standard_rules = r09_standard_rules()
+    del standard_rules["leakTest"]
+    insufficient_output = call(
+        "evaluate_design_special_requirements",
+        {
+            "requirements": r09_requirements(),
+            "standardRules": standard_rules,
+            "requiredPathsByDomain": r09_required_paths(),
+            "domains": ["ndt", "corrosion", "pressureTest", "leakTest"],
+        },
+    )
+    assert insufficient_output["result"] == "evidence_insufficient"
+    assert insufficient_output["warnings"] == ["leakTest_required_paths_or_standard_rules_missing"]
 
 
 def test_wps_pqr_coverage_checks_method_material_position_and_ranges() -> None:
@@ -376,8 +770,16 @@ def test_pneumatic_pressure_enforces_upper_limit_and_step_sequence() -> None:
     "check_ndt_personnel_coverage",
     "check_wps_pqr_coverage",
     "evaluate_installation_license_scope",
+    "check_installation_license_scope",
+    "decode_ndt_approval_item_codes",
     "evaluate_ndt_organization_scope",
+    "evaluate_ndt_agencies",
     "evaluate_design_approval_level",
+    "evaluate_design_document_approval",
+    "evaluate_calculation_document_consistency",
+    "evaluate_design_change_approval",
+    "evaluate_design_special_requirements",
+    "verify_design_license_seals",
     "evaluate_rt_film",
     "evaluate_pressure_test",
     "evaluate_valve_test",

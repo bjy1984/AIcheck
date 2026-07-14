@@ -6,6 +6,11 @@ atomicCheckToolBindingSet:
   atomicCheckCount: 171
   pilotRules:
   - R01
+  - R02
+  - R03
+  - R06
+  - R07
+  - R09
   - R12
   - R48
   - R49
@@ -24,6 +29,9 @@ atomicCheckToolBindings:
   - validate_evidence_grounding
   parameters:
     profile: design_license
+    clauseSource: frozen_standard_clause_package
+    failurePolicy: business_rule_result
+    argumentProfile: r01_design_org_identity
     normalizer: organization_name
     requiredCount: 3
   outputSchema: deterministic-tool-result-v1
@@ -40,6 +48,9 @@ atomicCheckToolBindings:
   - validate_evidence_grounding
   parameters:
     profile: design_license
+    clauseSource: frozen_standard_clause_package
+    failurePolicy: business_rule_result
+    argumentProfile: r01_design_scope_project
     scopeProfile: design-license-scope-cn-v1
   outputSchema: deterministic-tool-result-v1
   implementationStatus: pilot_implemented
@@ -49,14 +60,20 @@ atomicCheckToolBindings:
   - designLicense.validFrom
   - designLicense.validUntil
   - project.constructionStart
-  - project.constructionEnd
+  - project.plannedConstructionEnd
+  - project.actualConstructionEnd
+  - project.changeClarificationEnd
   tools:
   - extract_document_fields
   - check_date_covers
   - validate_evidence_grounding
   parameters:
     profile: design_license
+    clauseSource: frozen_standard_clause_package
+    failurePolicy: business_rule_result
+    argumentProfile: r01_design_license_period
     coverageMode: closed_interval
+    periodEndPolicy: latest_of_planned_actual_change_clarification
   outputSchema: deterministic-tool-result-v1
   implementationStatus: pilot_implemented
 - atomicCheckId: AC-R01-04
@@ -71,6 +88,9 @@ atomicCheckToolBindings:
   - validate_evidence_grounding
   parameters:
     profile: design_license
+    clauseSource: frozen_standard_clause_package
+    failurePolicy: business_rule_result
+    argumentProfile: r01_design_scope_documents
     scopeProfile: design-license-scope-cn-v1
   outputSchema: deterministic-tool-result-v1
   implementationStatus: pilot_implemented
@@ -95,61 +115,60 @@ atomicCheckToolBindings:
   implementationStatus: pilot_implemented
 - atomicCheckId: AC-R02-01
   sourceRuleId: R02
-  requiredFacts: &id001
+  requiredFacts:
   - installationLicense.scopeCodes
-  - installationLicense.validity
   - project.pipelineGrades
-  - project.constructionPeriod
   tools:
-  - get_document_ocr_result
   - extract_document_fields
   - extract_table_records
-  - check_required
-  - check_scope_coverage
-  - evaluate_installation_license_scope
+  - check_installation_license_scope
   - validate_evidence_grounding
   parameters:
     profile: installation_license
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
+    argumentProfile: r02_installation_scope
+    scopeProfile: installation-license-scope-cn-v2
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R02-02
   sourceRuleId: R02
-  requiredFacts: *id001
+  requiredFacts:
+  - installationLicense.validFrom
+  - installationLicense.validUntil
+  - project.constructionStart
+  - project.plannedConstructionEnd
   tools:
-  - get_document_ocr_result
   - extract_document_fields
-  - recognize_signatures_and_seals
-  - check_signature_completeness
   - check_date_covers
-  - check_scope_coverage
-  - evaluate_installation_license_scope
   - validate_evidence_grounding
   parameters:
     profile: installation_license
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
+    argumentProfile: r02_installation_license_period
+    coverageMode: closed_interval
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R02-03
   sourceRuleId: R02
-  requiredFacts: *id001
+  requiredFacts:
+  - installationLicense.validFrom
+  - installationLicense.validUntil
+  - project.constructionStart
+  - project.plannedConstructionEnd
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
-  - recognize_signatures_and_seals
-  - check_signature_completeness
-  - check_scope_coverage
-  - check_conditional_requirement
-  - evaluate_installation_license_scope
+  - check_date_covers
   - validate_evidence_grounding
   parameters:
     profile: installation_license
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
+    argumentProfile: r02_installation_license_period
+    failureAction: CONTACT_NOTICE_REQUIRED
+    externalActionPolicy: recommendation_only
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R02-04
   sourceRuleId: R02
   requiredFacts:
@@ -168,63 +187,68 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R03-01
   sourceRuleId: R03
-  requiredFacts: &id002
-  - ndtOrganization.name
-  - ndtLicense.methodCodes
-  - ndtLicense.validity
-  - ndtPlan.organizationName
-  - design.requiredNdtMethods
-  - project.constructionPeriod
+  requiredFacts:
+  - ndtAgencies.agencies[].agencyId
+  - ndtAgencies.agencies[].licenseOrganizationName
+  - ndtAgencies.agencies[].planOrganizationName
   tools:
-  - get_document_ocr_result
   - extract_document_fields
-  - check_cross_document_match
-  - evaluate_ndt_organization_scope
+  - evaluate_ndt_agencies
   - validate_evidence_grounding
   parameters:
     profile: ndt_organization_license
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
+    argumentProfile: r03_agency_identity
+    evaluationMode: identity
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R03-02
   sourceRuleId: R03
-  requiredFacts: *id002
+  requiredFacts:
+  - ndtAgencies.agencies[].agencyId
+  - ndtAgencies.agencies[].approvalItemCodes
+  - ndtAgencies.agencies[].requiredMethods
   tools:
-  - get_document_ocr_result
   - extract_document_fields
   - extract_table_records
-  - check_required
-  - evaluate_ndt_organization_scope
+  - decode_ndt_approval_item_codes
+  - evaluate_ndt_agencies
   - validate_evidence_grounding
   parameters:
     profile: ndt_organization_license
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
+    argumentProfile: r03_method_coverage
+    evaluationMode: method_coverage
+    codeProfile: tsg-z7002-2022-table-a1
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R03-03
   sourceRuleId: R03
-  requiredFacts: *id002
+  requiredFacts:
+  - ndtAgencies.agencies[].agencyId
+  - ndtAgencies.agencies[].validFrom
+  - ndtAgencies.agencies[].validUntil
+  - ndtAgencies.agencies[].periodStart
+  - ndtAgencies.agencies[].plannedPeriodEnd
   tools:
-  - get_document_ocr_result
   - extract_document_fields
-  - recognize_signatures_and_seals
-  - check_signature_completeness
-  - check_date_covers
-  - check_scope_coverage
-  - check_conditional_requirement
-  - evaluate_ndt_organization_scope
+  - evaluate_ndt_agencies
   - validate_evidence_grounding
   parameters:
     profile: ndt_organization_license
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
+    argumentProfile: r03_date_coverage
+    evaluationMode: date_coverage
+    failureAction: CONTACT_NOTICE_REQUIRED
+    externalActionPolicy: recommendation_only
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R03-04
   sourceRuleId: R03
   requiredFacts:
@@ -243,61 +267,92 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R04-01
   sourceRuleId: R04
-  requiredFacts: &id003
-  - designDocumentSet.documentTypes
-  - designDocuments.signatureRoles
-  - project.pipelineGrade
-  - project.designParameters
+  requiredFacts:
+  - designDocumentSet.catalogListedDocumentTypes
+  - designDocumentSet.uploadedDocumentTypes
+  - designDocumentSet.parseableDocumentTypes
   tools:
   - get_document_ocr_result
   - extract_document_fields
   - extract_table_records
-  - check_required
-  - evaluate_design_approval_level
+  - check_document_set_completeness
   - validate_evidence_grounding
   parameters:
     profile: design_approval
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
+    requiredDocumentTypes:
+    - drawing_catalog
+    - design_specification
+    - pipeline_data_sheet
+    - pipeline_layout_drawing
+    - pipeline_material_list
+    - straight_pipe_strength_calculation
   outputSchema: deterministic-tool-result-v1
   implementationStatus: implemented
 - atomicCheckId: AC-R04-02
   sourceRuleId: R04
-  requiredFacts: *id003
+  requiredFacts:
+  - designDocuments.documents
+  - project.pipelines
   tools:
   - get_document_ocr_result
   - extract_document_fields
   - extract_table_records
   - recognize_signatures_and_seals
-  - check_signature_completeness
-  - check_required
-  - evaluate_design_approval_level
+  - evaluate_design_document_approval
   - validate_evidence_grounding
   parameters:
     profile: design_approval
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
+    approvalMode: three_level
+    targetDocumentTypes:
+    - pipeline_data_sheet
+    - pipeline_material_grade_table
+    - equipment_layout_drawing
+    - pipeline_layout_drawing
+    - strength_calculation
+    - pipeline_stress_calculation
+    requiredRoles:
+    - 设计
+    - 校核
+    - 审核
+    ruleVersion: r04-design-approval-tsg31-2025-v1
   outputSchema: deterministic-tool-result-v1
   implementationStatus: implemented
 - atomicCheckId: AC-R04-03
   sourceRuleId: R04
-  requiredFacts: *id003
+  requiredFacts:
+  - designDocuments.documents
+  - project.pipelines
   tools:
   - get_document_ocr_result
   - extract_document_fields
   - extract_table_records
   - recognize_signatures_and_seals
-  - check_signature_completeness
-  - check_conditional_requirement
-  - evaluate_design_approval_level
+  - evaluate_design_document_approval
   - validate_evidence_grounding
   parameters:
     profile: design_approval
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
+    approvalMode: four_level_conditional
+    targetDocumentTypes:
+    - pipeline_material_grade_table
+    - pipeline_stress_calculation
+    - equipment_layout_drawing
+    - pipeline_layout_drawing
+    requiredRoles:
+    - 设计
+    - 校核
+    - 审核
+    - 审定
+    ruleVersion: r04-design-approval-tsg31-2025-v1
+    triggerProfile: gc1-or-gcd-pressure-temperature-v1
   outputSchema: deterministic-tool-result-v1
   implementationStatus: implemented
 - atomicCheckId: AC-R04-04
@@ -357,63 +412,80 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R06-01
   sourceRuleId: R06
-  requiredFacts: &id004
-  - calculation.coveredLines
-  - calculation.designParameters
-  - design.designParameters
-  - calculation.signatureRoles
-  - project.pipelineGrade
+  requiredFacts:
+  - calculationDocuments.documents[].documentId
+  - calculationDocuments.documents[].documentType
+  - calculationDocuments.documents[].bodyUploaded
+  - calculationDocuments.documents[].coveredPipelineIds
+  - calculationDocuments.documents[].parameterComparisons
   tools:
-  - get_document_ocr_result
   - extract_document_fields
-  - recognize_signatures_and_seals
-  - check_signature_completeness
-  - check_required
-  - check_cross_document_match
-  - check_scope_coverage
-  - check_numeric_range
-  - evaluate_design_approval_level
+  - extract_table_records
+  - evaluate_calculation_document_consistency
   - validate_evidence_grounding
   parameters:
     profile: calculation_approval
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
+    argumentProfile: r06_calculation_consistency
+    targetDocumentTypes:
+    - strength_calculation
+    - pipeline_stress_calculation
+    ruleVersion: r06-calculation-consistency-v1
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R06-02
   sourceRuleId: R06
-  requiredFacts: *id004
+  requiredFacts:
+  - calculationDocuments.documents
   tools:
-  - get_document_ocr_result
   - extract_document_fields
   - recognize_signatures_and_seals
-  - check_signature_completeness
-  - check_required
-  - evaluate_design_approval_level
+  - evaluate_design_document_approval
   - validate_evidence_grounding
   parameters:
     profile: calculation_approval
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
+    argumentProfile: r06_three_level_approval
+    approvalMode: three_level
+    targetDocumentTypes:
+    - strength_calculation
+    - pipeline_stress_calculation
+    requiredRoles:
+    - 设计
+    - 校核
+    - 审核
+    ruleVersion: r06-design-approval-tsg31-2025-3.1.3.3-v1
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R06-03
   sourceRuleId: R06
-  requiredFacts: *id004
+  requiredFacts:
+  - calculationDocuments.documents
+  - project.pipelines
   tools:
-  - get_document_ocr_result
   - extract_document_fields
   - recognize_signatures_and_seals
-  - check_signature_completeness
-  - check_numeric_range
-  - evaluate_design_approval_level
+  - evaluate_design_document_approval
   - validate_evidence_grounding
   parameters:
     profile: calculation_approval
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
+    argumentProfile: r06_four_level_approval
+    approvalMode: four_level_conditional
+    targetDocumentTypes:
+    - pipeline_stress_calculation
+    requiredRoles:
+    - 设计
+    - 校核
+    - 审核
+    - 审定
+    triggerProfile: gc1-or-gcd-pressure-temperature-v1
+    ruleVersion: r06-design-approval-tsg31-2025-3.1.3.3-v1
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R06-04
   sourceRuleId: R06
   requiredFacts:
@@ -432,26 +504,41 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R07-01
   sourceRuleId: R07
   requiredFacts:
-  - designChange.designLicenseSeal
-  - designChange.signatureRoles
-  - project.requiredApprovalLevel
+  - designChanges.hasDesignChanges
+  - designChanges.documents[].documentId
+  - designChanges.documents[].documentType
+  - designChanges.documents[].changedDocumentType
+  - designChanges.documents[].writtenApproval
+  - designChanges.documents[].originalDesignOrganizationName
+  - designChanges.documents[].approvingOrganizationName
+  - designChanges.documents[].signatureRoles
+  - designChanges.documents[].designLicenseSeal
+  - designChanges.documents[].coveredPipelineIds
+  - project.pipelines
   tools:
-  - get_document_ocr_result
   - extract_document_fields
   - recognize_signatures_and_seals
-  - check_signature_completeness
-  - evaluate_design_approval_level
+  - evaluate_design_change_approval
+  - verify_design_license_seals
   - validate_evidence_grounding
   parameters:
     profile: design_change_approval
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
+    argumentProfile: r07_design_change_approval
+    approvalLevelPolicy: inherit_changed_document_and_pipeline
+    requiredDocumentTypes:
+    - drawing_catalog
+    - pipeline_layout_drawing
+    expectedSealName: 压力管道设计许可印章
+    sealPolicy: tsg31_2025_3.1.2_by_document_type
+    ruleVersion: r07-design-change-tsg31-2025-v1
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R07-02
   sourceRuleId: R07
   requiredFacts:
@@ -470,7 +557,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R08-01
   sourceRuleId: R08
   requiredFacts:
@@ -511,22 +598,45 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R09-01
   sourceRuleId: R09
   requiredFacts:
-  - design.ndtRequirements
-  - design.corrosionRequirements
-  - design.pressureTestRequirements
-  - design.leakTestRequirements
-  - fixedClauses.requirements
+  - designSpecialRequirements.domains.ndt
+  - designSpecialRequirements.domains.corrosion
+  - designSpecialRequirements.domains.pressureTest
+  - designSpecialRequirements.domains.leakTest
+  - fixedClauses.designSpecialRequirementRules
   tools:
-  - get_document_ocr_result
   - extract_document_fields
+  - extract_table_records
   - evaluate_design_special_requirements
   - validate_evidence_grounding
   parameters:
     profile: design_special_requirements
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
+    argumentProfile: r09_design_special_requirements
+    domains:
+    - ndt
+    - corrosion
+    - pressureTest
+    - leakTest
+    requiredPathsByDomain:
+      ndt:
+      - requirements.method
+      - requirements.coverage
+      - requirements.acceptanceCriteria
+      corrosion:
+      - requirements.protectionMethod
+      - requirements.acceptanceCriteria
+      pressureTest:
+      - requirements.method
+      - requirements.testPressure
+      - requirements.acceptanceCriteria
+      leakTest:
+      - requirements.method
+      - requirements.testPressure
+      - requirements.acceptanceCriteria
+    ruleVersion: r09-design-special-requirements-v1
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R09-02
   sourceRuleId: R09
   requiredFacts:
@@ -545,10 +655,10 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R10-01
   sourceRuleId: R10
-  requiredFacts: &id005
+  requiredFacts: &id001
   - design.adoptedStandardType
   - comparisonDeclaration.document
   - comparisonTable.coveredSafetyTopics
@@ -567,7 +677,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R10-02
   sourceRuleId: R10
-  requiredFacts: *id005
+  requiredFacts: *id001
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -585,7 +695,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R10-03
   sourceRuleId: R10
-  requiredFacts: *id005
+  requiredFacts: *id001
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -620,7 +730,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R11-01
   sourceRuleId: R11
-  requiredFacts: &id006
+  requiredFacts: &id002
   - constructionPlan.signatureRoles
   - constructionPlan.ownerApproval
   - constructionPlan.projectParameters
@@ -641,7 +751,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R11-02
   sourceRuleId: R11
-  requiredFacts: *id006
+  requiredFacts: *id002
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -657,7 +767,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R11-03
   sourceRuleId: R11
-  requiredFacts: *id006
+  requiredFacts: *id002
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -774,7 +884,7 @@ atomicCheckToolBindings:
   implementationStatus: pilot_implemented
 - atomicCheckId: AC-R13-01
   sourceRuleId: R13
-  requiredFacts: &id007
+  requiredFacts: &id003
   - wps.parameters
   - pqr.parameters
   - actualWeld.conditions
@@ -796,7 +906,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R13-02
   sourceRuleId: R13
-  requiredFacts: *id007
+  requiredFacts: *id003
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -835,7 +945,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R14-01
   sourceRuleId: R14
-  requiredFacts: &id008
+  requiredFacts: &id004
   - weldingConsumable.mtc
   - weldingConsumable.batchNo
   - weldingConsumable.grade
@@ -857,7 +967,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R14-02
   sourceRuleId: R14
-  requiredFacts: *id008
+  requiredFacts: *id004
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -892,7 +1002,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R15-01
   sourceRuleId: R15
-  requiredFacts: &id009
+  requiredFacts: &id005
   - consumableStore.temperatureHumidityRecords
   - consumableStore.bakingRecords
   - consumableStore.issueRecords
@@ -913,7 +1023,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R15-02
   sourceRuleId: R15
-  requiredFacts: *id009
+  requiredFacts: *id005
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -1028,7 +1138,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R18-01
   sourceRuleId: R18
-  requiredFacts: &id010
+  requiredFacts: &id006
   - weldAppearance.reinforcement
   - weldAppearance.width
   - weldAppearance.undercut
@@ -1050,7 +1160,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R18-02
   sourceRuleId: R18
-  requiredFacts: *id010
+  requiredFacts: *id006
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -1205,7 +1315,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R22-01
   sourceRuleId: R22
-  requiredFacts: &id011
+  requiredFacts: &id007
   - heatTreatmentCurve.timeSeries
   - heatTreatmentReport.parameters
   - hardnessReport.values
@@ -1227,7 +1337,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R22-02
   sourceRuleId: R22
-  requiredFacts: *id011
+  requiredFacts: *id007
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -1341,7 +1451,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R25-01
   sourceRuleId: R25
-  requiredFacts: &id012
+  requiredFacts: &id008
   - ndtNonconformance.procedure
   - ndtNonconformance.commission
   - ndtNonconformance.notice
@@ -1360,7 +1470,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R25-02
   sourceRuleId: R25
-  requiredFacts: *id012
+  requiredFacts: *id008
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -1982,7 +2092,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R41-01
   sourceRuleId: R41
-  requiredFacts: &id013
+  requiredFacts: &id009
   - installation.alignmentRecords
   - installation.connectionMethod
   - installation.prohibitedMethods
@@ -2003,7 +2113,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R41-02
   sourceRuleId: R41
-  requiredFacts: *id013
+  requiredFacts: *id009
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -2116,7 +2226,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R44-01
   sourceRuleId: R44
-  requiredFacts: &id014
+  requiredFacts: &id010
   - safetyAccessory.license
   - safetyAccessory.typeTest
   - safetyAccessory.qualityCertificate
@@ -2137,7 +2247,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R44-02
   sourceRuleId: R44
-  requiredFacts: *id014
+  requiredFacts: *id010
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -2507,7 +2617,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R53-01
   sourceRuleId: R53
-  requiredFacts: &id015
+  requiredFacts: &id011
   - ndtReport.inventory
   - radiographicFilms.inventory
   - weldInventory.totalCount
@@ -2526,7 +2636,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R53-02
   sourceRuleId: R53
-  requiredFacts: *id015
+  requiredFacts: *id011
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -2730,7 +2840,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R58-01
   sourceRuleId: R58
-  requiredFacts: &id016
+  requiredFacts: &id012
   - component.typeTestScope
   - component.designItems
   - component.supervisionCertificates
@@ -2754,7 +2864,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R58-02
   sourceRuleId: R58
-  requiredFacts: *id016
+  requiredFacts: *id012
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -2788,7 +2898,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R59-01
   sourceRuleId: R59
-  requiredFacts: &id017
+  requiredFacts: &id013
   - component.factoryReport
   - component.grade
   - component.material
@@ -2812,7 +2922,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R59-02
   sourceRuleId: R59
-  requiredFacts: *id017
+  requiredFacts: *id013
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -2828,7 +2938,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R59-03
   sourceRuleId: R59
-  requiredFacts: *id017
+  requiredFacts: *id013
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -2902,7 +3012,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R61-01
   sourceRuleId: R61
-  requiredFacts: &id018
+  requiredFacts: &id014
   - component.qualityCertificate
   - component.supplyCondition
   - component.composition
@@ -2923,7 +3033,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R61-02
   sourceRuleId: R61
-  requiredFacts: *id018
+  requiredFacts: *id014
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -2999,7 +3109,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R63-01
   sourceRuleId: R63
-  requiredFacts: &id019
+  requiredFacts: &id015
   - material.retestReport
   - material.ndtReport
   - material.standardRef
@@ -3018,7 +3128,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R63-02
   sourceRuleId: R63
-  requiredFacts: *id019
+  requiredFacts: *id015
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -3052,7 +3162,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R64-01
   sourceRuleId: R64
-  requiredFacts: &id020
+  requiredFacts: &id016
   - foreignMaterial.qualityCertificate
   - foreignMaterial.retestReport
   - foreignMaterial.enterpriseStandard
@@ -3071,7 +3181,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R64-02
   sourceRuleId: R64
-  requiredFacts: *id020
+  requiredFacts: *id016
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -3222,7 +3332,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R68-01
   sourceRuleId: R68
-  requiredFacts: &id021
+  requiredFacts: &id017
   - valve.constructionRecords
   - valve.pressureTestReport
   - valve.testProcedure
@@ -3245,7 +3355,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R68-02
   sourceRuleId: R68
-  requiredFacts: *id021
+  requiredFacts: *id017
   tools:
   - get_document_ocr_result
   - extract_document_fields

@@ -168,7 +168,7 @@ standardClauseBindings:
   standardRef: STD-TSG-D7006-2020
   clauseNo: D2.2(4)
   bindingRole: primary
-  applicability: always
+  applicability: design_change_or_material_substitution
   lifecycleStatus: published
   verificationStatus: source_verified
   knowledgeFileId: KF-KB-CE49677F5B

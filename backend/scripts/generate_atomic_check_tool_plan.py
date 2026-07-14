@@ -13,7 +13,7 @@ BINDINGS = PACK_DIR / "atomic_check_tool_bindings.yaml"
 DOCUMENT = ROOT / "tools规划.md"
 
 TRACE_INSTRUCTION = "核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。"
-PILOT_RULES = {"R01", "R12", "R48", "R49", "R50"}
+PILOT_RULES = {"R01", "R02", "R03", "R06", "R07", "R09", "R12", "R48", "R49", "R50"}
 
 
 RULE_PROFILES: dict[str, tuple[list[str], str, str]] = {
@@ -25,7 +25,7 @@ RULE_PROFILES: dict[str, tuple[list[str], str, str]] = {
     "R06": (["calculation.coveredLines", "calculation.designParameters", "design.designParameters", "calculation.signatureRoles", "project.pipelineGrade"], "evaluate_design_approval_level", "calculation_approval"),
     "R07": (["designChange.designLicenseSeal", "designChange.signatureRoles", "project.requiredApprovalLevel"], "evaluate_design_approval_level", "design_change_approval"),
     "R08": (["design.standardReferences", "standardCatalog.versionStatus", "reviewDate"], "check_standard_version_active", "standard_version"),
-    "R09": (["design.ndtRequirements", "design.corrosionRequirements", "design.pressureTestRequirements", "design.leakTestRequirements", "fixedClauses.requirements"], "evaluate_design_special_requirements", "design_special_requirements"),
+    "R09": (["designSpecialRequirements.domains.ndt", "designSpecialRequirements.domains.corrosion", "designSpecialRequirements.domains.pressureTest", "designSpecialRequirements.domains.leakTest", "fixedClauses.designSpecialRequirementRules"], "evaluate_design_special_requirements", "design_special_requirements"),
     "R10": (["design.adoptedStandardType", "comparisonDeclaration.document", "comparisonTable.coveredSafetyTopics"], "evaluate_alternative_standard", "alternative_standard"),
     "R11": (["constructionPlan.signatureRoles", "constructionPlan.ownerApproval", "constructionPlan.projectParameters", "design.projectParameters", "constructionPlan.processRequirements"], "evaluate_construction_plan", "construction_plan"),
     "R12": (["welderCertificate.qualificationCodes", "welderCertificate.validity", "welder.identity", "actualWeld.workItems", "actualWeld.welderIdentity"], "check_welder_work_coverage", "welder_qualification"),
@@ -89,10 +89,6 @@ RULE_PROFILES: dict[str, tuple[list[str], str, str]] = {
 
 
 PILOT_BINDINGS: dict[str, dict[str, Any]] = {
-    "AC-R01-01": {"facts": ["designLicense.holderName", "designDocument.titleBlockOrganization", "designDocument.designSealOrganization"], "tools": ["extract_document_fields", "recognize_signatures_and_seals", "check_all_equal", "validate_evidence_grounding"], "parameters": {"normalizer": "organization_name", "requiredCount": 3}},
-    "AC-R01-02": {"facts": ["designLicense.scopeCodes", "project.pipelineGrades"], "tools": ["extract_document_fields", "extract_table_records", "check_design_license_scope", "validate_evidence_grounding"], "parameters": {"scopeProfile": "design-license-scope-cn-v1"}},
-    "AC-R01-03": {"facts": ["designLicense.validFrom", "designLicense.validUntil", "project.constructionStart", "project.constructionEnd"], "tools": ["extract_document_fields", "check_date_covers", "validate_evidence_grounding"], "parameters": {"coverageMode": "closed_interval"}},
-    "AC-R01-04": {"facts": ["designLicense.scopeCodes", "designDocument.pipelineGrades"], "tools": ["extract_document_fields", "extract_table_records", "check_design_license_scope", "validate_evidence_grounding"], "parameters": {"scopeProfile": "design-license-scope-cn-v1"}},
     "AC-R12-01": {"facts": ["welderCertificate.identity", "welderCertificate.qualificationCodes", "welderCertificate.validity"], "tools": ["extract_welder_certificate", "decode_welder_qualification", "check_date_covers", "validate_evidence_grounding"], "parameters": {"qualificationProfile": "welder-qualification-code-tsg-z6002-v1"}},
     "AC-R12-02": {"facts": ["welderCertificate.identity", "actualWeld.welderIdentity", "welderCertificate.qualificationCodes", "actualWeld.workItems"], "tools": ["extract_welder_certificate", "decode_welder_qualification", "check_all_equal", "check_welder_work_coverage", "validate_evidence_grounding"], "parameters": {"coverageProfile": "welder-work-coverage-tsg-z6002-v1"}},
     "AC-R12-03": {"facts": ["welderCertificate.qualificationCodes", "actualWeld.position"], "tools": ["decode_welder_qualification", "check_welder_work_coverage", "validate_evidence_grounding"], "parameters": {"dimension": "position"}},
@@ -101,6 +97,271 @@ PILOT_BINDINGS: dict[str, dict[str, Any]] = {
     "AC-R49-01": {"facts": ["pressureTest.method", "pressureTest.designPressure", "pressureTest.testPressure", "pressureTest.holdMinutes", "pressureTest.testResult", "pressureTest.allowableStressAtTestTemperature", "pressureTest.allowableStressAtDesignTemperature", "pressureTest.maximumAllowableTestPressure"], "tools": ["extract_document_fields", "check_pressure_test_parameters", "validate_evidence_grounding"], "parameters": {"ruleProfileVersion": "pressure-test-parameters-gbt20801-v2"}},
     "AC-R49-02": {"facts": ["pressureTest.method", "pressureTest.designPressure", "pressureTest.testPressure", "pressureTest.holdMinutes", "pressureTest.testResult", "pressureTest.maximumAllowableTestPressure", "pressureTest.pneumaticYieldLimitPressure", "pressureTest.pressureSteps"], "tools": ["extract_document_fields", "extract_table_records", "check_pressure_test_parameters", "validate_evidence_grounding"], "parameters": {"ruleProfileVersion": "pressure-test-parameters-gbt20801-v2"}},
     "AC-R50-01": {"facts": ["pressureTestReport.standardRef", "pressureTestReport.parameters", "pressureTestPlan.parameters", "pressureTestObserved.parameters", "pressureTestReport.result"], "tools": ["extract_document_fields", "check_pressure_test_report_consistency", "validate_evidence_grounding"], "parameters": {"numericTolerance": 0.001}},
+}
+
+
+R04_BINDINGS: dict[str, dict[str, Any]] = {
+    "AC-R04-01": {
+        "facts": [
+            "designDocumentSet.catalogListedDocumentTypes",
+            "designDocumentSet.uploadedDocumentTypes",
+            "designDocumentSet.parseableDocumentTypes",
+        ],
+        "tools": [
+            "get_document_ocr_result",
+            "extract_document_fields",
+            "extract_table_records",
+            "check_document_set_completeness",
+            "validate_evidence_grounding",
+        ],
+        "parameters": {
+            "requiredDocumentTypes": [
+                "drawing_catalog",
+                "design_specification",
+                "pipeline_data_sheet",
+                "pipeline_layout_drawing",
+                "pipeline_material_list",
+                "straight_pipe_strength_calculation",
+            ]
+        },
+    },
+    "AC-R04-02": {
+        "facts": ["designDocuments.documents", "project.pipelines"],
+        "tools": [
+            "get_document_ocr_result",
+            "extract_document_fields",
+            "extract_table_records",
+            "recognize_signatures_and_seals",
+            "evaluate_design_document_approval",
+            "validate_evidence_grounding",
+        ],
+        "parameters": {
+            "approvalMode": "three_level",
+            "targetDocumentTypes": [
+                "pipeline_data_sheet",
+                "pipeline_material_grade_table",
+                "equipment_layout_drawing",
+                "pipeline_layout_drawing",
+                "strength_calculation",
+                "pipeline_stress_calculation",
+            ],
+            "requiredRoles": ["设计", "校核", "审核"],
+            "ruleVersion": "r04-design-approval-tsg31-2025-v1",
+        },
+    },
+    "AC-R04-03": {
+        "facts": ["designDocuments.documents", "project.pipelines"],
+        "tools": [
+            "get_document_ocr_result",
+            "extract_document_fields",
+            "extract_table_records",
+            "recognize_signatures_and_seals",
+            "evaluate_design_document_approval",
+            "validate_evidence_grounding",
+        ],
+        "parameters": {
+            "approvalMode": "four_level_conditional",
+            "targetDocumentTypes": [
+                "pipeline_material_grade_table",
+                "pipeline_stress_calculation",
+                "equipment_layout_drawing",
+                "pipeline_layout_drawing",
+            ],
+            "requiredRoles": ["设计", "校核", "审核", "审定"],
+            "ruleVersion": "r04-design-approval-tsg31-2025-v1",
+            "triggerProfile": "gc1-or-gcd-pressure-temperature-v1",
+        },
+    },
+}
+
+
+R01_R03_BINDINGS: dict[str, dict[str, Any]] = {
+    "AC-R01-01": {
+        "facts": ["designLicense.holderName", "designDocument.titleBlockOrganization", "designDocument.designSealOrganization"],
+        "tools": ["extract_document_fields", "recognize_signatures_and_seals", "check_all_equal", "validate_evidence_grounding"],
+        "parameters": {"argumentProfile": "r01_design_org_identity", "normalizer": "organization_name", "requiredCount": 3},
+    },
+    "AC-R01-02": {
+        "facts": ["designLicense.scopeCodes", "project.pipelineGrades"],
+        "tools": ["extract_document_fields", "extract_table_records", "check_design_license_scope", "validate_evidence_grounding"],
+        "parameters": {"argumentProfile": "r01_design_scope_project", "scopeProfile": "design-license-scope-cn-v1"},
+    },
+    "AC-R01-03": {
+        "facts": [
+            "designLicense.validFrom", "designLicense.validUntil", "project.constructionStart",
+            "project.plannedConstructionEnd", "project.actualConstructionEnd", "project.changeClarificationEnd",
+        ],
+        "tools": ["extract_document_fields", "check_date_covers", "validate_evidence_grounding"],
+        "parameters": {
+            "argumentProfile": "r01_design_license_period",
+            "coverageMode": "closed_interval",
+            "periodEndPolicy": "latest_of_planned_actual_change_clarification",
+        },
+    },
+    "AC-R01-04": {
+        "facts": ["designLicense.scopeCodes", "designDocument.pipelineGrades"],
+        "tools": ["extract_document_fields", "extract_table_records", "check_design_license_scope", "validate_evidence_grounding"],
+        "parameters": {"argumentProfile": "r01_design_scope_documents", "scopeProfile": "design-license-scope-cn-v1"},
+    },
+    "AC-R02-01": {
+        "facts": ["installationLicense.scopeCodes", "project.pipelineGrades"],
+        "tools": ["extract_document_fields", "extract_table_records", "check_installation_license_scope", "validate_evidence_grounding"],
+        "parameters": {"argumentProfile": "r02_installation_scope", "scopeProfile": "installation-license-scope-cn-v2"},
+    },
+    "AC-R02-02": {
+        "facts": ["installationLicense.validFrom", "installationLicense.validUntil", "project.constructionStart", "project.plannedConstructionEnd"],
+        "tools": ["extract_document_fields", "check_date_covers", "validate_evidence_grounding"],
+        "parameters": {"argumentProfile": "r02_installation_license_period", "coverageMode": "closed_interval"},
+    },
+    "AC-R02-03": {
+        "facts": ["installationLicense.validFrom", "installationLicense.validUntil", "project.constructionStart", "project.plannedConstructionEnd"],
+        "tools": ["check_date_covers", "validate_evidence_grounding"],
+        "parameters": {
+            "argumentProfile": "r02_installation_license_period",
+            "failureAction": "CONTACT_NOTICE_REQUIRED",
+            "externalActionPolicy": "recommendation_only",
+        },
+    },
+    "AC-R03-01": {
+        "facts": ["ndtAgencies.agencies[].agencyId", "ndtAgencies.agencies[].licenseOrganizationName", "ndtAgencies.agencies[].planOrganizationName"],
+        "tools": ["extract_document_fields", "evaluate_ndt_agencies", "validate_evidence_grounding"],
+        "parameters": {"argumentProfile": "r03_agency_identity", "evaluationMode": "identity"},
+    },
+    "AC-R03-02": {
+        "facts": ["ndtAgencies.agencies[].agencyId", "ndtAgencies.agencies[].approvalItemCodes", "ndtAgencies.agencies[].requiredMethods"],
+        "tools": ["extract_document_fields", "extract_table_records", "decode_ndt_approval_item_codes", "evaluate_ndt_agencies", "validate_evidence_grounding"],
+        "parameters": {"argumentProfile": "r03_method_coverage", "evaluationMode": "method_coverage", "codeProfile": "tsg-z7002-2022-table-a1"},
+    },
+    "AC-R03-03": {
+        "facts": [
+            "ndtAgencies.agencies[].agencyId", "ndtAgencies.agencies[].validFrom", "ndtAgencies.agencies[].validUntil",
+            "ndtAgencies.agencies[].periodStart", "ndtAgencies.agencies[].plannedPeriodEnd",
+        ],
+        "tools": ["extract_document_fields", "evaluate_ndt_agencies", "validate_evidence_grounding"],
+        "parameters": {
+            "argumentProfile": "r03_date_coverage",
+            "evaluationMode": "date_coverage",
+            "failureAction": "CONTACT_NOTICE_REQUIRED",
+            "externalActionPolicy": "recommendation_only",
+        },
+    },
+}
+
+
+R06_R07_BINDINGS: dict[str, dict[str, Any]] = {
+    "AC-R06-01": {
+        "facts": [
+            "calculationDocuments.documents[].documentId",
+            "calculationDocuments.documents[].documentType",
+            "calculationDocuments.documents[].bodyUploaded",
+            "calculationDocuments.documents[].coveredPipelineIds",
+            "calculationDocuments.documents[].parameterComparisons",
+        ],
+        "tools": [
+            "extract_document_fields",
+            "extract_table_records",
+            "evaluate_calculation_document_consistency",
+            "validate_evidence_grounding",
+        ],
+        "parameters": {
+            "argumentProfile": "r06_calculation_consistency",
+            "targetDocumentTypes": ["strength_calculation", "pipeline_stress_calculation"],
+            "ruleVersion": "r06-calculation-consistency-v1",
+        },
+    },
+    "AC-R06-02": {
+        "facts": ["calculationDocuments.documents"],
+        "tools": [
+            "extract_document_fields",
+            "recognize_signatures_and_seals",
+            "evaluate_design_document_approval",
+            "validate_evidence_grounding",
+        ],
+        "parameters": {
+            "argumentProfile": "r06_three_level_approval",
+            "approvalMode": "three_level",
+            "targetDocumentTypes": ["strength_calculation", "pipeline_stress_calculation"],
+            "requiredRoles": ["设计", "校核", "审核"],
+            "ruleVersion": "r06-design-approval-tsg31-2025-3.1.3.3-v1",
+        },
+    },
+    "AC-R06-03": {
+        "facts": ["calculationDocuments.documents", "project.pipelines"],
+        "tools": [
+            "extract_document_fields",
+            "recognize_signatures_and_seals",
+            "evaluate_design_document_approval",
+            "validate_evidence_grounding",
+        ],
+        "parameters": {
+            "argumentProfile": "r06_four_level_approval",
+            "approvalMode": "four_level_conditional",
+            "targetDocumentTypes": ["pipeline_stress_calculation"],
+            "requiredRoles": ["设计", "校核", "审核", "审定"],
+            "triggerProfile": "gc1-or-gcd-pressure-temperature-v1",
+            "ruleVersion": "r06-design-approval-tsg31-2025-3.1.3.3-v1",
+        },
+    },
+    "AC-R07-01": {
+        "facts": [
+            "designChanges.hasDesignChanges",
+            "designChanges.documents[].documentId",
+            "designChanges.documents[].documentType",
+            "designChanges.documents[].changedDocumentType",
+            "designChanges.documents[].writtenApproval",
+            "designChanges.documents[].originalDesignOrganizationName",
+            "designChanges.documents[].approvingOrganizationName",
+            "designChanges.documents[].signatureRoles",
+            "designChanges.documents[].designLicenseSeal",
+            "designChanges.documents[].coveredPipelineIds",
+            "project.pipelines",
+        ],
+        "tools": [
+            "extract_document_fields",
+            "recognize_signatures_and_seals",
+            "evaluate_design_change_approval",
+            "verify_design_license_seals",
+            "validate_evidence_grounding",
+        ],
+        "parameters": {
+            "argumentProfile": "r07_design_change_approval",
+            "approvalLevelPolicy": "inherit_changed_document_and_pipeline",
+            "requiredDocumentTypes": ["drawing_catalog", "pipeline_layout_drawing"],
+            "expectedSealName": "压力管道设计许可印章",
+            "sealPolicy": "tsg31_2025_3.1.2_by_document_type",
+            "ruleVersion": "r07-design-change-tsg31-2025-v1",
+        },
+    },
+}
+
+
+R09_BINDINGS: dict[str, dict[str, Any]] = {
+    "AC-R09-01": {
+        "facts": [
+            "designSpecialRequirements.domains.ndt",
+            "designSpecialRequirements.domains.corrosion",
+            "designSpecialRequirements.domains.pressureTest",
+            "designSpecialRequirements.domains.leakTest",
+            "fixedClauses.designSpecialRequirementRules",
+        ],
+        "tools": [
+            "extract_document_fields",
+            "extract_table_records",
+            "evaluate_design_special_requirements",
+            "validate_evidence_grounding",
+        ],
+        "parameters": {
+            "argumentProfile": "r09_design_special_requirements",
+            "domains": ["ndt", "corrosion", "pressureTest", "leakTest"],
+            "requiredPathsByDomain": {
+                "ndt": ["requirements.method", "requirements.coverage", "requirements.acceptanceCriteria"],
+                "corrosion": ["requirements.protectionMethod", "requirements.acceptanceCriteria"],
+                "pressureTest": ["requirements.method", "requirements.testPressure", "requirements.acceptanceCriteria"],
+                "leakTest": ["requirements.method", "requirements.testPressure", "requirements.acceptanceCriteria"],
+            },
+            "ruleVersion": "r09-design-special-requirements-v1",
+        },
+    },
 }
 
 
@@ -145,6 +406,70 @@ def make_binding(check: dict[str, Any]) -> dict[str, Any]:
             "parameters": {"minConfidence": 0.75, "requirePage": True, "requireBboxOrQuotedText": True, "denyOnConflict": True},
             "outputSchema": "evidence-gate-result-v1",
             "implementationStatus": "pilot_implemented" if rule_id in PILOT_RULES else "implemented",
+        }
+    r04_override = R04_BINDINGS.get(check_id)
+    if r04_override:
+        return {
+            "atomicCheckId": check_id,
+            "sourceRuleId": rule_id,
+            "requiredFacts": r04_override["facts"],
+            "tools": r04_override["tools"],
+            "parameters": {
+                "profile": "design_approval",
+                "clauseSource": "frozen_standard_clause_package",
+                "failurePolicy": check["failurePolicy"],
+                **r04_override["parameters"],
+            },
+            "outputSchema": "deterministic-tool-result-v1",
+            "implementationStatus": "implemented",
+        }
+    r01_r03_override = R01_R03_BINDINGS.get(check_id)
+    if r01_r03_override:
+        return {
+            "atomicCheckId": check_id,
+            "sourceRuleId": rule_id,
+            "requiredFacts": r01_r03_override["facts"],
+            "tools": r01_r03_override["tools"],
+            "parameters": {
+                "profile": RULE_PROFILES[rule_id][2],
+                "clauseSource": "frozen_standard_clause_package",
+                "failurePolicy": check["failurePolicy"],
+                **r01_r03_override["parameters"],
+            },
+            "outputSchema": "deterministic-tool-result-v1",
+            "implementationStatus": "pilot_implemented",
+        }
+    r06_r07_override = R06_R07_BINDINGS.get(check_id)
+    if r06_r07_override:
+        return {
+            "atomicCheckId": check_id,
+            "sourceRuleId": rule_id,
+            "requiredFacts": r06_r07_override["facts"],
+            "tools": r06_r07_override["tools"],
+            "parameters": {
+                "profile": RULE_PROFILES[rule_id][2],
+                "clauseSource": "frozen_standard_clause_package",
+                "failurePolicy": check["failurePolicy"],
+                **r06_r07_override["parameters"],
+            },
+            "outputSchema": "deterministic-tool-result-v1",
+            "implementationStatus": "pilot_implemented",
+        }
+    r09_override = R09_BINDINGS.get(check_id)
+    if r09_override:
+        return {
+            "atomicCheckId": check_id,
+            "sourceRuleId": rule_id,
+            "requiredFacts": r09_override["facts"],
+            "tools": r09_override["tools"],
+            "parameters": {
+                "profile": RULE_PROFILES[rule_id][2],
+                "clauseSource": "frozen_standard_clause_package",
+                "failurePolicy": check["failurePolicy"],
+                **r09_override["parameters"],
+            },
+            "outputSchema": "deterministic-tool-result-v1",
+            "implementationStatus": "pilot_implemented",
         }
     facts, domain_tool, profile = RULE_PROFILES[rule_id]
     override = PILOT_BINDINGS.get(check_id)

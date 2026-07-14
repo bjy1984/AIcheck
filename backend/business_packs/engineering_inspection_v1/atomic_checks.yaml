@@ -73,7 +73,7 @@ atomicChecks:
   nodeId: 2
   name: 施工单位许可资质·原子项3
   checkType: evidence_and_deterministic_rule
-  instruction: 如果不能覆盖，需要发联络单提醒
+  instruction: 若安装许可证有效期不能覆盖施工计划工期，输出CONTACT_NOTICE_REQUIRED结构化提醒建议；当前不自动生成或发送联络单
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R02-04
@@ -109,7 +109,7 @@ atomicChecks:
   nodeId: 3
   name: 无损检测机构核准资质·原子项3
   checkType: evidence_and_deterministic_rule
-  instruction: 3、有效期：是否能覆盖住施工计划工期，如果不能覆盖，需要发联络单提醒
+  instruction: 有效期是否覆盖施工计划工期；若不能覆盖，按检测机构分别输出CONTACT_NOTICE_REQUIRED结构化提醒建议，当前不自动生成或发送联络单
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R03-04
@@ -145,7 +145,7 @@ atomicChecks:
   nodeId: 4
   name: 设计文件的批准程序·原子项3
   checkType: evidence_and_deterministic_rule
-  instruction: 下列管道的材料等级表、应力计算书、设备布置图和管道布置图应当有设计、校核、审核、审定四级签字：
+  instruction: 下列管道的材料等级表、应力计算书、设备布置图和管道布置图应当有设计、校核、审核、审定四级签字：（1）GC1级管道；（2）GCD级管道，且满足以下任一条件：设计压力大于或者等于16.7MPa；设计压力大于或者等于4.0MPa且设计温度大于或者等于570℃。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R04-04
@@ -199,7 +199,7 @@ atomicChecks:
   nodeId: 6
   name: 强度计算书、管道应力分析计算书的审批手续·原子项3
   checkType: evidence_and_deterministic_rule
-  instruction: 对 GC1 级管道，或者设计压力大于等于 16.7MPa，或者 GCD 级管道设计压力大于等于 4.0MPa 且设计温度大于等于 570℃的，应当有设计、校核、审核、审定四级签字
+  instruction: 对GC1级管道，或者设计压力大于等于16.7MPa，或者设计压力大于等于4.0MPa且设计温度大于等于570℃的GCD级管道，其管道应力分析计算书应当有设计、校核、审核、审定四级签字；强度计算书不在本条四级文件清单中
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R06-04
@@ -217,7 +217,7 @@ atomicChecks:
   nodeId: 7
   name: 设计变更的书面批准文件·原子项1
   checkType: evidence_and_deterministic_rule
-  instruction: 是否盖设计许可章，是否有相应人员三级或者四级签字
+  instruction: 有设计变更时应有原设计单位书面批准；按被变更设计文件及受影响管道条件逐份核验三级或者四级签字；重新出具的管道图纸目录和管道布置图应加盖原始压力管道设计许可印章，复印章无效，其他变更通知单不得无依据一律要求许可印章
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R07-02
@@ -253,7 +253,7 @@ atomicChecks:
   nodeId: 9
   name: 设计文件上注明的无损检测、防腐、耐压试验和泄漏试验要求·原子项1
   checkType: evidence_and_deterministic_rule
-  instruction: 审查设计说明：是否对无损检测、防腐和耐压试验和泄露性试验规定了具体要求，其相应要求应符合安全技术和标准规定
+  instruction: 仅审查设计说明是否分别对无损检测、防腐、耐压试验和泄漏试验规定了具体要求，以及各项要求是否通过冻结安全技术规范和标准规则校验；不审查实际施工、试验报告、检测结果或仪器
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R09-02

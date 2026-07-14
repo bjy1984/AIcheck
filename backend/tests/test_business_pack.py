@@ -149,7 +149,7 @@ def test_engineering_pack_has_complete_standard_clause_packages_and_atomic_check
     assert {item["atomicCheckId"] for item in tool_bindings} == {item["id"] for item in checks}
     assert all(item["requiredFacts"] and item["tools"] and item["outputSchema"] for item in tool_bindings)
     pilot_bindings = [item for item in tool_bindings if item["implementationStatus"] == "pilot_implemented"]
-    assert {item["sourceRuleId"] for item in pilot_bindings} == {"R01", "R12", "R48", "R49", "R50"}
+    assert {item["sourceRuleId"] for item in pilot_bindings} == {"R01", "R02", "R03", "R06", "R07", "R09", "R12", "R48", "R49", "R50"}
     assert all("validate_evidence_grounding" in item["tools"] for item in pilot_bindings)
 
     invalid_tool_binding_pack = deepcopy(pack)
@@ -166,6 +166,13 @@ def test_engineering_pack_has_complete_standard_clause_packages_and_atomic_check
     r10 = next(item for item in packages if item["sourceRuleId"] == "R10")
     assert "其他标准" in r10["applicability"]["expression"]
     assert any(item["clauseNo"] == "3.1.3.1" for item in r10["professionalClauses"])
+
+    r11 = next(item for item in packages if item["sourceRuleId"] == "R11")
+    gb50235 = next(item for item in r11["professionalClauses"] if item["standardRef"] == "STD-GB-50235-2010")
+    assert gb50235["clauseNo"] == "3.1.4(2)"
+    assert gb50235["sourcePage"] == 18
+    assert gb50235["locators"][0]["clauseNo"] == "3.1.4(2)"
+    assert gb50235["locators"][0]["verificationStatus"] == "visual_verified"
 
     invalid_pack = deepcopy(pack)
     invalid_pack["standardClausePackages"][0]["atomicCheckIds"] = []
@@ -184,7 +191,7 @@ def test_node_standards_exposes_fixed_clause_page_locators() -> None:
     assert len(repo.state["standard_document_versions"]) == 29
     assert len(repo.state["standard_clause_packages_db"]) == 68
     assert len(repo.state["standard_clause_package_items"]) == 168
-    assert len(repo.state["standard_clause_locators"]) == 216
+    assert len(repo.state["standard_clause_locators"]) == 217
     assert len(
         [item for item in repo.state["project_node_clause_packages"] if item["projectId"] == "P-2026-HDCP-001"]
     ) == 68
