@@ -31,7 +31,6 @@ from libs.knowledge_indexing import (
 )
 from libs.ocr_readiness import parse_result_outcome_status, parse_result_quality_blockers
 from libs.security.tenant import (
-    DEFAULT_TENANT_ID,
     apply_default_tenant,
     current_tenant_id as configured_tenant_id,
     tenant_id_for_record,
@@ -3064,6 +3063,16 @@ class InMemoryRepository:
                 return
             self.ensure_postgres_schema()
             current_documents = self.current_persistence_documents()
+            vector_collection = STATE_COLLECTIONS["knowledge_vectors"]
+            vector_dirty = any(
+                collection_name == vector_collection
+                and self._persistence_baseline.get((collection_name, object_id))
+                != self.canonical_persistence_payload(document)
+                for (collection_name, object_id), document in current_documents.items()
+            ) or any(
+                key[0] == vector_collection and key not in current_documents
+                for key in self._persistence_baseline
+            )
             tenant_id = configured_tenant_id()
             with self.sync_postgres.transaction():
                 self.prepare_audit_records_for_postgres_transaction(
@@ -3180,7 +3189,7 @@ class InMemoryRepository:
                     )
             self.sync_postgres.commit()
             self.capture_persistence_baseline()
-            if self.state.get("knowledge_vectors"):
+            if vector_dirty:
                 self.flush_knowledge_vectors_to_pgvector()
 
     def upsert_state_records_to_sync_postgres(

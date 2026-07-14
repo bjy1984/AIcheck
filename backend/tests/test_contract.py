@@ -10326,6 +10326,42 @@ def test_postgres_flush_uses_transaction() -> None:
     assert database.singleton_rows
 
 
+def test_postgres_flush_skips_pgvector_when_vectors_are_unchanged(monkeypatch) -> None:
+    database = FakePostgresConnection()
+    repo.sync_postgres = database
+    repo.postgres_dsn = "postgresql://fake"
+    repo.postgres_enabled = True
+    repo.state["knowledge_vectors"] = [{"id": "KVI-TEST", "dimensions": 1024}]
+    flushes: list[str] = []
+    monkeypatch.setattr(repo, "flush_knowledge_vectors_to_pgvector", lambda: flushes.append("flush"))
+
+    repo.flush_to_sync_postgres()
+    assert flushes == ["flush"]
+    flushes.clear()
+
+    repo.state["audit_logs"].append({"id": "AUD-NON-VECTOR", "action": "audit only"})
+    repo.flush_to_sync_postgres()
+
+    assert flushes == []
+
+
+def test_postgres_flush_syncs_pgvector_when_vector_payload_changes(monkeypatch) -> None:
+    database = FakePostgresConnection()
+    repo.sync_postgres = database
+    repo.postgres_dsn = "postgresql://fake"
+    repo.postgres_enabled = True
+    repo.state["knowledge_vectors"] = [{"id": "KVI-TEST", "dimensions": 1024}]
+    flushes: list[str] = []
+    monkeypatch.setattr(repo, "flush_knowledge_vectors_to_pgvector", lambda: flushes.append("flush"))
+
+    repo.flush_to_sync_postgres()
+    flushes.clear()
+    repo.state["knowledge_vectors"][0]["indexVersion"] = "V2"
+    repo.flush_to_sync_postgres()
+
+    assert flushes == ["flush"]
+
+
 async def test_postgres_transaction_probe_reports_skipped_without_postgres(monkeypatch) -> None:
     monkeypatch.delenv("AICHECK_DATABASE_URL", raising=False)
     result = await run_transaction_probe(None)
