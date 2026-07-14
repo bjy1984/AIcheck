@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "aicheck-audit-test-evidence@1",
+  "fullBackendSuite": {
+    "command": "cd backend && ./.venv/bin/pytest -q",
+    "passed": 882,
+    "skipped": 1,
+    "warnings": 6,
+    "durationSeconds": 29.64,
+    "exitCode": 0
+  },
+  "targetedAuditSuite": {
+    "passed": 83,
+    "warnings": 1,
+    "durationSeconds": 4.03,
+    "exitCode": 0,
+    "files": [
+      "test_audit_runtime.py",
+      "test_review_p0_correctness.py",
+      "test_review_orchestration_100_probe.py",
+      "test_task_lifecycle_p1.py",
+      "test_repository_postgres_concurrency.py",
+      "test_performance_hardening_p2.py",
+      "test_review_runtime_tool_dispatcher.py",
+      "test_review_tool_executor.py",
+      "test_review_business_tools.py"
+    ]
+  },
+  "frontendBackendContractAudit": {
+    "frontendEndpoints": 237,
+    "backendRouteKeys": 683,
+    "missingEndpoints": 0,
+    "exitCode": 0
+  },
+  "interpretation": "The existing suite is green but does not cover the confirmed cross-tenant, distributed failure and stale-snapshot scenarios recorded by this audit."
+}

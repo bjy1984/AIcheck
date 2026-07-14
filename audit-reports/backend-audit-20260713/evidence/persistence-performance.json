@@ -1,0 +1,46 @@
+{
+  "schemaVersion": "aicheck-audit-persistence-evidence@1",
+  "staleSnapshotOverwrite": {
+    "databaseType": "disposable PostgreSQL 16.10",
+    "writer1Committed": ["AUD-WRITER-1", "R1"],
+    "writer2StaleSnapshotCommitted": ["AUD-WRITER-2", "R2"],
+    "rowsAfterWriter2": [
+      ["audit_logs", "AUD-WRITER-2"],
+      ["review_runs", "R2"]
+    ],
+    "writer1AuditSurvived": false,
+    "writer1ReviewRunSurvived": false,
+    "appendOnlyTriggers": 0
+  },
+  "localDataset": {
+    "sqliteFileBytesApprox": 165675008,
+    "stateRows": 14438,
+    "statePayloadCharacters": 88502021,
+    "idempotencyRows": 156,
+    "idempotencyPayloadCharacters": 32979226,
+    "auditLogRows": 330,
+    "reviewRunRows": 15
+  },
+  "postgresFullLoadBenchmark": {
+    "sourceStateRows": 14438,
+    "sourceIdempotencyRows": 156,
+    "utf8PayloadBytes": 155074393,
+    "fullLoadSeconds": 8.91,
+    "pythonPeakAllocatedBytes": 617611846,
+    "loadedAuditLogs": 330,
+    "loadedReviewRuns": 15
+  },
+  "pagination": {
+    "storageOrder": ["AUD-A@01:00", "AUD-M@03:00", "AUD-Z@02:00"],
+    "expectedNewestFirst": ["AUD-M@03:00", "AUD-Z@02:00", "AUD-A@01:00"],
+    "stableNewestFirst": false,
+    "sqlitePlan": [
+      "SEARCH aicheck_state USING INDEX idx_aicheck_state_collection (collection=?)",
+      "USE TEMP B-TREE FOR ORDER BY"
+    ]
+  },
+  "auditRecordShape": {
+    "presentFields": ["id", "actorId", "actorName", "actorOrgName", "operationId", "action", "objectType", "objectId", "result", "createdAt"],
+    "missingScopeAndIntegrityFields": ["tenantId", "projectId", "nodeId", "before", "after", "requestHash", "previousHash", "eventHash", "ipAddress", "userAgent", "errorCode"]
+  }
+}

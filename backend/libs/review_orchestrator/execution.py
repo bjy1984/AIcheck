@@ -23,6 +23,7 @@ from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_config, qwen_runti
 from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
+from libs.security.tenant import current_tenant_id, tenant_id_for_record
 
 REVIEW_GRAPH_STEPS: list[dict[str, Any]] = [
     {"key": "load_context", "label": "加载项目上下文", "taskQueue": "review.graph"},
@@ -61,7 +62,37 @@ REVIEW_STATE_COLLECTIONS = (
     "ai_feedback",
     "review_run_clause_snapshots",
     "model_call_attempts",
+    "workflow_outbox",
+    "workflow_inbox",
 )
+
+REVIEW_RUN_TERMINAL_STATUSES = {
+    "accepted_by_human",
+    "edited_by_human",
+    "rejected_by_human",
+    "cancelled",
+    "failed",
+    "failed_to_start",
+}
+
+NON_RETRYABLE_REVIEW_REASONS = {
+    "REVIEW_INPUT_TOKEN_BUDGET_EXCEEDED",
+    "REVIEW_COST_BUDGET_EXCEEDED",
+    "REVIEW_MAX_ATTEMPTS_EXCEEDED",
+    "LLM_OUTPUT_TRUNCATED",
+    "LLM_OUTPUT_EMPTY",
+    "LLM_OUTPUT_INVALID_JSON",
+    "LLM_OUTPUT_INVALID_ENVELOPE",
+    "LLM_OUTPUT_EMPTY_FINDINGS",
+    "LLM_OUTPUT_INVALID_FINDING",
+}
+
+
+def review_workflow_id(tenant_id: str, review_run_id: str) -> str:
+    """Namespace Temporal workflows without exposing the tenant identifier."""
+
+    tenant_digest = hashlib.sha256(str(tenant_id).encode("utf-8")).hexdigest()[:12]
+    return f"review-run-{tenant_digest}-{review_run_id}"
 
 FORBIDDEN_AGENT_TOOLS = {
     "approve_review",
@@ -114,6 +145,64 @@ def ensure_review_state() -> None:
 def stable_hash_payload(value: Any) -> str:
     raw = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))
     return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def review_run_revision(review_run: dict[str, Any]) -> int:
+    return int(review_run.get("revision") or 1)
+
+
+def review_run_etag(review_run: dict[str, Any]) -> str:
+    review_run_id = str(review_run.get("reviewRunId") or review_run.get("id") or "unknown")
+    return f'W/"review-run-{review_run_id}-r{review_run_revision(review_run)}"'
+
+
+def bump_review_run_revision(review_run: dict[str, Any]) -> None:
+    review_run["revision"] = review_run_revision(review_run) + 1
+    review_run["updatedAt"] = server_time()
+
+
+def review_failure_retryable(exc: Exception) -> bool:
+    if isinstance(exc, (ValueError, TypeError, KeyError)):
+        return False
+    if isinstance(exc, IntegrationServiceError):
+        if exc.reason in NON_RETRYABLE_REVIEW_REASONS:
+            return False
+        if exc.status_code in {408, 425, 429} or (exc.status_code is not None and exc.status_code >= 500):
+            return True
+        return bool(exc.reason and any(token in exc.reason for token in ("TIMEOUT", "UNAVAILABLE", "CONNECTION")))
+    return isinstance(exc, (ConnectionError, TimeoutError, OSError, RuntimeError))
+
+
+def mark_review_run_retry_exhausted(review_run_id: str) -> dict[str, Any] | None:
+    review_run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one(
+        "review_runs", review_run_id
+    )
+    if not review_run:
+        return None
+    review_run["status"] = "failed"
+    review_run["retryableFailure"] = False
+    review_run["errorCode"] = "REVIEW_RETRY_EXHAUSTED"
+    review_run["finishedAt"] = server_time()
+    bump_review_run_revision(review_run)
+    append_review_event(
+        review_run_id,
+        event_type="review_run.retry_exhausted",
+        title="ReviewRun 重试耗尽",
+        status="failed",
+        details={"errorCode": "REVIEW_RETRY_EXHAUSTED"},
+    )
+    ai_run = repo.find_one("ai_runs", str(review_run.get("aiRunId") or ""))
+    if ai_run:
+        ai_run["status"] = "失败"
+        ai_run["errorCode"] = "REVIEW_RETRY_EXHAUSTED"
+    if not review_run.get("advisoryOnly"):
+        previous_status = str(review_run.get("previousNodeStatus") or "待人工确认")
+        repo.set_node_status(
+            str(review_run.get("projectId")),
+            int(review_run.get("nodeId") or 0),
+            previous_status,
+        )
+    return review_run
 
 
 def review_rule_node_ids(rule: dict[str, Any]) -> set[int]:
@@ -200,19 +289,27 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
 
     review_run_id = f"RRUN-{uuid4().hex[:10].upper()}"
     task_queues = review_task_queues()
-    workflow_id = f"review-run-{review_run_id}"
+    tenant_id = tenant_id_for_record(ai_run) or current_tenant_id()
+    workflow_id = review_workflow_id(tenant_id, review_run_id)
     now = server_time()
     audit_runtime = audit_runtime_public_config(mode=str(ai_run.get("auditInputMode") or "") or None)
     clause_package_snapshot = repo.clone(ai_run.get("clausePackageSnapshot"))
     record = {
         "id": review_run_id,
         "reviewRunId": review_run_id,
+        "tenantId": tenant_id,
         "aiRunId": ai_run["id"],
         "projectId": ai_run.get("projectId"),
         "nodeId": ai_run.get("nodeId"),
         "businessPackId": ai_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID,
         "businessPackVersion": ai_run.get("businessPackVersion"),
         "businessPackSnapshotHash": ai_run.get("businessPackSnapshotHash"),
+        "atomicCheckToolBindingSetId": ai_run.get("atomicCheckToolBindingSetId"),
+        "atomicCheckToolBindingSetVersion": ai_run.get("atomicCheckToolBindingSetVersion"),
+        "atomicCheckToolBindingSetLifecycle": ai_run.get("atomicCheckToolBindingSetLifecycle"),
+        "atomicCheckToolBindingSetHash": ai_run.get("atomicCheckToolBindingSetHash"),
+        "atomicCheckToolBindingSetSnapshot": repo.clone(ai_run.get("atomicCheckToolBindingSetSnapshot") or {}),
+        "atomicCheckToolBindingsSnapshot": repo.clone(ai_run.get("atomicCheckToolBindingsSnapshot") or []),
         "clausePackageId": ai_run.get("clausePackageId") or (clause_package_snapshot or {}).get("packageStorageId"),
         "clausePackageSnapshotHash": ai_run.get("clausePackageSnapshotHash") or (clause_package_snapshot or {}).get("snapshotHash"),
         "agentId": ai_run.get("agentId") or "compliance_review_agent",
@@ -257,6 +354,7 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
                 or (clause_package_snapshot or {}).get("snapshotHash"),
                 "promptVersion": ai_run.get("promptVersion"),
                 "ruleSetVersion": ai_run.get("ruleVersion"),
+                "atomicCheckToolBindingSetHash": ai_run.get("atomicCheckToolBindingSetHash"),
             }
         ),
         "outputHash": None,
@@ -416,12 +514,12 @@ def execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
     review_run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not review_run:
         return {"reviewRunId": review_run_id, "status": "missing"}
-    if review_run.get("status") in {"waiting_human_review", "accepted_by_human", "edited_by_human", "rejected_by_human", "failed"}:
+    if review_run.get("status") in {"waiting_human_review", *REVIEW_RUN_TERMINAL_STATUSES}:
         return {"reviewRunId": review_run_id, "status": review_run.get("status"), "alreadyCompleted": True}
     ai_run = repo.find_one("ai_runs", str(review_run.get("aiRunId")))
     review_run["status"] = "running"
     review_run["startedAt"] = review_run.get("startedAt") or server_time()
-    review_run["updatedAt"] = server_time()
+    bump_review_run_revision(review_run)
     if ai_run:
         ai_run["status"] = "推理中"
     context: dict[str, Any] = {}
@@ -441,7 +539,7 @@ def execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
         review_run["status"] = "waiting_human_review"
         review_run["currentStep"] = "waiting_human_review"
         review_run["finishedAt"] = server_time()
-        review_run["updatedAt"] = review_run["finishedAt"]
+        bump_review_run_revision(review_run)
         review_run["outputHash"] = stable_hash_payload(review_run.get("findingDrafts") or [])
         append_review_event(
             review_run_id,
@@ -514,16 +612,33 @@ def execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
                 ai_run["stateTransition"] = repo.clone(transition)
         return {"reviewRunId": review_run_id, "status": review_run["status"]}
     except Exception as exc:
-        review_run["status"] = "failed"
-        review_run["errorCode"] = "REVIEW_WORKFLOW_FAILED"
-        review_run["errorMessage"] = str(exc)
+        retryable = review_failure_retryable(exc)
+        failure_status = "retry_pending" if retryable else "failed"
+        error_code = (
+            str(exc.reason)
+            if isinstance(exc, IntegrationServiceError) and exc.reason
+            else "REVIEW_WORKFLOW_TRANSIENT_FAILURE"
+            if retryable
+            else "REVIEW_WORKFLOW_FAILED"
+        )
+        review_run["status"] = failure_status
+        review_run["retryableFailure"] = retryable
+        review_run["errorCode"] = error_code
+        review_run["errorMessage"] = str(exc) if isinstance(exc, IntegrationServiceError) else type(exc).__name__
         review_run["finishedAt"] = server_time()
-        append_review_event(review_run_id, event_type="review_run.failed", title="ReviewRun 执行失败", status="failed", details={"message": str(exc)})
+        bump_review_run_revision(review_run)
+        append_review_event(
+            review_run_id,
+            event_type="review_run.retry_pending" if retryable else "review_run.failed",
+            title="ReviewRun 等待重试" if retryable else "ReviewRun 执行失败",
+            status=failure_status,
+            details={"errorCode": error_code, "retryable": retryable},
+        )
         if ai_run:
-            ai_run["status"] = "失败"
-            ai_run["errorCode"] = "AI_RUN_FAILED"
-            ai_run["errorMessage"] = "Temporal/LangGraph 审查编排执行失败。"
-        if not review_run.get("advisoryOnly"):
+            ai_run["status"] = "等待重试" if retryable else "失败"
+            ai_run["errorCode"] = error_code
+            ai_run["errorMessage"] = "Temporal/LangGraph 审查编排暂时失败。" if retryable else "Temporal/LangGraph 审查编排执行失败。"
+        if not retryable and not review_run.get("advisoryOnly"):
             previous_status = str(review_run.get("previousNodeStatus") or "待人工确认")
             repo.set_node_status(
                 str(review_run.get("projectId")),
@@ -538,7 +653,12 @@ def execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
             review_run["stateTransition"] = transition
             if ai_run:
                 ai_run["stateTransition"] = repo.clone(transition)
-        return {"reviewRunId": review_run_id, "status": "failed", "errorMessage": str(exc)}
+        return {
+            "reviewRunId": review_run_id,
+            "status": failure_status,
+            "errorCode": error_code,
+            "retryable": retryable,
+        }
 
 
 def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any]) -> dict[str, Any]:
@@ -637,6 +757,11 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         pack = project.get("businessPackSnapshot") or load_business_pack(
             str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID)
         )
+        pack = repo.clone(pack)
+        if review_run.get("atomicCheckToolBindingSetSnapshot"):
+            pack["atomicCheckToolBindingSet"] = repo.clone(review_run["atomicCheckToolBindingSetSnapshot"])
+        if review_run.get("atomicCheckToolBindingsSnapshot"):
+            pack["atomicCheckToolBindings"] = repo.clone(review_run["atomicCheckToolBindingsSnapshot"])
         rule = (
             current_published_rule_for_node(
                 int(review_run.get("nodeId") or 0),
@@ -669,6 +794,10 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             pack,
             source_rule_id,
             available_tools={item["name"] for item in runtime_tool_catalog()},
+            require_published=(
+                str(review_run.get("reviewMode") or "formal") == "formal"
+                and not bool(review_run.get("advisoryOnly"))
+            ),
         )
         fact_snapshot = context.get("businessFacts") if isinstance(context.get("businessFacts"), dict) else {}
         tool_execution = execute_node_tool_plan(
@@ -2228,8 +2357,35 @@ def review_run_audit_trace(review_run_id: str) -> dict[str, Any]:
 def review_run_view(review_run: dict[str, Any], *, include_sensitive: bool = False) -> dict[str, Any]:
     view = repo.clone(review_run)
     if not include_sensitive:
-        view.pop("rawPrompt", None)
-        view.pop("rawOcrText", None)
+        prompt_audit = view.get("promptAudit") if isinstance(view.get("promptAudit"), dict) else {}
+        view["promptSummary"] = {
+            key: prompt_audit.get(key)
+            for key in (
+                "promptVersion",
+                "ruleVersion",
+                "messagesHash",
+                "promptHash",
+                "responseHash",
+                "payloadPolicy",
+            )
+            if prompt_audit.get(key) is not None
+        }
+        for sensitive_field in (
+            "rawPrompt",
+            "rawOcrText",
+            "prompt",
+            "promptAudit",
+            "messages",
+            "llmMetadata",
+            "reasoningProcess",
+            "llmResultText",
+            "ocrText",
+            "inputPayload",
+            "outputPayload",
+        ):
+            view.pop(sensitive_field, None)
+    view["revision"] = review_run_revision(review_run)
+    view["etag"] = review_run_etag(review_run)
     view["graphSummary"] = summarize_graph(review_run["reviewRunId"])
     view["clausePackageSnapshot"] = review_run_clause_snapshot(
         repo.state,
@@ -2260,6 +2416,8 @@ def confirmed_findings_for_human_decision(
     corrected_output = payload.get("correctedOutput")
     if not isinstance(corrected_output, list) or not corrected_output:
         return [], {"code": "CORRECTED_OUTPUT_REQUIRED"}
+    if len(json.dumps(corrected_output, ensure_ascii=False, default=str)) > 100_000:
+        return [], {"code": "CORRECTED_OUTPUT_TOTAL_TOO_LARGE"}
     if len(corrected_output) > len(original_drafts):
         return [], {"code": "CORRECTED_OUTPUT_TOO_MANY_FINDINGS"}
     originals_by_id = {str(item.get("id") or ""): item for item in original_drafts if item.get("id")}
@@ -2282,6 +2440,8 @@ def confirmed_findings_for_human_decision(
             return [], {"code": "CORRECTED_OUTPUT_ITEM_NOT_OBJECT", "index": index}
         source_draft_id = str(correction.get("sourceDraftId") or correction.get("id") or "")
         original = originals_by_id.get(source_draft_id) if source_draft_id else None
+        if source_draft_id and original is None:
+            return [], {"code": "CORRECTED_OUTPUT_SOURCE_NOT_FOUND", "index": index}
         if original is None and index < len(original_drafts):
             original = original_drafts[index]
         if original is None:
@@ -2306,6 +2466,51 @@ def confirmed_findings_for_human_decision(
             corrected.get("unsupportedClaims") if isinstance(corrected.get("unsupportedClaims"), list) else []
         )
         corrected["requiresHumanConfirmation"] = True
+        if len(corrected["title"]) > 200 or len(corrected["description"]) > 6000:
+            return [], {"code": "CORRECTED_OUTPUT_TEXT_TOO_LONG", "index": index}
+        if any(len(corrected.get(field) or []) > 50 for field in ("evidenceRefs", "ruleRefs", "kbRefs")):
+            return [], {"code": "CORRECTED_OUTPUT_TOO_MANY_REFERENCES", "index": index}
+
+        # An edited claim must never inherit previously validated references without
+        # re-grounding. Re-run every evidence/rule/KB gate even when the user keeps
+        # the original reference arrays unchanged.
+        ai_run = repo.find_one("ai_runs", str(review_run.get("aiRunId") or "")) or {}
+        evidence_links = review_run.get("evidenceLinks") or ai_run.get("evidenceLinks") or [
+            item
+            for item in repo.state.get("node_evidence_links", [])
+            if str(item.get("projectId") or "") == str(review_run.get("projectId") or "")
+            and int(item.get("nodeId") or 0) == int(review_run.get("nodeId") or 0)
+        ]
+        evidence_validation = validate_review_evidence_refs(
+            [corrected],
+            evidence_links,
+            audit_runtime=audit_runtime_for_run(review_run),
+        )
+        if not evidence_validation.get("passed"):
+            return [], {
+                "code": "CORRECTED_OUTPUT_EVIDENCE_REFS_INVALID",
+                "index": index,
+                "validation": evidence_validation,
+            }
+        reference_validation = validate_review_references(
+            [corrected],
+            [
+                item
+                for item in repo.state.get("rule_check_results", [])
+                if item.get("reviewRunId") == review_run.get("reviewRunId")
+            ],
+            [
+                item
+                for item in repo.state.get("retrieval_traces", [])
+                if item.get("reviewRunId") == review_run.get("reviewRunId")
+            ],
+        )
+        if not reference_validation.get("passed"):
+            return [], {
+                "code": "CORRECTED_OUTPUT_REFERENCES_INVALID",
+                "index": index,
+                "validation": reference_validation,
+            }
         confirmed.append(corrected)
     validation = validate_review_schema(confirmed)
     if not validation.get("passed"):
@@ -2313,7 +2518,13 @@ def confirmed_findings_for_human_decision(
     return confirmed, None
 
 
-def human_decision_for_review_run(review_run_id: str, decision: str, payload: dict[str, Any]) -> dict[str, Any]:
+def human_decision_for_review_run(
+    review_run_id: str,
+    decision: str,
+    payload: dict[str, Any],
+    *,
+    commit: bool = True,
+) -> dict[str, Any]:
     ensure_review_state()
     review_run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not review_run:
@@ -2321,6 +2532,20 @@ def human_decision_for_review_run(review_run_id: str, decision: str, payload: di
     allowed = {"accept", "edit", "reject"}
     if decision not in allowed:
         return {"status": "invalid_decision", "allowed": sorted(allowed)}
+    comment = str(payload.get("comment") or payload.get("reason") or "")
+    if len(comment) > 2000:
+        return {
+            "status": "invalid_input",
+            "reviewRunId": review_run_id,
+            "error": {"code": "HUMAN_DECISION_COMMENT_TOO_LONG", "maxLength": 2000},
+        }
+    if review_run.get("status") != "waiting_human_review":
+        return {
+            "status": "invalid_state",
+            "reviewRunId": review_run_id,
+            "currentStatus": review_run.get("status"),
+            "requiredStatus": "waiting_human_review",
+        }
     confirmed_findings, correction_error = confirmed_findings_for_human_decision(review_run, decision, payload)
     if correction_error:
         return {
@@ -2329,13 +2554,21 @@ def human_decision_for_review_run(review_run_id: str, decision: str, payload: di
             "error": correction_error,
         }
     status_map = {"accept": "accepted_by_human", "edit": "edited_by_human", "reject": "rejected_by_human"}
+    if not commit:
+        return {
+            "status": "validated",
+            "nextStatus": status_map[decision],
+            "reviewRun": review_run,
+            "confirmedFindings": confirmed_findings,
+        }
     review_run["status"] = status_map[decision]
     review_run["humanDecision"] = {
         "decision": decision,
-        "comment": payload.get("comment") or payload.get("reason"),
+        "comment": comment,
         "correctedOutput": payload.get("correctedOutput"),
         "decidedAt": server_time(),
     }
+    bump_review_run_revision(review_run)
     append_review_event(
         review_run_id,
         event_type="human_decision.submitted",
@@ -2447,6 +2680,7 @@ def clone_review_run_for_replay(
     ensure_review_state()
     now = server_time()
     child_id = f"RRUN-REPLAY-{uuid4().hex[:8].upper()}"
+    tenant_id = tenant_id_for_record(parent)
     child = repo.clone(parent)
     child.update(
         {
@@ -2458,7 +2692,7 @@ def clone_review_run_for_replay(
             "advisoryOnly": True if run_mode != "production" else bool(parent.get("advisoryOnly")),
             "status": "queued",
             "currentStep": "created",
-            "workflowId": f"review-run-{child_id}",
+            "workflowId": review_workflow_id(tenant_id, child_id),
             "temporalRunId": None,
             "startedAt": None,
             "finishedAt": None,
@@ -2468,6 +2702,7 @@ def clone_review_run_for_replay(
             "outputHash": stable_hash_payload(parent.get("findingDrafts") or []),
             "findingDrafts": [],
             "humanDecision": None,
+            "revision": 1,
         }
     )
     repo.state["review_runs"].insert(0, child)

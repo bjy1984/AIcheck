@@ -100,24 +100,26 @@ def migrate(
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS aicheck_state (
+                    tenant_id text NOT NULL DEFAULT 'TENANT-DEFAULT',
                     collection text NOT NULL,
                     object_id text NOT NULL,
                     payload jsonb NOT NULL,
                     updated_at timestamptz NOT NULL DEFAULT now(),
-                    PRIMARY KEY (collection, object_id)
+                    PRIMARY KEY (tenant_id, collection, object_id)
                 )
                 """
             )
             for collection, rows in selected.items():
                 for object_id, payload in rows:
+                    tenant_id = str(payload.get("tenantId") or os.getenv("AICHECK_TENANT_ID") or "TENANT-DEFAULT")
                     connection.execute(
                         """
-                        INSERT INTO aicheck_state (collection, object_id, payload, updated_at)
-                        VALUES (%s, %s, %s::jsonb, now())
-                        ON CONFLICT (collection, object_id)
+                        INSERT INTO aicheck_state (tenant_id, collection, object_id, payload, updated_at)
+                        VALUES (%s, %s, %s, %s::jsonb, now())
+                        ON CONFLICT (tenant_id, collection, object_id)
                         DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()
                         """,
-                        (collection, object_id, json.dumps(payload, ensure_ascii=False)),
+                        (tenant_id, collection, object_id, json.dumps(payload, ensure_ascii=False)),
                     )
                 inserted_or_updated[collection] = len(rows)
         connection.commit()

@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "aicheck-backend-audit-baseline@1",
+  "auditId": "backend-audit-20260713",
+  "capturedAt": "2026-07-13T18:30:00-07:00",
+  "branch": "main",
+  "upstream": "origin/main",
+  "commit": "0b6da1b25fce9f639de81c616ce537b93ff0db3a",
+  "commitDate": "2026-07-13T17:58:06-07:00",
+  "commitSubject": "fix: align audit and deployment contracts",
+  "worktreeCleanAtStart": true,
+  "runtime": {
+    "python": "3.14.3",
+    "pytest": "9.1.1",
+    "localPostgres": "16.10 Homebrew",
+    "dockerAvailable": false,
+    "temporalRuntimeAvailable": false
+  },
+  "scope": [
+    "AI review and audit runtime",
+    "ReviewRun Temporal/LangGraph orchestration",
+    "legacy Celery AI recheck",
+    "operation audit logs",
+    "FDE audit projections",
+    "shared authentication, idempotency and persistence"
+  ],
+  "deploymentAssumption": "shared multi-tenant instance",
+  "deltaSincePriorFrozenBaseline": {
+    "baseline": "bdd8348",
+    "backendFilesChanged": 159,
+    "insertions": 42094,
+    "deletions": 2258
+  },
+  "sha256": {
+    "backend/apps/api/main.py": "0b95bca97f1bf5c34e39a417e9b91aed5c315f3b9bf712850313b7e80fb7e73d",
+    "backend/apps/api/routes.py": "45794f62ea3bc340a92c9366ba991116c06366254f8720df4c788e4806446d9f",
+    "backend/apps/worker/tasks.py": "18bfe15a5c6cca1fd19a7047809bf44ae3e18532c5e0da301526cb226de20db0",
+    "backend/libs/audit_runtime.py": "7061d43fe241e8ac0653a8a1f5cc41a98b0780b685e75fa665e3b47d595c9536",
+    "backend/libs/review_grounding.py": "5d7d9a7329e3d6811cc2f45d679e1bc16a4d61d26393a0afcad6c956c4d99e44",
+    "backend/libs/review_orchestrator/execution.py": "e8f5eb6ef512ca19deebea4b0c74dd1c4483a6ad8cf6f4d054461d9bd55b3e40",
+    "backend/libs/db/repository.py": "feae30cdc233ea3b484198e818b2eaa4fa6c20d21868508c33985f734e1ff7ca",
+    "backend/libs/security/auth.py": "a9882dd8940875dd8c411b52b021443255e4437517f0e586c6c0a11d70f4ca3a"
+  }
+}

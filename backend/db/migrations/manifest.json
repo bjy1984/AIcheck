@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "aicheck-migration-manifest-v1",
+  "migrations": [
+    {
+      "version": "0001_backend_audit_hardening",
+      "sha256": "dcec5ebd532a09c3d55e4ce3685530c7fb2446665836900dbdee9362b914fc23",
+      "immutable": true
+    }
+  ]
+}

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import os
 import re
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -13,14 +16,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, Response
 
-from apps.api.routes import binding_node_ids, document_node_ids, idempotency_fingerprint, member_node_scope_error, mock_router, report_node_ids, router
-from libs.audit_context import reset_request_audit_context, set_request_audit_context
+from apps.api.routes import binding_node_ids, document_node_ids, idempotency_fingerprint, member_node_scope_error, mock_router, report_node_ids, router, scope_error_for_record
+from libs.audit_context import current_request_audit_context, reset_request_audit_context, set_request_audit_context
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 from libs.db.postgres import close_postgres, init_postgres_if_configured, run_transaction_probe
-from libs.db.repository import flush_idempotency_records, flush_state, flush_state_records, load_state, repo
+from libs.db.repository import (
+    flush_mutation_records,
+    flush_state,
+    load_state,
+    postgres_persistence_configured,
+    repo,
+)
 from libs.integrations.storage import ObjectStorageUnavailable, object_storage
 from libs.runtime_readiness import production_runtime_status
+from libs.review_orchestrator.dispatcher import review_orchestration_mode
 from libs.security.actions import canonical_path, required_action_for_request
 from libs.security.auth import (
     compatibility_mocks_enabled,
@@ -37,6 +47,23 @@ from libs.security.runtime import (
     validate_security_runtime,
 )
 from libs.security.session import SecurityBackendUnavailable, security_sessions
+from libs.security.tenant import (
+    current_tenant_id,
+    configured_tenant_id,
+    reset_request_tenant_id,
+    set_request_tenant_id,
+    tenant_is_allowed,
+    tenant_id_for_record,
+)
+
+
+logger = logging.getLogger("aicheck.api")
+_tenant_mutation_locks: dict[tuple[int, str], asyncio.Lock] = {}
+
+
+def tenant_mutation_lock(tenant_id: str) -> asyncio.Lock:
+    loop_id = id(asyncio.get_running_loop())
+    return _tenant_mutation_locks.setdefault((loop_id, tenant_id), asyncio.Lock())
 
 
 @asynccontextmanager
@@ -76,81 +103,215 @@ app.add_middleware(
         "X-Role",
         "X-User-Id",
     ],
+    expose_headers=["ETag", "Idempotency-Replayed", "Retry-After", "X-Operation-Id"],
 )
 
 
 @app.middleware("http")
 async def attach_operation_id(request: Request, call_next):
+    authorization = request.headers.get("Authorization", "")
+    predecoded_claims = decode_token(authorization) if authorization else None
+    claimed_tenant_id = str((predecoded_claims or {}).get("tid") or configured_tenant_id())
+    if predecoded_claims is None and request.method == "POST" and canonical_path(request.url.path) == "/auth/login":
+        try:
+            login_payload = json.loads((await request.body()).decode("utf-8"))
+        except Exception:
+            login_payload = None
+        requested_tenant_id = str((login_payload or {}).get("tenantId") or "").strip()
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", requested_tenant_id):
+            claimed_tenant_id = requested_tenant_id
+    tenant_id = claimed_tenant_id if tenant_is_allowed(claimed_tenant_id) else configured_tenant_id()
+    tenant_context_token = set_request_tenant_id(tenant_id)
+    mutation_lock = None
+    mutation_lock_acquired = False
+    try:
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            mutation_lock = tenant_mutation_lock(tenant_id)
+            await mutation_lock.acquire()
+            mutation_lock_acquired = True
+        return await handle_request(request, call_next, predecoded_claims=predecoded_claims)
+    finally:
+        try:
+            lock_connection = getattr(request.state, "idempotency_lock_connection", None)
+            if lock_connection is not None:
+                await asyncio.to_thread(release_idempotency_lock, lock_connection, request)
+        finally:
+            if mutation_lock is not None and mutation_lock_acquired:
+                mutation_lock.release()
+            reset_request_tenant_id(tenant_context_token)
+
+
+async def handle_request(request: Request, call_next, *, predecoded_claims: dict[str, Any] | None):
     request.state.operation_id = request.headers.get("X-Operation-Id") or f"OP-{uuid4().hex[:12].upper()}"
+    if predecoded_claims and not tenant_is_allowed(str(predecoded_claims.get("tid") or "")):
+        return audit_rejected_request(
+            request,
+            fail(errors.FORBIDDEN, request, message="当前部署不允许访问该租户。", http_status=403),
+            "TENANT_NOT_ALLOWED",
+        )
     normalized_path = canonical_path(request.url.path)
     if normalized_path.startswith("/mock/") and not compatibility_mocks_enabled():
         return JSONResponse({"detail": "Not Found"}, status_code=404)
     if auth_required(request) or request.headers.get("Authorization"):
-        claims = decode_token(request.headers.get("Authorization", ""))
+        claims = predecoded_claims
         if claims is None:
-            return fail(errors.AUTH_REQUIRED, request)
-        user_record = user_record_by_username(claims.get("sub"))
+            return audit_rejected_request(request, fail(errors.AUTH_REQUIRED, request), errors.AUTH_REQUIRED.reason)
+        if not repo.tenant_is_loaded(str(claims.get("tid") or "")):
+            if postgres_persistence_configured() or repo.sqlite_enabled or repo.sqlite_path or os.getenv("AICHECK_SQLITE_PATH"):
+                load_state()
+            repo.mark_tenant_loaded(str(claims.get("tid") or ""))
+        user_record = user_record_by_username(claims.get("sub"), tenant_id=str(claims.get("tid") or ""))
         if user_record is None:
-            return fail(errors.AUTH_REQUIRED, request)
+            return audit_rejected_request(request, fail(errors.AUTH_REQUIRED, request), "AUTH_USER_NOT_FOUND")
         if claims.get("role") != user_record.get("role") or int(claims.get("ver") or 0) != int(user_record.get("authVersion") or 0):
-            return fail(errors.AUTH_REQUIRED, request, message="登录身份已变化，请重新登录。")
+            return audit_rejected_request(
+                request,
+                fail(errors.AUTH_REQUIRED, request, message="登录身份已变化，请重新登录。"),
+                "AUTH_IDENTITY_CHANGED",
+            )
+        if str(claims.get("tid") or "") != tenant_id_for_record(user_record):
+            return audit_rejected_request(
+                request,
+                fail(errors.AUTH_REQUIRED, request, message="登录租户已变化，请重新登录。"),
+                "AUTH_TENANT_CHANGED",
+            )
         try:
             if await security_sessions.is_revoked(claims.get("jti")):
-                return fail(errors.AUTH_REQUIRED, request, message="登录已注销，请重新登录。")
+                return audit_rejected_request(
+                    request,
+                    fail(errors.AUTH_REQUIRED, request, message="登录已注销，请重新登录。"),
+                    "AUTH_TOKEN_REVOKED",
+                )
         except SecurityBackendUnavailable:
-            return fail(errors.SECURITY_BACKEND_UNAVAILABLE, request, http_status=503)
+            return audit_rejected_request(
+                request,
+                fail(errors.SECURITY_BACKEND_UNAVAILABLE, request, http_status=503),
+                errors.SECURITY_BACKEND_UNAVAILABLE.reason,
+            )
         user = public_user(user_record)
-        canonical_claims = {**claims, "role": user.get("role"), "ver": int(user_record.get("authVersion") or 0)}
+        canonical_claims = {
+            **claims,
+            "role": user.get("role"),
+            "ver": int(user_record.get("authVersion") or 0),
+            "tid": tenant_id_for_record(user_record),
+        }
         request.state.auth = canonical_claims
         request.state.auth_user = user
         password_change_paths = {"/auth/me", "/auth/logout", "/auth/change-password"}
         if user.get("mustChangePassword") and normalized_path not in password_change_paths:
-            return fail(errors.PASSWORD_CHANGE_REQUIRED, request, http_status=403)
+            return audit_rejected_request(
+                request,
+                fail(errors.PASSWORD_CHANGE_REQUIRED, request, http_status=403),
+                errors.PASSWORD_CHANGE_REQUIRED.reason,
+            )
     admin_read_error = inferred_admin_read_error(request)
     if admin_read_error is not None:
-        return admin_read_error
+        return audit_rejected_request(request, admin_read_error, errors.FORBIDDEN.reason)
     project_scope_error = inferred_project_scope_error(request)
     if project_scope_error is not None:
-        return project_scope_error
+        return audit_rejected_request(request, project_scope_error, "PROJECT_SCOPE_DENIED")
+    resource_scope_error = inferred_resource_scope_error(request)
+    if resource_scope_error is not None:
+        return audit_rejected_request(request, resource_scope_error, "RESOURCE_SCOPE_DENIED")
     action_error = inferred_action_error(request)
     if action_error is not None:
-        return action_error
+        return audit_rejected_request(request, action_error, "ACTION_DENIED")
     cached_idempotency = await idempotency_replay_response(request)
     if cached_idempotency is not None:
         return cached_idempotency
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        request.state.persistence_tenant_id = current_tenant_id()
+        persistent = bool(
+            postgres_persistence_configured()
+            or repo.sqlite_enabled
+            or repo.sqlite_path
+            or os.getenv("AICHECK_SQLITE_PATH")
+        )
+        request.state.mutation_state_snapshot = repo.snapshot_current_tenant_runtime(
+            include_state=not persistent
+        )
     actor = getattr(request.state, "auth_user", None) or {}
     audit_context_token = set_request_audit_context(
         {
             "actorId": actor.get("id") or request.headers.get("X-User-Id") or "system",
             "actorName": actor.get("displayName") or actor.get("name") or actor.get("username") or request.headers.get("X-User-Id") or "系统",
             "actorOrgName": actor.get("orgUnitName") or actor.get("orgName"),
+            "actorOrgId": actor.get("orgId"),
+            "actorRole": actor.get("role"),
+            "tenantId": tenant_id_for_record(actor),
             "operationId": request.state.operation_id,
+            "requestPath": canonical_path(request.url.path),
+            "httpMethod": request.method,
+            "clientIp": request.client.host if request.client else None,
+            "userAgent": request.headers.get("User-Agent"),
         }
     )
     try:
-        response = await call_next(request)
-        response = await finalize_mutation_response(request, response)
-        if should_flush_state(request):
-            scoped_records = getattr(request.state, "scoped_flush_records", None)
-            if callable(scoped_records):
-                records = scoped_records()
-                operation_id = getattr(request.state, "operation_id", None)
-                audit_records = [
-                    item
-                    for item in repo.state.get("audit_logs", [])
-                    if operation_id and item.get("operationId") == operation_id
-                ]
-                if audit_records:
-                    records.setdefault("audit_logs", []).extend(audit_records)
-                flush_state_records(records)
-                scope = getattr(request.state, "idempotency_scope", None)
-                if scope:
-                    flush_idempotency_records([scope])
-            else:
-                flush_state()
-        return response
+        try:
+            response = await call_next(request)
+        except BaseException:
+            restore_failed_request_state(request)
+            raise
+        persistence_tenant_id = str(
+            getattr(request.state, "persistence_tenant_id", None) or current_tenant_id()
+        )
+        persistence_tenant_token = None
+        persistence_audit_token = None
+        if persistence_tenant_id != current_tenant_id():
+            persistence_tenant_token = set_request_tenant_id(persistence_tenant_id)
+            persistence_audit_token = set_request_audit_context(
+                {**current_request_audit_context(), "tenantId": persistence_tenant_id}
+            )
+        try:
+            response = await finalize_mutation_response(request, response)
+            if should_flush_state(request):
+                scoped_records = getattr(request.state, "scoped_flush_records", None)
+                if callable(scoped_records):
+                    records = scoped_records()
+                    operation_id = getattr(request.state, "operation_id", None)
+                    audit_records = [
+                        item
+                        for item in repo.state.get("audit_logs", [])
+                        if operation_id and item.get("operationId") == operation_id
+                    ]
+                    if audit_records:
+                        records.setdefault("audit_logs", []).extend(audit_records)
+                    scope = getattr(request.state, "idempotency_scope", None)
+                    flush_mutation_records(records, [scope] if scope else [])
+                else:
+                    flush_state()
+            return response
+        except BaseException:
+            restore_failed_request_state(request)
+            raise
+        finally:
+            if persistence_audit_token is not None:
+                reset_request_audit_context(persistence_audit_token)
+            if persistence_tenant_token is not None:
+                reset_request_tenant_id(persistence_tenant_token)
     finally:
         reset_request_audit_context(audit_context_token)
+
+
+def restore_failed_request_state(request: Request) -> None:
+    snapshot = getattr(request.state, "mutation_state_snapshot", None)
+    if not isinstance(snapshot, dict):
+        return
+    tenant_id = str(snapshot.get("tenantId") or current_tenant_id())
+    token = None
+    if tenant_id != current_tenant_id():
+        token = set_request_tenant_id(tenant_id)
+    try:
+        persistent = bool(
+            postgres_persistence_configured()
+            or repo.sqlite_enabled
+            or repo.sqlite_path
+            or os.getenv("AICHECK_SQLITE_PATH")
+        )
+        repo.restore_tenant_runtime(snapshot, invalidate=persistent)
+    finally:
+        if token is not None:
+            reset_request_tenant_id(token)
 
 
 def auth_required(request: Request) -> bool:
@@ -176,10 +337,18 @@ def idempotency_scope(request: Request) -> str | None:
     normalized_path = canonical_path(request.url.path)
     if normalized_path.startswith(("/auth/", "/mock/")):
         return None
-    return f"{request.method}:{request.url.path}:{key}"
+    actor = getattr(request.state, "auth_user", None) or {}
+    claims = getattr(request.state, "auth", None) or {}
+    tenant_id = str(claims.get("tid") or tenant_id_for_record(actor) or configured_tenant_id())
+    actor_id = str(actor.get("id") or request.headers.get("X-User-Id") or "anonymous")
+    role = str(claims.get("role") or request.headers.get("X-Role") or "anonymous")
+    key_hash = idempotency_fingerprint(key)
+    return f"{tenant_id}:{actor_id}:{role}:{request.method}:{canonical_path(request.url.path)}:{key_hash}"
 
 
 def should_flush_state(request: Request) -> bool:
+    if bool(getattr(request.state, "force_flush_state", False)):
+        return True
     if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
         return False
     return audit_scope(request) is not None
@@ -210,12 +379,89 @@ async def idempotency_replay_response(request: Request) -> JSONResponse | None:
     fingerprint = await request_fingerprint(request)
     request.state.idempotency_scope = scope
     request.state.idempotency_fingerprint = fingerprint
+    if postgres_persistence_configured():
+        try:
+            lock_connection, persisted = await asyncio.to_thread(
+                acquire_idempotency_lock,
+                scope,
+                str((getattr(request.state, "auth", None) or {}).get("tid") or configured_tenant_id()),
+            )
+        except Exception as exc:
+            logger.exception("idempotency_lock_failed", extra={"scope": scope})
+            return fail(
+                errors.SECURITY_BACKEND_UNAVAILABLE,
+                request,
+                message="幂等协调服务暂不可用。",
+                data={"errorType": type(exc).__name__},
+                http_status=503,
+            )
+        request.state.idempotency_lock_connection = lock_connection
+        if isinstance(persisted, dict):
+            repo.state["idempotency"][scope] = persisted
     cached = repo.state["idempotency"].get(scope)
     if not isinstance(cached, dict) or "response" not in cached:
         return None
     if cached.get("requestHash") and cached["requestHash"] != fingerprint:
         return fail(errors.IDEMPOTENCY_KEY_CONFLICT, request)
-    return JSONResponse(repo.clone(cached["response"]), status_code=int(cached.get("httpStatus") or 200))
+    if cached.get("authorizationDigest") != request_authorization_digest(request):
+        return fail(errors.FORBIDDEN, request, message="当前授权上下文已变化，不能重放历史响应。", http_status=403)
+    return JSONResponse(
+        repo.clone(cached["response"]),
+        status_code=int(cached.get("httpStatus") or 200),
+        headers={"Idempotency-Replayed": "true"},
+    )
+
+
+def acquire_idempotency_lock(scope: str, tenant_id: str, dsn_override: str | None = None):
+    """Hold a PostgreSQL session lock until the request's mutation transaction completes."""
+
+    import psycopg
+
+    dsn = dsn_override or repo.postgres_dsn or os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL")
+    if not dsn:
+        raise RuntimeError("PostgreSQL DSN is required for distributed idempotency")
+    connection = psycopg.connect(dsn, autocommit=True)
+    try:
+        timeout_ms = max(100, min(int(os.getenv("AICHECK_IDEMPOTENCY_LOCK_TIMEOUT_MS", "5000")), 60_000))
+        connection.execute(f"SET lock_timeout = '{timeout_ms}ms'")
+        connection.execute("SELECT pg_advisory_lock(hashtextextended(%s, 0))", (scope,))
+        row = connection.execute(
+            "SELECT payload FROM idempotency_records WHERE tenant_id = %s AND scope = %s",
+            (tenant_id, scope),
+        ).fetchone()
+        return connection, (dict(row[0]) if row else None)
+    except Exception:
+        connection.close()
+        raise
+
+
+def release_idempotency_lock(connection, request: Request) -> None:
+    scope = getattr(request.state, "idempotency_scope", None)
+    try:
+        if scope:
+            connection.execute("SELECT pg_advisory_unlock(hashtextextended(%s, 0))", (scope,))
+    finally:
+        connection.close()
+
+
+def request_authorization_digest(request: Request) -> str:
+    actor = getattr(request.state, "auth_user", None) or {}
+    claims = getattr(request.state, "auth", None) or {}
+    user_id = str(actor.get("id") or request.headers.get("X-User-Id") or "anonymous")
+    tenant_id = str(claims.get("tid") or tenant_id_for_record(actor) or configured_tenant_id())
+    role = str(claims.get("role") or request.headers.get("X-Role") or "anonymous")
+    memberships = sorted(
+        (
+            str(item.get("projectId") or ""),
+            tuple(sorted(int(node_id) for node_id in item.get("nodeScope") or [])),
+            str(item.get("status") or ""),
+        )
+        for item in repo.state.get("project_members", [])
+        if str(item.get("userId") or "") == user_id and tenant_id_for_record(item) == tenant_id
+    )
+    return idempotency_fingerprint(
+        {"tenantId": tenant_id, "actorId": user_id, "role": role, "memberships": memberships}
+    )
 
 
 async def finalize_mutation_response(request: Request, response: Response) -> Response:
@@ -237,13 +483,76 @@ async def finalize_mutation_response(request: Request, response: Response) -> Re
         return replay_response
     if response.status_code == 200 and isinstance(payload, dict) and payload.get("code") == 0:
         if scope:
+            actor = getattr(request.state, "auth_user", None) or {}
+            claims = getattr(request.state, "auth", None) or {}
             repo.state["idempotency"][scope] = {
                 "requestHash": getattr(request.state, "idempotency_fingerprint", None),
+                "authorizationDigest": request_authorization_digest(request),
+                "tenantId": claims.get("tid") or tenant_id_for_record(actor) or configured_tenant_id(),
+                "actorId": actor.get("id") or request.headers.get("X-User-Id") or "anonymous",
+                "actorRole": claims.get("role") or request.headers.get("X-Role") or "anonymous",
                 "response": repo.clone(payload),
                 "httpStatus": response.status_code,
             }
         audit_successful_mutation(request, payload)
+    elif isinstance(payload, dict) and payload.get("code") not in {None, 0}:
+        audit_failed_mutation(request, payload, response.status_code)
     return replay_response
+
+
+def request_audit_context(request: Request) -> dict[str, Any]:
+    actor = getattr(request.state, "auth_user", None) or {}
+    claims = getattr(request.state, "auth", None) or {}
+    return {
+        "actorId": actor.get("id") or request.headers.get("X-User-Id") or "anonymous",
+        "actorName": actor.get("displayName") or actor.get("name") or actor.get("username") or "匿名请求",
+        "actorOrgName": actor.get("orgUnitName") or actor.get("orgName"),
+        "actorOrgId": actor.get("orgId"),
+        "actorRole": claims.get("role") or actor.get("role"),
+        "tenantId": claims.get("tid") or tenant_id_for_record(actor) or configured_tenant_id(),
+        "operationId": getattr(request.state, "operation_id", None),
+        "requestPath": canonical_path(request.url.path),
+        "httpMethod": request.method,
+        "clientIp": request.client.host if request.client else None,
+        "userAgent": request.headers.get("User-Agent"),
+    }
+
+
+def audit_rejected_request(request: Request, response: JSONResponse, reason_code: str) -> JSONResponse:
+    token = set_request_audit_context(request_audit_context(request))
+    try:
+        audit_id = repo.add_audit(
+            f"拒绝 {request.method} {canonical_path(request.url.path)}",
+            "SecurityEvent",
+            canonical_path(request.url.path),
+            result="失败",
+            error_code=reason_code,
+            outcome="denied",
+        )
+        audit = repo.find_one("audit_logs", audit_id)
+        if audit:
+            flush_mutation_records({"audit_logs": [audit]}, [])
+    except Exception:
+        logger.exception(
+            "security_audit_write_failed",
+            extra={"operation_id": getattr(request.state, "operation_id", None), "reason_code": reason_code},
+        )
+    finally:
+        reset_request_audit_context(token)
+    return response
+
+
+def audit_failed_mutation(request: Request, payload: dict[str, Any], http_status: int) -> None:
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    reason = str(data.get("reason") or "MUTATION_FAILED")
+    repo.add_audit(
+        f"失败 {request.method} {canonical_path(request.url.path)}",
+        "ApiMutation",
+        canonical_path(request.url.path),
+        result="失败",
+        error_code=reason,
+        outcome="denied" if http_status in {401, 403, 404} else "failed",
+    )
 
 
 def audit_scope(request: Request) -> str | None:
@@ -259,18 +568,11 @@ def audit_successful_mutation(request: Request, payload: dict[str, Any]) -> None
     normalized_path = audit_scope(request)
     if not normalized_path or payload_contains_key(payload, "auditLogId"):
         return
-    actor = getattr(request.state, "auth_user", None) or {}
-    audit_id = repo.add_audit(
+    repo.add_audit(
         f"{request.method} {normalized_path}",
         "ApiMutation",
         normalized_path,
     )
-    audit = repo.find_one("audit_logs", audit_id)
-    if audit:
-        audit["actorId"] = actor.get("id") or audit.get("actorId")
-        audit["actorName"] = actor.get("name") or actor.get("username") or audit.get("actorName")
-        audit["actorOrgName"] = actor.get("orgName") or audit.get("actorOrgName")
-        audit["operationId"] = getattr(request.state, "operation_id", None)
 
 
 def payload_contains_key(value: Any, key: str) -> bool:
@@ -293,6 +595,21 @@ def inferred_project_scope_error(request: Request) -> JSONResponse | None:
     role = claims.get("role")
     node_ids = scoped_node_ids_from_request(project_id, normalized_path, request)
     return member_node_scope_error(request, project_id, role, node_ids=node_ids)
+
+
+def inferred_resource_scope_error(request: Request) -> JSONResponse | None:
+    """Authorize id-based resources before any idempotency replay can occur."""
+
+    normalized_path = canonical_path(request.url.path)
+    review_match = re.match(r"^/review-runs/([^/]+)(?:/|$)", normalized_path)
+    if review_match:
+        review_run_id = review_match.group(1)
+        run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one(
+            "review_runs", review_run_id
+        )
+        if run:
+            return scope_error_for_record(request, run)
+    return None
 
 
 def scoped_node_ids_from_request(project_id: str, normalized_path: str, request: Request) -> list[int]:
@@ -373,6 +690,15 @@ async def object_storage_error_handler(request: Request, exc: ObjectStorageUnava
 
 @app.exception_handler(Exception)
 async def generic_error_handler(request: Request, exc: Exception):
+    logger.exception(
+        "unhandled_api_exception",
+        extra={
+            "operation_id": getattr(request.state, "operation_id", None),
+            "method": request.method,
+            "path": canonical_path(request.url.path),
+            "exception_type": type(exc).__name__,
+        },
+    )
     return JSONResponse(
         {
             "code": errors.EXTERNAL_TOOL_FAILED.code,
@@ -397,7 +723,11 @@ async def api_healthz(request: Request):
 
 async def health_response(request: Request):
     payload = await health_payload()
-    if strict_production() and (not payload["securityReady"] or not payload["runtimeReady"]):
+    if strict_production() and (
+        not payload["securityReady"]
+        or not payload["runtimeReady"]
+        or not payload["workflowReady"]
+    ):
         return fail(
             errors.SECURITY_BACKEND_UNAVAILABLE,
             request,
@@ -430,6 +760,12 @@ async def health_payload() -> dict[str, object]:
         key=lambda item: str(item.get("finishedAt") or item.get("updatedAt") or ""),
         default=None,
     )
+    temporal = await temporal_health_status()
+    workflow_metrics = review_workflow_metrics()
+    worker_ready = bool((workflow_metrics.get("reviewWorkerHeartbeat") or {}).get("ready"))
+    workflow_ready = bool(temporal.get("ready")) and (
+        review_orchestration_mode() != "temporal" or worker_ready
+    )
     return {
         "status": "ok",
         "service": "api-service",
@@ -441,6 +777,9 @@ async def health_payload() -> dict[str, object]:
         "sqlitePath": repo.sqlite_path,
         "authRequired": os.getenv("AICHECK_REQUIRE_AUTH", "false").lower() == "true",
         "demoUsersEnabled": demo_users_enabled(),
+        "workflowReady": workflow_ready,
+        "temporal": temporal,
+        "workflowMetrics": workflow_metrics,
         "objectStorageEnabled": object_storage.enabled,
         "officialOcrTelemetry": {
             "lastSuccessfulInferenceAt": (latest_success or {}).get("finishedAt")
@@ -451,6 +790,117 @@ async def health_payload() -> dict[str, object]:
         },
         **production_runtime_status(),
         **security_runtime_status(rate_limiter_ready=rate_limiter_ready),
+    }
+
+
+def review_workflow_metrics() -> dict[str, object]:
+    runs = repo.state.get("review_runs", [])
+    pending_outbox = [
+        item
+        for item in repo.state.get("workflow_outbox", [])
+        if item.get("status") in {"pending", "retry_pending"}
+    ]
+    cutoff = datetime.now() - timedelta(minutes=30)
+    stuck_runs = 0
+    for run in runs:
+        if run.get("status") not in {"queued", "running", "retry_pending"}:
+            continue
+        raw_updated = str(run.get("updatedAt") or run.get("createdAt") or "")
+        parsed = None
+        for candidate in (raw_updated, raw_updated.replace("Z", "+00:00")):
+            try:
+                parsed = datetime.fromisoformat(candidate)
+                break
+            except ValueError:
+                continue
+        if parsed is not None and parsed.replace(tzinfo=None) < cutoff:
+            stuck_runs += 1
+    worker_heartbeat: dict[str, object] = {"ready": False, "activeCount": 0, "lastSeenAt": None}
+    outbox_pending_count = len(pending_outbox)
+    outbox_max_attempts = max((int(item.get("attempts") or 0) for item in pending_outbox), default=0)
+    outbox_oldest_age_seconds: float | None = None
+    if repo.postgres_dsn or os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL"):
+        try:
+            with repo.postgres_connection() as connection:
+                heartbeat_row = connection.execute(
+                    """
+                    SELECT count(*) FILTER (WHERE last_seen_at >= now() - interval '30 seconds'),
+                           max(last_seen_at)
+                    FROM service_heartbeats
+                    WHERE service_role = 'review-worker'
+                    """
+                ).fetchone()
+                outbox_row = connection.execute(
+                    """
+                    SELECT count(*),
+                           max(COALESCE((payload ->> 'attempts')::integer, 0)),
+                           extract(epoch FROM (now() - min(updated_at)))
+                    FROM aicheck_state
+                    WHERE collection = 'workflow_outbox'
+                      AND payload ->> 'status' IN ('pending', 'retry_pending', 'delivering')
+                    """
+                ).fetchone()
+                connection.rollback()
+            active_count = int((heartbeat_row or [0])[0] or 0)
+            worker_heartbeat = {
+                "ready": active_count > 0,
+                "activeCount": active_count,
+                "lastSeenAt": heartbeat_row[1].isoformat() if heartbeat_row and heartbeat_row[1] else None,
+            }
+            if outbox_row:
+                outbox_pending_count = int(outbox_row[0] or 0)
+                outbox_max_attempts = int(outbox_row[1] or 0)
+                outbox_oldest_age_seconds = float(outbox_row[2]) if outbox_row[2] is not None else None
+        except Exception as exc:
+            worker_heartbeat = {
+                "ready": False,
+                "activeCount": 0,
+                "lastSeenAt": None,
+                "error": str(exc)[:200],
+            }
+    return {
+        "queuedRuns": sum(1 for item in runs if item.get("status") == "queued"),
+        "runningRuns": sum(1 for item in runs if item.get("status") == "running"),
+        "retryPendingRuns": sum(1 for item in runs if item.get("status") == "retry_pending"),
+        "failedRuns": sum(1 for item in runs if item.get("status") in {"failed", "failed_to_start"}),
+        "stuckRunCount": stuck_runs,
+        "outboxPendingCount": outbox_pending_count,
+        "outboxMaxAttempts": outbox_max_attempts,
+        "outboxOldestAgeSeconds": outbox_oldest_age_seconds,
+        "reviewWorkerHeartbeat": worker_heartbeat,
+    }
+
+
+async def temporal_health_status() -> dict[str, object]:
+    mode = review_orchestration_mode()
+    if mode != "temporal":
+        return {
+            "mode": mode,
+            "configured": False,
+            "ready": not strict_production(),
+            "reason": "Temporal orchestration is not selected.",
+        }
+    address = os.getenv("TEMPORAL_ADDRESS", "localhost:7233")
+    namespace = os.getenv("TEMPORAL_NAMESPACE", "default")
+    try:
+        from temporalio.client import Client
+
+        await asyncio.wait_for(Client.connect(address, namespace=namespace), timeout=2.0)
+    except Exception as exc:
+        return {
+            "mode": mode,
+            "configured": True,
+            "ready": False,
+            "address": address,
+            "namespace": namespace,
+            "errorType": type(exc).__name__,
+        }
+    return {
+        "mode": mode,
+        "configured": True,
+        "ready": True,
+        "address": address,
+        "namespace": namespace,
     }
 
 

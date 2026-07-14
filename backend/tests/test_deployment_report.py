@@ -562,7 +562,7 @@ def test_postgres_index_contract_check_fails_missing_tables_and_critical_indexes
     assert check["data"]["missingPlanCollections"] == []
     assert {
         "table": "aicheck_state",
-        "fields": ["collection", "object_id"],
+        "fields": ["tenant_id", "collection", "object_id"],
         "unique": True,
     } in check["data"]["missingCriticalIndexes"]
 
@@ -590,7 +590,7 @@ def test_storage_contract_check_fails_missing_bucket_method_and_repository_usage
     )
 
     assert check["status"] == "fail"
-    assert check["data"]["missingBuckets"] == ["ocr-artifacts", "previews"]
+    assert check["data"]["missingBuckets"] == ["audit-anchors", "ocr-artifacts", "previews"]
     assert check["data"]["unexpectedBuckets"] == ["tmp"]
     assert check["data"]["duplicateBuckets"] == ["exports"]
     assert {"method": "presigned_get_url", "reason": "missing"} in check["data"]["methodFailures"]

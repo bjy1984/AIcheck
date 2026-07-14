@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 from typing import Any
-from uuid import uuid4
 
 from libs.integrations.storage import object_storage
 
@@ -77,24 +76,14 @@ async def run_transaction_probe(dsn: str | None = None) -> dict[str, Any]:
         payload["reason"] = "postgres_not_configured"
         return payload
 
-    probe_id = f"postgres-transaction-probe-{uuid4().hex}"
     try:
         with repo.postgres_connection(configured_dsn) as connection:
             with connection.transaction():
-                connection.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS _deployment_probes (
-                        id text PRIMARY KEY,
-                        purpose text NOT NULL,
-                        created_at timestamptz NOT NULL DEFAULT now()
-                    )
-                    """
-                )
-                connection.execute(
-                    "INSERT INTO _deployment_probes (id, purpose) VALUES (%s, %s)",
-                    (probe_id, "deployment-transaction-probe"),
-                )
-                connection.execute("DELETE FROM _deployment_probes WHERE id = %s", (probe_id,))
+                probe = connection.execute(
+                    "SELECT current_database(), pg_is_in_recovery(), txid_current()"
+                ).fetchone()
+                if not probe or not probe[0]:
+                    raise RuntimeError("PostgreSQL transaction probe returned no database identity")
     except Exception as exc:
         payload.update(
             {

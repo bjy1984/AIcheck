@@ -170,13 +170,13 @@ REQUIRED_PLAN_COLLECTIONS = {
     "admin_configs",
 }
 CRITICAL_POSTGRES_INDEXES = [
-    {"table": "aicheck_state", "fields": ["collection", "object_id"], "unique": True},
-    {"table": "aicheck_state", "fields": ["collection"]},
+    {"table": "aicheck_state", "fields": ["tenant_id", "collection", "object_id"], "unique": True},
+    {"table": "aicheck_state", "fields": ["tenant_id", "collection"]},
     {"table": "aicheck_state", "fields": ["payload"], "type": "gin"},
-    {"table": "aicheck_singletons", "fields": ["name"], "unique": True},
-    {"table": "idempotency_records", "fields": ["scope"], "unique": True},
+    {"table": "aicheck_singletons", "fields": ["tenant_id", "name"], "unique": True},
+    {"table": "idempotency_records", "fields": ["tenant_id", "scope"], "unique": True},
 ]
-REQUIRED_STORAGE_BUCKETS = ("documents", "previews", "exports", "ocr-artifacts")
+REQUIRED_STORAGE_BUCKETS = ("documents", "previews", "exports", "ocr-artifacts", "audit-anchors")
 REQUIRED_STORAGE_METHODS = {
     "ensure_buckets": {
         "params": [],
@@ -2138,7 +2138,7 @@ def review_orchestration_contract_check(
     require_source_terms(
         "run_review_graph_activity",
         activities_source,
-        ["activity.defn", "load_state", "execute_review_run_inline", "flush_state"],
+        ["activity.defn", "load_review_run_state", "execute_review_run_inline", "flush_state_records"],
     )
 
     failures = route_failures + graph_failures + state_failures + tool_failures + source_failures

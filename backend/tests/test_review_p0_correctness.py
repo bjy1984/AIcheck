@@ -38,7 +38,13 @@ def finding_draft(*, draft_id: str = "FND-DRAFT-001", description: str = "原始
             }
         ],
         "ruleRefs": [{"ruleCode": "RULE-001", "ruleSetVersion": "ruleset-v1"}],
-        "kbRefs": [{"retrievalTraceId": "RTR-001", "clauseIds": ["CLAUSE-001"]}],
+        "kbRefs": [
+            {
+                "retrievalTraceId": "RTR-001",
+                "clauseIds": ["CLAUSE-001"],
+                "kbVersion": "inspection_kb@1.0.0",
+            }
+        ],
         "confidence": 0.82,
         "suggestedAction": "human_confirm",
         "groundingStatus": "grounded",
@@ -63,8 +69,28 @@ def review_run() -> dict:
         "kbVersion": "inspection_kb@1.0.0",
         "status": "waiting_human_review",
         "findingDrafts": [finding_draft()],
+        "evidenceLinks": [
+            {
+                "id": "EV-001",
+                "documentVersionId": "DV-001",
+                "pageNo": 1,
+                "bbox": [10, 20, 100, 40],
+                "text": "原始 AI 审查发现，人工修正后的审查发现。",
+            }
+        ],
     }
     repo.state["review_runs"].insert(0, record)
+    repo.state["rule_check_results"].append(
+        {"id": "RULE-RESULT-001", "reviewRunId": record["reviewRunId"], "ruleCode": "RULE-001"}
+    )
+    repo.state["retrieval_traces"].append(
+        {
+            "id": "RTR-001",
+            "retrievalTraceId": "RTR-001",
+            "reviewRunId": record["reviewRunId"],
+            "selectedClauses": [{"clauseId": "CLAUSE-001"}],
+        }
+    )
     return record
 
 

@@ -1,0 +1,334 @@
+{
+  "schemaVersion": "aicheck-backend-audit-findings@1",
+  "auditId": "backend-audit-20260713",
+  "baselineCommit": "0b6da1b25fce9f639de81c616ce537b93ff0db3a",
+  "decision": "NO-GO",
+  "summary": {
+    "total": 19,
+    "P0": 6,
+    "P1": 11,
+    "P2": 2,
+    "P3": 0
+  },
+  "findings": [
+    {
+      "id": "TENANT-001",
+      "severity": "P0",
+      "certainty": "confirmed",
+      "area": "authorization",
+      "title": "ReviewRun、AI Run 与审查工作台存在跨项目/跨节点 IDOR",
+      "actual": "ReviewRun 读、决定和重跑只验证用户在项目任一节点有权限；cancel 不验证项目可见性；AI Run 详情不校验 URL 中的项目/节点与实体归属；review-workbench 未按 nodeScope 过滤 findings 和 aiRuns。",
+      "impact": "同一实例中的低权限用户可读取其他节点的 Prompt/OCR 审查信息、改变未授权运行状态，甚至取消其他项目的正式审查。",
+      "evidence": [
+        "backend/apps/api/routes.py:2547",
+        "backend/apps/api/routes.py:6531",
+        "backend/apps/api/routes.py:6627",
+        "backend/apps/api/routes.py:9041",
+        "evidence/security-probes.json"
+      ],
+      "recommendation": "所有 runId 端点先解析资源，再统一执行 tenantId/projectId/nodeId/role/action 授权；URL 带项目和节点时必须与实体完全一致；列表必须按 nodeScope 过滤。",
+      "regressionTest": "构造两组织、两项目和互斥 nodeScope，对每个 ReviewRun/AI Run 端点验证跨范围请求均返回 FORBIDDEN 且不改变状态。"
+    },
+    {
+      "id": "AUDIT-SCOPE-001",
+      "severity": "P0",
+      "certainty": "confirmed",
+      "area": "audit-log-authorization",
+      "title": "全局、项目和节点审计日志接口均泄露全量日志",
+      "actual": "/audit-logs 可被任意登录用户读取；项目和节点接口忽略 project_id/node_id 并直接复用全局列表。审计记录本身也没有 tenantId/projectId/nodeId，无法正确过滤。",
+      "impact": "多租户部署下，用户可读取其他组织、项目和节点的操作者、对象编号及敏感管理操作。",
+      "evidence": [
+        "backend/apps/api/routes.py:23637",
+        "backend/apps/api/main.py:340",
+        "backend/libs/db/repository.py:402",
+        "evidence/security-probes.json",
+        "evidence/persistence-performance.json"
+      ],
+      "recommendation": "仅管理员或专门审计角色可访问全局日志；事件必须保存租户、项目和节点范围；项目/节点端点用服务端条件查询并叠加成员 nodeScope。",
+      "regressionTest": "六角色、两租户矩阵验证全局接口权限及项目/节点过滤，确保响应中不存在任何范围外事件。"
+    },
+    {
+      "id": "IDEM-001",
+      "severity": "P0",
+      "certainty": "confirmed",
+      "area": "idempotency-authorization",
+      "title": "幂等缓存可跨用户重放敏感响应并绕过资源级授权",
+      "actual": "缓存键只有 method:path:client-key，不含租户、用户或角色；命中缓存发生在 ReviewRun 路由资源授权之前。无项目成员关系的第二用户使用相同 key 得到第一用户的完整响应和 operationId。",
+      "impact": "泄露或可预测的幂等键可造成跨主体数据泄露、错误的操作确认和租户边界绕过。",
+      "evidence": [
+        "backend/apps/api/main.py:172",
+        "backend/apps/api/main.py:206",
+        "evidence/security-probes.json"
+      ],
+      "recommendation": "缓存 scope 加入 canonical tenant/user/role；缓存命中前仍执行资源授权；持久化中保存授权上下文摘要并拒绝主体不一致的重放。",
+      "regressionTest": "两个同角色用户使用相同 key 请求同一路径，第二用户无资源授权时必须被拒绝且不得读取缓存数据。"
+    },
+    {
+      "id": "REVIEW-DISPATCH-001",
+      "severity": "P0",
+      "certainty": "confirmed",
+      "area": "workflow-dispatch",
+      "title": "Temporal 启动失败仍被 API 当作正式审查成功派发",
+      "actual": "readiness 仅依据配置模式宣称可用；dispatcher 返回 failed_to_start 但携带 reviewRunId/workflowId；API 只检查这些 ID 是否存在，仍返回 code=0 并将节点改为业务核验中。",
+      "impact": "正式审查未启动但业务状态已推进，节点会长期卡死或被误认为正在审查。",
+      "evidence": [
+        "backend/libs/integrations/task_dispatcher.py:235",
+        "backend/libs/review_orchestrator/dispatcher.py:57",
+        "backend/apps/api/routes.py:6472",
+        "evidence/workflow-probes.json"
+      ],
+      "recommendation": "只有 dispatch.status=started/queued 才允许推进节点；failed_to_start 必须返回失败、回滚 run 和节点状态，并记录失败审计事件。",
+      "regressionTest": "注入 Temporal connect/start 异常，断言 API 非成功、节点状态不变、run 为 failed_to_start 且无假队列状态。"
+    },
+    {
+      "id": "REVIEW-SIGNAL-001",
+      "severity": "P0",
+      "certainty": "confirmed",
+      "area": "workflow-state-machine",
+      "title": "人工决定与 Temporal signal 非原子，且终态可重复翻转",
+      "actual": "接口先修改 ReviewRun、写反馈和 finding，再发送 Temporal signal；signal 失败仍返回 code=0。状态机未要求 waiting_human_review，不同幂等键可依次 edit、accept、reject，并重复生成 finding；cancel 同样缺少合法状态检查。",
+      "impact": "数据库与 Temporal 状态分裂，正式结论可被覆盖，重复 finding 和相互矛盾的审计历史会破坏业务真实性。",
+      "evidence": [
+        "backend/apps/api/routes.py:6580",
+        "backend/apps/api/routes.py:6627",
+        "backend/libs/review_orchestrator/execution.py:2316",
+        "evidence/workflow-probes.json"
+      ],
+      "recommendation": "引入显式允许状态、revision/CAS 和一次性决策键；通过事务型 outbox/收件箱协调数据库与 Temporal，signal 未确认前不得落最终业务状态。",
+      "regressionTest": "覆盖所有来源状态、accept/reject 并发、重复 signal、signal 超时和 cancel-vs-decision 竞态，保证只产生一个不可逆终态。"
+    },
+    {
+      "id": "STATE-PERSIST-001",
+      "severity": "P0",
+      "certainty": "confirmed",
+      "area": "persistence-concurrency",
+      "title": "多进程全量快照刷新会丢失已提交的 ReviewRun 和审计日志",
+      "actual": "普通 mutation 触发 DELETE 全部 aicheck_state 后按本进程内存快照重建。两个 repository 从同一旧快照出发顺序提交时，第二次刷新删除了第一写入者已提交的 audit 和 ReviewRun。advisory lock 只串行化，不能合并快照。",
+      "impact": "生产多 worker 下可无告警丢失审查运行、人工结论、审计日志和其他业务数据。",
+      "evidence": [
+        "backend/apps/api/main.py:133",
+        "backend/libs/db/repository.py:2193",
+        "evidence/persistence-performance.json"
+      ],
+      "recommendation": "移除全表 DELETE/重建，改为规范化行级事务写入；业务变更、审计事件和幂等记录在同一数据库事务中提交，并使用版本/CAS 防止旧快照覆盖。",
+      "regressionTest": "用两个独立进程/连接交错写 ReviewRun、finding、audit 和 idempotency，最终必须保留双方记录且无重复副作用。"
+    },
+    {
+      "id": "REVIEW-EVIDENCE-001",
+      "severity": "P1",
+      "certainty": "confirmed",
+      "area": "evidence-integrity",
+      "title": "人工 edit 可把不存在的证据、规则和知识引用写成 accepted finding",
+      "actual": "correctedOutput 只做结构校验，没有重新执行 evidence/reference/quality gate；动态探针写入 EV-NOT-FOUND、RULE-NOT-FOUND 和 RTR-NOT-FOUND 后仍返回 edited_by_human，并持久化 status=accepted。",
+      "impact": "人工修正后的正式审查记录可能失去可验证证据链，报告和后续评测会基于伪引用。",
+      "evidence": [
+        "backend/libs/review_orchestrator/execution.py:2250",
+        "backend/libs/review_orchestrator/execution.py:2412",
+        "evidence/security-probes.json"
+      ],
+      "recommendation": "人工 edit 后重新执行 schema、证据、规则、知识和跨文档定位校验；若允许人工无证据覆盖，应显式记录 override 类型、理由和审批人，不能伪装为 grounded。",
+      "regressionTest": "伪造 evidenceLinkId/ruleCode/retrievalTraceId 必须失败；合法人工修正必须保留源 draft 和完整验证结果。"
+    },
+    {
+      "id": "AUTH-JWT-001",
+      "severity": "P1",
+      "certainty": "confirmed",
+      "area": "authentication",
+      "title": "手写 JWT 解码路径不强制 exp、iss、aud 和 jti",
+      "actual": "decode_hs256_token 将缺少 exp/iss/aud/jti 的合法签名 token 视为有效，且在严格 PyJWT 校验之前直接返回。动态探针确认仅含 sub/role/ver 的 token 被接受。",
+      "impact": "泄露的签名 token 可长期有效，无法通过 jti 注销，也不受 issuer/audience 边界约束。",
+      "evidence": [
+        "backend/libs/security/auth.py:215",
+        "backend/libs/security/auth.py:313",
+        "evidence/security-probes.json"
+      ],
+      "recommendation": "删除宽松手写解码分支或对所有必需声明执行与 PyJWT 完全相同的 require 校验，并拒绝缺失或类型错误的声明。",
+      "regressionTest": "逐项删除必需 claim、使用错误 iss/aud、空 jti 和过期 exp，均必须返回 AUTH_REQUIRED。"
+    },
+    {
+      "id": "REVIEW-PRIVACY-001",
+      "severity": "P1",
+      "certainty": "confirmed",
+      "area": "sensitive-data",
+      "title": "普通 ReviewRun 端点返回完整 Prompt 和 OCR 敏感上下文",
+      "actual": "promptAudit 持久化 system/user/messages 和 OCR 证据；review_run_view 只移除 rawPrompt/rawOcrText，未移除 promptAudit。动态跨节点读取直接得到 promptAudit。FDE masked 视图对部分文本保留 240-800 个前缀字符，也不构成字段级脱敏。",
+      "impact": "可能泄露系统 Prompt、证号、姓名、单位、印章文本和其他文档内容，并扩大 IDOR 的数据影响。",
+      "evidence": [
+        "backend/libs/review_grounding.py:323",
+        "backend/libs/review_orchestrator/execution.py:1001",
+        "backend/libs/review_orchestrator/execution.py:2228",
+        "backend/apps/api/routes.py:9401",
+        "evidence/security-probes.json"
+      ],
+      "recommendation": "业务端默认只返回哈希和安全摘要；原始 Prompt/OCR 通过短期授权访问；按字段类型脱敏证号、姓名、单位、联系方式和印章，不使用简单前缀截断。",
+      "regressionTest": "在 Prompt 开头和嵌套 userPayload 放置敏感标记，普通用户及无 grant 的 FDE 响应中不得出现原文。"
+    },
+    {
+      "id": "AUDIT-INTEGRITY-001",
+      "severity": "P1",
+      "certainty": "confirmed",
+      "area": "audit-log-integrity",
+      "title": "审计日志不是 append-only，也没有篡改证据",
+      "actual": "审计事件只是通用 JSONB collection 中的普通可 upsert/delete 行；全量刷新会删除后重建。没有专用表权限、不可变约束、触发器、previousHash/eventHash 或签名。",
+      "impact": "无法证明审计历史未被删除、替换或重排，不满足不可抵赖和完整性要求。",
+      "evidence": [
+        "backend/libs/db/repository.py:402",
+        "backend/libs/db/repository.py:1954",
+        "backend/libs/db/repository.py:2193",
+        "evidence/persistence-performance.json"
+      ],
+      "recommendation": "使用独立 append-only audit_event 表和最小权限写账户；禁止 UPDATE/DELETE，增加序列、前向哈希链/签名和周期性外部 WORM 锚定。",
+      "regressionTest": "应用账户执行 UPDATE/DELETE 必须失败；删除、重排或改写任一事件后完整性校验必须检测到。"
+    },
+    {
+      "id": "AUDIT-COVERAGE-001",
+      "severity": "P1",
+      "certainty": "confirmed",
+      "area": "audit-log-completeness",
+      "title": "安全事件和失败操作不进入审计日志",
+      "actual": "全局中间件只记录 code=0 的成功 mutation，并明确排除 auth 路径。登录失败、登录成功、登出和限流探针产生 0 条新 audit；当前本地 330 条 audit_logs 的 result 全部为成功。",
+      "impact": "暴力登录、越权尝试、工作流失败和异常峰值无法通过审计日志追踪，事后取证不完整。",
+      "evidence": [
+        "backend/apps/api/main.py:238",
+        "backend/apps/api/main.py:249",
+        "backend/apps/api/routes.py:3911",
+        "evidence/security-probes.json",
+        "evidence/persistence-performance.json"
+      ],
+      "recommendation": "记录登录成功/失败/限流/登出、权限拒绝、验证失败、工作流失败和高风险读取；保存结果码、IP、UA、资源范围和安全相关上下文。",
+      "regressionTest": "每类安全事件和失败 mutation 都必须产生一条范围正确、无敏感凭据的失败审计记录。"
+    },
+    {
+      "id": "TEMPORAL-RETRY-001",
+      "severity": "P1",
+      "certainty": "confirmed",
+      "area": "workflow-reliability",
+      "title": "Temporal activity 的三次重试策略实际不会处理运行时异常",
+      "actual": "workflow 配置 RetryPolicy，但 activity 调用的 execute_review_run_inline 捕获所有异常、标记 failed 后正常返回。TimeoutError 探针没有向 activity 传播异常，因此 Temporal 会视为成功完成。",
+      "impact": "短暂数据库、模型或网络故障不会自动恢复，正式审查会直接失败。",
+      "evidence": [
+        "backend/apps/review_worker/workflows.py:23",
+        "backend/libs/review_orchestrator/execution.py:414",
+        "evidence/workflow-probes.json"
+      ],
+      "recommendation": "将可重试异常向 activity 抛出，仅在最终不可重试或重试耗尽时落 failed；明确分类 ReviewValidationError 与 transient infrastructure errors。",
+      "regressionTest": "第一次 TimeoutError、第二次成功时必须观察到两次 activity attempt 并最终进入 waiting_human_review。"
+    },
+    {
+      "id": "PERF-STATE-001",
+      "severity": "P1",
+      "certainty": "confirmed",
+      "area": "performance-pagination",
+      "title": "ReviewRun/FDE 读取全量状态，单次加载约 8.9 秒和 618 MB Python 分配",
+      "actual": "PostgreSQL live read 会加载全部 aicheck_state、singletons 和 idempotency 到全局内存，再用 Python filter/slice。用当前本地数据复制到临时 PostgreSQL 后，14,438 state rows 与 156 idempotency rows 的一次 load 耗时 8.91 秒、峰值分配 617,611,846 bytes。列表按 object_id 加载后内存 offset 分页，不能稳定保持 createdAt 倒序。",
+      "impact": "详情或列表请求可触发高延迟和内存峰值；并发下可能导致进程抖动、OOM、重复/漏页和审计时间线乱序。",
+      "evidence": [
+        "backend/apps/api/routes.py:208",
+        "backend/apps/api/routes.py:13931",
+        "backend/libs/db/repository.py:2068",
+        "evidence/persistence-performance.json"
+      ],
+      "recommendation": "按资源和范围直接 SQL 查询，增加 tenant/project/node/status/createdAt/id 复合索引；使用 (createdAt,id) keyset pagination，详情只加载关联记录。",
+      "regressionTest": "在 1k/10k/当前等价数据集上记录 p50/p95/RSS，并验证多页遍历无重复、无遗漏、顺序稳定。"
+    },
+    {
+      "id": "ROUTE-GATE-001",
+      "severity": "P1",
+      "certainty": "confirmed",
+      "area": "test-governance",
+      "title": "三项全路由安全测试因 FastAPI IncludedRouter 变更而空跑",
+      "actual": "app.routes 当前只暴露 9 个顶层条目，业务路由位于 IncludedRouter；测试仍遍历 app.routes，未检查 335 个 API router 路由。直接扫描 router 后发现 171 个 mutation、2 个缺失 action rule 和 2 个缺失归档 guard 的重算入口。",
+      "impact": "发布门禁持续绿灯但未实际验证 mutation action、归档只读和审计覆盖，新增越权路由可无告警上线。",
+      "evidence": [
+        "backend/tests/test_contract.py:7032",
+        "backend/tests/test_contract.py:7056",
+        "backend/tests/test_contract.py:7082",
+        "evidence/route-governance.json"
+      ],
+      "recommendation": "测试直接遍历 router/mock_router 或 OpenAPI operation；增加断言被检查路由数大于固定下限，并在 FastAPI 升级后验证路由发现机制。",
+      "regressionTest": "门禁必须报告约 335 个 router 路由和 171 个 mutation，且故意加入未授权 mutation 时测试失败。"
+    },
+    {
+      "id": "KNOWLEDGE-AUTH-001",
+      "severity": "P1",
+      "certainty": "confirmed",
+      "area": "authorization",
+      "title": "无 knowledge:manage 权限的 owner 可创建知识库重建预览并读取文件样本",
+      "actual": "POST /knowledge/reindex-preview 没有 inferred action，也不在管理员只读前缀内。owner 角色没有 knowledge:manage，但探针返回 code=0、创建 preview 并暴露 5 个样本文件名。",
+      "impact": "业务用户可探测全局知识库内容和影响范围，并生成后续高风险操作所依赖的 preview 对象。",
+      "evidence": [
+        "backend/libs/security/actions.py",
+        "backend/apps/api/routes.py:21670",
+        "evidence/route-governance.json"
+      ],
+      "recommendation": "为 preview 与实际操作使用相同 knowledge:manage 授权，并限制 preview 的租户/项目范围及响应字段。",
+      "regressionTest": "owner/inspection/contractor/ndt/fde 调用必须 FORBIDDEN，只有具 knowledge:manage 的授权主体可创建预览。"
+    },
+    {
+      "id": "ARCHIVE-001",
+      "severity": "P1",
+      "certainty": "confirmed",
+      "area": "business-state-integrity",
+      "title": "已归档项目仍可执行资料打靶重算并写入新运行记录",
+      "actual": "两个 material-targeting recompute 端点没有 mutation_guard。向已归档项目加入测试文档后，项目级重算返回 code=0 并新增 awaiting_ocr_evidence 运行。",
+      "impact": "归档快照不是只读，后续重算可改变证据链接、自动绑定和节点状态，破坏归档可复现性。",
+      "evidence": [
+        "backend/apps/api/routes.py:5103",
+        "backend/apps/api/routes.py:5127",
+        "evidence/workflow-probes.json",
+        "evidence/route-governance.json"
+      ],
+      "recommendation": "所有项目 mutation 统一通过 mutation_guard；归档后只允许创建独立派生版本，禁止修改原项目证据和状态。",
+      "regressionTest": "对归档项目调用两个重算端点必须返回 ARCHIVED_READONLY，且所有相关 collection 计数和哈希保持不变。"
+    },
+    {
+      "id": "RULE-LIFECYCLE-001",
+      "severity": "P1",
+      "certainty": "confirmed",
+      "area": "rule-governance",
+      "title": "lifecycleStatus=draft 的原子检查工具绑定集被全部编译执行",
+      "actual": "engineering-inspection-tool-bindings-v1 顶层状态为 draft，但 loader 不校验或传播该状态；171 个 binding 全部进入可执行计划。",
+      "impact": "未发布或未审批的规则工具绑定可参与正式审查，审查版本治理与回放可解释性失效。",
+      "evidence": [
+        "backend/business_packs/engineering_inspection_v1/atomic_check_tool_bindings.yaml:1",
+        "backend/libs/business_pack/loader.py:111",
+        "backend/libs/review_tools/executor.py:9",
+        "evidence/route-governance.json"
+      ],
+      "recommendation": "正式运行只加载 published binding set；draft 仅允许 shadow/evaluation；将 binding set ID、version、lifecycle 和 hash 固化到 ReviewRun。",
+      "regressionTest": "draft set 在 production/formal 模式必须拒绝或降为 advisory，发布后才可执行，并验证 replay 使用原快照。"
+    },
+    {
+      "id": "OBS-001",
+      "severity": "P2",
+      "certainty": "confirmed",
+      "area": "observability-error-handling",
+      "title": "异常被吞掉且 ReviewRun 健康状态缺少真实运行探测",
+      "actual": "全局异常 handler 不记录堆栈；ReviewRun 将 str(exc) 写入记录和时间线并可能返回客户端。健康检查主要确认 Temporal 地址已配置，不探测连接、worker poller、队列积压或卡死运行。",
+      "impact": "故障难以及时发现和定位，同时内部路径、服务名或供应商错误可能泄露给业务用户。",
+      "evidence": [
+        "backend/apps/api/main.py:374",
+        "backend/libs/review_orchestrator/execution.py:516",
+        "backend/libs/review_orchestrator/graph.py:91"
+      ],
+      "recommendation": "服务端记录结构化异常并返回稳定错误码；增加 Temporal 连接、worker heartbeat、queue lag、stuck run、retry 和状态分裂指标与告警。",
+      "regressionTest": "注入含路径/密钥样式的异常，客户端只看到脱敏错误码，服务端日志保留 operationId 和完整堆栈。"
+    },
+    {
+      "id": "INPUT-001",
+      "severity": "P2",
+      "certainty": "confirmed",
+      "area": "input-validation",
+      "title": "人工决定评论的 2000 字限制只用于 signal，原始超长内容仍被持久化",
+      "actual": "路由计算 compact comment，但把原始 body 传给 human_decision_for_review_run。5000 字评论被完整写入 ReviewRun 和 ai_feedback。",
+      "impact": "造成存储放大、响应膨胀和下游导出/日志界面风险，且不同系统看到的评论内容不一致。",
+      "evidence": [
+        "backend/apps/api/routes.py:6595",
+        "backend/libs/review_orchestrator/execution.py:2333",
+        "evidence/security-probes.json"
+      ],
+      "recommendation": "在 schema 边界拒绝超长输入，或仅持久化同一规范化值；correctedOutput 的所有文本字段也设置总量和单项上限。",
+      "regressionTest": "超过限制的评论和 finding 文本必须返回 VALIDATION_ERROR，持久化、signal 和响应使用完全相同的规范化内容。"
+    }
+  ]
+}

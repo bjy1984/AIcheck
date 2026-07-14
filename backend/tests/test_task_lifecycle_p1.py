@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 
 from fastapi.testclient import TestClient
 
 from apps.api.main import app
+from apps.review_worker.activities import run_review_graph_activity
 from apps.review_worker.workflows import ReviewRunWorkflow
 from libs.db.repository import repo
-from libs.review_orchestrator.dispatcher import dispatch_existing_review_run
-from libs.review_orchestrator.execution import clone_review_run_for_replay
+from libs.review_orchestrator.dispatcher import _start_temporal_workflow, dispatch_existing_review_run
+from libs.review_orchestrator.execution import clone_review_run_for_replay, review_workflow_id
+from libs.security.tenant import current_tenant_id
 
 
 client = TestClient(app)
@@ -43,6 +46,78 @@ def test_temporal_workflow_has_bounded_retry_policy() -> None:
     assert "RetryPolicy(" in source
     assert "maximum_attempts=3" in source
     assert "non_retryable_error_types" in source
+    assert "review_run_id if legacy_execution else activity_input" in source
+
+
+def test_temporal_workflow_id_is_stable_and_tenant_namespaced() -> None:
+    first = review_workflow_id("TENANT-A", "RRUN-SAME")
+    repeated = review_workflow_id("TENANT-A", "RRUN-SAME")
+    other_tenant = review_workflow_id("TENANT-B", "RRUN-SAME")
+
+    assert first == repeated
+    assert first != other_tenant
+    assert "TENANT-A" not in first
+
+
+def test_temporal_start_passes_tenant_execution_envelope(monkeypatch) -> None:
+    captured: dict = {}
+
+    class Handle:
+        id = "workflow-id"
+        result_run_id = "temporal-run-id"
+
+    class Client:
+        async def start_workflow(self, workflow_type, execution, *, id, task_queue):
+            captured.update(
+                {
+                    "workflowType": workflow_type,
+                    "execution": execution,
+                    "id": id,
+                    "taskQueue": task_queue,
+                }
+            )
+            return Handle()
+
+    async def connect(*_args, **_kwargs):
+        return Client()
+
+    monkeypatch.setattr("temporalio.client.Client.connect", connect)
+    run = {
+        "id": "RRUN-SAME",
+        "reviewRunId": "RRUN-SAME",
+        "tenantId": "TENANT-A",
+        "workflowId": review_workflow_id("TENANT-A", "RRUN-SAME"),
+        "taskQueues": {"workflow": "review.workflow"},
+        "revision": 1,
+    }
+    repo.state["review_runs"].insert(0, run)
+
+    asyncio.run(_start_temporal_workflow(run))
+
+    assert captured["execution"] == {"tenantId": "TENANT-A", "reviewRunId": "RRUN-SAME"}
+    assert captured["id"] == review_workflow_id("TENANT-A", "RRUN-SAME")
+
+
+def test_review_graph_activity_sets_and_restores_tenant_context(monkeypatch) -> None:
+    observed: list[str] = []
+    monkeypatch.setattr("apps.review_worker.activities.activity.heartbeat", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "apps.review_worker.activities.load_review_run_state",
+        lambda _review_run_id: observed.append(current_tenant_id()),
+    )
+    monkeypatch.setattr(
+        "apps.review_worker.activities.execute_review_run_inline",
+        lambda _review_run_id: {"status": "waiting_human_review"},
+    )
+    monkeypatch.setattr("apps.review_worker.activities.flush_state_records", lambda _records: None)
+
+    result = asyncio.run(
+        run_review_graph_activity({"tenantId": "TENANT-ACTIVITY", "reviewRunId": "RRUN-1"})
+    )
+
+    assert result["status"] == "waiting_human_review"
+    assert observed == ["TENANT-ACTIVITY"]
+    assert current_tenant_id() == "TENANT-DEFAULT"
 
 
 def test_dispatch_existing_review_run_marks_disabled_mode_failed(monkeypatch) -> None:

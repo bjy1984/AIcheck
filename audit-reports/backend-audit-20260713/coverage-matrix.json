@@ -1,0 +1,144 @@
+{
+  "schemaVersion": "aicheck-backend-audit-coverage-matrix@1",
+  "auditId": "backend-audit-20260713",
+  "authorization": [
+    {
+      "surface": "ReviewRun detail/timeline/graph",
+      "requiredBoundary": "tenant + project + node",
+      "currentBoundary": "project has any authorized node",
+      "result": "FAIL",
+      "findingIds": ["TENANT-001", "REVIEW-PRIVACY-001"]
+    },
+    {
+      "surface": "ReviewRun human-decision/rerun",
+      "requiredBoundary": "tenant + project + node + action + legal state",
+      "currentBoundary": "project has any authorized node + role action",
+      "result": "FAIL",
+      "findingIds": ["TENANT-001", "REVIEW-SIGNAL-001"]
+    },
+    {
+      "surface": "ReviewRun cancel",
+      "requiredBoundary": "tenant + project + node + action + legal state",
+      "currentBoundary": "role action only",
+      "result": "FAIL",
+      "findingIds": ["TENANT-001", "REVIEW-SIGNAL-001"]
+    },
+    {
+      "surface": "AI Run detail",
+      "requiredBoundary": "URL project/node must match entity",
+      "currentBoundary": "URL project/node authorization without entity binding",
+      "result": "FAIL",
+      "findingIds": ["TENANT-001"]
+    },
+    {
+      "surface": "review-workbench lists",
+      "requiredBoundary": "filter all collections by nodeScope",
+      "currentBoundary": "nodes filtered; findings and aiRuns unfiltered",
+      "result": "FAIL",
+      "findingIds": ["TENANT-001"]
+    },
+    {
+      "surface": "global/project/node audit logs",
+      "requiredBoundary": "auditor role and exact tenant/project/node scope",
+      "currentBoundary": "global in-memory list",
+      "result": "FAIL",
+      "findingIds": ["AUDIT-SCOPE-001"]
+    },
+    {
+      "surface": "knowledge reindex preview",
+      "requiredBoundary": "knowledge:manage",
+      "currentBoundary": "any authenticated role",
+      "result": "FAIL",
+      "findingIds": ["KNOWLEDGE-AUTH-001"]
+    }
+  ],
+  "reviewStateTransitions": [
+    {
+      "transition": "dispatch requested -> workflow started",
+      "required": "only started/queued advances node",
+      "observed": "failed_to_start advances node",
+      "result": "FAIL",
+      "findingIds": ["REVIEW-DISPATCH-001"]
+    },
+    {
+      "transition": "waiting_human_review -> one terminal decision",
+      "required": "single CAS-protected irreversible transition",
+      "observed": "queued and terminal runs accept decisions; terminal can flip repeatedly",
+      "result": "FAIL",
+      "findingIds": ["REVIEW-SIGNAL-001"]
+    },
+    {
+      "transition": "database decision <-> Temporal signal",
+      "required": "atomic/outbox consistency",
+      "observed": "database terminal state commits before failed signal",
+      "result": "FAIL",
+      "findingIds": ["REVIEW-SIGNAL-001"]
+    },
+    {
+      "transition": "transient activity failure -> retry",
+      "required": "exception reaches Temporal RetryPolicy",
+      "observed": "exception converted to normal failed return",
+      "result": "FAIL",
+      "findingIds": ["TEMPORAL-RETRY-001"]
+    },
+    {
+      "transition": "archived project -> immutable",
+      "required": "all mutations rejected",
+      "observed": "material targeting recompute writes a new run",
+      "result": "FAIL",
+      "findingIds": ["ARCHIVE-001"]
+    }
+  ],
+  "evidenceAndModelControls": [
+    {
+      "control": "formal review evidence readiness",
+      "result": "PASS_IN_EXISTING_TESTS",
+      "note": "Formal review is blocked when readyForAiFormal is false."
+    },
+    {
+      "control": "pure_llm formal-review prohibition",
+      "result": "PASS_IN_EXISTING_TESTS",
+      "note": "pure_llm is advisory/gap-precheck only."
+    },
+    {
+      "control": "invalid/truncated LLM output fails closed",
+      "result": "PASS_IN_EXISTING_TESTS",
+      "note": "Schema and provider-output guards reject malformed output."
+    },
+    {
+      "control": "automatic evidence/rule/reference gates",
+      "result": "PASS_IN_EXISTING_TESTS",
+      "note": "Automatic drafts are checked before human review."
+    },
+    {
+      "control": "human correctedOutput evidence/reference revalidation",
+      "result": "FAIL",
+      "findingIds": ["REVIEW-EVIDENCE-001"]
+    },
+    {
+      "control": "production binding-set lifecycle",
+      "result": "FAIL",
+      "findingIds": ["RULE-LIFECYCLE-001"]
+    }
+  ],
+  "auditEvents": [
+    {"event": "successful non-auth mutation", "result": "PARTIAL_PASS"},
+    {"event": "login success", "result": "MISSING"},
+    {"event": "login failure", "result": "MISSING"},
+    {"event": "login rate limit", "result": "MISSING"},
+    {"event": "logout", "result": "MISSING"},
+    {"event": "authorization denial", "result": "MISSING"},
+    {"event": "validation/business failure", "result": "MISSING"},
+    {"event": "Temporal start/signal failure", "result": "INCOMPLETE"},
+    {"event": "before/after diff", "result": "MISSING"},
+    {"event": "tenant/project/node scope", "result": "MISSING"},
+    {"event": "tamper evidence", "result": "MISSING"}
+  ],
+  "runtimeValidation": {
+    "localInMemoryAndSQLite": "completed",
+    "disposablePostgreSQL16": "completed",
+    "externalTemporal": "not available; deterministic failure injection used",
+    "externalModelProviders": "not called",
+    "stagingOrProduction": "not accessed"
+  }
+}

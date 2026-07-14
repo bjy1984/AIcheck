@@ -88,16 +88,17 @@ def prepare_row(
     }
 
 
-def load_source_rows(connection: Any, source_id: str) -> list[tuple[str, dict[str, Any]]]:
+def load_source_rows(connection: Any, source_id: str, tenant_id: str) -> list[tuple[str, dict[str, Any]]]:
     rows = connection.execute(
         """
         SELECT object_id, payload
         FROM aicheck_state
-        WHERE collection = 'knowledge_vectors'
+        WHERE tenant_id = %s
+          AND collection = 'knowledge_vectors'
           AND payload->>'sourceId' = %s
         ORDER BY object_id
         """,
-        (source_id,),
+        (tenant_id, source_id),
     ).fetchall()
     normalized: list[tuple[str, dict[str, Any]]] = []
     for object_id, payload in rows:
@@ -142,7 +143,8 @@ def ensure_schema(connection: Any) -> None:
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS knowledge_vector_index (
-            id text PRIMARY KEY,
+            tenant_id text NOT NULL DEFAULT 'TENANT-DEFAULT',
+            id text NOT NULL,
             file_id text,
             chunk_id text,
             document_id text,
@@ -153,7 +155,8 @@ def ensure_schema(connection: Any) -> None:
             embedding_model text NOT NULL,
             index_version text NOT NULL,
             metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
-            updated_at timestamptz NOT NULL DEFAULT now()
+            updated_at timestamptz NOT NULL DEFAULT now(),
+            PRIMARY KEY (tenant_id, id)
         )
         """
     )
@@ -178,7 +181,7 @@ def ensure_schema(connection: Any) -> None:
     )
 
 
-def target_summary(connection: Any, source_id: str) -> dict[str, Any]:
+def target_summary(connection: Any, source_id: str, tenant_id: str) -> dict[str, Any]:
     if connection.execute(
         "SELECT to_regclass('public.knowledge_vector_index')"
     ).fetchone()[0] is None:
@@ -195,9 +198,9 @@ def target_summary(connection: Any, source_id: str) -> dict[str, Any]:
             count(*) FILTER (WHERE dimensions <> 1024),
             count(*) FILTER (WHERE vector_norm(embedding) IS NULL OR vector_norm(embedding) <= 0)
         FROM knowledge_vector_index
-        WHERE source_id = %s
+        WHERE tenant_id = %s AND source_id = %s
         """,
-        (source_id,),
+        (tenant_id, source_id),
     ).fetchone()
     duplicate_chunks = connection.execute(
         """
@@ -205,12 +208,12 @@ def target_summary(connection: Any, source_id: str) -> dict[str, Any]:
         FROM (
             SELECT chunk_id
             FROM knowledge_vector_index
-            WHERE source_id = %s
+            WHERE tenant_id = %s AND source_id = %s
             GROUP BY chunk_id
             HAVING count(*) > 1
         ) duplicates
         """,
-        (source_id,),
+        (tenant_id, source_id),
     ).fetchone()[0]
     return {
         "count": int(count),
@@ -225,6 +228,7 @@ def apply_backfill(
     prepared: list[dict[str, Any]],
     *,
     source_id: str,
+    tenant_id: str,
     prune_stale: bool,
 ) -> dict[str, int]:
     stale_removed = 0
@@ -237,11 +241,11 @@ def apply_backfill(
             connection.execute(
                 """
                 INSERT INTO knowledge_vector_index (
-                    id, file_id, chunk_id, document_id, document_version_id, source_id,
+                    tenant_id, id, file_id, chunk_id, document_id, document_version_id, source_id,
                     embedding, dimensions, embedding_model, index_version, metadata, updated_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s::vector, %s, %s, %s, %s::jsonb, now())
-                ON CONFLICT (id) DO UPDATE SET
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s::vector, %s, %s, %s, %s::jsonb, now())
+                ON CONFLICT (tenant_id, id) DO UPDATE SET
                     file_id = EXCLUDED.file_id,
                     chunk_id = EXCLUDED.chunk_id,
                     document_id = EXCLUDED.document_id,
@@ -255,6 +259,7 @@ def apply_backfill(
                     updated_at = now()
                 """,
                 (
+                    tenant_id,
                     row["id"],
                     row["file_id"],
                     row["chunk_id"],
@@ -273,10 +278,10 @@ def apply_backfill(
             result = connection.execute(
                 """
                 DELETE FROM knowledge_vector_index
-                WHERE source_id = %s
+                WHERE tenant_id = %s AND source_id = %s
                   AND NOT (id = ANY(%s))
                 """,
-                (source_id, selected_ids),
+                (tenant_id, source_id, selected_ids),
             )
             stale_removed = int(result.rowcount or 0)
     connection.execute("ANALYZE knowledge_vector_index")
@@ -293,6 +298,7 @@ def parse_args() -> argparse.Namespace:
         default=os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL") or "",
     )
     parser.add_argument("--source-id", default=DEFAULT_SOURCE_ID)
+    parser.add_argument("--tenant-id", default=os.getenv("AICHECK_TENANT_ID") or "TENANT-DEFAULT")
     parser.add_argument("--dimensions", type=int, default=DEFAULT_DIMENSIONS)
     parser.add_argument("--expected-count", type=int, default=DEFAULT_EXPECTED_COUNT)
     parser.add_argument("--apply", action="store_true")
@@ -311,7 +317,7 @@ def main() -> int:
         raise SystemExit(f"psycopg is required: {exc}") from exc
 
     with psycopg.connect(args.database_url, autocommit=False) as connection:
-        source_rows = load_source_rows(connection, args.source_id)
+        source_rows = load_source_rows(connection, args.source_id, args.tenant_id)
         if len(source_rows) != args.expected_count:
             raise SystemExit(
                 f"Source vector gate failed: expected={args.expected_count}, actual={len(source_rows)}"
@@ -327,7 +333,7 @@ def main() -> int:
                 f"Source index gate failed: models={models}, indexVersions={versions}"
             )
         before_schema = schema_status(connection)
-        before = target_summary(connection, args.source_id)
+        before = target_summary(connection, args.source_id, args.tenant_id)
         applied = None
         if args.apply:
             if not before_schema["extensionAvailable"]:
@@ -336,10 +342,11 @@ def main() -> int:
                 connection,
                 prepared,
                 source_id=args.source_id,
+                tenant_id=args.tenant_id,
                 prune_stale=args.prune_stale,
             )
         after_schema = schema_status(connection)
-        after = target_summary(connection, args.source_id)
+        after = target_summary(connection, args.source_id, args.tenant_id)
         ok = (
             after["count"] == args.expected_count
             and after["dimensionMismatchCount"] == 0
@@ -351,6 +358,7 @@ def main() -> int:
             "schemaVersion": "aicheck-knowledge-pgvector-backfill@1",
             "mode": "apply" if args.apply else "dry-run",
             "sourceId": args.source_id,
+            "tenantId": args.tenant_id,
             "sourceCount": len(source_rows),
             "sourceDigest": canonical_digest(source_rows),
             "dimensions": args.dimensions,

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import threading
 from copy import deepcopy
@@ -28,6 +30,12 @@ from libs.knowledge_indexing import (
     vector_payload_for_pg,
 )
 from libs.ocr_readiness import parse_result_outcome_status, parse_result_quality_blockers
+from libs.security.tenant import (
+    DEFAULT_TENANT_ID,
+    apply_default_tenant,
+    current_tenant_id as configured_tenant_id,
+    tenant_id_for_record,
+)
 
 from .seed import ROLE_ACTIONS, ROLE_NODE_MAP, ensure_inspection_project_members, fresh_state
 
@@ -49,6 +57,8 @@ STATE_COLLECTIONS = {
     "review_graph_nodes": "review_graph_nodes",
     "review_tool_calls": "review_tool_calls",
     "review_events": "review_events",
+    "workflow_outbox": "workflow_outbox",
+    "workflow_inbox": "workflow_inbox",
     "retrieval_traces": "retrieval_traces",
     "rule_check_results": "rule_check_results",
     "ai_feedback": "ai_feedback",
@@ -151,6 +161,12 @@ def compatibility_mock_data_enabled() -> bool:
     return os.getenv("AICHECK_ENABLE_COMPATIBILITY_MOCKS", "false").strip().lower() == "true"
 
 
+def production_runtime_ddl_disabled() -> bool:
+    environment = os.getenv("AICHECK_ENV", "development").strip().lower()
+    allow_runtime_ddl = os.getenv("AICHECK_ALLOW_RUNTIME_DDL", "false").strip().lower() == "true"
+    return environment in {"production", "prod"} and not allow_runtime_ddl
+
+
 def blank_state() -> dict[str, Any]:
     state = fresh_state()
     for key in STATE_COLLECTIONS:
@@ -173,7 +189,18 @@ def runtime_initial_state() -> dict[str, Any]:
 
 class InMemoryRepository:
     def __init__(self) -> None:
+        self._tenant_states: dict[str, dict[str, Any]] = {}
+        self._tenant_persistence_baselines: dict[str, dict[tuple[str, str], str]] = {}
+        self._tenant_singleton_baselines: dict[str, dict[str, str]] = {}
+        self._tenant_idempotency_baselines: dict[str, dict[str, str]] = {}
+        self._tenant_pgvector_baseline_ids: dict[str, set[str]] = {}
+        self._loaded_tenants: set[str] = set()
         self.state = runtime_initial_state()
+        self._persistence_baseline: dict[tuple[str, str], str] = {}
+        self._singleton_baseline: dict[str, str] = {}
+        self._idempotency_baseline: dict[str, str] = {}
+        self._pgvector_baseline_ids: set[str] = set()
+        self.apply_tenant_scope()
         self.state.setdefault("knowledge_chunks", [])
         self.state.setdefault("knowledge_vectors", [])
         self.state.setdefault("knowledge_embedding_batches", [])
@@ -203,6 +230,8 @@ class InMemoryRepository:
         self.state.setdefault("review_graph_nodes", [])
         self.state.setdefault("review_tool_calls", [])
         self.state.setdefault("review_events", [])
+        self.state.setdefault("workflow_outbox", [])
+        self.state.setdefault("workflow_inbox", [])
         self.state.setdefault("retrieval_traces", [])
         self.state.setdefault("rule_check_results", [])
         self.state.setdefault("prompt_templates", [])
@@ -211,13 +240,112 @@ class InMemoryRepository:
         self.postgres_dsn: str | None = None
         self.sync_postgres = None
         self.postgres_enabled = False
+        self._postgres_schema_ready = False
         self.sqlite_path: str | None = None
         self.sqlite_enabled = False
         self._flush_lock = asyncio.Lock()
         self._sync_postgres_lock = threading.RLock()
 
+    @property
+    def state(self) -> dict[str, Any]:
+        tenant_id = configured_tenant_id()
+        state = self._tenant_states.get(tenant_id)
+        if state is None:
+            state = runtime_initial_state()
+            for state_key in STATE_COLLECTIONS:
+                apply_default_tenant(state.get(state_key), tenant_id=tenant_id)
+            for state_key in SINGLETON_COLLECTIONS:
+                apply_default_tenant(state.get(state_key), tenant_id=tenant_id)
+            self._tenant_states[tenant_id] = state
+        return state
+
+    @state.setter
+    def state(self, value: dict[str, Any]) -> None:
+        self._tenant_states[configured_tenant_id()] = value
+
+    @property
+    def _persistence_baseline(self) -> dict[tuple[str, str], str]:
+        return self._tenant_persistence_baselines.setdefault(configured_tenant_id(), {})
+
+    @_persistence_baseline.setter
+    def _persistence_baseline(self, value: dict[tuple[str, str], str]) -> None:
+        self._tenant_persistence_baselines[configured_tenant_id()] = value
+
+    @property
+    def _singleton_baseline(self) -> dict[str, str]:
+        return self._tenant_singleton_baselines.setdefault(configured_tenant_id(), {})
+
+    @_singleton_baseline.setter
+    def _singleton_baseline(self, value: dict[str, str]) -> None:
+        self._tenant_singleton_baselines[configured_tenant_id()] = value
+
+    @property
+    def _idempotency_baseline(self) -> dict[str, str]:
+        return self._tenant_idempotency_baselines.setdefault(configured_tenant_id(), {})
+
+    @_idempotency_baseline.setter
+    def _idempotency_baseline(self, value: dict[str, str]) -> None:
+        self._tenant_idempotency_baselines[configured_tenant_id()] = value
+
+    @property
+    def _pgvector_baseline_ids(self) -> set[str]:
+        return self._tenant_pgvector_baseline_ids.setdefault(configured_tenant_id(), set())
+
+    @_pgvector_baseline_ids.setter
+    def _pgvector_baseline_ids(self, value: set[str]) -> None:
+        self._tenant_pgvector_baseline_ids[configured_tenant_id()] = value
+
+    def tenant_is_loaded(self, tenant_id: str | None = None) -> bool:
+        return str(tenant_id or configured_tenant_id()) in self._loaded_tenants
+
+    def mark_tenant_loaded(self, tenant_id: str | None = None) -> None:
+        self._loaded_tenants.add(str(tenant_id or configured_tenant_id()))
+
+    def invalidate_tenant(self, tenant_id: str | None = None) -> None:
+        self._loaded_tenants.discard(str(tenant_id or configured_tenant_id()))
+
+    def snapshot_current_tenant_runtime(self, *, include_state: bool = True) -> dict[str, Any]:
+        """Capture request-local mutable state so a failed persistence boundary can be rolled back."""
+
+        tenant_id = configured_tenant_id()
+        return {
+            "tenantId": tenant_id,
+            "state": self.clone(self.state) if include_state else None,
+            "persistenceBaseline": dict(self._persistence_baseline) if include_state else None,
+            "singletonBaseline": dict(self._singleton_baseline) if include_state else None,
+            "idempotencyBaseline": dict(self._idempotency_baseline) if include_state else None,
+            "pgvectorBaselineIds": set(self._pgvector_baseline_ids) if include_state else None,
+            "wasLoaded": tenant_id in self._loaded_tenants,
+        }
+
+    def restore_tenant_runtime(self, snapshot: dict[str, Any], *, invalidate: bool = False) -> None:
+        tenant_id = str(snapshot.get("tenantId") or configured_tenant_id())
+        if tenant_id != configured_tenant_id():
+            raise RuntimeError("Cannot restore a tenant snapshot outside its tenant context.")
+        if snapshot.get("state") is None:
+            self.reset()
+            self._loaded_tenants.discard(tenant_id)
+            return
+        self.state = self.clone(snapshot["state"])
+        self._persistence_baseline = dict(snapshot.get("persistenceBaseline") or {})
+        self._singleton_baseline = dict(snapshot.get("singletonBaseline") or {})
+        self._idempotency_baseline = dict(snapshot.get("idempotencyBaseline") or {})
+        self._pgvector_baseline_ids = set(snapshot.get("pgvectorBaselineIds") or set())
+        if invalidate:
+            self._loaded_tenants.discard(tenant_id)
+        elif snapshot.get("wasLoaded"):
+            self._loaded_tenants.add(tenant_id)
+        else:
+            self._loaded_tenants.discard(tenant_id)
+
     def reset(self) -> None:
+        self._loaded_tenants.discard(configured_tenant_id())
         self.state = runtime_initial_state()
+        self._persistence_baseline = {}
+        self._singleton_baseline = {}
+        self._idempotency_baseline = {}
+        self._pgvector_baseline_ids = set()
+        self.apply_tenant_scope()
         self.state.setdefault("knowledge_chunks", [])
         self.state.setdefault("knowledge_vectors", [])
         self.state.setdefault("knowledge_embedding_batches", [])
@@ -246,11 +374,23 @@ class InMemoryRepository:
         self.state.setdefault("review_graph_nodes", [])
         self.state.setdefault("review_tool_calls", [])
         self.state.setdefault("review_events", [])
+        self.state.setdefault("workflow_outbox", [])
+        self.state.setdefault("workflow_inbox", [])
         self.state.setdefault("retrieval_traces", [])
         self.state.setdefault("rule_check_results", [])
         self.state.setdefault("prompt_templates", [])
         self.state.setdefault("cost_budget_change_requests", [])
         self.state.setdefault("masking_policies", [])
+
+    def apply_tenant_scope(self) -> None:
+        tenant_id = configured_tenant_id()
+        for state_key in STATE_COLLECTIONS:
+            apply_default_tenant(self.state.get(state_key), tenant_id=tenant_id)
+        for state_key in SINGLETON_COLLECTIONS:
+            apply_default_tenant(self.state.get(state_key), tenant_id=tenant_id)
+        for user in self.state.get("users", []):
+            if isinstance(user, dict):
+                user.setdefault("tenantId", tenant_id)
 
     def clone(self, value: Any) -> Any:
         return deepcopy(value)
@@ -399,25 +539,149 @@ class InMemoryRepository:
             if item.get("documentVersionId") in version_ids or item.get("objectId") in version_ids
         ]
 
-    def add_audit(self, action: str, object_type: str, object_id: str, result: str = "成功") -> str:
+    def add_audit(
+        self,
+        action: str,
+        object_type: str,
+        object_id: str,
+        result: str = "成功",
+        *,
+        project_id: str | None = None,
+        node_id: int | None = None,
+        error_code: str | None = None,
+        before: Any = None,
+        after: Any = None,
+        outcome: str | None = None,
+    ) -> str:
         audit_id = f"AUD-{uuid4().hex[:10].upper()}"
         actor = current_request_audit_context()
-        self.state["audit_logs"].insert(
-            0,
-            {
-                "id": audit_id,
-                "actorId": actor.get("actorId") or "system",
-                "actorName": actor.get("actorName") or "系统",
-                "actorOrgName": actor.get("actorOrgName"),
-                "operationId": actor.get("operationId"),
-                "action": action,
-                "objectType": object_type,
-                "objectId": object_id,
-                "result": result,
-                "createdAt": server_time(),
-            },
+        tenant_id = str(actor.get("tenantId") or configured_tenant_id())
+        request_path = str(actor.get("requestPath") or "")
+        project_match = re.search(r"/projects/([^/]+)", request_path)
+        node_match = re.search(r"/nodes/(\d+)", request_path)
+        resolved_project_id = project_id or (project_match.group(1) if project_match else None)
+        resolved_node_id = node_id if node_id is not None else (int(node_match.group(1)) if node_match else None)
+        if object_type in {"ReviewRun", "AIRun", "AiRun"}:
+            collection = "review_runs" if object_type == "ReviewRun" else "ai_runs"
+            id_field = "reviewRunId" if collection == "review_runs" else "id"
+            record = self.find_one(collection, object_id, id_field=id_field) or self.find_one(collection, object_id)
+            if record:
+                resolved_project_id = resolved_project_id or record.get("projectId")
+                resolved_node_id = resolved_node_id if resolved_node_id is not None else record.get("nodeId")
+                tenant_id = tenant_id_for_record(record)
+        if not resolved_project_id or resolved_node_id is None:
+            scoped_record = next(
+                (
+                    item
+                    for state_key in STATE_COLLECTIONS
+                    for item in self.state.get(state_key, [])
+                    if isinstance(item, dict)
+                    and tenant_id_for_record(item) == tenant_id
+                    and str(item.get("id") or item.get("reviewRunId") or "") == str(object_id)
+                ),
+                None,
+            )
+            if scoped_record:
+                resolved_project_id = resolved_project_id or scoped_record.get("projectId")
+                if not resolved_project_id and object_type.lower() in {"project", "inspectionproject"}:
+                    resolved_project_id = scoped_record.get("id")
+                resolved_node_id = (
+                    resolved_node_id if resolved_node_id is not None else scoped_record.get("nodeId")
+                )
+        tenant_events = [
+            item
+            for item in self.state.get("audit_logs", [])
+            if tenant_id_for_record(item) == tenant_id
+        ]
+        previous = max(tenant_events, key=lambda item: int(item.get("sequence") or 0), default=None)
+        sequence = int((previous or {}).get("sequence") or 0) + 1
+        previous_hash = str((previous or {}).get("eventHash") or "GENESIS")
+        before_hash = (
+            "sha256:" + hashlib.sha256(json.dumps(before, ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest()
+            if before is not None
+            else None
         )
+        after_hash = (
+            "sha256:" + hashlib.sha256(json.dumps(after, ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest()
+            if after is not None
+            else None
+        )
+        created_at = server_time()
+        resolved_outcome = outcome or ("success" if result == "成功" else "failed")
+        event = {
+            "id": audit_id,
+            "tenantId": tenant_id,
+            "projectId": resolved_project_id,
+            "nodeId": int(resolved_node_id) if resolved_node_id not in {None, ""} else None,
+            "actorId": actor.get("actorId") or "system",
+            "actorName": actor.get("actorName") or "系统",
+            "actorRole": actor.get("actorRole"),
+            "actorOrgId": actor.get("actorOrgId"),
+            "actorOrgName": actor.get("actorOrgName"),
+            "operationId": actor.get("operationId"),
+            "action": action,
+            "objectType": object_type,
+            "objectId": object_id,
+            "result": result,
+            "outcome": resolved_outcome,
+            "reasonCode": error_code,
+            "httpMethod": actor.get("httpMethod"),
+            "route": request_path or None,
+            "ipAddress": actor.get("clientIp"),
+            "userAgent": str(actor.get("userAgent") or "")[:512] or None,
+            "beforeHash": before_hash,
+            "afterHash": after_hash,
+            "sequence": sequence,
+            "previousHash": previous_hash,
+            "createdAt": created_at,
+        }
+        canonical = json.dumps(event, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))
+        event["eventHash"] = "sha256:" + hashlib.sha256(f"{previous_hash}:{canonical}".encode()).hexdigest()
+        event["integrityStatus"] = "verified"
+        self.state["audit_logs"].insert(0, event)
         return audit_id
+
+    def verify_audit_chain(self, tenant_id: str) -> dict[str, Any]:
+        tenant_events = [
+            self.clone(item)
+            for item in self.state.get("audit_logs", [])
+            if tenant_id_for_record(item) == tenant_id
+        ]
+        chained = [item for item in tenant_events if item.get("sequence") and item.get("eventHash")]
+        chained.sort(key=lambda item: (int(item.get("sequence") or 0), str(item.get("id") or "")))
+        expected_previous = "GENESIS"
+        expected_sequence = 1
+        failures: list[dict[str, Any]] = []
+        for event in chained:
+            sequence = int(event.get("sequence") or 0)
+            stored_hash = str(event.pop("eventHash", ""))
+            event.pop("integrityStatus", None)
+            previous_hash = str(event.get("previousHash") or "")
+            canonical = json.dumps(event, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))
+            computed_hash = "sha256:" + hashlib.sha256(
+                f"{expected_previous}:{canonical}".encode()
+            ).hexdigest()
+            if sequence != expected_sequence or previous_hash != expected_previous or stored_hash != computed_hash:
+                failures.append(
+                    {
+                        "id": event.get("id"),
+                        "sequence": sequence,
+                        "expectedSequence": expected_sequence,
+                        "previousHashMatches": previous_hash == expected_previous,
+                        "eventHashMatches": stored_hash == computed_hash,
+                    }
+                )
+            expected_previous = stored_hash
+            expected_sequence = sequence + 1
+        return {
+            "tenantId": tenant_id,
+            "status": "verified" if not failures else "tampered",
+            "verifiedEventCount": len(chained) - len(failures),
+            "chainedEventCount": len(chained),
+            "legacyUnsealedEventCount": len(tenant_events) - len(chained),
+            "failures": failures[:20],
+            "headHash": expected_previous if chained else None,
+        }
 
     def mutation_result(
         self,
@@ -1685,6 +1949,7 @@ class InMemoryRepository:
         with self._sync_postgres_lock:
             connection = self.sync_postgres
             self.sync_postgres = None
+            self._postgres_schema_ready = False
             if connection is not None:
                 try:
                     connection.close()
@@ -1725,34 +1990,40 @@ class InMemoryRepository:
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS aicheck_state (
+                    tenant_id text NOT NULL DEFAULT 'TENANT-DEFAULT',
                     collection text NOT NULL,
                     object_id text NOT NULL,
                     payload text NOT NULL,
                     updated_at text NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (collection, object_id)
+                    PRIMARY KEY (tenant_id, collection, object_id)
                 )
                 """
             )
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS aicheck_singletons (
-                    name text PRIMARY KEY,
+                    tenant_id text NOT NULL DEFAULT 'TENANT-DEFAULT',
+                    name text NOT NULL,
                     payload text NOT NULL,
-                    updated_at text NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    updated_at text NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (tenant_id, name)
                 )
                 """
             )
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS idempotency_records (
-                    scope text PRIMARY KEY,
+                    tenant_id text NOT NULL DEFAULT 'TENANT-DEFAULT',
+                    scope text NOT NULL,
                     payload text NOT NULL,
-                    updated_at text NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    updated_at text NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (tenant_id, scope)
                 )
                 """
             )
+            self._migrate_sqlite_tenant_keys(connection)
             connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_aicheck_state_collection ON aicheck_state (collection)"
+                "CREATE INDEX IF NOT EXISTS idx_aicheck_state_collection ON aicheck_state (tenant_id, collection)"
             )
             connection.execute(
                 """
@@ -1772,8 +2043,86 @@ class InMemoryRepository:
                 """
             )
             connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_idempotency_updated_at ON idempotency_records (updated_at DESC)"
+                "CREATE INDEX IF NOT EXISTS idx_idempotency_updated_at ON idempotency_records (tenant_id, updated_at DESC)"
             )
+
+    def _migrate_sqlite_tenant_keys(self, connection: sqlite3.Connection) -> None:
+        """Upgrade legacy local databases to the same composite tenant keys as PostgreSQL."""
+
+        state_columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(aicheck_state)")}
+        if "tenant_id" not in state_columns:
+            connection.execute("ALTER TABLE aicheck_state RENAME TO aicheck_state_legacy_tenant_key")
+            connection.execute(
+                """
+                CREATE TABLE aicheck_state (
+                    tenant_id text NOT NULL DEFAULT 'TENANT-DEFAULT',
+                    collection text NOT NULL,
+                    object_id text NOT NULL,
+                    payload text NOT NULL,
+                    updated_at text NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (tenant_id, collection, object_id)
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO aicheck_state (tenant_id, collection, object_id, payload, updated_at)
+                SELECT COALESCE(NULLIF(json_extract(payload, '$.tenantId'), ''), 'TENANT-DEFAULT'),
+                       collection, object_id, payload, updated_at
+                FROM aicheck_state_legacy_tenant_key
+                """
+            )
+            connection.execute("DROP TABLE aicheck_state_legacy_tenant_key")
+
+        singleton_columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(aicheck_singletons)")}
+        if "tenant_id" not in singleton_columns:
+            connection.execute("ALTER TABLE aicheck_singletons RENAME TO aicheck_singletons_legacy_tenant_key")
+            connection.execute(
+                """
+                CREATE TABLE aicheck_singletons (
+                    tenant_id text NOT NULL DEFAULT 'TENANT-DEFAULT',
+                    name text NOT NULL,
+                    payload text NOT NULL,
+                    updated_at text NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (tenant_id, name)
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO aicheck_singletons (tenant_id, name, payload, updated_at)
+                SELECT COALESCE(NULLIF(json_extract(payload, '$.tenantId'), ''), 'TENANT-DEFAULT'),
+                       name, payload, updated_at
+                FROM aicheck_singletons_legacy_tenant_key
+                """
+            )
+            connection.execute("DROP TABLE aicheck_singletons_legacy_tenant_key")
+
+        idempotency_columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(idempotency_records)")}
+        if "tenant_id" not in idempotency_columns:
+            connection.execute("ALTER TABLE idempotency_records RENAME TO idempotency_records_legacy_tenant_key")
+            connection.execute(
+                """
+                CREATE TABLE idempotency_records (
+                    tenant_id text NOT NULL DEFAULT 'TENANT-DEFAULT',
+                    scope text NOT NULL,
+                    payload text NOT NULL,
+                    updated_at text NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (tenant_id, scope)
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO idempotency_records (tenant_id, scope, payload, updated_at)
+                SELECT COALESCE(NULLIF(json_extract(payload, '$.tenantId'), ''),
+                                NULLIF(substr(scope, 1, instr(scope, ':') - 1), ''),
+                                'TENANT-DEFAULT'),
+                       scope, payload, updated_at
+                FROM idempotency_records_legacy_tenant_key
+                """
+            )
+            connection.execute("DROP TABLE idempotency_records_legacy_tenant_key")
 
     def _fresh_state_for_persistence_load(self) -> dict[str, Any]:
         loaded = runtime_initial_state()
@@ -1902,6 +2251,143 @@ class InMemoryRepository:
             return f"{doc['projectId']}:{doc['id']}"
         return object_id
 
+    @staticmethod
+    def canonical_persistence_payload(value: Any) -> str:
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+
+    def capture_persistence_baseline(self) -> None:
+        baseline: dict[tuple[str, str], str] = {}
+        for state_key, collection_name in STATE_COLLECTIONS.items():
+            for index, doc in enumerate(self.state.get(state_key, [])):
+                if not isinstance(doc, dict):
+                    continue
+                object_id = self.persistence_object_id(collection_name, doc, index)
+                baseline[(collection_name, object_id)] = self.canonical_persistence_payload(
+                    self.persistence_tenant_document(doc)
+                )
+        self._persistence_baseline = baseline
+        self._singleton_baseline = {
+            state_key: self.canonical_persistence_payload(
+                self.persistence_tenant_document(self.state.get(state_key) or {})
+            )
+            for state_key in SINGLETON_COLLECTIONS
+        }
+        self._idempotency_baseline = {
+            str(scope): self.canonical_persistence_payload(payload)
+            for scope, payload in self.state.get("idempotency", {}).items()
+        }
+
+    def current_persistence_documents(self) -> dict[tuple[str, str], dict[str, Any]]:
+        documents: dict[tuple[str, str], dict[str, Any]] = {}
+        for state_key, collection_name in STATE_COLLECTIONS.items():
+            for index, doc in enumerate(self.state.get(state_key, [])):
+                if not isinstance(doc, dict):
+                    continue
+                object_id = self.persistence_object_id(collection_name, doc, index)
+                documents[(collection_name, object_id)] = self.persistence_tenant_document(doc)
+        return documents
+
+    def persistence_tenant_document(self, document: dict[str, Any]) -> dict[str, Any]:
+        """Bind persisted records to this process's configured tenant."""
+
+        tenant_id = configured_tenant_id()
+        explicit_tenant = str(document.get("tenantId") or document.get("tenant_id") or "").strip()
+        if explicit_tenant and explicit_tenant != tenant_id:
+            raise RuntimeError("Cross-tenant persistence is not allowed in this process.")
+        if not explicit_tenant:
+            document["tenantId"] = tenant_id
+        scoped = self.clone(document)
+        scoped.pop("tenant_id", None)
+        scoped["tenantId"] = tenant_id
+        return scoped
+
+    def assert_persistence_baseline(self, key: tuple[str, str], stored_payload: Any) -> None:
+        expected = self._persistence_baseline.get(key)
+        actual = self.canonical_persistence_payload(stored_payload) if stored_payload is not None else None
+        if expected != actual:
+            raise RuntimeError(
+                f"Concurrent persistence update detected for {key[0]}/{key[1]}; reload before retrying."
+            )
+
+    def prepare_audit_records_for_postgres_transaction(
+        self,
+        records_by_state_key: dict[str, list[dict[str, Any]]],
+        tenant_id: str,
+    ) -> None:
+        """Serialize and re-chain new audit events under a tenant-scoped DB lock."""
+
+        audits = [item for item in records_by_state_key.get("audit_logs", []) if isinstance(item, dict)]
+        if not audits or self.sync_postgres is None:
+            return
+        self.sync_postgres.execute(
+            "SELECT pg_advisory_xact_lock(hashtext(%s))",
+            (f"aicheck:audit:{tenant_id}",),
+        )
+        head = self.sync_postgres.execute(
+            """
+            SELECT sequence, event_hash
+            FROM audit_events
+            WHERE tenant_id = %s AND sequence IS NOT NULL
+            ORDER BY sequence DESC
+            LIMIT 1
+            """,
+            (tenant_id,),
+        ).fetchone()
+        sequence = int(head[0]) if head else 0
+        previous_hash = str(head[1]) if head and head[1] else "GENESIS"
+        for event in sorted(audits, key=lambda item: (str(item.get("createdAt") or ""), str(item.get("id") or ""))):
+            event_id = str(event.get("id") or "")
+            if not event_id:
+                continue
+            existing = self.sync_postgres.execute(
+                "SELECT sequence, event_hash FROM audit_events WHERE tenant_id = %s AND id = %s",
+                (tenant_id, event_id),
+            ).fetchone()
+            if existing:
+                continue
+            sequence += 1
+            event["tenantId"] = tenant_id
+            event["sequence"] = sequence
+            event["previousHash"] = previous_hash
+            canonical_event = {
+                key: value
+                for key, value in event.items()
+                if key not in {"eventHash", "integrityStatus"}
+            }
+            canonical = json.dumps(
+                canonical_event,
+                ensure_ascii=False,
+                sort_keys=True,
+                default=str,
+                separators=(",", ":"),
+            )
+            event_hash = "sha256:" + hashlib.sha256(f"{previous_hash}:{canonical}".encode()).hexdigest()
+            event["eventHash"] = event_hash
+            event["integrityStatus"] = "verified"
+            previous_hash = event_hash
+
+    def update_scoped_persistence_baseline(
+        self,
+        records_by_state_key: dict[str, list[dict[str, Any]]],
+        deleted_object_ids_by_state_key: dict[str, list[str]],
+    ) -> None:
+        for state_key, object_ids in deleted_object_ids_by_state_key.items():
+            collection_name = STATE_COLLECTIONS.get(state_key)
+            if not collection_name:
+                continue
+            for object_id in object_ids:
+                self._persistence_baseline.pop((collection_name, str(object_id)), None)
+        for state_key, docs in records_by_state_key.items():
+            collection_name = STATE_COLLECTIONS.get(state_key)
+            if not collection_name:
+                continue
+            for index, doc in enumerate(docs):
+                if not isinstance(doc, dict):
+                    continue
+                doc = self.persistence_tenant_document(doc)
+                object_id = self.persistence_object_id(collection_name, doc, index)
+                self._persistence_baseline[(collection_name, object_id)] = self.canonical_persistence_payload(doc)
+
     def load_from_sqlite(self, selected_state_keys: set[str] | None = None) -> None:
         self.configure_sqlite(self.sqlite_path)
         if not self.sqlite_enabled:
@@ -1917,35 +2403,87 @@ class InMemoryRepository:
             if selected_state_keys is not None:
                 placeholders = ",".join("?" for _ in selected_collections) or "NULL"
                 rows = connection.execute(
-                    f"SELECT collection, payload FROM aicheck_state WHERE collection IN ({placeholders}) ORDER BY collection, object_id",
-                    selected_collections,
+                    f"""
+                    SELECT collection, object_id, payload
+                    FROM aicheck_state
+                    WHERE collection IN ({placeholders})
+                      AND tenant_id = ?
+                    ORDER BY collection, object_id
+                    """,
+                    [*selected_collections, configured_tenant_id()],
                 ).fetchall()
             else:
                 rows = connection.execute(
-                    "SELECT collection, payload FROM aicheck_state ORDER BY collection, object_id"
+                    """
+                    SELECT collection, object_id, payload
+                    FROM aicheck_state
+                    WHERE tenant_id = ?
+                    ORDER BY collection, object_id
+                    """,
+                    (configured_tenant_id(),),
                 ).fetchall()
             has_project_seed = any(row[0] == STATE_COLLECTIONS["projects"] for row in rows)
             grouped: dict[str, list[dict[str, Any]]] = {}
-            for collection_name, payload in rows:
+            for collection_name, _, payload in rows:
                 grouped.setdefault(collection_name, []).append(json.loads(payload))
             for state_key, collection_name in STATE_COLLECTIONS.items():
                 documents = grouped.get(collection_name, [])
-                if has_project_seed or documents:
+                if selected_state_keys is not None and state_key in selected_state_keys:
                     loaded[state_key] = documents
-            for name, payload in connection.execute("SELECT name, payload FROM aicheck_singletons").fetchall():
+                elif has_project_seed or documents:
+                    loaded[state_key] = documents
+            singleton_rows = connection.execute(
+                """
+                SELECT name, payload FROM aicheck_singletons
+                WHERE tenant_id = ?
+                """,
+                (configured_tenant_id(),),
+            ).fetchall()
+            for name, payload in singleton_rows:
                 loaded[name] = json.loads(payload)
-            loaded["idempotency"] = {
-                scope: json.loads(payload)
-                for scope, payload in connection.execute("SELECT scope, payload FROM idempotency_records").fetchall()
+            idempotency_rows = connection.execute(
+                "SELECT scope, payload FROM idempotency_records WHERE tenant_id = ?",
+                (configured_tenant_id(),),
+            ).fetchall()
+            loaded["idempotency"] = {scope: json.loads(payload) for scope, payload in idempotency_rows}
+        loaded_baseline = {
+            (str(collection_name), str(object_id)): self.canonical_persistence_payload(json.loads(payload))
+            for collection_name, object_id, payload in rows
+        }
+        self.mark_tenant_loaded()
+        if selected_state_keys is not None:
+            selected_collections_set = {
+                STATE_COLLECTIONS[key] for key in selected_state_keys if key in STATE_COLLECTIONS
             }
+            for state_key in selected_state_keys:
+                if state_key in STATE_COLLECTIONS:
+                    self.state[state_key] = loaded.get(state_key, [])
+            self._persistence_baseline = {
+                key: value
+                for key, value in self._persistence_baseline.items()
+                if key[0] not in selected_collections_set
+            }
+            self._persistence_baseline.update(loaded_baseline)
+            self.apply_tenant_scope()
+            return
+        self.state = loaded
+        self._persistence_baseline = {
+            **loaded_baseline
+        }
+        self._singleton_baseline = {
+            str(name): self.canonical_persistence_payload(json.loads(payload))
+            for name, payload in singleton_rows
+        }
+        self._idempotency_baseline = {
+            str(scope): self.canonical_persistence_payload(json.loads(payload))
+            for scope, payload in idempotency_rows
+        }
+        self.apply_tenant_scope()
         backfilled = (
-            self.apply_seed_compatibility_defaults(loaded)
+            self.apply_seed_compatibility_defaults(self.state)
             if selected_state_keys is None and demo_data_enabled()
             else False
         )
-        self.state = loaded
-        if selected_state_keys is not None:
-            return
         if not has_project_seed and demo_data_enabled():
             self.flush_to_sqlite()
         elif backfilled:
@@ -1956,45 +2494,110 @@ class InMemoryRepository:
         if not self.sqlite_enabled:
             return
         self.ensure_sqlite_schema()
+        current_documents = self.current_persistence_documents()
+        tenant_id = configured_tenant_id()
         with self.sqlite_connection() as connection:
-            connection.execute("BEGIN")
-            connection.execute("DELETE FROM aicheck_state")
-            connection.execute("DELETE FROM aicheck_singletons")
-            connection.execute("DELETE FROM idempotency_records")
-            for state_key, collection_name in STATE_COLLECTIONS.items():
-                docs = [self.clone(item) for item in self.state.get(state_key, [])]
-                for index, doc in enumerate(docs):
-                    object_id = self.persistence_object_id(collection_name, doc, index)
-                    connection.execute(
-                        """
-                        INSERT INTO aicheck_state (collection, object_id, payload, updated_at)
-                        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-                        ON CONFLICT(collection, object_id)
-                        DO UPDATE SET payload = excluded.payload, updated_at = CURRENT_TIMESTAMP
-                        """,
-                        (collection_name, object_id, json.dumps(doc, ensure_ascii=False)),
-                    )
-            for state_key in SINGLETON_COLLECTIONS:
-                connection.execute(
-                    """
-                    INSERT INTO aicheck_singletons (name, payload, updated_at)
-                    VALUES (?, ?, CURRENT_TIMESTAMP)
-                    ON CONFLICT(name)
-                    DO UPDATE SET payload = excluded.payload, updated_at = CURRENT_TIMESTAMP
-                    """,
-                    (state_key, json.dumps(self.clone(self.state.get(state_key)), ensure_ascii=False)),
+            connection.execute("BEGIN IMMEDIATE")
+            for collection_name, object_id in sorted(set(self._persistence_baseline) - set(current_documents)):
+                row = connection.execute(
+                    "SELECT payload FROM aicheck_state WHERE tenant_id = ? AND collection = ? AND object_id = ?",
+                    (tenant_id, collection_name, object_id),
+                ).fetchone()
+                self.assert_persistence_baseline(
+                    (collection_name, object_id),
+                    json.loads(row[0]) if row else None,
                 )
-            for scope, payload in self.state.get("idempotency", {}).items():
+                connection.execute(
+                    "DELETE FROM aicheck_state WHERE tenant_id = ? AND collection = ? AND object_id = ?",
+                    (tenant_id, collection_name, object_id),
+                )
+            for (collection_name, object_id), doc in current_documents.items():
+                payload = self.canonical_persistence_payload(doc)
+                key = (collection_name, object_id)
+                if self._persistence_baseline.get(key) == payload:
+                    continue
+                row = connection.execute(
+                    "SELECT payload FROM aicheck_state WHERE tenant_id = ? AND collection = ? AND object_id = ?",
+                    (tenant_id, collection_name, object_id),
+                ).fetchone()
+                if key in self._persistence_baseline:
+                    self.assert_persistence_baseline(key, json.loads(row[0]) if row else None)
+                elif row:
+                    if self.canonical_persistence_payload(json.loads(row[0])) == payload:
+                        continue
+                    raise RuntimeError(
+                        f"Concurrent persistence insert detected for {collection_name}/{object_id}."
+                    )
                 connection.execute(
                     """
-                    INSERT INTO idempotency_records (scope, payload, updated_at)
-                    VALUES (?, ?, CURRENT_TIMESTAMP)
-                    ON CONFLICT(scope)
+                    INSERT INTO aicheck_state (tenant_id, collection, object_id, payload, updated_at)
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(tenant_id, collection, object_id)
                     DO UPDATE SET payload = excluded.payload, updated_at = CURRENT_TIMESTAMP
                     """,
-                    (scope, json.dumps(self.clone(payload), ensure_ascii=False)),
+                    (tenant_id, collection_name, object_id, payload),
+                )
+            for state_key in SINGLETON_COLLECTIONS:
+                value = self.persistence_tenant_document(self.state.get(state_key) or {})
+                payload = self.canonical_persistence_payload(value)
+                if self._singleton_baseline.get(state_key) == payload:
+                    continue
+                row = connection.execute(
+                    "SELECT payload FROM aicheck_singletons WHERE tenant_id = ? AND name = ?",
+                    (tenant_id, state_key),
+                ).fetchone()
+                actual = self.canonical_persistence_payload(json.loads(row[0])) if row else None
+                expected = self._singleton_baseline.get(state_key)
+                if expected != actual and actual != payload:
+                    raise RuntimeError(f"Concurrent singleton update detected for {state_key}.")
+                connection.execute(
+                    """
+                    INSERT INTO aicheck_singletons (tenant_id, name, payload, updated_at)
+                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(tenant_id, name)
+                    DO UPDATE SET payload = excluded.payload, updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (tenant_id, state_key, payload),
+                )
+            current_idempotency = {
+                str(scope): self.clone(payload)
+                for scope, payload in self.state.get("idempotency", {}).items()
+            }
+            for scope in sorted(set(self._idempotency_baseline) - set(current_idempotency)):
+                row = connection.execute(
+                    "SELECT payload FROM idempotency_records WHERE tenant_id = ? AND scope = ?",
+                    (tenant_id, scope),
+                ).fetchone()
+                actual = self.canonical_persistence_payload(json.loads(row[0])) if row else None
+                if actual != self._idempotency_baseline[scope]:
+                    raise RuntimeError(f"Concurrent idempotency update detected for {scope}.")
+                connection.execute(
+                    "DELETE FROM idempotency_records WHERE tenant_id = ? AND scope = ?",
+                    (tenant_id, scope),
+                )
+            for scope, value in current_idempotency.items():
+                payload = self.canonical_persistence_payload(value)
+                if self._idempotency_baseline.get(scope) == payload:
+                    continue
+                row = connection.execute(
+                    "SELECT payload FROM idempotency_records WHERE tenant_id = ? AND scope = ?",
+                    (tenant_id, scope),
+                ).fetchone()
+                actual = self.canonical_persistence_payload(json.loads(row[0])) if row else None
+                expected = self._idempotency_baseline.get(scope)
+                if expected != actual and actual != payload:
+                    raise RuntimeError(f"Concurrent idempotency update detected for {scope}.")
+                connection.execute(
+                    """
+                    INSERT INTO idempotency_records (tenant_id, scope, payload, updated_at)
+                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(tenant_id, scope)
+                    DO UPDATE SET payload = excluded.payload, updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (tenant_id, scope, payload),
                 )
             connection.commit()
+        self.capture_persistence_baseline()
 
     def postgres_connection(self, dsn: str | None = None):
         try:
@@ -2011,38 +2614,91 @@ class InMemoryRepository:
             self.configure_sync_postgres()
             if self.sync_postgres is None:
                 return
+            if self._postgres_schema_ready:
+                return
+            if production_runtime_ddl_disabled():
+                required_tables = {
+                    "aicheck_state",
+                    "aicheck_singletons",
+                    "idempotency_records",
+                    "schema_migrations",
+                    "audit_events",
+                    "audit_chain_anchors",
+                    "service_heartbeats",
+                }
+                if os.getenv("AICHECK_REQUIRE_PGVECTOR", "true").strip().lower() == "true":
+                    required_tables.add("knowledge_vector_index")
+                present = {
+                    str(name)
+                    for (name,) in self.sync_postgres.execute(
+                        "SELECT relname FROM pg_class WHERE relname = ANY(%s)",
+                        (sorted(required_tables),),
+                    ).fetchall()
+                }
+                missing = sorted(required_tables - present)
+                if missing:
+                    self.sync_postgres.rollback()
+                    raise RuntimeError(
+                        "Database migrations are required before production startup; missing tables: "
+                        + ", ".join(missing)
+                    )
+                migration = self.sync_postgres.execute(
+                    "SELECT version FROM schema_migrations WHERE version = %s",
+                    ("0001_backend_audit_hardening",),
+                ).fetchone()
+                self.sync_postgres.commit()
+                if not migration:
+                    raise RuntimeError("Database migration 0001_backend_audit_hardening is required.")
+                self._postgres_schema_ready = True
+                return
             with self.sync_postgres.transaction():
                 self.sync_postgres.execute(
                     """
                     CREATE TABLE IF NOT EXISTS aicheck_state (
+                        tenant_id text NOT NULL DEFAULT 'TENANT-DEFAULT',
                         collection text NOT NULL,
                         object_id text NOT NULL,
                         payload jsonb NOT NULL,
                         updated_at timestamptz NOT NULL DEFAULT now(),
-                        PRIMARY KEY (collection, object_id)
+                        PRIMARY KEY (tenant_id, collection, object_id)
                     )
                     """
                 )
                 self.sync_postgres.execute(
                     """
                     CREATE TABLE IF NOT EXISTS aicheck_singletons (
-                        name text PRIMARY KEY,
+                        tenant_id text NOT NULL DEFAULT 'TENANT-DEFAULT',
+                        name text NOT NULL,
                         payload jsonb NOT NULL,
-                        updated_at timestamptz NOT NULL DEFAULT now()
+                        updated_at timestamptz NOT NULL DEFAULT now(),
+                        PRIMARY KEY (tenant_id, name)
                     )
                     """
                 )
                 self.sync_postgres.execute(
                     """
                     CREATE TABLE IF NOT EXISTS idempotency_records (
-                        scope text PRIMARY KEY,
+                        tenant_id text NOT NULL DEFAULT 'TENANT-DEFAULT',
+                        scope text NOT NULL,
                         payload jsonb NOT NULL,
-                        updated_at timestamptz NOT NULL DEFAULT now()
+                        updated_at timestamptz NOT NULL DEFAULT now(),
+                        PRIMARY KEY (tenant_id, scope)
                     )
                     """
                 )
                 self.sync_postgres.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_aicheck_state_collection ON aicheck_state (collection)"
+                    """
+                    CREATE TABLE IF NOT EXISTS service_heartbeats (
+                        service_id text PRIMARY KEY,
+                        service_role text NOT NULL,
+                        instance_id text NOT NULL,
+                        payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+                        last_seen_at timestamptz NOT NULL DEFAULT now()
+                    )
+                    """
+                )
+                self.sync_postgres.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_aicheck_state_collection ON aicheck_state (tenant_id, collection)"
                 )
                 self.sync_postgres.execute(
                     "CREATE INDEX IF NOT EXISTS idx_aicheck_state_payload_gin ON aicheck_state USING gin (payload)"
@@ -2062,8 +2718,9 @@ class InMemoryRepository:
                     """
                 )
                 self.sync_postgres.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_idempotency_updated_at ON idempotency_records (updated_at DESC)"
+                    "CREATE INDEX IF NOT EXISTS idx_idempotency_updated_at ON idempotency_records (tenant_id, updated_at DESC)"
                 )
+            self._postgres_schema_ready = True
 
     def load_from_sync_postgres(self, selected_state_keys: set[str] | None = None) -> None:
         with self._sync_postgres_lock:
@@ -2079,42 +2736,232 @@ class InMemoryRepository:
             ]
             if selected_state_keys is not None:
                 rows = self.sync_postgres.execute(
-                    "SELECT collection, payload FROM aicheck_state WHERE collection = ANY(%s) ORDER BY collection, object_id",
-                    (selected_collections,),
+                    """
+                    SELECT collection, object_id, payload FROM aicheck_state
+                    WHERE collection = ANY(%s)
+                      AND tenant_id = %s
+                    ORDER BY collection, object_id
+                    """,
+                    (selected_collections, configured_tenant_id()),
                 ).fetchall()
             else:
                 rows = self.sync_postgres.execute(
-                    "SELECT collection, payload FROM aicheck_state ORDER BY collection, object_id"
+                    """
+                    SELECT collection, object_id, payload FROM aicheck_state
+                    WHERE tenant_id = %s
+                    ORDER BY collection, object_id
+                    """,
+                    (configured_tenant_id(),),
                 ).fetchall()
             has_project_seed = any(row[0] == STATE_COLLECTIONS["projects"] for row in rows)
             grouped: dict[str, list[dict[str, Any]]] = {}
-            for collection_name, payload in rows:
+            for collection_name, _, payload in rows:
                 grouped.setdefault(collection_name, []).append(json.loads(json.dumps(payload)))
             for state_key, collection_name in STATE_COLLECTIONS.items():
                 documents = grouped.get(collection_name, [])
-                if has_project_seed or documents:
+                if selected_state_keys is not None and state_key in selected_state_keys:
                     loaded[state_key] = documents
-            for name, payload in self.sync_postgres.execute("SELECT name, payload FROM aicheck_singletons").fetchall():
+                elif has_project_seed or documents:
+                    loaded[state_key] = documents
+            singleton_rows = self.sync_postgres.execute(
+                "SELECT name, payload FROM aicheck_singletons WHERE tenant_id = %s",
+                (configured_tenant_id(),),
+            ).fetchall()
+            for name, payload in singleton_rows:
                 loaded[name] = json.loads(json.dumps(payload))
-            loaded["idempotency"] = {
-                scope: json.loads(json.dumps(payload))
-                for scope, payload in self.sync_postgres.execute("SELECT scope, payload FROM idempotency_records").fetchall()
+            idempotency_rows = self.sync_postgres.execute(
+                "SELECT scope, payload FROM idempotency_records WHERE tenant_id = %s",
+                (configured_tenant_id(),),
+            ).fetchall()
+            loaded["idempotency"] = {scope: json.loads(json.dumps(payload)) for scope, payload in idempotency_rows}
+            loaded_baseline = {
+                (str(collection_name), str(object_id)): self.canonical_persistence_payload(payload)
+                for collection_name, object_id, payload in rows
+            }
+            self.mark_tenant_loaded()
+            if selected_state_keys is not None:
+                selected_collections_set = {
+                    STATE_COLLECTIONS[key] for key in selected_state_keys if key in STATE_COLLECTIONS
+                }
+                for state_key in selected_state_keys:
+                    if state_key in STATE_COLLECTIONS:
+                        self.state[state_key] = loaded.get(state_key, [])
+                self._persistence_baseline = {
+                    key: value
+                    for key, value in self._persistence_baseline.items()
+                    if key[0] not in selected_collections_set
+                }
+                self._persistence_baseline.update(loaded_baseline)
+                self.apply_tenant_scope()
+                self.sync_postgres.commit()
+                return
+            self.state = loaded
+            self.mark_tenant_loaded()
+            self._persistence_baseline = {
+                **loaded_baseline
+            }
+            self._singleton_baseline = {
+                str(name): self.canonical_persistence_payload(payload)
+                for name, payload in singleton_rows
+            }
+            self._idempotency_baseline = {
+                str(scope): self.canonical_persistence_payload(payload)
+                for scope, payload in idempotency_rows
+            }
+            self.apply_tenant_scope()
+            self._pgvector_baseline_ids = {
+                str(item.get("id"))
+                for item in self.state.get("knowledge_vectors", [])
+                if isinstance(item, dict) and item.get("id")
             }
             backfilled = (
-                self.apply_seed_compatibility_defaults(loaded)
+                self.apply_seed_compatibility_defaults(self.state)
                 if selected_state_keys is None and demo_data_enabled()
                 else False
             )
-            self.state = loaded
             # psycopg starts a transaction for the SELECTs above when autocommit is off.
             # End that read transaction before any writer tries to flush the JSONB state.
             self.sync_postgres.commit()
-            if selected_state_keys is not None:
-                return
             if not has_project_seed and demo_data_enabled():
                 self.flush_to_sync_postgres()
             elif backfilled:
                 self.flush_to_sync_postgres()
+
+    def query_state_page_from_sync_postgres(
+        self,
+        state_key: str,
+        *,
+        tenant_id: str,
+        filters: dict[str, Any] | None = None,
+        page_size: int = 20,
+        cursor: str | None = None,
+    ) -> dict[str, Any]:
+        """Read a bounded tenant-scoped keyset page without materializing global state."""
+        with self._sync_postgres_lock:
+            self.configure_sync_postgres()
+            if self.sync_postgres is None:
+                return {"items": [], "pageSize": page_size, "hasMore": False, "nextCursor": None}
+            collection_name = STATE_COLLECTIONS.get(state_key)
+            if not collection_name:
+                raise KeyError(f"Unknown state collection: {state_key}")
+            safe_size = max(1, min(int(page_size or 20), 200))
+            clauses = ["tenant_id = %s", "collection = %s"]
+            params: list[Any] = [tenant_id, collection_name]
+            for field, value in (filters or {}).items():
+                if value is None or value == "":
+                    continue
+                if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", str(field)):
+                    raise ValueError(f"Unsafe JSON filter field: {field}")
+                clauses.append("payload ->> %s = %s")
+                params.extend([str(field), str(value)])
+            if cursor:
+                try:
+                    padded = cursor + "=" * (-len(cursor) % 4)
+                    cursor_payload = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+                    cursor_updated_at, cursor_object_id = cursor_payload
+                except Exception as exc:
+                    raise ValueError("Invalid keyset cursor") from exc
+                clauses.append("(updated_at, object_id) < (%s::timestamptz, %s)")
+                params.extend([str(cursor_updated_at), str(cursor_object_id)])
+            params.append(safe_size + 1)
+            rows = self.sync_postgres.execute(
+                f"""
+                SELECT object_id, payload, updated_at
+                FROM aicheck_state
+                WHERE {' AND '.join(clauses)}
+                ORDER BY updated_at DESC, object_id DESC
+                LIMIT %s
+                """,
+                tuple(params),
+            ).fetchall()
+            self.sync_postgres.commit()
+            has_more = len(rows) > safe_size
+            selected = rows[:safe_size]
+            next_cursor = None
+            if has_more and selected:
+                object_id, _, updated_at = selected[-1]
+                encoded = json.dumps([updated_at.isoformat(), str(object_id)], separators=(",", ":"))
+                next_cursor = base64.urlsafe_b64encode(encoded.encode("utf-8")).decode("ascii").rstrip("=")
+            return {
+                "items": [self.clone(payload) for _, payload, _ in selected],
+                "pageSize": safe_size,
+                "hasMore": has_more,
+                "nextCursor": next_cursor,
+                "paginationMode": "keyset",
+            }
+
+    def load_review_run_scope_from_sync_postgres(self, review_run_id: str) -> None:
+        """Merge one ReviewRun aggregate into memory without loading unrelated historical state."""
+        with self._sync_postgres_lock:
+            self.configure_sync_postgres()
+            if self.sync_postgres is None:
+                return
+            rows = self.sync_postgres.execute(
+                """
+                SELECT collection, object_id, payload
+                FROM aicheck_state
+                WHERE tenant_id = %s
+                  AND (
+                       (collection = 'review_runs' AND object_id = %s)
+                       OR payload ->> 'reviewRunId' = %s
+                  )
+                ORDER BY collection, object_id
+                """,
+                (configured_tenant_id(), review_run_id, review_run_id),
+            ).fetchall()
+            review_run = next(
+                (payload for collection, _, payload in rows if collection == STATE_COLLECTIONS["review_runs"]),
+                None,
+            )
+            if review_run:
+                ai_run_id = str(review_run.get("aiRunId") or "")
+                project_id = str(review_run.get("projectId") or "")
+                node_id = str(review_run.get("nodeId") or "")
+                extra_rows = self.sync_postgres.execute(
+                    """
+                    SELECT collection, object_id, payload
+                    FROM aicheck_state
+                    WHERE tenant_id = %s
+                      AND (
+                           (collection = 'ai_runs' AND object_id = %s)
+                           OR (collection = 'ai_trace_steps' AND payload ->> 'aiRunId' = %s)
+                           OR (
+                                collection = 'project_nodes'
+                                AND payload ->> 'projectId' = %s
+                                AND payload ->> 'nodeId' = %s
+                           )
+                      )
+                    ORDER BY collection, object_id
+                    """,
+                    (configured_tenant_id(), ai_run_id, ai_run_id, project_id, node_id),
+                ).fetchall()
+                rows.extend(extra_rows)
+            self.sync_postgres.commit()
+
+            state_key_by_collection = {value: key for key, value in STATE_COLLECTIONS.items()}
+            grouped: dict[str, list[dict[str, Any]]] = {}
+            for collection_name, _, payload in rows:
+                state_key = state_key_by_collection.get(str(collection_name))
+                if state_key:
+                    grouped.setdefault(state_key, []).append(self.clone(payload))
+            for state_key, incoming in grouped.items():
+                incoming_ids = {
+                    self.persistence_object_id(STATE_COLLECTIONS[state_key], item, index)
+                    for index, item in enumerate(incoming)
+                }
+                retained = [
+                    item
+                    for index, item in enumerate(self.state.get(state_key, []))
+                    if self.persistence_object_id(STATE_COLLECTIONS[state_key], item, index) not in incoming_ids
+                ]
+                self.state[state_key] = [*incoming, *retained]
+            self._persistence_baseline.update(
+                {
+                    (str(collection_name), str(object_id)): self.canonical_persistence_payload(payload)
+                    for collection_name, object_id, payload in rows
+                }
+            )
+            self.apply_tenant_scope()
 
     def load_ocr_task_state_from_sync_postgres(self, document_id: str, version_id: str) -> None:
         """Load only state needed by one OCR task, excluding unrelated historical parse payloads."""
@@ -2157,20 +3004,24 @@ class InMemoryRepository:
             ]
             rows = self.sync_postgres.execute(
                 """
-                SELECT collection, payload
+                SELECT collection, object_id, payload
                 FROM aicheck_state
-                WHERE collection = ANY(%s)
-                   OR (
-                        collection = ANY(%s)
-                        AND (
-                            object_id = ANY(%s)
-                            OR payload ->> 'documentId' = %s
-                            OR payload ->> 'documentVersionId' = %s
-                        )
-                   )
+                WHERE tenant_id = %s
+                  AND (
+                       collection = ANY(%s)
+                       OR (
+                            collection = ANY(%s)
+                            AND (
+                                object_id = ANY(%s)
+                                OR payload ->> 'documentId' = %s
+                                OR payload ->> 'documentVersionId' = %s
+                            )
+                       )
+                  )
                 ORDER BY collection, object_id
                 """,
                 (
+                    configured_tenant_id(),
                     global_collections,
                     scoped_collections,
                     [document_id, version_id],
@@ -2179,15 +3030,31 @@ class InMemoryRepository:
                 ),
             ).fetchall()
             grouped: dict[str, list[dict[str, Any]]] = {}
-            for collection_name, payload in rows:
+            for collection_name, _, payload in rows:
                 grouped.setdefault(collection_name, []).append(json.loads(json.dumps(payload)))
             for state_key, collection_name in STATE_COLLECTIONS.items():
                 if collection_name in global_collections or collection_name in scoped_collections:
                     loaded[state_key] = grouped.get(collection_name, [])
-            for name, payload in self.sync_postgres.execute("SELECT name, payload FROM aicheck_singletons").fetchall():
+            for name, payload in self.sync_postgres.execute(
+                "SELECT name, payload FROM aicheck_singletons WHERE tenant_id = %s",
+                (configured_tenant_id(),),
+            ).fetchall():
                 loaded[name] = json.loads(json.dumps(payload))
             loaded["idempotency"] = {}
             self.state = loaded
+            self._persistence_baseline = {
+                (str(collection_name), str(object_id)): self.canonical_persistence_payload(payload)
+                for collection_name, object_id, payload in rows
+            }
+            self._singleton_baseline = {
+                str(name): self.canonical_persistence_payload(payload)
+                for name, payload in self.sync_postgres.execute(
+                    "SELECT name, payload FROM aicheck_singletons WHERE tenant_id = %s",
+                    (configured_tenant_id(),),
+                ).fetchall()
+            }
+            self._idempotency_baseline = {}
+            self.apply_tenant_scope()
             self.sync_postgres.commit()
 
     def flush_to_sync_postgres(self) -> None:
@@ -2196,76 +3063,167 @@ class InMemoryRepository:
             if self.sync_postgres is None:
                 return
             self.ensure_postgres_schema()
+            current_documents = self.current_persistence_documents()
+            tenant_id = configured_tenant_id()
             with self.sync_postgres.transaction():
-                self.sync_postgres.execute("SELECT pg_advisory_xact_lock(hashtext('aicheck_state_flush'))")
-                self.sync_postgres.execute("DELETE FROM aicheck_state")
-                self.sync_postgres.execute("DELETE FROM aicheck_singletons")
-                self.sync_postgres.execute("DELETE FROM idempotency_records")
-                for state_key, collection_name in STATE_COLLECTIONS.items():
-                    docs = [self.clone(item) for item in self.state.get(state_key, [])]
-                    for index, doc in enumerate(docs):
-                        object_id = self.persistence_object_id(collection_name, doc, index)
-                        self.sync_postgres.execute(
-                            """
-                            INSERT INTO aicheck_state (collection, object_id, payload, updated_at)
-                            VALUES (%s, %s, %s::jsonb, now())
-                            ON CONFLICT (collection, object_id)
-                            DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()
-                            """,
-                            (collection_name, object_id, json.dumps(doc, ensure_ascii=False)),
-                        )
-                for state_key in SINGLETON_COLLECTIONS:
+                self.prepare_audit_records_for_postgres_transaction(
+                    {"audit_logs": self.state.get("audit_logs", [])},
+                    tenant_id,
+                )
+                current_documents = self.current_persistence_documents()
+                for collection_name, object_id in sorted(set(self._persistence_baseline) - set(current_documents)):
+                    row = self.sync_postgres.execute(
+                        "SELECT payload FROM aicheck_state WHERE tenant_id = %s AND collection = %s AND object_id = %s FOR UPDATE",
+                        (tenant_id, collection_name, object_id),
+                    ).fetchone()
+                    self.assert_persistence_baseline((collection_name, object_id), row[0] if row else None)
                     self.sync_postgres.execute(
-                        """
-                        INSERT INTO aicheck_singletons (name, payload, updated_at)
-                        VALUES (%s, %s::jsonb, now())
-                        ON CONFLICT (name)
-                        DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()
-                        """,
-                        (state_key, json.dumps(self.clone(self.state.get(state_key)), ensure_ascii=False)),
+                        "DELETE FROM aicheck_state WHERE tenant_id = %s AND collection = %s AND object_id = %s",
+                        (tenant_id, collection_name, object_id),
                     )
-                for scope, payload in self.state.get("idempotency", {}).items():
+                for (collection_name, object_id), doc in current_documents.items():
+                    payload = self.canonical_persistence_payload(doc)
+                    key = (collection_name, object_id)
+                    if self._persistence_baseline.get(key) == payload:
+                        continue
+                    row = self.sync_postgres.execute(
+                        "SELECT payload FROM aicheck_state WHERE tenant_id = %s AND collection = %s AND object_id = %s FOR UPDATE",
+                        (tenant_id, collection_name, object_id),
+                    ).fetchone()
+                    if key in self._persistence_baseline:
+                        self.assert_persistence_baseline(key, row[0] if row else None)
+                        self.sync_postgres.execute(
+                            "UPDATE aicheck_state SET payload = %s::jsonb, updated_at = now() WHERE tenant_id = %s AND collection = %s AND object_id = %s",
+                            (payload, tenant_id, collection_name, object_id),
+                        )
+                    elif row:
+                        if self.canonical_persistence_payload(row[0]) != payload:
+                            raise RuntimeError(
+                                f"Concurrent persistence insert detected for {collection_name}/{object_id}."
+                            )
+                    else:
+                        cursor = self.sync_postgres.execute(
+                            """
+                            INSERT INTO aicheck_state (tenant_id, collection, object_id, payload, updated_at)
+                            VALUES (%s, %s, %s, %s::jsonb, now())
+                            ON CONFLICT (tenant_id, collection, object_id) DO NOTHING
+                            """,
+                            (tenant_id, collection_name, object_id, payload),
+                        )
+                        if cursor.rowcount == 0:
+                            concurrent = self.sync_postgres.execute(
+                                "SELECT payload FROM aicheck_state WHERE tenant_id = %s AND collection = %s AND object_id = %s",
+                                (tenant_id, collection_name, object_id),
+                            ).fetchone()
+                            if not concurrent or self.canonical_persistence_payload(concurrent[0]) != payload:
+                                raise RuntimeError(
+                                    f"Concurrent persistence insert detected for {collection_name}/{object_id}."
+                                )
+                for state_key in SINGLETON_COLLECTIONS:
+                    value = self.persistence_tenant_document(self.state.get(state_key) or {})
+                    payload = self.canonical_persistence_payload(value)
+                    if self._singleton_baseline.get(state_key) == payload:
+                        continue
+                    row = self.sync_postgres.execute(
+                        "SELECT payload FROM aicheck_singletons WHERE tenant_id = %s AND name = %s FOR UPDATE",
+                        (tenant_id, state_key),
+                    ).fetchone()
+                    actual = self.canonical_persistence_payload(row[0]) if row else None
+                    expected = self._singleton_baseline.get(state_key)
+                    if expected != actual and actual != payload:
+                        raise RuntimeError(f"Concurrent singleton update detected for {state_key}.")
                     self.sync_postgres.execute(
                         """
-                        INSERT INTO idempotency_records (scope, payload, updated_at)
-                        VALUES (%s, %s::jsonb, now())
-                        ON CONFLICT (scope)
+                        INSERT INTO aicheck_singletons (tenant_id, name, payload, updated_at)
+                        VALUES (%s, %s, %s::jsonb, now())
+                        ON CONFLICT (tenant_id, name)
                         DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()
                         """,
-                        (scope, json.dumps(self.clone(payload), ensure_ascii=False)),
+                        (tenant_id, state_key, payload),
+                    )
+                current_idempotency = {
+                    str(scope): self.clone(value)
+                    for scope, value in self.state.get("idempotency", {}).items()
+                }
+                for scope in sorted(set(self._idempotency_baseline) - set(current_idempotency)):
+                    row = self.sync_postgres.execute(
+                        "SELECT payload FROM idempotency_records WHERE tenant_id = %s AND scope = %s FOR UPDATE",
+                        (tenant_id, scope),
+                    ).fetchone()
+                    actual = self.canonical_persistence_payload(row[0]) if row else None
+                    if actual != self._idempotency_baseline[scope]:
+                        raise RuntimeError(f"Concurrent idempotency update detected for {scope}.")
+                    self.sync_postgres.execute(
+                        "DELETE FROM idempotency_records WHERE tenant_id = %s AND scope = %s",
+                        (tenant_id, scope),
+                    )
+                for scope, value in current_idempotency.items():
+                    payload = self.canonical_persistence_payload(value)
+                    if self._idempotency_baseline.get(scope) == payload:
+                        continue
+                    row = self.sync_postgres.execute(
+                        "SELECT payload FROM idempotency_records WHERE tenant_id = %s AND scope = %s FOR UPDATE",
+                        (tenant_id, scope),
+                    ).fetchone()
+                    actual = self.canonical_persistence_payload(row[0]) if row else None
+                    expected = self._idempotency_baseline.get(scope)
+                    if expected != actual and actual != payload:
+                        raise RuntimeError(f"Concurrent idempotency update detected for {scope}.")
+                    self.sync_postgres.execute(
+                        """
+                        INSERT INTO idempotency_records (tenant_id, scope, payload, updated_at)
+                        VALUES (%s, %s, %s::jsonb, now())
+                        ON CONFLICT (tenant_id, scope)
+                        DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()
+                        """,
+                        (tenant_id, scope, payload),
                     )
             self.sync_postgres.commit()
+            self.capture_persistence_baseline()
             if self.state.get("knowledge_vectors"):
                 self.flush_knowledge_vectors_to_pgvector()
 
     def upsert_state_records_to_sync_postgres(
         self,
         records_by_state_key: dict[str, list[dict[str, Any]]],
+        idempotency_scopes: list[str] | None = None,
     ) -> None:
         """Persist selected records without replacing another process's state snapshot."""
-        self.sync_state_records_to_sync_postgres(records_by_state_key, {})
+        self.sync_state_records_to_sync_postgres(records_by_state_key, {}, idempotency_scopes=idempotency_scopes)
 
     def sync_state_records_to_sync_postgres(
         self,
         records_by_state_key: dict[str, list[dict[str, Any]]],
         deleted_object_ids_by_state_key: dict[str, list[str]],
+        *,
+        idempotency_scopes: list[str] | None = None,
     ) -> None:
-        """Delete stale scoped rows and upsert their replacements in one transaction."""
+        """Commit scoped business state and idempotency completion in one transaction."""
         with self._sync_postgres_lock:
             self.configure_sync_postgres()
             if self.sync_postgres is None:
                 return
             self.ensure_postgres_schema()
+            tenant_id = configured_tenant_id()
             with self.sync_postgres.transaction():
+                self.prepare_audit_records_for_postgres_transaction(records_by_state_key, tenant_id)
                 for state_key, object_ids in deleted_object_ids_by_state_key.items():
                     collection_name = STATE_COLLECTIONS.get(state_key)
                     if not collection_name:
                         raise KeyError(f"Unknown state collection: {state_key}")
                     selected_ids = sorted({str(item) for item in object_ids if item})
-                    if selected_ids:
+                    for object_id in selected_ids:
+                        key = (collection_name, object_id)
+                        if key not in self._persistence_baseline:
+                            raise RuntimeError(f"Cannot delete {collection_name}/{object_id} without a loaded baseline.")
+                        row = self.sync_postgres.execute(
+                            "SELECT payload FROM aicheck_state WHERE tenant_id = %s AND collection = %s AND object_id = %s FOR UPDATE",
+                            (tenant_id, collection_name, object_id),
+                        ).fetchone()
+                        self.assert_persistence_baseline(key, row[0] if row else None)
                         self.sync_postgres.execute(
-                            "DELETE FROM aicheck_state WHERE collection = %s AND object_id = ANY(%s)",
-                            (collection_name, selected_ids),
+                            "DELETE FROM aicheck_state WHERE tenant_id = %s AND collection = %s AND object_id = %s",
+                            (tenant_id, collection_name, object_id),
                         )
                 for state_key, docs in records_by_state_key.items():
                     collection_name = STATE_COLLECTIONS.get(state_key)
@@ -2274,37 +3232,86 @@ class InMemoryRepository:
                     for index, doc in enumerate(docs):
                         if not isinstance(doc, dict):
                             continue
+                        doc = self.persistence_tenant_document(doc)
                         object_id = self.persistence_object_id(collection_name, doc, index)
+                        key = (collection_name, object_id)
+                        payload = self.canonical_persistence_payload(doc)
+                        row = self.sync_postgres.execute(
+                            "SELECT payload FROM aicheck_state WHERE tenant_id = %s AND collection = %s AND object_id = %s FOR UPDATE",
+                            (tenant_id, collection_name, object_id),
+                        ).fetchone()
+                        if key in self._persistence_baseline:
+                            self.assert_persistence_baseline(key, row[0] if row else None)
+                            self.sync_postgres.execute(
+                                "UPDATE aicheck_state SET payload = %s::jsonb, updated_at = now() WHERE tenant_id = %s AND collection = %s AND object_id = %s",
+                                (payload, tenant_id, collection_name, object_id),
+                            )
+                        elif row:
+                            if self.canonical_persistence_payload(row[0]) != payload:
+                                raise RuntimeError(
+                                    f"Concurrent persistence insert detected for {collection_name}/{object_id}."
+                                )
+                        else:
+                            self.sync_postgres.execute(
+                                "INSERT INTO aicheck_state (tenant_id, collection, object_id, payload, updated_at) VALUES (%s, %s, %s, %s::jsonb, now())",
+                                (tenant_id, collection_name, object_id, payload),
+                            )
+                for scope in idempotency_scopes or []:
+                    idempotency_payload = self.state.get("idempotency", {}).get(scope)
+                    if not isinstance(idempotency_payload, dict):
+                        continue
+                    encoded = self.canonical_persistence_payload(idempotency_payload)
+                    row = self.sync_postgres.execute(
+                        "SELECT payload FROM idempotency_records WHERE tenant_id = %s AND scope = %s FOR UPDATE",
+                        (tenant_id, scope),
+                    ).fetchone()
+                    if row and self.canonical_persistence_payload(row[0]) != encoded:
+                        raise RuntimeError(
+                            f"Idempotency scope {scope} was concurrently completed with another response."
+                        )
+                    if not row:
                         self.sync_postgres.execute(
-                            """
-                            INSERT INTO aicheck_state (collection, object_id, payload, updated_at)
-                            VALUES (%s, %s, %s::jsonb, now())
-                            ON CONFLICT (collection, object_id)
-                            DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()
-                            """,
-                            (collection_name, object_id, json.dumps(self.clone(doc), ensure_ascii=False)),
+                            "INSERT INTO idempotency_records (tenant_id, scope, payload, updated_at) VALUES (%s, %s, %s::jsonb, now())",
+                            (tenant_id, scope, encoded),
                         )
             self.sync_postgres.commit()
+            self.update_scoped_persistence_baseline(records_by_state_key, deleted_object_ids_by_state_key)
+            for scope in idempotency_scopes or []:
+                payload = self.state.get("idempotency", {}).get(scope)
+                if isinstance(payload, dict):
+                    self._idempotency_baseline[scope] = self.canonical_persistence_payload(payload)
 
     def sync_state_records_to_sqlite(
         self,
         records_by_state_key: dict[str, list[dict[str, Any]]],
         deleted_object_ids_by_state_key: dict[str, list[str]],
+        *,
+        idempotency_scopes: list[str] | None = None,
     ) -> None:
         self.configure_sqlite(self.sqlite_path)
         if not self.sqlite_enabled:
             return
         self.ensure_sqlite_schema()
+        tenant_id = configured_tenant_id()
         with self.sqlite_connection() as connection:
-            connection.execute("BEGIN")
+            connection.execute("BEGIN IMMEDIATE")
             for state_key, object_ids in deleted_object_ids_by_state_key.items():
                 collection_name = STATE_COLLECTIONS.get(state_key)
                 if not collection_name:
                     raise KeyError(f"Unknown state collection: {state_key}")
-                connection.executemany(
-                    "DELETE FROM aicheck_state WHERE collection = ? AND object_id = ?",
-                    [(collection_name, str(object_id)) for object_id in object_ids if object_id],
-                )
+                for object_id in [str(item) for item in object_ids if item]:
+                    key = (collection_name, object_id)
+                    if key not in self._persistence_baseline:
+                        raise RuntimeError(f"Cannot delete {collection_name}/{object_id} without a loaded baseline.")
+                    row = connection.execute(
+                        "SELECT payload FROM aicheck_state WHERE tenant_id = ? AND collection = ? AND object_id = ?",
+                        (tenant_id, collection_name, object_id),
+                    ).fetchone()
+                    self.assert_persistence_baseline(key, json.loads(row[0]) if row else None)
+                    connection.execute(
+                        "DELETE FROM aicheck_state WHERE tenant_id = ? AND collection = ? AND object_id = ?",
+                        (tenant_id, collection_name, object_id),
+                    )
             for state_key, docs in records_by_state_key.items():
                 collection_name = STATE_COLLECTIONS.get(state_key)
                 if not collection_name:
@@ -2312,17 +3319,54 @@ class InMemoryRepository:
                 for index, doc in enumerate(docs):
                     if not isinstance(doc, dict):
                         continue
+                    doc = self.persistence_tenant_document(doc)
                     object_id = self.persistence_object_id(collection_name, doc, index)
+                    key = (collection_name, object_id)
+                    payload = self.canonical_persistence_payload(doc)
+                    row = connection.execute(
+                        "SELECT payload FROM aicheck_state WHERE tenant_id = ? AND collection = ? AND object_id = ?",
+                        (tenant_id, collection_name, object_id),
+                    ).fetchone()
+                    if key in self._persistence_baseline:
+                        self.assert_persistence_baseline(key, json.loads(row[0]) if row else None)
+                        connection.execute(
+                            "UPDATE aicheck_state SET payload = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND collection = ? AND object_id = ?",
+                            (payload, tenant_id, collection_name, object_id),
+                        )
+                    elif row:
+                        if self.canonical_persistence_payload(json.loads(row[0])) != payload:
+                            raise RuntimeError(
+                                f"Concurrent persistence insert detected for {collection_name}/{object_id}."
+                            )
+                    else:
+                        connection.execute(
+                            "INSERT INTO aicheck_state (tenant_id, collection, object_id, payload, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)",
+                            (tenant_id, collection_name, object_id, payload),
+                        )
+            for scope in idempotency_scopes or []:
+                idempotency_payload = self.state.get("idempotency", {}).get(scope)
+                if not isinstance(idempotency_payload, dict):
+                    continue
+                encoded = self.canonical_persistence_payload(idempotency_payload)
+                row = connection.execute(
+                    "SELECT payload FROM idempotency_records WHERE tenant_id = ? AND scope = ?",
+                    (tenant_id, scope),
+                ).fetchone()
+                if row and self.canonical_persistence_payload(json.loads(row[0])) != encoded:
+                    raise RuntimeError(
+                        f"Idempotency scope {scope} was concurrently completed with another response."
+                    )
+                if not row:
                     connection.execute(
-                        """
-                        INSERT INTO aicheck_state (collection, object_id, payload, updated_at)
-                        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-                        ON CONFLICT(collection, object_id)
-                        DO UPDATE SET payload = excluded.payload, updated_at = CURRENT_TIMESTAMP
-                        """,
-                        (collection_name, object_id, json.dumps(self.clone(doc), ensure_ascii=False)),
+                        "INSERT INTO idempotency_records (tenant_id, scope, payload, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+                        (tenant_id, scope, encoded),
                     )
             connection.commit()
+        self.update_scoped_persistence_baseline(records_by_state_key, deleted_object_ids_by_state_key)
+        for scope in idempotency_scopes or []:
+            payload = self.state.get("idempotency", {}).get(scope)
+            if isinstance(payload, dict):
+                self._idempotency_baseline[scope] = self.canonical_persistence_payload(payload)
 
     def upsert_idempotency_records_to_sync_postgres(self, scopes: list[str]) -> None:
         with self._sync_postgres_lock:
@@ -2330,32 +3374,77 @@ class InMemoryRepository:
             if self.sync_postgres is None:
                 return
             self.ensure_postgres_schema()
+            tenant_id = configured_tenant_id()
             with self.sync_postgres.transaction():
                 for scope in scopes:
                     payload = self.state.get("idempotency", {}).get(scope)
                     if not isinstance(payload, dict):
                         continue
-                    self.sync_postgres.execute(
-                        """
-                        INSERT INTO idempotency_records (scope, payload, updated_at)
-                        VALUES (%s, %s::jsonb, now())
-                        ON CONFLICT (scope)
-                        DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()
-                        """,
-                        (scope, json.dumps(self.clone(payload), ensure_ascii=False)),
-                    )
+                    encoded = self.canonical_persistence_payload(payload)
+                    row = self.sync_postgres.execute(
+                        "SELECT payload FROM idempotency_records WHERE tenant_id = %s AND scope = %s FOR UPDATE",
+                        (tenant_id, scope),
+                    ).fetchone()
+                    if row and self.canonical_persistence_payload(row[0]) != encoded:
+                        raise RuntimeError(f"Idempotency scope {scope} was concurrently completed with another response.")
+                    if not row:
+                        self.sync_postgres.execute(
+                            "INSERT INTO idempotency_records (tenant_id, scope, payload, updated_at) VALUES (%s, %s, %s::jsonb, now())",
+                            (tenant_id, scope, encoded),
+                        )
             self.sync_postgres.commit()
+            for scope in scopes:
+                payload = self.state.get("idempotency", {}).get(scope)
+                if isinstance(payload, dict):
+                    self._idempotency_baseline[scope] = self.canonical_persistence_payload(payload)
+
+    def upsert_idempotency_records_to_sqlite(self, scopes: list[str]) -> None:
+        self.configure_sqlite(self.sqlite_path)
+        if not self.sqlite_enabled:
+            return
+        self.ensure_sqlite_schema()
+        tenant_id = configured_tenant_id()
+        with self.sqlite_connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            for scope in scopes:
+                payload = self.state.get("idempotency", {}).get(scope)
+                if not isinstance(payload, dict):
+                    continue
+                encoded = self.canonical_persistence_payload(payload)
+                row = connection.execute(
+                    "SELECT payload FROM idempotency_records WHERE tenant_id = ? AND scope = ?",
+                    (tenant_id, scope),
+                ).fetchone()
+                if row and self.canonical_persistence_payload(json.loads(row[0])) != encoded:
+                    raise RuntimeError(f"Idempotency scope {scope} was concurrently completed with another response.")
+                if not row:
+                    connection.execute(
+                        "INSERT INTO idempotency_records (tenant_id, scope, payload, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+                        (tenant_id, scope, encoded),
+                    )
+            connection.commit()
+        for scope in scopes:
+            payload = self.state.get("idempotency", {}).get(scope)
+            if isinstance(payload, dict):
+                self._idempotency_baseline[scope] = self.canonical_persistence_payload(payload)
 
     def ensure_pgvector_schema(self) -> bool:
         with self._sync_postgres_lock:
             if self.sync_postgres is None:
                 return False
             try:
+                if production_runtime_ddl_disabled():
+                    present = self.sync_postgres.execute(
+                        "SELECT to_regclass('public.knowledge_vector_index')"
+                    ).fetchone()
+                    self.sync_postgres.commit()
+                    return bool(present and present[0])
                 self.sync_postgres.execute("CREATE EXTENSION IF NOT EXISTS vector")
                 self.sync_postgres.execute(
                     """
                     CREATE TABLE IF NOT EXISTS knowledge_vector_index (
-                        id text PRIMARY KEY,
+                        tenant_id text NOT NULL DEFAULT 'TENANT-DEFAULT',
+                        id text NOT NULL,
                         file_id text,
                         chunk_id text,
                         document_id text,
@@ -2366,12 +3455,23 @@ class InMemoryRepository:
                         embedding_model text NOT NULL,
                         index_version text NOT NULL,
                         metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
-                        updated_at timestamptz NOT NULL DEFAULT now()
+                        updated_at timestamptz NOT NULL DEFAULT now(),
+                        PRIMARY KEY (tenant_id, id)
                     )
                     """
                 )
-                self.sync_postgres.execute("CREATE INDEX IF NOT EXISTS idx_kvi_source ON knowledge_vector_index (source_id)")
-                self.sync_postgres.execute("CREATE INDEX IF NOT EXISTS idx_kvi_index_version ON knowledge_vector_index (index_version)")
+                self.sync_postgres.execute(
+                    "ALTER TABLE knowledge_vector_index ADD COLUMN IF NOT EXISTS tenant_id text NOT NULL DEFAULT 'TENANT-DEFAULT'"
+                )
+                self.sync_postgres.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_kvi_tenant_id ON knowledge_vector_index (tenant_id, id)"
+                )
+                self.sync_postgres.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_kvi_tenant_source ON knowledge_vector_index (tenant_id, source_id)"
+                )
+                self.sync_postgres.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_kvi_tenant_index_version ON knowledge_vector_index (tenant_id, index_version)"
+                )
                 self.sync_postgres.execute(
                     "CREATE INDEX IF NOT EXISTS idx_kvi_embedding_cosine ON knowledge_vector_index USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64)"
                 )
@@ -2389,7 +3489,7 @@ class InMemoryRepository:
             if self.sync_postgres is None or not self.ensure_pgvector_schema():
                 return
             try:
-                self.sync_postgres.execute("DELETE FROM knowledge_vector_index")
+                persisted_ids: list[str] = []
                 for row in self.state.get("knowledge_vectors", []) or []:
                     if int(row.get("dimensions") or 0) != OFFLINE_VECTOR_DIMENSIONS:
                         continue
@@ -2397,15 +3497,16 @@ class InMemoryRepository:
                     embedding = payload.get("embedding")
                     if not isinstance(embedding, list) or not embedding:
                         continue
+                    persisted_ids.append(str(payload["id"]))
                     embedding_literal = "[" + ",".join(str(float(item)) for item in embedding) + "]"
                     self.sync_postgres.execute(
                         """
                         INSERT INTO knowledge_vector_index (
-                            id, file_id, chunk_id, document_id, document_version_id, source_id,
+                            tenant_id, id, file_id, chunk_id, document_id, document_version_id, source_id,
                             embedding, dimensions, embedding_model, index_version, metadata, updated_at
                         )
-                        VALUES (%s, %s, %s, %s, %s, %s, %s::vector, %s, %s, %s, %s::jsonb, now())
-                        ON CONFLICT (id)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s::vector, %s, %s, %s, %s::jsonb, now())
+                        ON CONFLICT (tenant_id, id)
                         DO UPDATE SET
                             file_id = EXCLUDED.file_id,
                             chunk_id = EXCLUDED.chunk_id,
@@ -2420,6 +3521,7 @@ class InMemoryRepository:
                             updated_at = now()
                         """,
                         (
+                            configured_tenant_id(),
                             payload["id"],
                             payload["file_id"],
                             payload["chunk_id"],
@@ -2433,7 +3535,14 @@ class InMemoryRepository:
                             payload["metadata"],
                         ),
                     )
+                stale_ids = sorted(self._pgvector_baseline_ids - set(persisted_ids))
+                if stale_ids:
+                    self.sync_postgres.execute(
+                        "DELETE FROM knowledge_vector_index WHERE tenant_id = %s AND id = ANY(%s)",
+                        (configured_tenant_id(), stale_ids),
+                    )
                 self.sync_postgres.commit()
+                self._pgvector_baseline_ids = set(persisted_ids)
             except Exception:
                 try:
                     self.sync_postgres.rollback()
@@ -2453,8 +3562,8 @@ class InMemoryRepository:
             if self.sync_postgres is None or len(embedding) != OFFLINE_VECTOR_DIMENSIONS or not self.ensure_pgvector_schema():
                 return []
             embedding_literal = "[" + ",".join(str(float(item)) for item in embedding) + "]"
-            filters = []
-            params: list[Any] = []
+            filters = ["tenant_id = %s"]
+            params: list[Any] = [configured_tenant_id()]
             if source_id:
                 filters.append("source_id = %s")
                 params.append(source_id)
@@ -2782,6 +3891,35 @@ def load_state(selected_state_keys: set[str] | None = None) -> None:
     repo.load_from_sqlite(selected_state_keys)
 
 
+def load_review_run_state(review_run_id: str) -> None:
+    """Load only one ReviewRun aggregate for worker execution when PostgreSQL is available."""
+
+    if postgres_persistence_configured():
+        repo.load_review_run_scope_from_sync_postgres(review_run_id)
+        return
+    load_state(
+        {
+            "review_runs",
+            "review_step_runs",
+            "review_graph_nodes",
+            "review_tool_calls",
+            "review_events",
+            "workflow_outbox",
+            "workflow_inbox",
+            "retrieval_traces",
+            "rule_check_results",
+            "ai_feedback",
+            "review_run_clause_snapshots",
+            "model_call_attempts",
+            "ai_runs",
+            "ai_trace_steps",
+            "review_findings",
+            "tree_nodes",
+            "node_evidence_links",
+        }
+    )
+
+
 def load_ocr_task_state(document_id: str, version_id: str) -> None:
     if postgres_persistence_configured():
         repo.load_ocr_task_state_from_sync_postgres(document_id, version_id)
@@ -2815,6 +3953,7 @@ OCR_WORKER_STATE_KEYS_FOR_SQLITE = {
 
 
 def flush_state() -> None:
+    repo.apply_tenant_scope()
     if postgres_persistence_configured():
         repo.flush_to_sync_postgres()
         return
@@ -2824,18 +3963,32 @@ def flush_state() -> None:
 
 
 def flush_state_records(records_by_state_key: dict[str, list[dict[str, Any]]]) -> None:
+    flush_mutation_records(records_by_state_key, [])
+
+
+def flush_mutation_records(
+    records_by_state_key: dict[str, list[dict[str, Any]]],
+    idempotency_scopes: list[str],
+) -> None:
+    """Atomically commit a request's state/audit/outbox records and idempotency result."""
+
     records = {
-        state_key: [item for item in docs if isinstance(item, dict)]
+        state_key: [
+            apply_default_tenant(item, tenant_id=configured_tenant_id())
+            for item in docs
+            if isinstance(item, dict)
+        ]
         for state_key, docs in records_by_state_key.items()
         if docs
     }
-    if not records:
+    selected_scopes = [scope for scope in idempotency_scopes if scope]
+    if not records and not selected_scopes:
         return
     if postgres_persistence_configured():
-        repo.upsert_state_records_to_sync_postgres(records)
+        repo.upsert_state_records_to_sync_postgres(records, idempotency_scopes=selected_scopes)
         return
     if repo.sqlite_enabled or repo.sqlite_path or os.getenv("AICHECK_SQLITE_PATH"):
-        repo.flush_to_sqlite()
+        repo.sync_state_records_to_sqlite(records, {}, idempotency_scopes=selected_scopes)
 
 
 def sync_state_records(
@@ -2865,4 +4018,4 @@ def flush_idempotency_records(scopes: list[str]) -> None:
         repo.upsert_idempotency_records_to_sync_postgres(selected)
         return
     if repo.sqlite_enabled or repo.sqlite_path or os.getenv("AICHECK_SQLITE_PATH"):
-        repo.flush_to_sqlite()
+        repo.upsert_idempotency_records_to_sqlite(selected)

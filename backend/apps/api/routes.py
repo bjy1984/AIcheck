@@ -46,8 +46,9 @@ from libs.business_pack.clause_store import (
 )
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok, page, server_time
+from libs.audit_context import current_request_audit_context, reset_request_audit_context, set_request_audit_context
 from libs.audit_runtime import audit_runtime_public_config
-from libs.db.repository import flush_state, load_state, repo
+from libs.db.repository import flush_state, load_state, postgres_persistence_configured, repo
 from libs.db.seed import PROJECT_ID, ROLE_ACTIONS, ROLE_NODE_MAP, STANDARD_RULES_SOURCE_ID, STANDARD_RULES_VERSION
 from libs.deepseek_runtime import deepseek_runtime_public_config
 from libs.embedding_models import embedding_registry_payload, embedding_runtime_config
@@ -117,6 +118,14 @@ from libs.security.session import (
     SecurityBackendUnavailable,
     request_client_ip,
     security_sessions,
+)
+from libs.security.tenant import (
+    current_tenant_id,
+    configured_tenant_id,
+    reset_request_tenant_id,
+    set_request_tenant_id,
+    tenant_is_allowed,
+    tenant_id_for_record,
 )
 from scripts.ocr_100_label_studio_export import label_config_xml, label_studio_task, label_studio_task_without_image
 from scripts.ocr_100_label_studio_import import import_label_studio_annotations
@@ -205,9 +214,32 @@ KNOWLEDGE_UPLOAD_ROOT = WORKSPACE_ROOT / "output" / "knowledge_uploads"
 DOCUMENT_UPLOAD_ROOT = WORKSPACE_ROOT / "output" / "document_uploads"
 
 
-def refresh_state_from_postgres_for_live_read() -> None:
+REVIEW_LIVE_STATE_KEYS = {
+    "review_runs",
+    "review_step_runs",
+    "review_graph_nodes",
+    "review_tool_calls",
+    "review_events",
+    "retrieval_traces",
+    "rule_check_results",
+    "ai_feedback",
+    "review_run_clause_snapshots",
+    "review_findings",
+    "ai_runs",
+    "ai_trace_steps",
+    "workflow_outbox",
+    "workflow_inbox",
+}
+
+
+def refresh_state_from_postgres_for_live_read(selected_state_keys: set[str] | None = None) -> None:
     if repo.sync_postgres is not None:
-        load_state()
+        load_state(selected_state_keys or REVIEW_LIVE_STATE_KEYS)
+
+
+def refresh_review_run_from_postgres(review_run_id: str) -> None:
+    if repo.sync_postgres is not None:
+        repo.load_review_run_scope_from_sync_postgres(review_run_id)
 AI_FEEDBACK_TYPES = {
     "accepted",
     "edited",
@@ -406,6 +438,15 @@ def compact_plain_text(value: Any, limit: int = 2000) -> str:
     text = re.sub(r"[ \t]+", " ", str(value or "").strip())
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text[:limit]
+
+
+def validated_plain_text(value: Any, *, limit: int, field_name: str) -> tuple[str | None, str | None]:
+    raw = str(value or "").strip()
+    normalized = re.sub(r"[ \t]+", " ", raw)
+    normalized = re.sub(r"\n{3,}", "\n\n", normalized)
+    if len(normalized) > limit:
+        return None, f"{field_name}不能超过 {limit} 个字符。"
+    return normalized, None
 
 
 def split_business_rule_sentences(value: Any, limit: int = 12) -> list[str]:
@@ -1661,6 +1702,12 @@ def request_user_id(request: Request) -> str | None:
     return request.headers.get("X-User-Id")
 
 
+def request_tenant_id(request: Request) -> str:
+    claims = getattr(request.state, "auth", None) or {}
+    auth_user = getattr(request.state, "auth_user", None) or {}
+    return str(claims.get("tid") or tenant_id_for_record(auth_user) or configured_tenant_id())
+
+
 def request_actor_name(request: Request) -> str:
     user = getattr(request.state, "auth_user", None) or {}
     return str(
@@ -1740,7 +1787,7 @@ def validate_operation_preview(
     payload: dict[str, Any],
     base_fingerprint: str,
 ) -> tuple[dict[str, Any] | None, JSONResponse | None]:
-    refresh_state_from_postgres_for_live_read()
+    refresh_state_from_postgres_for_live_read({"operation_previews"})
     if not preview_id:
         if strict_production():
             return None, fail(
@@ -1784,6 +1831,9 @@ def member_node_scope_error(
     *,
     node_ids: list[int] | None = None,
 ) -> JSONResponse | None:
+    project = repo.require_project(project_id)
+    if project and tenant_id_for_record(project) != request_tenant_id(request):
+        return fail(errors.NOT_FOUND, request)
     if role == "admin":
         return None
     user_id = request_user_id(request)
@@ -1794,6 +1844,7 @@ def member_node_scope_error(
             item
             for item in repo.state["project_members"]
             if item.get("projectId") == project_id
+            and tenant_id_for_record(item) == request_tenant_id(request)
             and item.get("userId") == user_id
             and (not role or item.get("role") == role)
             and item.get("status") == "启用"
@@ -2413,6 +2464,85 @@ def record_if_match_valid(prefix: str, record: dict[str, Any], if_match: str | N
     return if_match in {"*", str(revision), f'W/"{revision}"', record_etag(prefix, record)}
 
 
+def review_run_precondition_error(
+    request: Request,
+    review_run: dict[str, Any],
+    if_match: str | None,
+) -> JSONResponse | None:
+    if not if_match:
+        return fail(
+            errors.PRECONDITION_REQUIRED,
+            request,
+            message="ReviewRun 状态变更必须携带 GET 返回的 etag（If-Match）。",
+            data={"etag": record_etag("review-run", review_run)},
+            http_status=428,
+        )
+    revision = record_revision(review_run)
+    accepted = {str(revision), f'W/"{revision}"', record_etag("review-run", review_run)}
+    if if_match not in accepted:
+        return fail(
+            errors.ETAG_CONFLICT,
+            request,
+            data={"etag": record_etag("review-run", review_run), "revision": revision},
+            http_status=409,
+        )
+    return None
+
+
+def enqueue_review_workflow_command(
+    request: Request,
+    review_run: dict[str, Any],
+    *,
+    command_type: str,
+    payload: dict[str, Any],
+    idempotency_key: str | None,
+) -> dict[str, Any]:
+    source = {
+        "tenantId": request_tenant_id(request),
+        "reviewRunId": review_run.get("reviewRunId") or review_run.get("id"),
+        "commandType": command_type,
+        "expectedRevision": record_revision(review_run),
+        "idempotencyKey": idempotency_key,
+        "payload": payload,
+    }
+    digest = idempotency_fingerprint(source)
+    command_id = f"WFCMD-{digest[:20].upper()}"
+    existing = repo.find_one("workflow_outbox", command_id)
+    if existing:
+        return existing
+    command = {
+        "id": command_id,
+        "commandId": command_id,
+        "tenantId": request_tenant_id(request),
+        "projectId": review_run.get("projectId"),
+        "nodeId": review_run.get("nodeId"),
+        "reviewRunId": review_run.get("reviewRunId") or review_run.get("id"),
+        "workflowId": review_run.get("workflowId"),
+        "commandType": command_type,
+        "expectedRevision": record_revision(review_run),
+        "payloadHash": idempotency_fingerprint(payload),
+        "signalPayload": repo.clone(payload),
+        "status": "pending",
+        "attempts": 0,
+        "createdAt": server_time(),
+        "updatedAt": server_time(),
+    }
+    repo.state.setdefault("workflow_outbox", []).insert(0, command)
+    return command
+
+
+def mark_review_workflow_command(command: dict[str, Any], signal_result: dict[str, Any]) -> None:
+    command["attempts"] = int(command.get("attempts") or 0) + 1
+    command["lastResult"] = repo.clone(signal_result)
+    command["updatedAt"] = server_time()
+    if signal_result.get("status") in {"sent", "skipped"}:
+        command["status"] = "delivered" if signal_result.get("status") == "sent" else "applied_inline"
+        command["deliveredAt"] = command["updatedAt"]
+    else:
+        command["status"] = "retry_pending"
+        command["nextAttemptAt"] = command["updatedAt"]
+
+
 def bump_record_revision(record: dict[str, Any]) -> None:
     record["revision"] = record_revision(record) + 1
     record["updatedAt"] = server_time()
@@ -2545,6 +2675,9 @@ def upsert_ndt_node_evidence_links(project_id: str, node_id: int, reports: list[
 
 
 def authorized_node_scope(request: Request, project_id: str) -> set[int] | None:
+    project = repo.require_project(project_id)
+    if not project or tenant_id_for_record(project) != request_tenant_id(request):
+        return set()
     claims = getattr(request.state, "auth", None)
     role = claims.get("role") if claims else request.headers.get("X-Role")
     if not role or role == "admin":
@@ -2559,6 +2692,7 @@ def authorized_node_scope(request: Request, project_id: str) -> set[int] | None:
             item
             for item in repo.state["project_members"]
             if item.get("projectId") == project_id
+            and tenant_id_for_record(item) == request_tenant_id(request)
             and item.get("userId") == user_id
             and item.get("role") == role
             and item.get("status") == "启用"
@@ -2832,6 +2966,8 @@ def record_visible_for_scope(record: dict[str, Any], scope: set[int] | None, *, 
 
 
 def record_visible_for_request(request: Request, record: dict[str, Any], project_id: str | None = None) -> bool:
+    if tenant_id_for_record(record) != request_tenant_id(request):
+        return False
     effective_project_id = project_id or record_project_id(record)
     if not effective_project_id:
         return True
@@ -2839,9 +2975,42 @@ def record_visible_for_request(request: Request, record: dict[str, Any], project
     return record_visible_for_scope(record, scope, project_id=effective_project_id)
 
 
+def safe_ai_run_view(run: dict[str, Any]) -> dict[str, Any]:
+    view = repo.clone(run)
+    prompt_audit = view.get("promptAudit") if isinstance(view.get("promptAudit"), dict) else {}
+    view["promptSummary"] = {
+        key: prompt_audit.get(key)
+        for key in (
+            "promptVersion",
+            "ruleVersion",
+            "messagesHash",
+            "promptHash",
+            "responseHash",
+            "payloadPolicy",
+        )
+        if prompt_audit.get(key) is not None
+    }
+    for field in (
+        "rawPrompt",
+        "rawOcrText",
+        "prompt",
+        "promptAudit",
+        "messages",
+        "llmMetadata",
+        "reasoningProcess",
+        "llmResultText",
+        "inputPayload",
+        "outputPayload",
+    ):
+        view.pop(field, None)
+    return view
+
+
 def scope_error_for_record(request: Request, record: dict[str, Any], project_id: str | None = None) -> JSONResponse | None:
     if record_visible_for_request(request, record, project_id):
         return None
+    if tenant_id_for_record(record) != request_tenant_id(request):
+        return fail(errors.NOT_FOUND, request)
     return fail(errors.FORBIDDEN, request, message="用户不在该资源授权范围内。")
 
 
@@ -2853,19 +3022,45 @@ def idempotency_fingerprint(source: Any) -> str:
 def idempotent(request: Request, key: str | None, producer, fingerprint_source: Any | None = None):
     if not key:
         return producer()
-    scope = f"{request.method}:{request.url.path}:{key}"
+    actor_id = operation_actor_key(request)
+    role = (getattr(request.state, "auth", None) or {}).get("role") or request.headers.get("X-Role") or "anonymous"
+    key_hash = idempotency_fingerprint(key)
+    scope = f"{request_tenant_id(request)}:{actor_id}:{role}:{request.method}:{request.url.path}:{key_hash}"
     cached = repo.state["idempotency"].get(scope)
     fingerprint = idempotency_fingerprint(fingerprint_source) if fingerprint_source is not None else None
+    authorization_digest = idempotency_fingerprint(
+        {
+            "tenantId": request_tenant_id(request),
+            "actorId": actor_id,
+            "role": role,
+            "memberships": sorted(
+                (
+                    str(item.get("projectId")),
+                    tuple(sorted(int(node_id) for node_id in item.get("nodeScope") or [])),
+                    str(item.get("status")),
+                )
+                for item in repo.state.get("project_members", [])
+                if item.get("userId") == request_user_id(request)
+                and tenant_id_for_record(item) == request_tenant_id(request)
+            ),
+        }
+    )
     if cached is not None:
         if isinstance(cached, dict) and "response" in cached:
             if fingerprint and cached.get("requestHash") and cached["requestHash"] != fingerprint:
                 return fail(errors.IDEMPOTENCY_KEY_CONFLICT, request)
+            if cached.get("authorizationDigest") != authorization_digest:
+                return fail(errors.FORBIDDEN, request, message="当前授权上下文已变化，不能重放历史响应。")
             return repo.clone(cached["response"])
         return repo.clone(cached)
     result = producer()
     if not isinstance(result, JSONResponse):
         repo.state["idempotency"][scope] = {
             "requestHash": fingerprint,
+            "authorizationDigest": authorization_digest,
+            "tenantId": request_tenant_id(request),
+            "actorId": actor_id,
+            "actorRole": role,
             "response": repo.clone(result),
         }
     return result
@@ -3030,6 +3225,7 @@ def build_admin_user_record(
     user = {
         **(existing or {}),
         "id": body.get("id") or (existing or {}).get("id") or f"USER-{uuid4().hex[:8].upper()}",
+        "tenantId": tenant_id_for_record(existing) if existing else current_tenant_id(),
         "username": username,
         "name": name,
         "displayName": name,
@@ -3910,6 +4106,37 @@ def runtime_ui_context(request: Request):
 
 @router.post("/auth/login")
 async def auth_login(request: Request, body: dict[str, Any] = Body(default_factory=dict)):
+    requested_tenant_id = str(body.get("tenantId") or current_tenant_id()).strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", requested_tenant_id):
+        return fail(errors.VALIDATION_ERROR, request, message="tenantId 格式无效。")
+    if not tenant_is_allowed(requested_tenant_id):
+        return fail(errors.FORBIDDEN, request, message="当前部署不允许访问该租户。", http_status=403)
+    request.state.persistence_tenant_id = requested_tenant_id
+    tenant_context_token = set_request_tenant_id(requested_tenant_id)
+    audit_context_token = set_request_audit_context(
+        {**current_request_audit_context(), "tenantId": requested_tenant_id}
+    )
+    try:
+        persistent = bool(
+            postgres_persistence_configured()
+            or repo.sqlite_enabled
+            or repo.sqlite_path
+            or os.getenv("AICHECK_SQLITE_PATH")
+        )
+        if not repo.tenant_is_loaded(requested_tenant_id):
+            if persistent:
+                load_state()
+            repo.mark_tenant_loaded(requested_tenant_id)
+        request.state.mutation_state_snapshot = repo.snapshot_current_tenant_runtime(
+            include_state=not persistent
+        )
+        return await authenticate_for_tenant(request, body, requested_tenant_id)
+    finally:
+        reset_request_audit_context(audit_context_token)
+        reset_request_tenant_id(tenant_context_token)
+
+
+async def authenticate_for_tenant(request: Request, body: dict[str, Any], tenant_id: str):
     username = str(body.get("username", "")).strip()
     client_ip = request_client_ip(request)
     try:
@@ -3917,6 +4144,15 @@ async def auth_login(request: Request, body: dict[str, Any] = Body(default_facto
     except SecurityBackendUnavailable:
         return fail(errors.SECURITY_BACKEND_UNAVAILABLE, request, http_status=503)
     if limit.blocked:
+        repo.add_audit(
+            "登录限流",
+            "Authentication",
+            username or client_ip,
+            result="失败",
+            error_code="RATE_LIMITED",
+            outcome="denied",
+        )
+        request.state.force_flush_state = True
         response = fail(
             errors.RATE_LIMITED,
             request,
@@ -3925,13 +4161,22 @@ async def auth_login(request: Request, body: dict[str, Any] = Body(default_facto
         )
         response.headers["Retry-After"] = str(limit.retry_after)
         return response
-    user = authenticate(username, str(body.get("password", "")))
+    user = authenticate(username, str(body.get("password", "")), tenant_id=tenant_id)
     if not user:
         try:
             limit = await security_sessions.record_login_failure(client_ip, username)
         except SecurityBackendUnavailable:
             return fail(errors.SECURITY_BACKEND_UNAVAILABLE, request, http_status=503)
         if limit.blocked:
+            repo.add_audit(
+                "登录失败并触发限流",
+                "Authentication",
+                username or client_ip,
+                result="失败",
+                error_code="RATE_LIMITED",
+                outcome="denied",
+            )
+            request.state.force_flush_state = True
             response = fail(
                 errors.RATE_LIMITED,
                 request,
@@ -3940,12 +4185,55 @@ async def auth_login(request: Request, body: dict[str, Any] = Body(default_facto
             )
             response.headers["Retry-After"] = str(limit.retry_after)
             return response
+        repo.add_audit(
+            "登录失败",
+            "Authentication",
+            username or "unknown",
+            result="失败",
+            error_code="INVALID_CREDENTIALS",
+            outcome="denied",
+        )
+        request.state.force_flush_state = True
         return fail(errors.AUTH_REQUIRED, request, message="账号或密码错误")
     try:
         await security_sessions.clear_login_failures(client_ip, username)
     except SecurityBackendUnavailable:
         return fail(errors.SECURITY_BACKEND_UNAVAILABLE, request, http_status=503)
-    return ok({"token": issue_token(user), "user": user}, request)
+    identity_audit_token = set_request_audit_context(
+        {
+            **current_request_audit_context(),
+            "tenantId": tenant_id,
+            "actorId": user.get("id") or username,
+            "actorName": user.get("displayName") or user.get("username") or username,
+            "actorOrgName": user.get("orgUnitName") or user.get("orgName"),
+            "actorOrgId": user.get("orgId"),
+            "actorRole": user.get("role"),
+        }
+    )
+    try:
+        try:
+            token = issue_token(user)
+        except Exception:
+            repo.add_audit(
+                "登录令牌签发失败",
+                "Authentication",
+                username,
+                result="失败",
+                error_code="JWT_BACKEND_UNAVAILABLE",
+                outcome="failed",
+            )
+            request.state.force_flush_state = True
+            return fail(
+                errors.SECURITY_BACKEND_UNAVAILABLE,
+                request,
+                message="令牌签发服务暂不可用。",
+                http_status=503,
+            )
+        repo.add_audit("登录成功", "Authentication", username)
+        request.state.force_flush_state = True
+        return ok({"token": token, "user": user}, request)
+    finally:
+        reset_request_audit_context(identity_audit_token)
 
 
 @router.post("/auth/logout")
@@ -3955,6 +4243,8 @@ async def auth_logout(request: Request):
         await security_sessions.revoke(str(claims.get("jti") or ""), int(claims.get("exp") or 0))
     except SecurityBackendUnavailable:
         return fail(errors.SECURITY_BACKEND_UNAVAILABLE, request, http_status=503)
+    repo.add_audit("退出登录", "Authentication", str(claims.get("sub") or "unknown"))
+    request.state.force_flush_state = True
     return ok(None, request)
 
 
@@ -4740,7 +5030,11 @@ def node_package(request: Request, project_id: str, node_id: int):
                 for item in repo.state["rectifications"]
                 if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)
             ],
-            "aiRuns": [repo.clone(item) for item in repo.state["ai_runs"] if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)],
+            "aiRuns": [
+                safe_ai_run_view(item)
+                for item in repo.state["ai_runs"]
+                if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)
+            ],
             "actions": repo.clone(node.get("actions", [])),
         },
         request,
@@ -5107,8 +5401,12 @@ def recompute_document_targeting(
     document_id: str,
     body: dict[str, Any] = Body(default_factory=dict),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_role: str | None = Header(default=None, alias="X-Role"),
 ):
     def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role)
+        if guard:
+            return guard
         document = repo.find_one("documents", document_id)
         if not document or document.get("projectId") != project_id:
             return fail(errors.NOT_FOUND, request)
@@ -5129,8 +5427,12 @@ def recompute_project_targeting(
     request: Request,
     project_id: str,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_role: str | None = Header(default=None, alias="X-Role"),
 ):
     def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role)
+        if guard:
+            return guard
         if not repo.require_project(project_id):
             return fail(errors.NOT_FOUND, request)
         result = recompute_project_material_targeting(repo, project_id, triggered_by="manual_api")
@@ -6340,6 +6642,21 @@ def ai_recheck(
                 data={"evidenceReadiness": evidence_readiness, "requestedReviewMode": review_mode},
                 http_status=409,
             )
+        binding_set = pack.get("atomicCheckToolBindingSet") or {}
+        binding_lifecycle = str(binding_set.get("lifecycleStatus") or "draft").lower()
+        if review_mode == "formal" and binding_lifecycle != "published":
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="原子检查工具绑定尚未发布，不能发起正式 AI 复核。",
+                data={
+                    "bindingSetId": binding_set.get("id"),
+                    "bindingSetVersion": binding_set.get("version"),
+                    "lifecycleStatus": binding_lifecycle,
+                    "allowedReviewMode": "gap_precheck",
+                },
+                http_status=409,
+            )
         if review_mode == "gap_precheck" and not (
             evidence_readiness.get("readyForGapPrecheck") or audit_runtime["mode"] == "pure_llm"
         ):
@@ -6393,6 +6710,17 @@ def ai_recheck(
             "businessPackId": pack["id"],
             "businessPackVersion": pack["version"],
             "businessPackSnapshotHash": pack["snapshotHash"],
+            "atomicCheckToolBindingSetId": binding_set.get("id"),
+            "atomicCheckToolBindingSetVersion": binding_set.get("version"),
+            "atomicCheckToolBindingSetLifecycle": binding_lifecycle,
+            "atomicCheckToolBindingSetHash": stable_hash_payload(
+                {
+                    "metadata": binding_set,
+                    "bindings": pack.get("atomicCheckToolBindings") or [],
+                }
+            ),
+            "atomicCheckToolBindingSetSnapshot": repo.clone(binding_set),
+            "atomicCheckToolBindingsSnapshot": repo.clone(pack.get("atomicCheckToolBindings") or []),
             "clausePackageId": (clause_package_snapshot or {}).get("packageStorageId"),
             "clausePackageSnapshotHash": (clause_package_snapshot or {}).get("snapshotHash"),
             "clausePackageSnapshot": clause_package_snapshot,
@@ -6471,6 +6799,22 @@ def ai_recheck(
             )
         repo.state["ai_runs"].insert(0, run)
         dispatch = task_dispatcher.dispatch_ai_recheck(project_id, node_id, run_id)
+        if dispatch.get("status") == "failed_to_start":
+            run["status"] = "失败"
+            run["errorCode"] = str(dispatch.get("errorCode") or "TASK_DISPATCH_UNAVAILABLE")
+            run["errorMessage"] = str(dispatch.get("message") or "AI 复核编排启动失败。")
+            run["finishedAt"] = server_time()
+            if dispatch.get("reviewRunId"):
+                run["reviewRunId"] = dispatch.get("reviewRunId")
+            if dispatch.get("workflowId"):
+                run["workflowId"] = dispatch.get("workflowId")
+            return fail(
+                errors.AI_RUN_FAILED,
+                request,
+                message="AI 复核编排启动失败，节点状态未变更。",
+                data={"dispatch": dispatch, "latestRun": run},
+                http_status=503,
+            )
         if not dispatch.get("taskId") and not dispatch.get("result") and not dispatch.get("reviewRunId") and not dispatch.get("workflowId"):
             run["status"] = "失败"
             run["errorCode"] = "TASK_DISPATCH_UNAVAILABLE"
@@ -6530,50 +6874,69 @@ def ai_recheck(
 
 @router.get("/projects/{project_id}/inspection/nodes/{node_id}/ai-runs")
 def list_ai_runs(request: Request, project_id: str, node_id: int):
-    return ok([repo.clone(item) for item in repo.state["ai_runs"] if item["projectId"] == project_id and int(item["nodeId"]) == int(node_id)], request)
+    scope_error = member_node_scope_error(request, project_id, effective_role_for_request(request)[0], node_ids=[node_id])
+    if scope_error:
+        return scope_error
+    return ok(
+        [
+            safe_ai_run_view(item)
+            for item in repo.state["ai_runs"]
+            if item["projectId"] == project_id
+            and int(item["nodeId"]) == int(node_id)
+            and tenant_id_for_record(item) == request_tenant_id(request)
+        ],
+        request,
+    )
 
 
 @router.get("/projects/{project_id}/inspection/nodes/{node_id}/ai-runs/{run_id}")
 def get_ai_run(request: Request, project_id: str, node_id: int, run_id: str):
     run = repo.find_one("ai_runs", run_id)
-    if not run:
+    if (
+        not run
+        or str(run.get("projectId") or "") != project_id
+        or int(run.get("nodeId") or 0) != int(node_id)
+    ):
         return fail(errors.NOT_FOUND, request)
-    return ok(repo.clone(run), request)
+    scope_error = scope_error_for_record(request, run, project_id)
+    if scope_error:
+        return scope_error
+    return ok(safe_ai_run_view(run), request)
 
 
 @router.get("/review-runs/{review_run_id}")
 def get_review_run(request: Request, review_run_id: str):
-    refresh_state_from_postgres_for_live_read()
+    refresh_review_run_from_postgres(review_run_id)
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
-    project_id = run.get("projectId")
-    if project_id and not project_visible_for_request(request, str(project_id)):
-        return fail(errors.FORBIDDEN, request)
+    scope_error = scope_error_for_record(request, run)
+    if scope_error:
+        return scope_error
     return ok({"run": review_run_view(run)}, request)
 
 
 @router.get("/review-runs/{review_run_id}/timeline")
 def get_review_run_timeline(request: Request, review_run_id: str):
-    refresh_state_from_postgres_for_live_read()
+    refresh_review_run_from_postgres(review_run_id)
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
-    project_id = run.get("projectId")
-    if project_id and not project_visible_for_request(request, str(project_id)):
-        return fail(errors.FORBIDDEN, request)
+    scope_error = scope_error_for_record(request, run)
+    if scope_error:
+        return scope_error
     return ok({"reviewRunId": review_run_id, "events": review_run_timeline(review_run_id)}, request)
 
 
 @router.get("/review-runs/{review_run_id}/graph")
 def get_review_run_graph(request: Request, review_run_id: str):
-    refresh_state_from_postgres_for_live_read()
+    refresh_review_run_from_postgres(review_run_id)
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
-    project_id = run.get("projectId")
-    if project_id and not project_visible_for_request(request, str(project_id)):
-        return fail(errors.FORBIDDEN, request)
+    scope_error = scope_error_for_record(request, run)
+    if scope_error:
+        return scope_error
     return ok({"reviewRunId": review_run_id, **graph_view_for_review_run(review_run_id)}, request)
 
 
@@ -6583,31 +6946,93 @@ def submit_review_run_human_decision(
     review_run_id: str,
     body: dict[str, Any] = Body(default_factory=dict),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
 ):
     def produce():
-        refresh_state_from_postgres_for_live_read()
+        refresh_review_run_from_postgres(review_run_id)
         run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
         if not run:
             return fail(errors.NOT_FOUND, request)
-        project_id = run.get("projectId")
-        if project_id and not project_visible_for_request(request, str(project_id)):
-            return fail(errors.FORBIDDEN, request)
-        decision = compact_plain_text(body.get("decision"), 40)
-        decision_comment = compact_plain_text(body.get("comment") or body.get("reason"), 2000)
+        scope_error = scope_error_for_record(request, run)
+        if scope_error:
+            return scope_error
+        precondition_error = review_run_precondition_error(request, run, if_match)
+        if precondition_error:
+            return precondition_error
+        decision, decision_error = validated_plain_text(body.get("decision"), limit=40, field_name="decision")
+        decision_comment, comment_error = validated_plain_text(
+            body.get("comment") or body.get("reason"),
+            limit=2000,
+            field_name="人工确认意见",
+        )
+        if decision_error or comment_error:
+            return fail(errors.VALIDATION_ERROR, request, message=decision_error or comment_error)
         if not decision or not decision_comment:
             return fail(errors.VALIDATION_ERROR, request, message="ReviewRun 人工确认必须明确选择结果并填写意见。")
-        result = human_decision_for_review_run(review_run_id, decision, body)
-        if result.get("status") in {"missing", "invalid_decision", "invalid_corrected_output"}:
-            return fail(errors.VALIDATION_ERROR, request, data=result)
-        temporal_signal = signal_review_run_human_decision(
-            result["reviewRun"],
-            {
+        normalized_body = {**body, "decision": decision, "comment": decision_comment}
+        validation = human_decision_for_review_run(review_run_id, decision, normalized_body, commit=False)
+        if validation.get("status") == "invalid_state":
+            return fail(errors.CONFLICT, request, message="ReviewRun 当前状态不允许提交人工确认。", data=validation, http_status=409)
+        if validation.get("status") in {"missing", "invalid_decision", "invalid_corrected_output", "invalid_input"}:
+            return fail(errors.VALIDATION_ERROR, request, data=validation)
+        command = enqueue_review_workflow_command(
+            request,
+            run,
+            command_type="submit_human_decision",
+            payload={
+                "tenantId": request_tenant_id(request),
+                "reviewRunId": review_run_id,
                 "decision": decision,
-                "status": result["status"],
-                "comment": decision_comment,
-                "decidedAt": result["reviewRun"].get("humanDecision", {}).get("decidedAt"),
+                "nextStatus": validation.get("nextStatus"),
+                "commentHash": idempotency_fingerprint(decision_comment),
+                "decisionPayload": repo.clone(normalized_body),
+            },
+            idempotency_key=idempotency_key,
+        )
+        if run.get("workflowEngine") == "temporal":
+            run["pendingWorkflowCommand"] = {
+                "commandId": command["commandId"],
+                "commandType": command["commandType"],
+                "status": "pending",
+                "queuedAt": server_time(),
+            }
+            bump_record_revision(run)
+            command["acceptedRevision"] = record_revision(run)
+            audit_id = repo.add_audit("提交 ReviewRun 人工确认命令", "ReviewRun", review_run_id)
+            request.state.scoped_flush_records = lambda: review_run_state_records(review_run_id)
+            return ok(
+                {
+                    "reviewRun": review_run_view(run),
+                    "commandId": command["commandId"],
+                    "commandStatus": "pending",
+                    "auditLogId": audit_id,
+                },
+                request,
+                message="人工确认命令已持久化，等待工作流处理。",
+            )
+        temporal_signal = signal_review_run_human_decision(
+            run,
+            {
+                "commandId": command["commandId"],
+                "decision": decision,
+                "status": validation.get("nextStatus"),
+                "commentHash": command["signalPayload"]["commentHash"],
+                "decidedAt": server_time(),
             },
         )
+        mark_review_workflow_command(command, temporal_signal)
+        if temporal_signal.get("status") == "failed":
+            request.state.scoped_flush_records = lambda: review_run_state_records(review_run_id)
+            return fail(
+                errors.EXTERNAL_TOOL_FAILED,
+                request,
+                message="Temporal 人工确认信号发送失败，业务终态未变更；命令已进入重试队列。",
+                data={"commandId": command["commandId"], "temporalSignal": temporal_signal},
+                http_status=503,
+            )
+        result = human_decision_for_review_run(review_run_id, decision, normalized_body)
+        if result.get("status") in {"missing", "invalid_decision", "invalid_corrected_output", "invalid_input"}:
+            return fail(errors.VALIDATION_ERROR, request, data=result)
         result["reviewRun"]["temporalSignal"] = temporal_signal
         audit_id = repo.add_audit("提交 ReviewRun 人工确认", "ReviewRun", review_run_id)
         request.state.scoped_flush_records = lambda: review_run_state_records(review_run_id)
@@ -6616,6 +7041,7 @@ def submit_review_run_human_decision(
                 "reviewRun": review_run_view(result["reviewRun"]),
                 "feedback": result.get("feedback"),
                 "temporalSignal": temporal_signal,
+                "commandId": command["commandId"],
                 "auditLogId": audit_id,
             },
             request,
@@ -6630,18 +7056,82 @@ def cancel_review_run(
     review_run_id: str,
     body: dict[str, Any] = Body(default_factory=dict),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
 ):
     def produce():
-        refresh_state_from_postgres_for_live_read()
+        refresh_review_run_from_postgres(review_run_id)
         run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
         if not run:
             return fail(errors.NOT_FOUND, request)
-        cancel_reason = compact_plain_text(body.get("reason"), 1000)
+        scope_error = scope_error_for_record(request, run)
+        if scope_error:
+            return scope_error
+        precondition_error = review_run_precondition_error(request, run, if_match)
+        if precondition_error:
+            return precondition_error
+        if run.get("status") not in {"queued", "running", "waiting_human_review"}:
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="ReviewRun 已进入终态，不能重复取消。",
+                data={"currentStatus": run.get("status")},
+                http_status=409,
+            )
+        cancel_reason, reason_error = validated_plain_text(body.get("reason"), limit=1000, field_name="取消原因")
+        if reason_error:
+            return fail(errors.VALIDATION_ERROR, request, message=reason_error)
         if not cancel_reason:
             return fail(errors.VALIDATION_ERROR, request, message="取消 ReviewRun 必须填写原因。")
+        command = enqueue_review_workflow_command(
+            request,
+            run,
+            command_type="cancel_review",
+            payload={
+                "tenantId": request_tenant_id(request),
+                "reviewRunId": review_run_id,
+                "reason": cancel_reason,
+                "reasonHash": idempotency_fingerprint(cancel_reason),
+            },
+            idempotency_key=idempotency_key,
+        )
+        if run.get("workflowEngine") == "temporal":
+            run["pendingWorkflowCommand"] = {
+                "commandId": command["commandId"],
+                "commandType": command["commandType"],
+                "status": "pending",
+                "queuedAt": server_time(),
+            }
+            bump_record_revision(run)
+            command["acceptedRevision"] = record_revision(run)
+            audit_id = repo.add_audit("提交 ReviewRun 取消命令", "ReviewRun", review_run_id)
+            request.state.scoped_flush_records = lambda: review_run_state_records(review_run_id)
+            return ok(
+                {
+                    "reviewRun": review_run_view(run),
+                    "commandId": command["commandId"],
+                    "commandStatus": "pending",
+                    "auditLogId": audit_id,
+                },
+                request,
+                message="取消命令已持久化，等待工作流处理。",
+            )
+        temporal_signal = signal_review_run_cancel(
+            run,
+            {"commandId": command["commandId"], "reasonHash": command["signalPayload"]["reasonHash"]},
+        )
+        mark_review_workflow_command(command, temporal_signal)
+        if temporal_signal.get("status") == "failed":
+            request.state.scoped_flush_records = lambda: review_run_state_records(review_run_id)
+            return fail(
+                errors.EXTERNAL_TOOL_FAILED,
+                request,
+                message="Temporal 取消信号发送失败，ReviewRun 状态未变更；命令已进入重试队列。",
+                data={"commandId": command["commandId"], "temporalSignal": temporal_signal},
+                http_status=503,
+            )
         run["status"] = "cancelled"
         run["cancelReason"] = cancel_reason
-        run["updatedAt"] = server_time()
+        bump_record_revision(run)
         if not run.get("advisoryOnly"):
             previous_status = str(run.get("previousNodeStatus") or "待人工确认")
             repo.set_node_status(
@@ -6658,11 +7148,18 @@ def cancel_review_run(
         if ai_run:
             ai_run["status"] = "已取消"
             ai_run["stateTransition"] = repo.clone(run.get("stateTransition") or {})
-        temporal_signal = signal_review_run_cancel(run, run["cancelReason"])
         run["temporalSignal"] = temporal_signal
         audit_id = repo.add_audit("取消 ReviewRun", "ReviewRun", review_run_id)
         request.state.scoped_flush_records = lambda: review_run_state_records(review_run_id)
-        return ok({"reviewRun": review_run_view(run), "temporalSignal": temporal_signal, "auditLogId": audit_id}, request)
+        return ok(
+            {
+                "reviewRun": review_run_view(run),
+                "temporalSignal": temporal_signal,
+                "commandId": command["commandId"],
+                "auditLogId": audit_id,
+            },
+            request,
+        )
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"reviewRunId": review_run_id, "body": body})
 
@@ -6675,13 +7172,13 @@ def rerun_review_run(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     def produce():
-        refresh_state_from_postgres_for_live_read()
+        refresh_review_run_from_postgres(review_run_id)
         parent = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
         if not parent:
             return fail(errors.NOT_FOUND, request)
-        project_id = parent.get("projectId")
-        if project_id and not project_visible_for_request(request, str(project_id)):
-            return fail(errors.FORBIDDEN, request)
+        scope_error = scope_error_for_record(request, parent)
+        if scope_error:
+            return scope_error
         rerun_reason = compact_plain_text(body.get("reason"), 1000)
         if not rerun_reason:
             return fail(errors.VALIDATION_ERROR, request, message="重跑 ReviewRun 必须填写原因。")
@@ -6690,6 +7187,14 @@ def rerun_review_run(
         audit_id = repo.add_audit("业务端请求 ReviewRun 重跑", "ReviewRun", child["reviewRunId"])
         child_review_run_id = str(child["reviewRunId"])
         request.state.scoped_flush_records = lambda: review_run_state_records(child_review_run_id)
+        if dispatch.get("status") == "failed_to_start":
+            return fail(
+                errors.AI_RUN_FAILED,
+                request,
+                message="ReviewRun 重跑创建成功但编排未启动。",
+                data={"reviewRun": review_run_view(child), "dispatch": dispatch, "auditLogId": audit_id},
+                http_status=503,
+            )
         return ok({"reviewRun": review_run_view(child), "dispatch": dispatch, "auditLogId": audit_id}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"reviewRunId": review_run_id, "body": body})
@@ -9050,10 +9555,13 @@ def generic_review_workbench(request: Request, project_id: str, nodeId: int | No
     ]
     if nodeId is not None:
         nodes = [item for item in nodes if int(item["nodeId"]) == int(nodeId)]
+    visible_node_ids = {int(item.get("nodeId") or 0) for item in nodes}
     findings = [
         repo.clone(item)
         for item in repo.state["review_findings"]
-        if item.get("projectId") == project_id and (nodeId is None or int(item.get("nodeId") or 0) == int(nodeId))
+        if item.get("projectId") == project_id
+        and tenant_id_for_record(item) == request_tenant_id(request)
+        and int(item.get("nodeId") or 0) in visible_node_ids
     ]
     return ok(
         {
@@ -9062,9 +9570,11 @@ def generic_review_workbench(request: Request, project_id: str, nodeId: int | No
             "nodes": repo.clone(nodes),
             "findings": findings,
             "aiRuns": [
-                repo.clone(item)
+                safe_ai_run_view(item)
                 for item in repo.state["ai_runs"]
-                if item.get("projectId") == project_id and (nodeId is None or int(item.get("nodeId") or 0) == int(nodeId))
+                if item.get("projectId") == project_id
+                and tenant_id_for_record(item) == request_tenant_id(request)
+                and int(item.get("nodeId") or 0) in visible_node_ids
             ],
         },
         request,
@@ -9336,14 +9846,19 @@ def ai_run_snapshot(run: dict[str, Any]) -> dict[str, Any]:
 
 
 def has_raw_access(request: Request, target_type: str, target_id: str) -> bool:
-    role, _ = effective_role_for_request(request)
-    if role == "admin":
-        return True
+    collection = {"ai_run": "ai_runs", "review_run": "review_runs"}.get(target_type)
+    if not collection:
+        return False
+    id_field = "reviewRunId" if target_type == "review_run" else "id"
+    target = repo.find_one(collection, target_id, id_field=id_field) or repo.find_one(collection, target_id)
+    if not target or tenant_id_for_record(target) != request_tenant_id(request):
+        return False
     user_id = fde_subject_user_id(request)
     if not user_id:
         return False
     return any(
         grant.get("subjectUserId") == user_id
+        and tenant_id_for_record(grant) == request_tenant_id(request)
         and grant.get("targetType") == target_type
         and grant.get("targetId") == target_id
         and grant.get("status") == "approved"
@@ -9401,9 +9916,36 @@ def fde_expiry_is_active(raw_value: Any) -> bool:
 def mask_text(value: Any, *, visible: int = 24) -> Any:
     if not isinstance(value, str):
         return value
-    if len(value) <= visible:
-        return value
-    return f"{value[:visible]}...<masked>"
+    redacted = value
+    redacted = re.sub(
+        r"(?<!\d)(\d{3})\d{4}(\d{4})(?!\d)",
+        r"\1****\2",
+        redacted,
+    )
+    redacted = re.sub(
+        r"(?<![0-9Xx])(\d{3})\d{11}([0-9Xx]{4})(?![0-9Xx])",
+        r"\1***********\2",
+        redacted,
+    )
+    redacted = re.sub(
+        r"([A-Za-z0-9._%+-])[^@\s]*(@[A-Za-z0-9.-]+\.[A-Za-z]{2,})",
+        r"\1***\2",
+        redacted,
+    )
+    redacted = re.sub(
+        r"(姓名|联系人|负责人)(\s*[:：]\s*)([\u4e00-\u9fff])([\u4e00-\u9fff]{1,3})",
+        lambda match: f"{match.group(1)}{match.group(2)}{match.group(3)}{'*' * len(match.group(4))}",
+        redacted,
+    )
+    redacted = re.sub(
+        r"([\u4e00-\u9fff]{2})([\u4e00-\u9fff]{2,})(公司|集团|研究院|检测院|中心)",
+        lambda match: f"{match.group(1)}***{match.group(3)}",
+        redacted,
+    )
+    if len(redacted) <= visible:
+        return redacted
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+    return f"<masked length={len(value)} sha256={digest}>"
 
 
 LLM_AUDIT_REDACTION_POLICY = "audit_summary_only_no_raw_chain_of_thought"
@@ -9707,40 +10249,60 @@ def fde_metric(label: str, value: Any, tone: str = "blue", suffix: str = "") -> 
     return {"label": label, "value": value, "tone": tone, "suffix": suffix}
 
 
-def acceptance_rate() -> float:
-    feedback = repo.state.get("ai_feedback", [])
+def acceptance_rate(tenant_id: str | None = None) -> float:
+    feedback = [
+        item
+        for item in repo.state.get("ai_feedback", [])
+        if tenant_id is None or tenant_id_for_record(item) == tenant_id
+    ]
     if not feedback:
         return 0.0
     accepted = len([item for item in feedback if item.get("accepted") or item.get("feedbackType") in {"accepted", "edited"}])
     return round(accepted / len(feedback), 4)
 
 
-def evidence_hit_rate() -> float:
-    findings = [item for item in repo.state.get("review_findings", []) if item.get("source") == "ai"]
+def evidence_hit_rate(tenant_id: str | None = None) -> float:
+    findings = [
+        item
+        for item in repo.state.get("review_findings", [])
+        if item.get("source") == "ai" and (tenant_id is None or tenant_id_for_record(item) == tenant_id)
+    ]
     if not findings:
         return 0.0
     with_evidence = len([item for item in findings if item.get("evidenceLinkIds") and item.get("ruleRefs")])
     return round(with_evidence / len(findings), 4)
 
 
-def hallucination_rate() -> float:
-    feedback = repo.state.get("ai_feedback", [])
+def hallucination_rate(tenant_id: str | None = None) -> float:
+    feedback = [
+        item
+        for item in repo.state.get("ai_feedback", [])
+        if tenant_id is None or tenant_id_for_record(item) == tenant_id
+    ]
     if not feedback:
         return 0.0
     hallucinations = len([item for item in feedback if item.get("feedbackType") == "hallucination"])
     return round(hallucinations / len(feedback), 4)
 
 
-def false_positive_rate() -> float:
-    feedback = repo.state.get("ai_feedback", [])
+def false_positive_rate(tenant_id: str | None = None) -> float:
+    feedback = [
+        item
+        for item in repo.state.get("ai_feedback", [])
+        if tenant_id is None or tenant_id_for_record(item) == tenant_id
+    ]
     if not feedback:
         return 0.0
     false_positive = len([item for item in feedback if item.get("feedbackType") == "rejected_false_positive"])
     return round(false_positive / len(feedback), 4)
 
 
-def suspected_miss_rate() -> float:
-    feedback = repo.state.get("ai_feedback", [])
+def suspected_miss_rate(tenant_id: str | None = None) -> float:
+    feedback = [
+        item
+        for item in repo.state.get("ai_feedback", [])
+        if tenant_id is None or tenant_id_for_record(item) == tenant_id
+    ]
     if not feedback:
         return 0.0
     missed = len([item for item in feedback if item.get("feedbackType") == "missed_issue"])
@@ -13755,6 +14317,9 @@ def fde_project_node_audit_detail(request: Request, project_id: str, node_id: in
     _, role_error = fde_error_unless_allowed(request, "fde:dashboard:view")
     if role_error:
         return role_error
+    project = repo.require_project(project_id)
+    if not project or tenant_id_for_record(project) != request_tenant_id(request):
+        return fail(errors.NOT_FOUND, request)
     node = repo.node(project_id, node_id)
     if not node:
         return fail(errors.NOT_FOUND, request)
@@ -13781,9 +14346,10 @@ def fde_dashboard(request: Request):
     _, role_error = fde_error_unless_allowed(request, "fde:dashboard:view")
     if role_error:
         return role_error
-    ai_runs = repo.state.get("ai_runs", [])
+    tenant_id = request_tenant_id(request)
+    ai_runs = [item for item in repo.state.get("ai_runs", []) if tenant_id_for_record(item) == tenant_id]
     failed_runs = [item for item in ai_runs if item.get("status") == "失败"]
-    ocr_documents = repo.state.get("documents", [])
+    ocr_documents = [item for item in repo.state.get("documents", []) if tenant_id_for_record(item) == tenant_id]
     ocr_success = len([item for item in ocr_documents if item.get("currentOcrStatus") == "已识别"])
     ocr_total = len(ocr_documents) or 1
     return ok(
@@ -13791,16 +14357,17 @@ def fde_dashboard(request: Request):
             "metrics": [
                 fde_metric("AI Run", len(ai_runs)),
                 fde_metric("成功率", round((len(ai_runs) - len(failed_runs)) / (len(ai_runs) or 1), 4), "green", "%"),
-                fde_metric("采纳率", acceptance_rate(), "green", "%"),
-                fde_metric("证据命中率", evidence_hit_rate(), "blue", "%"),
-                fde_metric("误报率", false_positive_rate(), "orange", "%"),
-                fde_metric("疑似漏报率", suspected_miss_rate(), "red", "%"),
-                fde_metric("幻觉率", hallucination_rate(), "red", "%"),
+                fde_metric("采纳率", acceptance_rate(tenant_id), "green", "%"),
+                fde_metric("证据命中率", evidence_hit_rate(tenant_id), "blue", "%"),
+                fde_metric("误报率", false_positive_rate(tenant_id), "orange", "%"),
+                fde_metric("疑似漏报率", suspected_miss_rate(tenant_id), "red", "%"),
+                fde_metric("幻觉率", hallucination_rate(tenant_id), "red", "%"),
                 fde_metric("OCR 成功率", round(ocr_success / ocr_total, 4), "orange", "%"),
             ],
             "alerts": [
                 {"id": item["id"], "severity": item["severity"], "title": item["title"], "status": item["status"]}
                 for item in repo.state.get("incidents", [])
+                if tenant_id_for_record(item) == tenant_id
             ],
             "agentPerformance": [
                 {
@@ -13808,11 +14375,12 @@ def fde_dashboard(request: Request):
                     "version": agent["version"],
                     "status": agent["status"],
                     "riskLevel": agent["riskLevel"],
-                    "acceptanceRate": acceptance_rate(),
-                    "evidenceHitRate": evidence_hit_rate(),
-                    "hallucinationRate": hallucination_rate(),
+                    "acceptanceRate": acceptance_rate(tenant_id),
+                    "evidenceHitRate": evidence_hit_rate(tenant_id),
+                    "hallucinationRate": hallucination_rate(tenant_id),
                 }
                 for agent in repo.state.get("agent_versions", [])
+                if tenant_id_for_record(agent) == tenant_id
             ],
             "cost": {
                 "tokenEstimate": sum(int(item.get("tokenUsage") or 0) for item in ai_runs),
@@ -13839,7 +14407,11 @@ def fde_audit_events(
     _, role_error = fde_error_unless_allowed(request, "fde:security:manage")
     if role_error:
         return role_error
-    items = [repo.clone(item) for item in repo.state.get("audit_logs", []) if fde_audit_event_scope(item)]
+    items = [
+        repo.clone(item)
+        for item in repo.state.get("audit_logs", [])
+        if fde_audit_event_scope(item) and tenant_id_for_record(item) == request_tenant_id(request)
+    ]
     if objectType:
         items = [item for item in items if item.get("objectType") == objectType]
     if objectId:
@@ -13891,11 +14463,29 @@ def fde_ai_runs(
     status: str | None = None,
     page_no: int = Query(default=1, alias="page"),
     page_size: int = Query(default=20, alias="pageSize"),
+    cursor: str | None = Query(default=None),
 ):
     _, role_error = fde_error_unless_allowed(request, "fde:ai-run:view-masked")
     if role_error:
         return role_error
-    items = [repo.clone(item) for item in repo.state.get("ai_runs", [])]
+    if repo.sync_postgres is not None and not businessPackId:
+        try:
+            result_page = repo.query_state_page_from_sync_postgres(
+                "ai_runs",
+                tenant_id=request_tenant_id(request),
+                filters={"projectId": projectId, "status": status},
+                page_size=page_size,
+                cursor=cursor,
+            )
+        except ValueError as exc:
+            return fail(errors.VALIDATION_ERROR, request, message=str(exc))
+        result_page["items"] = [fde_ai_run_view(item) for item in result_page["items"]]
+        return ok(result_page, request)
+    items = [
+        repo.clone(item)
+        for item in repo.state.get("ai_runs", [])
+        if tenant_id_for_record(item) == request_tenant_id(request)
+    ]
     if projectId:
         items = [item for item in items if item.get("projectId") == projectId]
     if businessPackId:
@@ -13911,9 +14501,12 @@ def fde_ai_run_detail(request: Request, run_id: str):
     if role_error:
         return role_error
     run = repo.find_one("ai_runs", run_id)
-    if not run:
+    if not run or tenant_id_for_record(run) != request_tenant_id(request):
         return fail(errors.NOT_FOUND, request)
     raw = has_raw_access(request, "ai_run", run_id)
+    if raw:
+        repo.add_audit("读取 AI Run 原文", "AIRun", run_id, outcome="success")
+        request.state.force_flush_state = True
     trace_steps = fde_trace_steps_for_run(run)
     return ok(
         {
@@ -13939,12 +14532,30 @@ def fde_review_runs(
     status: str | None = None,
     page_no: int = Query(default=1, alias="page"),
     page_size: int = Query(default=20, alias="pageSize"),
+    cursor: str | None = Query(default=None),
 ):
     _, role_error = fde_error_unless_allowed(request, "fde:ai-run:view-masked")
     if role_error:
         return role_error
+    if repo.sync_postgres is not None and nodeId is None and not submissionId and not documentVersionId:
+        try:
+            result_page = repo.query_state_page_from_sync_postgres(
+                "review_runs",
+                tenant_id=request_tenant_id(request),
+                filters={"projectId": projectId, "businessPackId": businessPackId, "status": status},
+                page_size=page_size,
+                cursor=cursor,
+            )
+        except ValueError as exc:
+            return fail(errors.VALIDATION_ERROR, request, message=str(exc))
+        result_page["items"] = [fde_review_run_view(item) for item in result_page["items"]]
+        return ok(result_page, request)
     refresh_state_from_postgres_for_live_read()
-    items = [repo.clone(item) for item in repo.state.get("review_runs", [])]
+    items = [
+        repo.clone(item)
+        for item in repo.state.get("review_runs", [])
+        if tenant_id_for_record(item) == request_tenant_id(request)
+    ]
     if projectId:
         items = [item for item in items if item.get("projectId") == projectId]
     if nodeId is not None:
@@ -13975,9 +14586,9 @@ def fde_review_run_detail(request: Request, review_run_id: str):
     _, role_error = fde_error_unless_allowed(request, "fde:ai-run:view-masked")
     if role_error:
         return role_error
-    refresh_state_from_postgres_for_live_read()
+    refresh_review_run_from_postgres(review_run_id)
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
-    if not run:
+    if not run or tenant_id_for_record(run) != request_tenant_id(request):
         return fail(errors.NOT_FOUND, request)
     graph = graph_view_for_review_run(review_run_id)
     temporal = temporal_history_summary(run)
@@ -13986,6 +14597,9 @@ def fde_review_run_detail(request: Request, review_run_id: str):
     raw = has_raw_access(request, "review_run", review_run_id) or (
         bool(run.get("aiRunId")) and has_raw_access(request, "ai_run", str(run.get("aiRunId")))
     )
+    if raw:
+        repo.add_audit("读取 ReviewRun 原文", "ReviewRun", review_run_id, outcome="success")
+        request.state.force_flush_state = True
     return ok(
         {
             "run": fde_review_run_view(run, raw_access=raw),
@@ -14015,8 +14629,14 @@ def fde_review_run_audit_package_download(request: Request, review_run_id: str):
     _, role_error = fde_error_unless_allowed(request, "fde:ai-run:view-masked")
     if role_error:
         return role_error
-    refresh_state_from_postgres_for_live_read()
+    refresh_review_run_from_postgres(review_run_id)
+    run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
+    if not run or tenant_id_for_record(run) != request_tenant_id(request):
+        return fail(errors.NOT_FOUND, request)
     raw = has_raw_access(request, "review_run", review_run_id)
+    if raw:
+        repo.add_audit("导出 ReviewRun 原文审计包", "ReviewRun", review_run_id, outcome="success")
+        request.state.force_flush_state = True
     package = fde_review_run_audit_package(review_run_id, raw_access=raw)
     if not package:
         return fail(errors.NOT_FOUND, request)
@@ -14028,9 +14648,9 @@ def fde_review_run_graph(request: Request, review_run_id: str):
     _, role_error = fde_error_unless_allowed(request, "fde:ai-run:view-masked")
     if role_error:
         return role_error
-    refresh_state_from_postgres_for_live_read()
+    refresh_review_run_from_postgres(review_run_id)
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
-    if not run:
+    if not run or tenant_id_for_record(run) != request_tenant_id(request):
         return fail(errors.NOT_FOUND, request)
     return ok({"reviewRunId": review_run_id, **graph_view_for_review_run(review_run_id)}, request)
 
@@ -14040,9 +14660,9 @@ def fde_review_run_temporal_history(request: Request, review_run_id: str):
     _, role_error = fde_error_unless_allowed(request, "fde:ai-run:view-masked")
     if role_error:
         return role_error
-    refresh_state_from_postgres_for_live_read()
+    refresh_review_run_from_postgres(review_run_id)
     run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
-    if not run:
+    if not run or tenant_id_for_record(run) != request_tenant_id(request):
         return fail(errors.NOT_FOUND, request)
     return ok(temporal_history_summary(run), request)
 
@@ -14058,9 +14678,9 @@ def fde_replay_review_run(
         _, role_error = fde_error_unless_allowed(request, "fde:ai-run:replay")
         if role_error:
             return role_error
-        refresh_state_from_postgres_for_live_read()
+        refresh_review_run_from_postgres(review_run_id)
         parent = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
-        if not parent:
+        if not parent or tenant_id_for_record(parent) != request_tenant_id(request):
             return fail(errors.NOT_FOUND, request)
         run_type = body.get("runMode") or body.get("runType") or "diagnostic_replay"
         if run_type not in FDE_REPLAY_TYPES:
@@ -14070,6 +14690,14 @@ def fde_replay_review_run(
         audit_id = repo.add_audit("FDE 创建 ReviewRun 重跑", "ReviewRun", child["reviewRunId"])
         child_review_run_id = str(child["reviewRunId"])
         request.state.scoped_flush_records = lambda: review_run_state_records(child_review_run_id)
+        if dispatch.get("status") == "failed_to_start":
+            return fail(
+                errors.AI_RUN_FAILED,
+                request,
+                message="FDE ReviewRun 重跑创建成功但编排未启动。",
+                data={"reviewRun": review_run_view(child), "dispatch": dispatch, "auditLogId": audit_id},
+                http_status=503,
+            )
         return ok({"reviewRun": review_run_view(child), "dispatch": dispatch, "auditLogId": audit_id}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"reviewRunId": review_run_id, "body": body})
@@ -14097,9 +14725,9 @@ def fde_review_run_feedback(
         role, role_error = fde_error_unless_allowed(request, "fde:feedback:triage")
         if role_error:
             return role_error
-        refresh_state_from_postgres_for_live_read()
+        refresh_review_run_from_postgres(review_run_id)
         run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
-        if not run:
+        if not run or tenant_id_for_record(run) != request_tenant_id(request):
             return fail(errors.NOT_FOUND, request)
         feedback_type = body.get("feedbackType") or "wrong_evidence"
         if feedback_type not in AI_FEEDBACK_TYPES:
@@ -14198,7 +14826,14 @@ def fde_access_grants(request: Request):
     _, role_error = fde_error_unless_allowed(request, "fde:security:manage")
     if role_error:
         return role_error
-    return ok(repo.clone(repo.state.get("access_grants", [])), request)
+    return ok(
+        [
+            repo.clone(item)
+            for item in repo.state.get("access_grants", [])
+            if tenant_id_for_record(item) == request_tenant_id(request)
+        ],
+        request,
+    )
 
 
 @router.post("/fde/access-grants/request")
@@ -14213,7 +14848,10 @@ def fde_request_access_grant(
             return role_error
         target_type = body.get("targetType") or "ai_run"
         target_id = body.get("targetId")
-        if target_type != "ai_run" or not target_id or not repo.find_one("ai_runs", target_id):
+        collection = {"ai_run": "ai_runs", "review_run": "review_runs"}.get(str(target_type))
+        id_field = "reviewRunId" if target_type == "review_run" else "id"
+        target = repo.find_one(collection, target_id, id_field=id_field) if collection and target_id else None
+        if not target or tenant_id_for_record(target) != request_tenant_id(request):
             return fail(errors.VALIDATION_ERROR, request, message="targetType/targetId 无效。")
         subject_user_id = fde_subject_user_id(request)
         reason = compact_plain_text(body.get("reason"), 1000)
@@ -14228,6 +14866,9 @@ def fde_request_access_grant(
         grant = {
             "id": body.get("id") or f"AGRANT-{uuid4().hex[:8].upper()}",
             "subjectUserId": subject_user_id,
+            "tenantId": request_tenant_id(request),
+            "projectId": target.get("projectId"),
+            "nodeId": target.get("nodeId"),
             "targetType": target_type,
             "targetId": target_id,
             "status": "pending",
@@ -14257,7 +14898,7 @@ def fde_approve_access_grant(
         if role != "admin":
             return fail(errors.FORBIDDEN, request, message="只有管理员可以批准 FDE 原文访问。")
         grant = repo.find_one("access_grants", grant_id)
-        if not grant:
+        if not grant or tenant_id_for_record(grant) != request_tenant_id(request):
             return fail(errors.NOT_FOUND, request)
         status = compact_plain_text(body.get("status") or "approved", 40)
         if status not in {"approved", "rejected"}:
@@ -15376,13 +16017,21 @@ def fde_create_release_plan(
         if not bundle:
             return fail(errors.VALIDATION_ERROR, request, message="capabilityBundleId 无效。")
         risk_level = body.get("riskLevel") or bundle.get("riskLevel") or "medium"
+        target_scope = repo.clone(
+            body.get("targetScope")
+            or {"tenantIds": [request_tenant_id(request)], "businessPackIds": [bundle.get("businessPackId")], "projectIds": []}
+        )
+        requested_tenants = {str(item) for item in target_scope.get("tenantIds") or [] if item}
+        if requested_tenants and requested_tenants != {request_tenant_id(request)}:
+            return fail(errors.FORBIDDEN, request, message="发布范围不能包含其他租户。")
+        target_scope["tenantIds"] = [request_tenant_id(request)]
         plan = {
             "id": body.get("id") or f"REL-{uuid4().hex[:8].upper()}",
             "releaseType": body.get("releaseType") or "capability_bundle",
             "capabilityBundleId": bundle_id,
             "riskLevel": risk_level,
             "status": "submitted",
-            "targetScope": body.get("targetScope") or {"tenantIds": [], "businessPackIds": [bundle.get("businessPackId")], "projectIds": []},
+            "targetScope": target_scope,
             "changeSummary": body.get("changeSummary") or "FDE 发起能力组合发布申请。",
             "evaluationReportId": body.get("evaluationReportId"),
             "rollbackPlanId": body.get("rollbackPlanId"),
@@ -15683,6 +16332,9 @@ def fde_business_pack_diff(request: Request, pack_id: str, compareTo: str | None
     validation_result = fde_business_pack_validation_result(pack_id)
     if not validation_result:
         return fail(errors.NOT_FOUND, request)
+    if tenantId and tenantId != request_tenant_id(request):
+        return fail(errors.NOT_FOUND, request)
+    tenant_id = request_tenant_id(request)
     current_summary = validation_result["summary"]
     baseline_summary: dict[str, Any] = {}
     if compareTo:
@@ -15695,7 +16347,7 @@ def fde_business_pack_diff(request: Request, pack_id: str, compareTo: str | None
             (
                 item
                 for item in repo.state.get("business_pack_installations", [])
-                if item.get("businessPackId") == pack_id and (not tenantId or item.get("tenantId") == tenantId)
+                if item.get("businessPackId") == pack_id and tenant_id_for_record(item) == tenant_id
             ),
             None,
         )
@@ -15712,7 +16364,7 @@ def fde_business_pack_diff(request: Request, pack_id: str, compareTo: str | None
         {
             "businessPackId": pack_id,
             "compareTo": compareTo or baseline_summary.get("version"),
-            "tenantId": tenantId,
+            "tenantId": tenant_id,
             "current": current_summary,
             "baseline": baseline_summary,
             "validation": validation_result["validation"],
@@ -15737,9 +16389,9 @@ def fde_install_business_pack(
         validation_result = fde_business_pack_validation_result(pack_id)
         if not validation_result:
             return fail(errors.NOT_FOUND, request)
-        tenant_id = compact_plain_text(body.get("tenantId") or os.getenv("AICHECK_TENANT_ID"), 120)
-        if not tenant_id:
-            return fail(errors.VALIDATION_ERROR, request, message="tenantId 不能为空。")
+        tenant_id = request_tenant_id(request)
+        if body.get("tenantId") and compact_plain_text(body.get("tenantId"), 120) != tenant_id:
+            return fail(errors.FORBIDDEN, request, message="不能为其他租户安装业务包。")
         dry_run = bool(body.get("dryRun", True))
         summary = validation_result["summary"]
         validation = validation_result["validation"]
@@ -15777,9 +16429,9 @@ def fde_upgrade_business_pack(
         validation_result = fde_business_pack_validation_result(pack_id)
         if not validation_result:
             return fail(errors.NOT_FOUND, request)
-        tenant_id = compact_plain_text(body.get("tenantId") or os.getenv("AICHECK_TENANT_ID"), 120)
-        if not tenant_id:
-            return fail(errors.VALIDATION_ERROR, request, message="tenantId 不能为空。")
+        tenant_id = request_tenant_id(request)
+        if body.get("tenantId") and compact_plain_text(body.get("tenantId"), 120) != tenant_id:
+            return fail(errors.FORBIDDEN, request, message="不能为其他租户升级业务包。")
         current = next(
             (
                 item
@@ -15819,9 +16471,9 @@ def fde_rollback_business_pack(
         _, role_error = fde_error_unless_allowed(request, "fde:business-pack:install")
         if role_error:
             return role_error
-        tenant_id = compact_plain_text(body.get("tenantId") or os.getenv("AICHECK_TENANT_ID"), 120)
-        if not tenant_id:
-            return fail(errors.VALIDATION_ERROR, request, message="tenantId 不能为空。")
+        tenant_id = request_tenant_id(request)
+        if body.get("tenantId") and compact_plain_text(body.get("tenantId"), 120) != tenant_id:
+            return fail(errors.FORBIDDEN, request, message="不能为其他租户回滚业务包。")
         installation = {
             "id": body.get("id") or f"BPROLL-{uuid4().hex[:8].upper()}",
             "businessPackId": pack_id,
@@ -18066,7 +18718,7 @@ def fde_run_ocr_capability_test(run_id: str) -> None:
         else:
             result = client.parse_via_job_sync(
                 {
-                    "tenantId": run.get("tenantId") or "fde-lab",
+                    "tenantId": run.get("tenantId") or configured_tenant_id(),
                     "projectId": None,
                     "documentId": job.get("documentId"),
                     "documentVersionId": job.get("documentVersionId"),
@@ -23635,14 +24287,48 @@ def publish_admin_config(
 
 
 @router.get("/admin/audit-logs")
-def audit_logs(request: Request, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), keyword: str | None = None, result: str | None = None, objectType: str | None = None):
-    items = [repo.clone(item) for item in repo.state["audit_logs"]]
+def audit_logs(
+    request: Request,
+    page_no: int = Query(default=1, alias="page"),
+    page_size: int = Query(default=20, alias="pageSize"),
+    keyword: str | None = None,
+    result: str | None = None,
+    objectType: str | None = None,
+    cursor: str | None = Query(default=None),
+):
+    role, identity_error = effective_role_for_request(request)
+    if identity_error:
+        return identity_error
+    if role not in {None, "admin"}:
+        return fail(errors.FORBIDDEN, request, message="仅租户管理员可查看全局审计日志。")
+    if strict_production() and role != "admin":
+        return fail(errors.FORBIDDEN, request, message="仅租户管理员可查看全局审计日志。")
+    if repo.sync_postgres is not None and not keyword:
+        try:
+            result_page = repo.query_state_page_from_sync_postgres(
+                "audit_logs",
+                tenant_id=request_tenant_id(request),
+                filters={"result": result, "objectType": objectType},
+                page_size=page_size,
+                cursor=cursor,
+            )
+        except ValueError as exc:
+            return fail(errors.VALIDATION_ERROR, request, message=str(exc))
+        result_page["integrity"] = repo.verify_audit_chain(request_tenant_id(request))
+        return ok(result_page, request)
+    items = [
+        repo.clone(item)
+        for item in repo.state["audit_logs"]
+        if tenant_id_for_record(item) == request_tenant_id(request)
+    ]
     if result:
         items = [item for item in items if item.get("result") == result]
     if objectType:
         items = [item for item in items if item.get("objectType") == objectType]
     items = filter_keyword(items, keyword, ["action", "objectType", "objectId", "actorName"])
-    return ok(page(items, page_no, page_size), request)
+    result_page = page(items, page_no, page_size)
+    result_page["integrity"] = repo.verify_audit_chain(request_tenant_id(request))
+    return ok(result_page, request)
 
 
 @router.get("/audit-logs")
@@ -23652,12 +24338,51 @@ def global_audit_logs(request: Request, page_no: int = Query(default=1, alias="p
 
 @router.get("/projects/{project_id}/audit-logs")
 def project_audit_logs(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    return audit_logs(request, page_no, page_size)
+    project = repo.require_project(project_id)
+    if not project or tenant_id_for_record(project) != request_tenant_id(request):
+        return fail(errors.NOT_FOUND, request)
+    if not project_visible_for_request(request, project_id):
+        return fail(errors.FORBIDDEN, request)
+    scope = authorized_node_scope(request, project_id)
+    items = [
+        repo.clone(item)
+        for item in repo.state["audit_logs"]
+        if tenant_id_for_record(item) == request_tenant_id(request)
+        and item.get("projectId") == project_id
+        and (
+            scope is None
+            or (
+                item.get("nodeId") is not None
+                and int(item.get("nodeId")) in scope
+            )
+        )
+    ]
+    result_page = page(items, page_no, page_size)
+    result_page["integrity"] = repo.verify_audit_chain(request_tenant_id(request))
+    return ok(result_page, request)
 
 
 @router.get("/projects/{project_id}/nodes/{node_id}/audit-logs")
 def node_audit_logs(request: Request, project_id: str, node_id: int, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    return audit_logs(request, page_no, page_size)
+    scope_error = member_node_scope_error(
+        request,
+        project_id,
+        effective_role_for_request(request)[0],
+        node_ids=[node_id],
+    )
+    if scope_error:
+        return scope_error
+    items = [
+        repo.clone(item)
+        for item in repo.state["audit_logs"]
+        if tenant_id_for_record(item) == request_tenant_id(request)
+        and item.get("projectId") == project_id
+        and item.get("nodeId") is not None
+        and int(item.get("nodeId")) == int(node_id)
+    ]
+    result_page = page(items, page_no, page_size)
+    result_page["integrity"] = repo.verify_audit_chain(request_tenant_id(request))
+    return ok(result_page, request)
 
 
 @router.get("/admin/org-units")

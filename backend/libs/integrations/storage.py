@@ -2,21 +2,22 @@ from __future__ import annotations
 
 import os
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urlencode, urlparse
 
 from libs.contracts.responses import SERVER_TZ
 
 
-LOGICAL_BUCKETS = ("documents", "previews", "exports", "ocr-artifacts")
+LOGICAL_BUCKETS = ("documents", "previews", "exports", "ocr-artifacts", "audit-anchors")
 DEFAULT_BUCKETS = LOGICAL_BUCKETS
 BUCKET_ENV_KEYS = {
     "documents": "AICHECK_MINIO_DOCUMENTS_BUCKET",
     "previews": "AICHECK_MINIO_PREVIEWS_BUCKET",
     "exports": "AICHECK_MINIO_EXPORTS_BUCKET",
     "ocr-artifacts": "AICHECK_MINIO_OCR_ARTIFACTS_BUCKET",
+    "audit-anchors": "AICHECK_MINIO_AUDIT_ANCHORS_BUCKET",
 }
 
 
@@ -103,9 +104,13 @@ class ObjectStorage:
         client = self.client()
         if client is None:
             return
-        for bucket in self.bucket_names.values():
+        object_lock_enabled = os.getenv("AICHECK_AUDIT_ANCHOR_OBJECT_LOCK", "false").lower() == "true"
+        for logical, bucket in self.bucket_names.items():
             if not client.bucket_exists(bucket):
-                client.make_bucket(bucket)
+                if logical == "audit-anchors" and object_lock_enabled:
+                    client.make_bucket(bucket, object_lock=True)
+                else:
+                    client.make_bucket(bucket)
         self._buckets_ensured = True
 
     def bucket_name(self, bucket: str) -> str:
@@ -160,8 +165,27 @@ class ObjectStorage:
 
         physical_bucket = self.bucket_name(bucket)
         physical_object_name = self.object_name(object_name)
-        client.put_object(physical_bucket, physical_object_name, io.BytesIO(data), length=len(data), content_type=content_type)
-        return f"minio://{physical_bucket}/{physical_object_name}"
+        retention = None
+        if bucket == "audit-anchors" and os.getenv("AICHECK_AUDIT_ANCHOR_OBJECT_LOCK", "false").lower() == "true":
+            from minio.retention import COMPLIANCE, Retention
+
+            retention_days = max(1, int(os.getenv("AICHECK_AUDIT_ANCHOR_RETENTION_DAYS", "3650")))
+            retention = Retention(COMPLIANCE, datetime.now(timezone.utc) + timedelta(days=retention_days))
+        result = client.put_object(
+            physical_bucket,
+            physical_object_name,
+            io.BytesIO(data),
+            length=len(data),
+            content_type=content_type,
+            retention=retention,
+        )
+        reference = f"minio://{physical_bucket}/{physical_object_name}"
+        if retention is not None and getattr(result, "version_id", None):
+            query = {"versionId": str(result.version_id)}
+            if getattr(result, "etag", None):
+                query["etag"] = str(result.etag)
+            reference = f"{reference}?{urlencode(query)}"
+        return reference
 
     def remove_object(self, bucket: str, object_name: str) -> bool:
         client = self.client()

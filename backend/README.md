@@ -16,6 +16,38 @@ Deployment guide: see [`../DEPLOYMENT.md`](../DEPLOYMENT.md).
 - `postgres`, `redis`, `minio`: unified PostgreSQL databases for AIcheck/LiteLLM/workflow, task queue/cache, and object storage for documents/previews/exports/OCR artifacts.
 - Docker Compose healthchecks are declared for API, worker, review worker, OCR, PostgreSQL, Redis, MinIO, Temporal, local embedding, and LiteLLM; service dependencies use `condition: service_healthy` for startup ordering.
 
+## Multi-tenant persistence and durable review commands
+
+Production uses `AICHECK_TENANT_MODE=shared`. Authenticated request and worker tenant identity is carried through a
+request-local context; PostgreSQL/SQLite state, singleton, and idempotency keys include `tenant_id`. ReviewRun human
+decisions and cancellation commands are committed to `workflow_outbox` in the same transaction as business state,
+audit records, and idempotency results. The review worker leases commands with `FOR UPDATE SKIP LOCKED`, sends
+idempotent Temporal signals, records `workflow_inbox` on application, and requeues delivered commands that do not
+produce an inbox record within the reconciliation window. New Temporal workflows use a tenant-hashed workflow ID and
+receive `{tenantId, reviewRunId}` as their execution envelope. Human comments and corrected outputs stay in the
+PostgreSQL outbox; Temporal history carries only the command identity, aggregate identity, and payload hash. The
+review worker defaults to one concurrent activity while the compatibility repository remains process-local; raise
+`AICHECK_REVIEW_WORKER_MAX_CONCURRENT_ACTIVITIES` only after replacing that shared mutable repository boundary.
+
+`AICHECK_TENANT_MODE=isolated` rejects login and bearer-token tenant IDs that do not equal `AICHECK_TENANT_ID`.
+Shared-mode cold tenant login loads that tenant's persistent user state before authentication. API mutations are
+serialized per tenant inside one process, and a failed database flush invalidates the tenant runtime snapshot so the
+next authenticated request reloads authoritative state.
+
+Audit heads are serialized under a PostgreSQL advisory lock and periodically written to content-addressed MinIO
+objects. Strict production requires an object-lock bucket and compliance retention; set
+`AICHECK_AUDIT_ANCHOR_OBJECT_LOCK=true` only after bucket retention has been verified. Atomic-check bindings remain
+fail-closed while their lifecycle is `draft`. After independent approval, obtain the source SHA-256 and run the guarded
+publisher with an approval identity and ticket:
+
+```bash
+HASH=$(shasum -a 256 business_packs/engineering_inspection_v1/atomic_check_tool_bindings.yaml | awk '{print $1}')
+python -m scripts.publish_atomic_check_bindings \
+  --approver '<reviewer>' --approval-ticket '<ticket>' --expected-sha256 "$HASH" --dry-run
+```
+
+Remove `--dry-run` only after the dry-run evidence is approved.
+
 ## Local Run
 
 ```bash
@@ -51,6 +83,23 @@ cd backend
 source .venv/bin/activate
 pytest
 ```
+
+The default local run skips tests that require a live PostgreSQL server. To execute the release
+matrix against an isolated test database, set `AICHECK_TEST_POSTGRES_URL`; every integration test
+creates and removes its own schema and never uses the application database:
+
+```bash
+AICHECK_TEST_POSTGRES_URL=postgresql://postgres:postgres@127.0.0.1:5432/aicheck_test pytest
+python scripts/migrate_backend.py --verify-only
+```
+
+The backend CI gate runs this full matrix against `pgvector/PostgreSQL 16`, including empty and
+legacy-schema migration, immutable checksum, tenant isolation, compare-and-swap concurrency,
+database advisory-lock timeout, cold-tenant login, and workflow outbox recovery tests. Separate live
+gates verify COMPLIANCE-retained MinIO audit-anchor versions and a real Temporal test service across
+activity retry, stopped-worker signal delivery, persistent server restart, and replacement-worker
+recovery. MinIO is restarted between gate phases and must retain the exact locked object version;
+the Temporal history assertion also rejects sensitive command payloads.
 
 The contract suite covers the response envelope, compatibility login paths, persistent user login with demo users disabled, mutation idempotency and body-conflict detection, archived/etag guards, submission withdrawal, rectification feedback, report-generation state guards, backend-inferred action-code guards, read/write URL/body/resource-derived node-scope guards, list-level node-scope filtering, upload-to-OCR task creation, OCR HTTP client dispatch, inline OCR field/chunk writeback, retry/cancel behavior for knowledge tasks, Temporal/LangGraph-compatible ReviewRun creation, graph visualization, human decision handling, AI feedback sample creation, FDE feedback triage to evaluation cases, FDE ReviewRun replay/shadow APIs, LiteLLM failure mapping, async LLM compare, object-storage export artifacts, JWT/action/node-scope identity guards, and PostgreSQL state round-trip.
 
@@ -148,7 +197,7 @@ docker compose \
   up -d --build
 ```
 
-Production ingress must terminate trusted TLS and dynamically resolve Docker upstreams. Render `deploy/nginx/aicheck.conf.template` with `AICHECK_PUBLIC_HOST`, `AICHECK_TLS_CERTIFICATE`, and `AICHECK_TLS_CERTIFICATE_KEY`; the strict release gate rejects a non-HTTPS `--api-base`. API and Review Worker startup also wait for the idempotent `workflow-migrate` service, which creates and verifies the LangGraph checkpoint schema before accepting work.
+Production ingress must terminate trusted TLS and dynamically resolve Docker upstreams. Render `deploy/nginx/aicheck.conf.template` with `AICHECK_PUBLIC_HOST`, `AICHECK_TLS_CERTIFICATE`, and `AICHECK_TLS_CERTIFICATE_KEY`; the strict release gate rejects a non-HTTPS `--api-base`. API and Review Worker startup also wait for the idempotent `workflow-migrate` service, which applies the versioned business-schema migrations and creates and verifies the LangGraph checkpoint schema before accepting work. Every migration is frozen in `db/migrations/manifest.json`; editing an applied SQL file or its checksum fails before database mutation. Run `python -m scripts.migrate_backend --verify-only` to validate the source tree, `python -m scripts.migrate_backend --status` to inventory applied, pending, mismatched, or database-only versions without writing, or `python -m scripts.migrate_backend --dry-run` with `AICHECK_DATABASE_URL` set to inspect pending migrations without committing them.
 
 The 151 engineering material review points are packaged in `config/material_review_points.json`. Regenerate and verify the asset after editing the source mapping document:
 
@@ -157,7 +206,7 @@ PYTHONPATH=. .venv/bin/python scripts/generate_material_review_asset.py
 PYTHONPATH=. .venv/bin/python scripts/generate_material_review_asset.py --check
 ```
 
-PostgreSQL persistence is enabled when `AICHECK_DATABASE_URL` is set. On startup the API creates the first-stage JSONB state tables (`aicheck_state`, `aicheck_singletons`, `idempotency_records`) and seeds the current demo state when the business database is empty. Mutating API calls flush state back to PostgreSQL so restarts preserve business data. The index test suite verifies the JSONB state table, singleton table, idempotency primary key, and GIN payload index contract.
+PostgreSQL persistence is enabled when `AICHECK_DATABASE_URL` is set. Versioned migrations create and upgrade the JSONB state tables (`aicheck_state`, `aicheck_singletons`, `idempotency_records`); strict production startup fails closed when the required migration has not been applied. Demo data is seeded only when explicitly enabled and the business database is empty. Mutating API calls persist scoped row changes back to PostgreSQL so concurrent requests do not replace unrelated collections. The index test suite verifies the JSONB state table, singleton table, idempotency primary key, and GIN payload index contract.
 
 Production uses the `pgvector/pgvector:pg16` image. Deployments based on `docker-compose.deploy.yml`
 must include `docker-compose.production-data.yml` to mount `rules/` read-only at `/rules`, and

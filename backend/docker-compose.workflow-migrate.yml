@@ -3,8 +3,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.server
-    command: python scripts/setup_langgraph_checkpoint.py
+    command: /bin/sh -c "python -m scripts.migrate_backend && python -m scripts.setup_langgraph_checkpoint"
     environment:
+      AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${AICHECK_POSTGRES_DB:-aicheck}
+      AICHECK_TENANT_ID: ${AICHECK_TENANT_ID:?AICHECK_TENANT_ID is required}
       AICHECK_REVIEW_ORCHESTRATION: ${AICHECK_REVIEW_ORCHESTRATION:-temporal}
       AICHECK_LANGGRAPH_CHECKPOINT_DISABLE: ${AICHECK_LANGGRAPH_CHECKPOINT_DISABLE:-false}
       LANGGRAPH_CHECKPOINT_DSN: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${WORKFLOW_POSTGRES_DB:-workflow}

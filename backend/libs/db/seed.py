@@ -1116,7 +1116,6 @@ BUSINESS_PACK_INSTALLATIONS = [
         "id": "BPINST-ENGINEERING-DEMO-001",
         "businessPackId": DEFAULT_BUSINESS_PACK_ID,
         "businessPackVersion": DEFAULT_BUSINESS_PACK["version"],
-        "tenantId": "demo",
         "status": "production",
         "installedByRole": "fde",
         "installedAt": "2026-06-26 12:05:00",
@@ -1129,7 +1128,6 @@ BUSINESS_PACK_OVERRIDES = [
     {
         "id": "BPOVR-ENGINEERING-DEMO-001",
         "businessPackId": DEFAULT_BUSINESS_PACK_ID,
-        "tenantId": "demo",
         "scope": "tenant",
         "status": "active",
         "overrides": {"reportTemplate": "TPL-PIPE-2026.06"},
@@ -1140,7 +1138,6 @@ BUSINESS_PACK_OVERRIDES = [
 COST_BUDGETS = [
     {
         "id": "BUDGET-DEMO-AI-202606",
-        "tenantId": "demo",
         "scopeType": "tenant",
         "scopeId": "demo",
         "monthlyBudget": 5000,

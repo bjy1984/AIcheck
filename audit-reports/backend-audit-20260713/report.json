@@ -1,0 +1,46 @@
+{
+  "schemaVersion": "aicheck-backend-deep-audit-report@1",
+  "auditId": "backend-audit-20260713",
+  "title": "AIcheck 后端 AI 审查与操作审计模块深度审计",
+  "baselineCommit": "0b6da1b25fce9f639de81c616ce537b93ff0db3a",
+  "decision": "NO-GO",
+  "productionReadiness": "NOT_ASSESSED_NO_STAGING_OR_EXTERNAL_TEMPORAL",
+  "focusedScore": 30,
+  "scoreBreakdown": [
+    {"dimension": "AI 证据与规则正确性", "score": 14, "max": 25},
+    {"dimension": "鉴权与多租户隔离", "score": 2, "max": 20},
+    {"dimension": "工作流与状态一致性", "score": 3, "max": 20},
+    {"dimension": "审计日志完整性", "score": 2, "max": 15},
+    {"dimension": "可靠性与性能", "score": 4, "max": 10},
+    {"dimension": "测试治理与可观测性", "score": 5, "max": 10}
+  ],
+  "findingSummary": {"total": 19, "P0": 6, "P1": 11, "P2": 2, "P3": 0},
+  "tests": {
+    "fullBackend": "882 passed, 1 skipped, 6 warnings in 29.64s",
+    "targetedAudit": "83 passed, 1 warning in 4.03s",
+    "frontendBackendContract": "237 frontend endpoints, 683 backend route keys, 0 missing"
+  },
+  "criticalEvidence": {
+    "crossProjectCancelAccepted": true,
+    "crossActorIdempotencyReplayAccepted": true,
+    "temporalStartFailureReturnedSuccess": true,
+    "temporalSignalFailureCommittedTerminalState": true,
+    "staleSnapshotLostCommittedRows": true,
+    "postgresFullLoadSeconds": 8.91,
+    "postgresFullLoadPeakPythonBytes": 617611846
+  },
+  "publicApiChanges": [],
+  "productCodeChanges": [],
+  "artifacts": [
+    "baseline-manifest.json",
+    "coverage-matrix.json",
+    "evidence-trace-index.json",
+    "findings.json",
+    "report.md",
+    "evidence/test-results.json",
+    "evidence/security-probes.json",
+    "evidence/workflow-probes.json",
+    "evidence/persistence-performance.json",
+    "evidence/route-governance.json"
+  ]
+}

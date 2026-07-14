@@ -13,6 +13,7 @@ from libs.security.auth import (
     persistent_users,
     strict_production,
 )
+from libs.security.tenant import configured_tenant_id
 
 
 def cors_allowed_origins() -> list[str]:
@@ -77,6 +78,19 @@ def security_runtime_problems() -> list[str]:
     problems: list[str] = []
     if os.getenv("AICHECK_REQUIRE_AUTH", "false").lower() != "true":
         problems.append("AICHECK_REQUIRE_AUTH must be true")
+    tenant_mode = os.getenv("AICHECK_TENANT_MODE", "shared").strip().lower()
+    if tenant_mode not in {"shared", "isolated"}:
+        problems.append("AICHECK_TENANT_MODE must be shared or isolated")
+    if tenant_mode == "isolated" and not os.getenv("AICHECK_TENANT_ID", "").strip():
+        problems.append("AICHECK_TENANT_ID must be explicitly configured for isolated mode")
+    if not configured_tenant_id():
+        problems.append("AICHECK_TENANT_ID must be non-empty")
+    if os.getenv("AICHECK_REQUIRE_AUDIT_ANCHOR", "false").lower() != "true":
+        problems.append("AICHECK_REQUIRE_AUDIT_ANCHOR must be true")
+    if os.getenv("AICHECK_AUDIT_ANCHOR_OBJECT_LOCK", "false").lower() != "true":
+        problems.append("AICHECK_AUDIT_ANCHOR_OBJECT_LOCK must confirm immutable bucket retention")
+    if not os.getenv("AICHECK_MINIO_ENDPOINT", "").strip():
+        problems.append("AICHECK_MINIO_ENDPOINT is required for audit anchoring")
     if demo_users_enabled():
         problems.append("AICHECK_ENABLE_DEMO_USERS must be false")
     if os.getenv("AICHECK_ENABLE_DEMO_DATA", "false").lower() == "true":

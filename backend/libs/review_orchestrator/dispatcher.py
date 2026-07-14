@@ -8,10 +8,13 @@ from libs.db.repository import flush_state_records, repo
 
 from .execution import (
     append_review_event,
+    bump_review_run_revision,
     create_review_run_from_ai_run,
     execute_review_run_inline,
+    review_workflow_id,
     review_run_state_records,
 )
+from libs.security.tenant import tenant_id_for_record
 
 
 def review_orchestration_mode() -> str:
@@ -29,6 +32,7 @@ def dispatch_existing_review_run(review_run: dict[str, Any]) -> dict[str, Any]:
         return start_temporal_workflow(review_run)
     review_run["status"] = "failed_to_start"
     review_run["dispatchErrorCode"] = "REVIEW_ORCHESTRATION_DISABLED"
+    bump_review_run_revision(review_run)
     append_review_event(
         str(review_run["reviewRunId"]),
         event_type="review_run.dispatch_failed",
@@ -61,6 +65,7 @@ def start_temporal_workflow(review_run: dict[str, Any]) -> dict[str, Any]:
         review_run["status"] = "failed_to_start"
         review_run["dispatchErrorCode"] = "TEMPORAL_START_FAILED"
         review_run["dispatchErrorMessage"] = str(exc)
+        bump_review_run_revision(review_run)
         append_review_event(
             str(review_run["reviewRunId"]),
             event_type="review_run.dispatch_failed",
@@ -86,14 +91,18 @@ async def _start_temporal_workflow(review_run: dict[str, Any]) -> dict[str, Any]
     address = os.getenv("TEMPORAL_ADDRESS", "localhost:7233")
     namespace = os.getenv("TEMPORAL_NAMESPACE", "default")
     client = await Client.connect(address, namespace=namespace)
+    tenant_id = tenant_id_for_record(review_run)
+    review_run_id = str(review_run["reviewRunId"])
+    workflow_id = str(review_run.get("workflowId") or review_workflow_id(tenant_id, review_run_id))
+    review_run["workflowId"] = workflow_id
     handle = await client.start_workflow(
         "ReviewRunWorkflow",
-        review_run["reviewRunId"],
-        id=review_run["workflowId"],
+        {"tenantId": tenant_id, "reviewRunId": review_run_id},
+        id=workflow_id,
         task_queue=review_run["taskQueues"]["workflow"],
     )
     review_run["temporalRunId"] = handle.result_run_id
-    review_run["updatedAt"] = review_run.get("updatedAt") or review_run.get("createdAt")
+    bump_review_run_revision(review_run)
     flush_state_records(review_run_state_records(str(review_run["reviewRunId"])))
     return {
         "mode": "temporal",
@@ -111,7 +120,7 @@ def signal_review_run_human_decision(review_run: dict[str, Any], decision: dict[
     return _run_temporal_signal(review_run, "submit_human_decision", decision)
 
 
-def signal_review_run_cancel(review_run: dict[str, Any], reason: str | None = None) -> dict[str, Any]:
+def signal_review_run_cancel(review_run: dict[str, Any], reason: Any = None) -> dict[str, Any]:
     if review_run.get("workflowEngine") != "temporal":
         return {"status": "skipped", "reason": "workflowEngine is not temporal"}
     return _run_temporal_signal(review_run, "cancel_review", reason)

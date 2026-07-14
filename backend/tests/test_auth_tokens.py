@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.main import app
@@ -28,24 +29,21 @@ def setup_function() -> None:
     repo.sqlite_path = None
 
 
-def test_hs256_tokens_do_not_depend_on_jose_backend(monkeypatch) -> None:
+def test_tokens_fail_closed_when_jwt_backend_is_unavailable(monkeypatch) -> None:
     monkeypatch.setattr(auth, "jwt", BrokenJose())
 
-    token = issue_token({"username": "ndt", "role": "ndt"})
-    claims = decode_token(f"Bearer {token}")
+    with pytest.raises(RuntimeError, match="jose backend unavailable"):
+        issue_token({"username": "ndt", "role": "ndt"})
 
-    assert claims is not None
-    assert claims["sub"] == "ndt"
-    assert claims["role"] == "ndt"
+    assert decode_token("Bearer unavailable-token") is None
 
 
-def test_ndt_login_returns_token_when_jose_backend_is_unavailable(monkeypatch) -> None:
+def test_login_fails_closed_when_jwt_backend_is_unavailable(monkeypatch) -> None:
     monkeypatch.setattr(auth, "jwt", BrokenJose())
 
     response = client.post("/api/auth/login", json={"username": "ndt", "password": "ndt"})
     payload = response.json()
 
-    assert response.status_code == 200
-    assert payload["code"] == 0
-    assert payload["data"]["user"]["role"] == "ndt"
-    assert decode_token(f"Bearer {payload['data']['token']}")["sub"] == "ndt"
+    assert response.status_code == 503
+    assert payload["code"] != 0
+    assert payload["data"]["reason"] == "SECURITY_BACKEND_UNAVAILABLE"

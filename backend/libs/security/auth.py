@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
-import json
 import os
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
+
+from libs.security.tenant import current_tenant_id, configured_tenant_id, tenant_id_for_record
 
 try:
     import jwt
@@ -95,6 +95,7 @@ def user_record(
         "defaultPath": ROLE_DEFAULT_PATHS.get(role, ROLE_DEFAULT_PATHS["inspection"]),
         "authVersion": 0,
         "mustChangePassword": False,
+        "tenantId": configured_tenant_id(),
     }
 
 
@@ -184,58 +185,6 @@ def jwt_ttl_minutes() -> int:
     return max(5, min(value, 720))
 
 
-def _base64url_encode(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
-
-
-def _base64url_decode(value: str) -> bytes:
-    padding = "=" * (-len(value) % 4)
-    return base64.urlsafe_b64decode((value + padding).encode("ascii"))
-
-
-def _jwt_payload_json(payload: dict[str, Any]) -> str:
-    normalized: dict[str, Any] = {}
-    for key, value in payload.items():
-        if isinstance(value, datetime):
-            normalized[key] = int(value.timestamp())
-        else:
-            normalized[key] = value
-    return json.dumps(normalized, ensure_ascii=False, separators=(",", ":"))
-
-
-def encode_hs256_token(payload: dict[str, Any], secret: str) -> str:
-    header = {"alg": JWT_ALGORITHM, "typ": "JWT"}
-    header_segment = _base64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8"))
-    payload_segment = _base64url_encode(_jwt_payload_json(payload).encode("utf-8"))
-    signing_input = f"{header_segment}.{payload_segment}".encode("ascii")
-    signature = hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
-    return f"{header_segment}.{payload_segment}.{_base64url_encode(signature)}"
-
-
-def decode_hs256_token(token: str, secret: str) -> dict[str, Any] | None:
-    try:
-        header_segment, payload_segment, signature_segment = token.split(".", 2)
-        signing_input = f"{header_segment}.{payload_segment}".encode("ascii")
-        expected = hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
-        supplied = _base64url_decode(signature_segment)
-        if not hmac.compare_digest(expected, supplied):
-            return None
-        header = json.loads(_base64url_decode(header_segment))
-        if header.get("alg") != JWT_ALGORITHM:
-            return None
-        payload = json.loads(_base64url_decode(payload_segment))
-        exp = payload.get("exp")
-        if exp is not None and float(exp) < datetime.now(timezone.utc).timestamp():
-            return None
-        if payload.get("iss") not in {None, jwt_issuer()}:
-            return None
-        if payload.get("aud") not in {None, jwt_audience()}:
-            return None
-        return payload
-    except Exception:
-        return None
-
-
 def persistent_users() -> list[dict[str, Any]]:
     try:
         from libs.db.repository import repo
@@ -244,27 +193,38 @@ def persistent_users() -> list[dict[str, Any]]:
     return repo.state.get("users", [])
 
 
-def persistent_user_by_username(username: str | None, *, enabled_only: bool = True) -> dict[str, Any] | None:
+def persistent_user_by_username(
+    username: str | None,
+    *,
+    enabled_only: bool = True,
+    tenant_id: str | None = None,
+) -> dict[str, Any] | None:
     if not username:
         return None
+    effective_tenant = str(tenant_id or current_tenant_id())
     return next(
         (
             user
             for user in persistent_users()
             if user.get("username") == username
+            and tenant_id_for_record(user) == effective_tenant
             and (not enabled_only or user.get("status", "启用") == "启用")
         ),
         None,
     )
 
 
-def user_record_by_username(username: str | None) -> dict[str, Any] | None:
-    persistent = persistent_user_by_username(username)
+def user_record_by_username(username: str | None, *, tenant_id: str | None = None) -> dict[str, Any] | None:
+    effective_tenant = str(tenant_id or current_tenant_id())
+    persistent = persistent_user_by_username(username, tenant_id=effective_tenant)
     if persistent:
         return persistent
     if not demo_users_enabled() or not username:
         return None
-    return USERS.get(username)
+    demo_user = USERS.get(username)
+    if demo_user and tenant_id_for_record(demo_user) == effective_tenant:
+        return demo_user
+    return None
 
 
 def public_user(user: dict[str, Any]) -> dict[str, Any]:
@@ -283,8 +243,8 @@ def user_by_username(username: str | None) -> dict[str, Any] | None:
     return public_user(user) if user else None
 
 
-def authenticate(username: str, password: str) -> dict[str, Any] | None:
-    user = user_record_by_username(username)
+def authenticate(username: str, password: str, *, tenant_id: str | None = None) -> dict[str, Any] | None:
+    user = user_record_by_username(username, tenant_id=tenant_id)
     if not user or not verify_password(password, user.get("passwordHash"), user.get("password")):
         return None
     return public_user(user)
@@ -296,6 +256,8 @@ def user_auth_version(username: str | None) -> int:
 
 
 def issue_token(user: dict[str, Any]) -> str:
+    if jwt is None:
+        raise RuntimeError("PyJWT is required to issue access tokens")
     now = datetime.now(timezone.utc)
     payload = {
         "sub": user["username"],
@@ -306,8 +268,9 @@ def issue_token(user: dict[str, Any]) -> str:
         "iat": now,
         "exp": now + timedelta(minutes=jwt_ttl_minutes()),
         "jti": uuid4().hex,
+        "tid": tenant_id_for_record(user),
     }
-    return encode_hs256_token(payload, jwt_secret())
+    return str(jwt.encode(payload, jwt_secret(), algorithm=JWT_ALGORITHM))
 
 
 def decode_token(token: str) -> dict[str, Any] | None:
@@ -324,20 +287,29 @@ def decode_token(token: str) -> dict[str, Any] | None:
             "role": parts[-1],
             "ver": 0,
             "dev": True,
+            "tid": configured_tenant_id(),
         }
-    decoded = decode_hs256_token(token, jwt_secret())
-    if decoded is not None:
-        return decoded
     if jwt is None:
         return None
     try:
-        return jwt.decode(
+        claims = jwt.decode(
             token,
             jwt_secret(),
             algorithms=[JWT_ALGORITHM],
             issuer=jwt_issuer(),
             audience=jwt_audience(),
-            options={"require": ["sub", "role", "ver", "iss", "aud", "iat", "exp", "jti"]},
+            options={"require": ["sub", "role", "ver", "tid", "iss", "aud", "iat", "exp", "jti"]},
         )
+        if not isinstance(claims.get("sub"), str) or not claims["sub"].strip():
+            return None
+        if not isinstance(claims.get("role"), str) or not claims["role"].strip():
+            return None
+        if not isinstance(claims.get("tid"), str) or not claims["tid"].strip():
+            return None
+        if not isinstance(claims.get("jti"), str) or not claims["jti"].strip():
+            return None
+        if not isinstance(claims.get("ver"), int):
+            return None
+        return claims
     except Exception:
         return None

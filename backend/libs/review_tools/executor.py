@@ -11,7 +11,14 @@ def compile_node_tool_plan(
     source_rule_id: str,
     *,
     available_tools: set[str],
+    require_published: bool = False,
 ) -> list[dict[str, Any]]:
+    binding_set = pack.get("atomicCheckToolBindingSet") or {}
+    lifecycle_status = str(binding_set.get("lifecycleStatus") or "draft").lower()
+    if require_published and lifecycle_status != "published":
+        raise ValueError(
+            f"Formal review requires published atomic check tool bindings; current status is {lifecycle_status}."
+        )
     bindings = [
         item
         for item in pack.get("atomicCheckToolBindings") or []
@@ -30,6 +37,8 @@ def compile_node_tool_plan(
                 "parameters": dict(binding.get("parameters") or {}),
                 "outputSchema": binding.get("outputSchema"),
                 "implementationStatus": binding.get("implementationStatus"),
+                "bindingSetVersion": binding_set.get("version"),
+                "bindingSetLifecycleStatus": lifecycle_status,
                 "compilable": not missing,
                 "missingTools": missing,
             }

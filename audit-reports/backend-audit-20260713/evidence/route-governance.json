@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "aicheck-audit-route-governance@1",
+  "router": {
+    "apiRouterRoutes": 335,
+    "mutatingRouteEntries": 171,
+    "nonPublicMutatingEntries": 168,
+    "mainAppRoutesVisibleToLegacyTests": 9
+  },
+  "vacuousTests": [
+    "test_all_non_public_mutating_routes_have_inferred_action_codes",
+    "test_project_mutating_routes_are_archived_readonly_guarded",
+    "test_all_non_public_mutating_routes_are_audit_logged"
+  ],
+  "missingInferredAction": [
+    "POST /knowledge/reindex-preview",
+    "POST /rules/versions/{version_id}/{action}-preview"
+  ],
+  "confirmedPreviewAuthorizationBypass": {
+    "endpoint": "POST /knowledge/reindex-preview",
+    "role": "owner",
+    "roleHasKnowledgeManage": false,
+    "apiCode": 0,
+    "previewCreated": true,
+    "sampleFileNamesExposed": 5
+  },
+  "missingDirectArchivedGuard": [
+    "POST /projects/{project_id}/documents/{document_id}/targeting/recompute",
+    "POST /projects/{project_id}/material-targeting/recompute"
+  ],
+  "ruleBindingLifecycle": {
+    "bindingSetLifecycleStatus": "draft",
+    "bindingCount": 171,
+    "compiledPlanItems": 171,
+    "compilablePlanItems": 171,
+    "lifecycleStatusPropagatedIntoPlan": false
+  }
+}

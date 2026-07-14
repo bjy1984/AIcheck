@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "aicheck-audit-evidence-trace-index@1",
+  "auditId": "backend-audit-20260713",
+  "traces": [
+    {
+      "evidence": "evidence/security-probes.json",
+      "covers": ["TENANT-001", "AUDIT-SCOPE-001", "IDEM-001", "REVIEW-EVIDENCE-001", "AUTH-JWT-001", "REVIEW-PRIVACY-001", "INPUT-001"],
+      "method": "FastAPI TestClient and direct invariant probes against isolated in-memory state"
+    },
+    {
+      "evidence": "evidence/workflow-probes.json",
+      "covers": ["REVIEW-DISPATCH-001", "REVIEW-SIGNAL-001", "TEMPORAL-RETRY-001", "ARCHIVE-001"],
+      "method": "deterministic Temporal failure injection and state transition observation"
+    },
+    {
+      "evidence": "evidence/persistence-performance.json",
+      "covers": ["STATE-PERSIST-001", "AUDIT-INTEGRITY-001", "AUDIT-COVERAGE-001", "PERF-STATE-001"],
+      "method": "disposable PostgreSQL 16.10 concurrency/load probes and read-only SQLite inventory"
+    },
+    {
+      "evidence": "evidence/route-governance.json",
+      "covers": ["ROUTE-GATE-001", "KNOWLEDGE-AUTH-001", "ARCHIVE-001", "RULE-LIFECYCLE-001"],
+      "method": "direct APIRouter enumeration, role probe and business-pack compilation inspection"
+    },
+    {
+      "evidence": "evidence/test-results.json",
+      "covers": ["existing-regression-baseline"],
+      "method": "full and targeted pytest plus frontend/backend contract audit"
+    }
+  ],
+  "sourceOnlyFindings": [
+    {
+      "id": "OBS-001",
+      "sources": [
+        "backend/apps/api/main.py:374",
+        "backend/libs/review_orchestrator/execution.py:516",
+        "backend/libs/review_orchestrator/graph.py:91"
+      ]
+    }
+  ]
+}

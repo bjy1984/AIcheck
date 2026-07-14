@@ -1,0 +1,60 @@
+{
+  "schemaVersion": "aicheck-audit-security-probes@1",
+  "multiTenantAuthorization": {
+    "authorizedNodeScope": [24],
+    "reviewRunNode40Read": {
+      "httpStatus": 200,
+      "apiCode": 0,
+      "promptAuditExposed": true
+    },
+    "queuedReviewRunHumanDecision": {
+      "httpStatus": 200,
+      "apiCode": 0,
+      "resultStatus": "rejected_by_human"
+    },
+    "crossProjectReviewRunCancel": {
+      "httpStatus": 200,
+      "apiCode": 0,
+      "resultStatus": "cancelled"
+    },
+    "aiRunUrlEntityMismatch": {
+      "requestedNodeId": 24,
+      "returnedNodeId": 40,
+      "apiCode": 0
+    },
+    "reviewWorkbench": {
+      "crossNodeFindingVisible": true,
+      "crossNodeAiRunVisible": true
+    }
+  },
+  "auditLogAccess": {
+    "globalAuditEndpointNonAdminCode": 0,
+    "projectAuditEndpointNonAdminCode": 0,
+    "globalTotal": 3,
+    "projectEndpointTotal": 3
+  },
+  "crossActorIdempotencyReplay": {
+    "firstActorApiCode": 0,
+    "secondActorApiCode": 0,
+    "secondActorHasProjectMembership": false,
+    "identicalSensitiveResponse": true,
+    "identicalOperationId": true,
+    "cacheScope": "POST:/review-runs/R-IDEM/human-decision:shared-idempotency-key"
+  },
+  "jwt": {
+    "validlySignedTokenMissingExpIssAudJtiAccepted": true
+  },
+  "humanCorrection": {
+    "bogusEvidenceLinkId": "EV-NOT-FOUND",
+    "bogusRuleCode": "RULE-NOT-FOUND",
+    "bogusRetrievalTraceId": "RTR-NOT-FOUND",
+    "resultStatus": "edited_by_human",
+    "persistedFindingStatus": "accepted"
+  },
+  "commentBoundary": {
+    "validatedDisplayLimit": 2000,
+    "submittedLength": 5000,
+    "persistedRunLength": 5000,
+    "persistedFeedbackLength": 5000
+  }
+}

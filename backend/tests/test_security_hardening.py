@@ -187,12 +187,16 @@ def test_disabled_missing_password_user_does_not_block_strict_startup(monkeypatc
     monkeypatch.setenv("AICHECK_STRICT_PRODUCTION", "true")
     monkeypatch.setenv("AICHECK_ENABLE_DEMO_DATA", "false")
     monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
+    monkeypatch.setenv("AICHECK_TENANT_ID", "TENANT-PRODUCTION")
     monkeypatch.setenv("AICHECK_ENABLE_DEMO_USERS", "false")
     monkeypatch.setenv("AICHECK_ALLOW_DEV_TOKENS", "false")
     monkeypatch.setenv("AICHECK_ENABLE_COMPATIBILITY_MOCKS", "false")
     monkeypatch.setenv("AICHECK_JWT_SECRET", "a" * 40)
     monkeypatch.setenv("AICHECK_CORS_ALLOWED_ORIGINS", "https://aicheck.example.com")
     monkeypatch.setenv("AICHECK_ALLOWED_HOSTS", "aicheck.example.com")
+    monkeypatch.setenv("AICHECK_REQUIRE_AUDIT_ANCHOR", "true")
+    monkeypatch.setenv("AICHECK_AUDIT_ANCHOR_OBJECT_LOCK", "true")
+    monkeypatch.setenv("AICHECK_MINIO_ENDPOINT", "minio:9000")
 
     assert security_runtime_problems() == []
 

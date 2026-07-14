@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "aicheck-audit-workflow-probes@1",
+  "temporalStartFailure": {
+    "dispatchStatus": "failed_to_start",
+    "dispatchErrorCode": "TEMPORAL_START_FAILED",
+    "apiHttpStatus": 200,
+    "apiCode": 0,
+    "nodeStatusBefore": "待人工确认",
+    "nodeStatusAfter": "业务核验中",
+    "aiRunStatusAfter": "推理中"
+  },
+  "temporalSignalFailure": {
+    "signalStatus": "failed",
+    "signalErrorCode": "TEMPORAL_SIGNAL_FAILED",
+    "apiHttpStatus": 200,
+    "apiCode": 0,
+    "persistedReviewRunStatus": "accepted_by_human",
+    "persistedFindingCount": 1
+  },
+  "terminalDecisionReplay": {
+    "firstStatus": "edited_by_human",
+    "secondStatus": "accepted_by_human",
+    "thirdStatus": "rejected_by_human",
+    "findingCountAfterFirst": 1,
+    "findingCountAfterSecond": 2,
+    "finalStatus": "rejected_by_human"
+  },
+  "activityRetry": {
+    "injectedError": "TimeoutError: transient-timeout",
+    "exceptionPropagated": false,
+    "returnedStatus": "failed",
+    "persistedStatus": "failed",
+    "rawErrorMessagePersisted": "transient-timeout"
+  },
+  "archivedProjectMutation": {
+    "projectStatus": "已归档",
+    "endpoint": "POST /projects/{project_id}/material-targeting/recompute",
+    "apiCode": 0,
+    "targetingRunsBefore": 0,
+    "targetingRunsAfter": 1,
+    "newRunStatus": "awaiting_ocr_evidence"
+  }
+}

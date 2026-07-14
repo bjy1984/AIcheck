@@ -60,6 +60,10 @@ def assert_error(response, reason: str):
 
 
 def allow_test_ai_dispatch(monkeypatch) -> None:
+    from libs.business_pack import load_business_pack
+
+    pack = load_business_pack("engineering_inspection_v1")
+    monkeypatch.setitem(pack["atomicCheckToolBindingSet"], "lifecycleStatus", "published")
     monkeypatch.setattr(
         task_dispatcher,
         "ai_recheck_dispatch_readiness",
@@ -5518,7 +5522,7 @@ def test_persistent_user_login_when_demo_users_disabled(monkeypatch) -> None:
     assert_error(client.post("/api/auth/login", json={"username": "inspection", "password": "inspection"}), "AUTH_REQUIRED")
 
 
-def test_auth_login_is_public_logout_requires_auth_and_neither_flushes_state(monkeypatch) -> None:
+def test_auth_login_is_public_logout_requires_auth_and_security_events_are_flushed(monkeypatch) -> None:
     from apps.api import main as api_main
 
     flush_calls: list[str] = []
@@ -5530,7 +5534,7 @@ def test_auth_login_is_public_logout_requires_auth_and_neither_flushes_state(mon
     assert_ok(client.post("/api/auth/logout", headers={"Authorization": f"Bearer {login['token']}"}))
     assert_error(client.post("/api/auth/logout"), "AUTH_REQUIRED")
     assert_error(client.post("/auth/logout"), "AUTH_REQUIRED")
-    assert flush_calls == []
+    assert flush_calls == ["flush", "flush"]
 
 
 def test_frontend_route_groups_return_success() -> None:
@@ -5663,6 +5667,7 @@ def test_global_audit_covers_mutations_without_explicit_audit_log(monkeypatch) -
     assert audit["objectType"] == "ApiMutation"
     assert audit["objectId"] == f"/projects/{project_id}/inspection/nodes/24/ai-recheck"
     assert audit["operationId"].startswith("OP-")
+    assert repo.verify_audit_chain(audit["tenantId"])["status"] == "verified"
 
 
 def test_global_audit_does_not_duplicate_explicit_audit_log() -> None:
@@ -7030,6 +7035,7 @@ def test_fde_ocr_capability_page_preview_requires_fde_permission(monkeypatch) ->
 
 
 def test_all_non_public_mutating_routes_have_inferred_action_codes() -> None:
+    from apps.api.routes import mock_router, router
     from libs.security.actions import MUTATING_METHODS, required_action_for_request
 
     public_mutations = {
@@ -7038,37 +7044,43 @@ def test_all_non_public_mutating_routes_have_inferred_action_codes() -> None:
         ("POST", "/auth/login"),
         ("POST", "/api/auth/login"),
         ("POST", "/auth/logout"),
-        ("POST", "/api/auth/logout"),
+        ("POST", "/auth/change-password"),
     }
     missing = []
-    for route in app.routes:
+    checked = 0
+    for route in [*router.routes, *mock_router.routes]:
         path = getattr(route, "path", "")
         methods = set(getattr(route, "methods", set()) or set()) & MUTATING_METHODS
         for method in methods:
             if (method, path) in public_mutations:
                 continue
+            checked += 1
             if required_action_for_request(method, path) is None:
                 missing.append(f"{method} {path}")
 
+    assert checked >= 150
     assert missing == []
 
 
 def test_project_mutating_routes_are_archived_readonly_guarded() -> None:
+    from apps.api.routes import router
     from libs.security.actions import MUTATING_METHODS
 
     delegated_guard_routes = {
         ("POST", "/projects/{project_id}/inspection/nodes/{node_id}/attachments"),
         ("POST", "/projects/{project_id}/inspection/nodes/{node_id}/file-bindings"),
-        ("POST", "/api/projects/{project_id}/inspection/nodes/{node_id}/attachments"),
-        ("POST", "/api/projects/{project_id}/inspection/nodes/{node_id}/file-bindings"),
+        ("POST", "/projects/{project_id}/nodes/{node_id}/evidence-links/{evidence_link_id}/confirm"),
+        ("POST", "/projects/{project_id}/nodes/{node_id}/evidence-links/{evidence_link_id}/reject"),
     }
     missing = []
-    for route in app.routes:
+    checked = 0
+    for route in router.routes:
         path = getattr(route, "path", "")
         if "{project_id}" not in path:
             continue
         methods = set(getattr(route, "methods", set()) or set()) & MUTATING_METHODS
         for method in methods:
+            checked += 1
             if (method, path) in delegated_guard_routes:
                 continue
             endpoint = getattr(route, "endpoint", None)
@@ -7076,10 +7088,12 @@ def test_project_mutating_routes_are_archived_readonly_guarded() -> None:
             if "mutation_guard(" not in source:
                 missing.append(f"{method} {path}")
 
+    assert checked >= 45
     assert missing == []
 
 
 def test_all_non_public_mutating_routes_are_audit_logged() -> None:
+    from apps.api.routes import mock_router, router
     from apps.api.main import audit_scope
     from libs.security.actions import MUTATING_METHODS
 
@@ -7089,15 +7103,17 @@ def test_all_non_public_mutating_routes_are_audit_logged() -> None:
         ("POST", "/auth/login"),
         ("POST", "/api/auth/login"),
         ("POST", "/auth/logout"),
-        ("POST", "/api/auth/logout"),
+        ("POST", "/auth/change-password"),
     }
     missing = []
-    for route in app.routes:
+    checked = 0
+    for route in [*router.routes, *mock_router.routes]:
         path = getattr(route, "path", "")
         methods = set(getattr(route, "methods", set()) or set()) & MUTATING_METHODS
         for method in methods:
             if (method, path) in unaudited_public_routes:
                 continue
+            checked += 1
             assert audit_scope(type("Req", (), {"method": method, "url": type("Url", (), {"path": path})()})()) is not None
             endpoint = getattr(route, "endpoint", None)
             source = inspect.getsource(endpoint) if endpoint is not None else ""
@@ -7105,6 +7121,7 @@ def test_all_non_public_mutating_routes_are_audit_logged() -> None:
             if not has_explicit_audit and audit_scope(type("Req", (), {"method": method, "url": type("Url", (), {"path": path})()})()) is None:
                 missing.append(f"{method} {path}")
 
+    assert checked >= 150
     assert missing == []
 
 
@@ -10121,11 +10138,15 @@ class FakePostgresTransaction:
 
 
 class FakePostgresCursor:
-    def __init__(self, rows):
+    def __init__(self, rows, *, rowcount: int | None = None):
         self.rows = rows
+        self.rowcount = len(rows) if rowcount is None else rowcount
 
     def fetchall(self):
         return list(self.rows)
+
+    def fetchone(self):
+        return self.rows[0] if self.rows else None
 
 
 class FakePostgresConnection:
@@ -10147,34 +10168,54 @@ class FakePostgresConnection:
     def execute(self, sql, params=None):
         normalized = " ".join(str(sql).split())
         self.executed.append(normalized)
-        if normalized.startswith("SELECT collection, payload FROM aicheck_state"):
-            return FakePostgresCursor([(collection, payload) for (collection, _), payload in sorted(self.state_rows.items())])
+        if normalized.startswith("SELECT collection, object_id, payload FROM aicheck_state"):
+            return FakePostgresCursor(
+                [(collection, object_id, payload) for (collection, object_id), payload in sorted(self.state_rows.items())]
+            )
+        if normalized.startswith("SELECT payload FROM aicheck_state"):
+            collection, object_id = params[-2:]
+            payload = self.state_rows.get((collection, object_id))
+            return FakePostgresCursor([(payload,)] if payload is not None else [])
         if normalized.startswith("SELECT name, payload FROM aicheck_singletons"):
             return FakePostgresCursor(list(self.singleton_rows.items()))
+        if normalized.startswith("SELECT payload FROM aicheck_singletons"):
+            payload = self.singleton_rows.get(params[-1])
+            return FakePostgresCursor([(payload,)] if payload is not None else [])
         if normalized.startswith("SELECT scope, payload FROM idempotency_records"):
             return FakePostgresCursor(list(self.idempotency_rows.items()))
-        if normalized.startswith("DELETE FROM aicheck_state"):
-            self.state_rows.clear()
+        if normalized.startswith("SELECT payload FROM idempotency_records"):
+            payload = self.idempotency_rows.get(params[-1])
+            return FakePostgresCursor([(payload,)] if payload is not None else [])
+        if normalized.startswith("DELETE FROM aicheck_state WHERE"):
+            self.state_rows.pop((params[-2], params[-1]), None)
         elif normalized.startswith("DELETE FROM aicheck_singletons"):
             self.singleton_rows.clear()
         elif normalized.startswith("DELETE FROM idempotency_records"):
             self.idempotency_rows.clear()
-        elif normalized.startswith("INSERT INTO aicheck_state"):
-            collection, object_id, payload = params
+        elif normalized.startswith("UPDATE aicheck_state SET payload"):
+            payload, collection, object_id = params[0], params[-2], params[-1]
             self.state_rows[(collection, object_id)] = json.loads(payload)
+        elif normalized.startswith("INSERT INTO aicheck_state"):
+            collection, object_id, payload = params[-3:]
+            self.state_rows[(collection, object_id)] = json.loads(payload)
+            return FakePostgresCursor([], rowcount=1)
         elif normalized.startswith("INSERT INTO aicheck_singletons"):
-            name, payload = params
+            name, payload = params[-2:]
             self.singleton_rows[name] = json.loads(payload)
         elif normalized.startswith("INSERT INTO idempotency_records"):
-            scope, payload = params
+            scope, payload = params[-2:]
             self.idempotency_rows[scope] = json.loads(payload)
-        return FakePostgresCursor([])
+        return FakePostgresCursor([], rowcount=0)
 
 
 def test_postgres_indexes_include_jsonb_and_idempotency_specs() -> None:
     assert "aicheck_state" in POSTGRES_INDEXES
     assert {"name": "idx_aicheck_state_payload_gin", "fields": ["payload"], "type": "gin"} in POSTGRES_INDEXES["aicheck_state"]
-    assert {"name": "idempotency_records_pkey", "fields": ["scope"], "unique": True} in POSTGRES_INDEXES["idempotency_records"]
+    assert {
+        "name": "idempotency_records_pkey",
+        "fields": ["tenant_id", "scope"],
+        "unique": True,
+    } in POSTGRES_INDEXES["idempotency_records"]
 
 
 def test_postgres_jsonb_state_table_covers_all_persisted_collections() -> None:

@@ -33,6 +33,13 @@ def assert_error(response, reason: str):
     return payload
 
 
+def allow_published_test_bindings(monkeypatch) -> None:
+    from libs.business_pack import load_business_pack
+
+    pack = load_business_pack("engineering_inspection_v1")
+    monkeypatch.setitem(pack["atomicCheckToolBindingSet"], "lifecycleStatus", "published")
+
+
 def seed_confirmed_node_24_evidence(project_id: str = "P-2026-HDCP-001") -> None:
     from libs.material_targeting import review_points_for_project
 
@@ -212,6 +219,7 @@ def test_fde_replay_creates_child_run_without_overwriting_parent() -> None:
 
 def test_review_run_orchestration_graph_and_human_decision(monkeypatch) -> None:
     monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "inline")
+    allow_published_test_bindings(monkeypatch)
     seed_confirmed_node_24_evidence()
     ai_run = assert_ok(
         client.post(
@@ -228,7 +236,11 @@ def test_review_run_orchestration_graph_and_human_decision(monkeypatch) -> None:
         client.post(
             f"/api/review-runs/{review_run_id}/human-decision",
             json={"decision": "accept", "comment": "证据链完整，人工确认。"},
-            headers={"X-Role": "inspection", "Idempotency-Key": "review-run-decision-001"},
+            headers={
+                "X-Role": "inspection",
+                "Idempotency-Key": "review-run-decision-001",
+                "If-Match": business_view["run"]["etag"],
+            },
         )
     )
 
@@ -281,6 +293,7 @@ def test_review_run_orchestration_graph_and_human_decision(monkeypatch) -> None:
 
 def test_review_run_can_call_litellm_and_normalize_structured_findings(monkeypatch) -> None:
     monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "inline")
+    allow_published_test_bindings(monkeypatch)
     monkeypatch.setenv("AICHECK_REVIEW_LLM_EXECUTION", "litellm")
     seed_confirmed_node_24_evidence()
 
@@ -326,6 +339,7 @@ def test_review_run_can_call_litellm_and_normalize_structured_findings(monkeypat
 
 def test_review_run_downgrades_unsupported_structured_litellm_claims(monkeypatch) -> None:
     monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "inline")
+    allow_published_test_bindings(monkeypatch)
     monkeypatch.setenv("AICHECK_REVIEW_LLM_EXECUTION", "litellm")
     seed_confirmed_node_24_evidence()
 
@@ -367,6 +381,7 @@ def test_review_run_downgrades_unsupported_structured_litellm_claims(monkeypatch
 
 def test_fde_review_run_visualization_replay_and_shadow(monkeypatch) -> None:
     monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "inline")
+    allow_published_test_bindings(monkeypatch)
     seed_confirmed_node_24_evidence()
     ai_run = assert_ok(
         client.post(
@@ -450,7 +465,11 @@ def test_fde_review_run_visualization_replay_and_shadow(monkeypatch) -> None:
                 "correctedOutput": [{"description": "人工修正后的审查发现。"}],
                 "shouldEnterEvaluationSet": True,
             },
-            headers={"X-Role": "inspection", "Idempotency-Key": "fde-review-decision-001"},
+            headers={
+                "X-Role": "inspection",
+                "Idempotency-Key": "fde-review-decision-001",
+                "If-Match": detail["run"]["etag"],
+            },
         )
     )
     detail_after_decision = assert_ok(client.get(f"/api/fde/review-runs/{review_run_id}", headers={"X-Role": "fde"}))
@@ -465,6 +484,7 @@ def test_fde_review_run_visualization_replay_and_shadow(monkeypatch) -> None:
 
 def test_fde_review_run_diagnostic_feedback_does_not_change_business_state(monkeypatch) -> None:
     monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "inline")
+    allow_published_test_bindings(monkeypatch)
     seed_confirmed_node_24_evidence()
     ai_run = assert_ok(
         client.post(
@@ -829,7 +849,7 @@ def test_fde_business_pack_install_rca_and_data_export() -> None:
     install = assert_ok(
         client.post(
             "/api/fde/business-packs/engineering_inspection_v1/install",
-            json={"tenantId": "demo", "dryRun": True},
+            json={"tenantId": "TENANT-DEFAULT", "dryRun": True},
             headers={"X-Role": "fde", "Idempotency-Key": "fde-bp-install-001"},
         )
     )
@@ -1922,7 +1942,7 @@ def test_fde_version_diff_release_impact_and_production_gate() -> None:
             json={
                 "capabilityBundleId": bundle_id,
                 "riskLevel": "medium",
-                "targetScope": {"tenantIds": ["demo"], "businessPackIds": ["engineering_inspection_v1"], "projectIds": []},
+                "targetScope": {"tenantIds": ["TENANT-DEFAULT"], "businessPackIds": ["engineering_inspection_v1"], "projectIds": []},
             },
             headers={"X-Role": "fde", "Idempotency-Key": "fde-release-100-001"},
         )

@@ -21,6 +21,7 @@ TASK_RUNNING = BusinessErrorCode(40902, "TASK_RUNNING", "任务正在运行，�
 ARCHIVED_READONLY = BusinessErrorCode(40903, "ARCHIVED_READONLY", "项目已归档，只读查看。")
 ETAG_CONFLICT = BusinessErrorCode(40904, "ETAG_CONFLICT", "数据版本已变化，请刷新后重试。")
 IDEMPOTENCY_KEY_CONFLICT = BusinessErrorCode(40905, "IDEMPOTENCY_KEY_CONFLICT", "幂等键已被不同请求内容使用。")
+PRECONDITION_REQUIRED = BusinessErrorCode(42801, "PRECONDITION_REQUIRED", "该操作必须携带最新资源版本。")
 FILE_TOO_LARGE = BusinessErrorCode(40016, "FILE_TOO_LARGE", "文件超过上传限制。")
 UNSUPPORTED_FILE_TYPE = BusinessErrorCode(40017, "UNSUPPORTED_FILE_TYPE", "文件类型不支持。")
 NDT_FILE_TOO_LARGE = BusinessErrorCode(40018, "NDT_FILE_TOO_LARGE", "无损检测报告或影像包超过上传限制。")
@@ -54,6 +55,7 @@ ERROR_BY_REASON = {
         ARCHIVED_READONLY,
         ETAG_CONFLICT,
         IDEMPOTENCY_KEY_CONFLICT,
+        PRECONDITION_REQUIRED,
         FILE_TOO_LARGE,
         UNSUPPORTED_FILE_TYPE,
         NDT_FILE_TOO_LARGE,
