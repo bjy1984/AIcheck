@@ -166,9 +166,7 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   padding: 18px 20px 16px;
   color: var(--aicheck-text, #26364e);
   background: var(--aicheck-surface, #fff);
-  border: 1px solid var(--aicheck-border, #d4deeb);
   border-radius: 12px;
-  box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
 }
 
 .audit-item-directory__head {
@@ -204,7 +202,6 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   line-height: 18px;
   color: var(--aicheck-text-muted, #52647d);
   background: var(--aicheck-surface-muted, #f2f6fb);
-  border: 1px solid var(--aicheck-border-soft, #e5ecf6);
   border-radius: 999px;
   font-variant-numeric: tabular-nums;
 }
@@ -225,7 +222,6 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   font-weight: 650;
   color: var(--aicheck-text-muted, #52647d);
   background: var(--aicheck-surface-soft, #f8fbff);
-  border: 1px solid var(--aicheck-border-soft, #e5ecf6);
   border-radius: 999px;
   align-items: center;
   gap: 8px;
@@ -253,7 +249,6 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   margin-top: 12px;
   overflow: auto hidden;
   background: var(--aicheck-surface-soft, #f8fbff);
-  border: 1px solid var(--aicheck-border-soft, #e5ecf6);
   border-radius: 10px;
   scrollbar-width: thin;
   scroll-snap-type: x proximity;
@@ -271,13 +266,11 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   min-height: 112px;
   padding: 5px 7px 8px;
   cursor: pointer;
-  background: color-mix(in srgb, var(--audit-item-color) 2%, var(--aicheck-surface, #fff));
-  border: 1px solid color-mix(in srgb, var(--audit-item-color) 16%, transparent);
+  background: transparent;
   border-radius: 10px;
   outline: none;
   scroll-snap-align: center;
   transition:
-    border-color 180ms ease-out,
     background-color 180ms ease-out,
     box-shadow 180ms ease-out,
     transform 180ms ease-out;
@@ -301,17 +294,13 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 
 .audit-item-directory__item:hover {
   background: color-mix(in srgb, var(--audit-item-color) 5%, var(--aicheck-surface, #fff));
-  border-color: color-mix(in srgb, var(--audit-item-color) 38%, transparent);
   transform: translateY(-1px);
 }
 
 .audit-item-directory__item.is-selected {
   background: var(--aicheck-surface, #fff);
-  border-color: color-mix(in srgb, var(--audit-item-color) 68%, var(--aicheck-surface, #fff));
   transform: translateY(-1px);
-  box-shadow:
-    0 6px 18px color-mix(in srgb, var(--audit-item-color) 12%, transparent),
-    inset 0 3px 0 color-mix(in srgb, var(--audit-item-color) 88%, transparent);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--audit-item-color) 12%, transparent);
 }
 
 .audit-item-directory__item:focus-visible {
@@ -322,7 +311,6 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 
 .audit-item-directory__item :deep(.el-step__head) {
   color: var(--audit-item-color) !important;
-  border-color: var(--audit-item-color) !important;
 }
 
 .audit-item-directory__item :deep(.el-step__line) {
@@ -339,10 +327,9 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 .audit-item-directory__item :deep(.el-step__icon) {
   width: 30px;
   height: 30px;
-  background: var(--aicheck-surface, #fff);
-  border: 1.5px solid var(--audit-item-color);
+  background: color-mix(in srgb, var(--audit-item-color) 10%, var(--aicheck-surface, #fff));
+  border: 0;
   border-radius: 50%;
-  box-shadow: 0 0 0 4px var(--aicheck-surface-soft, #f8fbff);
 }
 
 .audit-item-directory__item :deep(.el-step__main) {
@@ -358,7 +345,7 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   font-size: 11px;
   font-weight: 750;
   color: var(--audit-item-color);
-  background: var(--aicheck-surface, #fff);
+  background: transparent;
   border-radius: 50%;
   place-items: center;
   transition:
@@ -377,7 +364,7 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   width: 30px;
   height: 30px;
   pointer-events: none;
-  border: 1.5px solid var(--audit-item-color);
+  background: color-mix(in srgb, var(--audit-item-color) 22%, transparent);
   border-radius: 50%;
   content: '';
   animation: audit-item-ripple 1.45s ease-out 2;
@@ -424,7 +411,6 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   line-height: 18px;
   color: var(--audit-item-color);
   background: color-mix(in srgb, var(--audit-item-color) 7%, var(--aicheck-surface, #fff));
-  border: 1px solid color-mix(in srgb, var(--audit-item-color) 22%, transparent);
   border-radius: 999px;
   align-items: center;
   gap: 4px;
@@ -455,8 +441,6 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   padding: 10px 12px;
   margin-top: 10px;
   background: color-mix(in srgb, var(--audit-item-color) 4%, var(--aicheck-surface, #fff));
-  border: 1px solid color-mix(in srgb, var(--audit-item-color) 20%, var(--aicheck-border, #d4deeb));
-  border-left: 3px solid var(--audit-item-color);
   border-radius: 8px;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
@@ -488,7 +472,6 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   line-height: 18px;
   color: var(--audit-item-color);
   background: var(--aicheck-surface, #fff);
-  border: 1px solid color-mix(in srgb, var(--audit-item-color) 28%, transparent);
   border-radius: 999px;
   align-items: center;
   gap: 5px;
